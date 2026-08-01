@@ -205,6 +205,45 @@ describe('CreditSubscriptionCycleScheduler', () => {
     );
   });
 
+  it('retains every future plan change when backfilling across multiple effective cycles', async () => {
+    const subscriptions = new MemoryCreditSubscriptionStore();
+    const ledger = new MemoryCreditLedger();
+    await subscriptions.upsert({
+      anchorAt: '2026-01-01T00:00:00.000Z',
+      id: 'sub-multiple-future-changes',
+      interval: 'monthly',
+      paidThroughCycle: 3,
+      tier: 'starter',
+      workspaceId: 'workspace-multiple-future-changes',
+    });
+    await subscriptions.scheduleChange({
+      subscriptionId: 'sub-multiple-future-changes',
+      tier: 'growth',
+      interval: 'monthly',
+      effectiveCycle: 1,
+      at: '2026-01-15T00:00:00.000Z',
+    });
+    await subscriptions.scheduleChange({
+      subscriptionId: 'sub-multiple-future-changes',
+      tier: 'pro',
+      interval: 'yearly',
+      effectiveCycle: 2,
+      at: '2026-02-15T00:00:00.000Z',
+    });
+    const scheduler = new CreditSubscriptionCycleScheduler(subscriptions, ledger, {
+      planFor: (tier) => plans[tier],
+    });
+
+    await scheduler.run('2026-04-01T00:00:00.000Z');
+
+    assert.deepEqual(
+      ledger
+        .listLots('workspace-multiple-future-changes')
+        .map((lot) => lot.originalCredits),
+      [500, 1_300, 2_800],
+    );
+  });
+
   it('fails closed when a paid subscription tier has no valid credit amount', async () => {
     const ledger = new MemoryCreditLedger();
     const subscriptions = new MemoryCreditSubscriptionStore();

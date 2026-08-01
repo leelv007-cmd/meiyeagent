@@ -9,9 +9,11 @@ import {
 import type { CreditPlanCatalog } from './credit-plan-catalog.js';
 import type { CreditBalanceProjection, CreditGrantLot, GrantCreditsInput } from './credit-ledger.js';
 import {
+  creditSubscriptionCycleIndexAt,
   creditSubscriptionIntervalForCycle,
   creditSubscriptionTierForCycle,
   currentCreditSubscriptionCycle,
+  DeferredCreditPaymentEvent,
   type CreditSubscription,
   type CreditSubscriptionInterval,
   type CreditSubscriptionStore,
@@ -205,6 +207,26 @@ export class CreditBillingService {
         );
       }
       assertText(input.periodStartsAt ?? '', 'periodStartsAt');
+      if (Date.parse(input.periodStartsAt!) > Date.parse(now)) {
+        throw new DeferredCreditPaymentEvent(
+          'Credit renewal is waiting for its billing period to start.',
+        );
+      }
+      const renewalCycle = creditSubscriptionCycleIndexAt(
+        active.anchorAt,
+        input.periodStartsAt!,
+      );
+      const frozenTier = creditSubscriptionTierForCycle(active, renewalCycle);
+      const frozenInterval = creditSubscriptionIntervalForCycle(
+        active,
+        renewalCycle,
+      );
+      if (tier !== frozenTier || interval !== frozenInterval) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Credit renewal does not match the frozen credit subscription tier and interval.',
+        );
+      }
       return subscriptions.recordPaidPeriod({
         subscriptionId: active.id,
         periodStartsAt: input.periodStartsAt!,
@@ -237,21 +259,21 @@ export class CreditBillingService {
         targetSubscriptionId: requestedSubscriptionId,
         at: now,
       });
-      const paid = await subscriptions.recordPaidPeriod({
+      if (comparison < 0 || interval !== currentInterval) {
+        return subscriptions.scheduleChange({
+          subscriptionId: replacement.id,
+          tier,
+          interval,
+          effectiveCycle,
+          at: now,
+        });
+      }
+      return subscriptions.recordPaidPeriod({
         subscriptionId: replacement.id,
         periodStartsAt: anchorAt,
         coverageCycles: paidCycleCoverage(interval),
         at: now,
       });
-      return comparison < 0
-        ? subscriptions.scheduleChange({
-            subscriptionId: paid.id,
-            tier,
-            interval,
-            effectiveCycle,
-            at: now,
-          })
-        : paid;
     }
     if (comparison > 0 || replacesSubscription) {
       await this.ledger.expireSubscriptionLots({

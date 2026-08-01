@@ -19,6 +19,15 @@ export const CREDIT_SUBSCRIPTION_GRACE_PERIOD_MS = 7 * 24 * 60 * 60 * 1_000;
 export type CreditSubscriptionInterval = 'single_month' | 'monthly' | 'yearly';
 export type CreditSubscriptionStatus = 'active' | 'past_due' | 'cancelled';
 
+/** A provider delivery for a billing period that has not started may be retried. */
+export class DeferredCreditPaymentEvent extends Error {}
+
+export interface CreditSubscriptionScheduledChange {
+  tier: Exclude<CreditPlanId, 'trial'>;
+  interval: CreditSubscriptionInterval;
+  effectiveCycle: number;
+}
+
 export interface CreditSubscription {
   id: string;
   workspaceId: string;
@@ -28,6 +37,8 @@ export interface CreditSubscription {
   pendingTier: Exclude<CreditPlanId, 'trial'> | null;
   pendingInterval: CreditSubscriptionInterval | null;
   pendingEffectiveCycle: number | null;
+  /** Ordered future plan facts retained for historical grant reconciliation. */
+  scheduledChanges: CreditSubscriptionScheduledChange[];
   /** Keeps grant keys unique when a provider retains its id across an upgrade. */
   grantCycleOffset: number;
   /** Retains paid-cycle grant identity when a provider replaces its subscription id. */
@@ -50,6 +61,7 @@ export interface CreditSubscriptionInput {
   pendingTier?: Exclude<CreditPlanId, 'trial'> | null;
   pendingInterval?: CreditSubscriptionInterval | null;
   pendingEffectiveCycle?: number | null;
+  scheduledChanges?: readonly CreditSubscriptionScheduledChange[];
   grantCycleOffset?: number;
   grantLineageId?: string;
   anchorAt: string;
@@ -204,28 +216,23 @@ export function creditSubscriptionTierForCycle(
   subscription: CreditSubscription,
   cycleIndex: number,
 ) {
-  if (
-    subscription.pendingTier &&
-    subscription.pendingEffectiveCycle !== null &&
-    cycleIndex >= subscription.pendingEffectiveCycle
-  ) {
-    return subscription.pendingTier;
-  }
-  return subscription.tier;
+  return scheduledChangeForCycle(subscription, cycleIndex)?.tier ?? subscription.tier;
 }
 
 export function creditSubscriptionIntervalForCycle(
   subscription: CreditSubscription,
   cycleIndex: number,
 ) {
-  if (
-    subscription.pendingInterval &&
-    subscription.pendingEffectiveCycle !== null &&
-    cycleIndex >= subscription.pendingEffectiveCycle
-  ) {
-    return subscription.pendingInterval;
-  }
-  return subscription.interval;
+  return scheduledChangeForCycle(subscription, cycleIndex)?.interval ?? subscription.interval;
+}
+
+function scheduledChangeForCycle(
+  subscription: CreditSubscription,
+  cycleIndex: number,
+) {
+  return changesFor(subscription)
+    .filter((change) => change.effectiveCycle <= cycleIndex)
+    .at(-1) ?? null;
 }
 
 export class CreditSubscriptionCycleScheduler {
@@ -445,14 +452,21 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
     assertSubscriptionInput(input);
     const existing = this.subscriptions.get(input.id);
     const now = input.updatedAt ?? input.anchorAt;
+    const scheduledChanges = normalizeScheduledChanges(
+      input.scheduledChanges ??
+        existing?.scheduledChanges ??
+        legacyScheduledChanges(input),
+    );
+    const pending = scheduledChanges[0] ?? null;
     const subscription: CreditSubscription = {
       id: input.id,
       workspaceId: input.workspaceId,
       tier: input.tier,
       interval: input.interval,
-      pendingTier: input.pendingTier ?? null,
-      pendingInterval: input.pendingInterval ?? null,
-      pendingEffectiveCycle: input.pendingEffectiveCycle ?? null,
+      pendingTier: pending?.tier ?? null,
+      pendingInterval: pending?.interval ?? null,
+      pendingEffectiveCycle: pending?.effectiveCycle ?? null,
+      scheduledChanges,
       grantCycleOffset: input.grantCycleOffset ?? 0,
       grantLineageId:
         input.grantLineageId ?? existing?.grantLineageId ?? input.id,
@@ -645,9 +659,14 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
     if (subscription.status === 'cancelled') {
       throw new Error('Cancelled credit subscriptions cannot be changed.');
     }
-    subscription.pendingTier = input.tier;
-    subscription.pendingInterval = input.interval;
-    subscription.pendingEffectiveCycle = input.effectiveCycle;
+    subscription.scheduledChanges = scheduleSubscriptionChange(
+      subscription,
+      input,
+    );
+    const pending = subscription.scheduledChanges[0] ?? null;
+    subscription.pendingTier = pending?.tier ?? null;
+    subscription.pendingInterval = pending?.interval ?? null;
+    subscription.pendingEffectiveCycle = pending?.effectiveCycle ?? null;
     subscription.updatedAt = iso(input.at);
     return structuredClone(subscription);
   }
@@ -683,6 +702,9 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
         result: result ? structuredClone(result) : null,
       });
       return result ? structuredClone(result) : null;
+    } catch (error) {
+      if (error instanceof DeferredCreditPaymentEvent) return null;
+      throw error;
     } finally {
       release();
     }
@@ -722,6 +744,7 @@ interface CreditSubscriptionRow extends QueryResultRow {
   pending_tier: CreditSubscription['tier'] | null;
   pending_interval: CreditSubscriptionInterval | null;
   pending_effective_cycle: number | string | null;
+  scheduled_changes: unknown;
   grant_cycle_offset: number | string;
   grant_lineage_id: string;
   anchor_at: Date | string;
@@ -765,6 +788,7 @@ export class PostgresCreditSubscriptionStore
         pending_tier text CHECK (pending_tier IN ('starter', 'growth', 'pro')),
         pending_interval text CHECK (pending_interval IN ('single_month', 'monthly', 'yearly')),
         pending_effective_cycle integer CHECK (pending_effective_cycle >= 0),
+        scheduled_changes jsonb NOT NULL DEFAULT '[]'::jsonb,
         grant_cycle_offset integer NOT NULL DEFAULT 0 CHECK (grant_cycle_offset >= 0),
         grant_lineage_id text NOT NULL,
         anchor_at timestamptz NOT NULL,
@@ -788,6 +812,8 @@ export class PostgresCreditSubscriptionStore
         ADD COLUMN IF NOT EXISTS pending_interval text;
       ALTER TABLE p1_credit_subscriptions
         ADD COLUMN IF NOT EXISTS pending_effective_cycle integer;
+      ALTER TABLE p1_credit_subscriptions
+        ADD COLUMN IF NOT EXISTS scheduled_changes jsonb NOT NULL DEFAULT '[]'::jsonb;
       ALTER TABLE p1_credit_subscriptions
         ADD COLUMN IF NOT EXISTS grant_cycle_offset integer NOT NULL DEFAULT 0;
       ALTER TABLE p1_credit_subscriptions
@@ -854,9 +880,9 @@ export class PostgresCreditSubscriptionStore
     const result = await this.database.query<CreditSubscriptionRow>(
       `INSERT INTO p1_credit_subscriptions
         (id, workspace_id, tier, interval, pending_tier, pending_interval,
-         pending_effective_cycle, grant_cycle_offset, grant_lineage_id, anchor_at, paid_through_cycle,
+         pending_effective_cycle, scheduled_changes, grant_cycle_offset, grant_lineage_id, anchor_at, paid_through_cycle,
          status, past_due_at, cancelled_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        ON CONFLICT (id) DO UPDATE SET
          workspace_id = EXCLUDED.workspace_id,
          tier = EXCLUDED.tier,
@@ -864,6 +890,7 @@ export class PostgresCreditSubscriptionStore
          pending_tier = EXCLUDED.pending_tier,
          pending_interval = EXCLUDED.pending_interval,
          pending_effective_cycle = EXCLUDED.pending_effective_cycle,
+         scheduled_changes = EXCLUDED.scheduled_changes,
          grant_cycle_offset = EXCLUDED.grant_cycle_offset,
          grant_lineage_id = EXCLUDED.grant_lineage_id,
          anchor_at = EXCLUDED.anchor_at,
@@ -878,9 +905,14 @@ export class PostgresCreditSubscriptionStore
         input.workspaceId,
         input.tier,
         input.interval,
-        input.pendingTier ?? null,
-        input.pendingInterval ?? null,
-        input.pendingEffectiveCycle ?? null,
+        pendingFor(input).tier,
+        pendingFor(input).interval,
+        pendingFor(input).effectiveCycle,
+        JSON.stringify(
+          normalizeScheduledChanges(
+            input.scheduledChanges ?? legacyScheduledChanges(input),
+          ),
+        ),
         input.grantCycleOffset ?? 0,
         input.grantLineageId ?? input.id,
         iso(input.anchorAt),
@@ -1109,17 +1141,25 @@ export class PostgresCreditSubscriptionStore
     at: string;
   }) {
     assertPaidThroughCycle(input.effectiveCycle);
+    const subscription = await this.require(input.subscriptionId);
+    if (subscription.status === 'cancelled') {
+      throw new Error('Cancelled credit subscriptions cannot be changed.');
+    }
+    const scheduledChanges = scheduleSubscriptionChange(subscription, input);
+    const pending = scheduledChanges[0] ?? null;
     const result = await this.database.query<CreditSubscriptionRow>(
       `UPDATE p1_credit_subscriptions
           SET pending_tier = $2, pending_interval = $3,
-              pending_effective_cycle = $4, updated_at = $5
+              pending_effective_cycle = $4, scheduled_changes = $5::jsonb,
+              updated_at = $6
         WHERE id = $1 AND status <> 'cancelled'
         RETURNING *`,
       [
         input.subscriptionId,
-        input.tier,
-        input.interval,
-        input.effectiveCycle,
+        pending?.tier ?? null,
+        pending?.interval ?? null,
+        pending?.effectiveCycle ?? null,
+        JSON.stringify(scheduledChanges),
         iso(input.at),
       ],
     );
@@ -1187,6 +1227,7 @@ export class PostgresCreditSubscriptionStore
       return result;
     } catch (error) {
       await client.query('ROLLBACK');
+      if (error instanceof DeferredCreditPaymentEvent) return null;
       throw error;
     } finally {
       client.release();
@@ -1319,6 +1360,9 @@ function assertSubscriptionInput(input: CreditSubscriptionInput) {
     }
     assertPaidThroughCycle(input.pendingEffectiveCycle);
   }
+  if (input.scheduledChanges) {
+    normalizeScheduledChanges(input.scheduledChanges);
+  }
   if (input.status === 'past_due' && !input.pastDueAt) {
     throw new Error('past_due subscriptions require pastDueAt.');
   }
@@ -1331,6 +1375,78 @@ function assertSubscriptionInput(input: CreditSubscriptionInput) {
   if (input.status !== 'cancelled' && input.cancelledAt) {
     throw new Error('Only cancelled subscriptions may have cancelledAt.');
   }
+}
+
+function changesFor(subscription: CreditSubscription) {
+  return subscription.scheduledChanges.length > 0
+    ? subscription.scheduledChanges
+    : legacyScheduledChanges(subscription);
+}
+
+function legacyScheduledChanges(input: {
+  pendingTier?: Exclude<CreditPlanId, 'trial'> | null;
+  pendingInterval?: CreditSubscriptionInterval | null;
+  pendingEffectiveCycle?: number | null;
+}) {
+  if (
+    !input.pendingTier ||
+    !input.pendingInterval ||
+    input.pendingEffectiveCycle === undefined ||
+    input.pendingEffectiveCycle === null
+  ) {
+    return [];
+  }
+  return [{
+    tier: input.pendingTier,
+    interval: input.pendingInterval,
+    effectiveCycle: input.pendingEffectiveCycle,
+  }];
+}
+
+function normalizeScheduledChanges(
+  changes: readonly CreditSubscriptionScheduledChange[],
+) {
+  const byCycle = new Map<number, CreditSubscriptionScheduledChange>();
+  for (const change of changes) {
+    if (!['starter', 'growth', 'pro'].includes(change.tier)) {
+      throw new Error('Scheduled subscription tier must be a paid plan.');
+    }
+    if (!['single_month', 'monthly', 'yearly'].includes(change.interval)) {
+      throw new Error('Scheduled subscription interval is invalid.');
+    }
+    assertPaidThroughCycle(change.effectiveCycle);
+    byCycle.set(change.effectiveCycle, { ...change });
+  }
+  return [...byCycle.values()].sort(
+    (left, right) => left.effectiveCycle - right.effectiveCycle,
+  );
+}
+
+function scheduleSubscriptionChange(
+  subscription: CreditSubscription,
+  input: {
+    tier: Exclude<CreditPlanId, 'trial'>;
+    interval: CreditSubscriptionInterval;
+    effectiveCycle: number;
+  },
+) {
+  return normalizeScheduledChanges([
+    ...changesFor(subscription).filter(
+      (change) => change.effectiveCycle !== input.effectiveCycle,
+    ),
+    input,
+  ]);
+}
+
+function pendingFor(input: CreditSubscriptionInput) {
+  const scheduledChanges = normalizeScheduledChanges(
+    input.scheduledChanges ?? legacyScheduledChanges(input),
+  );
+  return scheduledChanges[0] ?? {
+    tier: null,
+    interval: null,
+    effectiveCycle: null,
+  };
 }
 
 function assertPaidThroughCycle(value: number) {
@@ -1358,17 +1474,17 @@ function iso(value: Date | string) {
 }
 
 function subscriptionFromRow(row: CreditSubscriptionRow): CreditSubscription {
+  const scheduledChanges = scheduledChangesFromRow(row);
+  const pending = scheduledChanges[0] ?? null;
   return {
     id: row.id,
     workspaceId: row.workspace_id,
     tier: row.tier,
     interval: row.interval,
-    pendingTier: row.pending_tier,
-    pendingInterval: row.pending_interval,
-    pendingEffectiveCycle:
-      row.pending_effective_cycle === null
-        ? null
-        : Number(row.pending_effective_cycle),
+    pendingTier: pending?.tier ?? null,
+    pendingInterval: pending?.interval ?? null,
+    pendingEffectiveCycle: pending?.effectiveCycle ?? null,
+    scheduledChanges,
     grantCycleOffset: Number(row.grant_cycle_offset),
     grantLineageId: row.grant_lineage_id,
     anchorAt: iso(row.anchor_at),
@@ -1379,4 +1495,27 @@ function subscriptionFromRow(row: CreditSubscriptionRow): CreditSubscription {
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };
+}
+
+function scheduledChangesFromRow(row: CreditSubscriptionRow) {
+  if (Array.isArray(row.scheduled_changes)) {
+    try {
+      return normalizeScheduledChanges(
+        row.scheduled_changes as CreditSubscriptionScheduledChange[],
+      );
+    } catch {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Credit subscription scheduled changes are invalid.',
+      );
+    }
+  }
+  return legacyScheduledChanges({
+    pendingTier: row.pending_tier,
+    pendingInterval: row.pending_interval,
+    pendingEffectiveCycle:
+      row.pending_effective_cycle === null
+        ? null
+        : Number(row.pending_effective_cycle),
+  });
 }

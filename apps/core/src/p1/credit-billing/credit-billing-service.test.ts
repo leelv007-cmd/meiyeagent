@@ -469,6 +469,132 @@ test('a same-tier replacement subscription id does not regrant the already-paid 
   );
 });
 
+test('a same-tier replacement changes billing interval only on the next paid cycle', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-interval-old',
+    paymentProductId: 'growth',
+    periodStartsAt: now.toISOString(),
+    subscriptionId: 'subscription-interval-old',
+  });
+  now = new Date('2026-01-15T00:00:00.000Z');
+  const replacement = await service.settlePayment(context, {
+    interval: 'year',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-interval-new',
+    paymentProductId: 'growth',
+    periodStartsAt: '2026-02-01T00:00:00.000Z',
+    subscriptionId: 'subscription-interval-new',
+  });
+
+  assert.equal(replacement?.interval, 'monthly');
+  assert.equal(replacement?.pendingInterval, 'yearly');
+  assert.equal(replacement?.pendingEffectiveCycle, 1);
+});
+
+test('a renewal must match the subscription tier and interval frozen for its paid cycle', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  const subscriptionId = 'subscription-renew-frozen-facts';
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-renew-frozen-activate',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId,
+  });
+  now = new Date('2026-02-01T00:00:00.000Z');
+
+  await assert.rejects(
+    service.settlePayment(context, {
+      interval: 'year',
+      lifecycle: 'renew',
+      paymentEventId: 'payment-renew-frozen-mismatch',
+      paymentProductId: 'pro',
+      periodStartsAt: now.toISOString(),
+      subscriptionId,
+    }),
+    /does not match the frozen credit subscription/i,
+  );
+  assert.equal((await subscriptions.get(subscriptionId))?.paidThroughCycle, 1);
+});
+
+test('an old paid period replay cannot clear a later past_due state', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  const subscriptionId = 'subscription-old-paid-replay';
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-old-paid-activate',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId,
+  });
+  now = new Date('2026-02-01T00:00:00.000Z');
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'past_due',
+    paymentEventId: 'payment-old-paid-past-due',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId,
+  });
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'renew',
+    paymentEventId: 'payment-old-paid-replay',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-01-01T00:00:00.000Z',
+    subscriptionId,
+  });
+
+  assert.equal((await subscriptions.get(subscriptionId))?.status, 'past_due');
+});
+
+test('a future renewal does not complete its receipt before it can be retried', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  const subscriptionId = 'subscription-future-payment-retry';
+  const renewal = {
+    interval: 'month' as const,
+    lifecycle: 'renew' as const,
+    paymentEventId: 'payment-future-payment-retry',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-02-01T00:00:00.000Z',
+    subscriptionId,
+  };
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-future-payment-activate',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId,
+  });
+  assert.equal(await service.settlePayment(context, renewal), null);
+  now = new Date('2026-02-01T00:00:00.000Z');
+  await service.settlePayment(context, renewal);
+
+  assert.equal((await subscriptions.get(subscriptionId))?.paidThroughCycle, 2);
+});
+
 test('future and old paid periods do not expand or regress current coverage', async () => {
   let now = new Date('2026-01-01T00:00:00.000Z');
   const ledger = new MemoryCreditLedger();

@@ -170,6 +170,8 @@ test(
         'workspace-period-pg',
         'workspace-annual-pg',
         'workspace-period-gap-pg',
+        'workspace-state-machine-pg',
+        'workspace-future-retry-pg',
       ]) {
         await pool.query(
           "INSERT INTO workspaces (id, name) VALUES ($1, 'Credit period test')",
@@ -307,6 +309,110 @@ test(
       assert.equal(
         (await store.get('pg-subscription-period-gap'))?.paidThroughCycle,
         3,
+      );
+
+      now = new Date('2026-01-01T00:00:00.000Z');
+      const stateMachine = serviceFor('workspace-state-machine-pg');
+      await stateMachine.service.settlePayment(stateMachine.context, {
+        interval: 'month',
+        lifecycle: 'activate',
+        paymentEventId: 'pg-state-machine-activate',
+        paymentProductId: 'growth',
+        periodStartsAt: now.toISOString(),
+        subscriptionId: 'pg-state-machine-old',
+      });
+      now = new Date('2026-01-15T00:00:00.000Z');
+      const intervalReplacement = await stateMachine.service.settlePayment(
+        stateMachine.context,
+        {
+          interval: 'year',
+          lifecycle: 'activate',
+          paymentEventId: 'pg-state-machine-interval-replacement',
+          paymentProductId: 'growth',
+          periodStartsAt: '2026-02-01T00:00:00.000Z',
+          subscriptionId: 'pg-state-machine-new',
+        },
+      );
+      assert.equal(intervalReplacement?.pendingInterval, 'yearly');
+      now = new Date('2026-02-01T00:00:00.000Z');
+      await stateMachine.service.settlePayment(stateMachine.context, {
+        interval: 'year',
+        lifecycle: 'renew',
+        paymentEventId: 'pg-state-machine-yearly-renewal',
+        paymentProductId: 'growth',
+        periodStartsAt: now.toISOString(),
+        subscriptionId: 'pg-state-machine-new',
+      });
+      assert.equal(
+        (await store.get('pg-state-machine-new'))?.paidThroughCycle,
+        13,
+      );
+      await store.scheduleChange({
+        subscriptionId: 'pg-state-machine-new',
+        tier: 'starter',
+        interval: 'monthly',
+        effectiveCycle: 14,
+        at: now.toISOString(),
+      });
+      await store.scheduleChange({
+        subscriptionId: 'pg-state-machine-new',
+        tier: 'pro',
+        interval: 'yearly',
+        effectiveCycle: 15,
+        at: now.toISOString(),
+      });
+      assert.deepEqual(
+        (await store.get('pg-state-machine-new'))?.scheduledChanges.map(
+          (change) => [change.tier, change.interval, change.effectiveCycle],
+        ),
+        [
+          ['growth', 'yearly', 1],
+          ['starter', 'monthly', 14],
+          ['pro', 'yearly', 15],
+        ],
+      );
+      await assert.rejects(
+        stateMachine.service.settlePayment(stateMachine.context, {
+          interval: 'year',
+          lifecycle: 'renew',
+          paymentEventId: 'pg-state-machine-mismatched-renewal',
+          paymentProductId: 'pro',
+          periodStartsAt: now.toISOString(),
+          subscriptionId: 'pg-state-machine-new',
+        }),
+        /does not match the frozen credit subscription/i,
+      );
+
+      now = new Date('2026-01-01T00:00:00.000Z');
+      const futureRetry = serviceFor('workspace-future-retry-pg');
+      const futureRenewal = {
+        interval: 'month' as const,
+        lifecycle: 'renew' as const,
+        paymentEventId: 'pg-future-retry-renewal',
+        paymentProductId: 'starter',
+        periodStartsAt: '2026-02-01T00:00:00.000Z',
+        subscriptionId: 'pg-future-retry',
+      };
+      await futureRetry.service.settlePayment(futureRetry.context, {
+        interval: 'month',
+        lifecycle: 'activate',
+        paymentEventId: 'pg-future-retry-activate',
+        paymentProductId: 'starter',
+        periodStartsAt: now.toISOString(),
+        subscriptionId: futureRenewal.subscriptionId,
+      });
+      assert.equal(
+        await futureRetry.service.settlePayment(
+          futureRetry.context,
+          futureRenewal,
+        ),
+        null,
+      );
+      now = new Date('2026-02-01T00:00:00.000Z');
+      await futureRetry.service.settlePayment(futureRetry.context, futureRenewal);
+      assert.equal(
+        (await store.get(futureRenewal.subscriptionId))?.paidThroughCycle,
+        2,
       );
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`).catch(() => undefined);
