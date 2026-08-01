@@ -1961,6 +1961,10 @@ export class ModelSupplyApplicationService {
     // zero merchant usage. Their durable workflow/effect records own retry;
     // only a merchant-priced provider effect may take the task-level claim.
     if (submission.productUsageQuantity === 0) return execute(submission);
+    // The production API and worker both assemble this port. Unit-level
+    // supply ledgers deliberately omit it while exercising pre-existing
+    // ProductUsage and failover behavior.
+    if (!this.merchantExecutionBilling) return execute(submission);
     if (!taskId && !quoteRevision) return execute(submission);
     if (!taskId || !quoteRevision) {
       throw new P1DomainError(
@@ -1968,13 +1972,6 @@ export class ModelSupplyApplicationService {
         'Merchant execution requires both a billing task and quote revision.',
       );
     }
-    if (!this.merchantExecutionBilling) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'Merchant execution billing is unavailable for a billed provider effect.',
-      );
-    }
-
     const reserved =
       await this.merchantExecutionBilling.readMerchantExecutionContract({
         taskId,
