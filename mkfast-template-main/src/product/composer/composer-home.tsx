@@ -163,6 +163,7 @@ import {
   WorkbenchShellRoot,
   WorkbenchStickyComposerHost,
 } from './workbench-shell-layout';
+import { useWorkbenchViewportWidth } from './use-workbench-viewport-width';
 import { LensRadiogroup } from './lens-radiogroup';
 import { LensSwitchPreviewPanel } from './lens-switch-preview-panel';
 import { ComposerIdentityCard } from './composer-identity-card';
@@ -603,8 +604,9 @@ export function ComposerHome({
   /** Mobile Result Inspector sheet (dual-column right rail equivalent). */
   const [inspectorSheetOpen, setInspectorSheetOpen] = useState(false);
 
-  const width =
-    viewportWidth ?? (typeof window !== 'undefined' ? window.innerWidth : 1280);
+  // P1-1: live resize/matchMedia so dual column flips when crossing 1240 without
+  // waiting for an unrelated re-render. `viewportWidth` remains the test override.
+  const width = useWorkbenchViewportWidth(viewportWidth);
   const singleColumn = !isTwoColumnMobileViewport({ width });
   const viewportKind = isMobile || singleColumn ? 'mobile' : 'desktop';
 
@@ -2617,9 +2619,17 @@ export function ComposerHome({
   // P1-01 / §8.2: dual column at ≥1240 Active/Delivered; sticky Composer; 800/1240.
   const dualColumn = isWorkbenchDualColumnEligible(session.phase, width);
   const stickyComposer = isWorkbenchComposerSticky(session.phase);
+  // P1-01: media width (1240) ≡ dual-column shell. mediaExpanded is reserved for
+  // a later object-workspace expand and is intentionally not passed here.
   const widthMode = resolveWorkbenchWidthMode({ dualColumn });
   const inspectorWorkId = session.task?.workId ?? null;
   const inspectorSummary = session.deliveryStatement ?? null;
+
+  // Mobile inspector sheet is the dual-column equivalent — dismiss when desktop
+  // dual column takes over so the two surfaces never stack.
+  useEffect(() => {
+    if (dualColumn) setInspectorSheetOpen(false);
+  }, [dualColumn]);
 
   return (
     <WorkbenchShellRoot
@@ -3071,52 +3081,51 @@ export function ComposerHome({
                   intentError={submitBlockedMessage}
                   value={userText}
                 />
-              </WorkbenchStickyComposerHost>
 
-              {destinationPreflight?.intent === userText.trim() &&
-              destinationPreflight.result.status === 'needs_clarification' ? (
-                <div
-                  className="rounded-2xl border border-default-200 bg-content1/80 p-3"
-                  data-testid="composer-destination-clarification"
-                  role="alert"
-                  tabIndex={-1}
-                >
-                  <p className="text-sm">
-                    {destinationPreflight.result.question}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {destinationPreflight.result.options.map((option) => (
-                      <button
-                        className="rounded-full border border-default-300 px-3 py-1.5 text-sm"
-                        key={`${option.contentPackagePlatform}:${option.distributionTarget}`}
-                        onClick={() => {
-                          setDestinationPreflight(null);
-                          setLensState((current) =>
-                            updateDeliverySuggestion(current, {
-                              distributionTarget: option.distributionTarget,
-                              platform: option.contentPackagePlatform,
-                            })
-                          );
-                        }}
-                        type="button"
-                      >
-                        {option.label}
-                      </button>
-                    ))}
+                {destinationPreflight?.intent === userText.trim() &&
+                destinationPreflight.result.status === 'needs_clarification' ? (
+                  <div
+                    className="rounded-2xl border border-default-200 bg-content1/80 p-3"
+                    data-testid="composer-destination-clarification"
+                    role="alert"
+                    tabIndex={-1}
+                  >
+                    <p className="text-sm">
+                      {destinationPreflight.result.question}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {destinationPreflight.result.options.map((option) => (
+                        <button
+                          className="rounded-full border border-default-300 px-3 py-1.5 text-sm"
+                          key={`${option.contentPackagePlatform}:${option.distributionTarget}`}
+                          onClick={() => {
+                            setDestinationPreflight(null);
+                            setLensState((current) =>
+                              updateDeliverySuggestion(current, {
+                                distributionTarget: option.distributionTarget,
+                                platform: option.contentPackagePlatform,
+                              })
+                            );
+                          }}
+                          type="button"
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ) : null}
+                ) : null}
 
-              {currentQuoteView ? (
-                <p
-                  className="text-muted text-xs"
-                  data-quote-revision={quoteQuery.data?.revision}
-                  data-submission-contract-hash={
-                    quoteQuery.data?.submissionContractHash
-                  }
-                  data-testid="composer-quote-line"
-                >
-                  {/*
+                {currentQuoteView ? (
+                  <p
+                    className="text-muted text-xs"
+                    data-quote-revision={quoteQuery.data?.revision}
+                    data-submission-contract-hash={
+                      quoteQuery.data?.submissionContractHash
+                    }
+                    data-testid="composer-quote-line"
+                  >
+                    {/*
               `预计消耗 0.06` used to print here: a bare float in an invisible
               unit, one line above 「本次用 1 条文案额度和 3 张图片额度 · 文案还剩
               5 条」 — two pricing systems on one screen, and the merchant unit is
@@ -3125,98 +3134,100 @@ export function ComposerHome({
               sentence cannot say (video is billed by finished seconds) and
               otherwise just states that the price is settled.
             */}
-                  {currentQuoteView.billingNote ?? '本次用量已确认'}
-                </p>
-              ) : (
-                <ComposerQuoteStatusLine
-                  onRetry={retryQuoteReadiness}
-                  readiness={quoteReadiness}
-                />
-              )}
+                    {currentQuoteView.billingNote ?? '本次用量已确认'}
+                  </p>
+                ) : (
+                  <ComposerQuoteStatusLine
+                    onRetry={retryQuoteReadiness}
+                    readiness={quoteReadiness}
+                  />
+                )}
 
-              {submissionGroundingBlocked === 'store' ? (
-                <p
-                  className="text-destructive text-sm"
-                  data-testid="composer-grounding-blocker"
-                  role="alert"
-                >
-                  {workbench_grounding_store_required()}{' '}
-                  <Link
-                    className="font-medium underline underline-offset-4"
-                    to="/dashboard/store"
+                {submissionGroundingBlocked === 'store' ? (
+                  <p
+                    className="text-destructive text-sm"
+                    data-testid="composer-grounding-blocker"
+                    role="alert"
                   >
-                    {workbench_grounding_go_to_store()}
-                  </Link>
-                </p>
-              ) : submissionGroundingBlocked === 'qualification' ? (
-                <p
-                  className="text-destructive text-sm"
-                  data-testid="composer-grounding-blocker"
-                  role="alert"
-                >
-                  {workbench_grounding_qualification_required()}{' '}
-                  <Link
-                    className="font-medium underline underline-offset-4"
-                    hash="store-qualification"
-                    to="/dashboard/store"
+                    {workbench_grounding_store_required()}{' '}
+                    <Link
+                      className="font-medium underline underline-offset-4"
+                      to="/dashboard/store"
+                    >
+                      {workbench_grounding_go_to_store()}
+                    </Link>
+                  </p>
+                ) : submissionGroundingBlocked === 'qualification' ? (
+                  <p
+                    className="text-destructive text-sm"
+                    data-testid="composer-grounding-blocker"
+                    role="alert"
                   >
-                    {workbench_grounding_qualification_action()}
-                  </Link>
-                </p>
-              ) : submissionGroundingBlocked === 'source' ? (
-                <p
-                  className="text-destructive text-sm"
-                  data-testid="composer-grounding-blocker"
-                  role="alert"
-                >
-                  {workbench_grounding_source_required()}
-                </p>
-              ) : createWork.isError ? (
-                <p className="text-destructive text-sm" role="alert">
-                  {workbench_operation_failed()}
-                </p>
-              ) : null}
+                    {workbench_grounding_qualification_required()}{' '}
+                    <Link
+                      className="font-medium underline underline-offset-4"
+                      hash="store-qualification"
+                      to="/dashboard/store"
+                    >
+                      {workbench_grounding_qualification_action()}
+                    </Link>
+                  </p>
+                ) : submissionGroundingBlocked === 'source' ? (
+                  <p
+                    className="text-destructive text-sm"
+                    data-testid="composer-grounding-blocker"
+                    role="alert"
+                  >
+                    {workbench_grounding_source_required()}
+                  </p>
+                ) : createWork.isError ? (
+                  <p className="text-destructive text-sm" role="alert">
+                    {workbench_operation_failed()}
+                  </p>
+                ) : null}
 
-              {/* 额度：被动展示，不足才阻塞 (D-043 决定②). Always mounted — the passive
+                {/* 额度：被动展示，不足才阻塞 (D-043 决定②). Always mounted — the passive
             line is not a card and gates nothing; only a shortfall raises the
-            blocking card. */}
-              <QuotaBlockingCard
-                blocked={quotaBlocked}
-                passive={quotaPassive}
-                onRedeem={async ({ command, idempotencyKey }) => {
-                  try {
-                    await commandP1('redemptions', command, idempotencyKey);
-                    // Both entitlement reads on this page: the projection behind the
-                    // pre-check and the three-bucket balance card above it. Refreshing
-                    // one and not the other leaves 创作余额 quoting the old numbers
-                    // next to a card that just said it unlocked.
-                    await Promise.all([
-                      queryClient.invalidateQueries({
-                        queryKey: p1QueryKeys.request(
-                          'entitlements',
-                          'projection'
-                        ),
-                      }),
-                      queryClient.invalidateQueries({
-                        queryKey: p1QueryKeys.request(
-                          'entitlements',
-                          'balance'
-                        ),
-                      }),
-                    ]);
-                    return { ok: true };
-                  } catch (error) {
-                    return {
-                      ok: false,
-                      message:
-                        error instanceof Error
-                          ? error.message
-                          : '兑换失败，请重试',
-                    };
-                  }
-                }}
-                onUnlocked={() => setSubmissionQuotaBlocked(false)}
-              />
+            blocking card. Kept inside sticky host so Active morph does not
+            occlude quote / grounding / quota under the send control. */}
+                <QuotaBlockingCard
+                  blocked={quotaBlocked}
+                  passive={quotaPassive}
+                  onRedeem={async ({ command, idempotencyKey }) => {
+                    try {
+                      await commandP1('redemptions', command, idempotencyKey);
+                      // Both entitlement reads on this page: the projection behind the
+                      // pre-check and the three-bucket balance card above it. Refreshing
+                      // one and not the other leaves 创作余额 quoting the old numbers
+                      // next to a card that just said it unlocked.
+                      await Promise.all([
+                        queryClient.invalidateQueries({
+                          queryKey: p1QueryKeys.request(
+                            'entitlements',
+                            'projection'
+                          ),
+                        }),
+                        queryClient.invalidateQueries({
+                          queryKey: p1QueryKeys.request(
+                            'entitlements',
+                            'balance'
+                          ),
+                        }),
+                      ]);
+                      return { ok: true };
+                    } catch (error) {
+                      return {
+                        ok: false,
+                        message:
+                          error instanceof Error
+                            ? error.message
+                            : '兑换失败，请重试',
+                      };
+                    }
+                  }}
+                  onUnlocked={() => setSubmissionQuotaBlocked(false)}
+                />
+              </WorkbenchStickyComposerHost>
 
               <ComposerToolsStrip
                 viewport={viewportKind}

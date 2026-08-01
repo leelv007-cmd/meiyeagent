@@ -27,10 +27,20 @@ test('P1-1: dual column uses react-resizable-panels product path', () => {
   assert.match(layout, /ResizablePanelGroup/u);
   assert.match(layout, /workbench-dual-column/u);
   assert.match(layout, /WorkbenchInspectorSheet/u);
+  // Stream panel must not become the sticky scrollport (P1-2 under dual column).
+  assert.match(layout, /meiye-workbench-stream-panel/u);
+  assert.match(layout, /data-overflow="visible"/u);
+  assert.doesNotMatch(layout, /min-h-\[28rem\]/u);
+  const glass = readSource('src/components/heroui-pro/heroui-glass.css');
+  assert.match(
+    glass,
+    /\.meiye-workbench-stream-panel\s*\{[\s\S]*?overflow:\s*visible\s*!important/u
+  );
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /isWorkbenchDualColumnEligible/u);
   assert.match(home, /WorkbenchCreateLayout/u);
   assert.match(home, /WorkbenchInspectorPanel/u);
+  assert.match(home, /useWorkbenchViewportWidth/u);
   assert.match(layout, /workbench-result-inspector/u);
 });
 
@@ -38,9 +48,16 @@ test('P1-2: Active sticky Composer clears mobile-nav (4.25rem family)', () => {
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /isWorkbenchComposerSticky/u);
   assert.match(home, /WorkbenchStickyComposerHost/u);
+  // Merchant-critical chrome rides the sticky host (quote / grounding / quota).
+  assert.match(
+    home,
+    /WorkbenchStickyComposerHost[\s\S]*composer-quote-line[\s\S]*QuotaBlockingCard[\s\S]*<\/WorkbenchStickyComposerHost>/u
+  );
   const shell = readSource('src/product/composer/workbench-shell.ts');
   assert.match(shell, /WORKBENCH_MOBILE_NAV_HEIGHT = '4\.25rem'/u);
   assert.match(shell, /5\.25rem\+env\(safe-area-inset-bottom\)/u);
+  assert.match(shell, /bg-background\/95/u);
+  assert.match(shell, /backdrop-blur/u);
 });
 
 test('frame registry: conversation renders turns via AgentFrame host', () => {

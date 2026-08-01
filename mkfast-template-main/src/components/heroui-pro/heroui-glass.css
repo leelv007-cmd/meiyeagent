@@ -183,6 +183,19 @@
 }
 
 /*
+ * P1-01 dual-column stream panel (#313 / P1-2).
+ * react-resizable-panels sets overflow:auto inline on Panel; that becomes the
+ * sticky scrollport and breaks Active Composer morph. Force visible so sticky
+ * Composer remains viewport-relative. Inspector panel is intentionally left alone.
+ */
+.meiye-workbench-stream-panel {
+  overflow: visible !important;
+}
+[data-slot="resizable-panel"]:has(> .meiye-workbench-stream-panel) {
+  overflow: visible !important;
+}
+
+/*
  * `chat-conversation` fades its own top and bottom 32px — a soft edge that
  * reads well when the pane carries chat bubbles you skim. The composer's
  * transcript carries cards the merchant has to read: the 进度宣告卡, the

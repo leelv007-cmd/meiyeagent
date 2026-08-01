@@ -88,12 +88,18 @@ export function workbenchShellMaxWidthPx(mode: WorkbenchWidthMode): number {
 }
 
 /**
- * Resolve shell width mode from phase + dual-column eligibility.
- * Media mode also applies when dual column is open so the outer shell can host
- * the Inspector without crushing the timeline.
+ * Resolve shell width mode.
+ *
+ * P1-01 product rule: media width (1240) ≡ dual-column shell open. The optional
+ * `mediaExpanded` flag is reserved for a later object-workspace expand that is
+ * not yet a home signal — callers that only pass `{ dualColumn }` are correct.
  */
 export function resolveWorkbenchWidthMode(input: {
   dualColumn: boolean;
+  /**
+   * Reserved for a future object-workspace media expand that is independent of
+   * dual-column. P1-01 home does not pass this; dual-column alone owns 1240.
+   */
   mediaExpanded?: boolean;
 }): WorkbenchWidthMode {
   if (input.dualColumn || input.mediaExpanded) return 'media';
@@ -107,7 +113,9 @@ export function workbenchShellMaxWidthClass(mode: WorkbenchWidthMode): string {
 
 /**
  * Sticky Composer host classes when Active. z-index sits above transcript
- * content but below mobile-nav (z-50) and dialogs.
+ * content but below mobile-nav (z-50) and dialogs. Opaque/blur backdrop so
+ * scrolling timeline text does not bleed through the send control (matches
+ * Result Center sticky action bar).
  */
 export function workbenchComposerStickyHostClass(
   sticky: boolean
@@ -118,5 +126,9 @@ export function workbenchComposerStickyHostClass(
     WORKBENCH_COMPOSER_STICKY_BOTTOM_CLASS,
     // Keep the send control clear of the floating mobile nav (P1-2).
     'pb-[max(0.5rem,env(safe-area-inset-bottom))] md:pb-0',
+    // Scrim while stuck — Idle non-sticky path never applies this host class.
+    'border-t border-border/60 bg-background/95 backdrop-blur supports-backdrop-filter:bg-background/80',
+    // Horizontal bleed so the scrim covers the shell padding while stuck.
+    '-mx-4 px-4 sm:-mx-6 sm:px-6',
   ].join(' ');
 }

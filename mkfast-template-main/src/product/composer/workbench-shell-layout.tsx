@@ -86,6 +86,12 @@ export type WorkbenchDualColumnProps = {
 /**
  * Desktop dual column. Only mount when `isWorkbenchDualColumnEligible` is true.
  * react-resizable-panels is the product path (F11 转正); no three-column home.
+ *
+ * Sticky Composer (P1-2) must stay page-relative. The library paints
+ * `overflow:auto` on Panel nodes, which would become the sticky scrollport.
+ * `.meiye-workbench-stream-panel` (+ :has rule in heroui-glass.css) forces
+ * overflow:visible !important on the stream panel only; the inspector may still
+ * scroll independently.
  */
 export function WorkbenchDualColumn({
   stream,
@@ -93,33 +99,42 @@ export function WorkbenchDualColumn({
   className,
 }: WorkbenchDualColumnProps) {
   return (
-    <ResizablePanelGroup
-      className={cn('min-h-[28rem] w-full', className)}
+    <div
+      className={cn('w-full', className)}
       data-testid="workbench-dual-column"
-      orientation="horizontal"
     >
-      <ResizablePanel
-        className="min-w-0"
-        defaultSize={62}
-        minSize={40}
-        data-testid="workbench-stream-panel"
+      <ResizablePanelGroup
+        className="w-full items-start"
+        orientation="horizontal"
       >
-        <div className="flex h-full min-w-0 flex-col gap-6 pr-2">{stream}</div>
-      </ResizablePanel>
-      <ResizableHandle
-        className="bg-border"
-        data-testid="workbench-column-handle"
-        withHandle
-      />
-      <ResizablePanel
-        className="min-w-0"
-        defaultSize={38}
-        minSize={24}
-        data-testid="workbench-inspector-panel"
-      >
-        <div className="flex h-full min-w-0 flex-col pl-2">{inspector}</div>
-      </ResizablePanel>
-    </ResizablePanelGroup>
+        <ResizablePanel
+          className="meiye-workbench-stream-panel min-w-0"
+          defaultSize={62}
+          minSize={40}
+        >
+          <div
+            className="meiye-workbench-stream-panel flex min-w-0 flex-col gap-6 pr-2"
+            data-overflow="visible"
+            data-testid="workbench-stream-panel"
+          >
+            {stream}
+          </div>
+        </ResizablePanel>
+        <ResizableHandle
+          className="bg-border"
+          data-testid="workbench-column-handle"
+          withHandle
+        />
+        <ResizablePanel className="min-w-0" defaultSize={38} minSize={24}>
+          <div
+            className="flex min-h-0 min-w-0 flex-col pl-2"
+            data-testid="workbench-inspector-panel"
+          >
+            {inspector}
+          </div>
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    </div>
   );
 }
 

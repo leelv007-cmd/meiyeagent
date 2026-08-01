@@ -71,3 +71,12 @@ test('plan and memory families stay registered for progressive mapping', () => {
   assert.equal(claimed.has('plan'), false);
   assert.equal(claimed.has('memory'), false);
 });
+
+test('session turn kind list is exhaustive over ComposerTurn kind (compile + runtime)', () => {
+  // Runtime mirror of the Exclude<…> extends never assert in the registry:
+  // every registry session kind is a known timeline kind that resolves.
+  for (const kind of COMPOSER_SESSION_TURN_KINDS) {
+    assert.equal(typeof resolveAgentFrameKind(kind), 'string');
+  }
+  assert.equal(COMPOSER_SESSION_TURN_KINDS.length, 8);
+});

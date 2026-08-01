@@ -58,6 +58,21 @@ export const COMPOSER_SESSION_TURN_KINDS = [
 ] as const satisfies ReadonlyArray<ComposerTurn['kind']>;
 
 /**
+ * Compile-time exhaustiveness: a new ComposerTurn['kind'] that is missing from
+ * COMPOSER_SESSION_TURN_KINDS fails typecheck (Exclude… extends never).
+ */
+type AssertSessionTurnKindsExhaustive =
+  Exclude<
+    ComposerTurn['kind'],
+    (typeof COMPOSER_SESSION_TURN_KINDS)[number]
+  > extends never
+    ? true
+    : ['Missing ComposerTurn kind in COMPOSER_SESSION_TURN_KINDS'];
+
+const _assertSessionTurnKindsExhaustive: AssertSessionTurnKindsExhaustive = true;
+void _assertSessionTurnKindsExhaustive;
+
+/**
  * Resolve the AgentFrame family for a timeline turn kind.
  *
  * Mapping (progressive, P1-01 base):

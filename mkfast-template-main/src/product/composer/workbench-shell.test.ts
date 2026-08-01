@@ -66,6 +66,8 @@ test('P1-2: Active/Delivered Composer is sticky; Idle is not', () => {
   const stickyClass = workbenchComposerStickyHostClass(true);
   assert.ok(stickyClass?.includes('sticky'));
   assert.ok(stickyClass?.includes('5.25rem'));
+  assert.ok(stickyClass?.includes('bg-background/95'));
+  assert.ok(stickyClass?.includes('backdrop-blur'));
   assert.equal(workbenchComposerStickyHostClass(false), undefined);
   assert.equal(WORKBENCH_MOBILE_NAV_HEIGHT, '4.25rem');
 });
