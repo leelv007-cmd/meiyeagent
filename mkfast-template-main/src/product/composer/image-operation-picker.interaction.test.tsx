@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ComposerImageOperationPicker,
   imageOperationCardinality,
+  imageOperationSourceCount,
 } from './image-operation-picker';
 
 afterEach(cleanup);
@@ -40,6 +41,15 @@ describe('free image operation entries', () => {
 });
 
 describe('image source cardinality', () => {
+  it('does not count style-only references as image operation inputs', () => {
+    expect(
+      imageOperationSourceCount({
+        sourceAssetIds: ['style-1', 'input-1'],
+        styleReferenceAssetIds: ['style-1'],
+      })
+    ).toBe(1);
+  });
+
   it('accepts only 0 / 1 / 2+ references for generate / edit / transform', () => {
     expect(imageOperationCardinality('image.generate', 0).valid).toBe(true);
     expect(imageOperationCardinality('image.generate', 1).valid).toBe(false);

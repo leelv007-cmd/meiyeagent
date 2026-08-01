@@ -276,6 +276,38 @@ test('fixture LLM deployments exactly satisfy the registered Harness copy axes',
   );
 });
 
+test('fixture assembly freezes a confirmed reference-image text route', async () => {
+  const fixture = modelRuntimeAssemblyFromEnv({
+    APP_ENV: 'e2e',
+    MODEL_EXECUTION_MODE: 'fixture',
+  });
+  const service = new ModelSupplyApplicationService({
+    models: fixture.models,
+    deployments: fixture.deployments,
+    execution: fixture.runtime.execution,
+    runtimeCapabilities: fixture.runtimeCapabilities,
+  });
+
+  const route = await service.freezeAutoTextRouteForExecution({
+    workspaceId: 'workspace-fixture-reference-image',
+    dataClass: [],
+  });
+
+  assert.equal(route.requestedSelection.mode, 'fixed');
+  assert.equal(route.actualCatalogModelId, 'llm-gemini');
+  const match = route.capabilityMatches?.find(
+    (candidate) => candidate.axisId === 'textResponse'
+  );
+  assert.equal(match?.outcome, 'eligible');
+  assert.deepEqual(
+    [...(match?.evidenceRefs ?? [])].sort(),
+    [
+      'local-fixture:llm-gemini:modality:image/*',
+      'local-fixture:llm-gemini:modality:text/plain',
+    ].sort()
+  );
+});
+
 test('fixture media lifecycle reports CNY cost without changing recorded or direct currencies', async () => {
   const mediaRequest = {
     ...recordedRequest('seedance-2', 'video.generate', {

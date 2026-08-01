@@ -383,7 +383,7 @@ export class ComposerSubmissionAdmissionGate
 		})}`;
 		const operation = operationForRequest(
 			recipeBinding.lens,
-			input.sources.assets.length,
+			input.sources.assets.filter((source) => source.role !== "style").length,
 			input.creationMode,
 			input.imageOperation,
 		);

@@ -26,6 +26,7 @@ import {
 } from './adapters.js';
 import { MemoryModelAssetStorage, RecordedGatewayPocPort } from './index.js';
 import { resetSharedRecordedHealthOverlay } from '../supply-registry/health-overlay.js';
+import { viralImageVisionResultSchema } from '../harness/viral-adapt.js';
 
 beforeEach(() => {
   resetSharedRecordedHealthOverlay();
@@ -97,6 +98,57 @@ test('fixture Harness contract routes DeepSeek copy with provider identity and s
   assert.equal(response.providerCost.currency, 'CNY');
   assert.ok(response.providerCost.amount > 0);
   assert.ok((response.providerCost.usage.outputTokens ?? 0) > 0);
+});
+
+test('fixture Gemini returns strict viral image vision only for a resolved reference image', async () => {
+  const request = recordedRequest('llm-gemini', 'text.respond', {
+    inputAssets: [{ assetId: 'viral-image-1', role: 'reference_image' }],
+  });
+  request.submission.prompt = 'Analyze the authorized viral reference image.';
+  request.submission.promptBinding = {
+    name: 'harness/xhs-viral-image-vision',
+    version: 'fixture-v1',
+    content: 'Return strict JSON.',
+    contentHash: 'a'.repeat(64),
+    label: 'fixture',
+    source: 'builtin',
+    isFallback: true,
+    fallbackReason: 'e2e_fixture',
+  };
+  request.resolvedInputAssets = [
+    {
+      assetId: 'viral-image-1',
+      bytes: new Uint8Array([137, 80, 78, 71]),
+      contentType: 'image/png',
+      kind: 'resolved',
+      providerReadableUrl: 'https://assets.example/viral-image-1',
+      role: 'reference_image',
+      sha256: 'b'.repeat(64),
+    },
+  ];
+
+  const fixtureRuntime = createModelExecutionRuntime({ mode: 'fixture' });
+  const completed = await fixtureRuntime.execution.execute(request);
+  assert.equal(completed.kind, 'completed');
+  if (completed.kind !== 'completed') return;
+  assert.equal(
+    viralImageVisionResultSchema.safeParse(JSON.parse(completed.text ?? ''))
+      .success,
+    true,
+  );
+
+  const missingReference = structuredClone(request);
+  missingReference.resolvedInputAssets = [];
+  const rejected = await fixtureRuntime.execution.execute(missingReference);
+  assert.equal(rejected.kind, 'failure');
+
+  const recorded = await createModelExecutionRuntime({
+    mode: 'recorded',
+  }).execution.execute(request);
+  assert.equal(recorded.kind, 'completed');
+  if (recorded.kind === 'completed') {
+    assert.equal(recorded.text, request.submission.prompt);
+  }
 });
 
 test('recorded LLM copy is readable, grounded, and does not expose the internal prompt JSON', async () => {

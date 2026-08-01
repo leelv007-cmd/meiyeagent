@@ -300,6 +300,7 @@ import {
   ComposerImageOperationPicker,
   imageOperationAttachmentHint,
   imageOperationCardinality,
+  imageOperationSourceCount,
   type ComposerImageOperation,
 } from './image-operation-picker';
 import {
@@ -1300,7 +1301,13 @@ export function ComposerHome({
     cancelViralOpenCliRead,
   ]);
   const imageCardinality = explicitImageOperation
-    ? imageOperationCardinality(explicitImageOperation, sourceReferences.length)
+    ? imageOperationCardinality(
+        explicitImageOperation,
+        imageOperationSourceCount({
+          sourceAssetIds: sourceReferences.map(({ id }) => id),
+          styleReferenceAssetIds,
+        })
+      )
     : { message: null, valid: true };
   const signedGeneration = generationParamsEnabled
     ? buildSubmissionGenerationParams({

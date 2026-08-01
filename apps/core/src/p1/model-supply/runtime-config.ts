@@ -88,6 +88,16 @@ function fixtureLlmCapabilityProfile(
         basis: 'inferred',
         evidenceRef: `${evidencePrefix}:modality:text/plain`,
       },
+      ...(model.id === 'llm-gemini'
+        ? [
+            {
+              mime: 'image/*' as const,
+              supported: true,
+              basis: 'inferred' as const,
+              evidenceRef: `${evidencePrefix}:modality:image/*`,
+            },
+          ]
+        : []),
     ],
     businessTags: [],
     modalityCapabilities: [],

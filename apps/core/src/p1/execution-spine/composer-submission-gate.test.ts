@@ -534,7 +534,24 @@ test("Result text adjustment binds the confirmed quote route and inspected data 
 test("Composer admission keeps pure image distinct from the first-class image-text note fork", async () => {
 	for (const kind of ["image", "image_text_note", "video"] as const) {
 		const briefChecks: unknown[] = [];
-		const input = mediaSubmission(kind);
+		const input = {
+			...mediaSubmission(kind),
+			...(kind === "image"
+				? {
+						creationMode: "free" as const,
+						imageOperation: "image.generate" as const,
+						sources: {
+							assets: [
+								{
+									id: "asset-1",
+									revision: "asset-r2",
+									role: "style" as const,
+								},
+							],
+						},
+					}
+				: {}),
+		};
 		const recipeLens = kind === "video" ? "video" : "image_text";
 		let publishedNotePageBound = 3;
 		const gate = new ComposerSubmissionAdmissionGate({
@@ -773,7 +790,7 @@ test("Composer admission keeps pure image distinct from the first-class image-te
 				operation:
 					kind === "video"
 						? "video.generate"
-						: kind === "image_text_note"
+						: kind === "image_text_note" || kind === "image"
 							? "image.generate"
 							: "image.edit",
 				outputCount: 2,

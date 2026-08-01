@@ -4,6 +4,14 @@ import { Button } from '@/components/ui/button';
 
 export type ComposerImageOperation = ImageIntent['operation'];
 
+export function imageOperationSourceCount(input: {
+  sourceAssetIds: readonly string[];
+  styleReferenceAssetIds: readonly string[];
+}): number {
+  const styleReferences = new Set(input.styleReferenceAssetIds);
+  return input.sourceAssetIds.filter((id) => !styleReferences.has(id)).length;
+}
+
 const IMAGE_OPERATION_ENTRIES: ReadonlyArray<{
   label: string;
   operation: ComposerImageOperation;

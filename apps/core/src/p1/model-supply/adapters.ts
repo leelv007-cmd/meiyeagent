@@ -270,6 +270,54 @@ export class GeminiDirectRecordedAdapter extends DirectLlmRecordedAdapter {
   readonly apiFamily = 'gemini' as const;
 }
 
+class FixtureGeminiViralImageVisionRecordedAdapter extends GeminiDirectRecordedAdapter {
+  override async execute(request: ProviderExecutionRequest) {
+    if (
+      request.submission.operation !== 'text.respond' ||
+      request.submission.promptBinding?.name !==
+        'harness/xhs-viral-image-vision'
+    ) {
+      return super.execute(request);
+    }
+    const hasReferenceImage = request.resolvedInputAssets?.some(
+      (asset) =>
+        asset.role === 'reference_image' &&
+        asset.contentType.startsWith('image/')
+    );
+    if (!hasReferenceImage) {
+      return {
+        kind: 'failure' as const,
+        acceptance: 'rejected_before_accept' as const,
+        message:
+          'Fixture viral image vision requires one resolved reference image.',
+        providerCost: {
+          amount: 0,
+          currency: this.currency,
+          usage: {},
+        },
+      };
+    }
+    return {
+      kind: 'completed' as const,
+      providerTaskRef: `fixture-viral-image-vision-${digest(request.jobId).slice(0, 20)}`,
+      text: JSON.stringify({
+        styleSummary: '克制柔光的美业杂志风',
+        englishImagePrompt:
+          'restrained soft-light beauty editorial scene with honest salon details',
+        onImageChineseText: ['到店护理分享'],
+        negativePrompt:
+          'watermark, medical claim, exaggerated result, unreadable text',
+        sourceTrack: 'paste',
+      }),
+      providerCost: {
+        amount: 0.02,
+        currency: this.currency,
+        usage: { inputTokens: 24, outputTokens: 48 },
+      },
+    };
+  }
+}
+
 export class CustomDirectRecordedAdapter extends DirectLlmRecordedAdapter {
   readonly catalogModelId = 'llm-custom';
   readonly apiFamily = 'custom' as const;
@@ -1026,8 +1074,11 @@ export function createModelExecutionRuntime(
     const fixture = new RecordedAdapterRouter(
       [
         new FixtureCanvasAgentRecordedAdapter(),
+        new FixtureGeminiViralImageVisionRecordedAdapter(),
         ...defaultRecordedAdapters().filter(
-          (adapter) => !(adapter instanceof DeepSeekProDirectRecordedAdapter),
+          (adapter) =>
+            !(adapter instanceof DeepSeekProDirectRecordedAdapter) &&
+            !(adapter instanceof GeminiDirectRecordedAdapter),
         ),
       ],
       {
