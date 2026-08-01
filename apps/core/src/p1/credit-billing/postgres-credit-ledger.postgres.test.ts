@@ -12,6 +12,7 @@ import {
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
 import { DurableProductBillingService } from '../product-billing/durable-service.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
+import { HarnessProductBillingSettlementExecutor } from '../harness/product-billing-settlement.js';
 import { creditUsageOperationId } from './credit-ledger.js';
 import { PostgresCreditLedger } from './postgres-credit-ledger.js';
 
@@ -91,6 +92,41 @@ test(
       );
       assert.equal(projection.availableCredits, 1);
       assert.equal(projection.usedCredits, 4);
+      const refunded = fulfilled[0]!.submission;
+      const refundedQuote = await new DurableProductBillingService(
+        billingRepository,
+      ).getQuote(refunded.snapshot.quote.id, workspaceId);
+      assert.ok(refundedQuote);
+      const settlement = new HarnessProductBillingSettlementExecutor(
+        new DurableProductBillingService(billingRepository),
+        undefined,
+        () => new Date('2026-08-02T00:00:00.000Z'),
+        undefined,
+        creditLedger,
+      );
+      const refundInput = {
+        workspaceId,
+        taskId: refunded.task.id,
+        quoteId: refundedQuote.quoteId,
+        quoteRevision: refundedQuote.revision,
+      };
+      await settlement.refund(refundInput);
+      await settlement.refund(refundInput);
+      assert.equal(
+        (await billingRepository.getUsage(workspaceId, refunded.task.id))?.status,
+        'refunded',
+      );
+      assert.equal(
+        (await creditLedger.project(workspaceId, '2026-08-02T00:00:00.000Z'))
+          .availableCredits,
+        3,
+      );
+      assert.equal(
+        (await creditLedger.listTransactions(workspaceId)).filter(
+          (transaction) => transaction.transactionType === 'REFUND',
+        ).length,
+        1,
+      );
       await creditLedger.grant({
         id: 'expired-package',
         workspaceId,
@@ -104,7 +140,7 @@ test(
         workspaceId,
         '2026-08-04T00:00:00.000Z',
       );
-      assert.equal(afterExpiry.availableCredits, 1);
+      assert.equal(afterExpiry.availableCredits, 3);
       assert.equal(afterExpiry.expiredCredits, 3);
       assert.deepEqual(
         (await creditLedger.listTransactions(workspaceId))

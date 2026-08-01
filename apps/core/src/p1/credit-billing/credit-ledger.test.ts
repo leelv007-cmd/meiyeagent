@@ -33,29 +33,52 @@ test('credits use FEFO across subscription and package lots', () => {
     expirationDate: '2026-08-31T00:00:00.000Z',
   });
   grant(ledger, {
-    id: 'package',
+    id: 'package-first',
     credits: 5,
     expirationDate: '2026-08-05T00:00:00.000Z',
     transactionType: 'PURCHASE_PACKAGE',
   });
+  grant(ledger, {
+    id: 'package-second',
+    credits: 4,
+    expirationDate: '2026-08-10T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+  });
 
-  const usage = ledger.consume({
+  const firstUsage = ledger.consume({
     workspaceId: 'workspace-credit',
     credits: 8,
-    transactionId: creditUsageOperationId('task-fefo'),
+    transactionId: creditUsageOperationId('task-fefo-first'),
     actorId: 'owner',
     correlationId: 'test',
     createdAt: '2026-08-02T00:00:00.000Z',
   });
+  const secondUsage = ledger.consume({
+    workspaceId: 'workspace-credit',
+    credits: 6,
+    transactionId: creditUsageOperationId('task-fefo-second'),
+    actorId: 'owner',
+    correlationId: 'test',
+    createdAt: '2026-08-03T00:00:00.000Z',
+  });
 
   assert.deepEqual(
-    usage.map((transaction) => [transaction.lotId, transaction.credits]),
+    [...firstUsage, ...secondUsage].map((transaction) => [
+      transaction.lotId,
+      transaction.credits,
+    ]),
     [
-      ['package', 5],
-      ['subscription', 3],
+      ['package-first', 5],
+      ['package-second', 3],
+      ['package-second', 1],
+      ['subscription', 5],
     ],
   );
-  assert.equal(ledger.project('workspace-credit').availableCredits, 7);
+  assert.equal(
+    ledger.project('workspace-credit', '2026-08-03T00:00:00.000Z')
+      .availableCredits,
+    5,
+  );
 });
 
 test('a refund after source-lot expiry remains visible but cannot revive credits', () => {
