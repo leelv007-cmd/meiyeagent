@@ -14,7 +14,41 @@ import { imageTextNoteVersionSchema } from './note-plan.js';
 const contentPackageIdSchema = z.string().trim().min(1);
 const contentPackageTimestampSchema = z.iso.datetime();
 
-export const contentPackageKindSchema = z.enum(['image_text', 'video']);
+/**
+ * Canonical ContentPackage kinds (xhs-vertical-integration-spec §3.1).
+ * - media: single media asset (image/video/…)
+ * - copy: pure text deliverable
+ * - note: image-text composite (page set + cover + body); XHS 图文成品
+ */
+export const contentPackageCanonicalKinds = ['media', 'copy', 'note'] as const;
+export type ContentPackageCanonicalKind =
+  (typeof contentPackageCanonicalKinds)[number];
+
+/**
+ * Legacy wire/storage aliases kept for compatibility without DB rewrite.
+ * Product semantics use the canonical map (new口径为准).
+ */
+export const contentPackageLegacyKindAliasMap = {
+  /** Historical 图文 package → note (XHS 图文成品). */
+  image_text: 'note',
+  /** Historical video package → media (single-media carrier). */
+  video: 'media',
+} as const satisfies Record<string, ContentPackageCanonicalKind>;
+
+export const contentPackageLegacyKinds = ['image_text', 'video'] as const;
+
+/**
+ * Wire schema accepts canonical kinds plus legacy aliases.
+ * Call {@link normalizeContentPackageKind} when product logic needs media/copy/note.
+ */
+export const contentPackageKindSchema = z.enum([
+  'media',
+  'copy',
+  'note',
+  'image_text',
+  'video',
+]);
+
 export const contentPackagePlatformSchema = z.enum([
   'xiaohongshu',
   'douyin',
@@ -151,6 +185,22 @@ export type ContentPackageStatus = z.infer<typeof contentPackageStatusSchema>;
 export type ContentPackageStatusGroup = z.infer<
   typeof contentPackageStatusGroupSchema
 >;
+
+/** Map legacy aliases to the media/copy/note product口径. Idempotent for canonical values. */
+export function normalizeContentPackageKind(
+  kind: ContentPackageKind,
+): ContentPackageCanonicalKind {
+  if (kind === 'image_text' || kind === 'video') {
+    return contentPackageLegacyKindAliasMap[kind];
+  }
+  return kind;
+}
+
+export function isContentPackageCanonicalKind(
+  kind: string,
+): kind is ContentPackageCanonicalKind {
+  return (contentPackageCanonicalKinds as readonly string[]).includes(kind);
+}
 
 const STATUS_GROUP_BY_STATUS = {
   accepted: 'usable',
