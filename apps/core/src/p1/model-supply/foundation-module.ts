@@ -5885,6 +5885,35 @@ function billingOutputCount(value: unknown): number {
   return Number(value);
 }
 
+function merchantBillingOperation(
+  value: unknown,
+  executionOperation: ModelOperation,
+): CreditPricingOperation {
+  const requested =
+    typeof value === 'string' && value.trim()
+      ? value.trim()
+      : executionOperation;
+  if (!CREDIT_PRICING_OPERATIONS.includes(requested as never)) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'billingOperation must be a published credit operation.',
+    );
+  }
+  if (
+    requested !== executionOperation &&
+    !(
+      requested === 'image.reference_transform' &&
+      executionOperation === 'image.edit'
+    )
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'billingOperation does not match the provider execution operation.',
+    );
+  }
+  return requested as CreditPricingOperation;
+}
+
 export class ModelSupplyFoundationModule implements P1OperationModule {
   readonly name = 'model-supply';
   private readonly adminActorIds: Set<string>;
@@ -6041,7 +6070,10 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
                         );
                       })(),
                 idempotencyKey: args.idempotencyKey,
-                operation: requestedOperation,
+                operation: merchantBillingOperation(
+                  payload.billingOperation,
+                  requestedOperation,
+                ),
                 outputCount: billingOutputCount(payload.billingOutputCount),
                 quoteRevision: billingQuoteRevision!,
                 ...(requestedInput?.durationSeconds !== undefined

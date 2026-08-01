@@ -133,7 +133,10 @@ export function buildLiveQuoteInput(input: {
   submission: ComposerSubmissionSignedFields;
 }) {
   const quantity = Math.max(1, input.quantity ?? 1);
-  const operation = COMPOSER_OPERATION_BY_LENS[input.lensId];
+  const operation =
+    input.lensId === 'image_text' && input.submission.imageOperation
+      ? input.submission.imageOperation
+      : COMPOSER_OPERATION_BY_LENS[input.lensId];
 
   // Everything the server bills off, quote identity excluded — see below.
   const billablePayload = {

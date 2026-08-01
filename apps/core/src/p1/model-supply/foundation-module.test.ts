@@ -2937,7 +2937,7 @@ describe('ModelSupplyFoundationModule', () => {
         {
           catalogModelId: 'llm-openai',
           lifecycleStatus: 'reserved',
-          operation: 'text.respond',
+          operation: 'copy.generate',
           outputCount: 1,
           quoteId: 'quote-valid',
           revision: 'quote-r1',
@@ -3007,7 +3007,7 @@ describe('ModelSupplyFoundationModule', () => {
     const payload = {
       billingOutputCount: 1,
       dataClass: [],
-      operation: 'text.respond',
+      operation: 'copy.generate',
       prompt: 'Return one concise campaign direction.',
       selection: { catalogModelId: 'llm-openai', mode: 'fixed' },
     };
@@ -3044,7 +3044,7 @@ describe('ModelSupplyFoundationModule', () => {
       );
     }
     for (const drift of [
-      { operation: 'copy.generate' },
+      { operation: 'copy.adapt' },
       { selection: { catalogModelId: 'llm-backup', mode: 'fixed' } },
       { billingOutputCount: 2 },
       { input: { durationSeconds: 15 } },
@@ -3148,7 +3148,7 @@ describe('ModelSupplyFoundationModule', () => {
     const quote = {
       catalogModelId: 'llm-openai',
       lifecycleStatus: 'reserved',
-      operation: 'text.respond',
+      operation: 'copy.generate',
       outputCount: 1,
       quoteId: 'quote-replay',
       revision: 'quote-r1',
@@ -3179,7 +3179,7 @@ describe('ModelSupplyFoundationModule', () => {
           billingQuoteRevision: quote.revision,
           billingTaskId: quote.taskId,
           dataClass: [],
-          operation: 'text.respond',
+          operation: 'copy.generate',
           prompt: 'Return one durable result.',
           selection: { catalogModelId: 'llm-openai', mode: 'fixed' },
         },

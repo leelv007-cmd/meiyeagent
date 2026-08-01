@@ -16,7 +16,11 @@ export const publicProductQuoteOperations = [
   'copy.generate',
   'copy.adapt',
   'image.generate',
+  'image.edit',
+  'image.reference_transform',
   'video.generate',
+  'audio.speech',
+  'audio.sfx',
 ] as const;
 
 export type PublicProductQuoteOperation =
@@ -138,14 +142,7 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
       }
       unitCreditCost = durationPricing as number;
     }
-    const outputLabel =
-      input.operation === 'copy.generate'
-        ? `${quantity} 条内容候选`
-        : input.operation === 'copy.adapt'
-          ? '三平台版本'
-        : input.operation === 'image.generate'
-          ? `${quantity} 张 ${input.aspectRatio ?? '3:4'} 图片`
-          : `${quantity} 段竖屏视频`;
+    const outputLabel = outputLabelFor(input, quantity);
     const creditCost = unitCreditCost * billableQuantity;
     if (!Number.isSafeInteger(creditCost) || creditCost < 1) {
       throw new P1DomainError(
@@ -174,5 +171,26 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
       unitRate: creditCost,
       workspaceId: input.workspaceId,
     };
+  }
+}
+
+function outputLabelFor(input: PublicProductQuoteIntent, quantity: number) {
+  switch (input.operation) {
+    case 'copy.generate':
+      return `${quantity} 条内容候选`;
+    case 'copy.adapt':
+      return `${quantity} 组三平台版本`;
+    case 'image.generate':
+      return `${quantity} 张 ${input.aspectRatio ?? '3:4'} 图片`;
+    case 'image.edit':
+      return `${quantity} 张编辑图片`;
+    case 'image.reference_transform':
+      return `${quantity} 张参考变换图片`;
+    case 'video.generate':
+      return `${quantity} 段竖屏视频`;
+    case 'audio.speech':
+      return `${quantity} 段语音`;
+    case 'audio.sfx':
+      return `${quantity} 段音效`;
   }
 }

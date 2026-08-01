@@ -833,7 +833,14 @@ const marketingIdentityDrafter = marketingIdentityStructuredExecutor
     })
   : undefined;
 const modelControlPlane = p1ModelSupplyRuntime.controlPlane;
-const productQuoteAuthority = new CatalogProductQuoteAuthority(modelControlPlane);
+const productQuoteAuthority = new CatalogProductQuoteAuthority({
+  getCatalog(workspaceId, operation) {
+    return modelControlPlane.getCatalog(
+      workspaceId,
+      operation === 'image.reference_transform' ? 'image.edit' : operation,
+    );
+  },
+});
 const providerConnectivity = providerConnectivityProbeFromEnv(
   providerCredentialRuntime.env,
 );

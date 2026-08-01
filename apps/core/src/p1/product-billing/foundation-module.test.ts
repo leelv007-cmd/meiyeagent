@@ -34,6 +34,7 @@ function authoritativeQuote(): ProductQuoteAuthority {
             : 'per_request',
         catalogModelId: input.catalogModelId,
         catalogModelRevision: 'catalog-server-1',
+        operation: input.operation,
         quoteId: input.quoteId,
         quotePolicyRevision: 'quote-policy-server-1',
         frozenCandidateDeploymentIds: ['server-deployment-1'],
@@ -53,6 +54,35 @@ function authoritativeQuote(): ProductQuoteAuthority {
 }
 
 describe('ProductBillingFoundationModule', () => {
+  it('accepts all eight merchant credit quote operations', async () => {
+    const { module: billing } = module();
+    for (const operation of [
+      'copy.generate',
+      'copy.adapt',
+      'image.generate',
+      'image.edit',
+      'image.reference_transform',
+      'video.generate',
+      'audio.speech',
+      'audio.sfx',
+    ] as const) {
+      const quote = await billing.execute({
+        context,
+        idempotencyKey: `quote-${operation}`,
+        input: {
+          action: 'quote',
+          payload: {
+            catalogModelId: `model-${operation}`,
+            operation,
+            quoteId: `quote-${operation}`,
+            ...(operation === 'video.generate' ? { targetSeconds: 15 } : {}),
+          },
+        },
+      });
+      assert.equal((quote as { operation?: string }).operation, operation);
+    }
+  });
+
   it('quotes and confirms from server-authoritative pricing only', async () => {
     const { module: billing } = module();
 

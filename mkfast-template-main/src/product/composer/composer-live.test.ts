@@ -253,7 +253,16 @@ describe('Composer live public contracts', () => {
     });
 
     assert.equal(edit.submission.imageOperation, 'image.edit');
+    assert.equal(edit.operation, 'image.edit');
     assert.notEqual(generate.quoteId, edit.quoteId);
+
+    const referenceTransform = buildLiveQuoteInput({
+      lensId: 'image_text',
+      model,
+      sessionId: 'session-operation',
+      submission: imageSubmission('3:4', 'image.reference_transform'),
+    });
+    assert.equal(referenceTransform.operation, 'image.reference_transform');
   });
 
   /**
@@ -357,7 +366,10 @@ describe('Composer live public contracts', () => {
 
   function imageSubmission(
     aspectRatio: '1:1' | '3:4',
-    imageOperation: 'image.generate' | 'image.edit' = 'image.generate'
+    imageOperation:
+      | 'image.generate'
+      | 'image.edit'
+      | 'image.reference_transform' = 'image.generate'
   ) {
     return {
       creationMode: 'free' as const,

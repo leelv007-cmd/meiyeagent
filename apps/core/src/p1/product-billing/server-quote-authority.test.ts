@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import { CatalogProductQuoteAuthority } from './server-quote-authority.js';
+import { createDefaultCatalogModels } from '../model-supply/catalog.js';
 
 function authority(credits = 5) {
   return new CatalogProductQuoteAuthority({
@@ -28,6 +29,94 @@ function authority(credits = 5) {
 }
 
 describe('CatalogProductQuoteAuthority', () => {
+  it('quotes every published credit operation from its own price and refund policy', async () => {
+    const operations = [
+      'copy.generate',
+      'copy.adapt',
+      'image.generate',
+      'image.edit',
+      'image.reference_transform',
+      'video.generate',
+      'audio.speech',
+      'audio.sfx',
+    ] as const;
+    const quoteAuthority = new CatalogProductQuoteAuthority({
+      async getCatalog(_workspaceId, operation) {
+        const index = operations.indexOf(operation);
+        return {
+          models: [{
+            id: `model-${index}`,
+            creditPricing: {
+              [operation]: {
+                creditCost: index + 1,
+                failureRefundsCredits: index % 2 === 0,
+                ...(operation === 'video.generate'
+                  ? { videoCreditCosts: { 15: index + 1 } }
+                  : {}),
+              },
+            },
+          }],
+          revisionId: 'catalog-eight-operations',
+        };
+      },
+    });
+
+    for (const [index, operation] of operations.entries()) {
+      const quote = await quoteAuthority.resolve({
+        catalogModelId: `model-${index}`,
+        operation: operation as never,
+        quantity: 1,
+        quoteId: `quote-${operation}`,
+        ...(operation === 'video.generate' ? { targetSeconds: 15 } : {}),
+        workspaceId: 'workspace-eight-operations',
+      });
+      assert.equal(quote.operation, operation);
+      assert.equal(quote.creditCost, index + 1);
+      assert.equal(quote.failureRefundsCredits, index % 2 === 0);
+      assert.ok(quote.outputLabel?.length);
+    }
+  });
+
+  it('quotes all eight operations from the published default catalog', async () => {
+    const models = createDefaultCatalogModels();
+    const quoteAuthority = new CatalogProductQuoteAuthority({
+      async getCatalog() {
+        return { models, revisionId: 'published-default-catalog' };
+      },
+    });
+    for (const operation of [
+      'copy.generate',
+      'copy.adapt',
+      'image.generate',
+      'image.edit',
+      'image.reference_transform',
+      'video.generate',
+      'audio.speech',
+      'audio.sfx',
+    ] as const) {
+      const model = models.find((candidate) => candidate.creditPricing?.[operation]);
+      assert.ok(model, `missing default pricing for ${operation}`);
+      const pricing = model.creditPricing?.[operation];
+      const quote = await quoteAuthority.resolve({
+        catalogModelId: model.id,
+        operation,
+        quoteId: `default-${operation}`,
+        ...(operation === 'video.generate' ? { targetSeconds: 15 } : {}),
+        workspaceId: 'workspace-default-catalog',
+      });
+      assert.equal(
+        quote.creditCost,
+        operation === 'video.generate'
+          ? pricing?.videoCreditCosts?.[15]
+          : pricing?.creditCost,
+      );
+      assert.equal(
+        quote.failureRefundsCredits,
+        pricing?.failureRefundsCredits,
+      );
+    }
+  });
+
   it('prices image set quantity from the server catalog', async () => {
     const quote = await authority().resolve({
       catalogModelId: 'image-model',
