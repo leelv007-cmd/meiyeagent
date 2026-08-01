@@ -127,6 +127,7 @@ import {
   type ViralAdaptRunBinding,
 } from '@/product/composer/viral-adapt-binding';
 import {
+  LatestViralOpenCliReadCoordinator,
   VIRAL_OPENCLI_LIVE_GATE_EVIDENCE,
   ViralOpenCliBridgeError,
   injectedViralOpenCliBridge,
@@ -640,13 +641,25 @@ export function ComposerHome({
   );
   /** #324/#328 爆款复刻 dual-track journey. */
   const viralOpenCliBridgeRef = useRef<ViralOpenCliBridge | null>(null);
-  const viralOpenCliReadAbortRef = useRef<AbortController | null>(null);
+  const viralOpenCliReadCoordinatorRef =
+    useRef<LatestViralOpenCliReadCoordinator | null>(null);
+  if (!viralOpenCliReadCoordinatorRef.current) {
+    viralOpenCliReadCoordinatorRef.current =
+      new LatestViralOpenCliReadCoordinator();
+  }
   const [viralAdaptJourney, setViralAdaptJourney] =
     useState<ViralAdaptJourneyState>(() =>
       createViralAdaptJourneyState({
         evidencePresent: VIRAL_OPENCLI_LIVE_GATE_EVIDENCE.verified,
       })
     );
+  const lensStateRef = useRef(lensState);
+  lensStateRef.current = lensState;
+  const viralAdaptJourneyRef = useRef(viralAdaptJourney);
+  viralAdaptJourneyRef.current = viralAdaptJourney;
+  const cancelViralOpenCliRead = useCallback(() => {
+    viralOpenCliReadCoordinatorRef.current?.cancel();
+  }, []);
   const [viralAdaptBinding, setViralAdaptBinding] =
     useState<ViralAdaptRunBinding | null>(null);
   const [showRequiredHint, setShowRequiredHint] = useState(false);
@@ -767,8 +780,7 @@ export function ComposerHome({
           : viralOpenCliBridge;
       viralOpenCliBridgeRef.current = bridge;
       if (bridge?.ready !== true) {
-        viralOpenCliReadAbortRef.current?.abort();
-        viralOpenCliReadAbortRef.current = null;
+        cancelViralOpenCliRead();
       }
       setViralAdaptJourney((current) =>
         setViralOpenCliBridgeReady(current, bridge?.ready === true)
@@ -778,64 +790,79 @@ export function ComposerHome({
     window.addEventListener('meiye:opencli-bridge-ready', refreshBridge);
     return () => {
       window.removeEventListener('meiye:opencli-bridge-ready', refreshBridge);
-      viralOpenCliReadAbortRef.current?.abort();
-      viralOpenCliReadAbortRef.current = null;
+      cancelViralOpenCliRead();
       viralOpenCliBridgeRef.current = null;
     };
-  }, [viralOpenCliBridge]);
+  }, [cancelViralOpenCliRead, viralOpenCliBridge]);
   const readViralOpenCliNote = useCallback(async () => {
     const reading = beginViralOpenCliRead(viralAdaptJourney);
     if ('error' in reading) return;
     const noteUrl = reading.opencli.noteUrl;
-    const abortController = new AbortController();
-    viralOpenCliReadAbortRef.current?.abort();
-    viralOpenCliReadAbortRef.current = abortController;
+    const coordinator = viralOpenCliReadCoordinatorRef.current;
+    if (!coordinator) return;
+    viralAdaptJourneyRef.current = reading;
     setViralAdaptJourney(reading);
-    try {
-      const result = await readViralOpenCliSource(
-        viralOpenCliBridgeRef.current,
-        noteUrl,
-        abortController.signal
-      );
-      const completed = completeViralOpenCliRead(reading, result);
-      if ('error' in completed) {
-        throw new ViralOpenCliBridgeError('invalid_result');
-      }
-      const mergedSources = mergeViralOpenCliAuthorizedSources(
-        lensState.draft.sources,
-        result.authorizedAssets
-      );
-      if ('error' in mergedSources) {
-        throw new ViralOpenCliBridgeError('invalid_result');
-      }
-      if (abortController.signal.aborted) return;
-      setLensState((current) => updateSources(current, mergedSources.sources));
-      await product.refresh();
-      if (abortController.signal.aborted) return;
-      setViralAdaptJourney(completed);
-    } catch (error) {
-      const bridgeAbsent =
-        error instanceof ViralOpenCliBridgeError &&
-        error.code === 'bridge_absent';
-      const invalidResult =
-        error instanceof ViralOpenCliBridgeError &&
-        error.code === 'invalid_result';
-      setViralAdaptJourney((current) =>
-        failViralOpenCliRead(
+    await coordinator.run({
+      read: (signal) =>
+        readViralOpenCliSource(viralOpenCliBridgeRef.current, noteUrl, signal),
+      refresh: product.refresh,
+      commit: (result) => {
+        const currentJourney = viralAdaptJourneyRef.current;
+        if (
+          currentJourney.phase !== 'sourcing' ||
+          currentJourney.sourceTrack !== 'opencli_link' ||
+          currentJourney.opencli.status !== 'reading' ||
+          currentJourney.opencli.noteUrl !== noteUrl
+        ) {
+          return;
+        }
+        const completed = completeViralOpenCliRead(currentJourney, result);
+        if ('error' in completed) {
+          throw new ViralOpenCliBridgeError('invalid_result');
+        }
+        const currentLens = lensStateRef.current;
+        const mergedSources = mergeViralOpenCliAuthorizedSources(
+          currentLens.draft.sources,
+          result.authorizedAssets
+        );
+        if ('error' in mergedSources) {
+          throw new ViralOpenCliBridgeError('invalid_result');
+        }
+        const nextLens = updateSources(currentLens, mergedSources.sources);
+        lensStateRef.current = nextLens;
+        viralAdaptJourneyRef.current = completed;
+        setLensState(nextLens);
+        setViralAdaptJourney(completed);
+      },
+      fail: (error) => {
+        const current = viralAdaptJourneyRef.current;
+        if (
+          current.phase !== 'sourcing' ||
+          current.sourceTrack !== 'opencli_link' ||
+          current.opencli.status !== 'reading' ||
+          current.opencli.noteUrl !== noteUrl
+        ) {
+          return;
+        }
+        const bridgeAbsent =
+          error instanceof ViralOpenCliBridgeError &&
+          error.code === 'bridge_absent';
+        const invalidResult =
+          error instanceof ViralOpenCliBridgeError &&
+          error.code === 'invalid_result';
+        const failed = failViralOpenCliRead(
           current,
           bridgeAbsent
             ? 'bridge_absent'
             : invalidResult
               ? 'invalid_result'
               : 'read_failed'
-        )
-      );
-    } finally {
-      if (viralOpenCliReadAbortRef.current === abortController) {
-        viralOpenCliReadAbortRef.current = null;
-      }
-    }
-  }, [lensState.draft.sources, product, viralAdaptJourney]);
+        );
+        viralAdaptJourneyRef.current = failed;
+        setViralAdaptJourney(failed);
+      },
+    });
+  }, [product, viralAdaptJourney]);
   const missingGrounding = useMemo(
     () => missingCreativeGrounding(product.state, sourceReferences),
     [product.state, sourceReferences]
@@ -1261,6 +1288,7 @@ export function ComposerHome({
       (submissionRecipe === undefined ||
         submissionRecipe.recipeId === 'recipe.viral_adapt');
     if (bindingStillCurrent) return;
+    cancelViralOpenCliRead();
     setViralAdaptBinding(null);
     setViralAdaptJourney((current) => cancelViralAdaptJourney(current));
   }, [
@@ -1269,6 +1297,7 @@ export function ComposerHome({
     userText,
     viralAdaptJourney.merchantIntent,
     viralAdaptJourney.phase,
+    cancelViralOpenCliRead,
   ]);
   const imageCardinality = explicitImageOperation
     ? imageOperationCardinality(explicitImageOperation, sourceReferences.length)
@@ -1816,6 +1845,7 @@ export function ComposerHome({
       return;
     }
     setViralAdaptBinding(null);
+    cancelViralOpenCliRead();
     setViralAdaptJourney((current) =>
       current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
     );
@@ -1824,7 +1854,12 @@ export function ComposerHome({
         queryKey: experienceEntriesQueryKey,
       });
     }
-  }, [experienceEntriesQueryKey, queryClient, workflowStream.workflowState]);
+  }, [
+    cancelViralOpenCliRead,
+    experienceEntriesQueryKey,
+    queryClient,
+    workflowStream.workflowState,
+  ]);
 
   useEffect(() => {
     // 额度退还可见: a failed run gives the reservation back, so the passive quota
@@ -2513,6 +2548,7 @@ export function ComposerHome({
     armedQuoteIdRef.current = null;
     setActiveAiCover(null);
     setViralAdaptBinding(null);
+    cancelViralOpenCliRead();
     setViralAdaptJourney((current) =>
       current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
     );
@@ -2547,6 +2583,7 @@ export function ComposerHome({
       setDestinationPreflight(null);
       armedQuoteIdRef.current = null;
       setViralAdaptBinding(null);
+      cancelViralOpenCliRead();
       setViralAdaptJourney((current) =>
         current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
       );
@@ -2590,7 +2627,7 @@ export function ComposerHome({
       focusComposerIntentInput();
       return true;
     },
-    [lensState.phase, session.phase, surfaceQuery.data]
+    [cancelViralOpenCliRead, lensState.phase, session.phase, surfaceQuery.data]
   );
 
   useEffect(() => {
@@ -2611,6 +2648,7 @@ export function ComposerHome({
     destinationAutoSubmitIntentRef.current = null;
     setDestinationPreflight(null);
     setViralAdaptBinding(null);
+    cancelViralOpenCliRead();
     setViralAdaptJourney((current) =>
       current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
     );
@@ -2692,6 +2730,7 @@ export function ComposerHome({
     // or the button is decoration.
     if (input.action !== 'review_partial') {
       setViralAdaptBinding(null);
+      cancelViralOpenCliRead();
       setViralAdaptJourney((current) =>
         current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
       );
@@ -3550,6 +3589,7 @@ export function ComposerHome({
                 }).state
             );
             // #324: 爆款复刻 chip opens paste-track sourcing journey (no scrape).
+            cancelViralOpenCliRead();
             if (handoff.recipeChipId === 'viral_adapt') {
               setViralAdaptJourney((current) =>
                 startViralAdaptJourney(current)
@@ -3690,9 +3730,8 @@ export function ComposerHome({
             }}
             onSourcingCancel={() => {
               setViralAdaptBinding(null);
+              cancelViralOpenCliRead();
               setViralAdaptJourney((current) => {
-                viralOpenCliReadAbortRef.current?.abort();
-                viralOpenCliReadAbortRef.current = null;
                 return cancelViralAdaptJourney(current);
               });
             }}
@@ -3706,8 +3745,7 @@ export function ComposerHome({
               setViralAdaptJourney((current) => {
                 setViralAdaptBinding(null);
                 if (track === 'paste') {
-                  viralOpenCliReadAbortRef.current?.abort();
-                  viralOpenCliReadAbortRef.current = null;
+                  cancelViralOpenCliRead();
                 }
                 return selectViralAdaptSourceTrack(current, track);
               })
@@ -3817,6 +3855,7 @@ export function ComposerHome({
                   // sentence in her own box and decides — the same contract the
                   // recommendation card's CTA already keeps.
                   setViralAdaptBinding(null);
+                  cancelViralOpenCliRead();
                   setViralAdaptJourney((current) =>
                     current.phase === 'idle'
                       ? current
@@ -4181,6 +4220,7 @@ export function ComposerHome({
                         state={lensState}
                         onChange={(next) => {
                           setViralAdaptBinding(null);
+                          cancelViralOpenCliRead();
                           setViralAdaptJourney((current) =>
                             current.phase === 'idle'
                               ? current
@@ -4198,6 +4238,7 @@ export function ComposerHome({
                         lensState={lensState}
                         onLensStateChange={(next) => {
                           setViralAdaptBinding(null);
+                          cancelViralOpenCliRead();
                           setViralAdaptJourney((current) =>
                             current.phase === 'idle'
                               ? current

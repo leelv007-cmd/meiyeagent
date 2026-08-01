@@ -614,11 +614,8 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     const executionConfirm = page.getByTestId(
       'execution-confirmation-interaction-card'
     );
-    if (
-      await executionConfirm.isVisible({ timeout: 60_000 }).catch(() => false)
-    ) {
-      await executionConfirm.getByRole('button', { name: '确认执行' }).click();
-    }
+    await expect(executionConfirm).toBeVisible({ timeout: 60_000 });
+    await executionConfirm.getByRole('button', { name: '确认执行' }).click();
     const outcome = await waitForDeliveryOrFailure(page);
     soft(
       outcome.deliveryVisible,

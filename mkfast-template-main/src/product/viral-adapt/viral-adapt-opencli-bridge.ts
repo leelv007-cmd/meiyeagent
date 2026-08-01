@@ -53,6 +53,54 @@ export class ViralOpenCliBridgeError extends Error {
   }
 }
 
+export type ViralOpenCliReadRunOutcome = 'committed' | 'failed' | 'superseded';
+
+/**
+ * Serializes host reads even when an injected bridge ignores AbortSignal.
+ * Only the current request may commit state or surface an error.
+ */
+export class LatestViralOpenCliReadCoordinator {
+  private active: AbortController | null = null;
+  private generation = 0;
+
+  cancel() {
+    this.generation += 1;
+    this.active?.abort();
+    this.active = null;
+  }
+
+  async run<T>(input: {
+    read: (signal: AbortSignal) => Promise<T>;
+    refresh?: () => Promise<unknown>;
+    commit: (value: T) => void;
+    fail: (error: unknown) => void;
+  }): Promise<ViralOpenCliReadRunOutcome> {
+    this.cancel();
+    const generation = this.generation;
+    const controller = new AbortController();
+    this.active = controller;
+    const isCurrent = () =>
+      this.generation === generation &&
+      this.active === controller &&
+      !controller.signal.aborted;
+
+    try {
+      const value = await input.read(controller.signal);
+      if (!isCurrent()) return 'superseded';
+      await input.refresh?.();
+      if (!isCurrent()) return 'superseded';
+      input.commit(value);
+      return 'committed';
+    } catch (error) {
+      if (!isCurrent()) return 'superseded';
+      input.fail(error);
+      return 'failed';
+    } finally {
+      if (this.active === controller) this.active = null;
+    }
+  }
+}
+
 export function injectedViralOpenCliBridge(): ViralOpenCliBridge | null {
   if (typeof window === 'undefined') return null;
   const bridge = window.__MEIYE_OPENCLI_BRIDGE__;

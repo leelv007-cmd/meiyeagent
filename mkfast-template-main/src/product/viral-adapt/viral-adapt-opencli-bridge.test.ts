@@ -3,12 +3,23 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
+  LatestViralOpenCliReadCoordinator,
   VIRAL_OPENCLI_LIVE_GATE_EVIDENCE,
   ViralOpenCliBridgeError,
   mergeViralOpenCliAuthorizedSources,
   readViralOpenCliSource,
   type ViralOpenCliBridge,
 } from './viral-adapt-opencli-bridge';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, reject, resolve };
+}
 
 test('verified gate points at the redacted #328 evidence record', () => {
   assert.equal(VIRAL_OPENCLI_LIVE_GATE_EVIDENCE.verified, true);
@@ -116,6 +127,76 @@ test('authorized bridge assets bind as revisioned untrusted Composer sources', (
     ),
     { error: 'source_conflict' }
   );
+});
+
+test('latest OpenCLI read wins when an aborted bridge request settles late', async () => {
+  const coordinator = new LatestViralOpenCliReadCoordinator();
+  const first = deferred<string>();
+  const second = deferred<string>();
+  const events: string[] = [];
+  let firstSignal: AbortSignal | undefined;
+
+  const firstRun = coordinator.run({
+    read: (signal) => {
+      firstSignal = signal;
+      return first.promise;
+    },
+    commit: (value) => events.push(`commit:${value}`),
+    fail: () => events.push('fail:first'),
+  });
+  const secondRun = coordinator.run({
+    read: () => second.promise,
+    commit: (value) => events.push(`commit:${value}`),
+    fail: () => events.push('fail:second'),
+  });
+
+  assert.equal(firstSignal?.aborted, true);
+  second.resolve('second');
+  assert.equal(await secondRun, 'committed');
+  first.resolve('first');
+  assert.equal(await firstRun, 'superseded');
+  assert.deepEqual(events, ['commit:second']);
+});
+
+test('cancelled OpenCLI read cannot commit after refresh or surface an error', async () => {
+  const coordinator = new LatestViralOpenCliReadCoordinator();
+  const refresh = deferred<void>();
+  const events: string[] = [];
+  let readSignal: AbortSignal | undefined;
+
+  const run = coordinator.run({
+    read: async (signal) => {
+      readSignal = signal;
+      return 'authorized result';
+    },
+    refresh: () => refresh.promise,
+    commit: (value) => events.push(`commit:${value}`),
+    fail: () => events.push('fail'),
+  });
+  await Promise.resolve();
+  coordinator.cancel();
+  refresh.resolve();
+
+  assert.equal(await run, 'superseded');
+  assert.equal(readSignal?.aborted, true);
+  assert.deepEqual(events, []);
+});
+
+test('aborted OpenCLI bridge rejection stays silent', async () => {
+  const coordinator = new LatestViralOpenCliReadCoordinator();
+  const bridge = deferred<string>();
+  const events: string[] = [];
+  const run = coordinator.run({
+    read: () => bridge.promise,
+    commit: (value) => events.push(`commit:${value}`),
+    fail: () => events.push('fail'),
+  });
+
+  coordinator.cancel();
+  bridge.reject(new Error('host ignored AbortSignal'));
+
+  assert.equal(await run, 'superseded');
+  assert.deepEqual(events, []);
 });
 
 test('web bridge boundary never fetches localhost or shells out', () => {
