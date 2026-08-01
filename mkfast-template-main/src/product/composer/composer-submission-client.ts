@@ -1,7 +1,5 @@
 import {
-  beautyVoiceRoleSchema,
   composerSubmissionSignedFieldsSchema,
-  thinkingLevelSchema,
   type ApiEnvelope,
 } from '@meiye/contracts';
 import { z } from 'zod';
@@ -35,10 +33,6 @@ export const composerSubmissionBodySchema = composerSubmissionSignedFieldsSchema
       })
       .strict()
       .optional(),
-    /** P2-09: beauty persona override; MarketingIdentity remains default. */
-    beautyVoiceRole: beautyVoiceRoleSchema.optional(),
-    /** P2-09: free-mode thinking level mapped to model tiers. */
-    thinkingLevel: thinkingLevelSchema.optional(),
     idempotencyKey: identifierSchema,
     quote: revisionReferenceSchema,
     sources: z

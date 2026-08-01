@@ -62,6 +62,14 @@ test('browser submission accepts P2-09 beauty voice and thinking level injection
     }).success,
     false
   );
+  assert.equal(
+    composerSubmissionBodySchema.safeParse({
+      ...submissionBody(),
+      beautyVoiceRole: 'owner',
+      thinkingLevel: 'standard',
+    }).success,
+    false
+  );
 });
 
 test('browser submission preserves only a valid free-image operation', () => {

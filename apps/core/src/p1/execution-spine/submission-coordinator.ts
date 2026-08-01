@@ -18,6 +18,7 @@ import {
 	creationExecutionSnapshotSchema,
 	creationSubmissionCommandSchema,
 	composerSubmissionRequestSchema,
+	normalizedGenerationParams,
 } from "./creation-execution-snapshot.js";
 
 export interface CreationSubmissionRecord {
@@ -270,8 +271,10 @@ export class CreationSubmissionCoordinator {
 			...item,
 			quantity: input.outputCount,
 		}));
+		const generationParams = normalizedGenerationParams(source);
 		const signedSubmission = pickComposerSubmissionSignedFields({
 			...(source.signedSubmission ?? {}),
+			...generationParams,
 			catalogModel: source.catalogModel,
 			contentPackagePlatform: source.contentPackagePlatform,
 			creationMode: source.creationMode,
@@ -296,6 +299,7 @@ export class CreationSubmissionCoordinator {
 			idempotencyKey: input.idempotencyKey,
 			identity: source.identity,
 			identityDecision: source.identityDecision,
+			...generationParams,
 			intent,
 			lens: source.lens,
 			modelPolicy: source.modelPolicy,

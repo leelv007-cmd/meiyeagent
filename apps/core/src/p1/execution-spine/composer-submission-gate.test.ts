@@ -291,6 +291,15 @@ test("Composer admission gate binds server facts before a submission can reserve
 		}),
 		/exact submitted fields/u,
 	);
+	for (const [generationOverride, expected] of [
+		[{ beautyVoiceRole: "customer" as const }, /MarketingIdentity/u],
+		[{ thinkingLevel: "deep" as const }, /standard thinking/u],
+	] as const) {
+		await assert.rejects(
+			gate.admit({ ...defaultSubmission(), ...generationOverride }),
+			expected,
+		);
+	}
 	assert.equal(capabilityChecks, 1);
 
 	sourcePackageRights = "revoked";

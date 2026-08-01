@@ -3,7 +3,6 @@ import test from 'node:test';
 
 import {
   buildSubmissionGenerationParams,
-  DEFAULT_BEAUTY_VOICE_ROLE,
   DEFAULT_THINKING_LEVEL,
   initialGenerationParamsState,
   isComposerGenerationParamsSupported,
@@ -53,16 +52,23 @@ test('free mode exposes both selectors; customized hides thinking and injects de
   assert.equal(shouldShowThinkingLevel('customized'), false);
 });
 
-test('customized submission injects owner + standard without free UI state', () => {
+test('customized submission preserves MarketingIdentity without a voice override', () => {
   assert.deepEqual(
     buildSubmissionGenerationParams({
       creationMode: 'customized',
       state: initialGenerationParamsState(),
     }),
-    {
-      beautyVoiceRole: DEFAULT_BEAUTY_VOICE_ROLE,
-      thinkingLevel: DEFAULT_THINKING_LEVEL,
-    }
+    { thinkingLevel: DEFAULT_THINKING_LEVEL }
+  );
+  assert.deepEqual(
+    buildSubmissionGenerationParams({
+      creationMode: 'customized',
+      state: {
+        beautyVoiceRole: 'owner',
+        thinkingLevel: 'deep',
+      },
+    }),
+    { thinkingLevel: DEFAULT_THINKING_LEVEL }
   );
 });
 

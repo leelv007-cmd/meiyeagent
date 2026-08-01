@@ -5,6 +5,10 @@ import {
 } from './note-plan.js';
 import { creationModeSchema } from './harness.js';
 import { imageIntentOperationSchema } from './image-intent.js';
+import {
+  beautyVoiceRoleSchema,
+  thinkingLevelSchema,
+} from './composer-generation-params.js';
 
 const identifierSchema = z.string().trim().min(1).max(200);
 const revisionSchema = z.string().trim().min(1).max(200);
@@ -136,6 +140,8 @@ export const composerSubmissionSignedFieldsBaseSchema = z
     deliverable: composerSubmissionDeliverableSchema,
     aiCover: composerAiCoverSchema.optional(),
     viralAdaptSource: composerViralAdaptSourceSchema.optional(),
+    beautyVoiceRole: beautyVoiceRoleSchema.optional(),
+    thinkingLevel: thinkingLevelSchema.optional(),
   })
   .strict();
 
@@ -148,6 +154,28 @@ export const composerSubmissionSignedFieldsSchema =
         message:
           'Viral adapt requires both the exact recipe.viral_adapt binding and one structured source.',
         path: ['viralAdaptSource'],
+      });
+    }
+    if (
+      submission.creationMode === 'customized' &&
+      submission.beautyVoiceRole !== undefined
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Customized creation uses MarketingIdentity and cannot carry a hidden beauty voice override.',
+        path: ['beautyVoiceRole'],
+      });
+    }
+    if (
+      submission.creationMode === 'customized' &&
+      submission.thinkingLevel !== undefined &&
+      submission.thinkingLevel !== 'standard'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Customized creation uses standard thinking.',
+        path: ['thinkingLevel'],
       });
     }
     if (

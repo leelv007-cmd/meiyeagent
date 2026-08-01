@@ -124,6 +124,36 @@ test('the frozen value must equal what was shown, field by field', () => {
   }
 });
 
+test('generation parameter changes cannot silently diverge from the frozen free-mode contract', () => {
+  const shown = signed({
+    creationMode: 'free',
+    beautyVoiceRole: 'beautician',
+    thinkingLevel: 'standard',
+  });
+  assert.equal(
+    composerSignedPreviewMatchesFrozen(
+      shown,
+      signed({
+        creationMode: 'free',
+        beautyVoiceRole: 'customer',
+        thinkingLevel: 'standard',
+      })
+    ),
+    false
+  );
+  assert.equal(
+    composerSignedPreviewMatchesFrozen(
+      shown,
+      signed({
+        creationMode: 'free',
+        beautyVoiceRole: 'beautician',
+        thinkingLevel: 'deep',
+      })
+    ),
+    false
+  );
+});
+
 test('every signed platform, target and deliverable has a merchant label', () => {
   for (const platform of composerSubmissionSignedFieldsSchema.shape
     .contentPackagePlatform.options) {

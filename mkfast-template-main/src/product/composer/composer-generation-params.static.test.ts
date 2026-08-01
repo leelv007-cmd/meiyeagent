@@ -15,23 +15,26 @@ const client = readFileSync(
   'utf8'
 );
 
-test('ComposerHome mounts generation params panel and injects on submit', () => {
+test('ComposerHome signs generation params before quoting and reuses that payload on submit', () => {
   assert.match(home, /ComposerGenerationParamsPanel/);
   assert.match(home, /buildSubmissionGenerationParams/);
   assert.match(home, /isComposerGenerationParamsSupported/);
   assert.match(home, /generationParamsEnabled \? \(/);
-  assert.match(
-    home,
-    /const generation = generationParamsEnabled\s+\? buildSubmissionGenerationParams/u
+  const generationOffset = home.indexOf('const signedGeneration =');
+  const signedSubmissionOffset = home.indexOf('const signedSubmissionParse =');
+  assert.notEqual(generationOffset, -1);
+  assert.ok(generationOffset < signedSubmissionOffset);
+  const signedSubmissionBlock = home.slice(
+    signedSubmissionOffset,
+    home.indexOf('const quoteInput =', signedSubmissionOffset)
   );
-  assert.match(home, /beautyVoiceRole/);
-  assert.match(home, /thinkingLevel/);
+  assert.match(signedSubmissionBlock, /signedGeneration\.beautyVoiceRole/);
+  assert.match(signedSubmissionBlock, /signedGeneration\.thinkingLevel/);
+  assert.doesNotMatch(home, /const generation = generationParamsEnabled/);
   assert.match(home, /creationMode=\{creationMode\}/);
 });
 
-test('browser submission contract admits beautyVoiceRole and thinkingLevel', () => {
-  assert.match(client, /beautyVoiceRoleSchema/);
-  assert.match(client, /thinkingLevelSchema/);
-  assert.match(client, /beautyVoiceRole: beautyVoiceRoleSchema\.optional\(\)/);
-  assert.match(client, /thinkingLevel: thinkingLevelSchema\.optional\(\)/);
+test('browser submission reuses the shared signed contract for generation params', () => {
+  assert.match(client, /composerSubmissionSignedFieldsSchema\s*\.extend/);
+  assert.doesNotMatch(client, /beautyVoiceRoleSchema|thinkingLevelSchema/);
 });

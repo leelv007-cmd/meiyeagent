@@ -1247,9 +1247,16 @@ test("an image-text note Result adjustment reserves the quoted image output", as
 	await coordinator.submit({
 		...modalitySubmissionPayload("image_text_note"),
 		actorId: "owner-1",
+		beautyVoiceRole: "customer",
+		creationMode: "free",
+		thinkingLevel: "deep",
 		workspaceId: "workspace-1",
 	});
 	const source = starter.starts[0]!;
+	assert.equal(source.snapshot.beautyVoiceRole, "customer");
+	assert.equal(source.snapshot.thinkingLevel, "deep");
+	assert.equal(source.snapshot.signedSubmission?.beautyVoiceRole, "customer");
+	assert.equal(source.snapshot.signedSubmission?.thinkingLevel, "deep");
 
 	const result = await coordinator.submitResultAdjustment({
 		actorId: "owner-1",
@@ -1267,6 +1274,11 @@ test("an image-text note Result adjustment reserves the quoted image output", as
 
 	assert.equal(result.work.id, "work-result-adjust-note-1");
 	assert.equal(starter.starts.length, 2);
+	const adjusted = starter.starts[1]!;
+	assert.equal(adjusted.snapshot.beautyVoiceRole, "customer");
+	assert.equal(adjusted.snapshot.thinkingLevel, "deep");
+	assert.equal(adjusted.snapshot.signedSubmission?.beautyVoiceRole, "customer");
+	assert.equal(adjusted.snapshot.signedSubmission?.thinkingLevel, "deep");
 	const noteStyleDecision = starter.starts[1]?.decisionReferences?.[0];
 	assert.match(noteStyleDecision?.id ?? "", /^decision-[a-f0-9]{24}$/u);
 	assert.deepEqual(

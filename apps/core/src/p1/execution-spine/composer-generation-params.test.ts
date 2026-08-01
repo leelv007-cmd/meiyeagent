@@ -55,10 +55,10 @@ const baseCommand = {
   contentModules: ['social_cover'] as const,
 } satisfies CreationSubmissionCommand;
 
-test('normalizedGenerationParams: customized injects owner + standard', () => {
+test('normalizedGenerationParams: customized preserves identity and ignores hidden state', () => {
   assert.deepEqual(
     normalizedGenerationParams({ creationMode: 'customized' }),
-    { beautyVoiceRole: 'owner', thinkingLevel: 'standard' },
+    { thinkingLevel: 'standard' },
   );
   assert.deepEqual(
     normalizedGenerationParams({
@@ -66,7 +66,7 @@ test('normalizedGenerationParams: customized injects owner + standard', () => {
       beautyVoiceRole: 'customer',
       thinkingLevel: 'deep',
     }),
-    { beautyVoiceRole: 'owner', thinkingLevel: 'standard' },
+    { thinkingLevel: 'standard' },
   );
 });
 
@@ -118,7 +118,7 @@ test('createCreationExecutionSnapshot freezes generation params from the request
   assert.equal(snapshot.thinkingLevel, 'deep');
 });
 
-test('createCreationExecutionSnapshot customized forces standard thinking', () => {
+test('createCreationExecutionSnapshot drops a hidden customized voice and forces standard thinking', () => {
   const snapshot = createCreationExecutionSnapshot(
     {
       ...baseCommand,
@@ -128,6 +128,6 @@ test('createCreationExecutionSnapshot customized forces standard thinking', () =
     },
     '2026-08-01T00:00:00.000Z',
   );
-  assert.equal(snapshot.beautyVoiceRole, 'owner');
+  assert.equal(snapshot.beautyVoiceRole, undefined);
   assert.equal(snapshot.thinkingLevel, 'standard');
 });

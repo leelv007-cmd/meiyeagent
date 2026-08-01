@@ -81,7 +81,8 @@ export function isComposerGenerationParamsSupported(input: {
 
 /**
  * Build the optional generation-param fields for the Composer submission body.
- * Customized always injects owner + standard; free only sends an explicit role.
+ * Customized preserves MarketingIdentity, ignores hidden free-mode state and
+ * pins standard thinking; free sends the merchant's explicit controls.
  */
 export function buildSubmissionGenerationParams(input: {
   creationMode: CreationMode;

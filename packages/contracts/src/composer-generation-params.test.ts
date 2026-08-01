@@ -59,13 +59,10 @@ test('C5 visibility: free shows both controls; customized injects defaults only'
   });
 });
 
-test('customized always injects owner + standard; free keeps unselected voice optional', () => {
+test('customized preserves MarketingIdentity and ignores hidden free-mode state', () => {
   assert.deepEqual(
     resolveComposerGenerationParams({ creationMode: 'customized' }),
-    {
-      beautyVoiceRole: DEFAULT_BEAUTY_VOICE_ROLE,
-      thinkingLevel: DEFAULT_THINKING_LEVEL,
-    },
+    { thinkingLevel: DEFAULT_THINKING_LEVEL },
   );
   assert.deepEqual(
     resolveComposerGenerationParams({
@@ -73,10 +70,7 @@ test('customized always injects owner + standard; free keeps unselected voice op
       beautyVoiceRole: 'customer',
       thinkingLevel: 'deep',
     }),
-    {
-      beautyVoiceRole: DEFAULT_BEAUTY_VOICE_ROLE,
-      thinkingLevel: DEFAULT_THINKING_LEVEL,
-    },
+    { thinkingLevel: DEFAULT_THINKING_LEVEL },
   );
   assert.deepEqual(
     resolveComposerGenerationParams({

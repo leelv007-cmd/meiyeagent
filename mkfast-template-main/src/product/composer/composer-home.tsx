@@ -1105,6 +1105,12 @@ export function ComposerHome({
   const imageCardinality = explicitImageOperation
     ? imageOperationCardinality(explicitImageOperation, sourceReferences.length)
     : { message: null, valid: true };
+  const signedGeneration = generationParamsEnabled
+    ? buildSubmissionGenerationParams({
+        creationMode,
+        state: generationParams,
+      })
+    : undefined;
   const signedSubmissionParse =
     selectedModel && submissionRecipe && destination
       ? composerSubmissionSignedFieldsSchema.safeParse({
@@ -1116,6 +1122,12 @@ export function ComposerHome({
           ...(signedAiCover ? { aiCover: signedAiCover } : {}),
           ...(viralSubmissionRecipeReady && activeViralAdaptSource
             ? { viralAdaptSource: activeViralAdaptSource }
+            : {}),
+          ...(signedGeneration?.beautyVoiceRole
+            ? { beautyVoiceRole: signedGeneration.beautyVoiceRole }
+            : {}),
+          ...(signedGeneration
+            ? { thinkingLevel: signedGeneration.thinkingLevel }
             : {}),
           catalogModel: {
             id: selectedModel.id,
@@ -2165,12 +2177,6 @@ export function ComposerHome({
       if (assets.length !== sourceReferences.length) {
         throw new Error('Composer source revisions are incomplete.');
       }
-      const generation = generationParamsEnabled
-        ? buildSubmissionGenerationParams({
-            creationMode,
-            state: generationParams,
-          })
-        : undefined;
       return submitComposerSubmission({
         ...signedSubmission,
         ...(input.briefConfirmationId
@@ -2200,10 +2206,6 @@ export function ComposerHome({
         ...(input.identityDecision
           ? { identityDecision: input.identityDecision }
           : {}),
-        ...(generation?.beautyVoiceRole
-          ? { beautyVoiceRole: generation.beautyVoiceRole }
-          : {}),
-        ...(generation ? { thinkingLevel: generation.thinkingLevel } : {}),
         idempotencyKey: `composer-submit:${sessionIdRef.current}:${input.quote.revision}`,
         creationMode,
         intent: input.intent,

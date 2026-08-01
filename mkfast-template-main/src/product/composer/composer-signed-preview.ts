@@ -115,6 +115,8 @@ export function composerSignedPreviewMatchesFrozen(
   return (
     shown.creationMode === frozen.creationMode &&
     shown.intent === frozen.intent &&
+    (shown.beautyVoiceRole ?? null) === (frozen.beautyVoiceRole ?? null) &&
+    (shown.thinkingLevel ?? null) === (frozen.thinkingLevel ?? null) &&
     (shown.imageOperation ?? null) === (frozen.imageOperation ?? null) &&
     shown.contentPackagePlatform === frozen.contentPackagePlatform &&
     shown.distributionTarget === frozen.distributionTarget &&

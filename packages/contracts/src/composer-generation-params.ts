@@ -20,7 +20,7 @@ export const beautyVoiceRoleSchema = z.enum(beautyVoiceRoleIds);
 
 export type BeautyVoiceRole = z.infer<typeof beautyVoiceRoleSchema>;
 
-/** Default injected for customized creation when the merchant does not override. */
+/** Default option for surfaces that need an explicit beauty-role selection. */
 export const DEFAULT_BEAUTY_VOICE_ROLE: BeautyVoiceRole = 'owner';
 
 /**
@@ -143,8 +143,8 @@ export function generationParamsVisibility(creationMode: CreationMode): {
 /**
  * Resolve what the submission should carry given creation mode + UI state.
  *
- * - customized: always inject owner + standard thinking, ignoring hidden free
- *   mode state
+ * - customized: keep MarketingIdentity as the voice, ignore hidden free-mode
+ *   state, and pin standard thinking
  * - free: pass merchant selection; unselected beauty role stays undefined so
  *   MarketingIdentity remains the default voice (selector = explicit override)
  */
@@ -159,7 +159,6 @@ export function resolveComposerGenerationParams(input: {
   const visibility = generationParamsVisibility(input.creationMode);
   if (visibility.beautyVoiceRole === 'default_inject') {
     return {
-      beautyVoiceRole: DEFAULT_BEAUTY_VOICE_ROLE,
       thinkingLevel: DEFAULT_THINKING_LEVEL,
     };
   }

@@ -41,6 +41,43 @@ test('intent and creation mode are required quote-signed fields', () => {
   );
 });
 
+test('generation parameters belong to the quote-signed allowlist', () => {
+  const picked = pickComposerSubmissionSignedFields({
+    ...signedFields,
+    creationMode: 'free',
+    beautyVoiceRole: 'customer',
+    thinkingLevel: 'deep',
+  });
+
+  assert.equal(picked.beautyVoiceRole, 'customer');
+  assert.equal(picked.thinkingLevel, 'deep');
+});
+
+test('customized submissions cannot replay hidden free-mode generation state', () => {
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse({
+      ...signedFields,
+      beautyVoiceRole: 'owner',
+      thinkingLevel: 'standard',
+    }).success,
+    false,
+  );
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse({
+      ...signedFields,
+      thinkingLevel: 'deep',
+    }).success,
+    false,
+  );
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse({
+      ...signedFields,
+      thinkingLevel: 'standard',
+    }).success,
+    true,
+  );
+});
+
 test('free image operation is signed while customized and non-image submissions reject it', () => {
   const freeImage = {
     ...signedFields,

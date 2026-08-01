@@ -419,8 +419,8 @@ function operationForLens(lens: z.infer<typeof creationLensSchema>) {
 
 /**
  * P2-09: normalize generation params by C5 rules before freezing the snapshot.
- * Customized injects the owner default and always pins standard thinking;
- * free keeps an unselected beauty role optional (MarketingIdentity default).
+ * Customized keeps MarketingIdentity as the voice, ignores hidden free-mode
+ * state and pins standard thinking; free keeps explicit overrides.
  */
 export function normalizedGenerationParams(command: {
 	creationMode: "customized" | "free";
