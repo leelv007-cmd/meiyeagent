@@ -75,6 +75,10 @@ export interface ProductQuoteSnapshot {
   /** Server-resolved extra-confirm threshold frozen from quotePolicyRevision. */
   extraConfirmThreshold?: number;
   billingMode: ProductBillingMode;
+  /** Merchant-facing credits frozen from CatalogModel × operation pricing. */
+  creditCost?: number;
+  /** The model-operation failure policy shown with the quote before submission. */
+  failureRefundsCredits?: boolean;
   /**
    * Server-frozen merchant entitlement debit preview.
    *
@@ -228,14 +232,20 @@ export interface ProductUsageRecord {
   status: 'reserved' | 'committed' | 'refunded' | 'partially_refunded';
   /** Product entitlement units reserved before execution. */
   reservedQuantity: number;
+  /** Merchant credits reserved before execution; required for credit-billing writes. */
+  reservedCredits?: number;
   /** Canonical per-bucket reservation; required on new writes. */
   reservedUnits?: ProductUsageUnit[];
   /** Product entitlement units finally committed after settlement. */
   settledQuantity: number;
+  /** Merchant credits finally retained after settlement. */
+  settledCredits?: number;
   /** Canonical per-bucket committed units; required on new writes. */
   settledUnits?: ProductUsageUnit[];
   /** Units refunded (reserved − settled, when positive). */
   refundedQuantity: number;
+  /** Merchant credits returned to the original grant lot, when still active. */
+  refundedCredits?: number;
   /** Canonical per-bucket released units; required on new writes. */
   refundedUnits?: ProductUsageUnit[];
   billingMode: ProductBillingMode;
@@ -261,6 +271,9 @@ export interface BuildProductQuoteInput {
   quotePolicyRevision: string;
   submissionContractHash?: string;
   billingMode: ProductBillingMode;
+  /** Server-authoritative price in merchant credits, never supplier currency. */
+  creditCost?: number;
+  failureRefundsCredits?: boolean;
   /** Server-authoritative per-bucket entitlement units frozen at quote time. */
   debitUnits?: ProductUsageUnit[];
   outputCount?: number;

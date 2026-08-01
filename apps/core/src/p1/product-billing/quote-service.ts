@@ -103,7 +103,9 @@ function revisionFor(input: BuildProductQuoteInput): string {
         billingMode: input.billingMode,
         catalogModelId: input.catalogModelId,
         catalogModelRevision: input.catalogModelRevision,
+        creditCost: input.creditCost,
         debitUnits: input.debitUnits,
+        failureRefundsCredits: input.failureRefundsCredits,
         minChargeSeconds: input.minChargeSeconds,
         outputCount: input.outputCount,
         outputLabel: input.outputLabel,
@@ -197,6 +199,15 @@ export class ProductQuoteService {
       assertProductUsageUnits(input.debitUnits);
     }
     if (
+      input.creditCost !== undefined &&
+      (!Number.isSafeInteger(input.creditCost) || input.creditCost < 1)
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'creditCost must be a positive integer.',
+      );
+    }
+    if (
       input.billingMode === 'per_output_second' &&
       (input.targetSeconds === undefined ||
         !Number.isFinite(input.targetSeconds) ||
@@ -261,8 +272,12 @@ export class ProductQuoteService {
         input.quotePolicyRevision,
       ),
       billingMode: input.billingMode,
+      ...(input.creditCost !== undefined ? { creditCost: input.creditCost } : {}),
       ...(input.debitUnits
         ? { debitUnits: structuredClone(input.debitUnits) }
+        : {}),
+      ...(input.failureRefundsCredits !== undefined
+        ? { failureRefundsCredits: input.failureRefundsCredits }
         : {}),
       ...(input.outputCount !== undefined
         ? { outputCount: input.outputCount }
@@ -442,6 +457,7 @@ export class ProductQuoteService {
       workspaceId: quote.workspaceId,
       quoteId: quote.quoteId,
       units: input.units,
+      ...(quote.creditCost !== undefined ? { credits: quote.creditCost } : {}),
       billingMode: quote.billingMode,
       createdAt: this.clock().toISOString(),
     });

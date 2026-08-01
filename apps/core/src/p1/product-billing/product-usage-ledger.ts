@@ -22,6 +22,8 @@ export type ReserveProductUsageInput = {
   workspaceId: string;
   quoteId: string;
   units?: ProductUsageUnit[];
+  /** Credit-billing writes reserve one total merchant-credit amount per task. */
+  credits?: number;
   /** Legacy internal adapter input; quote lifecycle callers use units. */
   quantity?: number;
   billingMode: ProductBillingMode;
@@ -81,6 +83,15 @@ export class MemoryProductUsageLedger implements ProductUsageLedger {
       'units',
     );
     const reservedQuantity = totalUnits(reservedUnits);
+    if (
+      input.credits !== undefined &&
+      (!Number.isSafeInteger(input.credits) || input.credits < 1)
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Product usage credits must be a positive integer.',
+      );
+    }
     if (!input.taskId.trim() || !input.quoteId.trim() || !input.workspaceId.trim()) {
       throw new P1DomainError(
         'INVALID_STATE',
@@ -94,7 +105,8 @@ export class MemoryProductUsageLedger implements ProductUsageLedger {
       if (
         existing.quoteId !== input.quoteId ||
         !sameUnits(reservedProductUsageUnits(existing), reservedUnits) ||
-        existing.workspaceId !== input.workspaceId
+        existing.workspaceId !== input.workspaceId ||
+        existing.reservedCredits !== input.credits
       ) {
         throw new P1DomainError(
           'IDEMPOTENCY_CONFLICT',
@@ -111,6 +123,7 @@ export class MemoryProductUsageLedger implements ProductUsageLedger {
       quoteId: input.quoteId,
       status: 'reserved',
       reservedQuantity,
+      ...(input.credits !== undefined ? { reservedCredits: input.credits } : {}),
       reservedUnits,
       settledQuantity: 0,
       settledUnits: [],
@@ -191,8 +204,14 @@ export class MemoryProductUsageLedger implements ProductUsageLedger {
       ...existing,
       status,
       settledQuantity,
+      ...(existing.reservedCredits !== undefined
+        ? { settledCredits: existing.reservedCredits }
+        : {}),
       settledUnits,
       refundedQuantity,
+      ...(existing.reservedCredits !== undefined
+        ? { refundedCredits: 0 }
+        : {}),
       refundedUnits,
       settlementStatus: input.settlementStatus,
       updatedAt: input.updatedAt,
@@ -277,6 +296,20 @@ export class MemoryProductUsageLedger implements ProductUsageLedger {
       settledUnits: remainingUnits,
       refundedQuantity,
       refundedUnits,
+      ...(existing.reservedCredits !== undefined
+        ? {
+            settledCredits: Math.round(
+              (existing.reservedCredits * remaining) /
+                Math.max(1, existing.reservedQuantity),
+            ),
+            refundedCredits:
+              existing.reservedCredits -
+              Math.round(
+                (existing.reservedCredits * remaining) /
+                  Math.max(1, existing.reservedQuantity),
+              ),
+          }
+        : {}),
       settlementStatus:
         remaining === 0 ? 'reconciled' : existing.settlementStatus,
       updatedAt: input.updatedAt,
