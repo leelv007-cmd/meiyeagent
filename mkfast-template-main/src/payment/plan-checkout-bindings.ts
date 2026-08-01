@@ -26,6 +26,7 @@ interface BindingRow extends Record<string, unknown> {
   cancelAtPeriodEnd: boolean | null;
   periodStart: Date | string | null;
   periodEnd: Date | string | null;
+  subscriptionId: string | null;
 }
 
 export class PostgresPlanCheckoutBindingStore {
@@ -110,7 +111,8 @@ export class PostgresPlanCheckoutBindingStore {
           binding.payment_type AS "paymentType",
           payment.cancel_at_period_end AS "cancelAtPeriodEnd",
           payment.period_start AS "periodStart",
-          payment.period_end AS "periodEnd"
+          payment.period_end AS "periodEnd",
+          payment.subscription_id AS "subscriptionId"
         FROM plan_checkout_bindings AS binding
         LEFT JOIN payment
           ON (
@@ -148,7 +150,8 @@ export class PostgresPlanCheckoutBindingStore {
           binding.payment_type AS "paymentType",
           payment.cancel_at_period_end AS "cancelAtPeriodEnd",
           payment.period_start AS "periodStart",
-          payment.period_end AS "periodEnd"
+          payment.period_end AS "periodEnd",
+          COALESCE(payment.subscription_id, binding.subscription_id) AS "subscriptionId"
         FROM plan_checkout_bindings AS binding
         LEFT JOIN payment
           ON payment.subscription_id = ${event.reference.id}
@@ -175,7 +178,8 @@ export class PostgresPlanCheckoutBindingStore {
           binding.payment_type AS "paymentType",
           payment.cancel_at_period_end AS "cancelAtPeriodEnd",
           payment.period_start AS "periodStart",
-          payment.period_end AS "periodEnd"
+          payment.period_end AS "periodEnd",
+          payment.subscription_id AS "subscriptionId"
         FROM payment
         INNER JOIN plan_checkout_bindings AS binding
           ON (
@@ -286,6 +290,7 @@ function rowToFacts(
     interval,
     periodStartsAt: row.periodStart ?? null,
     periodEndsAt: row.periodEnd ?? null,
+    subscriptionId: row.subscriptionId ?? null,
     ...(row.cancelAtPeriodEnd != null
       ? { cancelAtPeriodEnd: row.cancelAtPeriodEnd }
       : {}),

@@ -49,6 +49,10 @@ const stripeInvoicePaidSchema = z
   })
   .passthrough();
 
+const stripeInvoicePaymentFailedSchema = stripeInvoicePaidSchema.extend({
+  type: z.literal('invoice.payment_failed'),
+});
+
 const stripeSubscriptionUpdatedSchema = z
   .object({
     id: z.string().min(1),
@@ -116,6 +120,14 @@ const creemSubscriptionScheduledCancelSchema = z
   })
   .passthrough();
 
+const creemSubscriptionPastDueSchema = z
+  .object({
+    id: z.string().min(1),
+    eventType: z.literal('subscription.past_due'),
+    object: z.object({ id: z.string().min(1) }).passthrough(),
+  })
+  .passthrough();
+
 export function normalizeStripeVerifiedPaymentEvent(
   input: unknown
 ): VerifiedPaymentWebhookEvent | null {
@@ -174,6 +186,21 @@ export function normalizeStripeVerifiedPaymentEvent(
         id: updated.data.data.object.id,
         kind: 'subscription',
       },
+    };
+  }
+
+  const paymentFailed = stripeInvoicePaymentFailedSchema.safeParse(input);
+  if (paymentFailed.success) {
+    const subscriptionId = expandableId(
+      paymentFailed.data.data.object.parent?.subscription_details
+        .subscription ?? paymentFailed.data.data.object.subscription
+    );
+    if (!subscriptionId) return null;
+    return {
+      eventType: 'invoice.payment_failed',
+      provider: 'stripe',
+      providerEventId: paymentFailed.data.id,
+      reference: { id: subscriptionId, kind: 'subscription' },
     };
   }
 
@@ -238,6 +265,16 @@ export function normalizeCreemVerifiedPaymentEvent(
         id: scheduledCancel.data.object.id,
         kind: 'subscription',
       },
+    };
+  }
+
+  const pastDue = creemSubscriptionPastDueSchema.safeParse(input);
+  if (pastDue.success) {
+    return {
+      eventType: 'subscription.past_due',
+      provider: 'creem',
+      providerEventId: pastDue.data.id,
+      reference: { id: pastDue.data.object.id, kind: 'subscription' },
     };
   }
 

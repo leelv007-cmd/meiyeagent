@@ -181,6 +181,30 @@ test('Stripe normalizes invoice.paid, subscription updated, and deleted', () => 
   );
 });
 
+test('Stripe normalizes a recurring invoice payment failure to past_due input', () => {
+  assert.deepEqual(
+    normalizeStripeVerifiedPaymentEvent({
+      data: {
+        object: {
+          id: 'in_failed',
+          billing_reason: 'subscription_cycle',
+          parent: {
+            subscription_details: { subscription: 'sub_failed' },
+          },
+        },
+      },
+      id: 'evt_invoice_failed',
+      type: 'invoice.payment_failed',
+    }),
+    {
+      eventType: 'invoice.payment_failed',
+      provider: 'stripe',
+      providerEventId: 'evt_invoice_failed',
+      reference: { id: 'sub_failed', kind: 'subscription' },
+    }
+  );
+});
+
 test('Creem normalizes checkout, renewal, and cancel/expire lifecycle', () => {
   assert.deepEqual(
     normalizeCreemVerifiedPaymentEvent({
@@ -211,6 +235,19 @@ test('Creem normalizes checkout, renewal, and cancel/expire lifecycle', () => {
       provider: 'creem',
       providerEventId: 'evt_creem_2',
       reference: { id: 'sub_1', kind: 'subscription' },
+    }
+  );
+  assert.deepEqual(
+    normalizeCreemVerifiedPaymentEvent({
+      eventType: 'subscription.past_due',
+      id: 'evt_creem_past_due',
+      object: { id: 'sub_past_due' },
+    }),
+    {
+      eventType: 'subscription.past_due',
+      provider: 'creem',
+      providerEventId: 'evt_creem_past_due',
+      reference: { id: 'sub_past_due', kind: 'subscription' },
     }
   );
   assert.deepEqual(

@@ -17,6 +17,7 @@ const binding: PlanCheckoutBindingFacts = {
   interval: 'month',
   periodStartsAt: '2026-07-01T00:00:00.000Z',
   periodEndsAt: '2026-08-01T00:00:00.000Z',
+  subscriptionId: 'sub_1',
 };
 
 describe('plan-commerce settlement', () => {
@@ -53,6 +54,7 @@ describe('plan-commerce settlement', () => {
       interval: 'month',
       periodStartsAt: '2026-07-01T00:00:00.000Z',
       periodEndsAt: '2026-08-01T00:00:00.000Z',
+      subscriptionId: 'sub_1',
     });
   });
 
@@ -68,6 +70,7 @@ describe('plan-commerce settlement', () => {
       interval: 'year',
       periodStartsAt: '2026-07-01T00:00:00.000Z',
       periodEndsAt: '2027-07-01T00:00:00.000Z',
+      subscriptionId: 'sub_custom',
     });
 
     assert.deepEqual(command, {
@@ -78,6 +81,7 @@ describe('plan-commerce settlement', () => {
         paymentEventId: 'stripe:evt_cycle',
         paymentProductId: 'price_custom',
         interval: 'year',
+        subscriptionId: 'sub_custom',
         periodStartsAt: '2026-07-01T00:00:00.000Z',
         periodEndsAt: '2027-07-01T00:00:00.000Z',
         cancelAtPeriodEnd: false,
@@ -98,6 +102,66 @@ describe('plan-commerce settlement', () => {
     );
     assert.equal(renew?.lifecycle, 'renew');
     assert.equal(renew?.paymentEventId, 'stripe:evt_inv');
+  });
+
+  it('uses the verified subscription reference when a legacy binding row has no subscription id', () => {
+    const intent = planSettlementIntentFromEvent(
+      {
+        eventType: 'invoice.paid',
+        provider: 'stripe',
+        providerEventId: 'evt_verified_subscription',
+        reference: { id: 'sub_verified', kind: 'subscription' },
+      },
+      { ...binding, subscriptionId: null }
+    );
+
+    assert.equal(intent?.subscriptionId, 'sub_verified');
+  });
+
+  it('does not guess a subscription for an initial checkout without payment correlation', async () => {
+    const event: VerifiedPaymentWebhookEvent = {
+      eventType: 'checkout.session.completed',
+      provider: 'stripe',
+      providerEventId: 'evt_unresolved_checkout',
+      reference: { id: 'cs_unresolved', kind: 'checkout' },
+    };
+    let grants = 0;
+
+    const settled = await settleVerifiedPlanPayment(event, {
+      async resolveBinding() {
+        return { ...binding, subscriptionId: null };
+      },
+      async grantPlan() {
+        grants += 1;
+      },
+    });
+
+    assert.equal(settled, null);
+    assert.equal(grants, 0);
+  });
+
+  it('maps verified payment failure lifecycle to past_due', () => {
+    const failed = planSettlementIntentFromEvent(
+      {
+        eventType: 'invoice.payment_failed',
+        provider: 'stripe',
+        providerEventId: 'evt_payment_failed',
+        reference: { id: 'sub_1', kind: 'subscription' },
+      },
+      binding
+    );
+    const pastDue = planSettlementIntentFromEvent(
+      {
+        eventType: 'subscription.past_due',
+        provider: 'creem',
+        providerEventId: 'evt_past_due',
+        reference: { id: 'sub_1', kind: 'subscription' },
+      },
+      binding
+    );
+
+    assert.equal(failed?.lifecycle, 'past_due');
+    assert.equal(pastDue?.lifecycle, 'past_due');
   });
 
   it('maps subscription delete, cancel, and resume lifecycle', () => {

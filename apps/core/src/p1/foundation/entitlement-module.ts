@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   PUBLIC_PLAN_ALLOWANCE_SEED,
   publicBillingBalanceSchema,
+  publicCreditBalanceSchema,
 } from '@meiye/contracts';
 import {
   P1DomainError,
@@ -24,6 +25,10 @@ import {
   WorkspaceProvisionService,
   type PlatformDefaultModelPort,
 } from './workspace-provision.js';
+import {
+  CreditBillingService,
+  type CreditPaymentLifecycle,
+} from '../credit-billing/credit-billing-service.js';
 
 export interface PlanOffer {
   id: ProductPlanTier;
@@ -138,6 +143,11 @@ function string(input: Record<string, unknown>, key: string) {
     throw new P1DomainError('INVALID_STATE', `${key} is required.`);
   }
   return value;
+}
+
+function optionalString(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 function offer<T extends { id: string }>(offers: T[], id: string, kind: string) {
@@ -291,6 +301,8 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
       };
       /** Optional platform default model binding for workspace provision (Tb). */
       modelDefaults?: PlatformDefaultModelPort;
+      /** Production commerce writes only the credit ledger and subscription store. */
+      creditBilling?: CreditBillingService;
       modelCatalogTenantAllowlist?: readonly string[];
       warn?: (message: string) => void;
     } = {},
@@ -325,6 +337,12 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
     const catalog = await this.catalog();
     switch (action) {
       case 'checkout_plan': {
+        if (this.options.creditBilling) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Recorded plan checkout is retired; verified payment settlement owns credit subscriptions.',
+          );
+        }
         const selected = offer(
           catalog.plans,
           string(payload, 'tier'),
@@ -350,6 +368,7 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
           lifecycle !== 'activate' &&
           lifecycle !== 'renew' &&
           lifecycle !== 'resume' &&
+          lifecycle !== 'past_due' &&
           lifecycle !== 'cancel_at_period_end' &&
           lifecycle !== 'expire'
         ) {
@@ -361,6 +380,16 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
         const paymentEventId = string(payload, 'paymentEventId');
         const providerPeriod = optionalProviderPeriod(payload);
         const paymentProductId = string(payload, 'paymentProductId');
+        if (this.options.creditBilling) {
+          return this.options.creditBilling.settlePayment(args.context, {
+            lifecycle: lifecycle as CreditPaymentLifecycle,
+            paymentEventId,
+            paymentProductId,
+            interval: providerPeriod?.interval,
+            periodStartsAt: providerPeriod?.periodStartsAt,
+            subscriptionId: optionalString(payload, 'subscriptionId'),
+          });
+        }
         const selected = offer(
           catalog.plans,
           resolvePaymentTier({
@@ -434,6 +463,9 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
       case 'register_gift': {
         // Trusted internal REGISTER_GIFT grant (Tb). Not gated by dev commerce.
         this.requireProvisioningActor(args.context);
+        if (this.options.creditBilling) {
+          return this.options.creditBilling.grantTrial(args.context);
+        }
         return this.provisioner.provisionTrial(
           args.context,
           args.idempotencyKey,
@@ -446,6 +478,12 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
         return this.provisioner.provisionModelDefaults(args.context);
       }
       case 'checkout_add_on': {
+        if (this.options.creditBilling) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Recorded add-on checkout is retired; verified payment settlement must grant a credit package.',
+          );
+        }
         const selected = offer(
           catalog.addOns,
           string(payload, 'offerId'),
@@ -468,12 +506,24 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
         );
       }
       case 'configure_auto_top_up':
+        if (this.options.creditBilling) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Credit billing does not support legacy resource auto top-up.',
+          );
+        }
         return this.entitlements.configureAutoTopUp(
           args.context,
           this.autoTopUpConfiguration(payload, catalog.addOns),
           args.idempotencyKey,
         );
       case 'auto_top_up': {
+        if (this.options.creditBilling) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Credit billing does not support legacy resource auto top-up.',
+          );
+        }
         const resource = string(payload, 'resource');
         if (!USAGE_RESOURCES.includes(resource as UsageResource)) {
           throw new P1DomainError('INVALID_STATE', 'resource is invalid.');
@@ -505,6 +555,15 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
     const action = string(args.input, 'action');
     const payload = object(args.input.payload ?? {}, 'payload');
     if (action === 'catalog') {
+      if (this.options.creditBilling) {
+        const catalog = await this.options.creditBilling.catalog();
+        return {
+          mode: 'credit' as const,
+          plans: structuredClone(catalog.plans),
+          addOns: structuredClone(catalog.addOns),
+          trialEnabled: catalog.trialEnabled,
+        };
+      }
       const catalog = await this.catalog();
       return {
         mode: this.options.recordedCommerceEnabled
@@ -516,6 +575,11 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
       };
     }
     if (action === 'balance') {
+      if (this.options.creditBilling) {
+        return publicCreditBalanceSchema.parse(
+          await this.options.creditBilling.balance(args.context.workspaceId),
+        );
+      }
       const projection = await this.entitlements.getProjection(args.context);
       const bucket = (resource: 'copy' | 'image' | 'video') => {
         const usage = projection.usage[resource];
@@ -534,6 +598,15 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
       });
     }
     if (action === 'projection') {
+      if (this.options.creditBilling) {
+        return {
+          credits: publicCreditBalanceSchema.parse(
+            await this.options.creditBilling.balance(
+              args.context.workspaceId,
+            ),
+          ),
+        };
+      }
       const month =
         typeof payload.month === 'string'
           ? payload.month

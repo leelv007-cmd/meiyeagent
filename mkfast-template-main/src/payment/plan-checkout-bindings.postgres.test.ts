@@ -79,6 +79,7 @@ test(
         periodStartsAt: periodStart.toISOString(),
         periodEndsAt: periodEnd.toISOString(),
         cancelAtPeriodEnd: false,
+        subscriptionId,
       });
 
       await store.markActive({

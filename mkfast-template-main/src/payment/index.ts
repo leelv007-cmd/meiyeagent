@@ -150,8 +150,7 @@ export async function settleVerifiedPlanPurchase(
           provider: intent.provider,
           providerCheckoutId:
             event.reference.kind === 'checkout' ? event.reference.id : null,
-          subscriptionId:
-            event.reference.kind === 'subscription' ? event.reference.id : null,
+          subscriptionId: intent.subscriptionId,
         });
       } else if (event.reference.kind === 'subscription') {
         await bindingStore.markCanceled({

@@ -16,6 +16,7 @@ export type PlanSettlementLifecycle =
   | 'activate'
   | 'renew'
   | 'resume'
+  | 'past_due'
   | 'cancel_at_period_end'
   | 'expire';
 
@@ -30,6 +31,7 @@ export interface PlanSettlementIntent {
   interval: PlanInterval | 'lifetime' | 'one_time' | null;
   periodStartsAt: string | null;
   periodEndsAt: string | null;
+  subscriptionId: string | null;
   /** Cancel keeps access until periodEndsAt (end-of-period fall back). */
   cancelAtPeriodEnd?: boolean;
 }
@@ -41,6 +43,7 @@ export interface PlanCheckoutBindingFacts {
   interval?: PlanInterval | 'lifetime' | 'one_time' | null;
   periodStartsAt?: string | Date | null;
   periodEndsAt?: string | Date | null;
+  subscriptionId?: string | null;
   cancelAtPeriodEnd?: boolean;
 }
 
@@ -69,6 +72,7 @@ export function planGrantCommandFromIntent(intent: PlanSettlementIntent) {
       paymentEventId: intent.paymentEventId,
       paymentProductId: intent.priceId,
       interval: intent.interval,
+      subscriptionId: intent.subscriptionId,
       periodStartsAt: intent.periodStartsAt,
       periodEndsAt: intent.periodEndsAt,
       cancelAtPeriodEnd: intent.cancelAtPeriodEnd === true,
@@ -93,6 +97,19 @@ export function planSettlementIntentFromEvent(
   const lifecycle = lifecycleFromEvent(event);
   if (!lifecycle) return null;
 
+  const subscriptionId =
+    binding.subscriptionId?.trim() ||
+    (event.reference.kind === 'subscription'
+      ? event.reference.id.trim() || null
+      : null);
+  if (
+    !subscriptionId &&
+    binding.interval !== 'lifetime' &&
+    binding.interval !== 'one_time'
+  ) {
+    return null;
+  }
+
   return {
     lifecycle,
     paymentEventId,
@@ -104,6 +121,7 @@ export function planSettlementIntentFromEvent(
     interval: binding.interval ?? null,
     periodStartsAt: toIso(binding.periodStartsAt),
     periodEndsAt: toIso(binding.periodEndsAt),
+    subscriptionId,
     ...(binding.cancelAtPeriodEnd !== undefined
       ? { cancelAtPeriodEnd: binding.cancelAtPeriodEnd }
       : {}),
@@ -120,6 +138,9 @@ function lifecycleFromEvent(
     case 'invoice.paid':
     case 'subscription.renewed':
       return 'renew';
+    case 'invoice.payment_failed':
+    case 'subscription.past_due':
+      return 'past_due';
     case 'customer.subscription.resumed':
       return 'resume';
     case 'customer.subscription.updated':
