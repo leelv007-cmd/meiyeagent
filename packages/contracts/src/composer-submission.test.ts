@@ -72,6 +72,53 @@ test('free image operation is signed while customized and non-image submissions 
   );
 });
 
+test('AI cover choices are quote-signed and reject mismatched output dimensions', () => {
+  const aiCover = {
+    ...signedFields,
+    creationMode: 'free' as const,
+    imageOperation: 'image.generate' as const,
+    recipe: {
+      id: 'recipe.promotion_poster',
+      revision: 'recipe-promotion-poster-r1',
+    },
+    contentPackagePlatform: 'xiaohongshu' as const,
+    deliverable: {
+      kind: 'poster' as const,
+      quantity: 1,
+      aspectRatio: '9:16' as const,
+    },
+    aiCover: {
+      aspectRatio: '9:16' as const,
+      style: 'beauty_editorial' as const,
+      size: '1440x2560' as const,
+    },
+  };
+
+  assert.deepEqual(pickComposerSubmissionSignedFields(aiCover), aiCover);
+  assert.equal(composerSubmissionSignedFieldsSchema.safeParse(aiCover).success, true);
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse({
+      ...aiCover,
+      aiCover: { ...aiCover.aiCover, size: '2048x2048' },
+    }).success,
+    false,
+  );
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse({
+      ...aiCover,
+      deliverable: { ...aiCover.deliverable, aspectRatio: '1:1' },
+    }).success,
+    false,
+  );
+  assert.equal(
+    composerSubmissionSignedFieldsSchema.safeParse({
+      ...aiCover,
+      recipe: { id: 'recipe.other_poster', revision: 'recipe-r1' },
+    }).success,
+    false,
+  );
+});
+
 test('wechat_moments is a delivery target but not a variant platform', () => {
   assert.equal(isComposerVariantPlatform('wechat_moments'), false);
   assert.equal(isComposerVariantPlatform('xiaohongshu'), true);

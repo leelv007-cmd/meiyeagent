@@ -140,6 +140,21 @@ import {
 
 import { BriefSurface } from './brief-surface-panel';
 import { applyCatalogRecipeSelection } from './catalog-selection';
+import {
+  buildAiCoverActionSeed,
+  type AiCoverActionSeed,
+  type AiCoverAspectRatio,
+  type AiCoverBeautyPreset,
+} from './ai-cover-action';
+import {
+  buildStyleAnalysisStageFromAssets,
+  ComposerStyleAnalysisStageNotice,
+  ComposerStyleReferenceControl,
+} from './composer-style-reference-control';
+import {
+  submissionRoleForStyleReference,
+  toggleStyleReferenceAsset,
+} from './style-analysis-entry';
 import { ProgressiveFactCard } from './progressive-fact-card';
 import {
   hasMissingProgressiveStoreFacts,
@@ -481,6 +496,12 @@ export type ComposerHomeProps = {
   initialSessionIdentityId?: string;
   /** D-145 时间桥深链: reopen this in-flight run rather than the newest one. */
   initialTaskId?: string;
+  /** Result/workspace AI-cover handoff; current surface supplies the recipe. */
+  initialAiCover?: {
+    aspectRatio: AiCoverAspectRatio;
+    style: AiCoverBeautyPreset;
+    topicHint?: string;
+  };
   /** Injectable for tests; browser sessionStorage is used by default. */
   sessionStore?: Storage;
 };
@@ -489,6 +510,7 @@ export function ComposerHome({
   viewportWidth,
   fixtureSubmit = false,
   initialRecipeRevisionId,
+  initialAiCover,
   initialSessionIdentityId,
   initialSurfaceRevisionId,
   initialTaskId,
@@ -572,6 +594,7 @@ export function ComposerHome({
   const sourceFactsRef = useRef(new Map<string, ConfirmedAssetFacts>());
   const sourceRevisionRef = useRef(new Map<string, string>());
   const catalogSelectionAppliedRef = useRef(false);
+  const initialAiCoverAppliedRef = useRef(false);
   const sessionIdRef = useRef(newComposerSessionId());
   /**
    * Bumped whenever `sessionIdRef` is replaced. A ref is not reactive, so
@@ -632,6 +655,12 @@ export function ComposerHome({
   /** P2-09: free-mode beauty voice + thinking level; customized injects defaults. */
   const [generationParams, setGenerationParams] =
     useState<ComposerGenerationParamsState>(initialGenerationParamsState);
+  const [activeAiCover, setActiveAiCover] = useState<AiCoverActionSeed | null>(
+    null
+  );
+  const [styleReferenceAssetIds, setStyleReferenceAssetIds] = useState<
+    string[]
+  >([]);
   const [session, setSession] = useState<ComposerSession>(() =>
     createComposerSession(sessionIdRef.current)
   );
@@ -1016,6 +1045,20 @@ export function ComposerHome({
       submissionDelivery.deliverableKind === 'poster')
       ? imageOperation
       : undefined;
+  const signedAiCover =
+    activeAiCover &&
+    creationMode === 'free' &&
+    explicitImageOperation === 'image.generate' &&
+    submissionRecipe?.recipeId === 'recipe.promotion_poster' &&
+    submissionDelivery.deliverableKind === 'poster' &&
+    submissionDelivery.platform === 'xiaohongshu' &&
+    submissionAspectRatio === activeAiCover.aspectRatio
+      ? {
+          aspectRatio: activeAiCover.aspectRatio,
+          style: activeAiCover.style,
+          size: activeAiCover.size,
+        }
+      : undefined;
   const imageCardinality = explicitImageOperation
     ? imageOperationCardinality(explicitImageOperation, sourceReferences.length)
     : { message: null, valid: true };
@@ -1027,6 +1070,7 @@ export function ComposerHome({
           ...(explicitImageOperation
             ? { imageOperation: explicitImageOperation }
             : {}),
+          ...(signedAiCover ? { aiCover: signedAiCover } : {}),
           catalogModel: {
             id: selectedModel.id,
             revision: catalogRevision,
@@ -1851,6 +1895,9 @@ export function ComposerHome({
   const removeSource = (assetId: string) => {
     sourceFactsRef.current.delete(assetId);
     sourceRevisionRef.current.delete(assetId);
+    setStyleReferenceAssetIds((current) =>
+      current.filter((candidate) => candidate !== assetId)
+    );
     setLensState((current) =>
       updateSources(
         current,
@@ -2013,7 +2060,10 @@ export function ComposerHome({
               {
                 id: candidate.id,
                 revision: candidate.revision,
-                role: 'reference' as const,
+                role: submissionRoleForStyleReference(
+                  candidate.id,
+                  styleReferenceAssetIds
+                ),
               },
             ]
           : [];
@@ -2197,8 +2247,91 @@ export function ComposerHome({
     // A press was for one form of content at one price. Choosing another form
     // is a different ask, so the held press does not travel with it.
     armedQuoteIdRef.current = null;
+    setActiveAiCover(null);
     setLensState(selectLens(lensState, next));
   };
+
+  const applyAiCoverSeed = useCallback(
+    (seed: AiCoverActionSeed) => {
+      const surface = surfaceQuery.data;
+      const visiblePosterRevisions = new Set(
+        surface?.recipeRefs
+          .filter(
+            (reference) =>
+              reference.visible && reference.lensId === 'image_text'
+          )
+          .map((reference) => reference.recipeRevisionId) ?? []
+      );
+      const posterRecipe = surface?.recipes.find(
+        (recipe) =>
+          recipe.recipeId === 'recipe.promotion_poster' &&
+          recipe.lensId === 'image_text' &&
+          recipe.status === 'published' &&
+          visiblePosterRevisions.has(recipe.revisionId)
+      );
+      if (!surface || !posterRecipe) {
+        toast.error('封面配方暂时不可用，请刷新后重试。');
+        return false;
+      }
+      setSubmissionGroundingBlocked(null);
+      setSubmitBlockedMessage(null);
+      destinationAutoSubmitIntentRef.current = null;
+      setDestinationPreflight(null);
+      armedQuoteIdRef.current = null;
+      if (lensState.phase === 'frozen' || session.phase === 'delivered') {
+        sessionIdRef.current = newComposerSessionId();
+        setSessionEpoch((current) => current + 1);
+        briefContextRevisionRef.current = null;
+        briefInputRef.current = null;
+        restoredFromServerRef.current = true;
+        setSession((current) =>
+          rebindComposerSession(current, sessionIdRef.current)
+        );
+      }
+      setCreationMode('free');
+      setImageOperation('image.generate');
+      setActiveAiCover(seed);
+      setLensState((current) => {
+        const editable = reopenComposer(current);
+        const selected = applyCatalogRecipeSelection({
+          state: editable,
+          surface,
+          recipeRevisionId: posterRecipe.revisionId,
+          surfaceRevisionId: surface.revisionId,
+        }).state;
+        const withCoverSettings = updateSettings(
+          selected,
+          { aspectRatio: seed.aspectRatio, quantity: 1 },
+          'user'
+        );
+        const withDestination = updateDeliverySuggestion(
+          withCoverSettings,
+          {
+            deliverableKind: 'poster',
+            distributionTarget: 'export',
+            platform: 'xiaohongshu',
+          },
+          'user'
+        );
+        return updateUserText(withDestination, seed.intent);
+      });
+      focusComposerIntentInput();
+      return true;
+    },
+    [lensState.phase, session.phase, surfaceQuery.data]
+  );
+
+  useEffect(() => {
+    if (
+      initialAiCoverAppliedRef.current ||
+      !initialAiCover ||
+      !surfaceQuery.data
+    ) {
+      return;
+    }
+    const applied = applyAiCoverSeed(buildAiCoverActionSeed(initialAiCover));
+    if (applied) initialAiCoverAppliedRef.current = true;
+  }, [applyAiCoverSeed, initialAiCover, surfaceQuery.data]);
 
   const handleIntentChange = (value: string) => {
     setSubmissionGroundingBlocked(null);
@@ -3299,12 +3432,9 @@ export function ComposerHome({
                   focusComposerIntentInput();
                 }}
                 onDeliveryAiCover={(seed) => {
-                  // P2-11 / #323: AI cover secondary — prefill ratio+preset intent,
-                  // never auto-submit (same contract as follow-ups / paid-media gate).
-                  setLensState((current) =>
-                    updateUserText(current, seed.intent)
-                  );
-                  focusComposerIntentInput();
+                  // P2-11 / #323: freeze the chosen ratio+preset into the same
+                  // quote-signed contract the paid-media confirmation reads.
+                  applyAiCoverSeed(seed);
                 }}
                 onNotePlanOutlineEdit={({ pageId, title, body }) => {
                   setNotePlanOutlineSaveError((current) =>
@@ -3575,6 +3705,35 @@ export function ComposerHome({
                             : '可选：上传门店图片、顾客案例或价目素材'}
                         </p>
                       </ComposerImageInput>
+                      {sourceReferences.length > 0 ? (
+                        <div
+                          className="mt-2 flex flex-wrap items-center gap-2"
+                          data-testid="composer-style-reference-controls"
+                        >
+                          {sourceReferences.map((source) => (
+                            <ComposerStyleReferenceControl
+                              assetId={source.id}
+                              key={source.id}
+                              onToggle={(assetId) =>
+                                setStyleReferenceAssetIds((current) =>
+                                  toggleStyleReferenceAsset(current, assetId)
+                                )
+                              }
+                              selected={styleReferenceAssetIds.includes(
+                                source.id
+                              )}
+                            />
+                          ))}
+                          <ComposerStyleAnalysisStageNotice
+                            state={buildStyleAnalysisStageFromAssets({
+                              attachedAssetIds: sourceReferences.map(
+                                ({ id }) => id
+                              ),
+                              styleReferenceAssetIds,
+                            })}
+                          />
+                        </div>
+                      ) : null}
                       {imageCardinality.message ? (
                         <p
                           className="mt-2 text-destructive text-xs"

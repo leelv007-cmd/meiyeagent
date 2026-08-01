@@ -19,6 +19,7 @@ import {
 } from "../workflow-events.js";
 import { toHarnessWorkflowInput } from "./creation-stage-port.js";
 import { ProductQuoteService } from "../product-billing/quote-service.js";
+import { triggersPaidMediaExecution } from "../harness/workflow-core.js";
 import type { ComposerSubmissionBody } from "./creation-execution-snapshot.js";
 import {
 	CreationSubmissionCoordinator,
@@ -263,6 +264,60 @@ test("Core Composer HTTP freezes explicit selections, resumes SSE, and exposes o
 	assert.doesNotMatch(projectionBody, /provider-secret/u);
 	assert.doesNotMatch(projectionBody, /route-secret/u);
 	assert.doesNotMatch(projectionBody, /providerCost/u);
+});
+
+test("AI cover admission freezes structured choices and reaches the paid-media confirmation gate", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		modalityAdmission(),
+	);
+	const payload: ComposerSubmissionBody = {
+		...modalitySubmissionPayload("image"),
+		aiCover: {
+			aspectRatio: "9:16",
+			style: "beauty_editorial",
+			size: "1440x2560",
+		},
+		deliverable: {
+			kind: "poster",
+			quantity: 1,
+			aspectRatio: "9:16",
+		},
+		imageOperation: "image.generate",
+		idempotencyKey: "composer-ai-cover-1",
+		recipe: {
+			id: "recipe.promotion_poster",
+			revision: "recipe-promotion-poster-r1",
+		},
+	};
+
+	await coordinator.submit({
+		...payload,
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+
+	const started = starter.starts[0];
+	assert.ok(started);
+	assert.deepEqual(started.snapshot.signedSubmission?.aiCover, payload.aiCover);
+	assert.deepEqual(
+		submissions.reservedUnits("workspace-1", payload.idempotencyKey),
+		[{ resource: "image", quantity: 1 }],
+	);
+	assert.equal(
+		triggersPaidMediaExecution(
+			toHarnessWorkflowInput(
+				started.snapshot,
+				started.usageReservation,
+				started.decisionReferences,
+			),
+		),
+		true,
+	);
 });
 
 test("authenticated Composer HTTP carries all four output kinds through one snapshot, SSE, and public package contract", async (t) => {

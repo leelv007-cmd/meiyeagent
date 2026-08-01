@@ -3,6 +3,7 @@ import type { ZodType } from 'zod';
 import {
   ModelSupplyApplicationService,
   type Acceptance,
+  type CanvasGenerationInputAsset,
   type DataClass,
   type RouteSnapshot,
   type RequestedSelection,
@@ -28,6 +29,8 @@ export interface StructuredNodeRunnerRequest<Output> {
   schemaRevision: string;
   /** Frozen prompt lineage selected by the owning Harness node. */
   promptKey?: string;
+  /** Authorized multimodal inputs resolved by Model Supply before provider I/O. */
+  inputAssets?: CanvasGenerationInputAsset[];
   abortSignal?: AbortSignal;
   /** Revalidates live execution facts immediately before every provider effect. */
   beforeProviderAttempt?: () => Promise<void>;
@@ -111,6 +114,7 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
       prompt: request.prompt,
       schemaName: request.schemaName,
       schemaRevision: request.schemaRevision,
+      inputAssets: request.inputAssets,
       frozenRouteSnapshot: this.options.frozenRouteSnapshot,
     });
     const existing = this.effects.get(request.effectIdempotencyKey);
@@ -174,8 +178,17 @@ export class ModelSupplyStructuredNodeRunner implements StructuredNodeRunner {
         promptRevision: request.schemaRevision,
         exampleSetRevision: request.schemaName,
         productUsageQuantity: 0,
-        ...(this.options.providerOptions
-          ? { input: structuredClone(this.options.providerOptions) }
+        ...(this.options.providerOptions || request.inputAssets?.length
+          ? {
+              input: {
+                ...(this.options.providerOptions
+                  ? structuredClone(this.options.providerOptions)
+                  : {}),
+                ...(request.inputAssets?.length
+                  ? { inputAssets: structuredClone(request.inputAssets) }
+                  : {}),
+              },
+            }
           : {}),
         ...(frozenRoute
           ? { frozenRouteSnapshot: structuredClone(frozenRoute) }
@@ -355,6 +368,10 @@ export class AiSdkStructuredObjectExecutor
     const runner = this.runnerForRequest(providerRequest);
     const generated = await runner.generateStructured({
       ...structuredInput,
+      referenceAssets:
+        providerRequest?.resolvedInputAssets?.filter(
+          (asset) => asset.role === 'reference_image',
+        ) ?? providerRequest?.resolvedReferenceAssets,
       telemetryContext: providerRequest
         ? {
             actorId: providerRequest.submission.actorId,

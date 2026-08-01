@@ -29,13 +29,16 @@ test('three ratios are selectable and each maps to a size', () => {
 });
 
 test('beauty presets are the five beauty replacements (not generic)', () => {
-  assert.deepEqual([...AI_COVER_BEAUTY_PRESETS], [
-    'beauty_soft',
-    'beauty_editorial',
-    'before_after',
-    'spa_minimal',
-    'salon_photo',
-  ]);
+  assert.deepEqual(
+    [...AI_COVER_BEAUTY_PRESETS],
+    [
+      'beauty_soft',
+      'beauty_editorial',
+      'before_after',
+      'spa_minimal',
+      'salon_photo',
+    ]
+  );
   const seed = buildAiCoverActionSeed({
     style: 'spa_minimal',
     aspectRatio: '1:1',

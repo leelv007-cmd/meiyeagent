@@ -73,6 +73,14 @@ export function toggleStyleReferenceAsset(
   return [...current, id];
 }
 
+/** Map the mounted control state onto the canonical Composer source role. */
+export function submissionRoleForStyleReference(
+  assetId: string,
+  styleReferenceAssetIds: readonly string[]
+): 'style' | 'reference' {
+  return styleReferenceAssetIds.includes(assetId) ? 'style' : 'reference';
+}
+
 /**
  * Detect @素材 intent from free text (lightweight mention parse).
  * Matches「@素材」or「@风格参考」tokens; does not invent asset ids.

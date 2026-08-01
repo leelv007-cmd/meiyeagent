@@ -8,6 +8,19 @@
 
 ---
 
+## 0. 2026-08-02 合入门复核与修复
+
+复核结论：原提交的绿测试只覆盖 helper / 纯投影 / 局部 interaction，产品主路没有真正消费这些结果。具体缺口是：
+
+1. AI 封面的比例、美业预设、size 未进入 quote-signed Composer 契约，Core 编译和 Model Supply 提交也没有读取它们；
+2. Result Center 工具按钮没有可达出口，Delivered 预填在 frozen 状态下不会形成新提交；
+3. `@素材` 控件没有写入 canonical `role=style`，七维分析没有走 Model Supply 多模态路径，更没有进入 NotePlan 和最终配图 prompt / constraints；
+4. 时间线文案函数没有生产调用者。
+
+本次修复已把上述四个缺口接入真实提交、准入、Model Supply 和配图执行链，并增加 RED→GREEN 回归证据。
+
+---
+
 ## 一、「实施时定」闭合：AI 封面 size 映射（§4.2）
 
 | 产品比例 | Provider size (`WxH`) | 定案理由 |
@@ -36,6 +49,7 @@
 | Delivered | 次级动作「生成 AI 封面」→ 展开三比例可选 → 预填 Composer intent（**不自动提交**） |
 | 对象工作区 | Image worksurface 工具 chip「生成 AI 封面」（`data-testid=image-ai-cover-tool`） |
 | 付费门 | 封面 reservation 仅 `image` units → `triggersPaidMediaExecution === true` |
+| 契约 / 执行 | 比例 + preset + size 由 quote 签名；Core 物化冻结 prompt，Model Supply 提交真实 `width` / `height` |
 
 ### 2.2 参考图风格分析（七维）
 
@@ -47,7 +61,8 @@
 | --- | --- |
 | Composer | `@素材 · 用作风格参考` 控件 + `@素材` 文案识别 |
 | 时间线 | 阶段文案：`正在分析参考图风格（七维），后续配图会按同一风格保持一致` |
-| 配图链 | `consistencyRequirements` 注入七维；`{styleAnalysisBlock}` 注入 `xhsOutline` |
+| Model Supply | canonical `role=style` 转换为授权 `reference_image`，走现有 pinned structured runner / 多模态 provider 路径 |
+| 配图链 | `consistencyRequirements` 注入七维；`{styleAnalysisBlock}` 注入 NotePlan 与每页生图 prompt；七维缺一则 fail closed |
 
 ---
 
@@ -58,8 +73,12 @@
 | `apps/core/src/p1/harness/xhs-cover.ts` | size 映射、预设、prompt 物化、付费 reservation |
 | `apps/core/src/p1/harness/xhs-style-analysis.ts` | 七维 parse / inject / consistency 消费 |
 | `apps/core/src/p1/harness/merchant-delivery-language.ts` | `merchantStyleAnalysisProgress` |
+| `apps/core/src/p1/harness/unified-media-stage-ports.ts` | AI 封面编译、精确尺寸提交、七维分析与 NotePlan / 配图消费 |
+| `apps/core/src/p1/model-supply/structured-node-runner.ts` | 结构化节点的授权多模态输入 |
+| `packages/contracts/src/composer-submission.ts` | quote-signed AI 封面闭集契约 |
 | `mkfast-template-main/src/product/composer/ai-cover-action.ts` | Delivered / workspace 纯投影 |
 | `mkfast-template-main/src/product/composer/style-analysis-entry.ts` | @素材入口纯投影 |
+| `mkfast-template-main/src/product/composer/composer-home.tsx` | 真实 AI 封面预填 / 新 session / signed 提交，以及 `role=style` 写入 |
 | `mkfast-template-main/src/product/composer/composer-delivery-card.tsx` | Delivered 次级 UI |
 | `mkfast-template-main/src/product/composer/composer-style-reference-control.tsx` | @素材控件 |
 | `mkfast-template-main/src/product/results/image-worksurface-model.ts` | 对象工作区工具投影 |
@@ -71,8 +90,10 @@
 
 | 票面验收 | 证据 |
 | --- | --- |
-| 封面生成走付费媒体确认门且三比例可选（core + interaction） | `xhs-cover.test.ts`（gate + 三比例）；`composer-ai-cover.interaction.test.tsx`（三比例可选 + 不误开 Result Center） |
-| 风格分析产出七维结构并被配图链消费（core） | `xhs-style-analysis.test.ts`（parse 7 维 + consistencyRequirements + outline inject） |
+| 封面生成走付费媒体确认门且三比例可选（core + interaction） | `composer-submission.test.ts` + `composer-http.test.ts` + `unified-media-stage-ports.test.ts`（签名、准入、精确宽高提交）；`composer-ai-cover.interaction.test.tsx`（三比例可选） |
+| 风格分析产出七维结构并被配图链消费（core） | `unified-media-stage-ports.test.ts`（生产 NotePlan + 两页生图消费）；`structured-node-runner.test.ts`（授权参考图进入 provider 请求） |
+| 时间线真实上报 | `workflow-core.test.ts`（`running` 七维阶段早于 styles-ready 人工选择） |
+| Result Center 按钮可达 | `result-merchant-truth.interaction.test.tsx`（enabled + click 触发真实出口） |
 | Idle 无一级入口 | `ai-cover-action.test.ts` + `COMPOSER_TOOL_ENTRY_SEEDS` 负向 |
 | 触达 e2e | 留给主控全量；lane 内 focused unit/interaction 绿 |
 
@@ -81,21 +102,34 @@
 ## 五、验证命令（本机 lane）
 
 ```bash
-# core
-pnpm --filter @meiye/core exec tsx --test \
+# contracts
+pnpm --filter @meiye/contracts exec tsx --test \
+  src/composer-submission.test.ts
+
+# core production paths
+pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 \
   src/p1/harness/xhs-cover.test.ts \
-  src/p1/harness/xhs-style-analysis.test.ts
+  src/p1/harness/xhs-style-analysis.test.ts \
+  src/p1/harness/unified-media-stage-ports.test.ts \
+  src/p1/model-supply/structured-node-runner.test.ts
 
 # web unit
-pnpm --filter @meiye/web test -- \
+pnpm --filter @meiye/web exec tsx --test \
   src/product/composer/ai-cover-action.test.ts \
   src/product/composer/style-analysis-entry.test.ts \
   src/product/results/image-worksurface-model.test.ts
 
 # web interaction（注意：同 worktree 不与 dev 并跑；先 locale 若需要）
-pnpm --filter @meiye/web test:interaction -- \
+pnpm --filter @meiye/web exec vitest run \
   src/product/composer/composer-ai-cover.interaction.test.tsx \
-  src/product/composer/composer-style-reference.interaction.test.tsx
+  src/product/composer/composer-style-reference.interaction.test.tsx \
+  src/product/results/result-merchant-truth.interaction.test.tsx
+
+# compile gates
+pnpm --filter @meiye/contracts typecheck
+pnpm --filter @meiye/core typecheck
+pnpm --filter @meiye/web build
+pnpm --filter @meiye/web typecheck
 ```
 
 ---
@@ -105,4 +139,3 @@ pnpm --filter @meiye/web test:interaction -- \
 1. 不重写对象工作区编辑器壳（#322 属主）；本票只挂 AI 封面工具 chip。
 2. 不接爆款链接主路径（#324）。
 3. 全链路 live 生图（真实 provider 出图）与 e2e 全量由主控在 P1 齐验后门一并核。
-4. Composer 草稿 → Core 提交路径把 `styleReferenceAssetIds` 写入 `imageIntent.references[].slot=style_ref` 的 HTTP 粘合可随后续接线加强；本票已钉纯模型 + 控件 + 配图链消费。

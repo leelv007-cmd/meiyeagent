@@ -1052,9 +1052,22 @@ test('media context fence keeps bounded consumption while recompiling the provid
 test('image-text note uses the fourth Harness fork and waits for style choice before page generation', async () => {
   const keys: string[] = [];
   const progress: string[] = [];
+  const progressMessages: string[] = [];
   const observabilityEvents: unknown[] = [];
   let executionSelectionTrace: Record<string, unknown> | undefined;
-  const request = mediaTaskInput('image_text_note');
+  const baseRequest = mediaTaskInput('image_text_note');
+  const request: HarnessWorkflowInput = {
+    ...baseRequest,
+    executionSnapshot: {
+      ...baseRequest.executionSnapshot!,
+      sources: {
+        assets: baseRequest.executionSnapshot!.sources.assets.map((asset) => ({
+          ...asset,
+          role: 'style' as const,
+        })),
+      },
+    },
+  };
   const stages = noteStages();
   const executeNoteAndSelect = stages.executeNoteAndSelect.bind(stages);
   stages.executeNoteAndSelect = async (input) => {
@@ -1091,6 +1104,7 @@ test('image-text note uses the fourth Harness fork and waits for style choice be
       },
       async progress(event) {
         progress.push(`${event.stage}:${event.state}`);
+        progressMessages.push(event.message);
       },
       async token() {},
       async awaitDecision(question) {
@@ -1133,11 +1147,20 @@ test('image-text note uses the fourth Harness fork and waits for style choice be
   assert.deepEqual(progress, [
     'intent_naming:success',
     'context_injection:success',
+    'brief_compilation:running',
     'brief_compilation:suspended',
     'brief_compilation:success',
     'execution_selection:success',
     'assembly_delivery:success',
   ]);
+  assert.equal(
+    progressMessages[2],
+    '正在分析参考图风格（七维），后续配图会按同一风格保持一致',
+  );
+  assert.equal(
+    progressMessages[3],
+    '两种图文方向已经整理好，请选一个继续配图。',
+  );
   assert.equal(result.recommendation.recommendedCandidateId, 'story');
   assert.deepEqual(executionSelectionTrace?.auditSignals, [
     {

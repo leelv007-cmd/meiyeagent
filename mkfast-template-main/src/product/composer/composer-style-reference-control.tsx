@@ -43,7 +43,9 @@ export function ComposerStyleReferenceControl({
       title={STYLE_ANALYSIS_MENTION_HINT}
       type="button"
     >
-      {selected ? `已选·${STYLE_ANALYSIS_MENTION_LABEL}` : `@素材 · ${STYLE_ANALYSIS_MENTION_LABEL}`}
+      {selected
+        ? `已选·${STYLE_ANALYSIS_MENTION_LABEL}`
+        : `@素材 · ${STYLE_ANALYSIS_MENTION_LABEL}`}
     </button>
   );
 }

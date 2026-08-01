@@ -217,7 +217,7 @@ test('frozen structured execution uses the historical deployment and capability 
   assert.equal(executor.requests.length, 1);
 });
 
-test('AI SDK structured executor sends pinned adapter endpoint, model, and credential', async () => {
+test('AI SDK structured executor sends pinned binding and resolved reference images', async () => {
   const observed: Array<{
     url: string;
     authorization?: string;
@@ -250,6 +250,17 @@ test('AI SDK structured executor sends pinned adapter endpoint, model, and crede
       frozenRouteSnapshot: route,
     },
     routeSnapshot: route,
+    resolvedInputAssets: [
+      {
+        assetId: 'style-asset-1',
+        bytes: new Uint8Array([137, 80, 78, 71]),
+        contentType: 'image/png',
+        kind: 'resolved',
+        providerReadableUrl: 'https://assets.example/style-asset-1',
+        role: 'reference_image',
+        sha256: 'a'.repeat(64),
+      },
+    ],
     runtimeBinding: {
       capabilityRevisionId: 'capability-r1',
       deploymentId: 'deployment-a',
@@ -305,6 +316,7 @@ test('AI SDK structured executor sends pinned adapter endpoint, model, and crede
   assert.match(observed[0]!.url, /^https:\/\/provider-a\.example\/v1\//u);
   assert.equal(observed[0]!.authorization, 'Bearer pinned-secret-a');
   assert.equal(observed[0]!.body.model, 'provider-a');
+  assert.match(JSON.stringify(observed[0]!.body.messages), /image_url/u);
   assert.deepEqual(generated.providerCost, {
     amount: 0.000034,
     currency: 'CNY',

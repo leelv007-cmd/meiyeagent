@@ -163,6 +163,7 @@ export type ResultCenterPageProps = {
   onImageSaveLibrary?: ImageWorksurfaceProps['onSaveLibrary'];
   onImageSaveDraft?: ImageWorksurfaceProps['onSaveDraft'];
   onImageCreateFromThis?: ImageWorksurfaceProps['onCreateFromThis'];
+  onImageAiCover?: ImageWorksurfaceProps['onAiCover'];
   onDeliveryAction?: (
     actionId: DeliveryActionId,
     assisted?: {
@@ -319,6 +320,7 @@ function WorkspaceBody(props: {
   onImageSaveLibrary?: ResultCenterPageProps['onImageSaveLibrary'];
   onImageSaveDraft?: ResultCenterPageProps['onImageSaveDraft'];
   onImageCreateFromThis?: ResultCenterPageProps['onImageCreateFromThis'];
+  onImageAiCover?: ResultCenterPageProps['onImageAiCover'];
   onAdjust?: (
     instruction: string,
     scope?: ResultAdjustCommand['scope']
@@ -377,6 +379,7 @@ function WorkspaceBody(props: {
           onSaveLibrary={props.onImageSaveLibrary}
           onSaveDraft={props.onImageSaveDraft}
           onCreateFromThis={props.onImageCreateFromThis}
+          onAiCover={props.onImageAiCover}
         />
       );
       if (copyFacts) {
@@ -799,6 +802,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
             onImageSaveLibrary={props.onImageSaveLibrary}
             onImageSaveDraft={props.onImageSaveDraft}
             onImageCreateFromThis={props.onImageCreateFromThis}
+            onImageAiCover={props.onImageAiCover}
             onAdjust={props.onAdjust}
           />
         )}

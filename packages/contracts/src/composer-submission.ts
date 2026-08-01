@@ -67,6 +67,47 @@ export const composerSubmissionDeliverableSchema = z
   })
   .strict();
 
+export const composerAiCoverBeautyPresetIds = [
+  'beauty_soft',
+  'beauty_editorial',
+  'before_after',
+  'spa_minimal',
+  'salon_photo',
+] as const;
+
+export const composerAiCoverBeautyPresetSchema = z.enum(
+  composerAiCoverBeautyPresetIds,
+);
+
+/**
+ * The provider size is signed together with the merchant-facing ratio. A
+ * discriminated union prevents a valid ratio from being paired with a size
+ * belonging to another output shape.
+ */
+export const composerAiCoverSchema = z.discriminatedUnion('aspectRatio', [
+  z
+    .object({
+      aspectRatio: z.literal('3:4'),
+      style: composerAiCoverBeautyPresetSchema,
+      size: z.literal('1536x2048'),
+    })
+    .strict(),
+  z
+    .object({
+      aspectRatio: z.literal('1:1'),
+      style: composerAiCoverBeautyPresetSchema,
+      size: z.literal('2048x2048'),
+    })
+    .strict(),
+  z
+    .object({
+      aspectRatio: z.literal('9:16'),
+      style: composerAiCoverBeautyPresetSchema,
+      size: z.literal('1440x2560'),
+    })
+    .strict(),
+]);
+
 /**
  * User-confirmed fields covered by the quote preview and admission freeze.
  *
@@ -84,13 +125,16 @@ export const composerSubmissionSignedFieldsBaseSchema = z
     contentPackagePlatform: composerContentPackagePlatformSchema,
     distributionTarget: composerDistributionTargetSchema,
     deliverable: composerSubmissionDeliverableSchema,
+    aiCover: composerAiCoverSchema.optional(),
   })
   .strict();
 
 export const composerSubmissionSignedFieldsSchema =
   composerSubmissionSignedFieldsBaseSchema.superRefine((submission, context) => {
-    if (submission.imageOperation === undefined) return;
-    if (submission.creationMode !== 'free') {
+    if (
+      submission.imageOperation !== undefined &&
+      submission.creationMode !== 'free'
+    ) {
       context.addIssue({
         code: 'custom',
         message:
@@ -99,6 +143,7 @@ export const composerSubmissionSignedFieldsSchema =
       });
     }
     if (
+      submission.imageOperation !== undefined &&
       submission.deliverable.kind !== 'image_set' &&
       submission.deliverable.kind !== 'poster'
     ) {
@@ -107,6 +152,31 @@ export const composerSubmissionSignedFieldsSchema =
         message:
           'An explicit image operation requires an image deliverable.',
         path: ['imageOperation'],
+      });
+    }
+    if (submission.aiCover === undefined) return;
+    if (
+      submission.creationMode !== 'free' ||
+      submission.imageOperation !== 'image.generate' ||
+      submission.recipe.id !== 'recipe.promotion_poster' ||
+      submission.contentPackagePlatform !== 'xiaohongshu' ||
+      submission.deliverable.kind !== 'poster' ||
+      submission.deliverable.quantity !== 1
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'AI cover requires the promotion-poster recipe and one free Xiaohongshu image.',
+        path: ['aiCover'],
+      });
+    }
+    if (
+      submission.deliverable.aspectRatio !== submission.aiCover.aspectRatio
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'AI cover ratio must match the signed deliverable ratio.',
+        path: ['aiCover', 'aspectRatio'],
       });
     }
   });

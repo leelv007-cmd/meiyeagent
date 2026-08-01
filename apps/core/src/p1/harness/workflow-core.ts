@@ -33,6 +33,7 @@ import type {
   HarnessSkillManifestSnapshot,
   HarnessWorkflowInput,
 } from './task-admission.js';
+import type { StyleAnalysisResult } from './xhs-style-analysis.js';
 import type {
   ResolvedSkillInstruction,
   SkillInvocationReceipt,
@@ -55,6 +56,7 @@ import {
   merchantPaidGenerationConfirmationQuestion,
   merchantPaidGenerationConfirmationReason,
   merchantProgressMessage,
+  merchantStyleAnalysisProgress,
   merchantTaskSummary,
 } from './merchant-delivery-language.js';
 import type { RecipeFactSatisfaction } from './fact-satisfaction.js';
@@ -105,6 +107,7 @@ export interface HarnessMediaSelectionResult {
 export interface HarnessNoteBrief {
   kind: 'image_text_note';
   candidates: NoteStyleCandidates;
+  styleAnalysis?: StyleAnalysisResult;
 }
 
 export interface HarnessNoteSelectionResult {
@@ -383,7 +386,7 @@ export interface HarnessWorkflowRuntime {
       | 'brief_compilation'
       | 'execution_selection'
       | 'assembly_delivery';
-    state: 'success' | 'suspended';
+    state: 'running' | 'success' | 'suspended';
     message: string;
   }): Promise<void>;
   token(event: {
@@ -1644,6 +1647,18 @@ async function runNoteHarnessWorkflow(
   });
   activeRequest = factGate.request;
   context = factGate.context;
+
+  if (
+    activeRequest.executionSnapshot?.sources.assets.some(
+      ({ role }) => role === 'style',
+    )
+  ) {
+    await reportProgress({
+      stage: 'brief_compilation',
+      state: 'running',
+      message: merchantStyleAnalysisProgress(),
+    });
+  }
 
   const briefSkills = stageSkills.brief_compilation;
   let brief = await runtime.runStep(

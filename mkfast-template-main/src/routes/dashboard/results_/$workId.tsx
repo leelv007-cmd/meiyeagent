@@ -54,6 +54,7 @@ import {
 import { calibrateTerminalRevision } from '@/product/results/result-token-stream';
 import { projectResultShellPhase } from '@/product/results/result-shell-model';
 import { ResultCenterPage } from '@/product/results/result-center-page';
+import { buildAiCoverActionSeed } from '@/product/composer/ai-cover-action';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import {
   projectExecutionConfirmCard,
@@ -1430,6 +1431,19 @@ function ResultCenterRoutePage() {
         await refreshCanonicalResult();
       }}
       onImageCreateFromThis={createFromCurrent}
+      onImageAiCover={() => {
+        const seed = buildAiCoverActionSeed({
+          topicHint: currentPackageVersion?.title,
+        });
+        void navigate({
+          to: '/dashboard',
+          search: {
+            aiCoverAspectRatio: seed.aspectRatio,
+            aiCoverStyle: seed.style,
+            aiCoverTopic: currentPackageVersion?.title,
+          },
+        });
+      }}
       onAdjust={async (instruction, scope) => {
         if (!selected || !adjustSource || adjustBusy || pendingImageAdjust)
           return;

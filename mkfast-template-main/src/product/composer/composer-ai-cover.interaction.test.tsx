@@ -41,7 +41,9 @@ describe('Delivered AI cover secondary action', () => {
       />
     );
 
-    expect(screen.getByTestId('composer-delivery-ai-cover')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('composer-delivery-ai-cover')
+    ).toBeInTheDocument();
     await user.click(screen.getByTestId('composer-delivery-ai-cover-toggle'));
 
     const ratios = screen.getByTestId('composer-delivery-ai-cover-ratios');

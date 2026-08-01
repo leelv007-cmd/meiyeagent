@@ -75,6 +75,45 @@ function renderReadyResult(workspaceKind: ResultWorkspaceKind) {
 }
 
 describe('merchant Result Center truth', () => {
+  it('threads the object-workspace AI cover action to a reachable page exit', () => {
+    const onImageAiCover = vi.fn();
+    render(
+      <ResultCenterPage
+        workId={workId}
+        resolveOutcome={resolvedTarget()}
+        facts={{
+          target: { workId },
+          workspaceKind: 'image',
+          progressState: 'success',
+          hasUsableCandidate: true,
+        }}
+        imageWorksurface={{
+          workId,
+          baseRevisionId: 'revision-1',
+          outputType: 'single_image',
+          slot: 'standalone',
+          lifecycle: 'candidate',
+          candidates: [
+            {
+              assetId: 'image-1',
+              persisted: true,
+              rightsOk: true,
+              generationOk: true,
+            },
+          ],
+          hasContentPackage: false,
+          mediaVersionReady: true,
+        }}
+        onImageAiCover={onImageAiCover}
+      />
+    );
+
+    const trigger = screen.getByTestId('image-ai-cover-tool');
+    expect(trigger).toBeEnabled();
+    fireEvent.click(trigger);
+    expect(onImageAiCover).toHaveBeenCalledOnce();
+  });
+
   it.each<ResultWorkspaceKind>([
     'copy',
     'image',

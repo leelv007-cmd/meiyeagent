@@ -1,4 +1,10 @@
 import { ComposerHome } from '@/product/composer/composer-home';
+import {
+  AI_COVER_ASPECT_RATIOS,
+  AI_COVER_BEAUTY_PRESETS,
+  type AiCoverAspectRatio,
+  type AiCoverBeautyPreset,
+} from '@/product/composer/ai-cover-action';
 import { desktopRelayLanding } from '@/product/device-relay';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { createFileRoute } from '@tanstack/react-router';
@@ -17,6 +23,9 @@ import { useEffect } from 'react';
  */
 
 interface DashboardSearch {
+  aiCoverAspectRatio?: AiCoverAspectRatio;
+  aiCoverStyle?: AiCoverBeautyPreset;
+  aiCoverTopic?: string;
   catalogRecipeRevisionId?: string;
   catalogSurfaceRevisionId?: string;
   entry?: 'feishu' | 'notification';
@@ -33,6 +42,21 @@ interface DashboardSearch {
 
 export const Route = createFileRoute('/dashboard/')({
   validateSearch: (search: Record<string, unknown>): DashboardSearch => ({
+    ...(typeof search.aiCoverAspectRatio === 'string' &&
+    AI_COVER_ASPECT_RATIOS.includes(
+      search.aiCoverAspectRatio as AiCoverAspectRatio
+    )
+      ? { aiCoverAspectRatio: search.aiCoverAspectRatio as AiCoverAspectRatio }
+      : {}),
+    ...(typeof search.aiCoverStyle === 'string' &&
+    AI_COVER_BEAUTY_PRESETS.includes(search.aiCoverStyle as AiCoverBeautyPreset)
+      ? { aiCoverStyle: search.aiCoverStyle as AiCoverBeautyPreset }
+      : {}),
+    ...(typeof search.aiCoverTopic === 'string' &&
+    search.aiCoverTopic.trim().length > 0 &&
+    search.aiCoverTopic.length <= 200
+      ? { aiCoverTopic: search.aiCoverTopic.trim() }
+      : {}),
     ...(typeof search.catalogRecipeRevisionId === 'string' &&
     search.catalogRecipeRevisionId.length > 0
       ? { catalogRecipeRevisionId: search.catalogRecipeRevisionId }
@@ -125,6 +149,17 @@ function DashboardHome() {
 
   return (
     <ComposerHome
+      {...(search.aiCoverAspectRatio && search.aiCoverStyle
+        ? {
+            initialAiCover: {
+              aspectRatio: search.aiCoverAspectRatio,
+              style: search.aiCoverStyle,
+              ...(search.aiCoverTopic
+                ? { topicHint: search.aiCoverTopic }
+                : {}),
+            },
+          }
+        : {})}
       initialRecipeRevisionId={search.catalogRecipeRevisionId}
       initialSessionIdentityId={search.identity}
       initialSurfaceRevisionId={search.catalogSurfaceRevisionId}

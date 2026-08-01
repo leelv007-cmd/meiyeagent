@@ -243,11 +243,10 @@ export function ComposerDeliveryCard({
             生成 AI 封面
           </button>
           {aiCoverOpen ? (
-            <div
+            <fieldset
+              aria-label="AI 封面比例"
               className="flex flex-wrap gap-2"
               data-testid="composer-delivery-ai-cover-ratios"
-              role="group"
-              aria-label="AI 封面比例"
             >
               {aiCoverOptions.map((option) => (
                 <button
@@ -265,7 +264,7 @@ export function ComposerDeliveryCard({
                   {option.aspectRatio}
                 </button>
               ))}
-            </div>
+            </fieldset>
           ) : null}
         </div>
       ) : null}

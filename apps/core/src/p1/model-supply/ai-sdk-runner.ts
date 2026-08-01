@@ -301,6 +301,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     instructions: string;
     onPartialOutput?: (partial: unknown) => Promise<void> | void;
     prompt: string;
+    referenceAssets?: ResolvedReferenceAsset[];
     schema: ZodType<StructuredOutput>;
     schemaName: string;
     telemetryContext?: AiSdkTelemetryContext;
@@ -334,7 +335,10 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
                 name: input.schemaName,
                 schema: input.schema,
               }),
-              prompt: input.prompt,
+              ...structuredPromptInput(
+                input.prompt,
+                input.referenceAssets ?? [],
+              ),
               telemetry: { functionId: 'structured-brief' },
             }),
         );
@@ -374,6 +378,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
       beforeProviderAttempt?: () => Promise<void>;
       instructions: string;
       prompt: string;
+      referenceAssets?: ResolvedReferenceAsset[];
       schema: ZodType<StructuredOutput>;
       schemaName: string;
       telemetryContext?: AiSdkTelemetryContext;
@@ -456,6 +461,7 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
     abortSignal?: AbortSignal;
     instructions: string;
     prompt: string;
+    referenceAssets?: ResolvedReferenceAsset[];
     schema: ZodType<StructuredOutput>;
     schemaName: string;
     telemetryContext?: AiSdkTelemetryContext;
@@ -474,7 +480,10 @@ export class OpenAiCompatibleAiSdkRunner implements AiStreamingRunner {
             name: input.schemaName,
             schema: input.schema,
           }),
-          prompt: input.prompt,
+          ...structuredPromptInput(
+            input.prompt,
+            input.referenceAssets ?? [],
+          ),
           telemetry: { functionId: 'structured-brief' },
         }),
     );
@@ -974,6 +983,29 @@ export function createNativeLanguageModel(options: OpenAiCompatibleAiSdkOptions)
         supportsStructuredOutputs: true,
       }).chatModel(options.model);
   }
+}
+
+function structuredPromptInput(
+  prompt: string,
+  referenceAssets: ResolvedReferenceAsset[],
+) {
+  return referenceAssets.length === 0
+    ? { prompt }
+    : {
+        messages: [
+          {
+            role: 'user' as const,
+            content: [
+              { type: 'text' as const, text: prompt },
+              ...referenceAssets.map((asset) => ({
+                type: 'file' as const,
+                data: asset.bytes,
+                mediaType: asset.contentType,
+              })),
+            ],
+          },
+        ],
+      };
 }
 
 function languageModelCallSettings(options: OpenAiCompatibleAiSdkOptions) {

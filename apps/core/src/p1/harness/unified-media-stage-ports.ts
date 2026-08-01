@@ -111,6 +111,17 @@ import {
 	harnessMediaJobTopic,
 	requireMeasuredVideoDuration,
 } from "./workflow-core.js";
+import {
+	compileAiCoverImageParameters,
+	mapXhsCoverSize,
+	materializeXhsCoverPrompt,
+} from "./xhs-cover.js";
+import {
+	consumeStyleAnalysisForImagePipeline,
+	materializeStyleAnalysisSystemPrompt,
+	parseStyleAnalysisOutput,
+	type StyleAnalysisResult,
+} from "./xhs-style-analysis.js";
 
 const mediaBoundedRouteResultSchema = z
 	.object({
@@ -135,6 +146,9 @@ type MediaBrief = Exclude<ExecutionBrief, { kind: "copy" }>;
 const MEDIA_JOB_WAIT_TIMEOUT_SECONDS = 150;
 const NOTE_ADMISSION_WAIT_TIMEOUT_SECONDS = 300;
 const NOTE_ADMISSION_POLL_INTERVAL_MS = 250;
+const styleAnalysisModelOutputSchema = z
+	.object({ raw: z.string().trim().min(1) })
+	.strict();
 
 export interface HarnessMediaExecutionPort {
 	execute(input: {
@@ -304,8 +318,19 @@ export class UnifiedHarnessStagePorts
 				409,
 			);
 		}
-		assertBriefMatchesSnapshot(brief, requireSnapshot(input.request));
-		return { brief, metrics: metrics.snapshot() };
+		const snapshot = requireSnapshot(input.request);
+		const aiCover = snapshot.signedSubmission?.aiCover;
+		const productionBrief =
+			brief.kind === "image" && aiCover
+				? applyAiCoverToImageBrief({
+						brief,
+						userPrompt: input.declaration.normalizedIntent,
+						cover: aiCover,
+						template: input.request.prompts?.xhsCoverPrompt?.content,
+					})
+				: brief;
+		assertBriefMatchesSnapshot(productionBrief, snapshot);
+		return { brief: productionBrief, metrics: metrics.snapshot() };
 	}
 
 	async executeMediaAndSelect(
@@ -506,9 +531,22 @@ export class UnifiedHarnessStagePorts
 		const settings = await this.requireNoteSettings().read();
 		const notePageBound = requireNotePageBound(input.request);
 		const viralContext = await this.resolveViralAdaptPlanContext(input);
-		const compiler = this.noteCompiler(input, undefined, viralContext);
+		const styleAnalysis = await this.analyzeStyleReferences(input);
+		const stylePipeline = styleAnalysis
+			? consumeStyleAnalysisForImagePipeline(
+					styleAnalysis,
+					input.request.prompts?.xhsOutline?.content,
+				)
+			: undefined;
+		const compiler = this.noteCompiler(
+			input,
+			undefined,
+			viralContext,
+			styleAnalysis,
+		);
 		return {
 			kind: "image_text_note",
+			...(styleAnalysis ? { styleAnalysis } : {}),
 			candidates: await compiler.compileDrafts({
 				intent: input.declaration.normalizedIntent,
 				factRefs: [...(input.allowedFactRefs ?? [])],
@@ -517,6 +555,14 @@ export class UnifiedHarnessStagePorts
 				),
 				styles: settings.styles,
 				notePageBound,
+				...(stylePipeline
+					? {
+							styleAnalysisBlock: stylePipeline.styleAnalysisBlock,
+							styleAnalysisOutlinePrompt: stylePipeline.outlinePrompt,
+							consistencyRequirements:
+								stylePipeline.consistencyRequirements,
+						}
+					: {}),
 			}),
 		};
 	}
@@ -531,6 +577,8 @@ export class UnifiedHarnessStagePorts
 		const selected = await this.noteCompiler(
 			input,
 			enhancementJudge,
+			undefined,
+			input.brief.styleAnalysis,
 		).selectAndGenerate({
 			candidates: input.brief.candidates,
 			selectedStyleId: input.selectedStyleId,
@@ -726,6 +774,42 @@ export class UnifiedHarnessStagePorts
 		return this.contentPackages.write(revision);
 	}
 
+	private async analyzeStyleReferences(
+		input: Parameters<HarnessNoteStagePorts["compileNoteBrief"]>[0],
+	): Promise<StyleAnalysisResult | undefined> {
+		const styleAssets = requireSnapshot(input.request).sources.assets.filter(
+			(asset) => asset.role === "style",
+		);
+		if (styleAssets.length === 0) return undefined;
+		const result = await this.structuredRunner(
+			input.request,
+			"brief_compilation",
+		).run({
+			effectIdempotencyKey: `wf:${input.workflowId}:xhs:style-analysis`,
+			schemaName: "harness_xhs_style_analysis_v1",
+			schemaRevision: "xhs-style-analysis-v1",
+			instructions: materializeStyleAnalysisSystemPrompt(
+				input.request.prompts?.xhsStyleAnalysis?.content,
+			),
+			prompt: JSON.stringify({
+				intent: input.declaration.normalizedIntent,
+				referenceAssetIds: styleAssets.map(({ id }) => id),
+			}),
+			inputAssets: styleAssets.map(({ id }) => ({
+				assetId: id,
+				role: "reference_image" as const,
+			})),
+			schema: styleAnalysisModelOutputSchema,
+		});
+		const analysis = parseStyleAnalysisOutput(result.output.raw);
+		if (!analysis) {
+			throw new Error(
+				"Reference style analysis did not return all seven dimensions.",
+			);
+		}
+		return analysis;
+	}
+
 	private requireNoteSettings() {
 		if (!this.noteSettings) {
 			throw new Error("Image-text note settings are unavailable.");
@@ -815,6 +899,7 @@ export class UnifiedHarnessStagePorts
 		},
 		enhancementJudge?: NotePlanEnhancementJudgeState,
 		viralContext?: ViralAdaptPlanContext,
+		styleAnalysis?: StyleAnalysisResult,
 	) {
 		const snapshot = requireSnapshot(input.request);
 		const isXhsNote = snapshot.contentPackagePlatform === "xiaohongshu";
@@ -877,7 +962,12 @@ export class UnifiedHarnessStagePorts
 						},
 						() =>
 							this.media.execute({
-								brief: notePageImageBrief(page, snapshot, evaluationReason),
+								brief: notePageImageBrief(
+									page,
+									snapshot,
+									evaluationReason,
+									styleAnalysis,
+								),
 								context: input.context,
 								request: input.request,
 								workflowId: pageWorkflowId,
@@ -972,19 +1062,50 @@ export class UnifiedHarnessStagePorts
 	}
 }
 
+function applyAiCoverToImageBrief(input: {
+	brief: Extract<ExecutionBrief, { kind: "image" }>;
+	cover: Parameters<typeof compileAiCoverImageParameters>[0] & { size: string };
+	template?: string;
+	userPrompt: string;
+}): Extract<ExecutionBrief, { kind: "image" }> {
+	const materialized = materializeXhsCoverPrompt({
+		userPrompt: input.userPrompt,
+		style: input.cover.style,
+		aspectRatio: input.cover.aspectRatio,
+		...(input.template ? { template: input.template } : {}),
+	});
+	if (materialized.size !== input.cover.size) {
+		throw new Error("AI cover signed size does not match its aspect ratio.");
+	}
+	const parameters = compileAiCoverImageParameters(input.cover);
+	return {
+		...input.brief,
+		prompt: materialized.prompt,
+		parameters: {
+			ratio: parameters.ratio,
+			resolution: parameters.resolution,
+		},
+	};
+}
+
 function notePageImageBrief(
 	page: NotePlan["pages"][number],
 	snapshot: NonNullable<HarnessWorkflowInput["executionSnapshot"]>,
 	evaluationReason?: string,
+	styleAnalysis?: StyleAnalysisResult,
 ): Extract<ExecutionBrief, { kind: "image" }> {
 	const aspectRatio = snapshot.deliverable.aspectRatio ?? "3:4";
+	const stylePipeline = styleAnalysis
+		? consumeStyleAnalysisForImagePipeline(styleAnalysis)
+		: undefined;
 	return {
 		kind: "image",
 		intent: page.imageIntent,
 		prompt:
 			`为图文笔记第 ${page.order} 页生成配图：${page.imageIntent.purpose}。` +
 			`图文必须围绕“${page.textBlock.title}”一致表达。` +
-			(evaluationReason ? `本次回炉需要修正：${evaluationReason}` : ""),
+			(evaluationReason ? `本次回炉需要修正：${evaluationReason}` : "") +
+			(stylePipeline?.styleAnalysisBlock ?? ""),
 		referenceAssetIds: page.imageIntent.references.map(
 			({ assetId }) => assetId,
 		),
@@ -992,7 +1113,10 @@ function notePageImageBrief(
 			ratio: aspectRatio,
 			resolution: "2048",
 		},
-		constraints: ["不得改写精确文字，不得使用未授权素材"],
+		constraints: [
+			"不得改写精确文字，不得使用未授权素材",
+			...(stylePipeline?.consistencyRequirements ?? []),
+		],
 	};
 }
 
@@ -3164,6 +3288,9 @@ function mediaSubmission(
 		brief.kind === "image"
 			? compileImageIntentForProfile(brief.intent, imageProfile)
 			: undefined;
+	const aiCoverSize = snapshot.signedSubmission?.aiCover
+		? mapXhsCoverSize(snapshot.signedSubmission.aiCover.aspectRatio)
+		: undefined;
 	return {
 		actorId: request.actorId,
 		...(snapshot.lens === "image_text_note"
@@ -3180,6 +3307,9 @@ function mediaSubmission(
 			brief.kind === "image"
 				? {
 						inputAssets: compiledImage!.inputAssets,
+						...(aiCoverSize
+							? { width: aiCoverSize.width, height: aiCoverSize.height }
+							: {}),
 						ratio: brief.parameters.ratio,
 						resolution: brief.parameters.resolution,
 					}

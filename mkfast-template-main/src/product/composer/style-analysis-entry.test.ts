@@ -7,6 +7,7 @@ import {
   detectStyleAnalysisMention,
   projectStyleAnalysisEntry,
   projectStyleAnalysisMentionNotice,
+  submissionRoleForStyleReference,
   toggleStyleReferenceAsset,
 } from './style-analysis-entry';
 
@@ -37,6 +38,17 @@ test('toggle style reference is idempotent per asset', () => {
   assert.deepEqual(twice, []);
   const other = toggleStyleReferenceAsset(once, 'asset-2');
   assert.deepEqual(other, ['asset-1', 'asset-2']);
+});
+
+test('selected style references use the production submission role', () => {
+  assert.equal(
+    submissionRoleForStyleReference('asset-1', ['asset-1']),
+    'style'
+  );
+  assert.equal(
+    submissionRoleForStyleReference('asset-2', ['asset-1']),
+    'reference'
+  );
 });
 
 test('detect @素材 mention and honest pending notice without asset', () => {

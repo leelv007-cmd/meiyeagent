@@ -25,6 +25,9 @@ export interface NotePlanStructuredPort {
     intent: string;
     factRefs: string[];
     rightsRefs: string[];
+    styleAnalysisBlock?: string;
+    styleAnalysisOutlinePrompt?: string;
+    consistencyRequirements?: string[];
   }): Promise<NotePlan>;
   draftPage(input: {
     page: NotePlan['pages'][number];
@@ -153,6 +156,9 @@ export class NotePlanCompiler {
     rightsRefs: string[];
     styles?: NoteStyleConfig;
     notePageBound: number;
+    styleAnalysisBlock?: string;
+    styleAnalysisOutlinePrompt?: string;
+    consistencyRequirements?: string[];
   }) {
     const styles = noteStyleConfigSchema.parse(
       input.styles ?? DEFAULT_NOTE_STYLES,
@@ -162,6 +168,15 @@ export class NotePlanCompiler {
         intent: input.intent,
         factRefs: input.factRefs,
         rightsRefs: input.rightsRefs,
+        ...(input.styleAnalysisBlock
+          ? { styleAnalysisBlock: input.styleAnalysisBlock }
+          : {}),
+        ...(input.styleAnalysisOutlinePrompt
+          ? { styleAnalysisOutlinePrompt: input.styleAnalysisOutlinePrompt }
+          : {}),
+        ...(input.consistencyRequirements?.length
+          ? { consistencyRequirements: input.consistencyRequirements }
+          : {}),
       }),
     );
     assertNotePlanFactReferences(basePlan, input.factRefs);

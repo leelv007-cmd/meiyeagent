@@ -85,7 +85,6 @@ import type {
 	HarnessContextSnapshot,
 	HarnessStagePorts,
 } from "./workflow-core.js";
-
 test("unified stages forward bounded copy selection to the production copy port", async () => {
 	const copy = unsupportedCopyPorts();
 	const input = {
@@ -1296,6 +1295,139 @@ test("unified structured generation revalidates execution assembly before every 
 	assert.equal(providerAttempts, 1);
 });
 
+test("AI cover signed choices reach the production image generation brief", async () => {
+	const baseRequest = harnessInputWithExecutionAssembly(
+		"image",
+		"package-ai-cover",
+		"image.generate",
+		0,
+	);
+	const snapshot = creationExecutionSnapshotSchema.parse({
+		...baseRequest.executionSnapshot,
+		creationMode: "free",
+		operation: "image.generate",
+		platform: { id: "xiaohongshu" },
+		contentPackagePlatform: "xiaohongshu",
+		deliverable: { kind: "poster", quantity: 1, aspectRatio: "9:16" },
+		recipe: {
+			id: "recipe.promotion_poster",
+			revision: "recipe-promotion-poster-r1",
+		},
+		signedSubmission: {
+			creationMode: "free",
+			intent: "为夏日护理项目生成小红书封面",
+			imageOperation: "image.generate",
+			catalogModel: baseRequest.executionSnapshot!.catalogModel,
+			recipe: {
+				id: "recipe.promotion_poster",
+				revision: "recipe-promotion-poster-r1",
+			},
+			contentPackagePlatform: "xiaohongshu",
+			distributionTarget: "export",
+			deliverable: { kind: "poster", quantity: 1, aspectRatio: "9:16" },
+			aiCover: {
+				aspectRatio: "9:16",
+				style: "beauty_editorial",
+				size: "1440x2560",
+			},
+		},
+	});
+	const prompts = {
+		...baseRequest.prompts!,
+		xhsCoverPrompt: {
+			...baseRequest.prompts!.xhsCoverPrompt!,
+			content: HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt,
+			contentHash: createHash("sha256")
+				.update(HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt)
+				.digest("hex"),
+		},
+	};
+	const promptRevisionRefs = promptRevisionReferences(prompts);
+	const request: HarnessWorkflowInput = {
+		...baseRequest,
+		creationMode: "free",
+		executionSnapshot: snapshot,
+		prompts,
+		promptRevisionRefs,
+		executionAssembly: {
+			...baseRequest.executionAssembly!,
+			promptRevisionRefs,
+		},
+	};
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		{
+			create() {
+				return {
+					async run<Output>(structured: StructuredNodeRunnerRequest<Output>) {
+						return {
+							output: structured.schema.parse(
+								imageBriefFor("image.generate", 0),
+							),
+							attempts: 1,
+							providerTaskRef: "ai-cover-brief-provider",
+							replayed: false,
+							usage: { inputTokens: 1, outputTokens: 1 },
+						};
+					},
+				};
+			},
+		},
+		undefined as never,
+		new MemoryContentPackageRevisionWritePort(),
+		() => "2026-08-02T00:00:00.000Z",
+		undefined,
+		undefined,
+		notBilledExecutionChildObservability(),
+	);
+
+	const { brief } = await ports.compileMediaBrief({
+		workflowId: snapshot.task.id,
+		request,
+		declaration: {
+			normalizedIntent: "为夏日护理项目生成小红书封面",
+			taskType: "daily_service_exposure",
+			deliveryLayer: "finished_media",
+			relevantAssetCategories: ["product_service"],
+			usedAssetCategories: ["product_service"],
+			route: "customized",
+			routingSource: "model",
+			implicitConstraints: [],
+		},
+		context: contextSnapshot(),
+	});
+
+	assert.equal(brief.kind, "image");
+	if (brief.kind !== "image") assert.fail("Expected an image brief.");
+	assert.deepEqual(brief.parameters, {
+		ratio: "9:16",
+		resolution: "1440x2560",
+	});
+	assert.match(brief.prompt, /beauty_editorial/u);
+	assert.match(brief.prompt, /1440x2560/u);
+
+	const submissions: ModelSupplySubmission[] = [];
+	const media = new ModelSupplyHarnessMediaExecutionPort({
+		async submit(submission) {
+			submissions.push(structuredClone(submission));
+			return completedResult("image");
+		},
+	});
+	await media.execute({
+		brief,
+		context: contextSnapshot(),
+		request,
+		workflowId: snapshot.task.id,
+	});
+	assert.deepEqual(
+		{
+			width: submissions[0]?.input?.width,
+			height: submissions[0]?.input?.height,
+		},
+		{ width: 1440, height: 2560 },
+	);
+});
+
 test("media queue submission stops before the provider when durable rights are withdrawn", async () => {
 	let submissions = 0;
 	const adapter = new ModelSupplyHarnessMediaExecutionPort({
@@ -2435,6 +2567,127 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		"the page that came out right is left alone",
 	);
 	assert.match(partialPages.at(-1) ?? "", /还没对上/u);
+});
+
+test("a style-role source is analyzed and consumed by production note image briefs", async () => {
+	const baseRequest = harnessInputWithExecutionAssembly(
+		"image_text_note",
+		"package-note-style-reference",
+	);
+	const styleAsset = {
+		id: "style-asset-1",
+		revision: "style-asset-r1",
+		role: "style" as const,
+	};
+	const snapshot = creationExecutionSnapshotSchema.parse({
+		...baseRequest.executionSnapshot,
+		sources: { assets: [styleAsset] },
+	});
+	const request: HarnessWorkflowInput = {
+		...baseRequest,
+		executionSnapshot: snapshot,
+		intent: {
+			...baseRequest.intent,
+			assetReferences: [styleAsset.id],
+		},
+	};
+	const observedRequests: StructuredNodeRunnerRequest<unknown>[] = [];
+	const generatedBriefs: Extract<ExecutionBrief, { kind: "image" }>[] = [];
+	let generation = 0;
+	const ports = new UnifiedHarnessStagePorts(
+		noteCopyPorts(),
+		noteRunnerFactory(false, observedRequests),
+		{
+			async execute(input) {
+				generatedBriefs.push(input.brief as Extract<ExecutionBrief, { kind: "image" }>);
+				generation += 1;
+				const selection = completedResult("image", String(generation));
+				return {
+					asset: selection.asset!,
+					childRun: {
+						assetIds: [selection.asset!.id],
+						runId: `run-note-style-${generation}`,
+						runType: "model_job",
+						status: "succeeded",
+					},
+					kind: "image",
+					trace: {
+						stage: "execution_selection",
+						winnerCandidateId: selection.asset!.id,
+						candidateScores: [],
+						blockedCandidates: [],
+						rubricVersion: "image-v1",
+						rubricHash: "a".repeat(64),
+					},
+				};
+			},
+		},
+		new MemoryContentPackageRevisionWritePort(),
+		() => "2026-08-02T00:00:00.000Z",
+		{
+			async read() {
+				return {
+					styles: {
+						styles: [
+							{
+								id: "facts",
+								name: "干货版",
+								writingGuide: "清楚说明",
+								structureTemplate: "结论、依据、行动",
+								platforms: ["xiaohongshu" as const],
+							},
+						],
+					},
+				};
+			},
+		},
+		unconfiguredNotePlanEnhancementJudgeResolver,
+		notBilledExecutionChildObservability(),
+	);
+	const declaration = {
+		normalizedIntent: "介绍夏日护理项目",
+		taskType: "daily_service_exposure" as const,
+		deliveryLayer: "finished_media" as const,
+		relevantAssetCategories: ["product_service" as const],
+		usedAssetCategories: ["product_service" as const],
+		route: "customized" as const,
+		routingSource: "model" as const,
+		implicitConstraints: [],
+	};
+
+	const brief = await ports.compileNoteBrief({
+		workflowId: snapshot.task.id,
+		request,
+		declaration,
+		context: contextSnapshot(),
+	});
+	await ports.executeNoteAndSelect({
+		workflowId: snapshot.task.id,
+		request,
+		brief,
+		context: contextSnapshot(),
+		selectedStyleId: "facts",
+	});
+
+	const analysisRequest = observedRequests.find(
+		(candidate) => candidate.schemaName === "harness_xhs_style_analysis_v1",
+	);
+	assert.deepEqual(analysisRequest?.inputAssets, [
+		{ assetId: styleAsset.id, role: "reference_image" },
+	]);
+	const planRequest = observedRequests.find(
+		(candidate) => candidate.schemaName === "harness_note_plan_v1",
+	);
+	assert.match(planRequest?.prompt ?? "", /裸粉\+米白\+香槟金/u);
+	assert.equal(generatedBriefs.length, 2);
+	for (const generated of generatedBriefs) {
+		assert.match(generated.prompt, /风格参考（七维）/u);
+		assert.ok(
+			generated.constraints.some((constraint) =>
+				constraint.includes("配色保持一致：裸粉+米白+香槟金"),
+			),
+		);
+	}
 });
 
 test("production note assembly can disable an unavailable enhancement judge without bypassing canonical gates", async () => {
@@ -4561,15 +4814,34 @@ function noteCopyPorts(): HarnessStagePorts {
 
 function noteRunnerFactory(
 	conflictBeforeRegeneration = false,
+	observedRequests?: StructuredNodeRunnerRequest<unknown>[],
 ): HarnessStructuredNodeRunnerFactory {
 	return {
 		create() {
 			let consistencyAttempts = 0;
 			return {
 				async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
-					const payload = JSON.parse(request.prompt) as Record<string, unknown>;
+					observedRequests?.push(
+						request as StructuredNodeRunnerRequest<unknown>,
+					);
+					const payload = JSON.parse(request.prompt) as Record<
+						string,
+						unknown
+					>;
 					let output: unknown;
-					if (request.schemaName === "harness_note_plan_v1") {
+					if (request.schemaName === "harness_xhs_style_analysis_v1") {
+						output = {
+							raw: [
+								"画风：柔光实拍叠字",
+								"配色：裸粉+米白+香槟金",
+								"背景：纸感渐变",
+								"文字风格：粗体无衬线",
+								"装饰元素：轻边框",
+								"排版结构：居中封面",
+								"整体调性：干净专业",
+							].join("\n"),
+						};
+					} else if (request.schemaName === "harness_note_plan_v1") {
 						output = notePlanOutput();
 					} else if (request.schemaName === "harness_note_text_block_v1") {
 						const page = payload.page as {
