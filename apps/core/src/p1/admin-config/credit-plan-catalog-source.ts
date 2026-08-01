@@ -1,7 +1,7 @@
 import {
   CREDIT_PLAN_IDS,
-  DEFAULT_CREDIT_PLAN_CATALOG,
   type CreditAddOnOffer,
+  type CreditPlanCatalog,
   type CreditPlanOffer,
 } from '../credit-billing/credit-plan-catalog.js';
 
@@ -38,22 +38,13 @@ export class AdminConfigCreditPlanCatalogSource {
       ]);
     const configured = { trial, starter, growth, pro } as const;
     return {
-      plans: DEFAULT_CREDIT_PLAN_CATALOG.plans.map((fallback) => ({
-        ...fallback,
-        ...(configured[fallback.id]?.value as
-          | Omit<CreditPlanOffer, 'id'>
-          | undefined),
-        id: fallback.id,
-      })),
-      addOns: structuredClone(
-        (addOns?.value as CreditAddOnOffer[] | undefined) ??
-          DEFAULT_CREDIT_PLAN_CATALOG.addOns,
-      ),
-      trialEnabled:
-        typeof trialEnabled?.value === 'boolean'
-          ? trialEnabled.value
-          : DEFAULT_CREDIT_PLAN_CATALOG.trialEnabled,
-    };
+      plans: CREDIT_PLAN_IDS.map((id) => creditPlanFromConfig(
+        id,
+        configured[id]?.value,
+      )),
+      addOns: creditAddOnsFromConfig(addOns?.value),
+      trialEnabled: creditTrialEnabledFromConfig(trialEnabled?.value),
+    } satisfies CreditPlanCatalog;
   }
 
   async planFor(id: (typeof CREDIT_PLAN_IDS)[number]) {
@@ -62,4 +53,54 @@ export class AdminConfigCreditPlanCatalogSource {
     if (!plan) throw new Error(`Credit plan ${id} is not configured.`);
     return plan;
   }
+}
+
+function creditPlanFromConfig(
+  id: (typeof CREDIT_PLAN_IDS)[number],
+  value: unknown,
+): CreditPlanOffer {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw missingCreditPlanConfig();
+  }
+  const plan = value as Omit<CreditPlanOffer, 'id'>;
+  if (
+    !positiveInteger(plan.credits) ||
+    !positiveInteger(plan.storageMb) ||
+    !positiveInteger(plan.concurrencyLimit) ||
+    !positiveInteger(plan.queuePriority) ||
+    (plan.supportLabel !== 'standard' && plan.supportLabel !== 'priority')
+  ) {
+    throw missingCreditPlanConfig();
+  }
+  return { ...plan, id };
+}
+
+function creditAddOnsFromConfig(value: unknown): CreditAddOnOffer[] {
+  if (!Array.isArray(value)) throw missingCreditPlanConfig();
+  const addOns = value as CreditAddOnOffer[];
+  if (!addOns.every((offer) =>
+    typeof offer.id === 'string' &&
+    offer.id.trim().length > 0 &&
+    positiveInteger(offer.credits) &&
+    Number.isSafeInteger(offer.amountMicros) &&
+    offer.amountMicros >= 0 &&
+    /^[A-Z]{3}$/u.test(offer.currency) &&
+    positiveInteger(offer.expireDays),
+  )) {
+    throw missingCreditPlanConfig();
+  }
+  return structuredClone(addOns);
+}
+
+function creditTrialEnabledFromConfig(value: unknown) {
+  if (typeof value !== 'boolean') throw missingCreditPlanConfig();
+  return value;
+}
+
+function positiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function missingCreditPlanConfig() {
+  return new Error('Published credit plan configuration is incomplete or invalid.');
 }

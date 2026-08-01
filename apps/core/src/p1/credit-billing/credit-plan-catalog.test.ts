@@ -16,23 +16,21 @@ test('job runtime registers every publishable credit plan concurrency tier', () 
     Array.from({ length: MAX_CREDIT_PLAN_CONCURRENCY }, (_, index) => index + 1));
 });
 
-test('plan.credits is the only operator override source for plan and package credits', async () => {
+test('plan.credits is the only published source for plan and package credits', async () => {
   const reads: string[] = [];
+  const values = new Map<string, unknown>(
+    DEFAULT_CREDIT_PLAN_CATALOG.plans.map(({ id, ...plan }) => [
+      `plan.credits.${id}`,
+      id === 'growth' ? { ...plan, credits: 1_500 } : plan,
+    ] as const),
+  );
+  values.set('plan.credits.addons', DEFAULT_CREDIT_PLAN_CATALOG.addOns);
+  values.set('plan.credits.trial.enabled', true);
   const repository: CreditPlanConfigRepository = {
     async get(_scope, _workspaceId, key) {
       reads.push(key);
-      if (key === 'plan.credits.growth') {
-        return {
-          value: {
-            credits: 1_500,
-            storageMb: 5_120,
-            concurrencyLimit: 4,
-            queuePriority: 5,
-            supportLabel: 'priority',
-          },
-        };
-      }
-      return null;
+      const value = values.get(key);
+      return value === undefined ? null : { value };
     },
   };
 
@@ -49,6 +47,27 @@ test('plan.credits is the only operator override source for plan and package cre
   assert.equal(catalog.plans.find((plan) => plan.id === 'growth')?.credits, 1_500);
   assert.deepEqual(catalog.addOns, DEFAULT_CREDIT_PLAN_CATALOG.addOns);
   assert.equal(catalog.trialEnabled, true);
+});
+
+test('an empty or partial plan.credits publication fails closed', async () => {
+  const source = new AdminConfigCreditPlanCatalogSource({
+    async get(_scope, _workspaceId, key) {
+      if (key === 'plan.credits.growth') {
+        return {
+          value: {
+            credits: 1_300,
+            storageMb: 5_120,
+            concurrencyLimit: 4,
+            queuePriority: 5,
+            supportLabel: 'priority',
+          },
+        };
+      }
+      return null;
+    },
+  });
+
+  await assert.rejects(source.get(), /published credit plan configuration/i);
 });
 
 test('credit plan seeds match the approved trial, subscription and seven-day package values', () => {
