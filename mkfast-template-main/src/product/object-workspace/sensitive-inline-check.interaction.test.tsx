@@ -180,6 +180,42 @@ describe('note object workspace sensitive inline check', () => {
     expect(document.querySelector('.sensitive-word-highlight')).toBeNull();
   });
 
+  it('preserves consecutive empty paragraphs while replacing a later UTF-16 sensitive anchor', async () => {
+    const body = '前😀段\n换行。\n\n\n\n后段根治与护理。';
+    const onFieldChange = vi.fn();
+    boundedQueryP1.mockResolvedValueOnce(scanFor(body));
+    render(
+      <CopyImageTextWorksurface
+        facts={{
+          ...baseFacts,
+          document: { ...baseFacts.document, body },
+        }}
+        presentation="note_document"
+        onFieldChange={onFieldChange}
+      />
+    );
+
+    const paragraphs = screen
+      .getByTestId('copy-field-body')
+      .querySelectorAll('p');
+    expect(paragraphs).toHaveLength(3);
+    await advanceDebounce();
+    expect(
+      document.querySelector('.sensitive-word-highlight')
+    ).toHaveTextContent('根治');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: '将“根治”替换为“明显改善”' })
+    );
+    await act(async () => {});
+    expect(onFieldChange).toHaveBeenLastCalledWith(
+      'body',
+      '前😀段\n换行。\n\n\n\n后段明显改善与护理。'
+    );
+    expect(paragraphs[1]?.textContent).toBe('');
+    expect(paragraphs[2]).toHaveTextContent('后段明显改善与护理。');
+  });
+
   it('maps a second-paragraph emoji-prefixed Tiptap selection to the exact #322 anchor', async () => {
     const body = '首段😀护理。\n\n第二段根治色斑。';
     const onAdjust = vi.fn().mockResolvedValue(undefined);

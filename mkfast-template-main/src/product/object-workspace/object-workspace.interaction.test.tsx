@@ -152,6 +152,48 @@ describe('object workspace shell + selection AI', () => {
     );
   });
 
+  it('keeps the exact UTF-16 selection anchor after hard breaks and consecutive empty paragraphs', async () => {
+    const body = '前😀段\n换行。\n\n\n\n后段根治与护理。';
+    const onAdjust = vi.fn().mockResolvedValue(undefined);
+    render(
+      <CopyImageTextWorksurface
+        facts={{
+          ...facts,
+          document: { ...facts.document, body },
+        }}
+        onAdjust={onAdjust}
+      />
+    );
+    supportTiptapSelectionGeometry();
+
+    const editor = screen.getByTestId('copy-field-body');
+    const paragraphs = editor.querySelectorAll('p');
+    expect(paragraphs).toHaveLength(3);
+    const textNode = paragraphs[2]?.firstChild;
+    expect(textNode).toBeInstanceOf(Text);
+    const range = document.createRange();
+    range.setStart(textNode as Text, 2);
+    range.setEnd(textNode as Text, 4);
+    editor.focus();
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    fireEvent(document, new Event('selectionchange'));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('object-workspace-selection-ai-scope')
+      ).toHaveTextContent('已选中 2 个字')
+    );
+
+    fireEvent.click(screen.getByTestId('selection-ai-rewrite'));
+    await waitFor(() => expect(onAdjust).toHaveBeenCalledTimes(1));
+    expect(onAdjust.mock.calls[0]?.[1]).toMatchObject({
+      end: 16,
+      selectedText: '根治',
+      start: 14,
+    });
+  });
+
   it('routes custom through an instruction step before preview', async () => {
     const user = userEvent.setup();
     const onAdjust = vi.fn().mockResolvedValue(undefined);

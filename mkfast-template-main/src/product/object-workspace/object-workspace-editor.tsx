@@ -234,7 +234,7 @@ function plainToDoc(text: string): string {
       .replace(/\n/g, '<br>');
   return text
     .split(OBJECT_WORKSPACE_BLOCK_SEPARATOR)
-    .map((paragraph) => `<p>${escapeInline(paragraph) || '<br>'}</p>`)
+    .map((paragraph) => `<p>${escapeInline(paragraph)}</p>`)
     .join('');
 }
 
