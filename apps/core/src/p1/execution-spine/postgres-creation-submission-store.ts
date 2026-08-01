@@ -147,6 +147,12 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
         `Product usage for task ${submission.task.id} has a different reservation identity.`,
       );
     }
+    await billing.bindMerchantExecutionInput({
+      inputSnapshot: creationSubmissionMerchantInput(submission),
+      quoteRevision: quote.revision,
+      taskId: submission.task.id,
+      workspaceId: snapshot.workspaceId,
+    });
     if (credits !== undefined && creditLedger) {
       await creditLedger.consumeWithClient(client, {
         workspaceId: snapshot.workspaceId,
@@ -992,4 +998,20 @@ async function databaseNow(client: PoolClient) {
 
 function contentPackageKind(lens: CreationSubmissionRecord["snapshot"]["lens"]) {
   return lens === "video" ? "video" : "image_text";
+}
+
+function creationSubmissionMerchantInput(
+  submission: CreationSubmissionRecord,
+) {
+  const snapshot = submission.snapshot;
+  return {
+    input: {
+      inputAssets: snapshot.sources.assets.map((asset) => ({
+        assetId: asset.id,
+        role: asset.role,
+      })),
+      referenceAssetIds: snapshot.sources.assets.map((asset) => asset.id),
+    },
+    prompt: snapshot.intent.text,
+  };
 }

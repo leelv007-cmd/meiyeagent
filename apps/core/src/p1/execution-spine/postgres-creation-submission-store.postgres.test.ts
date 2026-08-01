@@ -5,7 +5,10 @@ import test from "node:test";
 import type { ContentPackage } from "@meiye/contracts";
 import { Pool } from "pg";
 
-import { DurableProductBillingService } from "../product-billing/durable-service.js";
+import {
+  DurableProductBillingService,
+  merchantExecutionInputHashes,
+} from "../product-billing/durable-service.js";
 import { PostgresProductBillingRepository } from "../product-billing/postgres-repository.js";
 import { OperationsApplicationService } from "../operations/application-service.js";
 import { OperationsFoundationModule } from "../operations/foundation-module.js";
@@ -26,6 +29,10 @@ import {
 } from "./submission-coordinator.js";
 import { toHarnessWorkflowInput } from "./creation-stage-port.js";
 import { buildSemanticDecisionResumption } from "../harness/semantic-decision-resumption.js";
+import {
+  nameHarnessIntent,
+  type StructuredNodeRunnerRequest,
+} from "../harness/structured-nodes.js";
 import { PostgresGrantLotLedger } from "../foundation/postgres-grant-lot.js";
 import { GrantLotAwareProductEntitlementService } from "../foundation/grant-lot-entitlement-service.js";
 import { MemoryFoundationRepository } from "../foundation/memory-repository.js";
@@ -1535,6 +1542,196 @@ test(
       }
     } finally {
       await cleanup(pool, workspaceId, submissions[0]!).catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "Postgres production assembly binds the signed root before auxiliary and final merchant effects",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
+      ),
+    );
+    const suffix = randomUUID();
+    const workspaceId = `spine-assembly-binding-${suffix}`;
+    const quoteId = `spine-assembly-quote-${suffix}`;
+    const submission = reserveRecord(workspaceId, quoteId, suffix);
+    const billing = new DurableProductBillingService(billingRepository);
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      await store.applySchema();
+      const quote = await billing.buildQuote({
+        billingMode: "per_request",
+        catalogModelId: "copy-model-1",
+        catalogModelRevision: "catalog-r1",
+        operation: "copy.generate",
+        outputCount: 1,
+        quoteId,
+        quotePolicyRevision: "quote-policy-1",
+        submissionContractHash: `signed-submission-${suffix}`,
+        unitRate: 1,
+        workspaceId,
+      });
+      const confirmed = await billing.confirm({
+        quoteId,
+        taskId: submission.task.id,
+        workspaceId,
+      });
+      submission.snapshot = createSnapshot({
+        quoteId,
+        quoteRevision: confirmed.revision,
+        submission,
+        workspaceId,
+      });
+      const signedRoot = {
+        input: {
+          inputAssets: submission.snapshot.sources.assets.map((asset) => ({
+            assetId: asset.id,
+            role: asset.role,
+          })),
+          referenceAssetIds: submission.snapshot.sources.assets.map(
+            (asset) => asset.id,
+          ),
+        },
+        prompt: submission.snapshot.intent.text,
+      };
+
+      await assert.rejects(
+        billing.readMerchantExecutionContract({
+          taskId: submission.task.id,
+          workspaceId,
+        }),
+        /complete reserved credit quote contract/u,
+      );
+      assert.equal(
+        (
+          await store.claim({
+            idempotencyKey: `assembly-submit-${suffix}`,
+            payloadHash: `assembly-payload-${suffix}`,
+            submission,
+            workspaceId,
+          })
+        ).kind,
+        "created",
+      );
+
+      const contract = await billing.readMerchantExecutionContract({
+        taskId: submission.task.id,
+        workspaceId,
+      });
+      const signedHashes = merchantExecutionInputHashes(signedRoot);
+      assert.deepEqual(
+        {
+          inputAssetsHash: contract.submissionInputAssetsHash,
+          promptHash: contract.submissionPromptHash,
+          referenceAssetsHash: contract.submissionReferenceAssetsHash,
+        },
+        signedHashes,
+      );
+
+      const executionOrder: string[] = [];
+      const named = await nameHarnessIntent(
+        {
+          workflowId: submission.task.id,
+          workflowRevision: submission.snapshot.revision,
+          creationMode: submission.snapshot.creationMode,
+          intent: {
+            assetReferences: submission.snapshot.sources.assets.map(
+              (asset) => asset.id,
+            ),
+            context: {
+              intent: submission.snapshot.intent.text,
+              sourceSummaries: [],
+              workId: submission.work.id,
+            },
+          },
+        },
+        {
+          async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
+            const inputSnapshot = { input: null, prompt: request.prompt };
+            const auxiliaryClaim = {
+              ...contract,
+              ...merchantExecutionInputHashes(inputSnapshot),
+              effectKey: `merchant-execution:${submission.task.id}:nameHarnessIntent`,
+              idempotencyKey: `merchant-execution:${submission.task.id}:nameHarnessIntent`,
+              inputSnapshot,
+              providerCatalogModelId: "controller-model-1",
+              providerOperation: "text.respond" as const,
+              taskId: submission.task.id,
+              workspaceId,
+            };
+            assert.equal(
+              (await billing.claimMerchantExecution(auxiliaryClaim)).decision,
+              "execute",
+            );
+            executionOrder.push(request.schemaName);
+            await billing.completeMerchantExecution({
+              ...auxiliaryClaim,
+              result: { status: "completed" },
+            });
+            return {
+              attempts: 1,
+              output: request.schema.parse({
+                blockingGap: null,
+                deliveryLayer: "copy",
+                implicitConstraints: [],
+                normalizedIntent: submission.snapshot.intent.text,
+                relevantAssetCategories: ["store"],
+                route: "customized",
+                taskType: "daily_service_exposure",
+                usedAssetCategories: ["store"],
+              }),
+              providerTaskRef: `provider-${submission.task.id}`,
+              replayed: false,
+              usage: { inputTokens: 10, outputTokens: 20 },
+            };
+          },
+        },
+      );
+      assert.equal(named.declaration.normalizedIntent, signedRoot.prompt);
+
+      const finalClaim = {
+        ...contract,
+        ...signedHashes,
+        effectKey: `merchant-execution:${submission.task.id}`,
+        idempotencyKey: `merchant-execution:${submission.task.id}`,
+        inputSnapshot: signedRoot,
+        providerCatalogModelId: contract.catalogModelId,
+        providerOperation: "copy.generate" as const,
+        taskId: submission.task.id,
+        workspaceId,
+      };
+      assert.equal(
+        (await billing.claimMerchantExecution(finalClaim)).decision,
+        "execute",
+      );
+      executionOrder.push("final-provider-effect");
+      await billing.completeMerchantExecution({
+        ...finalClaim,
+        result: { status: "completed" },
+      });
+      assert.deepEqual(executionOrder, [
+        "harness_intent_naming_v1",
+        "final-provider-effect",
+      ]);
+    } finally {
+      await pool
+        .query(
+          "DELETE FROM p1_product_billing_merchant_executions WHERE workspace_id = $1",
+          [workspaceId],
+        )
+        .catch(() => undefined);
+      await cleanup(pool, workspaceId, submission).catch(() => undefined);
       await pool.end();
     }
   },
