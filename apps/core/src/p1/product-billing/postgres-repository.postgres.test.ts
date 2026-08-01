@@ -820,15 +820,11 @@ describe(
         outputLabel,
       } = acceptedQuote;
       const currency = acceptedQuote.formula.currency;
-      if (
-        !catalogModelRevision ||
-        confirmedAmount === undefined ||
-        outputCount === undefined ||
-        !outputLabel ||
-        !currency
-      ) {
-        throw new Error('Composer quote must provide a complete execution contract.');
-      }
+      assert.ok(catalogModelRevision);
+      assert.notEqual(confirmedAmount, undefined);
+      assert.notEqual(outputCount, undefined);
+      assert.ok(outputLabel);
+      assert.ok(currency);
       const result = await operations.submitCreativeWork(
         context,
         work.id,
@@ -839,9 +835,9 @@ describe(
           catalogRevision: catalogModelRevision,
           currency,
           dataClass: [],
-          estimatedAmount: confirmedAmount,
+          estimatedAmount: confirmedAmount!,
           operation: 'image.generate',
-          outputCount,
+          outputCount: outputCount!,
           outputLabel,
           quoteAcceptedAt: '2026-08-01T00:00:00.000Z',
           quoteRevision: quote.revision,
