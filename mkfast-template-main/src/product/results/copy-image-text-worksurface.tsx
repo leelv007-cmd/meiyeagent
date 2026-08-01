@@ -3,10 +3,18 @@
  *
  * Primary document face · on-demand alternatives · selection rewrite with
  * stable anchors · fact sources · platform preview · persistent "还想怎么改？".
+ *
+ * P2-10 / #322: body field is Tiptap inside the object-workspace shell;
+ * selection AI six actions share this surface for copy / note / image_text.
  */
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  ObjectWorkspaceEditor,
+  ObjectWorkspaceShell,
+  objectWorkspaceCarrierFromFacts,
+} from '@/product/object-workspace';
 import { useEffect, useState } from 'react';
 
 import { AdjustPrompt } from './adjust-prompt';
@@ -105,9 +113,17 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
     instruction: string;
     scope: 'selection' | 'whole_document';
   } | null>(null);
+  const [pendingInstructionAction, setPendingInstructionAction] =
+    useState<SelectionRewriteAction | null>(null);
+  const [instructionDraft, setInstructionDraft] = useState('');
   const [quickEditBusy, setQuickEditBusy] = useState<string | null>(null);
   const [quickEditError, setQuickEditError] = useState<string | undefined>();
   const quickEditCopy = quickEditText();
+  const shellCarrier = objectWorkspaceCarrierFromFacts({
+    orderedAssetCount: props.facts.document.orderedAssetIds.length,
+    workspaceKind:
+      props.facts.document.orderedAssetIds.length > 0 ? 'image' : 'copy',
+  });
   useEffect(() => {
     setDraft({
       body: view.document.body,
@@ -155,7 +171,18 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
           hint: '还没选中文字，将改写整篇文案；只想改一句的话，先在正文里选中它。',
         };
 
-  const runSelectionRewrite = (action: SelectionRewriteAction) => {
+  const runSelectionRewrite = (
+    action: SelectionRewriteAction,
+    instruction?: string
+  ) => {
+    // tone / custom need a free-text instruction before preview (selection AI).
+    const needsInstruction =
+      action === 'tone' || action === 'tone_shift' || action === 'custom';
+    if (needsInstruction && instruction === undefined) {
+      setPendingInstructionAction(action);
+      setInstructionDraft('');
+      return;
+    }
     const start = bodySelection?.start ?? 0;
     const end = bodySelection?.end ?? draft.body.length;
     const anchor = captureStableSelectionAnchor(draft.body, 'body', start, end);
@@ -174,6 +201,7 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
       currentFieldText: draft.body,
       action,
       anchor,
+      ...(instruction?.trim() ? { instruction: instruction.trim() } : {}),
     });
     props.onSelectionRewriteResolved?.(resolved);
     if (resolved.kind === 'conflict') {
@@ -182,6 +210,8 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
       return;
     }
     setSelectionConflict(null);
+    setPendingInstructionAction(null);
+    setInstructionDraft('');
     if (resolved.kind === 'ok') {
       // The diff the merchant decides on. Nothing is written until 就用这版 —
       // that button is what turns this into a QuickEditIntent.
@@ -219,6 +249,11 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
   };
 
   return (
+    <ObjectWorkspaceShell
+      carrier={shellCarrier}
+      title={draft.title || '成品精修'}
+      workId={props.facts.workId}
+    >
     <div className="space-y-4" data-testid="copy-image-text-worksurface">
       <section
         className="space-y-3 rounded-lg border p-4"
@@ -246,30 +281,30 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
             }}
           />
         </label>
-        <label className="block space-y-1 text-sm">
+        <div className="block space-y-1 text-sm">
           <span className="text-muted-foreground">正文</span>
-          <textarea
-            className="min-h-28 w-full max-w-prose rounded-md border bg-background px-3 py-2"
+          <ObjectWorkspaceEditor
             data-testid="copy-field-body"
             value={draft.body}
-            onChange={(event) => {
+            onChange={(value) => {
               setDraft((current) => ({
                 ...current,
-                body: event.target.value,
+                body: value,
               }));
-              props.onFieldChange?.('body', event.target.value);
+              props.onFieldChange?.('body', value);
             }}
-            onSelect={(event) => {
-              const target = event.currentTarget;
-              if (target.selectionStart !== target.selectionEnd) {
-                setBodySelection({
-                  start: target.selectionStart,
-                  end: target.selectionEnd,
-                });
+            onSelectionChange={(selection) => {
+              if (!selection || selection.end <= selection.start) {
+                setBodySelection(null);
+                return;
               }
+              setBodySelection({
+                start: selection.start,
+                end: Math.min(selection.end, draft.body.length || selection.end),
+              });
             }}
           />
-        </label>
+        </div>
         <label className="block space-y-1 text-sm">
           <span className="text-muted-foreground">转化语 / CTA</span>
           <input
@@ -353,9 +388,10 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
         <section
           className="space-y-2 rounded-lg border p-4"
           data-testid="copy-selection-rewrite"
+          data-object-workspace-selection-ai="true"
           data-rewrite-scope={rewriteScope.kind}
         >
-          <h3 className="text-sm font-medium">选区改写</h3>
+          <h3 className="text-sm font-medium">选区 AI</h3>
           {/*
             Without a selection the rewrite still runs — over the whole 正文.
             That is the useful default (「整篇再顺一遍」), and it is also the one
@@ -368,7 +404,12 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
           >
             {rewriteScope.hint}
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div
+            className="flex flex-wrap gap-2"
+            data-testid="object-workspace-selection-ai-actions"
+            role="toolbar"
+            aria-label="选区 AI 六动作"
+          >
             {view.selectionRewriteActions.map((item) => (
               <Button
                 key={item.action}
@@ -376,12 +417,74 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
                 size="sm"
                 variant="outline"
                 data-testid={`copy-rewrite-${item.action}`}
+                data-selection-ai-action={item.action}
+                {...(item.action === 'continue' ||
+                item.action === 'rewrite' ||
+                item.action === 'expand' ||
+                item.action === 'shorten' ||
+                item.action === 'tone' ||
+                item.action === 'custom'
+                  ? { 'data-primary-selection-ai': 'true' }
+                  : {})}
                 onClick={() => runSelectionRewrite(item.action)}
               >
                 {item.label}
               </Button>
             ))}
           </div>
+          {pendingInstructionAction ? (
+            <div
+              className="space-y-2 rounded-md border p-3"
+              data-testid="selection-ai-instruction-panel"
+              data-pending-action={pendingInstructionAction}
+            >
+              <label className="block space-y-1 text-sm">
+                <span className="text-muted-foreground">
+                  {pendingInstructionAction === 'custom'
+                    ? '自定义要求'
+                    : '想要的语气'}
+                </span>
+                <input
+                  className="w-full rounded-md border bg-background px-3 py-2"
+                  data-testid="selection-ai-instruction-input"
+                  value={instructionDraft}
+                  onChange={(event) => setInstructionDraft(event.target.value)}
+                  placeholder={
+                    pendingInstructionAction === 'custom'
+                      ? '例如：更口语、少用感叹号'
+                      : '专业温和的美容顾问口吻'
+                  }
+                />
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  data-testid="selection-ai-instruction-confirm"
+                  onClick={() =>
+                    runSelectionRewrite(
+                      pendingInstructionAction,
+                      instructionDraft
+                    )
+                  }
+                >
+                  生成预览
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  data-testid="selection-ai-instruction-cancel"
+                  onClick={() => {
+                    setPendingInstructionAction(null);
+                    setInstructionDraft('');
+                  }}
+                >
+                  取消
+                </Button>
+              </div>
+            </div>
+          ) : null}
           {rewritePreview ? (
             <div
               className="space-y-2 rounded-md border p-3"
@@ -719,5 +822,6 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
         {view.mobileDesktopGate}
       </span>
     </div>
+    </ObjectWorkspaceShell>
   );
 }

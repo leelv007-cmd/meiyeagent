@@ -63,23 +63,46 @@ export function applyCopyFieldEdit(
 // Selection rewrite (stable anchor · base drift · derived Task)
 // ---------------------------------------------------------------------------
 
+/**
+ * Selection rewrite / selection AI actions.
+ *
+ * P2-10 six-action bar: continue / rewrite / expand / shorten / tone / custom.
+ * Legacy promo chips stay available for QuickEdit shortcuts.
+ * `tone_shift` is an alias of `tone` kept for older call sites.
+ */
 export type SelectionRewriteAction =
+  | 'continue'
   | 'rewrite'
   | 'shorten'
   | 'expand'
+  | 'tone'
   | 'tone_shift'
+  | 'custom'
   | 'weaker_promo'
   | 'stronger_cta';
 
 export const SELECTION_REWRITE_LABELS: Record<SelectionRewriteAction, string> =
   {
-    rewrite: '改写选区',
-    shorten: '缩短',
+    continue: '续写',
+    rewrite: '改写',
+    shorten: '精简',
     expand: '扩写',
-    tone_shift: '换语气',
+    tone: '语气',
+    tone_shift: '语气',
+    custom: '自定义',
     weaker_promo: '弱促销',
     stronger_cta: '加强 CTA',
   };
+
+/** Primary selection-AI six (object workspace toolbar). */
+export const SELECTION_AI_PRIMARY_ACTIONS = [
+  'continue',
+  'rewrite',
+  'expand',
+  'shorten',
+  'tone',
+  'custom',
+] as const satisfies readonly SelectionRewriteAction[];
 
 export type SelectionRewriteRequest = {
   action: SelectionRewriteAction;
@@ -248,6 +271,8 @@ function applyRewriteAction(
   instruction?: string
 ): string {
   switch (action) {
+    case 'continue':
+      return `${before} 到店可再细聊适合你的护理方案。`;
     case 'shorten':
       return before.slice(0, Math.max(1, Math.floor(before.length * 0.6)));
     case 'expand':
@@ -261,10 +286,15 @@ function applyRewriteAction(
       );
     case 'stronger_cta':
       return `${before} 现在可预约到店咨询。`;
+    case 'tone':
     case 'tone_shift':
       return instruction?.trim()
         ? `【${instruction.trim()}】${before}`
         : `换个说法：${before}`;
+    case 'custom':
+      return instruction?.trim()
+        ? `${instruction.trim()}：${before}`
+        : `自定义调整：${before}`;
     case 'rewrite':
       return instruction?.trim() ? instruction.trim() : `改写：${before}`;
     default: {
@@ -821,8 +851,14 @@ export function projectCopyImageTextWorksurface(
       submitLabel: ADJUST_PROMPT_SUBMIT_LABEL,
       persistent: true,
     },
+    // Primary six for the selection-AI bar; promo chips stay available as
+    // secondary QuickEdit shortcuts when the full rewrite panel is shown.
     selectionRewriteActions: (
-      Object.keys(SELECTION_REWRITE_LABELS) as SelectionRewriteAction[]
+      [
+        ...SELECTION_AI_PRIMARY_ACTIONS,
+        'weaker_promo',
+        'stronger_cta',
+      ] as SelectionRewriteAction[]
     ).map((action) => ({
       action,
       label: SELECTION_REWRITE_LABELS[action],

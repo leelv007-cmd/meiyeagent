@@ -109,8 +109,18 @@ export function quickEditActionForSelectionRewrite(
       return 'promotion_weaker';
     case 'stronger_cta':
       return 'promotion_stronger';
-    default:
+    case 'continue':
+    case 'rewrite':
+    case 'shorten':
+    case 'expand':
+    case 'tone':
+    case 'tone_shift':
+    case 'custom':
       return 'natural_language';
+    default: {
+      const _exhaustive: never = action;
+      return _exhaustive;
+    }
   }
 }
 

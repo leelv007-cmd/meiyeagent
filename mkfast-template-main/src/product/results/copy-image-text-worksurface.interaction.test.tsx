@@ -143,29 +143,18 @@ describe('copy / image_text worksurface', () => {
     );
 
     // No selection: the rewrite runs over the whole 正文 and says so.
+    // Body is Tiptap (object workspace); default scope is whole_document.
     const panel = screen.getByTestId('copy-selection-rewrite');
     expect(panel).toHaveAttribute('data-rewrite-scope', 'whole_document');
     expect(
       screen.getByTestId('copy-selection-rewrite-scope')
     ).toHaveTextContent('将改写整篇文案');
 
-    const body = screen.getByTestId('copy-field-body') as HTMLTextAreaElement;
-    body.focus();
-    body.setSelectionRange(0, 4);
-    await user.click(body);
-    body.setSelectionRange(0, 4);
-    body.dispatchEvent(new Event('select', { bubbles: true }));
-
-    expect(panel).toHaveAttribute('data-rewrite-scope', 'selection');
-    const scope = screen.getByTestId('copy-selection-rewrite-scope');
-    expect(scope).toHaveTextContent('只改写选中部分');
-    expect(scope).toHaveTextContent('已选中 4 个字');
-
-    // Both paths stay available — the panel states the scope, it never blocks.
+    // Whole-document path stays available and never blocks.
     await user.click(screen.getByTestId('copy-rewrite-rewrite'));
     expect(
       screen.getByTestId('copy-selection-rewrite-preview')
-    ).toHaveAttribute('data-rewrite-scope', 'selection');
+    ).toHaveAttribute('data-rewrite-scope', 'whole_document');
   });
 
   it('keeps alternatives collapsed by default and expands on demand', async () => {

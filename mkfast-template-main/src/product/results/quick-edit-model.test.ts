@@ -27,12 +27,15 @@ describe('quick edit producer', () => {
     );
   });
 
-  it('carries an open-ended chip as natural language', () => {
+  it('carries open-ended selection AI chips as natural language', () => {
     for (const action of [
+      'continue',
       'rewrite',
       'shorten',
       'expand',
+      'tone',
       'tone_shift',
+      'custom',
     ] as const) {
       assert.equal(
         quickEditActionForSelectionRewrite(action),
