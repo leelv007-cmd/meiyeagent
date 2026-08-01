@@ -74,6 +74,18 @@ export interface CreditSubscriptionStore {
     coverageCycles: number;
     at: string;
   }): Promise<CreditSubscription>;
+  recordInitialPaidPeriod(input: {
+    subscriptionId: string;
+    periodStartsAt: string;
+    coverageCycles: number;
+    at: string;
+  }): Promise<CreditSubscription>;
+  latestPaidPeriodStartsAt(subscriptionId: string): Promise<string | null>;
+  replaceSubscription(input: {
+    sourceSubscriptionId: string;
+    targetSubscriptionId: string;
+    at: string;
+  }): Promise<CreditSubscription>;
   resume(subscriptionId: string, at: string): Promise<CreditSubscription>;
   markPastDue(subscriptionId: string, at: string): Promise<CreditSubscription>;
   cancelPastDue(subscriptionId: string, at: string): Promise<CreditSubscription>;
@@ -451,6 +463,7 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
   }) {
     const subscription = this.require(input.subscriptionId);
     const periodStartsAt = iso(input.periodStartsAt);
+    const at = iso(input.at);
     assertCoverageCycles(input.coverageCycles);
     if (subscription.status === 'cancelled') {
       throw new Error('Cancelled credit subscriptions cannot receive renewal coverage.');
@@ -464,14 +477,94 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
           'Credit subscription billing period has different coverage facts.',
         );
       }
+      return this.recordPaidCoverage(
+        input.subscriptionId,
+        subscription.paidThroughCycle,
+        at,
+      );
+    }
+    const latest = await this.latestPaidPeriodStartsAt(input.subscriptionId);
+    if (
+      periodStartsAt > at ||
+      (latest !== null && periodStartsAt < latest)
+    ) {
       return structuredClone(subscription);
     }
     this.paidPeriods.set(key, input.coverageCycles);
     return this.recordPaidCoverage(
       input.subscriptionId,
       subscription.paidThroughCycle + input.coverageCycles,
-      input.at,
+      at,
     );
+  }
+
+  async recordInitialPaidPeriod(input: {
+    subscriptionId: string;
+    periodStartsAt: string;
+    coverageCycles: number;
+    at: string;
+  }) {
+    const subscription = this.require(input.subscriptionId);
+    const periodStartsAt = iso(input.periodStartsAt);
+    assertCoverageCycles(input.coverageCycles);
+    const key = `${input.subscriptionId}\u0000${periodStartsAt}`;
+    const existingCoverage = this.paidPeriods.get(key);
+    if (
+      existingCoverage !== undefined &&
+      existingCoverage !== input.coverageCycles
+    ) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        'Credit subscription billing period has different coverage facts.',
+      );
+    }
+    this.paidPeriods.set(key, input.coverageCycles);
+    return structuredClone(subscription);
+  }
+
+  async latestPaidPeriodStartsAt(subscriptionId: string) {
+    const prefix = `${subscriptionId}\u0000`;
+    return [...this.paidPeriods.keys()]
+      .filter((key) => key.startsWith(prefix))
+      .map((key) => key.slice(prefix.length))
+      .sort()
+      .at(-1) ?? null;
+  }
+
+  async replaceSubscription(input: {
+    sourceSubscriptionId: string;
+    targetSubscriptionId: string;
+    at: string;
+  }) {
+    const source = this.require(input.sourceSubscriptionId);
+    if (this.subscriptions.has(input.targetSubscriptionId)) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        `Credit subscription ${input.targetSubscriptionId} already exists.`,
+      );
+    }
+    const at = iso(input.at);
+    source.status = 'cancelled';
+    source.pastDueAt = null;
+    source.cancelledAt = at;
+    source.updatedAt = at;
+    const replacement: CreditSubscription = {
+      ...structuredClone(source),
+      id: input.targetSubscriptionId,
+      status: 'active',
+      cancelledAt: null,
+      updatedAt: at,
+    };
+    this.subscriptions.set(replacement.id, replacement);
+    const sourcePrefix = `${input.sourceSubscriptionId}\u0000`;
+    for (const [key, coverage] of this.paidPeriods) {
+      if (!key.startsWith(sourcePrefix)) continue;
+      this.paidPeriods.set(
+        `${input.targetSubscriptionId}\u0000${key.slice(sourcePrefix.length)}`,
+        coverage,
+      );
+    }
+    return structuredClone(replacement);
   }
 
   async resume(subscriptionId: string, at: string) {
@@ -779,6 +872,14 @@ export class PostgresCreditSubscriptionStore
       throw new Error('Cancelled credit subscriptions cannot receive renewal coverage.');
     }
     const periodStartsAt = iso(input.periodStartsAt);
+    const at = iso(input.at);
+    const latest = await this.latestPaidPeriodStartsAt(input.subscriptionId);
+    if (
+      periodStartsAt > at ||
+      (latest !== null && periodStartsAt < latest)
+    ) {
+      return existing;
+    }
     const inserted = await this.database.query<{ coverage_cycles: number | string }>(
       `INSERT INTO p1_credit_subscription_paid_periods
         (subscription_id, period_starts_at, coverage_cycles, created_at)
@@ -800,7 +901,11 @@ export class PostgresCreditSubscriptionStore
           'Credit subscription billing period has different coverage facts.',
         );
       }
-      return this.require(input.subscriptionId);
+      return this.recordPaidCoverage(
+        input.subscriptionId,
+        existing.paidThroughCycle,
+        at,
+      );
     }
     const updated = await this.database.query<CreditSubscriptionRow>(
       `UPDATE p1_credit_subscriptions
@@ -808,12 +913,94 @@ export class PostgresCreditSubscriptionStore
               status = 'active', past_due_at = NULL, updated_at = $3
         WHERE id = $1 AND status <> 'cancelled'
         RETURNING *`,
-      [input.subscriptionId, input.coverageCycles, iso(input.at)],
+      [input.subscriptionId, input.coverageCycles, at],
     );
     if (!updated.rows[0]) {
       throw new Error(`Credit subscription ${input.subscriptionId} was not found.`);
     }
     return subscriptionFromRow(updated.rows[0]);
+  }
+
+  async recordInitialPaidPeriod(input: {
+    subscriptionId: string;
+    periodStartsAt: string;
+    coverageCycles: number;
+    at: string;
+  }) {
+    assertCoverageCycles(input.coverageCycles);
+    const subscription = await this.require(input.subscriptionId);
+    const periodStartsAt = iso(input.periodStartsAt);
+    const inserted = await this.database.query<{ coverage_cycles: number | string }>(
+      `INSERT INTO p1_credit_subscription_paid_periods
+        (subscription_id, period_starts_at, coverage_cycles, created_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (subscription_id, period_starts_at) DO NOTHING
+       RETURNING coverage_cycles`,
+      [input.subscriptionId, periodStartsAt, input.coverageCycles, iso(input.at)],
+    );
+    if (!inserted.rows[0]) {
+      const existing = await this.database.query<{ coverage_cycles: number | string }>(
+        `SELECT coverage_cycles
+           FROM p1_credit_subscription_paid_periods
+          WHERE subscription_id = $1 AND period_starts_at = $2`,
+        [input.subscriptionId, periodStartsAt],
+      );
+      if (Number(existing.rows[0]?.coverage_cycles) !== input.coverageCycles) {
+        throw new P1DomainError(
+          'IDEMPOTENCY_CONFLICT',
+          'Credit subscription billing period has different coverage facts.',
+        );
+      }
+    }
+    return subscription;
+  }
+
+  async latestPaidPeriodStartsAt(subscriptionId: string) {
+    const result = await this.database.query<{ period_starts_at: Date | string | null }>(
+      `SELECT max(period_starts_at) AS period_starts_at
+         FROM p1_credit_subscription_paid_periods
+        WHERE subscription_id = $1`,
+      [subscriptionId],
+    );
+    const value = result.rows[0]?.period_starts_at;
+    return value ? iso(value) : null;
+  }
+
+  async replaceSubscription(input: {
+    sourceSubscriptionId: string;
+    targetSubscriptionId: string;
+    at: string;
+  }) {
+    const source = await this.require(input.sourceSubscriptionId);
+    if (await this.get(input.targetSubscriptionId)) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        `Credit subscription ${input.targetSubscriptionId} already exists.`,
+      );
+    }
+    const at = iso(input.at);
+    await this.cancel(input.sourceSubscriptionId, at);
+    const replacement = await this.upsert({
+      ...source,
+      id: input.targetSubscriptionId,
+      pendingTier: source.pendingTier ?? undefined,
+      pendingInterval: source.pendingInterval ?? undefined,
+      pendingEffectiveCycle: source.pendingEffectiveCycle ?? undefined,
+      status: 'active',
+      pastDueAt: null,
+      cancelledAt: null,
+      updatedAt: at,
+    });
+    await this.database.query(
+      `INSERT INTO p1_credit_subscription_paid_periods
+        (subscription_id, period_starts_at, coverage_cycles, created_at)
+       SELECT $2, period_starts_at, coverage_cycles, created_at
+         FROM p1_credit_subscription_paid_periods
+        WHERE subscription_id = $1
+       ON CONFLICT (subscription_id, period_starts_at) DO NOTHING`,
+      [input.sourceSubscriptionId, input.targetSubscriptionId],
+    );
+    return replacement;
   }
 
   async resume(subscriptionId: string, at: string) {

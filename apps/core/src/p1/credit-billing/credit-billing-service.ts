@@ -155,6 +155,9 @@ export class CreditBillingService {
       : null;
     if (input.lifecycle === 'past_due') {
       assertExistingSubscription(active, input.lifecycle);
+      if (await staleTerminalPeriod(subscriptions, active.id, input)) {
+        return active;
+      }
       return subscriptions.markPastDue(active.id, now);
     }
     if (input.lifecycle === 'cancel_at_period_end') {
@@ -169,6 +172,9 @@ export class CreditBillingService {
     }
     if (input.lifecycle === 'expire') {
       assertExistingSubscription(active, input.lifecycle);
+      if (await staleTerminalPeriod(subscriptions, active.id, input)) {
+        return active;
+      }
       return subscriptions.cancel(active.id, now);
     }
 
@@ -224,11 +230,28 @@ export class CreditBillingService {
     );
     const comparison = planRank(tier) - planRank(currentTier!);
     const replacesSubscription = active.id !== requestedSubscriptionId;
-    if (replacesSubscription && comparison < 0) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'A replacement subscription cannot apply a downgrade before the next cycle.',
-      );
+    if (replacesSubscription && comparison <= 0) {
+      const effectiveCycle = active.paidThroughCycle;
+      const replacement = await subscriptions.replaceSubscription({
+        sourceSubscriptionId: active.id,
+        targetSubscriptionId: requestedSubscriptionId,
+        at: now,
+      });
+      const paid = await subscriptions.recordPaidPeriod({
+        subscriptionId: replacement.id,
+        periodStartsAt: anchorAt,
+        coverageCycles: paidCycleCoverage(interval),
+        at: now,
+      });
+      return comparison < 0
+        ? subscriptions.scheduleChange({
+            subscriptionId: paid.id,
+            tier,
+            interval,
+            effectiveCycle,
+            at: now,
+          })
+        : paid;
     }
     if (comparison > 0 || replacesSubscription) {
       await this.ledger.expireSubscriptionLots({
@@ -313,7 +336,7 @@ export class CreditBillingService {
       grantCycleOffset?: number;
     },
   ) {
-    return subscriptions.upsert({
+    const subscription = await subscriptions.upsert({
       id: input.id,
       workspaceId: context.workspaceId,
       tier: input.tier,
@@ -324,7 +347,29 @@ export class CreditBillingService {
       createdAt: input.now,
       updatedAt: input.now,
     });
+    await subscriptions.recordInitialPaidPeriod({
+      subscriptionId: subscription.id,
+      periodStartsAt: input.anchorAt,
+      coverageCycles: input.paidThroughCycle,
+      at: input.now,
+    });
+    return subscription;
   }
+}
+
+async function staleTerminalPeriod(
+  subscriptions: CreditSubscriptionStore,
+  subscriptionId: string,
+  input: CreditPaymentSettlementInput,
+) {
+  if (!input.periodStartsAt) return false;
+  const latest = await subscriptions.latestPaidPeriodStartsAt(subscriptionId);
+  if (!latest) return false;
+  const incoming = new Date(input.periodStartsAt);
+  if (Number.isNaN(incoming.getTime())) {
+    throw new P1DomainError('INVALID_STATE', 'periodStartsAt must be an ISO timestamp.');
+  }
+  return incoming.toISOString() < latest;
 }
 
 function subscriptionForPayment(

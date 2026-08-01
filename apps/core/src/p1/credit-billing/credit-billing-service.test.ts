@@ -225,6 +225,18 @@ test('one paid billing period adds coverage once and resume adds no cycle', asyn
     periodStartsAt: now.toISOString(),
     subscriptionId: 'subscription-period',
   });
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'renew',
+    paymentEventId: 'payment-period-initial-replay',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId: 'subscription-period',
+  });
+  assert.equal(
+    (await subscriptions.get('subscription-period'))?.paidThroughCycle,
+    1,
+  );
   now = new Date('2026-02-01T00:00:00.000Z');
   for (const paymentEventId of ['payment-period-a', 'payment-period-b']) {
     await service.settlePayment(context, {
@@ -318,6 +330,101 @@ test('an upgrade with a replacement subscription id clears the old active cycle'
     )?.originalCredits,
     1_300,
   );
+});
+
+test('a replacement subscription id keeps a downgrade pending for the next cycle', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-replacement-growth',
+    paymentProductId: 'growth',
+    periodStartsAt: now.toISOString(),
+    subscriptionId: 'subscription-growth-old',
+  });
+  now = new Date('2026-01-15T00:00:00.000Z');
+  const replacement = await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-replacement-starter',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-02-01T00:00:00.000Z',
+    subscriptionId: 'subscription-starter-new',
+  });
+
+  assert.equal(replacement?.id, 'subscription-starter-new');
+  assert.equal(replacement?.tier, 'growth');
+  assert.equal(replacement?.pendingTier, 'starter');
+  assert.equal(replacement?.pendingEffectiveCycle, 1);
+  assert.equal((await subscriptions.get('subscription-growth-old'))?.status, 'cancelled');
+  assert.equal(
+    (await subscriptions.listForWorkspace(context.workspaceId)).filter(
+      (subscription) => subscription.status !== 'cancelled',
+    ).length,
+    1,
+  );
+});
+
+test('future and old paid periods do not expand or regress current coverage', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  const subscriptionId = 'subscription-monotonic-period';
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-monotonic-activate',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId,
+  });
+  now = new Date('2026-02-01T00:00:00.000Z');
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'renew',
+    paymentEventId: 'payment-monotonic-renew',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId,
+  });
+  for (const [paymentEventId, periodStartsAt] of [
+    ['payment-monotonic-old', '2025-12-01T00:00:00.000Z'],
+    ['payment-monotonic-future', '2026-04-01T00:00:00.000Z'],
+  ] as const) {
+    await service.settlePayment(context, {
+      interval: 'month',
+      lifecycle: 'renew',
+      paymentEventId,
+      paymentProductId: 'starter',
+      periodStartsAt,
+      subscriptionId,
+    });
+  }
+  assert.equal((await subscriptions.get(subscriptionId))?.paidThroughCycle, 2);
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'past_due',
+    paymentEventId: 'payment-monotonic-old-failure',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-01-01T00:00:00.000Z',
+    subscriptionId,
+  });
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'expire',
+    paymentEventId: 'payment-monotonic-old-expire',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-01-01T00:00:00.000Z',
+    subscriptionId,
+  });
+  assert.equal((await subscriptions.get(subscriptionId))?.status, 'active');
 });
 
 test('out-of-order terminal events remain retryable after subscription activation', async () => {

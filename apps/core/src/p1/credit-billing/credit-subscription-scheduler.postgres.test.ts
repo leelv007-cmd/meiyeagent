@@ -4,6 +4,9 @@ import test from 'node:test';
 
 import { Pool } from 'pg';
 
+import { CreditBillingService } from './credit-billing-service.js';
+import { MemoryCreditLedger } from './credit-ledger.js';
+import { DEFAULT_CREDIT_PLAN_CATALOG } from './credit-plan-catalog.js';
 import {
   PostgresCreditSubscriptionStore,
   type CreditSubscriptionStore,
@@ -134,6 +137,136 @@ test(
         store.recordPaidCoverage(subscriptionId, 16, '2026-03-08T00:00:00.000Z'),
         /cancelled/i,
       );
+    } finally {
+      await pool.query(`DROP SCHEMA ${schema} CASCADE`).catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'Postgres credit payment periods stay monotonic across replacements and annual replay',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const schema = `credit_period_${randomUUID().replaceAll('-', '')}`;
+    const pool = new Pool({
+      connectionString,
+      options: `-c search_path=${schema},public`,
+    });
+    let now = new Date('2026-01-01T00:00:00.000Z');
+    try {
+      await pool.query(`CREATE SCHEMA ${schema}`);
+      await pool.query('CREATE TABLE workspaces (id text PRIMARY KEY, name text NOT NULL)');
+      const store = new PostgresCreditSubscriptionStore(pool);
+      const client = await pool.connect();
+      try {
+        await store.migrate(client);
+      } finally {
+        client.release();
+      }
+      for (const workspaceId of ['workspace-period-pg', 'workspace-annual-pg']) {
+        await pool.query(
+          "INSERT INTO workspaces (id, name) VALUES ($1, 'Credit period test')",
+          [workspaceId],
+        );
+      }
+      const serviceFor = (workspaceId: string) => ({
+        context: {
+          correlationId: `period-${workspaceId}`,
+          userId: 'owner-pg',
+          workspaceId,
+        },
+        service: new CreditBillingService(
+          new MemoryCreditLedger(),
+          store,
+          { async get() { return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG); } },
+          {
+            async getPaymentMapping() {
+              return {
+                mappings: [
+                  { interval: 'month' as const, paymentProductId: 'starter', tier: 'starter' as const },
+                  { interval: 'month' as const, paymentProductId: 'growth', tier: 'growth' as const },
+                  { interval: 'year' as const, paymentProductId: 'pro', tier: 'pro' as const },
+                ],
+              };
+            },
+          },
+          () => now,
+        ),
+      });
+      const monthly = serviceFor('workspace-period-pg');
+      await monthly.service.settlePayment(monthly.context, {
+        interval: 'month',
+        lifecycle: 'activate',
+        paymentEventId: 'pg-period-activate',
+        paymentProductId: 'growth',
+        periodStartsAt: now.toISOString(),
+        subscriptionId: 'pg-subscription-old',
+      });
+      await monthly.service.settlePayment(monthly.context, {
+        interval: 'month',
+        lifecycle: 'renew',
+        paymentEventId: 'pg-period-same',
+        paymentProductId: 'growth',
+        periodStartsAt: now.toISOString(),
+        subscriptionId: 'pg-subscription-old',
+      });
+      now = new Date('2026-02-01T00:00:00.000Z');
+      for (const [paymentEventId, periodStartsAt] of [
+        ['pg-period-future', '2026-04-01T00:00:00.000Z'],
+        ['pg-period-current', '2026-02-01T00:00:00.000Z'],
+        ['pg-period-old', '2025-12-01T00:00:00.000Z'],
+      ] as const) {
+        await monthly.service.settlePayment(monthly.context, {
+          interval: 'month',
+          lifecycle: 'renew',
+          paymentEventId,
+          paymentProductId: 'growth',
+          periodStartsAt,
+          subscriptionId: 'pg-subscription-old',
+        });
+      }
+      assert.equal((await store.get('pg-subscription-old'))?.paidThroughCycle, 2);
+      await monthly.service.settlePayment(monthly.context, {
+        interval: 'month',
+        lifecycle: 'past_due',
+        paymentEventId: 'pg-period-old-terminal',
+        paymentProductId: 'growth',
+        periodStartsAt: '2026-01-01T00:00:00.000Z',
+        subscriptionId: 'pg-subscription-old',
+      });
+      assert.equal((await store.get('pg-subscription-old'))?.status, 'active');
+      const replacement = await monthly.service.settlePayment(monthly.context, {
+        interval: 'month',
+        lifecycle: 'activate',
+        paymentEventId: 'pg-period-replacement',
+        paymentProductId: 'starter',
+        periodStartsAt: '2026-03-01T00:00:00.000Z',
+        subscriptionId: 'pg-subscription-new',
+      });
+      assert.equal(replacement?.pendingTier, 'starter');
+      assert.equal(replacement?.pendingEffectiveCycle, 2);
+      assert.equal((await store.get('pg-subscription-old'))?.status, 'cancelled');
+
+      const annual = serviceFor('workspace-annual-pg');
+      now = new Date('2026-01-01T00:00:00.000Z');
+      await annual.service.settlePayment(annual.context, {
+        interval: 'year',
+        lifecycle: 'activate',
+        paymentEventId: 'pg-annual-activate',
+        paymentProductId: 'pro',
+        periodStartsAt: now.toISOString(),
+        subscriptionId: 'pg-subscription-annual',
+      });
+      await annual.service.settlePayment(annual.context, {
+        interval: 'year',
+        lifecycle: 'renew',
+        paymentEventId: 'pg-annual-same-period',
+        paymentProductId: 'pro',
+        periodStartsAt: now.toISOString(),
+        subscriptionId: 'pg-subscription-annual',
+      });
+      assert.equal((await store.get('pg-subscription-annual'))?.paidThroughCycle, 12);
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`).catch(() => undefined);
       await pool.end();
