@@ -3,6 +3,7 @@
  */
 import type { ReactNode } from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -15,6 +16,7 @@ import type {
   ExperienceCorrectionProjection,
   ExperienceSedimentProjection,
 } from './task-experience';
+import { projectExperienceSediment } from './task-experience';
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
@@ -73,6 +75,48 @@ describe('ExperienceBasisSurface', () => {
 });
 
 describe('ExperienceSedimentSurface', () => {
+  it('only exposes actions for pending experience bound to the current task source', async () => {
+    const user = userEvent.setup();
+    const onKeepLater = vi.fn();
+    const onThisTimeOnly = vi.fn();
+    const projection = projectExperienceSediment({
+      querySettled: true,
+      taskSourceConversationId: 'work-current:task-current',
+      pendingEntries: [
+        {
+          entryId: 'current-entry',
+          sourceConversationId: 'work-current:task-current',
+          value: '先讲问题再讲项目',
+        },
+        {
+          entryId: 'other-entry',
+          sourceConversationId: 'work-other:task-other',
+          value: '无关任务的经验',
+        },
+      ],
+    });
+
+    render(
+      <ExperienceSedimentSurface
+        onKeepLater={onKeepLater}
+        onThisTimeOnly={onThisTimeOnly}
+        projection={projection}
+      />
+    );
+
+    expect(
+      screen.queryByTestId('experience-sediment-item-other-entry')
+    ).toBeNull();
+    await user.click(
+      screen.getByTestId('experience-sediment-later-current-entry')
+    );
+    await user.click(
+      screen.getByTestId('experience-sediment-once-current-entry')
+    );
+    expect(onKeepLater).toHaveBeenCalledWith('current-entry');
+    expect(onThisTimeOnly).toHaveBeenCalledWith('current-entry');
+  });
+
   it('renders pending suggestions when producer has them', () => {
     const projection: ExperienceSedimentProjection = {
       state: 'ready',
@@ -85,9 +129,9 @@ describe('ExperienceSedimentSurface', () => {
         projection={projection}
       />
     );
-    expect(
-      screen.getByTestId('experience-sediment-item-p1')
-    ).toHaveTextContent('私信了解');
+    expect(screen.getByTestId('experience-sediment-item-p1')).toHaveTextContent(
+      '私信了解'
+    );
     expect(screen.getByTestId('experience-sediment-later-p1')).toBeTruthy();
     expect(screen.queryByTestId('experience-sediment-empty')).toBeNull();
   });

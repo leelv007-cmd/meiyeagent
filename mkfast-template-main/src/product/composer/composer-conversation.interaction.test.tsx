@@ -709,7 +709,9 @@ describe('成品交付卡', () => {
     );
     // Reduced-motion alternative: faces still render; morph layoutId is off.
     expect(screen.getByTestId('composer-delivery-morph')).toBeInTheDocument();
-    expect(screen.getByTestId('composer-candidate-summary')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('composer-candidate-summary')
+    ).toBeInTheDocument();
   });
 
   it('P2-13: task-in experience surfaces mount with honest empty when projected', () => {
@@ -725,10 +727,10 @@ describe('成品交付卡', () => {
     );
     // Sediment + correction show in delivered; basis is pre-exec only.
     expect(screen.queryByTestId('experience-basis-surface')).toBeNull();
-    expect(screen.getByTestId('experience-sediment-surface')).toBeInTheDocument();
     expect(
-      screen.getByTestId('experience-sediment-empty')
+      screen.getByTestId('experience-sediment-surface')
     ).toBeInTheDocument();
+    expect(screen.getByTestId('experience-sediment-empty')).toBeInTheDocument();
     expect(
       screen.getByTestId('experience-correction-surface')
     ).toBeInTheDocument();

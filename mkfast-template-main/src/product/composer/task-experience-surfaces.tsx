@@ -47,10 +47,7 @@ function ExperienceFrame({
   return (
     <section
       aria-label={title}
-      className={cn(
-        'meiye-porcelain rounded-2xl px-4 py-3',
-        className
-      )}
+      className={cn('meiye-porcelain rounded-2xl px-4 py-3', className)}
       data-agent-frame="memory"
       data-testid={testId}
     >

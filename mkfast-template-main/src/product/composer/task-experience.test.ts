@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  canActOnExperienceSediment,
   experienceEntryLabel,
   projectExperienceBasis,
   projectExperienceCorrection,
@@ -14,17 +15,30 @@ import {
   shouldShowExperienceSediment,
 } from './task-experience';
 
+test('sediment actions reject entry ids outside the current task projection', () => {
+  const projection = {
+    state: 'ready' as const,
+    items: [{ id: 'current-entry', label: '当前任务经验' }],
+  };
+
+  assert.equal(canActOnExperienceSediment(projection, 'current-entry'), true);
+  assert.equal(canActOnExperienceSediment(projection, 'other-entry'), false);
+});
+
 test('experienceEntryLabel never stringifies objects as JSON blobs', () => {
   assert.equal(experienceEntryLabel('主理人口吻', 'x'), '主理人口吻');
   assert.equal(
     experienceEntryLabel({ tone: '少促销感', hook: '先讲问题' }, 'x'),
     '少促销感 · 先讲问题'
   );
-  assert.equal(experienceEntryLabel(['a', 'b', { nested: true }], 'x'), 'a · b');
+  assert.equal(
+    experienceEntryLabel(['a', 'b', { nested: true }], 'x'),
+    'a · b'
+  );
   assert.equal(experienceEntryLabel({}, 'fallback'), 'fallback');
 });
 
-test('basis projects identity + confirmed chips when producer settled', () => {
+test('basis keeps the selected identity without claiming unbound workspace entries', () => {
   const ready = projectExperienceBasis({
     querySettled: true,
     identityLabel: '主理人口吻',
@@ -32,11 +46,12 @@ test('basis projects identity + confirmed chips when producer settled', () => {
       { entryId: 'e1', value: '少促销感' },
       { entryId: 'e2', value: '先讲问题再讲项目' },
     ],
+    consumedEntryIds: null,
   });
   assert.equal(ready.state, 'ready');
   assert.deepEqual(
     ready.chips.map((c) => c.label),
-    ['主理人口吻', '少促销感', '先讲问题再讲项目']
+    ['主理人口吻']
   );
 });
 
@@ -44,7 +59,8 @@ test('basis is honest empty when producer settled with nothing', () => {
   const empty = projectExperienceBasis({
     querySettled: true,
     identityLabel: null,
-    confirmedEntries: [],
+    confirmedEntries: [{ entryId: 'workspace-entry', value: '少促销感' }],
+    consumedEntryIds: null,
   });
   assert.equal(empty.state, 'empty');
   assert.deepEqual(empty.chips, []);
@@ -55,6 +71,7 @@ test('basis stays loading until the producer settles', () => {
     querySettled: false,
     identityLabel: '主理人口吻',
     confirmedEntries: [{ entryId: 'e1', value: 'x' }],
+    consumedEntryIds: null,
   });
   assert.equal(loading.state, 'loading');
   assert.deepEqual(loading.chips, []);
@@ -64,20 +81,49 @@ test('sediment projects pending entries only after settle', () => {
   assert.equal(
     projectExperienceSediment({
       querySettled: false,
-      pendingEntries: [{ entryId: 'p1', value: 'x' }],
+      taskSourceConversationId: 'work-current:task-current',
+      pendingEntries: [
+        {
+          entryId: 'p1',
+          sourceConversationId: 'work-current:task-current',
+          value: 'x',
+        },
+      ],
     }).state,
     'loading'
   );
   assert.equal(
     projectExperienceSediment({
       querySettled: true,
+      taskSourceConversationId: null,
+      pendingEntries: [
+        {
+          entryId: 'workspace-pending',
+          sourceConversationId: 'work-other:task-other',
+          value: '无关任务的经验',
+        },
+      ],
+    }).state,
+    'empty'
+  );
+  assert.equal(
+    projectExperienceSediment({
+      querySettled: true,
+      taskSourceConversationId: 'work-current:task-current',
       pendingEntries: [],
     }).state,
     'empty'
   );
   const ready = projectExperienceSediment({
     querySettled: true,
-    pendingEntries: [{ entryId: 'p1', value: '私信了解' }],
+    taskSourceConversationId: 'work-current:task-current',
+    pendingEntries: [
+      {
+        entryId: 'p1',
+        sourceConversationId: 'work-current:task-current',
+        value: '私信了解',
+      },
+    ],
   });
   assert.equal(ready.state, 'ready');
   assert.equal(ready.items[0]?.label, '私信了解');

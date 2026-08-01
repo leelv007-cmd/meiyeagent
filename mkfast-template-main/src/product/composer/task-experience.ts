@@ -33,6 +33,17 @@ export type ExperienceSedimentProjection = {
   items: ExperienceSedimentItem[];
 };
 
+/** Command guard: only current task-projected pending entries are actionable. */
+export function canActOnExperienceSediment(
+  projection: ExperienceSedimentProjection,
+  entryId: string
+): boolean {
+  return (
+    projection.state === 'ready' &&
+    projection.items.some((item) => item.id === entryId)
+  );
+}
+
 export type ExperienceCorrectionKind = 'fact' | 'task_only';
 
 export type ExperienceCorrectionProjection = {
@@ -86,6 +97,8 @@ export function projectExperienceBasis(input: {
   querySettled: boolean;
   identityLabel: string | null;
   confirmedEntries: Array<{ entryId: string; value: unknown }>;
+  /** Entry ids the current execution snapshot explicitly consumed. */
+  consumedEntryIds: readonly string[] | null;
   maxChips?: number;
 }): ExperienceBasisProjection {
   if (!input.querySettled) {
@@ -99,8 +112,10 @@ export function projectExperienceBasis(input: {
       label: input.identityLabel.trim(),
     });
   }
+  const consumedEntryIds = new Set(input.consumedEntryIds ?? []);
   for (const entry of input.confirmedEntries) {
     if (chips.length >= max) break;
+    if (!consumedEntryIds.has(entry.entryId)) continue;
     chips.push({
       id: entry.entryId,
       label: experienceEntryLabel(entry.value, entry.entryId),
@@ -118,17 +133,30 @@ export function projectExperienceBasis(input: {
  */
 export function projectExperienceSediment(input: {
   querySettled: boolean;
-  pendingEntries: Array<{ entryId: string; value: unknown }>;
+  /** Exact source conversation emitted by the current Work + Task run. */
+  taskSourceConversationId: string | null;
+  pendingEntries: Array<{
+    entryId: string;
+    sourceConversationId: string | null;
+    value: unknown;
+  }>;
   maxItems?: number;
 }): ExperienceSedimentProjection {
   if (!input.querySettled) {
     return { state: 'loading', items: [] };
   }
+  const taskSourceConversationId = input.taskSourceConversationId?.trim();
+  if (!taskSourceConversationId) {
+    return { state: 'empty', items: [] };
+  }
   const max = input.maxItems ?? 3;
-  const items = input.pendingEntries.slice(0, max).map((entry) => ({
-    id: entry.entryId,
-    label: experienceEntryLabel(entry.value, entry.entryId),
-  }));
+  const items = input.pendingEntries
+    .filter((entry) => entry.sourceConversationId === taskSourceConversationId)
+    .slice(0, max)
+    .map((entry) => ({
+      id: entry.entryId,
+      label: experienceEntryLabel(entry.value, entry.entryId),
+    }));
   if (items.length === 0) {
     return { state: 'empty', items: [] };
   }
@@ -166,9 +194,7 @@ export function projectExperienceCorrection(input: {
 /** Phases where the pre-exec basis strip is honest to show. */
 export function shouldShowExperienceBasis(phase: string): boolean {
   return (
-    phase === 'submitting' ||
-    phase === 'running' ||
-    phase === 'awaiting_answer'
+    phase === 'submitting' || phase === 'running' || phase === 'awaiting_answer'
   );
 }
 

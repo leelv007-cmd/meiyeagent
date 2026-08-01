@@ -12,6 +12,7 @@ import {
   SETTINGS_SIDEBAR_ITEMS,
 } from '../../config/sidebar-config';
 import { overwriteGetLocale } from '../../locale/paraglide/runtime';
+import { memory_page_description } from '../../locale/paraglide/messages';
 import { Routes } from '../routes';
 
 test('merchant navigation exposes creation, content, assets, store and memory', () => {
@@ -40,6 +41,23 @@ test('P2-13 product copy: memory destination merchant label is 经验 / Experien
 
   overwriteGetLocale(() => 'en');
   assert.equal(memory.label, 'Experience');
+
+  overwriteGetLocale(() => 'zh');
+});
+
+test('P2-13 experience copy makes no unsupported learning-over-time promise', () => {
+  overwriteGetLocale(() => 'zh');
+  assert.equal(
+    memory_page_description(),
+    '这里是你确认过、之后创作可参考的经验。'
+  );
+  assert.doesNotMatch(memory_page_description(), /用得越久|越懂/u);
+
+  overwriteGetLocale(() => 'en');
+  assert.equal(
+    memory_page_description(),
+    'Experience you confirmed for future creations.'
+  );
 
   overwriteGetLocale(() => 'zh');
 });

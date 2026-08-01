@@ -141,6 +141,7 @@ import {
 
 import { BriefSurface } from './brief-surface-panel';
 import {
+  canActOnExperienceSediment,
   projectExperienceBasis,
   projectExperienceCorrection,
   projectExperienceSediment,
@@ -833,35 +834,35 @@ export function ComposerHome({
       sessionIdentityId,
     ]
   );
+  const experienceTaskSourceConversationId = session.task
+    ? `${session.task.workId}:${session.task.taskId}`
+    : null;
   const experienceBasis = useMemo(
     () =>
       projectExperienceBasis({
         querySettled:
           experienceEntriesQuery.isSuccess || experienceEntriesQuery.isError,
-        identityLabel: identitySelection.selected?.label ?? null,
-        confirmedEntries: (experienceEntriesQuery.data?.items ?? [])
-          .filter((entry) => entry.status === 'confirmed')
-          .map((entry) => ({
-            entryId: entry.entryId,
-            value: entry.value,
-          })),
+        // The mutable session selector is not the immutable task snapshot.
+        identityLabel: null,
+        // `entries_page` is workspace-wide provenance, not proof that this
+        // execution snapshot consumed an entry. Fail closed until the snapshot
+        // exposes canonical consumed entry ids.
+        confirmedEntries: [],
+        consumedEntryIds: null,
       }),
-    [
-      experienceEntriesQuery.data?.items,
-      experienceEntriesQuery.isError,
-      experienceEntriesQuery.isSuccess,
-      identitySelection.selected?.label,
-    ]
+    [experienceEntriesQuery.isError, experienceEntriesQuery.isSuccess]
   );
   const experienceSediment = useMemo(
     () =>
       projectExperienceSediment({
         querySettled:
           experienceEntriesQuery.isSuccess || experienceEntriesQuery.isError,
+        taskSourceConversationId: experienceTaskSourceConversationId,
         pendingEntries: (experienceEntriesQuery.data?.items ?? [])
           .filter((entry) => entry.status === 'pending')
           .map((entry) => ({
             entryId: entry.entryId,
+            sourceConversationId: entry.source?.conversationId ?? null,
             value: entry.value,
           })),
       }),
@@ -869,6 +870,7 @@ export function ComposerHome({
       experienceEntriesQuery.data?.items,
       experienceEntriesQuery.isError,
       experienceEntriesQuery.isSuccess,
+      experienceTaskSourceConversationId,
     ]
   );
   // Correction classifier producer is not ready in production — honest empty.
@@ -3493,6 +3495,11 @@ export function ComposerHome({
                 experienceCorrection={experienceCorrection}
                 experienceSediment={experienceSediment}
                 onSedimentKeepLater={(entryId) => {
+                  if (
+                    !canActOnExperienceSediment(experienceSediment, entryId)
+                  ) {
+                    return;
+                  }
                   void commandP1(
                     'memory',
                     {
@@ -3515,6 +3522,11 @@ export function ComposerHome({
                     });
                 }}
                 onSedimentThisTimeOnly={(entryId) => {
+                  if (
+                    !canActOnExperienceSediment(experienceSediment, entryId)
+                  ) {
+                    return;
+                  }
                   void commandP1(
                     'memory',
                     {

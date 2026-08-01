@@ -2333,7 +2333,7 @@
   "memory_layer_pending_title": "待你确认",
   "memory_layer_remembered_description": "你确认过、之后创作会参考的内容，按类型放在下面。",
   "memory_layer_remembered_title": "已记住",
-  "memory_page_description": "这里是系统积累的、关于你这家店的经验。用得越久，它越懂你的店。",
+  "memory_page_description": "这里是你确认过、之后创作可参考的经验。",
   "memory_page_title": "经验",
   "memory_rejected_only_note": "你驳回过一些建议，目前没有需要确认或已记住的内容。",
   "memory_remembered_identity_empty": "还没有已确认的门店偏好。",
