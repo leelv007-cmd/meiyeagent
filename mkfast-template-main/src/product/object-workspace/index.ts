@@ -12,6 +12,18 @@ export {
 } from './object-workspace-shell';
 
 export {
+  NoteObjectWorkspace,
+  type NoteObjectWorkspaceProps,
+} from './note-object-workspace';
+
+export {
+  NoteWorkspacePreviews,
+  type NoteWorkspacePreviewCover,
+  type NoteWorkspacePreviewDocument,
+  type NoteWorkspacePreviewsProps,
+} from './note-workspace-previews';
+
+export {
   SELECTION_AI_ACTIONS,
   SELECTION_AI_LABELS,
   SELECTION_AI_LOCAL_TEMPLATES,

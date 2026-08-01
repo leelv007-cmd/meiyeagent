@@ -1,4 +1,11 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type {
   ResultTargetResolveOutcome,
@@ -45,6 +52,23 @@ vi.mock('@/components/uiux/state-panel', () => ({
 }));
 
 afterEach(cleanup);
+
+function supportTiptapSelectionGeometry() {
+  Object.defineProperty(document, 'elementFromPoint', {
+    configurable: true,
+    value: () => document.querySelector('[data-testid="copy-field-body"]'),
+  });
+  Object.defineProperties(Range.prototype, {
+    getBoundingClientRect: {
+      configurable: true,
+      value: () => new DOMRect(),
+    },
+    getClientRects: {
+      configurable: true,
+      value: () => [],
+    },
+  });
+}
 
 const workId = 'work_9fef6e5d-1fd2-4a44-9ce1-8ea3b4e76a07';
 
@@ -110,6 +134,7 @@ describe('merchant Result Center truth', () => {
 
     const trigger = screen.getByTestId('image-ai-cover-tool');
     expect(trigger).toBeEnabled();
+    expect(screen.queryByTestId('result-image-text-workspace')).toBeNull();
     fireEvent.click(trigger);
     expect(onImageAiCover).toHaveBeenCalledOnce();
   });
@@ -341,7 +366,12 @@ describe('merchant Result Center truth', () => {
     expect(screen.queryAllByTestId('result-secondary-action')).toHaveLength(0);
   });
 
-  it('keeps image-text media and the note editor together in the production result', () => {
+  it('keeps image-text media, editing and live note previews in one production workspace', async () => {
+    const user = userEvent.setup();
+    const onAdjust = vi.fn();
+    const onCopyQuickEdit = vi.fn();
+    const onCopySelectionRewrite = vi.fn();
+    const onImageAiCover = vi.fn();
     render(
       <ResultCenterPage
         workId={workId}
@@ -361,6 +391,7 @@ describe('merchant Result Center truth', () => {
           candidates: [
             {
               assetId: 'note-image-1',
+              previewUrl: 'https://cdn.example/note-image-1.webp',
               persisted: true,
               rightsOk: true,
               generationOk: true,
@@ -380,26 +411,180 @@ describe('merchant Result Center truth', () => {
             topics: ['护理'],
             orderedAssetIds: ['note-image-1'],
           },
-          factSources: [],
+          alternativeCandidates: [
+            {
+              candidateId: 'note-alternative-1',
+              title: '清透护理备选',
+              body: '先讲真实感受，再给护理建议。',
+              conversionHook: '到店咨询',
+            },
+          ],
+          factSources: [
+            {
+              id: 'note-fact-1',
+              kind: 'material',
+              label: '护理项目',
+              summary: '门店已确认',
+              status: 'confirmed',
+            },
+          ],
+          selectedCarrier: 'xiaohongshu',
+          platformPreviews: [
+            {
+              carrier: 'xiaohongshu',
+              title: '小红书护理版',
+              body: '真实分享护理体验，到店前先沟通肤况。',
+              conversionHook: '私信预约',
+              topics: ['护理'],
+              source: 'copy.adapt',
+            },
+          ],
           lifecycle: 'candidate',
         }}
-        onAdjust={vi.fn()}
+        onAdjust={onAdjust}
+        onCopyQuickEdit={onCopyQuickEdit}
+        onCopySelectionRewrite={onCopySelectionRewrite}
+        onImageAiCover={onImageAiCover}
       />
     );
 
-    expect(screen.getByTestId('image-worksurface')).toBeInTheDocument();
-    expect(screen.getByTestId('object-workspace-shell')).toHaveAttribute(
-      'data-carrier',
-      'note'
-    );
+    const shell = screen.getByTestId('object-workspace-shell');
+    expect(screen.getAllByTestId('object-workspace-shell')).toHaveLength(1);
+    expect(shell).toHaveAttribute('data-carrier', 'note');
+    expect(within(shell).getByTestId('image-worksurface')).toBeInTheDocument();
     expect(screen.getByTestId('copy-field-body')).toHaveTextContent(
       '先讲护理体验，再说明到店建议。'
     );
     expect(
       screen.getByTestId('object-workspace-selection-ai')
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('selection-ai-shorten'));
+    expect(onAdjust).toHaveBeenCalledWith(
+      expect.stringContaining('精简以下选区')
+    );
+    fireEvent.click(screen.getByTestId('image-ai-cover-tool'));
+    expect(onImageAiCover).toHaveBeenCalledOnce();
+    expect(screen.getByTestId('copy-fact-sources')).toHaveTextContent(
+      '护理项目'
+    );
+    expect(screen.getByTestId('copy-platform-preview-body')).toHaveTextContent(
+      '小红书护理版'
+    );
+    expect(screen.getByTestId('copy-selection-rewrite')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('copy-rewrite-weaker_promo'));
+    expect(onCopySelectionRewrite).toHaveBeenCalledOnce();
+    expect(
+      screen.getByTestId('copy-selection-rewrite-preview')
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('copy-export-use-poster'));
+    expect(onCopyQuickEdit).toHaveBeenCalledOnce();
+    await user.click(screen.getByTestId('copy-alternatives-toggle'));
+    expect(screen.getByText('清透护理备选')).toBeInTheDocument();
+
+    const phone = screen.getByRole('region', {
+      name: '小红书手机笔记预览',
+    });
+    expect(phone).toHaveAttribute('data-phone-shell', 'true');
+    expect(within(phone).getByRole('img')).toHaveAttribute(
+      'src',
+      'https://cdn.example/note-image-1.webp'
+    );
+    const discovery = screen.getByRole('region', {
+      name: '小红书发现页双列封面预览',
+    });
+    expect(
+      within(discovery).getByTestId('note-discovery-columns')
+    ).toHaveAttribute('data-column-count', '2');
+    expect(
+      within(discovery).getByTestId('note-discovery-own-card')
+    ).toContainElement(within(discovery).getByRole('img'));
+
+    const title = screen.getByTestId('copy-field-title');
+    await user.clear(title);
+    await user.type(title, '夏日焕亮笔记');
+    expect(within(phone).getByText('夏日焕亮笔记')).toBeInTheDocument();
+    expect(within(discovery).getByText('夏日焕亮笔记')).toBeInTheDocument();
+
+    const body = screen.getByTestId('copy-field-body');
+    supportTiptapSelectionGeometry();
+    await user.clear(body);
+    await user.type(body, '编辑后的护理正文。');
+    expect(within(phone).getByText('编辑后的护理正文。')).toBeInTheDocument();
+
+    const hook = screen.getByTestId('copy-field-hook');
+    await user.clear(hook);
+    await user.type(hook, '评论区预约');
+    expect(within(phone).getByText('评论区预约')).toBeInTheDocument();
     expect(screen.queryByTestId('copy-adopt-action')).toBeNull();
     expect(screen.getAllByTestId('result-adjust-prompt')).toHaveLength(1);
+  });
+
+  it('shows an honest empty cover when the canonical asset has no authorized preview URL', () => {
+    render(
+      <ResultCenterPage
+        workId={workId}
+        resolveOutcome={resolvedTarget()}
+        facts={{
+          target: { workId },
+          workspaceKind: 'image',
+          progressState: 'success',
+          hasUsableCandidate: true,
+        }}
+        imageWorksurface={{
+          workId,
+          baseRevisionId: 'version-note-empty-cover',
+          outputType: 'ordered_image_set',
+          slot: 'gallery',
+          lifecycle: 'candidate',
+          candidates: [
+            {
+              assetId: 'canonical-cover-without-url',
+              persisted: true,
+              rightsOk: true,
+              generationOk: true,
+              recipeOrder: 1,
+            },
+            {
+              assetId: 'other-image-with-url',
+              previewUrl: 'https://cdn.example/not-the-cover.webp',
+              persisted: true,
+              rightsOk: true,
+              generationOk: true,
+              recipeOrder: 2,
+            },
+          ],
+          hasContentPackage: true,
+          mediaVersionReady: true,
+        }}
+        copyWorksurface={{
+          workId,
+          baseRevisionId: 'version-note-empty-cover',
+          document: {
+            title: '封面待授权笔记',
+            body: '展示真实空态。',
+            conversionHook: '私信预约',
+            topics: [],
+            orderedAssetIds: [
+              'canonical-cover-without-url',
+              'other-image-with-url',
+            ],
+          },
+          factSources: [],
+          lifecycle: 'candidate',
+        }}
+      />
+    );
+
+    for (const regionName of [
+      '小红书手机笔记预览',
+      '小红书发现页双列封面预览',
+    ]) {
+      const region = screen.getByRole('region', { name: regionName });
+      expect(within(region).queryByRole('img')).toBeNull();
+      expect(within(region).getByRole('status')).toHaveTextContent(
+        '暂无可预览封面'
+      );
+    }
   });
 
   it('renders Run Detail panel collapsed with merchant fee/stage language', () => {

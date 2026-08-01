@@ -3,7 +3,7 @@
  *
  * Shared refinement surface for copy / note / image_text carriers.
  * Hosts Tiptap body editing + selection AI six actions.
- * Phone-shell preview and waterfall cover belong to later tickets (#326).
+ * Note composition adds phone-shell and waterfall previews in #326.
  */
 
 import type { ReactNode } from 'react';

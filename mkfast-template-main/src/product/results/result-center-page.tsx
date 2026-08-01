@@ -12,6 +12,7 @@ import { ProductStatus } from '@/components/uiux/product-status';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ContentPackageExportCarrier } from '@/p1/content-package-export-carrier';
+import { NoteWorkspacePreviews } from '@/product/object-workspace';
 import type {
   ContentPackagePlatform,
   QuickEditExportUseDelivery,
@@ -329,16 +330,30 @@ function WorkspaceBody(props: {
   fallbackCopy?: CopyImageTextWorksurfaceFacts;
 }) {
   const copyFacts = props.copyWorksurface ?? props.fallbackCopy;
-  const renderCopyWorksurface = (compositeWithMedia = false) =>
+  const renderCopyWorksurface = (
+    options: {
+      compositeWithMedia?: boolean;
+      noteMedia?: CopyImageTextWorksurfaceProps['noteMedia'];
+      presentation?: CopyImageTextWorksurfaceProps['presentation'];
+      renderDocumentPreviews?: CopyImageTextWorksurfaceProps['renderDocumentPreviews'];
+    } = {}
+  ) =>
     copyFacts ? (
       <CopyImageTextWorksurface
         facts={{ ...copyFacts, viewport: props.viewport }}
+        {...(options.noteMedia ? { noteMedia: options.noteMedia } : {})}
+        {...(options.presentation
+          ? { presentation: options.presentation }
+          : {})}
+        {...(options.renderDocumentPreviews
+          ? { renderDocumentPreviews: options.renderDocumentPreviews }
+          : {})}
         onAdjust={props.onAdjust}
-        showAdjustPrompt={!compositeWithMedia}
+        showAdjustPrompt={!options.compositeWithMedia}
         {...(props.adjustUnavailableReason
           ? { adjustUnavailableReason: props.adjustUnavailableReason }
           : {})}
-        {...(!compositeWithMedia && props.onCopyAdopt
+        {...(!options.compositeWithMedia && props.onCopyAdopt
           ? { onAdopt: props.onCopyAdopt }
           : {})}
         onGeneratePlatformVariants={props.onCopyGeneratePlatformVariants}
@@ -383,14 +398,26 @@ function WorkspaceBody(props: {
         />
       );
       if (copyFacts) {
-        return (
-          <div className="space-y-6" data-testid="result-image-text-workspace">
-            <section aria-label="图文媒资工作区">{mediaWorksurface}</section>
-            <section aria-label="笔记正文工作区">
-              {renderCopyWorksurface(true)}
-            </section>
-          </div>
-        );
+        const coverAssetId = copyFacts.document.orderedAssetIds[0] ?? null;
+        const coverPreviewUrl = coverAssetId
+          ? props.imageWorksurface.candidates.find(
+              (candidate) => candidate.assetId === coverAssetId
+            )?.previewUrl
+          : undefined;
+        return renderCopyWorksurface({
+          compositeWithMedia: true,
+          noteMedia: mediaWorksurface,
+          presentation: 'note_document',
+          renderDocumentPreviews: (document) => (
+            <NoteWorkspacePreviews
+              document={document}
+              cover={{
+                assetId: coverAssetId,
+                ...(coverPreviewUrl ? { previewUrl: coverPreviewUrl } : {}),
+              }}
+            />
+          ),
+        });
       }
       return mediaWorksurface;
     }

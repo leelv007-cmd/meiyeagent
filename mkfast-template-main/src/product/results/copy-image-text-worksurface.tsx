@@ -11,14 +11,16 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
+  NoteObjectWorkspace,
   ObjectWorkspaceEditor,
   ObjectWorkspaceShell,
   SelectionAiToolbar,
   buildSelectionAiPrompt,
   objectWorkspaceCarrierFromFacts,
+  type NoteWorkspacePreviewDocument,
   type SelectionAiAction,
 } from '@/product/object-workspace';
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 
 import { AdjustPrompt } from './adjust-prompt';
 import {
@@ -46,6 +48,14 @@ import {
 
 export type CopyImageTextWorksurfaceProps = {
   facts: CopyImageTextWorksurfaceFacts;
+  /** Compose media and existing document controls in the note shell. */
+  presentation?: 'full' | 'note_document';
+  /** Media inserted into the same NoteObjectWorkspace as the editor. */
+  noteMedia?: ReactNode;
+  /** Render live previews from this component's single controlled draft. */
+  renderDocumentPreviews?: (
+    document: NoteWorkspacePreviewDocument
+  ) => ReactNode;
   /** Composite image-text results already render the media adjustment box. */
   showAdjustPrompt?: boolean;
   onFieldChange?: (
@@ -82,6 +92,7 @@ export type CopyImageTextWorksurfaceProps = {
 };
 
 export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
+  const isNoteWorkspace = props.presentation === 'note_document';
   const [selectedCarrier, setSelectedCarrier] = useState<CopyPreviewCarrier>(
     props.facts.selectedCarrier ?? 'xiaohongshu'
   );
@@ -157,6 +168,9 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
       )
   );
   const alternatives = view.documentFace?.alternatives ?? [];
+  const WorkspaceShell = isNoteWorkspace
+    ? NoteObjectWorkspace
+    : ObjectWorkspaceShell;
 
   /**
    * What the next rewrite will actually touch. A stale selection (the body was
@@ -276,11 +290,14 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
   };
 
   return (
-    <ObjectWorkspaceShell
+    <WorkspaceShell
       carrier={shellCarrier}
       title={draft.title || '成品精修'}
       workId={props.facts.workId}
     >
+      {isNoteWorkspace && props.noteMedia ? (
+        <section aria-label="图文媒资工作区">{props.noteMedia}</section>
+      ) : null}
       <div className="space-y-4" data-testid="copy-image-text-worksurface">
         <section
           className="space-y-3 rounded-lg border p-4"
@@ -569,6 +586,13 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
           </div>
         ) : null}
 
+        {props.renderDocumentPreviews?.({
+          body: draft.body,
+          conversionHook: draft.conversionHook,
+          title: draft.title,
+          topics: view.document.topics,
+        })}
+
         <section
           className="space-y-2 rounded-lg border p-4"
           data-testid="copy-fact-sources"
@@ -817,6 +841,6 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
           {view.mobileDesktopGate}
         </span>
       </div>
-    </ObjectWorkspaceShell>
+    </WorkspaceShell>
   );
 }

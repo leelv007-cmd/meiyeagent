@@ -402,11 +402,45 @@ test.describe('P1-F2 continuous acceptance (#161)', () => {
       imageTextWorkspace.getByTestId('object-workspace-shell')
     ).toHaveAttribute('data-carrier', 'note');
     await expect(
+      imageTextWorkspace.getByTestId('object-workspace-shell')
+    ).toHaveCount(1);
+    await expect(
+      imageTextWorkspace.getByTestId('note-object-workspace')
+    ).toBeVisible();
+    await expect(
       imageTextWorkspace.getByTestId('copy-field-body')
     ).toContainText(/\S/u);
     await expect(
       imageTextWorkspace.getByTestId('object-workspace-selection-ai')
     ).toBeVisible();
+    const phonePreview = imageTextWorkspace.getByRole('region', {
+      name: '小红书手机笔记预览',
+    });
+    await expect(phonePreview).toHaveAttribute('data-phone-shell', 'true');
+    await expect(
+      phonePreview.getByTestId('note-phone-preview-cover')
+    ).toHaveAttribute('data-preview-source', 'authorized-preview-url');
+    const discoveryPreview = imageTextWorkspace.getByRole('region', {
+      name: '小红书发现页双列封面预览',
+    });
+    await expect(
+      discoveryPreview.getByTestId('note-discovery-columns')
+    ).toHaveAttribute('data-column-count', '2');
+    await expect(
+      discoveryPreview.getByTestId('note-discovery-own-card')
+    ).toBeVisible();
+
+    const titleField = imageTextWorkspace.getByTestId('copy-field-title');
+    const originalTitle = await titleField.inputValue();
+    const syncedTitle = `实时预览 ${merchantRunSuffix()}`;
+    await titleField.fill(syncedTitle);
+    await expect(phonePreview.getByTestId('note-phone-title')).toHaveText(
+      syncedTitle
+    );
+    await expect(
+      discoveryPreview.getByTestId('note-discovery-own-card')
+    ).toContainText(syncedTitle);
+    await titleField.fill(originalTitle);
     await expect(
       imageTextWorkspace.getByTestId('copy-adopt-action')
     ).toHaveCount(0);
