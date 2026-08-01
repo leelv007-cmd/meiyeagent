@@ -4,6 +4,7 @@ import { E2E_TEST_SECRET, type E2EUser, createE2EUser } from './test-data';
 const e2eHeaders = {
   'x-e2e-secret': E2E_TEST_SECRET,
 };
+const E2E_CLEANUP_TIMEOUT_MS = 15_000;
 
 function applicationOrigin() {
   if (process.env.PLAYWRIGHT_BASE_URL) {
@@ -23,18 +24,20 @@ function authOrigin() {
 
 export async function cleanupE2EUsers(request: APIRequestContext) {
   let lastError: unknown;
+  const deadline = Date.now() + E2E_CLEANUP_TIMEOUT_MS;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       const response = await request.delete(`${authOrigin()}/api/e2e/users`, {
         headers: e2eHeaders,
+        timeout: Math.max(1, deadline - Date.now()),
       });
       expect(response.status()).toBeLessThan(500);
       return;
     } catch (error) {
       lastError = error;
-      if (attempt < 2) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
+      const retryDelay = Math.min(100, deadline - Date.now());
+      if (attempt >= 2 || retryDelay <= 0) break;
+      await new Promise((resolve) => setTimeout(resolve, retryDelay));
     }
   }
 

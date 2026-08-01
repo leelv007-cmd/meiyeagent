@@ -4,6 +4,25 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import test from 'node:test';
 
+import { productionJourneyGlobalTimeout } from '../../playwright.config.js';
+
+test('only the required CI production journey has a bounded global runtime', () => {
+  assert.equal(
+    productionJourneyGlobalTimeout({
+      CI: 'true',
+      PLAYWRIGHT_PRODUCTION_CANDIDATE: 'true',
+    }),
+    60 * 60_000
+  );
+  assert.equal(productionJourneyGlobalTimeout({ CI: 'true' }), undefined);
+  assert.equal(
+    productionJourneyGlobalTimeout({
+      PLAYWRIGHT_PRODUCTION_CANDIDATE: 'true',
+    }),
+    undefined
+  );
+});
+
 test('Playwright provisions an isolated DBOS database and enables the real Harness runtime', async () => {
   const [config, provisioner] = await Promise.all([
     readFile(resolve(process.cwd(), 'playwright.config.ts'), 'utf8'),

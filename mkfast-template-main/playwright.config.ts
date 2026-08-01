@@ -1,5 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 
+export function productionJourneyGlobalTimeout(
+  env: Record<string, string | undefined>
+): number | undefined {
+  return env.CI && env.PLAYWRIGHT_PRODUCTION_CANDIDATE === 'true'
+    ? 60 * 60_000
+    : undefined;
+}
+
 const port = Number(process.env.PORT ?? 3000);
 const corePort = Number(process.env.PLAYWRIGHT_CORE_PORT ?? 4100);
 const productionCandidate =
@@ -46,6 +54,7 @@ const paymentWorkerVariables = providerFree
     ];
 
 export default defineConfig({
+  globalTimeout: productionJourneyGlobalTimeout(process.env),
   testDir: './tests/e2e/specs',
   fullyParallel: false,
   workers: 1,
