@@ -8,9 +8,6 @@
 /** Canonical fullscreen catalog path (templates | tools dual tab). */
 export const COMPOSER_CATALOG_PATH = '/dashboard/catalog';
 
-/** Pro Studio canonical gate — never deep-link Canvas / bypass entitlement. */
-export const PRO_STUDIO_CANONICAL_PATH = '/pro-studio';
-
 /** Dashboard home (return target after catalog). */
 export const COMPOSER_HOME_PATH = '/dashboard';
 

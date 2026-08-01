@@ -14,9 +14,9 @@ tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/130
 
 # 美业宣发经营 Agent P1 产品化规格：结果体验、资产治理与经营闭环
 
-> 本规格把 2026-07-22 全面差距复核中的 P1 项转成可开发、可验收的产品化合同。这里的 `P1` 表示 P0 统一执行与发布可信度完成后的下一优先级，不等同于 2026-07-11 的历史 P1 Scope，也不恢复已经被 D-072~D-099 和 ADR-0011/0012 取代的旧任务收件箱、自由画布或前台信息架构。
+> 本规格把 2026-07-22 全面差距复核中的 P1 项转成可开发、可验收的产品化合同。这里的 `P1` 表示 P0 统一执行与发布可信度完成后的下一优先级，不等同于 2026-07-11 的历史 P1 Scope，也不恢复已经被 D-072~D-099 和 ADR-0011 取代的旧任务收件箱、自由画布或前台信息架构。
 >
-> **两线边界**：P1 拥有 Composer、Result、Content、Assets、Delivery 和移动交接的主线产品化；Pro Studio 继续是独立 add-on 与探索式工程事实。P1 可以治理 Pro Studio 产生的 OwnedAsset 和 adoption 后的 ContentPackage，但不接管其画布工程、节点级生成或高阶编辑器 UI。
+> **创作边界（D-170 修订）**：P1 拥有 Composer、Result、Content、Assets、Delivery 和移动交接的主线产品化。**Pro Studio 独立 add-on / 探索式画布为历史起源表述，已全量退役（D-170）**——见 `docs/specs/pro-studio-retirement-spec-2026-08-01.md`。P1 可继续治理历史 Pro Studio 来源的 OwnedAsset 与已 adoption 的 ContentPackage（只读血缘），不恢复画布工程、节点级生成或高阶编辑器 UI。
 
 ## Problem Statement
 
@@ -103,7 +103,7 @@ Content 和 Assets 已有基本列表，但用户可见投影仍可能暴露 AID
 43. As a 门店内容操作者, I want 素材卡使用中文业务标题和清晰缩略图, so that “Composed video candidate”等内部命名不会进入素材库。
 44. As a 门店内容操作者, I want 按文件夹、标签、项目、IP、素材类型、来源和创建时间筛选, so that 素材库能支持日常经营查找。
 45. As a 门店内容操作者, I want 按授权状态、适用平台、有效期和待替换状态筛选, so that 公开营销前能快速找到安全素材。
-46. As a 门店内容操作者, I want 每个素材显示来自上传、生成、采用、Pro Studio 或历史迁移的来源, so that 资产血缘可理解。
+46. As a 门店内容操作者, I want 每个素材显示来自上传、生成、采用、历史迁移或历史画布来源（只读）的来源, so that 资产血缘可理解。
 47. As a 门店内容操作者, I want 查看一个素材被哪些 ContentPackage revision 引用, so that 撤权或替换时知道影响范围。
 48. As a 门店内容操作者, I want 授权即将到期或已撤回时看到待处理列表和安全替换入口, so that 新生成和新交付不会继续使用无效素材。
 49. As a 门店内容操作者, I want 失败、处理中和可用 Asset 分开展示并解释下一步, so that 临时 URL 或失败对象不会伪装成可用素材。
@@ -149,9 +149,9 @@ Content 和 Assets 已有基本列表，但用户可见投影仍可能暴露 AID
 
 - P1 以 P0 的 CreationExecutionSnapshot、单一 Harness、共享对象存储、公共 ContentPackage 投影和绿色发布门为前置。P0 未完成时可以开发纯投影和组件，但不得宣称完整旅程上线。
 - Result Center 继续位于具体 Work 上下文，不新增 Result 表、Result 聚合、Result 一级导航或第二历史列表。
-- 商家一级导航维持“创作 / 内容 / 素材 / 门店”。Pro Studio 保持独立 add-on，不回流为主线编辑器。
+- 商家一级导航维持“创作 / 内容 / 素材 / 门店”。产品无 Pro Studio 加购入口；不把主线编辑器扩成无限画布。
 - 所有页面只读取 canonical Task/Work/Job/Asset/ContentPackage/RouteSnapshot 与账本投影；UI state 只拥有临时交互，不拥有业务真相。
-- 对 Pro Studio 来源，公共投影通过判别式 `originRef` 接受 `advanced_canvas_project_revision`，不要求其伪造 `CreationExecutionSnapshot`；adoption 后仍由同一 ContentPackage/OwnedAsset 投影承接。
+- 对历史 Pro Studio 来源，公共投影可通过判别式 `originRef` 识别 `advanced_canvas_project_revision`（只读血缘）；禁止新 adoption 写入。
 
 ### 2. Progressive onboarding and landing handoff
 
@@ -191,9 +191,9 @@ Content 和 Assets 已有基本列表，但用户可见投影仍可能暴露 AID
 - Asset display title 在入库时由业务上下文生成，并允许用户修改治理标题；禁止把内部英文候选名直接投影给商家。
 - 文件夹、标签、项目、IP、用途和用户标题属于可版本化治理 metadata，不复制对象二进制，也不改变不可变 receipt。
 - 权利投影包含主体、用途、平台、有效期、证据状态、撤回状态和影响计数。撤回阻止新生成与新交付，并创建待替换投影；历史版本保持审计可见。
-- Asset lineage 至少关联上传/生成/adoption/Pro Studio/legacy 来源、父 Asset 和引用它的 ContentPackage revisions；执行来源使用判别式 `originRef = marketing_creation_snapshot | advanced_canvas_project_revision | direct_upload | legacy_import`。Pro Studio 来源还必须保存 projectId、revisionId、nodeId/jobId 和必要 checkpoint 引用。
-- 权利撤回或过期阻止新的营销生成、adoption、公共交付、系统分享和发布。工作区成员能否私下取回原始上传文件由独立 `private_retrieval_eligible` 策略决定：仅当工作区所有权、来源合同和当前访问策略同时允许时开放，且必须记录 retrieval receipt；这不恢复公开营销权。
-- Pro Studio 工程 ZIP 必须逐 Asset 执行 workspace access、`private_retrieval_eligible` 与 export policy。不可导出的引用资产必须使导出 fail-closed，或在用户明确选择“仅导出可用项”后从 ZIP 中排除并写入 manifest warning；不得因 Canvas manifest 不复用成品 rights schema 就绕过权利判断。
+- Asset lineage 至少关联上传/生成/adoption/legacy 来源、父 Asset 和引用它的 ContentPackage revisions；执行来源使用判别式 `originRef = marketing_creation_snapshot | advanced_canvas_project_revision | direct_upload | legacy_import`。`advanced_canvas_project_revision` 仅为历史只读血缘（D-170 禁止新写入）。
+- 权利撤回或过期阻止新的营销生成、公共交付、系统分享和发布。工作区成员能否私下取回原始上传文件由独立 `private_retrieval_eligible` 策略决定：仅当工作区所有权、来源合同和当前访问策略同时允许时开放，且必须记录 retrieval receipt；这不恢复公开营销权。
+- 主线成品 ZIP 必须逐 Asset 执行 workspace access、`private_retrieval_eligible` 与 export policy。不可导出的引用资产必须使导出 fail-closed，或在用户明确选择“仅导出可用项”后从 ZIP 中排除并写入 manifest warning。历史画布过程 ZIP 路径已退役（D-170）。
 - 搜索与筛选覆盖类型、来源、项目、IP、标签、权利、平台、有效期、处理状态和失败状态；失败项给出重试、替换或删除草稿的明确动作。
 
 ### 7. Mainline streaming as the only Composer copy-generation experience
@@ -202,7 +202,7 @@ Content 和 Assets 已有基本列表，但用户可见投影仍可能暴露 AID
 - SSE 连接使用 `Last-Event-ID` 恢复，客户端按 event id/sequence 去重，terminal revision 到达后以公共 ContentPackage 投影校准最终文本。
 - token 流可视呈现逐字更新；读屏播报按语义段落节流，最终完成只礼貌播报一次。断线时显示“正在恢复连接”，不清空已到达文本。
 - 图片和视频继续用白话阶段事件与最终 Asset，不伪造 token 或百分比。
-- Pro Studio `text.respond` 可以复用同一 SSE envelope、sequence、恢复和去重规则，但其 terminal truth 是 durable canvas text node + project revision，不是 ContentPackage；只有 adoption 后才进入主线成品投影。
+- 主线 token/SSE 流式以 ContentPackage / Task 为 terminal truth；历史画布 `text.respond` 路径已退役（D-170）。
 
 ### 8. Delivery and publication receipts
 
@@ -211,7 +211,7 @@ Content 和 Assets 已有基本列表，但用户可见投影仍可能暴露 AID
 - `shared` 或 `handed_off` 绝不等于 `published`。只有已验证平台回执或用户人工补记才能形成 publication record。
 - 人工发布记录包含平台、账号显示标识、发布时间、URL、记录人、source tier 和修订历史；修改已发布成品产生新 revision，不改写旧 publication record。
 - 自动发布状态机仍受平台 live gate 控制；未验证平台只提供发布包、系统分享和人工回执。
-- 主线确定性 ZIP 使用成品交付 manifest；Pro Studio 工程 ZIP 使用 `pro-studio-canvas-export/v1`。两者可以共用纯打包算法，但不得复用 publication/delivery 状态、rights 字段或 receipt 类型。
+- 主线确定性 ZIP 使用成品交付 manifest。历史 `pro-studio-canvas-export/v1` 过程资产 manifest 已退役，不得再作为产品交付面。
 
 ### 9. Outcome signals, weekly review and recommendation
 
@@ -276,7 +276,7 @@ Content 和 Assets 已有基本列表，但用户可见投影仍可能暴露 AID
 - Content 列表只含公共 ContentPackage 投影，不泄漏 prompt、AIDA、raw status、UUID、Provider 或模型 slug。
 - 搜索与过滤返回真实平台、项目、IP、系列、状态和日期结果；空结果不调用模型补造。
 - legacy 内容读取不创建 Work；第一次明确调整或交付才幂等创建 legacy anchor，且不调用模型、不扣费、不制造 revision。
-- Asset 只有持久 receipt 才进入可用列表；临时 URL、处理中和失败项不能伪装完成。Pro Studio Asset 必须通过 `advanced_canvas_project_revision` originRef 可回查。
+- Asset 只有持久 receipt 才进入可用列表；临时 URL、处理中和失败项不能伪装完成。历史画布来源 Asset 可通过 `advanced_canvas_project_revision` originRef 只读回查。
 - 文件夹/标签操作不复制对象；标题修改不改变 hash/receipt；来源和引用反向查询准确。
 - 授权到期或撤回阻止新营销生成、adoption、公共交付和发布并形成待替换投影；历史 revision 仍可审计。私下取回原始文件只在 `private_retrieval_eligible` 为真时允许，Canvas 工程 ZIP 逐 Asset 执行同一策略。
 
@@ -325,7 +325,7 @@ Content 和 Assets 已有基本列表，但用户可见投影仍可能暴露 AID
 
 - 复用现有 Result Shell、Result Command Adapter、token stream、return restore、三媒介 worksurface、Delivery panel 和 mobile video 合同测试。
 - 复用 ContentPackage public projection、OCC、delivery manifest、assisted receipt、recent projection 和 legacy migration 先例。
-- 复用 Assets governance、authorization、OwnedAsset、ContentPackage attachment 与 Pro Studio adoption 的不可变资产边界。
+- 复用 Assets governance、authorization、OwnedAsset、ContentPackage attachment 的不可变资产边界（历史 adoption 血缘只读）。
 - 浏览器验收沿用当前 Playwright production-candidate、移动 viewport、暗色模式和 axe 工具链，但升级为连续主旅程。
 
 ## Out of Scope
@@ -335,7 +335,7 @@ Content 和 Assets 已有基本列表，但用户可见投影仍可能暴露 AID
 - 不承诺自动因果归因、自动 ROI、竞品监测或跨租户行业 feed。
 - 不新增未经 live gate 验证的平台自动发布；小红书、朋友圈等继续使用发布包、系统分享或人工交接。
 - 不建设企业级多层审批、自定义 ACL、多门店/Agency 控制台、危机批量暂停和大规模团队协作。
-- 不在主线复制 Canva/CapCut 专业编辑器；无限画布、高阶精修、TTS/SFX 和节点编辑由 Pro Studio D-099 独立规格拥有。
+- 不在主线复制 Canva/CapCut 专业编辑器；无限画布 / 高阶精修 / 画布 Agent 已随 Pro Studio 退役（D-170），不另开接替规格。主线 TTS 能力按退役规格 KEEP 迁出后保留。
 - 不引入向量检索、RAG 或新的内容索引服务，除非现有 FTS 的固定检索集出现明确失败证据。
 - 不扩大医疗美容默认范围，也不在本规格执行公开收费前的完整法务与运营验证。
 - 不把全站 Landing 视觉重做纳入范围；仅修复 Landing 意图承接和与主应用连续性直接相关的交互。

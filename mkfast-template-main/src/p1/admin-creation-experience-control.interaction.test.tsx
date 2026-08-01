@@ -163,7 +163,7 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     );
   });
 
-  it('visually edits a Surface and only offers capability-verified Pro Studio', async () => {
+  it('visually edits a Surface without retired Pro Studio tool offers', async () => {
     const user = userEvent.setup();
     const api = createLifecycleApi();
     render(<AdminCreationExperienceControl api={api} />);
@@ -180,8 +180,12 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     );
     await user.type(within(editor).getByLabelText('变更原因'), '上线首页入口');
     expect(within(editor).queryByText('批量去背景')).not.toBeInTheDocument();
-    expect(within(editor).getByText('Pro Studio 无限画布')).toBeInTheDocument();
-    await user.click(within(editor).getByLabelText('展示 Pro Studio'));
+    expect(
+      within(editor).queryByText('Pro Studio 无限画布')
+    ).not.toBeInTheDocument();
+    expect(
+      within(editor).queryByLabelText('展示 Pro Studio')
+    ).not.toBeInTheDocument();
 
     await user.click(
       within(editor).getByRole('button', { name: '保存 Surface 草稿' })
@@ -205,9 +209,7 @@ describe('Recipe / Surface visual lifecycle editor', () => {
       'surface_draft',
       expect.objectContaining({
         body: expect.objectContaining({
-          toolEntryRefs: [
-            { toolEntryId: 'tool.pro_studio', order: 10, visible: true },
-          ],
+          toolEntryRefs: [],
         }),
       }),
       expect.any(String)

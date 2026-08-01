@@ -13,7 +13,6 @@ import type { InternalCapabilityRecord } from './types.js';
 export type ReadinessProbe = () => Promise<ReadinessCheckResult> | ReadinessCheckResult;
 
 export interface ReadinessProbeMap {
-  canvas?: ReadinessProbe;
   dbos?: ReadinessProbe;
   objectStorage?: ReadinessProbe;
   outbox?: ReadinessProbe;
@@ -33,7 +32,6 @@ const ALL_CHECKS: ReadinessCheckName[] = [
   'providerMode',
   'providerLive',
   'outbox',
-  'canvas',
 ];
 
 export interface EvaluateReadinessOptions {

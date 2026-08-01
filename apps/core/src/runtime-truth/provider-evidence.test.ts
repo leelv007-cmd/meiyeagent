@@ -125,7 +125,7 @@ function stagingReleaseManifest(): P0ReleaseCandidateManifest {
         video: 'staging:journey:video:1',
       },
     },
-    units: (['web', 'core', 'worker', 'canvas'] as const).map((unit) => ({
+    units: (['web', 'core', 'worker'] as const).map((unit) => ({
       unit,
       commitSha: commit,
       artifactDigest: `sha256:${unit}-immutable`,
@@ -385,14 +385,14 @@ test('release candidate acceptance fails closed without live evidence', () => {
   assert.equal(green.ok, true, green.errors.join('; '));
   assert.equal(green.merchantCapabilitiesOk, true);
 
-  const manifestWithoutCanvasConfig = stagingReleaseManifest();
+  const manifestWithoutWorkerConfig = stagingReleaseManifest();
   const incompleteManifest = evaluateReleaseCandidateAcceptance({
     expectedCommitSha: commit,
     providerLiveReport: baseReport(),
     releaseManifest: {
-      ...manifestWithoutCanvasConfig,
-      units: manifestWithoutCanvasConfig.units.map((unit) =>
-        unit.unit === 'canvas' ? { ...unit, configRevision: undefined } : unit,
+      ...manifestWithoutWorkerConfig,
+      units: manifestWithoutWorkerConfig.units.map((unit) =>
+        unit.unit === 'worker' ? { ...unit, configRevision: undefined } : unit,
       ),
     },
     now,

@@ -1,11 +1,79 @@
 import { createHash } from 'node:crypto';
 import { hasCurrentRestrictedAssetAuthorization } from '@meiye/contracts';
 import type { ProductRepository } from '../../product/repository.js';
-import type {
-  CanvasAssetRepository,
-  CanvasOwnedAsset,
-} from '../../pro-studio/canvas-asset-facade.js';
 import type { DataClass } from './supply-contracts.js';
+
+/**
+ * Minimal owned-asset receipt used by reference resolution.
+ * Mainline reads foundation `p1_owned_assets` (not pro_studio_owned_assets).
+ */
+export interface OwnedReferenceAsset {
+  contentType: string;
+  exportPolicy?: {
+    exportAllowed: boolean;
+    expiresAt: string | null;
+    privateRetrievalAllowed: boolean;
+    revokedAt: string | null;
+    workspaceId: string;
+  };
+  objectKey: string;
+  sha256: string;
+  sizeBytes: number;
+  source:
+    | { kind: 'local_import' }
+    | {
+        derivation: string;
+        kind: 'local_canvas_derivative';
+        parentAssetId: string;
+      }
+    | { kind: 'product_asset'; sourceAssetId: string }
+    | { jobId: string; kind: 'generation_job' };
+}
+
+export interface OwnedReferenceAssetRepository {
+  get(
+    workspaceId: string,
+    assetId: string,
+  ): Promise<OwnedReferenceAsset | null>;
+}
+
+/** Adapt foundation OwnedAsset rows into the reference-asset receipt shape. */
+export function foundationOwnedReferenceAssetRepository(assets: {
+  getOwnedAsset(
+    workspaceId: string,
+    assetId: string,
+  ): Promise<{
+    createdAt: string;
+    jobId: string;
+    mediaType: string;
+    objectKey: string;
+    sha256: string;
+    sizeBytes: number;
+    workspaceId: string;
+  } | null>;
+}): OwnedReferenceAssetRepository {
+  return {
+    async get(workspaceId, assetId) {
+      const asset = await assets.getOwnedAsset(workspaceId, assetId);
+      if (!asset) return null;
+      if (!normalizedContentType(asset.mediaType)) return null;
+      return {
+        contentType: asset.mediaType,
+        exportPolicy: {
+          exportAllowed: true,
+          expiresAt: null,
+          privateRetrievalAllowed: true,
+          revokedAt: null,
+          workspaceId: asset.workspaceId,
+        },
+        objectKey: asset.objectKey,
+        sha256: asset.sha256,
+        sizeBytes: asset.sizeBytes,
+        source: { kind: 'generation_job', jobId: asset.jobId },
+      };
+    },
+  };
+}
 
 export type ReferenceAssetResolutionFailureReason =
   | 'not_found'
@@ -155,7 +223,7 @@ export class OwnedAssetReferenceResolver implements ReferenceAssetResolverPort {
   private readonly maxBytes: number;
 
   constructor(
-    private readonly assets: Pick<CanvasAssetRepository, 'get'>,
+    private readonly assets: OwnedReferenceAssetRepository,
     private readonly storage: OwnedAssetReferenceStorage,
     options: {
       clock?: () => Date;
@@ -272,7 +340,7 @@ export class OwnedAssetReferenceResolver implements ReferenceAssetResolverPort {
     assetId: string,
   ): Promise<
     | {
-        asset: CanvasOwnedAsset;
+        asset: OwnedReferenceAsset;
         classificationSource: 'server_fact' | 'unclassified';
         contentType: string;
         dataClass: DataClass[];

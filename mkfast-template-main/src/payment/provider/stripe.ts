@@ -23,7 +23,6 @@ import type {
   PaymentStatus,
   PlanInterval,
   PortalResult,
-  ServerCatalogOffer,
 } from '../types';
 import { PlanIntervals, PaymentScenes, PaymentTypes } from '../types';
 import { normalizeStripeVerifiedPaymentEvent } from '../verified-webhook-event';
@@ -66,11 +65,6 @@ export class StripeProvider implements PaymentProvider {
 
   getProviderName(): string {
     return 'stripe';
-  }
-
-  async validateServerCatalogOffer(offer: ServerCatalogOffer) {
-    void offer;
-    throw new StripeNewCommerceRetiredError();
   }
 
   /**

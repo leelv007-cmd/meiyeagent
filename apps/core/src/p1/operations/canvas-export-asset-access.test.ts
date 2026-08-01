@@ -2,8 +2,38 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import type { ContentPackage } from '@meiye/contracts';
-import type { CanvasOwnedAsset } from '../../pro-studio/canvas-asset-facade.js';
 import { OperationsCanvasExportAssetAccessService } from './canvas-export-asset-access.js';
+
+/** Local mock shape for canvas export asset access tests. */
+type CanvasOwnedAsset = {
+  contentType: string;
+  createdAt?: string;
+  exportPolicy?: {
+    exportAllowed: boolean;
+    expiresAt: string | null;
+    ownerId?: string;
+    privateRetrievalAllowed: boolean;
+    revokedAt: string | null;
+    updatedAt?: string;
+    version?: number;
+    workspaceId: string;
+  };
+  fileName: string;
+  id: string;
+  objectKey: string;
+  sha256: string;
+  sizeBytes: number;
+  source:
+    | { kind: 'local_import' }
+    | {
+        derivation: string;
+        kind: 'local_canvas_derivative';
+        parentAssetId: string;
+      }
+    | { kind: 'product_asset'; sourceAssetId: string }
+    | { jobId: string; kind: 'generation_job' };
+  workspaceId: string;
+};
 
 const workspaceId = 'workspace-1';
 const bytes = new TextEncoder().encode('authoritative canvas asset');

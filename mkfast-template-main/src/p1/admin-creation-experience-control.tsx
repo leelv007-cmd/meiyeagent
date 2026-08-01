@@ -679,7 +679,6 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
   const [recipeRefs, setRecipeRefs] = useState<SurfaceRecipeRef[]>([
     newSurfaceRecipeRef(1),
   ]);
-  const [includeProStudio, setIncludeProStudio] = useState(false);
   const [reason, setReason] = useState('');
   const [head, setHead] = useState<SurfaceRecord | null>(null);
   const [history, setHistory] = useState<SurfaceRecord[]>([]);
@@ -691,11 +690,6 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
   const hydrate = (record: SurfaceRecord) => {
     setRecipeRefs(
       record.recipeRefs.length ? record.recipeRefs : [newSurfaceRecipeRef(1)]
-    );
-    setIncludeProStudio(
-      record.toolEntryRefs.some(
-        (ref) => ref.toolEntryId === 'tool.pro_studio' && ref.visible
-      )
     );
   };
 
@@ -793,9 +787,7 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
       reason: reason.trim(),
       body: {
         recipeRefs: refs,
-        toolEntryRefs: includeProStudio
-          ? [{ toolEntryId: 'tool.pro_studio', order: 10, visible: true }]
-          : [],
+        toolEntryRefs: [],
       },
     });
   };
@@ -958,18 +950,6 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
               </div>
             ))}
           </div>
-          <div className="rounded-xl border border-input p-3">
-            <p className="font-medium">已通过能力验收的工具</p>
-            <label className="mt-2 flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                aria-label="展示 Pro Studio"
-                checked={includeProStudio}
-                onChange={(event) => setIncludeProStudio(event.target.checked)}
-              />
-              Pro Studio 无限画布
-            </label>
-          </div>
           <div className="space-y-2">
             <Label htmlFor="surface-reason">变更原因</Label>
             <Input
@@ -1067,11 +1047,6 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
                   </p>
                 </div>
               ))}
-            {includeProStudio ? (
-              <div className="rounded-xl border border-primary/40 p-3 font-medium">
-                Pro Studio 无限画布
-              </div>
-            ) : null}
           </AdminPanelContent>
         </AdminPanel>
         <LifecycleHistory history={history} />

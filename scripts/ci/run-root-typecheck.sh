@@ -3,7 +3,6 @@ set -euo pipefail
 
 pnpm --filter @meiye/contracts typecheck
 pnpm --filter @meiye/core typecheck
-pnpm --filter @meiye/canvas typecheck
 
 # The Content Collections Vite plugin generates the Web module consumed by
 # TypeScript. Build it before typechecking so a clean checkout has the same

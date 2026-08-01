@@ -147,7 +147,6 @@ test('capability-gated tools do not count', () => {
     container: 'dialog',
     order: i,
     categories: ['image'],
-    isProStudioBanner: false,
     capabilityPublished: i < 5, // only 5 published
     entitlementLocked: false,
   }));
@@ -223,7 +222,7 @@ test('task-language categories for both tabs', () => {
   const templateCats = listCategoriesForTab('templates').map((c) => c.id);
   assert.deepEqual(templateCats, [...TEMPLATE_CATALOG_CATEGORIES]);
   const toolCats = listCategoriesForTab('tools').map((c) => c.id);
-  assert.deepEqual(toolCats, ['all', 'image', 'video', 'publish', 'pro']);
+  assert.deepEqual(toolCats, ['all', 'image', 'video', 'publish']);
 });
 
 test('filter by category keeps only published-visible matches', () => {

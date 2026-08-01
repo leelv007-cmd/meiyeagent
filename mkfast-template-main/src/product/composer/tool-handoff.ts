@@ -7,12 +7,11 @@
  * Open / preview / return = zero business writes.
  */
 
-/** Four first-ship standalone tool entry ids (D-092). */
+/** First-ship standalone tool entry ids (D-092; Pro Studio retired). */
 export const STANDALONE_TOOL_ENTRY_IDS = [
   'tool.multi_size',
   'tool.batch_bg_remove',
   'tool.subtitle_erase',
-  'tool.pro_studio',
 ] as const;
 
 export type StandaloneToolEntryId = (typeof STANDALONE_TOOL_ENTRY_IDS)[number];
@@ -315,30 +314,17 @@ export function parseToolHandoffFromSearchParams(
 }
 
 /**
- * Build a tool open href. Pro Studio always hits the canonical gate.
- * Other tools use a relative path under catalog / tool host — never Canvas deep links.
+ * Build a tool open href. Tools use a relative path under catalog / tool host.
  */
 export function buildToolOpenHref(
   handoff: ToolHandoff,
-  options?: { toolBasePath?: string; proStudioPath?: string }
+  options?: { toolBasePath?: string }
 ): string {
   const projected = projectToolHandoff(handoff);
   if (!projected.ok) {
     throw new Error(projected.reason);
   }
   const clean = projected.handoff;
-  const isProStudio =
-    clean.toolEntryId === 'tool.pro_studio' ||
-    clean.toolEntryId.endsWith('pro_studio');
-  if (isProStudio) {
-    // Canonical gate only — no Canvas deep-link bypass (D-077).
-    const base = options?.proStudioPath ?? '/pro-studio';
-    const params = serializeToolHandoffToSearchParams(clean);
-    // Pro Studio gate does not need toolEntryId in query (path is the gate).
-    params.delete('toolEntryId');
-    const qs = params.toString();
-    return qs ? `${base}?${qs}` : base;
-  }
   const base = options?.toolBasePath ?? `/dashboard/tools/${clean.toolEntryId}`;
   const params = serializeToolHandoffToSearchParams(clean);
   params.delete('toolEntryId'); // already in path
@@ -370,7 +356,7 @@ export type ToolHandoffOpenResult = {
 
 export function openToolWithHandoff(
   handoff: ToolHandoff,
-  options?: { toolBasePath?: string; proStudioPath?: string }
+  options?: { toolBasePath?: string }
 ): ToolHandoffOpenResult {
   const projected = projectToolHandoff(handoff);
   if (!projected.ok) {

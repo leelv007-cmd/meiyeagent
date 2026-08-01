@@ -1,23 +1,26 @@
 ---
 title: vozeb 借鉴落地与 Pro Studio 升单线实施规格
-status: ready-for-agent
-triage: ready-for-agent
+status: superseded
+triage: historical
 date: 2026-07-16
 revision: 2 (2026-07-16 晚,经 6 路 Codex 交叉复核修订;裁决材料 `.scratch/spec-codex-review-2026-07-16/`)
 source_of_truth:
+  - 退役权威: docs/specs/pro-studio-retirement-spec-2026-08-01.md + D-170
   - 评审主文档:`references/analysis/vozeb-方案合集-2026-07-16.md`(§8 决策定稿 + §9 画布迁移定稿)
   - 4 路交叉验证:`.scratch/vozeb-canvas-migration-2026-07-16/reports/r1.md`、`r2.md`、`r3.md`、`r4.md`
   - Codex 16 票深调研:`.scratch/vozeb-product-reference-wayfinding/`(采用终裁 assets/14、路线 assets/15、主报告 assets/16)
   - ADR-0011 ContentPackage 唯一成品聚合
   - `docs/specs/contentpackage-productization-spec.md`(主线 N1 事实基线,本规格不重开)
-  - ADR-0012 Composer 与 Pro Studio 两线产品边界
+  - ADR-0012 Composer 与 Pro Studio 两线产品边界（superseded by D-170）
   - CONTEXT.md(画布作品 / 作品编辑上下文 / Generation Job 契约)
   - 用户 2026-07-16 晚补充拍板:采用同选区只落一次 / Pro Studio=加购项 / Audio=TTS+音效 / Agent 动词全集含改删
 ---
 
 # vozeb 借鉴落地与 Pro Studio 升单线实施规格
 
-> **领域合同保留、实现入口已取代（2026-07-22）**：本文继续拥有两线边界、ContentPackage adoption、工程生命周期、计费/安全和商业 release gates 等原始领域合同；画布 parity、ports/copies 治理、用户侧模型选择、Canvas ZIP 导出与 Agent 外壳拆分由 D-099 rev2 重新裁决。当前实现不得从本文的“首发含 Agent/Audio”表述直接拆票，实施顺序与验收以 [`pro-studio-parity-rework-spec-2026-07-22.md`](./pro-studio-parity-rework-spec-2026-07-22.md)、G01–G48 baseline 和 K1–K7 票包为准。
+> **SUPERSEDED（2026-08-01）**：升单线 / Pro Studio 加购已由 **D-170 全量退役**。现行权威＝[`pro-studio-retirement-spec-2026-08-01.md`](./pro-studio-retirement-spec-2026-08-01.md)。正文仅历史领域合同追溯；不得按本文拆升单或 parity 票。ContentPackage 唯一聚合与主线 N1 不变量仍有效。
+>
+> **领域合同保留、实现入口已取代（2026-07-22，再被 D-170 取代）**：历史两线边界、adoption、商业 gates 见正文；画布 parity 曾由 D-099 rev2 裁决，现均随退役关闭。
 
 > 本规格是《vozeb 方案合集 2026-07-16》全部已拍板决策的工程落地口径。两条产品线:**主线**(L1 门店旅程,由 ContentPackage 产品化规格拥有,本规格只承接从 vozeb 借来的增强项)与**升单线**(L3 Pro Studio:无限画布 + 图片精修整套授权复用 + Audio + 画布 Agent,本规格的主体)。P1 Composer 的自由画布语义已收窄为日常轻编辑；首发范围含 Audio(TTS+音效)与 Agent(动词全集含改/删),整体量级如实计为 XL(详见实施决策 §12 的诚实口径:约 23-36 人周)。
 

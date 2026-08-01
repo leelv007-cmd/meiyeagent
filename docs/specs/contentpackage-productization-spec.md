@@ -9,17 +9,17 @@ source_of_truth:
   - 阶段诊断合成：`docs/reviews/stage-diagnosis-2026-07-14/05-synthesis.md`
   - 管理后台待开发：`docs/reviews/stage-diagnosis-2026-07-14/06-backlog-admin-control-plane.md`
   - CONTEXT.md（ContentPackage 唯一成品聚合 / 真实跑通链路数 / 商家一级导航收束术语）
-  - 2026-07-16 Pro Studio overlay：`references/analysis/vozeb-方案合集-2026-07-16.md`、`docs/specs/vozeb-adoption-pro-studio-spec.md`、ADR-0012
-  - 现行 ADR-0001 / 0005 / 0006 / 0007 / 0008 / 0009
+  - 历史 Pro Studio overlay（已退役）：`references/analysis/vozeb-方案合集-2026-07-16.md`、`docs/specs/vozeb-adoption-pro-studio-spec.md`、ADR-0012 — 见 **D-170** 与 `docs/specs/pro-studio-retirement-spec-2026-08-01.md`
+  - 现行 ADR-0001 / 0005 / 0006 / 0007 / 0008 / 0009 / 0011
 ---
 
 # ContentPackage 唯一成品化实施规格
 
 > 本规格是 2026-07-14 阶段诊断后用户逐条拍板（D01–D18 + ADR-0011）的工程落地口径。它不重开 P1 Scope Lock，不改 ADR-0006 拓扑 / ADR-0007 AI-SDK-first / ADR-0009 单发布闸，是这些既有决策在"唯一成品事实源"方向上的传导落地。P1 实施规格仍是 Scope 基线；本规格在其之上收敛成品事实。
 
-> 两线叠加：Pro Studio 是 2026-07-16 批准的独立加购产品面，工程可与 ContentPackage 并行，但其 `AdvancedCanvasProject`/revision 只能通过明确 adoption 回写本聚合；它不创建第二套内容事实，也不改变 P1 Composer 日常轻编辑或本规格的 N1/N2 发布闸。
+> **Pro Studio 并行工程主张已废止（D-170）**：不再有独立加购画布产品面与 ContentPackage「两线并行」工程。ContentPackage 仍是唯一用户成品聚合；历史 `advancedCanvas` 血缘只读，**禁止新 adoption 写入**。不改变 P1 Composer 日常轻编辑或本规格的 N1/N2 发布闸。
 
-> **2026-07-19 现行叠加**：产品前台结构以 `docs/design/beauty-marketing-agent-product-design-2026-07-17.md`（D-001~D-046）为唯一最高权威；本规格继续拥有 ContentPackage 聚合、唯一写入边界与 N1/N2 发布闸等实现约束（权威版 Implementation Boundary 白名单）。固定「3 选 1」已由 D-023 取代——默认一个主推荐、备选按需展开；D-046 的自由文本调整通过派生 Work/revision 回到同一 ContentPackage 血缘，不新增第二聚合或消息真相层。主实施已合入，当前 release gate 与持久层残差见实现总账。
+> **2026-07-19 现行叠加**：产品前台结构以 `docs/design/beauty-marketing-agent-product-design-2026-07-17.md` 为唯一最高权威；本规格继续拥有 ContentPackage 聚合、唯一写入边界与 N1/N2 发布闸等实现约束（权威版 Implementation Boundary 白名单）。固定「3 选 1」已由 D-023 取代——默认一个主推荐、备选按需展开；D-046 的自由文本调整通过派生 Work/revision 回到同一 ContentPackage 血缘，不新增第二聚合或消息真相层。主实施已合入，当前 release gate 与持久层残差见实现总账。
 
 ## Problem Statement
 

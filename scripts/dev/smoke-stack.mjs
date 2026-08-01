@@ -10,10 +10,8 @@ const startedAt = new Date().toISOString();
 const corePort =
   process.env.PLAYWRIGHT_CORE_PORT || process.env.CORE_PORT || '4100';
 const databaseUrl = process.env.DATABASE_URL;
-const canvasServiceToken = process.env.CANVAS_SERVICE_TOKEN;
 
 if (!databaseUrl) throw new Error('DATABASE_URL is required.');
-if (!canvasServiceToken) throw new Error('CANVAS_SERVICE_TOKEN is required.');
 
 async function retry(label, assertion, timeoutMs = 45_000) {
   const deadline = Date.now() + timeoutMs;
@@ -38,12 +36,6 @@ async function expectOk(label, url, init) {
 }
 
 await retry('Web', () => expectOk('Web', 'http://localhost:3000/auth/login'));
-
-await retry('Canvas', () =>
-  expectOk('Canvas', 'http://localhost:4200/api/internal/health', {
-    headers: { 'x-canvas-service-token': canvasServiceToken },
-  }),
-);
 
 await retry('Core assembly', async () => {
   const response = await expectOk(
@@ -80,7 +72,7 @@ await retry('Worker heartbeat', async () => {
 });
 
 process.stdout.write(
-  `Four-service smoke passed: Web:3000, Core:${corePort} Harness active, Worker heartbeat fresh, Canvas:4200.\n`,
+  `Web+core smoke passed: Web:3000, Core:${corePort} Harness active, Worker heartbeat fresh.\n`,
 );
 
 const playwright = await new Promise((resolveExit, reject) => {
@@ -102,7 +94,6 @@ const playwright = await new Promise((resolveExit, reject) => {
         ...process.env,
         PLAYWRIGHT_AUTH_BASE_URL: 'http://localhost:3000',
         PLAYWRIGHT_BASE_URL: 'http://localhost:3000',
-        PLAYWRIGHT_CANVAS_PORT: '4200',
         PLAYWRIGHT_CORE_PORT: corePort,
         PORT: '3000',
         TEST_DATABASE_URL: databaseUrl,

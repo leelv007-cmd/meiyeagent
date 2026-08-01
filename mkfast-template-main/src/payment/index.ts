@@ -2,11 +2,6 @@ import { websiteConfig } from '@/config/website';
 import { getDb } from '@/db';
 import { serverEnv } from '@/env/server';
 import { CreemProvider } from './provider/creem';
-import {
-  settlePendingProStudioActivations,
-  settleVerifiedProStudioPayment,
-} from './pro-studio-commerce';
-import { PostgresProStudioCommerceStore } from './postgres-pro-studio-commerce';
 import { PostgresPlanCheckoutBindingStore } from './plan-checkout-bindings';
 import {
   planGrantCommandFromIntent,
@@ -120,13 +115,10 @@ export async function settlePendingPaymentWebhookEvents() {
           return provider.handleWebhookEvent(claim.payload, signature);
         },
         async settle(event) {
-          const proStudioSettlement =
-            await settleVerifiedProStudioPurchase(event);
+          // Pro Studio add-on settlement retired (D-170 / P1 fail-closed).
+          // Plan commerce is the only durable binding path.
           const planSettlement = await settleVerifiedPlanPurchase(event);
-          if (
-            proStudioSettlement.status === 'not_applicable' &&
-            !planSettlement
-          ) {
+          if (!planSettlement) {
             const error = new Error(
               'Verified payment event has no durable commerce binding yet.'
             ) as Error & { code: string };
@@ -137,23 +129,6 @@ export async function settlePendingPaymentWebhookEvents() {
       },
     }
   );
-}
-
-export async function settlePendingProStudioPurchases() {
-  return settlePendingProStudioActivations({
-    activate: activateProStudioPurchase,
-    limit: 25,
-    store: new PostgresProStudioCommerceStore(getDb()),
-  });
-}
-
-export async function settleVerifiedProStudioPurchase(
-  event: VerifiedPaymentWebhookEvent
-) {
-  return settleVerifiedProStudioPayment(event, {
-    activate: activateProStudioPurchase,
-    store: new PostgresProStudioCommerceStore(getDb()),
-  });
 }
 
 /** Tc: settle plan checkout/renewal/cancel into Foundation payment_grant. */
@@ -216,34 +191,5 @@ async function grantPlanEntitlement(intent: PlanSettlementIntent) {
     throw new Error(
       `Core plan payment_grant failed (${response.status}): ${await response.text()}`
     );
-  }
-}
-
-async function activateProStudioPurchase(input: {
-  offerId: string;
-  ownerUserId: string;
-  paymentEventId: string;
-  workspaceId: string;
-}) {
-  const endpoint = new URL(
-    '/api/internal/pro-studio-purchases',
-    serverEnv.CANVAS_SERVICE_URL
-  );
-  const response = await fetch(endpoint, {
-    body: JSON.stringify({
-      offerId: input.offerId,
-      paymentEventId: input.paymentEventId,
-      userId: input.ownerUserId,
-      workspaceId: input.workspaceId,
-    }),
-    cache: 'no-store',
-    headers: {
-      'content-type': 'application/json',
-      'x-canvas-service-token': serverEnv.CANVAS_SERVICE_TOKEN,
-    },
-    method: 'POST',
-  });
-  if (!response.ok) {
-    throw new Error(`Canvas purchase activation failed (${response.status}).`);
   }
 }

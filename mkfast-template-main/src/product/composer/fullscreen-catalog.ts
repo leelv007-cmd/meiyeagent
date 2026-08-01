@@ -15,11 +15,6 @@ import type {
 } from '@meiye/contracts';
 
 import {
-  canEnterProStudio,
-  type ProStudioEntitlementState,
-} from '@/lib/pro-studio-entitlement';
-
-import {
   buildComposerCatalogHref,
   parseComposerCatalogSearch,
   type ComposerCatalogSearchParams,
@@ -96,13 +91,6 @@ export type CatalogItemView = {
   toolEntryId?: string;
   recipeId?: string;
   recipeRevisionId?: string;
-  isProStudioBanner?: boolean;
-  /**
-   * Pro Studio banner only (R-08 / #211): the canonical entitlement state.
-   * `locked` / `unknown` items still open the canonical gate — the gate page is
-   * where the merchant learns the real state and can unlock.
-   */
-  proStudioStatus?: ProStudioEntitlementState;
 };
 
 export type CatalogItemSource = {
@@ -120,12 +108,6 @@ export type CatalogItemSource = {
    * When surface.toolEntryRefs present, only visible refs count.
    */
   toolVisibility?: Record<string, boolean>;
-  /**
-   * Pro Studio entitlement from the canonical projection. Omitted = not read
-   * yet = `unknown` (R-08: seeds never stand in for an entitlement answer).
-   */
-  proStudioStatus?: ProStudioEntitlementState;
-  proStudioLockReason?: string;
 };
 
 /** Join live server facts with browser-only category/entitlement presentation. */
@@ -318,7 +300,7 @@ function projectToolItems(source: CatalogItemSource): CatalogItemView[] {
       tool.capabilityPublished &&
       source.capabilityGateOpen?.[tool.id] !== false;
     const publishedVisible = surfaceVisible && capabilityOk;
-    const base = {
+    return {
       id: tool.id,
       kind: 'tool' as const,
       title: tool.label,
@@ -327,29 +309,6 @@ function projectToolItems(source: CatalogItemSource): CatalogItemView[] {
       categories: ['all', ...tool.categories],
       publishedVisible,
       toolEntryId: tool.id,
-      isProStudioBanner: tool.isProStudioBanner,
-    };
-    if (tool.isProStudioBanner) {
-      // R-08: the entitlement verdict comes from the canonical projection, and
-      // an unread projection is `unknown` — the catalog never claims unlocked.
-      const status = source.proStudioStatus ?? 'unknown';
-      return {
-        ...base,
-        locked: !canEnterProStudio(status),
-        ...(canEnterProStudio(status)
-          ? {}
-          : {
-              lockReason:
-                source.proStudioLockReason ??
-                (status === 'locked'
-                  ? '尚未开通 Pro Studio'
-                  : '权益状态读取中，暂不可进入'),
-            }),
-        proStudioStatus: status,
-      };
-    }
-    return {
-      ...base,
       locked: tool.entitlementLocked,
       ...(tool.entitlementLocked && tool.lockReason
         ? { lockReason: tool.lockReason }

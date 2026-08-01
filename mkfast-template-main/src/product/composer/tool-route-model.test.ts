@@ -24,9 +24,9 @@ test('ordinary tools without a verified execution chain are not routable', () =>
   }
 });
 
-test('ordinary tool route rejects Pro Studio bypass and sensitive search', () => {
+test('ordinary tool route rejects unknown tool and sensitive search', () => {
   assert.equal(
-    resolveOrdinaryToolRoute('tool.pro_studio', {}).kind,
+    resolveOrdinaryToolRoute('tool.unknown_retired', {}).kind,
     'not_found'
   );
   const validated = validateOrdinaryToolSearch({

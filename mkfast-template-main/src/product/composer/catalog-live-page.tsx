@@ -1,8 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
-import { useProStudioEntitlement } from '@/hooks/use-pro-studio-entitlement';
-
 import { saveCatalogReturnSnapshot } from './catalog-return-store';
 import type { CatalogSearch } from './catalog-route-model';
 import {
@@ -19,10 +17,7 @@ import {
   fetchComposerCatalogSource,
   type ComposerQueryTransport,
 } from './composer-live';
-import {
-  assertProStudioCanonicalHref,
-  openComposerTool,
-} from './composer-tools';
+import { openComposerTool } from './composer-tools';
 import { loadCatalogReturnSnapshot } from './catalog-return-store';
 
 export type CatalogRecipeSelection = {
@@ -62,22 +57,15 @@ export function CatalogLivePage({
     queryKey: ['composer', 'fullscreen-catalog', search.surfaceRevisionId],
     queryFn: ({ signal }) => fetchComposerCatalogSource(signal, query),
   });
-  const entitlement = useProStudioEntitlement();
   const source = useMemo(
     () =>
       sourceQuery.data
-        ? {
-            ...catalogItemSourceFromLive(
-              sourceQuery.data.surface,
-              sourceQuery.data.tools
-            ),
-            proStudioStatus: entitlement.projection.state,
-            ...(entitlement.reason
-              ? { proStudioLockReason: entitlement.reason }
-              : {}),
-          }
+        ? catalogItemSourceFromLive(
+            sourceQuery.data.surface,
+            sourceQuery.data.tools
+          )
         : undefined,
-    [entitlement.projection.state, entitlement.reason, sourceQuery.data]
+    [sourceQuery.data]
   );
 
   useEffect(() => {
@@ -95,9 +83,7 @@ export function CatalogLivePage({
 
   const selectItem = (item: CatalogItemView) => {
     if (!sourceQuery.data) return;
-    // Pro Studio stays reachable in every state: the canonical gate page is
-    // where the merchant sees the real entitlement and can unlock (R-08).
-    if (item.locked && !item.isProStudioBanner) return;
+    if (item.locked) return;
     if (item.kind === 'template') {
       if (!item.recipeRevisionId) return;
       onSelectRecipe({
@@ -118,9 +104,6 @@ export function CatalogLivePage({
       focusKey: item.id,
       surfaceRevisionId: sourceQuery.data.surface.revisionId,
     });
-    if (item.toolEntryId === 'tool.pro_studio') {
-      assertProStudioCanonicalHref(opened.href);
-    }
     onNavigateHref(opened.href);
   };
 

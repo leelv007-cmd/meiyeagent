@@ -152,7 +152,7 @@ test('the manifest carries four same-SHA units with digests and config revisions
   assert.equal(manifest.result, 'pass');
   assert.deepEqual(
     manifest.units.map((unit) => unit.unit),
-    ['web', 'core', 'worker', 'canvas']
+    ['web', 'core', 'worker']
   );
   assert.deepEqual(new Set(manifest.units.map((unit) => unit.commitSha)), new Set([commit]));
   for (const unit of manifest.units) {
@@ -276,7 +276,7 @@ test('the generated manifest satisfies the release-candidate gate end to end', a
   );
   assert.equal(gate.status, 0, gate.stderr);
   assert.match(gate.stdout, /"status": "pass"/);
-  assert.match(gate.stdout, /"web",\n\s+"core",\n\s+"worker",\n\s+"canvas"/);
+  assert.match(gate.stdout, /"web",\n\s+"core",\n\s+"worker"/);
 });
 
 test('directory digests are deterministic and content sensitive', async () => {

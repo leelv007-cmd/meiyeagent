@@ -14,7 +14,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const CORE_OPERATIONS = ['copy.generate', 'image.generate', 'video.generate'];
-const REQUIRED_UNITS = ['web', 'core', 'worker', 'canvas'];
+const REQUIRED_UNITS = ['web', 'core', 'worker'];
 const COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/u;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 
@@ -60,7 +60,7 @@ export function assertReleaseCandidateEvidence({
     const required = new Set(REQUIRED_UNITS);
     const present = new Set(units.map((unit) => unit.unit));
     if (units.length !== REQUIRED_UNITS.length) {
-      errors.push('Release manifest must contain exactly web, core, worker, and canvas.');
+      errors.push('Release manifest must contain exactly web, core, and worker.');
     }
     for (const unit of required) {
       if (!present.has(unit)) errors.push(`Release manifest missing unit ${unit}.`);

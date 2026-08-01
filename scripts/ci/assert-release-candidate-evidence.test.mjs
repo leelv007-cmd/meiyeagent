@@ -105,7 +105,7 @@ function probe(operation, amount) {
   };
 }
 
-const units = ['web', 'core', 'worker', 'canvas'].map((unit) => ({
+const units = ['web', 'core', 'worker'].map((unit) => ({
   unit,
   commitSha: commit,
   artifactDigest: `sha256:${unit}-immutable`,

@@ -1,20 +1,18 @@
 /**
- * Home tools strip + Pro Studio banner (C3 / #97, D-077 / D-092).
+ * Home tools strip (C3 / #97, D-077 / D-092).
  *
  * Desktop ≤3 / mobile ≤2 ordinary tools.
- * Pro Studio full-width banner → /pro-studio canonical gate only.
+ * Pro Studio banner retired — D-170 / P1 fail-closed.
  */
 
 import { cn } from '@/lib/utils';
 
 import {
-  assertProStudioCanonicalHref,
   openComposerTool,
   projectComposerToolsStrip,
   type ComposerToolsStripInput,
   type ComposerToolsStripView,
   type ComposerToolChipView,
-  type ProStudioBannerView,
 } from './composer-tools';
 import type { ToolHandoff } from './tool-handoff';
 
@@ -40,9 +38,6 @@ export function ComposerToolsStrip({
 
   const handleOpen = (toolEntryId: string) => {
     const result = openComposerTool(toolEntryId, handoffContext ?? {});
-    if (toolEntryId === 'tool.pro_studio') {
-      assertProStudioCanonicalHref(result.href);
-    }
     if (onOpenTool) {
       onOpenTool(result.href, toolEntryId);
       return;
@@ -91,13 +86,6 @@ export function ComposerToolsStrip({
           ))}
         </ul>
       ) : null}
-
-      {view.proStudio ? (
-        <ProStudioBanner
-          banner={view.proStudio}
-          onOpen={() => handleOpen(view.proStudio!.id)}
-        />
-      ) : null}
     </section>
   );
 }
@@ -134,45 +122,6 @@ function OrdinaryToolButton({
       </span>
       <span className="text-xs leading-5 text-muted-foreground">
         {tool.locked ? (tool.lockReason ?? '未解锁') : tool.summary}
-      </span>
-    </button>
-  );
-}
-
-function ProStudioBanner({
-  banner,
-  onOpen,
-}: {
-  banner: ProStudioBannerView;
-  onOpen: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      data-testid="composer-pro-studio-banner"
-      data-status={banner.status}
-      data-can-enter={banner.canEnter ? 'true' : 'false'}
-      data-href={banner.href}
-      aria-label={`${banner.label}。${
-        banner.canEnter ? banner.summary : (banner.lockReason ?? banner.summary)
-      }。${banner.ctaLabel}`}
-      className={cn(
-        'flex min-h-12 w-full flex-col items-start gap-1 rounded-2xl border border-primary/30 bg-primary/5 p-4 text-left',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        'hover:bg-primary/10'
-      )}
-      onClick={onOpen}
-    >
-      <span className="text-sm font-semibold text-foreground">
-        {banner.label}
-      </span>
-      <span className="text-xs leading-5 text-muted-foreground">
-        {banner.canEnter
-          ? banner.summary
-          : (banner.lockReason ?? banner.summary)}
-      </span>
-      <span className="mt-1 text-xs font-medium text-primary">
-        {banner.ctaLabel}
       </span>
     </button>
   );

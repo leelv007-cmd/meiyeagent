@@ -56,7 +56,7 @@ import type { AiStreamingRunner } from './ai-sdk-runner.js';
 import {
   parseAudioSfxContract,
   parseAudioSpeechContract,
-} from '../../pro-studio-runtime/audio-contracts.js';
+} from './audio-contracts.js';
 import {
   audioProductionActivationBlockers,
   isAudioGenerationOperation,
@@ -2542,161 +2542,30 @@ export class ModelSupplyControlPlaneService {
   }
 
   async quoteCanvasGeneration(
-    context: P1Context,
-    request: ReturnType<typeof canvasGenerationRequest>,
-    idempotencyKey: string,
-  ) {
-    await this.assertCanvasGenerationLineage(context, request);
-    const { catalogRevisionId, deployment } =
-      await this.requireCanvasGenerationCapability(
-      context.workspaceId,
-      context.userId,
-      request,
+    _context: P1Context,
+    _request: ReturnType<typeof canvasGenerationRequest>,
+    _idempotencyKey: string,
+  ): Promise<never> {
+    // D-170 / pro-studio retirement: advanced-canvas generation STOP-WRITE.
+    throw new P1DomainError(
+      'COMMANDS_FROZEN',
+      'Pro Studio canvas generation is retired; no new quotes are accepted.',
     );
-    await this.initialize(context.workspaceId);
-    const quoteId = `canvas-quote-${stableId(
-      `${context.workspaceId}:${idempotencyKey}`,
-    )}`;
-    const payloadHash = canvasGenerationPayloadHash(
-      context.workspaceId,
-      request,
-    );
-    const existing = await this.repository.getCanvasGenerationQuote(
-      context.workspaceId,
-      quoteId,
-    );
-    if (existing) {
-      if (existing.actorId !== context.userId) {
-        throw new P1DomainError(
-          'FORBIDDEN',
-          'Canvas generation quote belongs to another actor.',
-        );
-      }
-      if (existing.payloadHash !== payloadHash) {
-        throw new P1DomainError(
-          'IDEMPOTENCY_CONFLICT',
-          'Canvas generation quote idempotency key conflicts with another payload.',
-        );
-      }
-      return existing;
-    }
-    const quote: PersistedCanvasGenerationQuote = {
-      actorId: context.userId,
-      catalogRevisionId,
-      createdAt: this.clock().toISOString(),
-      deploymentId: deployment.id,
-      estimatedProviderCost: deployment.unitPrice
-        ? structuredClone(deployment.unitPrice)
-        : null,
-      originRef: canvasGenerationOriginRef(request, deployment.catalogModelId),
-      quoteId,
-      operation: request.operation,
-      payloadHash,
-      priceRevision:
-        deployment.priceRevision ??
-        `${deployment.catalogModelId}:price-unavailable`,
-      routeSnapshot: await this.application.freezeFixedRouteForExecution({
-        catalogModelId: deployment.catalogModelId,
-        dataClass: request.dataClass,
-        deploymentId: deployment.id,
-        operation: request.operation,
-        workspaceId: context.workspaceId,
-      }),
-      workspaceId: context.workspaceId,
-    };
-    await this.repository.saveCanvasGenerationQuote(context.workspaceId, quote);
-    return structuredClone(quote);
   }
 
   async submitCanvasGeneration(
-    context: P1Context,
-    request: ReturnType<typeof canvasGenerationRequest>,
-    quoteId: string,
-    idempotencyKey: string,
-  ) {
-    await this.assertCanvasGenerationLineage(context, request);
-    const quote = await this.repository.getCanvasGenerationQuote(
-      context.workspaceId,
-      quoteId,
-    );
-    if (!quote) {
-      throw new P1DomainError(
-        'NOT_FOUND',
-        'Canvas generation quote was not found.',
-      );
-    }
-    if (
-      quote.actorId !== context.userId ||
-      quote.workspaceId !== context.workspaceId
-    ) {
-      throw new P1DomainError(
-        'FORBIDDEN',
-        'Canvas generation quote belongs to another actor.',
-      );
-    }
-    const { catalogRevisionId, deployment } =
-      await this.requireCanvasGenerationCapability(
-        context.workspaceId,
-        context.userId,
-        request,
-      );
-    if (
-      quote.payloadHash !==
-        canvasGenerationPayloadHash(context.workspaceId, request) ||
-      quote.catalogRevisionId !== catalogRevisionId ||
-      quote.deploymentId !== deployment.id ||
-      quote.routeSnapshot.catalogRevisionId !== catalogRevisionId ||
-      quote.routeSnapshot.deploymentId !== deployment.id ||
-      quote.priceRevision !==
-        (deployment.priceRevision ??
-          `${deployment.catalogModelId}:price-unavailable`)
-    ) {
-      throw new P1DomainError(
-        'IDEMPOTENCY_CONFLICT',
-        'Canvas generation quote does not match this workspace, payload, catalog, or price revision.',
-      );
-    }
-    const referenceAssetIds = request.inputAssets
-      .filter((asset) => asset.role !== 'mask')
-      .map((asset) => asset.assetId);
-    const submission: Parameters<ModelSupplyApplicationService['submit']>[0] = {
-      actorId: context.userId,
-      correlationId: context.correlationId,
-      dataClass: request.dataClass,
-      idempotencyKey,
-      input: {
-        ...request.parameters,
-        inputAssets: request.inputAssets,
-        referenceAssetIds,
-      } as Parameters<ModelSupplyApplicationService['submit']>[0]['input'],
-      operation: request.operation,
-      origin: {
-        kind: 'advanced_canvas',
-        projectId: request.projectId,
-        revisionId: request.revisionId,
-      },
-      originRef: structuredClone(quote.originRef),
-      lineage: {
-        inputNodeBindings: request.inputNodeBindings,
-      },
-      productUsageQuantity: canvasProductUsageQuantity(
-        deployment,
-        this.allowRecordedExecution,
-      ),
-      prompt: request.prompt,
-      frozenRouteSnapshot: structuredClone(quote.routeSnapshot),
-      selection: {
-        catalogModelId: deployment.catalogModelId,
-        mode: 'fixed',
-      },
-      workspaceId: context.workspaceId,
-    };
-    return this.dispatchCanvasGeneration(
-      context,
-      request.projectId,
-      submission,
+    _context: P1Context,
+    _request: ReturnType<typeof canvasGenerationRequest>,
+    _quoteId: string,
+    _idempotencyKey: string,
+  ): Promise<never> {
+    // D-170 / pro-studio retirement: advanced-canvas generation STOP-WRITE.
+    throw new P1DomainError(
+      'COMMANDS_FROZEN',
+      'Pro Studio canvas generation is retired; no new submissions are accepted.',
     );
   }
+
 
   async retryCanvasGeneration(
     context: P1Context,

@@ -1,18 +1,19 @@
 ---
 title: Pro Studio 画布上游对标重做实施规格（D-099）
-status: ready-for-agent
-triage: ready-for-agent
+status: superseded
+triage: historical
 date: 2026-07-22
 revision: 2
 tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/162
 source_of_truth:
-  - 决策: D-099（docs/design/beauty-marketing-agent-product-design-2026-07-17.md）
+  - 决策: D-099（docs/design/beauty-marketing-agent-product-design-2026-07-17.md）— **superseded by D-170**
+  - 退役权威: docs/specs/pro-studio-retirement-spec-2026-08-01.md + D-170
   - 验收基线: docs/evidence/pro-studio/upstream-parity-gap-baseline-2026-07-22.md（G01–G48 行级核销索引；含 D-099 改判两行）
   - P0 共享底座: docs/specs/beauty-marketing-agent-p0-remediation-spec-2026-07-22.md（Issue #129）
   - P1 主线投影与治理: docs/specs/beauty-marketing-agent-p1-productization-spec-2026-07-22.md（Issue #130）
   - 父规格: docs/specs/pro-studio-kernel-integration-spec.md（K01–K11；本规格修订其 K03 结论，其余不重开）
   - 祖规格: docs/specs/vozeb-adoption-pro-studio-spec.md（rev2，领域合同与发布门不重开）
-  - ADR-0011 ContentPackage 唯一成品聚合 / ADR-0012 两线边界与授权口径
+  - ADR-0011 ContentPackage 唯一成品聚合 / ADR-0012 两线边界与授权口径（ADR-0012 superseded by D-170）
   - A2/A3 书面授权: docs/evidence/pro-studio/a2-authorization-2026-07-19.md、a3-authorization-2026-07-19.md
   - 上游钉死: csyqlz/vozeb @ a2c52c7（v1.0.0，本地镜像 references/repos/vozeb）
   - copy-manifest 现状: docs/evidence/pro-studio/copy-manifest.json（schemaVersion 1，42 行 exact copies）+ scripts/pro-studio/（apply-exact-copies / conformance-gate / kernel-integration-gate.test）
@@ -21,7 +22,9 @@ source_of_truth:
 
 # Pro Studio 画布上游对标重做实施规格
 
-> 承接 D-099：K01–K11 交付的画布是"文件拷了、内核没挂"的自建简版（上游 canvas 目录 46 候选、exact-copy 34 个 canvas 组件 + 8 个共享 util 计 42 行 manifest；生产只挂载 1 个上游 UI 组件 `VozebCanvas`，另有 crop util 与 theme 两条非 UI 引用，其余 exact-copy UI 组件尚未成为生产可达组件）。本规格把画布重做为**真挂载上游内核**的高阶工作台，验收以对标基线逐行核销 + 与上游并排走查为准。Agent 对话式外壳按 D-099③ 独立成线，不在本规格。
+> **SUPERSEDED（2026-08-01）**：D-099 / K1–K7 parity 重做入口已废止。Pro Studio **全量退役（D-170）**；现行实施权威＝[`pro-studio-retirement-spec-2026-08-01.md`](./pro-studio-retirement-spec-2026-08-01.md)。本文正文仅作历史工程合同追溯，不得再拆 parity 票。
+>
+> 承接 D-099（历史）：K01–K11 交付的画布是"文件拷了、内核没挂"的自建简版（上游 canvas 目录 46 候选、exact-copy 34 个 canvas 组件 + 8 个共享 util 计 42 行 manifest；生产只挂载 1 个上游 UI 组件 `VozebCanvas`，另有 crop util 与 theme 两条非 UI 引用，其余 exact-copy UI 组件尚未成为生产可达组件）。本规格把画布重做为**真挂载上游内核**的高阶工作台，验收以对标基线逐行核销 + 与上游并排走查为准。Agent 对话式外壳按 D-099③ 独立成线，不在本规格。
 >
 > **rev2 关键结构（两路 Codex 复核 + 一路确认复核后）**：本规格不是"挂载 + 补 12 个文件"的接线活。真实 port 闭包约 86 个本地文件、近 1.9 万行，且现网缺三类合同（批量账本 / 模型选择端到端 / 画布导出公共接缝）。因此**功能票（K2–K7）前置一层「底座」(K1)**：manifest/port 治理、生产组件白名单、BackendPort vNext 合同冻结、批量账本合同拍板、宿主 UI runtime、跨包属主协调——K1 不落地，功能票不得开工。
 >

@@ -33,7 +33,7 @@ export const HYPERDRIVE_PLACEHOLDER_ID = '00000000-0000-0000-0000-000000000000';
 const ALL_ZERO_UUID = /^0{8}-0{4}-0{4}-0{4}-0{12}$/u;
 
 /** Units that legitimately ship without a wrangler config. */
-export const NON_WORKER_UNITS = ['core', 'worker', 'canvas'];
+export const NON_WORKER_UNITS = ['core', 'worker'];
 
 const TEMPLATE_NAMES = ['mkfast-template', 'tanstarter'];
 const DEMO_DOMAIN_SUFFIXES = ['tanstarter.dev', 'example.com', 'example.test'];

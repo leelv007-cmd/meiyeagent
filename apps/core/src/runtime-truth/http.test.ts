@@ -31,7 +31,6 @@ async function listen(
       workerFreshness: () => ({ name: 'workerFreshness', status: 'pass' }),
       providerMode: () => ({ name: 'providerMode', status: 'pass' }),
       outbox: () => ({ name: 'outbox', status: 'pass' }),
-      canvas: () => ({ name: 'canvas', status: 'pass' }),
     },
     capabilityRecords: [
       {
@@ -142,8 +141,9 @@ test('GET /health/ready reports ready when probes pass', async (t) => {
   assert.equal(payload.data.ready, true);
   assert.equal(payload.data.status, 'ready');
   assert.equal(payload.data.release?.commitSha, 'http-test-sha');
-  // 9 named checks including providerLive (skipped when not required/configured).
-  assert.equal(payload.data.checks.length, 9);
+  // Named checks after Pro Studio retirement (canvas probe removed); includes
+  // providerLive when not required/configured as skipped.
+  assert.equal(payload.data.checks.length, 8);
 });
 
 test('GET /health/ready returns 503 when a required probe fails', async (t) => {

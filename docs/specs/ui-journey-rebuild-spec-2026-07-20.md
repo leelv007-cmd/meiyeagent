@@ -1,5 +1,7 @@
 # UI/用户旅程重建 开发规格（2026-07-20）
 
+> **SUPERSEDED in part（2026-08-01 / D-170）**：文中「Pro Studio 入口 / 专业工作区横条 / #61–#72 画布 K 票现行」等产品声张已废止。Pro Studio 全量退役——见 [`pro-studio-retirement-spec-2026-08-01.md`](./pro-studio-retirement-spec-2026-08-01.md) 与决策日志 D-170。Composer / Result / 三模态主线合同仍可作历史与主线接缝参考；**不得**再实现「进入 Pro Studio」CTA。
+
 - 决策依据：D-072~D-098（UI/用户旅程块 + D-098 七项收敛处置），继承 D-013/D-023/D-027/D-028/D-029/D-031/D-033/D-037/D-038/D-040/D-043/D-044/D-045/D-046/D-062/D-066/D-068/D-069/D-080、ADR-0007（token 流式）、ADR-0011；见 `docs/design/beauty-marketing-agent-product-design-2026-07-17.md`
 - 复核链：七路交叉复核报告 `docs/reviews/ui-journey-decisions-xcheck-2026-07-20.md`（事实层零 P0；§6 票包存续裁定；§7/§8 C1~C7 处置）
 - 存量基线：#50-#60（T1-T6/Ta-Td/V1）与 #61-#72（Pro Studio K01-K11）已合入 main；本 spec 的正确姿势=**在已 shipped 后端接缝之上重建首屏与结果面**，勿再基于 SceneVisualButton/工作台结果分支加码

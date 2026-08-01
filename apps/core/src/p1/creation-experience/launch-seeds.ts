@@ -393,10 +393,9 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
  * Capability-verified standalone tools on the first-ship Surface.
  * Ordinary tools are intentionally absent until their complete execution chain
  * is wired and acceptance-tested; a registry row alone is not publishable.
+ * Pro Studio retired (D-170) — no workspace tool on launch Surface.
  */
-export const LAUNCH_TOOL_ENTRY_REFS: readonly SurfaceToolRef[] = [
-  { toolEntryId: 'tool.pro_studio', order: 10, visible: true },
-];
+export const LAUNCH_TOOL_ENTRY_REFS: readonly SurfaceToolRef[] = [];
 
 export function recipeBodyFromSpec(spec: LaunchRecipeSeedSpec): RecipeBodyInput {
   return {

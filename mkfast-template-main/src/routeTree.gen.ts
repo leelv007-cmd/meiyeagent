@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
-import { Route as ProStudioRouteImport } from './routes/pro-studio'
 import { Route as ManifestDotjsonRouteImport } from './routes/manifest[.]json'
 import { Route as HerouiSpikeRouteImport } from './routes/heroui-spike'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -89,11 +88,7 @@ import { Route as ApiWebhooksStripeRouteImport } from './routes/api/webhooks/str
 import { Route as ApiWebhooksCreemRouteImport } from './routes/api/webhooks/creem'
 import { Route as ApiStorageUploadRouteImport } from './routes/api/storage/upload'
 import { Route as ApiStorageFileRouteImport } from './routes/api/storage/file'
-import { Route as ApiProStudioLaunchRouteImport } from './routes/api/pro-studio/launch'
-import { Route as ApiProStudioEntryRouteImport } from './routes/api/pro-studio/entry'
-import { Route as ApiProStudioCheckoutRouteImport } from './routes/api/pro-studio/checkout'
 import { Route as ApiE2eUsersRouteImport } from './routes/api/e2e/users'
-import { Route as ApiE2eProStudioPaymentRouteImport } from './routes/api/e2e/pro-studio-payment'
 import { Route as ApiCoreDiagnosticsRouteImport } from './routes/api/core/diagnostics'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiCoreProductStateRouteImport } from './routes/api/core/product/state'
@@ -134,11 +129,6 @@ const SettingsRoute = SettingsRouteImport.update({
 const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
   id: '/robots.txt',
   path: '/robots.txt',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProStudioRoute = ProStudioRouteImport.update({
-  id: '/pro-studio',
-  path: '/pro-studio',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ManifestDotjsonRoute = ManifestDotjsonRouteImport.update({
@@ -524,29 +514,9 @@ const ApiStorageFileRoute = ApiStorageFileRouteImport.update({
   path: '/api/storage/file',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ApiProStudioLaunchRoute = ApiProStudioLaunchRouteImport.update({
-  id: '/api/pro-studio/launch',
-  path: '/api/pro-studio/launch',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiProStudioEntryRoute = ApiProStudioEntryRouteImport.update({
-  id: '/api/pro-studio/entry',
-  path: '/api/pro-studio/entry',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiProStudioCheckoutRoute = ApiProStudioCheckoutRouteImport.update({
-  id: '/api/pro-studio/checkout',
-  path: '/api/pro-studio/checkout',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ApiE2eUsersRoute = ApiE2eUsersRouteImport.update({
   id: '/api/e2e/users',
   path: '/api/e2e/users',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiE2eProStudioPaymentRoute = ApiE2eProStudioPaymentRouteImport.update({
-  id: '/api/e2e/pro-studio-payment',
-  path: '/api/e2e/pro-studio-payment',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiCoreDiagnosticsRoute = ApiCoreDiagnosticsRouteImport.update({
@@ -702,7 +672,6 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRouteWithChildren
   '/heroui-spike': typeof HerouiSpikeRouteWithChildren
   '/manifest.json': typeof ManifestDotjsonRoute
-  '/pro-studio': typeof ProStudioRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/settings': typeof SettingsRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -765,11 +734,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof SettingsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
-  '/api/e2e/pro-studio-payment': typeof ApiE2eProStudioPaymentRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
-  '/api/pro-studio/checkout': typeof ApiProStudioCheckoutRoute
-  '/api/pro-studio/entry': typeof ApiProStudioEntryRoute
-  '/api/pro-studio/launch': typeof ApiProStudioLaunchRoute
   '/api/storage/file': typeof ApiStorageFileRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
   '/api/webhooks/creem': typeof ApiWebhooksCreemRoute
@@ -812,7 +777,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRouteWithChildren
   '/manifest.json': typeof ManifestDotjsonRoute
-  '/pro-studio': typeof ProStudioRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/cookie': typeof legalsCookieRoute
@@ -874,11 +838,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
-  '/api/e2e/pro-studio-payment': typeof ApiE2eProStudioPaymentRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
-  '/api/pro-studio/checkout': typeof ApiProStudioCheckoutRoute
-  '/api/pro-studio/entry': typeof ApiProStudioEntryRoute
-  '/api/pro-studio/launch': typeof ApiProStudioLaunchRoute
   '/api/storage/file': typeof ApiStorageFileRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
   '/api/webhooks/creem': typeof ApiWebhooksCreemRoute
@@ -925,7 +885,6 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRouteWithChildren
   '/heroui-spike': typeof HerouiSpikeRouteWithChildren
   '/manifest.json': typeof ManifestDotjsonRoute
-  '/pro-studio': typeof ProStudioRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/settings': typeof SettingsRouteWithChildren
   '/sitemap.xml': typeof SitemapDotxmlRoute
@@ -988,11 +947,7 @@ export interface FileRoutesById {
   '/settings/': typeof SettingsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
-  '/api/e2e/pro-studio-payment': typeof ApiE2eProStudioPaymentRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
-  '/api/pro-studio/checkout': typeof ApiProStudioCheckoutRoute
-  '/api/pro-studio/entry': typeof ApiProStudioEntryRoute
-  '/api/pro-studio/launch': typeof ApiProStudioLaunchRoute
   '/api/storage/file': typeof ApiStorageFileRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
   '/api/webhooks/creem': typeof ApiWebhooksCreemRoute
@@ -1040,7 +995,6 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/heroui-spike'
     | '/manifest.json'
-    | '/pro-studio'
     | '/robots.txt'
     | '/settings'
     | '/sitemap.xml'
@@ -1103,11 +1057,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/api/auth/$'
     | '/api/core/diagnostics'
-    | '/api/e2e/pro-studio-payment'
     | '/api/e2e/users'
-    | '/api/pro-studio/checkout'
-    | '/api/pro-studio/entry'
-    | '/api/pro-studio/launch'
     | '/api/storage/file'
     | '/api/storage/upload'
     | '/api/webhooks/creem'
@@ -1150,7 +1100,6 @@ export interface FileRouteTypes {
     | '/'
     | '/auth'
     | '/manifest.json'
-    | '/pro-studio'
     | '/robots.txt'
     | '/sitemap.xml'
     | '/cookie'
@@ -1212,11 +1161,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/auth/$'
     | '/api/core/diagnostics'
-    | '/api/e2e/pro-studio-payment'
     | '/api/e2e/users'
-    | '/api/pro-studio/checkout'
-    | '/api/pro-studio/entry'
-    | '/api/pro-studio/launch'
     | '/api/storage/file'
     | '/api/storage/upload'
     | '/api/webhooks/creem'
@@ -1262,7 +1207,6 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/heroui-spike'
     | '/manifest.json'
-    | '/pro-studio'
     | '/robots.txt'
     | '/settings'
     | '/sitemap.xml'
@@ -1325,11 +1269,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/api/auth/$'
     | '/api/core/diagnostics'
-    | '/api/e2e/pro-studio-payment'
     | '/api/e2e/users'
-    | '/api/pro-studio/checkout'
-    | '/api/pro-studio/entry'
-    | '/api/pro-studio/launch'
     | '/api/storage/file'
     | '/api/storage/upload'
     | '/api/webhooks/creem'
@@ -1376,7 +1316,6 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRouteWithChildren
   HerouiSpikeRoute: typeof HerouiSpikeRouteWithChildren
   ManifestDotjsonRoute: typeof ManifestDotjsonRoute
-  ProStudioRoute: typeof ProStudioRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SettingsRoute: typeof SettingsRouteWithChildren
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
@@ -1390,11 +1329,7 @@ export interface RootRouteChildren {
   ApiPingRoute: typeof ApiPingRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiCoreDiagnosticsRoute: typeof ApiCoreDiagnosticsRouteWithChildren
-  ApiE2eProStudioPaymentRoute: typeof ApiE2eProStudioPaymentRoute
   ApiE2eUsersRoute: typeof ApiE2eUsersRoute
-  ApiProStudioCheckoutRoute: typeof ApiProStudioCheckoutRoute
-  ApiProStudioEntryRoute: typeof ApiProStudioEntryRoute
-  ApiProStudioLaunchRoute: typeof ApiProStudioLaunchRoute
   ApiStorageFileRoute: typeof ApiStorageFileRoute
   ApiStorageUploadRoute: typeof ApiStorageUploadRoute
   ApiWebhooksCreemRoute: typeof ApiWebhooksCreemRoute
@@ -1434,13 +1369,6 @@ declare module '@tanstack/react-router' {
       path: '/robots.txt'
       fullPath: '/robots.txt'
       preLoaderRoute: typeof RobotsDottxtRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pro-studio': {
-      id: '/pro-studio'
-      path: '/pro-studio'
-      fullPath: '/pro-studio'
-      preLoaderRoute: typeof ProStudioRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/manifest.json': {
@@ -1975,39 +1903,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiStorageFileRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/pro-studio/launch': {
-      id: '/api/pro-studio/launch'
-      path: '/api/pro-studio/launch'
-      fullPath: '/api/pro-studio/launch'
-      preLoaderRoute: typeof ApiProStudioLaunchRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/pro-studio/entry': {
-      id: '/api/pro-studio/entry'
-      path: '/api/pro-studio/entry'
-      fullPath: '/api/pro-studio/entry'
-      preLoaderRoute: typeof ApiProStudioEntryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/pro-studio/checkout': {
-      id: '/api/pro-studio/checkout'
-      path: '/api/pro-studio/checkout'
-      fullPath: '/api/pro-studio/checkout'
-      preLoaderRoute: typeof ApiProStudioCheckoutRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/api/e2e/users': {
       id: '/api/e2e/users'
       path: '/api/e2e/users'
       fullPath: '/api/e2e/users'
       preLoaderRoute: typeof ApiE2eUsersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/e2e/pro-studio-payment': {
-      id: '/api/e2e/pro-studio-payment'
-      path: '/api/e2e/pro-studio-payment'
-      fullPath: '/api/e2e/pro-studio-payment'
-      preLoaderRoute: typeof ApiE2eProStudioPaymentRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/core/diagnostics': {
@@ -2438,7 +2338,6 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRouteWithChildren,
   HerouiSpikeRoute: HerouiSpikeRouteWithChildren,
   ManifestDotjsonRoute: ManifestDotjsonRoute,
-  ProStudioRoute: ProStudioRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SettingsRoute: SettingsRouteWithChildren,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
@@ -2452,11 +2351,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPingRoute: ApiPingRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiCoreDiagnosticsRoute: ApiCoreDiagnosticsRouteWithChildren,
-  ApiE2eProStudioPaymentRoute: ApiE2eProStudioPaymentRoute,
   ApiE2eUsersRoute: ApiE2eUsersRoute,
-  ApiProStudioCheckoutRoute: ApiProStudioCheckoutRoute,
-  ApiProStudioEntryRoute: ApiProStudioEntryRoute,
-  ApiProStudioLaunchRoute: ApiProStudioLaunchRoute,
   ApiStorageFileRoute: ApiStorageFileRoute,
   ApiStorageUploadRoute: ApiStorageUploadRoute,
   ApiWebhooksCreemRoute: ApiWebhooksCreemRoute,

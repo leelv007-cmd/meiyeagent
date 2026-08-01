@@ -24,17 +24,16 @@ Spec -> Code -> Verify -> Test -> Green
 E2E tests remain local-first during feature work. The full suite also runs in
 the `Core quality` workflow when manually dispatched or when a pull request has
 the `run-e2e` label. This opt-in gate provisions PostgreSQL and boots the real
-Main, Core, Worker, and Canvas harness without making every ordinary pull
-request wait for the multi-service browser suite. A catalog row marked
-`MISSING SPEC` is an acceptance intent, not executable coverage.
+Main, Core, and Worker harness without making every ordinary pull request wait
+for the multi-service browser suite. A catalog row marked `MISSING SPEC` is an
+acceptance intent, not executable coverage.
 
 ## Test Harness
 
 - Config: `playwright.config.ts`
 - Specs: `tests/e2e/specs/`
 - Fixtures: `tests/e2e/fixtures/`
-- Test-only APIs: `src/routes/api/e2e/users.ts` and
-  `src/routes/api/e2e/pro-studio-payment.ts`
+- Test-only APIs: `src/routes/api/e2e/users.ts`
 
 The test-only API is disabled unless Vite is running locally with
 `import.meta.env.DEV === true`, `MODE=e2e`, and the request includes the
@@ -281,45 +280,13 @@ and complete touch-target audits at the two target mobile viewports.
 | 7 | The 379x820 mobile product keeps every visible target usable in all three stages and both locales | At 379x820, verify 18px product typography and no overflow, then scan every visible Action, Progress, and Handoff control in Chinese and English for a minimum 48x48px hit area; exclude only inline prose links whose target follows text-flow spacing. |
 | 8 | The 390x844 mobile product keeps every visible target usable in all three stages and both locales | Repeat the complete bilingual three-stage target, typography, and overflow audit at 390x844 and retain separate Action, Progress, and Handoff evidence frames. |
 
-## 21. Pro Studio Entitlement Checkout
+## 21–23. Pro Studio journeys — RETIRED (D-170)
 
-**File:** `specs/pro-studio-entitlement.spec.ts` | **Priority:** P0
-
-| # | Test name | Flow |
-|---|---|---|
-| 1 | A tenant without the entitlement sees a locked workbench entry that never enters the workspace | Sign in, open `/dashboard`, and require the Pro Studio entry to report the canonical `locked` state with a "了解并解锁" call to action and no "进入专业工作区" promise. Click it and require the canonical `/pro-studio` gate, the locked gate state, the purchase offer, no unlocked copy, no one-click entry, and an origin that is not Canvas. |
-| 2 | A tenant with the entitlement sees an active workbench entry that enters the workspace | From the same locked start, settle the fixture-signed paid webhook, reload `/dashboard`, and require the entry to report `active` with the "进入专业工作区" call to action. Click it and require the `/pro-studio` gate to report `active` with the unlocked copy and the one-click entry action. |
-| 3 | Unpurchased Owner sees the dedicated offer and server-owned checkout action | Sign in as a workspace Owner, open `/pro-studio`, verify the explanation/demo/price surface and a POST form to the dedicated checkout route; no workspace, price, or payment fact is submitted by the browser. |
-| 4 | Fixture-signed webhook unlocks Pro Studio and completes Canvas SSO | In local E2E mode, submit an HMAC-signed fixed-schema paid Stripe checkout event. A fixed fixture provider runs the production Owner-session checkout binding and canonical catalog validation before the provider payment, claim, lease, and Canvas activation path. Reload `/pro-studio`, verify “工作区已解锁”, click “一键进入”, and require the Canvas origin, workspace shell, session cookie, and CSRF cookie. |
-| 5 | Real provider hosted-checkout smoke remains opt-in | With explicit real-provider credentials and `PLAYWRIGHT_REAL_PRO_STUDIO_CHECKOUT_URL`, verify the hosted checkout is reachable. This smoke does not replace the default signed-fixture activation closure and does not claim a completed real payment. |
-
-## 22. Pro Studio Engineering And Cross-Service Smoke
-
-**Files:** `specs/pro-studio-engineering-tickets.spec.ts`,
-`specs/pro-studio-cross-service-smoke.spec.ts`,
-`specs/pro-studio-kernel-ui.spec.ts` | **Priority:** P0
-
-| # | Test name | Flow |
-|---|---|---|
-| 1 | Engineering tickets keep their bounded UI and lifecycle journeys | Verify the fixture entitlement and prompt seeds; in Light Composer, upload and authorize a distinctive asset, replace and source-crop an image without changing its destination box, save the normalized crop in a revision, export and sample the cropped PNG pixels, and adopt it into ContentPackage; then verify merchant diagnostics and media-custody recovery through the owning product routes. |
-| 2 | Cross-service generation is adopted into the main ContentPackage library | Register and sign in, unlock the fixture workspace, enter Canvas, create a project and checkpoint, generate a recorded image, save the graph, adopt the Advanced Canvas output, and verify the resulting package is visible in Main ContentPackage. |
-| 3 | Recorded TTS and SFX complete through Core and remain playable in Canvas | In the same real Main + Canvas + Core + Postgres harness, quote and submit independent `audio.speech` and `audio.sfx` jobs, let the durable Worker recover both, persist decoded workspace-owned audio, render two Canvas audio players, verify bounded Range delivery, and require server-controlled attachment headers for download. |
-| 4 | Authorized kernel completes the full UI creation and adoption journey | With `MODEL_EXECUTION_MODE=fixture`, use only visible Canvas controls after fixture registration and entitlement unlock: create a project through the keyboard-accessible name form, then create and soft-delete a disposable project through the visible cancellable confirmation layer with focus restored to its trigger; edit a text node, click “返回主产品” before saving, capture and dismiss the native `beforeunload` warning, prove the Canvas and unsaved state remain, then save and refresh under the existing autosave/OCC contract; upload and insert an owned image, select and connect nodes, and run square crop into a distinct square OwnedAsset and derived node; Shift-drag a visible background marquee around two nodes, drag the selected group by one shared delta, undo the move, redo it, save, and refresh media; start a cookie-clean browser context, sign in as the same user, and restore the same project, media, and edges; select the text anchor so its visible graph edge supplies the reference image, create a checkpoint, quote and submit image generation, refresh the task projection, insert the result with an input-derived edge, select text then generated media in order, adopt through the UI, verify the adopted badge, and open the same package in the Main ContentPackage library. This journey must not depend on native prompt or confirm dialogs; its browser `beforeunload` safeguard remains required. Capture `docs/evidence/pro-studio/kernel-v1-ui-smoke.png`. |
-
-## 23. Pro Studio Security Boundaries
-
-**File:** `specs/pro-studio-security-boundaries.spec.ts` | **Priority:** P0
-
-This is a fixture-local cross-service drill. It runs the real Main, Canvas, Core,
-Worker, and Postgres services while keeping model/media execution in
-`MODEL_EXECUTION_MODE=fixture`; it is not live-provider or production-release
-evidence.
-
-| # | Test name | Flow |
-|---|---|---|
-| 1 | Cross-workspace objects remain opaque and auditable | Create independent workspaces and reject foreign projects, revisions, assets, generation jobs, ContentPackages, the disabled Grant branch, and Agent confirmations with one opaque response; prove projects/assets/jobs/adoptions remain unchanged and reread seven workspace-scoped PostgreSQL rejection audits containing target hashes rather than raw IDs. |
-| 2 | Dual Canvas sessions preserve CAS zero-write | Plan and confirm the same revision in two sessions, require the stale apply to return `REVISION_CONFLICT` with no write, then re-read, re-plan, confirm, and apply successfully. |
-| 3 | Identity switch clears caches and fences late responses | Hold a stale `listProjects` response across sign-out and identity switch, then verify workspace-scoped storage/cache cleanup, the new cache namespace, and no stale project rendering. |
+Pro Studio product surface, entitlement checkout, Canvas harness journeys, and
+security drills were removed under
+`docs/specs/pro-studio-retirement-spec-2026-08-01.md` P1 fail-closed.
+Specs `pro-studio-*.spec.ts` and fixture `fixtures/pro-studio.ts` are deleted.
+Do not re-add catalog rows that treat `/pro-studio` or Canvas as product paths.
 
 ## 24. Marketing Entry Gates And Blocking Question
 
@@ -447,7 +414,7 @@ through the ContentPackage projection.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Admin visually publishes and rolls back Recipe and Surface revisions | Sign in as an admin, use the `/admin/templates` visual editor to draft, preview, publish, revise, and roll back a Recipe; compose a Surface from the published Recipe revision, verify only capability-approved Pro Studio is offered, then draft, preview, publish, revise, and roll back the Surface through the real Creation Experience API. |
+| 1 | Admin visually publishes and rolls back Recipe and Surface revisions | Sign in as an admin, use the `/admin/templates` visual editor to draft, preview, publish, revise, and roll back a Recipe; compose a Surface from the published Recipe revision (no Pro Studio tool offer — retired), then draft, preview, publish, revise, and roll back the Surface through the real Creation Experience API. |
 
 ## 31. Admin Supply Operations Acceptance
 
@@ -529,24 +496,10 @@ frozen until the D-125 stage-two window.
 | 2 | Mobile Progress never opens a phantom stage | With no active Work, verify the mobile Progress entry goes to the real task center. The target model contract separately verifies that the newest in-flight Work becomes its exact Result deep link, rather than a dashboard query flag. |
 | 3 | Product modal semantics and safe area stay intact | Interaction tests require one aria-modal Bottom Sheet/Dialog, Escape close, focus return, and product portal tokens; the 375px browser journey checks Result does not overflow or hide behind the bottom navigation. |
 
-## 34. Pro Studio G-index Local And Release QA
+## 34. Pro Studio G-index Local And Release QA — RETIRED (D-170)
 
-**Files:** `specs/pro-studio-k2-canvas.spec.ts`,
-`specs/pro-studio-kernel-ui.spec.ts`,
-`specs/pro-studio-cross-service-smoke.spec.ts`,
-`specs/pro-studio-security-boundaries.spec.ts` | **Priority:** P0 | **Tickets:** #163–#169
-
-These are visible, fixture-local acceptance journeys for the current G-index
-implementation. A catalog row is not a passing run: it requires the real local
-Main, Core, Worker, Canvas, and PostgreSQL harness. It is never live-provider,
-protected-release, pricing-approval, or manual-security-approval evidence.
-
-| # | Test name | Flow |
-|---|---|---|
-| 1 | G01–G25 graph interaction stays visible and merchant-safe | Unlock the fixture workspace, create a project using the visible name dialog, create/select five node types, use the rich node controls, preview an owned image, adjust text/resize, marquee/multi-select, connect/copy/delete, change background/minimap/zoom controls, open the node info surface, and exercise the hover quick-tool preference. Require no raw node, asset, workspace, model, or provider identifier in rendered merchant copy. |
-| 2 | G26–G31 retouch creates governed child lineage | Insert an owned image through the visible picker, use crop/mask/upscale/split/angle/reverse-prompt controls, confirm the quote where required, and verify each result is a distinct owned child with a derived graph edge. A fixture result proves only the local durable path; it does not prove a live model or provider. |
-| 3 | G32–G41 contextual generation is fail-closed and recoverable | Select a text/image/config node, open the visible node generation surface, prove an inactive catalog cannot quote or submit, then use an active fixture capability with an explicit `@` mention. Exercise 1 and 15 item quote/confirmation, partial failure, retry/cancel, durable text-stream cursor recovery, prompt search, and image/video/audio asset pagination without injecting an unmentioned resource. |
-| 4 | G43–G48 project/export controls preserve product boundaries | Create, rename, select and soft-delete a disposable project through visible confirmation dialogs; use beforeunload with an unsaved draft; create a checkpoint; export a frozen revision with the explicit available-only choice; and verify the result remains a Canvas ZIP manifest rather than a ContentPackage write. Recheck the adopted badge and Main ContentPackage only through the existing cross-service smoke. |
+Former G-index / Canvas acceptance journeys removed with the Pro Studio product
+surface. See `docs/specs/pro-studio-retirement-spec-2026-08-01.md`.
 | 5 | G42 stays deferred and forbidden | Do not add a chat shell, local Agent bridge, token storage, or arbitrary provider connection. The acceptance is the absence guard plus the existing governed plan/confirm/apply surface, not a substitute assistant UI. |
 
 ### Known fixture boundaries
@@ -607,7 +560,7 @@ These flows should be added after their dependencies are made deterministic:
 
 | Area | Reason |
 |---|---|
-| Generic payment portal | Requires Stripe or Creem test fixtures and provider-specific env. Pro Studio has its own bounded opt-in payment journey above. |
+| Generic payment portal | Requires Stripe or Creem test fixtures and provider-specific env. Plan payment remains the commerce path after Pro Studio add-on retirement. |
 | Transactional email | Requires a fake mail provider or captured verification links. |
 # P0 golden journey
 

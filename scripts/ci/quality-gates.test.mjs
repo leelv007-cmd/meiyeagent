@@ -57,8 +57,6 @@ test('the ordinary PR gate runs every Web and Canvas fast check plus repository 
     'pnpm --filter @meiye/web typecheck',
     'pnpm --filter @meiye/web test',
     'pnpm --filter @meiye/web test:interaction',
-    'pnpm --filter @meiye/canvas check',
-    'pnpm --filter @meiye/canvas test',
     'node scripts/uiux/secret-scan.mjs',
     'node scripts/uiux/decision-ticket-guard.mjs',
   ]);
@@ -141,7 +139,6 @@ test('the root typecheck prepares Web generated content before checking every wo
   assert.deepEqual(await runGate('run-root-typecheck.sh'), [
     'pnpm --filter @meiye/contracts typecheck',
     'pnpm --filter @meiye/core typecheck',
-    'pnpm --filter @meiye/canvas typecheck',
     'pnpm --filter @meiye/web build',
     'pnpm --filter @meiye/web typecheck',
   ]);
@@ -154,7 +151,6 @@ test('Biome checks authored Canvas sources while excluding only byte-exact vendo
 
   assert.deepEqual(rootBiome.files?.includes, [
     '**',
-    '!apps/canvas/src/vendor/vozeb',
   ]);
 });
 

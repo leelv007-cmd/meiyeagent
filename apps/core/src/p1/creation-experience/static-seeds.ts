@@ -52,14 +52,6 @@ export const TOOL_ENTRY_SEEDS: readonly CreativeToolEntry[] = [
     container: 'dialog',
     order: 3,
   },
-  {
-    id: 'tool.pro_studio',
-    label: 'Pro Studio',
-    summary: '打开专业工作区精修',
-    kind: 'standalone_tool',
-    container: 'workspace',
-    order: 10,
-  },
 ];
 
 export const TOOL_ENTRY_ID_SET: ReadonlySet<string> = new Set(

@@ -299,7 +299,6 @@ export {
 export {
   COMPOSER_CATALOG_PATH,
   COMPOSER_HOME_PATH,
-  PRO_STUDIO_CANONICAL_PATH,
   buildComposerCatalogHref,
   parseComposerCatalogSearch,
   type ComposerCatalogSearchParams,
@@ -340,18 +339,14 @@ export {
 
 export {
   ORDINARY_TOOL_CAP,
-  assertProStudioCanonicalHref,
   listOrdinaryHomeTools,
   openComposerTool,
   projectComposerToolsStrip,
-  projectProStudioBanner,
   type ComposerToolChipView,
   type ComposerToolsStripInput,
   type ComposerToolsStripView,
   type ComposerViewportKind,
-  type ProStudioBannerView,
 } from './composer-tools';
-
 export {
   ComposerToolsStrip,
   type ComposerToolsStripProps,

@@ -215,10 +215,14 @@ describe('launch seeds (D-082 / D-083)', () => {
     assert.equal(defaultLens, undefined);
   });
 
-  it('ships only capability-verified Pro Studio in the launch Surface', () => {
+  it('ships no Pro Studio tool on the launch Surface (D-170 retired)', () => {
     assert.deepEqual(
       LAUNCH_TOOL_ENTRY_REFS.map((r) => r.toolEntryId),
-      ['tool.pro_studio'],
+      [],
+    );
+    assert.equal(
+      LAUNCH_TOOL_ENTRY_REFS.some((r) => r.toolEntryId === 'tool.pro_studio'),
+      false,
     );
   });
 
@@ -252,7 +256,7 @@ describe('launch seeds (D-082 / D-083)', () => {
     assert.equal(result.surface.status, 'published');
     assert.equal(result.surface.surfaceId, LAUNCH_SURFACE_ID);
     assert.equal(result.surface.recipeRefs.length, 8);
-    assert.equal(result.surface.toolEntryRefs.length, 1);
+    assert.equal(result.surface.toolEntryRefs.length, 0);
 
     const browser = await service.projectBrowserSurface(LAUNCH_SURFACE_ID);
     assert.equal(browser.recipes.length, 8);

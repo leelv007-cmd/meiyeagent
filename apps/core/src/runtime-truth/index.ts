@@ -22,7 +22,6 @@ export {
   type ReadinessProbeMap,
 } from './readiness.js';
 export {
-  canvasReachabilityProbe,
   dbosSystemDbProbe,
   objectStorageReadWriteRoundTrip,
   objectStorageProbe,
@@ -31,7 +30,6 @@ export {
   providerModeProbe,
   schemaCompatibilityProbe,
   workerFreshnessProbe,
-  type CanvasReachabilityOptions,
   type ObjectStorageReadWriteTarget,
   type ObjectStorageProbeTarget,
   type OutboxBacklogSource,

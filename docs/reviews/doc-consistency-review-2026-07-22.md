@@ -1,6 +1,8 @@
 # 项目文档一致性复核（2026-07-22）
 
-> 状态：**当前一致性入口**。本报告在父 Spec、G01–G48 基线、D-099 rev2、P0/P1 当前执行规格与最新代码审查快照之间做权威对账。
+> **SUPERSEDED as current consistency entry（2026-08-01）**：Pro Studio / D-099 / K1–K7 / ADR-0012 现行段已由 **D-170 全量退役** 取代。权威＝决策日志 D-170 + [`docs/specs/pro-studio-retirement-spec-2026-08-01.md`](../specs/pro-studio-retirement-spec-2026-08-01.md) + 更新后的 `CONTEXT.md`。本报告保留为 **2026-07-22 固定快照**；文内 Pro Studio「当前 parity 执行前沿」等表述不再有效。
+>
+> 状态（历史）：曾为 2026-07-22 一致性入口。本报告在父 Spec、G01–G48 基线、D-099 rev2、P0/P1 当时执行规格与代码审查快照之间做权威对账。
 >
 > 复核基线：文档提交 `4e53d82`；Pro Studio G01–G48 代码事实基线 `4625e4238748196a7fcb12226cb11e2c0420083b`。代码审查报告 `docs/reviews/gptpro项目深度代码审查报告0722.md` 使用独立 review worktree，属于固定代码审查证据，不在未合并时覆盖当前 `main`。
 
