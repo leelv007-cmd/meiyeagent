@@ -2792,6 +2792,30 @@ describe('ModelSupplyFoundationModule', () => {
     );
   });
 
+  it('requires a reserved credit billing task on the production command seam', async () => {
+    const { controlPlane } = setup();
+    const module = new ModelSupplyFoundationModule(controlPlane, {
+      requireReservedBilling: true,
+    });
+    const payload = {
+      dataClass: [],
+      operation: 'text.respond',
+      prompt: 'Return one concise campaign direction.',
+      selection: { catalogModelId: 'llm-openai', mode: 'fixed' },
+    };
+
+    await assert.rejects(
+      command(module, owner, 'submit_generation', payload),
+      /reserved credit billing task/i,
+    );
+    const result = (await command(module, owner, 'submit_generation', {
+      ...payload,
+      billingTaskId: 'credit-task-1',
+      billingQuoteRevision: 'quote-r1',
+    })) as { status: string };
+    assert.equal(result.status, 'completed');
+  });
+
   it('submits fixed or automatic text.respond as one plain-text deliverable instead of copy candidates', async () => {
     const { module } = setup();
 

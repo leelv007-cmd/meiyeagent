@@ -4367,6 +4367,15 @@ function requiredString(input: Record<string, unknown>, key: string) {
   return value;
 }
 
+function optionalString(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+  if (value === undefined) return null;
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new P1DomainError('INVALID_STATE', `${key} must be a non-empty string.`);
+  }
+  return value;
+}
+
 function expectedCatalogHeadRevisionId(input: Record<string, unknown>) {
   if (!Object.hasOwn(input, 'expectedHeadRevisionId')) {
     throw new P1DomainError(
@@ -5858,6 +5867,7 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
     | 'reconcilePendingAction'
   >;
   private readonly videoWorkflow?: VideoWorkflowReadEditPort;
+  private readonly requireReservedBilling: boolean;
 
   constructor(
     private readonly controlPlane: ModelSupplyControlPlaneService,
@@ -5872,11 +5882,13 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
         | 'reconcilePendingAction'
       >;
       videoWorkflow?: VideoWorkflowReadEditPort;
+      requireReservedBilling?: boolean;
     } = {},
   ) {
     this.adminActorIds = new Set(options.adminActorIds ?? []);
     this.adminSupply = options.adminSupply;
     this.videoWorkflow = options.videoWorkflow;
+    this.requireReservedBilling = options.requireReservedBilling === true;
   }
 
   async execute(args: {
@@ -5946,6 +5958,26 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
           args.context.actor,
         );
         const requestedOperation = operation(payload);
+        const billingTaskId = optionalString(payload, 'billingTaskId');
+        const billingQuoteRevision = optionalString(
+          payload,
+          'billingQuoteRevision',
+        );
+        if (
+          this.requireReservedBilling &&
+          (!billingTaskId || !billingQuoteRevision)
+        ) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Merchant generation requires a reserved credit billing task and quote revision.',
+          );
+        }
+        if (Boolean(billingTaskId) !== Boolean(billingQuoteRevision)) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'billingTaskId and billingQuoteRevision must be provided together.',
+          );
+        }
         const requestedInput =
           payload.input && typeof payload.input === 'object'
             ? (payload.input as Parameters<
@@ -5962,6 +5994,9 @@ export class ModelSupplyFoundationModule implements P1OperationModule {
               : [],
             input: requestedInput,
             operation: requestedOperation,
+            ...(billingTaskId && billingQuoteRevision
+              ? { billingTaskId, billingQuoteRevision }
+              : {}),
             ...(usageQuantity === undefined
               ? {}
               : { productUsageQuantity: usageQuantity }),
