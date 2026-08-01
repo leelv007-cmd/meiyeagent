@@ -1,7 +1,7 @@
 /**
  * M-04 / T37 (#231) — what makes the browser gate a gate.
  *
- * Three things are not observable from any single spec run, so they are
+ * Four things are not observable from any single spec run, so they are
  * asserted statically (spec 测试决策 9, the CI assert-matrix precedent):
  *
  *  1. The mainline journey is in the required spec set. A strict spec that
@@ -15,6 +15,9 @@
  *  3. Every old UI spec that was demoted says so in its own header, and none of
  *     them is in the required set. 「删除、归档或显式标注降级」 is only honest
  *     if the marking is machine-checkable.
+ *  4. The required image-text direction choice uses a real click, proves the
+ *     option state advanced, and never hides a click failure behind the full
+ *     journey polling timeout unless a frozen route actually resumes.
  *
  * Issue #257 retired both public Operations actions. Internal application
  * service methods may remain for governed server callers; this file checks only
@@ -94,6 +97,31 @@ test('the M-04 mainline journey is in the required PR spec set', () => {
     script,
     /required_hard_gate_spec/u,
     'the hard gate spec must be an overridable named variable, like the assembly gate'
+  );
+});
+
+test('the image-text direction helper fails fast on real click errors', () => {
+  const fixture = readFileSync(
+    join(E2E_ROOT, 'fixtures/ui-journey.ts'),
+    'utf8'
+  );
+  const helper = fixture.slice(
+    fixture.indexOf('export async function chooseImageTextDirection'),
+    fixture.indexOf('export async function submitComposerJourney')
+  );
+
+  assert.doesNotMatch(helper, /force:\s*true/u);
+  assert.match(helper, /\.click\(\{ timeout: 3_000 \}\)/u);
+  assert.match(helper, /toHaveAttribute\('aria-pressed', 'true'\)/u);
+  assert.match(
+    helper,
+    /\.toPass\(\s*\{\s*timeout: 300_000,?\s*\}\s*\);[\s\S]*?direction\.click/u,
+    'the long poll must finish before the real click is attempted'
+  );
+  assert.match(
+    helper,
+    /catch \(error\) \{[\s\S]*?resumedLine[\s\S]*?waitFor\(\{ state: 'visible', timeout: 2_000 \}\)[\s\S]*?return;[\s\S]*?throw error;/u,
+    'a click error may be ignored only when frozen-route resume becomes visible promptly'
   );
 });
 

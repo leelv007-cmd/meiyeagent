@@ -24,12 +24,8 @@ const ACTIVE_OR_DELIVERED: ComposerSessionPhase[] = [
   'delivered',
 ];
 
-/** Phases where Composer sticks (excludes delivered — 成品卡 must stay clickable). */
-const STICKY_IN_FLIGHT: ComposerSessionPhase[] = [
-  'submitting',
-  'running',
-  'awaiting_answer',
-];
+/** Phases where Composer sticks (interrupt cards must stay clickable). */
+const STICKY_IN_FLIGHT: ComposerSessionPhase[] = ['submitting', 'running'];
 
 const IDLE_LIKE: ComposerSessionPhase[] = ['idle', 'cancelled', 'failed'];
 
@@ -64,10 +60,12 @@ test('P1-1: dual column only when width ≥1240 and Active/Delivered', () => {
   }
 });
 
-test('P1-2: in-flight Composer is sticky; delivered/Idle are not', () => {
+test('P1-2: Composer unsticks for merchant answers and delivery', () => {
   for (const phase of STICKY_IN_FLIGHT) {
     assert.equal(isWorkbenchComposerSticky(phase), true, phase);
   }
+  // Interrupt options must receive a real merchant click above the Composer.
+  assert.equal(isWorkbenchComposerSticky('awaiting_answer'), false);
   // Delivered keeps dual-column but unsticks so 成品卡 is not under z-30 scrim.
   assert.equal(isWorkbenchComposerSticky('delivered'), false);
   for (const phase of IDLE_LIKE) {

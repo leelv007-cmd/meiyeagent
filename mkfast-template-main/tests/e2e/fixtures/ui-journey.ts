@@ -145,8 +145,9 @@ export async function assertThreeModalDiscovery(page: Page) {
  * A frozen route may pre-answer the question before the merchant sees it, so
  * the card is transient: it can sit waiting for a click, flash and resolve on
  * its own, or never render at all. All three endings are legitimate; the only
- * stable signal that the direction landed is the resume stage line, so this
- * polls for that line and clicks the card whenever it happens to be up.
+ * stable signal that the direction landed is the resume stage line. Wait for
+ * either that line or the card, then click once; a click error is ignored only
+ * when the frozen route produces the resume line within a short race window.
  */
 export async function chooseImageTextDirection(page: Page) {
   const planCard = page.getByTestId('ask-merchant-group-card').filter({
@@ -167,55 +168,60 @@ export async function chooseImageTextDirection(page: Page) {
     .getByTestId('composer-stage-line')
     .filter({ hasText: '已按你选的方向继续准备整套图文' });
   await expect(async () => {
-    if (
-      await resumedLine
-        .first()
-        .isVisible()
-        .catch(() => false)
-    )
-      return;
-
-    // Prefer scrolling the interrupt host above sticky Composer before click.
-    const interruptHost = page.getByTestId('composer-question-turn');
-    if ((await interruptHost.count()) > 0) {
-      await interruptHost
-        .first()
-        .scrollIntoViewIfNeeded()
-        .catch(() => undefined);
-    }
-
+    const resumed = await resumedLine
+      .first()
+      .isVisible()
+      .catch(() => false);
     const cardVisible = await directionCard
       .first()
       .isVisible()
       .catch(() => false);
-    if (cardVisible) {
-      await directionCard
-        .first()
-        .scrollIntoViewIfNeeded()
-        .catch(() => undefined);
-      const directions = directionCard
-        .first()
-        .getByRole('button')
-        .filter({ hasNotText: /暂未确定|继续|这次先跳过/u });
-      try {
-        // force: Active sticky Composer (z-30) can still intercept a pure
-        // geometric click after scroll-margin; product path is scroll-margin +
-        // scrollIntoView — force is the e2e last resort for the same class.
-        await directions.first().click({ timeout: 3_000, force: true });
-      } catch {
-        // Frozen route may pre-answer between visibility check and click.
-      }
+    expect(resumed || cardVisible).toBeTruthy();
+  }, 'the direction card or frozen-route answer must become visible').toPass({
+    timeout: 300_000,
+  });
+
+  if (
+    await resumedLine
+      .first()
+      .isVisible()
+      .catch(() => false)
+  )
+    return;
+
+  // Prefer scrolling the interrupt host above the Composer before click.
+  const interruptHost = page.getByTestId('composer-question-turn');
+  if ((await interruptHost.count()) > 0) {
+    await interruptHost
+      .first()
+      .scrollIntoViewIfNeeded()
+      .catch(() => undefined);
+  }
+  await directionCard
+    .first()
+    .scrollIntoViewIfNeeded()
+    .catch(() => undefined);
+  const direction = directionCard
+    .first()
+    .getByRole('button')
+    .filter({ hasNotText: /暂未确定|继续|这次先跳过/u })
+    .first();
+  try {
+    await expect(direction).toBeEnabled();
+    await direction.click({ timeout: 3_000 });
+  } catch (error) {
+    try {
+      await resumedLine.first().waitFor({ state: 'visible', timeout: 2_000 });
+      return;
+    } catch {
+      throw error;
     }
-    // Not visible yet: keep toPass polling (workflow still compiling styles).
-    expect(
-      await resumedLine
-        .first()
-        .isVisible()
-        .catch(() => false)
-    ).toBeTruthy();
-  }, 'the direction must land — by merchant click or frozen-route pre-answer').toPass(
-    { timeout: 300_000 }
-  );
+  }
+  await expect(direction).toHaveAttribute('aria-pressed', 'true');
+  await expect(
+    resumedLine.first(),
+    'the direction must land after the merchant click'
+  ).toBeVisible({ timeout: 300_000 });
 }
 
 export async function submitComposerJourney(

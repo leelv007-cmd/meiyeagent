@@ -64,7 +64,9 @@ const DUAL_COLUMN_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
 ]);
 
 /**
- * Sticky only while the run is in flight / waiting on the merchant.
+ * Sticky only while the run is in flight and not waiting on the merchant.
+ * `awaiting_answer` is intentionally non-sticky: interrupt options must receive
+ * real pointer events instead of sitting below the Composer scrim.
  * `delivered` is intentionally non-sticky: 成品交付卡 must stay fully clickable
  * above the prompt cluster. CI journey @cbcbe4da/d39804f0 showed sticky z-30
  * covering the card even with clearance spacers (host is prompt+attachments tall).
@@ -72,7 +74,6 @@ const DUAL_COLUMN_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
 const STICKY_COMPOSER_PHASES: ReadonlySet<ComposerSessionPhase> = new Set([
   'submitting',
   'running',
-  'awaiting_answer',
 ]);
 
 /**
