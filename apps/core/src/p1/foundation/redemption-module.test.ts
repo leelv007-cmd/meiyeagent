@@ -35,7 +35,7 @@ describe('RedemptionFoundationModule authorization and contracts', () => {
       idempotencyKey: 'create-credit-code',
       input: {
         action: 'create',
-        payload: { code: 'CREDIT-30', credits: 30 },
+        payload: { code: 'CREDIT-30', credits: 30, grants: {} },
       },
     });
     await module.execute({

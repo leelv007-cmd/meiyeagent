@@ -101,7 +101,39 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
     ).toBeInTheDocument();
   });
 
-  it('keeps the blocker when a redemption does not increase authoritative credits', async () => {
+  it('unlocks an idempotent replay when the fresh balance already includes the grant', async () => {
+    const result = await recoverComposerCredits({
+      beforeCredits: 70,
+      requiredCredits: 50,
+      redeem: async () => ({
+        creditGrant: {
+          originalCredits: 30,
+          transactionType: 'REDEMPTION_CODE',
+        },
+      }),
+      refreshCredits: async () => ({ credits: { availableCredits: 70 } }),
+    });
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('unlocks from a real receipt and sufficient fresh balance without a cached before value', async () => {
+    const result = await recoverComposerCredits({
+      beforeCredits: undefined,
+      requiredCredits: 50,
+      redeem: async () => ({
+        creditGrant: {
+          originalCredits: 30,
+          transactionType: 'REDEMPTION_CODE',
+        },
+      }),
+      refreshCredits: async () => ({ credits: { availableCredits: 70 } }),
+    });
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it('keeps the blocker when the fresh authoritative balance remains insufficient', async () => {
     render(
       <UnlockHarness
         redeemImpl={() =>
@@ -129,7 +161,7 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
     await waitFor(() =>
       expect(
         screen.getByTestId('composer-quota-redeem-error')
-      ).toHaveTextContent('兑换后积分未到账，请重试')
+      ).toHaveTextContent('积分已到账，但仍不足以完成本次创作')
     );
     expect(screen.getByTestId('continue-creation')).toHaveTextContent(
       'blocked'
@@ -137,6 +169,20 @@ describe('GL-23 quota blocking card — redeem unlocks continue', () => {
     expect(
       screen.queryByTestId('composer-quota-unlock-success')
     ).not.toBeInTheDocument();
+  });
+
+  it('does not unlock from a sufficient balance without a credit receipt', async () => {
+    const result = await recoverComposerCredits({
+      beforeCredits: 40,
+      requiredCredits: 50,
+      redeem: async () => ({}),
+      refreshCredits: async () => ({ credits: { availableCredits: 70 } }),
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      message: '兑换后积分未到账，请重试',
+    });
   });
 
   it('renders inline code input when quota exhausted', () => {

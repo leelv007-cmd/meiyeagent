@@ -3,13 +3,6 @@ import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 import { canRecordRedemptionCode } from './admin-redemption-control';
 
-const validAmounts = {
-  copy: '20',
-  image: '0',
-  video: '0',
-  audio: '0',
-};
-
 describe('admin redemption form contract', () => {
   it('uses merchant-friendly workspace responsibility copy in both locales', () => {
     const zh = JSON.parse(
@@ -65,10 +58,10 @@ describe('admin redemption form contract', () => {
     assert.ok(en.admin_redemption_create_description);
   });
 
-  it('rejects partial grants when any amount is not a non-negative integer', () => {
+  it('requires credits to be one positive integer', () => {
     assert.equal(
       canRecordRedemptionCode({
-        amounts: { ...validAmounts, copy: '1.5', image: '1' },
+        credits: '1.5',
         code: 'WELCOME20',
         expiresAt: '',
       }),
@@ -76,7 +69,7 @@ describe('admin redemption form contract', () => {
     );
     assert.equal(
       canRecordRedemptionCode({
-        amounts: { ...validAmounts, copy: '-1', image: '1' },
+        credits: '0',
         code: 'WELCOME20',
         expiresAt: '',
       }),
@@ -87,7 +80,7 @@ describe('admin redemption form contract', () => {
   it('requires one manually supplied code', () => {
     assert.equal(
       canRecordRedemptionCode({
-        amounts: validAmounts,
+        credits: '30',
         code: 'WELCOME20',
         expiresAt: '2026-08-01T00:00',
       }),
@@ -95,7 +88,7 @@ describe('admin redemption form contract', () => {
     );
     assert.equal(
       canRecordRedemptionCode({
-        amounts: validAmounts,
+        credits: '30',
         code: '',
         expiresAt: '',
       }),

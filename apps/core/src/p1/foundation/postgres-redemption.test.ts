@@ -133,7 +133,7 @@ describe('PostgresRedemptionStore', () => {
         idempotencyKey: 'create-credit-redemption',
         input: {
           action: 'create',
-          payload: { code, credits: 30 },
+          payload: { code, credits: 30, grants: {} },
         },
       });
       const redeem = () =>

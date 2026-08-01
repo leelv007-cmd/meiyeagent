@@ -219,7 +219,9 @@ export type ComposerCreditRedemptionReceipt = {
 /**
  * A redemption command is not an unlock receipt. Credit mode unlocks only
  * after the command proves it wrote a credit lot and a fresh authoritative
- * projection proves that the balance both increased and covers this quote.
+ * projection proves that the balance covers this quote. The cached balance is
+ * not an unlock authority because a replay can observe the granted balance
+ * before this helper runs.
  */
 export async function recoverComposerCredits(input: {
   beforeCredits: number | null | undefined;
@@ -231,7 +233,6 @@ export async function recoverComposerCredits(input: {
 }): Promise<{ ok: true } | { ok: false; message: string }> {
   const receipt = await input.redeem();
   const projection = await input.refreshCredits();
-  const before = input.beforeCredits;
   const after = projection?.credits?.availableCredits;
   const required = input.requiredCredits;
   const creditGrant = receipt.creditGrant;
@@ -240,9 +241,7 @@ export async function recoverComposerCredits(input: {
     creditGrant.transactionType !== 'REDEMPTION_CODE' ||
     !Number.isSafeInteger(creditGrant.originalCredits) ||
     creditGrant.originalCredits <= 0 ||
-    !Number.isSafeInteger(before) ||
-    !Number.isSafeInteger(after) ||
-    after! <= before!
+    !Number.isSafeInteger(after)
   ) {
     return { ok: false, message: '兑换后积分未到账，请重试' };
   }

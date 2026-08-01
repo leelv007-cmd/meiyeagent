@@ -22,6 +22,8 @@ import {
   admin_redemption_code_placeholder,
   admin_redemption_codes_count,
   admin_redemption_codes_title,
+  admin_redemption_credit_receipt,
+  admin_redemption_credits,
   admin_redemption_create,
   admin_redemption_create_description,
   admin_redemption_create_failed,
@@ -29,13 +31,7 @@ import {
   admin_redemption_create_title,
   admin_redemption_empty,
   admin_redemption_expires_at,
-  admin_redemption_grant_transaction,
-  admin_redemption_grants,
   admin_redemption_load_failed,
-  admin_redemption_resource_audio,
-  admin_redemption_resource_copy,
-  admin_redemption_resource_image,
-  admin_redemption_resource_video,
   admin_redemption_status,
   admin_redemption_status_active,
   admin_redemption_status_expired,
@@ -52,21 +48,13 @@ interface RedemptionCodeRow {
   code: string;
   status: string;
   revision: number;
+  credits?: number;
   grants: Record<string, number>;
   expiresAt: string | null;
   batchId?: string;
-  grantTransactionId?: string;
+  creditGrantTransactionId?: string;
   redeemedWorkspaceId?: string;
 }
-
-type GrantResource = 'copy' | 'image' | 'video' | 'audio';
-
-const RESOURCE_LABELS: Record<GrantResource, () => string> = {
-  copy: admin_redemption_resource_copy,
-  image: admin_redemption_resource_image,
-  video: admin_redemption_resource_video,
-  audio: admin_redemption_resource_audio,
-};
 
 const STATUS_LABELS: Record<string, () => string> = {
   active: admin_redemption_status_active,
@@ -76,15 +64,15 @@ const STATUS_LABELS: Record<string, () => string> = {
 };
 
 export function canRecordRedemptionCode(input: {
-  amounts: Record<GrantResource, string>;
   code: string;
+  credits: string;
   expiresAt: string;
 }) {
-  const amountValues = Object.values(input.amounts).map(Number);
+  const credits = Number(input.credits);
   const normalizedCode = input.code.trim().toUpperCase();
   return (
-    amountValues.every((amount) => Number.isInteger(amount) && amount >= 0) &&
-    amountValues.some((amount) => amount > 0) &&
+    Number.isSafeInteger(credits) &&
+    credits > 0 &&
     /^[A-Z0-9_-]{4,64}$/.test(normalizedCode) &&
     (!input.expiresAt || Number.isFinite(Date.parse(input.expiresAt)))
   );
@@ -92,12 +80,7 @@ export function canRecordRedemptionCode(input: {
 
 export function AdminRedemptionControl() {
   const queryClient = useQueryClient();
-  const [amounts, setAmounts] = useState<Record<GrantResource, string>>({
-    copy: '20',
-    image: '0',
-    video: '0',
-    audio: '0',
-  });
+  const [credits, setCredits] = useState('30');
   const [code, setCode] = useState('');
   const [expiresAt, setExpiresAt] = useState('');
 
@@ -112,18 +95,14 @@ export function AdminRedemptionControl() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const grants = Object.fromEntries(
-        Object.entries(amounts)
-          .map(([resource, amount]) => [resource, Number(amount)] as const)
-          .filter(([, amount]) => Number.isInteger(amount) && amount > 0)
-      );
       return commandP1<RedemptionCodeRow[]>(
         'redemptions',
         {
           action: 'create',
           payload: {
-            grants,
             code: code.trim(),
+            credits: Number(credits),
+            grants: {},
             ...(expiresAt
               ? { expiresAt: new Date(expiresAt).toISOString() }
               : {}),
@@ -170,8 +149,8 @@ export function AdminRedemptionControl() {
 
   const rows = listQuery.data ?? [];
   const canCreate = canRecordRedemptionCode({
-    amounts,
     code,
+    credits,
     expiresAt,
   });
 
@@ -185,27 +164,18 @@ export function AdminRedemptionControl() {
           </AdminPanelDescription>
         </AdminPanelHeader>
         <AdminPanelContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {(Object.keys(RESOURCE_LABELS) as GrantResource[]).map((resource) => (
-            <div className="grid gap-2" key={resource}>
-              <Label htmlFor={`redeem-${resource}`}>
-                {RESOURCE_LABELS[resource]()}
-              </Label>
-              <Input
-                id={`redeem-${resource}`}
-                inputMode="numeric"
-                min={0}
-                step={1}
-                type="number"
-                value={amounts[resource]}
-                onChange={(event) =>
-                  setAmounts((current) => ({
-                    ...current,
-                    [resource]: event.target.value,
-                  }))
-                }
-              />
-            </div>
-          ))}
+          <div className="grid gap-2">
+            <Label htmlFor="redeem-credits">{admin_redemption_credits()}</Label>
+            <Input
+              id="redeem-credits"
+              inputMode="numeric"
+              min={1}
+              step={1}
+              type="number"
+              value={credits}
+              onChange={(event) => setCredits(event.target.value)}
+            />
+          </div>
           <div className="grid gap-2">
             <Label htmlFor="redeem-code">{admin_redemption_code()}</Label>
             <Input
@@ -253,10 +223,10 @@ export function AdminRedemptionControl() {
               <tr className="border-b text-left">
                 <th className="py-2 pr-3">{admin_redemption_code()}</th>
                 <th className="py-2 pr-3">{admin_redemption_status()}</th>
-                <th className="py-2 pr-3">{admin_redemption_grants()}</th>
+                <th className="py-2 pr-3">{admin_redemption_credits()}</th>
                 <th className="py-2 pr-3">{admin_redemption_expires_at()}</th>
                 <th className="py-2 pr-3">
-                  {admin_redemption_grant_transaction()}
+                  {admin_redemption_credit_receipt()}
                 </th>
                 <th className="py-2 pr-3">{admin_redemption_actions()}</th>
               </tr>
@@ -269,12 +239,9 @@ export function AdminRedemptionControl() {
                     {STATUS_LABELS[row.status]?.() ?? row.status}
                   </td>
                   <td className="py-2 pr-3">
-                    {Object.entries(row.grants)
-                      .map(
-                        ([resource, amount]) =>
-                          `${RESOURCE_LABELS[resource as GrantResource]?.() ?? resource}: ${amount}`
-                      )
-                      .join(' ')}
+                    {row.credits !== undefined
+                      ? `${row.credits} ${admin_redemption_credits()}`
+                      : '—'}
                   </td>
                   <td className="py-2 pr-3">
                     {row.expiresAt
@@ -282,7 +249,7 @@ export function AdminRedemptionControl() {
                       : '—'}
                   </td>
                   <td className="py-2 pr-3 font-mono text-xs">
-                    {row.grantTransactionId ?? '—'}
+                    {row.creditGrantTransactionId ?? '—'}
                   </td>
                   <td className="py-2 pr-3">
                     {row.status === 'active' ? (
