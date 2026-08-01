@@ -6003,11 +6003,11 @@ function merchantCopyCandidateCount(
       'Reserved credit quote has an invalid output count.',
     );
   }
-  if (operation === 'copy.generate') {
+  if (operation === 'copy.generate' || operation === 'copy.adapt') {
     if (outputCount === 1 || outputCount === 3) return outputCount;
     throw new P1DomainError(
       'INVALID_STATE',
-      'copy.generate reserved credit quotes support one or three outputs.',
+      'Copy reserved credit quotes support one or three outputs.',
     );
   }
   if (outputCount !== 1) {

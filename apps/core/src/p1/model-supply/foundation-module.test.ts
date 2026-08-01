@@ -3173,12 +3173,12 @@ describe('ModelSupplyFoundationModule', () => {
     );
   });
 
-  it('shares the reserved quote claim with direct control-plane consumers', async () => {
+  it('shares the reserved three-platform copy.adapt claim with direct control-plane consumers', async () => {
     let providerCalls = 0;
     const quote = {
       catalogModelId: 'llm-openai',
       lifecycleStatus: 'reserved',
-      operation: 'copy.generate',
+      operation: 'copy.adapt',
       outputCount: 3,
       quoteId: 'quote-shared-consumer',
       revision: 'quote-r1',
@@ -3213,7 +3213,7 @@ describe('ModelSupplyFoundationModule', () => {
       billingQuoteRevision: quote.revision,
       billingTaskId: quote.taskId,
       dataClass: [],
-      operation: 'copy.generate' as const,
+      operation: 'copy.adapt' as const,
       prompt: 'Return three campaign directions.',
       selection: { catalogModelId: quote.catalogModelId, mode: 'fixed' as const },
     };
