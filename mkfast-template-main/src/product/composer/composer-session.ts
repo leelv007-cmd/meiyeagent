@@ -204,13 +204,15 @@ export function rebindComposerSession(
     turns: session.turns.filter(
       // Turns that cannot function once the handle is gone: the candidate area
       // has no stream to fill it, the question card has nowhere to post an
-      // answer, and the 申报 describes a run this container no longer holds.
+      // answer, execution_confirm has no interaction request to answer, and the
+      // 申报 describes a run this container no longer holds.
       // 交付卡 stays — a partial delivery also offers 再生成一次, and throwing
       // away the part that did land would undo the honesty it was built for.
       (turn) =>
         turn.kind !== 'report' &&
         turn.kind !== 'candidate' &&
-        turn.kind !== 'question'
+        turn.kind !== 'question' &&
+        turn.kind !== 'execution_confirm'
     ),
   };
 }
@@ -311,8 +313,31 @@ export function applyComposerProgress(
 }
 
 /**
+ * Terminal phases that must not be demoted back to awaiting_answer / running
+ * by interrupt apply paths.
+ */
+function isTerminalComposerPhase(phase: ComposerSessionPhase): boolean {
+  return phase === 'delivered' || phase === 'cancelled';
+}
+
+function upsertInterruptTurn(
+  turns: ComposerTurn[],
+  turn: ComposerQuestionTurn | ComposerExecutionConfirmTurn
+): ComposerTurn[] {
+  const kind = turn.kind;
+  const next = turns.filter((item) => item.kind !== kind);
+  const candidateIndex = next.findIndex((item) => item.kind === 'candidate');
+  if (candidateIndex === -1) next.push(turn);
+  else next.splice(candidateIndex, 0, turn);
+  return next;
+}
+
+/**
  * A blocking question is present or cleared. D-116 keeps it non-blocking for
  * the merchant: the card always offers a skip, so the flow moves forward.
+ *
+ * Prefer `applyComposerPendingInterrupts` from the host when both question and
+ * execution_confirm can be live — separate clear paths race on phase.
  */
 export function applyComposerQuestion(
   session: ComposerSession,
@@ -326,37 +351,53 @@ export function applyComposerQuestion(
     // The cleared question keeps its turn: it anchors the interaction slot,
     // which reads the durable snapshot and shows the settled notice when the
     // system answered by default — erasing the turn would erase that trace.
+    // Do not demote phase while a paid-media execution_confirm turn is still
+    // the live interrupt (execution_confirm is removed on settle, so presence
+    // means still pending).
+    const peerConfirmActive = session.turns.some(
+      (turn) => turn.kind === 'execution_confirm'
+    );
+    if (peerConfirmActive) {
+      return {
+        ...session,
+        phase: isTerminalComposerPhase(session.phase)
+          ? session.phase
+          : 'awaiting_answer',
+      };
+    }
     return {
       ...session,
       phase: session.phase === 'awaiting_answer' ? 'running' : session.phase,
     };
   }
-  if (existing?.questionId === questionId) return session;
-  const turns: ComposerTurn[] = session.turns.filter(
-    (turn) => turn.kind !== 'question'
-  );
-  const candidateIndex = turns.findIndex((turn) => turn.kind === 'candidate');
+  if (existing?.questionId === questionId) {
+    // Peer may have demoted phase; keep the live interrupt visible as waiting.
+    if (
+      !isTerminalComposerPhase(session.phase) &&
+      session.phase !== 'awaiting_answer'
+    ) {
+      return { ...session, phase: 'awaiting_answer' };
+    }
+    return session;
+  }
   const turn: ComposerQuestionTurn = {
     kind: 'question',
     id: `question:${questionId}`,
     questionId,
   };
-  if (candidateIndex === -1) turns.push(turn);
-  else turns.splice(candidateIndex, 0, turn);
   return {
     ...session,
-    phase:
-      session.phase === 'delivered' || session.phase === 'cancelled'
-        ? session.phase
-        : 'awaiting_answer',
-    turns,
+    phase: isTerminalComposerPhase(session.phase)
+      ? session.phase
+      : 'awaiting_answer',
+    turns: upsertInterruptTurn(session.turns, turn),
   };
 }
 
 /**
  * P1-05: paid-media execution_confirm interrupt present or cleared.
- * Same single-turn discipline as applyComposerQuestion; kept separate so the
- * AgentFrame registry can map it as its own decision-family consumer.
+ * Cleared turns are removed (no durable settlement notice like question).
+ * Prefer `applyComposerPendingInterrupts` when both interrupt kinds can race.
  */
 export function applyComposerExecutionConfirm(
   session: ComposerSession,
@@ -368,31 +409,100 @@ export function applyComposerExecutionConfirm(
   );
   if (!confirmId) {
     if (!existing) return session;
+    // No settlement UI for execution_confirm — drop the turn so the timeline
+    // does not keep an empty DecisionFrame after accept/reject resolve.
+    // When a live question may also be pending, use applyComposerPendingInterrupts
+    // so phase is reconciled against both IDs in one update.
     return {
       ...session,
+      turns: session.turns.filter((turn) => turn.kind !== 'execution_confirm'),
       phase: session.phase === 'awaiting_answer' ? 'running' : session.phase,
     };
   }
-  if (existing?.confirmId === confirmId) return session;
-  const turns: ComposerTurn[] = session.turns.filter(
-    (turn) => turn.kind !== 'execution_confirm'
-  );
-  const candidateIndex = turns.findIndex((turn) => turn.kind === 'candidate');
+  if (existing?.confirmId === confirmId) {
+    if (
+      !isTerminalComposerPhase(session.phase) &&
+      session.phase !== 'awaiting_answer'
+    ) {
+      return { ...session, phase: 'awaiting_answer' };
+    }
+    return session;
+  }
   const turn: ComposerExecutionConfirmTurn = {
     kind: 'execution_confirm',
     id: `execution_confirm:${confirmId}`,
     confirmId,
   };
-  if (candidateIndex === -1) turns.push(turn);
-  else turns.splice(candidateIndex, 0, turn);
   return {
     ...session,
-    phase:
-      session.phase === 'delivered' || session.phase === 'cancelled'
-        ? session.phase
-        : 'awaiting_answer',
-    turns,
+    phase: isTerminalComposerPhase(session.phase)
+      ? session.phase
+      : 'awaiting_answer',
+    turns: upsertInterruptTurn(session.turns, turn),
   };
+}
+
+/**
+ * Atomic apply for question + execution_confirm pending IDs.
+ *
+ * One setSession avoids the race where clearing a settled question demotes
+ * phase to `running` while execution_confirm is still the live hold, and a
+ * same-confirmId early-return never restores `awaiting_answer`.
+ */
+export function applyComposerPendingInterrupts(
+  session: ComposerSession,
+  pending: {
+    questionId: string | null;
+    executionConfirmId: string | null;
+  }
+): ComposerSession {
+  let turns = session.turns;
+
+  const existingQuestion = turns.find(
+    (turn): turn is ComposerQuestionTurn => turn.kind === 'question'
+  );
+  if (pending.questionId) {
+    if (existingQuestion?.questionId !== pending.questionId) {
+      turns = upsertInterruptTurn(turns, {
+        kind: 'question',
+        id: `question:${pending.questionId}`,
+        questionId: pending.questionId,
+      });
+    }
+  }
+  // Cleared question keeps its turn (settlement-notice anchor).
+
+  const existingConfirm = turns.find(
+    (turn): turn is ComposerExecutionConfirmTurn =>
+      turn.kind === 'execution_confirm'
+  );
+  if (pending.executionConfirmId) {
+    if (existingConfirm?.confirmId !== pending.executionConfirmId) {
+      turns = upsertInterruptTurn(turns, {
+        kind: 'execution_confirm',
+        id: `execution_confirm:${pending.executionConfirmId}`,
+        confirmId: pending.executionConfirmId,
+      });
+    }
+  } else if (existingConfirm) {
+    turns = turns.filter((turn) => turn.kind !== 'execution_confirm');
+  }
+
+  if (isTerminalComposerPhase(session.phase)) {
+    return turns === session.turns ? session : { ...session, turns };
+  }
+
+  const hasLiveInterrupt = Boolean(
+    pending.questionId || pending.executionConfirmId
+  );
+  const phase: ComposerSessionPhase = hasLiveInterrupt
+    ? 'awaiting_answer'
+    : session.phase === 'awaiting_answer'
+      ? 'running'
+      : session.phase;
+
+  if (turns === session.turns && phase === session.phase) return session;
+  return { ...session, phase, turns };
 }
 
 /**

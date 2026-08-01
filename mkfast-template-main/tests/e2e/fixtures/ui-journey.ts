@@ -111,18 +111,21 @@ export async function assertThreeModalDiscovery(page: Page) {
 }
 
 /**
- * 图文's one real mid-run question.
+ * 图文's mid-run style choice (activation #3 of 4).
  *
  * The note plan compiles two directions and the harness marks that card
  * `unattended: 'hold'` (`apps/core/src/p1/harness/workflow-core.ts`
  * `noteStyleQuestion`) — it carries no default, so nothing releases it but a
  * merchant choice, and the run stays suspended until one lands. Answering it is
- * part of the 图文 mainline, not a test convenience, and remains the third
- * semantic activation in this modality's contract.
+ * part of the 图文 mainline, not a test convenience.
+ *
+ * After the direction lands, P1-05 paid-media execution_confirm is activation
+ * #4 (lens + submit + direction + 确认执行). This helper only covers the style
+ * card; callers that finish generation must also accept the in-stream confirm
+ * (see submitComposerJourney paid-media block).
  *
  * The old page-plan confirmation is not a merchant decision and must never
- * block this path. The one real direction choice submits in its option click,
- * so lens + submit + direction remains the complete three-activation contract.
+ * block this path. The style choice submits in its option click.
  *
  * A frozen route may pre-answer the question before the merchant sees it, so
  * the card is transient: it can sit waiting for a click, flash and resolve on

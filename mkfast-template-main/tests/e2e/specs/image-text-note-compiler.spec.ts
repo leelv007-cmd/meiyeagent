@@ -454,6 +454,18 @@ test.describe
       await expect(storyOption).toBeVisible();
       await storyOption.click();
 
+      // P1-05 / xhs-spec §3.3 / P1-6: note batch pages reserve copy+image and
+      // must hold on the in-stream execution_confirm interrupt before selection.
+      const confirmation = page.getByTestId(
+        'execution-confirmation-interaction-card'
+      );
+      await expect(confirmation).toBeVisible({ timeout: 90_000 });
+      await expect(
+        page.getByTestId('composer-execution-confirm-turn')
+      ).toHaveAttribute('data-agent-frame', 'decision');
+      await confirmation.getByRole('button', { name: '确认执行' }).click();
+      await expect(confirmation).toBeHidden({ timeout: 90_000 });
+
       const stream = await streamPromise;
       expect(stream.status).toBe('success');
       expect(

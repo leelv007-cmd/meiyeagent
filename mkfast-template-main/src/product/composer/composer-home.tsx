@@ -239,9 +239,8 @@ import {
   type ComposerImageOperation,
 } from './image-operation-picker';
 import {
-  applyComposerExecutionConfirm,
+  applyComposerPendingInterrupts,
   applyComposerProgress,
-  applyComposerQuestion,
   applyComposerWorkflowState,
   bindComposerTask,
   COMPOSER_SESSION_STORAGE_KEY,
@@ -1442,6 +1441,8 @@ export function ComposerHome({
   const questionTimeoutSeconds = decisionQuery.data?.timeoutSeconds ?? null;
   // P1-05: execution_confirm is its own timeline turn (DecisionFrame interrupt),
   // not a generic question. Server interrupt wins over client pre-submit card.
+  // Apply both pending IDs in one atomic session update so clearing a settled
+  // question cannot demote phase while execution_confirm is still the live hold.
   const clientExecutionConfirmOpen = executionConfirm.phase === 'open';
   const pendingExecutionConfirmTurnId =
     pendingExecutionConfirmation?.requestId ??
@@ -1449,23 +1450,23 @@ export function ComposerHome({
     (clientExecutionConfirmOpen ? 'client-execution-confirm' : null);
   const pendingQuestionTurnId =
     pendingAskRequest?.requestId ?? pendingQuestion?.questionId ?? null;
+  const hasExecutionConfirmBody =
+    Boolean(pendingExecutionConfirmation) ||
+    Boolean(pendingExecutionWaitingMessage) ||
+    clientExecutionConfirmOpen ||
+    Boolean(costFeedback);
 
   useEffect(() => {
     setSession((current) =>
-      applyComposerQuestion(current, pendingQuestionTurnId)
-    );
-  }, [
-    pendingQuestionTurnId,
-    questionResolutionSource,
-    workflowStream.workflowState,
-  ]);
-
-  useEffect(() => {
-    setSession((current) =>
-      applyComposerExecutionConfirm(current, pendingExecutionConfirmTurnId)
+      applyComposerPendingInterrupts(current, {
+        questionId: pendingQuestionTurnId,
+        executionConfirmId: pendingExecutionConfirmTurnId,
+      })
     );
   }, [
     pendingExecutionConfirmTurnId,
+    pendingQuestionTurnId,
+    questionResolutionSource,
     workflowStream.workflowState,
   ]);
 
@@ -2846,60 +2847,60 @@ export function ComposerHome({
                 onRecover={recoverFromReport}
                 executionConfirmSlot={
                   // P1-05: in-stream DecisionFrame interrupt body (not sticky slot).
-                  // Server AG-UI interrupt takes precedence; client cost card is
-                  // the pre-submit residual when still open; cost feedback stays
-                  // co-located so reject still answers in place.
-                  <div data-testid="execution-confirm-slot">
-                    {pendingExecutionConfirmation ? (
-                      <ExecutionConfirmationInteractionCard
-                        onRendererReady={acknowledgeAskMerchantRenderer}
-                        onRendererRejected={
-                          refreshInteractionAfterRendererRejection
-                        }
-                        onSubmit={answerExecutionConfirmation}
-                        pending={questionPending}
-                        request={pendingExecutionConfirmation}
-                      />
-                    ) : pendingExecutionWaitingMessage ? (
-                      <ExecutionConfirmationWaitingMessageCard
-                        onSubmit={answerExecutionWaitingMessage}
-                        pending={questionPending}
-                        request={pendingExecutionWaitingMessage}
-                      />
-                    ) : clientExecutionConfirmOpen ? (
-                      <ExecutionConfirmCard
-                        {...projectExecutionConfirmCard(executionConfirm, {
-                          busy: createWork.isPending || briefPending,
-                          onConfirm: () => {
-                            const run = pendingRunRef.current;
-                            setExecutionConfirm(confirmExecution);
-                            if (!run) return;
-                            pendingRunRef.current = null;
-                            runCreate(
-                              run.lensId,
-                              run.videoConfirmAccepted,
-                              run.briefConfirmationId
-                            );
-                          },
-                          onReject: () => {
-                            pendingRunRef.current = null;
-                            setExecutionConfirm(
-                              (current) => rejectExecution(current).state
-                            );
-                            setCostFeedback(
-                              projectExecutionCostFeedback({
-                                outcome: 'rejected',
-                              })
-                            );
-                          },
-                          staleNotice: currentQuoteView
-                            ? null
-                            : briefStaleQuoteNotice(),
-                        })}
-                      />
-                    ) : null}
-                    <ExecutionCostFeedbackLine feedback={costFeedback} />
-                  </div>
+                  // Pass null when idle so no empty DecisionFrame host remains.
+                  hasExecutionConfirmBody ? (
+                    <div data-testid="execution-confirm-slot">
+                      {pendingExecutionConfirmation ? (
+                        <ExecutionConfirmationInteractionCard
+                          onRendererReady={acknowledgeAskMerchantRenderer}
+                          onRendererRejected={
+                            refreshInteractionAfterRendererRejection
+                          }
+                          onSubmit={answerExecutionConfirmation}
+                          pending={questionPending}
+                          request={pendingExecutionConfirmation}
+                        />
+                      ) : pendingExecutionWaitingMessage ? (
+                        <ExecutionConfirmationWaitingMessageCard
+                          onSubmit={answerExecutionWaitingMessage}
+                          pending={questionPending}
+                          request={pendingExecutionWaitingMessage}
+                        />
+                      ) : clientExecutionConfirmOpen ? (
+                        <ExecutionConfirmCard
+                          {...projectExecutionConfirmCard(executionConfirm, {
+                            busy: createWork.isPending || briefPending,
+                            onConfirm: () => {
+                              const run = pendingRunRef.current;
+                              setExecutionConfirm(confirmExecution);
+                              if (!run) return;
+                              pendingRunRef.current = null;
+                              runCreate(
+                                run.lensId,
+                                run.videoConfirmAccepted,
+                                run.briefConfirmationId
+                              );
+                            },
+                            onReject: () => {
+                              pendingRunRef.current = null;
+                              setExecutionConfirm(
+                                (current) => rejectExecution(current).state
+                              );
+                              setCostFeedback(
+                                projectExecutionCostFeedback({
+                                  outcome: 'rejected',
+                                })
+                              );
+                            },
+                            staleNotice: currentQuoteView
+                              ? null
+                              : briefStaleQuoteNotice(),
+                          })}
+                        />
+                      ) : null}
+                      <ExecutionCostFeedbackLine feedback={costFeedback} />
+                    </div>
+                  ) : null
                 }
                 questionSlot={
                   <AskMerchantInteractionSlot
@@ -3319,13 +3320,15 @@ export function ComposerHome({
 
               {/*
                * P1-05: execution_confirm lives in the document timeline
-               * (executionConfirmSlot / DecisionFrame). Residual cost feedback
-               * only when Brief cancel wiped the transcript but still owes an
-               * in-place "未消耗额度" answer (D-164⑥).
+               * (executionConfirmSlot / DecisionFrame). Residual cost-only
+               * feedback when Brief cancel wiped the transcript but still owes
+               * an in-place "未消耗额度" answer (D-164⑥). Distinct testid so it
+               * is not mistaken for the paid-media confirm slot.
                */}
               {costFeedback &&
-              !session.turns.some((turn) => turn.kind === 'execution_confirm') ? (
-                <div data-testid="execution-confirm-slot">
+              !pendingExecutionConfirmTurnId &&
+              !clientExecutionConfirmOpen ? (
+                <div data-testid="execution-cost-feedback-slot">
                   <ExecutionCostFeedbackLine feedback={costFeedback} />
                 </div>
               ) : null}

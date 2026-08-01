@@ -8,6 +8,7 @@ import type { WorkflowProgressEnvelope } from '@meiye/contracts';
 
 import {
   applyComposerExecutionConfirm,
+  applyComposerPendingInterrupts,
   applyComposerProgress,
   applyComposerQuestion,
   applyComposerWorkflowState,
@@ -176,10 +177,68 @@ test('paid-media execution_confirm is a distinct single timeline turn (P1-05)', 
     'execution-request-2'
   );
 
+  // Cleared confirm is removed (no settlement notice) — no empty DecisionFrame.
   session = applyComposerExecutionConfirm(session, null);
   assert.equal(session.phase, 'running');
   assert.equal(
     session.turns.filter((turn) => turn.kind === 'execution_confirm').length,
+    0
+  );
+});
+
+test('settled question clear does not demote phase while execution_confirm is live', () => {
+  // Issue 1: note path settles note_style then holds execution_confirmation.
+  // A question-clear effect must not race phase to `running` over the live hold.
+  let session = applyComposerPendingInterrupts(runningSession(), {
+    questionId: 'note-style-1',
+    executionConfirmId: null,
+  });
+  assert.equal(session.phase, 'awaiting_answer');
+
+  session = applyComposerPendingInterrupts(session, {
+    questionId: null,
+    executionConfirmId: 'execution-request-1',
+  });
+  assert.equal(session.phase, 'awaiting_answer');
+  assert.equal(
+    session.turns.filter((turn) => turn.kind === 'question').length,
+    1
+  );
+  assert.equal(
+    session.turns.filter((turn) => turn.kind === 'execution_confirm').length,
+    1
+  );
+
+  // Re-apply the same clear + same confirm (workflow progress tick) stays waiting.
+  session = applyComposerPendingInterrupts(session, {
+    questionId: null,
+    executionConfirmId: 'execution-request-1',
+  });
+  assert.equal(session.phase, 'awaiting_answer');
+
+  // Also true for the split applyComposerQuestion clear path when confirm turn
+  // is already present.
+  session = applyComposerQuestion(session, null);
+  assert.equal(session.phase, 'awaiting_answer');
+});
+
+test('rebind drops stale execution_confirm turns with other task-bound interrupts', () => {
+  let session = applyComposerExecutionConfirm(
+    runningSession(),
+    'execution-request-stale'
+  );
+  session = applyComposerQuestion(session, 'question-stale');
+  const rebound = rebindComposerSession(session, 'session-retry');
+  assert.equal(
+    rebound.turns.filter((turn) => turn.kind === 'execution_confirm').length,
+    0
+  );
+  assert.equal(
+    rebound.turns.filter((turn) => turn.kind === 'question').length,
+    0
+  );
+  assert.equal(
+    rebound.turns.filter((turn) => turn.kind === 'merchant').length,
     1
   );
 });
