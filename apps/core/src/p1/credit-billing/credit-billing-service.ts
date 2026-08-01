@@ -310,7 +310,12 @@ export class CreditBillingService {
             'Credit replacement is waiting for its billing period to start.',
           );
         }
-        return scheduled;
+        return subscriptions.recordPaidPeriod({
+          subscriptionId: scheduled.id,
+          periodStartsAt: anchorAt,
+          coverageCycles: paidCycleCoverage(interval),
+          at: now,
+        });
       }
       const paid = await subscriptions.recordPaidPeriod({
         subscriptionId: replacement.id,

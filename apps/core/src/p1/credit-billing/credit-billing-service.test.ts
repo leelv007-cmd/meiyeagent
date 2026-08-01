@@ -668,6 +668,68 @@ test('a future same-tier replacement receipt remains retryable at its period sta
   );
 });
 
+test('a future downgrade receipt records its paid coverage when the replacement becomes effective', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  const replacement = {
+    interval: 'month' as const,
+    lifecycle: 'activate' as const,
+    paymentEventId: 'payment-future-downgrade',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-02-01T00:00:00.000Z',
+    subscriptionId: 'subscription-future-downgrade-new',
+  };
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-future-downgrade-old',
+    paymentProductId: 'growth',
+    periodStartsAt: now.toISOString(),
+    subscriptionId: 'subscription-future-downgrade-old',
+  });
+  now = new Date('2026-02-01T00:00:00.000Z');
+  await service.settlePayment(context, replacement);
+
+  const subscription = await subscriptions.get(replacement.subscriptionId);
+  assert.equal(subscription?.paidThroughCycle, 2);
+  assert.equal(subscription?.pendingTier, 'starter');
+  assert.equal(subscription?.pendingEffectiveCycle, 1);
+});
+
+test('a future interval replacement records annual paid coverage when it becomes effective', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  const replacement = {
+    interval: 'year' as const,
+    lifecycle: 'activate' as const,
+    paymentEventId: 'payment-future-interval',
+    paymentProductId: 'starter-year',
+    periodStartsAt: '2026-02-01T00:00:00.000Z',
+    subscriptionId: 'subscription-future-interval-new',
+  };
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-future-interval-old',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId: 'subscription-future-interval-old',
+  });
+  now = new Date('2026-02-01T00:00:00.000Z');
+  await service.settlePayment(context, replacement);
+
+  const subscription = await subscriptions.get(replacement.subscriptionId);
+  assert.equal(subscription?.paidThroughCycle, 13);
+  assert.equal(subscription?.pendingInterval, 'yearly');
+  assert.equal(subscription?.pendingEffectiveCycle, 1);
+});
+
 test('future and old paid periods do not expand or regress current coverage', async () => {
   let now = new Date('2026-01-01T00:00:00.000Z');
   const ledger = new MemoryCreditLedger();
@@ -823,6 +885,7 @@ function creditBillingService(
         return {
           mappings: [
             { interval: 'month' as const, paymentProductId: 'starter', tier: 'starter' as const },
+            { interval: 'year' as const, paymentProductId: 'starter-year', tier: 'starter' as const },
             { interval: 'month' as const, paymentProductId: 'growth', tier: 'growth' as const },
             { interval: 'year' as const, paymentProductId: 'pro', tier: 'pro' as const },
           ],
