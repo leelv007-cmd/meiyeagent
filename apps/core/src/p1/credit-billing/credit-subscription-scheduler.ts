@@ -1,6 +1,7 @@
-import type { Pool, PoolClient, QueryResultRow } from 'pg';
+import type { Pool, PoolClient, QueryResult, QueryResultRow } from 'pg';
 
 import type { PostgresSchemaMigrator } from '../../postgres-schema-migration.js';
+import { P1DomainError } from '../foundation/domain.js';
 import type { JobRuntimeHandler, RecurringJobInput } from '../job-runtime/index.js';
 import type { CreditPlanId, CreditPlanOffer } from './credit-plan-catalog.js';
 import type { CreditGrantLot, GrantCreditsInput } from './credit-ledger.js';
@@ -77,6 +78,17 @@ export interface CreditSubscriptionStore {
     effectiveCycle: number;
     at: string;
   }): Promise<CreditSubscription>;
+  withPaymentEvent(
+    input: {
+      workspaceId: string;
+      paymentEventId: string;
+      payloadHash: string;
+      createdAt: string;
+    },
+    operation: (
+      subscriptions: CreditSubscriptionStore,
+    ) => Promise<CreditSubscription | null>,
+  ): Promise<CreditSubscription | null>;
 }
 
 export interface CreditSubscriptionAlert {
@@ -336,6 +348,11 @@ export async function registerCreditSubscriptionSchedules(
 
 export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
   private readonly subscriptions = new Map<string, CreditSubscription>();
+  private readonly paymentEvents = new Map<
+    string,
+    { payloadHash: string; result: CreditSubscription | null }
+  >();
+  private paymentEventTail: Promise<void> = Promise.resolve();
 
   async get(subscriptionId: string) {
     const subscription = this.subscriptions.get(subscriptionId);
@@ -463,6 +480,42 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
     return structuredClone(subscription);
   }
 
+  async withPaymentEvent(
+    input: {
+      workspaceId: string;
+      paymentEventId: string;
+      payloadHash: string;
+      createdAt: string;
+    },
+    operation: (
+      subscriptions: CreditSubscriptionStore,
+    ) => Promise<CreditSubscription | null>,
+  ) {
+    let release!: () => void;
+    const previous = this.paymentEventTail;
+    this.paymentEventTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      assertPaymentEventInput(input);
+      const key = `${input.workspaceId}\u0000${input.paymentEventId}`;
+      const existing = this.paymentEvents.get(key);
+      if (existing) {
+        assertPaymentEventFacts(existing.payloadHash, input.payloadHash);
+        return existing.result ? structuredClone(existing.result) : null;
+      }
+      const result = await operation(this);
+      this.paymentEvents.set(key, {
+        payloadHash: input.payloadHash,
+        result: result ? structuredClone(result) : null,
+      });
+      return result ? structuredClone(result) : null;
+    } finally {
+      release();
+    }
+  }
+
   private require(subscriptionId: string) {
     const subscription = this.subscriptions.get(subscriptionId);
     if (!subscription) throw new Error(`Credit subscription ${subscriptionId} was not found.`);
@@ -488,11 +541,27 @@ interface CreditSubscriptionRow extends QueryResultRow {
   updated_at: Date | string;
 }
 
+interface CreditPaymentEventRow extends QueryResultRow {
+  payload_hash: string;
+  result_json: unknown;
+  completed: boolean;
+}
+
+interface CreditSubscriptionDatabase {
+  query<Row extends QueryResultRow = QueryResultRow>(
+    text: string,
+    values?: unknown[],
+  ): Promise<QueryResult<Row>>;
+}
+
 /** Durable payment-status truth consumed by the worker scheduler. */
 export class PostgresCreditSubscriptionStore
   implements CreditSubscriptionStore, PostgresSchemaMigrator
 {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly database: CreditSubscriptionDatabase = pool,
+  ) {}
 
   async migrate(client: PoolClient) {
     await client.query(`
@@ -531,11 +600,20 @@ export class PostgresCreditSubscriptionStore
       CREATE INDEX IF NOT EXISTS p1_credit_subscriptions_scheduler_idx
         ON p1_credit_subscriptions (status, anchor_at, id)
         WHERE status IN ('active', 'past_due');
+      CREATE TABLE IF NOT EXISTS p1_credit_payment_events (
+        workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        payment_event_id text NOT NULL,
+        payload_hash text NOT NULL CHECK (length(payload_hash) = 64),
+        result_json jsonb,
+        completed boolean NOT NULL DEFAULT false,
+        created_at timestamptz NOT NULL,
+        PRIMARY KEY (workspace_id, payment_event_id)
+      );
     `);
   }
 
   async get(subscriptionId: string) {
-    const result = await this.pool.query<CreditSubscriptionRow>(
+    const result = await this.database.query<CreditSubscriptionRow>(
       'SELECT * FROM p1_credit_subscriptions WHERE id = $1',
       [subscriptionId],
     );
@@ -543,7 +621,7 @@ export class PostgresCreditSubscriptionStore
   }
 
   async listForWorkspace(workspaceId: string) {
-    const result = await this.pool.query<CreditSubscriptionRow>(
+    const result = await this.database.query<CreditSubscriptionRow>(
       `SELECT * FROM p1_credit_subscriptions
         WHERE workspace_id = $1
         ORDER BY updated_at DESC, id`,
@@ -553,7 +631,7 @@ export class PostgresCreditSubscriptionStore
   }
 
   async listGrantCandidates() {
-    const result = await this.pool.query<CreditSubscriptionRow>(
+    const result = await this.database.query<CreditSubscriptionRow>(
       `SELECT * FROM p1_credit_subscriptions
         WHERE status IN ('active', 'past_due')
         ORDER BY anchor_at, id`,
@@ -564,7 +642,7 @@ export class PostgresCreditSubscriptionStore
   async upsert(input: CreditSubscriptionInput) {
     assertSubscriptionInput(input);
     const now = iso(input.updatedAt ?? input.anchorAt);
-    const result = await this.pool.query<CreditSubscriptionRow>(
+    const result = await this.database.query<CreditSubscriptionRow>(
       `INSERT INTO p1_credit_subscriptions
         (id, workspace_id, tier, interval, pending_tier, pending_interval,
          pending_effective_cycle, grant_cycle_offset, anchor_at, paid_through_cycle,
@@ -615,7 +693,7 @@ export class PostgresCreditSubscriptionStore
     const pendingApplies =
       existing.pendingEffectiveCycle !== null &&
       paidThroughCycle > existing.pendingEffectiveCycle;
-    const result = await this.pool.query<CreditSubscriptionRow>(
+    const result = await this.database.query<CreditSubscriptionRow>(
       `UPDATE p1_credit_subscriptions
           SET paid_through_cycle = GREATEST(paid_through_cycle, $2),
               status = 'active', past_due_at = NULL, updated_at = $3,
@@ -633,7 +711,7 @@ export class PostgresCreditSubscriptionStore
   }
 
   async markPastDue(subscriptionId: string, at: string) {
-    const result = await this.pool.query<CreditSubscriptionRow>(
+    const result = await this.database.query<CreditSubscriptionRow>(
       `UPDATE p1_credit_subscriptions
           SET status = 'past_due', past_due_at = COALESCE(past_due_at, $2), updated_at = $2
         WHERE id = $1 AND status = 'active'
@@ -644,7 +722,7 @@ export class PostgresCreditSubscriptionStore
   }
 
   async cancelPastDue(subscriptionId: string, at: string) {
-    const result = await this.pool.query<CreditSubscriptionRow>(
+    const result = await this.database.query<CreditSubscriptionRow>(
       `UPDATE p1_credit_subscriptions
           SET status = 'cancelled', past_due_at = NULL, cancelled_at = $2, updated_at = $2
         WHERE id = $1 AND status = 'past_due'
@@ -655,7 +733,7 @@ export class PostgresCreditSubscriptionStore
   }
 
   async cancel(subscriptionId: string, at: string) {
-    const result = await this.pool.query<CreditSubscriptionRow>(
+    const result = await this.database.query<CreditSubscriptionRow>(
       `UPDATE p1_credit_subscriptions
           SET status = 'cancelled', past_due_at = NULL, cancelled_at = $2, updated_at = $2
         WHERE id = $1 AND status <> 'cancelled'
@@ -673,7 +751,7 @@ export class PostgresCreditSubscriptionStore
     at: string;
   }) {
     assertPaidThroughCycle(input.effectiveCycle);
-    const result = await this.pool.query<CreditSubscriptionRow>(
+    const result = await this.database.query<CreditSubscriptionRow>(
       `UPDATE p1_credit_subscriptions
           SET pending_tier = $2, pending_interval = $3,
               pending_effective_cycle = $4, updated_at = $5
@@ -691,11 +769,118 @@ export class PostgresCreditSubscriptionStore
     return subscriptionFromRow(result.rows[0]);
   }
 
+  async withPaymentEvent(
+    input: {
+      workspaceId: string;
+      paymentEventId: string;
+      payloadHash: string;
+      createdAt: string;
+    },
+    operation: (
+      subscriptions: CreditSubscriptionStore,
+    ) => Promise<CreditSubscription | null>,
+  ) {
+    assertPaymentEventInput(input);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const inserted = await client.query(
+        `INSERT INTO p1_credit_payment_events
+          (workspace_id, payment_event_id, payload_hash, created_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (workspace_id, payment_event_id) DO NOTHING
+         RETURNING payment_event_id`,
+        [
+          input.workspaceId,
+          input.paymentEventId,
+          input.payloadHash,
+          iso(input.createdAt),
+        ],
+      );
+      if (inserted.rowCount === 0) {
+        const replay = await client.query<CreditPaymentEventRow>(
+          `SELECT payload_hash, result_json, completed
+             FROM p1_credit_payment_events
+            WHERE workspace_id = $1 AND payment_event_id = $2`,
+          [input.workspaceId, input.paymentEventId],
+        );
+        const receipt = replay.rows[0];
+        if (!receipt || !receipt.completed) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Credit payment event receipt is incomplete.',
+          );
+        }
+        assertPaymentEventFacts(receipt.payload_hash, input.payloadHash);
+        await client.query('COMMIT');
+        return creditPaymentEventResult(receipt.result_json);
+      }
+
+      const result = await operation(
+        new PostgresCreditSubscriptionStore(this.pool, client),
+      );
+      await client.query(
+        `UPDATE p1_credit_payment_events
+            SET result_json = $3::jsonb, completed = true
+          WHERE workspace_id = $1 AND payment_event_id = $2`,
+        [input.workspaceId, input.paymentEventId, JSON.stringify(result)],
+      );
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   private async require(subscriptionId: string) {
     const subscription = await this.get(subscriptionId);
     if (!subscription) throw new Error(`Credit subscription ${subscriptionId} was not found.`);
     return subscription;
   }
+}
+
+function assertPaymentEventInput(input: {
+  workspaceId: string;
+  paymentEventId: string;
+  payloadHash: string;
+  createdAt: string;
+}) {
+  if (!input.workspaceId.trim() || !input.paymentEventId.trim()) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Credit payment workspace and event id are required.',
+    );
+  }
+  if (!/^[a-f0-9]{64}$/u.test(input.payloadHash)) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Credit payment payload hash is invalid.',
+    );
+  }
+  date(input.createdAt, 'createdAt');
+}
+
+function assertPaymentEventFacts(existing: string, replayed: string) {
+  if (existing !== replayed) {
+    throw new P1DomainError(
+      'IDEMPOTENCY_CONFLICT',
+      'Credit payment event was replayed with different facts.',
+    );
+  }
+}
+
+function creditPaymentEventResult(value: unknown) {
+  if (value === null) return null;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Credit payment event result is invalid.',
+    );
+  }
+  return structuredClone(value) as CreditSubscription;
 }
 
 function addUtcMonths(anchor: Date, offset: number) {

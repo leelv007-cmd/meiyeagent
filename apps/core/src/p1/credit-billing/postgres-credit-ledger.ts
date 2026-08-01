@@ -7,6 +7,7 @@ import {
   compareCreditLotsForFefo,
   normalizeCreditConsumeIdempotencyKey,
   normalizeCreditGrantIdempotencyKey,
+  sameCreditGrantFacts,
   type CreditBalanceProjection,
   type CreditGrantLot,
   type CreditGrantTransactionType,
@@ -145,14 +146,7 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
     );
     if (existing.rows[0]) {
       const lot = creditLotFromRow(existing.rows[0]);
-      if (
-        lot.originalCredits !== input.credits ||
-        lot.expirationDate !== input.expirationDate ||
-        lot.transactionType !== input.transactionType ||
-        lot.sourceRef !== input.sourceRef ||
-        lot.grantIdempotencyKey !== key ||
-        lot.createdAt !== iso(input.createdAt)
-      ) {
+      if (!sameCreditGrantFacts(lot, input, key)) {
         throw new P1DomainError(
           'IDEMPOTENCY_CONFLICT',
           `Credit grant ${input.id} already exists with different facts.`,
@@ -391,11 +385,23 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
     return result.rows.map(creditTransactionFromRow);
   }
 
-  async project(workspaceId: string): Promise<CreditBalanceProjection> {
+  async project(
+    workspaceId: string,
+    asOf = new Date().toISOString(),
+  ): Promise<CreditBalanceProjection> {
     const [lots, transactions] = await Promise.all([
       this.listLots(workspaceId),
       this.listTransactions(workspaceId),
     ]);
+    const asOfMs = Date.parse(asOf);
+    const pendingExpiredCredits = lots
+      .filter(
+        (lot) =>
+          lot.remainingCredits > 0 &&
+          lot.expirationDate !== null &&
+          Date.parse(lot.expirationDate) <= asOfMs,
+      )
+      .reduce((sum, lot) => sum + lot.remainingCredits, 0);
     const amount = (...types: CreditTransactionType[]) =>
       transactions
         .filter((transaction) => types.includes(transaction.transactionType))
@@ -406,8 +412,13 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
       refundedCredits: transactions
         .filter((transaction) => transaction.transactionType === 'REFUND' && transaction.credited)
         .reduce((sum, transaction) => sum + transaction.credits, 0),
-      expiredCredits: amount('EXPIRE'),
-      availableCredits: lots.reduce((sum, lot) => sum + lot.remainingCredits, 0),
+      expiredCredits: amount('EXPIRE') + pendingExpiredCredits,
+      availableCredits: lots
+        .filter(
+          (lot) =>
+            lot.expirationDate === null || Date.parse(lot.expirationDate) > asOfMs,
+        )
+        .reduce((sum, lot) => sum + lot.remainingCredits, 0),
     };
   }
 

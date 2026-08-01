@@ -85,9 +85,27 @@ test(
         );
       }
 
-      const projection = await creditLedger.project(workspaceId);
+      const projection = await creditLedger.project(
+        workspaceId,
+        '2026-08-02T00:00:00.000Z',
+      );
       assert.equal(projection.availableCredits, 1);
       assert.equal(projection.usedCredits, 4);
+      await creditLedger.grant({
+        id: 'expired-package',
+        workspaceId,
+        credits: 3,
+        expirationDate: '2026-08-03T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'expired-projection-test',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      const afterExpiry = await creditLedger.project(
+        workspaceId,
+        '2026-08-04T00:00:00.000Z',
+      );
+      assert.equal(afterExpiry.availableCredits, 1);
+      assert.equal(afterExpiry.expiredCredits, 3);
       assert.deepEqual(
         (await creditLedger.listTransactions(workspaceId))
           .filter((transaction) => transaction.transactionType === 'USAGE')

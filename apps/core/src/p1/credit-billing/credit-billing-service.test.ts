@@ -153,3 +153,58 @@ test('credit payment settlement preserves package lots across upgrades and appli
   assert.equal((await subscriptions.get('subscription-1'))?.status, 'active');
   assert.equal((await scheduler.run(now.toISOString())).grantedCycles, 1);
 });
+
+test('verified payment events replay once and reject conflicting facts', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = new CreditBillingService(
+    ledger,
+    subscriptions,
+    { async get() { return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG); } },
+    {
+      async getPaymentMapping() {
+        return {
+          mappings: [
+            { interval: 'month', paymentProductId: 'starter', tier: 'starter' },
+            { interval: 'month', paymentProductId: 'growth', tier: 'growth' },
+          ],
+        };
+      },
+    },
+    () => now,
+  );
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-activate-once',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId: 'subscription-replay',
+  });
+  now = new Date('2026-02-01T00:00:00.000Z');
+  const renewal = {
+    interval: 'month' as const,
+    lifecycle: 'renew' as const,
+    paymentEventId: 'payment-renew-once',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId: 'subscription-replay',
+  };
+  await service.settlePayment(context, renewal);
+  now = new Date('2026-02-01T01:00:00.000Z');
+  await service.settlePayment(context, renewal);
+
+  assert.equal(
+    (await subscriptions.get('subscription-replay'))?.paidThroughCycle,
+    2,
+  );
+  await assert.rejects(
+    service.settlePayment(context, {
+      ...renewal,
+      paymentProductId: 'growth',
+    }),
+    /different facts/i,
+  );
+});

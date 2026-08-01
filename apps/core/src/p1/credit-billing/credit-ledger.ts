@@ -140,6 +140,20 @@ export function normalizeCreditConsumeIdempotencyKey(value: string) {
     : `${CREDIT_CONSUME_IDEMPOTENCY_PREFIX}${value}`;
 }
 
+export function sameCreditGrantFacts(
+  lot: CreditGrantLot,
+  input: GrantCreditsInput,
+  grantIdempotencyKey: string,
+) {
+  return (
+    lot.originalCredits === input.credits &&
+    sameGrantExpiry(lot, input) &&
+    lot.transactionType === input.transactionType &&
+    lot.sourceRef === input.sourceRef &&
+    lot.grantIdempotencyKey === grantIdempotencyKey
+  );
+}
+
 export function creditUsageOperationId(taskId: string) {
   return normalizeCreditConsumeIdempotencyKey(`task:${taskId}`);
 }
@@ -220,13 +234,7 @@ export class MemoryCreditLedger {
         (lot.id === input.id || lot.grantIdempotencyKey === key),
     );
     if (existing) {
-      const identical =
-        existing.originalCredits === input.credits &&
-        existing.expirationDate === input.expirationDate &&
-        existing.transactionType === input.transactionType &&
-        existing.sourceRef === input.sourceRef &&
-        existing.createdAt === input.createdAt &&
-        existing.grantIdempotencyKey === key;
+      const identical = sameCreditGrantFacts(existing, input, key);
       if (!identical) {
         throw new P1DomainError(
           'IDEMPOTENCY_CONFLICT',
@@ -481,10 +489,20 @@ export class MemoryCreditLedger {
     return expired;
   }
 
-  project(workspaceId: string): CreditBalanceProjection {
+  project(workspaceId: string, asOf = new Date().toISOString()): CreditBalanceProjection {
     const transactions = this.transactions.filter(
       (transaction) => transaction.workspaceId === workspaceId,
     );
+    const lots = this.lots.filter((lot) => lot.workspaceId === workspaceId);
+    const asOfMs = Date.parse(asOf);
+    const pendingExpiredCredits = lots
+      .filter(
+        (lot) =>
+          lot.remainingCredits > 0 &&
+          lot.expirationDate !== null &&
+          Date.parse(lot.expirationDate) <= asOfMs,
+      )
+      .reduce((sum, lot) => sum + lot.remainingCredits, 0);
     const total = (...types: CreditTransactionType[]) =>
       transactions
         .filter((transaction) => types.includes(transaction.transactionType))
@@ -497,9 +515,12 @@ export class MemoryCreditLedger {
           (transaction) => transaction.transactionType === 'REFUND' && transaction.credited,
         )
         .reduce((sum, transaction) => sum + transaction.credits, 0),
-      expiredCredits: total('EXPIRE'),
-      availableCredits: this.lots
-        .filter((lot) => lot.workspaceId === workspaceId)
+      expiredCredits: total('EXPIRE') + pendingExpiredCredits,
+      availableCredits: lots
+        .filter(
+          (lot) =>
+            lot.expirationDate === null || Date.parse(lot.expirationDate) > asOfMs,
+        )
         .reduce((sum, lot) => sum + lot.remainingCredits, 0),
     };
   }
@@ -530,4 +551,15 @@ export class MemoryCreditLedger {
   ) {
     return this.runAtomically(work);
   }
+}
+
+function sameGrantExpiry(lot: CreditGrantLot, input: GrantCreditsInput) {
+  if (lot.expirationDate === null || input.expirationDate === null) {
+    return lot.expirationDate === input.expirationDate;
+  }
+  if (lot.expirationDate === input.expirationDate) return true;
+  return (
+    Date.parse(lot.expirationDate) - Date.parse(lot.createdAt) ===
+    Date.parse(input.expirationDate) - Date.parse(input.createdAt)
+  );
 }

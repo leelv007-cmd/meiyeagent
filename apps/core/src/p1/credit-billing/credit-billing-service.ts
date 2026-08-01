@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import {
   resolvePaymentTier,
@@ -20,10 +22,22 @@ export type CreditPaymentLifecycle =
   | 'cancel_at_period_end'
   | 'expire';
 
+export interface CreditPaymentSettlementInput {
+  lifecycle: CreditPaymentLifecycle;
+  paymentEventId: string;
+  paymentProductId: string;
+  interval?: PaymentMappingInterval | null;
+  periodStartsAt?: string | null;
+  subscriptionId?: string | null;
+}
+
 export interface CreditBillingLedgerPort {
   grant(input: GrantCreditsInput): Promise<CreditGrantLot> | CreditGrantLot;
   listLots(workspaceId: string): Promise<readonly CreditGrantLot[]> | readonly CreditGrantLot[];
-  project(workspaceId: string): Promise<CreditBalanceProjection> | CreditBalanceProjection;
+  project(
+    workspaceId: string,
+    asOf?: string,
+  ): Promise<CreditBalanceProjection> | CreditBalanceProjection;
   expireSubscriptionLots(input: {
     workspaceId: string;
     subscriptionId: string;
@@ -78,14 +92,7 @@ export class CreditBillingService {
 
   async settlePayment(
     context: P1Context,
-    input: {
-      lifecycle: CreditPaymentLifecycle;
-      paymentEventId: string;
-      paymentProductId: string;
-      interval?: PaymentMappingInterval | null;
-      periodStartsAt?: string | null;
-      subscriptionId?: string | null;
-    },
+    input: CreditPaymentSettlementInput,
   ) {
     assertText(input.paymentEventId, 'paymentEventId');
     assertText(input.paymentProductId, 'paymentProductId');
@@ -99,18 +106,41 @@ export class CreditBillingService {
       throw new P1DomainError('INVALID_STATE', 'Payment cannot grant the trial credit plan.');
     }
     const now = this.clock().toISOString();
+    return this.subscriptions.withPaymentEvent(
+      {
+        workspaceId: context.workspaceId,
+        paymentEventId: input.paymentEventId,
+        payloadHash: paymentSettlementHash(context.workspaceId, input),
+        createdAt: now,
+      },
+      (subscriptions) =>
+        this.settlePaymentEvent(context, input, tier, now, subscriptions),
+    );
+  }
+
+  private async settlePaymentEvent(
+    context: P1Context,
+    input: CreditPaymentSettlementInput,
+    tier: CreditSubscription['tier'],
+    now: string,
+    subscriptions: CreditSubscriptionStore,
+  ) {
     const anchorAt = input.periodStartsAt ?? now;
     const interval = creditInterval(input.interval);
-    const subscriptions = await this.subscriptions.listForWorkspace(context.workspaceId);
-    const active = subscriptionForPayment(subscriptions, input.subscriptionId);
-
+    const workspaceSubscriptions = await subscriptions.listForWorkspace(
+      context.workspaceId,
+    );
+    const active = subscriptionForPayment(
+      workspaceSubscriptions,
+      input.subscriptionId,
+    );
     if (input.lifecycle === 'past_due') {
       if (!active) return null;
-      return this.subscriptions.markPastDue(active.id, now);
+      return subscriptions.markPastDue(active.id, now);
     }
     if (input.lifecycle === 'cancel_at_period_end') {
       if (!active) return null;
-      return this.subscriptions.scheduleChange({
+      return subscriptions.scheduleChange({
         subscriptionId: active.id,
         tier: active.tier,
         interval: active.interval,
@@ -120,12 +150,12 @@ export class CreditBillingService {
     }
     if (input.lifecycle === 'expire') {
       if (!active) return null;
-      return this.subscriptions.cancel(active.id, now);
+      return subscriptions.cancel(active.id, now);
     }
 
     if (input.lifecycle === 'renew' || input.lifecycle === 'resume') {
       if (!active) {
-        return this.openSubscription(context, {
+        return this.openSubscription(context, subscriptions, {
           id: subscriptionIdFor(input, context.workspaceId),
           interval,
           paidThroughCycle: paidCycleCoverage(interval),
@@ -143,7 +173,7 @@ export class CreditBillingService {
           'A single-month credit subscription has no renewable coverage.',
         );
       }
-      return this.subscriptions.recordPaidCoverage(
+      return subscriptions.recordPaidCoverage(
         active.id,
         active.paidThroughCycle + paidCycleCoverage(interval),
         now,
@@ -151,7 +181,7 @@ export class CreditBillingService {
     }
 
     if (!active) {
-      return this.openSubscription(context, {
+      return this.openSubscription(context, subscriptions, {
         id: subscriptionIdFor(input, context.workspaceId),
         interval,
         paidThroughCycle: paidCycleCoverage(interval),
@@ -170,8 +200,8 @@ export class CreditBillingService {
         correlationId: context.correlationId,
         createdAt: now,
       });
-      await this.subscriptions.cancel(active.id, now);
-      return this.openSubscription(context, {
+      await subscriptions.cancel(active.id, now);
+      return this.openSubscription(context, subscriptions, {
         id: subscriptionIdFor(input, context.workspaceId),
         interval,
         paidThroughCycle: paidCycleCoverage(interval),
@@ -183,7 +213,7 @@ export class CreditBillingService {
     }
 
     const effectiveCycle = active.paidThroughCycle;
-    return this.subscriptions.scheduleChange({
+    return subscriptions.scheduleChange({
       subscriptionId: active.id,
       tier,
       interval,
@@ -193,7 +223,7 @@ export class CreditBillingService {
   }
 
   async balance(workspaceId: string) {
-    return this.ledger.project(workspaceId);
+    return this.ledger.project(workspaceId, this.clock().toISOString());
   }
 
   async grantAddOn(
@@ -232,6 +262,7 @@ export class CreditBillingService {
 
   private async openSubscription(
     context: P1Context,
+    subscriptions: CreditSubscriptionStore,
     input: {
       id: string;
       tier: Exclude<CreditSubscription['tier'], 'trial'>;
@@ -242,7 +273,7 @@ export class CreditBillingService {
       grantCycleOffset?: number;
     },
   ) {
-    return this.subscriptions.upsert({
+    return subscriptions.upsert({
       id: input.id,
       workspaceId: context.workspaceId,
       tier: input.tier,
@@ -264,6 +295,24 @@ function subscriptionForPayment(
   return requested
     ? subscriptions.find((subscription) => subscription.id === requested) ?? null
     : null;
+}
+
+function paymentSettlementHash(
+  workspaceId: string,
+  input: CreditPaymentSettlementInput,
+) {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        workspaceId,
+        lifecycle: input.lifecycle,
+        paymentProductId: input.paymentProductId,
+        interval: input.interval ?? null,
+        periodStartsAt: input.periodStartsAt ?? null,
+        subscriptionId: input.subscriptionId?.trim() ?? null,
+      }),
+    )
+    .digest('hex');
 }
 
 function subscriptionIdFor(

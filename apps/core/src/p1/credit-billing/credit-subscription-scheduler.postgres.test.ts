@@ -4,7 +4,10 @@ import test from 'node:test';
 
 import { Pool } from 'pg';
 
-import { PostgresCreditSubscriptionStore } from './credit-subscription-scheduler.js';
+import {
+  PostgresCreditSubscriptionStore,
+  type CreditSubscriptionStore,
+} from './credit-subscription-scheduler.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 
@@ -59,6 +62,33 @@ test(
       assert.equal(resumed.paidThroughCycle, 13);
       assert.equal(resumed.pastDueAt, null);
 
+      let settlementCalls = 0;
+      const paymentEvent = {
+        workspaceId,
+        paymentEventId: 'payment-renew-once',
+        payloadHash: 'a'.repeat(64),
+        createdAt: '2026-02-04T00:00:00.000Z',
+      };
+      const settle = (subscriptions: CreditSubscriptionStore) => {
+        settlementCalls += 1;
+        return subscriptions.recordPaidCoverage(
+          subscriptionId,
+          14,
+          '2026-02-04T00:00:00.000Z',
+        );
+      };
+      await store.withPaymentEvent(paymentEvent, settle);
+      await store.withPaymentEvent(paymentEvent, settle);
+      assert.equal(settlementCalls, 1);
+      assert.equal((await store.get(subscriptionId))?.paidThroughCycle, 14);
+      await assert.rejects(
+        store.withPaymentEvent(
+          { ...paymentEvent, payloadHash: 'b'.repeat(64) },
+          settle,
+        ),
+        /different facts/i,
+      );
+
       await store.markPastDue(subscriptionId, '2026-03-01T00:00:00.000Z');
       const cancelled = await store.cancelPastDue(
         subscriptionId,
@@ -67,7 +97,7 @@ test(
       assert.equal(cancelled.status, 'cancelled');
       assert.equal(cancelled.pastDueAt, null);
       await assert.rejects(
-        store.recordPaidCoverage(subscriptionId, 14, '2026-03-08T00:00:00.000Z'),
+        store.recordPaidCoverage(subscriptionId, 15, '2026-03-08T00:00:00.000Z'),
         /cancelled/i,
       );
     } finally {

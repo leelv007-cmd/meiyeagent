@@ -117,13 +117,13 @@ test('workspace lock prevents concurrent reservations from exceeding one balance
   assert.equal(ledger.project('workspace-credit').availableCredits, 1);
 });
 
-test('trial grants are idempotent per workspace key', () => {
+test('trial grants are idempotent per workspace key across delayed retries', () => {
   const ledger = new MemoryCreditLedger();
   const input = {
     id: 'trial-workspace-credit',
     workspaceId: 'workspace-credit',
     credits: 100,
-    expirationDate: '2026-08-08T00:00:00.000Z',
+    expirationDate: null,
     transactionType: 'REGISTER_GIFT' as const,
     sourceRef: 'trial:workspace-credit',
     grantIdempotencyKey: 'grant:trial:workspace-credit',
@@ -131,7 +131,31 @@ test('trial grants are idempotent per workspace key', () => {
   };
 
   ledger.grant(input);
-  ledger.grant(input);
+  ledger.grant({ ...input, createdAt: '2026-08-02T00:00:00.000Z' });
 
   assert.equal(ledger.listLots('workspace-credit').length, 1);
+});
+
+test('balance projection excludes expired lots before a later consume writes EXPIRE', () => {
+  const ledger = new MemoryCreditLedger();
+  grant(ledger, {
+    id: 'expired-package',
+    credits: 5,
+    expirationDate: '2026-08-02T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+  });
+
+  const projection = ledger.project(
+    'workspace-credit',
+    '2026-08-03T00:00:00.000Z',
+  );
+
+  assert.equal(projection.availableCredits, 0);
+  assert.equal(projection.expiredCredits, 5);
+  assert.equal(
+    ledger.listTransactions('workspace-credit').filter(
+      (transaction) => transaction.transactionType === 'EXPIRE',
+    ).length,
+    0,
+  );
 });
