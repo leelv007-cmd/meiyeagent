@@ -209,6 +209,49 @@ const QUOTA_UNITS = {
 
 export type ComposerQuotaResource = keyof typeof QUOTA_UNITS;
 
+export type ComposerCreditRedemptionReceipt = {
+  creditGrant?: {
+    originalCredits: number;
+    transactionType: string;
+  };
+};
+
+/**
+ * A redemption command is not an unlock receipt. Credit mode unlocks only
+ * after the command proves it wrote a credit lot and a fresh authoritative
+ * projection proves that the balance both increased and covers this quote.
+ */
+export async function recoverComposerCredits(input: {
+  beforeCredits: number | null | undefined;
+  requiredCredits: number | null | undefined;
+  redeem: () => Promise<ComposerCreditRedemptionReceipt>;
+  refreshCredits: () => Promise<
+    { credits?: { availableCredits: number } } | null | undefined
+  >;
+}): Promise<{ ok: true } | { ok: false; message: string }> {
+  const receipt = await input.redeem();
+  const projection = await input.refreshCredits();
+  const before = input.beforeCredits;
+  const after = projection?.credits?.availableCredits;
+  const required = input.requiredCredits;
+  const creditGrant = receipt.creditGrant;
+  if (
+    !creditGrant ||
+    creditGrant.transactionType !== 'REDEMPTION_CODE' ||
+    !Number.isSafeInteger(creditGrant.originalCredits) ||
+    creditGrant.originalCredits <= 0 ||
+    !Number.isSafeInteger(before) ||
+    !Number.isSafeInteger(after) ||
+    after! <= before!
+  ) {
+    return { ok: false, message: '兑换后积分未到账，请重试' };
+  }
+  if (!Number.isSafeInteger(required) || required! <= 0 || after! < required!) {
+    return { ok: false, message: '积分已到账，但仍不足以完成本次创作' };
+  }
+  return { ok: true };
+}
+
 /**
  * Read the legacy balance only for the retired resource-bucket path. Credit
  * billing deliberately returns an optional `credits` projection: once present,

@@ -261,9 +261,11 @@ import {
 import { RecipeCardsPanel } from './recipe-cards-panel';
 import { QuotaBlockingCard } from './quota-blocking-card';
 import {
+  type ComposerCreditRedemptionReceipt,
   composerQuotaAvailability,
   composerQuotaRequirements,
   projectQuotaPassiveView,
+  recoverComposerCredits,
 } from './quota-blocking';
 import {
   buildLiveBriefInput,
@@ -4430,26 +4432,26 @@ export function ComposerHome({
                   passive={quotaPassive}
                   onRedeem={async ({ command, idempotencyKey }) => {
                     try {
-                      await commandP1('redemptions', command, idempotencyKey);
-                      // Both entitlement reads on this page: the projection behind the
-                      // pre-check and the three-bucket balance card above it. Refreshing
-                      // one and not the other leaves 创作余额 quoting the old numbers
-                      // next to a card that just said it unlocked.
-                      await Promise.all([
-                        queryClient.invalidateQueries({
-                          queryKey: p1QueryKeys.request(
-                            'entitlements',
-                            'projection'
+                      const result = await recoverComposerCredits({
+                        beforeCredits:
+                          usageQuery.data?.credits?.availableCredits,
+                        requiredCredits: currentQuoteView?.amount,
+                        redeem: () =>
+                          commandP1<ComposerCreditRedemptionReceipt>(
+                            'redemptions',
+                            command,
+                            idempotencyKey
                           ),
-                        }),
-                        queryClient.invalidateQueries({
-                          queryKey: p1QueryKeys.request(
-                            'entitlements',
-                            'balance'
-                          ),
-                        }),
-                      ]);
-                      return { ok: true };
+                        refreshCredits: async () =>
+                          (await usageQuery.refetch()).data,
+                      });
+                      await queryClient.invalidateQueries({
+                        queryKey: p1QueryKeys.request(
+                          'entitlements',
+                          'balance'
+                        ),
+                      });
+                      return result;
                     } catch (error) {
                       return {
                         ok: false,

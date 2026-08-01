@@ -14,6 +14,7 @@ import {
   QuotaBlockingCard,
   type QuotaBlockingCardProps,
 } from './quota-blocking-card';
+import { recoverComposerCredits } from './quota-blocking';
 
 afterEach(() => {
   cleanup();
@@ -58,6 +59,86 @@ function UnlockHarness({
 }
 
 describe('GL-23 quota blocking card — redeem unlocks continue', () => {
+  it('unlocks only after a credit receipt is confirmed by the authoritative balance', async () => {
+    const events: string[] = [];
+    const redeem = vi.fn(async () => {
+      events.push('redeem');
+      return {
+        code: { status: 'redeemed' },
+        grantTransactions: [],
+        creditGrant: {
+          originalCredits: 30,
+          transactionType: 'REDEMPTION_CODE' as const,
+        },
+      };
+    });
+    const refreshCredits = vi.fn(async () => {
+      events.push('refresh');
+      return { credits: { availableCredits: 70 } };
+    });
+
+    render(
+      <UnlockHarness
+        redeemImpl={() =>
+          recoverComposerCredits({
+            beforeCredits: 40,
+            requiredCredits: 50,
+            redeem,
+            refreshCredits,
+          })
+        }
+      />
+    );
+    setRedeemCode('CREDIT-30');
+    fireEvent.click(screen.getByTestId('composer-quota-redeem-submit'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('continue-creation')).toHaveTextContent('ready')
+    );
+    expect(events).toEqual(['redeem', 'refresh']);
+    expect(
+      screen.getByTestId('composer-quota-unlock-success')
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the blocker when a redemption does not increase authoritative credits', async () => {
+    render(
+      <UnlockHarness
+        redeemImpl={() =>
+          recoverComposerCredits({
+            beforeCredits: 40,
+            requiredCredits: 50,
+            redeem: async () => ({
+              code: { status: 'redeemed' },
+              grantTransactions: [],
+              creditGrant: {
+                originalCredits: 30,
+                transactionType: 'REDEMPTION_CODE',
+              },
+            }),
+            refreshCredits: async () => ({
+              credits: { availableCredits: 40 },
+            }),
+          })
+        }
+      />
+    );
+    setRedeemCode('NO-CREDIT');
+    fireEvent.click(screen.getByTestId('composer-quota-redeem-submit'));
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('composer-quota-redeem-error')
+      ).toHaveTextContent('兑换后积分未到账，请重试')
+    );
+    expect(screen.getByTestId('continue-creation')).toHaveTextContent(
+      'blocked'
+    );
+    expect(
+      screen.queryByTestId('composer-quota-unlock-success')
+    ).not.toBeInTheDocument();
+  });
+
   it('renders inline code input when quota exhausted', () => {
     render(<UnlockHarness redeemImpl={async () => ({ ok: true })} />);
     expect(

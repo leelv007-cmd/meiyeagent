@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { MemoryCreditLedger } from '../credit-billing/credit-ledger.js';
 import { MemoryGrantLotLedger } from './grant-lot.js';
 import { P1DomainError, type P1Context } from './domain.js';
 import { RedemptionFoundationModule } from './redemption-module.js';
@@ -17,6 +18,69 @@ const context = (actor: P1Context['actor']): P1Context => ({
 });
 
 describe('RedemptionFoundationModule authorization and contracts', () => {
+  it('redeems a credit code into the authoritative ledger without writing legacy lots', async () => {
+    const creditLedger = new MemoryCreditLedger();
+    const legacyGrantLots = new MemoryGrantLotLedger();
+    const module = new RedemptionFoundationModule(
+      new RedemptionApplicationService(
+        new MemoryRedemptionStore(),
+        legacyGrantLots,
+        () => new Date('2026-08-01T12:00:00.000Z'),
+        creditLedger
+      )
+    );
+
+    await module.execute({
+      context: context('admin'),
+      idempotencyKey: 'create-credit-code',
+      input: {
+        action: 'create',
+        payload: { code: 'CREDIT-30', credits: 30 },
+      },
+    });
+    await module.execute({
+      context: context('owner'),
+      idempotencyKey: 'redeem-credit-code',
+      input: { action: 'redeem', payload: { code: 'CREDIT-30' } },
+    });
+    await module.execute({
+      context: context('owner'),
+      idempotencyKey: 'replay-credit-code',
+      input: { action: 'redeem', payload: { code: 'CREDIT-30' } },
+    });
+
+    assert.equal(
+      creditLedger.project('ws-redemption-module').availableCredits,
+      30
+    );
+    assert.equal(creditLedger.listLots('ws-redemption-module').length, 1);
+    assert.equal(legacyGrantLots.listLots('ws-redemption-module').length, 0);
+  });
+
+  it('does not grant either ledger for an invalid credit code', async () => {
+    const creditLedger = new MemoryCreditLedger();
+    const legacyGrantLots = new MemoryGrantLotLedger();
+    const module = new RedemptionFoundationModule(
+      new RedemptionApplicationService(
+        new MemoryRedemptionStore(),
+        legacyGrantLots,
+        () => new Date('2026-08-01T12:00:00.000Z'),
+        creditLedger
+      )
+    );
+
+    await assert.rejects(() =>
+      module.execute({
+        context: context('owner'),
+        idempotencyKey: 'invalid-credit-code',
+        input: { action: 'redeem', payload: { code: 'INVALID-CREDIT' } },
+      })
+    );
+
+    assert.equal(creditLedger.listLots('ws-redemption-module').length, 0);
+    assert.equal(legacyGrantLots.listLots('ws-redemption-module').length, 0);
+  });
+
   it('replays a manual record command after the store committed it', async () => {
     const store = new MemoryRedemptionStore();
     const service = new RedemptionApplicationService(

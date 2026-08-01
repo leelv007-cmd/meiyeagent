@@ -12,6 +12,10 @@
  */
 
 import { createHash } from 'node:crypto';
+import type {
+  CreditGrantLot,
+  GrantCreditsInput,
+} from '../credit-billing/credit-ledger.js';
 import {
   MemoryGrantLotLedger,
   type GrantLotResource,
@@ -32,6 +36,8 @@ export interface RedemptionCode {
   status: RedemptionCodeStatus;
   /** Allowance per resource granted on redeem. */
   grants: Partial<Record<GrantLotResource, number>>;
+  /** Authoritative credit amount granted in credit-billing mode. */
+  credits?: number;
   /** Optional expiry (ISO). null = never. */
   expiresAt: string | null;
   /** CAS revision for admin void/update. */
@@ -44,12 +50,15 @@ export interface RedemptionCode {
   redeemedByUserId?: string;
   /** Real grant-lot transaction id written on redeem (never pre-generated). */
   grantTransactionId?: string;
+  /** Real credit-ledger transaction id written in credit-billing mode. */
+  creditGrantTransactionId?: string;
   batchId?: string;
 }
 
 export interface CreateRedemptionCodeInput {
   code: string;
   grants: Partial<Record<GrantLotResource, number>>;
+  credits?: number;
   expiresAt?: string | null;
   batchId?: string;
   createdBy: string;
@@ -59,6 +68,11 @@ export interface CreateRedemptionCodeInput {
 export interface RedeemResult {
   code: RedemptionCode;
   grantTransactions: GrantLotTransaction[];
+  creditGrant?: CreditGrantLot;
+}
+
+export interface CreditRedemptionGrantPort {
+  grant(input: GrantCreditsInput): Promise<CreditGrantLot> | CreditGrantLot;
 }
 
 export interface RedemptionCommandIdentity {
@@ -87,6 +101,7 @@ export interface RedemptionStore {
     grant?: (code: RedemptionCode) => Promise<{
       grantTransactionId: string;
       grantTransactions: GrantLotTransaction[];
+      creditGrant?: CreditGrantLot;
     }>;
   }): Promise<RedeemResult>;
 
@@ -142,6 +157,15 @@ function assertGrants(grants: Partial<Record<GrantLotResource, number>>) {
         `Grant amount for ${resource} must be a positive integer.`
       );
     }
+  }
+}
+
+function assertCredits(credits: number | undefined) {
+  if (!Number.isSafeInteger(credits) || (credits ?? 0) <= 0) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Redemption credits must be a positive integer.'
+    );
   }
 }
 
@@ -267,6 +291,7 @@ export class MemoryRedemptionStore implements RedemptionStore {
     grant?: (code: RedemptionCode) => Promise<{
       grantTransactionId: string;
       grantTransactions: GrantLotTransaction[];
+      creditGrant?: CreditGrantLot;
     }>;
   }): Promise<RedeemResult> {
     return this.withLock(() => this.redeemUnlocked(input));
@@ -281,6 +306,7 @@ export class MemoryRedemptionStore implements RedemptionStore {
     grant?: (code: RedemptionCode) => Promise<{
       grantTransactionId: string;
       grantTransactions: GrantLotTransaction[];
+      creditGrant?: CreditGrantLot;
     }>;
   }): Promise<RedeemResult> {
     const key = normalizeCode(input.code);
@@ -304,7 +330,10 @@ export class MemoryRedemptionStore implements RedemptionStore {
         );
       }
       const granted = await input.grant(structuredClone(current));
-      if (granted.grantTransactionId !== current.grantTransactionId) {
+      const persistedTransactionId = granted.creditGrant
+        ? current.creditGrantTransactionId
+        : current.grantTransactionId;
+      if (granted.grantTransactionId !== persistedTransactionId) {
         throw new P1DomainError(
           'INVALID_STATE',
           'Redeemed code grant transaction does not match persisted state.'
@@ -313,6 +342,9 @@ export class MemoryRedemptionStore implements RedemptionStore {
       return {
         code: structuredClone(current),
         grantTransactions: granted.grantTransactions,
+        ...(granted.creditGrant
+          ? { creditGrant: structuredClone(granted.creditGrant) }
+          : {}),
       };
     }
     if (current.status === 'voided') {
@@ -349,10 +381,17 @@ export class MemoryRedemptionStore implements RedemptionStore {
 
     try {
       const granted = await input.grant(structuredClone(current));
-      current.grantTransactionId = granted.grantTransactionId;
+      if (granted.creditGrant) {
+        current.creditGrantTransactionId = granted.grantTransactionId;
+      } else {
+        current.grantTransactionId = granted.grantTransactionId;
+      }
       return {
         code: structuredClone(current),
         grantTransactions: granted.grantTransactions,
+        ...(granted.creditGrant
+          ? { creditGrant: structuredClone(granted.creditGrant) }
+          : {}),
       };
     } catch (error) {
       // Roll back reservation on grant failure (memory atomicity).
@@ -404,14 +443,31 @@ export class RedemptionApplicationService {
   constructor(
     private readonly store: RedemptionStore,
     private readonly grantLots?: MemoryGrantLotLedger,
-    private readonly clock: () => Date = () => new Date()
+    private readonly clock: () => Date = () => new Date(),
+    private readonly creditLedger?: CreditRedemptionGrantPort
   ) {}
 
   async createCodes(
     input: CreateRedemptionCodeInput,
     command?: RedemptionCommandIdentity
   ): Promise<RedemptionCode[]> {
-    assertGrants(input.grants);
+    if (this.creditLedger) {
+      assertCredits(input.credits);
+      if (Object.keys(input.grants).length > 0) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Credit redemption codes cannot grant legacy resource buckets.'
+        );
+      }
+    } else {
+      assertGrants(input.grants);
+      if (input.credits !== undefined) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Legacy redemption codes cannot grant credits.'
+        );
+      }
+    }
     const code = normalizeCode(input.code);
     const now = input.createdAt ?? this.clock().toISOString();
     assertTimestamp(now, 'createdAt');
@@ -429,6 +485,7 @@ export class RedemptionApplicationService {
       code,
       status: 'active',
       grants: { ...input.grants },
+      ...(input.credits !== undefined ? { credits: input.credits } : {}),
       expiresAt: input.expiresAt ?? null,
       revision: 1,
       createdAt: now,
@@ -453,6 +510,7 @@ export class RedemptionApplicationService {
                     left.localeCompare(right)
                   )
                 ),
+                credits: input.credits ?? null,
               })
             ),
           }
@@ -519,6 +577,32 @@ export class RedemptionApplicationService {
     if (this.store.grantStrategy === 'store_transaction') {
       return this.store.redeemAtomic(commonInput);
     }
+    if (this.creditLedger) {
+      return this.store.redeemAtomic({
+        ...commonInput,
+        grant: async (code) => {
+          assertCredits(code.credits);
+          const lotId = creditRedemptionLotId(code.id, input.workspaceId);
+          const creditGrant = await this.creditLedger!.grant({
+            id: lotId,
+            workspaceId: input.workspaceId,
+            credits: code.credits!,
+            expirationDate: null,
+            transactionType: 'REDEMPTION_CODE',
+            sourceRef: code.id,
+            grantIdempotencyKey: `grant:redemption:${code.id}:${input.workspaceId}`,
+            actorId: input.userId,
+            correlationId: input.correlationId,
+            createdAt: code.redeemedAt ?? now,
+          });
+          return {
+            grantTransactionId: `credit-grant:${creditGrant.id}`,
+            grantTransactions: [],
+            creditGrant,
+          };
+        },
+      });
+    }
     if (!this.grantLots) {
       throw new P1DomainError(
         'INVALID_STATE',
@@ -576,6 +660,10 @@ export class RedemptionApplicationService {
       })
     );
   }
+}
+
+export function creditRedemptionLotId(codeId: string, workspaceId: string) {
+  return `credit-redeem-${digest(`${codeId}:${workspaceId}`).slice(0, 24)}`;
 }
 
 function assertTimestamp(value: string, field: string) {

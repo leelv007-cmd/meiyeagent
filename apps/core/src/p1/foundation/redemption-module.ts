@@ -42,11 +42,13 @@ export class RedemptionFoundationModule implements P1OperationModule {
         const grants = object(payload.grants ?? {}, 'grants') as Partial<
           Record<GrantLotResource, number>
         >;
+        const credits = payload.credits;
         return this.redemptions.createCodes(
           {
             grants,
             code: string(payload, 'code'),
             createdBy: args.context.userId,
+            ...(typeof credits === 'number' ? { credits } : {}),
             ...(typeof payload.expiresAt === 'string' || payload.expiresAt === null
               ? { expiresAt: payload.expiresAt as string | null }
               : {}),

@@ -447,7 +447,7 @@ const referenceAssets = new CompositeReferenceAssetResolver([
 const grantLotLedger = new PostgresGrantLotLedger(pool);
 const creditLedger = new PostgresCreditLedger(pool);
 const creditSubscriptionStore = new PostgresCreditSubscriptionStore(pool);
-const redemptionStore = new PostgresRedemptionStore(pool);
+const redemptionStore = new PostgresRedemptionStore(pool, creditLedger);
 const operationsRepository = new PostgresOperationsRepository(pool);
 const productBillingRepository = new PostgresProductBillingRepository(pool);
 const storeFactLedger = new PostgresStoreFactLedger(pool);
@@ -1768,7 +1768,12 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       },
     }),
     new RedemptionFoundationModule(
-      new RedemptionApplicationService(redemptionStore),
+      new RedemptionApplicationService(
+        redemptionStore,
+        undefined,
+        undefined,
+        creditLedger,
+      ),
     ),
     new IntegrationsFoundationModule(integrationService, {
       adminActorIds: modelAdminActorIds,

@@ -1,11 +1,14 @@
 import { createHash } from 'node:crypto';
 import type { Pool, PoolClient, QueryResultRow } from 'pg';
+import type { CreditGrantLot } from '../credit-billing/credit-ledger.js';
+import type { PostgresCreditLedger } from '../credit-billing/postgres-credit-ledger.js';
 import { P1DomainError } from './domain.js';
 import type {
   GrantLotResource,
   GrantLotTransaction,
 } from './grant-lot.js';
 import { grantLotWithClient } from './postgres-grant-lot.js';
+import { creditRedemptionLotId } from './redemption.js';
 import type {
   RedemptionCode,
   RedemptionCodeStatus,
@@ -21,6 +24,7 @@ interface RedemptionRow extends QueryResultRow {
   code: string;
   status: RedemptionCodeStatus;
   grants: Partial<Record<GrantLotResource, number>> | string;
+  credits: number | null;
   expires_at: Date | string | null;
   revision: string | number;
   created_at: Date | string;
@@ -30,6 +34,7 @@ interface RedemptionRow extends QueryResultRow {
   redeemed_workspace_id: string | null;
   redeemed_by_user_id: string | null;
   grant_transaction_id: string | null;
+  credit_grant_transaction_id: string | null;
   batch_id: string | null;
 }
 
@@ -50,7 +55,10 @@ interface TransactionRow extends QueryResultRow {
 export class PostgresRedemptionStore implements RedemptionStore {
   readonly grantStrategy = 'store_transaction' as const;
 
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly creditLedger?: PostgresCreditLedger
+  ) {}
 
   async migrate(client?: PoolClient) {
     const db: Queryable = client ?? this.pool;
@@ -62,8 +70,9 @@ export class PostgresRedemptionStore implements RedemptionStore {
           status IN ('active', 'redeemed', 'voided', 'expired')
         ),
         grants jsonb NOT NULL CHECK (
-          jsonb_typeof(grants) = 'object' AND grants <> '{}'::jsonb
+          jsonb_typeof(grants) = 'object'
         ),
+        credits integer CHECK (credits > 0),
         expires_at timestamptz,
         revision bigint NOT NULL DEFAULT 1 CHECK (revision > 0),
         created_at timestamptz NOT NULL,
@@ -73,18 +82,67 @@ export class PostgresRedemptionStore implements RedemptionStore {
         redeemed_workspace_id text,
         redeemed_by_user_id text,
         grant_transaction_id text,
+        credit_grant_transaction_id text,
         batch_id text,
-        CHECK (
-          (status = 'redeemed'
-            AND redeemed_at IS NOT NULL
-            AND redeemed_workspace_id IS NOT NULL
-            AND redeemed_by_user_id IS NOT NULL
-            AND grant_transaction_id IS NOT NULL)
-          OR (status <> 'redeemed')
-        ),
         FOREIGN KEY (redeemed_workspace_id, grant_transaction_id)
           REFERENCES p1_grant_lot_transactions(workspace_id, id)
       )
+    `);
+    await db.query(`
+      ALTER TABLE p1_redemption_codes
+        ADD COLUMN IF NOT EXISTS credits integer;
+      ALTER TABLE p1_redemption_codes
+        ADD COLUMN IF NOT EXISTS credit_grant_transaction_id text;
+      ALTER TABLE p1_redemption_codes
+        DROP CONSTRAINT IF EXISTS p1_redemption_codes_grants_check;
+      ALTER TABLE p1_redemption_codes
+        DROP CONSTRAINT IF EXISTS p1_redemption_codes_credits_check;
+      ALTER TABLE p1_redemption_codes
+        ADD CONSTRAINT p1_redemption_codes_grants_check CHECK (
+          jsonb_typeof(grants) = 'object'
+          AND (
+            (credits IS NULL AND grants <> '{}'::jsonb)
+            OR (credits > 0 AND grants = '{}'::jsonb)
+          )
+        );
+      ALTER TABLE p1_redemption_codes
+        ADD CONSTRAINT p1_redemption_codes_credits_check CHECK (
+          credits IS NULL OR credits > 0
+        )
+    `);
+    await db.query(`
+      DO $$
+      DECLARE legacy_check text;
+      BEGIN
+        FOR legacy_check IN
+          SELECT conname
+            FROM pg_constraint
+           WHERE conrelid = 'p1_redemption_codes'::regclass
+             AND contype = 'c'
+             AND pg_get_constraintdef(oid) LIKE '%grant_transaction_id IS NOT NULL%'
+        LOOP
+          EXECUTE format(
+            'ALTER TABLE p1_redemption_codes DROP CONSTRAINT %I',
+            legacy_check
+          );
+        END LOOP;
+      END $$;
+      ALTER TABLE p1_redemption_codes
+        DROP CONSTRAINT IF EXISTS p1_redemption_codes_redeemed_grant_check;
+      ALTER TABLE p1_redemption_codes
+        ADD CONSTRAINT p1_redemption_codes_redeemed_grant_check CHECK (
+          (
+            status = 'redeemed'
+            AND redeemed_at IS NOT NULL
+            AND redeemed_workspace_id IS NOT NULL
+            AND redeemed_by_user_id IS NOT NULL
+            AND num_nonnulls(
+              grant_transaction_id,
+              credit_grant_transaction_id
+            ) = 1
+          )
+          OR status <> 'redeemed'
+        )
     `);
     await db.query(`
       CREATE INDEX IF NOT EXISTS p1_redemption_codes_batch_idx
@@ -119,15 +177,16 @@ export class PostgresRedemptionStore implements RedemptionStore {
           for (const code of codes) {
             const result = await client.query<RedemptionRow>(
               `INSERT INTO p1_redemption_codes
-                 (id, code, status, grants, expires_at, revision, created_at,
-                  created_by, batch_id)
-               VALUES ($1, $2, 'active', $3::jsonb, $4::timestamptz, 1,
-                       $5::timestamptz, $6, $7)
+                 (id, code, status, grants, credits, expires_at, revision,
+                  created_at, created_by, batch_id)
+               VALUES ($1, $2, 'active', $3::jsonb, $4, $5::timestamptz, 1,
+                       $6::timestamptz, $7, $8)
                RETURNING *`,
               [
                 code.id,
                 normalizeCode(code.code),
                 JSON.stringify(code.grants),
+                code.credits ?? null,
                 code.expiresAt,
                 code.createdAt,
                 code.createdBy,
@@ -323,6 +382,25 @@ export class PostgresRedemptionStore implements RedemptionStore {
             'Redemption code was already redeemed.'
           );
         }
+        if (this.creditLedger) {
+          const creditGrant = await this.grantCreditsWithClient(
+            client,
+            current,
+            input
+          );
+          if (
+            current.creditGrantTransactionId !==
+            `credit-grant:${creditGrant.id}`
+          ) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Redeemed code is missing its real credit grant transaction.'
+            );
+          }
+          await client.query('COMMIT');
+          committed = true;
+          return { code: current, grantTransactions: [], creditGrant };
+        }
         const transactions = await transactionsForCode(
           client,
           input.workspaceId,
@@ -370,51 +448,60 @@ export class PostgresRedemptionStore implements RedemptionStore {
       }
 
       const transactions: GrantLotTransaction[] = [];
-      for (const [resource, amount] of Object.entries(current.grants).sort(
-        ([left], [right]) => left.localeCompare(right)
-      ) as Array<[GrantLotResource, number]>) {
-        const lotId = `lot-redeem-${digest(
-          `${current.id}:${input.workspaceId}:${resource}`
-        ).slice(0, 24)}`;
-        const granted = await grantLotWithClient(client, {
-          id: lotId,
-          workspaceId: input.workspaceId,
-          resource,
-          amount,
-          expirationDate: null,
-          transactionType: 'REDEMPTION_CODE',
-          sourceRef: current.id,
-          actorId: input.userId,
-          correlationId: input.correlationId,
-          createdAt: input.now,
-        });
-        transactions.push(granted.transaction);
-        // Compatibility projection: p1_usage_events remains the reservation
-        // state machine consumed by existing generation paths. Keep its
-        // allowance adjustment in this same redemption transaction.
-        await client.query(
-          `INSERT INTO p1_usage_events
-             (workspace_id, id, resource, action, amount, reservation_id,
-              reason, actor_id, correlation_id, created_at)
-           VALUES ($1, $2, $3, 'adjust', $4, NULL, $5, $6, $7, $8::timestamptz)`,
-          [
-            input.workspaceId,
-            `redemption-${current.id}:${resource}:allowance`,
+      let creditGrant: CreditGrantLot | undefined;
+      let grantTransactionId: string | null = null;
+      let creditGrantTransactionId: string | null = null;
+      if (this.creditLedger) {
+        creditGrant = await this.grantCreditsWithClient(client, current, input);
+        creditGrantTransactionId = `credit-grant:${creditGrant.id}`;
+      } else {
+        for (const [resource, amount] of Object.entries(current.grants).sort(
+          ([left], [right]) => left.localeCompare(right)
+        ) as Array<[GrantLotResource, number]>) {
+          const lotId = `lot-redeem-${digest(
+            `${current.id}:${input.workspaceId}:${resource}`
+          ).slice(0, 24)}`;
+          const granted = await grantLotWithClient(client, {
+            id: lotId,
+            workspaceId: input.workspaceId,
             resource,
             amount,
-            `redemption_code:${current.id}:transaction:${granted.transaction.id}`,
-            input.userId,
-            input.correlationId,
-            input.now,
-          ]
-        );
-      }
-      const primary = transactions[0];
-      if (!primary) {
-        throw new P1DomainError(
-          'INVALID_STATE',
-          'Redemption grant produced no transactions.'
-        );
+            expirationDate: null,
+            transactionType: 'REDEMPTION_CODE',
+            sourceRef: current.id,
+            actorId: input.userId,
+            correlationId: input.correlationId,
+            createdAt: input.now,
+          });
+          transactions.push(granted.transaction);
+          // Compatibility projection: p1_usage_events remains the reservation
+          // state machine consumed by existing generation paths. Keep its
+          // allowance adjustment in this same redemption transaction.
+          await client.query(
+            `INSERT INTO p1_usage_events
+               (workspace_id, id, resource, action, amount, reservation_id,
+                reason, actor_id, correlation_id, created_at)
+             VALUES ($1, $2, $3, 'adjust', $4, NULL, $5, $6, $7, $8::timestamptz)`,
+            [
+              input.workspaceId,
+              `redemption-${current.id}:${resource}:allowance`,
+              resource,
+              amount,
+              `redemption_code:${current.id}:transaction:${granted.transaction.id}`,
+              input.userId,
+              input.correlationId,
+              input.now,
+            ]
+          );
+        }
+        const primary = transactions[0];
+        if (!primary) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Redemption grant produced no transactions.'
+          );
+        }
+        grantTransactionId = primary.id;
       }
       const updated = await client.query<RedemptionRow>(
         `UPDATE p1_redemption_codes
@@ -423,6 +510,7 @@ export class PostgresRedemptionStore implements RedemptionStore {
                 redeemed_workspace_id = $4,
                 redeemed_by_user_id = $5,
                 grant_transaction_id = $6,
+                credit_grant_transaction_id = $7,
                 revision = revision + 1
           WHERE id = $1 AND revision = $2 AND status = 'active'
           RETURNING *`,
@@ -432,7 +520,8 @@ export class PostgresRedemptionStore implements RedemptionStore {
           input.now,
           input.workspaceId,
           input.userId,
-          primary.id,
+          grantTransactionId,
+          creditGrantTransactionId,
         ]
       );
       if (!updated.rows[0]) {
@@ -446,6 +535,7 @@ export class PostgresRedemptionStore implements RedemptionStore {
       return {
         code: redemptionFromRow(updated.rows[0]),
         grantTransactions: transactions,
+        ...(creditGrant ? { creditGrant } : {}),
       };
     } catch (error) {
       if (!committed) await client.query('ROLLBACK');
@@ -453,6 +543,43 @@ export class PostgresRedemptionStore implements RedemptionStore {
     } finally {
       client.release();
     }
+  }
+
+  private async grantCreditsWithClient(
+    client: PoolClient,
+    code: RedemptionCode,
+    input: {
+      workspaceId: string;
+      userId: string;
+      correlationId: string;
+      now: string;
+    }
+  ) {
+    if (!this.creditLedger || !Number.isSafeInteger(code.credits) || !code.credits) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Credit redemption requires a positive credit amount.'
+      );
+    }
+    if (Object.keys(code.grants).length > 0) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Credit redemption cannot write legacy resource grants.'
+      );
+    }
+    const id = creditRedemptionLotId(code.id, input.workspaceId);
+    return this.creditLedger.grantWithClient(client, {
+      id,
+      workspaceId: input.workspaceId,
+      credits: code.credits,
+      expirationDate: null,
+      transactionType: 'REDEMPTION_CODE',
+      sourceRef: code.id,
+      grantIdempotencyKey: `grant:redemption:${code.id}:${input.workspaceId}`,
+      actorId: input.userId,
+      correlationId: input.correlationId,
+      createdAt: code.redeemedAt ?? input.now,
+    });
   }
 
   private async transaction<T>(work: (client: PoolClient) => Promise<T>) {
@@ -500,6 +627,7 @@ function redemptionFromRow(row: RedemptionRow): RedemptionCode {
     code: row.code,
     status: row.status,
     grants: structuredClone(grants),
+    ...(row.credits !== null ? { credits: Number(row.credits) } : {}),
     expiresAt: timestamp(row.expires_at),
     revision: Number(row.revision),
     createdAt: timestamp(row.created_at)!,
@@ -514,6 +642,9 @@ function redemptionFromRow(row: RedemptionRow): RedemptionCode {
       : {}),
     ...(row.grant_transaction_id
       ? { grantTransactionId: row.grant_transaction_id }
+      : {}),
+    ...(row.credit_grant_transaction_id
+      ? { creditGrantTransactionId: row.credit_grant_transaction_id }
       : {}),
     ...(row.batch_id ? { batchId: row.batch_id } : {}),
   };
