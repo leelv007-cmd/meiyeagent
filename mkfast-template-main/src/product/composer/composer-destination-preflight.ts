@@ -16,6 +16,11 @@ export type ComposerDestinationPreflightDecision =
       >;
     };
 
+type ComposerDestinationSelection = {
+  contentPackagePlatform?: string | null;
+  distributionTarget?: string | null;
+};
+
 const DESTINATION_SIGNAL =
   /发到|发布|发给|用在|投放|小红书|抖音|视频号|朋友圈|线下|店内|立牌|海报|导出|下载|复制|代发|协助/u;
 
@@ -24,11 +29,23 @@ export function composerIntentMentionsDestination(intent: string): boolean {
 }
 
 export function decideComposerDestinationPreflight(input: {
+  appliedRecipeDestination?: ComposerDestinationSelection;
+  currentDestination?: ComposerDestinationSelection;
   hasExplicitDestination: boolean;
   intent: string;
   state: ComposerDestinationPreflightState | null;
 }): ComposerDestinationPreflightDecision {
-  if (input.hasExplicitDestination) return { kind: 'continue' };
+  const boundDestinationIsCurrent =
+    typeof input.appliedRecipeDestination?.contentPackagePlatform ===
+      'string' &&
+    typeof input.appliedRecipeDestination.distributionTarget === 'string' &&
+    input.currentDestination?.contentPackagePlatform ===
+      input.appliedRecipeDestination.contentPackagePlatform &&
+    input.currentDestination.distributionTarget ===
+      input.appliedRecipeDestination.distributionTarget;
+  if (input.hasExplicitDestination || boundDestinationIsCurrent) {
+    return { kind: 'continue' };
+  }
 
   const destination = input.intent.trim();
   if (input.state?.intent === destination) {

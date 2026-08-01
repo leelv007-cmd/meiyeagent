@@ -2797,6 +2797,14 @@ export function ComposerHome({
       return;
     }
     const destinationDecision = decideComposerDestinationPreflight({
+      appliedRecipeDestination:
+        submissionRecipe?.revisionId === lensState.draft.recipeRevisionId
+          ? submissionRecipe.delivery
+          : undefined,
+      currentDestination: {
+        contentPackagePlatform: lensState.draft.delivery.platform,
+        distributionTarget: lensState.draft.delivery.distributionTarget,
+      },
       hasExplicitDestination:
         lensState.draft.fieldMeta.deliveryPlatform?.ownership === 'user' &&
         lensState.draft.fieldMeta.deliveryPlatform.dirty,

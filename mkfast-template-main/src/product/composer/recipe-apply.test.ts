@@ -61,6 +61,21 @@ test('cold apply: no conflict → local apply, preserves user text, zero writes'
   assert.deepEqual(session.sideEffects, []);
 });
 
+test('case-note apply carries its frozen export destination into the draft', () => {
+  const lens = selectLens(createComposerLensState(), 'image_text');
+  const result = requestApplyRecipe(
+    createRecipeApplySession(lens),
+    seedToRecipeTarget(xhsSeed)
+  );
+
+  assert.equal(result.kind, 'applied');
+  assert.equal(result.session.lensState.draft.delivery.platform, 'xiaohongshu');
+  assert.equal(
+    result.session.lensState.draft.delivery.distributionTarget,
+    'export'
+  );
+});
+
 test('apply never injects a hidden prompt — user original text stays byte-identical', () => {
   const original = '用户原文·请勿被预设覆盖';
   let session = createRecipeApplySession(

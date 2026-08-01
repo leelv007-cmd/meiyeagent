@@ -23,6 +23,25 @@ test('a user-confirmed destination skips natural-language mapping', () => {
   );
 });
 
+test('an applied Recipe destination skips natural-language remapping', () => {
+  assert.deepEqual(
+    decideComposerDestinationPreflight({
+      appliedRecipeDestination: {
+        contentPackagePlatform: 'xiaohongshu',
+        distributionTarget: 'export',
+      },
+      currentDestination: {
+        contentPackagePlatform: 'xiaohongshu',
+        distributionTarget: 'export',
+      },
+      hasExplicitDestination: false,
+      intent: '把授权案例做成克制可信的小红书图文笔记',
+      state: null,
+    }),
+    { kind: 'continue' }
+  );
+});
+
 test('only merchant sentences that mention a destination enter mapping', () => {
   assert.equal(
     composerIntentMentionsDestination('写一条周末到店的团购活动文案'),

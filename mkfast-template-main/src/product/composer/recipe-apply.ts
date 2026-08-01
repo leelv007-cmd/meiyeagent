@@ -240,7 +240,8 @@ export function applyRecipeToLensState(
       recipeRevisionId: recipe.revisionId,
       delivery: {
         platform: delivery.contentPackagePlatform ?? draft.delivery.platform,
-        distributionTarget: draft.delivery.distributionTarget,
+        distributionTarget:
+          delivery.distributionTarget ?? draft.delivery.distributionTarget,
         deliverableKind:
           delivery.deliverableKind ?? draft.delivery.deliverableKind,
       },
