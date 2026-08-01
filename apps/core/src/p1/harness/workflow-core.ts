@@ -1767,6 +1767,16 @@ async function runNoteHarnessWorkflow(
     }, `r${context.bundle.revision}`);
   }
 
+  // P1-05 / xhs-spec §3.3 / §8.2: plan.ready (style selected + brief fenced)
+  // → interrupt execution_confirm before paid media selection. Pure copy units
+  // still skip via triggersPaidMediaExecution (D-043).
+  activeRequest = await confirmPaidGenerationExecution({
+    workflowId,
+    request: activeRequest,
+    runtime,
+    reportProgress,
+  });
+
   const executionSkills = stageSkills.execution_selection;
   const noteSelectionInput = {
     workflowId,
@@ -3002,10 +3012,9 @@ const PAID_MEDIA_USAGE_RESOURCES = new Set<ReservedUsageResource>([
  * Judgment is operation-based — what the reserved units say this run will
  * spend — not "which Harness path am I on".
  *
- * Note: note-path call site activates at P1 (xhs-spec §8.2: note paid-media
- * gate + in-stream presentation + fixture sync land together). A note run's
- * units (copy 1 + image notePageBound) already satisfy this predicate; only
- * the call site is deferred.
+ * Note path (image_text_note) calls the same gate after plan.ready — style
+ * selected and brief fenced — so batch page generation cannot spend before
+ * merchant confirm (P1-05 / xhs-spec §8.2 P1-6).
  */
 export function triggersPaidMediaExecution(
   request: HarnessWorkflowInput,
@@ -3035,9 +3044,8 @@ export function triggersPaidMediaExecution(
  * alone never hold (D-043 / composer-card-family T31).
  *
  * This is generation-point cost confirmation, not D-013 class-7 external
- * publish approval. Called from the copy and media Harness paths; the gate
- * itself decides whether to hold. The note path calls it from P1 (xhs-spec
- * §8.2), together with in-stream presentation and e2e fixture sync.
+ * publish approval. Called from the copy, media, and note Harness paths; the
+ * gate itself decides whether to hold (operation units, not path).
  *
  * Wire kind stays `external_action` so the existing interaction renderer gate
  * (`executionConfirmationInteractionRequestFromQuestion`) and e2e fixtures keep

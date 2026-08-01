@@ -2311,14 +2311,10 @@ test('a malformed usage breakdown also fails the paid-media judgment closed', as
   );
 });
 
-test('P0 image_text_note path does not produce execution_confirmation hold (note gate deferred to P1)', async () => {
-  // P0 现状 = 无门: note 路径没有调用点（xhs-spec §8.2 把 note 付费媒体过卡
-  // 排在 P1，与流内呈现 + e2e fixture 同步一体落地）。
-  // note 的真实预留（composer-submission-gate.noteUsageUnits 口径:
-  // copy 1 + image notePageBound）已令 triggersPaidMediaExecution === true，
-  // 判定就位、只差调用点，所以旅程此刻仍不挂 execution_confirmation。
-  //
-  // P1 激活 note 路径调用点时，这条测试的断言应反转为正向（期望产生 hold）。
+test('a paid note snapshot waits for execution confirmation before page generation', async () => {
+  // P1-05 / xhs-spec §3.2 / §8.2 P1-6: note 批量配图（copy 1 + image notePageBound）
+  // 必过卡。#288 把判定钉在 triggersPaidMediaExecution；本票激活 runNoteHarnessWorkflow
+  // 调用点，入边挂起 execution_confirmation，确认后才进入 selection。
   const request: HarnessWorkflowInput = {
     ...mediaTaskInput('image_text_note'),
     usageReservation: {
@@ -2330,7 +2326,7 @@ test('P0 image_text_note path does not produce execution_confirmation hold (note
     },
     decisionReferences: [
       {
-        id: 'decision-note-style-p0-no-hold',
+        id: 'decision-note-style-p1-hold',
         field: 'note_style',
         value: '故事版',
         revision: 1,
@@ -2340,6 +2336,190 @@ test('P0 image_text_note path does not produce execution_confirmation hold (note
   assert.equal(triggersPaidMediaExecution(request), true);
   const stages = noteStages();
   const executeNoteAndSelect = stages.executeNoteAndSelect.bind(stages);
+  const order: string[] = [];
+  stages.executeNoteAndSelect = async (input) => {
+    order.push('selection');
+    return executeNoteAndSelect(input);
+  };
+
+  await runHarnessWorkflow(
+    'task-image-text-note-p1-confirm',
+    request,
+    stages,
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question, stage) {
+        order.push('confirmation');
+        assert.equal(stage, 'execution_selection');
+        assert.equal(question.response.field, 'execution_confirmation');
+        assert.match(question.question, /开始生成/);
+        assert.deepEqual(question.executionConfirmationAuthority, {
+          kind: 'external_action',
+          revision: 'execution-external-action/v1',
+        });
+        return approvePaidGenerationConfirmation(question);
+      },
+      async recordTrace() {},
+    },
+  );
+
+  assert.equal(order[0], 'confirmation');
+  assert.ok(order.includes('selection'));
+});
+
+test('rejecting a paid note confirmation runs no page generation before re-confirmation', async () => {
+  // 出口证明（负向出边）：note 付费路径拒绝确认时，执行不得发生。
+  const request: HarnessWorkflowInput = {
+    ...mediaTaskInput('image_text_note'),
+    usageReservation: {
+      id: 'usage-reservation-note-rejected-then-approved',
+      units: [
+        { resource: 'copy' as const, quantity: 1 },
+        { resource: 'image' as const, quantity: 3 },
+      ],
+    },
+    decisionReferences: [
+      {
+        id: 'decision-note-style-p1-reject',
+        field: 'note_style',
+        value: '故事版',
+        revision: 1,
+      },
+    ],
+  };
+  const stages = noteStages();
+  const executeNoteAndSelect = stages.executeNoteAndSelect.bind(stages);
+  const order: string[] = [];
+  stages.executeNoteAndSelect = async (input) => {
+    order.push('selection');
+    return executeNoteAndSelect(input);
+  };
+  let confirmations = 0;
+  let resubmissions = 0;
+
+  await runHarnessWorkflow(
+    'task-image-text-note-p1-reject',
+    request,
+    stages,
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question, stage) {
+        assert.equal(stage, 'execution_selection');
+        assert.equal(question.response.field, 'execution_confirmation');
+        confirmations += 1;
+        if (confirmations === 1) {
+          assert.equal(order.length, 0);
+          order.push('rejection');
+          return rejectPaidGenerationConfirmation(question);
+        }
+        order.push('confirmation');
+        return approvePaidGenerationConfirmation(question);
+      },
+      async resubmitSemanticDecision(input) {
+        resubmissions += 1;
+        return buildSemanticDecisionResumption({
+          request: input.request,
+          command: input.command,
+          createdAt: '2026-08-01T09:05:00.000Z',
+        }).request;
+      },
+      async recordTrace() {},
+    },
+  );
+
+  assert.equal(confirmations, 2);
+  assert.equal(resubmissions, 1);
+  assert.deepEqual(order.slice(0, 3), [
+    'rejection',
+    'confirmation',
+    'selection',
+  ]);
+});
+
+test('a cancelled paid note confirmation terminates without page generation', async () => {
+  // 出口证明（终止出边）：挂起取消时零执行。
+  const request: HarnessWorkflowInput = {
+    ...mediaTaskInput('image_text_note'),
+    usageReservation: {
+      id: 'usage-reservation-note-cancelled-confirmation',
+      units: [
+        { resource: 'copy' as const, quantity: 1 },
+        { resource: 'image' as const, quantity: 3 },
+      ],
+    },
+    decisionReferences: [
+      {
+        id: 'decision-note-style-p1-cancel',
+        field: 'note_style',
+        value: '故事版',
+        revision: 1,
+      },
+    ],
+  };
+  const stages = noteStages();
+  const executeNoteAndSelect = stages.executeNoteAndSelect.bind(stages);
+  let selectionCalls = 0;
+  stages.executeNoteAndSelect = async (input) => {
+    selectionCalls += 1;
+    return executeNoteAndSelect(input);
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow(
+      'task-image-text-note-p1-cancel',
+      request,
+      stages,
+      {
+        async runStep(_key, operation) {
+          return operation();
+        },
+        async progress() {},
+        async token() {},
+        async awaitDecision(question) {
+          assert.equal(question.response.field, 'execution_confirmation');
+          return {
+            cancelled: true as const,
+            merchantMessage: '本次生成已取消，额度已退回。',
+            resolutionSource: 'reservation_released' as const,
+          };
+        },
+        async recordTrace() {},
+      },
+    ),
+    (error: unknown) => error instanceof HarnessWorkflowCancellation,
+  );
+
+  assert.equal(selectionCalls, 0);
+});
+
+test('a pure-copy note-path reservation still skips the confirmation hold (D-043)', async () => {
+  // 负向：即便走 note Harness 路径，预留仅 copy 时仍免确认。
+  const request: HarnessWorkflowInput = {
+    ...mediaTaskInput('image_text_note'),
+    usageReservation: {
+      id: 'usage-reservation-note-copy-only',
+      units: [{ resource: 'copy' as const, quantity: 1 }],
+    },
+    decisionReferences: [
+      {
+        id: 'decision-note-style-p1-copy-only',
+        field: 'note_style',
+        value: '故事版',
+        revision: 1,
+      },
+    ],
+  };
+  assert.equal(triggersPaidMediaExecution(request), false);
+  const stages = noteStages();
+  const executeNoteAndSelect = stages.executeNoteAndSelect.bind(stages);
   let selectionCalls = 0;
   stages.executeNoteAndSelect = async (input) => {
     selectionCalls += 1;
@@ -2347,7 +2527,7 @@ test('P0 image_text_note path does not produce execution_confirmation hold (note
   };
 
   await runHarnessWorkflow(
-    'task-image-text-note-p0-no-confirm',
+    'task-image-text-note-p1-copy-only',
     request,
     stages,
     {
@@ -2358,9 +2538,7 @@ test('P0 image_text_note path does not produce execution_confirmation hold (note
       async token() {},
       async awaitDecision(question) {
         if (question.response.field === 'execution_confirmation') {
-          throw new Error(
-            'P0 note path must not hold on paid confirmation (gate deferred to P1).',
-          );
+          throw new Error('Pure copy units must not hold on paid confirmation.');
         }
         throw new Error(`Unexpected question: ${question.questionId}`);
       },

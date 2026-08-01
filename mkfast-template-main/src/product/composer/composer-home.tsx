@@ -239,6 +239,7 @@ import {
   type ComposerImageOperation,
 } from './image-operation-picker';
 import {
+  applyComposerExecutionConfirm,
   applyComposerProgress,
   applyComposerQuestion,
   applyComposerWorkflowState,
@@ -1439,12 +1440,15 @@ export function ComposerHome({
       ? decisionQuery.data.resolutionSource
       : null;
   const questionTimeoutSeconds = decisionQuery.data?.timeoutSeconds ?? null;
-  const pendingQuestionTurnId =
-    pendingAskRequest?.requestId ??
+  // P1-05: execution_confirm is its own timeline turn (DecisionFrame interrupt),
+  // not a generic question. Server interrupt wins over client pre-submit card.
+  const clientExecutionConfirmOpen = executionConfirm.phase === 'open';
+  const pendingExecutionConfirmTurnId =
     pendingExecutionConfirmation?.requestId ??
     pendingExecutionWaitingMessage?.requestId ??
-    pendingQuestion?.questionId ??
-    null;
+    (clientExecutionConfirmOpen ? 'client-execution-confirm' : null);
+  const pendingQuestionTurnId =
+    pendingAskRequest?.requestId ?? pendingQuestion?.questionId ?? null;
 
   useEffect(() => {
     setSession((current) =>
@@ -1453,6 +1457,15 @@ export function ComposerHome({
   }, [
     pendingQuestionTurnId,
     questionResolutionSource,
+    workflowStream.workflowState,
+  ]);
+
+  useEffect(() => {
+    setSession((current) =>
+      applyComposerExecutionConfirm(current, pendingExecutionConfirmTurnId)
+    );
+  }, [
+    pendingExecutionConfirmTurnId,
     workflowStream.workflowState,
   ]);
 
@@ -2831,27 +2844,68 @@ export function ComposerHome({
                   );
                 }}
                 onRecover={recoverFromReport}
+                executionConfirmSlot={
+                  // P1-05: in-stream DecisionFrame interrupt body (not sticky slot).
+                  // Server AG-UI interrupt takes precedence; client cost card is
+                  // the pre-submit residual when still open; cost feedback stays
+                  // co-located so reject still answers in place.
+                  <div data-testid="execution-confirm-slot">
+                    {pendingExecutionConfirmation ? (
+                      <ExecutionConfirmationInteractionCard
+                        onRendererReady={acknowledgeAskMerchantRenderer}
+                        onRendererRejected={
+                          refreshInteractionAfterRendererRejection
+                        }
+                        onSubmit={answerExecutionConfirmation}
+                        pending={questionPending}
+                        request={pendingExecutionConfirmation}
+                      />
+                    ) : pendingExecutionWaitingMessage ? (
+                      <ExecutionConfirmationWaitingMessageCard
+                        onSubmit={answerExecutionWaitingMessage}
+                        pending={questionPending}
+                        request={pendingExecutionWaitingMessage}
+                      />
+                    ) : clientExecutionConfirmOpen ? (
+                      <ExecutionConfirmCard
+                        {...projectExecutionConfirmCard(executionConfirm, {
+                          busy: createWork.isPending || briefPending,
+                          onConfirm: () => {
+                            const run = pendingRunRef.current;
+                            setExecutionConfirm(confirmExecution);
+                            if (!run) return;
+                            pendingRunRef.current = null;
+                            runCreate(
+                              run.lensId,
+                              run.videoConfirmAccepted,
+                              run.briefConfirmationId
+                            );
+                          },
+                          onReject: () => {
+                            pendingRunRef.current = null;
+                            setExecutionConfirm(
+                              (current) => rejectExecution(current).state
+                            );
+                            setCostFeedback(
+                              projectExecutionCostFeedback({
+                                outcome: 'rejected',
+                              })
+                            );
+                          },
+                          staleNotice: currentQuoteView
+                            ? null
+                            : briefStaleQuoteNotice(),
+                        })}
+                      />
+                    ) : null}
+                    <ExecutionCostFeedbackLine feedback={costFeedback} />
+                  </div>
+                }
                 questionSlot={
                   <AskMerchantInteractionSlot
                     delivered={session.phase === 'delivered'}
                     fallback={
-                      pendingExecutionConfirmation ? (
-                        <ExecutionConfirmationInteractionCard
-                          onRendererReady={acknowledgeAskMerchantRenderer}
-                          onRendererRejected={
-                            refreshInteractionAfterRendererRejection
-                          }
-                          onSubmit={answerExecutionConfirmation}
-                          pending={questionPending}
-                          request={pendingExecutionConfirmation}
-                        />
-                      ) : pendingExecutionWaitingMessage ? (
-                        <ExecutionConfirmationWaitingMessageCard
-                          onSubmit={answerExecutionWaitingMessage}
-                          pending={questionPending}
-                          request={pendingExecutionWaitingMessage}
-                        />
-                      ) : pendingQuestion ? (
+                      pendingQuestion ? (
                         <ComposerQuestionCard
                           disabled={createWork.isPending}
                           // D-116 safety edge ②: quota or an external effect means D-112
@@ -3264,40 +3318,17 @@ export function ComposerHome({
               ) : null}
 
               {/*
-               * D-164③/⑥ 的挂载点。确认卡与它的反馈尾行共用这一格：卡消失后反馈出现
-               * 在同一坐标，商家的视线不用移动，「就地」是字面成立而不是近似。
+               * P1-05: execution_confirm lives in the document timeline
+               * (executionConfirmSlot / DecisionFrame). Residual cost feedback
+               * only when Brief cancel wiped the transcript but still owes an
+               * in-place "未消耗额度" answer (D-164⑥).
                */}
-              <div data-testid="execution-confirm-slot">
-                <ExecutionConfirmCard
-                  {...projectExecutionConfirmCard(executionConfirm, {
-                    busy: createWork.isPending || briefPending,
-                    onConfirm: () => {
-                      const run = pendingRunRef.current;
-                      setExecutionConfirm(confirmExecution);
-                      if (!run) return;
-                      pendingRunRef.current = null;
-                      runCreate(
-                        run.lensId,
-                        run.videoConfirmAccepted,
-                        run.briefConfirmationId
-                      );
-                    },
-                    onReject: () => {
-                      pendingRunRef.current = null;
-                      setExecutionConfirm(
-                        (current) => rejectExecution(current).state
-                      );
-                      setCostFeedback(
-                        projectExecutionCostFeedback({ outcome: 'rejected' })
-                      );
-                    },
-                    staleNotice: currentQuoteView
-                      ? null
-                      : briefStaleQuoteNotice(),
-                  })}
-                />
-                <ExecutionCostFeedbackLine feedback={costFeedback} />
-              </div>
+              {costFeedback &&
+              !session.turns.some((turn) => turn.kind === 'execution_confirm') ? (
+                <div data-testid="execution-confirm-slot">
+                  <ExecutionCostFeedbackLine feedback={costFeedback} />
+                </div>
+              ) : null}
             </>
           }
         />

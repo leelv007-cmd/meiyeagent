@@ -303,6 +303,12 @@ export type ComposerConversationProps = {
   identitySlot?: React.ReactNode;
   /** 引导补问卡 (T11 skip UI lives inside this node). */
   questionSlot?: React.ReactNode;
+  /**
+   * P1-05 / xhs-spec §3.3: paid-media execution_confirm interrupt body.
+   * Server interaction card and/or client cost confirm + cost feedback line.
+   * Rendered as a DecisionFrame turn — not a sticky independent slot.
+   */
+  executionConfirmSlot?: React.ReactNode;
   /** Opens the Result Center for a finished run — the only navigation. */
   onOpenDelivery: (input: ComposerDeliveryOpenInput) => void;
   /**
@@ -362,6 +368,7 @@ export function ComposerConversation({
   stream,
   identitySlot,
   questionSlot,
+  executionConfirmSlot,
   onOpenDelivery,
   onRateDelivery,
   onDeliveryFollowUp,
@@ -421,6 +428,19 @@ export function ComposerConversation({
             turnKind="question"
           >
             {questionSlot}
+          </AgentFrameHost>
+        ) : null;
+      case 'execution_confirm':
+        // P1-05: in-stream AG-UI interrupt (DecisionFrame). Replaces the
+        // independent sticky execution-confirm-slot mount from D-164.
+        return executionConfirmSlot ? (
+          <AgentFrameHost
+            frameKind={resolveAgentFrameKind('execution_confirm')}
+            key={turn.id}
+            testId="composer-execution-confirm-turn"
+            turnKind="execution_confirm"
+          >
+            {executionConfirmSlot}
           </AgentFrameHost>
         ) : null;
       case 'candidate':

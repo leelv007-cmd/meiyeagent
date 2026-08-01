@@ -68,6 +68,17 @@ export type ComposerQuestionTurn = {
   questionId: string;
 };
 
+/**
+ * P1-05 / xhs-spec §3.3: paid-media execution_confirm AG-UI interrupt.
+ * Distinct from generic `question` so the timeline can hang it as its own
+ * DecisionFrame consumer (server interaction card or client cost card).
+ */
+export type ComposerExecutionConfirmTurn = {
+  kind: 'execution_confirm';
+  id: string;
+  confirmId: string;
+};
+
 /** Streaming candidate area. Exactly one, appended when the task binds. */
 export type ComposerCandidateTurn = {
   kind: 'candidate';
@@ -121,6 +132,7 @@ export type ComposerTurn =
   | ComposerRouteNoticeTurn
   | ComposerStageTurn
   | ComposerQuestionTurn
+  | ComposerExecutionConfirmTurn
   | ComposerCandidateTurn
   | ComposerDeliveryTurn
   | ComposerReportTurn
@@ -342,6 +354,48 @@ export function applyComposerQuestion(
 }
 
 /**
+ * P1-05: paid-media execution_confirm interrupt present or cleared.
+ * Same single-turn discipline as applyComposerQuestion; kept separate so the
+ * AgentFrame registry can map it as its own decision-family consumer.
+ */
+export function applyComposerExecutionConfirm(
+  session: ComposerSession,
+  confirmId: string | null
+): ComposerSession {
+  const existing = session.turns.find(
+    (turn): turn is ComposerExecutionConfirmTurn =>
+      turn.kind === 'execution_confirm'
+  );
+  if (!confirmId) {
+    if (!existing) return session;
+    return {
+      ...session,
+      phase: session.phase === 'awaiting_answer' ? 'running' : session.phase,
+    };
+  }
+  if (existing?.confirmId === confirmId) return session;
+  const turns: ComposerTurn[] = session.turns.filter(
+    (turn) => turn.kind !== 'execution_confirm'
+  );
+  const candidateIndex = turns.findIndex((turn) => turn.kind === 'candidate');
+  const turn: ComposerExecutionConfirmTurn = {
+    kind: 'execution_confirm',
+    id: `execution_confirm:${confirmId}`,
+    confirmId,
+  };
+  if (candidateIndex === -1) turns.push(turn);
+  else turns.splice(candidateIndex, 0, turn);
+  return {
+    ...session,
+    phase:
+      session.phase === 'delivered' || session.phase === 'cancelled'
+        ? session.phase
+        : 'awaiting_answer',
+    turns,
+  };
+}
+
+/**
  * Terminal workflow state. Success promotes the candidate area into the
  * 成品预览卡 that opens the Result Center on click (ADR-0014: 提交后不跳转).
  */
@@ -361,7 +415,10 @@ export function applyComposerWorkflowState(
         ...session,
         phase: 'failed',
         turns: session.turns.filter(
-          (turn) => turn.kind !== 'candidate' && turn.kind !== 'question'
+          (turn) =>
+            turn.kind !== 'candidate' &&
+            turn.kind !== 'question' &&
+            turn.kind !== 'execution_confirm'
         ),
       },
       report
@@ -378,6 +435,7 @@ export function applyComposerWorkflowState(
         ...session.turns.filter(
           (turn) =>
             turn.kind !== 'question' &&
+            turn.kind !== 'execution_confirm' &&
             turn.kind !== 'delivery' &&
             turn.kind !== 'terminal'
         ),

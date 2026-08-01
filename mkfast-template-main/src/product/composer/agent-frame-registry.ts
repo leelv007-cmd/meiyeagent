@@ -33,6 +33,8 @@ export const COMPOSER_TIMELINE_TURN_KINDS = [
   'stage',
   'stages',
   'question',
+  /** P1-05: paid-media AG-UI interrupt (plan.ready → execution_confirm). */
+  'execution_confirm',
   'candidate',
   'delivery',
   'report',
@@ -51,6 +53,7 @@ export const COMPOSER_SESSION_TURN_KINDS = [
   'route_notice',
   'stage',
   'question',
+  'execution_confirm',
   'candidate',
   'delivery',
   'report',
@@ -75,9 +78,10 @@ void _assertSessionTurnKindsExhaustive;
 /**
  * Resolve the AgentFrame family for a timeline turn kind.
  *
- * Mapping (progressive, P1-01 base):
+ * Mapping (progressive, P1-01 base + P1-05 interrupt):
  * - merchant / route_notice / stage(s) / report → narrative
- * - question → decision (补问 / 确认槽位也走 decision)
+ * - question → decision (补问)
+ * - execution_confirm → decision (付费媒体执行确认 interrupt；DecisionFrame 承载)
  * - candidate / delivery → result
  * - terminal → task (cancelled / leave-recover outcomes)
  *
@@ -95,6 +99,7 @@ export function resolveAgentFrameKind(
     case 'report':
       return 'narrative';
     case 'question':
+    case 'execution_confirm':
       return 'decision';
     case 'candidate':
     case 'delivery':

@@ -39,9 +39,9 @@ export const JOURNEY_CONTRACTS: readonly JourneyContract[] = [
     deliveryTarget: 'xiaohongshu',
     modality: 'image_text',
     workspace: 'image',
-    // 镜头 + 提交 + 图文方向. The third is the merchant's own choice between the
-    // two directions the note plan compiles — see `chooseImageTextDirection`.
-    expectedActivations: 3,
+    // 镜头 + 提交 + 图文方向 + P1-05 paid-media execution_confirm.
+    // Note path reserves copy 1 + image notePageBound → must hold before generation.
+    expectedActivations: 4,
     packageFormat: 'zip',
     packageButtonName: /完整发布包（小红书）/u,
     // Fixture export may use content hash filename; zh/en product names also ok.
@@ -311,14 +311,19 @@ export async function submitComposerJourney(
     await chooseImageTextDirection(page);
   }
 
-  if (contract.modality === 'video') {
-    // D-164③: paid media generation holds on the execution confirmation card
-    // (quote + usage reservation); the run only starts after 确认执行. Copy and
-    // image_text (note path) deliver without a pre-run hold.
+  if (contract.modality === 'video' || contract.modality === 'image_text') {
+    // D-164③ / P1-05: paid media generation holds on the in-stream
+    // execution_confirm interrupt (quote + usage reservation). Video and note
+    // (image_text batch pages) require 确认执行 before selection; pure copy
+    // stays exempt (D-043).
     const confirmation = page.getByTestId(
       'execution-confirmation-interaction-card'
     );
     await expect(confirmation).toBeVisible({ timeout: 60_000 });
+    // Frame host marks the DecisionFrame interrupt for AgentFrame consumers.
+    await expect(
+      page.getByTestId('composer-execution-confirm-turn')
+    ).toHaveAttribute('data-agent-frame', 'decision');
     await confirmation.getByRole('button', { name: '确认执行' }).click();
     await expect(confirmation).toBeHidden({ timeout: 60_000 });
   }

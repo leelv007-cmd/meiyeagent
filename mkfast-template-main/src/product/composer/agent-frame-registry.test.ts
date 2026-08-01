@@ -47,6 +47,7 @@ test('progressive mapping matches the P1-01 document-timeline grammar', () => {
     stages: 'narrative',
     report: 'narrative',
     question: 'decision',
+    execution_confirm: 'decision',
     candidate: 'result',
     delivery: 'result',
     terminal: 'task',
@@ -78,5 +79,6 @@ test('session turn kind list is exhaustive over ComposerTurn kind (compile + run
   for (const kind of COMPOSER_SESSION_TURN_KINDS) {
     assert.equal(typeof resolveAgentFrameKind(kind), 'string');
   }
-  assert.equal(COMPOSER_SESSION_TURN_KINDS.length, 8);
+  // P1-05 added execution_confirm (was 8).
+  assert.equal(COMPOSER_SESSION_TURN_KINDS.length, 9);
 });

@@ -77,10 +77,17 @@ test('frame registry: conversation renders turns via AgentFrame host', () => {
   assert.match(conversation, /resolveAgentFrameKind/u);
   assert.match(conversation, /data-agent-frame/u);
   assert.match(conversation, /AgentFrameHost/u);
+  // P1-05: execution_confirm is an in-stream DecisionFrame, not sticky-only.
+  assert.match(conversation, /execution_confirm/u);
+  assert.match(conversation, /executionConfirmSlot/u);
   // Bubble stream retired for agent content (D1 document timeline).
   assert.doesNotMatch(conversation, /ChatMessage\.Assistant/u);
   assert.doesNotMatch(conversation, /ChatMessage\.User/u);
   const registry = readSource('src/product/composer/agent-frame-registry.ts');
   assert.match(registry, /AGENT_FRAME_KINDS/u);
   assert.match(registry, /COMPOSER_SESSION_TURN_KINDS/u);
+  assert.match(registry, /execution_confirm/u);
+  const home = readSource('src/product/composer/composer-home.tsx');
+  assert.match(home, /executionConfirmSlot/u);
+  assert.match(home, /applyComposerExecutionConfirm/u);
 });

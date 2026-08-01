@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { ComposerConversation } from './composer-conversation';
 import {
+  applyComposerExecutionConfirm,
   applyComposerProgress,
   bindComposerTask,
   createComposerSession,
@@ -104,5 +105,30 @@ describe('AgentFrame registry document timeline', () => {
     );
     const result = screen.getByTestId('agent-frame-result');
     expect(result).toHaveAttribute('data-turn-kind', 'candidate');
+  });
+
+  it('marks execution_confirm as a decision-frame interrupt (P1-05)', () => {
+    const session = applyComposerExecutionConfirm(
+      bindComposerTask(withMerchant(), TASK),
+      'execution-request-1'
+    );
+    render(
+      <ComposerConversation
+        executionConfirmSlot={
+          <div data-testid="execution-confirmation-interaction-card">
+            confirm
+          </div>
+        }
+        onOpenDelivery={() => {}}
+        session={session}
+        stream={emptyStream}
+      />
+    );
+    const frame = screen.getByTestId('composer-execution-confirm-turn');
+    expect(frame).toHaveAttribute('data-agent-frame', 'decision');
+    expect(frame).toHaveAttribute('data-turn-kind', 'execution_confirm');
+    expect(
+      screen.getByTestId('execution-confirmation-interaction-card')
+    ).toBeTruthy();
   });
 });

@@ -7,6 +7,7 @@ import test from 'node:test';
 import type { WorkflowProgressEnvelope } from '@meiye/contracts';
 
 import {
+  applyComposerExecutionConfirm,
   applyComposerProgress,
   applyComposerQuestion,
   applyComposerWorkflowState,
@@ -149,6 +150,36 @@ test('one blocking question at a time, cleared when it is answered or skipped', 
   // which shows the settled notice when the system answered by default.
   assert.equal(
     session.turns.filter((turn) => turn.kind === 'question').length,
+    1
+  );
+});
+
+test('paid-media execution_confirm is a distinct single timeline turn (P1-05)', () => {
+  let session = applyComposerExecutionConfirm(
+    runningSession(),
+    'execution-request-1'
+  );
+  assert.equal(session.phase, 'awaiting_answer');
+  assert.deepEqual(
+    session.turns.map((turn) => turn.kind),
+    ['merchant', 'execution_confirm', 'candidate']
+  );
+
+  session = applyComposerExecutionConfirm(session, 'execution-request-2');
+  assert.equal(
+    session.turns.filter((turn) => turn.kind === 'execution_confirm').length,
+    1
+  );
+  const turn = session.turns.find((item) => item.kind === 'execution_confirm');
+  assert.equal(
+    turn && turn.kind === 'execution_confirm' ? turn.confirmId : null,
+    'execution-request-2'
+  );
+
+  session = applyComposerExecutionConfirm(session, null);
+  assert.equal(session.phase, 'running');
+  assert.equal(
+    session.turns.filter((turn) => turn.kind === 'execution_confirm').length,
     1
   );
 });
