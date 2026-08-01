@@ -1,8 +1,8 @@
-import { AspectRatio } from "@/components/ui/aspect-ratio"
-import { Badge } from "@/components/ui/badge"
-import { Card } from "@/components/ui/card"
+import { AspectRatio } from '@/components/ui/aspect-ratio';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
 
-import { type BlogPost } from "./data"
+import type { BlogPost } from './data';
 
 export function PostCard({ post }: { post: BlogPost }) {
   return (
@@ -32,6 +32,7 @@ export function PostCard({ post }: { post: BlogPost }) {
           <Badge
             variant="ghost"
             render={
+              // biome-ignore lint/a11y/useAnchorContent: Base UI render prop slots the badge children into this anchor at render time, and aria-label covers screen readers.
               <a href="#" aria-label={`View ${post.category} articles`} />
             }
             className="text-primary hover:text-primary gap-1.5 px-0 font-semibold hover:bg-transparent focus-visible:bg-transparent"
@@ -60,5 +61,5 @@ export function PostCard({ post }: { post: BlogPost }) {
         </h2>
       </div>
     </article>
-  )
+  );
 }

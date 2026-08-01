@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState } from 'react';
 
 import {
   Carousel,
@@ -7,57 +7,57 @@ import {
   CarouselNext,
   CarouselPrevious,
   type CarouselApi,
-} from "@/components/ui/carousel"
-import { Progress, ProgressLabel } from "@/components/ui/progress"
+} from '@/components/ui/carousel';
+import { Progress, ProgressLabel } from '@/components/ui/progress';
 
-import { BLOG_POSTS } from "./data"
-import { PostCard } from "./post-card"
+import { BLOG_POSTS } from './data';
+import { PostCard } from './post-card';
 
 function getVisibleArticleCount() {
-  if (typeof window === "undefined") return 1
-  if (window.matchMedia("(min-width: 1024px)").matches) return 3
-  if (window.matchMedia("(min-width: 640px)").matches) return 2
-  return 1
+  if (typeof window === 'undefined') return 1;
+  if (window.matchMedia('(min-width: 1024px)').matches) return 3;
+  if (window.matchMedia('(min-width: 640px)').matches) return 2;
+  return 1;
 }
 
 export function BlogIndex() {
-  const [api, setApi] = useState<CarouselApi>()
+  const [api, setApi] = useState<CarouselApi>();
   const [carouselState, setCarouselState] = useState({
     selected: 0,
     visible: 1,
-  })
+  });
 
   useEffect(() => {
-    if (!api) return
+    if (!api) return;
 
     const updateCarouselState = () => {
       setCarouselState({
         selected: api.selectedScrollSnap(),
         visible: getVisibleArticleCount(),
-      })
-    }
+      });
+    };
 
-    updateCarouselState()
-    api.on("select", updateCarouselState)
-    api.on("reInit", updateCarouselState)
+    updateCarouselState();
+    api.on('select', updateCarouselState);
+    api.on('reInit', updateCarouselState);
 
     return () => {
-      api.off("select", updateCarouselState)
-      api.off("reInit", updateCarouselState)
-    }
-  }, [api])
+      api.off('select', updateCarouselState);
+      api.off('reInit', updateCarouselState);
+    };
+  }, [api]);
 
-  const currentStart = carouselState.selected + 1
+  const currentStart = carouselState.selected + 1;
   const currentEnd = Math.min(
     carouselState.selected + carouselState.visible,
     BLOG_POSTS.length
-  )
-  const progressValue = (currentEnd / BLOG_POSTS.length) * 100
+  );
+  const progressValue = (currentEnd / BLOG_POSTS.length) * 100;
 
   return (
     <Carousel
       setApi={setApi}
-      opts={{ align: "start", containScroll: "trimSnaps" }}
+      opts={{ align: 'start', containScroll: 'trimSnaps' }}
       className="flex flex-col gap-5 md:gap-6"
       aria-label="Featured blog articles"
     >
@@ -110,5 +110,5 @@ export function BlogIndex() {
         ))}
       </CarouselContent>
     </Carousel>
-  )
+  );
 }

@@ -1,4 +1,4 @@
-import { BlogIndex } from "./components/blog-index"
+import { BlogIndex } from './components/blog-index';
 
 export function Page() {
   return (
@@ -7,5 +7,5 @@ export function Page() {
         <BlogIndex />
       </div>
     </div>
-  )
+  );
 }
