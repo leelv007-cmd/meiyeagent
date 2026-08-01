@@ -2163,12 +2163,131 @@ test('a copy snapshot with paid media units holds for pre-run confirmation', asy
   assert.ok(order.includes('selection'));
 });
 
+test('rejecting the paid media confirmation runs no execution before a re-confirmation', async () => {
+  // 出口证明（负向出边）：花钱类出口硬门 —— 未确认的入边不得到达执行。
+  // 「暂不执行」把请求送回语义重提，付费执行必须等到下一次确认通过才发生。
+  const request: HarnessWorkflowInput = {
+    ...mediaTaskInput('image'),
+    usageReservation: {
+      id: 'usage-reservation-rejected-then-approved',
+      units: [{ resource: 'image' as const, quantity: 1 }],
+    },
+  };
+  const stages = mediaStages('image');
+  const executeMediaAndSelect = stages.executeMediaAndSelect.bind(stages);
+  const order: string[] = [];
+  stages.executeMediaAndSelect = async (input) => {
+    order.push('selection');
+    return executeMediaAndSelect(input);
+  };
+  let confirmations = 0;
+  let resubmissions = 0;
+
+  await runHarnessWorkflow('task-image', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question, stage) {
+      assert.equal(stage, 'execution_selection');
+      assert.equal(question.response.field, 'execution_confirmation');
+      confirmations += 1;
+      if (confirmations === 1) {
+        // 拒绝这一刻，执行必须还没发生。
+        assert.equal(order.length, 0);
+        order.push('rejection');
+        return rejectPaidGenerationConfirmation(question);
+      }
+      order.push('confirmation');
+      return approvePaidGenerationConfirmation(question);
+    },
+    async resubmitSemanticDecision(input) {
+      resubmissions += 1;
+      return buildSemanticDecisionResumption({
+        request: input.request,
+        command: input.command,
+        createdAt: '2026-08-01T09:05:00.000Z',
+      }).request;
+    },
+    async recordTrace() {},
+  });
+
+  assert.equal(confirmations, 2);
+  assert.equal(resubmissions, 1);
+  assert.deepEqual(order.slice(0, 3), ['rejection', 'confirmation', 'selection']);
+});
+
+test('a cancelled paid media confirmation terminates the workflow without executing', async () => {
+  // 出口证明（终止出边）：额度释放/挂起过期取消确认卡时，工作流终止且零执行。
+  const request: HarnessWorkflowInput = {
+    ...mediaTaskInput('image'),
+    usageReservation: {
+      id: 'usage-reservation-cancelled-confirmation',
+      units: [{ resource: 'image' as const, quantity: 1 }],
+    },
+  };
+  const stages = mediaStages('image');
+  const executeMediaAndSelect = stages.executeMediaAndSelect.bind(stages);
+  let selectionCalls = 0;
+  stages.executeMediaAndSelect = async (input) => {
+    selectionCalls += 1;
+    return executeMediaAndSelect(input);
+  };
+
+  await assert.rejects(
+    runHarnessWorkflow('task-image', request, stages, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        assert.equal(question.response.field, 'execution_confirmation');
+        return {
+          cancelled: true as const,
+          merchantMessage: '本次生成已取消，额度已退回。',
+          resolutionSource: 'reservation_released' as const,
+        };
+      },
+      async recordTrace() {},
+    }),
+    (error: unknown) => error instanceof HarnessWorkflowCancellation,
+  );
+
+  assert.equal(selectionCalls, 0);
+});
+
+test('a reserved run without a unit breakdown fails closed into confirmation', async () => {
+  // 花钱类硬门的失败方向：拿不到单位明细就当作会花钱，宁可多问一次也不放过。
+  // 生产不会走到这里（submission-coordinator 为每个 lens 都预留单位，
+  // storedUsageUnits 拒收空明细），这条钉的是失败方向本身。
+  const request: HarnessWorkflowInput = {
+    ...snapshotTaskInput(),
+    usageReservation: {
+      id: 'usage-reservation-without-units',
+      units: [],
+    },
+  };
+  assert.equal(triggersPaidMediaExecution(request), true);
+  assert.equal(
+    triggersPaidMediaExecution({
+      ...snapshotTaskInput(),
+      usageReservation: {
+        id: 'usage-reservation-malformed-units',
+        units: undefined as unknown as [],
+      },
+    }),
+    true,
+  );
+});
+
 test('P0 image_text_note path does not produce execution_confirmation hold (note gate deferred to P1)', async () => {
-  // P0 现状 = 无门: note 路径调用点已删（xhs-spec §8.2 把 note 付费媒体过卡
+  // P0 现状 = 无门: note 路径没有调用点（xhs-spec §8.2 把 note 付费媒体过卡
   // 排在 P1，与流内呈现 + e2e fixture 同步一体落地）。
-  // 即使 quote + note 的真实预留（composer-submission-gate.noteUsageUnits 口径:
-  // copy 1 + image notePageBound）令 triggersPaidMediaExecution === true，
-  // 旅程也不会挂 execution_confirmation。
+  // note 的真实预留（composer-submission-gate.noteUsageUnits 口径:
+  // copy 1 + image notePageBound）已令 triggersPaidMediaExecution === true，
+  // 判定就位、只差调用点，所以旅程此刻仍不挂 execution_confirmation。
   //
   // P1 激活 note 路径调用点时，这条测试的断言应反转为正向（期望产生 hold）。
   const request: HarnessWorkflowInput = {
@@ -3874,6 +3993,22 @@ function approvePaidGenerationConfirmation(
       reason: question.response.reason,
     },
     decision: { state: 'accepted' as const, value: 'approved' },
+  };
+}
+
+function rejectPaidGenerationConfirmation(
+  question: Parameters<HarnessWorkflowRuntime['awaitDecision']>[0],
+) {
+  return {
+    idempotencyKey: `reject-paid-generation:${question.questionId}`,
+    questionId: question.questionId,
+    workflowRevision: question.workflowRevision,
+    patch: {
+      field: question.response.field,
+      value: 'rejected',
+      reason: question.response.reason,
+    },
+    decision: { state: 'accepted' as const, value: 'rejected' },
   };
 }
 

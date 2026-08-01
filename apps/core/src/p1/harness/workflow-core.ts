@@ -2984,31 +2984,31 @@ const PAID_MEDIA_USAGE_RESOURCES = new Set(['image', 'video']);
  * Whether this request would trigger paid media execution and therefore needs
  * a pre-run confirmation hold. Pure copy remains free of confirmation (D-043).
  *
- * Judgment is operation-based (quote + reserved media units / media lens),
- * not "media workflow path only".
+ * Judgment is operation-based — what the reserved units say this run will
+ * spend — not "which Harness path am I on".
  *
  * Note: note-path call site activates at P1 (xhs-spec §8.2: note paid-media
- * gate + in-stream presentation + fixture sync land together). At P0 the
- * predicate may still return true for `image_text_note` lens fallback, but no
- * note Harness path invokes this gate yet.
+ * gate + in-stream presentation + fixture sync land together). A note run's
+ * units (copy 1 + image notePageBound) already satisfy this predicate; only
+ * the call site is deferred.
  */
 export function triggersPaidMediaExecution(
   request: HarnessWorkflowInput,
 ): boolean {
-  const snapshot = request.executionSnapshot;
-  if (!snapshot?.quote || !request.usageReservation) {
+  const reservation = request.usageReservation;
+  if (!request.executionSnapshot?.quote || !reservation) {
     return false;
   }
-  const units = request.usageReservation.units;
-  if (Array.isArray(units) && units.length > 0) {
-    return units.some((unit) => PAID_MEDIA_USAGE_RESOURCES.has(unit.resource));
+  const units = reservation.units;
+  if (!Array.isArray(units) || units.length === 0) {
+    // Fail closed: a reserved run with no unit breakdown cannot be shown to be
+    // copy-only, and this gate stands in front of spend. Production never
+    // reaches here — `submission-coordinator` reserves units for every lens and
+    // `storedUsageUnits` rejects an empty breakdown — so guessing from the lens
+    // would only ever be a fail-open hole.
+    return true;
   }
-  // Reservation without unit breakdown: media-like lenses imply paid media;
-  // pure copy lens stays exempt (D-043).
-  const lens = snapshot.lens;
-  return (
-    lens === 'image' || lens === 'video' || lens === 'image_text_note'
-  );
+  return units.some((unit) => PAID_MEDIA_USAGE_RESOURCES.has(unit.resource));
 }
 
 /**
