@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import type { ContentPackage, ContentPackagePlatform } from '@meiye/contracts';
 
 import type { DeliveryPanelTarget } from './delivery-b3-types';
 
@@ -20,6 +21,21 @@ export function deliveryTargetForIntent(
   }
   if (/朋友圈|wechat\s*moments/iu.test(intent)) return 'wechat_moments';
   return 'xiaohongshu';
+}
+
+export function resolveCanonicalDeliveryPlatform(
+  contentPackage:
+    | {
+        legacySource?: ContentPackage['legacySource'];
+        source: Pick<ContentPackage['source'], 'targetPlatform'>;
+      }
+    | undefined,
+  inferredTarget: DeliveryPanelTarget
+): ContentPackagePlatform | null {
+  const durablePlatform = contentPackage?.source.targetPlatform;
+  if (durablePlatform) return durablePlatform;
+  if (contentPackage && !contentPackage.legacySource) return null;
+  return inferredTarget === 'wechat_moments' ? null : inferredTarget;
 }
 
 function subscribeViewport(onStoreChange: () => void) {

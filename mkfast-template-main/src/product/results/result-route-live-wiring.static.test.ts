@@ -133,6 +133,14 @@ test('result route binds visible copy edits to the current delivery variant', ()
   );
 });
 
+test('result route prefers the durable package platform over mutable work intent', () => {
+  assert.match(route, /resolveCanonicalDeliveryPlatform/u);
+  assert.match(
+    route,
+    /resolveCanonicalDeliveryPlatform\(\s*contentPackage,\s*deliveryTarget\s*\)/u
+  );
+});
+
 test('result route copies, shares, scans, and exports the exact visible version', () => {
   assert.match(
     route,

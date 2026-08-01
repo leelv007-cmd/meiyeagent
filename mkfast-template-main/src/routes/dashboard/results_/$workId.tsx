@@ -77,6 +77,7 @@ import { weeklyReviewDerivePayload } from '@/product/results/weekly-review-model
 import { workLineageSourcePackageId } from '@/product/works/works-projection';
 import {
   deliveryTargetForIntent,
+  resolveCanonicalDeliveryPlatform,
   useDeliveryViewport,
 } from '@/product/results/delivery-viewport';
 import type { VideoCanonicalEditCommand } from '@/product/results/video/video-worksurface';
@@ -294,8 +295,10 @@ function ResultCenterRoutePage() {
     workspaceKind,
     selected?.work.intent ?? ''
   );
-  const canonicalDeliveryPlatform =
-    deliveryTarget === 'wechat_moments' ? null : deliveryTarget;
+  const canonicalDeliveryPlatform = resolveCanonicalDeliveryPlatform(
+    contentPackage,
+    deliveryTarget
+  );
   const deliveryVariant = canonicalDeliveryPlatform
     ? contentPackage?.variants.find(
         ({ platform }) => platform === canonicalDeliveryPlatform
