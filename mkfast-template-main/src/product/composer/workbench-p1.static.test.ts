@@ -27,14 +27,24 @@ test('P1-1: dual column uses react-resizable-panels product path', () => {
   assert.match(layout, /ResizablePanelGroup/u);
   assert.match(layout, /workbench-dual-column/u);
   assert.match(layout, /WorkbenchInspectorSheet/u);
-  // Stream panel must not become the sticky scrollport (P1-2 under dual column).
+  // Group + stream panel must not become sticky containing blocks (P1-2 residual).
   assert.match(layout, /meiye-workbench-stream-panel/u);
+  assert.match(layout, /meiye-workbench-dual-column-group/u);
   assert.match(layout, /data-overflow="visible"/u);
+  assert.match(layout, /style=\{\{\s*overflow:\s*['"]visible['"]\s*\}\}/u);
   assert.doesNotMatch(layout, /min-h-\[28rem\]/u);
   const glass = readSource('src/components/heroui-pro/heroui-glass.css');
   assert.match(
     glass,
     /\.meiye-workbench-stream-panel\s*\{[\s\S]*?overflow:\s*visible\s*!important/u
+  );
+  assert.match(
+    glass,
+    /\.meiye-workbench-dual-column-group[\s\S]*?overflow:\s*visible\s*!important/u
+  );
+  assert.match(
+    glass,
+    /data-slot=['"]resizable-panel-group['"][\s\S]*?:has\(\.meiye-workbench-stream-panel\)[\s\S]*?overflow:\s*visible\s*!important/u
   );
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /isWorkbenchDualColumnEligible/u);

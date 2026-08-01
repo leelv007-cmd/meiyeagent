@@ -112,16 +112,35 @@ describe('P1-01 workbench shell host layout', () => {
     expect(screen.getByTestId('composer-quote-line')).toBeInTheDocument();
   });
 
-  it('keeps stream panel overflow visible so sticky is page-relative (P1-2)', () => {
+  it('keeps dual-column group + stream panel overflow visible (P1-2 residual)', () => {
     render(<ShellProbe phase="delivered" width={1400} />);
+
+    const dual = screen.getByTestId('workbench-dual-column');
+    expect(dual).toHaveAttribute('data-overflow', 'visible');
+    expect(dual.className).toMatch(/meiye-workbench-dual-column/);
+    expect(dual.className).toMatch(/overflow-visible/);
+
+    // Group does not always forward data-testid; locate via slot + product class.
+    const group = dual.querySelector(
+      '[data-slot="resizable-panel-group"].meiye-workbench-dual-column-group'
+    );
+    expect(group).not.toBeNull();
+    expect((group as HTMLElement).className).toMatch(
+      /meiye-workbench-dual-column-group/
+    );
+    // User style prop after library default — Group must not keep overflow:hidden
+    // as the sticky containing block.
+    expect((group as HTMLElement).style.overflow).toBe('visible');
+
     const streamPanel = screen.getByTestId('workbench-stream-panel');
-    // Contract is the product class + data flag; library inline overflow:auto is
-    // overridden by heroui-glass.css `.meiye-workbench-stream-panel { overflow: visible !important }`.
     expect(streamPanel).toHaveAttribute('data-overflow', 'visible');
     expect(streamPanel.className).toMatch(/meiye-workbench-stream-panel/);
-    // Parent Panel may not surface className via the primitive; the CSS :has()
-    // rule targets the Panel that *contains* `.meiye-workbench-stream-panel`.
+    // Parent Panel is in the overflow-visible chain via CSS :has().
     expect(streamPanel.closest('[data-slot="resizable-panel"]')).not.toBeNull();
+    // Sticky host remains a descendant of the dual column (still left column).
+    expect(
+      dual.querySelector('[data-testid="workbench-sticky-composer-host"]')
+    ).not.toBeNull();
   });
 
   it('Idle at wide viewport stays single-column conversation width (P1-7)', () => {

@@ -183,15 +183,21 @@
 }
 
 /*
- * P1-01 dual-column stream panel (#313 / P1-2).
- * react-resizable-panels sets overflow:auto inline on Panel; that becomes the
- * sticky scrollport and breaks Active Composer morph. Force visible so sticky
- * Composer remains viewport-relative. Inspector panel is intentionally left alone.
+ * P1-01 dual-column overflow chain (#313 / P1-2).
+ * react-resizable-panels paints overflow:hidden on the Group and overflow:auto
+ * on Panel nodes — either becomes a sticky containing block and breaks Active
+ * Composer morph under dual column. Force visible on the dual-column group +
+ * stream panel chain only; inspector panel is intentionally left alone.
  */
+.meiye-workbench-dual-column,
+.meiye-workbench-dual-column-group,
+[data-slot='resizable-panel-group']:has(.meiye-workbench-stream-panel) {
+  overflow: visible !important;
+}
 .meiye-workbench-stream-panel {
   overflow: visible !important;
 }
-[data-slot="resizable-panel"]:has(> .meiye-workbench-stream-panel) {
+[data-slot='resizable-panel']:has(> .meiye-workbench-stream-panel) {
   overflow: visible !important;
 }
 

@@ -88,10 +88,10 @@ export type WorkbenchDualColumnProps = {
  * react-resizable-panels is the product path (F11 转正); no three-column home.
  *
  * Sticky Composer (P1-2) must stay page-relative. The library paints
- * `overflow:auto` on Panel nodes, which would become the sticky scrollport.
- * `.meiye-workbench-stream-panel` (+ :has rule in heroui-glass.css) forces
- * overflow:visible !important on the stream panel only; the inspector may still
- * scroll independently.
+ * `overflow:hidden` on the Group and `overflow:auto` on Panel nodes — either
+ * becomes a sticky containing block. Product CSS (heroui-glass.css) forces
+ * overflow:visible !important on the dual-column group + stream panel chain;
+ * the inspector may still scroll independently.
  */
 export function WorkbenchDualColumn({
   stream,
@@ -100,12 +100,19 @@ export function WorkbenchDualColumn({
 }: WorkbenchDualColumnProps) {
   return (
     <div
-      className={cn('w-full', className)}
+      className={cn(
+        'meiye-workbench-dual-column w-full overflow-visible',
+        className
+      )}
+      data-overflow="visible"
       data-testid="workbench-dual-column"
     >
       <ResizablePanelGroup
-        className="w-full items-start"
+        className="meiye-workbench-dual-column-group w-full items-start overflow-visible"
         orientation="horizontal"
+        // User style is applied after the library default so Group does not
+        // keep overflow:hidden as the sticky containing block (P1-2 residual).
+        style={{ overflow: 'visible' }}
       >
         <ResizablePanel
           className="meiye-workbench-stream-panel min-w-0"
@@ -113,7 +120,7 @@ export function WorkbenchDualColumn({
           minSize={40}
         >
           <div
-            className="meiye-workbench-stream-panel flex min-w-0 flex-col gap-6 pr-2"
+            className="meiye-workbench-stream-panel flex min-w-0 flex-col gap-6 overflow-visible pr-2"
             data-overflow="visible"
             data-testid="workbench-stream-panel"
           >
