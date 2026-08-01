@@ -753,6 +753,9 @@ function merchantCopyCandidateCount(
       'Copy reserved credit quotes support one or three outputs.',
     );
   }
+  if (operation === 'image.generate' || operation === 'image.edit') {
+    return undefined;
+  }
   if (outputCount !== 1) {
     throw new P1DomainError(
       'INVALID_STATE',
@@ -775,6 +778,34 @@ function merchantExecutionInputHashes(submission: ModelSupplySubmission) {
     inputAssetsHash: merchantExecutionHash(inputAssets),
     promptHash: merchantExecutionHash(submission.prompt),
     referenceAssetsHash: merchantExecutionHash(referenceAssetIds),
+  };
+}
+
+function merchantExecutionInputSnapshot(submission: ModelSupplySubmission) {
+  return {
+    input: submission.input
+      ? (structuredClone(submission.input) as Record<string, unknown>)
+      : null,
+    prompt: submission.prompt,
+  };
+}
+
+function bindMerchantExecutionInput(
+  submission: ModelSupplySubmission,
+  inputSnapshot: { input: Record<string, unknown> | null; prompt: string },
+  idempotencyKey: string,
+): ModelSupplySubmission {
+  return {
+    ...submission,
+    idempotencyKey,
+    ...(inputSnapshot.input === null
+      ? { input: undefined }
+      : {
+          input: structuredClone(
+            inputSnapshot.input,
+          ) as ModelSupplySubmission['input'],
+        }),
+    prompt: inputSnapshot.prompt,
   };
 }
 
@@ -1769,27 +1800,31 @@ export class ModelSupplyApplicationService {
   }
 
   async submit(submission: ModelSupplySubmission): Promise<ModelSupplyResult> {
-    return this.executeMerchantSubmission(submission, async (bound) => {
-      if (
-        this.mediaRuntime &&
-        (bound.operation === 'image.generate' ||
-          bound.operation === 'image.edit' ||
-          bound.operation === 'video.generate' ||
-          bound.operation === 'audio.speech' ||
-          bound.operation === 'audio.sfx')
-      ) {
-        return this.mediaRuntime.submit(
-          await withServerDerivedReferenceDataClass(
-            bound,
-            this.referenceAssets,
-          ),
+    return this.executeMerchantSubmission(
+      submission,
+      async (bound, merchantEffectKey) => {
+        if (
+          this.mediaRuntime &&
+          (bound.operation === 'image.generate' ||
+            bound.operation === 'image.edit' ||
+            bound.operation === 'video.generate' ||
+            bound.operation === 'audio.speech' ||
+            bound.operation === 'audio.sfx')
+        ) {
+          return this.mediaRuntime.submit(
+            await withServerDerivedReferenceDataClass(
+              bound,
+              this.referenceAssets,
+            ),
+          );
+        }
+        return this.executeSubmission(
+          await this.prepareSubmission(bound),
+          this.execution,
+          merchantEffectKey ? { effectIdempotencyKey: merchantEffectKey } : {},
         );
-      }
-      return this.executeSubmission(
-        await this.prepareSubmission(bound),
-        this.execution,
-      );
-    });
+      },
+    );
   }
 
   async submitWithProviderEffectKey(
@@ -1803,14 +1838,17 @@ export class ModelSupplyApplicationService {
     ) {
       throw new Error('Canvas text outbox accepts only language generation.');
     }
-    return this.executeMerchantSubmission(submission, async (bound) =>
-      this.executeSubmission(
-        await this.prepareSubmission(bound),
-        this.execution,
-        {
-          effectIdempotencyKey,
-        },
-      ),
+    return this.executeMerchantSubmission(
+      submission,
+      async (bound, merchantEffectKey) =>
+        this.executeSubmission(
+          await this.prepareSubmission(bound),
+          this.execution,
+          {
+            effectIdempotencyKey: merchantEffectKey ?? effectIdempotencyKey,
+          },
+        ),
+      effectIdempotencyKey,
     );
   }
 
@@ -1830,8 +1868,10 @@ export class ModelSupplyApplicationService {
     ) {
       throw new Error('Canvas text streaming requires one fixed text model.');
     }
-    return this.executeMerchantSubmission(submission, async (bound) =>
-      this.executeSubmission(
+    return this.executeMerchantSubmission(
+      submission,
+      async (bound, merchantEffectKey) =>
+        this.executeSubmission(
       await this.prepareSubmission(bound),
       {
         execute: async (request): Promise<ProviderExecutionResponse> => {
@@ -1945,27 +1985,42 @@ export class ModelSupplyApplicationService {
       },
       {
         deferResultPersistence: true,
-        effectIdempotencyKey: input.effectIdempotencyKey,
+        effectIdempotencyKey: merchantEffectKey ?? input.effectIdempotencyKey,
       },
-    ),
+        ),
+      input.effectIdempotencyKey,
     );
   }
 
   private async executeMerchantSubmission(
     submission: ModelSupplySubmission,
-    execute: (submission: ModelSupplySubmission) => Promise<ModelSupplyResult>,
+    execute: (
+      submission: ModelSupplySubmission,
+      merchantEffectKey?: string,
+    ) => Promise<ModelSupplyResult>,
+    suppliedEffectKey?: string,
   ): Promise<ModelSupplyResult> {
     const taskId = submission.billingTaskId;
     const quoteRevision = submission.billingQuoteRevision;
-    // Harness sub-steps already run under the outer reserved task and carry
-    // zero merchant usage. Their durable workflow/effect records own retry;
-    // only a merchant-priced provider effect may take the task-level claim.
-    if (submission.productUsageQuantity === 0) return execute(submission);
-    // The production API and worker both assemble this port. Unit-level
-    // supply ledgers deliberately omit it while exercising pre-existing
-    // ProductUsage and failover behavior.
-    if (!this.merchantExecutionBilling) return execute(submission);
-    if (!taskId && !quoteRevision) return execute(submission);
+    const merchantBilling = this.merchantExecutionBilling;
+    // Unit-level supply ledgers deliberately omit the durable merchant port.
+    // A submission that carries merchant billing facts must never fall through
+    // that compatibility seam.
+    if (!merchantBilling) {
+      if (taskId || quoteRevision) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Merchant execution billing is unavailable for this reserved task.',
+        );
+      }
+      return execute(submission);
+    }
+    // System-only probes carry zero usage and no merchant task. Merchant
+    // provider effects, including zero-usage harness children, must carry the
+    // complete reserved task identity below.
+    if (!taskId && !quoteRevision && submission.productUsageQuantity === 0) {
+      return execute(submission);
+    }
     if (!taskId || !quoteRevision) {
       throw new P1DomainError(
         'INVALID_STATE',
@@ -1973,7 +2028,7 @@ export class ModelSupplyApplicationService {
       );
     }
     const reserved =
-      await this.merchantExecutionBilling.readMerchantExecutionContract({
+      await merchantBilling.readMerchantExecutionContract({
         taskId,
         workspaceId: submission.workspaceId,
       });
@@ -1984,7 +2039,9 @@ export class ModelSupplyApplicationService {
       );
     }
     const operation = merchantProviderOperation(reserved.operation);
-    if (submission.operation !== operation) {
+    const auxiliaryEffect = submission.productUsageQuantity === 0;
+    const selectedCatalogModelId = submission.selection.catalogModelId;
+    if (!auxiliaryEffect && submission.operation !== operation) {
       throw new P1DomainError(
         'INVALID_STATE',
         'Merchant execution operation does not match the reserved credit quote.',
@@ -1992,7 +2049,9 @@ export class ModelSupplyApplicationService {
     }
     if (
       submission.selection.mode !== 'fixed' ||
-      submission.selection.catalogModelId !== reserved.catalogModelId
+      !selectedCatalogModelId ||
+      (!auxiliaryEffect &&
+        selectedCatalogModelId !== reserved.catalogModelId)
     ) {
       throw new P1DomainError(
         'INVALID_STATE',
@@ -2000,6 +2059,7 @@ export class ModelSupplyApplicationService {
       );
     }
     if (
+      !auxiliaryEffect &&
       reserved.targetSeconds !== undefined &&
       submission.input?.durationSeconds !== undefined &&
       submission.input.durationSeconds !== reserved.targetSeconds
@@ -2010,35 +2070,44 @@ export class ModelSupplyApplicationService {
       );
     }
 
-    const copyCandidateCount = merchantCopyCandidateCount(
-      operation,
-      reserved.outputCount,
-    );
+    const copyCandidateCount = auxiliaryEffect
+      ? undefined
+      : merchantCopyCandidateCount(operation, reserved.outputCount);
+    const effectKey = auxiliaryEffect
+      ? `merchant-execution:${taskId}:${suppliedEffectKey ?? submission.idempotencyKey}`
+      : `merchant-execution:${taskId}`;
     const bound = {
       ...submission,
       ...(copyCandidateCount === undefined ? {} : { copyCandidateCount }),
+      ...(!auxiliaryEffect ? { outputCount: reserved.outputCount } : {}),
       input:
-        reserved.targetSeconds === undefined
+        auxiliaryEffect || reserved.targetSeconds === undefined
           ? submission.input
           : {
               ...submission.input,
               durationSeconds: reserved.targetSeconds,
             },
-      operation,
+      ...(!auxiliaryEffect ? { operation } : {}),
       selection: {
-        catalogModelId: reserved.catalogModelId,
+        catalogModelId: auxiliaryEffect
+          ? selectedCatalogModelId
+          : reserved.catalogModelId,
         mode: 'fixed' as const,
       },
     } satisfies ModelSupplySubmission;
     const claim: ClaimMerchantExecutionInput = {
       ...reserved,
       ...merchantExecutionInputHashes(bound),
-      idempotencyKey: `merchant-execution:${taskId}`,
+      effectKey,
+      idempotencyKey: effectKey,
+      inputSnapshot: merchantExecutionInputSnapshot(bound),
+      providerCatalogModelId: bound.selection.catalogModelId,
+      providerOperation: bound.operation,
       taskId,
       workspaceId: bound.workspaceId,
     };
     const decision =
-      await this.merchantExecutionBilling.claimMerchantExecution<ModelSupplyResult>(
+      await merchantBilling.claimMerchantExecution<ModelSupplyResult>(
         claim,
       );
     if (decision.decision === 'replay') return decision.result;
@@ -2048,8 +2117,11 @@ export class ModelSupplyApplicationService {
         'Merchant execution is already in progress for this reserved credit task.',
       );
     }
-    const result = await execute(bound);
-    return this.merchantExecutionBilling.completeMerchantExecution({
+    const result = await execute(
+      bindMerchantExecutionInput(bound, decision.inputSnapshot, effectKey),
+      effectKey,
+    );
+    return merchantBilling.completeMerchantExecution({
       ...claim,
       result,
     });
@@ -2159,7 +2231,7 @@ export class ModelSupplyApplicationService {
         streaming: Boolean(input.onPartialOutput),
         workspaceId: submission.workspaceId,
       });
-    return this.executeMerchantSubmission(submission, (bound) =>
+    return this.executeMerchantSubmission(submission, (bound, merchantEffectKey) =>
       this.executeSubmission(bound, {
       execute: async (request) => {
         if (
@@ -2265,6 +2337,9 @@ export class ModelSupplyApplicationService {
       },
       }, {
         structuredRequestFingerprint,
+        ...(merchantEffectKey
+          ? { effectIdempotencyKey: merchantEffectKey }
+          : {}),
       }),
     );
   }

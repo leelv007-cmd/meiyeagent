@@ -36,6 +36,10 @@ import { StructuredObjectGenerationError } from './provider-lifecycle.js';
 import { P1ApplicationService } from '../foundation/application-service.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
 import { FoundationModelSupplyLedger } from './foundation-ledger.js';
+import type {
+  ClaimMerchantExecutionInput,
+  MerchantExecutionBillingPort,
+} from '../product-billing/durable-service.js';
 
 test('frozen structured execution uses the historical deployment and capability binding', async () => {
   const credentialVersions: Array<string | undefined> = [];
@@ -115,6 +119,7 @@ test('frozen structured execution uses the historical deployment and capability 
     ],
     execution: new RecordedProviderExecutionPort(),
     capabilityHotAssembly: hotAssembly,
+    merchantExecutionBilling: merchantExecutionBillingStub(),
   });
   const frozenRoute = structuredRouteSnapshot();
   application.applyCatalogRevision(
@@ -429,6 +434,7 @@ test('frozen structured repair failure settles request-bound runner cost', async
     deployments: [deploymentFixture('deployment-a', 'llm-a', 'provider-a')],
     execution: new RecordedProviderExecutionPort(),
     capabilityHotAssembly: hotAssembly,
+    merchantExecutionBilling: merchantExecutionBillingStub(),
     ledger: {
       async checkpointAttempt() {
         return { replayed: false };
@@ -1630,7 +1636,7 @@ test('structured runner fences every auto provider attempt before fallback', asy
   const executor = new FallbackStructuredExecutor(() => {
     revoked = true;
   });
-  const runner = createAutoRunner(new CountingLedger(), executor);
+  const runner = createAutoRunner(new CountingLedger(), executor, false);
 
   await assert.rejects(
     runner.run({
@@ -1659,7 +1665,7 @@ test('one shared attempt budget blocks route fallback before a second provider e
     consumedAttempts: 0,
   });
   const runner = withExecutionAttemptBudget(
-    createAutoRunner(new CountingLedger(), executor),
+    createAutoRunner(new CountingLedger(), executor, false),
     budget,
   );
 
@@ -1709,7 +1715,7 @@ test('provider 5xx consumes one shared physical attempt across SDK and route lay
     consumedAttempts: 0,
   });
   const runner = withExecutionAttemptBudget(
-    createAutoRunner(new CountingLedger(), executor),
+    createAutoRunner(new CountingLedger(), executor, false),
     budget,
   );
 
@@ -1728,6 +1734,49 @@ test('provider 5xx consumes one shared physical attempt across SDK and route lay
   assert.equal(providerCalls, 1);
   assert.equal(budget.consumedAttempts, 1);
 });
+
+function merchantExecutionBillingStub(): MerchantExecutionBillingPort {
+  const executions = new Map<
+    string,
+    {
+      inputSnapshot: { input: Record<string, unknown> | null; prompt: string };
+      result?: unknown;
+      completed: boolean;
+    }
+  >();
+  return {
+    async readMerchantExecutionContract() {
+      return {
+        catalogModelId: 'llm-harness',
+        operation: 'text.respond',
+        outputCount: 1,
+        quoteRevision: 'quote-r1',
+        submissionContractHash: 'structured-node-runner-test-snapshot',
+      };
+    },
+    async claimMerchantExecution<T>(input: ClaimMerchantExecutionInput) {
+      const key = `${input.workspaceId}:${input.taskId}:${input.effectKey}`;
+      const existing = executions.get(key);
+      if (existing?.completed) {
+        return { decision: 'replay' as const, result: existing.result as T };
+      }
+      if (existing) return { decision: 'in_progress' as const };
+      const inputSnapshot = structuredClone(input.inputSnapshot);
+      executions.set(key, { completed: false, inputSnapshot });
+      return { decision: 'execute' as const, inputSnapshot };
+    },
+    async completeMerchantExecution<T>(
+      input: ClaimMerchantExecutionInput & { result: T },
+    ) {
+      const key = `${input.workspaceId}:${input.taskId}:${input.effectKey}`;
+      const existing = executions.get(key);
+      if (!existing) throw new Error('Merchant execution was not claimed.');
+      existing.completed = true;
+      existing.result = structuredClone(input.result);
+      return input.result;
+    },
+  };
+}
 
 function createRunner(
   ledger: ModelSupplyLedgerPort,
@@ -1764,6 +1813,7 @@ function createStructuredApplication(ledger: ModelSupplyLedgerPort) {
     ],
     execution: new RecordedProviderExecutionPort(),
     ledger,
+    merchantExecutionBilling: merchantExecutionBillingStub(),
   });
 }
 
@@ -1855,6 +1905,7 @@ function createAutoRunner(
     ],
     execution: new RecordedProviderExecutionPort(),
     ledger,
+    merchantExecutionBilling: merchantExecutionBillingStub(),
     planningControlPlane: {
       async readPlanningState() {
         return {

@@ -124,7 +124,12 @@ function merchantExecutionBillingStub(input: {
 }) {
   const executions = new Map<
     string,
-    { contract: string; idempotencyKey: string; result?: unknown }
+    {
+      contract: string;
+      idempotencyKey: string;
+      inputSnapshot: { input: Record<string, unknown> | null; prompt: string };
+      result?: unknown;
+    }
   >();
   const contractFor = (claim: {
     catalogModelId: string;
@@ -134,7 +139,11 @@ function merchantExecutionBillingStub(input: {
     submissionContractHash: string;
     targetSeconds?: number;
     inputAssetsHash: string;
+    effectKey: string;
+    inputSnapshot: { input: Record<string, unknown> | null; prompt: string };
     promptHash: string;
+    providerCatalogModelId: string;
+    providerOperation: string;
     referenceAssetsHash: string;
   }) => JSON.stringify({
     catalogModelId: claim.catalogModelId,
@@ -144,7 +153,11 @@ function merchantExecutionBillingStub(input: {
     submissionContractHash: claim.submissionContractHash,
     targetSeconds: claim.targetSeconds ?? null,
     inputAssetsHash: claim.inputAssetsHash,
+    effectKey: claim.effectKey,
+    inputSnapshot: claim.inputSnapshot,
     promptHash: claim.promptHash,
+    providerCatalogModelId: claim.providerCatalogModelId,
+    providerOperation: claim.providerOperation,
     referenceAssetsHash: claim.referenceAssetsHash,
   });
   return {
@@ -191,17 +204,25 @@ function merchantExecutionBillingStub(input: {
       submissionContractHash: string;
       targetSeconds?: number;
       inputAssetsHash: string;
+      effectKey: string;
       promptHash: string;
+      inputSnapshot: { input: Record<string, unknown> | null; prompt: string };
+      providerCatalogModelId: string;
+      providerOperation: string;
       referenceAssetsHash: string;
       taskId: string;
       workspaceId: string;
     }): Promise<
-      | { decision: 'execute' }
+      | {
+          decision: 'execute';
+          inputSnapshot: { input: Record<string, unknown> | null; prompt: string };
+        }
       | { decision: 'in_progress' }
       | { decision: 'replay'; result: T }
     > {
       const contract = contractFor(claim);
-      const existing = executions.get(claim.taskId);
+      const executionKey = `${claim.taskId}:${claim.effectKey}`;
+      const existing = executions.get(executionKey);
       if (existing) {
         if (
           existing.contract !== contract ||
@@ -241,11 +262,15 @@ function merchantExecutionBillingStub(input: {
           'Merchant execution must match the reserved credit quote.',
         );
       }
-      executions.set(claim.taskId, {
+      executions.set(executionKey, {
         contract,
         idempotencyKey: claim.idempotencyKey,
+        inputSnapshot: structuredClone(claim.inputSnapshot),
       });
-      return { decision: 'execute' };
+      return {
+        decision: 'execute' as const,
+        inputSnapshot: structuredClone(claim.inputSnapshot),
+      };
     },
     async completeMerchantExecution<T>(claim: {
       catalogModelId: string;
@@ -257,11 +282,16 @@ function merchantExecutionBillingStub(input: {
       submissionContractHash: string;
       targetSeconds?: number;
       inputAssetsHash: string;
+      effectKey: string;
       promptHash: string;
+      inputSnapshot: { input: Record<string, unknown> | null; prompt: string };
+      providerCatalogModelId: string;
+      providerOperation: string;
       referenceAssetsHash: string;
       taskId: string;
     }): Promise<T> {
-      const existing = executions.get(claim.taskId);
+      const executionKey = `${claim.taskId}:${claim.effectKey}`;
+      const existing = executions.get(executionKey);
       const contract = contractFor(claim);
       if (
         !existing ||
@@ -274,7 +304,7 @@ function merchantExecutionBillingStub(input: {
         );
       }
       if ('result' in existing) return existing.result as T;
-      executions.set(claim.taskId, {
+      executions.set(executionKey, {
         ...existing,
         result: structuredClone(claim.result),
       });
@@ -3193,8 +3223,92 @@ describe('ModelSupplyFoundationModule', () => {
     );
   });
 
+  it('claims every reserved provider effect and rejects missing merchant billing facts', async () => {
+    let providerCalls = 0;
+    const execution = {
+      async execute(request: Parameters<ProviderExecutionPort['execute']>[0]) {
+        providerCalls += 1;
+        return new RecordedProviderExecutionPort().execute(request);
+      },
+    } satisfies ProviderExecutionPort;
+    const quote = {
+      catalogModelId: 'llm-openai',
+      lifecycleStatus: 'reserved',
+      operation: 'copy.generate',
+      outputCount: 1,
+      quoteId: 'quote-effect-claim',
+      revision: 'quote-r1',
+      taskId: 'credit-task-effect-claim',
+      workspaceId: owner.workspaceId,
+    } as ProductQuoteSnapshot;
+    const reservedBilling = merchantExecutionBillingStub({
+      getQuote: () => quote,
+      getUsage: () =>
+        ({
+          quoteId: quote.quoteId,
+          status: 'reserved',
+          taskId: quote.taskId,
+          workspaceId: owner.workspaceId,
+        }) as ProductUsageRecord,
+    });
+    const withoutBilling = setup(execution).models;
+    const billed = setup(
+      execution,
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      reservedBilling,
+    ).models;
+    const base = {
+      actorId: owner.userId,
+      dataClass: [],
+      idempotencyKey: 'merchant-effect-test',
+      operation: 'copy.generate' as const,
+      prompt: 'Return one campaign direction.',
+      selection: { catalogModelId: 'llm-openai', mode: 'fixed' as const },
+      workspaceId: owner.workspaceId,
+    };
+
+    await assert.rejects(
+      withoutBilling.submit({
+        ...base,
+        billingQuoteRevision: quote.revision,
+        billingTaskId: quote.taskId,
+        productUsageQuantity: 0,
+      }),
+      /billing is unavailable/i,
+    );
+    await assert.rejects(billed.submit(base), /billing task and quote revision/i);
+    await assert.rejects(
+      billed.submit({
+        ...base,
+        billingQuoteRevision: quote.revision,
+        billingTaskId: 'forged-task',
+        productUsageQuantity: 0,
+      }),
+      /reserved credit quote contract|reserved credit quote/i,
+    );
+    assert.equal(providerCalls, 0);
+
+    const result = await billed.submit({
+      ...base,
+      billingQuoteRevision: quote.revision,
+      billingTaskId: quote.taskId,
+      idempotencyKey: 'durable-zero-usage-effect',
+      operation: 'text.respond',
+      productUsageQuantity: 0,
+    });
+    assert.equal(result.status, 'completed');
+    assert.equal(providerCalls, 1);
+  });
+
   it('shares the reserved three-platform copy.adapt claim with direct control-plane consumers', async () => {
     let providerCalls = 0;
+    let providerEffectKey: string | undefined;
+    let providerPrompt: string | undefined;
+    let providerAssetIds: string[] = [];
     const quote = {
       catalogModelId: 'llm-openai',
       lifecycleStatus: 'reserved',
@@ -3216,16 +3330,42 @@ describe('ModelSupplyFoundationModule', () => {
           workspaceId: owner.workspaceId,
         }) as ProductUsageRecord,
     });
+    const referenceAssets: ReferenceAssetResolverPort = {
+      async inspect(_workspaceId, assetIds) {
+        return assetIds.map((assetId) => ({
+          assetId,
+          classificationSource: 'server_fact' as const,
+          contentType: 'image/png',
+          dataClass: [],
+          kind: 'resolved' as const,
+          rightsRevision: 'rights-r1',
+          sha256: '0'.repeat(64),
+        }));
+      },
+      async resolve(_workspaceId, assetIds) {
+        return assetIds.map((assetId) => ({
+          assetId,
+          bytes: new Uint8Array([1, 2, 3]),
+          contentType: 'image/png',
+          kind: 'resolved' as const,
+          providerReadableUrl: 'data:image/png;base64,AQID',
+          sha256: '0'.repeat(64),
+        }));
+      },
+    };
     const { controlPlane, models } = setup(
       {
         async execute(request) {
           providerCalls += 1;
+          providerEffectKey = request.effectIdempotencyKey;
+          providerPrompt = request.submission.prompt;
+          providerAssetIds = request.submission.input?.referenceAssetIds ?? [];
           return new RecordedProviderExecutionPort().execute(request);
         },
       },
       [],
       undefined,
-      undefined,
+      referenceAssets,
       undefined,
       undefined,
       reservedBilling,
@@ -3234,6 +3374,7 @@ describe('ModelSupplyFoundationModule', () => {
       billingQuoteRevision: quote.revision,
       billingTaskId: quote.taskId,
       dataClass: [],
+      input: { referenceAssetIds: ['asset-reference-a'] },
       operation: 'copy.adapt' as const,
       prompt: 'Return three campaign directions.',
       selection: { catalogModelId: quote.catalogModelId, mode: 'fixed' as const },
@@ -3259,6 +3400,12 @@ describe('ModelSupplyFoundationModule', () => {
     ]);
     assert.equal(providerCalls, 1);
     assert.equal(
+      providerEffectKey,
+      `merchant-execution:${quote.taskId}`,
+    );
+    assert.equal(providerPrompt, input.prompt);
+    assert.deepEqual(providerAssetIds, ['asset-reference-a']);
+    assert.equal(
       concurrent.filter((result) => result.status === 'fulfilled').length,
       1,
     );
@@ -3282,6 +3429,16 @@ describe('ModelSupplyFoundationModule', () => {
         actorId: owner.userId,
         idempotencyKey: 'prompt-drift-entry',
         prompt: 'Return a different campaign direction.',
+        workspaceId: owner.workspaceId,
+      }),
+      /another merchant execution|already claimed/i,
+    );
+    await assert.rejects(
+      models.submit({
+        ...input,
+        actorId: owner.userId,
+        idempotencyKey: 'reference-drift-entry',
+        input: { referenceAssetIds: ['asset-reference-b'] },
         workspaceId: owner.workspaceId,
       }),
       /another merchant execution|already claimed/i,
@@ -3352,6 +3509,60 @@ describe('ModelSupplyFoundationModule', () => {
     assert.equal(result.status, 'completed');
     assert.equal(providerOperation, 'image.edit');
     assert.equal(providerCalls, 1);
+  });
+
+  it('passes a multi-image reserved quote count to provider execution', async () => {
+    let providerOutputCount: number | undefined;
+    const quote = {
+      catalogModelId: 'seedream-5-pro',
+      lifecycleStatus: 'reserved',
+      operation: 'image.generate',
+      outputCount: 2,
+      quoteId: 'quote-image-two',
+      revision: 'quote-r1',
+      taskId: 'credit-task-image-two',
+      workspaceId: owner.workspaceId,
+    } as ProductQuoteSnapshot;
+    const reservedBilling = merchantExecutionBillingStub({
+      getQuote: () => quote,
+      getUsage: () =>
+        ({
+          quoteId: quote.quoteId,
+          status: 'reserved',
+          taskId: quote.taskId,
+          workspaceId: owner.workspaceId,
+        }) as ProductUsageRecord,
+    });
+    const { controlPlane } = setup(
+      {
+        async execute(request) {
+          providerOutputCount = request.submission.outputCount;
+          return new RecordedProviderExecutionPort().execute(request);
+        },
+      },
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      reservedBilling,
+    );
+
+    const result = await controlPlane.submitGeneration(
+      owner,
+      {
+        billingQuoteRevision: quote.revision,
+        billingTaskId: quote.taskId,
+        dataClass: [],
+        operation: 'image.generate',
+        prompt: 'Generate two coordinated campaign images.',
+        selection: { catalogModelId: quote.catalogModelId, mode: 'fixed' },
+      },
+      'image-two-provider-effect',
+    );
+
+    assert.equal(result.status, 'completed');
+    assert.equal(providerOutputCount, quote.outputCount);
   });
 
   it('derives video duration from the reserved quote before provider execution', async () => {

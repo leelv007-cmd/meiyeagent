@@ -445,10 +445,14 @@ describe(
       });
       const contract = {
         catalogModelId: 'video-model',
+        effectKey: 'merchant-execution:merchant-execution-task',
         operation: 'video.generate',
         outputCount: 1,
         inputAssetsHash: 'input-assets-hash',
+        inputSnapshot: { input: { durationSeconds: 10 }, prompt: 'merchant prompt' },
         promptHash: 'prompt-hash',
+        providerCatalogModelId: 'video-model',
+        providerOperation: 'video.generate',
         quoteRevision: quote.revision,
         referenceAssetsHash: 'reference-assets-hash',
         submissionContractHash: quote.submissionContractHash!,
@@ -489,7 +493,10 @@ describe(
         ...contract,
         idempotencyKey: winner,
       });
-      assert.deepEqual(recoveredClaim, { decision: 'execute' });
+      assert.deepEqual(recoveredClaim, {
+        decision: 'execute',
+        inputSnapshot: contract.inputSnapshot,
+      });
       const original = { jobId: 'job-durable', status: 'completed' };
       await service.completeMerchantExecution({
         ...contract,
@@ -503,6 +510,22 @@ describe(
         idempotencyKey: winner,
       });
       assert.deepEqual(replay, { decision: 'replay', result: original });
+      const auxiliary = await service.claimMerchantExecution({
+        ...contract,
+        effectKey: 'merchant-execution:merchant-execution-task:exact-text',
+        idempotencyKey:
+          'merchant-execution:merchant-execution-task:exact-text',
+        inputSnapshot: { input: { referenceAssetIds: ['asset-1'] }, prompt: 'Read visible text.' },
+        providerCatalogModelId: 'video-model',
+        providerOperation: 'text.respond',
+      });
+      assert.deepEqual(auxiliary, {
+        decision: 'execute',
+        inputSnapshot: {
+          input: { referenceAssetIds: ['asset-1'] },
+          prompt: 'Read visible text.',
+        },
+      });
       await assert.rejects(
         service.claimMerchantExecution({
           ...contract,

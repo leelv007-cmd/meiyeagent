@@ -19,7 +19,12 @@ export type ProductUsageProjection = Record<
 
 export interface MerchantExecutionRecord {
   contractHash: string;
+  effectKey: string;
   idempotencyKey: string;
+  inputSnapshot: {
+    input: Record<string, unknown> | null;
+    prompt: string;
+  };
   result?: unknown;
   status: 'claimed' | 'completed';
   taskId: string;
@@ -37,6 +42,7 @@ export interface ProductBillingTransaction {
   getMerchantExecution(
     workspaceId: string,
     taskId: string,
+    effectKey: string,
   ): Promise<MerchantExecutionRecord | null>;
   getUsageProjection(workspaceId: string): Promise<ProductUsageProjection>;
   getMonthlyOutput(
@@ -129,17 +135,38 @@ export class PostgresProductBillingRepository
       CREATE TABLE IF NOT EXISTS p1_product_billing_merchant_executions (
         workspace_id text NOT NULL,
         task_id text NOT NULL,
+        effect_key text NOT NULL,
         idempotency_key text NOT NULL,
         contract_hash text NOT NULL,
+        input_snapshot jsonb NOT NULL,
         status text NOT NULL,
         result jsonb,
         updated_at timestamptz NOT NULL DEFAULT now(),
-        PRIMARY KEY (workspace_id, task_id),
+        PRIMARY KEY (workspace_id, task_id, effect_key),
         FOREIGN KEY (workspace_id, task_id)
           REFERENCES p1_product_billing_usage (workspace_id, task_id),
         CHECK (status IN ('claimed', 'completed')),
         CHECK (status = 'claimed' OR result IS NOT NULL)
       );
+
+      ALTER TABLE p1_product_billing_merchant_executions
+        ADD COLUMN IF NOT EXISTS effect_key text;
+      UPDATE p1_product_billing_merchant_executions
+         SET effect_key = 'merchant-execution:' || task_id
+       WHERE effect_key IS NULL;
+      ALTER TABLE p1_product_billing_merchant_executions
+        ALTER COLUMN effect_key SET NOT NULL;
+      ALTER TABLE p1_product_billing_merchant_executions
+        ADD COLUMN IF NOT EXISTS input_snapshot jsonb;
+      UPDATE p1_product_billing_merchant_executions
+         SET input_snapshot = jsonb_build_object('input', null, 'prompt', '')
+       WHERE input_snapshot IS NULL;
+      ALTER TABLE p1_product_billing_merchant_executions
+        ALTER COLUMN input_snapshot SET NOT NULL;
+      ALTER TABLE p1_product_billing_merchant_executions
+        DROP CONSTRAINT IF EXISTS p1_product_billing_merchant_executions_pkey;
+      ALTER TABLE p1_product_billing_merchant_executions
+        ADD PRIMARY KEY (workspace_id, task_id, effect_key);
 
       CREATE INDEX IF NOT EXISTS p1_product_billing_quotes_workspace_status_idx
         ON p1_product_billing_quotes (workspace_id, lifecycle_status, updated_at DESC);
@@ -217,24 +244,32 @@ export class PostgresProductBillingRepository
       : null;
   }
 
-  async getMerchantExecution(workspaceId: string, taskId: string) {
+  async getMerchantExecution(
+    workspaceId: string,
+    taskId: string,
+    effectKey: string,
+  ) {
     const result = await this.database.query<{
       contract_hash: string;
+      effect_key: string;
       idempotency_key: string;
+      input_snapshot: MerchantExecutionRecord['inputSnapshot'];
       result: unknown;
       status: MerchantExecutionRecord['status'];
       updated_at: string;
     }>(
-      `SELECT idempotency_key, contract_hash, status, result, updated_at
+      `SELECT effect_key, idempotency_key, contract_hash, input_snapshot, status, result, updated_at
          FROM p1_product_billing_merchant_executions
-        WHERE workspace_id = $1 AND task_id = $2`,
-      [workspaceId, taskId],
+        WHERE workspace_id = $1 AND task_id = $2 AND effect_key = $3`,
+      [workspaceId, taskId, effectKey],
     );
     const row = result.rows[0];
     return row
       ? {
           contractHash: row.contract_hash,
+          effectKey: row.effect_key,
           idempotencyKey: row.idempotency_key,
+          inputSnapshot: structuredClone(row.input_snapshot),
           ...(row.status === 'completed'
             ? { result: structuredClone(row.result) }
             : {}),
@@ -467,19 +502,22 @@ export class PostgresProductBillingRepository
   async saveMerchantExecution(record: MerchantExecutionRecord) {
     await this.database.query(
       `INSERT INTO p1_product_billing_merchant_executions
-        (workspace_id, task_id, idempotency_key, contract_hash, status, result, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, now())
-       ON CONFLICT (workspace_id, task_id) DO UPDATE SET
+        (workspace_id, task_id, effect_key, idempotency_key, contract_hash, input_snapshot, status, result, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::jsonb, now())
+       ON CONFLICT (workspace_id, task_id, effect_key) DO UPDATE SET
          idempotency_key = EXCLUDED.idempotency_key,
          contract_hash = EXCLUDED.contract_hash,
+         input_snapshot = EXCLUDED.input_snapshot,
          status = EXCLUDED.status,
          result = EXCLUDED.result,
          updated_at = now()`,
       [
         record.workspaceId,
         record.taskId,
+        record.effectKey,
         record.idempotencyKey,
         record.contractHash,
+        JSON.stringify(record.inputSnapshot),
         record.status,
         JSON.stringify(record.status === 'completed' ? record.result : null),
       ],

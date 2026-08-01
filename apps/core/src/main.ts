@@ -881,6 +881,7 @@ const legacyModelSupplyRuntime = createModelSupplyRuntime({
   application: {
     assetStorage,
     execution: gatedModelExecution,
+    merchantExecutionBilling: billingLifecycle,
     promptAudits: promptAuditStore,
     promptResolver: modelSupplyPromptResolver,
     resultSink: modelSupplyRepository,

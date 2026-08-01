@@ -184,8 +184,10 @@ test('Ark Seedream submit normalizes the synchronous image API into a restart-sa
 
 test('Ark Seedream derives per-image usage from the returned response when usage is omitted', async () => {
   let requests = 0;
-  const fetchMock: typeof globalThis.fetch = async () => {
+  const fetchMock: typeof globalThis.fetch = async (_input, init) => {
     requests += 1;
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    assert.equal(body.n, 2);
     return Response.json({
       created: 1_786_400_000,
       data: [
@@ -196,6 +198,7 @@ test('Ark Seedream derives per-image usage from the returned response when usage
   };
   const provider = adapter(fetchMock);
   const request = effectRequest('seedream-5-pro');
+  request.submission.outputCount = 2;
 
   const receipt = await provider.submit(request);
 

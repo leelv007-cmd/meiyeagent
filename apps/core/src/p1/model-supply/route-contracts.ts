@@ -201,6 +201,8 @@ export interface ModelSupplySubmission {
   productUsageQuantity?: 0 | 1;
   /** Explicit bounded quality-probe breadth; ordinary copy generation omits this and defaults to one. */
   copyCandidateCount?: 1 | 3;
+  /** Server-derived output count frozen by the reserved merchant quote. */
+  outputCount?: number;
   promptRevision?: string;
   /** Immutable system prompt selected before provider I/O. */
   promptBinding?: ModelSupplyPromptBinding;

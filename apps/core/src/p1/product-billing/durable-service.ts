@@ -42,12 +42,21 @@ export interface MerchantExecutionContract {
 }
 
 export interface ClaimMerchantExecutionInput extends MerchantExecutionContract {
+  effectKey: string;
   inputAssetsHash: string;
   idempotencyKey: string;
+  inputSnapshot: MerchantExecutionInputSnapshot;
   promptHash: string;
+  providerCatalogModelId: string;
+  providerOperation: string;
   referenceAssetsHash: string;
   taskId: string;
   workspaceId: string;
+}
+
+export interface MerchantExecutionInputSnapshot {
+  input: Record<string, unknown> | null;
+  prompt: string;
 }
 
 export interface MerchantExecutionBillingPort {
@@ -57,7 +66,7 @@ export interface MerchantExecutionBillingPort {
   claimMerchantExecution<T = unknown>(
     input: ClaimMerchantExecutionInput,
   ): MaybePromise<
-    | { decision: 'execute' }
+    | { decision: 'execute'; inputSnapshot: MerchantExecutionInputSnapshot }
     | { decision: 'in_progress' }
     | { decision: 'replay'; result: T }
   >;
@@ -83,6 +92,13 @@ function merchantExecutionContractHash(
           'referenceAssetsHash' in input ? input.referenceAssetsHash : null,
         inputAssetsHash:
           'inputAssetsHash' in input ? input.inputAssetsHash : null,
+        effectKey: 'effectKey' in input ? input.effectKey : null,
+        inputSnapshot:
+          'inputSnapshot' in input ? input.inputSnapshot : null,
+        providerCatalogModelId:
+          'providerCatalogModelId' in input ? input.providerCatalogModelId : null,
+        providerOperation:
+          'providerOperation' in input ? input.providerOperation : null,
       }),
     )
     .digest('hex');
@@ -300,7 +316,7 @@ export class DurableProductBillingService
   async claimMerchantExecution<T = unknown>(
     input: ClaimMerchantExecutionInput,
   ): Promise<
-    | { decision: 'execute' }
+    | { decision: 'execute'; inputSnapshot: MerchantExecutionInputSnapshot }
     | { decision: 'in_progress' }
     | { decision: 'replay'; result: T }
   > {
@@ -309,11 +325,12 @@ export class DurableProductBillingService
     return this.run(() =>
       this.repository.withTransaction(
         workspaceId,
-        [`task:${input.taskId}`],
+        [`task:${input.taskId}`, `merchant-effect:${input.effectKey}`],
         async (transaction) => {
           const existing = await transaction.getMerchantExecution(
             workspaceId,
             input.taskId,
+            input.effectKey,
           );
           if (existing) {
             if (
@@ -335,7 +352,10 @@ export class DurableProductBillingService
               ...existing,
               status: 'claimed',
             });
-            return { decision: 'execute' as const };
+            return {
+              decision: 'execute' as const,
+              inputSnapshot: structuredClone(existing.inputSnapshot),
+            };
           }
 
           const [quote, usage] = await Promise.all([
@@ -366,12 +386,17 @@ export class DurableProductBillingService
           }
           await transaction.saveMerchantExecution({
             contractHash,
+            effectKey: input.effectKey,
             idempotencyKey: input.idempotencyKey,
+            inputSnapshot: structuredClone(input.inputSnapshot),
             status: 'claimed',
             taskId: input.taskId,
             workspaceId,
           });
-          return { decision: 'execute' as const };
+          return {
+            decision: 'execute' as const,
+            inputSnapshot: structuredClone(input.inputSnapshot),
+          };
         },
       ),
     );
@@ -385,11 +410,12 @@ export class DurableProductBillingService
     return this.run(() =>
       this.repository.withTransaction(
         workspaceId,
-        [`task:${input.taskId}`],
+        [`task:${input.taskId}`, `merchant-effect:${input.effectKey}`],
         async (transaction) => {
           const existing = await transaction.getMerchantExecution(
             workspaceId,
             input.taskId,
+            input.effectKey,
           );
           if (
             !existing ||

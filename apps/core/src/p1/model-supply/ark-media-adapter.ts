@@ -796,6 +796,9 @@ export class ArkMediaExecutionPort<
                 ),
               }
             : {}),
+          ...(request.submission.outputCount && request.submission.outputCount > 1
+            ? { n: request.submission.outputCount }
+            : {}),
           size: width && height ? `${width}x${height}` : '2K',
           sequential_image_generation: 'disabled',
           stream: false,
