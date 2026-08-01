@@ -175,11 +175,14 @@ export function deliveredMedia(
 }
 
 /**
- * 四形态判定. Carrier first (xhs-spec §3.1 media|copy|note via
- * `contentPackageCarrierOf`); then refine the note carrier into the works-surface
- * 四形态: empty body → 图片, body present → 图文, and a video asset under the
- * note wire path still surfaces as 视频. Wire kind image_text|video is never
- * branched on directly (#314 / #288 分层映射).
+ * 四形态判定 (D-118): shape follows what was actually delivered, not intent.
+ *
+ * #314 / xhs-spec §3.1: the media carrier (`contentPackageCarrierOf`, wire
+ * `video` today) is the only shape core states outright. Non-media packages
+ * still go through `deliveredMedia` so unordered `generated` assets (not yet
+ * on `orderedAssetIds`) keep gallery and list label consistent — never early-
+ * return `copy` from ordered-only carrier while the gallery still has media.
+ * Wire kind image_text|video is never branched on directly.
  */
 export function workOutputShape(
   contentPackage: PublicContentPackage
@@ -190,12 +193,11 @@ export function workOutputShape(
     orderedAssetCount: version?.orderedAssetIds.length ?? 0,
   });
   if (carrier === 'media') return 'video';
-  if (carrier === 'copy') return 'copy';
 
-  // note carrier: page-group composite; refine for 四形态.
   const media = deliveredMedia(contentPackage);
   if (media.some((item) => item.kind === 'video')) return 'video';
   const body = version?.body.trim() ?? '';
+  if (media.length === 0) return 'copy';
   return body === '' ? 'image' : 'note';
 }
 

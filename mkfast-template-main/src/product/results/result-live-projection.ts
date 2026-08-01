@@ -18,6 +18,7 @@ import type {
   VideoWorkflowPublicProjection,
   WorkflowState,
 } from '@meiye/contracts';
+import { contentPackageCarrierOf } from '@meiye/contracts';
 
 import type {
   CopyImageTextWorksurfaceFacts,
@@ -825,12 +826,21 @@ export function buildNativeVideoWorksurface(
   selection: ResultCenterLiveSelection,
   contentPackage: PublicContentPackage | undefined
 ): VideoWorksurfaceState | undefined {
-  if (selection.workspaceKind !== 'video' || contentPackage?.kind !== 'video') {
+  if (selection.workspaceKind !== 'video' || !contentPackage) {
     return undefined;
   }
   const version = contentPackage.versions.find(
     (candidate) => candidate.id === contentPackage.currentVersionId
   );
+  // #314: native video surface is the media carrier (wire `video` today).
+  if (
+    contentPackageCarrierOf({
+      kind: contentPackage.kind,
+      orderedAssetCount: version?.orderedAssetIds.length ?? 0,
+    }) !== 'media'
+  ) {
+    return undefined;
+  }
   const asset = contentPackage.generated.ownedAssets
     ?.filter((candidate) => candidate.contentType === 'video/mp4')
     .at(-1);

@@ -194,26 +194,93 @@ const canvasWork: RawCanvasWorkSummary = {
 
 const allPackages = [copyPackage, imagePackage, notePackage, videoPackage];
 
-test('the four output shapes are read off what was delivered', () => {
+test('the four output shapes are read off what was delivered (#314 carrier media + D-118)', () => {
+  // media carrier (wire video) → 视频; non-media refined via deliveredMedia.
   assert.equal(workOutputShape(copyPackage), 'copy');
   assert.equal(workOutputShape(imagePackage), 'image');
   assert.equal(workOutputShape(notePackage), 'note');
   assert.equal(workOutputShape(videoPackage), 'video');
 });
 
-test('image_text with orderedAssetCount > 0 classifies as note carrier (not wire-kind binary)', () => {
-  // #314 / xhs-spec §3.1: carrier is derived — ordered media under image_text is note.
-  // Body present ⇒ works 四形态 "note"; empty body ⇒ "image" (still note carrier).
-  assert.equal(workOutputShape(notePackage), 'note');
+test('unordered generated media under image_text is not mislabeled as copy', () => {
+  // #314 / D-118: orderedAssetCount === 0 ⇒ copy carrier, but gallery still
+  // shows generated assets — shape must follow deliveredMedia, not carrier early-return.
+  const generatedImage = packageFixture({
+    generated: {
+      assetIds: ['asset-gen-img'],
+      childRuns: [],
+      ownedAssets: [ownedAsset('asset-gen-img', 'image/png')],
+    },
+    id: 'package-gen-image',
+    kind: 'image_text',
+    status: 'accepted',
+    versions: [
+      {
+        body: '',
+        createdAt: '2026-07-22T08:00:00.000Z',
+        id: 'version-1',
+        orderedAssetIds: [],
+        title: '待编序图片',
+        topics: [],
+      },
+    ],
+  });
   assert.equal(
-    workOutputShape(imagePackage),
+    workOutputShape(generatedImage),
     'image',
-    'note carrier with empty body is the 图片 shape'
+    'generated image with empty ordered list is 图片, not 文案'
   );
-  // Pure copy remains image_text on the wire with zero ordered assets.
-  assert.equal(workOutputShape(copyPackage), 'copy');
-  // media carrier is wire video only today.
-  assert.equal(workOutputShape(videoPackage), 'video');
+  assert.equal(
+    workOutputShape(
+      packageFixture({
+        generated: {
+          assetIds: ['asset-gen-img'],
+          childRuns: [],
+          ownedAssets: [ownedAsset('asset-gen-img', 'image/png')],
+        },
+        id: 'package-gen-note',
+        kind: 'image_text',
+        status: 'accepted',
+        versions: [
+          {
+            body: '已有正文的待编序图文',
+            createdAt: '2026-07-22T08:00:00.000Z',
+            id: 'version-1',
+            orderedAssetIds: [],
+            title: '待编序图文',
+            topics: [],
+          },
+        ],
+      })
+    ),
+    'note'
+  );
+
+  const generatedVideo = packageFixture({
+    generated: {
+      assetIds: ['asset-gen-vid'],
+      childRuns: [],
+      ownedAssets: [ownedAsset('asset-gen-vid', 'video/mp4')],
+    },
+    id: 'package-gen-video',
+    kind: 'image_text',
+    status: 'accepted',
+    versions: [
+      {
+        body: '成片说明',
+        createdAt: '2026-07-24T08:00:00.000Z',
+        id: 'version-1',
+        orderedAssetIds: [],
+        title: '待编序成片',
+        topics: [],
+      },
+    ],
+  });
+  assert.equal(
+    workOutputShape(generatedVideo),
+    'video',
+    'generated video under image_text is 视频 even with empty ordered list'
+  );
 });
 
 test('a package carrying a video asset is a 视频 even under the image_text kind', () => {
