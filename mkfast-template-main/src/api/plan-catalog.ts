@@ -4,32 +4,32 @@
  */
 import { serverEnv } from '@/env/server';
 import {
-  PUBLIC_PLAN_CREDIT_SEED,
   publicPlanCatalogSchema,
   type PublicPlanCatalog,
 } from '@meiye/contracts';
 import { createServerFn } from '@tanstack/react-start';
 
-export const PLAN_CATALOG_SEED: PublicPlanCatalog = {
-  plans: [...PUBLIC_PLAN_CREDIT_SEED],
-};
+export async function fetchPublicPlanCatalog(
+  fetcher: typeof fetch = fetch,
+): Promise<PublicPlanCatalog> {
+  const response = await fetcher(
+    `${serverEnv.CORE_SERVICE_URL}/public/plan-catalog`,
+    {
+      headers: { 'x-service-token': serverEnv.CORE_SERVICE_TOKEN },
+      method: 'GET',
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Core plan catalog returned ${response.status}.`);
+  }
+  const envelope = (await response.json()) as { data?: unknown };
+  const parsed = publicPlanCatalogSchema.safeParse(envelope.data);
+  if (!parsed.success) {
+    throw new Error('Core plan catalog response is invalid.');
+  }
+  return parsed.data;
+}
 
 export const getPublicPlanCatalog = createServerFn({ method: 'GET' }).handler(
-  async (): Promise<PublicPlanCatalog> => {
-    try {
-      const response = await fetch(
-        `${serverEnv.CORE_SERVICE_URL}/public/plan-catalog`,
-        {
-          headers: { 'x-service-token': serverEnv.CORE_SERVICE_TOKEN },
-          method: 'GET',
-        }
-      );
-      if (!response.ok) return PLAN_CATALOG_SEED;
-      const envelope = (await response.json()) as { data?: unknown };
-      const parsed = publicPlanCatalogSchema.safeParse(envelope.data);
-      return parsed.success ? parsed.data : PLAN_CATALOG_SEED;
-    } catch {
-      return PLAN_CATALOG_SEED;
-    }
-  }
+  async () => fetchPublicPlanCatalog(),
 );

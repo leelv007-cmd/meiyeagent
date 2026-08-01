@@ -9,7 +9,6 @@ import {
   pricing_output_plan_pro,
   pricing_output_plan_starter,
   pricing_plan_concurrency_label,
-  pricing_plan_credits_per_month,
   pricing_plan_login_to_subscribe,
   pricing_plan_payment_not_open,
   pricing_plan_payment_not_open_hint,
@@ -51,9 +50,8 @@ export const Route = createFileRoute('/(pages)/pricing')({
       title: `${pricing_title()} | ${websiteConfig.metadata?.name}`,
       description: pricing_description(),
     }),
-  // D-143: the quota numbers are read from the entitlement catalogue, not
-  // written here. Editing a plan allowance in the operations console changes
-  // what this page says, because it is the same admin-config revision.
+  // #298 keeps the page on the published catalogue without presenting credit
+  // pricing owned by #310.
   loader: () => getPublicPlanCatalog(),
   component: PricingPage,
 });
@@ -216,10 +214,6 @@ function PlanPrice({ plan }: { plan: DisplayPlan }) {
 
 function PlanQuota({ quota }: { quota: PublicPlanOffer }) {
   const rows: Array<{ label: string; value: string }> = [
-    {
-      label: pricing_plan_credits_per_month(),
-      value: String(quota.credits),
-    },
     {
       label: pricing_plan_concurrency_label(),
       value: String(quota.concurrencyLimit),

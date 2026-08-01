@@ -120,14 +120,6 @@ const creemSubscriptionScheduledCancelSchema = z
   })
   .passthrough();
 
-const creemSubscriptionPastDueSchema = z
-  .object({
-    id: z.string().min(1),
-    eventType: z.literal('subscription.past_due'),
-    object: z.object({ id: z.string().min(1) }).passthrough(),
-  })
-  .passthrough();
-
 export function normalizeStripeVerifiedPaymentEvent(
   input: unknown
 ): VerifiedPaymentWebhookEvent | null {
@@ -265,16 +257,6 @@ export function normalizeCreemVerifiedPaymentEvent(
         id: scheduledCancel.data.object.id,
         kind: 'subscription',
       },
-    };
-  }
-
-  const pastDue = creemSubscriptionPastDueSchema.safeParse(input);
-  if (pastDue.success) {
-    return {
-      eventType: 'subscription.past_due',
-      provider: 'creem',
-      providerEventId: pastDue.data.id,
-      reference: { id: pastDue.data.object.id, kind: 'subscription' },
     };
   }
 

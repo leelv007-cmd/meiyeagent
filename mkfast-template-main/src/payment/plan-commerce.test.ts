@@ -140,7 +140,7 @@ describe('plan-commerce settlement', () => {
     assert.equal(grants, 0);
   });
 
-  it('maps verified payment failure lifecycle to past_due', () => {
+  it('maps Stripe payment failure lifecycle without inventing Creem past_due', () => {
     const failed = planSettlementIntentFromEvent(
       {
         eventType: 'invoice.payment_failed',
@@ -161,7 +161,7 @@ describe('plan-commerce settlement', () => {
     );
 
     assert.equal(failed?.lifecycle, 'past_due');
-    assert.equal(pastDue?.lifecycle, 'past_due');
+    assert.equal(pastDue, null);
   });
 
   it('maps subscription delete, cancel, and resume lifecycle', () => {

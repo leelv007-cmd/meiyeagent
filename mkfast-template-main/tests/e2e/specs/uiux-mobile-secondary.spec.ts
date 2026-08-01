@@ -258,29 +258,41 @@ test.describe('desktop secondary surfaces', () => {
     }
   });
 
-  test('expresses public plans and account usage only as deliverable output', async ({
+  test('keeps unpublished credit pricing off the public plans', async ({
+    page,
+  }) => {
+    await page.goto('/pricing');
+    await expect(
+      page.getByRole('heading', { name: '每个账期可交付产出' })
+    ).toBeVisible();
+    await expect(
+      page.getByText('可同时进行的创作数', { exact: true }).first()
+    ).toBeVisible();
+    for (const label of ['文案', '图片', '视频']) {
+      await expect(page.getByText(label, { exact: true })).toHaveCount(0);
+    }
+    for (const [tier, credits] of [
+      ['starter', '500'],
+      ['growth', '1300'],
+      ['pro', '2800'],
+    ] as const) {
+      await expect(
+        page.getByTestId(`pricing-plan-quota-${tier}`)
+      ).not.toContainText(credits);
+    }
+    const pricingText = (await page.locator('main').innerText()).toLowerCase();
+    expect(pricingText).not.toMatch(/\bcredit(s)?\b|\btoken(s)?\b|积分/);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth)
+    ).toBeLessThanOrEqual(1365);
+  });
+
+  test('expresses account usage only as deliverable output', async ({
     page,
     request,
   }) => {
     const user = await registerE2EUser(request);
     try {
-      await page.goto('/pricing');
-      await expect(
-        page.getByRole('heading', { name: '每个账期可交付产出' })
-      ).toBeVisible();
-      for (const label of ['文案', '图片', '视频', '可同时进行的创作数']) {
-        await expect(
-          page.getByText(label, { exact: true }).first()
-        ).toBeVisible();
-      }
-      const pricingText = (
-        await page.locator('main').innerText()
-      ).toLowerCase();
-      expect(pricingText).not.toMatch(/\bcredit(s)?\b|\btoken(s)?\b|积分/);
-      expect(
-        await page.evaluate(() => document.documentElement.scrollWidth)
-      ).toBeLessThanOrEqual(1365);
-
       await loginByForm(page, user);
       await page.goto('/settings/account?section=usage');
       await page.getByTestId('account-usage-details-toggle').click();

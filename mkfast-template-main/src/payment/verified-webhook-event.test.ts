@@ -237,18 +237,13 @@ test('Creem normalizes checkout, renewal, and cancel/expire lifecycle', () => {
       reference: { id: 'sub_1', kind: 'subscription' },
     }
   );
-  assert.deepEqual(
+  assert.equal(
     normalizeCreemVerifiedPaymentEvent({
       eventType: 'subscription.past_due',
       id: 'evt_creem_past_due',
       object: { id: 'sub_past_due' },
     }),
-    {
-      eventType: 'subscription.past_due',
-      provider: 'creem',
-      providerEventId: 'evt_creem_past_due',
-      reference: { id: 'sub_past_due', kind: 'subscription' },
-    }
+    null,
   );
   assert.deepEqual(
     normalizeCreemVerifiedPaymentEvent({

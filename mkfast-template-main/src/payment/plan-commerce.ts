@@ -139,7 +139,6 @@ function lifecycleFromEvent(
     case 'subscription.renewed':
       return 'renew';
     case 'invoice.payment_failed':
-    case 'subscription.past_due':
       return 'past_due';
     case 'customer.subscription.resumed':
       return 'resume';

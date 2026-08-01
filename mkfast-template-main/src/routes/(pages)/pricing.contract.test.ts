@@ -387,11 +387,11 @@ test('the landing reads the pro product out of the catalogue every time it is as
   );
 });
 
-test('plan credits come from the credit catalogue, not from this file', () => {
+test('the page loads the credit catalogue without displaying #310 pricing', () => {
   const pricing = read(PRICING);
   assert.match(pricing, /loader: \(\) => getPublicPlanCatalog\(\)/u);
   assert.match(pricing, /Route\.useLoaderData\(\)/u);
-  assert.match(pricing, /quota\.credits/u);
+  assert.doesNotMatch(pricing, /quota\.credits/u);
   assert.doesNotMatch(
     pricing,
     /quota:\s*\{[^}]*copy:\s*\d/u,
@@ -467,10 +467,9 @@ test('dead "不可用" CTA is gone; availability is computed, not faked', () => 
   assert.match(src, /CheckoutButton/u);
 });
 
-test('single coherent plan presentation with credits folded in; no jargon', () => {
+test('single coherent plan presentation does not pre-empt #310', () => {
   const src = read(PRICING);
-  // Credits are folded into the plan cards without reintroducing output buckets.
-  assert.match(src, /quota\.credits/u);
+  assert.doesNotMatch(src, /quota\.credits/u);
   assert.doesNotMatch(src, /pricing_output_copy_count/u);
   assert.doesNotMatch(src, /pricing_output_image_count/u);
   assert.doesNotMatch(src, /pricing_output_video_count/u);
@@ -486,7 +485,6 @@ test('new pricing copy is merchant Chinese and reaches zh/en parity', () => {
   const en = JSON.parse(read('project.inlang/messages/en.json'));
   const keys = [
     'pricing_plan_concurrency_label',
-    'pricing_plan_credits_per_month',
     'pricing_plan_login_to_subscribe',
     'pricing_plan_payment_not_open',
     'pricing_plan_payment_not_open_hint',

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { resolve } from 'node:path';
 import test from 'node:test';
+import { PUBLIC_PLAN_CREDIT_SEED } from '@meiye/contracts';
 import {
   createMemoryHistory,
   createRootRoute,
@@ -81,23 +82,20 @@ test('pricing stays readable without checkout and every public pricing CTA reach
     { Pricing: LandingPricing },
     { Footer: LandingFooter },
     { Route: pricingRoute },
-    { PLAN_CATALOG_SEED },
   ] = await Promise.all([
     import('../components/landing/pricing'),
     import('../components/landing/footer'),
     import('../routes/(pages)/pricing'),
-    import('../api/plan-catalog'),
   ]);
 
   const PricingPage = pricingRoute.options.component;
   assert.ok(PricingPage);
-  // The page reads its quotas from the entitlement catalogue (D-143), so it
-  // renders through a router that serves the seed rather than standalone.
+  const catalogFixture = { plans: [...PUBLIC_PLAN_CREDIT_SEED] };
   const pricingRootRoute = createRootRoute({ component: Outlet });
   const pricingPageRoute = createRoute({
     component: PricingPage,
     getParentRoute: () => pricingRootRoute,
-    loader: () => PLAN_CATALOG_SEED,
+    loader: () => catalogFixture,
     path: '/pricing',
   });
   const pricingRouter = createRouter({
@@ -113,10 +111,9 @@ test('pricing stays readable without checkout and every public pricing CTA reach
   assert.match(pricingHtml, />初级</u);
   assert.match(pricingHtml, />中级</u);
   assert.match(pricingHtml, />高级</u);
-  // #298 credit grant per tier, straight off the catalogue projection.
-  assert.match(pricingHtml, />500</u);
-  assert.match(pricingHtml, />1300</u);
-  assert.match(pricingHtml, />2800</u);
+  assert.doesNotMatch(pricingHtml, />500</u);
+  assert.doesNotMatch(pricingHtml, />1300</u);
+  assert.doesNotMatch(pricingHtml, />2800</u);
 
   const rootRoute = createRootRoute({ component: Outlet });
   const publicPageRoute = createRoute({
