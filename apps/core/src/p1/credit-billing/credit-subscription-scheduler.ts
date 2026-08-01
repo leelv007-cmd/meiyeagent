@@ -159,6 +159,20 @@ export function creditSubscriptionTierForCycle(
   return subscription.tier;
 }
 
+export function creditSubscriptionIntervalForCycle(
+  subscription: CreditSubscription,
+  cycleIndex: number,
+) {
+  if (
+    subscription.pendingInterval &&
+    subscription.pendingEffectiveCycle !== null &&
+    cycleIndex >= subscription.pendingEffectiveCycle
+  ) {
+    return subscription.pendingInterval;
+  }
+  return subscription.interval;
+}
+
 export class CreditSubscriptionCycleScheduler {
   constructor(
     private readonly subscriptions: CreditSubscriptionStore,
@@ -230,7 +244,6 @@ export class CreditSubscriptionCycleScheduler {
     let alertedCycles = 0;
     let checkedCycles = 0;
     for (const subscription of await this.subscriptions.listGrantCandidates()) {
-      if (subscription.status === 'cancelled') continue;
       const keys = new Set(
         (await this.ledger.listLots(subscription.workspaceId)).map(
           (lot) => lot.grantIdempotencyKey,
@@ -368,7 +381,6 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
 
   async listGrantCandidates() {
     return [...this.subscriptions.values()]
-      .filter((subscription) => subscription.status !== 'cancelled')
       .sort((left, right) => left.id.localeCompare(right.id))
       .map((subscription) => structuredClone(subscription));
   }
@@ -408,25 +420,10 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
       subscription.paidThroughCycle,
       paidThroughCycle,
     );
-    this.applyPendingChange(subscription);
     subscription.status = 'active';
     subscription.pastDueAt = null;
     subscription.updatedAt = iso(at);
     return structuredClone(subscription);
-  }
-
-  private applyPendingChange(subscription: CreditSubscription) {
-    if (
-      subscription.pendingEffectiveCycle === null ||
-      subscription.paidThroughCycle <= subscription.pendingEffectiveCycle
-    ) {
-      return;
-    }
-    subscription.tier = subscription.pendingTier!;
-    subscription.interval = subscription.pendingInterval!;
-    subscription.pendingTier = null;
-    subscription.pendingInterval = null;
-    subscription.pendingEffectiveCycle = null;
   }
 
   async markPastDue(subscriptionId: string, at: string) {
@@ -633,7 +630,6 @@ export class PostgresCreditSubscriptionStore
   async listGrantCandidates() {
     const result = await this.database.query<CreditSubscriptionRow>(
       `SELECT * FROM p1_credit_subscriptions
-        WHERE status IN ('active', 'past_due')
         ORDER BY anchor_at, id`,
     );
     return result.rows.map(subscriptionFromRow);
@@ -690,21 +686,13 @@ export class PostgresCreditSubscriptionStore
     if (existing.status === 'cancelled') {
       throw new Error('Cancelled credit subscriptions cannot receive renewal coverage.');
     }
-    const pendingApplies =
-      existing.pendingEffectiveCycle !== null &&
-      paidThroughCycle > existing.pendingEffectiveCycle;
     const result = await this.database.query<CreditSubscriptionRow>(
       `UPDATE p1_credit_subscriptions
           SET paid_through_cycle = GREATEST(paid_through_cycle, $2),
-              status = 'active', past_due_at = NULL, updated_at = $3,
-              tier = CASE WHEN $4 THEN pending_tier ELSE tier END,
-              interval = CASE WHEN $4 THEN pending_interval ELSE interval END,
-              pending_tier = CASE WHEN $4 THEN NULL ELSE pending_tier END,
-              pending_interval = CASE WHEN $4 THEN NULL ELSE pending_interval END,
-              pending_effective_cycle = CASE WHEN $4 THEN NULL ELSE pending_effective_cycle END
+              status = 'active', past_due_at = NULL, updated_at = $3
         WHERE id = $1 AND status <> 'cancelled'
         RETURNING *`,
-      [subscriptionId, paidThroughCycle, iso(at), pendingApplies],
+      [subscriptionId, paidThroughCycle, iso(at)],
     );
     if (!result.rows[0]) throw new Error(`Credit subscription ${subscriptionId} was not found.`);
     return subscriptionFromRow(result.rows[0]);

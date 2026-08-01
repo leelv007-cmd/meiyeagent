@@ -138,6 +138,73 @@ describe('CreditSubscriptionCycleScheduler', () => {
     ]);
   });
 
+  it('reconciles historical paid cycles after a subscription is cancelled', async () => {
+    const subscriptions = new MemoryCreditSubscriptionStore();
+    const ledger = new MemoryCreditLedger();
+    const alerts: CreditSubscriptionAlert[] = [];
+    await subscriptions.upsert({
+      anchorAt: '2026-01-01T00:00:00.000Z',
+      id: 'sub-cancelled-reconcile',
+      interval: 'monthly',
+      paidThroughCycle: 1,
+      tier: 'starter',
+      workspaceId: 'workspace-cancelled-reconcile',
+    });
+    await subscriptions.cancel(
+      'sub-cancelled-reconcile',
+      '2026-02-01T00:00:00.000Z',
+    );
+    const scheduler = new CreditSubscriptionCycleScheduler(subscriptions, ledger, {
+      alerts: { async notify(alert) { alerts.push(alert); } },
+      planFor: (tier) => plans[tier],
+    });
+
+    assert.deepEqual(
+      await scheduler.reconcile('2026-02-02T00:00:00.000Z'),
+      { alertedCycles: 1, checkedCycles: 1 },
+    );
+    assert.deepEqual(alerts.map((alert) => alert.cycleIndex), [0]);
+  });
+
+  it('uses the original tier when backfilling a cycle before an effective downgrade', async () => {
+    const subscriptions = new MemoryCreditSubscriptionStore();
+    const ledger = new MemoryCreditLedger();
+    await subscriptions.upsert({
+      anchorAt: '2026-01-01T00:00:00.000Z',
+      id: 'sub-downtime-downgrade',
+      interval: 'monthly',
+      paidThroughCycle: 1,
+      tier: 'growth',
+      workspaceId: 'workspace-downtime-downgrade',
+    });
+    await subscriptions.scheduleChange({
+      subscriptionId: 'sub-downtime-downgrade',
+      tier: 'starter',
+      interval: 'monthly',
+      effectiveCycle: 1,
+      at: '2026-01-15T00:00:00.000Z',
+    });
+    await subscriptions.recordPaidCoverage(
+      'sub-downtime-downgrade',
+      2,
+      '2026-02-01T00:00:00.000Z',
+    );
+    const scheduler = new CreditSubscriptionCycleScheduler(subscriptions, ledger, {
+      planFor: (tier) => plans[tier],
+    });
+
+    assert.deepEqual(
+      await scheduler.run('2026-02-01T00:00:00.000Z'),
+      { cancelledSubscriptions: 0, grantedCycles: 2 },
+    );
+    assert.deepEqual(
+      ledger
+        .listLots('workspace-downtime-downgrade')
+        .map((lot) => lot.originalCredits),
+      [1_300, 500],
+    );
+  });
+
   it('fails closed when a paid subscription tier has no valid credit amount', async () => {
     const ledger = new MemoryCreditLedger();
     const subscriptions = new MemoryCreditSubscriptionStore();

@@ -120,8 +120,8 @@ test('credit payment settlement preserves package lots across upgrades and appli
     paymentProductId: 'starter',
     subscriptionId: 'subscription-1',
   });
-  assert.equal(renewed?.tier, 'starter');
-  assert.equal(renewed?.pendingTier, null);
+  assert.equal(renewed?.tier, 'growth');
+  assert.equal(renewed?.pendingTier, 'starter');
   await scheduler.run(now.toISOString());
   assert.equal(
     ledger

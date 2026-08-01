@@ -9,6 +9,8 @@ import {
 import type { CreditPlanCatalog } from './credit-plan-catalog.js';
 import type { CreditBalanceProjection, CreditGrantLot, GrantCreditsInput } from './credit-ledger.js';
 import {
+  creditSubscriptionIntervalForCycle,
+  creditSubscriptionTierForCycle,
   type CreditSubscription,
   type CreditSubscriptionInterval,
   type CreditSubscriptionStore,
@@ -134,6 +136,13 @@ export class CreditBillingService {
       workspaceSubscriptions,
       input.subscriptionId,
     );
+    const currentCycleIndex = Math.max(0, (active?.paidThroughCycle ?? 1) - 1);
+    const currentTier = active
+      ? creditSubscriptionTierForCycle(active, currentCycleIndex)
+      : null;
+    const currentInterval = active
+      ? creditSubscriptionIntervalForCycle(active, currentCycleIndex)
+      : null;
     if (input.lifecycle === 'past_due') {
       if (!active) return null;
       return subscriptions.markPastDue(active.id, now);
@@ -142,8 +151,8 @@ export class CreditBillingService {
       if (!active) return null;
       return subscriptions.scheduleChange({
         subscriptionId: active.id,
-        tier: active.tier,
-        interval: active.interval,
+        tier: currentTier!,
+        interval: currentInterval!,
         effectiveCycle: active.paidThroughCycle,
         at: now,
       });
@@ -165,7 +174,7 @@ export class CreditBillingService {
         });
       }
       if (
-        active.interval === 'single_month' &&
+        currentInterval === 'single_month' &&
         active.pendingInterval === null
       ) {
         throw new P1DomainError(
@@ -191,7 +200,7 @@ export class CreditBillingService {
       });
     }
 
-    const comparison = planRank(tier) - planRank(active.tier);
+    const comparison = planRank(tier) - planRank(currentTier!);
     if (comparison > 0) {
       await this.ledger.expireSubscriptionLots({
         workspaceId: context.workspaceId,

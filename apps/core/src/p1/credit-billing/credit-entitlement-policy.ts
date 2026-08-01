@@ -6,6 +6,7 @@ import type { CreditPlanCatalog } from './credit-plan-catalog.js';
 import {
   CREDIT_SUBSCRIPTION_GRACE_PERIOD_MS,
   creditSubscriptionCycle,
+  creditSubscriptionTierForCycle,
   type CreditSubscription,
   type CreditSubscriptionStore,
 } from './credit-subscription-scheduler.js';
@@ -30,7 +31,12 @@ export class CreditSubscriptionEntitlementPolicy
       .sort((left, right) =>
         right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id)
       )[0];
-    const tier = subscription?.tier ?? 'trial';
+    const tier = subscription
+      ? creditSubscriptionTierForCycle(
+          subscription,
+          Math.max(0, subscription.paidThroughCycle - 1),
+        )
+      : 'trial';
     const plan = (await this.plans.get()).plans.find(
       (candidate) => candidate.id === tier,
     );
