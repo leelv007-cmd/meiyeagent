@@ -18,13 +18,15 @@ export const NOTE_PAGE_IMAGE_STATUSES = [
 
 export type NotePageImageStatus = (typeof NOTE_PAGE_IMAGE_STATUSES)[number];
 
-export const NOTE_PAGE_IMAGE_STATUS_LABELS: Record<NotePageImageStatus, string> =
-  {
-    pending: '待配图',
-    generating: '配图中',
-    ready: '已配图',
-    failed: '配图失败',
-  };
+export const NOTE_PAGE_IMAGE_STATUS_LABELS: Record<
+  NotePageImageStatus,
+  string
+> = {
+  pending: '待配图',
+  generating: '配图中',
+  ready: '已配图',
+  failed: '配图失败',
+};
 
 export type NotePlanTimelinePage = {
   pageId: string;

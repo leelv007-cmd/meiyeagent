@@ -53,78 +53,78 @@
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock. Dedicated pair + RUN_ISSUE_255_SAFE_PROVISION_POSTGRES_TEST=1 + ISSUE_255_SAFE_PROVISIONER_PATH."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock. Dedicated pair + RUN_ISSUE_255_SAFE_PROVISION_POSTGRES_TEST=1."
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
       "status": "unverified",
@@ -233,8 +233,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "unverified",
@@ -323,8 +323,8 @@
     },
     "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "76e745e66f4d82865e3585c296e380a7a4e943bd",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after P1 wave-2 merge (#317 workflow-core note paid-media gate + #318 Activity Shelf). safe-provision on dedicated meiye_issue255 pair with e2e lock."
+      "verifiedAt": "01169b4498e3fc29e9d9a387b51dc6bcfcce76c6",
+      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos after #319 P1-07 note timeline merge. safe-provision on dedicated meiye_issue255 pair with e2e lock."
     }
   }
 }

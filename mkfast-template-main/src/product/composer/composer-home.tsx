@@ -1431,8 +1431,7 @@ export function ComposerHome({
         const matched = packages.find((item) => item.id === packageId);
         const version =
           matched?.versions.find(
-            (entry) =>
-              entry.id === workflowStream.harnessDelivery?.versionId
+            (entry) => entry.id === workflowStream.harnessDelivery?.versionId
           ) ??
           matched?.versions.find((entry) => entry.note) ??
           matched?.versions[0];

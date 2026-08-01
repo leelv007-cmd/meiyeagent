@@ -22,9 +22,7 @@ import type {
 } from '@meiye/contracts';
 
 import type { NotePlanTimeline } from './note-plan-timeline';
-import {
-  applyBatchImageStatusFromHarnessStage,
-} from './note-plan-timeline';
+import { applyBatchImageStatusFromHarnessStage } from './note-plan-timeline';
 
 export const COMPOSER_SESSION_STORAGE_VERSION = 'composer-session/v1';
 export const COMPOSER_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -341,10 +339,13 @@ function syncNotePlanImageStatusFromProgress(
   );
   if (notePlanIndex === -1) return session;
   const notePlan = session.turns[notePlanIndex] as ComposerNotePlanTurn;
-  const nextTimeline = applyBatchImageStatusFromHarnessStage(notePlan.timeline, {
-    stage: frame.stage,
-    state: frame.state,
-  });
+  const nextTimeline = applyBatchImageStatusFromHarnessStage(
+    notePlan.timeline,
+    {
+      stage: frame.stage,
+      state: frame.state,
+    }
+  );
   if (nextTimeline === notePlan.timeline) return session;
   const turns = session.turns.slice();
   turns[notePlanIndex] = { ...notePlan, timeline: nextTimeline };

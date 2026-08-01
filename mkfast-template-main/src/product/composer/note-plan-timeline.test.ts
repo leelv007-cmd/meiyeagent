@@ -15,17 +15,15 @@ import {
   requestNotePlanPageRegenerate,
 } from './note-plan-timeline';
 
-function pageFixture(
-  input: {
-    id: string;
-    order: number;
-    pageRole: 'cover' | 'solution_show';
-    pagePurpose: 'capture_attention' | 'explain_solution';
-    title: string;
-    body: string;
-    imageAssetId?: string;
-  }
-): NotePlan['pages'][number] {
+function pageFixture(input: {
+  id: string;
+  order: number;
+  pageRole: 'cover' | 'solution_show';
+  pagePurpose: 'capture_attention' | 'explain_solution';
+  title: string;
+  body: string;
+  imageAssetId?: string;
+}): NotePlan['pages'][number] {
   return {
     id: input.id,
     order: input.order,

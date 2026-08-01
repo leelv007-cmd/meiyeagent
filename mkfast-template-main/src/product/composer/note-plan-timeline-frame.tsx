@@ -83,7 +83,10 @@ function NotePlanPageRow({
         </span>
       </div>
 
-      <label className="text-muted mb-1 block text-xs" htmlFor={`${page.pageId}-title`}>
+      <label
+        className="text-muted mb-1 block text-xs"
+        htmlFor={`${page.pageId}-title`}
+      >
         大纲标题
       </label>
       <input
@@ -101,7 +104,10 @@ function NotePlanPageRow({
         value={page.title}
       />
 
-      <label className="text-muted mb-1 block text-xs" htmlFor={`${page.pageId}-body`}>
+      <label
+        className="text-muted mb-1 block text-xs"
+        htmlFor={`${page.pageId}-body`}
+      >
         大纲正文
       </label>
       <textarea
@@ -124,7 +130,9 @@ function NotePlanPageRow({
         <button
           className="meiye-glass-piece rounded-full px-3 py-1 text-xs disabled:opacity-50"
           data-testid="note-plan-page-regenerate"
-          disabled={page.imageStatus === 'generating' || page.regenerateRequested}
+          disabled={
+            page.imageStatus === 'generating' || page.regenerateRequested
+          }
           onClick={() => onRegeneratePage(page.pageId)}
           type="button"
         >

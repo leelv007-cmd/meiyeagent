@@ -26,19 +26,21 @@ import type { NotePlan, WorkflowProgressEnvelope } from '@meiye/contracts';
 
 afterEach(cleanup);
 
-const TASK = { taskId: 'task-note', workId: 'work-note', packageId: 'pkg-note' };
+const TASK = {
+  taskId: 'task-note',
+  workId: 'work-note',
+  packageId: 'pkg-note',
+};
 const emptyStream = projectResultTokenStream({ workspaceKind: 'copy' });
 
-function page(
-  input: {
-    id: string;
-    order: number;
-    pageRole: 'cover' | 'solution_show';
-    pagePurpose: 'capture_attention' | 'explain_solution';
-    title: string;
-    body: string;
-  }
-): NotePlan['pages'][number] {
+function page(input: {
+  id: string;
+  order: number;
+  pageRole: 'cover' | 'solution_show';
+  pagePurpose: 'capture_attention' | 'explain_solution';
+  title: string;
+  body: string;
+}): NotePlan['pages'][number] {
   return {
     id: input.id,
     order: input.order,
@@ -188,9 +190,9 @@ describe('NotePlan multi-page timeline (P1-5)', () => {
     for (const row of rows) {
       expect(row).toHaveAttribute('data-image-status', 'generating');
     }
-    expect(screen.getAllByTestId('note-plan-page-image-status')[0]).toHaveTextContent(
-      '配图中'
-    );
+    expect(
+      screen.getAllByTestId('note-plan-page-image-status')[0]
+    ).toHaveTextContent('配图中');
   });
 
   it('session helpers apply outline edit and regenerate on the mounted turn', () => {
@@ -218,10 +220,12 @@ describe('NotePlan multi-page timeline (P1-5)', () => {
     session = updateComposerNotePlan(
       session,
       requestNotePlanPageRegenerate(
-        (session.turns.find((turn) => turn.kind === 'note_plan') as {
-          kind: 'note_plan';
-          timeline: NotePlanTimeline;
-        }).timeline,
+        (
+          session.turns.find((turn) => turn.kind === 'note_plan') as {
+            kind: 'note_plan';
+            timeline: NotePlanTimeline;
+          }
+        ).timeline,
         'page-2'
       )
     );

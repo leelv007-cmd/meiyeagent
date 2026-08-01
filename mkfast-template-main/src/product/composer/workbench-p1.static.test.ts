@@ -114,7 +114,9 @@ test('P1-5 / #319: note plan timeline + C7 delivery gate are on the product surf
   assert.doesNotMatch(frame, /@tiptap\//u);
   assert.match(frame, /<input/u);
   assert.match(frame, /<textarea/u);
-  const delivery = readSource('src/product/composer/composer-delivery-card.tsx');
+  const delivery = readSource(
+    'src/product/composer/composer-delivery-card.tsx'
+  );
   assert.match(delivery, /composer-delivery-object-workspace-gate/u);
   assert.match(delivery, /composer-delivery-action-object-workspace/u);
   assert.match(delivery, /导出\/发布准备/u);
