@@ -255,6 +255,14 @@ export async function submitComposerJourney(
      * covers the other end, after delivery).
      */
     onRunStreaming?: () => void | Promise<void>;
+    /**
+     * Keep the delivered card in Composer so a test can exercise secondary
+     * actions that live on that card. The default remains the canonical click
+     * through to Result Center.
+     */
+    openResult?: boolean;
+    /** Preserve a structured journey's existing Composer intent verbatim. */
+    preserveIntent?: boolean;
   } = {}
 ) {
   const lens = page.getByTestId(`composer-lens-option-${contract.modality}`);
@@ -265,7 +273,12 @@ export async function submitComposerJourney(
   // Day-0 intent may omit a 美业 service category. D-043 keeps that path moving
   // in explicit generic mode; later semantic gaps that are required for the
   // requested result may still surface one question and resume on its answer.
-  await page.getByTestId('composer-intent-input').fill(intent);
+  const intentInput = page.getByTestId('composer-intent-input');
+  if (options.preserveIntent) {
+    await expect(intentInput).toHaveValue(intent);
+  } else {
+    await intentInput.fill(intent);
+  }
   await expect(
     page.getByTestId('composer-quote-line'),
     'submit must bind the server quote before creation'
@@ -401,6 +414,7 @@ export async function submitComposerJourney(
   await expect(page).toHaveURL(/\/dashboard(?:\?|$)/u);
 
   await options.onDeliveryCardVisible?.();
+  if (options.openResult === false) return submittedWorkId;
   await clickComposerDeliveryCard(deliveryCard);
   await expect(page).toHaveURL(/\/dashboard\/results\/[^/?#]+(?:\?|$)/u, {
     timeout: 60_000,

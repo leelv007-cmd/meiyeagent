@@ -938,8 +938,8 @@ Playwright 旅程与四态形态的 P1 变更（双栏 / Composer 粘底 morph /
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | verified OpenCLI gate uses the injected logged-in bridge and keeps paste fallback | Log in, open the real Dashboard 「爆款复刻」 chip, and require the verified link track to be first and selected. Inject a local fixture bridge, pass it one complete fixture note URL, project only note text plus host-authorized asset ids into the confirm card, and prove the complete URL/token never enters the Composer intent or any XHS network request. Reopen the journey, switch to the always-available paste fallback, and reach its source-specific confirmation without contacting XHS. Live proof is recorded separately in the redacted #328 ops handoff and is never replaced by this fixture. |
-| 2 | a verified gate with no device bridge fails closed to paste | Leave the local bridge absent, require an honest disconnected status and disabled read action, then use the one-click paste fallback without any XHS request. |
+| 1 | verified OpenCLI gate uses the injected logged-in bridge and keeps paste fallback | Log in, open the real Dashboard 「爆款复刻」 chip, and require the verified link track to be first and selected only while the injected device bridge is ready. Pass the fixture bridge one complete fixture note URL, project only note text plus host-authorized asset ids into the confirm card, and prove the complete URL/token never enters the Composer intent or any XHS network request. Reopen the journey, switch to the always-available paste fallback, and reach its source-specific confirmation without contacting XHS. Live proof is recorded separately in the redacted #328 ops handoff and is never replaced by this fixture. |
+| 2 | a verified gate with no device bridge fails closed to paste | Leave the local bridge absent, require paste to remain the default plus an honest disconnected status; explicitly select the unavailable link track, require its read action disabled, then return to paste without any XHS request. |
 | 3 | a local bridge error stays generic and recovers through paste | Inject a ready bridge that rejects, require a generic merchant error with no URL/token echo, and recover through paste without any XHS request. |
 
 The pre-verification `gate=false` regression stays owned by
@@ -947,3 +947,16 @@ The pre-verification `gate=false` regression stays owned by
 tests explicitly create a closed evidence gate and require paste-only behavior.
 The browser spec does not add a production query flag or global that could
 reopen/override the evidence decision.
+
+## P2 图文对象工作区、AI 封面与爆款复刻合入门（#320–#325）
+
+**File:** `specs/p2-browser-closure.spec.ts` | **Priority:** P0
+
+真实本地 PostgreSQL、Web → Core 公共 HTTP/SSE 与 Chromium；仅模型边界使用
+fixture。产品请求不 mock，静态源码断言不能替代以下三条旅程。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | image-text customer deep run keeps canonical edit, Selection AI, sensitive-word guard, and delivery on one journey | 以 customer + deep 提交 note，核对冻结请求；进入带媒体的 Tiptap 对象工作区，真实选中正文片段并接受 Selection AI 调整，进入派生 Result；采用后保存 canonical 正文，要求 delivery 违禁词检查与当前正文同源、命中时 fail closed，修正后重新变 clear 并下载真实 ZIP。 |
+| 2 | delivered AI cover exposes five presets, signed ratios, style-role analysis, and a Result image | 从已交付图文卡进入 AI 封面，要求 5 个美业 preset 均可达、3 个 ratio 的签名尺寸不超过当前模型上限；以 1:1 正例和授权 style-role 素材提交，观察七维分析阶段、签名 payload、终态交付与 Result 图片。 |
+| 3 | viral chip uses honest paste fallback and authorized image through task experience morph to note Result | 从爆款复刻 chip 进入粘贴轨，确认 OpenCLI live 证据已核销但当前设备桥缺失时仍默认粘贴且无外部抓取；粘贴参考原文、上传并授权图片、确认 exact `recipe.viral_adapt` note 合同与结构化 `viralAdaptSource`，要求商家输入不泄露 raw note/内部传输字段/素材 ID，随后观察 basis → candidate/delivery morph → sediment/correction、成功终态主动 refetch memory entries（无 reload），并进入 note Result。 |
