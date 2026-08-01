@@ -14,7 +14,7 @@ import {
 
 type VersionChanges = Pick<
   ContentPackageVersion,
-  'body' | 'conversionHook' | 'orderedAssetIds' | 'title' | 'topics'
+  'body' | 'conversionHook' | 'note' | 'orderedAssetIds' | 'title' | 'topics'
 >;
 
 type VersionTarget =
@@ -231,12 +231,23 @@ export function editContentPackageLifecycleVersion(input: {
     }
   }
 
-  if (target.kind === 'package') {
-    const baseVersion = contentPackage.versions.find(
-      (version) => version.id === input.baseVersionId
+  const baseVersion =
+    target.kind === 'variant'
+      ? variant!.versions.find((version) => version.id === input.baseVersionId)
+      : contentPackage.versions.find(
+          (version) => version.id === input.baseVersionId
+        );
+  if (!baseVersion) {
+    throw new ContentPackageLifecycleError(
+      'CONTENT_PACKAGE_VERSION_NOT_FOUND',
+      'The ContentPackage version was not found.',
+      404
     );
+  }
+
+  if (target.kind === 'package') {
     if (
-      baseVersion?.sourceRef &&
+      baseVersion.sourceRef &&
       contentPackageVersionSourceRefIsReadOnly(baseVersion.sourceRef)
     ) {
       throw new ContentPackageLifecycleError(
@@ -268,21 +279,46 @@ export function editContentPackageLifecycleVersion(input: {
     );
   }
 
+  const changes: VersionChanges = {
+    ...input.changes,
+    ...(input.changes.note
+      ? { note: structuredClone(input.changes.note) }
+      : baseVersion.note
+        ? { note: structuredClone(baseVersion.note) }
+        : {}),
+  };
+  if (changes.note) {
+    const noteAssetIds = changes.note.plan.pages.map(
+      ({ imageAssetId }) => imageAssetId
+    );
+    if (
+      noteAssetIds.length !== changes.orderedAssetIds.length ||
+      noteAssetIds.some(
+        (assetId, index) => assetId !== changes.orderedAssetIds[index]
+      )
+    ) {
+      throw new ContentPackageLifecycleError(
+        'INVALID_CONTENT_PACKAGE_ASSET',
+        'An edited image-text note must preserve one page-ordered image Asset per page.',
+        409
+      );
+    }
+  }
   const ownerId = target.kind === 'variant' ? variant!.id : contentPackage.id;
   const versionId = editedVersionId(
     ownerId,
     input.baseVersionId,
-    input.changes,
+    changes,
     input.intent,
   );
   const delivery = exportUseDelivery({
-    changes: input.changes,
+    changes,
     contentPackage,
     sourceVersionId: versionId,
     ...(input.intent ? { intent: input.intent } : {}),
   });
   const version: ContentPackageVersion = {
-    ...input.changes,
+    ...changes,
     createdAt: input.timestamp,
     createdBy: input.userId,
     derivedFromVersionId: input.baseVersionId,

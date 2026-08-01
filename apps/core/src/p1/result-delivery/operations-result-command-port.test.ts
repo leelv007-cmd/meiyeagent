@@ -126,7 +126,11 @@ function fixture(
         versions: [
           {
             ...(options.noteSnapshot
-              ? { harnessCandidateId: 'story' }
+              ? {
+                  note: {
+                    plan: { style: { id: 'story' } },
+                  },
+                }
               : {}),
             id: 'version-1',
             orderedAssetIds: ['asset-1', 'asset-2'],
@@ -224,7 +228,11 @@ function fixture(
   const composerSubmissions = {
     async submit(input: { workId: string }) {
       composerCalls.push(input);
-      return { work: { id: input.workId } };
+      return {
+        contentPackage: { id: 'adjusted-package-1' },
+        task: { id: 'adjusted-task-1' },
+        work: { id: input.workId },
+      };
     },
   };
   return {

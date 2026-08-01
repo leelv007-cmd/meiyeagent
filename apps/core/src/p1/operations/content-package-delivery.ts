@@ -32,6 +32,7 @@ import type { ContextBundleRepository } from './context-bundle-repository.js';
 import type { ContextSourceRevisionRepository } from './context-source-revisions.js';
 import type { ContextInvalidationSink } from './context-invalidation.js';
 import type { StoreFactLedger } from './store-fact-ledger.js';
+import { contentPackageVersionVisibleText } from './content-package-visible-copy-policy.js';
 
 export interface ContentPackageApprovalPolicyPort {
   resolve(input: {
@@ -876,13 +877,7 @@ export class ContextBundleApprovalPolicyResolver
           factClaims: [],
           intendedUse: input.intendedUse,
           ...(expressionIdentityRef ? { expressionIdentityRef } : {}),
-          visibleText: [
-            { field: 'title', text: version.title },
-            { field: 'body', text: version.body },
-            ...(version.conversionHook
-              ? [{ field: 'cta', text: version.conversionHook }]
-              : []),
-          ],
+          visibleText: contentPackageVersionVisibleText(version),
           workspaceId: bundle.workspaceId,
         },
         identityRefs: identityValues.map((value) => ({

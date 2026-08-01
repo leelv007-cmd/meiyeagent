@@ -44,7 +44,11 @@ export interface ResultAdjustComposerSubmissionPort {
     taskId: string;
     workId: string;
     workspaceId: string;
-  }): Promise<{ work: { id: string } }>;
+  }): Promise<{
+    contentPackage: { id: string };
+    task: { id: string };
+    work: { id: string };
+  }>;
 }
 
 function operationContext(context: P1Context): OperationContext {
@@ -588,7 +592,8 @@ export class OperationsResultCommandPort {
         if (frozen && composerCommand) {
           const sourceNoteStyleId =
             frozen.snapshot.lens === 'image_text_note'
-              ? currentPackageVersion?.harnessCandidateId
+              ? (currentPackageVersion?.note?.plan.style.id ??
+                currentPackageVersion?.harnessCandidateId)
               : undefined;
           if (
             frozen.snapshot.lens === 'image_text_note' &&

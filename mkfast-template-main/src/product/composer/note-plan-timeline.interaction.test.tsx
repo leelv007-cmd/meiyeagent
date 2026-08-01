@@ -235,4 +235,39 @@ describe('NotePlan multi-page timeline (P1-5)', () => {
       expect(regen.timeline.pages[1]?.regenerateRequested).toBe(true);
     }
   });
+
+  it('exposes canonical outline save and a retryable failure exit', () => {
+    const onSave = vi.fn();
+    let session = sessionWithNotePlan(fixtureTimeline());
+    const noteTurn = session.turns.find((turn) => turn.kind === 'note_plan');
+    if (!noteTurn || noteTurn.kind !== 'note_plan') {
+      throw new Error('expected note_plan turn');
+    }
+    session = updateComposerNotePlan(
+      session,
+      editNotePlanPageOutline(noteTurn.timeline, {
+        pageId: 'page-1',
+        title: '等待服务端保存的标题',
+      })
+    );
+
+    render(
+      <ComposerConversation
+        notePlanOutlineSaveError={{
+          message: '保存失败，请刷新后重试。',
+          pageId: 'page-1',
+        }}
+        onNotePlanOutlineSave={onSave}
+        onOpenDelivery={() => undefined}
+        session={session}
+        stream={emptyStream}
+      />
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      '保存失败，请刷新后重试。'
+    );
+    fireEvent.click(screen.getByTestId('note-plan-page-save-outline'));
+    expect(onSave).toHaveBeenCalledWith('page-1');
+  });
 });

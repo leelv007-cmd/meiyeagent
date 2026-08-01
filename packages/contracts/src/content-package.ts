@@ -952,6 +952,7 @@ export const editContentPackageVersionCommandSchema = z.object({
   changes: contentPackageVersionSchema.pick({
     body: true,
     conversionHook: true,
+    note: true,
     orderedAssetIds: true,
     title: true,
     topics: true,

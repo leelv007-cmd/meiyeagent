@@ -22,7 +22,11 @@ export type NotePlanTimelineFrameProps = {
     title: string;
     body: string;
   }) => void;
+  onSaveOutline?: (pageId: string) => void;
+  outlineSaveError?: { message: string; pageId: string } | null;
+  outlineSavePendingPageId?: string | null;
   onRegeneratePage?: (pageId: string) => void;
+  regenerateError?: { message: string; pageId: string } | null;
   className?: string;
   /** When true, outline fields are read-only (e.g. mid-generation lock). */
   outlineReadOnly?: boolean;
@@ -44,15 +48,28 @@ function statusTone(status: NotePageImageStatus): string {
 function NotePlanPageRow({
   page,
   onEditOutline,
+  onSaveOutline,
   onRegeneratePage,
+  outlineSaveError,
+  outlineSavePendingPageId,
+  regenerateError,
   outlineReadOnly,
 }: {
   page: NotePlanTimelinePage;
   onEditOutline?: NotePlanTimelineFrameProps['onEditOutline'];
+  onSaveOutline?: NotePlanTimelineFrameProps['onSaveOutline'];
   onRegeneratePage?: NotePlanTimelineFrameProps['onRegeneratePage'];
+  outlineSaveError?: NotePlanTimelineFrameProps['outlineSaveError'];
+  outlineSavePendingPageId?: string | null;
+  regenerateError?: NotePlanTimelineFrameProps['regenerateError'];
   outlineReadOnly?: boolean;
 }) {
-  const editable = Boolean(onEditOutline) && !outlineReadOnly;
+  const savePending = outlineSavePendingPageId === page.pageId;
+  const editable = Boolean(onEditOutline) && !outlineReadOnly && !savePending;
+  const pageOutlineError =
+    outlineSaveError?.pageId === page.pageId ? outlineSaveError : null;
+  const pageRegenerateError =
+    regenerateError?.pageId === page.pageId ? regenerateError : null;
   return (
     <li
       className="meiye-glass-piece rounded-xl p-3"
@@ -126,6 +143,29 @@ function NotePlanPageRow({
         value={page.body}
       />
 
+      {page.outlineDirty && onSaveOutline ? (
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <button
+            className="meiye-glass-piece rounded-full px-3 py-1 text-xs disabled:opacity-50"
+            data-testid="note-plan-page-save-outline"
+            disabled={savePending}
+            onClick={() => onSaveOutline(page.pageId)}
+            type="button"
+          >
+            {savePending
+              ? '保存中…'
+              : pageOutlineError
+                ? '重试保存大纲'
+                : '保存大纲'}
+          </button>
+          {pageOutlineError ? (
+            <p className="text-xs text-destructive" role="alert">
+              {pageOutlineError.message}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {onRegeneratePage ? (
         <button
           className="meiye-glass-piece rounded-full px-3 py-1 text-xs disabled:opacity-50"
@@ -137,9 +177,16 @@ function NotePlanPageRow({
           type="button"
         >
           {page.regenerateRequested || page.imageStatus === 'generating'
-            ? '重生中…'
+            ? page.imageStatus === 'generating'
+              ? '重生中…'
+              : '等待确认…'
             : '重新生成此页配图'}
         </button>
+      ) : null}
+      {pageRegenerateError ? (
+        <p className="mt-2 text-xs text-destructive" role="alert">
+          {pageRegenerateError.message}
+        </p>
       ) : null}
     </li>
   );
@@ -148,7 +195,11 @@ function NotePlanPageRow({
 export function NotePlanTimelineFrame({
   timeline,
   onEditOutline,
+  onSaveOutline,
   onRegeneratePage,
+  outlineSaveError,
+  outlineSavePendingPageId,
+  regenerateError,
   className,
   outlineReadOnly,
 }: NotePlanTimelineFrameProps) {
@@ -174,7 +225,11 @@ export function NotePlanTimelineFrame({
           <NotePlanPageRow
             key={page.pageId}
             onEditOutline={onEditOutline}
+            onSaveOutline={onSaveOutline}
             onRegeneratePage={onRegeneratePage}
+            outlineSaveError={outlineSaveError}
+            outlineSavePendingPageId={outlineSavePendingPageId}
+            regenerateError={regenerateError}
             outlineReadOnly={outlineReadOnly}
             page={page}
           />

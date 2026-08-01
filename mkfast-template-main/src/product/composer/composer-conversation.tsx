@@ -321,8 +321,12 @@ export type ComposerConversationProps = {
     title: string;
     body: string;
   }) => void;
+  onNotePlanOutlineSave?: (pageId: string) => void;
+  notePlanOutlineSaveError?: { message: string; pageId: string } | null;
+  notePlanOutlineSavePendingPageId?: string | null;
   /** P1-07: per-page regenerate intent (fixture or merchant_request host). */
   onNotePlanRegeneratePage?: (pageId: string) => void;
+  notePlanRegenerationError?: { message: string; pageId: string } | null;
   /** Opens the Result Center for a finished run — the only navigation. */
   onOpenDelivery: (input: ComposerDeliveryOpenInput) => void;
   /**
@@ -384,7 +388,11 @@ export function ComposerConversation({
   questionSlot,
   executionConfirmSlot,
   onNotePlanOutlineEdit,
+  onNotePlanOutlineSave,
   onNotePlanRegeneratePage,
+  notePlanOutlineSaveError,
+  notePlanOutlineSavePendingPageId,
+  notePlanRegenerationError,
   onOpenDelivery,
   onRateDelivery,
   onDeliveryFollowUp,
@@ -505,8 +513,15 @@ export function ComposerConversation({
           >
             <NotePlanTimelineFrame
               onEditOutline={onNotePlanOutlineEdit}
+              onSaveOutline={onNotePlanOutlineSave}
               onRegeneratePage={onNotePlanRegeneratePage}
-              outlineReadOnly={session.phase === 'submitting'}
+              outlineSaveError={notePlanOutlineSaveError}
+              outlineSavePendingPageId={notePlanOutlineSavePendingPageId}
+              outlineReadOnly={
+                session.phase === 'submitting' ||
+                Boolean(notePlanOutlineSavePendingPageId)
+              }
+              regenerateError={notePlanRegenerationError}
               timeline={turn.timeline}
             />
           </AgentFrameHost>

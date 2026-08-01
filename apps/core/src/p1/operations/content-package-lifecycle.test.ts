@@ -76,7 +76,160 @@ function acceptedPackage() {
   });
 }
 
+function noteVersion() {
+  return {
+    schema: 'image-text-note-version/v1' as const,
+    plan: {
+      schema: 'note-plan/v1' as const,
+      themeAnchor: '夏日补水护理',
+      style: {
+        id: 'practical-guide',
+        name: '干货科普版',
+        positioning: '清楚可信',
+      },
+      pages: [
+        {
+          id: 'page-1',
+          order: 1,
+          revision: 1,
+          pageRole: 'cover' as const,
+          pagePurpose: 'capture_attention' as const,
+          textBlock: {
+            title: '补水先看肤况',
+            body: '先判断当下肤况。',
+            exactText: [],
+          },
+          imageIntent: {
+            operation: 'image.generate' as const,
+            purpose: '封面配图',
+            subject: '门店护理项目',
+            scene: '真实门店场景',
+            composition: '主体清晰',
+            references: [],
+            exactText: [],
+            changes: [],
+            invariants: [],
+            factRefs: [],
+            rightsRefs: [],
+            outputPlan: { kind: 'single' as const },
+          },
+          dependencies: [],
+          imageAssetId: 'package-asset',
+        },
+        {
+          id: 'page-2',
+          order: 2,
+          revision: 1,
+          pageRole: 'cta_guide' as const,
+          pagePurpose: 'drive_action' as const,
+          textBlock: {
+            title: '预约前先沟通',
+            body: '私信说明你的肤况。',
+            exactText: [],
+          },
+          imageIntent: {
+            operation: 'image.generate' as const,
+            purpose: '行动页配图',
+            subject: '门店护理项目',
+            scene: '真实门店场景',
+            composition: '主体清晰',
+            references: [],
+            exactText: [],
+            changes: [],
+            invariants: [],
+            factRefs: [],
+            rightsRefs: [],
+            outputPlan: { kind: 'single' as const },
+          },
+          dependencies: [{ pageId: 'page-1', kind: 'text_sequence' as const }],
+          imageAssetId: 'generated-asset',
+        },
+      ],
+    },
+    regenerationReceipts: [],
+  };
+}
+
 describe('ContentPackage lifecycle module', () => {
+  it('inherits canonical note on ordinary edits and replaces it only when supplied', () => {
+    const original = acceptedPackage();
+    const baseNote = noteVersion();
+    const withNote = contentPackageSchema.parse({
+      ...original,
+      versions: original.versions.map((version) =>
+        version.id === original.currentVersionId
+          ? {
+              ...version,
+              harnessCandidateId: 'practical-guide',
+              note: baseNote,
+            }
+          : version
+      ),
+    });
+    const commonChanges = {
+      body: 'Edited package body',
+      orderedAssetIds: ['package-asset', 'generated-asset'],
+      title: 'Edited package title',
+      topics: ['beauty'],
+    };
+
+    const inherited = editContentPackageLifecycleVersion({
+      baseVersionId: 'package-v1',
+      changes: commonChanges,
+      contentPackage: withNote,
+      target: { kind: 'package' },
+      timestamp: EDITED_AT,
+      userId: 'merchant-user',
+    });
+    assert.deepEqual(inherited.contentPackage.versions.at(-1)?.note, baseNote);
+
+    const changedNote = structuredClone(baseNote);
+    changedNote.plan.pages[0]!.textBlock.title = '商家改过的封面标题';
+    const changed = editContentPackageLifecycleVersion({
+      baseVersionId: 'package-v1',
+      changes: { ...commonChanges, note: changedNote },
+      contentPackage: withNote,
+      target: { kind: 'package' },
+      timestamp: EDITED_AT,
+      userId: 'merchant-user',
+    });
+    assert.equal(
+      changed.contentPackage.versions.at(-1)?.note?.plan.pages[0]?.textBlock
+        .title,
+      '商家改过的封面标题'
+    );
+    assert.equal(
+      changed.contentPackage.versions.at(-1)?.derivedFromVersionId,
+      'package-v1'
+    );
+    assert.equal(
+      changed.contentPackage.versions.at(-1)?.note?.plan.style.id,
+      'practical-guide'
+    );
+    assert.equal(
+      changed.contentPackage.versions.at(-1)?.harnessCandidateId,
+      undefined
+    );
+
+    assert.throws(
+      () =>
+        editContentPackageLifecycleVersion({
+          baseVersionId: 'package-v1',
+          changes: {
+            ...commonChanges,
+            orderedAssetIds: ['generated-asset', 'package-asset'],
+          },
+          contentPackage: withNote,
+          target: { kind: 'package' },
+          timestamp: EDITED_AT,
+          userId: 'merchant-user',
+        }),
+      (error: unknown) =>
+        error instanceof ContentPackageLifecycleError &&
+        error.code === 'INVALID_CONTENT_PACKAGE_ASSET'
+    );
+  });
+
   it('edits package and variant versions through one atomic invariant path', () => {
     const original = acceptedPackage();
     const packageEdit = editContentPackageLifecycleVersion({

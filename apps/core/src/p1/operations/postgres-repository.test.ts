@@ -354,6 +354,148 @@ describe(
 			assert.equal(count.rows[0]?.count, "1");
 		});
 
+		it("persists note outline edits through the public OCC command", async () => {
+			const suffix = randomUUID();
+			const assetIds = [`note-cover-${suffix}`, `note-body-${suffix}`];
+			const baseVersionId = `note-version-${suffix}`;
+			const draft = await service.createContentPackage(context, {
+				kind: "image_text",
+				source: { assetIds },
+			});
+			const createdAt = draft.createdAt;
+			const baseNote = {
+				schema: "image-text-note-version/v1" as const,
+				plan: {
+					schema: "note-plan/v1" as const,
+					themeAnchor: "夏日补水护理",
+					style: {
+						id: "practical-guide",
+						name: "干货科普版",
+						positioning: "清楚可信",
+					},
+					pages: assetIds.map((imageAssetId, index) => ({
+						id: `page-${index + 1}`,
+						order: index + 1,
+						revision: 1,
+						pageRole: index === 0 ? ("cover" as const) : ("cta_guide" as const),
+						pagePurpose:
+							index === 0
+								? ("capture_attention" as const)
+								: ("drive_action" as const),
+						textBlock: {
+							title: index === 0 ? "补水先看肤况" : "预约前先沟通",
+							body: index === 0 ? "先判断当下肤况。" : "私信说明你的肤况。",
+							exactText: [],
+						},
+						imageIntent: {
+							operation: "image.generate" as const,
+							purpose: "笔记配图",
+							subject: "门店护理项目",
+							scene: "真实门店场景",
+							composition: "主体清晰",
+							references: [],
+							exactText: [],
+							changes: [],
+							invariants: [],
+							factRefs: [],
+							rightsRefs: [],
+							outputPlan: { kind: "single" as const },
+						},
+						dependencies:
+							index === 0
+								? []
+								: [{ pageId: "page-1", kind: "text_sequence" as const }],
+						imageAssetId,
+					})),
+				},
+				regenerationReceipts: [],
+			};
+			const accepted = contentPackageSchema.parse({
+				...transitionContentPackage(
+					{ ...draft, status: "review_ready" },
+					{
+						type: "adopted",
+						version: {
+							body: "补水护理正文",
+							createdAt,
+							harnessCandidateId: "practical-guide",
+							id: baseVersionId,
+							note: baseNote,
+							orderedAssetIds: assetIds,
+							title: "夏日补水护理",
+							topics: ["补水护理"],
+						},
+					},
+					createdAt,
+				),
+				revision: draft.revision + 1,
+			});
+			const state = await repository.loadWorkspace(workspaceId);
+			assert.ok(state);
+			state.contentPackages = state.contentPackages.map((item) =>
+				item.id === draft.id ? accepted : item,
+			);
+			await repository.saveWorkspace(state);
+
+			const changedNote = structuredClone(baseNote);
+			changedNote.plan.pages[0]!.textBlock.title = "商家改过的封面标题";
+			const module = new OperationsFoundationModule(service);
+			const command = {
+				action: "edit_content_package_version",
+				payload: {
+					baseVersionId,
+					changes: {
+						body: "补水护理正文",
+						note: changedNote,
+						orderedAssetIds: assetIds,
+						title: "夏日补水护理",
+						topics: ["补水护理"],
+					},
+					expectedRevision: accepted.revision,
+					packageId: accepted.id,
+				},
+			};
+			const edited = (await module.execute({
+				context,
+				idempotencyKey: `note-edit-${suffix}`,
+				input: command,
+			})) as { currentVersionId: string; revision: number };
+			const persisted = await new OperationsApplicationService(
+				new PostgresOperationsRepository(pool),
+				{
+					canvasExporter: new RecordedCanvasExportAdapter(),
+					creationExecutor,
+					imageGenerator: new RecordedImageGenerationAdapter(),
+					notifier: { async send() {} },
+				},
+			).getContentPackage(context, accepted.id);
+			const persistedVersion = persisted.versions.find(
+				(version) => version.id === edited.currentVersionId,
+			);
+
+			assert.equal(edited.revision, accepted.revision + 1);
+			assert.equal(
+				persistedVersion?.note?.plan.pages[0]?.textBlock.title,
+				"商家改过的封面标题",
+			);
+			assert.equal(
+				persistedVersion?.note?.plan.style.id,
+				"practical-guide",
+			);
+			assert.equal(persistedVersion?.harnessCandidateId, undefined);
+			await assert.rejects(
+				module.execute({
+					context,
+					idempotencyKey: `note-edit-stale-${suffix}`,
+					input: command,
+				}),
+				(error: unknown) =>
+					error instanceof Error &&
+					"code" in error &&
+					error.code === "CONTENT_PACKAGE_REVISION_CONFLICT",
+			);
+		});
+
 		it("persists public visual adoption and revision idempotency across service restarts", async () => {
 			const suffix = randomUUID();
 			const sessionId = `session-visual-adoption-${suffix}`;

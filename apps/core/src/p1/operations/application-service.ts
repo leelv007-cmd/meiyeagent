@@ -5,6 +5,7 @@ import {
   type ContentPackageChildRun,
   type ContentPackageKind,
   type ContentPackageSource,
+  type ImageTextNoteVersion,
   type QuickEditIntent,
   type ResultAdoptCommand,
   type ReviseContentPackageVisualsCommand,
@@ -8653,6 +8654,7 @@ export class OperationsApplicationService {
       changes: {
         body: string;
         conversionHook?: string;
+        note?: ImageTextNoteVersion;
         orderedAssetIds: string[];
         title: string;
         topics: string[];

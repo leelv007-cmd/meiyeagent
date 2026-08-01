@@ -186,6 +186,59 @@ export function editNotePlanPageOutline(
   return { ...timeline, pages };
 }
 
+/** Keep other local drafts after one page is reprojected from canonical Core. */
+export function preserveUnsavedNotePlanOutlines(
+  canonical: NotePlanTimeline,
+  local: NotePlanTimeline,
+  savedPageId: string
+): NotePlanTimeline {
+  return local.pages.reduce(
+    (next, page) =>
+      page.pageId !== savedPageId && page.outlineDirty
+        ? editNotePlanPageOutline(next, {
+            body: page.body,
+            pageId: page.pageId,
+            title: page.title,
+          })
+        : next,
+    canonical
+  );
+}
+
+/** Quote/confirmation phase: reserve the page control without claiming execution. */
+export function prepareNotePlanPageRegenerate(
+  timeline: NotePlanTimeline,
+  pageId: string
+): NotePlanTimeline {
+  const index = timeline.pages.findIndex((page) => page.pageId === pageId);
+  if (index === -1) {
+    throw new Error(`Unknown NotePlan page: ${pageId}`);
+  }
+  const pages = timeline.pages.slice();
+  pages[index] = {
+    ...pages[index]!,
+    regenerateRequested: true,
+  };
+  return { ...timeline, pages };
+}
+
+/** Prepare/reject/failure exit: no generation was accepted, so status is preserved. */
+export function resetNotePlanPageRegenerate(
+  timeline: NotePlanTimeline,
+  pageId: string
+): NotePlanTimeline {
+  const index = timeline.pages.findIndex((page) => page.pageId === pageId);
+  if (index === -1) {
+    throw new Error(`Unknown NotePlan page: ${pageId}`);
+  }
+  const pages = timeline.pages.slice();
+  pages[index] = {
+    ...pages[index]!,
+    regenerateRequested: false,
+  };
+  return { ...timeline, pages };
+}
+
 /**
  * Merchant per-page regenerate intent. Marks the page generating and sets
  * regenerateRequested; production host binds merchant_request generation.

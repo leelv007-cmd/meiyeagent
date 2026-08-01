@@ -10,9 +10,12 @@ import {
   notePlanCoverAndBody,
   notePlanTimelineHasOutlineEdit,
   notePlanTimelineShowsImageStatus,
+  preserveUnsavedNotePlanOutlines,
+  prepareNotePlanPageRegenerate,
   projectNotePlanTimelineFromPlan,
   projectNotePlanTimelineFromVersion,
   requestNotePlanPageRegenerate,
+  resetNotePlanPageRegenerate,
 } from './note-plan-timeline';
 
 function pageFixture(input: {
@@ -139,6 +142,36 @@ test('P1-5: edit ≥1 outline page and show image status (fixture)', () => {
   assert.ok(timeline.pages.every((page) => page.imageStatus === 'ready'));
 });
 
+test('canonical save keeps dirty outlines from unrelated pages', () => {
+  const plan = planFixture();
+  const canonical = projectNotePlanTimelineFromPlan(plan);
+  const local = editNotePlanPageOutline(
+    editNotePlanPageOutline(canonical, {
+      pageId: 'page-1',
+      title: '已保存封面',
+    }),
+    { body: '未保存的正文大纲', pageId: 'page-2' }
+  );
+  const server = projectNotePlanTimelineFromPlan({
+    ...plan,
+    pages: plan.pages.map((page) =>
+      page.id === 'page-1'
+        ? {
+            ...page,
+            textBlock: { ...page.textBlock, title: '服务端封面' },
+          }
+        : page
+    ),
+  });
+
+  const merged = preserveUnsavedNotePlanOutlines(server, local, 'page-1');
+
+  assert.equal(merged.pages[0]?.title, '服务端封面');
+  assert.equal(merged.pages[0]?.outlineDirty, false);
+  assert.equal(merged.pages[1]?.body, '未保存的正文大纲');
+  assert.equal(merged.pages[1]?.outlineDirty, true);
+});
+
 test('per-page regenerate request + fixture complete', () => {
   let timeline = projectNotePlanTimelineFromPlan(planFixture());
   timeline = requestNotePlanPageRegenerate(timeline, 'page-2');
@@ -153,6 +186,18 @@ test('per-page regenerate request + fixture complete', () => {
   assert.equal(timeline.pages[1]?.imageAssetId, 'asset-2-r2');
   assert.equal(timeline.pages[1]?.revision, 2);
   assert.equal(timeline.pages[1]?.regenerateRequested, false);
+});
+
+test('regeneration preparation and rejection never claim image execution', () => {
+  const original = projectNotePlanTimelineFromPlan(planFixture());
+  const prepared = prepareNotePlanPageRegenerate(original, 'page-2');
+
+  assert.equal(prepared.pages[1]?.imageStatus, 'ready');
+  assert.equal(prepared.pages[1]?.regenerateRequested, true);
+
+  const rejected = resetNotePlanPageRegenerate(prepared, 'page-2');
+  assert.equal(rejected.pages[1]?.imageStatus, 'ready');
+  assert.equal(rejected.pages[1]?.regenerateRequested, false);
 });
 
 test('projectNotePlanTimelineFromVersion preserves selected assets as ready', () => {

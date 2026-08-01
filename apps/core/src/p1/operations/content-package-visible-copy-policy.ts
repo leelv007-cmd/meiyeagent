@@ -1,4 +1,4 @@
-import type { ContentPackage } from '@meiye/contracts';
+import type { ContentPackage, ContentPackageVersion } from '@meiye/contracts';
 
 import {
   validateHarnessPolicy,
@@ -37,6 +37,31 @@ export async function validateContentPackageVisibleCopyPolicy(input: {
   });
 }
 
+export function contentPackageVersionVisibleText(
+  version: Pick<
+    ContentPackageVersion,
+    'body' | 'conversionHook' | 'note' | 'title'
+  >
+) {
+  return [
+    { field: 'title', text: version.title },
+    { field: 'body', text: version.body },
+    ...(version.conversionHook
+      ? [{ field: 'cta', text: version.conversionHook }]
+      : []),
+    ...(version.note?.plan.pages.flatMap((page) => [
+      {
+        field: `note.pages.${page.id}.title`,
+        text: page.textBlock.title,
+      },
+      {
+        field: `note.pages.${page.id}.body`,
+        text: page.textBlock.body,
+      },
+    ]) ?? []),
+  ];
+}
+
 function fallbackPolicy(
   contentPackage: ContentPackage,
   intendedUse: 'paid_promotion' | 'public_content',
@@ -62,13 +87,7 @@ function fallbackPolicy(
         candidateId: version.id,
         factClaims: [],
         intendedUse,
-        visibleText: [
-          { field: 'title', text: version.title },
-          { field: 'body', text: version.body },
-          ...(version.conversionHook
-            ? [{ field: 'cta', text: version.conversionHook }]
-            : []),
-        ],
+        visibleText: contentPackageVersionVisibleText(version),
         workspaceId: contentPackage.workspaceId,
       },
       identityRefs: [],

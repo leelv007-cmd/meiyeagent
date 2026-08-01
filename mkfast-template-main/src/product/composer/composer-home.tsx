@@ -92,6 +92,7 @@ import {
   type ExecutionCostFeedback,
 } from './execution-cost-feedback';
 import { ExecutionCostFeedbackLine } from './execution-cost-feedback-line';
+import type { ComposerQuotaResource } from './quota-blocking';
 import { appendObservabilityEvent } from '@/p1/observability-event-client';
 import {
   DashboardHomeGreeting,
@@ -265,11 +266,22 @@ import {
 } from './composer-session';
 import type { ComposerRecoveryInput } from './composer-report-card';
 import {
+  confirmComposerNotePlanPageRegeneration,
+  prepareComposerNotePlanPageRegeneration,
+  saveComposerNotePlanOutline,
+  type PendingComposerNotePlanPageRegeneration,
+} from './composer-note-plan-live';
+import {
   editNotePlanPageOutline,
+  prepareNotePlanPageRegenerate,
+  preserveUnsavedNotePlanOutlines,
   projectNotePlanTimelineFromVersion,
   requestNotePlanPageRegenerate,
+  resetNotePlanPageRegenerate,
+  type NotePlanTimeline,
 } from './note-plan-timeline';
 import type {
+  CreativeWorkbenchProjection,
   ImageTextNoteVersion,
   PublicContentPackage,
 } from '@meiye/contracts';
@@ -598,6 +610,25 @@ export function ComposerHome({
   const [session, setSession] = useState<ComposerSession>(() =>
     createComposerSession(sessionIdRef.current)
   );
+  const notePlanCanonicalPackageRef = useRef<PublicContentPackage | null>(null);
+  const notePlanHydratedPackageRef = useRef<string | null>(null);
+  const notePlanOutlineIntentKeysRef = useRef(new Map<string, string>());
+  const [
+    notePlanOutlineSavePendingPageId,
+    setNotePlanOutlineSavePendingPageId,
+  ] = useState<string | null>(null);
+  const [notePlanOutlineSaveError, setNotePlanOutlineSaveError] = useState<{
+    message: string;
+    pageId: string;
+  } | null>(null);
+  const [notePlanRegenerationBusy, setNotePlanRegenerationBusy] =
+    useState(false);
+  const [notePlanRegenerationError, setNotePlanRegenerationError] = useState<{
+    message: string;
+    pageId: string;
+  } | null>(null);
+  const [pendingNotePlanRegeneration, setPendingNotePlanRegeneration] =
+    useState<PendingComposerNotePlanPageRegeneration | null>(null);
   const [questionPending, setQuestionPending] = useState(false);
   const [destinationMapPending, setDestinationMapPending] = useState(false);
   const destinationMapPendingRef = useRef(false);
@@ -1418,7 +1449,6 @@ export function ComposerHome({
 
   // P1-07 / #319: after note delivery, hydrate multi-page outline onto the
   // timeline from the ContentPackage version.note field (carrier note path).
-  const notePlanHydratedPackageRef = useRef<string | null>(null);
   useEffect(() => {
     if (session.phase !== 'delivered') return;
     const packageId = session.task?.packageId;
@@ -1432,17 +1462,20 @@ export function ComposerHome({
         const matched = packages.find((item) => item.id === packageId);
         const version =
           matched?.versions.find(
+            (entry) => entry.id === matched.currentVersionId
+          ) ??
+          matched?.versions.find(
             (entry) => entry.id === workflowStream.harnessDelivery?.versionId
           ) ??
           matched?.versions.find((entry) => entry.note) ??
           matched?.versions[0];
         const note = version?.note as ImageTextNoteVersion | undefined;
         if (!note?.plan?.pages?.length) return;
+        notePlanCanonicalPackageRef.current = matched ?? null;
         notePlanHydratedPackageRef.current = packageId;
         const timeline = projectNotePlanTimelineFromVersion(note, {
-          ...(version?.harnessCandidateId
-            ? { styleId: version.harnessCandidateId }
-            : {}),
+          styleId: version?.harnessCandidateId ?? note.plan.style.id,
+          styleName: note.plan.style.name,
         });
         setSession((current) => applyComposerNotePlan(current, timeline));
       })
@@ -2677,6 +2710,234 @@ export function ComposerHome({
     missingStoreFacts,
     productLoading: product.loading,
   });
+
+  const updateMountedNotePlan = (
+    update: (timeline: NotePlanTimeline) => NotePlanTimeline
+  ) => {
+    setSession((current) => {
+      const existing = current.turns.find((turn) => turn.kind === 'note_plan');
+      if (!existing || existing.kind !== 'note_plan') return current;
+      return updateComposerNotePlan(current, update(existing.timeline));
+    });
+  };
+
+  const refreshNotePlanCanonicalPackage = async (packageId: string) => {
+    const packages = await operationsQuery<PublicContentPackage[]>(
+      'content_packages',
+      {}
+    );
+    const refreshed = packages.find((item) => item.id === packageId) ?? null;
+    if (refreshed) notePlanCanonicalPackageRef.current = refreshed;
+    return refreshed;
+  };
+
+  const saveNotePlanOutline = async (pageId: string) => {
+    if (notePlanOutlineSavePendingPageId) return;
+    const noteTurn = session.turns.find((turn) => turn.kind === 'note_plan');
+    const page =
+      noteTurn?.kind === 'note_plan'
+        ? noteTurn.timeline.pages.find(
+            (candidate) => candidate.pageId === pageId
+          )
+        : null;
+    const contentPackage = notePlanCanonicalPackageRef.current;
+    if (!page || !contentPackage) {
+      setNotePlanOutlineSaveError({
+        message: '暂时无法读取当前内容版本，请刷新后重试。',
+        pageId,
+      });
+      return;
+    }
+    const fingerprint = JSON.stringify({
+      body: page.body,
+      packageId: contentPackage.id,
+      pageId,
+      revision: contentPackage.revision,
+      title: page.title,
+    });
+    const idempotencyKey =
+      notePlanOutlineIntentKeysRef.current.get(fingerprint) ??
+      crypto.randomUUID();
+    notePlanOutlineIntentKeysRef.current.set(fingerprint, idempotencyKey);
+    setNotePlanOutlineSavePendingPageId(pageId);
+    setNotePlanOutlineSaveError(null);
+    try {
+      const saved = await saveComposerNotePlanOutline({
+        contentPackage,
+        edit: { body: page.body, pageId, title: page.title },
+        idempotencyKey,
+      });
+      notePlanOutlineIntentKeysRef.current.delete(fingerprint);
+      notePlanCanonicalPackageRef.current = saved.contentPackage;
+      setSession((current) => {
+        const existing = current.turns.find(
+          (turn) => turn.kind === 'note_plan'
+        );
+        const timeline =
+          existing?.kind === 'note_plan'
+            ? preserveUnsavedNotePlanOutlines(
+                saved.timeline,
+                existing.timeline,
+                pageId
+              )
+            : saved.timeline;
+        return updateComposerNotePlan(current, timeline);
+      });
+    } catch (error) {
+      // A stale OCC base must be refreshed without replacing the merchant's
+      // dirty local page. Retry then reapplies that page to the newest note.
+      const code = p1ErrorCode(error);
+      if (
+        code === 'CONTENT_PACKAGE_REVISION_CONFLICT' ||
+        code === 'CONTENT_PACKAGE_VERSION_CONFLICT'
+      ) {
+        notePlanOutlineIntentKeysRef.current.delete(fingerprint);
+        await refreshNotePlanCanonicalPackage(contentPackage.id).catch(
+          () => null
+        );
+      }
+      setNotePlanOutlineSaveError({
+        message: '大纲尚未保存，改动仍在本页。请重试。',
+        pageId,
+      });
+    } finally {
+      setNotePlanOutlineSavePendingPageId(null);
+    }
+  };
+
+  const prepareNotePlanRegeneration = async (pageId: string) => {
+    if (
+      notePlanRegenerationBusy ||
+      pendingNotePlanRegeneration ||
+      executionConfirm.phase === 'open'
+    ) {
+      return;
+    }
+    const contentPackage = notePlanCanonicalPackageRef.current;
+    const workId = session.task?.workId;
+    if (!contentPackage || !workId) {
+      setNotePlanRegenerationError({
+        message: '暂时无法读取当前图文版本，请刷新后重试。',
+        pageId,
+      });
+      return;
+    }
+    updateMountedNotePlan((timeline) =>
+      prepareNotePlanPageRegenerate(timeline, pageId)
+    );
+    setNotePlanRegenerationBusy(true);
+    setNotePlanRegenerationError(null);
+    setCostFeedback(null);
+    try {
+      const workbench = await operationsQuery<CreativeWorkbenchProjection>(
+        'creative_workbench',
+        {}
+      );
+      const work = workbench.works.find((candidate) => candidate.id === workId);
+      if (!work) throw new Error('The source Work was not found.');
+      const pending = await prepareComposerNotePlanPageRegeneration({
+        contentPackage,
+        pageId,
+        workId,
+        workUpdatedAt: work.updatedAt,
+      });
+      setPendingNotePlanRegeneration(pending);
+      setExecutionConfirm(
+        openExecutionConfirm(createExecutionConfirmState(), {
+          composerSnapshot: {
+            draftRevisionId: pending.derivedWorkId,
+            lensId: 'image_text',
+            sources: [],
+            userText: pending.instruction,
+          },
+          cost: projectExecutionCost({
+            available: {},
+            requirements: (pending.quote.debitUnits ?? []).map((unit) => ({
+              cost: unit.quantity,
+              resource: unit.resource as ComposerQuotaResource,
+            })),
+          }),
+          params: projectExecutionParams({
+            aspectRatio: pending.aspectRatio ?? null,
+            lensId: 'image_text',
+            outputLabel: pending.quote.outputLabel ?? null,
+            quantity: pending.quantity,
+          }),
+        })
+      );
+    } catch {
+      updateMountedNotePlan((timeline) =>
+        resetNotePlanPageRegenerate(timeline, pageId)
+      );
+      setNotePlanRegenerationError({
+        message: '暂时无法准备本页重生成，尚未使用图片额度。请重试。',
+        pageId,
+      });
+    } finally {
+      setNotePlanRegenerationBusy(false);
+    }
+  };
+
+  const rejectNotePlanRegeneration = () => {
+    const pending = pendingNotePlanRegeneration;
+    if (!pending) return;
+    updateMountedNotePlan((timeline) =>
+      resetNotePlanPageRegenerate(timeline, pending.pageId)
+    );
+    setPendingNotePlanRegeneration(null);
+    setNotePlanRegenerationError(null);
+    setExecutionConfirm((current) => rejectExecution(current).state);
+    setCostFeedback(projectExecutionCostFeedback({ outcome: 'rejected' }));
+  };
+
+  const confirmNotePlanRegeneration = async () => {
+    const pending = pendingNotePlanRegeneration;
+    if (!pending || notePlanRegenerationBusy) return;
+    setNotePlanRegenerationBusy(true);
+    setNotePlanRegenerationError(null);
+    try {
+      const result = await confirmComposerNotePlanPageRegeneration({ pending });
+      setPendingNotePlanRegeneration(null);
+      setExecutionConfirm(confirmExecution);
+      notePlanCanonicalPackageRef.current = null;
+      notePlanHydratedPackageRef.current = null;
+      setSession((current) => {
+        const noteTurn = current.turns.find(
+          (turn) => turn.kind === 'note_plan'
+        );
+        const withExecution =
+          noteTurn?.kind === 'note_plan'
+            ? updateComposerNotePlan(
+                current,
+                requestNotePlanPageRegenerate(noteTurn.timeline, pending.pageId)
+              )
+            : current;
+        return bindComposerTask(withExecution, {
+          packageId: result.contentPackage.id,
+          taskId: result.task.id,
+          workId: result.work.id,
+        });
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['harness', 'active-tasks'],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: p1QueryKeys.request('operations', 'content_packages'),
+        }),
+      ]);
+    } catch {
+      // Keep the idempotent confirmation visible for retry. No local image is
+      // marked generating until Core returns the derived Task/Work receipt.
+      setNotePlanRegenerationError({
+        message: '本页重生成尚未确认，请重试或取消；当前图片保持不变。',
+        pageId: pending.pageId,
+      });
+    } finally {
+      setNotePlanRegenerationBusy(false);
+    }
+  };
+
   // Same两个 conditions `attemptSubmit` checks before it starts anything —
   // read here so the button can say which of its two jobs is armed *before*
   // the press rather than only after it (see `composerSubmitIntent`).
@@ -2858,6 +3119,9 @@ export function ComposerHome({
                   focusComposerIntentInput();
                 }}
                 onNotePlanOutlineEdit={({ pageId, title, body }) => {
+                  setNotePlanOutlineSaveError((current) =>
+                    current?.pageId === pageId ? null : current
+                  );
                   setSession((current) => {
                     const existing = current.turns.find(
                       (turn) => turn.kind === 'note_plan'
@@ -2875,19 +3139,16 @@ export function ComposerHome({
                     );
                   });
                 }}
+                notePlanOutlineSaveError={notePlanOutlineSaveError}
+                notePlanOutlineSavePendingPageId={
+                  notePlanOutlineSavePendingPageId
+                }
+                notePlanRegenerationError={notePlanRegenerationError}
+                onNotePlanOutlineSave={(pageId) => {
+                  void saveNotePlanOutline(pageId);
+                }}
                 onNotePlanRegeneratePage={(pageId) => {
-                  setSession((current) => {
-                    const existing = current.turns.find(
-                      (turn) => turn.kind === 'note_plan'
-                    );
-                    if (!existing || existing.kind !== 'note_plan') {
-                      return current;
-                    }
-                    return updateComposerNotePlan(
-                      current,
-                      requestNotePlanPageRegenerate(existing.timeline, pageId)
-                    );
-                  });
+                  void prepareNotePlanRegeneration(pageId);
                 }}
                 onOpenDelivery={openDelivery}
                 onRateDelivery={async ({
@@ -2962,8 +3223,14 @@ export function ComposerHome({
                       ) : clientExecutionConfirmOpen ? (
                         <ExecutionConfirmCard
                           {...projectExecutionConfirmCard(executionConfirm, {
-                            busy: createWork.isPending || briefPending,
+                            busy: pendingNotePlanRegeneration
+                              ? notePlanRegenerationBusy
+                              : createWork.isPending || briefPending,
                             onConfirm: () => {
+                              if (pendingNotePlanRegeneration) {
+                                void confirmNotePlanRegeneration();
+                                return;
+                              }
                               const run = pendingRunRef.current;
                               setExecutionConfirm(confirmExecution);
                               if (!run) return;
@@ -2975,6 +3242,10 @@ export function ComposerHome({
                               );
                             },
                             onReject: () => {
+                              if (pendingNotePlanRegeneration) {
+                                rejectNotePlanRegeneration();
+                                return;
+                              }
                               pendingRunRef.current = null;
                               setExecutionConfirm(
                                 (current) => rejectExecution(current).state
@@ -2985,9 +3256,11 @@ export function ComposerHome({
                                 })
                               );
                             },
-                            staleNotice: currentQuoteView
-                              ? null
-                              : briefStaleQuoteNotice(),
+                            staleNotice: pendingNotePlanRegeneration
+                              ? (notePlanRegenerationError?.message ?? null)
+                              : currentQuoteView
+                                ? null
+                                : briefStaleQuoteNotice(),
                           })}
                         />
                       ) : null}
