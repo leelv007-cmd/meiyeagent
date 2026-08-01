@@ -37,6 +37,18 @@ test('DBOS event reader exposes durable progress then the revision result', asyn
             versionId: 'version-1',
             revision: 1,
           },
+          experienceBasis: {
+            taskId: 'task-1',
+            contextBundleId: 'bundle-task-1',
+            contextBundleRevision: 2,
+            confirmedPreferences: [
+              {
+                sourceRef: 'preference:tone:r1',
+                label: '少促销感',
+                value: '少促销感',
+              },
+            ],
+          },
           recommendation: {
             recommendedCandidateId: 'c02',
             decisionTrace: {
@@ -109,6 +121,18 @@ test('DBOS event reader exposes durable progress then the revision result', asyn
         packageId: 'package-1',
         versionId: 'version-1',
         revision: 1,
+      },
+      experienceBasis: {
+        taskId: 'task-1',
+        contextBundleId: 'bundle-task-1',
+        contextBundleRevision: 2,
+        confirmedPreferences: [
+          {
+            sourceRef: 'preference:tone:r1',
+            label: '少促销感',
+            value: '少促销感',
+          },
+        ],
       },
       recommendation: {
         recommendedCandidateId: 'c02',

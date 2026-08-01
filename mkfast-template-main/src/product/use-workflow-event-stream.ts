@@ -1,9 +1,11 @@
 import {
   contentPackageRevisionDeliverySchema,
+  harnessExperienceBasisSchema,
   workflowProgressFrameSchema,
   workflowStateFrameSchema,
   workflowTokenFrameSchema,
   type ContentPackageRevisionDelivery,
+  type HarnessExperienceBasis,
   type MerchantReport,
   type WorkflowProgressEnvelope,
   type WorkflowProgressFrame,
@@ -159,6 +161,40 @@ export function harnessDeliveryFromState(
   return parsed.success ? parsed.data : undefined;
 }
 
+export function harnessExperienceBasisFromProgress(
+  progress: WorkflowProgressEnvelope,
+  workflowId: string
+): HarnessExperienceBasis | undefined {
+  if (
+    progress.workflowId !== workflowId ||
+    progress.stage !== 'context_injection' ||
+    progress.state !== 'success'
+  ) {
+    return undefined;
+  }
+  const parsed = harnessExperienceBasisSchema.safeParse(
+    progress.experienceBasis
+  );
+  return parsed.success && parsed.data.taskId === workflowId
+    ? parsed.data
+    : undefined;
+}
+
+export function harnessExperienceBasisFromState(
+  state: WorkflowStateEnvelope,
+  workflowId: string
+): HarnessExperienceBasis | undefined {
+  if (state.workflowId !== workflowId || state.status !== 'success') {
+    return undefined;
+  }
+  const parsed = harnessExperienceBasisSchema.safeParse(
+    state.snapshot.experienceBasis
+  );
+  return parsed.success && parsed.data.taskId === workflowId
+    ? parsed.data
+    : undefined;
+}
+
 export type HarnessCancellationOutcome = {
   merchantMessage: string;
   outcome: 'cancelled';
@@ -210,6 +246,9 @@ export function useWorkflowEventStream(input: {
   const [harnessDelivery, setHarnessDelivery] = useState<
     ContentPackageRevisionDelivery | undefined
   >();
+  const [harnessExperienceBasis, setHarnessExperienceBasis] = useState<
+    HarnessExperienceBasis | undefined
+  >();
   const [harnessCancellation, setHarnessCancellation] = useState<
     HarnessCancellationOutcome | undefined
   >();
@@ -226,6 +265,7 @@ export function useWorkflowEventStream(input: {
     setCopyCandidates([]);
     setWorkflowState(undefined);
     setHarnessDelivery(undefined);
+    setHarnessExperienceBasis(undefined);
     setHarnessCancellation(undefined);
     setMerchantReport(undefined);
     if (!input.enabled || !input.workflowId) {
@@ -262,6 +302,11 @@ export function useWorkflowEventStream(input: {
         cursor.current = next.cursor;
         if (frame.event === 'workflow.progress') {
           setLatestProgress(frame.data);
+          const experienceBasis = harnessExperienceBasisFromProgress(
+            frame.data,
+            input.workflowId
+          );
+          if (experienceBasis) setHarnessExperienceBasis(experienceBasis);
           return;
         }
         if (frame.event === 'workflow.token') {
@@ -278,6 +323,9 @@ export function useWorkflowEventStream(input: {
         }
         const delivery = harnessDeliveryFromState(frame.data);
         if (delivery) setHarnessDelivery(delivery);
+        setHarnessExperienceBasis(
+          harnessExperienceBasisFromState(frame.data, input.workflowId)
+        );
         const cancellation = harnessCancellationFromState(frame.data);
         if (cancellation) setHarnessCancellation(cancellation);
         const envelope = videoWorkflowEnvelopeFromState(frame.data);
@@ -336,6 +384,7 @@ export function useWorkflowEventStream(input: {
     copyCandidates: matchesInput ? copyCandidates : [],
     harnessCancellation: matchesInput ? harnessCancellation : undefined,
     harnessDelivery: matchesInput ? harnessDelivery : undefined,
+    harnessExperienceBasis: matchesInput ? harnessExperienceBasis : undefined,
     latestProgress: matchesInput ? latestProgress : undefined,
     // Gated like every other field: a 申报 belongs to the run it came from, and
     // handing it to a surface now watching a different workflow would state one

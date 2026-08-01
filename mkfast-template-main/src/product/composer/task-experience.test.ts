@@ -38,29 +38,33 @@ test('experienceEntryLabel never stringifies objects as JSON blobs', () => {
   assert.equal(experienceEntryLabel({}, 'fallback'), 'fallback');
 });
 
-test('basis keeps the selected identity without claiming unbound workspace entries', () => {
+test('basis renders only labels supplied by the frozen current-task producer', () => {
   const ready = projectExperienceBasis({
-    querySettled: true,
-    identityLabel: '主理人口吻',
-    confirmedEntries: [
-      { entryId: 'e1', value: '少促销感' },
-      { entryId: 'e2', value: '先讲问题再讲项目' },
+    producerSettled: true,
+    confirmedPreferences: [
+      {
+        sourceRef: 'preference:tone:r1',
+        label: '少促销感',
+        value: 'the UI must not re-derive this label',
+      },
+      {
+        sourceRef: 'preference:structure:r2',
+        label: '先讲问题再讲项目',
+        value: { structure: ['problem', 'project'] },
+      },
     ],
-    consumedEntryIds: null,
   });
   assert.equal(ready.state, 'ready');
   assert.deepEqual(
     ready.chips.map((c) => c.label),
-    ['主理人口吻']
+    ['少促销感', '先讲问题再讲项目']
   );
 });
 
 test('basis is honest empty when producer settled with nothing', () => {
   const empty = projectExperienceBasis({
-    querySettled: true,
-    identityLabel: null,
-    confirmedEntries: [{ entryId: 'workspace-entry', value: '少促销感' }],
-    consumedEntryIds: null,
+    producerSettled: true,
+    confirmedPreferences: [],
   });
   assert.equal(empty.state, 'empty');
   assert.deepEqual(empty.chips, []);
@@ -68,10 +72,8 @@ test('basis is honest empty when producer settled with nothing', () => {
 
 test('basis stays loading until the producer settles', () => {
   const loading = projectExperienceBasis({
-    querySettled: false,
-    identityLabel: '主理人口吻',
-    confirmedEntries: [{ entryId: 'e1', value: 'x' }],
-    consumedEntryIds: null,
+    producerSettled: false,
+    confirmedPreferences: [],
   });
   assert.equal(loading.state, 'loading');
   assert.deepEqual(loading.chips, []);

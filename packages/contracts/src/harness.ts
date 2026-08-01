@@ -1,6 +1,10 @@
 import { z } from 'zod';
 
 import {
+  CONTEXT_DIMENSIONS,
+  type ContextBundle,
+} from './context-bundle.js';
+import {
   assistantContextSchema,
   assistantFieldPatchBaseSchema,
 } from './p1.js';
@@ -93,6 +97,97 @@ export const chipsSignalInputSchema = z
   })
   .strict();
 
+export const harnessExperienceBasisSchema = z
+  .object({
+    taskId: harnessIdSchema,
+    contextBundleId: harnessIdSchema,
+    contextBundleRevision: z.number().int().positive(),
+    confirmedPreferences: z.array(
+      z
+        .object({
+          sourceRef: harnessIdSchema,
+          label: z.string().trim().min(1),
+          value: z.json(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+/**
+ * One immutable execution-basis projection shared by the running and terminal
+ * carriers. Reading resolved bundle values (rather than memory inventory)
+ * proves each preference survived precedence resolution for this task.
+ */
+export function projectHarnessExperienceBasis(
+  bundle: ContextBundle,
+): HarnessExperienceBasis {
+  const resolved = CONTEXT_DIMENSIONS.flatMap((dimension) =>
+    Object.entries(bundle.dimensions[dimension])
+      .filter(([, value]) => value.layer === 'confirmed_preference')
+      .map(([key, value]) => ({ key, ...value })),
+  ).sort(
+    (left, right) =>
+      left.sourceRef.localeCompare(right.sourceRef) ||
+      left.key.localeCompare(right.key),
+  );
+  const seen = new Set<string>();
+  const confirmedPreferences = resolved.flatMap((preference) => {
+    if (seen.has(preference.sourceRef)) return [];
+    seen.add(preference.sourceRef);
+    return [
+      {
+        sourceRef: preference.sourceRef,
+        label: harnessExperienceLabel(
+          preference.value,
+          preference.sourceRef,
+        ),
+        value: preference.value,
+      },
+    ];
+  });
+  return harnessExperienceBasisSchema.parse({
+    taskId: bundle.taskId,
+    contextBundleId: bundle.bundleId,
+    contextBundleRevision: bundle.revision,
+    confirmedPreferences,
+  });
+}
+
+function harnessExperienceLabel(value: unknown, fallback: string) {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .filter(
+        (item): item is string | number | boolean =>
+          typeof item === 'string' ||
+          typeof item === 'number' ||
+          typeof item === 'boolean',
+      )
+      .map(String)
+      .filter((item) => item.trim());
+    if (parts.length > 0) return parts.slice(0, 3).join(' · ');
+  }
+  if (value && typeof value === 'object') {
+    const parts = Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .flatMap(([, nested]) => {
+        if (typeof nested === 'string' && nested.trim()) {
+          return [nested.trim()];
+        }
+        if (typeof nested === 'number' || typeof nested === 'boolean') {
+          return [String(nested)];
+        }
+        return [];
+      });
+    if (parts.length > 0) return parts.slice(0, 3).join(' · ');
+  }
+  return fallback;
+}
+
 export const workflowProgressEnvelopeSchema = z
   .object({
     eventId: harnessIdSchema,
@@ -104,8 +199,30 @@ export const workflowProgressEnvelopeSchema = z
     state: workflowStateSchema,
     occurredAt: harnessTimestampSchema,
     message: z.string().trim().min(1).max(2_000).optional(),
+    experienceBasis: harnessExperienceBasisSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((progress, context) => {
+    if (!progress.experienceBasis) return;
+    if (
+      progress.stage !== 'context_injection' ||
+      progress.state !== 'success'
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Experience basis may only ride successful context injection progress.',
+        path: ['experienceBasis'],
+      });
+    }
+    if (progress.experienceBasis.taskId !== progress.workflowId) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Experience basis task must match the workflow.',
+        path: ['experienceBasis', 'taskId'],
+      });
+    }
+  });
 
 export const workflowProgressFrameSchema = z
   .object({
@@ -629,6 +746,9 @@ export type FirstUsableDraftMetric = z.infer<
   typeof firstUsableDraftMetricSchema
 >;
 export type ChipsSignalInput = z.infer<typeof chipsSignalInputSchema>;
+export type HarnessExperienceBasis = z.infer<
+  typeof harnessExperienceBasisSchema
+>;
 export type WorkflowProgressEnvelope = z.infer<
   typeof workflowProgressEnvelopeSchema
 >;

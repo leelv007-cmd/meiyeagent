@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { memoryTaskSourceConversationId } from '@meiye/contracts';
 
 import { HarnessCheckTargetScope } from '../agent-primitives/harness-check-target-scope.js';
 import {
@@ -68,6 +69,17 @@ test('production sedimentation replays all four decisions idempotently through t
     ['friendly', 'restrained', 'short'],
   );
   assert.deepEqual(
+    (await service.memoryEntriesPage('workspace-a', { limit: 10 })).items.map(
+      (entry) => entry.source?.conversationId,
+    ),
+    Array(3).fill(
+      memoryTaskSourceConversationId(
+        'conversation-a',
+        'task-memory-production',
+      ),
+    ),
+  );
+  assert.deepEqual(
     (await repository.listMemorySedimentationAudits('workspace-a')).map(
       ({ decision }) => decision,
     ),
@@ -107,8 +119,10 @@ test('production sedimentation records a durable failure without rejecting deliv
       {
         auditId: 'task-memory-production:pipeline',
         workspaceId: 'workspace-a',
-        conversationId:
-          'conversation-a:task-memory-production',
+        conversationId: memoryTaskSourceConversationId(
+          'conversation-a',
+          'task-memory-production',
+        ),
         itemId: 'pipeline',
         outcome: 'failed',
         decision: 'item_failed',

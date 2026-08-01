@@ -3,6 +3,13 @@ import { z } from 'zod';
 const idSchema = z.string().trim().min(1);
 const timestampSchema = z.iso.datetime();
 
+export function memoryTaskSourceConversationId(
+  workId: string,
+  taskId: string,
+) {
+  return `${idSchema.parse(workId)}:${idSchema.parse(taskId)}`;
+}
+
 export const reusableAssetScopeSchema = z
   .object({
     storeId: idSchema,

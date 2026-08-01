@@ -126,6 +126,79 @@ test('five semantic stages run in order with stable effect keys and a delivery f
   );
 });
 
+test('the running and terminal carriers share the frozen confirmed-preference basis', async () => {
+  const stages = fixtureStages();
+  const injectContext = stages.injectContext.bind(stages);
+  stages.injectContext = async (input) => {
+    const context = await injectContext(input);
+    return {
+      ...context,
+      bundle: {
+        ...context.bundle,
+        dimensions: {
+          ...context.bundle.dimensions,
+          expression_identity: {
+            selected_identity: {
+              value: { displayName: '主理人口吻' },
+              layer: 'confirmed_asset',
+              pool: 'store_personal',
+              sourceRef: 'marketing_identity:owner:3',
+            },
+            preference_tone: {
+              value: '少促销感',
+              layer: 'confirmed_preference',
+              pool: 'store_personal',
+              sourceRef: 'preference:tone:r1',
+            },
+          },
+        },
+      },
+    };
+  };
+  const progress: Array<
+    Parameters<HarnessWorkflowRuntime['progress']>[0]
+  > = [];
+  const runtime: HarnessWorkflowRuntime = {
+    async runStep(_effectIdempotencyKey, operation) {
+      return operation();
+    },
+    async progress(event) {
+      progress.push(event);
+    },
+    async token() {},
+    async awaitDecision() {
+      throw new Error('Unexpected decision wait.');
+    },
+    async recordTrace() {},
+  };
+
+  const result = await runHarnessWorkflow(
+    'task-35',
+    taskInput(),
+    stages,
+    runtime,
+  );
+  const expected = {
+    taskId: 'task-35',
+    contextBundleId: 'bundle-1',
+    contextBundleRevision: 1,
+    confirmedPreferences: [
+      {
+        sourceRef: 'preference:tone:r1',
+        label: '少促销感',
+        value: '少促销感',
+      },
+    ],
+  };
+
+  assert.deepEqual(
+    progress.find(({ stage }) => stage === 'context_injection')
+      ?.experienceBasis,
+    expected,
+  );
+  assert.deepEqual(result.experienceBasis, expected);
+});
+
 test('selected Skill refs freeze and enter all five stage effects and traces without instruction text', async () => {
   const calls: string[] = [];
   const traces: Array<{ stage: string; payload: unknown }> = [];

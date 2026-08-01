@@ -1,3 +1,4 @@
+import { memoryTaskSourceConversationId } from '@meiye/contracts';
 import { z } from 'zod';
 
 import type { RecordProposalPort } from '../agent-primitives/core-handlers.js';
@@ -104,7 +105,10 @@ export class ProductionMemorySedimentationCoordinator
       await this.repository.appendMemorySedimentationAudit({
         auditId: `${input.workflowId}:pipeline`,
         workspaceId: input.request.workspaceId,
-        conversationId: `${snapshot.work.id}:${input.workflowId}`,
+        conversationId: memoryTaskSourceConversationId(
+          snapshot.work.id,
+          input.workflowId,
+        ),
         itemId: 'pipeline',
         outcome: 'failed',
         decision: 'item_failed',
@@ -185,7 +189,10 @@ export class ProductionMemorySedimentationCoordinator
       () =>
         pipeline.complete({
           workspaceId: input.request.workspaceId,
-          conversationId: `${snapshot.work.id}:${input.workflowId}`,
+          conversationId: memoryTaskSourceConversationId(
+            snapshot.work.id,
+            input.workflowId,
+          ),
           turnId: input.workflowId,
           observedAt: stableTime,
           messages: [

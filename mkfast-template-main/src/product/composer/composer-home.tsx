@@ -67,7 +67,10 @@ import type {
   ResultPanel,
   StoreFact,
 } from '@meiye/contracts';
-import { composerSubmissionSignedFieldsSchema } from '@meiye/contracts';
+import {
+  composerSubmissionSignedFieldsSchema,
+  memoryTaskSourceConversationId,
+} from '@meiye/contracts';
 import type { AccountUsageProjection } from '@/product/account-usage';
 import { uploadProductAsset } from '@/api/product-assets';
 import { assetAuthorizationIdempotencyKey } from '@/product/asset-authorization-model';
@@ -835,23 +838,8 @@ export function ComposerHome({
     ]
   );
   const experienceTaskSourceConversationId = session.task
-    ? `${session.task.workId}:${session.task.taskId}`
+    ? memoryTaskSourceConversationId(session.task.workId, session.task.taskId)
     : null;
-  const experienceBasis = useMemo(
-    () =>
-      projectExperienceBasis({
-        querySettled:
-          experienceEntriesQuery.isSuccess || experienceEntriesQuery.isError,
-        // The mutable session selector is not the immutable task snapshot.
-        identityLabel: null,
-        // `entries_page` is workspace-wide provenance, not proof that this
-        // execution snapshot consumed an entry. Fail closed until the snapshot
-        // exposes canonical consumed entry ids.
-        confirmedEntries: [],
-        consumedEntryIds: null,
-      }),
-    [experienceEntriesQuery.isError, experienceEntriesQuery.isSuccess]
-  );
   const experienceSediment = useMemo(
     () =>
       projectExperienceSediment({
@@ -1611,6 +1599,18 @@ export function ComposerHome({
     workflowId: taskId,
     workflowQueryKey,
   });
+  const experienceBasis = useMemo(
+    () =>
+      projectExperienceBasis({
+        producerSettled:
+          Boolean(workflowStream.harnessExperienceBasis) ||
+          workflowStream.workflowState === 'success' ||
+          workflowStream.workflowState === 'failed',
+        confirmedPreferences:
+          workflowStream.harnessExperienceBasis?.confirmedPreferences ?? [],
+      }),
+    [workflowStream.harnessExperienceBasis, workflowStream.workflowState]
+  );
 
   useEffect(() => {
     if (!workflowStream.latestProgress) return;

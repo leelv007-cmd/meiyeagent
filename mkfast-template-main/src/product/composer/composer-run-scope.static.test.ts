@@ -41,6 +41,17 @@ test('the composer only listens to the run its session currently holds', () => {
   assert.doesNotMatch(home, /workflowId: (?!taskId)[A-Za-z]/u);
 });
 
+test('experience basis is bound to the current workflow carrier, not workspace selectors', () => {
+  const projectionStart = home.indexOf('const experienceBasis = useMemo');
+  const projectionEnd = home.indexOf('useEffect', projectionStart);
+  const projection = home.slice(projectionStart, projectionEnd);
+
+  assert.ok(projectionStart >= 0, 'experience basis projection must exist');
+  assert.match(projection, /workflowStream\.harnessExperienceBasis/u);
+  assert.doesNotMatch(projection, /identitySelection/u);
+  assert.doesNotMatch(projection, /experienceEntriesQuery/u);
+});
+
 /**
  * The handle is the tab's memory of a run it holds. A recovery unbinds it, and
  * if sessionStorage kept the old one the next reload would restore the run the

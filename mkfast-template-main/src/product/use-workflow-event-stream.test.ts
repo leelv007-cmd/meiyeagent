@@ -10,6 +10,8 @@ import {
   advanceWorkflowEventCursorForWorkflow,
   harnessCancellationFromState,
   harnessDeliveryFromState,
+  harnessExperienceBasisFromProgress,
+  harnessExperienceBasisFromState,
   parseWorkflowEventFrame,
   reduceWorkflowCopyTokens,
   videoWorkflowEnvelopeFromState,
@@ -26,6 +28,118 @@ const progress: WorkflowProgressEnvelope = {
   workflowId: 'video-a',
   workflowType: 'video',
 };
+
+const experienceBasis = {
+  taskId: 'video-a',
+  contextBundleId: 'bundle-video-a',
+  contextBundleRevision: 2,
+  confirmedPreferences: [
+    {
+      sourceRef: 'preference:tone:r1',
+      label: '少促销感',
+      value: '少促销感',
+    },
+  ],
+};
+
+test('accepts current-task experience basis from running progress and terminal restore only', () => {
+  const contextProgress = {
+    ...progress,
+    stage: 'context_injection' as const,
+    state: 'success' as const,
+    experienceBasis,
+  };
+  assert.deepEqual(
+    harnessExperienceBasisFromProgress(contextProgress, 'video-a'),
+    experienceBasis
+  );
+  assert.equal(
+    harnessExperienceBasisFromProgress(contextProgress, 'task-other'),
+    undefined
+  );
+  assert.equal(
+    harnessExperienceBasisFromProgress(
+      {
+        ...contextProgress,
+        experienceBasis: { ...experienceBasis, taskId: 'task-other' },
+      },
+      'video-a'
+    ),
+    undefined
+  );
+
+  const terminal = {
+    occurredAt: '2026-08-02T01:00:03.000Z',
+    snapshot: { experienceBasis },
+    sourceRevision: 3,
+    status: 'success' as const,
+    workflowId: 'video-a',
+  };
+  assert.deepEqual(
+    harnessExperienceBasisFromState(terminal, 'video-a'),
+    experienceBasis
+  );
+  assert.equal(
+    harnessExperienceBasisFromState(terminal, 'task-other'),
+    undefined
+  );
+  assert.equal(
+    harnessExperienceBasisFromState(
+      {
+        ...terminal,
+        snapshot: {
+          experienceBasis: { ...experienceBasis, taskId: 'task-other' },
+        },
+      },
+      'video-a'
+    ),
+    undefined
+  );
+});
+
+test('an older experience progress frame cannot replace the accepted basis', () => {
+  const newestFrame = {
+    data: {
+      ...progress,
+      eventId: 'video-a:4',
+      sequence: 4,
+      stage: 'context_injection' as const,
+      state: 'success' as const,
+      experienceBasis,
+    },
+    event: 'workflow.progress' as const,
+  };
+  const newest = advanceWorkflowEventCursorForWorkflow(
+    undefined,
+    'video-a',
+    newestFrame
+  );
+  let current = harnessExperienceBasisFromProgress(newestFrame.data, 'video-a');
+  const olderFrame = {
+    ...newestFrame,
+    data: {
+      ...newestFrame.data,
+      eventId: 'video-a:3',
+      sequence: 3,
+      experienceBasis: {
+        ...experienceBasis,
+        contextBundleRevision: 1,
+        confirmedPreferences: [],
+      },
+    },
+  };
+  const older = advanceWorkflowEventCursorForWorkflow(
+    newest.cursor,
+    'video-a',
+    olderFrame
+  );
+  if (older.accepted) {
+    current = harnessExperienceBasisFromProgress(olderFrame.data, 'video-a');
+  }
+
+  assert.equal(older.accepted, false);
+  assert.deepEqual(current, experienceBasis);
+});
 
 test('parses the three named SSE frame contracts without crossing their shapes', () => {
   const progressFrame = parseWorkflowEventFrame(

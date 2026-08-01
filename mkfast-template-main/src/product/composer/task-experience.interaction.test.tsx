@@ -41,8 +41,11 @@ describe('ExperienceBasisSurface', () => {
     const projection: ExperienceBasisProjection = {
       state: 'ready',
       chips: [
-        { id: 'identity', label: '主理人口吻' },
-        { id: 'e1', label: '少促销感' },
+        { id: 'preference:tone:r1', label: '少促销感' },
+        {
+          id: 'preference:structure:r2',
+          label: '先讲问题再讲项目',
+        },
       ],
     };
     render(<ExperienceBasisSurface projection={projection} />);
@@ -51,11 +54,11 @@ describe('ExperienceBasisSurface', () => {
       'memory'
     );
     expect(screen.getByTestId('experience-basis-chips')).toHaveTextContent(
-      '主理人口吻'
-    );
-    expect(screen.getByTestId('experience-basis-chip-e1')).toHaveTextContent(
       '少促销感'
     );
+    expect(
+      screen.getByTestId('experience-basis-chip-preference:tone:r1')
+    ).toHaveTextContent('少促销感');
     expect(screen.queryByTestId('experience-basis-empty')).toBeNull();
   });
 

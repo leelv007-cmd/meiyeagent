@@ -2,11 +2,13 @@ import {
   BOUNDED_EXECUTION_LIMITS,
   type BoundedExecutionSnapshot,
   HARNESS_STAGES,
+  projectHarnessExperienceBasis,
   questionCardSchema,
   type HarnessStage,
   type ContentPackage,
   type ContentPackageRevisionDelivery,
   type CreativeRecommendationDecisionTrace,
+  type HarnessExperienceBasis,
   type NoteStyleCandidates,
   type QuestionCard,
   type StructuredDecisionInput,
@@ -388,6 +390,7 @@ export interface HarnessWorkflowRuntime {
       | 'assembly_delivery';
     state: 'running' | 'success' | 'suspended';
     message: string;
+    experienceBasis?: HarnessExperienceBasis;
   }): Promise<void>;
   token(event: {
     sequence: number;
@@ -1245,6 +1248,7 @@ export async function runHarnessWorkflow(
     stage: 'context_injection',
     state: 'success',
     message: merchantContextMessage(activeRequest),
+    experienceBasis: projectHarnessExperienceBasis(bundle.bundle),
   });
   let factGate = await resolveFactSatisfaction({
     workflowId,
@@ -1386,6 +1390,7 @@ export async function runHarnessWorkflow(
       stage: 'context_injection',
       state: 'success',
       message: '资料有更新，已同步到本次创作',
+      experienceBasis: projectHarnessExperienceBasis(bundle.bundle),
     });
     factGate = await resolveFactSatisfaction({
       workflowId,
@@ -1540,6 +1545,7 @@ export async function runHarnessWorkflow(
   return {
     delivery,
     deliveryLayer: routed.declaration.deliveryLayer,
+    experienceBasis: projectHarnessExperienceBasis(bundle.bundle),
     recommendation,
     trace: selection.trace,
   };
@@ -1634,6 +1640,7 @@ async function runNoteHarnessWorkflow(
     stage: 'context_injection',
     state: 'success',
     message: merchantContextMessage(activeRequest),
+    experienceBasis: projectHarnessExperienceBasis(context.bundle),
   });
 
   let factGate = await resolveFactSatisfaction({
@@ -1780,6 +1787,12 @@ async function runNoteHarnessWorkflow(
       recompiled: true,
       ...skillTraceLineage(contextSkills),
     }, `r${context.bundle.revision}`);
+    await reportProgress({
+      stage: 'context_injection',
+      state: 'success',
+      message: '资料有更新，已同步到本次创作',
+      experienceBasis: projectHarnessExperienceBasis(context.bundle),
+    });
   }
 
   // P1-05 / xhs-spec §3.3 / §8.2: plan.ready (style selected + brief fenced)
@@ -1976,6 +1989,7 @@ async function runNoteHarnessWorkflow(
     },
     delivery,
     deliveryLayer: routed.declaration.deliveryLayer,
+    experienceBasis: projectHarnessExperienceBasis(context.bundle),
     recommendation,
     trace: selection.trace,
   };
@@ -2091,6 +2105,7 @@ async function runMediaHarnessWorkflow(
     stage: 'context_injection',
     state: 'success',
     message: merchantContextMessage(activeRequest),
+    experienceBasis: projectHarnessExperienceBasis(bundle.bundle),
   });
 
   let factGate = await resolveFactSatisfaction({
@@ -2405,6 +2420,7 @@ async function runMediaHarnessWorkflow(
       stage: 'context_injection',
       state: 'success',
       message: '资料有更新，已同步到本次创作',
+      experienceBasis: projectHarnessExperienceBasis(bundle.bundle),
     });
     compiledBrief = await runtime.runStep(
       harnessEffectKey(
@@ -2549,6 +2565,7 @@ async function runMediaHarnessWorkflow(
   return {
     delivery,
     deliveryLayer: routed.declaration.deliveryLayer,
+    experienceBasis: projectHarnessExperienceBasis(bundle.bundle),
     recommendation,
     trace: selection.trace,
     ...(brief.kind === 'video'
@@ -3275,6 +3292,7 @@ async function resolveFactSatisfaction(input: {
     stage: 'context_injection',
     state: 'success',
     message: '已收到，继续为你生成。',
+    experienceBasis: projectHarnessExperienceBasis(context.bundle),
   });
   return {
     request,

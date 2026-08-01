@@ -11,6 +11,8 @@
  * or correction classifications the server did not supply.
  */
 
+import type { HarnessExperienceBasis } from '@meiye/contracts';
+
 export type ExperienceChip = {
   id: string;
   label: string;
@@ -90,37 +92,26 @@ export function experienceEntryLabel(value: unknown, fallback: string): string {
 }
 
 /**
- * Pre-execution basis: identity voice + confirmed experience chips.
- * `querySettled=false` → loading; settled with zero chips → honest empty.
+ * Pre-execution basis: only preferences resolved into this task's frozen
+ * ContextBundle. `producerSettled=false` → loading; a settled empty projection
+ * remains an honest empty state.
  */
 export function projectExperienceBasis(input: {
-  querySettled: boolean;
-  identityLabel: string | null;
-  confirmedEntries: Array<{ entryId: string; value: unknown }>;
-  /** Entry ids the current execution snapshot explicitly consumed. */
-  consumedEntryIds: readonly string[] | null;
+  producerSettled: boolean;
+  confirmedPreferences: HarnessExperienceBasis['confirmedPreferences'];
   maxChips?: number;
 }): ExperienceBasisProjection {
-  if (!input.querySettled) {
+  if (!input.producerSettled) {
     return { state: 'loading', chips: [] };
   }
   const max = input.maxChips ?? 5;
-  const chips: ExperienceChip[] = [];
-  if (input.identityLabel?.trim()) {
-    chips.push({
-      id: 'identity',
-      label: input.identityLabel.trim(),
-    });
-  }
-  const consumedEntryIds = new Set(input.consumedEntryIds ?? []);
-  for (const entry of input.confirmedEntries) {
-    if (chips.length >= max) break;
-    if (!consumedEntryIds.has(entry.entryId)) continue;
-    chips.push({
-      id: entry.entryId,
-      label: experienceEntryLabel(entry.value, entry.entryId),
-    });
-  }
+  const chips = input.confirmedPreferences
+    .filter((preference) => preference.label.trim())
+    .slice(0, max)
+    .map((preference) => ({
+      id: preference.sourceRef,
+      label: preference.label.trim(),
+    }));
   if (chips.length === 0) {
     return { state: 'empty', chips: [] };
   }

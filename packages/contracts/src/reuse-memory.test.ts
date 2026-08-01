@@ -5,6 +5,7 @@ import {
   confirmMemoryCandidateCommandSchema,
   deleteMemoryEntryCommandSchema,
   memoryEntriesPageQuerySchema,
+  memoryTaskSourceConversationId,
   preferenceCandidateSchema,
   preferenceSignalSchema,
   preferenceSchema,
@@ -12,6 +13,13 @@ import {
   reuseTaskSeedSchema,
   sourcedPreferenceCandidateSchema,
 } from './reuse-memory.js';
+
+test('current-task memory source conversation id is shared by Core and Web', () => {
+  assert.equal(
+    memoryTaskSourceConversationId('work-current', 'task-current'),
+    'work-current:task-current',
+  );
+});
 
 test('memory entry queries are strictly bounded and have no all-items semantic', () => {
   assert.deepEqual(memoryEntriesPageQuerySchema.parse({}), { limit: 20 });
