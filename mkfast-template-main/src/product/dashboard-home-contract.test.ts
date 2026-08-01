@@ -155,10 +155,7 @@ test('P0-1: Active collapses 段① recommendation and 段③ continue via workb
 test('P0-4: recommendation prefill is typed handoff, not hard-coded copy lens', () => {
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /applyRecommendationHandoff/u);
-  assert.doesNotMatch(
-    home,
-    /selectLens\(\s*current\s*,\s*['"]copy['"]\s*\)/u
-  );
+  assert.doesNotMatch(home, /selectLens\(\s*current\s*,\s*['"]copy['"]\s*\)/u);
 });
 
 test('the greeting is fed by workbenchGreetingName, not by a new data source', () => {
