@@ -108,10 +108,16 @@ import type { ConfirmedAssetFacts } from '@/product/creation-entry-model';
 import { ViralAdaptPanel } from '@/product/viral-adapt/viral-adapt-panel';
 import {
   advanceViralSourcingToConfirm,
+  beginViralOpenCliRead,
   cancelViralAdaptJourney,
+  completeViralOpenCliRead,
   confirmViralAdaptJourney,
   createViralAdaptJourneyState,
+  failViralOpenCliRead,
+  selectViralAdaptSourceTrack,
+  setViralOpenCliBridgeReady,
   startViralAdaptJourney,
+  updateViralOpenCliLink,
   updateViralPasteDraft,
   type ViralAdaptJourneyState,
 } from '@/product/viral-adapt/viral-adapt-journey';
@@ -120,6 +126,14 @@ import {
   viralAdaptSourceForSession,
   type ViralAdaptRunBinding,
 } from '@/product/composer/viral-adapt-binding';
+import {
+  VIRAL_OPENCLI_LIVE_GATE_EVIDENCE,
+  ViralOpenCliBridgeError,
+  injectedViralOpenCliBridge,
+  mergeViralOpenCliAuthorizedSources,
+  readViralOpenCliSource,
+  type ViralOpenCliBridge,
+} from '@/product/viral-adapt/viral-adapt-opencli-bridge';
 import {
   missingCreativeGrounding,
   type CreativeGroundingRequirement,
@@ -518,6 +532,8 @@ export type ComposerHomeProps = {
   };
   /** Injectable for tests; browser sessionStorage is used by default. */
   sessionStore?: Storage;
+  /** Host-owned local bridge; undefined discovers the injected browser seam. */
+  viralOpenCliBridge?: ViralOpenCliBridge | null;
 };
 
 export function ComposerHome({
@@ -529,6 +545,7 @@ export function ComposerHome({
   initialSurfaceRevisionId,
   initialTaskId,
   sessionStore,
+  viralOpenCliBridge,
 }: ComposerHomeProps = {}) {
   const isMobile = useIsMobile();
   const navigate = useNavigate();
@@ -621,9 +638,15 @@ export function ComposerHome({
   const [lensState, setLensState] = useState<ComposerLensState>(() =>
     createComposerLensState()
   );
-  /** #324 爆款复刻 paste-track journey (chip → sourcing → confirm → note intent). */
+  /** #324/#328 爆款复刻 dual-track journey. */
+  const viralOpenCliBridgeRef = useRef<ViralOpenCliBridge | null>(null);
+  const viralOpenCliReadAbortRef = useRef<AbortController | null>(null);
   const [viralAdaptJourney, setViralAdaptJourney] =
-    useState<ViralAdaptJourneyState>(() => createViralAdaptJourneyState());
+    useState<ViralAdaptJourneyState>(() =>
+      createViralAdaptJourneyState({
+        evidencePresent: VIRAL_OPENCLI_LIVE_GATE_EVIDENCE.verified,
+      })
+    );
   const [viralAdaptBinding, setViralAdaptBinding] =
     useState<ViralAdaptRunBinding | null>(null);
   const [showRequiredHint, setShowRequiredHint] = useState(false);
@@ -736,6 +759,83 @@ export function ComposerHome({
     () => sourceReferencesFromDraft(lensState.draft.sources),
     [lensState.draft.sources]
   );
+  useEffect(() => {
+    const refreshBridge = () => {
+      const bridge =
+        viralOpenCliBridge === undefined
+          ? injectedViralOpenCliBridge()
+          : viralOpenCliBridge;
+      viralOpenCliBridgeRef.current = bridge;
+      if (bridge?.ready !== true) {
+        viralOpenCliReadAbortRef.current?.abort();
+        viralOpenCliReadAbortRef.current = null;
+      }
+      setViralAdaptJourney((current) =>
+        setViralOpenCliBridgeReady(current, bridge?.ready === true)
+      );
+    };
+    refreshBridge();
+    window.addEventListener('meiye:opencli-bridge-ready', refreshBridge);
+    return () => {
+      window.removeEventListener('meiye:opencli-bridge-ready', refreshBridge);
+      viralOpenCliReadAbortRef.current?.abort();
+      viralOpenCliReadAbortRef.current = null;
+      viralOpenCliBridgeRef.current = null;
+    };
+  }, [viralOpenCliBridge]);
+  const readViralOpenCliNote = useCallback(async () => {
+    const reading = beginViralOpenCliRead(viralAdaptJourney);
+    if ('error' in reading) return;
+    const noteUrl = reading.opencli.noteUrl;
+    const abortController = new AbortController();
+    viralOpenCliReadAbortRef.current?.abort();
+    viralOpenCliReadAbortRef.current = abortController;
+    setViralAdaptJourney(reading);
+    try {
+      const result = await readViralOpenCliSource(
+        viralOpenCliBridgeRef.current,
+        noteUrl,
+        abortController.signal
+      );
+      const completed = completeViralOpenCliRead(reading, result);
+      if ('error' in completed) {
+        throw new ViralOpenCliBridgeError('invalid_result');
+      }
+      const mergedSources = mergeViralOpenCliAuthorizedSources(
+        lensState.draft.sources,
+        result.authorizedAssets
+      );
+      if ('error' in mergedSources) {
+        throw new ViralOpenCliBridgeError('invalid_result');
+      }
+      if (abortController.signal.aborted) return;
+      setLensState((current) => updateSources(current, mergedSources.sources));
+      await product.refresh();
+      if (abortController.signal.aborted) return;
+      setViralAdaptJourney(completed);
+    } catch (error) {
+      const bridgeAbsent =
+        error instanceof ViralOpenCliBridgeError &&
+        error.code === 'bridge_absent';
+      const invalidResult =
+        error instanceof ViralOpenCliBridgeError &&
+        error.code === 'invalid_result';
+      setViralAdaptJourney((current) =>
+        failViralOpenCliRead(
+          current,
+          bridgeAbsent
+            ? 'bridge_absent'
+            : invalidResult
+              ? 'invalid_result'
+              : 'read_failed'
+        )
+      );
+    } finally {
+      if (viralOpenCliReadAbortRef.current === abortController) {
+        viralOpenCliReadAbortRef.current = null;
+      }
+    }
+  }, [lensState.draft.sources, product, viralAdaptJourney]);
   const missingGrounding = useMemo(
     () => missingCreativeGrounding(product.state, sourceReferences),
     [product.state, sourceReferences]
@@ -767,6 +867,45 @@ export function ComposerHome({
       });
     });
   }, [sourceReferences, viralAdaptJourney.phase]);
+  useEffect(() => {
+    if (
+      !surfaceQuery.data ||
+      viralAdaptJourney.phase !== 'ready' ||
+      !viralAdaptJourney.merchantIntent ||
+      userText !== viralAdaptJourney.merchantIntent ||
+      surfaceQuery.data.recipeRefs.some(
+        (reference) =>
+          reference.visible &&
+          reference.recipeRevisionId === lensState.draft.recipeRevisionId &&
+          surfaceQuery.data?.recipes.some(
+            (recipe) =>
+              recipe.recipeId === 'recipe.viral_adapt' &&
+              recipe.status === 'published' &&
+              recipe.revisionId === reference.recipeRevisionId
+          )
+      )
+    ) {
+      return;
+    }
+    setLensState(
+      (current) =>
+        applyRecommendationHandoffWithRecipe({
+          state: current,
+          handoff: {
+            intent: current.draft.userText,
+            outputHint: 'image_text',
+            recipeChipId: 'viral_adapt',
+          },
+          surface: surfaceQuery.data,
+        }).state
+    );
+  }, [
+    lensState.draft.recipeRevisionId,
+    surfaceQuery.data,
+    userText,
+    viralAdaptJourney.merchantIntent,
+    viralAdaptJourney.phase,
+  ]);
   const identitiesQuery = useQuery(marketingIdentityProjectionQuery);
   /** P2-13: shared experience producer for task-in basis / sediment surfaces. */
   const experienceEntriesQueryKey = useMemo(
@@ -1000,10 +1139,22 @@ export function ComposerHome({
         reference.visible &&
         reference.recipeRevisionId === submissionRecipe.revisionId
     ) === true;
-  const activeViralAdaptSource = viralAdaptSourceForSession(
+  const boundViralAdaptSource = viralAdaptSourceForSession(
     viralAdaptBinding,
     sessionIdRef.current
   );
+  const activeViralAdaptSource =
+    boundViralAdaptSource &&
+    viralAdaptJourney.phase === 'ready' &&
+    viralAdaptJourney.merchantIntent === userText &&
+    viralAdaptJourney.sourcePayload === boundViralAdaptSource &&
+    bindViralAdaptSource({
+      sessionId: sessionIdRef.current,
+      payload: boundViralAdaptSource,
+      sources: lensState.draft.sources,
+    }).ok
+      ? boundViralAdaptSource
+      : undefined;
   /**
    * Which model runs, and *why* that one (#240①).
    *
@@ -1102,6 +1253,23 @@ export function ComposerHome({
           size: activeAiCover.size,
         }
       : undefined;
+  useEffect(() => {
+    if (viralAdaptJourney.phase !== 'ready') return;
+    const bindingStillCurrent =
+      viralAdaptJourney.merchantIntent === userText &&
+      lensId === 'image_text' &&
+      (submissionRecipe === undefined ||
+        submissionRecipe.recipeId === 'recipe.viral_adapt');
+    if (bindingStillCurrent) return;
+    setViralAdaptBinding(null);
+    setViralAdaptJourney((current) => cancelViralAdaptJourney(current));
+  }, [
+    lensId,
+    submissionRecipe,
+    userText,
+    viralAdaptJourney.merchantIntent,
+    viralAdaptJourney.phase,
+  ]);
   const imageCardinality = explicitImageOperation
     ? imageOperationCardinality(explicitImageOperation, sourceReferences.length)
     : { message: null, valid: true };
@@ -3451,6 +3619,12 @@ export function ComposerHome({
         {viralAdaptJourney.phase === 'sourcing' ||
         viralAdaptJourney.phase === 'confirm' ? (
           <ViralAdaptPanel
+            onOpenCliLinkChange={(noteUrl) =>
+              setViralAdaptJourney((current) =>
+                updateViralOpenCliLink(current, noteUrl)
+              )
+            }
+            onOpenCliRead={() => void readViralOpenCliNote()}
             onConfirm={() => {
               const next = confirmViralAdaptJourney(viralAdaptJourney);
               if ('error' in next || !next.sourcePayload) return;
@@ -3508,14 +3682,26 @@ export function ComposerHome({
             }}
             onSourcingCancel={() => {
               setViralAdaptBinding(null);
-              setViralAdaptJourney((current) =>
-                cancelViralAdaptJourney(current)
-              );
+              setViralAdaptJourney((current) => {
+                viralOpenCliReadAbortRef.current?.abort();
+                viralOpenCliReadAbortRef.current = null;
+                return cancelViralAdaptJourney(current);
+              });
             }}
             onSourcingContinue={() =>
               setViralAdaptJourney((current) => {
                 const next = advanceViralSourcingToConfirm(current);
                 return 'error' in next ? current : next;
+              })
+            }
+            onTrackChange={(track) =>
+              setViralAdaptJourney((current) => {
+                setViralAdaptBinding(null);
+                if (track === 'paste') {
+                  viralOpenCliReadAbortRef.current?.abort();
+                  viralOpenCliReadAbortRef.current = null;
+                }
+                return selectViralAdaptSourceTrack(current, track);
               })
             }
             state={viralAdaptJourney}

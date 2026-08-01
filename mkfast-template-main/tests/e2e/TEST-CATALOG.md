@@ -931,3 +931,19 @@ to T38.
 Playwright 旅程与四态形态的 P1 变更（双栏 / Composer 粘底 morph / 宽度合同
 800→1240）绑定：形态在 P1 仍会重排，先在 P1 落地时一并写 spec，避免为将被
 重排的 DOM 写一次性 e2e。本节先按 E2E Workflow 的 Spec 步骤记账旅程与 owner。
+
+## #328 OpenCLI live 门与链接主路径
+
+**File:** `specs/viral-adapt-opencli-gate.spec.ts` | **Priority:** P0
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | verified OpenCLI gate uses the injected logged-in bridge and keeps paste fallback | Log in, open the real Dashboard 「爆款复刻」 chip, and require the verified link track to be first and selected. Inject a local fixture bridge, pass it one complete fixture note URL, project only note text plus host-authorized asset ids into the confirm card, and prove the complete URL/token never enters the Composer intent or any XHS network request. Reopen the journey, switch to the always-available paste fallback, and reach its source-specific confirmation without contacting XHS. Live proof is recorded separately in the redacted #328 ops handoff and is never replaced by this fixture. |
+| 2 | a verified gate with no device bridge fails closed to paste | Leave the local bridge absent, require an honest disconnected status and disabled read action, then use the one-click paste fallback without any XHS request. |
+| 3 | a local bridge error stays generic and recovers through paste | Inject a ready bridge that rejects, require a generic merchant error with no URL/token echo, and recover through paste without any XHS request. |
+
+The pre-verification `gate=false` regression stays owned by
+`viral-adapt-journey.test.ts` and `viral-adapt.interaction.test.tsx`: those
+tests explicitly create a closed evidence gate and require paste-only behavior.
+The browser spec does not add a production query flag or global that could
+reopen/override the evidence decision.

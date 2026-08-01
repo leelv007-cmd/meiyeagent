@@ -6,11 +6,15 @@ import { ViralAdaptConfirmCard } from './viral-adapt-confirm-card';
 import { ViralAdaptSourcingCard } from './viral-adapt-sourcing-card';
 import type {
   ViralAdaptJourneyState,
+  ViralAdaptSourceTrack,
   ViralPasteDraft,
 } from './viral-adapt-journey';
 
 export type ViralAdaptPanelProps = {
   state: ViralAdaptJourneyState;
+  onTrackChange: (track: ViralAdaptSourceTrack) => void;
+  onOpenCliLinkChange: (noteUrl: string) => void;
+  onOpenCliRead: () => void;
   onDraftChange: (patch: Partial<ViralPasteDraft>) => void;
   onSourcingContinue: () => void;
   onSourcingCancel: () => void;
@@ -22,6 +26,9 @@ export type ViralAdaptPanelProps = {
 
 export function ViralAdaptPanel({
   state,
+  onTrackChange,
+  onOpenCliLinkChange,
+  onOpenCliRead,
   onDraftChange,
   onSourcingContinue,
   onSourcingCancel,
@@ -37,7 +44,10 @@ export function ViralAdaptPanel({
         onCancel={onSourcingCancel}
         onContinue={onSourcingContinue}
         onDraftChange={onDraftChange}
+        onOpenCliLinkChange={onOpenCliLinkChange}
+        onOpenCliRead={onOpenCliRead}
         onRequestImageUpload={onRequestImageUpload}
+        onTrackChange={onTrackChange}
         state={state}
       />
     );

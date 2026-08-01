@@ -1,15 +1,15 @@
 /**
- * Viral adapt journey — paste-track first (#324 / P2-12).
+ * Viral adapt sourcing journey (#324 paste fallback + #328 OpenCLI gate).
  *
- * chip → sourcing card (paste / upload; OpenCLI reserved) → confirm card
- * (explicit source method) → ready submit intent for the note path.
- *
- * The merchant intent and the internal source carrier are deliberately
- * separate. Asset ids and routing metadata must never enter the textarea or
- * conversation transcript.
+ * A verified live gate only proves that OpenCLI note + download worked once.
+ * Per-device bridge readiness remains a separate, fail-closed condition.
+ * Complete note URLs stay in this browser-only state. Raw note text and asset
+ * ids leave this model only through the host-owned structured payload seam;
+ * they are never composed into the merchant-visible Composer intent.
  */
 
 export type ViralAdaptPhase = 'idle' | 'sourcing' | 'confirm' | 'ready';
+export type ViralAdaptSourceTrack = 'opencli_link' | 'paste';
 
 export type ViralOpenCliLiveGateView = {
   available: boolean;
@@ -22,17 +22,45 @@ export type ViralPasteDraft = {
   imageAssetIds: readonly string[];
 };
 
+export type ViralOpenCliAuthorizedAssetRef = {
+  id: string;
+  revision: string;
+};
+
+export type ViralOpenCliReadResult = {
+  schemaVersion: 'viral-opencli-read/v1';
+  noteText: string;
+  /** Untrusted refs downloaded, imported, and authorized by the local host. */
+  authorizedAssets: readonly ViralOpenCliAuthorizedAssetRef[];
+};
+
 export type ViralAdaptSourcePayload = {
   schemaVersion: 'viral-adapt-source/v1';
-  track: 'paste' | 'opencli_link';
+  track: ViralAdaptSourceTrack;
   noteText: string;
+  /** Host-authorized ids only; never a URL or local filesystem path. */
   authorizedAssetIds: readonly string[];
 };
 
+export type ViralAdaptReadySource = {
+  /** Safe for the merchant-visible Composer textarea. */
+  merchantIntent: string;
+  /** Hidden carrier for the signed Composer submission. */
+  sourcePayload: ViralAdaptSourcePayload;
+};
+
+export type ViralOpenCliJourneyState = {
+  /** A host bridge can disappear even after the one-time live gate is verified. */
+  bridgeReady: boolean;
+  /** Volatile browser-only input. Cleared immediately after a successful read. */
+  noteUrl: string;
+  status: 'bridge_absent' | 'idle' | 'reading' | 'ready' | 'error';
+  errorCode: 'bridge_absent' | 'read_failed' | 'invalid_result' | null;
+};
 export type ViralAdaptConfirmView = {
   schemaVersion: 'viral-adapt-confirm/v1';
   sourceMethod: {
-    track: 'paste';
+    track: ViralAdaptSourceTrack;
     label: string;
     detail: string;
   };
@@ -46,16 +74,18 @@ export type ViralAdaptConfirmView = {
 
 export type ViralAdaptJourneyState = {
   phase: ViralAdaptPhase;
+  sourceTrack: ViralAdaptSourceTrack;
   draft: ViralPasteDraft;
   liveGate: ViralOpenCliLiveGateView;
+  opencli: ViralOpenCliJourneyState;
   confirm: ViralAdaptConfirmView | null;
-  /** Intent text ready for Composer lens / submission. */
+  /** Safe for Composer lens / merchant-visible submission. */
   merchantIntent: string | null;
-  /** Internal transport carrier. Never render this value as merchant copy. */
+  /** Never write this field to textarea, logs, or product memory. */
   sourcePayload: ViralAdaptSourcePayload | null;
 };
 
-/** Default live gate: closed until #328 verifies OpenCLI. */
+/** Helper remains fail-closed; production explicitly supplies verified evidence. */
 export function defaultViralOpenCliLiveGate(
   evidencePresent = false
 ): ViralOpenCliLiveGateView {
@@ -73,11 +103,21 @@ export function defaultViralOpenCliLiveGate(
 
 export function createViralAdaptJourneyState(input?: {
   evidencePresent?: boolean;
+  bridgeReady?: boolean;
 }): ViralAdaptJourneyState {
+  const liveGate = defaultViralOpenCliLiveGate(input?.evidencePresent === true);
+  const bridgeReady = liveGate.available && input?.bridgeReady === true;
   return {
     phase: 'idle',
+    sourceTrack: liveGate.available && bridgeReady ? 'opencli_link' : 'paste',
     draft: { noteText: '', imageAssetIds: [] },
-    liveGate: defaultViralOpenCliLiveGate(input?.evidencePresent === true),
+    liveGate,
+    opencli: {
+      bridgeReady,
+      noteUrl: '',
+      status: bridgeReady ? 'idle' : 'bridge_absent',
+      errorCode: bridgeReady ? null : 'bridge_absent',
+    },
     confirm: null,
     merchantIntent: null,
     sourcePayload: null,
@@ -97,11 +137,235 @@ export function startViralAdaptJourney(
   };
 }
 
+function emptyDraft(): ViralPasteDraft {
+  return { noteText: '', imageAssetIds: [] };
+}
+
+export function selectViralAdaptSourceTrack(
+  state: ViralAdaptJourneyState,
+  requestedTrack: ViralAdaptSourceTrack
+): ViralAdaptJourneyState {
+  const sourceTrack =
+    requestedTrack === 'opencli_link' && !state.liveGate.available
+      ? 'paste'
+      : requestedTrack;
+  if (sourceTrack === state.sourceTrack) return state;
+  return {
+    ...state,
+    sourceTrack,
+    draft: emptyDraft(),
+    opencli: {
+      ...state.opencli,
+      noteUrl: '',
+      status: state.opencli.bridgeReady ? 'idle' : 'bridge_absent',
+      errorCode: state.opencli.bridgeReady ? null : 'bridge_absent',
+    },
+    confirm: null,
+    merchantIntent: null,
+    sourcePayload: null,
+  };
+}
+
+export function setViralOpenCliBridgeReady(
+  state: ViralAdaptJourneyState,
+  bridgeReady: boolean
+): ViralAdaptJourneyState {
+  const effectiveReady = state.liveGate.available && bridgeReady;
+  const sourceTrack =
+    effectiveReady && state.phase === 'idle'
+      ? 'opencli_link'
+      : !effectiveReady && state.sourceTrack === 'opencli_link'
+        ? 'paste'
+        : state.sourceTrack;
+  const sourceChanged = sourceTrack !== state.sourceTrack;
+  if (
+    state.opencli.bridgeReady === effectiveReady &&
+    state.opencli.status !== 'error' &&
+    !sourceChanged
+  ) {
+    return state;
+  }
+  return {
+    ...state,
+    sourceTrack,
+    ...(sourceChanged
+      ? {
+          draft: emptyDraft(),
+          confirm: null,
+          merchantIntent: null,
+          sourcePayload: null,
+        }
+      : {}),
+    opencli: {
+      ...state.opencli,
+      bridgeReady: effectiveReady,
+      ...(sourceChanged ? { noteUrl: '' } : {}),
+      status: effectiveReady ? 'idle' : 'bridge_absent',
+      errorCode: effectiveReady ? null : 'bridge_absent',
+    },
+  };
+}
+
+export function updateViralOpenCliLink(
+  state: ViralAdaptJourneyState,
+  noteUrl: string
+): ViralAdaptJourneyState {
+  if (state.phase !== 'sourcing' || state.sourceTrack !== 'opencli_link') {
+    return state;
+  }
+  return {
+    ...state,
+    draft: emptyDraft(),
+    opencli: {
+      ...state.opencli,
+      noteUrl,
+      status: state.opencli.bridgeReady ? 'idle' : 'bridge_absent',
+      errorCode: state.opencli.bridgeReady ? null : 'bridge_absent',
+    },
+    confirm: null,
+    merchantIntent: null,
+    sourcePayload: null,
+  };
+}
+
+export function isValidViralOpenCliNoteUrl(noteUrl: string): boolean {
+  try {
+    const parsed = new URL(noteUrl.trim());
+    const xhsHost =
+      parsed.hostname === 'xiaohongshu.com' ||
+      parsed.hostname.endsWith('.xiaohongshu.com');
+    return (
+      parsed.protocol === 'https:' &&
+      xhsHost &&
+      parsed.pathname !== '/' &&
+      parsed.pathname.length > 1
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function beginViralOpenCliRead(state: ViralAdaptJourneyState):
+  | ViralAdaptJourneyState
+  | {
+      error: 'gate_closed' | 'bridge_absent' | 'invalid_note_url';
+    } {
+  if (!state.liveGate.available || state.sourceTrack !== 'opencli_link') {
+    return { error: 'gate_closed' };
+  }
+  if (!state.opencli.bridgeReady) return { error: 'bridge_absent' };
+  if (!isValidViralOpenCliNoteUrl(state.opencli.noteUrl)) {
+    return { error: 'invalid_note_url' };
+  }
+  return {
+    ...state,
+    draft: emptyDraft(),
+    opencli: {
+      ...state.opencli,
+      status: 'reading',
+      errorCode: null,
+    },
+    confirm: null,
+    merchantIntent: null,
+    sourcePayload: null,
+  };
+}
+
+function hasAsciiControlCharacter(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 31 || code === 127) return true;
+  }
+  return false;
+}
+
+export function normalizeViralOpenCliAuthorizedAssets(
+  assets: readonly ViralOpenCliAuthorizedAssetRef[]
+): readonly ViralOpenCliAuthorizedAssetRef[] | null {
+  if (assets.length > 50) return null;
+  const normalized = new Map<string, ViralOpenCliAuthorizedAssetRef>();
+  for (const asset of assets) {
+    const id = asset.id.trim();
+    const revision = asset.revision.trim();
+    if (
+      !id ||
+      !revision ||
+      id.length > 200 ||
+      revision.length > 200 ||
+      hasAsciiControlCharacter(id) ||
+      hasAsciiControlCharacter(revision)
+    ) {
+      return null;
+    }
+    const previous = normalized.get(id);
+    if (previous && previous.revision !== revision) return null;
+    normalized.set(id, { id, revision });
+  }
+  return [...normalized.values()];
+}
+
+export function completeViralOpenCliRead(
+  state: ViralAdaptJourneyState,
+  result: ViralOpenCliReadResult
+): ViralAdaptJourneyState | { error: 'invalid_bridge_result' } {
+  const noteText = result.noteText.replace(/\r\n/gu, '\n').trim();
+  const authorizedAssets = normalizeViralOpenCliAuthorizedAssets(
+    result.authorizedAssets
+  );
+  if (
+    state.sourceTrack !== 'opencli_link' ||
+    state.opencli.status !== 'reading' ||
+    result.schemaVersion !== 'viral-opencli-read/v1' ||
+    noteText.length === 0 ||
+    noteText.length > 4_000 ||
+    authorizedAssets === null
+  ) {
+    return { error: 'invalid_bridge_result' };
+  }
+  return {
+    ...state,
+    draft: {
+      noteText,
+      imageAssetIds: authorizedAssets.map(({ id }) => id),
+    },
+    opencli: {
+      ...state.opencli,
+      noteUrl: '',
+      status: 'ready',
+      errorCode: null,
+    },
+  };
+}
+
+export function failViralOpenCliRead(
+  state: ViralAdaptJourneyState,
+  errorCode: 'bridge_absent' | 'read_failed' | 'invalid_result'
+): ViralAdaptJourneyState {
+  if (state.sourceTrack !== 'opencli_link') return state;
+  return {
+    ...state,
+    draft: emptyDraft(),
+    opencli: {
+      ...state.opencli,
+      bridgeReady:
+        errorCode === 'bridge_absent' ? false : state.opencli.bridgeReady,
+      status: errorCode === 'bridge_absent' ? 'bridge_absent' : 'error',
+      errorCode,
+    },
+    confirm: null,
+    merchantIntent: null,
+    sourcePayload: null,
+  };
+}
+
 export function updateViralPasteDraft(
   state: ViralAdaptJourneyState,
   patch: Partial<ViralPasteDraft>
 ): ViralAdaptJourneyState {
-  if (state.phase !== 'sourcing' && state.phase !== 'confirm') {
+  if (
+    state.sourceTrack !== 'paste' ||
+    (state.phase !== 'sourcing' && state.phase !== 'confirm')
+  ) {
     return state;
   }
   return {
@@ -121,11 +385,14 @@ export function updateViralPasteDraft(
   };
 }
 
-export function canAdvanceViralSourcing(draft: ViralPasteDraft): boolean {
-  return draft.noteText.trim().length > 0;
+export function canAdvanceViralSourcing(
+  state: ViralAdaptJourneyState
+): boolean {
+  if (!state.draft.noteText.trim()) return false;
+  return state.sourceTrack === 'paste' || state.opencli.status === 'ready';
 }
 
-/** OpenCLI track is selectable only when live gate is open. */
+/** OpenCLI track is selectable only when the one-time live gate is open. */
 export function isViralOpenCliTrackEnabled(
   liveGate: ViralOpenCliLiveGateView
 ): boolean {
@@ -133,6 +400,7 @@ export function isViralOpenCliTrackEnabled(
 }
 
 export function projectViralAdaptConfirmView(input: {
+  sourceTrack: ViralAdaptSourceTrack;
   draft: ViralPasteDraft;
   liveGate: ViralOpenCliLiveGateView;
   pageBound?: number;
@@ -141,15 +409,24 @@ export function projectViralAdaptConfirmView(input: {
   const noteText = input.draft.noteText.trim();
   const imageCount = input.draft.imageAssetIds.length;
   const hasImages = imageCount > 0;
-  const sourceLabel = hasImages ? '粘贴笔记文字 + 上传图片' : '粘贴笔记文字';
+  const isOpenCli = input.sourceTrack === 'opencli_link';
+  const sourceLabel = isOpenCli
+    ? hasImages
+      ? '本机登录态读取 + 导入并授权参考图'
+      : '本机登录态读取'
+    : hasImages
+      ? '粘贴笔记文字 + 上传图片'
+      : '粘贴笔记文字';
   return {
     schemaVersion: 'viral-adapt-confirm/v1',
     sourceMethod: {
-      track: 'paste',
+      track: input.sourceTrack,
       label: sourceLabel,
       detail: [
-        `已粘贴 ${noteText.length} 字`,
-        hasImages ? `已上传 ${imageCount} 张参考图` : '未上传参考图',
+        isOpenCli
+          ? `已读取 ${noteText.length} 字`
+          : `已粘贴 ${noteText.length} 字`,
+        hasImages ? `已授权 ${imageCount} 张参考图` : '未附加参考图',
       ].join('；'),
     },
     opencliSlot: {
@@ -178,10 +455,11 @@ export function projectViralAdaptConfirmView(input: {
 export function advanceViralSourcingToConfirm(
   state: ViralAdaptJourneyState
 ): ViralAdaptJourneyState | { error: 'empty_note_text' } {
-  if (!canAdvanceViralSourcing(state.draft)) {
+  if (!canAdvanceViralSourcing(state)) {
     return { error: 'empty_note_text' };
   }
   const confirm = projectViralAdaptConfirmView({
+    sourceTrack: state.sourceTrack,
     draft: state.draft,
     liveGate: state.liveGate,
   });
@@ -194,19 +472,20 @@ export function advanceViralSourcingToConfirm(
   };
 }
 
-export function composeViralAdaptSubmitIntent(draft: ViralPasteDraft): string {
-  void draft;
-  return '请为本店项目复刻一篇小红书爆款笔记，参考素材已由商家确认。';
-}
-
-export function composeViralAdaptSourcePayload(
-  draft: ViralPasteDraft
-): ViralAdaptSourcePayload {
+export function composeViralAdaptReadySource(input: {
+  sourceTrack: ViralAdaptSourceTrack;
+  draft: ViralPasteDraft;
+}): ViralAdaptReadySource {
+  const noteText = input.draft.noteText.replace(/\r\n/gu, '\n').trim();
   return {
-    schemaVersion: 'viral-adapt-source/v1',
-    track: 'paste',
-    noteText: draft.noteText.replace(/\r\n/gu, '\n').trim(),
-    authorizedAssetIds: [...draft.imageAssetIds],
+    merchantIntent:
+      '请为本店项目复刻一篇小红书爆款笔记，参考素材已由商家确认。',
+    sourcePayload: {
+      schemaVersion: 'viral-adapt-source/v1',
+      track: input.sourceTrack,
+      noteText,
+      authorizedAssetIds: [...input.draft.imageAssetIds],
+    },
   };
 }
 
@@ -216,14 +495,18 @@ export function confirmViralAdaptJourney(
   if (state.phase !== 'confirm' || !state.confirm) {
     return { error: 'not_in_confirm' };
   }
-  if (!canAdvanceViralSourcing(state.draft)) {
+  if (!canAdvanceViralSourcing(state)) {
     return { error: 'empty_note_text' };
   }
+  const ready = composeViralAdaptReadySource({
+    sourceTrack: state.sourceTrack,
+    draft: state.draft,
+  });
   return {
     ...state,
     phase: 'ready',
-    merchantIntent: composeViralAdaptSubmitIntent(state.draft),
-    sourcePayload: composeViralAdaptSourcePayload(state.draft),
+    merchantIntent: ready.merchantIntent,
+    sourcePayload: ready.sourcePayload,
   };
 }
 
@@ -232,6 +515,7 @@ export function cancelViralAdaptJourney(
 ): ViralAdaptJourneyState {
   return createViralAdaptJourneyState({
     evidencePresent: state.liveGate.available,
+    bridgeReady: state.opencli.bridgeReady,
   });
 }
 
