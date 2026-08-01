@@ -20,6 +20,7 @@ import type {
 import { domAnimation, LazyMotion } from 'motion/react';
 import * as m from 'motion/react-m';
 import type { CSSProperties } from 'react';
+import { useEffect } from 'react';
 
 import {
   ChatConversation,
@@ -46,6 +47,7 @@ import {
 } from './composer-delivery-card';
 import type { DeliveryFollowUpSeed } from './delivery-followup-seeds';
 import { ComposerProgressCard } from './composer-progress-card';
+import { WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS } from './workbench-shell';
 import {
   ComposerReportCard,
   type ComposerRecoveryInput,
@@ -159,6 +161,7 @@ function AgentFrameHost({
     </div>
   );
 }
+
 
 /**
  * D-111 分流告知. Identified by the `intent_naming` success frame, so the
@@ -396,6 +399,31 @@ export function ComposerConversation({
   // that styles.css forces under prefers-reduced-motion, so the transcript
   // has to answer the preference itself.
   const scrollBehavior = prefersReducedMotion ? 'instant' : 'smooth';
+  const liveInterruptTurnId =
+    session.turns.find(
+      (turn) =>
+        turn.kind === 'question' || turn.kind === 'execution_confirm'
+    )?.id ?? null;
+
+  // Merchant must act on in-stream interrupts. Active sticky Composer (z-30)
+  // covers the bottom of the timeline — bring the interrupt above the scrim
+  // when it appears (same failure class as 成品交付卡 / M-04 direction card).
+  useEffect(() => {
+    if (!liveInterruptTurnId) return;
+    const testId =
+      session.turns.find((turn) => turn.id === liveInterruptTurnId)?.kind ===
+      'execution_confirm'
+        ? 'composer-execution-confirm-turn'
+        : 'composer-question-turn';
+    const node = document.querySelector<HTMLElement>(
+      `[data-testid="${testId}"]`
+    );
+    if (!node || typeof node.scrollIntoView !== 'function') return;
+    node.scrollIntoView({
+      block: 'end',
+      behavior: prefersReducedMotion ? 'instant' : 'smooth',
+    });
+  }, [liveInterruptTurnId, prefersReducedMotion, session.turns]);
 
   if (turnCount === 0 && !identitySlot) return null;
 
@@ -436,6 +464,8 @@ export function ComposerConversation({
       case 'question':
         return questionSlot ? (
           <AgentFrameHost
+            // Clear Active sticky Composer (z-30) so 图文方向 / 补问 clicks land.
+            className={WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS}
             frameKind={resolveAgentFrameKind('question')}
             key={turn.id}
             testId="composer-question-turn"
@@ -449,6 +479,7 @@ export function ComposerConversation({
         // independent sticky execution-confirm-slot mount from D-164.
         return executionConfirmSlot ? (
           <AgentFrameHost
+            className={WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS}
             frameKind={resolveAgentFrameKind('execution_confirm')}
             key={turn.id}
             testId="composer-execution-confirm-turn"

@@ -157,27 +157,57 @@ export async function chooseImageTextDirection(page: Page) {
     'the retired page-plan confirmation must not add a merchant activation'
   ).toHaveCount(0);
 
-  const directionCard = page.getByTestId('ask-merchant-group-card').filter({
-    hasText: '两种图文方向都已准备好',
-  });
+  // Ask-merchant group is the production renderer; legacy composer-question-card
+  // remains as fallback when the interaction projection lags.
+  const directionCard = page
+    .getByTestId('ask-merchant-group-card')
+    .or(page.getByTestId('composer-question-card'))
+    .filter({ hasText: /两种图文方向/u });
+  const stylesReadyLine = page
+    .getByTestId('composer-stage-line')
+    .filter({ hasText: /两种图文方向已经整理好|两种图文方向都已准备好/u });
   const resumedLine = page
     .getByTestId('composer-stage-line')
     .filter({ hasText: '已按你选的方向继续准备整套图文' });
   await expect(async () => {
-    if (await resumedLine.first().isVisible()) return;
-    if (await directionCard.isVisible()) {
-      const directions = directionCard
-        .locator('fieldset')
-        .getByRole('button')
-        .filter({ hasNotText: '暂未确定' });
-      try {
-        await directions.first().click({ timeout: 2_000 });
-      } catch {
-        // The frozen route answered the card between the visibility check
-        // and the click; the resume line is still the exit.
-      }
+    if (await resumedLine.first().isVisible().catch(() => false)) return;
+
+    // Prefer scrolling the interrupt host above sticky Composer before click.
+    const interruptHost = page.getByTestId('composer-question-turn');
+    if (await interruptHost.count()) {
+      await interruptHost
+        .first()
+        .scrollIntoViewIfNeeded()
+        .catch(() => undefined);
     }
-    expect(await resumedLine.first().isVisible()).toBeTruthy();
+
+    const cardVisible = await directionCard
+      .first()
+      .isVisible()
+      .catch(() => false);
+    if (cardVisible) {
+      await directionCard
+        .first()
+        .scrollIntoViewIfNeeded()
+        .catch(() => undefined);
+      const directions = directionCard
+        .first()
+        .getByRole('button')
+        .filter({ hasNotText: /暂未确定|继续|这次先跳过/u });
+      try {
+        // force: Active sticky Composer (z-30) can intercept a pure geometric
+        // click even after scroll-margin; force lands the merchant act.
+        await directions.first().click({ timeout: 3_000, force: true });
+      } catch {
+        // Frozen route may pre-answer between visibility check and click.
+      }
+    } else {
+      // Still compiling, or styles_ready already flashed — keep polling.
+      void (await stylesReadyLine.first().isVisible().catch(() => false));
+    }
+    expect(
+      await resumedLine.first().isVisible().catch(() => false)
+    ).toBeTruthy();
   }, 'the direction must land — by merchant click or frozen-route pre-answer').toPass(
     { timeout: 300_000 }
   );

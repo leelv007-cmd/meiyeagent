@@ -74,6 +74,16 @@ test('P1-2: Active sticky Composer clears mobile-nav (4.25rem family)', () => {
     'src/product/composer/composer-delivery-card.tsx'
   );
   assert.match(delivery, /WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS/u);
+  // M-04 图文方向 / 付费确认：interrupt turns clear Active sticky Composer.
+  const conversationSticky = readSource(
+    'src/product/composer/composer-conversation.tsx'
+  );
+  assert.match(
+    conversationSticky,
+    /WORKBENCH_STICKY_COMPOSER_SCROLL_MARGIN_CLASS/u
+  );
+  assert.match(conversationSticky, /composer-question-turn/u);
+  assert.match(conversationSticky, /scrollIntoView/u);
 });
 
 test('frame registry: conversation renders turns via AgentFrame host', () => {
