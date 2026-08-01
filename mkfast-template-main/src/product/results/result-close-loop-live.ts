@@ -6,7 +6,6 @@ import type {
 import {
   ASSISTED_RESPONSIBILITY_ROLE_LABEL,
   type AssistedReceipt,
-  type DeliveryPanelTarget,
 } from './delivery-b3-types';
 import {
   deliveryActionReceiptIdempotencyKey,
@@ -220,12 +219,21 @@ export function projectResultCloseLoopFacts(input: {
     note?: string;
   }[];
   nowIso: string;
-  preferredPlatform?: DeliveryPanelTarget;
+  preferredPlatform?: ContentPackagePlatform | null;
 }): ResultCloseLoopFacts {
-  const variant =
-    input.contentPackage.variants.find(
-      (candidate) => candidate.platform === input.preferredPlatform
-    ) ?? input.contentPackage.variants[0];
+  const candidateVariant =
+    input.preferredPlatform === undefined
+      ? input.contentPackage.variants[0]
+      : input.preferredPlatform === null
+        ? undefined
+        : input.contentPackage.variants.find(
+            (candidate) => candidate.platform === input.preferredPlatform
+          );
+  const variant = candidateVariant?.versions.some(
+    (version) => version.id === candidateVariant.currentVersionId
+  )
+    ? candidateVariant
+    : undefined;
   const publications = publicationFactsForPackage(
     input.contentPackage,
     input.assistedReceipts

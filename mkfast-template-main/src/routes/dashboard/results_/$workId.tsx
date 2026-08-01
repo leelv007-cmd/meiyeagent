@@ -74,19 +74,15 @@ import type { AssistedReceipt } from '@/product/results/delivery-b3-types';
 import { buildCaptionText } from '@/product/results/delivery-full-package';
 import { shareCanonicalHandoff } from '@/product/results/delivery-handoff-live';
 import { projectResultCloseLoopFacts } from '@/product/results/result-close-loop-live';
+import { resolveResultDeliveryBinding } from '@/product/results/result-delivery-binding';
 import { weeklyReviewDerivePayload } from '@/product/results/weekly-review-model';
 import { workLineageSourcePackageId } from '@/product/works/works-projection';
 import {
   deliveryTargetForIntent,
-  resolveCanonicalDeliveryPlatform,
   useDeliveryViewport,
 } from '@/product/results/delivery-viewport';
 import type { VideoCanonicalEditCommand } from '@/product/results/video/video-worksurface';
-import {
-  executeResultContentPackageHandEdit,
-  findResultContentPackageHandEditVersion,
-  resolveResultContentPackageHandEditPlatform,
-} from '@/product/results/result-content-package-hand-edit';
+import { executeResultContentPackageHandEdit } from '@/product/results/result-content-package-hand-edit';
 import {
   validateResultCenterSearch,
   type ResultCenterSearch,
@@ -295,31 +291,19 @@ function ResultCenterRoutePage() {
     contentPackage,
     projectedWorkspaceKind: selected?.workspaceKind ?? 'copy',
   });
-  const deliveryTarget = deliveryTargetForIntent(
+  const inferredDeliveryTarget = deliveryTargetForIntent(
     workspaceKind,
     selected?.work.intent ?? ''
   );
-  const canonicalDeliveryPlatform = resolveCanonicalDeliveryPlatform(
+  const deliveryBinding = resolveResultDeliveryBinding(
     contentPackage,
-    deliveryTarget
+    inferredDeliveryTarget
   );
-  const deliveryVariant = canonicalDeliveryPlatform
-    ? contentPackage?.variants.find(
-        ({ platform }) => platform === canonicalDeliveryPlatform
-      )
-    : undefined;
-  const resultEditPlatform = contentPackage
-    ? resolveResultContentPackageHandEditPlatform(
-        contentPackage,
-        canonicalDeliveryPlatform
-      )
-    : undefined;
-  const currentResultEditVersion = contentPackage
-    ? findResultContentPackageHandEditVersion(
-        contentPackage,
-        resultEditPlatform
-      )
-    : undefined;
+  const canonicalDeliveryPlatform = deliveryBinding.canonicalPlatform;
+  const deliveryPanelTarget = deliveryBinding.panelTarget;
+  const deliveryVariant = deliveryBinding.variant;
+  const resultEditPlatform = deliveryBinding.scopePlatform;
+  const currentResultEditVersion = deliveryBinding.currentVersion;
   const resultEditVersions = resultEditPlatform
     ? (deliveryVariant?.versions ?? [])
     : (contentPackage?.versions ?? []);
@@ -696,10 +680,10 @@ function ResultCenterRoutePage() {
         !selected.job?.recommendedAssetId)
   );
   const deliveryCopy = contentPackage ? currentResultEditVersion : copyAsset;
-  const downloadableAsset = selected?.assets.find((asset) => asset.objectKey);
-  const downloadableObjectKey =
-    downloadableAsset?.objectKey ??
-    contentPackage?.generated.ownedAssets?.[0]?.objectKey;
+  const downloadableAsset = contentPackage
+    ? deliveryBinding.orderedOwnedAssets[0]
+    : selected?.assets.find((asset) => asset.objectKey);
+  const downloadableObjectKey = downloadableAsset?.objectKey;
   const singleDownloadUrl = downloadableObjectKey
     ? `/api/core/p1/assets?objectKey=${encodeURIComponent(downloadableObjectKey)}&download=1`
     : undefined;
@@ -731,6 +715,7 @@ function ResultCenterRoutePage() {
   const canExportFullPackage = Boolean(
     contentPackage &&
       canonicalDeliveryPlatform &&
+      currentResultEditVersion &&
       ['accepted', 'export_failed'].includes(contentPackage.status) &&
       contentPackage.variants.some(
         (variant) => variant.platform === canonicalDeliveryPlatform
@@ -740,35 +725,70 @@ function ResultCenterRoutePage() {
     (approval) =>
       approval.status === 'approved' &&
       approval.binding.platform === canonicalDeliveryPlatform &&
-      approval.binding.variantVersionId === deliveryVariant?.currentVersionId
+      approval.binding.variantVersionId === currentResultEditVersion?.id
   );
   const assistedStored = assistedReceiptsQuery.data?.find(
     ({ receipt }) =>
       receipt.packageId === contentPackage?.id &&
       receipt.binding?.platform === canonicalDeliveryPlatform &&
-      receipt.binding.variantVersionId === deliveryVariant?.currentVersionId
+      receipt.binding.variantVersionId === currentResultEditVersion?.id
   );
   const existingOneShotUrl = assistedStored?.receipt.handoffLink?.token
     ? `/dashboard/handoff/${encodeURIComponent(assistedStored.receipt.handoffLink.token)}`
     : undefined;
   // W09: the plan the delivery panel states before the download, and the file
   // list the share capability is probed against.
-  const fullPackagePlan = contentPackage
-    ? buildResultFullPackagePlan({
-        contentPackage,
-        nowIso: new Date().toISOString(),
-        // The ZIP core actually emits names itself; the page has no store name
-        // to offer here, so it states a neutral one rather than guessing from
-        // the content title and printing a file name that is not the file name.
-        storeName: '门店',
-        target: deliveryTarget,
-        ...(deliveryVariant?.currentVersionId
-          ? { variantVersionId: deliveryVariant.currentVersionId }
-          : {}),
-      })
-    : undefined;
+  const fullPackagePlan =
+    contentPackage && deliveryPanelTarget && currentResultEditVersion
+      ? buildResultFullPackagePlan({
+          contentPackage,
+          nowIso: new Date().toISOString(),
+          // The ZIP core actually emits names itself; the page has no store name
+          // to offer here, so it states a neutral one rather than guessing from
+          // the content title and printing a file name that is not the file name.
+          storeName: '门店',
+          target: deliveryPanelTarget,
+          variantVersionId: currentResultEditVersion.id,
+        })
+      : undefined;
   const sharePayloadFiles = sharePayloadFilesFromPlan(fullPackagePlan);
   const canShareFiles = probeCanShareFiles(sharePayloadFiles);
+  const deliveryPanelFacts = deliveryPanelTarget
+    ? {
+        target: deliveryPanelTarget,
+        hasCopyableText: Boolean(deliveryCopy),
+        hasSingleDownload: Boolean(singleDownloadUrl || deliveryCopy?.body),
+        hasFullPackage:
+          deliveryPanelTarget === 'wechat_moments'
+            ? Boolean(deliveryCopy || singleDownloadUrl)
+            : canExportFullPackage,
+        hasExternalSendApproval: Boolean(
+          activeDeliveryApproval || assistedStored
+        ),
+        shareDevice: {
+          hasNavigatorShare: typeof navigator.share === 'function',
+          // D-086: the capability is the probe result against the actual
+          // files, not the presence of the API.
+          canShareFiles,
+          canShareText: typeof navigator.share === 'function',
+        },
+        sharePayload: {
+          kind: deliveryCopy
+            ? sharePayloadFiles
+              ? ('mixed' as const)
+              : ('text' as const)
+            : ('files' as const),
+          ...(deliveryCopy?.body ? { text: deliveryCopy.body } : {}),
+          ...(sharePayloadFiles ? { files: sharePayloadFiles } : {}),
+          ...(existingOneShotUrl ? { oneShotLinkUrl: existingOneShotUrl } : {}),
+          ...(singleDownloadUrl ? { downloadHref: singleDownloadUrl } : {}),
+        },
+        ...(fullPackagePlan ? { fullPackagePlan } : {}),
+        ...(assistedStored ? { assistedReceipt: assistedStored.receipt } : {}),
+        nowIso: new Date().toISOString(),
+        viewport: deliveryViewport,
+      }
+    : undefined;
   const closeLoopFacts = contentPackage
     ? projectResultCloseLoopFacts({
         contentPackage,
@@ -779,11 +799,13 @@ function ResultCenterRoutePage() {
         hasDownload: Boolean(
           singleDownloadUrl ||
             canExportFullPackage ||
-            (deliveryTarget === 'wechat_moments' && deliveryCopy)
+            (deliveryPanelTarget === 'wechat_moments' && deliveryCopy)
         ),
         inferredSignals: resultsQuery.data?.signals.inferred ?? [],
         nowIso: new Date().toISOString(),
-        preferredPlatform: deliveryTarget,
+        preferredPlatform: deliveryPanelTarget
+          ? canonicalDeliveryPlatform
+          : null,
       })
     : undefined;
   const exactExportReceipt = contentPackage?.exportReceipts
@@ -791,7 +813,7 @@ function ResultCenterRoutePage() {
       (receipt) =>
         receipt.status === 'succeeded' &&
         receipt.platform === canonicalDeliveryPlatform &&
-        receipt.variantVersionId === deliveryVariant?.currentVersionId
+        receipt.variantVersionId === currentResultEditVersion?.id
     )
     .at(-1);
   const exactExportDownloadUrl = exactExportReceipt?.artifactObjectKey
@@ -1138,12 +1160,13 @@ function ResultCenterRoutePage() {
   // Scoped to the platform the page is currently acting on: 「小红书已发布、抖音
   // 失败」 is one package with two answers, and the merchant is standing on one
   // of them.
-  const deliveryAttempt = resultDeliveryAttemptState(contentPackage, {
-    platform: canonicalDeliveryPlatform,
-    ...(deliveryVariant?.currentVersionId
-      ? { variantVersionId: deliveryVariant.currentVersionId }
-      : {}),
-  });
+  const deliveryAttempt =
+    deliveryPanelTarget && canonicalDeliveryPlatform && currentResultEditVersion
+      ? resultDeliveryAttemptState(contentPackage, {
+          platform: canonicalDeliveryPlatform,
+          variantVersionId: currentResultEditVersion.id,
+        })
+      : 'none';
   const shellPhase = projectResultShellPhase({
     target,
     workspaceKind,
@@ -1712,36 +1735,7 @@ function ResultCenterRoutePage() {
           setCloseLoopPending(false);
         }
       }}
-      deliveryPanelFacts={{
-        target: deliveryTarget,
-        hasCopyableText: Boolean(deliveryCopy),
-        hasSingleDownload: Boolean(singleDownloadUrl || deliveryCopy?.body),
-        hasFullPackage:
-          deliveryTarget === 'wechat_moments'
-            ? Boolean(deliveryCopy || singleDownloadUrl)
-            : canExportFullPackage,
-        hasExternalSendApproval: Boolean(
-          activeDeliveryApproval || assistedStored
-        ),
-        shareDevice: {
-          hasNavigatorShare: typeof navigator.share === 'function',
-          // D-086: the capability is the probe result against the actual
-          // files, not the presence of the API.
-          canShareFiles,
-          canShareText: typeof navigator.share === 'function',
-        },
-        sharePayload: {
-          kind: deliveryCopy ? (sharePayloadFiles ? 'mixed' : 'text') : 'files',
-          ...(deliveryCopy?.body ? { text: deliveryCopy.body } : {}),
-          ...(sharePayloadFiles ? { files: sharePayloadFiles } : {}),
-          ...(existingOneShotUrl ? { oneShotLinkUrl: existingOneShotUrl } : {}),
-          ...(singleDownloadUrl ? { downloadHref: singleDownloadUrl } : {}),
-        },
-        ...(fullPackagePlan ? { fullPackagePlan } : {}),
-        ...(assistedStored ? { assistedReceipt: assistedStored.receipt } : {}),
-        nowIso: new Date().toISOString(),
-        viewport: deliveryViewport,
-      }}
+      deliveryPanelFacts={deliveryPanelFacts}
       viewport={deliveryViewport}
       onDeliveryAction={async (actionId, responsibility) => {
         if (actionId === 'copy' && deliveryCopy) {
@@ -1762,7 +1756,7 @@ function ResultCenterRoutePage() {
         }
         if (
           actionId === 'full_package' &&
-          deliveryTarget === 'wechat_moments' &&
+          deliveryPanelTarget === 'wechat_moments' &&
           contentPackage &&
           currentResultEditVersion
         ) {

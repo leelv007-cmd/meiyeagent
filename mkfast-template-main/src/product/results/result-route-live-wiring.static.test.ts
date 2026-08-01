@@ -97,10 +97,13 @@ test('copy adoption generates formal platform variants from both result entry po
 });
 
 test('result route binds visible copy edits to the current delivery variant', () => {
-  assert.match(route, /findResultContentPackageHandEditVersion/u);
   assert.match(
     route,
-    /const currentResultEditVersion = contentPackage\s*\? findResultContentPackageHandEditVersion\(\s*contentPackage,\s*resultEditPlatform\s*\)/u
+    /const resultEditPlatform = deliveryBinding\.scopePlatform;/u
+  );
+  assert.match(
+    route,
+    /const currentResultEditVersion = deliveryBinding\.currentVersion;/u
   );
   assert.match(
     route,
@@ -134,11 +137,35 @@ test('result route binds visible copy edits to the current delivery variant', ()
 });
 
 test('result route prefers the durable package platform over mutable work intent', () => {
-  assert.match(route, /resolveCanonicalDeliveryPlatform/u);
+  assert.match(route, /resolveResultDeliveryBinding/u);
   assert.match(
     route,
-    /resolveCanonicalDeliveryPlatform\(\s*contentPackage,\s*deliveryTarget\s*\)/u
+    /resolveResultDeliveryBinding\(\s*contentPackage,\s*inferredDeliveryTarget\s*\)/u
   );
+  assert.equal(route.match(/\binferredDeliveryTarget\b/gu)?.length, 2);
+});
+
+test('result route drives every delivery branch from the exact resolved version', () => {
+  assert.match(
+    route,
+    /const downloadableAsset = contentPackage\s*\? deliveryBinding\.orderedOwnedAssets\[0\]\s*:\s*selected\?\.assets\.find/u
+  );
+  assert.match(
+    route,
+    /target: deliveryPanelTarget[\s\S]*?variantVersionId: currentResultEditVersion\.id/u
+  );
+  assert.match(
+    route,
+    /preferredPlatform: deliveryPanelTarget\s*\? canonicalDeliveryPlatform\s*:\s*null/u
+  );
+  assert.match(
+    route,
+    /const deliveryAttempt =\s*deliveryPanelTarget &&\s*canonicalDeliveryPlatform &&\s*currentResultEditVersion\s*\? resultDeliveryAttemptState/u
+  );
+  assert.match(route, /const deliveryPanelFacts = deliveryPanelTarget\s*\?/u);
+  assert.match(route, /deliveryPanelFacts=\{deliveryPanelFacts\}/u);
+  assert.match(route, /target: deliveryPanelTarget/u);
+  assert.match(route, /deliveryPanelTarget === ['"]wechat_moments['"]/u);
 });
 
 test('result route copies, shares, scans, and exports the exact visible version', () => {
@@ -146,11 +173,15 @@ test('result route copies, shares, scans, and exports the exact visible version'
     route,
     /const deliveryCopy = contentPackage \? currentResultEditVersion : copyAsset;/u
   );
-  const deliveryStart = route.indexOf('deliveryPanelFacts={{');
-  const deliveryEnd = route.indexOf('\n    />', deliveryStart);
-  assert.notEqual(deliveryStart, -1);
-  assert.notEqual(deliveryEnd, -1);
-  const deliveryOutbound = route.slice(deliveryStart, deliveryEnd);
+  const factsStart = route.indexOf('const deliveryPanelFacts =');
+  const factsEnd = route.indexOf('const closeLoopFacts =', factsStart);
+  const actionStart = route.indexOf('onDeliveryAction={');
+  const actionEnd = route.indexOf('\n    />', actionStart);
+  assert.notEqual(factsStart, -1);
+  assert.notEqual(factsEnd, -1);
+  assert.notEqual(actionStart, -1);
+  assert.notEqual(actionEnd, -1);
+  const deliveryOutbound = `${route.slice(factsStart, factsEnd)}\n${route.slice(actionStart, actionEnd)}`;
   assert.match(deliveryOutbound, /hasCopyableText: Boolean\(deliveryCopy\)/u);
   assert.match(deliveryOutbound, /text: deliveryCopy\.body/u);
   assert.match(
@@ -160,11 +191,11 @@ test('result route copies, shares, scans, and exports the exact visible version'
   assert.doesNotMatch(deliveryOutbound, /copyAsset/u);
   assert.match(
     route,
-    /approval\.binding\.variantVersionId === deliveryVariant\?\.currentVersionId/u
+    /approval\.binding\.variantVersionId === currentResultEditVersion\?\.id/u
   );
   assert.match(
     route,
-    /receipt\.variantVersionId === deliveryVariant\?\.currentVersionId/u
+    /receipt\.variantVersionId === currentResultEditVersion\?\.id/u
   );
 });
 
@@ -227,7 +258,7 @@ test('result route paired seam rejects dropping Harness candidates before the Re
 });
 
 test('wechat moments full-package action downloads canonical caption segments', () => {
-  assert.match(route, /deliveryTarget === ['"]wechat_moments['"]/);
+  assert.match(route, /deliveryPanelTarget === ['"]wechat_moments['"]/);
   assert.match(route, /buildCaptionText/);
   assert.match(route, /text\/plain;charset=utf-8/);
   assert.match(route, /URL\.createObjectURL/);

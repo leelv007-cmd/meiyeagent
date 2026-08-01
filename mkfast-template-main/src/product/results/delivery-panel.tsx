@@ -166,6 +166,38 @@ export function DeliveryPanel({
     sensitiveWordsCheck !== undefined &&
     (sensitiveWordsCheck.kind !== 'ready' ||
       sensitiveWordsCheck.checkBar.status !== 'clear');
+  const assistedResponsibilityIncomplete =
+    responsibilityRole === 'external_owner' &&
+    externalOwnerId.trim().length === 0;
+  const runAction = async (actionId: DeliveryActionId) => {
+    if (
+      !onAction ||
+      sensitiveWordsBlockDelivery ||
+      pendingAction !== null ||
+      (actionId === 'assisted' && assistedResponsibilityIncomplete)
+    ) {
+      return;
+    }
+    setPendingAction(actionId);
+    try {
+      const next = await onAction(
+        actionId,
+        actionId === 'assisted'
+          ? {
+              ...(responsibilityRole === 'external_owner'
+                ? { ownerId: externalOwnerId.trim() }
+                : {}),
+              responsibilityRole,
+            }
+          : undefined
+      );
+      if (next) setCompletedOutcome(next);
+    } catch {
+      // Keep the panel retryable without claiming completion.
+    } finally {
+      setPendingAction(null);
+    }
+  };
 
   return (
     <section
@@ -345,34 +377,12 @@ export function DeliveryPanel({
                     sensitiveWordsBlockDelivery ||
                     pendingAction !== null ||
                     (action.id === 'assisted' &&
-                      responsibilityRole === 'external_owner' &&
-                      externalOwnerId.trim().length === 0)
+                      assistedResponsibilityIncomplete)
                   }
                   data-testid={`delivery-action-${action.id}`}
                   data-action-id={action.id}
                   data-enabled={action.enabled ? 'true' : 'false'}
-                  onClick={async () => {
-                    if (!onAction) return;
-                    setPendingAction(action.id);
-                    try {
-                      const next = await onAction(
-                        action.id,
-                        action.id === 'assisted'
-                          ? {
-                              ...(responsibilityRole === 'external_owner'
-                                ? { ownerId: externalOwnerId.trim() }
-                                : {}),
-                              responsibilityRole,
-                            }
-                          : undefined
-                      );
-                      if (next) setCompletedOutcome(next);
-                    } catch {
-                      // Keep the panel retryable without claiming completion.
-                    } finally {
-                      setPendingAction(null);
-                    }
-                  }}
+                  onClick={() => runAction(action.id)}
                   className="justify-start"
                 >
                   {actionIcon(action.id)}
@@ -455,17 +465,15 @@ export function DeliveryPanel({
 
             <Button
               type="button"
-              disabled={!view.assisted.primaryCta.enabled}
+              disabled={
+                !view.assisted.primaryCta.enabled ||
+                sensitiveWordsBlockDelivery ||
+                pendingAction !== null ||
+                assistedResponsibilityIncomplete
+              }
               data-testid="delivery-assisted-cta"
               data-cta-id={view.assisted.primaryCta.id}
-              onClick={() =>
-                onAction?.('assisted', {
-                  ...(responsibilityRole === 'external_owner'
-                    ? { ownerId: externalOwnerId.trim() }
-                    : {}),
-                  responsibilityRole,
-                })
-              }
+              onClick={() => runAction('assisted')}
             >
               {view.assisted.primaryCta.label}
             </Button>

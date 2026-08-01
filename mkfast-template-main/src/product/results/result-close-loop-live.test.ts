@@ -133,3 +133,36 @@ test('projects the canonical package into an honest Result close-loop journey', 
   assert.equal(facts.weeklyReview.observations.length, 1);
   assert.equal(facts.hasOneShotLink, true);
 });
+
+test('does not bind a non-platform package to the first variant', () => {
+  const facts = projectResultCloseLoopFacts({
+    contentPackage: contentPackage(),
+    contentPackages: [contentPackage()],
+    assistedReceipts: [],
+    canShareFiles: false,
+    hasDownload: true,
+    nowIso: '2026-07-23T12:00:00.000Z',
+    preferredPlatform: null,
+  });
+
+  assert.equal(facts.publicationPlatform, undefined);
+  assert.equal(facts.variantVersionId, undefined);
+});
+
+test('does not expose a dangling variant currentVersionId as a writable publication scope', () => {
+  const dangling = contentPackage();
+  dangling.variants[0]!.currentVersionId = 'douyin-missing';
+
+  const facts = projectResultCloseLoopFacts({
+    contentPackage: dangling,
+    contentPackages: [dangling],
+    assistedReceipts: [],
+    canShareFiles: false,
+    hasDownload: false,
+    nowIso: '2026-07-23T12:00:00.000Z',
+    preferredPlatform: 'douyin',
+  });
+
+  assert.equal(facts.publicationPlatform, undefined);
+  assert.equal(facts.variantVersionId, undefined);
+});
