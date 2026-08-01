@@ -106,4 +106,14 @@ if [[ "${RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED:-}" == "true" ]]; then
   )
 fi
 
+if [[ "${RUN_ISSUE_298_E2E_CREDIT_PLAN_SEED:-}" == "true" ]]; then
+  echo "Seeding Issue 298 published credit plan catalog through admin-config."
+  (
+    cd "${repo_root}"
+    DATABASE_URL="${business_url}" \
+      pnpm --filter @meiye/core exec tsx \
+      "${repo_root}/scripts/ci/seed-issue-298-e2e-credit-plan-catalog.mts"
+  )
+fi
+
 echo "Business schema is ready and DBOS system storage is separate."

@@ -69,7 +69,7 @@ export default defineConfig({
     {
       name: 'Core',
       command: [
-        `APP_ENV=e2e RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED=true TEST_DATABASE_URL='${databaseURL}' TEST_DBOS_SYSTEM_DATABASE_URL='${dbosSystemDatabaseURL}' ../scripts/ci/provision-test-db.sh`,
+        `APP_ENV=e2e RUN_ISSUE_247_E2E_PROVISIONAL_BOUNDS_SEED=true RUN_ISSUE_298_E2E_CREDIT_PLAN_SEED=true TEST_DATABASE_URL='${databaseURL}' TEST_DBOS_SYSTEM_DATABASE_URL='${dbosSystemDatabaseURL}' ../scripts/ci/provision-test-db.sh`,
         '&&',
         `DATABASE_URL='${databaseURL}'`,
         `HARNESS_DBOS_SYSTEM_DATABASE_URL='${dbosSystemDatabaseURL}'`,
