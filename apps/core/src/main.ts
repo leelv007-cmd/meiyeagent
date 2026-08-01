@@ -20,7 +20,7 @@ import {
 import { ProductService } from './product/product-service.js';
 import { CutoverProductService } from './product/cutover-product-service.js';
 import type { ProductQualitySink } from './product/quality-sink.js';
-import { productPlanConfigFromEnv } from './product/plans.js';
+import { defaultProductPlanConfig } from './product/plans.js';
 import {
   ModelSupplyProductCopyProvider,
   resolveCanonicalCopySelection,
@@ -76,8 +76,6 @@ import {
   SensitiveWordsFoundationModule,
 } from './p1/sensitive-words/index.js';
 import {
-  DEFAULT_ADD_ON_OFFERS,
-  DEFAULT_PLAN_OFFERS,
   GrantLotAwareProductEntitlementService,
   P1DomainError,
   P1ApplicationService,
@@ -379,6 +377,7 @@ import { PostgresCreditLedger } from './p1/credit-billing/postgres-credit-ledger
 import { PostgresCreditSubscriptionStore } from './p1/credit-billing/credit-subscription-scheduler.js';
 import { CreditBillingService } from './p1/credit-billing/credit-billing-service.js';
 import { CreditSubscriptionEntitlementPolicy } from './p1/credit-billing/credit-entitlement-policy.js';
+import { creditPlanConcurrencyTiers } from './p1/credit-billing/credit-plan-catalog.js';
 import { AdminConfigCreditPlanCatalogSource } from './p1/admin-config/credit-plan-catalog-source.js';
 import {
   createDurableResultDeliveryRuntime,
@@ -597,7 +596,7 @@ const notifier = new PostgresIdempotentProductNotifier(
   pool,
   downstreamNotifier
 );
-const productPlans = productPlanConfigFromEnv(process.env);
+const productPlans = defaultProductPlanConfig;
 const modelCatalogTenantAllowlist = (
   process.env.MODEL_CATALOG_TENANT_ALLOWLIST ?? ''
 )
@@ -673,9 +672,6 @@ const integrationAssembly = await integrationAdapterEnvFromSources(
   process.env
 );
 const byokRuntime = byokExecutionRuntimeFromEnv(integrationAssembly.env);
-const planConfigDefaults = Object.fromEntries(
-  DEFAULT_PLAN_OFFERS.map(({ id, ...value }) => [id, value]),
-);
 const e2ePlatformModelDefaults = e2ePlatformModelDefaultsFromEnv(process.env);
 /**
  * The one runtime source of platform default catalog models (#240①).
@@ -745,12 +741,6 @@ const adminConfigRuntime = {
       modelId,
     ])
   ),
-  'plan.addons': DEFAULT_ADD_ON_OFFERS,
-  'plan.trial.enabled': true,
-  'plan.allowances.trial': planConfigDefaults.trial,
-  'plan.allowances.starter': planConfigDefaults.starter,
-  'plan.allowances.growth': planConfigDefaults.growth,
-  'plan.allowances.pro': planConfigDefaults.pro,
 } satisfies Readonly<Record<string, unknown>>;
 const aiStreamingRunner =
   modelRuntime.mode === 'fixture'
@@ -936,12 +926,7 @@ const jobRuntimeWorkerActorIds = (
 const jobRuntime = PgBossJobPort.connect({
   connection: databaseUrl,
   queuePrefix: process.env.JOB_QUEUE_PREFIX ?? 'meiye-p1',
-  workspaceConcurrencyLimits: [
-    1,
-    4,
-    8,
-    ...Object.values(productPlans).map((plan) => plan.concurrencyLimit),
-  ],
+  workspaceConcurrencyLimits: creditPlanConcurrencyTiers(),
 });
 const entitlementJobRuntime = new EntitlementAwareJobPort(
   jobRuntime,
@@ -1138,6 +1123,7 @@ const legacyProductService = new ProductService(
   'legacy',
   {
     contentWriteOwnership: contentPackageWriteOwnership,
+    legacyBillingReadOnly: true,
     packageRightsPropagation,
   }
 );
@@ -1152,6 +1138,7 @@ const relationalProductService = new ProductService(
   {
     contentWriteOwnership: contentPackageWriteOwnership,
     copyUsageAuthority: 'foundation_ledger',
+    legacyBillingReadOnly: true,
     legacyVideoPath: 'disabled',
     packageRightsPropagation,
     searchProjection: new OperationsProductSearchProjection(
@@ -1640,12 +1627,6 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         // 笔记风格集合每次编译都现读（AdminConfigNotePlanSettingsSource.read），
         // 不登记的话后台会告诉运营「重启后生效」——与事实相反（D-116）。
         NOTE_STYLE_CONFIG_KEY,
-        'plan.addons',
-        'plan.trial.enabled',
-        'plan.allowances.trial',
-        'plan.allowances.starter',
-        'plan.allowances.growth',
-        'plan.allowances.pro',
         'plan.credits.trial',
         'plan.credits.starter',
         'plan.credits.growth',
@@ -1674,12 +1655,6 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'byok.adapter.assembly',
         'model.execution.mode',
         'model.media.execution.mode',
-        'plan.addons',
-        'plan.trial.enabled',
-        'plan.allowances.trial',
-        'plan.allowances.starter',
-        'plan.allowances.growth',
-        'plan.allowances.pro',
         'plan.credits.trial',
         'plan.credits.starter',
         'plan.credits.growth',
@@ -1692,6 +1667,14 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'compliance.aigc_label.default',
         'compliance.regulated_mode.default',
         'compliance.watermark.default',
+      ],
+      readOnlyKeys: [
+        'plan.addons',
+        'plan.trial.enabled',
+        'plan.allowances.trial',
+        'plan.allowances.starter',
+        'plan.allowances.growth',
+        'plan.allowances.pro',
       ],
     }),
     new ContextFoundationModule(storeFactLedger),

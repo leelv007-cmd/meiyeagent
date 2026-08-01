@@ -641,6 +641,7 @@ export class AdminConfigFoundationModule implements P1OperationModule {
   >;
   private readonly wiredKeys: ReadonlySet<string>;
   private readonly hotReadKeys: ReadonlySet<string>;
+  private readonly readOnlyKeys: ReadonlySet<string>;
   private readonly cloudflareInventory: CloudflareInventoryReadPort | null;
   private readonly cloudflareSelfProbes:
     | (() => Promise<CloudflareSelfProbeResult[]>)
@@ -658,6 +659,7 @@ export class AdminConfigFoundationModule implements P1OperationModule {
       >;
       wiredKeys?: readonly string[];
       hotReadKeys?: readonly string[];
+      readOnlyKeys?: readonly string[];
       cloudflareInventory?: CloudflareInventoryReadPort;
       cloudflareSelfProbes?: () => Promise<CloudflareSelfProbeResult[]>;
     } = {},
@@ -668,6 +670,7 @@ export class AdminConfigFoundationModule implements P1OperationModule {
     this.valueValidators = options.valueValidators ?? {};
     this.wiredKeys = new Set(options.wiredKeys ?? []);
     this.hotReadKeys = new Set(options.hotReadKeys ?? []);
+    this.readOnlyKeys = new Set(options.readOnlyKeys ?? []);
     this.cloudflareInventory = options.cloudflareInventory ?? null;
     this.cloudflareSelfProbes = options.cloudflareSelfProbes ?? null;
     this.definitions = [
@@ -700,6 +703,12 @@ export class AdminConfigFoundationModule implements P1OperationModule {
       throw new P1DomainError('INVALID_STATE', `Config key ${key} is not registered.`);
     }
     if (definition.scope === 'global') this.requireAdmin(args.context);
+    if (this.readOnlyKeys.has(key)) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Config key ${key} is retired and read-only.`,
+      );
+    }
     const workspaceId =
       definition.scope === 'global'
         ? GLOBAL_WORKSPACE_ID

@@ -5,7 +5,16 @@ import {
   AdminConfigCreditPlanCatalogSource,
   type CreditPlanConfigRepository,
 } from '../admin-config/credit-plan-catalog-source.js';
-import { DEFAULT_CREDIT_PLAN_CATALOG } from './credit-plan-catalog.js';
+import {
+  creditPlanConcurrencyTiers,
+  DEFAULT_CREDIT_PLAN_CATALOG,
+  MAX_CREDIT_PLAN_CONCURRENCY,
+} from './credit-plan-catalog.js';
+
+test('job runtime registers every publishable credit plan concurrency tier', () => {
+  assert.deepEqual(creditPlanConcurrencyTiers(),
+    Array.from({ length: MAX_CREDIT_PLAN_CONCURRENCY }, (_, index) => index + 1));
+});
 
 test('plan.credits is the only operator override source for plan and package credits', async () => {
   const reads: string[] = [];

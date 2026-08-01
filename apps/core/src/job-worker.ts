@@ -98,6 +98,7 @@ import {
   PostgresProductBillingRepository,
 } from './p1/product-billing/index.js';
 import { PostgresCreditLedger } from './p1/credit-billing/postgres-credit-ledger.js';
+import { creditPlanConcurrencyTiers } from './p1/credit-billing/credit-plan-catalog.js';
 import { CreditSubscriptionEntitlementPolicy } from './p1/credit-billing/credit-entitlement-policy.js';
 import {
   CREDIT_SUBSCRIPTION_CYCLE_JOB_KIND,
@@ -150,7 +151,7 @@ import {
   WebhookProductNotifier,
   noOpProductNotifier,
 } from './product/notifier.js';
-import { productPlanConfigFromEnv } from './product/plans.js';
+import { defaultProductPlanConfig } from './product/plans.js';
 import {
   ProductAssetDataClassResolver,
   ProductCreativeGroundingResolver,
@@ -204,20 +205,18 @@ const downstreamNotifier = notificationWebhook
 
 const pool = new Pool({ connectionString: databaseUrl });
 const adminConfigRepository = new PostgresAdminConfigRepository(pool);
+const creditPlanCatalog = new AdminConfigCreditPlanCatalogSource(
+  adminConfigRepository,
+);
 const notifier = new PostgresIdempotentProductNotifier(
   pool,
   downstreamNotifier,
 );
-const productPlans = productPlanConfigFromEnv(process.env);
+const productPlans = defaultProductPlanConfig;
 const jobRuntime = PgBossJobPort.connect({
   connection: databaseUrl,
   queuePrefix: process.env.JOB_QUEUE_PREFIX ?? 'meiye-p1',
-  workspaceConcurrencyLimits: [
-    1,
-    4,
-    8,
-    ...Object.values(productPlans).map((plan) => plan.concurrencyLimit),
-  ],
+  workspaceConcurrencyLimits: creditPlanConcurrencyTiers(),
   ...(harnessRuntimeConfig
     ? {
         terminalNotifier: async ({ envelope, status, output }) => {
@@ -262,9 +261,6 @@ const referenceAssets = new CompositeReferenceAssetResolver([
 const grantLotLedger = new PostgresGrantLotLedger(pool);
 const creditLedger = new PostgresCreditLedger(pool);
 const creditSubscriptionStore = new PostgresCreditSubscriptionStore(pool);
-const creditPlanCatalog = new AdminConfigCreditPlanCatalogSource(
-  adminConfigRepository,
-);
 const operationsRepository = new PostgresOperationsRepository(pool);
 const foundationAssetReferences = new FoundationOwnedAssetReferenceVerifier(
   foundationRepository,
@@ -565,7 +561,7 @@ const legacyProductService = new ProductService(
   undefined,
   legacyInFlightDecisions,
   'legacy',
-  { packageRightsPropagation }
+  { legacyBillingReadOnly: true, packageRightsPropagation }
 );
 const relationalProductService = new ProductService(
   relationalProductRepository,
@@ -576,6 +572,8 @@ const relationalProductService = new ProductService(
   legacyInFlightDecisions,
   'p1',
   {
+    copyUsageAuthority: 'foundation_ledger',
+    legacyBillingReadOnly: true,
     legacyVideoPath: 'disabled',
     packageRightsPropagation,
     searchProjection: new OperationsProductSearchProjection(

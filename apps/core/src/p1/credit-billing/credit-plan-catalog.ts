@@ -1,5 +1,13 @@
 export const CREDIT_PLAN_IDS = ['trial', 'starter', 'growth', 'pro'] as const;
 export type CreditPlanId = (typeof CREDIT_PLAN_IDS)[number];
+export const MAX_CREDIT_PLAN_CONCURRENCY = 100;
+
+export function creditPlanConcurrencyTiers() {
+  return Array.from(
+    { length: MAX_CREDIT_PLAN_CONCURRENCY },
+    (_, index) => index + 1,
+  );
+}
 
 export interface CreditPlanOffer {
   id: CreditPlanId;

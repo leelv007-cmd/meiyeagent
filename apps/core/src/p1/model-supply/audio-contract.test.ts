@@ -153,6 +153,12 @@ test('real Volcengine speech catalog remains unavailable without approved pricin
 
   assert.deepEqual(speech, {
     capabilities: ['audio.speech'],
+    creditPricing: {
+      'audio.speech': {
+        creditCost: 2,
+        failureRefundsCredits: true,
+      },
+    },
     displayName: 'Doubao Speech Synthesis 2.0',
     id: 'seed-tts-2',
     manufacturer: 'ByteDance',

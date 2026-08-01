@@ -780,6 +780,8 @@ export interface ProductServiceOptions {
   copyExecutionClock?: () => Date;
   copyExecutionLeaseMs?: number;
   copyUsageAuthority?: 'legacy_state' | 'foundation_ledger';
+  /** Keep P0 entitlement buckets as a historical projection only. */
+  legacyBillingReadOnly?: boolean;
   legacyVideoPath?: 'enabled' | 'disabled';
   searchProjection?: ProductSearchProjectionPort;
   packageRightsPropagation?: ProductPackageRightsPropagationPort;
@@ -1313,6 +1315,13 @@ export class ProductService implements ProductApplicationService {
           }
           return { kind: 'stored', outcome: existing.outcome };
         }
+        if (this.options.legacyBillingReadOnly) {
+          throw new DomainError(
+            'LEGACY_BILLING_RETIRED',
+            'Legacy product generation is retired; use the credit-priced creation path.',
+            409
+          );
+        }
         await this.requireLegacyWriteOwner(repository, context, command);
         await this.requireLegacyContentWrite(context, command);
 
@@ -1453,7 +1462,10 @@ export class ProductService implements ProductApplicationService {
             );
           }
           state.contents.push(...candidates);
-          if (preparation.execution.reservationId) {
+          if (
+            preparation.execution.reservationId &&
+            !this.options.legacyBillingReadOnly
+          ) {
             commitReservation(
               state,
               context,
@@ -1518,7 +1530,10 @@ export class ProductService implements ProductApplicationService {
             0,
             Date.now() - new Date(agentRun.startedAt).getTime()
           );
-          if (preparation.execution.reservationId) {
+          if (
+            preparation.execution.reservationId &&
+            !this.options.legacyBillingReadOnly
+          ) {
             refund(
               state,
               context,
@@ -2088,7 +2103,7 @@ export class ProductService implements ProductApplicationService {
                 ['committed', 'refunded', 'expired'].includes(terminal.status)
             )
         )?.reservationId;
-    if (reservationId) {
+    if (reservationId && !this.options.legacyBillingReadOnly) {
       refund(state, context, 'content', reservationId);
     } else {
       await this.syncFoundationCopyUsage(state, context);
@@ -2112,6 +2127,7 @@ export class ProductService implements ProductApplicationService {
     state: ProductState,
     context: ProductContext
   ) {
+    if (this.options.legacyBillingReadOnly) return;
     const projection =
       await this.options.usageProjection?.getCopyProjection(context);
     if (!projection) return;
@@ -2213,6 +2229,16 @@ export class ProductService implements ProductApplicationService {
     context: ProductContext,
     command: ProductCommand
   ) {
+    if (
+      this.options.legacyBillingReadOnly &&
+      (command.type === 'start_video' || command.type === 'retry_video')
+    ) {
+      throw new DomainError(
+        'LEGACY_BILLING_RETIRED',
+        'Legacy billable generation is retired; use the credit-priced creation path.',
+        409
+      );
+    }
     switch (command.type) {
       case 'hide_example': {
         for (const example of state.exampleStores) {
@@ -2564,7 +2590,9 @@ export class ProductService implements ProductApplicationService {
             createdAt: now(),
           };
         });
-        chargeImmediate(state, context, 'content', 1);
+        if (!this.options.legacyBillingReadOnly) {
+          chargeImmediate(state, context, 'content', 1);
+        }
         state.contents.push(...cards);
         state.operationalEvidence.weeklyCardCount += cards.length;
         audit(
@@ -2909,8 +2937,9 @@ export class ProductService implements ProductApplicationService {
           command.nextStatus === 'failed' ||
           command.nextStatus === 'cancelled'
         ) {
-          const released =
-            command.reason === 'reservation_expired'
+          const released = this.options.legacyBillingReadOnly
+            ? false
+            : command.reason === 'reservation_expired'
               ? releaseReservation(
                   state,
                   context,
@@ -3078,7 +3107,10 @@ export class ProductService implements ProductApplicationService {
           );
         }
         const storageMb = Math.ceil(command.storage.fileSizeBytes / 1_048_576);
-        if (state.entitlement.storageMb.remaining < storageMb) {
+        if (
+          !this.options.legacyBillingReadOnly &&
+          state.entitlement.storageMb.remaining < storageMb
+        ) {
           throw new DomainError(
             'STORAGE_QUOTA_EXHAUSTED',
             'Storage allowance is exhausted. Remove files or change plan.',
@@ -3109,16 +3141,18 @@ export class ProductService implements ProductApplicationService {
           createdAt: now(),
         };
         state.videoArtifacts.push(artifact);
-        state.entitlement.storageMb.remaining -= storageMb;
-        usage(
-          state,
-          context,
-          'storage',
-          storageMb,
-          'committed',
-          'Verified video artifact storage'
-        );
-        commitReservation(state, context, 'video', job.reservationId);
+        if (!this.options.legacyBillingReadOnly) {
+          state.entitlement.storageMb.remaining -= storageMb;
+          usage(
+            state,
+            context,
+            'storage',
+            storageMb,
+            'committed',
+            'Verified video artifact storage'
+          );
+          commitReservation(state, context, 'video', job.reservationId);
+        }
         state.operationalEvidence.videoOutputCount += 1;
         if (artifact.visibleLabel && artifact.implicitMetadata) {
           state.operationalEvidence.labeledVideoCount += 1;
@@ -3401,7 +3435,9 @@ export class ProductService implements ProductApplicationService {
             handoffToken: existing.token,
           };
         }
-        chargeImmediate(state, context, 'package', 1);
+        if (!this.options.legacyBillingReadOnly) {
+          chargeImmediate(state, context, 'package', 1);
+        }
         const handoff: HandoffPackage = {
           id: randomUUID(),
           contentId: content.id,
@@ -3742,14 +3778,16 @@ export class ProductService implements ProductApplicationService {
         result.id,
         { term: hardStop, subjectId }
       );
-      usage(
-        state,
-        context,
-        'content',
-        0,
-        'failed_no_charge',
-        `Safety hard stop: ${hardStop}`
-      );
+      if (!this.options.legacyBillingReadOnly) {
+        usage(
+          state,
+          context,
+          'content',
+          0,
+          'failed_no_charge',
+          `Safety hard stop: ${hardStop}`
+        );
+      }
       throw new DomainError(
         'CONTENT_HARD_STOP',
         'This request cannot be generated.',
