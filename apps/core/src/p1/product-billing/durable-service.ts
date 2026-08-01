@@ -368,7 +368,8 @@ export class DurableProductBillingService
             quote.workspaceId !== workspaceId ||
             quote.taskId !== input.taskId ||
             quote.revision !== input.quoteRevision ||
-            quote.lifecycleStatus !== 'reserved' ||
+            (quote.lifecycleStatus !== 'reserved' &&
+              quote.lifecycleStatus !== 'dispatched') ||
             quote.operation !== input.operation ||
             quote.catalogModelId !== input.catalogModelId ||
             quote.outputCount !== input.outputCount ||

@@ -26,6 +26,10 @@ import {
   type ModelSupplyResult,
   type ProviderExecutionRequest,
 } from '../model-supply/index.js';
+import type {
+  ClaimMerchantExecutionInput,
+  MerchantExecutionBillingPort,
+} from '../product-billing/durable-service.js';
 import { buildContentPackage } from '../operations/content-package.js';
 import { MemoryContextBundleRepository } from '../operations/context-bundle-repository.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
@@ -867,7 +871,7 @@ test(
       assert.equal(submission.correlationId, workflowId);
       assert.equal(
         submission.idempotencyKey,
-        `harness-media:${workflowId}:image`,
+        `merchant-execution:${workflowId}:harness-media:${workflowId}:image`,
       );
       assert.equal(submission.operation, 'image.generate');
       assert.equal(submission.workspaceId, workspaceId);
@@ -1323,6 +1327,7 @@ function productionModelSupply(providerRequests: ProviderExecutionRequest[]) {
         };
       },
     },
+    merchantExecutionBilling: productionMerchantExecutionBilling(),
   });
   return {
     credentialAssemblyRequests,
@@ -1346,6 +1351,55 @@ function productionModelSupply(providerRequests: ProviderExecutionRequest[]) {
     },
     publishNextCredentialHead() {
       credentialHead = 'credential-r2';
+    },
+  };
+}
+
+function productionMerchantExecutionBilling(): MerchantExecutionBillingPort {
+  const executions = new Map<
+    string,
+    {
+      inputSnapshot: ClaimMerchantExecutionInput['inputSnapshot'];
+      result?: unknown;
+    }
+  >();
+  return {
+    async readMerchantExecutionContract() {
+      return {
+        catalogModelId: 'model-production-media',
+        operation: 'image.generate',
+        outputCount: 1,
+        quoteRevision: 'quote-r1',
+        submissionContractHash: 'production-media-assembly-contract',
+      };
+    },
+    async claimMerchantExecution<T>(input: ClaimMerchantExecutionInput) {
+      if (
+        input.catalogModelId !== 'model-production-media' ||
+        input.operation !== 'image.generate' ||
+        input.outputCount !== 1 ||
+        input.quoteRevision !== 'quote-r1'
+      ) {
+        throw new Error('Production media claim must retain its quoted contract.');
+      }
+      const key = `${input.workspaceId}:${input.taskId}:${input.effectKey}`;
+      const existing = executions.get(key);
+      if (existing?.result !== undefined) {
+        return { decision: 'replay' as const, result: existing.result as T };
+      }
+      if (existing) return { decision: 'in_progress' as const };
+      const inputSnapshot = structuredClone(input.inputSnapshot);
+      executions.set(key, { inputSnapshot });
+      return { decision: 'execute' as const, inputSnapshot };
+    },
+    async completeMerchantExecution<T>(
+      input: ClaimMerchantExecutionInput & { result: T },
+    ) {
+      const key = `${input.workspaceId}:${input.taskId}:${input.effectKey}`;
+      const existing = executions.get(key);
+      if (!existing) throw new Error('Production media execution was not claimed.');
+      existing.result = structuredClone(input.result);
+      return input.result;
     },
   };
 }

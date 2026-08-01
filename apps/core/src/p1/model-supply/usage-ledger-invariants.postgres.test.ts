@@ -103,6 +103,10 @@ test(
 
     t.after(async () => {
       await pool.query(
+        'DELETE FROM p1_product_billing_merchant_executions WHERE workspace_id = $1',
+        [workspaceId],
+      );
+      await pool.query(
         'DELETE FROM p1_product_billing_provider_costs WHERE workspace_id = $1',
         [workspaceId],
       );
@@ -157,9 +161,11 @@ test(
       billingMode: 'per_request',
       catalogModelId: 'usage-invariant-model',
       frozenCandidateDeploymentIds: ['usage-invariant-deployment'],
+      operation: 'text.respond',
       outputCount: 1,
       quoteId,
       quotePolicyRevision: 'usage-invariant-quote-policy',
+      submissionContractHash: 'usage-invariant-signed-snapshot',
       unitRate: 1,
       workspaceId,
     });
@@ -224,6 +230,7 @@ test(
               supplyFreezes,
             },
           ),
+          merchantExecutionBilling: billing,
         }),
         executor,
         workspaceId,
@@ -366,9 +373,11 @@ test(
           billingMode: 'per_request',
           catalogModelId: model.id,
           frozenCandidateDeploymentIds: [deployment.id],
+          operation: 'text.respond',
           outputCount: 1,
           quoteId: retryQuoteId,
           quotePolicyRevision: 'usage-invariant-retry-quote-policy',
+          submissionContractHash: 'usage-invariant-retry-signed-snapshot',
           unitRate: 1,
           workspaceId,
         });
@@ -401,6 +410,7 @@ test(
                 supplyFreezes,
               },
             ),
+            merchantExecutionBilling: billing,
           }),
           executor: retryExecutor,
           workspaceId,

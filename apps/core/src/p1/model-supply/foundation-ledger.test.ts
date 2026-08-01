@@ -16,6 +16,11 @@ import {
   ProductQuoteService,
   type BillingLifecyclePort,
 } from '../product-billing/index.js';
+import type {
+  ClaimMerchantExecutionInput,
+  MerchantExecutionBillingPort,
+  MerchantExecutionContract,
+} from '../product-billing/durable-service.js';
 import type { SupplyRequestFreeze } from '../entitlement-pools/supply-ledger-fields.js';
 import { FoundationModelSupplyLedger } from './foundation-ledger.js';
 import {
@@ -114,6 +119,43 @@ function createStrictSupplyFreezeStore(
     },
   };
   return { freezes, supplyFreezes };
+}
+
+function merchantExecutionBillingStub(
+  contract: MerchantExecutionContract,
+): MerchantExecutionBillingPort {
+  const executions = new Map<
+    string,
+    {
+      inputSnapshot: ClaimMerchantExecutionInput['inputSnapshot'];
+      result?: unknown;
+    }
+  >();
+  return {
+    async readMerchantExecutionContract() {
+      return contract;
+    },
+    async claimMerchantExecution<T>(input: ClaimMerchantExecutionInput) {
+      const key = `${input.workspaceId}:${input.taskId}:${input.effectKey}`;
+      const existing = executions.get(key);
+      if (existing?.result !== undefined) {
+        return { decision: 'replay' as const, result: existing.result as T };
+      }
+      if (existing) return { decision: 'in_progress' as const };
+      const inputSnapshot = structuredClone(input.inputSnapshot);
+      executions.set(key, { inputSnapshot });
+      return { decision: 'execute' as const, inputSnapshot };
+    },
+    async completeMerchantExecution<T>(
+      input: ClaimMerchantExecutionInput & { result: T },
+    ) {
+      const key = `${input.workspaceId}:${input.taskId}:${input.effectKey}`;
+      const existing = executions.get(key);
+      if (!existing) throw new Error('Merchant execution was not claimed.');
+      existing.result = structuredClone(input.result);
+      return input.result;
+    },
+  };
 }
 
 test('a ProductUsage-reserved task never consumes the legacy grant-lot ledger', async () => {
@@ -221,6 +263,15 @@ test('a ProductUsage-reserved task never consumes the legacy grant-lot ledger', 
         checkpointAttempt: (input) => processLedger.checkpointAttempt(input),
         settleAttempt: (input) => processLedger.settleAttempt(input),
       },
+      merchantExecutionBilling: merchantExecutionBillingStub({
+        catalogModelId: videoModel.id,
+        operation: 'video.generate',
+        outputCount: 1,
+        quoteRevision: quote.revision,
+        submissionContractHash:
+          quote.submissionContractHash ?? 'single-product-ledger-contract',
+        targetSeconds: 15,
+      }),
       models: [videoModel],
     });
   };
@@ -445,6 +496,7 @@ test('re-reads a competing durable freeze when ProductUsage settles after a miss
   });
   const submission = {
     actorId: context.userId,
+    billingQuoteRevision: 'freeze-race-quote-r1',
     billingTaskId: reserved.taskId,
     dataClass: [],
     idempotencyKey: 'freeze-race-submit',
@@ -456,6 +508,13 @@ test('re-reads a competing durable freeze when ProductUsage settles after a miss
   const preview = await new ModelSupplyApplicationService({
     deployments: [deployment],
     execution: new RecordedProviderExecutionPort(),
+    merchantExecutionBilling: merchantExecutionBillingStub({
+      catalogModelId: model.id,
+      operation: 'image.generate',
+      outputCount: 1,
+      quoteRevision: 'freeze-race-quote-r1',
+      submissionContractHash: 'freeze-race-contract',
+    }),
     models: [model],
   }).submit(submission);
   const checkpoint = {
@@ -1515,6 +1574,14 @@ test('refunds canonical billing when a cross-model fallback is rejected', async 
       undefined,
       { billingLifecycle },
     ),
+    merchantExecutionBilling: merchantExecutionBillingStub({
+      catalogModelId: copyModels[0]!.id,
+      operation: 'copy.generate',
+      outputCount: 1,
+      quoteRevision: quote.revision,
+      submissionContractHash:
+        quote.submissionContractHash ?? 'invalid-fallback-contract',
+    }),
     planningControlPlane: {
       async readPlanningState() {
         return {
@@ -1540,7 +1607,7 @@ test('refunds canonical billing when a cross-model fallback is rejected', async 
     idempotencyKey: 'invalid-cross-model-fallback',
     operation: 'copy.generate',
     prompt: '跨模型回退必须先声明降级面',
-    selection: { mode: 'auto', profile: 'quality' },
+    selection: { mode: 'fixed', catalogModelId: copyModels[0]!.id },
     workspaceId: context.workspaceId,
   });
 

@@ -1114,8 +1114,11 @@ test(
         billingMode: 'per_request',
         catalogModelId: 'catalog-billing-image',
         frozenCandidateDeploymentIds: ['deployment-billing-image'],
+        operation: 'image.generate',
+        outputCount: 1,
         quoteId: `quote-${randomUUID()}`,
         quotePolicyRevision: 'product-policy-billing-r1',
+        submissionContractHash: 'billing-bridge-signed-snapshot',
         unitRate: 1,
         workspaceId,
       });
@@ -1200,6 +1203,7 @@ test(
         deployments: [deployment],
         execution: new RecordedProviderExecutionPort(),
         ledger,
+        merchantExecutionBilling: billing,
         models: [model],
       }).submit(submission);
 
