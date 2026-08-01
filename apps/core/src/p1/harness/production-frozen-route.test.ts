@@ -39,6 +39,64 @@ test('production route resolver freezes the confirmed checkpoint once', async ()
   ]);
 });
 
+test('production route resolver rejects fallback candidate drift', async () => {
+  const snapshot = mediaSnapshot();
+  const checkpoint = foundationRoute(snapshot);
+  checkpoint.fallbackConsent = true;
+  checkpoint.fallbackAuthorized = true;
+  checkpoint.maxAttempts = 2;
+  checkpoint.allowedCandidates.push({
+    ...checkpoint.allowedCandidates[0]!,
+    deploymentId: 'deployment-fallback-authorized',
+    fallbackRank: 2,
+  });
+  const frozen = modelSupplyRoute(snapshot);
+  frozen.fallbackConsent = true;
+  frozen.fallbackAuthorized = true;
+  frozen.maxAttempts = 2;
+  frozen.requestedSelection = {
+    ...frozen.requestedSelection,
+    fallbackConsent: true,
+  };
+  frozen.allowedCandidates?.push({
+    ...frozen.allowedCandidates[0]!,
+    deploymentId: 'deployment-fallback-drifted',
+    fallbackRank: 2,
+  });
+  const freezeInputs: unknown[] = [];
+  const resolver = new ProductionHarnessFrozenRouteSnapshotResolver(
+    {
+      async getRouteSnapshot() {
+        return structuredClone(checkpoint);
+      },
+    },
+    {
+      async freezeFixedRouteForExecution(input) {
+        freezeInputs.push(structuredClone(input));
+        return structuredClone(frozen);
+      },
+    },
+  );
+
+  await assert.rejects(
+    resolver.resolve(snapshot),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.name === 'HarnessAdmissionError' &&
+      'code' in error &&
+      error.code === 'FROZEN_ROUTE_MISMATCH',
+  );
+  assert.deepEqual(freezeInputs, [
+    {
+      catalogModelId: snapshot.catalogModel.id,
+      dataClass: ['contains_face'],
+      fallbackConsent: true,
+      operation: 'image.generate',
+      workspaceId: snapshot.workspaceId,
+    },
+  ]);
+});
+
 test('production route resolver rejects stale or incomplete route facts before admission', async () => {
   const snapshot = mediaSnapshot();
   const checkpoint = foundationRoute(snapshot);
@@ -517,6 +575,9 @@ function foundationRoute(
         credentialVersion: 'credential-r1',
         policyRevision: 'policy-r1',
         priceRevision: 'price-r1',
+        unitPriceMicros: 1,
+        currency: 'CNY',
+        unit: 'image',
         fallbackRank: 1,
       },
     ],

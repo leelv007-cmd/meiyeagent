@@ -69,6 +69,10 @@ export function copyCandidateBodiesAreDistinct(
 
 export interface ModelSupplyResult {
   jobId: string;
+  /** Server-owned merchant effect persisted with the durable provider job. */
+  merchantExecutionEffectKey?: string;
+  /** Billing task paired with merchantExecutionEffectKey. */
+  merchantExecutionTaskId?: string;
   /** Durable repository-observed terminal time; absent while outcome is unknown. */
   endedAt?: string;
   /** End-to-end elapsed time from the first provider attempt to endedAt. */

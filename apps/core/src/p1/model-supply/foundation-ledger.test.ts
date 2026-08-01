@@ -25,6 +25,7 @@ import type { SupplyRequestFreeze } from '../entitlement-pools/supply-ledger-fie
 import { FoundationModelSupplyLedger } from './foundation-ledger.js';
 import {
   ModelSupplyApplicationService,
+  ModelSupplyProviderAdmissionError,
   RecordedProviderExecutionPort,
   type CatalogModel,
   type ModelDeployment,
@@ -158,6 +159,75 @@ function merchantExecutionBillingStub(
     },
   };
 }
+
+test('a non-durable unknown merchant execution replays without another provider call', async () => {
+  const copyModel: CatalogModel = {
+    displayName: 'Unknown copy model',
+    id: 'copy-unknown-model',
+    modality: 'llm',
+    operations: ['copy.generate'],
+    qualityRank: 100,
+  };
+  const copyDeployment: ModelDeployment = {
+    apiFamily: 'openai',
+    catalogModelId: copyModel.id,
+    channel: 'direct',
+    credentialMode: 'platform',
+    credentialVersion: 'copy-unknown-credential-v1',
+    executionChannelId: 'copy-unknown-channel',
+    id: 'copy-unknown-deployment',
+    policyRevision: 'copy-unknown-policy-v1',
+    priceRevision: 'copy-unknown-price-v1',
+    pricingTier: 'standard',
+    region: 'domestic',
+    status: 'active',
+  };
+  let providerCalls = 0;
+  const application = new ModelSupplyApplicationService({
+    deployments: [copyDeployment],
+    execution: {
+      async execute() {
+        providerCalls += 1;
+        return {
+          acceptance: 'acceptance_unknown' as const,
+          kind: 'failure' as const,
+          message: 'Provider response was lost after dispatch.',
+          providerCost: {
+            amount: 0.01,
+            currency: 'CNY' as const,
+            usage: { inputTokens: 12 },
+          },
+        };
+      },
+    },
+    merchantExecutionBilling: merchantExecutionBillingStub({
+      catalogModelId: copyModel.id,
+      operation: 'copy.generate',
+      outputCount: 1,
+      quoteRevision: 'copy-unknown-quote-r1',
+      submissionContractHash: 'copy-unknown-contract-v1',
+    }),
+    models: [copyModel],
+  });
+  const submission = {
+    actorId: context.userId,
+    billingQuoteRevision: 'copy-unknown-quote-r1',
+    billingTaskId: 'copy-unknown-task',
+    dataClass: [],
+    idempotencyKey: 'copy-unknown-submit',
+    operation: 'copy.generate' as const,
+    prompt: '生成一条门店护理文案',
+    selection: { catalogModelId: copyModel.id, mode: 'fixed' as const },
+    workspaceId: context.workspaceId,
+  };
+
+  const first = await application.submit(submission);
+  assert.equal(first.status, 'unknown');
+  const replay = await application.submit(submission);
+
+  assert.deepEqual(replay, first);
+  assert.equal(providerCalls, 1);
+});
 
 test('a ProductUsage-reserved task never consumes the legacy grant-lot ledger', async () => {
   const videoModel: CatalogModel = {
@@ -1487,6 +1557,184 @@ test('keeps one reservation and one frozen candidate set across a safe pre-accep
         priceRevisionId: 'price-fallback',
       },
     ],
+  );
+});
+
+test('keeps a pre-accept media fallback resumable when the next frozen attempt reaches its bound', async () => {
+  const repository = new MemoryFoundationRepository();
+  repository.grantOwner(context.workspaceId, context.userId);
+  const foundation = new P1ApplicationService(repository);
+  await foundation.appendUsageEvent(
+    context,
+    {
+      id: 'bounded-image-entitlement',
+      resource: 'image',
+      action: 'adjust',
+      amount: 3,
+      reason: 'image plan',
+    },
+    'bounded-image-entitlement',
+  );
+  const deployments: ModelDeployment[] = ['primary', 'fallback'].map(
+    (channel, index) => ({
+      id: `bounded-image-${channel}`,
+      catalogModelId: model.id,
+      executionChannelId: `bounded-channel-${channel}`,
+      providerProfileId: `bounded-provider-${channel}`,
+      accountIdentity: `bounded-account-${channel}`,
+      endpointFingerprint: `bounded-endpoint-${channel}`,
+      apiFamily: 'image',
+      channel: 'managed',
+      region: 'overseas',
+      status: 'active',
+      priceRevision: `bounded-price-${channel}`,
+      unitPrice: {
+        amountMicros: index + 1,
+        currency: 'CNY',
+        unit: 'image',
+      },
+    }),
+  );
+  let providerCalls = 0;
+  let application!: ModelSupplyApplicationService;
+  application = new ModelSupplyApplicationService({
+    models: [model],
+    deployments,
+    execution: {
+      async execute() {
+        throw new Error('Durable media must use the guarded provider effect.');
+      },
+    },
+    ledger: new FoundationModelSupplyLedger(foundation),
+    planningControlPlane: {
+      async readPlanningState() {
+        return {
+          routePolicyRevisionId: 'bounded-route-policy-r1',
+          routePolicy: {
+            operation: 'image.generate' as const,
+            qualityTier: 'quality' as const,
+            hardConstraints: ['deployment_active'],
+            candidateDeploymentIds: deployments.map(({ id }) => id),
+            maxAttempts: 2,
+            fallbackAuthorized: true,
+          },
+        };
+      },
+    },
+  });
+  const frozenRoute = await application.freezeFixedRouteForExecution({
+    catalogModelId: model.id,
+    dataClass: [],
+    fallbackConsent: true,
+    operation: 'image.generate',
+    workspaceId: context.workspaceId,
+  });
+  const submission = {
+    workspaceId: context.workspaceId,
+    actorId: context.userId,
+    idempotencyKey: 'bounded-fallback-ledger',
+    operation: 'image.generate' as const,
+    selection: {
+      mode: 'fixed' as const,
+      catalogModelId: model.id,
+      fallbackConsent: true,
+    },
+    dataClass: [],
+    prompt: 'Pause before the next frozen attempt.',
+    frozenRouteSnapshot: frozenRoute,
+    mediaBoundedExecution: {
+      schemaVersion: 'media-bounded-execution/v1' as const,
+      snapshot: {
+        schemaVersion: 'bounded-execution-snapshot/v1' as const,
+        maxIterations: 1,
+        maxCostCents: 100,
+        maxWallClockMs: 60_000,
+        maxDelegations: 'unset' as const,
+        requiredLimits: [
+          'maxIterations' as const,
+          'maxCostCents' as const,
+          'maxWallClockMs' as const,
+        ],
+        consumption: {
+          iterations: 0,
+          costCents: 0,
+          wallClockMs: 0,
+          delegations: 0,
+        },
+        stopReason: null,
+        triggeredLimit: null,
+      },
+      countedAttemptIds: [],
+      countedProviderCostIds: [],
+    },
+  };
+  const guardedExecution: ProviderExecutionPort = {
+    async execute(request) {
+      try {
+        return await application.executeMediaProviderEffect({
+          submission: request.submission,
+          effectIdempotencyKey:
+            request.effectIdempotencyKey ?? `bounded-effect:${request.attemptId}`,
+          stage: 'submit',
+          attemptId: request.attemptId,
+          attemptOrdinal: request.attemptOrdinal,
+          routeSnapshot: request.routeSnapshot,
+          model: request.model,
+          deployment: request.deployment,
+          previousAttempts: request.previousAttempts,
+          previousProviderCosts: request.previousProviderCosts,
+          async execute() {
+            providerCalls += 1;
+            return {
+              kind: 'failure' as const,
+              acceptance: 'rejected_before_accept' as const,
+              errorCode: 'bounded_primary_rejected',
+              message: 'The primary rejected before accepting the request.',
+              providerCost: { amount: 0, currency: 'CNY' as const, usage: {} },
+              retryable: true,
+            };
+          },
+        });
+      } catch (error) {
+        if (!(error instanceof ModelSupplyProviderAdmissionError)) throw error;
+        return {
+          kind: 'failure' as const,
+          acceptance: 'rejected_before_accept' as const,
+          errorCode: error.errorCode,
+          message: error.message,
+          providerCost: { amount: 0, currency: 'CNY' as const, usage: {} },
+          retryable: error.retryable,
+        };
+      }
+    },
+  };
+
+  const result = await application.executeMediaProviderSubmission(
+    submission,
+    guardedExecution,
+    {
+      attemptEffectGuardsCheckpoint: true,
+      effectIdempotencyKey: 'bounded-effect-root',
+      useFrozenMediaCandidateSequence: true,
+    },
+  );
+
+  assert.equal(result.status, 'failed');
+  assert.equal(result.failureCode, 'MEDIA_BOUNDED_ITERATION_EXCEEDED');
+  assert.equal(result.usage.status, 'reserved');
+  assert.equal(result.attempt.acceptance, 'rejected_before_accept');
+  assert.equal(providerCalls, 1);
+  const attempts = await repository.listProviderAttempts(
+    context.workspaceId,
+    result.jobId,
+  );
+  assert.equal(attempts.length, 1);
+  assert.equal(attempts[0]?.acceptance, 'rejected_before_accept');
+  const job = await foundation.getGenerationJob(context, result.jobId);
+  assert.equal(job.status, 'running');
+  assert.equal(
+    (job.result as { failureCode?: string } | undefined)?.failureCode,
+    'bounded_primary_rejected',
   );
 });
 

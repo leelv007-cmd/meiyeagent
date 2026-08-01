@@ -134,6 +134,12 @@ export interface MerchantExecutionBillingPort
   completeMerchantExecution<T>(
     input: ClaimMerchantExecutionInput & { result: T },
   ): MaybePromise<T>;
+  settleDurableMerchantExecutionResult?<T>(input: {
+    effectKey: string;
+    result: T;
+    taskId: string;
+    workspaceId: string;
+  }): MaybePromise<T>;
 }
 
 function merchantExecutionContractHash(
@@ -166,6 +172,14 @@ function merchantExecutionContractHash(
       }),
     )
     .digest('hex');
+}
+
+function merchantExecutionResultJobId(result: unknown) {
+  if (!result || typeof result !== 'object' || Array.isArray(result)) {
+    return null;
+  }
+  const jobId = (result as { jobId?: unknown }).jobId;
+  return typeof jobId === 'string' && jobId.trim().length > 0 ? jobId : null;
 }
 
 function merchantExecutionMatchesReservation(
@@ -555,6 +569,69 @@ export class DurableProductBillingService
             taskId: input.taskId,
             workspaceId,
           });
+        },
+      ),
+    );
+  }
+
+  async settleDurableMerchantExecutionResult<T>(input: {
+    effectKey: string;
+    result: T;
+    taskId: string;
+    workspaceId: string;
+  }): Promise<T> {
+    const workspaceId = this.workspace(input.workspaceId);
+    const rootEffectKey = `merchant-execution:${input.taskId}`;
+    if (
+      input.effectKey !== rootEffectKey &&
+      !input.effectKey.startsWith(`${rootEffectKey}:`)
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Durable merchant execution result does not belong to its billing task.',
+      );
+    }
+    if (merchantExecutionResultJobId(input.result) === null) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Durable merchant execution result requires its persisted provider job.',
+      );
+    }
+    return this.run(() =>
+      this.repository.withTransaction(
+        workspaceId,
+        [`task:${input.taskId}`, `merchant-effect:${input.effectKey}`],
+        async (transaction) => {
+          const existing = await transaction.getMerchantExecution(
+            workspaceId,
+            input.taskId,
+            input.effectKey,
+          );
+          if (
+            !existing ||
+            existing.idempotencyKey !== input.effectKey ||
+            existing.status === 'bound'
+          ) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Durable merchant execution result requires its exact claimed effect.',
+            );
+          }
+          if (existing.status === 'completed') {
+            if (fingerprintValue(existing.result) === fingerprintValue(input.result)) {
+              return existing.result as T;
+            }
+            throw new P1DomainError(
+              'IDEMPOTENCY_CONFLICT',
+              'Durable merchant execution already completed with another result.',
+            );
+          }
+          await transaction.saveMerchantExecution({
+            ...existing,
+            result: structuredClone(input.result),
+            status: 'completed',
+          });
+          return input.result;
         },
       ),
     );

@@ -188,6 +188,7 @@ import {
   copyCandidateBodiesAreDistinct,
   type CancelledMediaProviderTerminalReconciliation,
   type CopyCandidate,
+  type DurableMediaGenerationJobView,
   type DurableMediaGenerationRuntimePort,
   type ModelSupplyLedgerCheckpointInput,
   type ModelSupplyLedgerPort,
@@ -800,6 +801,51 @@ function bindMerchantExecutionInput(
   };
 }
 
+function withMerchantExecutionAuthority(
+  result: ModelSupplyResult,
+  input: { effectKey: string; taskId: string },
+) {
+  if (
+    (result.merchantExecutionEffectKey &&
+      result.merchantExecutionEffectKey !== input.effectKey) ||
+    (result.merchantExecutionTaskId &&
+      result.merchantExecutionTaskId !== input.taskId)
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Model Supply result conflicts with its merchant execution authority.',
+    );
+  }
+  return {
+    ...result,
+    merchantExecutionEffectKey: input.effectKey,
+    merchantExecutionTaskId: input.taskId,
+  } satisfies ModelSupplyResult;
+}
+
+function isDurableMediaOperation(
+  operation: ModelSupplySubmission['operation'],
+) {
+  return (
+    operation === 'image.generate' ||
+    operation === 'image.edit' ||
+    operation === 'video.generate' ||
+    operation === 'audio.speech' ||
+    operation === 'audio.sfx'
+  );
+}
+
+function merchantExecutionRemainsClaimed(
+  result: ModelSupplyResult,
+  durableMedia: boolean,
+) {
+  return durableMedia && (
+    result.status === 'unknown' ||
+    (result.status === 'failed' &&
+      result.failureCode === 'MEDIA_BOUNDED_ITERATION_EXCEEDED')
+  );
+}
+
 function assertPromptBinding(
   operation: LanguageModelOperation,
   binding: NonNullable<ModelSupplySubmission['promptBinding']>,
@@ -1302,14 +1348,16 @@ export class ModelSupplyApplicationService {
     this.merchantExecutionBilling = port;
   }
 
-  getDurableMediaJob(workspaceId: string, jobId: string) {
+  async getDurableMediaJob(workspaceId: string, jobId: string) {
     if (!this.mediaRuntime) {
       throw new Error('Durable media runtime is not configured.');
     }
-    return this.mediaRuntime.get(workspaceId, jobId);
+    return this.settleDurableMerchantExecution(
+      await this.mediaRuntime.get(workspaceId, jobId),
+    );
   }
 
-  resumeBoundedMediaJob(input: {
+  async resumeBoundedMediaJob(input: {
     workspaceId: string;
     jobId: string;
     authorization: NonNullable<ModelSupplySubmission['mediaBoundedExecution']>;
@@ -1319,7 +1367,39 @@ export class ModelSupplyApplicationService {
         'Durable bounded media continuation is not configured.',
       );
     }
-    return this.mediaRuntime.resumeBoundedMediaJob(input);
+    return this.settleDurableMerchantExecution(
+      await this.mediaRuntime.resumeBoundedMediaJob(input),
+    );
+  }
+
+  private async settleDurableMerchantExecution(
+    view: DurableMediaGenerationJobView,
+  ) {
+    const result = view.result;
+    const effectKey = result.merchantExecutionEffectKey;
+    const taskId = result.merchantExecutionTaskId;
+    if (!effectKey && !taskId) return view;
+    if (!effectKey || !taskId) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Durable media result has incomplete merchant execution authority.',
+      );
+    }
+    if (merchantExecutionRemainsClaimed(result, true)) return view;
+    const billing = this.merchantExecutionBilling;
+    if (!billing?.settleDurableMerchantExecutionResult) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Durable merchant execution settlement is unavailable.',
+      );
+    }
+    const settled = await billing.settleDurableMerchantExecutionResult({
+      effectKey,
+      result,
+      taskId,
+      workspaceId: view.workspaceId,
+    });
+    return { ...view, result: settled };
   }
 
   cancelDurableMediaJob(input: {
@@ -1496,6 +1576,7 @@ export class ModelSupplyApplicationService {
     catalogModelId: string;
     deploymentId?: string;
     dataClass: DataClass[];
+    fallbackConsent?: boolean;
     promptRevision?: string;
     capabilityRequirements?: ModelCapabilityRequirementAxis[];
   }): Promise<RouteSnapshot> {
@@ -1504,7 +1585,11 @@ export class ModelSupplyApplicationService {
       actorId: 'workflow-gate',
       idempotencyKey: 'route-preview-only',
       operation: input.operation,
-      selection: { mode: 'fixed', catalogModelId: input.catalogModelId },
+      selection: {
+        mode: 'fixed',
+        catalogModelId: input.catalogModelId,
+        ...(input.fallbackConsent === true ? { fallbackConsent: true } : {}),
+      },
       dataClass: [...input.dataClass],
       prompt: '',
       ...(input.promptRevision ? { promptRevision: input.promptRevision } : {}),
@@ -1792,12 +1877,7 @@ export class ModelSupplyApplicationService {
       prepared,
       async (bound, merchantEffectKey) => {
         if (
-          this.mediaRuntime &&
-          (bound.operation === 'image.generate' ||
-            bound.operation === 'image.edit' ||
-            bound.operation === 'video.generate' ||
-            bound.operation === 'audio.speech' ||
-            bound.operation === 'audio.sfx')
+          this.mediaRuntime && isDurableMediaOperation(bound.operation)
         ) {
           return this.mediaRuntime.submit(
             await withServerDerivedReferenceDataClass(
@@ -2114,17 +2194,33 @@ export class ModelSupplyApplicationService {
       await merchantBilling.claimMerchantExecution<ModelSupplyResult>(
         claim,
       );
-    if (decision.decision === 'replay') return decision.result;
+    if (decision.decision === 'replay') {
+      return withMerchantExecutionAuthority(decision.result, {
+        effectKey,
+        taskId,
+      });
+    }
     if (decision.decision === 'in_progress') {
       throw new P1DomainError(
         'IDEMPOTENCY_CONFLICT',
         'Merchant execution is already in progress for this reserved credit task.',
       );
     }
-    const result = await execute(
-      bindMerchantExecutionInput(bound, decision.inputSnapshot, effectKey),
-      effectKey,
+    const result = withMerchantExecutionAuthority(
+      await execute(
+        bindMerchantExecutionInput(bound, decision.inputSnapshot, effectKey),
+        effectKey,
+      ),
+      { effectKey, taskId },
     );
+    if (
+      merchantExecutionRemainsClaimed(
+        result,
+        Boolean(this.mediaRuntime) && isDurableMediaOperation(bound.operation),
+      )
+    ) {
+      return result;
+    }
     return merchantBilling.completeMerchantExecution({
       ...claim,
       result,
@@ -3978,11 +4074,9 @@ export class ModelSupplyApplicationService {
           },
         };
         applyActualRouteDecisionExplanation(suspended);
-        await this.ledger?.settleAttempt({
-          submission,
-          result: suspended,
-          evidence: 'media_bounded_iteration_exhausted_before_fallback',
-        });
+        // The provider rejection in lastFailure is already settled. The bound
+        // is an orchestration suspension over that immutable outcome, not a
+        // second provider settlement for the same attempt.
         if (!options.deferResultPersistence) {
           await this.resultSink?.saveResult(
             submission.workspaceId,

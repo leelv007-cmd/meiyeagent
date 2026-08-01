@@ -238,15 +238,19 @@ export class DurableMediaGenerationApplicationService
   ): Promise<DurableMediaGenerationJobView> {
     const completed = resultFromOutput(record.output);
     const submission = submissionFromPayload(record.payload);
-    const result =
+    const durableResult =
       completed ?? this.dependencies.models.previewMediaSubmission(submission);
-    if (record.providerTaskRef && !result.attempt.providerTaskRef) {
-      result.attempt.providerTaskRef = record.providerTaskRef;
-      const current = result.attempts.find(
-        (attempt) => attempt.id === result.attempt.id
+    if (record.providerTaskRef && !durableResult.attempt.providerTaskRef) {
+      durableResult.attempt.providerTaskRef = record.providerTaskRef;
+      const current = durableResult.attempts.find(
+        (attempt) => attempt.id === durableResult.attempt.id
       );
       if (current) current.providerTaskRef = record.providerTaskRef;
     }
+    const result = durableMerchantExecutionResult(
+      durableResult,
+      submission,
+    );
     return {
       jobId: record.jobId,
       workspaceId: record.workspaceId,
@@ -265,6 +269,42 @@ export class DurableMediaGenerationApplicationService
       result,
     };
   }
+}
+
+function durableMerchantExecutionResult(
+  result: ModelSupplyResult,
+  submission: ModelSupplySubmission,
+) {
+  const taskId = submission.billingTaskId;
+  const quoteRevision = submission.billingQuoteRevision;
+  if (!taskId && !quoteRevision) return result;
+  const rootEffectKey = taskId ? `merchant-execution:${taskId}` : null;
+  if (
+    !taskId ||
+    !quoteRevision ||
+    !rootEffectKey ||
+    (submission.idempotencyKey !== rootEffectKey &&
+      !submission.idempotencyKey.startsWith(`${rootEffectKey}:`))
+  ) {
+    throw new Error(
+      'Durable media job has invalid merchant execution authority.',
+    );
+  }
+  if (
+    (result.merchantExecutionEffectKey &&
+      result.merchantExecutionEffectKey !== submission.idempotencyKey) ||
+    (result.merchantExecutionTaskId &&
+      result.merchantExecutionTaskId !== taskId)
+  ) {
+    throw new Error(
+      'Durable media result conflicts with its persisted merchant execution authority.',
+    );
+  }
+  return {
+    ...result,
+    merchantExecutionEffectKey: submission.idempotencyKey,
+    merchantExecutionTaskId: taskId,
+  } satisfies ModelSupplyResult;
 }
 
 export class ModelMediaGenerationEffect implements TracerExternalEffect {

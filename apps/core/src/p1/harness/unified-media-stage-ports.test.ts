@@ -404,6 +404,8 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 		amount: 0,
 		usage: {},
 	};
+	const merchantExecutionEffectKey =
+		"merchant-execution:task-image:harness-media:workflow-image-fallback-bound:image";
 	const suspendedResult: ModelSupplyResult & {
 		boundedExecution: unknown;
 	} = {
@@ -435,6 +437,8 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 			consumedProviderCostIds: [],
 		},
 		failureCode: "MEDIA_BOUNDED_ITERATION_EXCEEDED",
+		merchantExecutionEffectKey,
+		merchantExecutionTaskId: "task-image",
 		providerCost: estimatedCost,
 		providerCosts: [estimatedCost],
 		status: "failed",
@@ -445,6 +449,8 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 		jobId: suspendedResult.jobId,
 		latencyMs: 40,
 		attempts: [rejectedAttempt, fallback.attempt],
+		merchantExecutionEffectKey,
+		merchantExecutionTaskId: "task-image",
 		providerCosts: [estimatedCost, fallback.providerCost],
 	};
 	const { latencyMs: _providerLifecycleLatency, ...durableSuspendedResult } =
@@ -471,6 +477,15 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 		async resumeBoundedMediaJob(input) {
 			assert.equal(input.jobId, suspendedResult.jobId);
 			assert.equal(input.authorization.snapshot.maxIterations, 3);
+			assert.deepEqual(
+				input.authorization.snapshot.consumption,
+				{
+					iterations: 1,
+					costCents: 0,
+					wallClockMs: 0,
+					delegations: 0,
+				},
+			);
 			assert.deepEqual(input.authorization.countedAttemptIds, [
 				rejectedAttempt.id,
 			]);
@@ -495,8 +510,17 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 	assert.equal(first.currentBest.phase, "provider_route_suspended");
 	assert.equal(first.currentBest.providerRoute?.jobId, suspendedResult.jobId);
 	assert.equal(first.currentBest.providerRoute?.lifecycleBaselineMs, 25);
+	assert.equal(
+		(
+			first.currentBest.providerRoute as
+				| { merchantExecutionEffectKey?: string }
+				| undefined
+		)?.merchantExecutionEffectKey,
+		merchantExecutionEffectKey,
+	);
 	const {
 		endedAt: _durableTerminalTime,
+		merchantExecutionEffectKey: _durableMerchantExecutionEffectKey,
 		...canonicalDurableResult
 	} = durableSuspendedResult;
 	assert.equal(
@@ -504,6 +528,7 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 		mediaBoundedRequestFingerprint({
 			result: canonicalDurableResult,
 			lifecycleBaselineMs: 25,
+			merchantExecutionEffectKey,
 		}),
 	);
 	assert.equal(first.snapshot.triggeredLimit, "maxIterations");
@@ -537,9 +562,39 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 		/digest|checkpoint/iu,
 	);
 	assert.equal(resumes, 0);
+	const forgedEffectKey = "merchant-execution:task-image:forged-auxiliary";
+	const tamperedEffectCheckpoint = {
+		...first,
+		currentBest: {
+			...first.currentBest,
+			providerRoute: {
+				...first.currentBest.providerRoute!,
+				merchantExecutionEffectKey: forgedEffectKey,
+				resultDigest: mediaBoundedRequestFingerprint({
+					result: canonicalDurableResult,
+					lifecycleBaselineMs: 25,
+					merchantExecutionEffectKey: forgedEffectKey,
+				}),
+			},
+		},
+	};
+	await assert.rejects(
+		adapter.executeBounded({
+			brief: mediaBrief("image"),
+			context: contextSnapshot(),
+			request: { ...request, boundedExecution: raised },
+			workflowId: "workflow-image-fallback-bound",
+			boundedResume: tamperedEffectCheckpoint,
+		}),
+		/digest|checkpoint/iu,
+	);
+	assert.equal(resumes, 0);
 
-	const { endedAt: _forgedTerminalTime, ...forgedCanonicalResult } =
-		durableSuspendedResult;
+	const {
+		endedAt: _forgedTerminalTime,
+		merchantExecutionEffectKey: _forgedMerchantExecutionEffectKey,
+		...forgedCanonicalResult
+	} = durableSuspendedResult;
 	const forgedBaselineCheckpoint = {
 		...first,
 		currentBest: {
@@ -550,6 +605,7 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 				resultDigest: mediaBoundedRequestFingerprint({
 					result: forgedCanonicalResult,
 					lifecycleBaselineMs: 24,
+					merchantExecutionEffectKey,
 				}),
 			},
 		},
@@ -592,11 +648,25 @@ test("top-level bounded media execution turns Model Supply fallback exhaustion i
 	});
 	if ("state" in resumed) assert.fail("The raised route should complete.");
 	assert.equal(resumed.asset.id, fallback.asset?.id);
+	assert.equal(
+		resumed.merchantExecutionEffectKey,
+		merchantExecutionEffectKey,
+	);
+	assert.equal(
+		mediaBoundedCurrentBestSchema.parse(resumed.boundedCurrentBest)
+			.attempts[0]?.merchantExecutionEffectKey,
+		merchantExecutionEffectKey,
+	);
+	assert.match(
+		mediaBoundedCurrentBestSchema.parse(resumed.boundedCurrentBest)
+			.attempts[0]?.resultDigest ?? "",
+		/^[a-f0-9]{64}$/u,
+	);
 	assert.equal(resumed.boundedExecution?.consumption.iterations, 2);
 	assert.equal(resumed.boundedExecution?.consumption.wallClockMs, 40);
 	assert.equal(submissions, 1);
 	assert.equal(resumes, 1);
-	assert.equal(durableReads, 5);
+	assert.equal(durableReads, 6);
 });
 
 test("bounded media rejects unobserved, non-CNY, and missing-usage cost before another submit", async () => {
@@ -1155,8 +1225,8 @@ test("a succeeded audit failure does not rewrite successful media generation as 
 		unsupportedCopyPorts(),
 		undefined as never,
 		new ModelSupplyHarnessMediaExecutionPort({
-			async submit() {
-				return completedResult("image");
+			async submit(input) {
+				return completedMerchantResult("image", input);
 			},
 		}),
 		new MemoryContentPackageRevisionWritePort(),
@@ -1186,6 +1256,98 @@ test("a succeeded audit failure does not rewrite successful media generation as 
 		/terminal media audit unavailable/u,
 	);
 	assert.deepEqual(phases, ["invoked", "succeeded"]);
+});
+
+test("a failed bounded resume keeps its own lifecycle and preserves the provider error", async () => {
+	const audit = new MemoryObservabilityEventAudit();
+	const observer = new AgentPrimitiveObservabilityAdapter(audit, {
+		resolve: () => ({ kind: "not_billed" }),
+	});
+	const currentBest = mediaBoundedCurrentBestSchema.parse({
+		schemaVersion: "harness-media-current-best/v1",
+		requestFingerprint: "a".repeat(64),
+		executionRootFingerprint: "b".repeat(64),
+		kind: "image",
+		phase: "before_submit",
+		attempts: [],
+		countedAttemptIds: [],
+		countedProviderCostIds: [],
+		attemptReceiptDigests: [],
+		providerCostReceiptDigests: [],
+	});
+	const suspension = {
+		state: "suspended" as const,
+		snapshot: {
+			...boundedExecutionSnapshot(1, 1),
+			stopReason: "limit_reached" as const,
+			triggeredLimit: "maxIterations" as const,
+		},
+		currentBest,
+		unmetExplanation: "媒体生成已达到本轮上限",
+		resumable: true as const,
+	};
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		undefined as never,
+		{
+			async execute() {
+				throw new Error("Unbounded media execution is unavailable.");
+			},
+			async executeBounded(input) {
+				if (!input.boundedResume) return suspension;
+				throw new Error("bounded provider resume failed");
+			},
+		},
+		new MemoryContentPackageRevisionWritePort(),
+		() => "2026-07-29T00:00:00.000Z",
+		undefined,
+		undefined,
+		{
+			create() {
+				return observer;
+			},
+		},
+	);
+	const request = {
+		...harnessInputWithExecutionAssembly(
+			"image",
+			"package-bounded-resume-observability",
+			"image.generate",
+			0,
+		),
+		boundedExecution: boundedExecutionSnapshot(0, 1),
+	};
+	const initial = await ports.executeMediaAndSelectBounded({
+		brief: imageBriefFor("image.generate", 0),
+		context: contextSnapshot(),
+		request,
+		workflowId: request.executionSnapshot!.task.id,
+	});
+	assert.ok("state" in initial);
+	assert.equal(initial.state, "suspended");
+	await assert.rejects(
+		ports.executeMediaAndSelectBounded({
+			brief: imageBriefFor("image.generate", 0),
+			context: contextSnapshot(),
+			request: {
+				...request,
+				boundedExecution: resumeWithRaisedServerLimit(suspension.snapshot, {
+					limit: "maxIterations",
+					value: 2,
+				}),
+			},
+			workflowId: request.executionSnapshot!.task.id,
+			boundedResume: suspension,
+		}),
+		/bounded provider resume failed/u,
+	);
+	assert.deepEqual(
+		audit
+			.list(request.workspaceId)
+			.filter((event) => event.eventType === "agent_primitive.lifecycle")
+			.map((event) => event.payload.phase),
+		["invoked", "succeeded", "invoked", "rejected"],
+	);
 });
 
 test("a legacy media request without execution assembly cannot compile a structured brief", async () => {
@@ -1421,7 +1583,7 @@ test("AI cover signed choices reach the production image generation brief", asyn
 	const media = new ModelSupplyHarnessMediaExecutionPort({
 		async submit(submission) {
 			submissions.push(structuredClone(submission));
-			return completedResult("image");
+			return completedMerchantResult("image", submission);
 		},
 	});
 	await media.execute({
@@ -2333,8 +2495,8 @@ test("source-free video production reaches AI generation terms through the real 
 		}),
 	);
 	const media = new ModelSupplyHarnessMediaExecutionPort({
-		async submit() {
-			return completedResult("video");
+		async submit(input) {
+			return completedMerchantResult("video", input);
 		},
 	});
 	const ports = new UnifiedHarnessStagePorts(
@@ -3942,9 +4104,13 @@ test("exact-text image retries revalidate execution assembly before every provid
 	let submissions = 0;
 	const adapter = new ModelSupplyHarnessMediaExecutionPort(
 		{
-			async submit() {
+			async submit(input) {
 				submissions += 1;
-				return completedResult("image", String(submissions));
+				return completedMerchantResult(
+					"image",
+					input,
+					String(submissions),
+				);
 			},
 		},
 		{
@@ -5144,6 +5310,20 @@ function completedResult(
 		},
 		providerCost,
 		providerCosts: [providerCost],
+	};
+}
+
+function completedMerchantResult(
+	kind: "image" | "video",
+	submission: ModelSupplySubmission,
+	suffix = "1",
+): ModelSupplyResult {
+	const result = completedResult(kind, suffix);
+	if (!submission.billingTaskId) return result;
+	return {
+		...result,
+		merchantExecutionEffectKey: `merchant-execution:${submission.billingTaskId}:${submission.idempotencyKey}`,
+		merchantExecutionTaskId: submission.billingTaskId,
 	};
 }
 

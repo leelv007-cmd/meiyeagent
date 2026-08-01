@@ -19,6 +19,8 @@ const mediaAttemptCheckpointSchema = z
     jobId: z.string().trim().min(1),
     role: z.enum(['primary', 'exact_text_retry']),
     status: z.literal('completed'),
+    merchantExecutionEffectKey: z.string().trim().min(1).optional(),
+    resultDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional(),
   })
   .strict();
 
@@ -100,6 +102,7 @@ export const mediaBoundedCurrentBestSchema = z
         jobId: z.string().trim().min(1),
         resultDigest: z.string().regex(/^[a-f0-9]{64}$/u),
         lifecycleBaselineMs: z.number().int().nonnegative().safe(),
+        merchantExecutionEffectKey: z.string().trim().min(1).optional(),
       })
       .strict()
       .optional(),
@@ -112,6 +115,19 @@ export const mediaBoundedCurrentBestSchema = z
     const roles = checkpoint.attempts.map(({ role }) => role);
     const attemptDigestIds = checkpoint.attemptReceiptDigests.map(({ id }) => id);
     const costDigestIds = checkpoint.providerCostReceiptDigests.map(({ id }) => id);
+    for (const [index, attempt] of checkpoint.attempts.entries()) {
+      if (
+        Boolean(attempt.merchantExecutionEffectKey) !==
+        Boolean(attempt.resultDigest)
+      ) {
+        context.addIssue({
+          code: 'custom',
+          message:
+            'A merchant execution effect requires its durable result digest.',
+          path: ['attempts', index],
+        });
+      }
+    }
     if (
       new Set(jobIds).size !== jobIds.length ||
       new Set(roles).size !== roles.length ||

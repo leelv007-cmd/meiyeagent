@@ -22,6 +22,7 @@ interface FixedRouteFreezer {
     catalogModelId: string;
     dataClass: DataClass[];
     deploymentId?: string;
+    fallbackConsent?: boolean;
     operation: ModelOperation;
     workspaceId: string;
   }): Promise<RouteSnapshot>;
@@ -73,6 +74,7 @@ export class ProductionHarnessFrozenRouteSnapshotResolver
     const frozen = await this.freezer.freezeFixedRouteForExecution({
       catalogModelId: snapshot.catalogModel.id,
       dataClass,
+      ...(checkpoint.fallbackConsent ? { fallbackConsent: true } : {}),
       operation: nativeSupplyOperation(snapshot.operation),
       workspaceId: snapshot.workspaceId,
     });
@@ -88,6 +90,17 @@ export class ProductionHarnessFrozenRouteSnapshotResolver
       frozen.actualCatalogModelId !== snapshot.catalogModel.id ||
       frozen.requestedSelection.mode !== 'fixed' ||
       frozen.requestedSelection.catalogModelId !== snapshot.catalogModel.id ||
+      (frozen.requestedSelection.fallbackConsent ?? false) !==
+        checkpoint.fallbackConsent ||
+      (frozen.fallbackConsent ?? false) !== checkpoint.fallbackConsent ||
+      (checkpoint.maxAttempts !== undefined &&
+        frozen.maxAttempts !== checkpoint.maxAttempts) ||
+      (checkpoint.fallbackAuthorized !== undefined &&
+        frozen.fallbackAuthorized !== checkpoint.fallbackAuthorized) ||
+      !sameAllowedCandidates(
+        checkpoint.allowedCandidates,
+        frozen.allowedCandidates,
+      ) ||
       !sameDataClass(frozen.dataClass, dataClass) ||
       !executionCandidate ||
       !isCompleteExecutionCandidate(executionCandidate)
@@ -137,6 +150,7 @@ export class ProductionHarnessFrozenRouteSnapshotResolver
           catalogModelId: platformDefault.catalogModelId,
           dataClass,
           deploymentId: platformDefault.deploymentId,
+          ...(checkpoint.fallbackConsent ? { fallbackConsent: true } : {}),
           operation: nativeSupplyOperation(snapshot.operation),
           workspaceId: snapshot.workspaceId,
         });
@@ -250,6 +264,70 @@ function sameDataClass(left: DataClass[], right: DataClass[]) {
   return (
     sortedLeft.length === sortedRight.length &&
     sortedLeft.every((value, index) => value === sortedRight[index])
+  );
+}
+
+function sameAllowedCandidates(
+  checkpoint: FoundationRouteSnapshot['allowedCandidates'],
+  frozen: RouteSnapshot['allowedCandidates'],
+) {
+  if (!frozen || checkpoint.length !== frozen.length) return false;
+  const durable = checkpoint
+    .map((candidate, index) => ({
+      accountIdentity: candidate.accountIdentity ?? null,
+      activationStatus: candidate.activationStatus ?? null,
+      catalogModelId: candidate.catalogModelId,
+      credentialMode: candidate.credentialMode,
+      credentialVersion: candidate.credentialVersion,
+      currency: candidate.currency ?? null,
+      dataPolicyRevisionId: candidate.dataPolicyRevisionId ?? null,
+      deploymentId: candidate.deploymentId,
+      endpointFingerprint: candidate.endpointFingerprint ?? null,
+      endpointRevision: candidate.endpointRevision ?? null,
+      executionChannelId: candidate.executionChannelId ?? null,
+      fallbackRank: candidate.fallbackRank ?? index + 1,
+      lifecycleRevision: candidate.lifecycleRevision ?? null,
+      policyRevision: candidate.policyRevision ?? null,
+      priceRevision: candidate.priceRevision ?? null,
+      providerModel: candidate.providerModel ?? null,
+      region: candidate.region,
+      unit: candidate.unit ?? null,
+      unitPriceMicros: candidate.unitPriceMicros ?? null,
+    }))
+    .sort(compareFrozenCandidateFacts);
+  const current = frozen
+    .map((candidate) => ({
+      accountIdentity: candidate.accountIdentity ?? null,
+      activationStatus: candidate.activationStatus ?? null,
+      catalogModelId: candidate.catalogModelId,
+      credentialMode: candidate.credentialMode,
+      credentialVersion: candidate.credentialVersion,
+      currency: candidate.currency ?? null,
+      dataPolicyRevisionId: candidate.dataPolicyRevisionId ?? null,
+      deploymentId: candidate.deploymentId,
+      endpointFingerprint: candidate.endpointFingerprint ?? null,
+      endpointRevision: candidate.endpointRevision ?? null,
+      executionChannelId: candidate.executionChannelId ?? null,
+      fallbackRank: candidate.fallbackRank,
+      lifecycleRevision: candidate.deploymentLifecycleRevision ?? null,
+      policyRevision: candidate.policyRevision,
+      priceRevision: candidate.priceRevision,
+      providerModel: candidate.providerModel ?? null,
+      region: candidate.region === 'domestic' ? 'cn' : 'global',
+      unit: candidate.unit,
+      unitPriceMicros: candidate.unitPriceMicros,
+    }))
+    .sort(compareFrozenCandidateFacts);
+  return JSON.stringify(durable) === JSON.stringify(current);
+}
+
+function compareFrozenCandidateFacts(
+  left: { deploymentId: string; fallbackRank: number },
+  right: { deploymentId: string; fallbackRank: number },
+) {
+  return (
+    left.fallbackRank - right.fallbackRank ||
+    left.deploymentId.localeCompare(right.deploymentId)
   );
 }
 

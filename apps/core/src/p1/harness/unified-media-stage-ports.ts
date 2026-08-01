@@ -29,6 +29,7 @@ import {
 	BoundedExecutionResumeError,
 	type BoundedExecutionSuspension,
 	evaluateBoundedExecution,
+	resumeWithRaisedServerLimit,
 } from "./bounded-execution-controller.js";
 import {
 	assessImageExactText,
@@ -368,7 +369,7 @@ export class UnifiedHarnessStagePorts
 				request: input.request,
 				stage: "execution_selection",
 				primitiveId: `harness-media:${input.brief.kind}`,
-				baseIdempotencyKey: `harness-media:${input.workflowId}:${input.brief.kind}`,
+				baseIdempotencyKey: boundedMediaLifecycleKey(input),
 			},
 			() =>
 				this.media.executeBounded!({
@@ -1105,6 +1106,17 @@ function applyAiCoverToImageBrief(input: {
 			resolution: parameters.resolution,
 		},
 	};
+}
+
+function boundedMediaLifecycleKey(
+	input: Parameters<
+		NonNullable<HarnessMediaStagePorts["executeMediaAndSelectBounded"]>
+	>[0],
+) {
+	const base = `harness-media:${input.workflowId}:${input.brief.kind}`;
+	return input.boundedResume
+		? `${base}:resume:${mediaBoundedRequestFingerprint(input.boundedResume)}`
+		: base;
 }
 
 function notePageImageBrief(
@@ -1951,10 +1963,17 @@ export class ModelSupplyHarnessMediaExecutionPort
 						input.request.workspaceId,
 						attempt.jobId,
 					);
-					const completed = requireCompletedMediaResult(
+					const durableCompleted = requireCompletedMediaResult(
 						withObservedProviderLifecycle(durable),
 						input.brief.kind,
 					);
+					const completed = attempt.merchantExecutionEffectKey
+						? {
+								...durableCompleted,
+								merchantExecutionEffectKey:
+									attempt.merchantExecutionEffectKey,
+							}
+						: durableCompleted;
 					if (completed.jobId !== attempt.jobId) {
 						throw new HarnessMediaExecutionError(
 							"MEDIA_SNAPSHOT_MISMATCH",
@@ -1963,7 +1982,26 @@ export class ModelSupplyHarnessMediaExecutionPort
 							attempt.jobId,
 						);
 					}
-					observeBoundedMediaReceipts(activeSnapshot, current, completed, 0);
+						if (
+							attempt.merchantExecutionEffectKey !==
+							durableCompleted.merchantExecutionEffectKey ||
+						attempt.resultDigest &&
+							mediaRouteDurableResultDigest(durableCompleted) !==
+								attempt.resultDigest
+					) {
+						throw new HarnessMediaExecutionError(
+							"MEDIA_SNAPSHOT_MISMATCH",
+							"The durable media result does not match its selected merchant effect.",
+							409,
+							attempt.jobId,
+						);
+					}
+					observeBoundedMediaReceipts(
+						activeSnapshot,
+						current,
+							completed,
+							0,
+						);
 					return completed;
 				}),
 			);
@@ -2037,7 +2075,9 @@ export class ModelSupplyHarnessMediaExecutionPort
 				countedAttemptIds: checkpoint.countedAttemptIds,
 				countedProviderCostIds: checkpoint.countedProviderCostIds,
 			};
-			let result: ModelSupplyResult;
+			let result: ModelSupplyResult & {
+				merchantExecutionEffectKey?: string;
+			};
 			if (
 				role === "primary" &&
 				checkpoint.phase === "provider_route_suspended"
@@ -2064,6 +2104,8 @@ export class ModelSupplyHarnessMediaExecutionPort
 					durableBeforeResume.result.jobId !== checkpoint.providerRoute.jobId ||
 					durableBeforeResume.providerLifecycleLatencyMs !==
 						checkpoint.providerRoute.lifecycleBaselineMs ||
+					durableBeforeResume.result.merchantExecutionEffectKey !==
+						checkpoint.providerRoute.merchantExecutionEffectKey ||
 					mediaRouteDurableResultDigest(
 						durableBeforeResume.result,
 						durableBeforeResume.providerLifecycleLatencyMs,
@@ -2073,13 +2115,35 @@ export class ModelSupplyHarnessMediaExecutionPort
 						"Bounded media route resume checkpoint digest does not match the durable provider result.",
 					);
 				}
+				const durableBounded = mediaBoundedRouteResultSchema.parse(
+					(
+						durableBeforeResume.result as ModelSupplyResult & {
+							boundedExecution?: unknown;
+						}
+					).boundedExecution,
+				);
+				if (typeof activeSnapshot.maxIterations !== "number") {
+					throw new BoundedExecutionResumeError(
+						"Bounded media route resume requires a numeric iteration limit.",
+					);
+				}
+				const durableAuthorization: MediaBoundedExecutionAuthorization = {
+					schemaVersion: "media-bounded-execution/v1",
+					snapshot: resumeWithRaisedServerLimit(durableBounded.snapshot, {
+						limit: "maxIterations",
+						value: activeSnapshot.maxIterations,
+					}),
+					countedAttemptIds: durableBounded.consumedAttemptIds,
+					countedProviderCostIds:
+						durableBounded.consumedProviderCostIds,
+				};
 				const resumed = await this.runEffect(
 					`resume:${checkpoint.providerRoute.jobId}`,
 					() =>
 						this.models.resumeBoundedMediaJob!({
 							workspaceId: input.request.workspaceId,
 							jobId: checkpoint.providerRoute!.jobId,
-							authorization,
+							authorization: durableAuthorization,
 						}),
 					input.runStep,
 				);
@@ -2103,6 +2167,13 @@ export class ModelSupplyHarnessMediaExecutionPort
 						input.runStep,
 					);
 					result = withObservedProviderLifecycle(durable);
+				}
+				if (checkpoint.providerRoute.merchantExecutionEffectKey) {
+					result = {
+						...result,
+						merchantExecutionEffectKey:
+							checkpoint.providerRoute.merchantExecutionEffectKey,
+					};
 				}
 			} else {
 				result = await this.submitAndAwait(
@@ -2143,7 +2214,19 @@ export class ModelSupplyHarnessMediaExecutionPort
 				activeSnapshot = routeSuspension.snapshot;
 				return { suspension: routeSuspension };
 			}
-			const completed = requireCompletedMediaResult(result, input.brief.kind);
+			const durableCompleted = requireCompletedMediaResult(
+				result,
+				input.brief.kind,
+			);
+			const completed: ModelSupplyResult & {
+				merchantExecutionEffectKey?: string;
+			} = result.merchantExecutionEffectKey
+				? {
+						...durableCompleted,
+						merchantExecutionEffectKey:
+							result.merchantExecutionEffectKey,
+					}
+				: durableCompleted;
 			const activeMs = Math.max(
 				0,
 				Math.ceil(performance.now() - startedAt - durableWaitMs),
@@ -2166,7 +2249,19 @@ export class ModelSupplyHarnessMediaExecutionPort
 				phase: "ready",
 				attempts: [
 					...checkpoint.attempts,
-					{ role, jobId: completed.jobId, status: "completed" },
+					{
+						role,
+						jobId: completed.jobId,
+						status: "completed",
+						...(completed.merchantExecutionEffectKey
+							? {
+									merchantExecutionEffectKey:
+										completed.merchantExecutionEffectKey,
+									resultDigest:
+										mediaRouteDurableResultDigest(completed),
+								}
+							: {}),
+					},
 				],
 				asset: {
 					id: completed.asset!.id,
@@ -2704,15 +2799,20 @@ export class ModelSupplyHarnessMediaExecutionPort
 				throw staleNoteAdmission();
 			}
 		}
-		return {
-			...result,
-			...(submission.billingTaskId
-				? {
-						merchantExecutionEffectKey:
-							`merchant-execution:${submission.billingTaskId}:${submission.idempotencyKey}`,
-					}
-				: {}),
-		};
+		if (
+			executionAssemblyRequired &&
+			submission.billingTaskId &&
+			(result.merchantExecutionTaskId !== submission.billingTaskId ||
+				!result.merchantExecutionEffectKey)
+		) {
+			throw new HarnessMediaExecutionError(
+				"MEDIA_SNAPSHOT_MISMATCH",
+				"Durable media result is missing its server-owned merchant execution authority.",
+				409,
+				result.jobId,
+			);
+		}
+		return result;
 	}
 
 	private runEffect<Output>(
@@ -2906,7 +3006,7 @@ function nextMediaEffectCheckpoint(
 function mediaRouteBoundedSuspension(
 	activeSnapshot: NonNullable<HarnessWorkflowInput["boundedExecution"]>,
 	checkpoint: MediaBoundedCurrentBest,
-	result: ModelSupplyResult,
+	result: ModelSupplyResult & { merchantExecutionEffectKey?: string },
 	activeWallClockMs = 0,
 ): BoundedExecutionSuspension<MediaBoundedCurrentBest> | undefined {
 	const raw = (
@@ -3026,6 +3126,12 @@ function mediaRouteBoundedSuspension(
 				cumulativeLifecycleMs,
 			),
 			lifecycleBaselineMs: cumulativeLifecycleMs,
+			...(result.merchantExecutionEffectKey
+				? {
+						merchantExecutionEffectKey:
+							result.merchantExecutionEffectKey,
+					}
+				: {}),
 		},
 		countedAttemptIds: [
 			...new Set([
@@ -3208,6 +3314,9 @@ function mediaRouteDurableResultDigest(
 	return mediaBoundedRequestFingerprint({
 		result: canonical,
 		lifecycleBaselineMs,
+		...(result.merchantExecutionEffectKey
+			? { merchantExecutionEffectKey: result.merchantExecutionEffectKey }
+			: {}),
 	});
 }
 
@@ -3389,10 +3498,7 @@ function mediaSubmission(
 				: `${brief.firstFramePrompt}\n${brief.storyboard
 						.map((shot) => `${shot.index}. ${shot.description}`)
 						.join("\n")}`,
-		selection: {
-			catalogModelId: snapshot.catalogModel.id,
-			mode: "fixed",
-		},
+		selection: structuredClone(frozenRoute.requestedSelection),
 		workspaceId: request.workspaceId,
 	};
 }

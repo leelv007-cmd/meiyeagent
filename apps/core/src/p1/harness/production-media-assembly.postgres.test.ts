@@ -8,6 +8,7 @@ import test from 'node:test';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { contentPackageSchema } from '@meiye/contracts';
 import { Pool } from 'pg';
+import { z, type ZodType } from 'zod';
 
 import {
   AgentPrimitiveObservabilityAdapter,
@@ -19,18 +20,58 @@ import {
 } from '../execution-spine/creation-execution-snapshot.js';
 import { ModelSupplyComposerRouteResolver } from '../execution-spine/composer-route-resolver.js';
 import { PostgresContentPackageRevisionWritePort } from '../execution-spine/content-package-revision-port.js';
+import {
+  PostgresCreationSubmissionPersistence,
+  PostgresCreationSubmissionStore,
+  PostgresProductBillingUsageReservation,
+} from '../execution-spine/postgres-creation-submission-store.js';
+import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
+import { PostgresCreditLedger } from '../credit-billing/postgres-credit-ledger.js';
+import { P1ApplicationService } from '../foundation/application-service.js';
 import { PostgresFoundationRepository } from '../foundation/postgres-repository.js';
 import {
+  fromModelSupplyRouteSnapshot,
+  toFoundationRouteCheckpoint,
+} from '../route-snapshot-normalize.js';
+import { PgBossJobPort } from '../job-runtime/pg-boss-job-port.js';
+import {
+  DurableTracerWorker,
+  PostgresTracerJobRepository,
+  TracerJobApplicationService,
+} from '../job-runtime/tracer-worker.js';
+import {
+  MemoryModelAssetStorage,
   ModelSupplyApplicationService,
+  createDefaultCatalogModels,
+  createDefaultDeployments,
+  modelSupplyJobIdForKey,
   type CatalogModel,
+  type MediaProviderEffectRequest,
+  type MediaProviderLifecyclePort,
   type ModelSupplyResult,
   type ProviderExecutionRequest,
+  type StructuredObjectExecutor,
 } from '../model-supply/index.js';
+import { FoundationModelSupplyLedger } from '../model-supply/foundation-ledger.js';
+import {
+  DurableMediaGenerationApplicationService,
+  ModelMediaGenerationEffect,
+} from '../model-supply/media-generation-workflow.js';
+import { ModelSupplyStructuredNodeRunner } from '../model-supply/structured-node-runner.js';
 import type {
   ClaimMerchantExecutionInput,
   MerchantExecutionBillingPort,
   MerchantExecutionPromotionPort,
 } from '../product-billing/durable-service.js';
+import {
+  DurableProductBillingService,
+  merchantExecutionInputHashes,
+} from '../product-billing/durable-service.js';
+import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
+import {
+  ModelSupplyCreationInputResolver,
+} from '../operations/model-supply-creation-adapter.js';
+import type { CreativeGroundingSnapshot } from '../operations/types.js';
 import { buildContentPackage } from '../operations/content-package.js';
 import { MemoryContextBundleRepository } from '../operations/context-bundle-repository.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
@@ -43,8 +84,11 @@ import type { CredentialSecretBrokerPort } from '../supply-registry/secret-broke
 import {
   DbosHarnessWorkflowStarter,
   registerHarnessDbosWorkflow,
+  resumeHarnessDbosInteractionWorkflow,
   resumeHarnessDbosWorkflow,
+  sendHarnessMediaJobTerminal,
 } from './dbos-workflow.js';
+import { HarnessInteractionService } from './interaction-service.js';
 import {
   HARNESS_BUILTIN_PROMPTS,
   HARNESS_LANGFUSE_PROMPT_NAMES,
@@ -65,6 +109,10 @@ import {
   type HarnessStructuredNodeRunnerFactory,
 } from './production-stage-ports.js';
 import { PostgresHarnessStore } from './postgres-store.js';
+import { PostgresHarnessBillingCompensationStore } from './postgres-billing-compensation-store.js';
+import { PostgresHarnessResumeReconcilerStore } from './postgres-resume-reconciler-store.js';
+import { HarnessProductBillingSettlementExecutor } from './product-billing-settlement.js';
+import { HarnessResumeReconciler } from './resume-reconciler.js';
 import type {
   StructuredNodeRunner,
   StructuredNodeRunnerRequest,
@@ -1042,6 +1090,1010 @@ test(
   },
 );
 
+test(
+  'production credit media preserves its selected auxiliary claim across bounded resume',
+  {
+    skip:
+      databaseUrl && systemDatabaseUrl
+        ? false
+        : 'TEST_DATABASE_URL and TEST_DBOS_SYSTEM_DATABASE_URL are required',
+  },
+  async () => {
+    if (!databaseUrl || !systemDatabaseUrl) {
+      throw new Error('Production media assembly databases are unavailable.');
+    }
+    const suffix = randomUUID();
+    const suffixSafe = suffix.replaceAll('-', '').slice(0, 12);
+    const workflowId = `production-credit-media-${suffix}`;
+    const workspaceId = `workspace-production-credit-media-${suffix}`;
+    const runtimeId = harnessRuntimeId(workspaceId, workflowId);
+    const tracerTable = `issue298_tracer_${suffixSafe}`;
+    const bossSchema = `issue298_boss_${suffixSafe}`;
+    const primaryDeploymentId = 'gpt-image-2-managed';
+    const fallbackDeploymentId = 'gpt-image-2-tuzi-relay';
+    const pool = new Pool({ connectionString: databaseUrl, max: 12 });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const billing = new DurableProductBillingService(
+      billingRepository,
+      () => new Date(now),
+    );
+    const credits = new PostgresCreditLedger(pool);
+    const harnessStore = new PostgresHarnessStore(pool);
+    const contentPackages = new PostgresContentPackageRevisionWritePort(pool);
+    const foundationRoutes = new PostgresFoundationRepository(pool);
+    const noteAdmission = new PostgresNoteMediaAdmissionCoordinator(pool);
+    const billingCompensations =
+      new PostgresHarnessBillingCompensationStore(pool);
+    const providerEffects: string[] = [];
+    const mediaProviderEffects: string[] = [];
+    const providerCalls = { primary: 0, fallback: 0, poll: 0, download: 0 };
+    let request: HarnessWorkflowInput | undefined;
+    let jobRuntime: PgBossJobPort | undefined;
+    let mediaWorker: { stop(): Promise<void> } | undefined;
+    let dbosLaunched = false;
+
+    try {
+      await operations.migrate();
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS workspaces (
+          id text PRIMARY KEY,
+          name text NOT NULL
+        )
+      `);
+      await billingRepository.migrate();
+      const creditClient = await pool.connect();
+      try {
+        await credits.migrate(creditClient);
+      } finally {
+        creditClient.release();
+      }
+      await foundationRoutes.migrate();
+      await harnessStore.applySchema();
+      await billingCompensations.migrate();
+      await contentPackages.applySchema();
+      await noteAdmission.migrate();
+      await pool.query(
+        `INSERT INTO workspaces (id, name)
+         VALUES ($1, 'Production credit media assembly')`,
+        [workspaceId],
+      );
+      jobRuntime = PgBossJobPort.connect({
+        connection: { connectionString: databaseUrl, schema: bossSchema },
+        queuePrefix: `issue298-${suffixSafe}`,
+        retryDelaySeconds: 1,
+        heartbeatSeconds: 10,
+        terminalNotifier: async ({ envelope, status, output }) => {
+          await sendHarnessMediaJobTerminal({
+            workspaceId: envelope.workspaceId,
+            jobId: envelope.jobId,
+            kind: envelope.kind,
+            payload: envelope.payload,
+            status,
+            ...(output ? { output } : {}),
+          });
+        },
+      });
+      const tracerRepository = new PostgresTracerJobRepository(
+        pool,
+        jobRuntime,
+        { table: tracerTable },
+      );
+      await tracerRepository.migrate();
+      const tracerJobs = new TracerJobApplicationService(tracerRepository);
+
+      const assertClaimedBeforeProvider = async (
+        providerRequest: Pick<ProviderExecutionRequest, 'submission'>,
+      ) => {
+        const effectKey = providerRequest.submission.idempotencyKey;
+        const contract = await billing.readMerchantExecutionContract({
+          taskId: workflowId,
+          workspaceId,
+        });
+        assert.ok(contract.submissionPromptHash);
+        assert.match(contract.submissionPromptHash, /^[a-f0-9]{64}$/u);
+        assert.ok(contract.submissionReferenceAssetsHash);
+        assert.match(
+          contract.submissionReferenceAssetsHash,
+          /^[a-f0-9]{64}$/u,
+        );
+        assert.ok(contract.submissionInputAssetsHash);
+        assert.match(contract.submissionInputAssetsHash, /^[a-f0-9]{64}$/u);
+        const execution = await billingRepository.getMerchantExecution(
+          workspaceId,
+          workflowId,
+          effectKey,
+        );
+        assert.equal(execution?.status, 'claimed');
+        assert.ok(execution);
+        const exactHashes = merchantExecutionInputHashes(
+          execution.inputSnapshot,
+        );
+        assert.match(exactHashes.inputAssetsHash, /^[a-f0-9]{64}$/u);
+        assert.match(exactHashes.promptHash, /^[a-f0-9]{64}$/u);
+        assert.match(exactHashes.referenceAssetsHash, /^[a-f0-9]{64}$/u);
+        providerEffects.push(effectKey);
+        return execution;
+      };
+      const structuredExecutor: StructuredObjectExecutor = {
+        supportsCatalogModel(catalogModelId) {
+          return catalogModelId === 'deepseek-v4-pro';
+        },
+        async generate<Output>(input: {
+          instructions: string;
+          prompt: string;
+          providerRequest?: ProviderExecutionRequest;
+          schema: ZodType<Output>;
+          schemaName: string;
+        }) {
+          assert.ok(input.providerRequest);
+          const execution = await assertClaimedBeforeProvider(
+            input.providerRequest,
+          );
+          const structuredInput = JSON.parse(execution.inputSnapshot.prompt) as {
+            instructions: string;
+            prompt: string;
+          };
+          assert.equal(structuredInput.instructions, input.instructions);
+          assert.equal(structuredInput.prompt, input.prompt);
+          const output =
+            input.schemaName === 'harness_intent_naming_v1'
+              ? {
+                  blockingGap: null,
+                  deliveryLayer: 'finished_media',
+                  implicitConstraints: ['只使用已授权素材'],
+                  normalizedIntent: '制作夏日护理项目图片',
+                  relevantAssetCategories: ['material'],
+                  route: 'customized',
+                  taskType: 'daily_service_exposure',
+                  usedAssetCategories: ['material'],
+                }
+              : input.schemaName === 'harness_image_brief_v1'
+                ? {
+                    constraints: ['不得编造价格或护理效果'],
+                    intent: {
+                      changes: [],
+                      composition: '竖版主视觉，主体清晰',
+                      exactText: [],
+                      factRefs: [],
+                      invariants: [],
+                      operation: 'image.generate',
+                      outputPlan: { kind: 'single' },
+                      purpose: '夏日护理活动海报',
+                      references: [],
+                      rightsRefs: [],
+                      scene: '真实门店护理区',
+                      subject: '夏日护理项目',
+                    },
+                    kind: 'image',
+                    parameters: { ratio: '9:16', resolution: '1080p' },
+                    prompt:
+                      '为夏日护理项目生成一张竖版活动海报，保留真实门店护理氛围。',
+                    referenceAssetIds: [],
+                  }
+                : undefined;
+          if (!output) {
+            throw new Error(`Unexpected production schema ${input.schemaName}.`);
+          }
+          return {
+            output: input.schema.parse(output),
+            providerTaskRef: `structured-${input.schemaName}-${suffix}`,
+            usage: { inputTokens: 10, outputTokens: 20 },
+          };
+        },
+        providerCost(usage) {
+          return { amount: 0.01, currency: 'CNY', usage };
+        },
+      };
+      const catalogModels = createDefaultCatalogModels();
+      const deployments = createDefaultDeployments({
+        activatedDeploymentIds: [
+          'deepseek-v4-pro-direct',
+          primaryDeploymentId,
+          fallbackDeploymentId,
+        ],
+        activationEvidenceStatus: 'recorded',
+        deploymentPricingById: {
+          [primaryDeploymentId]: {
+            priceRevision: 'issue298-primary-cny-v1',
+            unitPrice: {
+              amountMicros: 10_000,
+              currency: 'CNY',
+              unit: 'image',
+            },
+          },
+          [fallbackDeploymentId]: {
+            priceRevision: 'issue298-fallback-cny-v1',
+            unitPrice: {
+              amountMicros: 10_000,
+              currency: 'CNY',
+              unit: 'image',
+            },
+          },
+        },
+      }).map((deployment) => ({
+        ...deployment,
+        ...(deployment.id === primaryDeploymentId
+          ? {
+              accountIdentity: 'issue298-primary-account',
+              endpointFingerprint: 'issue298-primary-endpoint',
+            }
+          : deployment.id === fallbackDeploymentId
+            ? {
+                accountIdentity: 'issue298-fallback-account',
+                endpointFingerprint: 'issue298-fallback-endpoint',
+              }
+            : {}),
+        capabilityProfile: {
+          vocabularyVersion: 'model-capability-v1' as const,
+          protocolCapabilities: {},
+          modalities: [
+            {
+              mime:
+                deployment.catalogModelId === 'gpt-image-2'
+                  ? 'image/*'
+                  : 'text/*',
+              supported: true,
+              basis: 'inferred' as const,
+              evidenceRef: `fixture://${deployment.id}/capability`,
+            },
+          ],
+          businessTags: [],
+          modalityCapabilities: [],
+        },
+      }));
+      const capabilityHotAssembly = new CapabilityHotAssemblyRegistry();
+      const capabilityEntries: RuntimeCapabilityEntry[] = deployments.map(
+        (deployment) => ({
+          deploymentId: deployment.id,
+          catalogModelId: deployment.catalogModelId,
+          apiFamily: deployment.apiFamily,
+          channel: deployment.channel,
+          region: deployment.region,
+          executionChannelId: deployment.executionChannelId,
+          ...(deployment.providerModel
+            ? { providerModel: deployment.providerModel }
+            : {}),
+          ...(deployment.endpointRevision
+            ? { endpointRevision: deployment.endpointRevision }
+            : {}),
+          ...(deployment.lifecycleRevision
+            ? { lifecycleRevision: deployment.lifecycleRevision }
+            : {}),
+          ...(deployment.credentialVersion
+            ? { credentialVersion: deployment.credentialVersion }
+            : {}),
+          adapterKey: 'recorded',
+          capabilityProfile: structuredClone(deployment.capabilityProfile),
+        }),
+      );
+      capabilityHotAssembly.applyCapabilityRevision({
+        revisionId: `production-credit-media-capability-${suffix}`,
+        number: 1,
+        publishedAt: now,
+        entries: capabilityEntries,
+      });
+      const supplyLedger = new FoundationModelSupplyLedger(
+        new P1ApplicationService(foundationRoutes, {
+          clock: () => new Date(now),
+        }),
+        undefined,
+        undefined,
+        {
+          billingLifecycle: billing,
+          clock: () => new Date(now),
+          productUsage: billing,
+        },
+      );
+      const models = new ModelSupplyApplicationService({
+        assetStorage: new MemoryModelAssetStorage(),
+        models: catalogModels,
+        deployments,
+        capabilityHotAssembly,
+        inferFixtureMediaCapabilityProfiles: true,
+        ledger: supplyLedger,
+        execution: {
+          async execute() {
+            throw new Error(
+              'Production media must execute through the durable provider lifecycle.',
+            );
+          },
+        },
+        merchantExecutionBilling: billing,
+        planningControlPlane: {
+          async readPlanningState(input) {
+            if (input.operation !== 'image.generate') return {};
+            return {
+              routePolicyRevisionId: 'issue298-route-policy-v1',
+              routePolicy: {
+                operation: 'image.generate',
+                qualityTier: 'quality',
+                hardConstraints: ['deployment_active', 'data_class'],
+                candidateDeploymentIds: [
+                  primaryDeploymentId,
+                  fallbackDeploymentId,
+                ],
+                maxAttempts: 2,
+                fallbackAuthorized: true,
+              },
+            };
+          },
+        },
+      });
+      const mediaProvider: MediaProviderLifecyclePort = {
+        async submit(providerRequest: MediaProviderEffectRequest) {
+          const execution = await assertClaimedBeforeProvider(providerRequest);
+          assert.equal(
+            execution.inputSnapshot.prompt,
+            providerRequest.submission.prompt ?? '',
+          );
+          assert.deepEqual(
+            execution.inputSnapshot.input,
+            providerRequest.submission.input ?? null,
+          );
+          mediaProviderEffects.push(
+            providerRequest.submission.idempotencyKey,
+          );
+          if (providerRequest.deployment.id === primaryDeploymentId) {
+            providerCalls.primary += 1;
+            return {
+              acceptance: 'rejected_before_accept',
+              errorCode: 'issue298_primary_rejected',
+              retryable: true,
+              error: 'Primary rejected before accepting the request.',
+              providerCost: { amount: 0, currency: 'CNY', usage: {} },
+            };
+          }
+          assert.equal(providerRequest.deployment.id, fallbackDeploymentId);
+          providerCalls.fallback += 1;
+          return {
+            acceptance: 'accepted',
+            taskRef: `issue298-fallback-task-${suffixSafe}`,
+            providerCost: {
+              amount: 0.01,
+              currency: 'CNY',
+              usage: { mediaUnits: 1 },
+            },
+          };
+        },
+        async recover() {
+          throw new Error('A rejected primary must recover from PostgreSQL.');
+        },
+        async poll(providerRequest) {
+          await assertClaimedBeforeProvider(providerRequest);
+          assert.equal(providerRequest.deployment.id, fallbackDeploymentId);
+          mediaProviderEffects.push(
+            providerRequest.submission.idempotencyKey,
+          );
+          providerCalls.poll += 1;
+          return {
+            status: 'completed',
+            providerCost: {
+              amount: 0.01,
+              currency: 'CNY',
+              usage: { mediaUnits: 1 },
+            },
+          };
+        },
+        async download(providerRequest) {
+          await assertClaimedBeforeProvider(providerRequest);
+          assert.equal(providerRequest.deployment.id, fallbackDeploymentId);
+          mediaProviderEffects.push(
+            providerRequest.submission.idempotencyKey,
+          );
+          providerCalls.download += 1;
+          return {
+            bytes: Buffer.from(`production-credit-media:${suffix}`),
+            contentType: 'image/png',
+          };
+        },
+        async cancel() {},
+      };
+      const mediaRuntime = new DurableMediaGenerationApplicationService({
+        jobs: tracerJobs,
+        models,
+        provider: mediaProvider,
+      });
+      models.attachDurableMediaRuntime(mediaRuntime);
+      const tracer = new DurableTracerWorker(
+        tracerRepository,
+        new ModelMediaGenerationEffect({
+          models,
+          provider: mediaProvider,
+        }),
+      );
+      const frozenRoute = await models.freezeFixedRouteForExecution({
+        catalogModelId: 'gpt-image-2',
+        dataClass: [],
+        fallbackConsent: true,
+        operation: 'image.generate',
+        workspaceId,
+      });
+      assert.deepEqual(
+        frozenRoute.allowedCandidates?.map(({ deploymentId }) => deploymentId),
+        [primaryDeploymentId, fallbackDeploymentId],
+      );
+      const quote = await billing.buildQuote({
+        billingMode: 'per_request',
+        catalogModelId: 'gpt-image-2',
+        catalogModelRevision: frozenRoute.catalogRevisionId,
+        creditCost: 5,
+        failureRefundsCredits: true,
+        operation: 'image.generate',
+        outputCount: 1,
+        quoteId: `quote-${workflowId}`,
+        quotePolicyRevision: 'production-credit-media-policy-r1',
+        submissionContractHash: `production-credit-media-${suffix}`,
+        unitRate: 5,
+        workspaceId,
+      });
+      const confirmed = await billing.confirm({
+        quoteId: quote.quoteId,
+        taskId: workflowId,
+        workspaceId,
+      });
+      request = productionCreditMediaRequest({
+        quoteRevision: confirmed.revision,
+        route: frozenRoute,
+        workflowId,
+        workspaceId,
+      });
+      const snapshot = requireExecutionSnapshot(request);
+      const composerRoute = {
+        ...toFoundationRouteCheckpoint(
+          fromModelSupplyRouteSnapshot(frozenRoute),
+          {
+            catalogRevision: snapshot.catalogModel.revision,
+            dataClass: 'public',
+            dataClasses: ['public'],
+            fallbackConsent: true,
+            requestedCatalogModelId: snapshot.catalogModel.id,
+            selectionMode: 'fixed',
+          },
+        ),
+        createdAt: frozenRoute.createdAt,
+        workspaceId,
+      };
+      await foundationRoutes.insertRouteSnapshot(composerRoute);
+      assert.equal(composerRoute.id, snapshot.route.id);
+      const grounding: CreativeGroundingSnapshot = {
+        assets: [],
+        capturedAt: now,
+        store: {
+          address: '88 号',
+          booking: '提前预约',
+          brandVoice: '真诚、不夸张',
+          city: '成都',
+          confirmedAt: now,
+          district: '锦江区',
+          name: '春日护理',
+          prohibitions: ['不虚构折扣'],
+          projects: [
+            {
+              durationMinutes: 60,
+              id: 'project-1',
+              name: '夏日护理',
+              price: 168,
+            },
+          ],
+          regulated: false,
+        },
+      };
+      const store = new PostgresCreationSubmissionStore(
+        pool,
+        new PostgresCreationSubmissionPersistence(
+          new PostgresProductBillingUsageReservation(
+            pool,
+            undefined,
+            credits,
+            new ModelSupplyCreationInputResolver({
+              async resolve(resolvedWorkspaceId, assetIds) {
+                assert.equal(resolvedWorkspaceId, workspaceId);
+                assert.deepEqual(assetIds, []);
+                return {
+                  snapshot: structuredClone(grounding),
+                  status: 'ready' as const,
+                };
+              },
+            }),
+          ),
+        ),
+      );
+      await store.applySchema();
+      await credits.grant({
+        createdAt: now,
+        credits: 10,
+        expirationDate: null,
+        grantIdempotencyKey: `grant:package:${suffix}`,
+        id: `credit-lot-${suffix}`,
+        sourceRef: `payment-${suffix}`,
+        transactionType: 'PURCHASE_PACKAGE',
+        workspaceId,
+      });
+      const submission: CreationSubmissionRecord = {
+        contentPackage: {
+          expectedRevision: snapshot.contentPackage.expectedRevision,
+          id: snapshot.contentPackage.id,
+        },
+        snapshot,
+        task: { id: snapshot.task.id },
+        usageReservation: request.usageReservation!,
+        work: { id: snapshot.work.id },
+      };
+      assert.equal(
+        (
+          await store.claim({
+            idempotencyKey: `submit-${workflowId}`,
+            payloadHash: `payload-${workflowId}`,
+            submission,
+            workspaceId,
+          })
+        ).kind,
+        'created',
+      );
+      const rootContract = await billing.readMerchantExecutionContract({
+        taskId: workflowId,
+        workspaceId,
+      });
+      assert.ok(rootContract.submissionPromptHash);
+      assert.match(rootContract.submissionPromptHash, /^[a-f0-9]{64}$/u);
+      assert.ok(rootContract.submissionReferenceAssetsHash);
+      assert.match(
+        rootContract.submissionReferenceAssetsHash,
+        /^[a-f0-9]{64}$/u,
+      );
+      assert.ok(rootContract.submissionInputAssetsHash);
+      assert.match(rootContract.submissionInputAssetsHash, /^[a-f0-9]{64}$/u);
+      assert.deepEqual(providerEffects, []);
+
+      const runners: HarnessStructuredNodeRunnerFactory = {
+        create(input) {
+          return new ModelSupplyStructuredNodeRunner({
+            actorId: input.actorId,
+            application: models,
+            billingQuoteRevision: input.billingQuoteRevision,
+            billingTaskId: input.billingTaskId,
+            executor: structuredExecutor,
+            selection: {
+              catalogModelId: 'deepseek-v4-pro',
+              mode: 'fixed',
+            },
+            workspaceId: input.workspaceId,
+          });
+        },
+      };
+      const executionChildObservability = {
+        create(observedRequest: HarnessWorkflowInput) {
+          const observedSnapshot = requireExecutionSnapshot(observedRequest);
+          return new AgentPrimitiveObservabilityAdapter(
+            new HarnessObservabilityEventAudit(harnessStore),
+            {
+              resolve() {
+                return {
+                  kind: 'product_usage' as const,
+                  productUsageTaskId: observedSnapshot.task.id,
+                  quoteId: observedSnapshot.quote.id,
+                };
+              },
+            },
+          );
+        },
+      };
+      const copy = new ProductionHarnessStagePorts(
+        runners,
+        new LedgerBackedHarnessContextPort(
+          new MemoryStoreFactLedger(),
+          new MemoryContextBundleRepository(),
+          () => now,
+          undefined,
+          undefined,
+          undefined,
+          {
+            async resolve({ assetIds }) {
+              return {
+                knownAssetIds: [...assetIds],
+                unauthorizedAssetIds: [],
+              };
+            },
+          },
+        ),
+        {
+          async deliverCopyRevision() {
+            throw new Error('Copy delivery is outside the frozen media route.');
+          },
+        },
+        () => now,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        executionChildObservability,
+        undefined,
+        undefined,
+        new HarnessObservabilityEventAudit(harnessStore),
+      );
+      const stages = createProductionHarnessMediaAssembly({
+        contentPackages,
+        copy,
+        models,
+        noteAdmission,
+        noteEnhancementJudge: unconfiguredNotePlanEnhancementJudgeResolver,
+        noteSettings: {
+          async read() {
+            throw new Error('Note settings are outside the frozen image route.');
+          },
+        },
+        now: () => now,
+        runners,
+        sensitiveLexicon: {
+          async listEnabled() {
+            return [];
+          },
+        },
+        executionChildObservability,
+      });
+      const settlement = new HarnessProductBillingSettlementExecutor(
+        billing,
+        undefined,
+        () => new Date(now),
+        undefined,
+        credits,
+      );
+      const workflow = registerHarnessDbosWorkflow(stages, harnessStore, {
+        billing: {
+          commit: (input) => settlement.commit(input),
+          promoteMerchantExecution: (input) =>
+            billing.promoteMerchantExecution(input),
+          refund: (input) => settlement.refund(input),
+          async scheduleCompensation(input) {
+            await billingCompensations.enqueue(input);
+          },
+          async completeCompensation(input) {
+            await billingCompensations.markCompleted(input);
+          },
+        },
+        boundedContinuations: {
+          async capability() {
+            return { kind: 'available' as const };
+          },
+          async resolve() {
+            return { limit: 'maxIterations' as const, value: 3 };
+          },
+        },
+      });
+      DBOS.setConfig({
+        name: 'beauty-marketing-production-credit-media',
+        systemDatabaseUrl,
+        applicationVersion: `production-credit-media-${suffix}`,
+      });
+      await DBOS.launch();
+      dbosLaunched = true;
+      mediaWorker = await jobRuntime.startWorker((envelope, context) =>
+        tracer.handle(envelope, context),
+      );
+      const resumeReconciler = new HarnessResumeReconciler(
+        new PostgresHarnessResumeReconcilerStore(pool),
+        {
+          async resume() {
+            throw new Error('A typed interaction must not use the legacy path.');
+          },
+          resumeInteraction: (
+            resolvedWorkspaceId,
+            resolvedWorkflowId,
+            signal,
+          ) =>
+            resumeHarnessDbosInteractionWorkflow(
+              resolvedWorkspaceId,
+              resolvedWorkflowId,
+              signal,
+              harnessStore,
+            ),
+        },
+      );
+      const interactions = new HarnessInteractionService(harnessStore, {
+        async resume({ eventId }) {
+          if (!(await resumeReconciler.resumeEvent(eventId))) {
+            throw new Error('The persisted interaction resume is unavailable.');
+          }
+        },
+      });
+      const admission = new HarnessTaskAdmissionService(
+        harnessStore,
+        new DbosHarnessWorkflowStarter(workflow),
+        {
+          async resolve() {
+            return productionPromptBundle('298-credit-resume-v1');
+          },
+        },
+        harnessStore,
+        {
+          async resolve() {
+            return {
+              maxIterations: 1,
+              maxCostCents: 100,
+              maxWallClockMs: 60_000,
+              maxDelegations: 'unset' as const,
+              requiredLimits: [
+                'maxIterations',
+                'maxCostCents',
+                'maxWallClockMs',
+              ] as const,
+            };
+          },
+        },
+        new ProductionHarnessFrozenRouteSnapshotResolver(
+          foundationRoutes,
+          models,
+        ),
+        undefined,
+        harnessStore,
+      );
+      assert.deepEqual(
+        await admission.submit({ taskId: workflowId, ...request }),
+        { workflowId, replayed: false },
+      );
+      const confirmation = await waitForQuestionField(
+        harnessStore,
+        workspaceId,
+        workflowId,
+        'execution_confirmation',
+      );
+      assert.equal(
+        await harnessStore.ackInteractionRenderer(workspaceId, workflowId, {
+          carrier: 'conversation',
+          requestId: confirmation.questionId,
+          revision: confirmation.workflowRevision,
+          step: 'execution_selection',
+        }),
+        'acked',
+      );
+      await interactions.submit(workspaceId, {
+        requestId: confirmation.questionId,
+        revision: confirmation.workflowRevision,
+        idempotencyKey: `approve-paid-generation:${workflowId}`,
+        resume: { runId: workflowId, step: 'execution_selection' },
+        response: { kind: 'approved' },
+      });
+      const boundedQuestion = await waitForQuestionField(
+        harnessStore,
+        workspaceId,
+        workflowId,
+        'bounded_execution_continuation',
+      );
+      assert.deepEqual(providerCalls, {
+        primary: 1,
+        fallback: 0,
+        poll: 0,
+        download: 0,
+      });
+      assert.equal(new Set(mediaProviderEffects).size, 1);
+      const mediaEffectKey = mediaProviderEffects[0]!;
+      assert.match(
+        mediaEffectKey,
+        new RegExp(
+          `^merchant-execution:${workflowId}:harness-media:${workflowId}:image$`,
+          'u',
+        ),
+      );
+      assert.equal(
+        (
+          await billingRepository.getMerchantExecution(
+            workspaceId,
+            workflowId,
+            mediaEffectKey,
+          )
+        )?.status,
+        'claimed',
+      );
+      const mediaJobId = modelSupplyJobIdForKey(
+        workspaceId,
+        mediaEffectKey,
+      );
+      const suspendedMediaJob = await tracerJobs.get(
+        workspaceId,
+        mediaJobId,
+      );
+      assert.equal(suspendedMediaJob.status, 'failed');
+      assert.equal(
+        (suspendedMediaJob.output?.result as ModelSupplyResult | undefined)
+          ?.failureCode,
+        'MEDIA_BOUNDED_ITERATION_EXCEEDED',
+      );
+      const boundedValue = boundedQuestion.options[0]?.label;
+      assert.equal(boundedValue, '提高上限后继续');
+      assert.equal(
+        await harnessStore.ackInteractionRenderer(workspaceId, workflowId, {
+          carrier: 'conversation',
+          requestId: boundedQuestion.questionId,
+          revision: boundedQuestion.workflowRevision,
+          step: 'execution_selection',
+        }),
+        'acked',
+      );
+      await interactions.submit(workspaceId, {
+        requestId: boundedQuestion.questionId,
+        revision: boundedQuestion.workflowRevision,
+        idempotencyKey: `raise-bounded-generation:${workflowId}`,
+        resume: { runId: workflowId, step: 'execution_selection' },
+        response: {
+          kind: 'answer',
+          items: [
+            {
+              itemId: boundedQuestion.response.field,
+              result: { kind: 'answer', value: boundedValue! },
+            },
+          ],
+        },
+      });
+      const result = await DBOS.retrieveWorkflow<{
+        delivery: { packageId: string; revision: number; versionId: string };
+      }>(runtimeId).getResult();
+      assert.equal(result.delivery.packageId, request.packageId);
+      assert.equal(result.delivery.revision, 1);
+      assert.deepEqual(providerCalls, {
+        primary: 1,
+        fallback: 1,
+        poll: 1,
+        download: 1,
+      });
+      assert.equal(new Set(mediaProviderEffects).size, 1);
+      assert.equal(mediaProviderEffects.at(-1), mediaEffectKey);
+      const completedMediaJob = await tracerJobs.get(
+        workspaceId,
+        mediaJobId,
+      );
+      assert.equal(completedMediaJob.status, 'completed');
+      const providerCallsBeforeReplay = { ...providerCalls };
+      const replayedMedia = await models.getDurableMediaJob(
+        workspaceId,
+        mediaJobId,
+      );
+      assert.equal(replayedMedia.result.status, 'completed');
+      assert.equal(
+        replayedMedia.result.merchantExecutionEffectKey,
+        mediaEffectKey,
+      );
+      assert.deepEqual(providerCalls, providerCallsBeforeReplay);
+
+      const completedQuote = await billing.getQuote(quote.quoteId, workspaceId);
+      const completedUsage = await billing.getUsage(workflowId, workspaceId);
+      assert.equal(completedQuote?.lifecycleStatus, 'settled');
+      assert.equal(completedUsage?.status, 'committed');
+      assert.equal(
+        (
+          await pool.query<{ status: string }>(
+            `SELECT status
+               FROM harness_runtime.billing_compensations
+              WHERE workspace_id=$1 AND task_id=$2`,
+            [workspaceId, workflowId],
+          )
+        ).rows[0]?.status,
+        'completed',
+      );
+      const executions = await pool.query<{
+        effect_key: string;
+        idempotency_key: string;
+        result: ModelSupplyResult | null;
+        status: string;
+      }>(
+        `SELECT effect_key, idempotency_key, result, status
+           FROM p1_product_billing_merchant_executions
+          WHERE workspace_id=$1 AND task_id=$2
+          ORDER BY effect_key`,
+        [workspaceId, workflowId],
+      );
+      assert.ok(providerEffects.length >= 3);
+      for (const effectKey of providerEffects) {
+        assert.equal(
+          executions.rows.find((row) => row.effect_key === effectKey)?.status,
+          'completed',
+        );
+      }
+      const primary = executions.rows.find(
+        ({ effect_key }) => effect_key === `merchant-execution:${workflowId}`,
+      );
+      const selectedEffect = mediaEffectKey;
+      const selectedExecution = executions.rows.find(
+        ({ effect_key }) => effect_key === selectedEffect,
+      );
+      assert.equal(selectedExecution?.status, 'completed');
+      assert.deepEqual(selectedExecution?.result, replayedMedia.result);
+      assert.equal(primary?.effect_key, `merchant-execution:${workflowId}`);
+      assert.equal(
+        primary?.idempotency_key,
+        `merchant-execution-promotion:${selectedEffect}`,
+      );
+      assert.equal(primary?.status, 'completed');
+      assert.deepEqual(primary?.result, replayedMedia.result);
+      const promotion = {
+        quoteRevision: confirmed.revision,
+        sourceEffectKey: selectedEffect,
+        taskId: workflowId,
+        workspaceId,
+      };
+      await billing.promoteMerchantExecution(promotion);
+      await assert.rejects(
+        billing.promoteMerchantExecution({
+          ...promotion,
+          sourceEffectKey: providerEffects[0]!,
+        }),
+        /another canonical merchant execution/u,
+      );
+      assert.equal(
+        (
+          await pool.query(
+            `SELECT count(*)::int AS count
+               FROM p1_product_billing_merchant_executions
+              WHERE workspace_id=$1 AND task_id=$2
+                AND effect_key=$3`,
+            [workspaceId, workflowId, `merchant-execution:${workflowId}`],
+          )
+        ).rows[0]?.count,
+        1,
+      );
+    } finally {
+      await mediaWorker?.stop().catch(() => undefined);
+      await jobRuntime?.stop().catch(() => undefined);
+      if (dbosLaunched) {
+        await DBOS.shutdown({ deregister: true }).catch(() => undefined);
+      }
+      if (request) {
+        await cleanup(pool, request, runtimeId).catch(() => undefined);
+      }
+      await pool
+        .query(
+          'DELETE FROM execution_spine.creation_submissions WHERE workspace_id=$1',
+          [workspaceId],
+        )
+        .catch(() => undefined);
+      await pool
+        .query(
+          'DELETE FROM p1_product_billing_merchant_executions WHERE workspace_id=$1',
+          [workspaceId],
+        )
+        .catch(() => undefined);
+      await pool
+        .query('DELETE FROM p1_product_billing_usage WHERE workspace_id=$1', [
+          workspaceId,
+        ])
+        .catch(() => undefined);
+      await pool
+        .query('DELETE FROM p1_product_billing_quotes WHERE workspace_id=$1', [
+          workspaceId,
+        ])
+        .catch(() => undefined);
+      await pool
+        .query('DELETE FROM p1_credit_lot_transactions WHERE workspace_id=$1', [
+          workspaceId,
+        ])
+        .catch(() => undefined);
+      await pool
+        .query('DELETE FROM p1_credit_grant_lots WHERE workspace_id=$1', [
+          workspaceId,
+        ])
+        .catch(() => undefined);
+      await pool
+        .query(
+          'DELETE FROM harness_runtime.billing_compensations WHERE workspace_id=$1',
+          [workspaceId],
+        )
+        .catch(() => undefined);
+      await pool
+        .query('DELETE FROM workspaces WHERE id=$1', [workspaceId])
+        .catch(() => undefined);
+      await pool
+        .query(`DROP TABLE IF EXISTS "public"."${tracerTable}" CASCADE`)
+        .catch(() => undefined);
+      await pool
+        .query(`DROP SCHEMA IF EXISTS "${bossSchema}" CASCADE`)
+        .catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
 class BoundaryAwareControllerFixture implements StructuredNodeRunner {
   constructor(
     private readonly snapshot: NonNullable<
@@ -1192,6 +2244,94 @@ function productionMediaRequest(
     usageReservation: {
       credits: 5,
       id: `usage-${workflowId}`,
+      units: [],
+    },
+  };
+}
+
+function productionCreditMediaRequest(input: {
+  quoteRevision: string;
+  route: { id: string; catalogRevisionId: string };
+  workflowId: string;
+  workspaceId: string;
+}): HarnessWorkflowInput {
+  const snapshot = createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-production-credit-media',
+      workspaceId: input.workspaceId,
+      idempotencyKey: `submission-${input.workflowId}`,
+      taskId: input.workflowId,
+      workId: `work-${input.workflowId}`,
+      contentPackageId: `package-${input.workflowId}`,
+      expectedContentPackageRevision: 0,
+      creationMode: 'customized',
+      intent: '制作夏日护理项目图片',
+      surface: { id: 'surface-production-credit-media', revision: 'surface-r1' },
+      recipe: { id: 'recipe-production-credit-media', revision: 'recipe-r1' },
+      lens: 'image',
+      operation: 'image.generate',
+      platform: { id: 'xiaohongshu' },
+      contentPackagePlatform: 'xiaohongshu',
+      distributionTarget: 'export',
+      deliverable: {
+        kind: 'image_set',
+        quantity: 1,
+        aspectRatio: '9:16',
+      },
+      deliverables: [
+        {
+          id: 'image-main',
+          kind: 'image',
+          order: 0,
+          quantity: 1,
+          aspectRatio: '9:16',
+        },
+      ],
+      sources: { assets: [] },
+      rights: { revision: 'rights-r1', summary: 'authorized' },
+      identity: OFFICIAL_NEUTRAL_IDENTITY,
+      modelPolicy: {
+        id: 'policy-production-credit-media',
+        revision: 'policy-r1',
+        mode: 'fixed',
+      },
+      catalogModel: {
+        id: 'gpt-image-2',
+        revision: input.route.catalogRevisionId,
+      },
+      quote: {
+        id: `quote-${input.workflowId}`,
+        revision: input.quoteRevision,
+      },
+      route: {
+        id: input.route.id,
+        revision: input.route.catalogRevisionId,
+      },
+      briefContext: { id: `brief-${input.workflowId}`, revision: 1 },
+      contentModules: ['social_cover'],
+    },
+    now,
+  );
+  return {
+    actorId: snapshot.actorId,
+    workspaceId: input.workspaceId,
+    packageId: snapshot.contentPackage.id,
+    expectedRevision: snapshot.contentPackage.expectedRevision,
+    workflowRevision: snapshot.revision,
+    creationMode: snapshot.creationMode,
+    rawInput: snapshot.intent.text,
+    intent: {
+      context: {
+        workId: snapshot.work.id,
+        intent: snapshot.intent.text,
+        sourceSummaries: [],
+      },
+      assetReferences: [],
+    },
+    executionSnapshot: snapshot,
+    usageReservation: {
+      credits: 5,
+      id: `usage-${input.workflowId}`,
       units: [],
     },
   };
@@ -1629,6 +2769,20 @@ async function waitForExecutionConfirmation(
     await new Promise<void>((resolve) => setTimeout(resolve, 20));
   }
   throw new Error('Paid media execution confirmation was not registered.');
+}
+
+async function waitForQuestionField(
+  store: PostgresHarnessStore,
+  workspaceId: string,
+  workflowId: string,
+  field: string,
+) {
+  for (let attempt = 0; attempt < 400; attempt += 1) {
+    const pending = await store.readPending(workspaceId, workflowId);
+    if (pending?.response.field === field) return pending;
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(`Harness question ${field} was not registered.`);
 }
 
 async function cleanup(
