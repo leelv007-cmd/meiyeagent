@@ -317,4 +317,70 @@ describe('delivery sensitive-word check bar', () => {
     await waitFor(() => expect(delivery).toBeEnabled());
     expect(blockedWhileFetching).toBe(true);
   });
+
+  it('rechecks edited delivery text and stays closed until the new result is known', async () => {
+    const clear = {
+      schemaVersion: 'sensitive-check-bar/v1' as const,
+      status: 'clear' as const,
+      summary: '未检出违禁词。',
+      items: [],
+    };
+    const hits = {
+      schemaVersion: 'sensitive-check-bar/v1' as const,
+      status: 'hits' as const,
+      summary: '检出 1 处违禁词，请按建议替换后再交付。',
+      items: [
+        {
+          wordId: 'sw-extreme-001',
+          word: '根治',
+          category: 'extreme' as const,
+          snippet: '手改后的根治正文',
+          replacements: ['明显改善'],
+        },
+      ],
+    };
+    let resolveEditedCheck!: (value: typeof hits) => void;
+    const editedCheck = new Promise<typeof hits>((resolve) => {
+      resolveEditedCheck = resolve;
+    });
+    p1Client.queryP1
+      .mockResolvedValueOnce(clear)
+      .mockReturnValueOnce(editedCheck);
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const rendered = render(
+      <QueryClientProvider client={client}>
+        <SensitiveWordsGuardedDeliveryPanel text="原安全正文" view={view()} />
+      </QueryClientProvider>
+    );
+    await screen.findByText('未检出违禁词。');
+    expect(screen.getByTestId('delivery-action-full_package')).toBeEnabled();
+
+    rendered.rerender(
+      <QueryClientProvider client={client}>
+        <SensitiveWordsGuardedDeliveryPanel
+          text="手改后的根治正文"
+          view={view()}
+        />
+      </QueryClientProvider>
+    );
+    await waitFor(() => expect(p1Client.queryP1).toHaveBeenCalledTimes(2));
+    expect(screen.getByTestId('delivery-action-full_package')).toBeDisabled();
+
+    resolveEditedCheck(hits);
+    await screen.findByText('检出 1 处违禁词，请按建议替换后再交付。');
+    expect(screen.getByTestId('delivery-action-full_package')).toBeDisabled();
+    expect(p1Client.queryP1).toHaveBeenLastCalledWith(
+      'sensitive-words',
+      {
+        action: 'check_bar',
+        payload: { text: '手改后的根治正文' },
+      },
+      {
+        signal: expect.any(AbortSignal),
+        timeoutMs: SENSITIVE_WORDS_DELIVERY_CHECK_TIMEOUT_MS,
+      }
+    );
+  });
 });

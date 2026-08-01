@@ -7,7 +7,11 @@
  */
 
 import { operationsCommand } from '@/p1/client';
-import type { ContentPackage, ContentPackageVersion } from '@meiye/contracts';
+import type {
+  ContentPackage,
+  ContentPackagePlatform,
+  ContentPackageVersion,
+} from '@meiye/contracts';
 
 type EditableContentPackageFields = Pick<
   ContentPackageVersion,
@@ -18,11 +22,12 @@ export type ResultContentPackageHandEditInput = {
   contentPackage: ResultContentPackageHandEditResult;
   changes: Partial<EditableContentPackageFields>;
   idempotencyKey: string;
+  platform?: ContentPackagePlatform;
 };
 
 export type ResultContentPackageHandEditResult = Pick<
   ContentPackage,
-  'currentVersionId' | 'id' | 'revision' | 'versions'
+  'currentVersionId' | 'id' | 'revision' | 'variants' | 'versions'
 >;
 
 export type ResultContentPackageHandEditCommand = {
@@ -33,6 +38,7 @@ export type ResultContentPackageHandEditCommand = {
     changes: EditableContentPackageFields;
     expectedRevision: number;
     packageId: string;
+    platform?: ContentPackagePlatform;
   };
 };
 
@@ -42,23 +48,40 @@ export type ResultContentPackageHandEditSubmit = (
   idempotencyKey: string
 ) => Promise<ResultContentPackageHandEditResult>;
 
-function currentVersion(
-  contentPackage: ResultContentPackageHandEditInput['contentPackage']
-): ContentPackageVersion {
-  const version = contentPackage.versions.find(
-    (candidate) => candidate.id === contentPackage.currentVersionId
+export function resolveResultContentPackageHandEditPlatform(
+  contentPackage: ResultContentPackageHandEditInput['contentPackage'],
+  deliveryPlatform: ContentPackagePlatform | null
+): ContentPackagePlatform | undefined {
+  return deliveryPlatform && contentPackage.variants.length > 0
+    ? deliveryPlatform
+    : undefined;
+}
+
+export function findResultContentPackageHandEditVersion(
+  contentPackage: ResultContentPackageHandEditInput['contentPackage'],
+  platform?: ContentPackagePlatform
+): ContentPackageVersion | undefined {
+  const source = platform
+    ? contentPackage.variants.find(
+        (candidate) => candidate.platform === platform
+      )
+    : contentPackage;
+  return source?.versions.find(
+    (candidate) => candidate.id === source.currentVersionId
   );
-  if (!version) {
-    throw new Error('The current ContentPackage version was not found.');
-  }
-  return version;
 }
 
 /** Build the single canonical OCC write. */
 export function buildResultContentPackageHandEditCommand(
   input: ResultContentPackageHandEditInput
 ): ResultContentPackageHandEditCommand {
-  const version = currentVersion(input.contentPackage);
+  const version = findResultContentPackageHandEditVersion(
+    input.contentPackage,
+    input.platform
+  );
+  if (!version) {
+    throw new Error('The current ContentPackage edit version was not found.');
+  }
   const changes = input.changes;
 
   return {
@@ -84,6 +107,7 @@ export function buildResultContentPackageHandEditCommand(
       },
       expectedRevision: input.contentPackage.revision,
       packageId: input.contentPackage.id,
+      ...(input.platform ? { platform: input.platform } : {}),
     },
   };
 }

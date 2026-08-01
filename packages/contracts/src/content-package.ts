@@ -960,6 +960,7 @@ export const editContentPackageVersionCommandSchema = z.object({
   expectedRevision: contentPackageExpectedRevisionSchema,
   intent: quickEditIntentSchema.optional(),
   packageId: contentPackageIdSchema,
+  platform: contentPackagePlatformSchema.optional(),
 }).superRefine((command, context) => {
   if (command.intent && command.intent.baseVersionId !== command.baseVersionId) {
     context.addIssue({

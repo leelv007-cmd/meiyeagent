@@ -80,7 +80,11 @@ import {
   useDeliveryViewport,
 } from '@/product/results/delivery-viewport';
 import type { VideoCanonicalEditCommand } from '@/product/results/video/video-worksurface';
-import { executeResultContentPackageHandEdit } from '@/product/results/result-content-package-hand-edit';
+import {
+  executeResultContentPackageHandEdit,
+  findResultContentPackageHandEditVersion,
+  resolveResultContentPackageHandEditPlatform,
+} from '@/product/results/result-content-package-hand-edit';
 import {
   validateResultCenterSearch,
   type ResultCenterSearch,
@@ -285,6 +289,33 @@ function ResultCenterRoutePage() {
   const currentPackageVersion = contentPackage?.versions.find(
     (version) => version.id === contentPackage.currentVersionId
   );
+  const workspaceKind = selected?.workspaceKind ?? 'copy';
+  const deliveryTarget = deliveryTargetForIntent(
+    workspaceKind,
+    selected?.work.intent ?? ''
+  );
+  const canonicalDeliveryPlatform =
+    deliveryTarget === 'wechat_moments' ? null : deliveryTarget;
+  const deliveryVariant = canonicalDeliveryPlatform
+    ? contentPackage?.variants.find(
+        ({ platform }) => platform === canonicalDeliveryPlatform
+      )
+    : undefined;
+  const resultEditPlatform = contentPackage
+    ? resolveResultContentPackageHandEditPlatform(
+        contentPackage,
+        canonicalDeliveryPlatform
+      )
+    : undefined;
+  const currentResultEditVersion = contentPackage
+    ? findResultContentPackageHandEditVersion(
+        contentPackage,
+        resultEditPlatform
+      )
+    : undefined;
+  const resultEditVersions = resultEditPlatform
+    ? (deliveryVariant?.versions ?? [])
+    : (contentPackage?.versions ?? []);
   const packageMutationFacts =
     resultContentPackageMutationFacts(contentPackage);
   const outcome: ResultTargetResolveOutcome = targetResolverQuery.data ?? {
@@ -294,7 +325,7 @@ function ResultCenterRoutePage() {
     requested: target,
   };
   const currentRevisionId = contentPackage
-    ? (contentPackage.currentVersionId ??
+    ? (currentResultEditVersion?.id ??
       `${contentPackage.id}:r${contentPackage.revision}`)
     : selected?.job?.id;
   const returnRestore = useResultReturnRestoreSession({
@@ -368,7 +399,6 @@ function ResultCenterRoutePage() {
   // missing or fails (fixture jobs may complete without a durable workflow id).
   // Video worksurface simply omits workflow-derived panels instead of hard-failing.
 
-  const workspaceKind = selected?.workspaceKind ?? 'copy';
   const harnessStreamMatchesResult =
     Boolean(resultWorkflowId) &&
     harnessStream.activeWorkflowId === resultWorkflowId;
@@ -398,12 +428,6 @@ function ResultCenterRoutePage() {
       ? harnessStream.copyCandidates
       : undefined;
   const streamLoading = streamActive && harnessStreamMatchesResult;
-  const deliveryTarget = deliveryTargetForIntent(
-    workspaceKind,
-    selected?.work.intent ?? ''
-  );
-  const canonicalDeliveryPlatform =
-    deliveryTarget === 'wechat_moments' ? null : deliveryTarget;
   const baseVideoWorksurface = selected
     ? (buildLiveVideoWorksurface(selected, workflowQuery.data) ??
       buildNativeVideoWorksurface(selected, contentPackage))
@@ -444,50 +468,56 @@ function ResultCenterRoutePage() {
       : packageBackedVideoWorksurface;
   // Terminal ContentPackage revision wins over intermediate stream text (P1-B2).
   const terminalCalibration =
-    currentPackageVersion &&
+    currentResultEditVersion &&
     (workspaceKind === 'copy' || workspaceKind === 'image')
       ? calibrateTerminalRevision({
           streamed: partialCandidates?.[0],
           terminal: {
-            title: currentPackageVersion.title,
-            body: currentPackageVersion.body,
-            conversionHook: currentPackageVersion.conversionHook ?? '',
-            revisionId: currentPackageVersion.id,
+            title: currentResultEditVersion.title,
+            body: currentResultEditVersion.body,
+            conversionHook: currentResultEditVersion.conversionHook ?? '',
+            revisionId: currentResultEditVersion.id,
           },
         })
       : null;
   const copyWorksurface =
-    selected?.copyWorksurface && currentPackageVersion
+    selected?.copyWorksurface && contentPackage && currentResultEditVersion
       ? {
           ...selected.copyWorksurface,
-          baseRevisionId: currentPackageVersion.id,
+          baseRevisionId: currentResultEditVersion.id,
+          packageId: contentPackage.id,
+          ...(resultEditPlatform ? { sourcePlatform: resultEditPlatform } : {}),
           document: {
-            body: terminalCalibration?.body ?? currentPackageVersion.body,
+            body: terminalCalibration?.body ?? currentResultEditVersion.body,
             conversionHook:
               terminalCalibration?.conversionHook ??
-              currentPackageVersion.conversionHook ??
+              currentResultEditVersion.conversionHook ??
               '',
-            orderedAssetIds: [...currentPackageVersion.orderedAssetIds],
-            title: terminalCalibration?.title ?? currentPackageVersion.title,
-            topics: [...currentPackageVersion.topics],
+            orderedAssetIds: [...currentResultEditVersion.orderedAssetIds],
+            title: terminalCalibration?.title ?? currentResultEditVersion.title,
+            topics: [...currentResultEditVersion.topics],
           },
           lifecycle: 'adopted' as const,
           platformPreviews: platformPreviewsFromContentPackage(contentPackage),
         }
-      : (selected?.copyWorksurface ??
-        (currentPackageVersion && contentPackage
+      : contentPackage
+        ? currentResultEditVersion
           ? {
               workId,
-              baseRevisionId: currentPackageVersion.id,
+              baseRevisionId: currentResultEditVersion.id,
+              packageId: contentPackage.id,
+              ...(resultEditPlatform
+                ? { sourcePlatform: resultEditPlatform }
+                : {}),
               document: {
-                body: currentPackageVersion.body,
-                conversionHook: currentPackageVersion.conversionHook ?? '',
-                orderedAssetIds: [...currentPackageVersion.orderedAssetIds],
-                title: currentPackageVersion.title,
-                topics: [...currentPackageVersion.topics],
+                body: currentResultEditVersion.body,
+                conversionHook: currentResultEditVersion.conversionHook ?? '',
+                orderedAssetIds: [...currentResultEditVersion.orderedAssetIds],
+                title: currentResultEditVersion.title,
+                topics: [...currentResultEditVersion.topics],
               },
-              alternativeCandidates: contentPackage.versions
-                .filter((version) => version.id !== currentPackageVersion.id)
+              alternativeCandidates: resultEditVersions
+                .filter((version) => version.id !== currentResultEditVersion.id)
                 .map((version) => ({
                   body: version.body,
                   candidateId: version.id,
@@ -502,7 +532,8 @@ function ResultCenterRoutePage() {
               platformPreviews:
                 platformPreviewsFromContentPackage(contentPackage),
             }
-          : undefined));
+          : undefined
+        : selected?.copyWorksurface;
   const imageWorksurface =
     selected?.imageWorksurface && currentPackageVersion
       ? {
@@ -657,6 +688,7 @@ function ResultCenterRoutePage() {
       (asset.id === selected.job?.recommendedAssetId ||
         !selected.job?.recommendedAssetId)
   );
+  const deliveryCopy = contentPackage ? currentResultEditVersion : copyAsset;
   const downloadableAsset = selected?.assets.find((asset) => asset.objectKey);
   const downloadableObjectKey =
     downloadableAsset?.objectKey ??
@@ -670,12 +702,12 @@ function ResultCenterRoutePage() {
     anchor.download = fileName ?? '';
     anchor.click();
   };
-  const downloadCopyAsset = () => {
-    if (!copyAsset?.body) return;
+  const downloadDeliveryCopy = () => {
+    if (!deliveryCopy?.body) return;
     const url = URL.createObjectURL(
       new Blob(
         [
-          [copyAsset.title, copyAsset.body, copyAsset.conversionHook]
+          [deliveryCopy.title, deliveryCopy.body, deliveryCopy.conversionHook]
             .filter(Boolean)
             .join('\n\n'),
         ],
@@ -697,11 +729,6 @@ function ResultCenterRoutePage() {
         (variant) => variant.platform === canonicalDeliveryPlatform
       )
   );
-  const deliveryVariant = canonicalDeliveryPlatform
-    ? contentPackage?.variants.find(
-        ({ platform }) => platform === canonicalDeliveryPlatform
-      )
-    : undefined;
   const activeDeliveryApproval = contentPackage?.approvalReceipts?.find(
     (approval) =>
       approval.status === 'approved' &&
@@ -745,7 +772,7 @@ function ResultCenterRoutePage() {
         hasDownload: Boolean(
           singleDownloadUrl ||
             canExportFullPackage ||
-            (deliveryTarget === 'wechat_moments' && copyAsset)
+            (deliveryTarget === 'wechat_moments' && deliveryCopy)
         ),
         inferredSignals: resultsQuery.data?.signals.inferred ?? [],
         nowIso: new Date().toISOString(),
@@ -1192,8 +1219,8 @@ function ResultCenterRoutePage() {
         jobId: selected?.job?.id,
       }}
       {...(basedOnLabel ? { basedOnLabel } : {})}
-      {...(currentPackageVersion?.exportUseDelivery
-        ? { exportUseDelivery: currentPackageVersion.exportUseDelivery }
+      {...(currentResultEditVersion?.exportUseDelivery
+        ? { exportUseDelivery: currentResultEditVersion.exportUseDelivery }
         : {})}
       partialCandidates={partialCandidates}
       streamLoading={streamLoading}
@@ -1340,9 +1367,9 @@ function ResultCenterRoutePage() {
       onCopyAdopt={copyAsset ? adoptCopyCandidate : undefined}
       onCopyGeneratePlatformVariants={() => generateCopyPlatformVariants()}
       onCopyHandEdit={
-        contentPackage?.currentVersionId
+        contentPackage && currentResultEditVersion
           ? async (changes) => {
-              const fingerprint = `hand-edit:${contentPackage.id}:${contentPackage.revision}:${JSON.stringify(changes)}`;
+              const fingerprint = `hand-edit:${contentPackage.id}:${contentPackage.revision}:${resultEditPlatform ?? 'canonical'}:${JSON.stringify(changes)}`;
               const key =
                 intentKeys.current.get(fingerprint) ?? crypto.randomUUID();
               intentKeys.current.set(fingerprint, key);
@@ -1350,6 +1377,7 @@ function ResultCenterRoutePage() {
                 contentPackage,
                 changes,
                 idempotencyKey: key,
+                ...(resultEditPlatform ? { platform: resultEditPlatform } : {}),
               });
               intentKeys.current.delete(fingerprint);
               await refreshCanonicalResult();
@@ -1363,31 +1391,36 @@ function ResultCenterRoutePage() {
         setShellActionError(undefined);
       }}
       onCopyQuickEdit={
-        contentPackage && currentPackageVersion
+        contentPackage && currentResultEditVersion
           ? async (request: QuickEditRequest) => {
-              const fingerprint = `quick-edit:${contentPackage.id}:${contentPackage.revision}:${request.action}:${request.instruction}`;
+              const fingerprint = `quick-edit:${contentPackage.id}:${contentPackage.revision}:${resultEditPlatform ?? 'canonical'}:${request.action}:${request.instruction}`;
               const key =
                 intentKeys.current.get(fingerprint) ?? crypto.randomUUID();
               intentKeys.current.set(fingerprint, key);
               await operationsCommand<PublicContentPackage>(
                 'edit_content_package_version',
                 {
-                  baseVersionId: currentPackageVersion.id,
+                  baseVersionId: currentResultEditVersion.id,
                   changes: {
                     body: request.changes.body,
                     conversionHook: request.changes.conversionHook,
-                    orderedAssetIds: [...currentPackageVersion.orderedAssetIds],
+                    orderedAssetIds: [
+                      ...currentResultEditVersion.orderedAssetIds,
+                    ],
                     title: request.changes.title,
-                    topics: [...currentPackageVersion.topics],
+                    topics: [...currentResultEditVersion.topics],
                   },
                   expectedRevision: contentPackage.revision,
                   intent: buildQuickEditIntent({
                     action: request.action,
-                    baseVersionId: currentPackageVersion.id,
+                    baseVersionId: currentResultEditVersion.id,
                     contentPackage,
                     instruction: request.instruction,
                   }),
                   packageId: contentPackage.id,
+                  ...(resultEditPlatform
+                    ? { platform: resultEditPlatform }
+                    : {}),
                 },
                 key
               );
@@ -1670,11 +1703,11 @@ function ResultCenterRoutePage() {
       }}
       deliveryPanelFacts={{
         target: deliveryTarget,
-        hasCopyableText: Boolean(copyAsset),
-        hasSingleDownload: Boolean(singleDownloadUrl || copyAsset?.body),
+        hasCopyableText: Boolean(deliveryCopy),
+        hasSingleDownload: Boolean(singleDownloadUrl || deliveryCopy?.body),
         hasFullPackage:
           deliveryTarget === 'wechat_moments'
-            ? Boolean(copyAsset || singleDownloadUrl)
+            ? Boolean(deliveryCopy || singleDownloadUrl)
             : canExportFullPackage,
         hasExternalSendApproval: Boolean(
           activeDeliveryApproval || assistedStored
@@ -1687,8 +1720,8 @@ function ResultCenterRoutePage() {
           canShareText: typeof navigator.share === 'function',
         },
         sharePayload: {
-          kind: copyAsset ? (sharePayloadFiles ? 'mixed' : 'text') : 'files',
-          ...(copyAsset?.body ? { text: copyAsset.body } : {}),
+          kind: deliveryCopy ? (sharePayloadFiles ? 'mixed' : 'text') : 'files',
+          ...(deliveryCopy?.body ? { text: deliveryCopy.body } : {}),
           ...(sharePayloadFiles ? { files: sharePayloadFiles } : {}),
           ...(existingOneShotUrl ? { oneShotLinkUrl: existingOneShotUrl } : {}),
           ...(singleDownloadUrl ? { downloadHref: singleDownloadUrl } : {}),
@@ -1700,9 +1733,9 @@ function ResultCenterRoutePage() {
       }}
       viewport={deliveryViewport}
       onDeliveryAction={async (actionId, responsibility) => {
-        if (actionId === 'copy' && copyAsset) {
+        if (actionId === 'copy' && deliveryCopy) {
           await navigator.clipboard.writeText(
-            [copyAsset.title, copyAsset.body, copyAsset.conversionHook]
+            [deliveryCopy.title, deliveryCopy.body, deliveryCopy.conversionHook]
               .filter(Boolean)
               .join('\n\n')
           );
@@ -1712,28 +1745,28 @@ function ResultCenterRoutePage() {
           startDownload(singleDownloadUrl);
           return 'download_done';
         }
-        if (actionId === 'single_download' && copyAsset?.body) {
-          downloadCopyAsset();
+        if (actionId === 'single_download' && deliveryCopy?.body) {
+          downloadDeliveryCopy();
           return 'download_done';
         }
         if (
           actionId === 'full_package' &&
           deliveryTarget === 'wechat_moments' &&
           contentPackage &&
-          currentPackageVersion
+          currentResultEditVersion
         ) {
           const captionUrl = URL.createObjectURL(
             new Blob(
               [
                 buildCaptionText({
-                  body: currentPackageVersion.body,
-                  ...(currentPackageVersion.conversionHook
+                  body: currentResultEditVersion.body,
+                  ...(currentResultEditVersion.conversionHook
                     ? {
-                        conversionHook: currentPackageVersion.conversionHook,
+                        conversionHook: currentResultEditVersion.conversionHook,
                       }
                     : {}),
-                  title: currentPackageVersion.title,
-                  topics: currentPackageVersion.topics,
+                  title: currentResultEditVersion.title,
+                  topics: currentResultEditVersion.topics,
                 }),
               ],
               { type: 'text/plain;charset=utf-8' }

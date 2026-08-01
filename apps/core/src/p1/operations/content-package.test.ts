@@ -1807,6 +1807,210 @@ describe('ContentPackage application service contract', () => {
     );
   });
 
+  it('edits only the selected delivery variant and expires its exact receipts', async () => {
+    let exportedVersion:
+      | Parameters<ContentPackageExportPort['export']>[0]['version']
+      | undefined;
+    const { context, operations, operationsService, service } = setup({
+      contentPackageExporter: {
+        async export(input) {
+          exportedVersion = structuredClone(input.version);
+          return {
+            artifactAssetId: 'export-after-hand-edit',
+            artifactObjectKey: `${input.workspaceId}/exports/after-hand-edit.zip`,
+            contentType: 'application/zip',
+            sha256: 'b'.repeat(64),
+            sizeBytes: 256,
+          };
+        },
+      },
+    });
+    const contentPackage = await seedAcceptedPackage(
+      operations,
+      operationsService,
+      context,
+      'image_text'
+    );
+    const state = await operations.loadWorkspace(context.workspaceId);
+    assert.ok(state);
+    const stored = state.contentPackages.find(
+      (candidate) => candidate.id === contentPackage.id
+    );
+    assert.ok(stored);
+    stored.revision = Math.max(1, stored.revision);
+    const oldVariantVersionIds = (
+      ['xiaohongshu', 'douyin', 'video_account'] as const
+    ).map((platform) => `${platform}-before-hand-edit`);
+    stored.variants = (
+      ['xiaohongshu', 'douyin', 'video_account'] as const
+    ).map((platform, index) => ({
+      currentVersionId: oldVariantVersionIds[index]!,
+      id: `${stored.id}-${platform}`,
+      platform,
+      versions: [
+        {
+          body: `${platform} 旧正文`,
+          conversionHook: '旧预约入口',
+          createdAt: NOW,
+          derivedFromVersionId: stored.currentVersionId,
+          id: oldVariantVersionIds[index]!,
+          orderedAssetIds: ['owned-image_text-1'],
+          source: 'ai_generated',
+          title: `${platform} 旧标题`,
+          topics: ['旧话题'],
+        },
+      ],
+    }));
+    stored.approvalReceipts = [
+      {
+        binding: {
+          accountId: 'account-xiaohongshu',
+          actionKind: 'publish',
+          actionScheduledAt: NOW,
+          contextBundle: {
+            bundleId: 'bundle-before-hand-edit',
+            hash: 'bundle-hash-before-hand-edit',
+            revision: 1,
+          },
+          cost: { amount: 0, currency: 'CNY' },
+          contentRevision: stored.revision,
+          packageId: stored.id,
+          platform: 'xiaohongshu',
+          purpose: 'public_content',
+          variantVersionId: oldVariantVersionIds[0]!,
+          workspaceId: stored.workspaceId,
+        },
+        events: [
+          {
+            actorId: context.userId,
+            eventId: 'approval-event-before-hand-edit',
+            occurredAt: NOW,
+            type: 'approved',
+          },
+        ],
+        id: 'approval-before-hand-edit',
+        idempotencyKey: 'approval-before-hand-edit-key',
+        payloadFingerprint: 'approval-before-hand-edit-fingerprint',
+        status: 'approved',
+      },
+    ];
+    stored.exportReceipts = [
+      {
+        artifactAssetId: 'export-before-hand-edit',
+        artifactObjectKey: `${stored.workspaceId}/exports/before-hand-edit.zip`,
+        contentType: 'application/zip',
+        createdAt: NOW,
+        id: 'export-receipt-before-hand-edit',
+        platform: 'xiaohongshu',
+        sha256: 'a'.repeat(64),
+        status: 'succeeded',
+        variantVersionId: oldVariantVersionIds[0]!,
+      },
+    ];
+    const originalPackageVersionId = stored.currentVersionId;
+    const originalPackageVersions = structuredClone(stored.versions);
+    await operations.saveWorkspace(state);
+
+    const edited = (await service.executeModule(
+      context,
+      'operations',
+      {
+        action: 'edit_content_package_version',
+        payload: {
+          baseVersionId: oldVariantVersionIds[0]!,
+          changes: {
+            body: '手改后的根治正文',
+            conversionHook: '私信预约',
+            orderedAssetIds: ['owned-image_text-1'],
+            title: '手改后的标题',
+            topics: ['护理日常'],
+          },
+          expectedRevision: stored.revision,
+          packageId: stored.id,
+          platform: 'xiaohongshu',
+        },
+      },
+      'edit-xiaohongshu-delivery-variant'
+    )) as ContentPackage;
+
+    assert.equal(edited.currentVersionId, originalPackageVersionId);
+    assert.deepEqual(edited.versions, originalPackageVersions);
+    const editedXiaohongshu = edited.variants.find(
+      (variant) => variant.platform === 'xiaohongshu'
+    );
+    assert.ok(editedXiaohongshu);
+    assert.notEqual(
+      editedXiaohongshu.currentVersionId,
+      oldVariantVersionIds[0]
+    );
+    assert.equal(editedXiaohongshu.versions.length, 2);
+    assert.equal(
+      editedXiaohongshu.versions.find(
+        (version) => version.id === editedXiaohongshu.currentVersionId
+      )?.body,
+      '手改后的根治正文'
+    );
+    for (const [index, platform] of (
+      ['douyin', 'video_account'] as const
+    ).entries()) {
+      const variant = edited.variants.find(
+        (candidate) => candidate.platform === platform
+      );
+      assert.equal(variant?.currentVersionId, oldVariantVersionIds[index + 1]);
+      assert.equal(variant?.versions.length, 1);
+      assert.equal(variant?.versions[0]?.body, `${platform} 旧正文`);
+    }
+    assert.notEqual(
+      edited.approvalReceipts?.[0]?.binding.variantVersionId,
+      editedXiaohongshu.currentVersionId
+    );
+    assert.notEqual(
+      edited.exportReceipts[0]?.variantVersionId,
+      editedXiaohongshu.currentVersionId
+    );
+    await assert.rejects(
+      service.executeModule(
+        context,
+        'operations',
+        {
+          action: 'edit_content_package_version',
+          payload: {
+            baseVersionId: oldVariantVersionIds[0]!,
+            changes: {
+              body: '过期 OCC 不得覆盖',
+              orderedAssetIds: ['owned-image_text-1'],
+              title: '过期标题',
+              topics: [],
+            },
+            expectedRevision: stored.revision,
+            packageId: stored.id,
+            platform: 'xiaohongshu',
+          },
+        },
+        'stale-xiaohongshu-delivery-variant'
+      ),
+      (error: unknown) =>
+        error instanceof OperationsError &&
+        error.code === 'CONTENT_PACKAGE_REVISION_CONFLICT'
+    );
+    const afterConflict = await operationsService.getContentPackage(
+      { ...context, actor: 'owner' },
+      stored.id
+    );
+    assert.deepEqual(afterConflict, edited);
+
+    await operationsService.exportContentPackage(
+      { ...context, actor: 'owner' },
+      {
+        expectedRevision: edited.revision,
+        packageId: edited.id,
+        platform: 'xiaohongshu',
+      }
+    );
+    assert.equal(exportedVersion?.id, editedXiaohongshu.currentVersionId);
+    assert.equal(exportedVersion?.body, '手改后的根治正文');
+  });
+
   it('creates one pending approval when the workflow target export becomes deliverable', async () => {
     let providerEffects = 0;
     let exportEffects = 0;

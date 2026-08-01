@@ -6,6 +6,8 @@ import type { ContentPackage } from '@meiye/contracts';
 import {
   buildResultContentPackageHandEditCommand,
   executeResultContentPackageHandEdit,
+  findResultContentPackageHandEditVersion,
+  resolveResultContentPackageHandEditPlatform,
 } from './result-content-package-hand-edit';
 
 const contentPackage = {
@@ -23,9 +25,27 @@ const contentPackage = {
       topics: ['美甲'],
     },
   ],
+  variants: [
+    {
+      currentVersionId: 'xiaohongshu-version-2',
+      id: 'pkg-1-xiaohongshu',
+      platform: 'xiaohongshu',
+      versions: [
+        {
+          id: 'xiaohongshu-version-2',
+          createdAt: '2026-07-20T01:00:00.000Z',
+          body: '小红书原正文',
+          conversionHook: '小红书原 CTA',
+          orderedAssetIds: ['image-2'],
+          title: '小红书原标题',
+          topics: ['小红书美甲'],
+        },
+      ],
+    },
+  ],
 } satisfies Pick<
   ContentPackage,
-  'currentVersionId' | 'id' | 'revision' | 'versions'
+  'currentVersionId' | 'id' | 'revision' | 'variants' | 'versions'
 >;
 
 test('hand edit compiles to the existing Operations ContentPackage OCC command', () => {
@@ -51,6 +71,51 @@ test('hand edit compiles to the existing Operations ContentPackage OCC command',
   });
   assert.equal('result' in command.payload, false);
   assert.equal('resultRevision' in command.payload, false);
+});
+
+test('platform hand edit binds OCC to the selected delivery variant', () => {
+  assert.equal(
+    resolveResultContentPackageHandEditPlatform(contentPackage, 'xiaohongshu'),
+    'xiaohongshu'
+  );
+  assert.equal(
+    findResultContentPackageHandEditVersion(contentPackage, 'xiaohongshu')?.id,
+    'xiaohongshu-version-2'
+  );
+  const command = buildResultContentPackageHandEditCommand({
+    contentPackage,
+    changes: { body: '小红书手改正文' },
+    idempotencyKey: 'result-hand-edit:pkg-1:7:xiaohongshu',
+    platform: 'xiaohongshu',
+  });
+
+  assert.deepEqual(command.payload, {
+    baseVersionId: 'xiaohongshu-version-2',
+    changes: {
+      body: '小红书手改正文',
+      conversionHook: '小红书原 CTA',
+      orderedAssetIds: ['image-2'],
+      title: '小红书原标题',
+      topics: ['小红书美甲'],
+    },
+    expectedRevision: 7,
+    packageId: 'pkg-1',
+    platform: 'xiaohongshu',
+  });
+});
+
+test('a package without variants keeps the canonical edit target', () => {
+  const canonicalOnly = { ...contentPackage, variants: [] };
+  const platform = resolveResultContentPackageHandEditPlatform(
+    canonicalOnly,
+    'xiaohongshu'
+  );
+
+  assert.equal(platform, undefined);
+  assert.equal(
+    findResultContentPackageHandEditVersion(canonicalOnly, platform)?.id,
+    'version-7'
+  );
 });
 
 test('execute dispatches the OCC write once and returns the canonical package response', async () => {
@@ -105,6 +170,32 @@ test('missing canonical current version is rejected before dispatch', async () =
         throw new Error('transport must not run');
       }
     ),
-    /current ContentPackage version was not found/
+    /current ContentPackage edit version was not found/
+  );
+});
+
+test('missing selected delivery variant is rejected before dispatch', async () => {
+  const platform = resolveResultContentPackageHandEditPlatform(
+    contentPackage,
+    'douyin'
+  );
+  assert.equal(platform, 'douyin');
+  assert.equal(
+    findResultContentPackageHandEditVersion(contentPackage, platform),
+    undefined
+  );
+  await assert.rejects(
+    executeResultContentPackageHandEdit(
+      {
+        contentPackage,
+        changes: { title: '不应写入' },
+        idempotencyKey: 'idem-missing-platform',
+        ...(platform ? { platform } : {}),
+      },
+      async () => {
+        throw new Error('transport must not run');
+      }
+    ),
+    /current ContentPackage edit version was not found/
   );
 });

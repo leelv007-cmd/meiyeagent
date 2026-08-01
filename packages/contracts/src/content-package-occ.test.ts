@@ -171,6 +171,20 @@ test('ContentPackage hand edit validates and retains a canonical note version', 
   const parsed = editContentPackageVersionCommandSchema.parse(command);
   assert.deepEqual(parsed.changes.note, noteVersion);
   assert.equal(
+    editContentPackageVersionCommandSchema.parse({
+      ...command,
+      platform: 'xiaohongshu',
+    }).platform,
+    'xiaohongshu',
+  );
+  assert.equal(
+    editContentPackageVersionCommandSchema.safeParse({
+      ...command,
+      platform: 'unsupported-platform',
+    }).success,
+    false,
+  );
+  assert.equal(
     editContentPackageVersionCommandSchema.safeParse({
       ...command,
       changes: {

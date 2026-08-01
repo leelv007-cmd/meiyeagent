@@ -96,6 +96,54 @@ test('copy adoption generates formal platform variants from both result entry po
   assert.match(route, /onCopyAdopt=\{[\s\S]*?adoptCopyCandidate/);
 });
 
+test('result route binds visible copy edits to the current delivery variant', () => {
+  assert.match(route, /findResultContentPackageHandEditVersion/u);
+  assert.match(
+    route,
+    /const currentResultEditVersion = contentPackage\s*\? findResultContentPackageHandEditVersion\(\s*contentPackage,\s*resultEditPlatform\s*\)/u
+  );
+  assert.match(
+    route,
+    /const copyWorksurface =[\s\S]*?currentResultEditVersion/u
+  );
+  assert.match(
+    route,
+    /const copyWorksurface =[\s\S]*?packageId: contentPackage\.id[\s\S]*?sourcePlatform: resultEditPlatform/u
+  );
+  assert.match(route, /onCopyHandEdit=\{[\s\S]*?platform: resultEditPlatform/u);
+  assert.match(
+    route,
+    /onCopyQuickEdit=\{[\s\S]*?baseVersionId: currentResultEditVersion\.id[\s\S]*?platform: resultEditPlatform/u
+  );
+});
+
+test('result route copies, shares, scans, and exports the exact visible version', () => {
+  assert.match(
+    route,
+    /const deliveryCopy = contentPackage \? currentResultEditVersion : copyAsset;/u
+  );
+  const deliveryStart = route.indexOf('deliveryPanelFacts={{');
+  const deliveryEnd = route.indexOf('\n    />', deliveryStart);
+  assert.notEqual(deliveryStart, -1);
+  assert.notEqual(deliveryEnd, -1);
+  const deliveryOutbound = route.slice(deliveryStart, deliveryEnd);
+  assert.match(deliveryOutbound, /hasCopyableText: Boolean\(deliveryCopy\)/u);
+  assert.match(deliveryOutbound, /text: deliveryCopy\.body/u);
+  assert.match(
+    deliveryOutbound,
+    /navigator\.clipboard\.writeText\([\s\S]*?deliveryCopy\.body/u
+  );
+  assert.doesNotMatch(deliveryOutbound, /copyAsset/u);
+  assert.match(
+    route,
+    /approval\.binding\.variantVersionId === deliveryVariant\?\.currentVersionId/u
+  );
+  assert.match(
+    route,
+    /receipt\.variantVersionId === deliveryVariant\?\.currentVersionId/u
+  );
+});
+
 test('result route does not ship hard-coded empty works or copy workspace', () => {
   assert.doesNotMatch(route, /const works[^=]*=\s*\[\s*\]/);
   assert.doesNotMatch(

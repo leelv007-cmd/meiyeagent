@@ -398,6 +398,14 @@ export class OperationsFoundationModule implements P1OperationModule {
             parsed.error.message
           );
         }
+        if (parsed.data.platform) {
+          return merchantContentPackage(
+            await this.operations.editContentPackageVariant(context, {
+              ...parsed.data,
+              platform: parsed.data.platform,
+            })
+          );
+        }
         return merchantContentPackage(
           await this.operations.editContentPackageVersion(context, parsed.data)
         );
