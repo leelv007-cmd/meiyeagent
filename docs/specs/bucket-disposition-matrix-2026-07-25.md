@@ -4,6 +4,8 @@
 >
 > **2026-08-01 D-170 覆盖**：原 **FREEZE 7 行（Pro Studio 系）全部升格为 RETIRE/真删**（先迁 KEEP audio，再删树/入口/加购）。实施权威＝`docs/specs/pro-studio-retirement-spec-2026-08-01.md` + D-170。下文 §2 表头保留历史行作追溯，**现行纪律＝RETIRE，不得再按 freeze-leave-running 施工**。
 >
+> **2026-08-01 D-172 覆盖**：**三桶条数计量口径（D-123）superseded——计费改积分制**。凡涉及三桶 entitlement／条数额度／`plan.allowances.*` 的 KEEP/REBUILD 行，处置以 `docs/specs/credit-billing-spec-2026-08-01.md` §2/§8 与 #291 盘点清单（退役 18/改造 30+/保留 11）为准：P0 `product-service` 四桶 entitlement 整体退役只读、grant-lot/usage-ledger schema 级收敛单资源 credits。行内旧口径不逐行改写，施工前先对照 #291 清单。
+>
 > **生产流水线**：确定性盘点（48 子模块/52.5 万行）→ 7 路 opus 初判（146 行+40 争点，70.5 万 token）→ 7 路 Codex 并发复核（1 全局+6 分片，逐行代码实证）→ 1 路 opus 补扫（web product 根级 79 行，填 30,563 行覆盖缺口）→ 主控终裁合并（45+ 处改判）。证据全文在 `.scratch/bucket-matrix-2026-07-25/`。
 >
 > **矩阵规模**：223 行判定，标注行数合计 ≈468,192；KEEP_EXTEND 156（另 mount-pending 2）／RETIRE 48＋**D-170 并入原 FREEZE 7**／REBUILD 10／FREEZE 现行 0／UNCERTAIN 0。

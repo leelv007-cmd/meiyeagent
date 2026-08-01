@@ -18,6 +18,8 @@ The latest user-confirmed decisions are authoritative. For P1, read `.scratch/p1
 
 **2026-08-01 XHS 专项融合与工作台升级批次覆盖**：决策日志已续至 **D-171**；现行实施权威＝`docs/specs/xhs-vertical-integration-spec-2026-08-01.md`（wayfinder 地图 `.wayfinder/map-xhs-vertical-integration.md` 九票闭合，收编 #281 有意遗留的 copy/note 集中开票）。术语：**工作台四态**＝Idle/Active/Waiting/Delivered 状态自适应工作台（D-164 单路由三段不推翻，对话＝文档时间线非气泡流）；**note 载体**＝图文复合成品（页组＋封面＋正文），ContentPackage kind 产品口径＝`media|copy|note`（旧 `image_text|video` 为兼容别名，勿在新面继续使用旧口径）；**执行确认判定**＝「操作是否触发付费媒体执行」（纯 copy 免确认继承 D-043；note 过卡 P1 激活）；**禁止小红书匿名抓取**——爆款复刻取材只允许用户自有登录态通道（OpenCLI，live 门核销后转正）或手动粘贴，服务端匿名抓取／逆向签名／账号池为硬红线。UI 实现基线＝HeroUI Pro AI 模板族＋assistant-ui 示例（零新 agent runtime；Tiptap 只进对象工作区）。
 
+**2026-08-01 积分制计费批次覆盖**：决策日志已续至 **D-172**；现行实施权威＝`docs/specs/credit-billing-spec-2026-08-01.md`（wayfinder 图 #289 闭合，实施票 #298–#302，开发纪律见 spec §11）。术语与红线：**积分制**＝订阅周期积分（按月发放月末清零，包年仍按月发分）＋加油包批次（SKU 效期、种子 7 天），FEFO 统一扣序；**升级＝当日清零重开（加油包存活），降级＝下周期生效，退订＝加油包效期内照用**；模型定价＝CatalogModel×操作＋失败退还开关；**三桶条数口径（D-123 计量框架）已 superseded——新面勿再使用 `plan.allowances.*`/条数额度词汇，改 `plan.credits.*` 与积分**；积分账唯一生产写入者＝P1（GrantLot＋ProductUsageLedger），P0 product-service 退役只读；**支付通道＝Waffo Pancake（RSA 验签），Creem 退役，禁止新增 Creem 引用**；D-061 双真相不变——上游 token/成本永不暴露商家面。
+
 ## Language
 
 **P0 保 8**:

@@ -13,7 +13,7 @@
 
 ### 0.2 被 supersede 的既有决策口径
 
-以下文档中「条数/三桶」商家计费口径自本规格起 superseded（文件本身不改，实施票挂对照）：
+以下文档中「条数/三桶」商家计费口径自本规格起 superseded（2026-08-01 已完成权威回写：设计日志 **D-172** ＋各文 supersede banner ＋ CONTEXT/PRODUCT/DESIGN/双 AGENTS 同步，旧正文不逐段改写）：
 
 - `docs/design/beauty-marketing-agent-product-design-2026-07-17.md`：D-044（试用条数）、D-045（grant-lot 条数制）、D-123（三桶+三类加油包条数）中的**计量单位口径**（机制骨架保留，见 §2）
 - `docs/specs/bucket-disposition-matrix-2026-07-25.md`（D-123 三桶 KEEP 行）

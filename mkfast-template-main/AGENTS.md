@@ -120,3 +120,11 @@ Avoid Node.js-specific APIs — this runs on Cloudflare Workers runtime, not Nod
 - UI baseline: HeroUI Pro AI showcase template family + assistant-ui examples — copy patterns/fragments, never their runtime.
 - Tiptap only inside the object workspace, never in the Composer.
 - No anonymous XHS scraping anywhere in the web app; sourcing is user-session (OpenCLI) or manual paste only.
+
+## Credit Billing Implementation Constraints (2026-08-01, D-172)
+
+- Pricing page follows variant A "credit card grid": billing-period switch bar (monthly / auto-renew monthly / yearly), credits as the hero number, per-card reference line ("约可生成 …") always marked 仅供参考 and read only from the ops-published values.
+- Workbench surfaces: balance badge (with soonest-expiring batch hint), pre-generation quote chip ("本次约消耗 N 分" + refund-on-failure state), insufficient-credit block with booster/upgrade dual exits; plus the credit detail page (batches + ledger rows).
+- Never render upstream model cost, token, or USD figures anywhere merchant-facing (D-061).
+- Payment provider is Waffo Pancake; do not add new Creem references. Secrets only via env from gitignored `docs/_private/waffo.env`.
+- Authority: `docs/specs/credit-billing-spec-2026-08-01.md` §6 (frontend) and §11 (lane discipline; tickets #298–#302).

@@ -47,3 +47,12 @@ Use concise English Conventional Commit-style subjects such as `feat:`, `fix(sco
 - XHS sourcing red lines: no anonymous scraping, no signature reverse-engineering, no account pools. Link ingestion only via the user's own logged-in session (OpenCLI channel, live-gated) or manual paste.
 - ContentPackage kind product vocabulary is `media|copy|note` (`image_text|video` are legacy aliases). Confirm-gate rule is paid-media-execution based; pure copy stays exempt (D-043). Note-path hold activates in P1 only.
 - Authority: `docs/specs/xhs-vertical-integration-spec-2026-08-01.md`.
+
+## Credit Billing Implementation Constraints (2026-08-01, D-172)
+
+- Billing switched from per-type count allowances (three buckets, D-123) to credits. Do not write new bucket/count-based entitlement code; the new admin-config key family is `plan.credits.*` (not `plan.allowances.*`).
+- Sole production writer of the credit ledger is P1 (GrantLot + ProductUsageLedger). P0 `product-service` entitlements are retired read-only.
+- Balance check + reservation + FEFO deduction must run in one DB transaction holding the workspace-level credit lock.
+- Dual-truth red line (D-061): upstream token/balance/USD cost must never appear in merchant-facing contracts, UI, or logs.
+- Payment provider is Waffo Pancake (RSA-SHA256 webhook signing); Creem is being retired — add no new Creem references. Waffo test credentials live only in gitignored `docs/_private/waffo.env`, injected via env; never plaintext in code, tickets, commits, or argv.
+- Authority: `docs/specs/credit-billing-spec-2026-08-01.md` (lane discipline in §11; tickets #298–#302).

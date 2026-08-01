@@ -1,6 +1,7 @@
 # 丽客美页 LIKEPAGE — Landing 文案与产品描述（2026-07-21）
 
 > 状态：终稿（哥拍板品牌名/slogan/定价展示/CTA；文案按「文案金句大师 2.0」纪律产出）。
+> **2026-08-01 D-172 覆盖**：本文一切「按条数」售卖口径（套餐条数额度、条数加油包卖点与相关 FAQ）superseded——计费改积分制，价格区文案口径以 `docs/specs/credit-billing-spec-2026-08-01.md` §6.1 为准（积分卡阵＋「约可生成」仅供参考＋周期切换条＋加油包横条）；非计费区文案不受影响，正文不逐段改写。
 > 用途：Landing page（@meiye/web `/`）12 区全部文案的唯一事实源；`landing_*` i18n 键以本文为准提取。
 > 关联：设计系统见 `landing-design-2026-07-21.md`；产品事实依据 `PRODUCT.md` 与 `docs/design/beauty-marketing-agent-product-design-2026-07-17.md`。
 
