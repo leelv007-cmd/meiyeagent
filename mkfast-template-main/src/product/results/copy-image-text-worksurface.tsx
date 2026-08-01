@@ -15,13 +15,16 @@ import {
   NoteObjectWorkspace,
   ObjectWorkspaceEditor,
   ObjectWorkspaceShell,
+  SensitiveInlineCheck,
   SelectionAiToolbar,
   buildSelectionAiPrompt,
   objectWorkspaceCarrierFromFacts,
   type NoteWorkspacePreviewDocument,
+  type ObjectWorkspaceEditorHandle,
+  type SensitiveInlineSnapshot,
   type SelectionAiAction,
 } from '@/product/object-workspace';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { AdjustPrompt } from './adjust-prompt';
 import {
@@ -138,6 +141,9 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
   } | null>(null);
   const [quickEditBusy, setQuickEditBusy] = useState<string | null>(null);
   const [quickEditError, setQuickEditError] = useState<string | undefined>();
+  const [sensitiveSnapshot, setSensitiveSnapshot] =
+    useState<SensitiveInlineSnapshot | null>(null);
+  const bodyEditorRef = useRef<ObjectWorkspaceEditorHandle>(null);
   const quickEditCopy = quickEditText();
   const shellCarrier = objectWorkspaceCarrierFromFacts({
     orderedAssetCount: props.facts.document.orderedAssetIds.length,
@@ -160,6 +166,7 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
     setBodySelection(null);
     setRewritePreview(null);
     setSelectionConflict(null);
+    setSensitiveSnapshot(null);
   }, [props.facts.baseRevisionId, view.document.body]);
   const dirty =
     draft.body !== view.document.body ||
@@ -367,8 +374,15 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
           <div className="block space-y-1 text-sm">
             <span className="text-muted-foreground">正文</span>
             <ObjectWorkspaceEditor
+              ref={bodyEditorRef}
               data-testid="copy-field-body"
               value={draft.body}
+              sensitiveHits={
+                isNoteWorkspace
+                  ? (sensitiveSnapshot?.scan.hits ?? [])
+                  : undefined
+              }
+              onSensitiveReplacementApplied={() => setSensitiveSnapshot(null)}
               onChange={(value) => {
                 setBodySelection(null);
                 setRewritePreview(null);
@@ -393,6 +407,15 @@ export function CopyImageTextWorksurface(props: CopyImageTextWorksurfaceProps) {
                 });
               }}
             />
+            {isNoteWorkspace ? (
+              <SensitiveInlineCheck
+                text={draft.body}
+                onSnapshotChange={setSensitiveSnapshot}
+                onReplace={(request) =>
+                  bodyEditorRef.current?.replaceSensitiveHit(request) ?? false
+                }
+              />
+            ) : null}
           </div>
           <label className="block space-y-1 text-sm">
             <span className="text-muted-foreground">转化语 / CTA</span>

@@ -1,9 +1,38 @@
 import {
-  sensitiveScanResultSchema,
+  SENSITIVE_SCAN_LIMITS,
   type SensitiveScanResult,
   type SensitiveWordHit,
   type SensitiveWordRecord,
+  sensitiveScanResultSchema,
 } from '@meiye/contracts';
+
+export type SensitiveScanLimitName = keyof typeof SENSITIVE_SCAN_LIMITS;
+
+/** Deterministic fail-closed result for any public scanner budget breach. */
+export class SensitiveScanLimitError extends Error {
+  readonly code = 'SENSITIVE_SCAN_LIMIT_EXCEEDED';
+
+  constructor(
+    readonly limitName: SensitiveScanLimitName,
+    readonly limit: number,
+    readonly observed: number,
+  ) {
+    super(
+      `Sensitive scan limit ${limitName} exceeded: observed ${observed}, limit ${limit}.`,
+    );
+    this.name = 'SensitiveScanLimitError';
+  }
+}
+
+function assertWithinLimit(
+  limitName: SensitiveScanLimitName,
+  observed: number,
+): void {
+  const limit = SENSITIVE_SCAN_LIMITS[limitName];
+  if (observed > limit) {
+    throw new SensitiveScanLimitError(limitName, limit, observed);
+  }
+}
 
 /** Escape a plain word for use inside a global RegExp. */
 export function escapeRegExp(value: string): string {
@@ -45,7 +74,7 @@ export function scanSensitiveText(
   text: string,
   lexicon: readonly SensitiveWordRecord[],
 ): SensitiveScanResult {
-  const normalized = normalizeWithOriginalRanges(text);
+  assertWithinLimit('maxTextLength', text.length);
   const enabled = lexicon
     .filter((row) => row.status === 'enabled' && row.word.trim().length > 0)
     .slice()
@@ -53,6 +82,10 @@ export function scanSensitiveText(
       (a, b) =>
         b.word.normalize('NFKC').length - a.word.normalize('NFKC').length,
     );
+  assertWithinLimit('maxEnabledWords', enabled.length);
+  assertWithinLimit('maxWorkUnits', text.length * enabled.length);
+
+  const normalized = normalizeWithOriginalRanges(text);
 
   const hits: SensitiveWordHit[] = [];
   for (const entry of enabled) {
@@ -73,6 +106,7 @@ export function scanSensitiveText(
       const rangeKey = `${index}:${end}`;
       if (seenOriginalRanges.has(rangeKey)) continue;
       seenOriginalRanges.add(rangeKey);
+      assertWithinLimit('maxRawHits', hits.length + 1);
       hits.push({
         wordId: entry.id,
         word: text.slice(index, end),
@@ -95,6 +129,7 @@ export function scanSensitiveText(
 
   return sensitiveScanResultSchema.parse({
     schemaVersion: 'sensitive-scan/v1',
+    complete: true,
     textLength: text.length,
     hitCount: nonOverlappingHits.length,
     hits: nonOverlappingHits,

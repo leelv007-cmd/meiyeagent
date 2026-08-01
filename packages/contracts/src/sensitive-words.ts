@@ -1,5 +1,17 @@
 import { z } from 'zod';
 
+/**
+ * Public scanner budgets. The work budget is the largest possible product of
+ * the two preceding limits; keeping it explicit prevents a later cap change
+ * from silently making matching unbounded.
+ */
+export const SENSITIVE_SCAN_LIMITS = {
+  maxTextLength: 50_000,
+  maxEnabledWords: 500,
+  maxWorkUnits: 25_000_000,
+  maxRawHits: 1_000,
+} as const;
+
 /** Seven categories transplanted from xhswork structure (spec §6.3); data is beauty-owned. */
 export const SENSITIVE_WORD_CATEGORIES = [
   'extreme',
@@ -51,6 +63,8 @@ export type SensitiveWordHit = z.infer<typeof sensitiveWordHitSchema>;
 export const sensitiveScanResultSchema = z
   .object({
     schemaVersion: z.literal('sensitive-scan/v1'),
+    /** Missing or false completeness must never be treated as a clear scan. */
+    complete: z.literal(true),
     /** UTF-16 code-unit length of the exact, unnormalized query text. */
     textLength: z.number().int().nonnegative(),
     hitCount: z.number().int().nonnegative(),
@@ -164,7 +178,7 @@ export type ListSensitiveWordsQuery = z.infer<
 
 export const scanSensitiveTextQuerySchema = z
   .object({
-    text: z.string().max(50_000),
+    text: z.string().max(SENSITIVE_SCAN_LIMITS.maxTextLength),
   })
   .strict();
 

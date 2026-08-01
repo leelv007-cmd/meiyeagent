@@ -1,24 +1,45 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { SensitiveWordRecord } from '@meiye/contracts';
+import {
+  SENSITIVE_SCAN_LIMITS,
+  type SensitiveWordRecord,
+} from '@meiye/contracts';
 
+import type { P1Context } from '../foundation/domain.js';
+import {
+  type HarnessPolicyInput,
+  validateHarnessPolicy,
+} from '../harness/policy-gates.js';
 import {
   BEAUTY_FIXTURE_SENSITIVE_LEXICON,
-  MemorySensitiveWordsRepository,
   buildSensitiveCheckBar,
+  MemorySensitiveWordsRepository,
   runGenerationChainSensitiveCheck,
-  scanSensitiveText,
+  SensitiveScanLimitError,
   SensitiveWordsFoundationModule,
+  scanSensitiveText,
 } from './index.js';
-import {
-  validateHarnessPolicy,
-  type HarnessPolicyInput,
-} from '../harness/policy-gates.js';
-import type { P1Context } from '../foundation/domain.js';
 
 const SAMPLE_COPY =
   '本店新客护理承诺根治色斑，绝对安全，一次见效，还能稳赚不赔。';
+
+function lexiconEntry(
+  id: string,
+  word: string,
+  status: SensitiveWordRecord['status'] = 'enabled'
+): SensitiveWordRecord {
+  const now = '2026-08-02T00:00:00.000Z';
+  return {
+    id,
+    word,
+    category: 'other',
+    replacements: ['温和表述'],
+    status,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
 
 function ctx(): P1Context {
   return {
@@ -51,6 +72,7 @@ function basePolicy(text: string): HarnessPolicyInput {
 
 test('fixture lexicon sample copy yields hits and replacement suggestions', () => {
   const scan = scanSensitiveText(SAMPLE_COPY, BEAUTY_FIXTURE_SENSITIVE_LEXICON);
+  assert.equal(scan.complete, true);
   assert.ok(scan.hitCount >= 2, `expected hits, got ${scan.hitCount}`);
   const root = scan.hits.find((hit) => hit.word.includes('根治'));
   assert.ok(root);
@@ -60,6 +82,145 @@ test('fixture lexicon sample copy yields hits and replacement suggestions', () =
   const bar = buildSensitiveCheckBar({ text: SAMPLE_COPY, scan });
   assert.equal(bar.status, 'hits');
   assert.ok(bar.items.some((item) => item.replacements.length > 0));
+});
+
+test('scanner enforces public text and enabled-lexicon limits before matching', () => {
+  const maxText = '清'.repeat(SENSITIVE_SCAN_LIMITS.maxTextLength);
+  const maxLexicon = Array.from(
+    { length: SENSITIVE_SCAN_LIMITS.maxEnabledWords },
+    (_, index) => lexiconEntry(`limit-${index}`, `不存在-${index}`)
+  );
+  const atJointBoundary = scanSensitiveText(maxText, maxLexicon);
+  assert.equal(atJointBoundary.complete, true);
+  assert.equal(atJointBoundary.hitCount, 0);
+  assert.equal(
+    maxText.length * maxLexicon.length,
+    SENSITIVE_SCAN_LIMITS.maxWorkUnits
+  );
+
+  assert.throws(
+    () =>
+      scanSensitiveText(
+        `${maxText}超`,
+        [lexiconEntry('one-enabled', '不存在')]
+      ),
+    (error) =>
+      error instanceof SensitiveScanLimitError &&
+      error.limitName === 'maxTextLength' &&
+      error.limit === SENSITIVE_SCAN_LIMITS.maxTextLength &&
+      error.observed === SENSITIVE_SCAN_LIMITS.maxTextLength + 1
+  );
+  assert.throws(
+    () =>
+      scanSensitiveText('', [
+        ...maxLexicon,
+        lexiconEntry('one-too-many', '额外词'),
+      ]),
+    (error) =>
+      error instanceof SensitiveScanLimitError &&
+      error.limitName === 'maxEnabledWords' &&
+      error.observed === SENSITIVE_SCAN_LIMITS.maxEnabledWords + 1
+  );
+
+  const disabledOverflow = Array.from(
+    { length: SENSITIVE_SCAN_LIMITS.maxEnabledWords + 1 },
+    (_, index) => lexiconEntry(`disabled-${index}`, `停用-${index}`, 'disabled')
+  );
+  assert.equal(scanSensitiveText('普通正文', disabledOverflow).complete, true);
+});
+
+test('Foundation maps 50,001-unit query input to deterministic INVALID_STATE', async () => {
+  const module = new SensitiveWordsFoundationModule(
+    new MemorySensitiveWordsRepository([lexiconEntry('text-limit', '根治')])
+  );
+  const text = '清'.repeat(SENSITIVE_SCAN_LIMITS.maxTextLength + 1);
+  for (const action of ['scan', 'check_bar', 'generation_chain_check']) {
+    await assert.rejects(
+      () =>
+        module.query({
+          context: ctx(),
+          input: { action, payload: { text } },
+        }),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'INVALID_STATE' &&
+        /maxTextLength/u.test(error.message) &&
+        !/Zod/u.test(error.name)
+    );
+  }
+});
+
+test('scanner rejects the first raw hit beyond its output budget without a partial result', () => {
+  const lexicon = [lexiconEntry('raw-hit', '禁')];
+  const atBoundary = scanSensitiveText(
+    '禁'.repeat(SENSITIVE_SCAN_LIMITS.maxRawHits),
+    lexicon
+  );
+  assert.equal(atBoundary.complete, true);
+  assert.equal(atBoundary.hitCount, SENSITIVE_SCAN_LIMITS.maxRawHits);
+
+  assert.throws(
+    () =>
+      scanSensitiveText(
+        '禁'.repeat(SENSITIVE_SCAN_LIMITS.maxRawHits + 1),
+        lexicon
+      ),
+    (error) =>
+      error instanceof SensitiveScanLimitError &&
+      error.limitName === 'maxRawHits' &&
+      error.limit === SENSITIVE_SCAN_LIMITS.maxRawHits &&
+      error.observed === SENSITIVE_SCAN_LIMITS.maxRawHits + 1
+  );
+});
+
+test('scan and generation-chain queries share the same guarded enabled source', async () => {
+  const rows = [lexiconEntry('shared-source', '根治')];
+  const repository = new MemorySensitiveWordsRepository(rows);
+  const module = new SensitiveWordsFoundationModule(repository);
+  const direct = (await module.query({
+    context: ctx(),
+    input: { action: 'scan', payload: { text: '根治' } },
+  })) as ReturnType<typeof scanSensitiveText>;
+  const chain = (await module.query({
+    context: ctx(),
+    input: { action: 'generation_chain_check', payload: { text: '根治' } },
+  })) as ReturnType<typeof runGenerationChainSensitiveCheck>;
+
+  assert.equal(direct.complete, true);
+  assert.deepEqual(chain.scan, direct);
+  assert.equal(chain.scanner, 'scanSensitiveText');
+
+  await assert.rejects(
+    () =>
+      module.query({
+        context: ctx(),
+        input: {
+          action: 'generation_chain_check',
+          payload: { text: '根治'.repeat(SENSITIVE_SCAN_LIMITS.maxRawHits + 1) },
+        },
+      }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'INVALID_STATE' &&
+      /maxRawHits/u.test(error.message)
+  );
+  await assert.rejects(
+    () =>
+      module.query({
+        context: ctx(),
+        input: {
+          action: 'scan',
+          payload: { text: '根治'.repeat(SENSITIVE_SCAN_LIMITS.maxRawHits + 1) },
+        },
+      }),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'INVALID_STATE' &&
+      /maxRawHits/u.test(error.message)
+  );
 });
 
 test('scan offsets remain UTF-16 ranges in the original text after NFKC matching', () => {

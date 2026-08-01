@@ -1,8 +1,16 @@
 export {
   ObjectWorkspaceEditor,
+  type ObjectWorkspaceEditorHandle,
   type ObjectWorkspaceBodySelection,
   type ObjectWorkspaceEditorProps,
 } from './object-workspace-editor';
+export {
+  SensitiveInlineCheck,
+  SENSITIVE_INLINE_DEBOUNCE_MS,
+  SENSITIVE_INLINE_TIMEOUT_MS,
+  type SensitiveInlineReplacementRequest,
+  type SensitiveInlineSnapshot,
+} from './sensitive-inline-check';
 
 export {
   ObjectWorkspaceShell,

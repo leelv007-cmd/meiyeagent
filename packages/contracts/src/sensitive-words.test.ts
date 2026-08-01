@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  SENSITIVE_WORD_CATEGORIES,
   createSensitiveWordCommandSchema,
+  SENSITIVE_SCAN_LIMITS,
+  SENSITIVE_WORD_CATEGORIES,
+  scanSensitiveTextQuerySchema,
   sensitiveCheckBarSchema,
   sensitiveScanResultSchema,
   sensitiveWordRecordSchema,
@@ -31,6 +33,7 @@ test('create command defaults category/status/replacements', () => {
 test('scan + check-bar schemas accept fixture-shaped payloads', () => {
   const scan = sensitiveScanResultSchema.parse({
     schemaVersion: 'sensitive-scan/v1',
+    complete: true,
     textLength: 10,
     hitCount: 1,
     hits: [
@@ -85,6 +88,7 @@ test('scan schema rejects mismatched, overlapping, or out-of-bounds ranges', () 
   };
   const result = (overrides: Record<string, unknown>) => ({
     schemaVersion: 'sensitive-scan/v1',
+    complete: true,
     textLength: 4,
     hitCount: 1,
     hits: [hit],
@@ -108,6 +112,48 @@ test('scan schema rejects mismatched, overlapping, or out-of-bounds ranges', () 
     sensitiveScanResultSchema.safeParse(
       result({ hits: [{ ...hit, index: 3 }] })
     ).success,
+    false
+  );
+});
+
+test('public scan limits and completeness fail closed at the contract boundary', () => {
+  assert.deepEqual(SENSITIVE_SCAN_LIMITS, {
+    maxTextLength: 50_000,
+    maxEnabledWords: 500,
+    maxWorkUnits: 25_000_000,
+    maxRawHits: 1_000,
+  });
+  assert.equal(
+    scanSensitiveTextQuerySchema.safeParse({
+      text: 'a'.repeat(SENSITIVE_SCAN_LIMITS.maxTextLength),
+    }).success,
+    true
+  );
+  assert.equal(
+    scanSensitiveTextQuerySchema.safeParse({
+      text: 'a'.repeat(SENSITIVE_SCAN_LIMITS.maxTextLength + 1),
+    }).success,
+    false
+  );
+
+  const completeResult = {
+    schemaVersion: 'sensitive-scan/v1',
+    complete: true,
+    textLength: 0,
+    hitCount: 0,
+    hits: [],
+  };
+  assert.equal(sensitiveScanResultSchema.safeParse(completeResult).success, true);
+  assert.equal(
+    sensitiveScanResultSchema.safeParse({
+      ...completeResult,
+      complete: false,
+    }).success,
+    false
+  );
+  const { complete: _missing, ...missingCompleteness } = completeResult;
+  assert.equal(
+    sensitiveScanResultSchema.safeParse(missingCompleteness).success,
     false
   );
 });

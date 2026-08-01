@@ -2,16 +2,46 @@ import {
   createSensitiveWordCommandSchema,
   deleteSensitiveWordCommandSchema,
   listSensitiveWordsQuerySchema,
+  SENSITIVE_SCAN_LIMITS,
   scanSensitiveTextQuerySchema,
   updateSensitiveWordCommandSchema,
 } from '@meiye/contracts';
 
-import { P1DomainError, type P1Context } from '../foundation/domain.js';
+import { type P1Context, P1DomainError } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
 import { buildSensitiveCheckBar } from './check-bar.js';
 import { runGenerationChainSensitiveCheck } from './generation-chain-check.js';
 import type { SensitiveWordsRepository } from './repository.js';
-import { scanSensitiveText } from './scan.js';
+import {
+  SensitiveScanLimitError,
+  scanSensitiveText,
+} from './scan.js';
+
+function failClosedOnScanLimit<T>(run: () => T): T {
+  try {
+    return run();
+  } catch (error) {
+    if (error instanceof SensitiveScanLimitError) {
+      throw new P1DomainError('INVALID_STATE', error.message);
+    }
+    throw error;
+  }
+}
+
+function scanQueryOf(payload: Record<string, unknown>) {
+  if (
+    typeof payload.text === 'string' &&
+    payload.text.length > SENSITIVE_SCAN_LIMITS.maxTextLength
+  ) {
+    const error = new SensitiveScanLimitError(
+      'maxTextLength',
+      SENSITIVE_SCAN_LIMITS.maxTextLength,
+      payload.text.length,
+    );
+    throw new P1DomainError('INVALID_STATE', error.message);
+  }
+  return scanSensitiveTextQuerySchema.parse(payload);
+}
 
 function actionOf(input: Record<string, unknown>): string {
   const action = input.action;
@@ -118,28 +148,32 @@ export class SensitiveWordsFoundationModule implements P1OperationModule {
     }
 
     if (action === 'scan') {
-      const query = scanSensitiveTextQuerySchema.parse(payload);
+      const query = scanQueryOf(payload);
       const lexicon = await this.repository.listEnabled();
-      return scanSensitiveText(query.text, lexicon);
+      return failClosedOnScanLimit(() => scanSensitiveText(query.text, lexicon));
     }
 
     if (action === 'check_bar') {
-      const query = scanSensitiveTextQuerySchema.parse(payload);
+      const query = scanQueryOf(payload);
       const lexicon = await this.repository.listEnabled();
-      const chain = runGenerationChainSensitiveCheck({
-        text: query.text,
-        lexicon,
-      });
+      const chain = failClosedOnScanLimit(() =>
+        runGenerationChainSensitiveCheck({
+          text: query.text,
+          lexicon,
+        }),
+      );
       return chain.checkBar;
     }
 
     if (action === 'generation_chain_check') {
-      const query = scanSensitiveTextQuerySchema.parse(payload);
+      const query = scanQueryOf(payload);
       const lexicon = await this.repository.listEnabled();
-      return runGenerationChainSensitiveCheck({
-        text: query.text,
-        lexicon,
-      });
+      return failClosedOnScanLimit(() =>
+        runGenerationChainSensitiveCheck({
+          text: query.text,
+          lexicon,
+        }),
+      );
     }
 
     throw new P1DomainError(

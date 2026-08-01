@@ -5,8 +5,8 @@ export {
 export { buildSensitiveCheckBar } from './check-bar.js';
 export { SensitiveWordsFoundationModule } from './foundation-module.js';
 export {
-  runGenerationChainSensitiveCheck,
   type GenerationChainSensitiveCheckResult,
+  runGenerationChainSensitiveCheck,
 } from './generation-chain-check.js';
 export { PostgresSensitiveWordsRepository } from './postgres-repository.js';
 export {
@@ -16,5 +16,7 @@ export {
 export {
   collectCandidateScanText,
   escapeRegExp,
+  SensitiveScanLimitError,
+  type SensitiveScanLimitName,
   scanSensitiveText,
 } from './scan.js';
