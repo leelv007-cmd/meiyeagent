@@ -3020,8 +3020,9 @@ export function triggersPaidMediaExecution(
  * alone never hold (D-043 / composer-card-family T31).
  *
  * This is generation-point cost confirmation, not D-013 class-7 external
- * publish approval. Called from copy/media/note Harness paths; the gate itself
- * decides whether to hold.
+ * publish approval. Called from the copy and media Harness paths; the gate
+ * itself decides whether to hold. The note path calls it from P1 (xhs-spec
+ * §8.2), together with in-stream presentation and e2e fixture sync.
  *
  * Wire kind stays `external_action` so the existing interaction renderer gate
  * (`executionConfirmationInteractionRequestFromQuestion`) and e2e fixtures keep

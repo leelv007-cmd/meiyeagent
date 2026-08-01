@@ -2166,16 +2166,19 @@ test('a copy snapshot with paid media units holds for pre-run confirmation', asy
 test('P0 image_text_note path does not produce execution_confirmation hold (note gate deferred to P1)', async () => {
   // P0 现状 = 无门: note 路径调用点已删（xhs-spec §8.2 把 note 付费媒体过卡
   // 排在 P1，与流内呈现 + e2e fixture 同步一体落地）。
-  // 即使 quote + usageReservation 命中 image_text_note lens 回落
-  // （triggersPaidMediaExecution === true），旅程也不会挂 execution_confirmation。
+  // 即使 quote + note 的真实预留（composer-submission-gate.noteUsageUnits 口径:
+  // copy 1 + image notePageBound）令 triggersPaidMediaExecution === true，
+  // 旅程也不会挂 execution_confirmation。
   //
   // P1 激活 note 路径调用点时，这条测试的断言应反转为正向（期望产生 hold）。
   const request: HarnessWorkflowInput = {
     ...mediaTaskInput('image_text_note'),
     usageReservation: {
-      id: 'usage-reservation-note-lens-fallback',
-      // empty units → lens fallback: image_text_note ⇒ true
-      units: [],
+      id: 'usage-reservation-note-paid-media',
+      units: [
+        { resource: 'copy' as const, quantity: 1 },
+        { resource: 'image' as const, quantity: 3 },
+      ],
     },
     decisionReferences: [
       {
