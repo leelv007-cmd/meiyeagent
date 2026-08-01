@@ -79,6 +79,7 @@ import {
   memory_entry_status_pending,
   memory_entry_status_rejected,
   memory_entry_view_evidence,
+  memory_entry_window_incomplete,
   memory_evidence_proposed_label,
   memory_evidence_source_label,
   memory_evidence_status_label,
@@ -89,12 +90,20 @@ import {
   memory_layer_remembered_description,
   memory_layer_remembered_title,
   memory_page_description,
+  memory_rejected_only_note,
   memory_remembered_identity_empty,
   memory_unbuilt_note,
 } from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { marketingIdentityProjectionQuery } from './marketing-identity-queries';
+
+/**
+ * Merchant vault list window. Contract max is 50; no status filter on the
+ * seam, so we take the largest legal page and avoid claiming empty queues
+ * when nextCursor means rejected rows may have crowded out real work.
+ */
+const MEMORY_ENTRIES_PAGE_LIMIT = 50;
 
 /** Newest proposedAt first within a fixed status group. */
 function sortByProposedAtDesc(
@@ -275,11 +284,16 @@ export function MemoryVaultPage() {
   const queryClient = useQueryClient();
   const identityQuery = useQuery(marketingIdentityProjectionQuery);
   const entriesQuery = useQuery({
-    queryKey: p1QueryKeys.request('memory', 'entries_page', { limit: 20 }),
+    queryKey: p1QueryKeys.request('memory', 'entries_page', {
+      limit: MEMORY_ENTRIES_PAGE_LIMIT,
+    }),
     queryFn: ({ signal }) =>
       queryP1<MemoryEntriesPage>(
         'memory',
-        { action: 'entries_page', payload: { limit: 20 } },
+        {
+          action: 'entries_page',
+          payload: { limit: MEMORY_ENTRIES_PAGE_LIMIT },
+        },
         signal
       ),
   });
@@ -328,10 +342,35 @@ export function MemoryVaultPage() {
   const confirmedEntries = sortByProposedAtDesc(
     allEntries.filter((entry) => entry.status === 'confirmed')
   );
+  const hasVisibleSediment =
+    pendingEntries.length > 0 || confirmedEntries.length > 0;
+  const hasRejectedHistory = allEntries.some(
+    (entry) => entry.status === 'rejected'
+  );
   // Only claim coldness once both reads have actually answered — a pending or
   // failed query is not evidence that the shop has nothing sedimented.
-  const settled = Boolean(entriesQuery.data) && Boolean(identityQuery.data);
+  const entriesReady = entriesQuery.isSuccess;
+  const settled = entriesReady && Boolean(identityQuery.data);
+  // Seam has no status filter; nextCursor means this window is incomplete —
+  // do not assert empty queues after client-side reject filtering.
+  const windowMayHaveMore = Boolean(entriesQuery.data?.nextCursor);
+  // True greenfield only: no raw rows at all (incl. rejected) and no persona.
   const cold = settled && allEntries.length === 0 && !defaultIdentity;
+  // Rejected-only history is not cold and not "越用越懂你" — nothing rememberable.
+  // Only claim this when the page window is complete (no nextCursor).
+  const rejectedOnlyNoIdentity =
+    settled &&
+    !defaultIdentity &&
+    !hasVisibleSediment &&
+    hasRejectedHistory &&
+    !windowMayHaveMore;
+  // Standing 「越懂你的店」 only with identity / visible sediment, or while the
+  // memory read is still unanswered (must not look cold on error/loading).
+  const showStandingDescription =
+    !cold &&
+    !rejectedOnlyNoIdentity &&
+    (Boolean(defaultIdentity) || hasVisibleSediment || !entriesReady);
+  const canClaimEmptyQueues = entriesReady && !cold && !windowMayHaveMore;
   const evidenceEntry =
     evidenceEntryId == null
       ? null
@@ -341,9 +380,13 @@ export function MemoryVaultPage() {
     <div className="flex flex-col gap-4">
       {cold ? (
         <ColdStartNote />
-      ) : (
+      ) : rejectedOnlyNoIdentity ? (
+        <p className="meiye-type-aux" data-testid="memory-rejected-only-note">
+          {memory_rejected_only_note()}
+        </p>
+      ) : showStandingDescription ? (
         <p className="meiye-type-aux">{memory_page_description()}</p>
-      )}
+      ) : null}
 
       {/* Layer 1 — 待你确认 (default on top, P1-4 / D5) */}
       <MemorySection
@@ -379,14 +422,19 @@ export function MemoryVaultPage() {
               ))}
             </div>
           </>
-        ) : cold ? null : (
-          // On a cold page the note above already says nothing was learned;
-          // repeating it as a queue-empty is the four-empty-blocks screen the
-          // cold state exists to replace.
+        ) : canClaimEmptyQueues ? (
+          // Authoritative empty only after a successful full-window read.
           <p className="meiye-type-aux" data-testid="memory-entry-empty">
             {memory_entry_empty()}
           </p>
-        )}
+        ) : entriesReady && windowMayHaveMore ? (
+          <p
+            className="meiye-type-aux"
+            data-testid="memory-pending-window-incomplete"
+          >
+            {memory_entry_window_incomplete()}
+          </p>
+        ) : null}
       </MemorySection>
 
       {/* Layer 2 — 已记住, grouped by domain */}
@@ -418,14 +466,21 @@ export function MemoryVaultPage() {
                     onOpenEvidence={() => setEvidenceEntryId(entry.entryId)}
                   />
                 ))
-              ) : cold ? null : (
+              ) : canClaimEmptyQueues ? (
                 <p
                   className="meiye-type-aux"
                   data-testid="memory-remembered-identity-empty"
                 >
                   {memory_remembered_identity_empty()}
                 </p>
-              )}
+              ) : entriesReady && windowMayHaveMore ? (
+                <p
+                  className="meiye-type-aux"
+                  data-testid="memory-confirmed-window-incomplete"
+                >
+                  {memory_entry_window_incomplete()}
+                </p>
+              ) : null}
             </div>
             {defaultIdentity ? (
               <p data-testid="memory-identity-name">

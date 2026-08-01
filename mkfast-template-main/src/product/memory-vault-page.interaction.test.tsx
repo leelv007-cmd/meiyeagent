@@ -310,7 +310,9 @@ describe('memory vault', () => {
       await screen.findByTestId('memory-entry-evidence-open-candidate-tone')
     );
     const drawer = await screen.findByTestId('memory-evidence-drawer');
-    expect(drawer.textContent).toMatch(/这条记忆的依据/u);
+    // Neutral title — must not claim the pending item is already remembered.
+    expect(drawer.textContent).toMatch(/这条内容的依据/u);
+    expect(drawer.textContent).not.toMatch(/这条记忆的依据/u);
     expect(drawer.textContent).toMatch(/克制、像熟客分享/u);
     expect(screen.getByTestId('memory-evidence-status').textContent).toMatch(
       /待你确认/u
@@ -321,6 +323,57 @@ describe('memory vault', () => {
     // Merchant language only: no internal object-model ids in the drawer.
     expect(drawer.textContent).not.toMatch(
       /conversation-a|turn-a|semanticKey/u
+    );
+  });
+
+  it('opens the evidence drawer on a confirmed entry with remembered status', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({
+              items: [
+                {
+                  entryId: 'confirmed-tone',
+                  semanticKey: 'tone.default',
+                  value: '克制、像熟客分享',
+                  status: 'confirmed',
+                  proposedAt: '2026-07-30T06:00:00.000Z',
+                  source: {
+                    conversationId: 'conversation-b',
+                    sourceTurnId: 'turn-b',
+                    messageRange: { start: 0, end: 1 },
+                    status: 'available',
+                    observedAt: '2026-07-30T05:59:00.000Z',
+                    preview: '以后文案要克制，像熟客分享。',
+                    deletedAt: null,
+                  },
+                },
+              ],
+              nextCursor: null,
+            })
+          : Promise.resolve({
+              identities: [],
+              defaultDecision: null,
+              defaultIdentity: null,
+              decisionRevision: 0,
+            })
+    );
+
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByTestId('memory-entry-evidence-open-confirmed-tone')
+    );
+    const drawer = await screen.findByTestId('memory-evidence-drawer');
+    expect(drawer.textContent).toMatch(/这条内容的依据/u);
+    expect(screen.getByTestId('memory-evidence-status').textContent).toMatch(
+      /已确认/u
+    );
+    expect(screen.getByTestId('memory-evidence-source').textContent).toMatch(
+      /因为你 2026\/7\/30 说过/u
+    );
+    expect(drawer.textContent).not.toMatch(
+      /conversation-b|turn-b|semanticKey/u
     );
   });
 
@@ -580,6 +633,93 @@ describe('memory vault', () => {
     // An unanswered read is not evidence that the shop has learned nothing.
     expect(screen.queryByTestId('memory-cold-start')).not.toBeInTheDocument();
     expect(screen.getByText(/越懂你的店/u)).toBeInTheDocument();
+    // Failed read must not invent two empty queues either.
+    expect(screen.queryByTestId('memory-entry-empty')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('memory-remembered-identity-empty')
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not claim 越懂你的店 when only rejected history exists', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({
+              items: [
+                {
+                  entryId: 'rejected-only',
+                  semanticKey: 'tone.rejected',
+                  value: '已拒绝的建议',
+                  status: 'rejected',
+                  proposedAt: '2026-07-30T06:00:00.000Z',
+                  source: null,
+                },
+              ],
+              nextCursor: null,
+            })
+          : Promise.resolve({
+              identities: [],
+              defaultDecision: null,
+              defaultIdentity: null,
+              decisionRevision: 0,
+            })
+    );
+
+    renderPage();
+
+    expect(
+      await screen.findByTestId('memory-rejected-only-note')
+    ).toHaveTextContent(/驳回过一些建议/u);
+    expect(screen.queryByText(/越懂你的店/u)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('memory-cold-start')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('memory-entry-rejected-only')
+    ).not.toBeInTheDocument();
+    // Layers stay honest about nothing pending / nothing confirmed.
+    expect(screen.getByTestId('memory-entry-empty').textContent).toMatch(
+      /还没有待确认的内容/u
+    );
+    expect(
+      screen.getByTestId('memory-remembered-identity-empty')
+    ).toBeInTheDocument();
+  });
+
+  it('does not claim empty queues when the page window may still hide work', async () => {
+    p1.queryP1.mockImplementation(
+      (module: string, input: { action: string }) =>
+        module === 'memory' && input.action === 'entries_page'
+          ? Promise.resolve({
+              items: [
+                {
+                  entryId: 'rejected-crowding',
+                  semanticKey: 'tone.rejected',
+                  value: '挤占窗口的拒绝',
+                  status: 'rejected',
+                  proposedAt: '2026-07-30T06:00:00.000Z',
+                  source: null,
+                },
+              ],
+              nextCursor: 'cursor-more',
+            })
+          : Promise.resolve({
+              identities: [],
+              defaultDecision: null,
+              defaultIdentity: null,
+              decisionRevision: 0,
+            })
+    );
+
+    renderPage();
+
+    expect(
+      await screen.findByTestId('memory-pending-window-incomplete')
+    ).toHaveTextContent(/更早的记录可能不在这一页/u);
+    expect(screen.queryByTestId('memory-entry-empty')).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId('memory-remembered-identity-empty')
+    ).not.toBeInTheDocument();
+    // Incomplete window is not the standing "we know your shop" claim either.
+    expect(screen.queryByText(/越懂你的店/u)).not.toBeInTheDocument();
   });
 
   it('keeps the standing description once the shop has sediment', async () => {
@@ -603,7 +743,7 @@ describe('memory vault', () => {
     // A shop with a persona but no candidates gets the scoped empty state —
     // that one is about the review queue, not about the product being cold.
     expect(screen.getByTestId('memory-entry-empty').textContent).toMatch(
-      /还没有待确认的门店偏好/u
+      /还没有待确认的内容/u
     );
   });
 });
