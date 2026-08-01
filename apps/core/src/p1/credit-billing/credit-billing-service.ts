@@ -256,7 +256,7 @@ export class CreditBillingService {
     if (comparison > 0 || replacesSubscription) {
       await this.ledger.expireSubscriptionLots({
         workspaceId: context.workspaceId,
-        subscriptionId: active.id,
+        subscriptionId: active.grantLineageId,
         actorId: context.userId,
         correlationId: context.correlationId,
         createdAt: now,

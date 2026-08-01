@@ -369,6 +369,106 @@ test('a replacement subscription id keeps a downgrade pending for the next cycle
   );
 });
 
+test('a replacement subscription id does not regrant the already-paid current cycle', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  const scheduler = new CreditSubscriptionCycleScheduler(subscriptions, ledger, {
+    planFor(tier) {
+      const plan = DEFAULT_CREDIT_PLAN_CATALOG.plans.find(
+        (candidate) => candidate.id === tier,
+      );
+      if (!plan) throw new Error(`Missing ${tier} plan.`);
+      return plan;
+    },
+  });
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-replacement-grant-growth',
+    paymentProductId: 'growth',
+    periodStartsAt: now.toISOString(),
+    subscriptionId: 'subscription-grant-old',
+  });
+  await scheduler.run(now.toISOString());
+
+  now = new Date('2026-01-15T00:00:00.000Z');
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-replacement-grant-starter',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-02-01T00:00:00.000Z',
+    subscriptionId: 'subscription-grant-new',
+  });
+
+  assert.deepEqual(await scheduler.run(now.toISOString()), {
+    cancelledSubscriptions: 0,
+    grantedCycles: 0,
+  });
+  assert.deepEqual(
+    ledger
+      .listLots(context.workspaceId)
+      .filter((lot) => lot.transactionType === 'SUBSCRIPTION_RENEWAL')
+      .map((lot) => [lot.grantIdempotencyKey, lot.originalCredits]),
+    [['grant:sub:subscription-grant-old:0', 1_300]],
+  );
+  assert.equal(
+    (await ledger.project(context.workspaceId, now.toISOString())).availableCredits,
+    1_300,
+  );
+});
+
+test('a same-tier replacement subscription id does not regrant the already-paid current cycle', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  const scheduler = new CreditSubscriptionCycleScheduler(subscriptions, ledger, {
+    planFor(tier) {
+      const plan = DEFAULT_CREDIT_PLAN_CATALOG.plans.find(
+        (candidate) => candidate.id === tier,
+      );
+      if (!plan) throw new Error(`Missing ${tier} plan.`);
+      return plan;
+    },
+  });
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-same-tier-old',
+    paymentProductId: 'growth',
+    periodStartsAt: now.toISOString(),
+    subscriptionId: 'subscription-same-tier-old',
+  });
+  await scheduler.run(now.toISOString());
+
+  now = new Date('2026-01-15T00:00:00.000Z');
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-same-tier-new',
+    paymentProductId: 'growth',
+    periodStartsAt: '2026-02-01T00:00:00.000Z',
+    subscriptionId: 'subscription-same-tier-new',
+  });
+
+  assert.deepEqual(await scheduler.run(now.toISOString()), {
+    cancelledSubscriptions: 0,
+    grantedCycles: 0,
+  });
+  assert.deepEqual(
+    ledger
+      .listLots(context.workspaceId)
+      .filter((lot) => lot.transactionType === 'SUBSCRIPTION_RENEWAL')
+      .map((lot) => [lot.grantIdempotencyKey, lot.originalCredits]),
+    [['grant:sub:subscription-same-tier-old:0', 1_300]],
+  );
+});
+
 test('future and old paid periods do not expand or regress current coverage', async () => {
   let now = new Date('2026-01-01T00:00:00.000Z');
   const ledger = new MemoryCreditLedger();

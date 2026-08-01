@@ -30,6 +30,8 @@ export interface CreditSubscription {
   pendingEffectiveCycle: number | null;
   /** Keeps grant keys unique when a provider retains its id across an upgrade. */
   grantCycleOffset: number;
+  /** Retains paid-cycle grant identity when a provider replaces its subscription id. */
+  grantLineageId: string;
   anchorAt: string;
   /** Number of monthly cycles with a successful payment coverage. */
   paidThroughCycle: number;
@@ -49,6 +51,7 @@ export interface CreditSubscriptionInput {
   pendingInterval?: CreditSubscriptionInterval | null;
   pendingEffectiveCycle?: number | null;
   grantCycleOffset?: number;
+  grantLineageId?: string;
   anchorAt: string;
   paidThroughCycle: number;
   status?: CreditSubscriptionStatus;
@@ -245,7 +248,7 @@ export class CreditSubscriptionCycleScheduler {
           );
         }
         const grantIdempotencyKey = creditSubscriptionGrantKey(
-          subscription.id,
+          subscription.grantLineageId,
           subscription.grantCycleOffset + cycle.cycleIndex,
         );
         if (existingGrants.has(grantIdempotencyKey)) continue;
@@ -256,8 +259,8 @@ export class CreditSubscriptionCycleScheduler {
           credits: plan.credits,
           expirationDate: cycle.endsAt,
           grantIdempotencyKey,
-          id: `subscription:${subscription.id}:${subscription.grantCycleOffset + cycle.cycleIndex}`,
-          sourceRef: subscription.id,
+          id: `subscription:${subscription.grantLineageId}:${subscription.grantCycleOffset + cycle.cycleIndex}`,
+          sourceRef: subscription.grantLineageId,
           transactionType: 'SUBSCRIPTION_RENEWAL',
           workspaceId: subscription.workspaceId,
         });
@@ -282,7 +285,7 @@ export class CreditSubscriptionCycleScheduler {
         if (
           keys.has(
             creditSubscriptionGrantKey(
-              subscription.id,
+              subscription.grantLineageId,
               subscription.grantCycleOffset + cycle.cycleIndex,
             ),
           )
@@ -427,6 +430,8 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
       pendingInterval: input.pendingInterval ?? null,
       pendingEffectiveCycle: input.pendingEffectiveCycle ?? null,
       grantCycleOffset: input.grantCycleOffset ?? 0,
+      grantLineageId:
+        input.grantLineageId ?? existing?.grantLineageId ?? input.id,
       anchorAt: iso(input.anchorAt),
       paidThroughCycle: input.paidThroughCycle,
       status: input.status ?? 'active',
@@ -681,6 +686,7 @@ interface CreditSubscriptionRow extends QueryResultRow {
   pending_interval: CreditSubscriptionInterval | null;
   pending_effective_cycle: number | string | null;
   grant_cycle_offset: number | string;
+  grant_lineage_id: string;
   anchor_at: Date | string;
   paid_through_cycle: number | string;
   status: CreditSubscriptionStatus;
@@ -723,6 +729,7 @@ export class PostgresCreditSubscriptionStore
         pending_interval text CHECK (pending_interval IN ('single_month', 'monthly', 'yearly')),
         pending_effective_cycle integer CHECK (pending_effective_cycle >= 0),
         grant_cycle_offset integer NOT NULL DEFAULT 0 CHECK (grant_cycle_offset >= 0),
+        grant_lineage_id text NOT NULL,
         anchor_at timestamptz NOT NULL,
         paid_through_cycle integer NOT NULL CHECK (paid_through_cycle >= 0),
         status text NOT NULL CHECK (status IN ('active', 'past_due', 'cancelled')),
@@ -746,6 +753,13 @@ export class PostgresCreditSubscriptionStore
         ADD COLUMN IF NOT EXISTS pending_effective_cycle integer;
       ALTER TABLE p1_credit_subscriptions
         ADD COLUMN IF NOT EXISTS grant_cycle_offset integer NOT NULL DEFAULT 0;
+      ALTER TABLE p1_credit_subscriptions
+        ADD COLUMN IF NOT EXISTS grant_lineage_id text;
+      UPDATE p1_credit_subscriptions
+         SET grant_lineage_id = id
+       WHERE grant_lineage_id IS NULL;
+      ALTER TABLE p1_credit_subscriptions
+        ALTER COLUMN grant_lineage_id SET NOT NULL;
       CREATE INDEX IF NOT EXISTS p1_credit_subscriptions_scheduler_idx
         ON p1_credit_subscriptions (status, anchor_at, id)
         WHERE status IN ('active', 'past_due');
@@ -803,9 +817,9 @@ export class PostgresCreditSubscriptionStore
     const result = await this.database.query<CreditSubscriptionRow>(
       `INSERT INTO p1_credit_subscriptions
         (id, workspace_id, tier, interval, pending_tier, pending_interval,
-         pending_effective_cycle, grant_cycle_offset, anchor_at, paid_through_cycle,
+         pending_effective_cycle, grant_cycle_offset, grant_lineage_id, anchor_at, paid_through_cycle,
          status, past_due_at, cancelled_at, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        ON CONFLICT (id) DO UPDATE SET
          workspace_id = EXCLUDED.workspace_id,
          tier = EXCLUDED.tier,
@@ -814,6 +828,7 @@ export class PostgresCreditSubscriptionStore
          pending_interval = EXCLUDED.pending_interval,
          pending_effective_cycle = EXCLUDED.pending_effective_cycle,
          grant_cycle_offset = EXCLUDED.grant_cycle_offset,
+         grant_lineage_id = EXCLUDED.grant_lineage_id,
          anchor_at = EXCLUDED.anchor_at,
          paid_through_cycle = EXCLUDED.paid_through_cycle,
          status = EXCLUDED.status,
@@ -830,6 +845,7 @@ export class PostgresCreditSubscriptionStore
         input.pendingInterval ?? null,
         input.pendingEffectiveCycle ?? null,
         input.grantCycleOffset ?? 0,
+        input.grantLineageId ?? input.id,
         iso(input.anchorAt),
         input.paidThroughCycle,
         input.status ?? 'active',
@@ -1292,6 +1308,7 @@ function subscriptionFromRow(row: CreditSubscriptionRow): CreditSubscription {
         ? null
         : Number(row.pending_effective_cycle),
     grantCycleOffset: Number(row.grant_cycle_offset),
+    grantLineageId: row.grant_lineage_id,
     anchorAt: iso(row.anchor_at),
     paidThroughCycle: Number(row.paid_through_cycle),
     status: row.status,
