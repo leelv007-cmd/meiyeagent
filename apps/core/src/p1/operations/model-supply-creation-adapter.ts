@@ -6,10 +6,7 @@ import type {
   ModelSupplyResult,
   ReferenceAssetResolverPort,
 } from '../model-supply/index.js';
-import type {
-  MerchantExecutionInputBindingPort,
-  MerchantExecutionInputSnapshot,
-} from '../product-billing/durable-service.js';
+import type { MerchantExecutionInputSnapshot } from '../product-billing/durable-service.js';
 import { OperationsError } from './application-service.js';
 import { nativeSupplyOperation } from '../harness/image-intent-compiler.js';
 import type {
@@ -315,7 +312,6 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
   constructor(
     private readonly controlPlane: ModelSupplyControlPlaneService,
     private readonly referenceAssets?: ReferenceAssetResolverPort,
-    private readonly merchantExecutionInputBinding?: MerchantExecutionInputBindingPort,
   ) {}
 
   async inspect(
@@ -481,21 +477,6 @@ export class ModelSupplyCreationExecutor implements CreationExecutorPort {
           mode: 'fixed',
         },
       } as const;
-    if (input.billingTaskId && input.billingQuoteRevision) {
-      if (!this.merchantExecutionInputBinding) {
-        throw new OperationsError(
-          'MERCHANT_EXECUTION_BINDING_UNAVAILABLE',
-          'Merchant execution input binding is unavailable.',
-          503,
-        );
-      }
-      await this.merchantExecutionInputBinding.bindMerchantExecutionInput({
-        inputSnapshot: structuredClone(providerInput),
-        quoteRevision: input.billingQuoteRevision,
-        taskId: input.billingTaskId,
-        workspaceId: input.context.workspaceId,
-      });
-    }
     const result = await this.controlPlane.submitGeneration(
       context,
       submission,

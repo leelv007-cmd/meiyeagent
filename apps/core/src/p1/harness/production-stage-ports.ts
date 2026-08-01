@@ -828,9 +828,17 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       },
       { runner },
     );
-    if ('state' in selection || !this.primitiveCheck) {
+    if ('state' in selection) {
       return selection;
     }
+    const selected = snapshot
+      ? {
+          ...selection,
+          merchantExecutionEffectKey:
+            `merchant-execution:${snapshot.task.id}:wf:${input.workflowId}:s4:${copyUnit(input.context.bundle.revision)}:${selection.winner.candidateId}`,
+        }
+      : selection;
+    if (!this.primitiveCheck) return selected;
     const correlationId = `wf:${input.workflowId}:s4:agent-check`;
     const lifecycle = harnessExecutionChildLifecycleInput({
       request: input.request,
@@ -866,7 +874,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
         structuredClone(checked.violations),
       );
     }
-    return selection;
+    return selected;
   }
 
   async assembleAndDeliver(

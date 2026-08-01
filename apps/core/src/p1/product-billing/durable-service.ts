@@ -60,12 +60,34 @@ export interface ClaimMerchantExecutionInput extends MerchantExecutionContract {
 
 export interface MerchantExecutionInputSnapshot {
   input: Record<string, unknown> | null;
+  /** Exact provider system instructions, when the upstream API accepts them separately. */
+  instructions?: string;
   prompt: string;
 }
 
-/** Server-only first binding of the exact submission that will reach a provider. */
+/** Server-only binding of the exact primary submission that will reach a provider. */
 export interface MerchantExecutionInputBindingPort {
   bindMerchantExecutionInput(input: {
+    inputSnapshot: MerchantExecutionInputSnapshot;
+    quoteRevision: string;
+    taskId: string;
+    workspaceId: string;
+  }): MaybePromise<void>;
+}
+
+/** Selects one completed auxiliary provider effect as the task's canonical result. */
+export interface MerchantExecutionPromotionPort {
+  promoteMerchantExecution(input: {
+    quoteRevision: string;
+    sourceEffectKey: string;
+    taskId: string;
+    workspaceId: string;
+  }): MaybePromise<void>;
+}
+
+/** Server-only binding of the immutable root submission admitted for billing. */
+export interface MerchantSubmissionInputBindingPort {
+  bindMerchantSubmissionInput(input: {
     inputSnapshot: MerchantExecutionInputSnapshot;
     quoteRevision: string;
     taskId: string;
@@ -97,7 +119,8 @@ export function merchantExecutionInputHashes(input: MerchantExecutionInputSnapsh
   };
 }
 
-export interface MerchantExecutionBillingPort {
+export interface MerchantExecutionBillingPort
+  extends MerchantExecutionInputBindingPort {
   readMerchantExecutionContract(
     input: Pick<ClaimMerchantExecutionInput, 'taskId' | 'workspaceId'>,
   ): MaybePromise<MerchantExecutionContract>;
@@ -143,6 +166,35 @@ function merchantExecutionContractHash(
       }),
     )
     .digest('hex');
+}
+
+function merchantExecutionMatchesReservation(
+  input: ClaimMerchantExecutionInput,
+  quote: ProductQuoteSnapshot | null,
+  usage: ProductUsageRecord | null,
+) {
+  return Boolean(
+    quote &&
+      usage &&
+      quote.workspaceId === input.workspaceId &&
+      quote.taskId === input.taskId &&
+      quote.revision === input.quoteRevision &&
+      (quote.lifecycleStatus === 'reserved' ||
+        quote.lifecycleStatus === 'dispatched') &&
+      quote.operation === input.operation &&
+      quote.catalogModelId === input.catalogModelId &&
+      quote.outputCount === input.outputCount &&
+      quote.submissionContractHash === input.submissionContractHash &&
+      quote.submissionPromptHash === input.submissionPromptHash &&
+      quote.submissionReferenceAssetsHash ===
+        input.submissionReferenceAssetsHash &&
+      quote.submissionInputAssetsHash === input.submissionInputAssetsHash &&
+      (quote.targetSeconds ?? null) === (input.targetSeconds ?? null) &&
+      usage.workspaceId === input.workspaceId &&
+      usage.taskId === input.taskId &&
+      usage.quoteId === quote.quoteId &&
+      usage.status === 'reserved',
+  );
 }
 
 function merchantExecutionClaimExpired(
@@ -217,7 +269,9 @@ export class DurableProductBillingService
     ProductBillingApplicationPort,
     BillingLifecyclePort,
     MerchantExecutionBillingPort,
-    MerchantExecutionInputBindingPort
+    MerchantExecutionInputBindingPort,
+    MerchantExecutionPromotionPort,
+    MerchantSubmissionInputBindingPort
 {
   constructor(
     private readonly repository: ProductBillingRepository,
@@ -320,6 +374,205 @@ export class DurableProductBillingService
   }
 
   async bindMerchantExecutionInput(input: {
+    inputSnapshot: MerchantExecutionInputSnapshot;
+    quoteRevision: string;
+    taskId: string;
+    workspaceId: string;
+  }): Promise<void> {
+    const workspaceId = this.workspace(input.workspaceId);
+    const effectKey = `merchant-execution:${input.taskId}`;
+    const inputFingerprint = fingerprintValue(input.inputSnapshot);
+    const hashes = merchantExecutionInputHashes(input.inputSnapshot);
+    await this.run(() =>
+      this.repository.withTransaction(
+        workspaceId,
+        [`task:${input.taskId}`, `merchant-effect:${effectKey}`],
+        async (transaction) => {
+          const quote = await transaction.getQuoteByTask(
+            workspaceId,
+            input.taskId,
+          );
+          const usage = await transaction.getUsage(workspaceId, input.taskId);
+          const existing = await transaction.getMerchantExecution(
+            workspaceId,
+            input.taskId,
+            effectKey,
+          );
+          if (existing) {
+            if (
+              fingerprintValue(existing.inputSnapshot) !== inputFingerprint
+            ) {
+              throw new P1DomainError(
+                'INVALID_STATE',
+                'Primary merchant execution input is already bound to another provider submission.',
+              );
+            }
+            if (
+              quote?.workspaceId === workspaceId &&
+              quote.taskId === input.taskId &&
+              quote.revision === input.quoteRevision
+            ) {
+              return;
+            }
+          }
+          if (
+            !quote ||
+            !usage ||
+            quote.workspaceId !== workspaceId ||
+            quote.taskId !== input.taskId ||
+            quote.revision !== input.quoteRevision ||
+            (quote.lifecycleStatus !== 'reserved' &&
+              quote.lifecycleStatus !== 'dispatched') ||
+            usage.workspaceId !== workspaceId ||
+            usage.taskId !== input.taskId ||
+            usage.quoteId !== quote.quoteId ||
+            usage.status !== 'reserved'
+          ) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Primary merchant execution input must bind to the exact reserved credit quote.',
+            );
+          }
+          const rootBinding = [
+            quote.submissionPromptHash,
+            quote.submissionReferenceAssetsHash,
+            quote.submissionInputAssetsHash,
+          ];
+          if (rootBinding.some(Boolean) && rootBinding.some((value) => !value)) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Merchant submission input binding is incomplete.',
+            );
+          }
+          if (rootBinding.every((value) => !value)) {
+            await transaction.saveQuote(workspaceId, {
+              ...quote,
+              submissionInputAssetsHash: hashes.inputAssetsHash,
+              submissionPromptHash: hashes.promptHash,
+              submissionReferenceAssetsHash: hashes.referenceAssetsHash,
+            });
+          } else if (
+            quote.submissionPromptHash !== hashes.promptHash ||
+            quote.submissionReferenceAssetsHash !== hashes.referenceAssetsHash ||
+            quote.submissionInputAssetsHash !== hashes.inputAssetsHash
+          ) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Primary provider input does not match the reserved merchant submission.',
+            );
+          }
+          await transaction.saveMerchantExecution({
+            contractHash: fingerprintValue({
+              inputSnapshot: input.inputSnapshot,
+              quoteRevision: input.quoteRevision,
+            }),
+            effectKey,
+            idempotencyKey: `merchant-execution-binding:${input.taskId}:${input.quoteRevision}`,
+            inputSnapshot: structuredClone(input.inputSnapshot),
+            status: 'bound',
+            taskId: input.taskId,
+            workspaceId,
+          });
+        },
+      ),
+    );
+  }
+
+  async promoteMerchantExecution(input: {
+    quoteRevision: string;
+    sourceEffectKey: string;
+    taskId: string;
+    workspaceId: string;
+  }): Promise<void> {
+    const workspaceId = this.workspace(input.workspaceId);
+    const rootEffectKey = `merchant-execution:${input.taskId}`;
+    if (
+      input.sourceEffectKey === rootEffectKey ||
+      !input.sourceEffectKey.startsWith(`${rootEffectKey}:`)
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Canonical merchant execution promotion requires an auxiliary task effect.',
+      );
+    }
+    const promotionKey = `merchant-execution-promotion:${input.sourceEffectKey}`;
+    await this.run(() =>
+      this.repository.withTransaction(
+        workspaceId,
+        [
+          `task:${input.taskId}`,
+          `merchant-effect:${input.sourceEffectKey}`,
+          `merchant-effect:${rootEffectKey}`,
+        ],
+        async (transaction) => {
+          const existing = await transaction.getMerchantExecution(
+            workspaceId,
+            input.taskId,
+            rootEffectKey,
+          );
+          if (existing) {
+            if (
+              existing.status === 'completed' &&
+              existing.idempotencyKey === promotionKey
+            ) {
+              return;
+            }
+            throw new P1DomainError(
+              'IDEMPOTENCY_CONFLICT',
+              `Billing task ${input.taskId} already selected another canonical merchant execution.`,
+            );
+          }
+          const [quote, usage, source] = await Promise.all([
+            transaction.getQuoteByTask(workspaceId, input.taskId),
+            transaction.getUsage(workspaceId, input.taskId),
+            transaction.getMerchantExecution(
+              workspaceId,
+              input.taskId,
+              input.sourceEffectKey,
+            ),
+          ]);
+          if (
+            !quote ||
+            !usage ||
+            quote.workspaceId !== workspaceId ||
+            quote.taskId !== input.taskId ||
+            quote.revision !== input.quoteRevision ||
+            (quote.lifecycleStatus !== 'reserved' &&
+              quote.lifecycleStatus !== 'dispatched') ||
+            usage.workspaceId !== workspaceId ||
+            usage.taskId !== input.taskId ||
+            usage.quoteId !== quote.quoteId ||
+            usage.status !== 'reserved' ||
+            !source ||
+            source.status !== 'completed' ||
+            source.idempotencyKey !== input.sourceEffectKey ||
+            source.result === undefined
+          ) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Canonical merchant execution requires a completed auxiliary effect on the exact reserved quote.',
+            );
+          }
+          await transaction.saveMerchantExecution({
+            contractHash: fingerprintValue({
+              quoteRevision: input.quoteRevision,
+              sourceContractHash: source.contractHash,
+              sourceEffectKey: input.sourceEffectKey,
+            }),
+            effectKey: rootEffectKey,
+            idempotencyKey: promotionKey,
+            inputSnapshot: structuredClone(source.inputSnapshot),
+            result: structuredClone(source.result),
+            status: 'completed',
+            taskId: input.taskId,
+            workspaceId,
+          });
+        },
+      ),
+    );
+  }
+
+  async bindMerchantSubmissionInput(input: {
     inputSnapshot: MerchantExecutionInputSnapshot;
     quoteRevision: string;
     taskId: string;
@@ -439,6 +692,17 @@ export class DurableProductBillingService
     | { decision: 'replay'; result: T }
   > {
     const workspaceId = this.workspace(input.workspaceId);
+    const suppliedHashes = merchantExecutionInputHashes(input.inputSnapshot);
+    if (
+      suppliedHashes.promptHash !== input.promptHash ||
+      suppliedHashes.referenceAssetsHash !== input.referenceAssetsHash ||
+      suppliedHashes.inputAssetsHash !== input.inputAssetsHash
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Merchant execution hashes must match the exact provider input snapshot.',
+      );
+    }
     const contractHash = merchantExecutionContractHash(input);
     return this.run(() =>
       this.repository.withTransaction(
@@ -450,7 +714,45 @@ export class DurableProductBillingService
             input.taskId,
             input.effectKey,
           );
+          const primaryMerchantEffect =
+            input.effectKey === `merchant-execution:${input.taskId}`;
           if (existing) {
+            if (existing.status === 'bound') {
+              if (
+                !primaryMerchantEffect ||
+                fingerprintValue(existing.inputSnapshot) !==
+                  fingerprintValue(input.inputSnapshot)
+              ) {
+                throw new P1DomainError(
+                  'INVALID_STATE',
+                  `Billing task ${input.taskId} primary merchant execution does not match its server binding.`,
+                );
+              }
+              const quote = await transaction.getQuoteByTask(
+                workspaceId,
+                input.taskId,
+              );
+              const usage = await transaction.getUsage(
+                workspaceId,
+                input.taskId,
+              );
+              if (!merchantExecutionMatchesReservation(input, quote, usage)) {
+                throw new P1DomainError(
+                  'INVALID_STATE',
+                  'Merchant execution must exactly match the reserved credit quote contract.',
+                );
+              }
+              await transaction.saveMerchantExecution({
+                ...existing,
+                contractHash,
+                idempotencyKey: input.idempotencyKey,
+                status: 'claimed',
+              });
+              return {
+                decision: 'execute' as const,
+                inputSnapshot: structuredClone(existing.inputSnapshot),
+              };
+            }
             if (
               existing.contractHash !== contractHash ||
               existing.idempotencyKey !== input.idempotencyKey
@@ -476,43 +778,21 @@ export class DurableProductBillingService
             };
           }
 
-          const [quote, usage] = await Promise.all([
-            transaction.getQuoteByTask(workspaceId, input.taskId),
-            transaction.getUsage(workspaceId, input.taskId),
-          ]);
-          const primaryMerchantEffect =
-            input.effectKey === `merchant-execution:${input.taskId}`;
-          if (
-            !quote ||
-            !usage ||
-            quote.workspaceId !== workspaceId ||
-            quote.taskId !== input.taskId ||
-            quote.revision !== input.quoteRevision ||
-            (quote.lifecycleStatus !== 'reserved' &&
-              quote.lifecycleStatus !== 'dispatched') ||
-            quote.operation !== input.operation ||
-            quote.catalogModelId !== input.catalogModelId ||
-            quote.outputCount !== input.outputCount ||
-            quote.submissionContractHash !== input.submissionContractHash ||
-            (primaryMerchantEffect &&
-              (!input.submissionPromptHash ||
-                !input.submissionReferenceAssetsHash ||
-                !input.submissionInputAssetsHash ||
-                quote.submissionPromptHash !== input.submissionPromptHash ||
-                quote.submissionReferenceAssetsHash !==
-                  input.submissionReferenceAssetsHash ||
-                quote.submissionInputAssetsHash !==
-                  input.submissionInputAssetsHash ||
-                input.promptHash !== input.submissionPromptHash ||
-                input.referenceAssetsHash !==
-                  input.submissionReferenceAssetsHash ||
-                input.inputAssetsHash !== input.submissionInputAssetsHash)) ||
-            (quote.targetSeconds ?? null) !== (input.targetSeconds ?? null) ||
-            usage.workspaceId !== workspaceId ||
-            usage.taskId !== input.taskId ||
-            usage.quoteId !== quote.quoteId ||
-            usage.status !== 'reserved'
-          ) {
+          const quote = await transaction.getQuoteByTask(
+            workspaceId,
+            input.taskId,
+          );
+          const usage = await transaction.getUsage(
+            workspaceId,
+            input.taskId,
+          );
+          if (primaryMerchantEffect) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Primary merchant execution requires an exact server-owned provider input binding.',
+            );
+          }
+          if (!merchantExecutionMatchesReservation(input, quote, usage)) {
             throw new P1DomainError(
               'INVALID_STATE',
               'Merchant execution must exactly match the reserved credit quote contract.',

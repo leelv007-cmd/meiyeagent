@@ -65,6 +65,7 @@ import {
   type AdminConfigRepository,
 } from '../admin-config/foundation-module.js';
 import type { TaskRecallDueInput } from '../due-delivery/task-recall-producer.js';
+import type { MerchantExecutionPromotionPort } from '../product-billing/durable-service.js';
 
 export const HARNESS_INTERACTION_CONTINUATION_LAYOUT =
   'bounded_followup_v1' as const;
@@ -172,6 +173,7 @@ export type HarnessDbosWorkflowInput =
 export interface HarnessBillingSettlementPort
   extends HarnessBillingSettlementExecutor {
   scheduleCompensation(input: HarnessBillingCompensationTask): Promise<void>;
+  promoteMerchantExecution?: MerchantExecutionPromotionPort['promoteMerchantExecution'];
   completeCompensation?(
     input: HarnessBillingCompensationTask,
   ): Promise<void>;
@@ -351,6 +353,13 @@ export function registerHarnessDbosWorkflow(
           name: effectIdempotencyKey.replaceAll(':', '-'),
         });
       },
+      ...(billing?.promoteMerchantExecution
+        ? {
+            finalizeMerchantExecution: async (input) => {
+              await billing.promoteMerchantExecution!(input);
+            },
+          }
+        : {}),
       awaitSignal<T>(
         topic: string,
         options: { timeoutSeconds: number },

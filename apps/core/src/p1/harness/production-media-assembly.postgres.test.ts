@@ -29,6 +29,7 @@ import {
 import type {
   ClaimMerchantExecutionInput,
   MerchantExecutionBillingPort,
+  MerchantExecutionPromotionPort,
 } from '../product-billing/durable-service.js';
 import { buildContentPackage } from '../operations/content-package.js';
 import { MemoryContextBundleRepository } from '../operations/context-bundle-repository.js';
@@ -42,6 +43,7 @@ import type { CredentialSecretBrokerPort } from '../supply-registry/secret-broke
 import {
   DbosHarnessWorkflowStarter,
   registerHarnessDbosWorkflow,
+  resumeHarnessDbosWorkflow,
 } from './dbos-workflow.js';
 import {
   HARNESS_BUILTIN_PROMPTS,
@@ -338,7 +340,15 @@ test(
         },
         executionChildObservability,
       });
-      const workflow = registerHarnessDbosWorkflow(stages, harnessStore);
+      const workflow = registerHarnessDbosWorkflow(stages, harnessStore, {
+        billing: {
+          async commit() {},
+          promoteMerchantExecution: (input) =>
+            supply.merchantExecutionBilling.promoteMerchantExecution(input),
+          async refund() {},
+          async scheduleCompensation() {},
+        },
+      });
       DBOS.setConfig({
         name: 'beauty-marketing-production-media-assembly',
         systemDatabaseUrl,
@@ -384,6 +394,26 @@ test(
         await admission.submit({ taskId: workflowId, ...request }),
         { workflowId, replayed: false },
       );
+      const confirmation = await waitForExecutionConfirmation(
+        harnessStore,
+        workspaceId,
+        workflowId,
+      );
+      assert.deepEqual(confirmation.executionConfirmationAuthority, {
+        kind: 'external_action',
+        revision: 'execution-external-action/v1',
+      });
+      await resumeHarnessDbosWorkflow(workspaceId, workflowId, {
+        decision: { state: 'accepted', value: 'approved' },
+        idempotencyKey: `approve-paid-generation:${workflowId}`,
+        patch: {
+          field: confirmation.response.field,
+          reason: confirmation.response.reason,
+          value: 'approved',
+        },
+        questionId: confirmation.questionId,
+        workflowRevision: confirmation.workflowRevision,
+      });
       await providerStarted;
       promptHead = productionPromptBundle('262-test-v2');
       selectedSkillManifest = {
@@ -864,6 +894,16 @@ test(
       assert.ok(submission);
       assert.equal(submission.billingTaskId, snapshot.task.id);
       assert.equal(submission.billingQuoteRevision, snapshot.quote.revision);
+      assert.equal(submission.productUsageQuantity, 0);
+      assert.deepEqual(supply.promotedEffects, [
+        {
+          quoteRevision: snapshot.quote.revision,
+          sourceEffectKey:
+            `merchant-execution:${snapshot.task.id}:${submission.idempotencyKey}`,
+          taskId: snapshot.task.id,
+          workspaceId,
+        },
+      ]);
       assert.deepEqual(submission.selection, {
         mode: 'fixed',
         catalogModelId: snapshot.catalogModel.id,
@@ -1150,6 +1190,11 @@ function productionMediaRequest(
       assetReferences: snapshot.sources.assets.map(({ id }) => id),
     },
     executionSnapshot: snapshot,
+    usageReservation: {
+      credits: 5,
+      id: `usage-${workflowId}`,
+      units: [],
+    },
   };
 }
 
@@ -1307,6 +1352,11 @@ function productionModelSupply(providerRequests: ProviderExecutionRequest[]) {
     publishedAt: now,
     entries: capabilityEntries,
   });
+  const promotedEffects: Array<
+    Parameters<MerchantExecutionPromotionPort['promoteMerchantExecution']>[0]
+  > = [];
+  const merchantExecutionBilling =
+    productionMerchantExecutionBilling(promotedEffects);
   const models = new ModelSupplyApplicationService({
     catalogRevisionId: 'model-r1',
     models: catalogModels,
@@ -1327,11 +1377,13 @@ function productionModelSupply(providerRequests: ProviderExecutionRequest[]) {
         };
       },
     },
-    merchantExecutionBilling: productionMerchantExecutionBilling(),
+    merchantExecutionBilling,
   });
   return {
     credentialAssemblyRequests,
+    merchantExecutionBilling,
     models,
+    promotedEffects,
     publishNextCatalogHead(workspaceId: string) {
       models.applyCatalogRevision(
         workspaceId,
@@ -1355,7 +1407,11 @@ function productionModelSupply(providerRequests: ProviderExecutionRequest[]) {
   };
 }
 
-function productionMerchantExecutionBilling(): MerchantExecutionBillingPort {
+function productionMerchantExecutionBilling(
+  promotedEffects: Array<
+    Parameters<MerchantExecutionPromotionPort['promoteMerchantExecution']>[0]
+  >,
+): MerchantExecutionBillingPort & MerchantExecutionPromotionPort {
   const executions = new Map<
     string,
     {
@@ -1364,6 +1420,9 @@ function productionMerchantExecutionBilling(): MerchantExecutionBillingPort {
     }
   >();
   return {
+    async bindMerchantExecutionInput() {
+      throw new Error('Auxiliary media execution must not bind the primary slot.');
+    },
     async readMerchantExecutionContract() {
       return {
         catalogModelId: 'model-production-media',
@@ -1400,6 +1459,32 @@ function productionMerchantExecutionBilling(): MerchantExecutionBillingPort {
       if (!existing) throw new Error('Production media execution was not claimed.');
       existing.result = structuredClone(input.result);
       return input.result;
+    },
+    async promoteMerchantExecution(input) {
+      const sourceKey =
+        `${input.workspaceId}:${input.taskId}:${input.sourceEffectKey}`;
+      const rootKey =
+        `${input.workspaceId}:${input.taskId}:merchant-execution:${input.taskId}`;
+      const source = executions.get(sourceKey);
+      const existing = executions.get(rootKey);
+      if (existing) {
+        if (
+          promotedEffects.some(
+            (promotion) =>
+              promotion.taskId === input.taskId &&
+              promotion.workspaceId === input.workspaceId &&
+              promotion.sourceEffectKey === input.sourceEffectKey,
+          )
+        ) {
+          return;
+        }
+        throw new Error('Another production media effect is already canonical.');
+      }
+      if (source?.result === undefined) {
+        throw new Error('Production media promotion requires a completed effect.');
+      }
+      executions.set(rootKey, structuredClone(source));
+      promotedEffects.push(structuredClone(input));
     },
   };
 }
@@ -1532,6 +1617,19 @@ async function assertPersistedJoin(
       },
     },
   ]);
+}
+
+async function waitForExecutionConfirmation(
+  store: PostgresHarnessStore,
+  workspaceId: string,
+  workflowId: string,
+) {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const pending = await store.readPending(workspaceId, workflowId);
+    if (pending?.executionConfirmationAuthority) return pending;
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error('Paid media execution confirmation was not registered.');
 }
 
 async function cleanup(

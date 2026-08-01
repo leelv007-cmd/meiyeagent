@@ -150,7 +150,7 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
       );
     }
     if (this.merchantExecutionInput) {
-      await billing.bindMerchantExecutionInput({
+      await billing.bindMerchantSubmissionInput({
         inputSnapshot: await this.merchantExecutionInput.resolve({
           ...(snapshot.deliverable.aspectRatio
             ? { aspectRatio: snapshot.deliverable.aspectRatio }

@@ -39,6 +39,7 @@ import {
   merchantExecutionInputHashes,
   type ClaimMerchantExecutionInput,
   type MerchantExecutionBillingPort,
+  type MerchantExecutionInputSnapshot,
 } from '../product-billing/durable-service.js';
 
 const EXECUTION_ATTEMPT_BUDGET_SUSPENSION_CODE =
@@ -766,11 +767,16 @@ function merchantCopyCandidateCount(
   return undefined;
 }
 
-function merchantExecutionInputSnapshot(submission: ModelSupplySubmission) {
+function modelSupplyMerchantExecutionInputSnapshot(
+  submission: ModelSupplySubmission,
+) {
   return {
     input: submission.input
       ? (structuredClone(submission.input) as Record<string, unknown>)
       : null,
+    ...(submission.promptBinding?.content
+      ? { instructions: submission.promptBinding.content }
+      : {}),
     prompt: submission.prompt,
   };
 }
@@ -1781,8 +1787,9 @@ export class ModelSupplyApplicationService {
   }
 
   async submit(submission: ModelSupplySubmission): Promise<ModelSupplyResult> {
+    const prepared = await this.prepareSubmission(submission);
     return this.executeMerchantSubmission(
-      submission,
+      prepared,
       async (bound, merchantEffectKey) => {
         if (
           this.mediaRuntime &&
@@ -1800,7 +1807,7 @@ export class ModelSupplyApplicationService {
           );
         }
         return this.executeSubmission(
-          await this.prepareSubmission(bound),
+          bound,
           this.execution,
           merchantEffectKey ? { effectIdempotencyKey: merchantEffectKey } : {},
         );
@@ -1819,11 +1826,12 @@ export class ModelSupplyApplicationService {
     ) {
       throw new Error('Canvas text outbox accepts only language generation.');
     }
+    const prepared = await this.prepareSubmission(submission);
     return this.executeMerchantSubmission(
-      submission,
+      prepared,
       async (bound, merchantEffectKey) =>
         this.executeSubmission(
-          await this.prepareSubmission(bound),
+          bound,
           this.execution,
           {
             effectIdempotencyKey: merchantEffectKey ?? effectIdempotencyKey,
@@ -1849,11 +1857,12 @@ export class ModelSupplyApplicationService {
     ) {
       throw new Error('Canvas text streaming requires one fixed text model.');
     }
+    const prepared = await this.prepareSubmission(submission);
     return this.executeMerchantSubmission(
-      submission,
+      prepared,
       async (bound, merchantEffectKey) =>
         this.executeSubmission(
-      await this.prepareSubmission(bound),
+      bound,
       {
         execute: async (request): Promise<ProviderExecutionResponse> => {
           const unavailable = (message: string, errorCode: string) => ({
@@ -1980,6 +1989,9 @@ export class ModelSupplyApplicationService {
       merchantEffectKey?: string,
     ) => Promise<ModelSupplyResult>,
     suppliedEffectKey?: string,
+    exactInputSnapshot?: (
+      submission: ModelSupplySubmission,
+    ) => MerchantExecutionInputSnapshot,
   ): Promise<ModelSupplyResult> {
     const taskId = submission.billingTaskId;
     const quoteRevision = submission.billingQuoteRevision;
@@ -2076,7 +2088,17 @@ export class ModelSupplyApplicationService {
         mode: 'fixed' as const,
       },
     } satisfies ModelSupplySubmission;
-    const inputSnapshot = merchantExecutionInputSnapshot(bound);
+    const inputSnapshot = exactInputSnapshot
+      ? exactInputSnapshot(bound)
+      : modelSupplyMerchantExecutionInputSnapshot(bound);
+    if (!auxiliaryEffect) {
+      await merchantBilling.bindMerchantExecutionInput({
+        inputSnapshot,
+        quoteRevision,
+        taskId,
+        workspaceId: bound.workspaceId,
+      });
+    }
     const claim: ClaimMerchantExecutionInput = {
       ...reserved,
       ...merchantExecutionInputHashes(inputSnapshot),
@@ -2213,6 +2235,14 @@ export class ModelSupplyApplicationService {
         streaming: Boolean(input.onPartialOutput),
         workspaceId: submission.workspaceId,
       });
+    const structuredProviderPrompt = JSON.stringify({
+      instructions: input.instructions,
+      prompt: input.prompt,
+      schema: toJSONSchema(input.schema),
+      schemaName: input.schemaName,
+      schemaRevision: submission.promptRevision ?? '',
+      streaming: Boolean(input.onPartialOutput),
+    });
     return this.executeMerchantSubmission(submission, (bound, merchantEffectKey) =>
       this.executeSubmission(bound, {
       execute: async (request) => {
@@ -2322,6 +2352,11 @@ export class ModelSupplyApplicationService {
         ...(merchantEffectKey
           ? { effectIdempotencyKey: merchantEffectKey }
           : {}),
+      }),
+      undefined,
+      (bound) => ({
+        ...modelSupplyMerchantExecutionInputSnapshot(bound),
+        prompt: structuredProviderPrompt,
       }),
     );
   }

@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 import type { ProductQuoteSnapshot, ProductUsageRecord } from '@meiye/contracts';
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
-import type { MerchantExecutionBillingPort } from '../product-billing/durable-service.js';
+import type {
+  MerchantExecutionBillingPort,
+  MerchantExecutionInputSnapshot,
+} from '../product-billing/durable-service.js';
 import {
   CatalogRevisionRegistry,
   createDefaultCatalogModels,
@@ -24,6 +28,7 @@ import {
   ModelSupplyApplicationService,
   RecordedProviderExecutionPort,
   type MediaProviderLifecyclePort,
+  type ModelSupplyPromptResolver,
   type ProviderExecutionPort,
   type ReferenceAssetResolverPort,
 } from './index.js';
@@ -65,6 +70,7 @@ function setup(
     new MemoryAdminConfigRepository(),
   planningControlPlane?: ModelSupplyPlanningControlPlanePort,
   merchantExecutionBilling?: MerchantExecutionBillingPort,
+  promptResolver?: ModelSupplyPromptResolver,
 ) {
   const repository = new MemoryModelSupplyControlPlaneRepository();
   const models = new ModelSupplyApplicationService({
@@ -76,6 +82,7 @@ function setup(
     execution,
     ...(referenceAssets ? { referenceAssets } : {}),
     ...(merchantExecutionBilling ? { merchantExecutionBilling } : {}),
+    ...(promptResolver ? { promptResolver } : {}),
     resultSink: repository,
   });
   const controlPlane = new ModelSupplyControlPlaneService({
@@ -121,13 +128,23 @@ async function command(
 function merchantExecutionBillingStub(input: {
   getQuote(taskId: string): ProductQuoteSnapshot | null;
   getUsage(taskId: string): ProductUsageRecord | null;
+  onBind?(input: {
+    inputSnapshot: MerchantExecutionInputSnapshot;
+    quoteRevision: string;
+    taskId: string;
+    workspaceId: string;
+  }): void;
 }) {
+  const bindings = new Map<
+    string,
+    MerchantExecutionInputSnapshot
+  >();
   const executions = new Map<
     string,
     {
       contract: string;
       idempotencyKey: string;
-      inputSnapshot: { input: Record<string, unknown> | null; prompt: string };
+      inputSnapshot: MerchantExecutionInputSnapshot;
       result?: unknown;
     }
   >();
@@ -140,7 +157,7 @@ function merchantExecutionBillingStub(input: {
     targetSeconds?: number;
     inputAssetsHash: string;
     effectKey: string;
-    inputSnapshot: { input: Record<string, unknown> | null; prompt: string };
+    inputSnapshot: MerchantExecutionInputSnapshot;
     promptHash: string;
     providerCatalogModelId: string;
     providerOperation: string;
@@ -161,6 +178,25 @@ function merchantExecutionBillingStub(input: {
     referenceAssetsHash: claim.referenceAssetsHash,
   });
   return {
+    async bindMerchantExecutionInput(binding: {
+      inputSnapshot: MerchantExecutionInputSnapshot;
+      quoteRevision: string;
+      taskId: string;
+      workspaceId: string;
+    }) {
+      input.onBind?.(structuredClone(binding));
+      const existing = bindings.get(binding.taskId);
+      if (
+        existing &&
+        JSON.stringify(existing) !== JSON.stringify(binding.inputSnapshot)
+      ) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Primary merchant execution input is already bound to another provider submission.',
+        );
+      }
+      bindings.set(binding.taskId, structuredClone(binding.inputSnapshot));
+    },
     async readMerchantExecutionContract(inputValue: {
       taskId: string;
       workspaceId: string;
@@ -214,7 +250,7 @@ function merchantExecutionBillingStub(input: {
       inputAssetsHash: string;
       effectKey: string;
       promptHash: string;
-      inputSnapshot: { input: Record<string, unknown> | null; prompt: string };
+      inputSnapshot: MerchantExecutionInputSnapshot;
       providerCatalogModelId: string;
       providerOperation: string;
       referenceAssetsHash: string;
@@ -223,13 +259,25 @@ function merchantExecutionBillingStub(input: {
     }): Promise<
       | {
           decision: 'execute';
-          inputSnapshot: { input: Record<string, unknown> | null; prompt: string };
+          inputSnapshot: MerchantExecutionInputSnapshot;
         }
       | { decision: 'in_progress' }
       | { decision: 'replay'; result: T }
     > {
       const contract = contractFor(claim);
       const executionKey = `${claim.taskId}:${claim.effectKey}`;
+      if (claim.effectKey === `merchant-execution:${claim.taskId}`) {
+        const binding = bindings.get(claim.taskId);
+        if (
+          !binding ||
+          JSON.stringify(binding) !== JSON.stringify(claim.inputSnapshot)
+        ) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Primary merchant execution requires the exact server input binding.',
+          );
+        }
+      }
       const existing = executions.get(executionKey);
       if (existing) {
         if (
@@ -3028,12 +3076,44 @@ describe('ModelSupplyFoundationModule', () => {
 
   it('requires exact reserved billing facts before the provider effect', async () => {
     let providerCalls = 0;
-    const { controlPlane } = setup({
-      async execute(request) {
-        providerCalls += 1;
-        return new RecordedProviderExecutionPort().execute(request);
+    let providerInstructions = 'Use the frozen campaign policy.';
+    let observedProviderInstructions: string | undefined;
+    const bindings: Array<{
+      inputSnapshot: MerchantExecutionInputSnapshot;
+      quoteRevision: string;
+      taskId: string;
+      workspaceId: string;
+    }> = [];
+    const { controlPlane } = setup(
+      {
+        async execute(request) {
+          providerCalls += 1;
+          observedProviderInstructions = request.submission.promptBinding?.content;
+          return new RecordedProviderExecutionPort().execute(request);
+        },
       },
-    });
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        async resolve() {
+          return {
+            content: providerInstructions,
+            contentHash: createHash('sha256')
+              .update(providerInstructions)
+              .digest('hex'),
+            isFallback: false,
+            label: 'production',
+            name: 'harness/copy-generation',
+            source: 'langfuse',
+            version: 'binding-r1',
+          };
+        },
+      },
+    );
     const quoteByTask = new Map<string, ProductQuoteSnapshot>([
       [
         'credit-task-valid',
@@ -3080,6 +3160,9 @@ describe('ModelSupplyFoundationModule', () => {
       ],
     ]);
     const reservedBilling = merchantExecutionBillingStub({
+      onBind(binding) {
+        bindings.push(binding);
+      },
       getQuote(taskId: string) {
         return quoteByTask.get(taskId) ?? null;
       },
@@ -3167,6 +3250,34 @@ describe('ModelSupplyFoundationModule', () => {
       billingQuoteRevision: 'quote-r1',
     })) as { status: string };
     assert.equal(result.status, 'completed');
+    assert.equal(providerCalls, 1);
+    assert.equal(observedProviderInstructions, providerInstructions);
+    assert.deepEqual(bindings, [
+      {
+        inputSnapshot: {
+          input: null,
+          instructions: 'Use the frozen campaign policy.',
+          prompt: 'Return one concise campaign direction.',
+        },
+        quoteRevision: 'quote-r1',
+        taskId: 'credit-task-valid',
+        workspaceId: owner.workspaceId,
+      },
+    ]);
+    providerInstructions = 'Use a changed campaign policy.';
+    await assert.rejects(
+      command(
+        module,
+        { ...owner, correlationId: 'corr-owner-instruction-drift' },
+        'submit_generation',
+        {
+          ...payload,
+          billingTaskId: 'credit-task-valid',
+          billingQuoteRevision: 'quote-r1',
+        },
+      ),
+      /already bound to another provider submission/i,
+    );
     assert.equal(providerCalls, 1);
   });
 

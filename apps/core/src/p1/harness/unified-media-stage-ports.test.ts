@@ -1704,7 +1704,8 @@ test("image-text note page generation uses the existing image executor without c
 		countedAttemptIds: [],
 		countedProviderCostIds: [],
 	});
-	assert.equal(Object.hasOwn(submissions[0] ?? {}, "billingTaskId"), false);
+	assert.equal(submissions[0]?.billingTaskId, "task-image_text_note");
+	assert.equal(submissions[0]?.billingQuoteRevision, "quote-r1");
 	assert.equal(submissions[0]?.productUsageQuantity, 0);
 	assert.equal(
 		submissions[0]?.selection.catalogModelId,
@@ -4039,7 +4040,7 @@ test("the production exact-text verifier reuses multimodal text.respond without 
 		expected: ["价格 398"],
 		request,
 		route: frozenTextRoute,
-		workflowId: "task-image",
+		workflowId: "task-image:note:page-1:r1",
 	});
 	const assessment = assessImageExactText(observation);
 
@@ -4047,6 +4048,8 @@ test("the production exact-text verifier reuses multimodal text.respond without 
 	assert.deepEqual(preauthorization, { iterations: 1, costCents: 2 });
 	assert.equal(submissions.length, 1);
 	assert.equal(submissions[0]?.operation, "text.respond");
+	assert.equal(submissions[0]?.billingTaskId, "task-image");
+	assert.equal(submissions[0]?.billingQuoteRevision, "quote-r1");
 	assert.deepEqual(submissions[0]?.frozenRouteSnapshot, frozenTextRoute);
 	assert.deepEqual(submissions[0]?.selection, {
 		mode: "fixed",

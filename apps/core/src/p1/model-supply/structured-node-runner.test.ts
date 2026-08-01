@@ -1745,6 +1745,7 @@ function merchantExecutionBillingStub(): MerchantExecutionBillingPort {
     }
   >();
   return {
+    async bindMerchantExecutionInput() {},
     async readMerchantExecutionContract() {
       return {
         catalogModelId: 'llm-harness',

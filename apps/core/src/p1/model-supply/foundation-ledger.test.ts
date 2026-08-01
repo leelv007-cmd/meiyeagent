@@ -132,6 +132,7 @@ function merchantExecutionBillingStub(
     }
   >();
   return {
+    async bindMerchantExecutionInput() {},
     async readMerchantExecutionContract() {
       return contract;
     },

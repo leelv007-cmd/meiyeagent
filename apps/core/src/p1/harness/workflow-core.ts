@@ -94,6 +94,8 @@ export interface HarnessSelectionResult {
   };
   trace: DecisionTraceFragment;
   boundedExecution?: BoundedExecutionSnapshot;
+  /** Server-only exact auxiliary effect selected after the mutable-context fence. */
+  merchantExecutionEffectKey?: string;
 }
 
 export interface HarnessMediaSelectionResult {
@@ -104,6 +106,8 @@ export interface HarnessMediaSelectionResult {
   kind: MediaBrief['kind'];
   measuredDurationSeconds?: number;
   trace: DecisionTraceFragment;
+  /** Server-only exact auxiliary effect selected after the mutable-context fence. */
+  merchantExecutionEffectKey?: string;
 }
 
 export interface HarnessNoteBrief {
@@ -375,6 +379,12 @@ export interface HarnessWorkflowRuntime {
     effectIdempotencyKey: string,
     operation: () => Promise<Output>,
   ): Promise<Output>;
+  finalizeMerchantExecution?(input: {
+    quoteRevision: string;
+    sourceEffectKey: string;
+    taskId: string;
+    workspaceId: string;
+  }): Promise<void>;
   /**
    * Receive a cross-carrier signal in the DBOS workflow, never in a step.
    * Non-DBOS runtimes omit this hook and retain the synchronous test path.
@@ -449,6 +459,48 @@ export interface HarnessWorkflowRuntime {
       | 'assembly_delivery';
     payload: unknown;
   }, afterPersist?: () => Promise<void>): Promise<void>;
+}
+
+async function finalizeSelectedMerchantExecution(input: {
+  request: HarnessWorkflowInput;
+  runtime: HarnessWorkflowRuntime;
+  selectionEffectKey?: string;
+  workflowId: string;
+}) {
+  const snapshot = input.request.executionSnapshot;
+  if (!input.selectionEffectKey) {
+    if (
+      input.request.executionAssembly &&
+      input.request.usageReservation &&
+      snapshot &&
+      snapshot.lens !== 'image_text_note'
+    ) {
+      throw new Error(
+        'Production merchant delivery requires its selected provider effect.',
+      );
+    }
+    return;
+  }
+  if (!snapshot || !input.request.usageReservation) {
+    throw new Error(
+      'Selected merchant execution requires its reserved billing snapshot.',
+    );
+  }
+  if (!input.runtime.finalizeMerchantExecution) {
+    throw new Error(
+      'Selected merchant execution finalization is unavailable before delivery.',
+    );
+  }
+  await input.runtime.runStep(
+    harnessEffectKey(input.workflowId, 4, 'merchant-primary', '0'),
+    () =>
+      input.runtime.finalizeMerchantExecution!({
+        quoteRevision: snapshot.quote.revision,
+        sourceEffectKey: input.selectionEffectKey!,
+        taskId: snapshot.task.id,
+        workspaceId: snapshot.workspaceId,
+      }),
+  );
 }
 
 export type BoundedExecutionContinuationCapability =
@@ -1489,6 +1541,13 @@ export async function runHarnessWorkflow(
     });
   }
 
+  await finalizeSelectedMerchantExecution({
+    request: activeRequest,
+    runtime,
+    selectionEffectKey: selection.merchantExecutionEffectKey,
+    workflowId,
+  });
+
   const assemblySkills = stageSkills.assembly_delivery;
   const delivery = await runtime.runStep(
     harnessEffectKey(
@@ -2503,6 +2562,13 @@ async function runMediaHarnessWorkflow(
       message: `已按最新资料${mediaSelectionMessage(brief.kind)}`,
     });
   }
+
+  await finalizeSelectedMerchantExecution({
+    request: activeRequest,
+    runtime,
+    selectionEffectKey: selection.merchantExecutionEffectKey,
+    workflowId,
+  });
 
   const assemblySkills = stageSkills.assembly_delivery;
   const delivery = await runtime.runStep(

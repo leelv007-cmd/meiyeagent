@@ -1388,7 +1388,7 @@ export class ModelSupplyImageExactTextVerifier
 		const submit = () =>
 			this.models.submit({
 				actorId: input.request.actorId,
-				billingTaskId: input.workflowId,
+					billingTaskId: requireSnapshot(input.request).task.id,
 				billingQuoteRevision: requireSnapshot(input.request).quote.revision,
 				correlationId: input.workflowId,
 				dataClass: [...frozenRouteSnapshot.dataClass],
@@ -2704,7 +2704,15 @@ export class ModelSupplyHarnessMediaExecutionPort
 				throw staleNoteAdmission();
 			}
 		}
-		return result;
+		return {
+			...result,
+			...(submission.billingTaskId
+				? {
+						merchantExecutionEffectKey:
+							`merchant-execution:${submission.billingTaskId}:${submission.idempotencyKey}`,
+					}
+				: {}),
+		};
 	}
 
 	private runEffect<Output>(
@@ -3328,9 +3336,7 @@ function mediaSubmission(
 		: undefined;
 	return {
 		actorId: request.actorId,
-		...(snapshot.lens === "image_text_note"
-			? {}
-			: { billingTaskId: snapshot.task.id }),
+		billingTaskId: snapshot.task.id,
 		billingQuoteRevision: snapshot.quote.revision,
 		correlationId: orchestrationWorkflowId ?? workflowId,
 		dataClass: [...frozenRoute.dataClass],
@@ -3455,7 +3461,7 @@ function assertBriefMatchesSnapshot(
 }
 
 function mediaSelection(
-	result: ModelSupplyResult,
+	result: ModelSupplyResult & { merchantExecutionEffectKey?: string },
 	kind: MediaBrief["kind"],
 	executions: ModelSupplyResult[],
 	blockedCandidates: Array<{ candidateId: string; gateIds: string[] }>,
@@ -3485,6 +3491,9 @@ function mediaSelection(
 	};
 	return {
 		asset: ownedAsset,
+		...(result.merchantExecutionEffectKey
+			? { merchantExecutionEffectKey: result.merchantExecutionEffectKey }
+			: {}),
 		childRun: {
 			actualCatalogModelId: result.snapshot.actualCatalogModelId,
 			assetIds: [asset.id],

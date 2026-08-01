@@ -4,7 +4,7 @@ import test from "node:test";
 
 import type { ContentPackage } from "@meiye/contracts";
 import { Pool } from "pg";
-import type { ZodType } from "zod";
+import { z, type ZodType } from "zod";
 
 import {
   DurableProductBillingService,
@@ -14,7 +14,6 @@ import { PostgresProductBillingRepository } from "../product-billing/postgres-re
 import { OperationsApplicationService } from "../operations/application-service.js";
 import { OperationsFoundationModule } from "../operations/foundation-module.js";
 import {
-  ModelSupplyCreationExecutor,
   ModelSupplyCreationInputResolver,
   modelSupplyCreationInputSnapshot,
   type CreativeGroundingSnapshot,
@@ -27,7 +26,6 @@ import {
   RecordedProviderExecutionPort,
   type StructuredObjectExecutor,
 } from "../model-supply/index.js";
-import type { ModelSupplyControlPlaneService } from "../model-supply/foundation-module.js";
 import { ModelSupplyStructuredNodeRunner } from "../model-supply/structured-node-runner.js";
 import {
   createCreationExecutionSnapshot,
@@ -1563,7 +1561,7 @@ test(
 );
 
 test(
-  "Postgres production assembly binds canonical provider input before auxiliary and final merchant effects",
+  "Postgres production assembly separates the root contract from auxiliary and final provider inputs",
   { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
   async () => {
     const pool = new Pool({ connectionString });
@@ -1657,7 +1655,7 @@ test(
         submission,
         workspaceId,
       });
-      const canonicalProviderInput = modelSupplyCreationInputSnapshot({
+      const rootSubmissionInput = modelSupplyCreationInputSnapshot({
         contract: {
           contentModules: submission.snapshot.contentModules,
         },
@@ -1700,16 +1698,23 @@ test(
         }) {
           auxiliaryProviderIo += 1;
           return {
-            output: input.schema.parse({
-              blockingGap: null,
-              deliveryLayer: "copy",
-              implicitConstraints: [],
-              normalizedIntent: submission.snapshot.intent.text,
-              relevantAssetCategories: ["store"],
-              route: "customized",
-              taskType: "daily_service_exposure",
-              usedAssetCategories: ["store"],
-            }) as Output,
+            output: input.schema.parse(
+              input.schemaName === "harness_copy_candidate_v1"
+                ? {
+                    body: "真实门店护理记录",
+                    title: "夏日护理",
+                  }
+                : {
+                    blockingGap: null,
+                    deliveryLayer: "copy",
+                    implicitConstraints: [],
+                    normalizedIntent: submission.snapshot.intent.text,
+                    relevantAssetCategories: ["store"],
+                    route: "customized",
+                    taskType: "daily_service_exposure",
+                    usedAssetCategories: ["store"],
+                  },
+            ) as Output,
             providerTaskRef: `provider-${submission.task.id}`,
             usage: { inputTokens: 10, outputTokens: 20 },
           };
@@ -1750,9 +1755,30 @@ test(
           },
           runner,
         );
+      const finalPrompt = "Generate the accepted summer-care deliverable.";
+      const finalInstructions = "Return the deliverable copy candidate.";
+      const runFinal = (
+        runner: ModelSupplyStructuredNodeRunner,
+        prompt = finalPrompt,
+        instructions = finalInstructions,
+      ) =>
+        runner.run({
+          effectIdempotencyKey: `wf:${submission.task.id}:s4:copy-final`,
+          instructions,
+          prompt,
+          schema: z
+            .object({ body: z.string(), title: z.string() })
+            .strict(),
+          schemaName: "harness_copy_candidate_v1",
+          schemaRevision: "copy-candidate-v1",
+        });
 
       await assert.rejects(
         runNaming(createStructuredRunner()),
+        /complete reserved credit quote contract/u,
+      );
+      await assert.rejects(
+        runFinal(createStructuredRunner()),
         /complete reserved credit quote contract/u,
       );
       assert.equal(auxiliaryProviderIo, 0);
@@ -1773,7 +1799,7 @@ test(
         taskId: submission.task.id,
         workspaceId,
       });
-      const signedHashes = merchantExecutionInputHashes(canonicalProviderInput);
+      const signedHashes = merchantExecutionInputHashes(rootSubmissionInput);
       assert.deepEqual(
         {
           inputAssetsHash: contract.submissionInputAssetsHash,
@@ -1790,97 +1816,56 @@ test(
       );
       assert.equal(auxiliaryProviderIo, 1);
       assert.equal(modelSupply.attempts().length, 1);
-      const controlPlane = {
-        async getCatalog() {
-          return {
-            models: [
-              {
-                activationEvidence: { status: "live_verified" as const },
-                availability: "available" as const,
-                id: contract.catalogModelId,
-              },
-            ],
-            revisionId: "catalog-r1",
-          };
-        },
-        async getJob(_workspaceId: string, jobId: string) {
-          throw new Error(`Unexpected copy job lookup ${jobId}.`);
-        },
-        async submitGeneration(
-          context: Parameters<
-            ModelSupplyControlPlaneService["submitGeneration"]
-          >[0],
-          request: Parameters<
-            ModelSupplyControlPlaneService["submitGeneration"]
-          >[1],
-          idempotencyKey: Parameters<
-            ModelSupplyControlPlaneService["submitGeneration"]
-          >[2],
-        ) {
-          return modelSupply.submit({
-            ...request,
-            actorId: context.userId,
-            idempotencyKey,
-            workspaceId: context.workspaceId,
-          });
-        },
-      } as unknown as ModelSupplyControlPlaneService;
-      const creation = new ModelSupplyCreationExecutor(
-        controlPlane,
-        undefined,
-        billing,
-      );
-      const creationRequest = {
-        billingQuoteRevision: contract.quoteRevision,
-        billingTaskId: submission.task.id,
-        context: {
-          actor: "owner",
-          correlationId: `final-${suffix}`,
-          userId: "owner-1",
-          workspaceId,
-        },
-        contract: {
-          aigcLabelEnabled: true,
-          catalogModelId: contract.catalogModelId,
-          catalogRevision: "catalog-r1",
-          contentModules: submission.snapshot.contentModules,
-          currency: "CNY",
-          dataClass: [],
-          estimatedAmount: 1,
-          operation: "copy.generate",
-          outputCount: 1,
-          outputLabel: "1 条内容候选",
-          quoteAcceptedAt: "2026-07-22T09:00:00.000Z",
-          quoteRevision: contract.quoteRevision,
-          watermarkEnabled: false,
-        },
-        groundingSnapshot,
-        idempotencyKey: `final-${suffix}`,
-        intent: submission.snapshot.intent.text,
-        productUsageQuantity: 1,
-        workId: submission.work.id,
-      } satisfies Parameters<typeof creation.submit>[0];
-      await assert.rejects(
-        creation.submit({
-          ...creationRequest,
-          groundingSnapshot: {
-            ...structuredClone(groundingSnapshot),
-            assets: [
-              {
-                ...structuredClone(groundingSnapshot.assets[0]!),
-                id: "asset-mismatch",
-              },
-            ],
-          },
-          idempotencyKey: `final-mismatch-${suffix}`,
-        }),
-        /already bound to another submission/u,
-      );
-      assert.equal(modelSupply.attempts().length, 1);
-
-      const final = await creation.submit(creationRequest);
-      assert.equal(final.status, "completed");
+      const final = await runFinal(createStructuredRunner());
+      assert.deepEqual(final.output, {
+        body: "真实门店护理记录",
+        title: "夏日护理",
+      });
       assert.equal(modelSupply.attempts().length, 2);
+      assert.equal(auxiliaryProviderIo, 2);
+      await assert.rejects(
+        runFinal(createStructuredRunner(), "Drifted provider prompt."),
+        /already bound to another merchant execution/u,
+      );
+      assert.equal(auxiliaryProviderIo, 2);
+      assert.equal(modelSupply.attempts().length, 2);
+      await assert.rejects(
+        runFinal(
+          createStructuredRunner(),
+          finalPrompt,
+          "Drifted provider instructions.",
+        ),
+        /already bound to another merchant execution/u,
+      );
+      assert.equal(auxiliaryProviderIo, 2);
+      assert.equal(modelSupply.attempts().length, 2);
+      const replay = await runFinal(createStructuredRunner());
+      assert.deepEqual(replay.output, final.output);
+      assert.equal(auxiliaryProviderIo, 2);
+      const execution = await billingRepository.getMerchantExecution(
+        workspaceId,
+        submission.task.id,
+        `merchant-execution:${submission.task.id}:wf:${submission.task.id}:s4:copy-final`,
+      );
+      assert.equal(execution?.status, "completed");
+      assert.equal(execution?.inputSnapshot.input, null);
+      assert.deepEqual(JSON.parse(execution!.inputSnapshot.prompt), {
+        instructions: finalInstructions,
+        prompt: finalPrompt,
+        schema: {
+          $schema: "https://json-schema.org/draft/2020-12/schema",
+          additionalProperties: false,
+          properties: {
+            body: { type: "string" },
+            title: { type: "string" },
+          },
+          required: ["body", "title"],
+          type: "object",
+        },
+        schemaName: "harness_copy_candidate_v1",
+        schemaRevision: "copy-candidate-v1",
+        streaming: false,
+      });
     } finally {
       await pool
         .query(

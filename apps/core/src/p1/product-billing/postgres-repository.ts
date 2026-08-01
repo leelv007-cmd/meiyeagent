@@ -23,10 +23,11 @@ export interface MerchantExecutionRecord {
   idempotencyKey: string;
   inputSnapshot: {
     input: Record<string, unknown> | null;
+    instructions?: string;
     prompt: string;
   };
   result?: unknown;
-  status: 'claimed' | 'completed';
+  status: 'bound' | 'claimed' | 'completed';
   taskId: string;
   updatedAt?: string;
   workspaceId: string;
@@ -87,6 +88,11 @@ export class PostgresProductBillingRepository
   async migrate(client?: PoolClient) {
     const database = client ?? this.database;
     await database.query(`
+      SELECT pg_advisory_xact_lock(
+        hashtext('p1-product-billing-merchant-executions'),
+        hashtext('bound-status-v1')
+      );
+
       CREATE TABLE IF NOT EXISTS p1_product_billing_quotes (
         workspace_id text NOT NULL,
         quote_id text NOT NULL,
@@ -145,28 +151,128 @@ export class PostgresProductBillingRepository
         PRIMARY KEY (workspace_id, task_id, effect_key),
         FOREIGN KEY (workspace_id, task_id)
           REFERENCES p1_product_billing_usage (workspace_id, task_id),
-        CHECK (status IN ('claimed', 'completed')),
-        CHECK (status = 'claimed' OR result IS NOT NULL)
+        CONSTRAINT p1_product_billing_merchant_executions_status_check
+          CHECK (status IN ('bound', 'claimed', 'completed')),
+        CONSTRAINT p1_product_billing_merchant_executions_result_check
+          CHECK (status IN ('bound', 'claimed') OR result IS NOT NULL)
       );
 
-      ALTER TABLE p1_product_billing_merchant_executions
-        ADD COLUMN IF NOT EXISTS effect_key text;
-      UPDATE p1_product_billing_merchant_executions
-         SET effect_key = 'merchant-execution:' || task_id
-       WHERE effect_key IS NULL;
-      ALTER TABLE p1_product_billing_merchant_executions
-        ALTER COLUMN effect_key SET NOT NULL;
-      ALTER TABLE p1_product_billing_merchant_executions
-        ADD COLUMN IF NOT EXISTS input_snapshot jsonb;
-      UPDATE p1_product_billing_merchant_executions
-         SET input_snapshot = jsonb_build_object('input', null, 'prompt', '')
-       WHERE input_snapshot IS NULL;
-      ALTER TABLE p1_product_billing_merchant_executions
-        ALTER COLUMN input_snapshot SET NOT NULL;
-      ALTER TABLE p1_product_billing_merchant_executions
-        DROP CONSTRAINT IF EXISTS p1_product_billing_merchant_executions_pkey;
-      ALTER TABLE p1_product_billing_merchant_executions
-        ADD PRIMARY KEY (workspace_id, task_id, effect_key);
+      DO $$
+      DECLARE
+        primary_key_definition text;
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+            FROM pg_attribute
+           WHERE attrelid = 'p1_product_billing_merchant_executions'::regclass
+             AND attname = 'effect_key'
+             AND NOT attisdropped
+        ) THEN
+          ALTER TABLE p1_product_billing_merchant_executions
+            ADD COLUMN effect_key text;
+        END IF;
+        UPDATE p1_product_billing_merchant_executions
+           SET effect_key = 'merchant-execution:' || task_id
+         WHERE effect_key IS NULL;
+        IF EXISTS (
+          SELECT 1
+            FROM pg_attribute
+           WHERE attrelid = 'p1_product_billing_merchant_executions'::regclass
+             AND attname = 'effect_key'
+             AND NOT attnotnull
+        ) THEN
+          ALTER TABLE p1_product_billing_merchant_executions
+            ALTER COLUMN effect_key SET NOT NULL;
+        END IF;
+
+        IF NOT EXISTS (
+          SELECT 1
+            FROM pg_attribute
+           WHERE attrelid = 'p1_product_billing_merchant_executions'::regclass
+             AND attname = 'input_snapshot'
+             AND NOT attisdropped
+        ) THEN
+          ALTER TABLE p1_product_billing_merchant_executions
+            ADD COLUMN input_snapshot jsonb;
+        END IF;
+        UPDATE p1_product_billing_merchant_executions
+           SET input_snapshot = jsonb_build_object('input', null, 'prompt', '')
+         WHERE input_snapshot IS NULL;
+        IF EXISTS (
+          SELECT 1
+            FROM pg_attribute
+           WHERE attrelid = 'p1_product_billing_merchant_executions'::regclass
+             AND attname = 'input_snapshot'
+             AND NOT attnotnull
+        ) THEN
+          ALTER TABLE p1_product_billing_merchant_executions
+            ALTER COLUMN input_snapshot SET NOT NULL;
+        END IF;
+
+        SELECT pg_get_constraintdef(oid)
+          INTO primary_key_definition
+          FROM pg_constraint
+         WHERE conrelid = 'p1_product_billing_merchant_executions'::regclass
+           AND conname = 'p1_product_billing_merchant_executions_pkey';
+        IF primary_key_definition IS NULL OR
+           primary_key_definition NOT LIKE '%effect_key%' THEN
+          ALTER TABLE p1_product_billing_merchant_executions
+            DROP CONSTRAINT IF EXISTS p1_product_billing_merchant_executions_pkey;
+          ALTER TABLE p1_product_billing_merchant_executions
+            ADD PRIMARY KEY (workspace_id, task_id, effect_key);
+        END IF;
+
+        IF EXISTS (
+          SELECT 1
+            FROM pg_constraint
+           WHERE conrelid = 'p1_product_billing_merchant_executions'::regclass
+             AND conname = 'p1_product_billing_merchant_executions_status_check'
+             AND pg_get_constraintdef(oid) NOT LIKE '%bound%'
+        ) THEN
+          ALTER TABLE p1_product_billing_merchant_executions
+            DROP CONSTRAINT p1_product_billing_merchant_executions_status_check;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1
+            FROM pg_constraint
+           WHERE conrelid = 'p1_product_billing_merchant_executions'::regclass
+             AND conname = 'p1_product_billing_merchant_executions_status_check'
+        ) THEN
+          ALTER TABLE p1_product_billing_merchant_executions
+            ADD CONSTRAINT p1_product_billing_merchant_executions_status_check
+              CHECK (status IN ('bound', 'claimed', 'completed'));
+        END IF;
+
+        IF EXISTS (
+          SELECT 1
+            FROM pg_constraint
+           WHERE conrelid = 'p1_product_billing_merchant_executions'::regclass
+             AND conname = 'p1_product_billing_merchant_executions_check'
+        ) THEN
+          ALTER TABLE p1_product_billing_merchant_executions
+            DROP CONSTRAINT p1_product_billing_merchant_executions_check;
+        END IF;
+        IF EXISTS (
+          SELECT 1
+            FROM pg_constraint
+           WHERE conrelid = 'p1_product_billing_merchant_executions'::regclass
+             AND conname = 'p1_product_billing_merchant_executions_result_check'
+             AND pg_get_constraintdef(oid) NOT LIKE '%bound%'
+        ) THEN
+          ALTER TABLE p1_product_billing_merchant_executions
+            DROP CONSTRAINT p1_product_billing_merchant_executions_result_check;
+        END IF;
+        IF NOT EXISTS (
+          SELECT 1
+            FROM pg_constraint
+           WHERE conrelid = 'p1_product_billing_merchant_executions'::regclass
+             AND conname = 'p1_product_billing_merchant_executions_result_check'
+        ) THEN
+          ALTER TABLE p1_product_billing_merchant_executions
+            ADD CONSTRAINT p1_product_billing_merchant_executions_result_check
+              CHECK (status IN ('bound', 'claimed') OR result IS NOT NULL);
+        END IF;
+      END $$;
 
       CREATE INDEX IF NOT EXISTS p1_product_billing_quotes_workspace_status_idx
         ON p1_product_billing_quotes (workspace_id, lifecycle_status, updated_at DESC);

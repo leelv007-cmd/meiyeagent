@@ -1267,7 +1267,6 @@ operationsService = new OperationsApplicationService(operationsRepository, {
   creationExecutor: new ModelSupplyCreationExecutor(
     modelControlPlane,
     referenceAssets,
-    productQuoteService,
   ),
   groundingResolver: creativeGroundingResolver,
   imageGenerator: new ModelSupplyImageGenerationAdapter(
@@ -2227,6 +2226,8 @@ if (harnessRuntimeConfig) {
       semanticResumptions: creationSubmissionStore,
       billing: {
         commit: (input) => harnessBilling.commit(input),
+        promoteMerchantExecution: (input) =>
+          productQuoteService.promoteMerchantExecution(input),
         refund: (input) => harnessBilling.refund(input),
         async scheduleCompensation(input) {
           await billingCompensations.enqueue(input);

@@ -1052,12 +1052,19 @@ test('media bounded suspension keys separate context-fence executions and replay
 });
 
 test('media context fence keeps bounded consumption while recompiling the provider effect', async () => {
-  const request = mediaTaskInput('image');
+  const request: HarnessWorkflowInput = {
+    ...mediaTaskInput('image'),
+    usageReservation: {
+      id: 'usage-reservation-image-fence',
+      units: [{ resource: 'image', quantity: 1 }],
+    },
+  };
   request.boundedExecution = boundedExecutionSnapshot(0, 5);
   const stages = mediaStages('image');
   const ordinarySelection = stages.executeMediaAndSelect.bind(stages);
   let boundedCalls = 0;
   let deliveredIterations = -1;
+  const terminalOrder: string[] = [];
   stages.executeMediaAndSelectBounded = async (input) => {
     boundedCalls += 1;
     assert.equal(
@@ -1077,6 +1084,8 @@ test('media context fence keeps bounded consumption while recompiling the provid
     const selection = await ordinarySelection(input);
     return {
       ...selection,
+      merchantExecutionEffectKey:
+        `merchant-execution:task-image:media-selection-r${boundedCalls}`,
       boundedCurrentBest: mediaBoundedCheckpoint(boundedCalls),
       boundedExecution: {
         ...input.request.boundedExecution!,
@@ -1097,6 +1106,7 @@ test('media context fence keeps bounded consumption while recompiling the provid
     },
   });
   stages.assembleMediaAndDeliver = async (input) => {
+    terminalOrder.push('delivery');
     deliveredIterations =
       input.request.boundedExecution?.consumption.iterations ?? -1;
     return {
@@ -1110,16 +1120,29 @@ test('media context fence keeps bounded consumption while recompiling the provid
     async runStep(_key, operation) {
       return operation();
     },
+    async finalizeMerchantExecution(input) {
+      terminalOrder.push(`promote:${input.sourceEffectKey}`);
+      assert.deepEqual(input, {
+        quoteRevision: 'quote-r1',
+        sourceEffectKey: 'merchant-execution:task-image:media-selection-r2',
+        taskId: 'task-image',
+        workspaceId: 'workspace-1',
+      });
+    },
     async progress() {},
     async token() {},
-    async awaitDecision() {
-      throw new Error('A continuing media bound should not enter HITL.');
+    async awaitDecision(question) {
+      return approvePaidGenerationConfirmation(question);
     },
     async recordTrace() {},
   });
 
   assert.equal(boundedCalls, 2);
   assert.equal(deliveredIterations, 2);
+  assert.deepEqual(terminalOrder, [
+    'promote:merchant-execution:task-image:media-selection-r2',
+    'delivery',
+  ]);
 });
 
 test('image-text note uses the fourth Harness fork and waits for style choice before page generation', async () => {

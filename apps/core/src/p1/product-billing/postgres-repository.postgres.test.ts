@@ -135,6 +135,68 @@ describe(
       };
     }
 
+    it('upgrades merchant execution constraints once and keeps later startup stable', async () => {
+      const readConstraints = async () =>
+        (
+          await pool.query<{ definition: string; name: string; oid: number }>(
+            `SELECT oid::int,
+                    conname AS name,
+                    pg_get_constraintdef(oid) AS definition
+              FROM pg_constraint
+              WHERE conrelid = 'p1_product_billing_merchant_executions'::regclass
+              ORDER BY conname`,
+          )
+        ).rows;
+      const readColumns = async () =>
+        (
+          await pool.query<{
+            name: string;
+            notNull: boolean;
+            number: number;
+          }>(
+            `SELECT attname AS name,
+                    attnotnull AS "notNull",
+                    attnum::int AS number
+               FROM pg_attribute
+              WHERE attrelid = 'p1_product_billing_merchant_executions'::regclass
+                AND attnum > 0
+                AND NOT attisdropped
+              ORDER BY attnum`,
+          )
+        ).rows;
+      await pool.query(`
+        ALTER TABLE p1_product_billing_merchant_executions
+          DROP CONSTRAINT p1_product_billing_merchant_executions_result_check,
+          DROP CONSTRAINT p1_product_billing_merchant_executions_status_check,
+          ADD CHECK (status IN ('claimed', 'completed')),
+          ADD CHECK (status = 'claimed' OR result IS NOT NULL)
+      `);
+
+      await repository.migrate();
+
+      const migrated = await readConstraints();
+      const migratedColumns = await readColumns();
+      const migratedChecks = migrated.filter(({ definition }) =>
+        definition.startsWith('CHECK'),
+      );
+      assert.deepEqual(
+        migratedChecks.map(({ name }) => name),
+        [
+          'p1_product_billing_merchant_executions_result_check',
+          'p1_product_billing_merchant_executions_status_check',
+        ],
+      );
+      assert.equal(
+        migratedChecks.every(({ definition }) => definition.includes('bound')),
+        true,
+      );
+
+      await repository.migrate();
+
+      assert.deepEqual(await readConstraints(), migrated);
+      assert.deepEqual(await readColumns(), migratedColumns);
+    });
+
     const providerCost = {
       currency: 'CNY',
       estimatedCostMicros: 100_000,
@@ -541,7 +603,32 @@ describe(
           idempotencyKey: 'merchant-forged-first-prompt',
           promptHash: 'forged-first-prompt-hash',
         }),
-        /exactly match/i,
+        /exact provider input|exactly match/i,
+      );
+      await service.bindMerchantExecutionInput({
+        inputSnapshot: contract.inputSnapshot,
+        quoteRevision: quote.revision,
+        taskId: contract.taskId,
+        workspaceId,
+      });
+      const bound = await repository.getMerchantExecution(
+        workspaceId,
+        contract.taskId,
+        contract.effectKey,
+      );
+      assert.equal(bound?.status, 'bound');
+      assert.deepEqual(bound?.inputSnapshot, contract.inputSnapshot);
+      await assert.rejects(
+        service.bindMerchantExecutionInput({
+          inputSnapshot: {
+            input: contract.inputSnapshot.input,
+            prompt: 'drifted provider prompt',
+          },
+          quoteRevision: quote.revision,
+          taskId: contract.taskId,
+          workspaceId,
+        }),
+        /already bound to another provider submission/i,
       );
 
       const claims = await Promise.allSettled([
@@ -593,12 +680,17 @@ describe(
         idempotencyKey: winner,
       });
       assert.deepEqual(replay, { decision: 'replay', result: original });
+      const auxiliaryInputSnapshot = {
+        input: { referenceAssetIds: ['asset-1'] },
+        prompt: 'Read visible text.',
+      };
       const auxiliary = await service.claimMerchantExecution({
         ...contract,
+        ...merchantExecutionInputHashes(auxiliaryInputSnapshot),
         effectKey: 'merchant-execution:merchant-execution-task:exact-text',
         idempotencyKey:
           'merchant-execution:merchant-execution-task:exact-text',
-        inputSnapshot: { input: { referenceAssetIds: ['asset-1'] }, prompt: 'Read visible text.' },
+        inputSnapshot: auxiliaryInputSnapshot,
         providerCatalogModelId: 'video-model',
         providerOperation: 'text.respond',
       });
@@ -615,7 +707,7 @@ describe(
           idempotencyKey: winner,
           outputCount: 2,
         }),
-        /another merchant execution|exactly match/i,
+        /another merchant execution|exact provider input|exactly match/i,
       );
       await assert.rejects(
         service.claimMerchantExecution({
@@ -623,8 +715,113 @@ describe(
           idempotencyKey: winner,
           promptHash: 'prompt-hash-drifted-before-replay',
         }),
-        /another merchant execution|exactly match/i,
+        /another merchant execution|exact provider input|exactly match/i,
       );
+      await service.settle({ quoteId: quote.quoteId, workspaceId });
+      await service.bindMerchantExecutionInput({
+        inputSnapshot: contract.inputSnapshot,
+        quoteRevision: quote.revision,
+        taskId: contract.taskId,
+        workspaceId,
+      });
+      assert.deepEqual(
+        await service.claimMerchantExecution<typeof original>({
+          ...contract,
+          idempotencyKey: winner,
+        }),
+        { decision: 'replay', result: original },
+      );
+    });
+
+    it('promotes only one completed auxiliary merchant effect into the canonical task result', async () => {
+      const workspaceId = workspace();
+      const service = new DurableProductBillingService(repository);
+      const quote = await service.buildQuote(
+        quoteInput(workspaceId, 'merchant-execution-promotion'),
+      );
+      const taskId = 'merchant-execution-promotion-task';
+      await service.confirm({ quoteId: quote.quoteId, taskId, workspaceId });
+      await service.beforeSubmit({
+        quoteRevision: quote.revision,
+        resource: 'video',
+        taskId,
+        workspaceId,
+      });
+      const reserved = await service.readMerchantExecutionContract({
+        taskId,
+        workspaceId,
+      });
+      const completeAuxiliary = async (suffix: string) => {
+        const effectKey = `merchant-execution:${taskId}:${suffix}`;
+        const inputSnapshot = {
+          input: { durationSeconds: 10 },
+          prompt: `provider prompt ${suffix}`,
+        };
+        const claim = {
+          ...reserved,
+          ...merchantExecutionInputHashes(inputSnapshot),
+          effectKey,
+          idempotencyKey: effectKey,
+          inputSnapshot,
+          providerCatalogModelId: reserved.catalogModelId,
+          providerOperation: reserved.operation,
+          taskId,
+          workspaceId,
+        };
+        assert.equal(
+          (await service.claimMerchantExecution(claim)).decision,
+          'execute',
+        );
+        const result = { jobId: `job-${suffix}`, status: 'completed' };
+        await service.completeMerchantExecution({ ...claim, result });
+        return { effectKey, inputSnapshot, result };
+      };
+      const selected = await completeAuxiliary('selected');
+      const competing = await completeAuxiliary('competing');
+
+      const promotions = await Promise.allSettled(
+        Array.from({ length: 8 }, () =>
+          new DurableProductBillingService(repository).promoteMerchantExecution({
+            quoteRevision: quote.revision,
+            sourceEffectKey: selected.effectKey,
+            taskId,
+            workspaceId,
+          }),
+        ),
+      );
+      assert.equal(
+        promotions.every(({ status }) => status === 'fulfilled'),
+        true,
+      );
+      const canonical = await repository.getMerchantExecution(
+        workspaceId,
+        taskId,
+        `merchant-execution:${taskId}`,
+      );
+      assert.equal(canonical?.status, 'completed');
+      assert.equal(
+        canonical?.idempotencyKey,
+        `merchant-execution-promotion:${selected.effectKey}`,
+      );
+      assert.deepEqual(canonical?.inputSnapshot, selected.inputSnapshot);
+      assert.deepEqual(canonical?.result, selected.result);
+      await assert.rejects(
+        service.promoteMerchantExecution({
+          quoteRevision: quote.revision,
+          sourceEffectKey: competing.effectKey,
+          taskId,
+          workspaceId,
+        }),
+        /another canonical merchant execution/i,
+      );
+
+      await service.settle({ quoteId: quote.quoteId, workspaceId });
+      await service.promoteMerchantExecution({
+        quoteRevision: quote.revision,
+        sourceEffectKey: selected.effectKey,
+        taskId,
+        workspaceId,
+      });
     });
 
     it('binds a server-derived first submission to a reserved quote exactly once', async () => {
@@ -655,7 +852,7 @@ describe(
         }),
         /complete reserved credit quote contract/i,
       );
-      await service.bindMerchantExecutionInput({
+      await service.bindMerchantSubmissionInput({
         inputSnapshot: {
           input: { durationSeconds: 10, referenceAssetIds: ['asset-b', 'asset-a'] },
           prompt: 'server authoritative video prompt',
@@ -672,7 +869,7 @@ describe(
       assert.ok(bound.submissionReferenceAssetsHash);
       assert.ok(bound.submissionInputAssetsHash);
       await assert.rejects(
-        service.bindMerchantExecutionInput({
+        service.bindMerchantSubmissionInput({
           inputSnapshot: { input: { durationSeconds: 10 }, prompt: 'drifted prompt' },
           quoteRevision: quote.revision,
           taskId: 'server-bound-submission-task',
@@ -789,7 +986,6 @@ describe(
         creationExecutor: new ModelSupplyCreationExecutor(
           controlPlane,
           undefined,
-          service,
         ),
         imageGenerator: { async submit() { throw new Error('not used'); } },
         notifier: { async send() {} },
