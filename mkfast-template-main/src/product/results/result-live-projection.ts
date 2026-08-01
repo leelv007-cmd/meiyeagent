@@ -344,6 +344,32 @@ function workspaceKindForWork(work: CreativeWork): ResultWorkspaceKind {
   }
 }
 
+/**
+ * Preserve the server-owned note carrier when a text-only successor executes
+ * through copy.generate. Work.operation describes the execution primitive;
+ * the current ContentPackage version remains authoritative for its product
+ * carrier and retained media.
+ */
+export function resultWorkspaceKindForContentPackage(input: {
+  contentPackage?: Pick<PublicContentPackage, 'currentVersionId' | 'kind'> & {
+    versions: readonly { id: string; orderedAssetIds: readonly string[] }[];
+  };
+  projectedWorkspaceKind: ResultWorkspaceKind;
+}): ResultWorkspaceKind {
+  const currentVersion = input.contentPackage?.versions.find(
+    (version) => version.id === input.contentPackage?.currentVersionId
+  );
+  if (!input.contentPackage || !currentVersion) {
+    return input.projectedWorkspaceKind;
+  }
+  return contentPackageCarrierOf({
+    kind: input.contentPackage.kind,
+    orderedAssetCount: currentVersion.orderedAssetIds.length,
+  }) === 'note'
+    ? 'image'
+    : input.projectedWorkspaceKind;
+}
+
 function latestJobForWork(
   projection: CreativeWorkbenchProjection,
   work: CreativeWork

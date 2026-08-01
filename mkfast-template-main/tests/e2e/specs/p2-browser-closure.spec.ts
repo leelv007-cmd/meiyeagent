@@ -155,8 +155,19 @@ async function selectCaseNoteRecipe(page: Page) {
 async function setTiptapBody(editor: Locator, value: string) {
   await editor.click();
   await editor.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
-  await editor.fill(value);
-  await expect(editor).toContainText(value);
+  // contenteditable fill treats each newline as a block boundary, while the
+  // product's canonical plain-text contract uses two newlines between blocks.
+  await editor.fill(value.replaceAll('\r\n', '\n').replaceAll('\n\n', '\n'));
+  await expect.poll(() => tiptapPlainText(editor)).toBe(value);
+}
+
+async function tiptapPlainText(editor: Locator) {
+  return editor.evaluate((element) =>
+    Array.from(element.children)
+      .map((block) => block.textContent ?? '')
+      .join('\n\n')
+      .replaceAll('\r\n', '\n')
+  );
 }
 
 async function waitForDeliveryOrFailure(page: Page) {
@@ -371,7 +382,7 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     await expect(toolbar.locator('[data-selection-ai-action]')).toHaveCount(6);
 
     let body = workspace.getByTestId('copy-field-body');
-    const originalBody = (await body.innerText()).trim();
+    const originalBody = (await tiptapPlainText(body)).trim();
     expect(originalBody.length).toBeGreaterThan(0);
     const selectionLength = Math.min(12, originalBody.length);
     await body.click();
@@ -428,11 +439,11 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     );
     workspace = page.getByTestId('result-image-text-workspace');
     body = workspace.getByTestId('copy-field-body');
-    const revisedBody = (await body.innerText()).trim();
+    const revisedBody = (await tiptapPlainText(body)).trim();
     expect(revisedBody).not.toBe(originalBody);
     await adoptResult(page, imageTextContract);
     const sensitiveBody =
-      revisedBody + '\n本店承诺' + SENSITIVE_WORD + '相关问题。';
+      revisedBody + '\n\n本店承诺' + SENSITIVE_WORD + '相关问题。';
     await setTiptapBody(body, sensitiveBody);
     const unsafeSavePromise = p1CommandResponse(
       page,

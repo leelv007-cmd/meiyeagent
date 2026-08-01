@@ -34,6 +34,7 @@ import {
   resultDeliveryAttemptState,
   resultDeriveSessionId,
   resultHarnessStreamLifecycle,
+  resultWorkspaceKindForContentPackage,
   resultWorkflowIdForWork,
   runDetailFactsFromLiveSelection,
 } from '@/product/results/result-live-projection';
@@ -290,7 +291,10 @@ function ResultCenterRoutePage() {
   const currentPackageVersion = contentPackage?.versions.find(
     (version) => version.id === contentPackage.currentVersionId
   );
-  const workspaceKind = selected?.workspaceKind ?? 'copy';
+  const workspaceKind = resultWorkspaceKindForContentPackage({
+    contentPackage,
+    projectedWorkspaceKind: selected?.workspaceKind ?? 'copy',
+  });
   const deliveryTarget = deliveryTargetForIntent(
     workspaceKind,
     selected?.work.intent ?? ''

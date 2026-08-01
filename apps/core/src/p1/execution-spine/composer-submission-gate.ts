@@ -145,6 +145,127 @@ export class ComposerSubmissionAdmissionGate
 		this.now = dependencies.now ?? (() => new Date().toISOString());
 	}
 
+	async prepareResultTextSelection(input: {
+		actorId: string;
+		workspaceId: string;
+	}) {
+		const preferences = await this.dependencies.modelPreferences.getPreferences(
+			input.workspaceId,
+			input.actorId,
+			"copy.generate",
+		);
+		const catalogModelId =
+			preferences.userDefault ??
+			preferences.workspaceDefault ??
+			preferences.platformDefault;
+		if (!catalogModelId?.trim()) {
+			throw invalid("No canonical copy model is configured.");
+		}
+		return { catalogModelId, operation: "copy.generate" as const };
+	}
+
+	async admitResultTextSelection(input: {
+		actorId: string;
+		outputCount: number;
+		quote: { id: string; revision: string };
+		sourceSnapshot: CreationExecutionSnapshot;
+		taskId: string;
+		workspaceId: string;
+	}) {
+		const quote = await this.dependencies.quotes.getQuote(
+			input.quote.id,
+			input.workspaceId,
+		);
+		if (
+			!quote ||
+			quote.quoteId !== input.quote.id ||
+			quote.revision !== input.quote.revision ||
+			quote.lifecycleStatus !== "confirmed" ||
+			quote.taskId !== input.taskId ||
+			!quote.catalogModelRevision?.trim() ||
+			quote.outputCount !== input.outputCount ||
+			quote.outputLabel !== `${input.outputCount} 条内容候选`
+		) {
+			throw invalid(
+				"The confirmed ProductQuote does not bind this text adjustment.",
+			);
+		}
+		const sourceAssetIds = input.sourceSnapshot.sources.assets.map(
+			({ id }) => id,
+		);
+		const inspectedAssets = await this.dependencies.assets.inspect(
+			input.workspaceId,
+			sourceAssetIds,
+		);
+		const inspectedById = new Map(
+			inspectedAssets.map((asset) => [asset.assetId, asset]),
+		);
+		const dataClass = new Set<DataClass>();
+		for (const source of input.sourceSnapshot.sources.assets) {
+			const inspected = inspectedById.get(source.id);
+			if (
+				!inspected ||
+				inspected.kind !== "resolved" ||
+				inspected.sha256 !== source.revision
+			) {
+				throw invalid(
+					"A text-adjustment source asset is missing or at a different revision.",
+				);
+			}
+			for (const value of inspected.dataClass ?? []) dataClass.add(value);
+		}
+		const serverDataClass = [...dataClass].sort();
+		const catalogModel = {
+			id: quote.catalogModelId,
+			revision: quote.catalogModelRevision,
+		};
+		const route = await this.dependencies.routeResolver.resolve({
+			catalogModel,
+			dataClass: serverDataClass,
+			operation: "copy.generate",
+			...(quote.routeSnapshotRef
+				? { routeSnapshotId: quote.routeSnapshotRef }
+				: {}),
+			workspaceId: input.workspaceId,
+		});
+		if (
+			!route ||
+			route.workspaceId !== input.workspaceId ||
+			(quote.routeSnapshotRef && route.id !== quote.routeSnapshotRef) ||
+			route.catalogRevision !== catalogModel.revision ||
+			route.requestedCatalogModelId !== catalogModel.id ||
+			route.selectionMode !== "fixed" ||
+			JSON.stringify(normalizeRouteDataClass(route.dataClasses)) !==
+				JSON.stringify(
+					serverDataClass.length > 0 ? serverDataClass : ["public"],
+				) ||
+			!route.allowedCandidates.some(
+				(candidate) => candidate.catalogModelId === catalogModel.id,
+			)
+		) {
+			throw invalid(
+				"The copy route does not match the confirmed text-adjustment quote.",
+			);
+		}
+		await this.dependencies.capabilities.assertReady({ catalogModel, route });
+		const preferences = await this.dependencies.modelPreferences.getPreferences(
+			input.workspaceId,
+			input.actorId,
+			"copy.generate",
+		);
+		return {
+			catalogModel,
+			modelPolicy: {
+				id: "result-adjust-model-policy:copy.generate",
+				mode: "fixed" as const,
+				revision: `result-adjust:${quote.catalogModelRevision}`,
+			},
+			modelSelection: deriveModelSelection(catalogModel.id, preferences),
+			operation: "copy.generate" as const,
+			route: { id: route.id, revision: route.catalogRevision },
+		};
+	}
+
 	async admit(input: ComposerSubmissionRequest) {
 		const recipe = await this.dependencies.catalog.getRecipeByRevisionId(
 			input.recipe.revision,

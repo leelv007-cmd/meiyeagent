@@ -1566,6 +1566,12 @@ const resultCommands = new OperationsResultCommandPort(
   productQuoteService,
   new PostgresResultAdjustSnapshotReadPort(pool),
   {
+    async prepareTextSelection(input) {
+      if (!composerSubmissionCoordinator) {
+        throw new Error('Composer Result adjustment is unavailable.');
+      }
+      return composerSubmissionCoordinator.prepareResultTextSelection(input);
+    },
     async submit(input) {
       if (!composerSubmissionCoordinator) {
         throw new Error('Composer Result adjustment is unavailable.');

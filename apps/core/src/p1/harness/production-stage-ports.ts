@@ -1386,7 +1386,13 @@ export function copyContentPackageRevisionWriteInput(
     ),
     ...(claimExtraction ? { claimExtraction } : {}),
     expectedRevision: input.request.expectedRevision,
-    generated: { assetIds: [workAssetId], childRuns: [] },
+    generated: {
+      assetIds: [workAssetId],
+      childRuns: [],
+      ...(sourceContentPackage?.ownedAssets?.length
+        ? { ownedAssets: structuredClone(sourceContentPackage.ownedAssets) }
+        : {}),
+    },
     harnessSelection: {
       recommendedCandidateId: input.selection.winner.candidateId,
     },

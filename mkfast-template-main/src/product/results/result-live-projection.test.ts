@@ -18,11 +18,39 @@ import {
   resultHarnessStreamLifecycle,
   resultWorkflowIdForWork,
   resultContentPackageMutationFacts,
+  resultWorkspaceKindForContentPackage,
   revisionTimelineFactsFromContentPackage,
   runDetailFactsFromLiveSelection,
 } from './result-live-projection';
 import { projectRevisionTimeline } from './result-revision-timeline-model';
 import { projectResultRunDetail } from './result-run-detail-model';
+
+test('note ContentPackage carrier keeps its image workspace after copy-only selection execution', () => {
+  assert.equal(
+    resultWorkspaceKindForContentPackage({
+      contentPackage: {
+        currentVersionId: 'version-note',
+        kind: 'image_text',
+        versions: [
+          { id: 'version-note', orderedAssetIds: ['owned-note-cover'] },
+        ],
+      },
+      projectedWorkspaceKind: 'copy',
+    }),
+    'image'
+  );
+  assert.equal(
+    resultWorkspaceKindForContentPackage({
+      contentPackage: {
+        currentVersionId: 'version-copy',
+        kind: 'image_text',
+        versions: [{ id: 'version-copy', orderedAssetIds: [] }],
+      },
+      projectedWorkspaceKind: 'copy',
+    }),
+    'copy'
+  );
+});
 
 test('projects only completed legacy or verifiable Composer adjustment sources', () => {
   assert.deepEqual(

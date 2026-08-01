@@ -1297,6 +1297,93 @@ test("an image-text note Result adjustment reserves the quoted image output", as
 	);
 });
 
+test("a note text-selection adjustment starts a terminal copy-only execution", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		modalityAdmission(),
+	);
+	await coordinator.submit({
+		...modalitySubmissionPayload("image_text_note"),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	const source = starter.starts[0]!;
+
+	await coordinator.submitResultAdjustment({
+		actorId: "owner-1",
+		idempotencyKey: "result-adjust-note-selection-1",
+		instruction: "改得更自然",
+		outputCount: 1,
+		quote: {
+			id: "quote-adjust-note-selection-1",
+			revision: "quote-adjust-note-selection-r1",
+		},
+		sourceContentPackage: { id: source.contentPackage.id, revision: 1 },
+		sourceNoteStyleId: "story",
+		sourceSnapshot: source.snapshot,
+		taskId: "composer-task:result-adjust:note-selection-1",
+		textSelectionScope: {
+			end: 9,
+			field: "body",
+			kind: "text_selection",
+			packageId: source.contentPackage.id,
+			platform: "xiaohongshu",
+			selectedText: "预约到店",
+			sourceTextSha256:
+				"53bb35f895648a58695272f4be5b28010ddaaf5ff8adc4934f3f2130c3b25477",
+			start: 5,
+			versionId: "version-1",
+		},
+		workId: "work-result-adjust-note-selection-1",
+		workspaceId: "workspace-1",
+	});
+
+	const adjusted = starter.starts[1]!;
+	assert.equal(adjusted.snapshot.lens, "copy");
+	assert.equal(adjusted.snapshot.operation, "copy.generate");
+	assert.deepEqual(adjusted.snapshot.deliverables, [
+		{
+			id: "recipe-deliverable-image_text_note",
+			kind: "copy",
+			order: 0,
+			quantity: 1,
+		},
+	]);
+	assert.deepEqual(adjusted.snapshot.deliverable, {
+		kind: "copy_document",
+		quantity: 1,
+	});
+	assert.deepEqual(adjusted.usageReservation.units, [
+		{ resource: "copy", quantity: 1 },
+	]);
+	assert.equal(
+		triggersPaidMediaExecution(
+			toHarnessWorkflowInput(
+				adjusted.snapshot,
+				adjusted.usageReservation,
+				adjusted.decisionReferences,
+			),
+		),
+		false,
+	);
+	assert.deepEqual(adjusted.snapshot.sources.textSelection, {
+		end: 9,
+		field: "body",
+		kind: "text_selection",
+		packageId: source.contentPackage.id,
+		platform: "xiaohongshu",
+		selectedText: "预约到店",
+		sourceTextSha256:
+			"53bb35f895648a58695272f4be5b28010ddaaf5ff8adc4934f3f2130c3b25477",
+		start: 5,
+		versionId: "version-1",
+	});
+});
+
 test("a rejected Composer admission does not claim a shell or start Harness", async () => {
 	const submissions = new MemorySubmissionStore();
 	const starter = new RecordingHarnessStarter();
@@ -1686,6 +1773,29 @@ function fixedAdmission(): CreationSubmissionAdmissionPort {
 
 function modalityAdmission(): CreationSubmissionAdmissionPort {
 	return {
+		async prepareResultTextSelection() {
+			return {
+				catalogModelId: "llm-copy-adjust",
+				operation: "copy.generate" as const,
+			};
+		},
+		async admitResultTextSelection() {
+			return {
+				catalogModel: { id: "llm-copy-adjust", revision: "catalog-copy-r1" },
+				modelPolicy: {
+					id: "result-adjust-model-policy:copy.generate",
+					mode: "fixed" as const,
+					revision: "result-adjust:catalog-copy-r1",
+				},
+				modelSelection: {
+					catalogModelId: "llm-copy-adjust",
+					platformConfigRevision: "admin-config:copy",
+					source: "platform_default" as const,
+				},
+				operation: "copy.generate" as const,
+				route: { id: "route-copy-adjust-1", revision: "catalog-copy-r1" },
+			};
+		},
 		async admit(input) {
 			const kind = input.lens ?? "copy";
 			return {

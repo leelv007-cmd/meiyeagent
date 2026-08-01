@@ -1493,6 +1493,9 @@ test('text selection delivery accepts a full candidate only when text outside th
       body: executionDelivery.inputs[0]?.version.body,
       conversionHook: executionDelivery.inputs[0]?.version.conversionHook,
       orderedAssetIds: executionDelivery.inputs[0]?.version.orderedAssetIds,
+      ownedAssetIds: executionDelivery.inputs[0]?.generated.ownedAssets?.map(
+        ({ id }) => id,
+      ),
       title: executionDelivery.inputs[0]?.version.title,
       topics: executionDelivery.inputs[0]?.version.topics,
       workAssetBody: executionDelivery.inputs[0]?.workAsset?.body,
@@ -1501,6 +1504,7 @@ test('text selection delivery accepts a full candidate only when text outside th
       body: '夏日护理，立即预约到店。',
       conversionHook: '私信预约',
       orderedAssetIds: ['selected-asset-1'],
+      ownedAssetIds: ['selected-asset-1'],
       title: '夏日护理',
       topics: ['护理'],
       workAssetBody: '夏日护理，立即预约到店。',
@@ -3936,6 +3940,14 @@ function contextWithSourcePackage(): HarnessContextSnapshot {
 function sourceContentPackageProjection() {
   return {
     reference: { id: 'source-package-1', revision: '3' },
+    ownedAssets: [
+      {
+        contentType: 'image/png',
+        id: 'selected-asset-1',
+        objectKey: 'generated/selected-asset-1.png',
+        sha256: 'selected-asset-1-sha256',
+      },
+    ],
     document: {
       body: '夏日护理，预约到店。',
       conversionHook: '私信预约',

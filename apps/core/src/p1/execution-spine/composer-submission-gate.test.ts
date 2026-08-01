@@ -415,6 +415,122 @@ test("Composer admission gate fails closed for stale quote, rights, and source f
 	assert.equal(capabilityChecks, 0);
 });
 
+test("Result text adjustment binds the confirmed quote route and inspected data class", async () => {
+	let routeId = "route-other";
+	let routeDataClasses = ["pii"];
+	let capabilityChecks = 0;
+	const gate = new ComposerSubmissionAdmissionGate({
+		assets: {
+			async inspect() {
+				return [
+					{
+						assetId: "asset-1",
+						contentType: "image/jpeg",
+						dataClass: ["pii"],
+						kind: "resolved" as const,
+						rightsRevision: "rights-r1",
+						sha256: "asset-r1",
+					},
+				];
+			},
+		},
+		briefs: { async assertCurrent() {} },
+		briefConfirmations: { async getBriefConfirmation() { return null; } },
+		capabilities: {
+			async assertReady() {
+				capabilityChecks += 1;
+			},
+		},
+		catalog: {
+			async getRecipeByRevisionId() { return null; },
+			async getSurfaceByRevisionId() { return null; },
+		},
+		identities: { async listActive() { return []; } },
+		modelPreferences: {
+			async getPreferences() {
+				return {
+					favorites: [],
+					recent: [],
+					workspaceDefault: "copy-new-default",
+				};
+			},
+		},
+		quotes: {
+			async getQuote() {
+				return {
+					catalogModelId: "copy-quoted",
+					catalogModelRevision: "catalog-copy-r1",
+					lifecycleStatus: "confirmed",
+					outputCount: 1,
+					outputLabel: "1 条内容候选",
+					quoteId: "quote-adjust-1",
+					revision: "quote-adjust-r1",
+					routeSnapshotRef: "route-confirmed",
+					taskId: "task-adjust-1",
+				} as never;
+			},
+		},
+		rights: {
+			async resolve() {
+				return { knownAssetIds: ["asset-1"], unauthorizedAssetIds: [] };
+			},
+		},
+		routeResolver: {
+			async resolve() {
+				return {
+					allowedCandidates: [
+						{ catalogModelId: "copy-quoted", deploymentId: "copy-deployment" },
+					],
+					catalogRevision: "catalog-copy-r1",
+					dataClass: routeDataClasses[0] ?? "public",
+					dataClasses: routeDataClasses,
+					id: routeId,
+					requestedCatalogModelId: "copy-quoted",
+					selectionMode: "fixed",
+					workspaceId: "workspace-1",
+				} as never;
+			},
+		},
+		sourcePackages: { async get() { return null; } },
+	});
+	const input = {
+		actorId: "owner-1",
+		outputCount: 1,
+		quote: { id: "quote-adjust-1", revision: "quote-adjust-r1" },
+		sourceSnapshot: {
+			sources: {
+				assets: [
+					{ id: "asset-1", revision: "asset-r1", role: "reference" },
+				],
+			},
+		} as never,
+		taskId: "task-adjust-1",
+		workspaceId: "workspace-1",
+	};
+
+	await assert.rejects(
+		gate.admitResultTextSelection(input),
+		/copy route does not match/u,
+	);
+	routeId = "route-confirmed";
+	routeDataClasses = ["public"];
+	await assert.rejects(
+		gate.admitResultTextSelection(input),
+		/copy route does not match/u,
+	);
+	assert.equal(capabilityChecks, 0);
+
+	routeDataClasses = ["pii"];
+	const admitted = await gate.admitResultTextSelection(input);
+	assert.equal(admitted.catalogModel.id, "copy-quoted");
+	assert.deepEqual(admitted.modelSelection, {
+		catalogModelId: "copy-quoted",
+		platformConfigRevision: null,
+		source: "current_selection",
+	});
+	assert.equal(capabilityChecks, 1);
+});
+
 test("Composer admission keeps pure image distinct from the first-class image-text note fork", async () => {
 	for (const kind of ["image", "image_text_note", "video"] as const) {
 		const briefChecks: unknown[] = [];

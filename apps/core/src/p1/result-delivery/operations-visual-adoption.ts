@@ -18,7 +18,7 @@ import type { CreationExecutionSnapshot } from '../execution-spine/creation-exec
 import { resolveAuthoritativeContentPackageVersionPlatform } from '../execution-spine/source-content-package-resolver.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import {
-  OperationsApplicationService,
+  type OperationsApplicationService,
   OperationsError,
 } from '../operations/application-service.js';
 import type { OperationContext } from '../operations/types.js';
@@ -36,6 +36,10 @@ export interface ResultAdjustSnapshotReadPort {
 }
 
 export interface ResultAdjustComposerSubmissionPort {
+  prepareTextSelection(input: {
+    actorId: string;
+    workspaceId: string;
+  }): Promise<{ catalogModelId: string; operation: 'copy.generate' }>;
   submit(input: {
     actorId: string;
     idempotencyKey: string;
@@ -159,7 +163,8 @@ function assertTextSelectionScope(input: {
     ? createHash('sha256').update(version.body).digest('hex')
     : undefined;
   if (
-    input.operation !== 'copy.generate' ||
+    (input.operation !== 'copy.generate' &&
+      input.snapshot?.lens !== 'image_text_note') ||
     !contentPackage ||
     !input.snapshot ||
     scope.platform !== authoritativePlatform ||
@@ -299,6 +304,35 @@ export class OperationsResultCommandPort {
     return { contentPackage, snapshot };
   }
 
+  private async adjustmentExecution(input: {
+    operation: CreationExecutionSnapshot['operation'];
+    scope: ResultAdjustCommand['scope'];
+    snapshot: CreationExecutionSnapshot;
+    userId: string;
+    workspaceId: string;
+  }) {
+    if (
+      input.scope?.kind !== 'text_selection' ||
+      input.snapshot.lens !== 'image_text_note'
+    ) {
+      return {
+        catalogModelId: input.snapshot.catalogModel.id,
+        operation: input.operation,
+      };
+    }
+    if (!this.composerSubmissions) {
+      throw new OperationsError(
+        'RESULT_ADJUST_OPERATION_UNSUPPORTED',
+        'Text adjustment admission is unavailable.',
+        409,
+      );
+    }
+    return this.composerSubmissions.prepareTextSelection({
+      actorId: input.userId,
+      workspaceId: input.workspaceId,
+    });
+  }
+
   async adopt(
     context: P1Context,
     command: ResultAdoptCommand,
@@ -379,7 +413,10 @@ export class OperationsResultCommandPort {
         }
         const sourceOperation =
           sourceJob?.contract.operation ?? frozen?.snapshot.operation;
+        const sourceCatalogModelId =
+          sourceJob?.contract.catalogModelId ?? frozen?.snapshot.catalogModel.id;
         if (
+          !sourceCatalogModelId ||
           sourceOperation !== 'copy.generate' &&
           sourceOperation !== 'image.generate'
         ) {
@@ -395,6 +432,18 @@ export class OperationsResultCommandPort {
           scope: command.scope,
           snapshot: frozen?.snapshot,
         });
+        const adjustmentExecution = frozen
+          ? await this.adjustmentExecution({
+              operation: sourceOperation,
+              scope: command.scope,
+              snapshot: frozen.snapshot,
+              userId: operation.userId,
+              workspaceId: operation.workspaceId,
+            })
+          : {
+              catalogModelId: sourceCatalogModelId,
+              operation: sourceOperation,
+            };
         const scopeAssetIds = resultAdjustScopeAssetIds(command.scope);
         const currentPackageVersion = frozen
           ? command.scope?.kind === 'text_selection'
@@ -457,18 +506,17 @@ export class OperationsResultCommandPort {
           ));
         return {
           quoteIntent: {
-            ...(sourceJob?.contract.aspectRatio ??
-            frozen?.snapshot.deliverable.aspectRatio
+            ...(adjustmentExecution.operation !== 'copy.generate' &&
+            (sourceJob?.contract.aspectRatio ??
+              frozen?.snapshot.deliverable.aspectRatio)
               ? {
                   aspectRatio:
                     sourceJob?.contract.aspectRatio ??
                     frozen?.snapshot.deliverable.aspectRatio,
                 }
               : {}),
-            catalogModelId:
-              sourceJob?.contract.catalogModelId ??
-              frozen!.snapshot.catalogModel.id,
-            operation: sourceOperation,
+            catalogModelId: adjustmentExecution.catalogModelId,
+            operation: adjustmentExecution.operation,
             quantity:
               command.scope?.kind === 'text_selection'
                 ? 1
@@ -556,7 +604,10 @@ export class OperationsResultCommandPort {
         }
         const sourceOperation =
           sourceJob?.contract.operation ?? frozen?.snapshot.operation;
+        const sourceCatalogModelId =
+          sourceJob?.contract.catalogModelId ?? frozen?.snapshot.catalogModel.id;
         if (
+          !sourceCatalogModelId ||
           sourceOperation !== 'copy.generate' &&
           sourceOperation !== 'image.generate'
         ) {
@@ -572,6 +623,18 @@ export class OperationsResultCommandPort {
           scope: composerCommand?.scope,
           snapshot: frozen?.snapshot,
         });
+        const adjustmentExecution = frozen
+          ? await this.adjustmentExecution({
+              operation: sourceOperation,
+              scope: composerCommand?.scope,
+              snapshot: frozen.snapshot,
+              userId: operation.userId,
+              workspaceId: operation.workspaceId,
+            })
+          : {
+              catalogModelId: sourceCatalogModelId,
+              operation: sourceOperation,
+            };
         const inheritedAssetIds = new Set(
           source.sourceReferences
             .filter((reference) => reference.kind === 'asset')
@@ -628,12 +691,12 @@ export class OperationsResultCommandPort {
         const aspectRatio =
           sourceJob?.contract.aspectRatio ??
           frozen?.snapshot.deliverable.aspectRatio;
-        const expectedOutputLabel = sourceOperation.startsWith('copy.')
+        const expectedOutputLabel = adjustmentExecution.operation.startsWith(
+          'copy.',
+        )
           ? `${expectedOutputCount} 条内容候选`
           : `${expectedOutputCount} 张 ${aspectRatio} 图片`;
-        const catalogModelId =
-          sourceJob?.contract.catalogModelId ??
-          frozen!.snapshot.catalogModel.id;
+        const catalogModelId = adjustmentExecution.catalogModelId;
         const pendingQuote = await this.quotes.getQuote(
           command.billingQuoteId,
           operation.workspaceId,

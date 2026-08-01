@@ -32,6 +32,8 @@ function fixture(
     packageVersionId?: string;
     packageWorkflowId?: string;
     packageRevision?: number;
+    quoteCatalogModelId?: string;
+    quoteOperation?: 'copy.generate' | 'image.generate';
     quoteStatus?: 'confirmed' | 'quoted';
     quoteOutputCount?: number;
     quoteTaskId?: string;
@@ -39,6 +41,7 @@ function fixture(
     semanticSnapshot?: boolean;
     sourceOperation?: 'copy.generate' | 'image.generate' | 'video.generate';
     sourceSessionId?: string;
+    textSelectionCatalogModelId?: string;
     snapshotContentPackagePlatform?:
       | 'douyin'
       | 'generic'
@@ -210,7 +213,7 @@ function fixture(
     options.quoteOutputCount ?? options.scopedAssetIds?.length ?? 1;
   const currentQuote = () => ({
     billingMode: 'per_request' as const,
-    catalogModelId: 'image-model-old',
+    catalogModelId: options.quoteCatalogModelId ?? 'image-model-old',
     catalogModelRevision: 'catalog-fresh',
     confirmedAmount: quoteOutputCount * 2,
     ...(quoteStatus === 'confirmed'
@@ -223,7 +226,7 @@ function fixture(
     lifecycleStatus: quoteStatus,
     outputCount: quoteOutputCount,
     outputLabel:
-      options.sourceOperation === 'copy.generate'
+      (options.quoteOperation ?? options.sourceOperation) === 'copy.generate'
         ? `${quoteOutputCount} 条内容候选`
         : `${quoteOutputCount} 张 3:4 图片`,
     quoteId: 'quote-fresh',
@@ -292,6 +295,13 @@ function fixture(
     },
   };
   const composerSubmissions = {
+    async prepareTextSelection() {
+      return {
+        catalogModelId:
+          options.textSelectionCatalogModelId ?? 'copy-model-current',
+        operation: 'copy.generate' as const,
+      };
+    },
     async submit(input: { workId: string }) {
       composerCalls.push(input);
       return {
@@ -398,6 +408,61 @@ test('copy text selection adjustment binds the frozen range through confirmation
   assert.match(
     (composerCalls[0] as { instruction: string }).instruction,
     /候选 body 必须返回完整正文/u,
+  );
+});
+
+test('note text selection quotes and submits a copy-only successor', async () => {
+  const { composerCalls, port } = fixture({
+    noteSnapshot: true,
+    quoteCatalogModelId: 'copy-model-current',
+    quoteOperation: 'copy.generate',
+    quoteStatus: 'quoted',
+    sourceOperation: 'image.generate',
+    textSelectionCatalogModelId: 'copy-model-current',
+  });
+  const source = {
+    expectedPackageRevision: 3,
+    kind: 'content_package_snapshot' as const,
+    packageId: 'package-1',
+    snapshotId: 'snapshot-task-1',
+    workflowId: 'task-1',
+  };
+  const command = {
+    expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+    instruction: '语气更自然',
+    scope: textSelectionScope,
+    source,
+    workId: 'work-1',
+  };
+  const prepared = await port.prepareAdjust(
+    context,
+    command,
+    'adjust-note-text-selection-prepare',
+  );
+
+  assert.deepEqual(prepared.quoteIntent, {
+    catalogModelId: 'copy-model-current',
+    operation: 'copy.generate',
+    quantity: 1,
+  });
+
+  await port.adjust(
+    context,
+    {
+      billingQuoteId: 'quote-fresh',
+      derivedTaskId: prepared.task.id,
+      derivedWorkId: prepared.work.id,
+      instruction: command.instruction,
+      scope: textSelectionScope,
+      source,
+    },
+    'adjust-note-text-selection-confirm',
+  );
+
+  assert.equal(composerCalls.length, 1);
+  assert.deepEqual(
+    (composerCalls[0] as { textSelectionScope?: unknown }).textSelectionScope,
+    textSelectionScope,
   );
 });
 

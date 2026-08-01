@@ -136,6 +136,24 @@ export interface CreationSubmissionAdmissionPort {
 		taskId: string;
 		usageUnits?: CreationSubmissionUsageUnit[];
 	}>;
+	prepareResultTextSelection?(input: {
+		actorId: string;
+		workspaceId: string;
+	}): Promise<{ catalogModelId: string; operation: "copy.generate" }>;
+	admitResultTextSelection?(input: {
+		actorId: string;
+		outputCount: number;
+		quote: { id: string; revision: string };
+		sourceSnapshot: CreationExecutionSnapshot;
+		taskId: string;
+		workspaceId: string;
+	}): Promise<{
+		catalogModel: { id: string; revision: string };
+		modelPolicy: { id: string; mode: "fixed"; revision: string };
+		modelSelection: NonNullable<CreationExecutionSnapshot["modelSelection"]>;
+		operation: "copy.generate";
+		route: { id: string; revision: string };
+	}>;
 }
 
 export class CreationSubmissionConflictError extends Error {
@@ -161,6 +179,16 @@ export class CreationSubmissionCoordinator {
 			"buildQuote" | "confirm" | "getQuote"
 		>,
 	) {}
+
+	async prepareResultTextSelection(input: {
+		actorId: string;
+		workspaceId: string;
+	}) {
+		if (!this.admission.prepareResultTextSelection) {
+			throw new Error("Result text-selection admission is unavailable.");
+		}
+		return this.admission.prepareResultTextSelection(input);
+	}
 
 	async submit(input: ComposerSubmissionRequest) {
 		const request = composerSubmissionRequestSchema.parse(input);
@@ -257,25 +285,51 @@ export class CreationSubmissionCoordinator {
 		if (source.workspaceId !== input.workspaceId) {
 			throw new Error("Result adjustment source does not match its workspace.");
 		}
-		if (source.lens === "image_text_note" && !input.sourceNoteStyleId) {
+		const isNoteTextSelection =
+			source.lens === "image_text_note" && input.textSelectionScope !== undefined;
+		if (
+			source.lens === "image_text_note" &&
+			!isNoteTextSelection &&
+			!input.sourceNoteStyleId
+		) {
 			throw new Error(
 				"Image-text note Result adjustment requires its frozen style.",
 			);
 		}
+		const textSelectionAdmission = isNoteTextSelection
+			? await this.admission.admitResultTextSelection?.({
+					actorId: input.actorId,
+					outputCount: input.outputCount,
+					quote: input.quote,
+					sourceSnapshot: source,
+					taskId: input.taskId,
+					workspaceId: input.workspaceId,
+				})
+			: undefined;
+		if (isNoteTextSelection && !textSelectionAdmission) {
+			throw new Error("Result text-selection admission is unavailable.");
+		}
 		const intent = `${source.intent.text}\n\n调整要求：${input.instruction}`;
-		const deliverable = {
-			...source.deliverable,
-			quantity: input.outputCount,
-		};
-		const deliverables = source.deliverables.map((item) => ({
-			...item,
-			quantity: input.outputCount,
-		}));
+		const deliverable = textSelectionAdmission
+			? ({ kind: "copy_document", quantity: input.outputCount } as const)
+			: { ...source.deliverable, quantity: input.outputCount };
+		const deliverables = textSelectionAdmission
+			? source.deliverables.map(({ id, order }) => ({
+					id,
+					kind: "copy" as const,
+					order,
+					quantity: input.outputCount,
+				}))
+			: source.deliverables.map((item) => ({
+					...item,
+					quantity: input.outputCount,
+				}));
 		const generationParams = normalizedGenerationParams(source);
 		const signedSubmission = pickComposerSubmissionSignedFields({
 			...(source.signedSubmission ?? {}),
 			...generationParams,
-			catalogModel: source.catalogModel,
+			catalogModel:
+				textSelectionAdmission?.catalogModel ?? source.catalogModel,
 			contentPackagePlatform: source.contentPackagePlatform,
 			creationMode: source.creationMode,
 			deliverable,
@@ -287,7 +341,8 @@ export class CreationSubmissionCoordinator {
 			actorId: input.actorId,
 			briefConfirmation: source.briefConfirmation,
 			briefContext: source.briefContext,
-			catalogModel: source.catalogModel,
+			catalogModel:
+				textSelectionAdmission?.catalogModel ?? source.catalogModel,
 			contentModules: source.contentModules,
 			contentPackageId: this.ids.createId("content-package"),
 			contentPackagePlatform: source.contentPackagePlatform,
@@ -301,15 +356,18 @@ export class CreationSubmissionCoordinator {
 			identityDecision: source.identityDecision,
 			...generationParams,
 			intent,
-			lens: source.lens,
-			modelPolicy: source.modelPolicy,
-			modelSelection: source.modelSelection,
-			operation: source.operation,
+			lens: textSelectionAdmission ? "copy" : source.lens,
+			modelPolicy:
+				textSelectionAdmission?.modelPolicy ?? source.modelPolicy,
+			modelSelection:
+				textSelectionAdmission?.modelSelection ?? source.modelSelection,
+			operation:
+				textSelectionAdmission?.operation ?? source.operation,
 			platform: source.platform,
 			quote: input.quote,
 			recipe: source.recipe,
 			rights: source.rights,
-			route: source.route,
+			route: textSelectionAdmission?.route ?? source.route,
 			signedSubmission,
 			viralAdaptSource: source.viralAdaptSource,
 			sources: {
@@ -330,7 +388,9 @@ export class CreationSubmissionCoordinator {
 		const snapshot = createCreationExecutionSnapshot(command, this.ids.now());
 		const submission: CreationSubmissionRecord = {
 			contentPackage: { ...snapshot.contentPackage },
-			...(source.lens === "image_text_note" && input.sourceNoteStyleId
+			...(source.lens === "image_text_note" &&
+			input.sourceNoteStyleId &&
+			!textSelectionAdmission
 				? {
 						decisionReferences: [
 							{

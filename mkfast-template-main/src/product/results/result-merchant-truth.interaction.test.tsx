@@ -3,6 +3,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -404,9 +405,11 @@ describe('merchant Result Center truth', () => {
         copyWorksurface={{
           workId,
           baseRevisionId: 'version-note-1',
+          packageId: 'package-note-1',
+          sourcePlatform: 'xiaohongshu',
           document: {
             title: '春日护理笔记',
-            body: '先讲护理体验，再说明到店建议。',
+            body: '先讲护理💆体验，再说明到店建议。',
             conversionHook: '私信预约',
             topics: ['护理'],
             orderedAssetIds: ['note-image-1'],
@@ -453,15 +456,47 @@ describe('merchant Result Center truth', () => {
     expect(shell).toHaveAttribute('data-carrier', 'note');
     expect(within(shell).getByTestId('image-worksurface')).toBeInTheDocument();
     expect(screen.getByTestId('copy-field-body')).toHaveTextContent(
-      '先讲护理体验，再说明到店建议。'
+      '先讲护理💆体验，再说明到店建议。'
     );
     expect(
       screen.getByTestId('object-workspace-selection-ai')
     ).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('selection-ai-shorten'));
-    expect(onAdjust).toHaveBeenCalledWith(
-      expect.stringContaining('精简以下选区')
+    supportTiptapSelectionGeometry();
+    const selectionBody = screen.getByTestId('copy-field-body');
+    const selectionTextNode = selectionBody.querySelector('p')?.firstChild;
+    if (!(selectionTextNode instanceof Text)) {
+      throw new Error('Missing note editor text node');
+    }
+    selectionBody.focus();
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.collapse(selectionTextNode, 0);
+    fireEvent(document, new Event('selectionchange', { bubbles: true }));
+    const range = document.createRange();
+    // JS/DOM offsets are UTF-16: the emoji occupies offsets 4-6.
+    range.setStart(selectionTextNode, 6);
+    range.setEnd(selectionTextNode, 8);
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    fireEvent(document, new Event('selectionchange', { bubbles: true }));
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('object-workspace-selection-ai')
+      ).toHaveAttribute('data-rewrite-scope', 'selection')
     );
+    fireEvent.click(screen.getByTestId('selection-ai-shorten'));
+    await waitFor(() => expect(onAdjust).toHaveBeenCalledOnce());
+    expect(onAdjust.mock.calls[0]?.[0]).toContain('精简以下选区');
+    expect(onAdjust.mock.calls[0]?.[1]).toMatchObject({
+      end: 8,
+      field: 'body',
+      kind: 'text_selection',
+      packageId: 'package-note-1',
+      platform: 'xiaohongshu',
+      selectedText: '体验',
+      start: 6,
+      versionId: 'version-note-1',
+    });
     fireEvent.click(screen.getByTestId('image-ai-cover-tool'));
     expect(onImageAiCover).toHaveBeenCalledOnce();
     expect(screen.getByTestId('copy-fact-sources')).toHaveTextContent(
@@ -507,6 +542,7 @@ describe('merchant Result Center truth', () => {
 
     const body = screen.getByTestId('copy-field-body');
     supportTiptapSelectionGeometry();
+    await user.click(body);
     await user.clear(body);
     await user.type(body, '编辑后的护理正文。');
     expect(within(phone).getByText('编辑后的护理正文。')).toBeInTheDocument();

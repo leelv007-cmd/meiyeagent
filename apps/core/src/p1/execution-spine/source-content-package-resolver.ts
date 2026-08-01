@@ -26,6 +26,8 @@ export interface SourceContentPackageReference {
 
 export interface ResolvedSourceContentPackage {
 	reference: SourceContentPackageReference;
+	/** Model-owned assets may be retained by an exact derived text revision. */
+	ownedAssets?: NonNullable<ContentPackage["generated"]["ownedAssets"]>;
 	/** Internal write-back source; never copied into provider context. */
 	document?: {
 		body: string;
@@ -143,6 +145,13 @@ export class ExecutionSourceContentPackageResolver
 		);
 		return {
 			reference: { ...source },
+			...((contentPackage.generated.ownedAssets?.length ?? 0) > 0
+				? {
+						ownedAssets: structuredClone(
+							contentPackage.generated.ownedAssets,
+						),
+					}
+				: {}),
 			document: {
 				body: currentVersion.body,
 				...(currentVersion.conversionHook
