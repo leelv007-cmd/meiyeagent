@@ -115,6 +115,22 @@ test('result route binds visible copy edits to the current delivery variant', ()
     route,
     /onCopyQuickEdit=\{[\s\S]*?baseVersionId: currentResultEditVersion\.id[\s\S]*?platform: resultEditPlatform/u
   );
+  assert.match(
+    route,
+    /const revisionTimelineTarget = resultEditPlatform\s*\? deliveryVariant\s*:\s*contentPackage;/u
+  );
+  assert.match(
+    route,
+    /revisionTimelineFactsFromContentPackage\(\s*revisionTimelineTarget\s*\)/u
+  );
+  assert.match(
+    route,
+    /referencedAssetIds: currentResultEditVersion\?\.orderedAssetIds/u
+  );
+  assert.match(
+    route,
+    /onRestoreRevisionVersion=\{async \(versionId\)[\s\S]*?targetVersionId: versionId/u
+  );
 });
 
 test('result route copies, shares, scans, and exports the exact visible version', () => {

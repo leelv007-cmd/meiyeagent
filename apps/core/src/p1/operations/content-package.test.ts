@@ -1599,7 +1599,7 @@ describe('ContentPackage application service contract', () => {
     );
   });
 
-  it('keeps platform version histories isolated and restores a target as a new version', async () => {
+  it('keeps platform version histories isolated and restores an XHS target as a new version', async () => {
     const { context, operations, operationsService, service } = setup();
     const contentPackage = await seedAcceptedPackage(
       operations,
@@ -1636,17 +1636,17 @@ describe('ContentPackage application service contract', () => {
     const editedVariant = (await operationsService.editContentPackageVariant(
       { ...context, actor: 'owner' },
       {
-        baseVersionId: 'douyin-v1',
+        baseVersionId: 'xiaohongshu-v1',
         changes: {
-          body: '抖音编辑稿',
-          conversionHook: '评论预约',
+          body: '小红书编辑稿',
+          conversionHook: '私信预约',
           orderedAssetIds: ['owned-image_text-1'],
-          title: '抖音编辑标题',
-          topics: ['同城探店'],
+          title: '小红书编辑标题',
+          topics: ['同城美业'],
         },
         expectedRevision: stored.revision,
         packageId: stored.id,
-        platform: 'douyin',
+        platform: 'xiaohongshu',
       }
     )) as { revision: number };
     await service.executeModule(
@@ -1657,10 +1657,10 @@ describe('ContentPackage application service contract', () => {
         payload: {
           expectedRevision: editedVariant.revision,
           packageId: stored.id,
-          targetVersionId: 'douyin-v1',
+          targetVersionId: 'xiaohongshu-v1',
         },
       },
-      'rollback-douyin-v1'
+      'rollback-xiaohongshu-v1'
     );
     const loaded = (await service.queryModule(context, 'operations', {
       action: 'content_package',
@@ -1676,19 +1676,24 @@ describe('ContentPackage application service contract', () => {
         }>;
       }>;
     };
-    const douyinHistory =
-      loaded.variants.find((variant) => variant.platform === 'douyin')
+    const xiaohongshuHistory =
+      loaded.variants.find((variant) => variant.platform === 'xiaohongshu')
         ?.versions ?? [];
 
-    assert.equal(douyinHistory.length, 3);
-    assert.equal(douyinHistory.at(-1)?.body, 'douyin 初稿');
-    assert.equal(douyinHistory.at(-1)?.source, 'rollback_restored');
-    assert.equal(douyinHistory.at(-1)?.revertedFromVersionId, 'douyin-v1');
+    assert.equal(xiaohongshuHistory.length, 3);
+    assert.equal(xiaohongshuHistory.at(-1)?.body, 'xiaohongshu 初稿');
+    assert.equal(xiaohongshuHistory.at(-1)?.source, 'rollback_restored');
     assert.equal(
-      loaded.variants.find((variant) => variant.platform === 'xiaohongshu')
-        ?.versions.length,
-      1
+      xiaohongshuHistory.at(-1)?.revertedFromVersionId,
+      'xiaohongshu-v1'
     );
+    for (const platform of ['douyin', 'video_account'] as const) {
+      assert.equal(
+        loaded.variants.find((variant) => variant.platform === platform)
+          ?.versions.length,
+        1
+      );
+    }
   });
 
   it('rejects rollback for a cancelled package without changing version history', async () => {

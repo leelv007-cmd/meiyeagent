@@ -1170,8 +1170,12 @@ function ResultCenterRoutePage() {
           )?.title ?? '上一条内容',
       })
     : undefined;
-  const revisionTimelineFacts =
-    revisionTimelineFactsFromContentPackage(contentPackage);
+  const revisionTimelineTarget = resultEditPlatform
+    ? deliveryVariant
+    : contentPackage;
+  const revisionTimelineFacts = revisionTimelineFactsFromContentPackage(
+    revisionTimelineTarget
+  );
   const runDetailFacts = runDetailFactsFromLiveSelection({
     workId,
     phase: shellPhase,
@@ -1182,7 +1186,7 @@ function ResultCenterRoutePage() {
   const shellFactSources = selected
     ? factSourcesFromGroundingSnapshot(selected.work, selected.job, {
         contentPackageRights: contentPackage?.rights,
-        referencedAssetIds: currentPackageVersion?.orderedAssetIds,
+        referencedAssetIds: currentResultEditVersion?.orderedAssetIds,
       })
     : contentPackage?.rights
       ? factSourcesFromGroundingSnapshot(

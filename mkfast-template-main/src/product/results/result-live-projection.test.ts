@@ -537,6 +537,47 @@ test('revision timeline facts project ContentPackage versions without inventing 
   assert.doesNotMatch(JSON.stringify(view), /a1b2c3d4-e5f6/u);
 });
 
+test('revision timeline facts mark and restore only the selected platform history', () => {
+  const facts = revisionTimelineFactsFromContentPackage({
+    currentVersionId: 'xiaohongshu-v2',
+    versions: [
+      {
+        body: '小红书初稿',
+        createdAt: '2026-07-20T08:00:00.000Z',
+        id: 'xiaohongshu-v1',
+        orderedAssetIds: ['xhs-image-1'],
+        title: '小红书初稿',
+        topics: ['美甲'],
+      },
+      {
+        body: '小红书手改稿',
+        createdAt: '2026-07-20T09:00:00.000Z',
+        derivedFromVersionId: 'xiaohongshu-v1',
+        id: 'xiaohongshu-v2',
+        orderedAssetIds: ['xhs-image-2'],
+        source: 'merchant_edited',
+        title: '小红书手改稿',
+        topics: ['美甲'],
+      },
+    ],
+  });
+  const view = projectRevisionTimeline(facts);
+
+  assert.deepEqual(
+    view.entries.map(({ versionId }) => versionId),
+    ['xiaohongshu-v2', 'xiaohongshu-v1']
+  );
+  assert.equal(view.entries[0]?.isCurrent, true);
+  assert.equal(
+    view.entries[1]?.recoverAction?.targetVersionId,
+    'xiaohongshu-v1'
+  );
+  assert.doesNotMatch(
+    JSON.stringify(view),
+    /package-v|douyin-v|video-account-v/u
+  );
+});
+
 test('run detail facts strip provider identity and keep merchant language', () => {
   const live = projectResultCenterLiveProjection(projection, 'work-copy-old');
   const job = live.selected!.job!;
