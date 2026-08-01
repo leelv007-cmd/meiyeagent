@@ -854,9 +854,10 @@ describe(
       assert.equal(providerOutputCount, quote.outputCount);
       assert.equal(result.assets.length, quote.outputCount);
       assert.equal(result.job.outputAssetIds.length, quote.outputCount);
-      assert.ok(
-        (await service.getQuote(quote.quoteId, workspaceId))?.submissionPromptHash,
-      );
+      const boundQuote = await service.getQuote(quote.quoteId, workspaceId);
+      assert.ok(boundQuote?.submissionPromptHash);
+      assert.ok(boundQuote?.submissionReferenceAssetsHash);
+      assert.ok(boundQuote?.submissionInputAssetsHash);
     });
 
     it('isolates workspaces and rolls back a failed transaction', async () => {
