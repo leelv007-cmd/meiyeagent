@@ -260,6 +260,8 @@ import {
 } from './composer-destination-preflight';
 import { projectComposerQuoteView } from './quote-wiring';
 import {
+  confirmCreditGuardedRun,
+  type CreditGuardedComposerRun,
   projectWorkbenchCreditBalance,
   projectWorkbenchCreditQuote,
   projectWorkbenchCreditShortfall,
@@ -709,11 +711,7 @@ export function ComposerHome({
   const [executionConfirm, setExecutionConfirm] = useState(
     createExecutionConfirmState
   );
-  const pendingRunRef = useRef<{
-    lensId: CreationLensId;
-    videoConfirmAccepted?: boolean;
-    briefConfirmationId?: string;
-  } | null>(null);
+  const pendingRunRef = useRef<CreditGuardedComposerRun | null>(null);
   // Deliberately outside `session`: declining clears the transcript, and a
   // feedback line that lived there would be wiped by the very action it
   // reports on (D-164⑥ 决定 B).
@@ -4117,22 +4115,23 @@ export function ComposerHome({
                                 void confirmNotePlanRegeneration();
                                 return;
                               }
-                              // A balance refresh may land while this card is
-                              // open. Recheck the current merchant-safe quote
-                              // and balance before this second submission path.
-                              if (quotaBlocked) {
-                                setSubmissionQuotaBlocked(true);
-                                return;
-                              }
-                              const run = pendingRunRef.current;
-                              setExecutionConfirm(confirmExecution);
-                              if (!run) return;
-                              pendingRunRef.current = null;
-                              runCreate(
-                                run.lensId,
-                                run.videoConfirmAccepted,
-                                run.briefConfirmationId
-                              );
+                              confirmCreditGuardedRun({
+                                quotaBlocked,
+                                run: pendingRunRef.current,
+                                onBlocked: () => {
+                                  setSubmissionQuotaBlocked(true);
+                                },
+                                onConfirmed: (run) => {
+                                  setExecutionConfirm(confirmExecution);
+                                  if (!run) return;
+                                  pendingRunRef.current = null;
+                                  runCreate(
+                                    run.lensId,
+                                    run.videoConfirmAccepted,
+                                    run.briefConfirmationId
+                                  );
+                                },
+                              });
                             },
                             onReject: () => {
                               if (pendingNotePlanRegeneration) {

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  confirmCreditGuardedRun,
   projectWorkbenchCreditBalance,
   projectWorkbenchCreditQuote,
   projectWorkbenchCreditShortfall,
@@ -92,4 +93,27 @@ test('leaves legacy amounts and incomplete credit quotes out of the credit surfa
     ),
     { missingCredits: 0, visible: false }
   );
+});
+
+test('blocks a confirmed run when a refreshed balance is now insufficient', () => {
+  let blocked = false;
+  let runCreateCalls = 0;
+
+  confirmCreditGuardedRun({
+    quotaBlocked: true,
+    run: {
+      lensId: 'image_text',
+      briefConfirmationId: 'brief-1',
+      videoConfirmAccepted: true,
+    },
+    onBlocked: () => {
+      blocked = true;
+    },
+    onConfirmed: () => {
+      runCreateCalls += 1;
+    },
+  });
+
+  assert.equal(blocked, true);
+  assert.equal(runCreateCalls, 0);
 });

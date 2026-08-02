@@ -1,4 +1,5 @@
 import type {
+  CreationLensId,
   PublicCreditBalance,
   PublicProductQuoteSnapshot,
 } from '@meiye/contracts';
@@ -24,6 +25,12 @@ export type WorkbenchCreditShortfallView = {
   visible: boolean;
 };
 
+export type CreditGuardedComposerRun = {
+  briefConfirmationId?: string;
+  lensId: CreationLensId;
+  videoConfirmAccepted?: boolean;
+};
+
 const HIDDEN_BALANCE: WorkbenchCreditBalanceView = {
   availableCredits: 0,
   expiringLot: null,
@@ -40,6 +47,25 @@ const HIDDEN_SHORTFALL: WorkbenchCreditShortfallView = {
   missingCredits: 0,
   visible: false,
 };
+
+/** Runs a confirmation only after rechecking the latest credit projection. */
+export function confirmCreditGuardedRun({
+  quotaBlocked,
+  run,
+  onBlocked,
+  onConfirmed,
+}: {
+  quotaBlocked: boolean;
+  run: CreditGuardedComposerRun | null;
+  onBlocked: () => void;
+  onConfirmed: (run: CreditGuardedComposerRun | null) => void;
+}) {
+  if (quotaBlocked) {
+    onBlocked();
+    return;
+  }
+  onConfirmed(run);
+}
 
 /**
  * Renders only the merchant-safe balance contract from `entitlements`.

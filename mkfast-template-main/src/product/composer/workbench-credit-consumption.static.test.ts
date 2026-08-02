@@ -46,7 +46,7 @@ test('workbench consumes the backend credit balance and quote through all three 
   );
   assert.match(
     source,
-    /onConfirm: \(\) => \{[\s\S]*?if \(quotaBlocked\) \{\s+setSubmissionQuotaBlocked\(true\);\s+return;\s+\}[\s\S]*?const run = pendingRunRef\.current;\s+setExecutionConfirm\(confirmExecution\);/u
+    /onConfirm: \(\) => \{[\s\S]*?confirmCreditGuardedRun\(\{[\s\S]*?quotaBlocked,[\s\S]*?run: pendingRunRef\.current,[\s\S]*?onBlocked: \(\) => \{\s+setSubmissionQuotaBlocked\(true\);/u
   );
   assert.match(
     source,
