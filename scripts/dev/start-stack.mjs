@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { createDevelopmentRuntimeProfile } from './runtime-profile.mjs';
+import { clearStackState, writeStackState } from './stack-state.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const profile = createDevelopmentRuntimeProfile(process.env);
@@ -30,13 +31,23 @@ if (provisionExit.code !== 0) {
   );
 }
 
+// Truth source for `pnpm dev:smoke`: the profile URLs actually handed to the
+// stack processes, not a later re-read of .env which can drift.
+await writeStackState(profile);
+
 const stack = run('pnpm', ['run', 'dev:all']);
+const clearState = async () => {
+  await clearStackState().catch(() => undefined);
+};
 for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => stack.kill(signal));
+  process.on(signal, () => {
+    void clearState().finally(() => stack.kill(signal));
+  });
 }
 const stackExit = await new Promise((resolveExit, reject) => {
   stack.once('error', reject);
   stack.once('exit', (code, signal) => resolveExit({ code, signal }));
 });
+await clearState();
 if (stackExit.signal) process.kill(process.pid, stackExit.signal);
 process.exitCode = stackExit.code ?? 1;

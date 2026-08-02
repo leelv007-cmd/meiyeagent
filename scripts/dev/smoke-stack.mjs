@@ -3,15 +3,22 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { fetchHealthy } from './health-fetch.mjs';
+import { readStackState } from './stack-state.mjs';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const startedAt = new Date().toISOString();
-const corePort =
-  process.env.PLAYWRIGHT_CORE_PORT || process.env.CORE_PORT || '4100';
-const databaseUrl = process.env.DATABASE_URL;
 
-if (!databaseUrl) throw new Error('DATABASE_URL is required.');
+// Prefer the DATABASE_URL written by `pnpm dev` (start-stack). Falling back to
+// process.env.DATABASE_URL was the false-red path: .env often points at a
+// shared meiye DB while the live stack used a different runtime URL.
+const stackState = await readStackState();
+const databaseUrl = stackState.DATABASE_URL;
+const corePort =
+  stackState.CORE_PORT ||
+  process.env.PLAYWRIGHT_CORE_PORT ||
+  process.env.CORE_PORT ||
+  '4100';
 
 async function retry(label, assertion, timeoutMs = 45_000) {
   const deadline = Date.now() + timeoutMs;
@@ -72,7 +79,7 @@ await retry('Worker heartbeat', async () => {
 });
 
 process.stdout.write(
-  `Web+core smoke passed: Web:3000, Core:${corePort} Harness active, Worker heartbeat fresh.\n`,
+  `Web+core smoke passed: Web:3000, Core:${corePort} Harness active, Worker heartbeat fresh (db=${databaseUrl}).\n`,
 );
 
 const playwright = await new Promise((resolveExit, reject) => {
