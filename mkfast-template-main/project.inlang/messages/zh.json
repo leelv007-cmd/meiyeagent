@@ -3296,7 +3296,7 @@
   "pricing_plan_recommended": "推荐",
   "pricing_plan_subscribe": "立即订阅",
   "pricing_plan_subtitle": "功能相同，按可交付的文案、图片、视频数量和可同时进行的创作数选择套餐。",
-  "pricing_plan_yearly_hint": "或按年 ¥{amount}/年",
+  "pricing_plan_yearly_hint": "或按年 {amount}/年",
   "pricing_plans_free_description": "适合单店验证内容到发布闭环",
   "pricing_plans_free_name": "初级",
   "pricing_plans_lifetime_description": "一次性付款获得所有高级功能",

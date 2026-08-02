@@ -3296,7 +3296,7 @@
   "pricing_plan_recommended": "Recommended",
   "pricing_plan_subscribe": "Subscribe now",
   "pricing_plan_subtitle": "Every plan has the same features — choose by how many copies, images, and videos you can deliver and how many creations run at once.",
-  "pricing_plan_yearly_hint": "or ¥{amount}/year billed annually",
+  "pricing_plan_yearly_hint": "or {amount}/year billed annually",
   "pricing_plans_free_description": "For a single store validating the content-to-publish workflow",
   "pricing_plans_free_name": "Starter",
   "pricing_plans_lifetime_description": "Premium features with one-time payment",

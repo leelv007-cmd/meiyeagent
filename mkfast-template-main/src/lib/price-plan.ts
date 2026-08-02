@@ -1,4 +1,5 @@
 import { websiteConfig } from '@/config/website';
+import { formatPrice } from '@/lib/formatter';
 import { PaymentTypes, PlanIntervals } from '@/payment/types';
 import type { Price, PricePlan } from '@/payment/types';
 
@@ -55,8 +56,10 @@ export function findSubscriptionPrice(
   );
 }
 
-export function formatYuan(amountInCents: number): string {
-  return `¥${Math.round(amountInCents / 100)}`;
+export function formatSubscriptionPrice(
+  price: Pick<Price, 'amount' | 'currency'>
+): string {
+  return formatPrice(price.amount, price.currency);
 }
 
 /**
@@ -72,7 +75,7 @@ export function growthMonthlyPriceLabel(): string | null {
     GROWTH_CONFIG_PLAN_ID,
     PlanIntervals.MONTH
   );
-  return monthly ? formatYuan(monthly.amount) : null;
+  return monthly ? formatSubscriptionPrice(monthly) : null;
 }
 
 /**

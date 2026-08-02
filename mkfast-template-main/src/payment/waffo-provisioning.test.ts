@@ -2,10 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { provisionWaffoSubscriptionCatalog } from './waffo-provisioning';
 
-test('provisions nine Test-only subscription products with a test webhook', async () => {
+test('provisions nine HKD Test-only subscription products and reuses the existing test webhook', async () => {
   const created: Array<{ prices: unknown }> = [];
   const createdGroups: unknown[] = [];
-  const webhookAdds: unknown[] = [];
 
   const result = await provisionWaffoSubscriptionCatalog(
     {
@@ -21,16 +20,10 @@ test('provisions nine Test-only subscription products with a test webhook', asyn
           return { group: { id: `GRP_${createdGroups.length}` } };
         },
       },
-      webhooks: {
-        add: async (input) => {
-          webhookAdds.push(input);
-          return { webhook: { id: 'whk_test_1' } };
-        },
-      },
     },
     {
       storeId: 'STO_test',
-      webhookUrl: 'https://payments.example.test/api/webhooks/waffo',
+      testWebhookId: 'whk_existing_test',
     }
   );
 
@@ -38,53 +31,38 @@ test('provisions nine Test-only subscription products with a test webhook', asyn
   assert.deepEqual(
     created.map((product) => product.prices),
     [
-      { CNY: { amount: '199.00', taxCategory: 'saas' } },
-      { CNY: { amount: '179.10', taxCategory: 'saas' } },
-      { CNY: { amount: '1791.00', taxCategory: 'saas' } },
-      { CNY: { amount: '499.00', taxCategory: 'saas' } },
-      { CNY: { amount: '449.10', taxCategory: 'saas' } },
-      { CNY: { amount: '4491.00', taxCategory: 'saas' } },
-      { CNY: { amount: '899.00', taxCategory: 'saas' } },
-      { CNY: { amount: '809.10', taxCategory: 'saas' } },
-      { CNY: { amount: '8091.00', taxCategory: 'saas' } },
+      { HKD: { amount: '231.00', taxCategory: 'saas' } },
+      { HKD: { amount: '208.00', taxCategory: 'saas' } },
+      { HKD: { amount: '2081.00', taxCategory: 'saas' } },
+      { HKD: { amount: '580.00', taxCategory: 'saas' } },
+      { HKD: { amount: '522.00', taxCategory: 'saas' } },
+      { HKD: { amount: '5217.00', taxCategory: 'saas' } },
+      { HKD: { amount: '1044.00', taxCategory: 'saas' } },
+      { HKD: { amount: '940.00', taxCategory: 'saas' } },
+      { HKD: { amount: '9400.00', taxCategory: 'saas' } },
     ]
   );
   assert.deepEqual(createdGroups, [
     {
-      name: 'Starter subscriptions',
+      name: 'Starter HKD subscriptions',
       productIds: ['PROD_1', 'PROD_2', 'PROD_3'],
       rules: { sharedTrial: false },
       storeId: 'STO_test',
     },
     {
-      name: 'Growth subscriptions',
+      name: 'Growth HKD subscriptions',
       productIds: ['PROD_4', 'PROD_5', 'PROD_6'],
       rules: { sharedTrial: false },
       storeId: 'STO_test',
     },
     {
-      name: 'Pro subscriptions',
+      name: 'Pro HKD subscriptions',
       productIds: ['PROD_7', 'PROD_8', 'PROD_9'],
       rules: { sharedTrial: false },
       storeId: 'STO_test',
     },
   ]);
-  assert.deepEqual(webhookAdds, [
-    {
-      channel: 'http',
-      events: [
-        'subscription.activated',
-        'subscription.payment_succeeded',
-        'subscription.canceling',
-        'subscription.uncanceled',
-        'subscription.canceled',
-      ],
-      storeId: 'STO_test',
-      testMode: true,
-      url: 'https://payments.example.test/api/webhooks/waffo',
-    },
-  ]);
-  assert.equal(result.testWebhookId, 'whk_test_1');
+  assert.equal(result.testWebhookId, 'whk_existing_test');
   assert.equal(result.productIds.proMonthly, 'PROD_8');
   assert.deepEqual(result.productGroupIds, {
     starter: 'GRP_1',

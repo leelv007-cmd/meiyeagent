@@ -9,7 +9,7 @@ const plan = {
   prices: [
     {
       amount: 49_900,
-      currency: 'CNY',
+      currency: 'HKD',
       interval: 'month',
       priceId: 'PROD_GROWTH_MONTH',
       type: 'subscription',
@@ -102,7 +102,7 @@ describe('Waffo checkout catalog boundary', () => {
     expect(create).toHaveBeenCalledWith({
       buyerEmail: 'user@example.test',
       buyerIdentity: 'user_1',
-      currency: 'CNY',
+      currency: 'HKD',
       metadata: {
         planCheckoutBindingId: 'pcb_1',
         userId: 'user_1',

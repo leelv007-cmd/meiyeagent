@@ -33,11 +33,11 @@ async function run() {
     '\n'
   );
   const storeId = requiredEnvironment('WAFFO_STORE_ID');
-  const webhookUrl = requiredHttpsUrl('WAFFO_WEBHOOK_URL');
+  const testWebhookId = requiredEnvironment('WAFFO_TEST_WEBHOOK_ID');
   const client = new WaffoPancake({ merchantId, privateKey });
   const result = await provisionWaffoSubscriptionCatalog(client, {
     storeId,
-    webhookUrl,
+    testWebhookId,
   });
 
   // Product and webhook IDs are public configuration values. Private input is
@@ -51,15 +51,6 @@ function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} must be configured.`);
   return value;
-}
-
-function requiredHttpsUrl(name: string): string {
-  const value = requiredEnvironment(name);
-  const url = new URL(value);
-  if (url.protocol !== 'https:') {
-    throw new Error(`${name} must use HTTPS.`);
-  }
-  return url.toString();
 }
 
 if (

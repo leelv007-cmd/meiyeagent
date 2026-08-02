@@ -2,7 +2,6 @@ import {
   BillingPeriod,
   TaxCategory,
   WebhookEventType,
-  type AddWebhookParams,
   type CreateSubscriptionProductGroupParams,
   type CreateSubscriptionProductParams,
 } from '@waffo/pancake-ts';
@@ -23,9 +22,6 @@ export interface WaffoSubscriptionProvisioningClient {
       input: CreateSubscriptionProductGroupParams
     ): Promise<{ group: { id: string } }>;
   };
-  webhooks: {
-    add(input: AddWebhookParams): Promise<{ webhook: { id: string } }>;
-  };
 }
 
 export const WAFFO_SUBSCRIPTION_WEBHOOK_EVENTS = [
@@ -38,7 +34,7 @@ export const WAFFO_SUBSCRIPTION_WEBHOOK_EVENTS = [
 
 export async function provisionWaffoSubscriptionCatalog(
   client: WaffoSubscriptionProvisioningClient,
-  input: { storeId: string; webhookUrl: string }
+  input: { storeId: string; testWebhookId: string }
 ) {
   const productIds = {} as Record<WaffoProductIdKey, string>;
   const productIdsByPlan: Record<WaffoSubscriptionPlanId, string[]> = {
@@ -56,8 +52,8 @@ export async function provisionWaffoSubscriptionCatalog(
           ? BillingPeriod.Yearly
           : BillingPeriod.Monthly,
       prices: {
-        CNY: {
-          amount: centsToYuan(product.amount),
+        HKD: {
+          amount: centsToDisplayAmount(product.amount),
           taxCategory: TaxCategory.SaaS,
         },
       },
@@ -74,20 +70,12 @@ export async function provisionWaffoSubscriptionCatalog(
   for (const planId of ['starter', 'growth', 'pro'] as const) {
     const created = await client.subscriptionProductGroups.create({
       storeId: input.storeId,
-      name: `${titleCase(planId)} subscriptions`,
+      name: `${titleCase(planId)} HKD subscriptions`,
       productIds: productIdsByPlan[planId],
       rules: { sharedTrial: false },
     });
     productGroupIds[planId] = created.group.id;
   }
-
-  const webhook = await client.webhooks.add({
-    storeId: input.storeId,
-    channel: 'http',
-    url: input.webhookUrl,
-    events: [...WAFFO_SUBSCRIPTION_WEBHOOK_EVENTS],
-    testMode: true,
-  });
 
   return {
     productIds,
@@ -102,13 +90,13 @@ export async function provisionWaffoSubscriptionCatalog(
         tier: product.planId,
       })),
     },
-    testWebhookId: webhook.webhook.id,
+    testWebhookId: input.testWebhookId,
   };
 }
 
-function centsToYuan(amount: number): string {
-  const yuan = Math.floor(amount / 100);
-  return `${yuan}.${String(amount % 100).padStart(2, '0')}`;
+function centsToDisplayAmount(amount: number): string {
+  const units = Math.floor(amount / 100);
+  return `${units}.${String(amount % 100).padStart(2, '0')}`;
 }
 
 function intervalLabel(interval: string): string {

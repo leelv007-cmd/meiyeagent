@@ -31,7 +31,7 @@ import { Button, buttonVariants } from '@/components/ui/button';
 import { websiteConfig } from '@/config/website';
 import {
   findSubscriptionPrice,
-  formatYuan,
+  formatSubscriptionPrice,
   PUBLIC_PAID_MONTHLY_PRICE_TESTID,
   PUBLIC_PLAN_CONFIG_IDS,
 } from '@/lib/price-plan';
@@ -193,7 +193,9 @@ function PlanPrice({ plan }: { plan: DisplayPlan }) {
           data-testid={PUBLIC_PAID_MONTHLY_PRICE_TESTID}
           className="text-3xl font-semibold"
         >
-          {monthly ? formatYuan(monthly.amount) : pricing_plan_price_custom()}
+          {monthly
+            ? formatSubscriptionPrice(monthly)
+            : pricing_plan_price_custom()}
         </span>
         {monthly ? (
           <span className="text-base text-muted-foreground">
@@ -204,7 +206,7 @@ function PlanPrice({ plan }: { plan: DisplayPlan }) {
       {yearly ? (
         <p className="text-xs text-muted-foreground">
           {pricing_plan_yearly_hint({
-            amount: Math.round(yearly.amount / 100),
+            amount: formatSubscriptionPrice(yearly),
           })}
         </p>
       ) : null}

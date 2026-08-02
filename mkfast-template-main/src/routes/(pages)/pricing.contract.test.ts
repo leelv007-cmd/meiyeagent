@@ -5,7 +5,7 @@ import test from 'node:test';
 import { websiteConfig } from '@/config/website';
 import {
   findSubscriptionPrice,
-  formatYuan,
+  formatSubscriptionPrice,
   GROWTH_CONFIG_PLAN_ID,
   growthMonthlyPriceLabel,
   PUBLIC_PAID_MONTHLY_PRICE_TESTID,
@@ -360,8 +360,11 @@ test('the landing reads the pro product out of the catalogue every time it is as
   // it is what rules those out.
   for (const proAmount of [41_700, 53_000]) {
     withStubbedCatalog({ free: 0, pro: proAmount, lifetime: 99_900 }, () => {
-      const priceFiledUnderPro = formatYuan(
-        findSubscriptionPrice('pro', PlanIntervals.MONTH)?.amount ?? 0
+      const priceFiledUnderPro = formatSubscriptionPrice(
+        findSubscriptionPrice('pro', PlanIntervals.MONTH) ?? {
+          amount: 0,
+          currency: 'CNY',
+        }
       );
       assert.equal(
         growthMonthlyPriceLabel(),
@@ -372,10 +375,13 @@ test('the landing reads the pro product out of the catalogue every time it is as
       // produced a visibly different number, so the assertion above is
       // load-bearing rather than accidentally true.
       assert.equal(
-        formatYuan(
-          findSubscriptionPrice('lifetime', PlanIntervals.MONTH)?.amount ?? 0
+        formatSubscriptionPrice(
+          findSubscriptionPrice('lifetime', PlanIntervals.MONTH) ?? {
+            amount: 0,
+            currency: 'CNY',
+          }
         ),
-        '¥999'
+        'CN¥999'
       );
       assert.notEqual(growthMonthlyPriceLabel(), '¥999');
     });
@@ -383,7 +389,10 @@ test('the landing reads the pro product out of the catalogue every time it is as
   // And the stub is fully undone, so the rest of the suite sees real config.
   assert.equal(
     growthMonthlyPriceLabel(),
-    formatYuan(realGrowthMonthlyAmount())
+    formatSubscriptionPrice({
+      amount: realGrowthMonthlyAmount(),
+      currency: 'CNY',
+    })
   );
 });
 
