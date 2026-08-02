@@ -284,7 +284,6 @@ import {
   OperationsApplicationService,
   OperationsFoundationModule,
   ModelSupplyCreationExecutor,
-  ModelSupplyCreationInputResolver,
   ModelSupplyImageGenerationAdapter,
   MediaCustodyStorageAdapter,
   MarketingIdentityFoundationModule,
@@ -1989,7 +1988,6 @@ if (harnessRuntimeConfig) {
         pool,
         grantLotLedger,
         creditLedger,
-        new ModelSupplyCreationInputResolver(creativeGroundingResolver),
       )
     )
   );

@@ -68,10 +68,6 @@ import {
   merchantExecutionInputHashes,
 } from '../product-billing/durable-service.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
-import {
-  ModelSupplyCreationInputResolver,
-} from '../operations/model-supply-creation-adapter.js';
-import type { CreativeGroundingSnapshot } from '../operations/types.js';
 import { buildContentPackage } from '../operations/content-package.js';
 import { MemoryContextBundleRepository } from '../operations/context-bundle-repository.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
@@ -1565,29 +1561,6 @@ test(
       };
       await foundationRoutes.insertRouteSnapshot(composerRoute);
       assert.equal(composerRoute.id, snapshot.route.id);
-      const grounding: CreativeGroundingSnapshot = {
-        assets: [],
-        capturedAt: now,
-        store: {
-          address: '88 号',
-          booking: '提前预约',
-          brandVoice: '真诚、不夸张',
-          city: '成都',
-          confirmedAt: now,
-          district: '锦江区',
-          name: '春日护理',
-          prohibitions: ['不虚构折扣'],
-          projects: [
-            {
-              durationMinutes: 60,
-              id: 'project-1',
-              name: '夏日护理',
-              price: 168,
-            },
-          ],
-          regulated: false,
-        },
-      };
       const store = new PostgresCreationSubmissionStore(
         pool,
         new PostgresCreationSubmissionPersistence(
@@ -1595,16 +1568,6 @@ test(
             pool,
             undefined,
             credits,
-            new ModelSupplyCreationInputResolver({
-              async resolve(resolvedWorkspaceId, assetIds) {
-                assert.equal(resolvedWorkspaceId, workspaceId);
-                assert.deepEqual(assetIds, []);
-                return {
-                  snapshot: structuredClone(grounding),
-                  status: 'ready' as const,
-                };
-              },
-            }),
           ),
         ),
       );

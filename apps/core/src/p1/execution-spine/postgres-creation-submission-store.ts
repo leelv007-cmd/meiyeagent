@@ -10,7 +10,6 @@ import {
   PostgresCreditLedger,
 } from "../credit-billing/postgres-credit-ledger.js";
 import { buildContentPackage } from "../operations/content-package.js";
-import type { ModelSupplyCreationInputResolverPort } from "../operations/model-supply-creation-adapter.js";
 import { insertContentPackageRow } from "../operations/postgres-content-package-write-adapter.js";
 import { DurableProductBillingService } from "../product-billing/durable-service.js";
 import { PostgresProductBillingRepository } from "../product-billing/postgres-repository.js";
@@ -66,7 +65,6 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
     private readonly pool: Pool,
     private readonly grantLots?: Pick<PostgresGrantLotLedger, 'consumeWithClient'>,
     private readonly credits?: Pick<PostgresCreditLedger, 'consumeWithClient'>,
-    private readonly merchantExecutionInput?: ModelSupplyCreationInputResolverPort,
   ) {}
 
   async reserve(client: PoolClient, submission: CreationSubmissionRecord) {
@@ -149,25 +147,12 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
         `Product usage for task ${submission.task.id} has a different reservation identity.`,
       );
     }
-    if (this.merchantExecutionInput) {
-      await billing.bindMerchantSubmissionInput({
-        inputSnapshot: await this.merchantExecutionInput.resolve({
-          ...(snapshot.deliverable.aspectRatio
-            ? { aspectRatio: snapshot.deliverable.aspectRatio }
-            : {}),
-          contentModules: [...snapshot.contentModules],
-          ...(snapshot.deliverable.durationSeconds
-            ? { durationSeconds: snapshot.deliverable.durationSeconds }
-            : {}),
-          intent: snapshot.intent.text,
-          sourceAssetIds: snapshot.sources.assets.map((asset) => asset.id),
-          workspaceId: snapshot.workspaceId,
-        }),
-        quoteRevision: quote.revision,
-        taskId: submission.task.id,
-        workspaceId: snapshot.workspaceId,
-      });
-    }
+    await billing.bindMerchantSubmissionInput({
+      inputSnapshot: creationSubmissionMerchantInput(submission),
+      quoteRevision: quote.revision,
+      taskId: submission.task.id,
+      workspaceId: snapshot.workspaceId,
+    });
     if (credits !== undefined && creditLedger) {
       await creditLedger.consumeWithClient(client, {
         workspaceId: snapshot.workspaceId,
@@ -1013,4 +998,20 @@ async function databaseNow(client: PoolClient) {
 
 function contentPackageKind(lens: CreationSubmissionRecord["snapshot"]["lens"]) {
   return lens === "video" ? "video" : "image_text";
+}
+
+function creationSubmissionMerchantInput(
+  submission: CreationSubmissionRecord,
+) {
+  const snapshot = submission.snapshot;
+  return {
+    input: {
+      inputAssets: snapshot.sources.assets.map((asset) => ({
+        assetId: asset.id,
+        role: asset.role,
+      })),
+      referenceAssetIds: snapshot.sources.assets.map((asset) => asset.id),
+    },
+    prompt: snapshot.intent.text,
+  };
 }

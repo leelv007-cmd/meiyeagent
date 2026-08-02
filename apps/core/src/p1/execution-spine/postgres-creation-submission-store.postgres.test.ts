@@ -13,11 +13,6 @@ import {
 import { PostgresProductBillingRepository } from "../product-billing/postgres-repository.js";
 import { OperationsApplicationService } from "../operations/application-service.js";
 import { OperationsFoundationModule } from "../operations/foundation-module.js";
-import {
-  ModelSupplyCreationInputResolver,
-  modelSupplyCreationInputSnapshot,
-  type CreativeGroundingSnapshot,
-} from "../operations/index.js";
 import { PostgresOperationsRepository } from "../operations/postgres-repository.js";
 import {
   createDefaultCatalogModels,
@@ -1561,63 +1556,18 @@ test(
 );
 
 test(
-  "Postgres production assembly separates the root contract from auxiliary and final provider inputs",
+  "Postgres production assembly freezes the admission root without Product grounding",
   { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
   async () => {
     const pool = new Pool({ connectionString });
     const operations = new PostgresOperationsRepository(pool);
     const billingRepository = new PostgresProductBillingRepository(pool);
-    const groundingSnapshot: CreativeGroundingSnapshot = {
-      assets: [
-        {
-          authorizationStatus: "authorized",
-          category: "store",
-          consentScope: "public_marketing",
-          containsPerson: false,
-          containsSensitiveData: false,
-          id: "asset-1",
-          minorStatus: "none",
-          rightsEvidenceRecorded: true,
-          sourceType: "real",
-          tags: ["护理室"],
-        },
-      ],
-      capturedAt: "2026-07-22T09:00:00.000Z",
-      store: {
-        address: "88 号",
-        booking: "提前预约",
-        brandVoice: "真诚、不夸张",
-        city: "成都",
-        confirmedAt: "2026-07-22T08:00:00.000Z",
-        district: "锦江区",
-        name: "春日护理",
-        prohibitions: ["不虚构折扣"],
-        projects: [
-          {
-            durationMinutes: 60,
-            id: "project-1",
-            name: "夏日护理",
-            price: 168,
-          },
-        ],
-        regulated: false,
-      },
-    };
-    const merchantExecutionInput = new ModelSupplyCreationInputResolver({
-      async resolve(workspaceId, sourceAssetIds) {
-        assert.equal(workspaceId.startsWith("spine-assembly-binding-"), true);
-        assert.deepEqual(sourceAssetIds, ["asset-1"]);
-        return { snapshot: structuredClone(groundingSnapshot), status: "ready" };
-      },
-    });
     const store = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(
         new PostgresProductBillingUsageReservation(
           pool,
           noOpGrantLots,
-          undefined,
-          merchantExecutionInput,
         ),
       ),
     );
@@ -1655,13 +1605,18 @@ test(
         submission,
         workspaceId,
       });
-      const rootSubmissionInput = modelSupplyCreationInputSnapshot({
-        contract: {
-          contentModules: submission.snapshot.contentModules,
+      const rootSubmissionInput = {
+        input: {
+          inputAssets: submission.snapshot.sources.assets.map((asset) => ({
+            assetId: asset.id,
+            role: asset.role,
+          })),
+          referenceAssetIds: submission.snapshot.sources.assets.map(
+            (asset) => asset.id,
+          ),
         },
-        groundingSnapshot,
-        intent: submission.snapshot.intent.text,
-      });
+        prompt: submission.snapshot.intent.text,
+      };
       let auxiliaryProviderIo = 0;
       const modelSupply = new ModelSupplyApplicationService({
         deployments: createDefaultDeployments({
@@ -1848,8 +1803,8 @@ test(
         `merchant-execution:${submission.task.id}:wf:${submission.task.id}:s4:copy-final`,
       );
       assert.equal(execution?.status, "completed");
-      assert.equal(execution?.inputSnapshot.input, null);
-      assert.deepEqual(JSON.parse(execution!.inputSnapshot.prompt), {
+      assert.deepEqual(execution?.inputSnapshot, {
+        input: null,
         instructions: finalInstructions,
         prompt: finalPrompt,
         schema: {

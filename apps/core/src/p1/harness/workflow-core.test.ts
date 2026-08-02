@@ -2241,6 +2241,53 @@ test('a paid copy snapshot delivers without a pre-run confirmation hold', async 
   assert.equal(selectionCalls, 1);
 });
 
+test('a credit-priced copy with intentionally empty product units does not hold', async () => {
+  const request: HarnessWorkflowInput = {
+    ...snapshotTaskInput(),
+    usageReservation: {
+      credits: 1,
+      id: 'usage-reservation-credit-copy',
+      units: [],
+    },
+  };
+
+  assert.equal(triggersPaidMediaExecution(request), false);
+  const stages = fixtureStages();
+  const executeAndSelect = stages.executeAndSelect!;
+  let selectionCalls = 0;
+  stages.executeAndSelect = async (input) => {
+    selectionCalls += 1;
+    return executeAndSelect(input);
+  };
+
+  await runHarnessWorkflow('task-credit-copy', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress() {},
+    async token() {},
+    async awaitDecision(question) {
+      throw new Error(`Unexpected question: ${question.questionId}`);
+    },
+    async recordTrace() {},
+  });
+
+  assert.equal(selectionCalls, 1);
+});
+
+test('credit-priced media with intentionally empty product units still holds', () => {
+  const request: HarnessWorkflowInput = {
+    ...mediaTaskInput('image'),
+    usageReservation: {
+      credits: 8,
+      id: 'usage-reservation-credit-image',
+      units: [],
+    },
+  };
+
+  assert.equal(triggersPaidMediaExecution(request), true);
+});
+
 test('a copy snapshot with paid media units holds for pre-run confirmation', async () => {
   // Positive pair for pure-copy exemption: even on the copy Harness path,
   // reserved image/video units trigger the paid-media confirmation gate.
@@ -2379,9 +2426,8 @@ test('a cancelled paid media confirmation terminates the workflow without execut
 
 test('a reserved run without a unit breakdown fails closed into confirmation', async () => {
   // 花钱类硬门的失败方向：拿不到单位明细就当作会花钱，宁可多问一次也不放过。
-  // 生产不会走到这里（submission-coordinator 为每个 lens 都预留单位，
-  // storedUsageUnits 拒收空明细），这条钉的是失败方向本身 —— 所以走完整旅程，
-  // 断言真的挂起了确认卡，而不是只问谓词。
+  // Legacy reservations cannot prove why their unit list is empty, so this
+  // path must still hold rather than infer a copy exemption.
   const request: HarnessWorkflowInput = {
     ...snapshotTaskInput(),
     usageReservation: {

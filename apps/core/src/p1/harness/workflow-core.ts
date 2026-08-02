@@ -3122,12 +3122,19 @@ export function triggersPaidMediaExecution(
     return false;
   }
   const units = reservation.units;
-  if (!Array.isArray(units) || units.length === 0) {
+  if (!Array.isArray(units)) {
     // Fail closed: a reserved run with no unit breakdown cannot be shown to be
-    // copy-only, and this gate stands in front of spend. Production never
-    // reaches here — `submission-coordinator` reserves units for every lens and
-    // `storedUsageUnits` rejects an empty breakdown — so guessing from the lens
-    // would only ever be a fail-open hole.
+    // copy-only, and this gate stands in front of spend. The Coordinator always
+    // persists an array for production submissions.
+    return true;
+  }
+  if (units.length === 0) {
+    // Credit-priced submissions intentionally carry no legacy product units.
+    // Their frozen lens is server-owned: copy keeps the D-043 exemption, while
+    // media and note lenses still require confirmation before provider spend.
+    if (reservation.credits !== undefined) {
+      return request.executionSnapshot.lens !== 'copy';
+    }
     return true;
   }
   return units.some((unit) => PAID_MEDIA_USAGE_RESOURCES.has(unit.resource));

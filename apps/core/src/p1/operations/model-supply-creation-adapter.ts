@@ -15,7 +15,6 @@ import type {
   CreationExecutorPort,
   CreativeBrief,
   CreativeExecutionContract,
-  CreativeGroundingResolverPort,
   CreativeGroundingSnapshot,
   CreativeInheritanceContext,
   CreativeInheritanceFact,
@@ -220,17 +219,6 @@ function structuredCreativeIntent(
     .join('\n\n');
 }
 
-export interface ModelSupplyCreationInputResolverPort {
-  resolve(input: {
-    aspectRatio?: CreativeExecutionContract['aspectRatio'];
-    contentModules: CreativeExecutionContract['contentModules'];
-    durationSeconds?: number;
-    intent: string;
-    sourceAssetIds: string[];
-    workspaceId: string;
-  }): Promise<MerchantExecutionInputSnapshot>;
-}
-
 export function modelSupplyCreationInputSnapshot(input: {
   briefSnapshot?: CreativeBrief;
   contract: Pick<
@@ -270,42 +258,6 @@ export function modelSupplyCreationInputSnapshot(input: {
       input.groundingSnapshot,
     ),
   };
-}
-
-export class ModelSupplyCreationInputResolver
-  implements ModelSupplyCreationInputResolverPort
-{
-  constructor(
-    private readonly groundingResolver: CreativeGroundingResolverPort,
-  ) {}
-
-  async resolve(
-    input: Parameters<ModelSupplyCreationInputResolverPort['resolve']>[0],
-  ) {
-    const grounding = await this.groundingResolver.resolve(
-      input.workspaceId,
-      input.sourceAssetIds,
-    );
-    if (grounding.status === 'missing') {
-      throw new OperationsError(
-        'CREATIVE_GROUNDING_INCOMPLETE',
-        `Confirmed Product grounding is incomplete: ${grounding.missing.join(', ')}.`,
-        409,
-        { missing: grounding.missing },
-      );
-    }
-    return modelSupplyCreationInputSnapshot({
-      contract: {
-        ...(input.aspectRatio ? { aspectRatio: input.aspectRatio } : {}),
-        contentModules: input.contentModules,
-        ...(input.durationSeconds
-          ? { durationSeconds: input.durationSeconds }
-          : {}),
-      },
-      groundingSnapshot: grounding.snapshot,
-      intent: input.intent,
-    });
-  }
 }
 
 export class ModelSupplyCreationExecutor implements CreationExecutorPort {
