@@ -14,7 +14,7 @@ import { ADMIN_CONFIG_KEYS } from './admin-config-view-model';
 /**
  * U05 的硬门在这里有一条全量镜像断言，**穿过生产控制器**跑：
  * 控制器自己决定一个键走常驻单选还是走下拉挑选，所以只有从这里进去，
- * 才能证明「19 个键全都落在新渲染层上」——直接喂表单组件会绕过这道分流。
+ * 才能证明「26 个键全都落在新渲染层上」——直接喂表单组件会绕过这道分流。
  */
 function renderControlForKey(key: string) {
   const queryClient = new QueryClient();
@@ -57,7 +57,7 @@ test('the note style key explains itself in note terms, not in checkout terms', 
 });
 
 test('every admin config key reaches the schema renderer through the production control', () => {
-  assert.equal(ADMIN_CONFIG_KEYS.length, 19);
+  assert.equal(ADMIN_CONFIG_KEYS.length, 26);
   for (const key of ADMIN_CONFIG_KEYS) {
     const html = renderControlForKey(key);
     assert.match(
@@ -86,6 +86,12 @@ test('the merchant hold control is editable and described as hot-read', () => {
   assert.match(html, /商家决策保留期（秒）/);
   assert.match(html, /data-slot="number-stepper"/);
   assert.match(html, /热加载已生效/);
+});
+
+test('credit plan configuration is described as hot-read and commerce-governed', () => {
+  const html = renderControlForKey('plan.credits.cycle_coefficients');
+  assert.match(html, /热加载已生效/);
+  assert.match(html, /新结账/);
 });
 
 /** 三个执行模式/装配键必须常驻展开，而不是被塞进「先选一项」的下拉里。 */

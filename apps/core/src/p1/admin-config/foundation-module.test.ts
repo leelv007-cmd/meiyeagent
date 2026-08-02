@@ -156,6 +156,7 @@ describe('Admin config application seam', () => {
         'plan.allowances.starter',
         'plan.allowances.trial',
         'plan.credits.addons',
+        'plan.credits.cycle_coefficients',
         'plan.credits.growth',
         'plan.credits.pro',
         'plan.credits.starter',
@@ -786,6 +787,8 @@ describe('Admin config application seam', () => {
             reason: 'Accept the governed credit plan boundary',
             value: {
               credits: 10_000_000,
+              currency: 'CNY',
+              monthlyPriceMicros: 1_000_000_000_000,
               storageMb: 1_000_000,
               concurrencyLimit: 100,
               queuePriority: 100,

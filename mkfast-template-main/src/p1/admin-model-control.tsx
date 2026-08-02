@@ -239,6 +239,7 @@ import {
   type ModelOperation,
   type RouteSimulatorFormValues,
 } from '@/p1/admin-view-model';
+import { AdminModelCreditPricingControl } from '@/p1/admin-model-credit-pricing-control';
 import { commandP1, queryP1 } from '@/p1/client';
 import { AdminActivationProbeControl } from '@/p1/admin-activation-probe-control';
 import { p1QueryKeys } from '@/p1/query-keys';
@@ -855,6 +856,23 @@ export function AdminModelControl() {
   const createDraft = async ({ editor }: CatalogDraftFormValues) => {
     try {
       const catalog = parseAdminCatalogDraft(editor);
+      const revision = await executeCommand<CatalogRevisionActivity>({
+        action: 'catalog_create_draft',
+        payload: { catalog },
+      });
+      remember(revision);
+      toast.success(
+        p1_admin_model_catalog_draft_created({ revision: revision.id })
+      );
+    } catch {
+      toast.error(p1_admin_model_catalog_draft_error());
+    }
+  };
+
+  const createCreditPricingDraft = async (
+    catalog: NonNullable<typeof catalogControl>['catalog']
+  ) => {
+    try {
       const revision = await executeCommand<CatalogRevisionActivity>({
         action: 'catalog_create_draft',
         payload: { catalog },
@@ -2044,6 +2062,14 @@ export function AdminModelControl() {
           </AdminPanelContent>
         </AdminPanel>
       </div>
+
+      {catalogControl ? (
+        <AdminModelCreditPricingControl
+          busy={busy === 'catalog_create_draft'}
+          catalog={catalogControl.catalog}
+          onCreateDraft={createCreditPricingDraft}
+        />
+      ) : null}
 
       <AdminPanel>
         <AdminPanelHeader>

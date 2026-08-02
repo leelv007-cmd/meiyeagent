@@ -10,7 +10,11 @@
  * 契约仍然只有一份：字段树是从 `admin-config-view-model.ts` 里那份 zod 读出来的，
  * 不是另抄一份。契约改了字段树跟着改，提交前后端也仍各校验一次。
  */
-import { DEFAULT_NOTE_STYLES, NOTE_STYLE_CONFIG_KEY } from '@meiye/contracts';
+import {
+  CREDIT_PLAN_CONFIG_DEFAULTS,
+  DEFAULT_NOTE_STYLES,
+  NOTE_STYLE_CONFIG_KEY,
+} from '@meiye/contracts';
 import type { z } from 'zod';
 
 import {
@@ -21,14 +25,20 @@ import {
   admin_config_field_amount_micros,
   admin_config_field_amount_micros_hint,
   admin_config_field_currency,
+  admin_config_field_cycle_monthly,
+  admin_config_field_cycle_single_month,
+  admin_config_field_cycle_yearly,
+  admin_config_field_credits,
   admin_config_field_id,
   admin_config_field_interval,
   admin_config_field_mappings,
+  admin_config_field_monthly_price_micros,
   admin_config_field_payment_product_id,
   admin_config_field_platforms,
   admin_config_field_quantity,
   admin_config_field_resource,
   admin_config_field_structure_template,
+  admin_config_field_storage_mb,
   admin_config_field_style_name,
   admin_config_field_styles,
   admin_config_field_tier,
@@ -42,6 +52,9 @@ import {
   admin_config_key_note_styles,
   admin_config_key_plan_addons,
   admin_config_key_plan_allowances,
+  admin_config_key_plan_credits,
+  admin_config_key_plan_credits_addons,
+  admin_config_key_plan_credits_cycle_coefficients,
   admin_config_key_payment_mapping,
   admin_config_key_regulated_mode_default,
   admin_config_key_trial_enabled,
@@ -287,11 +300,16 @@ const SEGMENT_LABELS: Record<string, () => string> = {
   concurrencyLimit: admin_plan_concurrency,
   copy: admin_plan_copy,
   currency: admin_config_field_currency,
+  monthly: admin_config_field_cycle_monthly,
+  single_month: admin_config_field_cycle_single_month,
+  yearly: admin_config_field_cycle_yearly,
+  credits: admin_config_field_credits,
   expireDays: admin_plan_expire_days,
   id: admin_config_field_id,
   image: admin_plan_image,
   interval: admin_config_field_interval,
   mappings: admin_config_field_mappings,
+  monthlyPriceMicros: admin_config_field_monthly_price_micros,
   name: admin_config_field_style_name,
   paymentProductId: admin_config_field_payment_product_id,
   platforms: admin_config_field_platforms,
@@ -300,6 +318,7 @@ const SEGMENT_LABELS: Record<string, () => string> = {
   resource: admin_config_field_resource,
   structureTemplate: admin_config_field_structure_template,
   styles: admin_config_field_styles,
+  storageMb: admin_config_field_storage_mb,
   supportLabel: admin_plan_support,
   tier: admin_config_field_tier,
   video: admin_plan_video,
@@ -331,6 +350,14 @@ const KEY_LABELS: Record<string, () => string> = {
   'plan.allowances.pro': admin_config_key_plan_allowances,
   'plan.allowances.starter': admin_config_key_plan_allowances,
   'plan.allowances.trial': admin_config_key_plan_allowances,
+  'plan.credits.addons': admin_config_key_plan_credits_addons,
+  'plan.credits.cycle_coefficients':
+    admin_config_key_plan_credits_cycle_coefficients,
+  'plan.credits.growth': admin_config_key_plan_credits,
+  'plan.credits.pro': admin_config_key_plan_credits,
+  'plan.credits.starter': admin_config_key_plan_credits,
+  'plan.credits.trial': admin_config_key_plan_credits,
+  'plan.credits.trial.enabled': admin_config_key_trial_enabled,
   'plan.payment-mapping': admin_config_key_payment_mapping,
   'plan.trial.enabled': admin_config_key_trial_enabled,
   'platform.defaultModel.audio': admin_config_key_default_model_audio,
@@ -694,6 +721,13 @@ const RUNTIME_SEEDS: Record<string, () => unknown> = {
 };
 
 export function defaultAdminConfigValue(key: string): unknown {
+  if (key in CREDIT_PLAN_CONFIG_DEFAULTS) {
+    return structuredClone(
+      CREDIT_PLAN_CONFIG_DEFAULTS[
+        key as keyof typeof CREDIT_PLAN_CONFIG_DEFAULTS
+      ]
+    );
+  }
   const seed = RUNTIME_SEEDS[key];
   if (seed) return seed();
   const schema = adminConfigSchemaFor(key as AdminConfigKey);

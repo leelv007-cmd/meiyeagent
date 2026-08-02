@@ -42,6 +42,11 @@ import {
   type P1ApplicationService,
   type P1Context,
 } from './p1/foundation/index.js';
+import {
+  CREDIT_PLAN_BILLING_CYCLES,
+  creditPlanCheckoutAmountMicros,
+  type CreditPlanCatalog,
+} from './p1/credit-billing/credit-plan-catalog.js';
 import type { IntegrationApplicationService } from './p1/integrations/index.js';
 import type { AiStreamingRunner } from './p1/model-supply/ai-sdk-runner.js';
 import type {
@@ -111,13 +116,7 @@ interface CoreServerDependencies {
   pendingActions?: Pick<PendingActionsService, 'list'>;
   /** Read side of the merchant credit catalogue for the public pricing page. */
   planCatalog?: {
-    get(): Promise<{
-      plans: Array<{
-        id: string;
-        credits: number;
-        concurrencyLimit: number;
-      }>;
-    }>;
+    get(): Promise<CreditPlanCatalog>;
   };
   /**
    * Optional runtime-truth port for /health/ready and /capabilities.
@@ -1065,12 +1064,23 @@ export function createCoreServer({
           response,
           200,
           publicPlanCatalogSchema.parse({
+            addOns: catalog.addOns,
             plans: catalog.plans
               .filter((plan) => plan.id !== 'trial')
               .map((plan) => ({
-                id: plan.id,
                 credits: plan.credits,
                 concurrencyLimit: plan.concurrencyLimit,
+                currency: plan.currency,
+                cyclePrices: CREDIT_PLAN_BILLING_CYCLES.map((cycle) => ({
+                  amountMicros: creditPlanCheckoutAmountMicros(
+                    plan.monthlyPriceMicros,
+                    cycle,
+                    catalog.cycleCoefficientBasisPoints,
+                  ),
+                  cycle,
+                })),
+                id: plan.id,
+                monthlyPriceMicros: plan.monthlyPriceMicros,
               })),
           }),
           requestCorrelationId

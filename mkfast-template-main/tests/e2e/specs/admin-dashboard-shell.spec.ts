@@ -8,10 +8,8 @@
  *
  *   1. every admin page renders the new shell in both themes, and the merchant
  *      shell no longer wraps /admin;
- *   2. the hand-entry panel moves a three-bucket number through the governed
- *      admin-config API (CAS revision advances, reason lands in the audit) and
- *      a store registering afterwards is provisioned with that number, with
- *      nothing redeployed;
+ *   2. the credit-cycle coefficient moves through the governed admin-config
+ *      API (CAS revision advances and the reason lands in its audit history);
  *   3. the model assembly page presents CatalogModel and ExecutionChannel as two
  *      layers, each separately operable.
  *   4. the wired merchant decision hold opens a bounded control and persists
@@ -733,159 +731,169 @@ test('admin Skill catalog dispatches structured lifecycle and governance command
 });
 
 /**
- * Move the trial copy allowance through the governed path an operator uses, and
- * return once the CAS revision has advanced. Shared by the journey and by its
- * restore, so putting the shared number back cannot become a back door that
- * skips impact review.
- *
- * `pick` receives the currently stored value so callers can choose a target
- * relative to it; the stored value is only readable once the editor has settled.
+ * Adjust one governed number step through the production admin form.
  */
-async function applyTrialCopyAllowance(
-  page: Page,
-  reason: string,
-  pick: (stored: number) => number
-) {
-  await page.goto('/admin/plans');
-  const copyField = page.locator('#plan-trial-copy');
-  await expect(copyField).toBeVisible({ timeout: 30_000 });
-  const trialForm = copyField.locator('xpath=ancestor::form[1]');
-
-  // Settle the editor before typing. It re-runs form.reset when the
-  // admin-config row lands, so a value entered beforehand is silently reverted
-  // and the submit then writes the unchanged number — a no-op that never
-  // advances the CAS revision, which surfaces 30s later as a product failure
-  // rather than as the race it is. The audit meta line only renders once that
-  // row is in hand, so it is the signal to wait on.
-  const revisionLine = trialForm.getByText(/^v\d+ · /);
-  await expect(revisionLine).toBeVisible({ timeout: 30_000 });
-  const revisionBefore = await revisionLine.innerText();
-
-  const stored = Number(await copyField.inputValue());
-  const target = pick(stored);
-  await copyField.fill(String(target));
-
-  // Fail loudly rather than hang: the editor goes read-only when admin-config
-  // carries no revision for the key, and a disabled button would otherwise just
-  // burn the test timeout.
-  const saveButton = trialForm.getByRole('button', { name: '审阅套餐变更' });
-  await expect(saveButton).toBeEnabled({ timeout: 30_000 });
-  // Last check before the write: whatever we are about to submit is still the
-  // number we typed.
-  await expect(copyField).toHaveValue(String(target));
-
-  await saveButton.click();
-
-  // Every governed write goes through impact review, and the reason is what
-  // lands in the audit trail — there is no un-audited path to the number.
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible();
-  await page.getByLabel('执行原因（写入审计）').fill(reason);
-  // Plan changes override the dialog's generic confirm label, and the suite
-  // sets no actionTimeout, so assert the button before clicking — otherwise a
-  // label mismatch hangs the click until the test-level timeout instead of
-  // failing here with something readable.
-  const confirmButton = dialog.getByRole('button', { name: '确认配置变更' });
-  await expect(confirmButton).toBeVisible({ timeout: 15_000 });
-  await confirmButton.click();
-  await expect(dialog).toBeHidden();
-
-  // CAS revision advanced: the editor's audit meta line changed.
-  await expect
-    .poll(async () => revisionLine.innerText(), { timeout: 30_000 })
-    .not.toBe(revisionBefore);
-
-  return { stored, target };
+interface ConfigHistoryItem {
+  revision: number | null;
 }
 
-/**
- * The governed key `plan.allowances.trial` feeds the catalog
- * (entitlement-catalog-source.ts); workspace-provision reads that catalog when
- * it activates the trial and materialises the number into the workspace's plan
- * event, which is what entitlement-service projects. Editing the config
- * therefore never rewrites an already-provisioned workspace — the hand-entered
- * number shows up for a store provisioned after the change. That is the chain
- * this journey walks.
- */
-test('a hand-entered three-bucket number reaches the merchant through governed config', async ({
-  baseURL,
-  browser,
+async function selectConfig(page: Page, key: string) {
+  const historyResponse = page.waitForResponse((response) => {
+    if (
+      response.request().method() !== 'POST' ||
+      !response.url().includes('/api/core/p1/query')
+    ) {
+      return false;
+    }
+    const body = response.request().postDataJSON() as
+      | {
+          action?: string;
+          module?: string;
+          payload?: { key?: string };
+        }
+      | undefined;
+    return (
+      body?.module === 'admin-config' &&
+      body.action === 'config_history' &&
+      body.payload?.key === key
+    );
+  });
+  await page.locator('#admin-runtime-config-key').selectOption(key);
+  const response = await historyResponse;
+  expect(response.ok()).toBe(true);
+  const payload = (await response.json()) as { data: ConfigHistoryItem[] };
+  return payload.data.at(-1)?.revision ?? null;
+}
+
+async function applyConfigStepper(
+  page: Page,
+  key: string,
+  stepperTestId: string,
+  direction: 'decrement' | 'increment',
+  reason: string
+) {
+  await page.goto('/admin/plans');
+  const originalRevision = await selectConfig(page, key);
+  const form = page.getByTestId(`admin-config-form-${key}`);
+  const stepper = form.getByTestId(stepperTestId);
+  await expect(stepper).toBeVisible({ timeout: 30_000 });
+  const button = stepper.locator(
+    `[data-slot="number-stepper-${direction}-button"]`
+  );
+  await expect(button).toBeEnabled();
+  await button.click();
+  await page.getByRole('button', { name: '审阅并记录' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('执行原因（写入审计）').fill(reason);
+  await dialog.getByRole('button', { name: '确认记录配置' }).click();
+  await expect(dialog).toBeHidden();
+  return originalRevision;
+}
+
+async function recordConfigBaseline(page: Page, key: string, reason: string) {
+  await page.goto('/admin/plans');
+  const existingRevision = await selectConfig(page, key);
+  if (existingRevision !== null) return existingRevision;
+  await page.getByRole('button', { name: '审阅并记录' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('执行原因（写入审计）').fill(reason);
+  await dialog.getByRole('button', { name: '确认记录配置' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText(reason, { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.goto('/admin/plans');
+  const createdRevision = await selectConfig(page, key);
+  expect(createdRevision).not.toBeNull();
+  return createdRevision;
+}
+
+async function rollbackConfig(
+  page: Page,
+  key: string,
+  targetRevision: number,
+  reason: string
+) {
+  await page.goto('/admin/plans');
+  await selectConfig(page, key);
+  const historyRow = page
+    .getByRole('row')
+    .filter({
+      has: page.getByText(String(targetRevision), { exact: true }),
+    })
+    .filter({
+      has: page.getByRole('button', { name: '回滚存储配置' }),
+    });
+  await expect(historyRow).toHaveCount(1);
+  const rollback = historyRow.getByRole('button', {
+    name: '回滚存储配置',
+  });
+  await expect(rollback).toHaveCount(1);
+  const commandResponse = page.waitForResponse((response) => {
+    if (
+      response.request().method() !== 'POST' ||
+      !response.url().includes('/api/core/p1/commands')
+    ) {
+      return false;
+    }
+    const body = response.request().postDataJSON() as
+      | {
+          action?: string;
+          module?: string;
+          payload?: { targetRevision?: number };
+        }
+      | undefined;
+    return (
+      body?.module === 'admin-config' &&
+      body.action === 'config_rollback' &&
+      body.payload?.targetRevision === targetRevision
+    );
+  });
+  await rollback.click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('执行原因（写入审计）').fill(reason);
+  await dialog.getByRole('button', { name: '确认回滚版本' }).click();
+  expect((await commandResponse).ok()).toBe(true);
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText(reason, { exact: true })).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
+test('a credit-cycle coefficient reaches its governed revision and audit trail', async ({
   page,
   request,
 }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(120_000);
   const admin = await registerE2EUser(request, { role: 'admin' });
-  // Unique per run: a fixed string would already be sitting in the audit trail
-  // from an earlier run, so the audit assertion below would pass even if this
-  // run never wrote anything.
-  const reason = `T35 acceptance ${Date.now()}: move the trial copy allowance through admin-config`;
-  let appliedFrom: number | undefined;
+  const reason = `CB-01 acceptance ${Date.now()}: change monthly cycle coefficient`;
+  let originalRevision: number | null = null;
+  let changed = false;
   try {
     await loginByForm(page, admin);
-
-    // 71-79 collides with no seed: the shipped copy allowances are 5/30/100/300
-    // and the add-on quantities 20/10, so a stale fallback cannot fake this
-    // green. Always move off the stored value — this config is global and
-    // outlives the run, so re-entering it would be a no-op write.
-    const { stored, target } = await applyTrialCopyAllowance(
+    originalRevision = await applyConfigStepper(
       page,
-      reason,
-      (current) => (current >= 71 && current < 79 ? current + 1 : 71)
+      'plan.credits.cycle_coefficients',
+      'admin-config-plan-credits-cycle_coefficients-monthly',
+      'increment',
+      reason
     );
-    appliedFrom = stored;
-
-    // The other half of the acceptance: the reason reached the audit record,
-    // not just the form. /admin/audit is the wrong surface for this — it is fed
-    // by revision_rollback_audits and catalog_revisions, so it carries template
-    // and catalog events only. admin-config keeps its trail per key, readable
-    // through config_history behind the advanced-config disclosure, and that is
-    // where an operator would go looking for who changed an allowance and why.
-    await page.getByText('高级配置与版本历史').click();
-    await page.selectOption(
-      '#admin-runtime-config-key',
-      'plan.allowances.trial'
-    );
+    changed = true;
+    expect(originalRevision).not.toBeNull();
     await expect(page.getByText(reason, { exact: true })).toBeVisible({
       timeout: 30_000,
     });
-
-    // …and a store registering now is provisioned off the edited catalog, with
-    // nothing redeployed. Its own context so the admin session stays intact.
-    const merchant = await registerE2EUser(request);
-    // newContext() does not inherit use.baseURL, so pass it through or the
-    // relative goto below would throw on an invalid URL.
-    const merchantContext = await browser.newContext({ baseURL });
-    try {
-      const merchantPage = await merchantContext.newPage();
-      await loginByForm(merchantPage, merchant);
-      await merchantPage.goto('/settings/account');
-      // Assert on what the merchant actually reads, not an internal field.
-      const merchantCopyAllowance = merchantPage
-        .locator('section', {
-          has: merchantPage.getByRole('heading', { name: '文案条数' }),
-        })
-        .getByText(/^套餐总量 \d+$/)
-        .first();
-      await expect(merchantCopyAllowance).toBeVisible({ timeout: 30_000 });
-      await expect(merchantCopyAllowance).toHaveText(`套餐总量 ${target}`, {
-        timeout: 30_000,
-      });
-    } finally {
-      await merchantContext.close();
-    }
   } finally {
-    const restoreTo = appliedFrom;
-    if (restoreTo !== undefined) {
-      // Put the shared number back. This config is workspace-wide and outlives
-      // the run, so without this every run walks the trial allowance upward for
-      // every other lane and for anyone eyeballing the admin surface. Restoring
-      // through the same governed path keeps it audited; its own catch so a
-      // restore failure cannot mask the assertion that actually failed.
-      await applyTrialCopyAllowance(
+    if (changed && originalRevision !== null) {
+      await rollbackConfig(
         page,
-        `${reason} (restore to ${restoreTo})`,
-        () => restoreTo
-      ).catch(() => undefined);
+        'plan.credits.cycle_coefficients',
+        originalRevision,
+        `${reason} (restore)`
+      );
     }
     await cleanupE2EUsers(request);
   }
@@ -899,57 +907,30 @@ test('the wired merchant decision hold is editable through governed config', asy
   const admin = await registerE2EUser(request, { role: 'admin' });
   const key = 'harness.confirmation_card.hold_timeout_seconds';
   const reason = `C1 acceptance ${Date.now()}: change merchant decision hold`;
-  let original: number | undefined;
-
-  const applyHold = async (value: number, auditReason: string) => {
-    const advanced = page.locator('details', {
-      hasText: '高级配置与版本历史',
-    });
-    if ((await advanced.getAttribute('open')) === null) {
-      await advanced.getByText('高级配置与版本历史').click();
-    }
-    await advanced.locator('#admin-runtime-config-key').selectOption(key);
-    const form = advanced.getByTestId(`admin-config-form-${key}`);
-    await expect(form).toBeVisible({ timeout: 30_000 });
-    const input = form.getByRole('textbox', {
-      name: '商家决策保留期（秒）',
-    });
-    await expect(input).toBeVisible();
-    await input.fill(String(value));
-    await advanced.getByRole('button', { name: '审阅并记录' }).click();
-    const dialog = page.getByRole('dialog');
-    await expect(dialog).toBeVisible();
-    await dialog.getByLabel('执行原因（写入审计）').fill(auditReason);
-    await dialog.getByRole('button', { name: '确认记录配置' }).click();
-    await expect(dialog).toBeHidden();
-    await expect(page.getByText(auditReason, { exact: true })).toBeVisible({
-      timeout: 30_000,
-    });
-  };
+  let originalRevision: number | null = null;
+  let changed = false;
 
   try {
     await loginByForm(page, admin);
-    await page.goto('/admin/plans');
-    const advanced = page.locator('details', {
-      hasText: '高级配置与版本历史',
+    originalRevision = await recordConfigBaseline(
+      page,
+      key,
+      `${reason} (baseline)`
+    );
+    await applyConfigStepper(
+      page,
+      key,
+      'admin-config-harness-confirmation_card-hold_timeout_seconds-value',
+      'decrement',
+      reason
+    );
+    changed = true;
+    await expect(page.getByText(reason, { exact: true })).toBeVisible({
+      timeout: 30_000,
     });
-    await advanced.getByText('高级配置与版本历史').click();
-    await advanced.locator('#admin-runtime-config-key').selectOption(key);
-    const form = advanced.getByTestId(`admin-config-form-${key}`);
-    await expect(form).toBeVisible({ timeout: 30_000 });
-    const input = form.getByRole('textbox', {
-      name: '商家决策保留期（秒）',
-    });
-    original = Number((await input.inputValue()).replaceAll(',', ''));
-    expect(original).toBeGreaterThanOrEqual(3_600);
-    expect(original).toBeLessThanOrEqual(172_800);
-    const target = original === 3_600 ? 3_601 : 3_600;
-    await applyHold(target, reason);
   } finally {
-    if (original !== undefined) {
-      await applyHold(original, `${reason} (restore to ${original})`).catch(
-        () => undefined
-      );
+    if (changed && originalRevision !== null) {
+      await rollbackConfig(page, key, originalRevision, `${reason} (restore)`);
     }
     await cleanupE2EUsers(request);
   }

@@ -19,6 +19,69 @@ describe('admin config form values', () => {
     assert.equal(parseAdminConfigDraft('plan.trial.enabled', 'false'), false);
     assert.deepEqual(
       parseAdminConfigDraft(
+        'plan.credits.growth',
+        JSON.stringify({
+          concurrencyLimit: 4,
+          credits: 1_300,
+          currency: 'CNY',
+          monthlyPriceMicros: 499_000_000,
+          queuePriority: 5,
+          storageMb: 5_120,
+          supportLabel: 'priority',
+        })
+      ),
+      {
+        concurrencyLimit: 4,
+        credits: 1_300,
+        currency: 'CNY',
+        monthlyPriceMicros: 499_000_000,
+        queuePriority: 5,
+        storageMb: 5_120,
+        supportLabel: 'priority',
+      }
+    );
+    assert.deepEqual(
+      parseAdminConfigDraft(
+        'plan.credits.cycle_coefficients',
+        JSON.stringify({ monthly: 9_000, single_month: 10_000, yearly: 7_500 })
+      ),
+      { monthly: 9_000, single_month: 10_000, yearly: 7_500 }
+    );
+    assert.throws(
+      () =>
+        parseAdminConfigDraft(
+          'plan.credits.starter',
+          JSON.stringify({
+            concurrencyLimit: 1,
+            credits: 500,
+            currency: 'CNY',
+            monthlyPriceMicros: 0,
+            queuePriority: 1,
+            storageMb: 1_024,
+            supportLabel: 'standard',
+          })
+        ),
+      /selected config key/i
+    );
+    assert.equal(
+      (
+        parseAdminConfigDraft(
+          'plan.credits.trial',
+          JSON.stringify({
+            concurrencyLimit: 1,
+            credits: 100,
+            currency: 'CNY',
+            monthlyPriceMicros: 0,
+            queuePriority: 1,
+            storageMb: 512,
+            supportLabel: 'standard',
+          })
+        ) as { monthlyPriceMicros: number }
+      ).monthlyPriceMicros,
+      0
+    );
+    assert.deepEqual(
+      parseAdminConfigDraft(
         'plan.allowances.starter',
         JSON.stringify({
           allowance: { audio: 8, copy: 30, image: 10, video: 5 },

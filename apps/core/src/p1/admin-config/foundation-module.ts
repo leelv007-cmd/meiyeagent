@@ -300,10 +300,22 @@ const trialPlanAllowanceSchema = planAllowanceSchema.extend({
 const creditPlanSchema = z
   .object({
     credits: z.number().int().positive().max(MAX_CREDIT_PLAN_AMOUNT),
+    monthlyPriceMicros: z.number().int().positive().max(MAX_ADD_ON_AMOUNT_MICROS),
+    currency: z.literal('CNY'),
     storageMb: z.number().int().positive().max(MAX_PLAN_RESOURCE_ALLOWANCE),
     concurrencyLimit: z.number().int().positive().max(MAX_PLAN_CONCURRENCY),
     queuePriority: z.number().int().positive().max(MAX_QUEUE_PRIORITY),
     supportLabel: z.enum(['standard', 'priority']),
+  })
+  .strict();
+const trialCreditPlanSchema = creditPlanSchema.extend({
+  monthlyPriceMicros: z.number().int().nonnegative().max(MAX_ADD_ON_AMOUNT_MICROS),
+});
+const creditPlanCycleCoefficientBasisPointsSchema = z
+  .object({
+    monthly: z.number().int().positive().max(10_000),
+    single_month: z.number().int().positive().max(10_000),
+    yearly: z.number().int().positive().max(10_000),
   })
   .strict();
 const creditAddOnSchema = z
@@ -311,7 +323,7 @@ const creditAddOnSchema = z
     id: z.string().trim().min(1).max(100),
     credits: z.number().int().positive().max(MAX_CREDIT_PLAN_AMOUNT),
     amountMicros: z.number().int().nonnegative().max(MAX_ADD_ON_AMOUNT_MICROS),
-    currency: z.string().length(3).regex(/^[A-Z]{3}$/),
+    currency: z.literal('CNY'),
     expireDays: z.number().int().positive().max(MAX_CREDIT_ADD_ON_EXPIRY_DAYS),
   })
   .strict();
@@ -515,7 +527,7 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     key: 'plan.credits.trial',
     scope: 'global',
     description: 'One-time trial credits recorded by platform administration.',
-    valueSchema: creditPlanSchema,
+    valueSchema: trialCreditPlanSchema,
   },
   {
     key: 'plan.credits.addons',
@@ -534,6 +546,12 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
         ids.add(offer.id);
       });
     }),
+  },
+  {
+    key: 'plan.credits.cycle_coefficients',
+    scope: 'global',
+    description: 'Credit plan billing-cycle price coefficients.',
+    valueSchema: creditPlanCycleCoefficientBasisPointsSchema,
   },
   {
     key: 'plan.credits.trial.enabled',

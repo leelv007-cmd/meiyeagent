@@ -39,25 +39,51 @@ export type PublicCreditBalance = z.infer<
 >;
 
 export const publicPlanTierIds = ['starter', 'growth', 'pro'] as const;
+export const publicPlanBillingCycles = [
+  'single_month',
+  'monthly',
+  'yearly',
+] as const;
+
+export const publicPlanCyclePriceSchema = z
+  .object({
+    amountMicros: z.number().int().nonnegative(),
+    cycle: z.enum(publicPlanBillingCycles),
+  })
+  .strict();
+
+export const publicPlanAddOnOfferSchema = z
+  .object({
+    amountMicros: z.number().int().nonnegative(),
+    credits: z.number().int().positive(),
+    currency: z.literal('CNY'),
+    expireDays: z.number().int().positive(),
+    id: z.string().min(1),
+  })
+  .strict();
 
 /**
  * What a public pricing page is allowed to know about a plan (D-143).
  *
- * Only the three merchant-countable buckets plus how many creations run at
- * once. Deliberately no unit price, no provider, no queue priority — D-109
- * keeps supply detail invisible, and the money side of a plan comes from the
- * payment configuration, not from the entitlement catalogue.
+ * Plan credit and merchant price facts are safe to publish. Upstream provider
+ * cost, model tokens and supply pricing are deliberately excluded (D-061).
  */
 export const publicPlanOfferSchema = z
   .object({
     id: z.enum(publicPlanTierIds),
     credits: z.number().int().positive(),
     concurrencyLimit: z.number().int().positive(),
+    currency: z.literal('CNY'),
+    cyclePrices: z.array(publicPlanCyclePriceSchema).length(3),
+    monthlyPriceMicros: z.number().int().positive(),
   })
   .strict();
 
 export const publicPlanCatalogSchema = z
-  .object({ plans: z.array(publicPlanOfferSchema) })
+  .object({
+    addOns: z.array(publicPlanAddOnOfferSchema),
+    plans: z.array(publicPlanOfferSchema),
+  })
   .strict();
 
 export type PublicPlanOffer = z.infer<typeof publicPlanOfferSchema>;
@@ -96,15 +122,36 @@ export const PUBLIC_PLAN_CREDIT_SEED: readonly PublicPlanOffer[] = [
     id: 'starter',
     credits: 500,
     concurrencyLimit: 1,
+    currency: 'CNY',
+    cyclePrices: [
+      { amountMicros: 199_000_000, cycle: 'single_month' },
+      { amountMicros: 179_100_000, cycle: 'monthly' },
+      { amountMicros: 1_791_000_000, cycle: 'yearly' },
+    ],
+    monthlyPriceMicros: 199_000_000,
   },
   {
     id: 'growth',
     credits: 1_300,
     concurrencyLimit: 4,
+    currency: 'CNY',
+    cyclePrices: [
+      { amountMicros: 499_000_000, cycle: 'single_month' },
+      { amountMicros: 449_100_000, cycle: 'monthly' },
+      { amountMicros: 4_491_000_000, cycle: 'yearly' },
+    ],
+    monthlyPriceMicros: 499_000_000,
   },
   {
     id: 'pro',
     credits: 2_800,
     concurrencyLimit: 8,
+    currency: 'CNY',
+    cyclePrices: [
+      { amountMicros: 899_000_000, cycle: 'single_month' },
+      { amountMicros: 809_100_000, cycle: 'monthly' },
+      { amountMicros: 8_091_000_000, cycle: 'yearly' },
+    ],
+    monthlyPriceMicros: 899_000_000,
   },
 ];

@@ -7,6 +7,49 @@ export const MAX_QUEUE_PRIORITY = 100;
 export const MAX_ADD_ON_QUANTITY = 1_000_000;
 export const MAX_ADD_ON_AMOUNT_MICROS = 1_000_000_000_000;
 export const MAX_ADD_ON_OFFERS = 100;
+export const MAX_CREDIT_PLAN_AMOUNT = 10_000_000;
+
+const creditPlanSchema = z
+  .object({
+    concurrencyLimit: z.number().int().positive().max(MAX_PLAN_CONCURRENCY),
+    credits: z.number().int().positive().max(MAX_CREDIT_PLAN_AMOUNT),
+    currency: z.literal('CNY'),
+    monthlyPriceMicros: z
+      .number()
+      .int()
+      .positive()
+      .max(MAX_ADD_ON_AMOUNT_MICROS),
+    queuePriority: z.number().int().positive().max(MAX_QUEUE_PRIORITY),
+    storageMb: z.number().int().positive().max(MAX_PLAN_RESOURCE_ALLOWANCE),
+    supportLabel: z.enum(['standard', 'priority']),
+  })
+  .strict();
+
+const trialCreditPlanSchema = creditPlanSchema.extend({
+  monthlyPriceMicros: z
+    .number()
+    .int()
+    .nonnegative()
+    .max(MAX_ADD_ON_AMOUNT_MICROS),
+});
+
+const creditPlanCycleCoefficientBasisPointsSchema = z
+  .object({
+    monthly: z.number().int().positive().max(10_000),
+    single_month: z.number().int().positive().max(10_000),
+    yearly: z.number().int().positive().max(10_000),
+  })
+  .strict();
+
+const creditAddOnSchema = z
+  .object({
+    amountMicros: z.number().int().nonnegative().max(MAX_ADD_ON_AMOUNT_MICROS),
+    credits: z.number().int().positive().max(MAX_CREDIT_PLAN_AMOUNT),
+    currency: z.literal('CNY'),
+    expireDays: z.number().int().positive().max(3_650),
+    id: z.string().min(1).max(100),
+  })
+  .strict();
 
 const planAllowanceSchema = z
   .object({
@@ -75,6 +118,14 @@ const configSchemas = {
         ids.add(offer.id);
       }
     }),
+  'plan.credits.addons': z.array(creditAddOnSchema).max(MAX_ADD_ON_OFFERS),
+  'plan.credits.cycle_coefficients':
+    creditPlanCycleCoefficientBasisPointsSchema,
+  'plan.credits.growth': creditPlanSchema,
+  'plan.credits.pro': creditPlanSchema,
+  'plan.credits.starter': creditPlanSchema,
+  'plan.credits.trial': trialCreditPlanSchema,
+  'plan.credits.trial.enabled': z.boolean(),
   'plan.trial.enabled': z.boolean(),
   'plan.allowances.growth': planAllowanceSchema,
   'plan.allowances.pro': planAllowanceSchema,

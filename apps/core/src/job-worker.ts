@@ -109,7 +109,10 @@ import {
   createCreditSubscriptionReconciliationJobHandler,
   registerCreditSubscriptionSchedules,
 } from './p1/credit-billing/credit-subscription-scheduler.js';
-import { AdminConfigCreditPlanCatalogSource } from './p1/admin-config/credit-plan-catalog-source.js';
+import {
+  AdminConfigCreditPlanCatalogSource,
+  ensureCreditPlanCatalogDefaults,
+} from './p1/admin-config/credit-plan-catalog-source.js';
 import {
   ModelSupplyImageGenerationAdapter,
   AdminConfigAssetIntakeGuidanceSource,
@@ -364,6 +367,7 @@ await migratePostgresSchema(pool, [
   operationalTelemetryStore,
   notifier,
 ]);
+await ensureCreditPlanCatalogDefaults(adminConfigRepository);
 const dueRecommendationBase = new PostgresHarnessStore(
   pool,
   storeFactLedger,

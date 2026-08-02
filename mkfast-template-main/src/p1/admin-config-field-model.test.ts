@@ -16,7 +16,7 @@ import {
 
 /** 后台能改的每个配置项都必须有表单件，一个都不许退回手敲文本。 */
 test('every admin config key maps onto typed form fields', () => {
-  assert.equal(ADMIN_CONFIG_KEYS.length, 19);
+  assert.equal(ADMIN_CONFIG_KEYS.length, 26);
   for (const key of ADMIN_CONFIG_KEYS) {
     const fields = buildAdminConfigFields(key);
     assert.ok(fields.length > 0, `${key} produced no fields`);
@@ -209,6 +209,20 @@ test('a never-written key still opens on a usable starting value', () => {
   assert.equal(styles.styles[0].name, '干货科普版');
   assert.equal(defaultAdminConfigValue('compliance.watermark.default'), false);
   assert.deepEqual(defaultAdminConfigValue('plan.addons'), []);
+  assert.deepEqual(defaultAdminConfigValue('plan.credits.starter'), {
+    concurrencyLimit: 1,
+    credits: 500,
+    currency: 'CNY',
+    monthlyPriceMicros: 199_000_000,
+    queuePriority: 1,
+    storageMb: 1_024,
+    supportLabel: 'standard',
+  });
+  assert.deepEqual(defaultAdminConfigValue('plan.credits.cycle_coefficients'), {
+    monthly: 9_000,
+    single_month: 10_000,
+    yearly: 7_500,
+  });
 });
 
 test('field writes stay immutable and land on the addressed path', () => {

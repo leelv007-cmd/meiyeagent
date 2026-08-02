@@ -80,7 +80,10 @@ import {
   admin_runtime_config_value,
   admin_runtime_mode_missing_requirements,
 } from '@/locale/paraglide/messages';
-import { NOTE_STYLE_CONFIG_KEY } from '@meiye/contracts';
+import {
+  CREDIT_PLAN_CONFIG_KEYS,
+  NOTE_STYLE_CONFIG_KEY,
+} from '@meiye/contracts';
 import { formatLocaleDateTime } from '@/lib/locale';
 import {
   adminConfigKeyLabel,
@@ -131,6 +134,7 @@ const HOT_READ_KEYS = new Set([
   // 「重启后生效」，与实际行为相反（D-116）。与 core 的 hotReadKeys 对齐。
   NOTE_STYLE_CONFIG_KEY,
   'harness.confirmation_card.hold_timeout_seconds',
+  ...CREDIT_PLAN_CONFIG_KEYS,
   'plan.addons',
   'plan.allowances.trial',
   'plan.allowances.starter',
@@ -178,6 +182,7 @@ export function adminConfigApplyRequest(
 
 function isCommerceKey(key: string) {
   return (
+    key.startsWith('plan.credits.') ||
     key === 'plan.addons' ||
     key === 'plan.payment-mapping' ||
     key.startsWith('plan.allowances.')

@@ -29,7 +29,26 @@ test('public plan catalog fails closed on Core HTTP, schema, and transport failu
 });
 
 test('public plan catalog returns the ops-published credit revision', async () => {
-  const catalog = { plans: [...PUBLIC_PLAN_CREDIT_SEED] };
+  const catalog = {
+    addOns: [
+      {
+        amountMicros: 49_000_000,
+        credits: 100,
+        currency: 'CNY',
+        expireDays: 7,
+        id: 'credits-100',
+      },
+    ],
+    plans: PUBLIC_PLAN_CREDIT_SEED.map((plan) => ({
+      ...plan,
+      cyclePrices: [
+        { amountMicros: 199_000_000, cycle: 'single_month' },
+        { amountMicros: 179_100_000, cycle: 'monthly' },
+        { amountMicros: 1_791_000_000, cycle: 'yearly' },
+      ],
+      monthlyPriceMicros: 199_000_000,
+    })),
+  };
   assert.deepEqual(
     await fetchPublicPlanCatalog(
       async () =>

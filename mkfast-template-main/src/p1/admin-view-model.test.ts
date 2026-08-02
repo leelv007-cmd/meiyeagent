@@ -76,6 +76,20 @@ describe('P1 admin view model', () => {
         models: [
           {
             capabilities: ['image.generate', 'image.edit'],
+            creditPricing: {
+              'image.edit': {
+                creditCost: 5,
+                failureRefundsCredits: true,
+              },
+              'image.generate': {
+                creditCost: 5,
+                failureRefundsCredits: true,
+              },
+              'image.reference_transform': {
+                creditCost: 5,
+                failureRefundsCredits: true,
+              },
+            },
             displayName: 'GPT Image 2',
             id: 'gpt-image-2',
             manufacturer: 'OpenAI',
@@ -150,6 +164,20 @@ describe('P1 admin view model', () => {
     assert.equal(draft.prices[0]?.revision, 1);
     assert.equal(draft.routes[0]?.revision, 1);
     assert.equal(draft.models[1]?.modality, 'audio');
+    assert.deepEqual(draft.models[0]?.creditPricing, {
+      'image.edit': {
+        creditCost: 5,
+        failureRefundsCredits: true,
+      },
+      'image.generate': {
+        creditCost: 5,
+        failureRefundsCredits: true,
+      },
+      'image.reference_transform': {
+        creditCost: 5,
+        failureRefundsCredits: true,
+      },
+    });
     assert.equal(JSON.stringify(draft).includes('apiKey'), false);
 
     const customControl = normalizeAdminCatalogControl({

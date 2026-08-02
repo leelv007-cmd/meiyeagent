@@ -378,7 +378,10 @@ import { PostgresCreditSubscriptionStore } from './p1/credit-billing/credit-subs
 import { CreditBillingService } from './p1/credit-billing/credit-billing-service.js';
 import { CreditSubscriptionEntitlementPolicy } from './p1/credit-billing/credit-entitlement-policy.js';
 import { creditPlanConcurrencyTiers } from './p1/credit-billing/credit-plan-catalog.js';
-import { AdminConfigCreditPlanCatalogSource } from './p1/admin-config/credit-plan-catalog-source.js';
+import {
+  AdminConfigCreditPlanCatalogSource,
+  ensureCreditPlanCatalogDefaults,
+} from './p1/admin-config/credit-plan-catalog-source.js';
 import {
   createDurableResultDeliveryRuntime,
   ResultDeliveryFoundationModule,
@@ -982,6 +985,7 @@ await migratePostgresSchema(pool, [
   operationalTelemetryStore,
   notifier,
 ]);
+await ensureCreditPlanCatalogDefaults(adminConfigRepository);
 if (modelRuntime.mode === 'fixture') {
   await initializeWorkspaceCatalog(PLATFORM_SUPPLY_SCOPE_ID);
 }
@@ -1644,6 +1648,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'plan.credits.growth',
         'plan.credits.pro',
         'plan.credits.addons',
+        'plan.credits.cycle_coefficients',
         'plan.credits.trial.enabled',
         ...PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(
           platformDefaultModelConfigName,
@@ -1672,6 +1677,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'plan.credits.growth',
         'plan.credits.pro',
         'plan.credits.addons',
+        'plan.credits.cycle_coefficients',
         'plan.credits.trial.enabled',
         ...PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(
           platformDefaultModelConfigName,

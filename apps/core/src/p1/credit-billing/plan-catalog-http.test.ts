@@ -1,0 +1,68 @@
+import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
+import test from 'node:test';
+
+import type { DiagnosticRun } from '@meiye/contracts';
+import type { DiagnosticRepository } from '../../diagnostics/repository.js';
+import { createCoreServer } from '../../server.js';
+import { DEFAULT_CREDIT_PLAN_CATALOG } from './credit-plan-catalog.js';
+
+const diagnostics: DiagnosticRepository = {
+  async create(run: DiagnosticRun) {
+    return run;
+  },
+  async get() {
+    return null;
+  },
+  async save(run: DiagnosticRun) {
+    return run;
+  },
+};
+
+test('published plan prices reach the service-token-gated Core read contract', async (t) => {
+  const server = createCoreServer({
+    diagnosticRepository: diagnostics,
+    planCatalog: {
+      async get() {
+        return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG);
+      },
+    },
+    serviceToken: 'plan-catalog-test-token',
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => server.close());
+  const { port } = server.address() as AddressInfo;
+  const url = `http://127.0.0.1:${port}/public/plan-catalog`;
+
+  assert.equal((await fetch(url)).status, 401);
+
+  const response = await fetch(url, {
+    headers: { 'x-service-token': 'plan-catalog-test-token' },
+  });
+  assert.equal(response.status, 200);
+  const payload = (await response.json()) as {
+    data: {
+      addOns: Array<{ credits: number; expireDays: number }>;
+      plans: Array<{
+        cyclePrices: Array<{ amountMicros: number; cycle: string }>;
+        id: string;
+        monthlyPriceMicros: number;
+      }>;
+    };
+  };
+  const growth = payload.data.plans.find((plan) => plan.id === 'growth');
+  assert.equal(growth?.monthlyPriceMicros, 499_000_000);
+  assert.deepEqual(growth?.cyclePrices, [
+    { amountMicros: 499_000_000, cycle: 'single_month' },
+    { amountMicros: 449_100_000, cycle: 'monthly' },
+    { amountMicros: 4_491_000_000, cycle: 'yearly' },
+  ]);
+  assert.deepEqual(
+    payload.data.addOns.map((offer) => [offer.credits, offer.expireDays]),
+    [[100, 7], [300, 7], [1_000, 7]],
+  );
+  assert.equal(JSON.stringify(payload).includes('token'), false);
+  assert.equal(JSON.stringify(payload).includes('provider'), false);
+});

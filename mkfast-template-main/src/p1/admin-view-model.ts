@@ -15,6 +15,19 @@ import {
   p1_common_unlabeled,
 } from '@/locale/paraglide/messages';
 
+export const CREDIT_PRICING_OPERATIONS = [
+  'copy.generate',
+  'copy.adapt',
+  'image.generate',
+  'image.edit',
+  'image.reference_transform',
+  'video.generate',
+  'audio.speech',
+  'audio.sfx',
+] as const;
+
+export type CreditPricingOperation = (typeof CREDIT_PRICING_OPERATIONS)[number];
+
 const modelOperationSchema = z.enum([
   'copy.generate',
   'copy.adapt',
@@ -25,6 +38,29 @@ const modelOperationSchema = z.enum([
   'audio.sfx',
   'text.respond',
 ]);
+
+const videoCreditCostsSchema = z.strictObject({
+  '15': z.number().int().positive().optional(),
+  '30': z.number().int().positive().optional(),
+  '60': z.number().int().positive().optional(),
+});
+
+const creditPricingEntrySchema = z.strictObject({
+  creditCost: z.number().int().positive(),
+  failureRefundsCredits: z.boolean(),
+  videoCreditCosts: videoCreditCostsSchema.optional(),
+});
+
+const creditPricingSchema = z.strictObject({
+  'audio.sfx': creditPricingEntrySchema.optional(),
+  'audio.speech': creditPricingEntrySchema.optional(),
+  'copy.adapt': creditPricingEntrySchema.optional(),
+  'copy.generate': creditPricingEntrySchema.optional(),
+  'image.edit': creditPricingEntrySchema.optional(),
+  'image.generate': creditPricingEntrySchema.optional(),
+  'image.reference_transform': creditPricingEntrySchema.optional(),
+  'video.generate': creditPricingEntrySchema.optional(),
+});
 
 const evidenceStatusSchema = z.enum([
   'documented',
@@ -310,6 +346,7 @@ const safeModelDraftSchema = z
 
 const catalogModelSchema = z.strictObject({
   capabilities: z.array(modelOperationSchema).optional(),
+  creditPricing: creditPricingSchema.optional(),
   displayName: z.string().min(1),
   id: z.string().min(1),
   manufacturer: z.string().min(1).optional(),
