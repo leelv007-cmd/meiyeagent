@@ -838,6 +838,20 @@ export class DurableProductBillingService
             if (!merchantExecutionClaimExpired(existing.updatedAt, this.clock())) {
               return { decision: 'in_progress' as const };
             }
+            const quote = await transaction.getQuoteByTask(
+              workspaceId,
+              input.taskId,
+            );
+            const usage = await transaction.getUsage(
+              workspaceId,
+              input.taskId,
+            );
+            if (!merchantExecutionMatchesReservation(input, quote, usage)) {
+              throw new P1DomainError(
+                'INVALID_STATE',
+                'Merchant execution must exactly match the reserved credit quote contract.',
+              );
+            }
             await transaction.saveMerchantExecution({
               ...existing,
               status: 'claimed',

@@ -734,6 +734,68 @@ describe(
       );
     });
 
+    it('rejects an expired merchant claim after its credit reservation is released', async () => {
+      const workspaceId = workspace();
+      const service = new DurableProductBillingService(repository);
+      const quote = await service.buildQuote(
+        quoteInput(workspaceId, 'expired-merchant-execution-quote'),
+      );
+      const taskId = 'expired-merchant-execution-task';
+      await service.confirm({ quoteId: quote.quoteId, taskId, workspaceId });
+      await service.beforeSubmit({
+        quoteRevision: quote.revision,
+        resource: 'video',
+        taskId,
+        workspaceId,
+      });
+      const effectKey = `merchant-execution:${taskId}:provider-attempt`;
+      const claim = {
+        catalogModelId: 'video-model',
+        effectKey,
+        idempotencyKey: effectKey,
+        inputAssetsHash: quote.submissionInputAssetsHash!,
+        inputSnapshot: {
+          input: { durationSeconds: 10 },
+          prompt: 'merchant prompt',
+        },
+        operation: 'video.generate',
+        outputCount: 1,
+        promptHash: quote.submissionPromptHash!,
+        providerCatalogModelId: 'video-model',
+        providerOperation: 'video.generate',
+        quoteRevision: quote.revision,
+        referenceAssetsHash: quote.submissionReferenceAssetsHash!,
+        submissionContractHash: quote.submissionContractHash!,
+        submissionInputAssetsHash: quote.submissionInputAssetsHash!,
+        submissionPromptHash: quote.submissionPromptHash!,
+        submissionReferenceAssetsHash: quote.submissionReferenceAssetsHash!,
+        targetSeconds: 10,
+        taskId,
+        workspaceId,
+      };
+
+      assert.equal(
+        (await service.claimMerchantExecution(claim)).decision,
+        'execute',
+      );
+      await service.failAndRefund({
+        forceCreditRefund: true,
+        quoteId: quote.quoteId,
+        workspaceId,
+      });
+      await pool.query(
+        `UPDATE p1_product_billing_merchant_executions
+            SET updated_at = now() - interval '2 minutes'
+          WHERE workspace_id = $1 AND task_id = $2 AND effect_key = $3`,
+        [workspaceId, taskId, effectKey],
+      );
+
+      await assert.rejects(
+        service.claimMerchantExecution(claim),
+        /reserved credit quote contract/i,
+      );
+    });
+
     it('promotes only one completed auxiliary merchant effect into the canonical task result', async () => {
       const workspaceId = workspace();
       const service = new DurableProductBillingService(repository);
