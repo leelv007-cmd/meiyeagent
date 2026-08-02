@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import { type GrantCreditsInput, MemoryCreditLedger } from './credit-ledger.js';
 import { CreditBillingService } from './credit-billing-service.js';
+import { DEFAULT_CREDIT_PLAN_CATALOG } from './credit-plan-catalog.js';
 import { MemoryCreditSubscriptionStore } from './credit-subscription-scheduler.js';
 import { E2ECreditDetailFixture } from './e2e-credit-detail-fixture.js';
 import { ProductQuoteService } from '../product-billing/quote-service.js';
@@ -59,6 +60,9 @@ test('E2E credit detail fixture seeds the real credit lifecycle idempotently', a
           yearly: 7_500,
         },
         plans: [],
+        referenceNumbers: structuredClone(
+          DEFAULT_CREDIT_PLAN_CATALOG.referenceNumbers,
+        ),
         trialEnabled: true,
       }),
     },
