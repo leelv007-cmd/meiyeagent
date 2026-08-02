@@ -2165,7 +2165,7 @@ export function ComposerHome({
     ]);
   }, [interactionMessageQuery.refetch, interactionQuery.refetch]);
 
-  const addSource = (assetId: string) => {
+  const addSource = useCallback((assetId: string) => {
     const facts = sourceFactsRef.current.get(assetId);
     const revision = sourceRevisionRef.current.get(assetId);
     if (!facts || !revision) return;
@@ -2192,9 +2192,9 @@ export function ComposerHome({
         },
       ])
     );
-  };
+  }, []);
 
-  const removeSource = (assetId: string) => {
+  const removeSource = useCallback((assetId: string) => {
     sourceFactsRef.current.delete(assetId);
     sourceRevisionRef.current.delete(assetId);
     setStyleReferenceAssetIds((current) =>
@@ -2213,7 +2213,7 @@ export function ComposerHome({
         )
       )
     );
-  };
+  }, []);
 
   /**
    * The submission gate reads `product.state`, and `useProductState` only
@@ -2223,87 +2223,90 @@ export function ComposerHome({
    * for a source the server has already authorized. Every inline asset write
    * ends here, the same way the ProgressiveFactCard confirm below does.
    */
-  const refreshAfterAssetWrite = async () => {
+  const refreshAfterAssetWrite = useCallback(async () => {
     setSubmissionGroundingBlocked(null);
     await product.refresh();
-  };
+  }, [product]);
 
-  const uploadComposerImage = async (
-    file: File,
-    facts: ConfirmedAssetFacts,
-    identity: ComposerImageIdentity
-  ) => {
-    const body = new FormData();
-    body.append('file', file);
-    body.append('uploadId', identity.uploadId);
-    body.append('contentHash', identity.contentHash);
-    const receipt = await uploadProductAsset({ data: body });
-    await executeProductCommand(
-      {
-        type: 'add_asset',
-        asset: {
-          id: identity.assetId,
-          mediaType: 'image',
-          objectKey: receipt.key,
-          sourceType: 'real',
-          tags: file.name.trim() ? [file.name.slice(0, 40)] : [],
-          category: facts.category,
-          consentScope: 'internal_only',
-          containsPerson: facts.containsPerson,
-          containsSensitiveData: facts.containsSensitiveData,
-          minorStatus: facts.minorStatus,
-          rightsOwner:
-            facts.rightsOwner?.trim() ||
-            product.state?.store?.name?.trim() ||
-            '门店',
+  const uploadComposerImage = useCallback(
+    async (
+      file: File,
+      facts: ConfirmedAssetFacts,
+      identity: ComposerImageIdentity
+    ) => {
+      const body = new FormData();
+      body.append('file', file);
+      body.append('uploadId', identity.uploadId);
+      body.append('contentHash', identity.contentHash);
+      const receipt = await uploadProductAsset({ data: body });
+      await executeProductCommand(
+        {
+          type: 'add_asset',
+          asset: {
+            id: identity.assetId,
+            mediaType: 'image',
+            objectKey: receipt.key,
+            sourceType: 'real',
+            tags: file.name.trim() ? [file.name.slice(0, 40)] : [],
+            category: facts.category,
+            consentScope: 'internal_only',
+            containsPerson: facts.containsPerson,
+            containsSensitiveData: facts.containsSensitiveData,
+            minorStatus: facts.minorStatus,
+            rightsOwner:
+              facts.rightsOwner?.trim() ||
+              product.state?.store?.name?.trim() ||
+              '门店',
+          },
         },
-      },
-      `composer-asset:${identity.contentHash}`
-    );
-    sourceRevisionRef.current.set(identity.assetId, receipt.contentHash);
-    sourceFactsRef.current.set(identity.assetId, facts);
-    if (facts.consentScope === 'internal_only') {
+        `composer-asset:${identity.contentHash}`
+      );
+      sourceRevisionRef.current.set(identity.assetId, receipt.contentHash);
+      sourceFactsRef.current.set(identity.assetId, facts);
+      if (facts.consentScope === 'internal_only') {
+        await refreshAfterAssetWrite();
+        return { attached: false };
+      }
+      const authorization = {
+        type: 'authorize_asset' as const,
+        assetId: identity.assetId,
+        consentScope: facts.consentScope,
+        rightsEvidence: facts.rightsEvidence,
+        rightsNoFixedExpiry: facts.rightsNoFixedExpiry,
+        rightsPlatforms: facts.rightsPlatforms,
+        rightsValidUntil: facts.rightsValidUntil,
+      };
+      await executeProductCommand(
+        authorization,
+        await assetAuthorizationIdempotencyKey(authorization)
+      );
       await refreshAfterAssetWrite();
-      return { attached: false };
-    }
-    const authorization = {
-      type: 'authorize_asset' as const,
-      assetId: identity.assetId,
-      consentScope: facts.consentScope,
-      rightsEvidence: facts.rightsEvidence,
-      rightsNoFixedExpiry: facts.rightsNoFixedExpiry,
-      rightsPlatforms: facts.rightsPlatforms,
-      rightsValidUntil: facts.rightsValidUntil,
-    };
-    await executeProductCommand(
-      authorization,
-      await assetAuthorizationIdempotencyKey(authorization)
-    );
-    await refreshAfterAssetWrite();
-    return { attached: true };
-  };
+      return { attached: true };
+    },
+    [product.state?.store?.name, refreshAfterAssetWrite]
+  );
 
-  const authorizeComposerImage = async (
-    assetId: string,
-    facts: ConfirmedAssetFacts
-  ) => {
-    if (facts.consentScope !== 'public_marketing') return;
-    const authorization = {
-      type: 'authorize_asset' as const,
-      assetId,
-      consentScope: facts.consentScope,
-      rightsEvidence: facts.rightsEvidence,
-      rightsNoFixedExpiry: facts.rightsNoFixedExpiry,
-      rightsPlatforms: facts.rightsPlatforms,
-      rightsValidUntil: facts.rightsValidUntil,
-    };
-    await executeProductCommand(
-      authorization,
-      await assetAuthorizationIdempotencyKey(authorization)
-    );
-    sourceFactsRef.current.set(assetId, facts);
-    await refreshAfterAssetWrite();
-  };
+  const authorizeComposerImage = useCallback(
+    async (assetId: string, facts: ConfirmedAssetFacts) => {
+      if (facts.consentScope !== 'public_marketing') return;
+      const authorization = {
+        type: 'authorize_asset' as const,
+        assetId,
+        consentScope: facts.consentScope,
+        rightsEvidence: facts.rightsEvidence,
+        rightsNoFixedExpiry: facts.rightsNoFixedExpiry,
+        rightsPlatforms: facts.rightsPlatforms,
+        rightsValidUntil: facts.rightsValidUntil,
+      };
+      await executeProductCommand(
+        authorization,
+        await assetAuthorizationIdempotencyKey(authorization)
+      );
+      sourceFactsRef.current.set(assetId, facts);
+      await refreshAfterAssetWrite();
+    },
+    [refreshAfterAssetWrite]
+  );
 
   const createWork = useMutation({
     mutationFn: async (input: {
@@ -3574,6 +3577,101 @@ export function ComposerHome({
     if (dualColumn) setInspectorSheetOpen(false);
   }, [dualColumn]);
 
+  // Keep the attach capsule slot referentially stable across quote/usage
+  // re-renders. An inline JSX tree remounts free-mode generation-params
+  // buttons on every parent render and breaks pointer clicks mid-popover.
+  const composerAttachmentSlot = useMemo(
+    () => (
+      <div data-testid="composer-source-picker">
+        {explicitImageOperation ? (
+          <ComposerImageOperationPicker
+            disabled={createWork.isPending || lensState.phase === 'frozen'}
+            onChange={setImageOperation}
+            value={explicitImageOperation}
+          />
+        ) : null}
+        {generationParamsEnabled ? (
+          <ComposerGenerationParamsPanel
+            creationMode={creationMode}
+            disabled={createWork.isPending || lensState.phase === 'frozen'}
+            onChange={setGenerationParams}
+            state={generationParams}
+          />
+        ) : null}
+        <ComposerImageInput
+          focusRef={sourcePickerRef}
+          onAssetAdded={addSource}
+          onAssetRemoved={removeSource}
+          onAuthorize={authorizeComposerImage}
+          onQueueChange={(uploads) =>
+            setUploadsReady(uploads.every((upload) => upload.status === 'ready'))
+          }
+          onUpload={uploadComposerImage}
+        >
+          <p className="text-muted text-xs">
+            {explicitImageOperation
+              ? imageOperationAttachmentHint(explicitImageOperation)
+              : '可选：上传门店图片、顾客案例或价目素材'}
+          </p>
+        </ComposerImageInput>
+        {sourceReferences.length > 0 ? (
+          <div
+            className="mt-2 flex flex-wrap items-center gap-2"
+            data-testid="composer-style-reference-controls"
+          >
+            {sourceReferences.map((source) => (
+              <ComposerStyleReferenceControl
+                assetId={source.id}
+                key={source.id}
+                onToggle={(assetId) =>
+                  setStyleReferenceAssetIds((current) =>
+                    toggleStyleReferenceAsset(current, assetId)
+                  )
+                }
+                selected={styleReferenceAssetIds.includes(source.id)}
+              />
+            ))}
+            <ComposerStyleAnalysisStageNotice
+              state={buildStyleAnalysisStageFromAssets({
+                attachedAssetIds: sourceReferences.map(({ id }) => id),
+                styleReferenceAssetIds,
+              })}
+            />
+          </div>
+        ) : null}
+        {imageCardinality.message ? (
+          <p
+            className="mt-2 text-destructive text-xs"
+            data-testid="composer-image-cardinality"
+            role="alert"
+          >
+            {imageCardinality.message}
+          </p>
+        ) : null}
+        <ComposerAiCoverMismatchNotice
+          visible={showAiCoverSignatureMismatch}
+        />
+      </div>
+    ),
+    [
+      addSource,
+      authorizeComposerImage,
+      createWork.isPending,
+      creationMode,
+      explicitImageOperation,
+      generationParams,
+      generationParamsEnabled,
+      imageCardinality.message,
+      lensState.phase,
+      removeSource,
+      showAiCoverSignatureMismatch,
+      sourcePickerRef,
+      sourceReferences,
+      styleReferenceAssetIds,
+      uploadComposerImage,
+    ]
+  );
+
   return (
     <WorkbenchShellRoot
       // `meiye-heroui-glass` lives on the app shell root (sidebar-layout), not
@@ -4072,90 +4170,7 @@ export function ComposerHome({
                   ariaLabel={creation_entry_intent_aria()}
                   // DESIGN.md 白瓷 Composer 大卡 — pinned by the product shell contract.
                   className="meiye-composer meiye-entry-card rounded-3xl p-4 sm:p-5"
-                  attachmentSlot={
-                    <div data-testid="composer-source-picker">
-                      {explicitImageOperation ? (
-                        <ComposerImageOperationPicker
-                          disabled={
-                            createWork.isPending || lensState.phase === 'frozen'
-                          }
-                          onChange={setImageOperation}
-                          value={explicitImageOperation}
-                        />
-                      ) : null}
-                      {generationParamsEnabled ? (
-                        <ComposerGenerationParamsPanel
-                          creationMode={creationMode}
-                          disabled={
-                            createWork.isPending || lensState.phase === 'frozen'
-                          }
-                          onChange={setGenerationParams}
-                          state={generationParams}
-                        />
-                      ) : null}
-                      <ComposerImageInput
-                        focusRef={sourcePickerRef}
-                        onAssetAdded={addSource}
-                        onAssetRemoved={removeSource}
-                        onAuthorize={authorizeComposerImage}
-                        onQueueChange={(uploads) =>
-                          setUploadsReady(
-                            uploads.every((upload) => upload.status === 'ready')
-                          )
-                        }
-                        onUpload={uploadComposerImage}
-                      >
-                        <p className="text-muted text-xs">
-                          {explicitImageOperation
-                            ? imageOperationAttachmentHint(
-                                explicitImageOperation
-                              )
-                            : '可选：上传门店图片、顾客案例或价目素材'}
-                        </p>
-                      </ComposerImageInput>
-                      {sourceReferences.length > 0 ? (
-                        <div
-                          className="mt-2 flex flex-wrap items-center gap-2"
-                          data-testid="composer-style-reference-controls"
-                        >
-                          {sourceReferences.map((source) => (
-                            <ComposerStyleReferenceControl
-                              assetId={source.id}
-                              key={source.id}
-                              onToggle={(assetId) =>
-                                setStyleReferenceAssetIds((current) =>
-                                  toggleStyleReferenceAsset(current, assetId)
-                                )
-                              }
-                              selected={styleReferenceAssetIds.includes(
-                                source.id
-                              )}
-                            />
-                          ))}
-                          <ComposerStyleAnalysisStageNotice
-                            state={buildStyleAnalysisStageFromAssets({
-                              attachedAssetIds: sourceReferences.map(
-                                ({ id }) => id
-                              ),
-                              styleReferenceAssetIds,
-                            })}
-                          />
-                        </div>
-                      ) : null}
-                      {imageCardinality.message ? (
-                        <p
-                          className="mt-2 text-destructive text-xs"
-                          data-testid="composer-image-cardinality"
-                          role="alert"
-                        >
-                          {imageCardinality.message}
-                        </p>
-                      ) : null}
-                      <ComposerAiCoverMismatchNotice
-                        visible={showAiCoverSignatureMismatch}
-                      />
-                    </div>
-                  }
+                  attachmentSlot={composerAttachmentSlot}
                   creditShort={quotaBlocked || quotaPassive.short}
                   creditSlot={
                     <ComposerCreditRecoveryHost

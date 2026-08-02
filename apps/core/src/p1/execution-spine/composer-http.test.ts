@@ -1170,6 +1170,8 @@ test("a terminal late answer preserves the frozen merchant credit quote policy",
 		catalogModelRevision: "catalog-r4",
 		creditCost: 7,
 		failureRefundsCredits: false,
+		operation: "copy.generate",
+		outputCount: 1,
 		quoteId: "quote-1",
 		quotePolicyRevision: "quote.policy@1",
 		unitRate: 7,
@@ -1216,6 +1218,11 @@ test("a terminal late answer preserves the frozen merchant credit quote policy",
 	const successorQuote = quotes.getQuote(successor.snapshot.quote.id);
 	assert.equal(successorQuote?.creditCost, 7);
 	assert.equal(successorQuote?.failureRefundsCredits, false);
+	// Credit-era merchant execution requires the complete reserved quote
+	// contract on every successor, including operation + outputCount.
+	assert.equal(successorQuote?.operation, "copy.generate");
+	assert.equal(successorQuote?.outputCount, 1);
+	assert.ok(successorQuote?.submissionContractHash);
 });
 
 test("a Result adjustment starts one new-chain submission from the frozen source", async () => {

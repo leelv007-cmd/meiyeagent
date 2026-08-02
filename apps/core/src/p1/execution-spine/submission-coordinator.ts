@@ -518,6 +518,15 @@ export class CreationSubmissionCoordinator {
 			...(sourceQuote.minChargeSeconds !== undefined
 				? { minChargeSeconds: sourceQuote.minChargeSeconds }
 				: {}),
+			// Merchant execution (including free+deep auxiliary text.respond)
+			// requires a complete reserved credit quote contract. Copy the
+			// frozen operation / output count from the source quote so the
+			// successor can claim against the same product contract shape.
+			...(sourceQuote.operation
+				? { operation: sourceQuote.operation }
+				: source.operation
+					? { operation: source.operation }
+					: {}),
 			...(sourceQuote.outputCount !== undefined
 				? { outputCount: sourceQuote.outputCount }
 				: {}),

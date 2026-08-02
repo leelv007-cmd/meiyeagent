@@ -201,9 +201,20 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
         : {}),
       quoteId: input.quoteId,
       quotePolicyRevision: 'quote.policy@1',
-      ...(input.submission
-        ? { submissionContractHash: fingerprintValue(input.submission) }
-        : {}),
+      // Merchant execution requires a complete reserved credit quote contract,
+      // including submissionContractHash. Composer quotes fingerprint the signed
+      // submission; result_adjust / free+deep Selection AI quotes have no signed
+      // Composer body — fingerprint the server-priced intent instead so reserve
+      // + bind can still produce a complete contract.
+      submissionContractHash: input.submission
+        ? fingerprintValue(input.submission)
+        : fingerprintValue({
+            catalogModelId: model.id,
+            operation: input.operation,
+            quantity,
+            quoteId: input.quoteId,
+            workspaceId: input.workspaceId,
+          }),
       ...(input.executionInput
         ? (() => {
             const hashes = merchantExecutionInputHashes(input.executionInput);

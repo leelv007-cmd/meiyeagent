@@ -120,4 +120,33 @@ describe('MemoryProductUsageLedger product units', () => {
     assert.equal(oneSettled.status, 'committed');
     assert.equal(oneSettled.settledQuantity, 1);
   });
+
+  it('credit-era empty units reserve and commit credits on settle', () => {
+    const ledger = new MemoryProductUsageLedger();
+    const reserved = ledger.reserve({
+      id: 'usage-credit-1',
+      taskId: 'task-credit-1',
+      workspaceId: 'ws-1',
+      quoteId: 'quote-credit-1',
+      credits: 15,
+      units: [],
+      billingMode: 'per_request',
+      createdAt: '2026-08-01T12:00:00.000Z',
+    });
+    assert.equal(reserved.status, 'reserved');
+    assert.deepEqual(reserved.reservedUnits, []);
+    assert.equal(reserved.reservedCredits, 15);
+    assert.equal(reserved.reservedQuantity, 0);
+
+    const settled = ledger.settle({
+      taskId: 'task-credit-1',
+      settledUnits: [],
+      settlementStatus: 'estimated',
+      updatedAt: '2026-08-01T12:05:00.000Z',
+    });
+    assert.equal(settled.status, 'committed');
+    assert.deepEqual(settled.settledUnits, []);
+    assert.equal(settled.settledCredits, 15);
+    assert.equal(settled.refundedCredits, 0);
+  });
 });

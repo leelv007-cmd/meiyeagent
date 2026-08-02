@@ -74,6 +74,10 @@ describe('CatalogProductQuoteAuthority', () => {
       assert.equal(quote.creditCost, index + 1);
       assert.equal(quote.failureRefundsCredits, index % 2 === 0);
       assert.ok(quote.outputLabel?.length);
+      // Result-adjust / free+deep Selection AI quotes have no Composer
+      // submission body; authority must still freeze a contract hash so
+      // merchant execution can reserve a complete credit quote.
+      assert.match(quote.submissionContractHash ?? '', /^[a-f0-9]{64}$/u);
     }
   });
 
@@ -349,6 +353,17 @@ describe('CatalogProductQuoteAuthority', () => {
       submission: { ...baseSubmission, creationMode: 'free' },
       workspaceId: 'workspace-1',
     });
+    const freeDeep = await authority().resolve({
+      catalogModelId: 'image-model',
+      operation: 'image.generate',
+      quoteId: 'quote-free-deep',
+      submission: {
+        ...baseSubmission,
+        creationMode: 'free',
+        thinkingLevel: 'deep',
+      },
+      workspaceId: 'workspace-1',
+    });
     const changedIntent = await authority().resolve({
       catalogModelId: 'image-model',
       operation: 'image.generate',
@@ -358,6 +373,21 @@ describe('CatalogProductQuoteAuthority', () => {
     });
 
     assert.notEqual(xhs.submissionContractHash, freeMode.submissionContractHash);
+    assert.notEqual(
+      freeMode.submissionContractHash,
+      freeDeep.submissionContractHash,
+    );
+    // free+deep must still freeze a complete merchant execution contract shape
+    // (operation + outputCount + submissionContractHash + creditCost).
+    for (const quote of [freeMode, freeDeep]) {
+      assert.equal(quote.operation, 'image.generate');
+      assert.equal(quote.outputCount, 1);
+      assert.ok(quote.submissionContractHash);
+      assert.ok(
+        quote.creditCost !== undefined && quote.creditCost >= 1,
+        'free creation still prices merchant credits from the catalog',
+      );
+    }
     assert.notEqual(
       xhs.submissionContractHash,
       changedIntent.submissionContractHash,

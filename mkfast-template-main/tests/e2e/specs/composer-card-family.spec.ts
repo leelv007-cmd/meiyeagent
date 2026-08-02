@@ -208,19 +208,6 @@ async function startRun(page: Page, intent: string): Promise<SubmissionResult> {
   };
 }
 
-async function confirmSeededStoreFacts(page: Page): Promise<void> {
-  await page.goto('/dashboard');
-  const card = page.getByTestId('progressive-fact-card');
-  await expect(card).toBeVisible({ timeout: 60_000 });
-  const input = card.getByTestId('progressive-fact-input');
-  await expect(input).toHaveValue('透亮猫眼');
-  await card.getByTestId('progressive-fact-continue').click();
-  await expect(input).toHaveValue('299');
-  await card.getByTestId('progressive-fact-continue').click();
-  await card.getByTestId('progressive-fact-confirm').click();
-  await expect(card).toBeHidden({ timeout: 60_000 });
-}
-
 /**
  * The delivered revision, straight from the seam the card does *not* use — the
  * card reads the terminal SSE snapshot, this reads the HTTP projection. Two
@@ -530,8 +517,10 @@ test.describe('T31 三类卡与确认卡', () => {
     );
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
+    // seedConfirmedStore finalizes store facts through the public intake
+    // command — progressive-fact-card is for incomplete stores only and must
+    // not be expected after this helper (credit-era / intake-finalized path).
     await seedConfirmedStore(page);
-    await confirmSeededStoreFacts(page);
 
     const run = await startRun(page, '写一条周末到店的团购活动文案');
     const questionCard = page.getByTestId('composer-question-card');
@@ -569,13 +558,44 @@ test.describe('T31 三类卡与确认卡', () => {
       timeout: 30_000,
     });
 
-    // 被动展示: the line is there and it is a statement, not a control.
-    const passive = page.getByTestId('composer-quota-passive');
-    await expect(passive).toBeVisible();
-    await expect(passive).toHaveAttribute('data-quota-short', 'false');
-    expect(await passive.locator('button, input, a').count()).toBe(0);
-    // D-123: no cost baseline, no money, no internal id in front of a merchant.
-    assertMerchantLanguage(await passive.innerText(), []);
+    // Credit-era (D-172 / #298): when `projection.credits` is present,
+    // `composerQuotaAvailability` intentionally silences the bucket passive
+    // line (`composer-quota-passive`). The server quote line is the passive
+    // exposure on the main path — statement only, no pre-run 额度确认 gate.
+    await expect(page.getByTestId('composer-quota-passive')).toHaveCount(0);
+    const entitlement = await page.evaluate(async () => {
+      const response = await fetch('/api/core/p1/query', {
+        body: JSON.stringify({
+          action: 'projection',
+          module: 'entitlements',
+          payload: {},
+        }),
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        method: 'POST',
+      });
+      const envelope = (await response.json()) as {
+        data?: {
+          credits?: { availableCredits?: number };
+        };
+        error?: { message?: string };
+      };
+      if (!response.ok) {
+        throw new Error(envelope.error?.message ?? 'entitlements projection failed');
+      }
+      return envelope.data;
+    });
+    expect(
+      entitlement?.credits,
+      'credit-era entitlements must project a credits balance'
+    ).toBeTruthy();
+    expect(
+      Number(entitlement?.credits?.availableCredits)
+    ).toBeGreaterThanOrEqual(0);
+    const quoteLine = page.getByTestId('composer-quote-line');
+    await expect(quoteLine).toBeVisible();
+    expect(await quoteLine.locator('button, input, a').count()).toBe(0);
+    assertMerchantLanguage(await quoteLine.innerText(), []);
 
     // 无冲突路径 0 张阻塞卡 (D-043 决定①) — nothing gates the run.
     await expect(page.getByTestId('composer-quota-blocking-card')).toHaveCount(

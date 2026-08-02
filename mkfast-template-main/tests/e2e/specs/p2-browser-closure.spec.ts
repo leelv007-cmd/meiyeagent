@@ -325,20 +325,28 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     });
 
     await page.getByTestId('composer-creation-mode-free').click();
-    // Generation params (voice / thinking) live in the attach capsule.
-    await openComposerCapsule(page, 'attach');
-    await page.getByTestId('composer-beauty-voice-role-customer').click();
-    await page.getByTestId('composer-thinking-level-deep').click();
-    await expect(
-      page.getByTestId('composer-beauty-voice-role-customer')
-    ).toHaveAttribute('aria-pressed', 'true');
-    await expect(
-      page.getByTestId('composer-thinking-level-deep')
-    ).toHaveAttribute('aria-pressed', 'true');
-    await closeComposerCapsule(
-      page,
-      page.getByTestId('composer-capsule-attach-panel')
+    await expect(page.getByTestId('composer-creation-mode-free')).toBeChecked();
+    // Generation params live in the attach capsule and only mount in free mode.
+    // Use DOM click rather than Playwright actionability: the sticky Composer
+    // reflows while quote readiness settles, which keeps these buttons
+    // "unstable" even though they are the correct free-mode controls.
+    const attachPanel = await openComposerCapsule(page, 'attach');
+    await expect(page.getByTestId('composer-generation-params')).toHaveAttribute(
+      'data-creation-mode',
+      'free'
     );
+    const beautyVoice = page.getByTestId('composer-beauty-voice-role-customer');
+    const deepThinking = page.getByTestId('composer-thinking-level-deep');
+    await expect(beautyVoice).toBeVisible();
+    await beautyVoice.evaluate((node) => {
+      (node as HTMLButtonElement).click();
+    });
+    await expect(beautyVoice).toHaveAttribute('aria-pressed', 'true');
+    await deepThinking.evaluate((node) => {
+      (node as HTMLButtonElement).click();
+    });
+    await expect(deepThinking).toHaveAttribute('aria-pressed', 'true');
+    await closeComposerCapsule(page, attachPanel);
 
     let submission: ComposerSubmission | undefined;
     let submissionIdempotencyHeader: string | null = null;

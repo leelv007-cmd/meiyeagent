@@ -359,8 +359,11 @@ async function queryProductUsage(page: Page, taskId: string) {
     });
     const envelope = (await response.json()) as {
       data?: {
+        refundedCredits?: number;
         refundedUnits?: Array<{ quantity: number; resource: string }>;
+        reservedCredits?: number;
         reservedUnits?: Array<{ quantity: number; resource: string }>;
+        settledCredits?: number;
         settledUnits?: Array<{ quantity: number; resource: string }>;
         status?: string;
       };
@@ -581,22 +584,23 @@ test.describe
       // unconfigured. A full package remains valid, but it must not invent a
       // five-dimension evaluation that never ran.
       expect(selected?.note?.evaluation).toBeUndefined();
+      // Credit-era (#298 / D-172): reservation carries credits with empty
+      // legacy bucket units. After delivery the reserved credits must commit
+      // (not remain reserved). Bucket copy/image units are retired.
       const usage = await queryProductUsage(page, submission.taskId);
       expect(usage).toMatchObject({
-        reservedUnits: [
-          { resource: 'copy', quantity: 1 },
-          { resource: 'image', quantity: 3 },
-        ],
-        settledUnits: [
-          { resource: 'copy', quantity: 1 },
-          {
-            resource: 'image',
-            quantity: selected?.note?.plan.pages.length,
-          },
-        ],
+        reservedUnits: [],
+        settledUnits: [],
         refundedUnits: [],
         status: 'committed',
       });
+      expect(
+        usage.reservedCredits,
+        'credit reservation must freeze a positive credit amount'
+      ).toEqual(expect.any(Number));
+      expect(usage.reservedCredits!).toBeGreaterThan(0);
+      expect(usage.settledCredits).toBe(usage.reservedCredits);
+      expect(usage.refundedCredits ?? 0).toBe(0);
       expect(contentPackage.marketing?.contextBundle?.bundleId).toBeTruthy();
       expect(contentPackage.marketing?.factRefs).toEqual(expect.any(Array));
       expect(contentPackage.marketing?.rightsRefs?.length ?? 0).toBeGreaterThan(
