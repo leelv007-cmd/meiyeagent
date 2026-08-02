@@ -86,10 +86,12 @@ export type ThinkingProviderOptions = {
 /**
  * Map a merchant thinking level onto existing model-tier / thinking params.
  *
- * - standard → balanced profile; disable thinking when the model supports it
- * - deep → quality profile; enable thinking + high reasoning effort
+ * - standard → quality profile (aligned with the global auto default); disable
+ *   thinking when the model supports it
+ * - deep → quality profile; enable thinking + high reasoning effort on top
  *
  * No separate thinkingPointsCost / entitlement bucket is introduced.
+ * R-2: standard must not silently demote XHS notes from quality → balanced.
  */
 export function mapThinkingLevelToModelOptions(
   level: ThinkingLevel,
@@ -102,7 +104,7 @@ export function mapThinkingLevelToModelOptions(
     };
   }
   return {
-    routeProfile: 'balanced',
+    routeProfile: 'quality',
     thinking: { type: 'disabled' },
   };
 }

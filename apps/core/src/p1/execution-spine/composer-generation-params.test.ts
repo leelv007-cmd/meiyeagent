@@ -86,8 +86,9 @@ test('normalizedGenerationParams: free keeps explicit selection and optional voi
 });
 
 test('thinking level maps to existing model tier / provider thinking params', () => {
+  // R-2: standard aligns with global quality default; deep stacks thinking.
   assert.deepEqual(mapThinkingLevelToModelOptions('standard'), {
-    routeProfile: 'balanced',
+    routeProfile: 'quality',
     thinking: { type: 'disabled' },
   });
   assert.deepEqual(mapThinkingLevelToModelOptions('deep'), {

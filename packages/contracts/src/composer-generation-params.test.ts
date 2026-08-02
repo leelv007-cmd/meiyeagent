@@ -36,8 +36,9 @@ test('beauty voice injection supplies xhsNoteGen tone and roleBlock', () => {
 });
 
 test('thinking level maps onto existing model tiers without a billing switch', () => {
+  // R-2: standard stays on quality (global auto default); no silent demotion.
   assert.deepEqual(mapThinkingLevelToModelOptions('standard'), {
-    routeProfile: 'balanced',
+    routeProfile: 'quality',
     thinking: { type: 'disabled' },
   });
   assert.deepEqual(mapThinkingLevelToModelOptions('deep'), {
