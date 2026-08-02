@@ -101,6 +101,12 @@ interface CoreServerDependencies {
     'streamCanvasTextGeneration'
   >;
   executionModeGate?: { blocksNewSubmission(): Promise<boolean> };
+  /** E2E-only merchant credit lifecycle seed; absent from non-E2E assemblies. */
+  e2eCreditDetailFixture?: {
+    seed(input: { workspaceId: string }): Promise<{ ready: true }>;
+  };
+  /** Explicit capability guard; the fixture must stay unavailable if omitted. */
+  e2eFixtureEnabled?: boolean;
   operationsService?: Pick<
     OperationsApplicationService,
     'getCreativeWorkbench'
@@ -906,6 +912,8 @@ export function createCoreServer({
   composerDestinationMapper,
   composerSubmission,
   contentPackageReader,
+  e2eCreditDetailFixture,
+  e2eFixtureEnabled = false,
   harnessService,
   pendingActions,
   planCatalog,
@@ -1046,6 +1054,57 @@ export function createCoreServer({
         { code: 'UNAUTHORIZED_SERVICE', message: 'Invalid service identity.' },
         requestCorrelationId
       );
+      return;
+    }
+
+    if (
+      request.method === 'POST' &&
+      url.pathname === '/v1/e2e/credit-detail-fixture' &&
+      e2eFixtureEnabled &&
+      e2eCreditDetailFixture
+    ) {
+      try {
+        const workspaceId = request.headers['x-workspace-id'];
+        if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+          throw new DomainError(
+            'NOT_FOUND',
+            'Workspace resource was not found.',
+            404,
+          );
+        }
+        const context = productIdentity(
+          request,
+          workspaceId,
+          requestCorrelationId,
+        );
+        if (context.actor !== 'user') {
+          throw new DomainError(
+            'COMMAND_ACTOR_FORBIDDEN',
+            'The current product role cannot seed E2E credit details.',
+            403,
+          );
+        }
+        sendJson(
+          response,
+          200,
+          await e2eCreditDetailFixture.seed({ workspaceId: context.workspaceId }),
+          requestCorrelationId,
+        );
+      } catch (error) {
+        const domainError =
+          error instanceof DomainError
+            ? error
+            : new DomainError(
+                'INVALID_STATE',
+                'The E2E credit detail fixture could not be seeded.',
+              );
+        sendError(
+          response,
+          domainError.status,
+          { code: domainError.code, message: domainError.message },
+          requestCorrelationId,
+        );
+      }
       return;
     }
 

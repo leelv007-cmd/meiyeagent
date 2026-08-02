@@ -1114,12 +1114,27 @@ test('credit detail reads transactions before lots to avoid a grant-read race', 
   assert.deepEqual(reads, ['transactions', 'lots']);
 });
 
-test('credit detail stays readable while a paid cycle waits for its grant', async () => {
+test('credit detail keeps immutable paid coverage while the scheduler grant is pending', async () => {
   const ledger = new MemoryCreditLedger();
   const subscriptions = new MemoryCreditSubscriptionStore();
-  const service = creditBillingService(
+  let catalog = structuredClone(DEFAULT_CREDIT_PLAN_CATALOG);
+  const service = new CreditBillingService(
     ledger,
     subscriptions,
+    { async get() { return structuredClone(catalog); } },
+    {
+      async getPaymentMapping() {
+        return {
+          mappings: [
+            {
+              interval: 'month' as const,
+              paymentProductId: 'starter',
+              tier: 'starter' as const,
+            },
+          ],
+        };
+      },
+    },
     () => new Date('2026-08-01T00:00:00.000Z'),
   );
 
@@ -1131,12 +1146,41 @@ test('credit detail stays readable while a paid cycle waits for its grant', asyn
     periodStartsAt: '2026-08-01T00:00:00.000Z',
     subscriptionId: 'subscription-awaiting-credit-grant',
   });
+  catalog = {
+    ...catalog,
+    plans: catalog.plans.map((plan) =>
+      plan.id === 'starter' ? { ...plan, credits: 9_999 } : plan,
+    ),
+  };
 
   assert.deepEqual(await service.detail(context.workspaceId), {
-    billing: null,
+    billing: {
+      creditsThisPeriod: 500,
+      interval: 'monthly',
+      periodEndsAt: '2026-09-01T00:00:00.000Z',
+      tier: 'starter',
+    },
     lots: [],
     transactions: [],
   });
+  const scheduler = new CreditSubscriptionCycleScheduler(subscriptions, ledger, {
+    planFor(tier) {
+      const plan = catalog.plans.find((candidate) => candidate.id === tier);
+      if (!plan) throw new Error(`Missing ${tier} plan.`);
+      return plan;
+    },
+  });
+  await scheduler.run('2026-08-01T00:00:00.000Z');
+  assert.equal(
+    ledger
+      .listLots(context.workspaceId)
+      .find(
+        (lot) =>
+          lot.grantIdempotencyKey ===
+          'grant:sub:subscription-awaiting-credit-grant:0',
+      )?.originalCredits,
+    500,
+  );
 });
 
 test('credit detail keeps an add-on and expired prior grant while a scheduled upgrade is current', async () => {

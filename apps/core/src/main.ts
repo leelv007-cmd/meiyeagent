@@ -376,6 +376,7 @@ import {
 import { PostgresCreditLedger } from './p1/credit-billing/postgres-credit-ledger.js';
 import { PostgresCreditSubscriptionStore } from './p1/credit-billing/credit-subscription-scheduler.js';
 import { CreditBillingService } from './p1/credit-billing/credit-billing-service.js';
+import { E2ECreditDetailFixture } from './p1/credit-billing/e2e-credit-detail-fixture.js';
 import { CreditSubscriptionEntitlementPolicy } from './p1/credit-billing/credit-entitlement-policy.js';
 import {
   creditPlanConcurrencyTiers,
@@ -2643,6 +2644,9 @@ const runtimeTruth = {
   releaseIdentity: () => resolveRuntimeTruth().releaseIdentity(),
 };
 
+const e2eFixtureEnabled =
+  process.env.APP_ENV === 'e2e' && process.env.NODE_ENV !== 'production';
+
 const server = createCoreServer({
   aiStreamingRunner,
   executionModeGate: streamingModeGate,
@@ -2657,6 +2661,14 @@ const server = createCoreServer({
     },
   },
   diagnosticRepository,
+  e2eCreditDetailFixture: e2eFixtureEnabled
+    ? new E2ECreditDetailFixture({
+        ledger: creditLedger,
+        productBilling: productQuoteService,
+        subscriptions: creditSubscriptionStore,
+      })
+    : undefined,
+  e2eFixtureEnabled,
   integrationService,
   harnessService,
   pendingActions,

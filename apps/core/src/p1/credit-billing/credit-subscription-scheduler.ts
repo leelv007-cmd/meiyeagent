@@ -19,6 +19,22 @@ export const CREDIT_SUBSCRIPTION_GRACE_PERIOD_MS = 7 * 24 * 60 * 60 * 1_000;
 export type CreditSubscriptionInterval = 'single_month' | 'monthly' | 'yearly';
 export type CreditSubscriptionStatus = 'active' | 'past_due' | 'cancelled';
 
+/** Immutable plan facts recorded with a paid billing period. */
+export interface CreditSubscriptionCoverage {
+  creditsPerCycle: number;
+  interval: CreditSubscriptionInterval;
+  tier: Exclude<CreditPlanId, 'trial'>;
+}
+
+export interface CreditSubscriptionPaidPeriodInput {
+  subscriptionId: string;
+  periodStartsAt: string;
+  coverageCycles: number;
+  /** Omitted only for pre-credit historical rows, never inferred later. */
+  coverage?: CreditSubscriptionCoverage;
+  at: string;
+}
+
 /** A provider delivery for a billing period that has not started may be retried. */
 export class DeferredCreditPaymentEvent extends Error {}
 
@@ -83,18 +99,12 @@ export interface CreditSubscriptionStore {
     paidThroughCycle: number,
     at: string,
   ): Promise<CreditSubscription>;
-  recordPaidPeriod(input: {
-    subscriptionId: string;
-    periodStartsAt: string;
-    coverageCycles: number;
-    at: string;
-  }): Promise<CreditSubscription>;
-  recordInitialPaidPeriod(input: {
-    subscriptionId: string;
-    periodStartsAt: string;
-    coverageCycles: number;
-    at: string;
-  }): Promise<CreditSubscription>;
+  recordPaidPeriod(input: CreditSubscriptionPaidPeriodInput): Promise<CreditSubscription>;
+  recordInitialPaidPeriod(input: CreditSubscriptionPaidPeriodInput): Promise<CreditSubscription>;
+  paidCoverageForCycle(
+    subscriptionId: string,
+    cycleIndex: number,
+  ): Promise<CreditSubscriptionCoverage | null>;
   latestPaidPeriodStartsAt(subscriptionId: string): Promise<string | null>;
   replaceSubscription(input: {
     sourceSubscriptionId: string;
@@ -272,10 +282,17 @@ export class CreditSubscriptionCycleScheduler {
       );
       for (const cycle of dueCreditSubscriptionCycles(subscription, asOf)) {
         const tier = creditSubscriptionTierForCycle(subscription, cycle.cycleIndex);
-        const plan = await this.options.planFor(tier);
-        if (!Number.isSafeInteger(plan.credits) || plan.credits <= 0) {
+        const coverage = await this.subscriptions.paidCoverageForCycle(
+          subscription.id,
+          cycle.cycleIndex,
+        );
+        // Paid-period coverage is the immutable source for new settlements.
+        // Keep the catalog fallback only for durable rows from before the
+        // snapshot column existed; it must never overwrite a known coverage.
+        const credits = coverage?.creditsPerCycle ?? (await this.options.planFor(tier)).credits;
+        if (!Number.isSafeInteger(credits) || credits <= 0) {
           throw new Error(
-            `Credit plan ${tier} must provide a positive integer credit amount.`,
+            `Credit plan ${coverage?.tier ?? tier} must provide a positive integer credit amount.`,
           );
         }
         const grantIdempotencyKey = creditSubscriptionGrantKey(
@@ -287,7 +304,7 @@ export class CreditSubscriptionCycleScheduler {
           actorId: 'system-credit-subscription-scheduler',
           correlationId: `credit-subscription-cycle:${subscription.id}:${cycle.cycleIndex}`,
           createdAt: cycle.startsAt,
-          credits: plan.credits,
+          credits,
           expirationDate: cycle.endsAt,
           grantIdempotencyKey,
           id: `subscription:${subscription.grantLineageId}:${subscription.grantCycleOffset + cycle.cycleIndex}`,
@@ -428,7 +445,10 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
     { payloadHash: string; result: CreditSubscription | null }
   >();
   private paymentEventTail: Promise<void> = Promise.resolve();
-  private readonly paidPeriods = new Map<string, number>();
+  private readonly paidPeriods = new Map<
+    string,
+    { coverage: CreditSubscriptionCoverage | undefined; coverageCycles: number }
+  >();
 
   async get(subscriptionId: string) {
     const subscription = this.subscriptions.get(subscriptionId);
@@ -504,12 +524,7 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
     return structuredClone(subscription);
   }
 
-  async recordPaidPeriod(input: {
-    subscriptionId: string;
-    periodStartsAt: string;
-    coverageCycles: number;
-    at: string;
-  }) {
+  async recordPaidPeriod(input: CreditSubscriptionPaidPeriodInput) {
     const subscription = this.require(input.subscriptionId);
     const periodStartsAt = iso(input.periodStartsAt);
     const at = iso(input.at);
@@ -520,16 +535,11 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
     if (periodStartsAt > at) return structuredClone(subscription);
     const key = `${input.subscriptionId}\u0000${periodStartsAt}`;
     const existingCoverage = this.paidPeriods.get(key);
-    if (existingCoverage !== undefined) {
-      if (existingCoverage !== input.coverageCycles) {
-        throw new P1DomainError(
-          'IDEMPOTENCY_CONFLICT',
-          'Credit subscription billing period has different coverage facts.',
-        );
-      }
+    if (existingCoverage) {
+      assertPaidPeriodFacts(existingCoverage, input);
       return structuredClone(subscription);
     }
-    this.paidPeriods.set(key, input.coverageCycles);
+    this.paidPeriods.set(key, paidPeriodFacts(input));
     const paidThroughCycle = this.contiguousPaidThroughCycle(subscription);
     if (paidThroughCycle <= subscription.paidThroughCycle) {
       return structuredClone(subscription);
@@ -537,27 +547,17 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
     return this.recordPaidCoverage(input.subscriptionId, paidThroughCycle, at);
   }
 
-  async recordInitialPaidPeriod(input: {
-    subscriptionId: string;
-    periodStartsAt: string;
-    coverageCycles: number;
-    at: string;
-  }) {
+  async recordInitialPaidPeriod(input: CreditSubscriptionPaidPeriodInput) {
     const subscription = this.require(input.subscriptionId);
     const periodStartsAt = iso(input.periodStartsAt);
     assertCoverageCycles(input.coverageCycles);
     const key = `${input.subscriptionId}\u0000${periodStartsAt}`;
     const existingCoverage = this.paidPeriods.get(key);
-    if (
-      existingCoverage !== undefined &&
-      existingCoverage !== input.coverageCycles
-    ) {
-      throw new P1DomainError(
-        'IDEMPOTENCY_CONFLICT',
-        'Credit subscription billing period has different coverage facts.',
-      );
+    if (existingCoverage) {
+      assertPaidPeriodFacts(existingCoverage, input);
+    } else {
+      this.paidPeriods.set(key, paidPeriodFacts(input));
     }
-    this.paidPeriods.set(key, input.coverageCycles);
     subscription.paidThroughCycle = Math.max(
       subscription.paidThroughCycle,
       this.contiguousPaidThroughCycle(subscription),
@@ -572,6 +572,26 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
       .map((key) => key.slice(prefix.length))
       .sort()
       .at(-1) ?? null;
+  }
+
+  async paidCoverageForCycle(subscriptionId: string, cycleIndex: number) {
+    assertPaidThroughCycle(cycleIndex);
+    const subscription = this.require(subscriptionId);
+    const prefix = `${subscriptionId}\u0000`;
+    for (const [key, period] of this.paidPeriods) {
+      if (!key.startsWith(prefix) || !period.coverage) continue;
+      const startCycle = creditSubscriptionCycleIndexAt(
+        subscription.anchorAt,
+        key.slice(prefix.length),
+      );
+      if (
+        cycleIndex >= startCycle &&
+        cycleIndex < startCycle + period.coverageCycles
+      ) {
+        return structuredClone(period.coverage);
+      }
+    }
+    return null;
   }
 
   async replaceSubscription(input: {
@@ -600,11 +620,11 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
     };
     this.subscriptions.set(replacement.id, replacement);
     const sourcePrefix = `${input.sourceSubscriptionId}\u0000`;
-    for (const [key, coverage] of this.paidPeriods) {
+    for (const [key, period] of this.paidPeriods) {
       if (!key.startsWith(sourcePrefix)) continue;
       this.paidPeriods.set(
         `${input.targetSubscriptionId}\u0000${key.slice(sourcePrefix.length)}`,
-        coverage,
+        structuredClone(period),
       );
     }
     return structuredClone(replacement);
@@ -725,14 +745,18 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
   private contiguousPaidThroughCycle(subscription: CreditSubscription) {
     const prefix = `${subscription.id}\u0000`;
     const coveredCycles = new Set<number>();
-    for (const [key, coverageCycles] of this.paidPeriods) {
+    for (const [key, period] of this.paidPeriods) {
       if (!key.startsWith(prefix)) continue;
       const cycleStart = creditSubscriptionCycleIndexAt(
         subscription.anchorAt,
         key.slice(prefix.length),
       );
       if (cycleStart < 0) continue;
-      for (let cycle = cycleStart; cycle < cycleStart + coverageCycles; cycle += 1) {
+      for (
+        let cycle = cycleStart;
+        cycle < cycleStart + period.coverageCycles;
+        cycle += 1
+      ) {
         coveredCycles.add(cycle);
       }
     }
@@ -766,6 +790,14 @@ interface CreditPaymentEventRow extends QueryResultRow {
   payload_hash: string;
   result_json: unknown;
   completed: boolean;
+}
+
+interface CreditSubscriptionPaidPeriodRow extends QueryResultRow {
+  period_starts_at: Date | string;
+  coverage_cycles: number | string;
+  coverage_credits: number | string | null;
+  coverage_interval: CreditSubscriptionInterval | null;
+  coverage_tier: CreditSubscription['tier'] | null;
 }
 
 interface CreditSubscriptionDatabase {
@@ -839,9 +871,23 @@ export class PostgresCreditSubscriptionStore
         subscription_id text NOT NULL REFERENCES p1_credit_subscriptions(id) ON DELETE CASCADE,
         period_starts_at timestamptz NOT NULL,
         coverage_cycles integer NOT NULL CHECK (coverage_cycles > 0),
+        coverage_credits integer CHECK (coverage_credits > 0),
+        coverage_interval text CHECK (coverage_interval IN ('single_month', 'monthly', 'yearly')),
+        coverage_tier text CHECK (coverage_tier IN ('starter', 'growth', 'pro')),
         created_at timestamptz NOT NULL,
+        CHECK (
+          (coverage_credits IS NULL AND coverage_interval IS NULL AND coverage_tier IS NULL)
+          OR
+          (coverage_credits IS NOT NULL AND coverage_interval IS NOT NULL AND coverage_tier IS NOT NULL)
+        ),
         PRIMARY KEY (subscription_id, period_starts_at)
       );
+      ALTER TABLE p1_credit_subscription_paid_periods
+        ADD COLUMN IF NOT EXISTS coverage_credits integer;
+      ALTER TABLE p1_credit_subscription_paid_periods
+        ADD COLUMN IF NOT EXISTS coverage_interval text;
+      ALTER TABLE p1_credit_subscription_paid_periods
+        ADD COLUMN IF NOT EXISTS coverage_tier text;
       CREATE TABLE IF NOT EXISTS p1_credit_payment_events (
         workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
         payment_event_id text NOT NULL,
@@ -957,12 +1003,7 @@ export class PostgresCreditSubscriptionStore
     return subscriptionFromRow(result.rows[0]);
   }
 
-  async recordPaidPeriod(input: {
-    subscriptionId: string;
-    periodStartsAt: string;
-    coverageCycles: number;
-    at: string;
-  }) {
+  async recordPaidPeriod(input: CreditSubscriptionPaidPeriodInput) {
     assertCoverageCycles(input.coverageCycles);
     const existing = await this.require(input.subscriptionId);
     if (existing.status === 'cancelled') {
@@ -975,27 +1016,34 @@ export class PostgresCreditSubscriptionStore
       'SELECT id FROM p1_credit_subscriptions WHERE id = $1 FOR UPDATE',
       [input.subscriptionId],
     );
-    const inserted = await this.database.query<{ coverage_cycles: number | string }>(
+    const coverage = paidPeriodFacts(input).coverage;
+    const inserted = await this.database.query<CreditSubscriptionPaidPeriodRow>(
       `INSERT INTO p1_credit_subscription_paid_periods
-        (subscription_id, period_starts_at, coverage_cycles, created_at)
-       VALUES ($1, $2, $3, $4)
+        (subscription_id, period_starts_at, coverage_cycles, coverage_credits,
+         coverage_interval, coverage_tier, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (subscription_id, period_starts_at) DO NOTHING
-       RETURNING coverage_cycles`,
-      [input.subscriptionId, periodStartsAt, input.coverageCycles, iso(input.at)],
+       RETURNING period_starts_at, coverage_cycles, coverage_credits,
+                 coverage_interval, coverage_tier`,
+      [
+        input.subscriptionId,
+        periodStartsAt,
+        input.coverageCycles,
+        coverage?.creditsPerCycle ?? null,
+        coverage?.interval ?? null,
+        coverage?.tier ?? null,
+        iso(input.at),
+      ],
     );
     if (!inserted.rows[0]) {
-      const replay = await this.database.query<{ coverage_cycles: number | string }>(
-        `SELECT coverage_cycles
+      const replay = await this.database.query<CreditSubscriptionPaidPeriodRow>(
+        `SELECT period_starts_at, coverage_cycles, coverage_credits,
+                coverage_interval, coverage_tier
            FROM p1_credit_subscription_paid_periods
           WHERE subscription_id = $1 AND period_starts_at = $2`,
         [input.subscriptionId, periodStartsAt],
       );
-      if (Number(replay.rows[0]?.coverage_cycles) !== input.coverageCycles) {
-        throw new P1DomainError(
-          'IDEMPOTENCY_CONFLICT',
-          'Credit subscription billing period has different coverage facts.',
-        );
-      }
+      assertPaidPeriodFacts(paidPeriodFactsFromRow(replay.rows[0]), input);
       return existing;
     }
     const paidThroughCycle = await this.contiguousPaidThroughCycle(existing);
@@ -1014,36 +1062,38 @@ export class PostgresCreditSubscriptionStore
     return subscriptionFromRow(updated.rows[0]);
   }
 
-  async recordInitialPaidPeriod(input: {
-    subscriptionId: string;
-    periodStartsAt: string;
-    coverageCycles: number;
-    at: string;
-  }) {
+  async recordInitialPaidPeriod(input: CreditSubscriptionPaidPeriodInput) {
     assertCoverageCycles(input.coverageCycles);
     const subscription = await this.require(input.subscriptionId);
     const periodStartsAt = iso(input.periodStartsAt);
-    const inserted = await this.database.query<{ coverage_cycles: number | string }>(
+    const coverage = paidPeriodFacts(input).coverage;
+    const inserted = await this.database.query<CreditSubscriptionPaidPeriodRow>(
       `INSERT INTO p1_credit_subscription_paid_periods
-        (subscription_id, period_starts_at, coverage_cycles, created_at)
-       VALUES ($1, $2, $3, $4)
+        (subscription_id, period_starts_at, coverage_cycles, coverage_credits,
+         coverage_interval, coverage_tier, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (subscription_id, period_starts_at) DO NOTHING
-       RETURNING coverage_cycles`,
-      [input.subscriptionId, periodStartsAt, input.coverageCycles, iso(input.at)],
+       RETURNING period_starts_at, coverage_cycles, coverage_credits,
+                 coverage_interval, coverage_tier`,
+      [
+        input.subscriptionId,
+        periodStartsAt,
+        input.coverageCycles,
+        coverage?.creditsPerCycle ?? null,
+        coverage?.interval ?? null,
+        coverage?.tier ?? null,
+        iso(input.at),
+      ],
     );
     if (!inserted.rows[0]) {
-      const existing = await this.database.query<{ coverage_cycles: number | string }>(
-        `SELECT coverage_cycles
+      const existing = await this.database.query<CreditSubscriptionPaidPeriodRow>(
+        `SELECT period_starts_at, coverage_cycles, coverage_credits,
+                coverage_interval, coverage_tier
            FROM p1_credit_subscription_paid_periods
           WHERE subscription_id = $1 AND period_starts_at = $2`,
         [input.subscriptionId, periodStartsAt],
       );
-      if (Number(existing.rows[0]?.coverage_cycles) !== input.coverageCycles) {
-        throw new P1DomainError(
-          'IDEMPOTENCY_CONFLICT',
-          'Credit subscription billing period has different coverage facts.',
-        );
-      }
+      assertPaidPeriodFacts(paidPeriodFactsFromRow(existing.rows[0]), input);
     }
     const paidThroughCycle = await this.contiguousPaidThroughCycle(subscription);
     if (paidThroughCycle <= subscription.paidThroughCycle) return subscription;
@@ -1059,6 +1109,34 @@ export class PostgresCreditSubscriptionStore
     );
     const value = result.rows[0]?.period_starts_at;
     return value ? iso(value) : null;
+  }
+
+  async paidCoverageForCycle(subscriptionId: string, cycleIndex: number) {
+    assertPaidThroughCycle(cycleIndex);
+    const subscription = await this.require(subscriptionId);
+    const periods = await this.database.query<CreditSubscriptionPaidPeriodRow>(
+      `SELECT period_starts_at, coverage_cycles, coverage_credits,
+              coverage_interval, coverage_tier
+         FROM p1_credit_subscription_paid_periods
+        WHERE subscription_id = $1
+        ORDER BY period_starts_at DESC`,
+      [subscriptionId],
+    );
+    for (const row of periods.rows) {
+      const period = paidPeriodFactsFromRow(row);
+      if (!period.coverage) continue;
+      const startCycle = creditSubscriptionCycleIndexAt(
+        subscription.anchorAt,
+        iso(row.period_starts_at),
+      );
+      if (
+        cycleIndex >= startCycle &&
+        cycleIndex < startCycle + period.coverageCycles
+      ) {
+        return period.coverage;
+      }
+    }
+    return null;
   }
 
   async replaceSubscription(input: {
@@ -1088,8 +1166,10 @@ export class PostgresCreditSubscriptionStore
     });
     await this.database.query(
       `INSERT INTO p1_credit_subscription_paid_periods
-        (subscription_id, period_starts_at, coverage_cycles, created_at)
-       SELECT $2, period_starts_at, coverage_cycles, created_at
+        (subscription_id, period_starts_at, coverage_cycles, coverage_credits,
+         coverage_interval, coverage_tier, created_at)
+       SELECT $2, period_starts_at, coverage_cycles, coverage_credits,
+              coverage_interval, coverage_tier, created_at
          FROM p1_credit_subscription_paid_periods
         WHERE subscription_id = $1
        ON CONFLICT (subscription_id, period_starts_at) DO NOTHING`,
@@ -1471,6 +1551,91 @@ function assertCoverageCycles(value: number) {
   if (!Number.isInteger(value) || value < 1) {
     throw new Error('coverageCycles must be a positive integer.');
   }
+}
+
+function paidPeriodFacts(
+  input: Pick<CreditSubscriptionPaidPeriodInput, 'coverageCycles' | 'coverage'>,
+) {
+  assertCoverageCycles(input.coverageCycles);
+  if (input.coverage) assertCoverage(input.coverage);
+  return {
+    coverageCycles: input.coverageCycles,
+    coverage: input.coverage ? structuredClone(input.coverage) : undefined,
+  };
+}
+
+function paidPeriodFactsFromRow(row: CreditSubscriptionPaidPeriodRow | undefined) {
+  if (!row) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Credit subscription billing period is missing.',
+    );
+  }
+  const values = [
+    row.coverage_credits,
+    row.coverage_interval,
+    row.coverage_tier,
+  ];
+  const hasCoverage = values.some((value) => value !== null);
+  if (hasCoverage && values.some((value) => value === null)) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Credit subscription billing period has incomplete immutable coverage.',
+    );
+  }
+  const coverage = hasCoverage
+    ? {
+        creditsPerCycle: Number(row.coverage_credits),
+        interval: row.coverage_interval!,
+        tier: row.coverage_tier!,
+      }
+    : undefined;
+  return paidPeriodFacts({
+    coverageCycles: Number(row.coverage_cycles),
+    coverage,
+  });
+}
+
+function assertPaidPeriodFacts(
+  existing: ReturnType<typeof paidPeriodFacts>,
+  input: Pick<CreditSubscriptionPaidPeriodInput, 'coverageCycles' | 'coverage'>,
+) {
+  const incoming = paidPeriodFacts(input);
+  if (
+    existing.coverageCycles !== incoming.coverageCycles ||
+    !sameCoverage(existing.coverage, incoming.coverage)
+  ) {
+    throw new P1DomainError(
+      'IDEMPOTENCY_CONFLICT',
+      'Credit subscription billing period has different coverage facts.',
+    );
+  }
+}
+
+function assertCoverage(coverage: CreditSubscriptionCoverage) {
+  if (
+    !Number.isSafeInteger(coverage.creditsPerCycle) ||
+    coverage.creditsPerCycle <= 0
+  ) {
+    throw new Error('Paid credit coverage must contain a positive integer credit amount.');
+  }
+  if (!['single_month', 'monthly', 'yearly'].includes(coverage.interval)) {
+    throw new Error('Paid credit coverage interval is invalid.');
+  }
+  if (!['starter', 'growth', 'pro'].includes(coverage.tier)) {
+    throw new Error('Paid credit coverage tier is invalid.');
+  }
+}
+
+function sameCoverage(
+  left: CreditSubscriptionCoverage | undefined,
+  right: CreditSubscriptionCoverage | undefined,
+) {
+  return (
+    left?.creditsPerCycle === right?.creditsPerCycle &&
+    left?.interval === right?.interval &&
+    left?.tier === right?.tier
+  );
 }
 
 function date(value: string, field: string) {

@@ -89,7 +89,7 @@ Verifies the signed-in profile update flow.
 | # | Test name | Flow |
 |---|---|---|
 | 1 | User can update display name | Sign in, open `/settings/account`, change the name, save, verify success toast, and reload to verify persistence. |
-| 2 | **MISSING SPEC** — Merchant credit billing and details stay merchant-safe | Sign in, open `/settings/account?section=credits`, and require the billing card to show the issued current-period credits, plan, interval, and end date. Seed FEFO batches plus reservation, settlement, credited refund, expired-uncredited refund, and expiry rows; verify their merchant-safe operation, status, amount, and batch association render without task, lot, payment-provider, correlation, or actor identifiers. |
+| 2 | Merchant credit billing and details stay merchant-safe | `specs/merchant-credit-billing-details.spec.ts` signs in through the browser, seeds only via the E2E-gated authenticated backend fixture, then opens the production aliases `/settings/credits` and `/settings/billing`. It verifies the issued billing period, FEFO batch associations for reservation, settlement, credited and expired-uncredited refunds, and expiry, with no task, lot, payment-provider, correlation, or actor identifiers. Guests receive 404 without the E2E secret and 401 without a session. |
 
 ## 5. Runtime Tracer
 

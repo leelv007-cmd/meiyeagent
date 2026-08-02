@@ -89,6 +89,7 @@ import { Route as ApiWebhooksCreemRouteImport } from './routes/api/webhooks/cree
 import { Route as ApiStorageUploadRouteImport } from './routes/api/storage/upload'
 import { Route as ApiStorageFileRouteImport } from './routes/api/storage/file'
 import { Route as ApiE2eUsersRouteImport } from './routes/api/e2e/users'
+import { Route as ApiE2eCreditDetailFixtureRouteImport } from './routes/api/e2e/credit-detail-fixture'
 import { Route as ApiCoreDiagnosticsRouteImport } from './routes/api/core/diagnostics'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as ApiCoreProductStateRouteImport } from './routes/api/core/product/state'
@@ -519,6 +520,12 @@ const ApiE2eUsersRoute = ApiE2eUsersRouteImport.update({
   path: '/api/e2e/users',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiE2eCreditDetailFixtureRoute =
+  ApiE2eCreditDetailFixtureRouteImport.update({
+    id: '/api/e2e/credit-detail-fixture',
+    path: '/api/e2e/credit-detail-fixture',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCoreDiagnosticsRoute = ApiCoreDiagnosticsRouteImport.update({
   id: '/api/core/diagnostics',
   path: '/api/core/diagnostics',
@@ -734,6 +741,7 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof SettingsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
+  '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
   '/api/storage/file': typeof ApiStorageFileRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
@@ -838,6 +846,7 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
+  '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
   '/api/storage/file': typeof ApiStorageFileRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
@@ -947,6 +956,7 @@ export interface FileRoutesById {
   '/settings/': typeof SettingsIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
+  '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
   '/api/storage/file': typeof ApiStorageFileRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
@@ -1057,6 +1067,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/api/auth/$'
     | '/api/core/diagnostics'
+    | '/api/e2e/credit-detail-fixture'
     | '/api/e2e/users'
     | '/api/storage/file'
     | '/api/storage/upload'
@@ -1161,6 +1172,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/api/auth/$'
     | '/api/core/diagnostics'
+    | '/api/e2e/credit-detail-fixture'
     | '/api/e2e/users'
     | '/api/storage/file'
     | '/api/storage/upload'
@@ -1269,6 +1281,7 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/api/auth/$'
     | '/api/core/diagnostics'
+    | '/api/e2e/credit-detail-fixture'
     | '/api/e2e/users'
     | '/api/storage/file'
     | '/api/storage/upload'
@@ -1329,6 +1342,7 @@ export interface RootRouteChildren {
   ApiPingRoute: typeof ApiPingRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiCoreDiagnosticsRoute: typeof ApiCoreDiagnosticsRouteWithChildren
+  ApiE2eCreditDetailFixtureRoute: typeof ApiE2eCreditDetailFixtureRoute
   ApiE2eUsersRoute: typeof ApiE2eUsersRoute
   ApiStorageFileRoute: typeof ApiStorageFileRoute
   ApiStorageUploadRoute: typeof ApiStorageUploadRoute
@@ -1910,6 +1924,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiE2eUsersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/e2e/credit-detail-fixture': {
+      id: '/api/e2e/credit-detail-fixture'
+      path: '/api/e2e/credit-detail-fixture'
+      fullPath: '/api/e2e/credit-detail-fixture'
+      preLoaderRoute: typeof ApiE2eCreditDetailFixtureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/core/diagnostics': {
       id: '/api/core/diagnostics'
       path: '/api/core/diagnostics'
@@ -2351,6 +2372,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPingRoute: ApiPingRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiCoreDiagnosticsRoute: ApiCoreDiagnosticsRouteWithChildren,
+  ApiE2eCreditDetailFixtureRoute: ApiE2eCreditDetailFixtureRoute,
   ApiE2eUsersRoute: ApiE2eUsersRoute,
   ApiStorageFileRoute: ApiStorageFileRoute,
   ApiStorageUploadRoute: ApiStorageUploadRoute,

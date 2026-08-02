@@ -22,6 +22,7 @@ import {
   currentCreditSubscriptionCycle,
   DeferredCreditPaymentEvent,
   type CreditSubscription,
+  type CreditSubscriptionCoverage,
   type CreditSubscriptionInterval,
   type CreditSubscriptionStore,
 } from './credit-subscription-scheduler.js';
@@ -128,6 +129,7 @@ export class CreditBillingService {
     if (tier === 'trial') {
       throw new P1DomainError('INVALID_STATE', 'Payment cannot grant the trial credit plan.');
     }
+    const interval = creditInterval(input.interval);
     const now = this.clock().toISOString();
     return this.subscriptions.withPaymentEvent(
       {
@@ -136,8 +138,15 @@ export class CreditBillingService {
         payloadHash: paymentSettlementHash(context.workspaceId, input),
         createdAt: now,
       },
-      (subscriptions) =>
-        this.settlePaymentEvent(context, input, tier, now, subscriptions),
+      async (subscriptions) =>
+        this.settlePaymentEvent(
+          context,
+          input,
+          tier,
+          paidCoverageForPlan(await this.plans.get(), tier, interval),
+          now,
+          subscriptions,
+        ),
     );
   }
 
@@ -145,6 +154,7 @@ export class CreditBillingService {
     context: P1Context,
     input: CreditPaymentSettlementInput,
     tier: CreditSubscription['tier'],
+    coverage: CreditSubscriptionCoverage,
     now: string,
     subscriptions: CreditSubscriptionStore,
   ) {
@@ -243,6 +253,7 @@ export class CreditBillingService {
         subscriptionId: active.id,
         periodStartsAt: input.periodStartsAt!,
         coverageCycles: paidCycleCoverage(interval),
+        coverage,
         at: now,
       });
       // A catch-up payment that leaves an earlier cycle unpaid does not advance
@@ -296,6 +307,7 @@ export class CreditBillingService {
         subscriptionId: active.id,
         periodStartsAt: input.periodStartsAt!,
         coverageCycles: paidCycleCoverage(interval),
+        coverage,
         at: now,
       });
     }
@@ -306,6 +318,7 @@ export class CreditBillingService {
         interval,
         paidThroughCycle: paidCycleCoverage(interval),
         tier,
+        coverage,
         anchorAt,
         now,
       });
@@ -341,6 +354,7 @@ export class CreditBillingService {
         subscriptionId: active.id,
         periodStartsAt: input.periodStartsAt,
         coverageCycles: paidCycleCoverage(interval),
+        coverage,
         at: now,
       });
     }
@@ -376,6 +390,7 @@ export class CreditBillingService {
           subscriptionId: scheduled.id,
           periodStartsAt: anchorAt,
           coverageCycles: paidCycleCoverage(interval),
+          coverage,
           at: now,
         });
       }
@@ -383,6 +398,7 @@ export class CreditBillingService {
         subscriptionId: replacement.id,
         periodStartsAt: anchorAt,
         coverageCycles: paidCycleCoverage(interval),
+        coverage,
         at: now,
       });
       if (deferred) {
@@ -406,6 +422,7 @@ export class CreditBillingService {
         interval,
         paidThroughCycle: paidCycleCoverage(interval),
         tier,
+        coverage,
         anchorAt,
         grantCycleOffset: replacesSubscription
           ? 0
@@ -468,7 +485,10 @@ export class CreditBillingService {
     const cycleIndex =
       currentCycle?.cycleIndex ??
       Math.max(0, subscription.paidThroughCycle - 1);
-    const tier = creditSubscriptionTierForCycle(subscription, cycleIndex);
+    const coverage = await this.subscriptions.paidCoverageForCycle(
+      subscription.id,
+      cycleIndex,
+    );
     const grantKey = creditSubscriptionGrantKey(
       subscription.grantLineageId,
       subscription.grantCycleOffset + cycleIndex,
@@ -476,17 +496,17 @@ export class CreditBillingService {
     const issuedLot = lots.find(
       (lot) => lot.grantIdempotencyKey === grantKey,
     );
-    // Payment coverage and grant issuance are independently durable. Until the
-    // scheduler catches up, preserve the ledger detail but do not invent a
-    // period credit amount from today's mutable plan configuration.
-    if (!issuedLot) return null;
+    // Paid coverage is frozen with the verified payment. A row from before the
+    // immutable snapshot migration can truthfully degrade until it has a lot;
+    // new payment rows never read today's mutable plan configuration here.
+    if (!issuedLot && !coverage) return null;
     return {
-      creditsThisPeriod: issuedLot.originalCredits,
-      interval: creditSubscriptionIntervalForCycle(subscription, cycleIndex),
+      creditsThisPeriod: issuedLot?.originalCredits ?? coverage!.creditsPerCycle,
+      interval: coverage?.interval ?? creditSubscriptionIntervalForCycle(subscription, cycleIndex),
       periodEndsAt:
         currentCycle?.endsAt ??
         creditSubscriptionCycle(subscription.anchorAt, cycleIndex).endsAt,
-      tier,
+      tier: coverage?.tier ?? creditSubscriptionTierForCycle(subscription, cycleIndex),
     };
   }
 
@@ -530,6 +550,7 @@ export class CreditBillingService {
     input: {
       id: string;
       tier: Exclude<CreditSubscription['tier'], 'trial'>;
+      coverage: CreditSubscriptionCoverage;
       interval: CreditSubscriptionInterval;
       paidThroughCycle: number;
       now: string;
@@ -552,6 +573,7 @@ export class CreditBillingService {
       subscriptionId: subscription.id,
       periodStartsAt: input.anchorAt,
       coverageCycles: input.paidThroughCycle,
+      coverage: input.coverage,
       at: input.now,
     });
     return subscription;
@@ -622,6 +644,21 @@ function creditInterval(
 
 function paidCycleCoverage(interval: CreditSubscriptionInterval) {
   return interval === 'yearly' ? 12 : 1;
+}
+
+function paidCoverageForPlan(
+  catalog: CreditPlanCatalog,
+  tier: Exclude<CreditSubscription['tier'], 'trial'>,
+  interval: CreditSubscriptionInterval,
+): CreditSubscriptionCoverage {
+  const plan = catalog.plans.find((candidate) => candidate.id === tier);
+  if (!plan || !Number.isSafeInteger(plan.credits) || plan.credits <= 0) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      `Credit plan ${tier} must provide a positive integer credit amount.`,
+    );
+  }
+  return { creditsPerCycle: plan.credits, interval, tier };
 }
 
 function planRank(tier: Exclude<CreditSubscription['tier'], 'trial'>) {

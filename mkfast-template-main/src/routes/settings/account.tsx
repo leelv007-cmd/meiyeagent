@@ -1,3 +1,6 @@
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { useEffect } from 'react';
+
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { UpdateAvatarCard } from '@/components/settings/profile/update-avatar-card';
 import { UpdateNameCard } from '@/components/settings/profile/update-name-card';
@@ -5,8 +8,6 @@ import { PasswordCardWrapper } from '@/components/settings/security/password-car
 import { BillingCard } from '@/components/settings/billing/billing-card';
 import { MerchantCreditDetailPanel } from '@/product/merchant-credit-detail-panel';
 import { RedemptionCard } from '@/p1/redemption-card';
-import { createFileRoute, Link } from '@tanstack/react-router';
-import { useEffect } from 'react';
 import {
   settings_account_description,
   settings_account_credits_heading,

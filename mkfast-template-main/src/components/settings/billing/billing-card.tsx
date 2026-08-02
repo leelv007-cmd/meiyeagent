@@ -1,5 +1,9 @@
 import type { MerchantCreditDetail } from '@meiye/contracts';
+import { IconRefresh } from '@tabler/icons-react';
+import { Link } from '@tanstack/react-router';
+
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { CustomerPortalButton } from '@/components/pricing/customer-portal-button';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Card,
@@ -19,7 +23,6 @@ import {
   credit_billing_interval_single_month,
   credit_billing_interval_yearly,
   credit_billing_load_error,
-  credit_billing_manage,
   credit_billing_no_active_subscription,
   credit_billing_period_ends,
   credit_billing_plan_growth,
@@ -28,14 +31,12 @@ import {
   credit_billing_plan_trial,
   credit_billing_retry,
   credit_billing_title,
+  credit_billing_renew,
+  credit_billing_upgrade,
 } from '@/locale/paraglide/messages';
 import { formatLocaleDate } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
-import { queryP1 } from '@/p1/client';
-import { p1QueryKeys } from '@/p1/query-keys';
-import { Link } from '@tanstack/react-router';
-import { IconRefresh } from '@tabler/icons-react';
-import { useQuery } from '@tanstack/react-query';
+import { useMerchantCreditDetail } from '@/product/use-merchant-credit-detail';
 
 const cardClass = 'w-full overflow-hidden';
 const footerClass = 'flex justify-end bg-muted px-6 py-4';
@@ -61,15 +62,7 @@ const INTERVAL_LABELS: Record<
 
 /** Current subscription facts are read from the merchant-safe credit contract. */
 export function BillingCard() {
-  const query = useQuery({
-    queryKey: p1QueryKeys.request('entitlements', 'credit_detail'),
-    queryFn: ({ signal }) =>
-      queryP1<MerchantCreditDetail>(
-        'entitlements',
-        { action: 'credit_detail', payload: {} },
-        signal
-      ),
-  });
+  const query = useMerchantCreditDetail();
 
   if (query.isPending) {
     return (
@@ -154,12 +147,15 @@ export function BillingCard() {
           </p>
         )}
       </CardContent>
-      <CardFooter className={footerClass}>
+      <CardFooter className={`${footerClass} gap-3`}>
+        <CustomerPortalButton variant="outline">
+          {credit_billing_renew()}
+        </CustomerPortalButton>
         <Link
           className={buttonVariants({ variant: 'default' })}
           to={Routes.Pricing}
         >
-          {credit_billing_manage()}
+          {credit_billing_upgrade()}
         </Link>
       </CardFooter>
     </Card>

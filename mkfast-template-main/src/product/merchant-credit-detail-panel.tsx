@@ -1,4 +1,6 @@
 import type { MerchantCreditDetail } from '@meiye/contracts';
+import { IconRefresh } from '@tabler/icons-react';
+
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -57,11 +59,8 @@ import {
   credit_detail_transactions_title,
 } from '@/locale/paraglide/messages';
 import { formatLocaleDate, formatLocaleDateTime } from '@/lib/locale';
-import { queryP1 } from '@/p1/client';
-import { p1QueryKeys } from '@/p1/query-keys';
 import { expiredUncreditedRefund } from '@/product/merchant-credit-detail';
-import { IconRefresh } from '@tabler/icons-react';
-import { useQuery } from '@tanstack/react-query';
+import { useMerchantCreditDetail } from '@/product/use-merchant-credit-detail';
 
 type MerchantCreditTransaction = MerchantCreditDetail['transactions'][number];
 
@@ -114,15 +113,7 @@ const TRANSACTION_OPERATION_LABELS: Record<
 };
 
 export function MerchantCreditDetailPanel() {
-  const query = useQuery({
-    queryKey: p1QueryKeys.request('entitlements', 'credit_detail'),
-    queryFn: ({ signal }) =>
-      queryP1<MerchantCreditDetail>(
-        'entitlements',
-        { action: 'credit_detail', payload: {} },
-        signal
-      ),
-  });
+  const query = useMerchantCreditDetail();
 
   if (query.isPending) {
     return (
