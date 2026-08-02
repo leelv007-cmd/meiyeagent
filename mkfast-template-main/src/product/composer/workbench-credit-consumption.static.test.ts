@@ -35,7 +35,7 @@ test('workbench consumes the backend credit balance and quote through all three 
   );
   assert.match(
     source,
-    /\{legacyQuotaBlocked \? \(\s+<ComposerCreditRecoveryHost/u
+    /\{legacyQuotaBlocked && !workbenchCreditShortfall\.visible \? \(\s+<ComposerCreditRecoveryHost/u
   );
   assert.doesNotMatch(
     source,

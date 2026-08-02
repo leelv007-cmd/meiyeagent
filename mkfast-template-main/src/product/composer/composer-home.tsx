@@ -4625,7 +4625,7 @@ export function ComposerHome({
                 ) : null}
 
                 {/* Legacy quota recovery remains outside the capsule when it is short. */}
-                {legacyQuotaBlocked ? (
+                {legacyQuotaBlocked && !workbenchCreditShortfall.visible ? (
                   <ComposerCreditRecoveryHost
                     blocked={legacyQuotaBlocked}
                     passive={quotaPassive}
