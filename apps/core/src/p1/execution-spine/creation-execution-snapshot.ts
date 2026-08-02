@@ -66,14 +66,39 @@ const assetReferenceSchema = revisionReferenceSchema
 	})
 	.strict();
 
+const pageRegenerationReferenceSchema = z
+	.object({
+		/** Frozen page image asset that the merchant asked to regenerate. */
+		targetAssetId: identifierSchema,
+	})
+	.strict();
+
 const sourceReferencesSchema = z
 	.object({
 		assets: z.array(assetReferenceSchema).max(50),
 		contentPackage: revisionReferenceSchema.optional(),
+		/** Single-page note regenerate (result_adjust asset scope). */
+		pageRegeneration: pageRegenerationReferenceSchema.optional(),
 		textSelection: resultAdjustTextSelectionScopeSchema.optional(),
 	})
 	.strict()
 	.superRefine((sources, context) => {
+		if (sources.pageRegeneration && sources.textSelection) {
+			context.addIssue({
+				code: "custom",
+				message:
+					"Page regeneration and text selection cannot share one source.",
+				path: ["pageRegeneration"],
+			});
+		}
+		if (sources.pageRegeneration && !sources.contentPackage) {
+			context.addIssue({
+				code: "custom",
+				message:
+					"Page regeneration requires its frozen ContentPackage reference.",
+				path: ["pageRegeneration"],
+			});
+		}
 		if (!sources.textSelection) return;
 		if (
 			!sources.contentPackage ||

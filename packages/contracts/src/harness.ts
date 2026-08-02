@@ -188,6 +188,60 @@ function harnessExperienceLabel(value: unknown, fallback: string) {
   return fallback;
 }
 
+/**
+ * Optional note-plan outline projection for running-phase timeline hydration.
+ * Backward compatible: absent on historical frames / non-note stages.
+ */
+export const workflowProgressNotePlanPreviewSchema = z
+  .object({
+    styleId: harnessIdSchema,
+    styleName: z.string().trim().min(1).max(200),
+    themeAnchor: z.string().trim().min(1).max(500),
+    pages: z
+      .array(
+        z
+          .object({
+            pageId: harnessIdSchema,
+            order: z.number().int().positive().max(20),
+            pageRole: z.enum([
+              'cover',
+              'pain_scene',
+              'solution_show',
+              'work_case',
+              'price_offer',
+              'cta_guide',
+            ]),
+            title: z.string().trim().min(1).max(200),
+            body: z.string().trim().min(1).max(4_000),
+          })
+          .strict()
+      )
+      .min(1)
+      .max(20),
+  })
+  .strict();
+
+/**
+ * Optional note outline summary for paid-media execution confirmation.
+ * Backward compatible: absent for copy/image/video paths.
+ */
+export const executionConfirmationOutlineSchema = z
+  .object({
+    pageCount: z.number().int().positive().max(20),
+    pages: z
+      .array(
+        z
+          .object({
+            order: z.number().int().positive().max(20),
+            title: z.string().trim().min(1).max(200),
+          })
+          .strict()
+      )
+      .min(1)
+      .max(20),
+  })
+  .strict();
+
 export const workflowProgressEnvelopeSchema = z
   .object({
     eventId: harnessIdSchema,
@@ -200,6 +254,13 @@ export const workflowProgressEnvelopeSchema = z
     occurredAt: harnessTimestampSchema,
     message: z.string().trim().min(1).max(2_000).optional(),
     experienceBasis: harnessExperienceBasisSchema.optional(),
+    /**
+     * Per-page note image progress (#319 L1-2). Absent = batch-level frame
+     * (legacy consumers keep treating stage/state for all pages).
+     */
+    pageId: harnessIdSchema.optional(),
+    /** Outline projection so the running-phase timeline can mount (L1-3). */
+    notePlanPreview: workflowProgressNotePlanPreviewSchema.optional(),
   })
   .strict()
   .superRefine((progress, context) => {
@@ -368,6 +429,8 @@ export const questionCardSchema = z
       .object({
         kind: z.literal('external_action'),
         revision: z.literal('execution-external-action/v1'),
+        /** Note paid-media outline summary for the confirm card (L1-4). */
+        outline: executionConfirmationOutlineSchema.optional(),
       })
       .strict()
       .optional(),
@@ -443,6 +506,8 @@ export const executionConfirmationRequestSchema = z
           .strict(),
         quoteRevision: harnessIdSchema,
         params: z.array(executionConfirmationParamSchema).max(12),
+        /** Optional note outline rows for confirm-card display (L1-4). */
+        outline: executionConfirmationOutlineSchema.optional(),
         debitPreview: z
           .array(
             z
