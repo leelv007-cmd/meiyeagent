@@ -923,6 +923,153 @@ test('out-of-order terminal events remain retryable after subscription activatio
   }
 });
 
+test('a grace-window resume that leaves an earlier unpaid cycle still clears past_due', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  const subscriptionId = 'subscription-resume-coverage-gap';
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-resume-gap-activate',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId,
+  });
+  now = new Date('2026-02-01T00:00:00.000Z');
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'renew',
+    paymentEventId: 'payment-resume-gap-renew',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId,
+  });
+  assert.equal((await subscriptions.get(subscriptionId))?.paidThroughCycle, 2);
+  const grantsAfterRenew = ledger.listLots(context.workspaceId).length;
+
+  now = new Date('2026-03-05T00:00:00.000Z');
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'past_due',
+    paymentEventId: 'payment-resume-gap-past-due',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-03-01T00:00:00.000Z',
+    subscriptionId,
+  });
+  assert.equal((await subscriptions.get(subscriptionId))?.status, 'past_due');
+
+  // The merchant pays April while March stays unpaid, so contiguous coverage
+  // cannot advance past cycle 2 — but the subscription is paid, not delinquent.
+  now = new Date('2026-04-02T00:00:00.000Z');
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'resume',
+    paymentEventId: 'payment-resume-gap-catch-up',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-04-01T00:00:00.000Z',
+    subscriptionId,
+  });
+
+  const resumed = await subscriptions.get(subscriptionId);
+  assert.equal(resumed?.status, 'active');
+  assert.equal(resumed?.pastDueAt, null);
+  assert.equal(resumed?.paidThroughCycle, 2);
+  assert.equal(ledger.listLots(context.workspaceId).length, grantsAfterRenew);
+});
+
+test('a resumed subscription with a coverage gap survives the grace-period sweeper', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  const scheduler = new CreditSubscriptionCycleScheduler(subscriptions, ledger, {
+    planFor(tier) {
+      const plan = DEFAULT_CREDIT_PLAN_CATALOG.plans.find(
+        (candidate) => candidate.id === tier,
+      );
+      if (!plan) throw new Error(`Missing ${tier} plan.`);
+      return plan;
+    },
+  });
+  const subscriptionId = 'subscription-resume-gap-sweeper';
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-sweeper-activate',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId,
+  });
+  now = new Date('2026-03-05T00:00:00.000Z');
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'past_due',
+    paymentEventId: 'payment-sweeper-past-due',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-03-01T00:00:00.000Z',
+    subscriptionId,
+  });
+  now = new Date('2026-04-02T00:00:00.000Z');
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'resume',
+    paymentEventId: 'payment-sweeper-catch-up',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-04-01T00:00:00.000Z',
+    subscriptionId,
+  });
+
+  await scheduler.run('2026-04-20T00:00:00.000Z');
+
+  assert.notEqual(
+    (await subscriptions.get(subscriptionId))?.status,
+    'cancelled',
+  );
+});
+
+test('a resume for a future billing period leaves past_due untouched', async () => {
+  let now = new Date('2026-01-01T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  const subscriptionId = 'subscription-resume-future-period';
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-resume-future-activate',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId,
+  });
+  now = new Date('2026-02-05T00:00:00.000Z');
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'past_due',
+    paymentEventId: 'payment-resume-future-past-due',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-02-01T00:00:00.000Z',
+    subscriptionId,
+  });
+  assert.equal((await subscriptions.get(subscriptionId))?.status, 'past_due');
+
+  // A deferred future period is parked, not settled: it must not clear past_due.
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'resume',
+    paymentEventId: 'payment-resume-future-catch-up',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-06-01T00:00:00.000Z',
+    subscriptionId,
+  });
+
+  assert.equal((await subscriptions.get(subscriptionId))?.status, 'past_due');
+});
+
 function creditBillingService(
   ledger: MemoryCreditLedger,
   subscriptions: MemoryCreditSubscriptionStore,

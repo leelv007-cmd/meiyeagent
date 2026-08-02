@@ -221,12 +221,20 @@ export class CreditBillingService {
           'Credit resume does not match the frozen credit subscription tier and interval.',
         );
       }
-      return subscriptions.recordPaidPeriod({
+      const paid = await subscriptions.recordPaidPeriod({
         subscriptionId: active.id,
         periodStartsAt: input.periodStartsAt!,
         coverageCycles: paidCycleCoverage(interval),
         at: now,
       });
+      // A catch-up payment that leaves an earlier cycle unpaid does not advance
+      // contiguous coverage, so recordPaidPeriod returns without clearing
+      // past_due. The payment still settled: restore status without granting a
+      // cycle, otherwise the grace sweeper cancels a paid subscription.
+      if (paid.status === 'past_due') {
+        return subscriptions.resume(active.id, now);
+      }
+      return paid;
     }
 
     if (input.lifecycle === 'renew') {

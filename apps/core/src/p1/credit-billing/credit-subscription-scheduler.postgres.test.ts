@@ -188,6 +188,7 @@ test(
         'workspace-period-pg',
         'workspace-annual-pg',
         'workspace-period-gap-pg',
+        'workspace-resume-gap-pg',
         'workspace-state-machine-pg',
         'workspace-future-retry-pg',
         'workspace-terminal-monotonic-pg',
@@ -339,6 +340,45 @@ test(
         (await store.get('pg-subscription-period-gap'))?.paidThroughCycle,
         3,
       );
+
+      const gapResume = serviceFor('workspace-resume-gap-pg');
+      now = new Date('2026-01-01T00:00:00.000Z');
+      await gapResume.service.settlePayment(gapResume.context, {
+        interval: 'month',
+        lifecycle: 'activate',
+        paymentEventId: 'pg-resume-gap-activate',
+        paymentProductId: 'starter',
+        periodStartsAt: now.toISOString(),
+        subscriptionId: 'pg-subscription-resume-gap',
+      });
+      now = new Date('2026-03-05T00:00:00.000Z');
+      await gapResume.service.settlePayment(gapResume.context, {
+        interval: 'month',
+        lifecycle: 'past_due',
+        paymentEventId: 'pg-resume-gap-past-due',
+        paymentProductId: 'starter',
+        periodStartsAt: '2026-03-01T00:00:00.000Z',
+        subscriptionId: 'pg-subscription-resume-gap',
+      });
+      assert.equal(
+        (await store.get('pg-subscription-resume-gap'))?.status,
+        'past_due',
+      );
+      // April settles while March stays unpaid: contiguous coverage cannot
+      // advance, but the subscription is paid and must leave past_due.
+      now = new Date('2026-04-02T00:00:00.000Z');
+      await gapResume.service.settlePayment(gapResume.context, {
+        interval: 'month',
+        lifecycle: 'resume',
+        paymentEventId: 'pg-resume-gap-catch-up',
+        paymentProductId: 'starter',
+        periodStartsAt: '2026-04-01T00:00:00.000Z',
+        subscriptionId: 'pg-subscription-resume-gap',
+      });
+      const pgResumed = await store.get('pg-subscription-resume-gap');
+      assert.equal(pgResumed?.status, 'active');
+      assert.equal(pgResumed?.pastDueAt, null);
+      assert.equal(pgResumed?.paidThroughCycle, 1);
 
       now = new Date('2026-01-01T00:00:00.000Z');
       const stateMachine = serviceFor('workspace-state-machine-pg');
