@@ -1627,8 +1627,8 @@ test(
             billingTaskId: input.billingTaskId,
             executor: structuredExecutor,
             selection: {
-              catalogModelId: 'deepseek-v4-pro',
-              mode: 'fixed',
+              mode: 'auto',
+              profile: 'quality',
             },
             workspaceId: input.workspaceId,
           });

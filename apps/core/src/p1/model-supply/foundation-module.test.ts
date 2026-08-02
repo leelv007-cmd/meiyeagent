@@ -134,6 +134,11 @@ function merchantExecutionBillingStub(input: {
     taskId: string;
     workspaceId: string;
   }): void;
+  onClaim?(claim: {
+    effectKey: string;
+    providerCatalogModelId: string;
+    providerOperation: string;
+  }): void;
 }) {
   const bindings = new Map<
     string,
@@ -266,6 +271,11 @@ function merchantExecutionBillingStub(input: {
     > {
       const contract = contractFor(claim);
       const executionKey = `${claim.taskId}:${claim.effectKey}`;
+      input.onClaim?.({
+        effectKey: claim.effectKey,
+        providerCatalogModelId: claim.providerCatalogModelId,
+        providerOperation: claim.providerOperation,
+      });
       if (claim.effectKey === `merchant-execution:${claim.taskId}`) {
         const binding = bindings.get(claim.taskId);
         if (
@@ -3435,6 +3445,84 @@ describe('ModelSupplyFoundationModule', () => {
     });
     assert.equal(result.status, 'completed');
     assert.equal(providerCalls, 1);
+  });
+
+  it('freezes an auto-routed auxiliary effect onto one CatalogModel before its merchant claim', async () => {
+    let providerCalls = 0;
+    const execution = {
+      async execute(request: Parameters<ProviderExecutionPort['execute']>[0]) {
+        providerCalls += 1;
+        return new RecordedProviderExecutionPort().execute(request);
+      },
+    } satisfies ProviderExecutionPort;
+    const quote = {
+      catalogModelId: 'gpt-image-2',
+      lifecycleStatus: 'reserved',
+      operation: 'image.generate',
+      outputCount: 1,
+      quoteId: 'quote-auxiliary-auto',
+      revision: 'quote-r1',
+      taskId: 'credit-task-auxiliary-auto',
+      workspaceId: owner.workspaceId,
+    } as ProductQuoteSnapshot;
+    const claims: Array<{
+      effectKey: string;
+      providerCatalogModelId: string;
+      providerOperation: string;
+    }> = [];
+    const reservedBilling = merchantExecutionBillingStub({
+      getQuote: () => quote,
+      getUsage: () =>
+        ({
+          quoteId: quote.quoteId,
+          status: 'reserved',
+          taskId: quote.taskId,
+          workspaceId: owner.workspaceId,
+        }) as ProductUsageRecord,
+      onClaim(claim) {
+        claims.push(claim);
+      },
+    });
+    const billed = new ModelSupplyApplicationService({
+      deployments: createDefaultDeployments({
+        activatedDeploymentIds: ['deepseek-v4-pro-direct'],
+        activationEvidenceStatus: 'recorded',
+      }),
+      execution,
+      merchantExecutionBilling: reservedBilling,
+      models: createDefaultCatalogModels(),
+      resultSink: new MemoryModelSupplyControlPlaneRepository(),
+    });
+
+    const result = await billed.submit({
+      actorId: owner.userId,
+      billingQuoteRevision: quote.revision,
+      billingTaskId: quote.taskId,
+      dataClass: [],
+      idempotencyKey: 'auxiliary-auto-selection',
+      operation: 'text.respond',
+      productUsageQuantity: 0,
+      prompt: 'Name the harness intent for this media request.',
+      selection: { mode: 'auto', profile: 'quality' },
+      workspaceId: owner.workspaceId,
+    });
+
+    assert.equal(result.status, 'completed');
+    assert.equal(providerCalls, 1);
+    assert.equal(claims.length, 1);
+    const claim = claims[0]!;
+    assert.equal(
+      claim.effectKey,
+      `merchant-execution:${quote.taskId}:auxiliary-auto-selection`,
+    );
+    assert.equal(claim.providerOperation, 'text.respond');
+    assert.equal(claim.providerCatalogModelId, result.snapshot.actualCatalogModelId);
+    assert.equal(result.snapshot.requestedSelection.mode, 'fixed');
+    assert.equal(
+      result.snapshot.requestedSelection.catalogModelId,
+      claim.providerCatalogModelId,
+    );
+    assert.notEqual(claim.providerCatalogModelId, quote.catalogModelId);
   });
 
   it('shares the reserved three-platform copy.adapt claim with direct control-plane consumers', async () => {

@@ -2062,6 +2062,36 @@ export class ModelSupplyApplicationService {
     );
   }
 
+  /**
+   * Resolves the auto route for a zero-usage auxiliary effect to one exact
+   * CatalogModel. Deployment-level failover inside that model stays available;
+   * model-level failover does not, because the claim binds a single model.
+   */
+  private async autoRoutedAuxiliaryCatalogModelId(
+    submission: ModelSupplySubmission,
+  ): Promise<string> {
+    const storedCatalog = this.workspaceCatalogs.get(submission.workspaceId) ?? {
+      revisionId: this.catalogRevisionId,
+      modelById: this.modelById,
+      deployments: this.deployments,
+      prices: this.prices,
+    };
+    const planning = await this.planSubmissionCandidates(submission, {
+      ...storedCatalog,
+      deployments: await this.constrainRuntimeDeploymentsForRequest(
+        storedCatalog.deployments,
+      ),
+    });
+    const catalogModelId = planning.candidates[0]?.model.id;
+    if (!catalogModelId) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'No compliant CatalogModel satisfies this auxiliary merchant effect.',
+      );
+    }
+    return catalogModelId;
+  }
+
   private async executeMerchantSubmission(
     submission: ModelSupplySubmission,
     execute: (
@@ -2114,15 +2144,25 @@ export class ModelSupplyApplicationService {
     }
     const operation = merchantProviderOperation(reserved.operation);
     const auxiliaryEffect = submission.productUsageQuantity === 0;
-    const selectedCatalogModelId = submission.selection.catalogModelId;
     if (!auxiliaryEffect && submission.operation !== operation) {
       throw new P1DomainError(
         'INVALID_STATE',
         'Merchant execution operation does not match the reserved credit quote.',
       );
     }
+    // An auxiliary claim binds one exact provider model, so an auto route must
+    // freeze server-side before the claim rather than during execution.
+    const selection: RequestedSelection =
+      auxiliaryEffect && submission.selection.mode === 'auto'
+        ? {
+            catalogModelId:
+              await this.autoRoutedAuxiliaryCatalogModelId(submission),
+            mode: 'fixed',
+          }
+        : submission.selection;
+    const selectedCatalogModelId = selection.catalogModelId;
     if (
-      submission.selection.mode !== 'fixed' ||
+      selection.mode !== 'fixed' ||
       !selectedCatalogModelId ||
       (!auxiliaryEffect &&
         selectedCatalogModelId !== reserved.catalogModelId)
