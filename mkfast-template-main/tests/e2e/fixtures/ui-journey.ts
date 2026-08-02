@@ -223,10 +223,20 @@ export async function chooseImageTextDirection(page: Page) {
   await expect(
     settlementProof.target === 'direction' ? direction : activeDirectionCard
   ).toHaveAttribute(settlementProof.attribute, settlementProof.value);
+  const executionConfirmation = page.getByTestId(
+    'execution-confirmation-interaction-card'
+  );
+  const terminalFailure = page
+    .getByTestId('composer-report-card')
+    .or(
+      page.locator(
+        '[data-testid="composer-terminal-outcome"][data-outcome="failed"]'
+      )
+    );
   await expect(
-    resumedLine.first(),
-    'the direction must land after the merchant click'
-  ).toBeVisible({ timeout: 300_000 });
+    resumedLine.or(executionConfirmation).or(terminalFailure).first(),
+    'the direction must reach a monotonic downstream state after the merchant click'
+  ).toBeVisible({ timeout: 60_000 });
 }
 
 export async function submitComposerJourney(

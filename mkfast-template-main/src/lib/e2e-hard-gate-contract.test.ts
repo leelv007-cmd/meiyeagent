@@ -132,6 +132,17 @@ test('the image-text direction helper fails fast on real click errors', () => {
     /catch \(error\) \{[\s\S]*?resumedLine[\s\S]*?waitFor\(\{ state: 'visible', timeout: 2_000 \}\)[\s\S]*?return;[\s\S]*?throw error;/u,
     'a click error may be ignored only when frozen-route resume becomes visible promptly'
   );
+  const afterClick = helper.slice(helper.indexOf('const settlementProof'));
+  assert.match(
+    afterClick,
+    /getByTestId\(\s*'execution-confirmation-interaction-card'\s*\)/u,
+    'a transient resume line may advance directly to the paid execution confirmation'
+  );
+  assert.doesNotMatch(
+    afterClick,
+    /timeout:\s*300_000/u,
+    'post-click settlement must not burn another five-minute direction timeout'
+  );
 });
 
 test('no browser test or fixture listens for the retired creative-work commands', () => {
