@@ -495,8 +495,11 @@ test.describe('T31 三类卡与确认卡', () => {
     // Promotion gaps now prefer the interaction channel (ask-merchant). This
     // case asserts the decision-card hold promise (reservationReleased), so
     // keep interaction absent and inject a hold question on the decision seam.
+    // AskMerchantInteractionSlot also polls `?view=snapshot`; that URL must be
+    // stubbed too or the real system_default resolution steals the fallback
+    // slot and composer-question-card never mounts.
     await page.route(
-      /\/api\/core\/p1\/harness\/tasks\/[^/]+\/interaction$/u,
+      /\/api\/core\/p1\/harness\/tasks\/[^/]+\/interaction(?:\?.*)?$/u,
       async (route) => {
         if (route.request().method() !== 'GET') {
           await route.continue();

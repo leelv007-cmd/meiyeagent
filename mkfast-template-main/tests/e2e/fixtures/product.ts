@@ -286,6 +286,13 @@ export async function seedComposerInlineAuthorize(
   );
   if (!authorized)
     throw new Error('Composer inline authorize produced no asset');
+  // L3-2: leave the attach portal closed. An open capsule panel sits in a
+  // base-ui portal that intercepts pointer events over in-stream cards
+  // (viral sourcing "继续确认", journey submit, etc.).
+  if (await attachPanel.isVisible().catch(() => false)) {
+    await page.keyboard.press('Escape');
+    await expect(attachPanel).toBeHidden({ timeout: 10_000 });
+  }
   return authorized;
 }
 

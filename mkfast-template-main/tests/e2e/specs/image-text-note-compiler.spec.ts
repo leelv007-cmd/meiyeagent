@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
 import {
@@ -218,13 +219,23 @@ async function submitNoteJourney(
   });
 
   if (expected === 'insufficient') {
-    // W05 ① — the 图文 run debits copy AND image, and the composer now checks
-    // both before letting the merchant press 生成. A doomed submit that comes
-    // back INSUFFICIENT_ENTITLEMENT is no longer the honest outcome here: the
-    // merchant is stopped in front of the button, told which bucket ran out.
+    // Credit-era (#298 / D-172): when projection.credits is present the
+    // bucket passive short-circuit is intentionally silent. Admission is the
+    // server quote + reserve path — click 生成 and let Core reject with
+    // INSUFFICIENT_ENTITLEMENT so the blocking card mounts from the real
+    // error seam (not a pre-click bucket guess).
+    const responsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes('/api/core/p1/composer/submissions'),
+      { timeout: 120_000 }
+    );
+    await page.getByTestId('composer-submit').click();
+    const response = await responsePromise;
+    expect(response.ok(), await response.text()).toBeFalsy();
     await expect(
       page.getByTestId('composer-quota-blocking-card')
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('composer-submit')).toBeDisabled();
     return {
       authorizedAssetId: authorized.id,
@@ -374,6 +385,59 @@ async function queryProductUsage(page: Page, taskId: string) {
     }
     return envelope.data;
   }, taskId);
+}
+
+async function queryAvailableCredits(page: Page) {
+  return page.evaluate(async () => {
+    const response = await fetch('/api/core/p1/query', {
+      body: JSON.stringify({
+        action: 'projection',
+        module: 'entitlements',
+        payload: {},
+      }),
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    const envelope = (await response.json()) as {
+      data?: { credits?: { availableCredits?: number } };
+      error?: { message?: string };
+    };
+    if (!response.ok || !envelope.data?.credits) {
+      throw new Error(
+        envelope.error?.message ?? 'Entitlements credits projection failed'
+      );
+    }
+    return Number(envelope.data.credits.availableCredits);
+  });
+}
+
+/**
+ * Credit-era trial grants 100 credits; one note does not exhaust the plan.
+ * Zero remaining lots for the workspace that ran `taskId` so the next note
+ * admission hits a real server INSUFFICIENT_ENTITLEMENT (not a bucket ghost).
+ */
+function zeroRemainingCreditsForTask(taskId: string) {
+  const databaseUrl = process.env.TEST_DATABASE_URL;
+  if (!databaseUrl) {
+    throw new Error('TEST_DATABASE_URL is required to drain trial credits');
+  }
+  const sql = `
+    UPDATE p1_credit_grant_lots
+    SET remaining_credits = 0, revision = revision + 1
+    WHERE workspace_id = (
+      SELECT workspace_id
+      FROM p1_product_billing_usage
+      WHERE task_id = '${taskId.replace(/'/g, "''")}'
+      LIMIT 1
+    )
+    AND remaining_credits > 0;
+  `;
+  execFileSync(
+    'psql',
+    [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', sql],
+    { encoding: 'utf8' }
+  );
 }
 
 async function adoptRecommendedCandidate(
@@ -601,6 +665,12 @@ test.describe
       expect(usage.reservedCredits!).toBeGreaterThan(0);
       expect(usage.settledCredits).toBe(usage.reservedCredits);
       expect(usage.refundedCredits ?? 0).toBe(0);
+      // Merchant-facing credit balance must reflect the committed debit.
+      const availableAfterDelivery = await queryAvailableCredits(page);
+      expect(availableAfterDelivery).toBeLessThan(100);
+      expect(availableAfterDelivery).toBe(
+        100 - (usage.settledCredits as number)
+      );
       expect(contentPackage.marketing?.contextBundle?.bundleId).toBeTruthy();
       expect(contentPackage.marketing?.factRefs).toEqual(expect.any(Array));
       expect(contentPackage.marketing?.rightsRefs?.length ?? 0).toBeGreaterThan(
@@ -653,6 +723,11 @@ test.describe
       await assertZipDownload(download, IMAGE_TEXT_CONTRACT, adopted.revision);
 
       await page.evaluate(() => sessionStorage.clear());
+      // Trial is 100 credits; one note leaves a residual balance. Drain the
+      // remaining lots so the next admission is a real credit shortfall —
+      // bucket-era "one note exhausts trial image units" no longer holds.
+      zeroRemainingCreditsForTask(submission.taskId);
+      expect(await queryAvailableCredits(page)).toBe(0);
       await submitNoteJourney(
         page,
         'insufficient',
@@ -663,11 +738,6 @@ test.describe
       await expect(quotaWall).toContainText('额度不足');
       await expect(quotaWall).toContainText(
         '当前额度不足，无法继续创作。可在此输入兑换码立即解锁。'
-      );
-      // 缺哪桶要说出来 (W05 ①) — 图文 spends two buckets, so 「额度不足」 alone
-      // leaves the merchant guessing which one to top up.
-      await expect(page.getByTestId('composer-quota-shortfall')).toContainText(
-        '不够这次生成了'
       );
       // D-141: the only two real exits are the inline code and a human.
       await expect(
