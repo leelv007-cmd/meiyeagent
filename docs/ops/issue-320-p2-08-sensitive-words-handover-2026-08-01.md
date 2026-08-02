@@ -34,8 +34,8 @@
 3. **人工校**（运营负责人或合规）勾选：启用 / 改写 replacements / 驳回。驳回词不入库。
 4. **入库**：运营在 `/admin/templates`「违禁词库」单条 CRUD；或后续脚本走 `sensitive-words` create（**无批量 UI**，见下）。
 5. **回滚**：`status=disabled` 立即对生成链/红线门生效（listEnabled 热读）；物理 delete 仅用于明显误录。
-6. **回归**：改词后至少跑  
-   `pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 src/p1/sensitive-words/sensitive-words.test.ts`  
+6. **回归**：改词后至少跑
+   `pnpm --filter @meiye/core exec tsx --test --test-concurrency=1 src/p1/sensitive-words/sensitive-words.test.ts`
    与相关 redlines 子集。
 
 ### 1.3 批量导入 UI（实施时定 → 本票裁决）

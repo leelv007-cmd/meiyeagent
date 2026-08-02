@@ -34,7 +34,7 @@
 - Core：`apps/core/src/p1/harness/xhs-cover.ts` → `XHS_COVER_SIZE_MAP`
 - Web 镜像：`mkfast-template-main/src/product/composer/ai-cover-action.ts` → `AI_COVER_SIZE_MAP`
 
-美业预设（替换通用 preset，#315 已写 builtin）：  
+美业预设（替换通用 preset，#315 已写 builtin）：
 `beauty_soft` / `beauty_editorial` / `before_after` / `spa_minimal` / `salon_photo`
 
 ---
