@@ -30,9 +30,13 @@ import {
   adoptResult,
   chooseImageTextDirection,
   clickComposerDeliveryCard,
+  closeComposerCapsule,
   downloadFullPackage,
   JOURNEY_CONTRACTS,
+  openComposerCapsule,
+  openComposerRecipeCard,
   openDeliveryPanel,
+  selectComposerLens,
   submitComposerJourney,
   waitForResultJourney,
 } from '../fixtures/ui-journey';
@@ -141,15 +145,17 @@ async function registerPreparedMerchant(
 }
 
 async function selectCaseNoteRecipe(page: Page) {
-  await page.getByTestId('composer-lens-option-image_text').click();
-  await page
-    .getByTestId('composer-recipe-card-recipe.case_to_xhs_note')
-    .click();
+  await selectComposerLens(page, 'image_text');
+  const recipePanel = await openComposerRecipeCard(
+    page,
+    'composer-recipe-card-recipe.case_to_xhs_note'
+  );
   const apply = page.getByRole('button', { name: '套用并更新设置' });
   const applied = page.getByTestId('composer-recipe-apply-undo');
   await expect(applied.or(apply)).toBeVisible();
   if (await apply.isVisible()) await apply.click();
   await expect(applied).toBeVisible();
+  await closeComposerCapsule(page, recipePanel);
 }
 
 async function setTiptapBody(editor: Locator, value: string) {
@@ -212,9 +218,7 @@ async function submitImageTextAllowingTerminalFailure(
     onRunStreaming?: () => void | Promise<void>;
   } = {}
 ) {
-  const lens = page.getByTestId('composer-lens-option-image_text');
-  await lens.click();
-  await expect(lens).toBeChecked();
+  await selectComposerLens(page, 'image_text');
   await expect(page.getByTestId('composer-intent-input')).toHaveValue(intent);
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 60_000,
@@ -321,6 +325,8 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     });
 
     await page.getByTestId('composer-creation-mode-free').click();
+    // Generation params (voice / thinking) live in the attach capsule.
+    await openComposerCapsule(page, 'attach');
     await page.getByTestId('composer-beauty-voice-role-customer').click();
     await page.getByTestId('composer-thinking-level-deep').click();
     await expect(
@@ -329,6 +335,10 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     await expect(
       page.getByTestId('composer-thinking-level-deep')
     ).toHaveAttribute('aria-pressed', 'true');
+    await closeComposerCapsule(
+      page,
+      page.getByTestId('composer-capsule-attach-panel')
+    );
 
     let submission: ComposerSubmission | undefined;
     let submissionIdempotencyHeader: string | null = null;
@@ -584,6 +594,8 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     const intent = page.getByTestId('composer-intent-input');
     await expect(intent).toHaveValue(/美业柔光.*1:1 方图/u);
     await expect(page.getByTestId('composer-creation-mode-free')).toBeChecked();
+    // Style reference controls live in the attach capsule popover.
+    await openComposerCapsule(page, 'attach');
     const styleReference = page.getByTestId(
       'composer-style-reference-' + asset.id
     );
@@ -596,6 +608,10 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     await expect(
       page.getByTestId('composer-style-analysis-stage')
     ).toContainText('正在分析参考图风格（七维）');
+    await closeComposerCapsule(
+      page,
+      page.getByTestId('composer-capsule-attach-panel')
+    );
     await expect(page.getByTestId('composer-quote-line')).toBeVisible({
       timeout: 60_000,
     });

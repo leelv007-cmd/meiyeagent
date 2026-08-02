@@ -10,6 +10,7 @@ import {
   downloadFullPackage,
   JOURNEY_CONTRACTS,
   openDeliveryPanel,
+  selectComposerLens,
   waitForResultJourney,
 } from '../fixtures/ui-journey';
 
@@ -52,9 +53,7 @@ async function p1Query<T>(
 }
 
 async function submitFirstCopy(page: Page, intent: string) {
-  const lens = page.getByTestId('composer-lens-option-copy');
-  await lens.click();
-  await expect(lens).toBeChecked();
+  await selectComposerLens(page, 'copy');
   await page.getByTestId('composer-intent-input').fill(intent);
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 30_000,

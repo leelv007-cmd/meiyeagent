@@ -1202,6 +1202,7 @@ export function ComposerPromptBar({
                       ? `输出类型：${lensSummary}`
                       : '选择输出类型（必填）'
                   }
+                  aria-required={true}
                   required={lensRequired && !lensSummary}
                   testId="composer-capsule-lens"
                 >

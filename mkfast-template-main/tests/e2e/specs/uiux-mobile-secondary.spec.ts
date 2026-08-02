@@ -30,9 +30,13 @@ for (const viewport of [
       try {
         await loginByForm(page, user);
         await expect(page.getByTestId('composer-home')).toBeVisible();
-        await expect(
-          page.getByTestId('composer-lens-radiogroup')
-        ).toBeVisible();
+        // L3-2: lens radiogroup is inside the capsule popover; cold mobile still
+        // exposes the required lens capsule trigger on the prompt bar.
+        await expect(page.getByTestId('composer-capsule-lens')).toBeVisible();
+        await expect(page.getByTestId('composer-capsule-lens')).toHaveAttribute(
+          'aria-required',
+          'true'
+        );
         await expect(page.getByTestId('composer-intent-input')).toBeVisible();
         const mobileNav = page.getByRole('navigation', { name: '移动端导航' });
         await expect(mobileNav).toBeVisible();

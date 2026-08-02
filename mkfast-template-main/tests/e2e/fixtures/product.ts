@@ -239,6 +239,12 @@ export async function seedComposerInlineAuthorize(
   const existingAssetIds = new Set(
     (await productState(page)).assets.map(({ id }) => id)
   );
+  // L3-2: gallery input lives in the attach capsule popover (portal).
+  const attachPanel = page.getByTestId('composer-capsule-attach-panel');
+  if (!(await attachPanel.isVisible().catch(() => false))) {
+    await page.getByTestId('composer-capsule-attach').click();
+    await expect(attachPanel).toBeVisible({ timeout: 15_000 });
+  }
   const galleryInput = page.locator('#composer-gallery-input');
   await expect(galleryInput).toBeAttached({ timeout: 30_000 });
   await galleryInput.setInputFiles({

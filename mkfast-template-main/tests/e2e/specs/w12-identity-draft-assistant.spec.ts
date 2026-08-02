@@ -381,6 +381,11 @@ test('one line and a reference become a draft the merchant still has to校对', 
     };
     expect(sessionDecision.id).toBeTruthy();
     expect(sessionDecision.revision).toBeGreaterThan(0);
+    // L3-2: identity card lives in the @ mention capsule popover.
+    await page.getByTestId('composer-capsule-mention').click();
+    await expect(
+      page.getByTestId('composer-capsule-mention-panel')
+    ).toBeVisible();
     const identityCard = page.getByTestId('composer-identity-selection');
     await expect(identityCard).toHaveAttribute(
       'data-identity-state',
@@ -390,6 +395,10 @@ test('one line and a reference become a draft the merchant still has to校对', 
     await expect(identityCard).toContainText(
       '这次用你选的口吻，不会改掉你平时的默认。'
     );
+    await page.keyboard.press('Escape');
+    await expect(
+      page.getByTestId('composer-capsule-mention-panel')
+    ).toBeHidden();
 
     // The legacy store profile is not authoritative generation context. Confirm
     // the service and price through the production progressive-fact seam before

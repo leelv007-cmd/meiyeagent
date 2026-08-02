@@ -4351,8 +4351,12 @@ export function ComposerHome({
                   placeholder={creation_entry_intent_placeholder()}
                   reuseChips={COMPOSER_REUSE_CHIPS}
                   running={
+                    // Lock/glow only while generating — keep intent editable
+                    // while Brief is open so the merchant can invalidate it
+                    // (stale-Brief path / M-04 English brief gate).
                     session.phase === 'running' ||
-                    session.phase === 'submitting'
+                    (session.phase === 'submitting' &&
+                      briefState.phase !== 'open')
                   }
                   signedPreview={signedPreview}
                   submitHint={submitIntent.hint}

@@ -24,6 +24,7 @@ import {
   downloadFullPackage,
   JOURNEY_CONTRACTS,
   openDeliveryPanel,
+  selectComposerLens,
   submitComposerJourney,
   waitForResultJourney,
   type JourneyContract,
@@ -471,9 +472,7 @@ test.describe('M-04 required browser hard gate', () => {
       unitPrice: expect.anything(),
     });
 
-    const copyLens = page.getByTestId('composer-lens-option-copy');
-    await copyLens.click();
-    await expect(copyLens).toBeChecked();
+    await selectComposerLens(page, 'copy');
     const intent = page.getByTestId('composer-intent-input');
     await intent.fill(`皮肤护理 朋友圈团购项目介绍 ${crypto.randomUUID()}`);
     await expect(page.getByTestId('composer-quote-line')).toBeVisible({

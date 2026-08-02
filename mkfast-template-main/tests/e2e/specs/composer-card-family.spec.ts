@@ -12,6 +12,7 @@ import {
 } from '../fixtures/auth';
 import { seedConfirmedStore } from '../fixtures/product';
 import { setTheme } from '../fixtures/page-health';
+import { selectComposerLens } from '../fixtures/ui-journey';
 
 /**
  * T31 / #225 — 卡片族与确认卡, the presentation layer of the three outbound
@@ -163,7 +164,7 @@ async function applyConfirmationCardTimeout(
  */
 async function startRun(page: Page, intent: string): Promise<SubmissionResult> {
   await page.goto('/dashboard');
-  await page.getByTestId('composer-lens-option-copy').click();
+  await selectComposerLens(page, 'copy');
   await page.getByTestId('composer-intent-input').fill(intent);
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 30_000,
@@ -560,7 +561,7 @@ test.describe('T31 三类卡与确认卡', () => {
     await seedConfirmedStore(page);
 
     await page.goto('/dashboard');
-    await page.getByTestId('composer-lens-option-copy').click();
+    await selectComposerLens(page, 'copy');
     await page
       .getByTestId('composer-intent-input')
       .fill('写一条周末皮肤护理到店预约文案');

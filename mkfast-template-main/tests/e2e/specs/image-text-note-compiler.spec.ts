@@ -10,7 +10,14 @@ import {
   seedComposerInlineAuthorize,
   seedConfirmedStore,
 } from '../fixtures/product';
-import { assertZipDownload, JOURNEY_CONTRACTS } from '../fixtures/ui-journey';
+import {
+  assertZipDownload,
+  closeComposerCapsule,
+  JOURNEY_CONTRACTS,
+  openComposerCapsule,
+  openComposerRecipeCard,
+  selectComposerLens,
+} from '../fixtures/ui-journey';
 
 const IMAGE_TEXT_CONTRACT = JOURNEY_CONTRACTS.find(
   ({ modality }) => modality === 'image_text'
@@ -157,7 +164,7 @@ async function submitNoteJourney(
   if (!authorizedAssetId) {
     await seedConfirmedStore(page);
   }
-  await page.getByTestId('composer-lens-option-image_text').click();
+  await selectComposerLens(page, 'image_text');
   const preferences = await queryImageModelPreferences(page);
   expect(preferences.workspaceDefault).toBeUndefined();
   expect(preferences.provisionedPlatformDefault).toEqual({
@@ -173,10 +180,11 @@ async function submitNoteJourney(
     fileName: 'note-case.png',
   });
   await page.reload();
-  await page.getByTestId('composer-lens-option-image_text').click();
-  await page
-    .getByTestId('composer-recipe-card-recipe.case_to_xhs_note')
-    .click();
+  await selectComposerLens(page, 'image_text');
+  const recipePanel = await openComposerRecipeCard(
+    page,
+    'composer-recipe-card-recipe.case_to_xhs_note'
+  );
   const applyRecipe = page.getByRole('button', {
     name: '套用并更新设置',
   });
@@ -184,10 +192,12 @@ async function submitNoteJourney(
   await expect(recipeApplied.or(applyRecipe)).toBeVisible();
   if (await applyRecipe.isVisible()) await applyRecipe.click();
   await expect(recipeApplied).toBeVisible();
+  await closeComposerCapsule(page, recipePanel);
   await seedComposerInlineAuthorize(page, {
     expectedAssetId: authorized.id,
     fileName: 'note-case.png',
   });
+  await openComposerCapsule(page, 'attach');
   const styleReference = page.getByTestId(
     `composer-style-reference-${authorized.id}`
   );
@@ -196,6 +206,10 @@ async function submitNoteJourney(
   await expect(styleReference).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('composer-style-analysis-stage')).toHaveText(
     STYLE_ANALYSIS_STAGE_MESSAGE
+  );
+  await closeComposerCapsule(
+    page,
+    page.getByTestId('composer-capsule-attach-panel')
   );
   const intent = '把这张美甲案例做成介绍本店夏日护理项目的小红书图文笔记';
   await page.getByTestId('composer-intent-input').fill(intent);

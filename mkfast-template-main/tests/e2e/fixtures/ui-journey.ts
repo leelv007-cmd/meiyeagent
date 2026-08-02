@@ -29,7 +29,8 @@ export type JourneyContract = {
   deliveryTarget: 'wechat_moments' | 'xiaohongshu' | 'douyin' | 'video_account';
   modality: JourneyModality;
   workspace: 'copy' | 'image' | 'video';
-  expectedActivations: 2 | 3 | 4;
+  /** isTrusted Day-0 activations including the lens-capsule open click (L3-2). */
+  expectedActivations: 2 | 3 | 4 | 5;
   packageFormat: 'text' | 'zip';
   packageButtonName: RegExp;
   packageFileName: RegExp;
@@ -44,7 +45,8 @@ export const JOURNEY_CONTRACTS: readonly JourneyContract[] = [
     deliveryTarget: 'wechat_moments',
     modality: 'copy',
     workspace: 'copy',
-    expectedActivations: 2,
+    // L3-2: open lens capsule + select lens + submit.
+    expectedActivations: 3,
     packageFormat: 'text',
     packageButtonName: /朋友圈分段包/u,
     // Production export may use zh "朋友圈分段" or en "moments-caption".
@@ -55,9 +57,9 @@ export const JOURNEY_CONTRACTS: readonly JourneyContract[] = [
     deliveryTarget: 'xiaohongshu',
     modality: 'image_text',
     workspace: 'image',
-    // 镜头 + 提交 + 图文方向 + P1-05 paid-media execution_confirm.
+    // open lens capsule + select lens + submit + 图文方向 + P1-05 execution_confirm.
     // Note path reserves copy 1 + image notePageBound → must hold before generation.
-    expectedActivations: 4,
+    expectedActivations: 5,
     packageFormat: 'zip',
     packageButtonName: /完整发布包（小红书）/u,
     // Fixture export may use content hash filename; zh/en product names also ok.
@@ -68,9 +70,8 @@ export const JOURNEY_CONTRACTS: readonly JourneyContract[] = [
     deliveryTarget: 'douyin',
     modality: 'video',
     workspace: 'video',
-    // 镜头 + 提交 + D-164③ 付费生成确认（确认执行）. The paid media hold adds one
-    // deliberate activation at the generation point.
-    expectedActivations: 4,
+    // open lens capsule + select lens + submit + Brief confirm + D-164③ 确认执行.
+    expectedActivations: 5,
     packageFormat: 'zip',
     packageButtonName: /完整发布包（抖音）/u,
     packageFileName: /(?:抖音|douyin|[a-f0-9]{32,}).*\.zip$/iu,
@@ -80,8 +81,8 @@ export const JOURNEY_CONTRACTS: readonly JourneyContract[] = [
     deliveryTarget: 'video_account',
     modality: 'video',
     workspace: 'video',
-    // 镜头 + 提交 + D-164③ 付费生成确认（确认执行）.
-    expectedActivations: 4,
+    // open lens capsule + select lens + submit + Brief confirm + D-164③ 确认执行.
+    expectedActivations: 5,
     packageFormat: 'zip',
     packageButtonName: /完整发布包（视频号）/u,
     packageFileName:
@@ -90,31 +91,117 @@ export const JOURNEY_CONTRACTS: readonly JourneyContract[] = [
   },
 ] as const;
 
+/** Merchant-facing lens label echoed on the capsule face after selection. */
+export const COMPOSER_LENS_FACE_LABEL: Record<JourneyModality, string> = {
+  copy: '文案',
+  image_text: '图文',
+  video: '视频',
+};
+
+type ComposerCapsuleKind =
+  | 'lens'
+  | 'recipe'
+  | 'destination'
+  | 'attach'
+  | 'mention'
+  | 'credit';
+
+function composerCapsulePanelTestId(kind: ComposerCapsuleKind): string {
+  // Destination reuses the pre-capsule chips host id as the popover content.
+  return kind === 'destination'
+    ? 'composer-destination-chips'
+    : `composer-capsule-${kind}-panel`;
+}
+
+const COMPOSER_CAPSULE_KINDS: readonly ComposerCapsuleKind[] = [
+  'lens',
+  'recipe',
+  'destination',
+  'attach',
+  'mention',
+  'credit',
+] as const;
+
+/**
+ * Open a Composer bottom-capsule popover and wait for its panel.
+ * Idempotent when the panel is already open. Closes any other capsule panel
+ * first so Escape/open sequences stay stable under the single-popover UI.
+ */
+export async function openComposerCapsule(
+  page: Page,
+  kind: ComposerCapsuleKind
+): Promise<Locator> {
+  const panel = page.getByTestId(composerCapsulePanelTestId(kind));
+  if (await panel.isVisible().catch(() => false)) return panel;
+  for (const other of COMPOSER_CAPSULE_KINDS) {
+    if (other === kind) continue;
+    const otherPanel = page.getByTestId(composerCapsulePanelTestId(other));
+    if (await otherPanel.isVisible().catch(() => false)) {
+      await page.keyboard.press('Escape');
+      await expect(otherPanel).toBeHidden();
+    }
+  }
+  await page.getByTestId(`composer-capsule-${kind}`).click();
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+/** Close an open capsule panel via Escape and wait until it is gone. */
+export async function closeComposerCapsule(
+  page: Page,
+  panel: Locator
+): Promise<void> {
+  if (!(await panel.isVisible().catch(() => false))) return;
+  await page.keyboard.press('Escape');
+  await expect(panel).toBeHidden();
+}
+
+/**
+ * Select a creation lens through the capsule popover, assert radio state, then
+ * close the panel and assert the capsule face echoes the lens label.
+ */
+export async function selectComposerLens(
+  page: Page,
+  modality: JourneyModality
+): Promise<void> {
+  const trigger = page.getByTestId('composer-capsule-lens');
+  const panel = await openComposerCapsule(page, 'lens');
+  const lens = page.getByTestId(`composer-lens-option-${modality}`);
+  await lens.click();
+  await expect(lens).toBeChecked();
+  await expect(lens).toHaveAttribute('data-state', 'checked');
+  await closeComposerCapsule(page, panel);
+  await expect(trigger).toContainText(COMPOSER_LENS_FACE_LABEL[modality]);
+  await expect(trigger).toHaveAttribute('data-active', 'true');
+}
+
+/**
+ * Open the recipe capsule, click a recipe card, leave the panel open so apply
+ * tip / patch preview assertions can run against the same popover.
+ */
+export async function openComposerRecipeCard(
+  page: Page,
+  cardTestId: string
+): Promise<Locator> {
+  const panel = await openComposerCapsule(page, 'recipe');
+  await page.getByTestId(cardTestId).click();
+  return panel;
+}
+
 export async function assertThreeModalDiscovery(page: Page) {
   await expect(page.getByTestId('composer-home')).toBeVisible();
+  // L3-2: lens lives in a bottom capsule; cold required semantics land on the
+  // trigger (aria-required), with the radiogroup still required inside the panel.
+  const lensCapsule = page.getByTestId('composer-capsule-lens');
+  await expect(lensCapsule).toBeVisible();
+  await expect(lensCapsule).toHaveAttribute('aria-required', 'true');
+
+  const lensPanel = await openComposerCapsule(page, 'lens');
   await expect(page.getByTestId('composer-lens-radiogroup')).toHaveAttribute(
     'aria-required',
     'true'
   );
-  // D-164②: the cold catalog is a pill row under the lens axis now, not a card
-  // grid below the quote line. Six cold entries, five pills — 旧内容换平台 is a
-  // reuse action rather than a marketing task and lives in the reuse chips, so
-  // it is not offered here. Three groups: 热点借势 and 品牌与个人 IP have no
-  // recipe behind them and are absent rather than greyed out.
-  await expect(page.getByTestId('composer-recipe-pill-row')).toHaveAttribute(
-    'data-group-count',
-    '3'
-  );
-
   for (const modality of ['copy', 'image_text', 'video'] as const) {
-    await expect(
-      page
-        .locator(
-          `[data-testid="composer-recipe-pill-row"] [data-card-lens="${modality}"]`
-        )
-        .first(),
-      `cold Composer must expose a discoverable ${modality} recipe`
-    ).toBeVisible();
     // Native <input type="radio"> exposes checked via the property / data-state,
     // not necessarily an aria-checked attribute.
     await expect(
@@ -124,6 +211,29 @@ export async function assertThreeModalDiscovery(page: Page) {
       page.getByTestId(`composer-lens-option-${modality}`)
     ).toHaveAttribute('data-state', 'unchecked');
   }
+  await closeComposerCapsule(page, lensPanel);
+
+  // D-164②: the cold catalog is a pill row inside the recipe capsule, not a
+  // card grid below the quote line. Six cold entries, five pills — 旧内容换平台
+  // is a reuse action rather than a marketing task and lives in the destination
+  // capsule reuse chips, so it is not offered here. Three groups: 热点借势 and
+  // 品牌与个人 IP have no recipe behind them and are absent rather than greyed out.
+  const recipePanel = await openComposerCapsule(page, 'recipe');
+  await expect(page.getByTestId('composer-recipe-pill-row')).toHaveAttribute(
+    'data-group-count',
+    '3'
+  );
+  for (const modality of ['copy', 'image_text', 'video'] as const) {
+    await expect(
+      page
+        .locator(
+          `[data-testid="composer-recipe-pill-row"] [data-card-lens="${modality}"]`
+        )
+        .first(),
+      `cold Composer must expose a discoverable ${modality} recipe`
+    ).toBeVisible();
+  }
+  await closeComposerCapsule(page, recipePanel);
 }
 
 /**
@@ -274,10 +384,7 @@ export async function submitComposerJourney(
     preserveIntent?: boolean;
   } = {}
 ) {
-  const lens = page.getByTestId(`composer-lens-option-${contract.modality}`);
-  await lens.click();
-  await expect(lens).toBeChecked();
-  await expect(lens).toHaveAttribute('data-state', 'checked');
+  await selectComposerLens(page, contract.modality);
 
   // Day-0 intent may omit a 美业 service category. D-043 keeps that path moving
   // in explicit generic mode; later semantic gaps that are required for the
