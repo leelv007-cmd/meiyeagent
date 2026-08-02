@@ -924,6 +924,42 @@ function fixtureCopyCandidatePartials(output: unknown) {
   return partials;
 }
 
+/**
+ * Resolve the AI SDK provider name used by `createNativeLanguageModel`.
+ * Must stay in lockstep with that function — providerOptions keys are matched
+ * by name and dropped when they do not.
+ */
+export function resolveOpenAiCompatibleProviderName(
+  options: Pick<
+    OpenAiCompatibleAiSdkOptions,
+    'apiFamily' | 'catalogModelId' | 'customProtocol'
+  >,
+): string {
+  const family = options.apiFamily ?? 'openai';
+  switch (family) {
+    case 'anthropic':
+      return 'anthropic';
+    case 'gemini':
+      return 'google.generative-ai';
+    case 'custom':
+      if (options.customProtocol === 'anthropic_messages') return 'anthropic';
+      if (options.customProtocol === 'gemini_generate_content') {
+        return 'google.generative-ai';
+      }
+      return 'meiye-custom';
+    default:
+      if (options.catalogModelId.startsWith('deepseek-v4-')) return 'deepseek';
+      return 'meiye-direct';
+  }
+}
+
+/**
+ * Providers that accept DeepSeek-style `thinking` / `reasoningEffort` under
+ * providerOptions. Others keep route-profile selection but skip injection so
+ * generation is not blocked by unsupported options.
+ */
+const THINKING_PROVIDER_OPTION_NAMES = new Set(['deepseek']);
+
 export function createNativeLanguageModel(options: OpenAiCompatibleAiSdkOptions) {
   const baseURL = options.baseUrl.replace(/\/$/, '');
   const family = options.apiFamily ?? 'openai';
@@ -960,28 +996,20 @@ export function createNativeLanguageModel(options: OpenAiCompatibleAiSdkOptions)
         baseURL,
         fetch: options.fetch,
         includeUsage: true,
-        name: 'meiye-custom',
+        name: resolveOpenAiCompatibleProviderName(options),
         supportsStructuredOutputs: true,
       }).chatModel(options.model);
-    default:
-      if (options.catalogModelId.startsWith('deepseek-v4-')) {
-        return createOpenAICompatible({
-          apiKey: options.apiKey,
-          baseURL,
-          fetch: options.fetch,
-          includeUsage: true,
-          name: 'deepseek',
-          supportsStructuredOutputs: false,
-        }).chatModel(options.model);
-      }
+    default: {
+      const name = resolveOpenAiCompatibleProviderName(options);
       return createOpenAICompatible({
         apiKey: options.apiKey,
         baseURL,
         fetch: options.fetch,
         includeUsage: true,
-        name: 'meiye-direct',
-        supportsStructuredOutputs: true,
+        name,
+        supportsStructuredOutputs: name !== 'deepseek',
       }).chatModel(options.model);
+    }
   }
 }
 
@@ -1008,19 +1036,24 @@ function structuredPromptInput(
       };
 }
 
-function languageModelCallSettings(options: OpenAiCompatibleAiSdkOptions) {
-  const deepseekOptions = {
+/** Exported for unit coverage of providerOptions keying. */
+export function languageModelCallSettings(options: OpenAiCompatibleAiSdkOptions) {
+  const thinkingOptions = {
     ...(options.reasoningEffort
       ? { reasoningEffort: options.reasoningEffort }
       : {}),
     ...(options.thinking ? { thinking: options.thinking } : {}),
   };
+  const providerName = resolveOpenAiCompatibleProviderName(options);
+  const injectThinking =
+    Object.keys(thinkingOptions).length > 0 &&
+    THINKING_PROVIDER_OPTION_NAMES.has(providerName);
   return {
     ...(options.maxOutputTokens
       ? { maxOutputTokens: options.maxOutputTokens }
       : {}),
-    ...(Object.keys(deepseekOptions).length > 0
-      ? { providerOptions: { deepseek: deepseekOptions } }
+    ...(injectThinking
+      ? { providerOptions: { [providerName]: thinkingOptions } }
       : {}),
   };
 }

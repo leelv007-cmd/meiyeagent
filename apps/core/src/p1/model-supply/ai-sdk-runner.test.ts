@@ -8,6 +8,8 @@ import {
   FixtureAiStructuredObjectExecutor,
   OpenAiCompatibleAiSdkRunner,
   fixtureStructuredFirstChunkHoldMs,
+  languageModelCallSettings,
+  resolveOpenAiCompatibleProviderName,
 } from './ai-sdk-runner.js';
 import { executionBriefSchema } from '../harness/structured-nodes.js';
 import { notePlanSchema } from '@meiye/contracts';
@@ -289,6 +291,52 @@ test('unknown provider errors are attempted once and are not retried', async () 
 
   await assert.rejects(runner.generateCopy('Write one honest primary option.'));
   assert.equal(requests, 1);
+});
+
+test('thinking providerOptions key under the resolved provider name, not a hard-coded deepseek key', () => {
+  assert.equal(
+    resolveOpenAiCompatibleProviderName({
+      catalogModelId: 'deepseek-v4-pro',
+    }),
+    'deepseek',
+  );
+  assert.equal(
+    resolveOpenAiCompatibleProviderName({
+      catalogModelId: 'seed-1-6-250615',
+    }),
+    'meiye-direct',
+  );
+
+  const deepseekSettings = languageModelCallSettings({
+    apiKey: 'k',
+    baseUrl: 'https://api.deepseek.com',
+    catalogModelId: 'deepseek-v4-pro',
+    inputCostPerMillion: 1,
+    model: 'deepseek-v4-pro',
+    outputCostPerMillion: 2,
+    reasoningEffort: 'high',
+    thinking: { type: 'enabled' },
+  });
+  assert.deepEqual(deepseekSettings.providerOptions, {
+    deepseek: {
+      reasoningEffort: 'high',
+      thinking: { type: 'enabled' },
+    },
+  });
+
+  // Non-deepseek providers skip thinking injection so generation is not blocked;
+  // route-profile selection still applies upstream.
+  const directSettings = languageModelCallSettings({
+    apiKey: 'k',
+    baseUrl: 'https://example.test/v1',
+    catalogModelId: 'seed-1-6-250615',
+    inputCostPerMillion: 1,
+    model: 'seed-1-6-250615',
+    outputCostPerMillion: 2,
+    reasoningEffort: 'high',
+    thinking: { type: 'enabled' },
+  });
+  assert.equal(directSettings.providerOptions, undefined);
 });
 
 test('DeepSeek V4 sends the mirrored thinking and long-output parameters', async () => {
