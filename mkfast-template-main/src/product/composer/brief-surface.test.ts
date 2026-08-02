@@ -311,6 +311,8 @@ describe('video confirm zone embedded in Brief', () => {
       quantity: 1,
       quotedSeconds: 15,
       targetSeconds: 15,
+      creditCost: null,
+      failureRefundsCredits: null,
       billingNote: '按生成成片 15 秒计费',
       lifecycleStatus: 'quoted',
       formulaExpression: '2 × 15s',

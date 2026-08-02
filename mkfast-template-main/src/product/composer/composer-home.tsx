@@ -29,13 +29,11 @@ import {
   creation_entry_intent_placeholder,
   creation_entry_submit,
   workbench_credit_balance,
-  workbench_credit_buy_booster,
   workbench_credit_expiring,
   workbench_credit_no_refund,
   workbench_credit_quote,
   workbench_credit_refund,
   workbench_credit_shortfall,
-  workbench_credit_upgrade,
   workbench_grounding_go_to_store,
   workbench_grounding_qualification_action,
   workbench_grounding_qualification_required,
@@ -1565,19 +1563,16 @@ export function ComposerHome({
   const legacyQuotaBlocked = quotaPassive.short || submissionQuotaBlocked;
   const quotaBlocked = legacyQuotaBlocked || workbenchCreditShortfall.visible;
   const creditSummary = workbenchCreditBalance.visible
-    ? [
-        workbench_credit_balance({
+    ? workbenchCreditBalance.expiringLot
+      ? `${workbench_credit_balance({
           count: workbenchCreditBalance.availableCredits,
-        }),
-        workbenchCreditBalance.expiringLot
-          ? workbench_credit_expiring({
-              count: workbenchCreditBalance.expiringLot.remainingCredits,
-              days: workbenchCreditBalance.expiringLot.daysUntilExpiry,
-            })
-          : null,
-      ]
-        .filter((value): value is string => value !== null)
-        .join(' · ')
+        })} · ${workbench_credit_expiring({
+          count: workbenchCreditBalance.expiringLot.remainingCredits,
+          days: workbenchCreditBalance.expiringLot.daysUntilExpiry,
+        })}`
+      : workbench_credit_balance({
+          count: workbenchCreditBalance.availableCredits,
+        })
     : quotaPassive.visible
       ? quotaPassive.notice
       : quotaBlocked

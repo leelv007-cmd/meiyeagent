@@ -1,8 +1,4 @@
-import type {
-  CreationLensId,
-  PublicCreditBalance,
-  PublicProductQuoteSnapshot,
-} from '@meiye/contracts';
+import type { CreationLensId, PublicCreditBalance } from '@meiye/contracts';
 
 export type WorkbenchCreditBalanceView = {
   availableCredits: number;
@@ -23,6 +19,12 @@ export type WorkbenchCreditQuoteView = {
 export type WorkbenchCreditShortfallView = {
   missingCredits: number;
   visible: boolean;
+};
+
+/** Published merchant-safe credit fields from the current quote projection. */
+type MerchantCreditQuoteInput = {
+  creditCost?: number | null;
+  failureRefundsCredits?: boolean | null;
 };
 
 export type CreditGuardedComposerRun = {
@@ -112,13 +114,11 @@ export function projectWorkbenchCreditBalance(
 
 /** Uses the published credit quote; legacy monetary fields cannot enter this view. */
 export function projectWorkbenchCreditQuote(
-  quote:
-    | Pick<PublicProductQuoteSnapshot, 'creditCost' | 'failureRefundsCredits'>
-    | null
-    | undefined
+  quote: MerchantCreditQuoteInput | null | undefined
 ): WorkbenchCreditQuoteView {
   if (
     !quote ||
+    typeof quote.creditCost !== 'number' ||
     !Number.isSafeInteger(quote.creditCost) ||
     quote.creditCost <= 0 ||
     typeof quote.failureRefundsCredits !== 'boolean'

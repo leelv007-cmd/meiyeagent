@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Request } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
@@ -161,6 +161,18 @@ async function submitNoteJourney(
   expected: 'accepted' | 'insufficient' = 'accepted',
   authorizedAssetId?: string
 ) {
+  let submissionPostCount = 0;
+  const countSubmissionPost = (request: Request) => {
+    if (
+      request.method() === 'POST' &&
+      request.url().includes('/api/core/p1/composer/submissions')
+    ) {
+      submissionPostCount += 1;
+    }
+  };
+  if (expected === 'insufficient') {
+    page.on('request', countSubmissionPost);
+  }
   await page.goto('/dashboard');
   if (!authorizedAssetId) {
     await seedConfirmedStore(page);
@@ -219,22 +231,18 @@ async function submitNoteJourney(
   });
 
   if (expected === 'insufficient') {
-    // The server remains the reserve authority. Its rejected admission
-    // invalidates the balance projection, so the subsequent merchant-facing
-    // state must be the credit shortfall rather than the retired code wall.
-    const responsePromise = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        response.url().includes('/api/core/p1/composer/submissions'),
-      { timeout: 120_000 }
-    );
-    await page.getByTestId('composer-submit').click();
-    const response = await responsePromise;
-    expect(response.ok(), await response.text()).toBeFalsy();
-    await expect(page.getByTestId('workbench-credit-shortfall')).toBeVisible({
-      timeout: 30_000,
-    });
-    await expect(page.getByTestId('composer-submit')).toBeDisabled();
+    // A known shortfall is blocked before admission. Core remains the reserve
+    // authority for stale races, but the client must not submit an unaffordable
+    // quote that it already knows cannot be covered.
+    try {
+      const shortfall = page.getByTestId('workbench-credit-shortfall-alert');
+      await expect(shortfall).toBeVisible({ timeout: 30_000 });
+      await expect(shortfall).toContainText(/还差\s*\d+\s*分/u);
+      await expect(page.getByTestId('composer-submit')).toBeDisabled();
+      expect(submissionPostCount).toBe(0);
+    } finally {
+      page.off('request', countSubmissionPost);
+    }
     return {
       authorizedAssetId: authorized.id,
       errorCode: undefined,
@@ -729,7 +737,7 @@ test.describe
         'insufficient',
         submission.authorizedAssetId
       );
-      const shortfall = page.getByTestId('workbench-credit-shortfall');
+      const shortfall = page.getByTestId('workbench-credit-shortfall-alert');
       await expect(shortfall).toBeVisible();
       await expect(shortfall).toContainText(/还差\s*\d+\s*分/u);
       await expect(

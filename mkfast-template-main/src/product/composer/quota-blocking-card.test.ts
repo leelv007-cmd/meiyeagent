@@ -33,6 +33,7 @@ function creditProjection(availableCredits: number) {
       refundedCredits: 0,
       expiredCredits: 0,
       availableCredits,
+      soonestExpiringLot: null,
     },
     plan: { tier: 'trial' as const },
     usage: {

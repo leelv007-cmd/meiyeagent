@@ -150,7 +150,9 @@ export function projectComposerQuoteView(
   quantity = 1
 ): ComposerQuoteView {
   const creditCost =
-    Number.isSafeInteger(snapshot.creditCost) && snapshot.creditCost > 0
+    typeof snapshot.creditCost === 'number' &&
+    Number.isSafeInteger(snapshot.creditCost) &&
+    snapshot.creditCost > 0
       ? snapshot.creditCost
       : null;
   const amount = creditCost ?? snapshot.confirmedAmount ?? 0;
