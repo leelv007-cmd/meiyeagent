@@ -714,6 +714,85 @@ describe('ProductEntitlementFoundationModule', () => {
     );
   });
 
+  it('projects the nearest unexpired credit lot through the merchant balance seams', async () => {
+    const clock = () => new Date('2026-08-01T00:00:00.000Z');
+    const repository = new MemoryFoundationRepository();
+    repository.grantOwner(owner.workspaceId, owner.userId);
+    const entitlements = new ProductEntitlementApplicationService(
+      repository,
+      new RecordedAutoTopUpPaymentPort(),
+      clock,
+    );
+    const ledger = new MemoryCreditLedger();
+    const subscriptions = new MemoryCreditSubscriptionStore();
+    const creditBilling = new CreditBillingService(
+      ledger,
+      subscriptions,
+      { async get() { return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG); } },
+      { async getPaymentMapping() { return null; } },
+      clock,
+    );
+    const service = new P1ApplicationService(repository, {
+      operations: [
+        new ProductEntitlementFoundationModule(entitlements, clock, {
+          creditBilling,
+        }),
+      ],
+    });
+    const grant = async (
+      id: string,
+      credits: number,
+      expirationDate: string,
+    ) =>
+      ledger.grant({
+        id,
+        workspaceId: owner.workspaceId,
+        credits,
+        expirationDate,
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'test-package',
+        actorId: owner.userId,
+        correlationId: owner.correlationId,
+        createdAt: '2026-07-01T00:00:00.000Z',
+      });
+
+    await grant('credit-lot-expired', 99, '2026-07-31T23:59:59.000Z');
+    await grant('credit-lot-later', 40, '2026-08-10T00:00:00.000Z');
+    await grant('credit-lot-soonest', 15, '2026-08-03T00:00:00.000Z');
+
+    const expected = {
+      grantedCredits: 154,
+      usedCredits: 0,
+      refundedCredits: 0,
+      expiredCredits: 99,
+      availableCredits: 55,
+      soonestExpiringLot: {
+        remainingCredits: 15,
+        expiresAt: '2026-08-03T00:00:00.000Z',
+      },
+    };
+    const balance = await service.queryModule(owner, 'entitlements', {
+      action: 'balance',
+      payload: {},
+    });
+    const projection = (await service.queryModule(owner, 'entitlements', {
+      action: 'projection',
+      payload: {},
+    })) as { credits: unknown };
+
+    assert.deepEqual(balance, expected);
+    assert.deepEqual(projection.credits, expected);
+    await assert.rejects(
+      service.queryModule(
+        { ...owner, userId: 'non-owner-entitlement-module' },
+        'entitlements',
+        { action: 'balance', payload: {} },
+      ),
+      (error: unknown) =>
+        error instanceof Error && 'code' in error && error.code === 'NOT_FOUND',
+    );
+  });
+
   it('projects the active paid tier instead of disguising it as trial', async () => {
     const clock = () => new Date('2026-08-01T00:00:00.000Z');
     const repository = new MemoryFoundationRepository();

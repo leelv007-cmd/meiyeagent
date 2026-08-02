@@ -156,6 +156,23 @@ test('video per_output_second billing note uses quotedSeconds', () => {
   assert.equal(view.amount, 15);
 });
 
+test('credit-facing composer view uses only the published credit quote fields', () => {
+  const quoted = buildComposerQuote({
+    quoteId: 'q-credit',
+    catalogModelId: 'model.image.credit',
+    quotePolicyRevision: 'qp-credit',
+    billingMode: 'per_request',
+    unitRate: 0.06,
+  });
+  quoted.creditCost = 42;
+  quoted.failureRefundsCredits = false;
+
+  const view = projectComposerQuoteView(quoted);
+  assert.equal(view.amount, 42);
+  assert.equal(view.creditCost, 42);
+  assert.equal(view.failureRefundsCredits, false);
+});
+
 test('dynamic settings row includes CatalogModel and stays 3–5 fields', () => {
   for (const lensId of ['copy', 'image_text', 'video'] as const) {
     const row = buildDynamicSettingsRow({

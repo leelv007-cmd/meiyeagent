@@ -27,6 +27,14 @@ import {
   creation_entry_intent_aria,
   creation_entry_intent_placeholder,
   creation_entry_submit,
+  workbench_credit_balance,
+  workbench_credit_buy_booster,
+  workbench_credit_expiring,
+  workbench_credit_no_refund,
+  workbench_credit_quote,
+  workbench_credit_refund,
+  workbench_credit_shortfall,
+  workbench_credit_upgrade,
   workbench_grounding_go_to_store,
   workbench_grounding_qualification_action,
   workbench_grounding_qualification_required,
@@ -250,6 +258,11 @@ import {
   type ComposerDestinationPreflightState,
 } from './composer-destination-preflight';
 import { projectComposerQuoteView } from './quote-wiring';
+import {
+  projectWorkbenchCreditBalance,
+  projectWorkbenchCreditQuote,
+  projectWorkbenchCreditShortfall,
+} from './workbench-credit';
 import {
   composerQueryPhase,
   currentComposerQuoteView,
@@ -1540,7 +1553,36 @@ export function ComposerHome({
       }),
     [quotaRequirements, usageQuery.data]
   );
-  const quotaBlocked = quotaPassive.short || submissionQuotaBlocked;
+  const workbenchCreditBalance = projectWorkbenchCreditBalance(
+    usageQuery.data?.credits,
+    new Date()
+  );
+  const workbenchCreditQuote = projectWorkbenchCreditQuote(currentQuoteView);
+  const workbenchCreditShortfall = projectWorkbenchCreditShortfall(
+    usageQuery.data?.credits,
+    workbenchCreditQuote
+  );
+  const legacyQuotaBlocked = quotaPassive.short || submissionQuotaBlocked;
+  const quotaBlocked = legacyQuotaBlocked || workbenchCreditShortfall.visible;
+  const creditSummary = workbenchCreditBalance.visible
+    ? [
+        workbench_credit_balance({
+          count: workbenchCreditBalance.availableCredits,
+        }),
+        workbenchCreditBalance.expiringLot
+          ? workbench_credit_expiring({
+              count: workbenchCreditBalance.expiringLot.remainingCredits,
+              days: workbenchCreditBalance.expiringLot.daysUntilExpiry,
+            })
+          : null,
+      ]
+        .filter((value): value is string => value !== null)
+        .join(' · ')
+    : quotaPassive.visible
+      ? quotaPassive.notice
+      : quotaBlocked
+        ? '额度不足'
+        : null;
 
   /**
    * D-164③ / D-164⑥: what this run will do and what it will cost, at the
@@ -4174,40 +4216,79 @@ export function ComposerHome({
                   // DESIGN.md 白瓷 Composer 大卡 — pinned by the product shell contract.
                   className="meiye-composer meiye-entry-card rounded-3xl p-4 sm:p-5"
                   attachmentSlot={composerAttachmentSlot}
-                  creditShort={quotaBlocked || quotaPassive.short}
+                  creditShort={quotaBlocked}
                   creditSlot={
-                    <ComposerCreditRecoveryHost
-                      blocked={quotaBlocked}
-                      passive={quotaPassive}
-                      quote={currentQuoteView}
-                      redeem={({ command, idempotencyKey }) =>
-                        commandP1<ComposerCreditRedemptionReceipt>(
-                          'redemptions',
-                          command,
-                          idempotencyKey
-                        )
-                      }
-                      refreshCredits={async () =>
-                        (await usageQuery.refetch()).data
-                      }
-                      onRecoverySettled={() =>
-                        queryClient.invalidateQueries({
-                          queryKey: p1QueryKeys.request(
-                            'entitlements',
-                            'balance'
-                          ),
-                        })
-                      }
-                      onUnlocked={() => setSubmissionQuotaBlocked(false)}
-                    />
+                    <div className="space-y-3">
+                      {workbenchCreditBalance.visible ? (
+                        <p
+                          className="text-sm font-medium text-foreground"
+                          data-testid="workbench-credit-balance"
+                        >
+                          {workbench_credit_balance({
+                            count: workbenchCreditBalance.availableCredits,
+                          })}
+                          {workbenchCreditBalance.expiringLot ? (
+                            <span className="block text-xs font-normal text-muted-foreground">
+                              {workbench_credit_expiring({
+                                count:
+                                  workbenchCreditBalance.expiringLot
+                                    .remainingCredits,
+                                days: workbenchCreditBalance.expiringLot
+                                  .daysUntilExpiry,
+                              })}
+                            </span>
+                          ) : null}
+                        </p>
+                      ) : null}
+                      {workbenchCreditShortfall.visible ? (
+                        <div
+                          className="space-y-2 rounded-xl border border-destructive/20 bg-destructive/5 p-3"
+                          data-testid="workbench-credit-shortfall"
+                          role="alert"
+                        >
+                          <p className="text-sm font-medium text-foreground">
+                            {workbench_credit_shortfall({
+                              count: workbenchCreditShortfall.missingCredits,
+                            })}
+                          </p>
+                          <div className="flex flex-wrap gap-3 text-sm font-medium underline underline-offset-4">
+                            <Link to="/settings/credits">
+                              {workbench_credit_buy_booster()}
+                            </Link>
+                            <Link to="/pricing">
+                              {workbench_credit_upgrade()}
+                            </Link>
+                          </div>
+                        </div>
+                      ) : (
+                        <ComposerCreditRecoveryHost
+                          blocked={legacyQuotaBlocked}
+                          passive={quotaPassive}
+                          quote={currentQuoteView}
+                          redeem={({ command, idempotencyKey }) =>
+                            commandP1<ComposerCreditRedemptionReceipt>(
+                              'redemptions',
+                              command,
+                              idempotencyKey
+                            )
+                          }
+                          refreshCredits={async () =>
+                            (await usageQuery.refetch()).data
+                          }
+                          onRecoverySettled={() =>
+                            queryClient.invalidateQueries({
+                              queryKey: p1QueryKeys.request(
+                                'entitlements',
+                                'balance'
+                              ),
+                            })
+                          }
+                          onUnlocked={() => setSubmissionQuotaBlocked(false)}
+                        />
+                      )}
+                    </div>
                   }
-                  creditSummary={
-                    quotaPassive.visible
-                      ? quotaPassive.notice
-                      : quotaBlocked
-                        ? '额度不足'
-                        : null
-                  }
+                  creditSummary={creditSummary}
                   destination={lensState.draft.delivery.platform ?? null}
                   destinationCapability={
                     destination
@@ -4418,15 +4499,33 @@ export function ComposerHome({
                 ) : null}
 
                 {currentQuoteView ? (
-                  <p
-                    className="text-muted text-xs"
-                    data-quote-revision={quoteQuery.data?.revision}
-                    data-submission-contract-hash={
-                      quoteQuery.data?.submissionContractHash
-                    }
-                    data-testid="composer-quote-line"
-                  >
-                    {/*
+                  <>
+                    {workbenchCreditQuote.visible ? (
+                      <p
+                        className="flex flex-wrap items-center gap-x-2 text-xs font-medium text-foreground"
+                        data-testid="workbench-credit-quote"
+                      >
+                        <span>
+                          {workbench_credit_quote({
+                            count: workbenchCreditQuote.creditCost!,
+                          })}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {workbenchCreditQuote.failureRefundsCredits
+                            ? workbench_credit_refund()
+                            : workbench_credit_no_refund()}
+                        </span>
+                      </p>
+                    ) : null}
+                    <p
+                      className="text-muted text-xs"
+                      data-quote-revision={quoteQuery.data?.revision}
+                      data-submission-contract-hash={
+                        quoteQuery.data?.submissionContractHash
+                      }
+                      data-testid="composer-quote-line"
+                    >
+                      {/*
               `预计消耗 0.06` used to print here: a bare float in an invisible
               unit, one line above 「本次用 1 条文案额度和 3 张图片额度 · 文案还剩
               5 条」 — two pricing systems on one screen, and the merchant unit is
@@ -4435,8 +4534,9 @@ export function ComposerHome({
               sentence cannot say (video is billed by finished seconds) and
               otherwise just states that the price is settled.
             */}
-                    {currentQuoteView.billingNote ?? '本次用量已确认'}
-                  </p>
+                      {currentQuoteView.billingNote ?? '本次用量已确认'}
+                    </p>
+                  </>
                 ) : (
                   <ComposerQuoteStatusLine
                     onRetry={retryQuoteReadiness}

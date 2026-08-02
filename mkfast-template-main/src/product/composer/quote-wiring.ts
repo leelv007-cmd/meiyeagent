@@ -45,6 +45,10 @@ export type ComposerQuoteView = {
   quantity: number;
   quotedSeconds?: number;
   targetSeconds?: number;
+  /** Server-published merchant credit cost; never inferred from formula fields. */
+  creditCost: number | null;
+  /** Server-published credit refund policy for this quoted operation. */
+  failureRefundsCredits: boolean | null;
   /** Merchant-facing billing note (e.g. 按生成成片 N 秒计费). */
   billingNote: string | null;
   lifecycleStatus: ProductQuoteSnapshot['lifecycleStatus'];
@@ -145,7 +149,11 @@ export function projectComposerQuoteView(
   snapshot: ProductQuoteSnapshot,
   quantity = 1
 ): ComposerQuoteView {
-  const amount = snapshot.confirmedAmount ?? 0;
+  const creditCost =
+    Number.isSafeInteger(snapshot.creditCost) && snapshot.creditCost > 0
+      ? snapshot.creditCost
+      : null;
+  const amount = creditCost ?? snapshot.confirmedAmount ?? 0;
   const billingNote =
     snapshot.billingMode === 'per_output_second' &&
     snapshot.quotedSeconds != null
@@ -161,6 +169,11 @@ export function projectComposerQuoteView(
     quantity,
     quotedSeconds: snapshot.quotedSeconds,
     targetSeconds: snapshot.targetSeconds,
+    creditCost,
+    failureRefundsCredits:
+      typeof snapshot.failureRefundsCredits === 'boolean'
+        ? snapshot.failureRefundsCredits
+        : null,
     billingNote,
     lifecycleStatus: snapshot.lifecycleStatus,
     formulaExpression: snapshot.formula.expression,

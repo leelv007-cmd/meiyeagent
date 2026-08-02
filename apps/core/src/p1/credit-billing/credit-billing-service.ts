@@ -67,6 +67,13 @@ export interface CreditBillingLedgerPort {
   }): Promise<unknown> | unknown;
 }
 
+export interface MerchantCreditBalance extends CreditBalanceProjection {
+  soonestExpiringLot: {
+    remainingCredits: number;
+    expiresAt: string;
+  } | null;
+}
+
 export interface CreditPlanCatalogSource {
   get(): Promise<CreditPlanCatalog>;
 }
@@ -462,8 +469,35 @@ export class CreditBillingService {
     });
   }
 
-  async balance(workspaceId: string) {
-    return this.ledger.project(workspaceId, this.clock().toISOString());
+  async balance(workspaceId: string): Promise<MerchantCreditBalance> {
+    const asOf = this.clock().toISOString();
+    const [projection, lots] = await Promise.all([
+      this.ledger.project(workspaceId, asOf),
+      this.ledger.listLots(workspaceId),
+    ]);
+    const asOfMs = Date.parse(asOf);
+    const soonest = lots
+      .filter(
+        (lot) =>
+          lot.remainingCredits > 0 &&
+          lot.expirationDate !== null &&
+          Date.parse(lot.expirationDate) > asOfMs,
+      )
+      .sort((left, right) => {
+        const byExpiry =
+          Date.parse(left.expirationDate!) -
+          Date.parse(right.expirationDate!);
+        return byExpiry === 0 ? left.id.localeCompare(right.id) : byExpiry;
+      })[0];
+    return {
+      ...projection,
+      soonestExpiringLot: soonest
+        ? {
+            remainingCredits: soonest.remainingCredits,
+            expiresAt: soonest.expirationDate!,
+          }
+        : null,
+    };
   }
 
   async detail(workspaceId: string) {

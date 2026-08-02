@@ -31,6 +31,13 @@ export const publicCreditBalanceSchema = z
     refundedCredits: z.number().int().nonnegative(),
     expiredCredits: z.number().int().nonnegative(),
     availableCredits: z.number().int().nonnegative(),
+    soonestExpiringLot: z
+      .object({
+        remainingCredits: z.number().int().positive(),
+        expiresAt: z.string().datetime(),
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 
