@@ -651,11 +651,6 @@ export class ProductQuoteService {
       return { quote: structuredClone(quote), usage };
     }
 
-    let settlementStatus: ProductSettlementStatus = 'estimated';
-    let settledAmount = ceiling;
-    let billedSeconds: number | undefined;
-    let platformAbsorbedAmount = 0;
-    let refundedAmount = 0;
     const reservedUsage = this.usage.getByTask(quote.taskId);
     if (!reservedUsage) {
       throw new P1DomainError(
@@ -663,6 +658,35 @@ export class ProductQuoteService {
         `Quote ${input.quoteId} is missing product usage.`,
       );
     }
+
+    // Credit-era (#298 / D-172): reservation is credits with empty legacy
+    // product units. Note (and other) deliveries may still attach historical
+    // product_units trustedUsage; that evidence must not block credit commit
+    // or invent bucket settlements that were never reserved.
+    if (quote.creditCost !== undefined) {
+      const usage = this.usage.settle({
+        taskId: quote.taskId,
+        settledUnits: [],
+        settlementStatus: 'estimated',
+        updatedAt: now,
+      });
+      const next: ProductQuoteSnapshot = {
+        ...quote,
+        lifecycleStatus: ceiling === 0 ? 'refunded' : 'settled',
+        settlementStatus: 'estimated',
+        settledAmount: ceiling,
+        refundedAmount: 0,
+        settledAt: now,
+      };
+      this.quotes.set(quote.quoteId, next);
+      return { quote: structuredClone(next), usage };
+    }
+
+    let settlementStatus: ProductSettlementStatus = 'estimated';
+    let settledAmount = ceiling;
+    let billedSeconds: number | undefined;
+    let platformAbsorbedAmount = 0;
+    let refundedAmount = 0;
     let settledUnitQuantity = reservedUsage.reservedQuantity;
     let settledUnits = reservedProductUsageUnits(reservedUsage);
 

@@ -560,6 +560,49 @@ describe('ProductQuoteService lifecycle', () => {
     assert.equal(fail('quote-system-failure', true).usage.status, 'refunded');
   });
 
+  it('credit-era settle commits reserved credits and ignores legacy product_units evidence', () => {
+    // Note deliveries still emit historical copy/image trustedUsage. Credit
+    // quotes reserve empty units + credits; settle must commit credits and
+    // must not throw on unreserved bucket resources (T20 / #298).
+    const quotes = service();
+    quotes.buildQuote({
+      ...perRequestInput('quote-credit-settle'),
+      creditCost: 12,
+      unitRate: 12,
+    });
+    quotes.confirm({
+      quoteId: 'quote-credit-settle',
+      taskId: 'task-credit-settle',
+    });
+    const reserved = quotes.reserve({
+      quoteId: 'quote-credit-settle',
+      units: [],
+    });
+    assert.equal(reserved.usage.status, 'reserved');
+    assert.deepEqual(reserved.usage.reservedUnits, []);
+    assert.equal(reserved.usage.reservedCredits, 12);
+
+    const settled = quotes.settle({
+      quoteId: 'quote-credit-settle',
+      trustedUsage: {
+        kind: 'product_units',
+        units: [
+          { resource: 'copy', quantity: 2 },
+          { resource: 'image', quantity: 3 },
+        ],
+        evidenceRef: 'note-plan-pages:page-1@page-1',
+      },
+    });
+
+    assert.equal(settled.quote.lifecycleStatus, 'settled');
+    assert.equal(settled.usage.status, 'committed');
+    assert.deepEqual(settled.usage.reservedUnits, []);
+    assert.deepEqual(settled.usage.settledUnits, []);
+    assert.equal(settled.usage.reservedCredits, 12);
+    assert.equal(settled.usage.settledCredits, 12);
+    assert.equal(settled.usage.refundedCredits ?? 0, 0);
+  });
+
   it('min charge and rounding affect quotedSeconds', () => {
     const quotes = service();
     const quoted = quotes.buildQuote({
