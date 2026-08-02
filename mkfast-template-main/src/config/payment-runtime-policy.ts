@@ -13,6 +13,8 @@ interface PaymentPriceIds {
   starterYearly?: string;
 }
 
+type ResolvedPaymentPriceIds = Required<PaymentPriceIds>;
+
 interface PaymentRuntimePolicyInput {
   provider: PaymentProvider;
   publicPaidLaunchEnabled: boolean;
@@ -23,13 +25,20 @@ interface PaymentRuntimePolicyInput {
 interface PaymentRuntimePolicy {
   enabled: boolean;
   provider: Exclude<PaymentProvider, ''> | undefined;
-  priceIds: PaymentPriceIds;
+  priceIds: ResolvedPaymentPriceIds;
 }
 
-const EMPTY_PRICE_IDS: PaymentPriceIds = {
+const EMPTY_PRICE_IDS: ResolvedPaymentPriceIds = {
+  growthMonthly: '',
+  growthSingleMonth: '',
+  growthYearly: '',
   proMonthly: '',
+  proSingleMonth: '',
   proYearly: '',
   lifetime: '',
+  starterMonthly: '',
+  starterSingleMonth: '',
+  starterYearly: '',
 };
 
 export function resolvePaymentRuntimePolicy({
@@ -47,6 +56,7 @@ export function resolvePaymentRuntimePolicy({
       enabled: true,
       provider,
       priceIds: {
+        ...EMPTY_PRICE_IDS,
         proMonthly: creemPriceIds.proMonthly ?? '',
         proYearly: creemPriceIds.proYearly ?? '',
         lifetime: creemPriceIds.lifetime ?? '',
@@ -76,7 +86,9 @@ export function resolvePaymentRuntimePolicy({
   };
 }
 
-function hasCompleteWaffoCatalog(ids: PaymentPriceIds) {
+function hasCompleteWaffoCatalog(
+  ids: PaymentPriceIds
+): ids is ResolvedPaymentPriceIds {
   return [
     ids.starterSingleMonth,
     ids.starterMonthly,
