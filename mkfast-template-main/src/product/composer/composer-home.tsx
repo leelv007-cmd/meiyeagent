@@ -264,6 +264,7 @@ import {
   projectWorkbenchCreditQuote,
   projectWorkbenchCreditShortfall,
 } from './workbench-credit';
+import { WorkbenchCreditPurchaseActions } from './workbench-credit-purchase-actions';
 import {
   composerQueryPhase,
   currentComposerQuoteView,
@@ -4116,6 +4117,13 @@ export function ComposerHome({
                                 void confirmNotePlanRegeneration();
                                 return;
                               }
+                              // A balance refresh may land while this card is
+                              // open. Recheck the current merchant-safe quote
+                              // and balance before this second submission path.
+                              if (quotaBlocked) {
+                                setSubmissionQuotaBlocked(true);
+                                return;
+                              }
                               const run = pendingRunRef.current;
                               setExecutionConfirm(confirmExecution);
                               if (!run) return;
@@ -4268,14 +4276,7 @@ export function ComposerHome({
                               count: workbenchCreditShortfall.missingCredits,
                             })}
                           </p>
-                          <div className="flex flex-wrap gap-3 text-sm font-medium underline underline-offset-4">
-                            <Link to="/pricing">
-                              {workbench_credit_buy_booster()}
-                            </Link>
-                            <Link to="/pricing">
-                              {workbench_credit_upgrade()}
-                            </Link>
-                          </div>
+                          <WorkbenchCreditPurchaseActions />
                         </div>
                       ) : (
                         <ComposerCreditRecoveryHost
@@ -4615,12 +4616,7 @@ export function ComposerHome({
                         count: workbenchCreditShortfall.missingCredits,
                       })}
                     </p>
-                    <div className="flex flex-wrap gap-3 text-sm font-medium underline underline-offset-4">
-                      <Link to="/pricing">
-                        {workbench_credit_buy_booster()}
-                      </Link>
-                      <Link to="/pricing">{workbench_credit_upgrade()}</Link>
-                    </div>
+                    <WorkbenchCreditPurchaseActions />
                   </div>
                 ) : null}
 

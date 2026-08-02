@@ -11,6 +11,10 @@ test('workbench consumes the backend credit balance and quote through all three 
     new URL('./workbench-credit.ts', import.meta.url),
     'utf8'
   );
+  const navigationSource = await readFile(
+    new URL('./credit-purchase-navigation.ts', import.meta.url),
+    'utf8'
+  );
 
   assert.match(source, /projectWorkbenchCreditBalance/u);
   assert.match(source, /projectWorkbenchCreditQuote/u);
@@ -19,11 +23,18 @@ test('workbench consumes the backend credit balance and quote through all three 
   assert.match(source, /data-testid="workbench-credit-quote"/u);
   assert.match(source, /data-testid="workbench-credit-shortfall"/u);
   assert.match(source, /data-testid="workbench-credit-shortfall-alert"/u);
-  assert.match(
-    source,
-    /<Link to="\/pricing">\s+\{workbench_credit_buy_booster\(\)\}/u
+  assert.equal(
+    source.match(/<WorkbenchCreditPurchaseActions\s*\/>/gu)?.length,
+    2
   );
-  assert.match(source, /to="\/pricing"/u);
+  assert.match(
+    navigationSource,
+    /booster:\s*\{\s*to:\s*'\/pricing',\s*hash:\s*'credit-boosters'\s*\}/u
+  );
+  assert.match(
+    navigationSource,
+    /upgrade:\s*\{\s*to:\s*'\/pricing',\s*hash:\s*'subscription-plans'\s*\}/u
+  );
   assert.match(
     source,
     /const quotaBlocked = legacyQuotaBlocked \|\| workbenchCreditShortfall\.visible/u
@@ -32,6 +43,10 @@ test('workbench consumes the backend credit balance and quote through all three 
   assert.match(
     source,
     /if \(quotaBlocked\) \{\s+setSubmissionQuotaBlocked\(true\);/u
+  );
+  assert.match(
+    source,
+    /onConfirm: \(\) => \{[\s\S]*?if \(quotaBlocked\) \{\s+setSubmissionQuotaBlocked\(true\);\s+return;\s+\}[\s\S]*?const run = pendingRunRef\.current;\s+setExecutionConfirm\(confirmExecution\);/u
   );
   assert.match(
     source,

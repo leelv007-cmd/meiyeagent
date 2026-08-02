@@ -219,11 +219,9 @@ async function submitNoteJourney(
   });
 
   if (expected === 'insufficient') {
-    // Credit-era (#298 / D-172): when projection.credits is present the
-    // bucket passive short-circuit is intentionally silent. Admission is the
-    // server quote + reserve path — click 生成 and let Core reject with
-    // INSUFFICIENT_ENTITLEMENT so the blocking card mounts from the real
-    // error seam (not a pre-click bucket guess).
+    // The server remains the reserve authority. Its rejected admission
+    // invalidates the balance projection, so the subsequent merchant-facing
+    // state must be the credit shortfall rather than the retired code wall.
     const responsePromise = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
@@ -233,7 +231,7 @@ async function submitNoteJourney(
     await page.getByTestId('composer-submit').click();
     const response = await responsePromise;
     expect(response.ok(), await response.text()).toBeFalsy();
-    await expect(page.getByTestId('composer-quota-blocking-card')).toBeVisible({
+    await expect(page.getByTestId('workbench-credit-shortfall')).toBeVisible({
       timeout: 30_000,
     });
     await expect(page.getByTestId('composer-submit')).toBeDisabled();
@@ -731,24 +729,20 @@ test.describe
         'insufficient',
         submission.authorizedAssetId
       );
-      const quotaWall = page.getByTestId('composer-quota-blocking-card');
-      await expect(quotaWall).toBeVisible();
-      await expect(quotaWall).toContainText('额度不足');
-      await expect(quotaWall).toContainText(
-        '当前额度不足，无法继续创作。可在此输入兑换码立即解锁。'
-      );
-      // D-141: the only two real exits are the inline code and a human.
+      const shortfall = page.getByTestId('workbench-credit-shortfall');
+      await expect(shortfall).toBeVisible();
+      await expect(shortfall).toContainText(/还差\s*\d+\s*分/u);
       await expect(
-        page.getByTestId('composer-quota-redemption-code')
-      ).toBeVisible();
+        shortfall.getByTestId('workbench-credit-buy-booster')
+      ).toHaveAttribute('href', '/pricing#credit-boosters');
       await expect(
-        page.getByTestId('composer-quota-contact-operations')
-      ).toHaveText('联系运营开通');
+        shortfall.getByTestId('workbench-credit-upgrade')
+      ).toHaveAttribute('href', '/pricing#subscription-plans');
       await page.screenshot({
         fullPage: true,
         path: resolve(
           import.meta.dirname,
-          '../../../../.scratch/orca-run-2026-07-25/t20-r2-trial-quota-wall.png'
+          '../../../../.scratch/orca-run-2026-07-25/t20-r2-credit-shortfall.png'
         ),
       });
     });

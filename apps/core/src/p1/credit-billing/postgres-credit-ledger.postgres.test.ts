@@ -13,7 +13,10 @@ import type { CreationSubmissionRecord } from '../execution-spine/submission-coo
 import { DurableProductBillingService } from '../product-billing/durable-service.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
 import { HarnessProductBillingSettlementExecutor } from '../harness/product-billing-settlement.js';
+import { CreditBillingService } from './credit-billing-service.js';
 import { creditUsageOperationId } from './credit-ledger.js';
+import { DEFAULT_CREDIT_PLAN_CATALOG } from './credit-plan-catalog.js';
+import { MemoryCreditSubscriptionStore } from './credit-subscription-scheduler.js';
 import { PostgresCreditLedger } from './postgres-credit-ledger.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
@@ -214,6 +217,62 @@ test(
         (await creditLedger.project(workspaceId)).availableCredits,
         0,
       );
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+test(
+  'Postgres ledger feeds the nearest unexpired lot into the merchant balance',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const fixture = await createFixture();
+    const { creditLedger, workspaceId } = fixture;
+    const now = new Date('2026-08-05T00:00:00.000Z');
+    const billing = new CreditBillingService(
+      creditLedger,
+      new MemoryCreditSubscriptionStore(),
+      { async get() { return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG); } },
+      { async getPaymentMapping() { return null; } },
+      () => now,
+    );
+    try {
+      await creditLedger.grant({
+        id: 'expired-package',
+        workspaceId,
+        credits: 99,
+        expirationDate: '2026-08-04T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'expired-package',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      await creditLedger.grant({
+        id: 'later-package',
+        workspaceId,
+        credits: 30,
+        expirationDate: '2026-08-20T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'later-package',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      await creditLedger.grant({
+        id: 'soonest-package',
+        workspaceId,
+        credits: 10,
+        expirationDate: '2026-08-10T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'soonest-package',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+
+      const balance = await billing.balance(workspaceId);
+
+      assert.equal(balance.availableCredits, 40);
+      assert.deepEqual(balance.soonestExpiringLot, {
+        remainingCredits: 10,
+        expiresAt: '2026-08-10T00:00:00.000Z',
+      });
     } finally {
       await fixture.cleanup();
     }
