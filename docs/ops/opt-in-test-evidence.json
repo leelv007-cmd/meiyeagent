@@ -33,98 +33,98 @@
     },
     "apps/core/src/p1/entitlement-pools/default-runtime-supply-pool.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "74074fcf341911acda78d37bf74ad04afa0a0e21",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) during the opt-in evidence sweep."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/entitlement-pools/postgres-repository.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "74074fcf341911acda78d37bf74ad04afa0a0e21",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) during the opt-in evidence sweep."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/execution-spine/postgres-creation-submission-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "74074fcf341911acda78d37bf74ad04afa0a0e21",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) during the opt-in evidence sweep."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/dbos-registration.smoke.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/delivery.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/fixture-fact-fidelity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/interaction-service.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/issue-255-live-collector.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/issue-255-postgres-live-receipt.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/issue-255-safe-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b on the dedicated meiye_issue255 pair with explicit destructive opt-in and the shared e2e lock: 3 pass, 0 fail, 0 skip; the suite safely removed both databases."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/langfuse-outbox-ops.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/media-bounded-continuation.dbos.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/note-media-admission.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/observability-health.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/postgres-billing-compensation-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/postgres-store.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/harness/production-media-assembly.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/integrations/douyin-oauth-lifecycle.postgres.test.ts": {
       "status": "unverified",
@@ -143,13 +143,13 @@
     },
     "apps/core/src/p1/model-supply/foundation-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/model-supply/postgres-owned-asset-cleanup-claim.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/model-supply/postgres-repository.test.ts": {
       "status": "green",
@@ -158,8 +158,8 @@
     },
     "apps/core/src/p1/model-supply/published-catalog-read.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/model-supply/reference-asset-dispatch.postgres.test.ts": {
       "status": "green",
@@ -168,78 +168,78 @@
     },
     "apps/core/src/p1/model-supply/retired-video-editing-schema.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/model-supply/usage-ledger-invariants.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/operations/composer-conversation-deletion.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/operations/content-package-migration-cli.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/operations/expired-fact-invalidation-outbox.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/operations/harness-copy-work-asset.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/operations/marketing-identity.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/operations/media-custody.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/operations/memory-sedimentation-pipeline.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/operations/parse-asset-memory.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/operations/postgres-content-package-write-adapter.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/operations/store-intake-finalizer.behavior.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/operations/store-intake-finalizer.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
-      "status": "unverified",
-      "verifiedAt": "91acd6b664a56458f997861fc814e8985b703bee",
-      "note": "Never run by the coordinator at merge time. Pinned here so any change to its directory forces a real run."
+      "status": "green",
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/result-delivery/assisted-canonical-repository.postgres.test.ts": {
       "status": "green",
@@ -303,8 +303,8 @@
     },
     "apps/core/src/product/notifier.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "74074fcf341911acda78d37bf74ad04afa0a0e21",
-      "note": "Re-verified 2026-07-31 against a fresh golden-template clone (business+DBOS pair) during the opt-in evidence sweep."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "mkfast-template-main/src/lib/auth/workspace-provisioning.postgres.test.ts": {
       "status": "green",
@@ -313,23 +313,33 @@
     },
     "mkfast-template-main/src/payment/plan-checkout-bindings.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "e582e15b7efc07f2ea38c241eb5efbd3d74ea801",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after Pro Studio D-170 retirement (audio extract + e2e cleanup guard; coordinator batch)."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 pair under the shared e2e lock: 2/2 pass, 0 fail, 0 skip via tsx --test."
     },
     "mkfast-template-main/src/payment/postgres-webhook-settlement.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "e582e15b7efc07f2ea38c241eb5efbd3d74ea801",
-      "note": "Re-verified 2026-08-01 against freshly provisioned meiye_optin_biz/dbos pair after Pro Studio D-170 retirement (audio extract + e2e cleanup guard; coordinator batch)."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 pair under the shared e2e lock: 2/2 pass, 0 fail, 0 skip via tsx --test."
     },
     "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
-      "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     },
     "apps/core/src/p1/sensitive-words/postgres-repository.postgres.test.ts": {
       "status": "green",
       "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
       "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
+    },
+    "apps/core/src/p1/credit-billing/credit-subscription-scheduler.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
+    },
+    "apps/core/src/p1/credit-billing/postgres-credit-ledger.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
+      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
     }
   }
 }
