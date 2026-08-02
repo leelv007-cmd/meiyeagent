@@ -3,6 +3,7 @@ import {
 	type ContentPackageKind,
 	type ContentPackagePlatform,
 	type ComposerContentPackagePlatform,
+	type ImageTextNoteVersion,
 } from "@meiye/contracts";
 
 import type { ContentPackageRightsResolverPort } from "../operations/types.js";
@@ -38,6 +39,11 @@ export interface ResolvedSourceContentPackage {
 		title: string;
 		topics: string[];
 	};
+	/**
+	 * Frozen note plan from the source version when present. Used by single-page
+	 * merchant regeneration so body/orderedAssetIds on other pages stay intact.
+	 */
+	note?: ImageTextNoteVersion;
 	structure: {
 		slots: Array<"headline" | "body" | "conversion_hook">;
 	};
@@ -163,6 +169,9 @@ export class ExecutionSourceContentPackageResolver
 				title: currentVersion.title,
 				topics: [...currentVersion.topics],
 			},
+			...(currentVersion.note
+				? { note: structuredClone(currentVersion.note) }
+				: {}),
 			structure: {
 				slots,
 			},

@@ -49,13 +49,13 @@ test('NotePlan compiles configured styles while keeping text dependencies serial
 });
 
 test('selected style requests every page and records a bounded conflict regeneration', async () => {
+  // Reason for sequential rewrite (L1-2): page image generation is ordered so
+  // the harness can emit running→success frames per page. Concurrency peak is
+  // therefore 1 instead of pages.length.
   const calls: string[] = [];
   let concurrent = 0;
   let peakConcurrent = 0;
-  let releaseInitial: (() => void) | undefined;
-  const initialBarrier = new Promise<void>((resolve) => {
-    releaseInitial = resolve;
-  });
+  const pageProgress: Array<{ pageId: string; state: string }> = [];
   const compiler = new NotePlanCompiler(
     structuredPort(calls, true, {
       ...basePlan(),
@@ -72,8 +72,6 @@ test('selected style requests every page and records a bounded conflict regenera
         if (reason === 'initial') {
           concurrent += 1;
           peakConcurrent = Math.max(peakConcurrent, concurrent);
-          if (concurrent === 2) releaseInitial?.();
-          await initialBarrier;
           concurrent -= 1;
         }
         const suffix = reason === 'initial' ? 'initial' : 'regenerated';
@@ -93,9 +91,20 @@ test('selected style requests every page and records a bounded conflict regenera
     candidates: drafts,
     selectedStyleId: 'story_recommendation',
     notePageBound: 3,
+    onPageProgress: (event) => {
+      pageProgress.push(event);
+    },
   });
 
-  assert.equal(peakConcurrent, 3);
+  assert.equal(peakConcurrent, 1);
+  assert.deepEqual(pageProgress, [
+    { pageId: 'page-1', state: 'running' },
+    { pageId: 'page-1', state: 'success' },
+    { pageId: 'page-2', state: 'running' },
+    { pageId: 'page-2', state: 'success' },
+    { pageId: 'page-3', state: 'running' },
+    { pageId: 'page-3', state: 'success' },
+  ]);
   assert.deepEqual(calls, [
     'image:initial:page-1',
     'image:initial:page-2',
@@ -582,6 +591,60 @@ test('single-page regeneration changes only the target page and charges one imag
     reason: 'merchant_request',
     auditRef: 'audit-page-2',
   });
+});
+
+test('merchant page regeneration production path generates one image and keeps other pages', async () => {
+  const calls: string[] = [];
+  const progress: Array<{ pageId: string; state: string }> = [];
+  const compiler = new NotePlanCompiler(
+    structuredPort(calls),
+    imagePort(calls),
+  );
+  const plan = {
+    ...basePlan(),
+    pages: [
+      ...basePlan().pages,
+      page('page-3', 3, 'solution_show', 'explain_solution', [
+        { pageId: 'page-2', kind: 'text_sequence' as const },
+      ]),
+    ],
+  };
+  const version = {
+    schema: 'image-text-note-version/v1' as const,
+    plan,
+    evaluation: passingNoteEvaluation('2026-07-26T00:00:00.000Z'),
+    regenerationReceipts: [],
+  };
+  version.plan.pages[0]!.imageAssetId = 'asset-page-1';
+  version.plan.pages[1]!.imageAssetId = 'asset-page-2';
+  version.plan.pages[2]!.imageAssetId = 'asset-page-3';
+
+  const result = await compiler.regenerateMerchantPage({
+    version,
+    pageId: 'page-2',
+    onPageProgress: (event) => {
+      progress.push(event);
+    },
+  });
+
+  assert.deepEqual(
+    calls.filter((call) => call.startsWith('image:')),
+    ['image:merchant_request:page-2'],
+  );
+  assert.deepEqual(progress, [
+    { pageId: 'page-2', state: 'running' },
+    { pageId: 'page-2', state: 'success' },
+  ]);
+  assert.equal(result.ownedAssets.length, 1);
+  assert.equal(result.version.plan.pages[0]?.imageAssetId, 'asset-page-1');
+  assert.equal(result.version.plan.pages[2]?.imageAssetId, 'asset-page-3');
+  assert.equal(result.version.plan.pages[1]?.revision, 2);
+  assert.notEqual(result.version.plan.pages[1]?.imageAssetId, 'asset-page-2');
+  assert.equal(result.version.regenerationReceipts.at(-1)?.imagePoints, 1);
+  assert.equal(
+    result.version.regenerationReceipts.at(-1)?.reason,
+    'merchant_request',
+  );
 });
 
 test('style reordering, addition and removal require no compiler code changes', async () => {

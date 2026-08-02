@@ -2144,6 +2144,7 @@ if (harnessRuntimeConfig) {
     runners: structuredNodeRunnerFactory,
     sensitiveLexicon: sensitiveWordsRepository,
     executionChildObservability: harnessExecutionChildObservability,
+    sourceContentPackages,
   });
   DBOS.setConfig(harnessRuntimeConfig.dbos);
   const harnessBilling = new HarnessProductBillingSettlementExecutor(

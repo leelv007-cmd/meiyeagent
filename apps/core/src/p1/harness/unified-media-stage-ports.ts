@@ -10,11 +10,13 @@ import type {
 } from "@meiye/contracts";
 import {
 	boundedExecutionSnapshotSchema,
+	imageTextNoteVersionSchema,
 	mapThinkingLevelToModelOptions,
 } from "@meiye/contracts";
 import { z } from "zod";
 import type { ContentPackageRevisionWritePort } from "../execution-spine/content-package-revision-port.js";
 import { isOfficialNeutralIdentity } from "../execution-spine/creation-execution-snapshot.js";
+import type { ExecutionSourceContentPackageResolverPort } from "../execution-spine/source-content-package-resolver.js";
 import { JobRuntimeError } from "../job-runtime/job-contracts.js";
 import type {
 	MediaBoundedExecutionAuthorization,
@@ -205,6 +207,7 @@ export class UnifiedHarnessStagePorts
 		private readonly noteEnhancementJudge: NotePlanEnhancementJudgeResolver = configuredNotePlanEnhancementJudgeResolver,
 		private readonly executionChildObservability?: HarnessExecutionChildObservabilityFactory,
 		private readonly sensitiveLexicon?: SensitiveLexiconReadPort,
+		private readonly sourceContentPackages?: ExecutionSourceContentPackageResolverPort,
 	) {}
 
 	recordExecutionAssemblyStep(
@@ -601,16 +604,29 @@ export class UnifiedHarnessStagePorts
 			workflowId: input.workflowId,
 			workspaceId: input.request.workspaceId,
 		});
-		const selected = await this.noteCompiler(
+		const pageRegeneration =
+			input.request.executionSnapshot?.sources.pageRegeneration;
+		const compiler = this.noteCompiler(
 			input,
 			enhancementJudge,
 			undefined,
 			input.brief.styleAnalysis,
-		).selectAndGenerate({
-			candidates: input.brief.candidates,
-			selectedStyleId: input.selectedStyleId,
-			notePageBound: requireNotePageBound(input.request),
-		});
+		);
+		const selected = pageRegeneration
+			? await this.executeNotePageRegeneration(
+					input,
+					compiler,
+					pageRegeneration,
+					enhancementJudge,
+				)
+			: await compiler.selectAndGenerate({
+					candidates: input.brief.candidates,
+					selectedStyleId: input.selectedStyleId,
+					notePageBound: requireNotePageBound(input.request),
+					...(input.onPageProgress
+						? { onPageProgress: input.onPageProgress }
+						: {}),
+				});
 		return {
 			...selected,
 			enhancementJudge,
@@ -638,6 +654,80 @@ export class UnifiedHarnessStagePorts
 					.digest("hex"),
 			},
 		};
+	}
+
+	private async executeNotePageRegeneration(
+		input: Parameters<HarnessNoteStagePorts["executeNoteAndSelect"]>[0],
+		compiler: NotePlanCompiler,
+		pageRegeneration: { targetAssetId: string },
+		enhancementJudge: NotePlanEnhancementJudgeState,
+	) {
+		const sourceRef = input.request.executionSnapshot?.sources.contentPackage;
+		if (!sourceRef) {
+			throw new HarnessMediaExecutionError(
+				"MEDIA_SNAPSHOT_MISMATCH",
+				"Single-page note regeneration requires a frozen ContentPackage source.",
+				409,
+			);
+		}
+		if (!this.sourceContentPackages) {
+			throw new HarnessMediaExecutionError(
+				"MEDIA_SNAPSHOT_MISMATCH",
+				"Single-page note regeneration requires the source ContentPackage resolver.",
+				409,
+			);
+		}
+		const source = await this.sourceContentPackages.resolve({
+			workspaceId: input.request.workspaceId,
+			source: sourceRef,
+		});
+		const sourceNote = source?.note
+			? imageTextNoteVersionSchema.parse(source.note)
+			: undefined;
+		if (!sourceNote) {
+			throw new HarnessMediaExecutionError(
+				"MEDIA_SNAPSHOT_MISMATCH",
+				"The frozen ContentPackage has no note plan to regenerate.",
+				409,
+			);
+		}
+		const page = sourceNote.plan.pages.find(
+			({ imageAssetId }) => imageAssetId === pageRegeneration.targetAssetId,
+		);
+		if (!page) {
+			throw new HarnessMediaExecutionError(
+				"MEDIA_SNAPSHOT_MISMATCH",
+				"The requested page image is not part of the frozen note plan.",
+				409,
+			);
+		}
+		const regenerated = await compiler.regenerateMerchantPage({
+			version: sourceNote,
+			pageId: page.id,
+			...(input.onPageProgress
+				? { onPageProgress: input.onPageProgress }
+				: {}),
+		});
+		// Keep assembleNoteAndDeliver fail-closed: unconfigured judges must
+		// still carry the self-correction-disabled audit signal.
+		if (enhancementJudge.status === "unconfigured") {
+			return {
+				...regenerated,
+				auditSignals: [
+					...regenerated.auditSignals,
+					{
+						eventType: "note_consistency_evaluated" as const,
+						payload: {
+							attempt: "initial",
+							evaluationUnavailable: true,
+							reason: enhancementJudge.reason,
+							selfCorrectionDisabled: true,
+						},
+					},
+				],
+			};
+		}
+		return regenerated;
 	}
 
 	async assembleNoteAndDeliver(
@@ -736,23 +826,37 @@ export class UnifiedHarnessStagePorts
 				"An unconfigured NotePlan enhancement judge requires an audit signal.",
 			);
 		}
+		const pageRegeneration =
+			input.request.executionSnapshot?.sources.pageRegeneration;
+		const imageUsageQuantity = pageRegeneration
+			? 1
+			: input.selection.version.plan.pages.length;
+		const copyUsageQuantity = pageRegeneration
+			? 0
+			: input.brief.candidates.candidates.length;
 		const revision = {
 			additionalVersions: versions.filter(({ id }) => id !== winner.id),
 			billingTrustedUsage: {
 				kind: "product_units" as const,
 				units: [
-					{
-						resource: "copy" as const,
-						quantity: input.brief.candidates.candidates.length,
-					},
+					...(copyUsageQuantity > 0
+						? [
+								{
+									resource: "copy" as const,
+									quantity: copyUsageQuantity,
+								},
+							]
+						: []),
 					{
 						resource: "image" as const,
-						quantity: input.selection.version.plan.pages.length,
+						quantity: imageUsageQuantity,
 					},
 				],
-				evidenceRef: `note-plan-pages:${input.selection.version.plan.pages
-					.map(({ id, revision }) => `${id}@${revision}`)
-					.join(",")}`,
+				evidenceRef: pageRegeneration
+					? `note-page-regeneration:${pageRegeneration.targetAssetId}`
+					: `note-plan-pages:${input.selection.version.plan.pages
+							.map(({ id, revision: pageRevision }) => `${id}@${pageRevision}`)
+							.join(",")}`,
 			},
 			claimExtraction,
 			expectedRevision: input.request.expectedRevision,

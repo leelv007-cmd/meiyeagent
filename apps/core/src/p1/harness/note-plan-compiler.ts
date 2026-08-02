@@ -224,10 +224,63 @@ export class NotePlanCompiler {
     });
   }
 
+  /**
+   * Merchant single-page regenerate: generate one image and patch the frozen
+   * source note version. Other pages keep body/orderedAssetIds unchanged.
+   */
+  async regenerateMerchantPage(input: {
+    version: ImageTextNoteVersion;
+    pageId: string;
+    onPageProgress?: (event: {
+      pageId: string;
+      state: 'running' | 'success';
+    }) => Promise<void> | void;
+  }) {
+    const current = imageTextNoteVersionSchema.parse(input.version);
+    const page = current.plan.pages.find(({ id }) => id === input.pageId);
+    if (!page) {
+      throw new Error('The requested NotePlan page does not exist.');
+    }
+    await input.onPageProgress?.({ pageId: page.id, state: 'running' });
+    const generation = await this.images.generate({
+      page,
+      reason: 'merchant_request',
+    });
+    const auditRef = `note-page-merchant-regeneration:${page.id}:r${page.revision + 1}`;
+    const version = regenerateNotePlanPage({
+      version: current,
+      pageId: page.id,
+      imageAssetId: generation.asset.id,
+      auditRef,
+    });
+    await input.onPageProgress?.({ pageId: page.id, state: 'success' });
+    return {
+      auditSignals: [
+        notePageRegeneratedEventSchema.parse({
+          eventType: 'note_page_regenerated',
+          payload: {
+            auditRef,
+            imagePoints: 1,
+            pageId: page.id,
+            trigger: 'user_selection',
+          },
+        }),
+      ] satisfies NotePlanCompilerAuditSignal[],
+      childRuns: [generation.childRun],
+      ownedAssets: [generation.asset],
+      selectedStyleId: current.plan.style.id,
+      version,
+    };
+  }
+
   async selectAndGenerate(input: {
     candidates: Awaited<ReturnType<NotePlanCompiler['compileDrafts']>>;
     selectedStyleId: string;
     notePageBound: number;
+    onPageProgress?: (event: {
+      pageId: string;
+      state: 'running' | 'success';
+    }) => Promise<void> | void;
   }) {
     const selected = input.candidates.candidates.find(
       ({ styleId }) => styleId === input.selectedStyleId,
@@ -242,11 +295,18 @@ export class NotePlanCompiler {
         payload: { styleId: selected.styleId },
       },
     ];
-    const initial = await Promise.all(
-      selected.plan.pages.map((page) =>
-        this.images.generate({ page, reason: 'initial' }),
-      ),
-    );
+    const initial: Array<
+      Awaited<ReturnType<NotePlanImagePort['generate']>>
+    > = [];
+    for (const page of selected.plan.pages) {
+      await input.onPageProgress?.({ pageId: page.id, state: 'running' });
+      const generation = await this.images.generate({
+        page,
+        reason: 'initial',
+      });
+      initial.push(generation);
+      await input.onPageProgress?.({ pageId: page.id, state: 'success' });
+    }
     let plan = notePlanSchema.parse({
       ...selected.plan,
       pages: selected.plan.pages.map((page, index) => ({

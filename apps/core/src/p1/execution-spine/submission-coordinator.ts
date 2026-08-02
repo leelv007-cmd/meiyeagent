@@ -280,6 +280,8 @@ export class CreationSubmissionCoordinator {
 		idempotencyKey: string;
 		instruction: string;
 		outputCount: number;
+		/** Single-page note image regenerate target (result_adjust asset scope). */
+		pageRegenerationTargetAssetId?: string;
 		quote: { id: string; revision: string };
 		sourceContentPackage: { id: string; revision: number };
 		sourceNoteStyleId?: string;
@@ -388,6 +390,13 @@ export class CreationSubmissionCoordinator {
 					id: input.sourceContentPackage.id,
 					revision: String(input.sourceContentPackage.revision),
 				},
+				...(input.pageRegenerationTargetAssetId
+					? {
+							pageRegeneration: {
+								targetAssetId: input.pageRegenerationTargetAssetId,
+							},
+						}
+					: {}),
 				...(input.textSelectionScope
 					? { textSelection: input.textSelectionScope }
 					: {}),

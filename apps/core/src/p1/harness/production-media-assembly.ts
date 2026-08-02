@@ -1,6 +1,7 @@
 import type { ImageModelRecipeProfile } from '@meiye/contracts';
 
 import type { ContentPackageRevisionWritePort } from '../execution-spine/content-package-revision-port.js';
+import type { ExecutionSourceContentPackageResolverPort } from '../execution-spine/source-content-package-resolver.js';
 import type {
   MediaBoundedExecutionAuthorization,
   ModelSupplyResult,
@@ -48,6 +49,7 @@ export function createProductionHarnessMediaAssembly(input: {
   runners: HarnessStructuredNodeRunnerFactory;
   sensitiveLexicon: SensitiveLexiconReadPort;
   executionChildObservability?: HarnessExecutionChildObservabilityFactory;
+  sourceContentPackages?: ExecutionSourceContentPackageResolverPort;
 }) {
   return new UnifiedHarnessStagePorts(
     input.copy,
@@ -64,5 +66,6 @@ export function createProductionHarnessMediaAssembly(input: {
     input.noteEnhancementJudge,
     input.executionChildObservability,
     input.sensitiveLexicon,
+    input.sourceContentPackages,
   );
 }
