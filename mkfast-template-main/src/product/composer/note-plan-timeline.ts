@@ -122,12 +122,54 @@ export function projectNotePlanTimelineFromVersion(
 }
 
 /**
- * Batch status from harness stage progress (fixture/recorded OK).
+ * Project a running-phase outline preview (from harness progress) into the
+ * timeline surface. Image status starts pending; L1-2 frames advance it.
+ */
+export function projectNotePlanTimelineFromPreview(preview: {
+  styleId: string;
+  styleName: string;
+  themeAnchor: string;
+  pages: Array<{
+    pageId: string;
+    order: number;
+    pageRole: string;
+    title: string;
+    body: string;
+  }>;
+}): NotePlanTimeline {
+  return {
+    schema: 'note-plan-timeline/v1',
+    themeAnchor: preview.themeAnchor,
+    styleId: preview.styleId,
+    styleName: preview.styleName,
+    pages: [...preview.pages]
+      .sort((a, b) => a.order - b.order)
+      .map((page) => ({
+        pageId: page.pageId,
+        order: page.order,
+        pageRole: page.pageRole,
+        pagePurpose:
+          page.pageRole === 'cover' ? 'capture_attention' : 'explain_solution',
+        title: page.title,
+        body: page.body,
+        imageStatus: 'pending' as const,
+        revision: 1,
+        outlineDirty: false,
+        regenerateRequested: false,
+      })),
+  };
+}
+
+/**
+ * Batch / per-page status from harness stage progress (fixture/recorded OK).
  * Does not invent page text — only refreshes imageStatus on an existing timeline.
+ *
+ * When `pageId` is present (L1-2 page-level frames), only that page transitions.
+ * Absent pageId keeps the legacy batch behaviour for older consumers.
  */
 export function applyBatchImageStatusFromHarnessStage(
   timeline: NotePlanTimeline,
-  input: { stage: string; state: string }
+  input: { stage: string; state: string; pageId?: string }
 ): NotePlanTimeline {
   let nextStatus: NotePageImageStatus | null = null;
   if (input.stage === 'execution_selection') {
@@ -145,7 +187,37 @@ export function applyBatchImageStatusFromHarnessStage(
     nextStatus = 'pending';
   }
   if (!nextStatus) return timeline;
+  if (input.pageId) {
+    return setNotePlanPageImageStatus(timeline, input.pageId, nextStatus);
+  }
   return setAllNotePlanImageStatuses(timeline, nextStatus);
+}
+
+/** Update one page's image status; unknown pageId is a no-op. */
+export function setNotePlanPageImageStatus(
+  timeline: NotePlanTimeline,
+  pageId: string,
+  status: NotePageImageStatus
+): NotePlanTimeline {
+  const index = timeline.pages.findIndex((page) => page.pageId === pageId);
+  if (index === -1) return timeline;
+  const current = timeline.pages[index]!;
+  if (current.imageStatus === status) {
+    if (status !== 'generating' && !current.regenerateRequested) {
+      return timeline;
+    }
+    if (status === 'generating' && current.regenerateRequested) {
+      return timeline;
+    }
+  }
+  const pages = timeline.pages.slice();
+  pages[index] = {
+    ...current,
+    imageStatus: status,
+    regenerateRequested:
+      status === 'generating' ? current.regenerateRequested : false,
+  };
+  return { ...timeline, pages };
 }
 
 export function setAllNotePlanImageStatuses(

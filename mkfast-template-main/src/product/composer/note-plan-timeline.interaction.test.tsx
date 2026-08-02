@@ -107,13 +107,18 @@ function fixtureTimeline(): NotePlanTimeline {
   });
 }
 
-function sessionWithNotePlan(timeline: NotePlanTimeline): ComposerSession {
+function sessionWithNotePlan(
+  timeline: NotePlanTimeline,
+  phase: ComposerSession['phase'] = 'running'
+): ComposerSession {
   let session = openComposerTurn(
     createComposerSession('session-note'),
     '做一组小红书图文'
   );
   session = bindComposerTask(session, TASK);
-  return applyComposerNotePlan(session, timeline);
+  session = applyComposerNotePlan(session, timeline);
+  // L1-3: outline edit / regenerate are delivered-only; running mounts readonly.
+  return { ...session, phase };
 }
 
 function progress(
@@ -132,10 +137,12 @@ function progress(
 }
 
 describe('NotePlan multi-page timeline (P1-5)', () => {
-  it('renders plan AgentFrame with editable outline and image status', () => {
+  it('renders plan AgentFrame with editable outline and image status when delivered', () => {
+    // Reason: L1-3 keeps edit/regenerate delivered-only; prior assertion assumed
+    // editable during any mounted phase.
     const onEdit = vi.fn();
     const onRegen = vi.fn();
-    const session = sessionWithNotePlan(fixtureTimeline());
+    const session = sessionWithNotePlan(fixtureTimeline(), 'delivered');
 
     render(
       <ComposerConversation
@@ -171,7 +178,102 @@ describe('NotePlan multi-page timeline (P1-5)', () => {
     expect(onRegen).toHaveBeenCalledWith('page-1');
   });
 
-  it('shows generating image status after execution_selection progress', () => {
+  it('mounts readonly timeline during running and advances page status by frame', () => {
+    let session = openComposerTurn(
+      createComposerSession('session-note-running'),
+      '做一组小红书图文'
+    );
+    session = bindComposerTask(session, TASK);
+    session = { ...session, phase: 'running' };
+    session = applyComposerProgress(
+      session,
+      progress({
+        sequence: 1,
+        stage: 'brief_compilation',
+        state: 'success',
+        message: '已选方向',
+        notePlanPreview: {
+          styleId: 'practical_guide',
+          styleName: '干货科普版',
+          themeAnchor: '夏日补水图文笔记',
+          pages: [
+            {
+              pageId: 'page-1',
+              order: 1,
+              pageRole: 'cover',
+              title: '封面标题',
+              body: '封面导语',
+            },
+            {
+              pageId: 'page-2',
+              order: 2,
+              pageRole: 'solution_show',
+              title: '方案页',
+              body: '方案正文',
+            },
+          ],
+        },
+      })
+    );
+
+    const { rerender } = render(
+      <ComposerConversation
+        onNotePlanOutlineEdit={vi.fn()}
+        onNotePlanRegeneratePage={vi.fn()}
+        onOpenDelivery={() => undefined}
+        session={session}
+        stream={emptyStream}
+      />
+    );
+
+    expect(screen.getByTestId('composer-note-plan-turn')).toBeInTheDocument();
+    expect(screen.getAllByTestId('note-plan-page-row')).toHaveLength(2);
+    // Running-phase: no regenerate control (delivered-only).
+    expect(screen.queryByTestId('note-plan-page-regenerate')).toBeNull();
+    const titleInput = screen.getAllByTestId('note-plan-page-title-input')[0]!;
+    expect(titleInput).toBeDisabled();
+
+    session = applyComposerProgress(
+      session,
+      progress({
+        sequence: 2,
+        state: 'running',
+        pageId: 'page-1',
+        message: '正在生成第 1 页配图',
+      })
+    );
+    session = applyComposerProgress(
+      session,
+      progress({
+        sequence: 3,
+        state: 'success',
+        pageId: 'page-1',
+        message: '第 1 页配图已完成',
+      })
+    );
+    session = applyComposerProgress(
+      session,
+      progress({
+        sequence: 4,
+        state: 'running',
+        pageId: 'page-2',
+        message: '正在生成第 2 页配图',
+      })
+    );
+    rerender(
+      <ComposerConversation
+        onOpenDelivery={() => undefined}
+        session={session}
+        stream={emptyStream}
+      />
+    );
+
+    const rows = screen.getAllByTestId('note-plan-page-row');
+    expect(rows[0]).toHaveAttribute('data-image-status', 'ready');
+    expect(rows[1]).toHaveAttribute('data-image-status', 'generating');
+  });
+
+  it('shows generating image status after batch execution_selection progress', () => {
     let session = sessionWithNotePlan(fixtureTimeline());
     session = applyComposerProgress(
       session,
@@ -237,8 +339,9 @@ describe('NotePlan multi-page timeline (P1-5)', () => {
   });
 
   it('exposes canonical outline save and a retryable failure exit', () => {
+    // Reason: L1-3 limits outline save UI to delivered phase.
     const onSave = vi.fn();
-    let session = sessionWithNotePlan(fixtureTimeline());
+    let session = sessionWithNotePlan(fixtureTimeline(), 'delivered');
     const noteTurn = session.turns.find((turn) => turn.kind === 'note_plan');
     if (!noteTurn || noteTurn.kind !== 'note_plan') {
       throw new Error('expected note_plan turn');

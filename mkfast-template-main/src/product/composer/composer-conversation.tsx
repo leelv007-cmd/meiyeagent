@@ -551,13 +551,27 @@ export function ComposerConversation({
             turnKind="note_plan"
           >
             <NotePlanTimelineFrame
-              onEditOutline={onNotePlanOutlineEdit}
-              onSaveOutline={onNotePlanOutlineSave}
-              onRegeneratePage={onNotePlanRegeneratePage}
+              onEditOutline={
+                session.phase === 'delivered'
+                  ? onNotePlanOutlineEdit
+                  : undefined
+              }
+              onSaveOutline={
+                session.phase === 'delivered'
+                  ? onNotePlanOutlineSave
+                  : undefined
+              }
+              onRegeneratePage={
+                session.phase === 'delivered'
+                  ? onNotePlanRegeneratePage
+                  : undefined
+              }
               outlineSaveError={notePlanOutlineSaveError}
               outlineSavePendingPageId={notePlanOutlineSavePendingPageId}
               outlineReadOnly={
-                session.phase === 'submitting' ||
+                // L1-3: running-phase timeline is mountable but read-only;
+                // outline edit / regenerate stay delivered-only (OCC chain).
+                session.phase !== 'delivered' ||
                 Boolean(notePlanOutlineSavePendingPageId)
               }
               regenerateError={notePlanRegenerationError}

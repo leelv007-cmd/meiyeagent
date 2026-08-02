@@ -22,7 +22,10 @@ import type {
 } from '@meiye/contracts';
 
 import type { NotePlanTimeline } from './note-plan-timeline';
-import { applyBatchImageStatusFromHarnessStage } from './note-plan-timeline';
+import {
+  applyBatchImageStatusFromHarnessStage,
+  projectNotePlanTimelineFromPreview,
+} from './note-plan-timeline';
 
 export const COMPOSER_SESSION_STORAGE_VERSION = 'composer-session/v1';
 export const COMPOSER_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
@@ -311,9 +314,11 @@ export function applyComposerProgress(
     ...session,
     progressSequence: frame.sequence,
   };
-  // P1-07: when a multi-page plan is already on the timeline, batch image
-  // status follows harness stage (fixture/recorded path).
-  const withImageStatus = syncNotePlanImageStatusFromProgress(next, frame);
+  // L1-3: mount readonly outline as soon as Core projects notePlanPreview
+  // (style_selected / running phase), before delivery hydration.
+  const withPlan = mountNotePlanPreviewFromProgress(next, frame);
+  // P1-07 / L1-2: batch or per-page image status follows harness stage.
+  const withImageStatus = syncNotePlanImageStatusFromProgress(withPlan, frame);
   if (!frame.message) return withImageStatus;
   if (frame.stage === 'assembly_delivery' && frame.state === 'success') {
     // The 任务总结 belongs to the deliverable, not to the progress rail.
@@ -330,6 +335,27 @@ export function applyComposerProgress(
   return { ...withImageStatus, turns };
 }
 
+function mountNotePlanPreviewFromProgress(
+  session: ComposerSession,
+  frame: WorkflowProgressEnvelope
+): ComposerSession {
+  const preview = frame.notePlanPreview;
+  if (!preview || !session.task?.taskId) return session;
+  // Do not clobber a delivered/hydrated plan that already has image assets.
+  const existing = session.turns.find(
+    (turn): turn is ComposerNotePlanTurn => turn.kind === 'note_plan'
+  );
+  if (
+    existing?.timeline.pages.some(
+      (page) => page.imageStatus === 'ready' && page.imageAssetId
+    )
+  ) {
+    return session;
+  }
+  const timeline = projectNotePlanTimelineFromPreview(preview);
+  return applyComposerNotePlan(session, timeline);
+}
+
 function syncNotePlanImageStatusFromProgress(
   session: ComposerSession,
   frame: WorkflowProgressEnvelope
@@ -344,6 +370,7 @@ function syncNotePlanImageStatusFromProgress(
     {
       stage: frame.stage,
       state: frame.state,
+      ...(frame.pageId ? { pageId: frame.pageId } : {}),
     }
   );
   if (nextTimeline === notePlan.timeline) return session;
