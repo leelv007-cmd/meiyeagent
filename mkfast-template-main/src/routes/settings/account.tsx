@@ -3,34 +3,35 @@ import { UpdateAvatarCard } from '@/components/settings/profile/update-avatar-ca
 import { UpdateNameCard } from '@/components/settings/profile/update-name-card';
 import { PasswordCardWrapper } from '@/components/settings/security/password-card-wrapper';
 import { BillingCard } from '@/components/settings/billing/billing-card';
-import { AccountUsagePanel } from '@/product/account-usage-panel';
+import { MerchantCreditDetailPanel } from '@/product/merchant-credit-detail-panel';
 import { RedemptionCard } from '@/p1/redemption-card';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import {
   settings_account_description,
+  settings_account_credits_heading,
   settings_account_jump_label,
   settings_account_profile_heading,
   settings_account_pwa_heading,
   settings_account_security_heading,
-  settings_account_usage_heading,
   settings_navigation_account,
   settings_title,
 } from '@/locale/paraglide/messages';
 import { InstallPrompt } from '@/pwa/install-prompt';
 
 interface AccountSearch {
-  section?: 'profile' | 'security' | 'usage';
+  section?: 'profile' | 'security' | 'credits';
 }
 
 export const Route = createFileRoute('/settings/account')({
-  validateSearch: (search: Record<string, unknown>): AccountSearch => ({
-    ...(search.section === 'profile' ||
-    search.section === 'security' ||
-    search.section === 'usage'
-      ? { section: search.section }
-      : {}),
-  }),
+  validateSearch: (search: Record<string, unknown>): AccountSearch => {
+    const section = search.section === 'usage' ? 'credits' : search.section;
+    return section === 'profile' ||
+      section === 'security' ||
+      section === 'credits'
+      ? { section }
+      : {};
+  },
   component: AccountPage,
 });
 
@@ -50,7 +51,7 @@ function AccountPage() {
       description={settings_account_description()}
     >
       {/*
-        The three sections were reachable only by typing a `?section=` URL — the
+        The account sections were reachable only by typing a `?section=` URL — the
         legacy aliases (/settings/profile · /settings/security · /settings/billing
         · /settings/credits · /settings/payment) all land here, and the sidebar
         settings group carries only 账户/模型/连接. These in-page jumps make every
@@ -68,7 +69,7 @@ function AccountPage() {
           [
             ['profile', settings_account_profile_heading()],
             ['security', settings_account_security_heading()],
-            ['usage', settings_account_usage_heading()],
+            ['credits', settings_account_credits_heading()],
           ] as const
         ).map(([id, label]) => (
           <Link
@@ -97,11 +98,11 @@ function AccountPage() {
         </h2>
         <PasswordCardWrapper />
       </section>
-      <section className="scroll-mt-16 space-y-4" id="usage">
+      <section className="scroll-mt-16 space-y-4" id="credits">
         <h2 className="text-lg font-semibold">
-          {settings_account_usage_heading()}
+          {settings_account_credits_heading()}
         </h2>
-        <AccountUsagePanel />
+        <MerchantCreditDetailPanel />
         <RedemptionCard />
         <BillingCard />
       </section>

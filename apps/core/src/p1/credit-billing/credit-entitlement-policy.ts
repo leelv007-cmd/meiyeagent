@@ -26,11 +26,10 @@ export class CreditSubscriptionEntitlementPolicy
 
   async resolve(workspaceId: string): Promise<ProductEntitlementPolicy | null> {
     const now = this.clock();
-    const subscription = (await this.subscriptions.listForWorkspace(workspaceId))
-      .filter((candidate) => hasCurrentPaidRights(candidate, now))
-      .sort((left, right) =>
-        right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id)
-      )[0];
+    const subscription = currentPaidCreditSubscription(
+      await this.subscriptions.listForWorkspace(workspaceId),
+      now,
+    );
     const tier = subscription
       ? creditSubscriptionTierForCycle(
           subscription,
@@ -65,6 +64,19 @@ export class CreditSubscriptionEntitlementPolicy
       tier,
     };
   }
+}
+
+export function currentPaidCreditSubscription(
+  subscriptions: readonly CreditSubscription[],
+  now: Date,
+) {
+  return (
+    subscriptions
+      .filter((candidate) => hasCurrentPaidRights(candidate, now))
+      .sort((left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt) || right.id.localeCompare(left.id),
+      )[0] ?? null
+  );
 }
 
 function hasCurrentPaidRights(subscription: CreditSubscription, now: Date) {

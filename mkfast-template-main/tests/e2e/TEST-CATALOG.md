@@ -89,6 +89,7 @@ Verifies the signed-in profile update flow.
 | # | Test name | Flow |
 |---|---|---|
 | 1 | User can update display name | Sign in, open `/settings/account`, change the name, save, verify success toast, and reload to verify persistence. |
+| 2 | **MISSING SPEC** — Merchant credit billing and details stay merchant-safe | Sign in, open `/settings/account?section=credits`, and require the billing card to show the issued current-period credits, plan, interval, and end date. Seed FEFO batches plus reservation, settlement, credited refund, expired-uncredited refund, and expiry rows; verify their merchant-safe operation, status, amount, and batch association render without task, lot, payment-provider, correlation, or actor identifiers. |
 
 ## 5. Runtime Tracer
 

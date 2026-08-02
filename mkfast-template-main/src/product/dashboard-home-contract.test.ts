@@ -259,7 +259,7 @@ test('the merchant can reach「我还剩多少」from the topbar', () => {
   const header = readSource('src/components/layout/dashboard-header.tsx');
 
   assert.match(header, /data-testid="product-usage-entry"/u);
-  assert.match(header, /search=\{\{ section: 'usage' \}\}/u);
+  assert.match(header, /search=\{\{ section: 'credits' \}\}/u);
   assert.match(header, /to="\/settings\/account"/u);
   assert.match(header, /shell_product_usage_entry_aria\(\)/u);
 });

@@ -1714,6 +1714,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       ),
       creditBilling,
       creditEntitlements: executionEntitlementPolicy,
+      creditUsage: productBillingRepository,
       monthlyOutput: productQuoteService,
       modelCatalogTenantAllowlist,
       warn: (message) => console.warn(message),

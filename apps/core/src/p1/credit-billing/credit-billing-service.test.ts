@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { P1Context } from '../foundation/domain.js';
-import { CreditBillingService } from './credit-billing-service.js';
+import {
+  CreditBillingService,
+  type CreditBillingLedgerPort,
+} from './credit-billing-service.js';
 import { MemoryCreditLedger } from './credit-ledger.js';
 import { DEFAULT_CREDIT_PLAN_CATALOG } from './credit-plan-catalog.js';
 import {
@@ -1068,6 +1071,143 @@ test('a resume for a future billing period leaves past_due untouched', async () 
   });
 
   assert.equal((await subscriptions.get(subscriptionId))?.status, 'past_due');
+});
+
+test('credit detail reads transactions before lots to avoid a grant-read race', async () => {
+  const reads: string[] = [];
+  const ledger: CreditBillingLedgerPort = {
+    expireSubscriptionLots() {},
+    grant() {
+      throw new Error('not used');
+    },
+    listLots() {
+      reads.push('lots');
+      return [];
+    },
+    listTransactions() {
+      reads.push('transactions');
+      return [];
+    },
+    project() {
+      return {
+        availableCredits: 0,
+        expiredCredits: 0,
+        grantedCredits: 0,
+        refundedCredits: 0,
+        usedCredits: 0,
+      };
+    },
+  };
+  const service = new CreditBillingService(
+    ledger,
+    new MemoryCreditSubscriptionStore(),
+    { async get() { return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG); } },
+    { async getPaymentMapping() { return null; } },
+    () => new Date('2026-08-01T00:00:00.000Z'),
+  );
+
+  assert.deepEqual(await service.detail(context.workspaceId), {
+    billing: null,
+    lots: [],
+    transactions: [],
+  });
+  assert.deepEqual(reads, ['transactions', 'lots']);
+});
+
+test('credit detail stays readable while a paid cycle waits for its grant', async () => {
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(
+    ledger,
+    subscriptions,
+    () => new Date('2026-08-01T00:00:00.000Z'),
+  );
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-awaiting-credit-grant',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-08-01T00:00:00.000Z',
+    subscriptionId: 'subscription-awaiting-credit-grant',
+  });
+
+  assert.deepEqual(await service.detail(context.workspaceId), {
+    billing: null,
+    lots: [],
+    transactions: [],
+  });
+});
+
+test('credit detail keeps an add-on and expired prior grant while a scheduled upgrade is current', async () => {
+  const now = new Date('2026-09-05T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  await subscriptions.upsert({
+    anchorAt: '2026-08-01T00:00:00.000Z',
+    id: 'subscription-detail-schedule',
+    interval: 'monthly',
+    paidThroughCycle: 2,
+    scheduledChanges: [
+      { effectiveCycle: 1, interval: 'monthly', tier: 'growth' },
+      { effectiveCycle: 2, interval: 'monthly', tier: 'starter' },
+    ],
+    tier: 'starter',
+    workspaceId: context.workspaceId,
+  });
+  ledger.grant({
+    createdAt: '2026-08-01T00:00:00.000Z',
+    credits: 500,
+    expirationDate: '2026-09-01T00:00:00.000Z',
+    grantIdempotencyKey: 'grant:sub:subscription-detail-schedule:0',
+    id: 'subscription-detail-0',
+    transactionType: 'SUBSCRIPTION_RENEWAL',
+    workspaceId: context.workspaceId,
+  });
+  ledger.grant({
+    createdAt: '2026-08-15T00:00:00.000Z',
+    credits: 100,
+    expirationDate: '2026-12-01T00:00:00.000Z',
+    id: 'package-detail-survives',
+    transactionType: 'PURCHASE_PACKAGE',
+    workspaceId: context.workspaceId,
+  });
+  ledger.grant({
+    createdAt: '2026-09-01T00:00:00.000Z',
+    credits: 1_300,
+    expirationDate: '2026-10-01T00:00:00.000Z',
+    grantIdempotencyKey: 'grant:sub:subscription-detail-schedule:1',
+    id: 'subscription-detail-1',
+    transactionType: 'SUBSCRIPTION_RENEWAL',
+    workspaceId: context.workspaceId,
+  });
+  ledger.expireLots({
+    actorId: 'system',
+    correlationId: 'internal',
+    now: '2026-09-01T00:00:00.000Z',
+    workspaceId: context.workspaceId,
+  });
+
+  const detail = await service.detail(context.workspaceId);
+
+  assert.deepEqual(detail.billing, {
+    creditsThisPeriod: 1_300,
+    interval: 'monthly',
+    periodEndsAt: '2026-10-01T00:00:00.000Z',
+    tier: 'growth',
+  });
+  assert.equal(detail.lots.length, 3);
+  assert.ok(
+    detail.lots.some(
+      (lot) =>
+        lot.transactionType === 'PURCHASE_PACKAGE' &&
+        lot.remainingCredits === 100,
+    ),
+  );
+  assert.ok(
+    detail.transactions.some((transaction) => transaction.transactionType === 'EXPIRE'),
+  );
 });
 
 function creditBillingService(

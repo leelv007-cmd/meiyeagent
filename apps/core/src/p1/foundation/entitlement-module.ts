@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   PUBLIC_PLAN_ALLOWANCE_SEED,
+  merchantCreditDetailSchema,
   publicBillingBalanceSchema,
   publicCreditBalanceSchema,
   type PublicCreditBalance,
@@ -30,6 +31,11 @@ import {
   CreditBillingService,
   type CreditPaymentLifecycle,
 } from '../credit-billing/credit-billing-service.js';
+import {
+  compareCreditLotsForFefo,
+  type CreditGrantLot,
+  type CreditLotTransaction,
+} from '../credit-billing/credit-ledger.js';
 import type { ProductEntitlementPolicyPort } from './entitlement-policy.js';
 
 export interface PlanOffer {
@@ -49,6 +55,21 @@ export interface AddOnOffer {
   quantity: number;
   amountMicros: number;
   currency: string;
+}
+
+type CreditUsageStatus =
+  | 'reserved'
+  | 'committed'
+  | 'partially_refunded'
+  | 'refunded';
+
+const MAX_CONCURRENT_CREDIT_USAGE_READS = 16;
+
+interface CreditUsageReader {
+  getUsage(
+    workspaceId: string,
+    taskId: string,
+  ): Promise<{ status: CreditUsageStatus } | null>;
 }
 
 /** Stable idempotency keys for workspace bootstrap provisioning (Tb). */
@@ -341,6 +362,8 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
       creditBilling?: CreditBillingService;
       /** Read-only paid tier source for the legacy projection bridge. */
       creditEntitlements?: ProductEntitlementPolicyPort;
+      /** Read-only task status joins a credit reservation to its settlement. */
+      creditUsage?: CreditUsageReader;
       modelCatalogTenantAllowlist?: readonly string[];
       warn?: (message: string) => void;
     } = {},
@@ -635,6 +658,25 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
         video: bucket('video'),
       });
     }
+    if (action === 'credit_detail') {
+      if (!this.options.creditBilling) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Credit detail is unavailable before credit billing is configured.',
+        );
+      }
+      const detail = await this.options.creditBilling.detail(
+        args.context.workspaceId,
+      );
+      return merchantCreditDetailSchema.parse(
+        await merchantCreditDetailProjection(
+          detail,
+          args.context.workspaceId,
+          this.clock().toISOString(),
+          this.options.creditUsage,
+        ),
+      );
+    }
     if (action === 'projection') {
       if (this.options.creditBilling) {
         const credits = publicCreditBalanceSchema.parse(
@@ -752,6 +794,193 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
       addOns: structuredClone(DEFAULT_ADD_ON_OFFERS),
       trialEnabled: true,
     };
+  }
+}
+
+async function merchantCreditDetailProjection(
+  detail: {
+    billing: {
+      creditsThisPeriod: number;
+      interval: 'single_month' | 'monthly' | 'yearly';
+      periodEndsAt: string;
+      tier: 'trial' | 'starter' | 'growth' | 'pro';
+    } | null;
+    lots: readonly CreditGrantLot[];
+    transactions: readonly CreditLotTransaction[];
+  },
+  workspaceId: string,
+  asOf: string,
+  creditUsage?: CreditUsageReader,
+) {
+  const lots = [...detail.lots].sort(compareCreditLotsForFefo);
+  const batchNumbers = new Map(lots.map((lot, index) => [lot.id, index + 1]));
+  const now = Date.parse(asOf);
+  const transactions = [...detail.transactions].sort(
+    (left, right) =>
+      Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
+      left.id.localeCompare(right.id),
+  );
+  const transactionsById = new Map(
+    transactions.map((transaction) => [transaction.id, transaction]),
+  );
+  const taskIds = new Set(
+    transactions
+      .filter((transaction) => transaction.transactionType === 'USAGE')
+      .map((transaction) => creditUsageTaskId(transaction.operationId))
+      .filter((taskId): taskId is string => taskId !== null),
+  );
+  const usageByTask = new Map(
+    await mapWithConcurrency(
+      [...taskIds],
+      MAX_CONCURRENT_CREDIT_USAGE_READS,
+      async (taskId) => [
+        taskId,
+        (await creditUsage?.getUsage(workspaceId, taskId)) ?? null,
+      ] as const,
+    ),
+  );
+  return {
+    billing: detail.billing,
+    batches: lots.map((lot, index) => ({
+      batchNumber: index + 1,
+      expiresAt: lot.expirationDate,
+      remainingCredits: lot.remainingCredits,
+      source: merchantCreditBatchSource(lot.transactionType),
+      status:
+        lot.expirationDate !== null && Date.parse(lot.expirationDate) <= now
+          ? ('expired' as const)
+          : lot.remainingCredits === 0
+            ? ('depleted' as const)
+            : ('active' as const),
+    })),
+    transactions: transactions.map((transaction) => {
+        const batchNumber = batchNumbers.get(transaction.lotId);
+        if (!batchNumber) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Credit transaction source lot is missing.',
+          );
+        }
+        return {
+        batchNumber,
+        credits: transaction.credits,
+        creditedAmount:
+          transaction.transactionType === 'REFUND' && transaction.credited
+            ? transaction.credits
+            : 0,
+        operation: merchantCreditTransactionOperation(
+          transaction,
+          transactionsById,
+        ),
+        occurredAt: transaction.createdAt,
+        refundDisposition:
+          transaction.transactionType !== 'REFUND'
+            ? ('not_applicable' as const)
+            : transaction.credited
+              ? ('credited' as const)
+              : ('expired_uncredited' as const),
+        status: merchantCreditTransactionStatus(
+          transaction,
+          transactionsById,
+          usageByTask,
+        ),
+        type: merchantCreditTransactionType(transaction.transactionType),
+      };
+      }),
+  };
+}
+
+async function mapWithConcurrency<T, TResult>(
+  values: readonly T[],
+  concurrency: number,
+  map: (value: T) => Promise<TResult>,
+) {
+  const results: TResult[] = new Array(values.length);
+  let nextIndex = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+      while (nextIndex < values.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await map(values[index]!);
+      }
+    }),
+  );
+  return results;
+}
+
+function creditUsageTaskId(operationId: string) {
+  const prefix = 'consume:task:';
+  return operationId.startsWith(prefix)
+    ? operationId.slice(prefix.length) || null
+    : null;
+}
+
+function merchantCreditTransactionStatus(
+  transaction: CreditLotTransaction,
+  transactionsById: ReadonlyMap<string, CreditLotTransaction>,
+  usageByTask: ReadonlyMap<string, { status: CreditUsageStatus } | null>,
+) {
+  const usage =
+    transaction.transactionType === 'USAGE'
+      ? transaction
+      : transaction.relatedTransactionId
+        ? transactionsById.get(transaction.relatedTransactionId)
+        : undefined;
+  const taskId = usage ? creditUsageTaskId(usage.operationId) : null;
+  const usageStatus = taskId ? usageByTask.get(taskId)?.status : null;
+  if (usageStatus === 'committed') return 'settled' as const;
+  if (usageStatus === 'partially_refunded') {
+    return 'partially_refunded' as const;
+  }
+  if (usageStatus === 'refunded') return 'refunded' as const;
+  if (transaction.transactionType === 'REFUND') return 'refunded' as const;
+  if (transaction.transactionType === 'USAGE') return 'reserved' as const;
+  return 'not_applicable' as const;
+}
+
+function merchantCreditTransactionOperation(
+  transaction: CreditLotTransaction,
+  transactionsById: ReadonlyMap<string, CreditLotTransaction>,
+) {
+  const usage =
+    transaction.transactionType === 'USAGE'
+      ? transaction
+      : transaction.relatedTransactionId
+        ? transactionsById.get(transaction.relatedTransactionId)
+        : undefined;
+  return usage && creditUsageTaskId(usage.operationId)
+    ? ('creation' as const)
+    : ('account_credit' as const);
+}
+
+function merchantCreditBatchSource(
+  type: CreditGrantLot['transactionType'],
+) {
+  switch (type) {
+    case 'REGISTER_GIFT':
+      return 'trial' as const;
+    case 'SUBSCRIPTION_RENEWAL':
+      return 'subscription' as const;
+    case 'PURCHASE_PACKAGE':
+      return 'booster' as const;
+    case 'REDEMPTION_CODE':
+      return 'redemption' as const;
+  }
+}
+
+function merchantCreditTransactionType(
+  type: CreditLotTransaction['transactionType'],
+) {
+  switch (type) {
+    case 'USAGE':
+      return 'reserve' as const;
+    case 'REFUND':
+      return 'refund' as const;
+    case 'EXPIRE':
+      return 'expire' as const;
+    default:
+      return 'grant' as const;
   }
 }
 

@@ -21,11 +21,11 @@ test('explains every way reserved usage can be released', () => {
 
   assert.equal(
     messages.zh?.account_usage_terms_explanation,
-    '可用=还能生成的条数；预留=进行中任务暂扣；已结算=已完成消耗；已释放=失败或已取消任务退回，以及到期未用的预留。'
+    '可用积分=当前可用于创作的积分；预扣=进行中作业暂扣的积分；已结算=已完成作业消耗的积分；已释放=失败、取消或过期后退回的积分。'
   );
   assert.equal(
     messages.en?.account_usage_terms_explanation,
-    'Available = outputs you can still generate; Reserved = held for work in progress; Settled = completed usage; Released = returned after a failed or cancelled task, or after an unused reservation expires.'
+    'Available credits = credits you can use now; Reserved = credits held for work in progress; Settled = credits used by finished work; Released = credits returned after failure, cancellation, or expiry.'
   );
 });
 

@@ -1,0 +1,258 @@
+import type { MerchantCreditDetail } from '@meiye/contracts';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  credit_detail_batch_balance,
+  credit_detail_batch_expiry,
+  credit_detail_batch_source,
+  credit_detail_batch_status,
+  credit_detail_batch_status_active,
+  credit_detail_batch_status_depleted,
+  credit_detail_batch_status_expired,
+  credit_detail_batches_title,
+  credit_detail_description,
+  credit_detail_load_error,
+  credit_detail_load_error_title,
+  credit_detail_refund_expired_uncredited,
+  credit_detail_retry,
+  credit_detail_source_booster,
+  credit_detail_source_redemption,
+  credit_detail_source_subscription,
+  credit_detail_source_trial,
+  credit_detail_title,
+  credit_detail_transaction_batch,
+  credit_detail_transaction_credits,
+  credit_detail_transaction_operation,
+  credit_detail_transaction_operation_account_credit,
+  credit_detail_transaction_operation_creation,
+  credit_detail_transaction_status,
+  credit_detail_transaction_status_not_applicable,
+  credit_detail_transaction_status_partially_refunded,
+  credit_detail_transaction_status_refunded,
+  credit_detail_transaction_status_reserved,
+  credit_detail_transaction_status_settled,
+  credit_detail_transaction_time,
+  credit_detail_transaction_type,
+  credit_detail_transaction_type_expire,
+  credit_detail_transaction_type_grant,
+  credit_detail_transaction_type_refund,
+  credit_detail_transaction_type_reserve,
+  credit_detail_transactions_title,
+} from '@/locale/paraglide/messages';
+import { formatLocaleDate, formatLocaleDateTime } from '@/lib/locale';
+import { queryP1 } from '@/p1/client';
+import { p1QueryKeys } from '@/p1/query-keys';
+import { expiredUncreditedRefund } from '@/product/merchant-credit-detail';
+import { IconRefresh } from '@tabler/icons-react';
+import { useQuery } from '@tanstack/react-query';
+
+type MerchantCreditTransaction = MerchantCreditDetail['transactions'][number];
+
+const BATCH_SOURCE_LABELS: Record<
+  MerchantCreditDetail['batches'][number]['source'],
+  () => string
+> = {
+  booster: credit_detail_source_booster,
+  redemption: credit_detail_source_redemption,
+  subscription: credit_detail_source_subscription,
+  trial: credit_detail_source_trial,
+};
+
+const BATCH_STATUS_LABELS: Record<
+  MerchantCreditDetail['batches'][number]['status'],
+  () => string
+> = {
+  active: credit_detail_batch_status_active,
+  depleted: credit_detail_batch_status_depleted,
+  expired: credit_detail_batch_status_expired,
+};
+
+const TRANSACTION_STATUS_LABELS: Record<
+  MerchantCreditTransaction['status'],
+  () => string
+> = {
+  not_applicable: credit_detail_transaction_status_not_applicable,
+  partially_refunded: credit_detail_transaction_status_partially_refunded,
+  refunded: credit_detail_transaction_status_refunded,
+  reserved: credit_detail_transaction_status_reserved,
+  settled: credit_detail_transaction_status_settled,
+};
+
+const TRANSACTION_TYPE_LABELS: Record<
+  MerchantCreditTransaction['type'],
+  () => string
+> = {
+  expire: credit_detail_transaction_type_expire,
+  grant: credit_detail_transaction_type_grant,
+  refund: credit_detail_transaction_type_refund,
+  reserve: credit_detail_transaction_type_reserve,
+};
+
+const TRANSACTION_OPERATION_LABELS: Record<
+  MerchantCreditTransaction['operation'],
+  () => string
+> = {
+  account_credit: credit_detail_transaction_operation_account_credit,
+  creation: credit_detail_transaction_operation_creation,
+};
+
+export function MerchantCreditDetailPanel() {
+  const query = useQuery({
+    queryKey: p1QueryKeys.request('entitlements', 'credit_detail'),
+    queryFn: ({ signal }) =>
+      queryP1<MerchantCreditDetail>(
+        'entitlements',
+        { action: 'credit_detail', payload: {} },
+        signal
+      ),
+  });
+
+  if (query.isPending) {
+    return (
+      <Card data-testid="merchant-credit-detail-loading">
+        <CardHeader>
+          <CardTitle>{credit_detail_title()}</CardTitle>
+          <CardDescription>{credit_detail_description()}</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (query.error || !query.data) {
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>{credit_detail_load_error_title()}</AlertTitle>
+        <AlertDescription className="flex items-center justify-between gap-3">
+          {credit_detail_load_error()}
+          <Button
+            onClick={() => void query.refetch()}
+            size="sm"
+            variant="outline"
+          >
+            <IconRefresh />
+            {credit_detail_retry()}
+          </Button>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+
+  return (
+    <Card data-testid="merchant-credit-detail">
+      <CardHeader>
+        <CardTitle>{credit_detail_title()}</CardTitle>
+        <CardDescription>{credit_detail_description()}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-8">
+        <section aria-labelledby="merchant-credit-batches">
+          <h3 className="mb-3 font-medium" id="merchant-credit-batches">
+            {credit_detail_batches_title()}
+          </h3>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{credit_detail_batch_source()}</TableHead>
+                <TableHead>{credit_detail_batch_balance()}</TableHead>
+                <TableHead>{credit_detail_batch_expiry()}</TableHead>
+                <TableHead>{credit_detail_batch_status()}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {query.data.batches.map((batch) => (
+                <TableRow key={batch.batchNumber}>
+                  <TableCell>{BATCH_SOURCE_LABELS[batch.source]()}</TableCell>
+                  <TableCell className="tabular-nums">
+                    {batch.remainingCredits}
+                  </TableCell>
+                  <TableCell>
+                    {batch.expiresAt ? formatLocaleDate(batch.expiresAt) : '—'}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="outline">
+                      {BATCH_STATUS_LABELS[batch.status]()}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </section>
+
+        <section aria-labelledby="merchant-credit-transactions">
+          <h3 className="mb-3 font-medium" id="merchant-credit-transactions">
+            {credit_detail_transactions_title()}
+          </h3>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{credit_detail_transaction_time()}</TableHead>
+                <TableHead>{credit_detail_transaction_operation()}</TableHead>
+                <TableHead>{credit_detail_transaction_type()}</TableHead>
+                <TableHead>{credit_detail_transaction_credits()}</TableHead>
+                <TableHead>{credit_detail_transaction_batch()}</TableHead>
+                <TableHead>{credit_detail_transaction_status()}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {query.data.transactions.map((transaction, index) => {
+                const expiredRefund = expiredUncreditedRefund(transaction);
+                return (
+                  <TableRow
+                    key={`${transaction.occurredAt}-${transaction.batchNumber}-${index}`}
+                  >
+                    <TableCell>
+                      {formatLocaleDateTime(transaction.occurredAt)}
+                    </TableCell>
+                    <TableCell>
+                      {TRANSACTION_OPERATION_LABELS[transaction.operation]()}
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <div>{TRANSACTION_TYPE_LABELS[transaction.type]()}</div>
+                        {expiredRefund ? (
+                          <p className="text-xs text-muted-foreground">
+                            {credit_detail_refund_expired_uncredited({
+                              count: expiredRefund.credits,
+                            })}
+                          </p>
+                        ) : null}
+                      </div>
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {transaction.credits}
+                    </TableCell>
+                    <TableCell>#{transaction.batchNumber}</TableCell>
+                    <TableCell>
+                      {TRANSACTION_STATUS_LABELS[transaction.status]()}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </section>
+      </CardContent>
+    </Card>
+  );
+}

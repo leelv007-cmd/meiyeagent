@@ -109,7 +109,15 @@ test('legacy locations redirect only through the frozen internal table', () => {
   assert.equal(resolveLegacyRedirect('/settings/files'), '/dashboard/assets');
   assert.equal(
     resolveLegacyRedirect('/settings/credits'),
-    '/settings/account?section=usage'
+    '/settings/account?section=credits'
+  );
+  assert.equal(
+    resolveLegacyRedirect('/settings/billing'),
+    '/settings/account?section=credits'
+  );
+  assert.equal(
+    resolveLegacyRedirect('/settings/payment'),
+    '/settings/account?section=credits'
   );
   assert.equal(
     resolveLegacyRedirect('/dashboard/store?tab=assets'),

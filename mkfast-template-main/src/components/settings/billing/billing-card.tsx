@@ -1,23 +1,5 @@
-import {
-  settings_billing_card_cancels_at_period_end,
-  settings_billing_card_current_plan,
-  settings_billing_card_current_plan_description,
-  settings_billing_card_free,
-  settings_billing_card_free_plan_message,
-  settings_billing_card_lifetime_message,
-  settings_billing_card_manage_billing,
-  settings_billing_card_manage_subscription,
-  settings_billing_card_no_plan,
-  settings_billing_card_period_ends,
-  settings_billing_card_period_start,
-  settings_billing_card_retry,
-  settings_billing_card_status_active,
-  settings_billing_card_status_trial,
-  settings_billing_card_trial_ends,
-  settings_billing_card_upgrade_plan,
-} from '@/locale/paraglide/messages';
-import { CustomerPortalButton } from '@/components/pricing/customer-portal-button';
-import { Badge } from '@/components/ui/badge';
+import type { MerchantCreditDetail } from '@meiye/contracts';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Card,
@@ -28,241 +10,157 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { authClient } from '@/auth/client';
-import { formatDate } from '@/lib/formatter';
-import { cn } from '@/lib/utils';
-import { useCurrentPlan } from '@/hooks/use-payment';
-import { getPricePlans } from '@/lib/price-plan';
-import { Link } from '@tanstack/react-router';
+import {
+  credit_billing_credits_this_period,
+  credit_billing_current_plan,
+  credit_billing_description,
+  credit_billing_interval,
+  credit_billing_interval_monthly,
+  credit_billing_interval_single_month,
+  credit_billing_interval_yearly,
+  credit_billing_load_error,
+  credit_billing_manage,
+  credit_billing_no_active_subscription,
+  credit_billing_period_ends,
+  credit_billing_plan_growth,
+  credit_billing_plan_pro,
+  credit_billing_plan_starter,
+  credit_billing_plan_trial,
+  credit_billing_retry,
+  credit_billing_title,
+} from '@/locale/paraglide/messages';
+import { formatLocaleDate } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
-import { IconCircleCheck, IconClock, IconRefresh } from '@tabler/icons-react';
-import { useCallback } from 'react';
-/** Card container: full width, no bottom padding */
-const cardClass = cn('w-full overflow-hidden pt-6 pb-0 flex flex-col');
-/** Footer: right-aligned primary action, muted background */
-const footerClass = cn(
-  'mt-2 px-6 py-4 flex justify-end items-center bg-muted rounded-none'
-);
-/**
- * Billing card: current plan and subscription status
- */
+import { queryP1 } from '@/p1/client';
+import { p1QueryKeys } from '@/p1/query-keys';
+import { Link } from '@tanstack/react-router';
+import { IconRefresh } from '@tabler/icons-react';
+import { useQuery } from '@tanstack/react-query';
+
+const cardClass = 'w-full overflow-hidden';
+const footerClass = 'flex justify-end bg-muted px-6 py-4';
+
+const PLAN_LABELS: Record<
+  NonNullable<MerchantCreditDetail['billing']>['tier'],
+  () => string
+> = {
+  growth: credit_billing_plan_growth,
+  pro: credit_billing_plan_pro,
+  starter: credit_billing_plan_starter,
+  trial: credit_billing_plan_trial,
+};
+
+const INTERVAL_LABELS: Record<
+  NonNullable<MerchantCreditDetail['billing']>['interval'],
+  () => string
+> = {
+  monthly: credit_billing_interval_monthly,
+  single_month: credit_billing_interval_single_month,
+  yearly: credit_billing_interval_yearly,
+};
+
+/** Current subscription facts are read from the merchant-safe credit contract. */
 export function BillingCard() {
-  const { data: session, isPending: isLoadingSession } =
-    authClient.useSession();
-  const currentUser = session?.user;
-  const {
-    data: paymentData,
-    isLoading: isLoadingPayment,
-    error: loadPaymentError,
-    refetch: refetchPayment,
-  } = useCurrentPlan(!!currentUser?.id);
-  const currentPlan = paymentData?.currentPlan ?? null;
-  const subscription = paymentData?.subscription ?? null;
-  const isLifetimeMember = currentPlan?.isLifetime ?? false;
-  // Resolve display name from config (fallback to plan id or "Free")
-  const plansRecord = getPricePlans();
-  const plans = Object.values(plansRecord);
-  const currentPlanWithName = currentPlan
-    ? (plans.find((p) => p.id === currentPlan.id) ?? null)
-    : null;
-  const isFreePlan = currentPlan?.isFree ?? false;
-  const currentPeriodStart = subscription?.currentPeriodStart
-    ? formatDate(subscription.currentPeriodStart)
-    : null;
-  const currentPeriodEnd = subscription?.currentPeriodEnd
-    ? formatDate(subscription.currentPeriodEnd)
-    : null;
-  const trialEndDate = subscription?.trialEndDate
-    ? formatDate(subscription.trialEndDate)
-    : null;
-  const handleRetry = useCallback(() => refetchPayment(), [refetchPayment]);
-  // Loading: skeleton for header, content and footer (footer button area right-aligned)
-  if (isLoadingPayment || isLoadingSession) {
+  const query = useQuery({
+    queryKey: p1QueryKeys.request('entitlements', 'credit_detail'),
+    queryFn: ({ signal }) =>
+      queryP1<MerchantCreditDetail>(
+        'entitlements',
+        { action: 'credit_detail', payload: {} },
+        signal
+      ),
+  });
+
+  if (query.isPending) {
     return (
-      <Card className={cardClass}>
+      <Card className={cardClass} data-testid="credit-billing-card-loading">
         <CardHeader>
-          <CardTitle className="text-lg font-semibold">
-            {settings_billing_card_current_plan()}
-          </CardTitle>
-          <CardDescription>
-            {settings_billing_card_current_plan_description()}
-          </CardDescription>
+          <CardTitle>{credit_billing_title()}</CardTitle>
+          <CardDescription>{credit_billing_description()}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4 flex-1">
-          <div className="flex items-center justify-start space-x-4">
-            <Skeleton className="h-8 w-1/5" />
-          </div>
-          <div className="text-sm text-muted-foreground space-y-2">
-            <Skeleton className="h-6 w-3/5" />
-          </div>
+        <CardContent className="space-y-3">
+          <Skeleton className="h-8 w-1/3" />
+          <Skeleton className="h-16 w-full" />
         </CardContent>
-        <CardFooter className={footerClass}>
-          <Skeleton className="h-8 w-1/4" />
-        </CardFooter>
       </Card>
     );
   }
-  // Error: show message in content and retry button in footer (right-aligned)
-  if (loadPaymentError) {
+
+  if (query.error || !query.data) {
     return (
-      <Card className={cardClass}>
-        <CardHeader>
-          <CardTitle className="text-lg font-semibold">
-            {settings_billing_card_current_plan()}
-          </CardTitle>
-          <CardDescription>
-            {settings_billing_card_current_plan_description()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4 flex-1">
-          <div className="text-destructive text-sm">
-            {loadPaymentError?.message}
-          </div>
-        </CardContent>
-        <CardFooter className={footerClass}>
-          <Button variant="outline" onClick={handleRetry}>
-            <IconRefresh className="size-4 mr-1" />
-            {settings_billing_card_retry()}
-          </Button>
-        </CardFooter>
-      </Card>
-    );
-  }
-  // No plan: show noPlan message and upgrade CTA in footer (right-aligned)
-  if (!currentPlan) {
-    return (
-      <Card className={cardClass}>
-        <CardHeader>
-          <CardTitle className="text-lg font-semibold">
-            {settings_billing_card_current_plan()}
-          </CardTitle>
-          <CardDescription>
-            {settings_billing_card_current_plan_description()}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="text-sm text-muted-foreground">
-            {settings_billing_card_no_plan()}
-          </div>
-        </CardContent>
-        <CardFooter className={footerClass}>
-          <Link
-            to={Routes.Pricing}
-            className={buttonVariants({ variant: 'default' })}
+      <Alert variant="destructive">
+        <AlertTitle>{credit_billing_title()}</AlertTitle>
+        <AlertDescription className="flex items-center justify-between gap-3">
+          {credit_billing_load_error()}
+          <Button
+            onClick={() => void query.refetch()}
+            size="sm"
+            variant="outline"
           >
-            {settings_billing_card_upgrade_plan()}
-          </Link>
-        </CardFooter>
-      </Card>
+            <IconRefresh />
+            {credit_billing_retry()}
+          </Button>
+        </AlertDescription>
+      </Alert>
     );
   }
-  // Main state: plan name, status badge, period/trial info, single primary action in footer
+
+  const billing = query.data.billing;
   return (
-    <Card className={cardClass}>
+    <Card className={cardClass} data-testid="credit-billing-card">
       <CardHeader>
-        <CardTitle className="text-lg font-semibold">
-          {settings_billing_card_current_plan()}
-        </CardTitle>
-        <CardDescription>
-          {settings_billing_card_current_plan_description()}
-        </CardDescription>
+        <CardTitle>{credit_billing_title()}</CardTitle>
+        <CardDescription>{credit_billing_description()}</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4 flex-1">
-        {/* Plan name and status badge (trialing | active) */}
-        <div className="flex items-center justify-start space-x-4">
-          <div className="text-3xl font-medium">
-            {currentPlanWithName?.name ??
-              currentPlan?.id ??
-              settings_billing_card_free()}
-          </div>
-          {subscription &&
-            (subscription.status === 'trialing' ||
-              subscription.status === 'active') && (
-              <Badge
-                variant="outline"
-                className={cn(
-                  'text-xs border-transparent',
-                  subscription.status === 'trialing'
-                    ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400'
-                    : 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
-                )}
-              >
-                {subscription.status === 'trialing' ? (
-                  <span className="flex items-center space-x-2">
-                    <IconClock className="size-3 mr-1" />
-                    {settings_billing_card_status_trial()}
-                  </span>
-                ) : (
-                  <span className="flex items-center space-x-2">
-                    <IconCircleCheck className="size-3 mr-1" />
-                    {settings_billing_card_status_active()}
-                  </span>
-                )}
-              </Badge>
-            )}
-        </div>
-
-        {/* Free plan hint */}
-        {isFreePlan && (
-          <div className="text-sm text-muted-foreground">
-            {settings_billing_card_free_plan_message()}
-          </div>
-        )}
-
-        {/* Lifetime plan hint */}
-        {isLifetimeMember && (
-          <div className="text-sm text-muted-foreground">
-            {settings_billing_card_lifetime_message()}
-          </div>
-        )}
-
-        {/* Subscription period and trial dates */}
-        {subscription && (
-          <div className="text-sm text-muted-foreground space-y-2">
-            {currentPeriodStart && (
-              <div className="text-muted-foreground">
-                {settings_billing_card_period_start()} {currentPeriodStart}
-              </div>
-            )}
-            {currentPeriodEnd && (
-              <div className="text-muted-foreground">
-                {settings_billing_card_period_ends()} {currentPeriodEnd}
-                {subscription.cancelAtPeriodEnd &&
-                  ` ${settings_billing_card_cancels_at_period_end()}`}
-              </div>
-            )}
-            {subscription.status === 'trialing' && trialEndDate && (
-              <div className="text-amber-600">
-                {settings_billing_card_trial_ends()} {trialEndDate}
-              </div>
-            )}
-          </div>
+      <CardContent className="space-y-3">
+        {billing ? (
+          <dl className="grid gap-3 text-sm sm:grid-cols-2">
+            <div>
+              <dt className="text-muted-foreground">
+                {credit_billing_current_plan()}
+              </dt>
+              <dd className="mt-1 font-medium">
+                {PLAN_LABELS[billing.tier]()}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">
+                {credit_billing_interval()}
+              </dt>
+              <dd className="mt-1 font-medium">
+                {INTERVAL_LABELS[billing.interval]()}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">
+                {credit_billing_credits_this_period()}
+              </dt>
+              <dd className="mt-1 font-medium tabular-nums">
+                {billing.creditsThisPeriod}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">
+                {credit_billing_period_ends()}
+              </dt>
+              <dd className="mt-1 font-medium">
+                {formatLocaleDate(billing.periodEndsAt)}
+              </dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {credit_billing_no_active_subscription()}
+          </p>
         )}
       </CardContent>
       <CardFooter className={footerClass}>
-        {/* Free: show upgrade button */}
-        {isFreePlan && (
-          <Link
-            to={Routes.Pricing}
-            className={buttonVariants({ variant: 'default' })}
-          >
-            {settings_billing_card_upgrade_plan()}
-          </Link>
-        )}
-
-        {/* Lifetime: show manage billing */}
-        {isLifetimeMember && currentUser && (
-          <CustomerPortalButton>
-            {settings_billing_card_manage_billing()}
-          </CustomerPortalButton>
-        )}
-
-        {/* Subscription: show manage subscription (only when not free and not lifetime) */}
-        {!isFreePlan && !isLifetimeMember && currentUser && (
-          <CustomerPortalButton>
-            {settings_billing_card_manage_subscription()}
-          </CustomerPortalButton>
-        )}
+        <Link
+          className={buttonVariants({ variant: 'default' })}
+          to={Routes.Pricing}
+        >
+          {credit_billing_manage()}
+        </Link>
       </CardFooter>
     </Card>
   );

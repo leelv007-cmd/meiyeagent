@@ -7,10 +7,17 @@ import {
   type PaymentMappingInterval,
 } from '../foundation/payment-mapping.js';
 import type { CreditPlanCatalog } from './credit-plan-catalog.js';
-import type { CreditBalanceProjection, CreditGrantLot, GrantCreditsInput } from './credit-ledger.js';
+import type {
+  CreditBalanceProjection,
+  CreditGrantLot,
+  CreditLotTransaction,
+  GrantCreditsInput,
+} from './credit-ledger.js';
 import {
+  creditSubscriptionCycle,
   creditSubscriptionCycleIndexAt,
   creditSubscriptionIntervalForCycle,
+  creditSubscriptionGrantKey,
   creditSubscriptionTierForCycle,
   currentCreditSubscriptionCycle,
   DeferredCreditPaymentEvent,
@@ -18,6 +25,7 @@ import {
   type CreditSubscriptionInterval,
   type CreditSubscriptionStore,
 } from './credit-subscription-scheduler.js';
+import { currentPaidCreditSubscription } from './credit-entitlement-policy.js';
 
 export type CreditPaymentLifecycle =
   | 'activate'
@@ -39,6 +47,9 @@ export interface CreditPaymentSettlementInput {
 export interface CreditBillingLedgerPort {
   grant(input: GrantCreditsInput): Promise<CreditGrantLot> | CreditGrantLot;
   listLots(workspaceId: string): Promise<readonly CreditGrantLot[]> | readonly CreditGrantLot[];
+  listTransactions?(
+    workspaceId: string,
+  ): Promise<readonly CreditLotTransaction[]> | readonly CreditLotTransaction[];
   project(
     workspaceId: string,
     asOf?: string,
@@ -54,6 +65,13 @@ export interface CreditBillingLedgerPort {
 
 export interface CreditPlanCatalogSource {
   get(): Promise<CreditPlanCatalog>;
+}
+
+export interface CreditBillingSummary {
+  creditsThisPeriod: number;
+  interval: CreditSubscriptionInterval;
+  periodEndsAt: string;
+  tier: CreditSubscription['tier'];
 }
 
 export interface CreditPaymentMappingSource {
@@ -408,6 +426,68 @@ export class CreditBillingService {
 
   async balance(workspaceId: string) {
     return this.ledger.project(workspaceId, this.clock().toISOString());
+  }
+
+  async detail(workspaceId: string) {
+    if (!this.ledger.listTransactions) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Credit ledger detail reader is not configured.',
+      );
+    }
+    // Read transactions first. A newly committed grant cannot then surface a
+    // transaction whose source lot is absent from the following lot read.
+    const transactions = await this.ledger.listTransactions(workspaceId);
+    const lots = await this.ledger.listLots(workspaceId);
+    const billing = await this.billingFromLots(workspaceId, lots);
+    return { billing, lots, transactions };
+  }
+
+  async billing(workspaceId: string): Promise<CreditBillingSummary | null> {
+    return this.billingFromLots(
+      workspaceId,
+      await this.ledger.listLots(workspaceId),
+    );
+  }
+
+  private async billingFromLots(
+    workspaceId: string,
+    lots: readonly CreditGrantLot[],
+  ): Promise<CreditBillingSummary | null> {
+    const now = this.clock();
+    const subscription = currentPaidCreditSubscription(
+      await this.subscriptions.listForWorkspace(workspaceId),
+      now,
+    );
+    if (!subscription) return null;
+
+    const currentCycle = currentCreditSubscriptionCycle(
+      subscription,
+      now.toISOString(),
+    );
+    const cycleIndex =
+      currentCycle?.cycleIndex ??
+      Math.max(0, subscription.paidThroughCycle - 1);
+    const tier = creditSubscriptionTierForCycle(subscription, cycleIndex);
+    const grantKey = creditSubscriptionGrantKey(
+      subscription.grantLineageId,
+      subscription.grantCycleOffset + cycleIndex,
+    );
+    const issuedLot = lots.find(
+      (lot) => lot.grantIdempotencyKey === grantKey,
+    );
+    // Payment coverage and grant issuance are independently durable. Until the
+    // scheduler catches up, preserve the ledger detail but do not invent a
+    // period credit amount from today's mutable plan configuration.
+    if (!issuedLot) return null;
+    return {
+      creditsThisPeriod: issuedLot.originalCredits,
+      interval: creditSubscriptionIntervalForCycle(subscription, cycleIndex),
+      periodEndsAt:
+        currentCycle?.endsAt ??
+        creditSubscriptionCycle(subscription.anchorAt, cycleIndex).endsAt,
+      tier,
+    };
   }
 
   async grantAddOn(

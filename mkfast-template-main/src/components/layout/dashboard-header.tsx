@@ -103,7 +103,7 @@ export function DashboardHeader({
           {actions}
           {/*
             「我还剩多少」was reachable only by typing the URL: the pricing CTA
-            answers「买什么」, not「剩多少」. The usage section is the one place
+            answers「买什么」, not「剩多少」. The credits section is the one place
             that answers it, so the capsule links straight at it. Literal `to`
             instead of `Routes.SettingsAccount` — the typed router needs the
             path literal to accept `search`.
@@ -115,7 +115,7 @@ export function DashboardHeader({
               aria-label={shell_product_usage_entry_aria()}
               className="meiye-product-subscription-entry"
               data-testid="product-usage-entry"
-              search={{ section: 'usage' }}
+              search={{ section: 'credits' }}
               to="/settings/account"
             >
               <IconGauge aria-hidden="true" className="size-4" />
