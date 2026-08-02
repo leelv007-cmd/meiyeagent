@@ -18,6 +18,7 @@ import {
   MemoryFoundationRepository,
   P1ApplicationService,
 } from '../foundation/index.js';
+import type { ContentPackageDestinationProjectionPort } from '../execution-spine/content-package-destination-projection.js';
 import {
   assertContentPackageExportAllowed,
   buildContentPackage,
@@ -47,6 +48,7 @@ const NOW = '2026-07-15T09:00:00.000Z';
 
 function setup(
   options: {
+    contentPackageDestinationProjection?: ContentPackageDestinationProjectionPort;
     contentPackageExporter?: ContentPackageExportPort;
     contentPackageRightsBasisResolver?: ContentPackageRightsBasisResolverPort;
     contentPackageRightsResolver?: ContentPackageRightsResolverPort;
@@ -78,6 +80,12 @@ function setup(
   operations.grantMembership(otherContext.userId, otherContext.workspaceId);
   const operationsService = new OperationsApplicationService(operations, {
     canvasExporter: new RecordedCanvasExportAdapter(),
+    ...(options.contentPackageDestinationProjection
+      ? {
+          contentPackageDestinationProjection:
+            options.contentPackageDestinationProjection,
+        }
+      : {}),
     ...(options.creationExecutor
       ? { creationExecutor: options.creationExecutor }
       : {}),
@@ -3414,6 +3422,162 @@ describe('ContentPackage application service contract', () => {
     assert.equal(created.statusLabel, '创作中');
     assert.deepEqual(detail, created);
     assert.deepEqual(library, [created]);
+  });
+
+  it('projects the immutable destination for public reads without rewriting the compact package', async () => {
+    const projectionCalls: Array<{
+      references: ReadonlyArray<{ packageId: string; snapshotId: string }>;
+      workspaceId: string;
+    }> = [];
+    const { context, operations, operationsService } = setup({
+      contentPackageDestinationProjection: {
+        async resolve(input) {
+          projectionCalls.push(input);
+          return input.references.map(({ packageId, snapshotId }) => ({
+            contentPackagePlatform: 'wechat_moments' as const,
+            distributionTarget: 'manual_copy' as const,
+            packageId,
+            snapshotId,
+          }));
+        },
+      },
+    });
+    const created = await operationsService.createContentPackage(context, {
+      kind: 'image_text',
+      source: {
+        assetIds: [],
+        creationExecutionSnapshot: {
+          id: 'snapshot-moments',
+          revision: 1,
+          schemaVersion: 'creation-execution-snapshot/v1',
+        },
+      },
+    });
+    const second = await operationsService.createContentPackage(context, {
+      kind: 'image_text',
+      source: {
+        assetIds: [],
+        creationExecutionSnapshot: {
+          id: 'snapshot-moments-second',
+          revision: 1,
+          schemaVersion: 'creation-execution-snapshot/v1',
+        },
+      },
+    });
+
+    const detail = await operationsService.getContentPackage(
+      context,
+      created.id
+    );
+    const listed = await operationsService.listContentPackages(context);
+    const publicDetail = (await new OperationsFoundationModule(
+      operationsService
+    ).query({
+      context,
+      input: {
+        action: 'content_package',
+        payload: { packageId: created.id },
+      },
+    })) as ContentPackage;
+
+    for (const projected of [
+      detail,
+      listed.find((contentPackage) => contentPackage.id === created.id),
+      publicDetail,
+    ]) {
+      assert.equal(
+        projected?.source.creationExecutionSnapshot?.contentPackagePlatform,
+        'wechat_moments'
+      );
+      assert.equal(
+        projected?.source.creationExecutionSnapshot?.distributionTarget,
+        'manual_copy'
+      );
+    }
+    const stored = (
+      await operations.loadWorkspace(context.workspaceId)
+    )?.contentPackages.find(
+      (contentPackage) => contentPackage.id === created.id
+    );
+    assert.equal(
+      stored?.source.creationExecutionSnapshot?.contentPackagePlatform,
+      undefined
+    );
+    assert.equal(
+      stored?.source.creationExecutionSnapshot?.distributionTarget,
+      undefined
+    );
+    assert.deepEqual(projectionCalls[0]?.references, [
+      { packageId: created.id, snapshotId: 'snapshot-moments' },
+    ]);
+    assert.deepEqual(
+      [...(projectionCalls[1]?.references ?? [])].sort((left, right) =>
+        left.packageId.localeCompare(right.packageId)
+      ),
+      [
+        { packageId: created.id, snapshotId: 'snapshot-moments' },
+        {
+          packageId: second.id,
+          snapshotId: 'snapshot-moments-second',
+        },
+      ].sort((left, right) => left.packageId.localeCompare(right.packageId))
+    );
+    assert.deepEqual(projectionCalls[2]?.references, [
+      { packageId: created.id, snapshotId: 'snapshot-moments' },
+    ]);
+  });
+
+  it('removes an unverified compact destination when immutable projection is unavailable', async () => {
+    const { context, operations, operationsService } = setup();
+    const created = await operationsService.createContentPackage(context, {
+      kind: 'image_text',
+      source: {
+        assetIds: [],
+        creationExecutionSnapshot: {
+          contentPackagePlatform: 'wechat_moments',
+          distributionTarget: 'manual_copy',
+          id: 'snapshot-unverified-destination',
+          revision: 1,
+          schemaVersion: 'creation-execution-snapshot/v1',
+        },
+      },
+    });
+
+    const detail = await operationsService.getContentPackage(
+      context,
+      created.id
+    );
+    const listed = await operationsService.listContentPackages(context);
+    const publicDetail = (await new OperationsFoundationModule(
+      operationsService
+    ).query({
+      context,
+      input: {
+        action: 'content_package',
+        payload: { packageId: created.id },
+      },
+    })) as ContentPackage;
+
+    for (const sanitized of [detail, listed[0], publicDetail]) {
+      assert.equal(
+        sanitized?.source.creationExecutionSnapshot?.contentPackagePlatform,
+        undefined
+      );
+      assert.equal(
+        sanitized?.source.creationExecutionSnapshot?.distributionTarget,
+        undefined
+      );
+    }
+    const stored = (await operations.loadWorkspace(context.workspaceId))
+      ?.contentPackages[0];
+    assert.equal(
+      stored?.source.creationExecutionSnapshot?.contentPackagePlatform,
+      'wechat_moments'
+    );
+    assert.equal(
+      stored?.source.creationExecutionSnapshot?.distributionTarget,
+      'manual_copy'
+    );
   });
 
   it('does not expose a package to another workspace', async () => {

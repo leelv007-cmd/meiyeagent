@@ -26,6 +26,7 @@ import {
 } from '../result-delivery/visual-adoption.js';
 import { VisualAdoptionError } from '../result-delivery/errors.js';
 import type { BillingLifecyclePort } from '../product-billing/lifecycle-port.js';
+import type { ContentPackageDestinationProjectionPort } from '../execution-spine/content-package-destination-projection.js';
 import { appendPendingApprovalRequest } from './content-package-approval.js';
 import {
   approvalReceiptExpiresAt,
@@ -300,6 +301,7 @@ interface OperationsDependencies {
   canvasExporter: CanvasExportPort;
   creationExecutor?: import('./types.js').CreationExecutorPort;
   contentPackageExporter?: ContentPackageExportPort;
+  contentPackageDestinationProjection?: ContentPackageDestinationProjectionPort;
   contentPackageApprovalPolicy?: ContentPackageApprovalPolicyPort;
   contentPackageRightsBasisResolver?: ContentPackageRightsBasisResolverPort;
   contentPackageRightsResolver?: ContentPackageRightsResolverPort;
@@ -891,6 +893,58 @@ export class OperationsApplicationService {
 
   private timestamp() {
     return this.now().toISOString();
+  }
+
+  private async projectContentPackageDestinations(
+    workspaceId: string,
+    contentPackages: readonly ContentPackage[]
+  ): Promise<ContentPackage[]> {
+    const projection = this.dependencies.contentPackageDestinationProjection;
+    const references = contentPackages.flatMap((contentPackage) => {
+      const snapshotId = contentPackage.source.creationExecutionSnapshot?.id;
+      return snapshotId
+        ? [{ packageId: contentPackage.id, snapshotId }]
+        : [];
+    });
+    const destinations =
+      projection && references.length > 0
+        ? await projection.resolve({ references, workspaceId })
+        : [];
+    const byReference = new Map(
+      destinations.map((destination) => [
+        JSON.stringify([destination.packageId, destination.snapshotId]),
+        destination,
+      ])
+    );
+    return contentPackages.map((contentPackage) => {
+      const snapshot = contentPackage.source.creationExecutionSnapshot;
+      if (!snapshot) return contentPackage;
+      const sanitizedSnapshot = { ...snapshot };
+      delete sanitizedSnapshot.contentPackagePlatform;
+      delete sanitizedSnapshot.distributionTarget;
+      const destination = byReference.get(
+        JSON.stringify([contentPackage.id, snapshot.id])
+      );
+      const sanitizedContentPackage = {
+        ...contentPackage,
+        source: {
+          ...contentPackage.source,
+          creationExecutionSnapshot: sanitizedSnapshot,
+        },
+      };
+      if (!destination) return sanitizedContentPackage;
+      return {
+        ...sanitizedContentPackage,
+        source: {
+          ...sanitizedContentPackage.source,
+          creationExecutionSnapshot: {
+            ...sanitizedSnapshot,
+            contentPackagePlatform: destination.contentPackagePlatform,
+            distributionTarget: destination.distributionTarget,
+          },
+        },
+      };
+    });
   }
 
   private appendTemplateLifecycle(
@@ -8739,9 +8793,15 @@ export class OperationsApplicationService {
         404
       );
     }
+    const projected = (
+      await this.projectContentPackageDestinations(
+        context.workspaceId,
+        [contentPackage]
+      )
+    )[0] ?? contentPackage;
     return {
-      ...contentPackage,
-      ...contentPackageVisibleStatus(contentPackage.status),
+      ...projected,
+      ...contentPackageVisibleStatus(projected.status),
     };
   }
 
@@ -9753,12 +9813,14 @@ export class OperationsApplicationService {
 
   async listContentPackages(context: OperationContext) {
     const state = await this.read(context);
-    return [...(state.contentPackages ?? [])]
-      .sort(
-        (left, right) =>
-          right.updatedAt.localeCompare(left.updatedAt) ||
-          right.id.localeCompare(left.id)
-      )
+    const sorted = [...(state.contentPackages ?? [])].sort(
+      (left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt) ||
+        right.id.localeCompare(left.id)
+    );
+    return (
+      await this.projectContentPackageDestinations(context.workspaceId, sorted)
+    )
       .map((contentPackage) => ({
         ...contentPackage,
         ...contentPackageVisibleStatus(contentPackage.status),

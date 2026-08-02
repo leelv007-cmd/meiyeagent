@@ -130,6 +130,7 @@ import {
   createOperationsTriggerJobHandler,
 } from './p1/operations/index.js';
 import { LOCAL_FIXTURE_PROVIDER_REFERENCE_POLICY } from './p1/model-supply/reference-asset-delivery.js';
+import { PostgresContentPackageDestinationProjection } from './p1/execution-spine/content-package-destination-projection.js';
 import { CutoverProductService } from './product/cutover-product-service.js';
 import { PostgresProductRepository } from './product/postgres-repository.js';
 import { PostgresRelationalProductRepository } from './product/relational-product-repository.js';
@@ -597,6 +598,8 @@ const contentPackageRightsResolver = new ProductContentPackageRightsResolver(
 );
 operations = new OperationsApplicationService(operationsRepository, {
   billingLifecycle,
+  contentPackageDestinationProjection:
+    new PostgresContentPackageDestinationProjection(pool),
   contentPackageExporter: new ContentPackageZipExportAdapter(
     assetStorage,
     new OperationsContentPackageExportAssetReader(

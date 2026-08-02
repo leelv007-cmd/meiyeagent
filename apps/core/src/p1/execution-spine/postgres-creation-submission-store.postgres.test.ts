@@ -1,15 +1,20 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
+
+import type { ContentPackage } from "@meiye/contracts";
 import { Pool } from "pg";
 
 import { DurableProductBillingService } from "../product-billing/durable-service.js";
 import { PostgresProductBillingRepository } from "../product-billing/postgres-repository.js";
+import { OperationsApplicationService } from "../operations/application-service.js";
+import { OperationsFoundationModule } from "../operations/foundation-module.js";
 import { PostgresOperationsRepository } from "../operations/postgres-repository.js";
 import {
   createCreationExecutionSnapshot,
   type ComposerSubmissionRequest,
 } from "./creation-execution-snapshot.js";
+import { PostgresContentPackageDestinationProjection } from "./content-package-destination-projection.js";
 import {
   PostgresCreationSubmissionPersistence,
   PostgresCreationSubmissionStore,
@@ -491,6 +496,9 @@ test(
         submission.task.id,
       );
       submission.snapshot = createSnapshot({
+        contentPackagePlatform: "wechat_moments",
+        distributionTarget: "manual_copy",
+        platformId: "wechat_moments",
         quoteId,
         quoteRevision: quote.revision,
         submission,
@@ -615,10 +623,14 @@ test(
         task_id: string;
         usage_reservation_id: string;
         work_id: string;
+        submission_platform: string;
+        submission_target: string;
       }>(
         `SELECT c.task_id, c.work_id, c.content_package_id,
                 c.usage_reservation_id, c.quote_id, c.route_snapshot_id,
-                p.payload->'source'->'creationExecutionSnapshot' AS execution_snapshot
+                p.payload->'source'->'creationExecutionSnapshot' AS execution_snapshot,
+                c.submission->'snapshot'->>'contentPackagePlatform' AS submission_platform,
+                c.submission->'snapshot'->>'distributionTarget' AS submission_target
            FROM execution_spine.creation_submissions c
            JOIN p1_content_packages p
              ON p.workspace_id = c.workspace_id
@@ -629,8 +641,6 @@ test(
       assert.deepEqual(lineage.rows[0], {
         content_package_id: submission.contentPackage.id,
         execution_snapshot: {
-          contentPackagePlatform: "douyin",
-          distributionTarget: "export",
           id: submission.snapshot.id,
           modelSelection: {
             source: "current_selection",
@@ -645,7 +655,179 @@ test(
         task_id: submission.task.id,
         usage_reservation_id: submission.usageReservation.id,
         work_id: submission.work.id,
+        submission_platform: "wechat_moments",
+        submission_target: "manual_copy",
       });
+      const destinationProjection =
+        new PostgresContentPackageDestinationProjection(pool);
+      assert.deepEqual(
+        await destinationProjection.resolve({
+          references: [
+            {
+              packageId: submission.contentPackage.id,
+              snapshotId: submission.snapshot.id,
+            },
+          ],
+          workspaceId,
+        }),
+        [
+          {
+            contentPackagePlatform: "wechat_moments",
+            distributionTarget: "manual_copy",
+            packageId: submission.contentPackage.id,
+            snapshotId: submission.snapshot.id,
+          },
+        ],
+      );
+      let mixedQueryCount = 0;
+      const mixedDestinationProjection =
+        new PostgresContentPackageDestinationProjection({
+          async query() {
+            mixedQueryCount += 1;
+            return {
+              rows: [
+                {
+                  content_package_id: submission.contentPackage.id,
+                  snapshot: submission.snapshot,
+                  snapshot_id: submission.snapshot.id,
+                },
+                {
+                  content_package_id: "package-malformed",
+                  snapshot: { id: "snapshot-malformed" },
+                  snapshot_id: "snapshot-malformed",
+                },
+              ],
+            };
+          },
+        } as unknown as Pick<Pool, "query">);
+      assert.deepEqual(
+        await mixedDestinationProjection.resolve({
+          references: [
+            {
+              packageId: submission.contentPackage.id,
+              snapshotId: submission.snapshot.id,
+            },
+            {
+              packageId: "package-malformed",
+              snapshotId: "snapshot-malformed",
+            },
+          ],
+          workspaceId,
+        }),
+        [
+          {
+            contentPackagePlatform: "wechat_moments",
+            distributionTarget: "manual_copy",
+            packageId: submission.contentPackage.id,
+            snapshotId: submission.snapshot.id,
+          },
+        ],
+      );
+      assert.equal(mixedQueryCount, 1);
+      const applicationService = new OperationsApplicationService(operations, {
+        canvasExporter: {
+          async export() {
+            throw new Error("not used");
+          },
+        },
+        contentPackageDestinationProjection: destinationProjection,
+        imageGenerator: {
+          async submit() {
+            throw new Error("not used");
+          },
+        },
+        notifier: { async send() {} },
+      });
+      const operationContext = {
+        actor: "worker" as const,
+        correlationId: `destination-projection-${suffix}`,
+        userId: "worker-1",
+        workspaceId,
+      };
+      const projectedDetail = await applicationService.getContentPackage(
+        operationContext,
+        submission.contentPackage.id,
+      );
+      const projectedList =
+        await applicationService.listContentPackages(operationContext);
+      const publicDetail = (await new OperationsFoundationModule(
+        applicationService,
+      ).query({
+        context: operationContext,
+        input: {
+          action: "content_package",
+          payload: { packageId: submission.contentPackage.id },
+        },
+      })) as ContentPackage;
+      for (const projected of [
+        projectedDetail,
+        projectedList[0],
+        publicDetail,
+      ]) {
+        assert.equal(
+          projected?.source.creationExecutionSnapshot?.contentPackagePlatform,
+          "wechat_moments",
+        );
+        assert.equal(
+          projected?.source.creationExecutionSnapshot?.distributionTarget,
+          "manual_copy",
+        );
+      }
+      for (const mismatched of [
+        {
+          references: [
+            {
+              packageId: `${submission.contentPackage.id}-foreign`,
+              snapshotId: submission.snapshot.id,
+            },
+          ],
+          workspaceId,
+        },
+        {
+          references: [
+            {
+              packageId: submission.contentPackage.id,
+              snapshotId: `${submission.snapshot.id}-foreign`,
+            },
+          ],
+          workspaceId,
+        },
+        {
+          references: [
+            {
+              packageId: submission.contentPackage.id,
+              snapshotId: submission.snapshot.id,
+            },
+          ],
+          workspaceId: `${workspaceId}-foreign`,
+        },
+      ]) {
+        assert.deepEqual(await destinationProjection.resolve(mismatched), []);
+      }
+      await pool.query(
+        `UPDATE execution_spine.creation_submissions
+            SET submission = submission #- '{snapshot,distributionTarget}'
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, submission.snapshot.id],
+      );
+      assert.deepEqual(
+        await destinationProjection.resolve({
+          references: [
+            {
+              packageId: submission.contentPackage.id,
+              snapshotId: submission.snapshot.id,
+            },
+          ],
+          workspaceId,
+        }),
+        [],
+      );
+      await pool.query(
+        `UPDATE execution_spine.creation_submissions
+            SET submission = $3::jsonb
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, submission.snapshot.id, JSON.stringify(submission)],
+      );
       await billingRepository.saveProviderCost(workspaceId, {
         attemptId: `attempt-${suffix}`,
         billingMode: "per_request",
@@ -1309,12 +1491,16 @@ test(
           package_snapshot: unknown;
           resource: string | null;
           snapshot_lens: string;
+          submission_platform: string;
+          submission_target: string;
           usage_id: string;
         }>(
           `SELECT p.payload->>'kind' AS package_kind,
                   p.payload->'source'->'creationExecutionSnapshot' AS package_snapshot,
                   u.payload->>'resource' AS resource,
                   s.submission->'snapshot'->>'lens' AS snapshot_lens,
+                  s.submission->'snapshot'->>'contentPackagePlatform' AS submission_platform,
+                  s.submission->'snapshot'->>'distributionTarget' AS submission_target,
                   u.usage_id
              FROM execution_spine.creation_submissions s
              JOIN p1_content_packages p
@@ -1330,8 +1516,6 @@ test(
           {
             package_kind: lens === "image" ? "image_text" : "video",
             package_snapshot: {
-              contentPackagePlatform: "douyin",
-              distributionTarget: "export",
               id: submission.snapshot.id,
               modelSelection: {
                 source: "current_selection",
@@ -1343,6 +1527,8 @@ test(
             },
             resource: lens,
             snapshot_lens: lens,
+            submission_platform: "douyin",
+            submission_target: "export",
             usage_id: submission.usageReservation.id,
           },
         ]);
@@ -1524,7 +1710,10 @@ async function seedUnconfirmedQuote(
 }
 
 function createSnapshot(input: {
+  contentPackagePlatform?: "douyin" | "wechat_moments";
+  distributionTarget?: "export" | "manual_copy";
   lens?: "copy" | "image" | "video";
+  platformId?: "douyin" | "wechat_moments";
   quoteId: string;
   quoteRevision: string;
   submission: Pick<
@@ -1560,7 +1749,9 @@ function createSnapshot(input: {
       intent: "为夏日护理项目写一条预约文案",
       lens,
       modelPolicy: { id: "policy-1", mode: "fixed", revision: "policy-r1" },
-      platform: { id: "douyin" },
+      platform: { id: input.platformId ?? "douyin" },
+      contentPackagePlatform: input.contentPackagePlatform,
+      distributionTarget: input.distributionTarget,
       quote: { id: input.quoteId, revision: input.quoteRevision },
       recipe: { id: "recipe-1", revision: "recipe-r1" },
       rights: { revision: "rights-r1", summary: "authorized source assets" },

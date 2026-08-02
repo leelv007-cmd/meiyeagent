@@ -271,6 +271,7 @@ import {
   type ComposerDestinationMappingPort,
 } from './p1/execution-spine/composer-destination-mapper.js';
 import { ModelSupplyComposerRouteResolver } from './p1/execution-spine/composer-route-resolver.js';
+import { PostgresContentPackageDestinationProjection } from './p1/execution-spine/content-package-destination-projection.js';
 import { PostgresContentPackageRevisionWritePort } from './p1/execution-spine/content-package-revision-port.js';
 import { CreationStagePort } from './p1/execution-spine/creation-stage-port.js';
 import {
@@ -1232,6 +1233,8 @@ const contentPackageApprovalPolicy = new ContextBundleApprovalPolicyResolver(
 operationsService = new OperationsApplicationService(operationsRepository, {
   billingLifecycle,
   canvasExportAssetAccess,
+  contentPackageDestinationProjection:
+    new PostgresContentPackageDestinationProjection(pool),
   contentPackageExporter: new ContentPackageZipExportAdapter(
     assetStorage,
     contentPackageExportAssets,
