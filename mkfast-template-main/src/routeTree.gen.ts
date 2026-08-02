@@ -84,6 +84,7 @@ import { Route as DashboardJobsJobIdRouteImport } from './routes/dashboard/jobs_
 import { Route as DashboardHandoffTokenRouteImport } from './routes/dashboard/handoff/$token'
 import { Route as DashboardContentContentIdRouteImport } from './routes/dashboard/content_/$contentId'
 import { Route as DashboardAssetsAssetIdRouteImport } from './routes/dashboard/assets_/$assetId'
+import { Route as ApiWebhooksWaffoRouteImport } from './routes/api/webhooks/waffo'
 import { Route as ApiWebhooksStripeRouteImport } from './routes/api/webhooks/stripe'
 import { Route as ApiWebhooksCreemRouteImport } from './routes/api/webhooks/creem'
 import { Route as ApiStorageUploadRouteImport } from './routes/api/storage/upload'
@@ -495,6 +496,11 @@ const DashboardAssetsAssetIdRoute = DashboardAssetsAssetIdRouteImport.update({
   path: '/assets/$assetId',
   getParentRoute: () => DashboardRoute,
 } as any)
+const ApiWebhooksWaffoRoute = ApiWebhooksWaffoRouteImport.update({
+  id: '/api/webhooks/waffo',
+  path: '/api/webhooks/waffo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiWebhooksStripeRoute = ApiWebhooksStripeRouteImport.update({
   id: '/api/webhooks/stripe',
   path: '/api/webhooks/stripe',
@@ -747,6 +753,7 @@ export interface FileRoutesByFullPath {
   '/api/storage/upload': typeof ApiStorageUploadRoute
   '/api/webhooks/creem': typeof ApiWebhooksCreemRoute
   '/api/webhooks/stripe': typeof ApiWebhooksStripeRoute
+  '/api/webhooks/waffo': typeof ApiWebhooksWaffoRoute
   '/dashboard/assets/$assetId': typeof DashboardAssetsAssetIdRoute
   '/dashboard/content/$contentId': typeof DashboardContentContentIdRoute
   '/dashboard/handoff/$token': typeof DashboardHandoffTokenRoute
@@ -852,6 +859,7 @@ export interface FileRoutesByTo {
   '/api/storage/upload': typeof ApiStorageUploadRoute
   '/api/webhooks/creem': typeof ApiWebhooksCreemRoute
   '/api/webhooks/stripe': typeof ApiWebhooksStripeRoute
+  '/api/webhooks/waffo': typeof ApiWebhooksWaffoRoute
   '/dashboard/assets/$assetId': typeof DashboardAssetsAssetIdRoute
   '/dashboard/content/$contentId': typeof DashboardContentContentIdRoute
   '/dashboard/handoff/$token': typeof DashboardHandoffTokenRoute
@@ -962,6 +970,7 @@ export interface FileRoutesById {
   '/api/storage/upload': typeof ApiStorageUploadRoute
   '/api/webhooks/creem': typeof ApiWebhooksCreemRoute
   '/api/webhooks/stripe': typeof ApiWebhooksStripeRoute
+  '/api/webhooks/waffo': typeof ApiWebhooksWaffoRoute
   '/dashboard/assets_/$assetId': typeof DashboardAssetsAssetIdRoute
   '/dashboard/content_/$contentId': typeof DashboardContentContentIdRoute
   '/dashboard/handoff/$token': typeof DashboardHandoffTokenRoute
@@ -1073,6 +1082,7 @@ export interface FileRouteTypes {
     | '/api/storage/upload'
     | '/api/webhooks/creem'
     | '/api/webhooks/stripe'
+    | '/api/webhooks/waffo'
     | '/dashboard/assets/$assetId'
     | '/dashboard/content/$contentId'
     | '/dashboard/handoff/$token'
@@ -1178,6 +1188,7 @@ export interface FileRouteTypes {
     | '/api/storage/upload'
     | '/api/webhooks/creem'
     | '/api/webhooks/stripe'
+    | '/api/webhooks/waffo'
     | '/dashboard/assets/$assetId'
     | '/dashboard/content/$contentId'
     | '/dashboard/handoff/$token'
@@ -1287,6 +1298,7 @@ export interface FileRouteTypes {
     | '/api/storage/upload'
     | '/api/webhooks/creem'
     | '/api/webhooks/stripe'
+    | '/api/webhooks/waffo'
     | '/dashboard/assets_/$assetId'
     | '/dashboard/content_/$contentId'
     | '/dashboard/handoff/$token'
@@ -1348,6 +1360,7 @@ export interface RootRouteChildren {
   ApiStorageUploadRoute: typeof ApiStorageUploadRoute
   ApiWebhooksCreemRoute: typeof ApiWebhooksCreemRoute
   ApiWebhooksStripeRoute: typeof ApiWebhooksStripeRoute
+  ApiWebhooksWaffoRoute: typeof ApiWebhooksWaffoRoute
   ApiCoreP1AssetsRoute: typeof ApiCoreP1AssetsRoute
   ApiCoreP1CommandsRoute: typeof ApiCoreP1CommandsRoute
   ApiCoreP1PendingActionsRoute: typeof ApiCoreP1PendingActionsRoute
@@ -1889,6 +1902,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardAssetsAssetIdRouteImport
       parentRoute: typeof DashboardRoute
     }
+    '/api/webhooks/waffo': {
+      id: '/api/webhooks/waffo'
+      path: '/api/webhooks/waffo'
+      fullPath: '/api/webhooks/waffo'
+      preLoaderRoute: typeof ApiWebhooksWaffoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/webhooks/stripe': {
       id: '/api/webhooks/stripe'
       path: '/api/webhooks/stripe'
@@ -2378,6 +2398,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiStorageUploadRoute: ApiStorageUploadRoute,
   ApiWebhooksCreemRoute: ApiWebhooksCreemRoute,
   ApiWebhooksStripeRoute: ApiWebhooksStripeRoute,
+  ApiWebhooksWaffoRoute: ApiWebhooksWaffoRoute,
   ApiCoreP1AssetsRoute: ApiCoreP1AssetsRoute,
   ApiCoreP1CommandsRoute: ApiCoreP1CommandsRoute,
   ApiCoreP1PendingActionsRoute: ApiCoreP1PendingActionsRoute,

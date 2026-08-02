@@ -48,14 +48,23 @@ export function requireSellableCheckoutPrice(
 
   if (
     (price.type === 'subscription' &&
-      (plan.isLifetime ||
-        (price.interval !== 'month' && price.interval !== 'year'))) ||
+      (plan.isLifetime || !isSubscriptionInterval(price.interval))) ||
     (price.type === 'one_time' && (!plan.isLifetime || price.interval != null))
   ) {
     throw new Error('The requested price has an invalid billing contract.');
   }
 
   return { plan, price };
+}
+
+function isSubscriptionInterval(interval: Price['interval']) {
+  return (
+    interval === 'single_month' ||
+    interval === 'monthly' ||
+    interval === 'yearly' ||
+    interval === 'month' ||
+    interval === 'year'
+  );
 }
 
 export function createCheckoutInputSchema(catalog: CheckoutCatalogLookup) {

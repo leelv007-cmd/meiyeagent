@@ -1,4 +1,5 @@
 import { Stripe } from 'stripe';
+import { verifyWebhook, type WebhookPublicKeys } from '@waffo/pancake-ts';
 import type { PaymentProviderName, VerifiedPaymentWebhookEvent } from './types';
 
 export type PaymentWebhookReceipt = 'accepted' | 'busy' | 'processed';
@@ -34,6 +35,7 @@ export interface PaymentWebhookSecrets {
   creemWebhookSecret?: string;
   stripeApiKey?: string;
   stripeWebhookSecret?: string;
+  waffoWebhookPublicKeys?: WebhookPublicKeys;
 }
 
 export class PaymentWebhookSignatureError extends Error {
@@ -147,6 +149,27 @@ export async function verifyPaymentWebhook(
   },
   secrets: PaymentWebhookSecrets
 ): Promise<CanonicalPaymentWebhook> {
+  if (input.provider === 'waffo') {
+    if (!secrets.waffoWebhookPublicKeys) {
+      throw new PaymentWebhookConfigurationError('waffo');
+    }
+    try {
+      const event = verifyWebhook(input.payload, input.signature, {
+        publicKeys: secrets.waffoWebhookPublicKeys,
+      });
+      return {
+        eventType: event.eventType,
+        payload: input.payload,
+        provider: 'waffo',
+        // The delivery id, unlike Waffo's business eventId, is unique for
+        // durable inbox deduplication and must remain stable on retries.
+        providerEventId: event.id,
+        signature: input.signature,
+      };
+    } catch {
+      throw new PaymentWebhookSignatureError();
+    }
+  }
   if (input.provider === 'creem') {
     const webhookSecret = secrets.creemWebhookSecret?.trim();
     if (!webhookSecret) {
@@ -202,6 +225,11 @@ export async function refreshVerifiedWebhookSignature(
   secrets: PaymentWebhookSecrets,
   clock: () => Date = () => new Date()
 ) {
+  if (claim.provider === 'waffo') {
+    // Waffo signs the raw body with its private key. A durable worker cannot
+    // mint or replace that signature; it must re-verify this original header.
+    return claim.signature;
+  }
   if (claim.provider === 'stripe') {
     const secret = secrets.stripeWebhookSecret?.trim();
     if (!secret) throw new PaymentWebhookConfigurationError('stripe');
@@ -265,7 +293,8 @@ export async function settlePendingPaymentWebhooks(
       if (
         event &&
         (event.provider !== claim.provider ||
-          event.providerEventId !== claim.providerEventId)
+          (event.providerDeliveryId ?? event.providerEventId) !==
+            claim.providerEventId)
       ) {
         const mismatch = new Error(
           'Verified webhook identity does not match its durable claim.'

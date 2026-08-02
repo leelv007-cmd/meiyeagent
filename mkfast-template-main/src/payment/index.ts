@@ -2,13 +2,14 @@ import { websiteConfig } from '@/config/website';
 import { getDb } from '@/db';
 import { serverEnv } from '@/env/server';
 import { CreemProvider } from './provider/creem';
+import { WaffoProvider } from './provider/waffo';
 import { PostgresPlanCheckoutBindingStore } from './plan-checkout-bindings';
 import {
   planGrantCommandFromIntent,
   settleVerifiedPlanPayment,
-  shouldCancelPlanBinding,
   type PlanSettlementIntent,
 } from './plan-commerce';
+import { applyPlanSettlementIntent } from './payment-settlement-side-effects';
 import { StripeProvider } from './provider/stripe';
 import { PostgresPaymentWebhookInbox } from './postgres-webhook-settlement';
 import {
@@ -33,6 +34,7 @@ type ProviderFactory = () => PaymentProvider;
 const providerRegistry: Record<PaymentProviderName, ProviderFactory> = {
   stripe: () => new StripeProvider(),
   creem: () => new CreemProvider(),
+  waffo: createWaffoProvider,
 };
 
 function createProvider(): PaymentProvider {
@@ -95,6 +97,7 @@ export async function handleWebhookEvent(
         creemWebhookSecret: serverEnv.CREEM_WEBHOOK_SECRET,
         stripeApiKey: serverEnv.STRIPE_SECRET_KEY,
         stripeWebhookSecret: serverEnv.STRIPE_WEBHOOK_SECRET,
+        waffoWebhookPublicKeys: waffoWebhookPublicKeys(),
       },
     }
   );
@@ -112,6 +115,7 @@ export async function settlePendingPaymentWebhookEvents() {
           const signature = await refreshVerifiedWebhookSignature(claim, {
             creemWebhookSecret: serverEnv.CREEM_WEBHOOK_SECRET,
             stripeWebhookSecret: serverEnv.STRIPE_WEBHOOK_SECRET,
+            waffoWebhookPublicKeys: waffoWebhookPublicKeys(),
           });
           return provider.handleWebhookEvent(claim.payload, signature);
         },
@@ -132,6 +136,21 @@ export async function settlePendingPaymentWebhookEvents() {
   );
 }
 
+function waffoWebhookPublicKeys() {
+  const test = serverEnv.WAFFO_WEBHOOK_TEST_PUBLIC_KEY?.trim();
+  const prod = serverEnv.WAFFO_WEBHOOK_PROD_PUBLIC_KEY?.trim();
+  return test || prod
+    ? { ...(test ? { test } : {}), ...(prod ? { prod } : {}) }
+    : undefined;
+}
+
+function createWaffoProvider() {
+  return new WaffoProvider({
+    allowTestEvents: serverEnv.WAFFO_DEBUG,
+    webhookPublicKeys: waffoWebhookPublicKeys(),
+  });
+}
+
 /** Tc: settle plan checkout/renewal/cancel into Foundation payment_grant. */
 export async function settleVerifiedPlanPurchase(
   event: VerifiedPaymentWebhookEvent
@@ -139,27 +158,13 @@ export async function settleVerifiedPlanPurchase(
   const bindingStore = new PostgresPlanCheckoutBindingStore(getDb());
   return settleVerifiedPlanPayment(event, {
     resolveBinding: (verified) => bindingStore.resolveBinding(verified),
-    grantPlan: async (intent) => {
-      await grantPlanEntitlement(intent);
-      if (
-        intent.lifecycle === 'activate' ||
-        intent.lifecycle === 'renew' ||
-        intent.lifecycle === 'resume'
-      ) {
-        await bindingStore.markActive({
-          bindingId: event.planBindingId ?? null,
-          provider: intent.provider,
-          providerCheckoutId:
-            event.reference.kind === 'checkout' ? event.reference.id : null,
-          subscriptionId: intent.subscriptionId,
-        });
-      } else if (shouldCancelPlanBinding(intent, event.reference)) {
-        await bindingStore.markCanceled({
-          provider: intent.provider,
-          subscriptionId: event.reference.id,
-        });
-      }
-    },
+    grantPlan: (intent) =>
+      applyPlanSettlementIntent(event, intent, {
+        bindings: bindingStore,
+        grantPlanEntitlement,
+        cancelWaffoSubscriptionAtPeriodEnd: (subscriptionId) =>
+          createWaffoProvider().cancelSubscriptionAtPeriodEnd(subscriptionId),
+      }),
   });
 }
 

@@ -34,6 +34,8 @@ test('local Vite development forwards only approved internal service bindings', 
   const commerceEnvironment = {
     STRIPE_SECRET_KEY: 'sk_test',
     STRIPE_WEBHOOK_SECRET: 'whsec_test',
+    WAFFO_MERCHANT_ID: 'MER_test',
+    WAFFO_PRIVATE_KEY: 'private-key-test-only',
   };
   const previousCommerce = Object.fromEntries(
     Object.keys(commerceEnvironment).map((name) => [name, process.env[name]])
@@ -79,12 +81,16 @@ test('local Vite development forwards only approved internal service bindings', 
     assert.equal(vars.CORE_SERVICE_URL, 'http://core.test');
     assert.equal(vars.CORE_SERVICE_TOKEN, 'test-core-token');
     assert.equal(vars.STRIPE_WEBHOOK_SECRET, 'whsec_test');
+    assert.equal(vars.WAFFO_MERCHANT_ID, 'MER_test');
+    assert.equal(vars.WAFFO_PRIVATE_KEY, 'private-key-test-only');
     assert.deepEqual(Object.keys(vars).sort(), [
       'CORE_SERVICE_TOKEN',
       'CORE_SERVICE_URL',
       'EXISTING_WRANGLER_BINDING',
       'STRIPE_SECRET_KEY',
       'STRIPE_WEBHOOK_SECRET',
+      'WAFFO_MERCHANT_ID',
+      'WAFFO_PRIVATE_KEY',
     ]);
   } finally {
     restoreEnvironment('CORE_SERVICE_URL', previousUrl);

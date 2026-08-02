@@ -637,8 +637,10 @@ function subscriptionIdFor(
 function creditInterval(
   interval: PaymentMappingInterval | null | undefined,
 ): CreditSubscriptionInterval {
-  if (interval === 'year') return 'yearly';
-  if (interval === 'one_time') return 'single_month';
+  if (interval === 'year' || interval === 'yearly') return 'yearly';
+  if (interval === 'one_time' || interval === 'single_month') {
+    return 'single_month';
+  }
   return 'monthly';
 }
 

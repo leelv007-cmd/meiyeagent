@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   normalizeCreemVerifiedPaymentEvent,
   normalizeStripeVerifiedPaymentEvent,
+  normalizeWaffoVerifiedPaymentEvent,
 } from './verified-webhook-event';
 
 test('Stripe normalizes paid checkout (payment or subscription mode)', () => {
@@ -258,6 +259,34 @@ test('Creem normalizes checkout, renewal, and cancel/expire lifecycle', () => {
       provider: 'creem',
       providerEventId: 'evt_creem_4',
       reference: { id: 'sub_3', kind: 'subscription' },
+    }
+  );
+});
+
+test('Waffo normalizes a subscription activation into an owned checkout settlement', () => {
+  assert.deepEqual(
+    normalizeWaffoVerifiedPaymentEvent({
+      id: 'waffo-delivery-001',
+      eventId: 'waffo-payment-001',
+      eventType: 'subscription.activated',
+      data: {
+        orderId: 'waffo-order-001',
+        merchantProvidedBuyerIdentity: 'user-001',
+        orderMerchantExternalId: 'plan-checkout-binding-001',
+        currentPeriodStart: '2026-08-03T00:00:00.000Z',
+        currentPeriodEnd: '2026-09-03T00:00:00.000Z',
+      },
+    }),
+    {
+      eventType: 'checkout.completed',
+      provider: 'waffo',
+      providerEventId: 'waffo-payment-001',
+      providerDeliveryId: 'waffo-delivery-001',
+      reference: { id: 'waffo-order-001', kind: 'subscription' },
+      planBindingId: 'plan-checkout-binding-001',
+      buyerIdentity: 'user-001',
+      periodStartsAt: '2026-08-03T00:00:00.000Z',
+      periodEndsAt: '2026-09-03T00:00:00.000Z',
     }
   );
 });

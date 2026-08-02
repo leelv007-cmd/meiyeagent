@@ -16,6 +16,7 @@ import {
 } from '@/storage/constants';
 import { clientEnv } from '@/env/client';
 import { PUBLIC_DISPLAY_PRICE_CENTS } from '@/lib/public-display-price';
+import { waffoSubscriptionPricesForPlan } from '@/payment/waffo-subscription-catalog';
 import type { WebsiteConfig } from '../types';
 import { resolvePaymentRuntimePolicy } from './payment-runtime-policy';
 
@@ -29,7 +30,21 @@ const paymentRuntimePolicy = resolvePaymentRuntimePolicy({
     proYearly: clientEnv.VITE_CREEM_PRODUCT_PRO_YEARLY,
     lifetime: clientEnv.VITE_CREEM_PRODUCT_LIFETIME,
   },
+  waffoProductIds: {
+    starterSingleMonth: clientEnv.VITE_WAFFO_PRODUCT_STARTER_SINGLE_MONTH,
+    starterMonthly: clientEnv.VITE_WAFFO_PRODUCT_STARTER_MONTHLY,
+    starterYearly: clientEnv.VITE_WAFFO_PRODUCT_STARTER_YEARLY,
+    growthSingleMonth: clientEnv.VITE_WAFFO_PRODUCT_GROWTH_SINGLE_MONTH,
+    growthMonthly: clientEnv.VITE_WAFFO_PRODUCT_GROWTH_MONTHLY,
+    growthYearly: clientEnv.VITE_WAFFO_PRODUCT_GROWTH_YEARLY,
+    proSingleMonth: clientEnv.VITE_WAFFO_PRODUCT_PRO_SINGLE_MONTH,
+    proMonthly: clientEnv.VITE_WAFFO_PRODUCT_PRO_MONTHLY,
+    proYearly: clientEnv.VITE_WAFFO_PRODUCT_PRO_YEARLY,
+  },
 });
+
+const waffoPriceIds = paymentRuntimePolicy.priceIds;
+const usesWaffoCatalog = paymentRuntimePolicy.provider === 'waffo';
 
 /**
  * Website config
@@ -98,22 +113,24 @@ export const websiteConfig: WebsiteConfig = {
         },
         pro: {
           id: 'pro',
-          prices: [
-            {
-              type: 'subscription',
-              priceId: paymentRuntimePolicy.priceIds.proMonthly,
-              amount: PUBLIC_DISPLAY_PRICE_CENTS.growthMonthly,
-              currency: 'CNY',
-              interval: 'month',
-            },
-            {
-              type: 'subscription',
-              priceId: paymentRuntimePolicy.priceIds.proYearly,
-              amount: PUBLIC_DISPLAY_PRICE_CENTS.growthYearly,
-              currency: 'CNY',
-              interval: 'year',
-            },
-          ],
+          prices: usesWaffoCatalog
+            ? waffoSubscriptionPricesForPlan('pro', waffoPriceIds)
+            : [
+                {
+                  type: 'subscription',
+                  priceId: paymentRuntimePolicy.priceIds.proMonthly,
+                  amount: PUBLIC_DISPLAY_PRICE_CENTS.growthMonthly,
+                  currency: 'CNY',
+                  interval: 'month',
+                },
+                {
+                  type: 'subscription',
+                  priceId: paymentRuntimePolicy.priceIds.proYearly,
+                  amount: PUBLIC_DISPLAY_PRICE_CENTS.growthYearly,
+                  currency: 'CNY',
+                  interval: 'year',
+                },
+              ],
           isFree: false,
           isLifetime: false,
           popular: true,
@@ -145,6 +162,30 @@ export const websiteConfig: WebsiteConfig = {
             return pricing_plans_lifetime_description();
           },
         },
+        ...(usesWaffoCatalog
+          ? {
+              starter: {
+                id: 'starter',
+                name: 'Starter',
+                description: 'Starter subscription',
+                prices: waffoSubscriptionPricesForPlan(
+                  'starter',
+                  waffoPriceIds
+                ),
+                isFree: false,
+                isLifetime: false,
+              },
+              growth: {
+                id: 'growth',
+                name: 'Growth',
+                description: 'Growth subscription',
+                prices: waffoSubscriptionPricesForPlan('growth', waffoPriceIds),
+                isFree: false,
+                isLifetime: false,
+                popular: true,
+              },
+            }
+          : {}),
       },
     },
   },

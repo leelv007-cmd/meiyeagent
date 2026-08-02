@@ -137,6 +137,7 @@ export const payment = pgTable(
   'payment',
   {
     id: text('id').primaryKey(),
+    provider: text('provider').$type<PaymentProviderName>(),
     priceId: text('price_id').notNull(),
     userId: text('user_id')
       .notNull()
@@ -159,6 +160,7 @@ export const payment = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull(),
   },
   (table) => [
+    index('payment_provider_idx').on(table.provider),
     index('payment_user_id_idx').on(table.userId),
     index('payment_customer_id_idx').on(table.customerId),
     index('payment_subscription_id_idx').on(table.subscriptionId),

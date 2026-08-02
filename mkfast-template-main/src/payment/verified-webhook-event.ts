@@ -116,6 +116,30 @@ const creemSubscriptionScheduledCancelSchema = z
   })
   .passthrough();
 
+const waffoWebhookEventSchema = z
+  .object({
+    id: z.string().min(1),
+    eventId: z.string().min(1),
+    eventType: z.enum([
+      'subscription.activated',
+      'subscription.payment_succeeded',
+      'subscription.canceling',
+      'subscription.uncanceled',
+      'subscription.canceled',
+    ]),
+    data: z
+      .object({
+        orderId: z.string().min(1),
+        merchantProvidedBuyerIdentity: z.string().min(1).optional(),
+        orderMerchantExternalId: z.string().min(1).optional(),
+        orderMetadata: z.record(z.string(), z.unknown()).optional(),
+        currentPeriodStart: z.string().min(1).optional(),
+        currentPeriodEnd: z.string().min(1).optional(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
 export function normalizeStripeVerifiedPaymentEvent(
   input: unknown
 ): VerifiedPaymentWebhookEvent | null {
@@ -255,6 +279,59 @@ export function normalizeCreemVerifiedPaymentEvent(
   }
 
   return null;
+}
+
+export function normalizeWaffoVerifiedPaymentEvent(
+  input: unknown
+): VerifiedPaymentWebhookEvent | null {
+  const event = waffoWebhookEventSchema.safeParse(input);
+  if (!event.success) return null;
+
+  const planBindingId =
+    event.data.data.orderMerchantExternalId ??
+    textMetadata(event.data.data.orderMetadata?.planCheckoutBindingId);
+  const buyerIdentity = event.data.data.merchantProvidedBuyerIdentity;
+  const period = {
+    ...(event.data.data.currentPeriodStart
+      ? { periodStartsAt: event.data.data.currentPeriodStart }
+      : {}),
+    ...(event.data.data.currentPeriodEnd
+      ? { periodEndsAt: event.data.data.currentPeriodEnd }
+      : {}),
+  };
+  const base = {
+    provider: 'waffo' as const,
+    // Waffo's business event id drives Core settlement idempotency. Its
+    // delivery id is retained separately for durable inbox deduplication.
+    providerEventId: event.data.eventId,
+    providerDeliveryId: event.data.id,
+    reference: { id: event.data.data.orderId, kind: 'subscription' as const },
+    ...(buyerIdentity ? { buyerIdentity } : {}),
+    ...period,
+  };
+
+  if (event.data.eventType === 'subscription.activated') {
+    if (!planBindingId || !buyerIdentity) return null;
+    return {
+      eventType: 'checkout.completed',
+      ...base,
+      planBindingId,
+    };
+  }
+
+  if (event.data.eventType === 'subscription.payment_succeeded') {
+    return { eventType: 'subscription.renewed', ...base };
+  }
+
+  if (event.data.eventType === 'subscription.canceling') {
+    return { eventType: 'customer.subscription.updated', ...base };
+  }
+
+  if (event.data.eventType === 'subscription.uncanceled') {
+    return { eventType: 'customer.subscription.resumed', ...base };
+  }
+
+  return { eventType: 'customer.subscription.deleted', ...base };
 }
 
 function textMetadata(value: unknown): string | null {

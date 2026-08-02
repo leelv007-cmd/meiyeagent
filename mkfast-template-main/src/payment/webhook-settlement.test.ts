@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createSign, generateKeyPairSync } from 'node:crypto';
 import test from 'node:test';
 import { Stripe } from 'stripe';
 import {
@@ -204,6 +205,105 @@ test('a verified Creem event reaches the same provider-scoped inbox', async () =
     signature,
   });
 });
+
+test('Waffo only accepts an RSA-signed raw delivery into the inbox', async () => {
+  const payload = JSON.stringify({
+    data: {
+      orderId: 'waffo-order-001',
+    },
+    eventId: 'waffo-order-001',
+    eventType: 'subscription.activated',
+    id: 'waffo-delivery-001',
+  });
+  const trusted = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { format: 'pem', type: 'pkcs1' },
+    publicKeyEncoding: { format: 'pem', type: 'spki' },
+  });
+  const untrusted = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { format: 'pem', type: 'pkcs1' },
+    publicKeyEncoding: { format: 'pem', type: 'spki' },
+  });
+  const signature = waffoSignature(payload, trusted.privateKey);
+  let received: CanonicalPaymentWebhook | null = null;
+  const inbox: PaymentWebhookInboxPort = {
+    async receive(event) {
+      received = event;
+      return 'accepted';
+    },
+    async claimNext() {
+      return null;
+    },
+    async checkpointApplied() {},
+    async complete() {},
+    async retry() {},
+  };
+
+  await assert.rejects(
+    receivePaymentWebhook(
+      { payload, provider: 'waffo', signature },
+      {
+        inbox,
+        secrets: { waffoWebhookPublicKeys: { test: untrusted.publicKey } },
+      }
+    ),
+    (error: unknown) => error instanceof PaymentWebhookSignatureError
+  );
+  assert.equal(received, null);
+
+  assert.equal(
+    await receivePaymentWebhook(
+      { payload, provider: 'waffo', signature },
+      {
+        inbox,
+        secrets: { waffoWebhookPublicKeys: { test: trusted.publicKey } },
+      }
+    ),
+    'accepted'
+  );
+  assert.deepEqual(received, {
+    eventType: 'subscription.activated',
+    payload,
+    provider: 'waffo',
+    providerEventId: 'waffo-delivery-001',
+    signature,
+  });
+});
+
+test('Waffo refuses delivery when neither platform public key is configured', async () => {
+  const inbox: PaymentWebhookInboxPort = {
+    async receive() {
+      return 'accepted';
+    },
+    async claimNext() {
+      return null;
+    },
+    async checkpointApplied() {},
+    async complete() {},
+    async retry() {},
+  };
+
+  await assert.rejects(
+    receivePaymentWebhook(
+      {
+        payload: JSON.stringify({ id: 'waffo-delivery-unconfigured' }),
+        provider: 'waffo',
+        signature: 't=1,v1=invalid',
+      },
+      { inbox, secrets: {} }
+    ),
+    (error: unknown) => error instanceof PaymentWebhookConfigurationError
+  );
+});
+
+function waffoSignature(payload: string, privateKey: string) {
+  const timestamp = Date.now();
+  const signer = createSign('RSA-SHA256');
+  signer.update(`${timestamp}.${payload}`);
+  signer.end();
+  return `t=${timestamp},v1=${signer.sign(privateKey).toString('base64')}`;
+}
 
 async function hmacHex(payload: string, secret: string) {
   const encoder = new TextEncoder();

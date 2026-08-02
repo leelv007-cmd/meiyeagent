@@ -209,6 +209,9 @@ importers:
       '@tiptap/starter-kit':
         specifier: ^2.27.2
         version: 2.27.2
+      '@waffo/pancake-ts':
+        specifier: 0.16.1
+        version: 0.16.1
       ai:
         specifier: 7.0.19
         version: 7.0.19(zod@4.4.3)
@@ -4389,6 +4392,10 @@ packages:
 
   '@vitest/utils@4.1.10':
     resolution: {integrity: sha512-fy9am/HWxbaGt/Sawrp90vt6Y6jQwf1RX77cz3uwoJwJVMli/e1IEwRPnMNJ7vKfPTwo0diXifkpPvwH9v7nGA==}
+
+  '@waffo/pancake-ts@0.16.1':
+    resolution: {integrity: sha512-Y02vPqjPHKQqivHrrCFY00/bO8A2faz/pJb4PBv3TfhXUvysZJPZHcz4GVN8Ok7+ql274iwllz/JPHJBtg8DEQ==}
+    engines: {node: '>=20.0.0'}
 
   '@workflow/serde@4.1.0':
     resolution: {integrity: sha512-pav4F2BoirECWR7Nf1TKt+2eETcBj7jj4cBefQ8VXQCA6NPkaKeLfj/zMgi+3zYV5ZIBT4GuUiphsj0/b9hPQQ==}
@@ -12478,6 +12485,8 @@ snapshots:
       '@vitest/pretty-format': 4.1.10
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.0
+
+  '@waffo/pancake-ts@0.16.1': {}
 
   '@workflow/serde@4.1.0': {}
 

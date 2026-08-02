@@ -38,8 +38,20 @@ export function findSubscriptionPrice(
 ): Price | undefined {
   if (!configPlanId) return undefined;
   const plan = getPricePlans()[configPlanId];
-  return plan?.prices?.find(
+  const exact = plan?.prices?.find(
     (p) => p.type === PaymentTypes.SUBSCRIPTION && p.interval === interval
+  );
+  if (exact) return exact;
+
+  const canonicalInterval =
+    interval === PlanIntervals.MONTH
+      ? PlanIntervals.MONTHLY
+      : interval === PlanIntervals.YEAR
+        ? PlanIntervals.YEARLY
+        : interval;
+  return plan?.prices?.find(
+    (p) =>
+      p.type === PaymentTypes.SUBSCRIPTION && p.interval === canonicalInterval
   );
 }
 

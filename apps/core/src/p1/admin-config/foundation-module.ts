@@ -613,7 +613,16 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
               .object({
                 paymentProductId: z.string().trim().min(1).max(200),
                 interval: z
-                  .enum(['month', 'year', 'lifetime', 'one_time', 'any'])
+                  .enum([
+                  'single_month',
+                  'monthly',
+                  'yearly',
+                  'month',
+                  'year',
+                  'lifetime',
+                  'one_time',
+                  'any',
+                ])
                   .default('any'),
                 // trial is granted by REGISTER_GIFT, never by a payment event.
                 tier: z.enum(['starter', 'growth', 'pro']),

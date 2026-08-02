@@ -20,9 +20,22 @@ export const PaymentScenes = {
   SUBSCRIPTION: 'subscription' as const,
 };
 
-export type PlanInterval = 'month' | 'year';
+/**
+ * New commerce uses three distinct period products. `month`/`year` remain
+ * only to read legacy Stripe/Creem payment rows during their retirement.
+ */
+export type PlanInterval =
+  | 'single_month'
+  | 'monthly'
+  | 'yearly'
+  | 'month'
+  | 'year';
 
 export const PlanIntervals = {
+  SINGLE_MONTH: 'single_month' as const,
+  MONTHLY: 'monthly' as const,
+  YEARLY: 'yearly' as const,
+  // Legacy persisted values.
   MONTH: 'month' as const,
   YEAR: 'year' as const,
 };
@@ -205,8 +218,16 @@ export type VerifiedPaymentReferenceKind =
 export type VerifiedPaymentWebhookEvent = {
   eventType: VerifiedPaymentEventType;
   provider: PaymentProviderName;
+  /** Provider business event id used for downstream settlement idempotency. */
   providerEventId: string;
+  /** Provider delivery id, when it differs from the business event id. */
+  providerDeliveryId?: string;
   reference: { id: string; kind: VerifiedPaymentReferenceKind };
   /** Signed checkout metadata used to close provider-callback-before-attach races. */
   planBindingId?: string;
+  /** Provider-verified buyer identity, when the provider exposes one. */
+  buyerIdentity?: string;
+  /** Provider-verified entitlement period bounds, when the provider exposes them. */
+  periodStartsAt?: string;
+  periodEndsAt?: string;
 };

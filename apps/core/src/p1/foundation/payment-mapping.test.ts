@@ -9,6 +9,9 @@ import {
 
 describe('payment-mapping', () => {
   it('defaults monthly/yearly to growth and lifetime to pro', () => {
+    assert.equal(defaultTierForInterval('single_month'), 'growth');
+    assert.equal(defaultTierForInterval('monthly'), 'growth');
+    assert.equal(defaultTierForInterval('yearly'), 'growth');
     assert.equal(defaultTierForInterval('month'), 'growth');
     assert.equal(defaultTierForInterval('year'), 'growth');
     assert.equal(defaultTierForInterval('lifetime'), 'pro');
@@ -45,6 +48,52 @@ describe('payment-mapping', () => {
         config,
       }),
       'growth'
+    );
+  });
+
+  it('keeps the three paid period products distinct in an admin mapping', () => {
+    const config = {
+      mappings: [
+        {
+          interval: 'single_month' as const,
+          paymentProductId: 'PROD_STARTER_SINGLE',
+          tier: 'starter' as const,
+        },
+        {
+          interval: 'monthly' as const,
+          paymentProductId: 'PROD_GROWTH_MONTHLY',
+          tier: 'growth' as const,
+        },
+        {
+          interval: 'yearly' as const,
+          paymentProductId: 'PROD_PRO_YEARLY',
+          tier: 'pro' as const,
+        },
+      ],
+    };
+    assert.equal(
+      resolvePaymentTier({
+        config,
+        interval: 'single_month',
+        paymentProductId: 'PROD_STARTER_SINGLE',
+      }),
+      'starter'
+    );
+    assert.equal(
+      resolvePaymentTier({
+        config,
+        interval: 'monthly',
+        paymentProductId: 'PROD_GROWTH_MONTHLY',
+      }),
+      'growth'
+    );
+    assert.equal(
+      resolvePaymentTier({
+        config,
+        interval: 'yearly',
+        paymentProductId: 'PROD_PRO_YEARLY',
+      }),
+      'pro'
     );
   });
 

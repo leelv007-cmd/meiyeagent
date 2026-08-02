@@ -125,6 +125,129 @@ test(
         WHERE id = ${binding.id}
       `;
       assert.equal(canceledBinding?.status, 'canceled');
+
+      const waffoBinding = await store.createOwnerBinding({
+        interval: 'month',
+        ownerUserId: userId,
+        paymentType: 'subscription',
+        priceId: 'PROD_GROWTH_MONTH',
+        provider: 'waffo',
+        workspaceId,
+      });
+      assert.ok(waffoBinding);
+      await store.attachProviderCheckout({
+        bindingId: waffoBinding.id,
+        providerCheckoutId: 'waffo-session-001',
+      });
+
+      const waffoPeriodStart = '2026-08-03T00:00:00.000Z';
+      const waffoPeriodEnd = '2026-09-03T00:00:00.000Z';
+      const waffoActivation = {
+        buyerIdentity: userId,
+        eventType: 'checkout.completed' as const,
+        periodEndsAt: waffoPeriodEnd,
+        periodStartsAt: waffoPeriodStart,
+        planBindingId: waffoBinding.id,
+        provider: 'waffo' as const,
+        providerDeliveryId: 'waffo-delivery-001',
+        providerEventId: 'waffo-payment-001',
+        reference: { id: 'waffo-order-001', kind: 'subscription' as const },
+      };
+      const waffoFacts = await store.resolveBinding(waffoActivation);
+      assert.deepEqual(normalizePeriodFacts(waffoFacts), {
+        workspaceId,
+        ownerUserId: userId,
+        priceId: 'PROD_GROWTH_MONTH',
+        interval: 'month',
+        periodStartsAt: waffoPeriodStart,
+        periodEndsAt: waffoPeriodEnd,
+        subscriptionId: null,
+      });
+
+      await store.upsertWaffoSubscriptionPayment({
+        event: waffoActivation,
+        intent: {
+          interval: 'month',
+          lifecycle: 'activate',
+          ownerUserId: userId,
+          paymentEventId: 'waffo:waffo-payment-001',
+          periodEndsAt: waffoPeriodEnd,
+          periodStartsAt: waffoPeriodStart,
+          priceId: 'PROD_GROWTH_MONTH',
+          provider: 'waffo',
+          providerEventId: 'waffo-payment-001',
+          subscriptionId: 'waffo-order-001',
+          workspaceId,
+        },
+      });
+      const [waffoPayment] = await client<
+        Array<{
+          provider: string | null;
+          subscription_id: string;
+          customer_id: string;
+        }>
+      >`
+        SELECT provider, subscription_id, customer_id
+        FROM payment
+        WHERE subscription_id = 'waffo-order-001'
+      `;
+      assert.deepEqual(waffoPayment, {
+        provider: 'waffo',
+        subscription_id: 'waffo-order-001',
+        customer_id: userId,
+      });
+
+      assert.equal(
+        await store.resolveBinding({
+          ...waffoActivation,
+          buyerIdentity: 'other-user',
+        }),
+        null
+      );
+
+      await store.markActive({
+        bindingId: waffoBinding.id,
+        provider: 'waffo',
+        subscriptionId: 'waffo-order-001',
+      });
+      const [activeWaffoBinding] = await client<
+        Array<{ status: string; subscription_id: string | null }>
+      >`
+        SELECT status, subscription_id
+        FROM plan_checkout_bindings
+        WHERE id = ${waffoBinding.id}
+      `;
+      assert.deepEqual(activeWaffoBinding, {
+        status: 'active',
+        subscription_id: 'waffo-order-001',
+      });
+
+      assert.deepEqual(
+        normalizePeriodFacts(
+          await store.resolveBinding({
+            buyerIdentity: userId,
+            eventType: 'subscription.renewed',
+            periodEndsAt: '2026-10-03T00:00:00.000Z',
+            periodStartsAt: waffoPeriodEnd,
+            provider: 'waffo',
+            providerDeliveryId: 'waffo-delivery-002',
+            providerEventId: 'waffo-payment-002',
+            reference: {
+              id: 'waffo-order-001',
+              kind: 'subscription',
+            },
+          })
+        ),
+        {
+          workspaceId,
+          ownerUserId: userId,
+          priceId: 'PROD_GROWTH_MONTH',
+          interval: 'month',
+          periodStartsAt: waffoPeriodEnd,
+          periodEndsAt: '2026-10-03T00:00:00.000Z',
+          subscriptionId: 'waffo-order-001',
+        }
+      );
     } finally {
       await client`DELETE FROM "user" WHERE id = ${userId}`;
       await client`DELETE FROM workspaces WHERE id = ${workspaceId}`;
@@ -135,6 +258,7 @@ test(
 
 async function migratePlanCheckoutBindings(client: postgres.Sql) {
   await client.unsafe(`
+    ALTER TABLE payment ADD COLUMN IF NOT EXISTS provider text;
     CREATE TABLE IF NOT EXISTS plan_checkout_bindings (
       id text PRIMARY KEY,
       provider text NOT NULL,

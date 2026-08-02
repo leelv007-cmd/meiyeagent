@@ -11,7 +11,10 @@ import type {
   PlanInterval,
   VerifiedPaymentWebhookEvent,
 } from './types';
-import type { PlanCheckoutBindingFacts } from './plan-commerce';
+import type {
+  PlanCheckoutBindingFacts,
+  PlanSettlementIntent,
+} from './plan-commerce';
 
 interface IdentifierRow extends Record<string, unknown> {
   id: string;
@@ -126,6 +129,10 @@ export class PostgresPlanCheckoutBindingStore {
           AND payment.price_id = binding.price_id
         WHERE binding.provider = ${event.provider}
           AND (
+            ${event.buyerIdentity ?? null} IS NULL
+            OR binding.owner_user_id = ${event.buyerIdentity ?? null}
+          )
+          AND (
             (
               binding.provider_checkout_id = ${event.reference.id}
               AND binding.status IN ('checkout_created', 'active')
@@ -137,7 +144,7 @@ export class PostgresPlanCheckoutBindingStore {
           )
         LIMIT 1
       `);
-      return rowToFacts(rows[0]);
+      return factsWithVerifiedPeriod(rowToFacts(rows[0]), event);
     }
 
     if (event.reference.kind === 'subscription') {
@@ -158,14 +165,22 @@ export class PostgresPlanCheckoutBindingStore {
           AND payment.user_id = binding.owner_user_id
         WHERE binding.provider = ${event.provider}
           AND (
+            ${event.buyerIdentity ?? null} IS NULL
+            OR binding.owner_user_id = ${event.buyerIdentity ?? null}
+          )
+          AND (
             binding.subscription_id = ${event.reference.id}
             OR payment.session_id = binding.provider_checkout_id
+            OR (
+              binding.id = ${event.planBindingId ?? null}
+              AND binding.status IN ('pending', 'checkout_created', 'active')
+            )
           )
           AND binding.status IN ('checkout_created', 'active', 'canceled')
         ORDER BY binding.updated_at DESC
         LIMIT 1
       `);
-      return rowToFacts(rows[0]);
+      return factsWithVerifiedPeriod(rowToFacts(rows[0]), event);
     }
 
     if (event.reference.kind === 'invoice') {
@@ -193,7 +208,7 @@ export class PostgresPlanCheckoutBindingStore {
         ORDER BY payment.updated_at DESC
         LIMIT 1
       `);
-      return rowToFacts(rows[0]);
+      return factsWithVerifiedPeriod(rowToFacts(rows[0]), event);
     }
 
     return null;
@@ -205,7 +220,7 @@ export class PostgresPlanCheckoutBindingStore {
     providerCheckoutId?: string | null;
     subscriptionId?: string | null;
   }) {
-    if (input.bindingId && input.providerCheckoutId) {
+    if (input.bindingId) {
       await this.db.execute(sql`
         UPDATE plan_checkout_bindings
         SET status = 'active',
@@ -221,8 +236,14 @@ export class PostgresPlanCheckoutBindingStore {
         WHERE id = ${input.bindingId}
           AND provider = ${input.provider}
           AND (
-            provider_checkout_id IS NULL
-            OR provider_checkout_id = ${input.providerCheckoutId}
+            ${input.providerCheckoutId ?? null} IS NULL
+            OR provider_checkout_id IS NULL
+            OR provider_checkout_id = ${input.providerCheckoutId ?? null}
+          )
+          AND (
+            ${input.subscriptionId ?? null} IS NULL
+            OR subscription_id IS NULL
+            OR subscription_id = ${input.subscriptionId ?? null}
           )
       `);
     } else if (input.providerCheckoutId) {
@@ -252,6 +273,56 @@ export class PostgresPlanCheckoutBindingStore {
     }
   }
 
+  async upsertWaffoSubscriptionPayment(input: {
+    event: VerifiedPaymentWebhookEvent;
+    intent: PlanSettlementIntent;
+  }) {
+    const subscriptionId = input.intent.subscriptionId?.trim();
+    if (!subscriptionId) {
+      throw new Error('Waffo subscription settlement requires subscriptionId.');
+    }
+    const paymentId = `waffo:${subscriptionId}`;
+    const customerId =
+      input.event.buyerIdentity?.trim() || input.intent.ownerUserId;
+    const status =
+      input.intent.lifecycle === 'expire'
+        ? ('canceled' as const)
+        : ('active' as const);
+    const cancelAtPeriodEnd = input.intent.lifecycle === 'cancel_at_period_end';
+    const rows = await this.db.execute<IdentifierRow>(sql`
+      INSERT INTO payment (
+        id, provider, price_id, user_id, customer_id, subscription_id,
+        type, scene, interval, status, paid, period_start, period_end,
+        cancel_at_period_end, created_at, updated_at
+      )
+      VALUES (
+        ${paymentId}, 'waffo', ${input.intent.priceId},
+        ${input.intent.ownerUserId}, ${customerId}, ${subscriptionId},
+        'subscription', 'subscription', ${input.intent.interval}, ${status},
+        TRUE, ${input.intent.periodStartsAt}, ${input.intent.periodEndsAt},
+        ${cancelAtPeriodEnd}, now(), now()
+      )
+      ON CONFLICT (subscription_id) DO UPDATE
+      SET provider = EXCLUDED.provider,
+          price_id = EXCLUDED.price_id,
+          customer_id = EXCLUDED.customer_id,
+          interval = EXCLUDED.interval,
+          status = EXCLUDED.status,
+          paid = EXCLUDED.paid,
+          period_start = COALESCE(EXCLUDED.period_start, payment.period_start),
+          period_end = COALESCE(EXCLUDED.period_end, payment.period_end),
+          cancel_at_period_end = EXCLUDED.cancel_at_period_end,
+          updated_at = now()
+      WHERE payment.provider IS NULL OR payment.provider = 'waffo'
+      RETURNING id
+    `);
+    if (!rows[0]) {
+      throw new Error(
+        'Waffo subscription payment belongs to another provider.'
+      );
+    }
+  }
+
   async markCanceled(input: {
     provider: PaymentProviderName;
     subscriptionId: string;
@@ -259,13 +330,16 @@ export class PostgresPlanCheckoutBindingStore {
     await this.db.execute(sql`
       UPDATE plan_checkout_bindings AS binding
       SET status = 'canceled', updated_at = now()
-      FROM payment
       WHERE binding.provider = ${input.provider}
-        AND payment.subscription_id = ${input.subscriptionId}
-        AND payment.user_id = binding.owner_user_id
         AND (
           binding.subscription_id = ${input.subscriptionId}
-          OR payment.session_id = binding.provider_checkout_id
+          OR EXISTS (
+            SELECT 1
+            FROM payment
+            WHERE payment.subscription_id = ${input.subscriptionId}
+              AND payment.user_id = binding.owner_user_id
+              AND payment.session_id = binding.provider_checkout_id
+          )
         )
     `);
   }
@@ -276,6 +350,9 @@ function rowToFacts(
 ): PlanCheckoutBindingFacts | null {
   if (!row?.workspaceId || !row.ownerUserId || !row.priceId) return null;
   const interval =
+    row.interval === 'single_month' ||
+    row.interval === 'monthly' ||
+    row.interval === 'yearly' ||
     row.interval === 'month' ||
     row.interval === 'year' ||
     row.interval === 'lifetime'
@@ -294,5 +371,17 @@ function rowToFacts(
     ...(row.cancelAtPeriodEnd != null
       ? { cancelAtPeriodEnd: row.cancelAtPeriodEnd }
       : {}),
+  };
+}
+
+function factsWithVerifiedPeriod(
+  facts: PlanCheckoutBindingFacts | null,
+  event: VerifiedPaymentWebhookEvent
+): PlanCheckoutBindingFacts | null {
+  if (!facts) return null;
+  return {
+    ...facts,
+    ...(event.periodStartsAt ? { periodStartsAt: event.periodStartsAt } : {}),
+    ...(event.periodEndsAt ? { periodEndsAt: event.periodEndsAt } : {}),
   };
 }

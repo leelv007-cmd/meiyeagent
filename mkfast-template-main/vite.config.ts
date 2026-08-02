@@ -79,6 +79,27 @@ const config = defineConfig(({ command, mode }) => ({
                 ...(process.env.CREEM_WEBHOOK_SECRET
                   ? { CREEM_WEBHOOK_SECRET: process.env.CREEM_WEBHOOK_SECRET }
                   : {}),
+                ...(process.env.WAFFO_DEBUG
+                  ? { WAFFO_DEBUG: process.env.WAFFO_DEBUG }
+                  : {}),
+                ...(process.env.WAFFO_MERCHANT_ID
+                  ? { WAFFO_MERCHANT_ID: process.env.WAFFO_MERCHANT_ID }
+                  : {}),
+                ...(process.env.WAFFO_PRIVATE_KEY
+                  ? { WAFFO_PRIVATE_KEY: process.env.WAFFO_PRIVATE_KEY }
+                  : {}),
+                ...(process.env.WAFFO_WEBHOOK_PROD_PUBLIC_KEY
+                  ? {
+                      WAFFO_WEBHOOK_PROD_PUBLIC_KEY:
+                        process.env.WAFFO_WEBHOOK_PROD_PUBLIC_KEY,
+                    }
+                  : {}),
+                ...(process.env.WAFFO_WEBHOOK_TEST_PUBLIC_KEY
+                  ? {
+                      WAFFO_WEBHOOK_TEST_PUBLIC_KEY:
+                        process.env.WAFFO_WEBHOOK_TEST_PUBLIC_KEY,
+                    }
+                  : {}),
               },
             })
           : undefined,

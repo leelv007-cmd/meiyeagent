@@ -11,6 +11,9 @@
 import type { ProductPlanTier } from './domain.js';
 
 export type PaymentMappingInterval =
+  | 'single_month'
+  | 'monthly'
+  | 'yearly'
   | 'month'
   | 'year'
   | 'lifetime'
@@ -50,6 +53,9 @@ const DEFAULT_INTERVAL_TIERS: Record<
 > = {
   month: 'growth',
   year: 'growth',
+  single_month: 'growth',
+  monthly: 'growth',
+  yearly: 'growth',
   lifetime: 'pro',
   one_time: 'pro',
 };
@@ -130,6 +136,9 @@ function normalizeInterval(
   value: PaymentMappingInterval | null | undefined
 ): PaymentMappingInterval {
   if (
+    value === 'single_month' ||
+    value === 'monthly' ||
+    value === 'yearly' ||
     value === 'month' ||
     value === 'year' ||
     value === 'lifetime' ||
@@ -158,14 +167,12 @@ export function billingPeriodFromProvider(input: {
   periodStrategy: 'calendar_month' | 'fixed_days' | 'provider_period';
 } {
   const clock = input.clock ?? (() => new Date());
-  const starts =
-    parseIso(input.periodStartsAt) ??
-    startOfUtcMonth(clock());
+  const starts = parseIso(input.periodStartsAt) ?? startOfUtcMonth(clock());
   let ends = parseIso(input.periodEndsAt);
 
   if (!ends) {
     const interval = normalizeInterval(input.interval);
-    if (interval === 'year') {
+    if (interval === 'year' || interval === 'yearly') {
       ends = new Date(
         Date.UTC(
           starts.getUTCFullYear() + 1,
@@ -180,7 +187,11 @@ export function billingPeriodFromProvider(input: {
     } else if (interval === 'lifetime' || interval === 'one_time') {
       // Lifetime: long fixed window so periodEndsAt is real but far out.
       ends = new Date(
-        Date.UTC(starts.getUTCFullYear() + 100, starts.getUTCMonth(), starts.getUTCDate())
+        Date.UTC(
+          starts.getUTCFullYear() + 100,
+          starts.getUTCMonth(),
+          starts.getUTCDate()
+        )
       );
     } else {
       ends = new Date(
