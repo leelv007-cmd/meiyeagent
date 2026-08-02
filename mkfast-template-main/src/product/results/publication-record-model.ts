@@ -6,6 +6,8 @@
  * Edits to published content create a new revision — never rewrite history.
  */
 
+import type { ContentPackagePlatform } from '@meiye/contracts';
+
 export const PUBLICATION_SOURCE_TIERS = [
   'verified_callback',
   'manual_record',
@@ -77,6 +79,11 @@ export type ManualPublicationFormInput = {
   platformUrl?: string;
   note?: string;
   status: 'published' | 'failed' | 'unknown';
+};
+
+export type PublicationVariantBinding = {
+  platform: ContentPackagePlatform;
+  variantVersionId: string;
 };
 
 export type ManualPublicationFormValidation =
@@ -285,6 +292,7 @@ export function projectPublicationRecordPanel(input: {
   contentPackageId?: string;
   contentPackageRevision?: number;
   variantVersionId?: string;
+  variantBindings?: readonly PublicationVariantBinding[];
   workspaceId?: string;
   recordsWorkspaceId?: string;
   records?: readonly PublicationRecordFact[];
@@ -318,7 +326,14 @@ export function projectPublicationRecordPanel(input: {
     };
   }
 
-  if (!input.variantVersionId?.trim()) {
+  const hasVariantBinding =
+    Boolean(input.variantVersionId?.trim()) ||
+    Boolean(
+      input.variantBindings?.some(
+        (binding) => binding.variantVersionId.trim().length > 0
+      )
+    );
+  if (!hasVariantBinding) {
     return {
       kind: 'fail_closed',
       heading,

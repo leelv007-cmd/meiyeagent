@@ -19,6 +19,7 @@ import {
 import {
   publicationRecordsFromDeliveryEvents,
   type PublicationRecordFact,
+  type PublicationVariantBinding,
 } from './publication-record-model';
 import type {
   WeeklyNextAction,
@@ -30,6 +31,7 @@ export type ResultCloseLoopFacts = {
   contentPackageRevision: number;
   variantVersionId?: string;
   publicationPlatform?: ContentPackagePlatform;
+  publicationBindings: readonly PublicationVariantBinding[];
   workspaceId: string;
   deliveryReceipts: readonly DeliveryActionReceiptFact[];
   publicationRecords: readonly PublicationRecordFact[];
@@ -219,21 +221,43 @@ export function projectResultCloseLoopFacts(input: {
     note?: string;
   }[];
   nowIso: string;
-  preferredPlatform?: ContentPackagePlatform | null;
+  preferredPlatform: ContentPackagePlatform | null;
+  allowExplicitVariantSelection?: boolean;
 }): ResultCloseLoopFacts {
   const candidateVariant =
-    input.preferredPlatform === undefined
-      ? input.contentPackage.variants[0]
-      : input.preferredPlatform === null
-        ? undefined
-        : input.contentPackage.variants.find(
-            (candidate) => candidate.platform === input.preferredPlatform
-          );
+    input.preferredPlatform === null
+      ? undefined
+      : input.contentPackage.variants.find(
+          (candidate) => candidate.platform === input.preferredPlatform
+        );
   const variant = candidateVariant?.versions.some(
     (version) => version.id === candidateVariant.currentVersionId
   )
     ? candidateVariant
     : undefined;
+  const validBindings = input.contentPackage.variants.flatMap((candidate) =>
+    candidate.versions.some(
+      (version) => version.id === candidate.currentVersionId
+    )
+      ? [
+          {
+            platform: candidate.platform,
+            variantVersionId: candidate.currentVersionId,
+          },
+        ]
+      : []
+  );
+  const publicationBindings: PublicationVariantBinding[] =
+    input.preferredPlatform === null && input.allowExplicitVariantSelection
+      ? validBindings
+      : variant
+        ? [
+            {
+              platform: variant.platform,
+              variantVersionId: variant.currentVersionId,
+            },
+          ]
+        : [];
   const publications = publicationFactsForPackage(
     input.contentPackage,
     input.assistedReceipts
@@ -242,6 +266,7 @@ export function projectResultCloseLoopFacts(input: {
   return {
     contentPackageId: input.contentPackage.id,
     contentPackageRevision: input.contentPackage.revision,
+    publicationBindings,
     ...(variant
       ? {
           publicationPlatform: variant.platform,

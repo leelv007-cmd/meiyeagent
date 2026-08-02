@@ -204,11 +204,12 @@ async function recordManualPublication(page: Page) {
     'close-loop publication form requires package + variant after adopt'
   ).toBeVisible({ timeout: 60_000 });
 
-  // Only platforms with a real ContentPackage variant may be recorded.
-  // Prefer an already-selected chip; otherwise take the first offered option.
-  const platformChips = page.locator('[data-testid^="publication-platform-"]');
-  await expect(platformChips.first()).toBeVisible({ timeout: 30_000 });
-  await platformChips.first().click();
+  // Moments remains distribution-only. Publication is a separate explicit
+  // merchant choice bound to one real current ContentPackage variant.
+  const xhsPlatform = page.getByTestId('publication-platform-xiaohongshu');
+  await expect(xhsPlatform).toBeVisible({ timeout: 30_000 });
+  await xhsPlatform.click();
+  await expect(xhsPlatform).toHaveAttribute('aria-pressed', 'true');
   await page.getByTestId('publication-account').fill('E2E 门店账号');
   const publishedAt = new Date().toISOString().slice(0, 16);
   await page.getByTestId('publication-at').fill(publishedAt);

@@ -16,13 +16,14 @@ import {
   result_publication_status_unknown,
   result_publication_submit,
 } from '@/locale/paraglide/messages';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ContentPackagePlatform } from '@meiye/contracts';
 
 import {
   validateManualPublicationForm,
   type ManualPublicationFormInput,
   type PublicationRecordPanelView,
+  type PublicationVariantBinding,
 } from './publication-record-model';
 
 export type PublicationRecordPanelProps = {
@@ -32,9 +33,14 @@ export type PublicationRecordPanelProps = {
   variantVersionId?: string;
   /** Exact platform for the bound ContentPackage variant. */
   platform?: ContentPackagePlatform;
+  /** Valid current variants the merchant may explicitly bind to publication. */
+  variantBindings?: readonly PublicationVariantBinding[];
   pending?: boolean;
   onRecordManual?: (
-    input: ManualPublicationFormInput & { idempotencyKey: string }
+    input: ManualPublicationFormInput & {
+      idempotencyKey: string;
+      variantVersionId: string;
+    }
   ) => void | Promise<void>;
 };
 
@@ -46,8 +52,8 @@ const PLATFORMS: readonly { id: ContentPackagePlatform; label: string }[] = [
 
 export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
   const { view } = props;
-  const [platform, setPlatform] = useState<ContentPackagePlatform>(
-    props.platform ?? 'xiaohongshu'
+  const [platform, setPlatform] = useState<ContentPackagePlatform | undefined>(
+    props.platform
   );
   const [accountDisplayLabel, setAccountDisplayLabel] = useState('');
   const [publishedAt, setPublishedAt] = useState('');
@@ -61,9 +67,31 @@ export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
     if (view.kind === 'fail_closed') return view.canRecordManual;
     return view.canRecordManual;
   }, [view]);
-  const platforms = props.platform
-    ? PLATFORMS.filter((item) => item.id === props.platform)
-    : PLATFORMS;
+  const variantBindings =
+    props.variantBindings ??
+    (props.platform && props.variantVersionId
+      ? [
+          {
+            platform: props.platform,
+            variantVersionId: props.variantVersionId,
+          },
+        ]
+      : []);
+  const bindingRevisionKey = variantBindings
+    .map((binding) => `${binding.platform}:${binding.variantVersionId}`)
+    .join('|');
+  useEffect(() => {
+    // A refreshed package revision may move a platform to a new current
+    // version. Unscoped distribution flows must ask the merchant to choose
+    // again instead of silently carrying a selection onto the new binding.
+    setPlatform(props.platform);
+  }, [bindingRevisionKey, props.contentPackageRevision, props.platform]);
+  const selectedBinding = variantBindings.find(
+    (binding) => binding.platform === platform
+  );
+  const platforms = PLATFORMS.filter((item) =>
+    variantBindings.some((binding) => binding.platform === item.id)
+  );
 
   return (
     <section
@@ -150,14 +178,14 @@ export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
             if (
               props.contentPackageId === undefined ||
               props.contentPackageRevision === undefined ||
-              !props.variantVersionId
+              !selectedBinding
             ) {
-              setFormError('缺少成品版本绑定，无法提交。');
+              setFormError('请选择实际发布平台。');
               return;
             }
             const result = validateManualPublicationForm(
               {
-                platform,
+                platform: selectedBinding.platform,
                 accountDisplayLabel,
                 publishedAt: publishedAt
                   ? new Date(publishedAt).toISOString()
@@ -169,7 +197,7 @@ export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
               {
                 contentPackageId: props.contentPackageId,
                 contentPackageRevision: props.contentPackageRevision,
-                variantVersionId: props.variantVersionId,
+                variantVersionId: selectedBinding.variantVersionId,
               }
             );
             if (!result.ok) {
@@ -180,6 +208,7 @@ export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
             await props.onRecordManual?.({
               ...result.normalized,
               idempotencyKey: result.idempotencyKey,
+              variantVersionId: selectedBinding.variantVersionId,
             });
           }}
         >
@@ -192,6 +221,7 @@ export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
                 size="sm"
                 variant={platform === item.id ? 'default' : 'outline'}
                 data-testid={`publication-platform-${item.id}`}
+                aria-pressed={platform === item.id}
                 onClick={() => setPlatform(item.id)}
               >
                 {item.label}
@@ -277,7 +307,7 @@ export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
           <Button
             type="submit"
             size="sm"
-            disabled={props.pending}
+            disabled={props.pending || !selectedBinding}
             data-testid="publication-record-submit"
           >
             {result_publication_submit()}

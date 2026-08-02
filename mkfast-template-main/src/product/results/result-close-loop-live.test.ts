@@ -135,16 +135,54 @@ test('projects the canonical package into an honest Result close-loop journey', 
 });
 
 test('does not bind a non-platform package to the first variant', () => {
+  const unscoped = contentPackage();
+  unscoped.variants.push({
+    id: 'variant-xiaohongshu',
+    platform: 'xiaohongshu',
+    currentVersionId: 'xiaohongshu-v1',
+    versions: [
+      {
+        id: 'xiaohongshu-v1',
+        title: '夏日美甲·小红书',
+        body: '到店可享夏日美甲套餐',
+        conversionHook: '私信预约',
+        orderedAssetIds: [],
+        topics: [],
+        createdAt: '2026-07-22T09:00:00.000Z',
+      },
+    ],
+  });
   const facts = projectResultCloseLoopFacts({
-    contentPackage: contentPackage(),
-    contentPackages: [contentPackage()],
+    contentPackage: unscoped,
+    contentPackages: [unscoped],
     assistedReceipts: [],
     canShareFiles: false,
     hasDownload: true,
     nowIso: '2026-07-23T12:00:00.000Z',
     preferredPlatform: null,
+    allowExplicitVariantSelection: true,
   });
 
+  assert.equal(facts.publicationPlatform, undefined);
+  assert.equal(facts.variantVersionId, undefined);
+  assert.deepEqual(facts.publicationBindings, [
+    { platform: 'douyin', variantVersionId: 'douyin-v1' },
+    { platform: 'xiaohongshu', variantVersionId: 'xiaohongshu-v1' },
+  ]);
+});
+
+test('keeps an unscoped non-distribution package closed to publication selection', () => {
+  const facts = projectResultCloseLoopFacts({
+    contentPackage: contentPackage(),
+    contentPackages: [contentPackage()],
+    assistedReceipts: [],
+    canShareFiles: false,
+    hasDownload: false,
+    nowIso: '2026-07-23T12:00:00.000Z',
+    preferredPlatform: null,
+  });
+
+  assert.deepEqual(facts.publicationBindings, []);
   assert.equal(facts.publicationPlatform, undefined);
   assert.equal(facts.variantVersionId, undefined);
 });
@@ -165,4 +203,5 @@ test('does not expose a dangling variant currentVersionId as a writable publicat
 
   assert.equal(facts.publicationPlatform, undefined);
   assert.equal(facts.variantVersionId, undefined);
+  assert.deepEqual(facts.publicationBindings, []);
 });

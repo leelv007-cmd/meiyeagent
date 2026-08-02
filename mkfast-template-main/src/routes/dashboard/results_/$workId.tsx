@@ -806,6 +806,12 @@ function ResultCenterRoutePage() {
         preferredPlatform: deliveryPanelTarget
           ? canonicalDeliveryPlatform
           : null,
+        allowExplicitVariantSelection: Boolean(
+          deliveryPanelTarget === 'wechat_moments' &&
+            canonicalDeliveryPlatform === null &&
+            !contentPackage.legacySource &&
+            !contentPackage.source.targetPlatform
+        ),
       })
     : undefined;
   const exactExportReceipt = contentPackage?.exportReceipts
@@ -1607,7 +1613,12 @@ function ResultCenterRoutePage() {
       closeLoop={closeLoopFacts}
       closeLoopPending={closeLoopPending}
       onRecordManualPublication={async (input) => {
-        if (!contentPackage || !closeLoopFacts?.variantVersionId) return;
+        const publicationBinding = closeLoopFacts?.publicationBindings.find(
+          (binding) =>
+            binding.platform === input.platform &&
+            binding.variantVersionId === input.variantVersionId
+        );
+        if (!contentPackage || !publicationBinding) return;
         setCloseLoopPending(true);
         setShellActionError(undefined);
         try {
@@ -1622,7 +1633,7 @@ function ResultCenterRoutePage() {
               ...(input.platformUrl ? { platformUrl: input.platformUrl } : {}),
               publishedAt: input.publishedAt,
               status: input.status,
-              variantVersionId: closeLoopFacts.variantVersionId,
+              variantVersionId: publicationBinding.variantVersionId,
             },
             input.idempotencyKey
           );

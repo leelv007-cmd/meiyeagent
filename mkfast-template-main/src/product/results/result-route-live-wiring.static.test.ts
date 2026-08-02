@@ -272,6 +272,19 @@ test('result route forwards the live viewport to the Result shell', () => {
 test('result route wires the Result close-loop panels to public P1 operations', () => {
   assert.match(route, /projectResultCloseLoopFacts/);
   assert.match(route, /closeLoop=\{closeLoopFacts\}/);
+  assert.match(
+    route,
+    /allowExplicitVariantSelection:\s*Boolean\([\s\S]*?deliveryPanelTarget === ['"]wechat_moments['"][\s\S]*?canonicalDeliveryPlatform === null[\s\S]*?!contentPackage\.legacySource[\s\S]*?!contentPackage\.source\.targetPlatform/u
+  );
+  assert.match(
+    route,
+    /closeLoopFacts\?\.publicationBindings\.find\([\s\S]*?binding\.platform === input\.platform[\s\S]*?binding\.variantVersionId === input\.variantVersionId/u
+  );
+  assert.match(
+    route,
+    /variantVersionId: publicationBinding\.variantVersionId/u
+  );
+  assert.doesNotMatch(route, /closeLoopFacts\?\.variantVersionId/u);
   assert.match(route, /record_content_package_manual_result/);
   assert.match(route, /record_content_package_result_signal/);
   assert.match(route, /record_content_package_result_review_action/);

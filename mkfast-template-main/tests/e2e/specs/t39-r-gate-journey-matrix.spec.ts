@@ -578,7 +578,10 @@ async function assertThreeDeliveryRoutes(
  * Reload first: close-loop facts bind to the generated platform variants, which
  * only exist once adoption and export have landed.
  */
-async function recordPublicationConfirmation(page: Page) {
+async function recordPublicationConfirmation(
+  page: Page,
+  contract: JourneyContract
+) {
   await page.reload();
   await expect(page.getByTestId('result-center-shell')).toBeVisible({
     timeout: 60_000,
@@ -590,9 +593,16 @@ async function recordPublicationConfirmation(page: Page) {
     '发布确认 needs a package and a variant — both exist after 采用 + 导出'
   ).toBeVisible({ timeout: 60_000 });
 
-  const platformChips = page.locator('[data-testid^="publication-platform-"]');
-  await expect(platformChips.first()).toBeVisible({ timeout: 30_000 });
-  await platformChips.first().click();
+  const publicationPlatform =
+    contract.deliveryTarget === 'wechat_moments'
+      ? 'xiaohongshu'
+      : contract.deliveryTarget;
+  const platformChip = page.getByTestId(
+    `publication-platform-${publicationPlatform}`
+  );
+  await expect(platformChip).toBeVisible({ timeout: 30_000 });
+  await platformChip.click();
+  await expect(platformChip).toHaveAttribute('aria-pressed', 'true');
   await page.getByTestId('publication-account').fill('E2E 门店账号');
   await page
     .getByTestId('publication-at')
@@ -732,7 +742,7 @@ test.describe('T39 R-gate journey matrix', () => {
       await assertBillingReconciled(page, contract, taskId!, beforeSpend);
 
       // —— 发布确认 ——
-      await recordPublicationConfirmation(page);
+      await recordPublicationConfirmation(page, contract);
 
       // —— 刷新恢复 ——
       await assertJourneyRestored(page, contract, workId);

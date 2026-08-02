@@ -98,6 +98,7 @@ import {
   projectPublicationRecordPanel,
   type ManualPublicationFormInput,
   type PublicationRecordFact,
+  type PublicationVariantBinding,
 } from './publication-record-model';
 import { WeeklyReviewPanel } from './weekly-review-panel';
 import {
@@ -194,6 +195,7 @@ export type ResultCenterPageProps = {
     contentPackageRevision?: number;
     variantVersionId?: string;
     publicationPlatform?: ContentPackagePlatform;
+    publicationBindings?: readonly PublicationVariantBinding[];
     workspaceId?: string;
     deliveryReceipts?: readonly DeliveryActionReceiptFact[];
     publicationRecords?: readonly PublicationRecordFact[];
@@ -205,7 +207,10 @@ export type ResultCenterPageProps = {
     hasDownload?: boolean;
   };
   onRecordManualPublication?: (
-    input: ManualPublicationFormInput & { idempotencyKey: string }
+    input: ManualPublicationFormInput & {
+      idempotencyKey: string;
+      variantVersionId: string;
+    }
   ) => void | Promise<void>;
   onRecordOutcomeObservation?: (
     kind: OutcomeObservationKind
@@ -955,6 +960,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
                 contentPackageId: cl.contentPackageId,
                 contentPackageRevision: cl.contentPackageRevision,
                 variantVersionId: cl.variantVersionId,
+                variantBindings: cl.publicationBindings,
                 workspaceId: cl.workspaceId,
                 recordsWorkspaceId: cl.workspaceId,
                 records: cl.publicationRecords,
@@ -1007,6 +1013,7 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
                     contentPackageId={cl.contentPackageId}
                     contentPackageRevision={cl.contentPackageRevision}
                     variantVersionId={cl.variantVersionId}
+                    variantBindings={cl.publicationBindings}
                     platform={cl.publicationPlatform}
                     pending={props.closeLoopPending}
                     onRecordManual={props.onRecordManualPublication}

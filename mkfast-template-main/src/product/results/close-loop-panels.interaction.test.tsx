@@ -46,6 +46,7 @@ describe('close-loop panels', () => {
         contentPackageId="pkg-a"
         contentPackageRevision={1}
         variantVersionId="v1"
+        platform="douyin"
         onRecordManual={() => undefined}
       />
     );
@@ -91,6 +92,76 @@ describe('close-loop panels', () => {
       onRecordManual.mock.calls[0]?.[0]?.idempotencyKey ?? '',
       /^pub\.douyin\.1\.[0-9a-z]+\.[0-9a-f-]{36}$/u
     );
+    assert.equal(
+      onRecordManual.mock.calls[0]?.[0]?.variantVersionId,
+      'douyin-v1'
+    );
+  });
+
+  it('requires an explicit valid variant selection for an unscoped distribution package', async () => {
+    const onRecordManual = vi.fn();
+    const variantBindings = [
+      { platform: 'xiaohongshu' as const, variantVersionId: 'xhs-v1' },
+      { platform: 'douyin' as const, variantVersionId: 'douyin-v1' },
+    ];
+    const view = projectPublicationRecordPanel({
+      contentPackageId: 'pkg-a',
+      contentPackageRevision: 1,
+      variantBindings,
+      automaticVerifiedPlatformCount: 0,
+    });
+    const { rerender } = render(
+      <PublicationRecordPanel
+        view={view}
+        contentPackageId="pkg-a"
+        contentPackageRevision={1}
+        variantBindings={variantBindings}
+        onRecordManual={onRecordManual}
+      />
+    );
+
+    const submit = screen.getByTestId('publication-record-submit');
+    assert.equal((submit as HTMLButtonElement).disabled, true);
+    const xhs = screen.getByTestId('publication-platform-xiaohongshu');
+    assert.equal(xhs.getAttribute('aria-pressed'), 'false');
+    fireEvent.click(xhs);
+    assert.equal(xhs.getAttribute('aria-pressed'), 'true');
+    assert.equal((submit as HTMLButtonElement).disabled, false);
+    fireEvent.change(screen.getByTestId('publication-account'), {
+      target: { value: '本店小红书' },
+    });
+    fireEvent.change(screen.getByTestId('publication-at'), {
+      target: { value: '2026-07-23T09:30' },
+    });
+    fireEvent.submit(screen.getByTestId('publication-record-form'));
+
+    await waitFor(() => assert.equal(onRecordManual.mock.calls.length, 1));
+    assert.equal(onRecordManual.mock.calls[0]?.[0]?.platform, 'xiaohongshu');
+    assert.equal(onRecordManual.mock.calls[0]?.[0]?.variantVersionId, 'xhs-v1');
+
+    const refreshedBindings = [
+      { platform: 'xiaohongshu' as const, variantVersionId: 'xhs-v2' },
+      { platform: 'douyin' as const, variantVersionId: 'douyin-v2' },
+    ];
+    const refreshedView = projectPublicationRecordPanel({
+      contentPackageId: 'pkg-a',
+      contentPackageRevision: 2,
+      variantBindings: refreshedBindings,
+      automaticVerifiedPlatformCount: 0,
+    });
+    rerender(
+      <PublicationRecordPanel
+        view={refreshedView}
+        contentPackageId="pkg-a"
+        contentPackageRevision={2}
+        variantBindings={refreshedBindings}
+        onRecordManual={onRecordManual}
+      />
+    );
+    await waitFor(() =>
+      assert.equal(xhs.getAttribute('aria-pressed'), 'false')
+    );
+    assert.equal((submit as HTMLButtonElement).disabled, true);
   });
 
   it('outcome chips stay disabled until published', () => {
