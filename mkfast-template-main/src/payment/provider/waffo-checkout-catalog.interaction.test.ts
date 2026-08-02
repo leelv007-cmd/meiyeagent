@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { WebhookEvent } from '@waffo/pancake-ts';
+import type { WaffoClient } from './waffo';
 
 const plan = {
   id: 'growth',
@@ -160,14 +162,24 @@ function fakeClient(
     mode: 'prod',
   },
   cancelSubscription: ReturnType<typeof vi.fn> = vi.fn()
-) {
+): WaffoClient {
+  const invokeCheckout = create as unknown as (input: unknown) => unknown;
+  const invokeCancellation = cancelSubscription as unknown as (
+    input: unknown
+  ) => unknown;
+
   return {
     checkout: {
-      authenticated: { create },
+      authenticated: {
+        create: async (input) =>
+          invokeCheckout(input) as { checkoutUrl: string; sessionId: string },
+      },
     },
     webhooks: {
-      verify: vi.fn().mockReturnValue(webhookEvent),
+      verify: () => webhookEvent as unknown as WebhookEvent,
     },
-    orders: { cancelSubscription },
+    orders: {
+      cancelSubscription: async (input) => invokeCancellation(input),
+    },
   };
 }

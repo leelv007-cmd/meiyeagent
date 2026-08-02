@@ -1,50 +1,47 @@
 import {
+  BillingPeriod,
+  TaxCategory,
+  WebhookEventType,
+  type AddWebhookParams,
+  type CreateSubscriptionProductGroupParams,
+  type CreateSubscriptionProductParams,
+  type PublishSubscriptionProductGroupParams,
+  type PublishSubscriptionProductParams,
+} from '@waffo/pancake-ts';
+import {
   WAFFO_SUBSCRIPTION_PRODUCTS,
   type WaffoProductIdKey,
   type WaffoSubscriptionPlanId,
 } from './waffo-subscription-catalog';
 
-type SubscriptionProductInput = {
-  storeId: string;
-  name: string;
-  billingPeriod: 'monthly' | 'yearly';
-  prices: { CNY: { amount: string; taxCategory: 'saas' } };
-  metadata: Record<string, string>;
-};
-
 export interface WaffoSubscriptionProvisioningClient {
   subscriptionProducts: {
     create(
-      input: SubscriptionProductInput
+      input: CreateSubscriptionProductParams
     ): Promise<{ product: { id: string } }>;
-    publish(input: { id: string }): Promise<{ product: { id: string } }>;
+    publish(
+      input: PublishSubscriptionProductParams
+    ): Promise<{ product: { id: string } }>;
   };
   subscriptionProductGroups: {
-    create(input: {
-      storeId: string;
-      name: string;
-      productIds: string[];
-      rules: { sharedTrial: false };
-    }): Promise<{ group: { id: string } }>;
-    publish(input: { id: string }): Promise<{ group: { id: string } }>;
+    create(
+      input: CreateSubscriptionProductGroupParams
+    ): Promise<{ group: { id: string } }>;
+    publish(
+      input: PublishSubscriptionProductGroupParams
+    ): Promise<{ group: { id: string } }>;
   };
   webhooks: {
-    add(input: {
-      storeId: string;
-      channel: 'http';
-      url: string;
-      events: readonly string[];
-      testMode: true;
-    }): Promise<{ webhook: { id: string } }>;
+    add(input: AddWebhookParams): Promise<{ webhook: { id: string } }>;
   };
 }
 
 export const WAFFO_SUBSCRIPTION_WEBHOOK_EVENTS = [
-  'subscription.activated',
-  'subscription.payment_succeeded',
-  'subscription.canceling',
-  'subscription.uncanceled',
-  'subscription.canceled',
+  WebhookEventType.SubscriptionActivated,
+  WebhookEventType.SubscriptionPaymentSucceeded,
+  WebhookEventType.SubscriptionCanceling,
+  WebhookEventType.SubscriptionUncanceled,
+  WebhookEventType.SubscriptionCanceled,
 ] as const;
 
 export async function provisionWaffoSubscriptionCatalog(
@@ -52,19 +49,25 @@ export async function provisionWaffoSubscriptionCatalog(
   input: { storeId: string; webhookUrl: string }
 ) {
   const productIds = {} as Record<WaffoProductIdKey, string>;
-  const productIdsByPlan = {
+  const productIdsByPlan: Record<WaffoSubscriptionPlanId, string[]> = {
     starter: [],
     growth: [],
     pro: [],
-  } satisfies Record<WaffoSubscriptionPlanId, string[]>;
+  };
 
   for (const product of WAFFO_SUBSCRIPTION_PRODUCTS) {
     const created = await client.subscriptionProducts.create({
       storeId: input.storeId,
       name: `${titleCase(product.planId)} ${intervalLabel(product.interval)}`,
-      billingPeriod: product.billingPeriod,
+      billingPeriod:
+        product.billingPeriod === 'yearly'
+          ? BillingPeriod.Yearly
+          : BillingPeriod.Monthly,
       prices: {
-        CNY: { amount: centsToYuan(product.amount), taxCategory: 'saas' },
+        CNY: {
+          amount: centsToYuan(product.amount),
+          taxCategory: TaxCategory.SaaS,
+        },
       },
       metadata: {
         commercePeriod: product.interval,
@@ -92,7 +95,7 @@ export async function provisionWaffoSubscriptionCatalog(
     storeId: input.storeId,
     channel: 'http',
     url: input.webhookUrl,
-    events: WAFFO_SUBSCRIPTION_WEBHOOK_EVENTS,
+    events: [...WAFFO_SUBSCRIPTION_WEBHOOK_EVENTS],
     testMode: true,
   });
 

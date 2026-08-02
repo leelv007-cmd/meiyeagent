@@ -17,24 +17,17 @@ interface PaymentRuntimePolicyInput {
   provider: PaymentProvider;
   publicPaidLaunchEnabled: boolean;
   creemPriceIds: PaymentPriceIds;
-  waffoProductIds: PaymentPriceIds;
+  waffoProductIds?: PaymentPriceIds;
 }
 
 interface PaymentRuntimePolicy {
   enabled: boolean;
   provider: Exclude<PaymentProvider, ''> | undefined;
-  priceIds: Required<PaymentPriceIds>;
+  priceIds: PaymentPriceIds;
 }
 
-const EMPTY_PRICE_IDS: Required<PaymentPriceIds> = {
-  growthMonthly: '',
-  growthSingleMonth: '',
-  growthYearly: '',
-  starterMonthly: '',
-  starterSingleMonth: '',
-  starterYearly: '',
+const EMPTY_PRICE_IDS: PaymentPriceIds = {
   proMonthly: '',
-  proSingleMonth: '',
   proYearly: '',
   lifetime: '',
 };
@@ -43,7 +36,7 @@ export function resolvePaymentRuntimePolicy({
   provider,
   publicPaidLaunchEnabled,
   creemPriceIds,
-  waffoProductIds,
+  waffoProductIds = {},
 }: PaymentRuntimePolicyInput): PaymentRuntimePolicy {
   if (provider === 'stripe') {
     return { enabled: true, provider, priceIds: { ...EMPTY_PRICE_IDS } };

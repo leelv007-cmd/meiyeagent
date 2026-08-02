@@ -3,36 +3,36 @@ import test from 'node:test';
 import { provisionWaffoSubscriptionCatalog } from './waffo-provisioning';
 
 test('provisions and publishes the nine subscription products with a test webhook', async () => {
-  const created: Array<Record<string, unknown>> = [];
-  const published: Array<Record<string, unknown>> = [];
-  const createdGroups: Array<Record<string, unknown>> = [];
-  const publishedGroups: Array<Record<string, unknown>> = [];
-  const webhookAdds: Array<Record<string, unknown>> = [];
+  const created: Array<{ prices: unknown }> = [];
+  const published: Array<{ id: string }> = [];
+  const createdGroups: unknown[] = [];
+  const publishedGroups: Array<{ id: string }> = [];
+  const webhookAdds: unknown[] = [];
 
   const result = await provisionWaffoSubscriptionCatalog(
     {
       subscriptionProducts: {
-        create: async (input: Record<string, unknown>) => {
+        create: async (input) => {
           created.push(input);
           return { product: { id: `PROD_${created.length}` } };
         },
-        publish: async (input: Record<string, unknown>) => {
+        publish: async (input) => {
           published.push(input);
           return { product: { id: input.id } };
         },
       },
       subscriptionProductGroups: {
-        create: async (input: Record<string, unknown>) => {
+        create: async (input) => {
           createdGroups.push(input);
           return { group: { id: `GRP_${createdGroups.length}` } };
         },
-        publish: async (input: Record<string, unknown>) => {
+        publish: async (input) => {
           publishedGroups.push(input);
           return { group: { id: input.id } };
         },
       },
       webhooks: {
-        add: async (input: Record<string, unknown>) => {
+        add: async (input) => {
           webhookAdds.push(input);
           return { webhook: { id: 'whk_test_1' } };
         },

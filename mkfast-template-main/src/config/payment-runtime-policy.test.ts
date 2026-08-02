@@ -25,10 +25,8 @@ test('Waffo only enables a complete three-tier, three-period catalog', () => {
     {
       enabled: true,
       priceIds: {
-        lifetime: '',
-        proMonthly: 'PROD_PRO_MONTHLY',
-        proYearly: 'PROD_PRO_YEARLY',
         ...waffoProducts,
+        lifetime: '',
       },
       provider: 'waffo',
     }

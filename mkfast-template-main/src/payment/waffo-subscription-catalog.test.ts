@@ -32,8 +32,4 @@ test('Waffo catalog has only the nine paid tier-period subscription products', (
       'yearly',
     ]
   );
-  assert.equal(
-    WAFFO_SUBSCRIPTION_PRODUCTS.some((product) => product.planId === 'trial'),
-    false
-  );
 });

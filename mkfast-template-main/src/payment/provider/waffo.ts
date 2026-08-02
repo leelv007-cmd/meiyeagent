@@ -1,4 +1,11 @@
-import { WaffoPancake, type WebhookPublicKeys } from '@waffo/pancake-ts';
+import {
+  WaffoPancake,
+  type AuthenticatedCheckoutParams,
+  type CancelSubscriptionParams,
+  type VerifyWebhookOptions,
+  type WebhookEvent,
+  type WebhookPublicKeys,
+} from '@waffo/pancake-ts';
 import { serverEnv } from '@/env/server';
 import { findPlanByPlanId, findPriceInPlan } from '@/lib/price-plan';
 import { requireSellableCheckoutPrice } from '@/payment/checkout-policy';
@@ -12,7 +19,25 @@ import type {
 } from '@/payment/types';
 import { normalizeWaffoVerifiedPaymentEvent } from '@/payment/verified-webhook-event';
 
-type WaffoClient = Pick<WaffoPancake, 'checkout' | 'orders' | 'webhooks'>;
+export type WaffoClient = {
+  checkout: {
+    authenticated: {
+      create(
+        params: AuthenticatedCheckoutParams
+      ): Promise<{ checkoutUrl: string; sessionId: string }>;
+    };
+  };
+  orders: {
+    cancelSubscription(params: CancelSubscriptionParams): Promise<unknown>;
+  };
+  webhooks: {
+    verify(
+      payload: string,
+      signature: string,
+      options?: VerifyWebhookOptions
+    ): WebhookEvent;
+  };
+};
 
 export interface WaffoProviderOptions {
   allowTestEvents?: boolean;
