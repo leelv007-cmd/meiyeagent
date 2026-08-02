@@ -32,6 +32,21 @@ export const DEFAULT_XHS_COVER_PRESET: XhsCoverBeautyPreset = 'beauty_soft';
 export const DEFAULT_XHS_COVER_ASPECT_RATIO: XhsCoverAspectRatio = '3:4';
 
 /**
+ * Chinese descriptive style phrases injected into `{style}` for generation
+ * models. Prefer descriptive Chinese over bare English enum ids.
+ */
+export const XHS_COVER_BEAUTY_PRESET_PROMPTS = {
+  beauty_soft:
+    '美业柔光：柔焦护肤光泽、干净台面、裸粉香槟金配色、轻文字叠层',
+  beauty_editorial:
+    '杂志质感：高定排版、精致留白、产品或人物杂志构图',
+  before_after:
+    '前后对比：左右或上下分屏、对比标注清晰、禁止虚假医疗承诺暗示',
+  spa_minimal: 'SPA极简：大面积留白、低饱和疗愈色、中心标题',
+  salon_photo: '门店实拍感：真实门店、手法或陈列光线、生活化但干净',
+} as const satisfies Record<XhsCoverBeautyPreset, string>;
+
+/**
  * Size mapping — 实施时定 (#323 / §4.2).
  *
  * Maps product aspect ratios onto Seedream-safe WxH strings for
@@ -117,9 +132,10 @@ export function materializeXhsCoverPrompt(input: {
   const sizeSpec = mapXhsCoverSize(input.aspectRatio);
   const template =
     input.template?.trim() || HARNESS_BUILTIN_PROMPTS.xhsCoverPrompt;
+  const styleDescription = XHS_COVER_BEAUTY_PRESET_PROMPTS[input.style];
   const prompt = template
     .replaceAll('{userPrompt}', userPrompt)
-    .replaceAll('{style}', input.style)
+    .replaceAll('{style}', styleDescription)
     .replaceAll('{size}', sizeSpec.size);
 
   return {
@@ -161,21 +177,24 @@ export function aiCoverTriggersPaidMediaConfirm(): true {
 /**
  * Image brief parameters for media selection / provider mapping.
  * `ratio` is the product aspect; `resolution` is the mapped WxH size string.
+ *
+ * Style is intentionally omitted: ark / tuzi image adapters have no style
+ * field; beauty preset semantics land in the prompt via
+ * `XHS_COVER_BEAUTY_PRESET_PROMPTS` instead.
  */
 export function compileAiCoverImageParameters(input: {
   aspectRatio: XhsCoverAspectRatio;
-  style: XhsCoverBeautyPreset;
+  /** Accepted for call-site compatibility; not forwarded to provider params. */
+  style?: XhsCoverBeautyPreset;
 }): {
   ratio: XhsCoverAspectRatio;
   resolution: string;
-  style: XhsCoverBeautyPreset;
   purpose: 'xiaohongshu_cover';
 } {
   const size = mapXhsCoverSize(input.aspectRatio);
   return {
     ratio: input.aspectRatio,
     resolution: size.size,
-    style: input.style,
     purpose: 'xiaohongshu_cover',
   };
 }
