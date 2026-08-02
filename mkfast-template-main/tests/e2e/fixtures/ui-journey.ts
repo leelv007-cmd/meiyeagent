@@ -19,7 +19,6 @@ export type JourneyModality = 'copy' | 'image_text' | 'video';
 export async function clickComposerDeliveryCard(
   deliveryCard: Locator
 ): Promise<void> {
-  await deliveryCard.scrollIntoViewIfNeeded();
   await deliveryCard.evaluate((node) => {
     node.scrollIntoView({ block: 'center', inline: 'nearest' });
   });

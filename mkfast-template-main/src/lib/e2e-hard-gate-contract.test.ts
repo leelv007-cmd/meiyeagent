@@ -145,6 +145,25 @@ test('the image-text direction helper fails fast on real click errors', () => {
   );
 });
 
+test('the delivery helper centers the exact card before a real Playwright click', () => {
+  const fixture = readFileSync(
+    join(E2E_ROOT, 'fixtures/ui-journey.ts'),
+    'utf8'
+  );
+  const helper = fixture.slice(
+    fixture.indexOf('export async function clickComposerDeliveryCard'),
+    fixture.indexOf('export type JourneyContract')
+  );
+
+  assert.doesNotMatch(helper, /scrollIntoViewIfNeeded/u);
+  assert.doesNotMatch(helper, /force:\s*true/u);
+  assert.match(
+    helper,
+    /\.evaluate\([\s\S]*?scrollIntoView\([\s\S]*?await deliveryCard\.click\(\)/u,
+    'DOM centering must precede a normal actionability-checked Playwright click'
+  );
+});
+
 test('no browser test or fixture listens for the retired creative-work commands', () => {
   const violations: string[] = [];
   for (const file of e2eFiles()) {
