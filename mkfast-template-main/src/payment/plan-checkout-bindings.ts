@@ -128,9 +128,9 @@ export class PostgresPlanCheckoutBindingStore {
           AND payment.user_id = binding.owner_user_id
           AND payment.price_id = binding.price_id
         WHERE binding.provider = ${event.provider}
-          AND (
-            ${event.buyerIdentity ?? null} IS NULL
-            OR binding.owner_user_id = ${event.buyerIdentity ?? null}
+          AND binding.owner_user_id = COALESCE(
+            ${event.buyerIdentity ?? null},
+            binding.owner_user_id
           )
           AND (
             (
@@ -164,9 +164,9 @@ export class PostgresPlanCheckoutBindingStore {
           ON payment.subscription_id = ${event.reference.id}
           AND payment.user_id = binding.owner_user_id
         WHERE binding.provider = ${event.provider}
-          AND (
-            ${event.buyerIdentity ?? null} IS NULL
-            OR binding.owner_user_id = ${event.buyerIdentity ?? null}
+          AND binding.owner_user_id = COALESCE(
+            ${event.buyerIdentity ?? null},
+            binding.owner_user_id
           )
           AND (
             binding.subscription_id = ${event.reference.id}
@@ -226,24 +226,28 @@ export class PostgresPlanCheckoutBindingStore {
         SET status = 'active',
             provider_checkout_id = COALESCE(
               provider_checkout_id,
-              ${input.providerCheckoutId}
+              ${sql.param(input.providerCheckoutId ?? null)}
             ),
             subscription_id = COALESCE(
-              ${input.subscriptionId ?? null},
+              ${sql.param(input.subscriptionId ?? null)},
               subscription_id
             ),
             updated_at = now()
         WHERE id = ${input.bindingId}
           AND provider = ${input.provider}
           AND (
-            ${input.providerCheckoutId ?? null} IS NULL
-            OR provider_checkout_id IS NULL
-            OR provider_checkout_id = ${input.providerCheckoutId ?? null}
+            provider_checkout_id IS NULL
+            OR provider_checkout_id = COALESCE(
+              ${sql.param(input.providerCheckoutId ?? null)},
+              provider_checkout_id
+            )
           )
           AND (
-            ${input.subscriptionId ?? null} IS NULL
-            OR subscription_id IS NULL
-            OR subscription_id = ${input.subscriptionId ?? null}
+            subscription_id IS NULL
+            OR subscription_id = COALESCE(
+              ${sql.param(input.subscriptionId ?? null)},
+              subscription_id
+            )
           )
       `);
     } else if (input.providerCheckoutId) {

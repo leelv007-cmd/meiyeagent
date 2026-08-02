@@ -243,6 +243,7 @@ test(
           ownerUserId: userId,
           priceId: 'PROD_GROWTH_MONTH',
           interval: 'month',
+          cancelAtPeriodEnd: false,
           periodStartsAt: waffoPeriodEnd,
           periodEndsAt: '2026-10-03T00:00:00.000Z',
           subscriptionId: 'waffo-order-001',
