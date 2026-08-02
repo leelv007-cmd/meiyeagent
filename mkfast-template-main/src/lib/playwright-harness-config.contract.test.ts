@@ -55,6 +55,18 @@ test('Playwright provisions an isolated DBOS database and enables the real Harne
     2,
     'provider-free Core and Worker fixtures must explicitly opt into warned prompt fallback'
   );
+  for (const key of [
+    'LANGFUSE_BASE_URL',
+    'LANGFUSE_PUBLIC_KEY',
+    'LANGFUSE_SECRET_KEY',
+    'LANGFUSE_PROMPT_VERSIONS',
+  ]) {
+    assert.equal(
+      config.match(new RegExp(`${key}=`, 'gu'))?.length,
+      2,
+      `provider-free Core and Worker fixtures must clear inherited ${key}`
+    );
+  }
   assert.match(config, /MODEL_EXECUTION_MODE=fixture/u);
   assert.equal(
     config.match(/JOB_QUEUE_PREFIX=\$\{jobQueuePrefix\}/gu)?.length,

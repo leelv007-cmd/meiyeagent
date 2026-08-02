@@ -88,6 +88,14 @@ export default defineConfig({
         // The e2e stack boots without Langfuse credentials; strict (the
         // default) refuses to start, so pin the audited builtin-fallback mode.
         'LANGFUSE_PROMPT_POLICY=pilot',
+        // Keep the fixture authority unconfigured even when the parent shell
+        // has a partial Langfuse configuration. Partial credentials without
+        // prompt pins produce an `unpinned` fallback that the Skill acceptance
+        // gate must reject.
+        'LANGFUSE_BASE_URL=',
+        'LANGFUSE_PUBLIC_KEY=',
+        'LANGFUSE_SECRET_KEY=',
+        'LANGFUSE_PROMPT_VERSIONS=',
         // E2E-only observation window: 10,000 ms instead of the 40 ms fixture
         // default, adding 9,960 ms to each structured copy run.
         'E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS=10000',
@@ -126,6 +134,10 @@ export default defineConfig({
         `INTEGRATION_SECRET_STORE_KEY=${integrationSecretStoreKey}`,
         'MODEL_EXECUTION_MODE=fixture',
         'LANGFUSE_PROMPT_POLICY=pilot',
+        'LANGFUSE_BASE_URL=',
+        'LANGFUSE_PUBLIC_KEY=',
+        'LANGFUSE_SECRET_KEY=',
+        'LANGFUSE_PROMPT_VERSIONS=',
         // Keep the worker on the same E2E-only 10,000 ms first-copy-chunk hold.
         'E2E_FIXTURE_STRUCTURED_FIRST_CHUNK_HOLD_MS=10000',
         'node scripts/e2e/run-service.mjs pnpm --dir .. --filter @meiye/core start:worker',
