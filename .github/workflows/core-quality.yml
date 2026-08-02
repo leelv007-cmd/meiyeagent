@@ -368,15 +368,13 @@ jobs:
           --health-timeout 3s
           --health-retries 20
     env:
+      # Fixture vite stack (no wrangler production-candidate). Matches the local
+      # P2 five-file 18/18 gate; candidate dual-origin made decision-card mocks
+      # miss (released-hold) while production-main-journey keeps candidate env.
       CI: true
       MODEL_EXECUTION_MODE: fixture
-      PLAYWRIGHT_AUTH_BASE_URL: http://localhost:3011
-      PLAYWRIGHT_BASE_URL: http://localhost:3010
-      PLAYWRIGHT_CANDIDATE_PORT: 3010
-      PLAYWRIGHT_CANVAS_PORT: 4210
       PLAYWRIGHT_CORE_PORT: 4110
-      PLAYWRIGHT_PRODUCTION_CANDIDATE: true
-      PORT: 3011
+      PORT: 3010
       TEST_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_pr_p2_browser
       TEST_DBOS_SYSTEM_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_pr_p2_browser_dbos
     steps:

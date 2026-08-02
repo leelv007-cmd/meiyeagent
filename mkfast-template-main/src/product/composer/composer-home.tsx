@@ -3606,7 +3606,9 @@ export function ComposerHome({
           onAssetRemoved={removeSource}
           onAuthorize={authorizeComposerImage}
           onQueueChange={(uploads) =>
-            setUploadsReady(uploads.every((upload) => upload.status === 'ready'))
+            setUploadsReady(
+              uploads.every((upload) => upload.status === 'ready')
+            )
           }
           onUpload={uploadComposerImage}
         >
@@ -3650,9 +3652,7 @@ export function ComposerHome({
             {imageCardinality.message}
           </p>
         ) : null}
-        <ComposerAiCoverMismatchNotice
-          visible={showAiCoverSignatureMismatch}
-        />
+        <ComposerAiCoverMismatchNotice visible={showAiCoverSignatureMismatch} />
       </div>
     ),
     [

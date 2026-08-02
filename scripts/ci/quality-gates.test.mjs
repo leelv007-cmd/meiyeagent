@@ -113,7 +113,8 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
     join(repositoryRoot, 'scripts/ci/run-p2-browser-acceptance.sh'),
     'utf8'
   );
-  assert.match(p2Script, /PLAYWRIGHT_PRODUCTION_CANDIDATE=true/);
+  // Fixture vite only — do not force production-candidate (see script comment).
+  assert.doesNotMatch(p2Script, /export PLAYWRIGHT_PRODUCTION_CANDIDATE=true/);
   assert.match(p2Script, /PLAYWRIGHT_PROVIDER_FREE=true/);
   assert.match(p2Script, /MODEL_EXECUTION_MODE=fixture/);
   assert.match(p2Script, /p2-browser-closure\.spec\.ts/);
@@ -179,6 +180,7 @@ test('the persistence gate uses Node test output before asserting database execu
     }),
     [
       'bash scripts/ci/provision-test-db.sh',
+      'pnpm --filter @meiye/web locale:compile',
       'pnpm --filter @meiye/core exec node --import tsx --test --test-concurrency=1 --test-reporter=spec src/**/*.test.ts',
       'node scripts/ci/assert-core-persistence-ran.mjs /dev/null',
     ]

@@ -6,9 +6,12 @@ set -euo pipefail
 evidence_dir="${CI_EVIDENCE_DIR:-output/ci/p2-browser-acceptance}"
 mkdir -p "${evidence_dir}"
 
-export PLAYWRIGHT_PRODUCTION_CANDIDATE=true
+# Fixture vite stack (no wrangler production-candidate). Dual-origin candidate
+# made decision-card route mocks miss under released-hold; production-main-journey
+# keeps the candidate gate. Local 18/18 and this job share the same surface.
 export PLAYWRIGHT_PROVIDER_FREE=true
 export MODEL_EXECUTION_MODE=fixture
+unset PLAYWRIGHT_PRODUCTION_CANDIDATE || true
 
 # P2 Chromium acceptance surface (#320–#328 related). Kept separate from the
 # production-main-journey gate so the ordinary PR journey stays lean while P2

@@ -44,9 +44,7 @@ test.describe('live creation catalog capability gate', () => {
     // L3-2: radiogroup lives in the lens capsule panel. Catalog apply still
     // selects copy; open the panel to assert radio state, then face echo.
     await page.getByTestId('composer-capsule-lens').click();
-    await expect(
-      page.getByTestId('composer-capsule-lens-panel')
-    ).toBeVisible();
+    await expect(page.getByTestId('composer-capsule-lens-panel')).toBeVisible();
     // The lens options are native radios (`lens-radiogroup.tsx`), so selection
     // is the `checked` property plus `data-state` — not an `aria-checked`
     // attribute, which a native radio does not need and does not carry. Same
@@ -55,9 +53,7 @@ test.describe('live creation catalog capability gate', () => {
     await expect(copyLens).toBeChecked();
     await expect(copyLens).toHaveAttribute('data-state', 'checked');
     await page.keyboard.press('Escape');
-    await expect(
-      page.getByTestId('composer-capsule-lens-panel')
-    ).toBeHidden();
+    await expect(page.getByTestId('composer-capsule-lens-panel')).toBeHidden();
     await expect(page.getByTestId('composer-capsule-lens')).toContainText(
       '文案'
     );

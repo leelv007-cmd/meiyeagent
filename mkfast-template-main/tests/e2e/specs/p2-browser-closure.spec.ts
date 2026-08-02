@@ -331,10 +331,9 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     // reflows while quote readiness settles, which keeps these buttons
     // "unstable" even though they are the correct free-mode controls.
     const attachPanel = await openComposerCapsule(page, 'attach');
-    await expect(page.getByTestId('composer-generation-params')).toHaveAttribute(
-      'data-creation-mode',
-      'free'
-    );
+    await expect(
+      page.getByTestId('composer-generation-params')
+    ).toHaveAttribute('data-creation-mode', 'free');
     const beautyVoice = page.getByTestId('composer-beauty-voice-role-customer');
     const deepThinking = page.getByTestId('composer-thinking-level-deep');
     await expect(beautyVoice).toBeVisible();

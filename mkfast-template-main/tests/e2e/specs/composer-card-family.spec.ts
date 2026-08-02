@@ -535,8 +535,7 @@ test.describe('T31 三类卡与确认卡', () => {
           };
         };
         const baseQuestion =
-          envelope.data?.question &&
-          typeof envelope.data.question === 'object'
+          envelope.data?.question && typeof envelope.data.question === 'object'
             ? envelope.data.question
             : {
                 freeText: { enabled: true, placeholder: '也可以直接告诉我' },
@@ -634,7 +633,9 @@ test.describe('T31 三类卡与确认卡', () => {
         error?: { message?: string };
       };
       if (!response.ok) {
-        throw new Error(envelope.error?.message ?? 'entitlements projection failed');
+        throw new Error(
+          envelope.error?.message ?? 'entitlements projection failed'
+        );
       }
       return envelope.data;
     });

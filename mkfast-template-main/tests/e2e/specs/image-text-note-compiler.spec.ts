@@ -233,9 +233,9 @@ async function submitNoteJourney(
     await page.getByTestId('composer-submit').click();
     const response = await responsePromise;
     expect(response.ok(), await response.text()).toBeFalsy();
-    await expect(
-      page.getByTestId('composer-quota-blocking-card')
-    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('composer-quota-blocking-card')).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByTestId('composer-submit')).toBeDisabled();
     return {
       authorizedAssetId: authorized.id,
@@ -433,11 +433,9 @@ function zeroRemainingCreditsForTask(taskId: string) {
     )
     AND remaining_credits > 0;
   `;
-  execFileSync(
-    'psql',
-    [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', sql],
-    { encoding: 'utf8' }
-  );
+  execFileSync('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', sql], {
+    encoding: 'utf8',
+  });
 }
 
 async function adoptRecommendedCandidate(

@@ -8,5 +8,8 @@ log_path="${CORE_PERSISTENCE_LOG_PATH:-core-persistence-test.log}"
 mkdir -p "$(dirname "${log_path}")"
 
 bash scripts/ci/provision-test-db.sh
+# Product-billing postgres suite shells into web `composer-live` via tsx --eval;
+# that import graph needs paraglide message modules (otherwise MODULE_NOT_FOUND).
+pnpm --filter @meiye/web locale:compile
 pnpm --filter @meiye/core exec node --import tsx --test --test-concurrency=1 --test-reporter=spec 'src/**/*.test.ts' 2>&1 | tee "${log_path}"
 node scripts/ci/assert-core-persistence-ran.mjs "${log_path}"
