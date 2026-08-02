@@ -191,7 +191,42 @@ export class CreditBillingService {
           'Credit subscription cannot resume before activation.',
         );
       }
-      return subscriptions.resume(active.id, now);
+      if (active.status !== 'past_due') {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Only a past-due credit subscription can resume after payment.',
+        );
+      }
+      assertText(input.periodStartsAt ?? '', 'periodStartsAt');
+      if (Date.parse(input.periodStartsAt!) > Date.parse(now)) {
+        throw new DeferredCreditPaymentEvent(
+          'Credit resume is waiting for its paid billing period to start.',
+        );
+      }
+      if (await staleTerminalPeriod(subscriptions, active.id, input)) {
+        return active;
+      }
+      const resumeCycle = creditSubscriptionCycleIndexAt(
+        active.anchorAt,
+        input.periodStartsAt!,
+      );
+      const frozenTier = creditSubscriptionTierForCycle(active, resumeCycle);
+      const frozenInterval = creditSubscriptionIntervalForCycle(
+        active,
+        resumeCycle,
+      );
+      if (tier !== frozenTier || interval !== frozenInterval) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'Credit resume does not match the frozen credit subscription tier and interval.',
+        );
+      }
+      return subscriptions.recordPaidPeriod({
+        subscriptionId: active.id,
+        periodStartsAt: input.periodStartsAt!,
+        coverageCycles: paidCycleCoverage(interval),
+        at: now,
+      });
     }
 
     if (input.lifecycle === 'renew') {

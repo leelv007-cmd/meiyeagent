@@ -784,7 +784,7 @@ function modelSupplyMerchantExecutionInputSnapshot(
 
 function bindMerchantExecutionInput(
   submission: ModelSupplySubmission,
-  inputSnapshot: { input: Record<string, unknown> | null; prompt: string },
+  inputSnapshot: MerchantExecutionInputSnapshot,
   idempotencyKey: string,
 ): ModelSupplySubmission {
   return {
@@ -2067,6 +2067,7 @@ export class ModelSupplyApplicationService {
     execute: (
       submission: ModelSupplySubmission,
       merchantEffectKey?: string,
+      merchantInputSnapshot?: MerchantExecutionInputSnapshot,
     ) => Promise<ModelSupplyResult>,
     suppliedEffectKey?: string,
     exactInputSnapshot?: (
@@ -2210,6 +2211,7 @@ export class ModelSupplyApplicationService {
       await execute(
         bindMerchantExecutionInput(bound, decision.inputSnapshot, effectKey),
         effectKey,
+        decision.inputSnapshot,
       ),
       { effectKey, taskId },
     );
@@ -2331,16 +2333,19 @@ export class ModelSupplyApplicationService {
         streaming: Boolean(input.onPartialOutput),
         workspaceId: submission.workspaceId,
       });
-    const structuredProviderPrompt = JSON.stringify({
+    const structuredProviderInput = {
+      ...modelSupplyMerchantExecutionInputSnapshot(submission),
       instructions: input.instructions,
       prompt: input.prompt,
       schema: toJSONSchema(input.schema),
       schemaName: input.schemaName,
       schemaRevision: submission.promptRevision ?? '',
       streaming: Boolean(input.onPartialOutput),
-    });
-    return this.executeMerchantSubmission(submission, (bound, merchantEffectKey) =>
-      this.executeSubmission(bound, {
+    } satisfies MerchantExecutionInputSnapshot;
+    return this.executeMerchantSubmission(
+      submission,
+      (bound, merchantEffectKey, merchantInputSnapshot) =>
+        this.executeSubmission(bound, {
       execute: async (request) => {
         if (
           this.submissionGate &&
@@ -2372,8 +2377,28 @@ export class ModelSupplyApplicationService {
           };
         }
         try {
+          const exactProviderInput =
+            merchantInputSnapshot ?? structuredProviderInput;
+          if (
+            exactProviderInput.instructions === undefined ||
+            exactProviderInput.schema === undefined ||
+            exactProviderInput.schemaName === undefined ||
+            exactProviderInput.schemaRevision === undefined ||
+            exactProviderInput.streaming === undefined ||
+            JSON.stringify(exactProviderInput.schema) !==
+              JSON.stringify(toJSONSchema(input.schema)) ||
+            exactProviderInput.streaming !== Boolean(input.onPartialOutput)
+          ) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Structured provider input does not match its durable merchant execution snapshot.',
+            );
+          }
           const generated = await executor.generate({
             ...input,
+            instructions: exactProviderInput.instructions,
+            prompt: exactProviderInput.prompt,
+            schemaName: exactProviderInput.schemaName,
             providerRequest: request,
             structuredRequestFingerprint,
             ...(request.structuredContinuation
@@ -2444,15 +2469,20 @@ export class ModelSupplyApplicationService {
         }
       },
       }, {
-        structuredRequestFingerprint,
-        ...(merchantEffectKey
-          ? { effectIdempotencyKey: merchantEffectKey }
-          : {}),
-      }),
+          structuredRequestFingerprint,
+          ...(merchantEffectKey
+            ? { effectIdempotencyKey: merchantEffectKey }
+            : {}),
+        }),
       undefined,
       (bound) => ({
         ...modelSupplyMerchantExecutionInputSnapshot(bound),
-        prompt: structuredProviderPrompt,
+        instructions: input.instructions,
+        prompt: input.prompt,
+        schema: toJSONSchema(input.schema),
+        schemaName: input.schemaName,
+        schemaRevision: bound.promptRevision ?? '',
+        streaming: Boolean(input.onPartialOutput),
       }),
     );
   }

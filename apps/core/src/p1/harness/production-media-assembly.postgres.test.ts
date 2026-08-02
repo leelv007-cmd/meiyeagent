@@ -8,7 +8,7 @@ import test from 'node:test';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { contentPackageSchema } from '@meiye/contracts';
 import { Pool } from 'pg';
-import { z, type ZodType } from 'zod';
+import { toJSONSchema, z, type ZodType } from 'zod';
 
 import {
   AgentPrimitiveObservabilityAdapter,
@@ -1221,6 +1221,7 @@ test(
         },
         async generate<Output>(input: {
           instructions: string;
+          onPartialOutput?: (partial: unknown) => Promise<void> | void;
           prompt: string;
           providerRequest?: ProviderExecutionRequest;
           schema: ZodType<Output>;
@@ -1230,12 +1231,20 @@ test(
           const execution = await assertClaimedBeforeProvider(
             input.providerRequest,
           );
-          const structuredInput = JSON.parse(execution.inputSnapshot.prompt) as {
-            instructions: string;
-            prompt: string;
+          const structuredInput = execution.inputSnapshot as typeof execution.inputSnapshot & {
+            schema: Record<string, unknown>;
+            schemaName: string;
+            schemaRevision: string;
+            streaming: boolean;
           };
           assert.equal(structuredInput.instructions, input.instructions);
           assert.equal(structuredInput.prompt, input.prompt);
+          assert.deepEqual(structuredInput.schema, toJSONSchema(input.schema));
+          assert.equal(structuredInput.schemaName, input.schemaName);
+          assert.equal(
+            structuredInput.streaming,
+            Boolean(input.onPartialOutput),
+          );
           const output =
             input.schemaName === 'harness_intent_naming_v1'
               ? {

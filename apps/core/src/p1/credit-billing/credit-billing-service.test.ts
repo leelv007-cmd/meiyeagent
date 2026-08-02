@@ -212,7 +212,7 @@ test('verified payment events replay once and reject conflicting facts', async (
   );
 });
 
-test('one paid billing period adds coverage once and resume adds no cycle', async () => {
+test('one paid billing period adds coverage once and resume requires new paid coverage', async () => {
   let now = new Date('2026-01-01T00:00:00.000Z');
   const ledger = new MemoryCreditLedger();
   const subscriptions = new MemoryCreditSubscriptionStore();
@@ -254,6 +254,7 @@ test('one paid billing period adds coverage once and resume adds no cycle', asyn
     2,
   );
 
+  now = new Date('2026-03-01T00:00:00.000Z');
   await service.settlePayment(context, {
     interval: 'month',
     lifecycle: 'past_due',
@@ -262,16 +263,33 @@ test('one paid billing period adds coverage once and resume adds no cycle', asyn
     periodStartsAt: now.toISOString(),
     subscriptionId: 'subscription-period',
   });
+  await assert.rejects(
+    service.settlePayment(context, {
+      interval: 'month',
+      lifecycle: 'resume',
+      paymentEventId: 'payment-period-resume-without-coverage',
+      paymentProductId: 'starter',
+      subscriptionId: 'subscription-period',
+    }),
+    /periodStartsAt/i,
+  );
+  assert.equal(
+    (await subscriptions.get('subscription-period'))?.status,
+    'past_due',
+  );
+
+  now = new Date('2026-03-04T00:00:00.000Z');
   await service.settlePayment(context, {
     interval: 'month',
     lifecycle: 'resume',
     paymentEventId: 'payment-period-resume',
     paymentProductId: 'starter',
+    periodStartsAt: '2026-03-01T00:00:00.000Z',
     subscriptionId: 'subscription-period',
   });
   assert.equal(
     (await subscriptions.get('subscription-period'))?.paidThroughCycle,
-    2,
+    3,
   );
   assert.equal((await subscriptions.get('subscription-period'))?.status, 'active');
 });

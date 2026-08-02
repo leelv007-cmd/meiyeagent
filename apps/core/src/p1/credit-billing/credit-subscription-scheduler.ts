@@ -451,6 +451,12 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
   async upsert(input: CreditSubscriptionInput) {
     assertSubscriptionInput(input);
     const existing = this.subscriptions.get(input.id);
+    if (existing && existing.workspaceId !== input.workspaceId) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        `Credit subscription ${input.id} belongs to a different workspace.`,
+      );
+    }
     const now = input.updatedAt ?? input.anchorAt;
     const scheduledChanges = normalizeScheduledChanges(
       input.scheduledChanges ??
@@ -884,7 +890,6 @@ export class PostgresCreditSubscriptionStore
          status, past_due_at, cancelled_at, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        ON CONFLICT (id) DO UPDATE SET
-         workspace_id = EXCLUDED.workspace_id,
          tier = EXCLUDED.tier,
          interval = EXCLUDED.interval,
          pending_tier = EXCLUDED.pending_tier,
@@ -899,6 +904,7 @@ export class PostgresCreditSubscriptionStore
          past_due_at = EXCLUDED.past_due_at,
          cancelled_at = EXCLUDED.cancelled_at,
          updated_at = EXCLUDED.updated_at
+       WHERE p1_credit_subscriptions.workspace_id = EXCLUDED.workspace_id
        RETURNING *`,
       [
         input.id,
@@ -924,7 +930,13 @@ export class PostgresCreditSubscriptionStore
         now,
       ],
     );
-    return subscriptionFromRow(result.rows[0]!);
+    if (!result.rows[0]) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        `Credit subscription ${input.id} belongs to a different workspace.`,
+      );
+    }
+    return subscriptionFromRow(result.rows[0]);
   }
 
   async recordPaidCoverage(subscriptionId: string, paidThroughCycle: number, at: string) {

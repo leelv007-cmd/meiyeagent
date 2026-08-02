@@ -63,6 +63,11 @@ export interface MerchantExecutionInputSnapshot {
   /** Exact provider system instructions, when the upstream API accepts them separately. */
   instructions?: string;
   prompt: string;
+  /** JSON schema handed to a structured-output provider. */
+  schema?: Record<string, unknown>;
+  schemaName?: string;
+  schemaRevision?: string;
+  streaming?: boolean;
 }
 
 /** Server-only binding of the exact primary submission that will reach a provider. */

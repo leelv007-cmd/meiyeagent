@@ -128,6 +128,24 @@ test(
         /one_active_per_workspace|unique/i,
       );
 
+      const foreignWorkspaceId = `${workspaceId}-foreign`;
+      await pool.query(
+        "INSERT INTO workspaces (id, name) VALUES ($1, 'Foreign workspace')",
+        [foreignWorkspaceId],
+      );
+      await assert.rejects(
+        store.upsert({
+          anchorAt: '2026-01-01T00:00:00.000Z',
+          id: subscriptionId,
+          interval: 'yearly',
+          paidThroughCycle: 12,
+          tier: 'pro',
+          workspaceId: foreignWorkspaceId,
+        }),
+        /different workspace/i,
+      );
+      assert.equal((await store.get(subscriptionId))?.workspaceId, workspaceId);
+
       await store.markPastDue(subscriptionId, '2026-03-01T00:00:00.000Z');
       const cancelled = await store.cancelPastDue(
         subscriptionId,

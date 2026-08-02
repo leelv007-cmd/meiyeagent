@@ -331,6 +331,34 @@ describe('CreditSubscriptionCycleScheduler', () => {
     );
   });
 
+  it('keeps a subscription identity bound to its original workspace', async () => {
+    const subscriptions = new MemoryCreditSubscriptionStore();
+    const subscription = {
+      anchorAt: '2026-01-01T00:00:00.000Z',
+      id: 'subscription-workspace-bound',
+      interval: 'monthly' as const,
+      paidThroughCycle: 1,
+      tier: 'starter' as const,
+    };
+
+    await subscriptions.upsert({
+      ...subscription,
+      workspaceId: 'workspace-original',
+    });
+
+    await assert.rejects(
+      subscriptions.upsert({
+        ...subscription,
+        workspaceId: 'workspace-foreign',
+      }),
+      /different workspace/i,
+    );
+    assert.equal(
+      (await subscriptions.get(subscription.id))?.workspaceId,
+      'workspace-original',
+    );
+  });
+
   it('registers repeatable grant and reconciliation jobs and delegates both handlers', async () => {
     const schedules: Array<{
       cron: string;

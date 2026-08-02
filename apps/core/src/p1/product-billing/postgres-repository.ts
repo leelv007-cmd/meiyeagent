@@ -25,6 +25,10 @@ export interface MerchantExecutionRecord {
     input: Record<string, unknown> | null;
     instructions?: string;
     prompt: string;
+    schema?: Record<string, unknown>;
+    schemaName?: string;
+    schemaRevision?: string;
+    streaming?: boolean;
   };
   result?: unknown;
   status: 'bound' | 'claimed' | 'completed';
