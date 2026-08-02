@@ -348,6 +348,70 @@ jobs:
             mkfast-template-main/test-results
           if-no-files-found: error
 
+  # P2 Chromium acceptance (#320–#328 surface). Five browser specs that previously
+  # only ran on developer hosts; required so push/PR cannot skip the P2 face.
+  p2-browser-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: meiye
+          POSTGRES_USER: meiye
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U meiye -d postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      CI: true
+      MODEL_EXECUTION_MODE: fixture
+      PLAYWRIGHT_AUTH_BASE_URL: http://localhost:3011
+      PLAYWRIGHT_BASE_URL: http://localhost:3010
+      PLAYWRIGHT_CANDIDATE_PORT: 3010
+      PLAYWRIGHT_CANVAS_PORT: 4210
+      PLAYWRIGHT_CORE_PORT: 4110
+      PLAYWRIGHT_PRODUCTION_CANDIDATE: true
+      PORT: 3011
+      TEST_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_pr_p2_browser
+      TEST_DBOS_SYSTEM_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_pr_p2_browser_dbos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize P2 browser acceptance evidence
+        run: mkdir -p output/ci/p2-browser-acceptance && touch output/ci/p2-browser-acceptance/job-started.log
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei postgresql-client
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @meiye/web exec playwright install --with-deps chromium
+      - name: Provision P2 browser-acceptance databases
+        run: >-
+          set -o pipefail;
+          ./scripts/ci/provision-test-db.sh 2>&1 |
+          tee output/ci/p2-browser-acceptance/provision.log
+      - name: Run P2 Chromium acceptance specs
+        run: bash scripts/ci/run-p2-browser-acceptance.sh
+        env:
+          CI_EVIDENCE_DIR: output/ci/p2-browser-acceptance
+          RELEASE_COMMIT_SHA: ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p2-browser-acceptance-evidence
+          path: |
+            output/ci/p2-browser-acceptance
+            mkfast-template-main/test-results
+          if-no-files-found: error
+
   required:
     if: ${{ always() }}
     needs:
@@ -356,6 +420,7 @@ jobs:
       - root-quality
       - core-persistence
       - production-main-journey
+      - p2-browser-acceptance
       - production-dependency-audit
     runs-on: ubuntu-latest
     steps:
@@ -366,6 +431,7 @@ jobs:
           REQUIRED_CORE_PERSISTENCE_RESULT: ${{ needs.core-persistence.result }}
           REQUIRED_CORE_RESULT: ${{ needs.core.result }}
           REQUIRED_PRODUCTION_MAIN_JOURNEY_RESULT: ${{ needs.production-main-journey.result }}
+          REQUIRED_P2_BROWSER_ACCEPTANCE_RESULT: ${{ needs.p2-browser-acceptance.result }}
           REQUIRED_PRODUCTION_DEPENDENCY_AUDIT_RESULT: ${{ needs.production-dependency-audit.result }}
           REQUIRED_REDLINE_EVALS_RESULT: ${{ needs.redline-evals.result }}
           REQUIRED_ROOT_QUALITY_RESULT: ${{ needs.root-quality.result }}

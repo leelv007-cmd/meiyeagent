@@ -91,7 +91,7 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
   // part of the ordinary PR run — not a spec that exists without running.
   assert.deepEqual(await runGate('run-pr-production-journey.sh'), [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/assembly-gate-required-journey.spec.ts tests/e2e/specs/m04-browser-hard-gate.spec.ts tests/e2e/specs/marketing-identity-flow.spec.ts tests/e2e/specs/w12-identity-draft-assistant.spec.ts',
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/assembly-gate-required-journey.spec.ts tests/e2e/specs/m04-browser-hard-gate.spec.ts tests/e2e/specs/marketing-identity-flow.spec.ts tests/e2e/specs/w12-identity-draft-assistant.spec.ts tests/e2e/specs/xhs-image-text-main-journey.spec.ts',
   ]);
 
   const script = await readFile(
@@ -101,7 +101,23 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
   assert.match(script, /PLAYWRIGHT_PRODUCTION_CANDIDATE=true/);
   assert.match(script, /PLAYWRIGHT_PROVIDER_FREE=true/);
   assert.match(script, /MODEL_EXECUTION_MODE=fixture/);
+  assert.match(script, /xhs-image-text-main-journey\.spec\.ts/);
   assert.doesNotMatch(script, /API_KEY|PROVIDER_LIVE|STRIPE_SECRET_KEY/);
+
+  assert.deepEqual(await runGate('run-p2-browser-acceptance.sh'), [
+    `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/image-text-note-compiler.spec.ts tests/e2e/specs/viral-adapt-opencli-gate.spec.ts tests/e2e/specs/p2-browser-closure.spec.ts tests/e2e/specs/admin-sensitive-words.spec.ts tests/e2e/specs/composer-card-family.spec.ts',
+  ]);
+
+  const p2Script = await readFile(
+    join(repositoryRoot, 'scripts/ci/run-p2-browser-acceptance.sh'),
+    'utf8'
+  );
+  assert.match(p2Script, /PLAYWRIGHT_PRODUCTION_CANDIDATE=true/);
+  assert.match(p2Script, /PLAYWRIGHT_PROVIDER_FREE=true/);
+  assert.match(p2Script, /MODEL_EXECUTION_MODE=fixture/);
+  assert.match(p2Script, /p2-browser-closure\.spec\.ts/);
+  assert.doesNotMatch(p2Script, /API_KEY|PROVIDER_LIVE|STRIPE_SECRET_KEY/);
 });
 
 test('the provider-free production candidate removes every commerce setting', () => {
@@ -256,8 +272,10 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(coreQuality, /^ {2}root-quality:/m);
   assert.match(coreQuality, /bash scripts\/ci\/run-root-required-quality\.sh/);
   assert.match(coreQuality, /^ {2}production-main-journey:/m);
+  assert.match(coreQuality, /^ {2}p2-browser-acceptance:/m);
   assert.match(coreQuality, /PLAYWRIGHT_PRODUCTION_CANDIDATE: true/);
   assert.match(coreQuality, /bash scripts\/ci\/run-pr-production-journey\.sh/);
+  assert.match(coreQuality, /bash scripts\/ci\/run-p2-browser-acceptance\.sh/);
   assert.match(
     coreQuality,
     /REQUIRED_E2E_SPEC: tests\/e2e\/specs\/assembly-gate-required-journey\.spec\.ts/,
@@ -273,6 +291,7 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(coreQuality, /needs\.root-quality\.result/);
   assert.match(coreQuality, /needs\.core-persistence\.result/);
   assert.match(coreQuality, /needs\.production-main-journey\.result/);
+  assert.match(coreQuality, /needs\.p2-browser-acceptance\.result/);
   assert.match(coreQuality, /needs\.production-dependency-audit\.result/);
   assert.match(
     coreQuality,
@@ -287,6 +306,7 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
     'root-required-quality-evidence',
     'core-persistence-evidence',
     'production-main-journey-evidence',
+    'p2-browser-acceptance-evidence',
   ]) {
     assert.match(coreQuality, new RegExp(`name: ${artifactName}`));
   }
