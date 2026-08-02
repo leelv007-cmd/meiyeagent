@@ -5,8 +5,6 @@ import {
   type AddWebhookParams,
   type CreateSubscriptionProductGroupParams,
   type CreateSubscriptionProductParams,
-  type PublishSubscriptionProductGroupParams,
-  type PublishSubscriptionProductParams,
 } from '@waffo/pancake-ts';
 import {
   WAFFO_SUBSCRIPTION_PRODUCTS,
@@ -19,16 +17,10 @@ export interface WaffoSubscriptionProvisioningClient {
     create(
       input: CreateSubscriptionProductParams
     ): Promise<{ product: { id: string } }>;
-    publish(
-      input: PublishSubscriptionProductParams
-    ): Promise<{ product: { id: string } }>;
   };
   subscriptionProductGroups: {
     create(
       input: CreateSubscriptionProductGroupParams
-    ): Promise<{ group: { id: string } }>;
-    publish(
-      input: PublishSubscriptionProductGroupParams
     ): Promise<{ group: { id: string } }>;
   };
   webhooks: {
@@ -74,7 +66,6 @@ export async function provisionWaffoSubscriptionCatalog(
         commerceTier: product.planId,
       },
     });
-    await client.subscriptionProducts.publish({ id: created.product.id });
     productIds[product.productIdKey] = created.product.id;
     productIdsByPlan[product.planId].push(created.product.id);
   }
@@ -87,7 +78,6 @@ export async function provisionWaffoSubscriptionCatalog(
       productIds: productIdsByPlan[planId],
       rules: { sharedTrial: false },
     });
-    await client.subscriptionProductGroups.publish({ id: created.group.id });
     productGroupIds[planId] = created.group.id;
   }
 

@@ -2,11 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { provisionWaffoSubscriptionCatalog } from './waffo-provisioning';
 
-test('provisions and publishes the nine subscription products with a test webhook', async () => {
+test('provisions nine Test-only subscription products with a test webhook', async () => {
   const created: Array<{ prices: unknown }> = [];
-  const published: Array<{ id: string }> = [];
   const createdGroups: unknown[] = [];
-  const publishedGroups: Array<{ id: string }> = [];
   const webhookAdds: unknown[] = [];
 
   const result = await provisionWaffoSubscriptionCatalog(
@@ -16,19 +14,11 @@ test('provisions and publishes the nine subscription products with a test webhoo
           created.push(input);
           return { product: { id: `PROD_${created.length}` } };
         },
-        publish: async (input) => {
-          published.push(input);
-          return { product: { id: input.id } };
-        },
       },
       subscriptionProductGroups: {
         create: async (input) => {
           createdGroups.push(input);
           return { group: { id: `GRP_${createdGroups.length}` } };
-        },
-        publish: async (input) => {
-          publishedGroups.push(input);
-          return { group: { id: input.id } };
         },
       },
       webhooks: {
@@ -59,10 +49,6 @@ test('provisions and publishes the nine subscription products with a test webhoo
       { CNY: { amount: '8091.00', taxCategory: 'saas' } },
     ]
   );
-  assert.deepEqual(
-    published.map((product) => product.id),
-    Array.from({ length: 9 }, (_, index) => `PROD_${index + 1}`)
-  );
   assert.deepEqual(createdGroups, [
     {
       name: 'Starter subscriptions',
@@ -83,10 +69,6 @@ test('provisions and publishes the nine subscription products with a test webhoo
       storeId: 'STO_test',
     },
   ]);
-  assert.deepEqual(
-    publishedGroups.map((group) => group.id),
-    ['GRP_1', 'GRP_2', 'GRP_3']
-  );
   assert.deepEqual(webhookAdds, [
     {
       channel: 'http',
