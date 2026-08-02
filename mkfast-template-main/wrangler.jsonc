@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "mkfast-template",
+  "name": "meiye-web",
   "compatibility_date": "2025-09-02",
   "compatibility_flags": [
     // Enable Node.js API
@@ -29,10 +29,6 @@
   // Whether Wrangler should keep variables configured in the dashboard on deploy
   "keep_vars": true,
 
-  "triggers": {
-    "crons": ["* * * * *"]
-  },
-
   // Enables automatically ingest, store, filter, and analyze logging data emitted from Cloudflare Workers
   "observability": {
     "logs": {
@@ -50,10 +46,15 @@
   // https://developers.cloudflare.com/workers/configuration/routing/custom-domains/
   "routes": [
     {
-      "pattern": "demo.tanstarter.dev",
+      "pattern": "tqai.uk",
       "custom_domain": true
     }
   ],
+
+  // Candidate versions receive an explicit public preview URL. The production
+  // custom domain remains attached only to the active production deployment.
+  "preview_urls": true,
+  "workers_dev": false,
 
   /**
    * Bindings
@@ -62,19 +63,12 @@
    * https://developers.cloudflare.com/workers/runtime-apis/bindings/
    */
   /**
-   * R2: create bucket with `npx wrangler r2 bucket create mkfast-template`
+   * R2: provisioned object storage shared with Core.
    */
   "r2_buckets": [
     {
-      "bucket_name": "mkfast-template",
+      "bucket_name": "meiye-assets",
       "binding": "BUCKET"
-    }
-  ],
-
-  "hyperdrive": [
-    {
-      "binding": "HYPERDRIVE",
-      "id": "00000000-0000-0000-0000-000000000000"
     }
   ]
 }

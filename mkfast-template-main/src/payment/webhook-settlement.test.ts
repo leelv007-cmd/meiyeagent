@@ -271,7 +271,7 @@ test('Waffo only accepts an RSA-signed raw delivery into the inbox', async () =>
   });
 });
 
-test('Waffo refuses delivery when neither platform public key is configured', async () => {
+test('Waffo falls back to SDK keys and rejects an invalid raw signature without an override', async () => {
   const inbox: PaymentWebhookInboxPort = {
     async receive() {
       return 'accepted';
@@ -293,7 +293,7 @@ test('Waffo refuses delivery when neither platform public key is configured', as
       },
       { inbox, secrets: {} }
     ),
-    (error: unknown) => error instanceof PaymentWebhookConfigurationError
+    (error: unknown) => error instanceof PaymentWebhookSignatureError
   );
 });
 

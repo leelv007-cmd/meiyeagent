@@ -5,10 +5,10 @@
  * Two independent judgments, deliberately separated:
  *
  *   1. Structure — key positions the repository owns. A missing `name`, absent
- *      Hyperdrive/R2 binding, or a D1 binding (forbidden by ADR-0006) is a hard
- *      failure, because no external account provisioning can fix it.
- *   2. Placeholders — template names, demo domains, and the all-zero Hyperdrive
- *      id. These are *reported*, not failed: filling them needs real Cloudflare
+ *      R2 binding, or a D1 binding (forbidden by ADR-0006) is a hard failure,
+ *      because no external account provisioning can fix it.
+ *   2. Placeholders — template names and demo domains. These are *reported*,
+ *      not failed: filling them needs real Cloudflare
  *      resources, which are the E-gate business batch (D-132 §D), not this
  *      ticket. A gate that fails on them today would be red at birth.
  *
@@ -20,10 +20,9 @@
  * (`@meiye/core` runtime-entry / Next standalone), so having no wrangler config
  * is their correct shape and is never reported as a finding.
  *
- * The Hyperdrive placeholder id mirrors
- * apps/core/src/p1/cloudflare-read/config-risk.ts (HYPERDRIVE_PLACEHOLDER_ID /
- * isHyperdrivePlaceholder). scripts/ops/verify-wrangler-config.test.mjs pins the
- * two definitions together so they cannot drift.
+ * Hyperdrive is deliberately absent from the Web Worker until a real account
+ * configuration exists. Core's local PostgreSQL path remains the only current
+ * database fact source; a fake Hyperdrive ID must never be added here.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -147,20 +146,6 @@ function structureIssuesFor(label, config, configPath, root) {
     push('compatibility_flags must include nodejs_compat');
   }
 
-  const hyperdrive = config.hyperdrive;
-  if (!Array.isArray(hyperdrive) || hyperdrive.length === 0) {
-    push('hyperdrive binding is required (PostgreSQL is the only fact source)');
-  } else {
-    for (const [index, binding] of hyperdrive.entries()) {
-      if (binding?.binding !== 'HYPERDRIVE') {
-        push(`hyperdrive[${index}].binding must be HYPERDRIVE`);
-      }
-      if (typeof binding?.id !== 'string' || binding.id.trim().length === 0) {
-        push(`hyperdrive[${index}].id key is required`);
-      }
-    }
-  }
-
   const buckets = config.r2_buckets;
   if (!Array.isArray(buckets) || buckets.length === 0) {
     push('r2_buckets binding is required');
@@ -201,14 +186,6 @@ function placeholderFindingsFor(label, config) {
       DEMO_DOMAIN_SUFFIXES.some((suffix) => pattern.toLowerCase().endsWith(suffix))
     ) {
       push('demo_route_domain', `routes[${index}].pattern=${pattern}`);
-    }
-  }
-  for (const [index, binding] of (Array.isArray(config.hyperdrive) ? config.hyperdrive : []).entries()) {
-    if (isHyperdrivePlaceholder(binding?.id)) {
-      push(
-        'hyperdrive_placeholder',
-        `hyperdrive[${index}].id=${binding?.id ?? '(missing)'}`
-      );
     }
   }
   for (const [index, bucket] of (Array.isArray(config.r2_buckets) ? config.r2_buckets : []).entries()) {

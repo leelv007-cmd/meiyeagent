@@ -19,26 +19,56 @@ test('the repository wrangler configs are structurally complete', () => {
   assert.deepEqual(result.structureIssues, []);
   assert.deepEqual(
     result.configs.map((entry) => entry.path),
-    ['mkfast-template-main/wrangler.jsonc', 'mkfast-template-main/wrangler.quality.jsonc']
+    [
+      'mkfast-template-main/wrangler.jsonc',
+      'mkfast-template-main/wrangler.quality.jsonc',
+      'mkfast-template-main/wrangler.waffo-preview.jsonc',
+    ]
   );
   assert.equal(result.ok, true);
 });
 
-test('placeholders are reported, and only become failures under --require-real-resources', () => {
-  const reported = verifyWranglerConfigs({ root: repositoryRoot });
-  const ids = new Set(reported.placeholders.map((finding) => finding.id));
-  assert.ok(ids.has('template_worker_name'));
-  assert.ok(ids.has('demo_route_domain'));
-  assert.ok(ids.has('hyperdrive_placeholder'));
-  assert.ok(ids.has('template_bucket_name'));
-  assert.equal(reported.ok, true, 'reporting placeholders must not fail the gate today');
+test('the Waffo Test candidate uses an isolated preview without a production route', async () => {
+  const config = parseJsonc(
+    await readFile(
+      join(repositoryRoot, 'mkfast-template-main/wrangler.waffo-preview.jsonc'),
+      'utf8'
+    )
+  );
+  assert.equal(config.name, 'meiye-web');
+  assert.equal(config.preview_urls, true);
+  assert.equal(config.workers_dev, false);
+  assert.equal(config.routes, undefined);
+  assert.equal(config.hyperdrive, undefined);
+  assert.deepEqual(config.vars, { WAFFO_DEBUG: 'true' });
+  assert.deepEqual(config.r2_buckets, [
+    { binding: 'BUCKET', bucket_name: 'meiye-assets' },
+  ]);
+});
+
+test('the release Worker uses the selected Cloudflare resources without a Hyperdrive placeholder', async () => {
+  const config = parseJsonc(
+    await readFile(join(repositoryRoot, 'mkfast-template-main/wrangler.jsonc'), 'utf8')
+  );
+  assert.equal(config.name, 'meiye-web');
+  assert.deepEqual(config.routes, [
+    { custom_domain: true, pattern: 'tqai.uk' },
+  ]);
+  assert.equal(config.preview_urls, true);
+  assert.equal(config.workers_dev, false);
+  assert.deepEqual(config.r2_buckets, [
+    { binding: 'BUCKET', bucket_name: 'meiye-assets' },
+  ]);
+  assert.equal(config.hyperdrive, undefined);
+  assert.equal(config.triggers, undefined);
 
   const strict = verifyWranglerConfigs({
     requireRealResources: true,
     root: repositoryRoot,
   });
-  assert.equal(strict.ok, false);
+  assert.equal(strict.ok, true);
   assert.deepEqual(strict.structureIssues, []);
+  assert.deepEqual(strict.placeholders, []);
 });
 
 test('core and worker are never reported for missing wrangler configs', () => {
@@ -102,7 +132,6 @@ test('missing key positions, forbidden D1 bindings, and unparseable configs fail
   assert.match(joined, /name is required/);
   assert.match(joined, /compatibility_date must be an ISO date/);
   assert.match(joined, /compatibility_flags must include nodejs_compat/);
-  assert.match(joined, /hyperdrive binding is required/);
   assert.match(joined, /r2_buckets\[0\]\.bucket_name is required/);
   assert.match(joined, /d1_databases must not be declared/);
   assert.match(joined, /main entrypoint \.\/src\/server\.ts does not exist/);
