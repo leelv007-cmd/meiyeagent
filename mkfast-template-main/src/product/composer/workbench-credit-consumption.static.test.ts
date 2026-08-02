@@ -15,10 +15,14 @@ test('workbench consumes the backend credit balance and quote through all three 
   assert.match(source, /projectWorkbenchCreditBalance/u);
   assert.match(source, /projectWorkbenchCreditQuote/u);
   assert.match(source, /projectWorkbenchCreditShortfall/u);
-  assert.match(source, /data-testid="workbench-credit-balance"/u);
+  assert.match(source, /data-testid="workbench-credit-topbar-balance"/u);
   assert.match(source, /data-testid="workbench-credit-quote"/u);
   assert.match(source, /data-testid="workbench-credit-shortfall"/u);
-  assert.match(source, /to="\/settings\/credits"/u);
+  assert.match(source, /data-testid="workbench-credit-shortfall-alert"/u);
+  assert.match(
+    source,
+    /<Link to="\/pricing">\s+\{workbench_credit_buy_booster\(\)\}/u
+  );
   assert.match(source, /to="\/pricing"/u);
   assert.match(
     source,
@@ -28,6 +32,14 @@ test('workbench consumes the backend credit balance and quote through all three 
   assert.match(
     source,
     /if \(quotaBlocked\) \{\s+setSubmissionQuotaBlocked\(true\);/u
+  );
+  assert.match(
+    source,
+    /\{legacyQuotaBlocked \? \(\s+<ComposerCreditRecoveryHost/u
+  );
+  assert.doesNotMatch(
+    source,
+    /\{quotaBlocked \? \(\s+<ComposerCreditRecoveryHost/u
   );
   assert.doesNotMatch(
     creditSource,

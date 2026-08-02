@@ -36,6 +36,7 @@ export type WorkbenchShellRootProps = {
   widthMode: WorkbenchWidthMode;
   dualColumn: boolean;
   stickyComposer: boolean;
+  topbar?: React.ReactNode;
   className?: string;
   children: React.ReactNode;
   'data-testid'?: string;
@@ -51,6 +52,7 @@ export function WorkbenchShellRoot({
   widthMode,
   dualColumn,
   stickyComposer,
+  topbar,
   className,
   children,
   'data-testid': testId = 'composer-home',
@@ -58,21 +60,24 @@ export function WorkbenchShellRoot({
   'data-viewport': viewport,
 }: WorkbenchShellRootProps) {
   return (
-    <div
-      className={cn(
-        'mx-auto flex w-full flex-col gap-6 px-4 py-6 sm:px-6',
-        workbenchShellMaxWidthClass(widthMode),
-        className
-      )}
-      data-dual-column={dualColumn ? 'true' : 'false'}
-      data-shell-width={widthMode}
-      data-sticky-composer={stickyComposer ? 'true' : 'false'}
-      data-testid={testId}
-      data-shelf-collapsed={shelfCollapsed}
-      data-viewport={viewport}
-    >
-      {children}
-    </div>
+    <>
+      {topbar}
+      <div
+        className={cn(
+          'mx-auto flex w-full flex-col gap-6 px-4 py-6 sm:px-6',
+          workbenchShellMaxWidthClass(widthMode),
+          className
+        )}
+        data-dual-column={dualColumn ? 'true' : 'false'}
+        data-shell-width={widthMode}
+        data-sticky-composer={stickyComposer ? 'true' : 'false'}
+        data-testid={testId}
+        data-shelf-collapsed={shelfCollapsed}
+        data-viewport={viewport}
+      >
+        {children}
+      </div>
+    </>
   );
 }
 

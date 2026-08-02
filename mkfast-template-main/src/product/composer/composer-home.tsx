@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
+import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { emitTelemetry } from '@/lib/product-telemetry';
 import {
@@ -3722,6 +3723,22 @@ export function ComposerHome({
       // here — T33「一个 Glass 壳根」. This root only owns the P1 width contract.
       dualColumn={dualColumn}
       stickyComposer={stickyComposer}
+      topbar={
+        <DashboardHeader
+          actions={
+            workbenchCreditBalance.visible ? (
+              <span
+                className="meiye-product-subscription-entry max-w-[min(60vw,22rem)]"
+                data-testid="workbench-credit-topbar-balance"
+                title={creditSummary ?? undefined}
+              >
+                <span className="truncate">{creditSummary}</span>
+              </span>
+            ) : null
+          }
+          breadcrumbs={[{ label: '工作台', isCurrentPage: true }]}
+        />
+      }
       widthMode={widthMode}
       data-shelf-collapsed={shelfCollapsed ? 'true' : 'false'}
       data-viewport={viewportKind}
@@ -4252,7 +4269,7 @@ export function ComposerHome({
                             })}
                           </p>
                           <div className="flex flex-wrap gap-3 text-sm font-medium underline underline-offset-4">
-                            <Link to="/settings/credits">
+                            <Link to="/pricing">
                               {workbench_credit_buy_booster()}
                             </Link>
                             <Link to="/pricing">
@@ -4587,10 +4604,30 @@ export function ComposerHome({
                   </p>
                 ) : null}
 
-                {/* Quota blocking alert stays visible outside the capsule when short. */}
-                {quotaBlocked ? (
+                {workbenchCreditShortfall.visible ? (
+                  <div
+                    className="space-y-2 rounded-xl border border-destructive/20 bg-destructive/5 p-3"
+                    data-testid="workbench-credit-shortfall-alert"
+                    role="alert"
+                  >
+                    <p className="text-sm font-medium text-foreground">
+                      {workbench_credit_shortfall({
+                        count: workbenchCreditShortfall.missingCredits,
+                      })}
+                    </p>
+                    <div className="flex flex-wrap gap-3 text-sm font-medium underline underline-offset-4">
+                      <Link to="/pricing">
+                        {workbench_credit_buy_booster()}
+                      </Link>
+                      <Link to="/pricing">{workbench_credit_upgrade()}</Link>
+                    </div>
+                  </div>
+                ) : null}
+
+                {/* Legacy quota recovery remains outside the capsule when it is short. */}
+                {legacyQuotaBlocked ? (
                   <ComposerCreditRecoveryHost
-                    blocked={quotaBlocked}
+                    blocked={legacyQuotaBlocked}
                     passive={quotaPassive}
                     quote={currentQuoteView}
                     redeem={({ command, idempotencyKey }) =>
