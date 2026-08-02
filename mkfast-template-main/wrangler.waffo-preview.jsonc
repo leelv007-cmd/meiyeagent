@@ -22,8 +22,16 @@
   "preview_urls": true,
   "workers_dev": false,
   "vars": {
+    "CORE_SERVICE_URL": "https://core-test.tqai.uk",
+    "INTERNAL_SERVICE_TRANSPORT": "private-network",
     "WAFFO_DEBUG": "true"
   },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "3d191e95f5f940ef8aaee857c6f38b35"
+    }
+  ],
   "r2_buckets": [
     {
       "bucket_name": "meiye-assets",

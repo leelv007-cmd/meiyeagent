@@ -39,8 +39,17 @@ test('the Waffo Test candidate uses an isolated preview without a production rou
   assert.equal(config.preview_urls, true);
   assert.equal(config.workers_dev, false);
   assert.equal(config.routes, undefined);
-  assert.equal(config.hyperdrive, undefined);
-  assert.deepEqual(config.vars, { WAFFO_DEBUG: 'true' });
+  assert.deepEqual(config.hyperdrive, [
+    {
+      binding: 'HYPERDRIVE',
+      id: '3d191e95f5f940ef8aaee857c6f38b35',
+    },
+  ]);
+  assert.deepEqual(config.vars, {
+    CORE_SERVICE_URL: 'https://core-test.tqai.uk',
+    INTERNAL_SERVICE_TRANSPORT: 'private-network',
+    WAFFO_DEBUG: 'true',
+  });
   assert.deepEqual(config.r2_buckets, [
     { binding: 'BUCKET', bucket_name: 'meiye-assets' },
   ]);
