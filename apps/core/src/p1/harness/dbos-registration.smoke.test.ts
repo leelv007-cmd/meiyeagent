@@ -2382,7 +2382,7 @@ function smokePorts(
       hash: 'a'.repeat(64),
       serializerVersion: 'context-bundle-c14n-v1' as const,
       workspaceId: 'workspace-smoke',
-      taskId: 'task-smoke',
+      taskId: workflowId,
       frozenAt: '2026-07-18T00:00:00.000Z',
       frozenBy: 'owner-smoke',
       previousRevision: null,

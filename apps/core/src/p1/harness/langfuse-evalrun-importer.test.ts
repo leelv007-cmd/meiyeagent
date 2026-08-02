@@ -37,6 +37,7 @@ const CORE_DIRECTORY = fileURLToPath(new URL('../../../', import.meta.url));
 const WORKSPACE_DIRECTORY = fileURLToPath(
   new URL('../../../../../', import.meta.url),
 );
+const REDLINES_ITEM_COUNT = 23;
 
 function memoryRegistry() {
   const runs = new Map<
@@ -88,7 +89,7 @@ test('imports versioned redline, memory and Skill EvalRuns through the dataset-i
 
   assert.deepEqual(redlines, {
     datasetName: 'harness-evalrun:harness-seven-redlines',
-    importedItems: 21,
+    importedItems: REDLINES_ITEM_COUNT,
     runId: 'harness-seven-redlines-recorded-v2',
   });
   assert.deepEqual(preferenceMemory, {
@@ -101,7 +102,7 @@ test('imports versioned redline, memory and Skill EvalRuns through the dataset-i
     importedItems: 2,
     runId: 'skills-five-piece-recorded-v2',
   });
-  assert.equal(requests.length, 27);
+  assert.equal(requests.length, REDLINES_ITEM_COUNT + 6);
   assert.equal(
     requests[0]?.authorization,
     `Basic ${Buffer.from('pk-test:sk-test').toString('base64')}`,
@@ -177,8 +178,8 @@ test('reimporting the same EvalRun leaves zero duplicate dataset items', async (
   const firstImport = structuredClone([...items]);
   await importer.importArtifact(REDLINES_BASELINE);
 
-  assert.equal(requests, 42);
-  assert.equal(items.size, 21);
+  assert.equal(requests, REDLINES_ITEM_COUNT * 2);
+  assert.equal(items.size, REDLINES_ITEM_COUNT);
   assert.deepEqual([...items], firstImport);
 });
 
@@ -391,10 +392,13 @@ test(
     const [exitCode] = (await once(child, 'close')) as [number];
 
     assert.equal(exitCode, 0, stderr);
-    assert.equal(requests, 21);
+    assert.equal(requests, REDLINES_ITEM_COUNT);
     assert.match(
       stdout,
-      /Imported 21 EvalRun items from harness-seven-redlines-recorded-v2/u,
+      new RegExp(
+        `Imported ${REDLINES_ITEM_COUNT} EvalRun items from harness-seven-redlines-recorded-v2`,
+        'u',
+      ),
     );
   },
 );

@@ -676,7 +676,7 @@ function launchSeedEvalRun(
 }
 
 /**
- * Draft → preview → publish all eight Recipes, then the launch Surface.
+ * Draft → preview → publish all formal Recipes, then the launch Surface.
  * Surface recipeRefs pin the published revision ids (session freeze later).
  */
 export async function publishLaunchCatalog(

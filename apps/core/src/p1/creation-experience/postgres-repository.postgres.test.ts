@@ -7,6 +7,7 @@ import { Pool } from 'pg';
 import { confirmBrief, projectBriefTrigger } from './brief-trigger-projection.js';
 import { CreationExperienceCatalogService } from './catalog-service.js';
 import { CreationExperienceFoundationModule } from './foundation-module.js';
+import { LAUNCH_RECIPE_SPECS } from './launch-seeds.js';
 import { MemoryObservabilityEventAudit } from './observability-events.js';
 import { PostgresCreationExperienceAuditRepository } from './postgres-audit-repository.js';
 import {
@@ -356,9 +357,10 @@ test(
         pool: runtimePool,
         ...unusedRevisionSources,
       });
-      assert.equal(first.launch?.recipes.length, 8);
+      const launchRecipeCount = LAUNCH_RECIPE_SPECS.length;
+      assert.equal(first.launch?.recipes.length, launchRecipeCount);
       assert.equal(first.launch?.surface.status, 'published');
-      assert.equal(first.launch?.surface.revision, 24);
+      assert.equal(first.launch?.surface.revision, launchRecipeCount * 3);
 
       const studioDraft = await first.catalog.draftRecipe({
         actorId: 'ops-recipe-studio',
@@ -442,14 +444,17 @@ test(
         restarted.launch?.surface.revisionId,
         expandedSurface.revisionId,
       );
-      assert.equal(restarted.launch?.surface.recipeRefs.length, 9);
+      assert.equal(
+        restarted.launch?.surface.recipeRefs.length,
+        launchRecipeCount + 1,
+      );
       assert.equal(
         (
           await restarted.catalog.listSurfaceHistory(
             first.launch!.surface.surfaceId,
           )
         ).length,
-        27,
+        expandedSurface.revision,
       );
       for (const recipe of first.launch!.recipes) {
         assert.equal(
