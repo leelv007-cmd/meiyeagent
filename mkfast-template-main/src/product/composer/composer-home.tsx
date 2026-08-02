@@ -1961,6 +1961,8 @@ export function ComposerHome({
       : null;
   const pendingQuestion: QuestionCard | null =
     decisionQuery.data?.question ?? null;
+  const questionReservationReleased =
+    decisionQuery.data?.reservationReleased === true;
   const questionResolutionSource =
     decisionQuery.data?.resolutionSource === 'core_timeout' ||
     decisionQuery.data?.resolutionSource === 'core_hold_expired'
@@ -4116,6 +4118,7 @@ export function ComposerHome({
                           onDecide={answerQuestion}
                           pending={questionPending}
                           question={pendingQuestion}
+                          reservationReleased={questionReservationReleased}
                           resolutionSource={questionResolutionSource}
                           timeoutSeconds={questionTimeoutSeconds}
                         />

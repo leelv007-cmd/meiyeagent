@@ -492,6 +492,29 @@ test.describe('T31 三类卡与确认卡', () => {
     request,
   }) => {
     test.setTimeout(420_000);
+    // Promotion gaps now prefer the interaction channel (ask-merchant). This
+    // case asserts the decision-card hold promise (reservationReleased), so
+    // keep interaction absent and inject a hold question on the decision seam.
+    await page.route(
+      /\/api\/core\/p1\/harness\/tasks\/[^/]+\/interaction$/u,
+      async (route) => {
+        if (route.request().method() !== 'GET') {
+          await route.continue();
+          return;
+        }
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          json: {
+            data: {
+              request: null,
+              resolutionSource: null,
+              status: 'absent',
+            },
+          },
+        });
+      }
+    );
     await page.route(
       /\/api\/core\/p1\/harness\/tasks\/[^/]+\/decision$/u,
       async (route) => {
@@ -505,14 +528,41 @@ test.describe('T31 三类卡与确认卡', () => {
             question?: Record<string, unknown> | null;
             reservationReleased?: boolean;
             timeoutSeconds?: number | null;
+            status?: string;
           };
         };
-        if (envelope.data?.question) {
-          envelope.data.question.unattended = 'hold';
-          envelope.data.reservationReleased = true;
-          envelope.data.timeoutSeconds = null;
-        }
-        await route.fulfill({ response, json: envelope });
+        const baseQuestion =
+          envelope.data?.question &&
+          typeof envelope.data.question === 'object'
+            ? envelope.data.question
+            : {
+                freeText: { enabled: true, placeholder: '也可以直接告诉我' },
+                options: [],
+                question: '方便补充这次活动的项目和价格档吗？',
+                questionId: 'e2e-released-hold-question',
+                response: {
+                  field: 'offer_price',
+                  reason: '让这次活动内容更贴合你的实际情况',
+                },
+                scope: 'current_task',
+                workflowId: 'e2e-released-hold-workflow',
+                workflowRevision: 1,
+              };
+        await route.fulfill({
+          response,
+          json: {
+            data: {
+              question: {
+                ...baseQuestion,
+                unattended: 'hold',
+              },
+              reservationReleased: true,
+              resolutionSource: null,
+              status: 'pending',
+              timeoutSeconds: null,
+            },
+          },
+        });
       }
     );
     const user = await registerE2EUser(request);
