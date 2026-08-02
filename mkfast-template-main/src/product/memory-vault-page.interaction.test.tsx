@@ -588,9 +588,7 @@ describe('memory vault', () => {
     expect(cold.textContent).toMatch(/还没学到/u);
     expect(cold.textContent).toMatch(/你常用的表达方式/u);
     expect(cold.textContent).toMatch(/还没有生成/u);
-    // The standing page description claims the product knows the shop better
-    // the longer she uses it. With nothing sedimented that is a lie, so it must
-    // not be on screen at all.
+    // The old learning-over-time promise must not return on the cold state.
     expect(screen.queryByText(/越懂你的店/u)).not.toBeInTheDocument();
     // And the cold note is said once, not repeated as a per-section empty.
     expect(screen.queryByTestId('memory-entry-empty')).not.toBeInTheDocument();
@@ -632,7 +630,9 @@ describe('memory vault', () => {
     );
     // An unanswered read is not evidence that the shop has learned nothing.
     expect(screen.queryByTestId('memory-cold-start')).not.toBeInTheDocument();
-    expect(screen.getByText(/越懂你的店/u)).toBeInTheDocument();
+    expect(
+      screen.getByText(/你确认过、之后创作可参考的经验/u)
+    ).toBeInTheDocument();
     // Failed read must not invent two empty queues either.
     expect(screen.queryByTestId('memory-entry-empty')).not.toBeInTheDocument();
     expect(
@@ -739,7 +739,9 @@ describe('memory vault', () => {
 
     await screen.findByTestId('memory-identity-name');
     expect(screen.queryByTestId('memory-cold-start')).not.toBeInTheDocument();
-    expect(screen.getByText(/越懂你的店/u)).toBeInTheDocument();
+    expect(
+      screen.getByText(/你确认过、之后创作可参考的经验/u)
+    ).toBeInTheDocument();
     // A shop with a persona but no candidates gets the scoped empty state —
     // that one is about the review queue, not about the product being cold.
     expect(screen.getByTestId('memory-entry-empty').textContent).toMatch(

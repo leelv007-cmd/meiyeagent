@@ -356,7 +356,7 @@ export function MemoryVaultPage() {
   const windowMayHaveMore = Boolean(entriesQuery.data?.nextCursor);
   // True greenfield only: no raw rows at all (incl. rejected) and no persona.
   const cold = settled && allEntries.length === 0 && !defaultIdentity;
-  // Rejected-only history is not cold and not "越用越懂你" — nothing rememberable.
+  // Rejected-only history is not cold, but it is not rememberable sediment.
   // Only claim this when the page window is complete (no nextCursor).
   const rejectedOnlyNoIdentity =
     settled &&
@@ -364,8 +364,8 @@ export function MemoryVaultPage() {
     !hasVisibleSediment &&
     hasRejectedHistory &&
     !windowMayHaveMore;
-  // Standing 「越懂你的店」 only with identity / visible sediment, or while the
-  // memory read is still unanswered (must not look cold on error/loading).
+  // Show the neutral standing description with identity / visible sediment, or
+  // while the memory read is unanswered (must not look cold on error/loading).
   const showStandingDescription =
     !cold &&
     !rejectedOnlyNoIdentity &&

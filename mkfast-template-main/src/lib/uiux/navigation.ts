@@ -40,7 +40,7 @@ export const BUSINESS_NAVIGATION = [
   /**
    * D-164 clause 4 (2026-07-29): first-class destination for what the product
    * has learned about the shop. P2-13 / D5 renames merchant-visible copy to
-   * 「经验」; route and id stay `/dashboard/memory` / `memory`.
+   * the localized Experience label; route and id stay `/dashboard/memory` / `memory`.
    *
    * Sits last because it is what the other four accumulate into, not a place
    * work starts. No literal copy — product-surface contract keeps shells free
