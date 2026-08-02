@@ -5,6 +5,7 @@ import {
   contentPackageCarrierOf,
   contentPackageCarriers,
   contentPackageKindSchema,
+  contentPackageSourceSchema,
 } from './content-package.js';
 
 test('contentPackageKindSchema stays the two-value wire/storage kind', () => {
@@ -58,4 +59,38 @@ test('contentPackageCarrierOf is total over the wire kinds', () => {
     ]),
   );
   assert.deepEqual([...seen].sort(), ['copy', 'media', 'note']);
+});
+
+test('ContentPackage source retains the frozen Composer destination platform', () => {
+  const source = contentPackageSourceSchema.parse({
+    assetIds: [],
+    creationExecutionSnapshot: {
+      contentPackagePlatform: 'wechat_moments',
+      distributionTarget: 'manual_copy',
+      id: 'snapshot-moments',
+      revision: 1,
+      schemaVersion: 'creation-execution-snapshot/v1',
+    },
+  });
+
+  assert.equal(
+    source.creationExecutionSnapshot?.contentPackagePlatform,
+    'wechat_moments',
+  );
+  assert.equal(
+    source.creationExecutionSnapshot?.distributionTarget,
+    'manual_copy',
+  );
+
+  assert.equal(
+    contentPackageSourceSchema.safeParse({
+      assetIds: [],
+      creationExecutionSnapshot: {
+        id: 'snapshot-historical',
+        revision: 1,
+        schemaVersion: 'creation-execution-snapshot/v1',
+      },
+    }).success,
+    true,
+  );
 });

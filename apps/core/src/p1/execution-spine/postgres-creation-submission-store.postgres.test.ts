@@ -629,6 +629,8 @@ test(
       assert.deepEqual(lineage.rows[0], {
         content_package_id: submission.contentPackage.id,
         execution_snapshot: {
+          contentPackagePlatform: "douyin",
+          distributionTarget: "export",
           id: submission.snapshot.id,
           modelSelection: {
             source: "current_selection",
@@ -1328,6 +1330,8 @@ test(
           {
             package_kind: lens === "image" ? "image_text" : "video",
             package_snapshot: {
+              contentPackagePlatform: "douyin",
+              distributionTarget: "export",
               id: submission.snapshot.id,
               modelSelection: {
                 source: "current_selection",

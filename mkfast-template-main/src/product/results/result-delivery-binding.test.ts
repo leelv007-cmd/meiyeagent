@@ -119,18 +119,25 @@ describe('Result delivery binding', () => {
     );
   });
 
-  it('keeps the modern Moments panel on package current without inventing a platform scope', () => {
+  it('uses the frozen Moments destination on package current without inventing a platform scope', () => {
     const contentPackage = packageFixture({
-      source: { assetIds: [] },
+      source: {
+        assetIds: [],
+        creationExecutionSnapshot: {
+          contentPackagePlatform: 'wechat_moments',
+          distributionTarget: 'manual_copy',
+          id: 'snapshot-moments',
+          revision: 1,
+          schemaVersion: 'creation-execution-snapshot/v1',
+        },
+      },
     });
 
-    const binding = resolveResultDeliveryBinding(
-      contentPackage,
-      'wechat_moments'
-    );
+    const binding = resolveResultDeliveryBinding(contentPackage, 'douyin');
 
     assert.equal(binding.canonicalPlatform, null);
     assert.equal(binding.panelTarget, 'wechat_moments');
+    assert.equal(binding.allowExplicitPublicationVariantSelection, true);
     assert.equal(binding.scopePlatform, undefined);
     assert.equal(binding.currentVersion?.id, 'base-v1');
     assert.deepEqual(binding.currentVersion?.orderedAssetIds, ['base-asset']);
@@ -138,6 +145,37 @@ describe('Result delivery binding', () => {
       binding.orderedOwnedAssets.map((asset) => asset.objectKey),
       ['objects/base.jpg']
     );
+  });
+
+  it('fails closed for frozen generic or offline destinations even when mutable intent says Moments', () => {
+    for (const contentPackagePlatform of [
+      'generic',
+      'offline_material',
+    ] as const) {
+      const contentPackage = packageFixture({
+        source: {
+          assetIds: [],
+          creationExecutionSnapshot: {
+            contentPackagePlatform,
+            distributionTarget: 'export',
+            id: `snapshot-${contentPackagePlatform}`,
+            revision: 1,
+            schemaVersion: 'creation-execution-snapshot/v1',
+          },
+        },
+      });
+
+      const binding = resolveResultDeliveryBinding(
+        contentPackage,
+        'wechat_moments'
+      );
+
+      assert.equal(binding.canonicalPlatform, null);
+      assert.equal(binding.panelTarget, null);
+      assert.equal(binding.allowExplicitPublicationVariantSelection, false);
+      assert.equal(binding.scopePlatform, undefined);
+      assert.equal(binding.currentVersion?.id, 'base-v1');
+    }
   });
 
   it('fails closed when a durable target has no matching variant', () => {

@@ -16,7 +16,7 @@ import {
   result_publication_status_unknown,
   result_publication_submit,
 } from '@/locale/paraglide/messages';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import type { ContentPackagePlatform } from '@meiye/contracts';
 
 import {
@@ -52,9 +52,10 @@ const PLATFORMS: readonly { id: ContentPackagePlatform; label: string }[] = [
 
 export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
   const { view } = props;
-  const [platform, setPlatform] = useState<ContentPackagePlatform | undefined>(
-    props.platform
-  );
+  const [platformSelection, setPlatformSelection] = useState<{
+    scopeKey: string;
+    platform: ContentPackagePlatform;
+  }>();
   const [accountDisplayLabel, setAccountDisplayLabel] = useState('');
   const [publishedAt, setPublishedAt] = useState('');
   const [platformUrl, setPlatformUrl] = useState('');
@@ -77,15 +78,23 @@ export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
           },
         ]
       : []);
-  const bindingRevisionKey = variantBindings
-    .map((binding) => `${binding.platform}:${binding.variantVersionId}`)
-    .join('|');
-  useEffect(() => {
-    // A refreshed package revision may move a platform to a new current
-    // version. Unscoped distribution flows must ask the merchant to choose
-    // again instead of silently carrying a selection onto the new binding.
-    setPlatform(props.platform);
-  }, [bindingRevisionKey, props.contentPackageRevision, props.platform]);
+  const selectionScopeKey = JSON.stringify([
+    props.contentPackageId ?? null,
+    props.contentPackageRevision ?? null,
+    props.platform ?? null,
+    variantBindings.map((binding) => [
+      binding.platform,
+      binding.variantVersionId,
+    ]),
+  ]);
+  // Validate the merchant choice during render. A refreshed package or
+  // binding therefore invalidates an old choice before the browser can submit
+  // it against a new variant version.
+  const platform =
+    props.platform ??
+    (platformSelection?.scopeKey === selectionScopeKey
+      ? platformSelection.platform
+      : undefined);
   const selectedBinding = variantBindings.find(
     (binding) => binding.platform === platform
   );
@@ -222,7 +231,12 @@ export function PublicationRecordPanel(props: PublicationRecordPanelProps) {
                 variant={platform === item.id ? 'default' : 'outline'}
                 data-testid={`publication-platform-${item.id}`}
                 aria-pressed={platform === item.id}
-                onClick={() => setPlatform(item.id)}
+                onClick={() =>
+                  setPlatformSelection({
+                    scopeKey: selectionScopeKey,
+                    platform: item.id,
+                  })
+                }
               >
                 {item.label}
               </Button>

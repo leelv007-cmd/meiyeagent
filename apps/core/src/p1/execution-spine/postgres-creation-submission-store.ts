@@ -214,6 +214,8 @@ export class PostgresCreationSubmissionPersistence implements CreationSubmission
       source: {
         assetIds: snapshot.sources.assets.map((asset) => asset.id),
         creationExecutionSnapshot: {
+          contentPackagePlatform: snapshot.contentPackagePlatform,
+          distributionTarget: snapshot.distributionTarget,
           id: snapshot.id,
           revision: snapshot.revision,
           schemaVersion: snapshot.schemaVersion,

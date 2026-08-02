@@ -16,6 +16,7 @@ type PublicOwnedAsset = NonNullable<
 >[number];
 
 export type ResultDeliveryBinding = {
+  allowExplicitPublicationVariantSelection: boolean;
   canonicalPlatform: ContentPackagePlatform | null;
   currentVersion: ContentPackageVersion | undefined;
   orderedOwnedAssets: PublicOwnedAsset[];
@@ -65,24 +66,32 @@ export function resolveResultDeliveryBinding(
       return asset ? [asset] : [];
     }) ?? [];
   const mayUseIntentFallback = !contentPackage || contentPackage.legacySource;
+  const frozenDestination = contentPackage?.source.creationExecutionSnapshot;
   const mayUseModernMomentsPanel = Boolean(
     contentPackage &&
       !durablePlatform &&
       !contentPackage.legacySource &&
-      inferredTarget === 'wechat_moments'
+      frozenDestination?.contentPackagePlatform === 'wechat_moments' &&
+      frozenDestination.distributionTarget
   );
   const deliveryVersionUnavailable = Boolean(contentPackage && !currentVersion);
+  const panelTarget = deliveryVersionUnavailable
+    ? null
+    : (canonicalPlatform ??
+      (mayUseIntentFallback
+        ? inferredTarget
+        : mayUseModernMomentsPanel
+          ? 'wechat_moments'
+          : null));
 
   return {
+    allowExplicitPublicationVariantSelection: Boolean(
+      mayUseModernMomentsPanel && panelTarget === 'wechat_moments'
+    ),
     canonicalPlatform,
     currentVersion,
     orderedOwnedAssets,
-    panelTarget: deliveryVersionUnavailable
-      ? null
-      : (canonicalPlatform ??
-        (mayUseIntentFallback || mayUseModernMomentsPanel
-          ? inferredTarget
-          : null)),
+    panelTarget,
     scopePlatform,
     variant,
   };

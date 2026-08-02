@@ -806,12 +806,8 @@ function ResultCenterRoutePage() {
         preferredPlatform: deliveryPanelTarget
           ? canonicalDeliveryPlatform
           : null,
-        allowExplicitVariantSelection: Boolean(
-          deliveryPanelTarget === 'wechat_moments' &&
-            canonicalDeliveryPlatform === null &&
-            !contentPackage.legacySource &&
-            !contentPackage.source.targetPlatform
-        ),
+        allowExplicitVariantSelection:
+          deliveryBinding.allowExplicitPublicationVariantSelection,
       })
     : undefined;
   const exactExportReceipt = contentPackage?.exportReceipts

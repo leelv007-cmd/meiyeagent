@@ -274,7 +274,7 @@ test('result route wires the Result close-loop panels to public P1 operations', 
   assert.match(route, /closeLoop=\{closeLoopFacts\}/);
   assert.match(
     route,
-    /allowExplicitVariantSelection:\s*Boolean\([\s\S]*?deliveryPanelTarget === ['"]wechat_moments['"][\s\S]*?canonicalDeliveryPlatform === null[\s\S]*?!contentPackage\.legacySource[\s\S]*?!contentPackage\.source\.targetPlatform/u
+    /allowExplicitVariantSelection:\s*deliveryBinding\.allowExplicitPublicationVariantSelection/u
   );
   assert.match(
     route,

@@ -10,6 +10,10 @@ import {
 } from './approval-receipt.js';
 import { creativeExecutionContractSchema } from './uiux.js';
 import { imageTextNoteVersionSchema } from './note-plan.js';
+import {
+  composerContentPackagePlatformSchema,
+  composerDistributionTargetSchema,
+} from './composer-submission.js';
 
 const contentPackageIdSchema = z.string().trim().min(1);
 const contentPackageTimestampSchema = z.iso.datetime();
@@ -338,6 +342,10 @@ export const contentPackageSourceSchema = z.object({
   compositionRevision: contentPackageIdSchema.optional(),
   creationExecutionSnapshot: z
     .object({
+      /** Frozen signed destination copied from the immutable execution snapshot. */
+      contentPackagePlatform: composerContentPackagePlatformSchema.optional(),
+      /** Optional only so historical ContentPackages remain readable. */
+      distributionTarget: composerDistributionTargetSchema.optional(),
       id: contentPackageIdSchema,
       revision: z.number().int().positive(),
       schemaVersion: z.literal('creation-execution-snapshot/v1'),

@@ -158,10 +158,36 @@ describe('close-loop panels', () => {
         onRecordManual={onRecordManual}
       />
     );
-    await waitFor(() =>
-      assert.equal(xhs.getAttribute('aria-pressed'), 'false')
-    );
+    assert.equal(xhs.getAttribute('aria-pressed'), 'false');
     assert.equal((submit as HTMLButtonElement).disabled, true);
+    fireEvent.submit(screen.getByTestId('publication-record-form'));
+    assert.equal(onRecordManual.mock.calls.length, 1);
+
+    fireEvent.click(screen.getByTestId('publication-platform-xiaohongshu'));
+    fireEvent.submit(screen.getByTestId('publication-record-form'));
+    await waitFor(() => assert.equal(onRecordManual.mock.calls.length, 2));
+    assert.equal(onRecordManual.mock.calls[1]?.[0]?.variantVersionId, 'xhs-v2');
+
+    rerender(
+      <PublicationRecordPanel
+        view={refreshedView}
+        contentPackageId="pkg-b"
+        contentPackageRevision={2}
+        variantBindings={refreshedBindings}
+        onRecordManual={onRecordManual}
+      />
+    );
+    assert.equal(
+      screen
+        .getByTestId('publication-platform-xiaohongshu')
+        .getAttribute('aria-pressed'),
+      'false'
+    );
+    assert.equal(
+      (screen.getByTestId('publication-record-submit') as HTMLButtonElement)
+        .disabled,
+      true
+    );
   });
 
   it('outcome chips stay disabled until published', () => {
