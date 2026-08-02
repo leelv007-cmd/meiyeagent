@@ -214,7 +214,7 @@ Worktree 根：`/Users/bin/orca/workspaces/美业内容2/lane-<N>`
 | --- | --- | --- |
 | `30699271165` | 方向 helper 每次等待 300s，重试 3 次；方向没有真正落地 | 产品用可见 `aria-pressed=true` 与恢复文案证明落地；普通 click，不再用 `force` 制造假绿 |
 | `30705186695` attempt 1 | Core recovery/compensation 与 Worker migration 并发，PostgreSQL `40P01`；DBOS admin `:3001` 还制造 EADDRINUSE 噪音，测例未开跑 | migration key advisory lock 包住 recovery/compensation；Worker `runAdminServer:false` |
-| `30705186695` attempt 2 | `force` click 返回但 `aria-pressed=false`，无 interaction POST；随后 W12 cleanup `DELETE` 无总期限，卡到 90m | 去掉 `force`，补真实 settle 断言；cleanup 增加 15s 总 deadline，CI job 收紧为 60m |
+| `30705186695` attempt 2 | `force` click 返回但 `aria-pressed=false`，无 interaction POST；随后 W12 cleanup `DELETE` 无总期限，卡到 90m | 去掉 `force`，补真实 settle 断言；cleanup 增加 15s 总 deadline；Playwright production candidate 全局上限收紧为 60m，GitHub Actions job 仍保留 90m |
 | `30709104009` / `30711498117` | 均已 settled 为 `cancelled`，不是 success；前者 journey 约 89m，后者由并行更新取消 | 不再把 cancelled/in-progress 当证据；新候选推送后只认 exact-tip `production-main-journey=success` |
 
 因此“严重超时”不是单一 sticky 几何问题，而是 **产品点击假绿 + 数据库迁移竞态 + 无界清理** 三项叠加；继续空等或只 rerun 不能闭环。
@@ -253,3 +253,62 @@ Worktree 根：`/Users/bin/orca/workspaces/美业内容2/lane-<N>`
 | #325 | `8b838141` | frozen experience basis、进度/终态、stale/foreign rejection |
 
 P2 当前仍是 **候选已修、未合入**。下一硬门：推送 P1 修复链与本次台账 → 等该 exact-tip `production-main-journey` success；绿后才允许把 #320–#325 逐票集成复验并登记 ledger。
+
+---
+
+## 13. P2 #320–#328 最终合入审核候选（2026-08-02）
+
+> 本节覆盖 §12.1 与 §12.4 的 P2 状态。§12.3 的 `20/20` prompt sites、Core `3007/2986/0/21`、Chromium `15/15` 和 main run `30716928507` 是 P1 exact-tip 的历史事实，继续保留，不得改写成 P2 结果。
+
+### 13.1 九票集成终态
+
+| 票 | 当前集成行为 |
+| --- | --- |
+| #320 | 原子 CRUD、全 carrier 检查、UTF-16 原始 offset、左最左最长替换与 delivery 前 fail-closed recheck |
+| #321 | 签名 generation params；customized 不携带隐藏 voice role，standard thinking 生效，并保留 MarketingIdentity |
+| #322 | 单一 NoteObjectWorkspace、Tiptap、六动作、空段落保真与 copy-only derived terminal |
+| #323 | 五个美业 preset、三比例（9:16=`1152×2048`）、授权 style refs 与七维分析 |
+| #324 | viral 手动粘贴／OpenCLI structured source、exact recipe、两条 viral prompt 与 fail-closed VLM reference |
+| #325 | 当前任务 frozen experience basis、三处露出、delivery morph 与 stale/foreign 拒绝 |
+| #326 | 同一对象工作区内的手机笔记预览与双列封面预览 |
+| #327 | bounded inline replacement、冻结选区、明确 variant/history/delivery；并收口历史及 mixed-version publication destination 投影 |
+| #328 | stale read cancellation、bridge fail-closed 与 paste fallback；live 门完成一次真实读取、一次下载、外部写入 `0` |
+
+### 13.2 累计门禁揭错与修复
+
+P2 第一次 Core 全量不是绿：`3094 total / 3060 pass / 13 fail / 21 skip`。13 红均被定位并最小修复：
+
+| 红项 | 数量 | 根因与修复 |
+| --- | ---: | --- |
+| launch catalog restart | 1 | #324 将 recipe 从 8 扩为 9，旧测试写死 8；改由 `LAUNCH_RECIPE_SPECS.length` 与实际 published revision 派生 |
+| DBOS smoke | 9 | fixture 写死 `task-smoke`，与 workflow identity 不一致；改为 `taskId=workflowId`，不放宽生产 fail-closed 合同 |
+| EvalRun importer | 3 | #320 新增两条 eval 后 21→23；使用单一 23 常量并派生重复导入计数 |
+
+修后 focused 为 launch restart 真实 PostgreSQL `1/1`、DBOS smoke 真实 DBOS `15/15`、EvalRun `8/8`。
+
+最终双轴合同审查又发现滚动部署 P1：把新目的地字段写进 strict compact snapshot 会让旧 worker 拒读；历史 modern Moments 的 immutable submission 已有目的地，但 compact 无字段时 Web 入口会消失。修复为：**不再持久化新字段到 compact**，从不可变 `creation_submissions.submission.snapshot` 按 workspace/package/snapshot exact-pair 做只读投影，只在响应 clone 临时注入；污染、缺失、坏 JSON 或 identity 不匹配全部 fail closed，且 bulk list 单查询。Agent Team 最终复审为 `P0=0 / P1=0 / P2=0`。
+
+Web 最终全门还揭出 1 条 shell 注释混入中文和 2 条 memory interaction 仍断言旧“越懂你的店”承诺；前者改成无字面量英文注释，后者对齐当前“你确认过、之后创作可参考的经验”诚实文案。没有回退 Paraglide 或产品诚实边界。
+
+### 13.3 Prompt 与 live 证据边界
+
+- Langfuse 远端版本已核为 `22/22`：14 个 core v3、6 个 XHS v2、2 个 viral v1；strict materialization `22/22`、fallback `0`、contentMatches `22`。
+- 仓库根 gitignored 本机环境固定 22 个版本；GitHub Actions secrets/variables 均为 `0/0`，所以不声称部署态凭证已经更新。
+- #328 于 `2026-08-01T20:53:37Z` 使用用户自有登录态完成一次真实 note read 与一次 download，写动作 `0`。fixture Chromium 只证明 bridge 注入合同、失败关闭与 paste fallback；不证明 live provider 或生产 companion 已部署。
+
+### 13.4 当前候选的最终本地证据
+
+| 门 | 实跑结果 |
+| --- | --- |
+| Contracts | typecheck exit 0；`165/165 pass` |
+| Core fresh business＋DBOS | `3096 total / 3075 pass / 0 fail / 21 explicit skip`；safe-provision 独立 `3/3` |
+| Core focused | ContentPackage `56/56`；creation submission 真实 PostgreSQL `10/10`；Core typecheck exit 0 |
+| opt-in evidence | 39 项换锚；guard 明确 `OK` |
+| Web quality | production build、Biome（1168 files）、typecheck 均 exit 0；unit `1712 pass / 0 fail / 3 skip`，三个 PostgreSQL opt-in 文件另跑 `3/3`；interaction `390/390`；secret scan 3264 files、0 finding；两组 decision guard 通过 |
+| Chromium fresh business＋DBOS | 五文件 `19/19 pass / 0 fail / 0 skip`，单 worker，7.8m |
+
+Core 的 21 个 skip 为显式环境门：safe-provision 3、retired Canvas 9、live/provider 8、MinIO 1。Web unit 的 3 个 skip 是 workspace provisioning、checkout binding 与 webhook settlement 的 PostgreSQL opt-in；三文件已在另一对 fresh 数据库上实跑 `3 pass / 0 fail / 0 skip`。浏览器使用 fixture structured model、真实本机 PostgreSQL 与 Chromium，不能冒充 live provider 或生产部署。
+
+### 13.5 合入与关票硬边界
+
+本节落库时仍是 integration candidate，不能据此提前写“已合入／已关票”。执行顺序固定为：冻结候选 commit → 本地 `main` fast-forward 到候选 → 逐票更新并提交 `docs/ops/merge-ledger.md` → 再把含 ledger 的 final main SHA push → 只认该 SHA 的 required CI 全绿 → 最后关闭 #320–#328。最终 SHA、CI run 与关票事实以 ledger 及 GitHub 为准。

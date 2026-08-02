@@ -1,10 +1,10 @@
 # 主控 Handoff — P2 合入批 + journey 门禁（2026-08-01）
 
-> **状态覆盖说明（Codex 2026-08-02）**：§1–§5 是 2026-08-01 的历史快照，包含旧 baseline、旧 lane HEAD 与当时 pending 的 run；不得按旧 SHA 操作。当前权威状态与候选 HEAD 见 §6。
+> **状态覆盖说明（Codex 2026-08-02）**：§1–§5 是 2026-08-01 的历史快照，包含旧 baseline、旧 lane HEAD 与当时 pending 的 run；不得按旧 SHA 操作。§6 是第一次复核快照；当前权威状态见 §7。
 
 | Field | Value |
 | --- | --- |
-| 状态 | **历史快照**：当时合入前 journey 门禁执行中；当前见 §6 |
+| 状态 | **历史快照**：当时合入前 journey 门禁执行中；当前见 §7 |
 | main tip（历史合入基线） | `69cf06e1`（含 Composer delivered 去 sticky 修复） |
 | 规格 | `docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §8.3–§8.4、§11 |
 | 通用纪律 | `docs/ops/agent-dispatch-runbook-2026-07-29.md` |
@@ -161,3 +161,45 @@ git merge --ff-only leelv007-cmd/lane-320   # 或 cherry-pick 8394b848
 | #328 | 未验收；依赖 #324 且需要真人已登录浏览器、真实小红书笔记 URL 与 live 核销，fixture 不得替代 |
 
 因此当前 checklist 是：推送已进入 main 的 P1 修复链与台账 → exact-tip journey 绿 → 集成复验 #320–#325 → 实现 #326/#327 → #328 HITL。ledger 与 Issue 只在对应 commit 真正进入 main 且证据完成后更新。
+
+---
+
+## 7. Codex 最终集成候选（2026-08-02）
+
+> 本节覆盖 §6.2 与 §6.3。九票已经在 P1 exact-tip 之后完成串行集成与复核；本节落库时仍待 main fast-forward 和该 final main SHA 的 required CI，因此不提前宣称合入或关票。
+
+### 7.1 九票终态
+
+| 票 | 终态摘要 |
+| --- | --- |
+| #320 | 原子 CRUD、全 carrier、UTF-16 offset、左最左最长与 delivery guard |
+| #321 | 签名 generation params；customized 无隐藏 voice role、standard thinking、MarketingIdentity 保留 |
+| #322 | 单一 NoteObjectWorkspace、Tiptap、六动作、空段落与 derived terminal |
+| #323 | 五 preset、三 ratio（9:16=`1152×2048`）、授权 style refs、七维分析 |
+| #324 | viral paste／OpenCLI structured source、exact recipe、两条 viral prompt；Langfuse 扩至 22/22 |
+| #325 | 当前任务 frozen experience basis、三处露出、morph、stale/foreign 拒绝 |
+| #326 | 手机笔记预览＋双列封面预览，复用同一对象工作区 |
+| #327 | bounded inline replacement、冻结选区、明确 variant/history/delivery；历史及 mixed-version destination 只读投影 |
+| #328 | stale read cancellation、bridge fail-closed、paste fallback；live 一次 read＋一次 download、写动作 0 |
+
+### 7.2 最终本地验证
+
+| 门 | 结果 |
+| --- | --- |
+| Core fresh business＋DBOS | `3096 total / 3075 pass / 0 fail / 21 explicit skip`；safe-provision `3/3` |
+| Contracts | `165/165`，typecheck exit 0 |
+| Web | build/check/typecheck 绿；unit `1712 pass / 0 fail / 3 skip`，三个 PostgreSQL opt-in 文件另跑 `3 pass / 0 fail / 0 skip`；interaction `390/390`；secret scan 0 finding |
+| Chromium fresh business＋DBOS | 五文件 `19/19 pass / 0 fail / 0 skip`，7.8m |
+| Prompt authority | remote `22/22`；strict `22/22`、fallback 0、contentMatches 22；Actions secrets/variables `0/0` |
+| Agent Team 终审 | `P0=0 / P1=0 / P2=0` |
+
+Core 首轮 `13` 红的逐项原因、focused 修复证据、compact rolling-deploy 兼容修复与证据边界见 `docs/ops/codex-handoff-journey-gate-p2-2026-08-02.md` §13。
+
+#328 live 门与 fixture 证据必须分开：`2026-08-01T20:53:37Z` 的用户自有登录态只执行一次真实 note read 与一次 download，外部写入为 0；fixture 浏览器只证明注入 bridge 合同、fail-closed 和 paste fallback，不证明生产 companion 或 live provider 已部署。
+
+### 7.3 剩余合入门
+
+1. 冻结候选 commit，并先 fast-forward 本地 `main`（不 push）。
+2. 以该本地 main 祖先为合入锚，逐票更新并提交 `docs/ops/merge-ledger.md`，再 fast-forward 本地 `main` 到这个 final ledger commit。
+3. push final main SHA，等待该 SHA 的 `production-main-journey`、`core-persistence`、`root-quality`、`core` 与聚合 `required` 全部 success。
+4. CI 全绿后再关闭 #320–#328；任何 cancelled、旧 SHA 或本地 fixture 结果都不能替代 exact-SHA CI。

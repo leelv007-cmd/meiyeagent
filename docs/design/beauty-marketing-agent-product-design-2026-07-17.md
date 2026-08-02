@@ -3519,11 +3519,17 @@ Skill 选中
 - 原因：#281 有意遗留的 copy/note 集中开票、两版 codex UI/UX 方案对撞合流、xhswork 参考项目九功能盘点三线在同一张 wayfinder 地图收敛；两版方案对现状的事实断言经代码逐条核对基本属实（推荐卡硬编码 copy／双滚动／交付重复等）。
 - 影响：P0 实施票 **#286/#287/#288** 已开（工作台收敛／记忆诚实／kind 合同起步）；文档同步＝本条＋CONTEXT 批次段＋PRODUCT/DESIGN 指针＋merge-ledger #281 行备注＋两版方案 supersede banner＋双 AGENTS 约束块；prompt 资产（xhswork 六文件美业化改写）挂 Langfuse 版本化（D-036）。
 - 证据边界：wayfinder `.wayfinder/map-xhs-vertical-integration.md`（九票＋两丢弃式原型）；研究报告 `references/analysis/xhswork-integration-2026-08-01/01~03-*.md`；两版方案原稿 `docs/meiyeweb-agent-UI-UX-Agent化调整建议0801.md`、`docs/美业宣发经营Agent-UI-UX调整建议-完整版0801.md`（已挂 banner）。
-- 待验证：OpenCLI live 门核销；P0-P2 各期验收门（规格 §8.1-8.3）；kind 全链读侧收敛与 image_text 迁移方式（实施时定）。
+- 待验证：OpenCLI live 门已于 2026-08-01 核销（见下方实施核销补记）；其余 P0-P2 各期验收门（规格 §8.1-8.3）、kind 全链读侧收敛与 image_text 迁移方式仍按实施证据核销。
 - Supersedes（产品权威，**不改写旧 D 正文**）：
   - **D-164③ 实现口径**「确认卡只挂 media 工作流路径」（#281 主控收窄裁决）→ 按分期升级为付费媒体执行操作判定（copy 免确认结论继承不废）
   - 两版 codex 方案 md 作为独立建议文档的地位 → 对撞结论以规格＋「锁定工作台 Agent 化目标形态」票为准
 - 不废：D-043 copy 主路径免确认、D-164 单路由三段与执行确认卡统一边界、D-113 一主候选、D-114 对话流主容器、D-130 HeroUI Pro 供给基准（本条将其 AI 模板族升格为工作台 UI 基线）、D-126 首页轻推荐（形态演进为胶囊建议行）。
+
+### 实施核销补记（2026-08-02）
+
+- OpenCLI live 门于 `2026-08-01T20:53:37Z` 使用用户自有登录态完成一次真实笔记读取与一次下载，外部写入为 `0`；全程未做发布、评论、点赞或账号状态变更。
+- live 门与 device bridge readiness 相互独立且均 fail-closed；fixture 浏览器证据只证明 bridge 合同、手动粘贴兜底与页面接线，不等同于上述 live 读取，也不证明已部署 companion 或 live provider。
+- 本补记只保留脱敏计数、时间和行为结论；详细的脱敏完整性摘要仍见 #328 handoff，但任何文档都不登记账号、笔记 URL、token、原始内容或内部对象标识。
 
 ## D-172 积分制计费定案：周期积分＋加油包、模型积分定价、Waffo 支付切换
 

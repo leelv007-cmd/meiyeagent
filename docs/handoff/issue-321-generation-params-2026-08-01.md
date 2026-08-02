@@ -24,7 +24,7 @@
 
 - 审计 §3 的 `note_style` 是图文双风格**结构候选**，不是 xhswork 式 tone/role 前台选择器。
 - `xhsNoteGen` 占位符是 `{tone}` + `{roleBlock}`，与 note plan 风格 id 正交。
-- MarketingIdentity 继续是**品牌表达默认值**；自由创作未选角色时，按冻结快照的 identity ref 只取已登记的 `expression_identity` 贡献；选择器是**显式覆盖**（C5）。
+- MarketingIdentity 继续是**品牌表达默认值**；未显式选择角色时，按冻结快照的 identity ref 只取已登记的 `expression_identity` 贡献。角色选择器只在自由创作中提供**显式覆盖**（C5）；定制创作隐藏选择器并省略 `beautyVoiceRole`，不得暗注入角色。
 
 ### 1.2 深度思考 → 模型档位映射（§4.7）
 
@@ -39,14 +39,14 @@
 
 - **不**引入 `thinkingPointsCost` / 独立 entitlement bucket（「不另建开关」）。
 - 不支持 thinking 的模型可忽略 provider 字段；routeProfile 仅由现有 XHS NotePlan auto 路由消费，不覆盖非 XHS 或 image/video brief 的既有选路。
-- **定制创作强制 `standard` 且隐藏控件**；**自由创作展开区显露**。
+- **定制创作省略 `beautyVoiceRole`、强制 `standard` 且隐藏控件**；**自由创作展开区显露**，并签名提交显式 role / thinking 选择。
 
 ### 1.3 美业口吻词汇
 
 | id | 标签 | tone → `{tone}` | roleBlock 摘要 |
 | --- | --- | --- | --- |
 | `beautician` | 美容师口吻 | 专业干货 | 资深美容师 |
-| `owner` | 店主口吻 | 温暖治愈 | 门店店主（定制默认注入） |
+| `owner` | 店主口吻 | 温暖治愈 | 门店店主（自由创作显式可选） |
 | `customer` | 顾客口吻 | 闺蜜聊天 | 到店顾客 |
 
 ## 2. 代码落点
@@ -62,7 +62,7 @@
 | 提交注入 | `composer-home` → `buildSubmissionGenerationParams` → `composer-submission-client` body |
 | 浏览器验收 | `tests/e2e/specs/uiux-upgrade-b-composer.spec.ts` + `tests/e2e/TEST-CATALOG.md` §16 #9 |
 
-**2026-08-02 合入审核修复：** 原交底只停在请求合同与快照，造成生产零消费者。现在参数从冻结快照进入既有 XHS NotePlan / `xhsNoteGen` 文本节点与 Model Supply auto profile/provider options；自由创作未选角色时消费同一冻结 ContextBundle 中的 MarketingIdentity；非 XHS 不显示、不提交且不改变模型路由。仍不重写 note 全链、不新建 runtime、不改前端计价。
+**2026-08-02 合入审核修复：** 原交底只停在请求合同与快照，造成生产零消费者。现在签名后的 role / thinking 参数从冻结快照进入既有 XHS NotePlan / `xhsNoteGen` 文本节点与 Model Supply auto profile/provider options；未显式选择角色时消费同一冻结 ContextBundle 中的 MarketingIdentity，定制创作不会把隐藏态角色带入请求；非 XHS 不显示、不提交且不改变模型路由。仍不重写 note 全链、不新建 runtime、不改前端计价。
 
 ## 3. 验收映射
 
