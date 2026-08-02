@@ -23,7 +23,10 @@ import {
   DurableProductBillingService,
   merchantExecutionInputHashes,
 } from './durable-service.js';
-import { PostgresProductBillingRepository } from './postgres-repository.js';
+import {
+  PostgresProductBillingRepository,
+  type ProductBillingRepository,
+} from './postgres-repository.js';
 import {
   CatalogProductQuoteAuthority,
   type PublicProductQuoteIntent,
@@ -778,11 +781,30 @@ describe(
         (await service.claimMerchantExecution(claim)).decision,
         'execute',
       );
-      await service.failAndRefund({
+      const terminalLockKeys: string[][] = [];
+      const terminalRepository = new Proxy(repository, {
+        get(target, property) {
+          if (property === 'withTransaction') {
+            return async (
+              ...args: Parameters<ProductBillingRepository['withTransaction']>
+            ) => {
+              terminalLockKeys.push([...args[1]]);
+              return target.withTransaction(...args);
+            };
+          }
+          const value = Reflect.get(target, property, target) as unknown;
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      }) as ProductBillingRepository;
+      await new DurableProductBillingService(terminalRepository).failAndRefund({
         forceCreditRefund: true,
         quoteId: quote.quoteId,
         workspaceId,
       });
+      assert.equal(
+        terminalLockKeys.some((keys) => keys.includes(`task:${taskId}`)),
+        true,
+      );
       await pool.query(
         `UPDATE p1_product_billing_merchant_executions
             SET updated_at = now() - interval '2 minutes'

@@ -1125,10 +1125,15 @@ export class DurableProductBillingService
     quoteId: string,
     mutation: (service: ProductQuoteService) => T,
   ) {
+    const current = await this.repository.getQuote(workspaceId, quoteId);
+    const lockKeys = [
+      `quote:${quoteId}`,
+      ...(current?.taskId ? [`task:${current.taskId}`] : []),
+    ];
     return this.run(() =>
       this.repository.withTransaction(
         workspaceId,
-        [`quote:${quoteId}`],
+        lockKeys,
         async (transaction) => {
           const service = await this.requireLocalByQuote(
             transaction,
