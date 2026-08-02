@@ -87,28 +87,30 @@ test.describe('merchant credit billing and details', () => {
       billing.getByRole('link', { name: /Upgrade plan|升级套餐/u })
     ).toHaveAttribute('href', /\/pricing/u);
 
-    await expect(batches.locator('tbody tr')).toHaveCount(6);
+    // Registration provisions one merchant gift lot; the fixture adds its
+    // subscription lot plus five lifecycle lots.
+    await expect(batches.locator('tbody tr')).toHaveCount(7);
     await expect(batches).toContainText(/Credit pack|加油包/u);
     await expect(batches).toContainText(/Subscription period|订阅周期/u);
     await expect(batches).toContainText(/Expired|已过期/u);
 
     await expect(transactions).toContainText(
-      /Creation activity\s+Reserved\s+2\s+#2\s+Reserved|创作作业\s+预扣\s+2\s+#2\s+已预扣/u
+      /Creation activity\s+Reserved\s+2\s+#2\s+Reserved|创作作业预扣2#2已预扣/u
     );
     await expect(transactions).toContainText(
-      /Creation activity\s+Reserved\s+3\s+#3\s+Settled|创作作业\s+预扣\s+3\s+#3\s+已结算/u
+      /Creation activity\s+Reserved\s+3\s+#3\s+Settled|创作作业预扣3#3已结算/u
     );
     await expect(transactions).toContainText(
-      /Creation activity\s+Refunded\s+4\s+#5\s+Refunded|创作作业\s+退回\s+4\s+#5\s+已退回/u
+      /Creation activity\s+Refunded\s+4\s+#5\s+Refunded|创作作业预扣4#5已退回/u
     );
     await expect(transactions).toContainText(
-      /Creation activity\s+Refunded\s+5\s+#4\s+Refunded|创作作业\s+退回\s+5\s+#4\s+已退回/u
+      /Creation activity\s+Refunded\s+5\s+#4\s+Refunded|创作作业预扣5#4已退回/u
     );
     await expect(transactions).toContainText(
       /Returned 5 credits \(batch expired; not credited\)\.|已退回 5 分（批次已过期，未入账）/u
     );
     await expect(transactions).toContainText(
-      /Account credit activity\s+Expired\s+50\s+#1\s+Not applicable|账户积分变动\s+过期\s+50\s+#1\s+不适用/u
+      /Account credit activity\s+Expired\s+50\s+#1\s+Not applicable|账户积分变动过期50#1不适用/u
     );
     await expect(detail).not.toContainText(
       /e2e-credit-detail|consume:|grant:|refund:|correlation|provider|actor|task:|lot-/iu
