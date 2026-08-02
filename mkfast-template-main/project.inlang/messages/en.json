@@ -951,6 +951,7 @@
   "common_toggle_sidebar": "Toggle Sidebar",
   "common_toggle_theme": "Toggle theme",
   "common_user_menu": "User menu",
+  "composer_ai_cover_signature_mismatch_notice": "Your ratio or recipe no longer matches the AI cover seed. This submit will run as plain image generation; restore the matching settings to keep the cover parameters.",
   "composer_brief_cancel": "Go back",
   "composer_brief_confirm": "Confirm and start",
   "composer_brief_evidence_applied_location": "Used in: {location}",

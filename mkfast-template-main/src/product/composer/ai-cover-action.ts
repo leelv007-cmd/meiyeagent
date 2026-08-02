@@ -136,3 +136,52 @@ export function projectAiCoverWorkspaceTool(input: {
     enabled: true,
   };
 }
+
+/** Signed AI cover payload that freezes with the submission. */
+export type SignedAiCover = {
+  aspectRatio: AiCoverAspectRatio;
+  style: AiCoverBeautyPreset;
+  size: string;
+};
+
+/**
+ * Resolve the signed AI cover for submission. Requires free mode, generate
+ * operation, promotion_poster recipe, poster deliverable, xiaohongshu, and a
+ * matching aspect ratio. Any mismatch returns undefined (submission still
+ * allowed as plain intent — surface a mismatch notice instead of failing).
+ */
+export function resolveSignedAiCover(input: {
+  activeAiCover: AiCoverActionSeed | null | undefined;
+  creationMode: 'free' | 'customized' | string;
+  imageOperation?: string | null;
+  recipeId?: string | null;
+  deliverableKind?: string | null;
+  platform?: string | null;
+  aspectRatio?: string | null;
+}): SignedAiCover | undefined {
+  const active = input.activeAiCover;
+  if (!active) return undefined;
+  if (input.creationMode !== 'free') return undefined;
+  if (input.imageOperation !== 'image.generate') return undefined;
+  if (input.recipeId !== 'recipe.promotion_poster') return undefined;
+  if (input.deliverableKind !== 'poster') return undefined;
+  if (input.platform !== 'xiaohongshu') return undefined;
+  if (input.aspectRatio !== active.aspectRatio) return undefined;
+  return {
+    aspectRatio: active.aspectRatio,
+    style: active.style,
+    size: active.size,
+  };
+}
+
+/**
+ * When the merchant still has an AI cover seed but the current form no longer
+ * matches its signature (ratio / recipe / platform / operation), show a notice
+ * so the silent drop is visible. Submission remains allowed.
+ */
+export function shouldShowAiCoverSignatureMismatchNotice(input: {
+  activeAiCover: AiCoverActionSeed | null | undefined;
+  signedAiCover: SignedAiCover | undefined;
+}): boolean {
+  return Boolean(input.activeAiCover) && input.signedAiCover === undefined;
+}

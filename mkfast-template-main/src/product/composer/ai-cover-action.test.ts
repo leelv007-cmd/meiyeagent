@@ -10,6 +10,8 @@ import {
   buildAiCoverActionSeed,
   listAiCoverRatioOptions,
   projectAiCoverWorkspaceTool,
+  resolveSignedAiCover,
+  shouldShowAiCoverSignatureMismatchNotice,
 } from './ai-cover-action';
 import { COMPOSER_TOOL_ENTRY_SEEDS } from './tool-entry-seeds';
 
@@ -93,6 +95,61 @@ test('Idle ordinary tools do not include AI cover as a primary entry', () => {
         tool.label.includes('封面') ||
         tool.label.includes('AI 封面')
     ),
+    false
+  );
+});
+
+test('signed AI cover matches only when ratio/recipe/platform/operation align', () => {
+  const seed = buildAiCoverActionSeed({
+    aspectRatio: '9:16',
+    style: 'beauty_soft',
+  });
+  const matched = resolveSignedAiCover({
+    activeAiCover: seed,
+    creationMode: 'free',
+    imageOperation: 'image.generate',
+    recipeId: 'recipe.promotion_poster',
+    deliverableKind: 'poster',
+    platform: 'xiaohongshu',
+    aspectRatio: '9:16',
+  });
+  assert.deepEqual(matched, {
+    aspectRatio: '9:16',
+    style: 'beauty_soft',
+    size: '1152x2048',
+  });
+  assert.equal(
+    shouldShowAiCoverSignatureMismatchNotice({
+      activeAiCover: seed,
+      signedAiCover: matched,
+    }),
+    false
+  );
+
+  // Changing aspect ratio silently drops the signed cover — notice must fire.
+  const ratioMismatch = resolveSignedAiCover({
+    activeAiCover: seed,
+    creationMode: 'free',
+    imageOperation: 'image.generate',
+    recipeId: 'recipe.promotion_poster',
+    deliverableKind: 'poster',
+    platform: 'xiaohongshu',
+    aspectRatio: '3:4',
+  });
+  assert.equal(ratioMismatch, undefined);
+  assert.equal(
+    shouldShowAiCoverSignatureMismatchNotice({
+      activeAiCover: seed,
+      signedAiCover: ratioMismatch,
+    }),
+    true
+  );
+
+  assert.equal(
+    shouldShowAiCoverSignatureMismatchNotice({
+      activeAiCover: null,
+      signedAiCover: undefined,
+    }),
     false
   );
 });

@@ -951,6 +951,7 @@
   "common_toggle_sidebar": "切换侧边栏",
   "common_toggle_theme": "切换主题",
   "common_user_menu": "用户菜单",
+  "composer_ai_cover_signature_mismatch_notice": "当前比例或配方与 AI 封面不一致，本次会按普通文生图提交；恢复匹配条件后才会带上封面参数。",
   "composer_brief_cancel": "返回修改",
   "composer_brief_confirm": "确认并开始",
   "composer_brief_evidence_applied_location": "用于：{location}",

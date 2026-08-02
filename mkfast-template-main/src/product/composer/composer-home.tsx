@@ -171,10 +171,13 @@ import {
 import { applyCatalogRecipeSelection } from './catalog-selection';
 import {
   buildAiCoverActionSeed,
+  resolveSignedAiCover,
+  shouldShowAiCoverSignatureMismatchNotice,
   type AiCoverActionSeed,
   type AiCoverAspectRatio,
   type AiCoverBeautyPreset,
 } from './ai-cover-action';
+import { ComposerAiCoverMismatchNotice } from './composer-ai-cover-mismatch-notice';
 import {
   buildStyleAnalysisStageFromAssets,
   ComposerStyleAnalysisStageNotice,
@@ -1269,20 +1272,21 @@ export function ComposerHome({
       submissionDelivery.deliverableKind === 'poster')
       ? imageOperation
       : undefined;
-  const signedAiCover =
-    activeAiCover &&
-    creationMode === 'free' &&
-    explicitImageOperation === 'image.generate' &&
-    submissionRecipe?.recipeId === 'recipe.promotion_poster' &&
-    submissionDelivery.deliverableKind === 'poster' &&
-    submissionDelivery.platform === 'xiaohongshu' &&
-    submissionAspectRatio === activeAiCover.aspectRatio
-      ? {
-          aspectRatio: activeAiCover.aspectRatio,
-          style: activeAiCover.style,
-          size: activeAiCover.size,
-        }
-      : undefined;
+  const signedAiCover = resolveSignedAiCover({
+    activeAiCover,
+    creationMode,
+    imageOperation: explicitImageOperation,
+    recipeId: submissionRecipe?.recipeId,
+    deliverableKind: submissionDelivery.deliverableKind,
+    platform: submissionDelivery.platform,
+    aspectRatio: submissionAspectRatio,
+  });
+  const showAiCoverSignatureMismatch = shouldShowAiCoverSignatureMismatchNotice(
+    {
+      activeAiCover,
+      signedAiCover,
+    }
+  );
   useEffect(() => {
     if (viralAdaptJourney.phase !== 'ready') return;
     const bindingStillCurrent =
@@ -4181,6 +4185,9 @@ export function ComposerHome({
                           {imageCardinality.message}
                         </p>
                       ) : null}
+                      <ComposerAiCoverMismatchNotice
+                        visible={showAiCoverSignatureMismatch}
+                      />
                     </div>
                   }
                   creationMode={creationMode}
