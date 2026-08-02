@@ -150,6 +150,61 @@ test('external execution authority freezes a hold-only confirmation request', ()
   });
 });
 
+test('note paid-media confirmation freezes outline page count and titles', () => {
+  const outline = {
+    pageCount: 3,
+    pages: [
+      { order: 1, title: '封面：夏日控油' },
+      { order: 2, title: '痛点：油头困扰' },
+      { order: 3, title: '预约引导' },
+    ],
+  };
+  const request = executionConfirmationInteractionRequestFromQuestion({
+    question: {
+      questionId: 'execution-confirmation:snapshot-note-1',
+      workflowId: 'run-note-1',
+      workflowRevision: 2,
+      question: '是否按当前方案开始生成？将按展示的参数与费用执行。',
+      options: [
+        { id: 'approved', label: '确认执行' },
+        { id: 'rejected', label: '暂不执行' },
+      ],
+      freeText: { enabled: false },
+      response: {
+        field: 'execution_confirmation',
+        reason: '生成前需要商家确认本次执行参数与费用',
+      },
+      unattended: 'hold',
+      executionConfirmationAuthority: {
+        kind: 'external_action',
+        revision: 'execution-external-action/v1',
+        outline,
+      },
+      scope: 'current_task',
+    },
+    request: {
+      executionSnapshot: {
+        id: 'snapshot-note-1',
+        revision: 2,
+        quote: { revision: 'quote-note-r1' },
+        operation: 'image.generate',
+        catalogModel: { id: 'model-image-1', revision: 'model-r1' },
+        deliverable: { kind: 'image_text_note' },
+        distributionTarget: 'xiaohongshu_draft',
+      },
+    },
+  });
+
+  assert.equal(request?.kind, 'execution_confirmation');
+  assert.deepEqual(request?.frozen.outline, outline);
+  assert.equal(
+    request?.frozen.params.some(
+      (param) => param.key === 'quantity' && param.value === '3 页',
+    ),
+    true,
+  );
+});
+
 test('interaction answers persist before one resume with the canonical triple', async () => {
   const order: string[] = [];
   const store = new MemoryInteractionStore(order);

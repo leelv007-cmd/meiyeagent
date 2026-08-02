@@ -352,6 +352,10 @@ export interface HarnessNoteStagePorts extends HarnessStagePorts {
     skillInstructions?: readonly ResolvedSkillInstruction[];
     awaitSignal?: HarnessSignalReceiver;
     runStep?: HarnessEffectRunner;
+    onPageProgress?: (event: {
+      pageId: string;
+      state: 'running' | 'success';
+    }) => Promise<void> | void;
   }): Promise<HarnessNoteSelectionResult>;
   assembleNoteAndDeliver(input: {
     workflowId: string;
@@ -401,6 +405,27 @@ export interface HarnessWorkflowRuntime {
     state: 'running' | 'success' | 'suspended';
     message: string;
     experienceBasis?: HarnessExperienceBasis;
+    /** Per-page note image progress (L1-2). */
+    pageId?: string;
+    /** Outline projection for running-phase timeline (L1-3). */
+    notePlanPreview?: {
+      styleId: string;
+      styleName: string;
+      themeAnchor: string;
+      pages: Array<{
+        pageId: string;
+        order: number;
+        pageRole:
+          | 'cover'
+          | 'pain_scene'
+          | 'solution_show'
+          | 'work_case'
+          | 'price_offer'
+          | 'cta_guide';
+        title: string;
+        body: string;
+      }>;
+    };
   }): Promise<void>;
   token(event: {
     sequence: number;
@@ -1778,10 +1803,29 @@ async function runNoteHarnessWorkflow(
           'brief_compilation',
         ),
       );
+  const selectedNoteCandidate = brief.candidates.candidates.find(
+    ({ styleId }) => styleId === selectedStyleId,
+  );
+  if (!selectedNoteCandidate) {
+    throw new HarnessMediaScopeError(merchantNoteStyleUnavailable());
+  }
+  const notePlanPreview = {
+    styleId: selectedNoteCandidate.styleId,
+    styleName: selectedNoteCandidate.styleName,
+    themeAnchor: selectedNoteCandidate.plan.themeAnchor,
+    pages: selectedNoteCandidate.plan.pages.map((page) => ({
+      pageId: page.id,
+      order: page.order,
+      pageRole: page.pageRole,
+      title: page.textBlock.title,
+      body: page.textBlock.body,
+    })),
+  };
   await reportProgress({
     stage: 'brief_compilation',
     state: 'success',
     message: merchantNoteProgressMessage('style_selected'),
+    notePlanPreview,
   });
 
   const fenced = await runtime.runStep(
@@ -1854,14 +1898,27 @@ async function runNoteHarnessWorkflow(
     });
   }
 
+  const activeNoteCandidate =
+    brief.candidates.candidates.find(
+      ({ styleId }) => styleId === selectedStyleId,
+    ) ?? selectedNoteCandidate;
+
   // P1-05 / xhs-spec §3.3 / §8.2: plan.ready (style selected + brief fenced)
   // → interrupt execution_confirm before paid media selection. Pure copy units
   // still skip via triggersPaidMediaExecution (D-043).
+  const noteOutlineSummary = {
+    pageCount: activeNoteCandidate.plan.pages.length,
+    pages: activeNoteCandidate.plan.pages.map((page) => ({
+      order: page.order,
+      title: page.textBlock.title,
+    })),
+  };
   activeRequest = await confirmPaidGenerationExecution({
     workflowId,
     request: activeRequest,
     runtime,
     reportProgress,
+    noteOutline: noteOutlineSummary,
   });
 
   const executionSkills = stageSkills.execution_selection;
@@ -1885,6 +1942,20 @@ async function runNoteHarnessWorkflow(
           ),
         }
       : {}),
+    onPageProgress: async (event: {
+      pageId: string;
+      state: 'running' | 'success';
+    }) => {
+      await reportProgress({
+        stage: 'execution_selection',
+        state: event.state,
+        pageId: event.pageId,
+        message:
+          event.state === 'running'
+            ? `正在生成第 ${notePageOrderLabel(activeNoteCandidate.plan, event.pageId)} 页配图`
+            : `第 ${notePageOrderLabel(activeNoteCandidate.plan, event.pageId)} 页配图已完成`,
+      });
+    },
   };
   const selection = await runSelectionStage(
     runtime,
@@ -2026,24 +2097,38 @@ async function runNoteHarnessWorkflow(
           '可以先用已经对好的页面发布，或者让我把没对上的那几页重做一次。',
       })
     : undefined;
+  const pageRegeneration =
+    activeRequest.executionSnapshot?.sources.pageRegeneration;
+  const imageUsageQuantity = pageRegeneration
+    ? 1
+    : selection.version.plan.pages.length;
+  const copyUsageQuantity = pageRegeneration
+    ? 0
+    : brief.candidates.candidates.length;
   return {
     ...(partialReport ? { merchantReport: partialReport } : {}),
     billingReceipt: {
       trustedUsage: {
         kind: 'product_units' as const,
         units: [
-          {
-            resource: 'copy' as const,
-            quantity: brief.candidates.candidates.length,
-          },
+          ...(copyUsageQuantity > 0
+            ? [
+                {
+                  resource: 'copy' as const,
+                  quantity: copyUsageQuantity,
+                },
+              ]
+            : []),
           {
             resource: 'image' as const,
-            quantity: selection.version.plan.pages.length,
+            quantity: imageUsageQuantity,
           },
         ],
-        evidenceRef: `note-plan-pages:${selection.version.plan.pages
-          .map(({ id, revision }) => `${id}@${revision}`)
-          .join(',')}`,
+        evidenceRef: pageRegeneration
+          ? `note-page-regeneration:${pageRegeneration.targetAssetId}`
+          : `note-plan-pages:${selection.version.plan.pages
+              .map(({ id, revision }) => `${id}@${revision}`)
+              .join(',')}`,
       },
     },
     delivery,
@@ -3157,6 +3242,15 @@ export function triggersPaidMediaExecution(
  * working. That kind is the execution-confirmation surface marker, not the
  * class-7 `external_action_approval` ruleset (which still only covers publish).
  */
+function notePageOrderLabel(
+  plan: { pages: Array<{ id: string; order: number }> },
+  pageId: string,
+) {
+  return String(
+    plan.pages.find(({ id }) => id === pageId)?.order ?? pageId,
+  );
+}
+
 async function confirmPaidGenerationExecution(input: {
   workflowId: string;
   request: HarnessWorkflowInput;
@@ -3164,6 +3258,10 @@ async function confirmPaidGenerationExecution(input: {
   reportProgress: (
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
   ) => Promise<void>;
+  noteOutline?: {
+    pageCount: number;
+    pages: Array<{ order: number; title: string }>;
+  };
 }) {
   let request = input.request;
   for (;;) {
@@ -3189,6 +3287,7 @@ async function confirmPaidGenerationExecution(input: {
       executionConfirmationAuthority: {
         kind: 'external_action',
         revision: 'execution-external-action/v1',
+        ...(input.noteOutline ? { outline: input.noteOutline } : {}),
       },
       scope: 'current_task',
     });

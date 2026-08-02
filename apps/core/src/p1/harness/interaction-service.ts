@@ -253,6 +253,7 @@ export function executionConfirmationInteractionRequestFromQuestion(input: {
   ) {
     return null;
   }
+  const outline = question.executionConfirmationAuthority?.outline;
   return executionConfirmationRequestSchema.parse({
     requestId: question.questionId,
     runId: question.workflowId,
@@ -284,7 +285,18 @@ export function executionConfirmationInteractionRequestFromQuestion(input: {
           value: snapshot.distributionTarget,
           hint: null,
         },
+        ...(outline
+          ? [
+              {
+                key: 'quantity' as const,
+                label: '页数',
+                value: `${outline.pageCount} 页`,
+                hint: null,
+              },
+            ]
+          : []),
       ],
+      ...(outline ? { outline } : {}),
       debitPreview: [],
       condition: {
         kind: 'external_action',
