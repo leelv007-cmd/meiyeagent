@@ -1576,7 +1576,9 @@ test("AI cover signed choices reach the production image generation brief", asyn
 		ratio: "9:16",
 		resolution: "1152x2048",
 	});
-	assert.match(brief.prompt, /beauty_editorial/u);
+	// Beauty preset lands as Chinese description in the style slot.
+	assert.match(brief.prompt, /风格预设：杂志质感/u);
+	assert.equal(brief.prompt.includes("风格预设：beauty_editorial"), false);
 	assert.match(brief.prompt, /1152x2048/u);
 
 	const submissions: ModelSupplySubmission[] = [];
@@ -1598,6 +1600,120 @@ test("AI cover signed choices reach the production image generation brief", asyn
 			height: submissions[0]?.input?.height,
 		},
 		{ width: 1152, height: 2048 },
+	);
+});
+
+test("poster media brief analyzes style-role refs and injects styleAnalysisBlock", async () => {
+	const baseRequest = harnessInputWithExecutionAssembly(
+		"image",
+		"package-poster-style-ref",
+		"image.generate",
+		0,
+	);
+	const styleAsset = {
+		id: "style-asset-poster-1",
+		revision: "style-asset-poster-r1",
+		role: "style" as const,
+	};
+	const snapshot = creationExecutionSnapshotSchema.parse({
+		...baseRequest.executionSnapshot,
+		creationMode: "free",
+		operation: "image.generate",
+		platform: { id: "xiaohongshu" },
+		contentPackagePlatform: "xiaohongshu",
+		// Keep aspect ratio aligned with deliverables[0] from harnessInput.
+		deliverable: { kind: "poster", quantity: 1, aspectRatio: "9:16" },
+		sources: { assets: [styleAsset] },
+	});
+	const request: HarnessWorkflowInput = {
+		...baseRequest,
+		creationMode: "free",
+		executionSnapshot: snapshot,
+		intent: {
+			...baseRequest.intent,
+			assetReferences: [styleAsset.id],
+		},
+	};
+	const observedRequests: StructuredNodeRunnerRequest<unknown>[] = [];
+	const ports = new UnifiedHarnessStagePorts(
+		unsupportedCopyPorts(),
+		{
+			create() {
+				return {
+					async run<Output>(structured: StructuredNodeRunnerRequest<Output>) {
+						observedRequests.push(
+							structured as StructuredNodeRunnerRequest<unknown>,
+						);
+						if (structured.schemaName === "harness_xhs_style_analysis_v1") {
+							return {
+								output: structured.schema.parse({
+									raw: [
+										"画风：柔光实拍叠字",
+										"配色：裸粉+米白+香槟金",
+										"背景：纸感渐变",
+										"文字风格：粗体无衬线",
+										"装饰元素：轻边框",
+										"排版结构：居中封面",
+										"整体调性：干净专业",
+									].join("\n"),
+								}),
+								attempts: 1,
+								providerTaskRef: "poster-style-analysis",
+								replayed: false,
+								usage: { inputTokens: 1, outputTokens: 1 },
+							};
+						}
+						return {
+							output: structured.schema.parse(
+								imageBriefFor("image.generate", 0),
+							),
+							attempts: 1,
+							providerTaskRef: "poster-brief-provider",
+							replayed: false,
+							usage: { inputTokens: 1, outputTokens: 1 },
+						};
+					},
+				};
+			},
+		},
+		undefined as never,
+		new MemoryContentPackageRevisionWritePort(),
+		() => "2026-08-02T00:00:00.000Z",
+		undefined,
+		undefined,
+		notBilledExecutionChildObservability(),
+	);
+
+	const { brief } = await ports.compileMediaBrief({
+		workflowId: snapshot.task.id,
+		request,
+		declaration: {
+			normalizedIntent: "生成夏日护理海报",
+			taskType: "daily_service_exposure",
+			deliveryLayer: "finished_media",
+			relevantAssetCategories: ["product_service"],
+			usedAssetCategories: ["product_service"],
+			route: "free",
+			routingSource: "entry",
+			implicitConstraints: [],
+		},
+		context: contextSnapshot(),
+	});
+
+	assert.equal(brief.kind, "image");
+	if (brief.kind !== "image") assert.fail("Expected an image brief.");
+	const analysisRequest = observedRequests.find(
+		(candidate) => candidate.schemaName === "harness_xhs_style_analysis_v1",
+	);
+	assert.deepEqual(analysisRequest?.inputAssets, [
+		{ assetId: styleAsset.id, role: "reference_image" },
+	]);
+	assert.match(brief.prompt, /风格参考（七维）/u);
+	assert.match(brief.prompt, /裸粉\+米白\+香槟金/u);
+	assert.ok(
+		brief.constraints.some((constraint) =>
+			constraint.includes("配色保持一致：裸粉+米白+香槟金"),
+		),
 	);
 });
 
@@ -2053,9 +2169,10 @@ test("frozen XHS generation params drive the existing note prompt and model rout
 		context: defaultIdentityContext,
 	});
 
+	// R-2: standard thinking keeps the quality profile (no silent demotion).
 	assert.deepEqual(factoryInputs.at(-1)?.selection, {
 		mode: "auto",
-		profile: "balanced",
+		profile: "quality",
 	});
 	assert.deepEqual(factoryInputs.at(-1)?.providerOptions, {
 		thinking: { type: "disabled" },

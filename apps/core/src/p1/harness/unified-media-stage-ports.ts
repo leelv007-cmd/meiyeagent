@@ -119,7 +119,9 @@ import {
 	materializeXhsCoverPrompt,
 } from "./xhs-cover.js";
 import {
+	applyStyleAnalysisToImageSetPlan,
 	consumeStyleAnalysisForImagePipeline,
+	formatStyleAnalysisBlock,
 	materializeStyleAnalysisSystemPrompt,
 	parseStyleAnalysisOutput,
 	type StyleAnalysisResult,
@@ -323,7 +325,7 @@ export class UnifiedHarnessStagePorts
 		}
 		const snapshot = requireSnapshot(input.request);
 		const aiCover = snapshot.signedSubmission?.aiCover;
-		const productionBrief =
+		let productionBrief =
 			brief.kind === "image" && aiCover
 				? applyAiCoverToImageBrief({
 						brief,
@@ -332,6 +334,17 @@ export class UnifiedHarnessStagePorts
 						template: input.request.prompts?.xhsCoverPrompt?.content,
 					})
 				: brief;
+		// R-3: poster / image_set also analyze role=style refs and inject the
+		// seven-dimension block into the image brief (parity with note path).
+		if (productionBrief.kind === "image") {
+			const styleAnalysis = await this.analyzeStyleReferences(input);
+			if (styleAnalysis) {
+				productionBrief = applyStyleAnalysisToImageBrief(
+					productionBrief,
+					styleAnalysis,
+				);
+			}
+		}
 		assertBriefMatchesSnapshot(productionBrief, snapshot);
 		return { brief: productionBrief, metrics: metrics.snapshot() };
 	}
@@ -794,9 +807,11 @@ export class UnifiedHarnessStagePorts
 		return this.contentPackages.write(revision);
 	}
 
-	private async analyzeStyleReferences(
-		input: Parameters<HarnessNoteStagePorts["compileNoteBrief"]>[0],
-	): Promise<StyleAnalysisResult | undefined> {
+	private async analyzeStyleReferences(input: {
+		workflowId: string;
+		request: HarnessWorkflowInput;
+		declaration: { normalizedIntent: string };
+	}): Promise<StyleAnalysisResult | undefined> {
 		const styleAssets = requireSnapshot(input.request).sources.assets.filter(
 			(asset) => asset.role === "style",
 		);
@@ -1084,7 +1099,11 @@ export class UnifiedHarnessStagePorts
 
 function applyAiCoverToImageBrief(input: {
 	brief: Extract<ExecutionBrief, { kind: "image" }>;
-	cover: Parameters<typeof compileAiCoverImageParameters>[0] & { size: string };
+	cover: {
+		aspectRatio: Parameters<typeof materializeXhsCoverPrompt>[0]["aspectRatio"];
+		style: Parameters<typeof materializeXhsCoverPrompt>[0]["style"];
+		size: string;
+	};
 	template?: string;
 	userPrompt: string;
 }): Extract<ExecutionBrief, { kind: "image" }> {
@@ -1097,7 +1116,9 @@ function applyAiCoverToImageBrief(input: {
 	if (materialized.size !== input.cover.size) {
 		throw new Error("AI cover signed size does not match its aspect ratio.");
 	}
-	const parameters = compileAiCoverImageParameters(input.cover);
+	const parameters = compileAiCoverImageParameters({
+		aspectRatio: input.cover.aspectRatio,
+	});
 	return {
 		...input.brief,
 		prompt: materialized.prompt,
@@ -1105,6 +1126,27 @@ function applyAiCoverToImageBrief(input: {
 			ratio: parameters.ratio,
 			resolution: parameters.resolution,
 		},
+	};
+}
+
+/**
+ * Inject seven-dimension style analysis into a poster / image_set image brief.
+ * Mirrors note-path consumption: styleAnalysisBlock in prompt + consistency
+ * constraints (via applyStyleAnalysisToImageSetPlan).
+ */
+function applyStyleAnalysisToImageBrief(
+	brief: Extract<ExecutionBrief, { kind: "image" }>,
+	analysis: StyleAnalysisResult,
+): Extract<ExecutionBrief, { kind: "image" }> {
+	const styleAnalysisBlock = formatStyleAnalysisBlock(analysis);
+	const { consistencyRequirements } = applyStyleAnalysisToImageSetPlan({
+		analysis,
+		existingRequirements: brief.constraints,
+	});
+	return {
+		...brief,
+		prompt: `${brief.prompt}${styleAnalysisBlock}`,
+		constraints: consistencyRequirements,
 	};
 }
 
