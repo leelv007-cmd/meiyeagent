@@ -90,7 +90,12 @@ export interface MerchantExecutionPromotionPort {
   }): MaybePromise<void>;
 }
 
-/** Server-only binding of the immutable root submission admitted for billing. */
+/**
+ * Freezes the submitted intent text and role-tagged source assets as the task's
+ * admission identity, before the first auxiliary effect runs. This is not the
+ * exact provider input: that authority is each effect's own claim binding, plus
+ * promotion of the effect chosen as the primary result.
+ */
 export interface MerchantSubmissionInputBindingPort {
   bindMerchantSubmissionInput(input: {
     inputSnapshot: MerchantExecutionInputSnapshot;
