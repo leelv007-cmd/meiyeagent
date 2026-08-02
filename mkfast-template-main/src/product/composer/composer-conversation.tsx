@@ -30,12 +30,25 @@ import {
   Segment,
 } from '@/components/heroui-pro';
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
+  agent_frame_stage_decision,
+  agent_frame_stage_memory,
+  agent_frame_stage_narrative,
+  agent_frame_stage_plan,
+  agent_frame_stage_result,
+  agent_frame_stage_task,
   composer_conversation_scroll_to_latest,
+  composer_generation_running,
   composer_reuse_suggestion_group,
   model_card_channel_multi,
   model_card_channel_single,
 } from '@/locale/paraglide/messages';
 import { StreamingAiMarkdown } from '@/components/markdown/ai-markdown';
+import { GenerationAccent } from '@/components/uiux/generation-accent';
 import { usePrefersReducedMotion } from '@/hooks/use-prefers-reduced-motion';
 import { cn } from '@/lib/utils';
 import type { ResultTokenStreamProjection } from '@/product/results/result-token-stream';
@@ -85,6 +98,70 @@ import {
 export type ComposerCreationMode = 'customized' | 'free';
 
 export const COMPOSER_INTENT_INPUT_TESTID = 'composer-intent-input';
+
+/** Locale stage labels for the six AgentFrame families (document timeline). */
+export function agentFrameStageLabel(frameKind: AgentFrameKind): string {
+  switch (frameKind) {
+    case 'narrative':
+      return agent_frame_stage_narrative();
+    case 'decision':
+      return agent_frame_stage_decision();
+    case 'plan':
+      return agent_frame_stage_plan();
+    case 'result':
+      return agent_frame_stage_result();
+    case 'task':
+      return agent_frame_stage_task();
+    case 'memory':
+      return agent_frame_stage_memory();
+  }
+}
+
+/**
+ * Idle creation-mode segmenter (C5 / R-1).
+ * Lives outside the Composer card — greeting → segmenter → Composer.
+ */
+export function ComposerCreationModeSegment({
+  creationMode,
+  onCreationModeChange,
+  className,
+}: {
+  creationMode: ComposerCreationMode;
+  onCreationModeChange: (mode: ComposerCreationMode) => void;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(className)}
+      data-testid="composer-creation-mode-host"
+      style={
+        {
+          '--meiye-segment-unselected': 'var(--ink-90)',
+        } as CSSProperties
+      }
+    >
+      <Segment
+        aria-label="创作入口"
+        data-testid="composer-creation-mode"
+        onSelectionChange={(key) =>
+          onCreationModeChange(key === 'free' ? 'free' : 'customized')
+        }
+        selectedKey={creationMode}
+        size="sm"
+      >
+        <Segment.Item
+          data-testid="composer-creation-mode-customized"
+          id="customized"
+        >
+          定制创作
+        </Segment.Item>
+        <Segment.Item data-testid="composer-creation-mode-free" id="free">
+          自由创作
+        </Segment.Item>
+      </Segment>
+    </div>
+  );
+}
 
 /** Focus the intent box. See the TextArea render site for why this is not a ref. */
 export function focusComposerIntentInput() {
@@ -147,11 +224,12 @@ function foldTurns(turns: ComposerTurn[]) {
 }
 
 /**
- * Document-timeline frame host (#313 / D1).
+ * Document-timeline frame host (#313 / D1 + L3-3 visual contract).
  *
  * Every turn renders through the AgentFrame registry. Agent content is full
  * width; merchant input may keep a light right-aligned chip (not a chat bubble
- * stream). data-agent-frame is the consumer hook for frame-family assertions.
+ * stream). data-agent-frame is the consumer hook for frame-family CSS + tests.
+ * The left rail / node / stage label form the document timeline (spec §2 D1).
  */
 function AgentFrameHost({
   turnKind,
@@ -159,21 +237,41 @@ function AgentFrameHost({
   children,
   className,
   testId,
+  stageLabel,
 }: {
   turnKind: ComposerTimelineTurnKind;
   frameKind: AgentFrameKind;
   children: React.ReactNode;
   className?: string;
   testId?: string;
+  /** Locale stage label shown above the card body (document timeline). */
+  stageLabel?: string;
 }) {
   return (
     <div
-      className={cn('w-full min-w-0', className)}
+      className={cn(
+        'meiye-agent-frame relative w-full min-w-0',
+        `meiye-agent-frame--${frameKind}`,
+        className
+      )}
       data-agent-frame={frameKind}
       data-testid={testId ?? `agent-frame-${frameKind}`}
       data-turn-kind={turnKind}
     >
-      {children}
+      <span
+        aria-hidden="true"
+        className="meiye-agent-frame__node"
+        data-testid="meiye-agent-frame-node"
+      />
+      {stageLabel ? (
+        <span
+          className="meiye-agent-frame__stage-label"
+          data-testid={`agent-frame-stage-${frameKind}`}
+        >
+          {stageLabel}
+        </span>
+      ) : null}
+      <div className="meiye-agent-frame__body">{children}</div>
     </div>
   );
 }
@@ -186,9 +284,11 @@ function AgentFrameHost({
  * P1-01: full-width narrative frame (document timeline), not an assistant bubble.
  */
 function RouteNotice({ message }: { message: string }) {
+  const frameKind = resolveAgentFrameKind('route_notice');
   return (
     <AgentFrameHost
-      frameKind={resolveAgentFrameKind('route_notice')}
+      frameKind={frameKind}
+      stageLabel={agentFrameStageLabel(frameKind)}
       testId="composer-route-notice"
       turnKind="route_notice"
     >
@@ -482,74 +582,83 @@ export function ComposerConversation({
 
   const running = session.phase === 'running' || session.phase === 'submitting';
 
+  const frameHost = (
+    turnKind: ComposerTimelineTurnKind,
+    props: {
+      children: React.ReactNode;
+      className?: string;
+      testId?: string;
+      key?: string;
+    }
+  ) => {
+    const frameKind = resolveAgentFrameKind(turnKind);
+    return (
+      <AgentFrameHost
+        className={props.className}
+        frameKind={frameKind}
+        key={props.key}
+        stageLabel={agentFrameStageLabel(frameKind)}
+        testId={props.testId}
+        turnKind={turnKind}
+      >
+        {props.children}
+      </AgentFrameHost>
+    );
+  };
+
   const renderTurn = (turn: ReturnType<typeof foldTurns>[number]) => {
     switch (turn.kind) {
       case 'stages':
-        return (
-          <AgentFrameHost
-            frameKind={resolveAgentFrameKind('stages')}
-            key={turn.stages[0]!.id}
-            turnKind="stages"
-          >
+        return frameHost('stages', {
+          key: turn.stages[0]!.id,
+          children: (
             <ComposerProgressCard running={running} stages={turn.stages} />
-          </AgentFrameHost>
-        );
+          ),
+        });
       case 'merchant':
         // Merchant intent: light right-aligned chip allowed; still a registry frame.
-        return (
-          <AgentFrameHost
-            className="flex justify-end"
-            frameKind={resolveAgentFrameKind('merchant')}
-            key={turn.id}
-            testId="composer-turn-merchant"
-            turnKind="merchant"
-          >
+        return frameHost('merchant', {
+          key: turn.id,
+          className: 'flex justify-end',
+          testId: 'composer-turn-merchant',
+          children: (
             <div className="meiye-porcelain max-w-[min(100%,28rem)] rounded-2xl px-3 py-2 text-sm">
               {turn.text}
             </div>
-          </AgentFrameHost>
-        );
+          ),
+        });
       case 'route_notice':
         return <RouteNotice key={turn.id} message={turn.message} />;
       case 'stage':
         // Folded into a 'stages' group above; unreachable.
         return null;
       case 'question':
-        return questionSlot ? (
-          <AgentFrameHost
-            // Clear Active sticky Composer (z-30) so 图文方向 / 补问 clicks land.
-            className={WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS}
-            frameKind={resolveAgentFrameKind('question')}
-            key={turn.id}
-            testId="composer-question-turn"
-            turnKind="question"
-          >
-            {questionSlot}
-          </AgentFrameHost>
-        ) : null;
+        return questionSlot
+          ? frameHost('question', {
+              key: turn.id,
+              // Clear Active sticky Composer (z-30) so 图文方向 / 补问 clicks land.
+              className: WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS,
+              testId: 'composer-question-turn',
+              children: questionSlot,
+            })
+          : null;
       case 'execution_confirm':
         // P1-05: in-stream AG-UI interrupt (DecisionFrame). Replaces the
         // independent sticky execution-confirm-slot mount from D-164.
-        return executionConfirmSlot ? (
-          <AgentFrameHost
-            className={WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS}
-            frameKind={resolveAgentFrameKind('execution_confirm')}
-            key={turn.id}
-            testId="composer-execution-confirm-turn"
-            turnKind="execution_confirm"
-          >
-            {executionConfirmSlot}
-          </AgentFrameHost>
-        ) : null;
+        return executionConfirmSlot
+          ? frameHost('execution_confirm', {
+              key: turn.id,
+              className: WORKBENCH_STICKY_COMPOSER_INTERRUPT_CLASS,
+              testId: 'composer-execution-confirm-turn',
+              children: executionConfirmSlot,
+            })
+          : null;
       case 'note_plan':
         // P1-07 / #319: multi-page outline + image status (AgentFrame plan).
-        return (
-          <AgentFrameHost
-            frameKind={resolveAgentFrameKind('note_plan')}
-            key={turn.id}
-            testId="composer-note-plan-turn"
-            turnKind="note_plan"
-          >
+        return frameHost('note_plan', {
+          key: turn.id,
+          testId: 'composer-note-plan-turn',
+          children: (
             <NotePlanTimelineFrame
               onEditOutline={
                 session.phase === 'delivered'
@@ -577,8 +686,8 @@ export function ComposerConversation({
               regenerateError={notePlanRegenerationError}
               timeline={turn.timeline}
             />
-          </AgentFrameHost>
-        );
+          ),
+        });
       case 'candidate': {
         // P0-3: after this run's delivery lands, collapse to a capsule;
         // drafting stays full. The single stream projection follows the
@@ -594,12 +703,9 @@ export function ComposerConversation({
           morphEnabled && !collapsed
             ? resultMorphLayoutId(turn.taskId)
             : undefined;
-        return (
-          <AgentFrameHost
-            frameKind={resolveAgentFrameKind('candidate')}
-            key={turn.id}
-            turnKind="candidate"
-          >
+        return frameHost('candidate', {
+          key: turn.id,
+          children: (
             <m.div
               data-morph-role={collapsed ? 'candidate-capsule' : 'candidate'}
               data-testid={
@@ -619,8 +725,8 @@ export function ComposerConversation({
                 <CandidateStream stream={stream} />
               )}
             </m.div>
-          </AgentFrameHost>
-        );
+          ),
+        });
       }
       case 'delivery': {
         // P0-3 / F8: delivery is the summary face (statement + actions). Do not
@@ -629,12 +735,9 @@ export function ComposerConversation({
         const morphId = morphEnabled
           ? resultMorphLayoutId(turn.taskId)
           : undefined;
-        return (
-          <AgentFrameHost
-            frameKind={resolveAgentFrameKind('delivery')}
-            key={turn.id}
-            turnKind="delivery"
-          >
+        return frameHost('delivery', {
+          key: turn.id,
+          children: (
             <m.div
               data-morph-role="delivery"
               data-testid="composer-delivery-morph"
@@ -664,29 +767,23 @@ export function ComposerConversation({
                 workId={turn.workId}
               />
             </m.div>
-          </AgentFrameHost>
-        );
+          ),
+        });
       }
       case 'report':
-        return (
-          <AgentFrameHost
-            frameKind={resolveAgentFrameKind('report')}
-            key={turn.id}
-            turnKind="report"
-          >
+        return frameHost('report', {
+          key: turn.id,
+          children: (
             <ComposerReportCard
               onRecover={(input) => onRecover?.(input)}
               report={turn.report}
             />
-          </AgentFrameHost>
-        );
+          ),
+        });
       case 'terminal':
-        return (
-          <AgentFrameHost
-            frameKind={resolveAgentFrameKind('terminal')}
-            key={turn.id}
-            turnKind="terminal"
-          >
+        return frameHost('terminal', {
+          key: turn.id,
+          children: (
             <output
               className="meiye-porcelain rounded-2xl p-4 text-sm"
               data-outcome={turn.outcome}
@@ -694,8 +791,8 @@ export function ComposerConversation({
             >
               {turn.message}
             </output>
-          </AgentFrameHost>
-        );
+          ),
+        });
     }
   };
 
@@ -721,7 +818,12 @@ export function ComposerConversation({
       initial={scrollBehavior}
       resize={scrollBehavior}
     >
-      <ChatConversation.Content className="flex flex-col gap-3">
+      <ChatConversation.Content className="meiye-document-timeline flex flex-col gap-3">
+        <span
+          aria-hidden="true"
+          className="meiye-document-timeline__rail"
+          data-testid="meiye-document-timeline-rail"
+        />
         {/* T10's Day-0 identity card leads the flow; the folded turn list
             follows it. Both, in this order — the identity choice is offered
             before there is any transcript to fold. */}
@@ -734,7 +836,12 @@ export function ComposerConversation({
         <LazyMotion features={domMax} strict>
           {shouldShowExperienceBasis(session.phase) && experienceBasis ? (
             <TurnArrival animate={!prefersReducedMotion} key="experience-basis">
-              <ExperienceBasisSurface projection={experienceBasis} />
+              {frameHost('experience_basis', {
+                key: 'experience-basis-frame',
+                children: (
+                  <ExperienceBasisSurface projection={experienceBasis} />
+                ),
+              })}
             </TurnArrival>
           ) : null}
           {foldTurns(session.turns).map((turn) => {
@@ -754,11 +861,16 @@ export function ComposerConversation({
               animate={!prefersReducedMotion}
               key="experience-sediment"
             >
-              <ExperienceSedimentSurface
-                onKeepLater={onSedimentKeepLater}
-                onThisTimeOnly={onSedimentThisTimeOnly}
-                projection={experienceSediment}
-              />
+              {frameHost('experience_sediment', {
+                key: 'experience-sediment-frame',
+                children: (
+                  <ExperienceSedimentSurface
+                    onKeepLater={onSedimentKeepLater}
+                    onThisTimeOnly={onSedimentThisTimeOnly}
+                    projection={experienceSediment}
+                  />
+                ),
+              })}
             </TurnArrival>
           ) : null}
           {shouldShowExperienceCorrection(session.phase) &&
@@ -767,7 +879,14 @@ export function ComposerConversation({
               animate={!prefersReducedMotion}
               key="experience-correction"
             >
-              <ExperienceCorrectionSurface projection={experienceCorrection} />
+              {frameHost('experience_correction', {
+                key: 'experience-correction-frame',
+                children: (
+                  <ExperienceCorrectionSurface
+                    projection={experienceCorrection}
+                  />
+                ),
+              })}
             </TurnArrival>
           ) : null}
         </LazyMotion>
@@ -795,17 +914,40 @@ export type ComposerPromptBarProps = {
   submitDisabled: boolean;
   /** Streaming lock — the send button becomes a stop affordance. */
   running: boolean;
-  creationMode: ComposerCreationMode;
-  onCreationModeChange: (mode: ComposerCreationMode) => void;
-  /** D-081 lens radiogroup. See the render site for why it is on both lines. */
-  lensSlot?: React.ReactNode;
   /**
-   * D-164② 第二层：the recipe pills for the lens above. It sits inside the bar
-   * because the axis and its shortcuts are one control surface — outside it,
-   * with the quote line in between, they read as two unrelated panels.
+   * @deprecated R-1: creation mode segment lives outside the Composer card.
+   * Kept optional so isolated tests can still mount a standalone bar.
+   */
+  creationMode?: ComposerCreationMode;
+  onCreationModeChange?: (mode: ComposerCreationMode) => void;
+  /** D-081 lens radiogroup — hosted inside the 输出类型 capsule popover. */
+  lensSlot?: React.ReactNode;
+  /** Selected lens label echo on the capsule (e.g. 「图文」). */
+  lensSummary?: string | null;
+  /** True when required lens is missing — capsule shows required highlight. */
+  lensRequired?: boolean;
+  /**
+   * D-164② recipe pills — hosted inside the 配方 capsule popover.
    */
   recipePillSlot?: React.ReactNode;
+  /** Selected recipe title echo on the capsule. */
+  recipeSummary?: string | null;
+  /** Upload / style-reference surface — hosted inside the ＋素材 capsule. */
   attachmentSlot?: React.ReactNode;
+  /**
+   * Identity + tools affordances — hosted inside the @ capsule.
+   * (口吻卡 / ComposerToolsStrip.)
+   */
+  mentionSlot?: React.ReactNode;
+  /**
+   * Credit balance / recovery — face shows a short label; popover keeps the
+   * existing recovery host (passive line + blocking redeem card).
+   */
+  creditSlot?: React.ReactNode;
+  /** Short credit label on the capsule face (e.g. balance notice). */
+  creditSummary?: string | null;
+  /** When true, credit capsule is emphasized (shortfall / blocked). */
+  creditShort?: boolean;
   destination: string | null;
   onDestinationChange: (platform: string | null) => void;
   destinationCapability: string | null;
@@ -838,6 +980,45 @@ export type ComposerPromptBarProps = {
 const INTENT_ERROR_ID = 'composer-intent-error';
 const SUBMIT_HINT_ID = 'composer-submit-intent';
 
+function CapsuleTrigger({
+  children,
+  className,
+  required,
+  active,
+  testId,
+  ...props
+}: React.ComponentProps<'button'> & {
+  required?: boolean;
+  active?: boolean;
+  testId: string;
+}) {
+  return (
+    <button
+      className={cn(
+        'inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition-colors',
+        'text-foreground hover:bg-foreground/5',
+        active && 'ring-foreground/15 bg-foreground/5 ring-1',
+        required && 'text-destructive ring-destructive/40 ring-1',
+        className
+      )}
+      data-active={active ? 'true' : 'false'}
+      data-required={required ? 'true' : 'false'}
+      data-testid={testId}
+      type="button"
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
+ * Composer prompt surface (L3-2 capsule contract / spec §2.4).
+ *
+ * Idle form: intent textarea + one bottom icon capsule row
+ * (＋素材 / 输出类型 / 配方 / @ / 发到哪 / 额度 / circular send).
+ * Creation-mode segmenter is outside this card (R-1).
+ */
 export function ComposerPromptBar({
   value,
   onValueChange,
@@ -848,8 +1029,15 @@ export function ComposerPromptBar({
   creationMode,
   onCreationModeChange,
   lensSlot,
+  lensSummary = null,
+  lensRequired = false,
   recipePillSlot,
+  recipeSummary = null,
   attachmentSlot,
+  mentionSlot,
+  creditSlot,
+  creditSummary = null,
+  creditShort = false,
   destination,
   onDestinationChange,
   destinationCapability,
@@ -868,51 +1056,37 @@ export function ComposerPromptBar({
     [intentError ? INTENT_ERROR_ID : null, submitHint ? SUBMIT_HINT_ID : null]
       .filter(Boolean)
       .join(' ') || undefined;
+
+  const destinationOption = COMPOSER_DESTINATION_OPTIONS.find(
+    (option) => option.id === destination
+  );
+  const destinationLabel = destinationOption
+    ? destinationOption.label
+    : '发到哪';
+
   return (
     <div
-      className={cn('flex flex-col gap-3', className)}
+      className={cn(
+        'flex flex-col gap-3',
+        running && 'meiye-rose-glow',
+        className
+      )}
+      data-running={running ? 'true' : 'false'}
       data-testid="composer-prompt-bar"
-      style={
-        {
-          /* The prompt bar sits on the ambient backdrop, where --ink-60 paints
-           * to ~3:1 in the light theme; raise the unselected segment label the
-           * same way the works filter does. */
-          '--meiye-segment-unselected': 'var(--ink-90)',
-        } as CSSProperties
-      }
     >
-      {/* D-111 双入口自报: 定制 and 自由 are two entries, never one blended control. */}
-      <Segment
-        aria-label="创作入口"
-        data-testid="composer-creation-mode"
-        onSelectionChange={(key) =>
-          onCreationModeChange(key === 'free' ? 'free' : 'customized')
-        }
-        selectedKey={creationMode}
-        size="sm"
-      >
-        <Segment.Item
-          data-testid="composer-creation-mode-customized"
-          id="customized"
-        >
-          定制创作
-        </Segment.Item>
-        <Segment.Item data-testid="composer-creation-mode-free" id="free">
-          自由创作
-        </Segment.Item>
-      </Segment>
+      {/* Optional legacy segment — prefer ComposerCreationModeSegment outside. */}
+      {creationMode && onCreationModeChange ? (
+        <ComposerCreationModeSegment
+          creationMode={creationMode}
+          onCreationModeChange={onCreationModeChange}
+        />
+      ) : null}
 
-      {/*
-        ADR-0014 wants outputKind compiled from the intent so the customized
-        line never asks 对口, but that compiler (T18 ①段) is not wired to the
-        recipe/quote selection yet: without a lens there is no catalog
-        operation and no quote, and picking a default here would be inventing a
-        product decision this ticket does not own. So the selector stays on
-        both lines for now — D-081's radiogroup contract, which D-043 already
-        counts as one of its two activations.
-      */}
-      {lensSlot}
-      {recipePillSlot}
+      {running ? (
+        <div data-testid="composer-generation-accent">
+          <GenerationAccent label={composer_generation_running()} />
+        </div>
+      ) : null}
 
       <PromptInput
         isDisabled={disabled}
@@ -921,7 +1095,7 @@ export function ComposerPromptBar({
         status={running ? 'streaming' : 'ready'}
         value={value}
       >
-        <PromptInput.Shell className="meiye-porcelain">
+        <PromptInput.Shell className="meiye-porcelain border-0 bg-transparent shadow-none">
           <PromptInput.Content
             onKeyDownCapture={(event) => {
               // Upstream PromptInput submits on bare Enter. The shipped submit
@@ -954,15 +1128,6 @@ export function ComposerPromptBar({
               placeholder={placeholder}
             />
           </PromptInput.Content>
-          <PromptInput.Toolbar>
-            <PromptInput.ToolbarEnd>
-              <PromptInput.Send
-                aria-label={submitLabel}
-                data-testid="composer-submit"
-                isDisabled={submitDisabled}
-              />
-            </PromptInput.ToolbarEnd>
-          </PromptInput.Toolbar>
         </PromptInput.Shell>
       </PromptInput>
 
@@ -993,73 +1158,245 @@ export function ComposerPromptBar({
       ) : null}
 
       {/*
-        Outside the Shell on purpose. The upload surface carries the T5 授权
-        disclosure, which expands into a full card; inside PromptInput.Toolbar
-        it is laid out as a toolbar item, so the expanded panel is clipped by
-        the toolbar row and the Shell's own layers swallow clicks meant for the
-        confirm button. A full-width block keeps it in the composer card — where
-        it belongs — without borrowing the toolbar's geometry.
+        Bottom icon capsule — L3-2 / prototype 04:286-294.
+        Popovers host the former stacked controls; selected state echoes on
+        the capsule labels. Radiogroup / fieldset a11y stays inside popovers.
       */}
-      {attachmentSlot ? <div className="mt-1">{attachmentSlot}</div> : null}
-
-      {/* 「发到哪」— one question, one tap. The双字段 split stays server-side. */}
       <div
-        className="flex flex-wrap items-center gap-2"
-        data-testid="composer-destination-chips"
+        className="meiye-glass-piece flex flex-wrap items-center gap-1 rounded-full p-1.5"
+        data-testid="composer-prompt-capsule"
       >
-        <span className="text-muted text-xs">发到哪</span>
-        {COMPOSER_DESTINATION_OPTIONS.map((option) => (
-          <button
-            aria-pressed={destination === option.id}
-            className={cn(
-              'meiye-glass-piece rounded-full px-3 py-1 text-xs',
-              destination === option.id &&
-                'ring-foreground/20 text-foreground ring-1'
-            )}
-            data-testid={`composer-destination-option-${option.id}`}
-            key={option.id}
-            onClick={() =>
-              onDestinationChange(destination === option.id ? null : option.id)
-            }
-            type="button"
-          >
-            {option.label}
-          </button>
-        ))}
-        {destinationCapability ? (
-          <span
-            className="text-muted text-xs"
-            data-testid="composer-destination-capability"
-          >
-            {destinationCapability}
-          </span>
-        ) : null}
-      </div>
-
-      {/*
-        U04: the 旧内容换平台 openers are the supply layer's PromptSuggestion —
-        one-tap sentences that drop into the merchant's own draft. This is the
-        composer's cold surface too: before there is any transcript, these
-        pills and the intent box are the whole offer, so the 空态 is a
-        suggestion rather than an empty panel.
-      */}
-      {reuseChips.length > 0 ? (
-        <PromptSuggestion data-testid="composer-reuse-chips" variant="pill">
-          <PromptSuggestion.Group label={composer_reuse_suggestion_group()}>
-            <PromptSuggestion.Items>
-              {reuseChips.map((chip) => (
-                <PromptSuggestion.Item
-                  data-testid={`composer-reuse-chip-${chip.id}`}
-                  key={chip.id}
-                  onPress={() => onReuseChip(chip)}
+        {attachmentSlot ? (
+          <Popover>
+            <PopoverTrigger
+              render={(triggerProps) => (
+                <CapsuleTrigger
+                  {...triggerProps}
+                  aria-label="添加素材"
+                  testId="composer-capsule-attach"
                 >
-                  {chip.label}
-                </PromptSuggestion.Item>
+                  <span aria-hidden="true">＋</span>
+                  <span className="hidden sm:inline">素材</span>
+                </CapsuleTrigger>
+              )}
+            />
+            <PopoverContent
+              align="start"
+              className="max-h-[70vh] w-[min(100vw-2rem,22rem)] overflow-y-auto p-3"
+              data-testid="composer-capsule-attach-panel"
+            >
+              {attachmentSlot}
+            </PopoverContent>
+          </Popover>
+        ) : null}
+
+        {lensSlot ? (
+          <Popover>
+            <PopoverTrigger
+              render={(triggerProps) => (
+                <CapsuleTrigger
+                  {...triggerProps}
+                  active={Boolean(lensSummary)}
+                  aria-label={
+                    lensSummary
+                      ? `输出类型：${lensSummary}`
+                      : '选择输出类型（必填）'
+                  }
+                  required={lensRequired && !lensSummary}
+                  testId="composer-capsule-lens"
+                >
+                  <span>{lensSummary ?? '输出类型'}</span>
+                  <span aria-hidden="true">▾</span>
+                </CapsuleTrigger>
+              )}
+            />
+            <PopoverContent
+              align="start"
+              className="w-[min(100vw-2rem,22rem)] p-3"
+              data-testid="composer-capsule-lens-panel"
+            >
+              {lensSlot}
+            </PopoverContent>
+          </Popover>
+        ) : null}
+
+        {recipePillSlot ? (
+          <Popover>
+            <PopoverTrigger
+              render={(triggerProps) => (
+                <CapsuleTrigger
+                  {...triggerProps}
+                  active={Boolean(recipeSummary)}
+                  aria-label={
+                    recipeSummary ? `配方：${recipeSummary}` : '选择配方'
+                  }
+                  testId="composer-capsule-recipe"
+                >
+                  <span className="max-w-[7rem] truncate">
+                    {recipeSummary ?? '配方'}
+                  </span>
+                  <span aria-hidden="true">▾</span>
+                </CapsuleTrigger>
+              )}
+            />
+            <PopoverContent
+              align="start"
+              className="w-[min(100vw-2rem,24rem)] max-h-[70vh] overflow-y-auto p-3"
+              data-testid="composer-capsule-recipe-panel"
+            >
+              {recipePillSlot}
+            </PopoverContent>
+          </Popover>
+        ) : null}
+
+        {mentionSlot ? (
+          <Popover>
+            <PopoverTrigger
+              render={(triggerProps) => (
+                <CapsuleTrigger
+                  {...triggerProps}
+                  aria-label="口吻与创作工具"
+                  testId="composer-capsule-mention"
+                >
+                  <span aria-hidden="true">@</span>
+                </CapsuleTrigger>
+              )}
+            />
+            <PopoverContent
+              align="start"
+              className="w-[min(100vw-2rem,24rem)] max-h-[70vh] overflow-y-auto p-3"
+              data-testid="composer-capsule-mention-panel"
+            >
+              {mentionSlot}
+            </PopoverContent>
+          </Popover>
+        ) : null}
+
+        <Popover>
+          <PopoverTrigger
+            render={(triggerProps) => (
+              <CapsuleTrigger
+                {...triggerProps}
+                active={Boolean(destination)}
+                aria-label={
+                  destinationLabel === '发到哪'
+                    ? '选择发布平台'
+                    : `发到哪：${destinationLabel}`
+                }
+                testId="composer-capsule-destination"
+              >
+                <span>{destinationLabel}</span>
+                <span aria-hidden="true">▾</span>
+              </CapsuleTrigger>
+            )}
+          />
+          <PopoverContent
+            align="start"
+            className="w-[min(100vw-2rem,20rem)] p-3"
+            data-testid="composer-destination-chips"
+          >
+            <p className="text-muted mb-2 text-xs">发到哪</p>
+            <div className="flex flex-wrap items-center gap-2">
+              {COMPOSER_DESTINATION_OPTIONS.map((option) => (
+                <button
+                  aria-pressed={destination === option.id}
+                  className={cn(
+                    'meiye-glass-piece rounded-full px-3 py-1 text-xs',
+                    destination === option.id &&
+                      'ring-foreground/20 text-foreground ring-1'
+                  )}
+                  data-testid={`composer-destination-option-${option.id}`}
+                  key={option.id}
+                  onClick={() =>
+                    onDestinationChange(
+                      destination === option.id ? null : option.id
+                    )
+                  }
+                  type="button"
+                >
+                  {option.label}
+                </button>
               ))}
-            </PromptSuggestion.Items>
-          </PromptSuggestion.Group>
-        </PromptSuggestion>
-      ) : null}
+            </div>
+            {destinationCapability ? (
+              <span
+                className="text-muted mt-2 block text-xs"
+                data-testid="composer-destination-capability"
+              >
+                {destinationCapability}
+              </span>
+            ) : null}
+            {reuseChips.length > 0 ? (
+              <div className="mt-3 border-t pt-3">
+                <PromptSuggestion
+                  data-testid="composer-reuse-chips"
+                  variant="pill"
+                >
+                  <PromptSuggestion.Group
+                    label={composer_reuse_suggestion_group()}
+                  >
+                    <PromptSuggestion.Items>
+                      {reuseChips.map((chip) => (
+                        <PromptSuggestion.Item
+                          data-testid={`composer-reuse-chip-${chip.id}`}
+                          key={chip.id}
+                          onPress={() => onReuseChip(chip)}
+                        >
+                          {chip.label}
+                        </PromptSuggestion.Item>
+                      ))}
+                    </PromptSuggestion.Items>
+                  </PromptSuggestion.Group>
+                </PromptSuggestion>
+              </div>
+            ) : null}
+          </PopoverContent>
+        </Popover>
+
+        {creditSlot ? (
+          <Popover>
+            <PopoverTrigger
+              render={(triggerProps) => (
+                <CapsuleTrigger
+                  {...triggerProps}
+                  active={Boolean(creditSummary)}
+                  aria-label={creditSummary ?? '额度'}
+                  required={creditShort}
+                  testId="composer-capsule-credit"
+                >
+                  <span className="max-w-[8rem] truncate">
+                    {creditSummary ?? '额度'}
+                  </span>
+                </CapsuleTrigger>
+              )}
+            />
+            <PopoverContent
+              align="end"
+              className="w-[min(100vw-2rem,22rem)] p-3"
+              data-testid="composer-capsule-credit-panel"
+            >
+              {creditSlot}
+            </PopoverContent>
+          </Popover>
+        ) : null}
+
+        <button
+          aria-label={submitLabel}
+          className={cn(
+            'ml-auto inline-flex size-10 shrink-0 items-center justify-center rounded-full',
+            'bg-primary text-primary-foreground shadow-sm transition-opacity',
+            'hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50'
+          )}
+          data-testid="composer-submit"
+          disabled={submitDisabled}
+          onClick={onSubmit}
+          type="button"
+        >
+          <span aria-hidden="true" className="text-base leading-none">
+            ↑
+          </span>
+        </button>
+      </div>
 
       {/* Read-only echo of what the server will sign and freeze (T08). */}
       {signedPreview ? (

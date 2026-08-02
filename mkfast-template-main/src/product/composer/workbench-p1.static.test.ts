@@ -60,10 +60,12 @@ test('P1-2: Active sticky Composer clears mobile-nav (4.25rem family)', () => {
   assert.match(home, /WorkbenchStickyComposerHost/u);
   assert.match(home, /WorkbenchStickyComposerClearance/u);
   // Merchant-critical chrome rides the sticky host (quote / grounding / quota).
+  // L3-2: credit recovery is also nested inside the capsule creditSlot.
   assert.match(
     home,
     /WorkbenchStickyComposerHost[\s\S]*composer-quote-line[\s\S]*ComposerCreditRecoveryHost[\s\S]*<\/WorkbenchStickyComposerHost>/u
   );
+  assert.match(home, /composer-prompt-capsule|creditSlot=/u);
   const shell = readSource('src/product/composer/workbench-shell.ts');
   assert.match(shell, /WORKBENCH_MOBILE_NAV_HEIGHT = '4\.25rem'/u);
   assert.match(shell, /5\.25rem\+env\(safe-area-inset-bottom\)/u);

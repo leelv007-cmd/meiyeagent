@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cardLanguageIssues } from './card-language';
 import {
   ComposerConversation,
+  ComposerCreationModeSegment,
   ComposerPromptBar,
 } from './composer-conversation';
 import { projectComposerSignedPreview } from './composer-signed-preview';
@@ -49,12 +50,10 @@ function promptBar(
   return (
     <ComposerPromptBar
       ariaLabel="描述这次想创作的内容"
-      creationMode="customized"
       destination={null}
       destinationCapability={null}
       disabled={false}
       submitDisabled={false}
-      onCreationModeChange={() => {}}
       onDestinationChange={() => {}}
       onReuseChip={() => {}}
       onSubmit={() => {}}
@@ -106,16 +105,21 @@ describe('submit key contract (D-043 activation counting)', () => {
 });
 
 describe('entry and destination are conversation affordances, not a form', () => {
-  it('declares 定制 and 自由 as two entries', async () => {
+  it('declares 定制 and 自由 as two entries (outside Composer card)', async () => {
     const user = userEvent.setup();
     const onCreationModeChange = vi.fn();
-    render(promptBar({ onCreationModeChange }));
+    render(
+      <ComposerCreationModeSegment
+        creationMode="customized"
+        onCreationModeChange={onCreationModeChange}
+      />
+    );
 
     await user.click(screen.getByTestId('composer-creation-mode-free'));
     expect(onCreationModeChange).toHaveBeenCalledWith('free');
   });
 
-  it('asks 「发到哪」once, as chips, and echoes the capability', async () => {
+  it('asks 「发到哪」from the capsule popover, and echoes the capability', async () => {
     const user = userEvent.setup();
     const onDestinationChange = vi.fn();
     render(
@@ -126,8 +130,11 @@ describe('entry and destination are conversation affordances, not a form', () =>
       })
     );
 
+    expect(screen.getByTestId('composer-prompt-capsule')).toBeInTheDocument();
+    await user.click(screen.getByTestId('composer-capsule-destination'));
+
     expect(
-      screen.getByTestId('composer-destination-option-wechat_moments')
+      await screen.findByTestId('composer-destination-option-wechat_moments')
     ).toHaveAttribute('aria-pressed', 'true');
     expect(
       screen.getByTestId('composer-destination-capability')
@@ -137,7 +144,7 @@ describe('entry and destination are conversation affordances, not a form', () =>
     expect(onDestinationChange).toHaveBeenCalledWith('douyin');
   });
 
-  it('offers 旧内容换平台 as supply-layer suggestions, and one tap seeds the draft (U04)', async () => {
+  it('offers 旧内容换平台 inside the destination capsule (U04)', async () => {
     const user = userEvent.setup();
     const onReuseChip = vi.fn();
     const chip = {
@@ -147,13 +154,32 @@ describe('entry and destination are conversation affordances, not a form', () =>
     };
     render(promptBar({ onReuseChip, reuseChips: [chip] }));
 
-    const suggestions = screen.getByTestId('composer-reuse-chips');
+    await user.click(screen.getByTestId('composer-capsule-destination'));
+    const suggestions = await screen.findByTestId('composer-reuse-chips');
     // Written by the vendored unit — red if the hand-rolled pill row returns.
     expect(suggestions.dataset.slot).toBe('prompt-suggestion');
     expect(suggestions).toHaveTextContent('想把旧内容换个平台再发？');
 
     await user.click(screen.getByTestId('composer-reuse-chip-xiaohongshu'));
     expect(onReuseChip).toHaveBeenCalledWith(chip);
+  });
+
+  it('shows generation accent while running and hides it when idle (L3-4)', () => {
+    const { rerender } = render(promptBar({ running: true }));
+    expect(
+      screen.getByTestId('composer-generation-accent')
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('composer-prompt-bar')).toHaveAttribute(
+      'data-running',
+      'true'
+    );
+
+    rerender(promptBar({ running: false }));
+    expect(screen.queryByTestId('composer-generation-accent')).toBeNull();
+    expect(screen.getByTestId('composer-prompt-bar')).toHaveAttribute(
+      'data-running',
+      'false'
+    );
   });
 
   it('shows the signed fields read-only, with no editable control', () => {
