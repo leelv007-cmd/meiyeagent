@@ -377,7 +377,11 @@ import { PostgresCreditLedger } from './p1/credit-billing/postgres-credit-ledger
 import { PostgresCreditSubscriptionStore } from './p1/credit-billing/credit-subscription-scheduler.js';
 import { CreditBillingService } from './p1/credit-billing/credit-billing-service.js';
 import { CreditSubscriptionEntitlementPolicy } from './p1/credit-billing/credit-entitlement-policy.js';
-import { creditPlanConcurrencyTiers } from './p1/credit-billing/credit-plan-catalog.js';
+import {
+  creditPlanConcurrencyTiers,
+  type CreditPlanReferenceNumbers,
+} from './p1/credit-billing/credit-plan-catalog.js';
+import { assertReferenceModelsArePriced } from './p1/credit-billing/reference-number-model-validation.js';
 import {
   AdminConfigCreditPlanCatalogSource,
   ensureCreditPlanCatalogDefaults,
@@ -1626,9 +1630,14 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
           hyperdriveId: cloudflareMapping.hyperdriveConfigId,
         }),
       runtime: adminConfigRuntime,
-      valueValidators: runtimeModeValidatorsFromProviderCredentials(
-        providerCredentialRuntime,
-      ),
+      valueValidators: {
+        ...runtimeModeValidatorsFromProviderCredentials(providerCredentialRuntime),
+        'plan.credits.reference_numbers': (value) =>
+          assertReferenceModelsArePriced(
+            value as CreditPlanReferenceNumbers,
+            modelControlPlane,
+          ),
+      },
       hotReadKeys: [
         ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
         DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
@@ -1649,6 +1658,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'plan.credits.pro',
         'plan.credits.addons',
         'plan.credits.cycle_coefficients',
+        'plan.credits.reference_numbers',
         'plan.credits.trial.enabled',
         ...PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(
           platformDefaultModelConfigName,
@@ -1678,6 +1688,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
         'plan.credits.pro',
         'plan.credits.addons',
         'plan.credits.cycle_coefficients',
+        'plan.credits.reference_numbers',
         'plan.credits.trial.enabled',
         ...PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(
           platformDefaultModelConfigName,

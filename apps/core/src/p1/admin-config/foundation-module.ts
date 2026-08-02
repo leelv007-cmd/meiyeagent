@@ -318,6 +318,32 @@ const creditPlanCycleCoefficientBasisPointsSchema = z
     yearly: z.number().int().positive().max(10_000),
   })
   .strict();
+const creditPlanReferenceOutputSchema = z
+  .object({
+    copy: z.number().int().nonnegative().max(MAX_CREDIT_PLAN_AMOUNT),
+    image: z.number().int().nonnegative().max(MAX_CREDIT_PLAN_AMOUNT),
+    video: z.number().int().nonnegative().max(MAX_CREDIT_PLAN_AMOUNT),
+  })
+  .strict();
+const creditPlanReferenceNumbersSchema = z
+  .object({
+    referenceModels: z
+      .object({
+        copy: z.string().trim().min(1).max(200),
+        image: z.string().trim().min(1).max(200),
+        video: z.string().trim().min(1).max(200),
+      })
+      .strict(),
+    published: z
+      .object({
+        trial: creditPlanReferenceOutputSchema,
+        starter: creditPlanReferenceOutputSchema,
+        growth: creditPlanReferenceOutputSchema,
+        pro: creditPlanReferenceOutputSchema,
+      })
+      .strict(),
+  })
+  .strict();
 const creditAddOnSchema = z
   .object({
     id: z.string().trim().min(1).max(100),
@@ -552,6 +578,13 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     scope: 'global',
     description: 'Credit plan billing-cycle price coefficients.',
     valueSchema: creditPlanCycleCoefficientBasisPointsSchema,
+  },
+  {
+    key: 'plan.credits.reference_numbers',
+    scope: 'global',
+    description:
+      'Published plan reference outputs and their operator-selected catalog models.',
+    valueSchema: creditPlanReferenceNumbersSchema,
   },
   {
     key: 'plan.credits.trial.enabled',

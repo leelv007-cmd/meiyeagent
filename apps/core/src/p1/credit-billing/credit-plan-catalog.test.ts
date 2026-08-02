@@ -68,6 +68,19 @@ test("plan.credits is the only published source for plan and package credits", a
 		single_month: 10_000,
 		yearly: 7_500,
 	});
+	values.set("plan.credits.reference_numbers", {
+		referenceModels: {
+			copy: "deepseek-v4-pro",
+			image: "seedream-5-pro",
+			video: "seedance-2",
+		},
+		published: {
+			trial: { copy: 100, image: 20, video: 2 },
+			starter: { copy: 500, image: 100, video: 10 },
+			growth: { copy: 1_300, image: 260, video: 26 },
+			pro: { copy: 2_800, image: 560, video: 56 },
+		},
+	});
 	values.set("plan.credits.trial.enabled", true);
 	const repository: CreditPlanConfigRepository = {
 		async get(_scope, _workspaceId, key) {
@@ -88,6 +101,7 @@ test("plan.credits is the only published source for plan and package credits", a
 		"plan.credits.pro",
 		"plan.credits.addons",
 		"plan.credits.cycle_coefficients",
+		"plan.credits.reference_numbers",
 		"plan.credits.trial.enabled",
 	]);
 	assert.equal(
@@ -105,6 +119,19 @@ test("plan.credits is the only published source for plan and package credits", a
 		yearly: 7_500,
 	});
 	assert.equal(catalog.trialEnabled, true);
+	assert.deepEqual(catalog.referenceNumbers, {
+		referenceModels: {
+			copy: "deepseek-v4-pro",
+			image: "seedream-5-pro",
+			video: "seedance-2",
+		},
+		published: {
+			trial: { copy: 100, image: 20, video: 2 },
+			starter: { copy: 500, image: 100, video: 10 },
+			growth: { copy: 1_300, image: 260, video: 26 },
+			pro: { copy: 2_800, image: 560, video: 56 },
+		},
+	});
 });
 
 test("an empty or partial plan.credits publication fails closed", async () => {
@@ -144,6 +171,7 @@ test("initializes an empty installation with revisioned credit plan seeds exactl
 		"plan.credits.pro",
 		"plan.credits.addons",
 		"plan.credits.cycle_coefficients",
+		"plan.credits.reference_numbers",
 		"plan.credits.trial.enabled",
 	]) {
 		const revisions = await repository.history("global", "__global__", key);

@@ -1081,6 +1081,7 @@ export function createCoreServer({
                 })),
                 id: plan.id,
                 monthlyPriceMicros: plan.monthlyPriceMicros,
+                referenceOutputs: catalog.referenceNumbers.published[plan.id],
               })),
           }),
           requestCorrelationId

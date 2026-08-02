@@ -159,6 +159,7 @@ describe('Admin config application seam', () => {
         'plan.credits.cycle_coefficients',
         'plan.credits.growth',
         'plan.credits.pro',
+        'plan.credits.reference_numbers',
         'plan.credits.starter',
         'plan.credits.trial',
         'plan.credits.trial.enabled',

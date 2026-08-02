@@ -62,6 +62,14 @@ export const publicPlanAddOnOfferSchema = z
   })
   .strict();
 
+export const publicPlanReferenceOutputsSchema = z
+  .object({
+    copy: z.number().int().nonnegative(),
+    image: z.number().int().nonnegative(),
+    video: z.number().int().nonnegative(),
+  })
+  .strict();
+
 /**
  * What a public pricing page is allowed to know about a plan (D-143).
  *
@@ -76,6 +84,7 @@ export const publicPlanOfferSchema = z
     currency: z.literal('CNY'),
     cyclePrices: z.array(publicPlanCyclePriceSchema).length(3),
     monthlyPriceMicros: z.number().int().positive(),
+    referenceOutputs: publicPlanReferenceOutputsSchema,
   })
   .strict();
 
@@ -129,6 +138,7 @@ export const PUBLIC_PLAN_CREDIT_SEED: readonly PublicPlanOffer[] = [
       { amountMicros: 1_791_000_000, cycle: 'yearly' },
     ],
     monthlyPriceMicros: 199_000_000,
+    referenceOutputs: { copy: 500, image: 100, video: 10 },
   },
   {
     id: 'growth',
@@ -141,6 +151,7 @@ export const PUBLIC_PLAN_CREDIT_SEED: readonly PublicPlanOffer[] = [
       { amountMicros: 4_491_000_000, cycle: 'yearly' },
     ],
     monthlyPriceMicros: 499_000_000,
+    referenceOutputs: { copy: 1_300, image: 260, video: 26 },
   },
   {
     id: 'pro',
@@ -153,5 +164,6 @@ export const PUBLIC_PLAN_CREDIT_SEED: readonly PublicPlanOffer[] = [
       { amountMicros: 8_091_000_000, cycle: 'yearly' },
     ],
     monthlyPriceMicros: 899_000_000,
+    referenceOutputs: { copy: 2_800, image: 560, video: 56 },
   },
 ];

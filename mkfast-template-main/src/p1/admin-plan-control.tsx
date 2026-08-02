@@ -16,6 +16,7 @@ import {
 } from '@/locale/paraglide/messages';
 import { queryP1 } from '@/p1/client';
 import { AdminRuntimeConfigControl } from '@/p1/admin-runtime-config-control';
+import { AdminPlanReferenceNumbersControl } from '@/p1/admin-plan-reference-numbers-control';
 import { p1QueryKeys } from '@/p1/query-keys';
 
 export const CREDIT_PLAN_CONFIG_KEYS = [
@@ -150,6 +151,7 @@ export function AdminPlanControl() {
           <AdminRuntimeConfigControl keys={[...PLAN_CONTROL_CONFIG_KEYS]} />
         </AdminPanelContent>
       </AdminPanel>
+      <AdminPlanReferenceNumbersControl />
     </div>
   );
 }

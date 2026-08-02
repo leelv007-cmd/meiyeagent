@@ -68,6 +68,19 @@ export const CREDIT_PLAN_CONFIG_DEFAULTS = {
     single_month: 10_000,
     yearly: 7_500,
   },
+  'plan.credits.reference_numbers': {
+    referenceModels: {
+      copy: 'deepseek-v4-pro',
+      image: 'seedream-5-pro',
+      video: 'seedance-2',
+    },
+    published: {
+      trial: { copy: 100, image: 20, video: 2 },
+      starter: { copy: 500, image: 100, video: 10 },
+      growth: { copy: 1_300, image: 260, video: 26 },
+      pro: { copy: 2_800, image: 560, video: 56 },
+    },
+  },
   'plan.credits.trial.enabled': true,
 } as const;
 

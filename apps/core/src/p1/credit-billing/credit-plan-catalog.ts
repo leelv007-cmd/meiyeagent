@@ -34,6 +34,21 @@ export interface CreditPlanCycleCoefficientBasisPoints {
 	yearly: number;
 }
 
+export interface CreditPlanReferenceOutputs {
+	copy: number;
+	image: number;
+	video: number;
+}
+
+export interface CreditPlanReferenceNumbers {
+	referenceModels: {
+		copy: string;
+		image: string;
+		video: string;
+	};
+	published: Record<CreditPlanId, CreditPlanReferenceOutputs>;
+}
+
 export interface CreditAddOnOffer {
 	id: string;
 	credits: number;
@@ -46,6 +61,7 @@ export interface CreditPlanCatalog {
 	plans: CreditPlanOffer[];
 	addOns: CreditAddOnOffer[];
 	cycleCoefficientBasisPoints: CreditPlanCycleCoefficientBasisPoints;
+	referenceNumbers: CreditPlanReferenceNumbers;
 	trialEnabled: boolean;
 }
 
@@ -92,6 +108,9 @@ export const DEFAULT_CREDIT_PLAN_CATALOG: CreditPlanCatalog = {
 	cycleCoefficientBasisPoints: {
 		...CREDIT_PLAN_CONFIG_DEFAULTS["plan.credits.cycle_coefficients"],
 	},
+	referenceNumbers: structuredClone(
+		CREDIT_PLAN_CONFIG_DEFAULTS["plan.credits.reference_numbers"],
+	),
 	trialEnabled: CREDIT_PLAN_CONFIG_DEFAULTS["plan.credits.trial.enabled"],
 };
 

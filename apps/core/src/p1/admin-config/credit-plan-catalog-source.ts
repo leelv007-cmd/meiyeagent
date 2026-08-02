@@ -8,6 +8,7 @@ import {
 	type CreditPlanCatalog,
 	type CreditPlanCycleCoefficientBasisPoints,
 	type CreditPlanOffer,
+	type CreditPlanReferenceNumbers,
 } from "../credit-billing/credit-plan-catalog.js";
 import type { AdminConfigRepository } from "./foundation-module.js";
 
@@ -121,6 +122,7 @@ export class AdminConfigCreditPlanCatalogSource {
 			pro,
 			addOns,
 			cycleCoefficients,
+			referenceNumbers,
 			trialEnabled,
 		] = await Promise.all([
 			this.repository.get("global", GLOBAL_WORKSPACE_ID, "plan.credits.trial"),
@@ -140,6 +142,11 @@ export class AdminConfigCreditPlanCatalogSource {
 			this.repository.get(
 				"global",
 				GLOBAL_WORKSPACE_ID,
+				"plan.credits.reference_numbers",
+			),
+			this.repository.get(
+				"global",
+				GLOBAL_WORKSPACE_ID,
 				"plan.credits.trial.enabled",
 			),
 		]);
@@ -153,6 +160,9 @@ export class AdminConfigCreditPlanCatalogSource {
 				creditPlanCycleCoefficientBasisPointsFromConfig(
 					cycleCoefficients?.value,
 				),
+			referenceNumbers: creditPlanReferenceNumbersFromConfig(
+				referenceNumbers?.value,
+			),
 			trialEnabled: creditTrialEnabledFromConfig(trialEnabled?.value),
 		} satisfies CreditPlanCatalog;
 	}
@@ -204,6 +214,41 @@ function creditPlanCycleCoefficientBasisPointsFromConfig(
 		throw missingCreditPlanConfig();
 	}
 	return structuredClone(coefficients);
+}
+
+function creditPlanReferenceNumbersFromConfig(
+	value: unknown,
+): CreditPlanReferenceNumbers {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		throw missingCreditPlanConfig();
+	}
+	const referenceNumbers = value as CreditPlanReferenceNumbers;
+	if (
+		!referenceModelIds(referenceNumbers.referenceModels) ||
+		!referenceOutputs(referenceNumbers.published)
+	) {
+		throw missingCreditPlanConfig();
+	}
+	return structuredClone(referenceNumbers);
+}
+
+function referenceModelIds(value: unknown): value is CreditPlanReferenceNumbers["referenceModels"] {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const models = value as Record<string, unknown>;
+	return ["copy", "image", "video"].every(
+		(category) => typeof models[category] === "string" && models[category].trim().length > 0,
+	);
+}
+
+function referenceOutputs(value: unknown): value is CreditPlanReferenceNumbers["published"] {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+	const published = value as Record<string, unknown>;
+	return CREDIT_PLAN_IDS.every((planId) => {
+		const outputs = published[planId];
+		if (!outputs || typeof outputs !== "object" || Array.isArray(outputs)) return false;
+		const record = outputs as Record<string, unknown>;
+		return ["copy", "image", "video"].every((category) => nonnegativeInteger(record[category]));
+	});
 }
 
 function creditAddOnsFromConfig(value: unknown): CreditAddOnOffer[] {
