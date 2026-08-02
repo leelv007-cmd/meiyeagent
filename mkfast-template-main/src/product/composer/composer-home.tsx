@@ -285,12 +285,15 @@ import {
 import { composerDraftToRecipeFields } from './recipe-patch-preview-client';
 import { submitComposerSubmission } from './composer-submission-client';
 import {
+  COMPOSER_DESTINATION_OPTIONS,
   ComposerConversation,
+  ComposerCreationModeSegment,
   ComposerPromptBar,
   focusComposerIntentInput,
   type ComposerCreationMode,
   type ComposerReuseChip,
 } from './composer-conversation';
+import { COMPOSER_LENS_LABELS } from './lens-labels';
 import {
   ComposerQuestionCard,
   composerQuestionDecision,
@@ -3535,6 +3538,35 @@ export function ComposerHome({
   const widthMode = resolveWorkbenchWidthMode({ dualColumn });
   const inspectorWorkId = session.task?.workId ?? null;
   const inspectorSummary = session.deliveryStatement ?? null;
+  const inspectorPhase =
+    session.phase === 'delivered'
+      ? 'delivered'
+      : session.phase === 'running' ||
+          session.phase === 'submitting' ||
+          session.phase === 'awaiting_answer'
+        ? 'running'
+        : 'idle';
+  const latestStageTurn = [...session.turns]
+    .reverse()
+    .find((turn) => turn.kind === 'stage');
+  const inspectorStageLabel =
+    latestStageTurn && latestStageTurn.kind === 'stage'
+      ? latestStageTurn.message
+      : null;
+  const inspectorProgressLabel =
+    inspectorPhase === 'running'
+      ? session.phase === 'submitting'
+        ? '正在提交'
+        : session.phase === 'awaiting_answer'
+          ? '等待你的确认'
+          : '创作进行中'
+      : null;
+  const inspectorPlatformLabel =
+    lensState.draft.delivery.platform != null
+      ? (COMPOSER_DESTINATION_OPTIONS.find(
+          (option) => option.id === lensState.draft.delivery.platform
+        )?.label ?? lensState.draft.delivery.platform)
+      : null;
 
   // Mobile inspector sheet is the dual-column equivalent — dismiss when desktop
   // dual column takes over so the two surfaces never stack.
@@ -3555,74 +3587,17 @@ export function ComposerHome({
       {/*
        * The greeting is the one personified moment the design system reserves a
        * whole type role for (DESIGN.md §3 问候语法则), so it opens the workbench.
-       * What follows is D-164① 的三段：提议 → 创作 → 继续.
+       * R-1 (gap-remediation-plan 2026-08-02) supersedes D-164① ordering:
+       * 问候 → 分段器 → Composer → 建议行 → Shelf (spec §2.4).
        */}
       <DashboardHomeGreeting state={product.state} />
 
-      <section data-testid="dashboard-section-proposal" hidden={shelfCollapsed}>
-        {/*
-         * 段① 提议位 — D-164①. The recommendation opens the workbench because the
-         * first question a shop owner has is "what should I post today", not
-         * "what shall I type". It used to sit below the whole Composer cluster:
-         * an empty panel above the axis was worse than no panel, so it was moved
-         * out of the way. D-164① settles the order the other way and the cold
-         * case is handled instead of avoided — a workspace with nothing in it
-         * shows the sample shops here, so the slot is never empty.
-         * Both CTAs prefill this same draft — never submit.
-         */}
-        <DashboardHomeSurface
-          loading={product.loading}
-          onPrefill={(handoff: RecommendationHandoff) => {
-            // P0-4 / F1: typed handoff. Respect outputHint when present;
-            // never hard-code copy lens when the recommendation has no hint.
-            focusIntentAfterPrefillRef.current = true;
-            setViralAdaptBinding(null);
-            if (lensState.phase === 'frozen' || session.phase === 'delivered') {
-              sessionIdRef.current = newComposerSessionId();
-              setSessionEpoch((current) => current + 1);
-              briefContextRevisionRef.current = null;
-              briefInputRef.current = null;
-              restoredFromServerRef.current = true;
-              setSession((current) =>
-                rebindComposerSession(current, sessionIdRef.current)
-              );
-            }
-            setLensState(
-              (current) =>
-                applyRecommendationHandoffWithRecipe({
-                  state: reopenComposer(current),
-                  handoff,
-                  surface: surfaceQuery.data,
-                }).state
-            );
-            // #324: 爆款复刻 chip opens paste-track sourcing journey (no scrape).
-            cancelViralOpenCliRead();
-            if (handoff.recipeChipId === 'viral_adapt') {
-              setViralAdaptJourney((current) =>
-                startViralAdaptJourney(current)
-              );
-            } else {
-              setViralAdaptJourney((current) =>
-                current.phase === 'idle'
-                  ? current
-                  : cancelViralAdaptJourney(current)
-              );
-            }
-          }}
-          onRefresh={product.refresh}
-          onStart={() => {
-            // A completed run can still be leaving its mutation state while the
-            // next-action card is already visible. Try now, then retry when that
-            // pending state clears so the merchant never lands on an enabled but
-            // unfocused prompt.
-            focusIntentAfterPrefillRef.current = true;
-            focusComposerIntentInput();
-          }}
-          state={product.state}
-        />
-      </section>
+      <ComposerCreationModeSegment
+        creationMode={creationMode}
+        onCreationModeChange={setCreationMode}
+      />
 
-      {/* 段② 创作面 — the axis itself (D-139 lens + input + affordances). */}
+      {/* 创作面 — Composer + document timeline (D-139 lens axis inside capsule). */}
       <section
         className="flex flex-col gap-6"
         data-testid="dashboard-section-create"
@@ -3776,6 +3751,10 @@ export function ComposerHome({
                       })
                   : undefined
               }
+              phase={inspectorPhase}
+              platformLabel={inspectorPlatformLabel}
+              progressLabel={inspectorProgressLabel}
+              stageLabel={inspectorStageLabel}
               summary={inspectorSummary}
               workId={inspectorWorkId}
             />
@@ -3783,22 +3762,9 @@ export function ComposerHome({
           stream={
             <>
               {/* Layer ① — the conversation. Stage announcements, the 引导补问卡 and the
-            streaming candidate all land here; nothing navigates away. */}
+            streaming candidate all land here; nothing navigates away.
+            Identity lives in the Composer @ capsule (L3-2), not the stream. */}
               <ComposerConversation
-                identitySlot={
-                  <ComposerIdentityCard
-                    defaultPending={defaultIdentityDecision.isPending}
-                    onRemember={(identityId) =>
-                      defaultIdentityDecision.mutate(identityId)
-                    }
-                    onRetry={() => void identitiesQuery.refetch()}
-                    onSelect={(identityId) =>
-                      sessionIdentityDecision.mutate(identityId)
-                    }
-                    selectionPending={sessionIdentityDecision.isPending}
-                    selection={identitySelection}
-                  />
-                }
                 experienceBasis={experienceBasis}
                 experienceCorrection={experienceCorrection}
                 experienceSediment={experienceSediment}
@@ -4190,7 +4156,40 @@ export function ComposerHome({
                       />
                     </div>
                   }
-                  creationMode={creationMode}
+                  creditShort={quotaBlocked || quotaPassive.short}
+                  creditSlot={
+                    <ComposerCreditRecoveryHost
+                      blocked={quotaBlocked}
+                      passive={quotaPassive}
+                      quote={currentQuoteView}
+                      redeem={({ command, idempotencyKey }) =>
+                        commandP1<ComposerCreditRedemptionReceipt>(
+                          'redemptions',
+                          command,
+                          idempotencyKey
+                        )
+                      }
+                      refreshCredits={async () =>
+                        (await usageQuery.refetch()).data
+                      }
+                      onRecoverySettled={() =>
+                        queryClient.invalidateQueries({
+                          queryKey: p1QueryKeys.request(
+                            'entitlements',
+                            'balance'
+                          ),
+                        })
+                      }
+                      onUnlocked={() => setSubmissionQuotaBlocked(false)}
+                    />
+                  }
+                  creditSummary={
+                    quotaPassive.visible
+                      ? quotaPassive.notice
+                      : quotaBlocked
+                        ? '额度不足'
+                        : null
+                  }
                   destination={lensState.draft.delivery.platform ?? null}
                   destinationCapability={
                     destination
@@ -4216,6 +4215,7 @@ export function ComposerHome({
                     // that resolves the wait the one click the merchant cannot make.
                     (lensId != null && !currentQuoteView && !quoteSettling)
                   }
+                  lensRequired={showRequiredHint}
                   lensSlot={
                     <>
                       <LensRadiogroup
@@ -4240,6 +4240,35 @@ export function ComposerHome({
                         }}
                       />
                     </>
+                  }
+                  lensSummary={lensId ? COMPOSER_LENS_LABELS[lensId] : null}
+                  mentionSlot={
+                    <div className="flex flex-col gap-4">
+                      <ComposerIdentityCard
+                        defaultPending={defaultIdentityDecision.isPending}
+                        onRemember={(identityId) =>
+                          defaultIdentityDecision.mutate(identityId)
+                        }
+                        onRetry={() => void identitiesQuery.refetch()}
+                        onSelect={(identityId) =>
+                          sessionIdentityDecision.mutate(identityId)
+                        }
+                        selectionPending={sessionIdentityDecision.isPending}
+                        selection={identitySelection}
+                      />
+                      <ComposerToolsStrip
+                        viewport={viewportKind}
+                        surfaceRevisionId={surfaceQuery.data?.revisionId}
+                        onOpenTool={(href) => {
+                          if (typeof window !== 'undefined') {
+                            window.location.assign(href);
+                          }
+                        }}
+                        onViewAll={(href) => {
+                          void navigate({ to: href as '/dashboard/catalog' });
+                        }}
+                      />
+                    </div>
                   }
                   recipePillSlot={
                     surfaceQuery.data ? (
@@ -4278,7 +4307,11 @@ export function ComposerHome({
                       </output>
                     )
                   }
-                  onCreationModeChange={setCreationMode}
+                  recipeSummary={
+                    lensState.draft.recipeRevisionId
+                      ? (submissionRecipe?.presentation.title ?? null)
+                      : null
+                  }
                   onDestinationChange={(platform) => {
                     const next = composerDestinationContract(platform);
                     setDestinationPreflight(null);
@@ -4317,7 +4350,10 @@ export function ComposerHome({
                   onValueChange={handleIntentChange}
                   placeholder={creation_entry_intent_placeholder()}
                   reuseChips={COMPOSER_REUSE_CHIPS}
-                  running={session.phase === 'running'}
+                  running={
+                    session.phase === 'running' ||
+                    session.phase === 'submitting'
+                  }
                   signedPreview={signedPreview}
                   submitHint={submitIntent.hint}
                   submitLabel={submitIntent.label}
@@ -4429,43 +4465,34 @@ export function ComposerHome({
                   </p>
                 ) : null}
 
-                {/* 额度：被动展示，不足才阻塞 (D-043 决定②). Always mounted — the passive
-            line is not a card and gates nothing; only a shortfall raises the
-            blocking card. Kept inside sticky host so Active morph does not
-            occlude quote / grounding / quota under the send control. */}
-                <ComposerCreditRecoveryHost
-                  blocked={quotaBlocked}
-                  passive={quotaPassive}
-                  quote={currentQuoteView}
-                  redeem={({ command, idempotencyKey }) =>
-                    commandP1<ComposerCreditRedemptionReceipt>(
-                      'redemptions',
-                      command,
-                      idempotencyKey
-                    )
-                  }
-                  refreshCredits={async () => (await usageQuery.refetch()).data}
-                  onRecoverySettled={() =>
-                    queryClient.invalidateQueries({
-                      queryKey: p1QueryKeys.request('entitlements', 'balance'),
-                    })
-                  }
-                  onUnlocked={() => setSubmissionQuotaBlocked(false)}
-                />
+                {/* Quota blocking alert stays visible outside the capsule when short. */}
+                {quotaBlocked ? (
+                  <ComposerCreditRecoveryHost
+                    blocked={quotaBlocked}
+                    passive={quotaPassive}
+                    quote={currentQuoteView}
+                    redeem={({ command, idempotencyKey }) =>
+                      commandP1<ComposerCreditRedemptionReceipt>(
+                        'redemptions',
+                        command,
+                        idempotencyKey
+                      )
+                    }
+                    refreshCredits={async () =>
+                      (await usageQuery.refetch()).data
+                    }
+                    onRecoverySettled={() =>
+                      queryClient.invalidateQueries({
+                        queryKey: p1QueryKeys.request(
+                          'entitlements',
+                          'balance'
+                        ),
+                      })
+                    }
+                    onUnlocked={() => setSubmissionQuotaBlocked(false)}
+                  />
+                ) : null}
               </WorkbenchStickyComposerHost>
-
-              <ComposerToolsStrip
-                viewport={viewportKind}
-                surfaceRevisionId={surfaceQuery.data?.revisionId}
-                onOpenTool={(href) => {
-                  if (typeof window !== 'undefined') {
-                    window.location.assign(href);
-                  }
-                }}
-                onViewAll={(href) => {
-                  void navigate({ to: href as '/dashboard/catalog' });
-                }}
-              />
 
               {briefView ? (
                 <BriefSurface
@@ -4537,13 +4564,74 @@ export function ComposerHome({
                   }
                 : undefined
             }
+            phase={inspectorPhase}
+            platformLabel={inspectorPlatformLabel}
+            progressLabel={inspectorProgressLabel}
+            stageLabel={inspectorStageLabel}
             summary={inspectorSummary}
             workId={inspectorWorkId}
           />
         </WorkbenchInspectorSheet>
       </section>
 
-      {/* 段③ 继续上次工作 — D-164① / D-126. Collapsed with 段① in Active (P0-1). */}
+      {/*
+       * 建议行 — R-1: below Composer on Idle (spec §2.4). Prefill only, never
+       * submit. Stays mounted under Active collapse so disclosure state survives.
+       */}
+      <section data-testid="dashboard-section-proposal" hidden={shelfCollapsed}>
+        <DashboardHomeSurface
+          loading={product.loading}
+          onPrefill={(handoff: RecommendationHandoff) => {
+            // P0-4 / F1: typed handoff. Respect outputHint when present;
+            // never hard-code copy lens when the recommendation has no hint.
+            focusIntentAfterPrefillRef.current = true;
+            setViralAdaptBinding(null);
+            if (lensState.phase === 'frozen' || session.phase === 'delivered') {
+              sessionIdRef.current = newComposerSessionId();
+              setSessionEpoch((current) => current + 1);
+              briefContextRevisionRef.current = null;
+              briefInputRef.current = null;
+              restoredFromServerRef.current = true;
+              setSession((current) =>
+                rebindComposerSession(current, sessionIdRef.current)
+              );
+            }
+            setLensState(
+              (current) =>
+                applyRecommendationHandoffWithRecipe({
+                  state: reopenComposer(current),
+                  handoff,
+                  surface: surfaceQuery.data,
+                }).state
+            );
+            // #324: 爆款复刻 chip opens paste-track sourcing journey (no scrape).
+            cancelViralOpenCliRead();
+            if (handoff.recipeChipId === 'viral_adapt') {
+              setViralAdaptJourney((current) =>
+                startViralAdaptJourney(current)
+              );
+            } else {
+              setViralAdaptJourney((current) =>
+                current.phase === 'idle'
+                  ? current
+                  : cancelViralAdaptJourney(current)
+              );
+            }
+          }}
+          onRefresh={product.refresh}
+          onStart={() => {
+            // A completed run can still be leaving its mutation state while the
+            // next-action card is already visible. Try now, then retry when that
+            // pending state clears so the merchant never lands on an enabled but
+            // unfocused prompt.
+            focusIntentAfterPrefillRef.current = true;
+            focusComposerIntentInput();
+          }}
+          state={product.state}
+        />
+      </section>
+
+      {/* Activity Shelf — D-126. Collapsed with 建议行 in Active (P0-1). */}
       {!shelfCollapsed ? <DashboardContinueSection /> : null}
     </WorkbenchShellRoot>
   );

@@ -3987,5 +3987,12 @@
   "experience_correction_fact_label": "Shop fact",
   "experience_correction_task_label": "This run only",
   "experience_correction_fact_body": "This will be kept as shop experience for later creations.",
-  "experience_correction_task_body": "This applies only to the current task, not long-term experience."
+  "experience_correction_task_body": "This applies only to the current task, not long-term experience.",
+  "agent_frame_stage_narrative": "Narrative",
+  "agent_frame_stage_decision": "Decision",
+  "agent_frame_stage_plan": "Plan",
+  "agent_frame_stage_result": "Result",
+  "agent_frame_stage_task": "Task",
+  "agent_frame_stage_memory": "Experience",
+  "composer_generation_running": "Generating…"
 }

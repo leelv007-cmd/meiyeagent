@@ -92,25 +92,17 @@ test('the greeting is its own export and no panel rides along with it', () => {
 });
 
 /**
- * D-164① supersedes the order this test used to hold.
+ * R-1 (gap-remediation-plan 2026-08-02) supersedes D-164① ordering.
  *
- * It read `Composer < DashboardHomeSurface`, on the grounds of PRODUCT.md 原则
- * 1「Composer 永远是唯一主轴，任何面板不与它竞争视觉重心」— the recommendation
- * panel had been pushed below the whole Composer cluster because, empty, it
- * pushed the input off the first screen. D-164① settles the page as 三段
- * 自上而下: 提议 → 创作 → 继续. The first question a shop owner arrives with is
- * "what should I post today", not "what shall I type".
- *
- * 原则 1 survives in the form the design draft rules for it (docs/tickets/261
- * `01-ia-three-sections.md` §3): keep D-164's order and hold the Composer's
- * weight by compressing 段① on narrow screens, never by reordering the page.
- * That half is enforced where it is observable — in the mobile e2e journey, not
- * in source order — so this test now holds the order alone.
+ * Spec §2.4 Idle order: 问候 → 分段器 → Composer → 建议行 → Shelf.
+ * D-164① had 提议 → 创作 → 继续; the gap remediation plan moves suggestions
+ * under the Composer main axis so first paint leads with creation.
  */
-test('the workbench opens 问候语 → 提议 → 创作 → 继续', () => {
+test('the workbench opens 问候语 → 分段器 → 创作 → 建议 → 继续', () => {
   const home = readSource('src/product/composer/composer-home.tsx');
 
   const greeting = home.indexOf('<DashboardHomeGreeting');
+  const segmenter = home.indexOf('<ComposerCreationModeSegment');
   const proposal = home.indexOf('data-testid="dashboard-section-proposal"');
   const create = home.indexOf('data-testid="dashboard-section-create"');
   const continued = home.indexOf('<DashboardContinueSection');
@@ -118,28 +110,31 @@ test('the workbench opens 问候语 → 提议 → 创作 → 继续', () => {
   const recommendations = home.indexOf('<DashboardHomeSurface');
 
   assert.ok(greeting > -1, 'the workbench renders the greeting');
-  assert.ok(proposal > -1, 'D-164①: 段① 提议位 is a named section');
-  assert.ok(create > -1, 'D-164①: 段② 创作面 is a named section');
-  assert.ok(continued > -1, 'D-164①: 段③ 继续上次工作 is a named section');
   assert.ok(
-    greeting < proposal,
+    segmenter > -1,
+    'R-1: creation-mode segmenter is a first-screen control'
+  );
+  assert.ok(proposal > -1, '建议行 is a named section');
+  assert.ok(create > -1, '创作面 is a named section');
+  assert.ok(continued > -1, 'Shelf / 继续上次工作 is present');
+  assert.ok(
+    greeting < segmenter,
     'DESIGN.md §3: the greeting is the page opening'
   );
   assert.ok(
-    proposal < create && create < continued,
-    'D-164①: 提议 → 创作 → 继续'
+    segmenter < create && create < proposal && proposal < continued,
+    'R-1: 问候 → 分段器 → Composer → 建议行 → Shelf'
   );
 
   // The sections are the page's skeleton, so each one has to actually contain
-  // the surface it is named for — three empty <section>s in the right order
-  // would satisfy the assertions above and mean nothing.
+  // the surface it is named for — empty markers in the right order mean nothing.
   assert.ok(
-    proposal < recommendations && recommendations < create,
-    'D-164①: 段① holds the recommendation surface'
+    create < composer && composer < proposal,
+    'R-1: 创作面 holds Composer above the suggestion row'
   );
   assert.ok(
-    create < composer && composer < continued,
-    'D-164①: 段② holds the creation axis'
+    proposal < recommendations && recommendations < continued,
+    'R-1: 建议行 holds the recommendation surface below Composer'
   );
 });
 

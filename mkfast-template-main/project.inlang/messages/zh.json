@@ -3987,5 +3987,12 @@
   "experience_correction_fact_label": "记为门店事实",
   "experience_correction_task_label": "只作用本次任务",
   "experience_correction_fact_body": "这条会写进门店经验，之后创作都会参考。",
-  "experience_correction_task_body": "这条只影响当前任务，不会改长期经验。"
+  "experience_correction_task_body": "这条只影响当前任务，不会改长期经验。",
+  "agent_frame_stage_narrative": "叙述",
+  "agent_frame_stage_decision": "决策",
+  "agent_frame_stage_plan": "计划",
+  "agent_frame_stage_result": "结果",
+  "agent_frame_stage_task": "任务",
+  "agent_frame_stage_memory": "经验",
+  "composer_generation_running": "正在生成…"
 }
