@@ -44,6 +44,13 @@ export const COMPOSER_TIMELINE_TURN_KINDS = [
   'delivery',
   'report',
   'terminal',
+  /**
+   * L3-3 / D5: task-in experience surfaces (render-only, like `stages`).
+   * Maps to AgentFrame memory family.
+   */
+  'experience_basis',
+  'experience_sediment',
+  'experience_correction',
 ] as const;
 
 export type ComposerTimelineTurnKind =
@@ -84,15 +91,14 @@ void _assertSessionTurnKindsExhaustive;
 /**
  * Resolve the AgentFrame family for a timeline turn kind.
  *
- * Mapping (progressive, P1-01 base + P1-05 interrupt + P1-07 note plan):
+ * Mapping (P1-01 base + P1-05 interrupt + P1-07 note plan + L3-3 memory):
  * - merchant / route_notice / stage(s) / report → narrative
  * - question → decision (补问)
  * - execution_confirm → decision (付费媒体执行确认 interrupt；DecisionFrame 承载)
  * - note_plan → plan (多页大纲 + 配图状态 + 逐页重生)
  * - candidate / delivery → result
  * - terminal → task (cancelled / leave-recover outcomes)
- *
- * memory stays registered for progressive mapping (memory proposals / P2).
+ * - experience_basis / experience_sediment / experience_correction → memory
  */
 export function resolveAgentFrameKind(
   turnKind: ComposerTimelineTurnKind
@@ -114,6 +120,10 @@ export function resolveAgentFrameKind(
       return 'result';
     case 'terminal':
       return 'task';
+    case 'experience_basis':
+    case 'experience_sediment':
+    case 'experience_correction':
+      return 'memory';
   }
 }
 

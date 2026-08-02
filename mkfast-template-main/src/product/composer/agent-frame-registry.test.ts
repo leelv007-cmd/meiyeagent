@@ -39,7 +39,7 @@ test('every timeline turn kind (incl. stages fold) maps through the registry', (
   }
 });
 
-test('progressive mapping matches the P1-01/P1-07 document-timeline grammar', () => {
+test('progressive mapping matches the P1-01/P1-07/L3-3 document-timeline grammar', () => {
   const expected: Record<string, AgentFrameKind> = {
     merchant: 'narrative',
     route_notice: 'narrative',
@@ -52,6 +52,9 @@ test('progressive mapping matches the P1-01/P1-07 document-timeline grammar', ()
     candidate: 'result',
     delivery: 'result',
     terminal: 'task',
+    experience_basis: 'memory',
+    experience_sediment: 'memory',
+    experience_correction: 'memory',
   };
   for (const [turnKind, frameKind] of Object.entries(expected)) {
     assert.equal(
@@ -63,7 +66,7 @@ test('progressive mapping matches the P1-01/P1-07 document-timeline grammar', ()
   }
 });
 
-test('plan family is claimed by note_plan; memory stays unclaimed', () => {
+test('plan family is claimed by note_plan; memory is claimed by experience surfaces', () => {
   assert.ok(AGENT_FRAME_KINDS.includes('plan'));
   assert.ok(AGENT_FRAME_KINDS.includes('memory'));
   const claimed = new Set(
@@ -72,8 +75,11 @@ test('plan family is claimed by note_plan; memory stays unclaimed', () => {
   // P1-07: multi-page note outline maps onto plan.
   assert.equal(claimed.has('plan'), true);
   assert.equal(resolveAgentFrameKind('note_plan'), 'plan');
-  // memory proposals remain progressive (no turn producer yet).
-  assert.equal(claimed.has('memory'), false);
+  // L3-3: experience surfaces claim the memory family.
+  assert.equal(claimed.has('memory'), true);
+  assert.equal(resolveAgentFrameKind('experience_basis'), 'memory');
+  assert.equal(resolveAgentFrameKind('experience_sediment'), 'memory');
+  assert.equal(resolveAgentFrameKind('experience_correction'), 'memory');
 });
 
 test('session turn kind list is exhaustive over ComposerTurn kind (compile + runtime)', () => {

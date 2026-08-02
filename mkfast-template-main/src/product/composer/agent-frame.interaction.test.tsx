@@ -154,4 +154,27 @@ describe('AgentFrame registry document timeline', () => {
     expect(frame.className).toMatch(/relative/);
     expect(frame.className).toMatch(/z-40/);
   });
+
+  it('renders document-timeline rail + nodes in the conversation tree (L3-3)', () => {
+    render(
+      <ComposerConversation
+        onOpenDelivery={() => {}}
+        session={withStages()}
+        stream={emptyStream}
+      />
+    );
+
+    const conversation = screen.getByTestId('composer-conversation');
+    expect(
+      conversation.querySelector('[data-testid="meiye-document-timeline-rail"]')
+    ).not.toBeNull();
+    const nodes = conversation.querySelectorAll(
+      '[data-testid="meiye-agent-frame-node"]'
+    );
+    expect(nodes.length).toBeGreaterThanOrEqual(2);
+    // Stage label is present for at least one frame family.
+    expect(
+      conversation.querySelector('[data-testid^="agent-frame-stage-"]')
+    ).not.toBeNull();
+  });
 });
