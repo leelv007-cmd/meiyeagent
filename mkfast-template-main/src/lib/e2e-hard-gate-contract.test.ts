@@ -159,9 +159,25 @@ test('the delivery helper centers the exact card before a real Playwright click'
   assert.doesNotMatch(helper, /force:\s*true/u);
   assert.match(
     helper,
-    /\.evaluate\([\s\S]*?scrollIntoView\([\s\S]*?await deliveryCard\.click\(\)/u,
+    /\.evaluate\([\s\S]*?scrollIntoView\([\s\S]*?await deliveryCard\.click\(\{ timeout: 15_000 \}\)/u,
     'DOM centering must precede a normal actionability-checked Playwright click'
   );
+});
+
+test('the P2 delivery-or-failure wait observes both branches independently', () => {
+  const spec = readFileSync(
+    join(E2E_ROOT, 'specs/p2-browser-closure.spec.ts'),
+    'utf8'
+  );
+  const helper = spec.slice(
+    spec.indexOf('async function waitForDeliveryOrFailure'),
+    spec.indexOf('async function submitImageTextAllowingTerminalFailure')
+  );
+
+  assert.doesNotMatch(helper, /\.or\(failure\)\.first\(\)/u);
+  assert.match(helper, /delivery\.isVisible\(\)/u);
+  assert.match(helper, /failure\.nth\(index\)\.isVisible\(\)/u);
+  assert.match(helper, /\.toPass\(\s*\{\s*timeout:\s*180_000/u);
 });
 
 test('no browser test or fixture listens for the retired creative-work commands', () => {

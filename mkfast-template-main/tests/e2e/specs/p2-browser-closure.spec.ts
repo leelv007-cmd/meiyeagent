@@ -170,27 +170,37 @@ async function tiptapPlainText(editor: Locator) {
   );
 }
 
-async function waitForDeliveryOrFailure(page: Page, workId?: string) {
-  const delivery = workId
-    ? page.locator(
-        '[data-testid="composer-delivery-card"][data-work-id="' + workId + '"]'
-      )
-    : page.getByTestId('composer-delivery-card');
+async function waitForDeliveryOrFailure(page: Page, workId: string) {
+  const delivery = page.locator(
+    '[data-testid="composer-delivery-card"][data-work-id="' + workId + '"]'
+  );
   const failure = page.locator(
     '[data-testid="composer-report-card"], [data-testid="composer-terminal-outcome"][data-outcome="failed"]'
   );
-  await expect(delivery.or(failure).first()).toBeVisible({ timeout: 180_000 });
+  await expect(async () => {
+    const failureCount = await failure.count();
+    const failureVisibility = await Promise.all(
+      Array.from({ length: failureCount }, (_, index) =>
+        failure.nth(index).isVisible()
+      )
+    );
+    expect(
+      (await delivery.isVisible()) || failureVisibility.some(Boolean)
+    ).toBe(true);
+  }, 'the current work must reach delivery or a visible terminal failure').toPass(
+    { timeout: 180_000 }
+  );
+  let failureText: string | undefined;
+  for (let index = 0; index < (await failure.count()); index += 1) {
+    const candidate = failure.nth(index);
+    if (await candidate.isVisible()) {
+      failureText = (await candidate.textContent())?.trim();
+      break;
+    }
+  }
   return {
-    deliveryVisible: await delivery
-      .first()
-      .isVisible()
-      .catch(() => false),
-    failureText: (
-      await failure
-        .first()
-        .textContent()
-        .catch(() => null)
-    )?.trim(),
+    deliveryVisible: await delivery.isVisible(),
+    failureText,
   };
 }
 
@@ -268,7 +278,7 @@ async function submitImageTextAllowingTerminalFailure(
     return { delivered: false, workId: workId! };
   }
   await callbacks.onRunStreaming?.();
-  const outcome = await waitForDeliveryOrFailure(page);
+  const outcome = await waitForDeliveryOrFailure(page, workId!);
   if (!outcome.deliveryVisible) {
     return { delivered: false, workId: workId! };
   }
@@ -639,7 +649,7 @@ test.describe('P2 direct Chromium closure (#320-#325)', () => {
     );
     await expect(executionConfirm).toBeVisible({ timeout: 60_000 });
     await executionConfirm.getByRole('button', { name: '确认执行' }).click();
-    const outcome = await waitForDeliveryOrFailure(page, coverWorkId);
+    const outcome = await waitForDeliveryOrFailure(page, coverWorkId!);
     soft(
       outcome.deliveryVisible,
       'fixture Chromium style-role run must reach a delivery card; terminal=' +

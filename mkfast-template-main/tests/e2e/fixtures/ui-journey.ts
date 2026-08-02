@@ -22,7 +22,7 @@ export async function clickComposerDeliveryCard(
   await deliveryCard.evaluate((node) => {
     node.scrollIntoView({ block: 'center', inline: 'nearest' });
   });
-  await deliveryCard.click();
+  await deliveryCard.click({ timeout: 15_000 });
 }
 
 export type JourneyContract = {
