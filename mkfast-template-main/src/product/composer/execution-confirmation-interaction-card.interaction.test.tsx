@@ -59,6 +59,38 @@ it('acks the mounted read-only card and submits approval', async () => {
   expect(onSubmit).toHaveBeenCalledWith({ kind: 'approved' });
 });
 
+it('renders note outline summary rows when frozen.outline is present', () => {
+  render(
+    <ExecutionConfirmationInteractionCard
+      onRendererReady={async () => undefined}
+      onSubmit={async () => undefined}
+      request={{
+        ...REQUEST,
+        frozen: {
+          ...REQUEST.frozen,
+          outline: {
+            pageCount: 3,
+            pages: [
+              { order: 1, title: '封面：夏日控油' },
+              { order: 2, title: '痛点：油头困扰' },
+              { order: 3, title: '预约引导' },
+            ],
+          },
+        },
+      }}
+    />
+  );
+
+  expect(
+    screen.getByTestId('execution-confirmation-outline')
+  ).toHaveTextContent('共 3 页');
+  const rows = screen.getAllByTestId('execution-confirmation-outline-row');
+  expect(rows).toHaveLength(3);
+  expect(rows[0]).toHaveTextContent('封面：夏日控油');
+  expect(rows[1]).toHaveTextContent('痛点：油头困扰');
+  expect(rows[2]).toHaveTextContent('预约引导');
+});
+
 it('rejects without inventing feedback inside the frozen card', async () => {
   const user = userEvent.setup();
   const onSubmit = vi.fn(async () => undefined);

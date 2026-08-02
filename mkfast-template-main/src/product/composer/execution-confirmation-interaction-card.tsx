@@ -68,6 +68,30 @@ export function ExecutionConfirmationInteractionCard({
           </div>
         ))}
       </dl>
+      {request.frozen.outline ? (
+        <div
+          className="mt-4 space-y-2"
+          data-testid="execution-confirmation-outline"
+        >
+          <p className="text-foreground text-sm font-medium">
+            大纲摘要（共 {request.frozen.outline.pageCount} 页）
+          </p>
+          <ol className="space-y-1">
+            {request.frozen.outline.pages.map((page) => (
+              <li
+                className="text-muted flex gap-2 text-sm"
+                data-testid="execution-confirmation-outline-row"
+                key={page.order}
+              >
+                <span className="text-foreground shrink-0">
+                  第 {page.order} 页
+                </span>
+                <span className="text-foreground truncate">{page.title}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
       <div className="mt-4 flex flex-wrap gap-2">
         <Button
           disabled={pending}
