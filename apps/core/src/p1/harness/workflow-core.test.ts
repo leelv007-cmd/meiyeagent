@@ -2522,10 +2522,19 @@ test('a paid note snapshot waits for execution confirmation before page generati
         assert.equal(stage, 'execution_selection');
         assert.equal(question.response.field, 'execution_confirmation');
         assert.match(question.question, /开始生成/);
+        // L1-4: the note confirm card now freezes the outline (page count +
+        // titles) onto the confirmation authority so merchants see what the
+        // paid run will produce before approving.
         assert.deepEqual(question.executionConfirmationAuthority, {
           kind: 'external_action',
           revision: 'execution-external-action/v1',
+          outline: question.executionConfirmationAuthority?.outline,
         });
+        assert.ok(
+          (question.executionConfirmationAuthority?.outline?.pageCount ?? 0) >
+            0,
+          'note confirmation carries the frozen outline summary',
+        );
         return approvePaidGenerationConfirmation(question);
       },
       async recordTrace() {},
