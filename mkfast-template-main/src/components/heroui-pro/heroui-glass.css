@@ -270,14 +270,14 @@
 
 /* narrative — plain text / light porcelain, muted node */
 .meiye-agent-frame--narrative > .meiye-agent-frame__node,
-[data-agent-frame='narrative'] > .meiye-agent-frame__node {
+[data-agent-frame="narrative"] > .meiye-agent-frame__node {
   border-color: color-mix(in oklch, var(--muted-foreground) 45%, transparent);
   background: color-mix(in oklch, var(--muted) 55%, var(--background));
 }
 
 /* decision — rose-gold node + soft left edge (confirm / 补问) */
 .meiye-agent-frame--decision > .meiye-agent-frame__node,
-[data-agent-frame='decision'] > .meiye-agent-frame__node {
+[data-agent-frame="decision"] > .meiye-agent-frame__node {
   border-color: oklch(0.63 0.13 18 / 0.65);
   background: oklch(0.72 0.1 18);
   box-shadow:
@@ -286,27 +286,27 @@
 }
 
 .meiye-agent-frame--decision > .meiye-agent-frame__body,
-[data-agent-frame='decision'] > .meiye-agent-frame__body {
+[data-agent-frame="decision"] > .meiye-agent-frame__body {
   border-left: 2px solid oklch(0.63 0.13 18 / 0.35);
   padding-left: 0.75rem;
 }
 
 /* plan — indigo-tinted node (outline / multi-page) */
 .meiye-agent-frame--plan > .meiye-agent-frame__node,
-[data-agent-frame='plan'] > .meiye-agent-frame__node {
+[data-agent-frame="plan"] > .meiye-agent-frame__node {
   border-color: oklch(0.55 0.1 260 / 0.55);
   background: oklch(0.78 0.06 260);
 }
 
 .meiye-agent-frame--plan > .meiye-agent-frame__body,
-[data-agent-frame='plan'] > .meiye-agent-frame__body {
+[data-agent-frame="plan"] > .meiye-agent-frame__body {
   border-left: 2px solid oklch(0.55 0.1 260 / 0.25);
   padding-left: 0.75rem;
 }
 
 /* result — heavier porcelain card edge (candidate / delivery) */
 .meiye-agent-frame--result > .meiye-agent-frame__node,
-[data-agent-frame='result'] > .meiye-agent-frame__node {
+[data-agent-frame="result"] > .meiye-agent-frame__node {
   border-color: color-mix(in oklch, var(--foreground) 35%, transparent);
   background: var(--background);
   box-shadow:
@@ -315,26 +315,26 @@
 }
 
 .meiye-agent-frame--result > .meiye-agent-frame__body > *,
-[data-agent-frame='result'] > .meiye-agent-frame__body > * {
+[data-agent-frame="result"] > .meiye-agent-frame__body > * {
   box-shadow: 0 1px 0 color-mix(in oklch, var(--foreground) 6%, transparent);
 }
 
 /* task — amber node (terminal / leave-recover) */
 .meiye-agent-frame--task > .meiye-agent-frame__node,
-[data-agent-frame='task'] > .meiye-agent-frame__node {
+[data-agent-frame="task"] > .meiye-agent-frame__node {
   border-color: oklch(0.7 0.12 75 / 0.55);
   background: oklch(0.86 0.08 75);
 }
 
 /* memory — soft teal node (experience surfaces) */
 .meiye-agent-frame--memory > .meiye-agent-frame__node,
-[data-agent-frame='memory'] > .meiye-agent-frame__node {
+[data-agent-frame="memory"] > .meiye-agent-frame__node {
   border-color: oklch(0.6 0.08 190 / 0.5);
   background: oklch(0.82 0.05 190);
 }
 
 .meiye-agent-frame--memory > .meiye-agent-frame__body,
-[data-agent-frame='memory'] > .meiye-agent-frame__body {
+[data-agent-frame="memory"] > .meiye-agent-frame__body {
   border-left: 2px dashed oklch(0.6 0.08 190 / 0.35);
   padding-left: 0.75rem;
 }

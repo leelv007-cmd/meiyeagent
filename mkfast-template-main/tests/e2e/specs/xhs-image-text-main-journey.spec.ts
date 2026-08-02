@@ -17,7 +17,10 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import { seedComposerInlineAuthorize, seedConfirmedStore } from '../fixtures/product';
+import {
+  seedComposerInlineAuthorize,
+  seedConfirmedStore,
+} from '../fixtures/product';
 import {
   JOURNEY_CONTRACTS,
   submitComposerJourney,
@@ -63,10 +66,9 @@ test.describe('XHS image-text main journey (production gate)', () => {
 
     const workspace = page.getByTestId('result-image-text-workspace');
     await expect(workspace.getByTestId('image-worksurface')).toBeVisible();
-    await expect(workspace.getByTestId('object-workspace-shell')).toHaveAttribute(
-      'data-carrier',
-      'note'
-    );
+    await expect(
+      workspace.getByTestId('object-workspace-shell')
+    ).toHaveAttribute('data-carrier', 'note');
     await expect(workspace.getByTestId('note-object-workspace')).toBeVisible();
     await expect(workspace.getByTestId('copy-field-body')).toContainText(/\S/u);
   });
