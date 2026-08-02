@@ -220,6 +220,8 @@ export function WorkbenchStickyComposerClearance({
   );
 }
 
+export type WorkbenchInspectorPhase = 'idle' | 'running' | 'delivered';
+
 export type WorkbenchInspectorPanelProps = {
   /** Optional delivery summary when a run has finished. */
   title?: string;
@@ -228,12 +230,20 @@ export type WorkbenchInspectorPanelProps = {
   onOpenFullWorkspace?: () => void;
   className?: string;
   emptyLabel?: string;
+  /** L3-5: phase-aware right rail (idle empty / running progress / delivered card). */
+  phase?: WorkbenchInspectorPhase;
+  /** Running: latest stage message. */
+  stageLabel?: string | null;
+  /** Running: short progress phrase. */
+  progressLabel?: string | null;
+  /** Delivered: platform label when known. */
+  platformLabel?: string | null;
 };
 
 /**
- * Minimal Result Inspector / context face for P1-01.
- * Full object workspace remains Result Center; this is the dual-column right
- * rail + mobile sheet content.
+ * Result Inspector / context face for the dual-column right rail (P1-01 + L3-5).
+ * Full object workspace remains Result Center; this surface is a phase-aware
+ * summary + gateway, not a second edit surface.
  */
 export function WorkbenchInspectorPanel({
   title = '上下文',
@@ -242,7 +252,14 @@ export function WorkbenchInspectorPanel({
   onOpenFullWorkspace,
   className,
   emptyLabel = '成品与依据会显示在这里',
+  phase = 'idle',
+  stageLabel = null,
+  progressLabel = null,
+  platformLabel = null,
 }: WorkbenchInspectorPanelProps) {
+  const delivered = phase === 'delivered' && Boolean(workId || summary);
+  const running = phase === 'running';
+
   return (
     <aside
       aria-label={title}
@@ -252,35 +269,104 @@ export function WorkbenchInspectorPanel({
       )}
       data-testid="workbench-result-inspector"
       data-has-work={workId ? 'true' : 'false'}
+      data-inspector-phase={phase}
     >
       <header className="flex items-center justify-between gap-2">
-        <h2 className="text-foreground text-sm font-medium">{title}</h2>
-        {workId && onOpenFullWorkspace ? (
-          <button
-            className="text-muted hover:text-foreground text-xs font-medium underline-offset-4 hover:underline"
-            data-testid="workbench-inspector-open-full"
-            onClick={onOpenFullWorkspace}
-            type="button"
-          >
-            打开对象工作区
-          </button>
-        ) : null}
+        <h2 className="text-foreground text-sm font-medium">
+          {delivered ? '本次成品' : running ? '进行中' : title}
+        </h2>
       </header>
-      {summary ? (
-        <p
-          className="text-foreground text-sm leading-relaxed"
-          data-testid="workbench-inspector-summary"
+
+      {running ? (
+        <div
+          className="flex flex-col gap-2"
+          data-testid="workbench-inspector-running"
         >
-          {summary}
-        </p>
-      ) : (
-        <p
-          className="text-muted text-sm"
-          data-testid="workbench-inspector-empty"
+          {stageLabel ? (
+            <p
+              className="text-foreground text-sm leading-relaxed"
+              data-testid="workbench-inspector-stage"
+            >
+              {stageLabel}
+            </p>
+          ) : null}
+          <p
+            className="text-muted text-xs"
+            data-testid="workbench-inspector-progress"
+          >
+            {progressLabel ?? '创作进行中'}
+          </p>
+        </div>
+      ) : null}
+
+      {delivered ? (
+        <div
+          className="flex flex-col gap-3"
+          data-testid="workbench-inspector-delivered"
         >
-          {emptyLabel}
-        </p>
-      )}
+          <div className="flex gap-3">
+            <div
+              aria-hidden="true"
+              className="bg-muted/40 border-border size-14 shrink-0 rounded-xl border"
+              data-testid="workbench-inspector-thumb"
+            />
+            <div className="min-w-0 flex-1 space-y-1">
+              {summary ? (
+                <p
+                  className="text-foreground line-clamp-3 text-sm leading-relaxed"
+                  data-testid="workbench-inspector-summary"
+                >
+                  {summary}
+                </p>
+              ) : (
+                <p
+                  className="text-muted text-sm"
+                  data-testid="workbench-inspector-summary"
+                >
+                  成品已就绪
+                </p>
+              )}
+              {platformLabel ? (
+                <p
+                  className="text-muted text-xs"
+                  data-testid="workbench-inspector-platform"
+                >
+                  {platformLabel}
+                </p>
+              ) : null}
+            </div>
+          </div>
+          {onOpenFullWorkspace && workId ? (
+            <button
+              className="bg-primary text-primary-foreground hover:opacity-90 inline-flex min-h-10 items-center justify-center rounded-full px-4 text-sm font-medium transition-opacity"
+              data-testid="workbench-inspector-open-full"
+              onClick={onOpenFullWorkspace}
+              type="button"
+            >
+              进入对象工作区
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!running && !delivered ? (
+        summary ? (
+          <p
+            className="text-foreground text-sm leading-relaxed"
+            data-testid="workbench-inspector-summary"
+          >
+            {summary}
+          </p>
+        ) : (
+          <p
+            className="text-muted text-sm"
+            data-testid="workbench-inspector-empty"
+          >
+            {emptyLabel}
+          </p>
+        )
+      ) : null}
+
       {workId ? (
         <p
           className="text-muted mt-auto text-xs"

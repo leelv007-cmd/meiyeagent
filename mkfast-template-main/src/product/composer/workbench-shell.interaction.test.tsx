@@ -91,6 +91,56 @@ function ViewportWidthProbe({ override }: { override?: number }) {
   );
 }
 
+describe('L3-5 Result Inspector phase faces', () => {
+  it('shows delivered summary card + primary workspace gate', () => {
+    render(
+      <WorkbenchInspectorPanel
+        onOpenFullWorkspace={() => {}}
+        phase="delivered"
+        platformLabel="小红书"
+        summary="周末预约文案已就绪"
+        workId="work-1"
+      />
+    );
+    const panel = screen.getByTestId('workbench-result-inspector');
+    expect(panel).toHaveAttribute('data-inspector-phase', 'delivered');
+    expect(screen.getByTestId('workbench-inspector-delivered')).toBeTruthy();
+    expect(screen.getByTestId('workbench-inspector-summary')).toHaveTextContent(
+      '周末预约文案已就绪'
+    );
+    expect(
+      screen.getByTestId('workbench-inspector-platform')
+    ).toHaveTextContent('小红书');
+    expect(
+      screen.getByTestId('workbench-inspector-open-full')
+    ).toHaveTextContent('进入对象工作区');
+  });
+
+  it('shows running stage + progress', () => {
+    render(
+      <WorkbenchInspectorPanel
+        phase="running"
+        progressLabel="创作进行中"
+        stageLabel="正在读你的门店资料"
+      />
+    );
+    expect(screen.getByTestId('workbench-inspector-running')).toBeTruthy();
+    expect(screen.getByTestId('workbench-inspector-stage')).toHaveTextContent(
+      '正在读你的门店资料'
+    );
+    expect(
+      screen.getByTestId('workbench-inspector-progress')
+    ).toHaveTextContent('创作进行中');
+  });
+
+  it('keeps honest empty idle state', () => {
+    render(<WorkbenchInspectorPanel phase="idle" />);
+    expect(screen.getByTestId('workbench-inspector-empty')).toBeTruthy();
+    expect(screen.queryByTestId('workbench-inspector-delivered')).toBeNull();
+    expect(screen.queryByTestId('workbench-inspector-running')).toBeNull();
+  });
+});
+
 describe('P1-01 workbench shell host layout', () => {
   it('mounts dual column + sticky host under Active at ≥1240 (P1-1 / P1-2)', () => {
     render(<ShellProbe phase="running" width={1240} />);
