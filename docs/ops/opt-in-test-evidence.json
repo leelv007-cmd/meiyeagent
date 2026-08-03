@@ -48,8 +48,8 @@
     },
     "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
-      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
+      "verifiedAt": "0c20d9572291a32d8d980cb43f156337238ed5c3",
+      "note": "Re-verified 2026-08-03 at 0c20d957 against a fresh isolated business and DBOS pair after formal provision: 1/1 pass, 0 fail, 0 skip via tsx --test."
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
@@ -233,8 +233,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "c4772292c2f29207264243591c031dd928a5952e",
-      "note": "Re-verified 2026-08-03 at c4772292 against fresh meiye_ci_optin_core / meiye_ci_optin_dbos under run-core-persistence.sh (locale:compile + Core full): 3196 total, 3175 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0."
+      "verifiedAt": "0c20d9572291a32d8d980cb43f156337238ed5c3",
+      "note": "Re-verified 2026-08-03 at 0c20d957 against a fresh isolated business and DBOS pair after formal provision: 2/2 pass, 0 fail, 0 skip via tsx --test."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "green",
@@ -313,13 +313,13 @@
     },
     "mkfast-template-main/src/payment/plan-checkout-bindings.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
-      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 pair under the shared e2e lock: 2/2 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "0c20d9572291a32d8d980cb43f156337238ed5c3",
+      "note": "Re-verified 2026-08-03 at 0c20d957 against a freshly provisioned isolated business and DBOS pair: 1/1 pass, 0 fail, 0 skip via tsx --test."
     },
     "mkfast-template-main/src/payment/postgres-webhook-settlement.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
-      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 pair under the shared e2e lock: 2/2 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "0c20d9572291a32d8d980cb43f156337238ed5c3",
+      "note": "Re-verified 2026-08-03 at 0c20d957 against a freshly provisioned isolated business and DBOS pair: 1/1 pass, 0 fail, 0 skip via tsx --test."
     },
     "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
       "status": "green",
@@ -331,15 +331,20 @@
       "verifiedAt": "7bea375b7af3b9f4d432a5eee367cadec2e8c026",
       "note": "Re-verified 2026-08-02 at 7bea375b against the fresh isolated audit_p2_core_final_20260802 and audit_p2_core_final_dbos_20260802 pair under the shared e2e lock: Core 3096 total, 3075 pass, 0 fail, 21 explicit skips."
     },
+    "apps/core/src/p1/credit-billing/credit-plan-catalog.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "0c20d9572291a32d8d980cb43f156337238ed5c3",
+      "note": "Re-verified 2026-08-03 at 0c20d957 against a fresh isolated business and DBOS pair after formal provision: 1/1 pass, 0 fail, 0 skip via tsx --test."
+    },
     "apps/core/src/p1/credit-billing/credit-subscription-scheduler.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
-      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
+      "verifiedAt": "0c20d9572291a32d8d980cb43f156337238ed5c3",
+      "note": "Re-verified 2026-08-03 at 0c20d957 against a fresh isolated business and DBOS pair after formal provision: 3/3 pass, 0 fail, 0 skip via tsx --test."
     },
     "apps/core/src/p1/credit-billing/postgres-credit-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "ff6932bb8408200f80a61dcc7734dc678067f135",
-      "note": "Re-verified 2026-08-02 at ff6932bb (merged #298 CB-L1) against the fresh isolated meiye_298_merged_optin_20260802 and meiye_298_merged_optin_dbos_20260802 pair under the shared e2e lock: Core full 3187 total, 3166 pass, 0 fail, 21 explicit skips; assert-core-persistence-ran.mjs exit 0 (DBOS smoke and production media assembly join both executed)."
+      "verifiedAt": "0c20d9572291a32d8d980cb43f156337238ed5c3",
+      "note": "Re-verified 2026-08-03 at 0c20d957 against a fresh isolated business and DBOS pair after formal provision: 2/2 pass, 0 fail, 0 skip via tsx --test."
     },
     "apps/core/src/p1/harness/note-page-regeneration.postgres.test.ts": {
       "status": "green",
