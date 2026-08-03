@@ -7,6 +7,7 @@ import type { DiagnosticRun } from '@meiye/contracts';
 import type { DiagnosticRepository } from './diagnostics/repository.js';
 import { ProductService } from './product/product-service.js';
 import { MemoryProductRepository } from './product/repository.js';
+import { P1DomainError } from './p1/foundation/domain.js';
 import { createCoreServer } from './server.js';
 
 const diagnostics: DiagnosticRepository = {
@@ -71,6 +72,7 @@ test('Core regenerates an unsafe correlation id', async (t) => {
 
 test('Core lets only the trusted worker bootstrap a matching workspace', async (t) => {
   const calls: Array<{
+    idempotencyKey: string;
     ownerEmail: string;
     ownerName: string;
     ownerUserId: string;
@@ -112,6 +114,7 @@ test('Core lets only the trusted worker bootstrap a matching workspace', async (
   assert.equal(accepted.status, 200);
   assert.deepEqual(calls, [
     {
+      idempotencyKey: 'workspace-bootstrap:v1',
       ownerEmail: 'owner-new@example.test',
       ownerName: 'New owner',
       ownerUserId: 'owner-new',
@@ -119,6 +122,44 @@ test('Core lets only the trusted worker bootstrap a matching workspace', async (
       workspaceName: 'New workspace',
     },
   ]);
+
+  let conflict = true;
+  const conflictServer = createCoreServer({
+    diagnosticRepository: diagnostics,
+    serviceToken: 'test-service-token',
+    workspaceBootstrapper: {
+      async bootstrap(input) {
+        if (conflict) {
+          conflict = false;
+          throw new P1DomainError(
+            'IDEMPOTENCY_CONFLICT',
+            'The bootstrap idempotency key was already used for different facts.'
+          );
+        }
+        return { created: false };
+      },
+    },
+  });
+  conflictServer.listen(0, '127.0.0.1');
+  await once(conflictServer, 'listening');
+  t.after(() => conflictServer.close());
+  const conflictPort = (conflictServer.address() as AddressInfo).port;
+  const conflictResponse = await fetch(
+    `http://127.0.0.1:${conflictPort}/v1/workspaces/workspace-new/bootstrap`,
+    {
+      body: JSON.stringify({
+        name: 'New workspace',
+        owner: { email: 'owner-new@example.test', name: 'New owner' },
+      }),
+      headers,
+      method: 'POST',
+    }
+  );
+  assert.equal(conflictResponse.status, 409);
+  assert.equal(
+    ((await conflictResponse.json()) as { error: { code: string } }).error.code,
+    'IDEMPOTENCY_CONFLICT'
+  );
 
   const rejected = await fetch(url, {
     body: JSON.stringify({

@@ -554,7 +554,17 @@ test(
         });
         const subscription = await store.get(terminalSubscriptionId);
         assert.equal(subscription?.status, 'active');
-        assert.deepEqual(subscription?.scheduledChanges, []);
+        if (lifecycle === 'cancel_at_period_end') {
+          assert.deepEqual(subscription?.scheduledChanges, [
+            {
+              effectiveCycle: 2,
+              interval: 'monthly',
+              tier: 'growth',
+            },
+          ]);
+        } else {
+          assert.deepEqual(subscription?.scheduledChanges, []);
+        }
       }
     } finally {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`).catch(() => undefined);

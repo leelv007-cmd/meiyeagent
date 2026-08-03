@@ -18,6 +18,7 @@ export const CREDIT_SUBSCRIPTION_GRACE_PERIOD_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export type CreditSubscriptionInterval = 'single_month' | 'monthly' | 'yearly';
 export type CreditSubscriptionStatus = 'active' | 'past_due' | 'cancelled';
+export type CreditSettlementStatus = 'applied' | 'duplicate' | 'ignored_stale';
 
 /** Immutable plan facts recorded with a paid billing period. */
 export interface CreditSubscriptionCoverage {
@@ -67,6 +68,8 @@ export interface CreditSubscription {
   cancelledAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Settlement receipt outcome for the most recent payment command result. */
+  settlementStatus?: CreditSettlementStatus;
 }
 
 export interface CreditSubscriptionInput {
@@ -112,6 +115,8 @@ export interface CreditSubscriptionStore {
     at: string;
   }): Promise<CreditSubscription>;
   resume(subscriptionId: string, at: string): Promise<CreditSubscription>;
+  /** Reverse only a scheduled end-of-period cancellation. */
+  uncancel(subscriptionId: string, at: string): Promise<CreditSubscription>;
   markPastDue(subscriptionId: string, at: string): Promise<CreditSubscription>;
   cancelPastDue(subscriptionId: string, at: string): Promise<CreditSubscription>;
   cancel(subscriptionId: string, at: string): Promise<CreditSubscription>;
@@ -642,6 +647,21 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
     return structuredClone(subscription);
   }
 
+  async uncancel(subscriptionId: string, at: string) {
+    const subscription = this.require(subscriptionId);
+    if (subscription.status === 'cancelled') {
+      throw new Error('Cancelled credit subscriptions cannot be uncanceled.');
+    }
+    subscription.scheduledChanges = [];
+    subscription.pendingTier = null;
+    subscription.pendingInterval = null;
+    subscription.pendingEffectiveCycle = null;
+    subscription.status = 'active';
+    subscription.pastDueAt = null;
+    subscription.updatedAt = iso(at);
+    return structuredClone(subscription);
+  }
+
   async markPastDue(subscriptionId: string, at: string) {
     const subscription = this.require(subscriptionId);
     if (subscription.status === 'active') {
@@ -726,14 +746,24 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
           input.payloadHash,
           input.compatiblePayloadHashes,
         );
-        return existing.result ? structuredClone(existing.result) : null;
+        return existing.result
+          ? withSettlementStatus(structuredClone(existing.result), 'duplicate')
+          : null;
       }
       const result = await operation(this);
+      const recorded = result
+        ? withSettlementStatus(
+            result,
+            result.settlementStatus === 'ignored_stale'
+              ? 'ignored_stale'
+              : 'applied',
+          )
+        : null;
       this.paymentEvents.set(key, {
         payloadHash: input.payloadHash,
-        result: result ? structuredClone(result) : null,
+        result: recorded ? structuredClone(recorded) : null,
       });
-      return result ? structuredClone(result) : null;
+      return recorded ? structuredClone(recorded) : null;
     } catch (error) {
       if (error instanceof DeferredCreditPaymentEvent) return null;
       throw error;
@@ -1198,6 +1228,26 @@ export class PostgresCreditSubscriptionStore
     return subscriptionFromRow(result.rows[0]);
   }
 
+  async uncancel(subscriptionId: string, at: string) {
+    const result = await this.database.query<CreditSubscriptionRow>(
+      `UPDATE p1_credit_subscriptions
+          SET status = 'active',
+              past_due_at = NULL,
+              pending_tier = NULL,
+              pending_interval = NULL,
+              pending_effective_cycle = NULL,
+              scheduled_changes = '[]'::jsonb,
+              updated_at = $2
+        WHERE id = $1 AND status <> 'cancelled'
+        RETURNING *`,
+      [subscriptionId, iso(at)],
+    );
+    if (!result.rows[0]) {
+      throw new Error(`Credit subscription ${subscriptionId} was not found.`);
+    }
+    return subscriptionFromRow(result.rows[0]);
+  }
+
   async markPastDue(subscriptionId: string, at: string) {
     const result = await this.database.query<CreditSubscriptionRow>(
       `UPDATE p1_credit_subscriptions
@@ -1314,20 +1364,31 @@ export class PostgresCreditSubscriptionStore
           input.compatiblePayloadHashes,
         );
         await client.query('COMMIT');
-        return creditPaymentEventResult(receipt.result_json);
+        const replayed = creditPaymentEventResult(receipt.result_json);
+        return replayed
+          ? withSettlementStatus(replayed, 'duplicate')
+          : null;
       }
 
       const result = await operation(
         new PostgresCreditSubscriptionStore(this.pool, client),
       );
+      const recorded = result
+        ? withSettlementStatus(
+            result,
+            result.settlementStatus === 'ignored_stale'
+              ? 'ignored_stale'
+              : 'applied',
+          )
+        : null;
       await client.query(
         `UPDATE p1_credit_payment_events
             SET result_json = $3::jsonb, completed = true
           WHERE workspace_id = $1 AND payment_event_id = $2`,
-        [input.workspaceId, input.paymentEventId, JSON.stringify(result)],
+        [input.workspaceId, input.paymentEventId, JSON.stringify(recorded)],
       );
       await client.query('COMMIT');
-      return result;
+      return recorded;
     } catch (error) {
       await client.query('ROLLBACK');
       if (error instanceof DeferredCreditPaymentEvent) return null;
@@ -1369,6 +1430,13 @@ export class PostgresCreditSubscriptionStore
     while (coveredCycles.has(paidThroughCycle)) paidThroughCycle += 1;
     return paidThroughCycle;
   }
+}
+
+function withSettlementStatus(
+  subscription: CreditSubscription,
+  settlementStatus: CreditSettlementStatus,
+): CreditSubscription {
+  return { ...subscription, settlementStatus };
 }
 
 function assertPaymentEventInput(input: {

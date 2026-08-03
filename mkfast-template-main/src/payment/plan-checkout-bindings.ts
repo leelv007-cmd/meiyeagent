@@ -35,6 +35,66 @@ interface BindingRow extends Record<string, unknown> {
 export class PostgresPlanCheckoutBindingStore {
   constructor(private readonly db: ReturnType<typeof getDatabase>) {}
 
+  /**
+   * Execute the Waffo single-month period-end cancel behind a durable
+   * subscription+period checkpoint. A pending row is retried after a failed
+   * provider call; a completed row is never called again on delivery replay.
+   */
+  async cancelWaffoSubscriptionAtPeriodEnd(input: {
+    cancel: () => Promise<void>;
+    periodStartsAt: string | null;
+    subscriptionId: string;
+  }) {
+    const subscriptionId = input.subscriptionId.trim();
+    const periodStartsAt = input.periodStartsAt?.trim() ?? '';
+    if (!subscriptionId || !periodStartsAt) {
+      throw new Error(
+        'Waffo cancellation checkpoint requires subscriptionId and periodStartsAt.'
+      );
+    }
+    if (!Number.isFinite(Date.parse(periodStartsAt))) {
+      throw new Error(
+        'Waffo cancellation periodStartsAt must be an ISO timestamp.'
+      );
+    }
+
+    await this.db.transaction(async (tx) => {
+      const inserted = await tx.execute<{
+        status: 'pending' | 'completed';
+      }>(sql`
+        INSERT INTO waffo_subscription_cancellation_receipts
+          (subscription_id, period_starts_at, status, requested_at, updated_at)
+        VALUES (${subscriptionId}, ${periodStartsAt}, 'pending', now(), now())
+        ON CONFLICT (subscription_id, period_starts_at) DO NOTHING
+        RETURNING status
+      `);
+      const receipt = inserted[0]
+        ? inserted[0]
+        : (
+            await tx.execute<{ status: 'pending' | 'completed' }>(sql`
+              SELECT status
+              FROM waffo_subscription_cancellation_receipts
+              WHERE subscription_id = ${subscriptionId}
+                AND period_starts_at = ${periodStartsAt}
+              FOR UPDATE
+            `)
+          )[0];
+      if (!receipt) {
+        throw new Error('Waffo cancellation checkpoint was not found.');
+      }
+      if (receipt.status === 'completed') return;
+
+      await input.cancel();
+      await tx.execute(sql`
+        UPDATE waffo_subscription_cancellation_receipts
+        SET status = 'completed', completed_at = now(), updated_at = now()
+        WHERE subscription_id = ${subscriptionId}
+          AND period_starts_at = ${periodStartsAt}
+          AND status = 'pending'
+      `);
+    });
+  }
+
   async createOwnerBinding(input: {
     interval?: PlanInterval | 'lifetime' | null;
     ownerUserId: string;
@@ -227,7 +287,7 @@ export class PostgresPlanCheckoutBindingStore {
     subscriptionId?: string | null;
   }) {
     if (input.bindingId) {
-      await this.db.execute(sql`
+      const rows = await this.db.execute<IdentifierRow>(sql`
         UPDATE plan_checkout_bindings
         SET status = 'active',
             provider_checkout_id = COALESCE(
@@ -255,18 +315,26 @@ export class PostgresPlanCheckoutBindingStore {
               subscription_id
             )
           )
+        RETURNING id
       `);
+      if (!rows[0]) {
+        throw new Error('Plan checkout binding was not activated.');
+      }
     } else if (input.providerCheckoutId) {
-      await this.db.execute(sql`
+      const rows = await this.db.execute<IdentifierRow>(sql`
         UPDATE plan_checkout_bindings
         SET status = 'active',
             subscription_id = COALESCE(${input.subscriptionId ?? null}, subscription_id),
             updated_at = now()
         WHERE provider = ${input.provider}
           AND provider_checkout_id = ${input.providerCheckoutId}
+        RETURNING id
       `);
+      if (!rows[0]) {
+        throw new Error('Plan checkout binding was not activated.');
+      }
     } else if (input.subscriptionId) {
-      await this.db.execute(sql`
+      const rows = await this.db.execute<IdentifierRow>(sql`
         UPDATE plan_checkout_bindings AS binding
         SET status = 'active',
             subscription_id = ${input.subscriptionId},
@@ -279,7 +347,15 @@ export class PostgresPlanCheckoutBindingStore {
             binding.subscription_id = ${input.subscriptionId}
             OR payment.session_id = binding.provider_checkout_id
           )
+        RETURNING binding.id
       `);
+      if (!rows[0]) {
+        throw new Error('Plan checkout binding was not activated.');
+      }
+    } else {
+      throw new Error(
+        'Plan checkout binding activation requires a provider reference.'
+      );
     }
   }
 
@@ -323,12 +399,38 @@ export class PostgresPlanCheckoutBindingStore {
           period_end = COALESCE(EXCLUDED.period_end, payment.period_end),
           cancel_at_period_end = EXCLUDED.cancel_at_period_end,
           updated_at = now()
-      WHERE payment.provider IS NULL OR payment.provider = 'waffo'
+      WHERE (payment.provider IS NULL OR payment.provider = 'waffo')
+        AND (
+          EXCLUDED.period_start IS NULL
+          OR payment.period_start IS NULL
+          OR EXCLUDED.period_start >= payment.period_start
+        )
+        AND (
+          EXCLUDED.status <> 'canceled'
+          OR EXCLUDED.period_start IS NOT NULL
+        )
+        AND payment.user_id = EXCLUDED.user_id
       RETURNING id
     `);
     if (!rows[0]) {
+      const existing = await this.db.execute<{
+        provider: PaymentProviderName | null;
+        status: string;
+        user_id: string;
+      }>(sql`
+        SELECT provider, status, user_id
+        FROM payment
+        WHERE subscription_id = ${subscriptionId}
+        LIMIT 1
+      `);
+      if (
+        existing[0]?.provider === 'waffo' &&
+        existing[0].user_id === input.intent.ownerUserId
+      ) {
+        return;
+      }
       throw new Error(
-        'Waffo subscription payment belongs to another provider.'
+        'Waffo subscription payment belongs to another owner or provider.'
       );
     }
   }
@@ -337,10 +439,20 @@ export class PostgresPlanCheckoutBindingStore {
     provider: PaymentProviderName;
     subscriptionId: string;
   }) {
-    await this.db.execute(sql`
+    const rows = await this.db.execute<IdentifierRow>(sql`
       UPDATE plan_checkout_bindings AS binding
       SET status = 'canceled', updated_at = now()
       WHERE binding.provider = ${input.provider}
+        AND (
+          ${input.provider} <> 'waffo'
+          OR EXISTS (
+            SELECT 1
+            FROM payment AS current_payment
+            WHERE current_payment.subscription_id = ${input.subscriptionId}
+              AND current_payment.provider = 'waffo'
+              AND current_payment.status = 'canceled'
+          )
+        )
         AND (
           binding.subscription_id = ${input.subscriptionId}
           OR EXISTS (
@@ -351,7 +463,25 @@ export class PostgresPlanCheckoutBindingStore {
               AND payment.session_id = binding.provider_checkout_id
           )
         )
+      RETURNING binding.id
     `);
+    if (rows[0]) return;
+
+    // A stale Waffo terminal delivery is intentionally a no-op when the
+    // durable payment row is still active. Unknown targets remain errors so
+    // callers cannot silently acknowledge a broken binding.
+    if (input.provider === 'waffo') {
+      const activePayment = await this.db.execute<IdentifierRow>(sql`
+        SELECT id
+        FROM payment
+        WHERE provider = 'waffo'
+          AND subscription_id = ${input.subscriptionId}
+          AND status = 'active'
+        LIMIT 1
+      `);
+      if (activePayment[0]) return;
+    }
+    throw new Error('Plan checkout binding was not canceled.');
   }
 }
 

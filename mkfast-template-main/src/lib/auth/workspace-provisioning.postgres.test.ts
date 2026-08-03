@@ -29,17 +29,30 @@ test(
       const [triggered] = await client<
         Array<{
           owner_user_id: string;
+          owner_email: string;
+          owner_name: string;
+          workspace_name: string;
           status: string;
           trial_status: string;
           model_default_status: string;
         }>
       >`
-        SELECT owner_user_id, status, trial_status, model_default_status
+        SELECT
+          owner_user_id,
+          owner_email,
+          owner_name,
+          workspace_name,
+          status,
+          trial_status,
+          model_default_status
         FROM workspace_provisioning_outbox
         WHERE workspace_id = ${workspaceId}
       `;
       assert.deepEqual(triggered, {
         owner_user_id: userId,
+        owner_email: `${userId}@example.test`,
+        owner_name: 'Provision Owner',
+        workspace_name: 'Provision Owner',
         status: 'pending',
         trial_status: 'pending',
         model_default_status: 'pending',
@@ -118,6 +131,9 @@ async function installProvisioningOutboxContract(
     CREATE TABLE IF NOT EXISTS workspace_provisioning_outbox (
       workspace_id text PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
       owner_user_id text NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
+      owner_email text,
+      owner_name text,
+      workspace_name text,
       status text NOT NULL DEFAULT 'pending',
       trial_status text NOT NULL DEFAULT 'pending',
       model_default_status text NOT NULL DEFAULT 'pending',
@@ -132,6 +148,12 @@ async function installProvisioningOutboxContract(
     );
     ALTER TABLE workspace_provisioning_outbox
       ADD COLUMN IF NOT EXISTS claim_token text;
+    ALTER TABLE workspace_provisioning_outbox
+      ADD COLUMN IF NOT EXISTS owner_email text;
+    ALTER TABLE workspace_provisioning_outbox
+      ADD COLUMN IF NOT EXISTS owner_name text;
+    ALTER TABLE workspace_provisioning_outbox
+      ADD COLUMN IF NOT EXISTS workspace_name text;
     CREATE OR REPLACE FUNCTION bootstrap_verified_user_workspace()
     RETURNS trigger
     LANGUAGE plpgsql
@@ -152,8 +174,20 @@ async function installProvisioningOutboxContract(
       INSERT INTO workspace_memberships (workspace_id, user_id, role)
       VALUES (personal_workspace_id, NEW.id, 'owner')
       ON CONFLICT (workspace_id, user_id) DO NOTHING;
-      INSERT INTO workspace_provisioning_outbox (workspace_id, owner_user_id)
-      VALUES (personal_workspace_id, NEW.id)
+      INSERT INTO workspace_provisioning_outbox (
+        workspace_id,
+        owner_user_id,
+        owner_email,
+        owner_name,
+        workspace_name
+      )
+      VALUES (
+        personal_workspace_id,
+        NEW.id,
+        NEW.email,
+        COALESCE(NULLIF(BTRIM(NEW.name), ''), personal_workspace_name),
+        personal_workspace_name
+      )
       ON CONFLICT (workspace_id) DO NOTHING;
       RETURN NEW;
     END;
@@ -179,6 +213,9 @@ async function backfillLegacyProvisioningAsCompleted(
     INSERT INTO workspace_provisioning_outbox (
       workspace_id,
       owner_user_id,
+      owner_email,
+      owner_name,
+      workspace_name,
       status,
       trial_status,
       model_default_status,
@@ -187,6 +224,9 @@ async function backfillLegacyProvisioningAsCompleted(
     SELECT
       membership.workspace_id,
       membership.user_id,
+      verified_user.email,
+      COALESCE(NULLIF(BTRIM(verified_user.name), ''), workspace.name),
+      workspace.name,
       'completed',
       'completed',
       'completed',
@@ -195,6 +235,8 @@ async function backfillLegacyProvisioningAsCompleted(
     INNER JOIN "user" AS verified_user
       ON verified_user.id = membership.user_id
       AND verified_user.email_verified IS TRUE
+    INNER JOIN workspaces AS workspace
+      ON workspace.id = membership.workspace_id
     WHERE membership.role = 'owner'
     ON CONFLICT (workspace_id) DO NOTHING
   `);

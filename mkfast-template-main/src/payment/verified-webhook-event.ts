@@ -328,7 +328,7 @@ export function normalizeWaffoVerifiedPaymentEvent(
   }
 
   if (event.data.eventType === 'subscription.uncanceled') {
-    return { eventType: 'customer.subscription.resumed', ...base };
+    return { eventType: 'subscription.uncanceled', ...base };
   }
 
   return { eventType: 'customer.subscription.deleted', ...base };

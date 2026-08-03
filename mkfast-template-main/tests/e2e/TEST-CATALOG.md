@@ -585,6 +585,7 @@ uses Production credentials, or changes a production Worker route.
 |---|---|---|
 | 1 | Authenticated pricing opens a Waffo Test checkout preflight | Register and sign in through the real app, open /pricing, require the Growth card to show HKD and an enabled candidate-catalog checkout button, then require its authenticated session to navigate to `pancake.waffo.ai` with `test=true`; this test never enters a card. |
 | 2 | The public Waffo webhook rejects an unsigned delivery | POST a raw JSON delivery with an invalid x-waffo-signature and require a 400 response with received: false; no database settlement is attempted. |
+| 3 | Deterministic Test acceptance settles one paid period | With the isolated Test-only flag enabled, register and sign in to bootstrap the workspace, verify the HKD Growth checkout surface and a monthly checkout binding/intent fixture, then POST a locally generated RSA-signed `subscription.payment_succeeded` raw body through a Playwright route fixture. Assert delivery-id inbox acceptance, durable outbox queueing, Core paid-period application, and active Web payment/binding/subscription projections. The fixture never enters a card, calls Waffo, publishes a product, or writes Production. |
 
 ## Deferred Coverage
 

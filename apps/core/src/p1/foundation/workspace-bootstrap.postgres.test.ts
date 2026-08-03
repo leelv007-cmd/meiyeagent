@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { Pool } from 'pg';
+import { P1DomainError } from './domain.js';
 import { PostgresWorkspaceBootstrapper } from './workspace-bootstrap.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
@@ -15,28 +16,47 @@ test(
     const workspaceId = `bootstrap-workspace-${suffix}`;
     const ownerUserId = `bootstrap-owner-${suffix}`;
     const bootstrapper = new PostgresWorkspaceBootstrapper(pool);
+    await bootstrapper.migrate();
     t.after(async () => {
+      await pool.query(
+        'DELETE FROM p1_workspace_bootstrap_receipts WHERE workspace_id = $1',
+        [workspaceId]
+      );
       await pool.query('DELETE FROM workspaces WHERE id = $1', [workspaceId]);
       await pool.end();
     });
 
-    const created = await bootstrapper.bootstrap({
+    const firstInput = {
+      idempotencyKey: `workspace-bootstrap:${workspaceId}`,
       ownerEmail: `bootstrap-owner-${suffix}@example.test`,
       ownerUserId,
       ownerName: 'Bootstrap owner',
       workspaceId,
       workspaceName: 'First workspace name',
-    });
+    };
+    const created = await bootstrapper.bootstrap(firstInput);
     assert.deepEqual(created, { created: true });
 
-    const replayed = await bootstrapper.bootstrap({
-      ownerEmail: `bootstrap-owner-${suffix}@example.test`,
-      ownerUserId,
+    const replayed = await bootstrapper.bootstrap(firstInput);
+    assert.deepEqual(replayed, { created: true });
+
+    await assert.rejects(
+      bootstrapper.bootstrap({
+        ...firstInput,
+        ownerName: 'Replacement owner name',
+      }),
+      (error: unknown) =>
+        error instanceof P1DomainError &&
+        error.code === 'IDEMPOTENCY_CONFLICT'
+    );
+
+    const preserved = await bootstrapper.bootstrap({
+      ...firstInput,
+      idempotencyKey: `workspace-bootstrap:${workspaceId}:retry`,
       ownerName: 'Replacement owner name',
-      workspaceId,
       workspaceName: 'Attempted replacement name',
     });
-    assert.deepEqual(replayed, { created: false });
+    assert.deepEqual(preserved, { created: false });
 
     const result = await pool.query<{
       name: string;

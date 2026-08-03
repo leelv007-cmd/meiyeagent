@@ -77,6 +77,12 @@ export async function ensurePersonalWorkspace(
       .values({
         workspaceId: bootstrap.workspace.id,
         ownerUserId: user.id,
+        ownerEmail: user.email,
+        ownerName:
+          user.name.trim() ||
+          user.email.toLowerCase().split('@')[0] ||
+          bootstrap.workspace.name,
+        workspaceName: bootstrap.workspace.name,
       })
       .onConflictDoNothing({ target: workspaceProvisioningOutbox.workspaceId });
 

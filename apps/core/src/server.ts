@@ -96,6 +96,7 @@ interface CoreServerDependencies {
   p1ApplicationService?: P1ApplicationService;
   workspaceBootstrapper?: {
     bootstrap(input: {
+      idempotencyKey: string;
       ownerEmail: string;
       ownerName: string;
       ownerUserId: string;
@@ -1084,7 +1085,7 @@ export function createCoreServer({
             503
           );
         }
-        requiredIdempotencyKey(request);
+        const idempotencyKey = requiredIdempotencyKey(request);
         const parsed = workspaceBootstrapRequestSchema.safeParse(
           await readJson(request)
         );
@@ -1110,6 +1111,7 @@ export function createCoreServer({
           response,
           200,
           await workspaceBootstrapper.bootstrap({
+            idempotencyKey,
             ownerEmail: parsed.data.owner.email,
             ownerName: parsed.data.owner.name,
             ownerUserId: context.userId,
@@ -1122,6 +1124,8 @@ export function createCoreServer({
         const domainError =
           error instanceof DomainError
             ? error
+            : error instanceof P1DomainError
+              ? new DomainError(error.code, error.message, 409)
             : new DomainError(
                 'WORKSPACE_BOOTSTRAP_FAILED',
                 'The workspace bootstrap could not be processed.',

@@ -261,6 +261,42 @@ test(
         subscription_id: 'waffo-order-001',
       });
 
+      // A delayed terminal delivery from an older billing period cannot
+      // overwrite the active Waffo payment or its binding.
+      await store.upsertWaffoSubscriptionPayment({
+        event: waffoActivation,
+        intent: {
+          interval: 'month',
+          lifecycle: 'expire',
+          ownerUserId: userId,
+          paymentEventId: 'waffo:waffo-expire-old',
+          periodEndsAt: '2026-08-03T00:00:00.000Z',
+          periodStartsAt: '2026-07-03T00:00:00.000Z',
+          priceId: 'PROD_GROWTH_MONTH',
+          provider: 'waffo',
+          providerEventId: 'waffo-expire-old',
+          subscriptionId: 'waffo-order-001',
+          workspaceId,
+        },
+      });
+      const [stillActiveWaffoPayment] = await client<
+        Array<{ status: string; period_start: Date | string | null }>
+      >`
+        SELECT status, period_start
+        FROM payment
+        WHERE subscription_id = 'waffo-order-001'
+      `;
+      assert.equal(stillActiveWaffoPayment?.status, 'active');
+
+      await assert.rejects(
+        store.markActive({
+          bindingId: 'missing-binding',
+          provider: 'waffo',
+          subscriptionId: 'waffo-order-001',
+        }),
+        /not activated|not found|active/i
+      );
+
       assert.deepEqual(
         normalizePeriodFacts(
           await store.resolveBinding({
@@ -288,6 +324,18 @@ test(
           subscriptionId: 'waffo-order-001',
         }
       );
+
+      let providerCancelCalls = 0;
+      const cancellationCheckpoint = {
+        periodStartsAt: waffoPeriodStart,
+        subscriptionId: 'waffo-order-001',
+        async cancel() {
+          providerCancelCalls += 1;
+        },
+      };
+      await store.cancelWaffoSubscriptionAtPeriodEnd(cancellationCheckpoint);
+      await store.cancelWaffoSubscriptionAtPeriodEnd(cancellationCheckpoint);
+      assert.equal(providerCancelCalls, 1);
     } finally {
       await client`DELETE FROM "user" WHERE id = ${userId}`;
       await client`DELETE FROM workspaces WHERE id = ${workspaceId}`;
@@ -316,7 +364,17 @@ async function migratePlanCheckoutBindings(client: postgres.Sql) {
     CREATE UNIQUE INDEX IF NOT EXISTS plan_checkout_bindings_provider_checkout_uidx
       ON plan_checkout_bindings (provider, provider_checkout_id);
     CREATE INDEX IF NOT EXISTS plan_checkout_bindings_subscription_id_idx
-      ON plan_checkout_bindings (subscription_id)
+      ON plan_checkout_bindings (subscription_id);
+    CREATE TABLE IF NOT EXISTS waffo_subscription_cancellation_receipts (
+      subscription_id text NOT NULL,
+      period_starts_at timestamptz NOT NULL,
+      status text NOT NULL DEFAULT 'pending',
+      requested_at timestamptz NOT NULL DEFAULT now(),
+      completed_at timestamptz,
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      PRIMARY KEY (subscription_id, period_starts_at),
+      CHECK (status IN ('pending', 'completed'))
+    )
   `);
 }
 

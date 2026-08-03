@@ -7,6 +7,7 @@ import {
 } from './workspace-bootstrap';
 import {
   consumeWorkspaceProvisioning,
+  bootstrapVerifiedWorkspaceIdentity,
   createCoreWorkspaceBootstrapper,
   createCoreWorkspaceProvisioner,
   WORKSPACE_PROVISION_MODEL_DEFAULT_KEY,
@@ -114,6 +115,9 @@ describe('personal workspace bootstrap', () => {
       {
         workspaceId: 'ws_user-123',
         ownerUserId: 'user-123',
+        ownerEmail: 'owner@example.test',
+        ownerName: 'Mumu Nails',
+        workspaceName: 'Mumu Nails',
       },
     ]);
     assert.equal(bootstrap.workspace.id, 'ws_user-123');
@@ -122,10 +126,13 @@ describe('personal workspace bootstrap', () => {
   it('consumes trial then model-default with separate stable keys and completes status', async () => {
     const record: WorkspaceProvisioningRecord = {
       modelDefaultStatus: 'pending',
+      ownerEmail: 'owner@example.test',
+      ownerName: 'Mumu Nails',
       ownerUserId: 'user-123',
       status: 'pending',
       trialStatus: 'pending',
       workspaceId: 'ws_user-123',
+      workspaceName: 'Mumu Nails',
     };
     const outbox = memoryProvisioningOutbox(record);
     const commands: Array<{ action: string; idempotencyKey: string }> = [];
@@ -162,10 +169,13 @@ describe('personal workspace bootstrap', () => {
   it('retries only the unfinished model-default step after a partial failure', async () => {
     const record: WorkspaceProvisioningRecord = {
       modelDefaultStatus: 'pending',
+      ownerEmail: 'owner@example.test',
+      ownerName: 'Mumu Nails',
       ownerUserId: 'user-123',
       status: 'pending',
       trialStatus: 'pending',
       workspaceId: 'ws_user-123',
+      workspaceName: 'Mumu Nails',
     };
     const outbox = memoryProvisioningOutbox(record);
     let failModel = true;
@@ -209,10 +219,13 @@ describe('personal workspace bootstrap', () => {
   it('does not treat another consumer processing lease as provisioned', async () => {
     const record: WorkspaceProvisioningRecord = {
       modelDefaultStatus: 'pending',
+      ownerEmail: 'owner@example.test',
+      ownerName: 'Mumu Nails',
       ownerUserId: 'user-123',
       status: 'processing',
       trialStatus: 'completed',
       workspaceId: 'ws_user-123',
+      workspaceName: 'Mumu Nails',
     };
 
     await assert.rejects(
@@ -236,10 +249,13 @@ describe('personal workspace bootstrap', () => {
   it('waits for a concurrent provisioning claimant instead of failing sibling requests', async () => {
     const record: WorkspaceProvisioningRecord = {
       modelDefaultStatus: 'completed',
+      ownerEmail: 'owner@example.test',
+      ownerName: 'Mumu Nails',
       ownerUserId: 'user-123',
       status: 'processing',
       trialStatus: 'completed',
       workspaceId: 'ws_user-123',
+      workspaceName: 'Mumu Nails',
     };
     let reads = 0;
     const result = await consumeWorkspaceProvisioning(
@@ -267,10 +283,13 @@ describe('personal workspace bootstrap', () => {
   it('fences a stale provisioning claimant after the lease is reclaimed', async () => {
     const record: WorkspaceProvisioningRecord = {
       modelDefaultStatus: 'pending',
+      ownerEmail: 'owner@example.test',
+      ownerName: 'Mumu Nails',
       ownerUserId: 'user-123',
       status: 'pending',
       trialStatus: 'pending',
       workspaceId: 'ws_user-123',
+      workspaceName: 'Mumu Nails',
     };
     const outbox = memoryProvisioningOutbox(record);
     const first = await outbox.claim();
@@ -313,6 +332,69 @@ describe('personal workspace bootstrap', () => {
 
     assert.equal(result, null);
     assert.equal(commands, 0);
+  });
+
+  it('recovers Core bootstrap identity from the durable outbox after a failed attempt', async () => {
+    const record: WorkspaceProvisioningRecord = {
+      modelDefaultStatus: 'pending',
+      ownerEmail: 'owner@example.test',
+      ownerName: 'Mumu Nails',
+      ownerUserId: 'user-123',
+      status: 'pending',
+      trialStatus: 'pending',
+      workspaceId: 'ws_user-123',
+      workspaceName: 'Mumu Nails',
+    };
+    const calls: Array<Record<string, string>> = [];
+    let failOnce = true;
+
+    const dependencies = {
+      outbox: {
+        async get() {
+          return { ...record };
+        },
+      },
+      bootstrapper: {
+        async bootstrap(input: Record<string, string>) {
+          calls.push(input);
+          if (failOnce) {
+            failOnce = false;
+            throw new Error('Core unavailable');
+          }
+        },
+      },
+    };
+
+    await assert.rejects(
+      bootstrapVerifiedWorkspaceIdentity(
+        { ownerUserId: record.ownerUserId, workspaceId: record.workspaceId },
+        dependencies
+      ),
+      /Core unavailable/u
+    );
+    await bootstrapVerifiedWorkspaceIdentity(
+      { ownerUserId: record.ownerUserId, workspaceId: record.workspaceId },
+      dependencies
+    );
+
+    assert.deepEqual(calls, [
+      {
+        idempotencyKey: 'workspace-bootstrap:ws_user-123',
+        ownerEmail: 'owner@example.test',
+        ownerName: 'Mumu Nails',
+        ownerUserId: 'user-123',
+        workspaceId: 'ws_user-123',
+        workspaceName: 'Mumu Nails',
+      },
+      {
+        idempotencyKey: 'workspace-bootstrap:ws_user-123',
+        ownerEmail: 'owner@example.test',
+        ownerName: 'Mumu Nails',
+        ownerUserId: 'user-123',
+        workspaceId: 'ws_user-123',
+        workspaceName: 'Mumu Nails',
+      },
+    ]);
   });
 
   it('sends trusted worker commands without tenant credential material', async () => {
@@ -368,6 +450,7 @@ describe('personal workspace bootstrap', () => {
     });
 
     await bootstrapper.bootstrap({
+      idempotencyKey: 'workspace-bootstrap:ws_user-123',
       ownerEmail: 'owner@example.test',
       ownerUserId: 'user-123',
       ownerName: 'Mumu Nails',

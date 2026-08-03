@@ -290,3 +290,25 @@ test('Waffo normalizes a subscription activation into an owned checkout settleme
     }
   );
 });
+
+test('Waffo uncanceled is a distinct lifecycle event, not a past-due resume', () => {
+  assert.deepEqual(
+    normalizeWaffoVerifiedPaymentEvent({
+      id: 'waffo-delivery-uncancel',
+      eventId: 'waffo-event-uncancel',
+      eventType: 'subscription.uncanceled',
+      data: {
+        orderId: 'waffo-order-uncancel',
+        merchantProvidedBuyerIdentity: 'user-001',
+      },
+    }),
+    {
+      eventType: 'subscription.uncanceled',
+      provider: 'waffo',
+      providerEventId: 'waffo-event-uncancel',
+      providerDeliveryId: 'waffo-delivery-uncancel',
+      reference: { id: 'waffo-order-uncancel', kind: 'subscription' },
+      buyerIdentity: 'user-001',
+    }
+  );
+});

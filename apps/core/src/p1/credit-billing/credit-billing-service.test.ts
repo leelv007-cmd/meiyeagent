@@ -200,7 +200,8 @@ test('verified payment events replay once and reject conflicting facts', async (
   };
   await service.settlePayment(context, renewal);
   now = new Date('2026-02-01T01:00:00.000Z');
-  await service.settlePayment(context, renewal);
+  const duplicateRenewal = await service.settlePayment(context, renewal);
+  assert.equal(duplicateRenewal?.settlementStatus, 'duplicate');
 
   assert.equal(
     (await subscriptions.get('subscription-replay'))?.paidThroughCycle,
@@ -267,10 +268,48 @@ test('a Waffo activation and payment success share one paid billing period', asy
   await assert.rejects(
     service.settlePayment(context, {
       ...firstPeriod,
-      paymentProductId: 'PROD_other_monthly',
+      paymentProductId: 'PROD_pro_monthly',
     }),
     /different facts/i,
   );
+});
+
+test('uncancel_at_period_end clears a scheduled cancellation without using past-due resume', async () => {
+  let now = new Date('2026-08-03T00:00:00.000Z');
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(ledger, subscriptions, () => now);
+  const subscriptionId = 'subscription-uncancel-period-end';
+
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'activate',
+    paymentEventId: 'payment-uncancel-activate',
+    paymentProductId: 'starter',
+    periodStartsAt: now.toISOString(),
+    subscriptionId,
+  });
+  now = new Date('2026-08-04T00:00:00.000Z');
+  await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'cancel_at_period_end',
+    paymentEventId: 'payment-uncancel-schedule',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-08-03T00:00:00.000Z',
+    subscriptionId,
+  });
+  assert.equal((await subscriptions.get(subscriptionId))?.pendingEffectiveCycle, 1);
+
+  const uncanceled = await service.settlePayment(context, {
+    interval: 'month',
+    lifecycle: 'uncancel_at_period_end',
+    paymentEventId: 'payment-uncancel-reverse',
+    paymentProductId: 'starter',
+    periodStartsAt: '2026-08-03T00:00:00.000Z',
+    subscriptionId,
+  });
+  assert.equal(uncanceled?.status, 'active');
+  assert.deepEqual((await subscriptions.get(subscriptionId))?.scheduledChanges, []);
 });
 
 test('replays a legacy Waffo paid-period receipt without widening its facts', async () => {
@@ -303,7 +342,10 @@ test('replays a legacy Waffo paid-period receipt without widening its facts', as
     {
       createdAt: legacyWaffoRenewal.periodStartsAt,
       paymentEventId: legacyWaffoRenewal.paymentEventId,
-      payloadHash: 'b7e9d7a4b3ac1aff1dcad9f07a0742a053c32a1ddae9083926038672f59929fb',
+      // Older workers used the activation lifecycle in this receipt even
+      // when the replaying delivery is a renewal. Both legacy lifecycle
+      // hashes must remain compatible for the same Waffo paid period.
+      payloadHash: '51a1792dc9b1e0456246ffbf5a23f5c40c26e9863aa1cdb17122b911ccfdcea1',
       workspaceId: context.workspaceId,
     },
     (store) => store.get(legacyWaffoRenewal.subscriptionId),
@@ -326,7 +368,7 @@ test('replays a legacy Waffo paid-period receipt without widening its facts', as
   await assert.rejects(
     service.settlePayment(context, {
       ...legacyWaffoRenewal,
-      paymentProductId: 'growth',
+      paymentProductId: 'PROD_pro_monthly',
     }),
     /different facts/i,
   );
@@ -946,7 +988,7 @@ test('future and old paid periods do not expand or regress current coverage', as
     periodStartsAt: '2026-01-01T00:00:00.000Z',
     subscriptionId,
   });
-  await service.settlePayment(context, {
+  const staleExpire = await service.settlePayment(context, {
     interval: 'month',
     lifecycle: 'expire',
     paymentEventId: 'payment-monotonic-old-expire',
@@ -954,6 +996,7 @@ test('future and old paid periods do not expand or regress current coverage', as
     periodStartsAt: '2026-01-01T00:00:00.000Z',
     subscriptionId,
   });
+  assert.equal(staleExpire?.settlementStatus, 'ignored_stale');
   assert.equal((await subscriptions.get(subscriptionId))?.status, 'active');
 });
 
@@ -1388,6 +1431,7 @@ function creditBillingService(
             { interval: 'year' as const, paymentProductId: 'starter-year', tier: 'starter' as const },
             { interval: 'month' as const, paymentProductId: 'growth', tier: 'growth' as const },
             { interval: 'year' as const, paymentProductId: 'pro', tier: 'pro' as const },
+            ...WAFFO_TEST_MAPPINGS,
           ],
         };
       },
@@ -1395,3 +1439,15 @@ function creditBillingService(
     clock,
   );
 }
+
+const WAFFO_TEST_MAPPINGS = [
+  { interval: 'single_month' as const, paymentProductId: 'PROD_starter_single_month', tier: 'starter' as const },
+  { interval: 'monthly' as const, paymentProductId: 'PROD_starter_monthly', tier: 'starter' as const },
+  { interval: 'yearly' as const, paymentProductId: 'PROD_starter_yearly', tier: 'starter' as const },
+  { interval: 'single_month' as const, paymentProductId: 'PROD_growth_single_month', tier: 'growth' as const },
+  { interval: 'monthly' as const, paymentProductId: 'PROD_growth_monthly', tier: 'growth' as const },
+  { interval: 'yearly' as const, paymentProductId: 'PROD_growth_yearly', tier: 'growth' as const },
+  { interval: 'single_month' as const, paymentProductId: 'PROD_pro_single_month', tier: 'pro' as const },
+  { interval: 'monthly' as const, paymentProductId: 'PROD_pro_monthly', tier: 'pro' as const },
+  { interval: 'yearly' as const, paymentProductId: 'PROD_pro_yearly', tier: 'pro' as const },
+];

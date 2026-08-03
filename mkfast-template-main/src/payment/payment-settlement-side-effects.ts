@@ -27,7 +27,10 @@ type PlanBindingSettlementPort = {
 export interface PlanSettlementSideEffectPorts {
   bindings: PlanBindingSettlementPort;
   grantPlanEntitlement(intent: PlanSettlementIntent): Promise<void>;
-  cancelWaffoSubscriptionAtPeriodEnd(subscriptionId: string): Promise<void>;
+  cancelWaffoSubscriptionAtPeriodEnd(input: {
+    periodStartsAt: string | null;
+    subscriptionId: string;
+  }): Promise<void>;
 }
 
 export async function applyPlanSettlementIntent(
@@ -42,7 +45,8 @@ export async function applyPlanSettlementIntent(
   if (
     intent.lifecycle === 'activate' ||
     intent.lifecycle === 'renew' ||
-    intent.lifecycle === 'resume'
+    intent.lifecycle === 'resume' ||
+    intent.lifecycle === 'uncancel_at_period_end'
   ) {
     await ports.bindings.markActive({
       bindingId: event.planBindingId ?? null,
@@ -57,7 +61,10 @@ export async function applyPlanSettlementIntent(
       intent.interval === 'single_month' &&
       intent.subscriptionId
     ) {
-      await ports.cancelWaffoSubscriptionAtPeriodEnd(intent.subscriptionId);
+      await ports.cancelWaffoSubscriptionAtPeriodEnd({
+        periodStartsAt: intent.periodStartsAt,
+        subscriptionId: intent.subscriptionId,
+      });
     }
   } else if (shouldCancelPlanBinding(intent, event.reference)) {
     await ports.bindings.markCanceled({

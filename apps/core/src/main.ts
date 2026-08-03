@@ -963,6 +963,7 @@ await migratePostgresSchema(pool, [
   diagnosticRepository,
   productRepository,
   relationalProductRepository,
+  workspaceBootstrapper,
   foundationRepository,
   grantLotLedger,
   creditLedger,

@@ -437,6 +437,7 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
           lifecycle !== 'activate' &&
           lifecycle !== 'renew' &&
           lifecycle !== 'resume' &&
+          lifecycle !== 'uncancel_at_period_end' &&
           lifecycle !== 'past_due' &&
           lifecycle !== 'cancel_at_period_end' &&
           lifecycle !== 'expire'
@@ -477,6 +478,7 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
             config:
               (await this.options.catalogSource?.getPaymentMapping?.()) ??
               null,
+            paymentProvider,
           }),
           'plan',
         );

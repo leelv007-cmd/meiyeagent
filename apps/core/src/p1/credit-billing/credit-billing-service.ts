@@ -32,6 +32,7 @@ export type CreditPaymentLifecycle =
   | 'activate'
   | 'renew'
   | 'resume'
+  | 'uncancel_at_period_end'
   | 'past_due'
   | 'cancel_at_period_end'
   | 'expire';
@@ -126,6 +127,7 @@ export class CreditBillingService {
       paymentProductId: input.paymentProductId,
       interval: input.interval,
       config: await this.paymentMappings.getPaymentMapping(),
+      paymentProvider: input.paymentProvider,
     });
     if (tier === 'trial') {
       throw new P1DomainError('INVALID_STATE', 'Payment cannot grant the trial credit plan.');
@@ -192,14 +194,18 @@ export class CreditBillingService {
       assertExistingSubscription(active, input.lifecycle);
       assertText(input.periodStartsAt ?? '', 'periodStartsAt');
       if (await staleTerminalPeriod(subscriptions, active.id, input)) {
-        return active;
+        return ignoredStale(active);
       }
       return subscriptions.markPastDue(active.id, now);
     }
     if (input.lifecycle === 'cancel_at_period_end') {
       assertExistingSubscription(active, input.lifecycle);
-      if (await staleTerminalPeriod(subscriptions, active.id, input)) {
-        return active;
+      if (
+        await staleTerminalPeriod(subscriptions, active.id, input, {
+          allowEqualPeriod: true,
+        })
+      ) {
+        return ignoredStale(active);
       }
       return subscriptions.scheduleChange({
         subscriptionId: active.id,
@@ -212,7 +218,7 @@ export class CreditBillingService {
     if (input.lifecycle === 'expire') {
       assertExistingSubscription(active, input.lifecycle);
       if (await staleTerminalPeriod(subscriptions, active.id, input)) {
-        return active;
+        return ignoredStale(active);
       }
       return subscriptions.cancel(active.id, now);
     }
@@ -237,7 +243,7 @@ export class CreditBillingService {
         );
       }
       if (await staleTerminalPeriod(subscriptions, active.id, input)) {
-        return active;
+        return ignoredStale(active);
       }
       const resumeCycle = creditSubscriptionCycleIndexAt(
         active.anchorAt,
@@ -269,6 +275,11 @@ export class CreditBillingService {
         return subscriptions.resume(active.id, now);
       }
       return paid;
+    }
+
+    if (input.lifecycle === 'uncancel_at_period_end') {
+      assertExistingSubscription(active, input.lifecycle);
+      return subscriptions.uncancel(active.id, now);
     }
 
     if (input.lifecycle === 'renew') {
@@ -589,6 +600,7 @@ async function staleTerminalPeriod(
   subscriptions: CreditSubscriptionStore,
   subscriptionId: string,
   input: CreditPaymentSettlementInput,
+  options: { allowEqualPeriod?: boolean } = {},
 ) {
   if (!input.periodStartsAt) return false;
   const latest = await subscriptions.latestPaidPeriodStartsAt(subscriptionId);
@@ -597,7 +609,9 @@ async function staleTerminalPeriod(
   if (Number.isNaN(incoming.getTime())) {
     throw new P1DomainError('INVALID_STATE', 'periodStartsAt must be an ISO timestamp.');
   }
-  return incoming.toISOString() <= latest;
+  return options.allowEqualPeriod
+    ? incoming.toISOString() < latest
+    : incoming.toISOString() <= latest;
 }
 
 function subscriptionForPayment(
@@ -642,7 +656,21 @@ function legacyWaffoPaymentSettlementHashes(
   ) {
     return [];
   }
-  return [paymentSettlementHash(workspaceId, input, false)];
+  // Before the paid-period canonical hash, activation and renewal receipts
+  // used their individual lifecycle names. A delivery can legitimately
+  // replay either legacy spelling for the same subscription period, so accept
+  // both hashes while keeping all other facts strict.
+  const hashes = new Set<string>();
+  for (const lifecycle of ['activate', 'renew'] as const) {
+    hashes.add(
+      paymentSettlementHash(
+        workspaceId,
+        { ...input, lifecycle },
+        false,
+      ),
+    );
+  }
+  return [...hashes];
 }
 
 function paidPeriodLifecycle(lifecycle: CreditPaymentLifecycle) {
@@ -711,4 +739,8 @@ function assertExistingSubscription(
       `Credit subscription ${lifecycle} cannot settle before activation.`,
     );
   }
+}
+
+function ignoredStale(subscription: CreditSubscription) {
+  return { ...subscription, settlementStatus: 'ignored_stale' as const };
 }

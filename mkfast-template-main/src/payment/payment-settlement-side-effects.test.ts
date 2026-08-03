@@ -37,14 +37,14 @@ test('Waffo single-month activation grants, persists, activates, then cancels at
     'grant',
     'persist:waffo',
     'active:order_1',
-    'cancel:order_1',
+    'cancel:order_1:2026-08-03T00:00:00.000Z',
   ]);
 });
 
 function fakePorts(calls: string[]): PlanSettlementSideEffectPorts {
   return {
-    async cancelWaffoSubscriptionAtPeriodEnd(subscriptionId) {
-      calls.push(`cancel:${subscriptionId}`);
+    async cancelWaffoSubscriptionAtPeriodEnd(input) {
+      calls.push(`cancel:${input.subscriptionId}:${input.periodStartsAt}`);
     },
     bindings: {
       async markActive(input) {

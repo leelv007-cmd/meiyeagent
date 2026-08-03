@@ -94,6 +94,9 @@ export const workspaceProvisioningOutbox = pgTable(
     ownerUserId: text('owner_user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+    ownerEmail: text('owner_email').notNull(),
+    ownerName: text('owner_name').notNull(),
+    workspaceName: text('workspace_name').notNull(),
     status: text('status')
       .$type<WorkspaceProvisioningStatus>()
       .default('pending')
@@ -220,6 +223,39 @@ export const planCheckoutBindings = pgTable(
       table.subscriptionId
     ),
   ]
+);
+
+/**
+ * Durable provider side-effect checkpoint for one-time Waffo single-month
+ * cancellation. The subscription+period key is stable across delivery
+ * replays and worker restarts.
+ */
+export const waffoSubscriptionCancellationReceipts = pgTable(
+  'waffo_subscription_cancellation_receipts',
+  {
+    subscriptionId: text('subscription_id').notNull(),
+    periodStartsAt: timestamp('period_starts_at', { withTimezone: true }).notNull(),
+    status: text('status')
+      .$type<'pending' | 'completed'>()
+      .default('pending')
+      .notNull(),
+    requestedAt: timestamp('requested_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.subscriptionId, table.periodStartsAt],
+      name: 'waffo_subscription_cancellation_receipts_pk',
+    }),
+    index('waffo_subscription_cancellation_receipts_status_idx').on(
+      table.status,
+    ),
+  ],
 );
 
 export const proStudioCheckoutBindings = pgTable(

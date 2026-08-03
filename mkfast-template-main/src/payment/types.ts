@@ -207,6 +207,7 @@ export type VerifiedPaymentEventType =
   | 'subscription.renewed'
   | 'customer.subscription.updated'
   | 'customer.subscription.resumed'
+  | 'subscription.uncanceled'
   | 'customer.subscription.deleted'
   | 'subscription.expired';
 

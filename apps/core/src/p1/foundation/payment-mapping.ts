@@ -8,7 +8,7 @@
  * free → trial is NOT a payment event (belongs to workspace provision / Tb).
  */
 
-import type { ProductPlanTier } from './domain.js';
+import { P1DomainError, type ProductPlanTier } from './domain.js';
 
 export type PaymentMappingInterval =
   | 'single_month'
@@ -45,6 +45,8 @@ export interface ResolvePaymentTierInput {
     string,
     PaymentMappingInterval | 'subscription'
   >;
+  /** Waffo subscriptions may only settle through the complete admin catalog. */
+  paymentProvider?: 'waffo';
 }
 
 const DEFAULT_INTERVAL_TIERS: Record<
@@ -77,6 +79,9 @@ export function resolvePaymentTier(
   input: ResolvePaymentTierInput
 ): ProductPlanTier {
   const productId = input.paymentProductId.trim();
+  if (input.paymentProvider === 'waffo') {
+    return resolveStrictWaffoPaymentTier(input, productId);
+  }
   if (!productId) return 'growth';
 
   const mappings = input.config?.mappings ?? [];
@@ -108,6 +113,70 @@ export function resolvePaymentTier(
   }
 
   return defaultTierForInterval(interval);
+}
+
+const WAFFO_INTERVALS = ['single_month', 'monthly', 'yearly'] as const;
+
+function resolveStrictWaffoPaymentTier(
+  input: ResolvePaymentTierInput,
+  productId: string,
+): ProductPlanTier {
+  const interval = input.interval;
+  if (!productId || !isWaffoInterval(interval)) {
+    throw invalidWaffoPaymentMapping();
+  }
+  const mappings = input.config?.mappings ?? [];
+  if (!isCompleteWaffoMapping(mappings)) {
+    throw invalidWaffoPaymentMapping();
+  }
+  const match = mappings.find(
+    (mapping) =>
+      mapping.paymentProductId.trim() === productId &&
+      mapping.interval === interval,
+  );
+  if (!match) throw invalidWaffoPaymentMapping();
+  return match.tier;
+}
+
+function isCompleteWaffoMapping(
+  mappings: readonly PaymentProductMapping[],
+): boolean {
+  const waffoMappings = mappings.filter((mapping) =>
+    isWaffoInterval(mapping.interval),
+  );
+  if (waffoMappings.length !== 9) return false;
+  const planPeriods = new Set<string>();
+  const productIds = new Set<string>();
+  for (const mapping of waffoMappings) {
+    if (!mapping.paymentProductId.trim()) {
+      return false;
+    }
+    const planPeriod = `${mapping.tier}:${mapping.interval}`;
+    if (planPeriods.has(planPeriod) || productIds.has(mapping.paymentProductId)) {
+      return false;
+    }
+    planPeriods.add(planPeriod);
+    productIds.add(mapping.paymentProductId);
+  }
+  return (
+    planPeriods.size === 9 &&
+    (['starter', 'growth', 'pro'] as const).every((tier) =>
+      WAFFO_INTERVALS.every((interval) => planPeriods.has(`${tier}:${interval}`)),
+    )
+  );
+}
+
+function isWaffoInterval(
+  value: PaymentMappingInterval | null | undefined,
+): value is (typeof WAFFO_INTERVALS)[number] {
+  return WAFFO_INTERVALS.some((interval) => interval === value);
+}
+
+function invalidWaffoPaymentMapping(): P1DomainError {
+  return new P1DomainError(
+    'INVALID_STATE',
+    'Waffo payment mapping must exactly match the complete subscription catalog.',
+  );
 }
 
 /**

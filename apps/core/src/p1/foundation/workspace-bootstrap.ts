@@ -1,7 +1,9 @@
-import type { Pool } from 'pg';
+import { createHash } from 'node:crypto';
+import type { Pool, PoolClient } from 'pg';
 import { P1DomainError } from './domain.js';
 
 export type CoreWorkspaceBootstrapInput = {
+  idempotencyKey: string;
   ownerEmail: string;
   ownerUserId: string;
   ownerName: string;
@@ -13,15 +15,67 @@ export type CoreWorkspaceBootstrapInput = {
  * Mirrors the authenticated Web workspace identity into the isolated Core DB.
  * Only the private worker endpoint may call this adapter.
  */
+type BootstrapReceipt = {
+  payload_hash: string;
+  created: boolean;
+};
+
 export class PostgresWorkspaceBootstrapper {
   constructor(private readonly pool: Pool) {}
+
+  /**
+   * Core's schema migrator owns the durable bootstrap receipt table. The write
+   * path deliberately never creates schema as a side effect of a request.
+   */
+  async migrate(client?: PoolClient) {
+    const connection = client ?? (await this.pool.connect());
+    try {
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS p1_workspace_bootstrap_receipts (
+          idempotency_key text PRIMARY KEY,
+          payload_hash text NOT NULL,
+          workspace_id text NOT NULL,
+          owner_user_id text NOT NULL,
+          created boolean NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS p1_workspace_bootstrap_receipts_workspace_idx
+          ON p1_workspace_bootstrap_receipts (workspace_id, created_at);
+      `);
+    } finally {
+      if (!client) connection.release();
+    }
+  }
 
   async bootstrap(
     input: CoreWorkspaceBootstrapInput
   ): Promise<{ created: boolean }> {
+    const payloadHash = workspaceBootstrapPayloadHash(input);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [input.idempotencyKey]
+      );
+      const existingReceipt = await client.query<BootstrapReceipt>(
+        `SELECT payload_hash, created
+           FROM p1_workspace_bootstrap_receipts
+          WHERE idempotency_key = $1
+          FOR UPDATE`,
+        [input.idempotencyKey]
+      );
+      if (existingReceipt.rows[0]) {
+        if (existingReceipt.rows[0].payload_hash !== payloadHash) {
+          throw new P1DomainError(
+            'IDEMPOTENCY_CONFLICT',
+            'The workspace bootstrap idempotency key was already used for different facts.'
+          );
+        }
+        await client.query('COMMIT');
+        return { created: existingReceipt.rows[0].created };
+      }
+
       await client.query(
         `INSERT INTO "user" (id, name, email, email_verified)
          VALUES ($1, $2, $3, true)
@@ -76,6 +130,22 @@ export class PostgresWorkspaceBootstrapper {
           );
         }
       }
+      await client.query(
+        `INSERT INTO p1_workspace_bootstrap_receipts (
+           idempotency_key,
+           payload_hash,
+           workspace_id,
+           owner_user_id,
+           created
+         ) VALUES ($1, $2, $3, $4, $5)`,
+        [
+          input.idempotencyKey,
+          payloadHash,
+          input.workspaceId,
+          input.ownerUserId,
+          created,
+        ]
+      );
       await client.query('COMMIT');
       return { created };
     } catch (error) {
@@ -85,4 +155,18 @@ export class PostgresWorkspaceBootstrapper {
       client.release();
     }
   }
+}
+
+function workspaceBootstrapPayloadHash(input: CoreWorkspaceBootstrapInput) {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        ownerEmail: input.ownerEmail,
+        ownerName: input.ownerName,
+        ownerUserId: input.ownerUserId,
+        workspaceId: input.workspaceId,
+        workspaceName: input.workspaceName,
+      })
+    )
+    .digest('hex');
 }

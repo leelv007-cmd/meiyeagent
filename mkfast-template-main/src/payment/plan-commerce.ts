@@ -16,6 +16,7 @@ export type PlanSettlementLifecycle =
   | 'activate'
   | 'renew'
   | 'resume'
+  | 'uncancel_at_period_end'
   | 'cancel_at_period_end'
   | 'expire';
 
@@ -178,7 +179,8 @@ function lifecycleFromEvent(
     case 'subscription.renewed':
       return 'renew';
     case 'customer.subscription.resumed':
-      return 'resume';
+    case 'subscription.uncanceled':
+      return 'uncancel_at_period_end';
     case 'customer.subscription.updated':
       // Cancel-at-period-end is expressed on the binding facts.
       return 'cancel_at_period_end';

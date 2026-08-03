@@ -18,3 +18,15 @@ test('billing portal requires recent authentication without stepping up checkout
     /createCustomerPortalSession[\s\S]*?\.middleware\(\[recentAuthApiMiddleware\]\)/u
   );
 });
+
+test('checkout bootstraps the verified Core workspace before creating a binding', async () => {
+  const source = await readFile(
+    resolve(process.cwd(), 'src/api/payment.ts'),
+    'utf8'
+  );
+
+  assert.match(
+    source,
+    /ensureVerifiedWorkspaceProvisioned[\s\S]*?createOwnerBinding/u
+  );
+});

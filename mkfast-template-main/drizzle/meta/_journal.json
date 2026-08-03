@@ -120,6 +120,27 @@
       "when": 1785697912746,
       "tag": "0016_good_bastion",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1785745599803,
+      "tag": "0017_acoustic_obadiah_stane",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1785745599804,
+      "tag": "0018_workspace_provisioning_identity",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1785745599805,
+      "tag": "0019_waffo_cancellation_receipts",
+      "breakpoints": true
     }
   ]
 }

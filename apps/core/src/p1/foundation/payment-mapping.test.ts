@@ -97,6 +97,61 @@ describe('payment-mapping', () => {
     );
   });
 
+  it('fails closed for Waffo unless a complete catalog has an exact canonical match', () => {
+    const config = {
+      mappings: [
+        ...(['starter', 'growth', 'pro'] as const).flatMap((tier) =>
+          (['single_month', 'monthly', 'yearly'] as const).map((interval) => ({
+            interval,
+            paymentProductId: `PROD_${tier}_${interval}`,
+            tier,
+          }))
+        ),
+      ],
+    };
+
+    assert.equal(
+      resolvePaymentTier({
+        config,
+        interval: 'monthly',
+        paymentProductId: 'PROD_growth_monthly',
+        paymentProvider: 'waffo',
+      }),
+      'growth'
+    );
+    for (const input of [
+      {
+        config,
+        interval: 'monthly' as const,
+        paymentProductId: 'PROD_legacy_cny',
+      },
+      {
+        config,
+        interval: null,
+        paymentProductId: 'PROD_growth_monthly',
+      },
+      {
+        config: {
+          mappings: [
+            ...config.mappings.slice(0, -1),
+            {
+              interval: 'any' as const,
+              paymentProductId: 'PROD_pro_yearly',
+              tier: 'pro' as const,
+            },
+          ],
+        },
+        interval: 'yearly' as const,
+        paymentProductId: 'PROD_pro_yearly',
+      },
+    ]) {
+      assert.throws(
+        () => resolvePaymentTier({ ...input, paymentProvider: 'waffo' }),
+        /Waffo payment mapping/
+      );
+    }
+  });
+
   it('falls back to env price catalog then interval defaults', () => {
     const catalog = defaultPriceCatalogFromEnv({
       monthly: 'price_m',

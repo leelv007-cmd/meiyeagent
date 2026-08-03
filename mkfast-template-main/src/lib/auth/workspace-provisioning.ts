@@ -18,6 +18,9 @@ export type WorkspaceProvisioningStep = 'trial' | 'model_default';
 export interface WorkspaceProvisioningRecord {
   workspaceId: string;
   ownerUserId: string;
+  ownerEmail: string;
+  ownerName: string;
+  workspaceName: string;
   status: WorkspaceProvisioningStatus;
   claimToken?: string | null;
   trialStatus: WorkspaceProvisioningStepStatus;
@@ -61,13 +64,55 @@ export interface CoreWorkspaceProvisioner {
 }
 
 export interface CoreWorkspaceBootstrapper {
-  bootstrap(input: {
-    ownerEmail: string;
-    ownerUserId: string;
-    ownerName: string;
-    workspaceId: string;
-    workspaceName: string;
-  }): Promise<void>;
+  bootstrap(input: WorkspaceBootstrapIdentity): Promise<void>;
+}
+
+export type WorkspaceBootstrapIdentity = {
+  idempotencyKey: string;
+  ownerEmail: string;
+  ownerUserId: string;
+  ownerName: string;
+  workspaceId: string;
+  workspaceName: string;
+};
+
+export async function bootstrapVerifiedWorkspaceIdentity(
+  input: { workspaceId: string; ownerUserId: string },
+  dependencies: {
+    outbox: Pick<WorkspaceProvisioningOutboxPort, 'get'>;
+    bootstrapper: CoreWorkspaceBootstrapper;
+  }
+) {
+  const record = await dependencies.outbox.get(
+    input.workspaceId,
+    input.ownerUserId
+  );
+  if (!record) {
+    throw new Error('Verified workspace bootstrap identity is unavailable.');
+  }
+  if (
+    record.workspaceId !== input.workspaceId ||
+    record.ownerUserId !== input.ownerUserId
+  ) {
+    throw new Error(
+      'Verified workspace bootstrap identity does not match the workspace.'
+    );
+  }
+  if (
+    !record.ownerEmail.trim() ||
+    !record.ownerName.trim() ||
+    !record.workspaceName.trim()
+  ) {
+    throw new Error('Verified workspace bootstrap identity is incomplete.');
+  }
+  await dependencies.bootstrapper.bootstrap({
+    idempotencyKey: `workspace-bootstrap:${record.workspaceId}`,
+    ownerEmail: record.ownerEmail,
+    ownerName: record.ownerName,
+    ownerUserId: record.ownerUserId,
+    workspaceId: record.workspaceId,
+    workspaceName: record.workspaceName,
+  });
 }
 
 export async function consumeWorkspaceProvisioning(
@@ -163,6 +208,9 @@ export async function consumeWorkspaceProvisioning(
 interface ProvisioningRow extends Record<string, unknown> {
   workspaceId: string;
   ownerUserId: string;
+  ownerEmail: string;
+  ownerName: string;
+  workspaceName: string;
   status: WorkspaceProvisioningStatus;
   trialStatus: WorkspaceProvisioningStepStatus;
   modelDefaultStatus: WorkspaceProvisioningStepStatus;
@@ -194,6 +242,9 @@ export class PostgresWorkspaceProvisioningOutbox
       RETURNING
         workspace_id AS "workspaceId",
         owner_user_id AS "ownerUserId",
+        owner_email AS "ownerEmail",
+        owner_name AS "ownerName",
+        workspace_name AS "workspaceName",
         status,
         claim_token AS "claimToken",
         trial_status AS "trialStatus",
@@ -270,6 +321,9 @@ export class PostgresWorkspaceProvisioningOutbox
       SELECT
         workspace_id AS "workspaceId",
         owner_user_id AS "ownerUserId",
+        owner_email AS "ownerEmail",
+        owner_name AS "ownerName",
+        workspace_name AS "workspaceName",
         status,
         claim_token AS "claimToken",
         trial_status AS "trialStatus",
@@ -355,9 +409,9 @@ export function createCoreWorkspaceBootstrapper(options: {
           method: 'POST',
           headers: {
             'content-type': 'application/json',
-            'idempotency-key': `workspace-bootstrap:${input.workspaceId}`,
+            'idempotency-key': input.idempotencyKey,
             'x-core-actor': 'worker',
-            'x-correlation-id': `workspace-bootstrap:${input.workspaceId}`,
+            'x-correlation-id': input.idempotencyKey,
             'x-service-token': options.coreServiceToken,
             'x-user-id': input.ownerUserId,
             'x-workspace-id': input.workspaceId,
@@ -381,26 +435,14 @@ export async function ensureVerifiedWorkspaceProvisioned(input: {
   database: WorkspaceDatabase;
   workspaceId: string;
   ownerUserId: string;
-  ownerEmail?: string;
-  ownerName?: string;
-  workspaceName?: string;
   coreServiceUrl: string;
   coreServiceToken: string;
 }) {
-  if (input.workspaceName) {
-    if (!input.ownerEmail || !input.ownerName) {
-      throw new Error('Verified workspace bootstrap identity is incomplete.');
-    }
-    await createCoreWorkspaceBootstrapper(input).bootstrap({
-      ownerEmail: input.ownerEmail,
-      ownerUserId: input.ownerUserId,
-      ownerName: input.ownerName,
-      workspaceId: input.workspaceId,
-      workspaceName: input.workspaceName,
-    });
-  }
+  const outbox = new PostgresWorkspaceProvisioningOutbox(input.database);
+  const bootstrapper = createCoreWorkspaceBootstrapper(input);
+  await bootstrapVerifiedWorkspaceIdentity(input, { outbox, bootstrapper });
   return consumeWorkspaceProvisioning(input, {
-    outbox: new PostgresWorkspaceProvisioningOutbox(input.database),
+    outbox,
     provisioner: createCoreWorkspaceProvisioner(input),
   });
 }
@@ -409,6 +451,9 @@ function provisioningRecord(row: ProvisioningRow): WorkspaceProvisioningRecord {
   return {
     workspaceId: row.workspaceId,
     ownerUserId: row.ownerUserId,
+    ownerEmail: row.ownerEmail,
+    ownerName: row.ownerName,
+    workspaceName: row.workspaceName,
     status: row.status,
     claimToken: row.claimToken,
     trialStatus: row.trialStatus,
@@ -454,9 +499,7 @@ async function coreProvisioningError(response: Response, fallback: string) {
       ? coreError.code
       : `CORE_HTTP_${response.status}`;
   const coreMessage =
-    coreError &&
-    'message' in coreError &&
-    typeof coreError.message === 'string'
+    coreError && 'message' in coreError && typeof coreError.message === 'string'
       ? coreError.message
       : fallback;
   const error = new Error(coreMessage) as Error & { code: string };

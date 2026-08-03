@@ -1,8 +1,13 @@
 import { getDb } from '@/db';
 import { payment } from '@/db/app.schema';
 import { user } from '@/db/auth.schema';
-import { resolveActiveWorkspace } from '@/db/workspaces';
+import {
+  resolveActiveWorkspace,
+  resolveWorkspaceMembership,
+} from '@/db/workspaces';
 import { getLocale } from '@/lib/locale';
+import { ensureVerifiedWorkspaceProvisioned } from '@/lib/auth/workspace-provisioning';
+import { serverEnv } from '@/env/server';
 import {
   findPlanByPlanId,
   findPlanByPriceId,
@@ -54,11 +59,17 @@ export const createCheckoutSession = createServerFn({ method: 'POST' })
     );
     const db = getDb();
     const [userRow] = await db
-      .select({ email: user.email, name: user.name })
+      .select({
+        email: user.email,
+        emailVerified: user.emailVerified,
+        name: user.name,
+      })
       .from(user)
       .where(eq(user.id, userId))
       .limit(1);
-    if (!userRow?.email) throw new Error('User email not found');
+    if (!userRow?.email || userRow.emailVerified !== true) {
+      throw new Error('Verified user identity is required for checkout.');
+    }
     const { planId, metadata } = data;
     const priceId = price.priceId;
     const locale = getLocale();
@@ -69,10 +80,17 @@ export const createCheckoutSession = createServerFn({ method: 'POST' })
     // Tc-1: bind plan checkout to an owner workspace before provider session.
     const workspace =
       data.workspaceId != null
-        ? { id: data.workspaceId }
+        ? await resolveWorkspaceMembership(userId, data.workspaceId)
         : await resolveActiveWorkspace(userId);
-    if (!workspace)
+    if (!workspace || workspace.role !== 'owner')
       throw new Error('Workspace not found for checkout binding.');
+    await ensureVerifiedWorkspaceProvisioned({
+      coreServiceToken: serverEnv.CORE_SERVICE_TOKEN,
+      coreServiceUrl: serverEnv.CORE_SERVICE_URL,
+      database: db,
+      ownerUserId: userId,
+      workspaceId: workspace.id,
+    });
     const bound = requireCheckoutWorkspaceBinding({
       userId,
       workspaceId: workspace.id,

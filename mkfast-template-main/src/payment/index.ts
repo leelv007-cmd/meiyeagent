@@ -188,8 +188,14 @@ export async function settleVerifiedPlanPurchase(
       applyPlanSettlementIntent(event, intent, {
         bindings: bindingStore,
         grantPlanEntitlement,
-        cancelWaffoSubscriptionAtPeriodEnd: (subscriptionId) =>
-          createWaffoProvider().cancelSubscriptionAtPeriodEnd(subscriptionId),
+        cancelWaffoSubscriptionAtPeriodEnd: (input) =>
+          bindingStore.cancelWaffoSubscriptionAtPeriodEnd({
+            ...input,
+            cancel: () =>
+              createWaffoProvider().cancelSubscriptionAtPeriodEnd(
+                input.subscriptionId
+              ),
+          }),
       }),
   });
 }

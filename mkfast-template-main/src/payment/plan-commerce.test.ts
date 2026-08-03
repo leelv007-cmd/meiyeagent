@@ -212,7 +212,7 @@ describe('plan-commerce settlement', () => {
     assert.equal(grants, 0);
   });
 
-  it('maps subscription delete, cancel, and resume lifecycle', () => {
+  it('maps subscription delete, cancel, and uncancel lifecycle', () => {
     assert.equal(
       planSettlementIntentFromEvent(
         {
@@ -247,7 +247,22 @@ describe('plan-commerce settlement', () => {
         },
         { ...binding, cancelAtPeriodEnd: false }
       )?.lifecycle,
-      'resume'
+      'uncancel_at_period_end'
+    );
+  });
+
+  it('maps a Waffo uncanceled event to uncancel_at_period_end', () => {
+    assert.equal(
+      planSettlementIntentFromEvent(
+        {
+          eventType: 'subscription.uncanceled',
+          provider: 'waffo',
+          providerEventId: 'evt_waffo_uncancel',
+          reference: { id: 'sub_1', kind: 'subscription' },
+        },
+        { ...binding, cancelAtPeriodEnd: false }
+      )?.lifecycle,
+      'uncancel_at_period_end'
     );
   });
 
