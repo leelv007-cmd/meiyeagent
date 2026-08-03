@@ -4,6 +4,7 @@ import type { PaymentProviderName, VerifiedPaymentWebhookEvent } from './types';
 import type {
   CanonicalPaymentWebhook,
   PaymentWebhookClaim,
+  PaymentWebhookDelivery,
   PaymentWebhookInboxPort,
   PaymentWebhookReceipt,
 } from './webhook-settlement';
@@ -74,15 +75,25 @@ export class PostgresPaymentWebhookInbox implements PaymentWebhookInboxPort {
     });
   }
 
-  async claimNext(): Promise<PaymentWebhookClaim | null> {
+  async claimNext(
+    delivery?: PaymentWebhookDelivery
+  ): Promise<PaymentWebhookClaim | null> {
     const claimToken = crypto.randomUUID();
+    const deliveryScope = delivery
+      ? sql`
+          AND provider = ${delivery.provider}
+          AND event_id = ${delivery.providerEventId}
+        `
+      : sql``;
     const rows = await this.database.execute<ClaimRow>(sql`
       WITH next_event AS (
         SELECT provider, event_id
         FROM payment_webhook_settlement_outbox
-        WHERE
+        WHERE (
           (status IN ('pending', 'retry') AND available_at <= now())
           OR (status = 'processing' AND lease_expires_at <= now())
+        )
+          ${deliveryScope}
         ORDER BY available_at, created_at, provider, event_id
         FOR UPDATE SKIP LOCKED
         LIMIT 1

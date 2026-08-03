@@ -4,6 +4,7 @@ import { schema } from '@/db/schema';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 import { PostgresPlanCheckoutBindingStore } from './plan-checkout-bindings';
+import { planSettlementIntentFromEvent } from './plan-commerce';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 
@@ -135,6 +136,44 @@ test(
         workspaceId,
       });
       assert.ok(waffoBinding);
+
+      // Waffo can deliver subscription.activated before createCheckout has
+      // attached its provider checkout id. The explicit binding metadata must
+      // still recover the pending row and preserve the first billing period.
+      const pendingWaffoActivation = {
+        buyerIdentity: userId,
+        eventType: 'checkout.completed' as const,
+        periodEndsAt: '2026-09-03T00:00:00.000Z',
+        periodStartsAt: '2026-08-03T00:00:00.000Z',
+        planBindingId: waffoBinding.id,
+        provider: 'waffo' as const,
+        providerDeliveryId: 'waffo-delivery-pending',
+        providerEventId: 'waffo-payment-pending',
+        reference: {
+          id: 'waffo-order-pending',
+          kind: 'subscription' as const,
+        },
+      };
+      const pendingWaffoFacts = await store.resolveBinding(
+        pendingWaffoActivation
+      );
+      assert.deepEqual(normalizePeriodFacts(pendingWaffoFacts), {
+        workspaceId,
+        ownerUserId: userId,
+        priceId: 'PROD_GROWTH_MONTH',
+        interval: 'month',
+        periodStartsAt: '2026-08-03T00:00:00.000Z',
+        periodEndsAt: '2026-09-03T00:00:00.000Z',
+        subscriptionId: null,
+      });
+      assert.equal(
+        planSettlementIntentFromEvent(
+          pendingWaffoActivation,
+          pendingWaffoFacts!
+        )?.subscriptionId,
+        'waffo-order-pending'
+      );
+
       await store.attachProviderCheckout({
         bindingId: waffoBinding.id,
         providerCheckoutId: 'waffo-session-001',

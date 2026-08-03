@@ -42,17 +42,8 @@
     }
   },
 
-  // Custom domains
-  // https://developers.cloudflare.com/workers/configuration/routing/custom-domains/
-  "routes": [
-    {
-      "pattern": "tqai.uk",
-      "custom_domain": true
-    }
-  ],
-
-  // Candidate versions receive an explicit public preview URL. The production
-  // custom domain remains attached only to the active production deployment.
+  // Candidate versions receive an explicit public preview URL. This default
+  // config is preview-only and must never carry a production custom-domain route.
   "preview_urls": true,
   "workers_dev": false,
 

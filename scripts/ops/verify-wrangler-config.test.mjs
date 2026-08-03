@@ -55,14 +55,12 @@ test('the Waffo Test candidate uses an isolated preview without a production rou
   ]);
 });
 
-test('the release Worker uses the selected Cloudflare resources without a Hyperdrive placeholder', async () => {
+test('the default Worker config is preview-only and carries no production route', async () => {
   const config = parseJsonc(
     await readFile(join(repositoryRoot, 'mkfast-template-main/wrangler.jsonc'), 'utf8')
   );
   assert.equal(config.name, 'meiye-web');
-  assert.deepEqual(config.routes, [
-    { custom_domain: true, pattern: 'tqai.uk' },
-  ]);
+  assert.equal(config.routes, undefined);
   assert.equal(config.preview_urls, true);
   assert.equal(config.workers_dev, false);
   assert.deepEqual(config.r2_buckets, [

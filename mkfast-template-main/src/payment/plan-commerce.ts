@@ -95,7 +95,6 @@ export function planSettlementIntentFromEvent(
   event: VerifiedPaymentWebhookEvent,
   binding: PlanCheckoutBindingFacts
 ): PlanSettlementIntent | null {
-  const paymentEventId = `${event.provider}:${event.providerEventId}`;
   const workspaceId = binding.workspaceId.trim();
   const ownerUserId = binding.ownerUserId.trim();
   const priceId = binding.priceId.trim();
@@ -117,6 +116,17 @@ export function planSettlementIntentFromEvent(
     return null;
   }
 
+  const periodStartsAt = toIso(binding.periodStartsAt);
+  const periodEndsAt = toIso(binding.periodEndsAt);
+  const paymentEventId = paymentSettlementEventId({
+    event,
+    lifecycle,
+    periodEndsAt,
+    periodStartsAt,
+    subscriptionId,
+  });
+  if (!paymentEventId) return null;
+
   return {
     lifecycle,
     paymentEventId,
@@ -126,13 +136,32 @@ export function planSettlementIntentFromEvent(
     ownerUserId,
     priceId,
     interval: binding.interval ?? null,
-    periodStartsAt: toIso(binding.periodStartsAt),
-    periodEndsAt: toIso(binding.periodEndsAt),
+    periodStartsAt,
+    periodEndsAt,
     subscriptionId,
     ...(binding.cancelAtPeriodEnd !== undefined
       ? { cancelAtPeriodEnd: binding.cancelAtPeriodEnd }
       : {}),
   };
+}
+
+function paymentSettlementEventId(input: {
+  event: VerifiedPaymentWebhookEvent;
+  lifecycle: PlanSettlementLifecycle;
+  periodEndsAt: string | null;
+  periodStartsAt: string | null;
+  subscriptionId: string | null;
+}) {
+  const { event, lifecycle, periodEndsAt, periodStartsAt, subscriptionId } =
+    input;
+  if (
+    event.provider === 'waffo' &&
+    (lifecycle === 'activate' || lifecycle === 'renew')
+  ) {
+    if (!subscriptionId || !periodStartsAt || !periodEndsAt) return null;
+    return `waffo:subscription:${subscriptionId}:${periodStartsAt}:${periodEndsAt}`;
+  }
+  return `${event.provider}:${event.providerEventId}`;
 }
 
 function lifecycleFromEvent(

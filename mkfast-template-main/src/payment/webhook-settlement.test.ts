@@ -18,6 +18,21 @@ import {
   type PaymentWebhookInboxPort,
 } from './webhook-settlement';
 
+function claim(
+  provider: 'stripe' | 'creem' | 'waffo',
+  providerEventId: string
+): PaymentWebhookClaim {
+  return {
+    attemptCount: 1,
+    claimToken: `claim-${providerEventId}`,
+    eventType: 'checkout.session.completed',
+    payload: JSON.stringify({ id: providerEventId }),
+    provider,
+    providerEventId,
+    signature: 'verified-signature',
+  };
+}
+
 test('webhook payload limits reject declared and streamed bodies over 512 KiB', async () => {
   const oversizedLength = new Request('https://example.test/webhook', {
     body: 'small',
@@ -332,7 +347,7 @@ test('a busy verified event is retryable and is never acknowledged with 200', as
   });
 });
 
-test('an accepted delivery runs the durable settlement worker before acknowledgement', async () => {
+test('an accepted delivery settles only its durable record before acknowledgement', async () => {
   const payload = JSON.stringify({
     id: 'evt_route_settlement',
     type: 'checkout.session.completed',
@@ -361,15 +376,15 @@ test('an accepted delivery runs the durable settlement worker before acknowledge
     {
       inbox,
       secrets: { stripeWebhookSecret: webhookSecret },
-      settle: async () => {
-        calls.push('settled');
+      settle: async (delivery) => {
+        calls.push(`settled:${delivery.provider}:${delivery.providerEventId}`);
         return { completed: 1, failed: 0 };
       },
     }
   );
 
   assert.equal(receipt, 'accepted');
-  assert.deepEqual(calls, ['received', 'settled']);
+  assert.deepEqual(calls, ['received', 'settled:stripe:evt_route_settlement']);
 });
 
 test('a settlement failure remains retryable instead of acknowledging the delivery', async () => {
@@ -401,6 +416,41 @@ test('a settlement failure remains retryable instead of acknowledging the delive
         inbox,
         secrets: { stripeWebhookSecret: webhookSecret },
         settle: async () => ({ completed: 0, failed: 1 }),
+      }
+    ),
+    { name: 'PaymentWebhookSettlementDeferredError' }
+  );
+});
+
+test('an accepted delivery is retryable when its durable claim is not completed', async () => {
+  const payload = JSON.stringify({
+    id: 'evt_route_not_claimed',
+    type: 'checkout.session.completed',
+  });
+  const webhookSecret = 'whsec_route_not_claimed';
+  const signature = Stripe.webhooks.generateTestHeaderString({
+    payload,
+    secret: webhookSecret,
+  });
+  const inbox: PaymentWebhookInboxPort = {
+    async receive() {
+      return 'accepted';
+    },
+    async claimNext() {
+      return null;
+    },
+    async checkpointApplied() {},
+    async complete() {},
+    async retry() {},
+  };
+
+  await assert.rejects(
+    receiveAndSettlePaymentWebhook(
+      { payload, provider: 'stripe', signature },
+      {
+        inbox,
+        secrets: { stripeWebhookSecret: webhookSecret },
+        settle: async () => ({ completed: 0, failed: 0 }),
       }
     ),
     { name: 'PaymentWebhookSettlementDeferredError' }
@@ -481,6 +531,66 @@ test('the settlement worker persists a retry when downstream settlement fails', 
     'applied:claim-contract-1:evt_retry',
     'retry:claim-contract-1:CORE_UNAVAILABLE',
   ]);
+});
+
+test('targeted settlement does not claim an unrelated poison delivery', async () => {
+  const current = claim('stripe', 'evt_current');
+  const poison = claim('stripe', 'evt_poison');
+  const requested: Array<string | undefined> = [];
+  const settled: string[] = [];
+  let currentClaimed = false;
+  const inbox: PaymentWebhookInboxPort = {
+    async receive() {
+      return 'accepted';
+    },
+    async claimNext(delivery) {
+      requested.push(delivery?.providerEventId);
+      if (
+        delivery?.providerEventId !== current.providerEventId ||
+        currentClaimed
+      ) {
+        return poison;
+      }
+      currentClaimed = true;
+      return current;
+    },
+    async checkpointApplied() {},
+    async complete() {},
+    async retry() {},
+  };
+
+  const result = await settlePendingPaymentWebhooks(
+    {
+      delivery: {
+        provider: current.provider,
+        providerEventId: current.providerEventId,
+      },
+      limit: 1,
+    },
+    {
+      inbox,
+      settlement: {
+        async apply(delivery) {
+          return {
+            eventType: 'checkout.session.completed',
+            provider: delivery.provider,
+            providerEventId: delivery.providerEventId,
+            reference: {
+              id: `checkout:${delivery.providerEventId}`,
+              kind: 'checkout',
+            },
+          };
+        },
+        async settle(event) {
+          settled.push(event.providerEventId);
+        },
+      },
+    }
+  );
+
+  assert.deepEqual(result, { completed: 1, failed: 0 });
+  assert.deepEqual(requested, ['evt_current']);
+  assert.deepEqual(settled, ['evt_current']);
 });
 
 test('a durable Stripe event receives a fresh internal signature before delayed settlement', async () => {

@@ -14,6 +14,11 @@ export interface CanonicalPaymentWebhook {
   signature: string;
 }
 
+export type PaymentWebhookDelivery = Pick<
+  CanonicalPaymentWebhook,
+  'provider' | 'providerEventId'
+>;
+
 export interface PaymentWebhookClaim extends CanonicalPaymentWebhook {
   appliedEvent?: VerifiedPaymentWebhookEvent | null;
   attemptCount: number;
@@ -22,7 +27,9 @@ export interface PaymentWebhookClaim extends CanonicalPaymentWebhook {
 
 export interface PaymentWebhookInboxPort {
   receive(event: CanonicalPaymentWebhook): Promise<PaymentWebhookReceipt>;
-  claimNext(): Promise<PaymentWebhookClaim | null>;
+  claimNext(
+    delivery?: PaymentWebhookDelivery
+  ): Promise<PaymentWebhookClaim | null>;
   checkpointApplied(
     claim: PaymentWebhookClaim,
     event: VerifiedPaymentWebhookEvent | null
@@ -124,14 +131,23 @@ export async function receiveAndSettlePaymentWebhook(
   dependencies: {
     inbox: PaymentWebhookInboxPort;
     secrets: PaymentWebhookSecrets;
-    settle: () => Promise<{ completed: number; failed: number }>;
+    settle: (
+      delivery: PaymentWebhookDelivery
+    ) => Promise<{ completed: number; failed: number }>;
   }
 ) {
-  const receipt = await receivePaymentWebhook(input, dependencies);
+  const event = await verifyPaymentWebhook(input, dependencies.secrets);
+  const receipt = await dependencies.inbox.receive(event);
   if (receipt === 'busy') return receipt;
 
-  const settlement = await dependencies.settle();
-  if (settlement.failed > 0) {
+  const settlement = await dependencies.settle({
+    provider: event.provider,
+    providerEventId: event.providerEventId,
+  });
+  if (
+    settlement.failed > 0 ||
+    (receipt === 'accepted' && settlement.completed !== 1)
+  ) {
     throw new PaymentWebhookSettlementDeferredError();
   }
   return receipt;
@@ -313,7 +329,7 @@ export interface PaymentWebhookSettlementPort {
 }
 
 export async function settlePendingPaymentWebhooks(
-  input: { limit: number },
+  input: { delivery?: PaymentWebhookDelivery; limit: number },
   dependencies: {
     inbox: PaymentWebhookInboxPort;
     settlement: PaymentWebhookSettlementPort;
@@ -322,7 +338,7 @@ export async function settlePendingPaymentWebhooks(
   let completed = 0;
   let failed = 0;
   for (let index = 0; index < input.limit; index += 1) {
-    const claim = await dependencies.inbox.claimNext();
+    const claim = await dependencies.inbox.claimNext(input.delivery);
     if (!claim) break;
     try {
       const event =

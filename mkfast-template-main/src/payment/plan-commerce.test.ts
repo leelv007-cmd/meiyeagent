@@ -104,6 +104,73 @@ describe('plan-commerce settlement', () => {
     assert.equal(renew?.paymentEventId, 'stripe:evt_inv');
   });
 
+  it('uses one Waffo settlement key for activation and payment of the same billing period', () => {
+    const periodStartsAt = '2026-08-03T00:00:00.000Z';
+    const periodEndsAt = '2026-09-03T00:00:00.000Z';
+    const waffoBinding = {
+      ...binding,
+      interval: 'monthly' as const,
+      periodEndsAt,
+      periodStartsAt,
+      subscriptionId: null,
+    };
+    const activation = planSettlementIntentFromEvent(
+      {
+        eventType: 'checkout.completed',
+        planBindingId: 'pcb_waffo_1',
+        provider: 'waffo',
+        providerDeliveryId: 'delivery_activation',
+        providerEventId: 'business_activation',
+        reference: { id: 'subscription_waffo_1', kind: 'subscription' },
+        periodEndsAt,
+        periodStartsAt,
+      },
+      waffoBinding
+    );
+    const paymentSucceeded = planSettlementIntentFromEvent(
+      {
+        eventType: 'subscription.renewed',
+        provider: 'waffo',
+        providerDeliveryId: 'delivery_payment',
+        providerEventId: 'business_payment',
+        reference: { id: 'subscription_waffo_1', kind: 'subscription' },
+        periodEndsAt,
+        periodStartsAt,
+      },
+      waffoBinding
+    );
+
+    assert.notEqual(
+      activation?.providerEventId,
+      paymentSucceeded?.providerEventId
+    );
+    assert.equal(
+      activation?.paymentEventId,
+      'waffo:subscription:subscription_waffo_1:2026-08-03T00:00:00.000Z:2026-09-03T00:00:00.000Z'
+    );
+    assert.equal(paymentSucceeded?.paymentEventId, activation?.paymentEventId);
+  });
+
+  it('fails closed when a Waffo paid subscription event has no billing period', () => {
+    assert.equal(
+      planSettlementIntentFromEvent(
+        {
+          eventType: 'subscription.renewed',
+          provider: 'waffo',
+          providerEventId: 'business_without_period',
+          reference: { id: 'subscription_waffo_1', kind: 'subscription' },
+        },
+        {
+          ...binding,
+          interval: 'monthly',
+          periodEndsAt: null,
+          periodStartsAt: null,
+        }
+      ),
+      null
+    );
+  });
+
   it('uses the verified subscription reference when a legacy binding row has no subscription id', () => {
     const intent = planSettlementIntentFromEvent(
       {

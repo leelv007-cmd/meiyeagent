@@ -17,6 +17,7 @@ import {
   receiveAndSettlePaymentWebhook,
   refreshVerifiedWebhookSignature,
   settlePendingPaymentWebhooks as consumePendingPaymentWebhooks,
+  type PaymentWebhookDelivery,
 } from './webhook-settlement';
 import type {
   CheckoutResult,
@@ -124,10 +125,12 @@ export async function handleAndSettleWebhookEvent(
   );
 }
 
-export async function settlePendingPaymentWebhookEvents() {
+export async function settlePendingPaymentWebhookEvents(
+  delivery?: PaymentWebhookDelivery
+) {
   const inbox = new PostgresPaymentWebhookInbox(getDb());
   return consumePendingPaymentWebhooks(
-    { limit: 25 },
+    delivery ? { delivery, limit: 1 } : { limit: 25 },
     {
       inbox,
       settlement: {

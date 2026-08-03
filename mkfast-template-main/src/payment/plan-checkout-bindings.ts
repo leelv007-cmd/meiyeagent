@@ -176,7 +176,13 @@ export class PostgresPlanCheckoutBindingStore {
               AND binding.status IN ('pending', 'checkout_created', 'active')
             )
           )
-          AND binding.status IN ('checkout_created', 'active', 'canceled')
+          AND (
+            binding.status IN ('checkout_created', 'active', 'canceled')
+            OR (
+              binding.id = ${event.planBindingId ?? null}
+              AND binding.status = 'pending'
+            )
+          )
         ORDER BY binding.updated_at DESC
         LIMIT 1
       `);
