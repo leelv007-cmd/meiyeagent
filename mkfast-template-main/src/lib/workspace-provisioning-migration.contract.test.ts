@@ -32,7 +32,7 @@ test('bootstrap identity has a backfill migration and a strict trigger contract'
   );
   assert.match(
     migration,
-    /UPDATE "workspace_provisioning_outbox" AS outbox[\s\S]*FROM "user" AS verified_user[\s\S]*INNER JOIN "workspaces"/u
+    /UPDATE "workspace_provisioning_outbox" AS outbox[\s\S]*FROM "user" AS verified_user, "workspaces" AS workspace[\s\S]*WHERE verified_user\."id" = outbox\."owner_user_id"[\s\S]*workspace\."id" = outbox\."workspace_id"/u
   );
   assert.match(
     migration,
