@@ -25,7 +25,9 @@ test('assembles workspace and default supply immediately for a verified user', a
         };
       },
       provisionWorkspace: async (input) => {
-        calls.push(`provision:${input.workspaceId}:${input.ownerUserId}`);
+        calls.push(
+          `provision:${input.workspaceId}:${input.ownerUserId}:${input.workspaceName}:${input.ownerEmail}:${input.ownerName}`
+        );
         return { status: 'completed' };
       },
     }
@@ -34,7 +36,7 @@ test('assembles workspace and default supply immediately for a verified user', a
   assert.deepEqual(result, { status: 'completed' });
   assert.deepEqual(calls, [
     'workspace',
-    'provision:ws_user-assembly:user-assembly',
+    'provision:ws_user-assembly:user-assembly:Example Store:owner@example.test:Example Store',
   ]);
 });
 

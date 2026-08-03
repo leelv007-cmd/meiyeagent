@@ -60,6 +60,16 @@ export interface CoreWorkspaceProvisioner {
   execute(command: WorkspaceProvisioningCommand): Promise<void>;
 }
 
+export interface CoreWorkspaceBootstrapper {
+  bootstrap(input: {
+    ownerEmail: string;
+    ownerUserId: string;
+    ownerName: string;
+    workspaceId: string;
+    workspaceName: string;
+  }): Promise<void>;
+}
+
 export async function consumeWorkspaceProvisioning(
   input: { workspaceId: string; ownerUserId: string },
   dependencies: {
@@ -331,13 +341,64 @@ export function createCoreWorkspaceProvisioner(options: {
   };
 }
 
+export function createCoreWorkspaceBootstrapper(options: {
+  coreServiceUrl: string;
+  coreServiceToken: string;
+  fetch?: typeof fetch;
+}): CoreWorkspaceBootstrapper {
+  const request = options.fetch ?? fetch;
+  return {
+    async bootstrap(input) {
+      const response = await request(
+        `${options.coreServiceUrl}/v1/workspaces/${encodeURIComponent(input.workspaceId)}/bootstrap`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'idempotency-key': `workspace-bootstrap:${input.workspaceId}`,
+            'x-core-actor': 'worker',
+            'x-correlation-id': `workspace-bootstrap:${input.workspaceId}`,
+            'x-service-token': options.coreServiceToken,
+            'x-user-id': input.ownerUserId,
+            'x-workspace-id': input.workspaceId,
+          },
+          body: JSON.stringify({
+            name: input.workspaceName,
+            owner: { email: input.ownerEmail, name: input.ownerName },
+          }),
+        }
+      );
+      if (response.ok) return;
+      throw await coreProvisioningError(
+        response,
+        'Workspace bootstrap request failed.'
+      );
+    },
+  };
+}
+
 export async function ensureVerifiedWorkspaceProvisioned(input: {
   database: WorkspaceDatabase;
   workspaceId: string;
   ownerUserId: string;
+  ownerEmail?: string;
+  ownerName?: string;
+  workspaceName?: string;
   coreServiceUrl: string;
   coreServiceToken: string;
 }) {
+  if (input.workspaceName) {
+    if (!input.ownerEmail || !input.ownerName) {
+      throw new Error('Verified workspace bootstrap identity is incomplete.');
+    }
+    await createCoreWorkspaceBootstrapper(input).bootstrap({
+      ownerEmail: input.ownerEmail,
+      ownerUserId: input.ownerUserId,
+      ownerName: input.ownerName,
+      workspaceId: input.workspaceId,
+      workspaceName: input.workspaceName,
+    });
+  }
   return consumeWorkspaceProvisioning(input, {
     outbox: new PostgresWorkspaceProvisioningOutbox(input.database),
     provisioner: createCoreWorkspaceProvisioner(input),
@@ -373,4 +434,32 @@ function safeErrorCode(error: unknown) {
     return error.code;
   }
   return 'WORKSPACE_PROVISIONING_FAILED';
+}
+
+async function coreProvisioningError(response: Response, fallback: string) {
+  const body = await response.json().catch(() => null);
+  const coreError =
+    body &&
+    typeof body === 'object' &&
+    'error' in body &&
+    body.error &&
+    typeof body.error === 'object'
+      ? body.error
+      : null;
+  const coreCode =
+    coreError &&
+    'code' in coreError &&
+    typeof coreError.code === 'string' &&
+    /^[A-Z0-9_]{1,80}$/u.test(coreError.code)
+      ? coreError.code
+      : `CORE_HTTP_${response.status}`;
+  const coreMessage =
+    coreError &&
+    'message' in coreError &&
+    typeof coreError.message === 'string'
+      ? coreError.message
+      : fallback;
+  const error = new Error(coreMessage) as Error & { code: string };
+  error.code = coreCode;
+  return error;
 }

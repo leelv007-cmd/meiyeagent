@@ -80,6 +80,7 @@ import {
   P1DomainError,
   P1ApplicationService,
   PostgresFoundationRepository,
+  PostgresWorkspaceBootstrapper,
   ProductEntitlementFoundationModule,
   RecordedAutoTopUpPaymentPort,
   PostgresGrantLotLedger,
@@ -428,6 +429,7 @@ const creativeGroundingResolver = new ProductCreativeGroundingResolver(
 );
 const assetStorage = modelAssetStorageFromEnv(process.env);
 const foundationRepository = new PostgresFoundationRepository(pool);
+const workspaceBootstrapper = new PostgresWorkspaceBootstrapper(pool);
 const ownedReferenceAssets = new OwnedAssetReferenceResolver(
   foundationOwnedReferenceAssetRepository(foundationRepository),
   {
@@ -2678,6 +2680,7 @@ const server = createCoreServer({
   p1ApplicationService,
   runtimeTruth,
   serviceToken,
+  workspaceBootstrapper,
   workflowEvents,
 });
 server.listen(port, '0.0.0.0', () => {

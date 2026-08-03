@@ -159,13 +159,22 @@ async function assembleUser(user: User) {
   return assembleVerifiedUser(user, {
     ensureWorkspace: (verifiedUser) =>
       ensurePersonalWorkspace(verifiedUser, database),
-    provisionWorkspace: ({ ownerUserId, workspaceId }) =>
+    provisionWorkspace: ({
+      ownerEmail,
+      ownerUserId,
+      ownerName,
+      workspaceId,
+      workspaceName,
+    }) =>
       ensureVerifiedWorkspaceProvisioned({
         coreServiceToken: serverEnv.CORE_SERVICE_TOKEN,
         coreServiceUrl: serverEnv.CORE_SERVICE_URL,
         database,
+        ownerEmail,
         ownerUserId,
+        ownerName,
         workspaceId,
+        workspaceName,
       }),
   });
 }

@@ -69,6 +69,69 @@ test('Core regenerates an unsafe correlation id', async (t) => {
   assert.match(payload.meta.correlationId, /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/u);
 });
 
+test('Core lets only the trusted worker bootstrap a matching workspace', async (t) => {
+  const calls: Array<{
+    ownerEmail: string;
+    ownerName: string;
+    ownerUserId: string;
+    workspaceId: string;
+    workspaceName: string;
+  }> = [];
+  const server = createCoreServer({
+    diagnosticRepository: diagnostics,
+    serviceToken: 'test-service-token',
+    workspaceBootstrapper: {
+      async bootstrap(input) {
+        calls.push(input);
+        return { created: true };
+      },
+    },
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => server.close());
+  const { port } = server.address() as AddressInfo;
+  const url = `http://127.0.0.1:${port}/v1/workspaces/workspace-new/bootstrap`;
+  const headers = {
+    'content-type': 'application/json',
+    'idempotency-key': 'workspace-bootstrap:v1',
+    'x-core-actor': 'worker',
+    'x-service-token': 'test-service-token',
+    'x-user-id': 'owner-new',
+    'x-workspace-id': 'workspace-new',
+  };
+
+  const accepted = await fetch(url, {
+    body: JSON.stringify({
+      name: 'New workspace',
+      owner: { email: 'owner-new@example.test', name: 'New owner' },
+    }),
+    headers,
+    method: 'POST',
+  });
+  assert.equal(accepted.status, 200);
+  assert.deepEqual(calls, [
+    {
+      ownerEmail: 'owner-new@example.test',
+      ownerName: 'New owner',
+      ownerUserId: 'owner-new',
+      workspaceId: 'workspace-new',
+      workspaceName: 'New workspace',
+    },
+  ]);
+
+  const rejected = await fetch(url, {
+    body: JSON.stringify({
+      name: 'New workspace',
+      owner: { email: 'owner-new@example.test', name: 'New owner' },
+    }),
+    headers: { ...headers, 'x-core-actor': 'payment' },
+    method: 'POST',
+  });
+  assert.equal(rejected.status, 403);
+  assert.equal(calls.length, 1);
+});
+
 async function coreServer(t: TestContext) {
   const repository = new MemoryProductRepository();
   repository.grantMembership('user-a', 'workspace-a');

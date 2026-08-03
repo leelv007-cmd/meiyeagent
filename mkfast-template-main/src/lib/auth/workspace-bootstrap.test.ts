@@ -7,6 +7,7 @@ import {
 } from './workspace-bootstrap';
 import {
   consumeWorkspaceProvisioning,
+  createCoreWorkspaceBootstrapper,
   createCoreWorkspaceProvisioner,
   WORKSPACE_PROVISION_MODEL_DEFAULT_KEY,
   WORKSPACE_PROVISION_TRIAL_KEY,
@@ -346,6 +347,46 @@ describe('personal workspace bootstrap', () => {
       action: 'provision_model_defaults',
       module: 'entitlements',
       payload: {},
+    });
+    assert.doesNotMatch(JSON.stringify(requests), /credential|byok|secret/iu);
+  });
+
+  it('bootstraps the Core workspace through the trusted worker boundary', async () => {
+    const requests: Array<{ body: unknown; headers: Headers; url: string }> =
+      [];
+    const bootstrapper = createCoreWorkspaceBootstrapper({
+      coreServiceToken: 'service-token',
+      coreServiceUrl: 'http://core.test',
+      fetch: async (input, init) => {
+        requests.push({
+          body: JSON.parse(String(init?.body)),
+          headers: new Headers(init?.headers),
+          url: String(input),
+        });
+        return Response.json({ data: { created: true } });
+      },
+    });
+
+    await bootstrapper.bootstrap({
+      ownerEmail: 'owner@example.test',
+      ownerUserId: 'user-123',
+      ownerName: 'Mumu Nails',
+      workspaceId: 'ws_user-123',
+      workspaceName: 'Mumu Nails',
+    });
+
+    assert.equal(
+      requests[0]?.url,
+      'http://core.test/v1/workspaces/ws_user-123/bootstrap'
+    );
+    assert.equal(requests[0]?.headers.get('x-core-actor'), 'worker');
+    assert.equal(
+      requests[0]?.headers.get('idempotency-key'),
+      'workspace-bootstrap:ws_user-123'
+    );
+    assert.deepEqual(requests[0]?.body, {
+      name: 'Mumu Nails',
+      owner: { email: 'owner@example.test', name: 'Mumu Nails' },
     });
     assert.doesNotMatch(JSON.stringify(requests), /credential|byok|secret/iu);
   });

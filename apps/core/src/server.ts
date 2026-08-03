@@ -94,6 +94,15 @@ interface CoreServerDependencies {
   diagnosticRepository: DiagnosticRepository;
   productService?: ProductApplicationService;
   p1ApplicationService?: P1ApplicationService;
+  workspaceBootstrapper?: {
+    bootstrap(input: {
+      ownerEmail: string;
+      ownerName: string;
+      ownerUserId: string;
+      workspaceId: string;
+      workspaceName: string;
+    }): Promise<{ created: boolean }>;
+  };
   integrationService?: IntegrationApplicationService;
   aiStreamingRunner?: AiStreamingRunner;
   canvasTextStreams?: Pick<
@@ -211,6 +220,13 @@ const MAX_JSON_BODY_BYTES = 1024 * 1024;
 const MAX_JSON_DEPTH = 64;
 const MAX_JSON_NODES = 50_000;
 const SAFE_REQUEST_ID = /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/u;
+const workspaceBootstrapRequestSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  owner: z.object({
+    email: z.string().trim().email().max(320),
+    name: z.string().trim().min(1).max(200),
+  }),
+});
 
 function correlationId(request: IncomingMessage) {
   const value = request.headers['x-correlation-id'];
@@ -907,6 +923,7 @@ export function createCoreServer({
   diagnosticRepository,
   productService,
   p1ApplicationService,
+  workspaceBootstrapper,
   integrationService,
   operationsService,
   composerDestinationMapper,
@@ -1054,6 +1071,73 @@ export function createCoreServer({
         { code: 'UNAUTHORIZED_SERVICE', message: 'Invalid service identity.' },
         requestCorrelationId
       );
+      return;
+    }
+
+    const bootstrapWorkspaceId = workspaceRoute(url.pathname, 'bootstrap');
+    if (request.method === 'POST' && bootstrapWorkspaceId) {
+      try {
+        if (!workspaceBootstrapper) {
+          throw new DomainError(
+            'WORKSPACE_BOOTSTRAP_UNAVAILABLE',
+            'Workspace bootstrap is not available.',
+            503
+          );
+        }
+        requiredIdempotencyKey(request);
+        const parsed = workspaceBootstrapRequestSchema.safeParse(
+          await readJson(request)
+        );
+        if (!parsed.success) {
+          throw new DomainError(
+            'INVALID_WORKSPACE_BOOTSTRAP',
+            'A valid workspace bootstrap request is required.'
+          );
+        }
+        const context = p1Identity(
+          request,
+          bootstrapWorkspaceId,
+          requestCorrelationId
+        );
+        if (context.actor !== 'worker') {
+          throw new DomainError(
+            'COMMAND_ACTOR_FORBIDDEN',
+            'Only the trusted worker can bootstrap a workspace.',
+            403
+          );
+        }
+        sendJson(
+          response,
+          200,
+          await workspaceBootstrapper.bootstrap({
+            ownerEmail: parsed.data.owner.email,
+            ownerName: parsed.data.owner.name,
+            ownerUserId: context.userId,
+            workspaceId: context.workspaceId,
+            workspaceName: parsed.data.name,
+          }),
+          requestCorrelationId
+        );
+      } catch (error) {
+        const domainError =
+          error instanceof DomainError
+            ? error
+            : new DomainError(
+                'WORKSPACE_BOOTSTRAP_FAILED',
+                'The workspace bootstrap could not be processed.',
+                409
+              );
+        sendError(
+          response,
+          domainError.status,
+          {
+            code: domainError.code,
+            message: domainError.message,
+            details: domainError.details,
+          },
+          requestCorrelationId
+        );
+      }
       return;
     }
 

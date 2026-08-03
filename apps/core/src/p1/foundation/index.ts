@@ -8,6 +8,7 @@ export * from './memory-job-port.js';
 export * from './ports.js';
 export * from './postgres-repository.js';
 export * from './workspace-provision.js';
+export * from './workspace-bootstrap.js';
 export * from './grant-lot.js';
 export * from './grant-lot-entitlement-service.js';
 export * from './postgres-grant-lot.js';
