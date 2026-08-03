@@ -98,11 +98,6 @@ function isDisplayPlanKey(node: ts.Node | undefined) {
   );
 }
 
-/** The real monthly amount for the paid tier, read straight from config. */
-function realGrowthMonthlyAmount() {
-  return findSubscriptionPrice('pro', PlanIntervals.MONTH)?.amount ?? 0;
-}
-
 /**
  * Run `body` against a catalogue where each product carries its own price.
  *
@@ -327,9 +322,18 @@ test('the mapping states exactly which product backs each public tier', () => {
   // wrong product — 中级 silently priced as 终身版 reads as consistent.
   assert.deepEqual(
     { ...PUBLIC_PLAN_CONFIG_IDS },
-    { starter: 'free', growth: 'pro' }
+    { starter: 'free', growth: 'growth' }
   );
-  assert.equal(GROWTH_CONFIG_PLAN_ID, 'pro');
+  assert.equal(GROWTH_CONFIG_PLAN_ID, 'growth');
+});
+
+test('the Growth card sends its mapped config plan id to checkout', () => {
+  const pricing = read(PRICING);
+  assert.match(
+    pricing,
+    /<CheckoutButton[\s\S]*?planId=\{plan\.configPlanId as string\}/u,
+    'Growth checkout must submit the same mapped plan id used for display'
+  );
 });
 
 test('both public surfaces keep the handle the browser reads the price by', () => {
@@ -346,7 +350,7 @@ test('both public surfaces keep the handle the browser reads the price by', () =
   assert.match(pricing, /data-testid=\{PUBLIC_PAID_MONTHLY_PRICE_TESTID\}/u);
 });
 
-test('the landing reads the pro product out of the catalogue every time it is asked', () => {
+test('the landing reads the Growth product out of the catalogue every time it is asked', () => {
   // Against a catalogue where every product carries a different price, the
   // number the landing prints says which product it read. Comparing it to
   // PUBLIC_PLAN_CONFIG_IDS.growth would prove nothing — that is the helper's
@@ -358,41 +362,42 @@ test('the landing reads the pro product out of the catalogue every time it is as
   // sentinel is a coin flip: a hard-coded string or a value memoised at module
   // load can match it. Moving the catalogue and watching the label move with
   // it is what rules those out.
-  for (const proAmount of [41_700, 53_000]) {
-    withStubbedCatalog({ free: 0, pro: proAmount, lifetime: 99_900 }, () => {
-      const priceFiledUnderPro = formatSubscriptionPrice(
-        findSubscriptionPrice('pro', PlanIntervals.MONTH) ?? {
-          amount: 0,
-          currency: 'CNY',
-        }
-      );
-      assert.equal(
-        growthMonthlyPriceLabel(),
-        priceFiledUnderPro,
-        `the landing must quote the pro product at ${proAmount} cents`
-      );
-      // The catalogue really does discriminate: another product would have
-      // produced a visibly different number, so the assertion above is
-      // load-bearing rather than accidentally true.
-      assert.equal(
-        formatSubscriptionPrice(
-          findSubscriptionPrice('lifetime', PlanIntervals.MONTH) ?? {
+  for (const growthAmount of [41_700, 53_000]) {
+    withStubbedCatalog(
+      { free: 0, growth: growthAmount, pro: 99_900, lifetime: 120_000 },
+      () => {
+        const priceFiledUnderGrowth = formatSubscriptionPrice(
+          findSubscriptionPrice('growth', PlanIntervals.MONTH) ?? {
             amount: 0,
             currency: 'CNY',
           }
-        ),
-        'CN¥999'
-      );
-      assert.notEqual(growthMonthlyPriceLabel(), '¥999');
-    });
+        );
+        assert.equal(
+          growthMonthlyPriceLabel(),
+          priceFiledUnderGrowth,
+          `the landing must quote the Growth product at ${growthAmount} cents`
+        );
+        // The catalogue really does discriminate: another product would have
+        // produced a visibly different number, so the assertion above is
+        // load-bearing rather than accidentally true.
+        assert.equal(
+          formatSubscriptionPrice(
+            findSubscriptionPrice('pro', PlanIntervals.MONTH) ?? {
+              amount: 0,
+              currency: 'CNY',
+            }
+          ),
+          'CN¥999'
+        );
+        assert.notEqual(growthMonthlyPriceLabel(), 'CN¥999');
+      }
+    );
   }
   // And the stub is fully undone, so the rest of the suite sees real config.
+  const restoredGrowth = findSubscriptionPrice('growth', PlanIntervals.MONTH);
   assert.equal(
     growthMonthlyPriceLabel(),
-    formatSubscriptionPrice({
-      amount: realGrowthMonthlyAmount(),
-      currency: 'CNY',
-    })
+    restoredGrowth ? formatSubscriptionPrice(restoredGrowth) : null
   );
 });
 

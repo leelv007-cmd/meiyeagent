@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createSign, generateKeyPairSync } from 'node:crypto';
 import test from 'node:test';
 import { Stripe } from 'stripe';
+import { DatabaseBindingUnavailableError } from '@/db/runtime';
 import {
   type CanonicalPaymentWebhook,
   PaymentWebhookConfigurationError,
@@ -468,6 +469,10 @@ test('webhook verification failures and missing secrets fail closed', async () =
   assert.equal(invalid.status, 400);
   assert.equal(unavailable.status, 503);
   assert.equal(unavailable.headers.get('retry-after'), '60');
+  assert.equal(
+    paymentWebhookErrorResponse(new DatabaseBindingUnavailableError()).status,
+    503
+  );
 });
 
 test('the settlement worker persists a retry when downstream settlement fails', async () => {

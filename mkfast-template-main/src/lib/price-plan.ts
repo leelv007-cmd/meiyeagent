@@ -15,7 +15,7 @@ import type { Price, PricePlan } from '@/payment/types';
  */
 export const PUBLIC_PLAN_CONFIG_IDS = {
   starter: 'free',
-  growth: 'pro',
+  growth: 'growth',
 } as const;
 
 /** The self-serve paid tier both public surfaces quote (D-143). */

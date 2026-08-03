@@ -573,6 +573,19 @@ short-circuits are never treated as #161 pass evidence. Evidence and residuals:
 |---|---|---|
 | 1 | Composer proposes a governed memory that the next ContextBundle consumes | Complete one real Composer copy run with an explicit durable preference, verify the pending memory and its source pointer, confirm it in the Memory UI, complete a second Composer run, verify its production ContextBundle consumes the confirmed preference, then tombstone the memory-owned provenance snapshot and verify the memory remains with a deleted-source marker. Deleting the canonical Composer conversation is deferred to #271. |
 
+## 36b. Waffo Test Checkout And Webhook Acceptance (#304)
+
+**File:** specs/waffo-acceptance.spec.ts | **Priority:** P1 | **Ticket:** #304
+
+This opt-in browser acceptance runs only with PLAYWRIGHT_WAFFO_ACCEPTANCE=true
+against the isolated Waffo Test candidate. It never publishes Waffo products,
+uses Production credentials, or changes a production Worker route.
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Authenticated pricing exposes the HKD Waffo checkout entry | Register and sign in through the real app, open /pricing, require the Growth card to show HKD and an enabled checkout button backed by the candidate catalog. |
+| 2 | The public Waffo webhook rejects an unsigned delivery | POST a raw JSON delivery with an invalid x-waffo-signature and require a 400 response with received: false; no database settlement is attempted. |
+
 ## Deferred Coverage
 
 These flows should be added after their dependencies are made deterministic:

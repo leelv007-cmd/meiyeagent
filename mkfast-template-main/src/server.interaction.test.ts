@@ -12,7 +12,9 @@ vi.mock('@tanstack/react-start/server-entry', () => ({
 }));
 vi.mock('@/locale/middleware', () => ({ localeMiddleware }));
 vi.mock('@/payment', () => ({ settlePendingPaymentWebhookEvents }));
-vi.mock('@/storage/object-outbox', () => ({ processStorageObjectOutbox: vi.fn() }));
+vi.mock('@/storage/object-outbox', () => ({
+  processStorageObjectOutbox: vi.fn(),
+}));
 
 describe('Worker payment settlement recovery', () => {
   beforeEach(() => {
@@ -31,11 +33,39 @@ describe('Worker payment settlement recovery', () => {
     const waitUntil = vi.fn();
     const server = (await import('./server')).default;
 
+    await server.fetch(
+      new Request('https://app.example.test/pricing'),
+      { HYPERDRIVE: { connectionString: 'postgres://test/database' } },
+      { waitUntil } as unknown as ExecutionContext
+    );
+
+    expect(settlePendingPaymentWebhookEvents).toHaveBeenCalledTimes(1);
+    expect(waitUntil).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips database-backed recovery on a local fetch without Hyperdrive', async () => {
+    const waitUntil = vi.fn();
+    const server = (await import('./server')).default;
+
     await server.fetch(new Request('https://app.example.test/pricing'), {}, {
       waitUntil,
     } as unknown as ExecutionContext);
 
-    expect(settlePendingPaymentWebhookEvents).toHaveBeenCalledTimes(1);
-    expect(waitUntil).toHaveBeenCalledTimes(1);
+    expect(settlePendingPaymentWebhookEvents).not.toHaveBeenCalled();
+    expect(waitUntil).not.toHaveBeenCalled();
+  });
+
+  it('treats a malformed binding as unavailable without throwing', async () => {
+    const waitUntil = vi.fn();
+    const server = (await import('./server')).default;
+
+    await server.fetch(
+      new Request('https://app.example.test/pricing'),
+      { HYPERDRIVE: { connectionString: '' } },
+      { waitUntil } as unknown as ExecutionContext
+    );
+
+    expect(settlePendingPaymentWebhookEvents).not.toHaveBeenCalled();
+    expect(waitUntil).not.toHaveBeenCalled();
   });
 });

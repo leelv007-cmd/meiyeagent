@@ -94,7 +94,7 @@ export async function handleWebhookEvent(
   return receivePaymentWebhook(
     { payload, provider, signature },
     {
-      inbox: new PostgresPaymentWebhookInbox(getDb()),
+      inbox: () => new PostgresPaymentWebhookInbox(getDb()),
       secrets: {
         creemWebhookSecret: serverEnv.CREEM_WEBHOOK_SECRET,
         stripeApiKey: serverEnv.STRIPE_SECRET_KEY,
@@ -113,7 +113,7 @@ export async function handleAndSettleWebhookEvent(
   return receiveAndSettlePaymentWebhook(
     { payload, provider, signature },
     {
-      inbox: new PostgresPaymentWebhookInbox(getDb()),
+      inbox: () => new PostgresPaymentWebhookInbox(getDb()),
       secrets: {
         creemWebhookSecret: serverEnv.CREEM_WEBHOOK_SECRET,
         stripeApiKey: serverEnv.STRIPE_SECRET_KEY,

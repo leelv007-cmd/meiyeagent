@@ -1,5 +1,6 @@
 import { Stripe } from 'stripe';
 import { verifyWebhook, type WebhookPublicKeys } from '@waffo/pancake-ts';
+import { DatabaseBindingUnavailableError } from '@/db/runtime';
 import type { PaymentProviderName, VerifiedPaymentWebhookEvent } from './types';
 
 export type PaymentWebhookReceipt = 'accepted' | 'busy' | 'processed';
@@ -37,6 +38,10 @@ export interface PaymentWebhookInboxPort {
   complete(claim: PaymentWebhookClaim): Promise<void>;
   retry(claim: PaymentWebhookClaim, errorCode: string): Promise<void>;
 }
+
+type PaymentWebhookInboxDependency =
+  | PaymentWebhookInboxPort
+  | (() => PaymentWebhookInboxPort);
 
 export interface PaymentWebhookSecrets {
   creemWebhookSecret?: string;
@@ -109,12 +114,12 @@ export async function receivePaymentWebhook(
     signature: string;
   },
   dependencies: {
-    inbox: PaymentWebhookInboxPort;
+    inbox: PaymentWebhookInboxDependency;
     secrets: PaymentWebhookSecrets;
   }
 ) {
   const event = await verifyPaymentWebhook(input, dependencies.secrets);
-  return dependencies.inbox.receive(event);
+  return resolveInbox(dependencies.inbox).receive(event);
 }
 
 /**
@@ -129,7 +134,7 @@ export async function receiveAndSettlePaymentWebhook(
     signature: string;
   },
   dependencies: {
-    inbox: PaymentWebhookInboxPort;
+    inbox: PaymentWebhookInboxDependency;
     secrets: PaymentWebhookSecrets;
     settle: (
       delivery: PaymentWebhookDelivery
@@ -137,7 +142,7 @@ export async function receiveAndSettlePaymentWebhook(
   }
 ) {
   const event = await verifyPaymentWebhook(input, dependencies.secrets);
-  const receipt = await dependencies.inbox.receive(event);
+  const receipt = await resolveInbox(dependencies.inbox).receive(event);
   if (receipt === 'busy') return receipt;
 
   const settlement = await dependencies.settle({
@@ -185,6 +190,12 @@ export function paymentWebhookErrorResponse(error: unknown) {
       { headers: { 'Retry-After': '60' }, status: 503 }
     );
   }
+  if (error instanceof DatabaseBindingUnavailableError) {
+    return Response.json(
+      { error: 'Webhook processing unavailable', received: false },
+      { headers: { 'Retry-After': '60' }, status: 503 }
+    );
+  }
   if (error instanceof PaymentWebhookSettlementDeferredError) {
     return Response.json(
       { error: 'Webhook settlement pending retry', received: false },
@@ -195,6 +206,10 @@ export function paymentWebhookErrorResponse(error: unknown) {
     { error: 'Webhook processing failed', received: false },
     { status: 500 }
   );
+}
+
+function resolveInbox(dependency: PaymentWebhookInboxDependency) {
+  return typeof dependency === 'function' ? dependency() : dependency;
 }
 
 export async function verifyPaymentWebhook(

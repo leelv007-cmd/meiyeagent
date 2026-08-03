@@ -312,6 +312,7 @@ function PlanCta({ plan }: { plan: DisplayPlan }) {
         planId={plan.configPlanId as string}
         priceId={monthly.priceId}
         metadata={userId ? { userId } : undefined}
+        data-testid="pricing-checkout-growth"
         className="w-full"
       >
         {pricing_plan_subscribe()}

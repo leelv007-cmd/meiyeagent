@@ -22,6 +22,7 @@ interface CheckoutButtonProps {
     | null;
   size?: 'default' | 'sm' | 'lg' | 'icon' | null;
   className?: string;
+  'data-testid'?: string;
   children?: React.ReactNode;
 }
 export function CheckoutButton({
@@ -31,6 +32,7 @@ export function CheckoutButton({
   variant = 'default',
   size = 'default',
   className,
+  'data-testid': dataTestId,
   children,
 }: CheckoutButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
@@ -64,6 +66,7 @@ export function CheckoutButton({
       variant={variant}
       size={size}
       className={cn(className)}
+      data-testid={dataTestId}
       onClick={handleClick}
       disabled={isLoading}
     >
