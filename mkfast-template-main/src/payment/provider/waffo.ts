@@ -2,6 +2,7 @@ import {
   WaffoPancake,
   type AuthenticatedCheckoutParams,
   type CancelSubscriptionParams,
+  type GraphQLResponse,
   type VerifyWebhookOptions,
   type WebhookEvent,
 } from '@waffo/pancake-ts';
@@ -33,6 +34,12 @@ export type WaffoClient = {
       ): Promise<{ checkoutUrl: string; sessionId: string }>;
     };
   };
+  graphql?: {
+    query<T>(input: {
+      query: string;
+      variables?: Record<string, unknown>;
+    }): Promise<GraphQLResponse<T>>;
+  };
   orders: {
     cancelSubscription(params: CancelSubscriptionParams): Promise<unknown>;
   };
@@ -48,16 +55,46 @@ export type WaffoClient = {
 export interface WaffoProviderOptions {
   client?: WaffoClient;
   environment?: WaffoEnvironment;
+  storeId?: string;
   webhookPublicKeys?: WaffoWebhookPublicKeys;
 }
+
+/**
+ * The Waffo Test sandbox stopped including `currentPeriodStart/End` in
+ * subscription webhook payloads on 2026-08-03. Paid-lifecycle settlement still
+ * fails closed without a provider-verified billing period, so the missing
+ * bounds are recovered from the provider's own order record instead of being
+ * derived locally. Unrecoverable lookups throw this retryable error and stay
+ * in the durable retry loop.
+ */
+export class WaffoPaymentPeriodUnavailableError extends Error {
+  readonly code = 'WAFFO_PERIOD_RECOVERY_UNAVAILABLE' as const;
+
+  constructor(orderId: string) {
+    super(
+      `Waffo subscription ${orderId} has no provider-verified billing period yet.`
+    );
+    this.name = 'WaffoPaymentPeriodUnavailableError';
+  }
+}
+
+type WaffoOrderPeriodLookup = {
+  subscriptionOrders: Array<{
+    id: string;
+    currentPeriodStart?: string | null;
+    currentPeriodEnd?: string | null;
+  }>;
+};
 
 export class WaffoProvider implements PaymentProvider {
   private readonly client: WaffoClient;
   private readonly environment: WaffoEnvironment;
+  private readonly storeIdOption: string | undefined;
   private readonly webhookPublicKeys: WaffoWebhookPublicKeys | undefined;
 
   constructor(options: WaffoProviderOptions = {}) {
     this.environment = options.environment ?? serverEnv.WAFFO_ENVIRONMENT;
+    this.storeIdOption = options.storeId;
     this.webhookPublicKeys = options.webhookPublicKeys;
     this.client =
       options.client ?? createWaffoClient(options.webhookPublicKeys);
@@ -137,7 +174,62 @@ export class WaffoProvider implements PaymentProvider {
     if (event.mode !== expectedWaffoWebhookMode(this.environment)) {
       throw new Error('Waffo webhook mode does not match its authority.');
     }
-    return normalizeWaffoVerifiedPaymentEvent(event);
+    const normalized = normalizeWaffoVerifiedPaymentEvent(event);
+    if (!normalized) return null;
+    return this.withRecoveredBillingPeriod(normalized);
+  }
+
+  /**
+   * Paid lifecycle events must carry a provider-verified billing period; when
+   * the webhook payload omits it, read the same fact back from the provider's
+   * order record. Anything else throws retryable and never invents a period.
+   */
+  private async withRecoveredBillingPeriod(
+    event: VerifiedPaymentWebhookEvent
+  ): Promise<VerifiedPaymentWebhookEvent> {
+    const isPaidLifecycle =
+      event.eventType === 'checkout.completed' ||
+      event.eventType === 'subscription.renewed';
+    if (!isPaidLifecycle) return event;
+    if (event.periodStartsAt && event.periodEndsAt) return event;
+
+    const orderId = event.reference.id;
+    const graphql = this.client.graphql;
+    const storeId = (this.storeIdOption ?? serverEnv.WAFFO_STORE_ID)?.trim();
+    if (!graphql || !storeId) {
+      throw new WaffoPaymentPeriodUnavailableError(orderId);
+    }
+    const response = await graphql.query<WaffoOrderPeriodLookup>({
+      query: `query WaffoOrderBillingPeriod($storeId: String!, $orderId: String!) {
+        subscriptionOrders(storeId: $storeId, filter: { id: { eq: $orderId } }) {
+          id
+          currentPeriodStart
+          currentPeriodEnd
+        }
+      }`,
+      variables: { orderId, storeId },
+    });
+    if (response.errors?.length || !response.data) {
+      throw new WaffoPaymentPeriodUnavailableError(orderId);
+    }
+    const order = response.data.subscriptionOrders.find(
+      (candidate) => candidate.id === orderId
+    );
+    const periodStartsAt = order?.currentPeriodStart?.trim();
+    const periodEndsAt = order?.currentPeriodEnd?.trim();
+    if (!periodStartsAt || !periodEndsAt) {
+      throw new WaffoPaymentPeriodUnavailableError(orderId);
+    }
+    const startsAt = Date.parse(periodStartsAt);
+    const endsAt = Date.parse(periodEndsAt);
+    if (
+      !Number.isFinite(startsAt) ||
+      !Number.isFinite(endsAt) ||
+      endsAt <= startsAt
+    ) {
+      throw new WaffoPaymentPeriodUnavailableError(orderId);
+    }
+    return { ...event, periodEndsAt, periodStartsAt };
   }
 }
 

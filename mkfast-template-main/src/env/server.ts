@@ -68,6 +68,7 @@ export const serverEnv = createEnv({
     WAFFO_ENVIRONMENT: z.enum(['test', 'production']).default('production'),
     WAFFO_MERCHANT_ID: z.string().optional(),
     WAFFO_PRIVATE_KEY: z.string().optional(),
+    WAFFO_STORE_ID: z.string().optional(),
     WAFFO_WEBHOOK_TEST_PUBLIC_KEY: z.string().optional(),
     WAFFO_WEBHOOK_PRODUCTION_PUBLIC_KEY: z.string().optional(),
   },
