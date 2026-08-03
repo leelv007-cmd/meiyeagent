@@ -5,9 +5,10 @@
  * Two independent judgments, deliberately separated:
  *
  *   1. Structure — key positions the repository owns. A missing `name`, absent
- *      R2 binding, or a D1 binding (forbidden by ADR-0006) is a hard failure,
+ *      Hyperdrive/R2 binding, or a D1 binding (forbidden by ADR-0006) is a hard failure,
  *      because no external account provisioning can fix it.
- *   2. Placeholders — template names and demo domains. These are *reported*,
+ *   2. Placeholders — template names, demo domains, and the all-zero Hyperdrive
+ *      id. These are *reported*,
  *      not failed: filling them needs real Cloudflare
  *      resources, which are the E-gate business batch (D-132 §D), not this
  *      ticket. A gate that fails on them today would be red at birth.
@@ -20,9 +21,9 @@
  * (`@meiye/core` runtime-entry / Next standalone), so having no wrangler config
  * is their correct shape and is never reported as a finding.
  *
- * Hyperdrive is deliberately absent from the Web Worker until a real account
- * configuration exists. Core's local PostgreSQL path remains the only current
- * database fact source; a fake Hyperdrive ID must never be added here.
+ * The Hyperdrive placeholder id mirrors Core's config-risk source. The isolated
+ * Waffo Test preview must use a real Test binding; the release config retains
+ * its current main placeholder until the external resource batch is complete.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -146,6 +147,20 @@ function structureIssuesFor(label, config, configPath, root) {
     push('compatibility_flags must include nodejs_compat');
   }
 
+  const hyperdrive = config.hyperdrive;
+  if (!Array.isArray(hyperdrive) || hyperdrive.length === 0) {
+    push('hyperdrive binding is required (PostgreSQL is the only fact source)');
+  } else {
+    for (const [index, binding] of hyperdrive.entries()) {
+      if (binding?.binding !== 'HYPERDRIVE') {
+        push(`hyperdrive[${index}].binding must be HYPERDRIVE`);
+      }
+      if (typeof binding?.id !== 'string' || binding.id.trim().length === 0) {
+        push(`hyperdrive[${index}].id key is required`);
+      }
+    }
+  }
+
   const buckets = config.r2_buckets;
   const isWaffoTestPreview = configPath.endsWith('wrangler.waffo-preview.jsonc');
   if (isWaffoTestPreview && buckets !== undefined) {
@@ -199,6 +214,14 @@ function placeholderFindingsFor(label, config) {
       )
     ) {
       push('template_bucket_name', `r2_buckets[${index}].bucket_name=${bucket.bucket_name}`);
+    }
+  }
+  for (const [index, binding] of (Array.isArray(config.hyperdrive) ? config.hyperdrive : []).entries()) {
+    if (isHyperdrivePlaceholder(binding?.id)) {
+      push(
+        'hyperdrive_placeholder',
+        `hyperdrive[${index}].id=${binding?.id ?? '(missing)'}`
+      );
     }
   }
   const blob = JSON.stringify(config).toLowerCase();

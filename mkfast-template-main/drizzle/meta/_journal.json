@@ -141,6 +141,13 @@
       "when": 1785745599805,
       "tag": "0019_waffo_cancellation_receipts",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1785745599806,
+      "tag": "0020_waffo_subscription_ordering",
+      "breakpoints": true
     }
   ]
 }

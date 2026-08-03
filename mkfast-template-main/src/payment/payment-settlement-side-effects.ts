@@ -11,7 +11,11 @@ type PlanBindingSettlementPort = {
   upsertWaffoSubscriptionPayment(input: {
     event: VerifiedPaymentWebhookEvent;
     intent: PlanSettlementIntent;
-  }): Promise<void>;
+  }): Promise<'applied' | 'duplicate' | 'ignored_stale' | undefined>;
+  classifyWaffoSubscriptionPayment?(input: {
+    event: VerifiedPaymentWebhookEvent;
+    intent: PlanSettlementIntent;
+  }): Promise<'applied' | 'duplicate' | 'ignored_stale'>;
   markActive(input: {
     bindingId?: string | null;
     provider: PaymentProviderName;
@@ -38,9 +42,27 @@ export async function applyPlanSettlementIntent(
   intent: PlanSettlementIntent,
   ports: PlanSettlementSideEffectPorts
 ) {
-  await ports.grantPlanEntitlement(intent);
+  let waffoReplay = false;
   if (event.provider === 'waffo') {
-    await ports.bindings.upsertWaffoSubscriptionPayment({ event, intent });
+    const classify = ports.bindings.classifyWaffoSubscriptionPayment;
+    if (classify && intent.subscriptionId) {
+      const order = await classify({ event, intent });
+      if (order === 'ignored_stale') return;
+      waffoReplay = order === 'duplicate';
+    }
+  }
+  if (!waffoReplay) {
+    await ports.grantPlanEntitlement(intent);
+  }
+  if (event.provider === 'waffo' && !waffoReplay) {
+    const waffoMutation = await ports.bindings.upsertWaffoSubscriptionPayment({
+      event,
+      intent,
+    });
+    if (waffoMutation === 'duplicate' || waffoMutation === 'ignored_stale') {
+      if (waffoMutation === 'ignored_stale') return;
+      waffoReplay = true;
+    }
   }
   if (
     intent.lifecycle === 'activate' ||
@@ -64,6 +86,16 @@ export async function applyPlanSettlementIntent(
       await ports.cancelWaffoSubscriptionAtPeriodEnd({
         periodStartsAt: intent.periodStartsAt,
         subscriptionId: intent.subscriptionId,
+      });
+    }
+    if (
+      event.provider === 'waffo' &&
+      intent.lifecycle === 'activate' &&
+      intent.replacesSubscriptionId
+    ) {
+      await ports.cancelWaffoSubscriptionAtPeriodEnd({
+        periodStartsAt: intent.periodStartsAt,
+        subscriptionId: intent.replacesSubscriptionId,
       });
     }
   } else if (shouldCancelPlanBinding(intent, event.reference)) {

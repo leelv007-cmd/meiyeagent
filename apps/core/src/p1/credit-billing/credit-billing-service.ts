@@ -45,6 +45,7 @@ export interface CreditPaymentSettlementInput {
   interval?: PaymentMappingInterval | null;
   periodStartsAt?: string | null;
   subscriptionId?: string | null;
+  providerOccurredAt?: string | null;
 }
 
 export interface CreditBillingLedgerPort {
@@ -193,7 +194,11 @@ export class CreditBillingService {
     if (input.lifecycle === 'past_due') {
       assertExistingSubscription(active, input.lifecycle);
       assertText(input.periodStartsAt ?? '', 'periodStartsAt');
-      if (await staleTerminalPeriod(subscriptions, active.id, input)) {
+      if (
+        await staleTerminalPeriod(subscriptions, active.id, input, {
+          allowEqualPeriod: input.providerOccurredAt != null,
+        })
+      ) {
         return ignoredStale(active);
       }
       return subscriptions.markPastDue(active.id, now);

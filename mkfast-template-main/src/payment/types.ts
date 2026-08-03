@@ -205,6 +205,7 @@ export type VerifiedPaymentEventType =
   | 'checkout.session.completed'
   | 'invoice.paid'
   | 'subscription.renewed'
+  | 'subscription.past_due'
   | 'customer.subscription.updated'
   | 'customer.subscription.resumed'
   | 'subscription.uncanceled'
@@ -231,4 +232,6 @@ export type VerifiedPaymentWebhookEvent = {
   /** Provider-verified entitlement period bounds, when the provider exposes them. */
   periodStartsAt?: string;
   periodEndsAt?: string;
+  /** Provider event occurrence time used for monotonic lifecycle fencing. */
+  providerOccurredAt?: string;
 };

@@ -18,13 +18,16 @@
   "assets": {
     "directory": "./dist/client"
   },
-  // Used only by local Playwright `wrangler dev`; it has no remote route.
-  "workers_dev": false,
-  "preview_urls": false,
   "r2_buckets": [
     {
-      "bucket_name": "meiye-assets",
+      "bucket_name": "mkfast-template",
       "binding": "BUCKET"
+    }
+  ],
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE",
+      "id": "00000000-0000-0000-0000-000000000000"
     }
   ]
 }

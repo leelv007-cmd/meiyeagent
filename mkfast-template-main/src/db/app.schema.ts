@@ -3,7 +3,7 @@
  * Add your app tables here; keep Better Auth tables in auth.schema.ts.
  */
 
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
   foreignKey,
@@ -147,6 +147,11 @@ export const payment = pgTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     customerId: text('customer_id').notNull(),
     subscriptionId: text('subscription_id'),
+    waffoProviderOccurredAt: timestamp('waffo_provider_occurred_at', {
+      withTimezone: true,
+    }),
+    waffoEventId: text('waffo_event_id'),
+    waffoEventRank: integer('waffo_event_rank'),
     sessionId: text('session_id'),
     invoiceId: text('invoice_id').unique(),
     type: text('type').notNull().$type<PaymentType>(),
@@ -201,6 +206,7 @@ export const planCheckoutBindings = pgTable(
       .references(() => user.id, { onDelete: 'cascade' }),
     providerCheckoutId: text('provider_checkout_id'),
     subscriptionId: text('subscription_id'),
+    replacesSubscriptionId: text('replaces_subscription_id'),
     status: text('status')
       .$type<'pending' | 'checkout_created' | 'active' | 'canceled' | 'failed'>()
       .default('pending')
@@ -222,6 +228,43 @@ export const planCheckoutBindings = pgTable(
     index('plan_checkout_bindings_subscription_id_idx').on(
       table.subscriptionId
     ),
+    index('plan_checkout_bindings_replaces_subscription_id_idx').on(
+      table.replacesSubscriptionId
+    ),
+    // One in-flight Waffo checkout per owner and workspace: closes the
+    // concurrent double-checkout race at the storage layer.
+    uniqueIndex('plan_checkout_bindings_waffo_inflight_uidx')
+      .on(table.ownerUserId, table.workspaceId)
+      .where(
+        sql`provider = 'waffo' AND status IN ('pending', 'checkout_created')`
+      ),
+  ]
+);
+
+/** Waffo downgrade/interval changes are parked until a provider primitive exists. */
+export const waffoSubscriptionChanges = pgTable(
+  'waffo_subscription_changes',
+  {
+    subscriptionId: text('subscription_id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    ownerUserId: text('owner_user_id').notNull(),
+    targetPriceId: text('target_price_id').notNull(),
+    targetInterval: text('target_interval').notNull(),
+    effectiveAt: timestamp('effective_at', { withTimezone: true }).notNull(),
+    status: text('status')
+      .$type<'pending' | 'applied' | 'canceled'>()
+      .default('pending')
+      .notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('waffo_subscription_changes_workspace_idx').on(table.workspaceId),
+    index('waffo_subscription_changes_status_idx').on(table.status),
   ]
 );
 
@@ -236,13 +279,20 @@ export const waffoSubscriptionCancellationReceipts = pgTable(
     subscriptionId: text('subscription_id').notNull(),
     periodStartsAt: timestamp('period_starts_at', { withTimezone: true }).notNull(),
     status: text('status')
-      .$type<'pending' | 'completed'>()
+      .$type<'pending' | 'processing' | 'completed'>()
       .default('pending')
       .notNull(),
     requestedAt: timestamp('requested_at', { withTimezone: true })
       .defaultNow()
       .notNull(),
     completedAt: timestamp('completed_at', { withTimezone: true }),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    claimToken: text('claim_token'),
+    lastErrorCode: text('last_error_code'),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .defaultNow()
       .notNull(),

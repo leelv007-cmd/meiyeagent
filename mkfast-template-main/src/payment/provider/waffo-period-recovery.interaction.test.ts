@@ -16,6 +16,7 @@ const ACTIVATION_PAYLOAD = {
   eventType: 'subscription.activated',
   id: 'delivery-recovery-1',
   mode: 'test',
+  timestamp: '2026-08-03T12:35:44.000Z',
 };
 
 const PROVIDER_PERIOD = {
@@ -52,9 +53,11 @@ function orderLookupResult(orders: Array<Record<string, unknown>>) {
 describe('Waffo billing period recovery', () => {
   it('recovers a missing billing period from the provider order', async () => {
     const { WaffoProvider } = await import('./waffo');
-    const graphql = vi.fn().mockResolvedValue(
-      orderLookupResult([{ id: 'ORD_recovery_1', ...PROVIDER_PERIOD }])
-    );
+    const graphql = vi
+      .fn()
+      .mockResolvedValue(
+        orderLookupResult([{ id: 'ORD_recovery_1', ...PROVIDER_PERIOD }])
+      );
     const provider = new WaffoProvider({
       client: recoveryClient(ACTIVATION_PAYLOAD, graphql),
       environment: 'test',
@@ -76,9 +79,11 @@ describe('Waffo billing period recovery', () => {
 
   it('recovers renewal periods for subscription.payment_succeeded', async () => {
     const { WaffoProvider } = await import('./waffo');
-    const graphql = vi.fn().mockResolvedValue(
-      orderLookupResult([{ id: 'ORD_recovery_1', ...PROVIDER_PERIOD }])
-    );
+    const graphql = vi
+      .fn()
+      .mockResolvedValue(
+        orderLookupResult([{ id: 'ORD_recovery_1', ...PROVIDER_PERIOD }])
+      );
     const provider = new WaffoProvider({
       client: recoveryClient(
         {

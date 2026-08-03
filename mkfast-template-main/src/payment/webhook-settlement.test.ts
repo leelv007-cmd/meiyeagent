@@ -684,6 +684,67 @@ test('the settlement worker persists a retry when downstream settlement fails', 
   ]);
 });
 
+test('recognized Waffo activation contract failures retry without checkpoint or completion', async () => {
+  const claim = claimForRetry('waffo', 'waffo-delivery-contract-invalid');
+  const mutations: string[] = [];
+  let claimed = false;
+  const inbox: PaymentWebhookInboxPort = {
+    async receive() {
+      return 'accepted';
+    },
+    async claimNext() {
+      if (claimed) return null;
+      claimed = true;
+      return claim;
+    },
+    async checkpointApplied() {
+      mutations.push('checkpointed');
+    },
+    async complete() {
+      mutations.push('completed');
+    },
+    async retry(_current, errorCode) {
+      mutations.push(`retry:${errorCode}`);
+    },
+  };
+
+  const result = await settlePendingPaymentWebhooks(
+    { limit: 1 },
+    {
+      inbox,
+      settlement: {
+        async apply() {
+          throw Object.assign(
+            new Error('Waffo activation is missing plan binding identity.'),
+            { code: 'WAFFO_EVENT_CONTRACT_INVALID' }
+          );
+        },
+        async settle() {
+          throw new Error('must not settle a malformed activation');
+        },
+      },
+    }
+  );
+
+  assert.deepEqual(result, { completed: 0, failed: 1 });
+  assert.deepEqual(mutations, ['retry:WAFFO_EVENT_CONTRACT_INVALID']);
+});
+
+function claimForRetry(
+  provider: PaymentWebhookClaim['provider'],
+  providerEventId: string
+): PaymentWebhookClaim {
+  return {
+    attemptCount: 1,
+    claimToken: `claim-${providerEventId}`,
+    eventType: 'subscription.activated',
+    payload: '{}',
+    provider,
+    providerEventId,
+    signature: 'verified-signature',
+  };
+}
+
 test('targeted settlement does not claim an unrelated poison delivery', async () => {
   const current = claim('stripe', 'evt_current');
   const poison = claim('stripe', 'evt_poison');

@@ -241,6 +241,7 @@ test('a Waffo activation and payment success share one paid billing period', asy
     paymentProductId: 'PROD_growth_monthly',
     paymentProvider: 'waffo' as const,
     periodStartsAt: '2026-08-03T00:00:00.000Z',
+    providerOccurredAt: '2026-08-03T00:00:01.000Z',
     subscriptionId: 'ORD_first_period',
   };
 
@@ -249,6 +250,7 @@ test('a Waffo activation and payment success share one paid billing period', asy
   await service.settlePayment(context, {
     ...firstPeriod,
     lifecycle: 'renew',
+    providerOccurredAt: '2026-08-03T00:00:02.000Z',
   });
 
   assert.equal(

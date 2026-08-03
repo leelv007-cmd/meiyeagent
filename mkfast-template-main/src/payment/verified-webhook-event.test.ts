@@ -4,6 +4,7 @@ import {
   normalizeCreemVerifiedPaymentEvent,
   normalizeStripeVerifiedPaymentEvent,
   normalizeWaffoVerifiedPaymentEvent,
+  WaffoPaymentEventContractError,
 } from './verified-webhook-event';
 
 test('Stripe normalizes paid checkout (payment or subscription mode)', () => {
@@ -269,6 +270,7 @@ test('Waffo normalizes a subscription activation into an owned checkout settleme
       id: 'waffo-delivery-001',
       eventId: 'waffo-payment-001',
       eventType: 'subscription.activated',
+      timestamp: '2026-08-03T00:00:01.000Z',
       data: {
         orderId: 'waffo-order-001',
         merchantProvidedBuyerIdentity: 'user-001',
@@ -282,6 +284,7 @@ test('Waffo normalizes a subscription activation into an owned checkout settleme
       provider: 'waffo',
       providerEventId: 'waffo-payment-001',
       providerDeliveryId: 'waffo-delivery-001',
+      providerOccurredAt: '2026-08-03T00:00:01.000Z',
       reference: { id: 'waffo-order-001', kind: 'subscription' },
       planBindingId: 'plan-checkout-binding-001',
       buyerIdentity: 'user-001',
@@ -297,6 +300,7 @@ test('Waffo uncanceled is a distinct lifecycle event, not a past-due resume', ()
       id: 'waffo-delivery-uncancel',
       eventId: 'waffo-event-uncancel',
       eventType: 'subscription.uncanceled',
+      timestamp: '2026-08-05T00:00:00.000Z',
       data: {
         orderId: 'waffo-order-uncancel',
         merchantProvidedBuyerIdentity: 'user-001',
@@ -307,8 +311,173 @@ test('Waffo uncanceled is a distinct lifecycle event, not a past-due resume', ()
       provider: 'waffo',
       providerEventId: 'waffo-event-uncancel',
       providerDeliveryId: 'waffo-delivery-uncancel',
+      providerOccurredAt: '2026-08-05T00:00:00.000Z',
       reference: { id: 'waffo-order-uncancel', kind: 'subscription' },
       buyerIdentity: 'user-001',
+    }
+  );
+});
+
+test('recognized Waffo activation contract failures are typed retryable errors', () => {
+  for (const data of [
+    {
+      orderId: 'waffo-order-missing-binding',
+      merchantProvidedBuyerIdentity: 'user-001',
+    },
+    {
+      orderId: 'waffo-order-missing-owner',
+      orderMerchantExternalId: 'pcb-001',
+    },
+    // Zod rejects "" as present-and-invalid; the schema failure must surface
+    // as a contract error, never a silent irrelevant-event null.
+    {
+      merchantProvidedBuyerIdentity: '',
+      orderId: 'waffo-order-empty-owner',
+      orderMerchantExternalId: 'pcb-001',
+    },
+    {
+      currentPeriodEnd: '2026-08-01T00:00:00.000Z',
+      currentPeriodStart: 'not-an-iso-date',
+      merchantProvidedBuyerIdentity: 'user-001',
+      orderId: 'waffo-order-invalid-period',
+      orderMerchantExternalId: 'pcb-001',
+    },
+    {
+      currentPeriodEnd: '2026-08-01T00:00:00.000Z',
+      currentPeriodStart: '2026-09-01T00:00:00.000Z',
+      merchantProvidedBuyerIdentity: 'user-001',
+      orderId: 'waffo-order-inverted-period',
+      orderMerchantExternalId: 'pcb-001',
+    },
+  ]) {
+    assert.throws(
+      () =>
+        normalizeWaffoVerifiedPaymentEvent({
+          data,
+          eventId: `waffo-event-${data.orderId}`,
+          eventType: 'subscription.activated',
+          id: `waffo-delivery-${data.orderId}`,
+          timestamp: '2026-08-03T00:00:01.000Z',
+        }),
+      (error: unknown) =>
+        error instanceof WaffoPaymentEventContractError &&
+        error.code === 'WAFFO_EVENT_CONTRACT_INVALID'
+    );
+  }
+});
+
+test('a recognized Waffo lifecycle event without a provider timestamp is a contract breach', () => {
+  assert.throws(
+    () =>
+      normalizeWaffoVerifiedPaymentEvent({
+        data: {
+          merchantProvidedBuyerIdentity: 'user-001',
+          orderId: 'waffo-order-no-timestamp',
+          orderMerchantExternalId: 'pcb-001',
+        },
+        eventId: 'waffo-event-no-timestamp',
+        eventType: 'subscription.payment_succeeded',
+        id: 'waffo-delivery-no-timestamp',
+      }),
+    (error: unknown) =>
+      error instanceof WaffoPaymentEventContractError &&
+      error.code === 'WAFFO_EVENT_CONTRACT_INVALID'
+  );
+});
+
+test('an unrecognized event type stays a silent null, not a contract error', () => {
+  assert.equal(
+    normalizeWaffoVerifiedPaymentEvent({
+      data: { orderId: 'waffo-order-refund' },
+      eventId: 'waffo-event-refund',
+      eventType: 'refund.created',
+      id: 'waffo-delivery-refund',
+    }),
+    null
+  );
+});
+
+test('a Waffo event with a malformed provider timestamp is a contract breach', () => {
+  assert.throws(
+    () =>
+      normalizeWaffoVerifiedPaymentEvent({
+        data: {
+          currentPeriodEnd: '2026-09-03T00:00:00.000Z',
+          currentPeriodStart: '2026-08-03T00:00:00.000Z',
+          merchantProvidedBuyerIdentity: 'user-001',
+          orderId: 'waffo-order-bad-timestamp',
+          orderMerchantExternalId: 'pcb-001',
+        },
+        eventId: 'waffo-event-bad-timestamp',
+        eventType: 'subscription.activated',
+        id: 'waffo-delivery-bad-timestamp',
+        timestamp: 'yesterday-ish',
+      }),
+    (error: unknown) =>
+      error instanceof WaffoPaymentEventContractError &&
+      error.code === 'WAFFO_EVENT_CONTRACT_INVALID'
+  );
+});
+
+test('Waffo activation with an absent or half-open period defers to provider recovery', () => {
+  const absent = normalizeWaffoVerifiedPaymentEvent({
+    data: {
+      merchantProvidedBuyerIdentity: 'user-001',
+      orderId: 'waffo-order-recoverable-period',
+      orderMerchantExternalId: 'pcb-001',
+    },
+    eventId: 'waffo-event-recoverable-period',
+    eventType: 'subscription.activated',
+    id: 'waffo-delivery-recoverable-period',
+    timestamp: '2026-08-03T00:00:01.000Z',
+  });
+  assert.equal(absent?.eventType, 'checkout.completed');
+  assert.equal(absent?.periodStartsAt, undefined);
+  assert.equal(absent?.periodEndsAt, undefined);
+
+  // A half-open period is recoverable too: the provider order record replaces
+  // both bounds before settlement.
+  const halfOpen = normalizeWaffoVerifiedPaymentEvent({
+    data: {
+      currentPeriodStart: '2026-08-03T00:00:00.000Z',
+      merchantProvidedBuyerIdentity: 'user-001',
+      orderId: 'waffo-order-half-open-period',
+      orderMerchantExternalId: 'pcb-001',
+    },
+    eventId: 'waffo-event-half-open-period',
+    eventType: 'subscription.activated',
+    id: 'waffo-delivery-half-open-period',
+    timestamp: '2026-08-03T00:00:01.000Z',
+  });
+  assert.equal(halfOpen?.eventType, 'checkout.completed');
+  assert.equal(halfOpen?.periodStartsAt, '2026-08-03T00:00:00.000Z');
+  assert.equal(halfOpen?.periodEndsAt, undefined);
+});
+
+test('Waffo preserves provider occurrence time and maps past_due', () => {
+  assert.deepEqual(
+    normalizeWaffoVerifiedPaymentEvent({
+      data: {
+        currentPeriodEnd: '2026-09-03T00:00:00.000Z',
+        currentPeriodStart: '2026-08-03T00:00:00.000Z',
+        merchantProvidedBuyerIdentity: 'user-001',
+        orderId: 'waffo-order-past-due',
+      },
+      eventId: 'waffo-event-past-due',
+      eventType: 'subscription.past_due',
+      id: 'waffo-delivery-past-due',
+      timestamp: '2026-08-04T01:02:03.000Z',
+    }),
+    {
+      eventType: 'subscription.past_due',
+      provider: 'waffo',
+      providerEventId: 'waffo-event-past-due',
+      providerDeliveryId: 'waffo-delivery-past-due',
+      providerOccurredAt: '2026-08-04T01:02:03.000Z',
+      reference: { id: 'waffo-order-past-due', kind: 'subscription' },
+      buyerIdentity: 'user-001',
+      periodStartsAt: '2026-08-03T00:00:00.000Z',
+      periodEndsAt: '2026-09-03T00:00:00.000Z',
     }
   );
 });

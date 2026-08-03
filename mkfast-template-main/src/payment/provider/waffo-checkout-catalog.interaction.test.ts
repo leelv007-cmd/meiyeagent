@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WebhookEvent } from '@waffo/pancake-ts';
+import { resolvePaymentRuntimePolicy } from '@/config/payment-runtime-policy';
 import type { WaffoClient } from '@/payment/provider/waffo';
 
 const plan = {
@@ -15,6 +16,18 @@ const plan = {
       type: 'subscription',
     },
   ],
+};
+
+const completeWaffoCatalog = {
+  growthMonthly: 'PROD_GROWTH_MONTHLY',
+  growthSingleMonth: 'PROD_GROWTH_SINGLE',
+  growthYearly: 'PROD_GROWTH_YEARLY',
+  proMonthly: 'PROD_PRO_MONTHLY',
+  proSingleMonth: 'PROD_PRO_SINGLE',
+  proYearly: 'PROD_PRO_YEARLY',
+  starterMonthly: 'PROD_STARTER_MONTHLY',
+  starterSingleMonth: 'PROD_STARTER_SINGLE',
+  starterYearly: 'PROD_STARTER_YEARLY',
 };
 
 vi.mock('@/lib/price-plan', () => ({
@@ -35,7 +48,7 @@ describe('Waffo checkout catalog boundary', () => {
     const create = vi.fn();
     const provider = new WaffoProvider({
       client: fakeClient(create),
-      environment: 'production',
+      environment: 'test',
     });
 
     await expect(
@@ -58,7 +71,7 @@ describe('Waffo checkout catalog boundary', () => {
     const create = vi.fn();
     const provider = new WaffoProvider({
       client: fakeClient(create),
-      environment: 'production',
+      environment: 'test',
     });
 
     await expect(
@@ -72,6 +85,62 @@ describe('Waffo checkout catalog boundary', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it('rejects Production checkout authority before any Waffo API call', async () => {
+    const { WaffoProvider } = await import('./waffo');
+    const create = vi.fn();
+    const provider = new WaffoProvider({
+      client: fakeClient(create),
+      environment: 'production',
+    });
+
+    await expect(
+      provider.createCheckout({
+        customerEmail: 'user@example.test',
+        metadata: {
+          planCheckoutBindingId: 'pcb_production',
+          userId: 'user_production',
+          workspaceId: 'ws_production',
+        },
+        planId: 'growth',
+        priceId: 'PROD_GROWTH_MONTH',
+      })
+    ).rejects.toThrow('WAFFO_ENVIRONMENT=test');
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a public Test gate with Production server authority', async () => {
+    expect(
+      resolvePaymentRuntimePolicy({
+        creemPriceIds: {},
+        provider: 'waffo',
+        publicPaidLaunchEnabled: true,
+        waffoProductIds: completeWaffoCatalog,
+        waffoTestCheckoutEnabled: true,
+      }).enabled
+    ).toBe(true);
+
+    const { WaffoProvider } = await import('./waffo');
+    const create = vi.fn();
+    const provider = new WaffoProvider({
+      client: fakeClient(create),
+      environment: 'production',
+    });
+
+    await expect(
+      provider.createCheckout({
+        customerEmail: 'user@example.test',
+        metadata: {
+          planCheckoutBindingId: 'pcb_public-gate',
+          userId: 'user_public-gate',
+          workspaceId: 'ws_public-gate',
+        },
+        planId: 'growth',
+        priceId: 'PROD_GROWTH_MONTH',
+      })
+    ).rejects.toThrow('WAFFO_ENVIRONMENT=test');
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('creates authenticated checkout with the binding as the order reference', async () => {
     const { WaffoProvider } = await import('./waffo');
     const create = vi.fn().mockResolvedValue({
@@ -80,7 +149,7 @@ describe('Waffo checkout catalog boundary', () => {
     });
     const provider = new WaffoProvider({
       client: fakeClient(create),
-      environment: 'production',
+      environment: 'test',
     });
 
     await expect(
@@ -97,7 +166,7 @@ describe('Waffo checkout catalog boundary', () => {
       })
     ).resolves.toEqual({
       id: 'waffo-session-1',
-      url: 'https://checkout.waffo.test/session-1',
+      url: 'https://checkout.waffo.test/session-1?test=true',
     });
     expect(create).toHaveBeenCalledWith({
       buyerEmail: 'user@example.test',

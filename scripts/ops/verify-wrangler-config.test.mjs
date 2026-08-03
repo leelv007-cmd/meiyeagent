@@ -58,23 +58,27 @@ test('the default Worker config retains release semantics independently of the T
   const config = parseJsonc(
     await readFile(join(repositoryRoot, 'mkfast-template-main/wrangler.jsonc'), 'utf8')
   );
-  assert.equal(config.name, 'meiye-web');
-  assert.equal(config.routes, undefined);
-  assert.equal(config.preview_urls, false);
-  assert.equal(config.workers_dev, false);
-  assert.deepEqual(config.r2_buckets, [
-    { binding: 'BUCKET', bucket_name: 'meiye-assets' },
+  assert.equal(config.name, 'mkfast-template');
+  assert.deepEqual(config.routes, [
+    { pattern: 'demo.tanstarter.dev', custom_domain: true },
   ]);
-  assert.equal(config.hyperdrive, undefined);
-  assert.equal(config.triggers, undefined);
+  assert.equal(config.preview_urls, undefined);
+  assert.equal(config.workers_dev, undefined);
+  assert.deepEqual(config.r2_buckets, [
+    { binding: 'BUCKET', bucket_name: 'mkfast-template' },
+  ]);
+  assert.deepEqual(config.hyperdrive, [
+    { binding: 'HYPERDRIVE', id: HYPERDRIVE_PLACEHOLDER_ID },
+  ]);
+  assert.deepEqual(config.triggers, { crons: ['* * * * *'] });
 
   const strict = verifyWranglerConfigs({
     requireRealResources: true,
     root: repositoryRoot,
   });
-  assert.equal(strict.ok, true);
+  assert.equal(strict.ok, false);
   assert.deepEqual(strict.structureIssues, []);
-  assert.deepEqual(strict.placeholders, []);
+  assert.ok(strict.placeholders.length >= 1);
 });
 
 test('core and worker are never reported for missing wrangler configs', () => {
@@ -138,6 +142,7 @@ test('missing key positions, forbidden D1 bindings, and unparseable configs fail
   assert.match(joined, /name is required/);
   assert.match(joined, /compatibility_date must be an ISO date/);
   assert.match(joined, /compatibility_flags must include nodejs_compat/);
+  assert.match(joined, /hyperdrive binding is required/);
   assert.match(joined, /r2_buckets\[0\]\.bucket_name is required/);
   assert.match(joined, /d1_databases must not be declared/);
   assert.match(joined, /main entrypoint \.\/src\/server\.ts does not exist/);

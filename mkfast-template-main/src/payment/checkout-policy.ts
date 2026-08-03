@@ -25,6 +25,19 @@ export interface SellableCheckoutSelection {
   price: Price;
 }
 
+/**
+ * Waffo checkout is deliberately Test-only until Production commerce is
+ * explicitly authorized. Webhook verification keeps its own environment
+ * authority and is not affected by this checkout gate.
+ */
+export function requireWaffoTestCheckoutAuthority(
+  authority: unknown
+): asserts authority is 'test' {
+  if (authority !== 'test') {
+    throw new Error('Waffo checkout requires WAFFO_ENVIRONMENT=test.');
+  }
+}
+
 export function requireSellableCheckoutPrice(
   input: { planId: string; priceId: string },
   catalog: CheckoutCatalogLookup

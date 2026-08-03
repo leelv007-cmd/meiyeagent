@@ -56,11 +56,11 @@ test(
       // attachProviderCheckout can persist its checkout id.
       await client`
         INSERT INTO payment
-          (id, price_id, user_id, customer_id, subscription_id, session_id,
+          (id, provider, price_id, user_id, customer_id, subscription_id, session_id,
            type, interval, status, paid, period_start, period_end,
            cancel_at_period_end, created_at, updated_at)
         VALUES
-          (${paymentId}, 'price_growth_month', ${userId}, ${`customer-${suffix}`},
+          (${paymentId}, 'stripe', 'price_growth_month', ${userId}, ${`customer-${suffix}`},
            ${subscriptionId}, ${checkoutId}, 'subscription', 'month', 'active',
            TRUE, ${periodStart.toISOString()}, ${periodEnd.toISOString()},
            FALSE, now(), now())
@@ -128,6 +128,78 @@ test(
       `;
       assert.equal(canceledBinding?.status, 'canceled');
 
+      const foreignWaffoSubscriptionId = `waffo-foreign-${suffix}`;
+      const foreignWaffoBinding = await store.createOwnerBinding({
+        interval: 'month',
+        ownerUserId: userId,
+        paymentType: 'subscription',
+        priceId: 'PROD_GROWTH_MONTH',
+        provider: 'waffo',
+        workspaceId,
+      });
+      assert.ok(foreignWaffoBinding);
+      await client`
+        INSERT INTO payment
+          (id, provider, price_id, user_id, customer_id, subscription_id,
+           type, interval, status, paid, period_start, period_end,
+           cancel_at_period_end, created_at, updated_at)
+        VALUES
+          (${`foreign-payment-${suffix}`}, 'stripe', 'PROD_GROWTH_MONTH',
+           ${userId}, ${`foreign-customer-${suffix}`},
+           ${foreignWaffoSubscriptionId}, 'subscription', 'month', 'active',
+           TRUE, ${periodStart.toISOString()}, ${periodEnd.toISOString()},
+           FALSE, now(), now())
+      `;
+      await assert.rejects(
+        store.markActive({
+          provider: 'waffo',
+          subscriptionId: foreignWaffoSubscriptionId,
+        }),
+        /not activated/i
+      );
+
+      const foreignStripeSubscriptionId = `stripe-foreign-${suffix}`;
+      const foreignStripeBinding = await store.createOwnerBinding({
+        interval: 'month',
+        ownerUserId: userId,
+        paymentType: 'subscription',
+        priceId: 'price_growth_month',
+        provider: 'stripe',
+        workspaceId,
+      });
+      assert.ok(foreignStripeBinding);
+      await store.attachProviderCheckout({
+        bindingId: foreignStripeBinding.id,
+        providerCheckoutId: `foreign-checkout-${suffix}`,
+      });
+      await client`
+        INSERT INTO payment
+          (id, provider, price_id, user_id, customer_id, subscription_id,
+           session_id, type, interval, status, paid, period_start, period_end,
+           cancel_at_period_end, created_at, updated_at)
+        VALUES
+          (${`foreign-cancel-payment-${suffix}`}, 'waffo', 'price_growth_month',
+           ${userId}, ${`foreign-cancel-customer-${suffix}`},
+           ${foreignStripeSubscriptionId}, ${`foreign-checkout-${suffix}`},
+           'subscription', 'month', 'active', TRUE,
+           ${periodStart.toISOString()}, ${periodEnd.toISOString()},
+           FALSE, now(), now())
+      `;
+      await assert.rejects(
+        store.markCanceled({
+          provider: 'stripe',
+          subscriptionId: foreignStripeSubscriptionId,
+        }),
+        /not canceled/i
+      );
+
+      // The in-flight unique index allows only one live Waffo attempt per
+      // owner and workspace; retire the probe binding before the next one.
+      await client`
+        UPDATE plan_checkout_bindings
+        SET status = 'failed', updated_at = now()
+        WHERE id = ${foreignWaffoBinding.id}
+      `;
       const waffoBinding = await store.createOwnerBinding({
         interval: 'month',
         ownerUserId: userId,
@@ -204,22 +276,25 @@ test(
         subscriptionId: null,
       });
 
-      await store.upsertWaffoSubscriptionPayment({
-        event: waffoActivation,
-        intent: {
-          interval: 'month',
-          lifecycle: 'activate',
-          ownerUserId: userId,
-          paymentEventId: 'waffo:waffo-payment-001',
-          periodEndsAt: waffoPeriodEnd,
-          periodStartsAt: waffoPeriodStart,
-          priceId: 'PROD_GROWTH_MONTH',
-          provider: 'waffo',
-          providerEventId: 'waffo-payment-001',
-          subscriptionId: waffoSubscriptionId,
-          workspaceId,
-        },
-      });
+      assert.equal(
+        await store.upsertWaffoSubscriptionPayment({
+          event: waffoActivation,
+          intent: {
+            interval: 'month',
+            lifecycle: 'activate',
+            ownerUserId: userId,
+            paymentEventId: 'waffo:waffo-payment-001',
+            periodEndsAt: waffoPeriodEnd,
+            periodStartsAt: waffoPeriodStart,
+            priceId: 'PROD_GROWTH_MONTH',
+            provider: 'waffo',
+            providerEventId: 'waffo-payment-001',
+            subscriptionId: waffoSubscriptionId,
+            workspaceId,
+          },
+        }),
+        'applied'
+      );
       const [waffoPayment] = await client<
         Array<{
           provider: string | null;
@@ -262,8 +337,131 @@ test(
         subscription_id: waffoSubscriptionId,
       });
 
+      const pastDueEvent = {
+        ...waffoActivation,
+        eventType: 'subscription.past_due' as const,
+        providerEventId: 'waffo-payment-past-due',
+        providerOccurredAt: '2026-08-04T01:02:03.000Z',
+      };
+      const cancelingEvent = {
+        ...waffoActivation,
+        eventType: 'customer.subscription.updated' as const,
+        providerEventId: 'waffo-payment-canceling',
+        providerOccurredAt: '2026-08-04T00:00:00.000Z',
+      };
+      assert.equal(
+        await store.upsertWaffoSubscriptionPayment({
+          event: cancelingEvent,
+          intent: {
+            interval: 'month',
+            lifecycle: 'cancel_at_period_end',
+            ownerUserId: userId,
+            paymentEventId: 'waffo:waffo-payment-canceling',
+            periodEndsAt: waffoPeriodEnd,
+            periodStartsAt: waffoPeriodStart,
+            priceId: 'PROD_GROWTH_MONTH',
+            provider: 'waffo',
+            providerEventId: cancelingEvent.providerEventId,
+            providerOccurredAt: cancelingEvent.providerOccurredAt,
+            subscriptionId: waffoSubscriptionId,
+            workspaceId,
+          },
+        }),
+        'applied'
+      );
+      assert.equal(
+        await store.upsertWaffoSubscriptionPayment({
+          event: pastDueEvent,
+          intent: {
+            interval: 'month',
+            lifecycle: 'past_due',
+            ownerUserId: userId,
+            paymentEventId: 'waffo:waffo-payment-past-due',
+            periodEndsAt: waffoPeriodEnd,
+            periodStartsAt: waffoPeriodStart,
+            priceId: 'PROD_GROWTH_MONTH',
+            provider: 'waffo',
+            providerEventId: pastDueEvent.providerEventId,
+            providerOccurredAt: pastDueEvent.providerOccurredAt,
+            subscriptionId: waffoSubscriptionId,
+            workspaceId,
+          },
+        }),
+        'applied'
+      );
+      const [pastDuePayment] = await client<
+        Array<{
+          status: string;
+          paid: boolean;
+          cancel_at_period_end: boolean | null;
+        }>
+      >`
+        SELECT status, paid, cancel_at_period_end
+        FROM payment
+        WHERE subscription_id = ${waffoSubscriptionId}
+      `;
+      assert.deepEqual(pastDuePayment, {
+        status: 'past_due',
+        paid: true,
+        cancel_at_period_end: true,
+      });
+
+      const staleRenewal = {
+        ...waffoActivation,
+        eventType: 'subscription.renewed' as const,
+        providerEventId: 'waffo-payment-stale-renewal',
+        providerOccurredAt: '2026-08-03T23:59:59.000Z',
+      };
+      assert.equal(
+        await store.upsertWaffoSubscriptionPayment({
+          event: staleRenewal,
+          intent: {
+            interval: 'month',
+            lifecycle: 'renew',
+            ownerUserId: userId,
+            paymentEventId: 'waffo:waffo-payment-stale-renewal',
+            periodEndsAt: '2026-10-03T00:00:00.000Z',
+            periodStartsAt: waffoPeriodEnd,
+            priceId: 'PROD_GROWTH_MONTH',
+            provider: 'waffo',
+            providerEventId: staleRenewal.providerEventId,
+            providerOccurredAt: staleRenewal.providerOccurredAt,
+            subscriptionId: waffoSubscriptionId,
+            workspaceId,
+          },
+        }),
+        'ignored_stale'
+      );
+      const [stillPastDue] = await client<Array<{ status: string }>>`
+        SELECT status
+        FROM payment
+        WHERE subscription_id = ${waffoSubscriptionId}
+      `;
+      assert.equal(stillPastDue?.status, 'past_due');
+
+      assert.equal(
+        await store.upsertWaffoSubscriptionPayment({
+          event: pastDueEvent,
+          intent: {
+            interval: 'month',
+            lifecycle: 'past_due',
+            ownerUserId: userId,
+            paymentEventId: 'waffo:waffo-payment-past-due-replay',
+            periodEndsAt: waffoPeriodEnd,
+            periodStartsAt: waffoPeriodStart,
+            priceId: 'PROD_GROWTH_MONTH',
+            provider: 'waffo',
+            providerEventId: pastDueEvent.providerEventId,
+            providerOccurredAt: pastDueEvent.providerOccurredAt,
+            subscriptionId: waffoSubscriptionId,
+            workspaceId,
+          },
+        }),
+        'duplicate'
+      );
+
       // A delayed terminal delivery from an older billing period cannot
-      // overwrite the active Waffo payment or its binding.
+      // overwrite the current past-due Waffo payment or its binding.
       await store.upsertWaffoSubscriptionPayment({
         event: waffoActivation,
         intent: {
@@ -287,7 +485,7 @@ test(
         FROM payment
         WHERE subscription_id = ${waffoSubscriptionId}
       `;
-      assert.equal(stillActiveWaffoPayment?.status, 'active');
+      assert.equal(stillActiveWaffoPayment?.status, 'past_due');
 
       await assert.rejects(
         store.markActive({
@@ -319,7 +517,7 @@ test(
           ownerUserId: userId,
           priceId: 'PROD_GROWTH_MONTH',
           interval: 'month',
-          cancelAtPeriodEnd: false,
+          cancelAtPeriodEnd: true,
           periodStartsAt: waffoPeriodEnd,
           periodEndsAt: '2026-10-03T00:00:00.000Z',
           subscriptionId: waffoSubscriptionId,
@@ -345,9 +543,92 @@ test(
   }
 );
 
+test(
+  'Waffo cancellation checkpoints release the database before provider calls and retry after failure',
+  { skip: !databaseUrl },
+  async () => {
+    const client = postgres(databaseUrl as string, { max: 2, prepare: false });
+    const db = drizzle(client, { schema });
+    const subscriptionId = `waffo-cancel-${crypto.randomUUID()}`;
+    const periodStartsAt = '2026-08-03T00:00:00.000Z';
+    let attempts = 0;
+    const observed: Array<{ status: string; attempt_count: number }> = [];
+
+    try {
+      await migratePlanCheckoutBindings(client);
+      const store = new PostgresPlanCheckoutBindingStore(db);
+      await assert.rejects(
+        store.cancelWaffoSubscriptionAtPeriodEnd({
+          periodStartsAt,
+          subscriptionId,
+          async cancel() {
+            attempts += 1;
+            const [row] = await client<
+              Array<{ status: string; attempt_count: number }>
+            >`
+              SELECT status, attempt_count
+              FROM waffo_subscription_cancellation_receipts
+              WHERE subscription_id = ${subscriptionId}
+                AND period_starts_at = ${periodStartsAt}
+            `;
+            if (row) observed.push(row);
+            throw new Error('provider unavailable');
+          },
+        })
+      );
+      assert.equal(attempts, 1);
+      assert.deepEqual(observed, [{ status: 'processing', attempt_count: 1 }]);
+
+      await client`
+        UPDATE waffo_subscription_cancellation_receipts
+        SET available_at = now()
+        WHERE subscription_id = ${subscriptionId}
+          AND period_starts_at = ${periodStartsAt}
+      `;
+      await store.cancelWaffoSubscriptionAtPeriodEnd({
+        periodStartsAt,
+        subscriptionId,
+        async cancel() {
+          attempts += 1;
+          const [row] = await client<
+            Array<{ status: string; attempt_count: number }>
+          >`
+            SELECT status, attempt_count
+            FROM waffo_subscription_cancellation_receipts
+            WHERE subscription_id = ${subscriptionId}
+              AND period_starts_at = ${periodStartsAt}
+          `;
+          if (row) observed.push(row);
+        },
+      });
+      assert.equal(attempts, 2);
+      assert.deepEqual(observed, [
+        { status: 'processing', attempt_count: 1 },
+        { status: 'processing', attempt_count: 2 },
+      ]);
+      const [completed] = await client<Array<{ status: string }>>`
+        SELECT status
+        FROM waffo_subscription_cancellation_receipts
+        WHERE subscription_id = ${subscriptionId}
+          AND period_starts_at = ${periodStartsAt}
+      `;
+      assert.equal(completed?.status, 'completed');
+    } finally {
+      await client`
+        DELETE FROM waffo_subscription_cancellation_receipts
+        WHERE subscription_id = ${subscriptionId}
+      `;
+      await client.end();
+    }
+  }
+);
+
 async function migratePlanCheckoutBindings(client: postgres.Sql) {
   await client.unsafe(`
     ALTER TABLE payment ADD COLUMN IF NOT EXISTS provider text;
+    ALTER TABLE payment ADD COLUMN IF NOT EXISTS waffo_provider_occurred_at timestamptz;
+    ALTER TABLE payment ADD COLUMN IF NOT EXISTS waffo_event_id text;
+    ALTER TABLE payment ADD COLUMN IF NOT EXISTS waffo_event_rank integer;
     CREATE TABLE IF NOT EXISTS plan_checkout_bindings (
       id text PRIMARY KEY,
       provider text NOT NULL,
@@ -358,24 +639,58 @@ async function migratePlanCheckoutBindings(client: postgres.Sql) {
       owner_user_id text NOT NULL REFERENCES "user"(id) ON DELETE CASCADE,
       provider_checkout_id text,
       subscription_id text,
+      replaces_subscription_id text,
       status text NOT NULL DEFAULT 'pending',
       created_at timestamptz NOT NULL DEFAULT now(),
       updated_at timestamptz NOT NULL DEFAULT now()
     );
+    ALTER TABLE plan_checkout_bindings
+      ADD COLUMN IF NOT EXISTS replaces_subscription_id text;
     CREATE UNIQUE INDEX IF NOT EXISTS plan_checkout_bindings_provider_checkout_uidx
       ON plan_checkout_bindings (provider, provider_checkout_id);
     CREATE INDEX IF NOT EXISTS plan_checkout_bindings_subscription_id_idx
       ON plan_checkout_bindings (subscription_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS plan_checkout_bindings_waffo_inflight_uidx
+      ON plan_checkout_bindings (owner_user_id, workspace_id)
+      WHERE provider = 'waffo' AND status IN ('pending', 'checkout_created');
+    CREATE TABLE IF NOT EXISTS waffo_subscription_changes (
+      subscription_id text PRIMARY KEY,
+      workspace_id text NOT NULL,
+      owner_user_id text NOT NULL,
+      target_price_id text NOT NULL,
+      target_interval text NOT NULL,
+      effective_at timestamptz NOT NULL,
+      status text NOT NULL DEFAULT 'pending',
+      created_at timestamptz NOT NULL DEFAULT now(),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      CHECK (status IN ('pending', 'applied', 'canceled'))
+    );
     CREATE TABLE IF NOT EXISTS waffo_subscription_cancellation_receipts (
       subscription_id text NOT NULL,
       period_starts_at timestamptz NOT NULL,
       status text NOT NULL DEFAULT 'pending',
       requested_at timestamptz NOT NULL DEFAULT now(),
       completed_at timestamptz,
+      attempt_count integer NOT NULL DEFAULT 0,
+      available_at timestamptz NOT NULL DEFAULT now(),
+      lease_expires_at timestamptz,
+      claim_token text,
+      last_error_code text,
       updated_at timestamptz NOT NULL DEFAULT now(),
       PRIMARY KEY (subscription_id, period_starts_at),
-      CHECK (status IN ('pending', 'completed'))
-    )
+      CHECK (status IN ('pending', 'processing', 'completed'))
+    );
+    ALTER TABLE waffo_subscription_cancellation_receipts
+      ADD COLUMN IF NOT EXISTS attempt_count integer NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS available_at timestamptz NOT NULL DEFAULT now(),
+      ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz,
+      ADD COLUMN IF NOT EXISTS claim_token text,
+      ADD COLUMN IF NOT EXISTS last_error_code text;
+    ALTER TABLE waffo_subscription_cancellation_receipts
+      DROP CONSTRAINT IF EXISTS waffo_subscription_cancellation_receipts_status_check;
+    ALTER TABLE waffo_subscription_cancellation_receipts
+      ADD CONSTRAINT waffo_subscription_cancellation_receipts_status_check
+      CHECK (status IN ('pending', 'processing', 'completed'))
   `);
 }
 
@@ -396,3 +711,189 @@ function normalizePeriodFacts<
       : null,
   };
 }
+
+test(
+  'Waffo checkout orchestration state closes the duplicate, stale and change-parking races',
+  { skip: !databaseUrl },
+  async () => {
+    const client = postgres(databaseUrl as string, { max: 1, prepare: false });
+    const db = drizzle(client, { schema });
+    const suffix = crypto.randomUUID();
+    const userId = `orch-owner-${suffix}`;
+    const workspaceId = `orch-workspace-${suffix}`;
+    const otherWorkspaceId = `orch-workspace-b-${suffix}`;
+    const activeOrderId = `orch-order-active-${suffix}`;
+    const cancellingOrderId = `orch-order-cancelling-${suffix}`;
+
+    try {
+      await migratePlanCheckoutBindings(client);
+      await client`
+        INSERT INTO "user"
+          (id, name, email, email_verified, created_at, updated_at)
+        VALUES
+          (${userId}, 'Orch Owner', ${`${userId}@example.test`}, TRUE, now(), now())
+      `;
+      await client`
+        INSERT INTO workspaces (id, name)
+        VALUES (${workspaceId}, 'Orch Workspace'), (${otherWorkspaceId}, 'Orch Workspace B')
+      `;
+      await client`
+        INSERT INTO workspace_memberships (workspace_id, user_id, role)
+        VALUES (${workspaceId}, ${userId}, 'owner'), (${otherWorkspaceId}, ${userId}, 'owner')
+      `;
+
+      const store = new PostgresPlanCheckoutBindingStore(db);
+
+      // One in-flight binding per owner and workspace: the race loser gets
+      // null instead of a second checkout.
+      const first = await store.createOwnerBinding({
+        interval: 'monthly',
+        ownerUserId: userId,
+        paymentType: 'subscription',
+        priceId: 'PROD_GROWTH_MONTHLY',
+        provider: 'waffo',
+        workspaceId,
+      });
+      assert.ok(first);
+      const raceLoser = await store.createOwnerBinding({
+        interval: 'monthly',
+        ownerUserId: userId,
+        paymentType: 'subscription',
+        priceId: 'PROD_GROWTH_MONTHLY',
+        provider: 'waffo',
+        workspaceId,
+      });
+      assert.equal(raceLoser, null);
+      assert.equal(
+        await store.hasPendingWaffoBinding({
+          interval: 'monthly',
+          ownerUserId: userId,
+          priceId: 'PROD_GROWTH_MONTHLY',
+          workspaceId,
+        }),
+        true
+      );
+
+      // An abandoned in-flight binding stops blocking after the stale
+      // release sweep, and the guard no longer reports it as pending.
+      await client`
+        UPDATE plan_checkout_bindings
+        SET updated_at = now() - interval '2 hours'
+        WHERE id = ${first.id}
+      `;
+      assert.equal(
+        await store.hasPendingWaffoBinding({
+          interval: 'monthly',
+          ownerUserId: userId,
+          priceId: 'PROD_GROWTH_MONTHLY',
+          workspaceId,
+        }),
+        false
+      );
+      await store.releaseStaleWaffoBindings({
+        ownerUserId: userId,
+        workspaceId,
+      });
+      const retry = await store.createOwnerBinding({
+        interval: 'monthly',
+        ownerUserId: userId,
+        paymentType: 'subscription',
+        priceId: 'PROD_GROWTH_MONTHLY',
+        provider: 'waffo',
+        workspaceId,
+      });
+      assert.ok(retry);
+      await client`
+        UPDATE plan_checkout_bindings
+        SET status = 'active', subscription_id = ${activeOrderId}
+        WHERE id = ${retry.id}
+      `;
+
+      // The current-subscription snapshot ignores an order already
+      // cancelling at period end, so post-upgrade classification never sees
+      // the dying subscription as current.
+      await client`
+        INSERT INTO payment
+          (id, provider, price_id, user_id, customer_id, subscription_id,
+           type, interval, status, paid, period_start, period_end,
+           cancel_at_period_end, created_at, updated_at)
+        VALUES
+          (${`waffo:${cancellingOrderId}`}, 'waffo', 'PROD_STARTER_MONTHLY', ${userId},
+           ${userId}, ${cancellingOrderId}, 'subscription', 'monthly', 'active',
+           TRUE, now() - interval '1 day', now() + interval '29 days',
+           TRUE, now(), now() + interval '1 minute'),
+          (${`waffo:${activeOrderId}`}, 'waffo', 'PROD_GROWTH_MONTHLY', ${userId},
+           ${userId}, ${activeOrderId}, 'subscription', 'monthly', 'active',
+           TRUE, now() - interval '1 day', now() + interval '29 days',
+           FALSE, now(), now())
+      `;
+      await client`
+        INSERT INTO plan_checkout_bindings
+          (id, provider, price_id, payment_type, interval, workspace_id,
+           owner_user_id, subscription_id, status, created_at, updated_at)
+        VALUES
+          (${`pcb-cancelling-${suffix}`}, 'waffo', 'PROD_STARTER_MONTHLY', 'subscription',
+           'monthly', ${workspaceId}, ${userId}, ${cancellingOrderId}, 'active',
+           now(), now())
+      `;
+      const current = await store.findCurrentWaffoSubscription({
+        ownerUserId: userId,
+        workspaceId,
+      });
+      assert.equal(current?.subscriptionId, activeOrderId);
+
+      // Next-cycle changes park durably, an applied change is never rewritten
+      // in place, and another workspace cannot rebind the subscription.
+      assert.equal(
+        await store.recordWaffoSubscriptionChange({
+          effectiveAt: new Date('2026-09-03T00:00:00.000Z').toISOString(),
+          ownerUserId: userId,
+          subscriptionId: activeOrderId,
+          targetInterval: 'yearly',
+          targetPriceId: 'PROD_GROWTH_YEARLY',
+          workspaceId,
+        }),
+        'pending'
+      );
+      await client`
+        UPDATE waffo_subscription_changes
+        SET status = 'applied'
+        WHERE subscription_id = ${activeOrderId}
+      `;
+      assert.equal(
+        await store.recordWaffoSubscriptionChange({
+          effectiveAt: new Date('2026-10-03T00:00:00.000Z').toISOString(),
+          ownerUserId: userId,
+          subscriptionId: activeOrderId,
+          targetInterval: 'monthly',
+          targetPriceId: 'PROD_STARTER_MONTHLY',
+          workspaceId,
+        }),
+        'applied'
+      );
+      const applied = await client`
+        SELECT target_price_id AS "targetPriceId", status
+        FROM waffo_subscription_changes
+        WHERE subscription_id = ${activeOrderId}
+      `;
+      assert.equal(applied[0]?.targetPriceId, 'PROD_GROWTH_YEARLY');
+      assert.equal(applied[0]?.status, 'applied');
+      await assert.rejects(
+        store.recordWaffoSubscriptionChange({
+          effectiveAt: new Date('2026-10-03T00:00:00.000Z').toISOString(),
+          ownerUserId: userId,
+          subscriptionId: activeOrderId,
+          targetInterval: 'monthly',
+          targetPriceId: 'PROD_STARTER_MONTHLY',
+          workspaceId: otherWorkspaceId,
+        }),
+        /belongs to another workspace/
+      );
+    } finally {
+      await client`DELETE FROM waffo_subscription_changes WHERE subscription_id = ${activeOrderId}`;
+      await client`DELETE FROM "user" WHERE id = ${userId}`;
+      await client`DELETE FROM workspaces WHERE id IN (${workspaceId}, ${otherWorkspaceId})`;
+      await client.end();
+    }
+  }
+);

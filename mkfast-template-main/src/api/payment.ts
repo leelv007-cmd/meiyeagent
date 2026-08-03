@@ -24,12 +24,18 @@ import { projectCurrentPlan } from './payment-current-plan';
 import { createCheckout, createCustomerPortal } from '@/payment';
 import {
   createCheckoutInputSchema,
+  requireWaffoTestCheckoutAuthority,
   portalInputSchema,
   requireSellableCheckoutPrice,
   StripeNewCommerceRetiredError,
 } from '@/payment/checkout-policy';
 import { PostgresPlanCheckoutBindingStore } from '@/payment/plan-checkout-bindings';
-import { requireCheckoutWorkspaceBinding } from '@/payment/plan-commerce';
+import {
+  classifyWaffoPlanChange,
+  requireCheckoutWorkspaceBinding,
+  WaffoCheckoutAlreadyActiveError,
+  WaffoNextCycleChangeUnavailableError,
+} from '@/payment/plan-commerce';
 import type {
   PaymentStatus,
   PlanInterval,
@@ -39,7 +45,7 @@ import type {
 import { PaymentScenes, PaymentTypes } from '@/payment/types';
 import { websiteConfig } from '@/config/website';
 import { createServerFn } from '@tanstack/react-start';
-import { and, desc, eq, or } from 'drizzle-orm';
+import { and, desc, eq, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 const checkoutCatalog = { findPlanByPlanId, findPriceInPlan };
@@ -53,6 +59,9 @@ export const createCheckoutSession = createServerFn({ method: 'POST' })
     const provider = websiteConfig.payment?.provider;
     if (!provider) throw new Error('Payment provider is required.');
     if (provider === 'stripe') throw new StripeNewCommerceRetiredError();
+    if (provider === 'waffo') {
+      requireWaffoTestCheckoutAuthority(serverEnv.WAFFO_ENVIRONMENT);
+    }
     const { price, plan: pricePlan } = requireSellableCheckoutPrice(
       data,
       checkoutCatalog
@@ -96,15 +105,86 @@ export const createCheckoutSession = createServerFn({ method: 'POST' })
       workspaceId: workspace.id,
     });
     const bindingStore = new PostgresPlanCheckoutBindingStore(db);
+    const requestedInterval = pricePlan.isLifetime
+      ? null
+      : (pricePlan.prices.find((candidate) => candidate.priceId === priceId)
+          ?.interval ?? null);
+    let replacesSubscriptionId: string | null = null;
+    if (provider === 'waffo' && requestedInterval) {
+      await bindingStore.releaseStaleWaffoBindings({
+        ownerUserId: bound.userId,
+        workspaceId: bound.workspaceId,
+      });
+      const current = await bindingStore.findCurrentWaffoSubscription({
+        ownerUserId: bound.userId,
+        workspaceId: bound.workspaceId,
+      });
+      const currentPlan = current ? findPlanByPriceId(current.priceId) : null;
+      const decision = classifyWaffoPlanChange({
+        current: current
+          ? {
+              planId: currentPlan?.id ?? '',
+              interval: current.interval,
+            }
+          : null,
+        requested: { planId, interval: requestedInterval },
+      });
+      if (decision === 'defer_next_cycle' && current) {
+        await bindingStore.recordWaffoSubscriptionChange({
+          effectiveAt:
+            current.periodEnd instanceof Date
+              ? current.periodEnd.toISOString()
+              : (current.periodEnd ?? new Date().toISOString()),
+          ownerUserId: bound.userId,
+          subscriptionId: current.subscriptionId,
+          targetInterval: requestedInterval,
+          targetPriceId: priceId,
+          workspaceId: bound.workspaceId,
+        });
+        throw new WaffoNextCycleChangeUnavailableError();
+      }
+      if (decision === 'duplicate') {
+        throw new WaffoCheckoutAlreadyActiveError();
+      }
+      if (decision === 'upgrade') {
+        replacesSubscriptionId = current?.subscriptionId ?? null;
+      }
+      if (
+        await bindingStore.hasPendingWaffoBinding({
+          interval: requestedInterval,
+          ownerUserId: bound.userId,
+          priceId,
+          replacesSubscriptionId,
+          workspaceId: bound.workspaceId,
+        })
+      ) {
+        throw new WaffoCheckoutAlreadyActiveError();
+      }
+    }
     const binding = await bindingStore.createOwnerBinding({
       provider,
       priceId,
       paymentType: price.type,
-      interval: pricePlan.isLifetime ? 'lifetime' : (price.interval ?? null),
+      interval: pricePlan.isLifetime ? 'lifetime' : requestedInterval,
       workspaceId: bound.workspaceId,
       ownerUserId: bound.userId,
+      replacesSubscriptionId,
     });
     if (!binding) {
+      // The unique in-flight index absorbs a concurrent duplicate insert;
+      // losing that race is a duplicate checkout, not a membership failure.
+      if (
+        provider === 'waffo' &&
+        (await bindingStore.hasPendingWaffoBinding({
+          interval: pricePlan.isLifetime ? null : requestedInterval,
+          ownerUserId: bound.userId,
+          priceId,
+          replacesSubscriptionId,
+          workspaceId: bound.workspaceId,
+        }))
+      ) {
+        throw new WaffoCheckoutAlreadyActiveError();
+      }
       throw new Error(
         'Plan checkout requires workspace owner membership for binding.'
       );
@@ -174,6 +254,23 @@ export const getCurrentPlan = createServerFn({ method: 'GET' })
     const plans = getAllPricePlans();
     const freePlan = plans.find((p) => p.isFree && !p.disabled) ?? null;
     const lifetimePlanIds = plans.filter((p) => p.isLifetime).map((p) => p.id);
+    const activeWorkspace = await resolveActiveWorkspace(userId);
+    const workspaceSubscriptionPredicate = activeWorkspace
+      ? sql`EXISTS (
+          SELECT 1
+          FROM plan_checkout_bindings AS workspace_binding
+          WHERE workspace_binding.workspace_id = ${activeWorkspace.id}
+            AND workspace_binding.owner_user_id = ${userId}
+            AND (
+              payment.provider IS NULL
+              OR workspace_binding.provider = payment.provider
+            )
+            AND (
+              workspace_binding.subscription_id = payment.subscription_id
+              OR workspace_binding.provider_checkout_id = payment.session_id
+            )
+        )`
+      : sql`FALSE`;
 
     const payments = await db
       .select({
@@ -204,7 +301,12 @@ export const getCurrentPlan = createServerFn({ method: 'GET' })
             ),
             and(
               eq(payment.type, PaymentTypes.SUBSCRIPTION),
-              or(eq(payment.status, 'active'), eq(payment.status, 'trialing'))
+              or(
+                eq(payment.status, 'active'),
+                eq(payment.status, 'trialing'),
+                eq(payment.status, 'past_due')
+              ),
+              workspaceSubscriptionPredicate
             )
           )
         )
@@ -229,7 +331,9 @@ export const getCurrentPlan = createServerFn({ method: 'GET' })
       if (
         !userLifetimePlan &&
         rec.type === PaymentTypes.SUBSCRIPTION &&
-        (rec.status === 'active' || rec.status === 'trialing') &&
+        (rec.status === 'active' ||
+          rec.status === 'trialing' ||
+          rec.status === 'past_due') &&
         !activeSubscription
       ) {
         activeSubscription = {

@@ -116,17 +116,23 @@ const creemSubscriptionScheduledCancelSchema = z
   })
   .passthrough();
 
+const RECOGNIZED_WAFFO_EVENT_TYPES = [
+  'subscription.activated',
+  'subscription.payment_succeeded',
+  'subscription.past_due',
+  'subscription.canceling',
+  'subscription.uncanceled',
+  'subscription.canceled',
+] as const;
+
 const waffoWebhookEventSchema = z
   .object({
     id: z.string().min(1),
     eventId: z.string().min(1),
-    eventType: z.enum([
-      'subscription.activated',
-      'subscription.payment_succeeded',
-      'subscription.canceling',
-      'subscription.uncanceled',
-      'subscription.canceled',
-    ]),
+    // The provider occurrence time drives monotonic lifecycle fencing, so a
+    // lifecycle event without one is a contract breach, not an optional gap.
+    timestamp: z.string().min(1),
+    eventType: z.enum(RECOGNIZED_WAFFO_EVENT_TYPES),
     data: z
       .object({
         orderId: z.string().min(1),
@@ -139,6 +145,54 @@ const waffoWebhookEventSchema = z
       .passthrough(),
   })
   .passthrough();
+
+export class WaffoPaymentEventContractError extends Error {
+  readonly code = 'WAFFO_EVENT_CONTRACT_INVALID' as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'WaffoPaymentEventContractError';
+  }
+}
+
+function isRecognizedWaffoEventType(input: unknown): boolean {
+  if (!input || typeof input !== 'object') return false;
+  const eventType = (input as { eventType?: unknown }).eventType;
+  return (
+    typeof eventType === 'string' &&
+    (RECOGNIZED_WAFFO_EVENT_TYPES as readonly string[]).includes(eventType)
+  );
+}
+
+/**
+ * A complete billing period that fails to parse or is inverted is a contract
+ * breach on paid lifecycle events. An absent or half-open period is left for
+ * the Waffo provider adapter, which recovers the authoritative bounds from
+ * the provider order record and fails closed retryable when it cannot.
+ */
+function assertWaffoPeriodContract(
+  period: { periodStartsAt?: string; periodEndsAt?: string },
+  eventType: (typeof RECOGNIZED_WAFFO_EVENT_TYPES)[number]
+) {
+  if (
+    eventType !== 'subscription.activated' &&
+    eventType !== 'subscription.payment_succeeded'
+  ) {
+    return;
+  }
+  if (!period.periodStartsAt || !period.periodEndsAt) return;
+  const startsAt = Date.parse(period.periodStartsAt);
+  const endsAt = Date.parse(period.periodEndsAt);
+  if (
+    !Number.isFinite(startsAt) ||
+    !Number.isFinite(endsAt) ||
+    endsAt <= startsAt
+  ) {
+    throw new WaffoPaymentEventContractError(
+      'Waffo paid lifecycle event has an invalid billing period.'
+    );
+  }
+}
 
 export function normalizeStripeVerifiedPaymentEvent(
   input: unknown
@@ -285,7 +339,17 @@ export function normalizeWaffoVerifiedPaymentEvent(
   input: unknown
 ): VerifiedPaymentWebhookEvent | null {
   const event = waffoWebhookEventSchema.safeParse(input);
-  if (!event.success) return null;
+  if (!event.success) {
+    // A recognized lifecycle event that fails contract validation (empty
+    // identity strings, missing envelope fields) must reach durable retry
+    // instead of being silently completed as irrelevant.
+    if (isRecognizedWaffoEventType(input)) {
+      throw new WaffoPaymentEventContractError(
+        'Waffo lifecycle event failed contract validation.'
+      );
+    }
+    return null;
+  }
 
   const planBindingId =
     event.data.data.orderMerchantExternalId ??
@@ -299,6 +363,13 @@ export function normalizeWaffoVerifiedPaymentEvent(
       ? { periodEndsAt: event.data.data.currentPeriodEnd }
       : {}),
   };
+  const providerOccurredAt = event.data.timestamp;
+  if (!Number.isFinite(Date.parse(providerOccurredAt))) {
+    throw new WaffoPaymentEventContractError(
+      'Waffo event timestamp must be a valid ISO timestamp.'
+    );
+  }
+  assertWaffoPeriodContract(period, event.data.eventType);
   const base = {
     provider: 'waffo' as const,
     // Waffo's business event id drives Core settlement idempotency. Its
@@ -308,10 +379,20 @@ export function normalizeWaffoVerifiedPaymentEvent(
     reference: { id: event.data.data.orderId, kind: 'subscription' as const },
     ...(buyerIdentity ? { buyerIdentity } : {}),
     ...period,
+    ...(providerOccurredAt ? { providerOccurredAt } : {}),
   };
 
   if (event.data.eventType === 'subscription.activated') {
-    if (!planBindingId || !buyerIdentity) return null;
+    if (!planBindingId) {
+      throw new WaffoPaymentEventContractError(
+        'Waffo activation is missing plan binding identity.'
+      );
+    }
+    if (!buyerIdentity) {
+      throw new WaffoPaymentEventContractError(
+        'Waffo activation is missing buyer identity.'
+      );
+    }
     return {
       eventType: 'checkout.completed',
       ...base,
@@ -321,6 +402,10 @@ export function normalizeWaffoVerifiedPaymentEvent(
 
   if (event.data.eventType === 'subscription.payment_succeeded') {
     return { eventType: 'subscription.renewed', ...base };
+  }
+
+  if (event.data.eventType === 'subscription.past_due') {
+    return { eventType: 'subscription.past_due', ...base };
   }
 
   if (event.data.eventType === 'subscription.canceling') {

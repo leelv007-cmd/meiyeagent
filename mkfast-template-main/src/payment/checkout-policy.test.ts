@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import type { PricePlan } from './types';
 import {
   createCheckoutInputSchema,
+  requireWaffoTestCheckoutAuthority,
   portalInputSchema,
   requireSellableCheckoutPrice,
 } from './checkout-policy';
@@ -56,6 +57,16 @@ const lookup = {
 };
 
 describe('public plan checkout policy', () => {
+  it('requires Test authority for every Waffo checkout', () => {
+    assert.doesNotThrow(() => requireWaffoTestCheckoutAuthority('test'));
+    for (const authority of ['production', undefined, 'staging']) {
+      assert.throws(
+        () => requireWaffoTestCheckoutAuthority(authority),
+        /WAFFO_ENVIRONMENT=test/u
+      );
+    }
+  });
+
   it('returns the canonical sellable price for a matching plan and price', () => {
     const selection = requireSellableCheckoutPrice(
       { planId: 'growth', priceId: 'prod_growth_month' },

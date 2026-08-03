@@ -227,6 +227,7 @@ export interface ProviderBillingPeriodInput {
     | 'lifetime'
     | 'one_time'
     | null;
+  providerOccurredAt?: string | null;
 }
 
 /**
@@ -468,6 +469,7 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
             interval: providerPeriod?.interval,
             periodStartsAt: providerPeriod?.periodStartsAt,
             subscriptionId: optionalString(payload, 'subscriptionId'),
+            providerOccurredAt: providerPeriod?.providerOccurredAt,
           });
         }
         const selected = offer(
@@ -1037,6 +1039,12 @@ function optionalProviderPeriod(
     intervalRaw === 'one_time'
       ? intervalRaw
       : null;
-  if (!periodStartsAt && !periodEndsAt && !interval) return null;
-  return { periodStartsAt, periodEndsAt, interval };
+  const providerOccurredAt =
+    typeof payload.providerOccurredAt === 'string'
+      ? payload.providerOccurredAt
+      : null;
+  if (!periodStartsAt && !periodEndsAt && !interval && !providerOccurredAt) {
+    return null;
+  }
+  return { periodStartsAt, periodEndsAt, interval, providerOccurredAt };
 }

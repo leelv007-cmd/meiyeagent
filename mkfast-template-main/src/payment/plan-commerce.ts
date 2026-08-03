@@ -17,6 +17,7 @@ export type PlanSettlementLifecycle =
   | 'renew'
   | 'resume'
   | 'uncancel_at_period_end'
+  | 'past_due'
   | 'cancel_at_period_end'
   | 'expire';
 
@@ -25,6 +26,7 @@ export interface PlanSettlementIntent {
   paymentEventId: string;
   provider: PaymentProviderName;
   providerEventId: string;
+  providerOccurredAt?: string;
   workspaceId: string;
   ownerUserId: string;
   priceId: string;
@@ -32,6 +34,8 @@ export interface PlanSettlementIntent {
   periodStartsAt: string | null;
   periodEndsAt: string | null;
   subscriptionId: string | null;
+  /** Existing Waffo subscription to cancel once an upgrade activates. */
+  replacesSubscriptionId?: string | null;
   /** Cancel keeps access until periodEndsAt (end-of-period fall back). */
   cancelAtPeriodEnd?: boolean;
 }
@@ -45,6 +49,92 @@ export interface PlanCheckoutBindingFacts {
   periodEndsAt?: string | Date | null;
   subscriptionId?: string | null;
   cancelAtPeriodEnd?: boolean;
+  replacesSubscriptionId?: string | null;
+}
+
+export type WaffoPlanChangeDecision =
+  | 'new_checkout'
+  | 'upgrade'
+  | 'defer_next_cycle'
+  | 'duplicate';
+
+export class WaffoNextCycleChangeUnavailableError extends Error {
+  readonly code = 'WAFFO_NEXT_CYCLE_CHANGE_UNAVAILABLE' as const;
+
+  constructor() {
+    super(
+      'Waffo cannot apply a downgrade or interval change at the next cycle yet.'
+    );
+    this.name = 'WaffoNextCycleChangeUnavailableError';
+  }
+}
+
+export class WaffoCheckoutAlreadyActiveError extends Error {
+  readonly code = 'WAFFO_CHECKOUT_ALREADY_ACTIVE' as const;
+
+  constructor() {
+    super(
+      'A Waffo subscription for this workspace and plan is already active.'
+    );
+    this.name = 'WaffoCheckoutAlreadyActiveError';
+  }
+}
+
+/**
+ * Waffo 0.16.1 exposes no safe next-cycle mutation primitive in this
+ * integration. Keep the decision pure so the HTTP boundary can fail closed
+ * before creating a second subscription.
+ */
+export function classifyWaffoPlanChange(input: {
+  current?: {
+    planId: string;
+    interval: PlanInterval | null;
+  } | null;
+  requested: {
+    planId: string;
+    interval: PlanInterval | null;
+  };
+}): WaffoPlanChangeDecision {
+  if (!input.current) return 'new_checkout';
+  if (
+    input.current.planId === input.requested.planId &&
+    canonicalWaffoInterval(input.current.interval) ===
+      canonicalWaffoInterval(input.requested.interval)
+  ) {
+    return 'duplicate';
+  }
+  return waffoPlanTierRank(input.requested.planId) >
+    waffoPlanTierRank(input.current.planId)
+    ? 'upgrade'
+    : 'defer_next_cycle';
+}
+
+export function canonicalWaffoInterval(
+  interval: PlanInterval | null | undefined
+): 'single_month' | 'monthly' | 'yearly' | null {
+  if (interval === 'month') return 'monthly';
+  if (interval === 'year') return 'yearly';
+  if (
+    interval === 'single_month' ||
+    interval === 'monthly' ||
+    interval === 'yearly'
+  ) {
+    return interval;
+  }
+  return null;
+}
+
+function waffoPlanTierRank(planId: string) {
+  switch (planId.trim().toLowerCase()) {
+    case 'starter':
+      return 1;
+    case 'growth':
+      return 2;
+    case 'pro':
+      return 3;
+    default:
+      return 0;
+  }
 }
 
 export interface PlanSettlementPorts {
@@ -79,6 +169,9 @@ export function planGrantCommandFromIntent(intent: PlanSettlementIntent) {
       periodStartsAt: intent.periodStartsAt,
       periodEndsAt: intent.periodEndsAt,
       cancelAtPeriodEnd: intent.cancelAtPeriodEnd === true,
+      ...(intent.providerOccurredAt
+        ? { providerOccurredAt: intent.providerOccurredAt }
+        : {}),
     },
   };
 }
@@ -136,6 +229,9 @@ export function planSettlementIntentFromEvent(
     paymentEventId,
     provider: event.provider,
     providerEventId: event.providerEventId,
+    ...(event.providerOccurredAt
+      ? { providerOccurredAt: event.providerOccurredAt }
+      : {}),
     workspaceId,
     ownerUserId,
     priceId,
@@ -143,9 +239,14 @@ export function planSettlementIntentFromEvent(
     periodStartsAt,
     periodEndsAt,
     subscriptionId,
-    ...(binding.cancelAtPeriodEnd !== undefined
-      ? { cancelAtPeriodEnd: binding.cancelAtPeriodEnd }
+    ...(binding.replacesSubscriptionId
+      ? { replacesSubscriptionId: binding.replacesSubscriptionId }
       : {}),
+    ...(event.eventType === 'customer.subscription.updated'
+      ? { cancelAtPeriodEnd: true }
+      : binding.cancelAtPeriodEnd !== undefined
+        ? { cancelAtPeriodEnd: binding.cancelAtPeriodEnd }
+        : {}),
   };
 }
 
@@ -178,6 +279,8 @@ function lifecycleFromEvent(
     case 'invoice.paid':
     case 'subscription.renewed':
       return 'renew';
+    case 'subscription.past_due':
+      return 'past_due';
     case 'customer.subscription.resumed':
     case 'subscription.uncanceled':
       return 'uncancel_at_period_end';

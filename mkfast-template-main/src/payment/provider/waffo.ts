@@ -8,7 +8,10 @@ import {
 } from '@waffo/pancake-ts';
 import { serverEnv } from '@/env/server';
 import { findPlanByPlanId, findPriceInPlan } from '@/lib/price-plan';
-import { requireSellableCheckoutPrice } from '@/payment/checkout-policy';
+import {
+  requireSellableCheckoutPrice,
+  requireWaffoTestCheckoutAuthority,
+} from '@/payment/checkout-policy';
 import {
   expectedWaffoWebhookMode,
   sdkWaffoEnvironment,
@@ -105,6 +108,7 @@ export class WaffoProvider implements PaymentProvider {
   }
 
   async createCheckout(params: CreateCheckoutParams): Promise<CheckoutResult> {
+    requireWaffoTestCheckoutAuthority(this.environment);
     const price = requireSellableCheckoutPrice(
       { planId: params.planId, priceId: params.priceId },
       { findPlanByPlanId, findPriceInPlan }

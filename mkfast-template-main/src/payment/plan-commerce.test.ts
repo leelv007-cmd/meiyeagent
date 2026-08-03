@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  canonicalWaffoInterval,
+  classifyWaffoPlanChange,
   planGrantCommandFromIntent,
   planSettlementIntentFromEvent,
   requireCheckoutWorkspaceBinding,
@@ -156,6 +158,28 @@ describe('plan-commerce settlement', () => {
     );
   });
 
+  it('keeps past_due on its own idempotency key so it can transition an active period', () => {
+    const pastDue = planSettlementIntentFromEvent(
+      {
+        eventType: 'subscription.past_due',
+        provider: 'waffo',
+        providerEventId: 'business_past_due',
+        reference: { id: 'subscription_waffo_1', kind: 'subscription' },
+        periodEndsAt: '2026-09-03T00:00:00.000Z',
+        periodStartsAt: '2026-08-03T00:00:00.000Z',
+      },
+      {
+        ...binding,
+        interval: 'monthly',
+        periodEndsAt: '2026-09-03T00:00:00.000Z',
+        periodStartsAt: '2026-08-03T00:00:00.000Z',
+        subscriptionId: 'subscription_waffo_1',
+      }
+    );
+    assert.equal(pastDue?.lifecycle, 'past_due');
+    assert.equal(pastDue?.paymentEventId, 'waffo:business_past_due');
+  });
+
   it('fails closed when a Waffo paid subscription event has no billing period', () => {
     assert.equal(
       planSettlementIntentFromEvent(
@@ -296,5 +320,61 @@ describe('plan-commerce settlement', () => {
       },
     });
     assert.equal(skipped, null);
+  });
+});
+
+describe('Waffo checkout plan-change classification', () => {
+  it('routes a workspace without a live subscription to a normal checkout', () => {
+    assert.equal(
+      classifyWaffoPlanChange({
+        current: null,
+        requested: { planId: 'growth', interval: 'monthly' },
+      }),
+      'new_checkout'
+    );
+  });
+
+  it('recognizes the same plan and canonical interval as a duplicate request', () => {
+    assert.equal(
+      classifyWaffoPlanChange({
+        current: { planId: 'growth', interval: 'month' },
+        requested: { planId: 'growth', interval: 'monthly' },
+      }),
+      'duplicate'
+    );
+  });
+
+  it('classifies a higher tier as an upgrade eligible for immediate checkout', () => {
+    assert.equal(
+      classifyWaffoPlanChange({
+        current: { planId: 'starter', interval: 'monthly' },
+        requested: { planId: 'pro', interval: 'monthly' },
+      }),
+      'upgrade'
+    );
+  });
+
+  it('defers a lower tier and a same-tier interval change to the next cycle', () => {
+    assert.equal(
+      classifyWaffoPlanChange({
+        current: { planId: 'pro', interval: 'monthly' },
+        requested: { planId: 'starter', interval: 'monthly' },
+      }),
+      'defer_next_cycle'
+    );
+    assert.equal(
+      classifyWaffoPlanChange({
+        current: { planId: 'growth', interval: 'monthly' },
+        requested: { planId: 'growth', interval: 'yearly' },
+      }),
+      'defer_next_cycle'
+    );
+  });
+
+  it('canonicalizes drizzle and Waffo interval spellings into one axis', () => {
+    assert.equal(canonicalWaffoInterval('month'), 'monthly');
+    assert.equal(canonicalWaffoInterval('year'), 'yearly');
+    assert.equal(canonicalWaffoInterval('single_month'), 'single_month');
+    assert.equal(canonicalWaffoInterval(null), null);
   });
 });
