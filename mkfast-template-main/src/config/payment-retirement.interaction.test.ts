@@ -16,7 +16,18 @@ describe('payment runtime policy', () => {
     ).toEqual({
       enabled: true,
       provider: 'stripe',
-      priceIds: { proMonthly: '', proYearly: '', lifetime: '' },
+      priceIds: {
+        growthMonthly: '',
+        growthSingleMonth: '',
+        growthYearly: '',
+        proMonthly: '',
+        proSingleMonth: '',
+        proYearly: '',
+        lifetime: '',
+        starterMonthly: '',
+        starterSingleMonth: '',
+        starterYearly: '',
+      },
     });
   });
 
@@ -35,9 +46,16 @@ describe('payment runtime policy', () => {
       enabled: true,
       provider: 'creem',
       priceIds: {
+        growthMonthly: '',
+        growthSingleMonth: '',
+        growthYearly: '',
         proMonthly: 'creem_monthly',
+        proSingleMonth: '',
         proYearly: 'creem_yearly',
         lifetime: 'creem_lifetime',
+        starterMonthly: '',
+        starterSingleMonth: '',
+        starterYearly: '',
       },
     });
   });
@@ -58,7 +76,18 @@ describe('payment runtime policy', () => {
     ).toEqual({
       enabled: false,
       provider: undefined,
-      priceIds: { proMonthly: '', proYearly: '', lifetime: '' },
+      priceIds: {
+        growthMonthly: '',
+        growthSingleMonth: '',
+        growthYearly: '',
+        proMonthly: '',
+        proSingleMonth: '',
+        proYearly: '',
+        lifetime: '',
+        starterMonthly: '',
+        starterSingleMonth: '',
+        starterYearly: '',
+      },
     });
   });
 });
