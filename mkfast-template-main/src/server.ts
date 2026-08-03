@@ -12,7 +12,11 @@ import { processStorageObjectOutbox } from '@/storage/object-outbox';
 console.log("[server-entry]: using custom server entry in 'src/server.ts'");
 
 export default {
-  fetch(request: Request) {
+  fetch(request: Request, _env: unknown, context: ExecutionContext) {
+    // A failed provider delivery is retained in the durable outbox. Run due
+    // work on normal Worker traffic as well as scheduled invocations so a
+    // preview without a cron trigger still recovers it.
+    context.waitUntil(settlePendingPaymentWebhookEvents());
     return localeMiddleware(request, () =>
       handler.fetch(request, {
         context: {
