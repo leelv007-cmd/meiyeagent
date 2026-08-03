@@ -313,13 +313,13 @@
     },
     "mkfast-template-main/src/payment/plan-checkout-bindings.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0c20d9572291a32d8d980cb43f156337238ed5c3",
-      "note": "Re-verified 2026-08-03 at 0c20d957 against a freshly provisioned isolated business and DBOS pair: 1/1 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "4580ee61fd7cc22871a43527149cd8e25a8740b9",
+      "note": "Re-verified 2026-08-03 at 4580ee61 after the Test-only webhook lock and Growth mapping remediation against a formally provisioned isolated business and DBOS pair: 1/1 pass, 0 fail, 0 skip via tsx --test."
     },
     "mkfast-template-main/src/payment/postgres-webhook-settlement.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0c20d9572291a32d8d980cb43f156337238ed5c3",
-      "note": "Re-verified 2026-08-03 at 0c20d957 against a freshly provisioned isolated business and DBOS pair: 1/1 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "4580ee61fd7cc22871a43527149cd8e25a8740b9",
+      "note": "Re-verified 2026-08-03 at 4580ee61 after the Test-only webhook lock and Growth mapping remediation against a formally provisioned isolated business and DBOS pair: 1/1 pass, 0 fail, 0 skip via tsx --test."
     },
     "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
       "status": "green",
@@ -333,18 +333,18 @@
     },
     "apps/core/src/p1/credit-billing/credit-plan-catalog.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0c20d9572291a32d8d980cb43f156337238ed5c3",
-      "note": "Re-verified 2026-08-03 at 0c20d957 against a fresh isolated business and DBOS pair after formal provision: 1/1 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "4580ee61fd7cc22871a43527149cd8e25a8740b9",
+      "note": "Re-verified 2026-08-03 at 4580ee61 after the Test-only webhook lock and Growth mapping remediation against a formally provisioned isolated business and DBOS pair: 1/1 pass, 0 fail, 0 skip via tsx --test."
     },
     "apps/core/src/p1/credit-billing/credit-subscription-scheduler.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0c20d9572291a32d8d980cb43f156337238ed5c3",
-      "note": "Re-verified 2026-08-03 at 0c20d957 against a fresh isolated business and DBOS pair after formal provision: 3/3 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "4580ee61fd7cc22871a43527149cd8e25a8740b9",
+      "note": "Re-verified 2026-08-03 at 4580ee61 after the Test-only webhook lock and Growth mapping remediation against a formally provisioned isolated business and DBOS pair: 3/3 pass, 0 fail, 0 skip via tsx --test."
     },
     "apps/core/src/p1/credit-billing/postgres-credit-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "0c20d9572291a32d8d980cb43f156337238ed5c3",
-      "note": "Re-verified 2026-08-03 at 0c20d957 against a fresh isolated business and DBOS pair after formal provision: 2/2 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "4580ee61fd7cc22871a43527149cd8e25a8740b9",
+      "note": "Re-verified 2026-08-03 at 4580ee61 after the Test-only webhook lock and Growth mapping remediation against a formally provisioned isolated business and DBOS pair: 2/2 pass, 0 fail, 0 skip via tsx --test."
     },
     "apps/core/src/p1/harness/note-page-regeneration.postgres.test.ts": {
       "status": "green",
