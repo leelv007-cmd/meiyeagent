@@ -13,6 +13,18 @@ export interface SendPaymentNotificationParams {
   amount: number;
 }
 
+/** Operations-only alert for a provider refund pending manual disposition. */
+export interface SendPaymentRefundReviewAlertParams {
+  amount: string;
+  currency: string;
+  eventStatus: 'failed' | 'succeeded';
+  orderId: string;
+  provider: string;
+  providerEventId: string;
+}
+
+export type PaymentRefundReviewAlertDelivery = 'delivered' | 'unavailable';
+
 /**
  * Notification provider interface
  */
@@ -26,4 +38,7 @@ export interface NotificationProvider {
    * Send a payment notification
    */
   sendPaymentNotification(params: SendPaymentNotificationParams): Promise<void>;
+  sendPaymentRefundReviewAlert(
+    params: SendPaymentRefundReviewAlertParams
+  ): Promise<void>;
 }

@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  PUBLIC_PLAN_CREDIT_SEED,
   publicBillingBalanceSchema,
   publicCreditBalanceSchema,
+  publicPlanCatalogSchema,
 } from './billing-balance.js';
+import { CREDIT_PLAN_CONFIG_DEFAULTS } from './credit-plan-config.js';
 
 test('public billing balance is an exact copy/image/video projection', () => {
   const balance = publicBillingBalanceSchema.parse({
@@ -59,6 +62,21 @@ test('public credit balance is a strict single-credit projection', () => {
   ]);
   assert.equal(
     publicCreditBalanceSchema.safeParse({ ...balance, copy: 1 }).success,
+    false,
+  );
+});
+
+test('the public plan catalog accepts HKD and rejects legacy CNY pricing', () => {
+  const catalog = {
+    addOns: CREDIT_PLAN_CONFIG_DEFAULTS['plan.credits.addons'],
+    plans: PUBLIC_PLAN_CREDIT_SEED,
+  };
+  assert.equal(publicPlanCatalogSchema.safeParse(catalog).success, true);
+  assert.equal(
+    publicPlanCatalogSchema.safeParse({
+      ...catalog,
+      plans: catalog.plans.map((plan) => ({ ...plan, currency: 'CNY' })),
+    }).success,
     false,
   );
 });

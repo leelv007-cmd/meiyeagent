@@ -21,7 +21,11 @@ import {
   recentAuthApiMiddleware,
 } from '@/middlewares/auth-middleware';
 import { projectCurrentPlan } from './payment-current-plan';
-import { createCheckout, createCustomerPortal } from '@/payment';
+import {
+  createCheckout,
+  createCreditPackageCheckout,
+  createCustomerPortal,
+} from '@/payment';
 import {
   createCheckoutInputSchema,
   requireWaffoTestCheckoutAuthority,
@@ -30,6 +34,7 @@ import {
   StripeNewCommerceRetiredError,
 } from '@/payment/checkout-policy';
 import { PostgresPlanCheckoutBindingStore } from '@/payment/plan-checkout-bindings';
+import { PostgresCreditPackageCheckoutBindingStore } from '@/payment/credit-package-checkout-bindings';
 import {
   classifyWaffoPlanChange,
   requireCheckoutWorkspaceBinding,
@@ -43,6 +48,10 @@ import type {
   Subscription,
 } from '@/payment/types';
 import { PaymentScenes, PaymentTypes } from '@/payment/types';
+import {
+  resolveWaffoCreditPackageOffer,
+  resolveWaffoCreditPackageProduct,
+} from '@/payment/waffo-credit-package-catalog';
 import { websiteConfig } from '@/config/website';
 import { createServerFn } from '@tanstack/react-start';
 import { and, desc, eq, or, sql } from 'drizzle-orm';
@@ -50,6 +59,12 @@ import { z } from 'zod';
 
 const checkoutCatalog = { findPlanByPlanId, findPriceInPlan };
 const checkoutInputSchema = createCheckoutInputSchema(checkoutCatalog);
+const creditPackageCheckoutInputSchema = z
+  .object({
+    offerId: z.string().trim().min(1),
+    workspaceId: z.string().min(1).optional(),
+  })
+  .strict();
 
 export const createCheckoutSession = createServerFn({ method: 'POST' })
   .inputValidator(checkoutInputSchema)
@@ -215,6 +230,88 @@ export const createCheckoutSession = createServerFn({ method: 'POST' })
       return { url: result.url, id: result.id };
     } catch (error) {
       await bindingStore.markCheckoutFailed(binding.id);
+      throw error;
+    }
+  });
+
+export const createCreditPackageCheckoutSession = createServerFn({
+  method: 'POST',
+})
+  .inputValidator(creditPackageCheckoutInputSchema)
+  .middleware([authApiMiddleware])
+  .handler(async ({ data, context }) => {
+    const { userId } = context;
+    if (websiteConfig.payment?.provider !== 'waffo') {
+      throw new Error('Credit package checkout requires Waffo.');
+    }
+    requireWaffoTestCheckoutAuthority(serverEnv.WAFFO_ENVIRONMENT);
+    const productId = resolveWaffoCreditPackageProduct(
+      data.offerId,
+      serverEnv.WAFFO_CREDIT_PACKAGE_PRODUCT_MAPPING
+    );
+    const offer = resolveWaffoCreditPackageOffer(data.offerId);
+    const db = getDb();
+    const [userRow] = await db
+      .select({
+        email: user.email,
+        emailVerified: user.emailVerified,
+      })
+      .from(user)
+      .where(eq(user.id, userId))
+      .limit(1);
+    if (!userRow?.email || userRow.emailVerified !== true) {
+      throw new Error('Verified user identity is required for checkout.');
+    }
+    const workspace =
+      data.workspaceId != null
+        ? await resolveWorkspaceMembership(userId, data.workspaceId)
+        : await resolveActiveWorkspace(userId);
+    if (!workspace || workspace.role !== 'owner') {
+      throw new Error('Workspace not found for credit package checkout.');
+    }
+    await ensureVerifiedWorkspaceProvisioned({
+      coreServiceToken: serverEnv.CORE_SERVICE_TOKEN,
+      coreServiceUrl: serverEnv.CORE_SERVICE_URL,
+      database: db,
+      ownerUserId: userId,
+      workspaceId: workspace.id,
+    });
+    const bound = requireCheckoutWorkspaceBinding({
+      userId,
+      workspaceId: workspace.id,
+    });
+    const bindingStore = new PostgresCreditPackageCheckoutBindingStore(db);
+    const binding = await bindingStore.createOwnerBinding({
+      offerId: data.offerId,
+      ownerUserId: bound.userId,
+      productId,
+      provider: 'waffo',
+      workspaceId: bound.workspaceId,
+    });
+    if (!binding) {
+      throw new Error('Credit package checkout requires workspace ownership.');
+    }
+
+    let providerCheckoutCreated = false;
+    try {
+      const result = await createCreditPackageCheckout({
+        buyerEmail: userRow.email,
+        buyerIdentity: bound.userId,
+        currency: offer.currency,
+        packageCheckoutBindingId: binding.id,
+        productId,
+        successUrl: getCanonicalUrl(Routes.SettingsBilling),
+      });
+      providerCheckoutCreated = true;
+      await bindingStore.attachProviderCheckout({
+        bindingId: binding.id,
+        providerCheckoutId: result.id,
+      });
+      return { id: result.id, url: result.url };
+    } catch (error) {
+      if (!providerCheckoutCreated) {
+        await bindingStore.markCheckoutFailed(binding.id);
+      }
       throw error;
     }
   });

@@ -2,6 +2,7 @@ import { serverEnv } from '@/env/server';
 import type {
   NotificationProvider,
   SendPaymentNotificationParams,
+  SendPaymentRefundReviewAlertParams,
 } from '../types';
 
 /**
@@ -17,7 +18,7 @@ async function sendMessage(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    console.error('Failed to send Feishu message:', response);
+    throw new Error('Feishu notification request failed.');
   }
 }
 
@@ -48,6 +49,22 @@ export class FeishuProvider implements NotificationProvider {
       console.log(`Successfully sent Feishu notification for user ${userName}`);
     } catch (error) {
       console.error('Failed to send Feishu notification:', error);
+    }
+  }
+
+  async sendPaymentRefundReviewAlert(
+    params: SendPaymentRefundReviewAlertParams
+  ): Promise<void> {
+    try {
+      await sendMessage(this.webhookUrl, {
+        msg_type: 'text',
+        content: {
+          text: `Refund Requires Review\nProvider: ${params.provider}\nStatus: ${params.eventStatus}\nAmount: ${params.amount} ${params.currency}\nOrder ID: ${params.orderId}\nRefund Event ID: ${params.providerEventId}`,
+        },
+      });
+    } catch (error) {
+      console.error('Failed to send refund review alert.');
+      throw error;
     }
   }
 }

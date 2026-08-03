@@ -363,7 +363,10 @@ export interface PaymentWebhookSettlementPort {
   apply(
     claim: PaymentWebhookClaim
   ): Promise<VerifiedPaymentWebhookEvent | null>;
-  settle(event: VerifiedPaymentWebhookEvent): Promise<void>;
+  settle(
+    event: VerifiedPaymentWebhookEvent,
+    claim: PaymentWebhookClaim
+  ): Promise<void>;
 }
 
 export async function settlePendingPaymentWebhooks(
@@ -398,7 +401,7 @@ export async function settlePendingPaymentWebhooks(
       if (claim.appliedEvent === undefined) {
         await dependencies.inbox.checkpointApplied(claim, event);
       }
-      if (event) await dependencies.settlement.settle(event);
+      if (event) await dependencies.settlement.settle(event, claim);
       await dependencies.inbox.complete(claim);
       completed += 1;
     } catch (error) {

@@ -103,7 +103,7 @@
 ### 3.2 套餐与周期折扣
 
 - 四档结构保留（trial/starter/growth/pro），每档配置：月积分数、基准月价、（非积分权益：并发/存储/队列优先级/支持等级照旧）。
-- **付费周期三档折扣系数**：单月购买（基准 1.00）/ 连续包月（种子 0.90）/ 包年付费（种子 0.75），系数后台可改，改动即时作用于价格页与下单价。
+- **付费周期三档折扣系数**：单月购买（基准 1.00）/ 连续包月（种子 0.90）/ 包年付费（种子 0.75），系数后台可改，改动即时作用于价格页与下单价。`monthlyPriceMicros` 保留 HKD 微单位单源；价格页和 checkout 在最终金额投影处按最接近整 HKD 四舍五入，不另存周期价格或运行时汇率。
 
 ### 3.3 加油包 SKU 管理
 
@@ -159,7 +159,7 @@ refund 回到**原扣批次**；若退还发生时原批次已过效期，退还
 - **provider 扩展全清单**（Codex 复核补）：不止新增 provider 文件——provider 类型联合（`types/index.d.ts:93` 现仅 `stripe|creem`）、注册表分派（`payment/index.ts:32`）、webhook verifier 分派（`webhook-settlement.ts:142` 现硬编码两家）、env/凭据装配、payment 持久化 provider 字段，全在改造面。
 - 事件映射：`order.completed` 等映射到现有 settlement lifecycle；**加油包结算路径独立于 `plan-checkout-bindings` 套餐 lifecycle 状态机**——`PaymentScene` 新增场景（现仅 `subscription | lifetime`，新增积分增量场景，语义=入账一个 `PURCHASE_PACKAGE` 积分批次）。
 - **续费对账合同**：订阅续费成功事件的确切事件名与 billing-period 标识随 §5.4 实测钉死后写入实施票；结算侧只负责「记账已支付覆盖的 cycle 区间」，发分/补发/漏发修复一律走 §1.1a 调度器与日对账（重复事件幂等吸收、漏事件调度器兜底、「已扣款未发分」告警）。
-- **退款落账合同**（本轮只落账+告警，人工处置；自动化退款账本与已消费积分追回另立后续专项）：新增退款事件表（现 payment 表无退款字段、事件联合无退款成员——app.schema.ts:136、payment/types.ts:190），字段=providerEventId（幂等唯一键，重放不重复落账）/orderId/scene/金额/事件状态（succeeded|failed）/rawPayload/receivedAt/处置状态（pending_review→resolved）+处置人与处置备注；落账即触发运营告警（通知桥）；处置动作留审计，不自动改积分批次。
+- **退款落账合同**（本轮只落账+告警，人工处置；自动化退款账本与已消费积分追回另立后续专项）：新增退款事件表（现 payment 表无退款字段、事件联合无退款成员——app.schema.ts:136、payment/types.ts:190），字段=providerEventId（由 Waffo `(eventType,eventId)` 编码为稳定 canonical key，幂等唯一，重放不重复落账且 failed→succeeded 不互相吞掉）/orderId/scene/金额/事件状态（succeeded|failed）/rawPayload/receivedAt/处置状态（pending_review→resolved）+处置人与处置备注；落账即触发运营告警（通知桥）；处置动作留审计，不自动改积分批次。
 
 ### 5.3 Creem 退役
 
@@ -209,13 +209,13 @@ refund 回到**原扣批次**；若退还发生时原批次已过效期，退还
 | 档 | 积分/月 | 单月基准价 | 每分单价 |
 |---|---|---|---|
 | trial | 100 | 免费 | — |
-| starter | 500 | ¥199 | ¥0.398 |
-| growth | 1300 | ¥499 | ¥0.384 |
-| pro | 2800 | ¥899 | ¥0.321 |
+| starter | 500 | HKD 231.183288 | HKD 0.462366576 |
+| growth | 1300 | HKD 579.700809 | HKD 0.445923699 |
+| pro | 2800 | HKD 1044.390836 | HKD 0.372996727 |
 
-**周期折扣系数**：单月 1.00 / 连续包月 0.90 / 包年 0.75。
+**周期折扣系数**：单月 1.00 / 连续包月 0.90 / 包年 0.75。最终公开/checkout 金额按最接近整 HKD 四舍五入：starter=231/208/2081，growth=580/522/5217，pro=1044/940/9400（单月/连续包月/包年）。
 
-**加油包**（效期统一 7 天种子，运营可改；每分单价恒高于套餐、包内递减）：100 分 ¥49 / 300 分 ¥139 / 1000 分 ¥429。
+**加油包**（效期统一 7 天种子，运营可改；每分单价恒高于套餐、包内递减）：100 分 HKD 57 / 300 分 HKD 161 / 1000 分 HKD 498。
 
 **价格页参考换算**：文案 1、图片 5、视频按 15 秒档 50；示例 starter＝约 500 条文案 或 100 张图 或 10 条 15 秒视频。
 
@@ -235,7 +235,7 @@ refund 回到**原扣批次**；若退还发生时原批次已过效期，退还
 7. **并发不超扣**：N 个并发提交争抢同一份余额，断言只有余额覆盖内的请求通过（同事务 + workspace 积分锁，§4.2）。
 8. **发分调度**：包年订阅模拟 12 个 cycle 逐月发放；调度器停机跨 cycle 后重启，断言缺失 cycle 补发且幂等键防重；构造「已扣款未发分」断言日对账告警触发。
 9. **续费失败宽限**：past_due 期内已发批次可用、不发新批次；宽限内补款 → 补发当期；宽限期满 → 走退订语义（加油包存活、权益回落）。
-10. **退款落账幂等**：同一 providerEventId 重放不产生第二条退款记录；落账触发运营告警。
+10. **退款落账幂等**：同一 canonical providerEventId 重放不产生第二条退款记录；同一 Waffo 原始 eventId 的 `refund.failed→refund.succeeded` 分别留审计；落账触发运营告警，禁用/失败的通知不得完成 outbox；人工处置写入 actor/note/resolvedAt。
 11. **trial 防重**：同一 workspace 重复开通路径不产生第二个 trial 批次。
 
 ## §10 实施开票建议切分

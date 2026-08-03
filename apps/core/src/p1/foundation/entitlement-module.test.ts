@@ -1411,6 +1411,124 @@ describe('ProductEntitlementFoundationModule', () => {
     );
   });
 
+  it('grants a configured credit package only through the payment add-on command', async () => {
+    const clock = () => new Date('2026-08-03T00:00:00.000Z');
+    const repository = new MemoryFoundationRepository();
+    repository.grantOwner(owner.workspaceId, owner.userId);
+    const entitlements = new ProductEntitlementApplicationService(
+      repository,
+      new RecordedAutoTopUpPaymentPort(),
+      clock,
+    );
+    const ledger = new MemoryCreditLedger();
+    const creditBilling = new CreditBillingService(
+      ledger,
+      new MemoryCreditSubscriptionStore(),
+      { async get() { return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG); } },
+      { async getPaymentMapping() { return null; } },
+      clock,
+    );
+    const service = new P1ApplicationService(repository, {
+      operations: [
+        new ProductEntitlementFoundationModule(entitlements, clock, {
+          creditBilling,
+        }),
+      ],
+    });
+    const payment = {
+      actor: 'payment' as const,
+      correlationId: 'corr-payment-add-on',
+      userId: 'payment-service',
+      workspaceId: owner.workspaceId,
+    };
+    const command = {
+      action: 'payment_add_on_grant',
+      payload: {
+        offerId: 'credits-100',
+        paymentEventId: 'waffo:order-add-on-1',
+      },
+    };
+
+    const granted = await service.executeModule(
+      payment,
+      'entitlements',
+      command,
+      'waffo:order-add-on-1',
+    );
+    const replay = await service.executeModule(
+      payment,
+      'entitlements',
+      command,
+      'waffo:order-add-on-1',
+    );
+
+    assert.deepEqual(replay, granted);
+    assert.deepEqual(ledger.listLots(owner.workspaceId), [
+      {
+        createdAt: '2026-08-03T00:00:00.000Z',
+        expirationDate: '2026-08-10T00:00:00.000Z',
+        grantIdempotencyKey: 'grant:package:waffo:order-add-on-1',
+        id: 'package:waffo:order-add-on-1',
+        originalCredits: 100,
+        remainingCredits: 100,
+        revision: 1,
+        sourceRef: 'credits-100',
+        transactionType: 'PURCHASE_PACKAGE',
+        workspaceId: owner.workspaceId,
+      },
+    ]);
+
+    await assert.rejects(
+      service.executeModule(
+        payment,
+        'entitlements',
+        {
+          action: 'payment_add_on_grant',
+          payload: {
+            offerId: 'unknown-package',
+            paymentEventId: 'waffo:order-add-on-unknown',
+          },
+        },
+        'waffo:order-add-on-unknown',
+      ),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'INVALID_STATE',
+    );
+    assert.equal(ledger.listLots(owner.workspaceId).length, 1);
+
+    await assert.rejects(
+      service.executeModule(
+        owner,
+        'entitlements',
+        command,
+        'waffo:owner-forged-add-on',
+      ),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'FORBIDDEN',
+    );
+    await assert.rejects(
+      service.executeModule(
+        {
+          actor: 'admin',
+          correlationId: 'corr-admin-forged-add-on',
+          userId: 'platform-admin',
+          workspaceId: owner.workspaceId,
+        },
+        'entitlements',
+        command,
+        'waffo:admin-forged-add-on',
+      ),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        error.code === 'FORBIDDEN',
+    );
+  });
+
   it('payment_grant maps lifetime activate to pro and cancel keeps period end', async () => {
     const service = setup(false);
     const payment = {

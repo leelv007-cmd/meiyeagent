@@ -4,7 +4,9 @@ import { FeishuProvider } from './provider/feishu';
 import type {
   NotificationProvider,
   NotificationProviderName,
+  PaymentRefundReviewAlertDelivery,
   SendPaymentNotificationParams,
+  SendPaymentRefundReviewAlertParams,
 } from './types';
 
 type ProviderFactory = () => NotificationProvider;
@@ -44,4 +46,14 @@ export async function sendPaymentNotification(
   if (!websiteConfig.notification?.enable) return;
   const provider = getNotificationProvider();
   await provider.sendPaymentNotification(params);
+}
+
+/** Notify operations that a verified provider refund requires manual review. */
+export async function sendPaymentRefundReviewAlert(
+  params: SendPaymentRefundReviewAlertParams
+): Promise<PaymentRefundReviewAlertDelivery> {
+  if (!websiteConfig.notification?.enable) return 'unavailable';
+  const provider = getNotificationProvider();
+  await provider.sendPaymentRefundReviewAlert(params);
+  return 'delivered';
 }

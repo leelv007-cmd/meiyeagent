@@ -3,7 +3,10 @@
 import handler from '@tanstack/react-start/server-entry';
 import { hasDatabaseBinding } from '@/db/runtime';
 import { localeMiddleware } from '@/locale/middleware';
-import { settlePendingPaymentWebhookEvents } from '@/payment';
+import {
+  drainPaymentRefundReviewAlerts,
+  settlePendingPaymentWebhookEvents,
+} from '@/payment';
 import { processStorageObjectOutbox } from '@/storage/object-outbox';
 
 /**
@@ -19,6 +22,7 @@ export default {
     // preview without a cron trigger still recovers it.
     if (hasDatabaseBinding(env)) {
       context.waitUntil(settlePendingPaymentWebhookEvents());
+      context.waitUntil(drainPaymentRefundReviewAlerts());
     }
     return localeMiddleware(request, () =>
       handler.fetch(request, {
@@ -35,6 +39,7 @@ export default {
   ) {
     if (hasDatabaseBinding(env)) {
       context.waitUntil(settlePendingPaymentWebhookEvents());
+      context.waitUntil(drainPaymentRefundReviewAlerts());
       context.waitUntil(processStorageObjectOutbox());
     }
   },

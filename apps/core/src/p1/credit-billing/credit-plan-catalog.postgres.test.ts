@@ -96,8 +96,8 @@ describe(
 						value: {
 							concurrencyLimit: 3,
 							credits: 1_777,
-							currency: "CNY",
-							monthlyPriceMicros: 499_000_000,
+							currency: "HKD",
+							monthlyPriceMicros: 579_700_809,
 							queuePriority: 4,
 							storageMb: 4_096,
 							supportLabel: "priority",
@@ -112,9 +112,9 @@ describe(
 				{
 					concurrencyLimit: 3,
 					credits: 1_777,
-					currency: "CNY",
+					currency: "HKD",
 					id: "growth",
-					monthlyPriceMicros: 499_000_000,
+					monthlyPriceMicros: 579_700_809,
 					queuePriority: 4,
 					storageMb: 4_096,
 					supportLabel: "priority",

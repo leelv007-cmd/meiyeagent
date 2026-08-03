@@ -29,7 +29,7 @@ export type WaffoProductIds = Partial<Record<WaffoProductIdKey, string>>;
  * uses a monthly Waffo product, then gets cancelled at period end after its
  * activation webhook settles; it must never become a separate trial product.
  *
- * HKD Test fixture prices are fixed values, not a runtime FX conversion. Their
+ * HKD prices are fixed governed values, not a runtime FX conversion. Their
  * ECB source date, cross-rate, and nearest-integer rounding rule are recorded
  * in docs/ops/waffo-hkd-launch-pricing-2026-08-03.md.
  */

@@ -15,47 +15,47 @@ const publishedCreditConfigs = [
   {
     effectiveValue: {
       credits: 500,
-      monthlyPriceMicros: 199_000_000,
+      monthlyPriceMicros: 231_183_288,
     },
     key: 'plan.credits.starter',
     storedValue: {
       credits: 500,
-      monthlyPriceMicros: 199_000_000,
+      monthlyPriceMicros: 231_183_288,
     },
   },
   {
     effectiveValue: {
       credits: 1_300,
-      monthlyPriceMicros: 499_000_000,
+      monthlyPriceMicros: 579_700_809,
     },
     key: 'plan.credits.growth',
     storedValue: {
       credits: 1_300,
-      monthlyPriceMicros: 499_000_000,
+      monthlyPriceMicros: 579_700_809,
     },
   },
   {
     effectiveValue: {
       credits: 2_800,
-      monthlyPriceMicros: 899_000_000,
+      monthlyPriceMicros: 1_044_390_836,
     },
     key: 'plan.credits.pro',
     storedValue: {
       credits: 2_800,
-      monthlyPriceMicros: 899_000_000,
+      monthlyPriceMicros: 1_044_390_836,
     },
   },
   {
     effectiveValue: [
-      { amountMicros: 49_000_000, credits: 100 },
-      { amountMicros: 139_000_000, credits: 300 },
-      { amountMicros: 429_000_000, credits: 1_000 },
+      { amountMicros: 57_000_000, credits: 100 },
+      { amountMicros: 161_000_000, credits: 300 },
+      { amountMicros: 498_000_000, credits: 1_000 },
     ],
     key: 'plan.credits.addons',
     storedValue: [
-      { amountMicros: 49_000_000, credits: 100 },
-      { amountMicros: 139_000_000, credits: 300 },
-      { amountMicros: 429_000_000, credits: 1_000 },
+      { amountMicros: 57_000_000, credits: 100 },
+      { amountMicros: 161_000_000, credits: 300 },
+      { amountMicros: 498_000_000, credits: 1_000 },
     ],
   },
 ];

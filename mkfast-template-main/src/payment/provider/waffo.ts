@@ -62,6 +62,15 @@ export interface WaffoProviderOptions {
   webhookPublicKeys?: WaffoWebhookPublicKeys;
 }
 
+export interface CreateWaffoCreditPackageCheckoutParams {
+  buyerEmail?: string;
+  buyerIdentity: string;
+  currency: string;
+  packageCheckoutBindingId: string;
+  productId: string;
+  successUrl?: string;
+}
+
 /**
  * The Waffo Test sandbox stopped including `currentPeriodStart/End` in
  * subscription webhook payloads on 2026-08-03. Paid-lifecycle settlement still
@@ -135,6 +144,38 @@ export class WaffoProvider implements PaymentProvider {
       // Trial entitlement is a Core-owned registration grant, never a Waffo
       // subscription. Do not accept provider default trial rules here.
       withTrial: false,
+    });
+    return {
+      id: checkout.sessionId,
+      url: checkoutUrlForEnvironment(checkout.checkoutUrl, this.environment),
+    };
+  }
+
+  async createCreditPackageCheckout(
+    params: CreateWaffoCreditPackageCheckoutParams
+  ): Promise<CheckoutResult> {
+    requireWaffoTestCheckoutAuthority(this.environment);
+    const buyerIdentity = params.buyerIdentity.trim();
+    const packageCheckoutBindingId = params.packageCheckoutBindingId.trim();
+    const productId = params.productId.trim();
+    if (!buyerIdentity) {
+      throw new Error('Credit package buyer identity is required for Waffo.');
+    }
+    if (!packageCheckoutBindingId) {
+      throw new Error('Credit package checkout binding is required for Waffo.');
+    }
+    if (!productId) {
+      throw new Error('Credit package product is required for Waffo.');
+    }
+
+    const checkout = await this.client.checkout.authenticated.create({
+      productId,
+      currency: params.currency,
+      buyerIdentity,
+      ...(params.buyerEmail ? { buyerEmail: params.buyerEmail } : {}),
+      ...(params.successUrl ? { successUrl: params.successUrl } : {}),
+      metadata: { creditPackageCheckoutBindingId: packageCheckoutBindingId },
+      orderMerchantExternalId: packageCheckoutBindingId,
     });
     return {
       id: checkout.sessionId,

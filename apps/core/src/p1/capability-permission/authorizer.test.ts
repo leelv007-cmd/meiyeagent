@@ -174,6 +174,16 @@ test('authorizer keeps worker bypass and payment grant restriction', () => {
     true
   );
 
+  assert.equal(
+    authorizer.decide({
+      actor: 'payment',
+      kind: 'command',
+      module: 'entitlements',
+      action: 'payment_add_on_grant',
+    }).allow,
+    true
+  );
+
   const restricted = authorizer.decide({
     actor: 'payment',
     kind: 'command',

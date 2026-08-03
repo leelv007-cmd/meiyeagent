@@ -76,6 +76,9 @@ export const WAFFO_SUBSCRIPTION_WEBHOOK_EVENTS = [
   WebhookEventType.SubscriptionCanceling,
   WebhookEventType.SubscriptionUncanceled,
   WebhookEventType.SubscriptionCanceled,
+  WebhookEventType.OrderCompleted,
+  WebhookEventType.RefundSucceeded,
+  WebhookEventType.RefundFailed,
 ] as const;
 
 type GraphQLPrice = {

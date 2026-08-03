@@ -212,8 +212,8 @@ test('a never-written key still opens on a usable starting value', () => {
   assert.deepEqual(defaultAdminConfigValue('plan.credits.starter'), {
     concurrencyLimit: 1,
     credits: 500,
-    currency: 'CNY',
-    monthlyPriceMicros: 199_000_000,
+    currency: 'HKD',
+    monthlyPriceMicros: 231_183_288,
     queuePriority: 1,
     storageMb: 1_024,
     supportLabel: 'standard',

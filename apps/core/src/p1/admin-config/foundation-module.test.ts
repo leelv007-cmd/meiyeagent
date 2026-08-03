@@ -788,7 +788,7 @@ describe('Admin config application seam', () => {
             reason: 'Accept the governed credit plan boundary',
             value: {
               credits: 10_000_000,
-              currency: 'CNY',
+              currency: 'HKD',
               monthlyPriceMicros: 1_000_000_000_000,
               storageMb: 1_000_000,
               concurrencyLimit: 100,

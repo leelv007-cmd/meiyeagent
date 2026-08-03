@@ -25,6 +25,16 @@ test('dry-run returns the Test catalog plan without reading or writing the API',
   assert.equal(result.plan.groups.length, 3);
   assert.equal(result.plan.webhook.testMode, true);
   assert.equal(result.plan.webhook.url, undefined);
+  assert.deepEqual(result.plan.webhook.events, [
+    'subscription.activated',
+    'subscription.payment_succeeded',
+    'subscription.canceling',
+    'subscription.uncanceled',
+    'subscription.canceled',
+    'order.completed',
+    'refund.succeeded',
+    'refund.failed',
+  ]);
   assert.deepEqual(calls, { graphql: 0, products: 0, groups: 0, webhooks: 0 });
 });
 

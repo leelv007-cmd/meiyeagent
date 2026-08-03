@@ -117,6 +117,9 @@ const creemSubscriptionScheduledCancelSchema = z
   .passthrough();
 
 const RECOGNIZED_WAFFO_EVENT_TYPES = [
+  'order.completed',
+  'refund.succeeded',
+  'refund.failed',
   'subscription.activated',
   'subscription.payment_succeeded',
   'subscription.past_due',
@@ -139,6 +142,8 @@ const waffoWebhookEventSchema = z
         merchantProvidedBuyerIdentity: z.string().min(1).optional(),
         orderMerchantExternalId: z.string().min(1).optional(),
         orderMetadata: z.record(z.string(), z.unknown()).optional(),
+        amount: z.string().min(1).optional(),
+        currency: z.string().min(1).optional(),
         currentPeriodStart: z.string().min(1).optional(),
         currentPeriodEnd: z.string().min(1).optional(),
       })
@@ -190,6 +195,35 @@ function assertWaffoPeriodContract(
   ) {
     throw new WaffoPaymentEventContractError(
       'Waffo paid lifecycle event has an invalid billing period.'
+    );
+  }
+}
+
+function assertWaffoPackageOrRefundContract(input: {
+  amount: string | null;
+  buyerIdentity: string | undefined;
+  currency: string | null;
+  orderMerchantExternalId: string | null;
+  subject: 'one-time order' | 'refund';
+}) {
+  if (!input.orderMerchantExternalId) {
+    throw new WaffoPaymentEventContractError(
+      `Waffo ${input.subject} is missing external order binding.`
+    );
+  }
+  if (!input.buyerIdentity) {
+    throw new WaffoPaymentEventContractError(
+      `Waffo ${input.subject} is missing buyer identity.`
+    );
+  }
+  if (!input.amount || !/^\d+(?:\.\d+)?$/u.test(input.amount)) {
+    throw new WaffoPaymentEventContractError(
+      `Waffo ${input.subject} has an invalid amount.`
+    );
+  }
+  if (!input.currency || !/^[A-Z]{3}$/u.test(input.currency)) {
+    throw new WaffoPaymentEventContractError(
+      `Waffo ${input.subject} has an invalid currency.`
     );
   }
 }
@@ -355,6 +389,11 @@ export function normalizeWaffoVerifiedPaymentEvent(
     event.data.data.orderMerchantExternalId ??
     textMetadata(event.data.data.orderMetadata?.planCheckoutBindingId);
   const buyerIdentity = event.data.data.merchantProvidedBuyerIdentity;
+  const orderMerchantExternalId = textMetadata(
+    event.data.data.orderMerchantExternalId
+  );
+  const amount = textMetadata(event.data.data.amount);
+  const currency = textMetadata(event.data.data.currency);
   const period = {
     ...(event.data.data.currentPeriodStart
       ? { periodStartsAt: event.data.data.currentPeriodStart }
@@ -369,6 +408,56 @@ export function normalizeWaffoVerifiedPaymentEvent(
       'Waffo event timestamp must be a valid ISO timestamp.'
     );
   }
+
+  if (event.data.eventType === 'order.completed') {
+    assertWaffoPackageOrRefundContract({
+      amount,
+      buyerIdentity,
+      currency,
+      orderMerchantExternalId,
+      subject: 'one-time order',
+    });
+    return {
+      eventType: 'credit_package.completed',
+      provider: 'waffo',
+      providerEventId: event.data.eventId,
+      providerDeliveryId: event.data.id,
+      providerOccurredAt,
+      reference: { id: event.data.data.orderId, kind: 'order' },
+      scene: 'credit_package',
+      packageCheckoutBindingId: orderMerchantExternalId!,
+      buyerIdentity: buyerIdentity!,
+      amount: amount!,
+      currency: currency!,
+    };
+  }
+
+  if (
+    event.data.eventType === 'refund.succeeded' ||
+    event.data.eventType === 'refund.failed'
+  ) {
+    assertWaffoPackageOrRefundContract({
+      amount,
+      buyerIdentity,
+      currency,
+      orderMerchantExternalId,
+      subject: 'refund',
+    });
+    return {
+      eventType: event.data.eventType,
+      provider: 'waffo',
+      providerEventId: `waffo:${event.data.eventType}:${event.data.eventId}`,
+      providerDeliveryId: event.data.id,
+      providerOccurredAt,
+      reference: { id: event.data.data.orderId, kind: 'order' },
+      scene: 'refund',
+      orderMerchantExternalId: orderMerchantExternalId!,
+      buyerIdentity: buyerIdentity!,
+      amount: amount!,
+      currency: currency!,
+    };
+  }
+
   assertWaffoPeriodContract(period, event.data.eventType);
   const base = {
     provider: 'waffo' as const,

@@ -22,12 +22,13 @@ export function createPermissionAuthorizer(): PermissionAuthorizerPort {
         return { allow: true, required: null, reason: 'worker_bypass' };
       }
 
-      // Payment service actor may only settle plan grants via entitlements.payment_grant.
+      // Payment service actor may only settle verified payment grants.
       if (input.actor === 'payment') {
         if (
           input.kind === 'command' &&
           input.module === 'entitlements' &&
-          input.action === 'payment_grant'
+          (input.action === 'payment_grant' ||
+            input.action === 'payment_add_on_grant')
         ) {
           return { allow: true, required: null, reason: 'payment_grant' };
         }
@@ -64,7 +65,7 @@ export function createPermissionAuthorizer(): PermissionAuthorizerPort {
 
       if (decision.reason === 'payment_actor_restricted') {
         throw new PermissionDeniedError(
-          'The payment actor can only execute entitlements.payment_grant.',
+          'The payment actor can only execute entitlements payment grants.',
           decision
         );
       }

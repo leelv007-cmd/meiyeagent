@@ -59,11 +59,11 @@ test('published plan prices reach the service-token-gated Core read contract', a
     };
   };
   const growth = payload.data.plans.find((plan) => plan.id === 'growth');
-  assert.equal(growth?.monthlyPriceMicros, 499_000_000);
+  assert.equal(growth?.monthlyPriceMicros, 579_700_809);
   assert.deepEqual(growth?.cyclePrices, [
-    { amountMicros: 499_000_000, cycle: 'single_month' },
-    { amountMicros: 449_100_000, cycle: 'monthly' },
-    { amountMicros: 4_491_000_000, cycle: 'yearly' },
+    { amountMicros: 580_000_000, cycle: 'single_month' },
+    { amountMicros: 522_000_000, cycle: 'monthly' },
+    { amountMicros: 5_217_000_000, cycle: 'yearly' },
   ]);
   assert.deepEqual(growth?.referenceOutputs, {
     copy: 1_300,

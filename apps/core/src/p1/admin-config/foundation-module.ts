@@ -301,7 +301,7 @@ const creditPlanSchema = z
   .object({
     credits: z.number().int().positive().max(MAX_CREDIT_PLAN_AMOUNT),
     monthlyPriceMicros: z.number().int().positive().max(MAX_ADD_ON_AMOUNT_MICROS),
-    currency: z.literal('CNY'),
+    currency: z.literal('HKD'),
     storageMb: z.number().int().positive().max(MAX_PLAN_RESOURCE_ALLOWANCE),
     concurrencyLimit: z.number().int().positive().max(MAX_PLAN_CONCURRENCY),
     queuePriority: z.number().int().positive().max(MAX_QUEUE_PRIORITY),
@@ -349,7 +349,7 @@ const creditAddOnSchema = z
     id: z.string().trim().min(1).max(100),
     credits: z.number().int().positive().max(MAX_CREDIT_PLAN_AMOUNT),
     amountMicros: z.number().int().nonnegative().max(MAX_ADD_ON_AMOUNT_MICROS),
-    currency: z.literal('CNY'),
+    currency: z.literal('HKD'),
     expireDays: z.number().int().positive().max(MAX_CREDIT_ADD_ON_EXPIRY_DAYS),
   })
   .strict();

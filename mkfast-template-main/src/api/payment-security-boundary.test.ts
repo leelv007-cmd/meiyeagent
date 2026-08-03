@@ -57,3 +57,15 @@ test('Waffo checkout requires Test server authority before catalog or binding wo
     /provider === 'waffo'[\s\S]*?requireWaffoTestCheckoutAuthority\(serverEnv\.WAFFO_ENVIRONMENT\)[\s\S]*?requireSellableCheckoutPrice/u
   );
 });
+
+test('credit package checkout is Test-only and binds the owner workspace before Waffo checkout', async () => {
+  const source = await readFile(
+    resolve(process.cwd(), 'src/api/payment.ts'),
+    'utf8'
+  );
+
+  assert.match(
+    source,
+    /createCreditPackageCheckoutSession[\s\S]*?requireWaffoTestCheckoutAuthority\(serverEnv\.WAFFO_ENVIRONMENT\)[\s\S]*?resolveWaffoCreditPackageProduct[\s\S]*?ensureVerifiedWorkspaceProvisioned[\s\S]*?createOwnerBinding[\s\S]*?createCreditPackageCheckout/u
+  );
+});

@@ -21,7 +21,7 @@ export interface CreditPlanOffer {
 	credits: number;
 	/** One calendar month before the selected billing-cycle coefficient. */
 	monthlyPriceMicros: number;
-	currency: "CNY";
+	currency: "HKD";
 	storageMb: number;
 	concurrencyLimit: number;
 	queuePriority: number;
@@ -53,7 +53,7 @@ export interface CreditAddOnOffer {
 	id: string;
 	credits: number;
 	amountMicros: number;
-	currency: "CNY";
+	currency: "HKD";
 	expireDays: number;
 }
 
@@ -71,11 +71,12 @@ export function creditPlanCheckoutAmountMicros(
 	coefficients: CreditPlanCycleCoefficientBasisPoints,
 ) {
 	const months = cycle === "yearly" ? 12 : 1;
+	const numerator =
+		BigInt(monthlyPriceMicros) * BigInt(months) * BigInt(coefficients[cycle]);
+	const microsPerCurrencyUnit = 1_000_000n;
+	const denominator = 10_000n * microsPerCurrencyUnit;
 	return Number(
-		(BigInt(monthlyPriceMicros) *
-			BigInt(months) *
-			BigInt(coefficients[cycle])) /
-			10_000n,
+		((numerator + denominator / 2n) / denominator) * microsPerCurrencyUnit,
 	);
 }
 

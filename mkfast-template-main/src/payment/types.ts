@@ -11,11 +11,12 @@ export const PaymentTypes = {
 };
 
 /**
- * Payment scene: subscription and lifetime
+ * Payment scene: subscription, credit package, and lifetime
  */
-export type PaymentScene = 'subscription' | 'lifetime';
+export type PaymentScene = 'subscription' | 'credit_package' | 'lifetime';
 
 export const PaymentScenes = {
+  CREDIT_PACKAGE: 'credit_package' as const,
   LIFETIME: 'lifetime' as const,
   SUBSCRIPTION: 'subscription' as const,
 };
@@ -203,7 +204,10 @@ export interface PaymentProvider {
 export type VerifiedPaymentEventType =
   | 'checkout.completed'
   | 'checkout.session.completed'
+  | 'credit_package.completed'
   | 'invoice.paid'
+  | 'refund.failed'
+  | 'refund.succeeded'
   | 'subscription.renewed'
   | 'subscription.past_due'
   | 'customer.subscription.updated'
@@ -215,20 +219,31 @@ export type VerifiedPaymentEventType =
 export type VerifiedPaymentReferenceKind =
   | 'checkout'
   | 'invoice'
+  | 'order'
   | 'subscription';
 
 export type VerifiedPaymentWebhookEvent = {
   eventType: VerifiedPaymentEventType;
   provider: PaymentProviderName;
-  /** Provider business event id used for downstream settlement idempotency. */
+  /** Canonical provider event key used for downstream settlement idempotency. */
   providerEventId: string;
   /** Provider delivery id, when it differs from the business event id. */
   providerDeliveryId?: string;
   reference: { id: string; kind: VerifiedPaymentReferenceKind };
   /** Signed checkout metadata used to close provider-callback-before-attach races. */
   planBindingId?: string;
+  /** Signed Waffo package checkout binding for one-time credit purchases. */
+  packageCheckoutBindingId?: string;
+  /** Signed provider order binding retained for refund audit routing. */
+  orderMerchantExternalId?: string;
   /** Provider-verified buyer identity, when the provider exposes one. */
   buyerIdentity?: string;
+  /** Waffo one-time purchase or refund routing scene. */
+  scene?: 'credit_package' | 'refund';
+  /** Provider display amount retained for later catalog and refund validation. */
+  amount?: string;
+  /** Provider ISO 4217 currency retained for later catalog and refund validation. */
+  currency?: string;
   /** Provider-verified entitlement period bounds, when the provider exposes them. */
   periodStartsAt?: string;
   periodEndsAt?: string;

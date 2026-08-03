@@ -684,6 +684,55 @@ test('the settlement worker persists a retry when downstream settlement fails', 
   ]);
 });
 
+test('the settlement worker passes the durable claim to audit-only side effects', async () => {
+  const current = claim('waffo', 'waffo-delivery-refund-001');
+  let claimed = false;
+  let deliveredClaim: PaymentWebhookClaim | undefined;
+  const inbox: PaymentWebhookInboxPort = {
+    async receive() {
+      return 'accepted';
+    },
+    async claimNext() {
+      if (claimed) return null;
+      claimed = true;
+      return current;
+    },
+    async checkpointApplied() {},
+    async complete() {},
+    async retry() {},
+  };
+
+  const result = await settlePendingPaymentWebhooks(
+    { limit: 1 },
+    {
+      inbox,
+      settlement: {
+        async apply() {
+          return {
+            amount: '161.00',
+            buyerIdentity: 'user_001',
+            currency: 'HKD',
+            eventType: 'refund.succeeded' as const,
+            orderMerchantExternalId: 'cpb_001',
+            provider: 'waffo' as const,
+            providerDeliveryId: current.providerEventId,
+            providerEventId: 'waffo-refund-001',
+            providerOccurredAt: '2026-08-04T01:02:03.000Z',
+            reference: { id: 'waffo-order-001', kind: 'order' as const },
+            scene: 'refund' as const,
+          };
+        },
+        async settle(...args) {
+          deliveredClaim = args[1];
+        },
+      },
+    }
+  );
+
+  assert.deepEqual(result, { completed: 1, failed: 0 });
+  assert.strictEqual(deliveredClaim, current);
+});
+
 test('recognized Waffo activation contract failures retry without checkpoint or completion', async () => {
   const claim = claimForRetry('waffo', 'waffo-delivery-contract-invalid');
   const mutations: string[] = [];

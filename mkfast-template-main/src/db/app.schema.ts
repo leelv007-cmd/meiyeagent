@@ -241,6 +241,72 @@ export const planCheckoutBindings = pgTable(
   ]
 );
 
+/**
+ * A Waffo one-time credit package is independent from subscription plan
+ * lifecycle state. Its signed order reference points at this owner/workspace
+ * binding, which in turn selects the Core credit-package SKU.
+ */
+export const creditPackageCheckoutBindings = pgTable(
+  'credit_package_checkout_bindings',
+  {
+    id: text('id').primaryKey(),
+    provider: text('provider').notNull().$type<PaymentProviderName>(),
+    productId: text('product_id').notNull(),
+    offerId: text('offer_id').notNull(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspaces.id, { onDelete: 'cascade' }),
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    providerCheckoutId: text('provider_checkout_id'),
+    providerOrderId: text('provider_order_id'),
+    providerPaymentEventId: text('provider_payment_event_id'),
+    status: text('status')
+      .$type<'pending' | 'checkout_created' | 'settled' | 'failed'>()
+      .default('pending')
+      .notNull(),
+    settlementStatus: text('settlement_status')
+      .$type<'pending' | 'processing' | 'settled'>()
+      .default('pending')
+      .notNull(),
+    settlementClaimToken: text('settlement_claim_token'),
+    settlementLeaseExpiresAt: timestamp('settlement_lease_expires_at', {
+      withTimezone: true,
+    }),
+    settlementCompletedAt: timestamp('settlement_completed_at', {
+      withTimezone: true,
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex('credit_package_checkout_bindings_provider_checkout_uidx').on(
+      table.provider,
+      table.providerCheckoutId
+    ),
+    index('credit_package_checkout_bindings_workspace_idx').on(
+      table.workspaceId,
+      table.ownerUserId
+    ),
+    // A retry must not create a second Waffo checkout for the same package.
+    // Terminal bindings stay replayable but release the next package purchase.
+    uniqueIndex('credit_package_checkout_bindings_waffo_inflight_uidx')
+      .on(table.provider, table.workspaceId, table.ownerUserId, table.offerId)
+      .where(sql`status IN ('pending', 'checkout_created')`),
+    uniqueIndex('credit_package_checkout_bindings_provider_order_uidx')
+      .on(table.provider, table.providerOrderId)
+      .where(sql`provider_order_id IS NOT NULL`),
+    uniqueIndex('credit_package_checkout_bindings_provider_payment_event_uidx')
+      .on(table.provider, table.providerPaymentEventId)
+      .where(sql`provider_payment_event_id IS NOT NULL`),
+  ]
+);
+
 /** Waffo downgrade/interval changes are parked until a provider primitive exists. */
 export const waffoSubscriptionChanges = pgTable(
   'waffo_subscription_changes',
@@ -476,6 +542,106 @@ export const paymentWebhookSettlementOutbox = pgTable(
       name: 'payment_webhook_settlement_outbox_event_fk',
     }).onDelete('cascade'),
     index('payment_webhook_settlement_outbox_ready_idx').on(
+      table.status,
+      table.availableAt
+    ),
+  ]
+);
+
+/**
+ * Waffo refunds are audit-only in the credit billing flow. A recorded refund
+ * never reverses grant lots; an operator resolves the separate review item.
+ */
+export const paymentRefundEvents = pgTable(
+  'payment_refund_events',
+  {
+    provider: text('provider').notNull().$type<PaymentProviderName>(),
+    providerEventId: text('provider_event_id').notNull(),
+    providerDeliveryId: text('provider_delivery_id').notNull(),
+    orderId: text('order_id').notNull(),
+    orderMerchantExternalId: text('order_merchant_external_id').notNull(),
+    ownerUserId: text('owner_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    scene: text('scene').notNull().$type<'refund'>(),
+    amount: text('amount').notNull(),
+    currency: text('currency').notNull(),
+    eventStatus: text('event_status').notNull().$type<'failed' | 'succeeded'>(),
+    rawPayload: text('raw_payload').notNull(),
+    providerOccurredAt: timestamp('provider_occurred_at', {
+      withTimezone: true,
+    }).notNull(),
+    receivedAt: timestamp('received_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    dispositionStatus: text('disposition_status')
+      .$type<'pending_review' | 'resolved'>()
+      .default('pending_review')
+      .notNull(),
+    dispositionActorUserId: text('disposition_actor_user_id').references(
+      () => user.id,
+      { onDelete: 'restrict' }
+    ),
+    dispositionNote: text('disposition_note'),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.provider, table.providerEventId],
+      name: 'payment_refund_events_provider_event_id_pk',
+    }),
+    index('payment_refund_events_pending_review_idx').on(
+      table.dispositionStatus,
+      table.receivedAt
+    ),
+  ]
+);
+
+/** Durable, retryable operations alert for one recorded Waffo refund. */
+export const paymentRefundReviewAlertOutbox = pgTable(
+  'payment_refund_review_alert_outbox',
+  {
+    provider: text('provider').notNull().$type<PaymentProviderName>(),
+    providerEventId: text('provider_event_id').notNull(),
+    status: text('status')
+      .$type<'pending' | 'processing' | 'completed'>()
+      .default('pending')
+      .notNull(),
+    attemptCount: integer('attempt_count').default(0).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    leaseExpiresAt: timestamp('lease_expires_at', { withTimezone: true }),
+    claimToken: text('claim_token'),
+    lastErrorCode: text('last_error_code'),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.provider, table.providerEventId],
+      name: 'payment_refund_review_alert_outbox_pk',
+    }),
+    foreignKey({
+      columns: [table.provider, table.providerEventId],
+      foreignColumns: [
+        paymentRefundEvents.provider,
+        paymentRefundEvents.providerEventId,
+      ],
+      name: 'payment_refund_review_alert_outbox_refund_fk',
+    }).onDelete('cascade'),
+    index('payment_refund_review_alert_outbox_ready_idx').on(
       table.status,
       table.availableAt
     ),

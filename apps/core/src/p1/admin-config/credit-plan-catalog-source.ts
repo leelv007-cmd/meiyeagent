@@ -37,7 +37,7 @@ type LegacyCreditPlanConfigKey = (typeof LEGACY_CREDIT_PLAN_KEYS)[number];
  * Materialize the opening catalog as audited revisions before either runtime
  * reads it. Existing operator decisions win, except for the exact #298 plan
  * shape: its five operator-controlled entitlement fields receive the newly
- * required CNY price fields through one auditable revision.
+ * required HKD price fields through one auditable revision.
  */
 export async function ensureCreditPlanCatalogDefaults(
 	repository: Pick<AdminConfigRepository, "apply" | "get">,
@@ -59,8 +59,8 @@ export async function ensureCreditPlanCatalogDefaults(
 						: `bootstrap:${key}`,
 					expectedRevision: existing?.revision ?? null,
 					key,
-					reason: upgraded
-						? "Add required CNY pricing fields to the legacy governed credit plan."
+						reason: upgraded
+							? "Add required HKD pricing fields to the legacy governed credit plan."
 						: "Initialize the governed credit plan catalog.",
 					scope: "global",
 					value: structuredClone(upgraded ?? CREDIT_PLAN_CONFIG_DEFAULTS[key]),
@@ -188,7 +188,7 @@ function creditPlanFromConfig(
 		!(id === "trial"
 			? nonnegativeInteger(plan.monthlyPriceMicros)
 			: positiveInteger(plan.monthlyPriceMicros)) ||
-		plan.currency !== "CNY" ||
+		plan.currency !== "HKD" ||
 		!positiveInteger(plan.storageMb) ||
 		!positiveInteger(plan.concurrencyLimit) ||
 		!positiveInteger(plan.queuePriority) ||
@@ -262,7 +262,7 @@ function creditAddOnsFromConfig(value: unknown): CreditAddOnOffer[] {
 				positiveInteger(offer.credits) &&
 				Number.isSafeInteger(offer.amountMicros) &&
 				offer.amountMicros >= 0 &&
-				offer.currency === "CNY" &&
+				offer.currency === "HKD" &&
 				positiveInteger(offer.expireDays),
 		)
 	) {

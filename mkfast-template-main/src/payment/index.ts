@@ -1,7 +1,23 @@
 import { websiteConfig } from '@/config/website';
 import { getDb } from '@/db';
 import { serverEnv } from '@/env/server';
+import { sendPaymentRefundReviewAlert } from '@/notification';
 import { PostgresPlanCheckoutBindingStore } from '@/payment/plan-checkout-bindings';
+import { PostgresCreditPackageCheckoutBindingStore } from '@/payment/credit-package-checkout-bindings';
+import {
+  settleVerifiedCreditPackagePurchase,
+  type CreditPackageSettlementIntent,
+} from '@/payment/credit-package-commerce';
+import { assertWaffoCreditPackagePaymentFacts } from '@/payment/waffo-credit-package-catalog';
+import {
+  PostgresPaymentRefundStore,
+  recordVerifiedPaymentRefund,
+} from '@/payment/payment-refunds';
+import {
+  drainPaymentRefundReviewAlerts as drainRefundReviewAlertOutbox,
+  PostgresPaymentRefundReviewAlertOutbox,
+} from '@/payment/payment-refund-alerts';
+import { settleVerifiedPaymentCommerce } from '@/payment/payment-commerce-settlement';
 import {
   planGrantCommandFromIntent,
   settleVerifiedPlanPayment,
@@ -10,7 +26,10 @@ import {
 import { applyPlanSettlementIntent } from '@/payment/payment-settlement-side-effects';
 import { CreemProvider } from '@/payment/provider/creem';
 import { StripeProvider } from '@/payment/provider/stripe';
-import { WaffoProvider } from '@/payment/provider/waffo';
+import {
+  WaffoProvider,
+  type CreateWaffoCreditPackageCheckoutParams,
+} from '@/payment/provider/waffo';
 import type { WaffoWebhookPublicKeys } from '@/payment/waffo-environment';
 import { PostgresPaymentWebhookInbox } from '@/payment/postgres-webhook-settlement';
 import {
@@ -87,6 +106,16 @@ export async function createCustomerPortal(
   return provider.createCustomerPortal(params);
 }
 
+export async function createCreditPackageCheckout(
+  params: CreateWaffoCreditPackageCheckoutParams
+): Promise<CheckoutResult> {
+  const provider = getPaymentProvider();
+  if (!(provider instanceof WaffoProvider)) {
+    throw new Error('Credit package checkout requires Waffo.');
+  }
+  return provider.createCreditPackageCheckout(params);
+}
+
 export async function handleWebhookEvent(
   provider: PaymentProviderName,
   payload: string,
@@ -131,8 +160,9 @@ export async function handleAndSettleWebhookEvent(
 export async function settlePendingPaymentWebhookEvents(
   delivery?: PaymentWebhookDelivery
 ) {
-  const inbox = new PostgresPaymentWebhookInbox(getDb());
-  return consumePendingPaymentWebhooks(
+  const database = getDb();
+  const inbox = new PostgresPaymentWebhookInbox(database);
+  const settlement = await consumePendingPaymentWebhooks(
     delivery ? { delivery, limit: 1 } : { limit: 25 },
     {
       inbox,
@@ -147,19 +177,54 @@ export async function settlePendingPaymentWebhookEvents(
           });
           return provider.handleWebhookEvent(claim.payload, signature);
         },
-        async settle(event) {
-          // Pro Studio add-on settlement retired (D-170 / P1 fail-closed).
-          // Plan commerce is the only durable binding path.
-          const planSettlement = await settleVerifiedPlanPurchase(event);
-          if (!planSettlement) {
-            const error = new Error(
-              'Verified payment event has no durable commerce binding yet.'
-            ) as Error & { code: string };
-            error.code = 'PAYMENT_BINDING_NOT_READY';
-            throw error;
-          }
+        async settle(event, claim) {
+          const creditPackages = new PostgresCreditPackageCheckoutBindingStore(
+            database
+          );
+          const refunds = new PostgresPaymentRefundStore(database);
+          await settleVerifiedPaymentCommerce(event, claim.payload, {
+            recordRefund: (verified, rawPayload) =>
+              recordVerifiedPaymentRefund(verified, rawPayload, {
+                record: (input) => refunds.record(input),
+              }),
+            settleCreditPackage: (verified) =>
+              settleVerifiedCreditPackagePurchase(verified, {
+                grantAddOn: grantCreditPackageEntitlement,
+                claimSettlement: (candidate) =>
+                  creditPackages.claimSettlement(candidate),
+                completeSettlement: (input) =>
+                  creditPackages.completeSettlement(input),
+                validateBinding: (candidate, binding) =>
+                  assertWaffoCreditPackagePaymentFacts(
+                    {
+                      amount: candidate.amount,
+                      currency: candidate.currency,
+                      offerId: binding.offerId,
+                      productId: binding.productId,
+                    },
+                    serverEnv.WAFFO_CREDIT_PACKAGE_PRODUCT_MAPPING
+                  ),
+              }),
+            settlePlan: settleVerifiedPlanPurchase,
+          });
         },
       },
+    }
+  );
+  return settlement;
+}
+
+/**
+ * Recovery runs independently from a webhook delivery acknowledgement. A
+ * poison alert therefore cannot delay or fail unrelated payment settlement.
+ */
+export async function drainPaymentRefundReviewAlerts() {
+  const database = getDb();
+  return drainRefundReviewAlertOutbox(
+    { limit: 25 },
+    {
+      notify: sendPaymentRefundReviewAlert,
+      outbox: new PostgresPaymentRefundReviewAlertOutbox(database),
     }
   );
 }
@@ -227,6 +292,41 @@ async function grantPlanEntitlement(intent: PlanSettlementIntent) {
   if (!response.ok) {
     throw new Error(
       `Core plan payment_grant failed (${response.status}): ${await response.text()}`
+    );
+  }
+}
+
+async function grantCreditPackageEntitlement(
+  intent: CreditPackageSettlementIntent
+) {
+  const endpoint = new URL(
+    `/v1/workspaces/${encodeURIComponent(intent.workspaceId)}/p1/commands`,
+    serverEnv.CORE_SERVICE_URL
+  );
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      'content-type': 'application/json',
+      'x-service-token': serverEnv.CORE_SERVICE_TOKEN,
+      'x-user-id': intent.ownerUserId,
+      'x-workspace-id': intent.workspaceId,
+      'x-core-actor': 'payment',
+      'idempotency-key': intent.paymentEventId,
+      'x-correlation-id': `payment:${intent.paymentEventId}`,
+    },
+    body: JSON.stringify({
+      module: 'entitlements',
+      action: 'payment_add_on_grant',
+      payload: {
+        offerId: intent.offerId,
+        paymentEventId: intent.paymentEventId,
+      },
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(
+      `Core credit package payment_add_on_grant failed (${response.status}): ${await response.text()}`
     );
   }
 }

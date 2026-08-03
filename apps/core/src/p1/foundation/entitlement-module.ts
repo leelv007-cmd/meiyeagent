@@ -543,6 +543,21 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
           args.idempotencyKey,
         );
       }
+      case 'payment_add_on_grant': {
+        // Trusted payment/webhook path. Packages are ledger grants, never
+        // subscription settlements, so no product mapping or period is read.
+        this.requirePaymentActor(args.context);
+        if (!this.options.creditBilling) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'Credit billing is required to grant a paid credit package.',
+          );
+        }
+        return this.options.creditBilling.grantAddOn(args.context, {
+          offerId: string(payload, 'offerId'),
+          paymentEventId: string(payload, 'paymentEventId'),
+        });
+      }
       case 'register_gift': {
         // Trusted internal REGISTER_GIFT grant (Tb). Not gated by dev commerce.
         this.requireProvisioningActor(args.context);

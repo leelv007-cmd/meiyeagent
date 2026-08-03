@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+	CREDIT_PLAN_CONFIG_DEFAULTS,
+	CREDIT_PLAN_CONFIG_KEYS,
+} from "@meiye/contracts";
+
+import {
 	AdminConfigCreditPlanCatalogSource,
 	type CreditPlanConfigRepository,
 	ensureCreditPlanCatalogDefaults,
@@ -24,31 +29,38 @@ test("job runtime registers every publishable credit plan concurrency tier", () 
 	);
 });
 
-test("checkout amounts use the published basis-point coefficient and cycle length", () => {
-	assert.equal(
-		creditPlanCheckoutAmountMicros(
-			499_000_000,
-			"single_month",
-			DEFAULT_CREDIT_PLAN_CATALOG.cycleCoefficientBasisPoints,
-		),
-		499_000_000,
-	);
-	assert.equal(
-		creditPlanCheckoutAmountMicros(
-			499_000_000,
-			"monthly",
-			DEFAULT_CREDIT_PLAN_CATALOG.cycleCoefficientBasisPoints,
-		),
-		449_100_000,
-	);
-	assert.equal(
-		creditPlanCheckoutAmountMicros(
-			499_000_000,
-			"yearly",
-			DEFAULT_CREDIT_PLAN_CATALOG.cycleCoefficientBasisPoints,
-		),
-		4_491_000_000,
-	);
+test("checkout amounts round the governed HKD monthly source to the nearest whole HKD", () => {
+	const expectations = [
+		[231_183_288, 231_000_000, 208_000_000, 2_081_000_000],
+		[579_700_809, 580_000_000, 522_000_000, 5_217_000_000],
+		[1_044_390_836, 1_044_000_000, 940_000_000, 9_400_000_000],
+	] as const;
+	for (const [monthlyPriceMicros, singleMonth, monthly, yearly] of expectations) {
+		assert.equal(
+			creditPlanCheckoutAmountMicros(
+				monthlyPriceMicros,
+				"single_month",
+				DEFAULT_CREDIT_PLAN_CATALOG.cycleCoefficientBasisPoints,
+			),
+			singleMonth,
+		);
+		assert.equal(
+			creditPlanCheckoutAmountMicros(
+				monthlyPriceMicros,
+				"monthly",
+				DEFAULT_CREDIT_PLAN_CATALOG.cycleCoefficientBasisPoints,
+			),
+			monthly,
+		);
+		assert.equal(
+			creditPlanCheckoutAmountMicros(
+				monthlyPriceMicros,
+				"yearly",
+				DEFAULT_CREDIT_PLAN_CATALOG.cycleCoefficientBasisPoints,
+			),
+			yearly,
+		);
+	}
 });
 
 test("plan.credits is the only published source for plan and package credits", async () => {
@@ -110,7 +122,7 @@ test("plan.credits is the only published source for plan and package credits", a
 	);
 	assert.equal(
 		catalog.plans.find((plan) => plan.id === "growth")?.monthlyPriceMicros,
-		499_000_000,
+		579_700_809,
 	);
 	assert.deepEqual(catalog.addOns, DEFAULT_CREDIT_PLAN_CATALOG.addOns);
 	assert.deepEqual(catalog.cycleCoefficientBasisPoints, {
@@ -153,6 +165,50 @@ test("an empty or partial plan.credits publication fails closed", async () => {
 	});
 
 	await assert.rejects(source.get(), /published credit plan configuration/i);
+});
+
+test("a legacy CNY publication stays unchanged and fails closed until an explicit HKD CAS", async () => {
+	const repository = new MemoryAdminConfigRepository();
+	for (const key of CREDIT_PLAN_CONFIG_KEYS) {
+		const value: unknown = structuredClone(CREDIT_PLAN_CONFIG_DEFAULTS[key]);
+		if (
+			key.startsWith("plan.credits.") &&
+			key !== "plan.credits.cycle_coefficients" &&
+			key !== "plan.credits.reference_numbers" &&
+			key !== "plan.credits.trial.enabled"
+		) {
+			if (Array.isArray(value)) {
+				for (const offer of value) {
+					(offer as Record<string, unknown>).currency = "CNY";
+				}
+			} else if (value && typeof value === "object") {
+				(value as Record<string, unknown>).currency = "CNY";
+			}
+		}
+		await repository.apply({
+			actorId: "platform-admin",
+			correlationId: `legacy-cny:${key}`,
+			expectedRevision: null,
+			key,
+			reason: "Preserve the legacy CNY revision for explicit migration.",
+			scope: "global",
+			value,
+			workspaceId: "__global__",
+		});
+	}
+
+	await ensureCreditPlanCatalogDefaults(repository);
+	await assert.rejects(
+		new AdminConfigCreditPlanCatalogSource(repository).get(),
+		/published credit plan configuration/i,
+	);
+	const starter = await repository.get(
+		"global",
+		"__global__",
+		"plan.credits.starter",
+	);
+	assert.equal((starter?.value as { currency: string }).currency, "CNY");
+	assert.equal(starter?.revision, 1);
 });
 
 test("initializes an empty installation with revisioned credit plan seeds exactly once", async () => {
@@ -218,8 +274,8 @@ test("upgrades a #298 legacy credit plan with a revision while preserving operat
 	assert.deepEqual(growthHistory[1]?.value, {
 		concurrencyLimit: 3,
 		credits: 1_777,
-		currency: "CNY",
-		monthlyPriceMicros: 499_000_000,
+		currency: "HKD",
+		monthlyPriceMicros: 579_700_809,
 		queuePriority: 4,
 		storageMb: 4_096,
 		supportLabel: "priority",
@@ -231,9 +287,9 @@ test("upgrades a #298 legacy credit plan with a revision while preserving operat
 	assert.deepEqual(growth, {
 		concurrencyLimit: 3,
 		credits: 1_777,
-		currency: "CNY",
+		currency: "HKD",
 		id: "growth",
-		monthlyPriceMicros: 499_000_000,
+		monthlyPriceMicros: 579_700_809,
 		queuePriority: 4,
 		storageMb: 4_096,
 		supportLabel: "priority",
@@ -253,7 +309,7 @@ test("credit plan seeds match the approved trial, subscription and seven-day pac
 			id: "trial",
 			credits: 100,
 			monthlyPriceMicros: 0,
-			currency: "CNY",
+			currency: "HKD",
 			storageMb: 512,
 			concurrencyLimit: 1,
 			queuePriority: 1,
@@ -262,8 +318,8 @@ test("credit plan seeds match the approved trial, subscription and seven-day pac
 		{
 			id: "starter",
 			credits: 500,
-			monthlyPriceMicros: 199_000_000,
-			currency: "CNY",
+			monthlyPriceMicros: 231_183_288,
+			currency: "HKD",
 			storageMb: 1_024,
 			concurrencyLimit: 1,
 			queuePriority: 1,
@@ -272,8 +328,8 @@ test("credit plan seeds match the approved trial, subscription and seven-day pac
 		{
 			id: "growth",
 			credits: 1_300,
-			monthlyPriceMicros: 499_000_000,
-			currency: "CNY",
+			monthlyPriceMicros: 579_700_809,
+			currency: "HKD",
 			storageMb: 5_120,
 			concurrencyLimit: 4,
 			queuePriority: 5,
@@ -282,8 +338,8 @@ test("credit plan seeds match the approved trial, subscription and seven-day pac
 		{
 			id: "pro",
 			credits: 2_800,
-			monthlyPriceMicros: 899_000_000,
-			currency: "CNY",
+			monthlyPriceMicros: 1_044_390_836,
+			currency: "HKD",
 			storageMb: 20_480,
 			concurrencyLimit: 8,
 			queuePriority: 10,

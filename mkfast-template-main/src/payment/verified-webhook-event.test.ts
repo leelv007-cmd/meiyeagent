@@ -294,6 +294,115 @@ test('Waffo normalizes a subscription activation into an owned checkout settleme
   );
 });
 
+test('Waffo normalizes a paid one-time credit package with its signed order facts', () => {
+  assert.deepEqual(
+    normalizeWaffoVerifiedPaymentEvent({
+      id: 'waffo-delivery-package-001',
+      eventId: 'waffo-payment-package-001',
+      eventType: 'order.completed',
+      timestamp: '2026-08-04T00:00:01.000Z',
+      data: {
+        orderId: 'waffo-order-package-001',
+        merchantProvidedBuyerIdentity: 'user-001',
+        orderMerchantExternalId: 'credit-package-binding-001',
+        amount: '57.00',
+        currency: 'HKD',
+      },
+    }),
+    {
+      eventType: 'credit_package.completed',
+      provider: 'waffo',
+      providerEventId: 'waffo-payment-package-001',
+      providerDeliveryId: 'waffo-delivery-package-001',
+      providerOccurredAt: '2026-08-04T00:00:01.000Z',
+      reference: { id: 'waffo-order-package-001', kind: 'order' },
+      scene: 'credit_package',
+      buyerIdentity: 'user-001',
+      packageCheckoutBindingId: 'credit-package-binding-001',
+      amount: '57.00',
+      currency: 'HKD',
+    }
+  );
+});
+
+test('Waffo normalizes successful and failed refunds for audit-only handling', () => {
+  for (const eventType of ['refund.succeeded', 'refund.failed'] as const) {
+    assert.deepEqual(
+      normalizeWaffoVerifiedPaymentEvent({
+        id: `waffo-delivery-${eventType}`,
+        eventId: 'waffo-refund-001',
+        eventType,
+        timestamp: '2026-08-04T01:02:03.000Z',
+        data: {
+          orderId: 'waffo-order-package-refund',
+          merchantProvidedBuyerIdentity: 'user-001',
+          orderMerchantExternalId: 'credit-package-binding-refund',
+          amount: '57.00',
+          currency: 'HKD',
+        },
+      }),
+      {
+        eventType,
+        provider: 'waffo',
+        providerEventId: `waffo:${eventType}:waffo-refund-001`,
+        providerDeliveryId: `waffo-delivery-${eventType}`,
+        providerOccurredAt: '2026-08-04T01:02:03.000Z',
+        reference: { id: 'waffo-order-package-refund', kind: 'order' },
+        scene: 'refund',
+        buyerIdentity: 'user-001',
+        orderMerchantExternalId: 'credit-package-binding-refund',
+        amount: '57.00',
+        currency: 'HKD',
+      }
+    );
+  }
+});
+
+test('recognized Waffo package and refund events reject incomplete signed facts', () => {
+  for (const eventType of ['order.completed', 'refund.succeeded'] as const) {
+    for (const data of [
+      {
+        amount: '57.00',
+        currency: 'HKD',
+        merchantProvidedBuyerIdentity: 'user-001',
+        orderId: 'waffo-order-missing-package-binding',
+      },
+      {
+        amount: '57.00',
+        currency: 'HKD',
+        orderId: 'waffo-order-missing-package-owner',
+        orderMerchantExternalId: 'credit-package-binding-001',
+      },
+      {
+        currency: 'HKD',
+        merchantProvidedBuyerIdentity: 'user-001',
+        orderId: 'waffo-order-missing-package-amount',
+        orderMerchantExternalId: 'credit-package-binding-001',
+      },
+      {
+        amount: '57.00',
+        merchantProvidedBuyerIdentity: 'user-001',
+        orderId: 'waffo-order-missing-package-currency',
+        orderMerchantExternalId: 'credit-package-binding-001',
+      },
+    ]) {
+      assert.throws(
+        () =>
+          normalizeWaffoVerifiedPaymentEvent({
+            id: `waffo-delivery-${eventType}-${data.orderId}`,
+            eventId: `waffo-event-${eventType}-${data.orderId}`,
+            eventType,
+            timestamp: '2026-08-04T01:02:03.000Z',
+            data,
+          }),
+        (error: unknown) =>
+          error instanceof WaffoPaymentEventContractError &&
+          error.code === 'WAFFO_EVENT_CONTRACT_INVALID'
+      );
+    }
+  }
+});
+
 test('Waffo uncanceled is a distinct lifecycle event, not a past-due resume', () => {
   assert.deepEqual(
     normalizeWaffoVerifiedPaymentEvent({

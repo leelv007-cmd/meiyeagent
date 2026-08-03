@@ -4,6 +4,7 @@ import { getBaseUrl } from '@/lib/urls';
 import type {
   NotificationProvider,
   SendPaymentNotificationParams,
+  SendPaymentRefundReviewAlertParams,
 } from '../types';
 
 /**
@@ -19,7 +20,7 @@ async function sendMessage(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    console.error('Failed to send Discord message:', response);
+    throw new Error('Discord notification request failed.');
   }
 }
 
@@ -73,6 +74,47 @@ export class DiscordProvider implements NotificationProvider {
       );
     } catch (error) {
       console.error('Failed to send Discord notification:', error);
+    }
+  }
+
+  async sendPaymentRefundReviewAlert(
+    params: SendPaymentRefundReviewAlertParams
+  ): Promise<void> {
+    try {
+      const body: Record<string, unknown> = {
+        username: this.botName,
+        embeds: [
+          {
+            title: 'Refund Requires Review',
+            color: 0xf59e0b,
+            fields: [
+              { name: 'Provider', value: params.provider, inline: true },
+              { name: 'Status', value: params.eventStatus, inline: true },
+              {
+                name: 'Amount',
+                value: `${params.amount} ${params.currency}`,
+                inline: true,
+              },
+              {
+                name: 'Order ID',
+                value: `\`${params.orderId}\``,
+                inline: false,
+              },
+              {
+                name: 'Refund Event ID',
+                value: `\`${params.providerEventId}\``,
+                inline: false,
+              },
+            ],
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      };
+      if (this.avatarUrl) body.avatar_url = this.avatarUrl;
+      await sendMessage(this.webhookUrl, body);
+    } catch (error) {
+      console.error('Failed to send refund review alert.');
+      throw error;
     }
   }
 }

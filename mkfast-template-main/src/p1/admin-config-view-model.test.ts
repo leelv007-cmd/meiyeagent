@@ -23,8 +23,8 @@ describe('admin config form values', () => {
         JSON.stringify({
           concurrencyLimit: 4,
           credits: 1_300,
-          currency: 'CNY',
-          monthlyPriceMicros: 499_000_000,
+          currency: 'HKD',
+          monthlyPriceMicros: 579_700_809,
           queuePriority: 5,
           storageMb: 5_120,
           supportLabel: 'priority',
@@ -33,8 +33,8 @@ describe('admin config form values', () => {
       {
         concurrencyLimit: 4,
         credits: 1_300,
-        currency: 'CNY',
-        monthlyPriceMicros: 499_000_000,
+        currency: 'HKD',
+        monthlyPriceMicros: 579_700_809,
         queuePriority: 5,
         storageMb: 5_120,
         supportLabel: 'priority',
@@ -70,7 +70,7 @@ describe('admin config form values', () => {
           JSON.stringify({
             concurrencyLimit: 1,
             credits: 100,
-            currency: 'CNY',
+            currency: 'HKD',
             monthlyPriceMicros: 0,
             queuePriority: 1,
             storageMb: 512,
@@ -79,6 +79,45 @@ describe('admin config form values', () => {
         ) as { monthlyPriceMicros: number }
       ).monthlyPriceMicros,
       0
+    );
+    assert.deepEqual(
+      parseAdminConfigDraft(
+        'plan.credits.addons',
+        JSON.stringify([
+          {
+            amountMicros: 57_000_000,
+            credits: 100,
+            currency: 'HKD',
+            expireDays: 7,
+            id: 'credits-100',
+          },
+        ])
+      ),
+      [
+        {
+          amountMicros: 57_000_000,
+          credits: 100,
+          currency: 'HKD',
+          expireDays: 7,
+          id: 'credits-100',
+        },
+      ]
+    );
+    assert.throws(
+      () =>
+        parseAdminConfigDraft(
+          'plan.credits.addons',
+          JSON.stringify([
+            {
+              amountMicros: 49_000_000,
+              credits: 100,
+              currency: 'CNY',
+              expireDays: 7,
+              id: 'credits-100',
+            },
+          ])
+        ),
+      /selected config key/i
     );
     assert.deepEqual(
       parseAdminConfigDraft(
