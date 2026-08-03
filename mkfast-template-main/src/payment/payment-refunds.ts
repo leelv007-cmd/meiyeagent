@@ -1,5 +1,6 @@
 import type { getDb as getDatabase } from '@/db';
-import { sql } from 'drizzle-orm';
+import { paymentRefundEvents } from '@/db/app.schema';
+import { asc, desc, eq, sql } from 'drizzle-orm';
 import type { VerifiedPaymentWebhookEvent } from './types';
 
 type PaymentDatabase = ReturnType<typeof getDatabase>;
@@ -31,6 +32,21 @@ export type PaymentRefundReceipt = Pick<
   | 'provider'
   | 'providerEventId'
 >;
+
+export type PaymentRefundReviewItem = {
+  amount: string;
+  currency: string;
+  dispositionActorUserId: string | null;
+  dispositionNote: string | null;
+  dispositionStatus: PaymentRefundDispositionStatus;
+  eventStatus: PaymentRefundEventStatus;
+  orderId: string;
+  provider: 'waffo';
+  providerEventId: string;
+  providerOccurredAt: string;
+  receivedAt: string;
+  resolvedAt: string | null;
+};
 
 export interface PaymentRefundStore {
   record(
@@ -247,6 +263,39 @@ export class PostgresPaymentRefundStore implements PaymentRefundStore {
       }
       throw new PaymentRefundContractError('Refund review was not found.');
     });
+  }
+
+  async listForReview(limit: number): Promise<PaymentRefundReviewItem[]> {
+    const rows = await this.database
+      .select({
+        amount: paymentRefundEvents.amount,
+        currency: paymentRefundEvents.currency,
+        dispositionActorUserId: paymentRefundEvents.dispositionActorUserId,
+        dispositionNote: paymentRefundEvents.dispositionNote,
+        dispositionStatus: paymentRefundEvents.dispositionStatus,
+        eventStatus: paymentRefundEvents.eventStatus,
+        orderId: paymentRefundEvents.orderId,
+        provider: paymentRefundEvents.provider,
+        providerEventId: paymentRefundEvents.providerEventId,
+        providerOccurredAt: paymentRefundEvents.providerOccurredAt,
+        receivedAt: paymentRefundEvents.receivedAt,
+        resolvedAt: paymentRefundEvents.resolvedAt,
+      })
+      .from(paymentRefundEvents)
+      .where(eq(paymentRefundEvents.provider, 'waffo'))
+      .orderBy(
+        asc(paymentRefundEvents.dispositionStatus),
+        desc(paymentRefundEvents.receivedAt)
+      )
+      .limit(limit);
+
+    return rows.map((row) => ({
+      ...row,
+      provider: 'waffo',
+      providerOccurredAt: row.providerOccurredAt.toISOString(),
+      receivedAt: row.receivedAt.toISOString(),
+      resolvedAt: row.resolvedAt?.toISOString() ?? null,
+    }));
   }
 }
 

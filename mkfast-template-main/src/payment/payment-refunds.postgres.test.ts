@@ -99,6 +99,34 @@ test(
         }),
         'already_resolved'
       );
+      const listedReview = (await store.listForReview(100)).find(
+        (review) => review.providerEventId === providerEventId
+      );
+      assert.ok(listedReview?.resolvedAt);
+      assert.deepEqual(
+        listedReview && {
+          amount: listedReview.amount,
+          currency: listedReview.currency,
+          dispositionActorUserId: listedReview.dispositionActorUserId,
+          dispositionNote: listedReview.dispositionNote,
+          dispositionStatus: listedReview.dispositionStatus,
+          eventStatus: listedReview.eventStatus,
+          orderId: listedReview.orderId,
+          provider: listedReview.provider,
+          providerEventId: listedReview.providerEventId,
+        },
+        {
+          amount: '161.00',
+          currency: 'HKD',
+          dispositionActorUserId: ownerUserId,
+          dispositionNote: 'Confirmed against the provider refund receipt.',
+          dispositionStatus: 'resolved',
+          eventStatus: 'succeeded',
+          orderId: input.orderId,
+          provider: 'waffo',
+          providerEventId,
+        }
+      );
 
       const alertOutbox = new PostgresPaymentRefundReviewAlertOutbox(db);
       const firstAlertClaim = await alertOutbox.claimNext();

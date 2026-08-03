@@ -69,3 +69,23 @@ test('credit package checkout is Test-only and binds the owner workspace before 
     /createCreditPackageCheckoutSession[\s\S]*?requireWaffoTestCheckoutAuthority\(serverEnv\.WAFFO_ENVIRONMENT\)[\s\S]*?resolveWaffoCreditPackageProduct[\s\S]*?ensureVerifiedWorkspaceProvisioned[\s\S]*?createOwnerBinding[\s\S]*?createCreditPackageCheckout/u
   );
 });
+
+test('admin audit mounts the protected refund review consumer', async () => {
+  const [routeSource, apiSource] = await Promise.all([
+    readFile(resolve(process.cwd(), 'src/routes/admin/audit.tsx'), 'utf8'),
+    readFile(resolve(process.cwd(), 'src/api/payment-refunds.ts'), 'utf8'),
+  ]);
+
+  assert.match(
+    routeSource,
+    /import \{ AdminPaymentRefundReview \} from '@\/p1\/admin-payment-refund-review';[\s\S]*?<AdminPaymentRefundReview \/>/u
+  );
+  assert.match(
+    apiSource,
+    /listPaymentRefundReviews[\s\S]*?method: 'GET'[\s\S]*?middleware\(\[adminApiMiddleware\]\)/u
+  );
+  assert.match(
+    apiSource,
+    /resolvePaymentRefund[\s\S]*?method: 'POST'[\s\S]*?middleware\(\[recentAdminApiMiddleware\]\)/u
+  );
+});

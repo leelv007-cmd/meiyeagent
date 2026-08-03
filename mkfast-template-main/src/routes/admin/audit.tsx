@@ -46,6 +46,7 @@ import { formatLocaleDateTime } from '@/lib/locale';
 import { AdminAuditControl } from '@/p1/admin-audit-control';
 import { AdminOperationsHealth } from '@/p1/admin-operations-health';
 import { AdminMerchantSupport } from '@/p1/admin-merchant-support';
+import { AdminPaymentRefundReview } from '@/p1/admin-payment-refund-review';
 import type { SupplyControlSnapshot } from '@/p1/admin-supply-types';
 import { ADMIN_SUPPLY_CONTROL_QUERY } from '@/p1/use-admin-supply-control';
 import { queryP1 } from '@/p1/client';
@@ -67,6 +68,7 @@ function AuditPage() {
     >
       <div className="space-y-8">
         <CapabilityDrilldownBanner pageId="audit" />
+        <AdminPaymentRefundReview />
         <AdminMerchantSupport />
         <AdminSupplyAuditProjection />
         <AdminByokAuditProjection />
