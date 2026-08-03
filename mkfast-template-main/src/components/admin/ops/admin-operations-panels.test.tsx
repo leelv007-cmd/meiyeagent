@@ -75,7 +75,7 @@ test('the usage panel draws the three buckets per plan and keeps the exact rows'
   assert.match(html, /data-slot="bar-chart"/);
   // 图是同一份投影的另一种读法，精确数字仍然留在行里。
   assert.match(html, /admin-ops-usage-row/);
-  assert.match(html, /文案 20/);
+  assert.match(html, /文案参考 20/);
 });
 
 test('the tasks panel lifts queue numbers into KPI tiles and draws the outcome share', () => {

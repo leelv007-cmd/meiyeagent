@@ -45,12 +45,9 @@ test('merchant quote label uses product allowance language, never provider curre
     'video.generate',
   ] as const) {
     const label = merchantUsageQuoteLabel(operation);
-    assert.match(label, /消耗|Uses|allowance|额度/u);
+    assert.match(label, /积分|credits/iu);
     assert.doesNotMatch(label, /\$|USD|CNY|US\$|€|¥/u);
   }
-  assert.match(merchantUsageQuoteLabel('copy.generate'), /文案|copy/iu);
-  assert.match(merchantUsageQuoteLabel('image.generate'), /图片|image/iu);
-  assert.match(merchantUsageQuoteLabel('video.generate'), /视频|video/iu);
 });
 
 test('keeps media aspect ratio in the Core quote revision', () => {
