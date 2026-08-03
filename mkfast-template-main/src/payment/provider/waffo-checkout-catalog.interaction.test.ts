@@ -115,6 +115,36 @@ describe('Waffo checkout catalog boundary', () => {
     });
   });
 
+  it('marks a Test checkout URL without discarding its authenticated token', async () => {
+    const { WaffoProvider } = await import('./waffo');
+    const create = vi.fn().mockResolvedValue({
+      checkoutUrl:
+        'https://pancake.waffo.ai/store/STO_TEST/checkout/cs_test#token=test-only-jwt',
+      sessionId: 'waffo-session-test',
+    });
+    const provider = new WaffoProvider({
+      client: fakeClient(create),
+      allowTestEvents: false,
+      testCheckout: true,
+    });
+
+    await expect(
+      provider.createCheckout({
+        customerEmail: 'user@example.test',
+        metadata: {
+          planCheckoutBindingId: 'pcb_test',
+          userId: 'user_test',
+          workspaceId: 'ws_test',
+        },
+        planId: 'growth',
+        priceId: 'PROD_GROWTH_MONTH',
+      })
+    ).resolves.toEqual({
+      id: 'waffo-session-test',
+      url: 'https://pancake.waffo.ai/store/STO_TEST/checkout/cs_test?test=true#token=test-only-jwt',
+    });
+  });
+
   it('does not allow test-mode webhook events outside an explicit sandbox', async () => {
     const { WaffoProvider } = await import('./waffo');
     const provider = new WaffoProvider({

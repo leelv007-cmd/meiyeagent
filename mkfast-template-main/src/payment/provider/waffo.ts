@@ -42,15 +42,18 @@ export type WaffoClient = {
 export interface WaffoProviderOptions {
   allowTestEvents?: boolean;
   client?: WaffoClient;
+  testCheckout?: boolean;
   webhookPublicKeys?: WebhookPublicKeys;
 }
 
 export class WaffoProvider implements PaymentProvider {
   private readonly allowTestEvents: boolean;
   private readonly client: WaffoClient;
+  private readonly testCheckout: boolean;
 
   constructor(options: WaffoProviderOptions = {}) {
     this.allowTestEvents = options.allowTestEvents ?? serverEnv.WAFFO_DEBUG;
+    this.testCheckout = options.testCheckout ?? false;
     this.client =
       options.client ?? createWaffoClient(options.webhookPublicKeys);
   }
@@ -87,7 +90,10 @@ export class WaffoProvider implements PaymentProvider {
       // subscription. Do not accept provider default trial rules here.
       withTrial: false,
     });
-    return { id: checkout.sessionId, url: checkout.checkoutUrl };
+    return {
+      id: checkout.sessionId,
+      url: checkoutUrlForEnvironment(checkout.checkoutUrl, this.testCheckout),
+    };
   }
 
   async createCustomerPortal(
@@ -118,6 +124,13 @@ export class WaffoProvider implements PaymentProvider {
     }
     return normalizeWaffoVerifiedPaymentEvent(event);
   }
+}
+
+function checkoutUrlForEnvironment(checkoutUrl: string, testCheckout: boolean) {
+  if (!testCheckout) return checkoutUrl;
+  const url = new URL(checkoutUrl);
+  url.searchParams.set('test', 'true');
+  return url.toString();
 }
 
 function createWaffoClient(publicKeys?: WebhookPublicKeys): WaffoClient {

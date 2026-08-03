@@ -147,6 +147,7 @@ function waffoWebhookPublicKeys() {
 function createWaffoProvider() {
   return new WaffoProvider({
     allowTestEvents: serverEnv.WAFFO_DEBUG,
+    testCheckout: serverEnv.WAFFO_DEBUG,
     webhookPublicKeys: waffoWebhookPublicKeys(),
   });
 }
