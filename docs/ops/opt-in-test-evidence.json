@@ -48,13 +48,13 @@
     },
     "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
-      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation, entitlement-module providerOccurredAt) against the fresh meiye_304_b04fec54_biz/_dbos pair: green."
+      "verifiedAt": "f2f8eef06007e2d83a657fc24ad938090590c3e0",
+      "note": "Re-verified 2026-08-04 at f2f8eef0 (#308 HKD credit packages and refunds) against fresh meiye_308_hkd_final_20260804_023453 / meiye_308_hkd_final_dbos_20260804_023453 databases: six focused Core PostgreSQL files passed 10/10 with 0 skipped."
     },
     "apps/core/src/p1/foundation/workspace-bootstrap.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
-      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation) against the fresh meiye_304_b04fec54_biz/_dbos pair: green."
+      "verifiedAt": "f2f8eef06007e2d83a657fc24ad938090590c3e0",
+      "note": "Re-verified 2026-08-04 at f2f8eef0 (#308 HKD credit packages and refunds) against fresh meiye_308_hkd_final_20260804_023453 / meiye_308_hkd_final_dbos_20260804_023453 databases: six focused Core PostgreSQL files passed 10/10 with 0 skipped."
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
@@ -238,8 +238,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
-      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation) against the fresh meiye_304_b04fec54_biz/_dbos pair: 2/2."
+      "verifiedAt": "f2f8eef06007e2d83a657fc24ad938090590c3e0",
+      "note": "Re-verified 2026-08-04 at f2f8eef0 (#308 HKD credit packages and refunds) against fresh meiye_308_hkd_final_20260804_023453 / meiye_308_hkd_final_dbos_20260804_023453 databases: six focused Core PostgreSQL files passed 10/10 with 0 skipped."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "green",
@@ -318,13 +318,23 @@
     },
     "mkfast-template-main/src/payment/plan-checkout-bindings.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
-      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation) against the fresh meiye_304_b04fec54_biz pair provisioned through migration 0020: 3/3 including the new orchestration race/stale/change-parking coverage and the durable cancellation lease suite."
+      "verifiedAt": "f2f8eef06007e2d83a657fc24ad938090590c3e0",
+      "note": "Re-verified 2026-08-04 at f2f8eef0 (#308 HKD credit packages and refunds) against fresh meiye_308_hkd_final_20260804_023453: four focused Web PostgreSQL files passed 9/9 with 0 skipped."
     },
     "mkfast-template-main/src/payment/postgres-webhook-settlement.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
-      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation) against the fresh meiye_304_b04fec54_biz pair: 1/1 atomic intake and expired-lease fencing."
+      "verifiedAt": "f2f8eef06007e2d83a657fc24ad938090590c3e0",
+      "note": "Re-verified 2026-08-04 at f2f8eef0 (#308 HKD credit packages and refunds) against fresh meiye_308_hkd_final_20260804_023453: four focused Web PostgreSQL files passed 9/9 with 0 skipped."
+    },
+    "mkfast-template-main/src/payment/credit-package-checkout-bindings.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "f2f8eef06007e2d83a657fc24ad938090590c3e0",
+      "note": "Re-verified 2026-08-04 at f2f8eef0 (#308 HKD credit packages and refunds) against fresh meiye_308_hkd_final_20260804_023453: four focused Web PostgreSQL files passed 9/9 with 0 skipped."
+    },
+    "mkfast-template-main/src/payment/payment-refunds.postgres.test.ts": {
+      "status": "green",
+      "verifiedAt": "f2f8eef06007e2d83a657fc24ad938090590c3e0",
+      "note": "Re-verified 2026-08-04 at f2f8eef0 (#308 HKD credit packages and refunds) against fresh meiye_308_hkd_final_20260804_023453: four focused Web PostgreSQL files passed 9/9 with 0 skipped."
     },
     "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
       "status": "green",
@@ -338,18 +348,18 @@
     },
     "apps/core/src/p1/credit-billing/credit-plan-catalog.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
-      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation, providerOccurredAt plumbing) against the fresh meiye_304_b04fec54_biz/_dbos pair: green."
+      "verifiedAt": "f2f8eef06007e2d83a657fc24ad938090590c3e0",
+      "note": "Re-verified 2026-08-04 at f2f8eef0 (#308 HKD credit packages and refunds) against fresh meiye_308_hkd_final_20260804_023453 / meiye_308_hkd_final_dbos_20260804_023453 databases: six focused Core PostgreSQL files passed 10/10 with 0 skipped."
     },
     "apps/core/src/p1/credit-billing/credit-subscription-scheduler.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
-      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation) against the fresh meiye_304_b04fec54_biz/_dbos pair: green incl. past_due grace sweep."
+      "verifiedAt": "f2f8eef06007e2d83a657fc24ad938090590c3e0",
+      "note": "Re-verified 2026-08-04 at f2f8eef0 (#308 HKD credit packages and refunds) against fresh meiye_308_hkd_final_20260804_023453 / meiye_308_hkd_final_dbos_20260804_023453 databases: six focused Core PostgreSQL files passed 10/10 with 0 skipped."
     },
     "apps/core/src/p1/credit-billing/postgres-credit-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
-      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation) against the fresh meiye_304_b04fec54_biz/_dbos pair: green."
+      "verifiedAt": "f2f8eef06007e2d83a657fc24ad938090590c3e0",
+      "note": "Re-verified 2026-08-04 at f2f8eef0 (#308 HKD credit packages and refunds) against fresh meiye_308_hkd_final_20260804_023453 / meiye_308_hkd_final_dbos_20260804_023453 databases: six focused Core PostgreSQL files passed 10/10 with 0 skipped."
     },
     "apps/core/src/p1/harness/note-page-regeneration.postgres.test.ts": {
       "status": "green",
