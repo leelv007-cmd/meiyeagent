@@ -218,7 +218,15 @@ function offer<T extends { id: string }>(offers: T[], id: string, kind: string) 
 export interface ProviderBillingPeriodInput {
   periodStartsAt?: string | null;
   periodEndsAt?: string | null;
-  interval?: 'month' | 'year' | 'lifetime' | 'one_time' | null;
+  interval?:
+    | 'single_month'
+    | 'monthly'
+    | 'yearly'
+    | 'month'
+    | 'year'
+    | 'lifetime'
+    | 'one_time'
+    | null;
 }
 
 /**
@@ -1008,6 +1016,9 @@ function optionalProviderPeriod(
   const intervalRaw =
     typeof payload.interval === 'string' ? payload.interval : null;
   const interval =
+    intervalRaw === 'single_month' ||
+    intervalRaw === 'monthly' ||
+    intervalRaw === 'yearly' ||
     intervalRaw === 'month' ||
     intervalRaw === 'year' ||
     intervalRaw === 'lifetime' ||

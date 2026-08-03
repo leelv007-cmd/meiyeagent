@@ -12,6 +12,10 @@ import {
 } from './entitlement-service.js';
 import { ProductEntitlementFoundationModule } from './entitlement-module.js';
 import { MemoryFoundationRepository } from './memory-repository.js';
+import type {
+  CreditBillingService,
+  CreditPaymentSettlementInput,
+} from '../credit-billing/credit-billing-service.js';
 
 const emptyDiagnostics: DiagnosticRepository = {
   async create(run: DiagnosticRun) {
@@ -112,4 +116,75 @@ test('payment actor can only settle entitlements.payment_grant over HTTP', async
     }),
   });
   assert.equal(ownerGrantDenied.status, 403);
+});
+
+test('payment_grant preserves Waffo catalog intervals over HTTP', async (t) => {
+  const repository = new MemoryFoundationRepository();
+  const clock = () => new Date('2026-08-03T00:00:00.000Z');
+  const entitlements = new ProductEntitlementApplicationService(
+    repository,
+    new RecordedAutoTopUpPaymentPort(),
+    clock,
+  );
+  const received: CreditPaymentSettlementInput[] = [];
+  const creditBilling = {
+    async settlePayment(
+      _context: unknown,
+      input: CreditPaymentSettlementInput,
+    ) {
+      received.push(input);
+      return null;
+    },
+  } as unknown as CreditBillingService;
+  const server = createCoreServer({
+    diagnosticRepository: emptyDiagnostics,
+    p1ApplicationService: new P1ApplicationService(repository, {
+      operations: [
+        new ProductEntitlementFoundationModule(entitlements, clock, {
+          creditBilling,
+        }),
+      ],
+    }),
+    serviceToken: 'test-service-token',
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => server.close());
+
+  const { port } = server.address() as AddressInfo;
+  const base = `http://127.0.0.1:${port}/v1/workspaces/workspace-payment/p1`;
+  const intervals = ['single_month', 'monthly', 'yearly'] as const;
+
+  for (const interval of intervals) {
+    const response = await fetch(`${base}/commands`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': `waffo:${interval}`,
+        'x-core-actor': 'payment',
+        'x-correlation-id': `waffo-${interval}`,
+        'x-service-token': 'test-service-token',
+        'x-user-id': 'payment-service',
+        'x-workspace-id': 'workspace-payment',
+      },
+      body: JSON.stringify({
+        action: 'payment_grant',
+        module: 'entitlements',
+        payload: {
+          interval,
+          lifecycle: 'renew',
+          paymentEventId: `waffo:${interval}`,
+          paymentProductId: `PROD_${interval.toUpperCase()}`,
+          periodStartsAt: '2026-08-03T00:00:00.000Z',
+          subscriptionId: `ORD_${interval}`,
+        },
+      }),
+    });
+    assert.equal(response.status, 200);
+  }
+
+  assert.deepEqual(
+    received.map((input) => input.interval),
+    intervals,
+  );
 });
