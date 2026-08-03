@@ -1292,6 +1292,9 @@ test('credit detail reads transactions before lots to avoid a grant-read race', 
         usedCredits: 0,
       };
     },
+    readBalanceSnapshot() {
+      throw new Error('not used');
+    },
   };
   const service = new CreditBillingService(
     ledger,
@@ -1307,6 +1310,52 @@ test('credit detail reads transactions before lots to avoid a grant-read race', 
     transactions: [],
   });
   assert.deepEqual(reads, ['transactions', 'lots']);
+});
+
+test('merchant balance derives availability and nearest expiry from one memory snapshot', async () => {
+  const ledger = new MemoryCreditLedger();
+  const now = new Date('2026-08-05T00:00:00.000Z');
+  const service = new CreditBillingService(
+    ledger,
+    new MemoryCreditSubscriptionStore(),
+    { async get() { return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG); } },
+    { async getPaymentMapping() { return null; } },
+    () => now,
+  );
+  const grant = (id: string, credits: number, expirationDate: string) =>
+    ledger.grant({
+      id,
+      workspaceId: context.workspaceId,
+      credits,
+      expirationDate,
+      transactionType: 'PURCHASE_PACKAGE',
+      createdAt: '2026-08-01T00:00:00.000Z',
+    });
+
+  grant('empty', 4, '2026-08-09T00:00:00.000Z');
+  grant('same-expiry-b', 8, '2026-08-10T00:00:00.000Z');
+  grant('same-expiry-a', 7, '2026-08-10T00:00:00.000Z');
+  ledger.consume({
+    workspaceId: context.workspaceId,
+    credits: 4,
+    transactionId: 'consume:empty',
+    actorId: context.userId,
+    correlationId: context.correlationId,
+    createdAt: '2026-08-01T12:00:00.000Z',
+  });
+  grant('expired', 9, '2026-08-02T00:00:00.000Z');
+
+  assert.deepEqual(await service.balance(context.workspaceId), {
+    grantedCredits: 28,
+    usedCredits: 4,
+    refundedCredits: 0,
+    expiredCredits: 9,
+    availableCredits: 15,
+    soonestExpiringLot: {
+      remainingCredits: 7,
+      expiresAt: '2026-08-10T00:00:00.000Z',
+    },
+  });
 });
 
 test('credit detail keeps immutable paid coverage while the scheduler grant is pending', async () => {

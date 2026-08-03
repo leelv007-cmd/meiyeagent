@@ -1,4 +1,4 @@
-import type { CreationLensId, PublicCreditBalance } from '@meiye/contracts';
+import type { PublicCreditBalance } from '@meiye/contracts';
 
 export type WorkbenchCreditBalanceView = {
   availableCredits: number;
@@ -27,11 +27,14 @@ type MerchantCreditQuoteInput = {
   failureRefundsCredits?: boolean | null;
 };
 
-export type CreditGuardedComposerRun = {
-  briefConfirmationId?: string;
-  lensId: CreationLensId;
-  videoConfirmAccepted?: boolean;
+export type FreshCreditProjection = {
+  credits?: PublicCreditBalance | null;
 };
+
+export type FreshCreditAdmission =
+  | { kind: 'admitted' }
+  | { kind: 'shortfall'; missingCredits: number }
+  | { kind: 'unavailable' };
 
 const HIDDEN_BALANCE: WorkbenchCreditBalanceView = {
   availableCredits: 0,
@@ -50,23 +53,46 @@ const HIDDEN_SHORTFALL: WorkbenchCreditShortfallView = {
   visible: false,
 };
 
-/** Runs a confirmation only after rechecking the latest credit projection. */
-export function confirmCreditGuardedRun({
-  quotaBlocked,
-  run,
-  onBlocked,
-  onConfirmed,
+/**
+ * Final browser admission reads Core's current merchant-safe projection before
+ * allowing a quoted run. The Core reservation transaction remains authoritative
+ * for concurrent spends after this read.
+ */
+export async function admitFreshCreditRun({
+  loadProjection,
+  quote,
 }: {
-  quotaBlocked: boolean;
-  run: CreditGuardedComposerRun | null;
-  onBlocked: () => void;
-  onConfirmed: (run: CreditGuardedComposerRun | null) => void;
-}) {
-  if (quotaBlocked) {
-    onBlocked();
-    return;
+  loadProjection: () => Promise<FreshCreditProjection>;
+  quote: MerchantCreditQuoteInput | null | undefined;
+}): Promise<FreshCreditAdmission> {
+  const currentQuote = projectWorkbenchCreditQuote(quote);
+  if (!currentQuote.visible || currentQuote.creditCost === null) {
+    return { kind: 'unavailable' };
   }
-  onConfirmed(run);
+
+  let projection: FreshCreditProjection;
+  try {
+    projection = await loadProjection();
+  } catch {
+    return { kind: 'unavailable' };
+  }
+
+  const balance = projection?.credits;
+  if (
+    !balance ||
+    !Number.isSafeInteger(balance.availableCredits) ||
+    balance.availableCredits < 0
+  ) {
+    return { kind: 'unavailable' };
+  }
+
+  const missingCredits = Math.max(
+    0,
+    currentQuote.creditCost - balance.availableCredits
+  );
+  return missingCredits > 0
+    ? { kind: 'shortfall', missingCredits }
+    : { kind: 'admitted' };
 }
 
 /**
@@ -77,7 +103,11 @@ export function projectWorkbenchCreditBalance(
   balance: PublicCreditBalance | null | undefined,
   now: Date
 ): WorkbenchCreditBalanceView {
-  if (!balance || !Number.isSafeInteger(balance.availableCredits)) {
+  if (
+    !balance ||
+    !Number.isSafeInteger(balance.availableCredits) ||
+    balance.availableCredits < 0
+  ) {
     return HIDDEN_BALANCE;
   }
   const lot = balance.soonestExpiringLot;

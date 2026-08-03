@@ -55,6 +55,11 @@ export interface CreditBalanceProjection {
   availableCredits: number;
 }
 
+export interface CreditBalanceSnapshot {
+  lots: readonly CreditGrantLot[];
+  projection: CreditBalanceProjection;
+}
+
 export type GrantCreditsInput = Omit<
   CreditGrantLot,
   'originalCredits' | 'remainingCredits' | 'grantIdempotencyKey' | 'revision'
@@ -72,6 +77,43 @@ export interface ConsumeCreditsInput {
   actorId: string;
   correlationId: string;
   createdAt: string;
+}
+
+export function projectCreditBalance(
+  lots: readonly CreditGrantLot[],
+  transactions: readonly CreditLotTransaction[],
+  asOf: string,
+): CreditBalanceProjection {
+  const asOfMs = Date.parse(asOf);
+  const pendingExpiredCredits = lots
+    .filter(
+      (lot) =>
+        lot.remainingCredits > 0 &&
+        lot.expirationDate !== null &&
+        Date.parse(lot.expirationDate) <= asOfMs,
+    )
+    .reduce((sum, lot) => sum + lot.remainingCredits, 0);
+  const total = (...types: CreditTransactionType[]) =>
+    transactions
+      .filter((transaction) => types.includes(transaction.transactionType))
+      .reduce((sum, transaction) => sum + transaction.credits, 0);
+  return {
+    grantedCredits: total(...CREDIT_GRANT_TRANSACTION_TYPES),
+    usedCredits: total('USAGE'),
+    refundedCredits: transactions
+      .filter(
+        (transaction) =>
+          transaction.transactionType === 'REFUND' && transaction.credited,
+      )
+      .reduce((sum, transaction) => sum + transaction.credits, 0),
+    expiredCredits: total('EXPIRE') + pendingExpiredCredits,
+    availableCredits: lots
+      .filter(
+        (lot) =>
+          lot.expirationDate === null || Date.parse(lot.expirationDate) > asOfMs,
+      )
+      .reduce((sum, lot) => sum + lot.remainingCredits, 0),
+  };
 }
 
 export function compareCreditLotsForFefo(
@@ -220,6 +262,18 @@ export class MemoryCreditLedger {
     return this.transactions
       .filter((transaction) => transaction.workspaceId === workspaceId)
       .map((transaction) => structuredClone(transaction));
+  }
+
+  readBalanceSnapshot(
+    workspaceId: string,
+    asOf = new Date().toISOString(),
+  ): CreditBalanceSnapshot {
+    const lots = this.listLots(workspaceId);
+    const transactions = this.listTransactions(workspaceId);
+    return {
+      lots,
+      projection: projectCreditBalance(lots, transactions, asOf),
+    };
   }
 
   grant(input: GrantCreditsInput) {
@@ -497,39 +551,7 @@ export class MemoryCreditLedger {
   }
 
   project(workspaceId: string, asOf = new Date().toISOString()): CreditBalanceProjection {
-    const transactions = this.transactions.filter(
-      (transaction) => transaction.workspaceId === workspaceId,
-    );
-    const lots = this.lots.filter((lot) => lot.workspaceId === workspaceId);
-    const asOfMs = Date.parse(asOf);
-    const pendingExpiredCredits = lots
-      .filter(
-        (lot) =>
-          lot.remainingCredits > 0 &&
-          lot.expirationDate !== null &&
-          Date.parse(lot.expirationDate) <= asOfMs,
-      )
-      .reduce((sum, lot) => sum + lot.remainingCredits, 0);
-    const total = (...types: CreditTransactionType[]) =>
-      transactions
-        .filter((transaction) => types.includes(transaction.transactionType))
-        .reduce((sum, transaction) => sum + transaction.credits, 0);
-    return {
-      grantedCredits: total(...CREDIT_GRANT_TRANSACTION_TYPES),
-      usedCredits: total('USAGE'),
-      refundedCredits: transactions
-        .filter(
-          (transaction) => transaction.transactionType === 'REFUND' && transaction.credited,
-        )
-        .reduce((sum, transaction) => sum + transaction.credits, 0),
-      expiredCredits: total('EXPIRE') + pendingExpiredCredits,
-      availableCredits: lots
-        .filter(
-          (lot) =>
-            lot.expirationDate === null || Date.parse(lot.expirationDate) > asOfMs,
-        )
-        .reduce((sum, lot) => sum + lot.remainingCredits, 0),
-    };
+    return this.readBalanceSnapshot(workspaceId, asOf).projection;
   }
 
   async runAtomically<T>(work: () => T | Promise<T>): Promise<T> {

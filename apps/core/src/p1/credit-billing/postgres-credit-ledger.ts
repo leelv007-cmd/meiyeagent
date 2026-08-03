@@ -8,7 +8,9 @@ import {
   normalizeCreditConsumeIdempotencyKey,
   normalizeCreditGrantIdempotencyKey,
   sameCreditGrantFacts,
+  projectCreditBalance,
   type CreditBalanceProjection,
+  type CreditBalanceSnapshot,
   type CreditGrantLot,
   type CreditGrantTransactionType,
   type CreditLotTransaction,
@@ -376,8 +378,8 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
     return refunds;
   }
 
-  async listLots(workspaceId: string) {
-    const result = await this.pool.query<CreditLotRow>(
+  private async listLotsFrom(queryable: Queryable, workspaceId: string) {
+    const result = await queryable.query<CreditLotRow>(
       `SELECT * FROM p1_credit_grant_lots WHERE workspace_id = $1
         ORDER BY expiration_date ASC NULLS LAST, created_at, id`,
       [workspaceId],
@@ -385,8 +387,12 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
     return result.rows.map(creditLotFromRow);
   }
 
-  async listTransactions(workspaceId: string) {
-    const result = await this.pool.query<CreditTransactionRow>(
+  async listLots(workspaceId: string) {
+    return this.listLotsFrom(this.pool, workspaceId);
+  }
+
+  private async listTransactionsFrom(queryable: Queryable, workspaceId: string) {
+    const result = await queryable.query<CreditTransactionRow>(
       `SELECT * FROM p1_credit_lot_transactions WHERE workspace_id = $1
         ORDER BY created_at, id`,
       [workspaceId],
@@ -394,41 +400,37 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
     return result.rows.map(creditTransactionFromRow);
   }
 
+  async listTransactions(workspaceId: string) {
+    return this.listTransactionsFrom(this.pool, workspaceId);
+  }
+
+  async readBalanceSnapshot(
+    workspaceId: string,
+    asOf = new Date().toISOString(),
+  ): Promise<CreditBalanceSnapshot> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const lots = await this.listLotsFrom(client, workspaceId);
+      const transactions = await this.listTransactionsFrom(client, workspaceId);
+      await client.query('COMMIT');
+      return {
+        lots,
+        projection: projectCreditBalance(lots, transactions, asOf),
+      };
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async project(
     workspaceId: string,
     asOf = new Date().toISOString(),
   ): Promise<CreditBalanceProjection> {
-    const [lots, transactions] = await Promise.all([
-      this.listLots(workspaceId),
-      this.listTransactions(workspaceId),
-    ]);
-    const asOfMs = Date.parse(asOf);
-    const pendingExpiredCredits = lots
-      .filter(
-        (lot) =>
-          lot.remainingCredits > 0 &&
-          lot.expirationDate !== null &&
-          Date.parse(lot.expirationDate) <= asOfMs,
-      )
-      .reduce((sum, lot) => sum + lot.remainingCredits, 0);
-    const amount = (...types: CreditTransactionType[]) =>
-      transactions
-        .filter((transaction) => types.includes(transaction.transactionType))
-        .reduce((sum, transaction) => sum + transaction.credits, 0);
-    return {
-      grantedCredits: amount(...CREDIT_GRANT_TRANSACTION_TYPES),
-      usedCredits: amount('USAGE'),
-      refundedCredits: transactions
-        .filter((transaction) => transaction.transactionType === 'REFUND' && transaction.credited)
-        .reduce((sum, transaction) => sum + transaction.credits, 0),
-      expiredCredits: amount('EXPIRE') + pendingExpiredCredits,
-      availableCredits: lots
-        .filter(
-          (lot) =>
-            lot.expirationDate === null || Date.parse(lot.expirationDate) > asOfMs,
-        )
-        .reduce((sum, lot) => sum + lot.remainingCredits, 0),
-    };
+    return (await this.readBalanceSnapshot(workspaceId, asOf)).projection;
   }
 
   async expireSubscriptionLots(input: {

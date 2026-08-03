@@ -279,6 +279,61 @@ test(
   },
 );
 
+test(
+  'Postgres balance snapshot keeps available credits and nearest lot coherent',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const fixture = await createFixture();
+    const { creditLedger, workspaceId } = fixture;
+    const billing = new CreditBillingService(
+      creditLedger,
+      new MemoryCreditSubscriptionStore(),
+      { async get() { return structuredClone(DEFAULT_CREDIT_PLAN_CATALOG); } },
+      { async getPaymentMapping() { return null; } },
+      () => new Date('2026-08-05T00:00:00.000Z'),
+    );
+    const grant = (id: string, credits: number, expirationDate: string) =>
+      creditLedger.grant({
+        id,
+        workspaceId,
+        credits,
+        expirationDate,
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: id,
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+
+    try {
+      await grant('empty', 4, '2026-08-09T00:00:00.000Z');
+      await grant('same-expiry-b', 8, '2026-08-10T00:00:00.000Z');
+      await grant('same-expiry-a', 7, '2026-08-10T00:00:00.000Z');
+      await creditLedger.consume({
+        workspaceId,
+        credits: 4,
+        transactionId: creditUsageOperationId('empty-lot'),
+        actorId: 'owner',
+        correlationId: 'test',
+        createdAt: '2026-08-01T12:00:00.000Z',
+      });
+      await grant('expired', 9, '2026-08-02T00:00:00.000Z');
+
+      assert.deepEqual(await billing.balance(workspaceId), {
+        grantedCredits: 28,
+        usedCredits: 4,
+        refundedCredits: 0,
+        expiredCredits: 9,
+        availableCredits: 15,
+        soonestExpiringLot: {
+          remainingCredits: 7,
+          expiresAt: '2026-08-10T00:00:00.000Z',
+        },
+      });
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
 async function createFixture() {
   const schema = `credit_pg_${randomUUID().replaceAll('-', '')}`;
   const pool = new Pool({

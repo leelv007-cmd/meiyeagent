@@ -9,6 +9,7 @@ import {
 import type { CreditPlanCatalog } from './credit-plan-catalog.js';
 import type {
   CreditBalanceProjection,
+  CreditBalanceSnapshot,
   CreditGrantLot,
   CreditLotTransaction,
   GrantCreditsInput,
@@ -58,6 +59,10 @@ export interface CreditBillingLedgerPort {
     workspaceId: string,
     asOf?: string,
   ): Promise<CreditBalanceProjection> | CreditBalanceProjection;
+  readBalanceSnapshot(
+    workspaceId: string,
+    asOf?: string,
+  ): Promise<CreditBalanceSnapshot> | CreditBalanceSnapshot;
   expireSubscriptionLots(input: {
     workspaceId: string;
     subscriptionId: string;
@@ -471,10 +476,10 @@ export class CreditBillingService {
 
   async balance(workspaceId: string): Promise<MerchantCreditBalance> {
     const asOf = this.clock().toISOString();
-    const [projection, lots] = await Promise.all([
-      this.ledger.project(workspaceId, asOf),
-      this.ledger.listLots(workspaceId),
-    ]);
+    const { lots, projection } = await this.ledger.readBalanceSnapshot(
+      workspaceId,
+      asOf,
+    );
     const asOfMs = Date.parse(asOf);
     const soonest = lots
       .filter(

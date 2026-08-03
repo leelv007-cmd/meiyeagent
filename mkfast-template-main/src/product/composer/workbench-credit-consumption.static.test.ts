@@ -46,8 +46,13 @@ test('workbench consumes the backend credit balance and quote through all three 
   );
   assert.match(
     source,
-    /onConfirm: \(\) => \{[\s\S]*?confirmCreditGuardedRun\(\{[\s\S]*?quotaBlocked,[\s\S]*?run: pendingRunRef\.current,[\s\S]*?onBlocked: \(\) => \{\s+setSubmissionQuotaBlocked\(true\);/u
+    /const runCreate = async[\s\S]*?admitFreshCreditRun\([\s\S]*?queryClient\.fetchQuery\([\s\S]*?queryKey: creditProjectionQueryKey,[\s\S]*?staleTime: 0,/u
   );
+  assert.match(
+    source,
+    /onSuccess: async[\s\S]*?invalidateQueries\([\s\S]*?queryKey: creditProjectionQueryKey,[\s\S]*?refetchQueries\([\s\S]*?queryKey: creditProjectionQueryKey,/u
+  );
+  assert.equal(source.match(/void runCreate\(/gu)?.length, 3);
   assert.match(
     source,
     /\{legacyQuotaBlocked && !workbenchCreditShortfall\.visible \? \(\s+<ComposerCreditRecoveryHost/u

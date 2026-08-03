@@ -1,4 +1,10 @@
-import { expect, test, type Page, type Request } from '@playwright/test';
+import {
+  expect,
+  test,
+  type Page,
+  type Request,
+  type Route,
+} from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 
@@ -8,6 +14,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import {
+  productState,
   seedComposerInlineAuthorize,
   seedConfirmedStore,
 } from '../fixtures/product';
@@ -158,8 +165,14 @@ async function queryImageModelPreferences(page: Page) {
 
 async function submitNoteJourney(
   page: Page,
-  expected: 'accepted' | 'insufficient' = 'accepted',
-  authorizedAssetId?: string
+  expected:
+    | 'accepted'
+    | 'insufficient'
+    | 'fresh_insufficient'
+    | 'projection_unavailable'
+    | 'missing_refund_policy' = 'accepted',
+  authorizedAssetId?: string,
+  drainWorkspaceId?: string
 ) {
   let submissionPostCount = 0;
   const countSubmissionPost = (request: Request) => {
@@ -170,7 +183,7 @@ async function submitNoteJourney(
       submissionPostCount += 1;
     }
   };
-  if (expected === 'insufficient') {
+  if (expected !== 'accepted') {
     page.on('request', countSubmissionPost);
   }
   await page.goto('/dashboard');
@@ -225,10 +238,130 @@ async function submitNoteJourney(
     page.getByTestId('composer-capsule-attach-panel')
   );
   const intent = '把这张美甲案例做成介绍本店夏日护理项目的小红书图文笔记';
+  let refundPolicyRemoved = false;
+  const removeRefundPolicy = async (route: Route) => {
+    const request = route.request();
+    const body = request.postDataJSON() as {
+      action?: string;
+      module?: string;
+    } | null;
+    if (body?.module !== 'product-billing' || body.action !== 'quote') {
+      await route.continue();
+      return;
+    }
+    const response = await route.fetch();
+    const envelope = (await response.json()) as {
+      data?: Record<string, unknown>;
+    };
+    if (!envelope.data) {
+      await route.fulfill({ response });
+      return;
+    }
+    const quote = { ...envelope.data };
+    delete quote.failureRefundsCredits;
+    refundPolicyRemoved = true;
+    await route.fulfill({
+      json: { ...envelope, data: quote },
+      response,
+    });
+  };
+  if (expected === 'missing_refund_policy') {
+    await page.route('**/api/core/p1/commands', removeRefundPolicy);
+  }
+  const submit = page.getByTestId('composer-submit');
   await page.getByTestId('composer-intent-input').fill(intent);
+
+  if (expected === 'missing_refund_policy') {
+    try {
+      await expect(submit).toBeEnabled({ timeout: 30_000 });
+      await submit.click();
+      await expect(page.getByTestId('composer-intent-error')).toHaveText(
+        '积分余额暂时无法确认，请重试。'
+      );
+      expect(refundPolicyRemoved).toBe(true);
+      expect(submissionPostCount).toBe(0);
+    } finally {
+      await page.unroute('**/api/core/p1/commands', removeRefundPolicy);
+      page.off('request', countSubmissionPost);
+    }
+    return {
+      authorizedAssetId: authorized.id,
+      errorCode: undefined,
+      errorMessage: undefined,
+      packageId: '',
+      platformDefaultRevision: preferences.platformDefaultRevision ?? '',
+      taskId: '',
+    };
+  }
+
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 30_000,
   });
+
+  if (expected === 'projection_unavailable') {
+    let projectionRequestRejected = false;
+    const rejectFreshProjection = async (route: Route) => {
+      const body = route.request().postDataJSON() as {
+        action?: string;
+        module?: string;
+      } | null;
+      if (body?.module !== 'entitlements' || body.action !== 'projection') {
+        await route.continue();
+        return;
+      }
+      projectionRequestRejected = true;
+      await route.abort('failed');
+    };
+    await page.route('**/api/core/p1/query', rejectFreshProjection);
+    try {
+      await expect(submit).toBeEnabled();
+      await submit.click();
+      await expect(page.getByTestId('composer-intent-error')).toHaveText(
+        '积分余额暂时无法确认，请重试。'
+      );
+      expect(projectionRequestRejected).toBe(true);
+      expect(submissionPostCount).toBe(0);
+    } finally {
+      await page.unroute('**/api/core/p1/query', rejectFreshProjection);
+      page.off('request', countSubmissionPost);
+    }
+    return {
+      authorizedAssetId: authorized.id,
+      errorCode: undefined,
+      errorMessage: undefined,
+      packageId: '',
+      platformDefaultRevision: preferences.platformDefaultRevision ?? '',
+      taskId: '',
+    };
+  }
+
+  if (expected === 'fresh_insufficient') {
+    if (!drainWorkspaceId) {
+      throw new Error(
+        'A merchant workspace is required to drain fixture credits.'
+      );
+    }
+    zeroRemainingCreditsForWorkspace(drainWorkspaceId);
+    try {
+      await expect(page.getByTestId('composer-submit')).toBeEnabled();
+      await page.getByTestId('composer-submit').click();
+      const shortfall = page.getByTestId('workbench-credit-shortfall-alert');
+      await expect(shortfall).toBeVisible({ timeout: 30_000 });
+      await expect(shortfall).toContainText(/还差\s*\d+\s*分/u);
+      await expect(page.getByTestId('composer-submit')).toBeDisabled();
+      expect(submissionPostCount).toBe(0);
+    } finally {
+      page.off('request', countSubmissionPost);
+    }
+    return {
+      authorizedAssetId: authorized.id,
+      errorCode: undefined,
+      errorMessage: undefined,
+      packageId: '',
+      platformDefaultRevision: preferences.platformDefaultRevision ?? '',
+      taskId: '',
+    };
+  }
 
   if (expected === 'insufficient') {
     // A known shortfall is blocked before admission. Core remains the reserve
@@ -291,6 +424,68 @@ async function submitNoteJourney(
     platformDefaultRevision: preferences.platformDefaultRevision ?? '',
     taskId: envelope.data?.task?.id ?? '',
   };
+}
+
+async function submitVideoBriefAfterFreshShortfall(
+  page: Page,
+  workspaceId: string
+) {
+  let submissionPostCount = 0;
+  const countSubmissionPost = (request: Request) => {
+    if (
+      request.method() === 'POST' &&
+      request.url().includes('/api/core/p1/composer/submissions')
+    ) {
+      submissionPostCount += 1;
+    }
+  };
+  page.on('request', countSubmissionPost);
+  try {
+    await page.goto('/dashboard');
+    await selectComposerLens(page, 'video');
+    const authorized = await seedComposerInlineAuthorize(page, {
+      fileName: 'credit-video-reference.png',
+    });
+    await page.reload();
+    await selectComposerLens(page, 'video');
+    const recipePanel = await openComposerRecipeCard(
+      page,
+      'composer-recipe-card-recipe.douyin_project_video'
+    );
+    const applyRecipe = page.getByRole('button', {
+      name: '套用并更新设置',
+    });
+    const recipeApplied = page.getByTestId('composer-recipe-apply-undo');
+    await expect(recipeApplied.or(applyRecipe)).toBeVisible();
+    if (await applyRecipe.isVisible()) await applyRecipe.click();
+    await closeComposerCapsule(page, recipePanel);
+    await seedComposerInlineAuthorize(page, {
+      expectedAssetId: authorized.id,
+      fileName: 'credit-video-reference.png',
+    });
+    await page
+      .getByTestId('composer-intent-input')
+      .fill('把这张夏日护理案例图做成一条可直接发布的抖音项目成片');
+    await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId('composer-submit')).toBeEnabled();
+    await page.getByTestId('composer-submit').click();
+
+    const brief = page.getByTestId('composer-brief-surface');
+    await expect(brief).toBeVisible({ timeout: 60_000 });
+    const confirm = brief.getByTestId('composer-brief-confirm');
+    await expect(confirm).toBeEnabled();
+    zeroRemainingCreditsForWorkspace(workspaceId);
+    await confirm.click();
+
+    const shortfall = page.getByTestId('workbench-credit-shortfall-alert');
+    await expect(shortfall).toBeVisible({ timeout: 30_000 });
+    await expect(shortfall).toContainText(/还差\s*\d+\s*分/u);
+    expect(submissionPostCount).toBe(0);
+  } finally {
+    page.off('request', countSubmissionPost);
+  }
 }
 
 async function collectWorkflowSse(page: Page, taskId: string) {
@@ -419,11 +614,10 @@ async function queryAvailableCredits(page: Page) {
 }
 
 /**
- * Credit-era trial grants 100 credits; one note does not exhaust the plan.
- * Zero remaining lots for the workspace that ran `taskId` so the next note
- * admission hits a real server INSUFFICIENT_ENTITLEMENT (not a bucket ghost).
+ * Credit-era trial grants 100 credits; zero the authenticated merchant's lots
+ * so final browser admission reads a real insufficient projection.
  */
-function zeroRemainingCreditsForTask(taskId: string) {
+function zeroRemainingCreditsForWorkspace(workspaceId: string) {
   const databaseUrl = process.env.TEST_DATABASE_URL;
   if (!databaseUrl) {
     throw new Error('TEST_DATABASE_URL is required to drain trial credits');
@@ -431,12 +625,7 @@ function zeroRemainingCreditsForTask(taskId: string) {
   const sql = `
     UPDATE p1_credit_grant_lots
     SET remaining_credits = 0, revision = revision + 1
-    WHERE workspace_id = (
-      SELECT workspace_id
-      FROM p1_product_billing_usage
-      WHERE task_id = '${taskId.replace(/'/g, "''")}'
-      LIMIT 1
-    )
+    WHERE workspace_id = '${workspaceId.replace(/'/g, "''")}'
     AND remaining_credits > 0;
   `;
   execFileSync('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', sql], {
@@ -544,6 +733,7 @@ test.describe
     }) => {
       test.setTimeout(660_000);
       await registerTrialNoteUser(page, request);
+      const { workspaceId } = await productState(page);
 
       const submission = await submitNoteJourney(page);
       const streamPromise = collectWorkflowSse(page, submission.taskId);
@@ -675,6 +865,9 @@ test.describe
       expect(availableAfterDelivery).toBe(
         100 - (usage.settledCredits as number)
       );
+      await expect(
+        page.getByTestId('workbench-credit-topbar-balance')
+      ).toContainText(String(availableAfterDelivery));
       expect(contentPackage.marketing?.contextBundle?.bundleId).toBeTruthy();
       expect(contentPackage.marketing?.factRefs).toEqual(expect.any(Array));
       expect(contentPackage.marketing?.rightsRefs?.length ?? 0).toBeGreaterThan(
@@ -727,15 +920,15 @@ test.describe
       await assertZipDownload(download, IMAGE_TEXT_CONTRACT, adopted.revision);
 
       await page.evaluate(() => sessionStorage.clear());
-      // Trial is 100 credits; one note leaves a residual balance. Drain the
-      // remaining lots so the next admission is a real credit shortfall —
-      // bucket-era "one note exhausts trial image units" no longer holds.
-      zeroRemainingCreditsForTask(submission.taskId);
-      expect(await queryAvailableCredits(page)).toBe(0);
+      // Trial is 100 credits; one note leaves a residual balance. Load the
+      // next Composer while that cached projection is still sufficient, then
+      // drain its lots immediately before the final admission. This must be a
+      // client-side zero-POST shortfall, not a server rejection.
       await submitNoteJourney(
         page,
-        'insufficient',
-        submission.authorizedAssetId
+        'fresh_insufficient',
+        submission.authorizedAssetId,
+        workspaceId
       );
       const shortfall = page.getByTestId('workbench-credit-shortfall-alert');
       await expect(shortfall).toBeVisible();
@@ -753,5 +946,34 @@ test.describe
           '../../../../.scratch/orca-run-2026-07-25/t20-r2-credit-shortfall.png'
         ),
       });
+    });
+
+    test('Video Brief acceptance rechecks a drained projection before admission', async ({
+      page,
+      request,
+    }) => {
+      test.setTimeout(240_000);
+      await registerTrialNoteUser(page, request);
+      const { workspaceId } = await productState(page);
+      await page.evaluate(() => sessionStorage.clear());
+      await submitVideoBriefAfterFreshShortfall(page, workspaceId);
+    });
+
+    test('Composer blocks an unavailable fresh credit projection before submission', async ({
+      page,
+      request,
+    }) => {
+      test.setTimeout(240_000);
+      await registerTrialNoteUser(page, request);
+      await submitNoteJourney(page, 'projection_unavailable');
+    });
+
+    test('Composer blocks a quote missing its refund policy before submission', async ({
+      page,
+      request,
+    }) => {
+      test.setTimeout(240_000);
+      await registerTrialNoteUser(page, request);
+      await submitNoteJourney(page, 'missing_refund_policy');
     });
   });

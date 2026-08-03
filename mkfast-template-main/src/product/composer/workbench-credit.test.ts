@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
-  confirmCreditGuardedRun,
+  admitFreshCreditRun,
   projectWorkbenchCreditBalance,
   projectWorkbenchCreditQuote,
   projectWorkbenchCreditShortfall,
@@ -95,25 +95,78 @@ test('leaves legacy amounts and incomplete credit quotes out of the credit surfa
   );
 });
 
-test('blocks a confirmed run when a refreshed balance is now insufficient', () => {
-  let blocked = false;
-  let runCreateCalls = 0;
+test('admits a run only when the fresh credit projection covers the exact quote', async () => {
+  let projectionReads = 0;
 
-  confirmCreditGuardedRun({
-    quotaBlocked: true,
-    run: {
-      lensId: 'image_text',
-      briefConfirmationId: 'brief-1',
-      videoConfirmAccepted: true,
+  const result = await admitFreshCreditRun({
+    loadProjection: async () => {
+      projectionReads += 1;
+      return {
+        credits: {
+          grantedCredits: 100,
+          usedCredits: 100,
+          refundedCredits: 0,
+          expiredCredits: 0,
+          availableCredits: 0,
+          soonestExpiringLot: null,
+        },
+      };
     },
-    onBlocked: () => {
-      blocked = true;
-    },
-    onConfirmed: () => {
-      runCreateCalls += 1;
+    quote: {
+      creditCost: 20,
+      failureRefundsCredits: true,
     },
   });
 
-  assert.equal(blocked, true);
-  assert.equal(runCreateCalls, 0);
+  assert.equal(projectionReads, 1);
+  assert.deepEqual(result, {
+    kind: 'shortfall',
+    missingCredits: 20,
+  });
+});
+
+test('fails closed when the fresh projection cannot provide a valid credit balance', async () => {
+  const quote = { creditCost: 20, failureRefundsCredits: true };
+  const reads = [
+    async () => {
+      throw new Error('projection unavailable');
+    },
+    async () => ({}),
+    async () => ({
+      credits: {
+        availableCredits: -1,
+      },
+    }),
+    async () => ({
+      credits: {
+        availableCredits: 1.5,
+      },
+    }),
+  ];
+
+  for (const loadProjection of reads) {
+    assert.deepEqual(await admitFreshCreditRun({ loadProjection, quote }), {
+      kind: 'unavailable',
+    });
+  }
+});
+
+test('fails closed before reading when the current quote lacks credit facts', async () => {
+  let projectionReads = 0;
+  const loadProjection = async () => {
+    projectionReads += 1;
+    return {};
+  };
+
+  for (const quote of [
+    {},
+    { creditCost: 20 },
+    { creditCost: 0, failureRefundsCredits: true },
+  ]) {
+    assert.deepEqual(await admitFreshCreditRun({ loadProjection, quote }), {
+      kind: 'unavailable',
+    });
+  }
+
+  assert.equal(projectionReads, 0);
 });

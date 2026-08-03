@@ -258,8 +258,7 @@ import {
 } from './composer-destination-preflight';
 import { projectComposerQuoteView } from './quote-wiring';
 import {
-  confirmCreditGuardedRun,
-  type CreditGuardedComposerRun,
+  admitFreshCreditRun,
   projectWorkbenchCreditBalance,
   projectWorkbenchCreditQuote,
   projectWorkbenchCreditShortfall,
@@ -452,6 +451,13 @@ function sourceReferencesFromDraft(sources: unknown[]) {
  */
 const COMPOSER_LENS_REQUIRED_MESSAGE =
   '还没定下要做哪种内容。先在上面选文案、图文或视频，再点发送。';
+
+type PendingCreditRun = {
+  briefConfirmationId?: string;
+  lensId: CreationLensId;
+  videoConfirmAccepted?: boolean;
+};
+
 const COMPOSER_QUOTE_PENDING_MESSAGE =
   '这次的用量还没算好，所以没能开始。稍等一下，等发送键下方出现用量说明再点；一直没出来的话，改一句描述会重新算。';
 
@@ -709,7 +715,9 @@ export function ComposerHome({
   const [executionConfirm, setExecutionConfirm] = useState(
     createExecutionConfirmState
   );
-  const pendingRunRef = useRef<CreditGuardedComposerRun | null>(null);
+  const pendingRunRef = useRef<PendingCreditRun | null>(null);
+  const creditAdmissionPendingRef = useRef(false);
+  const [creditAdmissionPending, setCreditAdmissionPending] = useState(false);
   // Deliberately outside `session`: declining clears the transcript, and a
   // feedback line that lived there would be wiped by the very action it
   // reports on (D-164⑥ 决定 B).
@@ -1116,8 +1124,12 @@ export function ComposerHome({
     initialSessionIdentityId,
     sessionIdentityDecision,
   ]);
+  const creditProjectionQueryKey = p1QueryKeys.request(
+    'entitlements',
+    'projection'
+  );
   const usageQuery = useQuery({
-    queryKey: p1QueryKeys.request('entitlements', 'projection'),
+    queryKey: creditProjectionQueryKey,
     queryFn: ({ signal }) =>
       queryP1<AccountUsageProjection>(
         'entitlements',
@@ -1601,7 +1613,11 @@ export function ComposerHome({
         generative: true,
       })
     ) {
-      runCreate(run.lensId, run.videoConfirmAccepted, run.briefConfirmationId);
+      void runCreate(
+        run.lensId,
+        run.videoConfirmAccepted,
+        run.briefConfirmationId
+      );
       return;
     }
     const rowValue = (key: 'destination' | 'deliverable') =>
@@ -2479,7 +2495,7 @@ export function ComposerHome({
         },
       });
     },
-    onSuccess: (created, variables) => {
+    onSuccess: async (created, variables) => {
       const submitted = submitComposer(lensState, {
         videoConfirmAccepted:
           variables.lensId === 'video'
@@ -2500,6 +2516,13 @@ export function ComposerHome({
           packageId: created.contentPackage.id,
         })
       );
+      await queryClient.invalidateQueries({
+        queryKey: creditProjectionQueryKey,
+      });
+      await queryClient.refetchQueries({
+        queryKey: creditProjectionQueryKey,
+        type: 'active',
+      });
     },
     onMutate: () => setSubmissionGroundingBlocked(null),
     onError: (error) => {
@@ -2520,7 +2543,7 @@ export function ComposerHome({
       ) {
         setSubmissionQuotaBlocked(true);
         void queryClient.invalidateQueries({
-          queryKey: p1QueryKeys.request('entitlements', 'projection'),
+          queryKey: creditProjectionQueryKey,
         });
       }
       toast.error(workbench_work_create_failed());
@@ -2539,11 +2562,13 @@ export function ComposerHome({
     focusComposerIntentInput();
   });
 
-  const runCreate = (
+  const runCreate = async (
     selectedLens: CreationLensId,
     videoConfirmAccepted?: boolean,
-    briefConfirmationId?: string
+    briefConfirmationId?: string,
+    onAdmitted?: () => void
   ) => {
+    if (creditAdmissionPendingRef.current || createWork.isPending) return;
     const identity = identitiesQuery.data?.identities.find(
       (candidate) => candidate.identityId === identitySelection.selected?.id
     );
@@ -2556,40 +2581,70 @@ export function ComposerHome({
       !submissionRecipe ||
       !briefInput?.briefContextId ||
       briefContextRevision === null ||
-      !quote
+      !quote ||
+      !currentQuoteView
     ) {
       toast.error(workbench_operation_failed());
       return;
     }
-    const intent =
-      lensState.draft.userText.trim() || coldCards[0]?.title || '创作';
-    createWork.mutate({
-      briefContextId: briefInput.briefContextId,
-      briefContextRevision,
-      briefInput,
-      identity,
-      ...(sessionIdentityDecisionReference
-        ? { identityDecision: sessionIdentityDecisionReference }
-        : identitySelection.source === 'default' &&
-            identitiesQuery.data?.defaultDecision
-          ? {
-              identityDecision: {
-                id: identitiesQuery.data.defaultDecision.decisionId,
-                revision: identitiesQuery.data.defaultDecision.decisionRevision,
-              },
-            }
-          : {}),
-      lensId: selectedLens,
-      intent,
-      quote,
-      recipe: submissionRecipe,
-      videoConfirmAccepted,
-      ...(briefConfirmationId
-        ? {
-            briefConfirmationId,
-          }
-        : {}),
-    });
+    creditAdmissionPendingRef.current = true;
+    setCreditAdmissionPending(true);
+    try {
+      const admission = await admitFreshCreditRun({
+        loadProjection: () =>
+          queryClient.fetchQuery({
+            queryKey: creditProjectionQueryKey,
+            queryFn: () =>
+              queryP1<AccountUsageProjection>('entitlements', {
+                action: 'projection',
+                payload: {},
+              }),
+            retry: false,
+            staleTime: 0,
+          }),
+        quote: currentQuoteView,
+      });
+      if (admission.kind === 'shortfall') {
+        setSubmissionQuotaBlocked(true);
+        return;
+      }
+      if (admission.kind === 'unavailable') {
+        setSubmitBlockedMessage('积分余额暂时无法确认，请重试。');
+        return;
+      }
+      onAdmitted?.();
+      await createWork.mutateAsync({
+        briefContextId: briefInput.briefContextId,
+        briefContextRevision,
+        briefInput,
+        identity,
+        ...(sessionIdentityDecisionReference
+          ? { identityDecision: sessionIdentityDecisionReference }
+          : identitySelection.source === 'default' &&
+              identitiesQuery.data?.defaultDecision
+            ? {
+                identityDecision: {
+                  id: identitiesQuery.data.defaultDecision.decisionId,
+                  revision:
+                    identitiesQuery.data.defaultDecision.decisionRevision,
+                },
+              }
+            : {}),
+        lensId: selectedLens,
+        intent:
+          lensState.draft.userText.trim() || coldCards[0]?.title || '创作',
+        quote,
+        recipe: submissionRecipe,
+        videoConfirmAccepted,
+        ...(briefConfirmationId ? { briefConfirmationId } : {}),
+      });
+    } catch {
+      // `createWork.onError` presents submit failures; a failed admission is
+      // already represented by its recoverable unavailable state above.
+    } finally {
+      creditAdmissionPendingRef.current = false;
+      setCreditAdmissionPending(false);
+    }
   };
 
   const handleLensChange = (next: CreationLensId) => {
@@ -3072,7 +3127,7 @@ export function ComposerHome({
       return;
     }
 
-    runCreate(lensState.lensId);
+    void runCreate(lensState.lensId);
   };
 
   useEffect(() => {
@@ -4104,29 +4159,25 @@ export function ComposerHome({
                           {...projectExecutionConfirmCard(executionConfirm, {
                             busy: pendingNotePlanRegeneration
                               ? notePlanRegenerationBusy
-                              : createWork.isPending || briefPending,
+                              : createWork.isPending ||
+                                briefPending ||
+                                creditAdmissionPending,
                             onConfirm: () => {
                               if (pendingNotePlanRegeneration) {
                                 void confirmNotePlanRegeneration();
                                 return;
                               }
-                              confirmCreditGuardedRun({
-                                quotaBlocked,
-                                run: pendingRunRef.current,
-                                onBlocked: () => {
-                                  setSubmissionQuotaBlocked(true);
-                                },
-                                onConfirmed: (run) => {
+                              const run = pendingRunRef.current;
+                              if (!run) return;
+                              void runCreate(
+                                run.lensId,
+                                run.videoConfirmAccepted,
+                                run.briefConfirmationId,
+                                () => {
                                   setExecutionConfirm(confirmExecution);
-                                  if (!run) return;
                                   pendingRunRef.current = null;
-                                  runCreate(
-                                    run.lensId,
-                                    run.videoConfirmAccepted,
-                                    run.briefConfirmationId
-                                  );
-                                },
-                              });
+                                }
+                              );
                             },
                             onReject: () => {
                               if (pendingNotePlanRegeneration) {
@@ -4310,10 +4361,13 @@ export function ComposerHome({
                       : null
                   }
                   disabled={
-                    createWork.isPending || lensState.phase === 'frozen'
+                    createWork.isPending ||
+                    creditAdmissionPending ||
+                    lensState.phase === 'frozen'
                   }
                   submitDisabled={
                     createWork.isPending ||
+                    creditAdmissionPending ||
                     briefPending ||
                     destinationMapPending ||
                     !uploadsReady ||
@@ -4334,7 +4388,9 @@ export function ComposerHome({
                         onChange={handleLensChange}
                         showRequiredHint={showRequiredHint}
                         disabled={
-                          createWork.isPending || lensState.phase === 'frozen'
+                          createWork.isPending ||
+                          creditAdmissionPending ||
+                          lensState.phase === 'frozen'
                         }
                       />
                       <LensSwitchPreviewPanel
@@ -4660,7 +4716,7 @@ export function ComposerHome({
                     // empty rather than keeping a turn that never ran.
                     setSession(createComposerSession(sessionIdRef.current));
                   }}
-                  disabled={createWork.isPending}
+                  disabled={createWork.isPending || creditAdmissionPending}
                 />
               ) : null}
 

@@ -221,3 +221,69 @@ test('balance projection excludes expired lots before a later consume writes EXP
     0,
   );
 });
+
+test('memory balance snapshot keeps the projection and FEFO candidates from one read', () => {
+  const ledger = new MemoryCreditLedger();
+  grant(ledger, {
+    id: 'empty',
+    credits: 4,
+    expirationDate: '2026-08-09T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+  });
+  grant(ledger, {
+    id: 'same-expiry-b',
+    credits: 8,
+    expirationDate: '2026-08-10T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+  });
+  grant(ledger, {
+    id: 'same-expiry-a',
+    credits: 7,
+    expirationDate: '2026-08-10T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+  });
+  ledger.consume({
+    workspaceId: 'workspace-credit',
+    credits: 4,
+    transactionId: creditUsageOperationId('empty-lot'),
+    actorId: 'owner',
+    correlationId: 'test',
+    createdAt: '2026-08-01T12:00:00.000Z',
+  });
+  grant(ledger, {
+    id: 'expired',
+    credits: 9,
+    expirationDate: '2026-08-02T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+  });
+
+  const snapshot = ledger.readBalanceSnapshot(
+    'workspace-credit',
+    '2026-08-05T00:00:00.000Z'
+  );
+
+  assert.equal(snapshot.projection.availableCredits, 15);
+  assert.deepEqual(
+    snapshot.lots
+      .filter(
+        (lot) =>
+          lot.remainingCredits > 0 &&
+          lot.expirationDate !== null &&
+          Date.parse(lot.expirationDate) > Date.parse('2026-08-05T00:00:00.000Z')
+      )
+      .map((lot) => lot.id),
+    ['same-expiry-b', 'same-expiry-a']
+  );
+
+  grant(ledger, {
+    id: 'after-snapshot',
+    credits: 8,
+    expirationDate: '2026-08-20T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+  });
+  assert.equal(snapshot.projection.availableCredits, 15);
+  assert.equal(
+    snapshot.lots.find((lot) => lot.id === 'same-expiry-b')?.remainingCredits,
+    8
+  );
+});
