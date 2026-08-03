@@ -35,7 +35,7 @@ describe('Waffo checkout catalog boundary', () => {
     const create = vi.fn();
     const provider = new WaffoProvider({
       client: fakeClient(create),
-      allowTestEvents: true,
+      environment: 'production',
     });
 
     await expect(
@@ -58,7 +58,7 @@ describe('Waffo checkout catalog boundary', () => {
     const create = vi.fn();
     const provider = new WaffoProvider({
       client: fakeClient(create),
-      allowTestEvents: true,
+      environment: 'production',
     });
 
     await expect(
@@ -80,7 +80,7 @@ describe('Waffo checkout catalog boundary', () => {
     });
     const provider = new WaffoProvider({
       client: fakeClient(create),
-      allowTestEvents: true,
+      environment: 'production',
     });
 
     await expect(
@@ -124,8 +124,7 @@ describe('Waffo checkout catalog boundary', () => {
     });
     const provider = new WaffoProvider({
       client: fakeClient(create),
-      allowTestEvents: false,
-      testCheckout: true,
+      environment: 'test',
     });
 
     await expect(
@@ -145,7 +144,7 @@ describe('Waffo checkout catalog boundary', () => {
     });
   });
 
-  it('does not allow test-mode webhook events outside an explicit sandbox', async () => {
+  it('rejects a Test-mode webhook under production authority', async () => {
     const { WaffoProvider } = await import('./waffo');
     const provider = new WaffoProvider({
       client: fakeClient(vi.fn(), {
@@ -155,12 +154,13 @@ describe('Waffo checkout catalog boundary', () => {
         id: 'waffo-delivery-001',
         mode: 'test',
       }),
-      allowTestEvents: false,
+      environment: 'production',
+      webhookPublicKeys: { prod: 'production-key' },
     });
 
     await expect(
       provider.handleWebhookEvent('{"signed":true}', 't=1,v1=signature')
-    ).rejects.toThrow('Test-mode Waffo webhook events are disabled');
+    ).rejects.toThrow('Waffo webhook mode does not match its authority');
   });
 
   it('locks webhook verification to Test and rejects production events', async () => {
@@ -174,15 +174,17 @@ describe('Waffo checkout catalog boundary', () => {
     });
     const verify = vi.spyOn(client.webhooks, 'verify');
     const provider = new WaffoProvider({
-      allowTestEvents: true,
       client,
+      environment: 'test',
+      webhookPublicKeys: { test: 'test-key' },
     });
 
     await expect(
       provider.handleWebhookEvent('{"signed":true}', 't=1,v1=signature')
-    ).rejects.toThrow('Production-mode Waffo webhook events are not accepted');
+    ).rejects.toThrow('Waffo webhook mode does not match its authority');
     expect(verify).toHaveBeenCalledWith('{"signed":true}', 't=1,v1=signature', {
       environment: 'test',
+      publicKeys: { test: 'test-key' },
       toleranceMs: 0,
     });
   });
@@ -195,7 +197,7 @@ describe('Waffo checkout catalog boundary', () => {
     });
     const provider = new WaffoProvider({
       client: fakeClient(vi.fn(), undefined, cancelSubscription),
-      allowTestEvents: true,
+      environment: 'test',
     });
 
     await provider.cancelSubscriptionAtPeriodEnd('waffo-order-001');

@@ -4,11 +4,17 @@ import {
   type CancelSubscriptionParams,
   type VerifyWebhookOptions,
   type WebhookEvent,
-  type WebhookPublicKeys,
 } from '@waffo/pancake-ts';
 import { serverEnv } from '@/env/server';
 import { findPlanByPlanId, findPriceInPlan } from '@/lib/price-plan';
 import { requireSellableCheckoutPrice } from '@/payment/checkout-policy';
+import {
+  expectedWaffoWebhookMode,
+  sdkWaffoEnvironment,
+  selectWaffoWebhookPublicKey,
+  type WaffoEnvironment,
+  type WaffoWebhookPublicKeys,
+} from '@/payment/waffo-environment';
 import type {
   CheckoutResult,
   CreateCheckoutParams,
@@ -40,20 +46,19 @@ export type WaffoClient = {
 };
 
 export interface WaffoProviderOptions {
-  allowTestEvents?: boolean;
   client?: WaffoClient;
-  testCheckout?: boolean;
-  webhookPublicKeys?: WebhookPublicKeys;
+  environment?: WaffoEnvironment;
+  webhookPublicKeys?: WaffoWebhookPublicKeys;
 }
 
 export class WaffoProvider implements PaymentProvider {
-  private readonly allowTestEvents: boolean;
   private readonly client: WaffoClient;
-  private readonly testCheckout: boolean;
+  private readonly environment: WaffoEnvironment;
+  private readonly webhookPublicKeys: WaffoWebhookPublicKeys | undefined;
 
   constructor(options: WaffoProviderOptions = {}) {
-    this.allowTestEvents = options.allowTestEvents ?? serverEnv.WAFFO_DEBUG;
-    this.testCheckout = options.testCheckout ?? false;
+    this.environment = options.environment ?? serverEnv.WAFFO_ENVIRONMENT;
+    this.webhookPublicKeys = options.webhookPublicKeys;
     this.client =
       options.client ?? createWaffoClient(options.webhookPublicKeys);
   }
@@ -92,7 +97,7 @@ export class WaffoProvider implements PaymentProvider {
     });
     return {
       id: checkout.sessionId,
-      url: checkoutUrlForEnvironment(checkout.checkoutUrl, this.testCheckout),
+      url: checkoutUrlForEnvironment(checkout.checkoutUrl, this.environment),
     };
   }
 
@@ -116,28 +121,37 @@ export class WaffoProvider implements PaymentProvider {
   ): Promise<VerifiedPaymentWebhookEvent | null> {
     // Freshness was enforced before the event was written to the durable inbox.
     // This pass checks RSA integrity again without rejecting a delayed worker.
+    const key = selectWaffoWebhookPublicKey(
+      this.environment,
+      this.webhookPublicKeys
+    );
+    if (!key) {
+      throw new Error('Waffo webhook verification is not configured.');
+    }
+    const sdkEnvironment = sdkWaffoEnvironment(this.environment);
     const event = this.client.webhooks.verify(payload, signature, {
-      environment: 'test',
+      environment: sdkEnvironment,
+      publicKeys: { [sdkEnvironment]: key },
       toleranceMs: 0,
     });
-    if (event.mode !== 'test') {
-      throw new Error('Production-mode Waffo webhook events are not accepted.');
-    }
-    if (!this.allowTestEvents) {
-      throw new Error('Test-mode Waffo webhook events are disabled.');
+    if (event.mode !== expectedWaffoWebhookMode(this.environment)) {
+      throw new Error('Waffo webhook mode does not match its authority.');
     }
     return normalizeWaffoVerifiedPaymentEvent(event);
   }
 }
 
-function checkoutUrlForEnvironment(checkoutUrl: string, testCheckout: boolean) {
-  if (!testCheckout) return checkoutUrl;
+function checkoutUrlForEnvironment(
+  checkoutUrl: string,
+  environment: WaffoEnvironment
+) {
+  if (environment !== 'test') return checkoutUrl;
   const url = new URL(checkoutUrl);
   url.searchParams.set('test', 'true');
   return url.toString();
 }
 
-function createWaffoClient(publicKeys?: WebhookPublicKeys): WaffoClient {
+function createWaffoClient(publicKeys?: WaffoWebhookPublicKeys): WaffoClient {
   const merchantId = serverEnv.WAFFO_MERCHANT_ID?.trim();
   const privateKey = serverEnv.WAFFO_PRIVATE_KEY?.replaceAll(
     '\\n',

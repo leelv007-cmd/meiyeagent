@@ -15,6 +15,10 @@ export const clientEnv = createEnv({
       .enum(['true', 'false'])
       .default('false')
       .transform((value) => value === 'true'),
+    VITE_WAFFO_TEST_CHECKOUT_ENABLED: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
     // The amounts the public pages quote are copy, not configuration, and
     // live in `@/lib/public-display-price` (D-156). They were declared here
     // until 2026-07-28, but the deploy workflow never injected them — the
@@ -31,8 +35,8 @@ export const clientEnv = createEnv({
     VITE_CREEM_PRODUCT_PRO_YEARLY: z.string().optional(),
     VITE_CREEM_PRODUCT_LIFETIME: z.string().optional(),
 
-    // Payment (Waffo): all nine subscription product IDs are required before
-    // Waffo checkout is publicly enabled.
+    // Payment (Waffo): all nine Test fixture product IDs are required before
+    // its isolated checkout can be enabled.
     VITE_WAFFO_PRODUCT_STARTER_SINGLE_MONTH: z.string().optional(),
     VITE_WAFFO_PRODUCT_STARTER_MONTHLY: z.string().optional(),
     VITE_WAFFO_PRODUCT_STARTER_YEARLY: z.string().optional(),

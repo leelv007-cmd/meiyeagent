@@ -25,6 +25,7 @@ import { resolvePaymentRuntimePolicy } from './payment-runtime-policy';
 const paymentRuntimePolicy = resolvePaymentRuntimePolicy({
   provider: clientEnv.VITE_PAYMENT_PROVIDER,
   publicPaidLaunchEnabled: clientEnv.VITE_PUBLIC_PAID_LAUNCH_ENABLED,
+  waffoTestCheckoutEnabled: clientEnv.VITE_WAFFO_TEST_CHECKOUT_ENABLED,
   creemPriceIds: {
     proMonthly: clientEnv.VITE_CREEM_PRODUCT_PRO_MONTHLY,
     proYearly: clientEnv.VITE_CREEM_PRODUCT_PRO_YEARLY,

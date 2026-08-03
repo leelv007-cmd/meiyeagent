@@ -1,14 +1,14 @@
-# Waffo HKD launch pricing
+# Waffo HKD Test fixture pricing
 
-This record fixes the Test and launch subscription catalog prices for #304.
-It is not a runtime currency conversion mechanism.
+This record fixes the Test-only subscription fixture prices for #304. It is not
+a production launch price or a runtime currency conversion mechanism.
 
 ## Source and rule
 
 - Source: ECB daily euro reference rates, [2026-07-31](https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml).
 - Source values: `CNY/EUR = 7.7539`; `HKD/EUR = 9.0079`.
 - Cross-rate: `1 CNY = 1.1617250674 HKD`.
-- Rule: multiply each former CNY launch amount by the cross-rate and round to
+- Rule: multiply each former CNY fixture amount by the cross-rate and round to
   the nearest whole HKD. The resulting value is stored as cents with `.00`.
 
 ## Fixed subscription catalog

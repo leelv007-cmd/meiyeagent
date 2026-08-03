@@ -231,6 +231,7 @@ test('Waffo only accepts an RSA-signed raw delivery into the inbox', async () =>
     eventId: 'waffo-order-001',
     eventType: 'subscription.activated',
     id: 'waffo-delivery-001',
+    mode: 'test',
   });
   const trusted = generateKeyPairSync('rsa', {
     modulusLength: 2048,
@@ -262,7 +263,10 @@ test('Waffo only accepts an RSA-signed raw delivery into the inbox', async () =>
       { payload, provider: 'waffo', signature },
       {
         inbox,
-        secrets: { waffoWebhookPublicKeys: { test: untrusted.publicKey } },
+        secrets: {
+          waffoEnvironment: 'test',
+          waffoWebhookPublicKeys: { test: untrusted.publicKey },
+        },
       }
     ),
     (error: unknown) => error instanceof PaymentWebhookSignatureError
@@ -274,7 +278,10 @@ test('Waffo only accepts an RSA-signed raw delivery into the inbox', async () =>
       { payload, provider: 'waffo', signature },
       {
         inbox,
-        secrets: { waffoWebhookPublicKeys: { test: trusted.publicKey } },
+        secrets: {
+          waffoEnvironment: 'test',
+          waffoWebhookPublicKeys: { test: trusted.publicKey },
+        },
       }
     ),
     'accepted'
@@ -296,6 +303,11 @@ test('Waffo does not accept a production-signed delivery into the Test inbox', a
     id: 'waffo-delivery-prod-001',
   });
   const production = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { format: 'pem', type: 'pkcs1' },
+    publicKeyEncoding: { format: 'pem', type: 'spki' },
+  });
+  const test = generateKeyPairSync('rsa', {
     modulusLength: 2048,
     privateKeyEncoding: { format: 'pem', type: 'pkcs1' },
     publicKeyEncoding: { format: 'pem', type: 'spki' },
@@ -324,7 +336,8 @@ test('Waffo does not accept a production-signed delivery into the Test inbox', a
       {
         inbox,
         secrets: {
-          waffoWebhookPublicKeys: { prod: production.publicKey },
+          waffoEnvironment: 'test',
+          waffoWebhookPublicKeys: { test: test.publicKey },
         },
       }
     ),
@@ -333,7 +346,95 @@ test('Waffo does not accept a production-signed delivery into the Test inbox', a
   assert.equal(received, false);
 });
 
-test('Waffo falls back to SDK keys and rejects an invalid raw signature without an override', async () => {
+test('Waffo production authority accepts only the configured production key and mode', async () => {
+  const payload = JSON.stringify({
+    data: { orderId: 'waffo-order-production-001' },
+    eventId: 'waffo-payment-production-001',
+    eventType: 'subscription.activated',
+    id: 'waffo-delivery-production-001',
+    mode: 'prod',
+  });
+  const production = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { format: 'pem', type: 'pkcs1' },
+    publicKeyEncoding: { format: 'pem', type: 'spki' },
+  });
+  const inbox: PaymentWebhookInboxPort = {
+    async receive() {
+      return 'accepted';
+    },
+    async claimNext() {
+      return null;
+    },
+    async checkpointApplied() {},
+    async complete() {},
+    async retry() {},
+  };
+
+  assert.equal(
+    await receivePaymentWebhook(
+      {
+        payload,
+        provider: 'waffo',
+        signature: waffoSignature(payload, production.privateKey),
+      },
+      {
+        inbox,
+        secrets: {
+          waffoEnvironment: 'production',
+          waffoWebhookPublicKeys: { prod: production.publicKey },
+        },
+      }
+    ),
+    'accepted'
+  );
+});
+
+test('Waffo Test authority rejects a valid Test-key signature carrying production mode', async () => {
+  const payload = JSON.stringify({
+    data: { orderId: 'waffo-order-mode-mismatch-001' },
+    eventId: 'waffo-payment-mode-mismatch-001',
+    eventType: 'subscription.activated',
+    id: 'waffo-delivery-mode-mismatch-001',
+    mode: 'prod',
+  });
+  const testKey = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+    privateKeyEncoding: { format: 'pem', type: 'pkcs1' },
+    publicKeyEncoding: { format: 'pem', type: 'spki' },
+  });
+  const inbox: PaymentWebhookInboxPort = {
+    async receive() {
+      return 'accepted';
+    },
+    async claimNext() {
+      return null;
+    },
+    async checkpointApplied() {},
+    async complete() {},
+    async retry() {},
+  };
+
+  await assert.rejects(
+    receivePaymentWebhook(
+      {
+        payload,
+        provider: 'waffo',
+        signature: waffoSignature(payload, testKey.privateKey),
+      },
+      {
+        inbox,
+        secrets: {
+          waffoEnvironment: 'test',
+          waffoWebhookPublicKeys: { test: testKey.publicKey },
+        },
+      }
+    ),
+    (error: unknown) => error instanceof PaymentWebhookSignatureError
+  );
+});
+
+test('Waffo requires an explicit current-environment public key before verification', async () => {
   const inbox: PaymentWebhookInboxPort = {
     async receive() {
       return 'accepted';
@@ -353,9 +454,9 @@ test('Waffo falls back to SDK keys and rejects an invalid raw signature without 
         provider: 'waffo',
         signature: 't=1,v1=invalid',
       },
-      { inbox, secrets: {} }
+      { inbox, secrets: { waffoEnvironment: 'test' } }
     ),
-    (error: unknown) => error instanceof PaymentWebhookSignatureError
+    (error: unknown) => error instanceof PaymentWebhookConfigurationError
   );
 });
 

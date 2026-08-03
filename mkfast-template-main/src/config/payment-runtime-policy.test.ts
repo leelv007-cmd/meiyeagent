@@ -14,13 +14,25 @@ const waffoProducts = {
   starterYearly: 'PROD_STARTER_YEARLY',
 };
 
-test('Waffo only enables a complete three-tier, three-period catalog', () => {
+test('Waffo Test checkout requires its isolated gate and complete catalog', () => {
+  assert.equal(
+    resolvePaymentRuntimePolicy({
+      creemPriceIds: {},
+      provider: 'waffo',
+      publicPaidLaunchEnabled: true,
+      waffoProductIds: waffoProducts,
+      waffoTestCheckoutEnabled: false,
+    }).enabled,
+    false
+  );
+
   assert.deepEqual(
     resolvePaymentRuntimePolicy({
       creemPriceIds: {},
       provider: 'waffo',
       publicPaidLaunchEnabled: true,
       waffoProductIds: waffoProducts,
+      waffoTestCheckoutEnabled: true,
     }),
     {
       enabled: true,
@@ -38,6 +50,7 @@ test('Waffo only enables a complete three-tier, three-period catalog', () => {
       provider: 'waffo',
       publicPaidLaunchEnabled: true,
       waffoProductIds: { ...waffoProducts, proYearly: '' },
+      waffoTestCheckoutEnabled: true,
     }).enabled,
     false
   );

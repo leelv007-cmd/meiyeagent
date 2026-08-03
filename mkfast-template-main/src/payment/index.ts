@@ -11,6 +11,7 @@ import { applyPlanSettlementIntent } from '@/payment/payment-settlement-side-eff
 import { CreemProvider } from '@/payment/provider/creem';
 import { StripeProvider } from '@/payment/provider/stripe';
 import { WaffoProvider } from '@/payment/provider/waffo';
+import type { WaffoWebhookPublicKeys } from '@/payment/waffo-environment';
 import { PostgresPaymentWebhookInbox } from '@/payment/postgres-webhook-settlement';
 import {
   receivePaymentWebhook,
@@ -99,6 +100,7 @@ export async function handleWebhookEvent(
         creemWebhookSecret: serverEnv.CREEM_WEBHOOK_SECRET,
         stripeApiKey: serverEnv.STRIPE_SECRET_KEY,
         stripeWebhookSecret: serverEnv.STRIPE_WEBHOOK_SECRET,
+        waffoEnvironment: serverEnv.WAFFO_ENVIRONMENT,
         waffoWebhookPublicKeys: waffoWebhookPublicKeys(),
       },
     }
@@ -118,6 +120,7 @@ export async function handleAndSettleWebhookEvent(
         creemWebhookSecret: serverEnv.CREEM_WEBHOOK_SECRET,
         stripeApiKey: serverEnv.STRIPE_SECRET_KEY,
         stripeWebhookSecret: serverEnv.STRIPE_WEBHOOK_SECRET,
+        waffoEnvironment: serverEnv.WAFFO_ENVIRONMENT,
         waffoWebhookPublicKeys: waffoWebhookPublicKeys(),
       },
       settle: settlePendingPaymentWebhookEvents,
@@ -139,6 +142,7 @@ export async function settlePendingPaymentWebhookEvents(
           const signature = await refreshVerifiedWebhookSignature(claim, {
             creemWebhookSecret: serverEnv.CREEM_WEBHOOK_SECRET,
             stripeWebhookSecret: serverEnv.STRIPE_WEBHOOK_SECRET,
+            waffoEnvironment: serverEnv.WAFFO_ENVIRONMENT,
             waffoWebhookPublicKeys: waffoWebhookPublicKeys(),
           });
           return provider.handleWebhookEvent(claim.payload, signature);
@@ -160,15 +164,15 @@ export async function settlePendingPaymentWebhookEvents(
   );
 }
 
-function waffoWebhookPublicKeys() {
+function waffoWebhookPublicKeys(): WaffoWebhookPublicKeys {
   const test = serverEnv.WAFFO_WEBHOOK_TEST_PUBLIC_KEY?.trim();
-  return test ? { test } : undefined;
+  const prod = serverEnv.WAFFO_WEBHOOK_PRODUCTION_PUBLIC_KEY?.trim();
+  return { ...(prod ? { prod } : {}), ...(test ? { test } : {}) };
 }
 
 function createWaffoProvider() {
   return new WaffoProvider({
-    allowTestEvents: serverEnv.WAFFO_DEBUG,
-    testCheckout: serverEnv.WAFFO_DEBUG,
+    environment: serverEnv.WAFFO_ENVIRONMENT,
     webhookPublicKeys: waffoWebhookPublicKeys(),
   });
 }

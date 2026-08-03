@@ -42,9 +42,8 @@
     }
   },
 
-  // Candidate versions receive an explicit public preview URL. This default
-  // config is preview-only and must never carry a production custom-domain route.
-  "preview_urls": true,
+  // Release configuration stays separate from the isolated Waffo Test preview.
+  "preview_urls": false,
   "workers_dev": false,
 
   /**

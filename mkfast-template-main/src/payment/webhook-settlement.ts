@@ -1,6 +1,12 @@
 import { Stripe } from 'stripe';
 import { verifyWebhook, type WebhookPublicKeys } from '@waffo/pancake-ts';
 import { DatabaseBindingUnavailableError } from '@/db/runtime';
+import {
+  expectedWaffoWebhookMode,
+  sdkWaffoEnvironment,
+  selectWaffoWebhookPublicKey,
+  type WaffoEnvironment,
+} from '@/payment/waffo-environment';
 import type { PaymentProviderName, VerifiedPaymentWebhookEvent } from './types';
 
 export type PaymentWebhookReceipt = 'accepted' | 'busy' | 'processed';
@@ -48,6 +54,7 @@ export interface PaymentWebhookSecrets {
   stripeApiKey?: string;
   stripeWebhookSecret?: string;
   waffoWebhookPublicKeys?: WebhookPublicKeys;
+  waffoEnvironment?: WaffoEnvironment;
 }
 
 export class PaymentWebhookSignatureError extends Error {
@@ -221,15 +228,28 @@ export async function verifyPaymentWebhook(
   secrets: PaymentWebhookSecrets
 ): Promise<CanonicalPaymentWebhook> {
   if (input.provider === 'waffo') {
+    const environment = secrets.waffoEnvironment;
+    if (!environment) {
+      throw new PaymentWebhookConfigurationError('waffo');
+    }
+    const configuredKey = selectWaffoWebhookPublicKey(
+      environment,
+      typeof secrets.waffoWebhookPublicKeys === 'string'
+        ? undefined
+        : secrets.waffoWebhookPublicKeys
+    );
+    if (!configuredKey) {
+      throw new PaymentWebhookConfigurationError('waffo');
+    }
     try {
-      const configuredKey =
-        typeof secrets.waffoWebhookPublicKeys === 'string'
-          ? secrets.waffoWebhookPublicKeys
-          : secrets.waffoWebhookPublicKeys?.test;
+      const sdkEnvironment = sdkWaffoEnvironment(environment);
       const event = verifyWebhook(input.payload, input.signature, {
-        environment: 'test',
-        ...(configuredKey ? { publicKeys: { test: configuredKey } } : {}),
+        environment: sdkEnvironment,
+        publicKeys: { [sdkEnvironment]: configuredKey },
       });
+      if (event.mode !== expectedWaffoWebhookMode(environment)) {
+        throw new Error('Waffo webhook mode does not match its authority.');
+      }
       return {
         eventType: event.eventType,
         payload: input.payload,

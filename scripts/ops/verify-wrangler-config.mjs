@@ -147,9 +147,12 @@ function structureIssuesFor(label, config, configPath, root) {
   }
 
   const buckets = config.r2_buckets;
-  if (!Array.isArray(buckets) || buckets.length === 0) {
+  const isWaffoTestPreview = configPath.endsWith('wrangler.waffo-preview.jsonc');
+  if (isWaffoTestPreview && buckets !== undefined) {
+    push('Waffo Test preview must not bind R2');
+  } else if (!isWaffoTestPreview && (!Array.isArray(buckets) || buckets.length === 0)) {
     push('r2_buckets binding is required');
-  } else {
+  } else if (Array.isArray(buckets)) {
     for (const [index, bucket] of buckets.entries()) {
       if (typeof bucket?.binding !== 'string' || bucket.binding.length === 0) {
         push(`r2_buckets[${index}].binding is required`);

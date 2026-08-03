@@ -35,7 +35,7 @@ test('the Waffo Test candidate uses an isolated preview without a production rou
       'utf8'
     )
   );
-  assert.equal(config.name, 'meiye-web');
+  assert.equal(config.name, 'meiye-web-waffo-test');
   assert.equal(config.preview_urls, true);
   assert.equal(config.workers_dev, false);
   assert.equal(config.routes, undefined);
@@ -49,20 +49,18 @@ test('the Waffo Test candidate uses an isolated preview without a production rou
     APP_ENV: 'e2e',
     CORE_SERVICE_URL: 'https://core-test.tqai.uk',
     INTERNAL_SERVICE_TRANSPORT: 'private-network',
-    WAFFO_DEBUG: 'true',
+    WAFFO_ENVIRONMENT: 'test',
   });
-  assert.deepEqual(config.r2_buckets, [
-    { binding: 'BUCKET', bucket_name: 'meiye-assets' },
-  ]);
+  assert.equal(config.r2_buckets, undefined);
 });
 
-test('the default Worker config is preview-only and carries no production route', async () => {
+test('the default Worker config retains release semantics independently of the Test preview', async () => {
   const config = parseJsonc(
     await readFile(join(repositoryRoot, 'mkfast-template-main/wrangler.jsonc'), 'utf8')
   );
   assert.equal(config.name, 'meiye-web');
   assert.equal(config.routes, undefined);
-  assert.equal(config.preview_urls, true);
+  assert.equal(config.preview_urls, false);
   assert.equal(config.workers_dev, false);
   assert.deepEqual(config.r2_buckets, [
     { binding: 'BUCKET', bucket_name: 'meiye-assets' },

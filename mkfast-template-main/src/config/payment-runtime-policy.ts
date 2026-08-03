@@ -18,6 +18,7 @@ type ResolvedPaymentPriceIds = Required<PaymentPriceIds>;
 interface PaymentRuntimePolicyInput {
   provider: PaymentProvider;
   publicPaidLaunchEnabled: boolean;
+  waffoTestCheckoutEnabled?: boolean;
   creemPriceIds: PaymentPriceIds;
   waffoProductIds?: PaymentPriceIds;
 }
@@ -44,6 +45,7 @@ const EMPTY_PRICE_IDS: ResolvedPaymentPriceIds = {
 export function resolvePaymentRuntimePolicy({
   provider,
   publicPaidLaunchEnabled,
+  waffoTestCheckoutEnabled = false,
   creemPriceIds,
   waffoProductIds = {},
 }: PaymentRuntimePolicyInput): PaymentRuntimePolicy {
@@ -66,7 +68,7 @@ export function resolvePaymentRuntimePolicy({
 
   if (
     provider === 'waffo' &&
-    publicPaidLaunchEnabled &&
+    waffoTestCheckoutEnabled &&
     hasCompleteWaffoCatalog(waffoProductIds)
   ) {
     return {
