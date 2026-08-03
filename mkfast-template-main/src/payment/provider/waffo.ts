@@ -117,9 +117,13 @@ export class WaffoProvider implements PaymentProvider {
     // Freshness was enforced before the event was written to the durable inbox.
     // This pass checks RSA integrity again without rejecting a delayed worker.
     const event = this.client.webhooks.verify(payload, signature, {
+      environment: 'test',
       toleranceMs: 0,
     });
-    if (event.mode === 'test' && !this.allowTestEvents) {
+    if (event.mode !== 'test') {
+      throw new Error('Production-mode Waffo webhook events are not accepted.');
+    }
+    if (!this.allowTestEvents) {
       throw new Error('Test-mode Waffo webhook events are disabled.');
     }
     return normalizeWaffoVerifiedPaymentEvent(event);

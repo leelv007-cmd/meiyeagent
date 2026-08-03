@@ -44,6 +44,14 @@ test.describe('Waffo checkout and webhook acceptance', () => {
     await expect(growthCard).toContainText('HK$');
     await expect(checkout).toBeEnabled();
     await expect(checkout).toContainText(/subscribe|订阅/u);
+
+    const testCheckout = page.waitForURL(
+      (url) =>
+        url.hostname === 'pancake.waffo.ai' &&
+        url.searchParams.get('test') === 'true'
+    );
+    await checkout.click();
+    await testCheckout;
   });
 
   test('the public Waffo webhook endpoint rejects an unsigned delivery', async ({

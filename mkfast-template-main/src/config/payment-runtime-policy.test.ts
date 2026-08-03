@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resolvePaymentRuntimePolicy } from './payment-runtime-policy';
+import { resolvePaymentRuntimePolicy } from '@/config/payment-runtime-policy';
 
 const waffoProducts = {
   growthMonthly: 'PROD_GROWTH_MONTHLY',

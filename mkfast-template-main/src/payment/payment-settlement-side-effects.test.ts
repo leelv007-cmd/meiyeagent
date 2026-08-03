@@ -3,9 +3,9 @@ import test from 'node:test';
 import {
   applyPlanSettlementIntent,
   type PlanSettlementSideEffectPorts,
-} from './payment-settlement-side-effects';
-import type { PlanSettlementIntent } from './plan-commerce';
-import type { VerifiedPaymentWebhookEvent } from './types';
+} from '@/payment/payment-settlement-side-effects';
+import type { PlanSettlementIntent } from '@/payment/plan-commerce';
+import type { VerifiedPaymentWebhookEvent } from '@/payment/types';
 
 test('Waffo single-month activation grants, persists, activates, then cancels at period end', async () => {
   const calls: string[] = [];

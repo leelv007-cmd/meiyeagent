@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatSubscriptionPrice } from './price-plan';
+import { formatSubscriptionPrice } from '@/lib/price-plan';
 
 test('formats the Waffo HKD subscription catalog as HKD copy', () => {
   assert.equal(

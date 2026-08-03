@@ -583,7 +583,7 @@ uses Production credentials, or changes a production Worker route.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Authenticated pricing exposes the HKD Waffo checkout entry | Register and sign in through the real app, open /pricing, require the Growth card to show HKD and an enabled checkout button backed by the candidate catalog. |
+| 1 | Authenticated pricing opens a Waffo Test checkout preflight | Register and sign in through the real app, open /pricing, require the Growth card to show HKD and an enabled candidate-catalog checkout button, then require its authenticated session to navigate to `pancake.waffo.ai` with `test=true`; this test never enters a card. |
 | 2 | The public Waffo webhook rejects an unsigned delivery | POST a raw JSON delivery with an invalid x-waffo-signature and require a 400 response with received: false; no database settlement is attempted. |
 
 ## Deferred Coverage

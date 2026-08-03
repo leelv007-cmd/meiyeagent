@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { WebhookEvent } from '@waffo/pancake-ts';
-import type { WaffoClient } from './waffo';
+import type { WaffoClient } from '@/payment/provider/waffo';
 
 const plan = {
   id: 'growth',
@@ -161,6 +161,30 @@ describe('Waffo checkout catalog boundary', () => {
     await expect(
       provider.handleWebhookEvent('{"signed":true}', 't=1,v1=signature')
     ).rejects.toThrow('Test-mode Waffo webhook events are disabled');
+  });
+
+  it('locks webhook verification to Test and rejects production events', async () => {
+    const { WaffoProvider } = await import('./waffo');
+    const client = fakeClient(vi.fn(), {
+      data: { orderId: 'waffo-order-production-001' },
+      eventId: 'waffo-payment-production-001',
+      eventType: 'subscription.payment_succeeded',
+      id: 'waffo-delivery-production-001',
+      mode: 'prod',
+    });
+    const verify = vi.spyOn(client.webhooks, 'verify');
+    const provider = new WaffoProvider({
+      allowTestEvents: true,
+      client,
+    });
+
+    await expect(
+      provider.handleWebhookEvent('{"signed":true}', 't=1,v1=signature')
+    ).rejects.toThrow('Production-mode Waffo webhook events are not accepted');
+    expect(verify).toHaveBeenCalledWith('{"signed":true}', 't=1,v1=signature', {
+      environment: 'test',
+      toleranceMs: 0,
+    });
   });
 
   it('schedules a paid single-month subscription to cancel at period end', async () => {

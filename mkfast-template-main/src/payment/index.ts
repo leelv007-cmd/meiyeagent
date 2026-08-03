@@ -1,24 +1,24 @@
 import { websiteConfig } from '@/config/website';
 import { getDb } from '@/db';
 import { serverEnv } from '@/env/server';
-import { CreemProvider } from './provider/creem';
-import { WaffoProvider } from './provider/waffo';
-import { PostgresPlanCheckoutBindingStore } from './plan-checkout-bindings';
+import { PostgresPlanCheckoutBindingStore } from '@/payment/plan-checkout-bindings';
 import {
   planGrantCommandFromIntent,
   settleVerifiedPlanPayment,
   type PlanSettlementIntent,
-} from './plan-commerce';
-import { applyPlanSettlementIntent } from './payment-settlement-side-effects';
-import { StripeProvider } from './provider/stripe';
-import { PostgresPaymentWebhookInbox } from './postgres-webhook-settlement';
+} from '@/payment/plan-commerce';
+import { applyPlanSettlementIntent } from '@/payment/payment-settlement-side-effects';
+import { CreemProvider } from '@/payment/provider/creem';
+import { StripeProvider } from '@/payment/provider/stripe';
+import { WaffoProvider } from '@/payment/provider/waffo';
+import { PostgresPaymentWebhookInbox } from '@/payment/postgres-webhook-settlement';
 import {
   receivePaymentWebhook,
   receiveAndSettlePaymentWebhook,
   refreshVerifiedWebhookSignature,
   settlePendingPaymentWebhooks as consumePendingPaymentWebhooks,
   type PaymentWebhookDelivery,
-} from './webhook-settlement';
+} from '@/payment/webhook-settlement';
 import type {
   CheckoutResult,
   CreateCheckoutParams,
@@ -27,7 +27,7 @@ import type {
   PaymentProviderName,
   PortalResult,
   VerifiedPaymentWebhookEvent,
-} from './types';
+} from '@/payment/types';
 
 let paymentProvider: PaymentProvider | null = null;
 
@@ -162,10 +162,7 @@ export async function settlePendingPaymentWebhookEvents(
 
 function waffoWebhookPublicKeys() {
   const test = serverEnv.WAFFO_WEBHOOK_TEST_PUBLIC_KEY?.trim();
-  const prod = serverEnv.WAFFO_WEBHOOK_PROD_PUBLIC_KEY?.trim();
-  return test || prod
-    ? { ...(test ? { test } : {}), ...(prod ? { prod } : {}) }
-    : undefined;
+  return test ? { test } : undefined;
 }
 
 function createWaffoProvider() {

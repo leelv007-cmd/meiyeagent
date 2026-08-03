@@ -1,4 +1,4 @@
-import type { PlanInterval, Price } from './types';
+import type { PlanInterval, Price } from '@/payment/types';
 
 export type WaffoSubscriptionPlanId = 'starter' | 'growth' | 'pro';
 

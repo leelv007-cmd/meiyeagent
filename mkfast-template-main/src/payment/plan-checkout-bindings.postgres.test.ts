@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { schema } from '@/db/schema';
+import { PostgresPlanCheckoutBindingStore } from '@/payment/plan-checkout-bindings';
+import { planSettlementIntentFromEvent } from '@/payment/plan-commerce';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { PostgresPlanCheckoutBindingStore } from './plan-checkout-bindings';
-import { planSettlementIntentFromEvent } from './plan-commerce';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 

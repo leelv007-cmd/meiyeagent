@@ -1,8 +1,11 @@
 import {
   shouldCancelPlanBinding,
   type PlanSettlementIntent,
-} from './plan-commerce';
-import type { PaymentProviderName, VerifiedPaymentWebhookEvent } from './types';
+} from '@/payment/plan-commerce';
+import type {
+  PaymentProviderName,
+  VerifiedPaymentWebhookEvent,
+} from '@/payment/types';
 
 type PlanBindingSettlementPort = {
   upsertWaffoSubscriptionPayment(input: {

@@ -222,10 +222,13 @@ export async function verifyPaymentWebhook(
 ): Promise<CanonicalPaymentWebhook> {
   if (input.provider === 'waffo') {
     try {
+      const configuredKey =
+        typeof secrets.waffoWebhookPublicKeys === 'string'
+          ? secrets.waffoWebhookPublicKeys
+          : secrets.waffoWebhookPublicKeys?.test;
       const event = verifyWebhook(input.payload, input.signature, {
-        ...(secrets.waffoWebhookPublicKeys
-          ? { publicKeys: secrets.waffoWebhookPublicKeys }
-          : {}),
+        environment: 'test',
+        ...(configuredKey ? { publicKeys: { test: configuredKey } } : {}),
       });
       return {
         eventType: event.eventType,

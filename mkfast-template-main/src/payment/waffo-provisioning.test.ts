@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { provisionWaffoSubscriptionCatalog } from './waffo-provisioning';
+import { provisionWaffoSubscriptionCatalog } from '@/payment/waffo-provisioning';
 
 test('provisions nine HKD Test-only subscription products and reuses the existing test webhook', async () => {
   const created: Array<{ prices: unknown }> = [];
