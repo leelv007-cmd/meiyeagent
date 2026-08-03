@@ -149,6 +149,11 @@ describe('plan-commerce settlement', () => {
       'waffo:subscription:subscription_waffo_1:2026-08-03T00:00:00.000Z:2026-09-03T00:00:00.000Z'
     );
     assert.equal(paymentSucceeded?.paymentEventId, activation?.paymentEventId);
+    assert.equal(
+      activation &&
+        planGrantCommandFromIntent(activation).payload.paymentProvider,
+      'waffo'
+    );
   });
 
   it('fails closed when a Waffo paid subscription event has no billing period', () => {

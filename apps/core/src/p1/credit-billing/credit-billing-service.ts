@@ -40,6 +40,7 @@ export interface CreditPaymentSettlementInput {
   lifecycle: CreditPaymentLifecycle;
   paymentEventId: string;
   paymentProductId: string;
+  paymentProvider?: 'waffo';
   interval?: PaymentMappingInterval | null;
   periodStartsAt?: string | null;
   subscriptionId?: string | null;
@@ -136,6 +137,10 @@ export class CreditBillingService {
         workspaceId: context.workspaceId,
         paymentEventId: input.paymentEventId,
         payloadHash: paymentSettlementHash(context.workspaceId, input),
+        compatiblePayloadHashes: legacyWaffoPaymentSettlementHashes(
+          context.workspaceId,
+          input,
+        ),
         createdAt: now,
       },
       async (subscriptions) =>
@@ -608,12 +613,15 @@ function subscriptionForPayment(
 function paymentSettlementHash(
   workspaceId: string,
   input: CreditPaymentSettlementInput,
+  normalizePaidPeriodLifecycle = true,
 ) {
   return createHash('sha256')
     .update(
       JSON.stringify({
         workspaceId,
-        lifecycle: input.lifecycle,
+        lifecycle: normalizePaidPeriodLifecycle
+          ? paidPeriodLifecycle(input.lifecycle)
+          : input.lifecycle,
         paymentProductId: input.paymentProductId,
         interval: input.interval ?? null,
         periodStartsAt: input.periodStartsAt ?? null,
@@ -621,6 +629,26 @@ function paymentSettlementHash(
       }),
     )
     .digest('hex');
+}
+
+function legacyWaffoPaymentSettlementHashes(
+  workspaceId: string,
+  input: CreditPaymentSettlementInput,
+) {
+  if (
+    input.paymentProvider !== 'waffo' ||
+    (input.lifecycle !== 'activate' && input.lifecycle !== 'renew') ||
+    !input.subscriptionId?.trim()
+  ) {
+    return [];
+  }
+  return [paymentSettlementHash(workspaceId, input, false)];
+}
+
+function paidPeriodLifecycle(lifecycle: CreditPaymentLifecycle) {
+  return lifecycle === 'activate' || lifecycle === 'renew'
+    ? 'paid_period'
+    : lifecycle;
 }
 
 function subscriptionIdFor(

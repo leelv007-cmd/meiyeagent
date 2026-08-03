@@ -94,6 +94,29 @@ test(
         /different facts/i,
       );
 
+      const legacyPaymentEvent = {
+        ...paymentEvent,
+        paymentEventId: 'payment-legacy-paid-period',
+        payloadHash: 'c'.repeat(64),
+      };
+      await store.withPaymentEvent(legacyPaymentEvent, settle);
+      await store.withPaymentEvent(
+        {
+          ...legacyPaymentEvent,
+          compatiblePayloadHashes: [legacyPaymentEvent.payloadHash],
+          payloadHash: 'd'.repeat(64),
+        },
+        settle,
+      );
+      assert.equal(settlementCalls, 2);
+      await assert.rejects(
+        store.withPaymentEvent(
+          { ...legacyPaymentEvent, payloadHash: 'e'.repeat(64) },
+          settle,
+        ),
+        /different facts/i,
+      );
+
       for (const [paymentEventId, payloadHash] of [
         ['payment-same-period-a', 'c'.repeat(64)],
         ['payment-same-period-b', 'd'.repeat(64)],

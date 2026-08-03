@@ -127,6 +127,7 @@ export interface CreditSubscriptionStore {
       workspaceId: string;
       paymentEventId: string;
       payloadHash: string;
+      compatiblePayloadHashes?: readonly string[];
       createdAt: string;
     },
     operation: (
@@ -702,6 +703,7 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
       workspaceId: string;
       paymentEventId: string;
       payloadHash: string;
+      compatiblePayloadHashes?: readonly string[];
       createdAt: string;
     },
     operation: (
@@ -719,7 +721,11 @@ export class MemoryCreditSubscriptionStore implements CreditSubscriptionStore {
       const key = `${input.workspaceId}\u0000${input.paymentEventId}`;
       const existing = this.paymentEvents.get(key);
       if (existing) {
-        assertPaymentEventFacts(existing.payloadHash, input.payloadHash);
+        assertPaymentEventFacts(
+          existing.payloadHash,
+          input.payloadHash,
+          input.compatiblePayloadHashes,
+        );
         return existing.result ? structuredClone(existing.result) : null;
       }
       const result = await operation(this);
@@ -1264,6 +1270,7 @@ export class PostgresCreditSubscriptionStore
       workspaceId: string;
       paymentEventId: string;
       payloadHash: string;
+      compatiblePayloadHashes?: readonly string[];
       createdAt: string;
     },
     operation: (
@@ -1301,7 +1308,11 @@ export class PostgresCreditSubscriptionStore
             'Credit payment event receipt is incomplete.',
           );
         }
-        assertPaymentEventFacts(receipt.payload_hash, input.payloadHash);
+        assertPaymentEventFacts(
+          receipt.payload_hash,
+          input.payloadHash,
+          input.compatiblePayloadHashes,
+        );
         await client.query('COMMIT');
         return creditPaymentEventResult(receipt.result_json);
       }
@@ -1364,6 +1375,7 @@ function assertPaymentEventInput(input: {
   workspaceId: string;
   paymentEventId: string;
   payloadHash: string;
+  compatiblePayloadHashes?: readonly string[];
   createdAt: string;
 }) {
   if (!input.workspaceId.trim() || !input.paymentEventId.trim()) {
@@ -1378,11 +1390,23 @@ function assertPaymentEventInput(input: {
       'Credit payment payload hash is invalid.',
     );
   }
+  for (const payloadHash of input.compatiblePayloadHashes ?? []) {
+    if (!/^[a-f0-9]{64}$/u.test(payloadHash)) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Credit payment compatible payload hash is invalid.',
+      );
+    }
+  }
   date(input.createdAt, 'createdAt');
 }
 
-function assertPaymentEventFacts(existing: string, replayed: string) {
-  if (existing !== replayed) {
+function assertPaymentEventFacts(
+  existing: string,
+  replayed: string,
+  compatiblePayloadHashes: readonly string[] = [],
+) {
+  if (existing !== replayed && !compatiblePayloadHashes.includes(existing)) {
     throw new P1DomainError(
       'IDEMPOTENCY_CONFLICT',
       'Credit payment event was replayed with different facts.',

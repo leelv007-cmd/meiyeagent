@@ -175,6 +175,7 @@ test('payment_grant preserves Waffo catalog intervals over HTTP', async (t) => {
           lifecycle: 'renew',
           paymentEventId: `waffo:${interval}`,
           paymentProductId: `PROD_${interval.toUpperCase()}`,
+          paymentProvider: 'waffo',
           periodStartsAt: '2026-08-03T00:00:00.000Z',
           subscriptionId: `ORD_${interval}`,
         },

@@ -447,6 +447,15 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
           );
         }
         const paymentEventId = string(payload, 'paymentEventId');
+        const requestedPaymentProvider = optionalString(payload, 'paymentProvider');
+        if (requestedPaymentProvider && requestedPaymentProvider !== 'waffo') {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'payment_grant paymentProvider is invalid.',
+          );
+        }
+        const paymentProvider =
+          requestedPaymentProvider === 'waffo' ? 'waffo' : undefined;
         const providerPeriod = optionalProviderPeriod(payload);
         const paymentProductId = string(payload, 'paymentProductId');
         if (this.options.creditBilling) {
@@ -454,6 +463,7 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
             lifecycle: lifecycle as CreditPaymentLifecycle,
             paymentEventId,
             paymentProductId,
+            paymentProvider: paymentProvider ?? undefined,
             interval: providerPeriod?.interval,
             periodStartsAt: providerPeriod?.periodStartsAt,
             subscriptionId: optionalString(payload, 'subscriptionId'),

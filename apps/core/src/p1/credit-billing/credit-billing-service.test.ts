@@ -215,6 +215,123 @@ test('verified payment events replay once and reject conflicting facts', async (
   );
 });
 
+test('a Waffo activation and payment success share one paid billing period', async () => {
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(
+    ledger,
+    subscriptions,
+    () => new Date('2026-08-03T00:00:00.000Z'),
+  );
+  const scheduler = new CreditSubscriptionCycleScheduler(subscriptions, ledger, {
+    planFor(tier) {
+      const plan = DEFAULT_CREDIT_PLAN_CATALOG.plans.find(
+        (candidate) => candidate.id === tier,
+      );
+      if (!plan) throw new Error(`Missing ${tier} plan.`);
+      return plan;
+    },
+  });
+  const firstPeriod = {
+    interval: 'monthly' as const,
+    lifecycle: 'activate' as const,
+    paymentEventId:
+      'waffo:subscription:ORD_first_period:2026-08-03T00:00:00.000Z:2026-09-03T00:00:00.000Z',
+    paymentProductId: 'PROD_growth_monthly',
+    paymentProvider: 'waffo' as const,
+    periodStartsAt: '2026-08-03T00:00:00.000Z',
+    subscriptionId: 'ORD_first_period',
+  };
+
+  await service.settlePayment(context, firstPeriod);
+  await scheduler.run(firstPeriod.periodStartsAt);
+  await service.settlePayment(context, {
+    ...firstPeriod,
+    lifecycle: 'renew',
+  });
+
+  assert.equal(
+    (await subscriptions.get(firstPeriod.subscriptionId))?.paidThroughCycle,
+    1,
+  );
+  assert.equal(
+    ledger
+      .listLots(context.workspaceId)
+      .filter(
+        (lot) =>
+          lot.grantIdempotencyKey ===
+          `grant:sub:${firstPeriod.subscriptionId}:0`,
+      ).length,
+    1,
+  );
+  await assert.rejects(
+    service.settlePayment(context, {
+      ...firstPeriod,
+      paymentProductId: 'PROD_other_monthly',
+    }),
+    /different facts/i,
+  );
+});
+
+test('replays a legacy Waffo paid-period receipt without widening its facts', async () => {
+  const ledger = new MemoryCreditLedger();
+  const subscriptions = new MemoryCreditSubscriptionStore();
+  const service = creditBillingService(
+    ledger,
+    subscriptions,
+    () => new Date('2026-08-03T00:00:00.000Z'),
+  );
+  const legacyWaffoRenewal = {
+    interval: 'monthly' as const,
+    lifecycle: 'renew' as const,
+    paymentEventId:
+      'waffo:subscription:ORD_legacy_period:2026-08-03T00:00:00.000Z:2026-09-03T00:00:00.000Z',
+    paymentProductId: 'PROD_growth_monthly',
+    paymentProvider: 'waffo' as const,
+    periodStartsAt: '2026-08-03T00:00:00.000Z',
+    subscriptionId: 'ORD_legacy_period',
+  };
+  await subscriptions.upsert({
+    anchorAt: legacyWaffoRenewal.periodStartsAt,
+    id: legacyWaffoRenewal.subscriptionId,
+    interval: 'monthly',
+    paidThroughCycle: 1,
+    tier: 'growth',
+    workspaceId: context.workspaceId,
+  });
+  await subscriptions.withPaymentEvent(
+    {
+      createdAt: legacyWaffoRenewal.periodStartsAt,
+      paymentEventId: legacyWaffoRenewal.paymentEventId,
+      payloadHash: 'b7e9d7a4b3ac1aff1dcad9f07a0742a053c32a1ddae9083926038672f59929fb',
+      workspaceId: context.workspaceId,
+    },
+    (store) => store.get(legacyWaffoRenewal.subscriptionId),
+  );
+
+  const replayed = await service.settlePayment(context, legacyWaffoRenewal);
+
+  assert.equal(replayed?.id, legacyWaffoRenewal.subscriptionId);
+  assert.equal(
+    (await subscriptions.get(legacyWaffoRenewal.subscriptionId))?.paidThroughCycle,
+    1,
+  );
+  await assert.rejects(
+    service.settlePayment(context, {
+      ...legacyWaffoRenewal,
+      paymentProvider: undefined,
+    }),
+    /different facts/i,
+  );
+  await assert.rejects(
+    service.settlePayment(context, {
+      ...legacyWaffoRenewal,
+      paymentProductId: 'growth',
+    }),
+    /different facts/i,
+  );
+});
+
 test('one paid billing period adds coverage once and resume requires new paid coverage', async () => {
   let now = new Date('2026-01-01T00:00:00.000Z');
   const ledger = new MemoryCreditLedger();

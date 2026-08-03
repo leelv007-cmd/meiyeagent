@@ -70,6 +70,9 @@ export function planGrantCommandFromIntent(intent: PlanSettlementIntent) {
       lifecycle: intent.lifecycle,
       paymentEventId: intent.paymentEventId,
       paymentProductId: intent.priceId,
+      ...(intent.provider === 'waffo'
+        ? { paymentProvider: 'waffo' as const }
+        : {}),
       interval: intent.interval,
       subscriptionId: intent.subscriptionId,
       periodStartsAt: intent.periodStartsAt,
