@@ -59,6 +59,13 @@ export class PaymentWebhookPayloadTooLargeError extends Error {
   }
 }
 
+export class PaymentWebhookSettlementDeferredError extends Error {
+  constructor() {
+    super('Payment webhook settlement is pending retry.');
+    this.name = 'PaymentWebhookSettlementDeferredError';
+  }
+}
+
 export async function readPaymentWebhookPayload(request: Request) {
   const declaredLength = request.headers.get('content-length');
   if (
@@ -103,6 +110,33 @@ export async function receivePaymentWebhook(
   return dependencies.inbox.receive(event);
 }
 
+/**
+ * Receipt and settlement are deliberately coupled at the HTTP boundary: a
+ * delivery is acknowledged only once its durable outbox has been drained, so
+ * a downstream failure remains eligible for the provider's normal retry.
+ */
+export async function receiveAndSettlePaymentWebhook(
+  input: {
+    payload: string;
+    provider: PaymentProviderName;
+    signature: string;
+  },
+  dependencies: {
+    inbox: PaymentWebhookInboxPort;
+    secrets: PaymentWebhookSecrets;
+    settle: () => Promise<{ completed: number; failed: number }>;
+  }
+) {
+  const receipt = await receivePaymentWebhook(input, dependencies);
+  if (receipt === 'busy') return receipt;
+
+  const settlement = await dependencies.settle();
+  if (settlement.failed > 0) {
+    throw new PaymentWebhookSettlementDeferredError();
+  }
+  return receipt;
+}
+
 export function paymentWebhookHttpResponse(receipt: PaymentWebhookReceipt) {
   if (receipt === 'busy') {
     return Response.json(
@@ -133,6 +167,12 @@ export function paymentWebhookErrorResponse(error: unknown) {
     return Response.json(
       { error: 'Webhook processing unavailable', received: false },
       { headers: { 'Retry-After': '60' }, status: 503 }
+    );
+  }
+  if (error instanceof PaymentWebhookSettlementDeferredError) {
+    return Response.json(
+      { error: 'Webhook settlement pending retry', received: false },
+      { headers: { 'Retry-After': '30' }, status: 503 }
     );
   }
   return Response.json(

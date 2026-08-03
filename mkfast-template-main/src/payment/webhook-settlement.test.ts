@@ -10,6 +10,7 @@ import {
   PaymentWebhookSignatureError,
   paymentWebhookHttpResponse,
   readPaymentWebhookPayload,
+  receiveAndSettlePaymentWebhook,
   receivePaymentWebhook,
   refreshVerifiedWebhookSignature,
   settlePendingPaymentWebhooks,
@@ -329,6 +330,81 @@ test('a busy verified event is retryable and is never acknowledged with 200', as
     received: false,
     retryable: true,
   });
+});
+
+test('an accepted delivery runs the durable settlement worker before acknowledgement', async () => {
+  const payload = JSON.stringify({
+    id: 'evt_route_settlement',
+    type: 'checkout.session.completed',
+  });
+  const webhookSecret = 'whsec_route_settlement';
+  const signature = Stripe.webhooks.generateTestHeaderString({
+    payload,
+    secret: webhookSecret,
+  });
+  const calls: string[] = [];
+  const inbox: PaymentWebhookInboxPort = {
+    async receive() {
+      calls.push('received');
+      return 'accepted';
+    },
+    async claimNext() {
+      return null;
+    },
+    async checkpointApplied() {},
+    async complete() {},
+    async retry() {},
+  };
+
+  const receipt = await receiveAndSettlePaymentWebhook(
+    { payload, provider: 'stripe', signature },
+    {
+      inbox,
+      secrets: { stripeWebhookSecret: webhookSecret },
+      settle: async () => {
+        calls.push('settled');
+        return { completed: 1, failed: 0 };
+      },
+    }
+  );
+
+  assert.equal(receipt, 'accepted');
+  assert.deepEqual(calls, ['received', 'settled']);
+});
+
+test('a settlement failure remains retryable instead of acknowledging the delivery', async () => {
+  const payload = JSON.stringify({
+    id: 'evt_route_retry',
+    type: 'checkout.session.completed',
+  });
+  const webhookSecret = 'whsec_route_retry';
+  const signature = Stripe.webhooks.generateTestHeaderString({
+    payload,
+    secret: webhookSecret,
+  });
+  const inbox: PaymentWebhookInboxPort = {
+    async receive() {
+      return 'accepted';
+    },
+    async claimNext() {
+      return null;
+    },
+    async checkpointApplied() {},
+    async complete() {},
+    async retry() {},
+  };
+
+  await assert.rejects(
+    receiveAndSettlePaymentWebhook(
+      { payload, provider: 'stripe', signature },
+      {
+        inbox,
+        secrets: { stripeWebhookSecret: webhookSecret },
+        settle: async () => ({ completed: 0, failed: 1 }),
+      }
+    ),
+    { name: 'PaymentWebhookSettlementDeferredError' }
+  );
 });
 
 test('webhook verification failures and missing secrets fail closed', async () => {

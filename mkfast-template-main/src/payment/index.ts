@@ -14,6 +14,7 @@ import { StripeProvider } from './provider/stripe';
 import { PostgresPaymentWebhookInbox } from './postgres-webhook-settlement';
 import {
   receivePaymentWebhook,
+  receiveAndSettlePaymentWebhook,
   refreshVerifiedWebhookSignature,
   settlePendingPaymentWebhooks as consumePendingPaymentWebhooks,
 } from './webhook-settlement';
@@ -99,6 +100,26 @@ export async function handleWebhookEvent(
         stripeWebhookSecret: serverEnv.STRIPE_WEBHOOK_SECRET,
         waffoWebhookPublicKeys: waffoWebhookPublicKeys(),
       },
+    }
+  );
+}
+
+export async function handleAndSettleWebhookEvent(
+  provider: PaymentProviderName,
+  payload: string,
+  signature: string
+) {
+  return receiveAndSettlePaymentWebhook(
+    { payload, provider, signature },
+    {
+      inbox: new PostgresPaymentWebhookInbox(getDb()),
+      secrets: {
+        creemWebhookSecret: serverEnv.CREEM_WEBHOOK_SECRET,
+        stripeApiKey: serverEnv.STRIPE_SECRET_KEY,
+        stripeWebhookSecret: serverEnv.STRIPE_WEBHOOK_SECRET,
+        waffoWebhookPublicKeys: waffoWebhookPublicKeys(),
+      },
+      settle: settlePendingPaymentWebhookEvents,
     }
   );
 }

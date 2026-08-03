@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { handleWebhookEvent } from '@/payment';
+import { handleAndSettleWebhookEvent } from '@/payment';
 import {
   paymentWebhookErrorResponse,
   paymentWebhookHttpResponse,
@@ -20,7 +20,11 @@ export const Route = createFileRoute('/api/webhooks/waffo')({
               { status: 400 }
             );
           }
-          const receipt = await handleWebhookEvent('waffo', payload, signature);
+          const receipt = await handleAndSettleWebhookEvent(
+            'waffo',
+            payload,
+            signature
+          );
           return paymentWebhookHttpResponse(receipt);
         } catch (error) {
           logPaymentWebhookError({
