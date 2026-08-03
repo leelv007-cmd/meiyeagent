@@ -46,6 +46,7 @@ test('the Waffo Test candidate uses an isolated preview without a production rou
     },
   ]);
   assert.deepEqual(config.vars, {
+    APP_ENV: 'e2e',
     CORE_SERVICE_URL: 'https://core-test.tqai.uk',
     INTERNAL_SERVICE_TRANSPORT: 'private-network',
     WAFFO_DEBUG: 'true',

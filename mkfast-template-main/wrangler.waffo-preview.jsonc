@@ -22,6 +22,7 @@
   "preview_urls": true,
   "workers_dev": false,
   "vars": {
+    "APP_ENV": "e2e",
     "CORE_SERVICE_URL": "https://core-test.tqai.uk",
     "INTERNAL_SERVICE_TRANSPORT": "private-network",
     "WAFFO_DEBUG": "true"
