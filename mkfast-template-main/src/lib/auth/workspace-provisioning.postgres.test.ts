@@ -110,9 +110,12 @@ test(
         claimToken: null,
         lastErrorCode: null,
         modelDefaultStatus: 'completed',
+        ownerEmail: `${userId}@example.test`,
+        ownerName: 'Provision Owner',
         ownerUserId: userId,
         status: 'completed',
         trialStatus: 'completed',
+        workspaceName: 'Provision Owner',
         workspaceId,
       });
     } finally {

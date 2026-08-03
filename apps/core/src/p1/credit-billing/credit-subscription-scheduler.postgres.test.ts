@@ -554,7 +554,7 @@ test(
         });
         const subscription = await store.get(terminalSubscriptionId);
         assert.equal(subscription?.status, 'active');
-        if (lifecycle === 'cancel_at_period_end') {
+        if (lifecycle !== 'past_due') {
           assert.deepEqual(subscription?.scheduledChanges, [
             {
               effectiveCycle: 2,

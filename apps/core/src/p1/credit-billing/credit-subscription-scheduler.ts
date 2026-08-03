@@ -1618,7 +1618,11 @@ function scheduleSubscriptionChange(
     ...changesFor(subscription).filter(
       (change) => change.effectiveCycle !== input.effectiveCycle,
     ),
-    input,
+    {
+      tier: input.tier,
+      interval: input.interval,
+      effectiveCycle: input.effectiveCycle,
+    },
   ]);
 }
 

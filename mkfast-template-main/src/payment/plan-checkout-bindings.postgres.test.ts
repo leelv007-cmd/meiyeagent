@@ -20,6 +20,7 @@ test(
     const paymentId = `plan-payment-${suffix}`;
     const checkoutId = `plan-checkout-${suffix}`;
     const subscriptionId = `plan-subscription-${suffix}`;
+    const waffoSubscriptionId = `waffo-order-${suffix}`;
     const periodStart = new Date('2026-07-01T00:00:00.000Z');
     const periodEnd = new Date('2026-08-01T00:00:00.000Z');
 
@@ -190,7 +191,7 @@ test(
         provider: 'waffo' as const,
         providerDeliveryId: 'waffo-delivery-001',
         providerEventId: 'waffo-payment-001',
-        reference: { id: 'waffo-order-001', kind: 'subscription' as const },
+        reference: { id: waffoSubscriptionId, kind: 'subscription' as const },
       };
       const waffoFacts = await store.resolveBinding(waffoActivation);
       assert.deepEqual(normalizePeriodFacts(waffoFacts), {
@@ -215,7 +216,7 @@ test(
           priceId: 'PROD_GROWTH_MONTH',
           provider: 'waffo',
           providerEventId: 'waffo-payment-001',
-          subscriptionId: 'waffo-order-001',
+          subscriptionId: waffoSubscriptionId,
           workspaceId,
         },
       });
@@ -228,11 +229,11 @@ test(
       >`
         SELECT provider, subscription_id, customer_id
         FROM payment
-        WHERE subscription_id = 'waffo-order-001'
+        WHERE subscription_id = ${waffoSubscriptionId}
       `;
       assert.deepEqual(waffoPayment, {
         provider: 'waffo',
-        subscription_id: 'waffo-order-001',
+        subscription_id: waffoSubscriptionId,
         customer_id: userId,
       });
 
@@ -247,7 +248,7 @@ test(
       await store.markActive({
         bindingId: waffoBinding.id,
         provider: 'waffo',
-        subscriptionId: 'waffo-order-001',
+        subscriptionId: waffoSubscriptionId,
       });
       const [activeWaffoBinding] = await client<
         Array<{ status: string; subscription_id: string | null }>
@@ -258,7 +259,7 @@ test(
       `;
       assert.deepEqual(activeWaffoBinding, {
         status: 'active',
-        subscription_id: 'waffo-order-001',
+        subscription_id: waffoSubscriptionId,
       });
 
       // A delayed terminal delivery from an older billing period cannot
@@ -275,7 +276,7 @@ test(
           priceId: 'PROD_GROWTH_MONTH',
           provider: 'waffo',
           providerEventId: 'waffo-expire-old',
-          subscriptionId: 'waffo-order-001',
+          subscriptionId: waffoSubscriptionId,
           workspaceId,
         },
       });
@@ -284,7 +285,7 @@ test(
       >`
         SELECT status, period_start
         FROM payment
-        WHERE subscription_id = 'waffo-order-001'
+        WHERE subscription_id = ${waffoSubscriptionId}
       `;
       assert.equal(stillActiveWaffoPayment?.status, 'active');
 
@@ -292,7 +293,7 @@ test(
         store.markActive({
           bindingId: 'missing-binding',
           provider: 'waffo',
-          subscriptionId: 'waffo-order-001',
+          subscriptionId: waffoSubscriptionId,
         }),
         /not activated|not found|active/i
       );
@@ -308,7 +309,7 @@ test(
             providerDeliveryId: 'waffo-delivery-002',
             providerEventId: 'waffo-payment-002',
             reference: {
-              id: 'waffo-order-001',
+              id: waffoSubscriptionId,
               kind: 'subscription',
             },
           })
@@ -321,14 +322,14 @@ test(
           cancelAtPeriodEnd: false,
           periodStartsAt: waffoPeriodEnd,
           periodEndsAt: '2026-10-03T00:00:00.000Z',
-          subscriptionId: 'waffo-order-001',
+          subscriptionId: waffoSubscriptionId,
         }
       );
 
       let providerCancelCalls = 0;
       const cancellationCheckpoint = {
         periodStartsAt: waffoPeriodStart,
-        subscriptionId: 'waffo-order-001',
+        subscriptionId: waffoSubscriptionId,
         async cancel() {
           providerCancelCalls += 1;
         },
