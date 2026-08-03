@@ -48,13 +48,13 @@
     },
     "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4cf4e1a43f04aadcd22ce47f90c0e3b701e7c7d3",
-      "note": "Re-verified 2026-08-03 at 4cf4e1a4 against fresh isolated meiye_304_final_biz_20260803_final / meiye_304_final_dbos_20260803_final: 1/1 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
+      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation, entitlement-module providerOccurredAt) against the fresh meiye_304_b04fec54_biz/_dbos pair: green."
     },
     "apps/core/src/p1/foundation/workspace-bootstrap.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4cf4e1a43f04aadcd22ce47f90c0e3b701e7c7d3",
-      "note": "Re-verified 2026-08-03 at 4cf4e1a4 against fresh isolated meiye_304_final_biz_20260803_final / meiye_304_final_dbos_20260803_final: 1/1 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
+      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation) against the fresh meiye_304_b04fec54_biz/_dbos pair: green."
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
@@ -238,8 +238,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4cf4e1a43f04aadcd22ce47f90c0e3b701e7c7d3",
-      "note": "Re-verified 2026-08-03 at 4cf4e1a4 against fresh isolated meiye_304_final_biz_20260803_final / meiye_304_final_dbos_20260803_final: 2/2 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
+      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation) against the fresh meiye_304_b04fec54_biz/_dbos pair: 2/2."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "green",
@@ -318,13 +318,13 @@
     },
     "mkfast-template-main/src/payment/plan-checkout-bindings.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4cf4e1a43f04aadcd22ce47f90c0e3b701e7c7d3",
-      "note": "Re-verified 2026-08-03 at 4cf4e1a4 against fresh isolated meiye_304_final_biz_20260803_final / meiye_304_final_dbos_20260803_final: 1/1 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
+      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation) against the fresh meiye_304_b04fec54_biz pair provisioned through migration 0020: 3/3 including the new orchestration race/stale/change-parking coverage and the durable cancellation lease suite."
     },
     "mkfast-template-main/src/payment/postgres-webhook-settlement.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4cf4e1a43f04aadcd22ce47f90c0e3b701e7c7d3",
-      "note": "Re-verified 2026-08-03 at 4cf4e1a4 against fresh isolated meiye_304_final_biz_20260803_final / meiye_304_final_dbos_20260803_final: 1/1 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
+      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation) against the fresh meiye_304_b04fec54_biz pair: 1/1 atomic intake and expired-lease fencing."
     },
     "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
       "status": "green",
@@ -338,18 +338,18 @@
     },
     "apps/core/src/p1/credit-billing/credit-plan-catalog.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4cf4e1a43f04aadcd22ce47f90c0e3b701e7c7d3",
-      "note": "Re-verified 2026-08-03 at 4cf4e1a4 against fresh isolated meiye_304_final_biz_20260803_final / meiye_304_final_dbos_20260803_final: 1/1 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
+      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation, providerOccurredAt plumbing) against the fresh meiye_304_b04fec54_biz/_dbos pair: green."
     },
     "apps/core/src/p1/credit-billing/credit-subscription-scheduler.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4cf4e1a43f04aadcd22ce47f90c0e3b701e7c7d3",
-      "note": "Re-verified 2026-08-03 at 4cf4e1a4 against fresh isolated meiye_304_final_biz_20260803_final / meiye_304_final_dbos_20260803_final: 3/3 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
+      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation) against the fresh meiye_304_b04fec54_biz/_dbos pair: green incl. past_due grace sweep."
     },
     "apps/core/src/p1/credit-billing/postgres-credit-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4cf4e1a43f04aadcd22ce47f90c0e3b701e7c7d3",
-      "note": "Re-verified 2026-08-03 at 4cf4e1a4 against fresh isolated meiye_304_final_biz_20260803_final / meiye_304_final_dbos_20260803_final: 2/2 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "b04fec541a1df5aa2cf15e4f15112a4453c46a03",
+      "note": "Re-verified 2026-08-03 at b04fec54 (#304 composite remediation) against the fresh meiye_304_b04fec54_biz/_dbos pair: green."
     },
     "apps/core/src/p1/harness/note-page-regeneration.postgres.test.ts": {
       "status": "green",
