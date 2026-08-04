@@ -181,7 +181,7 @@ test.describe('Waffo checkout and webhook acceptance', () => {
       };
       expect(event).toMatchObject({
         eventType: 'subscription.payment_succeeded',
-        eventId: 'event_e2e_waffo_test',
+        eventId: providerPaymentId,
         id: deliveryId,
         mode: 'test',
         productId: fixture.checkout.productId,
