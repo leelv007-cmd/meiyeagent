@@ -72,7 +72,7 @@ test.describe('merchant credit billing and details', () => {
     );
     const billing = page.getByTestId('credit-billing-card');
 
-    await expect(billing).toContainText(/Starter plan|初级套餐/u);
+    await expect(billing).toContainText(/Starter plan|起步套餐/u);
     await expect(billing).toContainText(/Continuous monthly|连续包月/u);
     await expect(billing).toContainText('500');
     const periodEnd = billing
@@ -95,16 +95,16 @@ test.describe('merchant credit billing and details', () => {
     await expect(batches).toContainText(/Expired|已过期/u);
 
     await expect(transactions).toContainText(
-      /Creation activity\s+Reserved\s+2\s+#2\s+Reserved|创作作业预扣2#2已预扣/u
+      /Content creation\s+Held\s+2\s+#2\s+In use while generating|内容创作占用2#2生成中已占用/u
     );
     await expect(transactions).toContainText(
-      /Creation activity\s+Reserved\s+3\s+#3\s+Settled|创作作业预扣3#3已结算/u
+      /Content creation\s+Held\s+3\s+#3\s+Deducted|内容创作占用3#3已扣完/u
     );
     await expect(transactions).toContainText(
-      /Creation activity\s+Refunded\s+4\s+#5\s+Refunded|创作作业预扣4#5已退回/u
+      /Content creation\s+Held\s+4\s+#5\s+Refunded|内容创作占用4#5已退回/u
     );
     await expect(transactions).toContainText(
-      /Creation activity\s+Refunded\s+5\s+#4\s+Refunded|创作作业预扣5#4已退回/u
+      /Content creation\s+Held\s+5\s+#4\s+Refunded|内容创作占用5#4已退回/u
     );
     await expect(transactions).toContainText(
       /Returned 5 credits \(batch expired; not credited\)\.|已退回 5 分（批次已过期，未入账）/u

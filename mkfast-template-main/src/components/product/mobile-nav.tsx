@@ -1,8 +1,5 @@
 import { Routes } from '@/lib/routes';
-import {
-  common_mobile_navigation,
-  product_navigation_identity_assets,
-} from '@/locale/paraglide/messages';
+import { common_mobile_navigation } from '@/locale/paraglide/messages';
 import { BUSINESS_SIDEBAR_ITEMS } from '@/config/sidebar-config';
 import { ProductIcon } from '@/components/uiux/product-icon';
 import { cn } from '@/lib/utils';
@@ -20,18 +17,11 @@ const activeClassName = 'font-medium text-foreground';
  * A route added to the shell now reaches the phone by itself instead of waiting
  * for someone to notice this file.
  *
- * One label is deliberately not shared. The 素材 page also holds 口吻, and
- * on the phone that entry is the only way in — hence 「身份素材」. On the desktop
- * sidebar the same route sits under 素材, which the nav contract fixes and this
- * ticket does not touch. The override is written down here rather than being an
- * accident of two hand-kept lists.
+ * Mobile and desktop share the same 素材 / Materials label for the assets slot
+ * (`product_navigation_assets`). Identity (口吻 / Voices) stays reachable inside
+ * the assets surface and dedicated routes — not via a different nav word.
+ * `TEST_IDS.assets` still marks the mobile entry for journey tests.
  */
-const MOBILE_LABEL_OVERRIDES: Partial<
-  Record<(typeof BUSINESS_SIDEBAR_ITEMS)[number]['id'], () => string>
-> = {
-  assets: product_navigation_identity_assets,
-};
-
 const TEST_IDS: Partial<
   Record<(typeof BUSINESS_SIDEBAR_ITEMS)[number]['id'], string>
 > = {
@@ -55,7 +45,6 @@ export function ProductMobileNav() {
       className="meiye-glass-piece fixed inset-x-3 bottom-[max(0.5rem,env(safe-area-inset-bottom))] z-50 grid h-[4.25rem] grid-cols-5 rounded-[28px] px-1.5 shadow-[var(--shadow-ambient)]"
     >
       {BUSINESS_SIDEBAR_ITEMS.map((item) => {
-        const label = (MOBILE_LABEL_OVERRIDES[item.id] ?? (() => item.label))();
         // The workbench entry is active on the workbench itself only; the
         // router's own match would also light it up on every nested route.
         const isWorkbench = item.href === Routes.Dashboard;
@@ -75,7 +64,7 @@ export function ProductMobileNav() {
             to={item.href}
           >
             <ProductIcon className="size-5" icon={item.icon} />
-            <span className="truncate">{label}</span>
+            <span className="truncate">{item.label}</span>
           </Link>
         );
       })}

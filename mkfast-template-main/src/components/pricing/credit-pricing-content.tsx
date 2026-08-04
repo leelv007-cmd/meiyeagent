@@ -8,6 +8,12 @@ import {
   pricing_booster_expire_days,
   pricing_booster_heading,
   pricing_booster_login_to_buy,
+  pricing_card_credits_monthly,
+  pricing_card_credits_trial,
+  pricing_output_plan_growth,
+  pricing_output_plan_pro,
+  pricing_output_plan_starter,
+  pricing_output_plan_trial,
   pricing_plan_login_to_subscribe,
   pricing_plan_payment_not_open,
   pricing_plan_payment_not_open_hint,
@@ -64,11 +70,11 @@ const CYCLE_TO_PLAN_INTERVAL = {
   yearly: PlanIntervals.YEARLY,
 } as const;
 
-const PLAN_NAME: Record<PublicPlanOffer['id'], string> = {
-  trial: 'Trial',
-  starter: 'Starter',
-  growth: 'Growth',
-  pro: 'Pro',
+const PLAN_NAME: Record<PublicPlanOffer['id'], () => string> = {
+  trial: pricing_output_plan_trial,
+  starter: pricing_output_plan_starter,
+  growth: pricing_output_plan_growth,
+  pro: pricing_output_plan_pro,
 };
 
 export function CreditPricingContent({
@@ -220,9 +226,15 @@ function PlanCard({
     plan.monthlyPriceMicros > 0 &&
     priced.originalAmountMicros > priced.amountMicros;
 
+  const planName = PLAN_NAME[plan.id]();
+  const creditsSuffix =
+    plan.id === 'trial' || plan.monthlyPriceMicros === 0
+      ? pricing_card_credits_trial()
+      : pricing_card_credits_monthly();
+
   return (
     <section
-      aria-label={PLAN_NAME[plan.id]}
+      aria-label={planName}
       className={cn(
         'flex h-full flex-col gap-5 rounded-3xl border bg-card p-6 text-card-foreground',
         recommended && 'ring-1 ring-[color:var(--spark)]'
@@ -231,7 +243,7 @@ function PlanCard({
     >
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-lg font-semibold">{PLAN_NAME[plan.id]}</h3>
+          <h3 className="text-lg font-semibold">{planName}</h3>
           {recommended ? (
             <span
               className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"
@@ -252,7 +264,7 @@ function PlanCard({
         >
           {plan.credits}
           <span className="ml-1 text-base font-medium text-muted-foreground">
-            / mo
+            {creditsSuffix}
           </span>
         </p>
 

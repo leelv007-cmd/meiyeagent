@@ -178,9 +178,9 @@ test.describe('desktop secondary surfaces', () => {
         page.getByRole('heading', { name: '模型偏好' })
       ).toBeVisible();
       await expect(
-        page.getByText('高级连接设置', { exact: true })
+        page.getByText('用自己的模型密钥', { exact: true })
       ).toBeVisible();
-      await page.getByText('高级连接设置', { exact: true }).click();
+      await page.getByText('用自己的模型密钥', { exact: true }).click();
       await expect(
         page.getByRole('tab', { name: '使用自己的模型密钥' })
       ).toBeVisible();
@@ -300,7 +300,7 @@ test.describe('desktop secondary surfaces', () => {
       await loginByForm(page, user);
       await page.goto('/settings/account?section=usage');
       await page.getByTestId('account-usage-details-toggle').click();
-      for (const label of ['可用', '预留', '已结算', '已释放', '本期到期']) {
+      for (const label of ['可用', '占用', '已扣完', '已释放', '本期到期']) {
         await expect(
           page.getByText(label, { exact: false }).first()
         ).toBeVisible();

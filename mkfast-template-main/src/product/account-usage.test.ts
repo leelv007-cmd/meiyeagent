@@ -21,11 +21,11 @@ test('explains every way reserved usage can be released', () => {
 
   assert.equal(
     messages.zh?.account_usage_terms_explanation,
-    '可用积分为当前可用于创作的积分；预扣为进行中作业暂扣的积分；已结算为已完成作业消耗的积分；已释放为失败、取消或过期后退回的积分。'
+    '可用积分为当前可用于创作的积分；占用为生成中已占用的积分；已扣完为已完成内容创作消耗的积分；已释放为失败、取消或过期后退回的积分。'
   );
   assert.equal(
     messages.en?.account_usage_terms_explanation,
-    'Available credits are ready to use; Reserved credits are held for work in progress; Settled credits were used by finished work; Released credits returned after failure, cancellation, or expiry.'
+    'Available credits are ready to use; Held credits cover content that is still generating; Deducted credits were used by finished content creation; Released credits returned after failure, cancellation, or expiry.'
   );
 });
 

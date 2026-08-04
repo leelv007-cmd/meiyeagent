@@ -110,7 +110,7 @@ test('settings exposes details and billing through the merchant credit contract'
   );
   assert.equal(
     messages.credit_billing_no_active_subscription,
-    '当前周期积分暂不可用；你仍可查看积分批次和流水。'
+    '当前周期积分暂不可用；你仍可查看积分来源和使用记录。'
   );
   const creditVocabularyKeys = [
     'workbench_quote_usage_copy',

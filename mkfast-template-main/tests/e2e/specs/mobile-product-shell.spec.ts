@@ -52,13 +52,13 @@ test('keeps identity, assets, and camera authorization reachable on mobile', asy
       mobileNav.getByTestId('mobile-identity-assets-entry')
     ).toHaveAttribute('href', /^\/dashboard\/assets(?:\?|$)/u);
     // 经验 joined the bar under D-164④ (P2-13 rename); the grid is five-wide.
-    // 「口吻与素材」是手机端独有的覆盖标签：product_navigation_identity_assets
-    // (project.inlang/messages/zh.json:3279)，由 mobile-nav.tsx:32 挂到 assets 槽。
-    for (const label of ['创作', '口吻与素材', '内容', '门店', '经验']) {
+    // Mobile and desktop share 「素材」 for the assets slot (product_navigation_assets).
+    // Identity (口吻) stays reachable inside the assets surface, not via a dual nav word.
+    for (const label of ['创作', '素材', '内容', '门店', '经验']) {
       await expect(mobileNav.getByText(label, { exact: true })).toBeVisible();
     }
 
-    await mobileNav.getByText('口吻与素材', { exact: true }).click();
+    await mobileNav.getByTestId('mobile-identity-assets-entry').click();
     await expect(page).toHaveURL(/\/dashboard\/assets(?:\?|$)/u);
     // a539378f 把「表达身份」改名为「口吻」：region 名来自
     // marketing-identity-manager.tsx:53 的 aria-labelledby → 同文件 :56 的 h3，

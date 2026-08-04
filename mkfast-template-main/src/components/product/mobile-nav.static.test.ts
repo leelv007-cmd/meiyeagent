@@ -61,16 +61,17 @@ test('the phone grid has one column per destination', () => {
 });
 
 /**
- * One label is allowed to differ, and only because the phone entry is the only
- * way into a page that also holds 口吻. An override nobody wrote down is how
- * the two lists drifted the first time.
+ * Mobile and desktop share the 素材 / Materials label (`product_navigation_assets`
+ * via `item.label`). Identity (口吻) remains reachable inside the assets surface
+ * and dedicated routes, not via a different bottom-bar word. The former
+ * `MOBILE_LABEL_OVERRIDES` dual label (口吻与素材 / Voices & assets) is gone —
+ * do not reintroduce a separate nav word without a product decision.
  */
-test('the one label the phone overrides is declared, not accidental', () => {
-  assert.match(source, /MOBILE_LABEL_OVERRIDES/u);
-  assert.match(source, /assets: product_navigation_identity_assets/u);
-  const overrides = source.slice(
-    source.indexOf('const MOBILE_LABEL_OVERRIDES'),
-    source.indexOf('const TEST_IDS')
-  );
-  assert.equal(overrides.match(/product_navigation_/gu)?.length, 1);
+test('mobile assets entry shares the desktop 素材 label; no dual-label override', () => {
+  assert.doesNotMatch(source, /MOBILE_LABEL_OVERRIDES/u);
+  assert.doesNotMatch(source, /product_navigation_identity_assets/u);
+  assert.match(source, /item\.label/u);
+  // Journey tests still find the assets slot by stable test id.
+  assert.match(source, /mobile-identity-assets-entry/u);
+  assert.match(source, /assets: 'mobile-identity-assets-entry'/u);
 });
