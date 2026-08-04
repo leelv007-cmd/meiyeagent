@@ -494,6 +494,25 @@ test('a recognized Waffo lifecycle event without a provider timestamp is a contr
   );
 });
 
+test('Waffo payment_succeeded without its provider Payment ID is a contract breach', () => {
+  assert.throws(
+    () =>
+      normalizeWaffoVerifiedPaymentEvent({
+        data: {
+          currentPeriodEnd: '2026-09-03T00:00:00.000Z',
+          currentPeriodStart: '2026-08-03T00:00:00.000Z',
+          orderId: 'waffo-order-no-payment-id',
+        },
+        eventType: 'subscription.payment_succeeded',
+        id: 'waffo-delivery-no-payment-id',
+        timestamp: '2026-08-03T00:00:01.000Z',
+      }),
+    (error: unknown) =>
+      error instanceof WaffoPaymentEventContractError &&
+      error.code === 'WAFFO_EVENT_CONTRACT_INVALID'
+  );
+});
+
 test('an unrecognized event type stays a silent null, not a contract error', () => {
   assert.equal(
     normalizeWaffoVerifiedPaymentEvent({

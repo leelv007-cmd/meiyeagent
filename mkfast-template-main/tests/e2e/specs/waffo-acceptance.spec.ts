@@ -117,7 +117,8 @@ test.describe('Waffo checkout and webhook acceptance', () => {
 
     const subscriptionId = 'sub_e2e_waffo_test';
     const deliveryId = 'delivery_e2e_waffo_test';
-    const paymentEventId = `waffo:subscription:${subscriptionId}:2026-08-03T00:00:00.000Z:2026-09-03T00:00:00.000Z`;
+    const providerPaymentId = 'PAY_e2e_waffo_test';
+    const paymentEventId = `waffo:${providerPaymentId}`;
     const fixture: FixtureState = {
       checkout: {
         bindingId: 'binding_e2e_waffo_test',
@@ -140,7 +141,7 @@ test.describe('Waffo checkout and webhook acceptance', () => {
     });
     const webhookPayload = JSON.stringify({
       eventType: 'subscription.payment_succeeded',
-      eventId: 'event_e2e_waffo_test',
+      eventId: providerPaymentId,
       id: deliveryId,
       mode: 'test',
       productId: fixture.checkout.productId,

@@ -106,7 +106,7 @@ describe('plan-commerce settlement', () => {
     assert.equal(renew?.paymentEventId, 'stripe:evt_inv');
   });
 
-  it('uses one Waffo settlement key for activation and payment of the same billing period', () => {
+  it('keeps Waffo activation and first-period payment receipts on their real provider event IDs', () => {
     const periodStartsAt = '2026-08-03T00:00:00.000Z';
     const periodEndsAt = '2026-09-03T00:00:00.000Z';
     const waffoBinding = {
@@ -146,11 +146,12 @@ describe('plan-commerce settlement', () => {
       activation?.providerEventId,
       paymentSucceeded?.providerEventId
     );
-    assert.equal(
-      activation?.paymentEventId,
-      'waffo:subscription:subscription_waffo_1:2026-08-03T00:00:00.000Z:2026-09-03T00:00:00.000Z'
+    assert.equal(activation?.paymentEventId, 'waffo:business_activation');
+    assert.equal(paymentSucceeded?.paymentEventId, 'waffo:business_payment');
+    assert.notEqual(
+      paymentSucceeded?.paymentEventId,
+      activation?.paymentEventId
     );
-    assert.equal(paymentSucceeded?.paymentEventId, activation?.paymentEventId);
     assert.equal(
       activation &&
         planGrantCommandFromIntent(activation).payload.paymentProvider,
@@ -198,6 +199,32 @@ describe('plan-commerce settlement', () => {
       ),
       null
     );
+  });
+
+  it('does not grant a Waffo renewal without a provider Payment ID', async () => {
+    const event: VerifiedPaymentWebhookEvent = {
+      eventType: 'subscription.renewed',
+      provider: 'waffo',
+      providerEventId: ' ',
+      reference: { id: 'subscription_waffo_1', kind: 'subscription' },
+    };
+    let grants = 0;
+
+    const settled = await settleVerifiedPlanPayment(event, {
+      async resolveBinding() {
+        return {
+          ...binding,
+          interval: 'monthly',
+          subscriptionId: 'subscription_waffo_1',
+        };
+      },
+      async grantPlan() {
+        grants += 1;
+      },
+    });
+
+    assert.equal(settled, null);
+    assert.equal(grants, 0);
   });
 
   it('uses the verified subscription reference when a legacy binding row has no subscription id', () => {

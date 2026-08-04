@@ -219,13 +219,10 @@ test('verified payment events replay once and reject conflicting facts', async (
 });
 
 test('a Waffo activation and payment success share one paid billing period', async () => {
+  let now = new Date('2026-08-03T00:00:00.000Z');
   const ledger = new MemoryCreditLedger();
   const subscriptions = new MemoryCreditSubscriptionStore();
-  const service = creditBillingService(
-    ledger,
-    subscriptions,
-    () => new Date('2026-08-03T00:00:00.000Z'),
-  );
+  const service = creditBillingService(ledger, subscriptions, () => now);
   const scheduler = new CreditSubscriptionCycleScheduler(subscriptions, ledger, {
     planFor(tier) {
       const plan = DEFAULT_CREDIT_PLAN_CATALOG.plans.find(
@@ -238,8 +235,7 @@ test('a Waffo activation and payment success share one paid billing period', asy
   const firstPeriod = {
     interval: 'monthly' as const,
     lifecycle: 'activate' as const,
-    paymentEventId:
-      'waffo:subscription:ORD_first_period:2026-08-03T00:00:00.000Z:2026-09-03T00:00:00.000Z',
+    paymentEventId: 'waffo:activation-first-period',
     paymentProductId: 'PROD_growth_monthly',
     paymentProvider: 'waffo' as const,
     periodStartsAt: '2026-08-03T00:00:00.000Z',
@@ -247,14 +243,26 @@ test('a Waffo activation and payment success share one paid billing period', asy
     subscriptionId: 'ORD_first_period',
   };
 
-  await service.settlePayment(context, firstPeriod);
+  const activated = await service.settlePayment(context, firstPeriod);
   await scheduler.run(firstPeriod.periodStartsAt);
-  await service.settlePayment(context, {
+  const firstPayment = {
     ...firstPeriod,
     lifecycle: 'renew',
+    paymentEventId: 'waffo:PAY_first_period',
     providerOccurredAt: '2026-08-03T00:00:02.000Z',
+  } as const;
+  const paid = await service.settlePayment(context, firstPayment);
+  const replayed = await service.settlePayment(context, firstPayment);
+  const samePeriodDifferentPayment = await service.settlePayment(context, {
+    ...firstPayment,
+    paymentEventId: 'waffo:PAY_first_period_adjustment',
+    providerOccurredAt: '2026-08-03T00:00:03.000Z',
   });
 
+  assert.equal(activated?.settlementStatus, 'applied');
+  assert.equal(paid?.settlementStatus, 'applied');
+  assert.equal(replayed?.settlementStatus, 'duplicate');
+  assert.equal(samePeriodDifferentPayment?.settlementStatus, 'applied');
   assert.equal(
     (await subscriptions.get(firstPeriod.subscriptionId))?.paidThroughCycle,
     1,
@@ -268,6 +276,29 @@ test('a Waffo activation and payment success share one paid billing period', asy
           `grant:sub:${firstPeriod.subscriptionId}:0`,
       ).length,
     1,
+  );
+  now = new Date('2026-09-03T00:00:00.000Z');
+  const nextPeriod = await service.settlePayment(context, {
+    ...firstPayment,
+    paymentEventId: 'waffo:PAY_second_period',
+    periodStartsAt: now.toISOString(),
+    providerOccurredAt: '2026-09-03T00:00:01.000Z',
+  });
+  await scheduler.run(now.toISOString());
+  assert.equal(nextPeriod?.settlementStatus, 'applied');
+  assert.equal(
+    (await subscriptions.get(firstPeriod.subscriptionId))?.paidThroughCycle,
+    2,
+  );
+  assert.equal(
+    ledger
+      .listLots(context.workspaceId)
+      .filter((lot) =>
+        lot.grantIdempotencyKey.startsWith(
+          `grant:sub:${firstPeriod.subscriptionId}:`,
+        ),
+      ).length,
+    2,
   );
   await assert.rejects(
     service.settlePayment(context, {

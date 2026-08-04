@@ -215,13 +215,14 @@ export function planSettlementIntentFromEvent(
 
   const periodStartsAt = toIso(binding.periodStartsAt);
   const periodEndsAt = toIso(binding.periodEndsAt);
-  const paymentEventId = paymentSettlementEventId({
-    event,
-    lifecycle,
-    periodEndsAt,
-    periodStartsAt,
-    subscriptionId,
-  });
+  if (
+    event.provider === 'waffo' &&
+    (lifecycle === 'activate' || lifecycle === 'renew') &&
+    (!periodStartsAt || !periodEndsAt)
+  ) {
+    return null;
+  }
+  const paymentEventId = paymentSettlementEventId(event);
   if (!paymentEventId) return null;
 
   return {
@@ -250,23 +251,9 @@ export function planSettlementIntentFromEvent(
   };
 }
 
-function paymentSettlementEventId(input: {
-  event: VerifiedPaymentWebhookEvent;
-  lifecycle: PlanSettlementLifecycle;
-  periodEndsAt: string | null;
-  periodStartsAt: string | null;
-  subscriptionId: string | null;
-}) {
-  const { event, lifecycle, periodEndsAt, periodStartsAt, subscriptionId } =
-    input;
-  if (
-    event.provider === 'waffo' &&
-    (lifecycle === 'activate' || lifecycle === 'renew')
-  ) {
-    if (!subscriptionId || !periodStartsAt || !periodEndsAt) return null;
-    return `waffo:subscription:${subscriptionId}:${periodStartsAt}:${periodEndsAt}`;
-  }
-  return `${event.provider}:${event.providerEventId}`;
+function paymentSettlementEventId(event: VerifiedPaymentWebhookEvent) {
+  const providerEventId = event.providerEventId.trim();
+  return providerEventId ? `${event.provider}:${providerEventId}` : null;
 }
 
 function lifecycleFromEvent(
@@ -297,7 +284,8 @@ function lifecycleFromEvent(
 
 /**
  * Settle a verified payment event into Foundation plan entitlement.
- * Idempotency is owned by core paymentEventId uniqueness.
+ * Core receipts deduplicate paymentEventId replays; paid-period uniqueness
+ * separately prevents two provider payment IDs from granting one cycle twice.
  */
 export async function settleVerifiedPlanPayment(
   event: VerifiedPaymentWebhookEvent,

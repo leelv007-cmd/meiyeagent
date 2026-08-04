@@ -246,7 +246,7 @@ test(
         ),
       });
       const monthly = serviceFor('workspace-period-pg');
-      await monthly.service.settlePayment(monthly.context, {
+      const activation = await monthly.service.settlePayment(monthly.context, {
         interval: 'month',
         lifecycle: 'activate',
         paymentEventId: 'pg-period-activate',
@@ -254,7 +254,7 @@ test(
         periodStartsAt: now.toISOString(),
         subscriptionId: 'pg-subscription-old',
       });
-      await monthly.service.settlePayment(monthly.context, {
+      const samePeriodPayment = await monthly.service.settlePayment(monthly.context, {
         interval: 'month',
         lifecycle: 'renew',
         paymentEventId: 'pg-period-same',
@@ -262,6 +262,34 @@ test(
         periodStartsAt: now.toISOString(),
         subscriptionId: 'pg-subscription-old',
       });
+      const replayedSamePayment = await monthly.service.settlePayment(monthly.context, {
+        interval: 'month',
+        lifecycle: 'renew',
+        paymentEventId: 'pg-period-same',
+        paymentProductId: 'growth',
+        periodStartsAt: now.toISOString(),
+        subscriptionId: 'pg-subscription-old',
+      });
+      assert.equal(activation?.settlementStatus, 'applied');
+      assert.equal(samePeriodPayment?.settlementStatus, 'applied');
+      assert.equal(replayedSamePayment?.settlementStatus, 'duplicate');
+      assert.equal((await store.get('pg-subscription-old'))?.paidThroughCycle, 1);
+      const receiptCount = await pool.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count
+           FROM p1_credit_payment_events
+          WHERE workspace_id = $1
+            AND payment_event_id IN ($2, $3)
+            AND completed = TRUE`,
+        ['workspace-period-pg', 'pg-period-activate', 'pg-period-same'],
+      );
+      assert.equal(receiptCount.rows[0]?.count, '2');
+      const paidPeriodCount = await pool.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count
+           FROM p1_credit_subscription_paid_periods
+          WHERE subscription_id = $1`,
+        ['pg-subscription-old'],
+      );
+      assert.equal(paidPeriodCount.rows[0]?.count, '1');
       now = new Date('2026-02-01T00:00:00.000Z');
       for (const [paymentEventId, periodStartsAt] of [
         ['pg-period-future', '2026-04-01T00:00:00.000Z'],
