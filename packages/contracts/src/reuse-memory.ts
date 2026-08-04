@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import { identifierSchema, nonEmptyTrimmedStringSchema } from './identifiers.js';
 
-const idSchema = z.string().trim().min(1);
+const idSchema = identifierSchema;
 const timestampSchema = z.iso.datetime();
 
 export function memoryTaskSourceConversationId(
@@ -249,7 +250,7 @@ const assetRevisionBodySchema = z
       z
         .object({
           suggestionId: idSchema,
-          explanation: z.string().trim().min(1),
+          explanation: nonEmptyTrimmedStringSchema,
           variableSlotKeys: z.array(idSchema),
         })
         .strict(),
@@ -269,7 +270,7 @@ export const reusableAssetLifecycleEventSchema = z
     assetId: idSchema,
     revisionId: idSchema,
     action: z.enum(['activated', 'deactivated']),
-    reason: z.string().trim().min(1),
+    reason: nonEmptyTrimmedStringSchema,
     actorId: idSchema,
     occurredAt: timestampSchema,
   })
@@ -321,7 +322,7 @@ export const memoryCandidateSourceSchema = z
 export const memoryEntriesPageQuerySchema = z
   .object({
     limit: z.number().int().positive().max(50).default(20),
-    cursor: z.string().trim().min(1).max(512).optional(),
+    cursor: nonEmptyTrimmedStringSchema.max(512).optional(),
   })
   .strict();
 
@@ -340,15 +341,15 @@ export const deleteMemorySourceConversationCommandSchema = z
 export const confirmMemoryCandidateCommandSchema = z
   .object({
     entryId: idSchema,
-    positiveExamples: z.array(z.string().trim().min(1)).max(20).default([]),
-    negativeExamples: z.array(z.string().trim().min(1)).max(20).default([]),
+    positiveExamples: z.array(nonEmptyTrimmedStringSchema).max(20).default([]),
+    negativeExamples: z.array(nonEmptyTrimmedStringSchema).max(20).default([]),
   })
   .strict();
 
 export const rejectMemoryCandidateCommandSchema = z
   .object({
     entryId: idSchema,
-    reason: z.string().trim().min(1).max(500),
+    reason: nonEmptyTrimmedStringSchema.max(500),
   })
   .strict();
 
@@ -366,7 +367,7 @@ export const memoryEntryProjectionSchema = z
         messageRange: memoryCandidateSourceSchema.shape.messageRange,
         status: z.enum(['available', 'deleted', 'unavailable']),
         observedAt: timestampSchema.nullable(),
-        preview: z.string().trim().min(1).max(500).nullable(),
+        preview: nonEmptyTrimmedStringSchema.max(500).nullable(),
         deletedAt: timestampSchema.nullable(),
       })
       .strict()
@@ -377,7 +378,7 @@ export const memoryEntryProjectionSchema = z
 export const memoryEntriesPageSchema = z
   .object({
     items: z.array(memoryEntryProjectionSchema),
-    nextCursor: z.string().trim().min(1).max(512).nullable(),
+    nextCursor: nonEmptyTrimmedStringSchema.max(512).nullable(),
   })
   .strict();
 
@@ -412,8 +413,8 @@ export const preferenceSchema = z
     defaultScope: reusableAssetScopeSchema,
     finalScope: reusableAssetScopeSchema,
     scopeDecision: reusableScopeDecisionSchema,
-    positiveExamples: z.array(z.string().trim().min(1)),
-    negativeExamples: z.array(z.string().trim().min(1)),
+    positiveExamples: z.array(nonEmptyTrimmedStringSchema),
+    negativeExamples: z.array(nonEmptyTrimmedStringSchema),
     evidenceDecisionIds: z.array(idSchema).min(1),
     status: z.literal('inactive_stage2'),
     recordState: z.enum(['current', 'revoked', 'superseded']),

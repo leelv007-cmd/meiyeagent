@@ -5,6 +5,7 @@
  */
 
 import { z } from 'zod';
+import { identifierSchema, nonEmptyTrimmedStringSchema } from './identifiers.js';
 
 import type { HealthOverlayState } from './capability-registry.js';
 
@@ -41,7 +42,7 @@ export const modelCapabilityClaimBasisSchema = z.enum([
 const modelCapabilityClaimEvidenceSchema = z
   .object({
     basis: modelCapabilityClaimBasisSchema,
-    evidenceRef: z.string().trim().min(1),
+    evidenceRef: nonEmptyTrimmedStringSchema,
   })
   .strict();
 
@@ -68,7 +69,7 @@ export const modelModalityClaimSchema = modelCapabilityClaimEvidenceSchema
 
 export const modelBusinessTagClaimSchema = modelCapabilityClaimEvidenceSchema
   .extend({
-    tag: z.string().trim().min(1),
+    tag: nonEmptyTrimmedStringSchema,
     supported: z.boolean(),
   })
   .strict();
@@ -77,7 +78,7 @@ export const modelModalityScopedCapabilityClaimSchema =
   modelCapabilityClaimEvidenceSchema
     .extend({
       modality: modelCapabilityMimeSchema,
-      capability: z.string().trim().min(1),
+      capability: nonEmptyTrimmedStringSchema,
       supported: z.boolean(),
       channelBound: z.boolean(),
     })
@@ -87,7 +88,7 @@ export const modelCapabilityProfileSchema = z
   .object({
     vocabularyVersion: z.literal(MODEL_CAPABILITY_VOCABULARY_VERSION),
     protocolCapabilities: z.record(
-      z.string().trim().min(1),
+      nonEmptyTrimmedStringSchema,
       modelProtocolCapabilityClaimSchema,
     ),
     modalities: z.array(modelModalityClaimSchema),
@@ -101,17 +102,17 @@ export const modelCapabilityProfileSchema = z
 const modelModalityScopedCapabilityRequirementSchema = z
   .object({
     modality: modelCapabilityMimeSchema,
-    capability: z.string().trim().min(1),
+    capability: nonEmptyTrimmedStringSchema,
   })
   .strict();
 
 export const modelCapabilityRequirementAxisSchema = z
   .object({
-    axisId: z.string().trim().min(1),
+    axisId: nonEmptyTrimmedStringSchema,
     vocabularyVersion: z.literal(MODEL_CAPABILITY_VOCABULARY_VERSION),
-    requiredProtocolCapabilities: z.array(z.string().trim().min(1)),
+    requiredProtocolCapabilities: z.array(nonEmptyTrimmedStringSchema),
     requiredModalities: z.array(modelCapabilityMimeSchema),
-    requiredBusinessTags: z.array(z.string().trim().min(1)),
+    requiredBusinessTags: z.array(nonEmptyTrimmedStringSchema),
     requiredModalityCapabilities: z.array(
       modelModalityScopedCapabilityRequirementSchema,
     ),
@@ -119,7 +120,7 @@ export const modelCapabilityRequirementAxisSchema = z
   })
   .strict();
 
-const rightsBasisIdSchema = z.string().trim().min(1);
+const rightsBasisIdSchema = identifierSchema;
 
 export const rightsBasisSchema = z.discriminatedUnion('kind', [
   z

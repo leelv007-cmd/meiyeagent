@@ -1,8 +1,9 @@
 import { z } from 'zod';
+import { identifierSchema } from './identifiers.js';
 
 import { storeFactCandidateDraftSchema } from './asset-intake.js';
 
-const idSchema = z.string().trim().min(1);
+const idSchema = identifierSchema;
 const timestampSchema = z.iso.datetime();
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/u);
 

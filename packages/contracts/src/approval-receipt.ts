@@ -1,6 +1,10 @@
 import { z } from 'zod';
+import {
+  approvalReceiptIdSchema,
+  identifierSchema,
+} from './identifiers.js';
 
-const idSchema = z.string().trim().min(1);
+const idSchema = identifierSchema;
 const timestampSchema = z.iso.datetime();
 
 export const approvalActionKindSchema = z.enum(['publish', 'paid_action']);
@@ -28,7 +32,7 @@ export const pendingApprovalRequestSchema = z.discriminatedUnion('status', [
   pendingApprovalRequestBaseSchema
     .extend({
       consumedAt: timestampSchema,
-      receiptId: idSchema,
+      receiptId: approvalReceiptIdSchema,
       status: z.literal('consumed'),
     })
     .strict(),
@@ -100,7 +104,7 @@ export const approvalReceiptSchema = z
     binding: approvalBindingSchema,
     events: z.array(approvalReceiptEventSchema).min(1),
     expiresAt: timestampSchema.optional(),
-    id: idSchema,
+    id: approvalReceiptIdSchema,
     idempotencyKey: idSchema,
     payloadFingerprint: idSchema,
     status: approvalReceiptStatusSchema,
@@ -148,7 +152,7 @@ export const creativeGenerationApprovalReceiptSchema = z
     binding: creativeGenerationApprovalBindingSchema,
     events: z.array(approvalReceiptEventSchema).min(1),
     expiresAt: timestampSchema.optional(),
-    id: idSchema,
+    id: approvalReceiptIdSchema,
     idempotencyKey: idSchema,
     payloadFingerprint: idSchema,
     status: approvalReceiptStatusSchema,
@@ -171,15 +175,11 @@ export const creativeGenerationApprovalReceiptSchema = z
     }
   });
 
-export type ApprovalActionKind = z.infer<typeof approvalActionKindSchema>;
 export type ApprovalBinding = z.infer<typeof approvalBindingSchema>;
 export type PendingApprovalRequest = z.infer<
   typeof pendingApprovalRequestSchema
 >;
 export type ApprovalReceipt = z.infer<typeof approvalReceiptSchema>;
-export type ApprovalReceiptEvent = z.infer<
-  typeof approvalReceiptEventSchema
->;
 export type CreativeGenerationApprovalReceipt = z.infer<
   typeof creativeGenerationApprovalReceiptSchema
 >;

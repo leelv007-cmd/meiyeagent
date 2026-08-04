@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { nonEmptyTrimmedStringSchema } from './identifiers.js';
 
 export const IMAGE_INTENT_OPERATIONS = [
   'image.generate',
@@ -30,13 +31,13 @@ const imageIntentProtectedAttributeSchema = z.enum([
 
 const imageIntentReferenceSchema = z
   .object({
-    assetId: z.string().trim().min(1),
-    assetRevision: z.string().trim().min(1),
+    assetId: nonEmptyTrimmedStringSchema,
+    assetRevision: nonEmptyTrimmedStringSchema,
     slot: imageIntentSlotKindSchema,
     mimeType: z.string().trim().regex(/^[\w.+-]+\/[\w.+-]+$/u),
     sizeBytes: z.number().int().positive(),
-    factRefs: z.array(z.string().trim().min(1)),
-    rightsRefs: z.array(z.string().trim().min(1)),
+    factRefs: z.array(nonEmptyTrimmedStringSchema),
+    rightsRefs: z.array(nonEmptyTrimmedStringSchema),
   })
   .strict()
   .superRefine((reference, context) => {
@@ -62,20 +63,20 @@ const imageIntentReferenceSchema = z
 const imageIntentChangeSchema = z
   .object({
     target: imageIntentProtectedAttributeSchema,
-    instruction: z.string().trim().min(1),
+    instruction: nonEmptyTrimmedStringSchema,
   })
   .strict();
 
 const imageIntentInvariantSchema = z
   .object({
     target: imageIntentProtectedAttributeSchema,
-    requirement: z.string().trim().min(1),
+    requirement: nonEmptyTrimmedStringSchema,
   })
   .strict();
 
 export const imageExactTextSchema = z
   .object({
-    text: z.string().trim().min(1),
+    text: nonEmptyTrimmedStringSchema,
     treatment: z.enum(['exact', 'creative']),
   })
   .strict();
@@ -95,12 +96,12 @@ export const imageOutputPlanSchema = z.discriminatedUnion('kind', [
           z
             .object({
               order: z.number().int().positive(),
-              role: z.string().trim().min(1),
+              role: nonEmptyTrimmedStringSchema,
             })
             .strict(),
         )
         .min(2),
-      consistencyRequirements: z.array(z.string().trim().min(1)).min(1),
+      consistencyRequirements: z.array(nonEmptyTrimmedStringSchema).min(1),
     })
     .strict()
     .superRefine((plan, context) => {
@@ -128,16 +129,16 @@ export const imageOutputPlanSchema = z.discriminatedUnion('kind', [
 export const imageIntentSchema = z
   .object({
     operation: imageIntentOperationSchema,
-    purpose: z.string().trim().min(1),
-    subject: z.string().trim().min(1),
-    scene: z.string().trim().min(1),
-    composition: z.string().trim().min(1),
+    purpose: nonEmptyTrimmedStringSchema,
+    subject: nonEmptyTrimmedStringSchema,
+    scene: nonEmptyTrimmedStringSchema,
+    composition: nonEmptyTrimmedStringSchema,
     references: z.array(imageIntentReferenceSchema),
     exactText: z.array(imageExactTextSchema),
     changes: z.array(imageIntentChangeSchema),
     invariants: z.array(imageIntentInvariantSchema),
-    factRefs: z.array(z.string().trim().min(1)),
-    rightsRefs: z.array(z.string().trim().min(1)),
+    factRefs: z.array(nonEmptyTrimmedStringSchema),
+    rightsRefs: z.array(nonEmptyTrimmedStringSchema),
     outputPlan: imageOutputPlanSchema,
   })
   .strict()
@@ -201,7 +202,7 @@ const imageSlotRecipeRuleSchema = z
       .min(1),
     maxBytesPerItem: z.number().int().positive(),
     incompatibleWith: z.array(imageIntentSlotKindSchema),
-    nativeField: z.string().trim().min(1),
+    nativeField: nonEmptyTrimmedStringSchema,
   })
   .strict()
   .superRefine((rule, context) => {
@@ -223,8 +224,8 @@ const imageSlotRecipeRuleSchema = z
 
 export const imageModelRecipeProfileSchema = z
   .object({
-    id: z.string().trim().min(1),
-    revision: z.string().trim().min(1),
+    id: nonEmptyTrimmedStringSchema,
+    revision: nonEmptyTrimmedStringSchema,
     operationMappings: z
       .object({
         'image.generate': z.enum(['image.generate', 'image.edit']),

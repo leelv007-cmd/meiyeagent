@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { nonEmptyTrimmedStringSchema } from './identifiers.js';
 
 export const notePageRegeneratedTriggerSchema = z.enum([
   'user_selection',
@@ -6,8 +7,8 @@ export const notePageRegeneratedTriggerSchema = z.enum([
 ]);
 
 const notePageRegeneratedBaseShape = {
-  auditRef: z.string().trim().min(1),
-  pageId: z.string().trim().min(1),
+  auditRef: nonEmptyTrimmedStringSchema,
+  pageId: nonEmptyTrimmedStringSchema,
   trigger: notePageRegeneratedTriggerSchema,
 };
 
@@ -16,7 +17,7 @@ export const notePageRegeneratedPayloadSchema = z.discriminatedUnion('imagePoint
     .object({
       ...notePageRegeneratedBaseShape,
       imagePoints: z.literal(0),
-      reason: z.string().trim().min(1),
+      reason: nonEmptyTrimmedStringSchema,
       side: z.literal('text'),
     })
     .strict(),

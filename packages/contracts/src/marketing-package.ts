@@ -1,6 +1,11 @@
 import { z } from 'zod';
+import {
+  identifierSchema,
+  marketingIdentityIdSchema,
+  nonEmptyTrimmedStringSchema,
+} from './identifiers.js';
 
-const idSchema = z.string().trim().min(1);
+const idSchema = identifierSchema;
 const timestampSchema = z.iso.datetime();
 const sha256Schema = z.string().regex(/^[a-f0-9]{64}$/);
 
@@ -33,7 +38,7 @@ export const promotionCallToActionSchema = z
   .object({
     kind: z.enum(['appointment', 'voucher', 'store_visit', 'contact', 'none']),
     mode: z.enum(['actionable', 'manual', 'unavailable']),
-    label: z.string().trim().min(1),
+    label: nonEmptyTrimmedStringSchema,
     endpoint: z.url().optional(),
   })
   .strict()
@@ -58,8 +63,8 @@ export const promotionOfferCardSchema = z
   .object({
     status: z.enum(['verified', 'unpriced']),
     sourceRefs: z.array(idSchema).max(20),
-    priceText: z.string().trim().min(1).optional(),
-    benefitText: z.string().trim().min(1).optional(),
+    priceText: nonEmptyTrimmedStringSchema.optional(),
+    benefitText: nonEmptyTrimmedStringSchema.optional(),
     effectiveFrom: timestampSchema.optional(),
     expiresAt: timestampSchema.optional(),
     callToAction: promotionCallToActionSchema,
@@ -97,7 +102,7 @@ export const hotTopicOpportunityCardSchema = z
   .object({
     opportunityId: idSchema,
     status: z.enum(['active', 'expired', 'evergreen_fallback']),
-    source: z.string().trim().min(1),
+    source: nonEmptyTrimmedStringSchema,
     sourceType: z.enum([
       'user_link',
       'user_screenshot',
@@ -109,13 +114,13 @@ export const hotTopicOpportunityCardSchema = z
     platforms: z
       .array(z.enum(['xiaohongshu', 'douyin', 'video_account']))
       .min(1),
-    region: z.string().trim().min(1),
-    targetAudience: z.string().trim().min(1),
+    region: nonEmptyTrimmedStringSchema,
+    targetAudience: nonEmptyTrimmedStringSchema,
     matchedStoreReferences: z.array(idSchema),
-    relevanceExplanation: z.string().trim().min(1),
-    reusableMechanism: z.string().trim().min(1),
-    expectedAction: z.string().trim().min(1),
-    evergreenFallback: z.string().trim().min(1),
+    relevanceExplanation: nonEmptyTrimmedStringSchema,
+    reusableMechanism: nonEmptyTrimmedStringSchema,
+    expectedAction: nonEmptyTrimmedStringSchema,
+    evergreenFallback: nonEmptyTrimmedStringSchema,
     protectedExpressionCopied: z.literal(false),
   })
   .strict()
@@ -256,19 +261,19 @@ function requireMerchantOnlyProvenance(
 }
 
 const identityBaseSchema = z.object({
-  identityId: idSchema,
+  identityId: marketingIdentityIdSchema,
   workspaceId: idSchema,
   version: z.number().int().positive(),
   status: z.enum(['active', 'revoked', 'departed', 'operator_changed']),
-  displayName: z.string().trim().min(1),
-  owner: z.string().trim().min(1),
-  professionalBoundaries: z.array(z.string().trim().min(1)),
+  displayName: nonEmptyTrimmedStringSchema,
+  owner: nonEmptyTrimmedStringSchema,
+  professionalBoundaries: z.array(nonEmptyTrimmedStringSchema),
   allowedPlatforms: z.array(marketingIdentityPlatformSchema),
   allowedScenes: z.array(marketingSceneSchema),
-  expressionSamples: z.array(z.string().trim().min(1).max(2_000)).max(20),
+  expressionSamples: z.array(nonEmptyTrimmedStringSchema.max(2_000)).max(20),
   effectiveFrom: timestampSchema,
   expiresAt: timestampSchema.nullable(),
-  departureHandling: z.string().trim().min(1),
+  departureHandling: nonEmptyTrimmedStringSchema,
   sourceRef: idSchema,
   /**
    * Field-level origin. Optional rather than defaulted: an identity registered
@@ -283,14 +288,14 @@ const identityBaseSchema = z.object({
 
 const brandIdentitySchema = identityBaseSchema.extend({
       kind: z.literal('brand'),
-      brandClaims: z.array(z.string().trim().min(1)).min(1),
-      forbiddenClaims: z.array(z.string().trim().min(1)),
-      visualPrinciples: z.array(z.string().trim().min(1)),
-      seriesAnchors: z.array(z.string().trim().min(1)),
+      brandClaims: z.array(nonEmptyTrimmedStringSchema).min(1),
+      forbiddenClaims: z.array(nonEmptyTrimmedStringSchema),
+      visualPrinciples: z.array(nonEmptyTrimmedStringSchema),
+      seriesAnchors: z.array(nonEmptyTrimmedStringSchema),
     });
 const personIdentitySchema = identityBaseSchema.extend({
       kind: z.literal('person'),
-      realWorldRole: z.string().trim().min(1),
+      realWorldRole: nonEmptyTrimmedStringSchema,
       portraitAuthorization: z.enum(['authorized', 'not_authorized']),
       voiceAuthorization: z.enum(['authorized', 'not_authorized']),
       historicalContentPermission: z.enum([
@@ -343,14 +348,14 @@ export const registerMarketingIdentityCommandSchema = z.discriminatedUnion(
   [
     identityRegistrationBaseSchema.extend({
       kind: z.literal('brand'),
-      brandClaims: z.array(z.string().trim().min(1)).min(1),
-      forbiddenClaims: z.array(z.string().trim().min(1)),
-      visualPrinciples: z.array(z.string().trim().min(1)),
-      seriesAnchors: z.array(z.string().trim().min(1)),
+      brandClaims: z.array(nonEmptyTrimmedStringSchema).min(1),
+      forbiddenClaims: z.array(nonEmptyTrimmedStringSchema),
+      visualPrinciples: z.array(nonEmptyTrimmedStringSchema),
+      seriesAnchors: z.array(nonEmptyTrimmedStringSchema),
     }),
     identityRegistrationBaseSchema.extend({
       kind: z.literal('person'),
-      realWorldRole: z.string().trim().min(1),
+      realWorldRole: nonEmptyTrimmedStringSchema,
       portraitAuthorization: z.enum(['authorized', 'not_authorized']),
       voiceAuthorization: z.enum(['authorized', 'not_authorized']),
       historicalContentPermission: z.enum([
@@ -402,7 +407,7 @@ export const registerMarketingIdentityCommandSchema = z.discriminatedUnion(
 export const marketingIdentityDraftRequestSchema = z
   .object({
     kind: z.enum(['brand', 'person']),
-    background: z.string().trim().min(1).max(2_000),
+    background: nonEmptyTrimmedStringSchema.max(2_000),
     referenceDraft: z
       .object({
         draftId: idSchema,
@@ -422,17 +427,17 @@ const marketingIdentitySuggestedFieldSchema = z.discriminatedUnion(
   [
     z
       .object({
-        value: z.string().trim().min(1).max(2_000),
+        value: nonEmptyTrimmedStringSchema.max(2_000),
         provenance: z.literal('ai_suggestion'),
       })
       .strict(),
     z
       .object({
-        value: z.string().trim().min(1).max(2_000),
+        value: nonEmptyTrimmedStringSchema.max(2_000),
         provenance: z.literal('document'),
         citation: z
           .object({
-            exactQuote: z.string().trim().min(1).max(2_000),
+            exactQuote: nonEmptyTrimmedStringSchema.max(2_000),
           })
           .strict(),
       })
@@ -519,23 +524,23 @@ export type MarketingIdentityDraftResult = z.infer<
 
 export const transitionMarketingIdentityCommandSchema = z
   .object({
-    identityId: idSchema,
+    identityId: marketingIdentityIdSchema,
     expectedVersion: z.number().int().positive(),
     transition: z.enum(['revoke', 'depart', 'operator_change']),
-    reason: z.string().trim().min(1),
+    reason: nonEmptyTrimmedStringSchema,
   })
   .strict();
 
 export const marketingIdentityQuerySchema = z
   .object({
-    identityId: idSchema.optional(),
+    identityId: marketingIdentityIdSchema.optional(),
     includeInactive: z.boolean().default(false),
   })
   .strict();
 
 export const marketingIdentityReferenceSchema = z
   .object({
-    identityId: idSchema,
+    identityId: marketingIdentityIdSchema,
     version: z.number().int().positive(),
   })
   .strict();
@@ -544,14 +549,14 @@ export const setDefaultMarketingIdentityCommandSchema = z
   .object({
     expectedDecisionRevision: z.number().int().nonnegative(),
     identity: marketingIdentityReferenceSchema,
-    reason: z.string().trim().min(1).max(500),
+    reason: nonEmptyTrimmedStringSchema.max(500),
   })
   .strict();
 
 export const selectMarketingIdentityForSessionCommandSchema = z
   .object({
     identity: marketingIdentityReferenceSchema.nullable(),
-    reason: z.string().trim().min(1).max(500),
+    reason: nonEmptyTrimmedStringSchema.max(500),
     sessionId: idSchema,
   })
   .strict();
@@ -559,7 +564,7 @@ export const selectMarketingIdentityForSessionCommandSchema = z
 export const rollbackDefaultMarketingIdentityCommandSchema = z
   .object({
     expectedDecisionRevision: z.number().int().positive(),
-    reason: z.string().trim().min(1).max(500),
+    reason: nonEmptyTrimmedStringSchema.max(500),
     targetDecisionRevision: z.number().int().positive(),
   })
   .strict();
@@ -640,7 +645,7 @@ export const promotionalMaterialSpecSchema = z
     purpose: promotionalMaterialPurposeSchema,
     width: z.number().int().positive(),
     height: z.number().int().positive(),
-    aspectRatio: z.string().trim().min(1),
+    aspectRatio: nonEmptyTrimmedStringSchema,
     textSafeArea: z
       .object({
         top: z.number().int().nonnegative(),
@@ -652,7 +657,7 @@ export const promotionalMaterialSpecSchema = z
     cropStrategy: z.enum(['cover_center', 'contain_brand_safe']),
     format: z.literal('image/png'),
     renderer: z.literal('light-composer'),
-    rendererVersion: z.string().trim().min(1),
+    rendererVersion: nonEmptyTrimmedStringSchema,
   })
   .strict();
 
@@ -678,7 +683,7 @@ export const promotionalMaterialReceiptSchema = z
     normalizedDocumentHash: sha256Schema,
     sourceAssetHashes: z.array(sha256Schema),
     fontBundleHash: sha256Schema,
-    objectKey: z.string().trim().min(1),
+    objectKey: nonEmptyTrimmedStringSchema,
     contentType: z.literal('image/png'),
     sizeBytes: z.number().int().positive(),
   })
@@ -743,7 +748,7 @@ export const quickEditIntentSchema = z
   .object({
     action: quickEditActionSchema,
     exportUse: quickEditExportUseSchema.optional(),
-    instruction: z.string().trim().min(1).max(2_000),
+    instruction: nonEmptyTrimmedStringSchema.max(2_000),
     target: z.enum(['package_version', 'platform_variant', 'export_use']),
     scope: z.literal('current_task'),
     baseVersionId: idSchema,
@@ -782,9 +787,9 @@ export const quickEditExportUseDeliverySchema = z.discriminatedUnion('kind', [
     .object({
       contentType: z.literal('text/plain;charset=utf-8'),
       exportUse: z.enum(['wechat_moments', 'spoken_script']),
-      fileName: z.string().trim().min(1),
+      fileName: nonEmptyTrimmedStringSchema,
       kind: z.literal('formatted_text'),
-      text: z.string().trim().min(1),
+      text: nonEmptyTrimmedStringSchema,
     })
     .strict(),
   z
@@ -830,14 +835,14 @@ export const quickEditExportUseDeliverySchema = z.discriminatedUnion('kind', [
 
 export const marketingPackageDeclarationSchema = z
   .object({
-    normalizedIntent: z.string().trim().min(1).max(4_000),
+    normalizedIntent: nonEmptyTrimmedStringSchema.max(4_000),
     taskType: marketingSceneSchema,
     deliveryLayer: z.enum(['copy', 'finished_media']),
-    relevantAssetCategories: z.array(z.string().trim().min(1)).max(20),
-    usedAssetCategories: z.array(z.string().trim().min(1)).max(20),
+    relevantAssetCategories: z.array(nonEmptyTrimmedStringSchema).max(20),
+    usedAssetCategories: z.array(nonEmptyTrimmedStringSchema).max(20),
     route: z.enum(['customized', 'guidance', 'free']),
     routingSource: z.enum(['entry', 'model', 'fallback', 'decision', 'policy']),
-    implicitConstraints: z.array(z.string().trim().min(1)).max(30),
+    implicitConstraints: z.array(nonEmptyTrimmedStringSchema).max(30),
   })
   .strict();
 

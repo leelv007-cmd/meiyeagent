@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { nonEmptyTrimmedStringSchema } from './identifiers.js';
 
 const compositeRevisionSchema = z
   .string()
@@ -27,8 +28,8 @@ export const observabilityAxisBindingSchema = z
     axisScope: z.enum(['task_root', 'execution_child']),
     skillRevision: axisValueSchema(compositeRevisionSchema),
     promptVersion: axisValueSchema(compositeRevisionSchema),
-    catalogRevision: axisValueSchema(z.string().trim().min(1)),
-    scene: axisValueSchema(z.string().trim().min(1)),
+    catalogRevision: axisValueSchema(nonEmptyTrimmedStringSchema),
+    scene: axisValueSchema(nonEmptyTrimmedStringSchema),
   })
   .strict();
 
@@ -45,8 +46,8 @@ export const observabilityAxesSchema = z
      * CreativeExecutionContract.catalogRevision, which pins the accepted
      * execution catalog contract.
      */
-    catalogRevision: z.string().trim().min(1),
-    scene: z.string().trim().min(1),
+    catalogRevision: nonEmptyTrimmedStringSchema,
+    scene: nonEmptyTrimmedStringSchema,
   })
   .strict();
 
@@ -65,7 +66,7 @@ export const observabilityDropEventSchema = z
     signal: observabilitySignalSchema,
     reason: z.enum(['permanent-config', 'transient']),
     count: z.number().int().positive(),
-    source: z.string().trim().min(1),
+    source: nonEmptyTrimmedStringSchema,
   })
   .strict();
 

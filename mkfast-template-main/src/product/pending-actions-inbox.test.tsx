@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import type { PendingAction } from '@meiye/contracts';
+import type { ApprovalReceiptId, PendingAction } from '@meiye/contracts';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import {
@@ -275,7 +275,7 @@ test('keeps a retry action after approval succeeds and delivery fails, then retr
                 type: 'approved' as const,
               },
             ],
-            id: 'receipt-delivery-retry',
+            id: 'receipt-delivery-retry' as ApprovalReceiptId,
             idempotencyKey: 'approval-key-retry',
             payloadFingerprint: 'fingerprint-retry',
             status: receiptStatus,
@@ -380,7 +380,7 @@ test('does not settle a new receipt from an older delivery of the same variant',
             type: 'approved' as const,
           },
         ],
-        id: receiptId,
+        id: receiptId as ApprovalReceiptId,
         idempotencyKey: 'approval-key-current-delivery',
         payloadFingerprint: 'fingerprint-current-delivery',
         status: 'approved' as const,

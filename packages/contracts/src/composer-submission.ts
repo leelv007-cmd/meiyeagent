@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { nonEmptyTrimmedStringSchema } from './identifiers.js';
 import {
   MAX_NOTE_PLAN_PAGE_COUNT,
   MIN_NOTE_PLAN_PAGE_COUNT,
@@ -10,8 +11,8 @@ import {
   thinkingLevelSchema,
 } from './composer-generation-params.js';
 
-const identifierSchema = z.string().trim().min(1).max(200);
-const revisionSchema = z.string().trim().min(1).max(200);
+const identifierSchema = nonEmptyTrimmedStringSchema.max(200);
+const revisionSchema = nonEmptyTrimmedStringSchema.max(200);
 
 export const composerContentPackagePlatformIds = [
   'xiaohongshu',
@@ -116,7 +117,7 @@ export const composerViralAdaptSourceSchema = z
   .object({
     schemaVersion: z.literal('viral-adapt-source/v1'),
     track: z.enum(['paste', 'opencli_link']),
-    noteText: z.string().trim().min(1).max(4_000),
+    noteText: nonEmptyTrimmedStringSchema.max(4_000),
     authorizedAssetIds: z.array(identifierSchema).max(50),
   })
   .strict();
@@ -131,7 +132,7 @@ export const composerViralAdaptSourceSchema = z
 export const composerSubmissionSignedFieldsBaseSchema = z
   .object({
     creationMode: creationModeSchema,
-    intent: z.string().trim().min(1).max(4_000),
+    intent: nonEmptyTrimmedStringSchema.max(4_000),
     imageOperation: imageIntentOperationSchema.optional(),
     catalogModel: composerRevisionReferenceSchema,
     recipe: composerRevisionReferenceSchema,

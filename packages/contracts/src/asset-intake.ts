@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import {
+  assetIntakeBatchIdSchema,
+  identifierSchema,
+  nonEmptyTrimmedStringSchema,
+} from './identifiers.js';
+import {
   capabilityEvidenceStatusSchema,
   storeFactKindSchema,
   storeFactScopeSchema,
@@ -7,7 +12,7 @@ import {
 } from './context-bundle.js';
 import { storeProfilePatchSchema } from './product-schema.js';
 
-const idSchema = z.string().trim().min(1);
+const idSchema = identifierSchema;
 const timestampSchema = z.iso.datetime();
 
 export const ASSET_INTAKE_FALLBACK_INPUTS = [
@@ -20,7 +25,7 @@ export const assetIntakeCapabilitySchema = z
   .object({
     status: capabilityEvidenceStatusSchema,
     fallbackInputs: z.array(z.enum(ASSET_INTAKE_FALLBACK_INPUTS)),
-    reason: z.string().trim().min(1).nullable(),
+    reason: nonEmptyTrimmedStringSchema.nullable(),
   })
   .strict()
   .superRefine((capability, context) => {
@@ -123,11 +128,11 @@ export const assetIntakeCandidateSchema = z.discriminatedUnion('objectKind', [
 
 export const assetIntakeBatchSchema = z
   .object({
-    batchId: idSchema,
+    batchId: assetIntakeBatchIdSchema,
     workspaceId: idSchema,
     taskId: idSchema,
     source: assetIntakeSourceSchema,
-    summary: z.string().trim().min(1),
+    summary: nonEmptyTrimmedStringSchema,
     candidates: z.array(assetIntakeCandidateSchema).min(1),
     createdAt: timestampSchema,
   })
@@ -138,7 +143,7 @@ export const assetIntakeDecisionEventSchema = z.discriminatedUnion('action', [
     .object({
       eventId: idSchema,
       workspaceId: idSchema,
-      batchId: idSchema,
+      batchId: assetIntakeBatchIdSchema,
       candidateId: idSchema,
       candidateRevision: z.number().int().positive(),
       action: z.literal('corrected'),
@@ -151,7 +156,7 @@ export const assetIntakeDecisionEventSchema = z.discriminatedUnion('action', [
     .object({
       eventId: idSchema,
       workspaceId: idSchema,
-      batchId: idSchema,
+      batchId: assetIntakeBatchIdSchema,
       candidateId: idSchema,
       candidateRevision: z.number().int().positive(),
       action: z.literal('confirmed'),
@@ -165,11 +170,11 @@ export const assetIntakeDecisionEventSchema = z.discriminatedUnion('action', [
     .object({
       eventId: idSchema,
       workspaceId: idSchema,
-      batchId: idSchema,
+      batchId: assetIntakeBatchIdSchema,
       candidateId: idSchema,
       candidateRevision: z.number().int().positive(),
       action: z.literal('rejected'),
-      reason: z.string().trim().min(1),
+      reason: nonEmptyTrimmedStringSchema,
       actorId: idSchema,
       occurredAt: timestampSchema,
     })
@@ -202,7 +207,7 @@ export const assetIntakeBatchInputSchema = assetIntakeBatchSchema
 
 export const confirmAssetIntakeFactCommandSchema = z
   .object({
-    batchId: idSchema,
+    batchId: assetIntakeBatchIdSchema,
     candidateId: idSchema,
     factId: idSchema,
     expectedFactRevision: z.number().int().nonnegative(),
@@ -210,7 +215,7 @@ export const confirmAssetIntakeFactCommandSchema = z
   .strict();
 
 export const persistedAssetIntakeBatchReferenceSchema = z
-  .object({ batchId: idSchema })
+  .object({ batchId: assetIntakeBatchIdSchema })
   .strict();
 
 export const finalizeStoreIntakeCommandSchema = z
@@ -293,22 +298,12 @@ export const finalizeStoreIntakeCommandSchema = z
     }
   });
 
-export type AssetIntakeCapability = z.infer<
-  typeof assetIntakeCapabilitySchema
->;
-export type AssetIntakeSource = z.infer<typeof assetIntakeSourceSchema>;
 export type StoreFactCandidateDraft = z.infer<
   typeof storeFactCandidateDraftSchema
->;
-export type AssetIntakeCandidate = z.infer<
-  typeof assetIntakeCandidateSchema
 >;
 export type AssetIntakeBatch = z.infer<typeof assetIntakeBatchSchema>;
 export type AssetIntakeDecisionEvent = z.infer<
   typeof assetIntakeDecisionEventSchema
->;
-export type ConfirmedFactReference = z.infer<
-  typeof confirmedFactReferenceSchema
 >;
 export type FinalizeStoreIntakeCommand = z.infer<
   typeof finalizeStoreIntakeCommandSchema

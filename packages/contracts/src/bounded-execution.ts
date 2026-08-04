@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { nonEmptyTrimmedStringSchema } from './identifiers.js';
 import { observabilityAxesSchema } from './observability.js';
 
 export const BOUNDED_EXECUTION_LIMITS = [
@@ -108,7 +109,7 @@ export const boundedExecutionSuspendedEventSchema = z
     ...observabilityAxesSchema.shape,
     snapshot: boundedExecutionSnapshotSchema,
     currentBest: z.json(),
-    unmetExplanation: z.string().trim().min(1),
+    unmetExplanation: nonEmptyTrimmedStringSchema,
     resumable: z.literal(true),
   })
   .strict()
@@ -145,7 +146,7 @@ export const boundedExecutionResumedEventSchema = z
     ...observabilityAxesSchema.shape,
     previousSnapshot: boundedExecutionSnapshotSchema,
     snapshot: boundedExecutionSnapshotSchema,
-    decisionId: z.string().trim().min(1),
+    decisionId: nonEmptyTrimmedStringSchema,
   })
   .strict()
   .superRefine((event, context) => {

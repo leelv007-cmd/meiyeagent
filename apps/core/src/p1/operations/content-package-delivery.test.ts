@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   CONTEXT_SOURCE_REVISION_KEYS,
+  type ApprovalReceiptId,
   type ApprovalBinding,
   type ContentPackage,
   type ProductState,
@@ -424,7 +425,7 @@ test('approval consumes the pending entry in an existing duplicate-id aggregate'
     {
       ...pending,
       consumedAt: '2026-07-18T06:45:00.000Z',
-      receiptId: 'approval-old',
+      receiptId: 'approval-old' as ApprovalReceiptId,
       status: 'consumed',
     },
     structuredClone(pending),

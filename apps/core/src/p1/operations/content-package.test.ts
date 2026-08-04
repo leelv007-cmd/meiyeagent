@@ -12,6 +12,7 @@ import {
   contentPackageStatusGroup,
   contentPackageStatusLabel,
   contentPackageStatusSchema,
+  type ApprovalReceiptId,
   type ContentPackage,
 } from '@meiye/contracts';
 import {
@@ -1792,7 +1793,7 @@ describe('ContentPackage application service contract', () => {
             type: 'approved',
           },
         ],
-        id: 'approval-before-hand-edit',
+        id: 'approval-before-hand-edit' as ApprovalReceiptId,
         idempotencyKey: 'approval-before-hand-edit-key',
         payloadFingerprint: 'approval-before-hand-edit-fingerprint',
         status: 'approved',

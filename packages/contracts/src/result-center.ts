@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { identifierSchema, nonEmptyTrimmedStringSchema } from './identifiers.js';
 
 import { contentPackagePlatformSchema } from './content-package.js';
 
@@ -168,7 +169,7 @@ export interface ResultCommandAdapter {
   execute(input: ResultCommandInput): Promise<ResultCommandOutcome>;
 }
 
-const resultObjectIdSchema = z.string().trim().min(1);
+const resultObjectIdSchema = identifierSchema;
 
 export const resultAdoptSelectionSchema = z.discriminatedUnion('kind', [
   z
@@ -288,7 +289,7 @@ export const resultAdjustScopeSchema = z.discriminatedUnion('kind', [
 export const resultAdjustCommandSchema = z
   .object({
     expectedWorkUpdatedAt: z.iso.datetime(),
-    instruction: z.string().trim().min(1).max(2_000),
+    instruction: nonEmptyTrimmedStringSchema.max(2_000),
     scope: resultAdjustScopeSchema.optional(),
     source: resultAdjustSourceSchema,
     workId: resultObjectIdSchema,
@@ -330,7 +331,7 @@ export const resultAdjustConfirmCommandSchema = z.union([
       billingQuoteId: resultObjectIdSchema,
       derivedTaskId: resultObjectIdSchema,
       derivedWorkId: resultObjectIdSchema,
-      instruction: z.string().trim().min(1).max(2_000),
+      instruction: nonEmptyTrimmedStringSchema.max(2_000),
       scope: resultAdjustScopeSchema.optional(),
       source: resultAdjustContentPackageSourceSchema,
     })
@@ -359,7 +360,6 @@ export const resultExportCommandSchema = z
   .strict();
 
 export type ResultAdoptCommand = z.infer<typeof resultAdoptCommandSchema>;
-export type ResultAdoptSelection = z.infer<typeof resultAdoptSelectionSchema>;
 export type ResultAdjustCommand = z.infer<typeof resultAdjustCommandSchema>;
 export type ResultAdjustConfirmCommand = z.infer<
   typeof resultAdjustConfirmCommandSchema

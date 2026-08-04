@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { nonEmptyTrimmedStringSchema } from './identifiers.js';
 
 /**
  * Public scanner budgets. The work budget is the largest possible product of
@@ -33,10 +34,10 @@ export const sensitiveWordStatusSchema = z.enum(SENSITIVE_WORD_STATUSES);
 
 export const sensitiveWordRecordSchema = z
   .object({
-    id: z.string().trim().min(1).max(80),
-    word: z.string().trim().min(1).max(100),
+    id: nonEmptyTrimmedStringSchema.max(80),
+    word: nonEmptyTrimmedStringSchema.max(100),
     category: sensitiveWordCategorySchema,
-    replacements: z.array(z.string().trim().min(1).max(100)).max(20),
+    replacements: z.array(nonEmptyTrimmedStringSchema.max(100)).max(20),
     status: sensitiveWordStatusSchema,
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
@@ -47,10 +48,10 @@ export type SensitiveWordRecord = z.infer<typeof sensitiveWordRecordSchema>;
 
 export const sensitiveWordHitSchema = z
   .object({
-    wordId: z.string().trim().min(1),
-    word: z.string().trim().min(1),
+    wordId: nonEmptyTrimmedStringSchema,
+    word: nonEmptyTrimmedStringSchema,
     category: sensitiveWordCategorySchema,
-    replacements: z.array(z.string().trim().min(1).max(100)),
+    replacements: z.array(nonEmptyTrimmedStringSchema.max(100)),
     /** UTF-16 code-unit offset into the exact, unnormalized query text. */
     index: z.number().int().nonnegative(),
     /** UTF-16 code-unit length in the exact, unnormalized query text. */
@@ -106,11 +107,11 @@ export type SensitiveScanResult = z.infer<typeof sensitiveScanResultSchema>;
 /** Delivery / generation-chain check-bar projection (spec §4.6). */
 export const sensitiveCheckBarItemSchema = z
   .object({
-    wordId: z.string().trim().min(1),
-    word: z.string().trim().min(1),
+    wordId: nonEmptyTrimmedStringSchema,
+    word: nonEmptyTrimmedStringSchema,
     category: sensitiveWordCategorySchema,
-    snippet: z.string().trim().min(1).max(200),
-    replacements: z.array(z.string().trim().min(1).max(100)),
+    snippet: nonEmptyTrimmedStringSchema.max(200),
+    replacements: z.array(nonEmptyTrimmedStringSchema.max(100)),
   })
   .strict();
 
@@ -120,7 +121,7 @@ export const sensitiveCheckBarSchema = z
   .object({
     schemaVersion: z.literal('sensitive-check-bar/v1'),
     status: z.enum(['clear', 'hits']),
-    summary: z.string().trim().min(1).max(500),
+    summary: nonEmptyTrimmedStringSchema.max(500),
     items: z.array(sensitiveCheckBarItemSchema),
   })
   .strict();
@@ -129,9 +130,9 @@ export type SensitiveCheckBar = z.infer<typeof sensitiveCheckBarSchema>;
 
 export const createSensitiveWordCommandSchema = z
   .object({
-    word: z.string().trim().min(1).max(100),
+    word: nonEmptyTrimmedStringSchema.max(100),
     category: sensitiveWordCategorySchema.default('other'),
-    replacements: z.array(z.string().trim().min(1).max(100)).max(20).default([]),
+    replacements: z.array(nonEmptyTrimmedStringSchema.max(100)).max(20).default([]),
     status: sensitiveWordStatusSchema.default('enabled'),
   })
   .strict();
@@ -142,10 +143,10 @@ export type CreateSensitiveWordCommand = z.infer<
 
 export const updateSensitiveWordCommandSchema = z
   .object({
-    id: z.string().trim().min(1).max(80),
-    word: z.string().trim().min(1).max(100).optional(),
+    id: nonEmptyTrimmedStringSchema.max(80),
+    word: nonEmptyTrimmedStringSchema.max(100).optional(),
     category: sensitiveWordCategorySchema.optional(),
-    replacements: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
+    replacements: z.array(nonEmptyTrimmedStringSchema.max(100)).max(20).optional(),
     status: sensitiveWordStatusSchema.optional(),
   })
   .strict();
@@ -156,7 +157,7 @@ export type UpdateSensitiveWordCommand = z.infer<
 
 export const deleteSensitiveWordCommandSchema = z
   .object({
-    id: z.string().trim().min(1).max(80),
+    id: nonEmptyTrimmedStringSchema.max(80),
   })
   .strict();
 

@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import { identifierSchema, nonEmptyTrimmedStringSchema } from './identifiers.js';
 
-const idSchema = z.string().trim().min(1);
+const idSchema = identifierSchema;
 const timestampSchema = z.iso.datetime();
 const jsonValueSchema = z.json();
 
@@ -132,7 +133,7 @@ export const capabilityEvidenceStatusSchema = z.enum([
 ]);
 const contextSourceRevisionSchema = z.union([
   z.number().int().nonnegative(),
-  z.string().trim().min(1),
+  nonEmptyTrimmedStringSchema,
 ]);
 
 export const contextSourceRevisionsSchema = z
@@ -249,7 +250,7 @@ export const contextBundleRecompileEventSchema = z
     fromRevision: z.number().int().positive(),
     toRevision: z.number().int().positive(),
     changedSources: z.array(z.enum(CONTEXT_SOURCE_REVISION_KEYS)).min(1),
-    reason: z.string().trim().min(1),
+    reason: nonEmptyTrimmedStringSchema,
     occurredAt: timestampSchema,
   })
   .strict();

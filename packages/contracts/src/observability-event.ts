@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { identifierSchema, nonEmptyTrimmedStringSchema } from './identifiers.js';
 
 import {
   boundedExecutionEventSchema,
@@ -16,7 +17,7 @@ import {
 } from './observability.js';
 import { productSettlementStatuses } from './product-quote.js';
 
-const observabilityIdSchema = z.string().trim().min(1).max(500);
+const observabilityIdSchema = identifierSchema.max(500);
 const observabilityAuditReferenceSchema = z
   .string()
   .regex(/^ref:[a-f0-9]{64}$/u);
@@ -138,7 +139,7 @@ const boundedExecutionSuspendedObservabilityEventSchema = z
       .object({
         snapshot: boundedExecutionSnapshotSchema,
         currentBest: z.json(),
-        unmetExplanation: z.string().trim().min(1),
+        unmetExplanation: nonEmptyTrimmedStringSchema,
         resumable: z.literal(true),
       })
       .strict(),

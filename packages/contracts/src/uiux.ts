@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { nonEmptyTrimmedStringSchema } from './identifiers.js';
 export const creativeOperationSchema = z.enum([
   'copy.generate',
   'copy.adapt',
@@ -40,17 +41,17 @@ export interface CreativeSourceReference {
 
 export const creativeExecutionContractSchema = z.object({
   operation: creativeOperationSchema,
-  catalogModelId: z.string().trim().min(1),
+  catalogModelId: nonEmptyTrimmedStringSchema,
   /**
    * Catalog revision pinned by the accepted execution contract. This is not
    * the observability event-attribution field with the same key.
    */
-  catalogRevision: z.string().trim().min(1),
-  quoteRevision: z.string().trim().min(1),
+  catalogRevision: nonEmptyTrimmedStringSchema,
+  quoteRevision: nonEmptyTrimmedStringSchema,
   quoteAcceptedAt: z.iso.datetime(),
-  outputLabel: z.string().trim().min(1),
+  outputLabel: nonEmptyTrimmedStringSchema,
   estimatedAmount: z.number().nonnegative(),
-  currency: z.string().trim().min(1),
+  currency: nonEmptyTrimmedStringSchema,
   outputCount: z.number().int().positive(),
   aspectRatio: z.enum(['1:1', '3:4', '9:16']).optional(),
   durationSeconds: z.number().int().positive().optional(),

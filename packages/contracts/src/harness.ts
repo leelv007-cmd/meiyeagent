@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { identifierSchema, nonEmptyTrimmedStringSchema } from './identifiers.js';
 
 import {
   CONTEXT_DIMENSIONS,
@@ -16,7 +17,7 @@ import {
 import { hotTopicOpportunityCardSchema } from './marketing-package.js';
 import { actionUsageSchema } from './observability-event.js';
 
-const harnessIdSchema = z.string().trim().min(1);
+const harnessIdSchema = identifierSchema;
 const harnessTimestampSchema = z.iso.datetime();
 const workflowRevisionSchema = z.number().int().nonnegative();
 
@@ -53,7 +54,7 @@ export const harnessTaskSubmissionSchema = z
     expectedRevision: workflowRevisionSchema,
     workflowRevision: workflowRevisionSchema,
     creationMode: creationModeSchema,
-    rawInput: z.string().trim().min(1).max(4_000),
+    rawInput: nonEmptyTrimmedStringSchema.max(4_000),
     intent: taskIntentInputSchema,
   })
   .strict();
@@ -61,7 +62,7 @@ export const harnessTaskSubmissionSchema = z
 export const assistantPatchDecisionSchema = z
   .object({
     state: z.enum(['pending', 'accepted', 'editing', 'ignored']),
-    value: z.string().trim().min(1).max(2_000),
+    value: nonEmptyTrimmedStringSchema.max(2_000),
   })
   .strict();
 
@@ -93,7 +94,7 @@ export const chipsSignalInputSchema = z
     chipId: harnessIdSchema,
     kind: z.enum(['adopted', 'modified', 'rejected']),
     taskId: harnessIdSchema,
-    value: z.string().trim().min(1).max(2_000),
+    value: nonEmptyTrimmedStringSchema.max(2_000),
   })
   .strict();
 
@@ -106,7 +107,7 @@ export const harnessExperienceBasisSchema = z
       z
         .object({
           sourceRef: harnessIdSchema,
-          label: z.string().trim().min(1),
+          label: nonEmptyTrimmedStringSchema,
           value: z.json(),
         })
         .strict(),
@@ -195,8 +196,8 @@ function harnessExperienceLabel(value: unknown, fallback: string) {
 export const workflowProgressNotePlanPreviewSchema = z
   .object({
     styleId: harnessIdSchema,
-    styleName: z.string().trim().min(1).max(200),
-    themeAnchor: z.string().trim().min(1).max(500),
+    styleName: nonEmptyTrimmedStringSchema.max(200),
+    themeAnchor: nonEmptyTrimmedStringSchema.max(500),
     pages: z
       .array(
         z
@@ -211,8 +212,8 @@ export const workflowProgressNotePlanPreviewSchema = z
               'price_offer',
               'cta_guide',
             ]),
-            title: z.string().trim().min(1).max(200),
-            body: z.string().trim().min(1).max(4_000),
+            title: nonEmptyTrimmedStringSchema.max(200),
+            body: nonEmptyTrimmedStringSchema.max(4_000),
           })
           .strict()
       )
@@ -233,7 +234,7 @@ export const executionConfirmationOutlineSchema = z
         z
           .object({
             order: z.number().int().positive().max(20),
-            title: z.string().trim().min(1).max(200),
+            title: nonEmptyTrimmedStringSchema.max(200),
           })
           .strict()
       )
@@ -252,7 +253,7 @@ export const workflowProgressEnvelopeSchema = z
     stage: harnessStageSchema,
     state: workflowStateSchema,
     occurredAt: harnessTimestampSchema,
-    message: z.string().trim().min(1).max(2_000).optional(),
+    message: nonEmptyTrimmedStringSchema.max(2_000).optional(),
     experienceBasis: harnessExperienceBasisSchema.optional(),
     /**
      * Per-page note image progress (#319 L1-2). Absent = batch-level frame
@@ -358,9 +359,9 @@ export const merchantReportSchema = z
     kind: merchantReportKindSchema,
     category: merchantReportCategorySchema,
     /** 白话原因 — never an error code, never an internal identifier. */
-    message: z.string().trim().min(1).max(2_000),
+    message: nonEmptyTrimmedStringSchema.max(2_000),
     /** 下一步动作, stated as a sentence the merchant can act on. */
-    nextStep: z.string().trim().min(1).max(2_000),
+    nextStep: nonEmptyTrimmedStringSchema.max(2_000),
     actions: z.array(merchantRecoveryActionSchema).min(1).max(4),
     /** True when the reserved 额度 went back — stated, never implied. */
     quotaRefunded: z.boolean(),
@@ -391,14 +392,14 @@ export const questionCardSchema = z
     questionId: harnessIdSchema,
     workflowId: harnessIdSchema,
     workflowRevision: workflowRevisionSchema,
-    question: z.string().trim().min(1).max(2_000),
+    question: nonEmptyTrimmedStringSchema.max(2_000),
     options: z
       .array(
         z
           .object({
             id: harnessIdSchema,
-            label: z.string().trim().min(1).max(500),
-            description: z.string().trim().min(1).max(1_000).optional(),
+            label: nonEmptyTrimmedStringSchema.max(500),
+            description: nonEmptyTrimmedStringSchema.max(1_000).optional(),
           })
           .strict()
       )
@@ -406,13 +407,13 @@ export const questionCardSchema = z
     freeText: z
       .object({
         enabled: z.boolean(),
-        placeholder: z.string().trim().min(1).max(500).optional(),
+        placeholder: nonEmptyTrimmedStringSchema.max(500).optional(),
       })
       .strict(),
     response: z
       .object({
         field: harnessIdSchema.max(200),
-        reason: z.string().trim().min(1).max(500),
+        reason: nonEmptyTrimmedStringSchema.max(500),
       })
       .strict(),
     /** Missing means hold; only an explicit continue may auto-release. */
@@ -483,9 +484,9 @@ const executionConfirmationParamSchema = z
       'destination',
       'deliverable',
     ]),
-    label: z.string().trim().min(1).max(500),
-    value: z.string().trim().min(1).max(1_000),
-    hint: z.string().trim().min(1).max(1_000).nullable(),
+    label: nonEmptyTrimmedStringSchema.max(500),
+    value: nonEmptyTrimmedStringSchema.max(1_000),
+    hint: nonEmptyTrimmedStringSchema.max(1_000).nullable(),
   })
   .strict();
 
@@ -562,7 +563,7 @@ export const executionConfirmationAnswerSchema = z
       z
         .object({
           kind: z.literal('rejected'),
-          feedback: z.string().trim().min(1).max(2_000).optional(),
+          feedback: nonEmptyTrimmedStringSchema.max(2_000).optional(),
         })
         .strict(),
     ]),
@@ -601,7 +602,7 @@ export const harnessInteractionMerchantMessageSchema = z
     step: z.literal('execution_selection'),
     carrier: z.enum(['conversation', 'store_page', 'task_card']),
     idempotencyKey: harnessIdSchema,
-    message: z.string().trim().min(1).max(2_000),
+    message: nonEmptyTrimmedStringSchema.max(2_000),
   })
   .strict();
 
@@ -721,7 +722,7 @@ export const harnessActiveTaskSchema = z
     workId: harnessIdSchema,
     packageId: harnessIdSchema,
     /** What the merchant typed to start the run — rebuilds the first turn. */
-    merchantText: z.string().trim().min(1).max(4_000),
+    merchantText: nonEmptyTrimmedStringSchema.max(4_000),
     submittedAt: harnessTimestampSchema,
   })
   .strict();
@@ -747,12 +748,12 @@ export const todayRecommendationSchema = z
     factsRevision: workflowRevisionSchema,
     packageId: harnessIdSchema,
     versionId: harnessIdSchema,
-    title: z.string().trim().min(1).max(500),
-    body: z.string().trim().min(1).max(20_000),
-    whyNow: z.string().trim().min(1).max(2_000),
+    title: nonEmptyTrimmedStringSchema.max(500),
+    body: nonEmptyTrimmedStringSchema.max(20_000),
+    whyNow: nonEmptyTrimmedStringSchema.max(2_000),
     factReferences: z.array(harnessIdSchema).min(1).max(100),
-    customerAction: z.string().trim().min(1).max(2_000),
-    sourceLabel: z.string().trim().min(1).max(2_000),
+    customerAction: nonEmptyTrimmedStringSchema.max(2_000),
+    sourceLabel: nonEmptyTrimmedStringSchema.max(2_000),
     createdAt: harnessTimestampSchema,
     opportunity: hotTopicOpportunityCardSchema.optional(),
   })

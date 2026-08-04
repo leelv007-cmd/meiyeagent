@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import {
+  approvalReceiptIdSchema,
+  identifierSchema,
+  nonEmptyTrimmedStringSchema,
+} from './identifiers.js';
+import {
   marketingPackageEvidenceSchema,
   quickEditExportUseDeliverySchema,
   quickEditIntentSchema,
@@ -15,8 +20,10 @@ import {
   composerDistributionTargetSchema,
 } from './composer-submission.js';
 
-const contentPackageIdSchema = z.string().trim().min(1);
+const contentPackageIdSchema = identifierSchema;
 const contentPackageTimestampSchema = z.iso.datetime();
+
+export const contentPackageFailureCodeSchema = nonEmptyTrimmedStringSchema;
 
 /**
  * ContentPackage wire/storage kind. Unchanged from v1 on purpose: every stored
@@ -64,10 +71,10 @@ export const videoCompositionEvidenceSchema = z
     aigc: z.object({
       implicitMetadata: z.object({
         actual: z.boolean(),
-        contentId: z.string().trim().min(1).optional(),
+        contentId: nonEmptyTrimmedStringSchema.optional(),
         contentType: z.literal('ai_generated').optional(),
-        serviceCode: z.string().trim().min(1).optional(),
-        serviceProvider: z.string().trim().min(1).optional(),
+        serviceCode: nonEmptyTrimmedStringSchema.optional(),
+        serviceProvider: nonEmptyTrimmedStringSchema.optional(),
         validated: z.boolean(),
       }),
       requested: z.boolean(),
@@ -79,13 +86,13 @@ export const videoCompositionEvidenceSchema = z
       visibleLabel: z.object({
         actual: z.boolean(),
         validated: z.boolean(),
-        value: z.string().trim().min(1).optional(),
+        value: nonEmptyTrimmedStringSchema.optional(),
       }),
     }),
     brandWatermark: z.object({
       actual: z.boolean(),
       requested: z.boolean(),
-      text: z.string().trim().min(1).optional(),
+      text: nonEmptyTrimmedStringSchema.optional(),
       validated: z.boolean(),
       validationMethod: z.enum([
         'composition_manifest',
@@ -95,9 +102,9 @@ export const videoCompositionEvidenceSchema = z
     clipCount: z.number().int().positive(),
     durationSeconds: z.number().positive().optional(),
     height: z.number().int().positive().optional(),
-    outputSha256: z.string().trim().min(1),
+    outputSha256: nonEmptyTrimmedStringSchema,
     outputSizeBytes: z.number().int().positive(),
-    rendererRevision: z.string().trim().min(1),
+    rendererRevision: nonEmptyTrimmedStringSchema,
     sourceAssetIds: z.array(contentPackageIdSchema).min(1),
     width: z.number().int().positive().optional(),
     delivery: z.object({
@@ -115,7 +122,7 @@ export const videoCompositionEvidenceSchema = z
       }),
       subtitles: z.object({
         format: z.literal('srt'),
-        text: z.string().trim().min(1),
+        text: nonEmptyTrimmedStringSchema,
         durationSeconds: z.number().positive(),
         validationMethod: z.enum(['composition_manifest', 'recorded_synthetic']),
       }),
@@ -337,7 +344,7 @@ export const contentPackageSourceSchema = z.object({
   assetIds: z.array(contentPackageIdSchema).default([]),
   briefId: contentPackageIdSchema.optional(),
   catalogModelId: contentPackageIdSchema.optional(),
-  dataClass: z.array(z.string().trim().min(1)).optional(),
+  dataClass: z.array(nonEmptyTrimmedStringSchema).optional(),
   executionContract: creativeExecutionContractSchema.optional(),
   compositionRevision: contentPackageIdSchema.optional(),
   creationExecutionSnapshot: z
@@ -385,7 +392,7 @@ export const contentPackageSourceSchema = z.object({
     .array(
       z.object({
         id: contentPackageIdSchema,
-        prompt: z.string().trim().min(1),
+        prompt: nonEmptyTrimmedStringSchema,
       })
     )
     .optional(),
@@ -402,7 +409,7 @@ export const contentPackageChildRunSchema = z.object({
   actualCatalogModelId: contentPackageIdSchema.optional(),
   apiCounterparty: contentPackageIdSchema.optional(),
   assetIds: z.array(contentPackageIdSchema).optional(),
-  failureCode: contentPackageIdSchema.optional(),
+  failureCode: contentPackageFailureCodeSchema.optional(),
   productUsage: z
     .object({
       quantity: z.number().int().nonnegative(),
@@ -481,10 +488,10 @@ export const contentPackageGeneratedSchema = z.object({
     .array(
       z.object({
         compositionEvidence: videoCompositionEvidenceSchema.optional(),
-        contentType: z.string().trim().min(1),
+        contentType: nonEmptyTrimmedStringSchema,
         id: contentPackageIdSchema,
-        objectKey: z.string().trim().min(1),
-        sha256: z.string().trim().min(1),
+        objectKey: nonEmptyTrimmedStringSchema,
+        sha256: nonEmptyTrimmedStringSchema,
         sizeBytes: z.number().int().positive().optional(),
         sourceAssetId: contentPackageIdSchema.optional(),
         sourceTaskRef: contentPackageIdSchema.optional(),
@@ -536,7 +543,7 @@ export const contentPackageVersionSchema = z.object({
   sourceRef: contentPackageVersionSourceRefSchema.optional(),
   note: imageTextNoteVersionSchema.optional(),
   title: z.string(),
-  topics: z.array(z.string().trim().min(1)).default([]),
+  topics: z.array(nonEmptyTrimmedStringSchema).default([]),
 });
 
 export const contentPackageVariantSchema = z.object({
@@ -548,7 +555,7 @@ export const contentPackageVariantSchema = z.object({
 
 export const contentPackageRightsSchema = z
   .object({
-    reason: z.string().trim().min(1).optional(),
+    reason: nonEmptyTrimmedStringSchema.optional(),
     revokedAt: contentPackageTimestampSchema.optional(),
     state: z.enum(['authorized', 'revoked']),
   })
@@ -573,7 +580,7 @@ export const contentPackageRightsSchema = z
 export const contentPackageComplianceSchema = z.object({
   aigcLabelEnabled: z.boolean(),
   watermarkEnabled: z.boolean(),
-  watermarkText: z.string().trim().min(1).optional(),
+  watermarkText: nonEmptyTrimmedStringSchema.optional(),
 });
 
 export const contentPackageExportReceiptSchema = z
@@ -582,15 +589,15 @@ export const contentPackageExportReceiptSchema = z
       .object({
         aigcLabelEnabled: z.boolean(),
         watermarkEnabled: z.boolean(),
-        watermarkText: z.string().trim().min(1).optional(),
+        watermarkText: nonEmptyTrimmedStringSchema.optional(),
       })
       .optional(),
     artifactAssetId: contentPackageIdSchema.optional(),
-    artifactObjectKey: z.string().trim().min(1).optional(),
+    artifactObjectKey: nonEmptyTrimmedStringSchema.optional(),
     contentType: z.enum(['application/zip', 'video/mp4']).optional(),
     correlationId: contentPackageIdSchema.optional(),
     createdAt: contentPackageTimestampSchema,
-    failureCategory: z.string().trim().min(1).optional(),
+    failureCategory: nonEmptyTrimmedStringSchema.optional(),
     id: contentPackageIdSchema,
     platform: contentPackagePlatformSchema,
     sha256: z
@@ -599,7 +606,7 @@ export const contentPackageExportReceiptSchema = z
       .optional(),
     sizeBytes: z.number().int().nonnegative().optional(),
     /** Immutable shared-object receipt version used by deletion claims. */
-    storageRevision: z.string().trim().min(1).optional(),
+    storageRevision: nonEmptyTrimmedStringSchema.optional(),
     status: z.enum(['succeeded', 'failed']),
     variantVersionId: contentPackageIdSchema,
   })
@@ -635,7 +642,7 @@ export function contentPackageDeliveryAttemptId(approvalReceiptId: string) {
 
 export const contentPackageDeliveryIdentitySchema = z
   .object({
-    approvalReceiptId: contentPackageIdSchema,
+    approvalReceiptId: approvalReceiptIdSchema,
     deliveryAttemptId: contentPackageIdSchema,
     schema: z.literal('approval_receipt_v1'),
   })
@@ -666,8 +673,8 @@ export const contentPackageDeliveryEventSchema = z.discriminatedUnion('type', [
     type: z.literal('automatic_publish_result'),
   }),
   contentPackageDeliveryEventBaseSchema.extend({
-    accountDisplayLabel: z.string().trim().min(1).optional(),
-    note: z.string().trim().min(1).optional(),
+    accountDisplayLabel: nonEmptyTrimmedStringSchema.optional(),
+    note: nonEmptyTrimmedStringSchema.optional(),
     platformUrl: z.url().optional(),
     status: z.enum(['published', 'failed', 'unknown']),
     type: z.literal('manual_publish_result'),
@@ -688,7 +695,7 @@ export const contentPackageDeliveryEventSchema = z.discriminatedUnion('type', [
 export const contentPackageDeliveryCapabilitySchema = z.object({
   mode: z.enum(['automatic_verified', 'assisted', 'unavailable']),
   platform: contentPackagePlatformSchema,
-  reason: z.string().trim().min(1),
+  reason: nonEmptyTrimmedStringSchema,
 });
 
 export const contentPackageResultSignalSchema = z.object({
@@ -707,7 +714,7 @@ export const contentPackageResultSignalSchema = z.object({
     'redeemed',
     'store_visit',
   ]),
-  note: z.string().trim().min(1).optional(),
+  note: nonEmptyTrimmedStringSchema.optional(),
   occurredAt: contentPackageTimestampSchema,
   quantity: z.number().int().positive().optional(),
   source: z.enum([
@@ -1028,9 +1035,9 @@ export const deliverContentPackageCommandSchema =
     receiptId: contentPackageIdSchema.optional(),
   });
 export const recordContentPackageManualResultCommandSchema = z.object({
-  accountDisplayLabel: z.string().trim().min(1).optional(),
+  accountDisplayLabel: nonEmptyTrimmedStringSchema.optional(),
   expectedRevision: contentPackageExpectedRevisionSchema,
-  note: z.string().trim().min(1).optional(),
+  note: nonEmptyTrimmedStringSchema.optional(),
   packageId: contentPackageIdSchema,
   platform: contentPackagePlatformSchema,
   platformUrl: z.url().optional(),
@@ -1041,7 +1048,7 @@ export const recordContentPackageManualResultCommandSchema = z.object({
 export const recordContentPackageResultSignalCommandSchema = z.object({
   expectedRevision: contentPackageExpectedRevisionSchema,
   kind: contentPackageResultSignalSchema.shape.kind,
-  note: z.string().trim().min(1).optional(),
+  note: nonEmptyTrimmedStringSchema.optional(),
   /**
    * When the merchant says it happened — 「这是昨天的」. Absent means now.
    * Backdating moves the signal's own clock only; the package's updatedAt and

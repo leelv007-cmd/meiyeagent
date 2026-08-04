@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import { nonEmptyTrimmedStringSchema } from './identifiers.js';
 
-const primitiveTextSchema = z.string().trim().min(1);
+const primitiveTextSchema = nonEmptyTrimmedStringSchema;
 const primitiveJsonSchema = z.json();
 
 export const AGENT_PRIMITIVE_IDS = Object.freeze([
@@ -67,8 +68,8 @@ export const askMerchantPrimitiveOptionSchema = z
 
 const askMerchantQuestionOptionSchema = z
   .object({
-    label: z.string().trim().min(1).max(500),
-    description: z.string().trim().min(1).max(1_000).optional(),
+    label: nonEmptyTrimmedStringSchema.max(500),
+    description: nonEmptyTrimmedStringSchema.max(1_000).optional(),
   })
   .strict();
 
@@ -84,7 +85,7 @@ export const askMerchantQuestionSchema = z
     freeText: z
       .object({
         enabled: z.boolean(),
-        placeholder: z.string().trim().min(1).max(500).optional(),
+        placeholder: nonEmptyTrimmedStringSchema.max(500).optional(),
       })
       .strict()
       .optional(),

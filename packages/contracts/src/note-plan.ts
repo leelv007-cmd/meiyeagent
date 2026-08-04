@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { nonEmptyTrimmedStringSchema } from './identifiers.js';
 
 import { imageIntentSchema } from './image-intent.js';
 
@@ -41,15 +42,15 @@ export const notePlanConsistencyDimensionSchema = z.enum(
 
 export const notePlanTextBlockSchema = z
   .object({
-    title: z.string().trim().min(1),
-    body: z.string().trim().min(1),
-    exactText: z.array(z.string().trim().min(1)),
+    title: nonEmptyTrimmedStringSchema,
+    body: nonEmptyTrimmedStringSchema,
+    exactText: z.array(nonEmptyTrimmedStringSchema),
   })
   .strict();
 
 export const notePlanPageSchema = z
   .object({
-    id: z.string().trim().min(1),
+    id: nonEmptyTrimmedStringSchema,
     order: z.number().int().positive(),
     revision: z.number().int().positive(),
     pageRole: notePlanPageRoleSchema,
@@ -59,12 +60,12 @@ export const notePlanPageSchema = z
     dependencies: z.array(
       z
         .object({
-          pageId: z.string().trim().min(1),
+          pageId: nonEmptyTrimmedStringSchema,
           kind: z.enum(['text_sequence', 'visual_reference']),
         })
         .strict(),
     ),
-    imageAssetId: z.string().trim().min(1).optional(),
+    imageAssetId: nonEmptyTrimmedStringSchema.optional(),
   })
   .strict()
   .superRefine((page, context) => {
@@ -96,12 +97,12 @@ export const notePlanPageSchema = z
 export const notePlanSchema = z
   .object({
     schema: z.literal(NOTE_PLAN_SCHEMA),
-    themeAnchor: z.string().trim().min(1),
+    themeAnchor: nonEmptyTrimmedStringSchema,
     style: z
       .object({
-        id: z.string().trim().min(1),
-        name: z.string().trim().min(1),
-        positioning: z.string().trim().min(1),
+        id: nonEmptyTrimmedStringSchema,
+        name: nonEmptyTrimmedStringSchema,
+        positioning: nonEmptyTrimmedStringSchema,
       })
       .strict(),
     pages: z
@@ -157,10 +158,10 @@ export const notePlanSchema = z
 
 export const noteStyleDefinitionSchema = z
   .object({
-    id: z.string().trim().min(1),
-    name: z.string().trim().min(1),
-    writingGuide: z.string().trim().min(1),
-    structureTemplate: z.string().trim().min(1),
+    id: nonEmptyTrimmedStringSchema,
+    name: nonEmptyTrimmedStringSchema,
+    writingGuide: nonEmptyTrimmedStringSchema,
+    structureTemplate: nonEmptyTrimmedStringSchema,
     platforms: z
       .array(z.enum(['xiaohongshu', 'douyin', 'video_account']))
       .min(1),
@@ -186,9 +187,9 @@ export const noteStyleConfigSchema = z
 
 const noteStyleCandidateSchema = z
   .object({
-    styleId: z.string().trim().min(1),
-    styleName: z.string().trim().min(1),
-    positioning: z.string().trim().min(1),
+    styleId: nonEmptyTrimmedStringSchema,
+    styleName: nonEmptyTrimmedStringSchema,
+    positioning: nonEmptyTrimmedStringSchema,
     plan: notePlanSchema,
   })
   .strict();
@@ -215,13 +216,13 @@ export const notePlanConsistencyEvaluationSchema = z
           .object({
             dimension: notePlanConsistencyDimensionSchema,
             passed: z.boolean(),
-            reason: z.string().trim().min(1),
-            pageIds: z.array(z.string().trim().min(1)),
+            reason: nonEmptyTrimmedStringSchema,
+            pageIds: z.array(nonEmptyTrimmedStringSchema),
           })
           .strict(),
       )
       .length(NOTE_PLAN_CONSISTENCY_DIMENSIONS.length),
-    regenerationPageIds: z.array(z.string().trim().min(1)),
+    regenerationPageIds: z.array(nonEmptyTrimmedStringSchema),
   })
   .strict()
   .superRefine((evaluation, context) => {
@@ -249,12 +250,12 @@ export const imageTextNoteVersionSchema = z
     regenerationReceipts: z.array(
       z
         .object({
-          pageId: z.string().trim().min(1),
+          pageId: nonEmptyTrimmedStringSchema,
           fromRevision: z.number().int().positive(),
           toRevision: z.number().int().positive(),
           imagePoints: z.literal(1),
           reason: z.enum(['merchant_request', 'consistency_conflict']),
-          auditRef: z.string().trim().min(1),
+          auditRef: nonEmptyTrimmedStringSchema,
         })
         .strict(),
     ),
