@@ -92,10 +92,12 @@ test('W01 browser proof cannot pre-seed the StoreFact projection under test', ()
 });
 
 test('Harness Result adoption emits the canonical command and does not infer adoption from currentVersionId', () => {
+  // The Result route delegates to use-result-center-view; adoption consumption
+  // lives in the hook since the A4 extraction.
   const route = readFileSync(
     join(
       repositoryRoot,
-      'mkfast-template-main/src/routes/dashboard/results_/$workId.tsx',
+      'mkfast-template-main/src/product/results/use-result-center-view.tsx',
     ),
     'utf8',
   );
