@@ -4,43 +4,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { parseResultCenterSearch as parseRouteSearch } from './result-center-search';
 import {
   parseResultCenterSearch,
   resolveRouteResultTarget,
 } from './result-target-wiring';
 
-/** Mirrors routes/dashboard/results_/$workId validateSearch (pure). */
-function validateResultCenterSearch(search: Record<string, unknown>) {
-  const contentId =
-    typeof search.contentId === 'string' && search.contentId.length > 0
-      ? search.contentId
-      : undefined;
-  const versionId =
-    typeof search.versionId === 'string' && search.versionId.length > 0
-      ? search.versionId
-      : undefined;
-  const panel =
-    search.panel === 'result' ||
-    search.panel === 'adjust' ||
-    search.panel === 'delivery' ||
-    search.panel === 'history' ||
-    search.panel === 'run'
-      ? search.panel
-      : undefined;
-  const focusKey =
-    typeof search.focusKey === 'string' && search.focusKey.length > 0
-      ? search.focusKey
-      : undefined;
-  return {
-    ...(contentId ? { contentId } : {}),
-    ...(versionId ? { versionId } : {}),
-    ...(panel ? { panel } : {}),
-    ...(focusKey ? { focusKey } : {}),
-  };
-}
-
-test('validateResultCenterSearch drops stage and unknown panel', () => {
-  const search = validateResultCenterSearch({
+test('route search parser drops stage and unknown panel', () => {
+  const search = parseRouteSearch({
     contentId: 'pkg-1',
     panel: 'delivery',
     stage: 'action',

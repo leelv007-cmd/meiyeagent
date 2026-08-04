@@ -84,14 +84,14 @@ import {
 import type { VideoCanonicalEditCommand } from '@/product/results/video/video-worksurface';
 import { executeResultContentPackageHandEdit } from '@/product/results/result-content-package-hand-edit';
 import {
-  validateResultCenterSearch,
+  parseResultCenterSearch,
   type ResultCenterSearch,
 } from '@/product/results/result-center-search';
 import {
   parseResultReturnState,
   resultReturnDestination,
 } from '@/product/results/result-return-navigation';
-import { parseResultCenterSearch } from '@/product/results/result-target-wiring';
+import { parseResultCenterSearch as parseResultTargetSearch } from '@/product/results/result-target-wiring';
 import { useResultReturnRestoreSession } from '@/product/results/use-result-return-restore-session';
 import { useWorkflowEventStream } from '@/product/use-workflow-event-stream';
 import type {
@@ -133,7 +133,7 @@ export type { ResultCenterSearch } from '@/product/results/result-center-search'
 
 export const Route = createFileRoute('/dashboard/results_/$workId')({
   validateSearch: (search: Record<string, unknown>): ResultCenterSearch =>
-    validateResultCenterSearch(search),
+    parseResultCenterSearch(search),
   component: ResultCenterRoutePage,
 });
 
@@ -158,7 +158,7 @@ function ResultCenterRoutePage() {
   >();
   const [closeLoopPending, setCloseLoopPending] = useState(false);
   const deliveryViewport = useDeliveryViewport();
-  const target = parseResultCenterSearch(workId, search);
+  const target = parseResultTargetSearch(workId, search);
   const workbenchQueryKey = p1QueryKeys.request(
     'operations',
     'creative_workbench'

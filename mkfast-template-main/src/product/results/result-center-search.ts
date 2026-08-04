@@ -27,7 +27,7 @@ function optionalPanel(value: unknown): ResultPanel | undefined {
 }
 
 /** The Result route keeps only its public target and trusted return anchor. */
-export function validateResultCenterSearch(
+export function parseResultCenterSearch(
   search: Record<string, unknown>
 ): ResultCenterSearch {
   const contentId = optionalString(search.contentId);
