@@ -19,6 +19,8 @@ import {
 import { buildComposerQuote, projectComposerQuoteView } from './quote-wiring';
 import { createComposerSession } from './composer-session';
 import { type ComposerRunTransports, useComposerRun } from './use-composer-run';
+import type { ComposerDestinationPreflightState } from './composer-destination-preflight';
+import type { ComposerGroundingBlocker } from './composer-grounding-blocker';
 
 const QUOTE = buildComposerQuote({
   billingMode: 'per_request',
@@ -55,6 +57,14 @@ const SIGNED_SUBMISSION: ComposerSubmissionSignedFields = {
   recipe: { id: RECIPE.recipeId, revision: RECIPE.revisionId },
 };
 
+const USAGE_BUCKET = {
+  allowance: 0,
+  available: 0,
+  committed: 0,
+  released: 0,
+  reserved: 0,
+};
+
 function createTransports() {
   const projection = fixtureBriefProjection({
     confirmationValid: true,
@@ -66,7 +76,21 @@ function createTransports() {
       return { kind: 'admitted' as const };
     }),
     loadCreditProjection: vi.fn(async () => ({
-      credits: { availableCredits: 20 },
+      plan: null,
+      usage: {
+        audio: USAGE_BUCKET,
+        copy: USAGE_BUCKET,
+        image: USAGE_BUCKET,
+        video: USAGE_BUCKET,
+      },
+      credits: {
+        grantedCredits: 20,
+        usedCredits: 0,
+        refundedCredits: 0,
+        expiredCredits: 0,
+        availableCredits: 20,
+        soonestExpiringLot: null,
+      },
     })),
     mapDestination: vi.fn(),
     requestBrief: vi.fn(async () => projection),
@@ -109,9 +133,11 @@ test('attemptSubmit passes all gates and creates through injected transports', a
       );
       const [, setBriefPending] = useState(false);
       const [, setDestinationMapPending] = useState(false);
-      const [destinationPreflight, setDestinationPreflight] = useState(null);
+      const [destinationPreflight, setDestinationPreflight] =
+        useState<ComposerDestinationPreflightState | null>(null);
       const [, setShowRequiredHint] = useState(false);
-      const [, setSubmissionGroundingBlocked] = useState(null);
+      const [, setSubmissionGroundingBlocked] =
+        useState<ComposerGroundingBlocker | null>(null);
       const [, setSubmissionQuotaBlocked] = useState(false);
       const [, setSubmitBlockedMessage] = useState<string | null>(null);
       const armedQuoteIdRef = useRef<string | null>(null);
@@ -164,10 +190,14 @@ test('attemptSubmit passes all gates and creates through injected transports', a
         submissionSettings: { ...lensState.draft.settings },
         styleReferenceAssetIds: [],
         surface: {
+          contentHash: 'surface-hash-1',
           recipeRefs: [],
           recipes: [],
+          revision: 1,
           revisionId: 'surface-1',
+          status: 'published',
           surfaceId: 'surface.home.launch',
+          toolEntryRefs: [],
         } as BrowserSurfaceProjection,
         transports,
         viralJourneyActive: false,
