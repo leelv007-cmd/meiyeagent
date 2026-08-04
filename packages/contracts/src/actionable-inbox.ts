@@ -31,19 +31,6 @@ export const actionableInboxStatusKinds = [
 export type ActionableInboxStatusKind =
   (typeof actionableInboxStatusKinds)[number];
 
-/** Chinese product labels for the six status kinds. */
-export const ACTIONABLE_INBOX_STATUS_LABEL: Record<
-  ActionableInboxStatusKind,
-  string
-> = {
-  acceptance_unknown_recovery: '需恢复核验',
-  delivery_completed: '交付完成',
-  delivery_partial_or_unknown: '交付部分成功/失败/未知',
-  needs_choice_or_confirm: '需要选择/补确认',
-  result_available: '结果可用',
-  task_failed: '任务最终失败',
-};
-
 /**
  * Next-action copy for inbox / Recent entry points (D-090 / D-097).
  * Must not use vague "查看详情".

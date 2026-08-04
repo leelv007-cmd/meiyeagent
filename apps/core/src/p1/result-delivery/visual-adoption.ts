@@ -62,7 +62,6 @@ export interface VisualAdoptionStore {
 
 export type VisualAdoptionResult = PublicContentPackage & {
   statusGroup: ReturnType<typeof contentPackageVisibleStatus>['statusGroup'];
-  statusLabel: ReturnType<typeof contentPackageVisibleStatus>['statusLabel'];
 };
 
 function withVisible(contentPackage: ContentPackage): VisualAdoptionResult {

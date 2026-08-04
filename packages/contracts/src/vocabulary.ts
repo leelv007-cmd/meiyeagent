@@ -15,15 +15,11 @@ export {
   type CapabilityInstrumentStatus,
 } from './capability-registry.js';
 export {
-  CONTENT_PACKAGE_ACTIONS_BY_STATUS,
-  CONTENT_PACKAGE_STATUS_CONTRACTS,
-  contentPackageActions,
   contentPackageCarriers,
   contentPackageKindSchema,
   contentPackagePlatformSchema,
   contentPackageStatusGroup,
   contentPackageStatusSchema,
-  type ContentPackageAction,
   type ContentPackageKind,
   type ContentPackagePlatform,
   type ContentPackageStatus,

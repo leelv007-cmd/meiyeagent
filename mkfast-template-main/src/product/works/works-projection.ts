@@ -21,8 +21,8 @@ import type {
 } from '@meiye/contracts';
 import {
   contentPackageCarrierOf,
-  contentPackageStatusLabel,
 } from '@meiye/contracts';
+import { contentPackageStatusLabel } from '@/product/content-package-presentation';
 
 import { canvasName } from '@/p1/canvas-name';
 import type { RawCanvasWorkSummary } from '@/product/canonical-history-model';

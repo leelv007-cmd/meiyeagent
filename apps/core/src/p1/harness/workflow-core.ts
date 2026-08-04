@@ -2,7 +2,6 @@ import {
   BOUNDED_EXECUTION_LIMITS,
   type BoundedExecutionSnapshot,
   HARNESS_STAGES,
-  projectHarnessExperienceBasis,
   questionCardSchema,
   type HarnessStage,
   type ContentPackage,
@@ -13,6 +12,7 @@ import {
   type QuestionCard,
   type StructuredDecisionInput,
 } from '@meiye/contracts';
+import { projectHarnessExperienceBasis } from './experience-basis.js';
 
 import {
   HarnessSelectionError,

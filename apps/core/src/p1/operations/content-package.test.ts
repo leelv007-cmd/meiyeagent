@@ -3,18 +3,19 @@ import { describe, it } from 'node:test';
 import {
   adoptIntoContentPackageCommandSchema,
   CONTENT_PACKAGE_COMMAND_SCHEMAS,
-  CONTENT_PACKAGE_ACTIONS_BY_STATUS,
   CONTENT_PACKAGE_QUERY_SCHEMAS,
-  CONTENT_PACKAGE_STATUS_CONTRACTS,
   contentPackageSchema,
   contentPackageVersionSchema,
   contentPackageVersionSourceRefIsReadOnly,
   contentPackageStatusGroup,
-  contentPackageStatusLabel,
   contentPackageStatusSchema,
   type ApprovalReceiptId,
   type ContentPackage,
 } from '@meiye/contracts';
+import {
+  CONTENT_PACKAGE_ACTIONS_BY_STATUS,
+  CONTENT_PACKAGE_STATUS_CONTRACTS,
+} from './content-package-status-contract.js';
 import {
   MemoryFoundationRepository,
   P1ApplicationService,
@@ -3077,11 +3078,6 @@ describe('ContentPackage frozen status contract', () => {
           contentPackageStatusGroup(status)
         )
       );
-      assert.ok(
-        ['创作中', '可使用', '需处理'].includes(
-          contentPackageStatusLabel(status)
-        )
-      );
     }
     assert.equal(contentPackageStatusGroup('review_ready'), 'usable');
     assert.equal(contentPackageStatusGroup('export_failed'), 'needs_attention');
@@ -3334,7 +3330,6 @@ describe('ContentPackage frozen status contract', () => {
     );
 
     assert.equal(ready.status, 'review_ready');
-    assert.equal(contentPackageStatusLabel(ready.status), '可使用');
   });
 
   it('adopts one version and replays an unknown save without duplicating it', () => {
