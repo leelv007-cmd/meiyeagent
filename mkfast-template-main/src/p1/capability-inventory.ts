@@ -39,7 +39,11 @@ export const CAPABILITY_INVENTORY: CapabilityInventoryDocument = {
       status: 'instrumented',
       owner: 'model-supply',
       drilldownKey: 'admin.supply',
-      criticalDependencies: ['config_secrets', 'job_queue_harness', 'observability_audit'],
+      criticalDependencies: [
+        'config_secrets',
+        'job_queue_harness',
+        'observability_audit',
+      ],
     },
     {
       id: 'generation_copy',
@@ -49,7 +53,10 @@ export const CAPABILITY_INVENTORY: CapabilityInventoryDocument = {
       status: 'instrumented',
       owner: 'model-supply/copy',
       drilldownKey: 'admin.supply.copy',
-      criticalDependencies: ['model_supply_routing_quality', 'entitlements_billing_redemption'],
+      criticalDependencies: [
+        'model_supply_routing_quality',
+        'entitlements_billing_redemption',
+      ],
     },
     {
       id: 'generation_image',
@@ -69,7 +76,11 @@ export const CAPABILITY_INVENTORY: CapabilityInventoryDocument = {
       status: 'instrumented',
       owner: 'model-supply/video',
       drilldownKey: 'admin.supply.video',
-      criticalDependencies: ['model_supply_routing_quality', 'data_storage', 'job_queue_harness'],
+      criticalDependencies: [
+        'model_supply_routing_quality',
+        'data_storage',
+        'job_queue_harness',
+      ],
     },
     {
       id: 'generation_audio',
@@ -80,7 +91,8 @@ export const CAPABILITY_INVENTORY: CapabilityInventoryDocument = {
       owner: 'model-supply/audio',
       drilldownKey: 'admin.supply.audio',
       criticalDependencies: ['model_supply_routing_quality'],
-      notes: 'not_instrumented for supply v1; inventory stub retained per D-051/D-068',
+      notes:
+        'not_instrumented for supply v1; inventory stub retained per D-051/D-068',
     },
     {
       id: 'job_queue_harness',

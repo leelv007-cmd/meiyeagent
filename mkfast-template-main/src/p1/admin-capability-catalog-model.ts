@@ -7,10 +7,10 @@
  * Pure projection only — shared wiring (routes/sidebar/locales/routeTree)
  * stays for Z2-WIRING batch B.
  */
-import {
-  type CapabilityDomainGroup,
-  type CapabilityInventoryDocument,
-  type CapabilityInventoryItem,
+import type {
+  CapabilityDomainGroup,
+  CapabilityInventoryDocument,
+  CapabilityInventoryItem,
 } from '@meiye/contracts';
 import { CAPABILITY_INVENTORY } from '@/p1/capability-inventory';
 

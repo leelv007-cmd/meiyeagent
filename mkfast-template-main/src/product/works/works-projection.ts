@@ -19,9 +19,7 @@ import type {
   ContentPackageVersion,
   PublicContentPackage,
 } from '@meiye/contracts';
-import {
-  contentPackageCarrierOf,
-} from '@meiye/contracts';
+import { contentPackageCarrierOf } from '@meiye/contracts';
 import { contentPackageStatusLabel } from '@/product/content-package-presentation';
 
 import { canvasName } from '@/p1/canvas-name';

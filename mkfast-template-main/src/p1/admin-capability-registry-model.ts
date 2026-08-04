@@ -7,14 +7,14 @@
  * - not_instrumented replaces only runtime facts (Q4), never the other five.
  * - Dependency table is static lookup only — no severity propagation.
  */
-import {
-  type CapabilityAvailabilityStatus,
-  type CapabilityDependencyEdge,
-  type CapabilityInstrumentStatus,
-  type CapabilityInventoryDocument,
-  type CapabilityInventoryItem,
-  type CapabilityRegistryEntry,
-  type OperationalMetricEnvelope,
+import type {
+  CapabilityAvailabilityStatus,
+  CapabilityDependencyEdge,
+  CapabilityInstrumentStatus,
+  CapabilityInventoryDocument,
+  CapabilityInventoryItem,
+  CapabilityRegistryEntry,
+  OperationalMetricEnvelope,
 } from '@meiye/contracts';
 import { CAPABILITY_INVENTORY } from '@/p1/capability-inventory';
 

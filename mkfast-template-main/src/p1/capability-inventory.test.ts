@@ -37,7 +37,7 @@ function assertSixQuestionMinimum(item: CapabilityInventoryItem) {
       'not_instrumented',
       'not_in_scope_for_supply_v1',
     ].includes(item.status),
-    `status must be honest, got ${item.status}`,
+    `status must be honest, got ${item.status}`
   );
 }
 
@@ -58,7 +58,7 @@ describe('capability inventory (S2a / D-051)', () => {
 
   it('keeps audio as not_in_scope_for_supply_v1 stub (must not disappear)', () => {
     const audio = CAPABILITY_INVENTORY.items.find(
-      (item) => item.id === 'generation_audio',
+      (item) => item.id === 'generation_audio'
     );
     assert.ok(audio);
     assert.equal(audio.status, 'not_in_scope_for_supply_v1');
@@ -69,7 +69,7 @@ describe('capability inventory (S2a / D-051)', () => {
     const instrumented = new Set(
       CAPABILITY_INVENTORY.items
         .filter((item) => item.status === 'instrumented')
-        .map((item) => item.id),
+        .map((item) => item.id)
     );
     assert.ok(instrumented.has('model_supply_routing_quality'));
     assert.ok(instrumented.has('job_queue_harness'));

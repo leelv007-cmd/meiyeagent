@@ -11,10 +11,7 @@ import {
   updateSettings,
   type ComposerLensState,
 } from './lens-state-machine';
-import {
-  confirmQuotePrice,
-  projectComposerQuoteView,
-} from './quote-wiring';
+import { confirmQuotePrice, projectComposerQuoteView } from './quote-wiring';
 import { productQuoteFixture } from './quote-fixture.test-helper';
 import {
   buildDynamicSettingsRow,

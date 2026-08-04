@@ -6,9 +6,9 @@
  * Browser contract never embeds Provider / Deployment / Credential / fallback.
  */
 
-import {
-  type ProductBillingMode,
-  type ProductQuoteSnapshot,
+import type {
+  ProductBillingMode,
+  ProductQuoteSnapshot,
 } from '@meiye/contracts';
 
 import {

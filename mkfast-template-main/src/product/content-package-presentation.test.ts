@@ -10,9 +10,7 @@ import {
 test('maps every ContentPackage status to merchant-facing Chinese', () => {
   for (const status of contentPackageStatusSchema.options) {
     assert.ok(
-      ['创作中', '可使用', '需处理'].includes(
-        contentPackageStatusLabel(status),
-      ),
+      ['创作中', '可使用', '需处理'].includes(contentPackageStatusLabel(status))
     );
   }
 });
