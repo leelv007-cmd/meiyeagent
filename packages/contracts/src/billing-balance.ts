@@ -1,7 +1,5 @@
 import { z } from 'zod';
 
-export const publicBillingBucketIds = ['copy', 'image', 'video'] as const;
-
 export const publicBillingBucketBalanceSchema = z
   .object({
     allowance: z.number().int().nonnegative(),
@@ -20,8 +18,6 @@ export const publicBillingBalanceSchema = z
     video: publicBillingBucketBalanceSchema,
   })
   .strict();
-
-export type PublicBillingBalance = z.infer<typeof publicBillingBalanceSchema>;
 
 /** Stable merchant-facing balance contract for the credit ledger. */
 export const publicCreditBalanceSchema = z

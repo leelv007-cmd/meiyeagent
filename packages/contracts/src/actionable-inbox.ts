@@ -118,8 +118,6 @@ export type ActionableInboxItem = {
   contentRevision?: number;
 };
 
-export type ActionableInboxItems = ActionableInboxItem[];
-
 /**
  * Recent creation card projection input / output (D-097).
  * Desktop max 6 / mobile max 4 — enforced by pure projector, not UI alone.
