@@ -313,28 +313,28 @@
     },
     "mkfast-template-main/src/lib/auth/workspace-provisioning.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fdbcc9f62d735a615871251ac9bd6adcb3bd34c6",
-      "note": "Re-verified 2026-08-04 at fdbcc9f6 on fresh PG meiye_309_ev_*; #309 Creem retirement. 12/12 pass 0 skip."
+      "verifiedAt": "bd1ebe37f15cc9d46e66e48b972b80c199610413",
+      "note": "Re-verified 2026-08-04 at bd1ebe37 after #309 format; fresh PG 12/12"
     },
     "mkfast-template-main/src/payment/plan-checkout-bindings.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fdbcc9f62d735a615871251ac9bd6adcb3bd34c6",
-      "note": "Re-verified 2026-08-04 at fdbcc9f6 on fresh PG meiye_309_ev_*; #309 Creem retirement. 12/12 pass 0 skip."
+      "verifiedAt": "bd1ebe37f15cc9d46e66e48b972b80c199610413",
+      "note": "Re-verified 2026-08-04 at bd1ebe37 after #309 format; fresh PG 12/12"
     },
     "mkfast-template-main/src/payment/postgres-webhook-settlement.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fdbcc9f62d735a615871251ac9bd6adcb3bd34c6",
-      "note": "Re-verified 2026-08-04 at fdbcc9f6 on fresh PG meiye_309_ev_*; #309 Creem retirement. 12/12 pass 0 skip."
+      "verifiedAt": "bd1ebe37f15cc9d46e66e48b972b80c199610413",
+      "note": "Re-verified 2026-08-04 at bd1ebe37 after #309 format; fresh PG 12/12"
     },
     "mkfast-template-main/src/payment/credit-package-checkout-bindings.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fdbcc9f62d735a615871251ac9bd6adcb3bd34c6",
-      "note": "Re-verified 2026-08-04 at fdbcc9f6 on fresh PG meiye_309_ev_*; #309 Creem retirement. 12/12 pass 0 skip."
+      "verifiedAt": "bd1ebe37f15cc9d46e66e48b972b80c199610413",
+      "note": "Re-verified 2026-08-04 at bd1ebe37 after #309 format; fresh PG 12/12"
     },
     "mkfast-template-main/src/payment/payment-refunds.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "fdbcc9f62d735a615871251ac9bd6adcb3bd34c6",
-      "note": "Re-verified 2026-08-04 at fdbcc9f6 on fresh PG meiye_309_ev_*; #309 Creem retirement. 12/12 pass 0 skip."
+      "verifiedAt": "bd1ebe37f15cc9d46e66e48b972b80c199610413",
+      "note": "Re-verified 2026-08-04 at bd1ebe37 after #309 format; fresh PG 12/12"
     },
     "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
       "status": "green",
