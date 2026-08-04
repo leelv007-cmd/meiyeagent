@@ -8,15 +8,26 @@ import {
 } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { AssetIntakeExperience } from '@meiye/contracts';
+import type { AssetIntakeExperience, ParseTask } from '@meiye/contracts';
 
 const commandP1 = vi.fn();
 const queryP1 = vi.fn();
+const uploadWorkspaceIntakeAsset = vi.fn();
 
 vi.mock('@/p1/client', () => ({
   commandP1: (...args: unknown[]) => commandP1(...args),
   queryP1: (...args: unknown[]) => queryP1(...args),
 }));
+
+vi.mock('@/p1/workspace-asset-upload', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/p1/workspace-asset-upload')>();
+  return {
+    ...actual,
+    uploadWorkspaceIntakeAsset: (...args: unknown[]) =>
+      uploadWorkspaceIntakeAsset(...args),
+  };
+});
 
 const { StoreIntakeWizard } = await import('./store-intake-wizard');
 
@@ -87,6 +98,21 @@ function renderWizard() {
 beforeEach(() => {
   commandP1.mockReset();
   queryP1.mockReset();
+  uploadWorkspaceIntakeAsset.mockReset();
+  let uploadCount = 0;
+  uploadWorkspaceIntakeAsset.mockImplementation(
+    async ({ file }: { file: File }) => {
+      uploadCount += 1;
+      const hex = String(uploadCount).padStart(2, '0').repeat(32);
+      return {
+        contentType: file.type || 'image/png',
+        objectKey: `workspace-a/canvas/assets/intake-${file.name}`,
+        sha256: hex.slice(0, 64),
+        sizeBytes: 128,
+        sourceUrl: `https://assets.example.test/${file.name}`,
+      };
+    }
+  );
   queryP1.mockImplementation(
     async (module: string, call: { action: string }) => {
       if (call.action === 'asset_intake_experience') return EXPERIENCE;
@@ -308,5 +334,228 @@ describe('StoreIntakeWizard', () => {
     expect(actions).not.toContain('store_fact_append');
     expect(actions).not.toContain('confirm_asset_intake_fact');
     expect(actions).not.toContain('record_asset_intake_batch');
+  });
+
+  it('batch upload shows Core progress then per-draft confirm fields', async () => {
+    const progressMessage =
+      '正在整理你上传的资料，已完成 2/2 份；离开后也会继续处理。';
+    let taskPolls = 0;
+    queryP1.mockImplementation(
+      async (module: string, call: { action: string; payload?: unknown }) => {
+        if (call.action === 'asset_intake_experience') return EXPERIENCE;
+        if (call.action === 'store_facts_active') return [];
+        if (call.action === 'config_defaults') {
+          return { 'compliance.regulated_mode.default': false };
+        }
+        if (call.action === 'asset_parse_task') {
+          taskPolls += 1;
+          const status =
+            taskPolls === 1 ? ('running' as const) : ('completed' as const);
+          const completed = taskPolls === 1 ? 1 : 2;
+          return {
+            carrierAttempt: 1,
+            createdAt: '2026-08-05T00:00:00.000Z',
+            disclosure: EXPERIENCE.disclosure,
+            mode: 'batch_async',
+            progress: {
+              completed,
+              message:
+                taskPolls === 1
+                  ? '正在整理你上传的资料，已完成 1/2 份；离开后也会继续处理。'
+                  : progressMessage,
+              total: 2,
+            },
+            sourceAssetIds: ['asset-a', 'asset-b'],
+            status,
+            taskId: (call.payload as { taskId: string }).taskId,
+            updatedAt: '2026-08-05T00:00:01.000Z',
+            workspaceId: 'workspace-a',
+          } satisfies ParseTask;
+        }
+        if (call.action === 'asset_parse_task_drafts') {
+          return {
+            taskId: (call.payload as { taskId: string }).taskId,
+            items: [
+              {
+                sourceAssetId: 'asset-a',
+                draft: {
+                  draftId: 'draft-a',
+                  revision: 1,
+                  workspaceId: 'workspace-a',
+                  taskId: (call.payload as { taskId: string }).taskId,
+                  sourceAssetId: 'asset-a',
+                  parsedDocumentId: 'parsed-a',
+                  target: 'price_list',
+                  origin: 'parsed',
+                  fields: [
+                    {
+                      key: 'offer.price',
+                      value: { amount: 239, currency: 'CNY' },
+                      provenance: 'photo_extract',
+                      status: 'unconfirmed',
+                    },
+                  ],
+                  factCandidates: [],
+                  visualClassification: null,
+                  parser: { kind: 'fixture' },
+                  createdAt: '2026-08-05T00:00:00.000Z',
+                },
+              },
+              {
+                sourceAssetId: 'asset-b',
+                draft: {
+                  draftId: 'draft-b',
+                  revision: 1,
+                  workspaceId: 'workspace-a',
+                  taskId: (call.payload as { taskId: string }).taskId,
+                  sourceAssetId: 'asset-b',
+                  parsedDocumentId: 'parsed-b',
+                  target: 'price_list',
+                  origin: 'parsed',
+                  fields: [
+                    {
+                      key: 'service.name',
+                      value: '头皮护理',
+                      provenance: 'photo_extract',
+                      status: 'unconfirmed',
+                    },
+                  ],
+                  factCandidates: [],
+                  visualClassification: null,
+                  parser: { kind: 'fixture' },
+                  createdAt: '2026-08-05T00:00:00.000Z',
+                },
+              },
+            ],
+          };
+        }
+        throw new Error(`unexpected query ${module}.${call.action}`);
+      }
+    );
+    commandP1.mockImplementation(
+      async (_module: string, call: { action: string; payload?: unknown }) => {
+        if (call.action === 'prepare_store_profile_import') {
+          return { batch: null };
+        }
+        if (call.action === 'start_parse_asset_batch') {
+          return {
+            carrierAttempt: 1,
+            createdAt: '2026-08-05T00:00:00.000Z',
+            disclosure: EXPERIENCE.disclosure,
+            mode: 'batch_async',
+            progress: {
+              completed: 0,
+              message:
+                '正在整理你上传的资料，已完成 0/2 份；离开后也会继续处理。',
+              total: 2,
+            },
+            sourceAssetIds: ['asset-a', 'asset-b'],
+            status: 'queued',
+            taskId: (call.payload as { taskId: string }).taskId,
+            updatedAt: '2026-08-05T00:00:00.000Z',
+            workspaceId: 'workspace-a',
+          } satisfies ParseTask;
+        }
+        if (call.action === 'finalize_store_intake') return {};
+        throw new Error(`unexpected command ${call.action}`);
+      }
+    );
+
+    renderWizard();
+    await screen.findByTestId('store-intake-steps');
+    // skip examples + recommendations → say_or_upload
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    await screen.findByTestId('store-intake-photos');
+
+    const photos = screen.getByTestId(
+      'store-intake-photos'
+    ) as HTMLInputElement;
+    const fileA = new File(['price-a'], 'price-a.png', { type: 'image/png' });
+    const fileB = new File(['price-b'], 'price-b.png', { type: 'image/png' });
+    Object.defineProperty(photos, 'files', {
+      configurable: true,
+      value: [fileA, fileB],
+    });
+    fireEvent.change(photos);
+
+    await waitFor(() => {
+      expect(uploadWorkspaceIntakeAsset).toHaveBeenCalledTimes(2);
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/已上传 2 份/u)).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    await screen.findByTestId('store-intake-batch-run');
+    fireEvent.click(screen.getByTestId('store-intake-batch-run'));
+
+    await waitFor(
+      () => {
+        expect(
+          commandP1.mock.calls.some(
+            (call) =>
+              (call[1] as { action: string }).action ===
+              'start_parse_asset_batch'
+          )
+        ).toBe(true);
+      },
+      { timeout: 5_000 }
+    );
+
+    await waitFor(
+      () => {
+        expect(
+          screen.getByTestId('store-intake-batch-progress').textContent
+        ).toBe(progressMessage);
+      },
+      { timeout: 5_000 }
+    );
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId('store-intake-arrange-result')).toBeTruthy();
+      },
+      { timeout: 5_000 }
+    );
+
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    await screen.findByTestId('store-intake-confirm');
+    expect(
+      (
+        screen.getByTestId(
+          'store-intake-field-projectPrice'
+        ) as HTMLInputElement
+      ).value
+    ).toBe('239');
+    expect(
+      (screen.getByTestId('store-intake-field-projectName') as HTMLInputElement)
+        .value
+    ).toBe('头皮护理');
+
+    for (const field of ['name', 'city', 'projectName', 'projectPrice']) {
+      fireEvent.click(screen.getByTestId(`store-intake-confirm-${field}`));
+    }
+    fireEvent.click(
+      screen.getByTestId('store-intake-field-projectPriceValidity-long-term')
+    );
+    fireEvent.click(
+      screen.getByTestId('store-intake-confirm-projectPriceValidity')
+    );
+    fireEvent.click(screen.getByTestId('store-intake-save'));
+
+    await waitFor(() => {
+      const finalize = commandP1.mock.calls.find(
+        (call) =>
+          (call[1] as { action: string }).action === 'finalize_store_intake'
+      );
+      expect(finalize).toBeTruthy();
+    });
+    const actions = commandP1.mock.calls.map(
+      (call) => (call[1] as { action: string }).action
+    );
+    expect(actions).toContain('start_parse_asset_batch');
+    expect(actions).toContain('finalize_store_intake');
+    expect(actions).not.toContain('confirm_asset_intake_fact');
   });
 });

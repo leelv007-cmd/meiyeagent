@@ -35,6 +35,12 @@ import {
   store_intake_arrange_recognized,
   store_intake_arranging,
   store_intake_back,
+  store_intake_batch_failed,
+  store_intake_batch_retry,
+  store_intake_batch_run,
+  store_intake_batch_running,
+  store_intake_batch_timeout,
+  store_intake_batch_to_manual,
   store_intake_confirm_all,
   store_intake_confirm_hint,
   store_intake_confirm_title,
@@ -61,6 +67,9 @@ import {
   store_intake_photo_ready,
   store_intake_photo_unsupported,
   store_intake_photo_uploading,
+  store_intake_photos_choose,
+  store_intake_photos_label,
+  store_intake_photos_ready,
   store_intake_price_validity_hint,
   store_intake_recommendation_hint,
   store_intake_recommended,
@@ -112,28 +121,37 @@ import type {
   AssetDraftView,
   AssetIntakeBatch,
   AssetIntakeExperience,
+  AssetParseTaskDrafts,
+  ParseTask,
   StoreFact,
   StoreProfile,
   VisualAssetSlot,
 } from '@meiye/contracts';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { IconAlertTriangle, IconCheck, IconRefresh } from '@tabler/icons-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   applyArrangedDraft,
+  applyBatchDrafts,
   arrangementRecognizedFields,
+  assetParseTaskDraftsQuery,
+  assetParseTaskQuery,
+  batchPollDelayMs,
   buildImportFinalizeCommand,
   canArrange,
+  canBatchParse,
   createStoreIntakeWizardState,
   currentStep,
   editSentence,
   goToStep,
   importCandidateGroups,
   orderedIntakeFields,
+  parseAssetBatchRequest,
   parseSingleAssetRequest,
   prepareManualDraftRequest,
   recommendedFactIds,
+  resolveBatchPollTick,
   rotateExample,
   selectedExample,
   toggleRecommendation,
@@ -293,6 +311,20 @@ export function StoreIntakeWizard({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string>();
   const [saved, setSaved] = useState(false);
+  /** Batch progress message comes from Core (`merchantParseProgress`). */
+  const [batchProgress, setBatchProgress] = useState<{
+    completed: number;
+    message: string;
+    total: number;
+  } | null>(null);
+  const [batchStatus, setBatchStatus] = useState<ParseTask['status'] | null>(
+    null
+  );
+  const [batchTerminal, setBatchTerminal] = useState<
+    'failed' | 'timeout' | null
+  >(null);
+  const [batchPending, setBatchPending] = useState(false);
+  const batchPollAbortRef = useRef<AbortController | null>(null);
 
   const arrange = useMutation({
     mutationFn: async (input: {
@@ -390,6 +422,21 @@ export function StoreIntakeWizard({
     complianceDefaults.data?.['compliance.regulated_mode.default'] ===
       undefined;
 
+  // D-158: leave the ai_arrange step or unmount → stop polling immediately.
+  useEffect(() => {
+    if (step?.id !== 'ai_arrange') {
+      batchPollAbortRef.current?.abort();
+      batchPollAbortRef.current = null;
+    }
+  }, [step?.id]);
+
+  useEffect(() => {
+    return () => {
+      batchPollAbortRef.current?.abort();
+      batchPollAbortRef.current = null;
+    };
+  }, []);
+
   async function upload(file: File) {
     setUploadError(undefined);
     setUploading(true);
@@ -405,6 +452,136 @@ export function StoreIntakeWizard({
       );
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function uploadMany(files: File[]) {
+    if (files.length === 0) return;
+    setUploadError(undefined);
+    setUploading(true);
+    try {
+      const receipts: WorkspaceAssetUpload[] = [];
+      for (const file of files) {
+        receipts.push(await uploadWorkspaceIntakeAsset({ file, workspaceId }));
+      }
+      setState((current) => ({
+        ...current,
+        uploads: receipts,
+        // Keep the first receipt on the single lane so manual fallback works.
+        upload: receipts[0] ?? current.upload,
+      }));
+      setBatchTerminal(null);
+      setBatchProgress(null);
+      setBatchStatus(null);
+    } catch (error) {
+      setUploadError(
+        error instanceof WorkspaceAssetUploadError &&
+          error.reason === 'unsupported_type'
+          ? store_intake_photo_unsupported()
+          : store_intake_photo_failed()
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function sleep(ms: number, signal: AbortSignal) {
+    if (signal.aborted) return;
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort);
+        resolve();
+      }, ms);
+      const onAbort = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+  }
+
+  /**
+   * Batch arrange: start_parse_asset_batch → poll asset_parse_task → drafts.
+   * Every wait state exits on terminal status, attempt budget, cancel, or fail.
+   */
+  async function runBatchParse() {
+    if (!canBatchParse(state)) return;
+    batchPollAbortRef.current?.abort();
+    const abort = new AbortController();
+    batchPollAbortRef.current = abort;
+    setBatchPending(true);
+    setBatchTerminal(null);
+    setBatchProgress(null);
+    setBatchStatus(null);
+    const id = crypto.randomUUID();
+    const taskId = `intake-batch-task:${id}`;
+    try {
+      const request = parseAssetBatchRequest({
+        rightsConfirmed: state.rightsConfirmed,
+        target: state.target,
+        taskId,
+        uploads: state.uploads,
+      });
+      let task = await commandP1<ParseTask>(
+        'asset-memory',
+        request,
+        `intake-batch:${id}`
+      );
+      setBatchStatus(task.status);
+      setBatchProgress(task.progress);
+
+      let attempt = 0;
+      while (true) {
+        const decision = resolveBatchPollTick({
+          attempt,
+          cancelled: abort.signal.aborted,
+          task,
+        });
+        if (decision.kind === 'cancelled') return;
+        if (decision.kind === 'failed') {
+          setBatchTerminal('failed');
+          setBatchStatus(decision.task.status);
+          setBatchProgress(decision.task.progress);
+          return;
+        }
+        if (decision.kind === 'completed') {
+          setBatchStatus(decision.task.status);
+          setBatchProgress(decision.task.progress);
+          const draftsQuery = assetParseTaskDraftsQuery(taskId);
+          const drafts = await queryP1<AssetParseTaskDrafts>(
+            'asset-memory',
+            draftsQuery,
+            abort.signal
+          );
+          if (abort.signal.aborted) return;
+          setState((current) => applyBatchDrafts(current, drafts.items));
+          return;
+        }
+        if (decision.kind === 'timeout') {
+          setBatchTerminal('timeout');
+          return;
+        }
+
+        await sleep(batchPollDelayMs(attempt), abort.signal);
+        if (abort.signal.aborted) return;
+        attempt += 1;
+        const progressQuery = assetParseTaskQuery(taskId);
+        task = await queryP1<ParseTask>(
+          'asset-memory',
+          progressQuery,
+          abort.signal
+        );
+        if (abort.signal.aborted) return;
+        setBatchStatus(task.status);
+        setBatchProgress(task.progress);
+      }
+    } catch {
+      if (!abort.signal.aborted) setBatchTerminal('failed');
+    } finally {
+      if (batchPollAbortRef.current === abort) {
+        batchPollAbortRef.current = null;
+      }
+      setBatchPending(false);
     }
   }
 
@@ -632,6 +809,33 @@ export function StoreIntakeWizard({
                     </p>
                   ) : null}
                 </div>
+                <div>
+                  <Label htmlFor="store-intake-photos">
+                    {store_intake_photos_label()}
+                  </Label>
+                  <Input
+                    accept="image/jpeg,image/png,image/webp"
+                    className="mt-1"
+                    data-testid="store-intake-photos"
+                    disabled={uploading}
+                    id="store-intake-photos"
+                    multiple
+                    onChange={(event) => {
+                      const files = [...(event.target.files ?? [])];
+                      if (files.length > 0) void uploadMany(files);
+                    }}
+                    type="file"
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {uploading
+                      ? store_intake_photo_uploading()
+                      : state.uploads.length > 0
+                        ? store_intake_photos_ready({
+                            count: state.uploads.length,
+                          })
+                        : store_intake_photos_choose()}
+                  </p>
+                </div>
                 {/* Contract says `blocking: false` — this prompt records an
                     answer, it never stops the merchant from continuing. */}
                 <div className="flex items-start gap-2">
@@ -668,7 +872,7 @@ export function StoreIntakeWizard({
                 {state.upload ? (
                   <Button
                     data-testid="store-intake-arrange-run"
-                    disabled={arrange.isPending}
+                    disabled={arrange.isPending || batchPending}
                     onClick={() =>
                       arrange.mutate({ manual: false, upload: state.upload! })
                     }
@@ -678,6 +882,72 @@ export function StoreIntakeWizard({
                       ? store_intake_arranging()
                       : store_intake_arrange()}
                   </Button>
+                ) : null}
+                {canBatchParse(state) ? (
+                  <div className="space-y-2" data-testid="store-intake-batch">
+                    <Button
+                      data-testid="store-intake-batch-run"
+                      disabled={batchPending || arrange.isPending}
+                      onClick={() => void runBatchParse()}
+                      type="button"
+                    >
+                      {batchPending
+                        ? store_intake_batch_running()
+                        : store_intake_batch_run()}
+                    </Button>
+                    {batchProgress ? (
+                      <p
+                        className="text-sm text-muted-foreground"
+                        data-status={batchStatus ?? undefined}
+                        data-testid="store-intake-batch-progress"
+                      >
+                        {/* Core merchantParseProgress text — do not rephrase. */}
+                        {batchProgress.message}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+                {batchTerminal ? (
+                  <div
+                    className="space-y-2"
+                    data-testid="store-intake-batch-failed"
+                    role="alert"
+                  >
+                    <p className="text-sm text-destructive">
+                      {batchTerminal === 'timeout'
+                        ? store_intake_batch_timeout()
+                        : store_intake_batch_failed()}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        data-testid="store-intake-batch-retry"
+                        disabled={batchPending}
+                        onClick={() => void runBatchParse()}
+                        size="sm"
+                        type="button"
+                        variant="outline"
+                      >
+                        {store_intake_batch_retry()}
+                      </Button>
+                      {state.upload ? (
+                        <Button
+                          data-testid="store-intake-batch-to-manual"
+                          disabled={arrange.isPending}
+                          onClick={() =>
+                            arrange.mutate({
+                              manual: true,
+                              upload: state.upload!,
+                            })
+                          }
+                          size="sm"
+                          type="button"
+                          variant="outline"
+                        >
+                          {store_intake_batch_to_manual()}
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
                 ) : null}
                 {arrange.isError || state.arrangeFailed ? (
                   <div

@@ -17,6 +17,7 @@ import type {
   AssetIntakeExperience,
   FinalizeStoreIntakeCommand,
   ParseSourceAssetInput,
+  ParseTask,
   StoreProfile,
 } from '@meiye/contracts';
 
@@ -108,7 +109,13 @@ export interface StoreIntakeWizardState {
   sentenceEdited: boolean;
   stepIndex: number;
   target: StoreIntakeTarget;
+  /** Single-file lane (kept for one-photo parse / manual fallback). */
   upload: WorkspaceAssetUpload | null;
+  /**
+   * Multi-file lane for batch parse. Independent of `upload` so single-file
+   * and batch can coexist without replacing each other.
+   */
+  uploads: WorkspaceAssetUpload[];
 }
 
 export function createStoreIntakeWizardState(
@@ -127,6 +134,7 @@ export function createStoreIntakeWizardState(
     stepIndex: 0,
     target: 'price_list',
     upload: null,
+    uploads: [],
   };
 }
 
@@ -304,7 +312,16 @@ export function statedSentence(sentence: string) {
 
 /** Step 4 can only run once the merchant gave it something to work from. */
 export function canArrange(state: StoreIntakeWizardState) {
-  return state.upload !== null || statedSentence(state.sentence).length > 0;
+  return (
+    state.upload !== null ||
+    state.uploads.length > 0 ||
+    statedSentence(state.sentence).length > 0
+  );
+}
+
+/** Batch parse needs at least two verified sources (contract min 2). */
+export function canBatchParse(state: StoreIntakeWizardState) {
+  return state.uploads.length >= 2;
 }
 
 export function parseSourceInput(input: {
@@ -343,6 +360,133 @@ export function parseSingleAssetRequest(input: {
       source: parseSourceInput(input),
     },
   };
+}
+
+/**
+ * Batch command assembly for `start_parse_asset_batch`. Asset ids stay unique
+ * even when two receipts share a sha256 prefix (index suffix).
+ */
+export function parseAssetBatchRequest(input: {
+  rightsConfirmed: boolean;
+  target: StoreIntakeTarget;
+  taskId: string;
+  uploads: WorkspaceAssetUpload[];
+}) {
+  return {
+    action: 'start_parse_asset_batch' as const,
+    payload: {
+      taskId: input.taskId,
+      sources: input.uploads.map((upload, index) =>
+        parseSourceInput({
+          assetId: `intake-asset:${upload.sha256.slice(0, 20)}-${index}`,
+          rightsConfirmed: input.rightsConfirmed,
+          target: input.target,
+          upload,
+        })
+      ),
+    },
+  };
+}
+
+export function assetParseTaskQuery(taskId: string) {
+  return {
+    action: 'asset_parse_task' as const,
+    payload: { taskId },
+  };
+}
+
+export function assetParseTaskDraftsQuery(taskId: string) {
+  return {
+    action: 'asset_parse_task_drafts' as const,
+    payload: { taskId },
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Batch poll control (D-158: every wait state has a stop condition).
+ * ------------------------------------------------------------------ */
+
+/** Hard cap so the UI cannot poll forever if Core never reaches a terminal. */
+export const BATCH_POLL_MAX_ATTEMPTS = 40;
+export const BATCH_POLL_BASE_MS = 500;
+export const BATCH_POLL_MAX_MS = 4_000;
+
+export type ParseTaskTerminalStatus = Extract<
+  ParseTask['status'],
+  'completed' | 'completed_with_fallback' | 'failed'
+>;
+
+export function isParseTaskTerminal(
+  status: ParseTask['status']
+): status is ParseTaskTerminalStatus {
+  return (
+    status === 'completed' ||
+    status === 'completed_with_fallback' ||
+    status === 'failed'
+  );
+}
+
+/**
+ * Whether the client should keep polling. Stops on terminal Core status,
+ * attempt budget, or when the caller already decided to cancel.
+ */
+export function shouldContinueBatchPolling(input: {
+  attempt: number;
+  cancelled?: boolean;
+  maxAttempts?: number;
+  status: ParseTask['status'] | null;
+}): boolean {
+  if (input.cancelled) return false;
+  if (input.status !== null && isParseTaskTerminal(input.status)) return false;
+  const max = input.maxAttempts ?? BATCH_POLL_MAX_ATTEMPTS;
+  return input.attempt < max;
+}
+
+/** Exponential backoff capped at BATCH_POLL_MAX_MS. */
+export function batchPollDelayMs(attempt: number): number {
+  const exp = Math.min(Math.max(attempt, 0), 4);
+  return Math.min(BATCH_POLL_BASE_MS * 2 ** exp, BATCH_POLL_MAX_MS);
+}
+
+export type BatchPollOutcome =
+  | { kind: 'completed'; task: ParseTask }
+  | { kind: 'failed'; task: ParseTask }
+  | { kind: 'timeout'; lastStatus: ParseTask['status'] | null }
+  | { kind: 'cancelled' };
+
+/**
+ * Pure decision after a progress poll: keep going, finish, fail, or time out.
+ * The UI owns the sleep / fetch; this only names the next exit.
+ */
+export function resolveBatchPollTick(input: {
+  attempt: number;
+  cancelled?: boolean;
+  maxAttempts?: number;
+  task: ParseTask | null;
+}):
+  | { kind: 'continue' }
+  | { kind: 'completed'; task: ParseTask }
+  | { kind: 'failed'; task: ParseTask }
+  | { kind: 'timeout' }
+  | { kind: 'cancelled' } {
+  if (input.cancelled) return { kind: 'cancelled' };
+  if (input.task && isParseTaskTerminal(input.task.status)) {
+    if (input.task.status === 'failed') {
+      return { kind: 'failed', task: input.task };
+    }
+    return { kind: 'completed', task: input.task };
+  }
+  if (
+    !shouldContinueBatchPolling({
+      attempt: input.attempt,
+      cancelled: input.cancelled,
+      maxAttempts: input.maxAttempts,
+      status: input.task?.status ?? null,
+    })
+  ) {
+    return { kind: 'timeout' };
+  }
+  return { kind: 'continue' };
 }
 
 /**
@@ -443,6 +587,43 @@ export function applyArrangedDraft(
     // a rights prompt the contract marks `blocking: false`.
     classification: draft.visualClassification ?? null,
     draft: applyExtractedFacts(state.draft, draftPrefillEntries(draft)),
+  };
+}
+
+/**
+ * Merge every produced batch draft into the progressive fact draft in source
+ * order. Confirmation still leaves only through finalize_store_intake.
+ */
+export function applyBatchDrafts(
+  state: StoreIntakeWizardState,
+  items: Array<{
+    draft: {
+      fields: Array<{ key: string; provenance: string; value: unknown }>;
+      origin: AssetDraftView['origin'];
+      visualClassification?: AssetDraftView['visualClassification'];
+    } | null;
+    sourceAssetId: string;
+  }>
+): StoreIntakeWizardState {
+  const ready = items
+    .map((item) => item.draft)
+    .filter((draft): draft is NonNullable<typeof draft> => draft !== null);
+  if (ready.length === 0) {
+    return {
+      ...state,
+      arrangeFailed: true,
+      arrangedOrigin: null,
+      classification: null,
+    };
+  }
+  let next = state;
+  for (const draft of ready) {
+    next = applyArrangedDraft(next, draft);
+  }
+  const allFallback = ready.every((draft) => draft.origin === 'fallback');
+  return {
+    ...next,
+    arrangeFailed: allFallback,
   };
 }
 
