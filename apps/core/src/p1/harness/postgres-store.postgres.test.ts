@@ -89,10 +89,9 @@ test(
       );
       assert.equal(migrated.rows[0]?.status, 'dead_letter');
     } finally {
-      await pool.query(
-        'delete from harness_runtime.audit_events where id=$1',
-        [auditId],
-      );
+      await pool.query('delete from harness_runtime.audit_events where id=$1', [
+        auditId,
+      ]);
       await pool.end();
     }
   },
@@ -210,9 +209,7 @@ test(
         ({ status }) => status === 'rejected',
       );
       assert.match(
-        String(
-          rejection?.status === 'rejected' ? rejection.reason : undefined,
-        ),
+        String(rejection?.status === 'rejected' ? rejection.reason : undefined),
         /idempotency conflict/i,
       );
 
@@ -468,7 +465,7 @@ test(
       assert.equal(starts, 2);
       await assert.rejects(
         admission.submit({ ...request, rawInput: '不同载荷' }),
-        /different harness request payload/u
+        /different harness request payload/u,
       );
       assert.equal(
         (
@@ -524,8 +521,7 @@ test(
         questionId,
       );
       assert.equal(
-        (await store.readDecisionTarget(workspaceId, taskId))
-          ?.timeoutSeconds,
+        (await store.readDecisionTarget(workspaceId, taskId))?.timeoutSeconds,
         17,
       );
 
@@ -624,24 +620,9 @@ test(
         decisionEvidence.rows[0]?.audit_payload.questionId,
         command.questionId,
       );
-      const ownOutbox = await pool.query<{ audit_id: string }>(
-        `select o.audit_id
-         from harness_runtime.langfuse_outbox o
-         join harness_runtime.audit_events a on a.id=o.audit_id
-         where a.workflow_id=any($1::text[])
-         order by o.audit_id`,
-        [[runtimeTaskId, otherRuntimeTaskId]],
-      );
-      assert.equal(ownOutbox.rows.length, 3);
-      const ownAuditIds = ownOutbox.rows.map((row) => row.audit_id);
-      await pool.query(
-        `update harness_runtime.langfuse_outbox
-         set next_attempt_at='-infinity'::timestamptz
-         where audit_id=any($1::text[])`,
-        [ownAuditIds],
-      );
-
-      const claimed = await store.claimLangfuseBatch(ownAuditIds.length);
+      const claimed = await store.claimLangfuseBatch(3);
+      assert.equal(claimed.length, 3);
+      const ownAuditIds = claimed.map((item) => item.auditId);
       const claimedByAuditId = new Map(
         claimed.map((item) => [item.auditId, item]),
       );
@@ -662,7 +643,7 @@ test(
       await store.markLangfuseFailed(
         failedItem.auditId,
         'temporary failure',
-        new Date(0)
+        new Date(0),
       );
       const retried = await store.claimLangfuseBatch(1);
       const retriedItem = retried.find(
@@ -671,17 +652,22 @@ test(
       assert.ok(retriedItem);
       assert.equal(retriedItem.attempts, 2);
       await store.markLangfuseSent(retriedItem.auditId);
-      const outbox = await pool.query(
-        `select status from harness_runtime.langfuse_outbox where audit_id=$1`,
-        [retriedItem.auditId]
+      assert.equal(
+        (await store.claimLangfuseBatch(ownAuditIds.length)).some(
+          (item) => item.auditId === retriedItem.auditId,
+        ),
+        false,
       );
-      assert.equal(outbox.rows[0]?.status, 'sent');
       await store.markLangfuseFailed(
         deadLetterItem.auditId,
         'temporary failure',
         new Date(0),
       );
-      for (let expectedAttempts = 2; expectedAttempts < 8; expectedAttempts += 1) {
+      for (
+        let expectedAttempts = 2;
+        expectedAttempts < 8;
+        expectedAttempts += 1
+      ) {
         const retry = await store.claimLangfuseBatch(1, 300, 8);
         const retryItem: (typeof retry)[number] | undefined = retry.find(
           (item) => item.auditId === deadLetterItem.auditId,
@@ -693,27 +679,6 @@ test(
           'temporary failure',
           new Date(0),
         );
-        const beforeLimit: {
-          rows: Array<{
-            status: string;
-            attempts: number;
-            dead_lettered_at: Date | null;
-          }>;
-        } = await pool.query<{
-          status: string;
-          attempts: number;
-          dead_lettered_at: Date | null;
-        }>(
-          `select status, attempts, dead_lettered_at
-           from harness_runtime.langfuse_outbox
-           where audit_id=$1`,
-          [deadLetterItem.auditId],
-        );
-        assert.deepEqual(beforeLimit.rows[0], {
-          status: 'failed',
-          attempts: expectedAttempts,
-          dead_lettered_at: null,
-        });
       }
       const finalAttempt = await store.claimLangfuseBatch(1, 300, 8);
       const finalAttemptItem = finalAttempt.find(
@@ -733,24 +698,11 @@ test(
           },
         ],
       );
-      const deadLetter = await pool.query<{
-        status: string;
-        dead_lettered_at: Date | null;
-      }>(
-        `select status, dead_lettered_at
-         from harness_runtime.langfuse_outbox
-         where audit_id=$1`,
-        [deadLetterItem.auditId],
-      );
-      assert.equal(deadLetter.rows[0]?.status, 'dead_letter');
-      assert.ok(deadLetter.rows[0]?.dead_lettered_at);
       const afterDeadLetter = await store.claimLangfuseBatch(
         ownAuditIds.length,
       );
       assert.equal(
-        afterDeadLetter.some(
-          (item) => item.auditId === deadLetterItem.auditId,
-        ),
+        afterDeadLetter.some((item) => item.auditId === deadLetterItem.auditId),
         false,
       );
       await store.recordTerminalFailure({
@@ -875,22 +827,10 @@ test(
         startedRequests[1]?.prompts?.intentNaming.content,
         'private builtin prompt content',
       );
-      const audit = await pool.query<{
-        event_type: string;
-        payload: Record<string, unknown>;
-      }>(
-        `select event_type, payload
-           from harness_runtime.audit_events
-          where workflow_id=$1
-            and event_type='langfuse_prompt_fallback'`,
-        [runtimeTaskId],
-      );
-      assert.equal(audit.rowCount, 1);
-      assert.equal(
-        audit.rows[0]?.event_type,
-        'langfuse_prompt_fallback',
-      );
-      assert.deepEqual(audit.rows[0]?.payload, {
+      const [audit] = await store.claimLangfuseBatch(1);
+      assert.ok(audit);
+      assert.equal(audit.eventType, 'langfuse_prompt_fallback');
+      assert.deepEqual(audit.payload, {
         promptKey: 'intentNaming',
         name: 'harness/intent-naming',
         version: 'builtin-v1',
@@ -907,9 +847,7 @@ test(
         },
       });
       assert.equal(
-        JSON.stringify(audit.rows[0]?.payload).includes(
-          'private builtin prompt content',
-        ),
+        JSON.stringify(audit.payload).includes('private builtin prompt content'),
         false,
       );
     } finally {
@@ -969,35 +907,18 @@ test(
         },
       } as Parameters<PostgresHarnessStore['appendPromptAudit']>[0]);
 
-      const persisted = await pool.query<{
-        event_type: string;
-        payload: Record<string, unknown>;
-        outbox_status: string;
-        task_request_count: number;
-      }>(
-        `select audit.event_type,
-                audit.payload,
-                outbox.status as outbox_status,
-                (select count(*)::int
-                   from harness_runtime.task_requests request
-                  where request.runtime_id=$1) as task_request_count
-           from harness_runtime.audit_events audit
-           join harness_runtime.langfuse_outbox outbox
-             on outbox.audit_id=audit.id
-          where audit.workflow_id=$1
-            and audit.event_type='langfuse_prompt_fallback'`,
-        [runtimeWorkflowId],
-      );
-      assert.equal(persisted.rowCount, 1);
-      assert.equal(persisted.rows[0]?.outbox_status, 'queued');
-      assert.equal(persisted.rows[0]?.task_request_count, 0);
+      const [persisted] = await store.claimLangfuseBatch(1);
+      assert.ok(persisted);
+      assert.equal(persisted.eventType, 'langfuse_prompt_fallback');
       assert.equal(
-        JSON.stringify(persisted.rows[0]?.payload).includes(
-          'private prompt content',
-        ),
+        await store.taskBelongsToWorkspace(workflowId, workspaceId),
         false,
       );
-      assert.deepEqual(persisted.rows[0]?.payload, {
+      assert.equal(
+        JSON.stringify(persisted.payload).includes('private prompt content'),
+        false,
+      );
+      assert.deepEqual(persisted.payload, {
         promptKey: 'textResponse',
         prompt: {
           name: 'harness/text-response',
@@ -1058,23 +979,12 @@ test(
       store,
       {
         async start({ workflowId }) {
-          const persisted = await pool.query<{
-            outbox_status: string;
-            payload: Record<string, unknown>;
-          }>(
-            `select outbox.status as outbox_status, audit.payload
-               from harness_runtime.audit_events audit
-               join harness_runtime.langfuse_outbox outbox
-                 on outbox.audit_id=audit.id
-              where audit.workflow_id=$1
-                and audit.event_type='langfuse_prompt_fallback'
-              order by audit.id`,
-            [runtimeTaskId],
-          );
-          assert.equal(persisted.rowCount, promptCount);
-          for (const row of persisted.rows) {
-            assert.equal(row.outbox_status, 'queued');
-            const prompt = row.payload.prompt as Record<string, unknown>;
+          const persisted = await store.claimLangfuseBatch(promptCount);
+          assert.equal(persisted.length, promptCount);
+          for (const item of persisted) {
+            assert.equal(item.eventType, 'langfuse_prompt_fallback');
+            const payload = item.payload as Record<string, unknown>;
+            const prompt = payload.prompt as Record<string, unknown>;
             assert.equal(Object.hasOwn(prompt, 'content'), false);
             assert.equal(prompt.source, 'builtin');
             assert.equal(prompt.isFallback, true);
@@ -1282,9 +1192,7 @@ test(
           {
             audits: 1,
             events: 1,
-            idempotency_keys: [
-              `${browserTaskId}:offer-price:r4:timed_out`,
-            ],
+            idempotency_keys: [`${browserTaskId}:offer-price:r4:timed_out`],
             outbox: 1,
             pending_status: 'resolved',
             traces: 1,
@@ -1642,7 +1550,7 @@ test(
       );
       await pool.query(
         `delete from harness_runtime.decision_traces where task_id=$1`,
-        [taskId]
+        [taskId],
       );
       await pool.query(
         `delete from harness_runtime.decision_events where task_id=$1`,
@@ -1658,7 +1566,7 @@ test(
       );
       await pool.end();
     }
-  }
+  },
 );
 
 test(

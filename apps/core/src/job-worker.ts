@@ -71,7 +71,10 @@ import {
   registerS3AssetRegistrationCleanupSchedule,
 } from './p1/model-supply/owned-asset-registration-cleanup.js';
 import { PostgresSkillRepository } from './p1/skills/index.js';
-import { PostgresHarnessStore } from './p1/harness/postgres-store.js';
+import {
+  PostgresHarnessAuditStore,
+  PostgresHarnessStore,
+} from './p1/harness/postgres-store.js';
 import { PostgresOwnedAssetCleanupClaimCoordinator } from './p1/model-supply/postgres-owned-asset-cleanup-claim.js';
 import { S3CompatibleAssetStorage } from './p1/model-supply/s3-asset-storage.js';
 import {
@@ -330,11 +333,12 @@ const repository = new PostgresTracerJobRepository(
   entitlementJobRuntime
 );
 const operationalTelemetryStore = new PostgresOperationalTelemetryStore(pool);
-const promptAuditStore = new PostgresHarnessStore(
+const harnessSchemaStore = new PostgresHarnessStore(
   pool,
   storeFactLedger,
   adminConfigRepository,
 );
+const promptAuditStore = new PostgresHarnessAuditStore(pool);
 await migratePostgresSchema(pool, [
   productRepository,
   relationalProductRepository,
@@ -352,7 +356,7 @@ await migratePostgresSchema(pool, [
   contextSourceRevisions,
   assetIntakeRepository,
   parseRepository,
-  promptAuditStore,
+  harnessSchemaStore,
   reuseMemoryRepository,
   contentPackageWriteOwnership,
   modelRepository,

@@ -33,8 +33,16 @@ import { PostgresStoreFactLedger } from '../operations/postgres-store-fact-ledge
 import { TaskBlockingNodeConflictError } from '../operations/repository.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { ModelSupplyPromptFallbackAuditEvent } from '../model-supply/route-contracts.js';
+import type { TaskObservabilityContextPort } from '../creation-experience/observability-events.js';
+import type { DailyRecommendationCandidateReader } from '../due-delivery/delivery-port.js';
 import { buildCopyPlatformVariants } from './output-compiler.js';
 import type { VisibleClaimExtraction } from './policy-gates.js';
+import type {
+  HarnessProductMetricRecorder,
+  HarnessRecommendationReader,
+  HarnessTaskAccess,
+} from './application-service.js';
+import type { HarnessWorkflowEventAccess } from './dbos-workflow-events.js';
 
 import type {
   HarnessDecisionStore,
@@ -47,14 +55,20 @@ import {
   type HarnessInteractionSnapshot,
   type HarnessInteractionPendingProjection,
   type HarnessInteractionStore,
+  type HarnessSystemDefaultCandidateStore,
 } from './interaction-service.js';
 import { isCurrentAskMerchantSemanticDefault } from './ask-merchant-timeout-authority.js';
 import { interactionKind } from './interaction-resume.js';
 import type {
   HarnessTaskRequestRegistry,
+  HarnessExecutionAssemblyAuditPort,
+  HarnessPromptFallbackAuditPort,
   HarnessWorkflowInput,
 } from './task-admission.js';
-import type { HarnessLangfuseOutboxItem } from './outbox-worker.js';
+import type {
+  HarnessLangfuseOutboxItem,
+  HarnessLangfuseOutboxStore,
+} from './outbox-worker.js';
 import type {
   HarnessReservationSweep,
   HarnessReservationSweepStore,
@@ -71,6 +85,10 @@ import {
   projectTodayRecommendation,
   type TodayRecommendationRecord,
 } from './today-recommendation.js';
+import type { HarnessWorkflowPersistence } from './dbos-workflow.js';
+import type { HarnessRuntimeIdResolver } from './dbos-workflow.js';
+import type { HarnessObservabilityReconciliationStore } from './observability-reconciliation.js';
+import type { HarnessCopyDeliveryPort } from './production-stage-ports.js';
 
 export interface HarnessAuditEvent {
   workspaceId: string;
@@ -112,8 +130,21 @@ class TaskRootObservabilityConflictError extends Error {
 export class PostgresHarnessStore
   implements
     HarnessTaskRequestRegistry,
+    HarnessTaskAccess,
+    HarnessRecommendationReader,
+    DailyRecommendationCandidateReader,
+    HarnessWorkflowEventAccess,
+    HarnessRuntimeIdResolver,
+    TaskObservabilityContextPort,
     HarnessDecisionStore,
     HarnessInteractionStore,
+    HarnessReservationSweepStore,
+    HarnessSystemDefaultCandidateStore,
+    HarnessWorkflowPersistence,
+    HarnessPromptFallbackAuditPort,
+    HarnessExecutionAssemblyAuditPort,
+    HarnessLangfuseOutboxStore,
+    HarnessObservabilityReconciliationStore,
     PostgresSchemaMigrator
 {
   constructor(
@@ -124,7 +155,11 @@ export class PostgresHarnessStore
     > = new PostgresStoreFactLedger(pool),
     private readonly adminConfig?: Pick<AdminConfigRepository, 'get'>,
     private readonly clock: () => Date = () => new Date(),
-  ) {}
+  ) {
+    bindAdapterMethods(this, new PostgresHarnessInteractionStore(pool, clock));
+    bindAdapterMethods(this, new PostgresHarnessAuditStore(pool));
+    bindAdapterMethods(this, new PostgresHarnessObservabilityStore(pool));
+  }
 
   async applySchema() {
     await migratePostgresSchema(this.pool, [this]);
@@ -600,7 +635,7 @@ export class PostgresHarnessStore
   }
 
   async taskBelongsToWorkspace(taskId: string, workspaceId: string) {
-    return (await this.workflowRuntimeId(workspaceId, taskId)) !== null;
+    return (await workflowRuntimeId(this.pool, workspaceId, taskId)) !== null;
   }
 
   async workflowRuntimeId(workspaceId: string, workflowId: string) {
@@ -632,7 +667,9 @@ export class PostgresHarnessStore
     if (rootAxes === undefined || rootAxes === null) return null;
     const parsed = observabilityAxisBindingSchema.parse(rootAxes);
     if (parsed.axisScope !== 'task_root') {
-      throw new Error('Frozen task observability axes must use task_root scope.');
+      throw new Error(
+        'Frozen task observability axes must use task_root scope.',
+      );
     }
     return parsed;
   }
@@ -732,7 +769,8 @@ export class PostgresHarnessStore
   }
 
   async readTerminalFailure(workspaceId: string, workflowId: string) {
-    const runtimeWorkflowId = await this.workflowRuntimeId(
+    const runtimeWorkflowId = await workflowRuntimeId(
+      this.pool,
       workspaceId,
       workflowId,
     );
@@ -759,7 +797,7 @@ export class PostgresHarnessStore
     workflowId: string;
     failure: Record<string, unknown>;
   }) {
-    await this.appendAudit({
+    await new PostgresHarnessAuditStore(this.pool).appendAudit({
       workspaceId: input.workspaceId,
       id: `audit-${input.workflowId}-workflow-failed`,
       workflowId: input.workflowId,
@@ -788,9 +826,8 @@ export class PostgresHarnessStore
     at: string,
     deliveredAtOverride?: string,
   ) {
-    const currentFactsRevision = await this.factRevisions.currentRevision(
-      workspaceId,
-    );
+    const currentFactsRevision =
+      await this.factRevisions.currentRevision(workspaceId);
     const deliveryResult = await this.pool.query<{
       task_id: string;
       request: unknown;
@@ -860,7 +897,9 @@ export class PostgresHarnessStore
     const recommendationRecord: TodayRecommendationRecord = {
       taskId: delivery.task_id,
       rawInput:
-        typeof request?.rawInput === 'string' ? request.rawInput : delivery.task_id,
+        typeof request?.rawInput === 'string'
+          ? request.rawInput
+          : delivery.task_id,
       deliveredAt:
         deliveredAtOverride ??
         (delivery.delivered_at instanceof Date
@@ -881,6 +920,39 @@ export class PostgresHarnessStore
       at,
     );
   }
+}
+
+type PostgresHarnessInteractionStoreSurface = Pick<
+  PostgresHarnessInteractionStore,
+  keyof PostgresHarnessInteractionStore
+>;
+type PostgresHarnessAuditStoreSurface = Pick<
+  PostgresHarnessAuditStore,
+  keyof PostgresHarnessAuditStore
+>;
+type PostgresHarnessObservabilityStoreSurface = Pick<
+  PostgresHarnessObservabilityStore,
+  keyof PostgresHarnessObservabilityStore
+>;
+
+export interface PostgresHarnessStore
+  extends
+    PostgresHarnessInteractionStoreSurface,
+    PostgresHarnessAuditStoreSurface,
+    PostgresHarnessObservabilityStoreSurface {}
+
+export class PostgresHarnessInteractionStore
+  implements
+    HarnessDecisionStore,
+    HarnessInteractionStore,
+    HarnessReservationSweepStore,
+    HarnessSystemDefaultCandidateStore,
+    HarnessWorkflowPersistence
+{
+  constructor(
+    private readonly pool: Pool,
+    private readonly clock: () => Date = () => new Date(),
+  ) {}
 
   async registerPending(
     workspaceId: string,
@@ -914,9 +986,7 @@ export class PostgresHarnessStore
       interactionRequest.timeoutPolicy?.kind === 'semantic_default' &&
       !isCurrentAskMerchantSemanticDefault(interactionRequest)
     ) {
-      throw new Error(
-        'The semantic default authority is not current.',
-      );
+      throw new Error('The semantic default authority is not current.');
     }
     const proposedInteractionProjection = interactionRequest
       ? createHarnessInteractionPendingProjection(
@@ -925,7 +995,8 @@ export class PostgresHarnessStore
           this.clock(),
         )
       : undefined;
-    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+    const runtimeTaskId = await requireWorkflowRuntimeId(
+      this.pool,
       workspaceId,
       parsed.workflowId,
     );
@@ -1016,10 +1087,7 @@ export class PostgresHarnessStore
                 set pending_projection=$2::jsonb,
                     updated_at=now()
               where task_id=$1 and status='pending'`,
-            [
-              runtimeTaskId,
-              JSON.stringify(proposedInteractionProjection),
-            ],
+            [runtimeTaskId, JSON.stringify(proposedInteractionProjection)],
           );
           frozenTimeoutSeconds =
             proposedInteractionProjection.timer.kind === 'armed'
@@ -1080,7 +1148,8 @@ export class PostgresHarnessStore
     request: HarnessInteractionRequest,
   ): ReturnType<HarnessInteractionStore['advanceInteraction']> {
     const parsed = harnessInteractionRequestSchema.parse(request);
-    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+    const runtimeTaskId = await requireWorkflowRuntimeId(
+      this.pool,
       workspaceId,
       parsed.runId,
     );
@@ -1145,11 +1214,7 @@ export class PostgresHarnessStore
                 pending_projection=$3::jsonb,
                 updated_at=now()
           where task_id=$1 and status='pending'`,
-        [
-          runtimeTaskId,
-          parsed.revision,
-          JSON.stringify(advancedProjection),
-        ],
+        [runtimeTaskId, parsed.revision, JSON.stringify(advancedProjection)],
       );
       await client.query('commit');
       return { outcome: 'advanced' };
@@ -1166,7 +1231,11 @@ export class PostgresHarnessStore
     runId: string,
     options?: { includeResolved?: boolean },
   ) {
-    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
+    const runtimeTaskId = await workflowRuntimeId(
+      this.pool,
+      workspaceId,
+      runId,
+    );
     if (!runtimeTaskId) return null;
     const result = await this.pool.query<{ pending_projection: unknown }>(
       `select pending_projection
@@ -1194,7 +1263,11 @@ export class PostgresHarnessStore
     workspaceId: string,
     runId: string,
   ): Promise<HarnessInteractionSnapshot> {
-    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
+    const runtimeTaskId = await workflowRuntimeId(
+      this.pool,
+      workspaceId,
+      runId,
+    );
     if (!runtimeTaskId) {
       return {
         request: null,
@@ -1246,7 +1319,11 @@ export class PostgresHarnessStore
   }
 
   async readWaitingInteraction(workspaceId: string, runId: string) {
-    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
+    const runtimeTaskId = await workflowRuntimeId(
+      this.pool,
+      workspaceId,
+      runId,
+    );
     if (!runtimeTaskId) return null;
     const result = await this.pool.query<{ pending_projection: unknown }>(
       `select pending_projection
@@ -1330,7 +1407,8 @@ export class PostgresHarnessStore
   async resolveInteraction(
     input: Parameters<HarnessInteractionStore['resolveInteraction']>[0],
   ): ReturnType<HarnessInteractionStore['resolveInteraction']> {
-    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+    const runtimeTaskId = await requireWorkflowRuntimeId(
+      this.pool,
       input.workspaceId,
       input.answer.resume.runId,
     );
@@ -1343,12 +1421,7 @@ export class PostgresHarnessStore
       const existing = await client.query<{
         id: string;
         payload_fingerprint: string;
-        resume_status:
-          | 'pending'
-          | 'sending'
-          | 'sent'
-          | 'waiting'
-          | 'invalid';
+        resume_status: 'pending' | 'sending' | 'sent' | 'waiting' | 'invalid';
       }>(
         `select id, payload_fingerprint, resume_status
            from harness_runtime.decision_events
@@ -1398,10 +1471,9 @@ export class PostgresHarnessStore
         return { outcome: 'stale_revision', resumeRequired: false };
       }
       if (input.trigger === 'system_default') {
-        const projection =
-          harnessInteractionPendingProjectionSchema.safeParse(
-            node.pending_projection,
-          );
+        const projection = harnessInteractionPendingProjectionSchema.safeParse(
+          node.pending_projection,
+        );
         if (!projection.success) {
           await client.query('rollback');
           return { outcome: 'unknown_state', resumeRequired: false };
@@ -1443,9 +1515,7 @@ export class PostgresHarnessStore
           const leaseExpiresAt =
             projection.data.timer.editingLeaseExpiresAt ??
             new Date(editingStartedAt + 30_000).toISOString();
-          if (
-            databaseNow.getTime() < Date.parse(leaseExpiresAt)
-          ) {
+          if (databaseNow.getTime() < Date.parse(leaseExpiresAt)) {
             await client.query('rollback');
             return { outcome: 'editing', resumeRequired: false };
           }
@@ -1471,8 +1541,7 @@ export class PostgresHarnessStore
           );
         }
         if (
-          databaseNow.getTime() <
-          Date.parse(projection.data.timer.deadlineAt)
+          databaseNow.getTime() < Date.parse(projection.data.timer.deadlineAt)
         ) {
           await client.query('rollback');
           return { outcome: 'not_due', resumeRequired: false };
@@ -1491,8 +1560,10 @@ export class PostgresHarnessStore
           typedProjection.data.request.revision !== input.answer.revision ||
           typedProjection.data.request.step !== input.answer.resume.step ||
           input.carrier === undefined ||
-          !(typedProjection.data.request.presentation
-            .carriers as readonly string[]).includes(input.carrier))
+          !(
+            typedProjection.data.request.presentation
+              .carriers as readonly string[]
+          ).includes(input.carrier))
       ) {
         await client.query('rollback');
         return { outcome: 'unknown_state', resumeRequired: false };
@@ -1506,14 +1577,14 @@ export class PostgresHarnessStore
         return { outcome: 'unknown_state', resumeRequired: false };
       }
       const logicalEventId = `interaction-event-${input.answer.idempotencyKey}`;
-      const runtimeEventId = this.runtimeObjectId(
+      const runtimeEventId = runtimeObjectId(
         input.workspaceId,
         input.answer.resume.runId,
         runtimeTaskId,
         logicalEventId,
       );
       await client.query(
-         `insert into harness_runtime.decision_events
+        `insert into harness_runtime.decision_events
            (id, task_id, question_id, workflow_revision, idempotency_key,
             payload_fingerprint, payload, resolution_source, resume_status)
          values ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9)`,
@@ -1536,7 +1607,7 @@ export class PostgresHarnessStore
           input.resumeDisposition === 'wait' ? 'waiting' : 'pending',
         ],
       );
-      await this.writeAuditAndOutbox(
+      await writeAuditAndOutbox(
         client,
         {
           workspaceId: input.workspaceId,
@@ -1589,7 +1660,11 @@ export class PostgresHarnessStore
       HarnessInteractionStore['transitionInteractionEditing']
     >[2],
   ): ReturnType<HarnessInteractionStore['transitionInteractionEditing']> {
-    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
+    const runtimeTaskId = await workflowRuntimeId(
+      this.pool,
+      workspaceId,
+      runId,
+    );
     if (!runtimeTaskId) return 'stale';
     const client = await this.pool.connect();
     try {
@@ -1612,9 +1687,9 @@ export class PostgresHarnessStore
         projection.data.request.requestId !== input.requestId ||
         projection.data.request.revision !== input.revision ||
         projection.data.request.step !== input.step ||
-        !(projection.data.request.presentation.carriers as readonly string[]).includes(
-          input.carrier,
-        )
+        !(
+          projection.data.request.presentation.carriers as readonly string[]
+        ).includes(input.carrier)
       ) {
         await client.query('rollback');
         return 'stale';
@@ -1641,8 +1716,7 @@ export class PostgresHarnessStore
           'select clock_timestamp() as transition_at',
         )
       ).rows[0]!.transition_at.getTime();
-      const editingStartedAt =
-        current === null ? null : Date.parse(current);
+      const editingStartedAt = current === null ? null : Date.parse(current);
       const leaseExpiresAt =
         projection.data.timer.editingLeaseExpiresAt === undefined ||
         projection.data.timer.editingLeaseExpiresAt === null
@@ -1679,16 +1753,13 @@ export class PostgresHarnessStore
           projection.data.timer.editingStartedAt = new Date(
             transitionAt,
           ).toISOString();
-          projection.data.timer.editingSessionId =
-            input.editingSessionId;
+          projection.data.timer.editingSessionId = input.editingSessionId;
         }
         projection.data.timer.editingLeaseExpiresAt = new Date(
           transitionAt + 30_000,
         ).toISOString();
       } else {
-        if (
-          projection.data.timer.editingSessionId !== input.editingSessionId
-        ) {
+        if (projection.data.timer.editingSessionId !== input.editingSessionId) {
           await client.query('rollback');
           return 'stale';
         }
@@ -1737,7 +1808,11 @@ export class PostgresHarnessStore
       HarnessInteractionStore['ackInteractionRenderer']
     >[2],
   ) {
-    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
+    const runtimeTaskId = await workflowRuntimeId(
+      this.pool,
+      workspaceId,
+      runId,
+    );
     if (!runtimeTaskId) return 'stale' as const;
     const client = await this.pool.connect();
     try {
@@ -1767,9 +1842,9 @@ export class PostgresHarnessStore
         projection.data.request.requestId !== acknowledgement.requestId ||
         projection.data.request.revision !== acknowledgement.revision ||
         projection.data.request.step !== acknowledgement.step ||
-        !(projection.data.request.presentation.carriers as readonly string[]).includes(
-          acknowledgement.carrier,
-        )
+        !(
+          projection.data.request.presentation.carriers as readonly string[]
+        ).includes(acknowledgement.carrier)
       ) {
         await client.query('rollback');
         return 'stale' as const;
@@ -1795,8 +1870,7 @@ export class PostgresHarnessStore
             projection.data.timer.timeoutSeconds * 1_000,
         ).toISOString();
         if (projection.data.timer.editingStartedAt !== null) {
-          projection.data.timer.editingStartedAt =
-            acknowledgedAt.toISOString();
+          projection.data.timer.editingStartedAt = acknowledgedAt.toISOString();
           projection.data.timer.editingLeaseExpiresAt = new Date(
             acknowledgedAt.getTime() + 30_000,
           ).toISOString();
@@ -1826,7 +1900,11 @@ export class PostgresHarnessStore
       HarnessInteractionStore['expireUnrenderedInteraction']
     >[2],
   ) {
-    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, runId);
+    const runtimeTaskId = await workflowRuntimeId(
+      this.pool,
+      workspaceId,
+      runId,
+    );
     if (!runtimeTaskId) return 'stale' as const;
     const client = await this.pool.connect();
     try {
@@ -1886,7 +1964,7 @@ export class PostgresHarnessStore
           where task_id=$1 and status='pending'`,
         [runtimeTaskId, JSON.stringify(projection.data)],
       );
-      await this.writeAuditAndOutbox(
+      await writeAuditAndOutbox(
         client,
         {
           workspaceId,
@@ -1916,20 +1994,26 @@ export class PostgresHarnessStore
     taskId: string,
     options?: { includeResolved?: boolean },
   ) {
-    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, taskId);
+    const runtimeTaskId = await workflowRuntimeId(
+      this.pool,
+      workspaceId,
+      taskId,
+    );
     if (!runtimeTaskId) return null;
     const result = await this.pool.query<{ payload: unknown }>(
       `select payload from harness_runtime.pending_questions
        where task_id=$1 and ($2::boolean or status='pending')`,
       [runtimeTaskId, options?.includeResolved === true],
     );
-    return result.rows[0]
-      ? pendingQuestionCard(result.rows[0].payload)
-      : null;
+    return result.rows[0] ? pendingQuestionCard(result.rows[0].payload) : null;
   }
 
   async readDecisionTarget(workspaceId: string, taskId: string) {
-    const runtimeTaskId = await this.workflowRuntimeId(workspaceId, taskId);
+    const runtimeTaskId = await workflowRuntimeId(
+      this.pool,
+      workspaceId,
+      taskId,
+    );
     if (!runtimeTaskId) return null;
     const result = await this.pool.query<{
       pending_projection: unknown;
@@ -2048,7 +2132,9 @@ export class PostgresHarnessStore
       input.limit < 1 ||
       !Number.isFinite(Date.parse(input.expiresBefore))
     ) {
-      throw new Error('Reservation sweep claim requires a valid limit and timestamp.');
+      throw new Error(
+        'Reservation sweep claim requires a valid limit and timestamp.',
+      );
     }
     const result = await this.pool.query<{
       attempts: number;
@@ -2192,7 +2278,7 @@ export class PostgresHarnessStore
       if (!runtimeId) {
         throw new Error('Reservation sweep claim was not found.');
       }
-      await this.writeAuditAndOutbox(
+      await writeAuditAndOutbox(
         client,
         {
           workspaceId: input.workspaceId,
@@ -2378,11 +2464,12 @@ export class PostgresHarnessStore
   async submit(
     input: Parameters<HarnessDecisionStore['submit']>[0],
   ): ReturnType<HarnessDecisionStore['submit']> {
-    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+    const runtimeTaskId = await requireWorkflowRuntimeId(
+      this.pool,
       input.workspaceId,
       input.taskId,
     );
-    const runtimeEventId = this.runtimeObjectId(
+    const runtimeEventId = runtimeObjectId(
       input.workspaceId,
       input.taskId,
       runtimeTaskId,
@@ -2409,7 +2496,8 @@ export class PostgresHarnessStore
         return {
           outcome:
             input.mode === 'late_answer' ||
-            existing.rows[0].payload_fingerprint === input.event.payloadFingerprint
+            existing.rows[0].payload_fingerprint ===
+              input.event.payloadFingerprint
               ? 'replayed'
               : 'idempotency_conflict',
           ...(input.mode === 'late_answer'
@@ -2466,8 +2554,7 @@ export class PostgresHarnessStore
             )
           : null;
       const acceptsLateAnswer =
-        input.mode === 'late_answer' &&
-        lateAnswerSource?.rowCount === 1;
+        input.mode === 'late_answer' && lateAnswerSource?.rowCount === 1;
       if (
         !node ||
         (node.status !== 'pending' && !acceptsLateAnswer) ||
@@ -2495,13 +2582,12 @@ export class PostgresHarnessStore
           input.event.payloadFingerprint,
           JSON.stringify(input.event),
           input.mode ?? 'decision',
-          input.mode === 'core_timeout' ||
-          input.mode === 'core_hold_expired'
+          input.mode === 'core_timeout' || input.mode === 'core_hold_expired'
             ? 'sent'
             : 'pending',
         ],
       );
-      const runtimeTraceId = await this.writeDecisionTrace(
+      const runtimeTraceId = await writeDecisionTrace(
         client,
         input.workspaceId,
         runtimeTaskId,
@@ -2522,7 +2608,7 @@ export class PostgresHarnessStore
           workflowRevision: input.command.workflowRevision,
         },
       };
-      await this.writeAuditAndOutbox(client, audit, runtimeTaskId);
+      await writeAuditAndOutbox(client, audit, runtimeTaskId);
       if (node.status === 'pending') {
         await client.query(
           `update harness_runtime.pending_questions
@@ -2536,8 +2622,7 @@ export class PostgresHarnessStore
         outcome: 'created',
         command: input.command,
         resumeRequired:
-          input.mode !== 'core_timeout' &&
-          input.mode !== 'core_hold_expired',
+          input.mode !== 'core_timeout' && input.mode !== 'core_hold_expired',
       };
     } catch (error) {
       await client.query('rollback');
@@ -2553,7 +2638,8 @@ export class PostgresHarnessStore
     eventId: string,
     claimId: string,
   ) {
-    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+    const runtimeTaskId = await requireWorkflowRuntimeId(
+      this.pool,
       workspaceId,
       taskId,
     );
@@ -2565,10 +2651,7 @@ export class PostgresHarnessStore
        where id=$1
          and resume_status='sending'
          and resume_claim_id=$2`,
-      [
-        this.runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId),
-        claimId,
-      ],
+      [runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId), claimId],
     );
     return result.rowCount === 1;
   }
@@ -2579,7 +2662,8 @@ export class PostgresHarnessStore
     eventId: string,
     claimId: string,
   ) {
-    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+    const runtimeTaskId = await requireWorkflowRuntimeId(
+      this.pool,
       workspaceId,
       taskId,
     );
@@ -2601,10 +2685,7 @@ export class PostgresHarnessStore
            )
          )
        returning id`,
-      [
-        this.runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId),
-        claimId,
-      ],
+      [runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId), claimId],
     );
     return result.rowCount === 1;
   }
@@ -2615,7 +2696,8 @@ export class PostgresHarnessStore
     eventId: string,
     claimId: string,
   ) {
-    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+    const runtimeTaskId = await requireWorkflowRuntimeId(
+      this.pool,
       workspaceId,
       taskId,
     );
@@ -2627,22 +2709,55 @@ export class PostgresHarnessStore
        where id=$1
          and resume_status='sending'
          and resume_claim_id=$2`,
-      [
-        this.runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId),
-        claimId,
-      ],
+      [runtimeObjectId(workspaceId, taskId, runtimeTaskId, eventId), claimId],
     );
   }
 
+  recordStageTrace(input: {
+    workspaceId: string;
+    id: string;
+    taskId: string;
+    stage: string;
+    payload: unknown;
+  }) {
+    return new PostgresHarnessAuditStore(this.pool).recordStageTrace(input);
+  }
+
+  recordTerminalFailure(input: {
+    workspaceId: string;
+    workflowId: string;
+    failure: Record<string, unknown>;
+  }) {
+    return new PostgresHarnessAuditStore(this.pool).appendAudit({
+      workspaceId: input.workspaceId,
+      id: `audit-${input.workflowId}-workflow-failed`,
+      workflowId: input.workflowId,
+      stage: 'workflow',
+      eventType: 'workflow_failed',
+      payload: input.failure,
+    });
+  }
+}
+
+export class PostgresHarnessAuditStore
+  implements
+    HarnessPromptFallbackAuditPort,
+    HarnessExecutionAssemblyAuditPort,
+    HarnessCopyDeliveryPort,
+    HarnessProductMetricRecorder
+{
+  constructor(private readonly pool: Pool) {}
+
   async appendAudit(event: HarnessAuditEvent) {
-    const runtimeWorkflowId = await this.requireWorkflowRuntimeId(
+    const runtimeWorkflowId = await requireWorkflowRuntimeId(
+      this.pool,
       event.workspaceId,
       event.workflowId,
     );
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      await this.writeAuditAndOutbox(client, event, runtimeWorkflowId);
+      await writeAuditAndOutbox(client, event, runtimeWorkflowId);
       await client.query('commit');
     } catch (error) {
       await client.query('rollback');
@@ -2653,23 +2768,20 @@ export class PostgresHarnessStore
   }
 
   async appendAuditIdempotently(event: HarnessAuditEvent) {
-    const runtimeWorkflowId = await this.requireWorkflowRuntimeId(
+    const runtimeWorkflowId = await requireWorkflowRuntimeId(
+      this.pool,
       event.workspaceId,
       event.workflowId,
     );
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      await this.writeAuditAndOutboxIdempotently(
-        client,
-        event,
-        runtimeWorkflowId,
-      );
+      await writeAuditAndOutboxIdempotently(client, event, runtimeWorkflowId);
       await client.query('commit');
     } catch (error) {
       await client.query('rollback');
       if (error instanceof TaskRootObservabilityConflictError) {
-        await this.recordTaskRootObservabilityConflict(client, error.auditId);
+        await recordTaskRootObservabilityConflict(client, error.auditId);
       }
       throw error;
     } finally {
@@ -2709,7 +2821,7 @@ export class PostgresHarnessStore
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      await this.writeAuditAndOutbox(client, safeEvent, runtimeWorkflowId);
+      await writeAuditAndOutbox(client, safeEvent, runtimeWorkflowId);
       await client.query('commit');
     } catch (error) {
       await client.query('rollback');
@@ -2726,14 +2838,15 @@ export class PostgresHarnessStore
     stage: string;
     payload: unknown;
   }) {
-    const runtimeTaskId = await this.requireWorkflowRuntimeId(
+    const runtimeTaskId = await requireWorkflowRuntimeId(
+      this.pool,
       input.workspaceId,
       input.taskId,
     );
     const client = await this.pool.connect();
     try {
       await client.query('begin');
-      const runtimeTraceId = this.runtimeObjectId(
+      const runtimeTraceId = runtimeObjectId(
         input.workspaceId,
         input.taskId,
         runtimeTaskId,
@@ -2751,7 +2864,7 @@ export class PostgresHarnessStore
           JSON.stringify(input.payload),
         ],
       );
-      await this.writeAuditAndOutbox(
+      await writeAuditAndOutbox(
         client,
         {
           workspaceId: input.workspaceId,
@@ -2801,11 +2914,12 @@ export class PostgresHarnessStore
     assetIds?: string[];
     reuseSeed?: ReuseTaskSeed;
   }): Promise<ContentPackageRevisionDelivery> {
-    const runtimeWorkflowId = await this.requireWorkflowRuntimeId(
+    const runtimeWorkflowId = await requireWorkflowRuntimeId(
+      this.pool,
       input.workspaceId,
       input.workflowId,
     );
-    const deliveryAuditId = this.runtimeObjectId(
+    const deliveryAuditId = runtimeObjectId(
       input.workspaceId,
       input.workflowId,
       runtimeWorkflowId,
@@ -2845,7 +2959,7 @@ export class PostgresHarnessStore
         const validLegacyReceipt =
           validDeliveryIdentity &&
           !validBoundReceipt &&
-          (await this.isValidLegacyDeliveryReceipt(
+          (await isValidLegacyDeliveryReceipt(
             client,
             input,
             runtimeWorkflowId,
@@ -2947,7 +3061,9 @@ export class PostgresHarnessStore
           contentPackage = contentPackageSchema.parse(row!.payload);
         }
         if (contentPackage.kind !== 'image_text') {
-          throw new TypeError('The copy tracer requires an image-text ContentPackage.');
+          throw new TypeError(
+            'The copy tracer requires an image-text ContentPackage.',
+          );
         }
         const candidateVersions = input.candidates.map((candidate) => ({
           id: copyVersionId(input, candidate),
@@ -2967,7 +3083,9 @@ export class PostgresHarnessStore
             harnessCandidateId === input.winner.candidateId,
         );
         if (!winnerVersion) {
-          throw new TypeError('The Harness winner must be a delivered candidate.');
+          throw new TypeError(
+            'The Harness winner must be a delivered candidate.',
+          );
         }
         const versionId = winnerVersion.id;
         const nextRevision = currentRevision + 1;
@@ -3016,9 +3134,11 @@ export class PostgresHarnessStore
               workspaceId: input.workspaceId,
             });
         if (!written) {
-          throw new Error('ContentPackage CAS failed while holding the workspace lock.');
+          throw new Error(
+            'ContentPackage CAS failed while holding the workspace lock.',
+          );
         }
-        const runtimeTraceId = await this.writeGeneralTrace(
+        const runtimeTraceId = await writeGeneralTrace(
           client,
           runtimeWorkflowId,
           {
@@ -3041,7 +3161,7 @@ export class PostgresHarnessStore
             },
           },
         );
-        await this.writeAuditAndOutbox(
+        await writeAuditAndOutbox(
           client,
           {
             workspaceId: input.workspaceId,
@@ -3094,6 +3214,12 @@ export class PostgresHarnessStore
       input.packageId,
     );
   }
+}
+
+export class PostgresHarnessObservabilityStore
+  implements HarnessLangfuseOutboxStore, HarnessObservabilityReconciliationStore
+{
+  constructor(private readonly pool: Pool) {}
 
   async claimLangfuseBatch(
     limit: number,
@@ -3180,20 +3306,16 @@ export class PostgresHarnessStore
         .map((row) => [`${row.task_id}:${row.id}`, row.payload]),
     );
     const latestStageTraces = new Map(
-      traceRows.map((row) => [
-        `${row.task_id}:${row.stage}`,
-        row.payload,
-      ]),
+      traceRows.map((row) => [`${row.task_id}:${row.stage}`, row.payload]),
     );
     return result.rows.map((row) => {
       const legacyTraceId = String(record(row.payload)?.traceId ?? '');
-      const decisionTrace =
-        row.post_contract
-          ? row.trace_id
-            ? physicalTraces.get(`${row.workflow_id}:${row.trace_id}`)
-            : undefined
-          : (exactTraces.get(`${row.workflow_id}:${legacyTraceId}`) ??
-            latestStageTraces.get(`${row.workflow_id}:${row.stage}`));
+      const decisionTrace = row.post_contract
+        ? row.trace_id
+          ? physicalTraces.get(`${row.workflow_id}:${row.trace_id}`)
+          : undefined
+        : (exactTraces.get(`${row.workflow_id}:${legacyTraceId}`) ??
+          latestStageTraces.get(`${row.workflow_id}:${row.stage}`));
       return {
         auditId: row.audit_id,
         workflowId: row.workflow_id,
@@ -3233,7 +3355,10 @@ export class PostgresHarnessStore
     error: string,
     drops: ObservabilityDropEvent[],
   ) {
-    const parsedDrops = observabilityDropEventSchema.array().min(1).parse(drops);
+    const parsedDrops = observabilityDropEventSchema
+      .array()
+      .min(1)
+      .parse(drops);
     await this.pool.query(
       `with transitioned as (
          update harness_runtime.langfuse_outbox
@@ -3287,9 +3412,7 @@ export class PostgresHarnessStore
     };
   }
 
-  async readObservabilityReconciliationBoundary(input: {
-    intervalMs: number;
-  }) {
+  async readObservabilityReconciliationBoundary(input: { intervalMs: number }) {
     const result = await this.pool.query<{ window_end: Date }>(
       `select to_timestamp(
          floor(
@@ -3391,7 +3514,9 @@ export class PostgresHarnessStore
     );
     const cutoverAt = result.rows[0]?.cutover_at;
     if (!cutoverAt) {
-      throw new Error('Observability reconciliation cutover was not activated.');
+      throw new Error(
+        'Observability reconciliation cutover was not activated.',
+      );
     }
     return cutoverAt;
   }
@@ -3587,128 +3712,135 @@ export class PostgresHarnessStore
     );
     return result.rowCount === 1;
   }
+}
 
-  private async writeDecisionTrace(
-    client: PoolClient,
-    workspaceId: string,
-    runtimeTaskId: string,
-    trace: HarnessDecisionTrace,
-  ) {
-    const runtimeTraceId = this.runtimeObjectId(
-      workspaceId,
-      trace.taskId,
-      runtimeTaskId,
-      trace.id,
-    );
-    await client.query(
-      `insert into harness_runtime.decision_traces
+async function workflowRuntimeId(
+  pool: Pool,
+  workspaceId: string,
+  workflowId: string,
+) {
+  const result = await pool.query<{ runtime_id: string }>(
+    `select runtime_id from harness_runtime.task_requests
+     where request->>'workspaceId'=$1
+       and (task_id=$2 or workflow_id=$3)
+     order by created_at, task_id
+     limit 1`,
+    [workspaceId, harnessRuntimeId(workspaceId, workflowId), workflowId],
+  );
+  return result.rows[0]?.runtime_id ?? null;
+}
+
+async function writeDecisionTrace(
+  client: PoolClient,
+  workspaceId: string,
+  runtimeTaskId: string,
+  trace: HarnessDecisionTrace,
+) {
+  const runtimeTraceId = runtimeObjectId(
+    workspaceId,
+    trace.taskId,
+    runtimeTaskId,
+    trace.id,
+  );
+  await client.query(
+    `insert into harness_runtime.decision_traces
          (id, task_id, stage, payload, trace_contract_version)
        values ($1,$2,$3,$4,'observability/v1')`,
-      [
-        runtimeTraceId,
-        runtimeTaskId,
-        trace.stage,
-        JSON.stringify(trace),
-      ],
-    );
-    return runtimeTraceId;
-  }
+    [runtimeTraceId, runtimeTaskId, trace.stage, JSON.stringify(trace)],
+  );
+  return runtimeTraceId;
+}
 
-  private async writeGeneralTrace(
-    client: PoolClient,
-    runtimeTaskId: string,
-    input: {
-      workspaceId: string;
-      id: string;
-      taskId: string;
-      stage: string;
-      payload: unknown;
-    },
-  ) {
-    const runtimeTraceId = this.runtimeObjectId(
-      input.workspaceId,
-      input.taskId,
-      runtimeTaskId,
-      input.id,
-    );
-    await client.query(
-      `insert into harness_runtime.decision_traces
+async function writeGeneralTrace(
+  client: PoolClient,
+  runtimeTaskId: string,
+  input: {
+    workspaceId: string;
+    id: string;
+    taskId: string;
+    stage: string;
+    payload: unknown;
+  },
+) {
+  const runtimeTraceId = runtimeObjectId(
+    input.workspaceId,
+    input.taskId,
+    runtimeTaskId,
+    input.id,
+  );
+  await client.query(
+    `insert into harness_runtime.decision_traces
          (id, task_id, stage, payload, trace_contract_version)
        values ($1,$2,$3,$4,'observability/v1')
        on conflict (id) do nothing`,
-      [
-        runtimeTraceId,
-        runtimeTaskId,
-        input.stage,
-        JSON.stringify(input.payload),
-      ],
-    );
-    return runtimeTraceId;
-  }
+    [runtimeTraceId, runtimeTaskId, input.stage, JSON.stringify(input.payload)],
+  );
+  return runtimeTraceId;
+}
 
-  private async writeAuditAndOutbox(
-    client: PoolClient,
-    event: HarnessAuditEvent,
-    runtimeWorkflowId: string,
-  ) {
-    const auditId = this.runtimeObjectId(
-      event.workspaceId,
-      event.workflowId,
-      runtimeWorkflowId,
-      event.id,
-    );
-    await client.query(
-      `insert into harness_runtime.audit_events
+async function writeAuditAndOutbox(
+  client: PoolClient,
+  event: HarnessAuditEvent,
+  runtimeWorkflowId: string,
+) {
+  const auditId = runtimeObjectId(
+    event.workspaceId,
+    event.workflowId,
+    runtimeWorkflowId,
+    event.id,
+  );
+  await client.query(
+    `insert into harness_runtime.audit_events
          (id, workflow_id, trace_id, trace_contract_version, stage,
           event_type, payload)
        values ($1,$2,$3,$4,$5,$6,$7)
        on conflict (id) do nothing`,
-      [
-        auditId,
-        runtimeWorkflowId,
-        event.traceId ?? null,
-        event.traceContractVersion ?? null,
-        event.stage,
-        event.eventType,
-        JSON.stringify(event.payload),
-      ],
-    );
-    await client.query(
-      `insert into harness_runtime.langfuse_outbox (audit_id, status)
-       values ($1,'queued') on conflict (audit_id) do nothing`,
-      [auditId],
-    );
-  }
-
-  private async writeAuditAndOutboxIdempotently(
-    client: PoolClient,
-    event: HarnessAuditEvent,
-    runtimeWorkflowId: string,
-  ) {
-    const auditId = this.runtimeObjectId(
-      event.workspaceId,
-      event.workflowId,
+    [
+      auditId,
       runtimeWorkflowId,
-      event.id,
-    );
-    const rootClaim = taskRootObservabilityClaim(event.payload);
-    if (rootClaim) {
-      const claim = await client.query<{ audit_id: string }>(
-        `insert into harness_runtime.observability_root_claims as existing
+      event.traceId ?? null,
+      event.traceContractVersion ?? null,
+      event.stage,
+      event.eventType,
+      JSON.stringify(event.payload),
+    ],
+  );
+  await client.query(
+    `insert into harness_runtime.langfuse_outbox (audit_id, status)
+       values ($1,'queued') on conflict (audit_id) do nothing`,
+    [auditId],
+  );
+}
+
+async function writeAuditAndOutboxIdempotently(
+  client: PoolClient,
+  event: HarnessAuditEvent,
+  runtimeWorkflowId: string,
+) {
+  const auditId = runtimeObjectId(
+    event.workspaceId,
+    event.workflowId,
+    runtimeWorkflowId,
+    event.id,
+  );
+  const rootClaim = taskRootObservabilityClaim(event.payload);
+  if (rootClaim) {
+    const claim = await client.query<{ audit_id: string }>(
+      `insert into harness_runtime.observability_root_claims as existing
            (workflow_id, audit_id, payload)
          values ($1,$2,$3)
          on conflict (workflow_id) do update set workflow_id=excluded.workflow_id
          where existing.payload=excluded.payload
          returning audit_id`,
-        [runtimeWorkflowId, auditId, JSON.stringify(rootClaim)],
-      );
-      if (claim.rowCount !== 1) {
-        throw new TaskRootObservabilityConflictError(auditId);
-      }
-      if (claim.rows[0]?.audit_id !== auditId) return;
+      [runtimeWorkflowId, auditId, JSON.stringify(rootClaim)],
+    );
+    if (claim.rowCount !== 1) {
+      throw new TaskRootObservabilityConflictError(auditId);
     }
-    const result = await client.query(
-      `insert into harness_runtime.audit_events as existing
+    if (claim.rows[0]?.audit_id !== auditId) return;
+  }
+  const result = await client.query(
+    `insert into harness_runtime.audit_events as existing
          (id, workflow_id, trace_id, trace_contract_version, stage,
           event_type, payload)
        values ($1,$2,$3,$4,$5,$6,$7)
@@ -3721,32 +3853,32 @@ export class PostgresHarnessStore
          and existing.event_type=excluded.event_type
          and existing.payload=excluded.payload
        returning id`,
-      [
-        auditId,
-        runtimeWorkflowId,
-        event.traceId ?? null,
-        event.traceContractVersion ?? null,
-        event.stage,
-        event.eventType,
-        JSON.stringify(event.payload),
-      ],
-    );
-    if (result.rowCount !== 1) {
-      throw new Error('Observability idempotency conflict.');
-    }
-    await client.query(
-      `insert into harness_runtime.langfuse_outbox (audit_id, status)
-       values ($1,'queued') on conflict (audit_id) do nothing`,
-      [auditId],
-    );
+    [
+      auditId,
+      runtimeWorkflowId,
+      event.traceId ?? null,
+      event.traceContractVersion ?? null,
+      event.stage,
+      event.eventType,
+      JSON.stringify(event.payload),
+    ],
+  );
+  if (result.rowCount !== 1) {
+    throw new Error('Observability idempotency conflict.');
   }
+  await client.query(
+    `insert into harness_runtime.langfuse_outbox (audit_id, status)
+       values ($1,'queued') on conflict (audit_id) do nothing`,
+    [auditId],
+  );
+}
 
-  private async recordTaskRootObservabilityConflict(
-    client: PoolClient,
-    auditId: string,
-  ) {
-    await client.query(
-      `insert into harness_runtime.observability_drop_events
+async function recordTaskRootObservabilityConflict(
+  client: PoolClient,
+  auditId: string,
+) {
+  await client.query(
+    `insert into harness_runtime.observability_drop_events
          (audit_id, delivery_generation, signal, reason, count, source,
           occurred_at)
        values (
@@ -3756,96 +3888,96 @@ export class PostgresHarnessStore
        on conflict (
          audit_id, delivery_generation, signal, reason, source
        ) do nothing`,
-      [auditId],
-    );
-  }
+    [auditId],
+  );
+}
 
-  private async requireWorkflowRuntimeId(
-    workspaceId: string,
-    workflowId: string,
-  ) {
-    const runtimeId = await this.workflowRuntimeId(workspaceId, workflowId);
-    if (!runtimeId) {
-      throw new Error('Harness workflow runtime identity was not found.');
-    }
-    return runtimeId;
+async function requireWorkflowRuntimeId(
+  pool: Pool,
+  workspaceId: string,
+  workflowId: string,
+) {
+  const runtimeId = await workflowRuntimeId(pool, workspaceId, workflowId);
+  if (!runtimeId) {
+    throw new Error('Harness workflow runtime identity was not found.');
   }
+  return runtimeId;
+}
 
-  private async isValidLegacyDeliveryReceipt(
-    client: PoolClient,
-    input: {
-      workflowId: string;
-      workspaceId: string;
-      packageId: string;
-      expectedRevision: number;
-    },
-    runtimeWorkflowId: string,
-    delivery: ContentPackageRevisionDelivery & {
-      workspaceId?: string;
-      expectedRevision?: number;
-      requestFingerprint?: string;
-    },
+async function isValidLegacyDeliveryReceipt(
+  client: PoolClient,
+  input: {
+    workflowId: string;
+    workspaceId: string;
+    packageId: string;
+    expectedRevision: number;
+  },
+  runtimeWorkflowId: string,
+  delivery: ContentPackageRevisionDelivery & {
+    workspaceId?: string;
+    expectedRevision?: number;
+    requestFingerprint?: string;
+  },
+) {
+  if (
+    runtimeWorkflowId !== input.workflowId ||
+    delivery.workspaceId !== undefined ||
+    delivery.expectedRevision !== undefined ||
+    delivery.requestFingerprint !== undefined ||
+    delivery.revision !== input.expectedRevision + 1
   ) {
-    if (
-      runtimeWorkflowId !== input.workflowId ||
-      delivery.workspaceId !== undefined ||
-      delivery.expectedRevision !== undefined ||
-      delivery.requestFingerprint !== undefined ||
-      delivery.revision !== input.expectedRevision + 1
-    ) {
-      return false;
-    }
-    const claim = await client.query<{ request: unknown }>(
-      `select request from harness_runtime.task_requests
+    return false;
+  }
+  const claim = await client.query<{ request: unknown }>(
+    `select request from harness_runtime.task_requests
        where task_id=$1 and workflow_id=$1 and runtime_id=$1
        limit 1`,
-      [runtimeWorkflowId],
-    );
-    const request = claim.rows[0]?.request as
-      | {
-          workspaceId?: unknown;
-          packageId?: unknown;
-          expectedRevision?: unknown;
-        }
-      | undefined;
-    if (
-      request?.workspaceId !== input.workspaceId ||
-      request.packageId !== input.packageId ||
-      request.expectedRevision !== input.expectedRevision
-    ) {
-      return false;
-    }
-    const target = await client.query<{
-      payload: unknown;
-      revision: string;
-    }>(
-      `select payload, revision::text as revision
+    [runtimeWorkflowId],
+  );
+  const request = claim.rows[0]?.request as
+    | {
+        workspaceId?: unknown;
+        packageId?: unknown;
+        expectedRevision?: unknown;
+      }
+    | undefined;
+  if (
+    request?.workspaceId !== input.workspaceId ||
+    request.packageId !== input.packageId ||
+    request.expectedRevision !== input.expectedRevision
+  ) {
+    return false;
+  }
+  const target = await client.query<{
+    payload: unknown;
+    revision: string;
+  }>(
+    `select payload, revision::text as revision
        from p1_content_packages
        where workspace_id=$1 and id=$2`,
-      [input.workspaceId, input.packageId],
-    );
-    const contentPackage = contentPackageSchema.safeParse(
-      target.rows[0]?.payload,
-    );
-    return (
-      contentPackage.success &&
-      Number(target.rows[0]?.revision ?? -1) >= delivery.revision &&
-      contentPackage.data.versions.some(
-        (version) => version.id === delivery.versionId,
-      )
-    );
-  }
+    [input.workspaceId, input.packageId],
+  );
+  const contentPackage = contentPackageSchema.safeParse(
+    target.rows[0]?.payload,
+  );
+  return (
+    contentPackage.success &&
+    Number(target.rows[0]?.revision ?? -1) >= delivery.revision &&
+    contentPackage.data.versions.some(
+      (version) => version.id === delivery.versionId,
+    )
+  );
+}
 
-  private runtimeObjectId(
-    workspaceId: string,
-    logicalWorkflowId: string,
-    runtimeWorkflowId: string,
-    logicalObjectId: string,
-  ) {
-    return runtimeWorkflowId === logicalWorkflowId
-      ? logicalObjectId
-      : harnessRuntimeId(workspaceId, logicalObjectId);
-  }
+function runtimeObjectId(
+  workspaceId: string,
+  logicalWorkflowId: string,
+  runtimeWorkflowId: string,
+  logicalObjectId: string,
+) {
+  return runtimeWorkflowId === logicalWorkflowId
+    ? logicalObjectId
+    : harnessRuntimeId(workspaceId, logicalObjectId);
 }
 
 function taskRootObservabilityClaim(payload: unknown) {
@@ -3855,8 +3987,7 @@ function taskRootObservabilityClaim(payload: unknown) {
     parsed.data.eventType !== 'agent_primitive.lifecycle' ||
     parsed.data.axisScope !== 'task_root' ||
     (parsed.data.payload.primitiveId !== 'harness-assembly:task_pin' &&
-      parsed.data.payload.primitiveId !==
-        'harness-assembly:event_persistence')
+      parsed.data.payload.primitiveId !== 'harness-assembly:event_persistence')
   ) {
     return;
   }
@@ -3869,6 +4000,21 @@ function taskRootObservabilityClaim(payload: unknown) {
     catalogRevision: parsed.data.catalogRevision,
     scene: parsed.data.scene,
   };
+}
+
+function bindAdapterMethods(target: object, adapter: object) {
+  for (const name of Object.getOwnPropertyNames(
+    Object.getPrototypeOf(adapter),
+  )) {
+    if (name === 'constructor') continue;
+    const method = (adapter as Record<string, unknown>)[name];
+    if (typeof method === 'function') {
+      Object.defineProperty(target, name, {
+        configurable: true,
+        value: method.bind(adapter),
+      });
+    }
+  }
 }
 
 function assertObservabilityWindow(windowStart: Date, windowEnd: Date) {
@@ -3899,9 +4045,7 @@ function pendingDecisionTimeoutSeconds(value: unknown) {
   }
   return projection.timeoutSeconds === null
     ? null
-    : confirmationCardTimeoutSecondsSchema.parse(
-        projection.timeoutSeconds,
-      );
+    : confirmationCardTimeoutSecondsSchema.parse(projection.timeoutSeconds);
 }
 
 function pendingQuestionCard(value: unknown): QuestionCard {
@@ -3922,9 +4066,7 @@ function pendingQuestionCard(value: unknown): QuestionCard {
     options: (question.options ?? []).map((option, index) => ({
       id: `${question.itemId}:${index}`,
       label: option.label,
-      ...(option.description
-        ? { description: option.description }
-        : {}),
+      ...(option.description ? { description: option.description } : {}),
     })),
     freeText: { enabled: true },
     response: {
