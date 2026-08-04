@@ -125,3 +125,16 @@ export async function loginByForm(page: Page, user: E2EUser) {
     { timeout: 30_000 }
   );
 }
+
+export async function signOut(page: Page) {
+  const response = await page.evaluate(async () => {
+    const result = await fetch('/api/auth/sign-out', {
+      body: '{}',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    return { body: await result.text(), ok: result.ok };
+  });
+  expect(response.ok, response.body).toBeTruthy();
+}
