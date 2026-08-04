@@ -548,4 +548,151 @@ test.describe('W02 five-step store intake', () => {
         ?.value
     ).toEqual({ booking: '提前一天私信预约' });
   });
+
+  test('batch parse: multi-file upload shows Core progress, fixture label, and finalizes once', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(360_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+
+    await productCommand(page, {
+      type: 'confirm_store',
+      store: {
+        accounts: [],
+        address: '湖墅南路 88 号',
+        booking: '提前一天私信预约',
+        brandVoice: '真实、克制',
+        city: '杭州',
+        district: '拱墅区',
+        name: 'W02 批量解析门店',
+        prohibitions: ['不虚构价格'],
+        projects: [LEGACY_PROJECT],
+        regulated: false,
+      },
+    });
+    const before = await productState(page);
+    expect(await activeStoreFacts(page, before.workspaceId)).toEqual([]);
+
+    const finalizations: ModuleRequest[] = [];
+    page.on('request', (outgoing) => {
+      if (!isAction(outgoing, 'finalize_store_intake')) return;
+      finalizations.push(moduleRequest(outgoing)!);
+    });
+
+    await page.goto('/dashboard/store');
+    const wizard = page.getByTestId('store-intake-wizard-store');
+    await expect(wizard).toBeVisible({ timeout: 60_000 });
+
+    // Capture step: single-file input remains, multi-file is available, and
+    // the Core-supplied fixture demo label is DOM-visible (not tooltip-only).
+    await walkToStep(page, 'say_or_upload');
+    await expect(wizard.getByTestId('store-intake-photo')).toBeVisible();
+    await expect(wizard.getByTestId('store-intake-photos')).toBeVisible();
+    await expect(
+      wizard.getByTestId('store-intake-fixture-label')
+    ).toBeVisible();
+    await expect(
+      wizard.getByTestId('store-intake-fixture-label')
+    ).toContainText('演示档');
+    await expect(wizard.getByTestId('store-intake-parse-closed')).toBeHidden();
+
+    await wizard.getByTestId('store-intake-photos').setInputFiles([
+      {
+        buffer: PRICE_LIST_PHOTO,
+        mimeType: 'image/png',
+        name: 'w02-batch-a.png',
+      },
+      {
+        buffer: PRICE_LIST_PHOTO,
+        mimeType: 'image/png',
+        name: 'w02-batch-b.png',
+      },
+    ]);
+    await expect(wizard.getByTestId('store-intake-photo-error')).toBeHidden();
+    await expect(wizard.getByText(/已上传 2 份/u)).toBeVisible({
+      timeout: 60_000,
+    });
+
+    // Arrange: fixture label still visible; batch run posts start_parse_asset_batch
+    // and surfaces Core merchant progress until drafts land.
+    await walkToStep(page, 'ai_arrange');
+    await expect(
+      wizard.getByTestId('store-intake-fixture-label')
+    ).toBeVisible();
+    await expect(
+      wizard.getByTestId('store-intake-fixture-label')
+    ).toContainText('演示档');
+    await expect(wizard.getByTestId('store-intake-batch-run')).toBeVisible();
+
+    const batchStart = page.waitForResponse(
+      (response) =>
+        isAction(response.request(), 'start_parse_asset_batch') &&
+        response.status() < 400,
+      { timeout: 90_000 }
+    );
+    await wizard.getByTestId('store-intake-batch-run').click();
+    const started = await batchStart;
+    expect(started.ok(), await started.text()).toBeTruthy();
+
+    await expect(wizard.getByTestId('store-intake-batch-progress')).toBeVisible(
+      {
+        timeout: 90_000,
+      }
+    );
+    await expect(
+      wizard.getByTestId('store-intake-batch-progress')
+    ).toContainText(/正在整理|已完成/u);
+    await expect(wizard.getByTestId('store-intake-batch-failed')).toBeHidden();
+    await expect(wizard.getByTestId('store-intake-arrange-result')).toBeVisible(
+      { timeout: 120_000 }
+    );
+
+    // Confirm each + finalize single rail (no confirm_asset_intake_fact).
+    await walkToStep(page, 'confirm_each');
+    const price = wizard.getByTestId('store-intake-field-projectPrice');
+    await expect(price).toHaveValue(PHOTO_PRICE);
+    await expect(
+      wizard.getByTestId('store-intake-provenance-projectPrice')
+    ).toHaveText('照片识别');
+
+    for (const field of ['name', 'city', 'projectName', 'projectPrice']) {
+      await wizard.getByTestId(`store-intake-confirm-${field}`).click();
+    }
+    await wizard
+      .getByTestId('store-intake-field-projectPriceValidity-long-term')
+      .click();
+    await wizard
+      .getByTestId('store-intake-confirm-projectPriceValidity')
+      .click();
+    await expect(wizard.getByTestId('store-intake-save')).toBeEnabled();
+
+    const finalizeResponse = page.waitForResponse(
+      (response) => isAction(response.request(), 'finalize_store_intake'),
+      { timeout: 90_000 }
+    );
+    await wizard.getByTestId('store-intake-save').click();
+    const finalized = await finalizeResponse;
+    expect(finalized.ok(), await finalized.text()).toBeTruthy();
+    await expect(wizard.getByTestId('store-intake-saved')).toBeVisible({
+      timeout: 60_000,
+    });
+
+    expect(finalizations).toHaveLength(1);
+    expect(finalizations[0]!.module).toBe('asset-memory');
+    expect(finalizations[0]!.action).toBe('finalize_store_intake');
+
+    const after = await productState(page);
+    const facts = await activeStoreFacts(page, after.workspaceId);
+    const priceFact = facts.find(
+      (fact) => fact.factId === `store-project:${LEGACY_PROJECT.id}:price`
+    );
+    expect(priceFact).toMatchObject({
+      expiresAt: null,
+      kind: 'price',
+      revision: 1,
+      value: { amount: Number(PHOTO_PRICE), currency: 'CNY' },
+    });
+  });
 });
