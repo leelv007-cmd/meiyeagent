@@ -9,6 +9,7 @@ import {
   HarnessSnapshotIdentityBindingError,
   ProductionHarnessStagePorts,
   type HarnessCopyDeliveryPort,
+  type ProductionHarnessStagePortsOptions,
 } from './production-stage-ports.js';
 import type { ContentPackageRevisionWriteInput } from '../execution-spine/content-package-revision-port.js';
 import { SourceContentPackageUnavailableError } from '../execution-spine/source-content-package-resolver.js';
@@ -54,9 +55,10 @@ test('production tracer keeps its server-owned copy delivery layer', async () =>
     },
   ]);
   const delivery = new RecordingDelivery();
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -64,9 +66,10 @@ test('production tracer keeps its server-owned copy delivery layer', async () =>
         return input.context;
       },
     },
-    delivery,
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: delivery,
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
 
   const named = await ports.nameIntent({
     workflowId: 'task-media',
@@ -90,9 +93,10 @@ test('production intent naming receives resolved Skill value objects through the
     },
   ]);
   const resolverInputs: unknown[] = [];
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -100,12 +104,11 @@ test('production intent naming receives resolved Skill value objects through the
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-    undefined,
-    undefined,
-    undefined,
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+    skills: {
+      instructions: {
       async resolve(input) {
         resolverInputs.push(input);
         return {
@@ -122,7 +125,8 @@ test('production intent naming receives resolved Skill value objects through the
         };
       },
     },
-  );
+    },
+  });
   const request = taskInput();
   const resolved = await ports.resolveStageSkills({
     workflowId: 'task-skill-port',
@@ -181,9 +185,10 @@ test('an existing frozen fact suppresses the matching blocking QuestionCard', as
       sourceRef: 'store_fact:price-a:1',
     },
   };
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         contextRequests += 1;
         return snapshot;
@@ -192,9 +197,10 @@ test('an existing frozen fact suppresses the matching blocking QuestionCard', as
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
   const input = { workflowId: 'task-fact-present', request: taskInput() };
   const named = await ports.nameIntent(input);
   assert.equal(named.blockingQuestion, null);
@@ -238,9 +244,10 @@ test('production Recipe fact satisfaction gates the facts visible to the Copy Br
     service: factContribution('service-1', 'service', '头皮清洁护理'),
     price: factContribution('price-1', 'price', 398),
   };
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return context;
       },
@@ -248,13 +255,11 @@ test('production Recipe fact satisfaction gates the facts visible to the Copy Br
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-22T10:00:00.000Z',
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-22T10:00:00.000Z',
+    },
+    skills: {
+      recipeFacts: {
       async getRecipeByRevisionId() {
         return {
           recipeId: 'recipe-1',
@@ -263,12 +268,15 @@ test('production Recipe fact satisfaction gates the facts visible to the Copy Br
         };
       },
     },
-    {
+    },
+    authorization: {
+      factRights: {
       async isAuthorized({ fact }) {
         return fact.factId === 'service-1';
       },
     },
-  );
+    },
+  });
   const snapshot = composerSnapshot();
   const request = {
     ...composerRequest(snapshot),
@@ -342,9 +350,10 @@ test('an unanswered industry gap reports the confirmed grounding surface to the 
     { key: 'store.name', sourceRef: 'store_fact:store-name:1' },
     { key: 'service.name', sourceRef: 'store_fact:service-name:1' },
   ];
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return snapshot;
       },
@@ -352,9 +361,10 @@ test('an unanswered industry gap reports the confirmed grounding surface to the 
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
 
   const named = await ports.nameIntent({
     workflowId: 'task-unanswered-industry',
@@ -391,9 +401,10 @@ test('the production reuse path keeps an unanswered industry QuestionCard reacha
       },
     },
   ]);
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -401,9 +412,10 @@ test('the production reuse path keeps an unanswered industry QuestionCard reacha
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
   const request = {
     ...taskInput(),
     reuseSeed: {
@@ -468,9 +480,10 @@ test('ambiguous service price facts keep the blocking QuestionCard', async () =>
       sourceRef: 'store_fact:price-nail:1',
     },
   };
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return snapshot;
       },
@@ -478,9 +491,10 @@ test('ambiguous service price facts keep the blocking QuestionCard', async () =>
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
 
   const named = await ports.nameIntent({
     workflowId: 'task-ambiguous-price',
@@ -527,9 +541,10 @@ test('same-scope facts with the same key keep the blocking QuestionCard before b
       { key: 'offer.price', sourceRef: 'store_fact:price-new:1' },
     ],
   });
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return snapshot;
       },
@@ -537,9 +552,10 @@ test('same-scope facts with the same key keep the blocking QuestionCard before b
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
 
   const named = await ports.nameIntent({
     workflowId: 'task-conflicting-price-streams',
@@ -566,9 +582,10 @@ test('production Copy stage keeps the frozen structured platform over model outp
       constraints: [],
     },
   ]);
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -576,9 +593,10 @@ test('production Copy stage keeps the frozen structured platform over model outp
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
   const snapshot = composerSnapshot();
 
   const result = await ports.compileBrief({
@@ -626,9 +644,10 @@ test('production Copy stage keeps the frozen structured platform over model outp
 
 test('a Composer Copy snapshot rejects a different active identity before provider execution', () => {
   const runner = new QueueRunner([]);
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -636,9 +655,10 @@ test('a Composer Copy snapshot rejects a different active identity before provid
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
   const snapshot = composerSnapshot();
   const context = contextSnapshot();
   context.policyReferences.identityRefs = [
@@ -684,9 +704,10 @@ test('a Composer Copy snapshot rejects a different active identity before provid
 
 test('a Composer Copy snapshot rejects a foreign brief asset before provider execution', () => {
   const runner = new QueueRunner([]);
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -694,9 +715,10 @@ test('a Composer Copy snapshot rejects a foreign brief asset before provider exe
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
   const snapshot = composerSnapshot();
   const context = contextSnapshot();
   context.policyReferences.identityRefs = [
@@ -747,9 +769,10 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
   const memoryStarted = new Promise<void>((resolve) => {
     markMemoryStarted = resolve;
   });
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => new QueueRunner([]) },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => new QueueRunner([]) },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -757,19 +780,14 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
         return input.context;
       },
     },
-    legacyDelivery,
-    () => '2026-07-22T10:00:00.000Z',
-    undefined,
-    executionDelivery,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    {
+      delivery: legacyDelivery,
+      now: () => '2026-07-22T10:00:00.000Z',
+    },
+    execution: {
+      delivery: executionDelivery,
+    },
+    memory: {
+      sedimentation: {
       async summarize() {
         return [];
       },
@@ -779,7 +797,8 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
         memoryCompletions += 1;
       },
     },
-  );
+    },
+  });
   const snapshot = composerSnapshot();
   const context = contextSnapshot();
   context.bundle.referencedFactRevisions = [
@@ -989,9 +1008,10 @@ test('a frozen Composer Copy snapshot uses the single revision writer', async ()
 
 test('assembly blocks unsupported visible claims before writing a deliverable revision', async () => {
   const executionDelivery = new RecordingRevisionWriter();
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => new QueueRunner([]) },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => new QueueRunner([]) },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -999,11 +1019,13 @@ test('assembly blocks unsupported visible claims before writing a deliverable re
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-22T10:00:00.000Z',
-    undefined,
-    executionDelivery,
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-22T10:00:00.000Z',
+    },
+    execution: {
+      delivery: executionDelivery,
+    },
+  });
   const snapshot = composerSnapshot();
 
   await assert.rejects(
@@ -1066,9 +1088,10 @@ test('assembly blocks unsupported visible claims before writing a deliverable re
 test('copy delivery hot-reads a newly enabled sensitive word before writing ContentPackage', async () => {
   const executionDelivery = new RecordingRevisionWriter();
   const enabledLexicon: SensitiveWordRecord[] = [];
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => new QueueRunner([]) },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => new QueueRunner([]) },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -1076,25 +1099,20 @@ test('copy delivery hot-reads a newly enabled sensitive word before writing Cont
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-22T10:00:00.000Z',
-    undefined,
-    executionDelivery,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-22T10:00:00.000Z',
+    },
+    execution: {
+      delivery: executionDelivery,
+    },
+    policy: {
+      sensitiveLexicon: {
       async listEnabled() {
         return structuredClone(enabledLexicon);
       },
     },
-  );
+    },
+  });
   const snapshot = composerSnapshot();
   enabledLexicon.push({
     id: 'sw-late-root-cure',
@@ -1160,9 +1178,10 @@ test('copy delivery hot-reads a newly enabled sensitive word before writing Cont
 
 test('assembly delivers legitimate promotion copy backed by confirmed facts', async () => {
   const executionDelivery = new RecordingRevisionWriter();
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => new QueueRunner([]) },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => new QueueRunner([]) },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -1170,11 +1189,13 @@ test('assembly delivers legitimate promotion copy backed by confirmed facts', as
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-22T10:00:00.000Z',
-    undefined,
-    executionDelivery,
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-22T10:00:00.000Z',
+    },
+    execution: {
+      delivery: executionDelivery,
+    },
+  });
   const snapshot = composerSnapshot();
   const context = contextSnapshot();
   const activeFacts = [
@@ -1289,9 +1310,10 @@ test('a source ContentPackage enters the Copy Brief and fails closed after revoc
     },
   ]);
   const executionDelivery = new RecordingRevisionWriter();
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextWithSourcePackage();
       },
@@ -1299,18 +1321,20 @@ test('a source ContentPackage enters the Copy Brief and fails closed after revoc
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-22T10:00:00.000Z',
-    undefined,
-    executionDelivery,
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-22T10:00:00.000Z',
+    },
+    execution: {
+      delivery: executionDelivery,
+      sourceContentPackages: {
       async resolve(input) {
         if (!available)
           throw new SourceContentPackageUnavailableError(input.source!);
         return sourceContentPackageProjection();
       },
     },
-  );
+    },
+  });
   const snapshot = composerSnapshot(source);
   const request = {
     ...taskInput(),
@@ -1412,9 +1436,10 @@ test('text selection delivery accepts a full candidate only when text outside th
       expressionIdentityRef: 'marketing_identity:identity-1:identity-r1',
     }),
   ]);
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => productionRunner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => productionRunner },
+      context: {
       async compileAndFreeze() {
         return contextWithSourcePackage();
       },
@@ -1422,16 +1447,18 @@ test('text selection delivery accepts a full candidate only when text outside th
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-22T10:00:00.000Z',
-    undefined,
-    executionDelivery,
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-22T10:00:00.000Z',
+    },
+    execution: {
+      delivery: executionDelivery,
+      sourceContentPackages: {
       async resolve() {
         return sourceContentPackageProjection();
       },
     },
-  );
+    },
+  });
 
   const generatedSelection = await ports.executeAndSelect({
     workflowId: snapshot.task.id,
@@ -1539,9 +1566,10 @@ test('text selection delivery rejects equal-length source drift before write', a
   const executionDelivery = new RecordingRevisionWriter();
   const driftedSource = sourceContentPackageProjection();
   driftedSource.document.body = '夏日护理，预约到访。';
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => new QueueRunner([]) },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => new QueueRunner([]) },
+      context: {
       async compileAndFreeze() {
         return contextWithSourcePackage();
       },
@@ -1549,12 +1577,18 @@ test('text selection delivery rejects equal-length source drift before write', a
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-22T10:00:00.000Z',
-    undefined,
-    executionDelivery,
-    { async resolve() { return driftedSource; } },
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-22T10:00:00.000Z',
+    },
+    execution: {
+      delivery: executionDelivery,
+      sourceContentPackages: {
+        async resolve() {
+          return driftedSource;
+        },
+      },
+    },
+  });
 
   await assert.rejects(
     ports.assembleAndDeliver({
@@ -1615,9 +1649,10 @@ test('only selected source-package assets can cross Brief, selection, and delive
     score(89),
   ]);
   const executionDelivery = new RecordingRevisionWriter();
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextWithSourcePackage();
       },
@@ -1625,16 +1660,18 @@ test('only selected source-package assets can cross Brief, selection, and delive
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-22T10:00:00.000Z',
-    undefined,
-    executionDelivery,
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-22T10:00:00.000Z',
+    },
+    execution: {
+      delivery: executionDelivery,
+      sourceContentPackages: {
       async resolve() {
         return sourceContentPackageProjection();
       },
     },
-  );
+    },
+  });
   const snapshot = composerSnapshot(source);
   const request = composerRequest(snapshot);
   const declaration = {
@@ -1696,9 +1733,10 @@ test('only selected source-package assets can cross Brief, selection, and delive
       constraints: [],
     },
   ]);
-  const sourceOnlyPorts = new ProductionHarnessStagePorts(
-    { create: () => sourceOnlyRunner },
-    {
+  const sourceOnlyPorts = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => sourceOnlyRunner },
+      context: {
       async compileAndFreeze() {
         return contextWithSourcePackage();
       },
@@ -1706,16 +1744,18 @@ test('only selected source-package assets can cross Brief, selection, and delive
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-22T10:00:00.000Z',
-    undefined,
-    new RecordingRevisionWriter(),
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-22T10:00:00.000Z',
+    },
+    execution: {
+      delivery: new RecordingRevisionWriter(),
+      sourceContentPackages: {
       async resolve() {
         return sourceContentPackageProjection();
       },
     },
-  );
+    },
+  });
   await assert.rejects(
     sourceOnlyPorts.compileBrief({
       workflowId: snapshot.task.id,
@@ -1753,9 +1793,10 @@ test('source revocation after c01 prevents c02 provider work and delivery', asyn
     candidate('候选一'),
   ]);
   const executionDelivery = new RecordingRevisionWriter();
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextWithSourcePackage();
       },
@@ -1763,11 +1804,12 @@ test('source revocation after c01 prevents c02 provider work and delivery', asyn
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-22T10:00:00.000Z',
-    undefined,
-    executionDelivery,
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-22T10:00:00.000Z',
+    },
+    execution: {
+      delivery: executionDelivery,
+      sourceContentPackages: {
       async resolve(input) {
         if (runner.requests.length >= 3) {
           throw new SourceContentPackageUnavailableError(input.source!);
@@ -1775,7 +1817,8 @@ test('source revocation after c01 prevents c02 provider work and delivery', asyn
         return sourceContentPackageProjection();
       },
     },
-  );
+    },
+  });
   const snapshot = composerSnapshot(source);
 
   await assert.rejects(
@@ -1809,9 +1852,10 @@ test('source revocation between auto fallback attempts stops the second provider
   const runner = new FallbackFenceRunner(() => {
     available = false;
   });
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextWithSourcePackage();
       },
@@ -1819,18 +1863,20 @@ test('source revocation between auto fallback attempts stops the second provider
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-22T10:00:00.000Z',
-    undefined,
-    new RecordingRevisionWriter(),
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-22T10:00:00.000Z',
+    },
+    execution: {
+      delivery: new RecordingRevisionWriter(),
+      sourceContentPackages: {
       async resolve(input) {
         if (!available)
           throw new SourceContentPackageUnavailableError(input.source!);
         return sourceContentPackageProjection();
       },
     },
-  );
+    },
+  });
   const snapshot = composerSnapshot(source);
   const request = composerRequest(snapshot);
 
@@ -1858,9 +1904,10 @@ test('source revocation between auto fallback attempts stops the second provider
 
 test('a Composer Copy snapshot rejects brief assets outside its frozen sources', async () => {
   const executionDelivery = new RecordingRevisionWriter();
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => new QueueRunner([]) },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => new QueueRunner([]) },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -1868,11 +1915,13 @@ test('a Composer Copy snapshot rejects brief assets outside its frozen sources',
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-22T10:00:00.000Z',
-    undefined,
-    executionDelivery,
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-22T10:00:00.000Z',
+    },
+    execution: {
+      delivery: executionDelivery,
+    },
+  });
   const snapshot = composerSnapshot();
 
   await assert.rejects(
@@ -1961,9 +2010,10 @@ test('production ports compose #31, canonical gates, a single primary result and
     score(92),
   ]);
   const delivery = new RecordingDelivery();
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -1971,9 +2021,10 @@ test('production ports compose #31, canonical gates, a single primary result and
         return input.context;
       },
     },
-    delivery,
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: delivery,
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
   const traces = new Map<string, Record<string, unknown>>();
   const request = {
     ...taskInput(),
@@ -2392,9 +2443,10 @@ for (const allowed of unpricedAllowedNumberCases) {
 
 test('withdrawn identity references stop before any provider request', () => {
   const runner = new QueueRunner([]);
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -2402,9 +2454,10 @@ test('withdrawn identity references stop before any provider request', () => {
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
 
   assert.throws(
     () =>
@@ -2430,9 +2483,10 @@ test('withdrawn identity references stop before any provider request', () => {
 
 test('execution assembly drift stops before the structured provider effect', async () => {
   const runner = new QueueRunner([]);
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -2440,9 +2494,10 @@ test('execution assembly drift stops before the structured provider effect', asy
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
   const prompts = harnessPromptBundle();
   const promptRevisionRefs = promptRevisionReferences(prompts);
   const request: HarnessWorkflowInput = {
@@ -2502,9 +2557,10 @@ test('execution assembly drift stops before the structured provider effect', asy
 
 test('canonical emitter flattens frozen child axes and uses snapshot catalog authority', async () => {
   const events = new MemoryObservabilityEventAudit();
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => new QueueRunner([]) },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => new QueueRunner([]) },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -2512,19 +2568,13 @@ test('canonical emitter flattens frozen child axes and uses snapshot catalog aut
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    events,
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+    observability: {
+      events: events,
+    },
+  });
   const request = taskInputWithExecutionAssembly('task-canonical');
   request.executionAssembly!.skillStages.execution_selection = [
     {
@@ -2592,9 +2642,10 @@ test('a legacy request without execution assembly cannot start structured genera
       blockingGap: null,
     },
   ]);
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -2602,9 +2653,10 @@ test('a legacy request without execution assembly cannot start structured genera
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
 
   await assert.rejects(
     () =>
@@ -2636,9 +2688,10 @@ test('structured provider child lifecycle uses frozen single-value axes', async 
       return { kind: 'not_billed' };
     },
   });
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -2646,20 +2699,17 @@ test('structured provider child lifecycle uses frozen single-value axes', async 
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+    observability: {
+      children: {
       create() {
         return observer;
       },
     },
-  );
+    },
+  });
 
   const request = taskInputWithExecutionAssembly('task-child-axes');
   const effectiveSkill = {
@@ -2729,9 +2779,7 @@ test('structured provider child lifecycle uses frozen single-value axes', async 
 });
 
 test('copy selection awaits the additive primitive check with frozen child axes', async () => {
-  const runner = new QueueRunner([
-    candidate('门店护理建议'),
-  ]);
+  const runner = new QueueRunner([candidate('门店护理建议')]);
   const audit = new MemoryObservabilityEventAudit();
   const observer = new AgentPrimitiveObservabilityAdapter(audit, {
     resolve() {
@@ -2739,9 +2787,10 @@ test('copy selection awaits the additive primitive check with frozen child axes'
     },
   });
   const checks: unknown[] = [];
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -2749,20 +2798,16 @@ test('copy selection awaits the additive primitive check with frozen child axes'
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+    observability: {
+      children: {
       create() {
         return observer;
       },
     },
-    {
+      primitiveCheck: {
       async execute(input) {
         checks.push(structuredClone(input));
         return {
@@ -2773,7 +2818,8 @@ test('copy selection awaits the additive primitive check with frozen child axes'
         };
       },
     },
-  );
+    },
+  });
   const workflowId = 'task-additive-primitive-check';
   const request = taskInputWithExecutionAssembly(workflowId);
   const context = contextSnapshot();
@@ -2871,9 +2917,10 @@ test('a sensitive-word primitive violation keeps structured matches and prevents
       ],
     },
   };
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -2881,16 +2928,12 @@ test('a sensitive-word primitive violation keeps structured matches and prevents
         return input.context;
       },
     },
-    delivery,
-    () => '2026-07-18T00:01:00.000Z',
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    { create: () => observer },
-    {
+      delivery: delivery,
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+    observability: {
+      children: { create: () => observer },
+      primitiveCheck: {
       async execute() {
         return {
           allowed: false,
@@ -2900,7 +2943,8 @@ test('a sensitive-word primitive violation keeps structured matches and prevents
         };
       },
     },
-  );
+    },
+  });
   const workflowId = 'task-blocked-additive-check';
   const request = taskInputWithExecutionAssembly(workflowId);
   const context = contextSnapshot();
@@ -2946,9 +2990,10 @@ test('copy selection keeps primitive and structured-node lifecycle events distin
       return { kind: 'not_billed' };
     },
   });
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -2956,17 +3001,12 @@ test('copy selection keeps primitive and structured-node lifecycle events distin
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    { create: () => observer },
-    undefined,
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+    observability: {
+      children: { create: () => observer },
+      candidateRunner: {
       wrap(input) {
         return {
           async run(request) {
@@ -2990,7 +3030,8 @@ test('copy selection keeps primitive and structured-node lifecycle events distin
         };
       },
     },
-  );
+    },
+  });
   const workflowId = 'task-nested-candidate-observability';
   const request = taskInputWithExecutionAssembly(workflowId);
   request.boundedExecution = {
@@ -3071,9 +3112,10 @@ test('copy self-correction uses the injected primitive candidate runner', async 
   );
   const wraps: unknown[] = [];
   const primitiveRuns: string[] = [];
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -3081,17 +3123,12 @@ test('copy self-correction uses the injected primitive candidate runner', async 
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    { create: () => observer },
-    undefined,
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+    observability: {
+      children: { create: () => observer },
+      candidateRunner: {
       wrap(input) {
         const { runner: activeRunner, ...metadata } = input;
         wraps.push(structuredClone(metadata));
@@ -3103,7 +3140,8 @@ test('copy self-correction uses the injected primitive candidate runner', async 
         };
       },
     },
-  );
+    },
+  });
   const workflowId = 'task-primitive-candidate-runner';
   const request = taskInputWithExecutionAssembly(workflowId);
   request.boundedExecution = {
@@ -3225,13 +3263,14 @@ test('bounded copy resume passes the durable candidate fence to the primitive ru
     },
   };
   const createPorts = (
-    candidateFactory?: ConstructorParameters<
-      typeof ProductionHarnessStagePorts
-    >[12],
+    candidateFactory?: NonNullable<
+      ProductionHarnessStagePortsOptions['observability']
+    >['candidateRunner'],
   ) =>
-    new ProductionHarnessStagePorts(
-      { create: () => runner },
-      {
+    new ProductionHarnessStagePorts({
+      core: {
+        runners: { create: () => runner },
+        context: {
         async compileAndFreeze() {
           return contextSnapshot();
         },
@@ -3239,24 +3278,19 @@ test('bounded copy resume passes the durable candidate fence to the primitive ru
           return value.context;
         },
       },
-      new RecordingDelivery(),
-      () => '2026-07-18T00:01:00.000Z',
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      { create: () => observer },
-      undefined,
-      candidateFactory,
-    );
+        delivery: new RecordingDelivery(),
+        now: () => '2026-07-18T00:01:00.000Z',
+      },
+      observability: {
+        children: { create: () => observer },
+        candidateRunner: candidateFactory,
+      },
+    });
 
   const suspended = await createPorts().executeAndSelectBounded(input);
   assert.equal(isBoundedExecutionSuspension(suspended), true);
   if (!isBoundedExecutionSuspension(suspended)) return;
-  const firstEffectIdempotencyKey =
-    runner.requests[0]?.effectIdempotencyKey;
+  const firstEffectIdempotencyKey = runner.requests[0]?.effectIdempotencyKey;
   assert.ok(firstEffectIdempotencyKey);
   const wraps: unknown[] = [];
   const resumed = await createPorts({
@@ -3320,9 +3354,10 @@ test('a succeeded audit failure does not rewrite a successful structured provide
     },
     { resolve: () => ({ kind: 'not_billed' }) },
   );
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -3330,20 +3365,17 @@ test('a succeeded audit failure does not rewrite a successful structured provide
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+    observability: {
+      children: {
       create() {
         return observer;
       },
     },
-  );
+    },
+  });
 
   await assert.rejects(
     () =>
@@ -3396,14 +3428,15 @@ test('structured controller receives the frozen route only for copy work', async
     new MemoryObservabilityEventAudit(),
     { resolve: () => ({ kind: 'not_billed' }) },
   );
-  const ports = new ProductionHarnessStagePorts(
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: {
       create(input) {
         receivedRouteIds.push(input.frozenRouteSnapshot?.id ?? null);
         return runner;
       },
     },
-    {
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -3411,20 +3444,17 @@ test('structured controller receives the frozen route only for copy work', async
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+    observability: {
+      children: {
       create() {
         return observer;
       },
     },
-  );
+    },
+  });
 
   await ports.nameIntent({
     workflowId: 'task-copy-controller',
@@ -3461,9 +3491,10 @@ test('media structured controller child lifecycle uses snapshot catalog authorit
       return { kind: 'not_billed' };
     },
   });
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -3471,20 +3502,17 @@ test('media structured controller child lifecycle uses snapshot catalog authorit
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    {
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+    observability: {
+      children: {
       create() {
         return observer;
       },
     },
-  );
+    },
+  });
 
   await ports.nameIntent({
     workflowId: 'task-media-child-axes',
@@ -3638,9 +3666,10 @@ async function assertUnpricedCandidateBlocked(output: CandidateFixture) {
 }
 
 function unpricedPorts(runner: StructuredNodeRunner) {
-  return new ProductionHarnessStagePorts(
-    { create: () => runner },
-    {
+  return new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -3648,9 +3677,10 @@ function unpricedPorts(runner: StructuredNodeRunner) {
         return input.context;
       },
     },
-    new RecordingDelivery(),
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
 }
 
 function unpricedExecutionInput(workflowId: string) {

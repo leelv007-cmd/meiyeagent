@@ -51,21 +51,27 @@ export function createProductionHarnessMediaAssembly(input: {
   executionChildObservability?: HarnessExecutionChildObservabilityFactory;
   sourceContentPackages?: ExecutionSourceContentPackageResolverPort;
 }) {
-  return new UnifiedHarnessStagePorts(
-    input.copy,
-    input.runners,
-    new ModelSupplyHarnessMediaExecutionPort(
-      input.models,
-      input.exactText,
-      input.noteAdmission,
-      input.imageProfile,
-    ),
-    input.contentPackages,
-    input.now,
-    input.noteSettings,
-    input.noteEnhancementJudge,
-    input.executionChildObservability,
-    input.sensitiveLexicon,
-    input.sourceContentPackages,
-  );
+  return new UnifiedHarnessStagePorts({
+    core: {
+      contentPackages: input.contentPackages,
+      now: input.now,
+      runners: input.runners,
+    },
+    collaborators: {
+      copy: input.copy,
+      media: new ModelSupplyHarnessMediaExecutionPort(
+        input.models,
+        input.exactText,
+        input.noteAdmission,
+        input.imageProfile,
+      ),
+    },
+    capabilities: {
+      executionChildObservability: input.executionChildObservability,
+      noteEnhancementJudge: input.noteEnhancementJudge,
+      noteSettings: input.noteSettings,
+      sensitiveLexicon: input.sensitiveLexicon,
+      sourceContentPackages: input.sourceContentPackages,
+    },
+  }).asCollaborators();
 }

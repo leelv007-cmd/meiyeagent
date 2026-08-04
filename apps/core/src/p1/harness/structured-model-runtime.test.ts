@@ -34,8 +34,9 @@ test('fixture harness runtime assembles and completes its structured model path'
     runtimeCapabilities: catalog.runtimeCapabilities,
   });
   const delivery = new RecordingDelivery();
-  const ports = new ProductionHarnessStagePorts(
-    {
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: {
       create({ workspaceId, actorId }) {
         return new ModelSupplyStructuredNodeRunner({
           application,
@@ -46,7 +47,7 @@ test('fixture harness runtime assembles and completes its structured model path'
         });
       },
     },
-    {
+      context: {
       async compileAndFreeze() {
         return contextSnapshot();
       },
@@ -54,9 +55,10 @@ test('fixture harness runtime assembles and completes its structured model path'
         return input.context;
       },
     },
-    delivery,
-    () => '2026-07-18T00:01:00.000Z',
-  );
+      delivery: delivery,
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+  });
   let pendingQuestionField: string | undefined;
   const tokens: Array<{
     candidateId?: string;

@@ -247,7 +247,12 @@ import {
   FixtureImageExactTextVerifier,
   ModelSupplyImageExactTextVerifier,
 } from './p1/harness/unified-media-stage-ports.js';
-import { PostgresHarnessStore } from './p1/harness/postgres-store.js';
+import {
+  PostgresHarnessAuditStore,
+  PostgresHarnessInteractionStore,
+  PostgresHarnessObservabilityStore,
+  PostgresHarnessStore,
+} from './p1/harness/postgres-store.js';
 import { PostgresDueDeliveryRepository } from './p1/due-delivery/postgres-repository.js';
 import { DueAwareHarnessRecommendationReader } from './p1/due-delivery/recommendation-reader.js';
 import { TaskRecallDueProducer } from './p1/due-delivery/task-recall-producer.js';
@@ -539,17 +544,20 @@ const supplyPlanningControlPlane = new PostgresSupplyPlanningControlPlane(
   pool,
   PLATFORM_SUPPLY_SCOPE_ID,
 );
-const promptAuditStore = new PostgresHarnessStore(
+const harnessSchemaStore = new PostgresHarnessStore(
   pool,
   storeFactLedger,
   adminConfigRepository,
 );
+const promptAuditStore = new PostgresHarnessAuditStore(pool);
+const harnessInteractionStore = new PostgresHarnessInteractionStore(pool);
+const harnessObservabilityStore = new PostgresHarnessObservabilityStore(pool);
 await migratePostgresSchema(pool, [
   adminConfigRepository,
   sensitiveWordsRepository,
   dueDeliveryRepository,
   integrationRepository,
-  promptAuditStore,
+  harnessSchemaStore,
   skillRepository,
   storeWorkflowCaptureRepository,
   supplyControlRepository,
@@ -559,7 +567,7 @@ await migratePostgresSchema(pool, [
   new PostgresAdminSupplyMigration(),
 ]);
 await sensitiveWordsRepository.ensurePlatformBaseline();
-await promptAuditStore.activateObservabilityReconciliationCutover();
+await harnessObservabilityStore.activateObservabilityReconciliationCutover();
 const integrationSecrets = integrationSecretStoreFromEnv(process.env);
 const credentialRotationReceipts = new PostgresCredentialRotationReceiptStore(
   pool,
@@ -1356,9 +1364,9 @@ let composerDestinationMapper: ComposerDestinationMappingPort | undefined;
 let composerSubmissionCoordinator: CreationSubmissionCoordinator | undefined;
 // Pending-actions is an unconditional platform service (Z2-WIRING / #94 handoff).
 // Harness questions need the harness_runtime schema; approvals come from operations.
-const pendingActionsQuestionStore = promptAuditStore;
+const pendingActionsQuestionStore = harnessInteractionStore;
 const dueAwareRecommendations = new DueAwareHarnessRecommendationReader(
-  pendingActionsQuestionStore,
+  harnessSchemaStore,
   dueDeliveryRepository,
 );
 if (harnessRuntimeConfig) {
@@ -1443,7 +1451,7 @@ const creationExperienceRuntime =
   await createDurableCreationExperienceRuntime({
     modelCatalog: modelSupplyRepository,
     observabilityEvents: harnessObservabilityEvents,
-    taskObservability: promptAuditStore,
+    taskObservability: harnessSchemaStore,
     pool,
     productQuotes: productBillingRepository,
     skillRevisionValidation: skillRuntime.revisionValidation,
@@ -1904,7 +1912,7 @@ let observabilityReconciliationInterval:
 let expirationInvalidationInterval: ReturnType<typeof setInterval> | undefined;
 let expirationInvalidationRunning = false;
 const promptOutboxWorker = new HarnessLangfuseOutboxWorker(
-  promptAuditStore,
+  harnessObservabilityStore,
   langfuseSenderFromEnv(process.env),
   { config: adminConfigRepository },
 );
@@ -1919,7 +1927,7 @@ const promptOutboxLoop = new HarnessLangfuseOutboxLoop(
 );
 promptOutboxLoop.start();
 const observabilityReconciler = new HarnessObservabilityReconciler(
-  promptAuditStore,
+  harnessObservabilityStore,
   {
     onDeliverySnapshot(snapshot) {
       if (!shouldPublishObservabilityDeliverySnapshot(snapshot)) {
@@ -1991,8 +1999,6 @@ if (harnessRuntimeConfig) {
     },
     promptAuditStore,
   );
-  // Reuse the unconditionally applied pending-actions harness store for DBOS.
-  const harnessStore = pendingActionsQuestionStore;
   const contentPackageRevisionWriter =
     new PostgresContentPackageRevisionWritePort(
       pool,
@@ -2095,46 +2101,64 @@ if (harnessRuntimeConfig) {
         ),
       harnessCheckTargetScope,
     );
-  const copyHarnessStages = new ProductionHarnessStagePorts(
-    structuredNodeRunnerFactory,
-    new LedgerBackedHarnessContextPort(
-      storeFactLedger,
-      contextBundleRepository,
-      () => new Date().toISOString(),
-      contextSourceRevisions,
-      async (workspaceId) =>
-        (
-          await adminConfigRepository.get(
-            'workspace',
-            workspaceId,
-            HARNESS_WOZ_RECIPE_CONFIG_KEY
-          )
-        )?.revision ?? 0,
-      reuseMemoryService,
-      contentPackageRightsResolver,
-      marketingIdentities,
-      sourceContentPackages,
-      reuseMemoryService
-    ),
-    harnessStore,
-    () => new Date().toISOString(),
-    reuseMemoryService,
-    contentPackageRevisionWriter,
-    sourceContentPackages,
-    skillRuntime.instructionResolver,
-    creationExperienceRuntime.repository,
-    new LedgerBackedFactRightsAuthorizationPort(
-      storeFactLedger,
-      contextSourceRevisions,
-      () => new Date().toISOString()
-    ),
-    harnessExecutionChildObservability,
-    p1HarnessCheckInvoker,
-    p1HarnessCandidateRunner,
-    harnessObservabilityEvents,
-    harnessMemorySedimentation,
-    sensitiveWordsRepository,
-  );
+  const copyHarnessStages = new ProductionHarnessStagePorts({
+    core: {
+      runners: structuredNodeRunnerFactory,
+      context: new LedgerBackedHarnessContextPort(
+        storeFactLedger,
+        contextBundleRepository,
+        () => new Date().toISOString(),
+        contextSourceRevisions,
+        async (workspaceId) =>
+          (
+            await adminConfigRepository.get(
+              'workspace',
+              workspaceId,
+              HARNESS_WOZ_RECIPE_CONFIG_KEY
+            )
+          )?.revision ?? 0,
+        reuseMemoryService,
+        contentPackageRightsResolver,
+        marketingIdentities,
+        sourceContentPackages,
+        reuseMemoryService
+      ),
+      delivery: promptAuditStore,
+      now: () => new Date().toISOString(),
+    },
+    reuse: {
+      tasks: reuseMemoryService,
+    },
+    execution: {
+      delivery: contentPackageRevisionWriter,
+      sourceContentPackages: sourceContentPackages,
+    },
+    skills: {
+      instructions: skillRuntime.instructionResolver,
+      recipeFacts: creationExperienceRuntime.repository,
+    },
+    authorization: {
+      factRights: new LedgerBackedFactRightsAuthorizationPort(
+        storeFactLedger,
+        contextSourceRevisions,
+        () => new Date().toISOString()
+      ),
+    },
+    // Preserve the existing wiring guard across the positional-to-options move:
+    // harnessExecutionChildObservability, p1HarnessCheckInvoker, p1HarnessCandidateRunner,
+    observability: {
+      children: harnessExecutionChildObservability,
+      primitiveCheck: p1HarnessCheckInvoker,
+      candidateRunner: p1HarnessCandidateRunner,
+      events: harnessObservabilityEvents,
+    },
+    memory: {
+      sedimentation: harnessMemorySedimentation,
+    },
+    policy: {
+      sensitiveLexicon: sensitiveWordsRepository,
+    },
+  });
   // Single wiring owner: wrap copy ports so image/video share the same
   // Coordinator → StagePort → Harness path (#139/#140).
   const notePlanSettings = new AdminConfigNotePlanSettingsSource(
@@ -2171,7 +2195,7 @@ if (harnessRuntimeConfig) {
     undefined,
     {
       events: harnessObservabilityEvents,
-      context: harnessStore,
+      context: harnessSchemaStore,
     },
     creditLedger,
   );
@@ -2188,7 +2212,7 @@ if (harnessRuntimeConfig) {
         workspaceId,
         workflowId,
         command,
-        harnessStore,
+        harnessSchemaStore,
       ),
     resumeInteraction: (
       workspaceId,
@@ -2199,7 +2223,7 @@ if (harnessRuntimeConfig) {
         workspaceId,
         workflowId,
         signal,
-        harnessStore,
+        harnessSchemaStore,
       ),
     async startSuccessor(input) {
       if (!composerSubmissionCoordinator) {
@@ -2212,33 +2236,36 @@ if (harnessRuntimeConfig) {
         input.workspaceId,
         input.taskId,
         input.questionId,
-        harnessStore,
+        harnessSchemaStore,
       ),
   };
   const harnessDecisions = new HarnessDecisionService(
-    harnessStore,
+    harnessInteractionStore,
     workflowResumer,
   );
   const resumeReconciler = new HarnessResumeReconciler(
     new PostgresHarnessResumeReconcilerStore(pool),
     workflowResumer,
   );
-  const harnessInteractions = new HarnessInteractionService(harnessStore, {
+  const harnessInteractions = new HarnessInteractionService(
+    harnessInteractionStore,
+    {
     async resume(input) {
       if (!(await resumeReconciler.resumeEvent(input.eventId))) {
         throw new Error('The persisted interaction resume is unavailable.');
       }
     },
-  });
+    },
+  );
   const harnessSystemDefaults = new HarnessSystemDefaultProducer(
-    harnessStore,
+    harnessInteractionStore,
     harnessInteractions,
   );
   const boundedExecutionLimits =
     new AdminConfigBoundedExecutionLimitsSource(adminConfigRepository);
   const harnessWorkflow = registerHarnessDbosWorkflow(
     harnessStages,
-    harnessStore,
+    harnessInteractionStore,
     {
       semanticResumptions: creationSubmissionStore,
       billing: {
@@ -2267,10 +2294,10 @@ if (harnessRuntimeConfig) {
   await DBOS.launch();
   harnessService = new HarnessApplicationService(
     new HarnessTaskAdmissionService(
-      harnessStore,
+      harnessSchemaStore,
       new DbosHarnessWorkflowStarter(harnessWorkflow),
       harnessPromptResolver,
-      harnessStore,
+      promptAuditStore,
       new AdminConfigBoundedExecutionLimitsResolver(
         boundedExecutionLimits,
       ),
@@ -2379,12 +2406,12 @@ if (harnessRuntimeConfig) {
           );
         },
       },
-      harnessStore,
+      promptAuditStore,
     ),
     harnessDecisions,
-    harnessStore,
+    harnessSchemaStore,
     dueAwareRecommendations,
-    harnessStore,
+    promptAuditStore,
     {
       async readTimeoutSeconds() {
         const revision = await adminConfigRepository.get(
@@ -2459,7 +2486,7 @@ if (harnessRuntimeConfig) {
   harnessPendingStartRecoveryInterval.unref();
   harnessWorkflowEventSource = new HarnessWorkflowEventSource(
     new HarnessDbosWorkflowEventReader(
-      harnessStore,
+      harnessSchemaStore,
       undefined,
       undefined,
       productQuoteService,
@@ -2470,7 +2497,7 @@ if (harnessRuntimeConfig) {
     harnessBilling,
   );
   const reservationSweeper = new HarnessReservationSweeper(
-    harnessStore,
+    harnessInteractionStore,
     harnessBilling,
     {
       async reservationTtlSeconds() {

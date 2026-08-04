@@ -105,12 +105,15 @@ import {
 import {
 	type HarnessContextSnapshot,
 	type HarnessEffectRunner,
+	type HarnessMediaExecutionStagePorts,
 	type HarnessMediaSelectionResult,
 	type HarnessMediaStagePorts,
 	type HarnessNoteBrief,
+	type HarnessNoteExecutionStagePorts,
 	type HarnessNoteSelectionResult,
 	type HarnessNoteStagePorts,
 	type HarnessSignalReceiver,
+	type HarnessStageCollaborators,
 	type HarnessStagePorts,
 	harnessMediaJobTopic,
 	requireMeasuredVideoDuration,
@@ -194,102 +197,62 @@ export interface HarnessMediaExecutionPort {
  * Adds image/video dispatch to the existing copy Harness ports. The shared
  * snapshot remains the only source of model, quote, platform and source facts.
  */
+export interface UnifiedHarnessStagePortsOptions {
+	core: {
+		contentPackages: ContentPackageRevisionWritePort;
+		now: () => string;
+		runners: HarnessStructuredNodeRunnerFactory;
+	};
+	collaborators: {
+		copy: HarnessStagePorts;
+		media: HarnessMediaExecutionPort;
+	};
+	capabilities?: {
+		executionChildObservability?: HarnessExecutionChildObservabilityFactory;
+		noteEnhancementJudge?: NotePlanEnhancementJudgeResolver;
+		noteSettings?: NotePlanSettingsSource;
+		sensitiveLexicon?: SensitiveLexiconReadPort;
+		sourceContentPackages?: ExecutionSourceContentPackageResolverPort;
+	};
+}
+
 export class UnifiedHarnessStagePorts
-	implements HarnessMediaStagePorts, HarnessNoteStagePorts
+	implements HarnessMediaExecutionStagePorts, HarnessNoteExecutionStagePorts
 {
-	constructor(
-		private readonly copy: HarnessStagePorts,
-		private readonly runners: HarnessStructuredNodeRunnerFactory,
-		private readonly media: HarnessMediaExecutionPort,
-		private readonly contentPackages: ContentPackageRevisionWritePort,
-		private readonly now: () => string,
-		private readonly noteSettings?: NotePlanSettingsSource,
-		private readonly noteEnhancementJudge: NotePlanEnhancementJudgeResolver = configuredNotePlanEnhancementJudgeResolver,
-		private readonly executionChildObservability?: HarnessExecutionChildObservabilityFactory,
-		private readonly sensitiveLexicon?: SensitiveLexiconReadPort,
-		private readonly sourceContentPackages?: ExecutionSourceContentPackageResolverPort,
-	) {}
+	private readonly copy: HarnessStagePorts;
+	private readonly runners: HarnessStructuredNodeRunnerFactory;
+	private readonly media: HarnessMediaExecutionPort;
+	private readonly contentPackages: ContentPackageRevisionWritePort;
+	private readonly now: () => string;
+	private readonly noteSettings?: NotePlanSettingsSource;
+	private readonly noteEnhancementJudge: NotePlanEnhancementJudgeResolver;
+	private readonly executionChildObservability?: HarnessExecutionChildObservabilityFactory;
+	private readonly sensitiveLexicon?: SensitiveLexiconReadPort;
+	private readonly sourceContentPackages?: ExecutionSourceContentPackageResolverPort;
 
-	recordExecutionAssemblyStep(
-		input: Parameters<
-			NonNullable<HarnessStagePorts["recordExecutionAssemblyStep"]>
-		>[0],
-	) {
-		if (!this.copy.recordExecutionAssemblyStep) {
-			throw new Error(
-				"Unified Harness requires workflow assembly observability.",
-			);
-		}
-		return this.copy.recordExecutionAssemblyStep(input);
+	constructor(options: UnifiedHarnessStagePortsOptions) {
+		this.copy = options.collaborators.copy;
+		this.runners = options.core.runners;
+		this.media = options.collaborators.media;
+		this.contentPackages = options.core.contentPackages;
+		this.now = options.core.now;
+		this.noteSettings = options.capabilities?.noteSettings;
+		this.noteEnhancementJudge =
+			options.capabilities?.noteEnhancementJudge ??
+			configuredNotePlanEnhancementJudgeResolver;
+		this.executionChildObservability =
+			options.capabilities?.executionChildObservability;
+		this.sensitiveLexicon = options.capabilities?.sensitiveLexicon;
+		this.sourceContentPackages = options.capabilities?.sourceContentPackages;
 	}
 
-	recordObservabilityEvent(
-		input: Parameters<
-			NonNullable<HarnessStagePorts["recordObservabilityEvent"]>
-		>[0],
-	) {
-		if (!this.copy.recordObservabilityEvent) {
-			throw new Error("Unified Harness requires canonical observability.");
-		}
-		return this.copy.recordObservabilityEvent(input);
-	}
-
-	resolveStageSkills(
-		input: Parameters<NonNullable<HarnessStagePorts["resolveStageSkills"]>>[0],
-	) {
-		if (!this.copy.resolveStageSkills) {
-			throw new Error(
-				"Unified Harness requires the configured Skill resolver.",
-			);
-		}
-		return this.copy.resolveStageSkills(input);
-	}
-
-	async nameIntent(input: Parameters<HarnessStagePorts["nameIntent"]>[0]) {
-		return this.copy.nameIntent(input);
-	}
-
-	injectContext(input: Parameters<HarnessStagePorts["injectContext"]>[0]) {
-		return this.copy.injectContext(input);
-	}
-
-	fenceContext(input: Parameters<HarnessStagePorts["fenceContext"]>[0]) {
-		return this.copy.fenceContext(input);
-	}
-
-	assessFacts(
-		input: Parameters<NonNullable<HarnessStagePorts["assessFacts"]>>[0],
-	) {
-		return this.copy.assessFacts?.(input) ?? Promise.resolve(null);
-	}
-
-	compileBrief(input: Parameters<HarnessStagePorts["compileBrief"]>[0]) {
-		return this.copy.compileBrief(input);
-	}
-
-	executeAndSelect(
-		input: Parameters<HarnessStagePorts["executeAndSelect"]>[0],
-	) {
-		return this.copy.executeAndSelect(input);
-	}
-
-	executeAndSelectBounded(
-		input: Parameters<
-			NonNullable<HarnessStagePorts["executeAndSelectBounded"]>
-		>[0],
-	) {
-		if (!this.copy.executeAndSelectBounded) {
-			throw new Error(
-				"Configured bounded execution requires a bounded selection port.",
-			);
-		}
-		return this.copy.executeAndSelectBounded(input);
-	}
-
-	assembleAndDeliver(
-		input: Parameters<HarnessStagePorts["assembleAndDeliver"]>[0],
-	) {
-		return this.copy.assembleAndDeliver(input);
+	asCollaborators(): HarnessStageCollaborators {
+		return {
+			shared: this.copy,
+			copy: this.copy,
+			media: this,
+			note: this,
+		};
 	}
 
 	async compileMediaBrief(
@@ -589,8 +552,7 @@ export class UnifiedHarnessStagePorts
 					? {
 							styleAnalysisBlock: stylePipeline.styleAnalysisBlock,
 							styleAnalysisOutlinePrompt: stylePipeline.outlinePrompt,
-							consistencyRequirements:
-								stylePipeline.consistencyRequirements,
+							consistencyRequirements: stylePipeline.consistencyRequirements,
 						}
 					: {}),
 			}),
@@ -704,9 +666,7 @@ export class UnifiedHarnessStagePorts
 		const regenerated = await compiler.regenerateMerchantPage({
 			version: sourceNote,
 			pageId: page.id,
-			...(input.onPageProgress
-				? { onPageProgress: input.onPageProgress }
-				: {}),
+			...(input.onPageProgress ? { onPageProgress: input.onPageProgress } : {}),
 		});
 		// Keep assembleNoteAndDeliver fail-closed: unconfigured judges must
 		// still carry the self-correction-disabled audit signal.
@@ -1546,7 +1506,7 @@ export class ModelSupplyImageExactTextVerifier
 		const submit = () =>
 			this.models.submit({
 				actorId: input.request.actorId,
-					billingTaskId: requireSnapshot(input.request).task.id,
+				billingTaskId: requireSnapshot(input.request).task.id,
 				billingQuoteRevision: requireSnapshot(input.request).quote.revision,
 				correlationId: input.workflowId,
 				dataClass: [...frozenRouteSnapshot.dataClass],
@@ -2116,8 +2076,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 					const completed = attempt.merchantExecutionEffectKey
 						? {
 								...durableCompleted,
-								merchantExecutionEffectKey:
-									attempt.merchantExecutionEffectKey,
+								merchantExecutionEffectKey: attempt.merchantExecutionEffectKey,
 							}
 						: durableCompleted;
 					if (completed.jobId !== attempt.jobId) {
@@ -2128,12 +2087,12 @@ export class ModelSupplyHarnessMediaExecutionPort
 							attempt.jobId,
 						);
 					}
-						if (
-							attempt.merchantExecutionEffectKey !==
+					if (
+						attempt.merchantExecutionEffectKey !==
 							durableCompleted.merchantExecutionEffectKey ||
-						attempt.resultDigest &&
+						(attempt.resultDigest &&
 							mediaRouteDurableResultDigest(durableCompleted) !==
-								attempt.resultDigest
+								attempt.resultDigest)
 					) {
 						throw new HarnessMediaExecutionError(
 							"MEDIA_SNAPSHOT_MISMATCH",
@@ -2142,12 +2101,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 							attempt.jobId,
 						);
 					}
-					observeBoundedMediaReceipts(
-						activeSnapshot,
-						current,
-							completed,
-							0,
-						);
+					observeBoundedMediaReceipts(activeSnapshot, current, completed, 0);
 					return completed;
 				}),
 			);
@@ -2280,8 +2234,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 						value: activeSnapshot.maxIterations,
 					}),
 					countedAttemptIds: durableBounded.consumedAttemptIds,
-					countedProviderCostIds:
-						durableBounded.consumedProviderCostIds,
+					countedProviderCostIds: durableBounded.consumedProviderCostIds,
 				};
 				const resumed = await this.runEffect(
 					`resume:${checkpoint.providerRoute.jobId}`,
@@ -2369,8 +2322,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 			} = result.merchantExecutionEffectKey
 				? {
 						...durableCompleted,
-						merchantExecutionEffectKey:
-							result.merchantExecutionEffectKey,
+						merchantExecutionEffectKey: result.merchantExecutionEffectKey,
 					}
 				: durableCompleted;
 			const activeMs = Math.max(
@@ -2403,8 +2355,7 @@ export class ModelSupplyHarnessMediaExecutionPort
 							? {
 									merchantExecutionEffectKey:
 										completed.merchantExecutionEffectKey,
-									resultDigest:
-										mediaRouteDurableResultDigest(completed),
+									resultDigest: mediaRouteDurableResultDigest(completed),
 								}
 							: {}),
 					},
@@ -3274,8 +3225,7 @@ function mediaRouteBoundedSuspension(
 			lifecycleBaselineMs: cumulativeLifecycleMs,
 			...(result.merchantExecutionEffectKey
 				? {
-						merchantExecutionEffectKey:
-							result.merchantExecutionEffectKey,
+						merchantExecutionEffectKey: result.merchantExecutionEffectKey,
 					}
 				: {}),
 		},

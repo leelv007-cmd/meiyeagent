@@ -19,6 +19,7 @@ import {
   runHarnessWorkflow,
   harnessMediaJobTopic,
   type BoundedExecutionContinuationCapability,
+  type HarnessStageCollaborators,
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
@@ -320,7 +321,7 @@ interface HarnessDbosWorkflowOptions {
 }
 
 export function registerHarnessDbosWorkflow(
-  ports: HarnessStagePorts,
+  ports: HarnessStagePorts | HarnessStageCollaborators,
   persistence: HarnessWorkflowPersistence,
   options: HarnessDbosWorkflowOptions = {},
 ) {

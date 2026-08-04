@@ -110,12 +110,14 @@ test('corrected intake fact is the only price in the next frozen Task, output an
     score(85),
   ]);
   const delivery = new RecordingDelivery();
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    new LedgerBackedHarnessContextPort(facts, bundles, () => now),
-    delivery,
-    () => now,
-  );
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: new LedgerBackedHarnessContextPort(facts, bundles, () => now),
+      delivery: delivery,
+      now: () => now,
+    },
+  });
   ports.assessFacts = async (input) =>
     assessRecipeFactSatisfaction(
       {

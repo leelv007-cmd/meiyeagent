@@ -316,38 +316,35 @@ test(
           );
         },
       };
-      const copy = new ProductionHarnessStagePorts(
-        runners,
-        new LedgerBackedHarnessContextPort(
-          new MemoryStoreFactLedger(),
-          new MemoryContextBundleRepository(),
-          () => now,
-          undefined,
-          undefined,
-          undefined,
-          {
-            async resolve({ assetIds }) {
-              return {
-                knownAssetIds: [...assetIds],
-                unauthorizedAssetIds: [],
-              };
+      const copy = new ProductionHarnessStagePorts({
+        core: {
+          runners,
+          context: new LedgerBackedHarnessContextPort(
+            new MemoryStoreFactLedger(),
+            new MemoryContextBundleRepository(),
+            () => now,
+            undefined,
+            undefined,
+            undefined,
+            {
+              async resolve({ assetIds }) {
+                return {
+                  knownAssetIds: [...assetIds],
+                  unauthorizedAssetIds: [],
+                };
+              },
+            },
+          ),
+          delivery: {
+            async deliverCopyRevision() {
+              throw new Error('Copy delivery is outside the frozen media route.');
             },
           },
-        ),
-        {
-          async deliverCopyRevision() {
-            throw new Error('Copy delivery is outside the frozen media route.');
-          },
+          now: () => now,
         },
-        () => now,
-        undefined,
-        undefined,
-        undefined,
-        skillInstructions,
-        undefined,
-        undefined,
-        executionChildObservability,
-      );
+        skills: { instructions: skillInstructions },
+        observability: { children: executionChildObservability },
+      });
       const stages = createProductionHarnessMediaAssembly({
         contentPackages,
         copy,
@@ -1651,41 +1648,37 @@ test(
           );
         },
       };
-      const copy = new ProductionHarnessStagePorts(
-        runners,
-        new LedgerBackedHarnessContextPort(
-          new MemoryStoreFactLedger(),
-          new MemoryContextBundleRepository(),
-          () => now,
-          undefined,
-          undefined,
-          undefined,
-          {
-            async resolve({ assetIds }) {
-              return {
-                knownAssetIds: [...assetIds],
-                unauthorizedAssetIds: [],
-              };
+      const copy = new ProductionHarnessStagePorts({
+        core: {
+          runners,
+          context: new LedgerBackedHarnessContextPort(
+            new MemoryStoreFactLedger(),
+            new MemoryContextBundleRepository(),
+            () => now,
+            undefined,
+            undefined,
+            undefined,
+            {
+              async resolve({ assetIds }) {
+                return {
+                  knownAssetIds: [...assetIds],
+                  unauthorizedAssetIds: [],
+                };
+              },
+            },
+          ),
+          delivery: {
+            async deliverCopyRevision() {
+              throw new Error('Copy delivery is outside the frozen media route.');
             },
           },
-        ),
-        {
-          async deliverCopyRevision() {
-            throw new Error('Copy delivery is outside the frozen media route.');
-          },
+          now: () => now,
         },
-        () => now,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        executionChildObservability,
-        undefined,
-        undefined,
-        new HarnessObservabilityEventAudit(harnessStore),
-      );
+        observability: {
+          children: executionChildObservability,
+          events: new HarnessObservabilityEventAudit(harnessStore),
+        },
+      });
       const stages = createProductionHarnessMediaAssembly({
         contentPackages,
         copy,

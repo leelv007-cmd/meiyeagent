@@ -163,7 +163,7 @@ export interface HarnessContextSnapshot {
   >;
 }
 
-export interface HarnessStagePorts {
+export interface HarnessSharedStagePorts {
   recordObservabilityEvent?(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
@@ -244,6 +244,9 @@ export interface HarnessStagePorts {
     declaration: IntentDeclaration;
     context: HarnessContextSnapshot;
   }): Promise<RecipeFactSatisfaction | null>;
+}
+
+export interface HarnessCopyStagePorts {
   compileBrief(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
@@ -276,9 +279,7 @@ export interface HarnessStagePorts {
       delta: string;
     }) => Promise<void> | void;
     boundedResume?: BoundedExecutionSuspension<unknown>;
-  }): Promise<
-    HarnessSelectionResult | BoundedExecutionSuspension<unknown>
-  >;
+  }): Promise<HarnessSelectionResult | BoundedExecutionSuspension<unknown>>;
   assembleAndDeliver(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
@@ -291,7 +292,10 @@ export interface HarnessStagePorts {
   }): Promise<ContentPackageRevisionDelivery>;
 }
 
-export interface HarnessMediaStagePorts extends HarnessStagePorts {
+export interface HarnessStagePorts
+  extends HarnessSharedStagePorts, HarnessCopyStagePorts {}
+
+export interface HarnessMediaExecutionStagePorts {
   compileMediaBrief(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
@@ -334,7 +338,10 @@ export interface HarnessMediaStagePorts extends HarnessStagePorts {
   }): Promise<ContentPackageRevisionDelivery>;
 }
 
-export interface HarnessNoteStagePorts extends HarnessStagePorts {
+export interface HarnessMediaStagePorts
+  extends HarnessSharedStagePorts, HarnessMediaExecutionStagePorts {}
+
+export interface HarnessNoteExecutionStagePorts {
   compileNoteBrief(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
@@ -367,6 +374,16 @@ export interface HarnessNoteStagePorts extends HarnessStagePorts {
     selection: HarnessNoteSelectionResult;
     skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<ContentPackageRevisionDelivery>;
+}
+
+export interface HarnessNoteStagePorts
+  extends HarnessSharedStagePorts, HarnessNoteExecutionStagePorts {}
+
+export interface HarnessStageCollaborators {
+  shared: HarnessSharedStagePorts;
+  copy: HarnessCopyStagePorts;
+  media: HarnessMediaExecutionStagePorts;
+  note: HarnessNoteExecutionStagePorts;
 }
 
 export type HarnessSignalReceiver = (
@@ -473,7 +490,8 @@ export interface HarnessWorkflowRuntime {
     request: HarnessWorkflowInput;
     suspension: BoundedExecutionSuspension<unknown>;
   }): Promise<BoundedExecutionContinuationCapability>;
-  recordTrace(input: {
+  recordTrace(
+    input: {
     id: string;
     taskId: string;
     stage:
@@ -483,7 +501,9 @@ export interface HarnessWorkflowRuntime {
       | 'execution_selection'
       | 'assembly_delivery';
     payload: unknown;
-  }, afterPersist?: () => Promise<void>): Promise<void>;
+    },
+    afterPersist?: () => Promise<void>,
+  ): Promise<void>;
 }
 
 async function finalizeSelectedMerchantExecution(input: {
@@ -574,7 +594,9 @@ export class HarnessSnapshotDecisionError extends Error {
   readonly status = 409;
 
   constructor() {
-    super('A semantic decision requires a new Composer submission and execution snapshot.');
+    super(
+      'A semantic decision requires a new Composer submission and execution snapshot.',
+    );
     this.name = 'HarnessSnapshotDecisionError';
   }
 }
@@ -614,7 +636,7 @@ type ResolvedSkillStages = Record<
 async function resolveWorkflowStageSkills(
   workflowId: string,
   request: HarnessWorkflowInput,
-  ports: HarnessStagePorts,
+  ports: HarnessSharedStagePorts,
   runtime: HarnessWorkflowRuntime,
 ) : Promise<ResolvedSkillStages> {
   const frozen = await runtime.runStep(
@@ -659,10 +681,7 @@ async function resolveWorkflowStageSkills(
     request.promptRevisionRefs,
   );
   if (
-    !samePromptRevisionRefs(
-      frozenPromptRevisionRefs,
-      currentPromptRevisionRefs,
-    )
+    !samePromptRevisionRefs(frozenPromptRevisionRefs, currentPromptRevisionRefs)
   ) {
     throw new Error('已冻结的 Prompt 版本或内容哈希不一致。');
   }
@@ -722,17 +741,15 @@ function freezeSkillResolution(resolved: {
       ({ contentHash }) => contentHash,
     ),
     skillCapabilityRequirements: resolved.instructions.map(
-      ({ requiredModelCapabilities }) => [
-        ...requiredModelCapabilities,
-      ],
+      ({ requiredModelCapabilities }) => [...requiredModelCapabilities],
     ),
-    skillReceiptIds: resolved.receipts.map(
-      ({ invocationId }) => invocationId,
-    ),
+    skillReceiptIds: resolved.receipts.map(({ invocationId }) => invocationId),
   };
 }
 
-function normalizeFrozenSkillStages(input: unknown): FrozenSkillStageResolutions {
+function normalizeFrozenSkillStages(
+  input: unknown,
+): FrozenSkillStageResolutions {
   const stages = emptyFrozenSkillStages();
   if (!isRecord(input)) return stages;
   if (isRecord(input.stageSkillResolutions)) {
@@ -783,12 +800,12 @@ function emptyResolvedSkillStage() {
   return { instructions: [], receipts: [] };
 }
 
-function isFrozenSkillStageResolution(
-  input: unknown,
-): input is Omit<
+function isFrozenSkillStageResolution(input: unknown): input is Omit<
   FrozenSkillStageResolution,
   'skillCapabilityRequirements'
-> & { skillCapabilityRequirements?: string[][] } {
+> & {
+  skillCapabilityRequirements?: string[][];
+} {
   return (
     isRecord(input) &&
     isStringArray(input.skillRevisionRefs) &&
@@ -807,10 +824,9 @@ function normalizeFrozenSkillStageResolution(
     skillContentHashes: [...input.skillContentHashes],
     ...(input.skillCapabilityRequirements
       ? {
-          skillCapabilityRequirements:
-            input.skillCapabilityRequirements.map((requirements) => [
-              ...requirements,
-            ]),
+          skillCapabilityRequirements: input.skillCapabilityRequirements.map(
+            (requirements) => [...requirements],
+          ),
         }
       : {}),
     skillReceiptIds: [...input.skillReceiptIds],
@@ -851,9 +867,7 @@ function sameOrderedNestedValues(
 ) {
   return (
     left.length === right.length &&
-    left.every((value, index) =>
-      sameOrderedValues(value, right[index] ?? []),
-    )
+    left.every((value, index) => sameOrderedValues(value, right[index] ?? []))
   );
 }
 
@@ -862,17 +876,16 @@ function isStringArrayArray(value: unknown): value is string[][] {
 }
 
 function isStringArray(input: unknown): input is string[] {
-  return Array.isArray(input) && input.every((value) => typeof value === 'string');
+  return (
+    Array.isArray(input) && input.every((value) => typeof value === 'string')
+  );
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);
 }
 
-function sameOrderedValues(
-  left: readonly string[],
-  right: readonly string[],
-) {
+function sameOrderedValues(left: readonly string[], right: readonly string[]) {
   return (
     left.length === right.length &&
     left.every((value, index) => value === right[index])
@@ -927,8 +940,7 @@ function isFrozenPromptRevisionRefs(
         typeof reference.version === 'string' &&
         typeof reference.contentHash === 'string' &&
         typeof reference.label === 'string' &&
-        (reference.source === 'langfuse' ||
-          reference.source === 'builtin') &&
+        (reference.source === 'langfuse' || reference.source === 'builtin') &&
         typeof reference.isFallback === 'boolean' &&
         (reference.fallbackReason === undefined ||
           typeof reference.fallbackReason === 'string'),
@@ -1001,34 +1013,285 @@ export class HarnessWorkflowCancellation extends Error {
   }
 }
 
+type HarnessProgressReporter = (
+  event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
+) => Promise<void>;
+
+interface HarnessLensStageDescriptor {
+  kind: 'copy' | 'media' | 'note';
+  includeEntryTrace: boolean;
+  includeExecutionRoot: boolean;
+  routeNotice: boolean;
+  scopeError?: string;
+  useActiveRequestForExecutionRoot: boolean;
+}
+
+const COPY_STAGE_DESCRIPTOR = {
+  execute: executeCopyHarnessStages,
+  kind: 'copy',
+  includeEntryTrace: true,
+  includeExecutionRoot: false,
+  routeNotice: true,
+  useActiveRequestForExecutionRoot: false,
+} as const satisfies HarnessLensStageDescriptor & {
+  execute: typeof executeCopyHarnessStages;
+};
+const MEDIA_STAGE_DESCRIPTOR = {
+  execute: executeMediaHarnessStages,
+  kind: 'media',
+  includeEntryTrace: true,
+  includeExecutionRoot: true,
+  routeNotice: true,
+  scopeError:
+    'A media submission must resolve to the finished_media delivery layer.',
+  useActiveRequestForExecutionRoot: false,
+} as const satisfies HarnessLensStageDescriptor & {
+  execute: typeof executeMediaHarnessStages;
+};
+const NOTE_STAGE_DESCRIPTOR = {
+  execute: executeNoteHarnessStages,
+  kind: 'note',
+  includeEntryTrace: false,
+  includeExecutionRoot: true,
+  routeNotice: false,
+  scopeError:
+    'An image-text note must resolve to the finished_media delivery layer.',
+  useActiveRequestForExecutionRoot: true,
+} as const satisfies HarnessLensStageDescriptor & {
+  execute: typeof executeNoteHarnessStages;
+};
+
+const HARNESS_LENS_STAGE_DESCRIPTORS = {
+  copy: COPY_STAGE_DESCRIPTOR,
+  image: MEDIA_STAGE_DESCRIPTOR,
+  video: MEDIA_STAGE_DESCRIPTOR,
+  image_text_note: NOTE_STAGE_DESCRIPTOR,
+} as const;
+
+interface HarnessStageExecutionInput {
+  descriptor: HarnessLensStageDescriptor;
+  ports: HarnessStagePorts | HarnessMediaStagePorts | HarnessNoteStagePorts;
+  prelude: Awaited<ReturnType<typeof runWorkflowPrelude>>;
+  progress: { sequence: number };
+  reportProgress: HarnessProgressReporter;
+  request: HarnessWorkflowInput;
+  runtime: HarnessWorkflowRuntime;
+  workflowId: string;
+}
+
+type CopyHarnessWorkflowResult = Awaited<
+  ReturnType<typeof executeCopyHarnessStages>
+> & {
+  billingReceipt?: undefined;
+  merchantReport?: undefined;
+};
+type MediaHarnessWorkflowResult = Awaited<
+  ReturnType<typeof executeMediaHarnessStages>
+> & { merchantReport?: undefined };
+type NoteHarnessWorkflowResult = Awaited<
+  ReturnType<typeof executeNoteHarnessStages>
+>;
+type HarnessWorkflowResult =
+  | CopyHarnessWorkflowResult
+  | MediaHarnessWorkflowResult
+  | NoteHarnessWorkflowResult;
+
+async function runWorkflowPrelude(input: {
+  descriptor: HarnessLensStageDescriptor;
+  ports: HarnessSharedStagePorts;
+  reportProgress: HarnessProgressReporter;
+  request: HarnessWorkflowInput;
+  runtime: HarnessWorkflowRuntime;
+  workflowId: string;
+}) {
+  const { descriptor, ports, reportProgress, request, runtime, workflowId } =
+    input;
+  const stageSkills = await resolveWorkflowStageSkills(
+    workflowId,
+    request,
+    ports,
+    runtime,
+  );
+  const intentSkills = stageSkills.intent_naming;
+  const intent = await runtime.runStep(
+    harnessEffectKey(
+      workflowId,
+      1,
+      skillEffectUnit('intent', intentSkills.instructions),
+      '0',
+    ),
+    () =>
+      ports.nameIntent({
+        workflowId,
+        request,
+        ...(intentSkills.instructions.length > 0
+          ? { skillInstructions: intentSkills.instructions }
+          : {}),
+      }),
+  );
+  if (
+    descriptor.scopeError &&
+    intent.declaration.deliveryLayer !== 'finished_media'
+  ) {
+    throw new HarnessMediaScopeError(descriptor.scopeError);
+  }
+  const routed = await resolveIntentRoute({
+    workflowId,
+    request,
+    intent,
+    ports,
+    runtime,
+    reportProgress,
+    skills: intentSkills,
+  });
+  let activeRequest = routed.request;
+  const executionRootRequest = descriptor.useActiveRequestForExecutionRoot
+    ? activeRequest
+    : request;
+  await trace(runtime, workflowId, 'intent_naming', {
+    ...(descriptor.includeExecutionRoot
+      ? { executionRoot: mediaExecutionRoot(executionRootRequest) }
+      : {}),
+    ...(descriptor.includeEntryTrace
+      ? { entryMode: request.creationMode ?? 'customized' }
+      : {}),
+    declaration: routed.declaration,
+    questionId: intent.blockingQuestion?.questionId ?? null,
+    ...(descriptor.includeEntryTrace && request.prompts?.intentNaming
+      ? { prompt: promptTraceReference(request.prompts.intentNaming) }
+      : {}),
+    ...(descriptor.includeEntryTrace && intent.metrics
+      ? { metrics: intent.metrics }
+      : {}),
+    ...(descriptor.includeEntryTrace && intentSkills.instructions.length > 0
+      ? skillTraceLineage(intentSkills)
+      : {}),
+  });
+  await reportProgress({
+    stage: 'intent_naming',
+    state: 'success',
+    message: merchantRouteMessage(
+      routed.declaration,
+      descriptor.routeNotice ? routed.notice : undefined,
+    ),
+  });
+
+  const contextSkills = stageSkills.context_injection;
+  let context = await runtime.runStep(
+    harnessEffectKey(
+      workflowId,
+      2,
+      skillEffectUnit('context', contextSkills.instructions),
+      '0',
+    ),
+    () =>
+      ports.injectContext({
+        workflowId,
+        request: activeRequest,
+        declaration: routed.declaration,
+        ...(contextSkills.instructions.length > 0
+          ? { skillInstructions: contextSkills.instructions }
+          : {}),
+      }),
+  );
+  await trace(
+    runtime,
+    workflowId,
+    'context_injection',
+    {
+      ...(descriptor.includeExecutionRoot
+        ? { executionRoot: mediaExecutionRoot(executionRootRequest) }
+        : {}),
+      bundleId: context.bundle.bundleId,
+      revision: context.bundle.revision,
+      hash: context.bundle.hash,
+      sourceRevisions: recommendationSourceRevisions(context),
+      ...skillTraceLineage(contextSkills),
+    },
+    `r${context.bundle.revision}`,
+  );
+  await reportProgress({
+    stage: 'context_injection',
+    state: 'success',
+    message: merchantContextMessage(activeRequest),
+    experienceBasis: projectHarnessExperienceBasis(context.bundle),
+  });
+  const factGate = await resolveFactSatisfaction({
+    workflowId,
+    request: activeRequest,
+    declaration: routed.declaration,
+    context,
+    ports,
+    runtime,
+    reportProgress,
+  });
+  activeRequest = factGate.request;
+  context = factGate.context;
+  return {
+    activeRequest,
+    context,
+    contextSkills,
+    factGate,
+    intent,
+    routed,
+    stageSkills,
+  };
+}
+
 export async function runHarnessWorkflow(
   workflowId: string,
   request: HarnessWorkflowInput,
-  ports: HarnessStagePorts,
+  stagePorts:
+    | HarnessStagePorts
+    | HarnessMediaStagePorts
+    | HarnessNoteStagePorts
+    | HarnessStageCollaborators,
   runtime: HarnessWorkflowRuntime,
-) {
+): Promise<HarnessWorkflowResult> {
+  const collaborators = stageCollaborators(
+    stagePorts,
+    request.executionSnapshot?.lens,
+  );
+  const descriptor =
+    HARNESS_LENS_STAGE_DESCRIPTORS[request.executionSnapshot?.lens ?? 'copy'];
   // D-118: every output lens dispatches inside the shared five-stage Harness;
   // lightweight copy/image execution may degrade stages but never bypass them.
-  if (request.executionSnapshot?.lens === 'image_text_note') {
-    return runNoteHarnessWorkflow(
-      workflowId,
-      request,
-      requireNoteStagePorts(ports),
-      runtime,
-    );
-  }
-  if (request.executionSnapshot?.lens === 'image' || request.executionSnapshot?.lens === 'video') {
-    return runMediaHarnessWorkflow(
-      workflowId,
-      request,
-      requireMediaStagePorts(ports),
-      runtime,
-    );
-  }
-  let eventSequence = 0;
+  const ports = stagePortView(stagePorts, collaborators, descriptor.kind);
+  const progress = { sequence: 0 };
   const reportProgress = (
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
-  ) => runtime.progress({ ...event, sequence: eventSequence++ });
+  ) => runtime.progress({ ...event, sequence: progress.sequence++ });
+  const prelude = await runWorkflowPrelude({
+    descriptor,
+    ports,
+    reportProgress,
+    request,
+    runtime,
+    workflowId,
+  });
+  return descriptor.execute({
+    descriptor,
+    ports,
+    prelude,
+    progress,
+    reportProgress,
+    request,
+    runtime,
+    workflowId,
+  });
+}
+
+async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
+  const {
+    ports: stagePorts,
+    prelude,
+    progress,
+    reportProgress,
+    request,
+    runtime,
+    workflowId,
+  } = input;
+  const ports = stagePorts as HarnessStagePorts;
   const executeSelection = async (
     effectIdempotencyKey: string,
     input: Parameters<
@@ -1044,10 +1307,8 @@ export async function runHarnessWorkflow(
         'Configured bounded execution requires a bounded selection port.',
       );
     }
-    const firstTokenSequence = eventSequence;
-    const executed = await runtime.runStep(
-      effectIdempotencyKey,
-      async () => {
+    const firstTokenSequence = progress.sequence;
+    const executed = await runtime.runStep(effectIdempotencyKey, async () => {
         await beforeSelection?.();
         let tokenCount = 0;
         const selection = await (
@@ -1070,9 +1331,8 @@ export async function runHarnessWorkflow(
           step: 'execution_check',
         });
         return { selection, tokenCount };
-      },
-    );
-    eventSequence += executed.tokenCount;
+    });
+    progress.sequence += executed.tokenCount;
     return executed.selection;
   };
   const executeSelectionWithPermissionHold = async (
@@ -1099,7 +1359,6 @@ export async function runHarnessWorkflow(
       throw error;
     }
   };
-  let activeRequest = request;
   const executeSelectionToCompletion = async (
     effectIdempotencyKey: string,
     initialInput: Parameters<typeof executeSelection>[1],
@@ -1149,8 +1408,7 @@ export async function runHarnessWorkflow(
         ].join('-'),
         ports.recordObservabilityEvent
           ? () => {
-              const idempotencyKey =
-                `bounded:${workflowId}:${continuation}:suspended`;
+              const idempotencyKey = `bounded:${workflowId}:${continuation}:suspended`;
               return ports.recordObservabilityEvent!({
                 workflowId,
                 request: activeRequest,
@@ -1212,8 +1470,7 @@ export async function runHarnessWorkflow(
         input,
         ports.recordObservabilityEvent
           ? () => {
-              const idempotencyKey =
-                `bounded:${workflowId}:${action.command.idempotencyKey}:resumed`;
+              const idempotencyKey = `bounded:${workflowId}:${action.command.idempotencyKey}:resumed`;
               return ports.recordObservabilityEvent!({
                 workflowId,
                 request: activeRequest,
@@ -1234,110 +1491,10 @@ export async function runHarnessWorkflow(
     }
     return outcome;
   };
-  const stageSkills = await resolveWorkflowStageSkills(
-    workflowId,
-    request,
-    ports,
-    runtime,
-  );
-  const intentSkills = stageSkills.intent_naming;
-  const intent = await runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      1,
-      skillEffectUnit('intent', intentSkills.instructions),
-      '0',
-    ),
-    () =>
-      ports.nameIntent({
-        workflowId,
-        request,
-        ...(intentSkills.instructions.length > 0
-          ? { skillInstructions: intentSkills.instructions }
-          : {}),
-      }),
-  );
-  const routed = await resolveIntentRoute({
-    workflowId,
-    request,
-    intent,
-    ports,
-    runtime,
-    reportProgress,
-    skills: intentSkills,
-  });
-  activeRequest = routed.request;
-  await trace(runtime, workflowId, 'intent_naming', {
-    // Replay fallback only for durable workflows enqueued before creationMode existed.
-    entryMode: request.creationMode ?? 'customized',
-    declaration: routed.declaration,
-    questionId: intent.blockingQuestion?.questionId ?? null,
-    ...(request.prompts?.intentNaming
-      ? { prompt: promptTraceReference(request.prompts.intentNaming) }
-      : {}),
-    ...(intent.metrics ? { metrics: intent.metrics } : {}),
-    ...(intentSkills.instructions.length > 0
-      ? {
-          skillRevisionRefs: intentSkills.instructions.map(
-            (skill) => skill.skillRevisionRef,
-          ),
-          skillContentHashes: intentSkills.instructions.map(
-            (skill) => skill.contentHash,
-          ),
-          skillReceiptIds: intentSkills.receipts.map(
-            (receipt) => receipt.invocationId,
-          ),
-        }
-      : {}),
-  });
-  await reportProgress({
-    stage: 'intent_naming',
-    state: 'success',
-    message: merchantRouteMessage(routed.declaration, routed.notice),
-  });
-
-  const contextSkills = stageSkills.context_injection;
-  let bundle = await runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      2,
-      skillEffectUnit('context', contextSkills.instructions),
-      '0',
-    ),
-    () =>
-      ports.injectContext({
-        workflowId,
-        request: activeRequest,
-        declaration: routed.declaration,
-        ...(contextSkills.instructions.length > 0
-          ? { skillInstructions: contextSkills.instructions }
-          : {}),
-      }),
-  );
-  await trace(runtime, workflowId, 'context_injection', {
-    bundleId: bundle.bundle.bundleId,
-    revision: bundle.bundle.revision,
-    hash: bundle.bundle.hash,
-    sourceRevisions: recommendationSourceRevisions(bundle),
-    ...skillTraceLineage(contextSkills),
-  }, `r${bundle.bundle.revision}`);
-  await reportProgress({
-    stage: 'context_injection',
-    state: 'success',
-    message: merchantContextMessage(activeRequest),
-    experienceBasis: projectHarnessExperienceBasis(bundle.bundle),
-  });
-  let factGate = await resolveFactSatisfaction({
-    workflowId,
-    request: activeRequest,
-    declaration: routed.declaration,
-    context: bundle,
-    ports,
-    runtime,
-    reportProgress,
-  });
-  activeRequest = factGate.request;
-  bundle = factGate.context;
+  const { contextSkills, intent, routed, stageSkills } = prelude;
+  let factGate = prelude.factGate;
+  let activeRequest = prelude.activeRequest;
+  let bundle = prelude.context;
 
   const briefSkills = stageSkills.brief_compilation;
   let compiledBrief = await runtime.runStep(
@@ -1366,7 +1523,11 @@ export async function runHarnessWorkflow(
     metrics: briefMetrics,
     degraded: briefDegraded,
   } = unpackBrief(compiledBrief);
-  await trace(runtime, workflowId, 'brief_compilation', {
+  await trace(
+    runtime,
+    workflowId,
+    'brief_compilation',
+    {
     kind: brief.kind,
     platform: brief.platform,
     factRefs: brief.factRefs,
@@ -1378,7 +1539,9 @@ export async function runHarnessWorkflow(
     ...(briefMetrics ? { metrics: briefMetrics } : {}),
     ...(briefDegraded ? { degraded: true } : {}),
     ...skillTraceLineage(briefSkills),
-  }, `r${bundle.bundle.revision}`);
+    },
+    `r${bundle.bundle.revision}`,
+  );
   await reportProgress({
     stage: 'brief_compilation',
     state: 'success',
@@ -1395,8 +1558,7 @@ export async function runHarnessWorkflow(
   });
 
   const executionSkills = stageSkills.execution_selection;
-  let selection: HarnessSelectionResult =
-    await executeSelectionToCompletion(
+  let selection: HarnessSelectionResult = await executeSelectionToCompletion(
       harnessEffectKey(
         workflowId,
         4,
@@ -1439,12 +1601,7 @@ export async function runHarnessWorkflow(
   });
 
   const fenced = await runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      2,
-      'fence',
-      `r${bundle.bundle.revision}`,
-    ),
+    harnessEffectKey(workflowId, 2, 'fence', `r${bundle.bundle.revision}`),
     () =>
       ports.fenceContext({
         workflowId,
@@ -1455,14 +1612,20 @@ export async function runHarnessWorkflow(
   );
   if (fenced.bundle.hash !== bundle.bundle.hash) {
     bundle = fenced;
-    await trace(runtime, workflowId, 'context_injection', {
+    await trace(
+      runtime,
+      workflowId,
+      'context_injection',
+      {
       bundleId: bundle.bundle.bundleId,
       revision: bundle.bundle.revision,
       hash: bundle.bundle.hash,
       sourceRevisions: recommendationSourceRevisions(bundle),
       recompiled: true,
       ...skillTraceLineage(contextSkills),
-    }, `r${bundle.bundle.revision}`);
+      },
+      `r${bundle.bundle.revision}`,
+    );
     await reportProgress({
       stage: 'context_injection',
       state: 'success',
@@ -1504,9 +1667,16 @@ export async function runHarnessWorkflow(
             : {}),
         }),
     );
-    ({ brief, metrics: briefMetrics, degraded: briefDegraded } =
-      unpackBrief(compiledBrief));
-    await trace(runtime, workflowId, 'brief_compilation', {
+    ({
+      brief,
+      metrics: briefMetrics,
+      degraded: briefDegraded,
+    } = unpackBrief(compiledBrief));
+    await trace(
+      runtime,
+      workflowId,
+      'brief_compilation',
+      {
       kind: brief.kind,
       platform: brief.platform,
       factRefs: brief.factRefs,
@@ -1519,7 +1689,9 @@ export async function runHarnessWorkflow(
       ...(briefMetrics ? { metrics: briefMetrics } : {}),
       ...(briefDegraded ? { degraded: true } : {}),
       ...skillTraceLineage(briefSkills),
-    }, `r${bundle.bundle.revision}`);
+      },
+      `r${bundle.bundle.revision}`,
+    );
     selection = await executeSelectionToCompletion(
       harnessEffectKey(
         workflowId,
@@ -1635,109 +1807,20 @@ export async function runHarnessWorkflow(
   };
 }
 
-async function runNoteHarnessWorkflow(
-  workflowId: string,
-  request: HarnessWorkflowInput,
-  ports: HarnessNoteStagePorts,
-  runtime: HarnessWorkflowRuntime,
-) {
-  let eventSequence = 0;
-  const reportProgress = (
-    event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
-  ) => runtime.progress({ ...event, sequence: eventSequence++ });
-  const stageSkills = await resolveWorkflowStageSkills(
-    workflowId,
-    request,
-    ports,
-    runtime,
-  );
-  const intentSkills = stageSkills.intent_naming;
-  const intent = await runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      1,
-      skillEffectUnit('intent', intentSkills.instructions),
-      '0',
-    ),
-    () =>
-      ports.nameIntent({
-        workflowId,
-        request,
-        ...(intentSkills.instructions.length > 0
-          ? { skillInstructions: intentSkills.instructions }
-          : {}),
-      }),
-  );
-  if (intent.declaration.deliveryLayer !== 'finished_media') {
-    throw new HarnessMediaScopeError(
-      'An image-text note must resolve to the finished_media delivery layer.',
-    );
-  }
-  const routed = await resolveIntentRoute({
-    workflowId,
-    request,
-    intent,
-    ports,
-    runtime,
+async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
+  const {
+    ports: stagePorts,
+    prelude,
     reportProgress,
-    skills: intentSkills,
-  });
-  let activeRequest = routed.request;
-  await trace(runtime, workflowId, 'intent_naming', {
-    executionRoot: mediaExecutionRoot(activeRequest),
-    declaration: routed.declaration,
-    questionId: intent.blockingQuestion?.questionId ?? null,
-  });
-  await reportProgress({
-    stage: 'intent_naming',
-    state: 'success',
-    message: merchantRouteMessage(routed.declaration),
-  });
-
-  const contextSkills = stageSkills.context_injection;
-  let context = await runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      2,
-      skillEffectUnit('context', contextSkills.instructions),
-      '0',
-    ),
-    () =>
-      ports.injectContext({
-        workflowId,
-        request: activeRequest,
-        declaration: routed.declaration,
-        ...(contextSkills.instructions.length > 0
-          ? { skillInstructions: contextSkills.instructions }
-          : {}),
-      }),
-  );
-  await trace(runtime, workflowId, 'context_injection', {
-    executionRoot: mediaExecutionRoot(activeRequest),
-    bundleId: context.bundle.bundleId,
-    revision: context.bundle.revision,
-    hash: context.bundle.hash,
-    sourceRevisions: recommendationSourceRevisions(context),
-    ...skillTraceLineage(contextSkills),
-  }, `r${context.bundle.revision}`);
-  await reportProgress({
-    stage: 'context_injection',
-    state: 'success',
-    message: merchantContextMessage(activeRequest),
-    experienceBasis: projectHarnessExperienceBasis(context.bundle),
-  });
-
-  let factGate = await resolveFactSatisfaction({
-    workflowId,
-    request: activeRequest,
-    declaration: routed.declaration,
-    context,
-    ports,
+    request,
     runtime,
-    reportProgress,
-  });
-  activeRequest = factGate.request;
-  context = factGate.context;
+    workflowId,
+  } = input;
+  const ports = stagePorts as HarnessNoteStagePorts;
+  const { contextSkills, routed, stageSkills } = prelude;
+  let activeRequest = prelude.activeRequest;
+  let context = prelude.context;
+  let factGate = prelude.factGate;
 
   if (
     activeRequest.executionSnapshot?.sources.assets.some(
@@ -1773,7 +1856,11 @@ async function runNoteHarnessWorkflow(
           : {}),
       }),
   );
-  await trace(runtime, workflowId, 'brief_compilation', {
+  await trace(
+    runtime,
+    workflowId,
+    'brief_compilation',
+    {
     executionRoot: mediaExecutionRoot(activeRequest),
     kind: brief.kind,
     themeAnchors: brief.candidates.candidates.map(
@@ -1784,7 +1871,9 @@ async function runNoteHarnessWorkflow(
       ({ pageRole }) => pageRole,
     ),
     ...skillTraceLineage(briefSkills),
-  }, `r${context.bundle.revision}`);
+    },
+    `r${context.bundle.revision}`,
+  );
   await reportProgress({
     stage: 'brief_compilation',
     state: 'suspended',
@@ -1882,14 +1971,20 @@ async function runNoteHarnessWorkflow(
     ) {
       throw new HarnessMediaScopeError(merchantNoteStyleUnavailable());
     }
-    await trace(runtime, workflowId, 'context_injection', {
+    await trace(
+      runtime,
+      workflowId,
+      'context_injection',
+      {
       executionRoot: mediaExecutionRoot(activeRequest),
       bundleId: context.bundle.bundleId,
       revision: context.bundle.revision,
       hash: context.bundle.hash,
       recompiled: true,
       ...skillTraceLineage(contextSkills),
-    }, `r${context.bundle.revision}`);
+      },
+      `r${context.bundle.revision}`,
+    );
     await reportProgress({
       stage: 'context_injection',
       state: 'success',
@@ -1996,16 +2091,12 @@ async function runNoteHarnessWorkflow(
           }
           for (const signal of noteRegenerationSignals) {
             const auditRef = signal.payload.auditRef;
-            if (
-              typeof auditRef !== 'string' ||
-              auditRef.trim().length === 0
-            ) {
+            if (typeof auditRef !== 'string' || auditRef.trim().length === 0) {
               throw new Error(
                 'Note regeneration observability requires an auditRef.',
               );
             }
-            const idempotencyKey =
-              `note-regenerated:${workflowId}:${auditRef}`;
+            const idempotencyKey = `note-regenerated:${workflowId}:${auditRef}`;
             await ports.recordObservabilityEvent({
               workflowId,
               request: activeRequest,
@@ -2139,130 +2230,21 @@ async function runNoteHarnessWorkflow(
   };
 }
 
-async function runMediaHarnessWorkflow(
-  workflowId: string,
-  request: HarnessWorkflowInput,
-  ports: HarnessMediaStagePorts,
-  runtime: HarnessWorkflowRuntime,
-) {
+async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
+  const {
+    ports: stagePorts,
+    prelude,
+    reportProgress,
+    request,
+    runtime,
+    workflowId,
+  } = input;
+  const ports = stagePorts as HarnessMediaStagePorts;
   const kind = mediaKind(request);
-  let eventSequence = 0;
-  const reportProgress = (
-    event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
-  ) => runtime.progress({ ...event, sequence: eventSequence++ });
-  let activeRequest = request;
-  const stageSkills = await resolveWorkflowStageSkills(
-    workflowId,
-    request,
-    ports,
-    runtime,
-  );
-  const intentSkills = stageSkills.intent_naming;
-  const intent = await runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      1,
-      skillEffectUnit('intent', intentSkills.instructions),
-      '0',
-    ),
-    () =>
-      ports.nameIntent({
-        workflowId,
-        request,
-        ...(intentSkills.instructions.length > 0
-          ? { skillInstructions: intentSkills.instructions }
-          : {}),
-      }),
-  );
-  if (intent.declaration.deliveryLayer !== 'finished_media') {
-    throw new HarnessMediaScopeError(
-      'A media submission must resolve to the finished_media delivery layer.',
-    );
-  }
-  const routed = await resolveIntentRoute({
-    workflowId,
-    request,
-    intent,
-    ports,
-    runtime,
-    reportProgress,
-    skills: intentSkills,
-  });
-  activeRequest = routed.request;
-  await trace(runtime, workflowId, 'intent_naming', {
-    executionRoot: mediaExecutionRoot(request),
-    // Replay fallback only for durable workflows enqueued before creationMode existed.
-    entryMode: request.creationMode ?? 'customized',
-    declaration: routed.declaration,
-    questionId: intent.blockingQuestion?.questionId ?? null,
-    ...(request.prompts?.intentNaming
-      ? { prompt: promptTraceReference(request.prompts.intentNaming) }
-      : {}),
-    ...(intent.metrics ? { metrics: intent.metrics } : {}),
-    ...(intentSkills.instructions.length > 0
-      ? {
-          skillRevisionRefs: intentSkills.instructions.map(
-            (skill) => skill.skillRevisionRef,
-          ),
-          skillContentHashes: intentSkills.instructions.map(
-            (skill) => skill.contentHash,
-          ),
-          skillReceiptIds: intentSkills.receipts.map(
-            (receipt) => receipt.invocationId,
-          ),
-        }
-      : {}),
-  });
-  await reportProgress({
-    stage: 'intent_naming',
-    state: 'success',
-    message: merchantRouteMessage(routed.declaration, routed.notice),
-  });
-
-  const contextSkills = stageSkills.context_injection;
-  let bundle = await runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      2,
-      skillEffectUnit('context', contextSkills.instructions),
-      '0',
-    ),
-    () =>
-      ports.injectContext({
-        workflowId,
-        request: activeRequest,
-        declaration: routed.declaration,
-        ...(contextSkills.instructions.length > 0
-          ? { skillInstructions: contextSkills.instructions }
-          : {}),
-      }),
-  );
-  await trace(runtime, workflowId, 'context_injection', {
-    executionRoot: mediaExecutionRoot(request),
-    bundleId: bundle.bundle.bundleId,
-    revision: bundle.bundle.revision,
-    hash: bundle.bundle.hash,
-    sourceRevisions: recommendationSourceRevisions(bundle),
-    ...skillTraceLineage(contextSkills),
-  }, `r${bundle.bundle.revision}`);
-  await reportProgress({
-    stage: 'context_injection',
-    state: 'success',
-    message: merchantContextMessage(activeRequest),
-    experienceBasis: projectHarnessExperienceBasis(bundle.bundle),
-  });
-
-  let factGate = await resolveFactSatisfaction({
-    workflowId,
-    request: activeRequest,
-    declaration: routed.declaration,
-    context: bundle,
-    ports,
-    runtime,
-    reportProgress,
-  });
-  activeRequest = factGate.request;
-  bundle = factGate.context;
+  const { contextSkills, routed, stageSkills } = prelude;
+  let activeRequest = prelude.activeRequest;
+  let bundle = prelude.context;
+  let factGate = prelude.factGate;
 
   const briefSkills = stageSkills.brief_compilation;
   let compiledBrief = await runtime.runStep(
@@ -2287,7 +2269,11 @@ async function runMediaHarnessWorkflow(
       }),
   );
   let { brief, metrics: briefMetrics } = unpackMediaBrief(compiledBrief);
-  await trace(runtime, workflowId, 'brief_compilation', {
+  await trace(
+    runtime,
+    workflowId,
+    'brief_compilation',
+    {
     executionRoot: mediaExecutionRoot(request),
     ...mediaBriefTrace(brief),
     ...(request.prompts?.briefCompilation
@@ -2295,7 +2281,9 @@ async function runMediaHarnessWorkflow(
       : {}),
     ...(briefMetrics ? { metrics: briefMetrics } : {}),
     ...skillTraceLineage(briefSkills),
-  }, `r${bundle.bundle.revision}`);
+    },
+    `r${bundle.bundle.revision}`,
+  );
   await reportProgress({
     stage: 'brief_compilation',
     state: 'success',
@@ -2332,11 +2320,9 @@ async function runMediaHarnessWorkflow(
       executionSkills.instructions,
       input,
       async (selectionInput) =>
-        (
-          bounded
+        (bounded
             ? ports.executeMediaAndSelectBounded!.bind(ports)
-            : ports.executeMediaAndSelect.bind(ports)
-        )(selectionInput),
+          : ports.executeMediaAndSelect.bind(ports))(selectionInput),
     );
     while (isBoundedExecutionSuspension(outcome)) {
       const suspension = outcome;
@@ -2379,8 +2365,7 @@ async function runMediaHarnessWorkflow(
         ].join('-'),
         ports.recordObservabilityEvent
           ? () => {
-              const idempotencyKey =
-                `bounded:${workflowId}:${unitId}:${continuation}:suspended`;
+              const idempotencyKey = `bounded:${workflowId}:${unitId}:${continuation}:suspended`;
               return ports.recordObservabilityEvent!({
                 workflowId,
                 request: activeRequest,
@@ -2431,8 +2416,7 @@ async function runMediaHarnessWorkflow(
         );
       }
       if (ports.recordObservabilityEvent) {
-        const idempotencyKey =
-          `bounded:${workflowId}:${action.command.idempotencyKey}:resumed`;
+        const idempotencyKey = `bounded:${workflowId}:${action.command.idempotencyKey}:resumed`;
         await runtime.runStep(idempotencyKey, () =>
           ports.recordObservabilityEvent!({
             workflowId,
@@ -2514,14 +2498,20 @@ async function runMediaHarnessWorkflow(
       boundedExecution: selection.boundedExecution,
     };
   }
-  await trace(runtime, workflowId, 'execution_selection', {
+  await trace(
+    runtime,
+    workflowId,
+    'execution_selection',
+    {
     executionRoot: mediaExecutionRoot(request),
     ...selection.trace,
     ...(selection.boundedExecution
       ? { boundedExecution: selection.boundedExecution }
       : {}),
     ...skillTraceLineage(executionSkills),
-  }, `r${bundle.bundle.revision}`);
+    },
+    `r${bundle.bundle.revision}`,
+  );
   await reportProgress({
     stage: 'execution_selection',
     state: 'success',
@@ -2551,7 +2541,11 @@ async function runMediaHarnessWorkflow(
     });
     activeRequest = factGate.request;
     bundle = factGate.context;
-    await trace(runtime, workflowId, 'context_injection', {
+    await trace(
+      runtime,
+      workflowId,
+      'context_injection',
+      {
       executionRoot: mediaExecutionRoot(request),
       bundleId: bundle.bundle.bundleId,
       revision: bundle.bundle.revision,
@@ -2559,7 +2553,9 @@ async function runMediaHarnessWorkflow(
       sourceRevisions: recommendationSourceRevisions(bundle),
       recompiled: true,
       ...skillTraceLineage(contextSkills),
-    }, `r${bundle.bundle.revision}`);
+      },
+      `r${bundle.bundle.revision}`,
+    );
     await reportProgress({
       stage: 'context_injection',
       state: 'success',
@@ -2591,7 +2587,11 @@ async function runMediaHarnessWorkflow(
         }),
     );
     ({ brief, metrics: briefMetrics } = unpackMediaBrief(compiledBrief));
-    await trace(runtime, workflowId, 'brief_compilation', {
+    await trace(
+      runtime,
+      workflowId,
+      'brief_compilation',
+      {
       executionRoot: mediaExecutionRoot(request),
       ...mediaBriefTrace(brief),
       recompiled: true,
@@ -2600,7 +2600,9 @@ async function runMediaHarnessWorkflow(
         : {}),
       ...(briefMetrics ? { metrics: briefMetrics } : {}),
       ...skillTraceLineage(briefSkills),
-    }, `r${bundle.bundle.revision}`);
+      },
+      `r${bundle.bundle.revision}`,
+    );
     const recompiledMediaSelectionInput = {
       workflowId,
       request: activeRequest,
@@ -2633,14 +2635,20 @@ async function runMediaHarnessWorkflow(
       };
     }
     boundedCheckpoint = selection.boundedCurrentBest;
-    await trace(runtime, workflowId, 'execution_selection', {
+    await trace(
+      runtime,
+      workflowId,
+      'execution_selection',
+      {
       executionRoot: mediaExecutionRoot(request),
       ...selection.trace,
       ...(selection.boundedExecution
         ? { boundedExecution: selection.boundedExecution }
         : {}),
       ...skillTraceLineage(executionSkills),
-    }, `r${bundle.bundle.revision}`);
+      },
+      `r${bundle.bundle.revision}`,
+    );
     await reportProgress({
       stage: 'execution_selection',
       state: 'success',
@@ -2744,7 +2752,64 @@ export class HarnessMediaScopeError extends Error {
   }
 }
 
-function requireNoteStagePorts(ports: HarnessStagePorts): HarnessNoteStagePorts {
+function stageCollaborators(
+  ports:
+    | HarnessStagePorts
+    | HarnessMediaStagePorts
+    | HarnessNoteStagePorts
+    | HarnessStageCollaborators,
+  lens: NonNullable<HarnessWorkflowInput['executionSnapshot']>['lens'] | undefined,
+): HarnessStageCollaborators {
+  if ('shared' in ports) return ports;
+  return {
+    shared: ports,
+    copy: 'compileBrief' in ports ? ports : ({} as HarnessCopyStagePorts),
+    media:
+      lens === 'image' || lens === 'video'
+        ? requireMediaStagePorts(ports)
+        : ({} as HarnessMediaExecutionStagePorts),
+    note:
+      lens === 'image_text_note'
+        ? requireNoteStagePorts(ports)
+        : ({} as HarnessNoteExecutionStagePorts),
+  };
+}
+
+function stagePortView(
+  original:
+    | HarnessStagePorts
+    | HarnessMediaStagePorts
+    | HarnessNoteStagePorts
+    | HarnessStageCollaborators,
+  collaborators: HarnessStageCollaborators,
+  kind: 'copy' | 'media' | 'note',
+): HarnessStagePorts | HarnessMediaStagePorts | HarnessNoteStagePorts {
+  if (!('shared' in original)) return original;
+  const implementation =
+    kind === 'copy'
+      ? collaborators.copy
+      : kind === 'media'
+        ? collaborators.media
+        : collaborators.note;
+  const owners = [implementation, collaborators.copy, collaborators.shared];
+  return new Proxy({} as HarnessNoteStagePorts, {
+    get(_target, property) {
+      for (const owner of owners) {
+        const value = Reflect.get(owner, property);
+        if (value !== undefined) {
+          return typeof value === 'function' ? value.bind(owner) : value;
+        }
+      }
+    },
+    has(_target, property) {
+      return owners.some((owner) => property in owner);
+    },
+  });
+}
+
+function requireNoteStagePorts(
+  ports: HarnessSharedStagePorts,
+): HarnessNoteStagePorts {
   if (
     !('compileNoteBrief' in ports) ||
     !('executeNoteAndSelect' in ports) ||
@@ -2830,8 +2895,7 @@ function boundedExecutionQuestion(
       `r${continuation + 1}:a${attempt + 1}`,
     workflowId,
     workflowRevision: request.workflowRevision,
-    question:
-      canContinue
+    question: canContinue
         ? `已保留当前最好结果${currentBest}；${suspension.unmetExplanation}。` +
           '提高本次任务上限后可以继续。'
         : `已保留当前最好结果${currentBest}；` +
@@ -2982,14 +3046,9 @@ function noteStyleIdFromDecision(
   return noteStyleIdFromValue(brief, decision.decision.value);
 }
 
-function noteStyleIdFromValue(
-  brief: HarnessNoteBrief,
-  value: string,
-) {
+function noteStyleIdFromValue(brief: HarnessNoteBrief, value: string) {
   const selected = brief.candidates.candidates.find(
-    (candidate) =>
-      candidate.styleId === value ||
-      candidate.styleName === value,
+    (candidate) => candidate.styleId === value || candidate.styleName === value,
   );
   if (!selected) {
     throw new HarnessMediaScopeError(
@@ -2999,13 +3058,17 @@ function noteStyleIdFromValue(
   return selected.styleId;
 }
 
-function requireMediaStagePorts(ports: HarnessStagePorts): HarnessMediaStagePorts {
+function requireMediaStagePorts(
+  ports: HarnessSharedStagePorts,
+): HarnessMediaStagePorts {
   if (
     !('compileMediaBrief' in ports) ||
     !('executeMediaAndSelect' in ports) ||
     !('assembleMediaAndDeliver' in ports)
   ) {
-    throw new HarnessMediaScopeError('Media Harness stages are not configured.');
+    throw new HarnessMediaScopeError(
+      'Media Harness stages are not configured.',
+    );
   }
   return ports as HarnessMediaStagePorts;
 }
@@ -3013,13 +3076,13 @@ function requireMediaStagePorts(ports: HarnessStagePorts): HarnessMediaStagePort
 function mediaKind(request: HarnessWorkflowInput): MediaBrief['kind'] {
   const lens = request.executionSnapshot?.lens;
   if (lens === 'image' || lens === 'video') return lens;
-  throw new HarnessMediaScopeError('Media Harness request lacks an image or video snapshot.');
+  throw new HarnessMediaScopeError(
+    'Media Harness request lacks an image or video snapshot.',
+  );
 }
 
 function unpackMediaBrief(input: MediaBrief | MeasuredMediaBrief) {
-  return 'brief' in input
-    ? input
-    : { brief: input, metrics: undefined };
+  return 'brief' in input ? input : { brief: input, metrics: undefined };
 }
 
 function mediaBriefTrace(brief: MediaBrief) {
@@ -3055,7 +3118,11 @@ export function requireMeasuredVideoDuration(
   selection: HarnessMediaSelectionResult,
 ) {
   const duration = selection.measuredDurationSeconds;
-  if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0) {
+  if (
+    typeof duration !== 'number' ||
+    !Number.isFinite(duration) ||
+    duration <= 0
+  ) {
     throw new HarnessMediaScopeError(
       'Delivered video lacks measured media duration evidence.',
     );
@@ -3095,7 +3162,9 @@ function mediaRecommendationDecisionTrace(
     whyPost: declaration.taskType,
     expressionIdentity: 'media_execution_receipt',
     factReferences: [],
-    platforms: request.executionSnapshot ? [request.executionSnapshot.platform.id] : [],
+    platforms: request.executionSnapshot
+      ? [request.executionSnapshot.platform.id]
+      : [],
     customerAction: 'review_media',
     complianceStatus: 'owned_asset_verified',
     deliverables: [`${brief.kind}_revision:${delivery.revision}`],
@@ -3118,9 +3187,7 @@ function unpackBrief(input: CopyBrief | MeasuredCopyBrief): {
   metrics?: StructuredNodeMetricsSnapshot;
   degraded?: boolean;
 } {
-  return 'brief' in input
-    ? input
-    : { brief: input };
+  return 'brief' in input ? input : { brief: input };
 }
 
 async function applyCurrentTaskDecision(
@@ -3246,9 +3313,7 @@ function notePageOrderLabel(
   plan: { pages: Array<{ id: string; order: number }> },
   pageId: string,
 ) {
-  return String(
-    plan.pages.find(({ id }) => id === pageId)?.order ?? pageId,
-  );
+  return String(plan.pages.find(({ id }) => id === pageId)?.order ?? pageId);
 }
 
 async function confirmPaidGenerationExecution(input: {
@@ -3326,7 +3391,7 @@ async function resolveFactSatisfaction(input: {
   request: HarnessWorkflowInput;
   declaration: IntentDeclaration;
   context: HarnessContextSnapshot;
-  ports: HarnessStagePorts;
+  ports: HarnessSharedStagePorts;
   runtime: HarnessWorkflowRuntime;
   reportProgress: (
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
@@ -3476,8 +3541,8 @@ async function resolveFactSatisfaction(input: {
 async function resolveIntentRoute(input: {
   workflowId: string;
   request: HarnessWorkflowInput;
-  intent: Awaited<ReturnType<HarnessStagePorts['nameIntent']>>;
-  ports: HarnessStagePorts;
+  intent: Awaited<ReturnType<HarnessSharedStagePorts['nameIntent']>>;
+  ports: HarnessSharedStagePorts;
   runtime: HarnessWorkflowRuntime;
   reportProgress: (
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
@@ -3514,8 +3579,7 @@ async function resolveIntentRoute(input: {
         ? policyContinuationDeclaration(input.intent.declaration)
         : freeRouteDeclaration(input.intent.declaration, 'policy'),
       request: input.request,
-      notice:
-        hasConfirmedMaterials
+      notice: hasConfirmedMaterials
           ? ('confirmed_materials' as const)
           : ('neutral_fallback' as const),
     };
@@ -3738,7 +3802,10 @@ function trace(
   );
 }
 
-async function runSelectionStage<Input extends { runStep?: HarnessEffectRunner }, Output>(
+async function runSelectionStage<
+  Input extends { runStep?: HarnessEffectRunner },
+  Output,
+>(
   runtime: HarnessWorkflowRuntime,
   workflowId: string,
   unit: string,
@@ -3748,12 +3815,7 @@ async function runSelectionStage<Input extends { runStep?: HarnessEffectRunner }
 ) {
   if (runtime.awaitSignal) return operation(input);
   return runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      4,
-      skillEffectUnit(unit, skills),
-      'selection',
-    ),
+    harnessEffectKey(workflowId, 4, skillEffectUnit(unit, skills), 'selection'),
     () => operation(input),
   );
 }

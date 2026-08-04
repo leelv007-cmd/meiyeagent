@@ -129,16 +129,20 @@ test("unified stages forward bounded copy selection to the production copy port"
 		forwardedSkillInput = received;
 		return { instructions: [], receipts: [] };
 	};
-	const ports = new UnifiedHarnessStagePorts(
-		copy,
-		undefined as never,
-		undefined as never,
-		undefined as never,
-		() => "2026-07-29T00:00:00.000Z",
-	);
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: undefined as never,
+			now: () => "2026-07-29T00:00:00.000Z",
+			runners: undefined as never,
+		},
+		collaborators: {
+			copy: copy,
+			media: undefined as never,
+		},
+	});
 
-	await ports.executeAndSelectBounded(input);
-	await ports.resolveStageSkills(skillInput);
+	await ports.asCollaborators().copy.executeAndSelectBounded!(input);
+	await ports.asCollaborators().shared.resolveStageSkills!(skillInput);
 
 	assert.equal(forwarded, input);
 	assert.equal(forwardedSkillInput, skillInput);
@@ -1177,18 +1181,22 @@ test("image and video use the existing Model Supply path with stable submission 
 
 test("a legacy media request without execution assembly cannot submit generation", async () => {
 	let submissions = 0;
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		undefined as never,
-		new ModelSupplyHarnessMediaExecutionPort({
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: new MemoryContentPackageRevisionWritePort(),
+			now: () => "2026-07-29T00:00:00.000Z",
+			runners: undefined as never,
+		},
+		collaborators: {
+			copy: unsupportedCopyPorts(),
+			media: new ModelSupplyHarnessMediaExecutionPort({
 			async submit() {
 				submissions += 1;
 				return completedResult("image");
 			},
 		}),
-		new MemoryContentPackageRevisionWritePort(),
-		() => "2026-07-29T00:00:00.000Z",
-	);
+		},
+	});
 
 	await assert.rejects(
 		() =>
@@ -1221,24 +1229,28 @@ test("a succeeded audit failure does not rewrite successful media generation as 
 		},
 		{ resolve: () => ({ kind: "not_billed" }) },
 	);
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		undefined as never,
-		new ModelSupplyHarnessMediaExecutionPort({
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: new MemoryContentPackageRevisionWritePort(),
+			now: () => "2026-07-29T00:00:00.000Z",
+			runners: undefined as never,
+		},
+		collaborators: {
+			copy: unsupportedCopyPorts(),
+			media: new ModelSupplyHarnessMediaExecutionPort({
 			async submit(input) {
 				return completedMerchantResult("image", input);
 			},
 		}),
-		new MemoryContentPackageRevisionWritePort(),
-		() => "2026-07-29T00:00:00.000Z",
-		undefined,
-		undefined,
-		{
+		},
+		capabilities: {
+			executionChildObservability: {
 			create() {
 				return observer;
 			},
 		},
-	);
+		},
+	});
 
 	await assert.rejects(
 		() =>
@@ -1286,10 +1298,15 @@ test("a failed bounded resume keeps its own lifecycle and preserves the provider
 		unmetExplanation: "媒体生成已达到本轮上限",
 		resumable: true as const,
 	};
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		undefined as never,
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: new MemoryContentPackageRevisionWritePort(),
+			now: () => "2026-07-29T00:00:00.000Z",
+			runners: undefined as never,
+		},
+		collaborators: {
+			copy: unsupportedCopyPorts(),
+			media: {
 			async execute() {
 				throw new Error("Unbounded media execution is unavailable.");
 			},
@@ -1298,16 +1315,15 @@ test("a failed bounded resume keeps its own lifecycle and preserves the provider
 				throw new Error("bounded provider resume failed");
 			},
 		},
-		new MemoryContentPackageRevisionWritePort(),
-		() => "2026-07-29T00:00:00.000Z",
-		undefined,
-		undefined,
-		{
+		},
+		capabilities: {
+			executionChildObservability: {
 			create() {
 				return observer;
 			},
 		},
-	);
+		},
+	});
 	const request = {
 		...harnessInputWithExecutionAssembly(
 			"image",
@@ -1352,9 +1368,11 @@ test("a failed bounded resume keeps its own lifecycle and preserves the provider
 
 test("a legacy media request without execution assembly cannot compile a structured brief", async () => {
 	let providerRuns = 0;
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: new MemoryContentPackageRevisionWritePort(),
+			now: () => "2026-07-29T00:00:00.000Z",
+			runners: {
 			create() {
 				return {
 					async run<Output>(request: StructuredNodeRunnerRequest<Output>) {
@@ -1370,10 +1388,12 @@ test("a legacy media request without execution assembly cannot compile a structu
 				};
 			},
 		},
-		undefined as never,
-		new MemoryContentPackageRevisionWritePort(),
-		() => "2026-07-29T00:00:00.000Z",
-	);
+		},
+		collaborators: {
+			copy: unsupportedCopyPorts(),
+			media: undefined as never,
+		},
+	});
 
 	await assert.rejects(
 		() =>
@@ -1409,9 +1429,11 @@ test("unified structured generation revalidates execution assembly before every 
 		new MemoryObservabilityEventAudit(),
 		{ resolve: () => ({ kind: "not_billed" }) },
 	);
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: new MemoryContentPackageRevisionWritePort(),
+			now: () => "2026-07-29T00:00:00.000Z",
+			runners: {
 			create() {
 				return {
 					async run<Output>(structured: StructuredNodeRunnerRequest<Output>) {
@@ -1434,17 +1456,19 @@ test("unified structured generation revalidates execution assembly before every 
 				};
 			},
 		},
-		undefined as never,
-		new MemoryContentPackageRevisionWritePort(),
-		() => "2026-07-29T00:00:00.000Z",
-		undefined,
-		undefined,
-		{
+		},
+		collaborators: {
+			copy: unsupportedCopyPorts(),
+			media: undefined as never,
+		},
+		capabilities: {
+			executionChildObservability: {
 			create() {
 				return observer;
 			},
 		},
-	);
+		},
+	});
 
 	await assert.rejects(
 		() =>
@@ -1527,9 +1551,11 @@ test("AI cover signed choices reach the production image generation brief", asyn
 			promptRevisionRefs,
 		},
 	};
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: new MemoryContentPackageRevisionWritePort(),
+			now: () => "2026-08-02T00:00:00.000Z",
+			runners: {
 			create() {
 				return {
 					async run<Output>(structured: StructuredNodeRunnerRequest<Output>) {
@@ -1546,13 +1572,15 @@ test("AI cover signed choices reach the production image generation brief", asyn
 				};
 			},
 		},
-		undefined as never,
-		new MemoryContentPackageRevisionWritePort(),
-		() => "2026-08-02T00:00:00.000Z",
-		undefined,
-		undefined,
-		notBilledExecutionChildObservability(),
-	);
+		},
+		collaborators: {
+			copy: unsupportedCopyPorts(),
+			media: undefined as never,
+		},
+		capabilities: {
+			executionChildObservability: notBilledExecutionChildObservability(),
+		},
+	});
 
 	const { brief } = await ports.compileMediaBrief({
 		workflowId: snapshot.task.id,
@@ -1635,9 +1663,11 @@ test("poster media brief analyzes style-role refs and injects styleAnalysisBlock
 		},
 	};
 	const observedRequests: StructuredNodeRunnerRequest<unknown>[] = [];
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: new MemoryContentPackageRevisionWritePort(),
+			now: () => "2026-08-02T00:00:00.000Z",
+			runners: {
 			create() {
 				return {
 					async run<Output>(structured: StructuredNodeRunnerRequest<Output>) {
@@ -1676,13 +1706,15 @@ test("poster media brief analyzes style-role refs and injects styleAnalysisBlock
 				};
 			},
 		},
-		undefined as never,
-		new MemoryContentPackageRevisionWritePort(),
-		() => "2026-08-02T00:00:00.000Z",
-		undefined,
-		undefined,
-		notBilledExecutionChildObservability(),
-	);
+		},
+		collaborators: {
+			copy: unsupportedCopyPorts(),
+			media: undefined as never,
+		},
+		capabilities: {
+			executionChildObservability: notBilledExecutionChildObservability(),
+		},
+	});
 
 	const { brief } = await ports.compileMediaBrief({
 		workflowId: snapshot.task.id,
@@ -2030,14 +2062,18 @@ test("frozen XHS generation params drive the existing note prompt and model rout
 	const structuredRequests: StructuredNodeRunnerRequest<unknown>[] = [];
 	const fixtureFactory = noteRunnerFactory();
 	const createPorts = () =>
-		new UnifiedHarnessStagePorts(
-			noteCopyPorts(),
-			{
+		new UnifiedHarnessStagePorts({
+			core: {
+				contentPackages: new MemoryContentPackageRevisionWritePort(),
+				now: () => "2026-08-02T00:00:00.000Z",
+				runners: {
 				create(input) {
 					factoryInputs.push(structuredClone(input));
 					const runner = fixtureFactory.create(input);
 					return {
-						async run<Output>(structured: StructuredNodeRunnerRequest<Output>) {
+							async run<Output>(
+								structured: StructuredNodeRunnerRequest<Output>,
+							) {
 							structuredRequests.push(
 								structured as StructuredNodeRunnerRequest<unknown>,
 							);
@@ -2046,10 +2082,13 @@ test("frozen XHS generation params drive the existing note prompt and model rout
 					};
 				},
 			},
-			undefined as never,
-			new MemoryContentPackageRevisionWritePort(),
-			() => "2026-08-02T00:00:00.000Z",
-			{
+			},
+			collaborators: {
+				copy: noteCopyPorts(),
+				media: undefined as never,
+			},
+			capabilities: {
+				noteSettings: {
 				async read() {
 					return {
 						styles: {
@@ -2066,9 +2105,9 @@ test("frozen XHS generation params drive the existing note prompt and model rout
 					};
 				},
 			},
-			undefined,
-			notBilledExecutionChildObservability(),
-		);
+				executionChildObservability: notBilledExecutionChildObservability(),
+			},
+		});
 	const ports = createPorts();
 
 	await ports.compileNoteBrief({
@@ -2255,22 +2294,26 @@ test("media delivery writes the shared ContentPackage once with asset, usage, co
 				return completedResult(kind);
 			},
 		});
-		const ports = new UnifiedHarnessStagePorts(
-			unsupportedCopyPorts(),
-			{
+		const ports = new UnifiedHarnessStagePorts({
+			core: {
+				contentPackages: {
+					async write(input) {
+						writtenRevision = structuredClone(input);
+						return writer.write(input);
+					},
+				},
+				now: () => "2026-07-22T09:00:01.000Z",
+				runners: {
 				create() {
 					throw new Error("Media delivery does not compile a copy brief.");
 				},
 			},
-			media,
-			{
-				async write(input) {
-					writtenRevision = structuredClone(input);
-					return writer.write(input);
 				},
+			collaborators: {
+				copy: unsupportedCopyPorts(),
+				media: media,
 			},
-			() => "2026-07-22T09:00:01.000Z",
-		);
+		});
 		const brief = mediaBrief(kind);
 		const selection = await media.execute({
 			brief,
@@ -2409,25 +2452,28 @@ test("image delivery hot-reads a newly enabled sensitive word before writing Con
 		},
 	});
 	const enabledLexicon: SensitiveWordRecord[] = [];
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: writer,
+			now: () => "2026-07-22T09:00:01.000Z",
+			runners: {
 			create() {
 				throw new Error("Media delivery does not compile a copy brief.");
 			},
 		},
-		media,
-		writer,
-		() => "2026-07-22T09:00:01.000Z",
-		undefined,
-		undefined,
-		undefined,
-		{
+		},
+		collaborators: {
+			copy: unsupportedCopyPorts(),
+			media: media,
+		},
+		capabilities: {
+			sensitiveLexicon: {
 			async listEnabled() {
 				return structuredClone(enabledLexicon);
 			},
 		},
-	);
+		},
+	});
 	const brief = {
 		...mediaBrief("image"),
 		intent: {
@@ -2509,25 +2555,28 @@ test("video delivery hot-reads a newly enabled sensitive word before writing Con
 		},
 	});
 	const enabledLexicon: SensitiveWordRecord[] = [];
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: writer,
+			now: () => "2026-07-22T09:00:01.000Z",
+			runners: {
 			create() {
 				throw new Error("Media delivery does not compile a copy brief.");
 			},
 		},
-		media,
-		writer,
-		() => "2026-07-22T09:00:01.000Z",
-		undefined,
-		undefined,
-		undefined,
-		{
+		},
+		collaborators: {
+			copy: unsupportedCopyPorts(),
+			media: media,
+		},
+		capabilities: {
+			sensitiveLexicon: {
 			async listEnabled() {
 				return structuredClone(enabledLexicon);
 			},
 		},
-	);
+		},
+	});
 	const brief = {
 		...mediaBrief("video"),
 		storyboard: [
@@ -2616,17 +2665,21 @@ test("source-free video production reaches AI generation terms through the real 
 			return completedMerchantResult("video", input);
 		},
 	});
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: writer,
+			now: () => "2026-07-22T09:00:01.000Z",
+			runners: {
 			create() {
 				throw new Error("Media delivery does not compile a copy brief.");
 			},
 		},
-		media,
-		writer,
-		() => "2026-07-22T09:00:01.000Z",
-	);
+		},
+		collaborators: {
+			copy: unsupportedCopyPorts(),
+			media: media,
+		},
+	});
 	const brief = {
 		...mediaBrief("video"),
 		referenceAssetIds: [],
@@ -2770,10 +2823,20 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 	let billingTrustedUsage:
 		| ContentPackageRevisionWriteInput["billingTrustedUsage"]
 		| undefined;
-	const ports = new UnifiedHarnessStagePorts(
-		noteCopyPorts(),
-		noteRunnerFactory(true),
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: {
+				async write(input) {
+					billingTrustedUsage = structuredClone(input.billingTrustedUsage);
+					return writer.write(input);
+				},
+			},
+			now: () => "2026-07-22T09:00:01.000Z",
+			runners: noteRunnerFactory(true),
+		},
+		collaborators: {
+			copy: noteCopyPorts(),
+			media: {
 			async execute() {
 				generated += 1;
 				const selection = completedResult("image", String(generated));
@@ -2804,14 +2867,9 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 				};
 			},
 		},
-		{
-			async write(input) {
-				billingTrustedUsage = structuredClone(input.billingTrustedUsage);
-				return writer.write(input);
 			},
-		},
-		() => "2026-07-22T09:00:01.000Z",
-		{
+		capabilities: {
+			noteSettings: {
 			async read() {
 				return {
 					styles: {
@@ -2835,9 +2893,9 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 				};
 			},
 		},
-		undefined,
-		notBilledExecutionChildObservability(),
-	);
+			executionChildObservability: notBilledExecutionChildObservability(),
+		},
+	});
 	const context = contextSnapshot();
 	const declaration = {
 		normalizedIntent: "介绍夏日护理项目",
@@ -2849,7 +2907,7 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		routingSource: "model" as const,
 		implicitConstraints: [],
 	};
-	const confirmation = await ports.nameIntent({
+	const confirmation = await ports.asCollaborators().shared.nameIntent({
 		workflowId: snapshot.task.id,
 		request,
 	});
@@ -2858,7 +2916,7 @@ test("image-text note compiles dual styles, generates selected pages, and writes
 		null,
 		"image-text planning must proceed to the one real direction choice without a page-plan confirmation",
 	);
-	const resumed = await ports.nameIntent({
+	const resumed = await ports.asCollaborators().shared.nameIntent({
 		workflowId: snapshot.task.id,
 		request: {
 			...request,
@@ -3088,12 +3146,19 @@ test("a style-role source is analyzed and consumed by production note image brie
 	const observedRequests: StructuredNodeRunnerRequest<unknown>[] = [];
 	const generatedBriefs: Extract<ExecutionBrief, { kind: "image" }>[] = [];
 	let generation = 0;
-	const ports = new UnifiedHarnessStagePorts(
-		noteCopyPorts(),
-		noteRunnerFactory(false, observedRequests),
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: new MemoryContentPackageRevisionWritePort(),
+			now: () => "2026-08-02T00:00:00.000Z",
+			runners: noteRunnerFactory(false, observedRequests),
+		},
+		collaborators: {
+			copy: noteCopyPorts(),
+			media: {
 			async execute(input) {
-				generatedBriefs.push(input.brief as Extract<ExecutionBrief, { kind: "image" }>);
+					generatedBriefs.push(
+						input.brief as Extract<ExecutionBrief, { kind: "image" }>,
+					);
 				generation += 1;
 				const selection = completedResult("image", String(generation));
 				return {
@@ -3116,9 +3181,9 @@ test("a style-role source is analyzed and consumed by production note image brie
 				};
 			},
 		},
-		new MemoryContentPackageRevisionWritePort(),
-		() => "2026-08-02T00:00:00.000Z",
-		{
+		},
+		capabilities: {
+			noteSettings: {
 			async read() {
 				return {
 					styles: {
@@ -3135,9 +3200,10 @@ test("a style-role source is analyzed and consumed by production note image brie
 				};
 			},
 		},
-		unconfiguredNotePlanEnhancementJudgeResolver,
-		notBilledExecutionChildObservability(),
-	);
+			noteEnhancementJudge: unconfiguredNotePlanEnhancementJudgeResolver,
+			executionChildObservability: notBilledExecutionChildObservability(),
+		},
+	});
 	const declaration = {
 		normalizedIntent: "介绍夏日护理项目",
 		taskType: "daily_service_exposure" as const,
@@ -3192,10 +3258,24 @@ test("production note assembly can disable an unavailable enhancement judge with
 	);
 	let generated = 0;
 	let writes = 0;
-	const ports = new UnifiedHarnessStagePorts(
-		noteCopyPorts(),
-		noteRunnerFactory(true),
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: {
+				async write(input) {
+					writes += 1;
+					return {
+						packageId: input.packageId,
+						revision: input.expectedRevision + 1,
+						versionId: input.version.id,
+					};
+				},
+			},
+			now: () => "2026-07-29T00:00:00.000Z",
+			runners: noteRunnerFactory(true),
+		},
+		collaborators: {
+			copy: noteCopyPorts(),
+			media: {
 			async execute() {
 				generated += 1;
 				const selection = completedResult("image", String(generated));
@@ -3219,18 +3299,9 @@ test("production note assembly can disable an unavailable enhancement judge with
 				};
 			},
 		},
-		{
-			async write(input) {
-				writes += 1;
-				return {
-					packageId: input.packageId,
-					revision: input.expectedRevision + 1,
-					versionId: input.version.id,
-				};
-			},
 		},
-		() => "2026-07-29T00:00:00.000Z",
-		{
+		capabilities: {
+			noteSettings: {
 			async read() {
 				return {
 					styles: {
@@ -3247,9 +3318,10 @@ test("production note assembly can disable an unavailable enhancement judge with
 				};
 			},
 		},
-		unconfiguredNotePlanEnhancementJudgeResolver,
-		notBilledExecutionChildObservability(),
-	);
+			noteEnhancementJudge: unconfiguredNotePlanEnhancementJudgeResolver,
+			executionChildObservability: notBilledExecutionChildObservability(),
+		},
+	});
 	const context = contextSnapshot();
 	const declaration = {
 		normalizedIntent: "介绍夏日护理项目",
@@ -3338,10 +3410,24 @@ test("note delivery hot-reads a newly enabled sensitive word before writing Cont
 	let generation = 0;
 	let writes = 0;
 	const enabledLexicon: SensitiveWordRecord[] = [];
-	const ports = new UnifiedHarnessStagePorts(
-		noteCopyPorts(),
-		noteRunnerFactory(true),
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: {
+				async write(input) {
+					writes += 1;
+					return {
+						packageId: input.packageId,
+						revision: input.expectedRevision + 1,
+						versionId: input.version.id,
+					};
+				},
+			},
+			now: () => "2026-07-29T00:00:00.000Z",
+			runners: noteRunnerFactory(true),
+		},
+		collaborators: {
+			copy: noteCopyPorts(),
+			media: {
 			async execute() {
 				generation += 1;
 				const selection = completedResult("image", String(generation));
@@ -3365,18 +3451,9 @@ test("note delivery hot-reads a newly enabled sensitive word before writing Cont
 				};
 			},
 		},
-		{
-			async write(input) {
-				writes += 1;
-				return {
-					packageId: input.packageId,
-					revision: input.expectedRevision + 1,
-					versionId: input.version.id,
-				};
 			},
-		},
-		() => "2026-07-29T00:00:00.000Z",
-		{
+		capabilities: {
+			noteSettings: {
 			async read() {
 				return {
 					styles: {
@@ -3393,14 +3470,15 @@ test("note delivery hot-reads a newly enabled sensitive word before writing Cont
 				};
 			},
 		},
-		unconfiguredNotePlanEnhancementJudgeResolver,
-		notBilledExecutionChildObservability(),
-		{
+			noteEnhancementJudge: unconfiguredNotePlanEnhancementJudgeResolver,
+			executionChildObservability: notBilledExecutionChildObservability(),
+			sensitiveLexicon: {
 			async listEnabled() {
 				return structuredClone(enabledLexicon);
 			},
 		},
-	);
+		},
+	});
 	const context = contextSnapshot();
 	const declaration = {
 		normalizedIntent: "介绍夏日护理项目",
@@ -3462,22 +3540,26 @@ test("media delivery blocks malicious visible copy before the canonical writer",
 		},
 	});
 	let writes = 0;
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: {
+				async write() {
+					writes += 1;
+					throw new Error("The redline gate must run before this writer.");
+				},
+			},
+			now: () => "2026-07-22T09:00:01.000Z",
+			runners: {
 			create() {
 				throw new Error("Media delivery does not compile a copy brief.");
 			},
 		},
-		media,
-		{
-			async write() {
-				writes += 1;
-				throw new Error("The redline gate must run before this writer.");
 			},
+		collaborators: {
+			copy: unsupportedCopyPorts(),
+			media: media,
 		},
-		() => "2026-07-22T09:00:01.000Z",
-	);
+	});
 	const brief = imageBriefFor("image.edit", 1);
 	brief.intent.purpose = "国家认证五星机构，团购价398元";
 	brief.intent.subject = "到店即送全年护理";
@@ -3605,22 +3687,26 @@ test("media closeout evaluates frozen price sources against delivery-time freshn
 		},
 	};
 	let writes = 0;
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: {
+				async write() {
+					writes += 1;
+					throw new Error("The freshness gate must run before this writer.");
+				},
+			},
+			now: () => "2026-07-22T09:00:01.000Z",
+			runners: {
 			create() {
 				throw new Error("Media delivery does not compile a copy brief.");
 			},
 		},
-		media,
-		{
-			async write() {
-				writes += 1;
-				throw new Error("The freshness gate must run before this writer.");
 			},
+		collaborators: {
+			copy: unsupportedCopyPorts(),
+			media: media,
 		},
-		() => "2026-07-22T09:00:01.000Z",
-	);
+	});
 	const selection = await media.execute({
 		brief,
 		context,
@@ -3700,21 +3786,25 @@ test("video delivery rejects a price from the context when this run did not auth
 			return completedResult("video");
 		},
 	});
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: {
+				async write() {
+					throw new Error("The unauthorized price must not reach the writer.");
+				},
+			},
+			now: () => "2026-07-22T09:00:01.000Z",
+			runners: {
 			create() {
 				throw new Error("Media delivery does not compile a copy brief.");
 			},
 		},
-		media,
-		{
-			async write() {
-				throw new Error("The unauthorized price must not reach the writer.");
 			},
+		collaborators: {
+			copy: unsupportedCopyPorts(),
+			media: media,
 		},
-		() => "2026-07-22T09:00:01.000Z",
-	);
+	});
 	const selection = await media.execute({
 		brief,
 		context,
@@ -3773,15 +3863,9 @@ test("image exact text is included in the visible-copy delivery gate", async () 
 		workflowId: request.executionSnapshot!.task.id,
 	});
 	let writes = 0;
-	const ports = new UnifiedHarnessStagePorts(
-		unsupportedCopyPorts(),
-		{
-			create() {
-				throw new Error("Media delivery does not compile a copy brief.");
-			},
-		},
-		media,
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: {
 			async write(input) {
 				writes += 1;
 				return {
@@ -3791,8 +3875,18 @@ test("image exact text is included in the visible-copy delivery gate", async () 
 				};
 			},
 		},
-		() => "2026-07-22T09:00:01.000Z",
-	);
+			now: () => "2026-07-22T09:00:01.000Z",
+			runners: {
+				create() {
+					throw new Error("Media delivery does not compile a copy brief.");
+				},
+			},
+		},
+		collaborators: {
+			copy: unsupportedCopyPorts(),
+			media: media,
+		},
+	});
 
 	await assert.rejects(
 		ports.assembleMediaAndDeliver({
@@ -4223,11 +4317,7 @@ test("exact-text image retries revalidate execution assembly before every provid
 		{
 			async submit(input) {
 				submissions += 1;
-				return completedMerchantResult(
-					"image",
-					input,
-					String(submissions),
-				);
+				return completedMerchantResult("image", input, String(submissions));
 			},
 		},
 		{
@@ -4781,13 +4871,18 @@ test("formal viral note planning consumes image vision and skips it when no imag
 			throw new Error("Note planning must not generate page media yet.");
 		},
 	};
-	const ports = new UnifiedHarnessStagePorts(
-		noteCopyPorts(),
-		noteRunnerFactory(),
-		media,
-		undefined as never,
-		() => "2026-08-02T00:00:00.000Z",
-		{
+	const ports = new UnifiedHarnessStagePorts({
+		core: {
+			contentPackages: undefined as never,
+			now: () => "2026-08-02T00:00:00.000Z",
+			runners: noteRunnerFactory(),
+		},
+		collaborators: {
+			copy: noteCopyPorts(),
+			media: media,
+		},
+		capabilities: {
+			noteSettings: {
 			async read() {
 				return {
 					styles: {
@@ -4804,9 +4899,9 @@ test("formal viral note planning consumes image vision and skips it when no imag
 				};
 			},
 		},
-		undefined,
-		notBilledExecutionChildObservability(),
-	);
+			executionChildObservability: notBilledExecutionChildObservability(),
+		},
+	});
 	const declaration = {
 		normalizedIntent: "介绍夏日护理项目",
 		taskType: "daily_service_exposure" as const,

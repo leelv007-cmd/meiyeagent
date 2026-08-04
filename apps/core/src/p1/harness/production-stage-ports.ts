@@ -52,6 +52,13 @@ import type {
   HarnessContextSnapshot,
   HarnessStagePorts,
 } from './workflow-core.js';
+
+type FirstArgument<Method> = Method extends (
+  input: infer Input,
+  ...rest: never[]
+) => unknown
+  ? Input
+  : never;
 import {
   ExecutionAttemptBudget,
   ExecutionAttemptBudgetExceeded,
@@ -170,12 +177,10 @@ export interface HarnessCopyDeliveryPort {
 
 export interface HarnessMemorySedimentationPort {
   summarize(
-    input: Parameters<HarnessStagePorts['assembleAndDeliver']>[0],
-  ): Promise<
-    Array<{ itemId: string; candidate: unknown; decision: unknown }>
-  >;
+    input: FirstArgument<HarnessStagePorts['assembleAndDeliver']>,
+  ): Promise<Array<{ itemId: string; candidate: unknown; decision: unknown }>>;
   complete(
-    input: Parameters<HarnessStagePorts['assembleAndDeliver']>[0],
+    input: FirstArgument<HarnessStagePorts['assembleAndDeliver']>,
   ): Promise<void>;
 }
 
@@ -369,30 +374,84 @@ export function observeHarnessStructuredNodeRunner(input: {
   );
 }
 
-export class ProductionHarnessStagePorts implements HarnessStagePorts {
-  constructor(
-    private readonly runners: HarnessStructuredNodeRunnerFactory,
-    private readonly context: ProductionHarnessContextPort,
-    private readonly delivery: HarnessCopyDeliveryPort,
-    private readonly now: () => string,
-    private readonly reuseTasks?: {
+export interface ProductionHarnessStagePortsOptions {
+  core: {
+    runners: HarnessStructuredNodeRunnerFactory;
+    context: ProductionHarnessContextPort;
+    delivery: HarnessCopyDeliveryPort;
+    now: () => string;
+  };
+  reuse?: {
+    tasks: {
       verifyReuseTaskSeed(
         workspaceId: string,
         seed: ReuseTaskSeed,
       ): Promise<AssetRevision>;
-    },
-    private readonly executionDelivery?: ContentPackageRevisionWritePort,
-    private readonly sourceContentPackages?: ExecutionSourceContentPackageResolverPort,
-    private readonly skillInstructions?: HarnessSkillInstructionResolverPort,
-    private readonly recipeFacts?: HarnessRecipeFactRequirementPort,
-    private readonly factRights?: FactRightsAuthorizationPort,
-    private readonly executionChildObservability?: HarnessExecutionChildObservabilityFactory,
-    private readonly primitiveCheck?: HarnessPrimitiveCheckPort,
-    private readonly candidatePrimitiveRunner?: HarnessCandidatePrimitiveRunnerFactory,
-    private readonly observabilityEvents?: ObservabilityEventAuditPort,
-    private readonly memorySedimentation?: HarnessMemorySedimentationPort,
-    private readonly sensitiveLexicon?: SensitiveLexiconReadPort,
-  ) {}
+    };
+  };
+  execution?: {
+    delivery?: ContentPackageRevisionWritePort;
+    sourceContentPackages?: ExecutionSourceContentPackageResolverPort;
+  };
+  skills?: {
+    instructions?: HarnessSkillInstructionResolverPort;
+    recipeFacts?: HarnessRecipeFactRequirementPort;
+  };
+  authorization?: {
+    factRights: FactRightsAuthorizationPort;
+  };
+  observability?: {
+    children?: HarnessExecutionChildObservabilityFactory;
+    events?: ObservabilityEventAuditPort;
+    primitiveCheck?: HarnessPrimitiveCheckPort;
+    candidateRunner?: HarnessCandidatePrimitiveRunnerFactory;
+  };
+  memory?: {
+    sedimentation: HarnessMemorySedimentationPort;
+  };
+  policy?: {
+    sensitiveLexicon: SensitiveLexiconReadPort;
+  };
+}
+
+export class ProductionHarnessStagePorts implements HarnessStagePorts {
+  private readonly runners: HarnessStructuredNodeRunnerFactory;
+  private readonly context: ProductionHarnessContextPort;
+  private readonly delivery: HarnessCopyDeliveryPort;
+  private readonly now: () => string;
+  private readonly reuseTasks?: NonNullable<
+    ProductionHarnessStagePortsOptions['reuse']
+  >['tasks'];
+  private readonly executionDelivery?: ContentPackageRevisionWritePort;
+  private readonly sourceContentPackages?: ExecutionSourceContentPackageResolverPort;
+  private readonly skillInstructions?: HarnessSkillInstructionResolverPort;
+  private readonly recipeFacts?: HarnessRecipeFactRequirementPort;
+  private readonly factRights?: FactRightsAuthorizationPort;
+  private readonly executionChildObservability?: HarnessExecutionChildObservabilityFactory;
+  private readonly primitiveCheck?: HarnessPrimitiveCheckPort;
+  private readonly candidatePrimitiveRunner?: HarnessCandidatePrimitiveRunnerFactory;
+  private readonly observabilityEvents?: ObservabilityEventAuditPort;
+  private readonly memorySedimentation?: HarnessMemorySedimentationPort;
+  private readonly sensitiveLexicon?: SensitiveLexiconReadPort;
+
+  constructor(options: ProductionHarnessStagePortsOptions) {
+    this.runners = options.core.runners;
+    this.context = options.core.context;
+    this.delivery = options.core.delivery;
+    this.now = options.core.now;
+    this.reuseTasks = options.reuse?.tasks;
+    this.executionDelivery = options.execution?.delivery;
+    this.sourceContentPackages = options.execution?.sourceContentPackages;
+    this.skillInstructions = options.skills?.instructions;
+    this.recipeFacts = options.skills?.recipeFacts;
+    this.factRights = options.authorization?.factRights;
+    this.executionChildObservability = options.observability?.children;
+    this.primitiveCheck = options.observability?.primitiveCheck;
+    this.candidatePrimitiveRunner = options.observability?.candidateRunner;
+    this.observabilityEvents = options.observability?.events;
+    this.memorySedimentation = options.memory?.sedimentation;
+    this.sensitiveLexicon = options.policy?.sensitiveLexicon;
+  }
 
   async recordObservabilityEvent(
     input: Parameters<
@@ -493,7 +552,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
   }
 
   async nameIntent(
-    input: Parameters<HarnessStagePorts['nameIntent']>[0],
+    input: FirstArgument<HarnessStagePorts['nameIntent']>,
   ): ReturnType<HarnessStagePorts['nameIntent']> {
     await this.resolveLiveSourceContentPackage(input.request);
     const runner = this.runnerWithSourceFence(input.request, 'intent_naming');
@@ -577,12 +636,12 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
   }
 
   async injectContext(
-    input: Parameters<HarnessStagePorts['injectContext']>[0],
+    input: FirstArgument<HarnessStagePorts['injectContext']>,
   ) {
     return this.context.compileAndFreeze(input);
   }
 
-  fenceContext(input: Parameters<HarnessStagePorts['fenceContext']>[0]) {
+  fenceContext(input: FirstArgument<HarnessStagePorts['fenceContext']>) {
     return this.context.fence(input);
   }
 
@@ -621,7 +680,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     );
   }
 
-  async compileBrief(input: Parameters<HarnessStagePorts['compileBrief']>[0]) {
+  async compileBrief(input: FirstArgument<HarnessStagePorts['compileBrief']>) {
     const snapshot = input.request.executionSnapshot;
     if (snapshot && snapshot.lens !== 'copy') {
       throw new HarnessCopyScopeError();
@@ -671,14 +730,14 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
   }
 
   executeAndSelect(
-    input: Parameters<HarnessStagePorts['executeAndSelect']>[0],
+    input: FirstArgument<HarnessStagePorts['executeAndSelect']>,
   ) {
     this.assertExecutionSelectionInput(input);
     return this.executeAndSelectLive(input);
   }
 
   private assertExecutionSelectionInput(
-    input: Parameters<HarnessStagePorts['executeAndSelect']>[0],
+    input: FirstArgument<HarnessStagePorts['executeAndSelect']>,
   ) {
     const registeredIdentityRefs = new Set(
       input.context.policyReferences.identityRefs
@@ -724,7 +783,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
   }
 
   private async executeAndSelectLive(
-    input: Parameters<HarnessStagePorts['executeAndSelect']>[0],
+    input: FirstArgument<HarnessStagePorts['executeAndSelect']>,
     boundedExecution?: NonNullable<HarnessWorkflowInput['boundedExecution']>,
     resumeFrom?: import('./execution-selection.js').CopySelectionCurrentBest,
   ) {
@@ -834,8 +893,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     const selected = snapshot
       ? {
           ...selection,
-          merchantExecutionEffectKey:
-            `merchant-execution:${snapshot.task.id}:wf:${input.workflowId}:s4:${copyUnit(input.context.bundle.revision)}:${selection.winner.candidateId}`,
+          merchantExecutionEffectKey: `merchant-execution:${snapshot.task.id}:wf:${input.workflowId}:s4:${copyUnit(input.context.bundle.revision)}:${selection.winner.candidateId}`,
         }
       : selection;
     if (!this.primitiveCheck) return selected;
@@ -878,7 +936,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
   }
 
   async assembleAndDeliver(
-    input: Parameters<HarnessStagePorts['assembleAndDeliver']>[0],
+    input: FirstArgument<HarnessStagePorts['assembleAndDeliver']>,
   ) {
     if (input.request.reuseSeed) {
       if (!this.reuseTasks) {
@@ -1183,7 +1241,7 @@ function structuredControllerFrozenRoute(
 }
 
 function assertDeliverableCandidatesPassVisibleRedlines(
-  input: Parameters<HarnessStagePorts['assembleAndDeliver']>[0],
+  input: FirstArgument<HarnessStagePorts['assembleAndDeliver']>,
   evaluatedAt: string,
   sensitiveLexicon?: readonly SensitiveWordRecord[],
 ) {
@@ -1323,7 +1381,7 @@ function policyFactKind(key: string): HarnessFactClaim['kind'] | null {
 }
 
 export function copyContentPackageRevisionWriteInput(
-  input: Parameters<HarnessStagePorts['assembleAndDeliver']>[0],
+  input: FirstArgument<HarnessStagePorts['assembleAndDeliver']>,
   occurredAt: string,
   sourceAssets: ReadonlyArray<{ id: string; role: 'source' | 'selected' }> = [],
   claimExtraction?: VisibleClaimExtraction,
@@ -1693,8 +1751,7 @@ function primitiveCandidateResumeFence(input: {
   }
   return {
     revision: isRevision ? 2 : 1,
-    sourceEffectIdempotencyKey:
-      `wf:${input.taskId}:s4:${input.unitId}:${sourceCandidateId}`,
+    sourceEffectIdempotencyKey: `wf:${input.taskId}:s4:${input.unitId}:${sourceCandidateId}`,
   };
 }
 

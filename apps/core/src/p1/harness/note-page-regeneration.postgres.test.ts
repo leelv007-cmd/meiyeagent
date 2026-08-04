@@ -36,7 +36,6 @@ import {
 } from './unified-media-stage-ports.js';
 import type {
   HarnessContextSnapshot,
-  HarnessNoteStagePorts,
   HarnessStagePorts,
 } from './workflow-core.js';
 import type { ContentPackageRevisionWritePort } from '../execution-spine/content-package-revision-port.js';
@@ -181,9 +180,11 @@ test(
         },
       };
 
-      const ports = new UnifiedHarnessStagePorts(
-        emptyCopyPorts(),
-        {
+      const ports = new UnifiedHarnessStagePorts({
+        core: {
+          contentPackages: writer,
+          now: () => '2026-08-02T01:00:00.000Z',
+          runners: {
           create() {
             return {
               async run() {
@@ -192,19 +193,21 @@ test(
             };
           },
         },
-        media,
-        writer,
-        () => '2026-08-02T01:00:00.000Z',
-        {
+        },
+        collaborators: {
+          copy: emptyCopyPorts(),
+          media: media,
+        },
+        capabilities: {
+          noteSettings: {
           async read() {
             return { styles: { styles: [] } };
           },
         },
-        unconfiguredNotePlanEnhancementJudgeResolver,
-        undefined,
-        undefined,
-        sourcePackages,
-      );
+          noteEnhancementJudge: unconfiguredNotePlanEnhancementJudgeResolver,
+          sourceContentPackages: sourcePackages,
+        },
+      });
 
       const request = pageRegenRequest({
         workspaceId,
@@ -229,9 +232,7 @@ test(
         },
       };
 
-      const selection = await (
-        ports as HarnessNoteStagePorts
-      ).executeNoteAndSelect({
+      const selection = await ports.executeNoteAndSelect({
         workflowId: request.packageId,
         request,
         brief,
@@ -267,7 +268,7 @@ test(
         1,
       );
 
-      await (ports as HarnessNoteStagePorts).assembleNoteAndDeliver({
+      await ports.assembleNoteAndDeliver({
         workflowId: request.packageId,
         request,
         declaration: {

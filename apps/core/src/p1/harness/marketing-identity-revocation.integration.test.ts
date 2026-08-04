@@ -174,12 +174,14 @@ test('identity revocation rejects the stale persona, falls back safely, and inva
     score(84),
   ]);
   const delivery = new RecordingDelivery();
-  const ports = new ProductionHarnessStagePorts(
-    { create: () => runner },
-    contextPort,
-    delivery,
-    () => now,
-  );
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => runner },
+      context: contextPort,
+      delivery: delivery,
+      now: () => now,
+    },
+  });
   const staleBrief = brief(['marketing_identity:person-1:1']);
   assert.throws(
     () =>
