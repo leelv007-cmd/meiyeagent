@@ -7,7 +7,7 @@ vi.mock('@/api/workspace-access', () => ({
 }));
 
 import { IntegrationSettings } from './integration-settings';
-import { type useIntegrationSettings } from './use-integration-settings';
+import type { useIntegrationSettings } from './use-integration-settings';
 
 function renderSettings() {
   const queryClient = new QueryClient();
