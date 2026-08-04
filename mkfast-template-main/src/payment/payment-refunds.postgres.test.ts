@@ -330,7 +330,7 @@ test(
 );
 
 test(
-  'keeps a refund after owner deletion and nulls a deleted disposition actor',
+  'records a late refund after owner deletion and nulls a deleted disposition actor',
   { skip: !databaseUrl },
   async () => {
     const client = postgres(databaseUrl as string, { max: 1, prepare: false });
@@ -348,30 +348,52 @@ test(
           VALUES (${userId}, 'Refund test user', ${`${userId}@example.test`}, TRUE, now(), now())
         `;
       }
+      await client`DELETE FROM "user" WHERE id = ${ownerUserId}`;
       const store = new PostgresPaymentRefundStore(db);
-      await store.record({
-        amount: '57.00',
-        currency: 'HKD',
-        dispositionStatus: 'pending_review',
-        eventStatus: 'failed',
-        orderId: `order-${suffix}`,
-        orderMerchantExternalId: `cpb-${suffix}`,
-        ownerUserId,
-        provider: 'waffo',
-        providerDeliveryId: `delivery-${suffix}`,
-        providerEventId,
-        providerOccurredAt: '2026-08-04T01:02:03.000Z',
-        rawPayload: '{"event":"refund.failed"}',
-        scene: 'refund',
-      });
-      await store.resolve({
-        actorUserId,
-        eventStatus: 'failed',
-        note: 'Reviewed',
-        provider: 'waffo',
-        providerEventId,
-      });
-      await client`DELETE FROM "user" WHERE id IN (${ownerUserId}, ${actorUserId})`;
+      assert.equal(
+        await store.record({
+          amount: '57.00',
+          currency: 'HKD',
+          dispositionStatus: 'pending_review',
+          eventStatus: 'failed',
+          orderId: `order-${suffix}`,
+          orderMerchantExternalId: `cpb-${suffix}`,
+          ownerUserId,
+          provider: 'waffo',
+          providerDeliveryId: `delivery-${suffix}`,
+          providerEventId,
+          providerOccurredAt: '2026-08-04T01:02:03.000Z',
+          rawPayload: '{"event":"refund.failed"}',
+          scene: 'refund',
+        }),
+        'created'
+      );
+      assert.deepEqual(
+        [
+          ...(await client<
+            Array<{
+              provider_event_id: string;
+              status: string;
+            }>
+          >`
+            SELECT provider_event_id, status
+            FROM payment_refund_review_alert_outbox
+            WHERE provider = 'waffo' AND provider_event_id = ${providerEventId}
+          `),
+        ],
+        [{ provider_event_id: providerEventId, status: 'pending' }]
+      );
+      assert.equal(
+        await store.resolve({
+          actorUserId,
+          eventStatus: 'failed',
+          note: 'Reviewed',
+          provider: 'waffo',
+          providerEventId,
+        }),
+        'resolved'
+      );
+      await client`DELETE FROM "user" WHERE id = ${actorUserId}`;
       const rows = await client<
         Array<{
           owner_user_id: string;
