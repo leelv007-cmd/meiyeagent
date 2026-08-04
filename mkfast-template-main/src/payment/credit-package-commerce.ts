@@ -1,4 +1,5 @@
 import type { VerifiedPaymentWebhookEvent } from './types';
+import type { CreditPackageSkuSnapshot } from './waffo-credit-package-catalog';
 
 export interface CreditPackageCheckoutBindingFacts {
   id: string;
@@ -6,6 +7,7 @@ export interface CreditPackageCheckoutBindingFacts {
   ownerUserId: string;
   productId: string;
   workspaceId: string;
+  skuSnapshot: CreditPackageSkuSnapshot;
 }
 
 export interface CreditPackageSettlementIntent {
@@ -13,6 +15,8 @@ export interface CreditPackageSettlementIntent {
   ownerUserId: string;
   paymentEventId: string;
   workspaceId: string;
+  credits: number;
+  expireDays: number;
 }
 
 export type CreditPackageSettlementClaim =
@@ -69,6 +73,8 @@ export function creditPackageSettlementIntentFromEvent(
     ownerUserId: binding.ownerUserId,
     paymentEventId: `${event.provider}:order:${orderId}`,
     workspaceId: binding.workspaceId,
+    credits: binding.skuSnapshot.credits,
+    expireDays: binding.skuSnapshot.expireDays,
   };
 }
 

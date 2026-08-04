@@ -12,6 +12,13 @@ const binding: CreditPackageCheckoutBindingFacts = {
   ownerUserId: 'user_001',
   productId: 'PROD_CREDITS_300',
   workspaceId: 'workspace_001',
+  skuSnapshot: {
+    amountMicros: 161_000_000,
+    currency: 'HKD',
+    credits: 300,
+    expireDays: 7,
+    fingerprint: 'credits-300:161000000:HKD:300:7',
+  },
 };
 
 const completedOrder = {
@@ -39,6 +46,8 @@ describe('credit package commerce', () => {
       ownerUserId: 'user_001',
       paymentEventId: 'waffo:order:waffo-order-001',
       workspaceId: 'workspace_001',
+      credits: 300,
+      expireDays: 7,
     });
 
     const grantAddOn = vi.fn();
@@ -121,6 +130,8 @@ describe('credit package commerce', () => {
       ownerUserId: 'user_001',
       paymentEventId: 'waffo:order:waffo-order-001',
       workspaceId: 'workspace_001',
+      credits: 300,
+      expireDays: 7,
     });
     expect(replay).toEqual(first);
     expect(grantAddOn).toHaveBeenCalledExactlyOnceWith(first);

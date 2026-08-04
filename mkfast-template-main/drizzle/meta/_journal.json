@@ -162,6 +162,13 @@
       "when": 1785745599808,
       "tag": "0022_payment_refund_events",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1785745599809,
+      "tag": "0023_credit_package_checkout_snapshot",
+      "breakpoints": true
     }
   ]
 }

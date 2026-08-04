@@ -202,6 +202,14 @@ function string(input: Record<string, unknown>, key: string) {
   return value;
 }
 
+function positiveInteger(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value <= 0) {
+    throw new P1DomainError('INVALID_STATE', `${key} must be a positive integer.`);
+  }
+  return value;
+}
+
 function optionalString(input: Record<string, unknown>, key: string) {
   const value = input[key];
   return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -556,6 +564,8 @@ export class ProductEntitlementFoundationModule implements P1OperationModule {
         return this.options.creditBilling.grantAddOn(args.context, {
           offerId: string(payload, 'offerId'),
           paymentEventId: string(payload, 'paymentEventId'),
+          credits: positiveInteger(payload, 'credits'),
+          expireDays: positiveInteger(payload, 'expireDays'),
         });
       }
       case 'register_gift': {

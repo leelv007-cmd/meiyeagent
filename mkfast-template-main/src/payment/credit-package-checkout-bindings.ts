@@ -6,6 +6,7 @@ import type {
   CreditPackageOrderEvent,
 } from './credit-package-commerce';
 import type { PaymentProviderName } from './types';
+import type { CreditPackageSkuSnapshot } from './waffo-credit-package-catalog';
 
 type PaymentDatabase = ReturnType<typeof getDatabase>;
 
@@ -19,6 +20,11 @@ interface BindingRow extends Record<string, unknown> {
   ownerUserId: string;
   productId: string;
   workspaceId: string;
+  skuAmountMicros: number | string | null;
+  skuCurrency: string | null;
+  skuCredits: number | null;
+  skuExpireDays: number | null;
+  skuFingerprint: string | null;
 }
 
 interface SettlementRow extends BindingRow {
@@ -63,15 +69,20 @@ export class PostgresCreditPackageCheckoutBindingStore {
     productId: string;
     provider: PaymentProviderName;
     workspaceId: string;
+    skuSnapshot: CreditPackageSkuSnapshot;
   }) {
     const id = `cpb_${crypto.randomUUID()}`;
     const rows = await this.database.execute<IdentifierRow>(sql`
       INSERT INTO credit_package_checkout_bindings
         (id, provider, product_id, offer_id, workspace_id, owner_user_id,
-         status, created_at, updated_at)
+         sku_amount_micros, sku_currency, sku_credits, sku_expire_days,
+         sku_fingerprint, status, created_at, updated_at)
       SELECT
         ${id}, ${input.provider}, ${input.productId}, ${input.offerId},
-        ${input.workspaceId}, ${input.ownerUserId}, 'pending', now(), now()
+        ${input.workspaceId}, ${input.ownerUserId},
+        ${input.skuSnapshot.amountMicros}, ${input.skuSnapshot.currency},
+        ${input.skuSnapshot.credits}, ${input.skuSnapshot.expireDays},
+        ${input.skuSnapshot.fingerprint}, 'pending', now(), now()
       FROM workspace_memberships
       WHERE workspace_memberships.workspace_id = ${input.workspaceId}
         AND workspace_memberships.user_id = ${input.ownerUserId}
@@ -98,7 +109,7 @@ export class PostgresCreditPackageCheckoutBindingStore {
           END,
           updated_at = now()
       WHERE id = ${input.bindingId}
-        AND status IN ('pending', 'checkout_created', 'settled')
+        AND status IN ('pending', 'checkout_created', 'settled', 'failed')
         AND (
           provider_checkout_id IS NULL
           OR provider_checkout_id = ${input.providerCheckoutId}
@@ -146,7 +157,7 @@ export class PostgresCreditPackageCheckoutBindingStore {
       WHERE id = ${bindingId}
         AND provider = ${event.provider}
         AND owner_user_id = ${buyerIdentity}
-        AND status IN ('pending', 'checkout_created', 'settled')
+        AND status IN ('pending', 'checkout_created', 'settled', 'failed')
         AND (
           provider_order_id IS NULL OR provider_order_id = ${orderId}
         )
@@ -165,10 +176,19 @@ export class PostgresCreditPackageCheckoutBindingStore {
         offer_id AS "offerId",
         owner_user_id AS "ownerUserId",
         product_id AS "productId",
-        workspace_id AS "workspaceId"
+        workspace_id AS "workspaceId",
+        sku_amount_micros AS "skuAmountMicros",
+        sku_currency AS "skuCurrency",
+        sku_credits AS "skuCredits",
+        sku_expire_days AS "skuExpireDays",
+        sku_fingerprint AS "skuFingerprint"
     `);
     if (claimed[0]) {
-      return { binding: claimed[0], claimToken, status: 'claimed' };
+      return {
+        binding: bindingFacts(claimed[0]),
+        claimToken,
+        status: 'claimed',
+      };
     }
 
     const rows = await this.database.execute<SettlementRow>(sql`
@@ -178,6 +198,11 @@ export class PostgresCreditPackageCheckoutBindingStore {
         owner_user_id AS "ownerUserId",
         product_id AS "productId",
         workspace_id AS "workspaceId",
+        sku_amount_micros AS "skuAmountMicros",
+        sku_currency AS "skuCurrency",
+        sku_credits AS "skuCredits",
+        sku_expire_days AS "skuExpireDays",
+        sku_fingerprint AS "skuFingerprint",
         provider_order_id AS "providerOrderId",
         provider_payment_event_id AS "providerPaymentEventId",
         settlement_status AS "settlementStatus"
@@ -216,6 +241,21 @@ export class PostgresCreditPackageCheckoutBindingStore {
       throw new Error('Credit package settlement claim was not completed.');
     }
   }
+
+  async releaseStaleWaffoBindings(input: {
+    ownerUserId: string;
+    workspaceId: string;
+  }) {
+    await this.database.execute(sql`
+      UPDATE credit_package_checkout_bindings
+      SET status = 'failed', updated_at = now()
+      WHERE provider = 'waffo'
+        AND owner_user_id = ${input.ownerUserId}
+        AND workspace_id = ${input.workspaceId}
+        AND status IN ('pending', 'checkout_created')
+        AND updated_at < now() - interval '1 hour'
+    `);
+  }
 }
 
 function requiredValue(value: string | undefined, field: string): string {
@@ -229,11 +269,29 @@ function requiredValue(value: string | undefined, field: string): string {
 }
 
 function bindingFacts(row: BindingRow): CreditPackageCheckoutBindingFacts {
+  if (
+    row.skuAmountMicros == null ||
+    row.skuCurrency == null ||
+    row.skuCredits == null ||
+    row.skuExpireDays == null ||
+    row.skuFingerprint == null
+  ) {
+    throw new CreditPackageSettlementContractError(
+      'Waffo credit package binding is missing its frozen SKU snapshot.'
+    );
+  }
   return {
     id: row.id,
     offerId: row.offerId,
     ownerUserId: row.ownerUserId,
     productId: row.productId,
     workspaceId: row.workspaceId,
+    skuSnapshot: {
+      amountMicros: Number(row.skuAmountMicros),
+      currency: row.skuCurrency as 'HKD',
+      credits: row.skuCredits,
+      expireDays: row.skuExpireDays,
+      fingerprint: row.skuFingerprint,
+    },
   };
 }

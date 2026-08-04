@@ -71,6 +71,8 @@ test('credit payment settlement preserves package lots across upgrades and appli
 
   now = new Date('2026-01-02T00:00:00.000Z');
   await service.grantAddOn(context, {
+    credits: 100,
+    expireDays: 7,
     offerId: 'credits-100',
     paymentEventId: 'payment-package',
   });

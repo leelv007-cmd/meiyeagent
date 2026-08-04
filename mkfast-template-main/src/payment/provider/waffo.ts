@@ -71,6 +71,14 @@ export interface CreateWaffoCreditPackageCheckoutParams {
   successUrl?: string;
 }
 
+export interface WaffoCreditPackageProductFacts {
+  amount: string;
+  currency: string;
+  metadata: Record<string, unknown> | string | null;
+  productId: string;
+  status: string;
+}
+
 /**
  * The Waffo Test sandbox stopped including `currentPeriodStart/End` in
  * subscription webhook payloads on 2026-08-03. Paid-lifecycle settlement still
@@ -180,6 +188,45 @@ export class WaffoProvider implements PaymentProvider {
     return {
       id: checkout.sessionId,
       url: checkoutUrlForEnvironment(checkout.checkoutUrl, this.environment),
+    };
+  }
+
+  async readCreditPackageProductFacts(
+    productId: string
+  ): Promise<WaffoCreditPackageProductFacts> {
+    const normalizedProductId = productId.trim();
+    if (!normalizedProductId)
+      throw new Error('Credit package product is required.');
+    if (!this.client.graphql) {
+      throw new Error('Waffo Test product read capability is not configured.');
+    }
+    const response = await this.client.graphql.query<{
+      onetimeProduct: {
+        id: string;
+        metadata: Record<string, unknown> | string | null;
+        status: string;
+        prices: Array<{ currency: string; priceInfo: { amount: string } }>;
+      } | null;
+    }>({
+      query: `query WaffoCreditPackageProduct($id: ID!) {
+        onetimeProduct(id: $id) {
+          id status metadata
+          prices { currency priceInfo { amount } }
+        }
+      }`,
+      variables: { id: normalizedProductId },
+    });
+    const product = response.data?.onetimeProduct;
+    const price = product?.prices?.length === 1 ? product.prices[0] : undefined;
+    if (response.errors?.length || !product || !price) {
+      throw new Error('Waffo Test product facts are unavailable or malformed.');
+    }
+    return {
+      amount: price.priceInfo.amount,
+      currency: price.currency,
+      metadata: product.metadata,
+      productId: product.id,
+      status: product.status,
     };
   }
 

@@ -6,6 +6,7 @@
 import { relations, sql } from 'drizzle-orm';
 import {
   boolean,
+  bigint,
   foreignKey,
   index,
   integer,
@@ -259,6 +260,11 @@ export const creditPackageCheckoutBindings = pgTable(
     ownerUserId: text('owner_user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
+    skuAmountMicros: bigint('sku_amount_micros', { mode: 'number' }),
+    skuCurrency: text('sku_currency'),
+    skuCredits: integer('sku_credits'),
+    skuExpireDays: integer('sku_expire_days'),
+    skuFingerprint: text('sku_fingerprint'),
     providerCheckoutId: text('provider_checkout_id'),
     providerOrderId: text('provider_order_id'),
     providerPaymentEventId: text('provider_payment_event_id'),
@@ -560,9 +566,7 @@ export const paymentRefundEvents = pgTable(
     providerDeliveryId: text('provider_delivery_id').notNull(),
     orderId: text('order_id').notNull(),
     orderMerchantExternalId: text('order_merchant_external_id').notNull(),
-    ownerUserId: text('owner_user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'restrict' }),
+    ownerUserId: text('owner_user_id').notNull(),
     scene: text('scene').notNull().$type<'refund'>(),
     amount: text('amount').notNull(),
     currency: text('currency').notNull(),
@@ -580,7 +584,7 @@ export const paymentRefundEvents = pgTable(
       .notNull(),
     dispositionActorUserId: text('disposition_actor_user_id').references(
       () => user.id,
-      { onDelete: 'restrict' }
+      { onDelete: 'set null' }
     ),
     dispositionNote: text('disposition_note'),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),

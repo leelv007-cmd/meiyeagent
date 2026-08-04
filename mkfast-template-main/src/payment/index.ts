@@ -8,7 +8,7 @@ import {
   settleVerifiedCreditPackagePurchase,
   type CreditPackageSettlementIntent,
 } from '@/payment/credit-package-commerce';
-import { assertWaffoCreditPackagePaymentFacts } from '@/payment/waffo-credit-package-catalog';
+import { assertWaffoCreditPackageSnapshot } from '@/payment/waffo-credit-package-catalog';
 import {
   PostgresPaymentRefundStore,
   recordVerifiedPaymentRefund,
@@ -116,6 +116,14 @@ export async function createCreditPackageCheckout(
   return provider.createCreditPackageCheckout(params);
 }
 
+export async function readWaffoCreditPackageProductFacts(productId: string) {
+  const provider = getPaymentProvider();
+  if (!(provider instanceof WaffoProvider)) {
+    throw new Error('Credit package product reads require Waffo.');
+  }
+  return provider.readCreditPackageProductFacts(productId);
+}
+
 export async function handleWebhookEvent(
   provider: PaymentProviderName,
   payload: string,
@@ -195,14 +203,12 @@ export async function settlePendingPaymentWebhookEvents(
                 completeSettlement: (input) =>
                   creditPackages.completeSettlement(input),
                 validateBinding: (candidate, binding) =>
-                  assertWaffoCreditPackagePaymentFacts(
+                  assertWaffoCreditPackageSnapshot(
                     {
                       amount: candidate.amount,
                       currency: candidate.currency,
-                      offerId: binding.offerId,
-                      productId: binding.productId,
-                    },
-                    serverEnv.WAFFO_CREDIT_PACKAGE_PRODUCT_MAPPING
+                      snapshot: binding.skuSnapshot,
+                    }
                   ),
               }),
             settlePlan: settleVerifiedPlanPurchase,
@@ -321,6 +327,8 @@ async function grantCreditPackageEntitlement(
       payload: {
         offerId: intent.offerId,
         paymentEventId: intent.paymentEventId,
+        credits: intent.credits,
+        expireDays: intent.expireDays,
       },
     }),
   });

@@ -533,27 +533,32 @@ export class CreditBillingService {
 
   async grantAddOn(
     context: P1Context,
-    input: { offerId: string; paymentEventId: string },
+    input: {
+      offerId: string;
+      paymentEventId: string;
+      credits: number;
+      expireDays: number;
+    },
   ) {
     assertText(input.offerId, 'offerId');
     assertText(input.paymentEventId, 'paymentEventId');
-    const offer = (await this.plans.get()).addOns.find(
-      (candidate) => candidate.id === input.offerId,
-    );
-    if (!offer) {
-      throw new P1DomainError('INVALID_STATE', 'Credit add-on offer is not configured.');
+    if (!Number.isSafeInteger(input.credits) || input.credits <= 0) {
+      throw new P1DomainError('INVALID_STATE', 'credits must be a positive integer.');
+    }
+    if (!Number.isSafeInteger(input.expireDays) || input.expireDays <= 0) {
+      throw new P1DomainError('INVALID_STATE', 'expireDays must be a positive integer.');
     }
     const createdAt = this.clock().toISOString();
     const expirationDate = new Date(
-      this.clock().getTime() + offer.expireDays * 24 * 60 * 60 * 1_000,
+      this.clock().getTime() + input.expireDays * 24 * 60 * 60 * 1_000,
     ).toISOString();
     return this.ledger.grant({
       id: `package:${input.paymentEventId}`,
       workspaceId: context.workspaceId,
-      credits: offer.credits,
+      credits: input.credits,
       expirationDate,
       transactionType: 'PURCHASE_PACKAGE',
-      sourceRef: offer.id,
+      sourceRef: input.offerId,
       grantIdempotencyKey: `grant:package:${input.paymentEventId}`,
       actorId: context.userId,
       correlationId: context.correlationId,

@@ -25,6 +25,7 @@ import {
   createCheckout,
   createCreditPackageCheckout,
   createCustomerPortal,
+  readWaffoCreditPackageProductFacts,
 } from '@/payment';
 import {
   createCheckoutInputSchema,
@@ -49,9 +50,10 @@ import type {
 } from '@/payment/types';
 import { PaymentScenes, PaymentTypes } from '@/payment/types';
 import {
-  resolveWaffoCreditPackageOffer,
   resolveWaffoCreditPackageProduct,
+  snapshotWaffoCreditPackageAddOn,
 } from '@/payment/waffo-credit-package-catalog';
+import { fetchPublicPlanCatalog } from './plan-catalog';
 import { websiteConfig } from '@/config/website';
 import { createServerFn } from '@tanstack/react-start';
 import { and, desc, eq, or, sql } from 'drizzle-orm';
@@ -249,7 +251,40 @@ export const createCreditPackageCheckoutSession = createServerFn({
       data.offerId,
       serverEnv.WAFFO_CREDIT_PACKAGE_PRODUCT_MAPPING
     );
-    const offer = resolveWaffoCreditPackageOffer(data.offerId);
+    const governedCatalog = await fetchPublicPlanCatalog();
+    const governedOffer = governedCatalog.addOns.find(
+      (candidate) => candidate.id === data.offerId
+    );
+    if (!governedOffer) {
+      throw new Error(
+        'Core credit package catalog does not contain the requested SKU.'
+      );
+    }
+    const skuSnapshot = snapshotWaffoCreditPackageAddOn(governedOffer);
+    const productFacts = await readWaffoCreditPackageProductFacts(productId);
+    if (
+      productFacts.status !== 'active' ||
+      productFacts.productId !== productId ||
+      productFacts.currency !== skuSnapshot.currency ||
+      productFacts.amount !== (skuSnapshot.amountMicros / 1_000_000).toFixed(2)
+    ) {
+      throw new Error(
+        'Waffo Test product facts drift from the governed SKU snapshot.'
+      );
+    }
+    const productMetadata =
+      typeof productFacts.metadata === 'string'
+        ? (JSON.parse(productFacts.metadata) as Record<string, unknown>)
+        : productFacts.metadata;
+    if (
+      productMetadata?.commerceSku !== data.offerId ||
+      productMetadata.credits !== skuSnapshot.credits ||
+      productMetadata.expireDays !== skuSnapshot.expireDays
+    ) {
+      throw new Error(
+        'Waffo Test product SKU metadata does not match the governed SKU.'
+      );
+    }
     const db = getDb();
     const [userRow] = await db
       .select({
@@ -281,12 +316,17 @@ export const createCreditPackageCheckoutSession = createServerFn({
       workspaceId: workspace.id,
     });
     const bindingStore = new PostgresCreditPackageCheckoutBindingStore(db);
+    await bindingStore.releaseStaleWaffoBindings({
+      ownerUserId: bound.userId,
+      workspaceId: bound.workspaceId,
+    });
     const binding = await bindingStore.createOwnerBinding({
       offerId: data.offerId,
       ownerUserId: bound.userId,
       productId,
       provider: 'waffo',
       workspaceId: bound.workspaceId,
+      skuSnapshot,
     });
     if (!binding) {
       throw new Error('Credit package checkout requires workspace ownership.');
@@ -297,7 +337,7 @@ export const createCreditPackageCheckoutSession = createServerFn({
       const result = await createCreditPackageCheckout({
         buyerEmail: userRow.email,
         buyerIdentity: bound.userId,
-        currency: offer.currency,
+        currency: skuSnapshot.currency,
         packageCheckoutBindingId: binding.id,
         productId,
         successUrl: getCanonicalUrl(Routes.SettingsBilling),

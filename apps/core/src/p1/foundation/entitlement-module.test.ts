@@ -584,6 +584,8 @@ describe('ProductEntitlementFoundationModule', () => {
     await scheduler.run(now.toISOString());
     now = new Date('2026-08-02T00:00:00.000Z');
     await creditBilling.grantAddOn(owner, {
+      credits: 100,
+      expireDays: 7,
       offerId: 'credits-100',
       paymentEventId: 'credit-detail-add-on',
     });
@@ -1444,6 +1446,8 @@ describe('ProductEntitlementFoundationModule', () => {
     const command = {
       action: 'payment_add_on_grant',
       payload: {
+        credits: 100,
+        expireDays: 7,
         offerId: 'credits-100',
         paymentEventId: 'waffo:order-add-on-1',
       },
@@ -1478,6 +1482,35 @@ describe('ProductEntitlementFoundationModule', () => {
       },
     ]);
 
+    await assert.doesNotReject(
+      service.executeModule(
+        payment,
+        'entitlements',
+        {
+          action: 'payment_add_on_grant',
+          payload: {
+            credits: 125,
+            expireDays: 9,
+            offerId: 'unknown-package',
+            paymentEventId: 'waffo:order-add-on-unknown',
+          },
+        },
+        'waffo:order-add-on-unknown',
+      ),
+    );
+    assert.deepEqual(ledger.listLots(owner.workspaceId)[1], {
+      createdAt: '2026-08-03T00:00:00.000Z',
+      expirationDate: '2026-08-12T00:00:00.000Z',
+      grantIdempotencyKey: 'grant:package:waffo:order-add-on-unknown',
+      id: 'package:waffo:order-add-on-unknown',
+      originalCredits: 125,
+      remainingCredits: 125,
+      revision: 1,
+      sourceRef: 'unknown-package',
+      transactionType: 'PURCHASE_PACKAGE',
+      workspaceId: owner.workspaceId,
+    });
+
     await assert.rejects(
       service.executeModule(
         payment,
@@ -1485,18 +1518,17 @@ describe('ProductEntitlementFoundationModule', () => {
         {
           action: 'payment_add_on_grant',
           payload: {
-            offerId: 'unknown-package',
-            paymentEventId: 'waffo:order-add-on-unknown',
+            offerId: 'credits-100',
+            paymentEventId: 'waffo:order-missing-snapshot',
           },
         },
-        'waffo:order-add-on-unknown',
+        'waffo:order-missing-snapshot',
       ),
       (error: unknown) =>
         error instanceof Error &&
         'code' in error &&
         error.code === 'INVALID_STATE',
     );
-    assert.equal(ledger.listLots(owner.workspaceId).length, 1);
 
     await assert.rejects(
       service.executeModule(

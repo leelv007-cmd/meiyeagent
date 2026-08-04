@@ -329,6 +329,76 @@ test(
   }
 );
 
+test(
+  'keeps a refund after owner deletion and nulls a deleted disposition actor',
+  { skip: !databaseUrl },
+  async () => {
+    const client = postgres(databaseUrl as string, { max: 1, prepare: false });
+    const db = drizzle(client, { schema });
+    const suffix = crypto.randomUUID();
+    const ownerUserId = `refund-delete-owner-${suffix}`;
+    const actorUserId = `refund-delete-actor-${suffix}`;
+    const providerEventId = `waffo:refund.failed:delete-${suffix}`;
+    try {
+      await migratePaymentRefundEvents(client);
+      for (const userId of [ownerUserId, actorUserId]) {
+        await client`
+          INSERT INTO "user"
+            (id, name, email, email_verified, created_at, updated_at)
+          VALUES (${userId}, 'Refund test user', ${`${userId}@example.test`}, TRUE, now(), now())
+        `;
+      }
+      const store = new PostgresPaymentRefundStore(db);
+      await store.record({
+        amount: '57.00',
+        currency: 'HKD',
+        dispositionStatus: 'pending_review',
+        eventStatus: 'failed',
+        orderId: `order-${suffix}`,
+        orderMerchantExternalId: `cpb-${suffix}`,
+        ownerUserId,
+        provider: 'waffo',
+        providerDeliveryId: `delivery-${suffix}`,
+        providerEventId,
+        providerOccurredAt: '2026-08-04T01:02:03.000Z',
+        rawPayload: '{"event":"refund.failed"}',
+        scene: 'refund',
+      });
+      await store.resolve({
+        actorUserId,
+        eventStatus: 'failed',
+        note: 'Reviewed',
+        provider: 'waffo',
+        providerEventId,
+      });
+      await client`DELETE FROM "user" WHERE id IN (${ownerUserId}, ${actorUserId})`;
+      const rows = await client<
+        Array<{
+          owner_user_id: string;
+          disposition_actor_user_id: string | null;
+        }>
+      >`
+        SELECT owner_user_id, disposition_actor_user_id
+        FROM payment_refund_events
+        WHERE provider = 'waffo' AND provider_event_id = ${providerEventId}
+      `;
+      assert.deepEqual(
+        [...rows],
+        [
+          {
+            owner_user_id: ownerUserId,
+            disposition_actor_user_id: null,
+          },
+        ]
+      );
+    } finally {
+      await client`DELETE FROM payment_refund_events WHERE provider_event_id = ${providerEventId}`;
+      await client`DELETE FROM "user" WHERE id IN (${ownerUserId}, ${actorUserId})`;
+      await client.end();
+    }
+  }
+);
+
 async function migratePaymentRefundEvents(client: postgres.Sql) {
   const [existing] = await client<Array<{ tableName: string | null }>>`
     SELECT to_regclass('public.payment_refund_events')::text AS "tableName"

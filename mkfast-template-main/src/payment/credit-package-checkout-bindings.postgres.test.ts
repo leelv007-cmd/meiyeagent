@@ -44,6 +44,13 @@ test(
         productId: 'PROD_CREDITS_300',
         provider: 'waffo',
         workspaceId,
+        skuSnapshot: {
+          amountMicros: 161_000_000,
+          currency: 'HKD',
+          credits: 300,
+          expireDays: 7,
+          fingerprint: 'credits-300:161000000:HKD:300:7',
+        },
       });
       assert.ok(binding);
 
@@ -69,6 +76,13 @@ test(
         ownerUserId,
         productId: 'PROD_CREDITS_300',
         workspaceId,
+        skuSnapshot: {
+          amountMicros: 161_000_000,
+          currency: 'HKD',
+          credits: 300,
+          expireDays: 7,
+          fingerprint: 'credits-300:161000000:HKD:300:7',
+        },
       });
 
       await assert.rejects(
@@ -104,6 +118,13 @@ test(
           ownerUserId,
           productId: 'PROD_CREDITS_300',
           workspaceId,
+          skuSnapshot: {
+            amountMicros: 161_000_000,
+            currency: 'HKD',
+            credits: 300,
+            expireDays: 7,
+            fingerprint: 'credits-300:161000000:HKD:300:7',
+          },
         },
         status: 'duplicate',
       });
@@ -119,6 +140,13 @@ test(
           ownerUserId,
           productId: 'PROD_CREDITS_300',
           workspaceId,
+          skuSnapshot: {
+            amountMicros: 161_000_000,
+            currency: 'HKD',
+            credits: 300,
+            expireDays: 7,
+            fingerprint: 'credits-300:161000000:HKD:300:7',
+          },
         },
         status: 'duplicate',
       });
@@ -165,6 +193,13 @@ test(
       productId: 'PROD_CREDITS_300',
       provider: 'waffo' as const,
       workspaceId,
+      skuSnapshot: {
+        amountMicros: 161_000_000,
+        currency: 'HKD' as const,
+        credits: 300,
+        expireDays: 7,
+        fingerprint: 'credits-300:161000000:HKD:300:7',
+      },
     };
 
     try {
@@ -205,6 +240,13 @@ test(
       productId: 'PROD_CREDITS_300',
       provider: 'waffo' as const,
       workspaceId,
+      skuSnapshot: {
+        amountMicros: 161_000_000,
+        currency: 'HKD' as const,
+        credits: 300,
+        expireDays: 7,
+        fingerprint: 'credits-300:161000000:HKD:300:7',
+      },
     };
 
     try {
@@ -230,6 +272,82 @@ test(
         [...bindings],
         [{ id: first.id, status: 'checkout_created' }]
       );
+    } finally {
+      await deleteCreditPackageOwner(client, ownerUserId, workspaceId);
+      await client.end();
+    }
+  }
+);
+
+test(
+  'releases an abandoned package checkout while accepting its late order once',
+  { skip: !databaseUrl },
+  async () => {
+    const client = postgres(databaseUrl as string, { max: 1, prepare: false });
+    const db = drizzle(client, { schema });
+    const suffix = crypto.randomUUID();
+    const ownerUserId = `credit-package-stale-owner-${suffix}`;
+    const workspaceId = `credit-package-stale-workspace-${suffix}`;
+    const input = {
+      offerId: 'credits-300',
+      ownerUserId,
+      productId: 'PROD_CREDITS_300',
+      provider: 'waffo' as const,
+      workspaceId,
+      skuSnapshot: {
+        amountMicros: 161_000_000,
+        currency: 'HKD' as const,
+        credits: 300,
+        expireDays: 7,
+        fingerprint: 'credits-300:161000000:HKD:300:7',
+      },
+    };
+    try {
+      await migrateCreditPackageCheckoutBindings(client);
+      await insertCreditPackageOwner(client, ownerUserId, workspaceId);
+      const store = new PostgresCreditPackageCheckoutBindingStore(db);
+      const first = await store.createOwnerBinding(input);
+      assert.ok(first);
+      await store.attachProviderCheckout({
+        bindingId: first.id,
+        providerCheckoutId: `waffo-stale-session-${suffix}`,
+      });
+      await client`
+        UPDATE credit_package_checkout_bindings
+        SET updated_at = now() - interval '2 hours'
+        WHERE id = ${first.id}
+      `;
+      await store.releaseStaleWaffoBindings({ ownerUserId, workspaceId });
+      const retry = await store.createOwnerBinding(input);
+      assert.ok(retry);
+      assert.notEqual(retry.id, first.id);
+
+      const lateEvent = {
+        amount: '161.00',
+        buyerIdentity: ownerUserId,
+        currency: 'HKD',
+        eventType: 'credit_package.completed' as const,
+        packageCheckoutBindingId: first.id,
+        provider: 'waffo' as const,
+        providerDeliveryId: `late-delivery-${suffix}`,
+        providerEventId: `late-payment-${suffix}`,
+        providerOccurredAt: '2026-08-04T01:02:03.000Z',
+        reference: { id: `late-order-${suffix}`, kind: 'order' as const },
+        scene: 'credit_package' as const,
+      } satisfies VerifiedPaymentWebhookEvent;
+      const claim = await store.claimSettlement(lateEvent);
+      assert.equal(claim?.status, 'claimed');
+      if (claim?.status !== 'claimed')
+        throw new Error('Expected a late claim.');
+      await store.completeSettlement({
+        bindingId: first.id,
+        claimToken: claim.claimToken,
+      });
+      assert.equal(
+        (await store.claimSettlement(lateEvent))?.status,
+        'duplicate'
+      );
+      assert.equal(await store.createOwnerBinding(input), null);
     } finally {
       await deleteCreditPackageOwner(client, ownerUserId, workspaceId);
       await client.end();

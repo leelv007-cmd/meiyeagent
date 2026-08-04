@@ -24,6 +24,14 @@ export type WaffoCreditPackageOffer = {
   offerId: WaffoCreditPackageOfferId;
 };
 
+export type CreditPackageSkuSnapshot = {
+  amountMicros: number;
+  currency: 'HKD';
+  credits: number;
+  expireDays: number;
+  fingerprint: string;
+};
+
 export const WAFFO_CREDIT_PACKAGE_OFFERS = [
   {
     amount: '57.00',
@@ -76,6 +84,35 @@ export function resolveWaffoCreditPackageOffer(
   return offer;
 }
 
+export function snapshotWaffoCreditPackageAddOn(input: {
+  amountMicros: number;
+  currency: string;
+  credits: number;
+  expireDays: number;
+  id: string;
+}): CreditPackageSkuSnapshot {
+  if (
+    input.currency !== 'HKD' ||
+    !Number.isSafeInteger(input.amountMicros) ||
+    input.amountMicros <= 0 ||
+    !Number.isSafeInteger(input.credits) ||
+    input.credits <= 0 ||
+    !Number.isSafeInteger(input.expireDays) ||
+    input.expireDays <= 0
+  ) {
+    throw new WaffoCreditPackageCatalogError(
+      'Core credit package catalog contains invalid SKU facts.'
+    );
+  }
+  return {
+    amountMicros: input.amountMicros,
+    currency: 'HKD',
+    credits: input.credits,
+    expireDays: input.expireDays,
+    fingerprint: `${input.id}:${input.amountMicros}:${input.currency}:${input.credits}:${input.expireDays}`,
+  };
+}
+
 /**
  * The signed one-time order must still match the server-selected Test SKU.
  * Waffo does not include a product id in every order webhook, so the durable
@@ -109,6 +146,28 @@ export function assertWaffoCreditPackagePaymentFacts(
   if (input.currency?.trim() !== offer.currency) {
     throw new WaffoCreditPackageCatalogError(
       'Credit package currency does not match the Test catalog.'
+    );
+  }
+}
+
+export function assertWaffoCreditPackageSnapshot(
+  input: {
+    amount: string | undefined;
+    currency: string | undefined;
+    snapshot: CreditPackageSkuSnapshot;
+  }
+): void {
+  if (
+    normalizeAmount(input.amount) !==
+    (input.snapshot.amountMicros / 1_000_000).toFixed(2)
+  ) {
+    throw new WaffoCreditPackageCatalogError(
+      'Credit package amount does not match the frozen checkout snapshot.'
+    );
+  }
+  if (input.currency?.trim() !== input.snapshot.currency) {
+    throw new WaffoCreditPackageCatalogError(
+      'Credit package currency does not match the frozen checkout snapshot.'
     );
   }
 }

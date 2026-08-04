@@ -54,6 +54,36 @@ describe('Waffo credit-package checkout', () => {
     ).rejects.toThrow('WAFFO_ENVIRONMENT=test');
     expect(create).not.toHaveBeenCalled();
   });
+
+  it('reads Test product facts through the SDK GraphQL query seam', async () => {
+    const graphql = {
+      query: vi.fn().mockResolvedValue({
+        data: {
+          onetimeProduct: {
+            id: 'PROD_CREDITS_300',
+            metadata: { commerceSku: 'credits-300' },
+            prices: [{ currency: 'HKD', priceInfo: { amount: '161.00' } }],
+            status: 'active',
+          },
+        },
+      }),
+    };
+    const provider = new WaffoProvider({
+      client: { ...fakeClient(vi.fn()), graphql } as WaffoClient,
+      environment: 'test',
+    });
+
+    await expect(
+      provider.readCreditPackageProductFacts('PROD_CREDITS_300')
+    ).resolves.toEqual({
+      amount: '161.00',
+      currency: 'HKD',
+      metadata: { commerceSku: 'credits-300' },
+      productId: 'PROD_CREDITS_300',
+      status: 'active',
+    });
+    expect(graphql.query).toHaveBeenCalledOnce();
+  });
 });
 
 function fakeClient(create: ReturnType<typeof vi.fn>): WaffoClient {
