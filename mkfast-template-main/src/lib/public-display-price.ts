@@ -10,7 +10,7 @@
  *
  * The billable price — the one a card is actually charged — does not exist
  * yet. It gets built when the E gate opens real payment, and it lands in
- * admin-config under the same governance as `plan.allowances.*`: draft,
+ * admin-config under the same governance as `plan.credits.*`: draft,
  * publish, CAS, audit, rollback. That is a different asset with a different
  * lifecycle, and this file is deliberately not it.
  *

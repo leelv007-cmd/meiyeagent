@@ -1704,10 +1704,6 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       readOnlyKeys: [
         'plan.addons',
         'plan.trial.enabled',
-        'plan.allowances.trial',
-        'plan.allowances.starter',
-        'plan.allowances.growth',
-        'plan.allowances.pro',
       ],
     }),
     new ContextFoundationModule(storeFactLedger),

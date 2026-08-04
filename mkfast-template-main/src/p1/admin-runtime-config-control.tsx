@@ -136,10 +136,6 @@ const HOT_READ_KEYS = new Set([
   'harness.confirmation_card.hold_timeout_seconds',
   ...CREDIT_PLAN_CONFIG_KEYS,
   'plan.addons',
-  'plan.allowances.trial',
-  'plan.allowances.starter',
-  'plan.allowances.growth',
-  'plan.allowances.pro',
   'plan.payment-mapping',
   'platform.defaultModel.copy',
   'platform.defaultModel.image',
@@ -184,8 +180,7 @@ function isCommerceKey(key: string) {
   return (
     key.startsWith('plan.credits.') ||
     key === 'plan.addons' ||
-    key === 'plan.payment-mapping' ||
-    key.startsWith('plan.allowances.')
+    key === 'plan.payment-mapping'
   );
 }
 

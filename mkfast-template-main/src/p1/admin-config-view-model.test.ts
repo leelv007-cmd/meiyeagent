@@ -121,18 +121,24 @@ describe('admin config form values', () => {
     );
     assert.deepEqual(
       parseAdminConfigDraft(
-        'plan.allowances.starter',
+        'plan.credits.starter',
         JSON.stringify({
-          allowance: { audio: 8, copy: 30, image: 10, video: 5 },
           concurrencyLimit: 1,
+          credits: 500,
+          currency: 'HKD',
+          monthlyPriceMicros: 231_000_000,
           queuePriority: 1,
+          storageMb: 1024,
           supportLabel: 'standard',
         })
       ),
       {
-        allowance: { audio: 8, copy: 30, image: 10, video: 5 },
         concurrencyLimit: 1,
+        credits: 500,
+        currency: 'HKD',
+        monthlyPriceMicros: 231_000_000,
         queuePriority: 1,
+        storageMb: 1024,
         supportLabel: 'standard',
       }
     );
@@ -207,9 +213,25 @@ describe('admin config form values', () => {
         parseAdminConfigDraft(
           'plan.allowances.starter',
           JSON.stringify({
-            allowance: { audio: 0, copy: 1_000_001, image: 10, video: 5 },
+            allowance: { audio: 0, copy: 30, image: 10, video: 5 },
             concurrencyLimit: 1,
             queuePriority: 1,
+            supportLabel: 'standard',
+          })
+        ),
+      /selected config key/i
+    );
+    assert.throws(
+      () =>
+        parseAdminConfigDraft(
+          'plan.credits.starter',
+          JSON.stringify({
+            concurrencyLimit: 1,
+            credits: 10_000_001,
+            currency: 'HKD',
+            monthlyPriceMicros: 231_000_000,
+            queuePriority: 1,
+            storageMb: 1024,
             supportLabel: 'standard',
           })
         ),

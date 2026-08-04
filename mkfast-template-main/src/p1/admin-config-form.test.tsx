@@ -22,12 +22,14 @@ test('a default model id renders as a plain single-line field', () => {
   assert.doesNotMatch(html, /<textarea/);
 });
 
-test('plan allowances render steppers for counts and a dial for priority', () => {
-  const html = render('plan.allowances.trial', {
-    allowance: { audio: 0, copy: 20, image: 10, video: 5 },
+test('plan credits render steppers for period credits and a dial for priority', () => {
+  const html = render('plan.credits.trial', {
     concurrencyLimit: 1,
-    expireDays: 7,
+    credits: 100,
+    currency: 'HKD',
+    monthlyPriceMicros: 0,
     queuePriority: 3,
+    storageMb: 512,
     supportLabel: 'standard',
   });
   assert.match(html, /data-slot="number-stepper"/);

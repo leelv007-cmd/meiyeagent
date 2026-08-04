@@ -894,23 +894,26 @@ describe('ProductEntitlementFoundationModule', () => {
     ]);
   });
 
-  it('defaults historical plan config to zero audio allowance', async () => {
-    const { config, service } = setupHotCatalog();
-    await config.apply({
-      actorId: admin.userId,
-      correlationId: admin.correlationId,
-      expectedRevision: null,
-      key: 'plan.allowances.growth',
-      reason: 'historical plan without audio',
-      scope: 'global',
-      value: {
-        allowance: { copy: 100, image: 40, video: 20 },
-        concurrencyLimit: 4,
-        queuePriority: 5,
-        supportLabel: 'priority',
-      },
-      workspaceId: admin.workspaceId,
-    });
+  it('keeps cutover plan seed audio at zero without plan.allowances hot-read', async () => {
+    const { service } = setupHotCatalog();
+    await assert.rejects(
+      () =>
+        applyConfig(
+          service,
+          'plan.allowances.growth',
+          {
+            allowance: { copy: 100, image: 40, video: 20 },
+            concurrencyLimit: 4,
+            queuePriority: 5,
+            supportLabel: 'priority',
+          },
+          null,
+        ),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        (error as { code: string }).code === 'INVALID_STATE',
+    );
 
     const catalog = (await service.queryModule(owner, 'entitlements', {
       action: 'catalog',
@@ -918,32 +921,25 @@ describe('ProductEntitlementFoundationModule', () => {
     })) as { plans: Array<{ id: string; allowance: { audio: number } }> };
     assert.equal(
       catalog.plans.find((plan) => plan.id === 'growth')?.allowance.audio,
-      0
+      0,
     );
   });
 
-  it('hot-reads plan changes for catalog and new checkout without rewriting an activated plan', async () => {
+  it('serves cutover plan seed for checkout; retired allowance keys no longer rewrite catalog', async () => {
     const { service } = setupHotCatalog();
-    await applyConfig(
-      service,
-      'plan.allowances.growth',
-      {
-        allowance: { audio: 0, copy: 120, image: 48, video: 24 },
-        concurrencyLimit: 5,
-        queuePriority: 6,
-        supportLabel: 'priority',
-      },
-      null,
-    );
-    const catalog = (await service.queryModule(
-      owner,
-      'entitlements',
-      { action: 'catalog', payload: {} },
-    )) as { plans: Array<{ id: string; allowance: { copy: number } }> };
-    assert.equal(
-      catalog.plans.find((plan) => plan.id === 'growth')?.allowance.copy,
-      120,
-    );
+    const catalog = (await service.queryModule(owner, 'entitlements', {
+      action: 'catalog',
+      payload: {},
+    })) as {
+      plans: Array<{
+        id: string;
+        allowance: { copy: number };
+        concurrencyLimit: number;
+      }>;
+    };
+    const growthSeed = catalog.plans.find((plan) => plan.id === 'growth');
+    assert.equal(growthSeed?.allowance.copy, 300);
+    assert.equal(growthSeed?.concurrencyLimit, 4);
 
     await service.executeModule(
       owner,
@@ -951,40 +947,35 @@ describe('ProductEntitlementFoundationModule', () => {
       { action: 'checkout_plan', payload: { tier: 'growth' } },
       'checkout-hot-growth',
     );
-    await applyConfig(
-      service,
-      'plan.allowances.growth',
-      {
-        allowance: { audio: 0, copy: 140, image: 56, video: 28 },
-        concurrencyLimit: 6,
-        queuePriority: 7,
-        supportLabel: 'priority',
-      },
-      1,
+    await assert.rejects(
+      () =>
+        applyConfig(
+          service,
+          'plan.allowances.growth',
+          {
+            allowance: { audio: 0, copy: 140, image: 56, video: 28 },
+            concurrencyLimit: 6,
+            queuePriority: 7,
+            supportLabel: 'priority',
+          },
+          null,
+        ),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        (error as { code: string }).code === 'INVALID_STATE',
     );
-    const projection = (await service.queryModule(
-      owner,
-      'entitlements',
-      { action: 'projection', payload: { month: '2026-07' } },
-    )) as { plan: { allowance: { copy: number }; concurrencyLimit: number } };
+    const projection = (await service.queryModule(owner, 'entitlements', {
+      action: 'projection',
+      payload: { month: '2026-07' },
+    })) as { plan: { allowance: { copy: number }; concurrencyLimit: number } };
 
-    assert.equal(projection.plan.allowance.copy, 120);
-    assert.equal(projection.plan.concurrencyLimit, 5);
+    assert.equal(projection.plan.allowance.copy, 300);
+    assert.equal(projection.plan.concurrencyLimit, 4);
   });
 
-  it('exposes a strict three-bucket balance sourced from configured entitlements', async () => {
+  it('exposes a strict three-bucket balance sourced from cutover plan seed', async () => {
     const { service } = setupHotCatalog();
-    await applyConfig(
-      service,
-      'plan.allowances.growth',
-      {
-        allowance: { audio: 0, copy: 12, image: 7, video: 2 },
-        concurrencyLimit: 2,
-        queuePriority: 3,
-        supportLabel: 'priority',
-      },
-      null,
-    );
     await service.executeModule(
       owner,
       'entitlements',
@@ -999,22 +990,22 @@ describe('ProductEntitlementFoundationModule', () => {
 
     assert.deepEqual(balance, {
       copy: {
-        allowance: 12,
-        available: 12,
+        allowance: 300,
+        available: 300,
         committed: 0,
         released: 0,
         reserved: 0,
       },
       image: {
-        allowance: 7,
-        available: 7,
+        allowance: 100,
+        available: 100,
         committed: 0,
         released: 0,
         reserved: 0,
       },
       video: {
-        allowance: 2,
-        available: 2,
+        allowance: 6,
+        available: 6,
         committed: 0,
         released: 0,
         reserved: 0,
@@ -1288,31 +1279,43 @@ describe('ProductEntitlementFoundationModule', () => {
     assert.equal(secondKey.usage.copy.allowance, 5);
   });
 
-  it('hot-reads trial plan config into catalog', async () => {
+  it('hot-reads trial enabled flag without reopening plan.allowances', async () => {
     const { service } = setupHotCatalog();
-    await applyConfig(
-      service,
-      'plan.allowances.trial',
-      {
-        allowance: { audio: 0, copy: 40, image: 10, video: 4 },
-        concurrencyLimit: 2,
-        queuePriority: 2,
-        supportLabel: 'standard',
-        expireDays: 14,
-      },
-      null,
+    await assert.rejects(
+      () =>
+        applyConfig(
+          service,
+          'plan.allowances.trial',
+          {
+            allowance: { audio: 0, copy: 40, image: 10, video: 4 },
+            concurrencyLimit: 2,
+            queuePriority: 2,
+            supportLabel: 'standard',
+            expireDays: 14,
+          },
+          null,
+        ),
+      (error: unknown) =>
+        error instanceof Error &&
+        'code' in error &&
+        (error as { code: string }).code === 'INVALID_STATE',
     );
     await applyConfig(service, 'plan.trial.enabled', false, null);
     const catalog = (await service.queryModule(owner, 'entitlements', {
       action: 'catalog',
       payload: {},
     })) as {
-      plans: Array<{ id: string; allowance: { copy: number }; expireDays?: number }>;
+      plans: Array<{
+        id: string;
+        allowance: { copy: number };
+        expireDays?: number;
+      }>;
       trialEnabled: boolean;
     };
     const trial = catalog.plans.find((plan) => plan.id === 'trial');
-    assert.equal(trial?.allowance.copy, 40);
-    assert.equal(trial?.expireDays, 14);
+    // Cutover seed stays fixed; only trialEnabled remains operator-hot.
+    assert.equal(trial?.allowance.copy, 5);
+    assert.equal(trial?.expireDays, 7);
     assert.equal(catalog.trialEnabled, false);
   });
 

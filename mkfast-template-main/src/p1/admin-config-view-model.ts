@@ -51,22 +51,6 @@ const creditAddOnSchema = z
   })
   .strict();
 
-const planAllowanceSchema = z
-  .object({
-    allowance: z
-      .object({
-        copy: z.number().int().nonnegative().max(MAX_PLAN_RESOURCE_ALLOWANCE),
-        image: z.number().int().nonnegative().max(MAX_PLAN_RESOURCE_ALLOWANCE),
-        video: z.number().int().nonnegative().max(MAX_PLAN_RESOURCE_ALLOWANCE),
-        audio: z.number().int().nonnegative().max(MAX_PLAN_RESOURCE_ALLOWANCE),
-      })
-      .strict(),
-    concurrencyLimit: z.number().int().positive().max(MAX_PLAN_CONCURRENCY),
-    queuePriority: z.number().int().positive().max(MAX_QUEUE_PRIORITY),
-    supportLabel: z.enum(['standard', 'priority']),
-  })
-  .strict();
-
 const configSchemas = {
   'byok.adapter.assembly': z.enum(['recorded', 'live']),
   'compliance.aigc_label.default': z.boolean(),
@@ -127,12 +111,6 @@ const configSchemas = {
   'plan.credits.trial': trialCreditPlanSchema,
   'plan.credits.trial.enabled': z.boolean(),
   'plan.trial.enabled': z.boolean(),
-  'plan.allowances.growth': planAllowanceSchema,
-  'plan.allowances.pro': planAllowanceSchema,
-  'plan.allowances.starter': planAllowanceSchema,
-  'plan.allowances.trial': planAllowanceSchema.extend({
-    expireDays: z.number().int().positive().max(366).optional(),
-  }),
   'platform.defaultModel.copy': z.string().min(1).max(200),
   'platform.defaultModel.image': z.string().min(1).max(200),
   'platform.defaultModel.video': z.string().min(1).max(200),

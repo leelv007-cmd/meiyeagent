@@ -8,8 +8,17 @@ import type { AdminConfigRepository } from './foundation-module.js';
 import type { PaymentMappingConfig } from '../foundation/payment-mapping.js';
 
 const GLOBAL_WORKSPACE_ID = '__global__';
-const PLAN_IDS = ['trial', 'starter', 'growth', 'pro'] as const;
 
+/**
+ * Cutover-only entitlement catalogue projection.
+ *
+ * Merchant billing truth is `plan.credits.*` via CreditBillingService. This
+ * source no longer hot-reads retired multi-bucket plan keys (#311 / credit
+ * billing-spec §2, §8). It only supplies:
+ * - static DEFAULT_PLAN_OFFERS seed (legacy modality scaffolding for provision)
+ * - trial enabled flag
+ * - payment product → tier mapping for settlement
+ */
 export class AdminConfigEntitlementCatalogSource {
   constructor(private readonly repository: AdminConfigRepository) {}
 
@@ -18,56 +27,27 @@ export class AdminConfigEntitlementCatalogSource {
     addOns: AddOnOffer[];
     trialEnabled: boolean;
   }> {
-    const [trial, starter, growth, pro, addOns, trialEnabled] = await Promise.all([
-      this.repository.get(
-        'global',
-        GLOBAL_WORKSPACE_ID,
-        'plan.allowances.trial',
-      ),
-      this.repository.get(
-        'global',
-        GLOBAL_WORKSPACE_ID,
-        'plan.allowances.starter',
-      ),
-      this.repository.get(
-        'global',
-        GLOBAL_WORKSPACE_ID,
-        'plan.allowances.growth',
-      ),
-      this.repository.get(
-        'global',
-        GLOBAL_WORKSPACE_ID,
-        'plan.allowances.pro',
-      ),
+    const [addOns, trialEnabled, trialCreditsEnabled] = await Promise.all([
       this.repository.get('global', GLOBAL_WORKSPACE_ID, 'plan.addons'),
       this.repository.get('global', GLOBAL_WORKSPACE_ID, 'plan.trial.enabled'),
+      this.repository.get(
+        'global',
+        GLOBAL_WORKSPACE_ID,
+        'plan.credits.trial.enabled',
+      ),
     ]);
-    const revisions: Record<(typeof PLAN_IDS)[number], typeof trial> = {
-      trial,
-      starter,
-      growth,
-      pro,
-    };
+    const trialFlag =
+      typeof trialCreditsEnabled?.value === 'boolean'
+        ? trialCreditsEnabled.value
+        : typeof trialEnabled?.value === 'boolean'
+          ? trialEnabled.value
+          : true;
     return {
-      plans: DEFAULT_PLAN_OFFERS.map((fallback) => {
-        const configured = revisions[fallback.id]?.value as
-          | Omit<PlanOffer, 'id'>
-          | undefined;
-        return {
-          ...fallback,
-          ...configured,
-          allowance: {
-            ...fallback.allowance,
-            ...configured?.allowance,
-          },
-          id: fallback.id,
-        };
-      }),
+      plans: structuredClone(DEFAULT_PLAN_OFFERS),
       addOns: structuredClone(
         (addOns?.value as AddOnOffer[] | undefined) ?? DEFAULT_ADD_ON_OFFERS,
       ),
-      trialEnabled:
-        typeof trialEnabled?.value === 'boolean' ? trialEnabled.value : true,
+      trialEnabled: trialFlag,
     };
   }
 

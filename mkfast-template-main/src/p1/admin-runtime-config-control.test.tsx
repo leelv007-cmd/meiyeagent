@@ -57,7 +57,7 @@ test('the note style key explains itself in note terms, not in checkout terms', 
 });
 
 test('every admin config key reaches the schema renderer through the production control', () => {
-  assert.equal(ADMIN_CONFIG_KEYS.length, 26);
+  assert.equal(ADMIN_CONFIG_KEYS.length, 22);
   for (const key of ADMIN_CONFIG_KEYS) {
     const html = renderControlForKey(key);
     assert.match(
@@ -303,7 +303,7 @@ test('submits Tuzi and mixed radio values through the audited config apply contr
   });
 });
 
-test('labels commerce config as hot-read while disclosing the legacy Product fallback', () => {
+test('labels credit commerce config as hot-read while disclosing the legacy Product fallback', () => {
   const queryClient = new QueryClient();
   queryClient.setQueryData(p1QueryKeys.request('admin-config', 'config_list'), [
     {
@@ -312,21 +312,27 @@ test('labels commerce config as hot-read while disclosing the legacy Product fal
       correlationId: 'growth-hot-read',
       createdAt: '2026-07-15T10:02:00.000Z',
       effectiveValue: {
-        allowance: { copy: 120, image: 48, video: 24 },
         concurrencyLimit: 5,
+        credits: 1_300,
+        currency: 'HKD',
+        monthlyPriceMicros: 580_000_000,
         queuePriority: 6,
+        storageMb: 5120,
         supportLabel: 'priority',
       },
-      key: 'plan.allowances.growth',
-      reason: 'Update growth allowance',
+      key: 'plan.credits.growth',
+      reason: 'Update growth credits',
       revision: 1,
       rolledBackToRevision: null,
       scope: 'global',
       status: 'applied',
       storedValue: {
-        allowance: { copy: 120, image: 48, video: 24 },
         concurrencyLimit: 5,
+        credits: 1_300,
+        currency: 'HKD',
+        monthlyPriceMicros: 580_000_000,
         queuePriority: 6,
+        storageMb: 5120,
         supportLabel: 'priority',
       },
       wired: true,
@@ -334,14 +340,14 @@ test('labels commerce config as hot-read while disclosing the legacy Product fal
   ]);
   queryClient.setQueryData(
     p1QueryKeys.request('admin-config', 'config_history', {
-      key: 'plan.allowances.growth',
+      key: 'plan.credits.growth',
     }),
     []
   );
 
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
-      <AdminRuntimeConfigControl keys={['plan.allowances.growth']} />
+      <AdminRuntimeConfigControl keys={['plan.credits.growth']} />
     </QueryClientProvider>
   );
 
@@ -351,7 +357,7 @@ test('labels commerce config as hot-read while disclosing the legacy Product fal
   assert.match(html, /admin-runtime-config-value/);
   assert.match(html, /审阅并记录/);
   // U05：受控配置一律走结构化表单，后台不再留手敲 JSON 的口子（D-107）。
-  assert.match(html, /admin-config-form-plan\.allowances\.growth/);
+  assert.match(html, /admin-config-form-plan\.credits\.growth/);
   assert.doesNotMatch(html, /<textarea/);
   assert.match(html, /data-slot="number-stepper"/);
 });

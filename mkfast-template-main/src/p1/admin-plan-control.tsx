@@ -30,17 +30,13 @@ export const CREDIT_PLAN_CONFIG_KEYS = [
 ] as const;
 
 /**
- * Keep the pre-existing governed controls reachable while #311 owns their
- * retirement. This panel itself only adds the new credit-plan surface.
+ * Credit-plan catalogue plus non-billing governed plan controls.
+ * Pre-credit multi-bucket plan dials are retired (#311) — do not re-add them.
  */
 export const PLAN_CONTROL_CONFIG_KEYS = [
   ...CREDIT_PLAN_CONFIG_KEYS,
   'harness.confirmation_card.hold_timeout_seconds',
   'plan.trial.enabled',
-  'plan.allowances.trial',
-  'plan.allowances.starter',
-  'plan.allowances.growth',
-  'plan.allowances.pro',
   'plan.addons',
   'plan.payment-mapping',
   'compliance.watermark.default',

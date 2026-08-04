@@ -280,23 +280,6 @@ export const DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG: HarnessTodayRecommenda
     video_account: '今天适合用一条视频提醒顾客预约到店。',
   },
 };
-const planAllowanceSchema = z
-  .object({
-    allowance: z.object({
-      audio: z.number().int().nonnegative().max(MAX_PLAN_RESOURCE_ALLOWANCE).default(0),
-      copy: z.number().int().nonnegative().max(MAX_PLAN_RESOURCE_ALLOWANCE),
-      image: z.number().int().nonnegative().max(MAX_PLAN_RESOURCE_ALLOWANCE),
-      video: z.number().int().nonnegative().max(MAX_PLAN_RESOURCE_ALLOWANCE),
-    }).strict(),
-    concurrencyLimit: z.number().int().positive().max(MAX_PLAN_CONCURRENCY),
-    queuePriority: z.number().int().positive().max(MAX_QUEUE_PRIORITY),
-    supportLabel: z.enum(['standard', 'priority']),
-  })
-  .strict();
-const trialPlanAllowanceSchema = planAllowanceSchema.extend({
-  /** Trial fixed_days length. */
-  expireDays: z.number().int().positive().max(366).optional(),
-});
 const creditPlanSchema = z
   .object({
     credits: z.number().int().positive().max(MAX_CREDIT_PLAN_AMOUNT),
@@ -523,19 +506,6 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     scope: 'global',
     description: 'Media execution mode recorded by platform administration.',
     valueSchema: z.enum(['disabled', 'ark', 'tuzi', 'ark,tuzi']),
-  },
-  ...(['growth', 'pro', 'starter'] as const).map((plan) => ({
-    key: `plan.allowances.${plan}`,
-    scope: 'global' as const,
-    description: `${plan} plan allowances recorded by platform administration.`,
-    valueSchema: planAllowanceSchema,
-  })),
-  {
-    key: 'plan.allowances.trial',
-    scope: 'global',
-    description:
-      'Trial fixed-days allowances recorded by platform administration.',
-    valueSchema: trialPlanAllowanceSchema,
   },
   {
     key: 'plan.trial.enabled',

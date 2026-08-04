@@ -151,10 +151,6 @@ describe('Admin config application seam', () => {
         'model.execution.mode',
         'model.media.execution.mode',
         'plan.addons',
-        'plan.allowances.growth',
-        'plan.allowances.pro',
-        'plan.allowances.starter',
-        'plan.allowances.trial',
         'plan.credits.addons',
         'plan.credits.cycle_coefficients',
         'plan.credits.growth',
@@ -703,34 +699,6 @@ describe('Admin config application seam', () => {
         },
       },
       {
-        key: 'plan.allowances.growth',
-        value: {
-          allowance: { audio: 0, copy: 1_000_001, image: 40, video: 20 },
-          concurrencyLimit: 4,
-          queuePriority: 5,
-          supportLabel: 'priority',
-        },
-      },
-      {
-        key: 'plan.allowances.starter',
-        value: {
-          allowance: { audio: 0, copy: 30, image: 10, video: 5 },
-          concurrencyLimit: 1,
-          expireDays: 7,
-          queuePriority: 1,
-          supportLabel: 'standard',
-        },
-      },
-      {
-        key: 'plan.allowances.growth',
-        value: {
-          allowance: { audio: 0, copy: 100, image: 40, video: 20 },
-          concurrencyLimit: 101,
-          queuePriority: 5,
-          supportLabel: 'priority',
-        },
-      },
-      {
         key: 'plan.addons',
         value: [
           {
@@ -808,15 +776,13 @@ describe('Admin config application seam', () => {
           action: 'config_apply',
           payload: {
             expectedRevision: null,
-            key: 'plan.allowances.growth',
+            key: 'plan.credits.growth',
             reason: 'Accept the documented commercial boundary',
             value: {
-              allowance: {
-                audio: 1_000_000,
-                copy: 1_000_000,
-                image: 1_000_000,
-                video: 1_000_000,
-              },
+              credits: 1_300,
+              currency: 'HKD',
+              monthlyPriceMicros: 580_000_000,
+              storageMb: 5_120,
               concurrencyLimit: 100,
               queuePriority: 100,
               supportLabel: 'priority',
@@ -834,18 +800,20 @@ describe('Admin config application seam', () => {
           action: 'config_apply',
           payload: {
             expectedRevision: null,
-            key: 'plan.allowances.trial',
-            reason: 'Accept the fixed-days trial boundary',
+            key: 'plan.credits.trial',
+            reason: 'Accept the one-time trial credit boundary',
             value: {
-              allowance: { audio: 0, copy: 5, image: 5, video: 1 },
+              credits: 100,
+              currency: 'HKD',
+              monthlyPriceMicros: 0,
+              storageMb: 512,
               concurrencyLimit: 1,
-              expireDays: 366,
               queuePriority: 1,
               supportLabel: 'standard',
             },
           },
         },
-        'trial-expire-days-at-boundary',
+        'trial-credit-boundary',
       ),
     );
     await assert.doesNotReject(
@@ -1051,21 +1019,27 @@ describe('Admin config application seam', () => {
     const service = new P1ApplicationService(new MemoryFoundationRepository(), {
       operations: [
         new AdminConfigFoundationModule(config, {
-          hotReadKeys: ['plan.allowances.growth'],
+          hotReadKeys: ['plan.credits.growth'],
           runtime: {
-            'plan.allowances.growth': {
-              allowance: { audio: 0, copy: 100, image: 40, video: 20 },
+            'plan.credits.growth': {
+              credits: 1_300,
+              currency: 'HKD',
+              monthlyPriceMicros: 580_000_000,
+              storageMb: 5_120,
               concurrencyLimit: 4,
               queuePriority: 5,
               supportLabel: 'priority',
             },
           },
-          wiredKeys: ['plan.allowances.growth'],
+          wiredKeys: ['plan.credits.growth'],
         }),
       ],
     });
     const value = {
-      allowance: { audio: 0, copy: 120, image: 48, video: 24 },
+      credits: 1_400,
+      currency: 'HKD',
+      monthlyPriceMicros: 600_000_000,
+      storageMb: 5_120,
       concurrencyLimit: 5,
       queuePriority: 6,
       supportLabel: 'priority',
@@ -1077,7 +1051,7 @@ describe('Admin config application seam', () => {
         action: 'config_apply',
         payload: {
           expectedRevision: null,
-          key: 'plan.allowances.growth',
+          key: 'plan.credits.growth',
           reason: 'Apply the new growth package immediately',
           value,
         },
@@ -1090,7 +1064,7 @@ describe('Admin config application seam', () => {
       'admin-config',
       {
         action: 'config_get',
-        payload: { key: 'plan.allowances.growth' },
+        payload: { key: 'plan.credits.growth' },
       },
     )) as { effectiveValue: unknown; storedValue: unknown; wired: boolean };
 

@@ -51,7 +51,6 @@ import {
   admin_config_key_default_model_video,
   admin_config_key_note_styles,
   admin_config_key_plan_addons,
-  admin_config_key_plan_allowances,
   admin_config_key_plan_credits,
   admin_config_key_plan_credits_addons,
   admin_config_key_plan_credits_cycle_coefficients,
@@ -346,10 +345,6 @@ const KEY_LABELS: Record<string, () => string> = {
     admin_config_key_confirmation_hold_timeout,
   'harness.note.styles': admin_config_key_note_styles,
   'plan.addons': admin_config_key_plan_addons,
-  'plan.allowances.growth': admin_config_key_plan_allowances,
-  'plan.allowances.pro': admin_config_key_plan_allowances,
-  'plan.allowances.starter': admin_config_key_plan_allowances,
-  'plan.allowances.trial': admin_config_key_plan_allowances,
   'plan.credits.addons': admin_config_key_plan_credits_addons,
   'plan.credits.cycle_coefficients':
     admin_config_key_plan_credits_cycle_coefficients,

@@ -137,13 +137,12 @@ const SOLD_PLAN_TERMS: Record<
 };
 
 /**
- * Seed values only — the running numbers are the `plan.allowances.*`
- * admin-config keys operations fills in (D-123 数字＝运营参数, D-132 §C-1).
+ * Cutover-only seed for legacy modality scaffolding (workspace model defaults).
  *
- * The sold tiers take their allowances from `PUBLIC_PLAN_ALLOWANCE_SEED` in
- * the shared contract, which is the same literal the pricing page falls back
- * to — one seed, not two that drift. Trial stays here at 文案5/图5/视频1: the
- * manifest records it as 已定 (C-3) and it is never quoted publicly.
+ * Merchant billing truth is `plan.credits.*` (#311). `PUBLIC_PLAN_ALLOWANCE_SEED`
+ * remains a cutover-only resource seed in contracts and must not be hot-read
+ * from admin-config. Trial stays at 文案5/图5/视频1 for Day-0 modality gating
+ * only — it is never quoted as a public billing price.
  */
 export const DEFAULT_PLAN_OFFERS: PlanOffer[] = [
   {

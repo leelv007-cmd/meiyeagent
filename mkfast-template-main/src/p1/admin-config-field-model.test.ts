@@ -16,7 +16,7 @@ import {
 
 /** 后台能改的每个配置项都必须有表单件，一个都不许退回手敲文本。 */
 test('every admin config key maps onto typed form fields', () => {
-  assert.equal(ADMIN_CONFIG_KEYS.length, 26);
+  assert.equal(ADMIN_CONFIG_KEYS.length, 22);
   for (const key of ADMIN_CONFIG_KEYS) {
     const fields = buildAdminConfigFields(key);
     assert.ok(fields.length > 0, `${key} produced no fields`);
@@ -81,14 +81,13 @@ test('booleans become switches and short strings become single-line text', () =>
   assert.equal(copyModel.kind === 'text' && copyModel.maxLength, 200);
 });
 
-test('plan allowances split bounded dials from open-ended counters', () => {
-  const fields = buildAdminConfigFields('plan.allowances.trial');
+test('plan credits expose period credits and non-billing capacity dials', () => {
+  const fields = buildAdminConfigFields('plan.credits.trial');
   const byName = new Map(fields.map((field) => [field.path.at(-1), field]));
 
-  const copy = byName.get('copy');
-  assert.equal(copy?.kind, 'number');
-  assert.equal(copy?.kind === 'number' && copy.control, 'stepper');
-  assert.equal(copy?.kind === 'number' && copy.max, 1_000_000);
+  const credits = byName.get('credits');
+  assert.equal(credits?.kind, 'number');
+  assert.equal(credits?.kind === 'number' && credits.control, 'stepper');
 
   const concurrency = byName.get('concurrencyLimit');
   assert.equal(concurrency?.kind === 'number' && concurrency.control, 'slider');
@@ -102,19 +101,12 @@ test('plan allowances split bounded dials from open-ended counters', () => {
     ['standard', 'priority']
   );
 
-  // `allowance` 这层容器不该在界面上多出一格，四个桶直接摊平。
+  // Retired bucket container must not reappear on credit keys.
   assert.equal(
     fields.some((field) => field.path.at(-1) === 'allowance'),
     false
   );
-  // 试用档独有的天数只在这一档出现。
-  assert.ok(byName.has('expireDays'));
-  assert.equal(
-    buildAdminConfigFields('plan.allowances.pro').some(
-      (field) => field.path.at(-1) === 'expireDays'
-    ),
-    false
-  );
+  assert.equal(buildAdminConfigFields('plan.allowances.trial').length, 0);
 });
 
 test('add-on offers render as an editable grid with real bounds', () => {
