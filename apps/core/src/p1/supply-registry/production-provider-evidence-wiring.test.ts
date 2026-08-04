@@ -4,7 +4,10 @@ import { describe, it } from 'node:test';
 
 describe('production provider evidence assembly', () => {
   it('wires HTTP AdminSupply to request-time provider probes and operational refresh', async () => {
-    const source = await readFile(new URL('../../main.ts', import.meta.url), 'utf8');
+    const source = await readFile(
+      new URL('../../assembly/core-assembly.ts', import.meta.url),
+      'utf8'
+    );
 
     assert.match(
       source,
@@ -18,7 +21,7 @@ describe('production provider evidence assembly', () => {
 
   it('wires the worker integration consumer to the real provider connectivity adapter', async () => {
     const source = await readFile(
-      new URL('../../job-worker.ts', import.meta.url),
+      new URL('../../assembly/core-assembly.ts', import.meta.url),
       'utf8',
     );
 

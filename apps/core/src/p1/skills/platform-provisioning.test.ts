@@ -360,7 +360,10 @@ test('configured prompt supply still requires frozen Langfuse production revisio
 });
 
 test('main enables platform recipe provisioning in the production runtime', async () => {
-  const source = await readFile(new URL('../../main.ts', import.meta.url), 'utf8');
+  const source = await readFile(
+    new URL('../../assembly/api-runtime.ts', import.meta.url),
+    'utf8'
+  );
   assert.match(
     source,
     /createDurableSkillRuntime\(\{[\s\S]*?provisionPlatformRecipes: true,[\s\S]*?\}\);/u,

@@ -6,6 +6,8 @@ import {
   questionCardSchema,
   type StructuredDecisionInput,
 } from '@meiye/contracts';
+import { ADMIN_CONFIG_KEY_CLASSIFICATION } from '../../assembly/domain-rules.js';
+import { HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY } from '../admin-config/index.js';
 
 import {
   commitHarnessBillingOrSchedule,
@@ -434,23 +436,15 @@ test('hold config is frozen inside the pending step and exposed as hot-read wiri
     /await readConfirmationCardHoldTimeoutSeconds\(config\)/u,
   );
 
-  const mainSource = readFileSync(
-    new URL('../../main.ts', import.meta.url),
-    'utf8',
+  assert.ok(
+    ADMIN_CONFIG_KEY_CLASSIFICATION.hotReadKeys.includes(
+      HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
+    ),
   );
-  const hotReadKeys = mainSource.match(
-    /hotReadKeys:\s*\[([\s\S]*?)\],\s*wiredKeys:/u,
-  )?.[1];
-  const wiredKeys = mainSource.match(
-    /wiredKeys:\s*\[([\s\S]*?)\],\s*\}\),/u,
-  )?.[1];
-  assert.match(
-    hotReadKeys ?? '',
-    /HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY/u,
-  );
-  assert.match(
-    wiredKeys ?? '',
-    /HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY/u,
+  assert.ok(
+    ADMIN_CONFIG_KEY_CLASSIFICATION.wiredKeys.includes(
+      HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
+    ),
   );
 });
 
@@ -492,7 +486,7 @@ test('typed timeout persistence uses the production system-default owner', () =>
     /persist-renderer-unavailable-/u,
   );
   const mainSource = readFileSync(
-    new URL('../../main.ts', import.meta.url),
+    new URL('../../assembly/api-runtime.ts', import.meta.url),
     'utf8',
   );
   assert.match(

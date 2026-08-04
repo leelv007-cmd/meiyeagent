@@ -40,7 +40,11 @@ const START = {
 };
 
 test('production assembles the capture repository, composite record port, and Skill module consumer', async () => {
-  const source = await readFile(new URL('../../main.ts', import.meta.url), 'utf8');
+  const [coreSource, apiSource] = await Promise.all([
+    readFile(new URL('../../assembly/core-assembly.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../../assembly/api-runtime.ts', import.meta.url), 'utf8'),
+  ]);
+  const source = `${coreSource}\n${apiSource}`;
   assert.match(
     source,
     /new PostgresStoreWorkflowCaptureRepository\(pool\)[\s\S]*?storeWorkflowCaptureRepository,[\s\S]*?new CompositeRecordProposalPort\([\s\S]*?new StoreWorkflowRecordProposalPort\(storeWorkflowCaptureRepository\)[\s\S]*?attachCaptureWorkflow\([\s\S]*?new StoreWorkflowCaptureService\(/u,

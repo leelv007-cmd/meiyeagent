@@ -140,7 +140,7 @@ test('production assembly binds every canonical primitive to its real handler', 
 
 test('main registers the production module and all three Harness callers', () => {
   const source = readFileSync(
-    new URL('../../main.ts', import.meta.url),
+    new URL('../../assembly/api-runtime.ts', import.meta.url),
     'utf8',
   );
 

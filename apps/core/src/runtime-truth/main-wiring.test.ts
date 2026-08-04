@@ -3,9 +3,12 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 test('Core entrypoint rebuilds provider evidence for both runtime-truth surfaces', async () => {
-  const main = await readFile(new URL('../main.ts', import.meta.url), 'utf8');
+  const main = await readFile(
+    new URL('../assembly/api-runtime.ts', import.meta.url),
+    'utf8',
+  );
 
-  assert.match(main, /assembleCapabilitiesFromEnv\(process\.env\)/);
+  assert.match(main, /assembleCapabilitiesFromEnv\(env\)/);
   assert.match(
     main,
     /providerLive:\s*\(\)\s*=>\s*providerEvidence\.providerLiveReadiness/,
@@ -19,7 +22,10 @@ test('Core entrypoint rebuilds provider evidence for both runtime-truth surfaces
 });
 
 test('Core recurring recovery owns committed Harness starts after boot', async () => {
-  const main = await readFile(new URL('../main.ts', import.meta.url), 'utf8');
+  const main = await readFile(
+    new URL('../assembly/api-runtime.ts', import.meta.url),
+    'utf8',
+  );
 
   assert.match(
     main,

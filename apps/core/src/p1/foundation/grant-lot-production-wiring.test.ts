@@ -6,7 +6,7 @@ describe('credit billing production assembly', () => {
   for (const entrypoint of ['main.ts', 'job-worker.ts']) {
     it(`${entrypoint} keeps legacy lots out of merchant metering`, async () => {
       const source = await readFile(
-        new URL(`../../${entrypoint}`, import.meta.url),
+        new URL('../../assembly/core-assembly.ts', import.meta.url),
         'utf8'
       );
       assert.match(source, /new PostgresGrantLotLedger\(pool\)/);
@@ -34,7 +34,10 @@ describe('credit billing production assembly', () => {
   }
 
   it('main.ts keeps both P0 ProductService assemblies billing-read-only', async () => {
-    const source = await readFile(new URL('../../main.ts', import.meta.url), 'utf8');
+    const source = await readFile(
+      new URL('../../assembly/core-assembly.ts', import.meta.url),
+      'utf8'
+    );
     assert.equal(source.match(/legacyBillingReadOnly:\s*true/g)?.length, 2);
   });
 });

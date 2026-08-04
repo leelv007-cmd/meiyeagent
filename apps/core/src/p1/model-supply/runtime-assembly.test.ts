@@ -89,7 +89,7 @@ function freshRankingInput(
 test('production processes inject durable ProductUsage into the bilateral supply ledger', async () => {
   for (const entrypoint of ['main.ts', 'job-worker.ts']) {
     const source = await readFile(
-      new URL(`../../${entrypoint}`, import.meta.url),
+      new URL('../../assembly/core-assembly.ts', import.meta.url),
       'utf8',
     );
     assert.match(

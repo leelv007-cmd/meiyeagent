@@ -15,13 +15,11 @@ const PROTECTED_PROGRESSIVE_RIGHTS = [
 ];
 
 const PRODUCTION_ASSEMBLY = [
-  'apps/core/src/main.ts',
-  'apps/core/src/job-worker.ts',
+  'apps/core/src/assembly/core-assembly.ts',
 ];
 
 const PRODUCTION_ALLOWANCE_READ_PATHS = [
-  'apps/core/src/main.ts',
-  'apps/core/src/job-worker.ts',
+  'apps/core/src/assembly/core-assembly.ts',
   'apps/core/src/p1/admin-config/entitlement-catalog-source.ts',
   'apps/core/src/p1/admin-config/foundation-module.ts',
   'mkfast-template-main/src/p1/admin-plan-control.tsx',

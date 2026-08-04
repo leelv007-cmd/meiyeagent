@@ -1,0 +1,1302 @@
+import { DBOS } from '@dbos-inc/dbos-sdk';
+import { Pool } from 'pg';
+import { PostgresDiagnosticRepository } from '../diagnostics/postgres-repository.js';
+import {
+  AdminConfigCreditPlanCatalogSource,
+  ensureCreditPlanCatalogDefaults,
+} from '../p1/admin-config/credit-plan-catalog-source.js';
+import {
+  AdminConfigEntitlementCatalogSource,
+  createModelExecutionModeGate,
+  DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG,
+  DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+  HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
+  HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
+  HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
+  HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY,
+  HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
+  integrationAdapterEnvFromSources,
+  ModeGateExecutionPort,
+  ModeGateMediaLifecyclePort,
+  modelRuntimeAssemblyFromSources,
+  PostgresAdminConfigRepository,
+} from '../p1/admin-config/index.js';
+import { createPermissionAuthorizer } from '../p1/capability-permission/index.js';
+import { CloudflareInventoryAdapter } from '../p1/cloudflare-read/index.js';
+import { CreditBillingService } from '../p1/credit-billing/credit-billing-service.js';
+import { CreditSubscriptionEntitlementPolicy } from '../p1/credit-billing/credit-entitlement-policy.js';
+import { creditPlanConcurrencyTiers } from '../p1/credit-billing/credit-plan-catalog.js';
+import { PostgresCreditSubscriptionStore } from '../p1/credit-billing/credit-subscription-scheduler.js';
+import { PostgresCreditLedger } from '../p1/credit-billing/postgres-credit-ledger.js';
+import {
+  P1CutoverExecutionService,
+  PostgresLegacyInFlightDecisionPort,
+} from '../p1/cutover/index.js';
+import { PostgresDueDeliveryRepository } from '../p1/due-delivery/postgres-repository.js';
+import {
+  ensureDefaultRuntimeSupplyPool,
+  PostgresAccountAllocationStore,
+  PostgresCapacityLeaseStore,
+  PostgresEntitlementPolicyStore,
+  PostgresEntitlementPoolsMigration,
+  PostgresModelSupplyProviderAdmission,
+  PostgresSupplyFreezeStore,
+  PostgresSupplyPoolStore,
+} from '../p1/entitlement-pools/index.js';
+import { PostgresContentPackageDestinationProjection } from '../p1/execution-spine/content-package-destination-projection.js';
+import { ExecutionSourceContentPackageResolver } from '../p1/execution-spine/source-content-package-resolver.js';
+import { e2ePlatformModelDefaultsFromEnv } from '../p1/foundation/e2e-platform-model-defaults.js';
+import {
+  GrantLotAwareProductEntitlementService,
+  P1ApplicationService,
+  P1DomainError,
+  PostgresFoundationRepository,
+  PostgresGrantLotLedger,
+  PostgresRedemptionStore,
+  PostgresWorkspaceBootstrapper,
+  RecordedAutoTopUpPaymentPort,
+} from '../p1/foundation/index.js';
+import {
+  PLATFORM_DEFAULT_MODEL_CONFIG_KEYS,
+  platformDefaultModelConfigName,
+  type PlatformDefaultModelConfigKey,
+  type PlatformDefaultModelSourcePort,
+} from '../p1/foundation/workspace-provision.js';
+import {
+  DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS,
+  DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
+  sendHarnessMediaJobTerminal,
+} from '../p1/harness/dbos-workflow.js';
+import {
+  assertLangfusePromptRuntimePolicy,
+  langfusePromptResolverFromEnv,
+  modelSupplyPromptResolverFromHarness,
+} from '../p1/harness/langfuse-prompts.js';
+import {
+  PostgresHarnessAuditStore,
+  PostgresHarnessInteractionStore,
+  PostgresHarnessObservabilityStore,
+  PostgresHarnessStore,
+} from '../p1/harness/postgres-store.js';
+import { DEFAULT_HOLD_RESERVATION_TTL_SECONDS } from '../p1/harness/reservation-sweeper.js';
+import {
+  initializeJobWorkerHarnessRuntime,
+  readHarnessRuntimeConfig,
+} from '../p1/harness/runtime-config.js';
+import {
+  byokExecutionRuntimeFromEnv,
+  createProviderCredentialSecretBroker,
+  feishuMcpAdapterFromEnv,
+  FoundationStrictByokLedger,
+  IntegrationApplicationService,
+  integrationSecretStoreFromEnv,
+  migrateProviderCredentialAccountsFromIntegrations,
+  PostgresIntegrationRepository,
+  providerConnectivityProbeFromEnv,
+  ProviderCredentialAccountProvisioner,
+  providerCredentialEnvFromVault,
+  registerFeishuIntentReconciliationSchedule,
+  registerFeishuToolLifecycleSchedule,
+} from '../p1/integrations/index.js';
+import {
+  EntitlementAwareJobPort,
+  PgBossJobPort,
+  PostgresOperationalTelemetryStore,
+  PostgresTracerJobRepository,
+  TracerJobApplicationService,
+} from '../p1/job-runtime/index.js';
+import {
+  CompositeReferenceAssetResolver,
+  createModelSupplyRuntime,
+  DurableMediaGenerationApplicationService,
+  FixtureAiStreamingRunner,
+  FixtureAiStructuredObjectExecutor,
+  FoundationModelSupplyLedger,
+  foundationOwnedReferenceAssetRepository,
+  MediaActivationProbeExecutor,
+  modelAssetStorageFromEnv,
+  modelMediaExecutionMode,
+  OpenAiCompatibleAiSdkRunner,
+  OwnedAssetReferenceResolver,
+  PostgresCanonicalVideoRunStore,
+  PostgresCanonicalVideoWorkflowSchema,
+  PostgresModelSupplyRepository,
+  ProductCopyProviderBridge,
+  ProductReferenceAssetPolicyResolver,
+  ProductReferenceAssetResolver,
+  projectDurableVideoWorkflow,
+  RECORDED_CATALOG_REVISION_ID,
+  seedCapabilityHotAssemblyFromCatalog,
+} from '../p1/model-supply/index.js';
+import { LOCAL_FIXTURE_PROVIDER_REFERENCE_POLICY } from '../p1/model-supply/reference-asset-delivery.js';
+import {
+  AiSdkStructuredObjectExecutor,
+  ModelSupplyStructuredNodeRunner,
+} from '../p1/model-supply/structured-node-runner.js';
+import {
+  AdminConfigAssetIntakeGuidanceSource,
+  ContentPackageMigrationService,
+  ContentPackageRightsBasisResolver,
+  ContentPackageZipExportAdapter,
+  ContextBundleApprovalPolicyResolver,
+  documentParseProviderFromEnv,
+  FixtureAssetDraftCompiler,
+  FixtureVisualAssetClassifier,
+  HeadGetContentPackageOwnedReceiptVerifier,
+  MediaCustodyStorageAdapter,
+  ModelSupplyCreationExecutor,
+  ModelSupplyImageGenerationAdapter,
+  OperationsApplicationService,
+  OperationsCanvasExportAssetAccessService,
+  OperationsContentPackageExportAssetReader,
+  OperationsProductPackageRightsAdapter,
+  OperationsProductSearchProjection,
+  ParseService,
+  PersistentCanvasExportAdapter,
+  PostgresAssetIntakeRepository,
+  PostgresContentPackageMigrationRunRepository,
+  PostgresContentPackageMigrationSource,
+  PostgresContentPackageWriteOwnership,
+  PostgresContextBundleRepository,
+  PostgresContextSourceRevisionRepository,
+  PostgresMarketingIdentityRepository,
+  PostgresOperationsRepository,
+  PostgresParseRepository,
+  PostgresReuseMemoryRepository,
+  PostgresStoreFactLedger,
+  ProductContentPackageRightsResolver,
+  ProductOperationsBatchExecutionAdapter,
+  StoredParseSourceAssetAuthorizer,
+  StructuredMarketingIdentityDrafter,
+} from '../p1/operations/index.js';
+import { PostgresStoreIntakeFinalizationRepository } from '../p1/operations/store-intake-finalizer.js';
+import {
+  CatalogProductQuoteAuthority,
+  DurableProductBillingService,
+  PostgresProductBillingRepository,
+} from '../p1/product-billing/index.js';
+import { PostgresSensitiveWordsRepository } from '../p1/sensitive-words/index.js';
+import {
+  PostgresSkillRepository,
+  PostgresStoreWorkflowCaptureRepository,
+} from '../p1/skills/index.js';
+import {
+  createPostgresAdminSupplyControlPlane,
+  PLATFORM_SUPPLY_SCOPE_ID,
+  PostgresAdminSupplyMigration,
+  PostgresCapabilityHotAssemblyMigration,
+  PostgresCapabilityHotAssemblyPort,
+  PostgresCredentialRotationReceiptStore,
+  PostgresSupplyControlPlaneRepository,
+  PostgresSupplyPlanningControlPlane,
+  PostgresSupplyPlanningMigration,
+  ProductionAdminProviderEvidence,
+} from '../p1/supply-registry/index.js';
+import { VideoWorkflowEventSource } from '../p1/workflow-events.js';
+import { migratePostgresSchema } from '../postgres-schema-migration.js';
+import { CutoverProductService } from '../product/cutover-product-service.js';
+import {
+  ModelSupplyProductCopyProvider,
+  resolveCanonicalCopySelection,
+} from '../product/model-supply-copy-provider.js';
+import {
+  noOpProductNotifier,
+  PostgresIdempotentProductNotifier,
+  WebhookProductNotifier,
+} from '../product/notifier.js';
+import {
+  ProductAssetDataClassResolver,
+  ProductCreativeGroundingResolver,
+} from '../product/p1-model-policy.js';
+import { defaultProductPlanConfig } from '../product/plans.js';
+import { PostgresProductRepository } from '../product/postgres-repository.js';
+import { ProductService } from '../product/product-service.js';
+import type { ProductQualitySink } from '../product/quality-sink.js';
+import { PostgresRelationalProductRepository } from '../product/relational-product-repository.js';
+import { assertStrongSecret } from '../security/secret-hardening.js';
+export type CoreRole = 'api' | 'worker';
+
+export async function assembleCoreGraph(
+  env: NodeJS.ProcessEnv,
+  options: { role: CoreRole }
+) {
+  assertLangfusePromptRuntimePolicy(env);
+  const harnessPromptResolver = langfusePromptResolverFromEnv(env);
+  const modelSupplyPromptResolver = modelSupplyPromptResolverFromHarness(
+    harnessPromptResolver
+  );
+
+  const databaseUrl = env.DATABASE_URL;
+  const serviceToken = env.CORE_SERVICE_TOKEN;
+  const recordedCommerceEnabled = env.P1_RECORDED_COMMERCE_ENABLED === '1';
+  if (!databaseUrl) throw new Error('DATABASE_URL is required.');
+  assertStrongSecret('CORE_SERVICE_TOKEN', serviceToken);
+
+  const harnessRuntimeConfig =
+    options.role === 'worker'
+      ? await initializeJobWorkerHarnessRuntime(env, {
+          setConfig: (config) => DBOS.setConfig(config),
+          launch: () => DBOS.launch(),
+        })
+      : env.HARNESS_DBOS_SYSTEM_DATABASE_URL
+        ? readHarnessRuntimeConfig(env)
+        : undefined;
+  // Both roles share the governed business-pool cap. Worker concurrency is
+  // already reflected by the harness runtime config and does not justify an
+  // unbounded PostgreSQL pool.
+  const pool = new Pool({
+    connectionString: databaseUrl,
+    ...(harnessRuntimeConfig
+      ? { max: harnessRuntimeConfig.businessPoolMax }
+      : {}),
+  });
+  const diagnosticRepository = new PostgresDiagnosticRepository(pool);
+  const productRepository = new PostgresProductRepository(pool);
+  const relationalProductRepository = new PostgresRelationalProductRepository(
+    pool
+  );
+  const creativeGroundingResolver = new ProductCreativeGroundingResolver(
+    relationalProductRepository
+  );
+  const assetStorage = modelAssetStorageFromEnv(env);
+  const foundationRepository = new PostgresFoundationRepository(pool);
+  const workspaceBootstrapper = new PostgresWorkspaceBootstrapper(pool);
+  const ownedReferenceAssets = new OwnedAssetReferenceResolver(
+    foundationOwnedReferenceAssetRepository(foundationRepository),
+    {
+      async head(objectKey) {
+        return assetStorage.head(objectKey);
+      },
+      async read(objectKey) {
+        return (await assetStorage.read(objectKey)).bytes;
+      },
+    },
+    {
+      productPolicyResolver: new ProductReferenceAssetPolicyResolver(
+        relationalProductRepository
+      ),
+    }
+  );
+  const productReferenceAssets = new ProductReferenceAssetResolver(
+    relationalProductRepository,
+    {
+      appBaseUrl: env.APP_BASE_URL ?? 'http://localhost:3000',
+      serviceToken,
+    }
+  );
+  // Reference resolution is role-neutral; API and worker must use the same
+  // owned-asset policy and product fallback order.
+  const referenceAssets = new CompositeReferenceAssetResolver([
+    ownedReferenceAssets,
+    productReferenceAssets,
+  ]);
+  const grantLotLedger = new PostgresGrantLotLedger(pool);
+  const creditLedger = new PostgresCreditLedger(pool);
+  const creditSubscriptionStore = new PostgresCreditSubscriptionStore(pool);
+  const redemptionStore = new PostgresRedemptionStore(pool, creditLedger);
+  const operationsRepository = new PostgresOperationsRepository(pool);
+  const productBillingRepository = new PostgresProductBillingRepository(pool);
+  const storeFactLedger = new PostgresStoreFactLedger(pool);
+  const contextBundleRepository = new PostgresContextBundleRepository(pool);
+  const contextSourceRevisions = new PostgresContextSourceRevisionRepository(
+    pool
+  );
+  const marketingIdentities = new PostgresMarketingIdentityRepository(pool);
+  const assetIntakeRepository = new PostgresAssetIntakeRepository(pool);
+  const storeIntakeFinalizations =
+    new PostgresStoreIntakeFinalizationRepository(pool);
+  const parseRepository = new PostgresParseRepository(pool);
+  const reuseMemoryRepository = new PostgresReuseMemoryRepository(pool);
+  const contentPackageWriteOwnership = new PostgresContentPackageWriteOwnership(
+    pool
+  );
+  const contentPackageMigrationRuns =
+    new PostgresContentPackageMigrationRunRepository(pool);
+  const contentPackageMigration = new ContentPackageMigrationService({
+    ownedReceiptVerifier: new HeadGetContentPackageOwnedReceiptVerifier({
+      async get(objectKey) {
+        return (await assetStorage.read(objectKey)).bytes;
+      },
+      async head(objectKey) {
+        try {
+          const stored = await assetStorage.read(objectKey);
+          return {
+            contentType: stored.contentType,
+            sizeBytes: stored.bytes.byteLength,
+          };
+        } catch {
+          return null;
+        }
+      },
+    }),
+    ownership: contentPackageWriteOwnership,
+    repository: operationsRepository,
+    runs: contentPackageMigrationRuns,
+    source: new PostgresContentPackageMigrationSource({
+      operations: operationsRepository,
+      pool,
+      product: relationalProductRepository,
+    }),
+  });
+  const adminConfigRepository = new PostgresAdminConfigRepository(pool);
+  const sensitiveWordsRepository = new PostgresSensitiveWordsRepository(pool);
+  const creditPlanCatalog = new AdminConfigCreditPlanCatalogSource(
+    adminConfigRepository
+  );
+  const creditBilling = new CreditBillingService(
+    creditLedger,
+    creditSubscriptionStore,
+    creditPlanCatalog,
+    new AdminConfigEntitlementCatalogSource(adminConfigRepository)
+  );
+  const dueDeliveryRepository = new PostgresDueDeliveryRepository(
+    pool,
+    adminConfigRepository
+  );
+  const cloudflareMapping = {
+    internalRef: env.CLOUDFLARE_MAPPING_REF ?? 'shell-production',
+    accountId: env.CLOUDFLARE_ACCOUNT_ID,
+    scriptName: env.CLOUDFLARE_SCRIPT_NAME,
+    r2BucketName: env.CLOUDFLARE_R2_BUCKET_NAME,
+    hyperdriveConfigId: env.CLOUDFLARE_HYPERDRIVE_CONFIG_ID,
+    verified: env.CLOUDFLARE_MAPPING_VERIFIED === 'true',
+  };
+  const cloudflareInventory = new CloudflareInventoryAdapter({
+    apiToken: env.CLOUDFLARE_INVENTORY_READ_TOKEN,
+    mapping: cloudflareMapping,
+  });
+  const integrationRepository = new PostgresIntegrationRepository(pool);
+  const skillRepository = new PostgresSkillRepository(pool);
+  const storeWorkflowCaptureRepository =
+    new PostgresStoreWorkflowCaptureRepository(pool);
+  const supplyControlRepository = new PostgresSupplyControlPlaneRepository(
+    pool
+  );
+  const supplyPlanningControlPlane = new PostgresSupplyPlanningControlPlane(
+    pool,
+    PLATFORM_SUPPLY_SCOPE_ID
+  );
+  const harnessSchemaStore = new PostgresHarnessStore(
+    pool,
+    storeFactLedger,
+    adminConfigRepository
+  );
+  const promptAuditStore = new PostgresHarnessAuditStore(pool);
+  const harnessInteractionStore = new PostgresHarnessInteractionStore(pool);
+  const harnessObservabilityStore = new PostgresHarnessObservabilityStore(pool);
+  await migratePostgresSchema(pool, [
+    adminConfigRepository,
+    sensitiveWordsRepository,
+    dueDeliveryRepository,
+    integrationRepository,
+    harnessSchemaStore,
+    skillRepository,
+    storeWorkflowCaptureRepository,
+    supplyControlRepository,
+    new PostgresCapabilityHotAssemblyMigration(),
+    new PostgresSupplyPlanningMigration(),
+    new PostgresEntitlementPoolsMigration(),
+    new PostgresAdminSupplyMigration(),
+  ]);
+  await sensitiveWordsRepository.ensurePlatformBaseline();
+  await harnessObservabilityStore.activateObservabilityReconciliationCutover();
+  const integrationSecrets = integrationSecretStoreFromEnv(env);
+  const credentialRotationReceipts = new PostgresCredentialRotationReceiptStore(
+    pool,
+    async (binding) => {
+      await integrationSecrets.use(binding.secretReference, {
+        workspaceId: binding.workspaceId,
+        credentialId: binding.credentialId,
+        version: binding.secretVersion,
+        provider: binding.provider,
+      });
+    }
+  );
+  const providerCredentialOperator = new ProviderCredentialAccountProvisioner(
+    supplyControlRepository,
+    credentialRotationReceipts,
+    integrationSecrets
+  );
+  await migrateProviderCredentialAccountsFromIntegrations(
+    integrationRepository,
+    supplyControlRepository
+  );
+  const providerCredentialRuntime = await providerCredentialEnvFromVault(
+    supplyControlRepository,
+    integrationSecrets,
+    env
+  );
+  const providerCredentialSecretBroker = createProviderCredentialSecretBroker(
+    supplyControlRepository,
+    integrationSecrets
+  );
+  const modelSupplyRepository = new PostgresModelSupplyRepository(pool);
+  const canonicalVideoWorkflowSchema = new PostgresCanonicalVideoWorkflowSchema(
+    pool
+  );
+  const cutoverExecution = new P1CutoverExecutionService(pool);
+  const legacyInFlightDecisions = new PostgresLegacyInFlightDecisionPort(pool);
+
+  const port = Number(env.CORE_PORT ?? 4100);
+  const notificationWebhook = env.FEISHU_WEBHOOK_URL ?? env.WECOM_WEBHOOK_URL;
+  const downstreamNotifier = notificationWebhook
+    ? new WebhookProductNotifier(
+        notificationWebhook,
+        env.APP_BASE_URL ?? 'http://localhost:3000'
+      )
+    : noOpProductNotifier;
+  const notifier = new PostgresIdempotentProductNotifier(
+    pool,
+    downstreamNotifier
+  );
+  const productPlans = defaultProductPlanConfig;
+  const modelCatalogTenantAllowlist = (env.MODEL_CATALOG_TENANT_ALLOWLIST ?? '')
+    .split(',')
+    .map((workspaceId) => workspaceId.trim())
+    .filter(Boolean);
+  const runtimeAssembly = await modelRuntimeAssemblyFromSources(
+    adminConfigRepository,
+    providerCredentialRuntime.env,
+    { processKind: options.role === 'api' ? 'http' : 'job-worker' }
+  );
+  const {
+    deployments,
+    models,
+    runtime: modelRuntime,
+  } = runtimeAssembly.assembly;
+  // G3 hot assembly: seed process-local capability head from boot catalog so
+  // HTTP reports the same boot fingerprint Worker seeds (dual-process alignment).
+  const bootCapabilityHotAssembly = seedCapabilityHotAssemblyFromCatalog(
+    runtimeAssembly.assembly
+  );
+  const capabilityHotAssembly = new PostgresCapabilityHotAssemblyPort(
+    pool,
+    supplyControlRepository,
+    PLATFORM_SUPPLY_SCOPE_ID,
+    providerCredentialSecretBroker
+  );
+  await capabilityHotAssembly.seedIfEmpty(
+    bootCapabilityHotAssembly.bootRevision
+  );
+  capabilityHotAssembly.applyCatalogRevisionHead(RECORDED_CATALOG_REVISION_ID);
+  const supplyPoolStore = new PostgresSupplyPoolStore(pool);
+  const entitlementPolicyStore = new PostgresEntitlementPolicyStore(pool);
+  const accountAllocationStore = new PostgresAccountAllocationStore(pool);
+  const capacityLeaseStore = new PostgresCapacityLeaseStore(pool);
+  const supplyFreezeStore = new PostgresSupplyFreezeStore(pool);
+  const bootDeploymentIds =
+    deployments.length > 0
+      ? deployments.map((deployment) => deployment.id)
+      : ['boot-placeholder-deployment'];
+  await ensureDefaultRuntimeSupplyPool(supplyPoolStore, bootDeploymentIds);
+  // #92 one durable ProductQuote/ProductUsage/ProviderCost lifecycle shared by
+  // HTTP, Operations, and model-supply across process restarts.
+  const productQuoteService = new DurableProductBillingService(
+    productBillingRepository
+  );
+  const billingLifecycle = productQuoteService;
+  const permissionAuthorizer = createPermissionAuthorizer();
+  const mediaExecutionMode = modelMediaExecutionMode(modelRuntime);
+  const gatedModelExecution = new ModeGateExecutionPort(
+    modelRuntime.execution,
+    adminConfigRepository,
+    modelRuntime.mode
+  );
+  // 流式 copy / assistant 的 runner 方法是同步签名，无法走 ProviderExecutionPort
+  // 装饰器；用同一 model.execution.mode 头做一个独立止血阀，注入两条流式 choke point，
+  // 使「停用」对锁定不变量的 token 流式主链也立即生效（P0-2）。
+  const streamingModeGate = createModelExecutionModeGate(
+    adminConfigRepository,
+    modelRuntime.mode
+  );
+  const gatedMediaExecution = modelRuntime.media
+    ? new ModeGateMediaLifecyclePort(
+        modelRuntime.media,
+        adminConfigRepository,
+        mediaExecutionMode
+      )
+    : undefined;
+  const integrationAssembly = await integrationAdapterEnvFromSources(
+    adminConfigRepository,
+    env
+  );
+  const byokRuntime = byokExecutionRuntimeFromEnv(integrationAssembly.env);
+  const e2ePlatformModelDefaults = e2ePlatformModelDefaultsFromEnv(env);
+  /**
+   * The one runtime source of platform default catalog models (#240①).
+   *
+   * Day-0 provisioning and the composer's preference projection both read this,
+   * so the model a new workspace is provisioned onto and the model the composer
+   * falls back to are the same fact, edited in one place by operations.
+   */
+  const platformDefaultModelSource: PlatformDefaultModelSourcePort = {
+    async getSnapshot() {
+      const entries = await Promise.all(
+        PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(async (configKey) => {
+          const configName = platformDefaultModelConfigName(configKey);
+          const row = await adminConfigRepository.get(
+            'global',
+            '__global__',
+            configName
+          );
+          const value = typeof row?.value === 'string' ? row.value.trim() : '';
+          const resolvedValue = value || e2ePlatformModelDefaults[configKey];
+          return resolvedValue
+            ? ([
+                configKey,
+                {
+                  catalogModelId: resolvedValue,
+                  configRevision:
+                    row && value
+                      ? `admin-config:${row.revision}`
+                      : `runtime-default:${configName}:${resolvedValue}`,
+                },
+              ] as const)
+            : null;
+        })
+      );
+      return Object.fromEntries(
+        entries.filter(
+          (
+            entry
+          ): entry is readonly [
+            PlatformDefaultModelConfigKey,
+            { catalogModelId: string; configRevision: string },
+          ] => entry !== null
+        )
+      );
+    },
+  };
+  const adminConfigRuntime = {
+    'byok.adapter.assembly': byokRuntime.mode,
+    'compliance.aigc_label.default': true,
+    'compliance.regulated_mode.default': false,
+    'compliance.watermark.default': false,
+    'model.execution.mode': modelRuntime.mode,
+    'model.media.execution.mode': mediaExecutionMode,
+    [HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY]:
+      DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
+    [HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY]:
+      DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS,
+    [HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY]:
+      DEFAULT_HOLD_RESERVATION_TTL_SECONDS,
+    [HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY]:
+      DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG,
+    [HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY]:
+      DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+    ...Object.fromEntries(
+      Object.entries(e2ePlatformModelDefaults).map(([configKey, modelId]) => [
+        platformDefaultModelConfigName(
+          configKey as PlatformDefaultModelConfigKey
+        ),
+        modelId,
+      ])
+    ),
+  } satisfies Readonly<Record<string, unknown>>;
+  const aiStreamingRunner =
+    modelRuntime.mode === 'fixture'
+      ? new FixtureAiStreamingRunner()
+      : modelRuntime.activation === 'live_verified' && modelRuntime.direct
+        ? new OpenAiCompatibleAiSdkRunner(modelRuntime.direct)
+        : undefined;
+  const foundationLedgerService = new P1ApplicationService(
+    foundationRepository
+  );
+  const productEntitlements = new GrantLotAwareProductEntitlementService(
+    foundationRepository,
+    grantLotLedger,
+    recordedCommerceEnabled ? new RecordedAutoTopUpPaymentPort() : undefined,
+    undefined,
+    productQuoteService
+  );
+  const executionEntitlementPolicy = new CreditSubscriptionEntitlementPolicy(
+    creditSubscriptionStore,
+    creditPlanCatalog
+  );
+  const modelSupplyProviderAdmission = new PostgresModelSupplyProviderAdmission(
+    {
+      productEntitlements: executionEntitlementPolicy,
+      entitlementPolicies: entitlementPolicyStore,
+      accountAllocations: accountAllocationStore,
+      supplyPools: supplyPoolStore,
+      capacityLeases: capacityLeaseStore,
+      creditMeteringEnabled: true,
+    }
+  );
+  const p1ModelSupplyRuntime = createModelSupplyRuntime({
+    application: {
+      assetStorage,
+      execution: gatedModelExecution,
+      ledger: new FoundationModelSupplyLedger(
+        foundationLedgerService,
+        executionEntitlementPolicy,
+        undefined,
+        {
+          billingLifecycle,
+          defaultSupplyPoolId: 'pool-shared-default',
+          productUsage: billingLifecycle,
+          supplyFreezes: supplyFreezeStore,
+        }
+      ),
+      merchantExecutionBilling: billingLifecycle,
+      providerAdmission: modelSupplyProviderAdmission,
+      promptAudits: promptAuditStore,
+      promptResolver: modelSupplyPromptResolver,
+      referenceAssets,
+      resultSink: modelSupplyRepository,
+      submissionGate: streamingModeGate,
+    },
+    catalog: runtimeAssembly.assembly,
+    capabilityHotAssembly,
+    controlPlane: {
+      activationEvidenceConfig: adminConfigRepository,
+      ...(gatedMediaExecution
+        ? {
+            activationProbeExecutor: new MediaActivationProbeExecutor(
+              gatedMediaExecution,
+              { deployments, models }
+            ),
+          }
+        : {}),
+      durationSamples: foundationRepository,
+      planningControlPlane: supplyPlanningControlPlane,
+      platformDefaultModels: platformDefaultModelSource,
+      repository: modelSupplyRepository,
+      supplyRegistry: supplyControlRepository,
+      modelCatalogTenantAllowlist,
+      warn: (message) => console.warn(message),
+    },
+  });
+  const p1ModelSupplyService = p1ModelSupplyRuntime.application;
+  const marketingIdentityStructuredExecutor =
+    modelRuntime.mode === 'fixture'
+      ? new FixtureAiStructuredObjectExecutor()
+      : modelRuntime.activation === 'live_verified' && modelRuntime.direct
+        ? new AiSdkStructuredObjectExecutor(modelRuntime.direct)
+        : undefined;
+  const marketingIdentityDrafter = marketingIdentityStructuredExecutor
+    ? new StructuredMarketingIdentityDrafter({
+        create({ workspaceId, actorId }) {
+          return new ModelSupplyStructuredNodeRunner({
+            application: p1ModelSupplyService,
+            executor: marketingIdentityStructuredExecutor,
+            workspaceId,
+            actorId,
+            selection: { mode: 'auto', profile: 'quality' },
+          });
+        },
+      })
+    : undefined;
+  const modelControlPlane = p1ModelSupplyRuntime.controlPlane;
+  const productQuoteAuthority = new CatalogProductQuoteAuthority({
+    getCatalog(workspaceId, operation) {
+      return modelControlPlane.getCatalog(
+        workspaceId,
+        operation === 'image.reference_transform' ? 'image.edit' : operation
+      );
+    },
+  });
+  const providerConnectivity = providerConnectivityProbeFromEnv(
+    providerCredentialRuntime.env
+  );
+  const adminProviderEvidence = new ProductionAdminProviderEvidence({
+    registry: supplyControlRepository,
+    pools: supplyPoolStore,
+    credentials: providerCredentialSecretBroker,
+    connectivity: providerConnectivity,
+    conformance: modelControlPlane,
+    health: supplyPlanningControlPlane.health,
+    verification: providerCredentialOperator,
+    credentialWorkspaceId: '__global__',
+  });
+  const adminSupplyControlPlane = createPostgresAdminSupplyControlPlane({
+    pool,
+    permission: permissionAuthorizer,
+    registry: supplyControlRepository,
+    pools: supplyPoolStore,
+    entitlementPolicies: entitlementPolicyStore,
+    accountAllocations: accountAllocationStore,
+    planning: supplyPlanningControlPlane,
+    hotAssembly: capabilityHotAssembly,
+    modelControlPlane,
+    modelRepository: modelSupplyRepository,
+    credentialRotations: credentialRotationReceipts,
+    providerProbes: adminProviderEvidence,
+    operationalEvidence: adminProviderEvidence,
+  });
+  {
+    const processKind = options.role === 'api' ? 'http' : 'job-worker';
+    const view = await capabilityHotAssembly.reportProcessView(processKind);
+    const defaultSupplyPool = await supplyPoolStore.get('pool-shared-default');
+    console.log(
+      `[z2-wiring] ${processKind} capability revision=${view.effectiveCapabilityRevisionId ?? 'none'} catalog=${view.effectiveCatalogRevisionId ?? 'none'} supplyPool=${defaultSupplyPool?.id ?? 'missing'}`
+    );
+  }
+  const legacyModelSupplyRuntime = createModelSupplyRuntime({
+    application: {
+      assetStorage,
+      execution: gatedModelExecution,
+      merchantExecutionBilling: billingLifecycle,
+      promptAudits: promptAuditStore,
+      promptResolver: modelSupplyPromptResolver,
+      resultSink: modelSupplyRepository,
+    },
+    catalog: runtimeAssembly.assembly,
+    controlPlane: {
+      repository: modelSupplyRepository,
+      modelCatalogTenantAllowlist,
+      warn: (message) => console.warn(message),
+    },
+  });
+  const legacyModelSupplyService = legacyModelSupplyRuntime.application;
+  const legacyModelControlPlane = legacyModelSupplyRuntime.controlPlane;
+  const initializeWorkspaceCatalog = async (workspaceId: string) => {
+    await Promise.all([
+      modelControlPlane.initialize(workspaceId),
+      legacyModelControlPlane.initialize(workspaceId),
+    ]);
+  };
+  const resolveCopySelection = async (request: {
+    workspaceId: string;
+    userId: string;
+  }) => {
+    const preferences = await modelControlPlane.getPreferences(
+      request.workspaceId,
+      request.userId,
+      'copy.generate'
+    );
+    return resolveCanonicalCopySelection(preferences);
+  };
+  const resolveCopyPrompt = (request: { workspaceId: string }) =>
+    modelControlPlane.getPromptRevision(request.workspaceId);
+  const p1CopyBridge = new ProductCopyProviderBridge(
+    p1ModelSupplyService,
+    initializeWorkspaceCatalog
+  );
+  const legacyCopyBridge = new ProductCopyProviderBridge(
+    legacyModelSupplyService,
+    initializeWorkspaceCatalog
+  );
+  const modelAdminActorIds = (env.P1_ADMIN_ACTOR_IDS ?? '')
+    .split(',')
+    .map((actorId) => actorId.trim())
+    .filter(Boolean);
+  const jobRuntimeWorkerActorIds = (env.P1_JOB_RUNTIME_WORKER_ACTOR_IDS ?? '')
+    .split(',')
+    .map((actorId) => actorId.trim())
+    .filter(Boolean);
+  const jobRuntime = PgBossJobPort.connect({
+    connection: databaseUrl,
+    queuePrefix: env.JOB_QUEUE_PREFIX ?? 'meiye-p1',
+    workspaceConcurrencyLimits: creditPlanConcurrencyTiers(),
+    ...(options.role === 'worker' && harnessRuntimeConfig
+      ? {
+          terminalNotifier: async ({ envelope, status, output }) => {
+            await sendHarnessMediaJobTerminal({
+              workspaceId: envelope.workspaceId,
+              jobId: envelope.jobId,
+              kind: envelope.kind,
+              payload: envelope.payload,
+              status,
+              ...(output ? { output } : {}),
+            });
+          },
+        }
+      : {}),
+  });
+  const entitlementJobRuntime = new EntitlementAwareJobPort(
+    jobRuntime,
+    executionEntitlementPolicy
+  );
+  const tracerJobRepository = new PostgresTracerJobRepository(
+    pool,
+    entitlementJobRuntime
+  );
+  const operationalTelemetryStore = new PostgresOperationalTelemetryStore(pool);
+  await migratePostgresSchema(pool, [
+    diagnosticRepository,
+    productRepository,
+    relationalProductRepository,
+    workspaceBootstrapper,
+    foundationRepository,
+    grantLotLedger,
+    creditLedger,
+    creditSubscriptionStore,
+    redemptionStore,
+    adminConfigRepository,
+    sensitiveWordsRepository,
+    operationsRepository,
+    productBillingRepository,
+    storeFactLedger,
+    contextBundleRepository,
+    contextSourceRevisions,
+    marketingIdentities,
+    assetIntakeRepository,
+    storeIntakeFinalizations,
+    parseRepository,
+    reuseMemoryRepository,
+    contentPackageWriteOwnership,
+    contentPackageMigrationRuns,
+    modelSupplyRepository,
+    canonicalVideoWorkflowSchema,
+    integrationRepository,
+    skillRepository,
+    storeWorkflowCaptureRepository,
+    cutoverExecution,
+    tracerJobRepository,
+    operationalTelemetryStore,
+    notifier,
+  ]);
+  await ensureCreditPlanCatalogDefaults(adminConfigRepository);
+  if (modelRuntime.mode === 'fixture') {
+    await initializeWorkspaceCatalog(PLATFORM_SUPPLY_SCOPE_ID);
+  }
+  const tracerJobs = new TracerJobApplicationService(tracerJobRepository);
+  const parseService = new ParseService(
+    parseRepository,
+    documentParseProviderFromEnv(env),
+    new FixtureAssetDraftCompiler(),
+    new FixtureVisualAssetClassifier(),
+    new StoredParseSourceAssetAuthorizer(assetStorage),
+    new AdminConfigAssetIntakeGuidanceSource(adminConfigRepository),
+    tracerJobs
+  );
+  if (gatedMediaExecution) {
+    p1ModelSupplyService.attachDurableMediaRuntime(
+      new DurableMediaGenerationApplicationService({
+        jobs: tracerJobs,
+        models: p1ModelSupplyService,
+        provider: gatedMediaExecution,
+        ...(modelRuntime.mode === 'fixture'
+          ? { referencePolicy: LOCAL_FIXTURE_PROVIDER_REFERENCE_POLICY }
+          : {}),
+      })
+    );
+  }
+  let operationsService: OperationsApplicationService;
+  const packageRightsPropagation = new OperationsProductPackageRightsAdapter(
+    () => operationsService
+  );
+  const canonicalVideoWorkflow = {
+    async edit(input: {
+      actorId: string;
+      correlationId: string;
+      edit: Parameters<PostgresCanonicalVideoRunStore['editRun']>[0]['edit'];
+      expectedRevision: number;
+      workflowId: string;
+      workspaceId: string;
+    }) {
+      const store = new PostgresCanonicalVideoRunStore(pool, input.workspaceId);
+      const workflow = projectDurableVideoWorkflow(
+        await store.editRun(input, new Date().toISOString())
+      );
+      return { workflow };
+    },
+    async list(input: { actorId: string; workspaceId: string }) {
+      const store = new PostgresCanonicalVideoRunStore(pool, input.workspaceId);
+      return (await store.listRuns(input.workspaceId, input.actorId)).map(
+        (run) => ({ workflow: projectDurableVideoWorkflow(run) })
+      );
+    },
+    async query(input: { workflowId: string; workspaceId: string }) {
+      const store = new PostgresCanonicalVideoRunStore(pool, input.workspaceId);
+      const run = await store.getRun(input.workflowId);
+      if (!run) {
+        throw new P1DomainError(
+          'NOT_FOUND',
+          `Video workflow ${input.workflowId} was not found.`
+        );
+      }
+      return { workflow: projectDurableVideoWorkflow(run) };
+    },
+  };
+  const videoWorkflowEventSource = new VideoWorkflowEventSource({
+    async owns(workspaceId, workflowId) {
+      const result = await pool.query(
+        `SELECT 1 FROM p1_creative_jobs
+          WHERE workspace_id = $1
+            AND payload->>'videoWorkflowId' = $2`,
+        [workspaceId, workflowId]
+      );
+      return result.rowCount === 1;
+    },
+    async readSnapshot(workspaceId, workflowId) {
+      return canonicalVideoWorkflow.query({ workspaceId, workflowId });
+    },
+  });
+  const feishuMcp = feishuMcpAdapterFromEnv(env);
+  const integrationService = new IntegrationApplicationService({
+    byok: byokRuntime.adapter,
+    byokExecutionMode: byokRuntime.mode,
+    byokLedger: new FoundationStrictByokLedger(
+      foundationLedgerService,
+      executionEntitlementPolicy
+    ),
+    endpointProfiles: [
+      {
+        apiFamily: 'openai-compatible',
+        endpoint:
+          env.BYOK_OPENAI_COMPATIBLE_ENDPOINT ?? 'https://api.openai.com/v1',
+        id: 'openai-compatible-default',
+        permittedModels:
+          byokRuntime.mode === 'live'
+            ? byokRuntime.permittedModels
+            : models
+                .filter((model) => model.modality === 'llm')
+                .map((model) => model.id),
+      },
+    ],
+    feishu: feishuMcp,
+    providerConnectivity: providerConnectivityProbeFromEnv(
+      providerCredentialRuntime.env
+    ),
+    repository: integrationRepository,
+    secrets: integrationSecrets,
+  });
+  if (options.role === 'api') {
+    await registerFeishuToolLifecycleSchedule(jobRuntime, {
+      ...(env.FEISHU_TOOL_CATALOG_CRON
+        ? { cron: env.FEISHU_TOOL_CATALOG_CRON }
+        : {}),
+      ...(env.FEISHU_TOOL_CATALOG_TIMEZONE
+        ? { timezone: env.FEISHU_TOOL_CATALOG_TIMEZONE }
+        : {}),
+    });
+    await registerFeishuIntentReconciliationSchedule(jobRuntime, {
+      ...(env.FEISHU_INTENT_RECONCILIATION_CRON
+        ? { cron: env.FEISHU_INTENT_RECONCILIATION_CRON }
+        : {}),
+      ...(env.FEISHU_INTENT_RECONCILIATION_TIMEZONE
+        ? { timezone: env.FEISHU_INTENT_RECONCILIATION_TIMEZONE }
+        : {}),
+    });
+  }
+  const createCopyProviders = (bridge: ProductCopyProviderBridge) => ({
+    domestic: new ModelSupplyProductCopyProvider(
+      bridge,
+      undefined,
+      'domestic',
+      resolveCopySelection,
+      resolveCopyPrompt
+    ),
+    standard: new ModelSupplyProductCopyProvider(
+      bridge,
+      undefined,
+      'overseas',
+      resolveCopySelection,
+      resolveCopyPrompt
+    ),
+  });
+  const qualitySink: ProductQualitySink = {
+    async record(workspaceId, event) {
+      await modelControlPlane.recordQuality(workspaceId, event);
+    },
+  };
+  // The projection adapter is stateless. Each process owns one instance, built
+  // from this shared recipe, because API and worker run in separate processes.
+  const searchProjection = new OperationsProductSearchProjection(
+    operationsRepository
+  );
+  // Worker batch execution reaches Product commands, including copy generation,
+  // ownership gates, quality feedback, and projections. Both roles therefore
+  // receive the complete ProductService dependency set.
+  const legacyProductService = new ProductService({
+    repository: productRepository,
+    notifier,
+    planConfig: productPlans,
+    copyProviders: createCopyProviders(legacyCopyBridge),
+    qualitySink,
+    inFlightDecisions: legacyInFlightDecisions,
+    acceptedWriteOwner: 'legacy',
+    contentWriteOwnership: contentPackageWriteOwnership,
+    legacyBillingReadOnly: true,
+    packageRightsPropagation,
+    storageEntitlements: executionEntitlementPolicy,
+  });
+  const relationalProductService = new ProductService({
+    repository: relationalProductRepository,
+    notifier,
+    planConfig: productPlans,
+    copyProviders: createCopyProviders(p1CopyBridge),
+    qualitySink,
+    inFlightDecisions: legacyInFlightDecisions,
+    acceptedWriteOwner: 'p1',
+    contentWriteOwnership: contentPackageWriteOwnership,
+    copyUsageAuthority: 'foundation_ledger',
+    legacyBillingReadOnly: true,
+    legacyVideoPath: 'disabled',
+    packageRightsPropagation,
+    storageEntitlements: executionEntitlementPolicy,
+    searchProjection,
+    // Billing write-lock makes syncFoundationCopyUsage return before this read,
+    // so usage projection is currently unreachable in both roles. It remains
+    // wired here to preserve the previously complete API configuration.
+    productEntitlements,
+  });
+  const productService = new CutoverProductService(
+    productRepository,
+    legacyProductService,
+    relationalProductService,
+    legacyInFlightDecisions
+  );
+  const batchExecutor = new ProductOperationsBatchExecutionAdapter(
+    productService,
+    () => operationsService
+  );
+  const contentPackageRightsResolver = new ProductContentPackageRightsResolver(
+    relationalProductRepository
+  );
+  const contentPackageRightsBasisResolver =
+    new ContentPackageRightsBasisResolver(
+      contentPackageRightsResolver,
+      supplyControlRepository,
+      {
+        allowLocalFixtureTerms: p1ModelSupplyRuntime.allowRecordedExecution,
+      }
+    );
+  const contentPackageExportAssets =
+    new OperationsContentPackageExportAssetReader(
+      operationsRepository,
+      assetStorage,
+      referenceAssets
+    );
+  const canvasExportAssetAccess = new OperationsCanvasExportAssetAccessService({
+    contentPackageAssets: contentPackageExportAssets,
+    contentPackageRights: contentPackageRightsResolver,
+    generationJobs: foundationRepository,
+    ownedAssetStorage: assetStorage,
+    productAssets: productReferenceAssets,
+    productPolicy: contentPackageRightsResolver,
+  });
+  const sourceContentPackageReader = {
+    async get(input: { packageId: string; workspaceId: string }) {
+      return (
+        (
+          await operationsRepository.loadWorkspace(input.workspaceId)
+        )?.contentPackages.find(
+          (contentPackage) => contentPackage.id === input.packageId
+        ) ?? null
+      );
+    },
+  };
+  const sourceContentPackages = new ExecutionSourceContentPackageResolver(
+    sourceContentPackageReader,
+    contentPackageRightsResolver
+  );
+  const sourceContentPackageAdmissionReader = {
+    async get(input: { packageId: string; workspaceId: string }) {
+      const contentPackage = await sourceContentPackageReader.get(input);
+      return contentPackage
+        ? {
+            id: contentPackage.id,
+            revision: contentPackage.revision,
+            rightsState: contentPackage.rights.state,
+            status: contentPackage.status,
+            workspaceId: contentPackage.workspaceId,
+          }
+        : null;
+    },
+  };
+  const contentPackageApprovalPolicy = new ContextBundleApprovalPolicyResolver(
+    contextBundleRepository,
+    {
+      sourceRevisions: contextSourceRevisions,
+      facts: storeFactLedger,
+    }
+  );
+  operationsService = new OperationsApplicationService(operationsRepository, {
+    billingLifecycle,
+    canvasExportAssetAccess,
+    contentPackageDestinationProjection:
+      new PostgresContentPackageDestinationProjection(pool),
+    contentPackageExporter: new ContentPackageZipExportAdapter(
+      assetStorage,
+      contentPackageExportAssets,
+      {
+        allowRecordedSyntheticVideoCompliance: env.APP_ENV === 'e2e',
+        appEnv: env.APP_ENV,
+      }
+    ),
+    contentPackageApprovalPolicy,
+    contentPackageRightsBasisResolver,
+    contentPackageRightsResolver,
+    contentWriteOwnership: contentPackageWriteOwnership,
+    assetDataClassResolver: new ProductAssetDataClassResolver(
+      relationalProductRepository
+    ),
+    batchExecutor,
+    canvasExporter: new PersistentCanvasExportAdapter(assetStorage),
+    creationExecutor: new ModelSupplyCreationExecutor(
+      modelControlPlane,
+      referenceAssets
+    ),
+    groundingResolver: creativeGroundingResolver,
+    imageGenerator: new ModelSupplyImageGenerationAdapter(
+      p1ModelSupplyService,
+      initializeWorkspaceCatalog
+    ),
+    mediaCustodyStorage: new MediaCustodyStorageAdapter(
+      referenceAssets,
+      assetStorage
+    ),
+    notifier: {
+      async send(notification) {
+        await notifier.notify({
+          correlationId: notification.idempotencyKey,
+          deepLink: '/dashboard',
+          idempotencyKey: notification.idempotencyKey,
+          jobId: notification.taskId,
+          message: notification.nextStep
+            ? `${notification.title}：${notification.nextStep}`
+            : notification.title,
+          status: 'needs_action',
+          workspaceId: notification.workspaceId,
+        });
+      },
+    },
+    triggerScheduler: entitlementJobRuntime,
+  });
+
+  return {
+    harnessPromptResolver,
+    modelSupplyPromptResolver,
+    databaseUrl,
+    serviceToken,
+    recordedCommerceEnabled,
+    harnessRuntimeConfig,
+    pool,
+    diagnosticRepository,
+    productRepository,
+    relationalProductRepository,
+    creativeGroundingResolver,
+    assetStorage,
+    foundationRepository,
+    workspaceBootstrapper,
+    ownedReferenceAssets,
+    productReferenceAssets,
+    referenceAssets,
+    grantLotLedger,
+    creditLedger,
+    creditSubscriptionStore,
+    redemptionStore,
+    operationsRepository,
+    productBillingRepository,
+    storeFactLedger,
+    contextBundleRepository,
+    contextSourceRevisions,
+    marketingIdentities,
+    assetIntakeRepository,
+    storeIntakeFinalizations,
+    parseRepository,
+    reuseMemoryRepository,
+    contentPackageWriteOwnership,
+    contentPackageMigrationRuns,
+    contentPackageMigration,
+    adminConfigRepository,
+    sensitiveWordsRepository,
+    creditPlanCatalog,
+    creditBilling,
+    dueDeliveryRepository,
+    cloudflareMapping,
+    cloudflareInventory,
+    integrationRepository,
+    skillRepository,
+    storeWorkflowCaptureRepository,
+    supplyControlRepository,
+    supplyPlanningControlPlane,
+    harnessSchemaStore,
+    promptAuditStore,
+    harnessInteractionStore,
+    harnessObservabilityStore,
+    integrationSecrets,
+    credentialRotationReceipts,
+    providerCredentialOperator,
+    providerCredentialRuntime,
+    providerCredentialSecretBroker,
+    modelSupplyRepository,
+    canonicalVideoWorkflowSchema,
+    cutoverExecution,
+    legacyInFlightDecisions,
+    port,
+    notificationWebhook,
+    downstreamNotifier,
+    notifier,
+    productPlans,
+    modelCatalogTenantAllowlist,
+    runtimeAssembly,
+    deployments,
+    models,
+    modelRuntime,
+    bootCapabilityHotAssembly,
+    capabilityHotAssembly,
+    supplyPoolStore,
+    entitlementPolicyStore,
+    accountAllocationStore,
+    capacityLeaseStore,
+    supplyFreezeStore,
+    bootDeploymentIds,
+    productQuoteService,
+    billingLifecycle,
+    permissionAuthorizer,
+    mediaExecutionMode,
+    gatedModelExecution,
+    streamingModeGate,
+    gatedMediaExecution,
+    integrationAssembly,
+    byokRuntime,
+    e2ePlatformModelDefaults,
+    platformDefaultModelSource,
+    adminConfigRuntime,
+    aiStreamingRunner,
+    foundationLedgerService,
+    productEntitlements,
+    executionEntitlementPolicy,
+    modelSupplyProviderAdmission,
+    p1ModelSupplyRuntime,
+    p1ModelSupplyService,
+    marketingIdentityStructuredExecutor,
+    marketingIdentityDrafter,
+    modelControlPlane,
+    productQuoteAuthority,
+    providerConnectivity,
+    adminProviderEvidence,
+    adminSupplyControlPlane,
+    legacyModelSupplyRuntime,
+    legacyModelSupplyService,
+    legacyModelControlPlane,
+    initializeWorkspaceCatalog,
+    resolveCopySelection,
+    resolveCopyPrompt,
+    p1CopyBridge,
+    legacyCopyBridge,
+    modelAdminActorIds,
+    jobRuntimeWorkerActorIds,
+    jobRuntime,
+    entitlementJobRuntime,
+    tracerJobRepository,
+    operationalTelemetryStore,
+    tracerJobs,
+    parseService,
+    operationsService,
+    packageRightsPropagation,
+    canonicalVideoWorkflow,
+    videoWorkflowEventSource,
+    feishuMcp,
+    integrationService,
+    createCopyProviders,
+    qualitySink,
+    searchProjection,
+    legacyProductService,
+    relationalProductService,
+    productService,
+    batchExecutor,
+    contentPackageRightsResolver,
+    contentPackageRightsBasisResolver,
+    contentPackageExportAssets,
+    canvasExportAssetAccess,
+    sourceContentPackageReader,
+    sourceContentPackages,
+    sourceContentPackageAdmissionReader,
+    contentPackageApprovalPolicy,
+  };
+}

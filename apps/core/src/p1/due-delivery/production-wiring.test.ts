@@ -5,12 +5,13 @@ import test from 'node:test';
 test('composition roots bind the due scanner and shared migration seam', async () => {
   // This is a call-site guard only. Scanner behavior is covered by
   // scanner-job.test.ts and the PostgreSQL due-delivery acceptance suite.
-  const source = await readFile(
-    new URL('../../job-worker.ts', import.meta.url),
-    'utf8',
-  );
+  const [coreSource, workerSource] = await Promise.all([
+    readFile(new URL('../../assembly/core-assembly.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../../assembly/worker-runtime.ts', import.meta.url), 'utf8'),
+  ]);
+  const source = `${coreSource}\n${workerSource}`;
   const mainSource = await readFile(
-    new URL('../../main.ts', import.meta.url),
+    new URL('../../assembly/core-assembly.ts', import.meta.url),
     'utf8',
   );
   const adminConfigDeclaration = mainSource.indexOf(
