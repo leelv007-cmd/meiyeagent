@@ -80,6 +80,39 @@ export function creditPlanCheckoutAmountMicros(
 	);
 }
 
+export function toPublicCreditPlanCatalog(
+	catalog: CreditPlanCatalog,
+): PublicPlanCatalog {
+	return publicPlanCatalogSchema.parse({
+		addOns: catalog.addOns,
+		plans: catalog.plans.map((plan) => ({
+			credits: plan.credits,
+			concurrencyLimit: plan.concurrencyLimit,
+			currency: plan.currency,
+			cyclePrices: CREDIT_PLAN_BILLING_CYCLES.map((cycle) => ({
+				amountMicros: creditPlanCheckoutAmountMicros(
+					plan.monthlyPriceMicros,
+					cycle,
+					catalog.cycleCoefficientBasisPoints,
+				),
+				cycle,
+			})),
+			id: plan.id,
+			monthlyPriceMicros: plan.monthlyPriceMicros,
+			referenceOutputs: catalog.referenceNumbers.published[plan.id],
+		})),
+	});
+}
+
+export async function readPublicCreditPlanCatalog(source: {
+	get(): Promise<CreditPlanCatalog>;
+	publicView?(): Promise<PublicPlanCatalog>;
+}) {
+	return source.publicView
+		? source.publicView()
+		: toPublicCreditPlanCatalog(await source.get());
+}
+
 /**
  * Operator-managed defaults. Running values are read from `plan.credits.*`
  * admin-config revisions; this literal only makes an empty installation usable.
@@ -119,4 +152,8 @@ export function creditPlanConfigKey(plan: CreditPlanId) {
 	return `plan.credits.${plan}` as const;
 }
 
-import { CREDIT_PLAN_CONFIG_DEFAULTS } from "@meiye/contracts";
+import {
+	CREDIT_PLAN_CONFIG_DEFAULTS,
+	publicPlanCatalogSchema,
+	type PublicPlanCatalog,
+} from "@meiye/contracts";

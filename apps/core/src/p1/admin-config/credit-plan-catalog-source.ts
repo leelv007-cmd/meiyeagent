@@ -9,6 +9,7 @@ import {
 	type CreditPlanCycleCoefficientBasisPoints,
 	type CreditPlanOffer,
 	type CreditPlanReferenceNumbers,
+	toPublicCreditPlanCatalog,
 } from "../credit-billing/credit-plan-catalog.js";
 import type { AdminConfigRepository } from "./foundation-module.js";
 
@@ -172,6 +173,10 @@ export class AdminConfigCreditPlanCatalogSource {
 		const plan = catalog.plans.find((candidate) => candidate.id === id);
 		if (!plan) throw new Error(`Credit plan ${id} is not configured.`);
 		return plan;
+	}
+
+	async publicView() {
+		return toPublicCreditPlanCatalog(await this.get());
 	}
 }
 

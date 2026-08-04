@@ -12,6 +12,10 @@ import type {
 } from './index.js';
 import { resolveFfprobePath } from './media-tool-paths.js';
 import { validateGeneratedAudio } from './audio-asset-pipeline.js';
+import {
+  assertAssetOwnedBy,
+  MAX_CANVAS_ASSET_UPLOAD_BYTES,
+} from './asset-http-policy.js';
 
 const execFileAsync = promisify(execFile);
 const corePackageDirectory = fileURLToPath(
@@ -68,6 +72,7 @@ function assertLocalAssetStorageEnvironment(env: NodeJS.ProcessEnv) {
 
 /** Local durable object store used by recorded and development runtimes. */
 export class FileSystemAssetStorage implements ModelAssetStoragePort {
+  readonly maxUploadBytes = MAX_CANVAS_ASSET_UPLOAD_BYTES;
   private readonly rootDirectory: string;
   private readonly publicBaseUrl?: string;
   private readonly videoProbe: (path: string) => Promise<VideoProbeResult>;
@@ -86,6 +91,10 @@ export class FileSystemAssetStorage implements ModelAssetStoragePort {
           options.ffprobePath ?? resolveFfprobePath(),
           options.ffprobeTimeoutMs ?? 15_000,
         ));
+  }
+
+  assertOwnedBy(input: Parameters<typeof assertAssetOwnedBy>[0]) {
+    assertAssetOwnedBy(input);
   }
 
   async persistGeneratedAsset(input: {
@@ -285,7 +294,7 @@ export class FileSystemAssetStorage implements ModelAssetStoragePort {
     assertCanvasObjectKey(input.workspaceId, input.objectKey);
     if (
       input.bytes.byteLength === 0 ||
-      input.bytes.byteLength > 25 * 1024 * 1024
+      input.bytes.byteLength > this.maxUploadBytes
     ) {
       throw new Error('Canvas asset payload has an invalid size.');
     }

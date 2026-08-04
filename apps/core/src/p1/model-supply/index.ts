@@ -41,6 +41,10 @@ import {
   type MerchantExecutionBillingPort,
   type MerchantExecutionInputSnapshot,
 } from '../product-billing/durable-service.js';
+import {
+  assertAssetOwnedBy,
+  MAX_CANVAS_ASSET_UPLOAD_BYTES,
+} from './asset-http-policy.js';
 
 const EXECUTION_ATTEMPT_BUDGET_SUSPENSION_CODE =
   'EXECUTION_ATTEMPT_BUDGET_SUSPENDED_BEFORE_PROVIDER';
@@ -279,6 +283,8 @@ function canvasGenerationResultInputs(submission: ModelSupplySubmission) {
 }
 
 export interface ModelAssetStoragePort {
+  assertOwnedBy?(input: Parameters<typeof assertAssetOwnedBy>[0]): void;
+  readonly maxUploadBytes?: number;
   persistGeneratedAsset(input: {
     workspaceId: string;
     bytes: Uint8Array;
@@ -303,7 +309,12 @@ export interface ModelAssetStoragePort {
 
 /** Test/default storage keeps the bytes instead of manufacturing a receipt. */
 export class MemoryModelAssetStorage implements ModelAssetStoragePort {
+  readonly maxUploadBytes = MAX_CANVAS_ASSET_UPLOAD_BYTES;
   private readonly objects = new Map<string, Uint8Array>();
+
+  assertOwnedBy(input: Parameters<typeof assertAssetOwnedBy>[0]) {
+    assertAssetOwnedBy(input);
+  }
 
   async persistGeneratedAsset(input: {
     workspaceId: string;

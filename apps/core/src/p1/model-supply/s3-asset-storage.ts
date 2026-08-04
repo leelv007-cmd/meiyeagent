@@ -17,6 +17,10 @@ import type {
 import {
   type OwnedAssetRegistrationFailureStage,
 } from './owned-asset-registration-lifecycle.js';
+import {
+  assertAssetOwnedBy,
+  MAX_CANVAS_ASSET_UPLOAD_BYTES,
+} from './asset-http-policy.js';
 
 export interface SharedObjectClient {
   delete(key: string): Promise<void>;
@@ -310,6 +314,7 @@ interface S3CompatibleAssetStorageOptions {
 }
 
 export class S3CompatibleAssetStorage implements ModelAssetStoragePort {
+  readonly maxUploadBytes = MAX_CANVAS_ASSET_UPLOAD_BYTES;
   private readonly cache: FileSystemAssetStorage;
   private readonly cacheDirectory: string;
   private readonly publicBaseUrl?: string;
@@ -328,6 +333,10 @@ export class S3CompatibleAssetStorage implements ModelAssetStoragePort {
         : {}),
       ...(options.videoProbe ? { videoProbe: options.videoProbe } : {}),
     });
+  }
+
+  assertOwnedBy(input: Parameters<typeof assertAssetOwnedBy>[0]) {
+    assertAssetOwnedBy(input);
   }
 
   async persistGeneratedAsset(
