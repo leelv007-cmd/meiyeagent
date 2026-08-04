@@ -203,13 +203,11 @@ export async function settlePendingPaymentWebhookEvents(
                 completeSettlement: (input) =>
                   creditPackages.completeSettlement(input),
                 validateBinding: (candidate, binding) =>
-                  assertWaffoCreditPackageSnapshot(
-                    {
-                      amount: candidate.amount,
-                      currency: candidate.currency,
-                      snapshot: binding.skuSnapshot,
-                    }
-                  ),
+                  assertWaffoCreditPackageSnapshot({
+                    amount: candidate.amount,
+                    currency: candidate.currency,
+                    snapshot: binding.skuSnapshot,
+                  }),
               }),
             settlePlan: settleVerifiedPlanPurchase,
           });

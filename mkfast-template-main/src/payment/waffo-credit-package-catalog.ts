@@ -150,13 +150,11 @@ export function assertWaffoCreditPackagePaymentFacts(
   }
 }
 
-export function assertWaffoCreditPackageSnapshot(
-  input: {
-    amount: string | undefined;
-    currency: string | undefined;
-    snapshot: CreditPackageSkuSnapshot;
-  }
-): void {
+export function assertWaffoCreditPackageSnapshot(input: {
+  amount: string | undefined;
+  currency: string | undefined;
+  snapshot: CreditPackageSkuSnapshot;
+}): void {
   if (
     normalizeAmount(input.amount) !==
     (input.snapshot.amountMicros / 1_000_000).toFixed(2)
