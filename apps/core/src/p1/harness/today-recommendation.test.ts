@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { contentPackageSchema } from '@meiye/contracts';
 
+import {
+  DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+  normalizeHarnessTodayRecommendationConfig,
+  resolveTodayRecommendationIndustrySlug,
+} from '../admin-config/foundation-module.js';
 import { compileCopyGenerationRequest } from './output-compiler.js';
 import { projectTodayRecommendation } from './today-recommendation.js';
 
@@ -61,14 +66,17 @@ test('today fixture uses the production primary copy candidate contract', () => 
 test('uses configured industry and platform rules before the persisted winner reason', () => {
   const configured = {
     ...record(1),
-    intent: { context: { industry: '美甲' } },
+    // Production writes industry_category (Chinese label or slug), not industry.
+    intent: { context: { industry_category: '皮肤管理' } },
     briefTrace: {
       ...record(1).briefTrace,
       platforms: ['xiaohongshu'],
     },
     recommendationRules: {
       weekdayWhyNow: { '6': '周六规则' },
-      industryWhyNow: { 美甲: '美甲行业先验' },
+      industryWhyNow: {
+        skin_management: '皮肤管理行业先验',
+      },
       platformWhyNow: { xiaohongshu: '小红书平台规则' },
     },
   };
@@ -76,8 +84,200 @@ test('uses configured industry and platform rules before the persisted winner re
   assert.equal(
     projectTodayRecommendation('workspace-1', 1, configured, NOW)
       .recommendation?.whyNow,
-    '美甲行业先验',
+    '皮肤管理行业先验',
   );
+});
+
+test('three published industry slugs each hit the industry whyNow layer', () => {
+  for (const [slug, label, reason] of [
+    ['hair_care', '美发', '护发行业先验'],
+    ['skin_management', '皮肤管理', '皮肤管理行业先验'],
+    ['hair_growth', '生发', '养发行业先验'],
+  ] as const) {
+    const bySlug = projectTodayRecommendation(
+      'workspace-1',
+      1,
+      {
+        ...record(1),
+        intent: { context: { industry_category: slug } },
+        briefTrace: {
+          ...record(1).briefTrace,
+          platforms: ['xiaohongshu'],
+        },
+        recommendationRules: {
+          weekdayWhyNow: { '6': '周六规则' },
+          industryWhyNow: {
+            hair_care: '护发行业先验',
+            skin_management: '皮肤管理行业先验',
+            hair_growth: '养发行业先验',
+          },
+          platformWhyNow: { xiaohongshu: '小红书平台规则' },
+        },
+      },
+      NOW,
+    );
+    assert.equal(bySlug.recommendation?.whyNow, reason, `slug ${slug}`);
+
+    const byLabel = projectTodayRecommendation(
+      'workspace-1',
+      1,
+      {
+        ...record(1),
+        intent: { context: { industry_category: label } },
+        briefTrace: {
+          ...record(1).briefTrace,
+          platforms: ['xiaohongshu'],
+        },
+        recommendationRules: {
+          weekdayWhyNow: { '6': '周六规则' },
+          industryWhyNow: {
+            hair_care: '护发行业先验',
+            skin_management: '皮肤管理行业先验',
+            hair_growth: '养发行业先验',
+          },
+          platformWhyNow: { xiaohongshu: '小红书平台规则' },
+        },
+      },
+      NOW,
+    );
+    assert.equal(byLabel.recommendation?.whyNow, reason, `label ${label}`);
+  }
+});
+
+test('orphan 美甲 and free-text industry values fall through to platform then weekday', () => {
+  const rules = {
+    weekdayWhyNow: { '6': '周六规则' },
+    industryWhyNow: {
+      hair_care: '护发行业先验',
+      // Legacy orphan key still present on a stored revision must not win.
+      美甲: '美甲孤儿条目',
+    },
+    platformWhyNow: { xiaohongshu: '小红书平台规则' },
+  };
+
+  assert.equal(
+    projectTodayRecommendation(
+      'workspace-1',
+      1,
+      {
+        ...record(1),
+        intent: { context: { industry_category: '美甲' } },
+        briefTrace: {
+          ...record(1).briefTrace,
+          platforms: ['xiaohongshu'],
+        },
+        recommendationRules: rules,
+      },
+      NOW,
+    ).recommendation?.whyNow,
+    '小红书平台规则',
+  );
+
+  assert.equal(
+    projectTodayRecommendation(
+      'workspace-1',
+      1,
+      {
+        ...record(1),
+        intent: { context: { industry_category: '自由文本随便写' } },
+        briefTrace: {
+          ...record(1).briefTrace,
+          platforms: ['xiaohongshu'],
+        },
+        recommendationRules: rules,
+      },
+      NOW,
+    ).recommendation?.whyNow,
+    '小红书平台规则',
+  );
+
+  assert.equal(
+    projectTodayRecommendation(
+      'workspace-1',
+      1,
+      {
+        ...record(1),
+        intent: { context: { industry_category: '美甲' } },
+        briefTrace: {
+          ...record(1).briefTrace,
+          platforms: [],
+        },
+        recommendationRules: rules,
+      },
+      NOW,
+    ).recommendation?.whyNow,
+    '周六规则',
+  );
+});
+
+test('persisted Chinese industryWhyNow keys migrate at read time and stay idempotent', () => {
+  const chineseRevision = {
+    weekdayWhyNow: { '6': '周六规则' },
+    industryWhyNow: {
+      美发: '旧键·护发',
+      皮肤管理: '旧键·皮肤管理',
+      美甲: '旧键·美甲孤儿',
+      生发: '旧键·养发',
+    },
+    platformWhyNow: { xiaohongshu: '小红书平台规则' },
+  };
+
+  const once = normalizeHarnessTodayRecommendationConfig(chineseRevision);
+  const twice = normalizeHarnessTodayRecommendationConfig(once);
+  assert.deepEqual(once, twice);
+  assert.deepEqual(once.industryWhyNow, {
+    hair_care: '旧键·护发',
+    skin_management: '旧键·皮肤管理',
+    hair_growth: '旧键·养发',
+    美甲: '旧键·美甲孤儿',
+  });
+
+  // Already-slug defaults are an identity transform.
+  assert.deepEqual(
+    normalizeHarnessTodayRecommendationConfig(
+      DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+    ),
+    DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+  );
+
+  assert.equal(
+    projectTodayRecommendation(
+      'workspace-1',
+      1,
+      {
+        ...record(1),
+        intent: { context: { industry_category: '美发' } },
+        briefTrace: {
+          ...record(1).briefTrace,
+          platforms: ['xiaohongshu'],
+        },
+        recommendationRules: chineseRevision,
+      },
+      NOW,
+    ).recommendation?.whyNow,
+    '旧键·护发',
+  );
+  assert.equal(
+    projectTodayRecommendation(
+      'workspace-1',
+      1,
+      {
+        ...record(1),
+        intent: { context: { industry_category: 'hair_growth' } },
+        briefTrace: {
+          ...record(1).briefTrace,
+          platforms: ['xiaohongshu'],
+        },
+        recommendationRules: chineseRevision,
+      },
+      NOW,
+    ).recommendation?.whyNow,
+    '旧键·养发',
+  );
+
+  assert.equal(resolveTodayRecommendationIndustrySlug('护发'), 'hair_care');
+  assert.equal(resolveTodayRecommendationIndustrySlug('养发'), 'hair_growth');
+  assert.equal(resolveTodayRecommendationIndustrySlug('美甲'), undefined);
 });
 
 test('replays a delivered image or video when media selection has no scores', () => {

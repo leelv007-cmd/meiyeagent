@@ -15,6 +15,7 @@ import {
 } from './bounded-execution-limits.js';
 import {
   AdminConfigFoundationModule,
+  DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
   DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
@@ -22,6 +23,8 @@ import {
   HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
   HARNESS_WOZ_RECIPE_CONFIG_KEY,
   MemoryAdminConfigRepository,
+  normalizeHarnessTodayRecommendationConfig,
+  resolveTodayRecommendationIndustrySlug,
 } from './foundation-module.js';
 
 /** Explicit bypass for tests of AdminConfigFoundationModule's own scope rules. */
@@ -1204,5 +1207,60 @@ describe('Admin config application seam', () => {
         ],
       },
     );
+  });
+});
+
+describe('today recommendation industry whyNow key migration (A7)', () => {
+  it('defaults use published industry slugs only', () => {
+    assert.deepEqual(
+      Object.keys(DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG.industryWhyNow).sort(),
+      ['hair_care', 'hair_growth', 'skin_management'],
+    );
+    assert.equal(
+      DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG.industryWhyNow.美甲,
+      undefined,
+    );
+  });
+
+  it('normalizes Chinese revision keys idempotently without write-back', () => {
+    const stored = {
+      weekdayWhyNow: { '1': '周一' },
+      industryWhyNow: {
+        美发: '护发理由',
+        皮肤管理: '皮肤理由',
+        生发: '养发理由',
+        美甲: '美甲孤儿',
+      },
+      platformWhyNow: { xiaohongshu: '平台' },
+    };
+    const once = normalizeHarnessTodayRecommendationConfig(stored);
+    const twice = normalizeHarnessTodayRecommendationConfig(once);
+    assert.deepEqual(once, twice);
+    assert.deepEqual(once.industryWhyNow, {
+      hair_care: '护发理由',
+      skin_management: '皮肤理由',
+      hair_growth: '养发理由',
+      美甲: '美甲孤儿',
+    });
+    assert.deepEqual(
+      normalizeHarnessTodayRecommendationConfig(
+        DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+      ),
+      DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
+    );
+  });
+
+  it('resolves production labels and slugs, and refuses 美甲', () => {
+    assert.equal(resolveTodayRecommendationIndustrySlug('hair_care'), 'hair_care');
+    assert.equal(resolveTodayRecommendationIndustrySlug('美发'), 'hair_care');
+    assert.equal(resolveTodayRecommendationIndustrySlug('护发'), 'hair_care');
+    assert.equal(
+      resolveTodayRecommendationIndustrySlug('皮肤管理'),
+      'skin_management',
+    );
+    assert.equal(resolveTodayRecommendationIndustrySlug('生发'), 'hair_growth');
+    assert.equal(resolveTodayRecommendationIndustrySlug('养发'), 'hair_growth');
+    assert.equal(resolveTodayRecommendationIndustrySlug('美甲'), undefined);
+    assert.equal(resolveTodayRecommendationIndustrySlug('随便'), undefined);
   });
 });

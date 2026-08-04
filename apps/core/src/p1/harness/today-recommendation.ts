@@ -4,7 +4,11 @@ import {
   type ContentPackage,
   type TodayRecommendationState,
 } from '@meiye/contracts';
-import type { HarnessTodayRecommendationConfig } from '../admin-config/foundation-module.js';
+import {
+  normalizeHarnessTodayRecommendationConfig,
+  resolveTodayRecommendationIndustrySlug,
+  type HarnessTodayRecommendationConfig,
+} from '../admin-config/foundation-module.js';
 
 // Today recommendation currently has no per-workspace timezone field. Keep the
 // existing merchant product convention explicit: Asia/Shanghai, with the
@@ -104,21 +108,33 @@ export function projectTodayRecommendation(
 }
 
 function configuredWhyNow(record: TodayRecommendationRecord, at: string) {
-  const rules = record.recommendationRules;
-  if (!rules) return undefined;
+  if (!record.recommendationRules) return undefined;
+  // Read-time key migration: persisted Chinese industry keys still hit after
+  // defaults moved to published slugs. Pure + idempotent; no write-back.
+  const rules = normalizeHarnessTodayRecommendationConfig(
+    record.recommendationRules,
+  );
 
   const intent = asRecord(record.intent);
   const intentContext = asRecord(intent?.context) ?? intent;
-  const industry =
+  const industryRaw =
     stringValue(intentContext?.industry_category) ??
     stringValue(intentContext?.industry) ??
     stringValue(intentContext?.scene);
+  // Production writes Chinese labels into industry_category; only published
+  // slugs (or resolvable aliases) may hit the industry layer. 美甲 / free text
+  // stay unmapped and fall through to platform → weekday.
+  const industrySlug = industryRaw
+    ? resolveTodayRecommendationIndustrySlug(industryRaw)
+    : undefined;
   const brief = asRecord(record.briefTrace);
   const platform = stringArray(brief?.platforms)[0];
   const weekday = merchantBusinessWeekday(at);
 
   return (
-    (industry ? stringValue(rules.industryWhyNow[industry]) : undefined) ??
+    (industrySlug
+      ? stringValue(rules.industryWhyNow[industrySlug])
+      : undefined) ??
     (platform ? stringValue(rules.platformWhyNow[platform]) : undefined) ??
     (weekday ? stringValue(rules.weekdayWhyNow[weekday]) : undefined)
   );

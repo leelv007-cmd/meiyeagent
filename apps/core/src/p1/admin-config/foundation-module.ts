@@ -264,15 +264,84 @@ export const harnessTodayRecommendationConfigSchema = z
 export type HarnessTodayRecommendationConfig = z.infer<
   typeof harnessTodayRecommendationConfigSchema
 >;
+/**
+ * Published C-5 industry slugs for today-recommendation industryWhyNow keys.
+ * Aliases cover (1) parse-service labels (护发/皮肤管理/生发), (2) question-card
+ * options that production actually writes into intent.context.industry_category
+ * (美发/皮肤管理), and (3) common merchant free-text (养发). 美甲 is intentionally
+ * absent — no published supply, so it must fall through to platform/weekday.
+ */
+export const TODAY_RECOMMENDATION_INDUSTRY_SLUGS = [
+  'hair_care',
+  'skin_management',
+  'hair_growth',
+] as const;
+export type TodayRecommendationIndustrySlug =
+  (typeof TODAY_RECOMMENDATION_INDUSTRY_SLUGS)[number];
+
+const TODAY_RECOMMENDATION_INDUSTRY_ALIASES: Readonly<
+  Record<string, TodayRecommendationIndustrySlug>
+> = {
+  hair_care: 'hair_care',
+  skin_management: 'skin_management',
+  hair_growth: 'hair_growth',
+  护发: 'hair_care',
+  美发: 'hair_care',
+  皮肤管理: 'skin_management',
+  生发: 'hair_growth',
+  养发: 'hair_growth',
+};
+
+/** Deterministic label/slug → published industry slug. Unmapped values (incl. 美甲) → undefined. */
+export function resolveTodayRecommendationIndustrySlug(
+  value: string,
+): TodayRecommendationIndustrySlug | undefined {
+  const key = value.trim();
+  return key ? TODAY_RECOMMENDATION_INDUSTRY_ALIASES[key] : undefined;
+}
+
+/**
+ * Idempotent key migration for industryWhyNow: Chinese/alias keys become
+ * published slugs. Safe to re-run; already-slug configs are identity. Applied
+ * at recommendation read time so persisted admin-config revisions that still
+ * carry Chinese keys keep working without a write-back migration.
+ */
+export function normalizeHarnessTodayRecommendationConfig(
+  config: HarnessTodayRecommendationConfig,
+): HarnessTodayRecommendationConfig {
+  const industryWhyNow: Record<string, string> = {};
+  for (const [rawKey, reason] of Object.entries(config.industryWhyNow)) {
+    const key = rawKey.trim();
+    if (!key) continue;
+    const slug = resolveTodayRecommendationIndustrySlug(key);
+    if (slug) {
+      // Prefer an already-canonical slug entry when both alias and slug exist.
+      if (!(slug in industryWhyNow) || key === slug) {
+        industryWhyNow[slug] = reason;
+      }
+      continue;
+    }
+    // Keep unmapped keys (e.g. legacy 美甲) without promoting them to a slug.
+    if (!(key in industryWhyNow)) {
+      industryWhyNow[key] = reason;
+    }
+  }
+  return {
+    weekdayWhyNow: config.weekdayWhyNow,
+    platformWhyNow: config.platformWhyNow,
+    industryWhyNow,
+  };
+}
+
 export const DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG: HarnessTodayRecommendationConfig = {
   weekdayWhyNow: {
     '1': '新的一周适合把本店主推项目重新介绍给顾客。',
     '5': '周末前适合提醒顾客安排下一次到店。',
   },
   industryWhyNow: {
-    美发: '结合本店发型服务，今天适合把主推项目讲清楚。',
-    美甲: '结合本店美甲服务，今天适合展示本周主推款式。',
-    皮肤管理: '结合本店护理服务，今天适合提醒顾客安排护理。',
+    hair_care: '结合本店护发与头皮护理，今天适合把主推项目讲清楚。',
+    skin_management: '结合本店皮肤管理项目，今天适合提醒顾客安排护理。',
+    hair_growth: '结合本店养发养护服务，今天适合把到店项目讲清楚。',
   },
   platformWhyNow: {
     xiaohongshu: '今天适合先用一篇实用内容让顾客了解本店项目。',
