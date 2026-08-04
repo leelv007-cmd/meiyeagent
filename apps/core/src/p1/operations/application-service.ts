@@ -315,16 +315,6 @@ interface OperationsDependencies {
   contentWriteOwnership?: {
     get(workspaceId: string): Promise<'legacy' | 'frozen' | 'contentpackage'>;
   };
-  contentPackageMigration?: {
-    activate(workspaceId: string, runId: string): Promise<unknown>;
-    backfill(workspaceId: string, runId: string): Promise<unknown>;
-    dryRun(workspaceId: string, runId: string): Promise<unknown>;
-    freeze(workspaceId: string, runId: string): Promise<unknown>;
-    inspect(workspaceId: string, runId: string): Promise<unknown>;
-    report(workspaceId: string, runId: string): Promise<unknown>;
-    rollback(workspaceId: string, runId: string): Promise<unknown>;
-    status(workspaceId: string, runId: string): unknown;
-  };
 }
 
 interface CreativeJobPreparationOptions {
@@ -7772,81 +7762,6 @@ export class OperationsApplicationService {
         ...contentPackage,
         ...contentPackageVisibleStatus(contentPackage.status),
       }));
-  }
-
-  private migration() {
-    if (!this.dependencies.contentPackageMigration) {
-      throw new OperationsError(
-        'CONTENT_PACKAGE_MIGRATION_UNAVAILABLE',
-        'ContentPackage migration is not configured.',
-        503
-      );
-    }
-    return this.dependencies.contentPackageMigration;
-  }
-
-  async inspectContentPackageMigration(
-    context: OperationContext,
-    runId: string
-  ) {
-    await this.authorize(context);
-    return this.migration().inspect(context.workspaceId, runId);
-  }
-
-  async dryRunContentPackageMigration(
-    context: OperationContext,
-    runId: string
-  ) {
-    await this.authorize(context);
-    return this.migration().dryRun(context.workspaceId, runId);
-  }
-
-  async freezeContentPackageMigration(
-    context: OperationContext,
-    runId: string
-  ) {
-    await this.authorize(context);
-    return this.migration().freeze(context.workspaceId, runId);
-  }
-
-  async backfillContentPackageMigration(
-    context: OperationContext,
-    runId: string
-  ) {
-    await this.authorize(context);
-    return this.migration().backfill(context.workspaceId, runId);
-  }
-
-  async activateContentPackageMigration(
-    context: OperationContext,
-    runId: string
-  ) {
-    await this.authorize(context);
-    return this.migration().activate(context.workspaceId, runId);
-  }
-
-  async rollbackContentPackageMigration(
-    context: OperationContext,
-    runId: string
-  ) {
-    await this.authorize(context);
-    return this.migration().rollback(context.workspaceId, runId);
-  }
-
-  async getContentPackageMigrationStatus(
-    context: OperationContext,
-    runId: string
-  ) {
-    await this.authorize(context);
-    return this.migration().status(context.workspaceId, runId);
-  }
-
-  async getContentPackageMigrationReport(
-    context: OperationContext,
-    runId: string
-  ) {
-    await this.authorize(context);
-    return this.migration().report(context.workspaceId, runId);
   }
 
 }

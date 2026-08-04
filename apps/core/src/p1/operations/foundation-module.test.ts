@@ -37,21 +37,30 @@ describe('operations foundation module', () => {
 
   it('keeps ContentPackage migration commands and reports behind the admin gate', async () => {
     const calls: string[] = [];
+    const unexpectedMigrationCall = () => {
+      throw new Error('Unexpected migration operation.');
+    };
     const module = new OperationsFoundationModule(
+      {} as OperationsApplicationService,
       {
-        async dryRunContentPackageMigration(_context: unknown, runId: string) {
-          calls.push(`dry-run:${runId}`);
-          return { runId };
+        adminActorIds: ['migration-admin'],
+        contentPackageMigration: {
+          activate: unexpectedMigrationCall,
+          backfill: unexpectedMigrationCall,
+          async dryRun(workspaceId: string, runId: string) {
+            calls.push(`dry-run:${workspaceId}:${runId}`);
+            return { runId };
+          },
+          freeze: unexpectedMigrationCall,
+          inspect: unexpectedMigrationCall,
+          async report(workspaceId: string, runId: string) {
+            calls.push(`report:${workspaceId}:${runId}`);
+            return { runId };
+          },
+          rollback: unexpectedMigrationCall,
+          status: unexpectedMigrationCall,
         },
-        async getContentPackageMigrationReport(
-          _context: unknown,
-          runId: string
-        ) {
-          calls.push(`report:${runId}`);
-          return { runId };
-        },
-      } as unknown as OperationsApplicationService,
-      { adminActorIds: ['migration-admin'] }
+      }
     );
     const baseContext = {
       correlationId: 'corr-migration-admin',
@@ -86,7 +95,36 @@ describe('operations foundation module', () => {
       },
     });
 
-    assert.deepEqual(calls, ['dry-run:run-1', 'report:run-1']);
+    assert.deepEqual(calls, [
+      'dry-run:workspace-migration-admin:run-1',
+      'report:workspace-migration-admin:run-1',
+    ]);
+  });
+
+  it('returns 503 when ContentPackage migration is not configured', async () => {
+    const module = new OperationsFoundationModule(
+      {} as OperationsApplicationService,
+      { adminActorIds: ['migration-admin'] }
+    );
+
+    await assert.rejects(
+      module.execute({
+        context: {
+          correlationId: 'corr-migration-unavailable',
+          userId: 'migration-admin',
+          workspaceId: 'workspace-migration-unavailable',
+        },
+        input: {
+          action: 'content_package_migration_inspect',
+          payload: { runId: 'run-unavailable' },
+        },
+      }),
+      (error: unknown) =>
+        error instanceof OperationsError &&
+        error.code === 'CONTENT_PACKAGE_MIGRATION_UNAVAILABLE' &&
+        error.message === 'ContentPackage migration is not configured.' &&
+        error.status === 503
+    );
   });
 
   it('routes only trusted package lineage when creating a Canvas work from content', async () => {

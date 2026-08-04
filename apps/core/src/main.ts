@@ -1268,7 +1268,6 @@ operationsService = new OperationsApplicationService(operationsRepository, {
   contentPackageApprovalPolicy,
   contentPackageRightsBasisResolver,
   contentPackageRightsResolver,
-  contentPackageMigration,
   contentWriteOwnership: contentPackageWriteOwnership,
   assetDataClassResolver: new ProductAssetDataClassResolver(
     relationalProductRepository
@@ -1859,6 +1858,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
     new MemoryFoundationModule(reuseMemoryService),
     new OperationsFoundationModule(operationsService, {
       adminActorIds: modelAdminActorIds,
+      contentPackageMigration,
       delivery: contentPackageDelivery,
     }),
   ],

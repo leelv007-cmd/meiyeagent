@@ -101,11 +101,10 @@ export async function runContentPackageMigrationCli(
     const module = new OperationsFoundationModule(
       new OperationsApplicationService(operations, {
         canvasExporter: new RecordedCanvasExportAdapter(),
-        contentPackageMigration: service,
         imageGenerator: new RecordedImageGenerationAdapter(),
         notifier: { async send() {} },
       }),
-      { adminActorIds: [adminId] }
+      { adminActorIds: [adminId], contentPackageMigration: service }
     );
     const context = { correlationId, userId: adminId, workspaceId };
     if (requested === 'status' || requested === 'report') {

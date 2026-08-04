@@ -266,7 +266,7 @@ const ADMIN_QUERIES = new Set([
 
 /**
  * Registers operations behind the highest Product Core seam. The module owns
- * no state; every action delegates to OperationsApplicationService.
+ * no state; commands delegate to injected application services.
  */
 export class OperationsFoundationModule implements P1OperationModule {
   readonly name = 'operations';
@@ -276,6 +276,16 @@ export class OperationsFoundationModule implements P1OperationModule {
     private readonly operations: OperationsApplicationService,
     private readonly options: {
       adminActorIds?: readonly string[];
+      contentPackageMigration?: {
+        activate(workspaceId: string, runId: string): Promise<unknown>;
+        backfill(workspaceId: string, runId: string): Promise<unknown>;
+        dryRun(workspaceId: string, runId: string): Promise<unknown>;
+        freeze(workspaceId: string, runId: string): Promise<unknown>;
+        inspect(workspaceId: string, runId: string): Promise<unknown>;
+        report(workspaceId: string, runId: string): Promise<unknown>;
+        rollback(workspaceId: string, runId: string): Promise<unknown>;
+        status(workspaceId: string, runId: string): unknown;
+      };
       delivery?: ContentPackageDeliveryService;
     } = {}
   ) {
@@ -291,6 +301,17 @@ export class OperationsFoundationModule implements P1OperationModule {
       );
     }
     return { ...context, actor: 'admin' as const };
+  }
+
+  private migration() {
+    if (!this.options.contentPackageMigration) {
+      throw new OperationsError(
+        'CONTENT_PACKAGE_MIGRATION_UNAVAILABLE',
+        'ContentPackage migration is not configured.',
+        503
+      );
+    }
+    return this.options.contentPackageMigration;
   }
 
   async execute(args: {
@@ -347,36 +368,30 @@ export class OperationsFoundationModule implements P1OperationModule {
           await this.operations.adoptCanvasWorkExport(context, parsed.data)
         );
       }
-      case 'content_package_migration_activate':
-        return this.operations.activateContentPackageMigration(
-          context,
-          migrationPayload().runId
-        );
-      case 'content_package_migration_backfill':
-        return this.operations.backfillContentPackageMigration(
-          context,
-          migrationPayload().runId
-        );
-      case 'content_package_migration_dry_run':
-        return this.operations.dryRunContentPackageMigration(
-          context,
-          migrationPayload().runId
-        );
-      case 'content_package_migration_freeze':
-        return this.operations.freezeContentPackageMigration(
-          context,
-          migrationPayload().runId
-        );
-      case 'content_package_migration_inspect':
-        return this.operations.inspectContentPackageMigration(
-          context,
-          migrationPayload().runId
-        );
-      case 'content_package_migration_rollback':
-        return this.operations.rollbackContentPackageMigration(
-          context,
-          migrationPayload().runId
-        );
+      case 'content_package_migration_activate': {
+        const { runId } = migrationPayload();
+        return this.migration().activate(context.workspaceId, runId);
+      }
+      case 'content_package_migration_backfill': {
+        const { runId } = migrationPayload();
+        return this.migration().backfill(context.workspaceId, runId);
+      }
+      case 'content_package_migration_dry_run': {
+        const { runId } = migrationPayload();
+        return this.migration().dryRun(context.workspaceId, runId);
+      }
+      case 'content_package_migration_freeze': {
+        const { runId } = migrationPayload();
+        return this.migration().freeze(context.workspaceId, runId);
+      }
+      case 'content_package_migration_inspect': {
+        const { runId } = migrationPayload();
+        return this.migration().inspect(context.workspaceId, runId);
+      }
+      case 'content_package_migration_rollback': {
+        const { runId } = migrationPayload();
+        return this.migration().rollback(context.workspaceId, runId);
+      }
       case 'adopt_into_content_package': {
         const parsed = adoptIntoContentPackageCommandSchema.safeParse(payload);
         if (!parsed.success) {
@@ -713,16 +728,14 @@ export class OperationsFoundationModule implements P1OperationModule {
     };
 
     switch (action) {
-      case 'content_package_migration_report':
-        return this.operations.getContentPackageMigrationReport(
-          context,
-          migrationPayload().runId
-        );
-      case 'content_package_migration_status':
-        return this.operations.getContentPackageMigrationStatus(
-          context,
-          migrationPayload().runId
-        );
+      case 'content_package_migration_report': {
+        const { runId } = migrationPayload();
+        return this.migration().report(context.workspaceId, runId);
+      }
+      case 'content_package_migration_status': {
+        const { runId } = migrationPayload();
+        return this.migration().status(context.workspaceId, runId);
+      }
       case 'creative_workbench':
         return this.operations.getCreativeWorkbench(context);
       case 'canonical_history':
