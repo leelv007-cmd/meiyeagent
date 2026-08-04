@@ -119,3 +119,37 @@ test('the public plan catalog accepts HKD and rejects legacy CNY pricing', () =>
     false,
   );
 });
+
+test('the public plan catalog carries all four merchant plan cards without internal pricing facts', () => {
+  const catalog = publicPlanCatalogSchema.parse({
+    addOns: CREDIT_PLAN_CONFIG_DEFAULTS['plan.credits.addons'],
+    plans: [
+      {
+        id: 'trial',
+        credits: 100,
+        concurrencyLimit: 1,
+        currency: 'HKD',
+        cyclePrices: [
+          { amountMicros: 0, cycle: 'single_month' },
+          { amountMicros: 0, cycle: 'monthly' },
+          { amountMicros: 0, cycle: 'yearly' },
+        ],
+        monthlyPriceMicros: 0,
+        referenceOutputs: { copy: 100, image: 20, video: 2 },
+      },
+      ...PUBLIC_PLAN_CREDIT_SEED,
+    ],
+  });
+
+  assert.deepEqual(
+    catalog.plans.map((plan) => plan.id),
+    ['trial', 'starter', 'growth', 'pro'],
+  );
+  assert.equal(
+    publicPlanCatalogSchema.safeParse({
+      ...catalog,
+      referenceModels: { copy: 'internal-model' },
+    }).success,
+    false,
+  );
+});

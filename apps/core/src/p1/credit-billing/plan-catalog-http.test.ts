@@ -59,6 +59,21 @@ test('published plan prices reach the service-token-gated Core read contract', a
     };
   };
   const growth = payload.data.plans.find((plan) => plan.id === 'growth');
+  const trial = payload.data.plans.find((plan) => plan.id === 'trial');
+  assert.deepEqual(
+    payload.data.plans.map((plan) => plan.id),
+    ['trial', 'starter', 'growth', 'pro']
+  );
+  assert.deepEqual(trial?.cyclePrices, [
+    { amountMicros: 0, cycle: 'single_month' },
+    { amountMicros: 0, cycle: 'monthly' },
+    { amountMicros: 0, cycle: 'yearly' },
+  ]);
+  assert.deepEqual(trial?.referenceOutputs, {
+    copy: 100,
+    image: 20,
+    video: 2,
+  });
   assert.equal(growth?.monthlyPriceMicros, 579_700_809);
   assert.deepEqual(growth?.cyclePrices, [
     { amountMicros: 580_000_000, cycle: 'single_month' },

@@ -1212,9 +1212,7 @@ export function createCoreServer({
           200,
           publicPlanCatalogSchema.parse({
             addOns: catalog.addOns,
-            plans: catalog.plans
-              .filter((plan) => plan.id !== 'trial')
-              .map((plan) => ({
+            plans: catalog.plans.map((plan) => ({
                 credits: plan.credits,
                 concurrencyLimit: plan.concurrencyLimit,
                 currency: plan.currency,

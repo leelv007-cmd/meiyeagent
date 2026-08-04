@@ -45,7 +45,7 @@ export type PublicCreditBalance = z.infer<
   typeof publicCreditBalanceSchema
 >;
 
-export const publicPlanTierIds = ['starter', 'growth', 'pro'] as const;
+export const publicPlanTierIds = ['trial', 'starter', 'growth', 'pro'] as const;
 export const publicPlanBillingCycles = [
   'single_month',
   'monthly',
@@ -90,7 +90,7 @@ export const publicPlanOfferSchema = z
     concurrencyLimit: z.number().int().positive(),
     currency: z.literal('HKD'),
     cyclePrices: z.array(publicPlanCyclePriceSchema).length(3),
-    monthlyPriceMicros: z.number().int().positive(),
+    monthlyPriceMicros: z.number().int().nonnegative(),
     referenceOutputs: publicPlanReferenceOutputsSchema,
   })
   .strict();

@@ -13,90 +13,6 @@ import {
 } from '@/lib/price-plan';
 import type { PricePlan } from '@/payment/types';
 import { PaymentTypes, PlanIntervals } from '@/payment/types';
-import ts from 'typescript';
-
-type PriceLookupSurvey = {
-  /** What `findSubscriptionPrice` is called locally, honouring `as` aliases. */
-  binding: string;
-  /** First argument of each direct call, in source order. */
-  callArguments: ts.Node[];
-  /** Any use that is not a direct call — an alias, a re-export, a hand-off. */
-  otherUses: string[];
-};
-
-/**
- * Survey every use of `findSubscriptionPrice` in a file, through the AST.
- *
- * Text matching kept losing this argument: an `as` alias renames the callee, a
- * wrapper hides the argument behind another function, and a comment mentioning
- * the name inflates any count you take. The compiler sees none of that — it
- * resolves the import to a local binding and comments do not exist in the
- * tree — so ask it instead of guessing at the source text.
- */
-function surveyPriceLookups(
-  sourceText: string,
-  fileName: string
-): PriceLookupSurvey {
-  const source = ts.createSourceFile(
-    fileName,
-    sourceText,
-    ts.ScriptTarget.Latest,
-    /* setParentNodes */ true,
-    ts.ScriptKind.TSX
-  );
-
-  let binding: string | undefined;
-  for (const statement of source.statements) {
-    if (!ts.isImportDeclaration(statement)) continue;
-    const named = statement.importClause?.namedBindings;
-    if (!named || !ts.isNamedImports(named)) continue;
-    for (const element of named.elements) {
-      // `propertyName` is set only for `imported as local`.
-      const imported = (element.propertyName ?? element.name).text;
-      if (imported === 'findSubscriptionPrice') binding = element.name.text;
-    }
-  }
-  assert.ok(
-    binding,
-    'the page must import findSubscriptionPrice to price anything'
-  );
-
-  const callArguments: ts.Node[] = [];
-  const otherUses: string[] = [];
-  const describe = (node: ts.Node) => {
-    const { line } = source.getLineAndCharacterOfPosition(
-      node.getStart(source)
-    );
-    return `line ${line + 1}: ${ts.SyntaxKind[node.parent.kind]}`;
-  };
-  const visit = (node: ts.Node) => {
-    // The import itself is a declaration, not a use.
-    if (ts.isImportDeclaration(node)) return;
-    if (ts.isIdentifier(node) && node.text === binding) {
-      const parent = node.parent;
-      if (parent && ts.isCallExpression(parent) && parent.expression === node) {
-        callArguments.push(parent.arguments[0]);
-      } else {
-        otherUses.push(describe(node));
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-  ts.forEachChild(source, visit);
-
-  return { binding, callArguments, otherUses };
-}
-
-/** True for the expression `plan.configPlanId`, as a tree rather than a string. */
-function isDisplayPlanKey(node: ts.Node | undefined) {
-  return (
-    !!node &&
-    ts.isPropertyAccessExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === 'plan' &&
-    node.name.text === 'configPlanId'
-  );
-}
 
 /**
  * Run `body` against a catalogue where each product carries its own price.
@@ -162,9 +78,10 @@ test('pricing page is reskinned to brand tokens, not the template skin', () => {
   assert.match(shell, /--primary:\s*var\(--ink\)/u);
   assert.match(shell, /Inter, "HarmonyOS Sans"/u);
   assert.match(shell, /\.dark \.meiye-pricing-shell/u);
-  // Rose-gold appears only as the subscription spark accent.
-  assert.match(src, /var\(--spark\)/u);
-  assert.match(src, /IconSparkles/u);
+  // Rose-gold appears only as the subscription spark accent (credit matrix cards).
+  const content = read('src/components/pricing/credit-pricing-content.tsx');
+  assert.match(content, /var\(--spark\)/u);
+  assert.match(content, /IconSparkles/u);
 });
 
 test('landing pricing speaks the launch contract in the landing scope', () => {
@@ -250,70 +167,33 @@ test('one price, one source: the landing and /pricing cannot disagree', () => {
     }
   }
 
-  // Both surfaces read the payment configuration through the same helper.
+  // Landing still uses the shared helper; /pricing now prices from the published
+  // credit catalogue (#310) and only reads payment price ids for checkout CTAs
+  // through findSubscriptionPrice inside the credit matrix module.
   assert.match(home, /growthMonthlyPriceLabel\(\)/u);
-  assert.match(pricing, /findSubscriptionPrice\(/u);
   assert.match(pricePlan, /export function growthMonthlyPriceLabel/u);
   assert.match(pricePlan, /export function findSubscriptionPrice/u);
   assert.match(pricePlan, /getPricePlans\(\)\[configPlanId\]/u);
+  const content = read('src/components/pricing/credit-pricing-content.tsx');
+  assert.match(content, /findSubscriptionPrice\(/u);
+  assert.match(pricing, /getPublicPlanCatalog/u);
 });
 
-test('one product key, one source: repointing a tier moves both pages at once', () => {
-  // Calling the same helper is not the same as quoting the same product.
-  // /pricing used to carry its own `configPlanId: 'pro'` literal for the paid
-  // card while the landing priced off GROWTH_CONFIG_PLAN_ID — two independent
-  // copies of the plan key, so repointing that one row at another product made
-  // the pages disagree again while every "same helper" assertion stayed green.
+test('landing mapping stays shared; credit matrix prices published catalog ids', () => {
   const pricing = read(PRICING);
   const pricePlan = read(PRICE_PLAN);
+  const content = read('src/components/pricing/credit-pricing-content.tsx');
 
-  // The mapping exists in exactly one place …
   assert.match(pricePlan, /export const PUBLIC_PLAN_CONFIG_IDS = \{/u);
   assert.match(
     pricePlan,
     /export const GROWTH_CONFIG_PLAN_ID = PUBLIC_PLAN_CONFIG_IDS\.growth;/u,
     'the landing price must resolve through the shared mapping, not a twin literal'
   );
-
-  // … and /pricing reads it rather than keeping its own copy.
-  assert.match(pricing, /configPlanId: PUBLIC_PLAN_CONFIG_IDS\.starter,/u);
-  assert.match(pricing, /configPlanId: PUBLIC_PLAN_CONFIG_IDS\.growth,/u);
-  assert.doesNotMatch(
-    pricing,
-    /configPlanId: ['"`]/u,
-    'a literal plan key here is a second source that can drift from the landing'
-  );
-
-  // Storing the key in the mapping is worth nothing if the page then prices a
-  // different key anyway. Every price lookup on this page must go through the
-  // display plan's own configPlanId — a literal argument here reintroduces the
-  // fork one level down, where the DISPLAY_PLANS assertions above cannot see it.
-  const survey = surveyPriceLookups(pricing, PRICING);
-
-  // 中级 monthly + 中级 yearly + the CTA's monthly. Three cards, but only the
-  // paid one is priced, and it is priced twice: once to show and once to decide
-  // whether checkout is reachable.
-  const EXPECTED_PRICE_LOOKUPS = 3;
-
-  // Every use must be a call. Handing the function to a variable, a wrapper or
-  // a re-export moves the argument somewhere this guard cannot read it, so the
-  // hand-off is the failure — there is no legitimate reason for one here.
-  assert.deepEqual(
-    survey.otherUses,
-    [],
-    `${survey.binding} must only ever be called directly on this page`
-  );
-  assert.equal(
-    survey.callArguments.length,
-    EXPECTED_PRICE_LOOKUPS,
-    'a price lookup was added or removed — is the new one keyed by the display plan?'
-  );
-  for (const argument of survey.callArguments) {
-    assert.ok(
-      isDisplayPlanKey(argument),
-      `price every card by plan.configPlanId, never by ${argument?.getText() ?? 'nothing'}`
-    );
-  }
+  // Shell does not reintroduce DISPLAY_PLANS configPlanId forks.
+  assert.doesNotMatch(pricing, /configPlanId:/u);
+  // Checkout price lookups are keyed by the published plan offer id.
+  assert.match(content, /findSubscriptionPrice\(\s*plan\.id/u);
 });
 
 test('the mapping states exactly which product backs each public tier', () => {
@@ -327,27 +207,23 @@ test('the mapping states exactly which product backs each public tier', () => {
   assert.equal(GROWTH_CONFIG_PLAN_ID, 'growth');
 });
 
-test('the Growth card sends its mapped config plan id to checkout', () => {
-  const pricing = read(PRICING);
+test('subscription checkout submits the published plan offer id', () => {
+  const content = read('src/components/pricing/credit-pricing-content.tsx');
   assert.match(
-    pricing,
-    /<CheckoutButton[\s\S]*?planId=\{plan\.configPlanId as string\}/u,
-    'Growth checkout must submit the same mapped plan id used for display'
+    content,
+    /planId=\{plan\.id\}/u,
+    'checkout must submit the published plan offer id used for display'
   );
 });
 
-test('both public surfaces keep the handle the browser reads the price by', () => {
-  // The browser gate (tests/e2e/specs/public-plan-price-source.spec.ts) can
-  // only compare the two pages if it can find the price on each. Losing the
-  // testid on one of them turns that gate into "element not found", which is a
-  // red run whose message points at the test rather than at the reshell that
-  // dropped the attribute. Say it here, where the reason is written down.
+test('landing keeps the shared paid monthly price handle; credit matrix uses plan price testids', () => {
   const home = read(HOME_PRICING);
-  const pricing = read(PRICING);
+  const content = read('src/components/pricing/credit-pricing-content.tsx');
   assert.equal(PUBLIC_PAID_MONTHLY_PRICE_TESTID, 'public-paid-monthly-price');
   assert.match(home, /PUBLIC_PAID_MONTHLY_PRICE_TESTID/u);
   assert.match(home, /data-testid=\{plan\.priceTestId\}/u);
-  assert.match(pricing, /data-testid=\{PUBLIC_PAID_MONTHLY_PRICE_TESTID\}/u);
+  // Credit matrix exposes per-plan published prices for browser assertions.
+  assert.match(content, /pricing-price-\$\{plan\.id\}/u);
 });
 
 test('the landing reads the Growth product out of the catalogue every time it is asked', () => {
@@ -401,10 +277,11 @@ test('the landing reads the Growth product out of the catalogue every time it is
   );
 });
 
-test('the page loads the credit catalogue without displaying #310 pricing', () => {
+test('the page loads the credit catalogue and renders the #310 credit matrix', () => {
   const pricing = read(PRICING);
   assert.match(pricing, /loader: \(\) => getPublicPlanCatalog\(\)/u);
   assert.match(pricing, /Route\.useLoaderData\(\)/u);
+  assert.match(pricing, /CreditPricingContent/u);
   assert.doesNotMatch(pricing, /quota\.credits/u);
   assert.doesNotMatch(
     pricing,
@@ -467,49 +344,49 @@ test('landing pricing discloses the pilot payment stance in the footnote', () =>
   assert.match(en.landing_pricing_footnote_prefix, /redemption code/iu);
 });
 
-test('dead "不可用" CTA is gone; availability is computed, not faked', () => {
+test('credit matrix page wires published catalog and honest checkout seams', () => {
   const src = read(PRICING);
-  // The template dead-end label must not be rendered as a CTA on /pricing.
+  assert.match(src, /getPublicPlanCatalog/u);
+  assert.match(src, /CreditPricingContent/u);
   assert.doesNotMatch(src, /pricing_card_not_available/u);
-  // Availability derives from the real payment computation.
-  assert.match(src, /websiteConfig\.payment\?\.enable/u);
-  assert.match(src, /hasValidPriceId/u);
-  // Honest unavailable states with a reason line.
-  assert.match(src, /pricing_plan_payment_not_open/u);
-  assert.match(src, /pricing_plan_purchase_unavailable/u);
-  // A real checkout path exists when a valid price id is configured.
-  assert.match(src, /CheckoutButton/u);
-});
-
-test('single coherent plan presentation does not pre-empt #310', () => {
-  const src = read(PRICING);
-  assert.doesNotMatch(src, /quota\.credits/u);
+  assert.doesNotMatch(src, /PricingTable/u);
+  // Legacy allowance / output-count vocabulary stays off the page shell.
   assert.doesNotMatch(src, /pricing_output_copy_count/u);
   assert.doesNotMatch(src, /pricing_output_image_count/u);
   assert.doesNotMatch(src, /pricing_output_video_count/u);
-  // The "并发任务" jargon label is not used; merchant language replaces it.
-  assert.doesNotMatch(src, /pricing_output_concurrency_label/u);
-  assert.match(src, /pricing_plan_concurrency_label/u);
-  // The separate second row (raw PricingTable) is not stacked on this page.
-  assert.doesNotMatch(src, /PricingTable/u);
+});
+
+test('credit matrix module owns anchors, cycle switcher and checkout CTAs', () => {
+  const content = read('src/components/pricing/credit-pricing-content.tsx');
+  assert.match(content, /id="subscription-plans"/u);
+  assert.match(content, /id="credit-boosters"/u);
+  assert.match(content, /pricing_billing_cycle_yearly/u);
+  assert.match(content, /pricing_reference_disclaimer/u);
+  assert.match(content, /CheckoutButton/u);
+  assert.match(content, /CreditPackageCheckoutButton/u);
+  assert.match(content, /websiteConfig\.payment\?\.enable/u);
+  assert.match(content, /pricing_plan_payment_not_open/u);
+  assert.match(content, /pricing_plan_purchase_unavailable/u);
 });
 
 test('new pricing copy is merchant Chinese and reaches zh/en parity', () => {
   const zh = JSON.parse(read('project.inlang/messages/zh.json'));
   const en = JSON.parse(read('project.inlang/messages/en.json'));
   const keys = [
-    'pricing_plan_concurrency_label',
+    'pricing_billing_cycle_label',
+    'pricing_billing_cycle_single_month',
+    'pricing_billing_cycle_monthly',
+    'pricing_billing_cycle_yearly',
+    'pricing_booster_heading',
+    'pricing_booster_buy',
+    'pricing_reference_disclaimer',
+    'pricing_reference_estimate',
+    'pricing_trial_no_purchase',
     'pricing_plan_login_to_subscribe',
     'pricing_plan_payment_not_open',
-    'pricing_plan_payment_not_open_hint',
-    'pricing_plan_price_custom',
-    'pricing_plan_price_free',
     'pricing_plan_purchase_unavailable',
-    'pricing_plan_purchase_unavailable_hint',
-    'pricing_plan_recommended',
     'pricing_plan_subscribe',
     'pricing_plan_subtitle',
-    'pricing_plan_yearly_hint',
   ];
   for (const key of keys) {
     assert.equal(typeof zh[key], 'string', `zh missing ${key}`);
@@ -517,10 +394,8 @@ test('new pricing copy is merchant Chinese and reaches zh/en parity', () => {
     assert.ok(zh[key].length > 0, `zh empty ${key}`);
     assert.ok(en[key].length > 0, `en empty ${key}`);
   }
-  // Merchant language: no "并发" jargon in the page-facing strings.
-  assert.doesNotMatch(zh.pricing_plan_concurrency_label, /并发/u);
   assert.doesNotMatch(zh.pricing_plan_subtitle, /并发/u);
-  assert.equal(zh.pricing_plan_concurrency_label, '可同时进行的创作数');
+  assert.equal(zh.pricing_billing_cycle_yearly, '包年付费');
 });
 
 test('template design doc is retired and points at the root design system', () => {

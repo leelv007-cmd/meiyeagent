@@ -2,7 +2,10 @@ import {
   pricing_checkout_failed,
   pricing_checkout_loading,
 } from '@/locale/paraglide/messages';
-import { createCheckoutSession } from '@/api/payment';
+import {
+  createCheckoutSession,
+  createCreditPackageCheckoutSession,
+} from '@/api/payment';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { IconLoader2 } from '@tabler/icons-react';
@@ -69,6 +72,57 @@ export function CheckoutButton({
       data-testid={dataTestId}
       onClick={handleClick}
       disabled={isLoading}
+    >
+      {isLoading ? (
+        <>
+          <IconLoader2 className="mr-2 size-4 animate-spin" />
+          {pricing_checkout_loading()}
+        </>
+      ) : (
+        children
+      )}
+    </Button>
+  );
+}
+
+export function CreditPackageCheckoutButton({
+  offerId,
+  className,
+  'data-testid': dataTestId,
+  children,
+}: {
+  offerId: string;
+  className?: string;
+  'data-testid'?: string;
+  children?: React.ReactNode;
+}) {
+  const [isLoading, setIsLoading] = useState(false);
+  const handleClick = async () => {
+    try {
+      setIsLoading(true);
+      const result = await createCreditPackageCheckoutSession({
+        data: { offerId },
+      });
+      if (result?.url) {
+        window.location.href = result.url;
+      } else {
+        toast.error(pricing_checkout_failed());
+      }
+    } catch (err) {
+      console.error('Credit package checkout error:', err);
+      toast.error(pricing_checkout_failed());
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <Button
+      className={cn(className)}
+      data-testid={dataTestId}
+      disabled={isLoading}
+      onClick={handleClick}
+      variant="outline"
     >
       {isLoading ? (
         <>
