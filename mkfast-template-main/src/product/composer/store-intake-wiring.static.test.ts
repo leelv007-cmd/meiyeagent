@@ -48,9 +48,7 @@ test('the store route keeps the qualification admission entry', () => {
   assert.match(storeRoute, /id="store-qualification"/u);
 });
 
-test('Composer names the qualification gap instead of failing silently', () => {
-  assert.match(composerHome, /confirmed_qualification/u);
-  assert.match(composerHome, /workbench_grounding_qualification_required/u);
+test('Composer qualification gap links to the store admission entry', () => {
   assert.match(composerHome, /hash="store-qualification"/u);
 });
 

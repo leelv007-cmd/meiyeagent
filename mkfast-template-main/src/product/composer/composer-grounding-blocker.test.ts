@@ -12,6 +12,10 @@ test('a regulated store missing its qualification is named, not silently blocked
     ]),
     'qualification'
   );
+  assert.equal(
+    groundingBlockerFromMissing(['confirmed_qualification']),
+    'qualification'
+  );
 });
 
 test('an unusable source still outranks the qualification gap', () => {

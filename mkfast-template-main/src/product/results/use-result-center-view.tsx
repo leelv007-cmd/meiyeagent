@@ -32,7 +32,10 @@ import {
   buildResultImageWorksurface,
   buildResultVideoWorksurface,
 } from '@/product/results/result-worksurface-model';
-import { useResultCommands } from '@/product/results/use-result-commands';
+import {
+  type ResultCommandTransport,
+  useResultCommands,
+} from '@/product/results/use-result-commands';
 import {
   buildResultFullPackagePlan,
   probeCanShareFiles,
@@ -136,11 +139,12 @@ export type ResultCenterViewState =
 export function useResultCenterView(
   workId: string,
   search: ResultCenterSearch,
-  navigate: UseNavigateResult<'/dashboard/results/$workId'>
+  navigate: UseNavigateResult<'/dashboard/results/$workId'>,
+  options: { commandTransport?: ResultCommandTransport } = {}
 ): ResultCenterViewState {
   const returnState = parseResultReturnState(search);
   const queryClient = useQueryClient();
-  const commands = useResultCommands();
+  const commands = useResultCommands(options.commandTransport);
   const [pendingImageAdjust, setPendingImageAdjust] =
     useState<PendingImageAdjust | null>(null);
   // D-164⑥ 决定 B: backing out of a regeneration is an outcome too, and the

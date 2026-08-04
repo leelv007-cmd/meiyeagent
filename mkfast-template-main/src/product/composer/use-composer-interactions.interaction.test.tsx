@@ -275,6 +275,15 @@ test('handles confirmation answer, continuation message, and renderer ack', asyn
       view.result.current.interactions.pendingExecutionConfirmation
     ).toEqual(EXECUTION_REQUEST)
   );
+  await waitFor(() =>
+    expect(
+      view.result.current.session.turns.some(
+        (turn) =>
+          turn.kind === 'execution_confirm' &&
+          turn.confirmId === EXECUTION_REQUEST.requestId
+      )
+    ).toBe(true)
+  );
 
   await act(() =>
     view.result.current.interactions.answerExecutionConfirmation({

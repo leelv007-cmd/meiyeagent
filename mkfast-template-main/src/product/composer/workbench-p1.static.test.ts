@@ -124,7 +124,6 @@ test('frame registry: conversation renders turns via AgentFrame host', () => {
   assert.match(registry, /case 'note_plan':\s*return 'plan'/u);
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /executionConfirmSlot/u);
-  assert.match(home, /applyComposerPendingInterrupts/u);
   assert.match(home, /applyComposerNotePlan/u);
   // Residual Brief-cancel feedback is not the paid-media confirm slot.
   assert.match(home, /execution-cost-feedback-slot/u);
