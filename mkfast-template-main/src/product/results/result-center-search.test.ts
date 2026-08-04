@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { validateResultCenterSearch } from './result-center-search';
+import { parseResultCenterSearch } from './result-center-search';
 
 test('Result route preserves only its typed return state across reload', () => {
   assert.deepEqual(
-    validateResultCenterSearch({
+    parseResultCenterSearch({
       focusKey: 'candidate-1',
       panel: 'run',
       returnDate: 'week',

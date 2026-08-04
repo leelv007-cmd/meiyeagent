@@ -58,19 +58,15 @@ import {
 import { resolveCreationModelSelection } from '@/p1/model-current-selection';
 import { useComplianceDefaults } from '@/p1/use-compliance-defaults';
 import type {
-  AskMerchantAnswer,
   BriefBoundRevisions,
   BriefSourceSignal,
   BriefTriggerInput,
   BriefTriggerProjection,
   BrowserRecipeProjection,
   CreationLensId,
-  ExecutionConfirmationAnswer,
-  HarnessInteractionRequest,
   MarketingIdentityAsset,
   MemoryEntriesPage,
   ProductQuoteSnapshot,
-  QuestionCard,
   ResultPanel,
   StoreFact,
 } from '@meiye/contracts';
@@ -147,22 +143,13 @@ import {
   type CreativeGroundingRequirement,
 } from '@/product/creative-brief-editor';
 import {
-  acknowledgeHarnessInteractionRenderer,
   readActiveHarnessTasks,
-  readPendingHarnessInteraction,
-  readPendingHarnessInteractionMessage,
-  readPendingHarnessDecision,
   setHarnessInteractionEditing,
-  submitHarnessInteraction,
-  submitHarnessInteractionMerchantMessage,
-  submitHarnessDecision,
 } from '@/product/harness-client';
 import { AskMerchantInteractionSlot } from '@/product/composer/ask-merchant-interaction-slot';
 import { ExecutionConfirmationInteractionCard } from '@/product/composer/execution-confirmation-interaction-card';
 import { ExecutionConfirmationWaitingMessageCard } from '@/product/composer/execution-confirmation-waiting-message-card';
 import { navigateAfterSubmitSuccess } from '@/product/results/result-center-navigation';
-import { projectResultTokenStream } from '@/product/results/result-token-stream';
-import { useWorkflowEventStream } from '@/product/use-workflow-event-stream';
 import {
   invalidateMarketingIdentity,
   marketingIdentityProjectionQuery,
@@ -171,7 +158,6 @@ import {
 import { BriefSurface } from './brief-surface-panel';
 import {
   canActOnExperienceSediment,
-  projectExperienceBasis,
   projectExperienceCorrection,
   projectExperienceSediment,
 } from './task-experience';
@@ -308,14 +294,8 @@ import {
   type ComposerReuseChip,
 } from './composer-conversation';
 import { COMPOSER_LENS_LABELS } from './lens-labels';
-import {
-  ComposerQuestionCard,
-  composerQuestionDecision,
-} from './composer-question-card';
-import {
-  composerQuestionHold,
-  type ComposerQuestionSettlement,
-} from './composer-question-timeout';
+import { ComposerQuestionCard } from './composer-question-card';
+import { composerQuestionHold } from './composer-question-timeout';
 import type { ComposerDeliveryOpenInput } from './composer-delivery-card';
 import { projectComposerSignedPreview } from './composer-signed-preview';
 import {
@@ -334,9 +314,6 @@ import {
 import { ComposerGenerationParamsPanel } from './composer-generation-params-panel';
 import {
   applyComposerNotePlan,
-  applyComposerPendingInterrupts,
-  applyComposerProgress,
-  applyComposerWorkflowState,
   bindComposerTask,
   COMPOSER_SESSION_STORAGE_KEY,
   composerSessionMerchantText,
@@ -350,6 +327,7 @@ import {
   updateComposerNotePlan,
   type ComposerSession,
 } from './composer-session';
+import { useComposerInteractions } from './use-composer-interactions';
 import type { ComposerRecoveryInput } from './composer-report-card';
 import {
   confirmComposerNotePlanPageRegeneration,
@@ -763,7 +741,6 @@ export function ComposerHome({
   } | null>(null);
   const [pendingNotePlanRegeneration, setPendingNotePlanRegeneration] =
     useState<PendingComposerNotePlanPageRegeneration | null>(null);
-  const [questionPending, setQuestionPending] = useState(false);
   const [destinationMapPending, setDestinationMapPending] = useState(false);
   const destinationMapPendingRef = useRef(false);
   const destinationAutoSubmitIntentRef = useRef<string | null>(null);
@@ -1840,65 +1817,33 @@ export function ComposerHome({
   }, [activeTasksQuery.data, initialTaskId, session.task]);
 
   const taskId = session.task?.taskId ?? '';
-  // Harness tasks are not a P1 query module — the existing harness surfaces key
-  // them by hand (see product/harness-question-card.tsx).
-  const workflowQueryKey = useMemo(
-    () => ['harness', 'workflow', taskId] as const,
-    [taskId]
-  );
-  const decisionQueryKey = useMemo(
-    () => ['harness', 'decision', taskId] as const,
-    [taskId]
-  );
-  const interactionQueryKey = useMemo(
-    () => ['harness', 'interaction', taskId] as const,
-    [taskId]
-  );
-  const workflowStream = useWorkflowEventStream({
-    enabled: Boolean(taskId),
-    workflowId: taskId,
-    workflowQueryKey,
+  const clientExecutionConfirmOpen = executionConfirm.phase === 'open';
+  const {
+    acknowledgeAskMerchantRenderer,
+    answerAskMerchant,
+    answerExecutionConfirmation,
+    answerExecutionWaitingMessage,
+    answerQuestion,
+    experienceBasis,
+    hasExecutionConfirmBody,
+    pendingAskRequest,
+    pendingExecutionConfirmation,
+    pendingExecutionWaitingMessage,
+    pendingQuestion,
+    questionPending,
+    questionReservationReleased,
+    questionResolutionSource,
+    questionTimeoutSeconds,
+    refreshInteractionAfterRendererRejection,
+    tokenStream,
+    workflowStream,
+  } = useComposerInteractions(taskId, {
+    costFeedbackPresent: Boolean(costFeedback),
+    executionConfirmOpen: clientExecutionConfirmOpen,
+    lensId,
+    session,
+    setSession,
   });
-  const experienceBasis = useMemo(
-    () =>
-      projectExperienceBasis({
-        producerSettled:
-          Boolean(workflowStream.harnessExperienceBasis) ||
-          workflowStream.workflowState === 'success' ||
-          workflowStream.workflowState === 'failed',
-        confirmedPreferences:
-          workflowStream.harnessExperienceBasis?.confirmedPreferences ?? [],
-      }),
-    [workflowStream.harnessExperienceBasis, workflowStream.workflowState]
-  );
-
-  useEffect(() => {
-    if (!workflowStream.latestProgress) return;
-    setSession((current) =>
-      applyComposerProgress(current, workflowStream.latestProgress!)
-    );
-  }, [workflowStream.latestProgress]);
-
-  useEffect(() => {
-    if (!workflowStream.workflowState) return;
-    // 成品版本 rides the same terminal frame as the status, so the delivery card
-    // binds its actions to the revision the server actually delivered — and so
-    // does the 失败/partial 申报 (W03), which is why neither needs a second read.
-    setSession((current) =>
-      applyComposerWorkflowState(
-        current,
-        workflowStream.workflowState!,
-        workflowStream.harnessDelivery,
-        workflowStream.harnessCancellation,
-        workflowStream.merchantReport
-      )
-    );
-  }, [
-    workflowStream.workflowState,
-    workflowStream.harnessDelivery,
-    workflowStream.harnessCancellation,
-    workflowStream.merchantReport,
-  ]);
 
   useEffect(() => {
     if (
@@ -1978,247 +1923,6 @@ export function ComposerHome({
     lensState.lensId,
     workflowStream.harnessDelivery?.versionId,
   ]);
-
-  // 需要用户的一个问题 — the third inbound seam message. Polled while the run is
-  // live so a suspended workflow surfaces its card without a page action.
-  const decisionQuery = useQuery({
-    enabled: Boolean(taskId) && session.phase !== 'delivered',
-    queryKey: decisionQueryKey,
-    queryFn: ({ signal }) => readPendingHarnessDecision(taskId, signal),
-    refetchInterval: session.phase === 'delivered' ? false : 2_000,
-  });
-  const interactionQuery = useQuery({
-    enabled: Boolean(taskId) && session.phase !== 'delivered',
-    queryKey: interactionQueryKey,
-    queryFn: ({ signal }) => readPendingHarnessInteraction(taskId, signal),
-    refetchInterval: session.phase === 'delivered' ? false : 2_000,
-  });
-  const interactionMessageQuery = useQuery({
-    enabled: Boolean(taskId) && session.phase !== 'delivered',
-    queryKey: ['harness', 'interaction-message', taskId],
-    queryFn: ({ signal }) =>
-      readPendingHarnessInteractionMessage(taskId, signal),
-    refetchInterval: session.phase === 'delivered' ? false : 2_000,
-  });
-  const pendingAskRequest =
-    interactionQuery.data?.kind === 'ask_merchant'
-      ? interactionQuery.data
-      : null;
-  const pendingExecutionConfirmation =
-    interactionQuery.data?.kind === 'execution_confirmation'
-      ? interactionQuery.data
-      : null;
-  const pendingExecutionWaitingMessage =
-    interactionMessageQuery.data?.kind === 'execution_confirmation'
-      ? interactionMessageQuery.data
-      : null;
-  const pendingQuestion: QuestionCard | null =
-    decisionQuery.data?.question ?? null;
-  const questionReservationReleased =
-    decisionQuery.data?.reservationReleased === true;
-  const questionResolutionSource =
-    decisionQuery.data?.resolutionSource === 'core_timeout' ||
-    decisionQuery.data?.resolutionSource === 'core_hold_expired'
-      ? decisionQuery.data.resolutionSource
-      : null;
-  const questionTimeoutSeconds = decisionQuery.data?.timeoutSeconds ?? null;
-  // P1-05: execution_confirm is its own timeline turn (DecisionFrame interrupt),
-  // not a generic question. Server interrupt wins over client pre-submit card.
-  // Apply both pending IDs in one atomic session update so clearing a settled
-  // question cannot demote phase while execution_confirm is still the live hold.
-  const clientExecutionConfirmOpen = executionConfirm.phase === 'open';
-  const pendingExecutionConfirmTurnId =
-    pendingExecutionConfirmation?.requestId ??
-    pendingExecutionWaitingMessage?.requestId ??
-    (clientExecutionConfirmOpen ? 'client-execution-confirm' : null);
-  const pendingQuestionTurnId =
-    pendingAskRequest?.requestId ?? pendingQuestion?.questionId ?? null;
-  const hasExecutionConfirmBody =
-    Boolean(pendingExecutionConfirmation) ||
-    Boolean(pendingExecutionWaitingMessage) ||
-    clientExecutionConfirmOpen ||
-    Boolean(costFeedback);
-
-  useEffect(() => {
-    setSession((current) =>
-      applyComposerPendingInterrupts(current, {
-        questionId: pendingQuestionTurnId,
-        executionConfirmId: pendingExecutionConfirmTurnId,
-      })
-    );
-  }, [
-    pendingExecutionConfirmTurnId,
-    pendingQuestionTurnId,
-    questionResolutionSource,
-    workflowStream.workflowState,
-  ]);
-
-  const tokenStream = useMemo(
-    () =>
-      projectResultTokenStream({
-        workspaceKind: lensId === 'image_text' ? 'image_text' : 'copy',
-        partialCandidates: workflowStream.copyCandidates,
-        progressState: workflowStream.workflowState,
-        loading: session.phase === 'running' || session.phase === 'submitting',
-        completed: session.phase === 'delivered',
-        reconnecting: workflowStream.transportStatus === 'degraded',
-      }),
-    [
-      lensId,
-      session.phase,
-      workflowStream.copyCandidates,
-      workflowStream.transportStatus,
-      workflowStream.workflowState,
-    ]
-  );
-
-  const answerQuestion = useCallback(
-    async (input: {
-      settlement: ComposerQuestionSettlement;
-      value: string;
-    }) => {
-      if (!pendingQuestion || !taskId) return;
-      setQuestionPending(true);
-      try {
-        const result = await submitHarnessDecision(
-          taskId,
-          composerQuestionDecision({
-            question: pendingQuestion,
-            // The settlement is part of the key: an explicit 「继续」 and a
-            // countdown release are different acts and must stay separable in
-            // the ledger, even though both route as ignored.
-            idempotencyKey: `composer-decision:${pendingQuestion.questionId}:${input.settlement}`,
-            settlement: input.settlement,
-            value: input.value,
-          })
-        );
-        if ('consumedByOther' in result) {
-          toast.info('系统已先一步处理，正在同步最新状态。');
-        } else if (result.successor) {
-          toast.success('已收到补充，正在生成精修版本。');
-        }
-        await decisionQuery.refetch();
-        return result;
-      } catch (error) {
-        toast.error(workbench_operation_failed());
-        // Rethrow: the card claimed a settlement synchronously so the countdown
-        // could not race it, and nothing reached the ledger, so that claim has
-        // to be released rather than left standing as 「已按…继续」.
-        throw error;
-      } finally {
-        setQuestionPending(false);
-      }
-    },
-    [decisionQuery, pendingQuestion, taskId]
-  );
-  const answerAskMerchant = useCallback(
-    async (response: AskMerchantAnswer['response']) => {
-      if (!pendingAskRequest || !taskId) return;
-      setQuestionPending(true);
-      try {
-        await submitHarnessInteraction(taskId, {
-          requestId: pendingAskRequest.requestId,
-          revision: pendingAskRequest.revision,
-          idempotencyKey:
-            `composer-interaction:${pendingAskRequest.requestId}:` +
-            `r${pendingAskRequest.revision}:merchant`,
-          resume: {
-            runId: pendingAskRequest.runId,
-            step: pendingAskRequest.step,
-          },
-          response,
-        });
-        await Promise.all([
-          interactionQuery.refetch(),
-          decisionQuery.refetch(),
-        ]);
-      } catch {
-        toast.error(workbench_operation_failed());
-        throw new Error('The merchant interaction could not be submitted.');
-      } finally {
-        setQuestionPending(false);
-      }
-    },
-    [decisionQuery, interactionQuery, pendingAskRequest, taskId]
-  );
-  const answerExecutionConfirmation = useCallback(
-    async (response: ExecutionConfirmationAnswer['response']) => {
-      if (!pendingExecutionConfirmation || !taskId) return;
-      setQuestionPending(true);
-      try {
-        await submitHarnessInteraction(taskId, {
-          requestId: pendingExecutionConfirmation.requestId,
-          revision: pendingExecutionConfirmation.revision,
-          idempotencyKey:
-            `composer-interaction:${pendingExecutionConfirmation.requestId}:` +
-            `r${pendingExecutionConfirmation.revision}:merchant`,
-          resume: {
-            runId: pendingExecutionConfirmation.runId,
-            step: pendingExecutionConfirmation.step,
-          },
-          response,
-        });
-        await interactionQuery.refetch();
-      } catch {
-        toast.error(workbench_operation_failed());
-        throw new Error('The execution confirmation could not be submitted.');
-      } finally {
-        setQuestionPending(false);
-      }
-    },
-    [interactionQuery, pendingExecutionConfirmation, taskId]
-  );
-  const answerExecutionWaitingMessage = useCallback(
-    async (
-      request: Extract<
-        HarnessInteractionRequest,
-        { kind: 'execution_confirmation' }
-      >,
-      message: string
-    ) => {
-      if (!taskId || request.runId !== taskId) return;
-      setQuestionPending(true);
-      try {
-        await submitHarnessInteractionMerchantMessage(taskId, {
-          requestId: request.requestId,
-          revision: request.revision,
-          step: request.step,
-          carrier: 'conversation',
-          idempotencyKey:
-            `composer-interaction:${request.requestId}:` +
-            `r${request.revision}:merchant-message`,
-          message,
-        });
-        await Promise.all([
-          interactionMessageQuery.refetch(),
-          interactionQuery.refetch(),
-          decisionQuery.refetch(),
-        ]);
-      } catch {
-        toast.error(workbench_operation_failed());
-        throw new Error('The merchant continuation could not be submitted.');
-      } finally {
-        setQuestionPending(false);
-      }
-    },
-    [decisionQuery, interactionMessageQuery, interactionQuery, taskId]
-  );
-  const acknowledgeAskMerchantRenderer = useCallback(
-    async (request: HarnessInteractionRequest) =>
-      acknowledgeHarnessInteractionRenderer(taskId, {
-        requestId: request.requestId,
-        revision: request.revision,
-        step: request.step,
-        carrier: 'conversation',
-      }),
-    [taskId]
-  );
-  const refreshInteractionAfterRendererRejection = useCallback(async () => {
-    await Promise.all([
-      interactionQuery.refetch(),
-      interactionMessageQuery.refetch(),
-    ]);
-  }, [interactionMessageQuery.refetch, interactionQuery.refetch]);
 
   const addSource = useCallback((assetId: string) => {
     const facts = sourceFactsRef.current.get(assetId);
@@ -4728,7 +4432,8 @@ export function ComposerHome({
                * is not mistaken for the paid-media confirm slot.
                */}
               {costFeedback &&
-              !pendingExecutionConfirmTurnId &&
+              !pendingExecutionConfirmation &&
+              !pendingExecutionWaitingMessage &&
               !clientExecutionConfirmOpen ? (
                 <div data-testid="execution-cost-feedback-slot">
                   <ExecutionCostFeedbackLine feedback={costFeedback} />

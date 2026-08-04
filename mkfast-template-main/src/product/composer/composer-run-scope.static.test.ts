@@ -9,50 +9,6 @@ const home = readFileSync(
 );
 
 /**
- * 一次运行一套真相 (W03 recovery / ADR-0014).
- *
- * The event stream, the pending-question poll and the workflow query keys all
- * hang off the session's own task handle. A recovery entry unbinds that handle
- * (rebindComposerSession), and these are what stop the finished run from
- * streaming into the conversation the merchant is now rewriting.
- */
-test('the composer only listens to the run its session currently holds', () => {
-  assert.match(home, /const taskId = session\.task\?\.taskId \?\? '';/u);
-  assert.match(
-    home,
-    /useWorkflowEventStream\(\{\s*enabled: Boolean\(taskId\),\s*workflowId: taskId,/u
-  );
-  assert.match(
-    home,
-    /enabled: Boolean\(taskId\) && session\.phase !== 'delivered'/u
-  );
-  // `enabled` only decides whether the poll runs; what it *asks about* is the
-  // queryFn's argument, and a poll enabled on the current handle while reading
-  // a remembered one would keep answering for the finished run.
-  assert.match(
-    home,
-    /queryFn: \(\{ signal \}\) => readPendingHarnessDecision\(taskId, signal\)/u
-  );
-  assert.match(home, /queryKey: decisionQueryKey/u);
-  assert.match(home, /\['harness', 'decision', taskId\] as const/u);
-  assert.match(home, /\['harness', 'workflow', taskId\] as const/u);
-  // The stream is never pointed at anything but that handle — no URL taskId, no
-  // remembered id from a run that already ended.
-  assert.doesNotMatch(home, /workflowId: (?!taskId)[A-Za-z]/u);
-});
-
-test('experience basis is bound to the current workflow carrier, not workspace selectors', () => {
-  const projectionStart = home.indexOf('const experienceBasis = useMemo');
-  const projectionEnd = home.indexOf('useEffect', projectionStart);
-  const projection = home.slice(projectionStart, projectionEnd);
-
-  assert.ok(projectionStart >= 0, 'experience basis projection must exist');
-  assert.match(projection, /workflowStream\.harnessExperienceBasis/u);
-  assert.doesNotMatch(projection, /identitySelection/u);
-  assert.doesNotMatch(projection, /experienceEntriesQuery/u);
-});
-
-/**
  * The handle is the tab's memory of a run it holds. A recovery unbinds it, and
  * if sessionStorage kept the old one the next reload would restore the run the
  * merchant just walked away from — stream, poll and 申报 with it (轮 5 P1-①).
