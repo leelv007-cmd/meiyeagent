@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { ProductQuoteSnapshot } from './product-quote.js';
-import { toPublicProductQuoteSnapshot } from './product-quote.js';
+import {
+  publicProductQuoteSnapshotSchema,
+  toPublicProductQuoteSnapshot,
+} from './product-quote.js';
 
 test('public ProductQuoteSnapshot removes every server-only routing field', () => {
   const internal = {
@@ -53,4 +56,28 @@ test('public ProductQuoteSnapshot removes every server-only routing field', () =
   ]) {
     assert.equal(serialized.includes(forbidden), false, forbidden);
   }
+});
+
+test('public quote wire schema rejects server-only routing fields', () => {
+  const publicQuote = {
+    quoteId: 'quote-1',
+    revision: 'rev-1',
+    catalogModelId: 'catalog-model-1',
+    quotePolicyRevision: 'quote.policy@1',
+    billingMode: 'per_request',
+    formula: { unitRate: 1.5, expression: 'per_request * 1.5' },
+    lifecycleStatus: 'quoted',
+  };
+
+  assert.equal(
+    publicProductQuoteSnapshotSchema.safeParse(publicQuote).success,
+    true,
+  );
+  assert.equal(
+    publicProductQuoteSnapshotSchema.safeParse({
+      ...publicQuote,
+      routeSnapshotRef: 'route-secret',
+    }).success,
+    false,
+  );
 });

@@ -5,6 +5,8 @@
  * Consumers (WT-C confirm UI, initial generation settlement, AP/MP H2) import only.
  */
 
+import { z } from 'zod';
+
 /** Product-level billing basis frozen into ProductQuoteSnapshot. */
 export const productBillingModes = [
   'per_request',
@@ -156,6 +158,60 @@ export type PublicProductQuoteSnapshot = Omit<
   | 'submissionReferenceAssetsHash'
   | 'submissionInputAssetsHash'
 >;
+
+export const publicProductQuoteSnapshotSchema: z.ZodType<PublicProductQuoteSnapshot> =
+  z
+    .object({
+      quoteId: z.string(),
+      revision: z.string(),
+      taskId: z.string().optional(),
+      workspaceId: z.string().optional(),
+      catalogModelId: z.string(),
+      operation: z.string().optional(),
+      catalogModelRevision: z.string().optional(),
+      quotePolicyRevision: z.string(),
+      submissionContractHash: z.string().optional(),
+      extraConfirmThreshold: z.number().optional(),
+      billingMode: z.enum(productBillingModes),
+      creditCost: z.number().optional(),
+      failureRefundsCredits: z.boolean().optional(),
+      debitUnits: z
+        .array(
+          z
+            .object({
+              resource: z.enum(['copy', 'image', 'video', 'audio']),
+              quantity: z.number(),
+            })
+            .strict(),
+        )
+        .optional(),
+      outputCount: z.number().optional(),
+      outputLabel: z.string().optional(),
+      formula: z
+        .object({
+          unitRate: z.number(),
+          currency: z.string().optional(),
+          expression: z.string(),
+        })
+        .strict(),
+      targetSeconds: z.number().optional(),
+      quotedSeconds: z.number().optional(),
+      minChargeSeconds: z.number().optional(),
+      roundingStepSeconds: z.number().optional(),
+      confirmedAmount: z.number().optional(),
+      authorizedCeiling: z.number().optional(),
+      billedSeconds: z.number().optional(),
+      settlementStatus: z.enum(productSettlementStatuses).optional(),
+      lifecycleStatus: z.enum(productQuoteLifecycleStatuses),
+      settledAmount: z.number().optional(),
+      refundedAmount: z.number().optional(),
+      platformAbsorbedAmount: z.number().optional(),
+      createdAt: z.string().optional(),
+      confirmedAt: z.string().optional(),
+      reservedAt: z.string().optional(),
+      settledAt: z.string().optional(),
+    })
+    .strict();
 
 /**
  * Strip server-only routing fields from a durable ProductQuoteSnapshot.

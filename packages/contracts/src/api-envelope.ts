@@ -45,6 +45,11 @@ export const API_ERROR_CODES = [
 export const apiErrorCodeSchema = z.enum(API_ERROR_CODES);
 export type KnownApiErrorCode = z.infer<typeof apiErrorCodeSchema>;
 
+export const apiErrorCodeWireSchema = z.union([
+  apiErrorCodeSchema,
+  z.string().trim().min(1),
+]);
+
 /**
  * DomainError and OperationsError are intentionally open-ended legacy
  * channels. Keep their values distinguishable until those constructors are
@@ -75,3 +80,28 @@ export interface ApiFailure {
 }
 
 export type ApiEnvelope<T> = ApiSuccess<T> | ApiFailure;
+
+export const apiMetaSchema = z
+  .object({ correlationId: z.string().trim().min(1) })
+  .strict();
+
+export const apiFailureSchema = z
+  .object({
+    error: z
+      .object({
+        code: apiErrorCodeWireSchema,
+        message: z.string(),
+        details: z.record(z.string(), z.unknown()).optional(),
+      })
+      .strict(),
+    meta: apiMetaSchema,
+  })
+  .strict();
+
+export function apiSuccessSchema<T extends z.ZodType>(dataSchema: T) {
+  return z.object({ data: dataSchema, meta: apiMetaSchema }).strict();
+}
+
+export function apiEnvelopeSchema<T extends z.ZodType>(dataSchema: T) {
+  return z.union([apiSuccessSchema(dataSchema), apiFailureSchema]);
+}

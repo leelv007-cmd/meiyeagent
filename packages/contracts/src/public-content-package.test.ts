@@ -2,7 +2,27 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { ContentPackage } from './content-package.js';
-import { toPublicContentPackage } from './public-content-package.js';
+import {
+  publicContentPackageSchema,
+  toPublicContentPackage,
+} from './public-content-package.js';
+
+const publicPackage = {
+  compliance: { aigcLabelEnabled: false, watermarkEnabled: false },
+  createdAt: '2026-07-18T08:00:00.000Z',
+  exportReceipts: [],
+  generated: { assetIds: [], childRuns: [] },
+  id: 'package-1',
+  kind: 'image_text',
+  lineage: {},
+  rights: { state: 'authorized' },
+  source: { assetIds: [] },
+  status: 'draft',
+  updatedAt: '2026-07-18T08:00:00.000Z',
+  variants: [],
+  versions: [],
+  workspaceId: 'workspace-1',
+};
 
 test('public ContentPackage removes every supplier routing and internal cost field', () => {
   const internal = {
@@ -78,4 +98,26 @@ test('public ContentPackage removes every supplier routing and internal cost fie
   ]) {
     assert.equal(serialized.includes(forbidden), false, forbidden);
   }
+});
+
+test('public ContentPackage wire schema rejects supplier routing and cost fields', () => {
+  assert.equal(publicContentPackageSchema.safeParse(publicPackage).success, true);
+  assert.equal(
+    publicContentPackageSchema.safeParse({
+      ...publicPackage,
+      generated: {
+        assetIds: [],
+        childRuns: [
+          {
+            runId: 'run-1',
+            runType: 'model_job',
+            status: 'succeeded',
+            assetIds: [],
+            providerModel: 'provider-secret',
+          },
+        ],
+      },
+    }).success,
+    false,
+  );
 });

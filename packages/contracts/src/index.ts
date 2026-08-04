@@ -40,7 +40,12 @@ export {
 
 export {
   API_ERROR_CODES,
+  apiEnvelopeSchema,
   apiErrorCodeSchema,
+  apiErrorCodeWireSchema,
+  apiFailureSchema,
+  apiMetaSchema,
+  apiSuccessSchema,
   type KnownApiErrorCode,
   type UnregisteredApiErrorCode,
   type ApiErrorCode,
@@ -722,6 +727,7 @@ export {
   type ProductQuoteFormula,
   type ProductQuoteSnapshot,
   type PublicProductQuoteSnapshot,
+  publicProductQuoteSnapshotSchema,
   toPublicProductQuoteSnapshot,
   type ProviderCostSnapshot,
   type ProviderFailoverKind,
@@ -783,6 +789,7 @@ export {
 } from './product.js';
 
 export {
+  publicContentPackageSchema,
   type PublicContentPackageChildRun,
   type PublicContentPackage,
   toPublicContentPackage,

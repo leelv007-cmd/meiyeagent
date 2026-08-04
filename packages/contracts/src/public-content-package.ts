@@ -1,6 +1,12 @@
+import { z } from 'zod';
 import type {
   ContentPackage,
   ContentPackageChildRun,
+} from './content-package.js';
+import {
+  contentPackageChildRunSchema,
+  contentPackageGeneratedSchema,
+  contentPackageSchema,
 } from './content-package.js';
 
 /** Supplier routing and internal unit economics never cross browser boundaries. */
@@ -20,6 +26,27 @@ export type PublicContentPackage = Omit<ContentPackage, 'generated'> & {
     childRuns: PublicContentPackageChildRun[];
   };
 };
+
+const publicContentPackageChildRunSchema = contentPackageChildRunSchema
+  .omit({
+    apiCounterparty: true,
+    providerCost: true,
+    providerCosts: true,
+    providerModel: true,
+    providerAttempts: true,
+    routeSnapshot: true,
+    routeSnapshotId: true,
+  })
+  .strict();
+
+export const publicContentPackageSchema: z.ZodType<PublicContentPackage> =
+  contentPackageSchema.safeExtend({
+    generated: contentPackageGeneratedSchema
+      .extend({
+        childRuns: z.array(publicContentPackageChildRunSchema),
+      })
+      .strict(),
+  }).strict();
 
 /**
  * The sole ContentPackage serializer for merchant/browser responses.

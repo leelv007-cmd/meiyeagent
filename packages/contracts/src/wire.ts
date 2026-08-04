@@ -1,6 +1,11 @@
 export {
   API_ERROR_CODES,
+  apiEnvelopeSchema,
   apiErrorCodeSchema,
+  apiErrorCodeWireSchema,
+  apiFailureSchema,
+  apiMetaSchema,
+  apiSuccessSchema,
   type ApiEnvelope,
   type ApiErrorCode,
   type ApiFailure,
@@ -67,10 +72,15 @@ export {
   type ContentPackageChildRun,
 } from './content-package.js';
 export {
+  publicContentPackageSchema,
   type PublicContentPackage,
   type PublicContentPackageChildRun,
   toPublicContentPackage,
 } from './public-content-package.js';
+export {
+  publicProductQuoteSnapshotSchema,
+  type PublicProductQuoteSnapshot,
+} from './product-quote.js';
 export {
   pendingActionSchema,
   pendingActionsResponseSchema,
