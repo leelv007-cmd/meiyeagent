@@ -73,12 +73,6 @@ const config = defineConfig(({ command, mode }) => ({
                 ...(process.env.STRIPE_WEBHOOK_SECRET
                   ? { STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET }
                   : {}),
-                ...(process.env.CREEM_API_KEY
-                  ? { CREEM_API_KEY: process.env.CREEM_API_KEY }
-                  : {}),
-                ...(process.env.CREEM_WEBHOOK_SECRET
-                  ? { CREEM_WEBHOOK_SECRET: process.env.CREEM_WEBHOOK_SECRET }
-                  : {}),
                 ...(process.env.WAFFO_DEBUG
                   ? { WAFFO_DEBUG: process.env.WAFFO_DEBUG }
                   : {}),

@@ -6,11 +6,9 @@ describe('payment runtime policy', () => {
     expect(
       resolvePaymentRuntimePolicy({
         provider: 'stripe',
-        publicPaidLaunchEnabled: true,
-        creemPriceIds: {
+        waffoProductIds: {
           proMonthly: 'must_not_publish',
           proYearly: 'must_not_publish',
-          lifetime: 'must_not_publish',
         },
       })
     ).toEqual({
@@ -31,47 +29,11 @@ describe('payment runtime policy', () => {
     });
   });
 
-  it('publishes Creem prices only for an explicit paid launch', () => {
+  it('keeps payment disabled without a provider', () => {
     expect(
       resolvePaymentRuntimePolicy({
-        provider: 'creem',
-        publicPaidLaunchEnabled: true,
-        creemPriceIds: {
-          proMonthly: 'creem_monthly',
-          proYearly: 'creem_yearly',
-          lifetime: 'creem_lifetime',
-        },
-      })
-    ).toEqual({
-      enabled: true,
-      provider: 'creem',
-      priceIds: {
-        growthMonthly: '',
-        growthSingleMonth: '',
-        growthYearly: '',
-        proMonthly: 'creem_monthly',
-        proSingleMonth: '',
-        proYearly: 'creem_yearly',
-        lifetime: 'creem_lifetime',
-        starterMonthly: '',
-        starterSingleMonth: '',
-        starterYearly: '',
-      },
-    });
-  });
-
-  it.each([
-    { provider: 'creem' as const, publicPaidLaunchEnabled: false },
-    { provider: '' as const, publicPaidLaunchEnabled: true },
-  ])('disables unsupported runtime input %#', (input) => {
-    expect(
-      resolvePaymentRuntimePolicy({
-        ...input,
-        creemPriceIds: {
-          proMonthly: 'must_not_publish',
-          proYearly: 'must_not_publish',
-          lifetime: 'must_not_publish',
-        },
+        provider: '',
+        waffoProductIds: { proMonthly: 'must_not_publish' },
       })
     ).toEqual({
       enabled: false,

@@ -92,7 +92,7 @@ export interface StorageConfig {
 /** Payment configuration */
 export interface PaymentConfig {
   enable?: boolean;                           // Whether to enable payment; when false, no checkout/billing
-  provider?: 'stripe' | 'creem' | 'waffo' | ''; // The payment provider, empty means disabled
+  provider?: 'stripe' | 'waffo' | ''; // The payment provider, empty means disabled
   price?: PriceConfig;                        // The price plans configuration
 }
 

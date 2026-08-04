@@ -24,7 +24,6 @@ import {
   type PlanSettlementIntent,
 } from '@/payment/plan-commerce';
 import { applyPlanSettlementIntent } from '@/payment/payment-settlement-side-effects';
-import { CreemProvider } from '@/payment/provider/creem';
 import { StripeProvider } from '@/payment/provider/stripe';
 import {
   WaffoProvider,
@@ -55,7 +54,6 @@ type ProviderFactory = () => PaymentProvider;
 
 const providerRegistry: Record<PaymentProviderName, ProviderFactory> = {
   stripe: () => new StripeProvider(),
-  creem: () => new CreemProvider(),
   waffo: createWaffoProvider,
 };
 
@@ -134,7 +132,6 @@ export async function handleWebhookEvent(
     {
       inbox: () => new PostgresPaymentWebhookInbox(getDb()),
       secrets: {
-        creemWebhookSecret: serverEnv.CREEM_WEBHOOK_SECRET,
         stripeApiKey: serverEnv.STRIPE_SECRET_KEY,
         stripeWebhookSecret: serverEnv.STRIPE_WEBHOOK_SECRET,
         waffoEnvironment: serverEnv.WAFFO_ENVIRONMENT,
@@ -154,7 +151,6 @@ export async function handleAndSettleWebhookEvent(
     {
       inbox: () => new PostgresPaymentWebhookInbox(getDb()),
       secrets: {
-        creemWebhookSecret: serverEnv.CREEM_WEBHOOK_SECRET,
         stripeApiKey: serverEnv.STRIPE_SECRET_KEY,
         stripeWebhookSecret: serverEnv.STRIPE_WEBHOOK_SECRET,
         waffoEnvironment: serverEnv.WAFFO_ENVIRONMENT,
@@ -178,7 +174,6 @@ export async function settlePendingPaymentWebhookEvents(
         async apply(claim) {
           const provider = createWebhookProvider(claim.provider);
           const signature = await refreshVerifiedWebhookSignature(claim, {
-            creemWebhookSecret: serverEnv.CREEM_WEBHOOK_SECRET,
             stripeWebhookSecret: serverEnv.STRIPE_WEBHOOK_SECRET,
             waffoEnvironment: serverEnv.WAFFO_ENVIRONMENT,
             waffoWebhookPublicKeys: waffoWebhookPublicKeys(),

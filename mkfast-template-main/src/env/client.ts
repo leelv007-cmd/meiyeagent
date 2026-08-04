@@ -9,12 +9,8 @@ export const clientEnv = createEnv({
   client: {
     VITE_BASE_URL: z.url().default('http://localhost:3000'),
 
-    // Payment provider: 'stripe' | 'creem' | 'waffo' | '' (empty = disabled)
-    VITE_PAYMENT_PROVIDER: z.enum(['stripe', 'creem', 'waffo', '']).default(''),
-    VITE_PUBLIC_PAID_LAUNCH_ENABLED: z
-      .enum(['true', 'false'])
-      .default('false')
-      .transform((value) => value === 'true'),
+    // Payment provider: 'stripe' | 'waffo' | '' (empty = disabled)
+    VITE_PAYMENT_PROVIDER: z.enum(['stripe', 'waffo', '']).default(''),
     VITE_WAFFO_TEST_CHECKOUT_ENABLED: z
       .enum(['true', 'false'])
       .default('false')
@@ -29,11 +25,6 @@ export const clientEnv = createEnv({
     VITE_STRIPE_PRICE_PRO_MONTHLY: z.string().optional(),
     VITE_STRIPE_PRICE_PRO_YEARLY: z.string().optional(),
     VITE_STRIPE_PRICE_LIFETIME: z.string().optional(),
-
-    // Payment (Creem)
-    VITE_CREEM_PRODUCT_PRO_MONTHLY: z.string().optional(),
-    VITE_CREEM_PRODUCT_PRO_YEARLY: z.string().optional(),
-    VITE_CREEM_PRODUCT_LIFETIME: z.string().optional(),
 
     // Payment (Waffo): all nine Test fixture product IDs are required before
     // its isolated checkout can be enabled.

@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  normalizeCreemVerifiedPaymentEvent,
   normalizeStripeVerifiedPaymentEvent,
   normalizeWaffoVerifiedPaymentEvent,
   WaffoPaymentEventContractError,
@@ -180,87 +179,6 @@ test('Stripe normalizes invoice.paid, subscription updated, and deleted', () => 
       type: 'checkout.session.async_payment_succeeded',
     }),
     null
-  );
-});
-
-test('Creem normalizes checkout, renewal, and cancel/expire lifecycle', () => {
-  assert.deepEqual(
-    normalizeCreemVerifiedPaymentEvent({
-      eventType: 'checkout.completed',
-      id: 'evt_creem_1',
-      object: {
-        id: 'ch_1',
-        status: 'completed',
-        metadata: { planCheckoutBindingId: 'pcb_creem_1' },
-      },
-    }),
-    {
-      eventType: 'checkout.completed',
-      provider: 'creem',
-      providerEventId: 'evt_creem_1',
-      reference: { id: 'ch_1', kind: 'checkout' },
-      planBindingId: 'pcb_creem_1',
-    }
-  );
-  assert.deepEqual(
-    normalizeCreemVerifiedPaymentEvent({
-      eventType: 'subscription.paid',
-      id: 'evt_creem_2',
-      object: { id: 'sub_1' },
-    }),
-    {
-      eventType: 'subscription.renewed',
-      provider: 'creem',
-      providerEventId: 'evt_creem_2',
-      reference: { id: 'sub_1', kind: 'subscription' },
-    }
-  );
-  assert.equal(
-    normalizeCreemVerifiedPaymentEvent({
-      eventType: 'subscription.past_due',
-      id: 'evt_creem_past_due',
-      object: { id: 'sub_past_due' },
-    }),
-    null
-  );
-  assert.deepEqual(
-    normalizeCreemVerifiedPaymentEvent({
-      eventType: 'subscription.canceled',
-      id: 'evt_creem_3',
-      object: { id: 'sub_2' },
-    }),
-    {
-      eventType: 'customer.subscription.deleted',
-      provider: 'creem',
-      providerEventId: 'evt_creem_3',
-      reference: { id: 'sub_2', kind: 'subscription' },
-    }
-  );
-  assert.deepEqual(
-    normalizeCreemVerifiedPaymentEvent({
-      eventType: 'subscription.scheduled_cancel',
-      id: 'evt_creem_scheduled',
-      object: { id: 'sub_scheduled' },
-    }),
-    {
-      eventType: 'customer.subscription.updated',
-      provider: 'creem',
-      providerEventId: 'evt_creem_scheduled',
-      reference: { id: 'sub_scheduled', kind: 'subscription' },
-    }
-  );
-  assert.deepEqual(
-    normalizeCreemVerifiedPaymentEvent({
-      eventType: 'subscription.expired',
-      id: 'evt_creem_4',
-      object: { id: 'sub_3' },
-    }),
-    {
-      eventType: 'subscription.expired',
-      provider: 'creem',
-      providerEventId: 'evt_creem_4',
-      reference: { id: 'sub_3', kind: 'subscription' },
-    }
   );
 });
 

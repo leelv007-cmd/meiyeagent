@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**TanStarter** (mkfast-template) — a full-stack SaaS boilerplate built with TanStack Start + React 19, deployed on Cloudflare Workers. Includes auth (Better Auth), payments (Stripe / Creem), email (Resend / Cloudflare Email), storage (Cloudflare R2), database (managed PostgreSQL via Hyperdrive + Drizzle ORM — per repo-root docs/adr/0006-p0-runtime-topology.md, D1 carries no auth or business data), and admin dashboard. This fork is the 美业内容2 Workers App Shell; product facts live in the separate Core service. Template blog/changelog/roadmap/waitlist/AI-playground routes are retired (404).
+**TanStarter** (mkfast-template) — a full-stack SaaS boilerplate built with TanStack Start + React 19, deployed on Cloudflare Workers. Includes auth (Better Auth), payments (Stripe / Waffo), email (Resend / Cloudflare Email), storage (Cloudflare R2), database (managed PostgreSQL via Hyperdrive + Drizzle ORM — per repo-root docs/adr/0006-p0-runtime-topology.md, D1 carries no auth or business data), and admin dashboard. This fork is the 美业内容2 Workers App Shell; product facts live in the separate Core service. Template blog/changelog/roadmap/waitlist/AI-playground routes are retired (404).
 
 ## Commands
 
@@ -71,7 +71,7 @@ Incoming request → Cloudflare Worker (`src/server.ts`) → TanStack Start hand
 | `src/api/` | Server functions (payment, users, contact, files) |
 | `src/auth/` | Better Auth config (`auth.ts` server, `client.ts` client) |
 | `src/db/` | Drizzle schemas (`auth.schema.ts` auto-generated, `app.schema.ts` app tables), migrations, types |
-| `src/payment/` | Stripe / Creem integration (checkout, portal, webhooks) |
+| `src/payment/` | Stripe / Waffo integration (checkout, portal, webhooks) |
 | `src/mail/` | Resend / Cloudflare Email — provider, templates (React components), rendering |
 | `src/storage/` | Cloudflare R2 file storage |
 | `src/notification/` | Discord/Feishu webhook notifications |

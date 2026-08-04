@@ -593,7 +593,7 @@ These flows should be added after their dependencies are made deterministic:
 
 | Area | Reason |
 |---|---|
-| Generic payment portal | Requires Stripe or Creem test fixtures and provider-specific env. Plan payment remains the commerce path after Pro Studio add-on retirement. |
+| Generic payment portal | Requires Stripe or Waffo test fixtures and provider-specific env. Plan payment remains the commerce path after Pro Studio add-on retirement. |
 | Transactional email | Requires a fake mail provider or captured verification links. |
 # P0 golden journey
 

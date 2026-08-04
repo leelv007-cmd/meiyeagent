@@ -24,13 +24,7 @@ import { resolvePaymentRuntimePolicy } from './payment-runtime-policy';
 // webhooks, but never publish a sellable Stripe catalog or new-commerce UI.
 const paymentRuntimePolicy = resolvePaymentRuntimePolicy({
   provider: clientEnv.VITE_PAYMENT_PROVIDER,
-  publicPaidLaunchEnabled: clientEnv.VITE_PUBLIC_PAID_LAUNCH_ENABLED,
   waffoTestCheckoutEnabled: clientEnv.VITE_WAFFO_TEST_CHECKOUT_ENABLED,
-  creemPriceIds: {
-    proMonthly: clientEnv.VITE_CREEM_PRODUCT_PRO_MONTHLY,
-    proYearly: clientEnv.VITE_CREEM_PRODUCT_PRO_YEARLY,
-    lifetime: clientEnv.VITE_CREEM_PRODUCT_LIFETIME,
-  },
   waffoProductIds: {
     starterSingleMonth: clientEnv.VITE_WAFFO_PRODUCT_STARTER_SINGLE_MONTH,
     starterMonthly: clientEnv.VITE_WAFFO_PRODUCT_STARTER_MONTHLY,

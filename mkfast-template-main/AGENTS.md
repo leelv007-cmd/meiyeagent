@@ -4,7 +4,7 @@ This file provides guidance to Code Agents (Codex, Cursor, etc.) when working wi
 
 ## Project Overview
 
-**TanStarter** (mkfast-template) — a full-stack SaaS boilerplate built with TanStack Start + React 19, deployed on Cloudflare Workers. Includes auth (Better Auth), payments (Stripe / Creem), email (Resend / Cloudflare Email), storage (Cloudflare R2), database (managed PostgreSQL via Hyperdrive + Drizzle ORM — per repo-root docs/adr/0006-p0-runtime-topology.md, D1 carries no auth or business data), and admin dashboard. This fork is the 美业内容2 Workers App Shell; product facts live in the separate Core service. Template blog/changelog/roadmap/waitlist/AI-playground routes are retired (404).
+**TanStarter** (mkfast-template) — a full-stack SaaS boilerplate built with TanStack Start + React 19, deployed on Cloudflare Workers. Includes auth (Better Auth), payments (Stripe / Waffo), email (Resend / Cloudflare Email), storage (Cloudflare R2), database (managed PostgreSQL via Hyperdrive + Drizzle ORM — per repo-root docs/adr/0006-p0-runtime-topology.md, D1 carries no auth or business data), and admin dashboard. This fork is the 美业内容2 Workers App Shell; product facts live in the separate Core service. Template blog/changelog/roadmap/waitlist/AI-playground routes are retired (404).
 
 ## Commands
 
@@ -71,7 +71,7 @@ Incoming request → Cloudflare Worker (`src/server.ts`) → TanStack Start hand
 | `src/api/` | Server functions (payment, users, contact, files) |
 | `src/auth/` | Better Auth config (`auth.ts` server, `client.ts` client) |
 | `src/db/` | Drizzle schemas (`auth.schema.ts` auto-generated, `app.schema.ts` app tables), migrations, types |
-| `src/payment/` | Stripe / Creem integration (checkout, portal, webhooks) |
+| `src/payment/` | Stripe / Waffo integration (checkout, portal, webhooks) |
 | `src/mail/` | Resend / Cloudflare Email — provider, templates (React components), rendering |
 | `src/storage/` | Cloudflare R2 file storage |
 | `src/notification/` | Discord/Feishu webhook notifications |
@@ -126,5 +126,5 @@ Avoid Node.js-specific APIs — this runs on Cloudflare Workers runtime, not Nod
 - Pricing page follows variant A "credit card grid": billing-period switch bar (monthly / auto-renew monthly / yearly), credits as the hero number, per-card reference line ("约可生成 …") always marked 仅供参考 and read only from the ops-published values.
 - Workbench surfaces: balance badge (with soonest-expiring batch hint), pre-generation quote chip ("本次约消耗 N 分" + refund-on-failure state), insufficient-credit block with booster/upgrade dual exits; plus the credit detail page (batches + ledger rows).
 - Never render upstream model cost, token, or USD figures anywhere merchant-facing (D-061).
-- Payment provider is Waffo Pancake; do not add new Creem references. Secrets only via env from gitignored `docs/_private/waffo.env`.
+- Payment provider is Waffo Pancake. Secrets only via env from gitignored `docs/_private/waffo.env`.
 - Authority: `docs/specs/credit-billing-spec-2026-08-01.md` §6 (frontend) and §11 (lane discipline; tickets #298–#302).

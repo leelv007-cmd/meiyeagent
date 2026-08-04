@@ -12,7 +12,6 @@ describe('payment entitlement resolution', () => {
   it('maps lifetime price ids to pro, not growth', () => {
     const pro = configuredProPriceIds({
       VITE_STRIPE_PRICE_LIFETIME: 'price-life',
-      VITE_CREEM_PRODUCT_LIFETIME: 'creem-life',
     } as unknown as NodeJS.ProcessEnv);
     assert.equal(pro.has('price-life'), true);
     assert.equal(

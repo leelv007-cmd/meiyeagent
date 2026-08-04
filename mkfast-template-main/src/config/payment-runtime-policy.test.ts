@@ -17,9 +17,7 @@ const waffoProducts = {
 test('Waffo Test checkout requires its isolated gate and complete catalog', () => {
   assert.equal(
     resolvePaymentRuntimePolicy({
-      creemPriceIds: {},
       provider: 'waffo',
-      publicPaidLaunchEnabled: true,
       waffoProductIds: waffoProducts,
       waffoTestCheckoutEnabled: false,
     }).enabled,
@@ -28,9 +26,7 @@ test('Waffo Test checkout requires its isolated gate and complete catalog', () =
 
   assert.deepEqual(
     resolvePaymentRuntimePolicy({
-      creemPriceIds: {},
       provider: 'waffo',
-      publicPaidLaunchEnabled: true,
       waffoProductIds: waffoProducts,
       waffoTestCheckoutEnabled: true,
     }),
@@ -46,9 +42,7 @@ test('Waffo Test checkout requires its isolated gate and complete catalog', () =
 
   assert.equal(
     resolvePaymentRuntimePolicy({
-      creemPriceIds: {},
       provider: 'waffo',
-      publicPaidLaunchEnabled: true,
       waffoProductIds: { ...waffoProducts, proYearly: '' },
       waffoTestCheckoutEnabled: true,
     }).enabled,

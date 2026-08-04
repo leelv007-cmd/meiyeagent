@@ -59,11 +59,6 @@ export const serverEnv = createEnv({
     STRIPE_SECRET_KEY: z.string().optional(),
     STRIPE_WEBHOOK_SECRET: z.string().optional(),
 
-    // Payment (Creem)
-    CREEM_DEBUG: z.string().optional(),
-    CREEM_API_KEY: z.string().optional(),
-    CREEM_WEBHOOK_SECRET: z.string().optional(),
-
     // Payment (Waffo Pancake)
     WAFFO_ENVIRONMENT: z.enum(['test', 'production']).default('production'),
     WAFFO_MERCHANT_ID: z.string().optional(),

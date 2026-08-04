@@ -111,9 +111,7 @@ describe('Waffo checkout catalog boundary', () => {
   it('rejects a public Test gate with Production server authority', async () => {
     expect(
       resolvePaymentRuntimePolicy({
-        creemPriceIds: {},
         provider: 'waffo',
-        publicPaidLaunchEnabled: true,
         waffoProductIds: completeWaffoCatalog,
         waffoTestCheckoutEnabled: true,
       }).enabled

@@ -321,8 +321,8 @@ describe('plan-commerce settlement', () => {
     const grants: PlanSettlementIntent[] = [];
     const event: VerifiedPaymentWebhookEvent = {
       eventType: 'checkout.completed',
-      provider: 'creem',
-      providerEventId: 'evt_c1',
+      provider: 'waffo',
+      providerEventId: 'evt_w1',
       reference: { id: 'ch_1', kind: 'checkout' },
     };
 
@@ -336,7 +336,7 @@ describe('plan-commerce settlement', () => {
     });
     assert.equal(settled?.lifecycle, 'activate');
     assert.equal(grants.length, 1);
-    assert.equal(grants[0]?.paymentEventId, 'creem:evt_c1');
+    assert.equal(grants[0]?.paymentEventId, 'waffo:evt_w1');
 
     const skipped = await settleVerifiedPlanPayment(event, {
       async resolveBinding() {

@@ -79,43 +79,6 @@ const stripeSubscriptionDeletedSchema = z
   })
   .passthrough();
 
-const creemCheckoutSchema = z
-  .object({
-    id: z.string().min(1),
-    eventType: z.literal('checkout.completed'),
-    object: z
-      .object({
-        id: z.string().min(1),
-        metadata: z.record(z.string(), z.unknown()).optional(),
-      })
-      .passthrough(),
-  })
-  .passthrough();
-
-const creemSubscriptionPaidSchema = z
-  .object({
-    id: z.string().min(1),
-    eventType: z.literal('subscription.paid'),
-    object: z.object({ id: z.string().min(1) }).passthrough(),
-  })
-  .passthrough();
-
-const creemSubscriptionCanceledSchema = z
-  .object({
-    id: z.string().min(1),
-    eventType: z.enum(['subscription.canceled', 'subscription.expired']),
-    object: z.object({ id: z.string().min(1) }).passthrough(),
-  })
-  .passthrough();
-
-const creemSubscriptionScheduledCancelSchema = z
-  .object({
-    id: z.string().min(1),
-    eventType: z.literal('subscription.scheduled_cancel'),
-    object: z.object({ id: z.string().min(1) }).passthrough(),
-  })
-  .passthrough();
-
 const RECOGNIZED_WAFFO_EVENT_TYPES = [
   'order.completed',
   'refund.succeeded',
@@ -310,63 +273,6 @@ function expandableId(
 ): string | null {
   if (typeof value === 'string') return value;
   return value?.id ?? null;
-}
-
-export function normalizeCreemVerifiedPaymentEvent(
-  input: unknown
-): VerifiedPaymentWebhookEvent | null {
-  const checkout = creemCheckoutSchema.safeParse(input);
-  if (checkout.success) {
-    const planBindingId = textMetadata(
-      checkout.data.object.metadata?.planCheckoutBindingId
-    );
-    return {
-      eventType: checkout.data.eventType,
-      provider: 'creem',
-      providerEventId: checkout.data.id,
-      reference: { id: checkout.data.object.id, kind: 'checkout' },
-      ...(planBindingId ? { planBindingId } : {}),
-    };
-  }
-
-  const paid = creemSubscriptionPaidSchema.safeParse(input);
-  if (paid.success) {
-    return {
-      eventType: 'subscription.renewed',
-      provider: 'creem',
-      providerEventId: paid.data.id,
-      reference: { id: paid.data.object.id, kind: 'subscription' },
-    };
-  }
-
-  const scheduledCancel =
-    creemSubscriptionScheduledCancelSchema.safeParse(input);
-  if (scheduledCancel.success) {
-    return {
-      eventType: 'customer.subscription.updated',
-      provider: 'creem',
-      providerEventId: scheduledCancel.data.id,
-      reference: {
-        id: scheduledCancel.data.object.id,
-        kind: 'subscription',
-      },
-    };
-  }
-
-  const canceled = creemSubscriptionCanceledSchema.safeParse(input);
-  if (canceled.success) {
-    return {
-      eventType:
-        canceled.data.eventType === 'subscription.expired'
-          ? 'subscription.expired'
-          : 'customer.subscription.deleted',
-      provider: 'creem',
-      providerEventId: canceled.data.id,
-      reference: { id: canceled.data.object.id, kind: 'subscription' },
-    };
-  }
-
-  return null;
 }
 
 export function normalizeWaffoVerifiedPaymentEvent(

@@ -20,7 +20,7 @@ import {
 } from './webhook-settlement';
 
 function claim(
-  provider: 'stripe' | 'creem' | 'waffo',
+  provider: 'stripe' | 'waffo',
   providerEventId: string
 ): PaymentWebhookClaim {
   return {
@@ -183,42 +183,6 @@ test('a verified Stripe event reaches the inbox with its canonical identity', as
     payload,
     provider: 'stripe',
     providerEventId: 'evt_verified_contract',
-    signature,
-  });
-});
-
-test('a verified Creem event reaches the same provider-scoped inbox', async () => {
-  const payload = JSON.stringify({
-    id: 'evt_creem_verified_contract',
-    eventType: 'subscription.paid',
-  });
-  const webhookSecret = 'creem_verified_contract';
-  const signature = await hmacHex(payload, webhookSecret);
-  let received: CanonicalPaymentWebhook | null = null;
-  const inbox: PaymentWebhookInboxPort = {
-    async receive(event) {
-      received = event;
-      return 'accepted';
-    },
-    async claimNext() {
-      return null;
-    },
-    async checkpointApplied() {},
-    async complete() {},
-    async retry() {},
-  };
-
-  const result = await receivePaymentWebhook(
-    { payload, provider: 'creem', signature },
-    { inbox, secrets: { creemWebhookSecret: webhookSecret } }
-  );
-
-  assert.equal(result, 'accepted');
-  assert.deepEqual(received, {
-    eventType: 'subscription.paid',
-    payload,
-    provider: 'creem',
-    providerEventId: 'evt_creem_verified_contract',
     signature,
   });
 });
@@ -466,21 +430,6 @@ function waffoSignature(payload: string, privateKey: string) {
   signer.update(`${timestamp}.${payload}`);
   signer.end();
   return `t=${timestamp},v1=${signer.sign(privateKey).toString('base64')}`;
-}
-
-async function hmacHex(payload: string, secret: string) {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(secret),
-    { hash: 'SHA-256', name: 'HMAC' },
-    false,
-    ['sign']
-  );
-  const digest = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
-  return Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, '0')
-  ).join('');
 }
 
 test('a busy verified event is retryable and is never acknowledged with 200', async () => {

@@ -24,15 +24,14 @@ Values are read by Vite from `.env*` during `pnpm dev` / `pnpm build` and inline
 | **Base** | | | |
 | `VITE_BASE_URL` | Site origin (e.g. `getBaseUrl()`) | No | Default: `http://localhost:3000` |
 | **Payment** | | | |
-| `VITE_PAYMENT_PROVIDER` | Payment provider (`stripe`, `creem`, or `''`) | No | Default: `''` (payment disabled); set to `stripe` or `creem` to enable |
+| `VITE_PAYMENT_PROVIDER` | Payment provider (`stripe`, `waffo`, or `''`) | No | Default: `''` (payment disabled); Stripe is legacy webhook-only |
 | **Payment (Stripe)** | | | |
 | `VITE_STRIPE_PRICE_PRO_MONTHLY` | Stripe Price ID (Pro monthly) | No | Required for pricing/checkout when using Stripe |
 | `VITE_STRIPE_PRICE_PRO_YEARLY` | Stripe Price ID (Pro yearly) | No | |
 | `VITE_STRIPE_PRICE_LIFETIME` | Stripe Price ID (Lifetime) | No | |
-| **Payment (Creem)** | | | |
-| `VITE_CREEM_PRODUCT_PRO_MONTHLY` | Creem Product ID (Pro monthly) | No | Required for pricing/checkout when using Creem |
-| `VITE_CREEM_PRODUCT_PRO_YEARLY` | Creem Product ID (Pro yearly) | No | |
-| `VITE_CREEM_PRODUCT_LIFETIME` | Creem Product ID (Lifetime) | No | |
+| **Payment (Waffo)** | | | |
+| `VITE_WAFFO_TEST_CHECKOUT_ENABLED` | Enable isolated Test checkout | No | Requires `WAFFO_ENVIRONMENT=test` and all nine product IDs |
+| `VITE_WAFFO_PRODUCT_{STARTER,GROWTH,PRO}_{SINGLE_MONTH,MONTHLY,YEARLY}` | Waffo subscription Product IDs | No | All nine are required when Test checkout is enabled |
 | **Analytics** | | | |
 | `VITE_GOOGLE_ANALYTICS_ID` | Google Analytics | No | |
 | `VITE_PLAUSIBLE_SCRIPT` | Plausible script URL | No | |
@@ -70,10 +69,14 @@ Read at **Worker request time**. Used for secrets, API keys, and server-only con
 | **Payment (Stripe)** | | | |
 | `STRIPE_SECRET_KEY` | Stripe API key | No | [Payment](./payment.md); required when using Stripe |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing | No | Payment webhook (Stripe) |
-| **Payment (Creem)** | | | |
-| `CREEM_API_KEY` | Creem API key | No | [Payment](./payment.md); required when using Creem |
-| `CREEM_WEBHOOK_SECRET` | Creem webhook signing | No | Payment webhook (Creem) |
-| `CREEM_DEBUG` | Use Creem sandbox API | No | Set to `true` for test mode (`test-api.creem.io`) |
+| **Payment (Waffo)** | | | |
+| `WAFFO_ENVIRONMENT` | Waffo authority (`test` or `production`) | No | Default: `production` |
+| `WAFFO_MERCHANT_ID` | Waffo merchant ID | No | Server-only credential |
+| `WAFFO_PRIVATE_KEY` | Waffo API private key | No | Server-only credential |
+| `WAFFO_STORE_ID` | Waffo store ID | No | Required for authoritative order reads |
+| `WAFFO_WEBHOOK_TEST_PUBLIC_KEY` | Test webhook public key | No | RSA-SHA256 verification in Test |
+| `WAFFO_WEBHOOK_PRODUCTION_PUBLIC_KEY` | Production webhook public key | No | RSA-SHA256 verification in Production |
+| `WAFFO_CREDIT_PACKAGE_PRODUCT_MAPPING` | Credit package SKU-to-product JSON mapping | No | Server-only fixed-product catalog |
 
 ---
 

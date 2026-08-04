@@ -23,7 +23,7 @@ export const PaymentScenes = {
 
 /**
  * New commerce uses three distinct period products. `month`/`year` remain
- * only to read legacy Stripe/Creem payment rows during their retirement.
+ * only to read legacy Stripe payment rows during their retirement.
  */
 export type PlanInterval =
   | 'single_month'

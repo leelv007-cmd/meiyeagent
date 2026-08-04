@@ -50,7 +50,6 @@ type PaymentWebhookInboxDependency =
   | (() => PaymentWebhookInboxPort);
 
 export interface PaymentWebhookSecrets {
-  creemWebhookSecret?: string;
   stripeApiKey?: string;
   stripeWebhookSecret?: string;
   waffoWebhookPublicKeys?: WebhookPublicKeys;
@@ -263,31 +262,6 @@ export async function verifyPaymentWebhook(
       throw new PaymentWebhookSignatureError();
     }
   }
-  if (input.provider === 'creem') {
-    const webhookSecret = secrets.creemWebhookSecret?.trim();
-    if (!webhookSecret) {
-      throw new PaymentWebhookConfigurationError('creem');
-    }
-    const expected = await hmacHex(input.payload, webhookSecret);
-    if (!constantTimeEqual(expected, input.signature)) {
-      throw new PaymentWebhookSignatureError();
-    }
-    try {
-      const raw = JSON.parse(input.payload) as Record<string, unknown>;
-      if (typeof raw.id !== 'string' || typeof raw.eventType !== 'string') {
-        throw new Error('Creem event identity is missing.');
-      }
-      return {
-        eventType: raw.eventType,
-        payload: input.payload,
-        provider: 'creem',
-        providerEventId: raw.id,
-        signature: input.signature,
-      };
-    } catch {
-      throw new PaymentWebhookSignatureError();
-    }
-  }
   const webhookSecret = secrets.stripeWebhookSecret?.trim();
   if (!webhookSecret) {
     throw new PaymentWebhookConfigurationError('stripe');
@@ -323,16 +297,11 @@ export async function refreshVerifiedWebhookSignature(
     // mint or replace that signature; it must re-verify this original header.
     return claim.signature;
   }
-  if (claim.provider === 'stripe') {
-    const secret = secrets.stripeWebhookSecret?.trim();
-    if (!secret) throw new PaymentWebhookConfigurationError('stripe');
-    const timestamp = Math.floor(clock().getTime() / 1_000);
-    const signature = await hmacHex(`${timestamp}.${claim.payload}`, secret);
-    return `t=${timestamp},v1=${signature}`;
-  }
-  const secret = secrets.creemWebhookSecret?.trim();
-  if (!secret) throw new PaymentWebhookConfigurationError('creem');
-  return hmacHex(claim.payload, secret);
+  const secret = secrets.stripeWebhookSecret?.trim();
+  if (!secret) throw new PaymentWebhookConfigurationError('stripe');
+  const timestamp = Math.floor(clock().getTime() / 1_000);
+  const signature = await hmacHex(`${timestamp}.${claim.payload}`, secret);
+  return `t=${timestamp},v1=${signature}`;
 }
 
 async function hmacHex(payload: string, secret: string) {
@@ -348,15 +317,6 @@ async function hmacHex(payload: string, secret: string) {
   return Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, '0')
   ).join('');
-}
-
-function constantTimeEqual(expected: string, actual: string) {
-  if (expected.length !== actual.length) return false;
-  let difference = 0;
-  for (let index = 0; index < expected.length; index += 1) {
-    difference |= expected.charCodeAt(index) ^ actual.charCodeAt(index);
-  }
-  return difference === 0;
 }
 
 export interface PaymentWebhookSettlementPort {

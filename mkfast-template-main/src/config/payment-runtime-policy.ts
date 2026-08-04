@@ -1,4 +1,4 @@
-type PaymentProvider = 'stripe' | 'creem' | 'waffo' | '';
+type PaymentProvider = 'stripe' | 'waffo' | '';
 
 interface PaymentPriceIds {
   growthMonthly?: string;
@@ -17,9 +17,7 @@ type ResolvedPaymentPriceIds = Required<PaymentPriceIds>;
 
 interface PaymentRuntimePolicyInput {
   provider: PaymentProvider;
-  publicPaidLaunchEnabled: boolean;
   waffoTestCheckoutEnabled?: boolean;
-  creemPriceIds: PaymentPriceIds;
   waffoProductIds?: PaymentPriceIds;
 }
 
@@ -44,26 +42,11 @@ const EMPTY_PRICE_IDS: ResolvedPaymentPriceIds = {
 
 export function resolvePaymentRuntimePolicy({
   provider,
-  publicPaidLaunchEnabled,
   waffoTestCheckoutEnabled = false,
-  creemPriceIds,
   waffoProductIds = {},
 }: PaymentRuntimePolicyInput): PaymentRuntimePolicy {
   if (provider === 'stripe') {
     return { enabled: true, provider, priceIds: { ...EMPTY_PRICE_IDS } };
-  }
-
-  if (provider === 'creem' && publicPaidLaunchEnabled) {
-    return {
-      enabled: true,
-      provider,
-      priceIds: {
-        ...EMPTY_PRICE_IDS,
-        proMonthly: creemPriceIds.proMonthly ?? '',
-        proYearly: creemPriceIds.proYearly ?? '',
-        lifetime: creemPriceIds.lifetime ?? '',
-      },
-    };
   }
 
   if (
