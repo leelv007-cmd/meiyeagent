@@ -20,7 +20,11 @@ test('Creem payment runtime remains retired from tracked code and active config'
     ['ls-files', '--', ...retiredModules],
     { cwd: repoRoot, encoding: 'utf8' }
   ).trim();
-  assert.equal(trackedModules, '', `Tracked retired modules:\n${trackedModules}`);
+  assert.equal(
+    trackedModules,
+    '',
+    `Tracked retired modules:\n${trackedModules}`
+  );
 
   const activeReferences = spawnSync(
     'git',

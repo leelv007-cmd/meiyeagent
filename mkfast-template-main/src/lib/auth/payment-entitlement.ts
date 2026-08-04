@@ -22,8 +22,8 @@ export function configuredGrowthPriceIds(env: NodeJS.ProcessEnv) {
 /** Price ids that map to pro (lifetime / one-time buyout). Tc-3 default. */
 export function configuredProPriceIds(env: NodeJS.ProcessEnv) {
   return new Set(
-    [env.VITE_STRIPE_PRICE_LIFETIME].filter(
-      (value): value is string => Boolean(value)
+    [env.VITE_STRIPE_PRICE_LIFETIME].filter((value): value is string =>
+      Boolean(value)
     )
   );
 }
