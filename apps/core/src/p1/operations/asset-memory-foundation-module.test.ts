@@ -337,12 +337,14 @@ test('asset-memory exposes parse task progress and draft enumeration', async () 
     status: string;
     mode: string;
     progress: { completed: number; total: number; message: string };
+    draftSupply: { kind: string; open: boolean };
   };
   assert.equal(progress.status, 'completed');
   assert.equal(progress.mode, 'batch_async');
   assert.equal(progress.progress.completed, 2);
   assert.equal(progress.progress.total, 2);
   assert.match(progress.progress.message, /2\/2/u);
+  assert.deepEqual(progress.draftSupply, { kind: 'fixture', open: true });
 
   const drafts = (await module.query({
     context,
@@ -358,12 +360,23 @@ test('asset-memory exposes parse task progress and draft enumeration', async () 
         parser: { kind: string } | null;
       } | null;
     }>;
+    draftSupply: { kind: string; open: boolean };
   };
   assert.equal(drafts.items[0]?.sourceAssetId, 'prog-a');
   assert.equal(drafts.items[1]?.sourceAssetId, 'prog-b');
   assert.equal(drafts.items[0]?.draft?.origin, 'parsed');
   assert.equal(drafts.items[0]?.draft?.parser?.kind, 'fixture');
   assert.equal(drafts.items[1]?.draft?.origin, 'parsed');
+  assert.deepEqual(drafts.draftSupply, { kind: 'fixture', open: true });
+
+  const experience = (await module.query({
+    context,
+    input: {
+      action: 'asset_intake_experience',
+      payload: { industry: 'hair_care', assetType: 'price_list' },
+    },
+  })) as { draftSupply: { kind: string; open: boolean } };
+  assert.deepEqual(experience.draftSupply, { kind: 'fixture', open: true });
 });
 
 test('start_parse_asset_batch rejects invalid payloads and unknown actions', async () => {

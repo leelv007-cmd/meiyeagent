@@ -16,7 +16,10 @@ import {
   ParseBatchJobEffect,
   ParseProviderError,
   ParseService,
+  ParseServiceError,
+  resolveAssetDraftSupply,
   StoredParseSourceAssetAuthorizer,
+  type AssetDraftCompiler,
   type DocumentParseProvider,
 } from './parse-service.js';
 
@@ -573,6 +576,110 @@ test('five-step intake experience comes from the configured guidance source', as
     assetType: 'group_buy',
   });
   assert.match(groupBuy.examples[0]!.title, /皮肤管理团购套餐/u);
+});
+
+test('fixture compiler and classifier report kind fixture and open supply', async () => {
+  const service = fixtureService(new MemoryParseRepository());
+  assert.equal(new FixtureAssetDraftCompiler().kind, 'fixture');
+  assert.equal(new FixtureVisualAssetClassifier().kind, 'fixture');
+  assert.deepEqual(service.draftSupply(), { kind: 'fixture', open: true });
+  const experience = await service.experience({
+    industry: 'hair_care',
+    assetType: 'price_list',
+  });
+  assert.deepEqual(experience.draftSupply, { kind: 'fixture', open: true });
+});
+
+test('mixed draft supply is fail-closed and blocks parse commands', async () => {
+  assert.deepEqual(
+    resolveAssetDraftSupply({
+      compilerKind: 'production',
+      classifierKind: 'fixture',
+    }),
+    { kind: 'production', open: false },
+  );
+  assert.deepEqual(
+    resolveAssetDraftSupply({
+      compilerKind: 'production',
+      classifierKind: 'production',
+    }),
+    { kind: 'production', open: true },
+  );
+
+  const closedCompiler: AssetDraftCompiler = {
+    kind: 'production',
+    async compile() {
+      throw new Error('production compiler is not wired (B3)');
+    },
+  };
+  const fixtureClassifier = new FixtureVisualAssetClassifier();
+  const service = new ParseService(
+    new MemoryParseRepository(),
+    new FixtureDocumentParseProvider(),
+    closedCompiler,
+    fixtureClassifier,
+    {
+      async isAuthorized(workspaceId, input) {
+        return (
+          workspaceId === context.workspaceId &&
+          input.objectKey.startsWith(`${workspaceId}/owned/`)
+        );
+      },
+    },
+    undefined,
+    { async submit() { return {} as never; } } as never,
+    () => now,
+  );
+  assert.deepEqual(service.draftSupply(), { kind: 'production', open: false });
+  await assert.rejects(
+    service.parseSingle(context, {
+      taskId: 'closed-single',
+      source: source('closed-a'),
+    }),
+    (error: unknown) =>
+      error instanceof ParseServiceError && error.code === 'SUPPLY_CLOSED',
+  );
+  await assert.rejects(
+    service.startBatch(context, {
+      taskId: 'closed-batch',
+      sources: [source('closed-b'), source('closed-c')],
+    }),
+    (error: unknown) =>
+      error instanceof ParseServiceError && error.code === 'SUPPLY_CLOSED',
+  );
+});
+
+test('experience and draftsForTask carry Core draftSupply truth', async () => {
+  const repository = new MemoryParseRepository();
+  const service = fixtureService(
+    repository,
+    new FixtureDocumentParseProvider(),
+    { async submit() { return {} as never; } },
+  );
+  const experience = await service.experience({
+    industry: 'hair_care',
+    assetType: 'price_list',
+  });
+  assert.equal(experience.draftSupply.kind, 'fixture');
+  assert.equal(experience.draftSupply.open, true);
+
+  const queued = await service.startBatch(context, {
+    taskId: 'supply-batch',
+    sources: [source('supply-a'), source('supply-b')],
+  });
+  assert.deepEqual(queued.draftSupply, { kind: 'fixture', open: true });
+  const progress = await service.task(context.workspaceId, queued.taskId);
+  assert.deepEqual(progress.draftSupply, { kind: 'fixture', open: true });
+  await service.runBatchTask(
+    context.workspaceId,
+    queued.taskId,
+    queued.carrierAttempt,
+  );
+  const drafts = await service.draftsForTask(
+    context.workspaceId,
+    queued.taskId,
+  );
+  assert.deepEqual(drafts.draftSupply, { kind: 'fixture', open: true });
 });
 
 test('draftsForTask lists sources in order and marks unproduced drafts null', async () => {

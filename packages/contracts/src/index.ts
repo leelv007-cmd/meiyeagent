@@ -657,6 +657,8 @@ export {
   ASSET_FIELD_PROVENANCE,
   VISUAL_ASSET_SLOTS,
   PARSE_PROVIDER_KINDS,
+  ASSET_DRAFT_SUPPLY_KINDS,
+  assetDraftSupplySchema,
   parseSourceAssetInputSchema,
   parseOwnedAssetSchema,
   parsedDocumentSchema,
@@ -691,6 +693,8 @@ export {
   type PrepareManualAssetDraftCommand,
   type AssetIntakeGuidanceConfig,
   type AssetIntakeExperience,
+  type AssetDraftSupply,
+  type AssetDraftSupplyKind,
   type AssetDraftTarget,
   type VisualAssetSlot,
 } from './parse-service.js';

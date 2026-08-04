@@ -26,6 +26,9 @@ import {
   canArrange,
   canBatchParse,
   createStoreIntakeWizardState,
+  draftSupplyFromExperience,
+  isPhotoParseOpen,
+  shouldShowFixtureParseLabel,
   currentStep,
   draftPrefillEntries,
   editSentence,
@@ -50,6 +53,7 @@ const experience: AssetIntakeExperience = {
   assetType: 'price_list',
   configRevision: 0,
   disclosure: '解析结果需要你确认。',
+  draftSupply: { kind: 'fixture', open: true },
   examples: [
     {
       exampleId: 'a',
@@ -245,6 +249,31 @@ test('batch parse needs at least two uploaded sources', () => {
     canBatchParse({ ...wizard(), uploads: [upload, uploadB] }),
     true
   );
+});
+
+test('fixture supply labels demo parse; closed supply fails closed', () => {
+  const fixture = draftSupplyFromExperience(experience);
+  assert.deepEqual(fixture, { kind: 'fixture', open: true });
+  assert.equal(shouldShowFixtureParseLabel(fixture), true);
+  assert.equal(isPhotoParseOpen(fixture), true);
+
+  const closed = draftSupplyFromExperience({
+    ...experience,
+    draftSupply: { kind: 'production', open: false },
+  });
+  assert.equal(shouldShowFixtureParseLabel(closed), false);
+  assert.equal(isPhotoParseOpen(closed), false);
+
+  const production = draftSupplyFromExperience({
+    ...experience,
+    draftSupply: { kind: 'production', open: true },
+  });
+  assert.equal(shouldShowFixtureParseLabel(production), false);
+  assert.equal(isPhotoParseOpen(production), true);
+
+  assert.equal(draftSupplyFromExperience(undefined), null);
+  assert.equal(isPhotoParseOpen(null), false);
+  assert.equal(shouldShowFixtureParseLabel(null), false);
 });
 
 test('the parse command carries the exact bytes identity Core re-verifies', () => {

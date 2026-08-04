@@ -39,6 +39,27 @@ export const VISUAL_ASSET_SLOTS = [
 
 export const PARSE_PROVIDER_KINDS = ['mineru_official', 'fixture'] as const;
 
+/**
+ * Draft-compiler / visual-classifier supply kinds.
+ * Enum (not boolean) so B3 can land a real `production` compiler without
+ * another contract break. Fixture is the honest demo stack; production is
+ * reserved for a non-fixture compiler.
+ */
+export const ASSET_DRAFT_SUPPLY_KINDS = ['fixture', 'production'] as const;
+
+export const assetDraftSupplySchema = z
+  .object({
+    kind: z.enum(ASSET_DRAFT_SUPPLY_KINDS),
+    /**
+     * Whether photo parse lanes (single + batch) may run.
+     * Fixture stack → open with demo labeling.
+     * Full production stack → open without demo labeling (B3).
+     * Mixed / incomplete supply → closed (no silent fixture drafts).
+     */
+    open: z.boolean(),
+  })
+  .strict();
+
 export const parseSourceAssetInputSchema = z
   .object({
     assetId: idSchema,
@@ -187,6 +208,8 @@ export const parseTaskSchema = z
       })
       .strict(),
     disclosure: idSchema,
+    /** Present on new tasks; older rows may omit until rewritten. */
+    draftSupply: assetDraftSupplySchema.optional(),
     createdAt: timestampSchema,
     updatedAt: timestampSchema,
   })
@@ -274,6 +297,7 @@ export const assetParseTaskDraftsSchema = z
   .object({
     taskId: idSchema,
     items: z.array(assetParseTaskDraftItemSchema),
+    draftSupply: assetDraftSupplySchema,
   })
   .strict();
 
@@ -348,6 +372,11 @@ export const assetIntakeExperienceSchema = z
     recommendations:
       assetIntakeGuidanceConfigSchema.shape.entries.element.shape.recommendations,
     disclosure: idSchema,
+    /**
+     * Core truth about the draft compiler/classifier stack. FE must not guess
+     * fixture vs production; gate photo parse and labels off this object only.
+     */
+    draftSupply: assetDraftSupplySchema,
   })
   .strict();
 
@@ -380,5 +409,7 @@ export type AssetIntakeGuidanceConfig = z.infer<
 export type AssetIntakeExperience = z.infer<
   typeof assetIntakeExperienceSchema
 >;
+export type AssetDraftSupply = z.infer<typeof assetDraftSupplySchema>;
+export type AssetDraftSupplyKind = (typeof ASSET_DRAFT_SUPPLY_KINDS)[number];
 export type AssetDraftTarget = (typeof ASSET_DRAFT_TARGETS)[number];
 export type VisualAssetSlot = (typeof VISUAL_ASSET_SLOTS)[number];

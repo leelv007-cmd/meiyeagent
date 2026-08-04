@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   assetDraftSchema,
+  assetDraftSupplySchema,
   assetDraftViewSchema,
   assetParseTaskDraftsSchema,
   parseAssetBatchInputSchema,
@@ -96,6 +97,27 @@ test('draft views disclose whether parsed content came from a fixture', () => {
   assert.equal(view.parser?.kind, 'fixture');
 });
 
+test('draft supply is an enum with open gate, not a boolean', () => {
+  const openFixture = assetDraftSupplySchema.parse({
+    kind: 'fixture',
+    open: true,
+  });
+  assert.equal(openFixture.kind, 'fixture');
+  assert.equal(openFixture.open, true);
+  const closed = assetDraftSupplySchema.parse({
+    kind: 'production',
+    open: false,
+  });
+  assert.equal(closed.kind, 'production');
+  assert.equal(closed.open, false);
+  assert.throws(() =>
+    assetDraftSupplySchema.parse({ kind: 'fixture', open: 'yes' }),
+  );
+  assert.throws(() =>
+    assetDraftSupplySchema.parse({ kind: 'demo', open: true }),
+  );
+});
+
 test('single and batch task modes cannot silently swap cardinality', () => {
   assert.throws(() =>
     parseTaskSchema.parse({
@@ -149,6 +171,7 @@ test('batch input rejects fewer than two sources, duplicate ids, and extras', ()
 test('parse task draft enumeration keeps null for unproduced sources', () => {
   const empty = assetParseTaskDraftsSchema.parse({
     taskId: 'task-a',
+    draftSupply: { kind: 'fixture', open: true },
     items: [
       { sourceAssetId: 'asset-a', draft: null },
       { sourceAssetId: 'asset-b', draft: null },
@@ -158,6 +181,7 @@ test('parse task draft enumeration keeps null for unproduced sources', () => {
 
   const withDraft = assetParseTaskDraftsSchema.parse({
     taskId: 'task-a',
+    draftSupply: { kind: 'fixture', open: true },
     items: [
       {
         sourceAssetId: 'asset-a',
@@ -181,6 +205,7 @@ test('parse task draft enumeration keeps null for unproduced sources', () => {
   });
   assert.equal(withDraft.items[0]?.draft?.parser?.kind, 'fixture');
   assert.equal(withDraft.items[0]?.draft?.origin, 'parsed');
+  assert.equal(withDraft.draftSupply.kind, 'fixture');
 });
 
 function source(assetId: string) {

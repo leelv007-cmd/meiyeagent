@@ -11,6 +11,7 @@
  */
 
 import type {
+  AssetDraftSupply,
   AssetDraftTarget,
   AssetDraftView,
   AssetIntakeBatch,
@@ -322,6 +323,37 @@ export function canArrange(state: StoreIntakeWizardState) {
 /** Batch parse needs at least two verified sources (contract min 2). */
 export function canBatchParse(state: StoreIntakeWizardState) {
   return state.uploads.length >= 2;
+}
+
+/**
+ * Core draftSupply is the only authority for fixture labeling and
+ * fail-closed photo parse. FE must not invent a second env-based guess.
+ */
+export function draftSupplyFromExperience(
+  experience: AssetIntakeExperience | null | undefined
+): AssetDraftSupply | null {
+  const supply = experience?.draftSupply;
+  if (!supply || typeof supply.kind !== 'string') return null;
+  if (supply.kind !== 'fixture' && supply.kind !== 'production') return null;
+  return {
+    kind: supply.kind,
+    open: supply.open === true,
+  };
+}
+
+/** Fixture demo stack → show the merchant-visible demo badge. */
+export function shouldShowFixtureParseLabel(
+  supply: AssetDraftSupply | null
+): boolean {
+  return supply?.kind === 'fixture' && supply.open === true;
+}
+
+/**
+ * Photo parse (single + batch) may run only when Core marks supply open.
+ * Closed until a complete production compiler lands (B3).
+ */
+export function isPhotoParseOpen(supply: AssetDraftSupply | null): boolean {
+  return supply?.open === true;
 }
 
 export function parseSourceInput(input: {

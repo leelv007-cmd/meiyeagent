@@ -1,5 +1,6 @@
 import {
   assetDraftSchema,
+  assetDraftSupplySchema,
   assetDraftViewSchema,
   assetIntakeExperienceSchema,
   assetIntakeGuidanceConfigSchema,
@@ -11,6 +12,8 @@ import {
   parseTaskSchema,
   prepareManualAssetDraftCommandSchema,
   type AssetDraft,
+  type AssetDraftSupply,
+  type AssetDraftSupplyKind,
   type AssetIntakeGuidanceConfig,
   type AssetParseTaskDrafts,
   type ParseAssetBatchInput,
@@ -61,6 +64,7 @@ export type ParseServiceErrorCode =
   | 'GUIDANCE_NOT_FOUND'
   | 'SOURCE_CONFLICT'
   | 'SOURCE_NOT_FOUND'
+  | 'SUPPLY_CLOSED'
   | 'TASK_CONFLICT'
   | 'TASK_NOT_FOUND';
 
@@ -329,6 +333,8 @@ export interface DocumentParseProvider {
 }
 
 export interface AssetDraftCompiler {
+  /** Supply kind — fixture demo vs production (B3). Never a boolean. */
+  readonly kind: AssetDraftSupplyKind;
   compile(input: {
     source: ParseOwnedAsset;
     document: ParsedDocument;
@@ -339,6 +345,8 @@ export interface AssetDraftCompiler {
 }
 
 export interface VisualAssetClassifier {
+  /** Supply kind — fixture demo vs production (B3). Never a boolean. */
+  readonly kind: AssetDraftSupplyKind;
   classify(input: {
     workspaceId: string;
     taskId: string;
@@ -347,6 +355,27 @@ export interface VisualAssetClassifier {
     slot: 'work_case' | 'store_scene' | 'product' | 'subject_person';
     description: string;
   }>;
+}
+
+/**
+ * Resolve merchant-facing draft supply from the wired compiler/classifier.
+ * Full fixture stack → open demo. Full production stack → open (B3).
+ * Mixed/incomplete → closed so fixture drafts cannot masquerade as real parse.
+ */
+export function resolveAssetDraftSupply(input: {
+  compilerKind: AssetDraftSupplyKind;
+  classifierKind: AssetDraftSupplyKind;
+}): AssetDraftSupply {
+  const open =
+    (input.compilerKind === 'fixture' &&
+      input.classifierKind === 'fixture') ||
+    (input.compilerKind === 'production' &&
+      input.classifierKind === 'production');
+  return assetDraftSupplySchema.parse({
+    // Report the compiler kind as the primary draft-supply identity.
+    kind: input.compilerKind,
+    open,
+  });
 }
 
 export interface AssetIntakeGuidanceSource {
@@ -411,6 +440,8 @@ export class FixtureDocumentParseProvider implements DocumentParseProvider {
 }
 
 export class FixtureAssetDraftCompiler implements AssetDraftCompiler {
+  readonly kind = 'fixture' as const;
+
   async compile(input: {
     source: ParseOwnedAsset;
     document: ParsedDocument;
@@ -482,6 +513,8 @@ export class FixtureAssetDraftCompiler implements AssetDraftCompiler {
 }
 
 export class FixtureVisualAssetClassifier implements VisualAssetClassifier {
+  readonly kind = 'fixture' as const;
+
   async classify(input: { source: ParseOwnedAsset }) {
     const value = input.source.assetId.toLowerCase();
     const slot = value.includes('work-case')
@@ -567,10 +600,19 @@ export class ParseService {
     private readonly now: () => string = () => new Date().toISOString(),
   ) {}
 
+  /** Core truth for fixture labeling and fail-closed gates (not FE-guessed). */
+  draftSupply(): AssetDraftSupply {
+    return resolveAssetDraftSupply({
+      classifierKind: this.visuals.kind,
+      compilerKind: this.compiler.kind,
+    });
+  }
+
   async parseSingle(
     context: { workspaceId: string },
     command: ParseSingleAssetCommand,
   ) {
+    this.requireOpenDraftSupply();
     const source = await this.recordSource(context.workspaceId, command.source);
     const task = await this.startTask({
       workspaceId: context.workspaceId,
@@ -613,6 +655,7 @@ export class ParseService {
     context: { workspaceId: string },
     command: ParseAssetBatchInput,
   ) {
+    this.requireOpenDraftSupply();
     if (!this.jobs) {
       throw new ParseServiceError(
         'TASK_CONFLICT',
@@ -783,8 +826,14 @@ export class ParseService {
     });
   }
 
-  task(workspaceId: string, taskId: string) {
-    return this.requireTask(workspaceId, taskId);
+  async task(workspaceId: string, taskId: string) {
+    const task = await this.requireTask(workspaceId, taskId);
+    // Always stamp live supply truth so progress views can label honestly
+    // even when the stored row predated draftSupply.
+    return {
+      ...task,
+      draftSupply: this.draftSupply(),
+    };
   }
 
   async draft(workspaceId: string, draftIdValue: string, revision?: number) {
@@ -854,6 +903,7 @@ export class ParseService {
     return assetParseTaskDraftsSchema.parse({
       taskId: task.taskId,
       items,
+      draftSupply: this.draftSupply(),
     });
   }
 
@@ -884,7 +934,17 @@ export class ParseService {
       examples: entry.examples,
       recommendations: entry.recommendations,
       disclosure: merchantParseDisclosure(),
+      draftSupply: this.draftSupply(),
     });
+  }
+
+  private requireOpenDraftSupply() {
+    const supply = this.draftSupply();
+    if (supply.open) return;
+    throw new ParseServiceError(
+      'SUPPLY_CLOSED',
+      'Photo parse is closed until a complete non-fixture draft supply is wired (B3).',
+    );
   }
 
   private async recordSource(
@@ -939,6 +999,7 @@ export class ParseService {
         }),
       },
       disclosure: merchantParseDisclosure(),
+      draftSupply: this.draftSupply(),
       createdAt,
       updatedAt: createdAt,
     });

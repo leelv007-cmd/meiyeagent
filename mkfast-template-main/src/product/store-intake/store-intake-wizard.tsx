@@ -42,6 +42,7 @@ import {
   store_intake_batch_timeout,
   store_intake_batch_to_manual,
   store_intake_confirm_all,
+  store_intake_fixture_label,
   store_intake_confirm_hint,
   store_intake_confirm_title,
   store_intake_description,
@@ -61,6 +62,7 @@ import {
   store_intake_origin_import,
   store_intake_origin_manual,
   store_intake_origin_parsed,
+  store_intake_parse_closed,
   store_intake_photo_choose,
   store_intake_photo_failed,
   store_intake_photo_label,
@@ -143,9 +145,11 @@ import {
   canBatchParse,
   createStoreIntakeWizardState,
   currentStep,
+  draftSupplyFromExperience,
   editSentence,
   goToStep,
   importCandidateGroups,
+  isPhotoParseOpen,
   orderedIntakeFields,
   parseAssetBatchRequest,
   parseSingleAssetRequest,
@@ -154,6 +158,7 @@ import {
   resolveBatchPollTick,
   rotateExample,
   selectedExample,
+  shouldShowFixtureParseLabel,
   toggleRecommendation,
   type ImportCandidateGroup,
   type StoreIntakeStepId,
@@ -407,6 +412,10 @@ export function StoreIntakeWizard({
   const example = experience.data
     ? selectedExample(experience.data, state)
     : undefined;
+  // Core draftSupply only — never guess fixture from FE env.
+  const draftSupply = draftSupplyFromExperience(experience.data);
+  const photoParseOpen = isPhotoParseOpen(draftSupply);
+  const showFixtureLabel = shouldShowFixtureParseLabel(draftSupply);
   const recognized = arrangementRecognizedFields(state);
   // "勾上的我会重点问" is a promise the confirm step has to keep: the ticked
   // fields lead, and the sentence box carries the same skeleton.
@@ -438,6 +447,7 @@ export function StoreIntakeWizard({
   }, []);
 
   async function upload(file: File) {
+    if (!photoParseOpen) return;
     setUploadError(undefined);
     setUploading(true);
     try {
@@ -456,7 +466,7 @@ export function StoreIntakeWizard({
   }
 
   async function uploadMany(files: File[]) {
-    if (files.length === 0) return;
+    if (!photoParseOpen || files.length === 0) return;
     setUploadError(undefined);
     setUploading(true);
     try {
@@ -505,7 +515,7 @@ export function StoreIntakeWizard({
    * Every wait state exits on terminal status, attempt budget, cancel, or fail.
    */
   async function runBatchParse() {
-    if (!canBatchParse(state)) return;
+    if (!photoParseOpen || !canBatchParse(state)) return;
     batchPollAbortRef.current?.abort();
     const abort = new AbortController();
     batchPollAbortRef.current = abort;
@@ -730,6 +740,22 @@ export function StoreIntakeWizard({
 
             {step.id === 'say_or_upload' ? (
               <div className="space-y-3" data-testid="store-intake-capture">
+                {showFixtureLabel ? (
+                  <output
+                    className="block rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
+                    data-testid="store-intake-fixture-label"
+                  >
+                    {store_intake_fixture_label()}
+                  </output>
+                ) : null}
+                {!photoParseOpen ? (
+                  <output
+                    className="block rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
+                    data-testid="store-intake-parse-closed"
+                  >
+                    {store_intake_parse_closed()}
+                  </output>
+                ) : null}
                 {/* W02 ④: the target decides which contract lane reads the
                     photo — a price list becomes fact candidates, a visual asset
                     is classified into the four `VISUAL_ASSET_SLOTS`. */}
@@ -784,7 +810,7 @@ export function StoreIntakeWizard({
                     accept="image/jpeg,image/png,image/webp"
                     className="mt-1"
                     data-testid="store-intake-photo"
-                    disabled={uploading}
+                    disabled={uploading || !photoParseOpen}
                     id="store-intake-photo"
                     onChange={(event) => {
                       const file = event.target.files?.[0];
@@ -817,7 +843,7 @@ export function StoreIntakeWizard({
                     accept="image/jpeg,image/png,image/webp"
                     className="mt-1"
                     data-testid="store-intake-photos"
-                    disabled={uploading}
+                    disabled={uploading || !photoParseOpen}
                     id="store-intake-photos"
                     multiple
                     onChange={(event) => {
@@ -864,12 +890,28 @@ export function StoreIntakeWizard({
 
             {step.id === 'ai_arrange' ? (
               <div className="space-y-3" data-testid="store-intake-arrange">
+                {showFixtureLabel ? (
+                  <output
+                    className="block rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100"
+                    data-testid="store-intake-fixture-label"
+                  >
+                    {store_intake_fixture_label()}
+                  </output>
+                ) : null}
+                {!photoParseOpen ? (
+                  <output
+                    className="block rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
+                    data-testid="store-intake-parse-closed"
+                  >
+                    {store_intake_parse_closed()}
+                  </output>
+                ) : null}
                 {!canArrange(state) ? (
                   <p className="text-sm text-muted-foreground">
                     {store_intake_arrange_empty()}
                   </p>
                 ) : null}
-                {state.upload ? (
+                {state.upload && photoParseOpen ? (
                   <Button
                     data-testid="store-intake-arrange-run"
                     disabled={arrange.isPending || batchPending}
@@ -883,7 +925,7 @@ export function StoreIntakeWizard({
                       : store_intake_arrange()}
                   </Button>
                 ) : null}
-                {canBatchParse(state) ? (
+                {canBatchParse(state) && photoParseOpen ? (
                   <div className="space-y-2" data-testid="store-intake-batch">
                     <Button
                       data-testid="store-intake-batch-run"

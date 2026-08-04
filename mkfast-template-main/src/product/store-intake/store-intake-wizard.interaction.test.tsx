@@ -35,6 +35,7 @@ const EXPERIENCE: AssetIntakeExperience = {
   assetType: 'price_list',
   configRevision: 0,
   disclosure: '解析结果需要你确认。',
+  draftSupply: { kind: 'fixture', open: true },
   examples: [
     {
       exampleId: 'a',
@@ -334,6 +335,66 @@ describe('StoreIntakeWizard', () => {
     expect(actions).not.toContain('store_fact_append');
     expect(actions).not.toContain('confirm_asset_intake_fact');
     expect(actions).not.toContain('record_asset_intake_batch');
+  });
+
+  it('shows a DOM-visible fixture demo label on capture and arrange', async () => {
+    renderWizard();
+    await screen.findByTestId('store-intake-steps');
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    const captureLabel = await screen.findByTestId(
+      'store-intake-fixture-label'
+    );
+    expect(captureLabel.textContent).toMatch(/演示档|Demo mode/u);
+    expect(screen.queryByTestId('store-intake-parse-closed')).toBeNull();
+    expect(
+      (screen.getByTestId('store-intake-photo') as HTMLInputElement).disabled
+    ).toBe(false);
+    expect(
+      (screen.getByTestId('store-intake-photos') as HTMLInputElement).disabled
+    ).toBe(false);
+
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    const arrangeLabel = await screen.findByTestId(
+      'store-intake-fixture-label'
+    );
+    expect(arrangeLabel.textContent).toMatch(/演示档|Demo mode/u);
+  });
+
+  it('fails closed when Core marks draftSupply closed', async () => {
+    queryP1.mockImplementation(
+      async (module: string, call: { action: string }) => {
+        if (call.action === 'asset_intake_experience') {
+          return {
+            ...EXPERIENCE,
+            draftSupply: { kind: 'production', open: false },
+          };
+        }
+        if (call.action === 'store_facts_active') return [];
+        if (call.action === 'config_defaults') {
+          return { 'compliance.regulated_mode.default': false };
+        }
+        throw new Error(`unexpected query ${module}.${call.action}`);
+      }
+    );
+    renderWizard();
+    await screen.findByTestId('store-intake-steps');
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    expect(await screen.findByTestId('store-intake-parse-closed')).toBeTruthy();
+    expect(screen.queryByTestId('store-intake-fixture-label')).toBeNull();
+    expect(
+      (screen.getByTestId('store-intake-photo') as HTMLInputElement).disabled
+    ).toBe(true);
+    expect(
+      (screen.getByTestId('store-intake-photos') as HTMLInputElement).disabled
+    ).toBe(true);
+
+    fireEvent.click(screen.getByTestId('store-intake-next'));
+    await screen.findByTestId('store-intake-arrange');
+    expect(screen.getByTestId('store-intake-parse-closed')).toBeTruthy();
+    expect(screen.queryByTestId('store-intake-arrange-run')).toBeNull();
+    expect(screen.queryByTestId('store-intake-batch-run')).toBeNull();
   });
 
   it('batch upload shows Core progress then per-draft confirm fields', async () => {
