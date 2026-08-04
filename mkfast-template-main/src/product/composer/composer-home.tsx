@@ -178,6 +178,7 @@ import {
 import { ComposerToolsStrip } from './composer-tools-strip';
 import {
   bindQuoteView,
+  confirmSwitch,
   createComposerLensState,
   reopenComposer,
   selectLens,
@@ -259,7 +260,6 @@ import { composerDraftToRecipeFields } from './recipe-patch-preview-client';
 import {
   COMPOSER_DESTINATION_OPTIONS,
   ComposerConversation,
-  ComposerCreationModeSegment,
   ComposerPromptBar,
   focusComposerIntentInput,
   type ComposerCreationMode,
@@ -283,7 +283,10 @@ import {
   isComposerGenerationParamsSupported,
   type ComposerGenerationParamsState,
 } from './composer-generation-params';
-import { ComposerGenerationParamsPanel } from './composer-generation-params-panel';
+import {
+  ComposerCreationModeSurface,
+  FreeCreationPanel,
+} from './free-creation-panel';
 import {
   applyComposerNotePlan,
   bindComposerTask,
@@ -621,6 +624,9 @@ export function ComposerHome({
   // D-111 双入口: the entry declares itself, the server decides the route.
   const [creationMode, setCreationMode] =
     useState<ComposerCreationMode>('customized');
+  const [freeCatalogModelId, setFreeCatalogModelId] = useState<string | null>(
+    null
+  );
   const [imageOperation, setImageOperation] =
     useState<ComposerImageOperation>('image.generate');
   /** P2-09: free-mode beauty voice + thinking level; customized injects defaults. */
@@ -1117,12 +1123,17 @@ export function ComposerHome({
    */
   const modelSelection = useMemo(() => {
     if (!lensId || !preferencesQuery.isSuccess) return undefined;
-    const explicitId = lensState.draft.fieldMeta.catalogModelId?.dirty
-      ? (lensState.draft.settings.catalogModelId ?? undefined)
-      : submissionRecipe?.modelPolicy.mode === 'fixed'
+    const preferences = normalizePreferences(preferencesQuery.data);
+    if (creationMode === 'free') {
+      return resolveCreationModelSelection({
+        catalog: catalog.models,
+        currentSelection: freeCatalogModelId ?? undefined,
+      });
+    }
+    const explicitId =
+      submissionRecipe?.modelPolicy.mode === 'fixed'
         ? submissionRecipe.modelPolicy.catalogModelId
         : undefined;
-    const preferences = normalizePreferences(preferencesQuery.data);
     return resolveCreationModelSelection({
       catalog: catalog.models,
       currentSelection: explicitId,
@@ -1132,9 +1143,9 @@ export function ComposerHome({
     });
   }, [
     catalog,
+    creationMode,
+    freeCatalogModelId,
     lensId,
-    lensState.draft.fieldMeta.catalogModelId?.dirty,
-    lensState.draft.settings.catalogModelId,
     preferencesQuery.data,
     preferencesQuery.isSuccess,
     submissionRecipe?.modelPolicy,
@@ -2009,15 +2020,18 @@ export function ComposerHome({
       fixtureSubmit,
       flushQuoteSettle,
       focusIntentAfterPrefillRef,
-      identity: selectedRunIdentity,
-      identityDecision: runIdentityDecision,
+      identity: creationMode === 'customized' ? selectedRunIdentity : undefined,
+      identityDecision:
+        creationMode === 'customized' ? runIdentityDecision : undefined,
       imageCardinalityValid: imageCardinality.valid,
       initialSurfaceRevisionId,
-      intentFallback: coldCards[0]?.title,
+      intentFallback:
+        creationMode === 'customized' ? coldCards[0]?.title : undefined,
       lensState,
-      missingGrounding,
+      missingGrounding: creationMode === 'customized' ? missingGrounding : [],
       productGroundingReady:
-        Boolean(product.state) && !product.loading && !product.error,
+        creationMode === 'free' ||
+        (Boolean(product.state) && !product.loading && !product.error),
       quotaBlocked,
       quote: quoteQuery.data,
       quoteId,
@@ -2048,6 +2062,7 @@ export function ComposerHome({
   const handleLensChange = (next: CreationLensId) => {
     setShowRequiredHint(false);
     setSubmissionGroundingBlocked(null);
+    setFreeCatalogModelId(null);
     // A press was for one form of content at one price. Choosing another form
     // is a different ask, so the held press does not travel with it.
     armedQuoteIdRef.current = null;
@@ -2057,7 +2072,39 @@ export function ComposerHome({
     setViralAdaptJourney((current) =>
       current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
     );
-    setLensState(selectLens(lensState, next));
+    setLensState((current) => {
+      const selected = selectLens(current, next);
+      return creationMode === 'free' && selected.phase === 'switch_preview'
+        ? confirmSwitch(selected)
+        : selected;
+    });
+  };
+
+  const handleCreationModeChange = (next: ComposerCreationMode) => {
+    if (next === creationMode) return;
+    setCreationMode(next);
+    setFreeCatalogModelId(null);
+    setShowRequiredHint(false);
+    setSubmissionGroundingBlocked(null);
+    setSubmitBlockedMessage(null);
+    armedQuoteIdRef.current = null;
+  };
+
+  const handleFreeModelChange = (modelId: string | null) => {
+    setFreeCatalogModelId(modelId);
+    const model = catalog.models.find((candidate) => candidate.id === modelId);
+    setLensState((current) =>
+      updateSettings(
+        current,
+        {
+          catalogModelId: model?.id ?? null,
+          catalogModelName: model?.displayName ?? null,
+          catalogModelRevision: model ? catalogRevision : null,
+          modelPolicyMode: model ? 'fixed' : 'auto',
+        },
+        'user'
+      )
+    );
   };
 
   const applyAiCoverSeed = useCallback(
@@ -2790,10 +2837,13 @@ export function ComposerHome({
   // the press rather than only after it (see `composerSubmitIntent`).
   const submitIntent = composerSubmitIntent({
     groundingBlocker:
-      product.state && !product.loading && !product.error
+      creationMode === 'customized' &&
+      product.state &&
+      !product.loading &&
+      !product.error
         ? groundingBlockerFromMissing(missingGrounding)
         : null,
-    storeFactsPending: showProgressiveFact,
+    storeFactsPending: creationMode === 'customized' && showProgressiveFact,
   });
 
   // P0-1 / F6: once a run is Active, collapse 段①/段③ so the transcript owns
@@ -2844,26 +2894,10 @@ export function ComposerHome({
   }, [dualColumn]);
 
   // Keep the attach capsule slot referentially stable across quote/usage
-  // re-renders. An inline JSX tree remounts free-mode generation-params
-  // buttons on every parent render and breaks pointer clicks mid-popover.
+  // re-renders so upload controls do not remount mid-interaction.
   const composerAttachmentSlot = useMemo(
     () => (
       <div data-testid="composer-source-picker">
-        {explicitImageOperation ? (
-          <ComposerImageOperationPicker
-            disabled={createWork.isPending || lensState.phase === 'frozen'}
-            onChange={setImageOperation}
-            value={explicitImageOperation}
-          />
-        ) : null}
-        {generationParamsEnabled ? (
-          <ComposerGenerationParamsPanel
-            creationMode={creationMode}
-            disabled={createWork.isPending || lensState.phase === 'frozen'}
-            onChange={setGenerationParams}
-            state={generationParams}
-          />
-        ) : null}
         <ComposerImageInput
           focusRef={sourcePickerRef}
           onAssetAdded={addSource}
@@ -2922,13 +2956,8 @@ export function ComposerHome({
     [
       addSource,
       authorizeComposerImage,
-      createWork.isPending,
-      creationMode,
       explicitImageOperation,
-      generationParams,
-      generationParamsEnabled,
       imageCardinality.message,
-      lensState.phase,
       removeSource,
       showAiCoverSignatureMismatch,
       sourcePickerRef,
@@ -2972,9 +3001,38 @@ export function ComposerHome({
        */}
       <DashboardHomeGreeting state={product.state} />
 
-      <ComposerCreationModeSegment
+      <ComposerCreationModeSurface
         creationMode={creationMode}
-        onCreationModeChange={setCreationMode}
+        freePanel={
+          <FreeCreationPanel
+            catalogError={catalogQuery.isError}
+            catalogLoading={catalogQuery.isPending}
+            disabled={
+              createWork.isPending ||
+              creditAdmissionPending ||
+              lensState.phase === 'frozen'
+            }
+            generationParams={generationParams}
+            imageOperationSlot={
+              explicitImageOperation ? (
+                <ComposerImageOperationPicker
+                  disabled={
+                    createWork.isPending || lensState.phase === 'frozen'
+                  }
+                  onChange={setImageOperation}
+                  value={explicitImageOperation}
+                />
+              ) : null
+            }
+            lensId={lensId}
+            models={catalog.models}
+            onGenerationParamsChange={setGenerationParams}
+            onLensChange={handleLensChange}
+            onModelChange={handleFreeModelChange}
+            selectedModelId={freeCatalogModelId}
+          />
+        }
+        onCreationModeChange={handleCreationModeChange}
       />
 
       {/* 创作面 — Composer + document timeline (D-139 lens axis inside capsule). */}
@@ -2982,7 +3040,7 @@ export function ComposerHome({
         className="flex flex-col gap-6"
         data-testid="dashboard-section-create"
       >
-        {storeFactLedgerFailed ? (
+        {creationMode === 'customized' && storeFactLedgerFailed ? (
           <div
             className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-3"
             data-testid="progressive-fact-ledger-error"
@@ -3007,7 +3065,7 @@ export function ComposerHome({
           </div>
         ) : null}
 
-        {showProgressiveFact ? (
+        {creationMode === 'customized' && showProgressiveFact ? (
           <ProgressiveFactCard
             activeFacts={product.state?.store ? (storeFacts.data ?? []) : []}
             factHeads={product.state?.store ? storeFactHeads : []}
@@ -3554,63 +3612,67 @@ export function ComposerHome({
                   }
                   lensRequired={showRequiredHint}
                   lensSlot={
-                    <>
-                      <LensRadiogroup
-                        value={lensId}
-                        onChange={handleLensChange}
-                        showRequiredHint={showRequiredHint}
-                        disabled={
-                          createWork.isPending ||
-                          creditAdmissionPending ||
-                          lensState.phase === 'frozen'
-                        }
-                      />
-                      <LensSwitchPreviewPanel
-                        state={lensState}
-                        onChange={(next) => {
-                          setViralAdaptBinding(null);
-                          cancelViralOpenCliRead();
-                          setViralAdaptJourney((current) =>
-                            current.phase === 'idle'
-                              ? current
-                              : cancelViralAdaptJourney(current)
-                          );
-                          setLensState(next);
-                        }}
-                      />
-                    </>
+                    creationMode === 'customized' ? (
+                      <>
+                        <LensRadiogroup
+                          value={lensId}
+                          onChange={handleLensChange}
+                          showRequiredHint={showRequiredHint}
+                          disabled={
+                            createWork.isPending ||
+                            creditAdmissionPending ||
+                            lensState.phase === 'frozen'
+                          }
+                        />
+                        <LensSwitchPreviewPanel
+                          state={lensState}
+                          onChange={(next) => {
+                            setViralAdaptBinding(null);
+                            cancelViralOpenCliRead();
+                            setViralAdaptJourney((current) =>
+                              current.phase === 'idle'
+                                ? current
+                                : cancelViralAdaptJourney(current)
+                            );
+                            setLensState(next);
+                          }}
+                        />
+                      </>
+                    ) : null
                   }
                   lensSummary={lensId ? COMPOSER_LENS_LABELS[lensId] : null}
                   mentionSlot={
-                    <div className="flex flex-col gap-4">
-                      <ComposerIdentityCard
-                        defaultPending={defaultIdentityDecision.isPending}
-                        onRemember={(identityId) =>
-                          defaultIdentityDecision.mutate(identityId)
-                        }
-                        onRetry={() => void identitiesQuery.refetch()}
-                        onSelect={(identityId) =>
-                          sessionIdentityDecision.mutate(identityId)
-                        }
-                        selectionPending={sessionIdentityDecision.isPending}
-                        selection={identitySelection}
-                      />
-                      <ComposerToolsStrip
-                        viewport={viewportKind}
-                        surfaceRevisionId={surfaceQuery.data?.revisionId}
-                        onOpenTool={(href) => {
-                          if (typeof window !== 'undefined') {
-                            window.location.assign(href);
+                    creationMode === 'customized' ? (
+                      <div className="flex flex-col gap-4">
+                        <ComposerIdentityCard
+                          defaultPending={defaultIdentityDecision.isPending}
+                          onRemember={(identityId) =>
+                            defaultIdentityDecision.mutate(identityId)
                           }
-                        }}
-                        onViewAll={(href) => {
-                          void navigate({ to: href as '/dashboard/catalog' });
-                        }}
-                      />
-                    </div>
+                          onRetry={() => void identitiesQuery.refetch()}
+                          onSelect={(identityId) =>
+                            sessionIdentityDecision.mutate(identityId)
+                          }
+                          selectionPending={sessionIdentityDecision.isPending}
+                          selection={identitySelection}
+                        />
+                        <ComposerToolsStrip
+                          viewport={viewportKind}
+                          surfaceRevisionId={surfaceQuery.data?.revisionId}
+                          onOpenTool={(href) => {
+                            if (typeof window !== 'undefined') {
+                              window.location.assign(href);
+                            }
+                          }}
+                          onViewAll={(href) => {
+                            void navigate({ to: href as '/dashboard/catalog' });
+                          }}
+                        />
+                      </div>
+                    ) : null
                   }
                   recipePillSlot={
-                    surfaceQuery.data ? (
+                    creationMode === 'customized' && surfaceQuery.data ? (
                       <RecipeCardsPanel
                         lensId={lensId}
                         lensState={lensState}
@@ -3635,7 +3697,7 @@ export function ComposerHome({
                         }
                         useBottomSheet={viewportKind === 'mobile'}
                       />
-                    ) : (
+                    ) : creationMode === 'customized' ? (
                       <output
                         className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground"
                         data-testid="composer-surface-status"
@@ -3644,9 +3706,10 @@ export function ComposerHome({
                           ? '创作模板暂时不可用，请稍后重试'
                           : '正在读取创作模板…'}
                       </output>
-                    )
+                    ) : null
                   }
                   recipeSummary={
+                    creationMode === 'customized' &&
                     lensState.draft.recipeRevisionId
                       ? (submissionRecipe?.presentation.title ?? null)
                       : null
@@ -3687,7 +3750,11 @@ export function ComposerHome({
                   }
                   onSubmit={() => void attemptSubmit()}
                   onValueChange={handleIntentChange}
-                  placeholder={creation_entry_intent_placeholder()}
+                  placeholder={
+                    creationMode === 'free'
+                      ? '输入提示词，直接生成这次作品…'
+                      : creation_entry_intent_placeholder()
+                  }
                   reuseChips={COMPOSER_REUSE_CHIPS}
                   running={
                     // Lock/glow only while generating — keep intent editable
@@ -3780,7 +3847,15 @@ export function ComposerHome({
                 ) : (
                   <ComposerQuoteStatusLine
                     onRetry={retryQuoteReadiness}
-                    readiness={quoteReadiness}
+                    readiness={
+                      creationMode === 'free' && lensId && !selectedModel
+                        ? {
+                            message: '请选择本次使用的模型。',
+                            retry: null,
+                            state: 'no_model',
+                          }
+                        : quoteReadiness
+                    }
                   />
                 )}
 
@@ -3956,7 +4031,10 @@ export function ComposerHome({
        * 建议行 — R-1: below Composer on Idle (spec §2.4). Prefill only, never
        * submit. Stays mounted under Active collapse so disclosure state survives.
        */}
-      <section data-testid="dashboard-section-proposal" hidden={shelfCollapsed}>
+      <section
+        data-testid="dashboard-section-proposal"
+        hidden={shelfCollapsed || creationMode === 'free'}
+      >
         <DashboardHomeSurface
           loading={product.loading}
           onPrefill={(handoff: RecommendationHandoff) => {
@@ -4010,7 +4088,9 @@ export function ComposerHome({
       </section>
 
       {/* Activity Shelf — D-126. Collapsed with 建议行 in Active (P0-1). */}
-      {!shelfCollapsed ? <DashboardContinueSection /> : null}
+      {!shelfCollapsed && creationMode === 'customized' ? (
+        <DashboardContinueSection />
+      ) : null}
     </WorkbenchShellRoot>
   );
 }

@@ -2,10 +2,9 @@
  * F-J-01 / G-UI-MERCHANT-NO-FALLBACK: the merchant must be told the channel
  * readiness of the model that will actually run (dual-end with admin).
  *
- * T30 / #224 moved the carrier, not the guarantee. The model picker was one of
- * the T08 signed fields, so the reshell stopped rendering it as an editable
- * control; readiness now rides the read-only signed preview. This file pins the
- * new location and additionally pins that the picker did not come back.
+ * T30 / #224 moved the carrier, not the guarantee. Customized creation keeps
+ * model routing in the read-only signed preview; D-103 free creation restores
+ * an explicit model choice outside the agent timeline.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -18,6 +17,7 @@ function read(file: string) {
 
 const home = read('./composer-home.tsx');
 const conversation = read('./composer-conversation.tsx');
+const freeCreationPanel = read('./free-creation-panel.tsx');
 
 test('composer projects channel readiness for the model that will run', () => {
   // The readiness value reaches the surface from the resolved catalog model.
@@ -38,7 +38,8 @@ test('composer projects channel readiness for the model that will run', () => {
   );
 });
 
-test('the retired model select stays retired (T08 signed fields are not a form)', () => {
-  assert.doesNotMatch(home, /composer-catalog-model-select/);
-  assert.doesNotMatch(conversation, /composer-catalog-model-select/);
+test('free creation restores explicit model choice without putting it in the agent timeline', () => {
+  assert.match(home, /<FreeCreationPanel/u);
+  assert.match(freeCreationPanel, /composer-free-model-select/u);
+  assert.doesNotMatch(conversation, /composer-free-model-select/u);
 });

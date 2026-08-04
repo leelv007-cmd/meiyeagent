@@ -68,7 +68,7 @@ export function ComposerGenerationParamsPanel({
             ))}
           </div>
           <p className="text-muted text-xs">
-            不选就用你登记的门店口吻；选了就按这个美业角色写。
+            不选就用模型默认口吻；选了就按这个美业角色写。
           </p>
         </fieldset>
       ) : null}
