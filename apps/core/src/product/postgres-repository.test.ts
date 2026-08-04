@@ -60,7 +60,7 @@ describe('Postgres product repository', { skip: databaseUrl ? false : 'TEST_DATA
   });
 
   it('persists workspace state and idempotent command output without leaking another member', async () => {
-    const service = new ProductService(repository);
+    const service = new ProductService({ repository });
     const context = {
       actor: 'user' as const,
       correlationId: 'corr-pg',
@@ -106,7 +106,7 @@ describe('Postgres product repository', { skip: databaseUrl ? false : 'TEST_DATA
   });
 
   it('rolls back state when the idempotency result cannot be persisted', async () => {
-    const service = new ProductService(repository);
+    const service = new ProductService({ repository });
     const context = {
       actor: 'user' as const,
       correlationId: 'corr-pg-atomic',
@@ -210,26 +210,18 @@ describe('Postgres product repository', { skip: databaseUrl ? false : 'TEST_DATA
       copyExecutionLeaseMs: 1_000,
     };
     const providers = { domestic: provider, standard: provider };
-    const firstService = new ProductService(
+    const firstService = new ProductService({
       repository,
-      undefined,
-      undefined,
-      providers,
-      undefined,
-      undefined,
-      'legacy',
-      options,
-    );
-    const recoveryService = new ProductService(
+      copyProviders: providers,
+      acceptedWriteOwner: 'legacy',
+      ...options,
+    });
+    const recoveryService = new ProductService({
       repository,
-      undefined,
-      undefined,
-      providers,
-      undefined,
-      undefined,
-      'legacy',
-      options,
-    );
+      copyProviders: providers,
+      acceptedWriteOwner: 'legacy',
+      ...options,
+    });
     const suffix = randomUUID();
     await firstService.execute(
       context,

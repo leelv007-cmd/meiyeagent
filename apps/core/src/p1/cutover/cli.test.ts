@@ -67,7 +67,7 @@ test(
        VALUES ($1, $2, 'owner')`,
       [workspaceId, userId]
     );
-    await new ProductService(repository).execute(
+    await new ProductService({ repository }).execute(
       {
         actor: 'user',
         role: 'owner',

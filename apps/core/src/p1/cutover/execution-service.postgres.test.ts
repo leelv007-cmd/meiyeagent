@@ -332,15 +332,10 @@ test(
     assert.equal(afterFirstP1Copy.available, 8);
     assert.equal(afterFirstP1Copy.committed, 2);
     const relational = new PostgresRelationalProductRepository(pool);
-    const p1State = await new ProductService(
-      relational,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'p1'
-    ).bootstrap({
+    const p1State = await new ProductService({
+      repository: relational,
+      acceptedWriteOwner: 'p1',
+    }).bootstrap({
       actor: 'user',
       correlationId: 'post-cutover-product-change',
       userId: operatorA,

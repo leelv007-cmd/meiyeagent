@@ -178,7 +178,7 @@ async function coreServer(t: TestContext) {
   repository.grantMembership('user-a', 'workspace-a');
   const server = createCoreServer({
     diagnosticRepository: diagnostics,
-    productService: new ProductService(repository),
+    productService: new ProductService({ repository }),
     serviceToken: 'test-service-token',
   });
   server.listen(0, '127.0.0.1');

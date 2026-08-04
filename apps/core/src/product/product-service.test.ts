@@ -35,7 +35,7 @@ describe('product golden journey', () => {
   it('strips retired ledger keys from historical ProductState JSON', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(merchant.userId, merchant.workspaceId);
-    const service = new ProductService(repository);
+    const service = new ProductService({ repository });
     const historicalState = await service.bootstrap(merchant);
     Object.assign(
       historicalState as ProductState & Record<string, unknown>,
@@ -62,7 +62,7 @@ describe('product golden journey', () => {
   it('persists complete restricted-asset authorization and rejects incomplete or expired grants', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(merchant.userId, merchant.workspaceId);
-    const service = new ProductService(repository);
+    const service = new ProductService({ repository });
     await addRealAsset(service, 'asset-restricted-rights');
     await service.execute(
       merchant,
@@ -143,7 +143,7 @@ describe('product golden journey', () => {
   it('requires evidence before a real asset becomes publicly usable and accepts historical evidence repair', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(merchant.userId, merchant.workspaceId);
-    const service = new ProductService(repository);
+    const service = new ProductService({ repository });
     await addRealAsset(service, 'asset-rights-invariant');
 
     await assert.rejects(
@@ -208,23 +208,16 @@ describe('product golden journey', () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(merchant.userId, merchant.workspaceId);
     const propagatedAssetIds: string[] = [];
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'legacy',
-      {
-        packageRightsPropagation: {
-          async revokePackagesUsingAsset(_context, assetId) {
-            propagatedAssetIds.push(assetId);
-            return { revokedPackageIds: [] };
-          },
+      acceptedWriteOwner: 'legacy',
+      packageRightsPropagation: {
+        async revokePackagesUsingAsset(_context, assetId) {
+          propagatedAssetIds.push(assetId);
+          return { revokedPackageIds: [] };
         },
-      }
-    );
+      },
+    });
 
     await addRealAsset(service, 'asset-minor-flip');
     await service.execute(
@@ -299,28 +292,21 @@ describe('product golden journey', () => {
       });
     let propagationAttempts = 0;
     const propagatedAssetIds: string[] = [];
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'legacy',
-      {
-        packageRightsPropagation: {
-          async revokePackagesUsingAsset(_context, assetId) {
-            assert.equal(workspaceLocked, false);
-            propagationAttempts += 1;
-            propagatedAssetIds.push(assetId);
-            if (propagationAttempts === 1) {
-              throw new Error('operations temporarily unavailable');
-            }
-            return { revokedPackageIds: ['package-revoked-on-retry'] };
-          },
+      acceptedWriteOwner: 'legacy',
+      packageRightsPropagation: {
+        async revokePackagesUsingAsset(_context, assetId) {
+          assert.equal(workspaceLocked, false);
+          propagationAttempts += 1;
+          propagatedAssetIds.push(assetId);
+          if (propagationAttempts === 1) {
+            throw new Error('operations temporarily unavailable');
+          }
+          return { revokedPackageIds: ['package-revoked-on-retry'] };
         },
-      }
-    );
+      },
+    });
     await addRealAsset(service, 'asset-withdraw-retry');
 
     await assert.rejects(
@@ -359,23 +345,16 @@ describe('product golden journey', () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(merchant.userId, merchant.workspaceId);
     let propagationAttempts = 0;
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'legacy',
-      {
-        packageRightsPropagation: {
-          async revokePackagesUsingAsset() {
-            propagationAttempts += 1;
-            return { revokedPackageIds: ['package-with-real-photo'] };
-          },
+      acceptedWriteOwner: 'legacy',
+      packageRightsPropagation: {
+        async revokePackagesUsingAsset() {
+          propagationAttempts += 1;
+          return { revokedPackageIds: ['package-with-real-photo'] };
         },
-      }
-    );
+      },
+    });
     await addRealAsset(service, 'asset-reauthorized');
 
     await service.execute(
@@ -410,18 +389,11 @@ describe('product golden journey', () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(merchant.userId, merchant.workspaceId);
     let owner: 'legacy' | 'frozen' | 'contentpackage' = 'frozen';
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'legacy',
-      {
-        contentWriteOwnership: { get: async () => owner },
-      }
-    );
+      acceptedWriteOwner: 'legacy',
+      contentWriteOwnership: { get: async () => owner },
+    });
     const legacyContentCommands = [
       { type: 'generate_copy' },
       { type: 'select_content' },
@@ -516,22 +488,15 @@ describe('product golden journey', () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(merchant.userId, merchant.workspaceId);
     const projected: string[][] = [];
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'legacy',
-      {
-        searchProjection: {
-          async sync(state) {
-            projected.push(state.assets.map((asset) => asset.id));
-          },
+      acceptedWriteOwner: 'legacy',
+      searchProjection: {
+        async sync(state) {
+          projected.push(state.assets.map((asset) => asset.id));
         },
-      }
-    );
+      },
+    });
 
     await service.execute(
       merchant,
@@ -563,16 +528,11 @@ describe('product golden journey', () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(merchant.userId, merchant.workspaceId);
     repository.setFutureWriteOwner(merchant.workspaceId, 'p1');
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'p1',
-      { legacyVideoPath: 'disabled' }
-    );
+      acceptedWriteOwner: 'p1',
+      legacyVideoPath: 'disabled',
+    });
     const state = await service.bootstrap(merchant);
     state.storyboards.push({
       confirmedAt: new Date().toISOString(),
@@ -601,15 +561,10 @@ describe('product golden journey', () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('operator-a', merchant.workspaceId, 'operator');
     repository.setFutureWriteOwner(merchant.workspaceId, 'p1');
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'p1'
-    );
+      acceptedWriteOwner: 'p1',
+    });
 
     await assert.rejects(
       service.execute(
@@ -629,9 +584,12 @@ describe('product golden journey', () => {
     repository.grantMembership('user-a', 'workspace-a');
     repository.grantMembership('user-b', 'workspace-b');
     const notifications: ProductNotification[] = [];
-    const service = new ProductService(repository, {
-      async notify(notification) {
-        notifications.push(notification);
+    const service = new ProductService({
+      repository,
+      notifier: {
+        async notify(notification) {
+          notifications.push(notification);
+        },
       },
     });
 
@@ -1082,7 +1040,7 @@ describe('product golden journey', () => {
   it('keeps creation open and applies the hard stop only at publication handoff', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
-    const service = new ProductService(repository);
+    const service = new ProductService({ repository });
     await prepareCopyFixture(service, false);
     const unchecked = await service.execute(
       merchant,
@@ -1163,7 +1121,7 @@ describe('product golden journey', () => {
   it('requires accepted Content and keeps handoff actions separate from explicit manual results', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
-    const service = new ProductService(repository);
+    const service = new ProductService({ repository });
     await prepareCopyFixture(service, false);
     const generated = await service.execute(
       merchant,
@@ -1258,7 +1216,7 @@ describe('product golden journey', () => {
   it('records regulated Preflight and store responsibility before handoff', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
-    const service = new ProductService(repository);
+    const service = new ProductService({ repository });
 
     await service.execute(
       merchant,
@@ -1395,7 +1353,7 @@ describe('product golden journey', () => {
   it('rejects legacy apply_plan for every actor and protects worker facts', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
-    const service = new ProductService(repository);
+    const service = new ProductService({ repository });
 
     await assert.rejects(
       service.execute(
@@ -1448,7 +1406,7 @@ describe('product golden journey', () => {
   it('rejects an idempotency key reused with a different command payload', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
-    const service = new ProductService(repository);
+    const service = new ProductService({ repository });
     const command = {
       type: 'confirm_store' as const,
       store: {
@@ -1480,7 +1438,7 @@ describe('product golden journey', () => {
   it('freezes new legacy commands while keeping write ownership reversible', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
-    const service = new ProductService(repository);
+    const service = new ProductService({ repository });
     repository.setFutureWriteOwner('workspace-a', 'frozen');
     await assert.rejects(
       service.execute(
@@ -1513,7 +1471,7 @@ describe('product golden journey', () => {
   it('rechecks write ownership after acquiring the workspace lock', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
-    const service = new ProductService(repository);
+    const service = new ProductService({ repository });
     let releaseLock = () => {};
     let markAcquired = () => {};
     const acquired = new Promise<void>((resolve) => {
@@ -1568,24 +1526,18 @@ describe('product golden journey', () => {
         }));
       },
     };
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      { domestic: provider, standard: provider },
-      undefined,
-      undefined,
-      'legacy',
-      {
-        contentWriteOwnership: {
-          async get() {
-            ownerReads += 1;
-            if (ownerReads === 1) markInitialOwnerRead();
-            return contentOwner;
-          },
+      copyProviders: { domestic: provider, standard: provider },
+      acceptedWriteOwner: 'legacy',
+      contentWriteOwnership: {
+        async get() {
+          ownerReads += 1;
+          if (ownerReads === 1) markInitialOwnerRead();
+          return contentOwner;
         },
-      }
-    );
+      },
+    });
     await prepareCopyFixture(service, false);
     let releaseLock = () => {};
     let markLockAcquired = () => {};
@@ -1626,19 +1578,15 @@ describe('product golden journey', () => {
     repository.grantMembership('user-a', 'workspace-a');
     repository.setFutureWriteOwner('workspace-a', 'p1');
     const decisions = new Map<string, LegacyInFlightDecision>();
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      {
+      inFlightDecisions: {
         async get(workspaceId, jobId) {
           assert.equal(workspaceId, 'workspace-a');
           return decisions.get(jobId) ?? null;
         },
-      }
-    );
+      },
+    });
     const state = await service.bootstrap(merchant);
     state.videoJobs.push({
       agentRunId: 'agent-inflight',
@@ -1737,23 +1685,16 @@ describe('product golden journey', () => {
   it('enforces governed storage without writing the retired storage bucket', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'legacy',
-      {
-        legacyBillingReadOnly: true,
-        storageEntitlements: {
-          async resolve() {
-            return { storageMb: 1 };
-          },
+      acceptedWriteOwner: 'legacy',
+      legacyBillingReadOnly: true,
+      storageEntitlements: {
+        async resolve() {
+          return { storageMb: 1 };
         },
-      }
-    );
+      },
+    });
     const state = await service.bootstrap(merchant);
     state.videoJobs.push({
       agentRunId: 'agent-storage',
@@ -1875,22 +1816,16 @@ describe('product golden journey', () => {
           }));
         },
       };
-      const service = new ProductService(
+      const service = new ProductService({
         repository,
-        undefined,
-        undefined,
-        { domestic: provider, standard: provider },
-        undefined,
-        undefined,
-        'legacy',
-        {
-          contentWriteOwnership: {
-            async get() {
-              return contentOwner;
-            },
+        copyProviders: { domestic: provider, standard: provider },
+        acceptedWriteOwner: 'legacy',
+        contentWriteOwnership: {
+          async get() {
+            return contentOwner;
           },
-        }
-      );
+        },
+      });
       await prepareCopyFixture(service, false);
       const command = service.execute(
         merchant,
@@ -1932,12 +1867,10 @@ describe('product golden journey', () => {
       standard: failedProvider,
       domestic: failedProvider,
     };
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      providers
-    );
+      copyProviders: providers,
+    });
     await prepareCopyFixture(service, false);
 
     await assert.rejects(
@@ -1972,23 +1905,16 @@ describe('product golden journey', () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
     repository.setFutureWriteOwner('workspace-a', 'p1');
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'p1',
-      {
-        copyUsageAuthority: 'foundation_ledger',
-        usageProjection: {
-          async getCopyProjection() {
-            return { allowance: 100, available: 99 };
-          },
+      acceptedWriteOwner: 'p1',
+      copyUsageAuthority: 'foundation_ledger',
+      productEntitlements: {
+        async getProjection() {
+          return { usage: { copy: { allowance: 100, available: 99 } } };
         },
-      }
-    );
+      },
+    });
     await prepareCopyFixture(service, false);
 
     const generated = await service.execute(
@@ -2031,9 +1957,12 @@ describe('product golden journey', () => {
         }));
       },
     };
-    const service = new ProductService(repository, undefined, undefined, {
-      domestic: provider,
-      standard: provider,
+    const service = new ProductService({
+      repository,
+      copyProviders: {
+        domestic: provider,
+        standard: provider,
+      },
     });
     await prepareCopyFixture(service, false);
 
@@ -2096,26 +2025,18 @@ describe('product golden journey', () => {
       copyExecutionClock: () => clock,
       copyExecutionLeaseMs: 1_000,
     };
-    const firstService = new ProductService(
+    const firstService = new ProductService({
       repository,
-      undefined,
-      undefined,
-      providers,
-      undefined,
-      undefined,
-      'legacy',
-      options
-    );
-    const recoveryService = new ProductService(
+      copyProviders: providers,
+      acceptedWriteOwner: 'legacy',
+      ...options,
+    });
+    const recoveryService = new ProductService({
       repository,
-      undefined,
-      undefined,
-      providers,
-      undefined,
-      undefined,
-      'legacy',
-      options
-    );
+      copyProviders: providers,
+      acceptedWriteOwner: 'legacy',
+      ...options,
+    });
     await prepareCopyFixture(firstService, false);
 
     const original = firstService.execute(
@@ -2181,11 +2102,9 @@ describe('product golden journey', () => {
     });
     const bridge = new ProductCopyProviderBridge(modelSupply);
     const qualityEvents: ProductQualityEvent[] = [];
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      {
+      copyProviders: {
         domestic: new ModelSupplyProductCopyProvider(
           bridge,
           { catalogModelId: 'llm-domestic', mode: 'fixed' },
@@ -2197,12 +2116,12 @@ describe('product golden journey', () => {
           'overseas'
         ),
       },
-      {
+      qualitySink: {
         async record(_workspaceId, event) {
           qualityEvents.push(event);
         },
-      }
-    );
+      },
+    });
     await prepareCopyFixture(service, false);
 
     const generated = await service.execute(
@@ -2393,12 +2312,10 @@ describe('product golden journey', () => {
       standard: provider,
       domestic: provider,
     };
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      providers
-    );
+      copyProviders: providers,
+    });
     await prepareCopyFixture(service, false);
 
     const result = await service.execute(
@@ -2505,12 +2422,10 @@ describe('product golden journey', () => {
         },
       },
     };
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      providers
-    );
+      copyProviders: providers,
+    });
     await prepareCopyFixture(service, true);
 
     const result = await service.execute(
@@ -2532,7 +2447,7 @@ describe('product golden journey', () => {
   it('enforces video task business idempotency, lease expiry, and terminal state', async () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
-    const service = new ProductService(repository);
+    const service = new ProductService({ repository });
     const state = await service.bootstrap(merchant);
     state.storyboards.push({
       id: 'storyboard-lease',
@@ -2656,7 +2571,7 @@ describe('product golden journey', () => {
     // construction — it cannot reach a caller without passing through here.
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
-    const service = new ProductService(repository);
+    const service = new ProductService({ repository });
     await service.execute(
       merchant,
       {
@@ -2690,7 +2605,7 @@ describe('product golden journey', () => {
         return { output: {}, state: persisted };
       }
     }
-    const leaky = new LeakyProductService(repository);
+    const leaky = new LeakyProductService({ repository });
     const result = await leaky.execute(
       merchant,
       { type: 'hide_example', hidden: false },
@@ -2734,12 +2649,10 @@ describe('product golden journey', () => {
       domestic: provider,
       standard: provider,
     };
-    const service = new ProductService(
+    const service = new ProductService({
       repository,
-      undefined,
-      undefined,
-      providers
-    );
+      copyProviders: providers,
+    });
     await prepareCopyFixture(service, false);
 
     // Deliberate injection: reserved-namespace material sitting in the

@@ -562,39 +562,34 @@ const mediaGenerationWorker = gatedMediaExecution
       })
     )
   : undefined;
-const legacyProductService = new ProductService(
-  productRepository,
-  notifier,
-  productPlans,
-  undefined,
-  undefined,
-  legacyInFlightDecisions,
-  'legacy',
-  {
-    legacyBillingReadOnly: true,
-    packageRightsPropagation,
-    storageEntitlements: executionEntitlementPolicy,
-  }
+const searchProjection = new OperationsProductSearchProjection(
+  operationsRepository
 );
-const relationalProductService = new ProductService(
-  relationalProductRepository,
+const legacyProductService = new ProductService({
+  repository: productRepository,
   notifier,
-  productPlans,
-  undefined,
-  undefined,
-  legacyInFlightDecisions,
-  'p1',
-  {
-    copyUsageAuthority: 'foundation_ledger',
-    legacyBillingReadOnly: true,
-    legacyVideoPath: 'disabled',
-    packageRightsPropagation,
-    storageEntitlements: executionEntitlementPolicy,
-    searchProjection: new OperationsProductSearchProjection(
-      operationsRepository
-    ),
-  }
-);
+  planConfig: productPlans,
+  inFlightDecisions: legacyInFlightDecisions,
+  acceptedWriteOwner: 'legacy',
+  contentWriteOwnership: contentPackageWriteOwnership,
+  legacyBillingReadOnly: true,
+  packageRightsPropagation,
+  storageEntitlements: executionEntitlementPolicy,
+});
+const relationalProductService = new ProductService({
+  repository: relationalProductRepository,
+  notifier,
+  planConfig: productPlans,
+  inFlightDecisions: legacyInFlightDecisions,
+  acceptedWriteOwner: 'p1',
+  contentWriteOwnership: contentPackageWriteOwnership,
+  copyUsageAuthority: 'foundation_ledger',
+  legacyBillingReadOnly: true,
+  legacyVideoPath: 'disabled',
+  packageRightsPropagation,
+  storageEntitlements: executionEntitlementPolicy,
+  searchProjection,
+});
 const productService = new CutoverProductService(
   productRepository,
   legacyProductService,

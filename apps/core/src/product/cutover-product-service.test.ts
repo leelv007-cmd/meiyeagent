@@ -211,7 +211,7 @@ describe('cutover-aware product application service', () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership(userContext.userId, userContext.workspaceId);
     repository.setFutureWriteOwner(userContext.workspaceId, 'p1');
-    const seed = new ProductService(repository);
+    const seed = new ProductService({ repository });
     const state = await seed.bootstrap(userContext);
     const createdAt = '2026-07-11T00:00:00.000Z';
     state.assets.push({
@@ -264,15 +264,10 @@ describe('cutover-aware product application service', () => {
       updatedAt: createdAt,
     });
     await repository.save(state);
-    const p1 = new ProductService(
+    const p1 = new ProductService({
       repository,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      'p1'
-    );
+      acceptedWriteOwner: 'p1',
+    });
 
     const prepared = await p1.prepareVideoRender(
       { ...userContext, actor: 'worker' },
@@ -280,19 +275,15 @@ describe('cutover-aware product application service', () => {
     );
     assert.equal(prepared.job.id, 'job-render');
 
-    const recovery = new ProductService(
+    const recovery = new ProductService({
       repository,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      {
+      inFlightDecisions: {
         async get(_workspaceId, jobId) {
           return decision(jobId, 'new_owner_recovery');
         },
       },
-      'p1'
-    );
+      acceptedWriteOwner: 'p1',
+    });
     await assert.rejects(
       recovery.prepareVideoRender(
         { ...userContext, actor: 'worker' },

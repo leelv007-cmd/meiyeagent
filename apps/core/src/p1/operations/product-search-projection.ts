@@ -2,10 +2,6 @@ import type { ProductState } from '@meiye/contracts';
 import type { OperationsRepository } from './repository.js';
 import type { SearchDocument } from './types.js';
 
-export interface ProductSearchProjectionPort {
-  sync(state: ProductState): Promise<void>;
-}
-
 function assetDocument(
   state: ProductState,
   asset: ProductState['assets'][number]
@@ -98,9 +94,7 @@ function contentDocument(
  * Projects Product Core facts into the shared PostgreSQL search index. Product
  * remains authoritative; this adapter owns only a rebuildable read model.
  */
-export class OperationsProductSearchProjection
-  implements ProductSearchProjectionPort
-{
+export class OperationsProductSearchProjection {
   constructor(private readonly repository: OperationsRepository) {}
 
   async sync(state: ProductState) {

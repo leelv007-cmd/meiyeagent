@@ -26,7 +26,7 @@ test('product HTTP boundary trusts service-authenticated identity and hides cros
   repository.grantMembership('user-b', 'workspace-b');
   const server = createCoreServer({
     diagnosticRepository: emptyDiagnostics,
-    productService: new ProductService(repository),
+    productService: new ProductService({ repository }),
     serviceToken: 'test-service-token',
   });
   server.listen(0, '127.0.0.1');
@@ -166,7 +166,7 @@ test('product HTTP boundary enforces trusted workspace command roles', async (t)
   repository.grantMembership('reviewer-a', 'workspace-a');
   const server = createCoreServer({
     diagnosticRepository: emptyDiagnostics,
-    productService: new ProductService(repository),
+    productService: new ProductService({ repository }),
     serviceToken: 'test-service-token',
   });
   server.listen(0, '127.0.0.1');

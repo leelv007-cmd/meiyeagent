@@ -28,6 +28,10 @@ import {
   noOpLegacyInFlightDecisionPort,
   type LegacyInFlightDecisionPort,
 } from './legacy-inflight-decision.js';
+import type { OperationsProductPackageRightsAdapter } from '../p1/operations/product-package-rights-adapter.js';
+import type { OperationsProductSearchProjection } from '../p1/operations/product-search-projection.js';
+import type { CreditSubscriptionEntitlementPolicy } from '../p1/credit-billing/credit-entitlement-policy.js';
+import type { GrantLotAwareProductEntitlementService } from '../p1/foundation/grant-lot-entitlement-service.js';
 import {
   hasCurrentRestrictedAssetAuthorization,
   isRestrictedProductAsset,
@@ -758,39 +762,37 @@ interface PreparedCopyExecution {
   toolCallId: string;
 }
 
-export interface ProductUsageProjectionPort {
-  getCopyProjection(context: ProductContext): Promise<{
-    allowance: number;
-    available: number;
-  }>;
-}
-
-export interface ProductSearchProjectionPort {
-  sync(state: ProductState): Promise<void>;
-}
-
-export interface ProductPackageRightsPropagationPort {
-  revokePackagesUsingAsset(
-    context: ProductContext,
-    assetId: string
-  ): Promise<{ revokedPackageIds: string[] }>;
-}
-
-export interface ProductStorageEntitlementPort {
-  resolve(workspaceId: string): Promise<{ storageMb?: number } | null>;
-}
-
-export interface ProductServiceOptions {
+export interface ProductServiceConfig {
+  repository: ProductRepository;
+  notifier?: ProductNotifier;
+  planConfig?: ProductPlanConfig;
+  copyProviders?: CopyProviderRegistry;
+  qualitySink?: ProductQualitySink;
+  inFlightDecisions?: LegacyInFlightDecisionPort;
+  acceptedWriteOwner?: 'legacy' | 'p1';
   copyExecutionClock?: () => Date;
   copyExecutionLeaseMs?: number;
   copyUsageAuthority?: 'legacy_state' | 'foundation_ledger';
   /** Keep P0 entitlement buckets as a historical projection only. */
   legacyBillingReadOnly?: boolean;
   legacyVideoPath?: 'enabled' | 'disabled';
-  searchProjection?: ProductSearchProjectionPort;
-  packageRightsPropagation?: ProductPackageRightsPropagationPort;
-  storageEntitlements?: ProductStorageEntitlementPort;
-  usageProjection?: ProductUsageProjectionPort;
+  searchProjection?: Pick<OperationsProductSearchProjection, 'sync'>;
+  packageRightsPropagation?: Pick<
+    OperationsProductPackageRightsAdapter,
+    'revokePackagesUsingAsset'
+  >;
+  storageEntitlements?: {
+    resolve(
+      ...args: Parameters<CreditSubscriptionEntitlementPolicy['resolve']>
+    ): Promise<{ storageMb?: number } | null>;
+  };
+  productEntitlements?: {
+    getProjection(
+      ...args: Parameters<GrantLotAwareProductEntitlementService['getProjection']>
+    ): Promise<{
+      usage: { copy: { allowance: number; available: number } };
+    }>;
+  };
   contentWriteOwnership?: {
     get(workspaceId: string): Promise<'legacy' | 'frozen' | 'contentpackage'>;
   };
@@ -849,16 +851,24 @@ export interface ProductApplicationService {
 }
 
 export class ProductService implements ProductApplicationService {
-  constructor(
-    private readonly repository: ProductRepository,
-    private readonly notifier: ProductNotifier = noOpProductNotifier,
-    private readonly planConfig: ProductPlanConfig = defaultProductPlanConfig,
-    private readonly copyProviders: CopyProviderRegistry = defaultCopyProviderRegistry,
-    private readonly qualitySink: ProductQualitySink = noOpProductQualitySink,
-    private readonly inFlightDecisions: LegacyInFlightDecisionPort = noOpLegacyInFlightDecisionPort,
-    private readonly acceptedWriteOwner: 'legacy' | 'p1' = 'legacy',
-    private readonly options: ProductServiceOptions = {}
-  ) {}
+  private readonly repository: ProductRepository;
+  private readonly notifier: ProductNotifier;
+  private readonly planConfig: ProductPlanConfig;
+  private readonly copyProviders: CopyProviderRegistry;
+  private readonly qualitySink: ProductQualitySink;
+  private readonly inFlightDecisions: LegacyInFlightDecisionPort;
+  private readonly acceptedWriteOwner: 'legacy' | 'p1';
+
+  constructor(private readonly options: ProductServiceConfig) {
+    this.repository = options.repository;
+    this.notifier = options.notifier ?? noOpProductNotifier;
+    this.planConfig = options.planConfig ?? defaultProductPlanConfig;
+    this.copyProviders = options.copyProviders ?? defaultCopyProviderRegistry;
+    this.qualitySink = options.qualitySink ?? noOpProductQualitySink;
+    this.inFlightDecisions =
+      options.inFlightDecisions ?? noOpLegacyInFlightDecisionPort;
+    this.acceptedWriteOwner = options.acceptedWriteOwner ?? 'legacy';
+  }
 
   async bootstrap(context: ProductContext) {
     await this.authorize(context);
@@ -2133,12 +2143,14 @@ export class ProductService implements ProductApplicationService {
     context: ProductContext
   ) {
     if (this.options.legacyBillingReadOnly) return;
-    const projection =
-      await this.options.usageProjection?.getCopyProjection(context);
+    const { actor: _actor, ...foundationContext } = context;
+    const projection = await this.options.productEntitlements?.getProjection(
+      foundationContext
+    );
     if (!projection) return;
     state.entitlement.content = {
-      allowance: projection.allowance,
-      remaining: projection.available,
+      allowance: projection.usage.copy.allowance,
+      remaining: projection.usage.copy.available,
     };
   }
 

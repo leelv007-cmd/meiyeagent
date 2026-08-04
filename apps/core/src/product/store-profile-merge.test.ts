@@ -16,7 +16,7 @@ const context: ProductContext = {
 test('a complete revision-zero patch creates the Day-0 store profile and replays once', async () => {
   const repository = new MemoryProductRepository();
   repository.grantMembership(context.userId, context.workspaceId);
-  const product = new ProductService(repository);
+  const product = new ProductService({ repository });
   const patch = completePatch();
 
   const created = await product.mergeStoreProfile(context, patch, 'day-0');
@@ -43,7 +43,7 @@ test('a complete revision-zero patch creates the Day-0 store profile and replays
 test('patch merge upserts stable ids and preserves omitted accounts and legacy unconfirmed projects', async () => {
   const repository = new MemoryProductRepository();
   repository.grantMembership(context.userId, context.workspaceId);
-  const product = new ProductService(repository);
+  const product = new ProductService({ repository });
   await product.mergeStoreProfile(
     context,
     {
@@ -108,7 +108,7 @@ test('patch merge upserts stable ids and preserves omitted accounts and legacy u
 test('per-id clear removes only the named account and project', async () => {
   const repository = new MemoryProductRepository();
   repository.grantMembership(context.userId, context.workspaceId);
-  const product = new ProductService(repository);
+  const product = new ProductService({ repository });
   await product.mergeStoreProfile(
     context,
     {

@@ -96,7 +96,7 @@ describe(
     });
 
     it('keeps legacy JSON immutable after P1 takes ownership and appends the complete journey as relation revisions', async () => {
-      const legacyService = new ProductService(legacyRepository);
+      const legacyService = new ProductService({ repository: legacyRepository });
       await legacyService.execute(
         context,
         { hidden: true, type: 'hide_example' },
@@ -109,15 +109,10 @@ describe(
          ON CONFLICT (workspace_id) DO UPDATE SET owner = 'p1', updated_at = now()`,
         [workspaceId]
       );
-      const relationalService = new ProductService(
-        relationalRepository,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        'p1'
-      );
+      const relationalService = new ProductService({
+        repository: relationalRepository,
+        acceptedWriteOwner: 'p1',
+      });
       const service = new CutoverProductService(
         legacyRepository,
         legacyService,
@@ -340,26 +335,18 @@ describe(
         copyExecutionLeaseMs: 1_000,
       };
       const providers = { domestic: provider, standard: provider };
-      const firstService = new ProductService(
-        relationalRepository,
-        undefined,
-        undefined,
-        providers,
-        undefined,
-        undefined,
-        'p1',
-        options
-      );
-      const recoveryService = new ProductService(
-        relationalRepository,
-        undefined,
-        undefined,
-        providers,
-        undefined,
-        undefined,
-        'p1',
-        options
-      );
+      const firstService = new ProductService({
+        repository: relationalRepository,
+        copyProviders: providers,
+        acceptedWriteOwner: 'p1',
+        ...options,
+      });
+      const recoveryService = new ProductService({
+        repository: relationalRepository,
+        copyProviders: providers,
+        acceptedWriteOwner: 'p1',
+        ...options,
+      });
       const command = {
         brief: {
           assetIds: ['asset-relational'],

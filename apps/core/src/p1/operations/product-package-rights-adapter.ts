@@ -2,7 +2,7 @@ import {
   hasCurrentRestrictedAssetAuthorization,
   type Platform,
 } from '@meiye/contracts';
-import type { ProductPackageRightsPropagationPort } from '../../product/product-service.js';
+import type { ProductContext } from '@meiye/contracts';
 import type { OperationsApplicationService } from './application-service.js';
 import type {
   ContentPackageAssetExportPolicyPort,
@@ -143,19 +143,12 @@ function hasExpiredRights(
   return !Number.isFinite(validUntil) || validUntil <= now.getTime();
 }
 
-export class OperationsProductPackageRightsAdapter
-  implements ProductPackageRightsPropagationPort
-{
+export class OperationsProductPackageRightsAdapter {
   constructor(
     private readonly operations: () => OperationsApplicationService
   ) {}
 
-  revokePackagesUsingAsset(
-    context: Parameters<
-      ProductPackageRightsPropagationPort['revokePackagesUsingAsset']
-    >[0],
-    assetId: string
-  ) {
+  revokePackagesUsingAsset(context: ProductContext, assetId: string) {
     return this.operations().revokeContentPackagesUsingAsset(
       {
         actor: context.actor === 'worker' ? 'worker' : 'owner',

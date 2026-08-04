@@ -2416,7 +2416,7 @@ async function createEnvironment(
     workspaceId,
   };
   const productRepository = new PostgresProductRepository(pool);
-  const product = new ProductService(productRepository);
+  const product = new ProductService({ repository: productRepository });
   const facts = new PostgresStoreFactLedger(pool);
   const intakeRepository = new PostgresAssetIntakeRepository(pool);
   const finalizations = new PostgresStoreIntakeFinalizationRepository(pool);

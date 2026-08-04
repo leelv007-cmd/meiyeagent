@@ -1145,53 +1145,39 @@ const qualitySink: ProductQualitySink = {
     await modelControlPlane.recordQuality(workspaceId, event);
   },
 };
-const legacyProductService = new ProductService(
-  productRepository,
-  notifier,
-  productPlans,
-  createCopyProviders(legacyCopyBridge),
-  qualitySink,
-  legacyInFlightDecisions,
-  'legacy',
-  {
-    contentWriteOwnership: contentPackageWriteOwnership,
-    legacyBillingReadOnly: true,
-    packageRightsPropagation,
-    storageEntitlements: executionEntitlementPolicy,
-  }
+const searchProjection = new OperationsProductSearchProjection(
+  operationsRepository
 );
-const relationalProductService = new ProductService(
-  relationalProductRepository,
+const legacyProductService = new ProductService({
+  repository: productRepository,
   notifier,
-  productPlans,
-  createCopyProviders(p1CopyBridge),
+  planConfig: productPlans,
+  copyProviders: createCopyProviders(legacyCopyBridge),
   qualitySink,
-  legacyInFlightDecisions,
-  'p1',
-  {
-    contentWriteOwnership: contentPackageWriteOwnership,
-    copyUsageAuthority: 'foundation_ledger',
-    legacyBillingReadOnly: true,
-    legacyVideoPath: 'disabled',
-    packageRightsPropagation,
-    storageEntitlements: executionEntitlementPolicy,
-    searchProjection: new OperationsProductSearchProjection(
-      operationsRepository
-    ),
-    usageProjection: {
-      async getCopyProjection(context) {
-        const { actor: _actor, ...foundationContext } = context;
-        const projection = await productEntitlements.getProjection(
-          foundationContext
-        );
-        return {
-          allowance: projection.usage.copy.allowance,
-          available: projection.usage.copy.available,
-        };
-      },
-    },
-  }
-);
+  inFlightDecisions: legacyInFlightDecisions,
+  acceptedWriteOwner: 'legacy',
+  contentWriteOwnership: contentPackageWriteOwnership,
+  legacyBillingReadOnly: true,
+  packageRightsPropagation,
+  storageEntitlements: executionEntitlementPolicy,
+});
+const relationalProductService = new ProductService({
+  repository: relationalProductRepository,
+  notifier,
+  planConfig: productPlans,
+  copyProviders: createCopyProviders(p1CopyBridge),
+  qualitySink,
+  inFlightDecisions: legacyInFlightDecisions,
+  acceptedWriteOwner: 'p1',
+  contentWriteOwnership: contentPackageWriteOwnership,
+  copyUsageAuthority: 'foundation_ledger',
+  legacyBillingReadOnly: true,
+  legacyVideoPath: 'disabled',
+  packageRightsPropagation,
+  storageEntitlements: executionEntitlementPolicy,
+  searchProjection,
+  productEntitlements,
+});
 const productService = new CutoverProductService(
   productRepository,
   legacyProductService,

@@ -17,13 +17,13 @@ const context = {
 async function initialProductState() {
   const repository = new MemoryProductRepository();
   repository.grantMembership(context.userId, context.workspaceId);
-  return new ProductService(repository).bootstrap(context);
+  return new ProductService({ repository }).bootstrap(context);
 }
 
 async function productStatesWithEntities() {
   const repository = new MemoryProductRepository();
   repository.grantMembership(context.userId, context.workspaceId);
-  const service = new ProductService(repository);
+  const service = new ProductService({ repository });
   const first = await service.execute(
     context,
     {
