@@ -313,28 +313,28 @@
     },
     "mkfast-template-main/src/lib/auth/workspace-provisioning.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "4cf4e1a43f04aadcd22ce47f90c0e3b701e7c7d3",
-      "note": "Re-verified 2026-08-03 at 4cf4e1a4 against fresh isolated meiye_304_final_biz_20260803_final / meiye_304_final_dbos_20260803_final: 1/1 pass, 0 fail, 0 skip via tsx --test."
+      "verifiedAt": "fdbcc9f62d735a615871251ac9bd6adcb3bd34c6",
+      "note": "Re-verified 2026-08-04 at fdbcc9f6 on fresh PG meiye_309_ev_*; #309 Creem retirement. 12/12 pass 0 skip."
     },
     "mkfast-template-main/src/payment/plan-checkout-bindings.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5bd0b5bcacba5a81bb9c610c3fff3aedc6f37f24",
-      "note": "Re-verified 2026-08-04 at 5bd0b5bc on fresh PG meiye_308_ev_20260804_082857 / dbos twin; #308 evidence refresh. Core 8/8 and Web payment 11/11, 0 skip."
+      "verifiedAt": "fdbcc9f62d735a615871251ac9bd6adcb3bd34c6",
+      "note": "Re-verified 2026-08-04 at fdbcc9f6 on fresh PG meiye_309_ev_*; #309 Creem retirement. 12/12 pass 0 skip."
     },
     "mkfast-template-main/src/payment/postgres-webhook-settlement.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5bd0b5bcacba5a81bb9c610c3fff3aedc6f37f24",
-      "note": "Re-verified 2026-08-04 at 5bd0b5bc on fresh PG meiye_308_ev_20260804_082857 / dbos twin; #308 evidence refresh. Core 8/8 and Web payment 11/11, 0 skip."
+      "verifiedAt": "fdbcc9f62d735a615871251ac9bd6adcb3bd34c6",
+      "note": "Re-verified 2026-08-04 at fdbcc9f6 on fresh PG meiye_309_ev_*; #309 Creem retirement. 12/12 pass 0 skip."
     },
     "mkfast-template-main/src/payment/credit-package-checkout-bindings.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5bd0b5bcacba5a81bb9c610c3fff3aedc6f37f24",
-      "note": "Re-verified 2026-08-04 at 5bd0b5bc on fresh PG meiye_308_ev_20260804_082857 / dbos twin; #308 evidence refresh. Core 8/8 and Web payment 11/11, 0 skip."
+      "verifiedAt": "fdbcc9f62d735a615871251ac9bd6adcb3bd34c6",
+      "note": "Re-verified 2026-08-04 at fdbcc9f6 on fresh PG meiye_309_ev_*; #309 Creem retirement. 12/12 pass 0 skip."
     },
     "mkfast-template-main/src/payment/payment-refunds.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "5bd0b5bcacba5a81bb9c610c3fff3aedc6f37f24",
-      "note": "Re-verified 2026-08-04 at 5bd0b5bc on fresh PG meiye_308_ev_20260804_082857 / dbos twin; #308 evidence refresh. Core 8/8 and Web payment 11/11, 0 skip."
+      "verifiedAt": "fdbcc9f62d735a615871251ac9bd6adcb3bd34c6",
+      "note": "Re-verified 2026-08-04 at fdbcc9f6 on fresh PG meiye_309_ev_*; #309 Creem retirement. 12/12 pass 0 skip."
     },
     "apps/core/src/p1/harness/reservation-sweeper.postgres.test.ts": {
       "status": "green",
