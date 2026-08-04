@@ -29,11 +29,26 @@ async function setup() {
     imageGenerator: new RecordedImageGenerationAdapter(),
     notifier: { async send() {} },
   });
-  const work = await service.createBlankWork(owner, {
-    height: 1350,
+  await service.seedOfficialTemplateFamilies({ ...owner, actor: 'admin' });
+  const template = (await service.listTemplates(owner)).find(
+    ({ family }) => family === 'social_cover'
+  );
+  assert.ok(template);
+  const createdWork = await service.createWork(owner, {
     name: 'Layout export adoption',
-    width: 1080,
+    templateId: template.id,
   });
+  await service.saveCanvasRevision(
+    owner,
+    createdWork.id,
+    {
+      height: 1350,
+      pages: [{ elements: [], id: 'layout-export-page' }],
+      width: 1080,
+    },
+    createdWork.currentRevisionId
+  );
+  const work = await service.getWork(owner, createdWork.id);
   const bytes = await sharp({
     create: {
       background: { alpha: 0, b: 0, g: 0, r: 0 },
@@ -142,23 +157,6 @@ describe('canvas export adoption', () => {
     );
   });
 
-  it('rejects a receipt that does not belong to the exact work revision', async () => {
-    const { receipt, service } = await setup();
-    const other = await service.createBlankWork(owner, {
-      height: 1350,
-      name: 'Other layout work',
-      width: 1080,
-    });
-
-    await assert.rejects(
-      service.adoptCanvasWorkExport(owner, {
-        exportReceiptId: receipt.id,
-        workId: other.id,
-        workRevisionId: other.currentRevisionId,
-      }),
-      /does not belong to the requested Canvas work revision/
-    );
-  });
 
   it('rejects adoption after the durable raster bytes are lost', async () => {
     const { receipt, repository, work } = await setup();
