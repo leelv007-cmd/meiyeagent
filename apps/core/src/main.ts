@@ -2,9 +2,7 @@ import { shutdownLangfuseTracing } from './instrumentation.js';
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import {
-  ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
   confirmationCardTimeoutSecondsSchema,
-  NOTE_STYLE_CONFIG_KEY,
 } from '@meiye/contracts';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
@@ -52,11 +50,8 @@ import {
   AdminConfigBoundedExecutionLimitsSource,
   AdminConfigEntitlementCatalogSource,
   AdminConfigNotePlanSettingsSource,
-  BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
-  BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
   DEFAULT_HARNESS_LANGFUSE_OUTBOX_CONFIG,
   DEFAULT_HARNESS_TODAY_RECOMMENDATION_CONFIG,
-  DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
   HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
   HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
@@ -140,7 +135,6 @@ import {
   FoundationModelSupplyLedger,
   MediaActivationProbeExecutor,
   ModelSupplyFoundationModule,
-  isLiveVerifiedActivationEvidence,
   foundationOwnedReferenceAssetRepository,
   OwnedAssetReferenceResolver,
   OpenAiCompatibleAiSdkRunner,
@@ -402,6 +396,13 @@ import {
   OperationsVisualAdoptionPort,
 } from './p1/result-delivery/operations-visual-adoption.js';
 import { PostgresResultAdjustSnapshotReadPort } from './p1/result-delivery/postgres-result-adjust-snapshot.js';
+import {
+  ADMIN_CONFIG_KEY_CLASSIFICATION,
+  createMarketingIdentityReferenceResolver,
+  createWriteOwnershipReader,
+  probeObjectStorageReadWrite,
+  validatePlatformDefaultModel,
+} from './assembly/domain-rules.js';
 
 assertLangfusePromptRuntimePolicy(process.env);
 const harnessPromptResolver = langfusePromptResolverFromEnv(process.env);
@@ -1635,69 +1636,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
             modelControlPlane,
           ),
       },
-      hotReadKeys: [
-        ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
-        DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
-        HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
-        HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
-        HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
-        HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY,
-        HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
-        HARNESS_WOZ_RECIPE_CONFIG_KEY,
-        BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
-        BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
-        // 笔记风格集合每次编译都现读（AdminConfigNotePlanSettingsSource.read），
-        // 不登记的话后台会告诉运营「重启后生效」——与事实相反（D-116）。
-        NOTE_STYLE_CONFIG_KEY,
-        'plan.credits.trial',
-        'plan.credits.starter',
-        'plan.credits.growth',
-        'plan.credits.pro',
-        'plan.credits.addons',
-        'plan.credits.cycle_coefficients',
-        'plan.credits.reference_numbers',
-        'plan.credits.trial.enabled',
-        ...PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(
-          platformDefaultModelConfigName,
-        ),
-        'compliance.aigc_label.default',
-        'compliance.regulated_mode.default',
-        'compliance.watermark.default',
-      ],
-      wiredKeys: [
-        ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
-        DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
-        HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY,
-        HARNESS_CONFIRMATION_CARD_TIMEOUT_CONFIG_KEY,
-        HARNESS_LANGFUSE_OUTBOX_CONFIG_KEY,
-        HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY,
-        HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
-        HARNESS_WOZ_RECIPE_CONFIG_KEY,
-        BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
-        BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
-        NOTE_STYLE_CONFIG_KEY,
-        'byok.adapter.assembly',
-        'model.execution.mode',
-        'model.media.execution.mode',
-        'plan.credits.trial',
-        'plan.credits.starter',
-        'plan.credits.growth',
-        'plan.credits.pro',
-        'plan.credits.addons',
-        'plan.credits.cycle_coefficients',
-        'plan.credits.reference_numbers',
-        'plan.credits.trial.enabled',
-        ...PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(
-          platformDefaultModelConfigName,
-        ),
-        'compliance.aigc_label.default',
-        'compliance.regulated_mode.default',
-        'compliance.watermark.default',
-      ],
-      readOnlyKeys: [
-        'plan.addons',
-        'plan.trial.enabled',
-      ],
+      ...ADMIN_CONFIG_KEY_CLASSIFICATION,
     }),
     new ContextFoundationModule(storeFactLedger),
     new ProductEntitlementFoundationModule(productEntitlements, undefined, {
@@ -1713,54 +1652,25 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       warn: (message) => console.warn(message),
       modelDefaults: {
         getSnapshot: () => platformDefaultModelSource.getSnapshot(),
-        async validateDefault(operation, modelId) {
-          const model = models.find(
-            (candidate) =>
-              candidate.id === modelId && candidate.operations.includes(operation),
-          );
-          if (!model) {
-            throw new P1DomainError(
-              'INVALID_STATE',
-              `Platform default model ${modelId} does not support ${operation}.`,
-            );
-          }
-          const candidates = deployments.filter(
-            (deployment) =>
-              deployment.catalogModelId === modelId &&
-              deployment.status === 'active' &&
-              deployment.credentialMode !== 'byok_strict' &&
-              deployment.credentialOwner !== 'workspace_byok',
-          );
-          if (
-            modelRuntime.mode === 'fixture' &&
-            Object.values(e2ePlatformModelDefaults).includes(modelId) &&
-            candidates.length > 0
-          ) {
-            return;
-          }
-          for (const deployment of candidates) {
-            const configurationRevision =
-              runtimeAssembly.assembly.configurationRevisions[deployment.id];
-            if (!configurationRevision) continue;
-            const evidence = await adminConfigRepository.get(
-              'global',
-              '__global__',
-              `model.activation.evidence.${deployment.id}`,
-            );
-            const activationEvidence = evidence?.value as
-              | ActivationEvidence
-              | undefined;
-            if (
-              isLiveVerifiedActivationEvidence(activationEvidence) &&
-              activationEvidence?.configurationRevision === configurationRevision
-            ) {
-              return;
-            }
-          }
-          throw new P1DomainError(
-            'INVALID_STATE',
-            `Platform default model ${modelId} is not live verified for ${operation}.`,
-          );
+        validateDefault(operation, modelId) {
+          return validatePlatformDefaultModel({
+            operation,
+            modelId,
+            models,
+            deployments,
+            mode: modelRuntime.mode,
+            fixtureDefaultModelIds: Object.values(e2ePlatformModelDefaults),
+            configurationRevisions:
+              runtimeAssembly.assembly.configurationRevisions,
+            async readActivationEvidence(deploymentId) {
+              const evidence = await adminConfigRepository.get(
+                'global',
+                '__global__',
+                `model.activation.evidence.${deploymentId}`,
+              );
+              return evidence?.value as ActivationEvidence | undefined;
+            },
+          });
         },
         async setWorkspaceDefault(
           workspaceId,
@@ -1812,36 +1722,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       marketingIdentities,
       undefined,
       marketingIdentityDrafter,
-      {
-        async resolve({ workspaceId, draftId, revision }) {
-          const draft = await parseService.draftView(
-            workspaceId,
-            draftId,
-            revision
-          );
-          const summary = draft.fields.find(
-            (field) => field.key === 'brand_reference.summary'
-          );
-          if (
-            draft.target !== 'brand_reference' ||
-            draft.origin !== 'parsed' ||
-            !draft.parsedDocumentId ||
-            typeof summary?.value !== 'string' ||
-            !summary.value.trim()
-          ) {
-            throw new P1DomainError(
-              'INVALID_STATE',
-              'The identity reference must be an exact parsed brand reference revision.'
-            );
-          }
-          return {
-            draftId: draft.draftId,
-            draftRevision: draft.revision,
-            parsedDocumentId: draft.parsedDocumentId,
-            text: summary.value.trim(),
-          };
-        },
-      }
+      createMarketingIdentityReferenceResolver(parseService)
     ),
     new AssetMemoryFoundationModule(
       assetIntakeService,
@@ -1856,14 +1737,7 @@ const p1ApplicationService = new P1ApplicationService(foundationRepository, {
       delivery: contentPackageDelivery,
     }),
   ],
-  writeOwnershipReader: async (workspaceId) => {
-    const result = await pool.query<{
-      owner: 'legacy' | 'frozen' | 'p1';
-    }>('SELECT owner FROM p1_write_ownership WHERE workspace_id = $1', [
-      workspaceId,
-    ]);
-    return result.rows[0]?.owner ?? null;
-  },
+  writeOwnershipReader: createWriteOwnershipReader(pool),
 });
 const p1HarnessCheckInvoker = new P1HarnessCheckInvoker(
   p1ApplicationService,
@@ -2549,45 +2423,6 @@ const dbosSystemPool = harnessRuntimeConfig
     })
   : undefined;
 
-const READINESS_PROBE_WORKSPACE_ID = 'readiness-probe';
-// A 1x1 PNG: the shared storage seam validates media magic bytes, so the probe
-// has to write a real media payload.
-const READINESS_PROBE_BYTES = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=',
-  'base64',
-);
-
-const probeObjectStorageReadWrite = async () => {
-  if (!assetStorage.persistOwnedAsset) {
-    throw new Error('Owned asset storage is unavailable for readiness probe.');
-  }
-  const persisted = await assetStorage.persistOwnedAsset({
-    bytes: READINESS_PROBE_BYTES,
-    contentType: 'image/png',
-    workspaceId: READINESS_PROBE_WORKSPACE_ID,
-  });
-  try {
-    const stored = await assetStorage.read(persisted.objectKey);
-    if (
-      stored.bytes.byteLength !== READINESS_PROBE_BYTES.byteLength ||
-      stored.bytes.some(
-        (byte, index) => byte !== READINESS_PROBE_BYTES[index],
-      )
-    ) {
-      throw new Error(
-        'Object storage returned different bytes than were written.',
-      );
-    }
-  } finally {
-    const deleteCached = (
-      assetStorage as { deleteCachedAsset?: (objectKey: string) => Promise<void> }
-    ).deleteCachedAsset;
-    if (deleteCached) {
-      await deleteCached.call(assetStorage, persisted.objectKey);
-    }
-  }
-};
-
 const readinessProbes = {
   dbos: dbosSystemPool
     ? dbosSystemDbProbe(dbosSystemPool)
@@ -2599,7 +2434,7 @@ const readinessProbes = {
       }),
   objectStorage: objectStorageProbe({
     env: process.env,
-    probeReadWrite: probeObjectStorageReadWrite,
+    probeReadWrite: () => probeObjectStorageReadWrite(assetStorage),
   }),
   outbox: outboxBacklogProbe({
     async criticalBacklog() {
