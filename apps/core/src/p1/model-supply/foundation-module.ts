@@ -427,14 +427,6 @@ export interface ModelSupplyControlPlaneRepository {
     workspaceId: string,
     query: ModelSupplyJobListQuery,
   ): Promise<ModelSupplyJobListPage>;
-  saveCanvasGenerationQuote(
-    workspaceId: string,
-    quote: PersistedCanvasGenerationQuote,
-  ): Promise<void>;
-  getCanvasGenerationQuote(
-    workspaceId: string,
-    quoteId: string,
-  ): Promise<PersistedCanvasGenerationQuote | null>;
   enqueueCanvasTextGeneration(
     workspaceId: string,
     queued: ModelSupplyResult,

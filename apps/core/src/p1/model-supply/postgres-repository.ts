@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import { P1DomainError } from '../foundation/domain.js';
+import type { ModelSupplyControlPlaneRepository } from './foundation-module.js';
 import type {
   CatalogRevision,
   PreferenceView,
@@ -156,7 +157,9 @@ type StoredQualityEvaluationRunHeader = Omit<
   rejectionCases?: BeautyQualityEvaluationRun['rejectionCases'];
 };
 
-export class PostgresModelSupplyRepository {
+export class PostgresModelSupplyRepository
+  implements ModelSupplyControlPlaneRepository
+{
   constructor(private readonly pool: Pool) {}
 
   async migrate(client?: PoolClient) {
