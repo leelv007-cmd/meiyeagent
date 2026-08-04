@@ -40,16 +40,8 @@ import {
   workbench_grounding_source_required,
   workbench_grounding_store_required,
   workbench_operation_failed,
-  workbench_work_create_failed,
-  workbench_work_created,
 } from '@/locale/paraglide/messages';
-import {
-  commandP1,
-  operationsQuery,
-  P1RequestError,
-  p1ErrorCode,
-  queryP1,
-} from '@/p1/client';
+import { commandP1, operationsQuery, p1ErrorCode, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import {
   normalizeCatalog,
@@ -59,14 +51,9 @@ import { resolveCreationModelSelection } from '@/p1/model-current-selection';
 import { useComplianceDefaults } from '@/p1/use-compliance-defaults';
 import type {
   BriefBoundRevisions,
-  BriefSourceSignal,
   BriefTriggerInput,
-  BriefTriggerProjection,
-  BrowserRecipeProjection,
   CreationLensId,
-  MarketingIdentityAsset,
   MemoryEntriesPage,
-  ProductQuoteSnapshot,
   ResultPanel,
   StoreFact,
 } from '@meiye/contracts';
@@ -138,10 +125,7 @@ import {
   readViralOpenCliSource,
   type ViralOpenCliBridge,
 } from '@/product/viral-adapt/viral-adapt-opencli-bridge';
-import {
-  missingCreativeGrounding,
-  type CreativeGroundingRequirement,
-} from '@/product/creative-brief-editor';
+import { missingCreativeGrounding } from '@/product/creative-brief-editor';
 import {
   readActiveHarnessTasks,
   setHarnessInteractionEditing,
@@ -176,10 +160,7 @@ import {
   ComposerStyleAnalysisStageNotice,
   ComposerStyleReferenceControl,
 } from './composer-style-reference-control';
-import {
-  submissionRoleForStyleReference,
-  toggleStyleReferenceAsset,
-} from './style-analysis-entry';
+import { toggleStyleReferenceAsset } from './style-analysis-entry';
 import { ProgressiveFactCard } from './progressive-fact-card';
 import {
   hasMissingProgressiveStoreFacts,
@@ -190,7 +171,6 @@ import {
   cancelBriefSurface,
   confirmBriefSurface,
   createBriefSurfaceState,
-  decideSubmitPath,
   openBriefSurface,
   projectBriefSurfaceView,
   type BriefSurfaceState,
@@ -198,11 +178,9 @@ import {
 import { ComposerToolsStrip } from './composer-tools-strip';
 import {
   bindQuoteView,
-  canSubmit,
   createComposerLensState,
   reopenComposer,
   selectLens,
-  submitComposer,
   updateSettings,
   updateSources,
   updateDeliverySuggestion,
@@ -233,18 +211,13 @@ import {
   composerDestinationCapability,
   composerDestinationContract,
 } from './destination-contract';
-import { mapComposerDestination } from './composer-destination-client';
 import {
   groundingBlockerFromMissing,
   type ComposerGroundingBlocker,
 } from './composer-grounding-blocker';
-import {
-  decideComposerDestinationPreflight,
-  type ComposerDestinationPreflightState,
-} from './composer-destination-preflight';
+import type { ComposerDestinationPreflightState } from './composer-destination-preflight';
 import { projectComposerQuoteView } from './quote-wiring';
 import {
-  admitFreshCreditRun,
   projectWorkbenchCreditBalance,
   projectWorkbenchCreditQuote,
   projectWorkbenchCreditShortfall,
@@ -283,7 +256,6 @@ import {
   syncComposerBriefContext,
 } from './composer-live';
 import { composerDraftToRecipeFields } from './recipe-patch-preview-client';
-import { submitComposerSubmission } from './composer-submission-client';
 import {
   COMPOSER_DESTINATION_OPTIONS,
   ComposerConversation,
@@ -318,8 +290,6 @@ import {
   COMPOSER_SESSION_STORAGE_KEY,
   composerSessionMerchantText,
   createComposerSession,
-  failComposerSession,
-  openComposerTurn,
   rebindComposerSession,
   restoreComposerSession,
   restoreComposerSessionFromActiveTask,
@@ -328,6 +298,7 @@ import {
   type ComposerSession,
 } from './composer-session';
 import { useComposerInteractions } from './use-composer-interactions';
+import { briefSourcesFromDraft, useComposerRun } from './use-composer-run';
 import type { ComposerRecoveryInput } from './composer-report-card';
 import {
   confirmComposerNotePlanPageRegeneration,
@@ -384,33 +355,6 @@ const COMPOSER_REUSE_CHIPS: ComposerReuseChip[] = [
   },
 ];
 
-function briefSourcesFromDraft(sources: unknown[]): BriefSourceSignal[] {
-  return sources.flatMap((source, index) => {
-    if (!source || typeof source !== 'object' || Array.isArray(source)) {
-      return [];
-    }
-    const value = source as Record<string, unknown>;
-    return [
-      {
-        id: typeof value.id === 'string' ? value.id : `source-${index + 1}`,
-        ...(typeof value.kind === 'string' ? { kind: value.kind } : {}),
-        ...(typeof value.category === 'string'
-          ? { category: value.category }
-          : {}),
-        ...(typeof value.containsPerson === 'boolean'
-          ? { containsPerson: value.containsPerson }
-          : {}),
-        ...(typeof value.restricted === 'boolean'
-          ? { restricted: value.restricted }
-          : {}),
-        ...(typeof value.rightsStatus === 'string'
-          ? { rightsStatus: value.rightsStatus }
-          : {}),
-      },
-    ];
-  });
-}
-
 function sourceReferencesFromDraft(sources: unknown[]) {
   return sources.flatMap((source) => {
     if (!source || typeof source !== 'object' || Array.isArray(source)) {
@@ -427,17 +371,11 @@ function sourceReferencesFromDraft(sources: unknown[]) {
  * Both name the problem *and* the way out; 「操作未完成，请检查当前状态后重试」
  * is what this replaces.
  */
-const COMPOSER_LENS_REQUIRED_MESSAGE =
-  '还没定下要做哪种内容。先在上面选文案、图文或视频，再点发送。';
-
 type PendingCreditRun = {
   briefConfirmationId?: string;
   lensId: CreationLensId;
   videoConfirmAccepted?: boolean;
 };
-
-const COMPOSER_QUOTE_PENDING_MESSAGE =
-  '这次的用量还没算好，所以没能开始。稍等一下，等发送键下方出现用量说明再点；一直没出来的话，改一句描述会重新算。';
 
 /**
  * What the send button will actually do on the next press.
@@ -470,29 +408,6 @@ function composerSubmitIntent(input: {
     };
   }
   return { label: creation_entry_submit(), hint: null };
-}
-
-function groundingBlockerMessage(blocker: ComposerGroundingBlocker) {
-  if (blocker === 'store') return workbench_grounding_store_required();
-  if (blocker === 'qualification') {
-    return workbench_grounding_qualification_required();
-  }
-  return workbench_grounding_source_required();
-}
-
-function groundingBlockerFromError(error: unknown) {
-  if (!(error instanceof P1RequestError)) return null;
-  const missing = error.details?.missing;
-  if (!Array.isArray(missing)) return null;
-  return groundingBlockerFromMissing(
-    missing.filter(
-      (value): value is CreativeGroundingRequirement =>
-        value === 'confirmed_store' ||
-        value === 'confirmed_project' ||
-        value === 'confirmed_qualification' ||
-        value === 'real_authorized_asset'
-    )
-  );
 }
 
 function sameBriefRevisions(
@@ -694,8 +609,6 @@ export function ComposerHome({
     createExecutionConfirmState
   );
   const pendingRunRef = useRef<PendingCreditRun | null>(null);
-  const creditAdmissionPendingRef = useRef(false);
-  const [creditAdmissionPending, setCreditAdmissionPending] = useState(false);
   // Deliberately outside `session`: declining clears the transcript, and a
   // feedback line that lived there would be wiped by the very action it
   // reports on (D-164⑥ 决定 B).
@@ -2067,290 +1980,71 @@ export function ComposerHome({
     [refreshAfterAssetWrite]
   );
 
-  const createWork = useMutation({
-    mutationFn: async (input: {
-      briefConfirmationId?: string;
-      briefContextId: string;
-      briefContextRevision: number;
-      briefInput: BriefTriggerInput;
-      identity?: MarketingIdentityAsset;
-      identityDecision?: { id: string; revision: number };
-      lensId: CreationLensId;
-      intent: string;
-      quote: ProductQuoteSnapshot;
-      recipe: BrowserRecipeProjection;
-      videoConfirmAccepted?: boolean;
-    }) => {
-      if (fixtureSubmit) {
-        return {
-          contentPackage: {
-            expectedRevision: 0,
-            id: `fixture-package-${input.lensId}`,
-          },
-          task: { id: `fixture-task-${input.lensId}` },
-          work: { id: `fixture-work-${input.lensId}` },
-        };
-      }
-      if (input.lensId === 'video' && !input.videoConfirmAccepted) {
-        throw new Error('Video quote confirmation is required.');
-      }
-      const currentBrief = await requestComposerBrief({
-        ...input.briefInput,
-        ...(input.briefConfirmationId
-          ? { confirmationId: input.briefConfirmationId }
-          : {}),
-      });
-      if (
-        currentBrief.requiresBrief ||
-        (input.briefConfirmationId && !currentBrief.confirmationValid)
-      ) {
-        throw new Error('Brief confirmation is no longer current.');
-      }
-
-      if (!signedSubmission) {
-        throw new Error('Composer delivery contract is incomplete.');
-      }
-      if (signedSubmission.viralAdaptSource) {
-        const rebound = bindViralAdaptSource({
-          sessionId: sessionIdRef.current,
-          payload: signedSubmission.viralAdaptSource,
-          sources: lensState.draft.sources,
-        });
-        if (
-          !activeViralAdaptSource ||
-          !rebound.ok ||
-          rebound.binding.sessionId !== sessionIdRef.current
-        ) {
-          throw new Error(
-            'Viral adapt source is no longer ready for this run.'
-          );
+  const selectedRunIdentity = identitiesQuery.data?.identities.find(
+    (candidate) => candidate.identityId === identitySelection.selected?.id
+  );
+  const runIdentityDecision = sessionIdentityDecisionReference
+    ? sessionIdentityDecisionReference
+    : identitySelection.source === 'default' &&
+        identitiesQuery.data?.defaultDecision
+      ? {
+          id: identitiesQuery.data.defaultDecision.decisionId,
+          revision: identitiesQuery.data.defaultDecision.decisionRevision,
         }
-      }
-      const catalogModelRevision = input.quote.catalogModelRevision;
-      if (!catalogModelRevision) {
-        throw new Error('Composer quote is missing its catalog revision.');
-      }
-      const assets = lensState.draft.sources.flatMap((source) => {
-        if (!source || typeof source !== 'object' || Array.isArray(source)) {
-          return [];
-        }
-        const candidate = source as Record<string, unknown>;
-        return typeof candidate.id === 'string' &&
-          typeof candidate.revision === 'string'
-          ? [
-              {
-                id: candidate.id,
-                revision: candidate.revision,
-                role: submissionRoleForStyleReference(
-                  candidate.id,
-                  styleReferenceAssetIds
-                ),
-              },
-            ]
-          : [];
-      });
-      if (assets.length !== sourceReferences.length) {
-        throw new Error('Composer source revisions are incomplete.');
-      }
-      return submitComposerSubmission({
-        ...signedSubmission,
-        ...(input.briefConfirmationId
-          ? {
-              briefConfirmation: {
-                id: input.briefConfirmationId,
-                revision: currentBrief.bindRevisions.draftRevisionId,
-              },
-            }
-          : {}),
-        briefContext: {
-          id: input.briefContextId,
-          revision: input.briefContextRevision,
-        },
-        catalogModel: {
-          id: input.quote.catalogModelId,
-          revision: catalogModelRevision,
-        },
-        ...(input.identity
-          ? {
-              identity: {
-                id: input.identity.identityId,
-                revision: String(input.identity.version),
-              },
-            }
-          : {}),
-        ...(input.identityDecision
-          ? { identityDecision: input.identityDecision }
-          : {}),
-        idempotencyKey: `composer-submit:${sessionIdRef.current}:${input.quote.revision}`,
-        creationMode,
-        intent: input.intent,
-        quote: {
-          id: input.quote.quoteId,
-          revision: input.quote.revision,
-        },
-        recipe: {
-          id: input.recipe.recipeId,
-          revision: input.recipe.revisionId,
-        },
-        sources: { assets },
-        surface: {
-          id: surfaceQuery.data!.surfaceId,
-          revision: surfaceQuery.data!.revisionId,
-        },
-      });
-    },
-    onSuccess: async (created, variables) => {
-      const submitted = submitComposer(lensState, {
-        videoConfirmAccepted:
-          variables.lensId === 'video'
-            ? variables.videoConfirmAccepted
-            : undefined,
-        confirmPriceMatchesCharge: true,
-      });
-      if (submitted.ok) {
-        setLensState(submitted.state);
-      }
-      toast.success(workbench_work_created());
-      // ADR-0014「提交后不跳转」— the run streams here and finishes as a
-      // 成品预览卡. Opening the Result Center stays a merchant action.
-      setSession((current) =>
-        bindComposerTask(current, {
-          taskId: created.task.id,
-          workId: created.work.id,
-          packageId: created.contentPackage.id,
-        })
-      );
-      await queryClient.invalidateQueries({
-        queryKey: creditProjectionQueryKey,
-      });
-      await queryClient.refetchQueries({
-        queryKey: creditProjectionQueryKey,
-        type: 'active',
-      });
-    },
-    onMutate: () => setSubmissionGroundingBlocked(null),
-    onError: (error) => {
-      setSession((current) => failComposerSession(current));
-      if (p1ErrorCode(error) === 'CREATIVE_GROUNDING_INCOMPLETE') {
-        const blocker =
-          groundingBlockerFromError(error) ??
-          groundingBlockerFromMissing(missingGrounding);
-        if (blocker) {
-          setSubmissionGroundingBlocked(blocker);
-          toast.error(groundingBlockerMessage(blocker));
-          return;
-        }
-      }
-      if (
-        p1ErrorCode(error) === 'INSUFFICIENT_ENTITLEMENT' ||
-        p1ErrorCode(error) === 'ENTITLEMENT_INSUFFICIENT'
-      ) {
-        setSubmissionQuotaBlocked(true);
-        void queryClient.invalidateQueries({
-          queryKey: creditProjectionQueryKey,
-        });
-      }
-      toast.error(workbench_work_create_failed());
-    },
-  });
-
-  useEffect(() => {
-    if (!focusIntentAfterPrefillRef.current || createWork.isPending) return;
-    const intentInput = document.querySelector(
-      '[data-testid="composer-intent-input"]'
-    );
-    if (!(intentInput instanceof HTMLTextAreaElement) || intentInput.disabled) {
-      return;
-    }
-    focusIntentAfterPrefillRef.current = false;
-    focusComposerIntentInput();
-  });
-
-  const runCreate = async (
-    selectedLens: CreationLensId,
-    videoConfirmAccepted?: boolean,
-    briefConfirmationId?: string,
-    onAdmitted?: () => void
-  ) => {
-    if (creditAdmissionPendingRef.current || createWork.isPending) return;
-    const identity = identitiesQuery.data?.identities.find(
-      (candidate) => candidate.identityId === identitySelection.selected?.id
-    );
-    const briefInput = briefInputRef.current;
-    const briefContextRevision = briefContextRevisionRef.current;
-    // `quote` joins the guard rather than staying a `!` assertion: every caller
-    // already checks it, and a run must carry the price it was admitted on.
-    const quote = quoteQuery.data;
-    if (
-      !submissionRecipe ||
-      !briefInput?.briefContextId ||
-      briefContextRevision === null ||
-      !quote ||
-      !currentQuoteView
-    ) {
-      toast.error(workbench_operation_failed());
-      return;
-    }
-    creditAdmissionPendingRef.current = true;
-    setCreditAdmissionPending(true);
-    try {
-      const admission = await admitFreshCreditRun({
-        loadProjection: () =>
-          queryClient.fetchQuery({
-            queryKey: creditProjectionQueryKey,
-            queryFn: () =>
-              queryP1<AccountUsageProjection>('entitlements', {
-                action: 'projection',
-                payload: {},
-              }),
-            retry: false,
-            staleTime: 0,
-          }),
-        quote: currentQuoteView,
-      });
-      if (admission.kind === 'shortfall') {
-        setSubmissionQuotaBlocked(true);
-        return;
-      }
-      if (admission.kind === 'unavailable') {
-        setSubmitBlockedMessage('积分余额暂时无法确认，请重试。');
-        return;
-      }
-      onAdmitted?.();
-      await createWork.mutateAsync({
-        briefContextId: briefInput.briefContextId,
-        briefContextRevision,
-        briefInput,
-        identity,
-        ...(sessionIdentityDecisionReference
-          ? { identityDecision: sessionIdentityDecisionReference }
-          : identitySelection.source === 'default' &&
-              identitiesQuery.data?.defaultDecision
-            ? {
-                identityDecision: {
-                  id: identitiesQuery.data.defaultDecision.decisionId,
-                  revision:
-                    identitiesQuery.data.defaultDecision.decisionRevision,
-                },
-              }
-            : {}),
-        lensId: selectedLens,
-        intent:
-          lensState.draft.userText.trim() || coldCards[0]?.title || '创作',
-        quote,
-        recipe: submissionRecipe,
-        videoConfirmAccepted,
-        ...(briefConfirmationId ? { briefConfirmationId } : {}),
-      });
-    } catch {
-      // `createWork.onError` presents submit failures; a failed admission is
-      // already represented by its recoverable unavailable state above.
-    } finally {
-      creditAdmissionPendingRef.current = false;
-      setCreditAdmissionPending(false);
-    }
-  };
-
+      : undefined;
+  const { attemptSubmit, createWork, creditAdmissionPending, runCreate } =
+    useComposerRun({
+      activeViralAdaptSource,
+      armedQuoteIdRef,
+      briefContextRevisionRef,
+      briefInputRef,
+      briefState,
+      creationMode,
+      creditProjectionQueryKey,
+      currentQuoteView,
+      destinationAutoSubmitIntentRef,
+      destinationMapPendingRef,
+      destinationPreflight,
+      explicitImageOperation,
+      fixtureSubmit,
+      flushQuoteSettle,
+      focusIntentAfterPrefillRef,
+      identity: selectedRunIdentity,
+      identityDecision: runIdentityDecision,
+      imageCardinalityValid: imageCardinality.valid,
+      initialSurfaceRevisionId,
+      intentFallback: coldCards[0]?.title,
+      lensState,
+      missingGrounding,
+      productGroundingReady:
+        Boolean(product.state) && !product.loading && !product.error,
+      quotaBlocked,
+      quote: quoteQuery.data,
+      quoteId,
+      quoteSettling,
+      recipe: submissionRecipe,
+      sessionIdRef,
+      setBriefPending,
+      setBriefState,
+      setDestinationMapPending,
+      setDestinationPreflight,
+      setLensState,
+      setSession,
+      setShowRequiredHint,
+      setSubmissionGroundingBlocked,
+      setSubmissionQuotaBlocked,
+      setSubmitBlockedMessage,
+      signedSubmission,
+      submissionDelivery,
+      submissionQuantity,
+      submissionSettings,
+      styleReferenceAssetIds,
+      surface: surfaceQuery.data,
+      viralJourneyActive:
+        viralAdaptJourney.phase !== 'idle' ||
+        submissionRecipe?.recipeId === 'recipe.viral_adapt',
+      viralSubmissionRecipeReady,
+    });
   const handleLensChange = (next: CreationLensId) => {
     setShowRequiredHint(false);
     setSubmissionGroundingBlocked(null);
@@ -2606,232 +2300,6 @@ export function ComposerHome({
         });
       }
     }
-  };
-
-  const attemptSubmit = async () => {
-    setSubmitBlockedMessage(null);
-    if (!imageCardinality.valid) {
-      document
-        .querySelector<HTMLElement>(
-          '[data-testid="composer-image-operation-picker"]'
-        )
-        ?.focus();
-      return;
-    }
-    const gate = canSubmit(lensState);
-    if (!gate.allowed && gate.reason !== 'video_confirm_required') {
-      setShowRequiredHint(true);
-      setSubmitBlockedMessage(gate.message);
-      if (gate.focusTarget === 'lens_group') {
-        document
-          .querySelector<HTMLElement>(
-            '[data-testid="composer-lens-radiogroup"]'
-          )
-          ?.focus();
-      }
-      return;
-    }
-
-    if (lensState.phase !== 'selected') {
-      setSubmitBlockedMessage(COMPOSER_LENS_REQUIRED_MESSAGE);
-      return;
-    }
-    if (
-      (viralAdaptJourney.phase !== 'idle' ||
-        submissionRecipe?.recipeId === 'recipe.viral_adapt') &&
-      (!viralSubmissionRecipeReady || !activeViralAdaptSource)
-    ) {
-      setSubmitBlockedMessage(
-        '爆款复刻的模板或参考素材尚未确认，当前不会按默认图文提交。'
-      );
-      return;
-    }
-    const destinationDecision = decideComposerDestinationPreflight({
-      appliedRecipeDestination:
-        submissionRecipe?.revisionId === lensState.draft.recipeRevisionId
-          ? submissionRecipe.delivery
-          : undefined,
-      currentDestination: {
-        contentPackagePlatform: lensState.draft.delivery.platform,
-        distributionTarget: lensState.draft.delivery.distributionTarget,
-      },
-      hasExplicitDestination:
-        lensState.draft.fieldMeta.deliveryPlatform?.ownership === 'user' &&
-        lensState.draft.fieldMeta.deliveryPlatform.dirty,
-      intent: lensState.draft.userText,
-      state: destinationPreflight,
-    });
-    if (destinationDecision.kind === 'map') {
-      if (destinationMapPendingRef.current) return;
-      destinationMapPendingRef.current = true;
-      setDestinationMapPending(true);
-      try {
-        const result = await mapComposerDestination(
-          destinationDecision.destination
-        );
-        setDestinationPreflight({
-          intent: destinationDecision.destination,
-          result,
-        });
-        if (result.status === 'mapped') {
-          destinationAutoSubmitIntentRef.current =
-            destinationDecision.destination;
-          setLensState((current) =>
-            current.draft.userText.trim() === destinationDecision.destination
-              ? updateDeliverySuggestion(
-                  current,
-                  {
-                    distributionTarget: result.distributionTarget,
-                    platform: result.contentPackagePlatform,
-                  },
-                  'system'
-                )
-              : current
-          );
-        }
-      } catch {
-        toast.error('暂时无法确认发布去向，请重试或直接选择平台。');
-      } finally {
-        destinationMapPendingRef.current = false;
-        setDestinationMapPending(false);
-      }
-      return;
-    }
-    if (destinationDecision.kind === 'block') {
-      document
-        .querySelector<HTMLElement>(
-          '[data-testid="composer-destination-clarification"]'
-        )
-        ?.focus();
-      return;
-    }
-    if (quotaBlocked) {
-      setSubmissionQuotaBlocked(true);
-      return;
-    }
-    // `currentQuoteView`, not `quoteView`: a run must never be admitted against
-    // a price the merchant's current input no longer produces (#240 P1).
-    if (!quoteQuery.data || !currentQuoteView || !submissionRecipe) {
-      if (quoteSettling) {
-        // Pressing send *is* the merchant saying the sentence is final. End the
-        // window, ask for the price now, and remember that they asked: the run
-        // starts as soon as that price lands. Flushing without arming would
-        // make the first press change a status line and nothing else — a dead
-        // press, which is the defect this ticket exists to remove.
-        armedQuoteIdRef.current = quoteId;
-        flushQuoteSettle();
-        return;
-      }
-      setShowRequiredHint(true);
-      setSubmitBlockedMessage(COMPOSER_QUOTE_PENDING_MESSAGE);
-      return;
-    }
-    const groundingBlocker =
-      product.state && !product.loading && !product.error
-        ? groundingBlockerFromMissing(missingGrounding)
-        : null;
-    if (groundingBlocker) {
-      setSubmissionGroundingBlocked(groundingBlocker);
-      return;
-    }
-
-    // The merchant's sentence opens the conversation before any backend round
-    // trip, so the container reads as a reply rather than a blank wait.
-    setSession((current) =>
-      openComposerTurn(current, lensState.draft.userText)
-    );
-
-    setBriefPending(true);
-    let projection: BriefTriggerProjection | undefined;
-    try {
-      const briefContextId = `composer:${sessionIdRef.current}`;
-      const briefContext = await syncComposerBriefContext({
-        briefContextId,
-        draft: {
-          delivery: submissionDelivery,
-          imageOperation: explicitImageOperation ?? null,
-          settings: submissionSettings,
-          sources: briefSourcesFromDraft(lensState.draft.sources),
-          userText: lensState.draft.userText,
-        },
-        expectedRevision: briefContextRevisionRef.current,
-        lensId: lensState.lensId,
-        quoteId: quoteQuery.data.quoteId,
-        recipeRevisionId: submissionRecipe.revisionId,
-        sourceIds: sourceReferences.map((source) => source.id),
-        surfaceRevisionId:
-          surfaceQuery.data?.revisionId ?? initialSurfaceRevisionId ?? null,
-      });
-      briefContextRevisionRef.current = briefContext.revision;
-      const briefInput = buildLiveBriefInput({
-        briefContextId,
-        lensId: lensState.lensId,
-        quote: quoteQuery.data,
-        currentRevisions: briefContext.currentRevisions,
-        delivery: submissionDelivery,
-        imageCount: lensState.lensId === 'image_text' ? submissionQuantity : 0,
-        sources: briefSourcesFromDraft(lensState.draft.sources),
-        highRiskFacts:
-          /价格|价目|团购|优惠|\d+\s*元/u.test(lensState.draft.userText) &&
-          !lensState.draft.sources.some(
-            (source) =>
-              source &&
-              typeof source === 'object' &&
-              !Array.isArray(source) &&
-              (source as Record<string, unknown>).category === 'price_list'
-          )
-            ? [{ kind: 'price', status: 'missing' }]
-            : [],
-      });
-      briefInputRef.current = briefInput;
-      projection = await requestComposerBrief(briefInput);
-    } catch {
-      // The merchant turn is already in the transcript; mark the attempt failed
-      // so the container does not sit in `submitting` forever.
-      setSession((current) => failComposerSession(current));
-      toast.error(workbench_operation_failed());
-      return;
-    } finally {
-      setBriefPending(false);
-    }
-
-    // Video paths always require explicit Brief accept — never runCreate
-    // while the lens gate reports video_confirm_required or lens is video.
-    const videoConfirmRequired =
-      lensState.lensId === 'video' ||
-      (!gate.allowed && gate.reason === 'video_confirm_required');
-
-    if (videoConfirmRequired && !projection) {
-      setShowRequiredHint(true);
-      return;
-    }
-
-    const path = decideSubmitPath({
-      projection,
-      videoConfirmRequired,
-    });
-    if (path.path === 'open_brief') {
-      setBriefState(
-        openBriefSurface(briefState, {
-          projection: path.projection,
-          composerSnapshot: {
-            userText: lensState.draft.userText,
-            sources: [...lensState.draft.sources],
-            lensId: lensState.lensId,
-            draftRevisionId: path.projection.bindRevisions.draftRevisionId,
-          },
-        })
-      );
-      return;
-    }
-
-    // Safety net: video must never submit without Brief accept.
-    if (videoConfirmRequired) {
-      setShowRequiredHint(true);
-      return;
-    }
-
-    void runCreate(lensState.lensId);
   };
 
   useEffect(() => {

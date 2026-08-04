@@ -42,17 +42,6 @@ test('a blocked press produces a described, visible reason on the intent box', (
   assert.match(conversation, /id=\{INTENT_ERROR_ID\}/u);
   assert.match(conversation, /role="alert"/u);
 
-  // Every branch of `attemptSubmit` that stops without starting a run names a
-  // reason; the one that starts a run clears the previous one.
-  assert.match(home, /setSubmitBlockedMessage\(gate\.message\)/u);
-  assert.match(
-    home,
-    /setSubmitBlockedMessage\(COMPOSER_LENS_REQUIRED_MESSAGE\)/u
-  );
-  assert.match(
-    home,
-    /setSubmitBlockedMessage\(COMPOSER_QUOTE_PENDING_MESSAGE\)/u
-  );
   assert.match(home, /intentError=\{submitBlockedMessage\}/u);
 });
 

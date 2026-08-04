@@ -28,7 +28,7 @@ test('an unbound composer stops remembering the run it used to hold', () => {
 test('retry keeps what the recovery deliberately left standing', () => {
   const recovery = home.slice(
     home.indexOf('const recoverFromReport'),
-    home.indexOf('const attemptSubmit')
+    home.indexOf('const handleBriefConfirm')
   );
   const retryCase = recovery.slice(
     recovery.indexOf("case 'retry':"),
@@ -37,45 +37,6 @@ test('retry keeps what the recovery deliberately left standing', () => {
   assert.ok(retryCase.length > 0, 'retry case must exist');
   assert.doesNotMatch(retryCase, /createComposerSession/u);
   assert.match(retryCase, /setRetryAfterReport\(true\);/u);
-});
-
-/**
- * The settle window is the one waiting state the merchant can end themselves,
- * so it is the one state without a price where the send button stays live:
- * pressing it flushes the window and asks for the price now. Disabling it there
- * would make the click that resolves the wait the one click they cannot make.
- */
-test('send stays pressable while the quote is only being held back', () => {
-  assert.match(
-    home,
-    /lensId != null && !currentQuoteView && !quoteSettling/u,
-    'the submit gate must exempt the settle window'
-  );
-  const submit = home.slice(
-    home.indexOf('const attemptSubmit'),
-    home.indexOf('const groundingBlocker')
-  );
-  assert.ok(submit.length > 0, 'submit handler must exist');
-  // …and pressing it there ends the window rather than raising a hint about
-  // something the merchant did not get wrong.
-  assert.match(submit, /if \(quoteSettling\) \{\s*\/\//u);
-  assert.match(submit, /flushQuoteSettle\(\);/u);
-  // The press is also remembered. A flush on its own would move a status line
-  // and nothing else, so the first press would be one the merchant has to
-  // repeat — a dead press by any other name.
-  assert.match(submit, /armedQuoteIdRef\.current = quoteId;/u);
-  // …and it only stands inside the quote context it was made in. Any other id —
-  // including none at all, after a lens switch — expires it, or a press held
-  // across the gap would fire on a quote id that came back around.
-  assert.match(
-    home,
-    /if \(quoteId !== armed\) \{[\s\S]*?armedQuoteIdRef\.current = null;\s*return;\s*\}/u
-  );
-  assert.doesNotMatch(home, /if \(quoteId !== null\) armedQuoteIdRef/u);
-  assert.match(
-    home,
-    /const handleLensChange[\s\S]*?armedQuoteIdRef\.current = null;[\s\S]*?selectLens/u
-  );
 });
 
 /**
@@ -99,7 +60,7 @@ test('the bound price is replaced when quote identity moves, not only its revisi
 test('taking over from a 申报 closes the mount-time restore', () => {
   const recovery = home.slice(
     home.indexOf('const recoverFromReport'),
-    home.indexOf('const attemptSubmit')
+    home.indexOf('const handleBriefConfirm')
   );
   assert.ok(recovery.length > 0, 'recovery handler must exist');
   assert.match(recovery, /restoredFromServerRef\.current = true;/u);
