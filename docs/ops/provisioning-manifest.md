@@ -28,14 +28,15 @@
 | **B-3a** `LANGFUSE_OUTBOX_MAX_ATTEMPTS`/`LANGFUSE_OUTBOX_RETRY_DELAY_MS`/`HARNESS_COMPENSATION_POLL_MS`/`P1_OUTBOX_CRITICAL_MAX_BACKLOG` | Langfuse outbox 重试、dead-letter 与 readiness 阈值 | **无需动作**——使用 `.env.example` 默认值；生产按告警容量调整 | 本地业务 PostgreSQL | ☑ 配置键与 `.env.example` 对齐；毒消息不自动无限重试 |
 | **B-4** `BETTER_AUTH_SECRET`/`DATABASE_URL`/`HARNESS_DBOS_*` | 认证/持久层/编排 | **无需动作**——本地生成、本地真机 PG（CI 真机 job 既有） | 本地真机 PG | ☑ 无需 live 核销（本地生成＋本车道真机 PG） |
 
-## C. 运营供给项（数字＝运营参数，开发用种子样例值验收；D-123/D-128 口径）
+## C. 运营供给项（数字＝运营参数，开发用种子样例值验收；**D-172 积分制现行**，D-123 三桶计量 superseded）
 
 | 项 | 用途（消费方） | 需你提供 | 开发期种子值 | 状态 |
 |---|---|---|---|---|
-| **C-1** 套餐三桶数字（文案/图/视频点 × 初级/中级/高级 三档） | 计费三桶票、运营手填后台；消费方＝`plan.allowances.{starter,growth,pro}` admin-config 键 → 授权发放 + 公开定价页 | **可后补**——上线前在后台填真值即可 | **D-143 种子＝D-123 原文**：初级 文案100/图40/视频3、中级 文案300/图100/视频6、高级 文案600/图180/视频9（视频 3/6/9＝用户拍板数，文案/图为 D-123 参考表）；档位命名＝初级/中级/高级 | ☐ 可后补（种子已落地 `entitlement-module.ts` DEFAULT_PLAN_OFFERS + `product/plans.ts`）。**2026-08-01 D-172 覆盖**：三桶数字口径 superseded，改积分制种子（credit spec §7：trial 100/starter 500/growth 1300/pro 2800＋周期系数＋加油包三 SKU），键族 `plan.allowances.*`→`plan.credits.*` |
-| **C-2** 三类加油包定价 | 同上 | **可后补**同上 | 样例值（现行 copy-20/image-10/video-5；D-123 参考＝文案包100次/¥29、图片包50张/¥89、视频包3条/¥149，未落地待运营核算） | ☐ 可后补 |
-| **C-1b** 计费价（真实扣款的那个） | 真实收款链路——**E 门开放前不存在**（D-124 试点期支付零开发，D-156） | **E 门时供给**，届时进 admin-config 走 `plan.allowances.*` 同一治理链（draft→publish→CAS→审计→回滚），并把 `server-catalog-validation.ts` 的三方对账从一次性加油包扩到订阅 | — | ☐ 绑 E 门。**公开页上那个数字不在本项**：它是文案资产，落在 `mkfast-template-main/src/lib/public-display-price.ts`，改它等同改文案、无需供给、无连锁（D-156）。两页读同一个源由 `specs/public-plan-price-source.spec.ts` 在真浏览器上看住。**D-172**：E 门支付 provider＝Waffo Pancake（Creem 退役），测试凭据已供给＝`docs/_private/waffo.env` |
-| **C-3** 试用额度默认值与开关初值 | 装配门 trial 档、示例任务真实扣点 | 一组你认可的试用额度（例：文案 X 条/图 Y 张/视频 Z 条） | 样例值 | ☑ 已定：文案 5／图 5／视频 1 |
+| **C-1** 套餐周期积分与价格（trial/starter/growth/pro） | 运营后台 AdminPlanControl；消费方＝admin-config **`plan.credits.{trial,starter,growth,pro}`** → 公开 `/public/plan-catalog` + 价格页积分卡阵 + 订阅发分 | 运营期可在后台 CAS 改真值；缺省用种子验收 | credit spec §7 / `packages/contracts` `CREDIT_PLAN_CONFIG_DEFAULTS`：trial **100**、starter **500**、growth **1300**、pro **2800** 分/月（及 HKD `monthlyPriceMicros`、并发/优先级等非计量字段） | ☑ 种子已落地；#303/#310/#311 已接线。**禁止**再写 `plan.allowances.*` |
+| **C-1a** 周期系数 + 参考数字 | 价格页三档周期折算；「约可生成」只读已发布参考 | 运营可改系数与参考模型 | `plan.credits.cycle_coefficients`；`plan.credits.reference_numbers`（含 published 参考 copy/image/video 与模型选择） | ☑ #303/#307 已落地 |
+| **C-2** 积分加油包 SKU（三档） | 价格页 `#credit-boosters` + Waffo 一次性 checkout + 发分 | 运营可改 credits/价/效期 | `plan.credits.addons` 种子：100 / 300 / 1000 分，效期 7 天（HKD） | ☑ #303/#308/#310 已落地（**非** copy/image/video 三类条数包） |
+| **C-1b** 支付通道与计费价治理 | 真实收款：订阅 + 加油包经 **Waffo Pancake**；SKU/价进 admin-config 同一 CAS 链（`plan.credits.*` / payment-mapping） | 测试凭据已在 `docs/_private/waffo.env`；**生产** Waffo 开通另批 | — | ☑ Test 路径 #304/#308/#312 已验收；☐ 生产开通仍挂运营。Creem **已退役**。公开展示价与扣款 SKU 均不得再走 `plan.allowances.*` |
+| **C-3** 试用积分与开关 | 装配门 trial 档、register_gift / grantTrial | 试用积分与 `plan.credits.trial.enabled` / `plan.trial.enabled` | 种子 trial **100** 分；开关默认开 | ☑ 已定（条数「文案5/图5/视频1」仅为 cutover 脚手架，**非**计费真相） |
 | **C-4** 兑换码规则（位数/批次/有效期） | 试点注册承接票（D-045/D-124 R门①） | 一句话规则即可 | 样例规则 | ☑ 已定：手动申请（运营人工发码，无自动生成规则） |
 | **C-5** 三行业示例店（行业选定＋示例素材/事实） | D-126 冷态首页票（platform_sample） | 三个行业名（建议：美发/美甲美睫/皮肤管理），有真实素材更好、没有则 AI 样例 | AI 生成样例素材 | ☑ 已定：护发／皮肤管理／生发 |
 | **C-6** 行业先验配置（今日推荐 v1） | D-126 热态推荐票（确定性规则＋行业先验受控配置） | 已提供开发默认配置（美发/美甲/皮肤管理及三平台规则）；运营终审可继续调整 | `harness.today_recommendation` admin-config fixture | ☑ 开发默认已供给；运营终审待定 |
@@ -43,7 +44,7 @@
 
 ## D. E 门/能力门触发时另批（现在不动）
 
-支付真实闭环（Stripe/Creem 或国内通道）、手机号短信、平台代发账号（`publish:*` 能力门）、MinerU 自托管、部署中国化——全部挂 E 门/能力门触发点（D-124/D-128/D-129），届时单独一轮清单，不在本轮索取。
+Waffo **生产**环境开通与对账、手机号短信、平台代发账号（`publish:*` 能力门）、MinerU 自托管、部署中国化——全部挂 E 门/能力门触发点（D-124/D-128/D-129），届时单独一轮清单。**禁止**把已退役的 Creem 或 `plan.allowances.*` 写回本清单主行。
 
 ## 维护规则
 

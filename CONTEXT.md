@@ -18,7 +18,7 @@ The latest user-confirmed decisions are authoritative. For P1, read `.scratch/p1
 
 **2026-08-01 XHS 专项融合与工作台升级批次覆盖**：决策日志已续至 **D-171**；现行实施权威＝`docs/specs/xhs-vertical-integration-spec-2026-08-01.md`（wayfinder 地图 `.wayfinder/map-xhs-vertical-integration.md` 九票闭合，收编 #281 有意遗留的 copy/note 集中开票）。术语：**工作台四态**＝Idle/Active/Waiting/Delivered 状态自适应工作台（D-164 单路由三段不推翻，对话＝文档时间线非气泡流）；**note 载体**＝图文复合成品（页组＋封面＋正文），ContentPackage kind 产品口径＝`media|copy|note`（旧 `image_text|video` 为兼容别名，勿在新面继续使用旧口径）；**执行确认判定**＝「操作是否触发付费媒体执行」（纯 copy 免确认继承 D-043；note 过卡 P1 激活）；**禁止小红书匿名抓取**——爆款复刻取材只允许用户自有登录态通道（OpenCLI，live 门核销后转正）或手动粘贴，服务端匿名抓取／逆向签名／账号池为硬红线。UI 实现基线＝HeroUI Pro AI 模板族＋assistant-ui 示例（零新 agent runtime；Tiptap 只进对象工作区）。
 
-**2026-08-01 积分制计费批次覆盖**：决策日志已续至 **D-172**；现行实施权威＝`docs/specs/credit-billing-spec-2026-08-01.md`（wayfinder 图 #289 闭合，实施票 #298–#302，开发纪律见 spec §11）。术语与红线：**积分制**＝订阅周期积分（按月发放月末清零，包年仍按月发分）＋加油包批次（SKU 效期、种子 7 天），FEFO 统一扣序；**升级＝当日清零重开（加油包存活），降级＝下周期生效，退订＝加油包效期内照用**；模型定价＝CatalogModel×操作＋失败退还开关；**三桶条数口径（D-123 计量框架）已 superseded——新面勿再使用 `plan.allowances.*`/条数额度词汇，改 `plan.credits.*` 与积分**；积分账唯一生产写入者＝P1（GrantLot＋ProductUsageLedger），P0 product-service 退役只读；**支付通道＝Waffo Pancake（RSA 验签），Creem 退役，禁止新增 Creem 引用**；D-061 双真相不变——上游 token/成本永不暴露商家面。
+**2026-08-01 积分制计费批次覆盖（2026-08-04 落地收口）**：决策日志已续至 **D-172**；现行实施权威＝`docs/specs/credit-billing-spec-2026-08-01.md`。实施子票 **#298–#312 均已 CLOSED**（含 §9 十一门回归与 merge-ledger 验收行；tip 见 `docs/ops/merge-ledger.md` / handoff 收口节）。术语与红线：**积分制**＝订阅周期积分（按月发放月末清零，包年仍按月发分）＋加油包批次（SKU 效期、种子 7 天），FEFO 统一扣序；**升级＝当日清零重开（加油包存活），降级＝下周期生效，退订＝加油包效期内照用**；模型定价＝CatalogModel×操作＋失败退还开关；**三桶条数计量（D-123）已 superseded——新面只讲积分与 `plan.credits.*`，禁止复活 `plan.allowances.*`/条数额度计费词汇**；积分账唯一生产写入者＝P1（GrantLot＋ProductUsageLedger），P0 product-service 生产写账只读锁定；**支付通道＝Waffo Pancake（RSA 验签），Creem 已退役**；D-061 双真相不变——上游 token/成本永不暴露商家面。
 
 ## Language
 
@@ -753,16 +753,16 @@ A store-owned identity or publishing target on a content platform whose capabili
 _Avoid_: account pack, integration count, workspace member
 
 **高用量 Pro**:
-The P1 high-activity single-store plan with the same Composer creative, template, model-choice, and connection capabilities as Growth, differentiated only by larger output allowances, execution priority, and workday priority support. Plan name 「Pro」 does **not** imply the retired Pro Studio canvas add-on（D-170）。（2026-07-24 D-123 修订：公开档位命名统一为**初级/中级/高级**＝工作区 1/2/3＋文案/图片/视频三桶额度与三类加油包；Growth/高用量 Pro 为历史命名，建套餐页以 D-123 为准。）
-_Avoid_: team Pro, feature-gated Pro, unlimited support
+The highest paid merchant plan tier (id `pro` on the public credit catalogue) with the same Composer creative, template, model-choice, and connection capabilities as Growth, differentiated by a larger **monthly credit grant**, higher concurrency/priority, and workday priority support. Plan name 「Pro」 does **not** imply the retired Pro Studio canvas add-on（D-170）. Public merchandising names may still use 初级/中级/高级 for starter/growth/pro; metering is always **credits**, never per-modality bar counts.
+_Avoid_: team Pro, feature-gated Pro, unlimited support, 三桶额度 Pro, 把 Pro 当成画布加购
 
-**产出量额度**:
-The merchant-facing usage allowance stated as copy tasks, image outputs, and video outputs or duration: public plans explain representative content outcomes, while the signed-in account projection separates available, reserved, settled, and expiring quantities. Weighted model cost and original provider units remain internal to product and provider ledgers.
-_Avoid_: product credits, token balance, 积分余额, 用户页展示 provider cost, 把预留写成已扣除
+**积分余额**:
+The merchant-facing usable credit quantity after FEFO projection: available, reserved, settled, and nearest-expiring lot facts. Public pricing may show “约可生成” reference counts as non-binding estimates only. Weighted model cost and original provider units remain internal to product and provider ledgers.
+_Avoid_: 产出量额度 as billing truth, 文案/图片/视频三桶余额, token balance, 用户页展示 provider cost, 把预留写成已扣除, 把参考条数当扣费单位
 
 **动作级权益边界**:
-The entitlement check attached only to an action that consumes a priced execution or requests a formally entitled delivery; drafting, templates, editing, user switches, and existing objects stay open, and an insufficient allowance preserves all work while offering an inline plan-management path.
-_Avoid_: 页面级付费墙, 套餐不足锁工作台, 禁用水印或 AIGC 开关, 弹窗销毁草稿, 把套餐提示写成合规门禁
+The entitlement check attached only to an action that consumes a priced execution or requests a formally entitled delivery; drafting, templates, editing, user switches, and existing objects stay open, and an insufficient **credit** balance preserves all work while offering inline paths to buy credit packages or upgrade the plan.
+_Avoid_: 页面级付费墙, 套餐不足锁工作台, 禁用水印或 AIGC 开关, 弹窗销毁草稿, 把套餐提示写成合规门禁, 按条数桶分别拦截
 
 **集成凭据库**:
 The P1 workspace-scoped secret boundary for OAuth tokens, webhook secrets, MCP credentials, and BYOK keys, with Product Core holding authorization metadata and references while a mature secret manager holds values.
@@ -793,5 +793,5 @@ The persistent free-text input shown at the result stage for long-tail steering 
 _Avoid_: thread-as-primary, message log as workflow truth, 原地覆盖结果, 无血缘重写
 
 **Day-0 平台默认供给**:
-The platform-owned model bindings provisioned for a verified workspace so its positive trial allowances are immediately usable without BYOK. Every modality whose trial allowance is greater than zero requires a validated platform default; a zero-allowance modality may remain unbound, while a configured default is still validated and stored.
-_Avoid_: 四模态一律硬要求, 缺零额度 Audio 阻断开通, 租户凭据充当平台默认, 未验证即标可用
+The platform-owned model bindings provisioned for a verified workspace so trial **credits** (and any non-zero trial modality scaffolding used only for Day-0 model defaults) are immediately usable without BYOK. Modalities required for the trial credit path need a validated platform default; a modality that is intentionally unbound for trial may remain so, while a configured default is still validated and stored.
+_Avoid_: 四模态一律硬要求, 按三桶 trial 条数阻断开通, 租户凭据充当平台默认, 未验证即标可用

@@ -121,10 +121,10 @@ Avoid Node.js-specific APIs — this runs on Cloudflare Workers runtime, not Nod
 - Tiptap only inside the object workspace, never in the Composer.
 - No anonymous XHS scraping anywhere in the web app; sourcing is user-session (OpenCLI) or manual paste only.
 
-## Credit Billing Implementation Constraints (2026-08-01, D-172)
+## Credit Billing Implementation Constraints (2026-08-01, D-172; landed #298–#312)
 
-- Pricing page follows variant A "credit card grid": billing-period switch bar (monthly / auto-renew monthly / yearly), credits as the hero number, per-card reference line ("约可生成 …") always marked 仅供参考 and read only from the ops-published values.
-- Workbench surfaces: balance badge (with soonest-expiring batch hint), pre-generation quote chip ("本次约消耗 N 分" + refund-on-failure state), insufficient-credit block with booster/upgrade dual exits; plus the credit detail page (batches + ledger rows).
-- Never render upstream model cost, token, or USD figures anywhere merchant-facing (D-061).
-- Payment provider is Waffo Pancake. Secrets only via env from gitignored `docs/_private/waffo.env`.
-- Authority: `docs/specs/credit-billing-spec-2026-08-01.md` §6 (frontend) and §11 (lane discipline; tickets #298–#302).
+- Pricing page follows variant A "credit card grid": billing-period switch (single_month / monthly / yearly), four plan cards (trial/starter/growth/pro) with **credits** as the hero number, per-card reference line ("约可生成 …") always marked 仅供参考 and read only from ops-published `plan.credits.reference_numbers`, plus `#credit-boosters` add-on strip.
+- Workbench surfaces: balance badge (with soonest-expiring lot hint), pre-generation quote chip ("本次约消耗 N 分" + refund-on-failure state), insufficient-credit block with booster/upgrade dual exits; plus the credit detail page (batches + ledger rows).
+- Never render upstream model cost, token, or USD figures anywhere merchant-facing (D-061). Do not reintroduce bar-count allowance UI or `plan.allowances.*` admin keys.
+- Payment provider is **Waffo Pancake** (Creem is retired). Secrets only via env from gitignored `docs/_private/waffo.env`.
+- Authority: `docs/specs/credit-billing-spec-2026-08-01.md` §6 (frontend). Close-out: #298–#312 CLOSED; root `AGENTS.md` credit section + `docs/ops/credit-billing-master-handoff-2026-08-01.md`.

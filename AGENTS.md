@@ -48,11 +48,11 @@ Use concise English Conventional Commit-style subjects such as `feat:`, `fix(sco
 - ContentPackage kind product vocabulary is `media|copy|note` (`image_text|video` are legacy aliases). Confirm-gate rule is paid-media-execution based; pure copy stays exempt (D-043). Note-path hold activates in P1 only.
 - Authority: `docs/specs/xhs-vertical-integration-spec-2026-08-01.md`.
 
-## Credit Billing Implementation Constraints (2026-08-01, D-172)
+## Credit Billing Implementation Constraints (2026-08-01, D-172; landed #298–#312)
 
-- Billing switched from per-type count allowances (three buckets, D-123) to credits. Do not write new bucket/count-based entitlement code; the new admin-config key family is `plan.credits.*` (not `plan.allowances.*`).
-- Sole production writer of the credit ledger is P1 (GrantLot + ProductUsageLedger). P0 `product-service` entitlements are retired read-only.
+- Merchant metering is **credits**, not per-type count allowances (D-123 three-bucket metering is superseded). Do not write new bucket/count-based entitlement code. The only governed admin-config key family for plan commercial numbers is `plan.credits.*` (`plan.allowances.*` is retired and must not be re-registered).
+- Sole production writer of the credit ledger is P1 (GrantLot + ProductUsageLedger). P0 `product-service` production assembly is billing write-locked (`legacyBillingReadOnly: true`).
 - Balance check + reservation + FEFO deduction must run in one DB transaction holding the workspace-level credit lock.
 - Dual-truth red line (D-061): upstream token/balance/USD cost must never appear in merchant-facing contracts, UI, or logs.
-- Payment provider is Waffo Pancake (RSA-SHA256 webhook signing); Creem is being retired — add no new Creem references. Waffo test credentials live only in gitignored `docs/_private/waffo.env`, injected via env; never plaintext in code, tickets, commits, or argv.
-- Authority: `docs/specs/credit-billing-spec-2026-08-01.md` (lane discipline in §11; tickets #298–#302).
+- Payment provider is **Waffo Pancake** (RSA-SHA256 webhook signing). **Creem is retired** — add no Creem references on live paths. Waffo test credentials live only in gitignored `docs/_private/waffo.env`, injected via env; never plaintext in code, tickets, commits, or argv.
+- Authority: `docs/specs/credit-billing-spec-2026-08-01.md`. Implementation close-out: issues **#298–#312 CLOSED** (merge-ledger tip includes #312 acceptance at `afd05adf`); ops handoff `docs/ops/credit-billing-master-handoff-2026-08-01.md` (closed state).
