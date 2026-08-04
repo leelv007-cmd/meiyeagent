@@ -48,13 +48,13 @@
     },
     "apps/core/src/p1/foundation/workspace-provision.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3643cc20a871abb62be8e3aa24542f0384b847b0",
-      "note": "Re-verified 2026-08-04 at 3643cc20 on fresh PG meiye_305_ev_*; #305 rebase evidence. 12/12 pass 0 skip."
+      "verifiedAt": "5a6a9bf28f339f7e8bfb1f1267b325dcdf8c3fb4",
+      "note": "Re-verified 2026-08-04 at 5a6a9bf2 (#311 allowance retirement) against fresh isolated meiye_311_ev_20260804_195552 / meiye_311_ev_dbos_20260804_195552 pair: 6 suite files 12/12 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/foundation/workspace-bootstrap.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "3643cc20a871abb62be8e3aa24542f0384b847b0",
-      "note": "Re-verified 2026-08-04 at 3643cc20 on fresh PG meiye_305_ev_*; #305 rebase evidence. 12/12 pass 0 skip."
+      "verifiedAt": "5a6a9bf28f339f7e8bfb1f1267b325dcdf8c3fb4",
+      "note": "Re-verified 2026-08-04 at 5a6a9bf2 (#311 allowance retirement) against fresh isolated meiye_311_ev_20260804_195552 / meiye_311_ev_dbos_20260804_195552 pair: 6 suite files 12/12 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/canonical-observability-emitters.postgres.test.ts": {
       "status": "green",
@@ -238,8 +238,8 @@
     },
     "apps/core/src/p1/pending-actions-invariant.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "846abd2e4c54cb03c2da1e788e630af8fbf1091c",
-      "note": "Re-verified 2026-08-04 at 846abd2e (#310 credit matrix) against fresh isolated meiye_310_ev_20260804_193253 / meiye_310_ev_dbos_20260804_193253 pair: 4 suite files 10/10 pass, 0 fail, 0 skip."
+      "verifiedAt": "5a6a9bf28f339f7e8bfb1f1267b325dcdf8c3fb4",
+      "note": "Re-verified 2026-08-04 at 5a6a9bf2 (#311 allowance retirement) against fresh isolated meiye_311_ev_20260804_195552 / meiye_311_ev_dbos_20260804_195552 pair: 6 suite files 12/12 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/product-billing/postgres-repository.postgres.test.ts": {
       "status": "green",
@@ -348,18 +348,18 @@
     },
     "apps/core/src/p1/credit-billing/credit-plan-catalog.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "846abd2e4c54cb03c2da1e788e630af8fbf1091c",
-      "note": "Re-verified 2026-08-04 at 846abd2e (#310 credit matrix) against fresh isolated meiye_310_ev_20260804_193253 / meiye_310_ev_dbos_20260804_193253 pair: 4 suite files 10/10 pass, 0 fail, 0 skip."
+      "verifiedAt": "5a6a9bf28f339f7e8bfb1f1267b325dcdf8c3fb4",
+      "note": "Re-verified 2026-08-04 at 5a6a9bf2 (#311 allowance retirement) against fresh isolated meiye_311_ev_20260804_195552 / meiye_311_ev_dbos_20260804_195552 pair: 6 suite files 12/12 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/credit-billing/credit-subscription-scheduler.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "846abd2e4c54cb03c2da1e788e630af8fbf1091c",
-      "note": "Re-verified 2026-08-04 at 846abd2e (#310 credit matrix) against fresh isolated meiye_310_ev_20260804_193253 / meiye_310_ev_dbos_20260804_193253 pair: 4 suite files 10/10 pass, 0 fail, 0 skip."
+      "verifiedAt": "5a6a9bf28f339f7e8bfb1f1267b325dcdf8c3fb4",
+      "note": "Re-verified 2026-08-04 at 5a6a9bf2 (#311 allowance retirement) against fresh isolated meiye_311_ev_20260804_195552 / meiye_311_ev_dbos_20260804_195552 pair: 6 suite files 12/12 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/credit-billing/postgres-credit-ledger.postgres.test.ts": {
       "status": "green",
-      "verifiedAt": "846abd2e4c54cb03c2da1e788e630af8fbf1091c",
-      "note": "Re-verified 2026-08-04 at 846abd2e (#310 credit matrix) against fresh isolated meiye_310_ev_20260804_193253 / meiye_310_ev_dbos_20260804_193253 pair: 4 suite files 10/10 pass, 0 fail, 0 skip."
+      "verifiedAt": "5a6a9bf28f339f7e8bfb1f1267b325dcdf8c3fb4",
+      "note": "Re-verified 2026-08-04 at 5a6a9bf2 (#311 allowance retirement) against fresh isolated meiye_311_ev_20260804_195552 / meiye_311_ev_dbos_20260804_195552 pair: 6 suite files 12/12 pass, 0 fail, 0 skip."
     },
     "apps/core/src/p1/harness/note-page-regeneration.postgres.test.ts": {
       "status": "green",
