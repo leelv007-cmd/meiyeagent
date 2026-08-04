@@ -3,8 +3,8 @@
  * official_direct + upstream_reseller — independent of live credentials.
  */
 import type { SupplyChannelKind } from '@meiye/contracts';
+import type { ProviderExecutionPort } from '../../../foundation/ports.js';
 import type {
-  ProviderExecutionPort,
   ProviderExecutionRequest,
   ProviderExecutionResponse,
 } from '../../provider-lifecycle.js';

@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { resolveFfmpegPath } from './media-tool-paths.js';
+import type { ProviderExecutionPort } from '../foundation/ports.js';
 import {
   parseAudioSfxContract,
   parseAudioSpeechContract,
@@ -22,7 +23,6 @@ import type {
   ModelAssetStoragePort,
   ModelOperation,
   OwnedAsset,
-  ProviderExecutionPort,
   ProviderExecutionRequest,
   ProviderExecutionResponse,
 } from './index.js';
@@ -493,6 +493,19 @@ export const RECORDED_MEDIA_ADAPTER_CONTRACTS = {
   },
 } as const satisfies Record<string, RecordedMediaAdapterContract>;
 
+type RecordedMediaCatalogModelId = keyof typeof RECORDED_MEDIA_ADAPTER_CONTRACTS;
+type RecordedMediaCatalogModelIdFor<
+  Modality extends RecordedMediaAdapterContract['modality'],
+> = {
+  [CatalogModelId in RecordedMediaCatalogModelId]:
+    (typeof RECORDED_MEDIA_ADAPTER_CONTRACTS)[CatalogModelId]['modality'] extends Modality
+      ? CatalogModelId
+      : never;
+}[RecordedMediaCatalogModelId];
+type ImageRecordedCatalogModelId = RecordedMediaCatalogModelIdFor<'image'>;
+type VideoRecordedCatalogModelId = RecordedMediaCatalogModelIdFor<'video'>;
+type AudioRecordedCatalogModelId = RecordedMediaCatalogModelIdFor<'audio'>;
+
 function recordedMediaCost(
   contract: RecordedMediaAdapterContract,
   units = 1,
@@ -561,9 +574,8 @@ function assertRecordedTaskScope(
   }
 }
 
-abstract class ImageRecordedAdapter implements ProviderExecutionPort {
-  abstract readonly catalogModelId: string;
-  abstract readonly contract: Extract<
+class ImageRecordedAdapter implements ProviderExecutionPort {
+  readonly contract: Extract<
     RecordedMediaAdapterContract,
     { modality: 'image' }
   >;
@@ -573,6 +585,10 @@ abstract class ImageRecordedAdapter implements ProviderExecutionPort {
   private readonly healthOverlay = getSharedRecordedHealthOverlay();
   private nextPollStatus?: RecordedTaskStatus;
   private nextErrorCode?: string;
+
+  constructor(readonly catalogModelId: ImageRecordedCatalogModelId) {
+    this.contract = RECORDED_MEDIA_ADAPTER_CONTRACTS[catalogModelId];
+  }
 
   setNextPollStatus(status: RecordedTaskStatus) {
     this.nextPollStatus = status;
@@ -827,27 +843,6 @@ abstract class ImageRecordedAdapter implements ProviderExecutionPort {
   }
 }
 
-export class GptImage2RecordedAdapter extends ImageRecordedAdapter {
-  readonly catalogModelId = 'gpt-image-2';
-  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['gpt-image-2'];
-}
-export class NanoBanana2RecordedAdapter extends ImageRecordedAdapter {
-  readonly catalogModelId = 'nano-banana-2';
-  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['nano-banana-2'];
-}
-export class NanoBananaProRecordedAdapter extends ImageRecordedAdapter {
-  readonly catalogModelId = 'nano-banana-pro';
-  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['nano-banana-pro'];
-}
-export class Seedream45RecordedAdapter extends ImageRecordedAdapter {
-  readonly catalogModelId = 'seedream-4-5';
-  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['seedream-4-5'];
-}
-export class Seedream5ProRecordedAdapter extends ImageRecordedAdapter {
-  readonly catalogModelId = 'seedream-5-pro';
-  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['seedream-5-pro'];
-}
-
 export type RecordedTaskStatus =
   | 'queued'
   | 'running'
@@ -868,9 +863,8 @@ export interface RecordedMediaTask {
   retryable?: boolean;
 }
 
-abstract class VideoRecordedAdapter implements ProviderExecutionPort {
-  abstract readonly catalogModelId: string;
-  abstract readonly contract: Extract<
+class VideoRecordedAdapter implements ProviderExecutionPort {
+  readonly contract: Extract<
     RecordedMediaAdapterContract,
     { modality: 'video' }
   >;
@@ -880,6 +874,12 @@ abstract class VideoRecordedAdapter implements ProviderExecutionPort {
   private readonly healthOverlay = getSharedRecordedHealthOverlay();
   private nextPollStatus?: RecordedTaskStatus;
   private nextErrorCode?: string;
+
+  constructor(
+    readonly catalogModelId: VideoRecordedCatalogModelId = 'veo-latest',
+  ) {
+    this.contract = RECORDED_MEDIA_ADAPTER_CONTRACTS[catalogModelId];
+  }
 
   setNextPollStatus(status: RecordedTaskStatus) {
     this.nextPollStatus = status;
@@ -1113,34 +1113,16 @@ abstract class VideoRecordedAdapter implements ProviderExecutionPort {
   }
 }
 
-export class Seedance15ProRecordedAdapter extends VideoRecordedAdapter {
-  readonly catalogModelId = 'seedance-1-5-pro';
-  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['seedance-1-5-pro'];
-}
-export class Seedance2RecordedAdapter extends VideoRecordedAdapter {
-  readonly catalogModelId = 'seedance-2';
-  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['seedance-2'];
-}
-export class KlingLatestRecordedAdapter extends VideoRecordedAdapter {
-  readonly catalogModelId = 'kling-latest';
-  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['kling-latest'];
-}
-export class GrokLatestVideoRecordedAdapter extends VideoRecordedAdapter {
-  readonly catalogModelId = 'grok-latest-video';
-  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['grok-latest-video'];
-}
-export class VeoLatestRecordedAdapter extends VideoRecordedAdapter {
-  readonly catalogModelId = 'veo-latest';
-  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['veo-latest'];
-}
-
-abstract class AudioRecordedAdapter implements ProviderExecutionPort {
-  abstract readonly catalogModelId: string;
-  abstract readonly contract: Extract<
+class AudioRecordedAdapter implements ProviderExecutionPort {
+  readonly contract: Extract<
     RecordedMediaAdapterContract,
     { modality: 'audio' }
   >;
   private readonly tasks = new Map<string, RecordedMediaTask>();
+
+  constructor(readonly catalogModelId: AudioRecordedCatalogModelId) {
+    this.contract = RECORDED_MEDIA_ADAPTER_CONTRACTS[catalogModelId];
+  }
 
   get assetTtlSeconds() {
     return this.contract.assetTtlSeconds;
@@ -1249,16 +1231,6 @@ abstract class AudioRecordedAdapter implements ProviderExecutionPort {
   }
 }
 
-export class AudioSpeechRecordedAdapter extends AudioRecordedAdapter {
-  readonly catalogModelId = 'audio-speech-fixture';
-  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['audio-speech-fixture'];
-}
-
-export class AudioSfxRecordedAdapter extends AudioRecordedAdapter {
-  readonly catalogModelId = 'audio-sfx-fixture';
-  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['audio-sfx-fixture'];
-}
-
 abstract class ManagedMediaAdapter extends VideoRecordedAdapter {
   abstract readonly provider: 'fal' | 'replicate';
 
@@ -1297,34 +1269,45 @@ abstract class ManagedMediaAdapter extends VideoRecordedAdapter {
 }
 
 export class FalManagedMediaAdapter extends ManagedMediaAdapter {
-  readonly catalogModelId = 'veo-latest';
-  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['veo-latest'];
   readonly provider = 'fal' as const;
   protected readonly taskRefPrefix = 'fal-queue-task';
 }
 
 export class ReplicateManagedMediaAdapter extends ManagedMediaAdapter {
-  readonly catalogModelId = 'veo-latest';
-  readonly contract = RECORDED_MEDIA_ADAPTER_CONTRACTS['veo-latest'];
   readonly provider = 'replicate' as const;
   protected readonly taskRefPrefix = 'replicate-prediction';
 }
 
+type RecordedMediaAdapterFor<CatalogModelId extends RecordedMediaCatalogModelId> =
+  (typeof RECORDED_MEDIA_ADAPTER_CONTRACTS)[CatalogModelId]['modality'] extends 'image'
+    ? ImageRecordedAdapter
+    : (typeof RECORDED_MEDIA_ADAPTER_CONTRACTS)[CatalogModelId]['modality'] extends 'video'
+      ? VideoRecordedAdapter
+      : AudioRecordedAdapter;
+
+export function createRecordedMediaAdapter<
+  CatalogModelId extends RecordedMediaCatalogModelId,
+>(catalogModelId: CatalogModelId): RecordedMediaAdapterFor<CatalogModelId> {
+  const contract = RECORDED_MEDIA_ADAPTER_CONTRACTS[catalogModelId];
+  switch (contract.modality) {
+    case 'image':
+      return new ImageRecordedAdapter(
+        catalogModelId as ImageRecordedCatalogModelId,
+      ) as RecordedMediaAdapterFor<CatalogModelId>;
+    case 'video':
+      return new VideoRecordedAdapter(
+        catalogModelId as VideoRecordedCatalogModelId,
+      ) as RecordedMediaAdapterFor<CatalogModelId>;
+    case 'audio':
+      return new AudioRecordedAdapter(
+        catalogModelId as AudioRecordedCatalogModelId,
+      ) as RecordedMediaAdapterFor<CatalogModelId>;
+  }
+}
+
 export function defaultRecordedMediaAdapters(): ProviderExecutionPort[] {
-  return [
-    new GptImage2RecordedAdapter(),
-    new NanoBanana2RecordedAdapter(),
-    new NanoBananaProRecordedAdapter(),
-    new Seedream45RecordedAdapter(),
-    new Seedream5ProRecordedAdapter(),
-    new Seedance15ProRecordedAdapter(),
-    new Seedance2RecordedAdapter(),
-    new KlingLatestRecordedAdapter(),
-    new GrokLatestVideoRecordedAdapter(),
-    new VeoLatestRecordedAdapter(),
-    new AudioSpeechRecordedAdapter(),
-    new AudioSfxRecordedAdapter(),
-  ];
+  return (Object.keys(RECORDED_MEDIA_ADAPTER_CONTRACTS) as RecordedMediaCatalogModelId[])
+    .map((catalogModelId) => createRecordedMediaAdapter(catalogModelId));
 }
 
 export interface RecordedMediaRouterOptions {

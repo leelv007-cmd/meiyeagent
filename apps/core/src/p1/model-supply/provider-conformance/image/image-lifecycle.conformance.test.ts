@@ -14,8 +14,7 @@ import {
 } from '../../ark-media-adapter.js';
 import {
   RecordedAdapterRouter,
-  Seedream5ProRecordedAdapter,
-  GptImage2RecordedAdapter,
+  createRecordedMediaAdapter,
   recordedRequest,
 } from '../../adapters.js';
 import type { MediaProviderEffectRequest } from '../../provider-lifecycle.js';
@@ -139,13 +138,13 @@ test('MP-04I recorded dual-channel routers cover health/drain/idempotent image l
       channelId: 'recorded-official-seedream',
       channelKind: 'official_direct' as const,
       catalogModelId: 'seedream-5-pro' as const,
-      createAdapter: () => new Seedream5ProRecordedAdapter(),
+      createAdapter: () => createRecordedMediaAdapter('seedream-5-pro'),
     },
     {
       channelId: 'recorded-reseller-gpt-image',
       channelKind: 'upstream_reseller' as const,
       catalogModelId: 'gpt-image-2' as const,
-      createAdapter: () => new GptImage2RecordedAdapter(),
+      createAdapter: () => createRecordedMediaAdapter('gpt-image-2'),
     },
   ]) {
     const harness: ImageLifecycleConformanceHarness = {

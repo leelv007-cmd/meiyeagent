@@ -132,7 +132,6 @@ export {
   type AdapterRuntimeConfig,
   type ProviderExecutionRequest,
   type ProviderExecutionResponse,
-  type ProviderExecutionPort,
   type ProviderRuntimeBinding,
   type StructuredObjectExecutor,
   type MediaProviderEffectRequest,
@@ -198,13 +197,13 @@ import {
   type ProviderCost,
 } from './ledger-contracts.js';
 import {
-  type ProviderExecutionPort,
   type ProviderExecutionRequest,
   type ProviderExecutionResponse,
   type ProviderRuntimeBinding,
   type StructuredObjectExecutor,
   StructuredObjectGenerationError,
 } from './provider-lifecycle.js';
+import type { ProviderExecutionPort } from '../foundation/ports.js';
 import {
   deploymentAllowsDataClass,
   planModelSupplyCandidates,

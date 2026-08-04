@@ -2,7 +2,7 @@
  * Dual-channel fakes for MP-08 fault-injection matrix unit path.
  * Text uses TextConformanceFakePort scenarios; image/video wrap lifecycle fakes.
  */
-import type { ProviderExecutionPort } from '../../provider-lifecycle.js';
+import type { ProviderExecutionPort } from '../../../foundation/ports.js';
 import {
   dualChannelTextFixtures,
   type TextChannelFixture,

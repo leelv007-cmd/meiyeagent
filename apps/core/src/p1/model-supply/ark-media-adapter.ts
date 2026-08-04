@@ -20,10 +20,10 @@ import type {
   MediaProviderLifecyclePort,
   MediaProviderReceiptStore,
   MediaProviderSubmissionReceipt,
-  ProviderExecutionPort,
   ProviderExecutionRequest,
   ProviderExecutionResponse,
 } from './index.js';
+import type { ProviderExecutionPort } from '../foundation/ports.js';
 
 type ImageCatalogModelId = 'gpt-image-2' | 'seedream-4-5' | 'seedream-5-pro';
 const MAX_PROVIDER_IMAGE_BYTES = 25 * 1024 * 1024;

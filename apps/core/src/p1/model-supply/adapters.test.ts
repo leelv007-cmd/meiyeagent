@@ -6,21 +6,13 @@ import {
   BifrostLiteLlmComparison,
   FalManagedMediaAdapter,
   GeminiDirectRecordedAdapter,
-  GptImage2RecordedAdapter,
-  GrokLatestVideoRecordedAdapter,
-  KlingLatestRecordedAdapter,
-  NanoBanana2RecordedAdapter,
-  NanoBananaProRecordedAdapter,
   OpenAiCompatibleLlmExecutionPort,
   OpenAiDirectRecordedAdapter,
   ReplicateManagedMediaAdapter,
   RECORDED_MEDIA_ADAPTER_CONTRACTS,
   RecordedAdapterRouter,
   RecordedMediaAdapterError,
-  Seedance15ProRecordedAdapter,
-  Seedance2RecordedAdapter,
-  Seedream5ProRecordedAdapter,
-  VeoLatestRecordedAdapter,
+  createRecordedMediaAdapter,
   createModelExecutionRuntime,
   recordedRequest,
 } from './adapters.js';
@@ -214,12 +206,12 @@ test('fixture-only recorded LLM emits strict Canvas Agent JSON without changing 
   }
 });
 
-test('four image and four video stable adapter classes enforce operation/spec and expose lifecycle contracts', async () => {
+test('stable image and video adapters enforce operation/spec and expose lifecycle contracts', async () => {
   const images = [
-    new GptImage2RecordedAdapter(),
-    new NanoBanana2RecordedAdapter(),
-    new NanoBananaProRecordedAdapter(),
-    new Seedream5ProRecordedAdapter(),
+    createRecordedMediaAdapter('gpt-image-2'),
+    createRecordedMediaAdapter('nano-banana-2'),
+    createRecordedMediaAdapter('nano-banana-pro'),
+    createRecordedMediaAdapter('seedream-5-pro'),
   ];
   for (const adapter of images) {
     const request = recordedRequest(adapter.catalogModelId, 'image.generate', {
@@ -274,11 +266,11 @@ test('four image and four video stable adapter classes enforce operation/spec an
   );
 
   for (const adapter of [
-    new Seedance15ProRecordedAdapter(),
-    new Seedance2RecordedAdapter(),
-    new KlingLatestRecordedAdapter(),
-    new GrokLatestVideoRecordedAdapter(),
-    new VeoLatestRecordedAdapter(),
+    createRecordedMediaAdapter('seedance-1-5-pro'),
+    createRecordedMediaAdapter('seedance-2'),
+    createRecordedMediaAdapter('kling-latest'),
+    createRecordedMediaAdapter('grok-latest-video'),
+    createRecordedMediaAdapter('veo-latest'),
   ]) {
     const request = recordedRequest(adapter.catalogModelId, 'video.generate', {
       durationSeconds: 10,
@@ -310,15 +302,15 @@ test('four image and four video stable adapter classes enforce operation/spec an
 
 test('every recorded media model replays its structured error contract with acceptance, cost, and phase behavior', async () => {
   for (const adapter of [
-    new GptImage2RecordedAdapter(),
-    new NanoBanana2RecordedAdapter(),
-    new NanoBananaProRecordedAdapter(),
-    new Seedream5ProRecordedAdapter(),
-    new Seedance15ProRecordedAdapter(),
-    new Seedance2RecordedAdapter(),
-    new KlingLatestRecordedAdapter(),
-    new GrokLatestVideoRecordedAdapter(),
-    new VeoLatestRecordedAdapter(),
+    createRecordedMediaAdapter('gpt-image-2'),
+    createRecordedMediaAdapter('nano-banana-2'),
+    createRecordedMediaAdapter('nano-banana-pro'),
+    createRecordedMediaAdapter('seedream-5-pro'),
+    createRecordedMediaAdapter('seedance-1-5-pro'),
+    createRecordedMediaAdapter('seedance-2'),
+    createRecordedMediaAdapter('kling-latest'),
+    createRecordedMediaAdapter('grok-latest-video'),
+    createRecordedMediaAdapter('veo-latest'),
   ]) {
     assert.equal(
       adapter.contract.errorContracts.length,
@@ -372,7 +364,7 @@ test('every recorded media model replays its structured error contract with acce
 });
 
 test('recorded media 429 cooldown is isolated by workspace and credential', async () => {
-  const adapter = new VeoLatestRecordedAdapter();
+  const adapter = createRecordedMediaAdapter('veo-latest');
   const request = recordedRequest('veo-latest', 'video.generate', {
     durationSeconds: 10,
   });
@@ -396,7 +388,7 @@ test('recorded media 429 cooldown is isolated by workspace and credential', asyn
 });
 
 test('media lifecycle router preserves structured submit, poll, and cancellation errors', async () => {
-  const adapter = new VeoLatestRecordedAdapter();
+  const adapter = createRecordedMediaAdapter('veo-latest');
   const router = new RecordedAdapterRouter([adapter]);
   const request = {
     ...recordedRequest('veo-latest', 'video.generate', {

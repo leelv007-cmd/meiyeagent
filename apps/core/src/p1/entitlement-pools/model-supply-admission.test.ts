@@ -1,10 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ProductEntitlementPolicy } from '../foundation/entitlement-policy.js';
-import {
-  ModelSupplyApplicationService,
-  type ProviderExecutionPort,
-} from '../model-supply/index.js';
+import type { ProviderExecutionPort } from '../foundation/ports.js';
+import { ModelSupplyApplicationService } from '../model-supply/index.js';
 import type { AccountAllocation, EntitlementPolicyRevision } from './contracts.js';
 import { PostgresModelSupplyProviderAdmission } from './model-supply-admission.js';
 import type {

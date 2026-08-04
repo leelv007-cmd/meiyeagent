@@ -1,9 +1,9 @@
 import type {
   MediaProviderEffectRequest,
   MediaProviderLifecyclePort,
-  ProviderExecutionPort,
   ProviderExecutionRequest,
 } from '../model-supply/index.js';
+import type { ProviderExecutionPort } from '../foundation/ports.js';
 import type { AdminConfigRepository } from './foundation-module.js';
 
 const GLOBAL_WORKSPACE_ID = '__global__';

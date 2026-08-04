@@ -5,7 +5,7 @@
  * This is NOT the live LLM three-copy-candidates dimension.
  */
 import { createHash, randomUUID } from 'node:crypto';
-import type { ProviderExecutionPort } from '../../provider-lifecycle.js';
+import type { ProviderExecutionPort } from '../../../foundation/ports.js';
 import {
   buildActivationEvidenceInputs,
   dualChannelActivationGateReady,

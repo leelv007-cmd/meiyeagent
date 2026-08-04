@@ -12,12 +12,12 @@ import {
 } from '@meiye/contracts';
 import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { createCoreServer } from '../../server.js';
+import type { ProviderExecutionPort } from '../foundation/ports.js';
 import {
   ModelSupplyApplicationService,
   type CatalogModel,
   type ModelDeployment,
   type ModelSupplyLedgerPort,
-  type ProviderExecutionPort,
 } from './index.js';
 import {
   S3_ASSET_REGISTRATION_CLEANUP_SAFETY_WINDOW_MS,

@@ -13,6 +13,10 @@ import type {
   UsageEvent,
   UsageResource,
 } from './domain.js';
+import type {
+  ProviderExecutionRequest,
+  ProviderExecutionResponse,
+} from '../model-supply/provider-lifecycle.js';
 
 export interface IdempotentExecution<T> {
   replayed: boolean;
@@ -142,11 +146,9 @@ export interface JobPort {
 }
 
 export interface ProviderExecutionPort {
-  execute(input: {
-    operation: string;
-    routeSnapshotId: string;
-    payload: Record<string, unknown>;
-  }): Promise<{ acceptance: 'rejected_before_accept' | 'accepted' | 'acceptance_unknown'; taskRef?: string }>;
+  execute(
+    request: ProviderExecutionRequest
+  ): Promise<ProviderExecutionResponse>;
 }
 
 export interface SecretPort {

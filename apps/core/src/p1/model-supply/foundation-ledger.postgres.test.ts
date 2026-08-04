@@ -4,6 +4,7 @@ import test from 'node:test';
 import { Pool } from 'pg';
 import { P1ApplicationService } from '../foundation/application-service.js';
 import { REGISTER_GIFT_GRANT_KEY } from '../foundation/domain.js';
+import type { ProviderExecutionPort } from '../foundation/ports.js';
 import { ProductEntitlementApplicationService } from '../foundation/entitlement-service.js';
 import { GrantLotAwareProductEntitlementService } from '../foundation/grant-lot-entitlement-service.js';
 import { PostgresGrantLotLedger } from '../foundation/postgres-grant-lot.js';
@@ -17,7 +18,6 @@ import {
   modelSupplyJobId,
   type CatalogModel,
   type ModelDeployment,
-  type ProviderExecutionPort,
 } from './index.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;

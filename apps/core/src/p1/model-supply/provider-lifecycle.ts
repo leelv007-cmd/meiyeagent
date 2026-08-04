@@ -150,16 +150,6 @@ export type ProviderExecutionResponse =
       providerCost: Omit<ProviderCost, 'id' | 'status'>;
     };
 
-/**
- * The only execution seam used by ModelSupplyApplicationService. Direct,
- * managed and gateway adapters all normalize into this contract.
- */
-export interface ProviderExecutionPort {
-  execute(
-    request: ProviderExecutionRequest
-  ): Promise<ProviderExecutionResponse>;
-}
-
 export interface StructuredObjectExecutor {
   supportsCatalogModel(
     catalogModelId: string,

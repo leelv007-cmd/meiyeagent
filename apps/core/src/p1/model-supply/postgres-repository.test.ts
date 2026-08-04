@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';
 import { Pool } from 'pg';
 import { P1DomainError } from '../foundation/domain.js';
+import type { ProviderExecutionPort } from '../foundation/ports.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
 import { RecordedAdapterRouter } from './adapters.js';
 import {
@@ -16,7 +17,6 @@ import {
   VersionedHumanCalibratedVideoQualityScorer,
   RecordedProviderExecutionPort,
   RecordedVideoCompositionPort,
-  type ProviderExecutionPort,
   type VideoQualityScoringPort,
 } from './index.js';
 import {

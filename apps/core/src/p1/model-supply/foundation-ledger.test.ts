@@ -10,6 +10,7 @@ import {
   MemoryGrantLotLedger,
 } from '../foundation/index.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
+import type { ProviderExecutionPort } from '../foundation/ports.js';
 import {
   MemoryProductUsageLedger,
   ProductBillingLifecycle,
@@ -31,7 +32,6 @@ import {
   type ModelDeployment,
   type ModelSupplyLedgerPort,
   type ModelSupplyProviderAdmissionPort,
-  type ProviderExecutionPort,
 } from './index.js';
 
 const context = {

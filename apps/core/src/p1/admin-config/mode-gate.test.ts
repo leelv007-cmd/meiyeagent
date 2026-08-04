@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { recordedRequest } from '../model-supply/adapters.js';
-import type { ProviderExecutionPort } from '../model-supply/index.js';
+import type { ProviderExecutionPort } from '../foundation/ports.js';
 import type { MediaProviderLifecyclePort } from '../model-supply/index.js';
 import { MemoryAdminConfigRepository } from './foundation-module.js';
 import {

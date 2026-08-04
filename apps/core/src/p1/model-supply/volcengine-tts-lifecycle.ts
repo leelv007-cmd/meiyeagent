@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { link, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { validateGeneratedAudio } from './audio-asset-pipeline.js';
+import type { ProviderExecutionPort } from '../foundation/ports.js';
 import {
   parseAudioSpeechContract,
   type AudioSpeechContract,
@@ -10,7 +11,6 @@ import type {
   AdapterRuntimeConfig,
   MediaProviderEffectRequest,
   MediaProviderLifecyclePort,
-  ProviderExecutionPort,
   ProviderExecutionRequest,
   ProviderExecutionResponse,
 } from './index.js';

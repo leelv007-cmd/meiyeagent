@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { ProviderExecutionPort } from '../foundation/ports.js';
 import {
   ModelSupplyApplicationService,
   type ModelSupplyProviderAdmissionPort,
-  type ProviderExecutionPort,
 } from './index.js';
 
 const model = {

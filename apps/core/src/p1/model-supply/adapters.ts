@@ -25,10 +25,10 @@ import type {
   MediaProviderHealthReport,
   MediaProviderLifecyclePort,
   ModelSupplySubmission,
-  ProviderExecutionPort,
   ProviderExecutionRequest,
   ProviderExecutionResponse,
 } from './index.js';
+import type { ProviderExecutionPort } from '../foundation/ports.js';
 
 type LlmScenario = 'success' | '401' | '403' | '429' | '5xx' | 'stream_partial';
 
@@ -642,22 +642,11 @@ export {
   type RecordedMediaAdapterContract,
   type RecordedMediaRouterOptions,
   RECORDED_MEDIA_ADAPTER_CONTRACTS,
-  GptImage2RecordedAdapter,
-  NanoBanana2RecordedAdapter,
-  NanoBananaProRecordedAdapter,
-  Seedream45RecordedAdapter,
-  Seedream5ProRecordedAdapter,
   type RecordedTaskStatus,
   type RecordedMediaTask,
-  Seedance15ProRecordedAdapter,
-  Seedance2RecordedAdapter,
-  KlingLatestRecordedAdapter,
-  GrokLatestVideoRecordedAdapter,
-  VeoLatestRecordedAdapter,
-  AudioSpeechRecordedAdapter,
-  AudioSfxRecordedAdapter,
   FalManagedMediaAdapter,
   ReplicateManagedMediaAdapter,
+  createRecordedMediaAdapter,
   defaultRecordedMediaAdapters,
 } from './recorded-media-adapters.js';
 

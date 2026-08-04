@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { describe, it } from 'node:test';
 import type { ProductQuoteSnapshot, ProductUsageRecord } from '@meiye/contracts';
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
+import type { ProviderExecutionPort } from '../foundation/ports.js';
 import type {
   MerchantExecutionBillingPort,
   MerchantExecutionInputSnapshot,
@@ -29,7 +30,6 @@ import {
   RecordedProviderExecutionPort,
   type MediaProviderLifecyclePort,
   type ModelSupplyPromptResolver,
-  type ProviderExecutionPort,
   type ReferenceAssetResolverPort,
 } from './index.js';
 import { FixtureAiStreamingRunner } from './ai-sdk-runner.js';

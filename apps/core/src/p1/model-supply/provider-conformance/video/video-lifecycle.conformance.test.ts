@@ -17,8 +17,7 @@ import {
 } from '../../ark-media-adapter.js';
 import {
   RecordedAdapterRouter,
-  Seedance2RecordedAdapter,
-  VeoLatestRecordedAdapter,
+  createRecordedMediaAdapter,
   recordedRequest,
 } from '../../adapters.js';
 import type { MediaProviderEffectRequest } from '../../provider-lifecycle.js';
@@ -141,13 +140,13 @@ test('MP-04V recorded dual-channel routers cover health/drain/idempotent video l
       channelId: 'recorded-official-seedance',
       channelKind: 'official_direct' as const,
       catalogModelId: 'seedance-2' as const,
-      createAdapter: () => new Seedance2RecordedAdapter(),
+      createAdapter: () => createRecordedMediaAdapter('seedance-2'),
     },
     {
       channelId: 'recorded-reseller-veo',
       channelKind: 'upstream_reseller' as const,
       catalogModelId: 'veo-latest' as const,
-      createAdapter: () => new VeoLatestRecordedAdapter(),
+      createAdapter: () => createRecordedMediaAdapter('veo-latest'),
     },
   ]) {
     const harness: VideoLifecycleConformanceHarness = {

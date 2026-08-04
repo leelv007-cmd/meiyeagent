@@ -2,10 +2,8 @@
  * Run MP-04T text conformance against a ProviderExecutionPort (S2a port).
  */
 import { createHash, randomUUID } from 'node:crypto';
-import type {
-  ProviderExecutionPort,
-  ProviderExecutionRequest,
-} from '../../provider-lifecycle.js';
+import type { ProviderExecutionPort } from '../../../foundation/ports.js';
+import type { ProviderExecutionRequest } from '../../provider-lifecycle.js';
 import type { CatalogModel, ModelDeployment } from '../../supply-contracts.js';
 import {
   gradeMappingConfidence,
