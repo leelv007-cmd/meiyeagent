@@ -3,7 +3,11 @@ import type {
   ContentPackageStatus,
   ContentPackageStatusGroup,
 } from '@meiye/contracts';
-import { contentPackageStatusGroup } from '@meiye/contracts';
+import {
+  contentPackageStatusGroup,
+  publicContentPackageSchema,
+} from '@meiye/contracts';
+import { z } from 'zod';
 
 export const CONTENT_PACKAGE_STATUS_GROUP_LABELS = {
   creating: '创作中',
@@ -14,6 +18,21 @@ export const CONTENT_PACKAGE_STATUS_GROUP_LABELS = {
 export function contentPackageStatusLabel(status: ContentPackageStatus) {
   return CONTENT_PACKAGE_STATUS_GROUP_LABELS[contentPackageStatusGroup(status)];
 }
+
+export const contentPackageProjectionSchema =
+  publicContentPackageSchema.transform((contentPackage) => ({
+    ...contentPackage,
+    statusGroup: contentPackageStatusGroup(contentPackage.status),
+    statusLabel: contentPackageStatusLabel(contentPackage.status),
+  }));
+
+export const contentPackageProjectionListSchema = z.array(
+  contentPackageProjectionSchema
+);
+
+export type ContentPackageProjection = z.infer<
+  typeof contentPackageProjectionSchema
+>;
 
 export const ACTIONABLE_INBOX_STATUS_LABEL: Record<
   ActionableInboxStatusKind,

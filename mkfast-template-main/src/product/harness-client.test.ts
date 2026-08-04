@@ -40,6 +40,7 @@ test('submits one validated harness task to the collection boundary', async () =
     request = new Request(new URL(String(input), 'http://localhost'), init);
     return Response.json({
       data: { workflowId: 'work-1', replayed: false },
+      meta: { correlationId: 'corr-test' },
     });
   };
   try {
@@ -80,6 +81,7 @@ test('reads a persisted current recommendation without accepting a stale revisio
         recommendation: null,
         stale: true,
       },
+      meta: { correlationId: 'corr-test' },
     });
   try {
     assert.deepEqual(await readTodayRecommendation(), {
@@ -131,8 +133,14 @@ test('reads and consumes the durable merchant-message interaction boundary', asy
     );
     requests.push(request);
     return request.method === 'GET'
-      ? Response.json({ data: waiting })
-      : Response.json({ data: { kind: 'resumed', replayed: false } });
+      ? Response.json({
+          data: waiting,
+          meta: { correlationId: 'corr-test' },
+        })
+      : Response.json({
+          data: { kind: 'resumed', replayed: false },
+          meta: { correlationId: 'corr-test' },
+        });
   };
   try {
     assert.deepEqual(
@@ -218,6 +226,7 @@ test('exact interaction mutations never fall back to identityless legacy writes'
           code: 'HARNESS_INTERACTION_VERSION_REQUIRED',
           message: 'Exact interaction identity is required.',
         },
+        meta: { correlationId: 'corr-test' },
       },
       { status: 426 }
     );
@@ -280,6 +289,7 @@ test('parses the server-owned question target and persisted submit receipt', asy
         status: 'pending',
         timeoutSeconds: 19,
       },
+      meta: { correlationId: 'corr-test' },
     })
   );
   assert.deepEqual(snapshot, {
@@ -293,14 +303,20 @@ test('parses the server-owned question target and persisted submit receipt', asy
 
   assert.deepEqual(
     await readHarnessSubmitResult(
-      Response.json({ data: { eventId: 'event-1', replayed: false } })
+      Response.json({
+        data: { eventId: 'event-1', replayed: false },
+        meta: { correlationId: 'corr-test' },
+      })
     ),
     { eventId: 'event-1', replayed: false }
   );
 
   assert.deepEqual(
     await readHarnessSubmitResult(
-      Response.json({ data: { consumedByOther: true, eventId: null } })
+      Response.json({
+        data: { consumedByOther: true, eventId: null },
+        meta: { correlationId: 'corr-test' },
+      })
     ),
     { consumedByOther: true, eventId: null }
   );
@@ -315,6 +331,7 @@ test('parses the server-owned question target and persisted submit receipt', asy
             workflowId: 'workflow-late',
           },
         },
+        meta: { correlationId: 'corr-test' },
       })
     ),
     {

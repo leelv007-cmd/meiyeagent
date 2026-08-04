@@ -1,11 +1,8 @@
-import {
-  composerSubmissionSignedFieldsSchema,
-  type ApiEnvelope,
-} from '@meiye/contracts';
+import { composerSubmissionSignedFieldsSchema } from '@meiye/contracts';
 import { z } from 'zod';
 
 import { telemetryFetch } from '@/lib/product-telemetry';
-import { P1RequestError } from '@/p1/client';
+import { readP1Envelope } from '@/p1/client';
 
 const identifierSchema = z.string().trim().min(1).max(200);
 const revisionSchema = z.string().trim().min(1).max(200);
@@ -120,27 +117,9 @@ export async function submitComposerSubmission(
     },
     method: 'POST',
   });
-  return composerSubmissionResultSchema.parse(
-    await readComposerEnvelope(response)
+  return readP1Envelope(
+    response,
+    composerSubmissionResultSchema,
+    'Composer submission failed.'
   );
-}
-
-async function readComposerEnvelope(response: Response) {
-  let envelope: ApiEnvelope<unknown>;
-  try {
-    envelope = (await response.json()) as ApiEnvelope<unknown>;
-  } catch {
-    throw new P1RequestError(
-      'Composer submission response was not valid JSON.'
-    );
-  }
-  if (!response.ok || 'error' in envelope) {
-    const error = 'error' in envelope ? envelope.error : undefined;
-    throw new P1RequestError(
-      error?.message ?? 'Composer submission failed.',
-      error?.code,
-      error?.details
-    );
-  }
-  return envelope.data;
 }

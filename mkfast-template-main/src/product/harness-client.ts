@@ -9,7 +9,6 @@ import {
   firstUsableDraftMetricSchema,
   structuredDecisionInputSchema,
   todayRecommendationStateSchema,
-  type ApiEnvelope,
   type HarnessTaskSubmission,
   type FirstUsableDraftMetric,
   type HarnessDecisionSnapshot as HarnessDecisionReadModel,
@@ -22,7 +21,7 @@ import {
 import { z } from 'zod';
 
 import { telemetryFetch } from '@/lib/product-telemetry';
-import { P1RequestError } from '@/p1/client';
+import { readP1Envelope } from '@/p1/client';
 
 const taskHandleSchema = z
   .object({
@@ -273,20 +272,9 @@ export async function readTodayRecommendation(signal?: AbortSignal) {
 }
 
 async function readEnvelope<T>(response: Response): Promise<T> {
-  let envelope: ApiEnvelope<T>;
-  try {
-    envelope = (await response.json()) as ApiEnvelope<T>;
-  } catch {
-    throw new P1RequestError('Harness response was not valid JSON.');
-  }
-  if (!response.ok || 'error' in envelope) {
-    const error = 'error' in envelope ? envelope.error : undefined;
-    throw new P1RequestError(
-      error?.message ?? 'Harness request failed.',
-      error?.code,
-      error?.details,
-      response.status
-    );
-  }
-  return envelope.data;
+  return readP1Envelope(
+    response,
+    z.unknown(),
+    'Harness request failed.'
+  ) as Promise<T>;
 }

@@ -14,6 +14,7 @@ test('posts only the merchant destination sentence and parses a mapped pair', as
         distributionTarget: 'manual_copy',
         status: 'mapped',
       },
+      meta: { correlationId: 'corr-test' },
     });
   };
   try {
@@ -50,6 +51,7 @@ test('keeps conservative clarification structured and rejects extra response fie
         question: '准备发到哪里，生成后希望怎么交付？',
         status: 'needs_clarification',
       },
+      meta: { correlationId: 'corr-test' },
     });
   try {
     const result = await mapComposerDestination('帮我写一条活动文案');
@@ -69,6 +71,7 @@ test('keeps conservative clarification structured and rejects extra response fie
         status: 'mapped',
         silentlyAdded: true,
       },
+      meta: { correlationId: 'corr-test' },
     });
   try {
     await assert.rejects(

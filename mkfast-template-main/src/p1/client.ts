@@ -1,9 +1,14 @@
-import type { ApiEnvelope, P1ModuleRequest } from '@meiye/contracts';
 import {
-  correlatedApiErrorMessage,
-  parseApiErrorEnvelope,
-} from '@/lib/correlated-api-error';
+  apiEnvelopeSchema,
+  merchantCreditDetailSchema,
+  p1ModuleRequestSchema,
+  publicProductQuoteSnapshotSchema,
+  type P1ModuleRequest,
+} from '@meiye/contracts';
+import { z } from 'zod';
+import { correlatedApiErrorMessage } from '@/lib/correlated-api-error';
 import { emitTelemetry, telemetryFetch } from '@/lib/product-telemetry';
+import { contentPackageProjectionListSchema } from '@/product/content-package-presentation';
 import { canonicalJsonString } from './canonical-json';
 
 type P1Module = P1ModuleRequest['module'];
@@ -42,25 +47,75 @@ export function p1ErrorCode(error: unknown) {
   return error instanceof P1RequestError ? error.code : undefined;
 }
 
-async function readEnvelope<T>(response: Response) {
-  const envelope = (await response.json()) as ApiEnvelope<T>;
-  if (!response.ok || 'error' in envelope) {
-    const failure = parseApiErrorEnvelope(envelope, 'P1 request failed');
+const unknownResponseSchema = z.unknown();
+
+const responseSchemas = new Map<string, z.ZodType>([
+  ['entitlements.credit_detail', merchantCreditDetailSchema],
+  ['operations.content_packages', contentPackageProjectionListSchema],
+  ['product-billing.quote', publicProductQuoteSnapshotSchema],
+]);
+
+function responseSchema(module: P1Module, action: string) {
+  return responseSchemas.get(`${module}.${action}`) ?? unknownResponseSchema;
+}
+
+export function readP1Envelope<Schema extends z.ZodType>(
+  response: Response,
+  dataSchema: Schema,
+  fallback?: string
+): Promise<z.output<Schema>>;
+export function readP1Envelope<T = unknown>(
+  response: Response,
+  dataSchema?: z.ZodType,
+  fallback?: string
+): Promise<T>;
+export async function readP1Envelope(
+  response: Response,
+  dataSchema: z.ZodType = unknownResponseSchema,
+  fallback = 'P1 request failed'
+): Promise<unknown> {
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
     throw new P1RequestError(
-      correlatedApiErrorMessage(failure.message, failure.correlationId),
-      failure.code,
-      failure.details
+      `${fallback} Response was not valid JSON.`,
+      undefined,
+      undefined,
+      response.status
+    );
+  }
+  const parsed = apiEnvelopeSchema(dataSchema).safeParse(body);
+  if (!parsed.success) {
+    throw new P1RequestError(
+      `${fallback} Response envelope was invalid.`,
+      undefined,
+      undefined,
+      response.status
+    );
+  }
+  const envelope = parsed.data;
+  if (!response.ok || 'error' in envelope) {
+    const error = 'error' in envelope ? envelope.error : undefined;
+    throw new P1RequestError(
+      correlatedApiErrorMessage(
+        error?.message ?? fallback,
+        envelope.meta.correlationId
+      ),
+      error?.code,
+      error?.details,
+      response.status
     );
   }
   return envelope.data;
 }
 
 function moduleRequest(module: P1Module, call: P1ModuleCall): P1ModuleRequest {
-  return {
+  return p1ModuleRequestSchema.parse({
     action: call.action,
     module,
     payload: call.payload ?? {},
-  };
+  });
 }
 
 export async function queryP1<T>(
@@ -83,7 +138,10 @@ export async function queryP1<T>(
     });
   }
   try {
-    return await readEnvelope<T>(response);
+    return (await readP1Envelope(
+      response,
+      responseSchema(module, call.action)
+    )) as T;
   } catch (error) {
     emitTelemetry('query_error', {
       action: call.action,
@@ -223,7 +281,10 @@ export async function commandP1<T>(
       });
     }
     try {
-      return await readEnvelope<T>(response);
+      return (await readP1Envelope(
+        response,
+        responseSchema(module, call.action)
+      )) as T;
     } catch (error) {
       const deadline = commandDeadlineError(
         module,

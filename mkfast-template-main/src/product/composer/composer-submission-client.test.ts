@@ -155,6 +155,7 @@ test('submits the exact Composer body and returns the durable handles', async ()
         usageReservation: { id: 'usage-task-1' },
         work: { id: 'work-1' },
       },
+      meta: { correlationId: 'corr-test' },
     });
   };
   try {

@@ -9,16 +9,12 @@ import {
 } from '@/locale/paraglide/messages';
 import {
   contentPackageStatusGroup,
-  type ContentPackage,
-  type ContentPackageStatusGroup,
   type CreativeJob,
   type CreativeWork,
 } from '@meiye/contracts';
+import type { ContentPackageProjection } from './content-package-presentation';
 
-export type ContentPackageProjection = ContentPackage & {
-  statusGroup: ContentPackageStatusGroup;
-  statusLabel: string;
-};
+export type { ContentPackageProjection } from './content-package-presentation';
 
 export type LegacyContentPackageState =
   | {

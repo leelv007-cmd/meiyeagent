@@ -1,9 +1,10 @@
-import type {
-  ApiEnvelope,
-  CommandResult,
-  ProductCommand,
-  ProductState,
+import {
+  apiEnvelopeSchema,
+  type CommandResult,
+  type ProductCommand,
+  type ProductState,
 } from '@meiye/contracts';
+import { z } from 'zod';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   correlatedApiErrorMessage,
@@ -33,12 +34,17 @@ function productFailureMessage(status: number) {
 }
 
 export async function readProductEnvelope<T>(response: Response) {
-  let payload: ApiEnvelope<T>;
+  let body: unknown;
   try {
-    payload = (await response.json()) as ApiEnvelope<T>;
+    body = await response.json();
   } catch {
     throw new Error(productFailureMessage(response.status));
   }
+  const parsed = apiEnvelopeSchema(z.unknown()).safeParse(body);
+  if (!parsed.success) {
+    throw new Error(productFailureMessage(response.status));
+  }
+  const payload = parsed.data;
   if (!response.ok || 'error' in payload) {
     const failure = parseApiErrorEnvelope(
       payload,
@@ -51,7 +57,7 @@ export async function readProductEnvelope<T>(response: Response) {
       )
     );
   }
-  return payload.data;
+  return payload.data as T;
 }
 
 export async function executeProductCommand(

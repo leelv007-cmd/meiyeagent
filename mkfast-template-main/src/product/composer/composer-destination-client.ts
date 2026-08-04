@@ -1,12 +1,11 @@
 import {
   composerContentPackagePlatformSchema,
   composerDistributionTargetSchema,
-  type ApiEnvelope,
 } from '@meiye/contracts';
 import { z } from 'zod';
 
 import { telemetryFetch } from '@/lib/product-telemetry';
-import { P1RequestError } from '@/p1/client';
+import { readP1Envelope } from '@/p1/client';
 
 const destinationOptionSchema = z
   .object({
@@ -51,27 +50,9 @@ export async function mapComposerDestination(
       method: 'POST',
     }
   );
-  return composerDestinationMappingSchema.parse(
-    await readDestinationEnvelope(response)
+  return readP1Envelope(
+    response,
+    composerDestinationMappingSchema,
+    'Composer destination mapping failed.'
   );
-}
-
-async function readDestinationEnvelope(response: Response) {
-  let envelope: ApiEnvelope<unknown>;
-  try {
-    envelope = (await response.json()) as ApiEnvelope<unknown>;
-  } catch {
-    throw new P1RequestError(
-      'Composer destination response was not valid JSON.'
-    );
-  }
-  if (!response.ok || 'error' in envelope) {
-    const error = 'error' in envelope ? envelope.error : undefined;
-    throw new P1RequestError(
-      error?.message ?? 'Composer destination mapping failed.',
-      error?.code,
-      error?.details
-    );
-  }
-  return envelope.data;
 }

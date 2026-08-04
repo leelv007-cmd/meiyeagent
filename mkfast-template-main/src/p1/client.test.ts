@@ -8,7 +8,10 @@ import {
   P1_COMMAND_TIMEOUT_CODE,
   P1_QUERY_TIMEOUT_CODE,
   P1RequestError,
+  operationsQuery,
   p1ErrorCode,
+  queryP1,
+  readP1Envelope,
 } from './client';
 
 /** A server that accepts the request and then never answers. */
@@ -257,15 +260,135 @@ test('a command without a deadline keeps its unbounded legacy behaviour', async 
   globalThis.fetch = ((_input: unknown, init?: RequestInit) => {
     seen.push(init?.signal);
     return Promise.resolve(
-      new Response(JSON.stringify({ data: { ok: true } }), { status: 200 })
+      new Response(
+        JSON.stringify({
+          data: { ok: true },
+          meta: { correlationId: 'corr-test' },
+        }),
+        { status: 200 }
+      )
     );
   }) as typeof fetch;
   try {
     assert.deepEqual(
-      await commandP1('product-billing', { action: 'quote', payload: {} }),
+      await commandP1('product-billing', {
+        action: 'unregistered',
+        payload: {},
+      }),
       { ok: true }
     );
     assert.deepEqual(seen, [undefined]);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('rejects an API success envelope without correlation metadata', async () => {
+  await assert.rejects(
+    readP1Envelope(Response.json({ data: { ok: true } })),
+    (error: unknown) =>
+      error instanceof P1RequestError &&
+      error.message.includes('Response envelope was invalid')
+  );
+});
+
+test('validates quote responses against the public billing wire schema', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      Response.json({
+        data: {
+          billingMode: 'per_request',
+          catalogModelId: 'catalog-model-1',
+          formula: { expression: 'per_request * 1.5', unitRate: 1.5 },
+          lifecycleStatus: 'quoted',
+          quoteId: 'quote-1',
+          quotePolicyRevision: 'quote.policy@1',
+          revision: 'rev-1',
+          routeSnapshotRef: 'server-only-route',
+        },
+        meta: { correlationId: 'corr-quote' },
+      })
+    )) as typeof fetch;
+  try {
+    await assert.rejects(
+      commandP1('product-billing', { action: 'quote', payload: {} }),
+      (error: unknown) =>
+        error instanceof P1RequestError &&
+        error.message.includes('Response envelope was invalid')
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('projects validated content package status labels on the Web boundary', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      Response.json({
+        data: [
+          {
+            compliance: {
+              aigcLabelEnabled: false,
+              watermarkEnabled: false,
+            },
+            createdAt: '2026-08-05T00:00:00.000Z',
+            exportReceipts: [],
+            generated: { assetIds: [], childRuns: [] },
+            id: 'package-1',
+            kind: 'image_text',
+            lineage: {},
+            rights: { state: 'authorized' },
+            source: { assetIds: [] },
+            status: 'review_ready',
+            updatedAt: '2026-08-05T00:00:00.000Z',
+            variants: [],
+            versions: [],
+            workspaceId: 'workspace-1',
+          },
+        ],
+        meta: { correlationId: 'corr-packages' },
+      })
+    )) as typeof fetch;
+  try {
+    const packages =
+      await operationsQuery<
+        Array<{ statusGroup: string; statusLabel: string }>
+      >('content_packages');
+    assert.equal(packages[0]?.statusGroup, 'usable');
+    assert.equal(packages[0]?.statusLabel, '可使用');
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('validates credit detail responses against the merchant-safe schema', async () => {
+  const original = globalThis.fetch;
+  globalThis.fetch = (() =>
+    Promise.resolve(
+      Response.json({
+        data: {
+          batches: [],
+          billing: {
+            creditsThisPeriod: 1_300,
+            interval: 'monthly',
+            periodEndsAt: '2026-09-01T00:00:00.000Z',
+            providerSubscriptionId: 'server-only-subscription',
+            tier: 'growth',
+          },
+          transactions: [],
+        },
+        meta: { correlationId: 'corr-credit-detail' },
+      })
+    )) as typeof fetch;
+  try {
+    await assert.rejects(
+      queryP1('entitlements', { action: 'credit_detail', payload: {} }),
+      (error: unknown) =>
+        error instanceof P1RequestError &&
+        error.message.includes('Response envelope was invalid')
+    );
   } finally {
     globalThis.fetch = original;
   }
