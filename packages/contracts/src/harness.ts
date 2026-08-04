@@ -26,7 +26,7 @@ export const HARNESS_STAGES = [
 ] as const;
 
 export const harnessStageSchema = z.enum(HARNESS_STAGES);
-export const workflowStateSchema = z.enum([
+const workflowStateSchema = z.enum([
   'waiting',
   'running',
   'suspended',
@@ -85,15 +85,6 @@ export const firstUsableDraftMetricSchema = z
   })
   .strict();
 
-export const chipsSignalInputSchema = z
-  .object({
-    chipId: harnessIdSchema,
-    kind: z.enum(['adopted', 'modified', 'rejected']),
-    taskId: harnessIdSchema,
-    value: nonEmptyTrimmedStringSchema.max(2_000),
-  })
-  .strict();
-
 export const harnessExperienceBasisSchema = z
   .object({
     taskId: harnessIdSchema,
@@ -115,7 +106,7 @@ export const harnessExperienceBasisSchema = z
  * Optional note-plan outline projection for running-phase timeline hydration.
  * Backward compatible: absent on historical frames / non-note stages.
  */
-export const workflowProgressNotePlanPreviewSchema = z
+const workflowProgressNotePlanPreviewSchema = z
   .object({
     styleId: harnessIdSchema,
     styleName: nonEmptyTrimmedStringSchema.max(200),
@@ -148,7 +139,7 @@ export const workflowProgressNotePlanPreviewSchema = z
  * Optional note outline summary for paid-media execution confirmation.
  * Backward compatible: absent for copy/image/video paths.
  */
-export const executionConfirmationOutlineSchema = z
+const executionConfirmationOutlineSchema = z
   .object({
     pageCount: z.number().int().positive().max(20),
     pages: z
@@ -219,7 +210,7 @@ export const workflowProgressFrameSchema = z
  * Merchant-visible copy channels. Candidate identity stays separate so a
  * consumer can render multiple drafts without concatenating their deltas.
  */
-export const workflowTokenChannelSchema = z.enum([
+const workflowTokenChannelSchema = z.enum([
   'copy.title',
   'copy.body',
   'copy.cta',
@@ -257,9 +248,9 @@ export const workflowTokenFrameSchema = z
  * not, and the run still ends in `success` because the merchant has something
  * usable in hand.
  */
-export const merchantReportKindSchema = z.enum(['failure', 'partial']);
+const merchantReportKindSchema = z.enum(['failure', 'partial']);
 
-export const merchantReportCategorySchema = z.enum([
+const merchantReportCategorySchema = z.enum([
   'media_generation',
   'exact_text',
   'content_source',
@@ -269,7 +260,7 @@ export const merchantReportCategorySchema = z.enum([
 ]);
 
 /** What the merchant can do next. The browser maps each to one entry. */
-export const merchantRecoveryActionSchema = z.enum([
+const merchantRecoveryActionSchema = z.enum([
   'retry',
   'adjust_intent',
   'switch_form',
@@ -377,7 +368,7 @@ export const questionCardSchema = z
     }
   });
 
-export const questionCardUnattendedSchema = z.enum(['continue', 'hold']);
+const questionCardUnattendedSchema = z.enum(['continue', 'hold']);
 
 /**
  * Missing is the backwards-compatible fail-closed value. Producers should
@@ -528,7 +519,7 @@ export const harnessInteractionMerchantMessageSchema = z
   })
   .strict();
 
-export const harnessDecisionResolutionSourceSchema = z.enum([
+const harnessDecisionResolutionSourceSchema = z.enum([
   'decision',
   'core_timeout',
   'core_hold_expired',
@@ -638,7 +629,7 @@ export const harnessDecisionSubmitResultSchema = z.union([
  * log and rebuilds the transcript from the replay, so this list carries only
  * what is needed to *re-open* the conversation — never a second copy of it.
  */
-export const harnessActiveTaskSchema = z
+const harnessActiveTaskSchema = z
   .object({
     taskId: harnessIdSchema,
     workId: harnessIdSchema,
@@ -663,7 +654,7 @@ export const contentPackageRevisionDeliverySchema = z
   })
   .strict();
 
-export const todayRecommendationSchema = z
+const todayRecommendationSchema = z
   .object({
     workspaceId: harnessIdSchema,
     taskId: harnessIdSchema,
@@ -724,16 +715,12 @@ export type TaskIntentInput = z.infer<typeof taskIntentInputSchema>;
 export type HarnessTaskSubmission = z.infer<
   typeof harnessTaskSubmissionSchema
 >;
-export type AssistantPatchDecision = z.infer<
-  typeof assistantPatchDecisionSchema
->;
 export type StructuredDecisionInput = z.infer<
   typeof structuredDecisionInputSchema
 >;
 export type FirstUsableDraftMetric = z.infer<
   typeof firstUsableDraftMetricSchema
 >;
-export type ChipsSignalInput = z.infer<typeof chipsSignalInputSchema>;
 export type HarnessExperienceBasis = z.infer<
   typeof harnessExperienceBasisSchema
 >;
@@ -741,27 +728,19 @@ export type WorkflowProgressEnvelope = z.infer<
   typeof workflowProgressEnvelopeSchema
 >;
 export type WorkflowProgressFrame = z.infer<typeof workflowProgressFrameSchema>;
-export type WorkflowTokenChannel = z.infer<typeof workflowTokenChannelSchema>;
 export type WorkflowTokenEnvelope = z.infer<
   typeof workflowTokenEnvelopeSchema
 >;
 export type WorkflowTokenFrame = z.infer<typeof workflowTokenFrameSchema>;
-export type MerchantReportKind = z.infer<typeof merchantReportKindSchema>;
-export type MerchantReportCategory = z.infer<
-  typeof merchantReportCategorySchema
->;
 export type MerchantRecoveryAction = z.infer<
   typeof merchantRecoveryActionSchema
 >;
 export type MerchantReport = z.infer<typeof merchantReportSchema>;
 export type HarnessActiveTask = z.infer<typeof harnessActiveTaskSchema>;
-export type HarnessActiveTaskList = z.infer<typeof harnessActiveTaskListSchema>;
 export type WorkflowStateEnvelope = z.infer<typeof workflowStateEnvelopeSchema>;
 export type WorkflowStateFrame = z.infer<typeof workflowStateFrameSchema>;
 export type QuestionCard = z.infer<typeof questionCardSchema>;
-export type QuestionCardUnattended = z.infer<
-  typeof questionCardUnattendedSchema
->;
+type QuestionCardUnattended = z.infer<typeof questionCardUnattendedSchema>;
 export type ExecutionConfirmationRequest = z.infer<
   typeof executionConfirmationRequestSchema
 >;
@@ -782,9 +761,6 @@ export type HarnessInteractionEditing = z.infer<
 >;
 export type HarnessInteractionMerchantMessage = z.infer<
   typeof harnessInteractionMerchantMessageSchema
->;
-export type HarnessDecisionResolutionSource = z.infer<
-  typeof harnessDecisionResolutionSourceSchema
 >;
 export type HarnessDecisionSnapshot = z.infer<
   typeof harnessDecisionSnapshotSchema

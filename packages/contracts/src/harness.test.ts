@@ -3,7 +3,6 @@ import test from 'node:test';
 
 import {
   HARNESS_STAGES,
-  chipsSignalInputSchema,
   contentPackageRevisionDeliverySchema,
   creationModeSchema,
   executionConfirmationAnswerSchema,
@@ -119,24 +118,11 @@ test('parses and round-trips the three frontend inputs', () => {
     false
   );
 
-  const signal = {
-    chipId: 'signal-1',
-    kind: 'adopted',
-    taskId: 'task-1',
-    value: '更像我本人',
-  };
-  assert.deepEqual(roundTrip(chipsSignalInputSchema, signal), signal);
-
   assert.equal(
     structuredDecisionInputSchema.safeParse({
       ...decision,
       decision: { state: 'enabled', value: 'invalid' },
     }).success,
-    false
-  );
-  assert.equal(
-    chipsSignalInputSchema.safeParse({ ...signal, kind: 'auto_learned' })
-      .success,
     false
   );
 });
