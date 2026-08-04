@@ -213,18 +213,32 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
   for (const action of [
     'parse_single_asset',
     'prepare_manual_asset_draft',
+    'start_parse_asset_batch',
   ]) {
     assert.equal(
       requiredP1Capability('command', 'asset-memory', action),
       'content.create',
     );
   }
-  for (const action of ['asset_intake_experience']) {
+  for (const action of [
+    'asset_intake_experience',
+    'asset_parse_task',
+    'asset_parse_task_drafts',
+  ]) {
     assert.equal(
       requiredP1Capability('query', 'asset-memory', action),
       'workspace.read',
     );
   }
+  // Retired batch/view seams stay browser-unreachable.
+  assert.equal(
+    requiredP1Capability('command', 'asset-memory', 'parse_asset_batch'),
+    null,
+  );
+  assert.equal(
+    requiredP1Capability('query', 'asset-memory', 'parse_task_view'),
+    null,
+  );
   assert.equal(
     requiredP1Capability(
       'command',

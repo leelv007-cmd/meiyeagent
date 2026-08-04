@@ -1,7 +1,10 @@
 import {
   assetIntakeExperienceQuerySchema,
+  assetParseTaskDraftsQuerySchema,
+  assetParseTaskQuerySchema,
   confirmAssetIntakeFactCommandSchema,
   finalizeStoreIntakeCommandSchema,
+  parseAssetBatchInputSchema,
   parseSingleAssetCommandSchema,
   prepareManualAssetDraftCommandSchema,
 } from '@meiye/contracts';
@@ -66,6 +69,11 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
           args.context,
           parse(parseSingleAssetCommandSchema, value),
         );
+      case 'start_parse_asset_batch':
+        return this.requireParsing().startBatch(
+          args.context,
+          parse(parseAssetBatchInputSchema, value),
+        );
       case 'prepare_manual_asset_draft':
         return this.requireParsing().prepareManualDraft(
           args.context,
@@ -121,6 +129,20 @@ export class AssetMemoryFoundationModule implements P1OperationModule {
       case 'asset_intake_experience': {
         const input = parse(assetIntakeExperienceQuerySchema, value);
         return this.requireParsing().experience(input);
+      }
+      case 'asset_parse_task': {
+        const input = parse(assetParseTaskQuerySchema, value);
+        return this.requireParsing().task(
+          args.context.workspaceId,
+          input.taskId,
+        );
+      }
+      case 'asset_parse_task_drafts': {
+        const input = parse(assetParseTaskDraftsQuerySchema, value);
+        return this.requireParsing().draftsForTask(
+          args.context.workspaceId,
+          input.taskId,
+        );
       }
       default:
         throw new P1DomainError(

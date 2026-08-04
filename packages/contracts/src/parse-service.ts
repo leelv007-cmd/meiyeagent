@@ -246,6 +246,37 @@ export const parseAssetBatchInputSchema = z
     }
   });
 
+/** Progress query for a parse task (single or batch). */
+export const assetParseTaskQuerySchema = z
+  .object({
+    taskId: idSchema,
+  })
+  .strict();
+
+/**
+ * Enumerate latest drafts for each source of a parse task.
+ * Items preserve task.sourceAssetIds order; draft is null until produced.
+ */
+export const assetParseTaskDraftsQuerySchema = z
+  .object({
+    taskId: idSchema,
+  })
+  .strict();
+
+export const assetParseTaskDraftItemSchema = z
+  .object({
+    sourceAssetId: idSchema,
+    draft: assetDraftViewSchema.nullable(),
+  })
+  .strict();
+
+export const assetParseTaskDraftsSchema = z
+  .object({
+    taskId: idSchema,
+    items: z.array(assetParseTaskDraftItemSchema),
+  })
+  .strict();
+
 export const prepareManualAssetDraftCommandSchema = z
   .object({
     taskId: idSchema,
@@ -332,6 +363,14 @@ export type ParseSingleAssetCommand = z.infer<
   typeof parseSingleAssetCommandSchema
 >;
 export type ParseAssetBatchInput = z.infer<typeof parseAssetBatchInputSchema>;
+export type AssetParseTaskQuery = z.infer<typeof assetParseTaskQuerySchema>;
+export type AssetParseTaskDraftsQuery = z.infer<
+  typeof assetParseTaskDraftsQuerySchema
+>;
+export type AssetParseTaskDraftItem = z.infer<
+  typeof assetParseTaskDraftItemSchema
+>;
+export type AssetParseTaskDrafts = z.infer<typeof assetParseTaskDraftsSchema>;
 export type PrepareManualAssetDraftCommand = z.infer<
   typeof prepareManualAssetDraftCommandSchema
 >;

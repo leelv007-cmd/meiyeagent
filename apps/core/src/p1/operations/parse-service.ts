@@ -4,6 +4,7 @@ import {
   assetIntakeExperienceSchema,
   assetIntakeGuidanceConfigSchema,
   ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
+  assetParseTaskDraftsSchema,
   parseOwnedAssetSchema,
   parsedDocumentSchema,
   parseSourceAssetInputSchema,
@@ -11,6 +12,7 @@ import {
   prepareManualAssetDraftCommandSchema,
   type AssetDraft,
   type AssetIntakeGuidanceConfig,
+  type AssetParseTaskDrafts,
   type ParseAssetBatchInput,
   type ParsedDocument,
   type ParseOwnedAsset,
@@ -812,6 +814,46 @@ export class ParseService {
     return assetDraftViewSchema.parse({
       ...draft,
       parser: document ? { kind: document.parser.kind } : null,
+    });
+  }
+
+  /**
+   * Enumerate the latest draft for each source of a parse task, in
+   * task.sourceAssetIds order. Missing drafts stay null so the merchant
+   * can tell ready items from still-in-flight ones.
+   */
+  async draftsForTask(
+    workspaceId: string,
+    taskId: string,
+  ): Promise<AssetParseTaskDrafts> {
+    const task = await this.requireTask(workspaceId, taskId);
+    const items = await Promise.all(
+      task.sourceAssetIds.map(async (sourceAssetId) => {
+        const draft = await this.repository.latestDraftForSource(
+          workspaceId,
+          sourceAssetId,
+        );
+        if (!draft) {
+          return { sourceAssetId, draft: null };
+        }
+        const document = draft.parsedDocumentId
+          ? await this.repository.getDocument(
+              workspaceId,
+              draft.parsedDocumentId,
+            )
+          : null;
+        return {
+          sourceAssetId,
+          draft: assetDraftViewSchema.parse({
+            ...draft,
+            parser: document ? { kind: document.parser.kind } : null,
+          }),
+        };
+      }),
+    );
+    return assetParseTaskDraftsSchema.parse({
+      taskId: task.taskId,
+      items,
     });
   }
 

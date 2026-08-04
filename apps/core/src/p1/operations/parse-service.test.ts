@@ -575,6 +575,44 @@ test('five-step intake experience comes from the configured guidance source', as
   assert.match(groupBuy.examples[0]!.title, /皮肤管理团购套餐/u);
 });
 
+test('draftsForTask lists sources in order and marks unproduced drafts null', async () => {
+  const repository = new MemoryParseRepository();
+  const service = fixtureService(
+    repository,
+    new FixtureDocumentParseProvider(),
+    { async submit() { return {} as never; } },
+  );
+  const queued = await service.startBatch(context, {
+    taskId: 'drafts-batch',
+    sources: [source('drafts-a'), source('drafts-b')],
+  });
+
+  const pending = await service.draftsForTask(
+    context.workspaceId,
+    queued.taskId,
+  );
+  assert.deepEqual(
+    pending.items.map((item) => item.sourceAssetId),
+    ['drafts-a', 'drafts-b'],
+  );
+  assert.equal(pending.items[0]?.draft, null);
+  assert.equal(pending.items[1]?.draft, null);
+
+  await service.runBatchTask(
+    context.workspaceId,
+    queued.taskId,
+    queued.carrierAttempt,
+  );
+  const ready = await service.draftsForTask(
+    context.workspaceId,
+    queued.taskId,
+  );
+  assert.equal(ready.items[0]?.draft?.origin, 'parsed');
+  assert.equal(ready.items[0]?.draft?.parser?.kind, 'fixture');
+  assert.equal(ready.items[1]?.draft?.origin, 'parsed');
+  assert.equal(ready.items[1]?.draft?.parser?.kind, 'fixture');
+});
+
 function fixtureService(
   repository: MemoryParseRepository,
   provider: DocumentParseProvider = new FixtureDocumentParseProvider(),

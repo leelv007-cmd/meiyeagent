@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   assetDraftSchema,
   assetDraftViewSchema,
+  assetParseTaskDraftsSchema,
   parseAssetBatchInputSchema,
   parseTaskSchema,
 } from './parse-service.js';
@@ -115,6 +116,71 @@ test('single and batch task modes cannot silently swap cardinality', () => {
       sources: [source('asset-a'), source('asset-a')],
     }),
   );
+});
+
+test('batch input rejects fewer than two sources, duplicate ids, and extras', () => {
+  assert.throws(
+    () =>
+      parseAssetBatchInputSchema.parse({
+        taskId: 'task-a',
+        sources: [source('asset-a')],
+      }),
+    /Too small|>=2 items/u,
+  );
+  assert.throws(
+    () =>
+      parseAssetBatchInputSchema.parse({
+        taskId: 'task-a',
+        sources: [source('asset-a'), source('asset-a')],
+      }),
+    /unique/u,
+  );
+  assert.throws(
+    () =>
+      parseAssetBatchInputSchema.parse({
+        taskId: 'task-a',
+        sources: [source('asset-a'), source('asset-b')],
+        extra: true,
+      }),
+    /unrecognized_keys|Unrecognized key/u,
+  );
+});
+
+test('parse task draft enumeration keeps null for unproduced sources', () => {
+  const empty = assetParseTaskDraftsSchema.parse({
+    taskId: 'task-a',
+    items: [
+      { sourceAssetId: 'asset-a', draft: null },
+      { sourceAssetId: 'asset-b', draft: null },
+    ],
+  });
+  assert.equal(empty.items[0]?.draft, null);
+
+  const withDraft = assetParseTaskDraftsSchema.parse({
+    taskId: 'task-a',
+    items: [
+      {
+        sourceAssetId: 'asset-a',
+        draft: {
+          draftId: 'draft-a',
+          revision: 1,
+          workspaceId: 'workspace-a',
+          taskId: 'task-a',
+          sourceAssetId: 'asset-a',
+          parsedDocumentId: 'parsed-a',
+          target: 'price_list',
+          origin: 'parsed',
+          fields: [],
+          factCandidates: [],
+          visualClassification: null,
+          parser: { kind: 'fixture' },
+          createdAt: now,
+        },
+      },
+    ],
+  });
+  assert.equal(withDraft.items[0]?.draft?.parser?.kind, 'fixture');
+  assert.equal(withDraft.items[0]?.draft?.origin, 'parsed');
 });
 
 function source(assetId: string) {

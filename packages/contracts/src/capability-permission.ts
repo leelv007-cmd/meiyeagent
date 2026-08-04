@@ -261,14 +261,31 @@ const operationsWorkspaceQueryActions = new Set([
   'templates',
   'work',
 ]);
+/**
+ * Live asset-memory write actions.
+ *
+ * #329/#334 re-exposes batch parse under new action names
+ * (`start_parse_asset_batch` + progress/drafts queries below). Issue 257
+ * retired `parse_asset_batch` / `parse_task_view` / `asset_draft_view`
+ * together with their deleted command schemas; those old names stay
+ * unreachable. Reusing them would rebind dead contracts — so B4 ships
+ * new names on the surviving `parseAssetBatchInputSchema` /
+ * `parseTaskSchema` / draft-view surface instead.
+ * Confirm stays finalize_store_intake only (D-151).
+ */
 const assetMemoryCreateActions = new Set([
   'confirm_asset_intake_fact',
   'finalize_store_intake',
   'parse_single_asset',
   'prepare_manual_asset_draft',
   'prepare_store_profile_import',
+  'start_parse_asset_batch',
 ]);
-const assetMemoryQueryActions = new Set(['asset_intake_experience']);
+const assetMemoryQueryActions = new Set([
+  'asset_intake_experience',
+  'asset_parse_task',
+  'asset_parse_task_drafts',
+]);
 const memoryCreateActions = new Set([
   'confirm_candidate',
   'delete_source_conversation',
