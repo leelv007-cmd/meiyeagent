@@ -57,7 +57,8 @@ const corePreferenceView = read(
 const coreControlPlane = read(
   '../../../../apps/core/src/p1/model-supply/foundation-module.ts'
 );
-const coreMain = read('../../../../apps/core/src/main.ts');
+// The composition root moved into assembly/ (C1 CoreAssembly extraction).
+const coreMain = read('../../../../apps/core/src/assembly/core-assembly.ts');
 const coreCopyProvider = read(
   '../../../../apps/core/src/product/model-supply-copy-provider.ts'
 );
