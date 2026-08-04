@@ -964,6 +964,19 @@ tests explicitly create a closed evidence gate and require paste-only behavior.
 The browser spec does not add a production query flag or global that could
 reopen/override the evidence decision.
 
+## #333 Note 单页重生 browser 旅程（xcheck A6）
+
+**File:** `specs/note-page-regeneration-journey.spec.ts` | **Priority:** P0
+
+零后端改动。为已闭合的 note 单页重生生产链补 browser e2e：ComposerHome
+delivered 态 note-plan 时间线 → 单页重生。OCC 语义锚定：仅 prepare 携带
+`expectedWorkUpdatedAt`，confirm 不带。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | stale OCC prepare is rejected then successful page regen reaches new task/package | 走最便宜的 fixture 小红书图文主链至 ComposerHome delivered（`openResult: false`），挂载 `note-plan-timeline-frame`。负例①：route 仅改写 `result_adjust_prepare` 的 `expectedWorkUpdatedAt` 为更早 ISO → HTTP 409 + `RESULT_ADJUST_REVISION_CONFLICT` + 诚实文案「暂时无法准备本页重生成…」+ 无 confirm 请求 + 无新 package + 行状态仍 `ready`。`unroute` 后正例：prepare 带 OCC token → 确认卡 → confirm 体不含 `expectedWorkUpdatedAt` → 新 taskId 出现在 harness active tasks（交付前）→ 目标行 `generating`/「配图中」→ poll **confirm 返回的具体新 package id** 至 `revision>=1` 且有 `currentVersionId`，并断言 lineage.reusedFromPackageId 命中重生前 parent、某个 version 带本页 regenerationReceipt（toRevision=fromRevision+1, imagePoints=1）。 |
+| 2 | package without creationExecutionSnapshot shows honest prepare failure and emits no prepare | 水合时 strip `source.creationExecutionSnapshot` 但保留 `note.plan.pages`（时间线与重生按钮仍可见）。点击后客户端在发 prepare 前失败，文案落在 (a) 准备失败句（非理想 (b) 水合句，因 catch 吞 error code）；全程无 `result_adjust_prepare`/`result_adjust`；无确认卡；package 数量不变。 |
+
 ## P2 图文对象工作区、AI 封面与爆款复刻合入门（#320–#325）
 
 **File:** `specs/p2-browser-closure.spec.ts` | **Priority:** P0
