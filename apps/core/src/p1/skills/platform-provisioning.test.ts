@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import type { EvalRun } from '@meiye/contracts';
+import type { EvalRun } from '../../contracts/index.js';
 import { Pool } from 'pg';
 
 import {

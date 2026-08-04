@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CAPABILITY_INVENTORY } from '@meiye/contracts';
+import { CAPABILITY_INVENTORY } from '@/p1/capability-inventory';
 import {
   REQUIRED_SIX_QUESTION_KEYS,
   SIX_QUESTION_KEYS,

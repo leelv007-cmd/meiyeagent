@@ -13,7 +13,6 @@ import { isDeepStrictEqual } from 'node:util';
 
 import type {
   CreationLensId,
-  EvalRun,
   RecipeDeliveryDefaults,
   RecipeId,
   RecipePresentation,
@@ -22,6 +21,7 @@ import type {
   SurfaceId,
   SurfaceToolRef,
 } from '@meiye/contracts';
+import type { EvalRun } from '../../contracts/index.js';
 import { CreationExperienceCatalogService } from './catalog-service.js';
 import type { CreationExperienceCatalogRepository } from './memory-repository.js';
 import { MemoryCreationExperienceCatalogRepository } from './memory-repository.js';

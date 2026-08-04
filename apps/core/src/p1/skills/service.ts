@@ -1,11 +1,7 @@
 import { createHash } from 'node:crypto';
 
-import {
-  evalRunSchema,
-  parseSkillSchema,
-  type EvalRun,
-  type HarnessStage,
-} from '@meiye/contracts';
+import type { HarnessStage } from '@meiye/contracts';
+import { evalRunSchema, parseSkillSchema, type EvalRun } from '../../contracts/index.js';
 
 import {
   P1DomainError,

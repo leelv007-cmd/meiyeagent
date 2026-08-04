@@ -3,12 +3,12 @@
  * No behavior changes. Video workflow segment remains in index.ts (#102).
  */
 import type {
-  AdvancedCanvasEditingContext,
   ImageIntent,
   ModelCapabilityProfile,
   SupplierPricingTier,
   VideoCompositionEvidence,
 } from '@meiye/contracts';
+import type { AdvancedCanvasEditingContext } from '../../contracts/index.js';
 
 export const MODEL_MODALITIES = ['llm', 'image', 'video', 'audio'] as const;
 export type ModelModality = (typeof MODEL_MODALITIES)[number];

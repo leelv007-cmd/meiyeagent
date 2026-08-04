@@ -8,11 +8,11 @@
  * stays for Z2-WIRING batch B.
  */
 import {
-  CAPABILITY_INVENTORY,
   type CapabilityDomainGroup,
   type CapabilityInventoryDocument,
   type CapabilityInventoryItem,
 } from '@meiye/contracts';
+import { CAPABILITY_INVENTORY } from '@/p1/capability-inventory';
 
 import {
   capabilityGroupLabel,

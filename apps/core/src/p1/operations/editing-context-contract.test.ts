@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { editingContextSchema, type EditingContext } from '@meiye/contracts';
+import { editingContextSchema, type EditingContext } from '../../contracts/index.js';
 
 test('editing context is a strict shared discriminated contract', () => {
   const contexts: EditingContext[] = [

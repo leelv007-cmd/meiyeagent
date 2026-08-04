@@ -1,4 +1,4 @@
-import { evalRunSchema, type EvalRun } from '@meiye/contracts';
+import { evalRunSchema, type EvalRun } from '../../contracts/index.js';
 
 import { REDLINE_CASES } from './cases.js';
 import { evaluateRedlineCase } from './promptfoo-provider.js';

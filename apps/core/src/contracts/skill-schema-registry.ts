@@ -1,12 +1,14 @@
 import { z } from 'zod';
+import {
+  assistantContextSchema,
+  marketingSceneSchema,
+  nonEmptyTrimmedStringSchema,
+} from '@meiye/contracts';
 
-import { marketingSceneSchema } from './marketing-package.js';
-import { assistantContextSchema } from './p1.js';
-
-const skillAssetReferenceSchema = z.string().trim().min(1).max(200);
-const intentDecisionFieldSchema = z.string().trim().min(1).max(200);
-const intentDecisionQuestionSchema = z.string().trim().min(1).max(2_000);
-const intentDecisionOptionSchema = z.string().trim().min(1).max(500);
+const skillAssetReferenceSchema = nonEmptyTrimmedStringSchema.max(200);
+const intentDecisionFieldSchema = nonEmptyTrimmedStringSchema.max(200);
+const intentDecisionQuestionSchema = nonEmptyTrimmedStringSchema.max(2_000);
+const intentDecisionOptionSchema = nonEmptyTrimmedStringSchema.max(500);
 
 export const SKILL_OPERATING_ASSET_CATEGORIES = [
   'store',
@@ -42,7 +44,7 @@ const intentDecisionBlockingGapSchema = z
 
 export const intentDecisionSkillOutputSchema = z
   .object({
-    normalizedIntent: z.string().trim().min(1).max(4_000),
+    normalizedIntent: nonEmptyTrimmedStringSchema.max(4_000),
     taskType: marketingSceneSchema,
     deliveryLayer: z.enum(['copy', 'finished_media']),
     relevantAssetCategories: z
@@ -52,7 +54,7 @@ export const intentDecisionSkillOutputSchema = z
       .array(skillOperatingAssetCategorySchema)
       .max(SKILL_OPERATING_ASSET_CATEGORIES.length),
     route: z.enum(['customized', 'guidance']),
-    implicitConstraints: z.array(z.string().trim().min(1)).max(30),
+    implicitConstraints: z.array(nonEmptyTrimmedStringSchema).max(30),
     blockingGap: intentDecisionBlockingGapSchema.nullable(),
   })
   .strict()

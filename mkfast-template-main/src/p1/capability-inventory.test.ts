@@ -4,7 +4,7 @@ import {
   CAPABILITY_INVENTORY,
   CAPABILITY_INVENTORY_REVISION,
 } from './capability-inventory.js';
-import type { CapabilityInventoryItem } from './capability-registry.js';
+import type { CapabilityInventoryItem } from '@meiye/contracts';
 
 /** D-051 decision ③ required inventory ids. */
 const REQUIRED_IDS = [

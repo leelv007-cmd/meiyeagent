@@ -4,15 +4,14 @@ import {
   MAX_NOTE_PLAN_PAGE_COUNT,
   MIN_NOTE_PLAN_PAGE_COUNT,
   STORE_FACT_KINDS,
-  evalRunSchema,
   type ComposerContentPackagePlatform,
   type ComposerDistributionTarget,
-  type EvalRun,
   type RecipeDeliveryDefaults,
   type RecipeModelPolicy,
   type RecipeSourceRequirement,
   type StoreFactKind,
 } from '@meiye/contracts';
+import { evalRunSchema, type EvalRun } from '../../contracts/index.js';
 
 import { P1DomainError } from '../foundation/domain.js';
 import { CreationExperienceCatalogService } from './catalog-service.js';

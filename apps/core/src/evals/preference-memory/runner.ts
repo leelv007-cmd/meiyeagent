@@ -3,7 +3,7 @@ import {
   evalRunSchema,
   type EvalCaseResult,
   type EvalRun,
-} from '@meiye/contracts';
+} from '../../contracts/index.js';
 
 import {
   MemoryReuseMemoryRepository,

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 
-import type { EvalRun } from '@meiye/contracts';
+import type { EvalRun } from '../../contracts/index.js';
 
 import {
   nameHarnessIntent,

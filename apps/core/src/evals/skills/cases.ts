@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { EvalRun } from '@meiye/contracts';
+import type { EvalRun } from '../../contracts/index.js';
 
 import type { SkillRevision } from '../../p1/skills/types.js';
 

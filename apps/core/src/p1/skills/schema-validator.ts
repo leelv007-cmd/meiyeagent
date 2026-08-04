@@ -1,4 +1,4 @@
-import { parseSkillSchema } from '@meiye/contracts';
+import { parseSkillSchema } from '../../contracts/index.js';
 
 import type { SkillOutputValidator } from './types.js';
 

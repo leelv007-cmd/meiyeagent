@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 
-import { evalRunSchema, type EvalRun } from '@meiye/contracts';
+import { evalRunSchema, type EvalRun } from '../../contracts/index.js';
 
 import { P1DomainError } from '../foundation/domain.js';
 import type { EvalRunRegistryPort } from '../harness/eval-run-registry.js';

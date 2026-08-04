@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
-import { evalRunSchema, type EvalRun } from '@meiye/contracts';
+import { evalRunSchema, type EvalRun } from '../../contracts/index.js';
 
 import {
   LANGFUSE_DATASET_ITEM_FIELDS,

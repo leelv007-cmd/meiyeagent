@@ -3,7 +3,7 @@
  * instrumented domains are deepened by J1+; stubs keep six-question minimum fields.
  * Audio = not_instrumented / not_in_scope_for_supply_v1 — must remain visible.
  */
-import type { CapabilityInventoryDocument } from './capability-registry.js';
+import type { CapabilityInventoryDocument } from '@meiye/contracts';
 
 export const CAPABILITY_INVENTORY_REVISION = 'cap-inventory-2026-07-20.v1';
 

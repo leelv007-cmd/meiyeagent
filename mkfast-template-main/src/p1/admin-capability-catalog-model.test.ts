@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { CAPABILITY_INVENTORY } from '@meiye/contracts';
+import { CAPABILITY_INVENTORY } from '@/p1/capability-inventory';
 import {
   ADMIN_DRILLDOWN_PAGE_IDS,
   ADMIN_DRILLDOWN_PAGES,

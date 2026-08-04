@@ -1,4 +1,4 @@
-import { resolveSkillSchema } from '@meiye/contracts';
+import { resolveSkillSchema } from '../../contracts/index.js';
 import { z } from 'zod';
 
 import type {

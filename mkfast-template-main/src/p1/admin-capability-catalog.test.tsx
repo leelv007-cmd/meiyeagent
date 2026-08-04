@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { CAPABILITY_INVENTORY } from '@meiye/contracts';
+import { CAPABILITY_INVENTORY } from '@/p1/capability-inventory';
 import { AdminCapabilityCatalog } from './admin-capability-catalog';
 import {
   CAPABILITY_CATALOG_L1_ORDER,

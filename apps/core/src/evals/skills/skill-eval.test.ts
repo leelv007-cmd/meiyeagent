@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-import { evalRunSchema } from '@meiye/contracts';
+import { evalRunSchema } from '../../contracts/index.js';
 import { SKILL_ACCEPTANCE_CASES } from './cases.js';
 import { createRecordedSkillEvalRun } from './skill-artifact.js';
 

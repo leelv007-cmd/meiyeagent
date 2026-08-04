@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 
+import { requiredP1Capability } from '@meiye/contracts';
 import {
   listSkillSchemaRefs,
-  requiredP1Capability,
   resolveSkillSchema,
   type EvalRun,
-} from '@meiye/contracts';
+} from '../../contracts/index.js';
 
 import { P1ApplicationService } from '../foundation/application-service.js';
 import { P1DomainError } from '../foundation/domain.js';

@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 
-import { evalRunSchema, type EvalRun } from '@meiye/contracts';
+import { evalRunSchema, type EvalRun } from '../../contracts/index.js';
 import type { Pool, PoolClient } from 'pg';
 import { z } from 'zod';
 

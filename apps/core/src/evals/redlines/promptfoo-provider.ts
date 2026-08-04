@@ -1,7 +1,7 @@
 import {
   evalCaseResultSchema,
   type EvalCaseResult,
-} from '@meiye/contracts';
+} from '../../contracts/index.js';
 
 import {
   validateHarnessPolicy,

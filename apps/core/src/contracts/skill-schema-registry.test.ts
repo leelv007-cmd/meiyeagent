@@ -8,7 +8,7 @@ import {
   listSkillSchemaRefs,
   parseSkillSchema,
   resolveSkillSchema,
-} from './index.js';
+} from './skill-schema-registry.js';
 
 const EXPECTED_SKILL_SCHEMA_REFS = [
   'skill-input.daily-industry@1',

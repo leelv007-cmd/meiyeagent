@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-import { evalRunSchema } from '@meiye/contracts';
+import { evalRunSchema } from '../../contracts/index.js';
 
 import { REDLINE_CASES } from './cases.js';
 import { createRecordedRedlineEvalRun } from './redline-artifact.js';

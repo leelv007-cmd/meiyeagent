@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import { identifierSchema } from '@meiye/contracts';
 
-const editingContextIdSchema = z.string().trim().min(1);
+const editingContextIdSchema = identifierSchema;
 
 export const editingContextSchema = z.discriminatedUnion('kind', [
   z

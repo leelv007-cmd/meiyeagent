@@ -1,11 +1,15 @@
 import { z } from 'zod';
+import {
+  identifierSchema,
+  nonEmptyTrimmedStringSchema,
+} from '@meiye/contracts';
 
-const evalIdSchema = z.string().trim().min(1);
-const evalRevisionSchema = z.string().trim().min(1);
+const evalIdSchema = identifierSchema;
+const evalRevisionSchema = nonEmptyTrimmedStringSchema;
 
 export const evalMemoryChangeSchema = z
   .object({
-    path: z.string().trim().min(1),
+    path: nonEmptyTrimmedStringSchema,
     before: z.json().nullable(),
     after: z.json().nullable(),
   })
@@ -27,7 +31,7 @@ export const evalCaseResultSchema = z
     skillRevisionRef: evalRevisionSchema.optional(),
     scorerRevision: evalRevisionSchema,
     passed: z.boolean(),
-    reason: z.string().trim().min(1),
+    reason: nonEmptyTrimmedStringSchema,
     memoryDiff: evalMemoryDiffSchema.nullable(),
   })
   .strict();

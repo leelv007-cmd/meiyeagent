@@ -2,7 +2,7 @@ import {
   evalCaseResultSchema,
   evalRunSchema,
   type EvalRun,
-} from '@meiye/contracts';
+} from '../../contracts/index.js';
 
 import { skillAcceptanceGateFailure } from '../../p1/skills/service.js';
 import type { SkillRevision } from '../../p1/skills/types.js';

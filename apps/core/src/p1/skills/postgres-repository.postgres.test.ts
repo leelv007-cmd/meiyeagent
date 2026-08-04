@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import { Pool } from 'pg';
 
-import type { EvalRun } from '@meiye/contracts';
+import type { EvalRun } from '../../contracts/index.js';
 
 import { PostgresCreationExperienceCatalogRepository } from '../creation-experience/postgres-repository.js';
 import { P1ApplicationService } from '../foundation/application-service.js';

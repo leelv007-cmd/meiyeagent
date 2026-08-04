@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 
-import type { EvalRun } from '@meiye/contracts';
+import type { EvalRun } from '../../contracts/index.js';
 
 import { P1DomainError } from '../foundation/domain.js';
 import {

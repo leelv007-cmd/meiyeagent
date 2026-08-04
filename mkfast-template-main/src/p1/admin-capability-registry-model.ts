@@ -8,7 +8,6 @@
  * - Dependency table is static lookup only — no severity propagation.
  */
 import {
-  CAPABILITY_INVENTORY,
   type CapabilityAvailabilityStatus,
   type CapabilityDependencyEdge,
   type CapabilityInstrumentStatus,
@@ -17,6 +16,7 @@ import {
   type CapabilityRegistryEntry,
   type OperationalMetricEnvelope,
 } from '@meiye/contracts';
+import { CAPABILITY_INVENTORY } from '@/p1/capability-inventory';
 
 /** D-051 six-question keys in operator order. */
 export const SIX_QUESTION_KEYS = [
