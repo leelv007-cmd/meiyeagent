@@ -1039,9 +1039,12 @@ function FeishuProductPanel({
 
 export function IntegrationSettings({
   scope = 'external',
+  settings,
 }: {
   scope?: 'external' | 'model';
+  settings?: ReturnType<typeof useIntegrationSettings>;
 }) {
+  const liveSettings = useIntegrationSettings(settings === undefined);
   const access = useWorkspaceAccess();
   const visibleProviders = PROVIDERS.filter((item) =>
     scope === 'model' ? item.provider === 'model' : item.provider !== 'model'
@@ -1068,7 +1071,7 @@ export function IntegrationSettings({
     loading,
     refresh,
     refreshing,
-  } = useIntegrationSettings();
+  } = settings ?? liveSettings;
   const createForm = useForm<CreateIntegrationConnectionInput>({
     defaultValues: {
       // Every capability starts off. Granting 发布 to a public platform is a
