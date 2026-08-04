@@ -1,0 +1,41 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { CORE_ROUTE_AUTH_CLASSES } from './route-table.js';
+
+test('every Core route declares its auth class', () => {
+  assert.deepEqual(Object.fromEntries(CORE_ROUTE_AUTH_CLASSES), {
+    assets: 'service-token',
+    capabilities: 'public',
+    'canvas-text-stream': 'service-token',
+    'composer-content-package': 'service-token',
+    'composer-destination-map': 'service-token',
+    'composer-submissions': 'service-token',
+    'composer-task-events': 'service-token',
+    'diagnostic-events': 'service-token',
+    'diagnostic-resume-retired': 'service-token',
+    'diagnostics-create-retired': 'service-token',
+    'e2e-credit-detail-fixture': 'service-token',
+    health: 'public',
+    'health-assembly': 'public',
+    'health-ready': 'public',
+    'harness-active-tasks': 'service-token',
+    'harness-decision': 'service-token',
+    'harness-interaction': 'service-token',
+    'harness-interaction-editing': 'service-token',
+    'harness-interaction-message': 'service-token',
+    'harness-interaction-renderer': 'service-token',
+    'harness-product-metrics': 'service-token',
+    'harness-recommendation': 'service-token',
+    'harness-task-admission': 'service-token',
+    'p1-commands': 'service-token',
+    'p1-query': 'service-token',
+    'pending-actions': 'service-token',
+    'product-commands': 'service-token',
+    'product-state': 'service-token',
+    'public-plan-catalog': 'service-token',
+    'workspace-bootstrap': 'service-token',
+    'workflow-events': 'service-token',
+    'assistant-stream': 'service-token',
+  });
+  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 32);
+});
