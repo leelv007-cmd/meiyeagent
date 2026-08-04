@@ -739,8 +739,6 @@ export {
   type ProductUsageResource,
   type ProductUsageUnit,
   type BuildProductQuoteInput,
-  applyBillableSecondsRules,
-  computeProductAmount,
 } from './product-quote.js';
 
 export {

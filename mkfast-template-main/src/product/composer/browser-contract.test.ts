@@ -12,10 +12,10 @@ import {
   serializeBrowserComposerPayload,
 } from './browser-contract';
 import {
-  buildComposerQuote,
   projectComposerQuoteView,
   serializeComposerQuoteForBrowser,
 } from './quote-wiring';
+import { productQuoteFixture } from './quote-fixture.test-helper';
 import {
   createComposerLensState,
   selectLens,
@@ -118,13 +118,17 @@ test('settings row + quote browser payloads stay channel-clean', () => {
   });
   assert.equal(findForbiddenBrowserComposerKey(rowPayload), null);
 
-  const quote = buildComposerQuote({
+  const quote = productQuoteFixture({
     quoteId: 'q-snap',
+    revision: 'server-revision-snapshot',
     catalogModelId: 'model.video.std',
     quotePolicyRevision: 'qp-1',
     billingMode: 'per_output_second',
-    unitRate: 3,
     targetSeconds: 15,
+    quotedSeconds: 15,
+    confirmedAmount: 45,
+    authorizedCeiling: 45,
+    formula: { expression: '3 × 15s', unitRate: 3 },
   });
   const view = projectComposerQuoteView(quote);
   const browserQuote = serializeComposerQuoteForBrowser(view);

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { applyBillableSecondsRules } from '@meiye/contracts';
 import { P1DomainError } from '../foundation/domain.js';
+import { applyBillableSecondsRules } from './quote-math.js';
 import { ProductQuoteService } from './quote-service.js';
 
 const fixedNow = new Date('2026-07-20T12:00:00.000Z');

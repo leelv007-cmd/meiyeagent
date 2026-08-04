@@ -89,14 +89,9 @@ export {
 } from './settings-row';
 
 export {
-  buildComposerQuote,
-  composerRequestFromBuildInput,
-  composeQuoteRevision,
   confirmQuotePrice,
   projectComposerQuoteView,
-  requoteOnParamChange,
   serializeComposerQuoteForBrowser,
-  type ComposerQuoteRequest,
   type ComposerQuoteView,
 } from './quote-wiring';
 

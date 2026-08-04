@@ -52,6 +52,10 @@ export {
   type TrustedUsageEvidence,
 } from './quote-service.js';
 export {
+  applyBillableSecondsRules,
+  computeProductAmount,
+} from './quote-math.js';
+export {
   CatalogProductQuoteAuthority,
   publicProductQuoteOperations,
   toPublicProductQuoteSnapshot,

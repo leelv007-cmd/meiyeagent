@@ -7,9 +7,6 @@
  */
 
 import {
-  applyBillableSecondsRules,
-  computeProductAmount,
-  type BuildProductQuoteInput,
   type ProductBillingMode,
   type ProductQuoteSnapshot,
 } from '@meiye/contracts';
@@ -18,22 +15,6 @@ import {
   findForbiddenBrowserComposerKey,
   projectBrowserComposerPayload,
 } from './browser-contract';
-
-export type ComposerQuoteRequest = {
-  quoteId: string;
-  catalogModelId: string;
-  catalogModelRevision?: string;
-  quotePolicyRevision: string;
-  billingMode: ProductBillingMode;
-  unitRate: number;
-  currency?: string;
-  /** Output quantity for per_request multi-output (copy packages, image sets). */
-  quantity?: number;
-  targetSeconds?: number;
-  minChargeSeconds?: number;
-  roundingStepSeconds?: number;
-  workspaceId?: string;
-};
 
 export type ComposerQuoteView = {
   quoteId: string;
@@ -54,95 +35,6 @@ export type ComposerQuoteView = {
   lifecycleStatus: ProductQuoteSnapshot['lifecycleStatus'];
   formulaExpression: string;
 };
-
-/**
- * Pure local quote builder used by the Composer before/without a live server.
- * Mirrors product-quote formula rules so unit tests can assert re-quote wiring.
- */
-export function buildComposerQuote(
-  request: ComposerQuoteRequest
-): ProductQuoteSnapshot {
-  const quantity = Math.max(1, request.quantity ?? 1);
-  const quotedSeconds =
-    request.billingMode === 'per_output_second'
-      ? applyBillableSecondsRules({
-          rawSeconds: request.targetSeconds ?? 0,
-          minChargeSeconds: request.minChargeSeconds,
-          roundingStepSeconds: request.roundingStepSeconds,
-        })
-      : undefined;
-
-  const unitAmount = computeProductAmount({
-    billingMode: request.billingMode,
-    unitRate: request.unitRate,
-    billableSeconds: quotedSeconds,
-  });
-  const amount =
-    request.billingMode === 'per_request' ? unitAmount * quantity : unitAmount;
-
-  const revision = composeQuoteRevision({
-    catalogModelId: request.catalogModelId,
-    catalogModelRevision: request.catalogModelRevision,
-    quotePolicyRevision: request.quotePolicyRevision,
-    billingMode: request.billingMode,
-    unitRate: request.unitRate,
-    quantity,
-    targetSeconds: request.targetSeconds,
-    minChargeSeconds: request.minChargeSeconds,
-    roundingStepSeconds: request.roundingStepSeconds,
-  });
-
-  const formulaExpression =
-    request.billingMode === 'per_output_second'
-      ? `${request.unitRate} × ${quotedSeconds ?? 0}s`
-      : `${request.unitRate} × ${quantity}`;
-
-  return {
-    quoteId: request.quoteId,
-    revision,
-    catalogModelId: request.catalogModelId,
-    catalogModelRevision: request.catalogModelRevision,
-    quotePolicyRevision: request.quotePolicyRevision,
-    billingMode: request.billingMode,
-    formula: {
-      unitRate: request.unitRate,
-      currency: request.currency,
-      expression: formulaExpression,
-    },
-    targetSeconds: request.targetSeconds,
-    quotedSeconds,
-    minChargeSeconds: request.minChargeSeconds,
-    roundingStepSeconds: request.roundingStepSeconds,
-    confirmedAmount: amount,
-    authorizedCeiling: amount,
-    lifecycleStatus: 'quoted',
-    workspaceId: request.workspaceId,
-  };
-}
-
-export function composeQuoteRevision(input: {
-  catalogModelId: string;
-  catalogModelRevision?: string;
-  quotePolicyRevision: string;
-  billingMode: ProductBillingMode;
-  unitRate: number;
-  quantity: number;
-  targetSeconds?: number;
-  minChargeSeconds?: number;
-  roundingStepSeconds?: number;
-}): string {
-  return [
-    input.catalogModelId,
-    input.catalogModelRevision ?? '0',
-    input.quotePolicyRevision,
-    input.billingMode,
-    String(input.unitRate),
-    String(input.quantity),
-    String(input.targetSeconds ?? ''),
-    String(input.minChargeSeconds ?? ''),
-    String(input.roundingStepSeconds ?? ''),
-  ].join(':');
-}
 
 /** Project a ProductQuoteSnapshot into a merchant-facing Composer view. */
 export function projectComposerQuoteView(
@@ -183,19 +75,6 @@ export function projectComposerQuoteView(
 }
 
 /**
- * Re-quote when model / quantity / duration changes.
- * Returns a new snapshot with a new revision (never mutates previous).
- */
-export function requoteOnParamChange(
-  previous: ProductQuoteSnapshot | null,
-  request: ComposerQuoteRequest
-): { snapshot: ProductQuoteSnapshot; revisionChanged: boolean } {
-  const snapshot = buildComposerQuote(request);
-  const revisionChanged = !previous || previous.revision !== snapshot.revision;
-  return { snapshot, revisionChanged };
-}
-
-/**
  * Confirm path: the amount the user accepts MUST equal the charge amount
  * frozen on the snapshot (confirmedAmount === authorizedCeiling for simple path).
  */
@@ -225,25 +104,4 @@ export function serializeComposerQuoteForBrowser(
     throw new Error(`composer quote browser leak: ${forbidden}`);
   }
   return projected;
-}
-
-/** Map a BuildProductQuoteInput (server shape) into ComposerQuoteRequest. */
-export function composerRequestFromBuildInput(
-  input: BuildProductQuoteInput,
-  quantity = 1
-): ComposerQuoteRequest {
-  return {
-    quoteId: input.quoteId,
-    catalogModelId: input.catalogModelId,
-    catalogModelRevision: input.catalogModelRevision,
-    quotePolicyRevision: input.quotePolicyRevision,
-    billingMode: input.billingMode,
-    unitRate: input.unitRate,
-    currency: input.currency,
-    quantity,
-    targetSeconds: input.targetSeconds,
-    minChargeSeconds: input.minChargeSeconds,
-    roundingStepSeconds: input.roundingStepSeconds,
-    workspaceId: input.workspaceId,
-  };
 }

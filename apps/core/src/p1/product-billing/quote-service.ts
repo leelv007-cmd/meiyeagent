@@ -11,8 +11,6 @@
 
 import { createHash } from 'node:crypto';
 import {
-  applyBillableSecondsRules,
-  computeProductAmount,
   type BuildProductQuoteInput,
   type ProductQuoteSnapshot,
   type ProductSettlementStatus,
@@ -22,6 +20,10 @@ import {
   type TrustedUsageEvidenceKind,
 } from '@meiye/contracts';
 import { P1DomainError } from '../foundation/domain.js';
+import {
+  applyBillableSecondsRules,
+  computeProductAmount,
+} from './quote-math.js';
 import {
   MemoryProductUsageLedger,
   reservedProductUsageUnits,

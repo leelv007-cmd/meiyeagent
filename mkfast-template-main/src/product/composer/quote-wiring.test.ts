@@ -12,65 +12,27 @@ import {
   type ComposerLensState,
 } from './lens-state-machine';
 import {
-  buildComposerQuote,
   confirmQuotePrice,
   projectComposerQuoteView,
-  requoteOnParamChange,
 } from './quote-wiring';
+import { productQuoteFixture } from './quote-fixture.test-helper';
 import {
   buildDynamicSettingsRow,
   assertSettingsRowContract,
 } from './settings-row';
 
-test('changing model or quantity re-quotes and updates revision', () => {
-  const base = buildComposerQuote({
-    quoteId: 'q-1',
-    catalogModelId: 'model.copy.basic',
-    catalogModelRevision: 'cm-1',
-    quotePolicyRevision: 'qp-1',
-    billingMode: 'per_request',
-    unitRate: 1,
-    quantity: 3,
-  });
-
-  const afterQty = requoteOnParamChange(base, {
-    quoteId: 'q-1',
-    catalogModelId: 'model.copy.basic',
-    catalogModelRevision: 'cm-1',
-    quotePolicyRevision: 'qp-1',
-    billingMode: 'per_request',
-    unitRate: 1,
-    quantity: 5,
-  });
-  assert.equal(afterQty.revisionChanged, true);
-  assert.notEqual(afterQty.snapshot.revision, base.revision);
-  assert.equal(afterQty.snapshot.confirmedAmount, 5);
-
-  const afterModel = requoteOnParamChange(afterQty.snapshot, {
-    quoteId: 'q-1',
-    catalogModelId: 'model.copy.pro',
-    catalogModelRevision: 'cm-2',
-    quotePolicyRevision: 'qp-1',
-    billingMode: 'per_request',
-    unitRate: 2,
-    quantity: 5,
-  });
-  assert.equal(afterModel.revisionChanged, true);
-  assert.notEqual(afterModel.snapshot.revision, afterQty.snapshot.revision);
-  assert.equal(afterModel.snapshot.confirmedAmount, 10);
-  assert.equal(afterModel.snapshot.catalogModelId, 'model.copy.pro');
-});
-
 test('confirm price equals charge price after re-quote', () => {
-  const quoted = buildComposerQuote({
+  const quoted = productQuoteFixture({
     quoteId: 'q-match',
+    revision: 'server-revision-video',
     catalogModelId: 'model.video.std',
     quotePolicyRevision: 'qp-v',
     billingMode: 'per_output_second',
-    unitRate: 2,
     targetSeconds: 15,
-    minChargeSeconds: 5,
-    roundingStepSeconds: 1,
+    quotedSeconds: 15,
+    confirmedAmount: 30,
+    authorizedCeiling: 30,
+    formula: { expression: '2 × 15s', unitRate: 2 },
   });
 
   const check = confirmQuotePrice(quoted);
@@ -84,13 +46,14 @@ test('composer draft re-quote wiring: model/qty change updates bound revision', 
   let state: ComposerLensState = createComposerLensState();
   state = selectLens(state, 'copy');
 
-  const q1 = buildComposerQuote({
+  const q1 = productQuoteFixture({
     quoteId: 'q-wire',
+    revision: 'server-revision-1',
     catalogModelId: 'model.copy.basic',
     quotePolicyRevision: 'qp-1',
     billingMode: 'per_request',
-    unitRate: 1,
-    quantity: 3,
+    confirmedAmount: 3,
+    authorizedCeiling: 3,
   });
   state = bindQuoteView(state, projectComposerQuoteView(q1, 3));
   const rev1 = state.draft.quoteRevisionId;
@@ -107,27 +70,17 @@ test('composer draft re-quote wiring: model/qty change updates bound revision', 
     'user'
   );
 
-  const q2 = buildComposerQuote({
+  const q2 = productQuoteFixture({
     quoteId: 'q-wire',
+    revision: 'server-revision-2',
     catalogModelId: 'model.copy.pro',
     quotePolicyRevision: 'qp-1',
     billingMode: 'per_request',
-    unitRate: 2,
-    quantity: 6,
+    confirmedAmount: 12,
+    authorizedCeiling: 12,
   });
-  const requoted = requoteOnParamChange(
-    { ...q1, revision: rev1! },
-    {
-      quoteId: 'q-wire',
-      catalogModelId: 'model.copy.pro',
-      quotePolicyRevision: 'qp-1',
-      billingMode: 'per_request',
-      unitRate: 2,
-      quantity: 6,
-    }
-  );
-  assert.equal(requoted.revisionChanged, true);
-  state = bindQuoteView(state, projectComposerQuoteView(requoted.snapshot, 6));
+  assert.notEqual(q2.revision, q1.revision);
+  state = bindQuoteView(state, projectComposerQuoteView(q2, 6));
 
   assert.notEqual(state.draft.quoteRevisionId, rev1);
   assert.equal(state.draft.quoteView?.amount, 12);
@@ -139,15 +92,17 @@ test('composer draft re-quote wiring: model/qty change updates bound revision', 
 });
 
 test('video per_output_second billing note uses quotedSeconds', () => {
-  const quoted = buildComposerQuote({
+  const quoted = productQuoteFixture({
     quoteId: 'q-sec',
+    revision: 'server-revision-seconds',
     catalogModelId: 'model.video.std',
     quotePolicyRevision: 'qp-v',
     billingMode: 'per_output_second',
-    unitRate: 1,
     targetSeconds: 12,
-    minChargeSeconds: 10,
-    roundingStepSeconds: 5,
+    quotedSeconds: 15,
+    confirmedAmount: 15,
+    authorizedCeiling: 15,
+    formula: { expression: '1 × 15s', unitRate: 1 },
   });
   // max(12, 10) = 12, ceil to 5 → 15
   assert.equal(quoted.quotedSeconds, 15);
@@ -157,12 +112,14 @@ test('video per_output_second billing note uses quotedSeconds', () => {
 });
 
 test('credit-facing composer view uses only the published credit quote fields', () => {
-  const quoted = buildComposerQuote({
+  const quoted = productQuoteFixture({
     quoteId: 'q-credit',
+    revision: 'server-revision-credit',
     catalogModelId: 'model.image.credit',
     quotePolicyRevision: 'qp-credit',
     billingMode: 'per_request',
-    unitRate: 0.06,
+    confirmedAmount: 0.06,
+    authorizedCeiling: 0.06,
   });
   quoted.creditCost = 42;
   quoted.failureRefundsCredits = false;

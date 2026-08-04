@@ -26,7 +26,8 @@ import {
   type ComposerLensState,
 } from './lens-state-machine';
 import { LENS_REQUIRED_SUBMIT_HINT } from './lens-labels';
-import { buildComposerQuote, projectComposerQuoteView } from './quote-wiring';
+import { productQuoteFixture } from './quote-fixture.test-helper';
+import { projectComposerQuoteView } from './quote-wiring';
 import { bindQuoteView } from './lens-state-machine';
 
 // ---------------------------------------------------------------------------
@@ -133,13 +134,14 @@ function dirtySelectedState(): ComposerLensState {
     'user'
   );
   state = updateSelectedTools(state, ['tool.multi_size']);
-  const quote = buildComposerQuote({
+  const quote = productQuoteFixture({
     quoteId: 'q1',
+    revision: 'server-revision-1',
     catalogModelId: 'model.copy.pro',
     quotePolicyRevision: 'qp-1',
     billingMode: 'per_request',
-    unitRate: 1,
-    quantity: 5,
+    confirmedAmount: 5,
+    authorizedCeiling: 5,
   });
   state = bindQuoteView(state, projectComposerQuoteView(quote, 5));
   return state;
@@ -292,13 +294,14 @@ test('submit freezes lens and revisions; further select is no-op', () => {
   let state: ComposerLensState = createComposerLensState();
   state = selectLens(state, 'copy');
   state = updateUserText(state, '提交文案');
-  const quote = buildComposerQuote({
+  const quote = productQuoteFixture({
     quoteId: 'q-submit',
+    revision: 'server-revision-submit',
     catalogModelId: 'model.copy.basic',
     quotePolicyRevision: 'qp-1',
     billingMode: 'per_request',
-    unitRate: 1,
-    quantity: 3,
+    confirmedAmount: 3,
+    authorizedCeiling: 3,
   });
   state = bindQuoteView(state, projectComposerQuoteView(quote, 3));
 
@@ -344,15 +347,17 @@ test('reopening anything that is not frozen changes nothing', () => {
 test('video submit requires confirm; zone includes 按生成成片 N 秒计费', () => {
   let state: ComposerLensState = createComposerLensState();
   state = selectLens(state, 'video');
-  const quote = buildComposerQuote({
+  const quote = productQuoteFixture({
     quoteId: 'q-video',
+    revision: 'server-revision-video',
     catalogModelId: 'model.video.std',
     quotePolicyRevision: 'qp-v',
     billingMode: 'per_output_second',
-    unitRate: 2,
     targetSeconds: 15,
-    minChargeSeconds: 5,
-    roundingStepSeconds: 1,
+    quotedSeconds: 15,
+    confirmedAmount: 30,
+    authorizedCeiling: 30,
+    formula: { expression: '2 × 15s', unitRate: 2 },
   });
   state = bindQuoteView(state, projectComposerQuoteView(quote));
 

@@ -16,20 +16,22 @@ import {
   selectLens,
   updateUserText,
 } from './lens-state-machine';
-import { buildComposerQuote, projectComposerQuoteView } from './quote-wiring';
+import { productQuoteFixture } from './quote-fixture.test-helper';
+import { projectComposerQuoteView } from './quote-wiring';
 import { createComposerSession } from './composer-session';
 import { type ComposerRunTransports, useComposerRun } from './use-composer-run';
 import type { ComposerDestinationPreflightState } from './composer-destination-preflight';
 import type { ComposerGroundingBlocker } from './composer-grounding-blocker';
 
-const QUOTE = buildComposerQuote({
+const QUOTE = productQuoteFixture({
   billingMode: 'per_request',
   catalogModelId: 'model-copy-1',
   catalogModelRevision: 'model-copy-1@1',
-  quantity: 1,
   quoteId: 'quote-1',
+  revision: 'server-revision-1',
   quotePolicyRevision: 'policy-1',
-  unitRate: 1,
+  confirmedAmount: 1,
+  authorizedCeiling: 1,
 });
 QUOTE.creditCost = 1;
 

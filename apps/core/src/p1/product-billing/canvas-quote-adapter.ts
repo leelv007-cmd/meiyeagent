@@ -10,13 +10,15 @@
  */
 
 import {
-  applyBillableSecondsRules,
-  computeProductAmount,
   type BuildProductQuoteInput,
   type ProductBillingMode,
   type ProductQuoteSnapshot,
 } from '@meiye/contracts';
 import { P1DomainError } from '../foundation/domain.js';
+import {
+  applyBillableSecondsRules,
+  computeProductAmount,
+} from './quote-math.js';
 
 /** Subset of CreativeExecutionContract quote-related fields. */
 export type CreativeExecutionQuoteSource = {
