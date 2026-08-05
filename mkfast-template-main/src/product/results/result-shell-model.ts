@@ -292,8 +292,10 @@ export function projectResultShellActions(
       };
     }
     return {
+      // #353: `retry` dispatches `retry_creative_job` — a fresh creative run,
+      // not a second delivery attempt. Name the run, not the delivery.
       primaryAction: retryableRun
-        ? action('retry', 'primary', true, '重试交付')
+        ? action('retry', 'primary', true, '重试创作')
         : action('leave_and_continue', 'primary', true, '返回工作台'),
       secondaryActions: [action('continue_adjust', 'secondary')],
       overflowActions: historyAndRun,

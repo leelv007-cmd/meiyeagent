@@ -189,7 +189,12 @@ function recoveryHintFor(facts: ResultRunDetailFacts): string | undefined {
     return '可点「恢复或核验」继续，不会重复盲提交。';
   }
   if (facts.phase === 'failed') {
-    return '可点「重试」重新生成；重试前会确认费用。';
+    // #350 / #353: 「重试」 dispatches `retry_creative_job`, which needs a Job
+    // row. Without one the shell offers 「返回工作台」 instead, so the hint has
+    // to name that same exit rather than a button the merchant cannot find.
+    return (facts.jobStatus ?? 'none') === 'none'
+      ? '请返回工作台重新发起本次创作。'
+      : '可点「重试」重新生成；重试前会确认费用。';
   }
   return undefined;
 }

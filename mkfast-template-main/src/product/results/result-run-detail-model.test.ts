@@ -77,6 +77,34 @@ test('run detail recovery path for acceptance unknown / suspended', () => {
   );
 });
 
+// #353: 「重试」 dispatches `retry_creative_job`, which needs a Job row. #350
+// already took that button off a Job-less failed run; the Run Detail hint went
+// on telling merchants to press it. Send them where the shell actually sends
+// them, and keep the hint intact wherever the Job — and the button — exist.
+test('run detail failure hint drops 重试 when the run has no retryable Job', () => {
+  const noJob = projectResultRunDetail({
+    phase: 'failed',
+    progressState: 'failed',
+    jobStatus: 'none',
+    supportReference: 'MY-NOJOB1',
+  });
+  assert.equal(noJob.recoveryHint, '请返回工作台重新发起本次创作。');
+  assert.doesNotMatch(JSON.stringify(noJob), /可点「重试」/u);
+
+  const withJob = projectResultRunDetail({
+    phase: 'failed',
+    progressState: 'failed',
+    jobStatus: 'failed',
+    failureCode: 'TIMEOUT',
+    supportReference: 'MY-JOB0001',
+  });
+  assert.equal(
+    withJob.recoveryHint,
+    '可点「重试」重新生成；重试前会确认费用。'
+  );
+  assert.equal(withJob.failureSummary, '生成超时，可以重试。');
+});
+
 test('video run detail keeps same-task recovery without promising regeneration', () => {
   const view = projectResultRunDetail({
     phase: 'failed',
