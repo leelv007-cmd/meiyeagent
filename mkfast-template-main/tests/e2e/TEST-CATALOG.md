@@ -808,11 +808,12 @@ places kept in step by hand). D-143's requirement is that every price a visitor
 reads is traceable to one declared source, so that is what is asked now — per
 surface, plus the anti-crosstalk leg that a same-number assertion cannot reach.
 
-**Known condition, named not blessed:** the landing quotes
+**Known condition, named not blessed (#352):** the landing quotes
 `PUBLIC_DISPLAY_PRICE_CENTS` (D-156 pilot copy, CNY on a non-Waffo runtime)
 while `/pricing` quotes the governed Core catalog (HKD). Whether the product
-should keep two pricing assets is a pricing decision filed for the user; this
-file holds each surface to its own source until that lands.
+should keep two pricing assets is tracked in #352 and settled after the pilot
+alongside the #240 operations window; this file holds each surface to its own
+source until that lands.
 
 | # | Test name | Flow |
 |---|---|---|

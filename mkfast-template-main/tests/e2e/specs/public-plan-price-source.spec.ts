@@ -47,15 +47,16 @@ import {
  *      that catches what a same-number assertion cannot.
  *   D. each page quotes the paid month exactly once.
  *
- * KNOWN CONDITION (named on purpose, not blessed): the landing and /pricing are
- * two pricing assets today. The landing quotes `PUBLIC_DISPLAY_PRICE_CENTS`
- * (D-156 pilot copy, CNY on a non-Waffo runtime) while /pricing quotes the
- * governed Core catalog (HKD). Under a Waffo runtime both read HK$522 — but out
- * of two places synchronised by hand, not out of one source. Whether the
- * product should keep two assets is a pricing decision, filed as #352.
- * This file neither asserts they agree nor pretends the split is fine: it holds
- * each surface to its own source, which is what keeps the split honest until
- * that decision lands.
+ * KNOWN CONDITION (named on purpose, not blessed — see #352): the landing and
+ * /pricing are two pricing assets today. The landing quotes
+ * `PUBLIC_DISPLAY_PRICE_CENTS` (D-156 pilot copy, CNY on a non-Waffo runtime)
+ * while /pricing quotes the governed Core catalog (HKD). Under a Waffo runtime
+ * both read HK$522 — but out of two places synchronised by hand, not out of one
+ * source. Whether the landing should read the catalog is tracked in #352 and
+ * settled after the pilot, alongside the #240 operations window. This file
+ * neither asserts the two agree nor pretends the split is fine: it holds each
+ * surface to its own source, which is what keeps the split honest until that
+ * decision lands.
  */
 
 /** Exported from `src/lib/price-plan.ts` as PUBLIC_PAID_MONTHLY_PRICE_TESTID. */
@@ -76,7 +77,34 @@ async function readQuotedPrice(
     price,
     `${url} must quote the paid month price exactly once`
   ).toHaveCount(1);
-  return (await price.innerText()).trim();
+  const text = (await price.innerText()).trim();
+  // Which stack answered, on the record. This suite reads three apps — the
+  // suite's own, one started at a moved display price, one also pointed at a
+  // moved catalog — and a guard against crosstalk that cannot say which server
+  // it just read is one confusion away from proving nothing. Playwright's
+  // local `reuseExistingServer` makes that a live hazard, not a hypothetical.
+  test
+    .info()
+    .annotations.push({ type: 'price-read', description: `${url} → ${text}` });
+  return text;
+}
+
+/**
+ * Two readings must come from two servers.
+ *
+ * Every "the source moved" leg below compares a reading from a second app
+ * against one from the suite's own stack. If those were ever the same server,
+ * the comparison would be a number against itself and every leg would pass by
+ * construction — the exact failure this file exists to rule out, one level up.
+ */
+function expectDistinctStacks(baseURL: string): void {
+  const own = new URL(
+    test.info().project.use.baseURL ?? 'http://localhost:3000'
+  );
+  expect(
+    new URL(baseURL).port,
+    'the second app must be a different server from the suite stack'
+  ).not.toBe(own.port);
 }
 
 test.describe('公开价可追同源', () => {
@@ -119,6 +147,7 @@ test.describe('公开价可追同源', () => {
     // not.
     const repriced = await startRepricedWebApp(MOVED_MONTHLY_AMOUNT_CENTS);
     try {
+      expectDistinctStacks(repriced.baseURL);
       const landing = await readQuotedPrice(page, `${repriced.baseURL}/`);
       const pricing = await readQuotedPrice(
         page,
@@ -129,12 +158,13 @@ test.describe('公开价可追同源', () => {
         landing,
         'the landing kept quoting its own price after the display-price source moved'
       ).toBe(MOVED_MONTHLY_PRICE_LABEL);
-      // Anti-crosstalk. If this ever fails, /pricing has started reading the
-      // landing's source — the same defect as the two pages disagreeing, with
-      // the numbers happening to line up.
+      // Anti-crosstalk, and the shape it would take: /pricing reading the
+      // landing's display price instead of the catalog it declares. That is
+      // the same defect as the two pages disagreeing, with the numbers
+      // happening to line up, so a same-number assertion cannot see it.
       expect(
         pricing,
-        '/pricing followed the display-price source it does not declare'
+        '/pricing moved with the display-price source — it has started reading D-156 pilot copy instead of the published catalog it declares'
       ).toBe(before.pricing);
     } finally {
       await repriced.stop();
@@ -148,6 +178,7 @@ test.describe('公开价可追同源', () => {
       { coreServiceURL: stubCore.url }
     );
     try {
+      expectDistinctStacks(onMovedCatalog.baseURL);
       const pricing = await readQuotedPrice(
         page,
         `${onMovedCatalog.baseURL}/pricing`
@@ -158,9 +189,12 @@ test.describe('公开价可追同源', () => {
         pricing,
         '/pricing kept quoting its own price after the published catalog moved'
       ).toBe(MOVED_CATALOG_PRICE_LABEL);
+      // The mirror crosstalk shape: the landing falling back to the catalog
+      // when its own source is present. Its number is compiled in, so if this
+      // fails something has wired the marketing page to Core.
       expect(
         landing,
-        'the landing followed the published catalog it does not declare'
+        'the landing moved with the published catalog — it has started reading Core instead of the display price it declares'
       ).toBe(MOVED_MONTHLY_PRICE_LABEL);
     } finally {
       await onMovedCatalog.stop();
