@@ -373,4 +373,45 @@ describe('NotePlan multi-page timeline (P1-5)', () => {
     fireEvent.click(screen.getByTestId('note-plan-page-save-outline'));
     expect(onSave).toHaveBeenCalledWith('page-1');
   });
+
+  it('shows an honest note-plan hydration failure and clears it when absent', () => {
+    // Reason: silent catch left page-regen dead with no merchant-visible signal.
+    const session = sessionWithNotePlan(fixtureTimeline(), 'delivered');
+    const hydrationError = {
+      reason: 'Response envelope was invalid.',
+      message: '本页配图暂不可重新生成：图文版本未能读取，请刷新后重试。',
+    };
+
+    const { rerender } = render(
+      <ComposerConversation
+        notePlanHydrationError={hydrationError}
+        onOpenDelivery={() => undefined}
+        session={session}
+        stream={emptyStream}
+      />
+    );
+
+    const alert = screen.getByTestId('note-plan-hydration-error');
+    expect(alert).toHaveTextContent(
+      '本页配图暂不可重新生成：图文版本未能读取，请刷新后重试。'
+    );
+    expect(alert).toHaveAttribute(
+      'data-reason',
+      'Response envelope was invalid.'
+    );
+    // Distinct from the regenerate-path merchant copy.
+    expect(alert.textContent).not.toBe(
+      '暂时无法读取当前图文版本，请刷新后重试。'
+    );
+
+    rerender(
+      <ComposerConversation
+        notePlanHydrationError={null}
+        onOpenDelivery={() => undefined}
+        session={session}
+        stream={emptyStream}
+      />
+    );
+    expect(screen.queryByTestId('note-plan-hydration-error')).toBeNull();
+  });
 });

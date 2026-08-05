@@ -448,6 +448,8 @@ export type ComposerConversationProps = {
   /** P1-07: per-page regenerate intent (fixture or merchant_request host). */
   onNotePlanRegeneratePage?: (pageId: string) => void;
   notePlanRegenerationError?: { message: string; pageId: string } | null;
+  /** Delivery-time ContentPackage hydrate failed — page regen unavailable. */
+  notePlanHydrationError?: { reason: string; message: string } | null;
   /** Opens the Result Center for a finished run — the only navigation. */
   onOpenDelivery: (input: ComposerDeliveryOpenInput) => void;
   /**
@@ -525,6 +527,7 @@ export function ComposerConversation({
   notePlanOutlineSaveError,
   notePlanOutlineSavePendingPageId,
   notePlanRegenerationError,
+  notePlanHydrationError,
   onOpenDelivery,
   onRateDelivery,
   onDeliveryFollowUp,
@@ -684,6 +687,7 @@ export function ComposerConversation({
                 Boolean(notePlanOutlineSavePendingPageId)
               }
               regenerateError={notePlanRegenerationError}
+              hydrationError={notePlanHydrationError}
               timeline={turn.timeline}
             />
           ),

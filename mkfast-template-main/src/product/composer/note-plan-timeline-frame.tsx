@@ -27,6 +27,8 @@ export type NotePlanTimelineFrameProps = {
   outlineSavePendingPageId?: string | null;
   onRegeneratePage?: (pageId: string) => void;
   regenerateError?: { message: string; pageId: string } | null;
+  /** Delivery-time ContentPackage hydrate failed — page regen is unavailable. */
+  hydrationError?: { reason: string; message: string } | null;
   className?: string;
   /** When true, outline fields are read-only (e.g. mid-generation lock). */
   outlineReadOnly?: boolean;
@@ -200,6 +202,7 @@ export function NotePlanTimelineFrame({
   outlineSaveError,
   outlineSavePendingPageId,
   regenerateError,
+  hydrationError,
   className,
   outlineReadOnly,
 }: NotePlanTimelineFrameProps) {
@@ -219,6 +222,16 @@ export function NotePlanTimelineFrame({
           {timeline.themeAnchor}
           {timeline.styleName ? ` · ${timeline.styleName}` : ''}
         </p>
+        {hydrationError ? (
+          <p
+            className="mt-2 text-xs text-destructive"
+            data-reason={hydrationError.reason}
+            data-testid="note-plan-hydration-error"
+            role="alert"
+          >
+            {hydrationError.message}
+          </p>
+        ) : null}
       </header>
       <ol className="flex flex-col gap-3" data-testid="note-plan-page-list">
         {timeline.pages.map((page) => (

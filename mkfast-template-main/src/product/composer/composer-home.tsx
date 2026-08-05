@@ -440,6 +440,19 @@ function newComposerSessionId() {
     : `composer-${Date.now()}`;
 }
 
+/**
+ * #338: the note hydrate used to swallow every failure, so a delivered note
+ * could carry a live-looking 重新生成 control that no request would ever leave.
+ * The merchant now reads one line, and `reason` keeps the cause on the page for
+ * whoever has to diagnose the next one.
+ */
+function notePlanHydrationFailure(reason: string) {
+  return {
+    message: '本页配图暂不可重新生成：图文版本未能读取，请刷新后重试。',
+    reason,
+  };
+}
+
 export type ComposerHomeProps = {
   /** Optional viewport override for tests. */
   viewportWidth?: number;
@@ -657,6 +670,12 @@ export function ComposerHome({
   const [notePlanRegenerationError, setNotePlanRegenerationError] = useState<{
     message: string;
     pageId: string;
+  } | null>(null);
+  // Set whenever the delivery-time hydrate cannot produce a canonical package —
+  // the condition that leaves 重新生成 inert (see notePlanHydrationFailure).
+  const [notePlanHydrationFailed, setNotePlanHydrationFailed] = useState<{
+    reason: string;
+    message: string;
   } | null>(null);
   const [pendingNotePlanRegeneration, setPendingNotePlanRegeneration] =
     useState<PendingComposerNotePlanPageRegeneration | null>(null);
@@ -1816,27 +1835,42 @@ export function ComposerHome({
       .then((packages) => {
         if (cancelled) return;
         const matched = packages.find((item) => item.id === packageId);
+        if (!matched) {
+          setNotePlanHydrationFailed(
+            notePlanHydrationFailure('package_absent')
+          );
+          return;
+        }
         const version =
-          matched?.versions.find(
+          matched.versions.find(
             (entry) => entry.id === matched.currentVersionId
           ) ??
-          matched?.versions.find(
+          matched.versions.find(
             (entry) => entry.id === workflowStream.harnessDelivery?.versionId
           ) ??
-          matched?.versions.find((entry) => entry.note) ??
-          matched?.versions[0];
+          matched.versions.find((entry) => entry.note) ??
+          matched.versions[0];
         const note = version?.note as ImageTextNoteVersion | undefined;
-        if (!note?.plan?.pages?.length) return;
-        notePlanCanonicalPackageRef.current = matched ?? null;
+        if (!note?.plan?.pages?.length) {
+          setNotePlanHydrationFailed(notePlanHydrationFailure('note_absent'));
+          return;
+        }
+        notePlanCanonicalPackageRef.current = matched;
         notePlanHydratedPackageRef.current = packageId;
+        setNotePlanHydrationFailed(null);
         const timeline = projectNotePlanTimelineFromVersion(note, {
           styleId: version?.harnessCandidateId ?? note.plan.style.id,
           styleName: note.plan.style.name,
         });
         setSession((current) => applyComposerNotePlan(current, timeline));
       })
-      .catch(() => {
-        // Hydration is best-effort; delivery card still opens the object workspace.
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setNotePlanHydrationFailed(
+          notePlanHydrationFailure(
+            error instanceof Error ? error.message : 'query_rejected'
+          )
+        );
       });
     return () => {
       cancelled = true;
@@ -3308,6 +3342,7 @@ export function ComposerHome({
                   notePlanOutlineSavePendingPageId
                 }
                 notePlanRegenerationError={notePlanRegenerationError}
+                notePlanHydrationError={notePlanHydrationFailed}
                 onNotePlanOutlineSave={(pageId) => {
                   void saveNotePlanOutline(pageId);
                 }}
