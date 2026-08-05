@@ -2,12 +2,15 @@
  * L1-1: single-page note regenerate production path (true single page).
  *
  * Fresh-library PG pattern: skip without TEST_DATABASE_URL.
- * Seeds a 3-page note ContentPackage in PG, resolves it through the production
- * source resolver, runs merchant page regeneration, and asserts:
- * - exactly 1 image provider call
- * - trusted usage image quantity = 1
- * - pages 1 and 3 keep body + asset ids
- * - page 2 receives a new revision/asset
+ * Seeds a 3-page note ContentPackage in PG with mixed merchant-upload +
+ * platform-generated assets, resolves through the production source resolver,
+ * and delivers through the real PostgresContentPackageRevisionWritePort +
+ * ProductContentPackageRightsResolver so #341 (inherited generated assets
+ * misclassified as merchant sources) is reproducible on this path.
+ *
+ * Positive case (post-fix expectation): delivery lands revision 1 with
+ * usage=1. Pre-fix this case is red on CONTENT_PACKAGE_ASSET_RIGHTS_UNAVAILABLE.
+ * Negative case: withdrawn merchant source asset still refuses delivery.
  */
 import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
@@ -24,236 +27,372 @@ import { Pool } from 'pg';
 
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import {
+  ContentPackageRevisionWriteError,
+  PostgresContentPackageRevisionWritePort,
+} from '../execution-spine/content-package-revision-port.js';
+import {
   ExecutionSourceContentPackageResolver,
   type SourceContentPackageReader,
 } from '../execution-spine/source-content-package-resolver.js';
 import { buildContentPackage } from '../operations/content-package.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
+import { ProductContentPackageRightsResolver } from '../operations/product-package-rights-adapter.js';
 import { unconfiguredNotePlanEnhancementJudgeResolver } from './note-plan-structured-port.js';
 import {
   UnifiedHarnessStagePorts,
   type HarnessMediaExecutionPort,
 } from './unified-media-stage-ports.js';
+import { harnessRuntimeId } from './workspace-scope.js';
 import type {
   HarnessContextSnapshot,
   HarnessStagePorts,
 } from './workflow-core.js';
-import type { ContentPackageRevisionWritePort } from '../execution-spine/content-package-revision-port.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 
+type PageRegenFixture = {
+  cleanup: () => Promise<void>;
+  derivedPackageId: string;
+  genAsset2: string;
+  genAsset3: string;
+  merchantAssetId: string;
+  packageId: string;
+  plan: NotePlan;
+  ports: UnifiedHarnessStagePorts;
+  request: HarnessWorkflowInput;
+  /** Flip merchant source asset to withdrawn after selection (mid-execution). */
+  revokeMerchantAsset: () => void;
+  taskId: string;
+  workspaceId: string;
+  imageCalls: () => number;
+};
+
+async function seedPageRegenFixture(pool: Pool): Promise<PageRegenFixture> {
+  const operations = new PostgresOperationsRepository(pool);
+  await operations.migrate();
+
+  const suffix = randomUUID().slice(0, 8);
+  const workspaceId = `ws-note-regen-${suffix}`;
+  const packageId = `pkg-note-regen-${suffix}`;
+  const derivedPackageId = `pkg-derived-${suffix}`;
+  const taskId = `task-derived-${suffix}`;
+  const workId = `work-derived-${suffix}`;
+  // Mixed mother-package assets: page1 merchant upload, page2/3 platform-generated.
+  const merchantAssetId = `asset-${suffix}-source-1`;
+  const genAsset2 = `asset-${suffix}-gen-2`;
+  const genAsset3 = `asset-${suffix}-gen-3`;
+  const orderedAssetIds = [merchantAssetId, genAsset2, genAsset3];
+  const plan = threePagePlan(orderedAssetIds);
+  const note = imageTextNoteVersionSchema.parse({
+    schema: 'image-text-note-version/v1',
+    plan,
+    regenerationReceipts: [],
+  });
+  const timestamp = '2026-08-02T00:00:00.000Z';
+
+  const mother = contentPackageSchema.parse({
+    ...buildContentPackage({
+      id: packageId,
+      kind: 'image_text',
+      source: {
+        // Only merchant-uploaded material lives in source.assetIds.
+        assetIds: [merchantAssetId],
+        targetPlatform: 'xiaohongshu',
+        workId: `work-${suffix}`,
+        workflowId: `task-${suffix}`,
+        workflowRevision: 1,
+      },
+      timestamp,
+      workspaceId,
+    }),
+    revision: 1,
+    status: 'accepted',
+    currentVersionId: `${packageId}-v1`,
+    versions: [
+      {
+        id: `${packageId}-v1`,
+        title: plan.themeAnchor,
+        body: plan.pages.map((page) => page.textBlock.body).join('\n\n'),
+        orderedAssetIds: [...orderedAssetIds],
+        topics: [],
+        createdAt: timestamp,
+        source: 'ai_generated',
+        note,
+        harnessCandidateId: plan.style.id,
+        harnessScore: 100,
+      },
+    ],
+    // Platform-generated pages are owned receipts, not merchant source assets.
+    generated: {
+      assetIds: [genAsset2, genAsset3],
+      childRuns: [],
+      ownedAssets: [genAsset2, genAsset3].map((id) => ownedAsset(id)),
+    },
+  });
+  await pool.query(
+    `INSERT INTO p1_content_packages
+       (workspace_id, id, payload, revision, updated_at)
+     VALUES ($1, $2, $3::jsonb, 1, $4)`,
+    [workspaceId, packageId, JSON.stringify(mother), timestamp],
+  );
+
+  const request = pageRegenRequest({
+    workspaceId,
+    packageId,
+    derivedPackageId,
+    taskId,
+    workId,
+    targetAssetId: genAsset2,
+  });
+  const snapshot = request.executionSnapshot!;
+
+  // Derived package shell matches postgres-creation-submission-store shape
+  // (revision 0, bound to this execution snapshot + source mother package).
+  const derivedShell = {
+    ...buildContentPackage({
+      id: derivedPackageId,
+      kind: 'image_text',
+      source: {
+        assetIds: [],
+        creationExecutionSnapshot: {
+          id: snapshot.id,
+          revision: snapshot.revision,
+          schemaVersion: snapshot.schemaVersion,
+        },
+        sourceContentPackage: { id: packageId, revision: '1' },
+        targetPlatform: 'xiaohongshu',
+        workId: snapshot.work.id,
+        workflowId: snapshot.task.id,
+        workflowRevision: snapshot.revision,
+      },
+      timestamp,
+      workspaceId,
+    }),
+    lineage: { reusedFromPackageId: packageId },
+  };
+  await pool.query(
+    `INSERT INTO p1_content_packages
+       (workspace_id, id, payload, revision, updated_at)
+     VALUES ($1, $2, $3::jsonb, 0, $4)`,
+    [workspaceId, derivedPackageId, JSON.stringify(derivedShell), timestamp],
+  );
+
+  const reader: SourceContentPackageReader = {
+    async get(input) {
+      const row = await pool.query<{ payload: ContentPackage }>(
+        `SELECT payload
+           FROM p1_content_packages
+          WHERE workspace_id = $1 AND id = $2`,
+        [input.workspaceId, input.packageId],
+      );
+      return row.rows[0]?.payload ?? null;
+    },
+  };
+
+  // Mutable product rights: starts authorized so sourcing can pass; negative
+  // tests flip to withdrawn mid-execution before delivery write.
+  let merchantAuthorization: 'authorized' | 'withdrawn' = 'authorized';
+  // Generated images are never merchant assets — they are absent from
+  // p1_owned_assets / p1_creative_assets and thus from this product rights list.
+  const rightsResolver = new ProductContentPackageRightsResolver({
+    async load(loadWorkspaceId) {
+      if (loadWorkspaceId !== workspaceId) return null;
+      return {
+        assets: [
+          {
+            id: merchantAssetId,
+            sourceType: 'real',
+            authorizationStatus: merchantAuthorization,
+            consentScope: 'public_marketing',
+            rightsEvidence: 'merchant-release.pdf',
+            rightsNoFixedExpiry: true,
+          },
+        ],
+      };
+    },
+  });
+
+  // Production wires the same rights resolver into sourcing (core-assembly).
+  const sourcePackages = new ExecutionSourceContentPackageResolver(
+    reader,
+    rightsResolver,
+  );
+
+  const writer = new PostgresContentPackageRevisionWritePort(
+    pool,
+    rightsResolver,
+  );
+  await writer.applySchema();
+
+  let imageCalls = 0;
+  const media: HarnessMediaExecutionPort = {
+    async execute() {
+      imageCalls += 1;
+      const id = `asset-${suffix}-regen-${imageCalls}`;
+      return {
+        kind: 'image',
+        asset: ownedAsset(id),
+        childRun: {
+          runId: `run-${id}`,
+          runType: 'model_job',
+          status: 'succeeded',
+          assetIds: [id],
+          productUsage: { quantity: 1, status: 'committed' },
+        },
+        trace: {
+          stage: 'execution_selection',
+          winnerCandidateId: id,
+          candidateScores: [],
+          blockedCandidates: [],
+          rubricVersion: 'test',
+          rubricHash: createHash('sha256').update('test').digest('hex'),
+        },
+      };
+    },
+  };
+
+  const ports = new UnifiedHarnessStagePorts({
+    core: {
+      contentPackages: writer,
+      now: () => '2026-08-02T01:00:00.000Z',
+      runners: {
+        create() {
+          return {
+            async run() {
+              throw new Error('structured runner unused for page regen');
+            },
+          };
+        },
+      },
+    },
+    collaborators: {
+      copy: emptyCopyPorts(),
+      media,
+    },
+    capabilities: {
+      noteSettings: {
+        async read() {
+          return { styles: { styles: [] } };
+        },
+      },
+      noteEnhancementJudge: unconfiguredNotePlanEnhancementJudgeResolver,
+      sourceContentPackages: sourcePackages,
+    },
+  });
+
+  return {
+    cleanup: async () => {
+      const runtimeWorkflowId = harnessRuntimeId(workspaceId, taskId);
+      await pool.query(
+        `DELETE FROM harness_runtime.audit_events WHERE workflow_id = $1`,
+        [runtimeWorkflowId],
+      );
+      await pool.query(
+        `DELETE FROM execution_spine.content_package_write_receipts
+          WHERE workspace_id = $1`,
+        [workspaceId],
+      );
+      await pool.query(
+        `DELETE FROM p1_content_packages WHERE workspace_id = $1`,
+        [workspaceId],
+      );
+    },
+    derivedPackageId,
+    genAsset2,
+    genAsset3,
+    merchantAssetId,
+    packageId,
+    plan,
+    ports,
+    request,
+    revokeMerchantAsset: () => {
+      merchantAuthorization = 'withdrawn';
+    },
+    taskId,
+    workspaceId,
+    imageCalls: () => imageCalls,
+  };
+}
+
+function noteBrief(plan: NotePlan) {
+  return {
+    kind: 'image_text_note' as const,
+    candidates: {
+      candidates: [
+        {
+          styleId: plan.style.id,
+          styleName: plan.style.name,
+          positioning: plan.style.positioning,
+          plan,
+        },
+      ],
+    },
+  };
+}
+
+const declaration = {
+  normalizedIntent: '重新生成第 2 页',
+  taskType: 'daily_service_exposure',
+  deliveryLayer: 'finished_media',
+  relevantAssetCategories: ['product_service'],
+  usedAssetCategories: ['product_service'],
+  route: 'free',
+  routingSource: 'model',
+  implicitConstraints: [],
+} as never;
+
 test(
-  'single-page note regeneration keeps other pages and records usage=1',
+  'single-page note regeneration keeps other pages and delivers revision 1 with usage=1',
   {
     skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
   },
   async () => {
     const pool = new Pool({ connectionString });
-    const operations = new PostgresOperationsRepository(pool);
-    await operations.migrate();
-    const suffix = randomUUID().slice(0, 8);
-    const workspaceId = `ws-note-regen-${suffix}`;
-    const packageId = `pkg-note-regen-${suffix}`;
-    const sourceAssetIds = [
-      `asset-${suffix}-1`,
-      `asset-${suffix}-2`,
-      `asset-${suffix}-3`,
-    ];
-    const plan = threePagePlan(sourceAssetIds);
-    const note = imageTextNoteVersionSchema.parse({
-      schema: 'image-text-note-version/v1',
-      plan,
-      regenerationReceipts: [],
-    });
-    const timestamp = '2026-08-02T00:00:00.000Z';
-
+    let cleanup: (() => Promise<void>) | undefined;
     try {
-      const seeded = contentPackageSchema.parse({
-        ...buildContentPackage({
-          id: packageId,
-          kind: 'image_text',
-          source: {
-            assetIds: sourceAssetIds,
-            targetPlatform: 'xiaohongshu',
-            workId: `work-${suffix}`,
-            workflowId: `task-${suffix}`,
-            workflowRevision: 1,
-          },
-          timestamp,
-          workspaceId,
-        }),
-        revision: 1,
-        status: 'accepted',
-        currentVersionId: `${packageId}-v1`,
-        versions: [
-          {
-            id: `${packageId}-v1`,
-            title: plan.themeAnchor,
-            body: plan.pages.map((page) => page.textBlock.body).join('\n\n'),
-            orderedAssetIds: [...sourceAssetIds],
-            topics: [],
-            createdAt: timestamp,
-            source: 'ai_generated',
-            note,
-            harnessCandidateId: plan.style.id,
-            harnessScore: 100,
-          },
-        ],
-        generated: {
-          assetIds: sourceAssetIds,
-          childRuns: [],
-          ownedAssets: sourceAssetIds.map((id) => ownedAsset(id)),
-        },
-      });
-      await pool.query(
-        `INSERT INTO p1_content_packages
-           (workspace_id, id, payload, revision, updated_at)
-         VALUES ($1, $2, $3::jsonb, 1, $4)`,
-        [workspaceId, packageId, JSON.stringify(seeded), timestamp],
-      );
-
-      const reader: SourceContentPackageReader = {
-        async get(input) {
-          const row = await pool.query<{ payload: ContentPackage }>(
-            `SELECT payload
-               FROM p1_content_packages
-              WHERE workspace_id = $1 AND id = $2`,
-            [input.workspaceId, input.packageId],
-          );
-          return row.rows[0]?.payload ?? null;
-        },
-      };
-      const sourcePackages = new ExecutionSourceContentPackageResolver(reader);
-      const resolved = await sourcePackages.resolve({
+      const fixture = await seedPageRegenFixture(pool);
+      cleanup = fixture.cleanup;
+      const {
+        derivedPackageId,
+        genAsset2,
+        genAsset3,
+        merchantAssetId,
+        plan,
+        ports,
+        request,
+        taskId,
         workspaceId,
-        source: { id: packageId, revision: '1' },
-      });
-      assert.ok(resolved?.note);
-      assert.equal(resolved.note?.plan.pages.length, 3);
+      } = fixture;
+      // Production workflowId === taskId (task-admission); not package id.
+      const workflowId = request.executionSnapshot!.task.id;
+      assert.equal(workflowId, taskId);
 
-      let imageCalls = 0;
-      let billingTrustedUsage:
-        | {
-            kind: string;
-            units: Array<{ resource: string; quantity: number }>;
-            evidenceRef: string;
-          }
-        | undefined;
-
-      const media: HarnessMediaExecutionPort = {
-        async execute() {
-          imageCalls += 1;
-          const id = `asset-${suffix}-regen-${imageCalls}`;
-          return {
-            kind: 'image',
-            asset: ownedAsset(id),
-            childRun: {
-              runId: `run-${id}`,
-              runType: 'model_job',
-              status: 'succeeded',
-              assetIds: [id],
-              productUsage: { quantity: 1, status: 'committed' },
-            },
-            trace: {
-              stage: 'execution_selection',
-              winnerCandidateId: id,
-              candidateScores: [],
-              blockedCandidates: [],
-              rubricVersion: 'test',
-              rubricHash: createHash('sha256').update('test').digest('hex'),
-            },
-          };
-        },
-      };
-
-      const writer: ContentPackageRevisionWritePort = {
-        async write(input) {
-          billingTrustedUsage = structuredClone(
-            input.billingTrustedUsage as typeof billingTrustedUsage,
-          );
-          return {
-            packageId: input.packageId,
-            versionId: input.version.id,
-            revision: input.expectedRevision + 1,
-          };
-        },
-      };
-
-      const ports = new UnifiedHarnessStagePorts({
-        core: {
-          contentPackages: writer,
-          now: () => '2026-08-02T01:00:00.000Z',
-          runners: {
-          create() {
-            return {
-              async run() {
-                throw new Error('structured runner unused for page regen');
-              },
-            };
-          },
-        },
-        },
-        collaborators: {
-          copy: emptyCopyPorts(),
-          media: media,
-        },
-        capabilities: {
-          noteSettings: {
-          async read() {
-            return { styles: { styles: [] } };
-          },
-        },
-          noteEnhancementJudge: unconfiguredNotePlanEnhancementJudgeResolver,
-          sourceContentPackages: sourcePackages,
-        },
-      });
-
-      const request = pageRegenRequest({
-        workspaceId,
-        packageId,
-        derivedPackageId: `pkg-derived-${suffix}`,
-        taskId: `task-derived-${suffix}`,
-        workId: `work-derived-${suffix}`,
-        targetAssetId: sourceAssetIds[1]!,
-      });
-      const context = emptyContext(request, sourceAssetIds);
-      const brief = {
-        kind: 'image_text_note' as const,
-        candidates: {
-          candidates: [
-            {
-              styleId: plan.style.id,
-              styleName: plan.style.name,
-              positioning: plan.style.positioning,
-              plan,
-            },
-          ],
-        },
-      };
+      const context = emptyContext(request, [merchantAssetId]);
+      const brief = noteBrief(plan);
 
       const selection = await ports.executeNoteAndSelect({
-        workflowId: request.packageId,
+        workflowId,
         request,
         brief,
         context,
         selectedStyleId: plan.style.id,
       });
 
-      assert.equal(imageCalls, 1, 'exactly one image provider call');
+      assert.equal(fixture.imageCalls(), 1, 'exactly one image provider call');
       assert.equal(selection.ownedAssets.length, 1);
       assert.equal(
         selection.version.plan.pages[0]?.imageAssetId,
-        sourceAssetIds[0],
+        merchantAssetId,
       );
       assert.equal(
         selection.version.plan.pages[2]?.imageAssetId,
-        sourceAssetIds[2],
+        genAsset3,
       );
       assert.equal(selection.version.plan.pages[1]?.revision, 2);
       assert.notEqual(
         selection.version.plan.pages[1]?.imageAssetId,
-        sourceAssetIds[1],
+        genAsset2,
       );
       assert.equal(
         selection.version.plan.pages[0]?.textBlock.body,
@@ -268,29 +407,60 @@ test(
         1,
       );
 
-      await ports.assembleNoteAndDeliver({
-        workflowId: request.packageId,
+      const delivery = await ports.assembleNoteAndDeliver({
+        workflowId,
         request,
-        declaration: {
-          normalizedIntent: '重新生成第 2 页',
-          taskType: 'daily_service_exposure',
-          deliveryLayer: 'finished_media',
-          relevantAssetCategories: ['product_service'],
-          usedAssetCategories: ['product_service'],
-          route: 'free',
-          routingSource: 'model',
-          implicitConstraints: [],
-        } as never,
+        declaration,
         context,
         brief,
         selection,
       });
 
-      assert.deepEqual(billingTrustedUsage, {
+      assert.equal(delivery.revision, 1);
+      assert.equal(delivery.packageId, derivedPackageId);
+      assert.ok(delivery.versionId);
+
+      const persisted = await pool.query<{
+        payload: ContentPackage;
+        revision: string;
+      }>(
+        `SELECT payload, revision::text AS revision
+           FROM p1_content_packages
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, derivedPackageId],
+      );
+      const derived = contentPackageSchema.parse(persisted.rows[0]?.payload);
+      assert.equal(persisted.rows[0]?.revision, '1');
+      assert.equal(derived.revision, 1);
+      assert.equal(derived.currentVersionId, delivery.versionId);
+      const deliveredVersion = derived.versions.find(
+        (version) => version.id === delivery.versionId,
+      );
+      assert.ok(deliveredVersion?.note);
+      const receipt = deliveredVersion.note.regenerationReceipts.at(-1);
+      assert.equal(receipt?.imagePoints, 1);
+      assert.equal(receipt?.pageId, plan.pages[1]?.id);
+
+      const audit = await pool.query<{
+        payload: {
+          billingTrustedUsage?: {
+            kind: string;
+            units: Array<{ resource: string; quantity: number }>;
+            evidenceRef: string;
+          };
+        };
+      }>(
+        `SELECT payload
+           FROM harness_runtime.audit_events
+          WHERE workflow_id = $1 AND event_type = 'package_delivered'`,
+        [harnessRuntimeId(workspaceId, workflowId)],
+      );
+      assert.deepEqual(audit.rows[0]?.payload.billingTrustedUsage, {
         kind: 'product_units',
         units: [{ resource: 'image', quantity: 1 }],
-        evidenceRef: `note-page-regeneration:${sourceAssetIds[1]}`,
+        evidenceRef: `note-page-regeneration:${genAsset2}`,
       });
+
       assert.equal(
         contentPackageCarrierOf({
           kind: 'image_text',
@@ -299,10 +469,80 @@ test(
         'note',
       );
     } finally {
-      await pool.query(
-        `DELETE FROM p1_content_packages WHERE workspace_id = $1`,
-        [workspaceId],
+      if (cleanup) await cleanup();
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'delivery refuses a merchant source asset revoked mid-execution',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const pool = new Pool({ connectionString });
+    let cleanup: (() => Promise<void>) | undefined;
+    try {
+      const fixture = await seedPageRegenFixture(pool);
+      cleanup = fixture.cleanup;
+      const {
+        derivedPackageId,
+        merchantAssetId,
+        plan,
+        ports,
+        request,
+        revokeMerchantAsset,
+        workspaceId,
+      } = fixture;
+      const workflowId = request.executionSnapshot!.task.id;
+      const context = emptyContext(request, [merchantAssetId]);
+      const brief = noteBrief(plan);
+
+      // Sourcing still sees authorized merchant asset and generates the page.
+      const selection = await ports.executeNoteAndSelect({
+        workflowId,
+        request,
+        brief,
+        context,
+        selectedStyleId: plan.style.id,
+      });
+
+      // Live rights flip after selection — delivery write must re-check.
+      revokeMerchantAsset();
+
+      await assert.rejects(
+        () =>
+          ports.assembleNoteAndDeliver({
+            workflowId,
+            request,
+            declaration,
+            context,
+            brief,
+            selection,
+          }),
+        (error: unknown) => {
+          assert.ok(error instanceof ContentPackageRevisionWriteError);
+          assert.equal(error.code, 'CONTENT_PACKAGE_ASSET_RIGHTS_UNAVAILABLE');
+          return true;
+        },
       );
+
+      const persisted = await pool.query<{
+        payload: ContentPackage;
+        revision: string;
+      }>(
+        `SELECT payload, revision::text AS revision
+           FROM p1_content_packages
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, derivedPackageId],
+      );
+      const derived = contentPackageSchema.parse(persisted.rows[0]?.payload);
+      assert.equal(persisted.rows[0]?.revision, '0');
+      assert.equal(derived.revision, 0);
+      assert.equal(derived.currentVersionId, undefined);
+    } finally {
+      if (cleanup) await cleanup();
       await pool.end();
     }
   },
@@ -477,6 +717,7 @@ function emptyContext(
   request: HarnessWorkflowInput,
   authorizedAssetIds: readonly string[] = [],
 ): HarnessContextSnapshot {
+  const taskId = request.executionSnapshot?.task.id ?? request.packageId;
   return {
     bundle: {
       bundleId: `bundle-${request.packageId}`,
@@ -484,7 +725,7 @@ function emptyContext(
       hash: 'a'.repeat(64),
       serializerVersion: 'context-bundle-c14n-v1',
       workspaceId: request.workspaceId,
-      taskId: request.packageId,
+      taskId,
       frozenAt: '2026-08-02T00:00:00.000Z',
       frozenBy: 'owner-1',
       previousRevision: null,

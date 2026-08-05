@@ -211,13 +211,34 @@ export class PostgresContentPackageRevisionWritePort
 			assertExecutionBinding(contentPackage, input);
 			const sourceContentPackage =
 				await assertPostgresSourceContentPackageAvailable(client, input);
-				assertDeliveredAssetBinding(
+			assertDeliveredAssetBinding(
+				contentPackage,
+				sourceContentPackage,
+				versions,
+				generatedAssetIds(input),
+			);
+			await assertLiveDeliveredAssetRights(
+				this.assetRights,
+				input,
+				versions,
+				{
 					contentPackage,
 					sourceContentPackage,
-					versions,
-					generatedAssetIds(input),
-				);
-				await assertLiveDeliveredAssetRights(this.assetRights, input, versions);
+					// Workspace-scoped only — never walk lineage across tenants.
+					load: async (packageId) => {
+						const loaded = await client.query<{ payload: unknown }>(
+							`SELECT payload
+							   FROM p1_content_packages
+							  WHERE workspace_id=$1 AND id=$2`,
+							[input.workspaceId, packageId],
+						);
+						const payload = loaded.rows[0]?.payload;
+						return payload
+							? contentPackageSchema.parse(payload)
+							: undefined;
+					},
+				},
+			);
 			const currentRevision = Number(row.revision);
 			if (currentRevision !== input.expectedRevision) {
 				throw new ContentPackageRevisionWriteError(
@@ -408,7 +429,16 @@ export class MemoryContentPackageRevisionWritePort
 			versions,
 			generatedAssetIds(input),
 		);
-		await assertLiveDeliveredAssetRights(this.assetRights, input, versions);
+		await assertLiveDeliveredAssetRights(this.assetRights, input, versions, {
+			contentPackage,
+			sourceContentPackage,
+			load: async (packageId) => {
+				const value = this.packages.get(
+					`${input.workspaceId}:${packageId}`,
+				);
+				return value ? structuredClone(value) : undefined;
+			},
+		});
 		if (contentPackage.revision !== input.expectedRevision) {
 			throw new ContentPackageRevisionWriteError(
 				"CONTENT_PACKAGE_REVISION_CONFLICT",
@@ -684,22 +714,91 @@ function generatedAssetIds(input: ContentPackageRevisionWriteInput) {
 	];
 }
 
+/** Model Supply receipts recorded on a package — not merchant source assets. */
+function recordedGeneratedAssetIds(contentPackage: ContentPackage) {
+	return unique([
+		...contentPackage.generated.assetIds,
+		...(contentPackage.generated.ownedAssets?.map((asset) => asset.id) ?? []),
+	]);
+}
+
+/**
+ * Generation receipts inherit across package revisions and derived packages.
+ * Walk self → frozen source → parents so re-delivered platform images stay
+ * exempt from merchant live-rights checks (merchant freeze-bound sources stay
+ * under live rights).
+ */
+async function inheritedGeneratedAssetIds(input: {
+	contentPackage: ContentPackage;
+	sourceContentPackage: ContentPackage | undefined;
+	load: (packageId: string) => Promise<ContentPackage | undefined>;
+}): Promise<Set<string>> {
+	const collected = new Set<string>();
+	const visited = new Set<string>();
+	const maxDepth = 16;
+
+	const take = (pkg: ContentPackage) => {
+		for (const assetId of recordedGeneratedAssetIds(pkg)) {
+			collected.add(assetId);
+		}
+	};
+
+	take(input.contentPackage);
+	visited.add(input.contentPackage.id);
+
+	let nextId =
+		input.sourceContentPackage?.id ??
+		input.contentPackage.source.sourceContentPackage?.id ??
+		input.contentPackage.lineage.reusedFromPackageId;
+	let providedSource = input.sourceContentPackage;
+
+	for (let depth = 0; nextId && depth < maxDepth; depth += 1) {
+		if (visited.has(nextId)) break;
+		visited.add(nextId);
+		const pkg =
+			providedSource?.id === nextId
+				? providedSource
+				: await input.load(nextId);
+		providedSource = undefined;
+		if (!pkg) break;
+		take(pkg);
+		nextId =
+			pkg.source.sourceContentPackage?.id ??
+			pkg.lineage.reusedFromPackageId;
+	}
+
+	return collected;
+}
+
 async function assertLiveDeliveredAssetRights(
 	rights: ContentPackageRightsResolverPort | undefined,
 	input: ContentPackageRevisionWriteInput,
 	versions: ContentPackageVersion[],
+	lineage: {
+		contentPackage: ContentPackage;
+		sourceContentPackage: ContentPackage | undefined;
+		load: (packageId: string) => Promise<ContentPackage | undefined>;
+	},
 ) {
 	// Owned Model Supply receipts are recorded by generation, not merchant
 	// source rights. Only freeze-bound source/order assets need live rights.
 	const ownedGenerated = new Set(generatedAssetIds(input));
-	const assetIds = [
+	let assetIds = [
 		...new Set(
 			versions
 				.flatMap((version) => version.orderedAssetIds)
 				.filter((assetId) => !ownedGenerated.has(assetId)),
 		),
 	];
+	// Fast path: non-derived / fully-this-write deliveries never load lineage.
 	if (assetIds.length === 0) return;
+
+	// Remaining ids may be generation receipts inherited across revisions —
+	// load lineage only when this second filter is needed.
+	const inheritedGenerated = await inheritedGeneratedAssetIds(lineage);
+	assetIds = assetIds.filter((assetId) => !inheritedGenerated.has(assetId));
+	if (assetIds.length === 0) return;
+
 	if (!rights) {
 		throw new ContentPackageRevisionWriteError(
 			"CONTENT_PACKAGE_ASSET_RIGHTS_UNAVAILABLE",

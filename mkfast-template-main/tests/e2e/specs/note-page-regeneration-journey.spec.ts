@@ -541,22 +541,19 @@ test.describe('Note page regeneration journey (#333 / xcheck A6)', () => {
    * #341 — what the derived run does *after* a merchant confirms it.
    *
    * Split out of the case above rather than truncating it, because everything
-   * up to the confirmation is green and has to stay a live gate while this is
-   * parked. This half cannot pass yet: the derived delivery is rejected by
-   * `assertLiveDeliveredAssetRights`
-   * (apps/core/src/p1/execution-spine/content-package-revision-port.ts:687-724)
-   * with CONTENT_PACKAGE_ASSET_RIGHTS_UNAVAILABLE / 409. A single-page
-   * regeneration generates one image and *inherits* the other pages' images
-   * from the parent; the inherited ones are not in this delivery's
-   * generatedAssetIds, so the live-rights exemption misses them and they are
-   * checked as if they were merchant-uploaded source assets — which they never
-   * were, so the rights resolver does not know them and the write is refused.
-   * Observed as DBOS status ERROR with the package left at revision 0 / draft.
+   * up to the confirmation is a live gate in its own right. This half was
+   * parked until #341: a single-page regeneration generates one image and
+   * *inherits* the other pages' images from the parent, and the live-rights
+   * exemption in `assertLiveDeliveredAssetRights` only covered this write's own
+   * generation set — so inherited platform images were checked as if they were
+   * merchant uploads, the rights resolver did not know them, and the delivery
+   * was refused with CONTENT_PACKAGE_ASSET_RIGHTS_UNAVAILABLE / 409 (DBOS
+   * status ERROR, package left at revision 0 / draft).
    *
-   * Drop the `fixme` when #341 lands: this then witnesses #341 AC ③ and #333
-   * AC ①. Assertions are the #333 originals, unweakened.
+   * Witnesses #341 AC ③ and #333 AC ①. Assertions are the #333 originals,
+   * unweakened.
    */
-  test.fixme(
+  test(
     'the derived run delivers a regenerated page with its receipt',
     async ({ page, request }) => {
       test.setTimeout(480_000);

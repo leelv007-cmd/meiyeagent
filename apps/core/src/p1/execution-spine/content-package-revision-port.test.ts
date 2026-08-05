@@ -460,6 +460,377 @@ test("video delivery resolves source rights from a frozen source ContentPackage"
 	});
 });
 
+test("delivery inherits generation receipts across two lineage hops", async () => {
+	const rightsRequests: Array<{ assetIds: string[]; workspaceId: string }> =
+		[];
+	const writer = new MemoryContentPackageRevisionWritePort({
+		async resolve(input) {
+			rightsRequests.push({
+				assetIds: [...input.assetIds],
+				workspaceId: input.workspaceId,
+			});
+			return {
+				knownAssetIds: input.assetIds,
+				unauthorizedAssetIds: [],
+			};
+		},
+	});
+
+	const grandmother = {
+		...buildContentPackage({
+			id: "pkg-grandmother",
+			kind: "image_text" as const,
+			source: {
+				assetIds: [],
+				targetPlatform: "xiaohongshu" as const,
+				workflowId: "task-g",
+				workflowRevision: 1,
+				workId: "work-g",
+			},
+			timestamp: "2026-07-22T08:00:00.000Z",
+			workspaceId: "workspace-lineage",
+		}),
+		currentVersionId: "version-g",
+		generated: {
+			assetIds: ["gen-g"],
+			childRuns: [],
+			ownedAssets: [
+				{
+					contentType: "image/png",
+					id: "gen-g",
+					objectKey: "packages/pkg-grandmother/gen-g.png",
+					sha256: "g".repeat(64),
+				},
+			],
+		},
+		revision: 1,
+		status: "accepted" as const,
+		versions: [
+			{
+				body: "grandmother body",
+				createdAt: "2026-07-22T08:00:00.000Z",
+				id: "version-g",
+				orderedAssetIds: ["gen-g"],
+				source: "ai_generated" as const,
+				title: "grandmother",
+				topics: [],
+			},
+		],
+	};
+	const mother = {
+		...buildContentPackage({
+			id: "pkg-mother",
+			kind: "image_text" as const,
+			source: {
+				assetIds: [],
+				sourceContentPackage: {
+					id: "pkg-grandmother",
+					revision: "1",
+				},
+				targetPlatform: "xiaohongshu" as const,
+				workflowId: "task-m",
+				workflowRevision: 1,
+				workId: "work-m",
+			},
+			timestamp: "2026-07-22T08:30:00.000Z",
+			workspaceId: "workspace-lineage",
+		}),
+		currentVersionId: "version-m",
+		generated: {
+			assetIds: ["gen-m"],
+			childRuns: [],
+			ownedAssets: [
+				{
+					contentType: "image/png",
+					id: "gen-m",
+					objectKey: "packages/pkg-mother/gen-m.png",
+					sha256: "m".repeat(64),
+				},
+			],
+		},
+		lineage: { reusedFromPackageId: "pkg-grandmother" },
+		revision: 1,
+		status: "accepted" as const,
+		versions: [
+			{
+				body: "mother body",
+				createdAt: "2026-07-22T08:30:00.000Z",
+				id: "version-m",
+				// Re-delivers grandmother generation receipt plus own generation.
+				orderedAssetIds: ["gen-g", "gen-m"],
+				source: "ai_generated" as const,
+				title: "mother",
+				topics: [],
+			},
+		],
+	};
+	const derived = buildContentPackage({
+		id: "pkg-derived",
+		kind: "image_text",
+		source: {
+			assetIds: [],
+			creationExecutionSnapshot: {
+				id: "snapshot-derived",
+				revision: 1,
+				schemaVersion: "creation-execution-snapshot/v1",
+			},
+			sourceContentPackage: { id: "pkg-mother", revision: "1" },
+			targetPlatform: "xiaohongshu",
+			workflowId: "task-derived",
+			workflowRevision: 1,
+			workId: "work-derived",
+		},
+		timestamp: "2026-07-22T09:00:00.000Z",
+		workspaceId: "workspace-lineage",
+	});
+	writer.seed(grandmother);
+	writer.seed(mother);
+	writer.seed({
+		...derived,
+		lineage: { reusedFromPackageId: "pkg-mother" },
+	});
+
+	const version = {
+		body: "derived body",
+		createdAt: "2026-07-22T09:00:00.000Z",
+		id: "version-derived",
+		// Two-hop inheritance: gen-g (grandmother) + gen-m (mother) + gen-d (this write).
+		orderedAssetIds: ["gen-g", "gen-m", "gen-d"],
+		source: "ai_generated" as const,
+		title: "derived",
+		topics: [],
+	};
+	const delivery = await writer.write({
+		expectedRevision: 0,
+		generated: {
+			assetIds: ["gen-d"],
+			childRuns: [],
+			ownedAssets: [
+				{
+					contentType: "image/png",
+					id: "gen-d",
+					objectKey: "packages/pkg-derived/gen-d.png",
+					sha256: "d".repeat(64),
+				},
+			],
+		},
+		idempotencyKey: "harness-note:task-derived",
+		kind: "image_text",
+		occurredAt: "2026-07-22T09:00:00.000Z",
+		packageId: "pkg-derived",
+		platform: "xiaohongshu",
+		snapshot: {
+			id: "snapshot-derived",
+			revision: 1,
+			schemaVersion: "creation-execution-snapshot/v1",
+		},
+		snapshotId: "snapshot-derived",
+		sourceContentPackage: { id: "pkg-mother", revision: "1" },
+		taskId: "task-derived",
+		version,
+		workId: "work-derived",
+		workflowId: "task-derived",
+		workflowRevision: 1,
+		workspaceId: "workspace-lineage",
+	});
+
+	assert.deepEqual(delivery, {
+		packageId: "pkg-derived",
+		revision: 1,
+		versionId: "version-derived",
+	});
+	// Inherited generation receipts must not be sent to merchant rights.
+	assert.deepEqual(rightsRequests, []);
+	assert.deepEqual(
+		writer.get("workspace-lineage", "pkg-derived")?.generated.assetIds,
+		["gen-d"],
+	);
+});
+
+test("delivery still refuses a non-generated merchant asset after lineage exemption", async () => {
+	const writer = new MemoryContentPackageRevisionWritePort({
+		async resolve({ assetIds }) {
+			return {
+				knownAssetIds: assetIds,
+				// Merchant source is known but no longer authorized.
+				unauthorizedAssetIds: assetIds.filter(
+					(assetId) => assetId === "merchant-source-1",
+				),
+			};
+		},
+	});
+
+	const grandmother = {
+		...buildContentPackage({
+			id: "pkg-g2",
+			kind: "image_text" as const,
+			source: {
+				assetIds: [],
+				targetPlatform: "xiaohongshu" as const,
+				workflowId: "task-g2",
+				workflowRevision: 1,
+				workId: "work-g2",
+			},
+			timestamp: "2026-07-22T08:00:00.000Z",
+			workspaceId: "workspace-lineage-2",
+		}),
+		currentVersionId: "version-g2",
+		generated: {
+			assetIds: ["gen-g2"],
+			childRuns: [],
+			ownedAssets: [
+				{
+					contentType: "image/png",
+					id: "gen-g2",
+					objectKey: "packages/pkg-g2/gen-g2.png",
+					sha256: "g".repeat(64),
+				},
+			],
+		},
+		revision: 1,
+		status: "accepted" as const,
+		versions: [
+			{
+				body: "g2 body",
+				createdAt: "2026-07-22T08:00:00.000Z",
+				id: "version-g2",
+				orderedAssetIds: ["gen-g2"],
+				source: "ai_generated" as const,
+				title: "g2",
+				topics: [],
+			},
+		],
+	};
+	const mother = {
+		...buildContentPackage({
+			id: "pkg-m2",
+			kind: "image_text" as const,
+			source: {
+				// Merchant asset is freeze-bound source material on the mother package.
+				assetIds: ["merchant-source-1"],
+				sourceContentPackage: { id: "pkg-g2", revision: "1" },
+				targetPlatform: "xiaohongshu" as const,
+				workflowId: "task-m2",
+				workflowRevision: 1,
+				workId: "work-m2",
+			},
+			timestamp: "2026-07-22T08:30:00.000Z",
+			workspaceId: "workspace-lineage-2",
+		}),
+		currentVersionId: "version-m2",
+		generated: {
+			assetIds: ["gen-m2"],
+			childRuns: [],
+			ownedAssets: [
+				{
+					contentType: "image/png",
+					id: "gen-m2",
+					objectKey: "packages/pkg-m2/gen-m2.png",
+					sha256: "m".repeat(64),
+				},
+			],
+		},
+		lineage: { reusedFromPackageId: "pkg-g2" },
+		revision: 1,
+		status: "accepted" as const,
+		versions: [
+			{
+				body: "m2 body",
+				createdAt: "2026-07-22T08:30:00.000Z",
+				id: "version-m2",
+				orderedAssetIds: ["merchant-source-1", "gen-g2", "gen-m2"],
+				source: "ai_generated" as const,
+				title: "m2",
+				topics: [],
+			},
+		],
+	};
+	writer.seed(grandmother);
+	writer.seed(mother);
+	writer.seed({
+		...buildContentPackage({
+			id: "pkg-d2",
+			kind: "image_text",
+			source: {
+				assetIds: [],
+				creationExecutionSnapshot: {
+					id: "snapshot-d2",
+					revision: 1,
+					schemaVersion: "creation-execution-snapshot/v1",
+				},
+				sourceContentPackage: { id: "pkg-m2", revision: "1" },
+				targetPlatform: "xiaohongshu",
+				workflowId: "task-d2",
+				workflowRevision: 1,
+				workId: "work-d2",
+			},
+			timestamp: "2026-07-22T09:00:00.000Z",
+			workspaceId: "workspace-lineage-2",
+		}),
+		lineage: { reusedFromPackageId: "pkg-m2" },
+	});
+
+	await assert.rejects(
+		writer.write({
+			expectedRevision: 0,
+			generated: {
+				assetIds: ["gen-d2"],
+				childRuns: [],
+				ownedAssets: [
+					{
+						contentType: "image/png",
+						id: "gen-d2",
+						objectKey: "packages/pkg-d2/gen-d2.png",
+						sha256: "d".repeat(64),
+					},
+				],
+			},
+			idempotencyKey: "harness-note:task-d2",
+			kind: "image_text",
+			occurredAt: "2026-07-22T09:00:00.000Z",
+			packageId: "pkg-d2",
+			platform: "xiaohongshu",
+			snapshot: {
+				id: "snapshot-d2",
+				revision: 1,
+				schemaVersion: "creation-execution-snapshot/v1",
+			},
+			snapshotId: "snapshot-d2",
+			sourceContentPackage: { id: "pkg-m2", revision: "1" },
+			taskId: "task-d2",
+			version: {
+				body: "d2 body",
+				createdAt: "2026-07-22T09:00:00.000Z",
+				id: "version-d2",
+				// Inherited gens + unauthorized merchant freeze-bound source.
+				orderedAssetIds: [
+					"merchant-source-1",
+					"gen-g2",
+					"gen-m2",
+					"gen-d2",
+				],
+				source: "ai_generated" as const,
+				title: "d2",
+				topics: [],
+			},
+			workId: "work-d2",
+			workflowId: "task-d2",
+			workflowRevision: 1,
+			workspaceId: "workspace-lineage-2",
+		}),
+		(error: unknown) =>
+			error instanceof ContentPackageRevisionWriteError &&
+			error.code === "CONTENT_PACKAGE_ASSET_RIGHTS_UNAVAILABLE" &&
+			error.message ===
+				"Live asset rights no longer permit this delivery.",
+	);
+	assert.equal(writer.get("workspace-lineage-2", "pkg-d2")?.revision, 0);
+	assert.equal(
+		writer.get("workspace-lineage-2", "pkg-d2")?.currentVersionId,
+		undefined,
+	);
+});
+
 function sourceContentPackage() {
 	return {
 		...buildContentPackage({
