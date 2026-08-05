@@ -968,14 +968,22 @@ reopen/override the evidence decision.
 
 **File:** `specs/note-page-regeneration-journey.spec.ts` | **Priority:** P0
 
-零后端改动。为已闭合的 note 单页重生生产链补 browser e2e：ComposerHome
-delivered 态 note-plan 时间线 → 单页重生。OCC 语义锚定：仅 prepare 携带
-`expectedWorkUpdatedAt`，confirm 不带。
+零后端改动。ComposerHome delivered 态 note-plan 时间线 → 单页重生。OCC 语义锚定：
+仅 prepare 携带 `expectedWorkUpdatedAt`，confirm 不带。
 
-| # | Test name | Flow |
-|---|---|---|
-| 1 | stale OCC prepare is rejected then successful page regen reaches new task/package | 走最便宜的 fixture 小红书图文主链至 ComposerHome delivered（`openResult: false`），挂载 `note-plan-timeline-frame`。负例①：route 仅改写 `result_adjust_prepare` 的 `expectedWorkUpdatedAt` 为更早 ISO → HTTP 409 + `RESULT_ADJUST_REVISION_CONFLICT` + 诚实文案「暂时无法准备本页重生成…」+ 无 confirm 请求 + 无新 package + 行状态仍 `ready`。`unroute` 后正例：prepare 带 OCC token → 确认卡 → confirm 体不含 `expectedWorkUpdatedAt` → 新 taskId 出现在 harness active tasks（交付前）→ 目标行 `generating`/「配图中」→ poll **confirm 返回的具体新 package id** 至 `revision>=1` 且有 `currentVersionId`，并断言 lineage.reusedFromPackageId 命中重生前 parent、某个 version 带本页 regenerationReceipt（toRevision=fromRevision+1, imagePoints=1）。 |
-| 2 | package without creationExecutionSnapshot shows honest prepare failure and emits no prepare | 水合时 strip `source.creationExecutionSnapshot` 但保留 `note.plan.pages`（时间线与重生按钮仍可见）。点击后客户端在发 prepare 前失败，文案落在 (a) 准备失败句（非理想 (b) 水合句，因 catch 吞 error code）；全程无 `result_adjust_prepare`/`result_adjust`；无确认卡；package 数量不变。 |
+> **实测结论（2026-08-05）**：本票原假设「生产链已闭合、只差旅程见证」被浏览器
+> 证伪——**单页重生当前从 UI 不可达**。delivered 态下按钮渲染且 enabled，但点击
+> 永远不发 `result_adjust_prepare`，在 `composer-home.tsx:2710-2719` 被客户端拦下
+> （`notePlanCanonicalPackageRef` 从未被填充），商家只拿到
+> 「暂时无法读取当前图文版本，请刷新后重试。」。非本 spec 时序问题：~90s 内反复点击
+> 零命令；`session.task` 同时带 workId 与 packageId；`operations.content_packages`
+> 返回的正是该 packageId，且 revision 1 / review_ready / currentVersionId 已设 /
+> 2 version × 3 页 / snapshot 齐全；reload 后 note_plan turn 干脆不再挂载。
+
+| # | Test name | Status | Flow |
+|---|---|---|---|
+| 1 | stale OCC prepare is rejected then successful page regen reaches new task/package | **BLOCKED（`test.fixme`）** | 覆盖 AC ①②，因上述可达性缺陷当前无法见证（两半都要求 prepare 真的发出）。旅程按目标合同完整写出并原地保留：负例①用 route 仅改写 prepare 体的 `expectedWorkUpdatedAt` → 期望 409 + `RESULT_ADJUST_REVISION_CONFLICT` + 诚实文案 + 无 confirm 请求 + 无新 package；正例 → 确认卡 → confirm 体不含 `expectedWorkUpdatedAt` → 新 taskId 出现在 harness active tasks（**必须在等交付之前**，该列表排除已 `package_delivered`）→ poll confirm 返回的**具体**新 package id 至 `revision>=1` 且有 `currentVersionId` → 断言 `lineage.reusedFromPackageId` 命中重生前 parent、某 version 带本页 regenerationReceipt（`toRevision=fromRevision+1`, `imagePoints=1`）。缺陷修复后去掉 `fixme` 即成回归门。 |
+| 2 | regenerate on a delivered note fails honestly and builds nothing | 绿 | 覆盖 AC ③，**零注入**：delivered 态点击重生 → 诚实文案「暂时无法读取当前图文版本，请刷新后重试。」（并断言不是 prepare 层那句，两层文案不得混同）；全程无 `result_adjust_prepare`/`result_adjust` 离开浏览器；无确认卡与 slot；目标行仍 `ready`/「已配图」、按钮可重试；package 列表不变。早期草稿曾 strip `creationExecutionSnapshot` 制造该失败，已**删除**——不 strip 也是同一句文案，注入什么都没隔离出来，留着就是「为错误的理由而绿」。 |
 
 ## P2 图文对象工作区、AI 封面与爆款复刻合入门（#320–#325）
 
