@@ -405,3 +405,43 @@ test('template design doc is retired and points at the root design system', () =
   assert.match(doc, /美业内容2\/DESIGN\.md/u);
   assert.match(doc, /Do not treat this file as authoritative/u);
 });
+
+test('the landing quotes the credit model and owns no second set of plan numbers', () => {
+  // #336 AC2. RETIRED-METERING: the landing used to sell 「按条数试用额度」 and
+  // 「文案 / 图片 / 视频分开计」 while /pricing sold credits — two billing models,
+  // and whichever page they read second contradicted the first.
+  //
+  // The fix is structural rather than a wording pass. The landing keeps its own
+  // launch lineup (D-143 named the tiers 初级/中级/终身版 and the user ratified
+  // the 上线特惠 framing), but it may no longer carry a *quantity*: not a credit
+  // grant, not an output count, not a tier ceiling. The only number on it is the
+  // paid month price, and that comes from the helper /pricing prices from. A
+  // page with no numbers of its own has nothing to drift.
+  const zh = JSON.parse(read('project.inlang/messages/zh.json'));
+  const en = JSON.parse(read('project.inlang/messages/en.json'));
+  const landingPricingKeys = Object.keys(zh).filter((key) =>
+    key.startsWith('landing_pricing_')
+  );
+  assert.ok(landingPricingKeys.length > 0);
+
+  for (const key of landingPricingKeys) {
+    // RETIRED-METERING: the retired unit, pinned as absent.
+    assert.doesNotMatch(zh[key], /额度|条数|三桶/u, key);
+    assert.doesNotMatch(en[key], /allowance|per-piece|three bucket/iu, key);
+    assert.doesNotMatch(
+      zh[key],
+      /\d/u,
+      `${key} prints a number the landing would have to keep in step with /pricing`
+    );
+    assert.doesNotMatch(en[key], /\d/u, key);
+  }
+
+  // The price is the single exception, and it is not written here: it arrives
+  // through the shared mapping and carries the handle the browser suite reads
+  // off both pages.
+  const home = read(HOME_PRICING);
+  assert.match(home, /growthMonthlyPriceLabel\(\)/u);
+  assert.match(home, /PUBLIC_PAID_MONTHLY_PRICE_TESTID/u);
+  // …and the landing names /pricing as the authority for everything else.
+  assert.match(home, /Routes\.Pricing/u);
+});
