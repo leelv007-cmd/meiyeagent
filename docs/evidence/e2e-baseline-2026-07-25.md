@@ -289,3 +289,16 @@ demoted spec would not add any.
   originating Job", a row the ContentPackage seam does not write, and planted a
   Job with no `contract`, which took the Result page to its error boundary — and
   then surfaced the unbind recorded in its own section above.
+
+## Must-run membership rulings (2026-08-06, xcheck wave closeout)
+
+Two specs were candidates for the required gate during the #329 remediation
+wave. Ruled at closeout, per the coordinator with the user's delegation:
+
+- `today-recommendation-industry.spec.ts` — **not in the must-run set.** The
+  lane measured its red-form cost at +5.3m per run; the industry→recommendation
+  chain is watched at the unit layer (today-recommendation tests, 94/94 at
+  merge). Browser coverage remains available on demand.
+- `note-page-regeneration-journey.spec.ts` — **not in the must-run set for
+  now.** It carries a pre-wave baseline biome red in an untouched section;
+  membership is deferred until #355 clears the baseline reds, then re-judged.
