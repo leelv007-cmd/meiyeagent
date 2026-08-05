@@ -184,17 +184,22 @@ function structuredCreativeIntent(
         })
         .join('\n')}`
     : undefined;
+  const groundingStore = groundingSnapshot?.store;
   const grounding = groundingSnapshot
     ? [
         '已确认 Product grounding（不得使用此快照外的商家事实；不得编造价格、折扣或授权）：',
-        `- 门店：${groundingSnapshot.store.name}｜${groundingSnapshot.store.city}${groundingSnapshot.store.district}｜${groundingSnapshot.store.address}`,
-        `- 预约：${groundingSnapshot.store.booking}`,
-        `- 品牌语气：${groundingSnapshot.store.brandVoice}`,
-        `- 禁止表达：${groundingSnapshot.store.prohibitions.join('、') || '无'}`,
-        ...groundingSnapshot.store.projects.map(
-          (project) =>
-            `- 已确认项目：${project.name}（ID ${project.id}，价格 ${project.price}，时长 ${project.durationMinutes} 分钟）`
-        ),
+        ...(groundingStore
+          ? [
+              `- 门店：${groundingStore.name}｜${groundingStore.city}${groundingStore.district}｜${groundingStore.address}`,
+              `- 预约：${groundingStore.booking}`,
+              `- 品牌语气：${groundingStore.brandVoice}`,
+              `- 禁止表达：${groundingStore.prohibitions.join('、') || '无'}`,
+              ...groundingStore.projects.map(
+                (project) =>
+                  `- 已确认项目：${project.name}（ID ${project.id}，价格 ${project.price}，时长 ${project.durationMinutes} 分钟）`
+              ),
+            ]
+          : ['- 门店：本次自由创作未绑定已确认门店，不得写入任何门店事实。']),
         ...(groundingSnapshot.qualification
           ? [
               `- 已确认资质：admitted=${groundingSnapshot.qualification.admitted}，treatmentScope=${groundingSnapshot.qualification.treatmentScope ?? '未提供'}`,

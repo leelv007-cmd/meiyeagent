@@ -5,6 +5,7 @@ import {
   type ContentPackageChildRun,
   type ContentPackageKind,
   type ContentPackageSource,
+  type CreationMode,
   type ImageTextNoteVersion,
   type QuickEditIntent,
   type ResultAdoptCommand,
@@ -3919,6 +3920,8 @@ export class OperationsApplicationService {
     context: OperationContext,
     input: {
       contentModules?: CreativeContentModuleId[];
+      /** Absent reads as `customized`, keeping full grounding (D-175). */
+      creationMode?: CreationMode;
       intent: string;
       mode: 'agent' | 'direct';
       operation?: CreativeOperation;
@@ -4025,6 +4028,7 @@ export class OperationsApplicationService {
       const work: CreativeWork = {
         contentModules,
         createdAt: timestamp,
+        ...(input.creationMode ? { creationMode: input.creationMode } : {}),
         ...(input.derivedFrom ? { derivedFrom: input.derivedFrom } : {}),
         id: this.id(),
         ...(input.briefConfirmationId
@@ -4248,6 +4252,7 @@ export class OperationsApplicationService {
     return this.createCreativeWork(context, {
       derivedFrom: source.id,
       contentModules: input.contentModules ?? source.contentModules,
+      ...(source.creationMode ? { creationMode: source.creationMode } : {}),
       intent: input.intent,
       mode: source.mode,
       operation: source.operation,
@@ -4828,7 +4833,8 @@ export class OperationsApplicationService {
         .map((reference) => reference.id);
       const resolution = await this.dependencies.groundingResolver.resolve(
         context.workspaceId,
-        sourceAssetIds
+        sourceAssetIds,
+        snapshotWork.creationMode
       );
       if (resolution.status === 'missing') {
         throw new OperationsError(
@@ -5677,7 +5683,7 @@ export class OperationsApplicationService {
           ...(copyJob.contract.watermarkEnabled
             ? {
                 watermarkText:
-                  copyJob.groundingSnapshot?.store.name.trim() || '品牌内容',
+                  copyJob.groundingSnapshot?.store?.name.trim() || '品牌内容',
               }
             : {}),
         },

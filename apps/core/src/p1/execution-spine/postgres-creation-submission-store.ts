@@ -210,6 +210,7 @@ export class PostgresCreationSubmissionPersistence implements CreationSubmission
         JSON.stringify({
           contentModules: snapshot.contentModules,
           createdAt: timestamp,
+          creationMode: snapshot.creationMode,
           id: submission.work.id,
           intent: snapshot.intent.text,
           mode: "agent",

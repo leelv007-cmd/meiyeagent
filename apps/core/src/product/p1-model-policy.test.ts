@@ -163,7 +163,7 @@ test('creative grounding exposes only confirmed store facts and requested real a
   assert.equal(ready.status, 'ready');
   if (ready.status !== 'ready') return;
   assert.deepEqual(
-    ready.snapshot.store.projects.map((project) => project.id),
+    ready.snapshot.store?.projects.map((project) => project.id),
     ['project-confirmed']
   );
   assert.deepEqual(ready.snapshot.assets, [
@@ -217,5 +217,147 @@ test('creative grounding exposes only confirmed store facts and requested real a
       missing: ['real_authorized_asset'],
       status: 'missing',
     }
+  );
+});
+
+function groundingResolverFor(product: unknown) {
+  return new ProductCreativeGroundingResolver(
+    {
+      async load() {
+        return structuredClone(product);
+      },
+    } as unknown as ProductRepository,
+    () => new Date('2026-08-06T08:00:00.000Z')
+  );
+}
+
+const dayZeroAssets = [
+  {
+    authorizationStatus: 'authorized',
+    consentScope: 'public_marketing',
+    containsPerson: false,
+    containsSensitiveData: false,
+    id: 'asset-real-day0',
+    minorStatus: 'none',
+    rightsEvidence: 'recorded',
+    sourceType: 'real',
+    tags: [],
+  },
+  {
+    authorizationStatus: 'authorized',
+    consentScope: 'public_marketing',
+    containsPerson: false,
+    containsSensitiveData: false,
+    id: 'asset-ai-day0',
+    minorStatus: 'none',
+    rightsEvidence: 'recorded',
+    sourceType: 'ai_generated',
+    tags: [],
+  },
+];
+
+test('D-175: free creation is grounded without a confirmed store or project', async () => {
+  const resolver = groundingResolverFor({ assets: dayZeroAssets });
+
+  // Day-0 merchant: no store row at all.
+  const customized = await resolver.resolve('workspace-day0', []);
+  assert.deepEqual(customized, {
+    missing: ['confirmed_store', 'confirmed_project'],
+    status: 'missing',
+  });
+
+  const free = await resolver.resolve('workspace-day0', [], 'free');
+  assert.equal(free.status, 'ready');
+  if (free.status !== 'ready') return;
+  assert.equal(free.snapshot.store, undefined);
+  assert.deepEqual(free.snapshot.assets, []);
+
+  // The rights gate is a compliance floor: free creation keeps it.
+  assert.deepEqual(
+    await resolver.resolve('workspace-day0', ['asset-ai-day0'], 'free'),
+    { missing: ['real_authorized_asset'], status: 'missing' }
+  );
+  const freeWithAsset = await resolver.resolve(
+    'workspace-day0',
+    ['asset-real-day0'],
+    'free'
+  );
+  assert.equal(freeWithAsset.status, 'ready');
+  if (freeWithAsset.status === 'ready') {
+    assert.deepEqual(
+      freeWithAsset.snapshot.assets.map((asset) => asset.id),
+      ['asset-real-day0']
+    );
+  }
+});
+
+test('D-175: free creation keeps the regulated qualification gate', async () => {
+  const regulatedStore = {
+    address: '1 号',
+    booking: '预约到店',
+    brandVoice: '克制',
+    city: '上海',
+    district: '静安区',
+    name: '未确认医美门店',
+    projects: [],
+    prohibitions: [],
+    regulated: true,
+  };
+
+  const unqualified = groundingResolverFor({
+    assets: dayZeroAssets,
+    store: regulatedStore,
+  });
+  // Store facts waived, regulated qualification still refused.
+  assert.deepEqual(await unqualified.resolve('workspace-b', [], 'free'), {
+    missing: ['confirmed_qualification'],
+    status: 'missing',
+  });
+
+  const qualified = groundingResolverFor({
+    assets: dayZeroAssets,
+    qualification: { admitted: true, confirmed: true },
+    store: regulatedStore,
+  });
+  const ready = await qualified.resolve('workspace-b', [], 'free');
+  assert.equal(ready.status, 'ready');
+  if (ready.status !== 'ready') return;
+  // The store was never confirmed, so it contributes no facts to the snapshot.
+  assert.equal(ready.snapshot.store, undefined);
+  assert.equal(ready.snapshot.qualification?.confirmed, true);
+});
+
+test('D-175: free creation still reads a confirmed store when the merchant has one', async () => {
+  const resolver = groundingResolverFor({
+    assets: dayZeroAssets,
+    store: {
+      address: '88 号',
+      booking: '预约到店',
+      brandVoice: '真诚',
+      city: '成都',
+      confirmedAt: '2026-08-05T07:00:00.000Z',
+      district: '锦江区',
+      name: '春日美甲',
+      projects: [
+        {
+          confirmed: true,
+          durationMinutes: 90,
+          id: 'project-confirmed',
+          name: '纯色美甲',
+          price: 168,
+        },
+      ],
+      prohibitions: [],
+      regulated: false,
+    },
+  });
+
+  const free = await resolver.resolve('workspace-c', [], 'free');
+  assert.equal(free.status, 'ready');
+  if (free.status !== 'ready') return;
+  assert.equal(free.snapshot.store?.name, '春日美甲');
+  assert.deepEqual(
+    free.snapshot.store?.projects.map((project) => project.id),
+    ['project-confirmed']
   );
 });

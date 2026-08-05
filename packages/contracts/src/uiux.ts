@@ -121,7 +121,8 @@ export type CreativeBriefUpdate =
 
 export interface CreativeGroundingSnapshot {
   capturedAt: string;
-  store: {
+  /** Absent for free creation without a confirmed store (D-175). */
+  store?: {
     name: string;
     city: string;
     district: string;

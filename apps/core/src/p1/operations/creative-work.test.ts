@@ -16,7 +16,9 @@ import {
   type OperationContext,
 } from './index.js';
 import type { BillingLifecyclePort } from '../product-billing/lifecycle-port.js';
-import type { ProductQuoteSnapshot } from '@meiye/contracts';
+import { ProductCreativeGroundingResolver } from '../../product/p1-model-policy.js';
+import type { ProductRepository } from '../../product/repository.js';
+import type { ProductQuoteSnapshot, ProductState } from '@meiye/contracts';
 
 const owner: OperationContext = {
   actor: 'owner',
@@ -1050,5 +1052,171 @@ describe('creative work lifecycle', () => {
     assert.equal(retry.job.productUsageQuantity, 1);
     assert.equal(unknownWork.derivedFrom, work.id);
     assert.equal(failedWork.derivedFrom, work.id);
+  });
+});
+
+/**
+ * D-175. The merchant here is Day-0: no store row, so nothing is confirmed and
+ * no project exists. These run the real Product resolver rather than a stub so
+ * the mode split is proved end to end, from the Work through `prepareCreativeJob`
+ * into the grounding snapshot the executor is handed.
+ */
+describe('free creation grounding', () => {
+  const dayZeroProduct = {
+    assets: [
+      {
+        authorizationStatus: 'authorized',
+        consentScope: 'public_marketing',
+        containsPerson: false,
+        containsSensitiveData: false,
+        id: 'asset-authorized',
+        minorStatus: 'none',
+        rightsEvidence: 'recorded',
+        sourceType: 'real',
+        tags: [],
+      },
+      {
+        authorizationStatus: 'authorized',
+        consentScope: 'internal_only',
+        containsPerson: false,
+        containsSensitiveData: false,
+        id: 'asset-internal-only',
+        minorStatus: 'none',
+        rightsEvidence: 'recorded',
+        sourceType: 'real',
+        tags: [],
+      },
+    ],
+  } as unknown as ProductState;
+
+  function dayZeroSetup() {
+    return setup(
+      new RecordedCreationExecutor(),
+      { async resolve() { return []; } },
+      new ProductCreativeGroundingResolver({
+        async load() {
+          return structuredClone(dayZeroProduct);
+        },
+      } as unknown as ProductRepository),
+    );
+  }
+
+  async function groundingRefusal(run: () => Promise<unknown>) {
+    let captured: OperationsError | undefined;
+    await assert.rejects(run, (error: unknown) => {
+      assert.ok(error instanceof OperationsError);
+      captured = error;
+      return true;
+    });
+    assert.equal(captured!.code, 'CREATIVE_GROUNDING_INCOMPLETE');
+    assert.equal(captured!.status, 409);
+    return (captured!.details as { missing: string[] }).missing;
+  }
+
+  it('delivers for a Day-0 merchant who has no confirmed store or project', async () => {
+    const { executor, service } = dayZeroSetup();
+    const work = await service.createCreativeWork(owner, {
+      creationMode: 'free',
+      intent: '写三条立秋话题的内容',
+      mode: 'direct',
+      operation: 'copy.generate',
+      sessionId: 'composer:day-zero-free',
+      sourceReferences: [],
+    });
+    assert.equal(work.creationMode, 'free');
+
+    const submitted = await service.submitCreativeWork(
+      owner,
+      work.id,
+      contract,
+      'day-zero-free-submit',
+    );
+
+    assert.equal(submitted.job.status, 'completed');
+    // Delivered: the three candidates are readable from the workbench the
+    // results surface reads, not merely returned by the executor.
+    const workbench = await service.getCreativeWorkbench(owner);
+    assert.equal(
+      workbench.assets.filter((asset) => asset.workId === work.id).length,
+      3,
+    );
+    // Grounded, but on nothing the merchant has not confirmed.
+    const snapshot = executor.groundingSnapshots.at(-1);
+    assert.ok(snapshot);
+    assert.equal(snapshot.store, undefined);
+    assert.deepEqual(snapshot.assets, []);
+  });
+
+  it('refuses the same Day-0 submission when the Work is customized', async () => {
+    const { service } = dayZeroSetup();
+    const work = await service.createCreativeWork(owner, {
+      creationMode: 'customized',
+      intent: '写三条立秋话题的内容',
+      mode: 'direct',
+      operation: 'copy.generate',
+      sessionId: 'composer:day-zero-customized',
+      sourceReferences: [],
+    });
+
+    assert.deepEqual(
+      await groundingRefusal(() =>
+        service.submitCreativeWork(
+          owner,
+          work.id,
+          contract,
+          'day-zero-customized-submit',
+        ),
+      ),
+      ['confirmed_store', 'confirmed_project'],
+    );
+  });
+
+  it('keeps the asset rights floor for free creation', async () => {
+    const { service } = dayZeroSetup();
+    const work = await service.createCreativeWork(owner, {
+      creationMode: 'free',
+      intent: '用这张内部素材写一条内容',
+      mode: 'direct',
+      operation: 'copy.generate',
+      sessionId: 'composer:day-zero-free-rights',
+      sourceReferences: [{ id: 'asset-internal-only', kind: 'asset' }],
+    });
+
+    assert.deepEqual(
+      await groundingRefusal(() =>
+        service.submitCreativeWork(
+          owner,
+          work.id,
+          contract,
+          'day-zero-free-rights-submit',
+        ),
+      ),
+      ['real_authorized_asset'],
+    );
+  });
+
+  it('carries free creation through 「基于此再创作」 into the next round', async () => {
+    const { service } = dayZeroSetup();
+    const source = await service.createCreativeWork(owner, {
+      creationMode: 'free',
+      intent: '写三条立秋话题的内容',
+      mode: 'direct',
+      operation: 'copy.generate',
+      sessionId: 'composer:day-zero-free-derive',
+      sourceReferences: [],
+    });
+    const derived = await service.deriveCreativeWork(owner, source.id, {
+      intent: '写三条立秋话题的内容\n\n调整要求：更口语',
+      sessionId: 'composer:day-zero-free-derive',
+    });
+
+    assert.equal(derived.creationMode, 'free');
+    const submitted = await service.submitCreativeWork(
+      owner,
+      derived.id,
+      contract,
+      'day-zero-free-derive-submit',
+    );
+    assert.equal(submitted.job.status, 'completed');
   });
 });

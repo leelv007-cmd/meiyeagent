@@ -8,7 +8,10 @@ import type {
   CreativeGroundingResolverPort,
   CreativeGroundingResolution,
 } from '../p1/operations/index.js';
-import { hasCurrentRestrictedAssetAuthorization } from '@meiye/contracts';
+import {
+  hasCurrentRestrictedAssetAuthorization,
+  type CreationMode,
+} from '@meiye/contracts';
 import type { PlanAllowances, ProductPlanConfig } from './plans.js';
 import type { ProductRepository } from './repository.js';
 
@@ -39,7 +42,8 @@ export class ProductCreativeGroundingResolver
 
   async resolve(
     workspaceId: string,
-    sourceAssetIds: string[]
+    sourceAssetIds: string[],
+    creationMode: CreationMode = 'customized'
   ): Promise<CreativeGroundingResolution> {
     const state = await this.repository.load(workspaceId);
     const store = state?.store;
@@ -66,8 +70,15 @@ export class ProductCreativeGroundingResolver
       | 'confirmed_qualification'
       | 'real_authorized_asset'
     >();
-    if (!store?.confirmedAt) missing.add('confirmed_store');
-    if (confirmedProjects.length === 0) missing.add('confirmed_project');
+    // D-175: free creation carries no operating context, so store and project
+    // facts are waived. Asset rights and regulated qualification are compliance
+    // floors and stay enforced in both modes.
+    const storeFactsRequired = creationMode !== 'free';
+    const storeConfirmed = Boolean(store?.confirmedAt);
+    if (storeFactsRequired) {
+      if (!storeConfirmed) missing.add('confirmed_store');
+      if (confirmedProjects.length === 0) missing.add('confirmed_project');
+    }
     if (store?.regulated && !state?.qualification?.confirmed) {
       missing.add('confirmed_qualification');
     }
@@ -77,7 +88,7 @@ export class ProductCreativeGroundingResolver
     ) {
       missing.add('real_authorized_asset');
     }
-    if (missing.size > 0 || !store?.confirmedAt) {
+    if (missing.size > 0 || (storeFactsRequired && !storeConfirmed)) {
       return { missing: [...missing], status: 'missing' };
     }
 
@@ -127,23 +138,27 @@ export class ProductCreativeGroundingResolver
         })),
         capturedAt: this.clock().toISOString(),
         ...(qualification ? { qualification } : {}),
-        store: {
-          address: store.address,
-          booking: store.booking,
-          brandVoice: store.brandVoice,
-          city: store.city,
-          confirmedAt: store.confirmedAt,
-          district: store.district,
-          name: store.name,
-          prohibitions: [...store.prohibitions],
-          projects: confirmedProjects.map((project) => ({
-            durationMinutes: project.durationMinutes,
-            id: project.id,
-            name: project.name,
-            price: project.price,
-          })),
-          regulated: store.regulated,
-        },
+        ...(store?.confirmedAt
+          ? {
+              store: {
+                address: store.address,
+                booking: store.booking,
+                brandVoice: store.brandVoice,
+                city: store.city,
+                confirmedAt: store.confirmedAt,
+                district: store.district,
+                name: store.name,
+                prohibitions: [...store.prohibitions],
+                projects: confirmedProjects.map((project) => ({
+                  durationMinutes: project.durationMinutes,
+                  id: project.id,
+                  name: project.name,
+                  price: project.price,
+                })),
+                regulated: store.regulated,
+              },
+            }
+          : {}),
       },
       status: 'ready',
     };

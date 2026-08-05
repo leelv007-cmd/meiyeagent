@@ -1,5 +1,6 @@
 import type {
   ContentPackage,
+  CreationMode,
   CreativeGenerationApprovalReceipt,
   PromotionalMaterialReceipt,
   PromotionalMaterialSpec,
@@ -584,7 +585,8 @@ export type CreativeBriefUpdate =
 
 export interface CreativeGroundingSnapshot {
   capturedAt: string;
-  store: {
+  /** Absent for free creation without a confirmed store (D-175). */
+  store?: {
     name: string;
     city: string;
     district: string;
@@ -641,6 +643,11 @@ export interface CreativeWork {
   sessionId: string;
   intent: string;
   mode: 'agent' | 'direct';
+  /**
+   * Which Composer entry produced this Work. Missing on historical rows, which
+   * read as `customized` so their grounding stays unchanged (D-175).
+   */
+  creationMode?: CreationMode;
   /** Missing only on historical rows created before composer mode persistence. */
   operation?: CreativeOperation;
   sourceReferences: CreativeSourceReference[];
@@ -1180,7 +1187,9 @@ export interface AssetDataClassResolverPort {
 export interface CreativeGroundingResolverPort {
   resolve(
     workspaceId: string,
-    sourceAssetIds: string[]
+    sourceAssetIds: string[],
+    /** Defaults to the full `customized` grounding when absent (D-175). */
+    creationMode?: CreationMode
   ): Promise<CreativeGroundingResolution>;
 }
 
