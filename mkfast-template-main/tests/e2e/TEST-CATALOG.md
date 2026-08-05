@@ -781,9 +781,9 @@ ledger state, and the redemption is a real code an admin recorded.
   number to edit — the public page reads the same `plan.credits.*` revision the
   grant reads (D-143 单一商品目录 / D-172).
 
-## 两页套餐价同源（#242，S3 转入）
+## 公开价可追同源（#242 / #346，S3 转入）
 
-**File:** `specs/public-plan-price-source.spec.ts` | **Priority:** P0 | **Tickets:** #242 / D-143
+**File:** `specs/public-plan-price-source.spec.ts` | **Priority:** P0 | **Tickets:** #242 / #346 / D-143
 
 我们卖给商家的套餐月价（不是商家自己的服务价）。The landing once said ¥399
 while `/pricing` said ¥499. S3 routed both pages through one helper and guarded
@@ -795,12 +795,29 @@ can reach.
 
 Both pages carry `data-testid="public-paid-monthly-price"` on the paid tier's
 month price, exported as `PUBLIC_PAID_MONTHLY_PRICE_TESTID` from the module
-that owns the price.
+that owns the price. `/pricing` hangs it on the growth card and only under the
+monthly cycle — under the yearly cycle the number beside it is a year's price.
+
+**What this file asks changed in #346.** It used to ask whether both pages
+print the same number. #310 moved `/pricing` onto the Core published catalog,
+so the two pages no longer share a source and the guard sat reading zero
+elements on `/pricing`, passing nothing, for weeks. Same-number is also the
+weaker question: two hand-synced literals agree perfectly, which is the state
+the product is actually in (under a Waffo runtime both read HK$522, out of two
+places kept in step by hand). D-143's requirement is that every price a visitor
+reads is traceable to one declared source, so that is what is asked now — per
+surface, plus the anti-crosstalk leg that a same-number assertion cannot reach.
+
+**Known condition, named not blessed:** the landing quotes
+`PUBLIC_DISPLAY_PRICE_CENTS` (D-156 pilot copy, CNY on a non-Waffo runtime)
+while `/pricing` quotes the governed Core catalog (HKD). Whether the product
+should keep two pricing assets is a pricing decision filed for the user; this
+file holds each surface to its own source until that lands.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | The landing and /pricing quote the same 中级 month price | Open `/` and `/pricing`, take the price text off the testid on each (requiring exactly one per page), require each to read as `¥<number>` — so "both say 敬请期待" cannot pass as agreement — and require the two strings to be identical. |
-| 2 | Moving the source moves both pages together | Read both pages' price off the suite's own stack, then start a second copy of the web app from a different `VITE_PUBLIC_QUOTED_MONTHLY_CENTS` (the override `src/lib/public-display-price.ts` reads so this suite can move the quoted copy — D-156; not a provisioning item and not a billing knob), and require both pages on it to quote the moved value and neither to quote the old one. Agreement at a single value is equally consistent with both pages hard-coding the same literal; only the move tells them apart. |
+| 1 | Each public surface quotes the paid month exactly once, and a real price | Open `/` and `/pricing`, take the price text off the testid on each requiring **exactly one per page** (a second copy on one page is the same drift as a second copy across two, one level down), and require each to read as a currency mark plus an amount — so "both say 敬请期待" cannot pass as agreement. |
+| 2 | Moving a source moves the surface that declares it, and only that one | Read both prices off the suite's own stack, then move each source in turn against a second copy of the web app. **Display price:** start it from a different `VITE_PUBLIC_QUOTED_MONTHLY_CENTS` (the override `src/lib/public-display-price.ts` reads so this suite can move the quoted copy — D-156; not a provisioning item, not a billing knob); the landing must quote the moved value and **`/pricing` must not move**. **Published catalog:** point that app's `CORE_SERVICE_URL` at a stub Core publishing a different growth monthly price; `/pricing` must quote the moved value and **the landing must not move** — its number is compiled in and never asks Core. The two "must not move" legs are the anti-crosstalk half: they catch a surface that has started reading the other's source, which is the same defect as the pages disagreeing, with the numbers happening to line up. |
 
 ## S5 成品动作面（#239 / W07+W08+W09）
 

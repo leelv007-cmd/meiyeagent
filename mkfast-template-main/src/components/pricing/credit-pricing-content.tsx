@@ -37,7 +37,10 @@ import {
 } from '@/components/pricing/credit-pricing-model';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { websiteConfig } from '@/config/website';
-import { findSubscriptionPrice } from '@/lib/price-plan';
+import {
+  findSubscriptionPrice,
+  PUBLIC_PAID_MONTHLY_PRICE_TESTID,
+} from '@/lib/price-plan';
 import { Routes } from '@/lib/routes';
 import { cn } from '@/lib/utils';
 import { getLocale } from '@/locale/paraglide/runtime';
@@ -281,6 +284,28 @@ function PlanCard({
                   locale
                 )}
           </p>
+          {/*
+            The same handle the landing hangs on its quoted month price (#242),
+            so a browser can read "the paid tier's monthly price" off both
+            public surfaces without knowing how either lays it out.
+
+            Conditional on purpose. It belongs to one plan — the self-serve
+            paid tier the landing quotes — and only while this card is showing
+            a monthly figure; under the yearly cycle the number beside it is a
+            year's price, and answering "the month price" with it would be the
+            kind of quiet mismatch this handle exists to catch. #310 dropped
+            the handle when it moved these cards onto the published catalog,
+            which left the cross-surface guard reading zero elements and
+            passing nothing (#346).
+          */}
+          {plan.id === 'growth' && cycle === 'monthly' ? (
+            <span
+              className="sr-only"
+              data-testid={PUBLIC_PAID_MONTHLY_PRICE_TESTID}
+            >
+              {formatPublishedPrice(priced.amountMicros, plan.currency, locale)}
+            </span>
+          ) : null}
           {showOriginal ? (
             <p
               className="text-sm text-muted-foreground line-through tabular-nums"
