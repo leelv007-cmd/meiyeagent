@@ -3047,6 +3047,7 @@ export function ComposerHome({
               lensState.phase === 'frozen'
             }
             generationParams={generationParams}
+            generationParamsEnabled={generationParamsEnabled}
             imageOperationSlot={
               explicitImageOperation ? (
                 <ComposerImageOperationPicker

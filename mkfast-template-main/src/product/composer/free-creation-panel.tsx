@@ -37,6 +37,7 @@ export function FreeCreationPanel({
   className,
   disabled,
   generationParams,
+  generationParamsEnabled,
   imageOperationSlot,
   lensId,
   models,
@@ -50,6 +51,12 @@ export function FreeCreationPanel({
   className?: string;
   disabled: boolean;
   generationParams: ComposerGenerationParamsState;
+  /**
+   * P2-09 belongs to the XHS image-text note route. Home resolves the same
+   * `isComposerGenerationParamsSupported` probe it signs the submission with,
+   * so the control cannot be shown on a route that would drop its value.
+   */
+  generationParamsEnabled: boolean;
   imageOperationSlot?: React.ReactNode;
   lensId: CreationLensId | null;
   models: CatalogModelView[];
@@ -130,12 +137,14 @@ export function FreeCreationPanel({
           </output>
         ) : null}
         {imageOperationSlot}
-        <ComposerGenerationParamsPanel
-          creationMode="free"
-          disabled={disabled}
-          onChange={onGenerationParamsChange}
-          state={generationParams}
-        />
+        {generationParamsEnabled ? (
+          <ComposerGenerationParamsPanel
+            creationMode="free"
+            disabled={disabled}
+            onChange={onGenerationParamsChange}
+            state={generationParams}
+          />
+        ) : null}
       </div>
     </section>
   );

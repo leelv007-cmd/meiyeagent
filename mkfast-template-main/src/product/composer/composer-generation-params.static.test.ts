@@ -19,7 +19,15 @@ const client = readFileSync(
 
 test('ComposerHome signs generation params before quoting and reuses that payload on submit', () => {
   // Panel mount lives on the free-creation surface (extracted in 7fe159cd).
-  assert.match(freePanel, /ComposerGenerationParamsPanel/);
+  // It has to stay behind the route gate: an ungated mount ships a control the
+  // submission side then drops, which is the #343 regression.
+  assert.equal(freePanel.match(/<ComposerGenerationParamsPanel/gu)?.length, 1);
+  assert.match(
+    freePanel,
+    /\{generationParamsEnabled \? \(\s*\n\s*<ComposerGenerationParamsPanel/u
+  );
+  // Home owns the probe and hands the panel the same boolean it signs with.
+  assert.match(home, /generationParamsEnabled=\{generationParamsEnabled\}/);
   // Signing still happens on home before quoteInput is built.
   assert.match(home, /buildSubmissionGenerationParams/);
   assert.match(home, /isComposerGenerationParamsSupported/);

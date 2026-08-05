@@ -40,7 +40,11 @@ const models: CatalogModelView[] = [
   },
 ];
 
-function ModeHarness() {
+function ModeHarness({
+  generationParamsEnabled = true,
+}: {
+  generationParamsEnabled?: boolean;
+}) {
   const [mode, setMode] = useState<ComposerCreationMode>('customized');
   const [lensId, setLensId] = useState<CreationLensId | null>(null);
   const [modelId, setModelId] = useState<string | null>(null);
@@ -56,6 +60,7 @@ function ModeHarness() {
           catalogLoading={false}
           disabled={false}
           generationParams={generationParams}
+          generationParamsEnabled={generationParamsEnabled}
           lensId={lensId}
           models={models}
           onGenerationParamsChange={setGenerationParams}
@@ -88,6 +93,25 @@ describe('D-103 creation mode surface', () => {
     ).toBeVisible();
   });
 
+  // P2-09 (#343): the free panel may only offer role/thinking on the route the
+  // submission signs them for, otherwise the merchant sets a value that is
+  // silently dropped.
+  it('mounts generation params only while the route supports them', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <ModeHarness generationParamsEnabled={false} />
+    );
+
+    await user.click(screen.getByTestId('composer-creation-mode-free'));
+
+    expect(screen.getByTestId('composer-free-creation-panel')).toBeVisible();
+    expect(screen.queryByTestId('composer-generation-params')).toBeNull();
+
+    rerender(<ModeHarness generationParamsEnabled />);
+
+    expect(screen.getByTestId('composer-generation-params')).toBeVisible();
+  });
+
   it('reports the model explicitly selected for the free run', async () => {
     const onModelChange = vi.fn();
     const user = userEvent.setup();
@@ -97,6 +121,7 @@ describe('D-103 creation mode surface', () => {
         catalogLoading={false}
         disabled={false}
         generationParams={initialGenerationParamsState()}
+        generationParamsEnabled={false}
         lensId="copy"
         models={models}
         onGenerationParamsChange={() => undefined}
