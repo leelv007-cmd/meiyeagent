@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 import {
   rendererAckNeedsRefetch,
   rendererAckRetryDelay,
@@ -146,50 +147,97 @@ export function AskMerchantGroupCard({
       <div className="space-y-4">
         {request.questions.map((question) => {
           const selected = results[question.itemId];
+          const comparesStyleOptions =
+            question.itemId === 'note_style' &&
+            (question.options?.length ?? 0) > 0;
+          const chooseOption = (label: string) => {
+            const result = { kind: 'answer' as const, value: label };
+            setResults((current) => ({
+              ...current,
+              [question.itemId]: result,
+            }));
+            if (submitsOptionImmediately) {
+              void onSubmit({
+                kind: 'answer',
+                items: [{ itemId: question.itemId, result }],
+              });
+            }
+          };
           return (
             <fieldset className="space-y-2" key={question.itemId}>
               <legend className="text-foreground text-sm">
                 {question.question}
               </legend>
               {question.options ? (
-                <div className="flex flex-wrap gap-2">
-                  {question.options.map((option) => (
-                    <Button
-                      aria-pressed={
+                comparesStyleOptions ? (
+                  <div
+                    className="grid gap-3 sm:grid-cols-2"
+                    data-option-count={question.options.length}
+                    data-testid="ask-merchant-option-comparison"
+                  >
+                    {question.options.map((option) => {
+                      const isSelected =
                         selected?.kind === 'answer' &&
-                        selected.value === option.label
-                      }
-                      disabled={pending}
-                      key={option.label}
-                      onClick={() => {
-                        const result = {
-                          kind: 'answer' as const,
-                          value: option.label,
-                        };
-                        setResults((current) => ({
-                          ...current,
-                          [question.itemId]: result,
-                        }));
-                        if (submitsOptionImmediately) {
-                          void onSubmit({
-                            kind: 'answer',
-                            items: [{ itemId: question.itemId, result }],
-                          });
+                        selected.value === option.label;
+                      return (
+                        <button
+                          aria-pressed={isSelected}
+                          className={cn(
+                            'flex flex-col gap-2 rounded-2xl border p-3 text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50',
+                            isSelected
+                              ? 'border-primary/40 bg-primary/10 text-foreground'
+                              : 'border-border/60 bg-transparent hover:bg-muted/40'
+                          )}
+                          data-option-label={option.label}
+                          data-testid="ask-merchant-option-card"
+                          disabled={pending}
+                          key={option.label}
+                          onClick={() => chooseOption(option.label)}
+                          type="button"
+                        >
+                          <span
+                            className="font-medium text-sm"
+                            data-testid="ask-merchant-option-label"
+                          >
+                            {option.label}
+                          </span>
+                          {option.description ? (
+                            <span
+                              className="whitespace-pre-line text-sm text-foreground"
+                              data-testid="ask-merchant-option-positioning"
+                            >
+                              {option.description}
+                            </span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {question.options.map((option) => (
+                      <Button
+                        aria-pressed={
+                          selected?.kind === 'answer' &&
+                          selected.value === option.label
                         }
-                      }}
-                      size="sm"
-                      type="button"
-                      variant="secondary"
-                    >
-                      {option.label}
-                      {option.description ? (
-                        <span className="text-muted ml-1 text-xs">
-                          {option.description}
-                        </span>
-                      ) : null}
-                    </Button>
-                  ))}
-                </div>
+                        disabled={pending}
+                        key={option.label}
+                        onClick={() => chooseOption(option.label)}
+                        size="sm"
+                        type="button"
+                        variant="secondary"
+                      >
+                        {option.label}
+                        {option.description ? (
+                          <span className="text-muted ml-1 text-xs">
+                            {option.description}
+                          </span>
+                        ) : null}
+                      </Button>
+                    ))}
+                  </div>
+                )
               ) : null}
               {!question.options || question.freeText?.enabled ? (
                 <Input

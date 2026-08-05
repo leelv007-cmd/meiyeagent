@@ -1,3 +1,4 @@
+import { DEFAULT_NOTE_STYLES } from '@meiye/contracts';
 import {
   expect,
   test,
@@ -739,18 +740,37 @@ test.describe
       const streamPromise = collectWorkflowSse(page, submission.taskId);
 
       // The note_style question rides the interaction channel; the retired
-      // decision endpoint deliberately returns null for it, and the grouped
-      // interaction card renders options by label (the projection carries no
-      // option ids), so the merchant answers by label like a real journey.
-      const practicalOption = page.getByRole('button', {
-        name: /干货科普版/,
-      });
-      const storyOption = page.getByRole('button', {
-        name: /种草叙事版/,
-      });
-      await expect(practicalOption).toBeVisible({ timeout: 90_000 });
-      await expect(storyOption).toBeVisible();
-      await storyOption.click();
+      // decision endpoint deliberately returns null for it. Comparison cards
+      // render full positioning (writingGuide) so the merchant is not half-blind.
+      const comparison = page.getByTestId('ask-merchant-option-comparison');
+      await expect(comparison).toBeVisible({ timeout: 90_000 });
+      await expect(comparison).toHaveAttribute(
+        'data-option-count',
+        String(DEFAULT_NOTE_STYLES.styles.length)
+      );
+
+      const styleCards = page.getByTestId('ask-merchant-option-card');
+      await expect(styleCards).toHaveCount(2);
+      await expect(styleCards.nth(0)).toBeVisible();
+      await expect(styleCards.nth(1)).toBeVisible();
+
+      const positioningTexts: string[] = [];
+      for (const style of DEFAULT_NOTE_STYLES.styles) {
+        const card = page.locator(
+          `[data-testid="ask-merchant-option-card"][data-option-label="${style.name}"]`
+        );
+        await expect(card).toBeVisible();
+        const positioning = card.getByTestId('ask-merchant-option-positioning');
+        await expect(positioning).toHaveText(style.writingGuide);
+        positioningTexts.push(await positioning.innerText());
+      }
+      expect(positioningTexts[0]).not.toBe(positioningTexts[1]);
+
+      await page
+        .locator(
+          '[data-testid="ask-merchant-option-card"][data-option-label="种草叙事版"]'
+        )
+        .click();
 
       // P1-05 / xhs-spec §3.3 / P1-6: note batch pages reserve copy+image and
       // must hold on the in-stream execution_confirm interrupt before selection.

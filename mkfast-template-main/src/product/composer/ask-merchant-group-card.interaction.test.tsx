@@ -305,6 +305,105 @@ it('submits the image-text direction in the option click', async () => {
   ).not.toBeInTheDocument();
 });
 
+const PRACTICAL_GUIDE_POSITIONING =
+  '用清楚、可信、便于收藏的方式解释项目与选择依据。';
+const STORY_RECOMMENDATION_POSITIONING =
+  '从顾客场景切入，以真实体验路径承接预约行动。';
+
+const NOTE_STYLE_REQUEST: AskMerchantQuestionRequest = {
+  ...REQUEST,
+  step: 'brief_compilation',
+  questions: [
+    {
+      itemId: 'note_style',
+      question: '两种图文方向都已准备好，这次想用哪一种？',
+      options: [
+        {
+          label: '干货科普版',
+          description: PRACTICAL_GUIDE_POSITIONING,
+        },
+        {
+          label: '种草叙事版',
+          description: STORY_RECOMMENDATION_POSITIONING,
+        },
+      ],
+      freeText: { enabled: false },
+      fallback: { kind: 'deferred' },
+    },
+  ],
+};
+
+it('renders full note_style positioning side-by-side for comparison', () => {
+  render(
+    <AskMerchantGroupCard
+      onEditingChange={async () => undefined}
+      onRendererReady={async () => undefined}
+      onSubmit={async () => undefined}
+      request={NOTE_STYLE_REQUEST}
+    />
+  );
+
+  const comparison = screen.getByTestId('ask-merchant-option-comparison');
+  expect(comparison).toHaveAttribute('data-option-count', '2');
+
+  const cards = screen.getAllByTestId('ask-merchant-option-card');
+  expect(cards).toHaveLength(2);
+
+  const positionings = screen.getAllByTestId('ask-merchant-option-positioning');
+  expect(positionings).toHaveLength(2);
+  expect(positionings[0]).toHaveTextContent(PRACTICAL_GUIDE_POSITIONING);
+  expect(positionings[1]).toHaveTextContent(STORY_RECOMMENDATION_POSITIONING);
+  expect(positionings[0]?.textContent).toBe(PRACTICAL_GUIDE_POSITIONING);
+  expect(positionings[1]?.textContent).toBe(STORY_RECOMMENDATION_POSITIONING);
+  expect(positionings[0]?.textContent).not.toBe(positionings[1]?.textContent);
+});
+
+it('submits the note_style label immediately when a comparison card is clicked', async () => {
+  const user = userEvent.setup();
+  const onSubmit = vi.fn(async () => undefined);
+  render(
+    <AskMerchantGroupCard
+      onEditingChange={async () => undefined}
+      onRendererReady={async () => undefined}
+      onSubmit={onSubmit}
+      request={NOTE_STYLE_REQUEST}
+    />
+  );
+
+  await user.click(screen.getAllByTestId('ask-merchant-option-card')[0]!);
+
+  expect(onSubmit).toHaveBeenCalledOnce();
+  expect(onSubmit).toHaveBeenCalledWith({
+    kind: 'answer',
+    items: [
+      {
+        itemId: 'note_style',
+        result: { kind: 'answer', value: '干货科普版' },
+      },
+    ],
+  });
+  expect(
+    screen.queryByRole('button', { name: '提交回答' })
+  ).not.toBeInTheDocument();
+});
+
+it('keeps non-note_style options on the button row without comparison layout', () => {
+  render(
+    <AskMerchantGroupCard
+      onEditingChange={async () => undefined}
+      onRendererReady={async () => undefined}
+      onSubmit={async () => undefined}
+      request={REQUEST}
+    />
+  );
+
+  expect(
+    screen.queryByTestId('ask-merchant-option-comparison')
+  ).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /头皮护理/u })).toBeInTheDocument();
+  expect(screen.getByText('说明只给商家看')).toBeInTheDocument();
+});
+
 it('submits one explicit group skip', async () => {
   const user = userEvent.setup();
   const onSubmit = vi.fn(async () => undefined);
