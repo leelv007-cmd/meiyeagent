@@ -593,7 +593,14 @@ export function ResultCenterPage(props: ResultCenterPageProps) {
             <p>
               {shell.workspaceKind === 'video'
                 ? '本次是否产生费用请以账单记录为准；上游结果接收失败，可返回工作台查看运行详情。'
-                : '本次是否产生费用请以账单记录为准；重新生成前会再次确认费用。'}
+                : // #358 / D-176: the confirmation this promises belongs to
+                  // 「重试」, and `retryableRun` only puts that button on screen
+                  // when the run has a Job. Read the same `jobId` the action
+                  // projection reads, so the sentence can never outlive the
+                  // button it describes.
+                  props.facts.jobId
+                  ? '本次是否产生费用请以账单记录为准；重新生成前会再次确认费用。'
+                  : '本次是否产生费用请以账单记录为准；当前页面不会重新发起本次创作。'}
             </p>
             <p data-testid="result-support-reference">
               联系支持时请提供编号{' '}

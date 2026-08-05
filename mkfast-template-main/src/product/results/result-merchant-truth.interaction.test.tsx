@@ -199,7 +199,12 @@ describe('merchant Result Center truth', () => {
     );
 
     const page = screen.getByRole('main');
-    expect(page).toHaveTextContent('本次是否产生费用请以账单记录为准');
+    // Whole sentence, not just the honest half: #358 found the tail promising
+    // a confirmation before a regeneration this page cannot start, and a
+    // prefix-only assertion let it ride.
+    expect(page).toHaveTextContent(
+      '本次是否产生费用请以账单记录为准；当前页面不会重新发起本次创作。'
+    );
     expect(page).not.toHaveTextContent(workId);
     expect(screen.getByTestId('result-support-reference')).toHaveTextContent(
       supportReference
@@ -207,6 +212,53 @@ describe('merchant Result Center truth', () => {
     expect(page).not.toHaveTextContent(workId);
     fireEvent.click(screen.getByTestId('result-back'));
     expect(onBack).toHaveBeenCalledOnce();
+  });
+
+  // #358 / D-176: the same soft promise the Run Detail fee line carried, but
+  // on the always-visible failure banner instead of inside a collapsed panel.
+  // The sentence has to agree with the button next to it, so it splits on the
+  // very fact that decides whether 「重试」 renders at all — `facts.jobId`, via
+  // `retryableRun` in result-shell-model — and not on a second job-shaped
+  // signal the action projection never reads.
+  it('keeps the failed-fee promise only where a Job puts 重试 on screen', () => {
+    render(
+      <ResultCenterPage
+        workId={workId}
+        resolveOutcome={resolvedTarget()}
+        facts={{
+          target: { workId },
+          workspaceKind: 'image',
+          progressState: 'failed',
+          jobId: 'job_5b1f0c3a-77a6-4a1e-9f0c-2c9a1d5e4b88',
+        }}
+        onAction={() => undefined}
+      />
+    );
+
+    expect(screen.getByTestId('result-primary-action')).toHaveTextContent(
+      '重试'
+    );
+    expect(screen.getByRole('main')).toHaveTextContent(
+      '本次是否产生费用请以账单记录为准；重新生成前会再次确认费用。'
+    );
+  });
+
+  it('leaves the video receiver fee line exactly as it was', () => {
+    render(
+      <ResultCenterPage
+        workId={workId}
+        resolveOutcome={resolvedTarget()}
+        facts={{
+          target: { workId },
+          workspaceKind: 'video',
+          progressState: 'failed',
+        }}
+      />
+    );
+
+    expect(screen.getByRole('main')).toHaveTextContent(
+      '本次是否产生费用请以账单记录为准；上游结果接收失败，可返回工作台查看运行详情。'
+    );
   });
 
   it('describes terminal video failure without promising a recovery action', () => {
