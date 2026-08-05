@@ -763,6 +763,11 @@ test.describe('D-126 dashboard home mount', () => {
     // 降级投影腿：真实成品原封不动留在工作台，只把推荐这一路的两个来源
     // （Harness 投影 + ContentPackage 兜底）排空。此时唯一诚实的说法是
     // 「今天的主推荐还没排出来」——不许退回冷启动，也不许是空壳。
+    // Both mocks must answer with a whole envelope. `readP1Envelope` parses
+    // `apiEnvelopeSchema` strictly, so a bare `{ data }` is rejected before the
+    // reader ever sees the payload — and the failure is silent at this seam,
+    // which would empty the recommendation for the wrong reason and let this
+    // leg claim a degradation it never actually exercised.
     await page.route('**/api/core/p1/harness/recommendation', async (route) => {
       await route.fulfill({
         json: {
@@ -772,6 +777,7 @@ test.describe('D-126 dashboard home mount', () => {
             recommendation: null,
             stale: false,
           },
+          meta: { correlationId: 'e2e-d126-empty-recommendation' },
         },
         status: 200,
       });
@@ -782,7 +788,13 @@ test.describe('D-126 dashboard home mount', () => {
         await route.fallback();
         return;
       }
-      await route.fulfill({ json: { data: [] }, status: 200 });
+      await route.fulfill({
+        json: {
+          data: [],
+          meta: { correlationId: 'e2e-d126-empty-packages' },
+        },
+        status: 200,
+      });
     });
     await page.goto('/dashboard');
     const degraded = page.getByTestId('today-recommendation');
