@@ -87,8 +87,15 @@ test('pricing page is reskinned to brand tokens, not the template skin', () => {
 test('landing pricing speaks the launch contract in the landing scope', () => {
   // The LIKEPAGE landing is exempt from PricingShell — it runs the SaaS
   // template's own visual system, scoped under `.meiye-landing`. What it is not
-  // exempt from is the launch pricing contract: 初级 free / 中级 paid /
-  // lifetime disabled.
+  // exempt from is the launch pricing contract.
+  //
+  // That contract changed on 2026-08-05: this test used to pin the landing's
+  // own three tiers (初级 free / 中级 paid / lifetime disabled behind 敬请期待),
+  // which is exactly the second plan vocabulary the user's de-tiering ruling
+  // retired. Naming tiers in two places is what let them fork; the successor
+  // contract is that the landing names none, so nothing is left to keep in
+  // step. What survives is what a visitor still needs: the shared price handle,
+  // the credit model, and the way to the catalog that does own the tiers.
   const home = read(HOME_PRICING);
   const zh = JSON.parse(read('project.inlang/messages/zh.json'));
   const en = JSON.parse(read('project.inlang/messages/en.json'));
@@ -98,30 +105,43 @@ test('landing pricing speaks the launch contract in the landing scope', () => {
   assert.match(home, /landing_pricing_[a-z0-9_]+/u);
   assert.match(home, /Routes\.Register/u);
   assert.match(home, /Routes\.Pricing/u);
-  assert.match(home, /aria-disabled/u);
 
-  // The pricing block's wording is the user's own call (landing-copy doc §2.10):
-  // a 上线特惠 badge over the paid tier, lifetime disabled behind 敬请期待.
-  assert.equal(zh.landing_pricing_growth_badge, '上线特惠');
+  // The badge and the coming-soon fallback are the user's own wording
+  // (landing-copy doc §2.10) and outlive the tiers they used to sit on.
+  assert.equal(zh.landing_pricing_price_badge, '上线特惠');
   assert.equal(zh.landing_pricing_coming_soon, '敬请期待');
-  // The paid CTA reaches registration, and the lifetime tier has no href at
-  // all — pricing.tsx renders an aria-disabled span whenever href is absent.
-  assert.match(
-    home,
-    /name: landing_pricing_growth_name\(\)[\s\S]*?href: Routes\.Register/u
+
+  // No tier vocabulary reaches the landing, in either locale or in the source.
+  // RETIRED-METERING: the names this block printed until the de-tiering ruling.
+  const retiredTierKeys = Object.keys(zh).filter((key) =>
+    /^landing_pricing_(starter|growth|lifetime)_/u.test(key)
   );
-  // The lifetime tier carries no href at all, and the card renders a really
-  // disabled button for any tier without one. Asserting the absence of a link
-  // rather than a particular field name keeps this honest across reshells.
+  assert.deepEqual(
+    retiredTierKeys,
+    [],
+    'per-tier landing messages are retired — the landing names no tier'
+  );
   assert.doesNotMatch(
     home,
-    /name: landing_pricing_lifetime_name\(\)[\s\S]*?href:/u,
-    'the lifetime tier must not gain a link'
+    /landing_pricing_(?:starter|growth|lifetime)_/u,
+    'the landing must not render a tier of its own'
   );
-  assert.match(home, /disabled\s*\n\s*aria-disabled="true"/u);
+
+  // A disabled pseudo-CTA existed only to park the unopened lifetime tier. With
+  // no tiers there is nothing to park, and every CTA here has to be a real link
+  // — a stronger promise than "the fake one is marked disabled".
+  assert.doesNotMatch(
+    home,
+    /aria-disabled/u,
+    'no tier to park means no disabled pseudo-CTA'
+  );
+
   for (const key of [
-    'landing_pricing_growth_badge',
+    'landing_pricing_price_badge',
     'landing_pricing_coming_soon',
+    'landing_pricing_cta',
+    'landing_pricing_plans_link',
+    'landing_pricing_credit_model_1',
   ]) {
     assert.equal(typeof en[key], 'string', `en missing ${key}`);
     assert.ok(en[key].length > 0, `en empty ${key}`);
@@ -221,7 +241,10 @@ test('landing keeps the shared paid monthly price handle; credit matrix uses pla
   const content = read('src/components/pricing/credit-pricing-content.tsx');
   assert.equal(PUBLIC_PAID_MONTHLY_PRICE_TESTID, 'public-paid-monthly-price');
   assert.match(home, /PUBLIC_PAID_MONTHLY_PRICE_TESTID/u);
-  assert.match(home, /data-testid=\{plan\.priceTestId\}/u);
+  // The handle used to hang off a per-card field, because three cards each had
+  // a price and only one of them was the shared one. One price block, one
+  // unconditional handle: there is no card left for it to be attached to.
+  assert.match(home, /data-testid=\{PUBLIC_PAID_MONTHLY_PRICE_TESTID\}/u);
   // Credit matrix exposes per-plan published prices for browser assertions.
   assert.match(content, /pricing-price-\$\{plan\.id\}/u);
 });
@@ -333,8 +356,9 @@ test('landing pricing discloses the pilot payment stance in the footnote', () =>
     );
   }
 
-  // No subscription-management promise while there is no subscription.
-  assert.doesNotMatch(zh.landing_pricing_growth_note, /取消|暂停/u);
+  // No subscription-management promise while there is no subscription. The
+  // note moved off the paid tier onto the shared price when the tiers went.
+  assert.doesNotMatch(zh.landing_pricing_price_note, /取消|暂停/u);
 
   // The footnote states the pilot payment stance, matching /pricing's own
   // "purchase not open" projection instead of contradicting it.
@@ -411,12 +435,13 @@ test('the landing quotes the credit model and owns no second set of plan numbers
   // 「文案 / 图片 / 视频分开计」 while /pricing sold credits — two billing models,
   // and whichever page they read second contradicted the first.
   //
-  // The fix is structural rather than a wording pass. The landing keeps its own
-  // launch lineup (D-143 named the tiers 初级/中级/终身版 and the user ratified
-  // the 上线特惠 framing), but it may no longer carry a *quantity*: not a credit
-  // grant, not an output count, not a tier ceiling. The only number on it is the
-  // paid month price, and that comes from the helper /pricing prices from. A
-  // page with no numbers of its own has nothing to drift.
+  // The fix is structural rather than a wording pass, on two axes the user
+  // ruled on in turn. The landing may carry no *quantity* — not a credit grant,
+  // not an output count, not a tier ceiling — and since 2026-08-05 no *tier
+  // name* either: naming the plans on two pages is what let the two vocabularies
+  // fork, so the names now live only on /pricing. The single number left here
+  // is the paid month price, and it comes from the helper /pricing prices from.
+  // A page holding neither a number nor a name of its own has nothing to drift.
   const zh = JSON.parse(read('project.inlang/messages/zh.json'));
   const en = JSON.parse(read('project.inlang/messages/en.json'));
   const landingPricingKeys = Object.keys(zh).filter((key) =>
@@ -434,6 +459,12 @@ test('the landing quotes the credit model and owns no second set of plan numbers
       `${key} prints a number the landing would have to keep in step with /pricing`
     );
     assert.doesNotMatch(en[key], /\d/u, key);
+    // RETIRED-METERING: both plan vocabularies, pinned as absent from the
+    // landing — the ones it used to own, and the ones /pricing owns now. A
+    // landing that cannot say either name cannot fork from either.
+    assert.doesNotMatch(zh[key], /初级|中级|高级|终身版/u, key);
+    assert.doesNotMatch(zh[key], /体验版|起步版|成长版|专业版/u, key);
+    assert.doesNotMatch(en[key], /\b(?:starter|growth|lifetime|pro)\b/iu, key);
   }
 
   // The price is the single exception, and it is not written here: it arrives

@@ -97,38 +97,53 @@ test.describe('LIKEPAGE marketing landing page', () => {
 
     const pricing = page.locator('#pricing');
     await pricing.scrollIntoViewIfNeeded();
-    // D-143 renamed the tiers to merchant Chinese; the landing and /pricing
-    // both say 初级/中级/高级 now, and no public surface says Starter/Growth.
-    await expect(pricing).toContainText('初级');
-    await expect(pricing).toContainText('免费');
-    await expect(pricing).toContainText('中级');
-    await expect(pricing).not.toContainText('Starter');
-    await expect(pricing).not.toContainText('Growth');
-    // The paid tier quotes a price, but not one written here: this file used to
-    // assert ¥399 and went on asserting it after the configured price moved to
-    // ¥1999, so the landing was quoting a number no test had ever agreed to.
-    // Which number it is, and whether /pricing agrees, belongs to
+    // The landing names no tier (user ruling 2026-08-05). This test used to
+    // assert 初级/免费/中级 here, back when the landing sold its own three
+    // cards — the second plan vocabulary that kept forking from the one
+    // /pricing sells. Both vocabularies are now pinned as absent: the names
+    // this page used to own, and the names /pricing owns today.
+    for (const tier of [
+      '初级',
+      '中级',
+      '高级',
+      '终身版',
+      '体验版',
+      '起步版',
+      '成长版',
+      '专业版',
+      'Starter',
+      'Growth',
+      'Lifetime',
+    ]) {
+      await expect(pricing).not.toContainText(tier);
+    }
+
+    // The paid month still quotes a price, but not one written here: this file
+    // used to assert ¥399 and went on asserting it after the configured price
+    // moved to ¥1999, so the landing was quoting a number no test had ever
+    // agreed to. Which number it is, and whether /pricing agrees, belongs to
     // public-plan-price-source.spec.ts.
-    await expect(pricing.getByTestId('public-paid-monthly-price')).toHaveText(
-      /^¥\d+$/u
-    );
+    const price = pricing.getByTestId('public-paid-monthly-price');
+    expect(await price.count()).toBe(1);
+    await expect(price).toHaveText(/^¥\d+$/u);
     await expect(pricing).toContainText('上线特惠');
-    await expect(pricing).toContainText('敬请期待');
 
-    // The paid tier's CTA is exactly the approved label and reaches
-    // registration; the lifetime tier is a disabled non-link.
-    const paidCta = pricing.locator('a[href="/auth/register"]').last();
-    await expect(paidCta).toHaveText('升级中级套餐');
+    // Sold in credits, and the catalog that owns the tiers is one click away.
+    await expect(pricing).toContainText('积分');
+    await expect(pricing.locator('a[href="/pricing"]')).not.toHaveCount(0);
 
+    // The one number on the block is the shared price. Anything else numeric
+    // would be a per-tier fact the landing has no way to keep in step.
+    const priceText = await price.innerText();
+    const withoutPrice = (await pricing.innerText()).replace(priceText, '');
+    expect(withoutPrice).not.toMatch(/\d/u);
+
+    // Exactly one registration CTA — three cards meant three, and a disabled
+    // pseudo-CTA parked the tier that was not open. With no tiers, every CTA
+    // here is a real link.
     const registerLinks = pricing.locator('a[href="/auth/register"]');
-    expect(await registerLinks.count()).toBeGreaterThanOrEqual(2);
-
-    const lifetime = pricing.locator('[aria-disabled="true"]');
-    await expect(lifetime.first()).toBeVisible();
-    await expect(lifetime.first()).toHaveText('敬请期待');
-    expect(
-      await lifetime.first().evaluate((el) => el.closest('a') === null)
-    ).toBe(true);
+    expect(await registerLinks.count()).toBe(1);
+    expect(await pricing.locator('[aria-disabled="true"]').count()).toBe(0);
 
     // D-124: the badge stands on the footnote's disclosure — online payment is
     // not open during the pilot and credits come from a redemption code. That

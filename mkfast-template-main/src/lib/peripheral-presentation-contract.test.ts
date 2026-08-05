@@ -143,21 +143,28 @@ test('pricing stays readable without checkout and every public pricing CTA reach
   const ctaHtml = renderToStaticMarkup(
     createElement(RouterProvider, { router })
   );
-  // The landing surface keeps /pricing reachable and register-first CTAs live;
-  // the lifetime tier stays a disabled non-link.
+  // The landing surface keeps /pricing reachable and register-first CTAs live.
+  //
+  // Until 2026-08-05 this asserted two registration links, a disabled
+  // 敬请期待 non-link, and the literal 升级中级套餐 label — all three were
+  // per-tier facts of the landing's own three cards, and the user's de-tiering
+  // ruling retired the cards. The successors say the same thing about a page
+  // with one offer: the catalog stays reachable, registration stays reachable,
+  // and nothing on the block pretends to be a control that does not work.
   assert.ok((ctaHtml.match(/href="\/pricing"/g) ?? []).length >= 1);
-  assert.ok((ctaHtml.match(/href="\/auth\/register"/g) ?? []).length >= 2);
-  assert.match(ctaHtml, /aria-disabled="true"/u);
-  assert.match(ctaHtml, />敬请期待</u);
-  assert.doesNotMatch(ctaHtml, /<a[^>]*>[^<]*敬请期待/u);
+  assert.ok((ctaHtml.match(/href="\/auth\/register"/g) ?? []).length >= 1);
+  assert.doesNotMatch(ctaHtml, /aria-disabled="true"/u);
 
-  // The user's own pricing wording renders: the launch-special badge and an
-  // upgrade CTA that reaches registration.
+  // The user's own launch-special badge renders, and the tier names it used to
+  // sit on do not.
   assert.match(ctaHtml, />上线特惠</u);
-  assert.match(
-    ctaHtml,
-    /<a[^>]*href="\/auth\/register"[^>]*>升级中级套餐<\/a>/u
-  );
+  for (const tier of ['初级', '中级', '终身版']) {
+    assert.doesNotMatch(
+      ctaHtml,
+      new RegExp(tier, 'u'),
+      `landing names ${tier}`
+    );
+  }
 
   // T36 / D-124: the badge stands on the footnote's disclosure, so the rendered
   // landing still has to say online payment is not open and credits come from a
