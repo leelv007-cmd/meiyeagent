@@ -151,8 +151,10 @@ export function composerSubmitButton(page: Page) {
 /**
  * D-081 / D-098 C6 lens (creation-mode) selector chips on the current surface.
  * Current shipped chips: 做图文 | 做视频 (做文案 lands with new Composer).
- * Required mode select is a mode selector — NOT a forbidden pre-form — and
- * occupies one of the two-click Day-0 budget slots.
+ * Required mode select is a mode selector — NOT a forbidden pre-form. Since the
+ * capsule Composer (L3-2) the lens lives in a popover, so selecting takes two
+ * activations (open capsule + pick option) inside the three-click Day-0 budget
+ * (D-173: open capsule → pick lens → submit).
  */
 export function composerLensOption(
   page: Page,
@@ -164,7 +166,8 @@ export function composerLensOption(
 /**
  * Primary scene / template card on the entry surface.
  * Per D-098 C6 the card click is dual-purpose (select lens + apply recipe) and
- * counts as exactly 1 activation toward the 2-click budget.
+ * counts as exactly 1 activation toward the three-click Day-0 budget (D-173;
+ * the capsule-open click that reveals the card takes another slot).
  */
 export function composerRecipeCard(page: Page) {
   return page.getByTestId('composer-recipe-card-recipe.project_intro');

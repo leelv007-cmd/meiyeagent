@@ -205,10 +205,12 @@ test.describe('D-111 intent routing over real HTTP and SSE', () => {
     });
     expect(
       activations,
-      `confirmed-fact mode must reach its first token in exactly two activations; events=${JSON.stringify(counter.events())}`
-    ).toBe(2);
+      `confirmed-fact mode must reach its first token within the three-activation Day-0 budget (D-173: open lens capsule, pick lens, submit); events=${JSON.stringify(counter.events())}`
+    ).toBe(3);
     await expect(page.getByTestId('composer-question-turn')).toHaveCount(0);
-    await expect(page.getByTestId('composer-route-notice')).toHaveText(
+    // The agent-frame stage label (叙述) is part of the frame's text, so pin
+    // the notice sentence as containment rather than whole-frame equality.
+    await expect(page.getByTestId('composer-route-notice')).toContainText(
       '这次会参考你已确认的资料，直接继续生成。',
       { timeout: 60_000 }
     );
