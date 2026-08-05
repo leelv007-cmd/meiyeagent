@@ -3577,6 +3577,7 @@ Skill 选中
 - 决定：Core 的创作 grounding 校验**按创作模式分层**——自由创作（free）只强制**素材权利与受监管资质**（`real_authorized_asset`/`confirmed_qualification`，合规底线无差别），**放行** `confirmed_store`/`confirmed_project`；定制创作（customized）维持全量 grounding 不变。前台两模式按下前行为不变（定制态事实卡前置、自由态零经营上下文），#345 已修复的 409 具名映射（store gap → 'store' blocker）保留为防御层。
 - 原因：D-111 把自由创作定位为「引导不满足→自然路由过去先出活」的零经营上下文逃生口，D-103「自由创作不读取隐含门店」、D-119「录入永不前置」同向；Core 无差别强制门店/项目使逃生口名存实亡。方向 B（修订 D-111/D-103、前置门店门）被弃用——两个入口被同一道门挡死，逃生口失去意义。
 - 影响：实施票 #348（Core `p1-model-policy`/grounding 解析面按 mode 分层＋消费者证明「Day-0 零门店商家自由创作提交→出活」）；合规红线（素材权利/资质）一字不动。
+- **事实前提订正（2026-08-06，lane-348 实施穷举实证）**：`CREATIVE_GROUNDING_INCOMPLETE` 全仓唯一产出点在 `prepareCreativeJob`，可达路径只有 Result Center **重试**（`retryCreativeJob`）与 **result_adjust 遗留分支**；composer 主提交链（admission→冻结 snapshot→startHarness）**从不调用 groundingResolver**（postgres 契约测试 :1558 钉死「freezes the admission root without Product grounding」）。故「Day-0 商家自由创作一次也提交不了」表述过强——首次提交不撞门，撞门的是重试与调整链路。**决策方向不变**：门在哪生效就在哪分层；消费者证明相应落在真实撞门的链路上，不在恒绿旅程上伪造。
 - Supersedes：不改写旧 D 正文；D-111/D-103/D-119 按原文兑现。
 
 ## 待拍板（2026-07-17 合并评审识别，逐一讨论后按模板转正式决策）
