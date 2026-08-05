@@ -69,6 +69,10 @@ path. Its own reds are why "migrate them" and not "make the file required":
    bound to a projection the new seam does not feed.
 3. **video path** (`:332`) — `composer-delivery-card` never arrives inside the
    test's own 180s budget. The three-modal journey gives video 600s.
+   *Correction (2026-08-05, #340):* the stall was the run parked on the D-164③
+   execution-confirm card the journey never answered, not a budget the product
+   cannot meet — with the confirm step added the same case passes in 15s
+   inside the original 180s.
 4. **T5 inline authorize** (`:539`) — no `[data-has-token="true"]` after the
    inline-authorized submit.
 
