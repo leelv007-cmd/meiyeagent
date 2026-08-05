@@ -351,7 +351,7 @@ test('DBOS event reader exposes hold expiry as success without delivery', async 
       async getResult() {
         return {
           delivery: null,
-          merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+          merchantMessage: '超时未选择，本次任务已取消，积分已退回',
           outcome: 'cancelled',
           resolutionSource: 'core_hold_expired',
         };
@@ -373,7 +373,7 @@ test('DBOS event reader exposes hold expiry as success without delivery', async 
       occurredAt: '2026-07-18T09:00:00.000Z',
       snapshot: {
         delivery: null,
-        merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+        merchantMessage: '超时未选择，本次任务已取消，积分已退回',
         outcome: 'cancelled',
         resolutionSource: 'core_hold_expired',
       },

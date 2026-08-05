@@ -122,7 +122,7 @@ export class HarnessDbosWorkflowEventReader
         actionUsage.refundedUnits > 0
           ? {
               ...snapshot,
-              merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+              merchantMessage: '超时未选择，本次任务已取消，积分已退回',
             }
           : snapshot;
       return workflowStateEnvelopeSchema.parse({

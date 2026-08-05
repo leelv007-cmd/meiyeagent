@@ -991,7 +991,7 @@ test('refund failure still records terminal state and preserves the execution er
   ]);
 });
 
-test('a refund that lands is the only thing that lets the card say 额度已退回', async () => {
+test('a refund that lands is the only thing that lets the card say 积分已退回', async () => {
   const executionError = new Error('generation failed');
   const recorded: boolean[] = [];
   await assert.rejects(
@@ -1066,7 +1066,7 @@ test('hold expiry refunds the reservation and returns a successful non-delivery 
       },
     },
     cancellation: new HarnessWorkflowCancellation(
-      '超时未选择，本次任务已取消，额度已退回',
+      '超时未选择，本次任务已取消，积分已退回',
     ),
     request,
     runStep: async (name, operation) => {
@@ -1084,7 +1084,7 @@ test('hold expiry refunds the reservation and returns a successful non-delivery 
   ]);
   assert.deepEqual(result, {
     delivery: null,
-    merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+    merchantMessage: '超时未选择，本次任务已取消，积分已退回',
     outcome: 'cancelled',
     resolutionSource: 'core_hold_expired',
   });
@@ -1107,14 +1107,14 @@ test('hold expiry reports a pending refund when durable compensation owns it', a
       async scheduleCompensation() {},
     },
     cancellation: new HarnessWorkflowCancellation(
-      '超时未选择，本次任务已取消，额度已退回',
+      '超时未选择，本次任务已取消，积分已退回',
     ),
     request,
     runStep: async (_name, operation) => operation(),
     workflowId: settlement.taskId,
   });
 
-  assert.equal(result.merchantMessage, '超时未选择，本次任务已取消，额度退款处理中');
+  assert.equal(result.merchantMessage, '超时未选择，本次任务已取消，积分退款处理中');
 });
 
 test('an explicit hard-cap stop keeps its decision reason while refund is pending', async () => {
@@ -1143,7 +1143,7 @@ test('an explicit hard-cap stop keeps its decision reason while refund is pendin
   });
 
   assert.equal(result.resolutionSource, 'decision');
-  assert.equal(result.merchantMessage, '本次任务已结束，额度退款处理中');
+  assert.equal(result.merchantMessage, '本次任务已结束，积分退款处理中');
 });
 
 test('hold expiry never claims a refund after both settlement writes fail', async () => {
@@ -1165,20 +1165,20 @@ test('hold expiry never claims a refund after both settlement writes fail', asyn
       },
     },
     cancellation: new HarnessWorkflowCancellation(
-      '超时未选择，本次任务已取消，额度已退回',
+      '超时未选择，本次任务已取消，积分已退回',
     ),
     request,
     runStep: async (_name, operation) => operation(),
     workflowId: settlement.taskId,
   });
 
-  assert.equal(result.merchantMessage, '超时未选择，本次任务已取消，额度退款处理中');
+  assert.equal(result.merchantMessage, '超时未选择，本次任务已取消，积分退款处理中');
 });
 
 test('hold expiry without a reservation has nothing to refund', async () => {
   const result = await settleHarnessCancellation({
     cancellation: new HarnessWorkflowCancellation(
-      '超时未选择，本次任务已取消，额度已退回',
+      '超时未选择，本次任务已取消，积分已退回',
     ),
     request: { workspaceId: 'workspace-no-reservation' } as HarnessWorkflowInput,
     runStep: async (_name, operation) => operation(),
@@ -1193,7 +1193,7 @@ test('hold expiry refuses success when a reservation cannot be refunded', async 
   await assert.rejects(
     settleHarnessCancellation({
       cancellation: new HarnessWorkflowCancellation(
-        '超时未选择，本次任务已取消，额度已退回',
+        '超时未选择，本次任务已取消，积分已退回',
       ),
       request: {
         usageReservation: { id: 'usage-reservation-missing-billing', units: [] },

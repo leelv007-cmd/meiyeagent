@@ -978,7 +978,7 @@ test(
       }>(runtimeWorkflowId);
       assert.deepEqual(await recovered.getResult(), {
         delivery: null,
-        merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+        merchantMessage: '超时未选择，本次任务已取消，积分已退回',
         outcome: 'cancelled',
         resolutionSource: 'core_hold_expired',
       });
@@ -1340,7 +1340,7 @@ test(
       const result = await handle.getResult();
       assert.deepEqual(result, {
         delivery: null,
-        merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+        merchantMessage: '超时未选择，本次任务已取消，积分已退回',
         outcome: 'cancelled',
         resolutionSource: 'core_hold_expired',
       });

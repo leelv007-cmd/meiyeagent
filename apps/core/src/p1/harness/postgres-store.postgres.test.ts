@@ -1111,7 +1111,7 @@ test(
         ignoredDecision(
           `${holdTaskId}:offer-price`,
           `${holdTaskId}:offer-price:r4:core_hold_expired`,
-          '超时未选择，本次任务已取消，额度已退回',
+          '超时未选择，本次任务已取消，积分已退回',
         ),
       );
 
@@ -1642,7 +1642,7 @@ test(
         ignoredDecision(
           questionId,
           `${questionId}:r4:core_hold_expired`,
-          '超时未选择，本次任务已取消，额度已退回',
+          '超时未选择，本次任务已取消，积分已退回',
         ),
       );
 

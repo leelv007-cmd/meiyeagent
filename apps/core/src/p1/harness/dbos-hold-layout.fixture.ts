@@ -124,7 +124,7 @@ const workflow = DBOS.registerWorkflow(
             ? { command: decision, resolutionSource: 'decision' as const }
             : {
                 cancelled: true as const,
-                merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+                merchantMessage: '超时未选择，本次任务已取消，积分已退回',
                 resolutionSource: 'core_hold_expired' as const,
               };
         }

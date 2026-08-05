@@ -2385,7 +2385,7 @@ test('rejecting the paid media confirmation runs no execution before a re-confir
 });
 
 test('a cancelled paid media confirmation terminates the workflow without executing', async () => {
-  // 出口证明（终止出边）：额度释放/挂起过期取消确认卡时，工作流终止且零执行。
+  // 出口证明（终止出边）：积分释放/挂起过期取消确认卡时，工作流终止且零执行。
   const request: HarnessWorkflowInput = {
     ...mediaTaskInput('image'),
     usageReservation: {
@@ -2412,7 +2412,7 @@ test('a cancelled paid media confirmation terminates the workflow without execut
         assert.equal(question.response.field, 'execution_confirmation');
         return {
           cancelled: true as const,
-          merchantMessage: '本次生成已取消，额度已退回。',
+          merchantMessage: '本次生成已取消，积分已退回。',
           resolutionSource: 'reservation_released' as const,
         };
       },
@@ -2661,7 +2661,7 @@ test('a cancelled paid note confirmation terminates without page generation', as
           assert.equal(question.response.field, 'execution_confirmation');
           return {
             cancelled: true as const,
-            merchantMessage: '本次生成已取消，额度已退回。',
+            merchantMessage: '本次生成已取消，积分已退回。',
             resolutionSource: 'reservation_released' as const,
           };
         },
@@ -3576,7 +3576,7 @@ test('repeated bounded skips stay held until durable expiry cancels without more
         if (decisions === 3) {
           return {
             cancelled: true,
-            merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+            merchantMessage: '超时未选择，本次任务已取消，积分已退回',
             resolutionSource: 'core_hold_expired' as const,
           };
         }
@@ -3605,7 +3605,7 @@ test('repeated bounded skips stay held until durable expiry cancels without more
       assert.ok(error instanceof HarnessWorkflowCancellation);
       assert.equal(
         error.message,
-        '超时未选择，本次任务已取消，额度已退回',
+        '超时未选择，本次任务已取消，积分已退回',
       );
       return true;
     },
@@ -4012,7 +4012,7 @@ test('repeated non-iteration suspensions keep distinct durable trace identities'
         candidate: { candidateId: 'c01', title: '当前最好版本' },
         deliverable: false,
       },
-      unmetExplanation: '仍需追加一次成本额度',
+      unmetExplanation: '仍需追加一次成本积分',
       resumable: true,
     };
   };

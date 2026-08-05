@@ -533,7 +533,7 @@ export function registerHarnessDbosWorkflow(
           }
           return {
             cancelled: true as const,
-            merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+            merchantMessage: '超时未选择，本次任务已取消，积分已退回',
             resolutionSource: 'core_hold_expired' as const,
           };
         }
@@ -618,7 +618,7 @@ export function registerHarnessDbosWorkflow(
                 return {
                   cancelled: true as const,
                   merchantMessage: request.usageReservation
-                    ? '超时未选择，本次任务已取消，额度已退回'
+                    ? '超时未选择，本次任务已取消，积分已退回'
                     : '超时未选择，本次任务已取消',
                   resolutionSource: 'core_hold_expired' as const,
                 };
@@ -642,7 +642,7 @@ export function registerHarnessDbosWorkflow(
               return {
                 cancelled: true as const,
                 merchantMessage: request.usageReservation
-                  ? '超时未选择，本次任务已取消，额度已退回'
+                  ? '超时未选择，本次任务已取消，积分已退回'
                   : '超时未选择，本次任务已取消',
                 resolutionSource: 'core_hold_expired' as const,
               };
@@ -784,7 +784,7 @@ export function registerHarnessDbosWorkflow(
           undefined,
           true,
         );
-        // Whether the reserved 额度 came back is part of what the merchant is
+        // Whether the reserved 积分 came back is part of what the merchant is
         // told (D-096 申报). It is known here and nowhere downstream, so it
         // travels with the persisted failure — and it is the refund's own
         // result, never the mere fact that a refund was attempted: a scheduled
@@ -935,7 +935,7 @@ export async function commitHarnessBillingOrSchedule(input: {
 
 /**
  * What actually happened to the reservation. `scheduled` and `unavailable` both
- * mean the 额度 is not back yet — the merchant must not be told it is.
+ * mean the 积分 is not back yet — the merchant must not be told it is.
  */
 export type HarnessRefundOutcome = 'refunded' | 'scheduled' | 'unavailable';
 
@@ -1025,8 +1025,8 @@ export async function settleHarnessCancellation(input: {
         ...input.cancellation.result,
         merchantMessage:
           input.cancellation.result.resolutionSource === 'decision'
-            ? '本次任务已结束，额度退款处理中'
-            : '超时未选择，本次任务已取消，额度退款处理中',
+            ? '本次任务已结束，积分退款处理中'
+            : '超时未选择，本次任务已取消，积分退款处理中',
       };
     }
   }
@@ -1234,7 +1234,7 @@ export async function abandonReleasedHarnessReservation(
     {
       cancelled: true as const,
       merchantMessage:
-        '之前占用的额度已经放回。已按你刚才的回答重新排队，不会重复占用。',
+        '之前占用的积分已经放回。已按你刚才的回答重新排队，不会重复占用。',
       resolutionSource: 'reservation_released' as const,
     },
     decisionTopic(questionId),
@@ -1436,12 +1436,12 @@ export function confirmationCardHoldExpired(question: QuestionCard) {
     workflowRevision: question.workflowRevision,
     patch: {
       field: question.response.field,
-      value: '超时未选择，本次任务已取消，额度已退回',
+      value: '超时未选择，本次任务已取消，积分已退回',
       reason: question.response.reason,
     },
     decision: {
       state: 'ignored',
-      value: '超时未选择，本次任务已取消，额度已退回',
+      value: '超时未选择，本次任务已取消，积分已退回',
     },
   });
 }
