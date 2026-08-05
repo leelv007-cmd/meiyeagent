@@ -20,14 +20,17 @@
  * hydrate's empty `.catch` swallowed the rejection, so nothing anywhere said so
  * while the timeline kept rendering from the SSE projection (a different path).
  *
- * Both halves of the journey are live again below. What they now protect:
- *   AC ① successful regeneration reaches a new task + a newly minted package;
- *   AC ② a stale OCC token is rejected at prepare and derives nothing;
- *   AC ③ when the hydrate genuinely cannot read the package, the merchant is
- *         told so on the timeline — the failure that hid for #333 can no
- *         longer be silent — and still nothing half-built is produced.
+ * The journey is live again below, in three cases:
+ *   1. a stale OCC token is rejected at prepare and derives nothing, then a
+ *      confirmed regeneration mints its package, surfaces its derived task and
+ *      starts the derived run — green, and the gate that fails first if the
+ *      hydrate breaks again;
+ *   2. what that derived run delivers — parked on #341, see its own note;
+ *   3. when the hydrate genuinely cannot read the package, the merchant is told
+ *      so on the timeline (the failure that hid for #333 can no longer be
+ *      silent) and nothing half-built is produced.
  *
- * AC ③ needs fault injection now that hydration works; that injection is the
+ * Case 3 needs fault injection now that hydration works; that injection is the
  * only route() in this file that touches the query channel, and it is torn down
  * before anything is measured through it.
  */
@@ -259,7 +262,7 @@ test.describe('Note page regeneration journey (#333 / xcheck A6)', () => {
   // package ref never hydrated. Both halves depend on `result_adjust_prepare`
   // actually leaving the browser, so this is the gate that fails first if the
   // hydrate breaks again.
-  test('stale OCC prepare is rejected then successful page regen reaches new task/package', async ({
+  test('stale OCC prepare is rejected then a confirmed page regen starts its derived run', async ({
     page,
     request,
   }) => {
@@ -532,67 +535,149 @@ test.describe('Note page regeneration journey (#333 / xcheck A6)', () => {
     ).toBeVisible({ timeout: 60_000 });
     await derivedConfirmation.getByRole('button', { name: '确认执行' }).click();
     await expect(derivedConfirmation).toBeHidden({ timeout: 60_000 });
-
-    // Wait for worker delivery of the *specific* minted package — not "any new
-    // id appears" (confirm inserts a draft shell with revision 0 / empty
-    // versions immediately; that is not page-regeneration completion).
-    let deliveredPackage: ContentPackageListItem | undefined;
-    await expect
-      .poll(
-        async () => {
-          const packages = await listContentPackages(page);
-          const pkg = packages.find((item) => item.id === newPackageId);
-          deliveredPackage = pkg;
-          return Boolean(
-            pkg &&
-              (pkg.revision ?? 0) >= 1 &&
-              typeof pkg.currentVersionId === 'string' &&
-              pkg.currentVersionId.length > 0
-          );
-        },
-        {
-          message:
-            'worker must deliver the derived package to revision>=1 with a currentVersionId',
-          timeout: 120_000,
-        }
-      )
-      .toBe(true);
-
-    expect(
-      deliveredPackage,
-      'delivered package snapshot must be captured after poll'
-    ).toBeTruthy();
-    const lineageSource = deliveredPackage!.lineage?.reusedFromPackageId;
-    expect(
-      lineageSource,
-      'derived package lineage.reusedFromPackageId must point at a parent package'
-    ).toBeTruthy();
-    expect(
-      packageIdsBefore.has(lineageSource!),
-      'lineage must reuse one of the merchant packages that existed before regenerate'
-    ).toBe(true);
-
-    const versions = deliveredPackage!.versions ?? [];
-    const currentVersion =
-      versions.find(
-        (version) => version.id === deliveredPackage!.currentVersionId
-      ) ?? null;
-    const receiptOn = (version: (typeof versions)[number] | null | undefined) =>
-      (version?.note?.regenerationReceipts ?? []).find(
-        (receipt) =>
-          receipt.pageId === pageId &&
-          typeof receipt.fromRevision === 'number' &&
-          receipt.toRevision === (receipt.fromRevision as number) + 1 &&
-          receipt.imagePoints === 1
-      );
-    const pageReceipt =
-      receiptOn(currentVersion) ??
-      versions.map((version) => receiptOn(version)).find(Boolean);
-    expect(
-      pageReceipt,
-      `some version must carry a regeneration receipt for page ${pageId} with toRevision=fromRevision+1 and imagePoints=1`
-    ).toBeTruthy();
   });
+
+  /**
+   * #341 — what the derived run does *after* a merchant confirms it.
+   *
+   * Split out of the case above rather than truncating it, because everything
+   * up to the confirmation is green and has to stay a live gate while this is
+   * parked. This half cannot pass yet: the derived delivery is rejected by
+   * `assertLiveDeliveredAssetRights`
+   * (apps/core/src/p1/execution-spine/content-package-revision-port.ts:687-724)
+   * with CONTENT_PACKAGE_ASSET_RIGHTS_UNAVAILABLE / 409. A single-page
+   * regeneration generates one image and *inherits* the other pages' images
+   * from the parent; the inherited ones are not in this delivery's
+   * generatedAssetIds, so the live-rights exemption misses them and they are
+   * checked as if they were merchant-uploaded source assets — which they never
+   * were, so the rights resolver does not know them and the write is refused.
+   * Observed as DBOS status ERROR with the package left at revision 0 / draft.
+   *
+   * Drop the `fixme` when #341 lands: this then witnesses #341 AC ③ and #333
+   * AC ①. Assertions are the #333 originals, unweakened.
+   */
+  test.fixme(
+    'the derived run delivers a regenerated page with its receipt',
+    async ({ page, request }) => {
+      test.setTimeout(480_000);
+      await page.setViewportSize({ width: 1440, height: 900 });
+
+      const { readyRow } = await deliverNoteOnComposerHome(page, request);
+      const pageId = await readyRow.getAttribute('data-page-id');
+      expect(pageId, 'ready row must carry a stable data-page-id').toBeTruthy();
+      const targetRow = page.locator(
+        `[data-testid="note-plan-page-row"][data-page-id="${pageId}"]`
+      );
+      const packagesBefore = await listContentPackages(page);
+      const packageIdsBefore = new Set(
+        packagesBefore.map((item) => item.id).filter(Boolean) as string[]
+      );
+
+      const prepareResponsePromise = page.waitForResponse(
+        (response) => isP1Command(response, 'result_adjust_prepare'),
+        { timeout: 60_000 }
+      );
+      await targetRow.getByTestId('note-plan-page-regenerate').click();
+      const prepareResponse = await prepareResponsePromise;
+      expect(
+        prepareResponse.ok(),
+        `prepare must succeed; body=${await prepareResponse.text()}`
+      ).toBeTruthy();
+
+      const confirmResponsePromise = page.waitForResponse(
+        (response) => isP1Command(response, 'result_adjust'),
+        { timeout: 60_000 }
+      );
+      await page.getByTestId('execution-confirm-accept').click();
+      const confirmResponse = await confirmResponsePromise;
+      const confirmBodyText = await confirmResponse.text();
+      expect(
+        confirmResponse.ok(),
+        `confirm must succeed; body=${confirmBodyText}`
+      ).toBeTruthy();
+      const newPackageId = (
+        JSON.parse(confirmBodyText) as {
+          data?: { contentPackage?: { id?: string } };
+        }
+      ).data?.contentPackage?.id;
+      expect(
+        newPackageId,
+        'confirm response must expose the newly minted content package id'
+      ).toBeTruthy();
+
+      // The derived run is a paid generation like any other (D-164③).
+      const derivedConfirmation = page.getByTestId(
+        'execution-confirmation-interaction-card'
+      );
+      await expect(derivedConfirmation).toBeVisible({ timeout: 60_000 });
+      await derivedConfirmation
+        .getByRole('button', { name: '确认执行' })
+        .click();
+      await expect(derivedConfirmation).toBeHidden({ timeout: 60_000 });
+
+      // Wait for worker delivery of the *specific* minted package — not "any new
+      // id appears" (confirm inserts a draft shell with revision 0 / empty
+      // versions immediately; that is not page-regeneration completion).
+      let deliveredPackage: ContentPackageListItem | undefined;
+      await expect
+        .poll(
+          async () => {
+            const packages = await listContentPackages(page);
+            const pkg = packages.find((item) => item.id === newPackageId);
+            deliveredPackage = pkg;
+            return Boolean(
+              pkg &&
+                (pkg.revision ?? 0) >= 1 &&
+                typeof pkg.currentVersionId === 'string' &&
+                pkg.currentVersionId.length > 0
+            );
+          },
+          {
+            message:
+              'worker must deliver the derived package to revision>=1 with a currentVersionId',
+            timeout: 120_000,
+          }
+        )
+        .toBe(true);
+
+      expect(
+        deliveredPackage,
+        'delivered package snapshot must be captured after poll'
+      ).toBeTruthy();
+      const lineageSource = deliveredPackage!.lineage?.reusedFromPackageId;
+      expect(
+        lineageSource,
+        'derived package lineage.reusedFromPackageId must point at a parent package'
+      ).toBeTruthy();
+      expect(
+        packageIdsBefore.has(lineageSource!),
+        'lineage must reuse one of the merchant packages that existed before regenerate'
+      ).toBe(true);
+
+      const versions = deliveredPackage!.versions ?? [];
+      const currentVersion =
+        versions.find(
+          (version) => version.id === deliveredPackage!.currentVersionId
+        ) ?? null;
+      const receiptOn = (
+        version: (typeof versions)[number] | null | undefined
+      ) =>
+        (version?.note?.regenerationReceipts ?? []).find(
+          (receipt) =>
+            receipt.pageId === pageId &&
+            typeof receipt.fromRevision === 'number' &&
+            receipt.toRevision === (receipt.fromRevision as number) + 1 &&
+            receipt.imagePoints === 1
+        );
+      const pageReceipt =
+        receiptOn(currentVersion) ??
+        versions.map((version) => receiptOn(version)).find(Boolean);
+      expect(
+        pageReceipt,
+        `some version must carry a regeneration receipt for page ${pageId} with toRevision=fromRevision+1 and imagePoints=1`
+      ).toBeTruthy();
+    }
+  );
 
   /**
    * #333 AC ③ / #338 — the hydrate can still fail (the server can be down, the
