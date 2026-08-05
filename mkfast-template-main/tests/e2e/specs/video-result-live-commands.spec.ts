@@ -12,6 +12,7 @@ import {
 } from '../fixtures/product';
 import {
   JOURNEY_CONTRACTS,
+  selectComposerLens,
   submitComposerJourney,
   waitForResultJourney,
 } from '../fixtures/ui-journey';
@@ -278,12 +279,12 @@ test.describe('video Result canonical live commands', () => {
     await loginByForm(page, user);
     await seedConfirmedStore(page);
     await page.goto('/dashboard');
-    await page.getByTestId('composer-lens-option-video').click();
+    await selectComposerLens(page, 'video');
     const authorized = await seedComposerInlineAuthorize(page, {
       fileName: 'video-live-commands-reference.png',
     });
     await page.reload();
-    await page.getByTestId('composer-lens-option-video').click();
+    await selectComposerLens(page, 'video');
     await seedComposerInlineAuthorize(page, {
       expectedAssetId: authorized.id,
       fileName: 'video-live-commands-reference.png',

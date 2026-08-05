@@ -7,6 +7,11 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { seedConfirmedStore } from '../fixtures/product';
+import {
+  closeComposerCapsule,
+  openComposerCapsule,
+  selectComposerLens,
+} from '../fixtures/ui-journey';
 
 type ComposerSubmission = {
   packageId: string;
@@ -118,10 +123,11 @@ async function approveExternalSend(page: Page, packageId: string) {
 
 async function submitComposerCopy(page: Page): Promise<ComposerSubmission> {
   await page.goto('/dashboard');
-  await page.getByTestId('composer-lens-option-copy').click();
+  await selectComposerLens(page, 'copy');
   await page
     .getByTestId('composer-intent-input')
     .fill('给透亮猫眼写一条周末预约文案');
+  const destinationPanel = await openComposerCapsule(page, 'destination');
   const destination = page.getByTestId(
     'composer-destination-option-xiaohongshu'
   );
@@ -130,6 +136,7 @@ async function submitComposerCopy(page: Page): Promise<ComposerSubmission> {
     await destination.click();
   }
   await expect(destination).toHaveAttribute('aria-pressed', 'true');
+  await closeComposerCapsule(page, destinationPanel);
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 60_000,
   });

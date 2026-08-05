@@ -8,6 +8,12 @@ import {
 import { measureContrast } from '../fixtures/contrast';
 import { seedConfirmedStore } from '../fixtures/product';
 import { setTheme } from '../fixtures/page-health';
+import {
+  closeComposerCapsule,
+  openComposerCapsule,
+  openComposerRecipeCard,
+  selectComposerLens,
+} from '../fixtures/ui-journey';
 import { installWorksBrowserFixtures } from '../fixtures/works';
 
 /**
@@ -34,9 +40,10 @@ type SubmissionResult = { taskId: string; workId: string };
  * `!uploadsReady`.
  */
 async function applyImageNoteRecipe(page: Page) {
-  await page
-    .getByTestId('composer-recipe-card-recipe.promotion_poster')
-    .click();
+  const recipePanel = await openComposerRecipeCard(
+    page,
+    'composer-recipe-card-recipe.promotion_poster'
+  );
   // The composer asks first only when the recipe would rewrite settings the
   // merchant can already see (发到哪 / 交付物 / 生成方式); when they already match
   // it applies straight away. Both endings are correct, so wait for either —
@@ -50,6 +57,7 @@ async function applyImageNoteRecipe(page: Page) {
     await page.getByTestId('composer-patch-confirm').click();
   }
   await expect(applied).toBeVisible({ timeout: 30_000 });
+  await closeComposerCapsule(page, recipePanel);
 }
 
 /** Same entry the T31 card-family spec uses — one real creation, real core. */
@@ -59,14 +67,16 @@ async function startRun(
   lens: 'copy' | 'image_text' = 'copy'
 ): Promise<SubmissionResult> {
   await page.goto('/dashboard');
-  await page.getByTestId(`composer-lens-option-${lens}`).click();
+  await selectComposerLens(page, lens);
   if (lens === 'image_text') await applyImageNoteRecipe(page);
   await page.getByTestId('composer-intent-input').fill(intent);
   if (lens === 'image_text') {
     // 促销海报 lands on 线下物料; the 作品 has to be bound to a platform core can
     // export, and 小红书 is the one the image journeys export. The reshelled
     // composer asks 发到哪 with chips — the older `#composer-setting-input-
-    // platform` select the image-intent spec still drives is gone.
+    // platform` select the image-intent spec still drives is gone, and since
+    // the capsule bar those chips live inside the 发到哪 popover.
+    const destinationPanel = await openComposerCapsule(page, 'destination');
     const destination = page.getByTestId(
       'composer-destination-option-xiaohongshu'
     );
@@ -75,6 +85,7 @@ async function startRun(
       await destination.click();
     }
     await expect(destination).toHaveAttribute('aria-pressed', 'true');
+    await closeComposerCapsule(page, destinationPanel);
   }
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 30_000,

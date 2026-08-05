@@ -7,6 +7,10 @@ import { expect, type Page } from '@playwright/test';
  * layer (not Playwright `.click()` call sites). Cmd/Ctrl+Enter keyboard submit
  * also counts as one activation. Measurement must be cleared after seed prep
  * and stopped at the first usable draft token (`[data-has-token="true"]`).
+ *
+ * CAPSULE-GATED-LOCATOR-ONLY: the composer locator factories below build
+ * locators and never drive them, so opening the capsule that mounts each one
+ * is the caller's job (#355 gate).
  */
 
 export type UserActivationKind = 'click' | 'keyboard_submit';
