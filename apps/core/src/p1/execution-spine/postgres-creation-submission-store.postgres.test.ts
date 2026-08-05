@@ -1898,11 +1898,101 @@ test(
   },
 );
 
+/**
+ * D-175. The Work row the Coordinator writes is a hand-enumerated payload, not
+ * a spread, so a field added to `CreativeWork` is dropped here silently and
+ * without a type error. Read the mode back through the repository the
+ * Operations service actually reads from, not from the INSERT.
+ */
+test(
+  "the Coordinator persists the creation mode onto the Work it reserves",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
+      ),
+    );
+    const suffix = randomUUID();
+    const workspaceId = `spine-creation-mode-${suffix}`;
+    const freeQuoteId = `spine-creation-mode-free-${suffix}`;
+    const customizedQuoteId = `spine-creation-mode-customized-${suffix}`;
+    const free = reserveRecord(
+      workspaceId,
+      freeQuoteId,
+      `${suffix}-free`,
+      "copy",
+      "free",
+    );
+    const customized = reserveRecord(
+      workspaceId,
+      customizedQuoteId,
+      `${suffix}-customized`,
+      "copy",
+      "customized",
+    );
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      await store.applySchema();
+      await pool.query(
+        "INSERT INTO workspaces (id, name) VALUES ($1, 'Creation mode test')",
+        [workspaceId],
+      );
+
+      for (const [record, quoteId, creationMode] of [
+        [free, freeQuoteId, "free"],
+        [customized, customizedQuoteId, "customized"],
+      ] as const) {
+        const quote = await seedQuote(
+          billingRepository,
+          workspaceId,
+          quoteId,
+          record.task.id,
+        );
+        record.snapshot = createSnapshot({
+          creationMode,
+          quoteId,
+          quoteRevision: quote.revision,
+          submission: record,
+          workspaceId,
+        });
+        const claimed = await store.claim({
+          idempotencyKey: `creation-mode-${creationMode}`,
+          payloadHash: `creation-mode-${creationMode}`,
+          submission: record,
+          workspaceId,
+        });
+        assert.equal(claimed.kind, "created");
+      }
+
+      const state = await operations.loadWorkspace(workspaceId);
+      const readBack = (workId: string) =>
+        state?.creativeWorks.find((work) => work.id === workId);
+      assert.equal(readBack(free.work.id)?.creationMode, "free");
+      assert.equal(readBack(customized.work.id)?.creationMode, "customized");
+    } finally {
+      await cleanup(pool, workspaceId, free).catch(() => undefined);
+      await cleanup(pool, workspaceId, customized).catch(() => undefined);
+      await pool
+        .query("DELETE FROM workspaces WHERE id = $1", [workspaceId])
+        .catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
 function reserveRecord(
   workspaceId: string,
   quoteId: string,
   suffix: string,
   lens: "copy" | "image" | "video" = "copy",
+  creationMode: "customized" | "free" = "customized",
 ): CreationSubmissionRecord {
   const taskId = `spine-task-${suffix}`;
   const submission: CreationSubmissionRecord = {
@@ -1910,6 +2000,7 @@ function reserveRecord(
     snapshot: createSnapshot({
       quoteId,
       quoteRevision: "quote-revision-placeholder",
+      creationMode,
       lens,
       submission: {
         contentPackage: { expectedRevision: 0, id: `spine-package-${suffix}` },
@@ -2006,6 +2097,7 @@ async function seedUnconfirmedQuote(
 function createSnapshot(input: {
   catalogModelId?: string;
   contentPackagePlatform?: "douyin" | "wechat_moments";
+  creationMode?: "customized" | "free";
   distributionTarget?: "export" | "manual_copy";
   lens?: "copy" | "image" | "video";
   platformId?: "douyin" | "wechat_moments";
@@ -2043,7 +2135,7 @@ function createSnapshot(input: {
         input.submission.contentPackage.expectedRevision,
       identity: { id: "identity-1", revision: "identity-r1" },
       idempotencyKey: "submission-key",
-      creationMode: "customized",
+      creationMode: input.creationMode ?? "customized",
       intent: "为夏日护理项目写一条预约文案",
       lens,
       modelPolicy: { id: "policy-1", mode: "fixed", revision: "policy-r1" },

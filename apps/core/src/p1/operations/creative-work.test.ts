@@ -1195,6 +1195,69 @@ describe('free creation grounding', () => {
     );
   });
 
+  it('freezes grounding at first submission, so a retry never resolves it again', async () => {
+    const executor = new RecordedCreationExecutor();
+    const product = new ProductCreativeGroundingResolver({
+      async load() {
+        return structuredClone(dayZeroProduct);
+      },
+    } as unknown as ProductRepository);
+    const resolveModes: Array<string | undefined> = [];
+    const counted: CreativeGroundingResolverPort = {
+      async resolve(workspaceId, sourceAssetIds, creationMode) {
+        resolveModes.push(creationMode);
+        return product.resolve(workspaceId, sourceAssetIds, creationMode);
+      },
+    };
+    const { service } = setup(
+      executor,
+      { async resolve() { return []; } },
+      counted,
+    );
+    const work = await service.createCreativeWork(owner, {
+      creationMode: 'free',
+      intent: '写三条立秋话题的内容',
+      mode: 'direct',
+      operation: 'copy.generate',
+      sessionId: 'composer:day-zero-free-retry',
+      sourceReferences: [],
+    });
+    executor.results.push(
+      {
+        failureCode: 'TERMINAL_FAILURE',
+        providerJobId: 'provider-failed',
+        routeSnapshotId: 'route-failed',
+        status: 'failed',
+      },
+      {
+        copyCandidates: threeCandidates('重试完成', '新任务完成。'),
+        providerJobId: 'provider-retry',
+        routeSnapshotId: 'route-retry',
+        status: 'completed',
+      },
+    );
+
+    const failed = await service.submitCreativeWork(
+      owner,
+      work.id,
+      contract,
+      'day-zero-free-retry',
+    );
+    assert.equal(failed.job.status, 'failed');
+    assert.deepEqual(resolveModes, ['free']);
+
+    const retry = await service.retryCreativeJob(
+      owner,
+      failed.job.id,
+      'day-zero-free-retry-again',
+    );
+    assert.equal(retry.job.status, 'completed');
+    // The retry inherited the frozen snapshot; the resolver was not consulted
+    // a second time, so a retry cannot be a red-to-green proof of this change.
+    assert.deepEqual(resolveModes, ['free']);
+    assert.equal(retry.job.groundingSnapshot?.store, undefined);
+  });
+
   it('carries free creation through 「基于此再创作」 into the next round', async () => {
     const { service } = dayZeroSetup();
     const source = await service.createCreativeWork(owner, {
