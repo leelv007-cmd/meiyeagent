@@ -251,6 +251,10 @@ describe('StoreIntakeWizard', () => {
       'district',
       'address',
       'booking',
+      // D-174 industry sits last and matches no recommendation hint: ticking a
+      // recommendation never pulls it forward, it is only ever offered after
+      // everything the merchant came here for.
+      'industry',
     ]);
     expect(screen.queryByTestId('store-intake-recommended-projectPrice')).toBe(
       null
@@ -284,7 +288,9 @@ describe('StoreIntakeWizard', () => {
       'projectPrice',
       'projectPriceValidity',
     ]);
-    expect(fields).toHaveLength(8);
+    // Reordering neither adds nor drops: the whole of STORE_INTAKE_FIELDS is
+    // still asked, industry (D-174) included.
+    expect(fields).toHaveLength(9);
     expect(
       screen.getByTestId('store-intake-recommended-projectPrice')
     ).toBeTruthy();
