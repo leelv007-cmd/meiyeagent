@@ -222,6 +222,12 @@ export function projectResultShellActions(
 > {
   const delivery = facts.deliveryAttempt ?? 'none';
   const videoReceiver = facts.workspaceKind === 'video';
+  // #350: retry dispatches `retry_creative_job`, which needs a Job row. Only
+  // video canonical runs produce one -- Composer copy/image works are written
+  // straight into `p1_creative_works` with no Job -- and the handler is
+  // `if (!selected?.job) return;`. Offering 重试 without one renders a button
+  // that swallows the click.
+  const retryableRun = Boolean(facts.jobId);
   // P1-B1 / #150: History + Run Detail are real panels (not empty no-ops).
   // Keep them in overflow so they never steal the single primary action.
   const historyAndRun: ResultAction[] = [
@@ -286,7 +292,9 @@ export function projectResultShellActions(
       };
     }
     return {
-      primaryAction: action('retry', 'primary', true, '重试交付'),
+      primaryAction: retryableRun
+        ? action('retry', 'primary', true, '重试交付')
+        : action('leave_and_continue', 'primary', true, '返回工作台'),
       secondaryActions: [action('continue_adjust', 'secondary')],
       overflowActions: historyAndRun,
     };
@@ -351,7 +359,9 @@ export function projectResultShellActions(
         };
       }
       return {
-        primaryAction: action('retry', 'primary'),
+        primaryAction: retryableRun
+          ? action('retry', 'primary')
+          : action('leave_and_continue', 'primary', true, '返回工作台'),
         secondaryActions: videoReceiver
           ? []
           : [action('continue_adjust', 'secondary')],

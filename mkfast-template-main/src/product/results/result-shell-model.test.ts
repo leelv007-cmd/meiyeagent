@@ -343,7 +343,7 @@ test('actions: every merchant phase keeps a single primary and real History/Run 
     },
     {
       label: 'recoverable_failure',
-      facts: baseFacts({ progressState: 'failed' }),
+      facts: baseFacts({ progressState: 'failed', jobId: 'job-1' }),
       primary: 'retry',
     },
     {
@@ -410,9 +410,46 @@ test('actions: every merchant phase keeps a single primary and real History/Run 
 test('actions: failed → retry primary', () => {
   const actions = projectResultShellActions(
     'failed',
-    baseFacts({ progressState: 'failed' })
+    baseFacts({ progressState: 'failed', jobId: 'job-1' })
   );
   assert.equal(actions.primaryAction?.id, 'retry');
+});
+
+// #350: Composer copy/image works never get a `p1_creative_jobs` row, and the
+// retry handler is `if (!selected?.job) return;`. Offering 重试 there is a
+// button that swallows the click. Fall back to the exit the video branch of
+// this same phase already uses.
+test('actions: a failed run with no retryable Job offers no retry', () => {
+  const actions = projectResultShellActions(
+    'failed',
+    baseFacts({ progressState: 'failed' })
+  );
+  assert.equal(actions.primaryAction?.id, 'leave_and_continue');
+  assert.equal(actions.primaryAction?.label, '返回工作台');
+  assert.equal(
+    [
+      actions.primaryAction,
+      ...actions.secondaryActions,
+      ...actions.overflowActions,
+    ].some((candidate) => candidate?.id === 'retry'),
+    false
+  );
+});
+
+test('actions: a failed delivery with no retryable Job offers no retry', () => {
+  const actions = projectResultShellActions(
+    'delivered',
+    baseFacts({ deliveryAttempt: 'failed' })
+  );
+  assert.notEqual(actions.primaryAction?.id, 'retry');
+  assert.equal(
+    [
+      actions.primaryAction,
+      ...actions.secondaryActions,
+      ...actions.overflowActions,
+    ].some((candidate) => candidate?.id === 'retry'),
+    false
+  );
 });
 
 test('actions: acceptance_unknown → recover_or_verify only', () => {
