@@ -50,6 +50,13 @@ export interface StoreProfile {
   district: string;
   address: string;
   booking: string;
+  /**
+   * D-174: the beauty category this store is in, and the source of truth for
+   * the today-recommendation industry layer. Optional because stating it is
+   * skippable (D-119) and because rows written before D-174 do not carry it.
+   * Free text is allowed — an unmapped value simply misses the industry layer.
+   */
+  industry?: string;
   brandVoice: string;
   prohibitions: string[];
   accounts: StoreAccount[];
@@ -66,6 +73,7 @@ export interface StoreProfilePatch {
   district?: string;
   address?: string;
   booking?: string;
+  industry?: string;
   brandVoice?: string;
   prohibitions?: string[];
   regulated?: boolean;

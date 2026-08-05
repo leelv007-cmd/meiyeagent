@@ -776,6 +776,16 @@ const PROFILE_FACT_MAPPINGS = {
     patchField: 'district',
     valueField: 'district',
   },
+  // D-174: the today-recommendation industry layer reads the store profile, and
+  // this is the identity that lets the profile's industry reach the fact ledger
+  // at all. Any value is accepted — only published slugs and their aliases hit
+  // the industry layer, and an unmapped one falls through rather than failing.
+  'store-profile:industry:other': {
+    kind: 'other',
+    key: 'store.profile.industry',
+    patchField: 'industry',
+    valueField: 'industry',
+  },
   'store-profile:address:fulfillment': {
     kind: 'fulfillment',
     key: 'store.fulfillment.address',

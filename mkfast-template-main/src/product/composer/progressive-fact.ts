@@ -24,7 +24,8 @@ export type ProgressiveFactId =
   | 'district'
   | 'address'
   | 'booking'
-  | 'brandVoice';
+  | 'brandVoice'
+  | 'industry';
 
 /**
  * The merchant's answer to "how long is this price good for" (#244).
@@ -92,6 +93,8 @@ export type ProgressiveFactDraft = {
   address: string;
   booking: string;
   brandVoice: string;
+  /** D-174 store-wide beauty category; '' means the merchant has not stated it. */
+  industry: string;
   projectId: string;
   projectDurationMinutes: number;
   projectName: string;
@@ -164,6 +167,17 @@ const FACT_ORDER: ProgressiveFactId[] = [
   'brandVoice',
 ];
 
+/**
+ * Ids that project onto the fact ledger when answered.
+ *
+ * Deliberately not the same list as FACT_ORDER: industry is collected by the
+ * store intake wizard, not by the Day-0 question flow, because D-119 keeps
+ * intake from ever becoming a precondition and D-174 makes industry skippable.
+ * It still has to reach the ledger on the wizard lane, which is what this list
+ * is for — FACT_ORDER decides what gets *asked*, this decides what gets *sent*.
+ */
+const LEDGER_PROJECTED_FACTS: ProgressiveFactId[] = [...FACT_ORDER, 'industry'];
+
 const BLOCKING = new Set<ProgressiveFactId>([
   'name',
   'city',
@@ -173,13 +187,20 @@ const BLOCKING = new Set<ProgressiveFactId>([
 ]);
 
 const FALLBACKS: Record<
-  Extract<ProgressiveFactId, 'district' | 'address' | 'booking' | 'brandVoice'>,
+  Extract<
+    ProgressiveFactId,
+    'district' | 'address' | 'booking' | 'brandVoice' | 'industry'
+  >,
   string
 > = {
   district: '本区',
   address: '门店地址待补充',
   booking: '到店咨询预约',
   brandVoice: '真实、克制、像熟客推荐',
+  // Unlike the others this fallback is not written anywhere: skipping industry
+  // means the profile stays silent about it, and the recommendation falls back
+  // to its platform / weekday reasons. Saying nothing beats guessing a trade.
+  industry: '不按行业定制开场',
 };
 
 const WHY: Record<ProgressiveFactId, string> = {
@@ -193,6 +214,7 @@ const WHY: Record<ProgressiveFactId, string> = {
   address: '详细地址用于到店指引，可先跳过并用安全占位。',
   booking: '预约方式决定文案结尾怎么请顾客来。',
   brandVoice: '语气偏好可稍后完善；跳过时使用克制默认语气。',
+  industry: '说清主营哪一类美业服务，今日推荐才能按你的行业给理由。',
 };
 
 const IMPACT: Record<ProgressiveFactId, string> = {
@@ -205,6 +227,7 @@ const IMPACT: Record<ProgressiveFactId, string> = {
   address: '跳过将使用“门店地址待补充”，成品不写具体导航。',
   booking: '跳过将使用“到店咨询预约”，不写具体预约渠道。',
   brandVoice: '跳过将使用默认克制语气，可稍后在门店资料改。',
+  industry: '回答后，今日推荐会按你的行业说明为什么适合现在做。',
 };
 
 export function createProgressiveFactDraft(
@@ -255,6 +278,7 @@ export function createProgressiveFactDraft(
     address: profile?.address ?? partial?.address ?? '',
     booking: profile?.booking ?? partial?.booking ?? '',
     brandVoice: profile?.brandVoice ?? partial?.brandVoice ?? '',
+    industry: profile?.industry ?? partial?.industry ?? '',
     projectId: project?.id ?? partial?.projectId ?? 'progressive-project-1',
     projectDurationMinutes:
       project?.durationMinutes ?? partial?.projectDurationMinutes ?? 60,
@@ -443,20 +467,20 @@ export function buildFinalizeStoreIntakeCommand(
   const answered = new Set(draft.answered);
   if (answered.has('projectPriceValidity')) answered.add('projectPrice');
 
-  const candidates = FACT_ORDER.filter((id) => answered.has(id)).flatMap(
-    (id) => {
-      const projection = storeFactProjection(draft, id, options);
-      if (!projection) return [];
-      return [
-        {
-          candidateId: `${projection.factId}:candidate`,
-          status: 'pending' as const,
-          objectKind: 'store_fact' as const,
-          fact: projection.fact,
-        },
-      ];
-    }
-  );
+  const candidates = LEDGER_PROJECTED_FACTS.filter((id) =>
+    answered.has(id)
+  ).flatMap((id) => {
+    const projection = storeFactProjection(draft, id, options);
+    if (!projection) return [];
+    return [
+      {
+        candidateId: `${projection.factId}:candidate`,
+        status: 'pending' as const,
+        objectKind: 'store_fact' as const,
+        fact: projection.fact,
+      },
+    ];
+  });
   if (candidates.length === 0) return null;
 
   const changed = new Set([...draft.answered, ...draft.skipped]);
@@ -485,6 +509,13 @@ export function buildFinalizeStoreIntakeCommand(
     profilePatch.brandVoice = (
       draft.brandVoice.trim() || FALLBACKS.brandVoice
     ).trim();
+  }
+  // No fallback value here on purpose: an unstated industry stays absent from
+  // the patch, which is what keeps "skipped" different from "answered blank".
+  // Core also pairs this field with the industry fact candidate, so writing a
+  // placeholder would claim a trade the merchant never named.
+  if (changed.has('industry') && draft.industry.trim()) {
+    profilePatch.industry = draft.industry.trim();
   }
   if (initializingProfile) {
     // Core requires `regulated` on the first patch (STORE_PROFILE_INCOMPLETE),
@@ -591,6 +622,22 @@ function storeFactProjection(
           value: { district: draft.district.trim() },
         },
       };
+    case 'industry': {
+      // Blank never becomes a fact: Core checks this candidate against
+      // profilePatch.industry, which stays absent unless the merchant stated
+      // one, and a fact claiming an empty trade would fail that pairing.
+      const industry = draft.industry.trim();
+      if (!industry) return null;
+      return {
+        factId: 'store-profile:industry:other',
+        fact: {
+          ...base,
+          kind: 'other',
+          key: 'store.profile.industry',
+          value: { industry },
+        },
+      };
+    }
     case 'address':
       return {
         factId: 'store-profile:address:fulfillment',

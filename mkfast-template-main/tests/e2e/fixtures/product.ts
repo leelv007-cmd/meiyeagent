@@ -220,6 +220,100 @@ export async function seedConfirmedStore(page: Page) {
 }
 
 /**
+ * State the store's industry the way the intake wizard does (D-174): one
+ * finalize_store_intake batch that writes the profile field and its ledger fact
+ * together, which is what the today-recommendation industry layer reads.
+ *
+ * Seed before running the task that should carry the industry whyNow — a fact
+ * written afterwards bumps the fact revision and correctly marks the delivered
+ * recommendation stale instead of relabelling it.
+ */
+export async function seedStoreIndustry(page: Page, industry: string) {
+  const state = await productState(page);
+  const storeRevision = state.store?.revision;
+  if (storeRevision === undefined) {
+    throw new Error('Confirmed store is missing from ProductState');
+  }
+  const suffix = crypto.randomUUID();
+  const capturedAt = new Date(Date.now() - 1_000).toISOString();
+  const batchId = `seed-store-industry-${suffix}`;
+  const candidateId = `${batchId}:industry`;
+  const referenceId = `${batchId}:merchant-confirmation`;
+  const factId = 'store-profile:industry:other';
+  const result = (await page.evaluate(
+    async (payload) => {
+      const response = await fetch('/api/core/p1/commands', {
+        body: JSON.stringify({
+          action: 'finalize_store_intake',
+          module: 'asset-memory',
+          payload,
+        }),
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': `product-fixture:finalize_store_intake:${crypto.randomUUID()}`,
+        },
+        method: 'POST',
+      });
+      const envelope = (await response.json()) as {
+        data?: unknown;
+        error?: { code?: string; message?: string };
+      };
+      if (!response.ok || envelope.data === undefined) {
+        throw new Error(
+          `industry finalize_store_intake failed: ${JSON.stringify(envelope.error)}`
+        );
+      }
+      return envelope.data;
+    },
+    {
+      batch: {
+        batchId,
+        candidates: [
+          {
+            candidateId,
+            fact: {
+              effectiveFrom: capturedAt,
+              expiresAt: null,
+              key: 'store.profile.industry',
+              kind: 'other',
+              scope: { storeId: state.workspaceId },
+              source: {
+                capturedAt,
+                kind: 'user_confirmation',
+                referenceId,
+              },
+              value: { industry },
+            },
+            objectKind: 'store_fact',
+            status: 'pending',
+          },
+        ],
+        source: {
+          capabilityStatus: 'assisted',
+          capturedAt,
+          example: false,
+          kind: 'manual',
+          referenceId,
+          sourceId: `${batchId}:source`,
+          sourceWorkspaceId: state.workspaceId,
+        },
+        summary: 'E2E merchant-stated store industry.',
+        taskId: `${batchId}:task`,
+      },
+      confirmations: [{ candidateId, expectedFactRevision: 0, factId }],
+      profilePatch: { expectedRevision: storeRevision, industry },
+    }
+  )) as { facts: Array<{ factId: string; revision: number }> };
+  expect(result.facts).toEqual(
+    expect.arrayContaining([expect.objectContaining({ factId, revision: 1 })])
+  );
+  // The profile is the industry layer's source of truth, so prove the write
+  // landed there too rather than only on the ledger.
+  expect((await productState(page)).store?.industry).toBe(industry);
+}
+
+/**
  * Day-0 inline authorize seed via composer path (NOT library detail form).
  * Must complete before user-activation measurement begins.
  */

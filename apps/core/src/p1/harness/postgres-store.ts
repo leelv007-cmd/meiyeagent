@@ -151,7 +151,7 @@ export class PostgresHarnessStore
     private readonly pool: Pool,
     private readonly factRevisions: Pick<
       PostgresStoreFactLedger,
-      'currentRevision'
+      'currentRevision' | 'listActive'
     > = new PostgresStoreFactLedger(pool),
     private readonly adminConfig?: Pick<AdminConfigRepository, 'get'>,
     private readonly clock: () => Date = () => new Date(),
@@ -883,6 +883,12 @@ export class PostgresHarnessStore
       if (!traces.has(row.stage)) traces.set(row.stage, row.payload);
     }
     const request = record(delivery.request);
+    // D-174: the industry layer's source of truth. Reading it off the fact
+    // ledger rather than the Product profile row is deliberate — the ledger is
+    // the profile's canonical Core-side projection, and it is the same revision
+    // the staleness check above is keyed on, so editing the industry invalidates
+    // yesterday's card instead of silently re-labelling it.
+    const storeIndustry = await this.readStoreProfileIndustry(workspaceId, at);
     const recommendationRules = this.adminConfig
       ? harnessTodayRecommendationConfigSchema.parse(
           (
@@ -908,6 +914,7 @@ export class PostgresHarnessStore
       delivery: delivery.delivery,
       contentPackage: delivery.content_package,
       intent: request?.intent,
+      ...(storeIndustry ? { storeIndustry } : {}),
       ...(recommendationRules ? { recommendationRules } : {}),
       contextTrace: traces.get('context_injection'),
       briefTrace: traces.get('brief_compilation'),
@@ -919,6 +926,27 @@ export class PostgresHarnessStore
       recommendationRecord,
       at,
     );
+  }
+
+  /**
+   * The store-wide industry the merchant stated on their profile (D-174),
+   * projected onto the fact ledger under `store.profile.industry`.
+   *
+   * Store-scoped on purpose: a service-scoped revision of this key would
+   * describe one project rather than the store, and the industry layer's copy
+   * ("结合本店…") speaks for the store.
+   */
+  private async readStoreProfileIndustry(workspaceId: string, at: string) {
+    const active = await this.factRevisions.listActive({
+      workspaceId,
+      scope: { storeId: workspaceId },
+      at,
+    });
+    const industry = active.find(
+      (fact) => fact.key === 'store.profile.industry',
+    );
+    const value = record(industry?.value)?.industry;
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
   }
 }
 

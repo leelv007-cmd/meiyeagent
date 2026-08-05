@@ -266,10 +266,16 @@ export type HarnessTodayRecommendationConfig = z.infer<
 >;
 /**
  * Published C-5 industry slugs for today-recommendation industryWhyNow keys.
- * Aliases cover (1) parse-service labels (护发/皮肤管理/生发), (2) question-card
- * options that production actually writes into intent.context.industry_category
- * (美发/皮肤管理), and (3) common merchant free-text (养发). 美甲 is intentionally
- * absent — no published supply, so it must fall through to platform/weekday.
+ * Aliases cover (1) parse-service labels (护发/皮肤管理/生发), (2) the labels a
+ * merchant states as their industry (美发/皮肤管理), and (3) common merchant
+ * free-text (养发). 美甲 is intentionally absent — no published supply, so it
+ * must fall through to platform/weekday.
+ *
+ * The industry value itself comes from the store profile (D-174). An earlier
+ * revision of this comment claimed production writes it into
+ * `intent.context.industry_category`; that path was proven unreachable end to
+ * end (#330), which is why the profile is now the source and the intent-context
+ * read survives only as a fallback.
  */
 export const TODAY_RECOMMENDATION_INDUSTRY_SLUGS = [
   'hair_care',

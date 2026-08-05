@@ -27,6 +27,8 @@ export interface TodayRecommendationRecord {
   delivery: unknown;
   contentPackage: unknown;
   intent?: unknown;
+  /** D-174: the store profile's industry, the industry layer's source of truth. */
+  storeIndustry?: string;
   recommendationRules?: HarnessTodayRecommendationConfig;
   contextTrace: unknown;
   briefTrace: unknown;
@@ -117,13 +119,17 @@ function configuredWhyNow(record: TodayRecommendationRecord, at: string) {
 
   const intent = asRecord(record.intent);
   const intentContext = asRecord(intent?.context) ?? intent;
+  // D-174: industry describes the store, so the profile answers first. The
+  // intent-context chain stays behind it as the fallback for deliveries made
+  // before the profile carried an industry — it is never the preferred source.
   const industryRaw =
+    stringValue(record.storeIndustry) ??
     stringValue(intentContext?.industry_category) ??
     stringValue(intentContext?.industry) ??
     stringValue(intentContext?.scene);
-  // Production writes Chinese labels into industry_category; only published
-  // slugs (or resolvable aliases) may hit the industry layer. 美甲 / free text
-  // stay unmapped and fall through to platform → weekday.
+  // Whatever the source, only published slugs (or resolvable aliases) may hit
+  // the industry layer. 美甲 / free text stay unmapped and fall through to
+  // platform → weekday.
   const industrySlug = industryRaw
     ? resolveTodayRecommendationIndustrySlug(industryRaw)
     : undefined;

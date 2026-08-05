@@ -49,6 +49,12 @@ const PROFILE_IMPORTS = [
     key: 'store.profile.district',
   },
   {
+    factId: 'store-profile:industry:other',
+    field: 'industry',
+    kind: 'other',
+    key: 'store.profile.industry',
+  },
+  {
     factId: 'store-profile:address:fulfillment',
     field: 'address',
     kind: 'fulfillment',
@@ -62,7 +68,7 @@ const PROFILE_IMPORTS = [
   },
 ] as const satisfies ReadonlyArray<{
   factId: string;
-  field: 'name' | 'city' | 'district' | 'address' | 'booking';
+  field: 'name' | 'city' | 'district' | 'industry' | 'address' | 'booking';
   kind: 'other' | 'fulfillment';
   key: string;
 }>;
@@ -92,7 +98,9 @@ export class StoreProfileImportPreparer {
     const candidates: AssetIntakeBatch['candidates'] = [];
 
     for (const mapping of PROFILE_IMPORTS) {
-      const value = store[mapping.field].trim();
+      // industry is optional on the profile (D-174), so this reads undefined
+      // for a store that skipped it — skipped means no candidate, not a blank.
+      const value = store[mapping.field]?.trim();
       if (!value) continue;
       if (await this.hasFact(context.workspaceId, mapping.factId)) continue;
       candidates.push({

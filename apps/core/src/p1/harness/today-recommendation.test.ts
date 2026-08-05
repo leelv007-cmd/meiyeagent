@@ -88,6 +88,92 @@ test('uses configured industry and platform rules before the persisted winner re
   );
 });
 
+// D-174: the industry layer describes the store, not one task. The profile is
+// its source of truth; the intent-context chain stays only as a fallback for
+// deliveries that predate the profile field.
+test('the store profile industry outranks the intent context chain', () => {
+  const rules = {
+    weekdayWhyNow: { '6': '周六规则' },
+    industryWhyNow: {
+      hair_care: '护发行业先验',
+      skin_management: '皮肤管理行业先验',
+    },
+    platformWhyNow: { xiaohongshu: '小红书平台规则' },
+  };
+
+  assert.equal(
+    projectTodayRecommendation(
+      'workspace-1',
+      1,
+      {
+        ...record(1),
+        storeIndustry: '美发',
+        // Disagreeing on purpose: if the intent context could still win, this
+        // would read 皮肤管理行业先验 and the profile would be decorative.
+        intent: { context: { industry_category: '皮肤管理' } },
+        recommendationRules: rules,
+      },
+      NOW,
+    ).recommendation?.whyNow,
+    '护发行业先验',
+  );
+});
+
+test('the intent context chain still answers when the profile has no industry', () => {
+  const rules = {
+    weekdayWhyNow: { '6': '周六规则' },
+    industryWhyNow: { skin_management: '皮肤管理行业先验' },
+    platformWhyNow: { xiaohongshu: '小红书平台规则' },
+  };
+
+  for (const storeIndustry of [undefined, '', '   ']) {
+    assert.equal(
+      projectTodayRecommendation(
+        'workspace-1',
+        1,
+        {
+          ...record(1),
+          ...(storeIndustry === undefined ? {} : { storeIndustry }),
+          intent: { context: { industry_category: '皮肤管理' } },
+          recommendationRules: rules,
+        },
+        NOW,
+      ).recommendation?.whyNow,
+      '皮肤管理行业先验',
+      `blank profile industry ${JSON.stringify(storeIndustry)} must fall back`,
+    );
+  }
+});
+
+test('an unmapped profile industry falls through instead of throwing', () => {
+  const rules = {
+    weekdayWhyNow: { '6': '周六规则' },
+    industryWhyNow: { hair_care: '护发行业先验' },
+    platformWhyNow: { xiaohongshu: '小红书平台规则' },
+  };
+
+  // 美甲 is published-supply-less by design, and free text is whatever the
+  // merchant typed. Neither may hit the industry layer, and neither may take
+  // the whole card down with it — platform then weekday still answer.
+  for (const storeIndustry of ['美甲', '自由文本随便写']) {
+    assert.equal(
+      projectTodayRecommendation(
+        'workspace-1',
+        1,
+        {
+          ...record(1),
+          storeIndustry,
+          briefTrace: { ...record(1).briefTrace, platforms: ['xiaohongshu'] },
+          recommendationRules: rules,
+        },
+        NOW,
+      ).recommendation?.whyNow,
+      '小红书平台规则',
+      `unmapped profile industry ${storeIndustry} must fall through`,
+    );
+  }
+});
+
 test('three published industry slugs each hit the industry whyNow layer', () => {
   for (const [slug, label, reason] of [
     ['hair_care', '美发', '护发行业先验'],

@@ -23,6 +23,9 @@ const storeSchema = z.object({
   district: id,
   address: id,
   booking: id,
+  // D-174: skippable, so optional rather than defaulted — an absent industry
+  // and an empty one must both mean "not stated yet", never a guessed one.
+  industry: id.optional(),
   brandVoice: id,
   prohibitions: z.array(id),
   accounts: z.array(
@@ -60,6 +63,7 @@ export const storeProfilePatchSchema = z
     district: id.optional(),
     address: id.optional(),
     booking: id.optional(),
+    industry: id.optional(),
     brandVoice: id.optional(),
     prohibitions: z.array(id).optional(),
     regulated: z.boolean().optional(),

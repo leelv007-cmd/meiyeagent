@@ -43,6 +43,9 @@ export const STORE_INTAKE_FIELDS: ProgressiveFactId[] = [
   'district',
   'address',
   'booking',
+  // D-174: last, and skippable — the wizard collects it, the Day-0 question
+  // flow (FACT_ORDER) deliberately does not, so intake stays non-blocking.
+  'industry',
 ];
 
 /**
@@ -60,6 +63,7 @@ const DRAFT_FIELD_FACTS: Record<string, ProgressiveFactId> = {
   'store.fulfillment.booking': 'booking',
   'store.profile.city': 'city',
   'store.profile.district': 'district',
+  'store.profile.industry': 'industry',
   'store.profile.name': 'name',
 };
 
@@ -70,6 +74,7 @@ export const MANUAL_FIELD_KEYS: Record<ProgressiveFactId, string | undefined> =
     brandVoice: undefined,
     city: 'store.profile.city',
     district: 'store.profile.district',
+    industry: 'store.profile.industry',
     name: 'store.profile.name',
     projectName: 'service.name',
     projectPrice: 'service.price',
@@ -687,6 +692,7 @@ const IMPORT_PROFILE_FIELDS: Record<string, ProgressiveFactId> = {
   'store-profile:booking:fulfillment': 'booking',
   'store-profile:city:other': 'city',
   'store-profile:district:other': 'district',
+  'store-profile:industry:other': 'industry',
   'store-profile:name:other': 'name',
 };
 

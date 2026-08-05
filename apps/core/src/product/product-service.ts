@@ -261,6 +261,7 @@ function storeProfileScalars(patch: StoreProfilePatch) {
       | 'district'
       | 'address'
       | 'booking'
+      | 'industry'
       | 'brandVoice'
       | 'prohibitions'
       | 'regulated'
@@ -272,6 +273,9 @@ function storeProfileScalars(patch: StoreProfilePatch) {
     'district',
     'address',
     'booking',
+    // D-174: optional, so it is merged like any other scalar but never
+    // required — a store that skipped it simply has no industry.
+    'industry',
     'brandVoice',
     'prohibitions',
     'regulated',
@@ -347,6 +351,7 @@ function createStoreProfileFromPatch(patch: StoreProfilePatch): StoreProfile {
     district: patch.district!,
     address: patch.address!,
     booking: patch.booking!,
+    ...(patch.industry === undefined ? {} : { industry: patch.industry }),
     brandVoice: patch.brandVoice!,
     prohibitions: structuredClone(patch.prohibitions ?? []),
     accounts: mergeStoreAccounts([], patch),

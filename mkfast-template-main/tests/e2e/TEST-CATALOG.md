@@ -998,3 +998,19 @@ fixture。产品请求不 mock，静态源码断言不能替代以下三条旅�
 | 1 | image-text customer deep run keeps canonical edit, Selection AI, sensitive-word guard, and delivery on one journey | 以 customer + deep 提交 note，核对冻结请求；进入带媒体的 Tiptap 对象工作区，真实选中正文片段并接受 Selection AI 调整，进入派生 Result；采用后保存 canonical 正文，要求 delivery 违禁词检查与当前正文同源、命中时 fail closed，修正后重新变 clear 并下载真实 ZIP。 |
 | 2 | delivered AI cover exposes five presets, signed ratios, style-role analysis, and a Result image | 从已交付图文卡进入 AI 封面，要求 5 个美业 preset 均可达、3 个 ratio 的签名尺寸不超过当前模型上限；以 1:1 正例和授权 style-role 素材提交，观察七维分析阶段、签名 payload、终态交付与 Result 图片。 |
 | 3 | viral chip uses honest paste fallback and authorized image through task experience morph to note Result | 从爆款复刻 chip 进入粘贴轨，确认 OpenCLI live 证据已核销但当前设备桥缺失时仍默认粘贴且无外部抓取；粘贴参考原文、上传并授权图片、确认 exact `recipe.viral_adapt` note 合同与结构化 `viralAdaptSource`，要求商家输入不泄露 raw note/内部传输字段/素材 ID，随后观察 basis → candidate/delivery morph → sediment/correction、成功终态主动 refetch memory entries（无 reload），并进入 note Result。 |
+
+## D-174 今日推荐行业层换源（#342，重述自 #330 AC3）
+
+**File:** `specs/today-recommendation-industry.spec.ts` | **Priority:** P1
+
+单独成文件而不是并入 `dashboard-home-mount.spec.ts`：它证的是一条产品合同
+（行业层数据源＝门店档案），与 D-126 首页挂载是两回事。跑一次真实生成，属长用例，
+**不进 production-journey 必跑集**。
+
+旧口径（答行业问题卡→从任务读回）经 #330 实证端到端不可达：商家可写事实的封闭词表
+里没有行业身份，行业缺口恒被自动放行；即便挂起，流内作答也不落库。D-174 因此把数据源
+换成门店档案——whyNow 文案「结合本店…」本来说的就是门店属性。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | a stated industry gives the hot recommendation its industry whyNow | 确认门店后以一条 `finalize_store_intake` 写入行业（档案字段＋`store.profile.industry` 事实同批落地，并回读 ProductState 证明档案侧真的写进去了）；**先声明再生成**（后写事实会正确地把已交付推荐置为 stale 而非改写它）；走真实 Composer 交付一单；回首页展开今日推荐迷你卡，断言行业层原文「结合本店护发与头皮护理，今天适合把主推项目讲清楚。」，并**排他断言** platform／weekday 两句兜底文案缺席——没有排他这一半，一张同时显示两句的卡也会绿。 |

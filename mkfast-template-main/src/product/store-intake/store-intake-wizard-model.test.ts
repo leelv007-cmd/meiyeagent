@@ -161,6 +161,10 @@ test('ticking a recommendation changes what the wizard asks and offers', () => {
       'district',
       'address',
       'booking',
+      // D-174 industry sits last and matches no recommendation hint: ticking a
+      // recommendation never pulls it forward, it is only ever offered after
+      // everything the merchant came here for.
+      'industry',
     ]
   );
   // 少打字: the sentence box arrives pre-structured instead of empty.

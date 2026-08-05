@@ -20,6 +20,9 @@ test('today recommendation reads the fact revision through the ledger API', asyn
       revisionReads.push(workspaceId);
       return 7;
     },
+    async listActive() {
+      return [];
+    },
   });
 
   const recommendation = await store.readTodayRecommendation('workspace-1');
@@ -115,6 +118,9 @@ test('today recommendation selects the frozen revision trace when context inject
     {
       async currentRevision() {
         return 1;
+      },
+      async listActive() {
+        return [];
       },
     },
     undefined,
