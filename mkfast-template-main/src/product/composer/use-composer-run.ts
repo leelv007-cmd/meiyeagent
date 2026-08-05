@@ -215,14 +215,23 @@ function groundingBlockerFromError(error: unknown) {
   if (!(error instanceof P1RequestError)) return null;
   const missing = error.details?.missing;
   if (!Array.isArray(missing)) return null;
-  return groundingBlockerFromMissing(
-    missing.filter(
-      (value): value is CreativeGroundingRequirement =>
-        value === 'confirmed_store' ||
-        value === 'confirmed_project' ||
-        value === 'confirmed_qualification' ||
-        value === 'real_authorized_asset'
-    )
+  const requirements = missing.filter(
+    (value): value is CreativeGroundingRequirement =>
+      value === 'confirmed_store' ||
+      value === 'confirmed_project' ||
+      value === 'confirmed_qualification' ||
+      value === 'real_authorized_asset'
+  );
+  // A store gap normally never reaches a request: customized creation names it
+  // on the button and opens the fact card first. Core resolves grounding for
+  // every submission regardless of creation mode, so free creation meets that
+  // rule at the server instead — and a refused press has to say why (#345).
+  return (
+    groundingBlockerFromMissing(requirements) ??
+    (requirements.includes('confirmed_store') ||
+    requirements.includes('confirmed_project')
+      ? 'store'
+      : null)
   );
 }
 

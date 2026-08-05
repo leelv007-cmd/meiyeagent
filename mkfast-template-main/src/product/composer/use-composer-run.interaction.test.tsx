@@ -8,6 +8,8 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { type ReactNode, useRef, useState } from 'react';
 import { expect, test, vi } from 'vitest';
 
+import { P1RequestError } from '@/p1/client';
+
 import { createBriefSurfaceState } from './brief-surface';
 import { fixtureBriefProjection } from './brief-surface.fixture';
 import {
@@ -225,4 +227,132 @@ test('attemptSubmit passes all gates and creates through injected transports', a
     workId: 'work-1',
   });
   expect(view.result.current.lensState.phase).toBe('frozen');
+});
+
+/**
+ * #345: Core resolves creative grounding for every submission with no notion of
+ * creation mode (`ProductCreativeGroundingResolver.resolve`), while free
+ * creation carries no client-side store pre-check — so the server is the first
+ * thing that tells a Day-0 merchant their store is unconfirmed. That refusal
+ * has to name the gap: the Composer already renders a `store` blocker with the
+ * copy and the store link, and a press that is refused must produce a described
+ * reason rather than the generic failure toast.
+ */
+test('a submission refused for store grounding names the gap the server sent', async () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const transports = createTransports();
+  transports.submitSubmission = vi.fn(async () => {
+    throw new P1RequestError(
+      'Confirmed Product grounding is incomplete: confirmed_store, confirmed_project.',
+      'CREATIVE_GROUNDING_INCOMPLETE',
+      { missing: ['confirmed_store', 'confirmed_project'] },
+      409
+    );
+  }) as ComposerRunTransports['submitSubmission'];
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+  const view = renderHook(
+    () => {
+      const initialLens = bindQuoteView(
+        updateUserText(
+          selectLens(createComposerLensState(), 'copy'),
+          SIGNED_SUBMISSION.intent
+        ),
+        projectComposerQuoteView(QUOTE, 1)
+      );
+      const [lensState, setLensState] = useState(initialLens);
+      const [, setSession] = useState(() => createComposerSession('session-1'));
+      const [briefState, setBriefState] = useState(() =>
+        createBriefSurfaceState()
+      );
+      const [, setBriefPending] = useState(false);
+      const [, setDestinationMapPending] = useState(false);
+      const [destinationPreflight, setDestinationPreflight] =
+        useState<ComposerDestinationPreflightState | null>(null);
+      const [, setShowRequiredHint] = useState(false);
+      const [submissionGroundingBlocked, setSubmissionGroundingBlocked] =
+        useState<ComposerGroundingBlocker | null>(null);
+      const [, setSubmissionQuotaBlocked] = useState(false);
+      const [, setSubmitBlockedMessage] = useState<string | null>(null);
+      const armedQuoteIdRef = useRef<string | null>(null);
+      const briefContextRevisionRef = useRef<number | null>(null);
+      const briefInputRef = useRef(null);
+      const destinationAutoSubmitIntentRef = useRef<string | null>(null);
+      const destinationMapPendingRef = useRef(false);
+      const focusIntentAfterPrefillRef = useRef(false);
+      const sessionIdRef = useRef('session-1');
+      const run = useComposerRun({
+        armedQuoteIdRef,
+        briefContextRevisionRef,
+        briefInputRef,
+        briefState,
+        // Free creation is the mode that reaches the server without a store
+        // pre-check (`missingGrounding` is empty here for that reason).
+        creationMode: 'free',
+        creditProjectionQueryKey: ['credits'],
+        currentQuoteView: projectComposerQuoteView(QUOTE, 1),
+        destinationAutoSubmitIntentRef,
+        destinationMapPendingRef,
+        destinationPreflight,
+        fixtureSubmit: false,
+        flushQuoteSettle: vi.fn(),
+        focusIntentAfterPrefillRef,
+        imageCardinalityValid: true,
+        lensState,
+        missingGrounding: [],
+        productGroundingReady: true,
+        quotaBlocked: false,
+        quote: QUOTE,
+        quoteId: QUOTE.quoteId,
+        quoteSettling: false,
+        recipe: RECIPE,
+        sessionIdRef,
+        setBriefPending,
+        setBriefState,
+        setDestinationMapPending,
+        setDestinationPreflight,
+        setLensState,
+        setSession,
+        setShowRequiredHint,
+        setSubmissionGroundingBlocked,
+        setSubmissionQuotaBlocked,
+        setSubmitBlockedMessage,
+        signedSubmission: SIGNED_SUBMISSION,
+        submissionDelivery: {
+          deliverableKind: 'copy_document',
+          platform: 'xiaohongshu',
+        },
+        submissionQuantity: 1,
+        submissionSettings: { ...lensState.draft.settings },
+        styleReferenceAssetIds: [],
+        surface: {
+          contentHash: 'surface-hash-1',
+          recipeRefs: [],
+          recipes: [],
+          revision: 1,
+          revisionId: 'surface-1',
+          status: 'published',
+          surfaceId: 'surface.home.launch',
+          toolEntryRefs: [],
+        } as BrowserSurfaceProjection,
+        transports,
+        viralJourneyActive: false,
+        viralSubmissionRecipeReady: false,
+      });
+      return { run, submissionGroundingBlocked };
+    },
+    { wrapper }
+  );
+
+  await act(() => view.result.current.run.attemptSubmit());
+  await waitFor(() =>
+    expect(transports.submitSubmission).toHaveBeenCalledOnce()
+  );
+
+  await waitFor(() =>
+    expect(view.result.current.submissionGroundingBlocked).toBe('store')
+  );
 });
