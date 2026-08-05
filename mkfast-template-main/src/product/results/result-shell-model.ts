@@ -292,11 +292,12 @@ export function projectResultShellActions(
       };
     }
     return {
-      // #353: `retry` dispatches `retry_creative_job` — a fresh creative run,
-      // not a second delivery attempt. Name the run, not the delivery.
-      primaryAction: retryableRun
-        ? action('retry', 'primary', true, '重试创作')
-        : action('leave_and_continue', 'primary', true, '返回工作台'),
+      // #353: `retry` dispatches `retry_creative_job` — a billable fresh
+      // creative run, not a second delivery attempt. What failed was the
+      // delivery, and the delivery panel runs off the ContentPackage, so it
+      // needs no Job. Copy/image keeps 继续调整 because a rejected note is
+      // usually fixed by editing it, not by regenerating it.
+      primaryAction: action('deliver', 'primary', true, '处理交付问题'),
       secondaryActions: [action('continue_adjust', 'secondary')],
       overflowActions: historyAndRun,
     };

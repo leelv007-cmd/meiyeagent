@@ -453,18 +453,30 @@ test('actions: a failed delivery with no retryable Job offers no retry', () => {
 });
 
 // #353: `retry` dispatches `retry_creative_job` in every branch it appears in —
-// a fresh creative run on the Operations executor, never a second delivery
-// attempt. The delivery branch relabelled it 「重试交付」, naming the one thing
-// the click cannot do.
-test('actions: a failed delivery names retry after the run it re-submits', () => {
-  const facts = baseFacts({ deliveryAttempt: 'failed', jobId: 'job-1' });
-  const actions = projectResultShellActions(
-    projectResultShellPhase(facts),
-    facts
-  );
-  assert.equal(actions.primaryAction?.id, 'retry');
-  assert.equal(actions.primaryAction?.label, '重试创作');
-  assert.doesNotMatch(actions.primaryAction?.label ?? '', /交付/u);
+// a billable fresh creative run on the Operations executor, never a second
+// delivery attempt. The cure for a failed delivery is the delivery panel, which
+// runs off the ContentPackage and needs no Job at all. Same house rule the video
+// branch of this same condition already follows.
+test('actions: a failed delivery returns to delivery, Job or no Job', () => {
+  for (const facts of [
+    baseFacts({ deliveryAttempt: 'failed', jobId: 'job-1' }),
+    baseFacts({ deliveryAttempt: 'failed' }),
+  ]) {
+    const actions = projectResultShellActions(
+      projectResultShellPhase(facts),
+      facts
+    );
+    assert.equal(actions.primaryAction?.id, 'deliver');
+    assert.equal(actions.primaryAction?.label, '处理交付问题');
+    assert.equal(
+      [
+        actions.primaryAction,
+        ...actions.secondaryActions,
+        ...actions.overflowActions,
+      ].some((candidate) => candidate?.id === 'retry'),
+      false
+    );
+  }
 });
 
 test('actions: acceptance_unknown → recover_or_verify only', () => {
