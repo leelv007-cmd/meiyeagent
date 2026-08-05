@@ -52,7 +52,7 @@ import {
  * (D-156 pilot copy, CNY on a non-Waffo runtime) while /pricing quotes the
  * governed Core catalog (HKD). Under a Waffo runtime both read HK$522 — but out
  * of two places synchronised by hand, not out of one source. Whether the
- * product should keep two assets is a pricing decision, filed for the user.
+ * product should keep two assets is a pricing decision, filed as #352.
  * This file neither asserts they agree nor pretends the split is fine: it holds
  * each surface to its own source, which is what keeps the split honest until
  * that decision lands.
