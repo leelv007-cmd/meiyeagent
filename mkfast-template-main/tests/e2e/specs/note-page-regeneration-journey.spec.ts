@@ -63,7 +63,7 @@ const imageTextContract = JOURNEY_CONTRACTS.find(
   ({ modality }) => modality === 'image_text'
 )!;
 
-const PREPARE_FAIL_COPY = '暂时无法准备本页重生成，尚未使用图片额度。请重试。';
+const PREPARE_FAIL_COPY = '暂时无法准备本页重生成，尚未消耗积分。请重试。';
 const HYDRATION_FAIL_COPY = '暂时无法读取当前图文版本，请刷新后重试。';
 /** #338: what the timeline says on its own when the hydrate could not read the package. */
 const HYDRATION_UNAVAILABLE_COPY =

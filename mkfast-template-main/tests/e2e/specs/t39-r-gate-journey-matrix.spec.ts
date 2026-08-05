@@ -343,7 +343,7 @@ async function assertDayZeroSampleStoresStayReadOnly(page: Page) {
     ).toBeVisible();
   }
   await expect(
-    showcase.getByText('只读 · 浏览不消耗额度').first(),
+    showcase.getByText('只读 · 浏览不消耗积分').first(),
     'the showcase must say out loud that browsing costs nothing'
   ).toBeVisible();
 

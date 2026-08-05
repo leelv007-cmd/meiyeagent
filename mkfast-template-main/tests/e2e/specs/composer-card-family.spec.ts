@@ -28,7 +28,7 @@ import { selectComposerLens } from '../fixtures/ui-journey';
  *    proven by the run finishing rather than by the card disappearing;
  *  - the 「采用」 entry is bound to the revision the backend actually delivered;
  *  - every sentence on all three cards is merchant language (D-116);
- *  - quota is passive on the main path — no pre-run 额度确认 (D-043).
+ *  - credits are passive on the main path — no pre-run 积分确认 (D-043).
  */
 
 /** Mirrors src/product/composer/card-language.ts — the走查断言清单. */
@@ -578,7 +578,7 @@ test.describe('T31 三类卡与确认卡', () => {
     const questionCard = page.getByTestId('composer-question-card');
     await expect(questionCard).toBeVisible({ timeout: 240_000 });
     await expect(page.getByTestId('composer-question-hold')).toContainText(
-      '额度已经放回'
+      '积分已经放回'
     );
     await expect(page.getByTestId('composer-question-hold')).toContainText(
       '重新排队占用'
@@ -593,7 +593,7 @@ test.describe('T31 三类卡与确认卡', () => {
     ]);
   });
 
-  test('quota is passive on the main path — no pre-run 额度确认', async ({
+  test('credits are passive on the main path — no pre-run 积分确认', async ({
     page,
     request,
   }) => {
@@ -612,8 +612,9 @@ test.describe('T31 三类卡与确认卡', () => {
 
     // Credit-era (D-172 / #298): when `projection.credits` is present,
     // `composerQuotaAvailability` intentionally silences the bucket passive
-    // line (`composer-quota-passive`). The server quote line is the passive
-    // exposure on the main path — statement only, no pre-run 额度确认 gate.
+    // line, which #336 retired with the three-bucket projection that fed it.
+    // The server quote line is the passive exposure on the main path — a
+    // statement only, with no pre-run 积分确认 gate.
     await expect(page.getByTestId('composer-quota-passive')).toHaveCount(0);
     const entitlement = await page.evaluate(async () => {
       const response = await fetch('/api/core/p1/query', {

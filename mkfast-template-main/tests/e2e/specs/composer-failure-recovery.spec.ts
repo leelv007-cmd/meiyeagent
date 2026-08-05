@@ -18,7 +18,7 @@ import { seedConfirmedStore } from '../fixtures/product';
  * S2 失败与恢复 — the two journeys W03 and W10 exist to make true.
  *
  * ① 失败申报: a run that cannot be delivered says so *in the conversation*, in
- *    merchant language, with a next step and the 额度 outcome. Before this the
+ *    merchant language, with a next step and the 积分 outcome. Before this the
  *    transcript simply stopped and a generic toast was the whole story
  *    (差距报告 P0-2).
  * ② 时间桥: closing the tab is not a way to lose a run. The server holds the
@@ -204,8 +204,11 @@ async function startRun(page: Page, intent: string) {
 }
 
 /** 还剩 N 条 — the passive quota line the refund has to move back. */
-function remainingFromQuotaLine(text: string) {
-  const match = /还剩\s*(\d+)/u.exec(text);
+function availableCreditsFromBalanceLine(text: string) {
+  // 「可用 1300 分」 — the credit balance beside the composer (D-172). This used
+  // to read 「还剩 N 条」 off `composer-quota-passive`, the bucket line that the
+  // retired three-bucket projection fed (#336).
+  const match = /可用\s*(\d+)\s*分/u.exec(text);
   return match ? Number(match[1]) : null;
 }
 
@@ -228,10 +231,10 @@ test.describe('S2 失败与恢复', () => {
     await expect(page.getByTestId('composer-quote-line')).toBeVisible({
       timeout: 30_000,
     });
-    // Read the quota before the run so the refund is an observed change rather
-    // than a sentence the card asserts about itself.
-    const quotaBefore = remainingFromQuotaLine(
-      await page.getByTestId('composer-quota-passive').innerText()
+    // Read the balance before the run so the refund is an observed change
+    // rather than a sentence the card asserts about itself.
+    const creditsBefore = availableCreditsFromBalanceLine(
+      await page.getByTestId('workbench-credit-balance').innerText()
     );
 
     const run = await startRun(page, FAILURE_DRILL_INTENT);
@@ -255,20 +258,20 @@ test.describe('S2 失败与恢复', () => {
     const actions = page.getByTestId('composer-report-actions');
     expect(await actions.locator('button').count()).toBeGreaterThan(0);
 
-    // ② 额度退还可见: stated on the card *and* visible on the passive line.
+    // ② 积分退还可见: stated on the card *and* visible on the balance line.
     await expect(page.getByTestId('composer-report-quota')).toContainText(
       '退回'
     );
-    if (quotaBefore !== null) {
+    if (creditsBefore !== null) {
       await expect
         .poll(
           async () =>
-            remainingFromQuotaLine(
-              await page.getByTestId('composer-quota-passive').innerText()
+            availableCreditsFromBalanceLine(
+              await page.getByTestId('workbench-credit-balance').innerText()
             ),
           { timeout: 60_000 }
         )
-        .toBe(quotaBefore);
+        .toBe(creditsBefore);
     }
 
     // A blocked draft must not be left on screen as if it were usable.

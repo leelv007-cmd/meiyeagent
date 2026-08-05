@@ -655,9 +655,10 @@ exist to make true, both against the real Web → Core → Harness/DBOS chain.
 
 - **失败申报 (P0-2)**: a run whose candidate is blocked by the canonical
   `critical_fact_source` gate reaches the conversation as a 申报卡 carrying a
-  Chinese 白话原因, a 下一步动作, at least one recovery entry, and the 额度
-  outcome — asserted both on the card and as an observed return of the passive
-  quota number, not only as a sentence the card makes about itself. The blocked
+  Chinese 白话原因, a 下一步动作, at least one recovery entry, and the 积分
+  outcome — asserted both on the card and as an observed return of the credit
+  balance beside the composer, not only as a sentence the card makes about
+  itself. The blocked
   draft is gone from the transcript: a refused candidate must not be left on
   screen as if it were usable. Every visible sentence passes the D-116 language
   gate.
@@ -766,19 +767,19 @@ walk end to end. Both drive real backends — the allowance moves through the
 governed admin-config CAS path an operator uses, the shortfall is a real
 ledger state, and the redemption is a real code an admin recorded.
 
-- 缺哪桶说哪桶：an 图文 run debits copy AND image server-side
-  (`server-quote-authority.ts` `debitUnitsFor` /
-  `composer-submission-gate.ts` `noteUsageUnits`). A merchant whose grant has
-  图片 to spare and 文案 at zero is stopped in front of 生成 and told which
-  bucket, not handed an `INSUFFICIENT_ENTITLEMENT` after the fact (P0-5).
+- 缺多少说多少：admission is one credit reservation for the whole run
+  (D-172), so a merchant short of credits is stopped in front of 生成 and told
+  the gap in 分, not handed an `INSUFFICIENT_ENTITLEMENT` after the fact
+  (P0-5). The per-bucket precheck this replaced is retired with the
+  three-bucket projection that fed it (#336).
 - 原地解锁：the exits on that card are the inline redemption code and the
   contact form — the old 「查看套餐」 link redirected to the same read-only
   usage page the merchant was already looking at (D-141). Redeeming keeps the
   same URL and the same draft, and 生成 comes back.
-- 一个数字一个来源：changing the 初级 文案额度 in the operations console
-  changes what `/pricing` quotes on the next load. No deploy, no second number
-  to edit — the public page reads the same `plan.allowances.*` revision the
-  grant reads (D-143 单一商品目录).
+- 一个数字一个来源：changing a plan's monthly credits in the operations
+  console changes what `/pricing` quotes on the next load. No deploy, no second
+  number to edit — the public page reads the same `plan.credits.*` revision the
+  grant reads (D-143 单一商品目录 / D-172).
 
 ## 两页套餐价同源（#242，S3 转入）
 

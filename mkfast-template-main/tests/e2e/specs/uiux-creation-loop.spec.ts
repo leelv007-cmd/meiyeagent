@@ -155,7 +155,7 @@ test.describe('Day-0 recommendation and example store', () => {
     const example = page.getByRole('region', { name: hairCare.name });
     await expect(example).toBeVisible();
     await expect(
-      example.getByText('只读 · 浏览不消耗额度', { exact: true })
+      example.getByText('只读 · 浏览不消耗积分', { exact: true })
     ).toBeVisible();
     for (const asset of hairCare.assetPreviews) {
       await expect(example.getByText(asset.label).first()).toBeVisible();

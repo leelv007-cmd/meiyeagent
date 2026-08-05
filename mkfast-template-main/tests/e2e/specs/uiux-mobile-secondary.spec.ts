@@ -262,53 +262,50 @@ test.describe('desktop secondary surfaces', () => {
     }
   });
 
-  test('keeps unpublished credit pricing off the public plans', async ({
+  test('states the public plans in credits, the unit they are sold in', async ({
     page,
   }) => {
+    // This pair used to assert the opposite — that neither /pricing nor the
+    // account page could say 「积分」 — and drove `pricing-plan-quota-*` and an
+    // account panel that #310/#306 had already replaced. Both were dead against
+    // the shipped product: the testids and the 「每个账期可交付产出」 heading
+    // exist nowhere else in the repo, and the account page mounts
+    // MerchantCreditDetailPanel now (asserted in merchant-credit-detail.test.ts).
+    // The mobile-layout question they were carrying is real, so it is kept; the
+    // retired-unit expectation is inverted to the credit contract (#336 C6).
     await page.goto('/pricing');
-    await expect(
-      page.getByRole('heading', { name: '每个账期可交付产出' })
-    ).toBeVisible();
-    await expect(
-      page.getByText('可同时进行的创作数', { exact: true }).first()
-    ).toBeVisible();
-    for (const label of ['文案', '图片', '视频']) {
-      await expect(page.getByText(label, { exact: true })).toHaveCount(0);
+    await expect(page.getByTestId('pricing-subscription-plans')).toBeVisible();
+    await expect(page.getByTestId('pricing-credit-boosters')).toBeVisible();
+    for (const tier of ['trial', 'starter', 'growth', 'pro'] as const) {
+      await expect(page.getByTestId(`pricing-credits-${tier}`)).toBeVisible();
     }
-    for (const [tier, credits] of [
-      ['starter', '500'],
-      ['growth', '1300'],
-      ['pro', '2800'],
-    ] as const) {
-      await expect(
-        page.getByTestId(`pricing-plan-quota-${tier}`)
-      ).not.toContainText(credits);
-    }
-    const pricingText = (await page.locator('main').innerText()).toLowerCase();
-    expect(pricingText).not.toMatch(/\bcredit(s)?\b|\btoken(s)?\b|积分/);
+    const pricingText = await page.locator('main').innerText();
+    expect(pricingText).toMatch(/积分/);
+    // RETIRED-METERING: the unit /pricing stopped selling in (D-172).
+    expect(pricingText).not.toMatch(/额度|条数/);
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth)
     ).toBeLessThanOrEqual(1365);
   });
 
-  test('expresses account usage only as deliverable output', async ({
+  test('states account billing in credits without overflowing the phone', async ({
     page,
     request,
   }) => {
     const user = await registerE2EUser(request);
     try {
       await loginByForm(page, user);
-      await page.goto('/settings/account?section=usage');
-      await page.getByTestId('account-usage-details-toggle').click();
-      for (const label of ['可用', '占用', '已扣完', '已释放', '本期到期']) {
-        await expect(
-          page.getByText(label, { exact: false }).first()
-        ).toBeVisible();
-      }
-      const accountText = (
-        await page.locator('main').innerText()
-      ).toLowerCase();
-      expect(accountText).not.toMatch(/\bcredit(s)?\b|\btoken(s)?\b|积分/);
+      await page.goto('/settings/account?section=credits');
+      await expect(page.getByTestId('merchant-credit-detail')).toBeVisible();
+      const accountText = await page.locator('main').innerText();
+      expect(accountText).toMatch(/积分/);
+      // RETIRED-METERING: the three-bucket usage panel this replaced.
+      expect(accountText).not.toMatch(/额度|条数/);
+      expect(
+        await page.evaluate(
+          () => document.documentElement.scrollWidth - window.innerWidth
+        )
+      ).toBeLessThanOrEqual(1);
     } finally {
       await cleanupE2EUsers(request);
     }
