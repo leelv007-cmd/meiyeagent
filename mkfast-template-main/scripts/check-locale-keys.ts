@@ -67,7 +67,6 @@ const PRODUCT_SHELL_SOURCES = [
   'src/p1/redemption-card.tsx',
   'src/p1/settings-view-model.ts',
   'src/p1/use-integration-settings.ts',
-  'src/product/account-usage-panel.tsx',
   'src/product/async-task-center-model.ts',
   'src/product/async-task-center.tsx',
   'src/product/canonical-asset-actions.tsx',
