@@ -11,6 +11,7 @@ import {
   probeObjectStorageReadWrite,
   validatePlatformDefaultModel,
 } from '../assembly/domain-rules.js';
+import { noteEnhancementJudgeResolverForMode } from './note-enhancement-judge.js';
 import {
   AdminConfigBoundedExecutionContinuationResolver,
   AdminConfigBoundedExecutionLimitsResolver,
@@ -83,7 +84,6 @@ import {
 import { requireHarnessFrozenPrompt } from '../p1/harness/langfuse-prompts.js';
 import { langfuseSenderFromEnv } from '../p1/harness/langfuse-sender.js';
 import { PostgresNoteMediaAdmissionCoordinator } from '../p1/harness/note-media-admission.js';
-import { unconfiguredNotePlanEnhancementJudgeResolver } from '../p1/harness/note-plan-structured-port.js';
 import {
   HarnessObservabilityReconciler,
   shouldPublishObservabilityDeliverySnapshot,
@@ -1022,7 +1022,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       imageProfile: IMAGE_MODEL_RECIPE_PROFILE,
       models: p1ModelSupplyService,
       noteAdmission: noteMediaAdmission,
-      noteEnhancementJudge: unconfiguredNotePlanEnhancementJudgeResolver,
+      noteEnhancementJudge: noteEnhancementJudgeResolverForMode(modelRuntime.mode),
       noteSettings: notePlanSettings,
       now: () => new Date().toISOString(),
       runners: structuredNodeRunnerFactory,

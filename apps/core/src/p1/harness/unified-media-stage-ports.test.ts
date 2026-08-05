@@ -65,6 +65,7 @@ import type {
 	NoteMediaAdmissionPort,
 	NoteMediaAdmissionToken,
 } from "./note-media-admission.js";
+import { noteEnhancementJudgeResolverForMode } from "../../assembly/note-enhancement-judge.js";
 import { unconfiguredNotePlanEnhancementJudgeResolver } from "./note-plan-structured-port.js";
 import { LedgerBackedHarnessContextPort } from "./production-context-port.js";
 import type { HarnessStructuredNodeRunnerFactory } from "./production-stage-ports.js";
@@ -3318,7 +3319,7 @@ test("production note assembly can disable an unavailable enhancement judge with
 				};
 			},
 		},
-			noteEnhancementJudge: unconfiguredNotePlanEnhancementJudgeResolver,
+			noteEnhancementJudge: noteEnhancementJudgeResolverForMode("disabled"),
 			executionChildObservability: notBilledExecutionChildObservability(),
 		},
 	});
