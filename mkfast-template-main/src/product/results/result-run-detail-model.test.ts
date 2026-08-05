@@ -105,6 +105,52 @@ test('run detail failure hint drops 重试 when the run has no retryable Job', (
   assert.equal(withJob.failureSummary, '生成超时，可以重试。');
 });
 
+// #358 / D-176: the pilot ships no in-place rerun. On a Job-less failed run
+// 「可恢复」 and 「重新生成前会再次确认」 both name the 「重试」 button #350 took off
+// the page, so they promise an exit the merchant cannot reach. Say what is
+// actually there — and leave both lines alone wherever the Job, and therefore
+// 「重试」, still exist.
+test('run detail failure stage/cost drop the rerun promise when there is no Job', () => {
+  const noJob = projectResultRunDetail({
+    phase: 'failed',
+    progressState: 'failed',
+    jobStatus: 'none',
+    supportReference: 'MY-NOJOB2',
+  });
+  assert.equal(noJob.stageSummary, '生成失败，请返回工作台重新发起');
+  assert.equal(
+    noJob.costSummary,
+    '费用以账单记录为准；当前页面不会重新发起本次创作。'
+  );
+  assert.doesNotMatch(JSON.stringify(noJob), /可恢复|重新生成前会再次确认/u);
+
+  const withJob = projectResultRunDetail({
+    phase: 'failed',
+    progressState: 'failed',
+    jobStatus: 'failed',
+    supportReference: 'MY-JOB0002',
+  });
+  assert.equal(withJob.stageSummary, '生成失败，可恢复');
+  assert.equal(
+    withJob.costSummary,
+    '费用以账单记录为准；重新生成前会再次确认。'
+  );
+
+  // The fee gate is failure-shaped, not Job-shaped. A run still going before
+  // its Job row shows up is not the world D-176 speaks to, and telling that
+  // merchant the page will not regenerate would be its own false statement.
+  const noJobRunning = projectResultRunDetail({
+    phase: 'running',
+    progressState: 'running',
+    jobStatus: 'none',
+    supportReference: 'MY-NOJOB3',
+  });
+  assert.equal(
+    noJobRunning.costSummary,
+    '费用以账单记录为准；重新生成前会再次确认。'
+  );
+});
+
 test('video run detail keeps same-task recovery without promising regeneration', () => {
   const view = projectResultRunDetail({
     phase: 'failed',

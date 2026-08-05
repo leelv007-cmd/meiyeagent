@@ -97,7 +97,14 @@ function stageSummaryFor(facts: ResultRunDetailFacts): string {
     case 'ready':
       return '结果可用';
     case 'failed':
-      return '生成失败，可恢复';
+      // #358 / D-176: the pilot builds no in-place rerun, so 「可恢复」 is only
+      // true while a Job — and with it the 「重试」 button — exists. Without one
+      // the shell's single exit is 「返回工作台」; name it here, because this
+      // line is the badge on the collapsed summary and may be all the merchant
+      // ever reads.
+      return (facts.jobStatus ?? 'none') === 'none'
+        ? '生成失败，请返回工作台重新发起'
+        : '生成失败，可恢复';
     case 'delivered':
       return '已交付';
     default: {
@@ -162,6 +169,12 @@ function costSummaryFor(facts: ResultRunDetailFacts): string {
   }
   if (facts.workspaceKind === 'video') {
     return '费用以账单记录为准；当前页面不会发起新的成片生成。';
+  }
+  if (facts.phase === 'failed' && (facts.jobStatus ?? 'none') === 'none') {
+    // #358 / D-176: same reading as the video branch above — there is nothing
+    // on this page left to confirm a fee for, so promising a confirmation
+    // before a regeneration invents the regeneration too.
+    return '费用以账单记录为准；当前页面不会重新发起本次创作。';
   }
   return '费用以账单记录为准；重新生成前会再次确认。';
 }
