@@ -460,12 +460,14 @@ test.describe('D-126 dashboard home mount', () => {
     expect(workbench.works).toEqual([]);
     expect(workbench.jobs).toEqual([]);
 
-    // D-164①: 段③ is absent here and only here. An empty workspace has nothing
-    // to continue, and a second empty panel under the sample stores would say
-    // nothing 段① has not already said.
+    // R-1 (gap-remediation 2026-08-02, supersedes D-164① here): the Composer
+    // leads and the suggestion row follows — 问候 → 分段器 → Composer → 建议行.
+    // 段③ is absent here and only here. An empty workspace has nothing to
+    // continue, and a second empty panel under the sample stores would say
+    // nothing the suggestion row has not already said.
     expect(await dashboardSectionOrder(page)).toEqual([
-      'dashboard-section-proposal',
       'dashboard-section-create',
+      'dashboard-section-proposal',
     ]);
   });
 
@@ -737,14 +739,15 @@ test.describe('D-126 dashboard home mount', () => {
       card.getByText(/store_fact:|platform-sample|null|undefined/u)
     ).toHaveCount(0);
 
-    // D-164①: 提议 → 创作 → 继续, all three on the one dashboard route and in
-    // that order. The order is the claim: what to do next comes before the
-    // place to do it, and unfinished work comes last so it nudges without
-    // displacing the entry the merchant came here for.
+    // R-1 (gap-remediation 2026-08-02, supersedes D-164①'s 提议-first order):
+    // 创作 → 提议 → 继续, all three on the one dashboard route and in that
+    // order — the place to create leads, the suggestion row follows it, and
+    // unfinished work comes last so it nudges without displacing the entry
+    // the merchant came here for. Matches dashboard-home-contract.test.ts.
     await expect(page.getByTestId('dashboard-section-continue')).toBeVisible();
     expect(await dashboardSectionOrder(page)).toEqual([
-      'dashboard-section-proposal',
       'dashboard-section-create',
+      'dashboard-section-proposal',
       'dashboard-section-continue',
     ]);
     await expect(page.getByTestId('continue-item').first()).toBeVisible();
