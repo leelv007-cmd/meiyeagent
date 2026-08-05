@@ -188,6 +188,22 @@ export const WORKS_BROWSER_FIXTURES: PublicContentPackage[] = [
   }),
 ];
 
+/**
+ * A mocked P1 reply has to be a whole envelope, not just its `data`.
+ * `readP1Envelope` (src/p1/client.ts) parses the body with `apiEnvelopeSchema`,
+ * which is `.strict()` and requires `meta.correlationId`, and the browser reads
+ * that id back when it reports an error. A bare `{ data }` fails that parse and
+ * surfaces as a query that never resolves — the surface simply never renders —
+ * rather than as anything that names the mock, which is what made this read
+ * like a product defect.
+ */
+function p1Envelope(data: unknown) {
+  return {
+    data,
+    meta: { correlationId: `works-fixture-${crypto.randomUUID()}` },
+  };
+}
+
 export async function installWorksBrowserFixtures(page: Page) {
   await page.route('**/api/core/p1/query', async (route) => {
     const request = route.request();
@@ -200,11 +216,11 @@ export async function installWorksBrowserFixtures(page: Page) {
       return;
     }
     if (body.action === 'content_packages') {
-      await route.fulfill({ json: { data: WORKS_BROWSER_FIXTURES } });
+      await route.fulfill({ json: p1Envelope(WORKS_BROWSER_FIXTURES) });
       return;
     }
     if (body.action === 'canonical_history') {
-      await route.fulfill({ json: { data: EMPTY_CANONICAL_HISTORY } });
+      await route.fulfill({ json: p1Envelope(EMPTY_CANONICAL_HISTORY) });
       return;
     }
     await route.continue();

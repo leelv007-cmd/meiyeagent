@@ -128,12 +128,26 @@ async function startRun(
   };
   expect(response.ok(), envelope.error?.message).toBeTruthy();
   if (lens === 'image_text') {
-    const missingFacts = page.getByTestId('ask-merchant-group-card').filter({
-      hasText: '请确认本次创作要用的优惠、履约信息',
-    });
-    await expect(missingFacts).toBeVisible({ timeout: 60_000 });
-    await missingFacts.getByRole('button', { name: '整组暂不确定' }).click();
-    await expect(missingFacts).toBeHidden({ timeout: 30_000 });
+    // What actually holds an 图文 run is D-164③ / P1-05: paid media stops on
+    // the in-stream execution_confirm interrupt and spends nothing until the
+    // merchant presses 确认执行. Same handling as `submitComposerJourney`
+    // (fixtures/ui-journey.ts) and the seven other specs that drive it.
+    //
+    // This used to answer a missing-facts question card instead. That card is
+    // unreachable for this run: `assessRecipeFactSatisfaction`
+    // (apps/core/src/p1/harness/fact-satisfaction.ts) only asks when the
+    // criticality call returns `critical`, and the fixture rule
+    // (model-supply/ai-sdk-runner.ts `harness_fact_criticality_v1`) derives
+    // that from the intent text — 「生成一张门店夏日护理海报」 claims no price,
+    // discount or fulfillment, so criticality is `optional` and the run takes
+    // the `execute_with_notice` branch, states 「本次结果没有使用尚未确认的…」
+    // and carries on. That is D-119 「录入永不前置」 working, not a gap.
+    const confirmation = page.getByTestId(
+      'execution-confirmation-interaction-card'
+    );
+    await expect(confirmation).toBeVisible({ timeout: 60_000 });
+    await confirmation.getByRole('button', { name: '确认执行' }).click();
+    await expect(confirmation).toBeHidden({ timeout: 60_000 });
   }
   return {
     taskId: envelope.data?.task?.id ?? '',
@@ -349,6 +363,11 @@ test.describe('T32 作品面换壳', () => {
     page,
     request,
   }) => {
+    // Its own assertions wait up to 60s, which the 30s default could never
+    // contain — the test died before the wait it asks for could finish. This
+    // states a budget the body can actually spend; it does not widen any
+    // assertion, and the run costs well under it once the mocks parse.
+    test.setTimeout(120_000);
     const user = await registerE2EUser(request);
     await installWorksBrowserFixtures(page);
     await loginByForm(page, user);
