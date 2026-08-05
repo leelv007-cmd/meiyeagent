@@ -10,16 +10,24 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const home = readFileSync(join(here, 'composer-home.tsx'), 'utf8');
+// Free-creation surface was extracted from composer-home; the panel mounts there.
+const freePanel = readFileSync(join(here, 'free-creation-panel.tsx'), 'utf8');
 const client = readFileSync(
   join(here, 'composer-submission-client.ts'),
   'utf8'
 );
 
 test('ComposerHome signs generation params before quoting and reuses that payload on submit', () => {
-  assert.match(home, /ComposerGenerationParamsPanel/);
+  // Panel mount lives on the free-creation surface (extracted in 7fe159cd).
+  assert.match(freePanel, /ComposerGenerationParamsPanel/);
+  // Signing still happens on home before quoteInput is built.
   assert.match(home, /buildSubmissionGenerationParams/);
   assert.match(home, /isComposerGenerationParamsSupported/);
-  assert.match(home, /generationParamsEnabled \? \(/);
+  // Multi-line gate: only sign when the capability probe is on.
+  assert.match(
+    home,
+    /const signedGeneration = generationParamsEnabled\s*\n\s*\?\s*buildSubmissionGenerationParams\(\{/u
+  );
   const generationOffset = home.indexOf('const signedGeneration =');
   const signedSubmissionOffset = home.indexOf('const signedSubmissionParse =');
   assert.notEqual(generationOffset, -1);
@@ -32,6 +40,7 @@ test('ComposerHome signs generation params before quoting and reuses that payloa
   assert.match(signedSubmissionBlock, /signedGeneration\.thinkingLevel/);
   assert.doesNotMatch(home, /const generation = generationParamsEnabled/);
   assert.match(home, /creationMode=\{creationMode\}/);
+  assert.match(freePanel, /creationMode="free"/);
 });
 
 test('browser submission reuses the shared signed contract for generation params', () => {

@@ -49,9 +49,32 @@ test('Creem payment runtime remains retired from tracked code and active config'
     { cwd: repoRoot, encoding: 'utf8' }
   );
 
+  // Fail closed: status 0 = hits found, 1 = no hits, anything else = grep error
+  // (bad pathspec, git failure). Do not treat empty stdout as a clean pass.
   assert.ok(
-    activeReferences.status === 1 && activeReferences.stdout === '',
+    activeReferences.status === 0 || activeReferences.status === 1,
     activeReferences.stderr ||
-      `Active Creem references remain:\n${activeReferences.stdout}`
+      `git grep creem failed with status ${String(activeReferences.status)}`
+  );
+
+  // Constraint docs may name Creem only to state that it is retired — that is
+  // policy prose, not a live payment path. Allow solely the AGENTS.md
+  // retirement sentence; a `// Creem is retired` comment next to live creem
+  // code under src/ must still fail.
+  const remaining = (activeReferences.stdout || '')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter(
+      (line) =>
+        !/^mkfast-template-main\/AGENTS\.md:\d+:.*\(Creem is retired\)/i.test(
+          line
+        )
+    );
+
+  assert.equal(
+    remaining.length,
+    0,
+    `Active Creem references remain:\n${remaining.join('\n') || activeReferences.stdout}`
   );
 });

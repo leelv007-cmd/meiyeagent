@@ -19,8 +19,15 @@ const conversation = readFileSync(
  */
 test('the send control states which of its two jobs the next press does', () => {
   assert.match(home, /function composerSubmitIntent\(input:/u);
-  assert.match(home, /groundingBlocker:\s*\n?\s*product\.state/u);
-  assert.match(home, /storeFactsPending:\s*showProgressiveFact,/u);
+  // Grounding intent only arms in customized mode, and still reads product.state.
+  assert.match(
+    home,
+    /groundingBlocker:\s*\n?\s*creationMode === 'customized' &&\s*\n?\s*product\.state/u
+  );
+  assert.match(
+    home,
+    /storeFactsPending:\s*creationMode === 'customized' && showProgressiveFact,/u
+  );
   assert.match(home, /submitLabel=\{submitIntent\.label\}/u);
   assert.match(home, /submitHint=\{submitIntent\.hint\}/u);
   // The constant label is now only the branch where a press really starts a run.

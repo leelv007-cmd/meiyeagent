@@ -65,12 +65,19 @@ test('merchant-facing integration labels do not fall back to internal ids', () =
 
 test('pricing comparison and shared accessibility copy use Paraglide', () => {
   const pricing = readSource('src/routes/(pages)/pricing.tsx');
+  // Credit-matrix plan labels live in the content module (extracted from the
+  // page shell); the route only keeps page chrome + subtitle keys.
+  const pricingContent = readSource(
+    'src/components/pricing/credit-pricing-content.tsx'
+  );
   const sidebarLayout = readSource('src/components/layout/sidebar-layout.tsx');
   const sidebar = readSource('src/components/ui/sidebar.tsx');
 
   assert.doesNotMatch(pricing, /[\u3400-\u9fff]/);
-  assert.match(pricing, /\bpricing_output_[a-z0-9_]+\b/);
+  assert.doesNotMatch(pricingContent, /[\u3400-\u9fff]/);
+  assert.match(pricingContent, /\bpricing_output_[a-z0-9_]+\b/);
   assert.match(pricing, /from ['"]@\/locale\/paraglide\/messages['"]/);
+  assert.match(pricingContent, /from ['"]@\/locale\/paraglide\/messages['"]/);
   assert.doesNotMatch(sidebarLayout, />Loading\.\.\.</);
   assert.doesNotMatch(sidebar, />Sidebar</);
   assert.doesNotMatch(sidebar, /Displays the mobile sidebar\./);
@@ -78,42 +85,42 @@ test('pricing comparison and shared accessibility copy use Paraglide', () => {
 });
 
 test('pricing stays readable without checkout and every public pricing CTA reaches it', async () => {
+  // #310 moved plan markup into CreditPricingContent; PricingPage reads
+  // Route.useLoaderData() off the real file route, so a synthetic router no
+  // longer renders. Drive the content module directly for the unauthenticated
+  // "readable without checkout" case.
   const [
     { Pricing: LandingPricing },
     { Footer: LandingFooter },
-    { Route: pricingRoute },
+    { CreditPricingContent },
   ] = await Promise.all([
     import('../components/landing/pricing'),
     import('../components/landing/footer'),
-    import('../routes/(pages)/pricing'),
+    import('../components/pricing/credit-pricing-content'),
   ]);
 
-  const PricingPage = pricingRoute.options.component;
-  assert.ok(PricingPage);
-  const catalogFixture = { plans: [...PUBLIC_PLAN_CREDIT_SEED] };
-  const pricingRootRoute = createRootRoute({ component: Outlet });
-  const pricingPageRoute = createRoute({
-    component: PricingPage,
-    getParentRoute: () => pricingRootRoute,
-    loader: () => catalogFixture,
-    path: '/pricing',
-  });
-  const pricingRouter = createRouter({
-    history: createMemoryHistory({ initialEntries: ['/pricing'] }),
-    routeTree: pricingRootRoute.addChildren([pricingPageRoute]),
-  });
-  await pricingRouter.load();
+  const catalogFixture = {
+    addOns: [],
+    plans: [...PUBLIC_PLAN_CREDIT_SEED],
+  };
   const pricingHtml = renderToStaticMarkup(
-    createElement(RouterProvider, { router: pricingRouter })
+    createElement(CreditPricingContent, {
+      catalog: catalogFixture,
+      isAuthenticated: false,
+    })
   );
-  assert.match(pricingHtml, /id="output-plan-heading"/u);
-  // D-123 档位命名: 初级 / 中级 / 高级.
-  assert.match(pricingHtml, />初级</u);
-  assert.match(pricingHtml, />中级</u);
-  assert.match(pricingHtml, />高级</u);
-  assert.doesNotMatch(pricingHtml, />500</u);
-  assert.doesNotMatch(pricingHtml, />1300</u);
-  assert.doesNotMatch(pricingHtml, />2800</u);
+  assert.ok(pricingHtml.length > 0, 'pricing content must render markup');
+  // Credit-matrix page (D-172 / #310): public upgrade CTAs deep-link here.
+  assert.match(pricingHtml, /id="subscription-plans"/u);
+  // baseLocale is zh; plan h3 labels are 起步 / 成长 / 专业.
+  assert.match(pricingHtml, />起步</u);
+  assert.match(pricingHtml, />成长</u);
+  assert.match(pricingHtml, />专业</u);
+  // Hero credits: testid attribute closes then the bare number, then a suffix span.
+  // Verified shape: data-testid="pricing-credits-starter">500<span class="ml-1 ...
+  assert.match(pricingHtml, /data-testid="pricing-credits-starter">500<span/u);
+  assert.match(pricingHtml, /data-testid="pricing-credits-growth">1300<span/u);
+  assert.match(pricingHtml, /data-testid="pricing-credits-pro">2800<span/u);
 
   const rootRoute = createRootRoute({ component: Outlet });
   const publicPageRoute = createRoute({
@@ -167,6 +174,8 @@ test('peripheral Paraglide handoff records every new key in both languages', () 
     'src/p1/settings-view-model.ts',
     'src/components/ui/sidebar.tsx',
     'src/routes/(pages)/pricing.tsx',
+    // Plan-name keys moved here with the credit-matrix extract (#310).
+    'src/components/pricing/credit-pricing-content.tsx',
   ];
   const enMessages = JSON.parse(
     readSource('project.inlang/messages/en.json')

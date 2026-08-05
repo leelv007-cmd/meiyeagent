@@ -25,7 +25,12 @@ test('Composer routes the quote line through the precondition state machine', as
   assert.equal(source.includes('当前模型或报价暂不可用'), false);
 
   assert.match(source, /<ComposerQuoteStatusLine/u);
-  assert.match(source, /readiness=\{quoteReadiness\}/u);
+  // Free mode may inject a no_model readiness; every other path still uses the
+  // precondition state machine (`quoteReadiness`).
+  assert.match(
+    source,
+    /readiness=\{\s*creationMode === 'free' && lensId && !selectedModel\s*\?[\s\S]*?:\s*quoteReadiness\s*\}/u
+  );
   assert.match(source, /onRetry=\{retryQuoteReadiness\}/u);
 
   // Every precondition the state machine distinguishes is fed from the live

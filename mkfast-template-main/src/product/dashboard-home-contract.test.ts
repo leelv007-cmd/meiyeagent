@@ -100,9 +100,11 @@ test('the greeting is its own export and no panel rides along with it', () => {
  */
 test('the workbench opens 问候语 → 分段器 → 创作 → 建议 → 继续', () => {
   const home = readSource('src/product/composer/composer-home.tsx');
+  // Segmenter markup lives in free-creation-panel; home hosts the surface.
+  const freePanel = readSource('src/product/composer/free-creation-panel.tsx');
 
   const greeting = home.indexOf('<DashboardHomeGreeting');
-  const segmenter = home.indexOf('<ComposerCreationModeSegment');
+  const segmenter = home.indexOf('<ComposerCreationModeSurface');
   const proposal = home.indexOf('data-testid="dashboard-section-proposal"');
   const create = home.indexOf('data-testid="dashboard-section-create"');
   const continued = home.indexOf('<DashboardContinueSection');
@@ -113,6 +115,11 @@ test('the workbench opens 问候语 → 分段器 → 创作 → 建议 → 继�
   assert.ok(
     segmenter > -1,
     'R-1: creation-mode segmenter is a first-screen control'
+  );
+  assert.match(
+    freePanel,
+    /<ComposerCreationModeSegment/u,
+    'R-1: free-creation surface still mounts the segmenter control'
   );
   assert.ok(proposal > -1, '建议行 is a named section');
   assert.ok(create > -1, '创作面 is a named section');
@@ -145,16 +152,20 @@ test('P0-1: Active hides 段① without remounting it and collapses 段③', () 
   // A late Active replay may briefly collapse the shelf after Delivered. Keep
   // the recommendation mounted so an expanded chip does not lose disclosure
   // state; native hidden still removes the section from layout/accessibility.
+  // Free mode also hides the suggestion row (same keep-mounted + hidden pattern).
   assert.match(
     home,
-    /<section[^>]*data-testid="dashboard-section-proposal"[^>]*hidden=\{shelfCollapsed\}[^>]*>/u
+    /<section[^>]*data-testid="dashboard-section-proposal"[^>]*hidden=\{shelfCollapsed \|\| creationMode === 'free'\}[^>]*>/u
   );
   assert.doesNotMatch(
     home,
     /!shelfCollapsed \? \([\s\S]*dashboard-section-proposal/u
   );
-  // Continue has no disclosure state and may remain mount-gated.
-  assert.match(home, /!shelfCollapsed \? <DashboardContinueSection/u);
+  // Continue has no disclosure state and may remain mount-gated (customized only).
+  assert.match(
+    home,
+    /!shelfCollapsed && creationMode === 'customized' \? \(\s*<DashboardContinueSection/u
+  );
 });
 
 test('P0-4: recommendation prefill is typed handoff, not hard-coded copy lens', () => {
