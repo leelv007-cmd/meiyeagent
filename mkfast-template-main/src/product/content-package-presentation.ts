@@ -19,8 +19,23 @@ export function contentPackageStatusLabel(status: ContentPackageStatus) {
   return CONTENT_PACKAGE_STATUS_GROUP_LABELS[contentPackageStatusGroup(status)];
 }
 
-export const contentPackageProjectionSchema =
-  publicContentPackageSchema.transform((contentPackage) => ({
+/**
+ * `listContentPackages` spreads `contentPackageVisibleStatus(status)` over every
+ * package it returns, so `statusGroup` arrives on the wire even though the
+ * ContentPackage contract — which is strict — never declared it. Drop the
+ * derived key before validating and recompute it below: how a status reads to a
+ * merchant is presentation, and presentation is this side's to own. Every other
+ * undeclared key still fails the parse.
+ */
+export const contentPackageProjectionSchema = z
+  .preprocess((value) => {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      return value;
+    }
+    const { statusGroup: _derived, ...wire } = value as Record<string, unknown>;
+    return wire;
+  }, publicContentPackageSchema)
+  .transform((contentPackage) => ({
     ...contentPackage,
     statusGroup: contentPackageStatusGroup(contentPackage.status),
     statusLabel: contentPackageStatusLabel(contentPackage.status),
