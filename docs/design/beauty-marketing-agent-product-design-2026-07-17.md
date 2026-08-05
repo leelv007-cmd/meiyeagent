@@ -3570,6 +3570,15 @@ Skill 选中
 - 影响：#330 AC3 验收口径重述＝「档案填行业→首页行业层 whyNow」，实施票 #342；d14f58ba 在 `foundation-module.ts` 的过强可达性注释（"production actually writes…"）随实施订正。
 - Supersedes：不改写旧 D 正文；仅订正 d14f58ba 实现注释的可达性断言。
 
+## D-175 自由创作 grounding 分层：Core 放行门店/项目，保留权利/资质
+
+- 日期：2026-08-06
+- 状态：`accepted`（2026-08-05 深夜用户拍板「待拍板项都按你的建议选项继续」＝方向 A；源起 #345 反向复核——lane-343 实证 Core grounding 校验不认识 creationMode，每次提交都要求 `confirmed_store`/`confirmed_project`，Day-0 商家走自由创作一次也提交不了，D-111 的「先出活」承诺落空）
+- 决定：Core 的创作 grounding 校验**按创作模式分层**——自由创作（free）只强制**素材权利与受监管资质**（`real_authorized_asset`/`confirmed_qualification`，合规底线无差别），**放行** `confirmed_store`/`confirmed_project`；定制创作（customized）维持全量 grounding 不变。前台两模式按下前行为不变（定制态事实卡前置、自由态零经营上下文），#345 已修复的 409 具名映射（store gap → 'store' blocker）保留为防御层。
+- 原因：D-111 把自由创作定位为「引导不满足→自然路由过去先出活」的零经营上下文逃生口，D-103「自由创作不读取隐含门店」、D-119「录入永不前置」同向；Core 无差别强制门店/项目使逃生口名存实亡。方向 B（修订 D-111/D-103、前置门店门）被弃用——两个入口被同一道门挡死，逃生口失去意义。
+- 影响：实施票 #348（Core `p1-model-policy`/grounding 解析面按 mode 分层＋消费者证明「Day-0 零门店商家自由创作提交→出活」）；合规红线（素材权利/资质）一字不动。
+- Supersedes：不改写旧 D 正文；D-111/D-103/D-119 按原文兑现。
+
 ## 待拍板（2026-07-17 合并评审识别，逐一讨论后按模板转正式决策）
 
 已拍板转正：视频成片首发地位 → D-027；文案/成片两层交付 → D-028；Day-0 零资产首屏 → D-029；定位边界 → D-030；前台无槽位填表、结构化输入融入对话流 → D-031；Agent Workflow 编排总纲（收编原「阻塞作用域」「沉淀检测」两项为推论一/二）→ D-032；Task 统一交互单元与 Harness 五段式 → D-033（均 2026-07-17）；Harness 实现选型四题 + 工程约束（11 号简报全案采纳，提示词承载 = Langfuse 先行）→ D-034~D-038（2026-07-17 深夜，证据 = 10 份调研 + 9 路 Codex 对抗交叉验证（r08 三次容量失败未产出，Dify 在 D-037 中仅为战术搁置项，见其证据边界与 08 号报告头部横幅），`references/analysis/harness-research-2026-07-17/`）；09 合规章义务清单去向（2026-07-18 一致性复核 escalate 项）= 并入 Week 0 预登记文档 → D-039（2026-07-18）。
