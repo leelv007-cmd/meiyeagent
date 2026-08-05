@@ -8,16 +8,33 @@ import {
 } from '../fixtures/auth';
 import { createE2EUser } from '../fixtures/test-data';
 
+type CreditBalance = {
+  availableCredits: number;
+  expiredCredits: number;
+  grantedCredits: number;
+  refundedCredits: number;
+  soonestExpiringLot: unknown;
+  usedCredits: number;
+};
+
 type EntitlementProjection = {
+  credits: CreditBalance;
   plan?: { tier?: string };
-  usage: Record<string, { allowance: number }>;
 };
 
 type ProvisioningShape = {
+  credits: CreditBalance;
   defaults: Record<string, string | null>;
   planTier?: string;
-  usage: Record<string, number | undefined>;
 };
+
+/**
+ * The seeded one-time trial grant (`plan.credits.trial`) and the credits this
+ * spec's own recorded codes carry. Operators can move the trial number in
+ * admin-config; the e2e stack boots on the governed default.
+ */
+const TRIAL_CREDITS = 100;
+const CODE_CREDITS = 30;
 
 async function p1Query<T>(
   page: Page,
@@ -92,21 +109,19 @@ async function provisioningShape(page: Page): Promise<ProvisioningShape> {
     )
   );
   return {
+    credits: entitlement.credits,
     defaults,
     planTier: entitlement.plan?.tier,
-    usage: {
-      copy: entitlement.usage.copy?.allowance,
-      image: entitlement.usage.image?.allowance,
-      video: entitlement.usage.video?.allowance,
-    },
   };
 }
 
+/**
+ * Record a code on the admin console the operator actually uses. The console
+ * mints credit codes — the retired per-bucket amount fields are gone with the
+ * buckets, and the recorded row is read back in credits.
+ */
 async function recordCode(page: Page, code: string) {
-  await page.locator('#redeem-copy').fill('5');
-  await page.locator('#redeem-image').fill('5');
-  await page.locator('#redeem-video').fill('1');
-  await page.locator('#redeem-audio').fill('0');
+  await page.locator('#redeem-credits').fill(String(CODE_CREDITS));
   await page.locator('#redeem-code').fill(code);
   const responsePromise = page.waitForResponse(
     (response) =>
@@ -155,7 +170,10 @@ test.describe('registration and redemption chain (#219)', () => {
     await page.goto('/admin/redemptions');
 
     const redeemRow = await recordCode(page, redeemCode);
-    await expect(redeemRow).toContainText('5');
+    await expect(
+      redeemRow,
+      'the console must read the recorded amount back in credits'
+    ).toContainText(`${CODE_CREDITS} 积分`);
 
     const voidRow = await recordCode(page, voidCode);
     const voidResponsePromise = page.waitForResponse(
@@ -202,13 +220,20 @@ test.describe('registration and redemption chain (#219)', () => {
     await loginByForm(page, assisted);
     const assistedShape = await provisioningShape(page);
     expect(assistedShape).toEqual({
+      credits: {
+        availableCredits: TRIAL_CREDITS,
+        expiredCredits: 0,
+        grantedCredits: TRIAL_CREDITS,
+        refundedCredits: 0,
+        soonestExpiringLot: null,
+        usedCredits: 0,
+      },
       defaults: {
         'copy.generate': 'deepseek-v4-pro',
         'image.generate': 'nano-banana-2',
         'video.generate': 'seedance-2',
       },
       planTier: 'trial',
-      usage: { copy: 5, image: 5, video: 1 },
     });
     await signOut(page);
 
@@ -333,11 +358,18 @@ test.describe('registration and redemption chain (#219)', () => {
       'entitlements',
       'projection'
     );
-    expect({
-      copy: after.usage.copy?.allowance,
-      image: after.usage.image?.allowance,
-      video: after.usage.video?.allowance,
-    }).toEqual({ copy: 10, image: 10, video: 2 });
+    // Redeeming adds the code's credits to the trial grant the merchant
+    // already holds — a second batch on the same ledger, not a replacement.
+    expect(
+      after.credits,
+      'the redeemed code must land on the credit ledger'
+    ).toMatchObject({
+      availableCredits: TRIAL_CREDITS + CODE_CREDITS,
+      expiredCredits: 0,
+      grantedCredits: TRIAL_CREDITS + CODE_CREDITS,
+      refundedCredits: 0,
+      usedCredits: 0,
+    });
 
     await codeInput.fill(redeemCode);
     const replayResponsePromise = page.waitForResponse(
@@ -353,7 +385,10 @@ test.describe('registration and redemption chain (#219)', () => {
       'entitlements',
       'projection'
     );
-    expect(replayed.usage).toEqual(after.usage);
+    expect(
+      replayed.credits,
+      'redeeming the same code twice must not grant a second batch'
+    ).toEqual(after.credits);
 
     await page.goto('/dashboard');
     await expect(

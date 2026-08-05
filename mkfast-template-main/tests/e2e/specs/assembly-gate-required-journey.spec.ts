@@ -14,6 +14,12 @@ import {
   waitForResultJourney,
 } from '../fixtures/ui-journey';
 
+/**
+ * The seeded one-time trial grant (`plan.credits.trial`). Operators can move
+ * this number in admin-config; the e2e stack boots on the governed default.
+ */
+const TRIAL_CREDITS = 100;
+
 async function p1Query<T>(
   page: Page,
   module: string,
@@ -149,15 +155,25 @@ test.describe('required assembly gate', () => {
     await assertThreeModalDiscovery(page);
 
     const entitlement = await p1Query<{
+      credits: Record<string, unknown>;
       plan?: { tier?: string };
-      usage: Record<string, { allowance: number }>;
     }>(page, 'entitlements', 'projection');
     expect(entitlement.plan?.tier).toBe('trial');
-    expect({
-      copy: entitlement.usage.copy?.allowance,
-      image: entitlement.usage.image?.allowance,
-      video: entitlement.usage.video?.allowance,
-    }).toEqual({ copy: 5, image: 5, video: 1 });
+    // Zero configuration includes zero billing setup: the one-time trial credit
+    // grant (D-172, `plan.credits.trial`) is already on the ledger and wholly
+    // unspent. Asserted as the entire balance object so an extra field or a
+    // pre-spent grant cannot slip through.
+    expect(
+      entitlement.credits,
+      'a cold tenant is funded by the one-time trial credit grant'
+    ).toEqual({
+      availableCredits: TRIAL_CREDITS,
+      expiredCredits: 0,
+      grantedCredits: TRIAL_CREDITS,
+      refundedCredits: 0,
+      soonestExpiringLot: null,
+      usedCredits: 0,
+    });
 
     const defaults = await Promise.all(
       [

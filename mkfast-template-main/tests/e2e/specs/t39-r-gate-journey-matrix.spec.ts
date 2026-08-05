@@ -30,7 +30,7 @@ import {
  *     → 首次出活 (Composer 提交 → 流式 → 成品预览卡 → Result Center)
  *     → 采用
  *     → 三路交付 (取文件 / 协办交接 / 发布确认)
- *     → 计费对账 (三桶各自扣减、预估=回执、视频按条)
+ *     → 计费对账 (积分单账扣减、预估=回执、视频按条)
  *     → 刷新恢复
  *
  * Deliberately **not** in the required PR set. The required browser position is
@@ -116,40 +116,29 @@ const MATRIX_LEGS: readonly MatrixLeg[] = [
   },
 ];
 
-/** Which entitlement bucket a modality spends. */
-const BILLING_BUCKET: Record<JourneyContract['modality'], BillingResource> = {
-  copy: 'copy',
-  image_text: 'image',
-  video: 'video',
-};
-
-type BillingResource = 'audio' | 'copy' | 'image' | 'video';
-
-const BILLING_BUCKETS: readonly BillingResource[] = [
-  'audio',
-  'copy',
-  'image',
-  'video',
-];
-
-type UsageBucket = {
-  allowance: number;
-  available: number;
-  committed: number;
-  released: number;
-  reserved: number;
+type CreditBalance = {
+  availableCredits: number;
+  expiredCredits: number;
+  grantedCredits: number;
+  refundedCredits: number;
+  usedCredits: number;
 };
 
 type EntitlementProjection = {
+  credits: CreditBalance;
   plan?: { tier?: string };
-  usage: Record<BillingResource, UsageBucket>;
 };
 
-type ProductUsageUnit = { quantity: number; resource: BillingResource };
+type ProductUsageUnit = { quantity: number; resource: string };
 
 type ProductUsageRecord = {
+  refundedCredits?: number;
+  refundedQuantity: number;
+  refundedUnits?: ProductUsageUnit[];
+  reservedCredits?: number;
   reservedQuantity: number;
   reservedUnits?: ProductUsageUnit[];
+  settledCredits?: number;
   settledQuantity: number;
   settledUnits?: ProductUsageUnit[];
   settlementStatus?: string;
@@ -159,11 +148,18 @@ type ProductUsageRecord = {
 
 type ProductQuoteSnapshot = {
   billingMode: string;
+  creditCost?: number;
+  formula: { currency?: string; expression: string; unitRate: number };
   outputCount?: number;
   quoteId: string;
+  settledAmount?: number;
   settlementStatus?: string;
+  targetSeconds?: number;
   taskId?: string;
 };
+
+/** The duration tiers a 成片 quote may pick a flat price from. */
+const VIDEO_DURATION_TIERS = [15, 30, 60];
 
 /**
  * 商家语言反向断言 (D-116).
@@ -372,20 +368,18 @@ async function entitlementProjection(page: Page) {
   return p1Query<EntitlementProjection>(page, 'entitlements', 'projection');
 }
 
-function bucketSpend(bucket: UsageBucket) {
-  return bucket.reserved + bucket.committed - bucket.released;
-}
-
 /**
- * 计费对账 (R-06 / T26).
+ * 计费对账 (R-06 / T26), on the credit contract (D-172 / #298).
  *
  * Three claims, each on its own observable:
- *   1. 三桶各自扣减 — only the modality's own bucket moves; the other three
- *      stand still. Buckets are read before the run and after settlement.
- *   2. 预估=回执 — the ProductUsage receipt commits the units the reservation
- *      asked for, and the quote reaches `reconciled`.
- *   3. 视频按条 — W1: the authoritative video unit is the 条, one per run.
- *      A per-second reading of this leg is an expired contract.
+ *   1. 一本积分账 — the receipt spends credits and nothing else. The retired
+ *      three-bucket units must stay empty on every leg; a bucket quantity
+ *      coming back is a regression to a计量 the product no longer sells.
+ *   2. 预估=回执 — the ProductUsage receipt commits the credits the quote
+ *      froze, and the merchant balance moves by exactly that number.
+ *   3. 视频按条 — W1 in credit form: one 成片 run is one flat charge picked
+ *      from a duration tier. A per-second reading of this leg is an expired
+ *      contract.
  */
 async function assertBillingReconciled(
   page: Page,
@@ -393,8 +387,6 @@ async function assertBillingReconciled(
   taskId: string,
   before: EntitlementProjection
 ) {
-  const bucket = BILLING_BUCKET[contract.modality];
-
   await expect
     .poll(
       async () =>
@@ -429,85 +421,98 @@ async function assertBillingReconciled(
     taskId
   );
 
-  // 预估=回执: what was reserved is what was committed, bucket by bucket.
+  // 一本积分账: the receipt is denominated in credits, and the retired bucket
+  // vector stays empty on both sides of the reservation. Asserted as an
+  // exclusion, not an absence check — a receipt that starts carrying units
+  // again is the regression this row exists to catch.
   expect(
-    usage.settledUnits,
-    'the receipt must carry canonical per-bucket units, not a legacy scalar'
-  ).toBeTruthy();
-  expect(usage.settledUnits).toEqual(usage.reservedUnits);
-  expect(usage.settledQuantity).toBe(usage.reservedQuantity);
+    usage,
+    'a credit receipt carries no retired three-bucket units'
+  ).toMatchObject({
+    refundedUnits: [],
+    reservedUnits: [],
+    settledUnits: [],
+  });
+  expect(usage.reservedQuantity).toBe(0);
+  expect(usage.settledQuantity).toBe(0);
+  expect(usage.refundedQuantity).toBe(0);
+
+  // 预估=回执: what the quote froze is what was reserved and committed.
+  expect(
+    quote.creditCost,
+    'the quote must freeze a positive merchant credit price'
+  ).toBeGreaterThan(0);
+  expect(
+    quote.formula.currency,
+    'the merchant price is quoted in credits, never in supplier currency'
+  ).toBe('CREDITS');
+  expect(usage.reservedCredits, '预扣 must equal the frozen quote').toBe(
+    quote.creditCost
+  );
+  expect(usage.settledCredits, '回执 must equal 预扣').toBe(
+    usage.reservedCredits
+  );
+  expect(usage.refundedCredits ?? 0, 'a delivered run refunds nothing').toBe(0);
+  expect(
+    quote.settledAmount,
+    'the settled amount must be the credits the quote authorized'
+  ).toBe(quote.creditCost);
 
   // Settlement honesty. The contract is 「missing trusted usage → estimated |
   // unknown (never fake reconciled)」 (`@meiye/contracts` product-quote,
-  // `productSettlementStatuses`). `reconciled` is only reachable when settle is
-  // handed trusted usage evidence — provider usage, a provider bill, or
-  // measured media duration; without either the service deliberately keeps
-  // "estimated/unknown; do not invent billedSeconds". Which of the two lands is
-  // a property of the modality's own fixture, not of this journey: 文案 settles
-  // `estimated`, the media runs arrive with trusted units and settle
-  // `reconciled`. What must never appear is `unknown` — that is evidence which
-  // arrived and could not be used, and it would mean the receipt above equals
-  // the estimate only by accident.
+  // `productSettlementStatuses`). Which of the two honest values lands is a
+  // property of the settle branch the run takes, not of this journey. What must
+  // never appear is `unknown` — that is evidence which arrived and could not be
+  // used, and it would mean the receipt above equals the quote only by
+  // accident.
   const settlement = usage.settlementStatus ?? quote.settlementStatus;
   expect(
     ['estimated', 'reconciled'],
     `settlement must stay honest; got ${settlement}`
   ).toContain(settlement);
 
-  // 三桶各自扣减, in its general form: the receipt and the entitlement
-  // projection must agree bucket by bucket, and nothing outside the receipt may
-  // move. Pinning one bucket per modality would assert a product shape that does
-  // not exist — a 图文笔记 is text *and* images, so it legitimately spends both
-  // the copy and the image bucket in one run (measured, not assumed).
-  const spentByBucket = new Map<BillingResource, number>();
-  for (const unit of usage.settledUnits ?? []) {
-    spentByBucket.set(
-      unit.resource,
-      (spentByBucket.get(unit.resource) ?? 0) + unit.quantity
-    );
-  }
-  expect(
-    spentByBucket.get(bucket) ?? 0,
-    `a ${contract.modality} run must spend its own ${bucket} bucket`
-  ).toBeGreaterThan(0);
-  expect(
-    spentByBucket.get('audio') ?? 0,
-    'no v1 output spends the audio bucket'
-  ).toBe(0);
-
   if (contract.modality === 'video') {
-    // W1: the authoritative video unit is the 条 — one per run. Measured where
-    // the merchant's balance actually lives, the entitlement ledger.
+    // W1 in credit form: one 成片 run is one 条 charged once. Duration only
+    // selects which flat tier price applies — it is never a multiplier, and a
+    // per-second billing mode on this leg is an expired contract.
+    expect(quote.outputCount, 'one 成片 run quotes exactly one 条').toBe(1);
     expect(
-      spentByBucket.get('video'),
-      'one 成片 run deducts exactly one 条 (W1)'
-    ).toBe(1);
-    // The price formula is a different axis from the entitlement unit, and this
-    // quote still reports `per_output_second` (measured — see the T39 closeout
-    // report). Recorded rather than pinned: asserting `per_request` would demand
-    // a shape the product does not have today, and asserting
-    // `per_output_second` would freeze the very thing W1 moved away from. What
-    // must hold either way is the 条 above — under the per-second settle branch
-    // a trusted-seconds receipt recomputes video units from seconds, so this
-    // assertion is what would catch that path deducting more than one.
+      quote.billingMode,
+      `按秒计费 is retired; got ${quote.billingMode}`
+    ).toBe('per_request');
     expect(
-      ['per_request', 'per_output_second'],
-      `unexpected video billing mode ${quote.billingMode}`
-    ).toContain(quote.billingMode);
+      VIDEO_DURATION_TIERS,
+      `unexpected 成片 duration tier ${quote.targetSeconds}`
+    ).toContain(quote.targetSeconds);
+    expect(
+      quote.creditCost,
+      '时长只挑档位，不做乘数：一条成片＝一次档位价'
+    ).toBe(quote.formula.unitRate * quote.outputCount!);
   }
 
+  // The merchant's balance is the second observable, and it must move by
+  // exactly what the receipt says — no more (a second silent debit) and no
+  // less (a debit that never reached the ledger). Everything the merchant was
+  // ever granted stays granted; a delivered run only converts available into
+  // used.
   const after = await entitlementProjection(page);
-  for (const resource of BILLING_BUCKETS) {
-    const expected = spentByBucket.get(resource) ?? 0;
-    expect(
-      bucketSpend(after.usage[resource]) - bucketSpend(before.usage[resource]),
-      `${resource}: the entitlement projection must move exactly as the receipt says`
-    ).toBe(expected);
-    expect(
-      after.usage[resource].available,
-      `${resource}: the remaining balance must fall by what the receipt spent`
-    ).toBe(before.usage[resource].available - expected);
-  }
+  const spent = usage.settledCredits!;
+  expect(
+    after.credits.usedCredits - before.credits.usedCredits,
+    'the credit ledger must record exactly what the receipt committed'
+  ).toBe(spent);
+  expect(
+    before.credits.availableCredits - after.credits.availableCredits,
+    'the remaining balance must fall by what the receipt committed'
+  ).toBe(spent);
+  expect(
+    after.credits.grantedCredits,
+    'spending credits must not re-grant any'
+  ).toBe(before.credits.grantedCredits);
+  expect(
+    after.credits.refundedCredits,
+    'a delivered run must not touch the refund total'
+  ).toBe(before.credits.refundedCredits);
 }
 
 /**
@@ -672,6 +677,21 @@ test.describe('T39 R-gate journey matrix', () => {
       expect(beforeSpend.plan?.tier, 'a cold tenant starts on trial').toBe(
         'trial'
       );
+      // The trial grant is one-time and untouched at Day-0: everything granted
+      // is still available, and nothing has been spent, refunded or expired.
+      expect(
+        beforeSpend.credits,
+        'a cold tenant holds its whole one-time trial grant'
+      ).toMatchObject({
+        availableCredits: beforeSpend.credits.grantedCredits,
+        expiredCredits: 0,
+        refundedCredits: 0,
+        usedCredits: 0,
+      });
+      expect(
+        beforeSpend.credits.grantedCredits,
+        'Day-0 must be funded before the first run'
+      ).toBeGreaterThan(0);
 
       // —— 首次出活 ——
       await seedConfirmedStore(page);

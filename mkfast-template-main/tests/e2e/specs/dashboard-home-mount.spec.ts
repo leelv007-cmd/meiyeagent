@@ -22,18 +22,30 @@ import {
  * D-126 Dashboard home mount (issue #223).
  *
  * Cold: three platform-maintained sample stores; clicking a sample task runs
- * the real chain, spends the real trial allowance and produces an exportable
+ * the real chain, spends the real trial credits and produces an exportable
  * artifact (D-128 — no demo-only path). Hot: one recommendation a day whose
  * CTA prefills the Composer draft.
  */
 
 const COPY_CONTRACT = JOURNEY_CONTRACTS[0]!;
 
-type UsageBucket = { allowance: number; available: number };
-type EntitlementProjection = {
-  plan?: { tier?: string };
-  usage: Record<string, UsageBucket | undefined>;
+type CreditBalance = {
+  availableCredits: number;
+  expiredCredits: number;
+  grantedCredits: number;
+  refundedCredits: number;
+  usedCredits: number;
 };
+type EntitlementProjection = {
+  credits: CreditBalance;
+  plan?: { tier?: string };
+};
+
+/**
+ * The seeded one-time trial grant (`plan.credits.trial`). Operators can move
+ * this number in admin-config; the e2e stack boots on the governed default.
+ */
+const TRIAL_CREDITS = 100;
 
 async function p1Query<T>(
   page: Page,
@@ -418,18 +430,23 @@ test.describe('D-126 dashboard home mount', () => {
       await expect(sampleRegion.getByText(content.title).first()).toBeVisible();
     }
 
-    // --- C-3 trial allowance is already provisioned for the cold tenant --
+    // --- C-3 trial credits are already provisioned for the cold tenant ----
     const before = await p1Query<EntitlementProjection>(
       page,
       'entitlements',
       'projection'
     );
     expect(before.plan?.tier).toBe('trial');
-    expect({
-      copy: before.usage.copy?.allowance,
-      image: before.usage.image?.allowance,
-      video: before.usage.video?.allowance,
-    }).toEqual({ copy: 5, image: 5, video: 1 });
+    expect(
+      before.credits,
+      'the cold tenant holds its whole one-time trial credit grant'
+    ).toMatchObject({
+      availableCredits: TRIAL_CREDITS,
+      expiredCredits: 0,
+      grantedCredits: TRIAL_CREDITS,
+      refundedCredits: 0,
+      usedCredits: 0,
+    });
 
     // --- Sample task prefills the Composer, then runs for real ----------
     await sampleRegion.getByRole('button', { name: '复用这条结构' }).click();
@@ -452,7 +469,7 @@ test.describe('D-126 dashboard home mount', () => {
     ]);
   });
 
-  test('sample task runs on the real chain, spends trial allowance and exports', async ({
+  test('sample task runs on the real chain, spends trial credits and exports', async ({
     page,
     request,
   }) => {
@@ -487,15 +504,42 @@ test.describe('D-126 dashboard home mount', () => {
     ).toBeHidden();
     await waitForResultJourney(page, COPY_CONTRACT, workId);
 
-    // 试用额度被真实占用 —— the sample holds usage on the same ProductUsage
-    // ledger a paying merchant is charged on, bound to this very task.
+    // 试用积分被真实占用 —— the sample holds credits on the same ProductUsage
+    // ledger a paying merchant is charged on, bound to this very task, and it
+    // holds them in the currency the product actually sells: the retired
+    // three-bucket units stay empty.
     const usage = await p1Query<{
-      reservedQuantity: number;
-      resource?: string;
+      refundedUnits?: unknown[];
+      reservedCredits?: number;
+      reservedUnits?: unknown[];
+      settledUnits?: unknown[];
       status: string;
     }>(page, 'product-billing', 'get_usage', { taskId });
-    expect(usage.resource).toBe('copy');
-    expect(usage.reservedQuantity).toBeGreaterThan(0);
+    const quote = await p1Query<{ creditCost?: number; taskId?: string }>(
+      page,
+      'product-billing',
+      'get_quote_by_task',
+      { taskId }
+    );
+    expect(
+      usage,
+      'the sample run is billed in credits, not buckets'
+    ).toMatchObject({
+      refundedUnits: [],
+      reservedUnits: [],
+      settledUnits: [],
+    });
+    expect(quote.taskId, 'the quote must be bound to this very task').toBe(
+      taskId
+    );
+    expect(
+      quote.creditCost,
+      'a sample run is priced like any run'
+    ).toBeGreaterThan(0);
+    expect(
+      usage.reservedCredits,
+      'the sample holds exactly the credits the quote froze'
+    ).toBe(quote.creditCost);
     expect(['reserved', 'committed']).toContain(usage.status);
 
     // 成品真的写出来了，而且采用不是必经动作。导出止步于此：这条 Day-0 脊柱
