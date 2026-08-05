@@ -12,7 +12,10 @@ import {
   seedComposerInlineAuthorize,
 } from '../fixtures/product';
 import {
+  closeComposerCapsule,
   JOURNEY_CONTRACTS,
+  openComposerRecipeCard,
+  selectComposerLens,
   submitComposerJourney,
   waitForResultJourney,
 } from '../fixtures/ui-journey';
@@ -345,19 +348,17 @@ test.describe('W01 store intake fact wiring', () => {
     const imageTextPage = await context.newPage();
     try {
       await imageTextPage.goto('/dashboard');
-      await imageTextPage
-        .getByTestId('composer-lens-option-image_text')
-        .click();
+      await selectComposerLens(imageTextPage, 'image_text');
       const authorized = await seedComposerInlineAuthorize(imageTextPage, {
         fileName: 'confirmed-facts-case.png',
       });
+      // reload unmounts every capsule — re-select the lens afterwards.
       await imageTextPage.reload();
-      await imageTextPage
-        .getByTestId('composer-lens-option-image_text')
-        .click();
-      await imageTextPage
-        .getByTestId('composer-recipe-card-recipe.case_to_xhs_note')
-        .click();
+      await selectComposerLens(imageTextPage, 'image_text');
+      const recipePanel = await openComposerRecipeCard(
+        imageTextPage,
+        'composer-recipe-card-recipe.case_to_xhs_note'
+      );
       const applyRecipe = imageTextPage.getByRole('button', {
         name: '套用并更新设置',
       });
@@ -367,6 +368,7 @@ test.describe('W01 store intake fact wiring', () => {
       await expect(recipeApplied.or(applyRecipe)).toBeVisible();
       if (await applyRecipe.isVisible()) await applyRecipe.click();
       await expect(recipeApplied).toBeVisible();
+      await closeComposerCapsule(imageTextPage, recipePanel);
       await seedComposerInlineAuthorize(imageTextPage, {
         expectedAssetId: authorized.id,
         fileName: 'confirmed-facts-case.png',

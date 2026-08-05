@@ -11,7 +11,10 @@ import { setTheme, type ThemeMode } from '../fixtures/page-health';
 import { seedConfirmedStore } from '../fixtures/product';
 import {
   clickComposerDeliveryCard,
+  closeComposerCapsule,
   JOURNEY_CONTRACTS,
+  openComposerCapsule,
+  selectComposerLens,
   waitForResultJourney,
 } from '../fixtures/ui-journey';
 
@@ -273,12 +276,14 @@ async function revealExampleStores(page: Page) {
 }
 
 async function submitPrefilledCopy(page: Page, intentPrefilled = false) {
-  const lens = page.getByTestId('composer-lens-option-copy');
   const intent = page.getByTestId('composer-intent-input');
   if (intentPrefilled) {
     // The sample knows the reusable intent, but it carries no typed outputHint.
-    // P0-4 therefore forbids it from silently forcing any output lens.
+    // P0-4 therefore forbids it from silently forcing any output lens. Radios live
+    // inside the lens capsule popover — assert the cold state while it is open,
+    // then selectComposerLens (idempotent if the panel is already open).
     await expect(intent).toHaveValue(/\S{10,}/u);
+    await openComposerCapsule(page, 'lens');
     for (const lensId of ['copy', 'image_text', 'video']) {
       await expect(
         page.getByTestId(`composer-lens-option-${lensId}`)
@@ -286,8 +291,7 @@ async function submitPrefilledCopy(page: Page, intentPrefilled = false) {
     }
   }
   const originalIntent = await intent.inputValue();
-  await lens.click();
-  await expect(lens).toBeChecked();
+  await selectComposerLens(page, 'copy');
   if (intentPrefilled) {
     await expect(intent).toHaveValue(originalIntent);
   }
@@ -523,6 +527,8 @@ test.describe('D-126 dashboard home mount', () => {
     await page
       .getByTestId('composer-intent-input')
       .fill('为周末护理项目写一条可以直接发布的预约文案');
+    // Destination options live in the capsule popover (unmounted until open).
+    const destinationPanel = await openComposerCapsule(page, 'destination');
     const destination = page.getByTestId(
       'composer-destination-option-xiaohongshu'
     );
@@ -531,6 +537,7 @@ test.describe('D-126 dashboard home mount', () => {
       await destination.click();
     }
     await expect(destination).toHaveAttribute('aria-pressed', 'true');
+    await closeComposerCapsule(page, destinationPanel);
 
     const { workId } = await submitPrefilledCopy(page);
     await waitForResultJourney(page, COPY_CONTRACT, workId);

@@ -9,7 +9,14 @@ import {
   seedComposerInlineAuthorize,
   seedConfirmedStore,
 } from '../fixtures/product';
-import { assertZipDownload, JOURNEY_CONTRACTS } from '../fixtures/ui-journey';
+import {
+  assertZipDownload,
+  closeComposerCapsule,
+  JOURNEY_CONTRACTS,
+  openComposerCapsule,
+  openComposerRecipeCard,
+  selectComposerLens,
+} from '../fixtures/ui-journey';
 
 const IMAGE_CONTRACT = JOURNEY_CONTRACTS.find(
   ({ modality }) => modality === 'image_text'
@@ -129,7 +136,7 @@ async function queryOperations<T>(
 async function submitImageJourney(page: Page, journey: Journey) {
   await page.goto('/dashboard');
   await seedConfirmedStore(page);
-  await page.getByTestId('composer-lens-option-image_text').click();
+  await selectComposerLens(page, 'image_text');
   const authorizedSources: Array<{ id: string }> = [];
   for (let index = 0; index < journey.sourceCount; index += 1) {
     authorizedSources.push(
@@ -140,13 +147,16 @@ async function submitImageJourney(page: Page, journey: Journey) {
     );
   }
   if (authorizedSources.length > 0) {
+    // reload unmounts every capsule — re-select the lens afterwards.
     await page.reload();
-    await page.getByTestId('composer-lens-option-image_text').click();
+    await selectComposerLens(page, 'image_text');
   }
-  await page
-    .getByTestId('composer-recipe-card-recipe.promotion_poster')
-    .click();
+  const recipePanel = await openComposerRecipeCard(
+    page,
+    'composer-recipe-card-recipe.promotion_poster'
+  );
   await expect(page.getByTestId('composer-recipe-apply-undo')).toBeVisible();
+  await closeComposerCapsule(page, recipePanel);
   for (const [index, source] of authorizedSources.entries()) {
     await seedComposerInlineAuthorize(page, {
       expectedAssetId: source.id,
@@ -158,6 +168,8 @@ async function submitImageJourney(page: Page, journey: Journey) {
   const intent = page.getByTestId('composer-intent-input');
   await intent.fill(journey.intent);
   await expect(intent).toHaveValue(journey.intent);
+  // Capability line lives inside the destination popover — assert while open.
+  const destinationPanel = await openComposerCapsule(page, 'destination');
   const destination = page.getByTestId(
     'composer-destination-option-xiaohongshu'
   );
@@ -166,6 +178,7 @@ async function submitImageJourney(page: Page, journey: Journey) {
   await expect(
     page.getByTestId('composer-destination-capability')
   ).toBeVisible();
+  await closeComposerCapsule(page, destinationPanel);
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 30_000,
   });

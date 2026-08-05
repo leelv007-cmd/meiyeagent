@@ -20,7 +20,20 @@ test('keyboard submits the Composer and announces the streamed candidate', async
   await seedConfirmedStore(page);
   await page.goto('/dashboard');
 
+  // Keyboard governance — do NOT swap in selectComposerLens (mouse clicks).
+  // CapsuleTrigger is a native <button type="button"> receiving Base UI
+  // PopoverTrigger props (composer-conversation.tsx CapsuleTrigger /
+  // PopoverTrigger). Native button activation (Space/Enter) fires the click
+  // that opens the popover; the radiogroup stays unmounted until then.
+  const lensTrigger = page.getByTestId('composer-capsule-lens');
+  const lensPanel = page.getByTestId('composer-capsule-lens-panel');
   const lens = page.getByTestId('composer-lens-option-copy');
+  await lensTrigger.focus();
+  await page.keyboard.press('Space');
+  await expect(lensPanel).toBeVisible();
+  // Same focus()+Space idiom the pre-capsule test used on the radio itself.
+  // FloatingFocusManager may already land on the first radio; re-focus is a
+  // no-op then and keeps the journey on keyboard activation, not pointer.
   await lens.focus();
   await page.keyboard.press('Space');
   await expect(lens).toBeChecked();

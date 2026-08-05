@@ -7,6 +7,12 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { seedConfirmedStore } from '../fixtures/product';
+import {
+  closeComposerCapsule,
+  openComposerCapsule,
+  openComposerRecipeCard,
+  selectComposerLens,
+} from '../fixtures/ui-journey';
 
 type ComposerSubmission = {
   packageId: string;
@@ -43,10 +49,11 @@ async function submitComposerImageText(
   intent: string
 ): Promise<ComposerSubmission> {
   await page.goto('/dashboard');
-  await page.getByTestId('composer-lens-option-image_text').click();
-  await page
-    .getByTestId('composer-recipe-card-recipe.promotion_poster')
-    .click();
+  await selectComposerLens(page, 'image_text');
+  const recipePanel = await openComposerRecipeCard(
+    page,
+    'composer-recipe-card-recipe.promotion_poster'
+  );
   const patchPreview = page.getByTestId('composer-recipe-patch-preview');
   const applied = page.getByTestId('composer-recipe-apply-undo');
   await expect(patchPreview.or(applied).first()).toBeVisible({
@@ -56,14 +63,17 @@ async function submitComposerImageText(
     await page.getByTestId('composer-patch-confirm').click();
   }
   await expect(applied).toBeVisible({ timeout: 30_000 });
+  await closeComposerCapsule(page, recipePanel);
 
   await page.getByTestId('composer-intent-input').fill(intent);
+  const destinationPanel = await openComposerCapsule(page, 'destination');
   const destination = page.getByTestId(
     'composer-destination-option-xiaohongshu'
   );
   if ((await destination.getAttribute('aria-pressed')) !== 'true') {
     await destination.click();
   }
+  await closeComposerCapsule(page, destinationPanel);
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 60_000,
   });

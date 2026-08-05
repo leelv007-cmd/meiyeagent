@@ -6,7 +6,13 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { productState, seedConfirmedStore } from '../fixtures/product';
-import { assertThreeModalDiscovery } from '../fixtures/ui-journey';
+import {
+  assertThreeModalDiscovery,
+  closeComposerCapsule,
+  openComposerCapsule,
+  openComposerRecipeCard,
+  selectComposerLens,
+} from '../fixtures/ui-journey';
 
 test.afterEach(async ({ request }) => {
   await cleanupE2EUsers(request);
@@ -40,9 +46,7 @@ test('lens and intent bind a quote without writing a product record', async ({
   await page.goto('/dashboard');
 
   const before = await productState(page);
-  const lens = page.getByTestId('composer-lens-option-copy');
-  await lens.click();
-  await expect(lens).toBeChecked();
+  await selectComposerLens(page, 'copy');
   await page
     .getByTestId('composer-intent-input')
     .fill('为到店护理写一条朋友圈项目介绍');
@@ -68,10 +72,11 @@ test('XHS note generation exposes role and thinking only in free mode', async ({
 
   await page.getByTestId('composer-creation-mode-free').click();
   await expect(page.getByTestId('composer-generation-params')).toHaveCount(0);
-  await page.getByTestId('composer-lens-option-image_text').click();
-  await page
-    .getByTestId('composer-recipe-card-recipe.case_to_xhs_note')
-    .click();
+  await selectComposerLens(page, 'image_text');
+  const recipePanel = await openComposerRecipeCard(
+    page,
+    'composer-recipe-card-recipe.case_to_xhs_note'
+  );
   const applyRecipe = page.getByRole('button', {
     name: '套用并更新设置',
   });
@@ -79,6 +84,8 @@ test('XHS note generation exposes role and thinking only in free mode', async ({
   await expect(recipeApplied.or(applyRecipe)).toBeVisible();
   if (await applyRecipe.isVisible()) await applyRecipe.click();
   await expect(recipeApplied).toBeVisible();
+  // Apply tip lives inside the recipe panel; close before free-mode params outside.
+  await closeComposerCapsule(page, recipePanel);
 
   await expect(page.getByTestId('composer-generation-params')).toBeVisible();
   await page.getByTestId('composer-beauty-voice-role-customer').click();
@@ -94,12 +101,19 @@ test('XHS note generation exposes role and thinking only in free mode', async ({
   await expect(page.getByTestId('composer-generation-params')).toHaveCount(0);
   await page.getByTestId('composer-creation-mode-free').click();
   await expect(page.getByTestId('composer-generation-params')).toBeVisible();
+  // Switching lens with a recipe on may open a confirm dialog before the radio
+  // is checked — cannot use selectComposerLens (it asserts checked immediately).
+  await openComposerCapsule(page, 'lens');
   await page.getByTestId('composer-lens-option-copy').click();
   const confirmCopySwitch = page.getByRole('button', {
     name: '切换到文案',
   });
   await expect(confirmCopySwitch).toBeVisible();
   await confirmCopySwitch.click();
+  // Re-open if the confirm path unmounted the panel; keep the radio assertion
+  // (not the capsule face) so this still proves the checked state after confirm.
+  const lensPanel = await openComposerCapsule(page, 'lens');
   await expect(page.getByTestId('composer-lens-option-copy')).toBeChecked();
+  await closeComposerCapsule(page, lensPanel);
   await expect(page.getByTestId('composer-generation-params')).toHaveCount(0);
 });
