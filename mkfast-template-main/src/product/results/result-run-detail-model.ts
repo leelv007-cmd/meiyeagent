@@ -64,7 +64,7 @@ const FAILURE_MESSAGES: Record<string, string> = {
   RATE_LIMITED: '当前排队较多，请稍后再试。',
   CONTENT_FILTER: '内容未通过合规检查，请调整后再试。',
   PROVIDER_ERROR: '生成服务暂时不可用，请稍后重试。',
-  QUOTA_EXCEEDED: '额度不足，请确认套餐后再试。',
+  QUOTA_EXCEEDED: '积分不足，请确认套餐后再试。',
   CANCELLED: '本次任务已取消。',
   UNKNOWN: '生成未完成，请重试或联系支持。',
 };

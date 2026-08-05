@@ -31,7 +31,7 @@ const FORBIDDEN_LANGUAGE = [
 /**
  * Identifier shapes the merchant must never see. D-123 keeps the internal cost
  * baseline off the front end entirely, so a bare currency amount in card copy
- * is a leak too — the merchant-facing unit is 额度/条数, never 元 (D-109).
+ * is a leak too — the merchant-facing unit is 积分, never 元 (D-109 / D-172).
  */
 const FORBIDDEN_IDENTIFIERS = [
   { label: 'uuid', pattern: /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-/iu },

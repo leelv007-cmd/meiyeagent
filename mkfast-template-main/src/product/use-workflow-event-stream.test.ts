@@ -425,7 +425,7 @@ test('hold expiry preserves the Core cancellation and refund message', () => {
       occurredAt: '2026-07-25T08:00:00.000Z',
       snapshot: {
         delivery: null,
-        merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+        merchantMessage: '超时未选择，本次任务已取消，积分已退回',
         outcome: 'cancelled',
         resolutionSource: 'core_hold_expired',
       },
@@ -434,7 +434,7 @@ test('hold expiry preserves the Core cancellation and refund message', () => {
       workflowId: 'task-hold-expired',
     }),
     {
-      merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+      merchantMessage: '超时未选择，本次任务已取消，积分已退回',
       outcome: 'cancelled',
       resolutionSource: 'core_hold_expired',
     }

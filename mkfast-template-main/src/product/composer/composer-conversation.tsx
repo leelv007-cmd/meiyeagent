@@ -1020,7 +1020,7 @@ function CapsuleTrigger({
  * Composer prompt surface (L3-2 capsule contract / spec §2.4).
  *
  * Idle form: intent textarea + one bottom icon capsule row
- * (＋素材 / 输出类型 / 配方 / @ / 发到哪 / 额度 / circular send).
+ * (＋素材 / 输出类型 / 配方 / @ / 发到哪 / 积分 / circular send).
  * Creation-mode segmenter is outside this card (R-1).
  */
 export function ComposerPromptBar({
@@ -1365,12 +1365,12 @@ export function ComposerPromptBar({
                 <CapsuleTrigger
                   {...triggerProps}
                   active={Boolean(creditSummary)}
-                  aria-label={creditSummary ?? '额度'}
+                  aria-label={creditSummary ?? '积分'}
                   required={creditShort}
                   testId="composer-capsule-credit"
                 >
                   <span className="max-w-[8rem] truncate">
-                    {creditSummary ?? '额度'}
+                    {creditSummary ?? '积分'}
                   </span>
                 </CapsuleTrigger>
               )}

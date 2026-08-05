@@ -30,6 +30,8 @@ import {
   creation_entry_submit,
   workbench_credit_balance,
   workbench_credit_expiring,
+  composer_credit_block_title,
+  composer_credit_shortfall_notice,
   workbench_credit_no_refund,
   workbench_credit_quote,
   workbench_credit_refund,
@@ -238,9 +240,7 @@ import { RecipeCardsPanel } from './recipe-cards-panel';
 import { ComposerCreditRecoveryHost } from './quota-blocking-card';
 import {
   type ComposerCreditRedemptionReceipt,
-  composerQuotaAvailability,
   composerQuotaRequirements,
-  projectQuotaPassiveView,
 } from './quota-blocking';
 import {
   buildLiveBriefInput,
@@ -1474,14 +1474,6 @@ export function ComposerHome({
       submissionRecipe?.delivery.notePageBound,
     ]
   );
-  const quotaPassive = useMemo(
-    () =>
-      projectQuotaPassiveView({
-        requirements: quotaRequirements,
-        available: composerQuotaAvailability(usageQuery.data),
-      }),
-    [quotaRequirements, usageQuery.data]
-  );
   const workbenchCreditBalance = projectWorkbenchCreditBalance(
     usageQuery.data?.credits,
     new Date()
@@ -1491,7 +1483,7 @@ export function ComposerHome({
     usageQuery.data?.credits,
     workbenchCreditQuote
   );
-  const legacyQuotaBlocked = quotaPassive.short || submissionQuotaBlocked;
+  const legacyQuotaBlocked = submissionQuotaBlocked;
   const quotaBlocked = legacyQuotaBlocked || workbenchCreditShortfall.visible;
   const creditSummary = workbenchCreditBalance.visible
     ? workbenchCreditBalance.expiringLot
@@ -1504,11 +1496,9 @@ export function ComposerHome({
       : workbench_credit_balance({
           count: workbenchCreditBalance.availableCredits,
         })
-    : quotaPassive.visible
-      ? quotaPassive.notice
-      : quotaBlocked
-        ? '额度不足'
-        : null;
+    : quotaBlocked
+      ? composer_credit_block_title()
+      : null;
 
   /**
    * D-164③ / D-164⑥: what this run will do and what it will cost, at the
@@ -1553,11 +1543,14 @@ export function ComposerHome({
           userText: lensState.draft.userText,
         },
         cost: projectExecutionCost({
-          available: {
-            ...composerQuotaAvailability(usageQuery.data),
-          },
           billingNote: currentQuoteView?.billingNote ?? null,
+          creditCost: workbenchCreditQuote.creditCost,
           requirements: quotaRequirements,
+          shortNotice: workbenchCreditShortfall.visible
+            ? composer_credit_shortfall_notice({
+                count: workbenchCreditShortfall.missingCredits,
+              })
+            : null,
         }),
         params: projectExecutionParams({
           aspectRatio: submissionAspectRatio,
@@ -1812,7 +1805,7 @@ export function ComposerHome({
   ]);
 
   useEffect(() => {
-    // 额度退还可见: a failed run gives the reservation back, so the passive quota
+    // 积分退还可见: a failed run gives the reservation back, so the credit
     // line must stop showing the number from before the run.
     if (workflowStream.workflowState !== 'failed') return;
     void queryClient.invalidateQueries({
@@ -2773,7 +2766,7 @@ export function ComposerHome({
             userText: pending.instruction,
           },
           cost: projectExecutionCost({
-            available: {},
+            creditCost: pending.quote.creditCost ?? null,
             requirements: (pending.quote.debitUnits ?? []).map((unit) => ({
               cost: unit.quantity,
               resource: unit.resource as ComposerQuotaResource,
@@ -2792,7 +2785,7 @@ export function ComposerHome({
         resetNotePlanPageRegenerate(timeline, pageId)
       );
       setNotePlanRegenerationError({
-        message: '暂时无法准备本页重生成，尚未使用图片额度。请重试。',
+        message: '暂时无法准备本页重生成，尚未消耗积分。请重试。',
         pageId,
       });
     } finally {
@@ -3585,7 +3578,9 @@ export function ComposerHome({
                       ) : (
                         <ComposerCreditRecoveryHost
                           blocked={legacyQuotaBlocked}
-                          passive={quotaPassive}
+                          missingCredits={
+                            workbenchCreditShortfall.missingCredits
+                          }
                           quote={currentQuoteView}
                           redeem={({ command, idempotencyKey }) =>
                             commandP1<ComposerCreditRedemptionReceipt>(
@@ -3858,12 +3853,11 @@ export function ComposerHome({
                     >
                       {/*
               `预计消耗 0.06` used to print here: a bare float in an invisible
-              unit, one line above 「本次用 1 条文案额度和 3 张图片额度 · 文案还剩
-              5 条」 — two pricing systems on one screen, and the merchant unit is
-              条数, never money (D-109 / D-123). The counted sentence next to the
-              send button owns the numbers; this line now only carries what that
-              sentence cannot say (video is billed by finished seconds) and
-              otherwise just states that the price is settled.
+              unit, one line above the counted sentence — two pricing systems on
+              one screen, and the merchant unit is 积分, never money (D-109 /
+              D-172). The credit quote above owns the numbers; this line now only
+              carries what that sentence cannot say (video is billed by finished
+              seconds) and otherwise just states that the price is settled.
             */}
                       {currentQuoteView.billingNote ?? '本次用量已确认'}
                     </p>
@@ -3945,7 +3939,7 @@ export function ComposerHome({
                 {legacyQuotaBlocked && !workbenchCreditShortfall.visible ? (
                   <ComposerCreditRecoveryHost
                     blocked={legacyQuotaBlocked}
-                    passive={quotaPassive}
+                    missingCredits={workbenchCreditShortfall.missingCredits}
                     quote={currentQuoteView}
                     redeem={({ command, idempotencyKey }) =>
                       commandP1<ComposerCreditRedemptionReceipt>(
@@ -3995,7 +3989,7 @@ export function ComposerHome({
                * P1-05: execution_confirm lives in the document timeline
                * (executionConfirmSlot / DecisionFrame). Residual cost-only
                * feedback when Brief cancel wiped the transcript but still owes
-               * an in-place "未消耗额度" answer (D-164⑥). Distinct testid so it
+               * an in-place "未消耗积分" answer (D-164⑥). Distinct testid so it
                * is not mistaken for the paid-media confirm slot.
                */}
               {costFeedback &&

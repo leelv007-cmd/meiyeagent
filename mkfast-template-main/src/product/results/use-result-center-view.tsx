@@ -1183,10 +1183,10 @@ export function useResultCenterView(
                       userText: pendingImageAdjust.instruction,
                     },
                     cost: projectExecutionCost({
-                      // The Result Center does not carry the entitlements
-                      // projection, so the card says what this run spends and
-                      // stays silent about the remaining balance.
-                      available: {},
+                      // The Result Center does not carry the credit balance, so
+                      // the card quotes what this run costs and stays silent
+                      // about what is left.
+                      creditCost: pendingImageAdjust.quote.creditCost ?? null,
                       requirements: (
                         pendingImageAdjust.quote.debitUnits ?? []
                       ).map((unit) => ({

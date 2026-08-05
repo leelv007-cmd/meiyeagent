@@ -169,7 +169,7 @@ describe('D-116 safety edges', () => {
     await tick(10);
     expect(onDecide).not.toHaveBeenCalled();
     expect(screen.getByTestId('composer-question-hold')).toHaveTextContent(
-      '额度'
+      '积分'
     );
     // The card still moves forward on purpose — it is a fallback, not a wall.
     expect(screen.getByTestId('composer-question-continue')).toBeEnabled();
@@ -308,7 +308,7 @@ describe('a decision that never reached the ledger rolls back', () => {
       />
     );
     expect(screen.getByTestId('composer-question-settled')).toHaveTextContent(
-      '已取消，额度已退回'
+      '已取消，积分已退回'
     );
     expect(screen.getByTestId('composer-question-submit')).toBeDisabled();
     expect(screen.getByTestId('composer-question-answer')).toBeEnabled();
@@ -323,7 +323,7 @@ describe('a decision that never reached the ledger rolls back', () => {
       />
     );
     expect(screen.getByTestId('composer-question-hold')).toHaveTextContent(
-      '额度已经放回'
+      '积分已经放回'
     );
     expect(screen.getByTestId('composer-question-hold')).toHaveTextContent(
       '重新排队占用'

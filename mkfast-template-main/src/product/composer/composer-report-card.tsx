@@ -4,7 +4,7 @@
  * Before this card a failed run rendered as nothing: the transcript stopped and
  * a generic toast said 「操作未完成，请检查当前状态后重试」, while the Chinese
  * failure copy Core had already written died in the transport layer. The card is
- * the other half of that fix — it states 白话原因, 下一步动作 and the 额度 outcome,
+ * the other half of that fix — it states 白话原因, 下一步动作 and the 积分 outcome,
  * and every failure ends with at least one way forward.
  *
  * Nothing here re-words Core: `message` and `nextStep` arrive on the terminal
@@ -72,13 +72,13 @@ export function ComposerReportCard({
         {report.nextStep}
       </p>
       {report.quotaRefunded ? (
-        // 额度退还可见: the merchant is told the reservation came back rather
+        // 积分退还可见: the merchant is told the reservation came back rather
         // than being left to compare two numbers on the composer.
         <p
           className="text-muted mt-2 text-xs"
           data-testid="composer-report-quota"
         >
-          这次没有扣你的额度，已经退回。
+          这次没有扣你的积分，已经退回。
         </p>
       ) : null}
       <div

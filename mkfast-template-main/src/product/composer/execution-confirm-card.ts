@@ -14,21 +14,22 @@
  * you can configure from is a configuration surface, and D-159③ says the
  * interaction here may only be confirm-shaped.
  *
- * Money never appears (D1, ratified 2026-07-29): the merchant sees bucket
- * counts, on exactly the wording `projectQuotaPassiveView` already produces, so
- * one run cannot be described two ways on one screen. Amounts stay in the
- * settings detail view.
+ * Money never appears (D1, ratified 2026-07-29). What the merchant reads here
+ * is the credit cost the server quoted for this run, on exactly the wording
+ * `workbench_credit_quote` prints beside the composer, so one run cannot be
+ * described two ways on one screen. Yuan amounts stay in the settings detail
+ * view. Until D-172 this line counted resource buckets instead; that unit is
+ * retired and the sentence it produced was the last production-reachable place
+ * a merchant still read it (#336 AC1). RETIRED-METERING: 「本次用 1 条文案额度
+ * · 还剩 4 条」.
  */
 
 import type { CreationLensId } from '@meiye/contracts';
 
+import { workbench_credit_quote } from '@/locale/paraglide/messages';
+
 import type { ComposerInputSnapshot } from './brief-surface';
-import {
-  projectQuotaPassiveView,
-  quotaSpendLabel,
-  type ComposerQuotaResource,
-  type QuotaRequirement,
-} from './quota-blocking';
+import type { ComposerQuotaResource, QuotaRequirement } from './quota-blocking';
 
 /* ── 0. Trigger mode ──────────────────────────────────────────────────── */
 
@@ -277,38 +278,43 @@ export type ExecutionCostUnit = {
 };
 
 export type ExecutionCostView = {
-  /** 「本次用 1 条文案额度 · 还剩 4 条」— straight from the passive view. */
+  /** 「本次约消耗 12 分」— the server's credit quote for this run. */
   readonly notice: string;
   readonly units: readonly ExecutionCostUnit[];
   /** Video's per-second billing note; null for every other lens. */
   readonly billingNote: string | null;
-  /** D-123 缺额提醒. True disables 确认. */
+  /**
+   * Whether the merchant's balance covers this quote. Admission moved to the
+   * credit reservation with D-172, so the shortfall is projected once, from
+   * the server balance (`projectWorkbenchCreditShortfall`), and passed in —
+   * this card no longer computes a second answer from bucket counts.
+   */
   readonly short: boolean;
   readonly shortNotice: string | null;
 };
 
 export function projectExecutionCost(input: {
   requirements: QuotaRequirement[];
-  available: Partial<Record<ComposerQuotaResource, number | null | undefined>>;
+  /** Server-published credit cost for this run; null until the quote lands. */
+  creditCost?: number | null;
   billingNote?: string | null;
+  shortNotice?: string | null;
 }): ExecutionCostView {
-  const passive = projectQuotaPassiveView({
-    available: input.available,
-    requirements: input.requirements,
-  });
+  const creditCost =
+    typeof input.creditCost === 'number' &&
+    Number.isSafeInteger(input.creditCost) &&
+    input.creditCost > 0
+      ? input.creditCost
+      : null;
   return {
     billingNote: input.billingNote ?? null,
-    // The passive row stays silent until every balance has loaded, because a
-    // half sentence there reads as a whole one. The card cannot afford that
-    // silence — it is the moment of committing — so it falls back to the half
-    // it does know: what this run spends, with no claim about what is left.
-    notice: passive.visible
-      ? passive.notice
-      : input.requirements.length > 0
-        ? `本次用 ${quotaSpendLabel(input.requirements)}`
-        : '',
-    short: passive.short,
-    shortNotice: passive.shortNotice,
+    // Silent until the quote lands: a cost sentence with no quote behind it is
+    // a number the merchant would be committing to on our guess, and this card
+    // is the moment of committing.
+    notice:
+      creditCost === null ? '' : workbench_credit_quote({ count: creditCost }),
+    short: Boolean(input.shortNotice),
+    shortNotice: input.shortNotice ?? null,
     units: input.requirements.map((requirement) => ({
       cost: requirement.cost,
       resource: requirement.resource,

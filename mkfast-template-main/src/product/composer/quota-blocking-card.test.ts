@@ -1,49 +1,22 @@
 /**
- * GL-23 quota blocking card pure model — redeem unlocks continue creation.
+ * GL-23 credit blocking card pure model — redeem unlocks continue creation.
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
 
+import * as quotaBlocking from './quota-blocking';
 import {
   beginQuotaRedeem,
   buildQuotaRedeemCommand,
   completeQuotaRedeem,
   composerQuotaRequirements,
-  composerQuotaAvailability,
   createQuotaBlockingState,
   isQuotaRedeemCodeValid,
   projectQuotaBlockingView,
-  projectQuotaPassiveView,
   setQuotaRedeemCode,
   showQuotaBlocking,
 } from './quota-blocking';
-
-function creditProjection(availableCredits: number) {
-  const bucket = (allowance: number) => ({
-    allowance,
-    available: allowance,
-    committed: 0,
-    released: 0,
-    reserved: 0,
-  });
-  return {
-    credits: {
-      grantedCredits: availableCredits,
-      usedCredits: 0,
-      refundedCredits: 0,
-      expiredCredits: 0,
-      availableCredits,
-      soonestExpiringLot: null,
-    },
-    plan: { tier: 'trial' as const },
-    usage: {
-      copy: bucket(5),
-      image: bucket(5),
-      video: bucket(1),
-      audio: bucket(0),
-    },
-  };
-}
 
 describe('GL-23 quota blocking model', () => {
   it('starts hidden / not unlocked', () => {
@@ -113,24 +86,6 @@ describe('GL-23 quota blocking model', () => {
 });
 
 describe('W05 图文双桶预检 (P0-5)', () => {
-  it('does not let the retired 5/5/1 buckets block a credit-priced image request', () => {
-    const view = projectQuotaPassiveView({
-      requirements: [{ resource: 'image', cost: 6 }],
-      available: composerQuotaAvailability(creditProjection(100)),
-    });
-    assert.equal(view.visible, false);
-    assert.equal(view.short, false);
-  });
-
-  it('does not let the retired video bucket claim a 50-credit clip is available', () => {
-    const view = projectQuotaPassiveView({
-      requirements: [{ resource: 'video', cost: 1 }],
-      available: composerQuotaAvailability(creditProjection(40)),
-    });
-    assert.equal(view.visible, false);
-    assert.equal(view.short, false);
-  });
-
   it('mirrors the server: an image-text note debits copy AND image', () => {
     assert.deepEqual(
       composerQuotaRequirements({
@@ -196,129 +151,63 @@ describe('W05 图文双桶预检 (P0-5)', () => {
     );
   });
 
-  it('blocks the copy-short image-rich 图文 run the server would reject', () => {
-    const view = projectQuotaPassiveView({
-      requirements: composerQuotaRequirements({
-        lensId: 'image_text',
-        deliverableKind: 'note',
-        quantity: 1,
-        notePageBound: 4,
-      }),
-      available: { copy: 0, image: 40, video: 3 },
-    });
-    assert.equal(view.short, true);
-    assert.deepEqual(view.shortResources, ['copy']);
-    assert.equal(
-      view.notice,
-      '本次用 1 条文案额度和 4 张图片额度 · 文案还剩 0 条、图片还剩 40 张'
-    );
-    assert.equal(view.shortNotice, '文案额度不够这次生成了，可以补充后再来');
-  });
-
   it('counts an image_set by the recipe, so 4 pages is not pre-checked as 1', () => {
     // The fork the signed quantity resolves (S3 P0-1): recipe declares 4, the
-    // untouched draft still says 1. Billing follows the recipe, so the merchant
-    // with 3 images left must be stopped here rather than by the server.
-    const requirements = composerQuotaRequirements({
-      lensId: 'image_text',
-      deliverableKind: 'image_set',
-      quantity: 4,
-    });
-    assert.deepEqual(requirements, [{ resource: 'image', cost: 4 }]);
-    const view = projectQuotaPassiveView({
-      requirements,
-      available: { copy: 5, image: 3, video: 1 },
-    });
-    assert.equal(view.short, true);
-    assert.deepEqual(view.shortResources, ['image']);
-    // Counting the draft's 1 instead would leave 3 images looking like plenty.
-    assert.equal(
-      projectQuotaPassiveView({
-        requirements: composerQuotaRequirements({
-          lensId: 'image_text',
-          deliverableKind: 'image_set',
-          quantity: 1,
-        }),
-        available: { copy: 5, image: 3, video: 1 },
-      }).short,
-      false
-    );
-  });
-
-  it('names both buckets when both fall short', () => {
-    const view = projectQuotaPassiveView({
-      requirements: composerQuotaRequirements({
+    // untouched draft still says 1. Billing follows the recipe, so the quote
+    // the merchant confirms has to be priced off the recipe's count.
+    assert.deepEqual(
+      composerQuotaRequirements({
         lensId: 'image_text',
-        deliverableKind: 'note',
-        quantity: 1,
-        notePageBound: 4,
+        deliverableKind: 'image_set',
+        quantity: 4,
       }),
-      available: { copy: 0, image: 1 },
-    });
-    assert.deepEqual(view.shortResources, ['copy', 'image']);
-    assert.equal(
-      view.shortNotice,
-      '文案额度和图片额度不够这次生成了，可以补充后再来'
+      [{ resource: 'image', cost: 4 }]
     );
   });
 });
 
-describe('D-043 quota 被动展示', () => {
-  it('states the run and the balance where both count the same thing', () => {
-    const view = projectQuotaPassiveView({
-      requirements: [{ resource: 'copy', cost: 1 }],
-      available: { copy: 5 },
-    });
-    assert.equal(view.visible, true);
-    assert.equal(view.short, false);
-    assert.equal(view.notice, '本次用 1 条文案额度 · 还剩 5 条');
-    assert.equal(view.shortNotice, null);
-    assert.deepEqual(view.shortResources, []);
-  });
-
-  it('flags a short balance without gating anything', () => {
-    const view = projectQuotaPassiveView({
-      requirements: [{ resource: 'image', cost: 3 }],
-      available: { image: 1 },
-    });
-    assert.equal(view.short, true);
-    assert.equal(view.notice, '本次用 3 张图片额度 · 还剩 1 张');
-    assert.equal(view.shortNotice, '图片额度不够这次生成了，可以补充后再来');
-  });
-
-  it('states video in 条 now that the ledger reserves it by clip', () => {
-    // T21/G-11 moved video settlement onto whole clips
-    // (`server-quote-authority.ts` debitUnitsFor → `{ video, quantity }`), so
-    // the seconds-vs-clips split that forced silence here is gone (W05 ③).
-    const view = projectQuotaPassiveView({
-      requirements: [{ resource: 'video', cost: 1 }],
-      available: { video: 3 },
-    });
-    assert.equal(view.visible, true);
-    assert.equal(view.notice, '本次用 1 条视频额度 · 还剩 3 条');
-    assert.equal(view.short, false);
-  });
-
-  it('says nothing before every touched balance has loaded', () => {
-    for (const available of [null, undefined]) {
+describe('D-172 retirement: the bucket-metering half is gone', () => {
+  it('exports no bucket-metering helper, so no surface can rebuild the sentence', () => {
+    // RETIRED-METERING: 「本次用 1 条文案额度 · 还剩 5 条」 had exactly one
+    // balance source — the retired projection (#336 AC3). Deleting the read without
+    // deleting the sentence would leave a helper that formats a balance nobody
+    // can supply, which is how the wording comes back.
+    for (const retired of [
+      'QUOTA_BLOCK_TITLE',
+      'QUOTA_BLOCK_DESCRIPTION',
+      'QUOTA_RESOURCE_LABELS',
+      'composerQuotaAvailability',
+      'projectQuotaPassiveView',
+      'quotaShortNotice',
+      'quotaSpendLabel',
+    ]) {
       assert.equal(
-        projectQuotaPassiveView({
-          requirements: [{ resource: 'copy', cost: 1 }],
-          available: { copy: available },
-        }).visible,
-        false
-      );
-      // A 图文 run must wait for BOTH buckets — half a sentence reads as whole.
-      assert.equal(
-        projectQuotaPassiveView({
-          requirements: [
-            { resource: 'copy', cost: 1 },
-            { resource: 'image', cost: 4 },
-          ],
-          available: { copy: 5, image: available },
-        }).visible,
-        false
+        retired in quotaBlocking,
+        false,
+        `quota-blocking still exports ${retired}`
       );
     }
+  });
+
+  it('reads no legacy usage bucket', () => {
+    const source = readFileSync(
+      new URL('./quota-blocking.ts', import.meta.url),
+      'utf8'
+    );
+    assert.doesNotMatch(source, /usage\./u);
+    assert.doesNotMatch(source, /AccountUsageProjection/u);
+  });
+
+  it('blocks and unblocks on the credit shortfall alone', () => {
+    // The card is now driven by `projectWorkbenchCreditShortfall`, so the only
+    // question this model answers is「挡住了吗」and「兑换后放行了吗」.
+    let state = showQuotaBlocking(createQuotaBlockingState());
+    assert.equal(projectQuotaBlockingView(state).visible, true);
+    assert.equal(projectQuotaBlockingView(state).canContinueCreation, false);
+
+    state = setQuotaRedeemCode(state, 'TOPUP-1');
+    state = beginQuotaRedeem(state);
+    state = completeQuotaRedeem(state, { ok: true });
+    assert.equal(projectQuotaBlockingView(state).canContinueCreation, true);
   });
 });

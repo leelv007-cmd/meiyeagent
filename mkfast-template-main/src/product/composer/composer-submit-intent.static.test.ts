@@ -53,7 +53,7 @@ test('a blocked press produces a described, visible reason on the intent box', (
 });
 
 /**
- * D-109 / D-123: the merchant unit is 条数, never money, and no internal cost
+ * D-109 / D-172: the merchant unit is 积分, never money, and no internal cost
  * baseline reaches the front. The quote line printed 「预计消耗 0.06」 — a bare
  * float in an invisible unit — one line above the counted sentence next to the
  * send button.

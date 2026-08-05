@@ -867,7 +867,7 @@ describe('终态申报', () => {
       'success',
       undefined,
       {
-        merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+        merchantMessage: '超时未选择，本次任务已取消，积分已退回',
         outcome: 'cancelled',
         resolutionSource: 'core_hold_expired',
       }
@@ -880,7 +880,7 @@ describe('终态申报', () => {
       />
     );
     expect(screen.getByTestId('composer-terminal-outcome')).toHaveTextContent(
-      '已取消，额度已退回'
+      '已取消，积分已退回'
     );
     expect(screen.queryByTestId('composer-delivery-card')).toBeNull();
   });

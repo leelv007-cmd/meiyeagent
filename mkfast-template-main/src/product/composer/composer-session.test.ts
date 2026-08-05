@@ -622,7 +622,7 @@ test('hold expiry is a visible cancelled/refunded terminal, never a delivery', (
     'success',
     undefined,
     {
-      merchantMessage: '超时未选择，本次任务已取消，额度已退回',
+      merchantMessage: '超时未选择，本次任务已取消，积分已退回',
       outcome: 'cancelled',
       resolutionSource: 'core_hold_expired',
     }
@@ -635,7 +635,7 @@ test('hold expiry is a visible cancelled/refunded terminal, never a delivery', (
   assert.deepEqual(cancelled.turns.at(-1), {
     id: 'terminal:task-1',
     kind: 'terminal',
-    message: '超时未选择，本次任务已取消，额度已退回',
+    message: '超时未选择，本次任务已取消，积分已退回',
     outcome: 'cancelled',
   });
   cancelled = applyComposerQuestion(cancelled, 'question-1');

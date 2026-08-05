@@ -1,5 +1,5 @@
 /**
- * GL-23 quota-exhausted blocking card with inline redemption (C4 / #98).
+ * GL-23 credit-exhausted blocking card with inline redemption (C4 / #98).
  *
  * Reuses the redemptions CAS seam via injectable `onRedeem` (host wires
  * commandP1('redemptions', { action: 'redeem', payload: { code } }, key)).
@@ -10,6 +10,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
+import { composer_credit_shortfall_notice } from '@/locale/paraglide/messages';
+
 import {
   beginQuotaRedeem,
   buildQuotaRedeemCommand,
@@ -17,14 +19,12 @@ import {
   createQuotaBlockingState,
   isQuotaRedeemCodeValid,
   projectQuotaBlockingView,
-  quotaShortNotice,
   recoverComposerCredits,
   setQuotaRedeemCode,
   showQuotaBlocking,
   type ComposerCreditQuote,
   type ComposerCreditRedemptionReceipt,
   type QuotaBlockingState,
-  type QuotaPassiveView,
   QUOTA_BLOCK_CONTACT_LABEL,
 } from './quota-blocking';
 
@@ -49,11 +49,11 @@ export type QuotaBlockingCardProps = {
    */
   contactHref?: string;
   /**
-   * 被动展示 (D-043 决定②/③). Present on the main path, where it states what
-   * this run will use and what is left and gates nothing — the merchant's tap
-   * on 生成 is the confirmation. Omit it and the card shows only when blocked.
+   * How many credits this run is short by, when the server balance says so.
+   * Names the gap instead of a generic「积分不足」(D-116): the merchant can
+   * only act on a number.
    */
-  passive?: QuotaPassiveView;
+  missingCredits?: number | null;
   className?: string;
 };
 
@@ -62,7 +62,7 @@ export function QuotaBlockingCard({
   onRedeem,
   onUnlocked,
   contactHref = '/contact',
-  passive,
+  missingCredits,
   className,
 }: QuotaBlockingCardProps) {
   const [state, setState] = useState<QuotaBlockingState>(() =>
@@ -81,22 +81,10 @@ export function QuotaBlockingCard({
   const view = projectQuotaBlockingView(state);
   const idle = !blocked && !state.blocked && !state.unlocked;
 
-  // Main path: a passive line, no card chrome, no action, nothing to dismiss.
-  // 「无冲突路径 0 张阻塞卡」 (D-043 决定①) is a claim about what blocks, and
-  // this blocks nothing — it is the 额度 the merchant is entitled to see.
-  if (idle || !view.visible) {
-    if (!passive?.visible) return null;
-    return (
-      <p
-        className={cn('text-muted text-xs', className)}
-        data-quota-short={passive.short ? 'true' : 'false'}
-        data-testid="composer-quota-passive"
-      >
-        {passive.notice}
-        {passive.shortNotice ? ` · ${passive.shortNotice}` : ''}
-      </p>
-    );
-  }
+  // 「无冲突路径 0 张阻塞卡」 (D-043 决定①). Nothing to say when nothing is
+  // blocked: the balance the merchant is entitled to see on the main path is
+  // printed in credits by the workbench (`workbench-credit-balance`), not here.
+  if (idle || !view.visible) return null;
 
   const handleRedeem = async () => {
     if (!isQuotaRedeemCodeValid(state.code)) return;
@@ -139,14 +127,14 @@ export function QuotaBlockingCard({
     >
       <div className="space-y-1">
         <p className="text-sm font-medium text-foreground">{view.title}</p>
-        {/* Which bucket ran out, not just that one did (W05 ①/D-116). */}
-        {passive?.shortResources.length ? (
+        {/* How far short, not just that it is short (W05 ①/D-116). */}
+        {typeof missingCredits === 'number' && missingCredits > 0 ? (
           <p
             className="text-sm text-muted-foreground"
-            data-quota-short-resources={passive.shortResources.join(',')}
+            data-credit-shortfall={String(missingCredits)}
             data-testid="composer-quota-shortfall"
           >
-            {quotaShortNotice(passive.shortResources)}
+            {composer_credit_shortfall_notice({ count: missingCredits })}
           </p>
         ) : null}
         <p className="text-sm text-muted-foreground">{view.description}</p>

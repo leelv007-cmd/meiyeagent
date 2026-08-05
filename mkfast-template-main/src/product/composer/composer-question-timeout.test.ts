@@ -49,7 +49,7 @@ test('released reservation changes the pending hold promise before an answer', (
     unattended: 'hold',
   });
 
-  assert.match(view.holdNotice ?? '', /额度已经放回/u);
+  assert.match(view.holdNotice ?? '', /积分已经放回/u);
   assert.match(view.holdNotice ?? '', /重新排队占用/u);
 
   const failedSuccessor = projectComposerQuestionCard({
@@ -61,7 +61,7 @@ test('released reservation changes the pending hold promise before an answer', (
     timeoutSeconds: null,
     unattended: 'hold',
   });
-  assert.match(failedSuccessor.settledNotice ?? '', /额度已经放回/u);
+  assert.match(failedSuccessor.settledNotice ?? '', /积分已经放回/u);
   assert.match(failedSuccessor.settledNotice ?? '', /再次提交/u);
 });
 
@@ -83,7 +83,7 @@ test('quota and external effects withhold the displayed release', () => {
     unattended: 'continue',
   });
   assert.equal(view.autoContinueEnabled, false);
-  assert.match(view.holdNotice ?? '', /额度/u);
+  assert.match(view.holdNotice ?? '', /积分/u);
 });
 
 test('Core timeout and hold expiry stay visible and keep late answers available', () => {
@@ -106,7 +106,7 @@ test('Core timeout and hold expiry stay visible and keep late answers available'
     unattended: 'hold',
   });
   assert.match(cancelled.settledNotice ?? '', /已取消/u);
-  assert.match(cancelled.settledNotice ?? '', /额度已退回/u);
+  assert.match(cancelled.settledNotice ?? '', /积分已退回/u);
 });
 
 test('submit outcomes and failures are explicit merchant-visible states', () => {

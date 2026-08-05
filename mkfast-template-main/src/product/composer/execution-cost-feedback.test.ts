@@ -24,52 +24,42 @@ function text(feedback: ExecutionCostFeedback | null) {
 test('declining says nothing was spent, because nothing was', () => {
   const feedback = projectExecutionCostFeedback({ outcome: 'rejected' });
 
-  assert.equal(text(feedback), '已取消，本次没有消耗额度');
+  assert.equal(text(feedback), '已取消，本次没有消耗积分');
   assert.equal(feedback?.tone, 'neutral');
 });
 
-test('a failed run says the quota came back', () => {
+test('a failed run says the credits came back', () => {
   // D-109 already commits to a full refund on an unaccepted or failed run and
   // the ledger already does it. This only says so where she can read it.
   assert.equal(
     text(projectExecutionCostFeedback({ outcome: 'failed' })),
-    '本次没有成功，额度已退回'
+    '本次没有成功，积分已退回'
   );
 });
 
-test('a settled run reports what was committed, in bucket counts', () => {
+test('a settled run reports what was committed, in credits', () => {
   const feedback = projectExecutionCostFeedback({
-    available: { copy: 5, image: 6 },
     outcome: 'settled',
-    settledUnits: [
-      { cost: 1, resource: 'copy' },
-      { cost: 3, resource: 'image' },
-    ],
+    settledCredits: 12,
   });
 
-  assert.match(text(feedback) ?? '', /^本次用了 /u);
-  assert.match(text(feedback) ?? '', /1 条文案额度和 3 张图片额度/u);
-  assert.match(text(feedback) ?? '', /文案还剩 5 条/u);
-  // D1 / D-109「供应细节不可见」: counts only, never money.
+  assert.equal(text(feedback), '本次用了 12 分');
+  assert.equal(feedback?.tone, 'positive');
+  // D1 / D-109「供应细节不可见」: credits only, never money.
   assert.doesNotMatch(text(feedback) ?? '', /CNY|￥|¥|元/u);
 });
 
 test('settlement that has not come back says nothing at all', () => {
-  // Silence is the only honest option: 「本次用了 0 条」would be a claim about
+  // Silence is the only honest option: 「本次用了 0 分」would be a claim about
   // her balance made out of missing data, which is what this line exists to
   // prevent.
-  assert.equal(
-    projectExecutionCostFeedback({ outcome: 'settled', settledUnits: [] }),
-    null
-  );
-  assert.equal(
-    projectExecutionCostFeedback({
-      available: { copy: null },
-      outcome: 'settled',
-      settledUnits: [{ cost: 1, resource: 'copy' }],
-    }),
-    null
-  );
+  for (const settledCredits of [undefined, null, 0, -3, 1.5]) {
+    assert.equal(
+      projectExecutionCostFeedback({ outcome: 'settled', settledCredits }),
+      null,
+      String(settledCredits)
+    );
+  }
 });
 
 test('a deterministic edit is never gated, in any trigger mode', () => {

@@ -154,11 +154,11 @@ test('example store waits for every successful real query and exits on any fact'
   assert.equal(exampleStoreVisibility({ ...empty, hidden: true }), 'hidden');
 });
 
-test('example browsing states in both locales that it uses no allowance', () => {
-  assert.equal(exampleStoreBrowsingMessage('zh'), '只读 · 浏览不消耗额度');
+test('example browsing states in both locales that it spends no credits', () => {
+  assert.equal(exampleStoreBrowsingMessage('zh'), '只读 · 浏览不消耗积分');
   assert.equal(
     exampleStoreBrowsingMessage('en'),
-    'Read-only · Browsing does not use your allowance'
+    'Read-only · Browsing spends no credits'
   );
 });
 

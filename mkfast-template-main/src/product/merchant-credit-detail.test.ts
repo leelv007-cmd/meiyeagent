@@ -151,6 +151,7 @@ test('settings exposes details and billing through the merchant credit contract'
       'string',
       `missing en key ${key}`
     );
+    // RETIRED-METERING: the retired units, pinned as absent from the #291 keys.
     assert.doesNotMatch(messages[key], /额度|条|张|段|产出/u, key);
   }
   assert.match(messages.admin_plan_trial_description, /试用积分/u);

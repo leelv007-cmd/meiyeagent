@@ -42,14 +42,14 @@ export function composerQuestionHold(input: {
 }
 
 const HOLD_NOTICES: Record<ComposerQuestionHold, string> = {
-  quota: '这次的额度不够自动继续了，需要你确认一下再往下走。',
+  quota: '这次的积分不够自动继续了，需要你确认一下再往下走。',
   external_effect: '这次会对外发布，需要你确认一下再往下走。',
 };
 const UNATTENDED_HOLD_NOTICE = '需要你选择后继续，这张卡不会自动放行。';
 const RELEASED_RESERVATION_NOTICE =
-  '之前占用的额度已经放回，现在回答会重新排队占用额度。';
+  '之前占用的积分已经放回，现在回答会重新排队占用积分。';
 const RELEASED_LATE_ANSWER_NOTICE =
-  '之前占用的额度已经放回。你的回答已保存，但新版本还没开始；请再次提交，系统会重新排队占用额度。';
+  '之前占用的积分已经放回。你的回答已保存，但新版本还没开始；请再次提交，系统会重新排队占用积分。';
 
 const SETTLEMENT_NOTICES: Record<ComposerQuestionSettlement, string> = {
   answered: '已按你的回答继续',
@@ -69,7 +69,7 @@ const RESOLUTION_NOTICES: Record<
   string
 > = {
   core_timeout: '系统已按通用模式继续，你仍可回答并生成精修版本。',
-  core_hold_expired: '本次任务已取消，额度已退回。你仍可回答并生成新版本。',
+  core_hold_expired: '本次任务已取消，积分已退回。你仍可回答并生成新版本。',
   late_answer: '你的回答已保存；如果新版本还没开始，可以再次提交重试。',
 };
 

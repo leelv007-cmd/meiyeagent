@@ -37,7 +37,7 @@ function openCard(
     quantity: 3,
   });
   const cost = projectExecutionCost({
-    available: { copy: 5, image: 9 },
+    creditCost: 36,
     requirements: [{ cost: 3, resource: 'image' }],
     ...costOverrides,
   });
@@ -80,14 +80,16 @@ describe('the card says what will happen, in the shop owner language', () => {
     ).not.toBeInTheDocument();
   });
 
-  it('states the cost in buckets and never in money (D1 / D-109)', () => {
+  it('states the cost in credits and never in money (D1 / D-109 / D-172)', () => {
     render(<ExecutionConfirmCard {...openCard()} />);
 
     const costLine = screen.getByTestId('execution-confirm-cost');
-    expect(costLine.textContent).toMatch(/本次用 3 张图片额度/u);
+    expect(costLine.textContent).toBe('本次约消耗 36 分');
     // 供应细节不可见: no currency, anywhere on the card.
     const card = screen.getByTestId('execution-confirm-card');
     expect(card.textContent).not.toMatch(/CNY|￥|¥|元/u);
+    // RETIRED-METERING: what this card printed until D-172, pinned as absent.
+    expect(card.textContent).not.toMatch(/额度|条数/u);
   });
 });
 
@@ -120,34 +122,34 @@ describe('the card is a confirmation, not a settings form (D-159③)', () => {
   });
 });
 
-describe('a balance that has not loaded', () => {
-  it('still says what the run spends, and claims nothing about what is left', () => {
+describe('a quote that has not landed', () => {
+  it('says nothing about cost rather than a number nobody quoted', () => {
     render(
       <ExecutionConfirmCard
         {...openCard(
           {},
-          { available: {}, requirements: [{ cost: 2, resource: 'image' }] }
+          { creditCost: null, requirements: [{ cost: 2, resource: 'image' }] }
         )}
       />
     );
 
-    const costLine = screen.getByTestId('execution-confirm-cost');
-    expect(costLine.textContent).toBe('本次用 2 张图片额度');
-    // Silence would be wrong here — this is the moment of committing — but so
-    // would a remaining figure nobody has read yet.
-    expect(costLine.textContent).not.toMatch(/还剩/u);
+    // This is the moment of committing, so an invented figure is worse than
+    // silence: the card still shows the parameters and both answers.
+    expect(screen.queryByTestId('execution-confirm-cost')).toBeNull();
+    expect(screen.getByTestId('execution-confirm-accept')).not.toBeDisabled();
   });
 });
 
 describe('a run the merchant cannot afford', () => {
-  it('blocks 确认 but keeps 拒绝 and the reason on screen', () => {
+  it('blocks 确认 but keeps 拒绝 and the gap on screen', () => {
     render(
       <ExecutionConfirmCard
         {...openCard(
           {},
           {
-            available: { image: 1 },
+            creditCost: 36,
             requirements: [{ cost: 3, resource: 'image' }],
+            shortNotice: '积分还差 12 分，补充后即可继续',
           }
         )}
       />
@@ -158,7 +160,7 @@ describe('a run the merchant cannot afford', () => {
     // out is a dead end, and the reason has to stay readable next to it.
     expect(screen.getByTestId('execution-confirm-reject')).not.toBeDisabled();
     expect(screen.getByTestId('execution-confirm-short').textContent).toMatch(
-      /图片额度不够/u
+      /还差 12 分/u
     );
   });
 });
@@ -172,7 +174,7 @@ describe('the state machine', () => {
         sources: [],
         userText: '写一条母亲节文案',
       },
-      cost: projectExecutionCost({ available: {}, requirements: [] }),
+      cost: projectExecutionCost({ requirements: [] }),
       params: [],
     });
 
@@ -193,7 +195,7 @@ describe('the state machine', () => {
         userText: 'first',
       },
       cost: projectExecutionCost({
-        available: { copy: 5 },
+        creditCost: 8,
         requirements: [{ cost: 1, resource: 'copy' }],
       }),
       params: [],
@@ -206,7 +208,7 @@ describe('the state machine', () => {
         userText: 'second',
       },
       cost: projectExecutionCost({
-        available: { copy: 5 },
+        creditCost: 32,
         requirements: [{ cost: 4, resource: 'copy' }],
       }),
       params: [],

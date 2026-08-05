@@ -18,10 +18,10 @@
  */
 
 import {
-  projectQuotaPassiveView,
-  type ComposerQuotaResource,
-  type QuotaRequirement,
-} from './quota-blocking';
+  composer_run_cancelled_no_spend,
+  composer_run_credits_settled,
+  composer_run_failed_credits_returned,
+} from '@/locale/paraglide/messages';
 
 export type ExecutionOutcome = 'rejected' | 'settled' | 'failed';
 
@@ -35,20 +35,17 @@ export type ExecutionCostFeedback = {
 export type ExecutionCostFeedbackInput = {
   readonly outcome: ExecutionOutcome;
   /**
-   * What settlement actually committed, per bucket — not what was reserved.
+   * What settlement actually committed, in credits — not what was reserved.
    * Only read on the 'settled' branch.
    */
-  readonly settledUnits?: readonly QuotaRequirement[];
-  readonly available?: Partial<
-    Record<ComposerQuotaResource, number | null | undefined>
-  >;
+  readonly settledCredits?: number | null;
 };
 
 /**
  * Returns null when there is nothing honest to say — a settled run whose
- * committed units have not come back yet. Saying「本次用了 0 条」there would be
- * a claim about the merchant's balance made from missing data, which is the one
- * thing this line exists to prevent.
+ * committed credits have not come back yet. Saying「本次用了 0 分」there would
+ * be a claim about the merchant's balance made from missing data, which is the
+ * one thing this line exists to prevent.
  */
 export function projectExecutionCostFeedback(
   input: ExecutionCostFeedbackInput
@@ -56,7 +53,7 @@ export function projectExecutionCostFeedback(
   if (input.outcome === 'rejected') {
     return {
       outcome: 'rejected',
-      text: '已取消，本次没有消耗额度',
+      text: composer_run_cancelled_no_spend(),
       tone: 'neutral',
     };
   }
@@ -65,22 +62,23 @@ export function projectExecutionCostFeedback(
     // and the ledger already implements it. This only says so out loud.
     return {
       outcome: 'failed',
-      text: '本次没有成功，额度已退回',
+      text: composer_run_failed_credits_returned(),
       tone: 'neutral',
     };
   }
-  const settled = (input.settledUnits ?? []).filter((unit) => unit.cost > 0);
-  if (settled.length === 0) return null;
-  const passive = projectQuotaPassiveView({
-    available: input.available ?? {},
-    requirements: [...settled],
-  });
-  if (!passive.visible) return null;
+  const settledCredits = input.settledCredits;
+  if (
+    typeof settledCredits !== 'number' ||
+    !Number.isSafeInteger(settledCredits) ||
+    settledCredits <= 0
+  ) {
+    return null;
+  }
   return {
     outcome: 'settled',
     // Same sentence the card promised before the run, now in the past tense —
     // one run described one way.
-    text: passive.notice.replace(/^本次用 /u, '本次用了 '),
+    text: composer_run_credits_settled({ count: settledCredits }),
     tone: 'positive',
   };
 }
