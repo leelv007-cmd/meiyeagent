@@ -5,6 +5,8 @@ import {
   type Page,
 } from '@playwright/test';
 
+import type { MerchantCreditDetail } from '@meiye/contracts';
+
 import { COMPOSER_SESSION_STORAGE_KEY } from '@/product/composer/composer-session';
 
 import {
@@ -224,6 +226,41 @@ function creditBalanceLine(page: Page) {
   return page.getByTestId('workbench-credit-topbar-balance');
 }
 
+/**
+ * 商家积分明细 — the same `entitlements/credit_detail` projection the account
+ * page renders (`use-merchant-credit-detail.ts`), so this reads what the
+ * merchant can look up rather than an internal table.
+ *
+ * The balance line alone cannot tell 「扣了又退」 from 「从未扣过」: both end at
+ * the number they started from. The ledger can, because a reservation leaves a
+ * row behind whether or not it is later credited back.
+ */
+async function creditTransactions(page: Page, operation: string) {
+  const detail = await page.evaluate(async () => {
+    const response = await fetch('/api/core/p1/query', {
+      body: JSON.stringify({
+        action: 'credit_detail',
+        module: 'entitlements',
+        payload: {},
+      }),
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    const envelope = (await response.json()) as {
+      data?: MerchantCreditDetail;
+      error?: { message?: string };
+    };
+    if (!response.ok || !envelope.data) {
+      throw new Error(envelope.error?.message ?? 'credit_detail failed');
+    }
+    return envelope.data;
+  });
+  return detail.transactions.filter(
+    (transaction) => transaction.operation === operation
+  );
+}
+
 test.describe('S2 失败与恢复', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));
@@ -285,6 +322,34 @@ test.describe('S2 失败与恢复', () => {
         )
         .toBe(creditsBefore);
     }
+
+    // 退回 ≠ 从未扣过. Ending on the number it started from is also what never
+    // charging would look like, so the balance alone cannot tell a refund from
+    // a run that was waved through — nor can it catch a charge that is never
+    // credited back, once the balance has settled. The ledger keeps both facts:
+    // a reservation leaves its row whatever happens next, and the credit back
+    // is a second row that names the amount it returned.
+    //
+    // Read off the ledger rather than by watching the balance dip mid-run: the
+    // reservation and its refund are 408ms apart (#356 archaeology), and the
+    // balance line lags them — it was still reading the pre-run number while
+    // the reservation was already on the ledger, and only showed the dip after
+    // the refund had landed. Sampling that window would be asserting on a stale
+    // read, not on the charge.
+    await expect
+      .poll(async () => await creditTransactions(page, 'creation'), {
+        timeout: 60_000,
+      })
+      .toHaveLength(2);
+    const creation = await creditTransactions(page, 'creation');
+    const reserved = creation.filter((entry) => entry.type === 'reserve');
+    const refunded = creation.filter((entry) => entry.type === 'refund');
+    expect(reserved, '本次运行必须真的预扣过一次').toHaveLength(1);
+    expect(reserved[0]!.credits).toBeGreaterThan(0);
+    expect(reserved[0]!.status).toBe('refunded');
+    expect(refunded, '预扣必须被退回').toHaveLength(1);
+    expect(refunded[0]!.refundDisposition).toBe('credited');
+    expect(refunded[0]!.creditedAmount).toBe(reserved[0]!.credits);
 
     // A blocked draft must not be left on screen as if it were usable.
     await expect(page.getByTestId('composer-delivery-turn')).toHaveCount(0);
