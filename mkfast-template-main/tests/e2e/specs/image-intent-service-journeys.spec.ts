@@ -203,6 +203,24 @@ async function submitImageJourney(page: Page, journey: Journey) {
   expect(envelope.data?.contentPackage?.id).toBeTruthy();
   expect(envelope.data?.task?.id).toBeTruthy();
   expect(envelope.data?.work?.id).toBeTruthy();
+
+  // D-164③ / P1-05: paid media generation holds on the in-stream
+  // execution_confirm interrupt (frozen params + credit preview) before
+  // execution_selection runs. The poster route carries no 图文方向 fork, so
+  // 确认执行 is the only merchant step between the 202 and the workflow
+  // resuming — without it the run stays suspended at execution_selection and
+  // the SSE never reaches a terminal state.
+  const confirmation = page.getByTestId(
+    'execution-confirmation-interaction-card'
+  );
+  await expect(confirmation).toBeVisible({ timeout: 60_000 });
+  // Frame host marks the DecisionFrame interrupt for AgentFrame consumers.
+  await expect(
+    page.getByTestId('composer-execution-confirm-turn')
+  ).toHaveAttribute('data-agent-frame', 'decision');
+  await confirmation.getByRole('button', { name: '确认执行' }).click();
+  await expect(confirmation).toBeHidden({ timeout: 60_000 });
+
   return {
     packageId: envelope.data!.contentPackage!.id!,
     taskId: envelope.data!.task!.id!,
