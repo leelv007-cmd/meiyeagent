@@ -11,6 +11,11 @@ import {
   seedComposerInlineAuthorize,
   seedConfirmedStore,
 } from '../fixtures/product';
+import {
+  closeComposerCapsule,
+  openComposerRecipeCard,
+  selectComposerLens,
+} from '../fixtures/ui-journey';
 
 const EXPECTED_STAGES = [
   'intent_naming',
@@ -104,16 +109,19 @@ async function queryOperations<T>(
 async function submitVideoJourney(page: Page) {
   await page.goto('/dashboard');
   await seedConfirmedStore(page);
-  await page.getByTestId('composer-lens-option-video').click();
+  await selectComposerLens(page, 'video');
   const authorized = await seedComposerInlineAuthorize(page, {
     fileName: 'video-native-reference.png',
   });
+  // reload unmounts every capsule — re-select lens then apply recipe in-panel.
   await page.reload();
-  await page.getByTestId('composer-lens-option-video').click();
-  await page
-    .getByTestId('composer-recipe-card-recipe.douyin_project_video')
-    .click();
+  await selectComposerLens(page, 'video');
+  const recipePanel = await openComposerRecipeCard(
+    page,
+    'composer-recipe-card-recipe.douyin_project_video'
+  );
   await expect(page.getByTestId('composer-recipe-apply-undo')).toBeVisible();
+  await closeComposerCapsule(page, recipePanel);
   await seedComposerInlineAuthorize(page, {
     expectedAssetId: authorized.id,
     fileName: 'video-native-reference.png',

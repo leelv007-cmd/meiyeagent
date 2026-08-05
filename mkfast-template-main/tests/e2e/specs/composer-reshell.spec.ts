@@ -7,7 +7,12 @@ import {
 } from '../fixtures/auth';
 import { seedConfirmedStore } from '../fixtures/product';
 import { setTheme } from '../fixtures/page-health';
-import { clickComposerDeliveryCard } from '../fixtures/ui-journey';
+import {
+  clickComposerDeliveryCard,
+  closeComposerCapsule,
+  openComposerCapsule,
+  selectComposerLens,
+} from '../fixtures/ui-journey';
 
 /**
  * T30 / #224 — D-114 定制创作主容器 acceptance.
@@ -45,7 +50,7 @@ type SubmissionBody = {
  */
 async function startCopyRun(page: Page, intent: string) {
   await page.goto('/dashboard');
-  await page.getByTestId('composer-lens-option-copy').click();
+  await selectComposerLens(page, 'copy');
   await page.getByTestId('composer-intent-input').fill(intent);
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 30_000,
@@ -202,8 +207,19 @@ test.describe('D-114 Composer conversation container', () => {
     await seedConfirmedStore(page);
 
     await page.goto('/dashboard');
-    await page.getByTestId('composer-lens-option-copy').click();
-    await page.getByTestId('composer-destination-option-xiaohongshu').click();
+    await selectComposerLens(page, 'copy');
+    // Destination options + capability live inside the capsule popover (unmounted
+    // until open). Assert capability while the panel is still open, then close.
+    const destinationPanel = await openComposerCapsule(page, 'destination');
+    const destination = page.getByTestId(
+      'composer-destination-option-xiaohongshu'
+    );
+    await destination.click();
+    await expect(destination).toHaveAttribute('aria-pressed', 'true');
+    await expect(
+      page.getByTestId('composer-destination-capability')
+    ).toHaveText('生成后导出');
+    await closeComposerCapsule(page, destinationPanel);
     await page
       .getByTestId('composer-intent-input')
       .fill('写一条夏日护理预约文案');
@@ -224,9 +240,6 @@ test.describe('D-114 Composer conversation container', () => {
       await preview.locator('input, select, textarea').count(),
       'signed fields must not be editable form controls (T08 / D-031)'
     ).toBe(0);
-    await expect(
-      page.getByTestId('composer-destination-capability')
-    ).toHaveText('生成后导出');
 
     const requestPromise = page.waitForRequest(
       (request_) =>
@@ -276,13 +289,21 @@ test.describe('D-114 Composer conversation container', () => {
 
     // D-164②: reuse is not a recipe pill. Every pill in that row applies a
     // recipe; 旧内容换平台 hands a sentence back to the conversation instead, so
-    // it lives in the chips below and nowhere else. This used to be a `count()
-    // > 0` guard, which after the pill row would have skipped silently forever
-    // rather than testing anything.
+    // it lives in the destination capsule chips and nowhere else. This used to
+    // be a `count() > 0` guard, which after the pill row would have skipped
+    // silently forever rather than testing anything. Open the recipe capsule so
+    // the absence check is against mounted pills, not an unmounted panel.
+    const recipePanel = await openComposerCapsule(page, 'recipe');
     await expect(
       page.getByTestId('composer-recipe-card-reuse_content')
     ).toHaveCount(0);
+    await closeComposerCapsule(page, recipePanel);
+
+    // Reuse chips live inside the destination capsule (U04).
+    const destinationPanel = await openComposerCapsule(page, 'destination');
+    await expect(page.getByTestId('composer-reuse-chips')).toBeVisible();
     await page.getByTestId('composer-reuse-chip-xiaohongshu').click();
+    await closeComposerCapsule(page, destinationPanel);
     // Reuse is answered in the flow: the draft gets a sentence, not a panel.
     await expect(page.getByTestId('composer-intent-input')).not.toHaveValue('');
 
@@ -298,8 +319,6 @@ test.describe('D-114 Composer conversation container', () => {
     await expect(page.locator('#composer-setting-input-platform')).toHaveCount(
       0
     );
-    // The chips that replaced it are present and one-tap.
-    await expect(page.getByTestId('composer-reuse-chips')).toBeVisible();
   });
 
   for (const theme of ['light', 'dark'] as const) {

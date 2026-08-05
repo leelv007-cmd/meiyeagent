@@ -10,6 +10,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { seedConfirmedStore } from '../fixtures/product';
+import { selectComposerLens } from '../fixtures/ui-journey';
 
 test.describe('marketing Composer and Harness question', () => {
   test.beforeAll(async ({ request }) => {
@@ -213,7 +214,7 @@ test.describe('marketing Composer and Harness question', () => {
     await loginByForm(page, user);
     await seedConfirmedStore(page);
     await page.goto('/dashboard');
-    await page.getByTestId('composer-lens-option-copy').click();
+    await selectComposerLens(page, 'copy');
     await page
       .getByTestId('composer-intent-input')
       .fill('把新团购做一套能发的');

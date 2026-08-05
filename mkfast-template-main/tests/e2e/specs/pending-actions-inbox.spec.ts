@@ -10,6 +10,11 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import {
+  closeComposerCapsule,
+  openComposerCapsule,
+  selectComposerLens,
+} from '../fixtures/ui-journey';
 
 async function p1Command<T>(
   page: Page,
@@ -99,10 +104,11 @@ async function submitComposerTask(page: Page): Promise<ComposerTask> {
     window.sessionStorage.removeItem('composer-session::composer-session/v1');
   });
   await page.goto('/dashboard');
-  await page.getByTestId('composer-lens-option-copy').click();
+  await selectComposerLens(page, 'copy');
   await page
     .getByTestId('composer-intent-input')
     .fill('写一条周末到店的团购活动文案');
+  const destinationPanel = await openComposerCapsule(page, 'destination');
   const destination = page.getByTestId(
     'composer-destination-option-xiaohongshu'
   );
@@ -111,6 +117,7 @@ async function submitComposerTask(page: Page): Promise<ComposerTask> {
     await destination.click();
   }
   await expect(destination).toHaveAttribute('aria-pressed', 'true');
+  await closeComposerCapsule(page, destinationPanel);
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 60_000,
   });

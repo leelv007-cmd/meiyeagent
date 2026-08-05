@@ -3,6 +3,11 @@ import { expect, test } from '@playwright/test';
 import { cleanupE2EUsers } from '../fixtures/auth';
 import { seedConfirmedStore } from '../fixtures/product';
 import { createE2EUser } from '../fixtures/test-data';
+import {
+  closeComposerCapsule,
+  openComposerCapsule,
+  selectComposerLens,
+} from '../fixtures/ui-journey';
 
 test.describe('M-01 signed platform contract', () => {
   test.beforeAll(async ({ request }) => {
@@ -59,7 +64,7 @@ test.describe('M-01 signed platform contract', () => {
       }
     });
 
-    await page.getByTestId('composer-lens-option-copy').click();
+    await selectComposerLens(page, 'copy');
     await page
       .getByTestId('composer-intent-input')
       .fill('写一条夏日护理预约文案');
@@ -73,6 +78,7 @@ test.describe('M-01 signed platform contract', () => {
     // T30 / #224: 「发到哪」is one chip question in the conversation, not a
     // settings-grid select — the destination is a signed field the server
     // freezes, so it is asked once and never rendered as an editable form row.
+    // Destination options + capability now live in the capsule popover.
     const destination = (platform: string) =>
       page.getByTestId(`composer-destination-option-${platform}`);
     await expect(
@@ -80,14 +86,6 @@ test.describe('M-01 signed platform contract', () => {
       'the retired platform select must not come back (D-031)'
     ).toHaveCount(0);
 
-    await destination('xiaohongshu').click();
-    await expect(destination('xiaohongshu')).toHaveAttribute(
-      'aria-pressed',
-      'true'
-    );
-    await expect(
-      page.getByTestId('composer-destination-capability')
-    ).toHaveText('生成后导出');
     // Capture inside the poll. While the quote refetches, the attribute is
     // briefly absent, and `null` trivially satisfies `.not.toBe(previous)` —
     // so a poll that only checks difference can pass mid-refetch and the read
@@ -109,15 +107,31 @@ test.describe('M-01 signed platform contract', () => {
       return captured as unknown as string;
     };
 
+    // Capability line is inside the destination popover — assert while open,
+    // then close so quote-hash polling (outside) is not blocked by the panel.
+    const xhsPanel = await openComposerCapsule(page, 'destination');
+    await destination('xiaohongshu').click();
+    await expect(destination('xiaohongshu')).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    await expect(
+      page.getByTestId('composer-destination-capability')
+    ).toHaveText('生成后导出');
+    await closeComposerCapsule(page, xhsPanel);
     const xhsHash = await contractHashOtherThan(initialHash);
 
+    const wechatPanel = await openComposerCapsule(page, 'destination');
     await destination('wechat_moments').click();
     await expect(
       page.getByTestId('composer-destination-capability')
     ).toHaveText('生成后协办交接');
+    await closeComposerCapsule(page, wechatPanel);
     await contractHashOtherThan(xhsHash);
 
+    const xhsAgainPanel = await openComposerCapsule(page, 'destination');
     await destination('xiaohongshu').click();
+    await closeComposerCapsule(page, xhsAgainPanel);
     await expect
       .poll(() => quoteLine.getAttribute('data-submission-contract-hash'))
       .toBe(xhsHash);

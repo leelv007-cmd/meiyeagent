@@ -6,6 +6,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { seedConfirmedStore } from '../fixtures/product';
+import { selectComposerLens } from '../fixtures/ui-journey';
 import { installUserActivationCounter } from '../fixtures/user-activation';
 
 type AskMerchantPending = {
@@ -18,8 +19,7 @@ type AskMerchantPending = {
 
 async function submitCustomizedCopy(page: Page, intent = '写一条周末预约文案') {
   await page.goto('/dashboard');
-  const lens = page.getByTestId('composer-lens-option-copy');
-  await lens.click();
+  await selectComposerLens(page, 'copy');
   await page.getByTestId('composer-intent-input').fill(intent);
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 30_000,
