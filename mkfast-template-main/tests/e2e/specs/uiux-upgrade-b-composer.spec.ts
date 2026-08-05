@@ -31,8 +31,17 @@ test('cold Composer exposes the required lenses without a merchant submission', 
     '先补门店信息'
   );
   await expect(page.getByTestId('composer-submit')).toBeEnabled();
-  await expect(page.getByTestId('composer-conversation')).toBeVisible();
+  // The Idle home carries no transcript. `composer-conversation` returns null
+  // while the session has no turns and no identity slot
+  // (composer-conversation.tsx:584), and `79f9a4e7` moved the identity card out
+  // of the stream into the @ capsule (L3-2), so the cold surface stopped
+  // mounting an empty pane. Both halves of "no merchant submission yet" are
+  // pinned here: no transcript, and no merchant turn anywhere on the page.
+  await expect(page.getByTestId('composer-conversation')).toHaveCount(0);
   await expect(page.getByTestId('composer-turn-merchant')).toHaveCount(0);
+  // A cold Composer must still be the thing that would open one — the capsule
+  // bar and submit control are live, they are just not a conversation yet.
+  await expect(page.getByTestId('composer-capsule-lens')).toBeVisible();
 });
 
 test('lens and intent bind a quote without writing a product record', async ({
