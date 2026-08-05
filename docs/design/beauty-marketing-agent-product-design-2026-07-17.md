@@ -3580,7 +3580,14 @@ Skill 选中
 - **事实前提订正（2026-08-06，lane-348 实施穷举实证）**：`CREATIVE_GROUNDING_INCOMPLETE` 全仓唯一产出点在 `prepareCreativeJob`，可达路径只有 Result Center **重试**（`retryCreativeJob`）与 **result_adjust 遗留分支**；composer 主提交链（admission→冻结 snapshot→startHarness）**从不调用 groundingResolver**（postgres 契约测试 :1558 钉死「freezes the admission root without Product grounding」）。故「Day-0 商家自由创作一次也提交不了」表述过强——首次提交不撞门，撞门的是重试与调整链路。（同日补全：composer 首提经 `PostgresCreationSubmissionPersistence.reserve()` 的裸 INSERT 落 `p1_creative_works` 行，「基于此再创作」的派生第二轮经 result_adjust 遗留分支→`prepareCreativeJob` **真实撞门**——准确读法＝Day-0 free 商家**出得了第一活、续不上第二轮**。）**决策方向不变**：门在哪生效就在哪分层；消费者证明相应落在真实撞门的链路上（free 第二轮出活），不在恒绿旅程上伪造。
 - Supersedes：不改写旧 D 正文；D-111/D-103/D-119 按原文兑现。
 
-## 待拍板（2026-07-17 合并评审识别，逐一讨论后按模板转正式决策）
+## D-176 失败创作的原地重跑能力：试点前不建设，诚实文案先行
+
+- 日期：2026-08-06
+- 状态：`accepted`（用户拍板「#354 按主控建议执行」；源起 #350——结果中心对 composer 失败作品渲染跑不动的重试按钮，拆除后失败旅程的唯一出口＝返回工作台重新发起）
+- 决定：**试点期不建设「原地重放一次 harness 运行」能力**。失败 composer 创作的官方出口维持 #350/#353 合同：主动作「返回工作台」＋提示「请返回工作台重新发起本次创作」。同面板两处与此矛盾的软承诺（`stageSummaryFor`「生成失败，可恢复」／`costSummaryFor`「重新生成前会再次确认」，无 job 作品上均为空头支票）按 #353 的 jobStatus 分流范式改为诚实文案（实施票 #358）。
+- 原因：①原地重跑是**新执行语义**不是缺陷修复——retry 管线（Operations Job）与 harness 作品互不相通（#348/#350 考古钉死），要做就牵动重放语义（同快照？新准入？）、计费口径（按次计费的重做）与 D-117/D-122 HITL 编排对齐，属设计票量级；②验证期优先最快栈，能力绑定触发点：试点中「失败后重发起」的真实频次与商家抱怨才是建设信号；③现有出口旅程完整且诚实，不是残缺 MVP——缺的是优化，不是闭环。
+- 触发点：试点运营窗（#240）复盘时若失败重发起成为高频痛点，重开 #354 走 spec 流程。
+- 影响：#354 关闭（记录触发点）；#358 实施两处诚实文案；#353 已修的 `recoveryHintFor` 为改写范式。
 
 已拍板转正：视频成片首发地位 → D-027；文案/成片两层交付 → D-028；Day-0 零资产首屏 → D-029；定位边界 → D-030；前台无槽位填表、结构化输入融入对话流 → D-031；Agent Workflow 编排总纲（收编原「阻塞作用域」「沉淀检测」两项为推论一/二）→ D-032；Task 统一交互单元与 Harness 五段式 → D-033（均 2026-07-17）；Harness 实现选型四题 + 工程约束（11 号简报全案采纳，提示词承载 = Langfuse 先行）→ D-034~D-038（2026-07-17 深夜，证据 = 10 份调研 + 9 路 Codex 对抗交叉验证（r08 三次容量失败未产出，Dify 在 D-037 中仅为战术搁置项，见其证据边界与 08 号报告头部横幅），`references/analysis/harness-research-2026-07-17/`）；09 合规章义务清单去向（2026-07-18 一致性复核 escalate 项）= 并入 Week 0 预登记文档 → D-039（2026-07-18）。
 
