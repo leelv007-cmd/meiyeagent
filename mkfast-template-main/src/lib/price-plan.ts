@@ -18,8 +18,47 @@ export const PUBLIC_PLAN_CONFIG_IDS = {
   growth: 'growth',
 } as const;
 
-/** The self-serve paid tier both public surfaces quote (D-143). */
-export const GROWTH_CONFIG_PLAN_ID = PUBLIC_PLAN_CONFIG_IDS.growth;
+/**
+ * Where the paid tier sits when the Waffo catalog is not configured.
+ *
+ * The payment config ships two different catalogs. With Waffo configured it
+ * carries the real sellable products — starter / growth / pro — and the paid
+ * tier this module quotes is `growth`. Without it, the config keeps the
+ * template's own plans, where the same tier is filed under `pro` and priced
+ * from `PUBLIC_DISPLAY_PRICE_CENTS.growthMonthly`.
+ *
+ * `pro` is therefore two different things depending on the catalog, which is
+ * why this is a fallback and not a second entry in the mapping above: under the
+ * Waffo catalog `pro` is a genuinely higher tier with a price of its own, and
+ * quoting it would put a wrong number on the landing rather than a missing one.
+ */
+const GROWTH_TEMPLATE_CONFIG_PLAN_ID = 'pro';
+
+/**
+ * The self-serve paid tier both public surfaces quote (D-143, #349).
+ *
+ * This was a constant reading `PUBLIC_PLAN_CONFIG_IDS.growth` until #349. That
+ * made the landing's price depend on a plan key that only exists under one of
+ * the two catalogs: `0c20d957` (#304) repointed the tier at `growth` for the
+ * Waffo catalog, and every other runtime — Playwright pins
+ * `VITE_PAYMENT_PROVIDER=stripe`, and a deployment may leave it unset — quietly
+ * stopped resolving to any plan at all, so the landing printed its coming-soon
+ * fallback where its only price belongs. Resolving against the catalog that is
+ * actually configured is what makes the two cases one code path.
+ *
+ * Returns undefined only when neither key is configured, which is the one
+ * situation where the public pages genuinely have no price to quote.
+ */
+export function growthConfigPlanId(): string | undefined {
+  const plans = getPricePlans();
+  if (plans[PUBLIC_PLAN_CONFIG_IDS.growth]) {
+    return PUBLIC_PLAN_CONFIG_IDS.growth;
+  }
+  if (plans[GROWTH_TEMPLATE_CONFIG_PLAN_ID]) {
+    return GROWTH_TEMPLATE_CONFIG_PLAN_ID;
+  }
+  return undefined;
+}
 
 /**
  * The handle a browser uses to read the paid tier's monthly price (#242).
@@ -72,7 +111,7 @@ export function formatSubscriptionPrice(
  */
 export function growthMonthlyPriceLabel(): string | null {
   const monthly = findSubscriptionPrice(
-    GROWTH_CONFIG_PLAN_ID,
+    growthConfigPlanId(),
     PlanIntervals.MONTH
   );
   return monthly ? formatSubscriptionPrice(monthly) : null;

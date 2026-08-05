@@ -1,11 +1,24 @@
 /**
  * Format a price for display
+ *
+ * Formatted for the audience that reads it. These prices are quoted to Chinese
+ * shop owners, and `en-US` renders CNY as `CN¥399` — a disambiguation English
+ * needs because `¥` could be yen, and one no merchant here expects on a price
+ * tag. Every decision that set these numbers wrote them `¥399`, and the browser
+ * contract on the landing page has always asked for `¥<digits>`; the template
+ * default was quietly answering in a different alphabet.
+ *
+ * Currencies that are not the local one keep their disambiguating prefix under
+ * this locale too — the Waffo catalog's HKD still reads `HK$522` — so the
+ * change removes a foreign-language artifact without making any price
+ * ambiguous.
+ *
  * @param price Price amount in currency units (dollars, euros, etc.)
  * @param currency Currency code
  * @returns Formatted price string
  */
 export function formatPrice(price: number, currency: string): string {
-  const formatter = new Intl.NumberFormat('en-US', {
+  const formatter = new Intl.NumberFormat('zh-CN', {
     style: 'currency',
     currency,
     minimumFractionDigits: 0,

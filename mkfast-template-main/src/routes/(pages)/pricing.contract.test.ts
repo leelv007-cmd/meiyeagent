@@ -6,7 +6,7 @@ import { websiteConfig } from '@/config/website';
 import {
   findSubscriptionPrice,
   formatSubscriptionPrice,
-  GROWTH_CONFIG_PLAN_ID,
+  growthConfigPlanId,
   growthMonthlyPriceLabel,
   PUBLIC_PAID_MONTHLY_PRICE_TESTID,
   PUBLIC_PLAN_CONFIG_IDS,
@@ -205,9 +205,19 @@ test('landing mapping stays shared; credit matrix prices published catalog ids',
   const content = read('src/components/pricing/credit-pricing-content.tsx');
 
   assert.match(pricePlan, /export const PUBLIC_PLAN_CONFIG_IDS = \{/u);
+  // Until #349 this pinned a constant: `GROWTH_CONFIG_PLAN_ID =
+  // PUBLIC_PLAN_CONFIG_IDS.growth`. The point of that assertion — the landing
+  // reads the shared mapping rather than a twin literal — outlived the
+  // constant, which had to become a resolution once it turned out the config
+  // ships two catalogs and only one of them files the tier under that key.
   assert.match(
     pricePlan,
-    /export const GROWTH_CONFIG_PLAN_ID = PUBLIC_PLAN_CONFIG_IDS\.growth;/u,
+    /export function growthConfigPlanId\(\)/u,
+    'the paid tier must resolve against the catalog that is configured'
+  );
+  assert.match(
+    pricePlan,
+    /plans\[PUBLIC_PLAN_CONFIG_IDS\.growth\]/u,
     'the landing price must resolve through the shared mapping, not a twin literal'
   );
   // Shell does not reintroduce DISPLAY_PLANS configPlanId forks.
@@ -224,7 +234,64 @@ test('the mapping states exactly which product backs each public tier', () => {
     { ...PUBLIC_PLAN_CONFIG_IDS },
     { starter: 'free', growth: 'growth' }
   );
-  assert.equal(GROWTH_CONFIG_PLAN_ID, 'growth');
+  // Which product the paid tier resolves to, per catalog shape. This replaces
+  // an `assert.equal(GROWTH_CONFIG_PLAN_ID, 'growth')` that could only ever
+  // restate the mapping constant back to itself, and so held while the landing
+  // was resolving to nothing at all on every non-Waffo runtime (#349). Naming
+  // the answer for each catalog is what that assertion was trying to buy.
+  withStubbedCatalog({ free: 0, growth: 52_200, pro: 94_000 }, () => {
+    assert.equal(growthConfigPlanId(), 'growth');
+  });
+  withStubbedCatalog({ free: 0, lifetime: 699_000, pro: 39_900 }, () => {
+    assert.equal(growthConfigPlanId(), 'pro');
+  });
+  withStubbedCatalog({ free: 0 }, () => {
+    assert.equal(growthConfigPlanId(), undefined);
+  });
+});
+
+test('the landing quotes a price under every configured catalog shape', () => {
+  // #349. `0c20d957` (#304) repointed the paid tier at the config key `growth`,
+  // which only exists when the Waffo catalog is configured. Every other runtime
+  // — Playwright pins VITE_PAYMENT_PROVIDER=stripe, and a deployment may leave
+  // it unset — kept the template catalog, where the same tier is filed under
+  // `pro` carrying PUBLIC_DISPLAY_PRICE_CENTS.growthMonthly. So the landing
+  // resolved to a plan that was not there and printed 敬请期待 instead of a
+  // price: a public surface silently losing its only number.
+  //
+  // What makes this worth a resolution rather than a second literal: under the
+  // Waffo catalog `pro` is a genuinely higher tier with its own price, and
+  // quoting it would be a wrong number rather than a missing one. The fallback
+  // may only fire when no `growth` plan exists at all.
+  const monthlyLabelFor = (id: string) =>
+    formatSubscriptionPrice(
+      findSubscriptionPrice(id, PlanIntervals.MONTH) ?? {
+        amount: 0,
+        currency: 'CNY',
+      }
+    );
+
+  // The template catalog: no `growth` key anywhere, paid tier filed as `pro`.
+  withStubbedCatalog({ free: 0, lifetime: 699_000, pro: 39_900 }, () => {
+    assert.equal(growthMonthlyPriceLabel(), monthlyLabelFor('pro'));
+    assert.notEqual(growthMonthlyPriceLabel(), null);
+  });
+
+  // The Waffo catalog: both keys exist and they are different products, so the
+  // landing has to keep reading Growth.
+  withStubbedCatalog(
+    { free: 0, growth: 52_200, lifetime: 699_000, pro: 94_000 },
+    () => {
+      assert.equal(growthMonthlyPriceLabel(), monthlyLabelFor('growth'));
+      assert.notEqual(growthMonthlyPriceLabel(), monthlyLabelFor('pro'));
+    }
+  );
+
+  // Neither key configured is the one case that may print nothing: 敬请期待 is
+  // an honest empty state only when there is genuinely no price to quote.
+  withStubbedCatalog({ free: 0, lifetime: 699_000 }, () => {
+    assert.equal(growthMonthlyPriceLabel(), null);
+  });
 });
 
 test('subscription checkout submits the published plan offer id', () => {
@@ -286,18 +353,29 @@ test('the landing reads the Growth product out of the catalogue every time it is
               currency: 'CNY',
             }
           ),
-          'CN¥999'
+          '¥999'
         );
-        assert.notEqual(growthMonthlyPriceLabel(), 'CN¥999');
+        assert.notEqual(growthMonthlyPriceLabel(), '¥999');
       }
     );
   }
   // And the stub is fully undone, so the rest of the suite sees real config.
-  const restoredGrowth = findSubscriptionPrice('growth', PlanIntervals.MONTH);
-  assert.equal(
-    growthMonthlyPriceLabel(),
-    restoredGrowth ? formatSubscriptionPrice(restoredGrowth) : null
+  //
+  // This used to read the restored price out of the literal key `growth` and
+  // accept null when it was missing — which is exactly how #349 stayed
+  // invisible here: under the template catalog that key resolves to nothing, so
+  // "the landing quotes nothing" was the expected value rather than the bug.
+  // Restoration is now checked by what the sentinels were for (they are gone)
+  // and the real catalog is required to quote something.
+  const restoredLabel = growthMonthlyPriceLabel();
+  assert.notEqual(
+    restoredLabel,
+    null,
+    'the configured catalog must quote the paid tier'
   );
+  for (const sentinel of ['¥417', '¥530']) {
+    assert.notEqual(restoredLabel, sentinel, 'the stub is fully undone');
+  }
 });
 
 test('the page loads the credit catalogue and renders the #310 credit matrix', () => {
