@@ -12,6 +12,16 @@ import {
 import { seedConfirmedStore } from '../fixtures/product';
 import { selectComposerLens } from '../fixtures/ui-journey';
 
+/**
+ * Every P1 response the browser reads goes through `readP1Envelope`, and since
+ * `5490078f` (fix(web): validate shared transport responses) that helper parses
+ * the *whole* envelope — `meta.correlationId` included — instead of casting it.
+ * A route mock that answers `{ data }` alone is now rejected as an invalid
+ * envelope before any component sees it, so the composer never binds the task
+ * and never polls `/interaction`. Mocks must produce what production produces.
+ */
+const HARNESS_CORRELATION_ID = 'e2e-340-marketing-composer-harness';
+
 test.describe('marketing Composer and Harness question', () => {
   test.beforeAll(async ({ request }) => {
     await cleanupE2EUsers(request);
@@ -44,6 +54,7 @@ test.describe('marketing Composer and Harness question', () => {
             recommendation: null,
             stale: false,
           },
+          meta: { correlationId: HARNESS_CORRELATION_ID },
         },
         status: 200,
       })
@@ -77,6 +88,7 @@ test.describe('marketing Composer and Harness question', () => {
             usageReservation: { id: 'e2e-composer-question-reservation' },
             work: { id: 'e2e-composer-question-work' },
           },
+          meta: { correlationId: HARNESS_CORRELATION_ID },
         },
         status: 202,
       });
@@ -90,6 +102,7 @@ test.describe('marketing Composer and Harness question', () => {
               code: 'DIRECT_HARNESS_ADMISSION_RETIRED',
               message: 'Composer owns task admission.',
             },
+            meta: { correlationId: HARNESS_CORRELATION_ID },
           },
           status: 410,
         });
@@ -110,13 +123,18 @@ test.describe('marketing Composer and Harness question', () => {
             status: 'absent',
             timeoutSeconds: null,
           },
+          meta: { correlationId: HARNESS_CORRELATION_ID },
         },
         status: 200,
       });
     });
     await page.route(
       '**/api/core/p1/harness/tasks/*/interaction/message',
-      (route) => route.fulfill({ json: { data: null }, status: 200 })
+      (route) =>
+        route.fulfill({
+          json: { data: null, meta: { correlationId: HARNESS_CORRELATION_ID } },
+          status: 200,
+        })
     );
     await page.route(
       '**/api/core/p1/harness/tasks/*/interaction/v2/renderer',
@@ -124,7 +142,12 @@ test.describe('marketing Composer and Harness question', () => {
         rendererAcknowledgements.push(
           route.request().postDataJSON() as Record<string, unknown>
         );
-        return route.fulfill({ json: { data: { acknowledged: true } } });
+        return route.fulfill({
+          json: {
+            data: { acknowledged: true },
+            meta: { correlationId: HARNESS_CORRELATION_ID },
+          },
+        });
       }
     );
     await page.route(
@@ -144,6 +167,7 @@ test.describe('marketing Composer and Harness question', () => {
                 eventId: `${requestedTaskId}:interaction:1`,
                 replayed: false,
               },
+              meta: { correlationId: HARNESS_CORRELATION_ID },
             },
             status: 200,
           });
@@ -182,6 +206,7 @@ test.describe('marketing Composer and Harness question', () => {
                     renderer: 'ask_merchant_group',
                   },
                 },
+            meta: { correlationId: HARNESS_CORRELATION_ID },
           },
           status: 200,
         });
@@ -265,7 +290,17 @@ test.describe('marketing Composer and Harness question', () => {
     await expect.poll(() => interactionReads).toBeGreaterThan(0);
     await expect(questionCard).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText('这次团购价按哪个金额写？')).toBeVisible();
-    await expect(page.getByText('等你确认当前团购价')).toBeVisible();
+    // `b7c9e659` gave the workbench a phase-aware Result Inspector, so the
+    // workflow's stage message now renders in two carriers and a page-wide
+    // getByText is ambiguous. Pin both carriers by container rather than
+    // dropping either: the in-stream stage line this test is about, and the
+    // inspector echo that arrived with it.
+    await expect(page.getByTestId('composer-stage-line')).toContainText(
+      '等你确认当前团购价'
+    );
+    await expect(page.getByTestId('workbench-inspector-stage')).toContainText(
+      '等你确认当前团购价'
+    );
 
     await questionCard.getByRole('button', { name: '¥398' }).click();
     await questionCard.getByRole('button', { name: '提交回答' }).click();
@@ -325,6 +360,7 @@ test.describe('marketing Composer and Harness question', () => {
             recommendation: null,
             stale: false,
           },
+          meta: { correlationId: HARNESS_CORRELATION_ID },
         },
         status: 200,
       })
@@ -343,6 +379,7 @@ test.describe('marketing Composer and Harness question', () => {
               },
             ],
           },
+          meta: { correlationId: HARNESS_CORRELATION_ID },
         },
         status: 200,
       })
@@ -356,6 +393,7 @@ test.describe('marketing Composer and Harness question', () => {
             status: 'absent',
             timeoutSeconds: null,
           },
+          meta: { correlationId: HARNESS_CORRELATION_ID },
         },
         status: 200,
       })
@@ -374,6 +412,7 @@ test.describe('marketing Composer and Harness question', () => {
                 eventId: `${taskId}:interaction-message:1`,
                 replayed: false,
               },
+              meta: { correlationId: HARNESS_CORRELATION_ID },
             },
             status: 200,
           });
@@ -422,6 +461,7 @@ test.describe('marketing Composer and Harness question', () => {
                     },
                   }
                 : null,
+            meta: { correlationId: HARNESS_CORRELATION_ID },
           },
           status: 200,
         });
@@ -433,7 +473,12 @@ test.describe('marketing Composer and Harness question', () => {
         rendererAcknowledgements.push(
           route.request().postDataJSON() as Record<string, unknown>
         );
-        return route.fulfill({ json: { data: { acknowledged: true } } });
+        return route.fulfill({
+          json: {
+            data: { acknowledged: true },
+            meta: { correlationId: HARNESS_CORRELATION_ID },
+          },
+        });
       }
     );
     await page.route(
@@ -451,6 +496,7 @@ test.describe('marketing Composer and Harness question', () => {
                 eventId: `${taskId}:interaction:1`,
                 replayed: false,
               },
+              meta: { correlationId: HARNESS_CORRELATION_ID },
             },
             status: 200,
           });
@@ -533,6 +579,7 @@ test.describe('marketing Composer and Harness question', () => {
                       },
                     }
                   : null,
+            meta: { correlationId: HARNESS_CORRELATION_ID },
           },
           status: 200,
         });
