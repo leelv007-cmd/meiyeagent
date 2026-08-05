@@ -4,6 +4,10 @@ import {
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import {
+  closeComposerCapsule,
+  openComposerCapsule,
+} from '../fixtures/ui-journey';
 
 /**
  * T37 / M-04 (#231): the mobile 「running Copy Work → 结果路由 → 返回锚点」 journey
@@ -69,9 +73,16 @@ test('keeps identity, assets, and camera authorization reachable on mobile', asy
     await expect(page.getByText('素材', { exact: true }).first()).toBeVisible();
 
     await mobileNav.getByText('创作', { exact: true }).click();
+    // d27a43cc moved the lens radiogroup into the bottom capsule (L3-2), so it
+    // is not mounted while that popover is closed. What mobile has to keep
+    // reachable is the trigger; the group itself is asserted inside the panel
+    // the merchant opens, exactly as the desktop journeys do.
+    await expect(page.getByTestId('composer-capsule-lens')).toBeVisible();
+    const lensPanel = await openComposerCapsule(page, 'lens');
     await expect(
       page.getByRole('radiogroup', { name: '创作类型' })
     ).toBeVisible();
+    await closeComposerCapsule(page, lensPanel);
     // The send control names which of its two jobs the next press does, so on
     // a workspace whose store facts are still open it reads 先补门店信息.
     await expect(
@@ -79,9 +90,15 @@ test('keeps identity, assets, and camera authorization reachable on mobile', asy
         name: /开始创作|先补门店信息|先补资质信息|先确认素材来源/,
       })
     ).toBeVisible();
+    // Same migration as the lens group above: the camera control moved into the
+    // ＋素材 capsule with the rest of the source picker, so mobile pins the
+    // trigger and asserts the control inside the panel it opens.
+    await expect(page.getByTestId('composer-capsule-attach')).toBeVisible();
+    const attachPanel = await openComposerCapsule(page, 'attach');
     await expect(
       page.getByRole('button', { name: '拍照', exact: true })
     ).toBeVisible();
+    await closeComposerCapsule(page, attachPanel);
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth)
     ).toBeLessThanOrEqual(390);
