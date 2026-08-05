@@ -13,6 +13,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { seedConfirmedStore } from '../fixtures/product';
+import { selectComposerLens } from '../fixtures/ui-journey';
 
 /**
  * S2 失败与恢复 — the two journeys W03 and W10 exist to make true.
@@ -192,7 +193,7 @@ async function settleSubmission(
 
 async function startRun(page: Page, intent: string) {
   await page.goto('/dashboard');
-  await page.getByTestId('composer-lens-option-copy').click();
+  await selectComposerLens(page, 'copy');
   await page.getByTestId('composer-intent-input').fill(intent);
   await expect(page.getByTestId('composer-quote-line')).toBeVisible({
     timeout: 30_000,
@@ -203,13 +204,24 @@ async function startRun(page: Page, intent: string) {
   return settleSubmission(page, responsePromise);
 }
 
-/** 还剩 N 条 — the passive quota line the refund has to move back. */
+/** 可用 N 分 — the credit balance the refund has to move back. */
 function availableCreditsFromBalanceLine(text: string) {
-  // 「可用 1300 分」 — the credit balance beside the composer (D-172). This used
-  // to read 「还剩 N 条」 off `composer-quota-passive`, the bucket line that the
-  // retired three-bucket projection fed (#336).
+  // 「可用 1300 分」 — the credit balance (D-172). This used to read 「还剩 N 条」
+  // off `composer-quota-passive`, the bucket line that the retired three-bucket
+  // projection fed (#336).
   const match = /可用\s*(\d+)\s*分/u.exec(text);
   return match ? Number(match[1]) : null;
+}
+
+/**
+ * The topbar balance, not the one in the credit capsule: since the capsule bar
+ * (`d27a43cc`) `workbench-credit-balance` only mounts while that popover is
+ * open, so reading it would make the refund assertion depend on a panel being
+ * held open across the whole run. Both render `workbench_credit_balance` off
+ * the same `availableCredits`, and this one is always on screen.
+ */
+function creditBalanceLine(page: Page) {
+  return page.getByTestId('workbench-credit-topbar-balance');
 }
 
 test.describe('S2 失败与恢复', () => {
@@ -226,7 +238,7 @@ test.describe('S2 失败与恢复', () => {
     await seedConfirmedStore(page);
 
     await page.goto('/dashboard');
-    await page.getByTestId('composer-lens-option-copy').click();
+    await selectComposerLens(page, 'copy');
     await page.getByTestId('composer-intent-input').fill(FAILURE_DRILL_INTENT);
     await expect(page.getByTestId('composer-quote-line')).toBeVisible({
       timeout: 30_000,
@@ -234,7 +246,7 @@ test.describe('S2 失败与恢复', () => {
     // Read the balance before the run so the refund is an observed change
     // rather than a sentence the card asserts about itself.
     const creditsBefore = availableCreditsFromBalanceLine(
-      await page.getByTestId('workbench-credit-balance').innerText()
+      await creditBalanceLine(page).innerText()
     );
 
     const run = await startRun(page, FAILURE_DRILL_INTENT);
@@ -267,7 +279,7 @@ test.describe('S2 失败与恢复', () => {
         .poll(
           async () =>
             availableCreditsFromBalanceLine(
-              await page.getByTestId('workbench-credit-balance').innerText()
+              await creditBalanceLine(page).innerText()
             ),
           { timeout: 60_000 }
         )
