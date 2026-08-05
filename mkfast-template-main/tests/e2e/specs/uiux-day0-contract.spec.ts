@@ -16,10 +16,14 @@ import {
   seedConfirmedStore,
 } from '../fixtures/product';
 import {
+  closeComposerCapsule,
+  openComposerCapsule,
+  openComposerRecipeCard,
+  selectComposerLens,
+} from '../fixtures/ui-journey';
+import {
   blockingQuestionLocator,
   briefConfirmButton,
-  composerLensOption,
-  composerRecipeCard,
   composerSubmitButton,
   firstTokenLocator,
   installUserActivationCounter,
@@ -44,15 +48,24 @@ import {
  * it) and must not re-enter the required set; `src/lib/e2e-hard-gate-contract`
  * holds the register that enforces both halves of that statement.
  *
- * Click budget (isTrusted real-count via installUserActivationCounter):
- *   1. Template / scenario card path: card(1 dual-purpose lens+apply) + start(2) = 2
- *   2. Pure free-text path: select lens(1) + start(2) = 2
- *   3. Video path: select lens(1) + start(2) + Brief confirm(3) = 2 base + 1 extra
- *      (D-094 / D-043 decision ③ Brief confirm is EXTRA and not cancelled by C6)
+ * Click budget (isTrusted real-count via installUserActivationCounter). D-173
+ * raised the Day-0 budget from 2 to 3 because the capsule Composer (L3-2) moved
+ * the lens radiogroup and the Recipe cards into popovers, so reaching either now
+ * costs an extra open-capsule activation:
+ *   1. Template / scenario card path: open recipe capsule(1) +
+ *      card(2, dual-purpose lens+apply) + start(3) = 3
+ *   2. Pure free-text path: open lens capsule(1) + select lens(2) + start(3) = 3
+ *   3. Video path: open lens capsule(1) + select lens(2) + start(3) +
+ *      Brief confirm(4) + D-164③ 确认执行(5) = 3 base + 2 extra
+ *      (D-094 / D-043 decision ③ Brief confirm is EXTRA and not cancelled by C6;
+ *      D-164③ / P1-05 adds the paid-media execution confirm, and the shipped
+ *      journey contract already prices video at 5)
  *
  * Required lens/mode selector = mode selector, NOT a forbidden pre-form (D-081).
  * Old free-text "≤2 without mode select" semantics are retired — they conflict
- * with D-081 forced lens selection.
+ * with D-081 forced lens selection. The capsule open is likewise not optional:
+ * D-173 keeps the selection mandatory and pays for the popover, it does not
+ * reopen the "keyboard alone / no mode select" shortcut.
  *
  * Assertions target the shipped Composer lens radiogroup + Recipe cards.
  * Do not weaken isTrusted counters or soft-pass missing steps.
@@ -182,7 +195,7 @@ function assertActivationBudget(
 ) {
   expect(
     activationCount,
-    `${label}: D-098 C6 expects exactly ${expected} isTrusted user activations to first token; got ${activationCount}: ${JSON.stringify(counter.events())}`
+    `${label}: D-098 C6 as superseded by D-173 expects exactly ${expected} isTrusted user activations to first token; got ${activationCount}: ${JSON.stringify(counter.events())}`
   ).toBe(expected);
   expect(counter.events().every((event) => event.kind === 'click')).toBe(true);
   expect(
@@ -202,7 +215,7 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
   });
 
   test.describe('template path (C6 dual-purpose card)', () => {
-    test('scene/template card (1, lens+apply) + start (2) = 2 activations to first token', async ({
+    test('open recipe capsule (1) + scene/template card (2, lens+apply) + start (3) = 3 activations to first token', async ({
       page,
       request,
     }) => {
@@ -215,22 +228,25 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       await assertNoSkipUsed(page, counter);
       await assertZeroBlockingBeforeSubmit(page);
 
-      // C6: a Recipe card click is dual-purpose (select lens + apply patch).
-      // That single activation occupies the lens-selection budget slot.
-      const templateCard = composerRecipeCard(page);
-      await expect(
-        templateCard,
-        'Day-0 template path needs a visible scene/template card on the entry surface'
-      ).toBeVisible();
-      await templateCard.click();
+      // C6: a Recipe card click is still dual-purpose (select lens + apply
+      // patch) and still occupies the lens-selection budget slot. Since L3-2
+      // the cards live inside the recipe capsule, so reaching them costs the
+      // extra open-capsule activation D-173 budgets for.
+      const recipePanel = await openComposerRecipeCard(
+        page,
+        'composer-recipe-card-recipe.project_intro'
+      );
       expect(
         counter.count(),
-        `template card must count as exactly 1 isTrusted activation (C6 dual-purpose); events=${JSON.stringify(counter.events())}`
-      ).toBe(1);
+        `opening the recipe capsule and clicking the template card must count as exactly 2 isTrusted activations (open + C6 dual-purpose card); events=${JSON.stringify(counter.events())}`
+      ).toBe(2);
 
+      // The apply tip renders inside the recipe popover — assert it while the
+      // panel is open, then close before touching the surface behind it.
       await expect(
         page.getByTestId('composer-recipe-apply-undo')
       ).toBeVisible();
+      await closeComposerCapsule(page, recipePanel);
       const intentInput = page.getByLabel('描述这次想创作的内容');
       await intentInput.fill('介绍本店透亮猫眼项目');
       await expect(intentInput).toHaveValue('介绍本店透亮猫眼项目');
@@ -245,7 +261,12 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
         timeout: 90_000,
       });
 
-      assertActivationBudget(activationCount, 2, counter, 'template path (C6)');
+      assertActivationBudget(
+        activationCount,
+        3,
+        counter,
+        'template path (C6 + D-173)'
+      );
 
       await expect(blockingQuestionLocator(page)).toHaveCount(0);
       await expect(firstTokenLocator(page)).toHaveAttribute(
@@ -261,7 +282,7 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
   });
 
   test.describe('pure text path (C6 forced lens select)', () => {
-    test('select lens (1) + start creation (2) = 2 activations to first token', async ({
+    test('open lens capsule (1) + select lens (2) + start creation (3) = 3 activations to first token', async ({
       page,
       request,
     }) => {
@@ -274,27 +295,29 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       await assertZeroBlockingBeforeSubmit(page);
 
       // D-081 / C6: pure free-text MUST pay for an explicit lens/mode select.
-      // The Composer starts cold; selecting the explicit copy radio is
-      // one trusted activation and never relies on an inferred default.
-      const lensChip = composerLensOption(page, 'copy');
+      // The Composer starts cold; selecting the explicit copy radio never
+      // relies on an inferred default. Since L3-2 the radio lives in the lens
+      // capsule, so the select costs two trusted activations (open + pick) —
+      // the capsule face and the checked radio are both asserted by the fixture.
       await expect(
-        lensChip,
-        'pure text path requires a visible lens/mode chip (做图文/做文案); red until C/D Composer enforces D-081 if absent'
+        page.getByTestId('composer-capsule-lens'),
+        'pure text path requires a visible lens/mode capsule (输出类型); red until C/D Composer enforces D-081 if absent'
       ).toBeVisible();
-      await lensChip.click();
+      await selectComposerLens(page, 'copy');
       expect(
         counter.count(),
-        `lens select must count as exactly 1 isTrusted activation; events=${JSON.stringify(counter.events())}`
-      ).toBe(1);
+        `lens select must count as exactly 2 isTrusted activations (open capsule + pick lens); events=${JSON.stringify(counter.events())}`
+      ).toBe(2);
 
       // Typing is NOT a user-activation (counter only records trusted clicks /
-      // Cmd+Enter). Free-text path budget is still exactly 2 clicks.
+      // Cmd+Enter), and neither is the Escape that closes the capsule. The
+      // free-text path budget is exactly 3 clicks.
       const intent = page.getByLabel('描述这次想创作的内容');
       await intent.fill('为透亮猫眼写一条克制的到店种草');
       await assertComposerQuoteReady(page);
       await expect(composerSubmitButton(page)).toBeEnabled();
       await expect(blockingQuestionLocator(page)).toHaveCount(0);
-      expect(counter.count()).toBe(1);
+      expect(counter.count()).toBe(2);
 
       await composerSubmitButton(page).click();
 
@@ -303,13 +326,14 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
         timeout: 90_000,
       });
 
-      // Exact 2 — not ≤2. A path that skips lens select and only clicks start
-      // (old free-text semantics) would report 1 and must fail this gate.
+      // Exact 3 — not ≤3. A path that skips lens select and only clicks start
+      // (old free-text semantics) would report 1 and must fail this gate, and a
+      // surface that silently preselected a lens would report 2.
       assertActivationBudget(
         activationCount,
-        2,
+        3,
         counter,
-        'pure text path (C6)'
+        'pure text path (C6 + D-173)'
       );
 
       await expect(blockingQuestionLocator(page)).toHaveCount(0);
@@ -323,8 +347,8 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
     });
   });
 
-  test.describe('video path (C6 base 2 + D-094 Brief confirm)', () => {
-    test('select video lens (1) + start (2) + Brief confirm (3) to first token', async ({
+  test.describe('video path (C6 base 3 under D-173 + D-094 Brief + D-164③ confirm)', () => {
+    test('open lens capsule (1) + select video lens (2) + start (3) + Brief confirm (4) + 确认执行 (5) to first token', async ({
       page,
       request,
     }) => {
@@ -339,27 +363,26 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       await assertNoSkipUsed(page, counter);
       await assertZeroBlockingBeforeSubmit(page);
 
-      // Base C6 budget: lens select + start = 2.
-      const videoChip = composerLensOption(page, 'video');
+      // Base C6 budget under D-173: open lens capsule + lens select + start = 3.
       await expect(
-        videoChip,
-        'video path requires a visible 做视频 mode chip'
+        page.getByTestId('composer-capsule-lens'),
+        'video path requires a visible 输出类型 capsule holding the 做视频 radio'
       ).toBeVisible();
-      await videoChip.click();
-      expect(counter.count()).toBe(1);
+      await selectComposerLens(page, 'video');
+      expect(counter.count()).toBe(2);
 
       const intent = page.getByLabel('描述这次想创作的内容');
       await intent.fill('为夏季美甲写一条15秒到店种草短视频');
       await assertComposerQuoteReady(page);
       await expect(composerSubmitButton(page)).toBeEnabled();
-      expect(counter.count()).toBe(1);
+      expect(counter.count()).toBe(2);
 
       await composerSubmitButton(page).click();
-      expect(counter.count()).toBe(2);
+      expect(counter.count()).toBe(3);
 
       // D-094 / D-043 decision ③: any video generation requires conditional
       // Brief confirm. This EXTRA click is NOT cancelled by C6 — expected
-      // total is 3 (2 base + 1 Brief), not 2.
+      // total is 4 (3 base under D-173 + 1 Brief), not 3.
       // Prefer hard fail over soft-pass when Brief UI is not on the current
       // shipped surface (awaiting C4 Brief UI / #98).
       const briefConfirm = briefConfirmButton(page);
@@ -370,18 +393,39 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       await briefConfirm.click();
       expect(
         counter.count(),
-        `after Brief confirm expected 3 isTrusted activations (2 base + Brief); events=${JSON.stringify(counter.events())}`
-      ).toBe(3);
+        `after Brief confirm expected 4 isTrusted activations (3 base + Brief); events=${JSON.stringify(counter.events())}`
+      ).toBe(4);
+
+      // D-164③ / P1-05: paid media then holds on the in-stream execution_confirm
+      // interrupt (frozen params + credit preview) before execution_selection
+      // runs. Without 确认执行 the run stays suspended and the 成品预览卡 never
+      // arrives — which is what made this case look like an unmeetable video
+      // budget in docs/evidence/e2e-baseline-2026-07-25.md §3 (that note predates
+      // D-164③). The shipped journey contract already prices video at 5
+      // (ui-journey.ts JOURNEY_CONTRACTS), and this is the fifth activation.
+      const executionConfirm = page.getByTestId(
+        'execution-confirmation-interaction-card'
+      );
+      await expect(executionConfirm).toBeVisible({ timeout: 60_000 });
+      await expect(
+        page.getByTestId('composer-execution-confirm-turn')
+      ).toHaveAttribute('data-agent-frame', 'decision');
+      await executionConfirm.getByRole('button', { name: '确认执行' }).click();
+      await expect(executionConfirm).toBeHidden({ timeout: 60_000 });
+      expect(
+        counter.count(),
+        `after 确认执行 expected 5 isTrusted activations (3 base + Brief + D-164③); events=${JSON.stringify(counter.events())}`
+      ).toBe(5);
 
       // First-token endpoint is the Day-0 stop condition for all three paths.
-      // Video may still be red on the current surface until Result Center /
-      // video first-token projection lands — keep the hard wait (no fake-green).
+      // Video has no token stream, so the 成片 itself is the endpoint — keep the
+      // hard wait (no fake-green).
       await assertVideoFirstUsableResult(page, () => counter.stop());
       const activationCount = counter.count();
       expect(
         activationCount,
-        `video path (C6+D-094): expected exactly 3 isTrusted activations (lens + start + Brief confirm) to first token; got ${activationCount}: ${JSON.stringify(counter.events())}`
-      ).toBe(3);
+        `video path (C6+D-094 under D-173): expected exactly 5 isTrusted activations (open lens capsule + lens + start + Brief confirm + D-164③ 确认执行) to first token; got ${activationCount}: ${JSON.stringify(counter.events())}`
+      ).toBe(5);
       expect(counter.events().every((event) => event.kind === 'click')).toBe(
         true
       );
@@ -393,7 +437,7 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
     });
   });
 
-  test('keyboard submit path: lens select (1 click) + Cmd/Ctrl+Enter (1) = 2 activations', async ({
+  test('keyboard submit path: lens select (2 clicks) + Cmd/Ctrl+Enter (1) = 3 activations', async ({
     page,
     request,
   }) => {
@@ -406,9 +450,11 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
     // C6: keyboard equivalence covers the submit activation only. Pure free-text
     // still owes an explicit lens select under D-081 — do NOT reintroduce the
     // old "keyboard alone ≤2 / =1 without mode select" free-text semantics.
-    const lensChip = composerLensOption(page, 'copy');
-    await expect(lensChip).toBeVisible();
-    await lensChip.click();
+    // D-173 only re-prices that select: since L3-2 it is open capsule + pick
+    // option, so the keyboard path is 2 clicks + 1 keyboard_submit.
+    await expect(page.getByTestId('composer-capsule-lens')).toBeVisible();
+    await selectComposerLens(page, 'copy');
+    expect(counter.count()).toBe(2);
 
     const intent = page.getByLabel('描述这次想创作的内容');
     await intent.fill('快捷键提交也应直达首 token');
@@ -422,12 +468,15 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       timeout: 90_000,
     });
 
-    // 1 click (lens) + 1 keyboard_submit. Cmd/Ctrl+Enter does not produce a click.
+    // 2 clicks (open lens capsule, pick lens) + 1 keyboard_submit. Cmd/Ctrl+Enter
+    // does not produce a click, and the Escape that closes the capsule is not an
+    // activation, so the keyboard equivalence still buys exactly the submit step.
     expect(
       activationCount,
-      `keyboard path under C6 expects lens click + keyboard_submit = 2; got ${activationCount}: ${JSON.stringify(counter.events())}`
-    ).toBe(2);
+      `keyboard path under C6 as superseded by D-173 expects open capsule + lens click + keyboard_submit = 3; got ${activationCount}: ${JSON.stringify(counter.events())}`
+    ).toBe(3);
     expect(counter.events()).toEqual([
+      expect.objectContaining({ kind: 'click' }),
       expect.objectContaining({ kind: 'click' }),
       expect.objectContaining({ kind: 'keyboard_submit' }),
     ]);
@@ -490,7 +539,7 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
     request,
   }) => {
     test.setTimeout(180_000);
-    // Conflict path is exempt from the C6 2-click base budget because the
+    // Conflict path is exempt from the C6 base click budget because the
     // conditional Brief confirmation is mandatory. The new Composer must not
     // resurrect the retired Harness question form.
     await installUserActivationCounter(page);
@@ -498,8 +547,8 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
 
     // Conflict fixture path: free-text that triggers the offer-price question.
     // D-081 still requires an explicit lens. This path is exempt only from
-    // the two-click budget because the conflict confirmation is mandatory.
-    await composerLensOption(page, 'copy').click();
+    // the base click budget because the conflict confirmation is mandatory.
+    await selectComposerLens(page, 'copy');
     const intent = page.getByLabel('描述这次想创作的内容');
     await intent.fill('把新团购做一套能发的');
     await assertComposerQuoteReady(page);
@@ -560,6 +609,11 @@ test.describe('V1 T5 independent inline one-click authorize', () => {
       observedCommands.push(command);
     });
 
+    // L3-2: inline source intake moved into the attach capsule popover, so the
+    // whole one-question journey below runs while that panel is open. The
+    // contract is unchanged — intake is still inline on the Composer surface,
+    // it is no longer permanently unfolded.
+    const attachPanel = await openComposerCapsule(page, 'attach');
     const sourcePicker = page.getByTestId('composer-source-picker');
     await expect(
       sourcePicker,
@@ -635,6 +689,10 @@ test.describe('V1 T5 independent inline one-click authorize', () => {
     expect(new URL(page.url()).pathname).toBe(new URL(dashboardUrl).pathname);
     await expect(page).not.toHaveURL(/\/dashboard\/assets\//);
 
+    // Leave the attach portal closed: an open capsule panel intercepts pointer
+    // events over the rest of the Composer (same reason as 310c71e6).
+    await closeComposerCapsule(page, attachPanel);
+
     const state = await productState(page);
     const authorized = state.assets.find(
       (asset) => asset.consentScope === 'public_marketing'
@@ -678,7 +736,7 @@ test.describe('V1 T5 independent inline one-click authorize', () => {
     });
 
     // Continue: intent + submit still on the same surface.
-    await composerLensOption(page, 'copy').click();
+    await selectComposerLens(page, 'copy');
     await page.getByLabel('描述这次想创作的内容').fill('内联授权后继续创作');
     await assertComposerQuoteReady(page);
     await expect(composerSubmitButton(page)).toBeEnabled();
