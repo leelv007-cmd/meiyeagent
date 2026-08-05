@@ -9,7 +9,6 @@ import {
 } from './composer-conversation';
 import type { ComposerGenerationParamsState } from './composer-generation-params';
 import { ComposerGenerationParamsPanel } from './composer-generation-params-panel';
-import { LensRadiogroup } from './lens-radiogroup';
 
 export function ComposerCreationModeSurface({
   creationMode,
@@ -42,7 +41,6 @@ export function FreeCreationPanel({
   lensId,
   models,
   onGenerationParamsChange,
-  onLensChange,
   onModelChange,
   selectedModelId,
 }: {
@@ -61,7 +59,6 @@ export function FreeCreationPanel({
   lensId: CreationLensId | null;
   models: CatalogModelView[];
   onGenerationParamsChange: (state: ComposerGenerationParamsState) => void;
-  onLensChange: (lensId: CreationLensId) => void;
   onModelChange: (modelId: string | null) => void;
   selectedModelId: string | null;
 }) {
@@ -99,11 +96,11 @@ export function FreeCreationPanel({
             模型直出
           </span>
         </div>
-        <LensRadiogroup
-          disabled={disabled}
-          onChange={onLensChange}
-          value={lensId}
-        />
+        {/*
+          Output type stays in the bottom capsule for both modes (spec 2.4).
+          A second radiogroup here would duplicate the lens control, its DOM id
+          and its radio group name on one screen.
+        */}
       </div>
 
       <div className="space-y-4">

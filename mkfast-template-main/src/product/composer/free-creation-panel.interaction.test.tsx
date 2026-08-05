@@ -46,7 +46,7 @@ function ModeHarness({
   generationParamsEnabled?: boolean;
 }) {
   const [mode, setMode] = useState<ComposerCreationMode>('customized');
-  const [lensId, setLensId] = useState<CreationLensId | null>(null);
+  const [lensId] = useState<CreationLensId | null>(null);
   const [modelId, setModelId] = useState<string | null>(null);
   const [generationParams, setGenerationParams] =
     useState<ComposerGenerationParamsState>(initialGenerationParamsState);
@@ -64,7 +64,6 @@ function ModeHarness({
           lensId={lensId}
           models={models}
           onGenerationParamsChange={setGenerationParams}
-          onLensChange={setLensId}
           onModelChange={setModelId}
           selectedModelId={modelId}
         />
@@ -84,7 +83,9 @@ describe('D-103 creation mode surface', () => {
     await user.click(screen.getByTestId('composer-creation-mode-free'));
 
     expect(screen.getByTestId('composer-free-creation-panel')).toBeVisible();
-    expect(screen.getByRole('radiogroup', { name: /创作类型/ })).toBeVisible();
+    // #344: output type is chosen in the bottom capsule (spec 2.4), so the
+    // panel must not grow a second lens radiogroup of its own.
+    expect(screen.queryByRole('radiogroup', { name: /创作类型/ })).toBeNull();
     expect(screen.getByLabelText('本次使用的模型')).toBeVisible();
     expect(screen.getByText('先选择输出类型')).toBeVisible();
     expect(screen.getByTestId('composer-thinking-level')).toBeVisible();
@@ -125,7 +126,6 @@ describe('D-103 creation mode surface', () => {
         lensId="copy"
         models={models}
         onGenerationParamsChange={() => undefined}
-        onLensChange={() => undefined}
         onModelChange={onModelChange}
         selectedModelId={null}
       />

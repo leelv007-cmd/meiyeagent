@@ -178,7 +178,6 @@ import {
 import { ComposerToolsStrip } from './composer-tools-strip';
 import {
   bindQuoteView,
-  confirmSwitch,
   createComposerLensState,
   reopenComposer,
   selectLens,
@@ -2106,12 +2105,7 @@ export function ComposerHome({
     setViralAdaptJourney((current) =>
       current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
     );
-    setLensState((current) => {
-      const selected = selectLens(current, next);
-      return creationMode === 'free' && selected.phase === 'switch_preview'
-        ? confirmSwitch(selected)
-        : selected;
-    });
+    setLensState((current) => selectLens(current, next));
   };
 
   const handleCreationModeChange = (next: ComposerCreationMode) => {
@@ -3062,7 +3056,6 @@ export function ComposerHome({
             lensId={lensId}
             models={catalog.models}
             onGenerationParamsChange={setGenerationParams}
-            onLensChange={handleLensChange}
             onModelChange={handleFreeModelChange}
             selectedModelId={freeCatalogModelId}
           />
@@ -3648,67 +3641,63 @@ export function ComposerHome({
                   }
                   lensRequired={showRequiredHint}
                   lensSlot={
-                    creationMode === 'customized' ? (
-                      <>
-                        <LensRadiogroup
-                          value={lensId}
-                          onChange={handleLensChange}
-                          showRequiredHint={showRequiredHint}
-                          disabled={
-                            createWork.isPending ||
-                            creditAdmissionPending ||
-                            lensState.phase === 'frozen'
-                          }
-                        />
-                        <LensSwitchPreviewPanel
-                          state={lensState}
-                          onChange={(next) => {
-                            setViralAdaptBinding(null);
-                            cancelViralOpenCliRead();
-                            setViralAdaptJourney((current) =>
-                              current.phase === 'idle'
-                                ? current
-                                : cancelViralAdaptJourney(current)
-                            );
-                            setLensState(next);
-                          }}
-                        />
-                      </>
-                    ) : null
+                    <>
+                      <LensRadiogroup
+                        value={lensId}
+                        onChange={handleLensChange}
+                        showRequiredHint={showRequiredHint}
+                        disabled={
+                          createWork.isPending ||
+                          creditAdmissionPending ||
+                          lensState.phase === 'frozen'
+                        }
+                      />
+                      <LensSwitchPreviewPanel
+                        state={lensState}
+                        onChange={(next) => {
+                          setViralAdaptBinding(null);
+                          cancelViralOpenCliRead();
+                          setViralAdaptJourney((current) =>
+                            current.phase === 'idle'
+                              ? current
+                              : cancelViralAdaptJourney(current)
+                          );
+                          setLensState(next);
+                        }}
+                      />
+                    </>
                   }
                   lensSummary={lensId ? COMPOSER_LENS_LABELS[lensId] : null}
                   mentionSlot={
-                    creationMode === 'customized' ? (
-                      <div className="flex flex-col gap-4">
-                        <ComposerIdentityCard
-                          defaultPending={defaultIdentityDecision.isPending}
-                          onRemember={(identityId) =>
-                            defaultIdentityDecision.mutate(identityId)
+                    <div className="flex flex-col gap-4">
+                      <ComposerIdentityCard
+                        defaultPending={defaultIdentityDecision.isPending}
+                        onRemember={(identityId) =>
+                          defaultIdentityDecision.mutate(identityId)
+                        }
+                        onRetry={() => void identitiesQuery.refetch()}
+                        onSelect={(identityId) =>
+                          sessionIdentityDecision.mutate(identityId)
+                        }
+                        selectionPending={sessionIdentityDecision.isPending}
+                        selection={identitySelection}
+                      />
+                      <ComposerToolsStrip
+                        viewport={viewportKind}
+                        surfaceRevisionId={surfaceQuery.data?.revisionId}
+                        onOpenTool={(href) => {
+                          if (typeof window !== 'undefined') {
+                            window.location.assign(href);
                           }
-                          onRetry={() => void identitiesQuery.refetch()}
-                          onSelect={(identityId) =>
-                            sessionIdentityDecision.mutate(identityId)
-                          }
-                          selectionPending={sessionIdentityDecision.isPending}
-                          selection={identitySelection}
-                        />
-                        <ComposerToolsStrip
-                          viewport={viewportKind}
-                          surfaceRevisionId={surfaceQuery.data?.revisionId}
-                          onOpenTool={(href) => {
-                            if (typeof window !== 'undefined') {
-                              window.location.assign(href);
-                            }
-                          }}
-                          onViewAll={(href) => {
-                            void navigate({ to: href as '/dashboard/catalog' });
-                          }}
-                        />
-                      </div>
-                    ) : null
+                        }}
+                        onViewAll={(href) => {
+                          void navigate({ to: href as '/dashboard/catalog' });
+                        }}
+                      />
+                    </div>
                   }
                   recipePillSlot={
-                    creationMode === 'customized' && surfaceQuery.data ? (
+                    surfaceQuery.data ? (
                       <RecipeCardsPanel
                         lensId={lensId}
                         lensState={lensState}
@@ -3733,7 +3722,7 @@ export function ComposerHome({
                         }
                         useBottomSheet={viewportKind === 'mobile'}
                       />
-                    ) : creationMode === 'customized' ? (
+                    ) : (
                       <output
                         className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground"
                         data-testid="composer-surface-status"
@@ -3742,10 +3731,9 @@ export function ComposerHome({
                           ? '创作模板暂时不可用，请稍后重试'
                           : '正在读取创作模板…'}
                       </output>
-                    ) : null
+                    )
                   }
                   recipeSummary={
-                    creationMode === 'customized' &&
                     lensState.draft.recipeRevisionId
                       ? (submissionRecipe?.presentation.title ?? null)
                       : null
