@@ -20,6 +20,7 @@ import {
   type BuildExceptionHomeInput,
   type ExceptionHomeView,
 } from '@/p1/admin-exception-home-model';
+import { AdminSensitiveWordsGateAlert } from '@/p1/admin-sensitive-words-gate-alert';
 import type { SupplyControlSnapshot } from '@/p1/admin-supply-types';
 
 function isActionableInboxItem(
@@ -134,14 +135,21 @@ function LiveAdminExceptionHome({
   // F-J-04: wait until shared projection + pending-actions settle so loading
   // never looks like "no exceptions".
   const pendingSettled = pendingActions.isSuccess || pendingActions.isError;
+  // Spec F / D9: gate alert is independent of metrics/pending settle and must
+  // not wait on them (loading/error of the gate stay visible, never empty-green).
+  const gateAlert = <AdminSensitiveWordsGateAlert />;
+
   if (!projection.isSettled || !pendingSettled) {
     return (
-      <output
-        data-testid="exception-home-loading"
-        className="text-sm text-muted-foreground"
-      >
-        正在加载异常优先首页…
-      </output>
+      <div className="space-y-4">
+        {gateAlert}
+        <output
+          data-testid="exception-home-loading"
+          className="text-sm text-muted-foreground"
+        >
+          正在加载异常优先首页…
+        </output>
+      </div>
     );
   }
 
@@ -166,24 +174,30 @@ function LiveAdminExceptionHome({
         ? pendingActions.error.message
         : 'pending-actions 加载失败';
     return (
-      <section
-        data-testid="exception-home-error"
-        role="alert"
-        className="rounded-lg border border-destructive/40 p-4 text-sm text-destructive"
-      >
-        异常优先首页加载失败：{metricsMessage}；{supplyMessage}；{pendingMessage}
-        。当前状态未知，不能宣称无待处理异常。
-      </section>
+      <div className="space-y-4">
+        {gateAlert}
+        <section
+          data-testid="exception-home-error"
+          role="alert"
+          className="rounded-lg border border-destructive/40 p-4 text-sm text-destructive"
+        >
+          异常优先首页加载失败：{metricsMessage}；{supplyMessage}；
+          {pendingMessage}。当前状态未知，不能宣称无待处理异常。
+        </section>
+      </div>
     );
   }
 
   return (
-    <LiveAdminExceptionHomeReady
-      input={input}
-      registry={projection.view}
-      pendingActions={pendingActions.data}
-      pendingActionsFailed={pendingActions.isError}
-    />
+    <div className="space-y-4">
+      {gateAlert}
+      <LiveAdminExceptionHomeReady
+        input={input}
+        registry={projection.view}
+        pendingActions={pendingActions.data}
+        pendingActionsFailed={pendingActions.isError}
+      />
+    </div>
   );
 }
 

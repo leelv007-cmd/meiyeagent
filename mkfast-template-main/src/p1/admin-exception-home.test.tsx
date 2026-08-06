@@ -22,6 +22,8 @@ import {
 import { buildCapabilityRegistry } from '@/p1/admin-capability-registry-model';
 import { buildDefaultSupplyControlSnapshot } from '@/p1/admin-supply-fixture';
 import type { SupplyControlSnapshot } from '@/p1/admin-supply-types';
+import { adminEnabledSensitiveWordsQueryKey } from '@/p1/admin-sensitive-words-gate';
+import { SENSITIVE_WORDS_GATE_COPY } from '@/p1/admin-sensitive-words-gate-alert';
 import { pendingActionsQueryKey } from '@/product/pending-actions-client';
 
 const NOW = '2026-07-20T12:00:00.000Z';
@@ -325,6 +327,11 @@ test('live shared cache: home and catalog both mark generation_image available',
     LIVE_OPERATIONAL_METRICS
   );
   queryClient.setQueryData(adminCapabilitySupplySnapshotQueryKey, snapshot);
+  // Active lexicon: gate must not alert on the home.
+  queryClient.setQueryData(adminEnabledSensitiveWordsQueryKey, {
+    items: [{ id: 'sw-1' }],
+    total: 1,
+  });
 
   const homeHtml = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
@@ -339,9 +346,67 @@ test('live shared cache: home and catalog both mark generation_image available',
 
   assert.match(homeHtml, /data-testid="exception-home-panel"/);
   assert.doesNotMatch(homeHtml, /data-testid="exception-home-loading"/);
+  assert.doesNotMatch(homeHtml, /data-testid="sensitive-words-gate-alert"/);
   assert.match(
     catalogHtml,
     /data-testid="availability-status-badge"[^>]*data-status="available"/
   );
   assert.match(catalogHtml, /live_model_supply_snapshot/);
+});
+
+test('live exception home: empty enabled lexicon shows inactive gate alert', () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  queryClient.setQueryData(pendingActionsQueryKey, [] satisfies PendingAction[]);
+  queryClient.setQueryData(
+    adminOperationalMetricsQueryKey,
+    LIVE_OPERATIONAL_METRICS
+  );
+  queryClient.setQueryData(
+    adminCapabilitySupplySnapshotQueryKey,
+    buildLiveGenerationImageSupplySnapshot()
+  );
+  queryClient.setQueryData(adminEnabledSensitiveWordsQueryKey, {
+    items: [],
+    total: 0,
+  });
+
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <AdminExceptionHome input={{ now: NOW }} />
+    </QueryClientProvider>
+  );
+
+  assert.match(html, /data-testid="sensitive-words-gate-alert"/);
+  assert.match(html, /data-gate-status="inactive"/);
+  assert.match(html, new RegExp(SENSITIVE_WORDS_GATE_COPY.inactive));
+  assert.doesNotMatch(html, new RegExp(SENSITIVE_WORDS_GATE_COPY.error));
+});
+
+test('live exception home: gate loading is not empty inactive', () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  queryClient.setQueryData(pendingActionsQueryKey, [] satisfies PendingAction[]);
+  queryClient.setQueryData(
+    adminOperationalMetricsQueryKey,
+    LIVE_OPERATIONAL_METRICS
+  );
+  queryClient.setQueryData(
+    adminCapabilitySupplySnapshotQueryKey,
+    buildLiveGenerationImageSupplySnapshot()
+  );
+  // No sensitive-words cache → pending gate query.
+
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <AdminExceptionHome input={{ now: NOW }} />
+    </QueryClientProvider>
+  );
+
+  assert.match(html, /data-gate-status="loading"/);
+  assert.match(html, new RegExp(SENSITIVE_WORDS_GATE_COPY.loading));
+  assert.doesNotMatch(html, /data-gate-status="inactive"/);
+  assert.doesNotMatch(html, new RegExp(SENSITIVE_WORDS_GATE_COPY.inactive));
 });

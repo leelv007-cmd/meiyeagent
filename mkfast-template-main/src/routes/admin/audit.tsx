@@ -55,6 +55,7 @@ import { groupAuditIntoBuckets } from '@/p1/admin-audit-timeline-model';
 import { AdminOperationsHealth } from '@/p1/admin-operations-health';
 import { AdminMerchantSupport } from '@/p1/admin-merchant-support';
 import { AdminPaymentRefundReview } from '@/p1/admin-payment-refund-review';
+import { AdminSensitiveWordsGateAlert } from '@/p1/admin-sensitive-words-gate-alert';
 import type { SupplyControlSnapshot } from '@/p1/admin-supply-types';
 import { ADMIN_SUPPLY_CONTROL_QUERY } from '@/p1/use-admin-supply-control';
 import { queryP1 } from '@/p1/client';
@@ -78,6 +79,8 @@ function AuditPage() {
     >
       <div className="space-y-8">
         <CapabilityDrilldownBanner pageId="audit" />
+        {/* Spec F / D9: current derived gate state only — no persisted audit event. */}
+        <AdminSensitiveWordsGateAlert />
         <AdminPaymentRefundReview />
         <AdminMerchantSupport />
         <AdminSupplyAuditProjection />
