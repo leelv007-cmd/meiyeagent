@@ -18,6 +18,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   admin_audit_actor_correlation,
   admin_audit_bucket_earlier,
@@ -27,6 +29,15 @@ import {
   admin_audit_copied,
   admin_audit_copy_reference,
   admin_audit_empty,
+  admin_audit_export_csv,
+  admin_audit_filter_action,
+  admin_audit_filter_action_placeholder,
+  admin_audit_filter_actor,
+  admin_audit_filter_actor_placeholder,
+  admin_audit_filter_clear,
+  admin_audit_filter_empty,
+  admin_audit_filter_from,
+  admin_audit_filter_to,
   admin_audit_reason,
   admin_audit_refresh,
   admin_audit_scope_diff,
@@ -36,6 +47,16 @@ import {
 } from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
 import {
+  auditCsvFilename,
+  buildAuditCsv,
+  downloadAuditCsv,
+  emptyAuditListFilters,
+  filterAuditEvents,
+  hasActiveAuditFilters,
+  type AuditListEvent,
+  type AuditListFilters,
+} from '@/p1/admin-audit-filter-model';
+import {
   groupAuditIntoBuckets,
   initialOpenAuditIds,
   toggleOpenAuditId,
@@ -43,7 +64,12 @@ import {
 } from '@/p1/admin-audit-timeline-model';
 import { operationsQuery, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
-import { IconChevronRight, IconCopy, IconRefresh } from '@tabler/icons-react';
+import {
+  IconChevronRight,
+  IconCopy,
+  IconDownload,
+  IconRefresh,
+} from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -84,15 +110,8 @@ interface CatalogRevisionActivity {
   }>;
 }
 
-interface AuditEventView {
-  id: string;
-  action: string;
-  actor: string;
-  correlationId: string;
-  createdAt: string;
-  reason: string;
-  scope: string;
-}
+/** Shared list row shape — same fields the CSV export serialises. */
+type AuditEventView = AuditListEvent;
 
 const AUDIT_BUCKET_LABEL: Record<AuditBucketKey, () => string> = {
   today: admin_audit_bucket_today,
@@ -201,7 +220,11 @@ function AuditTimelineEntry({
   onOpenChange: (open: boolean) => void;
 }) {
   return (
-    <TimelineItem className="ms-0! pb-6" step={step}>
+    <TimelineItem
+      className="ms-0! pb-6"
+      data-testid={`admin-audit-event-${event.id}`}
+      step={step}
+    >
       <TimelineHeader>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <TimelineTitle className="font-mono text-sm font-semibold">
@@ -331,6 +354,108 @@ export function useAuditOpenIds(entries: readonly { id: string }[]) {
   return { openIds, onToggle };
 }
 
+function AuditListFiltersBar({
+  filters,
+  onChange,
+  onClear,
+  onExport,
+  exportDisabled,
+}: {
+  filters: AuditListFilters;
+  onChange: (next: AuditListFilters) => void;
+  onClear: () => void;
+  onExport: () => void;
+  exportDisabled: boolean;
+}) {
+  const setField =
+    (field: keyof AuditListFilters) =>
+    (value: string) => {
+      onChange({ ...filters, [field]: value });
+    };
+
+  return (
+    <div
+      className="flex flex-col gap-3 border-b pb-4"
+      data-testid="admin-audit-filters"
+    >
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="admin-audit-filter-from">
+            {admin_audit_filter_from()}
+          </Label>
+          <Input
+            data-testid="admin-audit-filter-from"
+            id="admin-audit-filter-from"
+            onChange={(event) => setField('fromDate')(event.target.value)}
+            type="date"
+            value={filters.fromDate}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="admin-audit-filter-to">
+            {admin_audit_filter_to()}
+          </Label>
+          <Input
+            data-testid="admin-audit-filter-to"
+            id="admin-audit-filter-to"
+            onChange={(event) => setField('toDate')(event.target.value)}
+            type="date"
+            value={filters.toDate}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="admin-audit-filter-actor">
+            {admin_audit_filter_actor()}
+          </Label>
+          <Input
+            data-testid="admin-audit-filter-actor"
+            id="admin-audit-filter-actor"
+            onChange={(event) => setField('actor')(event.target.value)}
+            placeholder={admin_audit_filter_actor_placeholder()}
+            type="search"
+            value={filters.actor}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="admin-audit-filter-action">
+            {admin_audit_filter_action()}
+          </Label>
+          <Input
+            data-testid="admin-audit-filter-action"
+            id="admin-audit-filter-action"
+            onChange={(event) => setField('action')(event.target.value)}
+            placeholder={admin_audit_filter_action_placeholder()}
+            type="search"
+            value={filters.action}
+          />
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          data-testid="admin-audit-export-csv"
+          disabled={exportDisabled}
+          onClick={onExport}
+          type="button"
+          variant="outline"
+        >
+          <IconDownload />
+          {admin_audit_export_csv()}
+        </Button>
+        {hasActiveAuditFilters(filters) ? (
+          <Button
+            data-testid="admin-audit-filter-clear"
+            onClick={onClear}
+            type="button"
+            variant="ghost"
+          >
+            {admin_audit_filter_clear()}
+          </Button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 export function AdminAuditControl() {
   const templateQuery = useQuery({
     queryKey: p1QueryKeys.request('operations', 'admin_template_catalog'),
@@ -410,7 +535,17 @@ export function AdminAuditControl() {
     );
   }, [catalogQuery.data, rollbackQuery.data, templateQuery.data]);
 
-  const { openIds, onToggle } = useAuditOpenIds(events);
+  const [filters, setFilters] = useState<AuditListFilters>(
+    emptyAuditListFilters
+  );
+  const filteredEvents = useMemo(
+    () => filterAuditEvents(events, filters),
+    [events, filters]
+  );
+
+  // Open-state follows the filtered stream so collapsed cards stay closed when
+  // the operator narrows or widens the view without a full remount.
+  const { openIds, onToggle } = useAuditOpenIds(filteredEvents);
 
   const refresh = () =>
     Promise.all([
@@ -419,8 +554,19 @@ export function AdminAuditControl() {
       catalogQuery.refetch(),
     ]);
 
+  const handleExport = () => {
+    downloadAuditCsv(buildAuditCsv(filteredEvents), auditCsvFilename());
+  };
+
+  const emptyMessage =
+    events.length === 0
+      ? admin_audit_empty()
+      : hasActiveAuditFilters(filters)
+        ? admin_audit_filter_empty()
+        : admin_audit_empty();
+
   return (
-    <Frame dense>
+    <Frame dense data-testid="admin-audit-control">
       <FrameHeader className="flex-row items-center justify-between gap-3">
         <FrameTitle>{admin_audit_title()}</FrameTitle>
         <Button
@@ -436,12 +582,19 @@ export function AdminAuditControl() {
           {admin_audit_refresh()}
         </Button>
       </FrameHeader>
-      <FramePanel>
-        {events.length === 0 ? (
-          <p className="text-sm text-muted-foreground">{admin_audit_empty()}</p>
+      <FramePanel className="space-y-4">
+        <AuditListFiltersBar
+          exportDisabled={filteredEvents.length === 0}
+          filters={filters}
+          onChange={setFilters}
+          onClear={() => setFilters(emptyAuditListFilters())}
+          onExport={handleExport}
+        />
+        {filteredEvents.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{emptyMessage}</p>
         ) : (
           <AuditTimelineStream
-            events={events}
+            events={filteredEvents}
             onToggle={onToggle}
             openIds={openIds}
           />
