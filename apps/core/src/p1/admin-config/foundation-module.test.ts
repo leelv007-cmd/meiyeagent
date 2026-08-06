@@ -5,6 +5,7 @@ import {
   NOTE_STYLE_CONFIG_KEY,
 } from '@meiye/contracts';
 import { z } from 'zod';
+import { ADMIN_CONFIG_KEY_CLASSIFICATION } from '../../assembly/domain-rules.js';
 import { P1ApplicationService } from '../foundation/application-service.js';
 import { MemoryFoundationRepository } from '../foundation/memory-repository.js';
 import type { PermissionAuthorizerPort } from '../capability-permission/port.js';
@@ -1072,6 +1073,35 @@ describe('Admin config application seam', () => {
       'compliance.watermark.default': false,
     });
     assert.equal(JSON.stringify(result).includes('actorId'), false);
+  });
+
+  // #371: classification → projection. Not a settlement consumption proof.
+  // Unwritten projection may leave effectiveValue empty (no runtime default).
+  it('projects plan.payment-mapping as wired without inventing an unwritten effectiveValue', async () => {
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [
+        new AdminConfigFoundationModule(new MemoryAdminConfigRepository(), {
+          ...ADMIN_CONFIG_KEY_CLASSIFICATION,
+        }),
+      ],
+    });
+
+    const projected = (await service.queryModule(
+      context,
+      'admin-config',
+      {
+        action: 'config_get',
+        payload: { key: 'plan.payment-mapping' },
+      },
+    )) as {
+      effectiveValue: unknown;
+      storedValue: unknown;
+      wired: boolean;
+    };
+
+    assert.equal(projected.wired, true);
+    assert.equal(projected.storedValue, null);
+    assert.equal(projected.effectiveValue, null);
   });
 
   it('reports hot-read commerce config as effective immediately', async () => {

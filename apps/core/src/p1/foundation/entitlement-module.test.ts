@@ -1851,6 +1851,9 @@ describe('ProductEntitlementFoundationModule', () => {
     assert.equal(later.usage.copy.available, 105);
   });
 
+  // #371 consumption proof (separate from classification wired=true assertion):
+  // write the mapping via admin-config, then settle through the real
+  // entitlements payment_grant seam and assert the resolved plan tier.
   it('hot-reads plan.payment-mapping for every paid settlement', async () => {
     const { service } = setupHotCatalog();
     const payment = {

@@ -55,6 +55,9 @@ const SHARED_HOT_AND_WIRED_CONFIG_KEYS = [
   BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
   BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
   NOTE_STYLE_CONFIG_KEY,
+  // Settlement hot-reads this key on every paid grant; no process-boot default.
+  // Unwritten projection may leave effectiveValue empty (#371 / Spec C §支付映射).
+  'plan.payment-mapping',
   ...CREDIT_PLAN_CONFIG_KEYS,
   ...PLATFORM_DEFAULT_MODEL_CONFIG_KEYS.map(platformDefaultModelConfigName),
   ...COMPLIANCE_CONFIG_KEYS,

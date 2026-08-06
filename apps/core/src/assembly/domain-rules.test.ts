@@ -123,6 +123,7 @@ test('fixture admission is limited to configured fixture defaults with an active
 });
 
 test('D-116 hot-read keys stay wired and disjoint from read-only keys', () => {
+  // Structural completeness only — does not prove any key is consumed at runtime.
   assert.doesNotThrow(() => assertAdminConfigKeyConsistency());
   assert.ok(
     ADMIN_CONFIG_KEY_CLASSIFICATION.hotReadKeys.includes(NOTE_STYLE_CONFIG_KEY)
@@ -138,5 +139,14 @@ test('D-116 hot-read keys stay wired and disjoint from read-only keys', () => {
         readOnlyKeys: [],
       }),
     /missing wiring \[drifted\.key\]/
+  );
+});
+
+// #371 / Spec C: classification wiring is independent of settlement consumption
+// proof (that lives on the entitlements payment_grant seam).
+test('plan.payment-mapping is classified as wired', () => {
+  assert.equal(
+    ADMIN_CONFIG_KEY_CLASSIFICATION.wiredKeys.includes('plan.payment-mapping'),
+    true
   );
 });
