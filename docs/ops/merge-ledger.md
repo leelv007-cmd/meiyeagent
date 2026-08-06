@@ -229,3 +229,4 @@
 | 40d5fb40 | #382 | 商家 user_selected 全旅程 e2e 验收门（published fixture 真 BFF/Core，含取消未注入+租户隔离+审计五轴） | Playwright 3/3 亲跑（1.4m）+核心单测 6/6+契约 2/2+双包 tsc 0 err | driver 修 fixture prompt 钉 intentNaming（stage 冻结不变量）+evidence 改查 runtime_id |
 | 407e27b9 | #390 | Catalog 死字段（capabilities/routes）撤编辑入口与 chip；下钻覆盖补 supply/cloudflare/capabilities/首页；积分套餐配置键收敛 contracts 单一来源+补 reference_numbers | core 7/7+web 30/30+双包 tsc 0 err 亲跑（rebase 后抽 15/15+7/7 复验） | 再存草稿会清历史死字段值（与移除一致） |
 | 455504f7 | #391 | 兑换码过期改后台定时任务（redemption.expire-due），list 读取不再抬 revision | 18/18+PG 店面 4/4（lane419 库）+tsc 0 err 亲跑；先红后绿亲证（还原修复 2 红） | redeem 路径保留内联单码过期（禁兑已过期码语义） |
+| 88ae8ae1 | #392 | Cloudflare deep-link 接真（verified+https 才渲染 anchor，否则不出现）；删三份过时 WIRING-DIFF.md；woz.recipe 文档化为纯版本触发器 | core 42/42+web 13/13+双包 tsc 0 err 亲跑 | 审计写两份实删三份（capability/cloudflare/supply） |
