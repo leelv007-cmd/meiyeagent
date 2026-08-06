@@ -5,7 +5,7 @@
  */
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
-import { useForm, useWatch } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
 import {
@@ -15,6 +15,13 @@ import {
 import { Badge } from '@/components/reui/badge';
 import { Frame, FramePanel } from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -315,21 +322,33 @@ function GovernedActionFormCells({
   return (
     <>
       <TableCell>
-        <select
-          aria-label={`${label}目标`}
-          className="h-9 min-w-48 rounded-md border bg-background px-2 text-xs"
-          {...form.register('targetId')}
-        >
-          <option value="">选择目标</option>
-          {targets.map((target) => (
-            <option
-              key={target.selectionId ?? target.resourceId}
-              value={target.selectionId ?? target.resourceId}
+        <Controller
+          control={form.control}
+          name="targetId"
+          render={({ field }) => (
+            <Select
+              onValueChange={(value) => field.onChange(value ?? '')}
+              value={field.value || undefined}
             >
-              {target.label ?? target.resourceId}
-            </option>
-          ))}
-        </select>
+              <SelectTrigger
+                aria-label={`${label}目标`}
+                className="h-9 min-w-48 data-size:h-9"
+              >
+                <SelectValue placeholder="选择目标" />
+              </SelectTrigger>
+              <SelectContent>
+                {targets.map((target) => {
+                  const id = target.selectionId ?? target.resourceId;
+                  return (
+                    <SelectItem key={id} value={id}>
+                      {target.label ?? target.resourceId}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          )}
+        />
         {actionId === 'credential_rotate' ? (
           <div>
             <input

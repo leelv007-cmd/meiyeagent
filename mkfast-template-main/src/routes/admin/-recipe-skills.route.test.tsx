@@ -134,6 +134,14 @@ test('Skills admin route exposes all five structured lifecycle commands', () => 
 
   assert.match(html, /data-testid="admin-skills-control"/);
   assert.match(html, /<h2[^>]*>Skill 目录<\/h2>/);
+  // Action picker is base-nova Select: closed SSR only shows the active value
+  // (default = 新建做法). Full command catalog is a source contract.
+  assert.match(html, /id="skills-action"/);
+  assert.match(html, /新建做法/);
+  const controlSource = readFileSync(
+    resolve(process.cwd(), 'src/p1/admin-skills-control.tsx'),
+    'utf8'
+  );
   for (const label of [
     '新建做法',
     '受理并冻结',
@@ -141,12 +149,14 @@ test('Skills admin route exposes all five structured lifecycle commands', () => 
     '回滚绑定',
     '登记部署',
   ]) {
-    assert.ok(html.includes(label), `missing lifecycle command: ${label}`);
+    assert.ok(
+      controlSource.includes(`label: '${label}'`),
+      `missing lifecycle command in COMMAND_FORMS: ${label}`
+    );
   }
   assert.doesNotMatch(html, /skills-payload/);
   assert.doesNotMatch(html, /data-ops-control="raw-json"/);
   assert.doesNotMatch(html, /<pre/);
-  assert.doesNotMatch(html, /<option value="store"/);
   assert.doesNotMatch(html, /maxChildEffects|redlinePolicy/);
 });
 

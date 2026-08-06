@@ -9,6 +9,7 @@ import {
 } from '@/p1/admin-supply-control';
 import { ASSOCIATION_VIEW_IDS } from '@/p1/admin-supply-association-views-model';
 import { buildDefaultSupplyControlSnapshot } from '@/p1/admin-supply-fixture';
+import { GOVERNED_QUICK_ACTION_IDS } from '@/p1/admin-supply-quick-actions-model';
 
 const SNAPSHOT = buildDefaultSupplyControlSnapshot();
 
@@ -59,7 +60,11 @@ test('SSR J5 credential UI + route simulator + governed actions', () => {
   assert.match(html, /invoice/);
 
   assert.match(html, /data-testid="supply-governed-actions-panel"/);
-  assert.match(html, /data-action-count="14"/);
+  // Count is the model catalog size (13 today); pin to live length, not a stale literal.
+  assert.match(
+    html,
+    new RegExp(`data-action-count="${GOVERNED_QUICK_ACTION_IDS.length}"`)
+  );
   assert.match(html, /data-forbid-secret-echo="true"/);
   assert.match(html, /data-forbid-direct-db="true"/);
   assert.match(html, /data-forbid-bypass-publish="true"/);

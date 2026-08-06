@@ -21,6 +21,13 @@ import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { FieldGroup } from '@/components/ui/field';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Table,
   TableBody,
   TableCell,
@@ -705,19 +712,26 @@ export function AdminRuntimeConfigControl({
                 last={!activeGenericKey}
                 title={admin_runtime_config_key()}
               >
-                <select
-                  className="h-touch-target w-full rounded-lg border border-divider bg-surface-1 px-2.5 text-sm"
-                  id="admin-runtime-config-key"
-                  onChange={(event) => selectKey(event.target.value)}
-                  value={activeGenericKey}
+                <Select
+                  onValueChange={(value) => {
+                    if (value) selectKey(value);
+                  }}
+                  value={activeGenericKey || undefined}
                 >
-                  <option disabled value="" />
-                  {genericItems.map((item) => (
-                    <option key={item.key} value={item.key}>
-                      {adminConfigKeyLabel(item.key)}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger
+                    className="w-full"
+                    id="admin-runtime-config-key"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {genericItems.map((item) => (
+                      <SelectItem key={item.key} value={item.key}>
+                        {adminConfigKeyLabel(item.key)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </SettingField>
             ) : null}
             {genericItems.length > 0 && activeGenericKey ? (

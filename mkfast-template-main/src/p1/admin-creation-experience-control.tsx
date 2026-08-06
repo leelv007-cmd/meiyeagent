@@ -18,6 +18,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { commandP1, queryP1 } from '@/p1/client';
@@ -1092,60 +1099,75 @@ function RecipeEditor({
           </div>
           <div className="space-y-2">
             <Label htmlFor="recipe-lens">创作形式</Label>
-            <select
-              id="recipe-lens"
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              value={lensId}
-              onChange={(event) => {
-                const nextLens = event.target.value as CreationLensId;
+            <Select
+              onValueChange={(value) => {
+                if (!value) return;
+                const nextLens = value as CreationLensId;
                 setLensId(nextLens);
                 setDelivery(defaultRecipeDelivery(nextLens));
               }}
+              value={lensId}
             >
-              <option value="copy">文案</option>
-              <option value="image_text">图文</option>
-              <option value="video">视频</option>
-            </select>
+              <SelectTrigger className="w-full" id="recipe-lens">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="copy">文案</SelectItem>
+                <SelectItem value="image_text">图文</SelectItem>
+                <SelectItem value="video">视频</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="recipe-delivery-platform">交付平台</Label>
-              <select
-                id="recipe-delivery-platform"
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={delivery.contentPackagePlatform}
-                onChange={(event) =>
+              <Select
+                onValueChange={(value) => {
+                  if (!value) return;
                   setDelivery((current) => ({
                     ...current,
-                    contentPackagePlatform: event.target.value,
-                  }))
-                }
+                    contentPackagePlatform: value,
+                  }));
+                }}
+                value={delivery.contentPackagePlatform}
               >
-                <option value="xiaohongshu">小红书</option>
-                <option value="douyin">抖音</option>
-                <option value="video_account">视频号</option>
-                <option value="wechat_moments">朋友圈</option>
-                <option value="offline_material">线下物料</option>
-                <option value="generic">通用</option>
-              </select>
+                <SelectTrigger className="w-full" id="recipe-delivery-platform">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="xiaohongshu">小红书</SelectItem>
+                  <SelectItem value="douyin">抖音</SelectItem>
+                  <SelectItem value="video_account">视频号</SelectItem>
+                  <SelectItem value="wechat_moments">朋友圈</SelectItem>
+                  <SelectItem value="offline_material">线下物料</SelectItem>
+                  <SelectItem value="generic">通用</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="recipe-distribution-target">交付方式</Label>
-              <select
-                id="recipe-distribution-target"
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={delivery.distributionTarget}
-                onChange={(event) =>
+              <Select
+                onValueChange={(value) => {
+                  if (!value) return;
                   setDelivery((current) => ({
                     ...current,
-                    distributionTarget: event.target.value,
-                  }))
-                }
+                    distributionTarget: value,
+                  }));
+                }}
+                value={delivery.distributionTarget}
               >
-                <option value="export">导出成品</option>
-                <option value="manual_copy">手动复制发布</option>
-                <option value="assisted_handoff">辅助交接</option>
-              </select>
+                <SelectTrigger
+                  className="w-full"
+                  id="recipe-distribution-target"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="export">导出成品</SelectItem>
+                  <SelectItem value="manual_copy">手动复制发布</SelectItem>
+                  <SelectItem value="assisted_handoff">辅助交接</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-2">
               <Label htmlFor="recipe-delivery-quantity">成品数量</Label>
@@ -1239,17 +1261,21 @@ function RecipeEditor({
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="recipe-model-mode">模型策略</Label>
-              <select
-                id="recipe-model-mode"
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              <Select
+                onValueChange={(value) => {
+                  if (!value) return;
+                  setModelMode(value as RecipeModelPolicyMode);
+                }}
                 value={modelMode}
-                onChange={(event) =>
-                  setModelMode(event.target.value as RecipeModelPolicyMode)
-                }
               >
-                <option value="auto">自动</option>
-                <option value="fixed">固定模型</option>
-              </select>
+                <SelectTrigger className="w-full" id="recipe-model-mode">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">自动</SelectItem>
+                  <SelectItem value="fixed">固定模型</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             {modelMode === 'fixed' ? (
               <div className="space-y-2">
@@ -1309,19 +1335,24 @@ function RecipeEditor({
           <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
             <div className="space-y-2">
               <Label htmlFor="recipe-rollback">Recipe 回滚版本</Label>
-              <select
-                id="recipe-rollback"
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={rollbackRevision}
-                onChange={(event) => setRollbackRevision(event.target.value)}
+              <Select
+                onValueChange={(value) => {
+                  if (value == null) return;
+                  setRollbackRevision(value);
+                }}
+                value={rollbackRevision || undefined}
               >
-                <option value="">选择已发布版本</option>
-                {rollbackOptions.map((record) => (
-                  <option key={record.revision} value={record.revision}>
-                    r{record.revision}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="w-full" id="recipe-rollback">
+                  <SelectValue placeholder="选择已发布版本" />
+                </SelectTrigger>
+                <SelectContent>
+                  {rollbackOptions.map((record) => (
+                    <SelectItem key={record.revision} value={record.revision}>
+                      r{record.revision}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <Button
               type="button"
@@ -1819,25 +1850,31 @@ function SurfaceEditor({
                       <Label htmlFor={`surface-recipe-pick-${index}`}>
                         Recipe
                       </Label>
-                      <select
-                        id={`surface-recipe-pick-${index}`}
-                        data-testid={`surface-recipe-pick-${index}`}
-                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                        value={recipeId}
-                        onChange={(event) =>
-                          void selectRecipeForNewCard(index, event.target.value)
-                        }
+                      <Select
+                        onValueChange={(value) => {
+                          if (!value) return;
+                          void selectRecipeForNewCard(index, value);
+                        }}
+                        value={recipeId || undefined}
                       >
-                        <option value="">选择已发布 Recipe</option>
-                        {availableRecipeHeads.map((headCandidate) => (
-                          <option
-                            key={headCandidate.recipeId}
-                            value={headCandidate.recipeId}
-                          >
-                            {headCandidate.title} ({headCandidate.recipeId})
-                          </option>
-                        ))}
-                      </select>
+                        <SelectTrigger
+                          className="w-full"
+                          data-testid={`surface-recipe-pick-${index}`}
+                          id={`surface-recipe-pick-${index}`}
+                        >
+                          <SelectValue placeholder="选择已发布 Recipe" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableRecipeHeads.map((headCandidate) => (
+                            <SelectItem
+                              key={headCandidate.recipeId}
+                              value={headCandidate.recipeId}
+                            >
+                              {headCandidate.title} ({headCandidate.recipeId})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
                   ) : (
                     <div className="space-y-1 sm:col-span-2">
@@ -1848,35 +1885,39 @@ function SurfaceEditor({
                     <Label htmlFor={`surface-recipe-revision-${index}`}>
                       Recipe 版本
                     </Label>
-                    <select
-                      id={`surface-recipe-revision-${index}`}
-                      data-testid={`surface-recipe-revision-${index}`}
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      value={ref.recipeRevisionId}
+                    <Select
                       disabled={!recipeId || candidates.length === 0}
-                      onChange={(event) =>
-                        selectRevisionForCard(
-                          index,
-                          event.target.value,
-                          candidates
-                        )
-                      }
+                      onValueChange={(value) => {
+                        if (!value) return;
+                        selectRevisionForCard(index, value, candidates);
+                      }}
+                      value={ref.recipeRevisionId || undefined}
                     >
-                      <option value="">
-                        {candidates.length === 0
-                          ? '暂无已发布版本'
-                          : '选择已发布版本'}
-                      </option>
-                      {candidates.map((candidate) => (
-                        <option
-                          key={candidate.revisionId}
-                          value={candidate.revisionId}
-                        >
-                          r{candidate.revision} · {candidate.title} (
-                          {candidate.revisionId})
-                        </option>
-                      ))}
-                    </select>
+                      <SelectTrigger
+                        className="w-full"
+                        data-testid={`surface-recipe-revision-${index}`}
+                        id={`surface-recipe-revision-${index}`}
+                      >
+                        <SelectValue
+                          placeholder={
+                            candidates.length === 0
+                              ? '暂无已发布版本'
+                              : '选择已发布版本'
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {candidates.map((candidate) => (
+                          <SelectItem
+                            key={candidate.revisionId}
+                            value={candidate.revisionId}
+                          >
+                            r{candidate.revision} · {candidate.title} (
+                            {candidate.revisionId})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     {recipeId && candidates.length === 0 ? (
                       <p
                         className="text-sm text-muted-foreground"
@@ -1890,20 +1931,27 @@ function SurfaceEditor({
                     <Label htmlFor={`surface-recipe-lens-${index}`}>
                       创作形式
                     </Label>
-                    <select
-                      id={`surface-recipe-lens-${index}`}
-                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                      value={ref.lensId}
-                      onChange={(event) =>
+                    <Select
+                      onValueChange={(value) => {
+                        if (!value) return;
                         updateRef(index, {
-                          lensId: event.target.value as CreationLensId,
-                        })
-                      }
+                          lensId: value as CreationLensId,
+                        });
+                      }}
+                      value={ref.lensId}
                     >
-                      <option value="copy">文案</option>
-                      <option value="image_text">图文</option>
-                      <option value="video">视频</option>
-                    </select>
+                      <SelectTrigger
+                        className="w-full"
+                        id={`surface-recipe-lens-${index}`}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="copy">文案</SelectItem>
+                        <SelectItem value="image_text">图文</SelectItem>
+                        <SelectItem value="video">视频</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor={`surface-recipe-order-${index}`}>顺序</Label>
@@ -2009,19 +2057,24 @@ function SurfaceEditor({
           <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
             <div className="space-y-2">
               <Label htmlFor="surface-rollback">Surface 回滚版本</Label>
-              <select
-                id="surface-rollback"
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={rollbackRevision}
-                onChange={(event) => setRollbackRevision(event.target.value)}
+              <Select
+                onValueChange={(value) => {
+                  if (value == null) return;
+                  setRollbackRevision(value);
+                }}
+                value={rollbackRevision || undefined}
               >
-                <option value="">选择已发布版本</option>
-                {rollbackOptions.map((record) => (
-                  <option key={record.revision} value={record.revision}>
-                    r{record.revision}
-                  </option>
-                ))}
-              </select>
+                <SelectTrigger className="w-full" id="surface-rollback">
+                  <SelectValue placeholder="选择已发布版本" />
+                </SelectTrigger>
+                <SelectContent>
+                  {rollbackOptions.map((record) => (
+                    <SelectItem key={record.revision} value={record.revision}>
+                      r{record.revision}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <Button
               type="button"

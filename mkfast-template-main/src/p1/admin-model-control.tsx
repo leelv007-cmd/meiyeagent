@@ -10,7 +10,7 @@ import {
 } from '@tabler/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import { z } from 'zod';
 
@@ -27,6 +27,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import {
   Table,
@@ -1182,37 +1189,67 @@ export function AdminModelControl() {
           >
             <div className="space-y-2">
               <Label htmlFor="route-simulator-operation">Operation</Label>
-              <select
-                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                id="route-simulator-operation"
-                {...routeSimulatorForm.register('operation')}
-              >
-                {OPERATIONS.map((operation) => (
-                  <option key={operation.id} value={operation.id}>
-                    {operation.label()}
-                  </option>
-                ))}
-              </select>
+              <Controller
+                control={routeSimulatorForm.control}
+                name="operation"
+                render={({ field }) => (
+                  <Select
+                    onValueChange={(value) => {
+                      if (value) field.onChange(value);
+                    }}
+                    value={field.value}
+                  >
+                    <SelectTrigger
+                      className="w-full"
+                      id="route-simulator-operation"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {OPERATIONS.map((operation) => (
+                        <SelectItem key={operation.id} value={operation.id}>
+                          {operation.label()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="route-simulator-selection">
                 {p1_admin_model_route_selection_mode()}
               </Label>
-              <select
-                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                id="route-simulator-selection"
-                {...routeSimulatorForm.register('selectionMode')}
-              >
-                <option value="fixed">
-                  {p1_admin_model_route_selection_fixed()}
-                </option>
-                <option
-                  disabled={simulatorOperation !== 'copy.generate'}
-                  value="auto"
-                >
-                  LLM Auto
-                </option>
-              </select>
+              <Controller
+                control={routeSimulatorForm.control}
+                name="selectionMode"
+                render={({ field }) => (
+                  <Select
+                    onValueChange={(value) => {
+                      if (value) field.onChange(value);
+                    }}
+                    value={field.value}
+                  >
+                    <SelectTrigger
+                      className="w-full"
+                      id="route-simulator-selection"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fixed">
+                        {p1_admin_model_route_selection_fixed()}
+                      </SelectItem>
+                      <SelectItem
+                        disabled={simulatorOperation !== 'copy.generate'}
+                        value="auto"
+                      >
+                        LLM Auto
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
               {routeSimulatorForm.formState.errors.selectionMode ? (
                 <p className="text-xs text-destructive">
                   {routeSimulatorForm.formState.errors.selectionMode.message}
@@ -1223,19 +1260,33 @@ export function AdminModelControl() {
               <Label htmlFor="route-simulator-model">
                 {p1_admin_model_route_fixed_model()}
               </Label>
-              <select
-                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                disabled={simulatorSelectionMode === 'auto'}
-                id="route-simulator-model"
-                {...routeSimulatorForm.register('catalogModelId')}
-              >
-                <option value="">{p1_admin_model_route_select_model()}</option>
-                {simulatorModels.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.displayName} · {model.availability}
-                  </option>
-                ))}
-              </select>
+              <Controller
+                control={routeSimulatorForm.control}
+                name="catalogModelId"
+                render={({ field }) => (
+                  <Select
+                    disabled={simulatorSelectionMode === 'auto'}
+                    onValueChange={(value) => field.onChange(value ?? '')}
+                    value={field.value || undefined}
+                  >
+                    <SelectTrigger
+                      className="w-full"
+                      id="route-simulator-model"
+                    >
+                      <SelectValue
+                        placeholder={p1_admin_model_route_select_model()}
+                      />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {simulatorModels.map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.displayName} · {model.availability}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
               {routeSimulatorForm.formState.errors.catalogModelId ? (
                 <p className="text-xs text-destructive">
                   {routeSimulatorForm.formState.errors.catalogModelId.message}
@@ -1244,40 +1295,71 @@ export function AdminModelControl() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="route-simulator-data-class">Data class</Label>
-              <select
-                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                id="route-simulator-data-class"
-                {...routeSimulatorForm.register('dataClass')}
-              >
-                <option value="public">public</option>
-                <option value="contains_face">contains_face</option>
-                <option value="pii">pii</option>
-                <option value="medical">medical</option>
-              </select>
+              <Controller
+                control={routeSimulatorForm.control}
+                name="dataClass"
+                render={({ field }) => (
+                  <Select
+                    onValueChange={(value) => {
+                      if (value) field.onChange(value);
+                    }}
+                    value={field.value}
+                  >
+                    <SelectTrigger
+                      className="w-full"
+                      id="route-simulator-data-class"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="public">public</SelectItem>
+                      <SelectItem value="contains_face">
+                        contains_face
+                      </SelectItem>
+                      <SelectItem value="pii">pii</SelectItem>
+                      <SelectItem value="medical">medical</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
             <div className="space-y-2">
               <Label htmlFor="route-simulator-failure">
                 {p1_admin_model_route_failure_scenario()}
               </Label>
-              <select
-                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                id="route-simulator-failure"
-                {...routeSimulatorForm.register('failureScenario')}
-              >
-                <option value="success">
+              <Controller
+                control={routeSimulatorForm.control}
+                name="failureScenario"
+                render={({ field }) => (
+                  <Select
+                    onValueChange={(value) => {
+                      if (value) field.onChange(value);
+                    }}
+                    value={field.value}
+                  >
+                    <SelectTrigger
+                      className="w-full"
+                      id="route-simulator-failure"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+<SelectItem value="success">
                   {p1_admin_model_route_failure_success()}
-                </option>
-                <option value="rejected_before_accept">
+                </SelectItem>
+                <SelectItem value="rejected_before_accept">
                   {p1_admin_model_route_failure_rejected_before_accept()}
-                </option>
-                <option value="accepted_failure">
+                </SelectItem>
+                <SelectItem value="accepted_failure">
                   {p1_admin_model_route_failure_accepted()}
-                </option>
-                <option value="acceptance_unknown">
+                </SelectItem>
+                <SelectItem value="acceptance_unknown">
                   {p1_admin_model_route_failure_unknown()}
-                </option>
-              </select>
-            </div>
+                </SelectItem>
+                                  </SelectContent>
+                  </Select>
+                )}
+              />            </div>
             <div className="space-y-2">
               <Label htmlFor="route-simulator-unavailable">
                 {p1_admin_model_route_unavailable_deployments()}
@@ -1660,17 +1742,32 @@ export function AdminModelControl() {
               <Label htmlFor="quality-evaluation-model">
                 {p1_admin_model_quality_model()}
               </Label>
-              <select
-                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                id="quality-evaluation-model"
-                {...evaluationForm.register('catalogModelId')}
-              >
-                {evaluableCopyModels.map((model) => (
-                  <option key={model.id} value={model.id}>
-                    {model.displayName} · {model.availability}
-                  </option>
-                ))}
-              </select>
+              <Controller
+                control={evaluationForm.control}
+                name="catalogModelId"
+                render={({ field }) => (
+                  <Select
+                    onValueChange={(value) => {
+                      if (value) field.onChange(value);
+                    }}
+                    value={field.value || undefined}
+                  >
+                    <SelectTrigger
+                      className="w-full"
+                      id="quality-evaluation-model"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {evaluableCopyModels.map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.displayName} · {model.availability}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
             </div>
             <Button
               disabled={Boolean(busy) || !evaluationModelId}
@@ -1858,25 +1955,35 @@ export function AdminModelControl() {
                     })}
                   </p>
                 </div>
-                <select
-                  className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                  {...rollbackForm.register('promptRevisionId')}
-                >
-                  <option value="">
-                    {p1_admin_model_rollback_select_prompt()}
-                  </option>
-                  {promptRevisions?.revisions
-                    .filter((revision) => !revision.current)
-                    .map((revision) => (
-                      <option
-                        key={revision.promptRevision}
-                        value={revision.promptRevision}
-                      >
-                        {revision.label} · {revision.promptRevision} ·{' '}
-                        {revision.exampleSetRevision}
-                      </option>
-                    ))}
-                </select>
+                <Controller
+                  control={rollbackForm.control}
+                  name="promptRevisionId"
+                  render={({ field }) => (
+                    <Select
+                      onValueChange={(value) => field.onChange(value ?? '')}
+                      value={field.value || undefined}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue
+                          placeholder={p1_admin_model_rollback_select_prompt()}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {promptRevisions?.revisions
+                          .filter((revision) => !revision.current)
+                          .map((revision) => (
+                            <SelectItem
+                              key={revision.promptRevision}
+                              value={revision.promptRevision}
+                            >
+                              {revision.label} · {revision.promptRevision} ·{' '}
+                              {revision.exampleSetRevision}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
                 <Button
                   disabled={Boolean(busy) || !promptRollbackTarget}
                   onClick={() => submitRollback('prompt')}
@@ -1896,26 +2003,37 @@ export function AdminModelControl() {
                     })}
                   </p>
                 </div>
-                <select
-                  className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                  {...rollbackForm.register('catalogRevisionId')}
-                >
-                  <option value="">
-                    {p1_admin_model_rollback_select_catalog()}
-                  </option>
-                  {catalogRevisions?.revisions
-                    .filter(
-                      (revision) =>
-                        !revision.current &&
-                        (revision.stage === 'published' ||
-                          revision.stage === 'recorded')
-                    )
-                    .map((revision) => (
-                      <option key={revision.id} value={revision.id}>
-                        #{revision.number} · {revision.id} · {revision.stage}
-                      </option>
-                    ))}
-                </select>
+                <Controller
+                  control={rollbackForm.control}
+                  name="catalogRevisionId"
+                  render={({ field }) => (
+                    <Select
+                      onValueChange={(value) => field.onChange(value ?? '')}
+                      value={field.value || undefined}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue
+                          placeholder={p1_admin_model_rollback_select_catalog()}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {catalogRevisions?.revisions
+                          .filter(
+                            (revision) =>
+                              !revision.current &&
+                              (revision.stage === 'published' ||
+                                revision.stage === 'recorded')
+                          )
+                          .map((revision) => (
+                            <SelectItem key={revision.id} value={revision.id}>
+                              #{revision.number} · {revision.id} ·{' '}
+                              {revision.stage}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
                 <Button
                   disabled={Boolean(busy) || !catalogRollbackTarget}
                   onClick={() => submitRollback('catalog')}

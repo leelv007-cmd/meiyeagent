@@ -4,7 +4,6 @@
 import { Badge, type BadgeProps } from '@/components/reui/badge';
 import {
   Frame,
-  FrameDescription,
   FrameHeader,
   FramePanel,
   FrameTitle,
@@ -102,15 +101,8 @@ export function SupplyAssociationViewsPanel({
       data-path={panel.path}
       className="space-y-4"
     >
+      {/* Page header already carries the view title; panel only hosts nav. */}
       <Frame>
-        <FrameHeader className="gap-1">
-          <FrameTitle className="text-base">
-            五关联视图 · {panel.title}
-          </FrameTitle>
-          <FrameDescription className="text-xs">
-            正查 + 反查 · path {panel.path}
-          </FrameDescription>
-        </FrameHeader>
         <FramePanel>
           <SupplyAssociationViewsNav activeViewId={panel.viewId} />
         </FramePanel>

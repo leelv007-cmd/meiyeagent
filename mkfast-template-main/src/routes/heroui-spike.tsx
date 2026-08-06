@@ -1,9 +1,13 @@
 /**
  * HeroUI Pro V3 (Glass) spike shell — T02 / issue #196.
  *
- * Dev-only scaffolding for the component base that T30–T36 build on. It mounts
- * nothing from the production IA and is hidden in production builds, so the
- * existing 门店橱窗 surfaces keep shipping unchanged (D-130: KEEP 桶不为换库迁移).
+ * ISOLATED VENDOR SPIKE (admin restyle residual #387):
+ * - Not part of the admin product surface. Admin heroui dependency scan
+ *   excludes `src/routes/heroui-spike/**`.
+ * - Dev-only: `beforeLoad` throws notFound() in production.
+ * - Merchant shell + `heroui-pro` stay for product surfaces; this route is a
+ *   sandbox that still consumes ListView and other HeroUI Pro blocks.
+ * - Do not promote imports from this tree into `/admin/*` or `src/p1/admin-*`.
  *
  *   pnpm --filter @meiye/web dev → /heroui-spike
  */

@@ -1,31 +1,37 @@
 /**
- * 受控配置的结构化表单（U05 / D-107）。
+ * Controlled config structured form (U05 / D-107).
  *
- * `admin-config-field-model.ts` 把配置契约读成字段树，这里把字段树摆成运营
- * 真正会用的控件：开关、下拉、步进器、优先级滑杆、成组的行编辑。
- * 后台因此不再出现「请输入与配置项匹配的 JSON」这类要求——
- * 长文字段（写作要点这种）仍是多行输入框，但那是散文，不是要人拼对的结构。
+ * `admin-config-field-model.ts` reads the config contract into a field tree;
+ * this module lays that tree out as operator controls: switches, selects,
+ * steppers, priority sliders, and grouped row editors.
+ * Presentation is shadcn/base-nova only (admin restyle residual #387) —
+ * no heroui cell editors.
  *
- * 表单只负责改值；保存仍走原来的影响面确认 + 写入原因 + CAS，一步没少。
+ * The form only mutates values; save still goes through impact review +
+ * reason + CAS.
  */
 import { Badge } from '@/components/reui/badge';
-import { ListBox } from '@heroui/react';
-import { IconPlus, IconTrash } from '@tabler/icons-react';
-import { useMemo } from 'react';
-
-import type { DataGridColumn } from '@/components/heroui-pro';
-import {
-  CellSelect,
-  CellSlider,
-  CellSwitch,
-  DataGrid,
-  NativeSelect,
-  NumberStepper,
-} from '@/components/heroui-pro';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import {
   admin_config_list_add,
@@ -46,40 +52,42 @@ import {
   readFieldValue,
   writeFieldValue,
 } from '@/p1/admin-config-field-model';
+import { IconMinus, IconPlus, IconTrash } from '@tabler/icons-react';
+import { useMemo } from 'react';
 
 /**
- * 选项在**当下**的运行时状态：哪个正在生效、哪个因为缺东西装不起来。
- * 这些不在契约里，由拿着配置行的控制器传进来；表单本身不认识运行时。
+ * Runtime-only option state: which option is active, which cannot mount.
+ * Not part of the contract; the owning controller passes this in.
  */
 export interface AdminConfigOptionMeta {
-  /** 装不起来的原因（缺凭据之类），有值即置灰。 */
+  /** Block reason (missing credentials, etc.); present → disabled. */
   blockedReason?: string;
-  /** 「HTTP · 当前生效」这类小标签。 */
+  /** Chips like "HTTP · active". */
   chips?: string[];
 }
 
 interface FieldViewProps {
   configKey: string;
-  /** 行内格子用更紧的控件，成表单的字段用常规控件。 */
+  /** Dense controls for grid cells; full-size controls for form fields. */
   dense?: boolean;
   disabled?: boolean;
   field: AdminConfigField;
   onChange: (next: unknown) => void;
   optionMeta?: (optionValue: string) => AdminConfigOptionMeta;
-  /** 解析后的真实路径（列表把模板里的下标换成行号）。 */
+  /** Resolved path (list rows replace the template index with the row index). */
   path: AdminConfigFieldPath;
   root: unknown;
 }
 
 /**
- * 控件的 DOM id 一律按解析后的路径算，不用 `field.id`——后者来自列表的模板
- * 路径（下标恒为 0），直接用会让每一行顶着同一个 id，`<label for>` 也指错。
+ * DOM ids always use the resolved path, never `field.id` — list templates
+ * pin index 0, so reusing field.id would collide across rows.
  */
 function domId(props: Pick<FieldViewProps, 'configKey' | 'path'>) {
   return adminConfigFieldId(props.configKey, props.path);
 }
 
-/** 列表模板里的下标占位换成真实行号。 */
+/** Replace list template index placeholders with the real row index. */
 function rowPath(
   listPath: AdminConfigFieldPath,
   index: number,
@@ -100,17 +108,18 @@ function BooleanField(props: FieldViewProps) {
   const { disabled, field, onChange, path, root } = props;
   const checked = readFieldValue(root, path) === true;
   return (
-    <CellSwitch.Root
-      data-testid={domId(props)}
-      isDisabled={disabled}
-      isSelected={checked}
-      onChange={(next) => onChange(writeFieldValue(root, path, next))}
-    >
-      <CellSwitch.Trigger>
-        <CellSwitch.Label>{field.label}</CellSwitch.Label>
-        <CellSwitch.Control />
-      </CellSwitch.Trigger>
-    </CellSwitch.Root>
+    <label className="flex items-center gap-2" htmlFor={domId(props)}>
+      <Switch
+        checked={checked}
+        data-testid={domId(props)}
+        disabled={disabled}
+        id={domId(props)}
+        onCheckedChange={(next) =>
+          onChange(writeFieldValue(root, path, next === true))
+        }
+      />
+      <span className="text-sm font-medium">{field.label}</span>
+    </label>
   );
 }
 
@@ -128,7 +137,7 @@ function EnumField(props: FieldViewProps) {
   if (field.kind !== 'enum') return null;
   const current = String(readFieldValue(root, path) ?? '');
 
-  // 整项就是一个枚举：几个选项并排，各自带解释与当下状态，让人能比较着选。
+  // Whole-field enum: options side-by-side with descriptions for comparison.
   if (field.presentation === 'radio' && !dense) {
     return (
       <fieldset className="space-y-3" data-testid={domId(props)}>
@@ -181,58 +190,40 @@ function EnumField(props: FieldViewProps) {
     );
   }
 
-  if (dense) {
-    return (
-      <CellSelect.Root
+  const select = (
+    <Select
+      disabled={disabled}
+      onValueChange={(next) => {
+        if (next == null) return;
+        onChange(writeFieldValue(root, path, String(next)));
+      }}
+      value={current || undefined}
+    >
+      <SelectTrigger
         aria-label={field.label}
-        isDisabled={disabled}
-        onSelectionChange={(next) =>
-          onChange(writeFieldValue(root, path, String(next)))
-        }
-        selectedKey={current}
+        className={dense ? 'h-8 w-full min-w-28 data-size:h-8' : 'w-full'}
+        data-testid={domId(props)}
+        id={dense ? undefined : domId(props)}
+        size={dense ? 'sm' : 'default'}
       >
-        <CellSelect.Trigger data-testid={domId(props)}>
-          <CellSelect.Value />
-          <CellSelect.Indicator />
-        </CellSelect.Trigger>
-        <CellSelect.Popover>
-          <ListBox>
-            {field.options.map((option) => (
-              <ListBox.Item
-                id={option.value}
-                key={option.value}
-                textValue={option.label}
-              >
-                {option.label}
-                <ListBox.ItemIndicator />
-              </ListBox.Item>
-            ))}
-          </ListBox>
-        </CellSelect.Popover>
-      </CellSelect.Root>
-    );
-  }
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {field.options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+
+  if (dense) return select;
 
   return (
     <div className="space-y-2">
       <Label htmlFor={domId(props)}>{field.label}</Label>
-      <NativeSelect.Root fullWidth>
-        <NativeSelect.Trigger
-          data-testid={domId(props)}
-          disabled={disabled}
-          id={domId(props)}
-          onChange={(event) =>
-            onChange(writeFieldValue(root, path, event.target.value))
-          }
-          value={current}
-        >
-          {field.options.map((option) => (
-            <NativeSelect.Option key={option.value} value={option.value}>
-              {option.label}
-            </NativeSelect.Option>
-          ))}
-        </NativeSelect.Trigger>
-      </NativeSelect.Root>
+      {select}
     </div>
   );
 }
@@ -242,49 +233,87 @@ function NumberField(props: FieldViewProps) {
   if (field.kind !== 'number') return null;
   const raw = readFieldValue(root, path);
   const current = typeof raw === 'number' ? raw : (field.min ?? 0);
-  const commit = (next: number) => onChange(writeFieldValue(root, path, next));
+  const step = field.integer ? 1 : 0.1;
+  const commit = (next: number) => {
+    let value = next;
+    if (field.min !== undefined) value = Math.max(field.min, value);
+    if (field.max !== undefined) value = Math.min(field.max, value);
+    if (field.integer) value = Math.round(value);
+    onChange(writeFieldValue(root, path, value));
+  };
 
   if (field.control === 'slider') {
     return (
       <div className="space-y-2" data-testid={domId(props)}>
-        <CellSlider.Root
+        <div className="flex items-center justify-between gap-2">
+          <Label>{field.label}</Label>
+          <span className="tabular-nums text-muted-foreground text-sm">
+            {current}
+          </span>
+        </div>
+        <Slider
           aria-label={field.label}
-          isDisabled={disabled}
-          maxValue={field.max}
-          minValue={field.min}
-          onChange={(next) => commit(Array.isArray(next) ? next[0] : next)}
+          disabled={disabled}
+          max={field.max}
+          min={field.min}
+          onValueChange={(next) => {
+            const value = Array.isArray(next) ? next[0] : next;
+            if (typeof value === 'number') commit(value);
+          }}
           step={field.integer ? 1 : undefined}
-          value={current}
-        >
-          <CellSlider.Label>{field.label}</CellSlider.Label>
-          <CellSlider.Output />
-          <CellSlider.Track>
-            <CellSlider.Fill />
-            <CellSlider.Thumb />
-          </CellSlider.Track>
-        </CellSlider.Root>
+          value={[current]}
+        />
       </div>
     );
   }
 
+  const atMin = field.min !== undefined && current <= field.min;
+  const atMax = field.max !== undefined && current >= field.max;
+
   return (
     <div className="space-y-2" data-testid={domId(props)}>
-      <Label>{field.label}</Label>
-      <NumberStepper.Root
-        aria-label={field.label}
-        isDisabled={disabled}
-        maxValue={field.max}
-        minValue={field.min}
-        onChange={commit}
-        step={field.integer ? 1 : undefined}
-        value={current}
+      <Label htmlFor={domId(props)}>{field.label}</Label>
+      <div
+        className="flex w-fit items-center gap-1"
+        data-slot="number-stepper"
       >
-        <NumberStepper.Group>
-          <NumberStepper.DecrementButton />
-          <NumberStepper.Value />
-          <NumberStepper.IncrementButton />
-        </NumberStepper.Group>
-      </NumberStepper.Root>
+        <Button
+          aria-label="decrement"
+          disabled={disabled || atMin}
+          onClick={() => commit(current - step)}
+          size="icon-sm"
+          type="button"
+          variant="outline"
+        >
+          <IconMinus />
+        </Button>
+        <Input
+          aria-label={field.label}
+          className="h-8 w-20 text-center tabular-nums"
+          disabled={disabled}
+          id={domId(props)}
+          inputMode={field.integer ? 'numeric' : 'decimal'}
+          max={field.max}
+          min={field.min}
+          onChange={(event) => {
+            const parsed = Number(event.target.value);
+            if (Number.isFinite(parsed)) commit(parsed);
+          }}
+          step={step}
+          type="number"
+          value={current}
+        />
+        <Button
+          aria-label="increment"
+          disabled={disabled || atMax}
+          onClick={() => commit(current + step)}
+          size="icon-sm"
+          type="button"
+          variant="outline"
+        >
+          <IconPlus />
+        </Button>
+      </div>
       {field.hint ? (
         <p className="text-muted-foreground text-xs">{field.hint}</p>
       ) : null}
@@ -330,8 +359,8 @@ function ToggleSetField(props: FieldViewProps) {
   if (field.kind !== 'toggle-set') return null;
   const raw = readFieldValue(root, path);
   const selected = new Set(Array.isArray(raw) ? raw.map(String) : []);
-  // 契约要求至少留几个，就真的关不掉最后那几个——只在下面写句提示、
-  // 让人关掉再被后端打回来，是把校验当成了说明书。
+  // Contract requires a minimum count — lock the last remaining options rather
+  // than letting the operator clear them and hit a backend validation error.
   const atMin = selected.size <= (field.minItems ?? 0);
   const toggle = (value: string, next: boolean) => {
     if (!next && atMin && selected.has(value)) return;
@@ -345,20 +374,22 @@ function ToggleSetField(props: FieldViewProps) {
     <fieldset className="space-y-2" data-testid={domId(props)}>
       <legend className="font-medium text-sm">{field.label}</legend>
       <div className="flex flex-wrap gap-3">
-        {field.options.map((option) => (
-          <CellSwitch.Root
-            data-testid={`${domId(props)}-${option.value}`}
-            isDisabled={disabled || (atMin && selected.has(option.value))}
-            isSelected={selected.has(option.value)}
-            key={option.value}
-            onChange={(next) => toggle(option.value, next)}
-          >
-            <CellSwitch.Trigger>
-              <CellSwitch.Label>{option.label}</CellSwitch.Label>
-              <CellSwitch.Control />
-            </CellSwitch.Trigger>
-          </CellSwitch.Root>
-        ))}
+        {field.options.map((option) => {
+          const locked = Boolean(atMin && selected.has(option.value));
+          const testId = `${domId(props)}-${option.value}`;
+          return (
+            <label className="flex items-center gap-2" htmlFor={testId} key={option.value}>
+              <Switch
+                checked={selected.has(option.value)}
+                data-testid={testId}
+                disabled={Boolean(disabled) || locked}
+                id={testId}
+                onCheckedChange={(next) => toggle(option.value, next === true)}
+              />
+              <span className="text-sm">{option.label}</span>
+            </label>
+          );
+        })}
       </div>
       {field.minItems ? (
         <p className="text-muted-foreground text-xs">
@@ -367,10 +398,6 @@ function ToggleSetField(props: FieldViewProps) {
       ) : null}
     </fieldset>
   );
-}
-
-interface GridRow {
-  __index: number;
 }
 
 function ListField(props: FieldViewProps) {
@@ -432,54 +459,53 @@ function ListField(props: FieldViewProps) {
   }
 
   if (field.layout === 'grid') {
-    const rows: GridRow[] = items.map((_, index) => ({ __index: index }));
-    const columns: DataGridColumn<GridRow>[] = [
-      ...field.itemFields.map((itemField, position) => ({
-        cell: (row: GridRow) => (
-          <FieldView
-            configKey={configKey}
-            dense
-            disabled={disabled}
-            field={itemField}
-            onChange={onChange}
-            path={rowPath(path, row.__index, itemField.path)}
-            root={root}
-          />
-        ),
-        header: itemField.label,
-        id: itemField.id,
-        isRowHeader: position === 0,
-      })),
-      {
-        align: 'end' as const,
-        cell: (row: GridRow) => (
-          <Button
-            data-testid={`${rowId(configKey, path, row.__index)}-remove`}
-            disabled={disabled || atMin}
-            onClick={() => removeRow(row.__index)}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            <IconTrash />
-            <span className="sr-only">{admin_config_list_remove()}</span>
-          </Button>
-        ),
-        header: '',
-        id: `${domId(props)}-actions`,
-      },
-    ];
-
     return (
       <div className="space-y-3" data-testid={domId(props)}>
         {header}
-        <DataGrid
-          aria-label={field.label}
-          columns={columns}
-          data={rows}
-          getRowId={(row) => row.__index}
-          verticalAlign="middle"
-        />
+        <Table aria-label={field.label} data-slot="data-grid">
+          <TableHeader>
+            <TableRow>
+              {field.itemFields.map((itemField) => (
+                <TableHead key={itemField.id}>{itemField.label}</TableHead>
+              ))}
+              <TableHead className="w-12 text-right">
+                <span className="sr-only">{admin_config_list_remove()}</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((_, index) => (
+              <TableRow key={rowId(configKey, path, index)}>
+                {field.itemFields.map((itemField) => (
+                  <TableCell className="align-middle whitespace-normal" key={itemField.id}>
+                    <FieldView
+                      configKey={configKey}
+                      dense
+                      disabled={disabled}
+                      field={itemField}
+                      onChange={onChange}
+                      path={rowPath(path, index, itemField.path)}
+                      root={root}
+                    />
+                  </TableCell>
+                ))}
+                <TableCell className="text-right align-middle">
+                  <Button
+                    data-testid={`${rowId(configKey, path, index)}-remove`}
+                    disabled={disabled || atMin}
+                    onClick={() => removeRow(index)}
+                    size="sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <IconTrash />
+                    <span className="sr-only">{admin_config_list_remove()}</span>
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </div>
     );
   }

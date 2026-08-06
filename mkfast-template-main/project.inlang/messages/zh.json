@@ -4163,5 +4163,7 @@
   "workspace_sample_isolation_note": "只显示本店自己上传或沉淀下来的素材。",
   "workspace_section_facts": "门店信息",
   "workspace_section_identities": "口吻",
-  "workspace_section_materials": "素材"
+  "workspace_section_materials": "素材",
+  "admin_skills_title": "Skills",
+  "admin_skills_description": "定义、受理冻结、绑定与回滚产品 Skill 版本。"
 }

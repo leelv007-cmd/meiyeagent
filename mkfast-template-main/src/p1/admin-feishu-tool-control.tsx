@@ -13,7 +13,14 @@ import {
 } from '@/components/reui/frame';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';;
 import { Separator } from '@/components/ui/separator';
 import {
   Table,
@@ -181,21 +188,25 @@ export function AdminFeishuToolControl() {
             <Label htmlFor="admin-feishu-connection">
               {p1_admin_feishu_connection()}
             </Label>
-            <select
-              className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-              id="admin-feishu-connection"
-              onChange={(event) => setConnectionId(event.target.value)}
-              value={connectionId}
+            <Select
+              onValueChange={(value) => {
+                if (value) setConnectionId(value);
+              }}
+              value={connectionId || undefined}
             >
-              {feishuConnections.length === 0 ? (
-                <option value="">{p1_admin_feishu_connection_empty()}</option>
-              ) : null}
-              {feishuConnections.map((connection) => (
-                <option key={connection.id} value={connection.id}>
-                  {connection.id} · {connection.status}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger className="w-full" id="admin-feishu-connection">
+                <SelectValue
+                  placeholder={p1_admin_feishu_connection_empty()}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {feishuConnections.map((connection) => (
+                  <SelectItem key={connection.id} value={connection.id}>
+                    {connection.id} · {connection.status}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <Button
             disabled={!connectionId || syncMutation.isPending}

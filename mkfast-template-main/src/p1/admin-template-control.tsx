@@ -24,7 +24,14 @@ import {
 } from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';;
 import {
   Table,
   TableBody,
@@ -511,21 +518,29 @@ export function AdminTemplateControl() {
                   <Label htmlFor="admin-template-family-filter">
                     {p1_admin_template_family_filter()}
                   </Label>
-                  <select
-                    className="h-9 rounded-md border bg-background px-3 text-sm"
-                    id="admin-template-family-filter"
-                    onChange={(event) => setFamilyFilter(event.target.value)}
+                  <Select
+                    onValueChange={(value) => {
+                      if (value) setFamilyFilter(value);
+                    }}
                     value={familyFilter}
                   >
-                    <option value="all">
-                      {p1_admin_template_family_all()}
-                    </option>
-                    {families.map((family) => (
-                      <option key={family} value={family}>
-                        {family}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger
+                      className="w-auto min-w-32"
+                      id="admin-template-family-filter"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">
+                        {p1_admin_template_family_all()}
+                      </SelectItem>
+                      {families.map((family) => (
+                        <SelectItem key={family} value={family}>
+                          {family}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <Button
                   disabled={catalogQuery.isFetching}

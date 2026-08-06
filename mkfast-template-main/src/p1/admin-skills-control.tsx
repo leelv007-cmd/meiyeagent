@@ -13,6 +13,13 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -990,17 +997,26 @@ export function AdminSkillsControl() {
           <div className="flex items-end gap-3 px-4 py-3">
             <div className="space-y-2">
               <Label htmlFor="skills-tier-filter">按层级筛选</Label>
-              <select
-                id="skills-tier-filter"
-                data-ops-control="select"
-                className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-                value={tierFilter}
-                onChange={(event) => setTierFilter(event.target.value)}
+              <Select
+                onValueChange={(value) => {
+                  if (value == null) return;
+                  setTierFilter(value === '__all__' ? '' : value);
+                }}
+                value={tierFilter || '__all__'}
               >
-                <option value="">全部</option>
-                <option value="platform">平台层</option>
-                <option value="industry">行业层</option>
-              </select>
+                <SelectTrigger
+                  className="w-auto min-w-32"
+                  data-ops-control="select"
+                  id="skills-tier-filter"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__all__">全部</SelectItem>
+                  <SelectItem value="platform">平台层</SelectItem>
+                  <SelectItem value="industry">行业层</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             {stats?.industryTierTotal ? (
               <p className="pb-2 text-sm text-muted-foreground">
@@ -1466,24 +1482,31 @@ export function AdminSkillsControl() {
         <FramePanel className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="skills-action">操作</Label>
-            <select
-              id="skills-action"
-              data-ops-control="select"
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-              value={action}
-              onChange={(event) => {
-                setAction(event.target.value as SkillAction);
+            <Select
+              onValueChange={(value) => {
+                if (!value) return;
+                setAction(value as SkillAction);
                 setValues({});
                 setError('');
                 setResult(null);
               }}
+              value={action}
             >
-              {ACTION_ORDER.map((value) => (
-                <option key={value} value={value}>
-                  {COMMAND_FORMS[value].label}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger
+                className="w-full"
+                data-ops-control="select"
+                id="skills-action"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ACTION_ORDER.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {COMMAND_FORMS[value].label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {form.fields.map((field) => (
@@ -1499,46 +1522,58 @@ export function AdminSkillsControl() {
                   {field.label}
                 </Label>
                 {field.kind === 'select' ? (
-                  <select
-                    id={`skills-field-${field.key}`}
-                    data-ops-control="select"
-                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={values[field.key] ?? ''}
-                    onChange={(event) =>
+                  <Select
+                    onValueChange={(value) => {
+                      if (value == null) return;
                       setValues((current) => ({
                         ...current,
-                        [field.key]: event.target.value,
-                      }))
-                    }
+                        [field.key]: value,
+                      }));
+                    }}
+                    value={values[field.key] || undefined}
                   >
-                    <option value="">请选择</option>
-                    {field.options?.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger
+                      className="w-full"
+                      data-ops-control="select"
+                      id={`skills-field-${field.key}`}
+                    >
+                      <SelectValue placeholder="请选择" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {field.options?.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 ) : field.kind === 'workflow_select' ? (
-                  <select
-                    id={`skills-field-${field.key}`}
-                    data-ops-control="select"
-                    data-testid={`skills-field-${field.key}`}
-                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={values[field.key] ?? ''}
-                    onChange={(event) =>
+                  <Select
+                    onValueChange={(value) => {
+                      if (value == null) return;
                       setValues((current) => ({
                         ...current,
-                        [field.key]: event.target.value,
-                      }))
-                    }
+                        [field.key]: value,
+                      }));
+                    }}
+                    value={values[field.key] || undefined}
                   >
-                    <option value="">请选择已发布工作流</option>
-                    {publishedWorkflowRevisionRefs.map((ref) => (
-                      <option key={ref} value={ref}>
-                        {ref}
-                      </option>
-                    ))}
-                  </select>
+                    <SelectTrigger
+                      className="w-full"
+                      data-ops-control="select"
+                      data-testid={`skills-field-${field.key}`}
+                      id={`skills-field-${field.key}`}
+                    >
+                      <SelectValue placeholder="请选择已发布工作流" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {publishedWorkflowRevisionRefs.map((ref) => (
+                        <SelectItem key={ref} value={ref}>
+                          {ref}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 ) : field.kind === 'workflow_multi' ? (
                   <div
                     className="max-h-48 space-y-2 overflow-y-auto rounded-md border p-3"

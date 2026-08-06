@@ -15,7 +15,14 @@ import {
   FramePanel,
   FrameTitle,
 } from '@/components/reui/frame';
-import { Button } from '@/components/ui/button';
+import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';;
 import { FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
@@ -280,31 +287,38 @@ export function AdminPlanReferenceNumbersControl() {
                 last={index === categories.length - 1}
                 title={`${categoryLabel(category)}参考模型`}
               >
-                <select
-                  className="h-touch-target w-full rounded-lg border border-divider bg-surface-1 px-2.5 text-sm"
-                  id={`reference-model-${category}`}
-                  onChange={(event) => {
+                <Select
+                  onValueChange={(value) => {
+                    if (!value) return;
                     setDraft({
                       ...draft,
                       referenceModels: {
                         ...draft.referenceModels,
-                        [category]: event.target.value,
+                        [category]: value,
                       },
                     });
                     setError(undefined);
                   }}
-                  value={draft.referenceModels[category]}
+                  value={draft.referenceModels[category] || undefined}
                 >
-                  {models
-                    .filter((model) =>
-                      model.operations.includes(operationFor(category))
-                    )
-                    .map((model) => (
-                      <option key={model.id} value={model.id}>
-                        {model.displayName}
-                      </option>
-                    ))}
-                </select>
+                  <SelectTrigger
+                    className="w-full"
+                    id={`reference-model-${category}`}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models
+                      .filter((model) =>
+                        model.operations.includes(operationFor(category))
+                      )
+                      .map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.displayName}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
               </SettingField>
             ))}
           </FieldGroup>

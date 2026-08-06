@@ -4163,5 +4163,7 @@
   "workspace_sample_isolation_note": "Only material this store uploaded or captured.",
   "workspace_section_facts": "Shop details",
   "workspace_section_identities": "Voices",
-  "workspace_section_materials": "Materials"
+  "workspace_section_materials": "Materials",
+  "admin_skills_title": "Skills",
+  "admin_skills_description": "Define, accept-freeze, bind, and roll back product Skill versions."
 }

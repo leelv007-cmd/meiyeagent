@@ -155,3 +155,23 @@ test('association view control is import-stable for all five ids', () => {
     assert.match(html, /data-testid="supply-association-projection"/);
   }
 });
+
+/**
+ * #387 restyle residual: the page header already shows
+ * 「五关联视图 · {viewId}」; the panel body must not repeat that same title.
+ */
+test('association view panel does not repeat the page header title', () => {
+  for (const viewId of ASSOCIATION_VIEW_IDS) {
+    const html = renderToStaticMarkup(
+      <AdminSupplyAssociationView
+        snapshot={buildDefaultSupplyControlSnapshot()}
+        viewId={viewId}
+      />
+    );
+    assert.match(html, /data-testid="supply-association-views-panel"/);
+    assert.doesNotMatch(html, /五关联视图 ·/);
+    // Nav and projections remain.
+    assert.match(html, /data-testid="supply-association-nav"/);
+    assert.match(html, /data-testid="supply-association-projection"/);
+  }
+});

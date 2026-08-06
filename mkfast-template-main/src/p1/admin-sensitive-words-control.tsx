@@ -24,6 +24,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Table,
   TableBody,
   TableCell,
@@ -206,25 +213,31 @@ export function AdminSensitiveWordsControl() {
               </div>
               <div className="space-y-1">
                 <Label htmlFor="sw-category">分类</Label>
-                <select
-                  id="sw-category"
-                  className="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
-                  value={draft.category}
-                  onChange={(event) =>
+                <Select
+                  onValueChange={(value) => {
+                    if (!value) return;
                     setDraft((current) => ({
                       ...current,
-                      category: event.target
-                        .value as AdminSensitiveWordDraft['category'],
-                    }))
-                  }
-                  data-testid="admin-sensitive-words-category"
+                      category: value as AdminSensitiveWordDraft['category'],
+                    }));
+                  }}
+                  value={draft.category}
                 >
-                  {ADMIN_SENSITIVE_WORD_CATEGORIES.map((category) => (
-                    <option key={category} value={category}>
-                      {categoryLabel(category)}
-                    </option>
-                  ))}
-                </select>
+                  <SelectTrigger
+                    className="w-full"
+                    data-testid="admin-sensitive-words-category"
+                    id="sw-category"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ADMIN_SENSITIVE_WORD_CATEGORIES.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {categoryLabel(category)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1 md:col-span-2">
                 <Label htmlFor="sw-replacements">替换建议（逗号分隔）</Label>
