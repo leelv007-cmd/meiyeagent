@@ -41,6 +41,8 @@ const CONFIG_PUBLISH_ACTIONS_WITHOUT_STEP_UP = new Set([
   'admin-config.config_history',
   'admin-config.config_list',
   'creation-experience.recipe_draft',
+  // Spec D3 / #372 — iterative governed save (not publication).
+  'creation-experience.recipe_governance_save',
   'creation-experience.recipe_get',
   'creation-experience.recipe_history',
   'creation-experience.recipe_published_revisions',

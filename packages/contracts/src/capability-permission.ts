@@ -368,6 +368,8 @@ export function requiredP1Capability(
     }
     return new Set([
       'recipe_draft',
+      // Spec D3 / #372 — Templates governed save (compile → validate).
+      'recipe_governance_save',
       'recipe_preview',
       'recipe_publish',
       'recipe_rollback',

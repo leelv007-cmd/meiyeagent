@@ -119,6 +119,7 @@ describe('route-level recent authentication', () => {
 
     for (const [module, action] of [
       ['creation-experience', 'recipe_draft'],
+      ['creation-experience', 'recipe_governance_save'],
       ['creation-experience', 'recipe_get'],
       ['creation-experience', 'recipe_history'],
       ['creation-experience', 'recipe_published_revisions'],

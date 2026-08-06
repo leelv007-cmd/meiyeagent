@@ -40,6 +40,24 @@ const defaultApi: CreationExperienceAdminApi = {
     commandP1('creation-experience', { action, payload }, idempotencyKey),
 };
 
+/** Server compilation receipt attached by recipe_governance_save (never client-built). */
+type RecipeCompilationReceipt = {
+  receiptId: string;
+  compiledAt?: string;
+  industryKey: string;
+  promptRevisionRef: string;
+  skillRevisionRefs: string[];
+  workflowRevisionRef?: string;
+  outputContractRef?: string;
+  quotePolicyRevisionRef?: string;
+};
+
+type RecipeStudioReleaseProjection = {
+  phase: string;
+  compilationReceipt?: RecipeCompilationReceipt;
+  validation?: { checkedAt?: string; passed?: boolean } | null;
+};
+
 type RecipeRecord = {
   recipeId: string;
   revision: number;
@@ -68,7 +86,34 @@ type RecipeRecord = {
   skillRevisionRefs?: string[];
   targetWorkspaceKind: CreationLensId;
   rolledBackToRevision?: number | null;
+  /** Server-only release evidence; present on admin command responses / heads. */
+  studioRelease?: RecipeStudioReleaseProjection;
 };
+
+/**
+ * Deterministic defaults for governance-only fields that lack dedicated editors
+ * in this ticket (pass-through / create defaults — Spec D3 / #372).
+ * industryKey is never inferred from lens.
+ */
+const RECIPE_GOVERNANCE_DEFAULTS = {
+  industryKey: 'beauty_general',
+  workflowRevisionRef: 'workflow.recipe-studio@1',
+  outputContractRef: 'output.image-text-note@1',
+  quotePolicyRevisionRef: 'quote.policy@1',
+  intentTypes: ['daily_exposure'] as string[],
+  storySegments: [
+    'pain_point',
+    'professional_insight',
+    'service_solution',
+    'cta',
+  ] as string[],
+  candidateStrategy: 'dual_style_user_choice' as
+    | 'single_primary'
+    | 'dual_style_user_choice',
+};
+
+type GovernanceCandidateStrategy =
+  (typeof RECIPE_GOVERNANCE_DEFAULTS)['candidateStrategy'];
 
 type RecipeDelivery = {
   contentPackagePlatform: string;
@@ -122,6 +167,30 @@ function defaultRecipeDelivery(lensId: CreationLensId): RecipeDelivery {
     aspectRatio: '3:4',
     notePageBound: 3,
   };
+}
+
+/** Map structured delivery controls to governance outputKind (not lens-guessing). */
+function outputKindFromDelivery(delivery: RecipeDelivery): string {
+  if (delivery.deliverableKind === 'copy_document') return 'copy';
+  if (delivery.deliverableKind === 'video_package') return 'video';
+  if (delivery.deliverableKind === 'note') return 'image_text_note';
+  return 'image_text_note';
+}
+
+function stringArrayField(value: unknown, fallback: string[]): string[] {
+  if (!Array.isArray(value)) return [...fallback];
+  const items = value.filter(
+    (item): item is string => typeof item === 'string' && item.trim().length > 0
+  );
+  return items.length > 0 ? items.map((item) => item.trim()) : [...fallback];
+}
+
+function readRecipeStudioPlan(contextPatches?: Record<string, unknown>) {
+  const plan = contextPatches?.recipeStudioPlan;
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+    return null;
+  }
+  return plan as Record<string, unknown>;
 }
 
 function idempotencyKey(action: string, id: string) {
@@ -212,6 +281,37 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
   const [reason, setReason] = useState('');
   const [factTypes, setFactTypes] = useState<string[]>([]);
   const [skillRevisionRefs, setSkillRevisionRefs] = useState<string[]>([]);
+  // Governance-only pass-through (no dedicated editors this ticket — Spec D3).
+  const [industryKey, setIndustryKey] = useState(
+    RECIPE_GOVERNANCE_DEFAULTS.industryKey
+  );
+  const [workflowRevisionRef, setWorkflowRevisionRef] = useState(
+    RECIPE_GOVERNANCE_DEFAULTS.workflowRevisionRef
+  );
+  const [outputContractRef, setOutputContractRef] = useState(
+    RECIPE_GOVERNANCE_DEFAULTS.outputContractRef
+  );
+  const [quotePolicyRevisionRef, setQuotePolicyRevisionRef] = useState(
+    RECIPE_GOVERNANCE_DEFAULTS.quotePolicyRevisionRef
+  );
+  const [intentTypes, setIntentTypes] = useState<string[]>([
+    ...RECIPE_GOVERNANCE_DEFAULTS.intentTypes,
+  ]);
+  const [storySegments, setStorySegments] = useState<string[]>([
+    ...RECIPE_GOVERNANCE_DEFAULTS.storySegments,
+  ]);
+  const [candidateStrategy, setCandidateStrategy] =
+    useState<GovernanceCandidateStrategy>(
+      RECIPE_GOVERNANCE_DEFAULTS.candidateStrategy
+    );
+  const [sourceRequirements, setSourceRequirements] = useState<
+    Array<Record<string, unknown>>
+  >([]);
+  const [outputKind, setOutputKind] = useState(() =>
+    outputKindFromDelivery(defaultRecipeDelivery('image_text'))
+  );
+  const [studioRelease, setStudioRelease] =
+    useState<RecipeStudioReleaseProjection | null>(null);
   const [head, setHead] = useState<RecipeRecord | null>(null);
   const [history, setHistory] = useState<RecipeRecord[]>([]);
   const [rollbackRevision, setRollbackRevision] = useState('');
@@ -220,16 +320,17 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
   const operationInFlight = useRef(false);
 
   const hydrate = (record: RecipeRecord) => {
+    const nextDelivery = {
+      ...defaultRecipeDelivery(record.lensId),
+      ...(record.delivery as Partial<RecipeDelivery>),
+    };
     setLensId(record.lensId);
     setTitle(record.presentation.title);
     setSummary(record.presentation.summary);
     setPromptRevisionRef(record.promptRevisionRef);
     setModelMode(record.modelPolicy.mode);
     setCatalogModelId(record.modelPolicy.catalogModelId ?? '');
-    setDelivery({
-      ...defaultRecipeDelivery(record.lensId),
-      ...(record.delivery as Partial<RecipeDelivery>),
-    });
+    setDelivery(nextDelivery);
     // Carry server bindings into edit state (no dedicated UI — still round-trip).
     setFactTypes(
       Array.isArray(record.factTypes) ? [...record.factTypes] : []
@@ -239,6 +340,51 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
         ? [...record.skillRevisionRefs]
         : []
     );
+    setSourceRequirements(
+      Array.isArray(record.sourceRequirements)
+        ? record.sourceRequirements.map((item) => ({ ...item }))
+        : []
+    );
+    const plan = readRecipeStudioPlan(record.contextPatches);
+    setIndustryKey(
+      typeof plan?.industryKey === 'string' && plan.industryKey.trim()
+        ? plan.industryKey.trim()
+        : RECIPE_GOVERNANCE_DEFAULTS.industryKey
+    );
+    setIntentTypes(
+      stringArrayField(plan?.intentTypes, RECIPE_GOVERNANCE_DEFAULTS.intentTypes)
+    );
+    setStorySegments(
+      stringArrayField(
+        plan?.storySegments,
+        RECIPE_GOVERNANCE_DEFAULTS.storySegments
+      )
+    );
+    const settings = record.settingsPatches ?? {};
+    const strategy = settings.candidateStrategy;
+    setCandidateStrategy(
+      strategy === 'single_primary' || strategy === 'dual_style_user_choice'
+        ? strategy
+        : RECIPE_GOVERNANCE_DEFAULTS.candidateStrategy
+    );
+    setOutputKind(
+      typeof settings.outputKind === 'string' && settings.outputKind.trim()
+        ? settings.outputKind.trim()
+        : outputKindFromDelivery(nextDelivery)
+    );
+    setWorkflowRevisionRef(
+      record.workflowRevisionRef?.trim() ||
+        RECIPE_GOVERNANCE_DEFAULTS.workflowRevisionRef
+    );
+    setOutputContractRef(
+      record.outputContractRef?.trim() ||
+        RECIPE_GOVERNANCE_DEFAULTS.outputContractRef
+    );
+    setQuotePolicyRevisionRef(
+      record.quotePolicyRevisionRef?.trim() ||
+        RECIPE_GOVERNANCE_DEFAULTS.quotePolicyRevisionRef
+    );
+    setStudioRelease(record.studioRelease ?? null);
   };
 
   const refreshHistory = async () => {
@@ -325,6 +471,8 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
       setError('请填写变更原因。');
       return;
     }
+    // Plain draft path remains for title/binding round-trips (#361). Governed
+    // compile+validate uses recipe_governance_save separately (Spec D3 / #372).
     void execute('recipe_draft', {
       recipeId: normalizedId,
       expectedRevision: head?.revision ?? null,
@@ -343,7 +491,10 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
         delivery,
         contextPatches: head?.contextPatches ?? {},
         factTypes,
-        sourceRequirements: head?.sourceRequirements ?? [],
+        sourceRequirements:
+          sourceRequirements.length > 0
+            ? sourceRequirements
+            : (head?.sourceRequirements ?? []),
         modelPolicy: {
           mode: modelMode,
           ...(modelMode === 'fixed' && catalogModelId.trim()
@@ -365,6 +516,105 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
         targetWorkspaceKind: lensId,
       },
     });
+  };
+
+  /**
+   * Build RecipeGovernanceFormInput-shaped payload from structured controls +
+   * pass-through governance fields. Never includes studioRelease / passed /
+   * hiddenPromptBody / blocks / evalRun (server-only).
+   */
+  const buildGovernanceFormPayload = (
+    normalizedId: string
+  ): AdminPayload => {
+    const presentation: Record<string, string> = {
+      title: title.trim(),
+      summary: summary.trim(),
+    };
+    const actionLabel = head?.presentation.actionLabel?.trim();
+    if (actionLabel) presentation.actionLabel = actionLabel;
+
+    const modelPolicy: Record<string, string> = { mode: modelMode };
+    if (modelMode === 'fixed' && catalogModelId.trim()) {
+      modelPolicy.catalogModelId = catalogModelId.trim();
+    }
+
+    const output: Record<string, unknown> = {
+      outputKind,
+      quantity: delivery.quantity,
+      deliverableKind: delivery.deliverableKind,
+    };
+    if (delivery.aspectRatio?.trim()) {
+      output.aspectRatio = delivery.aspectRatio.trim();
+    }
+    if (typeof delivery.durationSeconds === 'number') {
+      output.durationSeconds = delivery.durationSeconds;
+    }
+    if (typeof delivery.notePageBound === 'number') {
+      output.notePageBound = delivery.notePageBound;
+    }
+
+    const payload: AdminPayload = {
+      recipeId: normalizedId,
+      expectedRevision: head?.revision ?? null,
+      reason: reason.trim(),
+      industryKey: industryKey.trim() || RECIPE_GOVERNANCE_DEFAULTS.industryKey,
+      presentation,
+      modelPolicy,
+      promptRevisionRef: promptRevisionRef.trim(),
+      skillRevisionRefs: [...skillRevisionRefs],
+      workflowRevisionRef:
+        workflowRevisionRef.trim() ||
+        RECIPE_GOVERNANCE_DEFAULTS.workflowRevisionRef,
+      outputContractRef:
+        outputContractRef.trim() || RECIPE_GOVERNANCE_DEFAULTS.outputContractRef,
+      quotePolicyRevisionRef:
+        quotePolicyRevisionRef.trim() ||
+        RECIPE_GOVERNANCE_DEFAULTS.quotePolicyRevisionRef,
+      factTypes: [...factTypes],
+      sourceRequirements: sourceRequirements.map((item) => ({ ...item })),
+      intentTypes: [...intentTypes],
+      storySegments: [...storySegments],
+      output,
+      candidateStrategy,
+      platform: {
+        contentPackagePlatform: delivery.contentPackagePlatform,
+        distributionTarget: delivery.distributionTarget,
+      },
+    };
+
+    if (head?.familyId?.trim()) {
+      payload.familyId = head.familyId.trim();
+    }
+    if (head?.contextPatches && Object.keys(head.contextPatches).length > 0) {
+      payload.contextPatches = structuredClone(head.contextPatches);
+    }
+    if (head?.settingsPatches && Object.keys(head.settingsPatches).length > 0) {
+      payload.settingsPatches = structuredClone(head.settingsPatches);
+    }
+
+    return payload;
+  };
+
+  const governanceSave = () => {
+    const normalizedId = recipeId.trim();
+    if (
+      !normalizedId ||
+      !title.trim() ||
+      !summary.trim() ||
+      !promptRevisionRef.trim()
+    ) {
+      setError('请填写 Recipe ID、标题、摘要和 Prompt revision。');
+      return;
+    }
+    if (modelMode === 'fixed' && !catalogModelId.trim()) {
+      setError('固定模型策略需要填写 Catalog model ID。');
+      return;
+    }
+    if (!reason.trim()) {
+      setError('请填写变更原因。');
+      return;
+    }
+    void execute('recipe_governance_save', buildGovernanceFormPayload(normalizedId));
   };
 
   const transition = async (action: 'recipe_preview' | 'recipe_publish') => {
@@ -613,6 +863,15 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
             </Button>
             <Button
               type="button"
+              variant="outline"
+              disabled={busy}
+              data-testid="recipe-governance-save"
+              onClick={governanceSave}
+            >
+              治理保存 Recipe
+            </Button>
+            <Button
+              type="button"
               variant="secondary"
               disabled={
                 busy || !head || !['draft', 'preview'].includes(head.status)
@@ -682,6 +941,33 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
             </Button>
           </FramePanel>
         </Frame>
+        {studioRelease?.compilationReceipt ? (
+          <Frame dense headingLevel={3} data-testid="recipe-compilation-receipt">
+            <FrameHeader>
+              <FrameTitle>编译回执</FrameTitle>
+              <FrameDescription>
+                Server-issued compile/validate receipt (read-only).
+              </FrameDescription>
+            </FrameHeader>
+            <FramePanel className="space-y-1 text-sm">
+              <p data-testid="recipe-studio-phase">
+                phase: {studioRelease.phase}
+              </p>
+              <p>
+                industry: {studioRelease.compilationReceipt.industryKey}
+              </p>
+              <p className="break-all">
+                receipt: {studioRelease.compilationReceipt.receiptId}
+              </p>
+              <p className="break-all">
+                prompt: {studioRelease.compilationReceipt.promptRevisionRef}
+              </p>
+              {studioRelease.validation?.passed ? (
+                <p data-testid="recipe-validation-passed">validation: passed</p>
+              ) : null}
+            </FramePanel>
+          </Frame>
+        ) : null}
         <LifecycleHistory history={history} />
       </div>
     </div>

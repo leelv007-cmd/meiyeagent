@@ -163,6 +163,361 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     );
   });
 
+  it('submits recipe_governance_save with form payload and renders compilation receipt (#372)', async () => {
+    const user = userEvent.setup();
+    const api: CreationExperienceAdminApi = {
+      query: vi.fn(async () => null),
+      command: vi.fn(async (action, payload) => {
+        if (action !== 'recipe_governance_save') {
+          throw new Error(`unexpected action ${action}`);
+        }
+        const recipeId = String(payload.recipeId);
+        return {
+          recipeId,
+          revision: 2,
+          revisionId: `${recipeId}@2`,
+          status: 'draft',
+          lensId: 'image_text',
+          presentation: payload.presentation,
+          delivery: {
+            contentPackagePlatform: (
+              payload.platform as { contentPackagePlatform: string }
+            ).contentPackagePlatform,
+            distributionTarget: (
+              payload.platform as { distributionTarget: string }
+            ).distributionTarget,
+            deliverableKind: 'note',
+            quantity: 1,
+            aspectRatio: '3:4',
+            notePageBound: 3,
+          },
+          contextPatches: {
+            recipeStudioPlan: {
+              industryKey: payload.industryKey,
+              intentTypes: payload.intentTypes,
+              storySegments: payload.storySegments,
+            },
+          },
+          factTypes: payload.factTypes,
+          sourceRequirements: payload.sourceRequirements,
+          modelPolicy: payload.modelPolicy,
+          settingsPatches: {
+            candidateStrategy: payload.candidateStrategy,
+            outputKind: (payload.output as { outputKind: string }).outputKind,
+          },
+          outputContractRef: payload.outputContractRef,
+          quotePolicyRevisionRef: payload.quotePolicyRevisionRef,
+          workflowRevisionRef: payload.workflowRevisionRef,
+          promptRevisionRef: payload.promptRevisionRef,
+          skillRevisionRefs: payload.skillRevisionRefs,
+          targetWorkspaceKind: 'image_text',
+          rolledBackToRevision: null,
+          studioRelease: {
+            phase: 'validated',
+            compilationReceipt: {
+              receiptId: 'receipt-gov-demo-1',
+              compiledAt: '2026-08-06T12:00:00.000Z',
+              industryKey: String(payload.industryKey),
+              promptRevisionRef: String(payload.promptRevisionRef),
+              skillRevisionRefs: payload.skillRevisionRefs as string[],
+              workflowRevisionRef: String(payload.workflowRevisionRef),
+              outputContractRef: String(payload.outputContractRef),
+              quotePolicyRevisionRef: String(payload.quotePolicyRevisionRef),
+            },
+            validation: {
+              checkedAt: '2026-08-06T12:00:01.000Z',
+              passed: true,
+            },
+          },
+        };
+      }),
+    };
+
+    render(<AdminCreationExperienceControl api={api} />);
+
+    await user.type(screen.getByLabelText('Recipe ID'), 'recipe.gov.demo');
+    await user.type(screen.getByLabelText('标题'), '治理保存示例');
+    await user.type(screen.getByLabelText('摘要'), '结构化表单提交治理保存');
+    await user.type(
+      screen.getByLabelText('Prompt revision'),
+      'prompt.gov.demo@1'
+    );
+    await user.type(screen.getByLabelText('变更原因'), '验收治理保存回执');
+    await user.click(
+      screen.getByRole('button', { name: '治理保存 Recipe' })
+    );
+
+    expect(
+      await screen.findByTestId('recipe-lifecycle-status')
+    ).toHaveTextContent('draft · r2');
+    expect(screen.getByTestId('recipe-compilation-receipt')).toBeInTheDocument();
+    expect(screen.getByTestId('recipe-studio-phase')).toHaveTextContent(
+      'phase: validated'
+    );
+    expect(screen.getByTestId('recipe-validation-passed')).toHaveTextContent(
+      'validation: passed'
+    );
+    expect(screen.getByTestId('recipe-compilation-receipt')).toHaveTextContent(
+      'receipt-gov-demo-1'
+    );
+    expect(screen.getByTestId('recipe-compilation-receipt')).toHaveTextContent(
+      'beauty_general'
+    );
+
+    expect(api.command).toHaveBeenCalledWith(
+      'recipe_governance_save',
+      expect.objectContaining({
+        recipeId: 'recipe.gov.demo',
+        expectedRevision: null,
+        reason: '验收治理保存回执',
+        industryKey: 'beauty_general',
+        presentation: expect.objectContaining({
+          title: '治理保存示例',
+          summary: '结构化表单提交治理保存',
+        }),
+        modelPolicy: { mode: 'auto' },
+        promptRevisionRef: 'prompt.gov.demo@1',
+        skillRevisionRefs: [],
+        workflowRevisionRef: 'workflow.recipe-studio@1',
+        outputContractRef: 'output.image-text-note@1',
+        quotePolicyRevisionRef: 'quote.policy@1',
+        factTypes: [],
+        sourceRequirements: [],
+        intentTypes: ['daily_exposure'],
+        storySegments: [
+          'pain_point',
+          'professional_insight',
+          'service_solution',
+          'cta',
+        ],
+        output: expect.objectContaining({
+          outputKind: 'image_text_note',
+          quantity: 1,
+          deliverableKind: 'note',
+          aspectRatio: '3:4',
+          notePageBound: 3,
+        }),
+        candidateStrategy: 'dual_style_user_choice',
+        platform: {
+          contentPackagePlatform: 'xiaohongshu',
+          distributionTarget: 'export',
+        },
+      }),
+      expect.any(String)
+    );
+
+    const submitted = (api.command as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[1] as Record<string, unknown>;
+    expect(submitted).not.toHaveProperty('studioRelease');
+    expect(submitted).not.toHaveProperty('passed');
+    expect(submitted).not.toHaveProperty('hiddenPromptBody');
+    expect(submitted).not.toHaveProperty('blocks');
+    expect(submitted).not.toHaveProperty('evalRun');
+    expect(submitted).not.toHaveProperty('body');
+  });
+
+  it('surfaces a stable Core error when recipe_governance_save fails (#372)', async () => {
+    const user = userEvent.setup();
+    const stableMessage =
+      'Skill revision skill.missing@1 is not frozen for production.';
+    const api: CreationExperienceAdminApi = {
+      query: vi.fn(async () => null),
+      command: vi.fn(async (action) => {
+        if (action === 'recipe_governance_save') {
+          throw new Error(stableMessage);
+        }
+        throw new Error(`unexpected action ${action}`);
+      }),
+    };
+
+    render(<AdminCreationExperienceControl api={api} />);
+
+    await user.type(screen.getByLabelText('Recipe ID'), 'recipe.gov.fail');
+    await user.type(screen.getByLabelText('标题'), '失败路径');
+    await user.type(screen.getByLabelText('摘要'), '稳定错误应显示在表单');
+    await user.type(
+      screen.getByLabelText('Prompt revision'),
+      'prompt.gov.fail@1'
+    );
+    await user.type(screen.getByLabelText('变更原因'), '验收错误表面');
+    await user.click(
+      screen.getByRole('button', { name: '治理保存 Recipe' })
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(stableMessage);
+    expect(
+      screen.queryByTestId('recipe-compilation-receipt')
+    ).not.toBeInTheDocument();
+    expect(api.command).toHaveBeenCalledWith(
+      'recipe_governance_save',
+      expect.objectContaining({
+        recipeId: 'recipe.gov.fail',
+        industryKey: 'beauty_general',
+      }),
+      expect.any(String)
+    );
+  });
+
+  it('hydrates governance fields from Recipe head before governed save (#372)', async () => {
+    const user = userEvent.setup();
+    const recipeId = 'recipe.gov.hydrate';
+    const seedHead = {
+      recipeId,
+      revision: 5,
+      revisionId: `${recipeId}@5`,
+      status: 'draft',
+      lensId: 'image_text',
+      familyId: 'education_note',
+      presentation: {
+        title: '已有治理配方',
+        summary: '从 head 回填',
+        actionLabel: '选择图文并套用',
+      },
+      delivery: {
+        contentPackagePlatform: 'xiaohongshu',
+        distributionTarget: 'export',
+        deliverableKind: 'note',
+        quantity: 1,
+        aspectRatio: '3:4',
+        notePageBound: 3,
+      },
+      contextPatches: {
+        tone: 'professional',
+        recipeStudioPlan: {
+          industryKey: 'hair_care',
+          intentTypes: ['conversion'],
+          storySegments: ['pain_point', 'cta'],
+        },
+      },
+      factTypes: ['service'],
+      sourceRequirements: [{ slot: 'store_facts', required: true }],
+      modelPolicy: { mode: 'auto' },
+      settingsPatches: {
+        locale: 'zh-CN',
+        candidateStrategy: 'single_primary',
+        outputKind: 'image_text_note',
+      },
+      outputContractRef: 'output.image-text-note@4',
+      quotePolicyRevisionRef: 'quote.policy@5',
+      workflowRevisionRef: 'workflow.recipe-studio@2',
+      promptRevisionRef: 'prompt.hydrate@12',
+      skillRevisionRefs: ['skill.bound@3'],
+      targetWorkspaceKind: 'image_text',
+      rolledBackToRevision: null,
+      studioRelease: {
+        phase: 'validated',
+        compilationReceipt: {
+          receiptId: 'receipt-hydrate-5',
+          industryKey: 'hair_care',
+          promptRevisionRef: 'prompt.hydrate@12',
+          skillRevisionRefs: ['skill.bound@3'],
+        },
+        validation: { passed: true, checkedAt: '2026-08-06T10:00:00.000Z' },
+      },
+    };
+
+    const histories = new Map<string, Array<Record<string, unknown>>>([
+      [`recipe:${recipeId}`, [seedHead]],
+    ]);
+    const heads = new Map<string, Record<string, unknown>>([
+      [`recipe:${recipeId}`, seedHead],
+    ]);
+    const api: CreationExperienceAdminApi = {
+      query: vi.fn(async (action, payload) => {
+        const id = String(payload.recipeId);
+        const key = `recipe:${id}`;
+        if (action === 'recipe_history') return histories.get(key) ?? [];
+        if (action === 'recipe_validate') return { ok: true, errors: [] };
+        return heads.get(key) ?? null;
+      }),
+      command: vi.fn(async (action, payload) => {
+        if (action !== 'recipe_governance_save') {
+          throw new Error(`unexpected action ${action}`);
+        }
+        const id = String(payload.recipeId);
+        const key = `recipe:${id}`;
+        const previous = heads.get(key);
+        const revision = Number(previous?.revision ?? 0) + 2;
+        const record = {
+          ...seedHead,
+          presentation: payload.presentation,
+          factTypes: payload.factTypes,
+          skillRevisionRefs: payload.skillRevisionRefs,
+          promptRevisionRef: payload.promptRevisionRef,
+          industryKey: payload.industryKey,
+          revision,
+          revisionId: `${id}@${revision}`,
+          status: 'draft',
+          studioRelease: {
+            phase: 'validated',
+            compilationReceipt: {
+              receiptId: 'receipt-hydrate-next',
+              industryKey: String(payload.industryKey),
+              promptRevisionRef: String(payload.promptRevisionRef),
+              skillRevisionRefs: payload.skillRevisionRefs as string[],
+            },
+            validation: { passed: true },
+          },
+        };
+        heads.set(key, record);
+        return record;
+      }),
+    };
+
+    render(<AdminCreationExperienceControl api={api} />);
+
+    await user.type(screen.getByLabelText('Recipe ID'), recipeId);
+    await user.click(screen.getByRole('button', { name: '加载 Recipe' }));
+    expect(
+      await screen.findByTestId('recipe-lifecycle-status')
+    ).toHaveTextContent('draft · r5');
+    expect(screen.getByTestId('recipe-compilation-receipt')).toHaveTextContent(
+      'hair_care'
+    );
+
+    await user.clear(screen.getByLabelText('标题'));
+    await user.type(screen.getByLabelText('标题'), '回填后改标题');
+    await user.type(screen.getByLabelText('变更原因'), '治理保存回填验收');
+    await user.click(
+      screen.getByRole('button', { name: '治理保存 Recipe' })
+    );
+
+    expect(
+      await screen.findByTestId('recipe-lifecycle-status')
+    ).toHaveTextContent('draft · r7');
+
+    expect(api.command).toHaveBeenCalledWith(
+      'recipe_governance_save',
+      expect.objectContaining({
+        recipeId,
+        expectedRevision: 5,
+        industryKey: 'hair_care',
+        familyId: 'education_note',
+        presentation: expect.objectContaining({ title: '回填后改标题' }),
+        promptRevisionRef: 'prompt.hydrate@12',
+        skillRevisionRefs: ['skill.bound@3'],
+        workflowRevisionRef: 'workflow.recipe-studio@2',
+        outputContractRef: 'output.image-text-note@4',
+        quotePolicyRevisionRef: 'quote.policy@5',
+        factTypes: ['service'],
+        sourceRequirements: [{ slot: 'store_facts', required: true }],
+        intentTypes: ['conversion'],
+        storySegments: ['pain_point', 'cta'],
+        candidateStrategy: 'single_primary',
+        contextPatches: expect.objectContaining({
+          tone: 'professional',
+          recipeStudioPlan: expect.objectContaining({
+            industryKey: 'hair_care',
+          }),
+        }),
+        settingsPatches: expect.objectContaining({
+          candidateStrategy: 'single_primary',
+        }),
+      }),
+      expect.any(String)
+    );
+  });
+
   it('keeps factTypes and skillRevisionRefs when only the Recipe title changes (#361)', async () => {
     const user = userEvent.setup();
     const recipeId = 'recipe.roundtrip.bindings';
