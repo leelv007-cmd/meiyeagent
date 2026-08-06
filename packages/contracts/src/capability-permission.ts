@@ -400,6 +400,8 @@ export function requiredP1Capability(
         'skill_revision_history',
         // Spec B / #362: bind/define dropdown shares the #360 catalog port.
         'published_recipe_workflow_revision_refs',
+        // Spec E / #378: merchant capability-pack projection (authenticated workspace).
+        'merchant_skill_projection',
       ]).has(action)
         ? 'workspace.read'
         : null;

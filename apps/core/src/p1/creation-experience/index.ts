@@ -8,8 +8,11 @@ export {
 export { CreationExperienceCatalogService } from './catalog-service.js';
 export {
   mergePublishedRecipeWorkflowRevisionRefs,
+  mergePublishedRecipeWorkflowRevisionRefsForLens,
   normalizeWorkflowRevisionRef,
+  type LaunchRecipeLensWorkflowSeed,
   type LaunchRecipeWorkflowSeed,
+  type PublishedRecipeLensWorkflowSource,
   type PublishedRecipeWorkflowSource,
 } from './published-recipe-workflow-catalog.js';
 export {

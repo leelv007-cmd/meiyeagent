@@ -23,6 +23,17 @@ export {
   SkillFoundationModule,
 } from './foundation-module.js';
 export {
+  FORBIDDEN_MERCHANT_SKILL_KEYS,
+  buildMerchantSkillProjection,
+  findForbiddenMerchantSkillKey,
+  isCreationLensId,
+  isMerchantPresentationPolicy,
+  isMerchantSkillVisibleToWorkspace,
+  projectMerchantSkillCapabilityItem,
+  serializeMerchantSkillProjection,
+  sortMerchantSkillCapabilityItems,
+} from './merchant-skill-projection.js';
+export {
   SkillInvocationToolAdapter,
   type SkillInvocationToolResult,
 } from './tool-adapter.js';

@@ -1772,6 +1772,19 @@ export class PostgresSkillRepository implements SkillRepository {
     return result.rows.map(cloneBindingRow) as SkillBinding[];
   }
 
+  async listActiveBindingsForWorkflow(workflowRevisionRef: string) {
+    const result = await this.pool.query<BindingPayloadRow>(
+      `SELECT payload, stage
+         FROM p1_skill_bindings
+        WHERE workflow_revision_ref = $1
+          AND status = 'active'
+          AND payload->>'mode' IS DISTINCT FROM 'planner_selected'
+        ORDER BY created_at, binding_id`,
+      [workflowRevisionRef],
+    );
+    return result.rows.map(cloneBindingRow) as SkillBinding[];
+  }
+
   async retireLegacyPlannerSelectedBindings(retiredAt: string) {
     const result = await this.pool.query(
       `UPDATE p1_skill_bindings

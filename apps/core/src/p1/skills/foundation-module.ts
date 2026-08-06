@@ -34,6 +34,8 @@ export const SKILL_QUERY_ACTIONS = [
   'skill_reverse_dependencies',
   // #360 catalog projection for bind/define dropdowns (Spec B / #362).
   'published_recipe_workflow_revision_refs',
+  // Spec E / #378: merchant capability-pack projection (presentationPolicy).
+  'merchant_skill_projection',
 ] as const;
 
 export const SKILL_COMMAND_ACTIONS = [
@@ -361,6 +363,25 @@ export class SkillFoundationModule implements P1OperationModule {
           workflowRevisionRefs:
             await this.service.listPublishedRecipeWorkflowRevisionRefs(),
         };
+      }
+      case 'merchant_skill_projection': {
+        onlyKeys(
+          value,
+          ['lensId', 'industryCategory'],
+          '商家 Skill 能力包投影查询',
+        );
+        return this.service.projectMerchantSkills({
+          workspaceId: args.context.workspaceId,
+          lensId: text(value, 'lensId'),
+          ...(value.industryCategory === undefined
+            ? {}
+            : {
+                industryCategory: optionalTextOrNull(
+                  value,
+                  'industryCategory',
+                ),
+              }),
+        });
       }
       default:
         return name satisfies never;

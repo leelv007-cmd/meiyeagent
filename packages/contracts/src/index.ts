@@ -374,6 +374,17 @@ export {
 } from './creation-experience.js';
 
 export {
+  merchantSkillPresentationPolicies,
+  merchantSkillTiers,
+  merchantSkillCapabilityItemSchema,
+  merchantSkillProjectionSchema,
+  type MerchantSkillPresentationPolicy,
+  type MerchantSkillTier,
+  type MerchantSkillCapabilityItem,
+  type MerchantSkillProjection,
+} from './merchant-skill-projection.js';
+
+export {
   CREDIT_PLAN_CONFIG_DEFAULTS,
   CREDIT_PLAN_CONFIG_KEYS,
 } from './credit-plan-config.js';

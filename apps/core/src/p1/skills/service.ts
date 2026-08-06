@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 
-import type { HarnessStage } from '@meiye/contracts';
+import type {
+  CreationLensId,
+  HarnessStage,
+  MerchantSkillCapabilityItem,
+  MerchantSkillProjection,
+} from '@meiye/contracts';
 import { evalRunSchema, parseSkillSchema, type EvalRun } from '../../contracts/index.js';
 
 import {
@@ -20,7 +25,17 @@ import {
   validateSkillFrontmatter,
   validateSkillPackagePaths,
 } from './skill-format.js';
-import { mergePublishedRecipeWorkflowRevisionRefs } from '../creation-experience/published-recipe-workflow-catalog.js';
+import {
+  mergePublishedRecipeWorkflowRevisionRefs,
+  mergePublishedRecipeWorkflowRevisionRefsForLens,
+} from '../creation-experience/published-recipe-workflow-catalog.js';
+import {
+  buildMerchantSkillProjection,
+  isCreationLensId,
+  isMerchantPresentationPolicy,
+  isMerchantSkillVisibleToWorkspace,
+  projectMerchantSkillCapabilityItem,
+} from './merchant-skill-projection.js';
 import { parseSkillGovernance } from './skill-governance.js';
 import {
   SkillPromptAuthorityUnavailableError,
@@ -78,9 +93,16 @@ export const SKILL_WORKFLOW_BINDING_INVALID_MESSAGE =
  * Read-only published Recipe workflow catalog (#360). Production wires
  * CreationExperienceCatalogService; unit tests may omit the port (only
  * governance membership is enforced on bind) or inject a fixed list.
+ *
+ * `listPublishedRecipeWorkflowRevisionRefsForLens` is optional for #378
+ * merchant projection; when omitted, the service falls back to launch-seed
+ * lens merge (still deterministic, never admin catalog).
  */
 export type PublishedRecipeWorkflowCatalogPort = {
   listPublishedRecipeWorkflowRevisionRefs(): Promise<string[]>;
+  listPublishedRecipeWorkflowRevisionRefsForLens?(
+    lensId: string,
+  ): Promise<string[]>;
 };
 
 function fail(message: string): never {
@@ -268,6 +290,117 @@ export class SkillService {
       return this.publishedWorkflowCatalog.listPublishedRecipeWorkflowRevisionRefs();
     }
     return mergePublishedRecipeWorkflowRevisionRefs([]);
+  }
+
+  /**
+   * Lens-scoped published workflow refs for merchant skill projection (#378).
+   * Never reuses admin `listCatalog`; fails closed to launch-seed lens merge
+   * when the catalog port is absent.
+   */
+  async listPublishedRecipeWorkflowRevisionRefsForLens(
+    lensId: CreationLensId | string,
+  ): Promise<string[]> {
+    if (
+      this.publishedWorkflowCatalog?.listPublishedRecipeWorkflowRevisionRefsForLens
+    ) {
+      return this.publishedWorkflowCatalog.listPublishedRecipeWorkflowRevisionRefsForLens(
+        lensId,
+      );
+    }
+    return mergePublishedRecipeWorkflowRevisionRefsForLens(lensId, []);
+  }
+
+  /**
+   * Merchant-facing capability-pack projection (Spec E / #378).
+   *
+   * Inputs: authenticated workspaceId, current output lens, optional industry.
+   * Source: published Recipe workflows for that lens + active Skill bindings
+   * that are accepted_frozen, presentation-visible, and tenant/tier eligible.
+   * Ordering: deterministic published-catalog skillId order (no personalization).
+   */
+  async projectMerchantSkills(input: {
+    workspaceId: string;
+    lensId: string;
+    industryCategory?: string | null;
+  }): Promise<MerchantSkillProjection> {
+    const workspaceId = required(input.workspaceId, 'Workspace ID');
+    if (!isCreationLensId(input.lensId)) {
+      fail(`Unknown creation lens "${input.lensId}".`);
+    }
+    const lensId = input.lensId;
+    const industryCategory = input.industryCategory?.trim() || null;
+
+    const workflowRevisionRefs =
+      await this.listPublishedRecipeWorkflowRevisionRefsForLens(lensId);
+
+    const selectedBySkillId = new Map<
+      string,
+      { item: MerchantSkillCapabilityItem; specificity: number }
+    >();
+
+    for (const workflowRevisionRef of workflowRevisionRefs) {
+      const bindings =
+        await this.repository.listActiveBindingsForWorkflow(
+          workflowRevisionRef,
+        );
+      for (const binding of bindings) {
+        if (binding.mode === 'disabled') continue;
+        if (
+          !merchantTriggerMatches(binding.triggerCondition, {
+            industryCategory,
+            tenantId: workspaceId,
+          })
+        ) {
+          continue;
+        }
+
+        const catalog = await this.repository.getCatalog(binding.skillId);
+        if (!catalog) continue;
+        if (!isMerchantPresentationPolicy(catalog.presentationPolicy)) {
+          continue;
+        }
+        if (!catalog.activeRevisionRef) continue;
+        // Out-of-catalog / stale revision: binding must point at published head.
+        if (binding.skillRevisionRef !== catalog.activeRevisionRef) continue;
+
+        const revision = await this.repository.getRevision(
+          binding.skillRevisionRef,
+        );
+        if (!revision || revision.status !== 'accepted_frozen') continue;
+        if (
+          !revision.governance.workflowRevisionRefs.includes(
+            workflowRevisionRef,
+          )
+        ) {
+          continue;
+        }
+        if (
+          !isMerchantSkillVisibleToWorkspace({
+            catalog,
+            binding,
+            workspaceId,
+          })
+        ) {
+          continue;
+        }
+
+        const item = projectMerchantSkillCapabilityItem({
+          catalog,
+          skillRevisionRef: binding.skillRevisionRef,
+        });
+        const specificity = merchantTriggerSpecificity(binding.triggerCondition);
+        const existing = selectedBySkillId.get(item.skillId);
+        if (!existing || specificity > existing.specificity) {
+          selectedBySkillId.set(item.skillId, { item, specificity });
+        }
+      }
+    }
+
+    return buildMerchantSkillProjection({
+      workspaceId,
+      lensId,
+      items: [...selectedBySkillId.values()].map((entry) => entry.item),
+    });
   }
 
   async defineCatalogEntry(input: {
@@ -1969,6 +2102,30 @@ function triggerSpecificity(condition: SkillTriggerCondition) {
     (condition.industryCategory ? 1 : 0) +
     (condition.tenantId ? 2 : 0)
   );
+}
+
+/**
+ * Industry/tenant match for merchant projection (stage-agnostic).
+ * Global (null) binding dimensions always match; specific dimensions must equal.
+ */
+function merchantTriggerMatches(
+  binding: SkillTriggerCondition,
+  query: { industryCategory: string | null; tenantId: string },
+) {
+  if (
+    binding.industryCategory &&
+    binding.industryCategory !== query.industryCategory
+  ) {
+    return false;
+  }
+  if (binding.tenantId && binding.tenantId !== query.tenantId) {
+    return false;
+  }
+  return true;
+}
+
+function merchantTriggerSpecificity(condition: SkillTriggerCondition) {
+  return triggerSpecificity(condition);
 }
 
 function resolvedInstruction(

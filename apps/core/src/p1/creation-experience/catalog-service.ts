@@ -14,7 +14,10 @@ import {
   projectBrowserSurface,
 } from './browser-projection.js';
 import type { CreationExperienceCatalogRepository } from './memory-repository.js';
-import { mergePublishedRecipeWorkflowRevisionRefs } from './published-recipe-workflow-catalog.js';
+import {
+  mergePublishedRecipeWorkflowRevisionRefs,
+  mergePublishedRecipeWorkflowRevisionRefsForLens,
+} from './published-recipe-workflow-catalog.js';
 import { validateRecipeForComposer } from './recipe-validator.js';
 
 import { resolveThreeStateCollectionField } from './revision-field-merge.js';
@@ -654,6 +657,16 @@ export class CreationExperienceCatalogService {
   async listPublishedRecipeWorkflowRevisionRefs(): Promise<string[]> {
     const published = await this.repository.listPublishedRecipes();
     return mergePublishedRecipeWorkflowRevisionRefs(published);
+  }
+
+  /**
+   * Lens-scoped published workflow catalog for merchant skill projection (#378).
+   */
+  async listPublishedRecipeWorkflowRevisionRefsForLens(
+    lensId: string,
+  ): Promise<string[]> {
+    const published = await this.repository.listPublishedRecipes();
+    return mergePublishedRecipeWorkflowRevisionRefsForLens(lensId, published);
   }
 
   /**

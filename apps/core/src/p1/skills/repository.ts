@@ -78,6 +78,13 @@ export interface SkillRepository extends EvalRunRegistryPort {
     workflowRevisionRef: string,
     triggerCondition: SkillTriggerCondition,
   ): Promise<SkillBinding[]>;
+  /**
+   * Active bindings for a workflow across all stages (merchant projection #378).
+   * Excludes planner_selected; does not apply industry/tenant stage filters.
+   */
+  listActiveBindingsForWorkflow(
+    workflowRevisionRef: string,
+  ): Promise<SkillBinding[]>;
   retireLegacyPlannerSelectedBindings(retiredAt: string): Promise<number>;
   putDeployment(
     deployment: SkillDeployment,
@@ -823,6 +830,22 @@ export class MemorySkillRepository implements SkillRepository {
           triggerConditionMatches(binding.triggerCondition, triggerCondition) &&
           binding.status === 'active' &&
           binding.mode !== 'planner_selected',
+      )
+      .map(clone);
+  }
+
+  async listActiveBindingsForWorkflow(workflowRevisionRef: string) {
+    return [...this.bindings.values()]
+      .filter(
+        (binding): binding is SkillBinding =>
+          binding.workflowRevisionRef === workflowRevisionRef &&
+          binding.status === 'active' &&
+          binding.mode !== 'planner_selected',
+      )
+      .sort(
+        (left, right) =>
+          left.createdAt.localeCompare(right.createdAt) ||
+          left.bindingId.localeCompare(right.bindingId),
       )
       .map(clone);
   }

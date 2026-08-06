@@ -4,7 +4,12 @@
  * Sole authority for skill-bind allowlists and admin workflow dropdowns:
  * merge launch-seed specs with currently published Recipe heads, then
  * return non-empty normalized workflow revision refs (deduped, sorted).
+ *
+ * Lens-scoped merge supports merchant skill projection (#378): only workflows
+ * that belong to published recipes (or launch seeds) for the active output lens.
  */
+
+import type { CreationLensId } from '@meiye/contracts';
 
 import type { LaunchRecipeSeedSpec } from './launch-seeds.js';
 import { LAUNCH_RECIPE_SPECS } from './launch-seeds.js';
@@ -15,9 +20,19 @@ export type PublishedRecipeWorkflowSource = Pick<
   'recipeId' | 'workflowRevisionRef'
 >;
 
+export type PublishedRecipeLensWorkflowSource = Pick<
+  ServerRecipeRecord,
+  'recipeId' | 'lensId' | 'workflowRevisionRef'
+>;
+
 export type LaunchRecipeWorkflowSeed = Pick<
   LaunchRecipeSeedSpec,
   'recipeId' | 'workflowRevisionRef'
+>;
+
+export type LaunchRecipeLensWorkflowSeed = Pick<
+  LaunchRecipeSeedSpec,
+  'recipeId' | 'lensId' | 'workflowRevisionRef'
 >;
 
 /** Trim and drop empty refs. Returns null when the value must not enter the catalog. */
@@ -68,5 +83,25 @@ export function mergePublishedRecipeWorkflowRevisionRefs(
 
   return [...merged].sort((left, right) =>
     left < right ? -1 : left > right ? 1 : 0,
+  );
+}
+
+/**
+ * Same merge rules as {@link mergePublishedRecipeWorkflowRevisionRefs}, but
+ * only recipes (and seeds) whose `lensId` matches the requested output lens.
+ * Used by merchant skill projection (#378) so copy/image_text/video stay isolated.
+ */
+export function mergePublishedRecipeWorkflowRevisionRefsForLens(
+  lensId: CreationLensId | string,
+  publishedRecipes: readonly PublishedRecipeLensWorkflowSource[],
+  launchSpecs: readonly LaunchRecipeLensWorkflowSeed[] = LAUNCH_RECIPE_SPECS,
+): string[] {
+  const filteredPublished = publishedRecipes.filter(
+    (recipe) => recipe.lensId === lensId,
+  );
+  const filteredSeeds = launchSpecs.filter((spec) => spec.lensId === lensId);
+  return mergePublishedRecipeWorkflowRevisionRefs(
+    filteredPublished,
+    filteredSeeds,
   );
 }
