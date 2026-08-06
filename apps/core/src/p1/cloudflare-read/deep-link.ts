@@ -212,6 +212,52 @@ export function resolveCloudflareDeepLink(
   };
 }
 
+/**
+ * Default admin Cloudflare panel deep-link kinds (read-only handoff CTAs).
+ * Order matches product operator priority: deployments → logs → traces.
+ */
+export const DEFAULT_ADMIN_CLOUDFLARE_DEEP_LINK_KINDS = [
+  'worker_deployments',
+  'worker_logs',
+  'worker_traces',
+] as const satisfies readonly CloudflareDeepLinkResourceKind[];
+
+export interface AdminCloudflareDeepLinkView {
+  kind: CloudflareDeepLinkResourceKind;
+  dashboardUrl: string;
+}
+
+/**
+ * Resolve the default admin deep-link set into official Dashboard URLs.
+ * Returns [] when mapping is not verified — callers must not invent dead CTAs.
+ */
+export function resolveDefaultAdminCloudflareDeepLinks(
+  mapping: CloudflareResourceMapping,
+  options: { now?: Date; baseUrl?: string } = {},
+): AdminCloudflareDeepLinkView[] {
+  if (!mapping.verified) {
+    return [];
+  }
+  const snapshotAt = (options.now ?? new Date()).toISOString();
+  return DEFAULT_ADMIN_CLOUDFLARE_DEEP_LINK_KINDS.map((kind) => {
+    const envelope = buildCloudflareDeepLinkEnvelope({
+      resourceKind: kind,
+      resourceRef: mapping.internalRef,
+      snapshotAt,
+      returnTo: '/admin/cloudflare',
+      capabilityContext: {
+        capabilityId: 'observability_audit',
+        capabilityLabel: 'observability_audit',
+      },
+    });
+    return {
+      kind,
+      dashboardUrl: resolveCloudflareDeepLink(envelope, mapping, options)
+        .dashboardUrl,
+    };
+  });
+}
+
 function dashboardPathFor(
   kind: CloudflareDeepLinkResourceKind,
   refs: {

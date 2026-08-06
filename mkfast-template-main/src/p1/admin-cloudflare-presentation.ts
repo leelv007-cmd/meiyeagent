@@ -8,8 +8,6 @@
 
 import {
   adminCfDeepLinkLabel,
-  buildAdminCloudflareDeepLink,
-  type AdminCfDeepLinkEnvelope,
   type AdminCfDeepLinkResourceKind,
 } from './admin-cloudflare-deep-link';
 import {
@@ -109,10 +107,14 @@ export interface AdminCfPresentationView {
   configRisks: AdminCfConfigRiskView[];
   probes: AdminCfProbeView[];
   probeSummary: ReturnType<typeof summarizeProbeSuite>;
+  /**
+   * Official Dashboard deep-links resolved server-side.
+   * Empty when mapping is unverified — never render dead CTAs.
+   */
   deepLinks: Array<{
     kind: AdminCfDeepLinkResourceKind;
     label: string;
-    envelope: AdminCfDeepLinkEnvelope;
+    dashboardUrl: string;
   }>;
   /** Always false — do not render a CF Queue card. */
   showCloudflareQueueCard: false;
@@ -255,41 +257,48 @@ function projectVersions(
   };
 }
 
-const DEFAULT_DEEP_LINK_KINDS: AdminCfDeepLinkResourceKind[] = [
-  'worker_deployments',
-  'worker_logs',
-  'worker_traces',
-];
+export interface AdminCfResolvedDeepLinkInput {
+  kind: AdminCfDeepLinkResourceKind;
+  dashboardUrl: string;
+}
+
+/**
+ * Project Core-resolved deep-links into operator-facing CTAs.
+ * Drops entries without a usable https Dashboard URL (no dead spans).
+ */
+export function projectAdminCloudflareDeepLinks(
+  resolved: readonly AdminCfResolvedDeepLinkInput[] | undefined | null
+): AdminCfPresentationView['deepLinks'] {
+  if (!resolved?.length) return [];
+  const links: AdminCfPresentationView['deepLinks'] = [];
+  for (const item of resolved) {
+    const url = item.dashboardUrl?.trim();
+    if (!url || !/^https:\/\//i.test(url)) continue;
+    links.push({
+      kind: item.kind,
+      label: adminCfDeepLinkLabel(item.kind),
+      dashboardUrl: url,
+    });
+  }
+  return links;
+}
 
 export function buildAdminCloudflarePresentation(input: {
   inventory?: AdminCfInventoryInput | null;
   probes?: AdminCfProbeView[];
   configRisks?: AdminCfConfigRiskView[];
-  resourceRef?: string;
   now?: Date;
+  /**
+   * Server-resolved Dashboard URLs. When omitted or empty, the panel hides
+   * the deep-link block entirely (ticket #392: no dead CTAs).
+   */
+  deepLinks?: readonly AdminCfResolvedDeepLinkInput[] | null;
 }): AdminCfPresentationView {
   const inventory = input.inventory;
   const freshness: AdminCfFreshness = inventory?.freshness ?? 'not_verified';
-  const resourceRef =
-    input.resourceRef ?? inventory?.mappingRef ?? 'shell-default';
   const probes = input.probes ?? [];
   const configRisks = input.configRisks ?? DEFAULT_REPO_CONFIG_RISKS;
-
-  const deepLinks = DEFAULT_DEEP_LINK_KINDS.map((kind) => {
-    const envelope = buildAdminCloudflareDeepLink({
-      resourceKind: kind,
-      resourceRef,
-      capabilityId: 'observability_audit',
-      capabilityLabel: '观测告警审计',
-      returnTo: '/admin/cloudflare',
-      snapshotAt: (input.now ?? new Date()).toISOString(),
-    });
-    return {
-      kind,
-      label: adminCfDeepLinkLabel(kind),
-      envelope,
-    };
-  });
+  const deepLinks = projectAdminCloudflareDeepLinks(input.deepLinks);
 
   return {
     truthLayers: {

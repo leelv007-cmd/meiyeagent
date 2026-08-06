@@ -605,6 +605,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         activationEvidenceStatus: modelRuntime.activation,
         adminActorIds: modelAdminActorIds,
         cloudflareInventory,
+        cloudflareMapping,
         cloudflareSelfProbes: () =>
           runCloudflareSelfProbes({
             shellBaseUrl: env.APP_BASE_URL ?? 'http://localhost:3000',

@@ -20,11 +20,14 @@ export {
 
 export {
   CLOUDFLARE_HANDOFF_TTL_MS,
+  DEFAULT_ADMIN_CLOUDFLARE_DEEP_LINK_KINDS,
   CloudflareDeepLinkError,
   isAllowedDeepLinkResourceKind,
   assertNoSensitiveDeepLinkFields,
   buildCloudflareDeepLinkEnvelope,
   resolveCloudflareDeepLink,
+  resolveDefaultAdminCloudflareDeepLinks,
+  type AdminCloudflareDeepLinkView,
   type BuildDeepLinkEnvelopeInput,
 } from './deep-link.js';
 

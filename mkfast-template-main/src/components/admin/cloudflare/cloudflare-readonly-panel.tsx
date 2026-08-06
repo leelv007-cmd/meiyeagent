@@ -243,36 +243,51 @@ export function CloudflareReadonlyPanel({
         </FramePanel>
       </Frame>
 
-      <Frame data-testid="cf-deep-links">
-        <FrameHeader>
-          <FrameTitle>技术台 deep-link（脱敏上下文）</FrameTitle>
-        </FrameHeader>
-        <FramePanel>
-          <ul className="flex flex-wrap gap-2">
-            {view.deepLinks.map((link) => (
-              <li key={link.kind}>
-                <Badge
-                  variant="outline"
-                  size="xl"
-                  data-testid="cf-deep-link"
-                  data-resource-kind={link.kind}
-                  data-mutates-cloudflare="false"
-                >
-                  {link.label}
-                </Badge>
-              </li>
-            ))}
-          </ul>
-        </FramePanel>
-        <FramePanel
-          className="border-dashed shadow-none"
-          data-testid="cf-write-denials"
-        >
-          <p className="text-muted-foreground text-xs">
-            写权限零持有：{view.deniedWriteActions.join(', ')}
-          </p>
-        </FramePanel>
-      </Frame>
+      {view.deepLinks.length > 0 ? (
+        <Frame data-testid="cf-deep-links">
+          <FrameHeader>
+            <FrameTitle>技术台 deep-link（脱敏上下文）</FrameTitle>
+          </FrameHeader>
+          <FramePanel>
+            <ul className="flex flex-wrap gap-2">
+              {view.deepLinks.map((link) => (
+                <li key={link.kind}>
+                  <a
+                    href={link.dashboardUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="cf-deep-link"
+                    data-resource-kind={link.kind}
+                    data-mutates-cloudflare="false"
+                    className="border-border bg-background hover:bg-muted inline-flex items-center rounded-md border px-3 py-1.5 text-sm font-medium transition-colors"
+                  >
+                    {link.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </FramePanel>
+          <FramePanel
+            className="border-dashed shadow-none"
+            data-testid="cf-write-denials"
+          >
+            <p className="text-muted-foreground text-xs">
+              写权限零持有：{view.deniedWriteActions.join(', ')}
+            </p>
+          </FramePanel>
+        </Frame>
+      ) : (
+        <Frame data-testid="cf-write-denials-only">
+          <FramePanel
+            className="border-dashed shadow-none"
+            data-testid="cf-write-denials"
+          >
+            <p className="text-muted-foreground text-xs">
+              写权限零持有：{view.deniedWriteActions.join(', ')}
+            </p>
+          </FramePanel>
+        </Frame>
+      )}
     </div>
   );
 }

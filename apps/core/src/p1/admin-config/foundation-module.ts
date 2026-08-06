@@ -17,9 +17,12 @@ import {
   type PlatformDefaultModelConfigKey,
 } from '../foundation/workspace-provision.js';
 import { createDefaultDeployments } from '../model-supply/catalog.js';
-import type {
-  CloudflareInventorySnapshot,
-  CloudflareSelfProbeResult,
+import {
+  resolveDefaultAdminCloudflareDeepLinks,
+  type AdminCloudflareDeepLinkView,
+  type CloudflareInventorySnapshot,
+  type CloudflareResourceMapping,
+  type CloudflareSelfProbeResult,
 } from '../cloudflare-read/index.js';
 import {
   BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
@@ -469,7 +472,8 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
   {
     key: HARNESS_WOZ_RECIPE_CONFIG_KEY,
     scope: 'workspace',
-    description: 'Free-form WOZ recipe consumed by ContextBundle compilation.',
+    description:
+      'Version trigger only: ContextBundle re-freeze consumes the config revision; the JSON value has no reader.',
     valueSchema: z.json(),
   },
   {
@@ -761,6 +765,7 @@ export class AdminConfigFoundationModule implements P1OperationModule {
   private readonly cloudflareSelfProbes:
     | (() => Promise<CloudflareSelfProbeResult[]>)
     | null;
+  private readonly cloudflareMapping: CloudflareResourceMapping | null;
 
   constructor(
     private readonly repository: AdminConfigRepository,
@@ -777,6 +782,8 @@ export class AdminConfigFoundationModule implements P1OperationModule {
       readOnlyKeys?: readonly string[];
       cloudflareInventory?: CloudflareInventoryReadPort;
       cloudflareSelfProbes?: () => Promise<CloudflareSelfProbeResult[]>;
+      /** Verified production mapping used to resolve Dashboard deep-links. */
+      cloudflareMapping?: CloudflareResourceMapping;
     } = {},
   ) {
     this.adminActorIds = new Set(options.adminActorIds ?? []);
@@ -788,6 +795,7 @@ export class AdminConfigFoundationModule implements P1OperationModule {
     this.readOnlyKeys = new Set(options.readOnlyKeys ?? []);
     this.cloudflareInventory = options.cloudflareInventory ?? null;
     this.cloudflareSelfProbes = options.cloudflareSelfProbes ?? null;
+    this.cloudflareMapping = options.cloudflareMapping ?? null;
     this.definitions = [
       ...CONFIG_DEFINITIONS,
       ...(options.additionalDefinitions ?? []),
@@ -919,7 +927,10 @@ export class AdminConfigFoundationModule implements P1OperationModule {
         this.cloudflareInventory.getInventory(),
         this.cloudflareSelfProbes?.() ?? Promise.resolve([]),
       ]);
-      return { inventory, probes };
+      const deepLinks: AdminCloudflareDeepLinkView[] = this.cloudflareMapping
+        ? resolveDefaultAdminCloudflareDeepLinks(this.cloudflareMapping)
+        : [];
+      return { inventory, probes, deepLinks };
     }
     if (action === 'config_list') {
       const visibleDefinitions = this.isAdmin(args.context)
@@ -1067,6 +1078,7 @@ export class AdminConfigFoundationModule implements P1OperationModule {
     return {
       key: definition.key,
       scope: definition.scope,
+      description: definition.description,
       storedValue: revision?.value ?? null,
       effectiveValue: this.hotReadKeys.has(definition.key)
         ? revision?.value ?? this.runtime[definition.key] ?? null

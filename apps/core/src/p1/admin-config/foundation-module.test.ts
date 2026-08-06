@@ -83,6 +83,7 @@ describe('Admin config application seam', () => {
     assert.deepEqual(projected, {
       key: 'model.execution.mode',
       scope: 'global',
+      description: 'LLM execution mode recorded by platform administration.',
       storedValue: 'direct',
       effectiveValue: 'recorded',
       wired: false,
@@ -1292,8 +1293,90 @@ describe('Admin config application seam', () => {
             mutatesCloudflare: false,
           },
         ],
+        deepLinks: [],
       },
     );
+  });
+
+  it('resolves official Dashboard deep-links when Cloudflare mapping is verified', async () => {
+    const inventory = {
+      mappingRef: 'shell-prod',
+      capturedAt: '2026-07-20T08:00:00.000Z',
+      freshness: 'fresh' as const,
+      deployments: {
+        status: 'known' as const,
+        value: [] as Array<{
+          deploymentId: string;
+          notDataRollback: true;
+        }>,
+        freshness: 'fresh' as const,
+        observedAt: '2026-07-20T08:00:00.000Z',
+        source: 'cloudflare_rest' as const,
+      },
+      versions: {
+        status: 'known' as const,
+        value: [] as Array<{ versionId: string }>,
+        freshness: 'fresh' as const,
+        observedAt: '2026-07-20T08:00:00.000Z',
+        source: 'cloudflare_rest' as const,
+      },
+      resources: [],
+      cloudflareQueuesEnabled: false as const,
+      graphqlAnalyticsDeferred: true as const,
+      cache: { hit: false, ttlMs: 120_000, ageMs: null },
+    };
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [
+        new AdminConfigFoundationModule(new MemoryAdminConfigRepository(), {
+          cloudflareInventory: {
+            async getInventory() {
+              return inventory;
+            },
+          },
+          cloudflareMapping: {
+            internalRef: 'shell-prod',
+            accountId: 'acct_test',
+            scriptName: 'mkfast-template',
+            verified: true,
+          },
+        }),
+      ],
+    });
+
+    const result = (await service.queryModule(context, 'admin-config', {
+      action: 'cloudflare_inventory',
+      payload: {},
+    })) as {
+      deepLinks: Array<{ kind: string; dashboardUrl: string }>;
+    };
+
+    assert.equal(result.deepLinks.length, 3);
+    assert.equal(result.deepLinks[0]?.kind, 'worker_deployments');
+    assert.match(
+      result.deepLinks[0]!.dashboardUrl,
+      /dash\.cloudflare\.com\/acct_test\/workers\/services\/view\/mkfast-template\/production\/deployments/,
+    );
+    assert.equal(result.deepLinks[1]?.kind, 'worker_logs');
+    assert.equal(result.deepLinks[2]?.kind, 'worker_traces');
+  });
+
+  it('documents harness.woz.recipe as a revision-only version trigger', async () => {
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [
+        new AdminConfigFoundationModule(new MemoryAdminConfigRepository(), {
+          adminActorIds: [context.userId],
+        }),
+      ],
+    });
+    const listed = (await service.queryModule(context, 'admin-config', {
+      action: 'config_list',
+      payload: {},
+    })) as Array<{ key: string; description: string }>;
+    const recipe = listed.find((item) => item.key === HARNESS_WOZ_RECIPE_CONFIG_KEY);
+    assert.ok(recipe);
+    assert.match(recipe!.description, /version trigger/i);
+    assert.match(recipe!.description, /revision/i);
+    assert.match(recipe!.description, /no reader/i);
   });
 });
 

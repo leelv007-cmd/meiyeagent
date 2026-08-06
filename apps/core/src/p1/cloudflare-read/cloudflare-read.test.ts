@@ -32,6 +32,7 @@ import {
   normalizeVersionsFromApi,
   projectCloudflareConfigRisks,
   resolveCloudflareDeepLink,
+  resolveDefaultAdminCloudflareDeepLinks,
   runCloudflareSelfProbes,
   runMappingReadinessProbe,
   shouldShowCloudflareQueueCard,
@@ -221,6 +222,25 @@ test('resolveDeepLink builds official Dashboard URL only for verified mapping', 
       err instanceof CloudflareDeepLinkError &&
       err.code === 'mapping_not_verified',
   );
+});
+
+test('resolveDefaultAdminCloudflareDeepLinks returns official URLs only when verified', () => {
+  const empty = resolveDefaultAdminCloudflareDeepLinks(UNVERIFIED_MAPPING);
+  assert.deepEqual(empty, []);
+
+  const links = resolveDefaultAdminCloudflareDeepLinks(VERIFIED_MAPPING, {
+    now: new Date('2026-07-20T00:00:00Z'),
+  });
+  assert.equal(links.length, 3);
+  assert.deepEqual(
+    links.map((link) => link.kind),
+    ['worker_deployments', 'worker_logs', 'worker_traces'],
+  );
+  for (const link of links) {
+    assert.match(link.dashboardUrl, /^https:\/\/dash\.cloudflare\.com\//);
+    assert.match(link.dashboardUrl, /acct_test/);
+    assert.match(link.dashboardUrl, /mkfast-template/);
+  }
 });
 
 // ── normalize ────────────────────────────────────────────────────────

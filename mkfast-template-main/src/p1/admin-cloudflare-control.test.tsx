@@ -34,11 +34,46 @@ test('SSR renders three truth layers, probes, config risks, no queue, no write',
   assert.match(html, /data-severity="not_ready"/);
   assert.match(html, /data-testid="cf-self-probes"/);
   assert.match(html, /data-mutates-cloudflare="false"/);
-  assert.match(html, /data-testid="cf-deep-link"/);
+  // Without resolved deepLinks, the dead span block must not appear.
+  assert.doesNotMatch(html, /data-testid="cf-deep-link"/);
   assert.match(html, /data-testid="cf-write-denials"/);
   assert.match(html, /cloudflare_deploy/);
   assert.doesNotMatch(html, /data-testid="cf-queue-card"/);
   assert.doesNotMatch(html, /data-action="cloudflare_publish"/);
+});
+
+test('SSR renders deep-links as real external anchors when Core provides URLs', () => {
+  const html = renderToStaticMarkup(
+    <AdminCloudflareControl
+      view={buildAdminCloudflarePresentation({
+        inventory: null,
+        probes: defaultAdminCfProbes(),
+        deepLinks: [
+          {
+            kind: 'worker_deployments',
+            dashboardUrl:
+              'https://dash.cloudflare.com/acct_test/workers/services/view/mkfast/production/deployments',
+          },
+          {
+            kind: 'worker_logs',
+            dashboardUrl:
+              'https://dash.cloudflare.com/acct_test/workers/services/view/mkfast/production/observability',
+          },
+        ],
+      })}
+    />
+  );
+
+  assert.match(html, /data-testid="cf-deep-links"/);
+  assert.match(html, /data-testid="cf-deep-link"/);
+  assert.match(
+    html,
+    /href="https:\/\/dash\.cloudflare\.com\/acct_test\/workers\/services\/view\/mkfast\/production\/deployments"/
+  );
+  assert.match(html, /target="_blank"/);
+  assert.match(html, /rel="noopener noreferrer"/);
+  // Must be anchors, not dead spans for the CTA surface.
+  assert.match(html, /<a[^>]*data-testid="cf-deep-link"/);
 });
 
 test('SSR presents unknown inventory honestly when mapping unverified', () => {

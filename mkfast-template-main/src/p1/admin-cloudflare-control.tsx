@@ -19,9 +19,14 @@ import {
   buildAdminCloudflarePresentation,
   type AdminCfInventoryInput,
   type AdminCfPresentationView,
+  type AdminCfResolvedDeepLinkInput,
 } from '@/p1/admin-cloudflare-presentation';
 import { queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
+import {
+  ADMIN_CF_DEEP_LINK_RESOURCE_KINDS,
+  type AdminCfDeepLinkResourceKind,
+} from '@/p1/admin-cloudflare-deep-link';
 
 const freshnessSchema = z.enum([
   'fresh',
@@ -36,7 +41,7 @@ const PROBE_KINDS = [
   'object_storage_binding',
   'mapping_readiness',
 ] as const satisfies readonly AdminCfProbeKind[];
-
+const deepLinkKindSchema = z.enum(ADMIN_CF_DEEP_LINK_RESOURCE_KINDS);
 const NO_EVIDENCE_AT = '1970-01-01T00:00:00.000Z';
 const nonEmpty = z.string().min(1);
 const optionalFreshness = { freshness: freshnessSchema.optional() };
@@ -111,10 +116,15 @@ const probeSchema = z.object({
   observedAt: nonEmpty,
   detail: nonEmpty.optional(),
 });
+const deepLinkSchema = z.object({
+  kind: deepLinkKindSchema,
+  dashboardUrl: nonEmpty,
+});
 const cloudflareReadResponseSchema = z.union([
   z.object({
     inventory: inventorySchema,
     probes: z.array(probeSchema).optional(),
+    deepLinks: z.array(deepLinkSchema).optional(),
   }),
   inventorySchema.transform((inventory) => ({ inventory })),
 ]);
@@ -154,6 +164,12 @@ export function projectAdminCloudflareLiveView(
         projectAdminCfProbe
       )
     : [];
+  const deepLinks: AdminCfResolvedDeepLinkInput[] | undefined =
+    response.success && 'deepLinks' in response.data
+      ? (response.data.deepLinks as
+          | Array<{ kind: AdminCfDeepLinkResourceKind; dashboardUrl: string }>
+          | undefined)
+      : undefined;
   if (inventory) {
     return buildAdminCloudflarePresentation({
       inventory,
@@ -165,6 +181,7 @@ export function projectAdminCloudflareLiveView(
               observedAt
             ),
       now: new Date(observedAt),
+      deepLinks,
     });
   }
 
@@ -182,6 +199,7 @@ export function projectAdminCloudflareLiveView(
     },
     probes: unknownProbes(reason, observedAt),
     now: new Date(observedAt),
+    deepLinks,
   });
 }
 

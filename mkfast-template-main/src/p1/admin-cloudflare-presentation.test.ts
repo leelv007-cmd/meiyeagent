@@ -66,14 +66,36 @@ test('presentation translates inventory into business impact, not raw metrics', 
   assert.equal(view.graphqlAnalyticsDeferred, true);
   assert.equal(view.writeActionsAllowed, false);
   assert.ok(view.deniedWriteActions.includes('cloudflare_deploy'));
-  assert.ok(view.deepLinks.length >= 3);
-  for (const link of view.deepLinks) {
-    assert.equal(link.envelope.mutatesCloudflare, false);
-    assert.equal(link.envelope.resourceRef, 'shell-prod');
-  }
+  // No server-resolved deepLinks → empty (no dead CTAs).
+  assert.equal(view.deepLinks.length, 0);
   assert.ok(view.configRisks.some((r) => r.id === 'trace_sampling_100pct'));
   assert.ok(view.configRisks.some((r) => r.id === 'hyperdrive_placeholder'));
   assert.match(view.truthLayers.nativeDiagnostics, /Dashboard/);
+});
+
+test('presentation projects only https Dashboard deep-links from Core', () => {
+  const view = buildAdminCloudflarePresentation({
+    inventory: FRESH_INVENTORY,
+    deepLinks: [
+      {
+        kind: 'worker_deployments',
+        dashboardUrl:
+          'https://dash.cloudflare.com/acct/workers/services/view/shell/production/deployments',
+      },
+      {
+        kind: 'worker_logs',
+        dashboardUrl: 'javascript:alert(1)',
+      },
+      {
+        kind: 'worker_traces',
+        dashboardUrl: 'https://dash.cloudflare.com/acct/workers/services/view/shell/production/observability',
+      },
+    ],
+  });
+  assert.equal(view.deepLinks.length, 2);
+  assert.equal(view.deepLinks[0]?.kind, 'worker_deployments');
+  assert.match(view.deepLinks[0]!.dashboardUrl, /^https:\/\//);
+  assert.equal(view.deepLinks[1]?.kind, 'worker_traces');
 });
 
 test('stale / unknown / rate-limit / mapping present honestly', () => {
