@@ -3589,6 +3589,17 @@ Skill 选中
 - 触发点：试点运营窗（#240）复盘时若失败重发起成为高频痛点，重开 #354 走 spec 流程。
 - 影响：#354 关闭（记录触发点）；#358 实施两处诚实文案；#353 已修的 `recoveryHintFor` 为改写范式。
 
+## D-177 standalone 工具支线清零：首批三工具剔除、Recipe Studio 页收敛、admin 整备波指针
+
+- 日期：2026-08-06
+- 状态：`accepted`（用户拍板于 wayfinder 地图「工具区编排的产品形态」#398→#418：「多尺寸适配 / 批量去背景 / 字幕擦除这三个都是无效功能，应该剔除，属于原历史决策没有及时更新」）
+- 决定①（三工具剔除）：**D-092 首批 standalone 工具组合中的多平台尺寸重排与导出、批量去背景、视频字幕擦除与修复三项废止剔除**，连同整条 `toolEntryRefs` 链路（Core 静态种子/校验、Surface 契约字段、前台工具页签/路由/handoff、编排覆盖投影）一并拆除，实施票 #419。由于 Pro Studio 已由 D-170 全量退役，**D-077 双入口架构的 `standalone_tool` 支线成员归零**——该 kind 分类随 #419 从契约中清理，`composer_recipe`（含配方卡/能力包）成为创作工具的唯一入口形态。剔除依据：#402 资解证明该链四段建成但从未通电（`LAUNCH_TOOL_ENTRY_REFS` 恒空、全仓无非空生产者、前台覆盖分支从未执行、三工具 `capabilityPublished:false` 从未上线）。若相关能力将来回归，归宿是技能/配方轴而非独立工具区（小云雀实测佐证：同名三能力在其产品中均为 Composer 技能形态，#413）。
+- 决定②（Recipe Studio 页收敛）：`/admin/recipe-studio` 独立页下线（admin 审计 §六 D3-b，实施票 #375），**D-101 的五阶段受控积木编译链（compile/validate/评测门）不变**，其 Web 唯一入口收敛为 Templates 页创作体验控件＋`RecipeStudioCompileInputAdapter`（#372）。D-127「NEW 桶：Recipe Studio」自本条起指编译链与 Templates 内入口，不得据其重建独立 Studio 页面。评测/内测门的证据服务签发见 `docs/specs/admin-backlog-2026-08-06/spec-i-recipe-evaluation-evidence.md`（⚠️ #374 禁用评测门期间 `switchProduction` 不可达，D+I 必须同批）。
+- 决定③（admin 整备波指针，均与本文档既有决策对齐、无冲突）：admin 后台整备波产出的权威文件——审计与 D1–D9 决议（`docs/reviews/admin-config-audit-2026-08-06.md`，其 D1–D9 为审计局部编号，与本文档 D-xxx 序列无关）、九份实施 spec（`docs/specs/admin-backlog-2026-08-06/`，实施票 #359–#397）、评测证据生命周期规格（`docs/specs/evaluation-evidence-lifecycle-spec-2026-08-06.md`：到期自动重评＋失败才告警＋不自动下架）、商家技能选择零持久化规格（`docs/specs/merchant-skill-persistence-spec-2026-08-06.md`：与本文档「所有普通修改默认只影响当前任务」原则同构）。对齐核验：Spec A 单一 admin 角色 ↔ D-057「首期单一管理路径、复杂角色管理延期」与 D-101「不因此新增复杂 RBAC」；Spec A 封禁 impersonate 端点 ↔ 「未拍板前不实现 impersonation」；三条误报更正（p1 无商家 fail-open／Skill 白名单静默在运行时／presentationPolicy 绑定期已消费）为代码事实澄清，不触动任何 D 条目。
+- 影响：D-092 部分废止（Pro Studio 项已先由 D-170 处置）；D-078 的「预设尺寸重排与导出」首页切片废止；D-093 的工具目录分类/排序/搜索范围收窄至 `composer_recipe` 一族；D-084 移动端目录容器合同不受影响（模板页签保留）。读 D-077/D-078/D-092/D-093 规划新工具能力者，须以本条为准。
+- 证据边界：#402/#413/#418 资解（票内留档）；本条不动 D-101/D-107/D-108 的编译链、能力清单与 Skill 合同。
+- Supersedes：D-092 三工具项与上下文 handoff 中对应三工具的引用；D-078 standalone 切片；收窄 D-093 范围。
+
 已拍板转正：视频成片首发地位 → D-027；文案/成片两层交付 → D-028；Day-0 零资产首屏 → D-029；定位边界 → D-030；前台无槽位填表、结构化输入融入对话流 → D-031；Agent Workflow 编排总纲（收编原「阻塞作用域」「沉淀检测」两项为推论一/二）→ D-032；Task 统一交互单元与 Harness 五段式 → D-033（均 2026-07-17）；Harness 实现选型四题 + 工程约束（11 号简报全案采纳，提示词承载 = Langfuse 先行）→ D-034~D-038（2026-07-17 深夜，证据 = 10 份调研 + 9 路 Codex 对抗交叉验证（r08 三次容量失败未产出，Dify 在 D-037 中仅为战术搁置项，见其证据边界与 08 号报告头部横幅），`references/analysis/harness-research-2026-07-17/`）；09 合规章义务清单去向（2026-07-18 一致性复核 escalate 项）= 并入 Week 0 预登记文档 → D-039（2026-07-18）。
 
 2026-07-17 合并评审识别的待拍板项已全部转正（即上列清单）；本行不作全局声明——2026-07-20 起新决策产生的「待继续拍板」项以各决策条内记录为权威（见 D-072 起各决策条内记录，现至 D-151；D-079 为跳号未使用）。
