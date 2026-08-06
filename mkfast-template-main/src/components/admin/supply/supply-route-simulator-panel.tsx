@@ -6,7 +6,14 @@
  * Live path (F-J-02) always mounts with idle / error / ready honest states;
  * fixture path supplies a ready demo view.
  */
-import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
+import { Badge, type BadgeProps } from '@/components/reui/badge';
+import {
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import {
   Table,
   TableBody,
@@ -20,73 +27,90 @@ import type {
   RouteSimulatorPanelView,
 } from '@/p1/admin-supply-route-simulator-model';
 
+/**
+ * Evidence freshness words come from the projection, so the mapping is on the
+ * word rather than on a colour picked at the call site. Deployment bands are
+ * not health words — they stay neutral, and anything unmapped (`missing`,
+ * `below_sample`, ranking layer ids, `unknown`) falls through to `outline`
+ * rather than borrowing a colour it has not earned.
+ */
+const ROUTE_VARIANT: Record<string, BadgeProps['variant']> = {
+  fresh: 'success-light',
+  stale: 'warning-light',
+  production: 'secondary',
+  canary: 'secondary',
+  unknown: 'outline',
+};
+
+function routeVariant(word: string): BadgeProps['variant'] {
+  return ROUTE_VARIANT[word] ?? 'outline';
+}
+
 function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
   return (
     <>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div
-          data-testid="supply-route-hard-filter"
-          className="rounded-lg border p-3"
-        >
-          <p className="text-xs text-muted-foreground">硬过滤通过</p>
-          <p className="mt-1 font-medium">
-            {view.hardFilterPassed.length} 个 Deployment
-          </p>
-          <p className="text-xs text-muted-foreground">
-            排除 {view.hardFilterExcluded.length}
-          </p>
-        </div>
-        <div
-          data-testid="supply-route-max-cost"
-          className="rounded-lg border p-3"
-        >
-          <p className="text-xs text-muted-foreground">最大成本</p>
-          <p className="mt-1 font-medium">
-            {view.maxCost
-              ? `${(view.maxCost.amountMicros / 1_000_000).toFixed(4)} ${view.maxCost.currency}`
-              : '—'}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            证据来源 {view.maxCost?.evidenceSource ?? '无候选'}
-          </p>
-        </div>
-        <div
-          data-testid="supply-route-acceptance"
-          className="rounded-lg border p-3"
-        >
-          <p className="text-xs text-muted-foreground">接受态分支</p>
-          <p className="mt-1 font-medium">{view.acceptanceBranch.decision}</p>
-          <p className="text-xs text-muted-foreground">
-            {view.acceptanceBranch.acceptance} · {view.acceptanceBranch.reason}
-          </p>
-        </div>
-        <div
-          data-testid="supply-route-data-level"
-          className="rounded-lg border p-3"
-        >
-          <p className="text-xs text-muted-foreground">数据处理等级</p>
-          <p className="mt-1 font-medium">{view.dataProcessingLevel.level}</p>
-          <p className="text-xs text-muted-foreground">
-            {view.dataProcessingLevel.copy}
-          </p>
-        </div>
+        <Frame dense data-testid="supply-route-hard-filter">
+          <FramePanel>
+            <p className="text-xs text-muted-foreground">硬过滤通过</p>
+            <p className="mt-1 font-medium">
+              {view.hardFilterPassed.length} 个 Deployment
+            </p>
+            <p className="text-xs text-muted-foreground">
+              排除 {view.hardFilterExcluded.length}
+            </p>
+          </FramePanel>
+        </Frame>
+        <Frame dense data-testid="supply-route-max-cost">
+          <FramePanel>
+            <p className="text-xs text-muted-foreground">最大成本</p>
+            <p className="mt-1 font-medium">
+              {view.maxCost
+                ? `${(view.maxCost.amountMicros / 1_000_000).toFixed(4)} ${view.maxCost.currency}`
+                : '—'}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              证据来源 {view.maxCost?.evidenceSource ?? '无候选'}
+            </p>
+          </FramePanel>
+        </Frame>
+        <Frame dense data-testid="supply-route-acceptance">
+          <FramePanel>
+            <p className="text-xs text-muted-foreground">接受态分支</p>
+            <p className="mt-1 font-medium">{view.acceptanceBranch.decision}</p>
+            <p className="text-xs text-muted-foreground">
+              {view.acceptanceBranch.acceptance} ·{' '}
+              {view.acceptanceBranch.reason}
+            </p>
+          </FramePanel>
+        </Frame>
+        <Frame dense data-testid="supply-route-data-level">
+          <FramePanel>
+            <p className="text-xs text-muted-foreground">数据处理等级</p>
+            <p className="mt-1 font-medium">{view.dataProcessingLevel.level}</p>
+            <p className="text-xs text-muted-foreground">
+              {view.dataProcessingLevel.copy}
+            </p>
+          </FramePanel>
+        </Frame>
       </div>
 
       {view.failClosed ? (
-        <div
-          data-testid="supply-route-fail-closed"
-          className="rounded-lg border border-destructive/40 p-3 text-sm text-destructive"
-        >
-          失败关闭：无合规候选（{view.failClosedReason}）
-        </div>
+        <Frame dense data-testid="supply-route-fail-closed">
+          <FramePanel className="border-destructive/40 text-sm text-destructive">
+            失败关闭：无合规候选（{view.failClosedReason}）
+          </FramePanel>
+        </Frame>
       ) : null}
 
-      <div data-testid="supply-route-sort" className="space-y-2">
-        <h3 className="text-sm font-semibold">三层排序</h3>
-        <p className="text-xs text-muted-foreground">
-          {view.layerOrder.join(' → ')}
-        </p>
-        <div className="overflow-hidden rounded-lg border">
+      <Frame dense headingLevel={3} data-testid="supply-route-sort">
+        <FrameHeader>
+          <FrameTitle>三层排序</FrameTitle>
+          <FrameDescription className="text-xs">
+            {view.layerOrder.join(' → ')}
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="p-0!">
           <Table>
             <TableHeader>
               <TableRow>
@@ -103,9 +127,7 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
                     {row.deploymentId}
                   </TableCell>
                   <TableCell>
-                    <AdminStatusChip variant="secondary">
-                      {row.band}
-                    </AdminStatusChip>
+                    <Badge variant={routeVariant(row.band)}>{row.band}</Badge>
                   </TableCell>
                 </TableRow>
               ))}
@@ -116,49 +138,66 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
               无排序候选
             </p>
           ) : null}
-        </div>
-      </div>
+        </FramePanel>
+      </Frame>
 
-      <div data-testid="supply-route-live-exclusions" className="space-y-2">
-        <h3 className="text-sm font-semibold">实时排除</h3>
-        {view.liveExclusions.length === 0 ? (
-          <p className="text-xs text-muted-foreground">无实时排除</p>
-        ) : (
-          <ul className="list-disc space-y-1 pl-5 text-sm">
-            {view.liveExclusions.map((row) => (
-              <li key={`live-${row.deploymentId}`}>
-                <span className="font-mono text-xs">{row.deploymentId}</span>:{' '}
-                {row.reasons.join(', ')}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      <Frame dense headingLevel={3} data-testid="supply-route-live-exclusions">
+        <FrameHeader>
+          <FrameTitle>实时排除</FrameTitle>
+        </FrameHeader>
+        <FramePanel>
+          {view.liveExclusions.length === 0 ? (
+            <p className="text-xs text-muted-foreground">无实时排除</p>
+          ) : (
+            <ul className="list-disc space-y-1 pl-5 text-sm">
+              {view.liveExclusions.map((row) => (
+                <li key={`live-${row.deploymentId}`}>
+                  <span className="font-mono text-xs">{row.deploymentId}</span>:{' '}
+                  {row.reasons.join(', ')}
+                </li>
+              ))}
+            </ul>
+          )}
+        </FramePanel>
+      </Frame>
 
-      <div data-testid="supply-route-not-selected" className="space-y-2">
-        <h3 className="text-sm font-semibold">未选原因</h3>
-        {view.notSelectedReasons.length === 0 ? (
-          <p className="text-xs text-muted-foreground">全部通过</p>
-        ) : (
-          <ul className="list-disc space-y-1 pl-5 text-sm">
-            {view.notSelectedReasons.map((row) => (
-              <li
-                key={`ns-${row.layer}-${row.deploymentId}-${row.reasons.join()}`}
-              >
-                <AdminStatusChip variant="outline" className="mr-1">
-                  {row.layer ?? 'unknown'}
-                </AdminStatusChip>
-                <span className="font-mono text-xs">{row.deploymentId}</span>:{' '}
-                {row.reasons.join(', ')}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      <Frame dense headingLevel={3} data-testid="supply-route-not-selected">
+        <FrameHeader>
+          <FrameTitle>未选原因</FrameTitle>
+        </FrameHeader>
+        <FramePanel>
+          {view.notSelectedReasons.length === 0 ? (
+            <p className="text-xs text-muted-foreground">全部通过</p>
+          ) : (
+            <ul className="list-disc space-y-1 pl-5 text-sm">
+              {view.notSelectedReasons.map((row) => (
+                <li
+                  key={`ns-${row.layer}-${row.deploymentId}-${row.reasons.join()}`}
+                >
+                  <Badge
+                    variant={routeVariant(row.layer ?? 'unknown')}
+                    className="mr-1"
+                  >
+                    {row.layer ?? 'unknown'}
+                  </Badge>
+                  <span className="font-mono text-xs">{row.deploymentId}</span>:{' '}
+                  {row.reasons.join(', ')}
+                </li>
+              ))}
+            </ul>
+          )}
+        </FramePanel>
+      </Frame>
 
-      <div data-testid="supply-route-evidence-freshness" className="space-y-2">
-        <h3 className="text-sm font-semibold">证据新鲜度</h3>
-        <div className="overflow-hidden rounded-lg border">
+      <Frame
+        dense
+        headingLevel={3}
+        data-testid="supply-route-evidence-freshness"
+      >
+        <FrameHeader>
+          <FrameTitle>证据新鲜度</FrameTitle>
+        </FrameHeader>
+        <FramePanel className="p-0!">
           <Table>
             <TableHeader>
               <TableRow>
@@ -190,35 +229,37 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
                         </TableCell>
                         <TableCell>{fact.kind}</TableCell>
                         <TableCell>
-                          <AdminStatusChip
-                            variant={
-                              fact.status === 'fresh' ? 'secondary' : 'outline'
-                            }
-                          >
+                          <Badge variant={routeVariant(fact.status)}>
                             {fact.status}
-                          </AdminStatusChip>
+                          </Badge>
                         </TableCell>
                       </TableRow>
                     ))
               )}
             </TableBody>
           </Table>
-        </div>
-      </div>
+        </FramePanel>
+      </Frame>
 
-      <div data-testid="supply-route-cost-evidence" className="space-y-2">
-        <h3 className="text-sm font-semibold">成本证据来源</h3>
-        <ul className="list-disc space-y-1 pl-5 text-sm">
-          {view.costEvidenceSource.map((row) => (
-            <li key={`cost-${row.deploymentId}`}>
-              <span className="font-mono text-xs">{row.deploymentId}</span>:{' '}
-              {row.source ?? 'unknown'}
-              {row.amountMicros != null ? ` · ${row.amountMicros} micros` : ''}
-              {row.riskDiscountApplied ? ' · 风险折扣' : ''}
-            </li>
-          ))}
-        </ul>
-      </div>
+      <Frame dense headingLevel={3} data-testid="supply-route-cost-evidence">
+        <FrameHeader>
+          <FrameTitle>成本证据来源</FrameTitle>
+        </FrameHeader>
+        <FramePanel>
+          <ul className="list-disc space-y-1 pl-5 text-sm">
+            {view.costEvidenceSource.map((row) => (
+              <li key={`cost-${row.deploymentId}`}>
+                <span className="font-mono text-xs">{row.deploymentId}</span>:{' '}
+                {row.source ?? 'unknown'}
+                {row.amountMicros != null
+                  ? ` · ${row.amountMicros} micros`
+                  : ''}
+                {row.riskDiscountApplied ? ' · 风险折扣' : ''}
+              </li>
+            ))}
+          </ul>
+        </FramePanel>
+      </Frame>
     </>
   );
 }
@@ -258,23 +299,20 @@ export function SupplyRouteSimulatorPanel({
       </header>
 
       {resolved.status === 'idle' ? (
-        <p
-          data-testid="supply-route-simulator-idle"
-          className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground"
-        >
-          尚未运行路由模拟。使用下方「路由模拟」受治理动作，经 Core
-          预览并执行后，此处展示解释投影。当前为空闲态，不是无候选。
-        </p>
+        <Frame dense data-testid="supply-route-simulator-idle">
+          <FramePanel className="border-dashed text-sm text-muted-foreground">
+            尚未运行路由模拟。使用下方「路由模拟」受治理动作，经 Core
+            预览并执行后，此处展示解释投影。当前为空闲态，不是无候选。
+          </FramePanel>
+        </Frame>
       ) : null}
 
       {resolved.status === 'error' ? (
-        <p
-          data-testid="supply-route-simulator-error"
-          role="alert"
-          className="rounded-lg border border-destructive/40 p-4 text-sm text-destructive"
-        >
-          路由模拟失败：{resolved.message}。当前状态未知，未使用演示数据回退。
-        </p>
+        <Frame dense data-testid="supply-route-simulator-error" role="alert">
+          <FramePanel className="border-destructive/40 text-sm text-destructive">
+            路由模拟失败：{resolved.message}。当前状态未知，未使用演示数据回退。
+          </FramePanel>
+        </Frame>
       ) : null}
 
       {resolved.status === 'ready' ? (

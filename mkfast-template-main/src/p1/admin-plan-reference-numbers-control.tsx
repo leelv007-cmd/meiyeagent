@@ -5,16 +5,19 @@ import {
   ImpactReviewDialog,
   type ImpactReviewRequest,
 } from '@/components/admin/impact-review-dialog';
+import { SettingField } from '@/components/admin/shared/setting-field';
+import { Badge } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameFooter,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
+import { FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   Table,
   TableBody,
@@ -246,35 +249,39 @@ export function AdminPlanReferenceNumbersControl() {
 
   if (!draft || !referenceItem || plans.length !== planIds.length) {
     return (
-      <AdminPanel data-testid="admin-plan-reference-numbers">
-        <AdminPanelHeader>
-          <AdminPanelTitle>价格页参考数字</AdminPanelTitle>
-          <AdminPanelDescription>
-            正在读取已发布的参考数字配置。
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-      </AdminPanel>
+      <Frame
+        className="w-full"
+        data-testid="admin-plan-reference-numbers"
+        dense
+      >
+        <FrameHeader>
+          <FrameTitle>价格页参考数字</FrameTitle>
+          <FrameDescription>正在读取已发布的参考数字配置。</FrameDescription>
+        </FrameHeader>
+      </Frame>
     );
   }
 
   return (
     <div className="space-y-5" data-testid="admin-plan-reference-numbers">
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>价格页参考数字</AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame className="w-full" dense>
+        <FrameHeader>
+          <FrameTitle>价格页参考数字</FrameTitle>
+          <FrameDescription>
             建议值按套餐月积分与参考模型积分价实时换算；前台只读取确认发布后的数字。
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-3">
-            {categories.map((category) => (
-              <div className="space-y-2" key={category}>
-                <Label htmlFor={`reference-model-${category}`}>
-                  {categoryLabel(category)}参考模型
-                </Label>
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="p-0">
+          <FieldGroup className="gap-0">
+            {categories.map((category, index) => (
+              <SettingField
+                key={category}
+                labelFor={`reference-model-${category}`}
+                last={index === categories.length - 1}
+                title={`${categoryLabel(category)}参考模型`}
+              >
                 <select
-                  className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
+                  className="h-touch-target w-full rounded-lg border border-divider bg-surface-1 px-2.5 text-sm"
                   id={`reference-model-${category}`}
                   onChange={(event) => {
                     setDraft({
@@ -298,14 +305,11 @@ export function AdminPlanReferenceNumbersControl() {
                       </option>
                     ))}
                 </select>
-              </div>
+              </SettingField>
             ))}
-          </div>
-          {suggestions ? null : (
-            <p className="text-sm text-destructive" role="alert">
-              所选参考模型必须有对应的已发布积分价；视频固定读取 15 秒档。
-            </p>
-          )}
+          </FieldGroup>
+        </FramePanel>
+        <FramePanel className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -363,47 +367,63 @@ export function AdminPlanReferenceNumbersControl() {
                       />
                     </TableCell>
                   ))}
-                  {categories.map((category) => (
-                    <TableCell
-                      data-testid={`reference-status-${plan.id}-${category}`}
-                      key={`${category}-status`}
-                    >
-                      {suggestions
-                        ? referenceStatus(
-                            draft.published[plan.id][category],
-                            suggestions[plan.id][category]
-                          )
-                        : '参考模型不可用'}
-                    </TableCell>
-                  ))}
+                  {categories.map((category) => {
+                    const status = suggestions
+                      ? referenceStatus(
+                          draft.published[plan.id][category],
+                          suggestions[plan.id][category]
+                        )
+                      : '参考模型不可用';
+                    return (
+                      <TableCell
+                        data-testid={`reference-status-${plan.id}-${category}`}
+                        key={`${category}-status`}
+                      >
+                        <Badge
+                          variant={
+                            suggestions
+                              ? status === '一致'
+                                ? 'success-light'
+                                : 'warning-light'
+                              : 'secondary'
+                          }
+                        >
+                          {status}
+                        </Badge>
+                      </TableCell>
+                    );
+                  })}
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-          {error ? (
-            <p className="text-sm text-destructive" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <div className="flex flex-wrap gap-3">
-            <Button
-              disabled={!suggestions}
-              onClick={() => {
-                if (!suggestions) return;
-                setDraft({ ...draft, published: suggestions });
-                setError(undefined);
-              }}
-              type="button"
-              variant="outline"
-            >
-              全部采用建议值
-            </Button>
-            <Button disabled={!suggestions} onClick={publish} type="button">
-              确认发布
-            </Button>
+        </FramePanel>
+        <FrameFooter className="flex flex-row justify-end gap-3">
+          <div className="mr-auto flex flex-col justify-center gap-1 text-destructive text-sm">
+            {suggestions ? null : (
+              <p role="alert">
+                所选参考模型必须有对应的已发布积分价；视频固定读取 15 秒档。
+              </p>
+            )}
+            {error ? <p role="alert">{error}</p> : null}
           </div>
-        </AdminPanelContent>
-      </AdminPanel>
+          <Button
+            disabled={!suggestions}
+            onClick={() => {
+              if (!suggestions) return;
+              setDraft({ ...draft, published: suggestions });
+              setError(undefined);
+            }}
+            type="button"
+            variant="outline"
+          >
+            全部采用建议值
+          </Button>
+          <Button disabled={!suggestions} onClick={publish} type="button">
+            确认发布
+          </Button>
+        </FrameFooter>
+      </Frame>
       <ImpactReviewDialog
         onOpenChange={(open) => {
           if (!open) setImpactReview(undefined);

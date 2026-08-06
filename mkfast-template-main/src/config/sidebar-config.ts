@@ -1,4 +1,9 @@
 import {
+  admin_nav_group_account_commerce,
+  admin_nav_group_ai_supply,
+  admin_nav_group_content_assets,
+  admin_nav_group_integrations,
+  admin_nav_group_ops_governance,
   admin_navigation_audit,
   admin_navigation_capabilities,
   admin_navigation_cloudflare,
@@ -213,3 +218,72 @@ export const ADMIN_UTILITY_ITEM: ShellNavigationItem = {
   href: Routes.Admin,
   icon: IconShieldCheck,
 };
+
+export interface AdminNavGroup {
+  id: string;
+  label: string;
+  items: readonly ShellNavigationItem[];
+}
+
+const adminItemById = new Map(
+  ADMIN_SIDEBAR_ITEMS.map((item) => [item.id, item] as const)
+);
+
+function adminItem(id: (typeof ADMIN_SIDEBAR_ITEMS)[number]['id']) {
+  const item = adminItemById.get(id);
+  if (!item) throw new Error(`Unknown admin nav item: ${id}`);
+  return item;
+}
+
+/**
+ * D2 (admin-config-audit 2026-08-06 §6): the sidebar groups the flat
+ * ADMIN_SIDEBAR_ITEMS word list by the six capability-catalog L1 domains.
+ * ADMIN_SIDEBAR_ITEMS stays the single source of truth for labels/hrefs;
+ * groups only arrange it. recipe-studio stays listed until the D3
+ * retirement ticket lands — the restyle wave removes no functionality.
+ */
+export const ADMIN_NAV_GROUPS: readonly AdminNavGroup[] = [
+  {
+    id: 'account-commerce',
+    get label() {
+      return admin_nav_group_account_commerce();
+    },
+    items: [adminItem('users'), adminItem('plans'), adminItem('redemptions')],
+  },
+  {
+    id: 'ai-supply',
+    get label() {
+      return admin_nav_group_ai_supply();
+    },
+    items: [adminItem('supply'), adminItem('models')],
+  },
+  {
+    id: 'content-assets',
+    get label() {
+      return admin_nav_group_content_assets();
+    },
+    items: [
+      adminItem('templates'),
+      adminItem('skills'),
+      adminItem('recipe-studio'),
+    ],
+  },
+  {
+    id: 'integrations',
+    get label() {
+      return admin_nav_group_integrations();
+    },
+    items: [adminItem('integrations')],
+  },
+  {
+    id: 'ops-governance',
+    get label() {
+      return admin_nav_group_ops_governance();
+    },
+    items: [
+      adminItem('capabilities'),
+      adminItem('audit'),
+      adminItem('cloudflare'),
+    ],
+  },
+];

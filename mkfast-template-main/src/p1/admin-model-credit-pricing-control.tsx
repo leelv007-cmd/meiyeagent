@@ -1,12 +1,12 @@
+import {
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import { IconFilePlus } from '@tabler/icons-react';
 
-import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-} from '@/components/admin/shell/admin-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -134,16 +134,14 @@ export function AdminModelCreditPricingControl({
   onCreateDraft: (catalog: AdminCatalogControl['catalog']) => Promise<void>;
 }) {
   return (
-    <AdminPanel>
-      <AdminPanelHeader>
-        <AdminPanelTitle>
-          {p1_admin_model_credit_pricing_title()}
-        </AdminPanelTitle>
-        <AdminPanelDescription>
+    <Frame>
+      <FrameHeader className="gap-1">
+        <FrameTitle>{p1_admin_model_credit_pricing_title()}</FrameTitle>
+        <FrameDescription>
           {p1_admin_model_credit_pricing_description()}
-        </AdminPanelDescription>
-      </AdminPanelHeader>
-      <AdminPanelContent className="space-y-6">
+        </FrameDescription>
+      </FrameHeader>
+      <FramePanel className="space-y-6">
         {catalog.models.map((model) => {
           const operations = supportedPricingOperations(model);
           if (operations.length === 0) return null;
@@ -241,7 +239,7 @@ export function AdminModelCreditPricingControl({
             </form>
           );
         })}
-      </AdminPanelContent>
-    </AdminPanel>
+      </FramePanel>
+    </Frame>
   );
 }

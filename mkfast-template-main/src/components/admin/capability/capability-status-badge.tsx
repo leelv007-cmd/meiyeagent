@@ -4,45 +4,40 @@ import type {
   CapabilityInventoryItemStatus,
 } from '@meiye/contracts';
 
-import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
+import { Badge, type BadgeProps } from '@/components/reui/badge';
 import {
   availabilityLabel,
   inventoryStatusLabel,
 } from '@/p1/admin-capability-registry-model';
 
-type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
+/**
+ * 状态徽章走 ReUI Badge 的语义 variant，不再是四档通用色。
+ *
+ * 「诚实 unknown」在这里是配色纪律的一部分：未插桩 / 未核验一律走中性
+ * `secondary`，绝不借 success 的绿色替没量到的东西背书。
+ */
+type StatusVariant = NonNullable<BadgeProps['variant']>;
 
-function inventoryVariant(status: CapabilityInventoryItemStatus): BadgeVariant {
-  switch (status) {
-    case 'instrumented':
-      return 'secondary';
-    case 'stub':
-      return 'outline';
-    case 'not_instrumented':
-    case 'not_in_scope_for_supply_v1':
-      return 'outline';
-    default:
-      return 'outline';
-  }
+function inventoryVariant(
+  status: CapabilityInventoryItemStatus
+): StatusVariant {
+  return status === 'instrumented' ? 'success-outline' : 'secondary';
 }
 
 function availabilityVariant(
   status: CapabilityAvailabilityStatus
-): BadgeVariant {
+): StatusVariant {
   switch (status) {
     case 'available':
-      return 'secondary';
+      return 'success-outline';
     case 'degraded':
     case 'attention':
     case 'stale':
-      return 'outline';
+      return 'warning-outline';
     case 'blocked':
-      return 'destructive';
-    case 'not_verified':
-    case 'not_instrumented':
-      return 'outline';
+      return 'destructive-outline';
     default:
-      return 'outline';
+      return 'secondary';
   }
 }
 
@@ -53,13 +48,13 @@ export function InventoryStatusBadge({
   status: CapabilityInventoryItemStatus;
 }) {
   return (
-    <AdminStatusChip
+    <Badge
       variant={inventoryVariant(status)}
       data-testid="inventory-status-badge"
       data-status={status}
     >
       {inventoryStatusLabel(status)}
-    </AdminStatusChip>
+    </Badge>
   );
 }
 
@@ -70,13 +65,13 @@ export function AvailabilityStatusBadge({
   status: CapabilityAvailabilityStatus;
 }) {
   return (
-    <AdminStatusChip
+    <Badge
       variant={availabilityVariant(status)}
       data-testid="availability-status-badge"
       data-status={status}
     >
       {availabilityLabel(status)}
-    </AdminStatusChip>
+    </Badge>
   );
 }
 
@@ -99,12 +94,12 @@ export function InstrumentStatusBadge({
               : status;
 
   return (
-    <AdminStatusChip
-      variant={status === 'instrumented' ? 'secondary' : 'outline'}
+    <Badge
+      variant={status === 'instrumented' ? 'success-outline' : 'secondary'}
       data-testid="instrument-status-badge"
       data-status={status}
     >
       {label}
-    </AdminStatusChip>
+    </Badge>
   );
 }

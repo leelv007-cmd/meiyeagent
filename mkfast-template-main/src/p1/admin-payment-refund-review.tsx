@@ -2,14 +2,14 @@ import {
   listPaymentRefundReviews,
   resolvePaymentRefund,
 } from '@/api/payment-refunds';
+import { Badge } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
@@ -64,14 +64,14 @@ export function AdminPaymentRefundReview() {
   const rows = reviews.data ?? [];
 
   return (
-    <AdminPanel data-testid="admin-payment-refund-review">
-      <AdminPanelHeader>
-        <AdminPanelTitle>Payment refund review</AdminPanelTitle>
-        <AdminPanelDescription>
+    <Frame data-testid="admin-payment-refund-review" dense>
+      <FrameHeader>
+        <FrameTitle>Payment refund review</FrameTitle>
+        <FrameDescription>
           Review provider refund facts without changing customer credits.
-        </AdminPanelDescription>
-      </AdminPanelHeader>
-      <AdminPanelContent className="overflow-x-auto">
+        </FrameDescription>
+      </FrameHeader>
+      <FramePanel className="overflow-x-auto">
         {reviews.isPending ? (
           <p className="text-sm text-muted-foreground">Loading...</p>
         ) : reviews.isError ? (
@@ -119,8 +119,8 @@ export function AdminPaymentRefundReview() {
             </TableBody>
           </Table>
         )}
-      </AdminPanelContent>
-    </AdminPanel>
+      </FramePanel>
+    </Frame>
   );
 }
 
@@ -142,13 +142,13 @@ function RefundReviewRow({
   return (
     <TableRow data-testid={`refund-review-${item.providerEventId}`}>
       <TableCell>
-        <AdminStatusChip
+        <Badge
           variant={
-            item.dispositionStatus === 'resolved' ? 'secondary' : 'outline'
+            item.dispositionStatus === 'resolved' ? 'success-light' : 'outline'
           }
         >
           {item.dispositionStatus}
-        </AdminStatusChip>
+        </Badge>
         <p className="mt-1 text-xs text-muted-foreground">{item.eventStatus}</p>
       </TableCell>
       <TableCell>

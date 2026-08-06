@@ -1,19 +1,24 @@
 import { InventoryStatusBadge } from '@/components/admin/capability/capability-status-badge';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Separator } from '@/components/ui/separator';
 import type { CapabilityCatalogView } from '@/p1/admin-capability-catalog-model';
 
 /**
  * Two-level capability catalog (J3).
  * L1 = operator domains; L2 = technical deps + evidence drilldowns.
  * Daily ops path: no code/SQL/env/raw JSON/CLI controls (D-048).
+ *
+ * 呈现走 surge 的 panel 行式语言：每个 L1 域一个 Frame，域内三段（能力项 /
+ * 技术依赖 / 证据下钻）各占一个 FramePanel，行与行之间由 border-b 分隔而不是
+ * 一堆各自带边框的卡片。
  */
 export function CapabilityCatalogPanel({
   view,
@@ -40,7 +45,7 @@ export function CapabilityCatalogPanel({
       </Alert>
 
       <p
-        className="text-sm text-muted-foreground"
+        className="text-muted-foreground text-sm"
         data-testid="catalog-revision"
       >
         revision {view.revision} · 捕获 {view.capturedAt} · L1{' '}
@@ -48,151 +53,148 @@ export function CapabilityCatalogPanel({
       </p>
 
       {view.domains.map((section) => (
-        <AdminPanel
+        <Frame
           key={section.domain}
           data-testid="catalog-l1-section"
           data-domain={section.domain}
         >
-          <AdminPanelHeader className="space-y-2">
+          <FrameHeader className="gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <AdminPanelTitle className="text-base">
-                {section.title}
-              </AdminPanelTitle>
-              <AdminStatusChip
-                variant="secondary"
-                data-testid="catalog-l1-badge"
-              >
+              <FrameTitle className="text-base">{section.title}</FrameTitle>
+              <Badge variant="secondary" data-testid="catalog-l1-badge">
                 L1 能力域
-              </AdminStatusChip>
+              </Badge>
             </div>
-            <AdminPanelDescription className="space-y-1">
+            <FrameDescription className="space-y-1">
               <p data-testid="catalog-function-summary">
-                <span className="font-medium text-foreground">功能：</span>
+                <span className="text-foreground font-medium">功能：</span>
                 {section.functionSummary}
               </p>
               <p data-testid="catalog-user-impact">
-                <span className="font-medium text-foreground">用户影响：</span>
+                <span className="text-foreground font-medium">用户影响：</span>
                 {section.userImpact}
               </p>
-            </AdminPanelDescription>
-          </AdminPanelHeader>
-          <AdminPanelContent className="space-y-5">
-            <section
-              className="space-y-2"
-              data-testid="catalog-l2-capabilities"
-            >
-              <h3 className="text-sm font-semibold">能力项</h3>
-              {section.capabilities.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  本域暂无登记能力
-                </p>
-              ) : (
-                <ul className="grid gap-2 sm:grid-cols-2">
-                  {section.capabilities.map((cap) => (
-                    <li
-                      key={cap.id}
-                      className="rounded-lg border p-3"
-                      data-testid="catalog-capability-row"
-                      data-capability-id={cap.id}
+            </FrameDescription>
+          </FrameHeader>
+
+          <FramePanel
+            className="flex flex-col gap-0 p-0!"
+            data-testid="catalog-l2-capabilities"
+          >
+            <div className="text-muted-foreground flex items-center gap-3 px-4 py-2 text-sm font-medium">
+              <span className="flex-1">能力项</span>
+              <span className="shrink-0">插桩状态</span>
+            </div>
+            <Separator />
+            {section.capabilities.length === 0 ? (
+              <p className="text-muted-foreground px-4 py-6 text-center text-sm">
+                本域暂无登记能力
+              </p>
+            ) : (
+              section.capabilities.map((cap) => (
+                <div
+                  key={cap.id}
+                  className="flex items-start gap-3 border-b px-4 py-3 last:border-b-0"
+                  data-testid="catalog-capability-row"
+                  data-capability-id={cap.id}
+                >
+                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="text-foreground text-sm font-medium">
+                      {cap.name}
+                    </span>
+                    <span className="text-muted-foreground text-xs">
+                      {cap.purpose}
+                    </span>
+                  </div>
+                  <InventoryStatusBadge status={cap.status} />
+                </div>
+              ))
+            )}
+          </FramePanel>
+
+          <FramePanel data-testid="catalog-l2-dependencies">
+            <h3 className="text-sm font-semibold">二级 · 技术依赖</h3>
+            {section.technicalDependencies.length === 0 ? (
+              <p className="text-muted-foreground mt-2 text-sm">
+                无关键技术依赖
+              </p>
+            ) : (
+              <ul className="mt-2 flex flex-wrap gap-2">
+                {section.technicalDependencies.map((dep) => (
+                  <li key={dep.id}>
+                    <Badge
+                      variant="outline"
+                      data-testid="catalog-tech-dep"
+                      data-dep-id={dep.id}
                     >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-medium">{cap.name}</span>
-                        <InventoryStatusBadge status={cap.status} />
-                      </div>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {cap.purpose}
-                      </p>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+                      {dep.label}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </FramePanel>
 
-            <section
-              className="space-y-2"
-              data-testid="catalog-l2-dependencies"
-            >
-              <h3 className="text-sm font-semibold">二级 · 技术依赖</h3>
-              {section.technicalDependencies.length === 0 ? (
-                <p className="text-sm text-muted-foreground">无关键技术依赖</p>
-              ) : (
-                <ul className="flex flex-wrap gap-2">
-                  {section.technicalDependencies.map((dep) => (
-                    <li key={dep.id}>
-                      <AdminStatusChip
-                        variant="outline"
-                        data-testid="catalog-tech-dep"
-                        data-dep-id={dep.id}
+          <FramePanel
+            className="flex flex-col gap-0 p-0!"
+            data-testid="catalog-l2-evidence"
+          >
+            <div className="text-muted-foreground px-4 py-2 text-sm font-medium">
+              二级 · 证据下钻
+            </div>
+            <Separator />
+            {section.evidenceDrilldowns.length === 0 ? (
+              <p className="text-muted-foreground px-4 py-6 text-center text-sm">
+                本域暂无既有管理页下钻（后续纵向回填）
+              </p>
+            ) : (
+              section.evidenceDrilldowns.map((drill) => (
+                <a
+                  key={drill.pageId}
+                  href={drill.path}
+                  className="hover:bg-muted/40 flex flex-col gap-0.5 border-b px-4 py-3 transition-colors last:border-b-0"
+                  data-testid="catalog-evidence-drilldown"
+                  data-page-id={drill.pageId}
+                  data-hosts-health={
+                    drill.hostsOperationsHealth ? 'true' : 'false'
+                  }
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">{drill.title}</span>
+                    {drill.hostsOperationsHealth ? (
+                      <Badge
+                        variant="info-outline"
+                        data-testid="catalog-health-block-badge"
                       >
-                        {dep.label}
-                      </AdminStatusChip>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className="space-y-2" data-testid="catalog-l2-evidence">
-              <h3 className="text-sm font-semibold">二级 · 证据下钻</h3>
-              {section.evidenceDrilldowns.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  本域暂无既有管理页下钻（后续纵向回填）
-                </p>
-              ) : (
-                <ul className="grid gap-2 sm:grid-cols-2">
-                  {section.evidenceDrilldowns.map((drill) => (
-                    <li key={drill.pageId}>
-                      <a
-                        href={drill.path}
-                        className="block rounded-lg border p-3 transition-colors hover:bg-muted/40"
-                        data-testid="catalog-evidence-drilldown"
-                        data-page-id={drill.pageId}
-                        data-hosts-health={
-                          drill.hostsOperationsHealth ? 'true' : 'false'
-                        }
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-medium">
-                            {drill.title}
-                          </span>
-                          {drill.hostsOperationsHealth ? (
-                            <AdminStatusChip
-                              variant="secondary"
-                              data-testid="catalog-health-block-badge"
-                            >
-                              含运行健康
-                            </AdminStatusChip>
-                          ) : null}
-                        </div>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {drill.functionSummary}
-                        </p>
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          用户影响：{drill.userImpact}
-                        </p>
-                        <p className="mt-1 font-mono text-[11px] text-muted-foreground">
-                          {drill.path}
-                        </p>
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          </AdminPanelContent>
-        </AdminPanel>
+                        含运行健康
+                      </Badge>
+                    ) : null}
+                  </div>
+                  <p className="text-muted-foreground text-xs">
+                    {drill.functionSummary}
+                  </p>
+                  <p className="text-muted-foreground text-xs">
+                    用户影响：{drill.userImpact}
+                  </p>
+                  <p className="text-muted-foreground font-mono text-[11px]">
+                    {drill.path}
+                  </p>
+                </a>
+              ))
+            )}
+          </FramePanel>
+        </Frame>
       ))}
 
-      <section
-        className="rounded-lg border border-dashed p-4"
-        data-testid="catalog-handoff-note"
-      >
-        <h3 className="text-sm font-semibold">复杂修复 · 技术移交</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          需要代码级、SQL、环境变量或基础设施变更时，生成脱敏移交上下文交给技术同学；
-          不在运营界面伪装成一键修复。
-        </p>
-      </section>
+      <Frame variant="ghost" data-testid="catalog-handoff-note">
+        <FramePanel className="border-dashed shadow-none">
+          <h3 className="text-sm font-semibold">复杂修复 · 技术移交</h3>
+          <p className="text-muted-foreground mt-1 text-sm">
+            需要代码级、SQL、环境变量或基础设施变更时，生成脱敏移交上下文交给技术同学；
+            不在运营界面伪装成一键修复。
+          </p>
+        </FramePanel>
+      </Frame>
     </div>
   );
 }

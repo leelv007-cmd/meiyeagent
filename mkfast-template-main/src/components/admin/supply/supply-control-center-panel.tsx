@@ -74,7 +74,7 @@ export function SupplyControlCenterPanel({
     <div
       data-testid="supply-control-center-panel"
       data-catalog-revision-id={catalogRevisionId}
-      className="space-y-10"
+      className="space-y-8"
     >
       <SupplyOverviewPanel view={overview} />
       <SupplyRunTable page={runTable} onStateChange={onRunTableStateChange} />

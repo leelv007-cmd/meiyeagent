@@ -7,14 +7,14 @@ import type {
 } from '@meiye/contracts';
 import { useRef, useState } from 'react';
 
+import { Badge } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -152,6 +152,13 @@ function publishedRevisions<T extends { revision: number; status: string }>(
   );
 }
 
+function lifecycleBadgeVariant(status?: CatalogArtifactStatus) {
+  if (status === 'published') return 'success-light' as const;
+  if (status === 'preview') return 'info-light' as const;
+  if (status === 'draft') return 'secondary' as const;
+  return 'outline' as const;
+}
+
 function LifecycleHistory({
   history,
 }: {
@@ -162,26 +169,33 @@ function LifecycleHistory({
   }>;
 }) {
   return (
-    <div className="space-y-2">
-      <h4 className="text-sm font-medium">版本历史</h4>
-      {history.length === 0 ? (
-        <p className="text-sm text-muted-foreground">尚无版本。</p>
-      ) : (
-        <ol className="grid gap-2 sm:grid-cols-2">
-          {[...history].reverse().map((item) => (
-            <li
-              key={`${item.revision}-${item.status}`}
-              className="rounded-lg border border-input px-3 py-2 text-sm"
-            >
-              r{item.revision} · {item.status}
-              {item.rolledBackToRevision
-                ? ` · 回滚自 r${item.rolledBackToRevision}`
-                : ''}
-            </li>
-          ))}
-        </ol>
-      )}
-    </div>
+    <Frame dense headingLevel={3}>
+      <FrameHeader>
+        <FrameTitle>版本历史</FrameTitle>
+      </FrameHeader>
+      <FramePanel>
+        {history.length === 0 ? (
+          <p className="text-sm text-muted-foreground">尚无版本。</p>
+        ) : (
+          <ol className="grid gap-2 sm:grid-cols-2">
+            {[...history].reverse().map((item) => (
+              <li
+                key={`${item.revision}-${item.status}`}
+                className="flex flex-wrap items-center gap-2 rounded-lg border border-input px-3 py-2 text-sm"
+              >
+                r{item.revision}
+                <Badge variant={lifecycleBadgeVariant(item.status)}>
+                  {item.status}
+                </Badge>
+                {item.rolledBackToRevision
+                  ? `回滚自 r${item.rolledBackToRevision}`
+                  : ''}
+              </li>
+            ))}
+          </ol>
+        )}
+      </FramePanel>
+    </Frame>
   );
 }
 
@@ -370,14 +384,14 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
       className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)]"
       data-testid="recipe-editor"
     >
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>Recipe 配置</AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame dense headingLevel={3}>
+        <FrameHeader>
+          <FrameTitle>Recipe 配置</FrameTitle>
+          <FrameDescription>
             用表单编辑用户可见入口，不暴露 Prompt 正文。
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="space-y-4">
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="space-y-4">
           <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
             <div className="space-y-2">
               <Label htmlFor="recipe-id">Recipe ID</Label>
@@ -629,35 +643,33 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
               回滚 Recipe
             </Button>
           </div>
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
 
       <div className="space-y-4">
-        <AdminPanel data-testid="recipe-visual-preview">
-          <AdminPanelHeader>
+        <Frame dense headingLevel={3} data-testid="recipe-visual-preview">
+          <FrameHeader>
             <div className="flex items-center justify-between gap-3">
-              <AdminPanelTitle>Recipe 可视预览</AdminPanelTitle>
-              <AdminStatusChip
-                variant="outline"
+              <FrameTitle>Recipe 可视预览</FrameTitle>
+              <Badge
+                variant={lifecycleBadgeVariant(head?.status)}
                 data-testid="recipe-lifecycle-status"
               >
                 {head ? `${head.status} · r${head.revision}` : '未保存'}
-              </AdminStatusChip>
+              </Badge>
             </div>
-            <AdminPanelDescription>
-              {lensLabels[lensId]}入口卡片
-            </AdminPanelDescription>
-          </AdminPanelHeader>
-          <AdminPanelContent className="space-y-2">
-            <h3 className="font-semibold">{title || '未填写标题'}</h3>
+            <FrameDescription>{lensLabels[lensId]}入口卡片</FrameDescription>
+          </FrameHeader>
+          <FramePanel className="space-y-2">
+            <p className="font-semibold">{title || '未填写标题'}</p>
             <p className="text-sm text-muted-foreground">
               {summary || '未填写摘要'}
             </p>
             <Button type="button" size="sm" disabled>
               选择{lensLabels[lensId]}并套用
             </Button>
-          </AdminPanelContent>
-        </AdminPanel>
+          </FramePanel>
+        </Frame>
         <LifecycleHistory history={history} />
       </div>
     </div>
@@ -821,14 +833,14 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
       className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.8fr)]"
       data-testid="surface-editor"
     >
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>Surface 编排</AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame dense headingLevel={3}>
+        <FrameHeader>
+          <FrameTitle>Surface 编排</FrameTitle>
+          <FrameDescription>
             按顺序编排已发布 Recipe；工具区只提供通过能力验收的入口。
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="space-y-4">
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="space-y-4">
           <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
             <div className="space-y-2">
               <Label htmlFor="surface-id">Surface ID</Label>
@@ -1011,26 +1023,26 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
               回滚 Surface
             </Button>
           </div>
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
 
       <div className="space-y-4">
-        <AdminPanel data-testid="surface-visual-preview">
-          <AdminPanelHeader>
+        <Frame dense headingLevel={3} data-testid="surface-visual-preview">
+          <FrameHeader>
             <div className="flex items-center justify-between gap-3">
-              <AdminPanelTitle>Surface 可视预览</AdminPanelTitle>
-              <AdminStatusChip
-                variant="outline"
+              <FrameTitle>Surface 可视预览</FrameTitle>
+              <Badge
+                variant={lifecycleBadgeVariant(head?.status)}
                 data-testid="surface-lifecycle-status"
               >
                 {head ? `${head.status} · r${head.revision}` : '未保存'}
-              </AdminStatusChip>
+              </Badge>
             </div>
-            <AdminPanelDescription>
+            <FrameDescription>
               {surfaceId || '未填写 Surface ID'}
-            </AdminPanelDescription>
-          </AdminPanelHeader>
-          <AdminPanelContent className="space-y-3">
+            </FrameDescription>
+          </FrameHeader>
+          <FramePanel className="space-y-3">
             {recipeRefs
               .filter((ref) => ref.visible)
               .map((ref, index) => (
@@ -1047,8 +1059,8 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
                   </p>
                 </div>
               ))}
-          </AdminPanelContent>
-        </AdminPanel>
+          </FramePanel>
+        </Frame>
         <LifecycleHistory history={history} />
       </div>
     </div>
@@ -1061,14 +1073,14 @@ export function AdminCreationExperienceControl({
   api?: CreationExperienceAdminApi;
 }) {
   return (
-    <AdminPanel>
-      <AdminPanelHeader>
-        <AdminPanelTitle>创作入口 Recipe / Surface</AdminPanelTitle>
-        <AdminPanelDescription>
+    <Frame>
+      <FrameHeader>
+        <FrameTitle>创作入口 Recipe / Surface</FrameTitle>
+        <FrameDescription>
           完成草稿、预览、发布与回滚；发布后只影响新的创作会话。
-        </AdminPanelDescription>
-      </AdminPanelHeader>
-      <AdminPanelContent>
+        </FrameDescription>
+      </FrameHeader>
+      <FramePanel>
         <Tabs defaultValue="recipe">
           <TabsList aria-label="创作入口编辑器">
             <TabsTrigger value="recipe">Recipe 编辑</TabsTrigger>
@@ -1081,7 +1093,7 @@ export function AdminCreationExperienceControl({
             <SurfaceEditor api={api} />
           </TabsContent>
         </Tabs>
-      </AdminPanelContent>
-    </AdminPanel>
+      </FramePanel>
+    </Frame>
   );
 }

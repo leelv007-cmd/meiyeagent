@@ -14,6 +14,8 @@ import {
   admin_users_close,
   admin_users_columns_email,
   admin_users_columns_provisioned_by,
+  admin_users_detail_account_title,
+  admin_users_detail_summary_title,
   admin_users_email_copied,
   admin_users_joined,
   admin_users_self_registered,
@@ -25,23 +27,30 @@ import {
 } from '@/locale/paraglide/messages';
 import type { AdminUserListItem } from '@/api/users';
 import { UserAvatar } from '@/components/shared/user-avatar';
-import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
+import { Badge } from '@/components/reui/badge';
+import {
+  Frame,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
-import {
-  Drawer,
-  DrawerClose,
-  DrawerContent,
-  DrawerFooter,
-  DrawerHeader,
-  DrawerTitle,
-  DrawerTrigger,
-} from '@/components/ui/drawer';
-import { Label } from '@/components/ui/label';
+import { FieldError, FieldLabel } from '@/components/ui/field';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import { useBanUser, useUnbanUser } from '@/hooks/use-users';
-import { useIsMobile } from '@/hooks/use-mobile';
 import { formatDate } from '@/lib/formatter';
 import { cn } from '@/lib/utils';
 import {
@@ -52,13 +61,29 @@ import {
   IconUserCheck,
   IconUserX,
 } from '@tabler/icons-react';
+import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+
+const FRAME_PANEL_RESET = 'shadow-none!';
+
+function toDate(v: Date | string | number | null | undefined): Date | null {
+  return v ? new Date(v) : null;
+}
+
+function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="min-w-0 truncate text-right">{value}</span>
+    </div>
+  );
+}
+
 interface UserDetailViewerProps {
   user: AdminUserListItem;
 }
 export function UserDetailViewer({ user }: UserDetailViewerProps) {
-  const isMobile = useIsMobile();
   const [error, setError] = useState<string | undefined>();
   const [banReason, setBanReason] = useState<string>(
     admin_users_ban_default_reason()
@@ -67,8 +92,6 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const banUserMutation = useBanUser();
   const unbanUserMutation = useUnbanUser();
-  const toDate = (v: Date | string | number | null | undefined): Date | null =>
-    v ? new Date(v) : null;
   const handleBan = async () => {
     if (!banReason?.trim()) {
       setError(admin_users_ban_error());
@@ -111,194 +134,261 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
       toast.error(msg);
     }
   };
+
+  const provisionedBy =
+    user.provisioningAttribution.kind === 'admin_assisted'
+      ? (user.provisioningAttribution.operatorDisplayName ??
+        admin_users_admin())
+      : admin_users_self_registered();
+
+  const accountSection = (
+    <Frame dense spacing="sm" className="w-full">
+      <FrameHeader>
+        <FrameTitle>{admin_users_detail_account_title()}</FrameTitle>
+      </FrameHeader>
+      <FramePanel className={cn('flex flex-col gap-3', FRAME_PANEL_RESET)}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant={user.role === 'admin' ? 'info-light' : 'secondary'}>
+            {user.role === 'admin' ? admin_users_admin() : admin_users_user()}
+          </Badge>
+          <Badge variant={user.banned ? 'destructive-light' : 'success-light'}>
+            {user.banned ? (
+              <>
+                <IconUserX className="size-3.5" />
+                {admin_users_banned()}
+              </>
+            ) : (
+              <>
+                <IconUserCheck className="size-3.5" />
+                {admin_users_active()}
+              </>
+            )}
+          </Badge>
+        </div>
+        {user.email && (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs text-muted-foreground">
+              {admin_users_columns_email()}
+            </span>
+            <Badge
+              variant="outline"
+              size="xl"
+              className="w-fit border-transparent hover:cursor-pointer hover:underline hover:underline-offset-4"
+              render={<button type="button" />}
+              onClick={() => {
+                navigator.clipboard.writeText(user.email);
+                toast.success(admin_users_email_copied());
+              }}
+            >
+              {user.emailVerified ? (
+                <IconMailCheck className="size-3.5 stroke-success" />
+              ) : (
+                <IconMailQuestion className="size-3.5 stroke-destructive" />
+              )}
+              {user.email}
+            </Badge>
+          </div>
+        )}
+      </FramePanel>
+    </Frame>
+  );
+
+  const banSection = (
+    <Frame dense spacing="sm" className="w-full">
+      <FrameHeader>
+        <FrameTitle>
+          {user.banned ? admin_users_banned() : admin_users_ban_button()}
+        </FrameTitle>
+      </FrameHeader>
+      <FramePanel className={cn('flex flex-col gap-4', FRAME_PANEL_RESET)}>
+        {error && <FieldError>{error}</FieldError>}
+        {user.banned ? (
+          <div className="flex flex-col gap-2 text-sm">
+            {user.banReason && (
+              <SummaryRow
+                label={admin_users_ban_reason()}
+                value={user.banReason}
+              />
+            )}
+            <SummaryRow
+              label={admin_users_ban_expires()}
+              value={
+                user.banExpires && toDate(user.banExpires)
+                  ? formatDate(toDate(user.banExpires)!)
+                  : admin_users_ban_never()
+              }
+            />
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-col gap-1.5">
+              <FieldLabel htmlFor="ban-reason">
+                {admin_users_ban_reason()}
+              </FieldLabel>
+              <Textarea
+                id="ban-reason"
+                value={banReason}
+                onChange={(e) => setBanReason(e.target.value)}
+                placeholder={admin_users_ban_reason_placeholder()}
+                required
+              />
+            </div>
+            <div className="flex w-fit max-w-full flex-col gap-1.5">
+              <FieldLabel>{admin_users_ban_expires()}</FieldLabel>
+              <div className="w-fit rounded-lg border border-input bg-background">
+                <button
+                  type="button"
+                  onClick={() => setCalendarOpen((o) => !o)}
+                  className={cn(
+                    'flex h-9 w-full items-center justify-start gap-1.5 px-2.5 text-sm font-normal outline-none hover:bg-muted hover:text-foreground rounded-lg',
+                    !banExpiresAt && 'text-muted-foreground'
+                  )}
+                >
+                  <IconCalendar className="size-4 shrink-0" />
+                  {banExpiresAt ? (
+                    formatDate(banExpiresAt)
+                  ) : (
+                    <span>{admin_users_ban_select_date()}</span>
+                  )}
+                </button>
+                {calendarOpen && (
+                  <div className="w-auto border-t border-input p-2">
+                    <Calendar
+                      mode="single"
+                      selected={banExpiresAt}
+                      onSelect={(date) => {
+                        setBanExpiresAt(date);
+                        setCalendarOpen(false);
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </FramePanel>
+    </Frame>
+  );
+
+  const summarySection = (
+    <Frame dense spacing="sm" className="w-full">
+      <FrameHeader>
+        <FrameTitle>{admin_users_detail_summary_title()}</FrameTitle>
+      </FrameHeader>
+      <FramePanel
+        className={cn('flex flex-col gap-2 text-sm', FRAME_PANEL_RESET)}
+      >
+        <SummaryRow
+          label={admin_users_columns_provisioned_by()}
+          value={<span className="font-mono text-xs">{provisionedBy}</span>}
+        />
+        <SummaryRow
+          label={admin_users_joined()}
+          value={
+            toDate(user.createdAt) ? formatDate(toDate(user.createdAt)!) : '-'
+          }
+        />
+        <SummaryRow
+          label={admin_users_updated()}
+          value={
+            toDate(user.updatedAt) ? formatDate(toDate(user.updatedAt)!) : '-'
+          }
+        />
+      </FramePanel>
+    </Frame>
+  );
+
+  const leftContent = (
+    <div className="flex flex-col gap-4 px-5 py-4 sm:px-6">
+      {accountSection}
+      {banSection}
+    </div>
+  );
+
+  const rightContent = (
+    <div className="flex flex-col gap-4 px-5 py-4 sm:px-6">
+      {summarySection}
+    </div>
+  );
+
   return (
-    <Drawer direction={isMobile ? 'bottom' : 'right'}>
+    <Sheet>
       <div className="flex items-center gap-2">
         <UserAvatar
           name={user.name ?? null}
           image={user.image ?? null}
           className="size-8 shrink-0 border"
         />
-        <DrawerTrigger asChild>
-          <Button
-            variant="link"
-            className="w-fit px-0 text-left text-foreground"
-          >
-            <span className="font-medium hover:underline hover:underline-offset-4">
-              {user.name}
-            </span>
-          </Button>
-        </DrawerTrigger>
+        <SheetTrigger
+          render={
+            <Button
+              variant="link"
+              className="w-fit px-0 text-left text-foreground"
+            />
+          }
+        >
+          <span className="font-medium hover:underline hover:underline-offset-4">
+            {user.name}
+          </span>
+        </SheetTrigger>
       </div>
-      <DrawerContent>
-        <DrawerHeader className="gap-1">
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        className="flex flex-col gap-0 overflow-hidden rounded-xl p-0 outline-none data-[side=right]:inset-y-4 data-[side=right]:right-4 data-[side=right]:left-auto data-[side=right]:h-[calc(100svh-2rem)] data-[side=right]:w-[min(56rem,calc(100vw-2rem))] data-[side=right]:max-w-none data-[side=right]:sm:max-w-none"
+      >
+        <SheetHeader className="shrink-0 border-b px-5 py-4 sm:px-6">
           <div className="flex items-center gap-4">
             <UserAvatar
               name={user.name ?? null}
               image={user.image ?? null}
               className="size-12 border"
             />
-            <DrawerTitle>{user.name}</DrawerTitle>
-          </div>
-        </DrawerHeader>
-        <div className="flex flex-col gap-4 overflow-y-auto px-4 text-sm">
-          <div className="grid gap-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <AdminStatusChip
-                variant="outline"
-                className={cn(
-                  'px-1.5 border-transparent',
-                  user.role === 'admin'
-                    ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400'
-                    : 'bg-secondary text-secondary-foreground'
-                )}
-              >
-                {user.role === 'admin'
-                  ? admin_users_admin()
-                  : admin_users_user()}
-              </AdminStatusChip>
-              <AdminStatusChip
-                variant="outline"
-                className={cn(
-                  'px-1.5 border-transparent',
-                  user.banned
-                    ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
-                    : 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
-                )}
-              >
-                {user.banned ? (
-                  <>
-                    <IconUserX />
-                    {admin_users_banned()}
-                  </>
-                ) : (
-                  <>
-                    <IconUserCheck />
-                    {admin_users_active()}
-                  </>
-                )}
-              </AdminStatusChip>
-            </div>
-            {user.email && (
-              <div className="grid gap-3">
-                <span className="text-xs text-muted-foreground">
-                  {admin_users_columns_email()}:
-                </span>
-                <AdminStatusChip
-                  variant="outline"
-                  className="w-fit px-1.5 py-2 text-sm border-transparent hover:cursor-pointer hover:underline hover:underline-offset-4"
-                  onClick={() => {
-                    navigator.clipboard.writeText(user.email);
-                    toast.success(admin_users_email_copied());
-                  }}
+            <div className="flex min-w-0 flex-col gap-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <SheetTitle className="truncate">{user.name}</SheetTitle>
+                <Badge
+                  variant={user.banned ? 'destructive-light' : 'success-light'}
                 >
-                  {user.emailVerified ? (
-                    <IconMailCheck className="stroke-green-500 dark:stroke-green-400" />
-                  ) : (
-                    <IconMailQuestion className="stroke-red-500 dark:stroke-red-400" />
-                  )}
-                  {user.email}
-                </AdminStatusChip>
+                  {user.banned ? admin_users_banned() : admin_users_active()}
+                </Badge>
               </div>
-            )}
-          </div>
-          <div className="grid gap-3">
-            <div className="flex items-center justify-between gap-4">
-              <span className="text-muted-foreground">
-                {admin_users_columns_provisioned_by()}:
-              </span>
-              <span className="font-mono text-xs">
-                {user.provisioningAttribution.kind === 'admin_assisted'
-                  ? (user.provisioningAttribution.operatorDisplayName ??
-                    admin_users_admin())
-                  : admin_users_self_registered()}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">
-                {admin_users_joined()}:
-              </span>
-              <span>
+              <SheetDescription>
+                {admin_users_joined()}
+                {': '}
                 {toDate(user.createdAt)
                   ? formatDate(toDate(user.createdAt)!)
                   : '-'}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">
-                {admin_users_updated()}:
-              </span>
-              <span>
-                {toDate(user.updatedAt)
-                  ? formatDate(toDate(user.updatedAt)!)
-                  : '-'}
-              </span>
+              </SheetDescription>
             </div>
           </div>
-          <Separator />
-          {error && <div className="text-sm text-destructive">{error}</div>}
-          {user.banned ? (
-            <div className="grid gap-4">
-              {user.banReason && (
-                <div>
-                  {admin_users_ban_reason()}: {user.banReason}
-                </div>
-              )}
-              <div>
-                {admin_users_ban_expires()}:{' '}
-                {user.banExpires && toDate(user.banExpires)
-                  ? formatDate(toDate(user.banExpires)!)
-                  : admin_users_ban_never()}
-              </div>
-            </div>
-          ) : (
-            <div className="grid gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="ban-reason">{admin_users_ban_reason()}</Label>
-                <Textarea
-                  id="ban-reason"
-                  value={banReason}
-                  onChange={(e) => setBanReason(e.target.value)}
-                  placeholder={admin_users_ban_reason_placeholder()}
-                  required
-                />
-              </div>
-              <div className="grid w-fit max-w-full gap-2">
-                <Label>{admin_users_ban_expires()}</Label>
-                <div className="w-fit rounded-lg border border-input bg-background">
-                  <button
-                    type="button"
-                    onClick={() => setCalendarOpen((o) => !o)}
-                    className={cn(
-                      'flex h-9 w-full items-center justify-start gap-1.5 px-2.5 text-sm font-normal outline-none hover:bg-muted hover:text-foreground rounded-lg',
-                      !banExpiresAt && 'text-muted-foreground'
-                    )}
-                  >
-                    <IconCalendar className="size-4 shrink-0" />
-                    {banExpiresAt ? (
-                      formatDate(banExpiresAt)
-                    ) : (
-                      <span>{admin_users_ban_select_date()}</span>
-                    )}
-                  </button>
-                  {calendarOpen && (
-                    <div className="w-auto border-t border-input p-2">
-                      <Calendar
-                        mode="single"
-                        selected={banExpiresAt}
-                        onSelect={(date) => {
-                          setBanExpiresAt(date);
-                          setCalendarOpen(false);
-                        }}
-                      />
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
+        </SheetHeader>
+
+        {/* Mobile: one stacked scroll area */}
+        <div className="min-h-0 flex-1 lg:hidden">
+          <ScrollArea className="h-full">
+            {leftContent}
+            <Separator />
+            {rightContent}
+          </ScrollArea>
         </div>
-        <DrawerFooter className="flex flex-col gap-2">
+
+        {/* Desktop: two independent scroll areas split by a separator */}
+        <div className="hidden min-h-0 flex-1 flex-row lg:flex">
+          <div className="min-h-0 min-w-0 flex-1">
+            <ScrollArea className="h-full">{leftContent}</ScrollArea>
+          </div>
+          <Separator orientation="vertical" className="self-stretch" />
+          <div className="min-h-0 w-[320px] shrink-0">
+            <ScrollArea className="h-full">{rightContent}</ScrollArea>
+          </div>
+        </div>
+
+        <SheetFooter className="shrink-0 flex-row items-center justify-end gap-2 border-t bg-muted/40 px-5 py-4 sm:px-6">
+          <SheetClose render={<Button type="button" variant="outline" />}>
+            {admin_users_close()}
+          </SheetClose>
           {user.banned ? (
             <Button
               variant="destructive"
@@ -322,11 +412,8 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
               {admin_users_ban_button()}
             </Button>
           )}
-          <DrawerClose asChild>
-            <Button variant="outline">{admin_users_close()}</Button>
-          </DrawerClose>
-        </DrawerFooter>
-      </DrawerContent>
-    </Drawer>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }

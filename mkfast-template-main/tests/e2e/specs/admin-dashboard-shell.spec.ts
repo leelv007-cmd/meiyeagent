@@ -25,13 +25,13 @@ import {
 
 const ADMIN_ROUTES = [
   ['/admin', '异常收口'],
-  ['/admin/supply', '供应运行'],
+  ['/admin/supply', '供给运行控制台'],
   ['/admin/supply/views/model', '供应关联视图'],
   ['/admin/supply/tasks/task-does-not-exist', '供应任务详情'],
   ['/admin/capabilities', '能力目录'],
   ['/admin/recipe-studio', 'Recipe Studio'],
   ['/admin/skills', 'Skills'],
-  ['/admin/models', '模型供应'],
+  ['/admin/models', '模型资产与定价'],
   ['/admin/templates', '官方模板'],
   ['/admin/integrations', '集成治理'],
   ['/admin/plans', '套餐治理'],
@@ -355,13 +355,13 @@ test('every admin page renders the template-dashboard shell in both themes', asy
     for (const [path] of ADMIN_ROUTES) {
       await page.goto(path);
 
-      // The token bridge keys off this class; without it every HeroUI surface
-      // silently falls back to the library's own palette. Generous timeout:
-      // the first admin hit compiles the route and the Glass sheet cold.
+      // 换到 ReUI 壳之后壳根是 shadcn SidebarProvider（admin 是本仓唯一的
+      // `@/components/ui/sidebar` 消费方，所以这个 slot 就是「后台壳在位」）。
+      // Generous timeout: the first admin hit compiles the route cold.
       await expect(
-        page.locator('.meiye-heroui-glass'),
+        page.locator('[data-slot="sidebar-wrapper"]'),
         `${path} lost the shell. Page errors so far:\n${pageErrors.join('\n')}`
-      ).toBeVisible({ timeout: 60_000 });
+      ).toBeAttached({ timeout: 60_000 });
       await expect(
         page.locator('[data-slot="sidebar-menu-item"]').first()
       ).toBeVisible();
@@ -369,16 +369,16 @@ test('every admin page renders the template-dashboard shell in both themes', asy
       await expect(page.locator('[data-shell-mode="admin"]')).toHaveCount(0);
 
       // Sample both themes and require them to actually differ. Asserting each
-      // one is merely non-transparent is close to tautological — the shell root
-      // carries bg-background, so it resolves to something whether or not the
-      // Glass sheet loaded and whether or not the token bridge matched. Two
-      // readings that come back equal mean dark mode never took, which is the
-      // failure this assertion exists to catch.
+      // one is merely non-transparent is close to tautological — the surface
+      // carries a background token, so it resolves to something whether or not
+      // the theme took. Two readings that come back equal mean dark mode never
+      // took, which is the failure this assertion exists to catch. 读数取侧栏
+      // 内层（bg-sidebar，壳把 --sidebar 映到 --color-background）。
       const backgrounds: Record<string, string> = {};
       for (const theme of ['light', 'dark'] as const) {
         await setTheme(page, theme);
         backgrounds[theme] = await page
-          .locator('.meiye-heroui-glass')
+          .locator('[data-slot="sidebar-inner"]')
           .evaluate((node) => getComputedStyle(node).backgroundColor);
         expect(backgrounds[theme], `${path} @ ${theme}`).not.toBe(
           'rgba(0, 0, 0, 0)'

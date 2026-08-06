@@ -1,14 +1,18 @@
 import { useQuery } from '@tanstack/react-query';
 
+import { SettingField } from '@/components/admin/shared/setting-field';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-} from '@/components/admin/shell/admin-panel';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
+import { FieldGroup } from '@/components/ui/field';
 import {
+  admin_plan_add_ons,
+  admin_plan_add_ons_needs_review,
+  admin_plan_add_ons_pricing_ok,
   admin_plan_credit_booster_unit_price_hint,
   admin_plan_credit_booster_unit_price_warning,
   admin_plan_credit_catalog_description,
@@ -128,25 +132,44 @@ export function AdminPlanControl() {
 
   return (
     <div className="space-y-5">
-      <Alert>
-        <AlertTitle>{admin_plan_credit_catalog_title()}</AlertTitle>
-        <AlertDescription>
-          {admin_plan_credit_catalog_description()}
-        </AlertDescription>
-      </Alert>
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>{admin_plan_credit_catalog_title()}</AdminPanelTitle>
-          <AdminPanelDescription data-testid="credit-booster-unit-price-hint">
-            {hasWarning
-              ? admin_plan_credit_booster_unit_price_warning()
-              : admin_plan_credit_booster_unit_price_hint()}
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent>
-          <AdminRuntimeConfigControl keys={[...PLAN_CONTROL_CONFIG_KEYS]} />
-        </AdminPanelContent>
-      </AdminPanel>
+      <Frame className="w-full" dense>
+        <FrameHeader>
+          <FrameTitle>{admin_plan_credit_catalog_title()}</FrameTitle>
+          <FrameDescription>
+            {admin_plan_credit_catalog_description()}
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="p-0">
+          <FieldGroup className="gap-0">
+            <SettingField
+              badge={
+                hasWarning
+                  ? {
+                      label: admin_plan_add_ons_needs_review(),
+                      variant: 'warning-light',
+                    }
+                  : {
+                      label: admin_plan_add_ons_pricing_ok(),
+                      variant: 'success-light',
+                    }
+              }
+              contentClassName="@md/field-group:w-[26rem]"
+              last
+              title={admin_plan_add_ons()}
+            >
+              <p
+                className="text-muted-foreground text-sm"
+                data-testid="credit-booster-unit-price-hint"
+              >
+                {hasWarning
+                  ? admin_plan_credit_booster_unit_price_warning()
+                  : admin_plan_credit_booster_unit_price_hint()}
+              </p>
+            </SettingField>
+          </FieldGroup>
+        </FramePanel>
+      </Frame>
+      <AdminRuntimeConfigControl keys={[...PLAN_CONTROL_CONFIG_KEYS]} />
       <AdminPlanReferenceNumbersControl />
     </div>
   );

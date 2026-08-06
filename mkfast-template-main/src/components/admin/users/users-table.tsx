@@ -18,11 +18,14 @@ import {
   admin_users_user,
 } from '@/locale/paraglide/messages';
 import { UserDetailViewer } from '@/components/admin/users/user-detail-viewer';
-import { DataTableAdvancedToolbar } from '@/components/data-table/data-table-advanced-toolbar';
 import { DataTableColumnHeader } from '@/components/data-table/data-table-column-header';
 import { DataTableFacetedFilter } from '@/components/data-table/data-table-faceted-filter';
 import { DataTablePagination } from '@/components/data-table/data-table-pagination';
+import { DataTableViewOptions } from '@/components/data-table/data-table-view-options';
+import { Badge } from '@/components/reui/badge';
+import { Frame, FrameFooter, FramePanel } from '@/components/reui/frame';
 import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
 import {
   Table,
   TableBody,
@@ -49,12 +52,10 @@ import {
   IconUserX,
   IconX,
 } from '@tabler/icons-react';
-import { useMemo, useState } from 'react';
+import { type ReactNode, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
 import { formatDate, formatDateTime } from '@/lib/formatter';
-import { cn } from '@/lib/utils';
 function TableRowSkeleton({ columns }: { columns: number }) {
   return (
     <TableRow className="h-14">
@@ -101,6 +102,7 @@ interface UsersTableProps {
   sorting: SortingState;
   filters?: ColumnFiltersState;
   loading?: boolean;
+  actions?: ReactNode;
   onSearch: (value: string) => void;
   onPageChange: (page: number) => void;
   onPageSizeChange: (size: number) => void;
@@ -116,6 +118,7 @@ export function UsersTable({
   sorting,
   filters = [],
   loading,
+  actions,
   onSearch,
   onPageChange,
   onPageSizeChange,
@@ -129,7 +132,10 @@ export function UsersTable({
         id: 'name',
         accessorKey: 'name',
         enableHiding: true,
-        enableSorting: false,
+        // The three sortable ids are exactly the server's SORT_FIELD_MAP keys
+        // (src/api/users.ts); anything else would be silently coerced to
+        // createdAt server-side, so those columns stay unsortable.
+        enableSorting: true,
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
@@ -145,7 +151,7 @@ export function UsersTable({
         id: 'email',
         accessorKey: 'email',
         enableHiding: true,
-        enableSorting: false,
+        enableSorting: true,
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
@@ -156,21 +162,23 @@ export function UsersTable({
           const u = row.original;
           return (
             <div className="flex items-center gap-2">
-              <AdminStatusChip
+              <Badge
                 variant="outline"
-                className="text-sm border-transparent px-1.5 py-2 hover:cursor-pointer hover:underline hover:underline-offset-4"
+                size="xl"
+                className="border-transparent hover:cursor-pointer hover:underline hover:underline-offset-4"
+                render={<button type="button" />}
                 onClick={() => {
                   navigator.clipboard.writeText(u.email);
                   toast.success(admin_users_email_copied());
                 }}
               >
                 {u.emailVerified ? (
-                  <IconMailCheck className="stroke-green-500 dark:stroke-green-400" />
+                  <IconMailCheck className="size-3.5 stroke-success" />
                 ) : (
-                  <IconMailQuestion className="stroke-red-500 dark:stroke-red-400" />
+                  <IconMailQuestion className="size-3.5 stroke-destructive" />
                 )}
                 {u.email}
-              </AdminStatusChip>
+              </Badge>
             </div>
           );
         },
@@ -192,17 +200,9 @@ export function UsersTable({
         cell: ({ row }) => {
           const r = row.original.role ?? 'user';
           return (
-            <AdminStatusChip
-              variant="outline"
-              className={cn(
-                'px-1.5 border-transparent',
-                r === 'admin'
-                  ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400'
-                  : 'bg-secondary text-secondary-foreground'
-              )}
-            >
+            <Badge variant={r === 'admin' ? 'info-light' : 'secondary'}>
               {r === 'admin' ? admin_users_admin() : admin_users_user()}
-            </AdminStatusChip>
+            </Badge>
           );
         },
         meta: { label: admin_users_columns_role() },
@@ -236,7 +236,7 @@ export function UsersTable({
         id: 'createdAt',
         accessorKey: 'createdAt',
         enableHiding: true,
-        enableSorting: false,
+        enableSorting: true,
         header: ({ column }) => (
           <DataTableColumnHeader
             column={column}
@@ -262,27 +262,19 @@ export function UsersTable({
         cell: ({ row }) => {
           const banned = row.original.banned;
           return (
-            <AdminStatusChip
-              variant="outline"
-              className={cn(
-                'px-1.5 border-transparent',
-                banned
-                  ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400'
-                  : 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400'
-              )}
-            >
+            <Badge variant={banned ? 'destructive-light' : 'success-light'}>
               {banned ? (
                 <>
-                  <IconUserX />
+                  <IconUserX className="size-3.5" />
                   {admin_users_inactive()}
                 </>
               ) : (
                 <>
-                  <IconUserCheck />
+                  <IconUserCheck className="size-3.5" />
                   {admin_users_active()}
                 </>
               )}
-            </AdminStatusChip>
+            </Badge>
           );
         },
         meta: { label: admin_users_columns_status() },
@@ -389,59 +381,58 @@ export function UsersTable({
     enableMultiSort: false,
   });
   return (
-    <div className="w-full space-y-4">
-      <DataTableAdvancedToolbar table={table}>
-        <div className="flex flex-1 flex-wrap items-center gap-2">
-          <div className="relative">
-            <Input
-              placeholder={admin_users_search()}
-              value={search}
-              onChange={(e) => {
-                onSearch(e.target.value);
-                onPageChange(0);
-              }}
-              className="h-8 w-[260px] pr-8"
-            />
-            {search.length > 0 ? (
-              <button
-                type="button"
-                aria-label={admin_users_clear_search()}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => {
-                  onSearch('');
+    <Frame dense className="w-full">
+      <FramePanel className="p-0! shadow-none!">
+        <div
+          role="toolbar"
+          aria-orientation="horizontal"
+          className="flex flex-wrap items-center justify-between gap-2 px-(--frame-panel-header-px) py-(--frame-panel-header-py)"
+        >
+          <div className="flex flex-1 flex-wrap items-center gap-2">
+            <div className="relative">
+              <Input
+                placeholder={admin_users_search()}
+                value={search}
+                onChange={(e) => {
+                  onSearch(e.target.value);
                   onPageChange(0);
                 }}
-              >
-                <IconX className="size-3.5" />
-              </button>
-            ) : null}
+                className="h-8 w-[260px] pr-8"
+              />
+              {search.length > 0 ? (
+                <button
+                  type="button"
+                  aria-label={admin_users_clear_search()}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                  onClick={() => {
+                    onSearch('');
+                    onPageChange(0);
+                  }}
+                >
+                  <IconX className="size-3.5" />
+                </button>
+              ) : null}
+            </div>
+            <DataTableFacetedFilter
+              column={table.getColumn('role')}
+              title={admin_users_columns_role()}
+              options={roleFilterOptions}
+            />
+            <DataTableFacetedFilter
+              column={table.getColumn('status')}
+              title={admin_users_columns_status()}
+              options={statusFilterOptions}
+            />
           </div>
-          <DataTableFacetedFilter
-            column={table.getColumn('role')}
-            title={admin_users_columns_role()}
-            options={roleFilterOptions}
-          />
-          <DataTableFacetedFilter
-            column={table.getColumn('status')}
-            title={admin_users_columns_status()}
-            options={statusFilterOptions}
-          />
+          <div className="flex shrink-0 items-center gap-2">
+            <DataTableViewOptions table={table} align="end" />
+            {actions}
+          </div>
         </div>
-      </DataTableAdvancedToolbar>
-      <div className="relative flex flex-col gap-4 overflow-auto">
-        <div className="overflow-hidden rounded-lg border">
+        <Separator />
+        <div className="w-full overflow-x-auto">
           <Table>
-            {/*
-              Not bg-muted: under the admin shell's token bridge --muted is
-              remapped to muted *ink* (HeroUI's meaning) rather than a muted
-              *surface* (shadcn's), so this band rendered as a slab of the wrong
-              polarity in both themes — 3.20:1 in light and 1.90:1 in dark
-              against its own labels, both under WCAG AA. --surface-secondary is
-              the bridge's own secondary surface and is opaque in both themes,
-              which a sticky header needs. See .scratch/…/F-3-diagnosis.md; the
-              same collision elsewhere is tracked as OI-48.
-            */}
-            <TableHeader className="sticky top-0 z-10 bg-[var(--surface-secondary)]">
+            <TableHeader className="sticky top-0 z-10 bg-muted">
               {table.getHeaderGroups().map((hg) => (
                 <TableRow key={hg.id}>
                   {hg.headers.map((header) => (
@@ -492,8 +483,10 @@ export function UsersTable({
             </TableBody>
           </Table>
         </div>
+      </FramePanel>
+      <FrameFooter>
         <DataTablePagination table={table} className="px-0" />
-      </div>
-    </div>
+      </FrameFooter>
+    </Frame>
   );
 }

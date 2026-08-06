@@ -3,15 +3,35 @@
  * Metadata / binding / version / 3-state + tested gate + draining /
  * probe results / rotate-drain notes. Secrets never rendered.
  */
+import { Badge, type BadgeProps } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import type { CredentialUiPanelView } from '@/p1/admin-supply-credential-model';
+
+/**
+ * Lifecycle / drain / source words come from the projection, so the mapping is
+ * on the word rather than on a colour picked at the call site — an unmapped
+ * word stays neutral instead of borrowing a green it has not earned.
+ */
+const CREDENTIAL_VARIANT: Record<string, BadgeProps['variant']> = {
+  active: 'success-light',
+  pending: 'warning-light',
+  retired: 'outline',
+  draining: 'warning-light',
+  none: 'outline',
+  registry: 'secondary',
+  migration: 'secondary',
+  env_fallback: 'destructive-light',
+};
+
+function credentialVariant(word: string): BadgeProps['variant'] {
+  return CREDENTIAL_VARIANT[word] ?? 'outline';
+}
 
 export function SupplyCredentialPanel({
   view,
@@ -39,27 +59,30 @@ export function SupplyCredentialPanel({
       </header>
 
       {view.envFallbackCount > 0 ? (
-        <div
-          data-testid="supply-credential-env-fallback-banner"
-          className="rounded-lg border border-destructive/40 bg-destructive/5 p-3 text-sm"
-        >
-          环境变量回退（保险箱未接管）持续可见：请尽快迁移到 CredentialAccount
-          保险箱写入，重启后生效。
-        </div>
+        <Frame dense data-testid="supply-credential-env-fallback-banner">
+          <FramePanel className="border-destructive/40 bg-destructive/5 text-sm">
+            环境变量回退（保险箱未接管）持续可见：请尽快迁移到 CredentialAccount
+            保险箱写入，重启后生效。
+          </FramePanel>
+        </Frame>
       ) : (
-        <div
+        <Frame
+          dense
           data-testid="supply-credential-env-fallback-banner"
           data-empty="true"
-          className="rounded-lg border border-dashed p-3 text-xs text-muted-foreground"
         >
-          无 env_fallback 风险账户；风险与迁移入口在出现时将持续可见。
-        </div>
+          <FramePanel className="border-dashed text-xs text-muted-foreground">
+            无 env_fallback 风险账户；风险与迁移入口在出现时将持续可见。
+          </FramePanel>
+        </Frame>
       )}
 
       <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         {view.accounts.map((account) => (
-          <AdminPanel
+          <Frame
+            dense
             key={account.id}
+            className="h-full min-w-0"
             data-testid="supply-credential-card"
             data-credential-id={account.id}
             data-status={account.status}
@@ -67,43 +90,37 @@ export function SupplyCredentialPanel({
             data-source={account.source}
             data-env-fallback-risk={String(account.envFallbackRisk)}
           >
-            <AdminPanelHeader className="space-y-2 pb-2">
+            <FrameHeader className="gap-2">
               <div className="flex items-start justify-between gap-2">
-                <AdminPanelTitle className="text-sm">
-                  {account.label}
-                </AdminPanelTitle>
-                <AdminStatusChip variant="outline">
+                <FrameTitle className="text-sm">{account.label}</FrameTitle>
+                <Badge variant={credentialVariant(account.status)}>
                   {account.statusLabel}
-                </AdminStatusChip>
+                </Badge>
               </div>
-              <AdminPanelDescription className="font-mono text-xs">
+              <FrameDescription className="font-mono text-xs">
                 {account.id} · v{account.version}
-              </AdminPanelDescription>
-            </AdminPanelHeader>
-            <AdminPanelContent className="space-y-2 text-xs">
+              </FrameDescription>
+            </FrameHeader>
+            <FramePanel className="space-y-2 text-xs">
               <div className="flex flex-wrap gap-1">
-                <AdminStatusChip
-                  variant={
-                    account.source === 'env_fallback'
-                      ? 'destructive'
-                      : 'secondary'
-                  }
-                >
+                <Badge variant={credentialVariant(account.source)}>
                   {account.sourceLabel}
-                </AdminStatusChip>
-                <AdminStatusChip variant="outline">
+                </Badge>
+                <Badge variant={credentialVariant(account.drainSubstate)}>
                   {account.drainLabel}
-                </AdminStatusChip>
-                <AdminStatusChip
+                </Badge>
+                <Badge
                   variant={
-                    account.activationGate.satisfied ? 'secondary' : 'outline'
+                    account.activationGate.satisfied
+                      ? 'success-light'
+                      : 'outline'
                   }
                   data-testid="supply-credential-activation-gate"
                   data-satisfied={String(account.activationGate.satisfied)}
                 >
                   激活门：
                   {account.activationGate.satisfied ? '满足' : '未满足'}
-                </AdminStatusChip>
+                </Badge>
               </div>
 
               <p>
@@ -168,8 +185,8 @@ export function SupplyCredentialPanel({
                   {String(account.rotateDrainFlow.canRevoke)}
                 </p>
               </div>
-            </AdminPanelContent>
-          </AdminPanel>
+            </FramePanel>
+          </Frame>
         ))}
       </div>
     </section>

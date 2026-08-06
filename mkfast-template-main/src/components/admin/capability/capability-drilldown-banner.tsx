@@ -1,4 +1,4 @@
-import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
+import { Badge } from '@/components/reui/badge';
 import {
   domainLabel,
   getDrilldownDomainContext,
@@ -24,27 +24,24 @@ export function CapabilityDrilldownBanner({
 
   return (
     <aside
-      className="rounded-lg border bg-muted/30 p-4 text-sm"
+      className="bg-muted/30 rounded-xl border p-4 text-sm"
       data-testid="capability-drilldown-banner"
       data-page-id={page.pageId}
       data-domain={page.domain}
       data-hosts-health={page.hostsOperationsHealth ? 'true' : 'false'}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <AdminStatusChip variant="secondary" data-testid="drilldown-l1-badge">
+        <Badge variant="secondary" data-testid="drilldown-l1-badge">
           {domainLabel(page.domain)}
-        </AdminStatusChip>
+        </Badge>
         <span className="text-muted-foreground">·</span>
         <span className="font-medium" data-testid="drilldown-page-title">
           {page.title}
         </span>
         {page.hostsOperationsHealth ? (
-          <AdminStatusChip
-            variant="outline"
-            data-testid="drilldown-health-badge"
-          >
+          <Badge variant="info-outline" data-testid="drilldown-health-badge">
             运行健康区块
-          </AdminStatusChip>
+          </Badge>
         ) : null}
       </div>
       <p

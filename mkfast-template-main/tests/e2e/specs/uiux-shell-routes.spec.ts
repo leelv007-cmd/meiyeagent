@@ -141,7 +141,7 @@ test('canonical shell routes survive direct navigation and reload', async ({
     ['/settings/account', '账户'],
     ['/settings/models', '模型'],
     ['/settings/connections', '连接'],
-    ['/admin/models', '模型供应'],
+    ['/admin/models', '模型资产与定价'],
     ['/admin/templates', '官方模板'],
     ['/admin/integrations', '集成治理'],
     ['/admin/plans', '套餐治理'],

@@ -1,27 +1,29 @@
 import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import { SupplyAuditTable } from '@/components/admin/supply/supply-audit-table';
+import { Badge, type BadgeProps } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+  Timeline,
+  TimelineContent,
+  TimelineHeader,
+  TimelineItem,
+  TimelineTitle,
+} from '@/components/reui/timeline';
 import {
-  admin_audit_action,
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import {
   admin_audit_actor_correlation,
   admin_audit_description,
-  admin_audit_time,
   admin_audit_title,
   admin_audit_unknown,
   admin_health_evidence_title,
@@ -43,7 +45,13 @@ import {
   p1_admin_audit_byok_usage_status_label,
 } from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
-import { AdminAuditControl } from '@/p1/admin-audit-control';
+import {
+  AdminAuditControl,
+  AuditBucketHeading,
+  AuditCopyReferenceButton,
+  useAuditOpenIds,
+} from '@/p1/admin-audit-control';
+import { groupAuditIntoBuckets } from '@/p1/admin-audit-timeline-model';
 import { AdminOperationsHealth } from '@/p1/admin-operations-health';
 import { AdminMerchantSupport } from '@/p1/admin-merchant-support';
 import { AdminPaymentRefundReview } from '@/p1/admin-payment-refund-review';
@@ -55,8 +63,10 @@ import {
   normalizeIntegrationAudit,
   type IntegrationAuditView,
 } from '@/p1/settings-view-model';
+import { IconChevronRight } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
+import { useMemo } from 'react';
 
 export const Route = createFileRoute('/admin/audit')({ component: AuditPage });
 
@@ -73,16 +83,21 @@ function AuditPage() {
         <AdminSupplyAuditProjection />
         <AdminByokAuditProjection />
         <AdminAuditControl />
-        <section
-          className="space-y-4 border-t pt-6"
-          data-testid="runtime-governance-health"
+        {/* Ghost frame: AdminOperationsHealth 自带五个 Frame，这里再套一层
+            FramePanel 就是框中框，只留分区标题。 */}
+        <Frame
+          className="border-t pt-6"
           data-domain="runtime_and_governance"
+          data-testid="runtime-governance-health"
+          variant="ghost"
         >
-          <h2 className="text-lg font-semibold">
-            {admin_health_evidence_title()}
-          </h2>
+          <FrameHeader className="px-0">
+            <FrameTitle className="text-lg">
+              {admin_health_evidence_title()}
+            </FrameTitle>
+          </FrameHeader>
           <AdminOperationsHealth />
-        </section>
+        </Frame>
       </div>
     </AdminRoutePage>
   );
@@ -100,14 +115,14 @@ function AdminSupplyAuditProjection() {
   });
 
   return (
-    <AdminPanel data-testid="admin-supply-audit-projection">
-      <AdminPanelHeader>
-        <AdminPanelTitle>模型供应治理审计</AdminPanelTitle>
-        <AdminPanelDescription>
+    <Frame data-testid="admin-supply-audit-projection" dense>
+      <FrameHeader>
+        <FrameTitle>模型供应治理审计</FrameTitle>
+        <FrameDescription>
           受治理动作的不可变原因、目标、操作者与关联证据。
-        </AdminPanelDescription>
-      </AdminPanelHeader>
-      <AdminPanelContent>
+        </FrameDescription>
+      </FrameHeader>
+      <FramePanel>
         {auditQuery.isPending ? (
           <p className="text-sm text-muted-foreground">{common_loading()}</p>
         ) : auditQuery.isError ? (
@@ -115,8 +130,8 @@ function AdminSupplyAuditProjection() {
         ) : (
           <SupplyAuditTable changes={auditQuery.data?.recentChanges ?? []} />
         )}
-      </AdminPanelContent>
-    </AdminPanel>
+      </FramePanel>
+    </Frame>
   );
 }
 
@@ -128,6 +143,16 @@ function byokActionLabel(action: string) {
     return p1_admin_audit_byok_action_failed();
   }
   return p1_admin_audit_byok_action_unknown();
+}
+
+function byokActionVariant(action: string): BadgeProps['variant'] {
+  if (action === 'byok.completed') {
+    return 'success-light';
+  }
+  if (action === 'byok.failed') {
+    return 'destructive-light';
+  }
+  return 'outline';
 }
 
 function byokUsageStatusLabel(status?: string) {
@@ -159,14 +184,12 @@ function AdminByokAuditProjection() {
   });
 
   return (
-    <AdminPanel>
-      <AdminPanelHeader>
-        <AdminPanelTitle>{p1_admin_audit_byok_title()}</AdminPanelTitle>
-        <AdminPanelDescription>
-          {p1_admin_audit_byok_description()}
-        </AdminPanelDescription>
-      </AdminPanelHeader>
-      <AdminPanelContent>
+    <Frame dense>
+      <FrameHeader>
+        <FrameTitle>{p1_admin_audit_byok_title()}</FrameTitle>
+        <FrameDescription>{p1_admin_audit_byok_description()}</FrameDescription>
+      </FrameHeader>
+      <FramePanel>
         {auditQuery.isPending ? (
           <p className="text-sm text-muted-foreground">{common_loading()}</p>
         ) : auditQuery.isError ? (
@@ -174,47 +197,66 @@ function AdminByokAuditProjection() {
         ) : (
           <ByokAuditTable events={auditQuery.data ?? []} />
         )}
-      </AdminPanelContent>
-    </AdminPanel>
+      </FramePanel>
+    </Frame>
   );
 }
 
-function ByokAuditTable({ events }: { events: IntegrationAuditView[] }) {
+function ByokAuditEntry({
+  event,
+  step,
+  open,
+  onOpenChange,
+}: {
+  event: IntegrationAuditView;
+  step: number;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>{admin_audit_action()}</TableHead>
-          <TableHead>{p1_admin_audit_byok_execution_details()}</TableHead>
-          <TableHead>{admin_audit_actor_correlation()}</TableHead>
-          <TableHead>{admin_audit_time()}</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {events.length === 0 ? (
-          <TableRow>
-            <TableCell className="text-muted-foreground" colSpan={4}>
-              {p1_admin_audit_byok_empty()}
-            </TableCell>
-          </TableRow>
-        ) : (
-          events.map((event) => (
-            <TableRow key={event.id}>
-              <TableCell>
-                <AdminStatusChip
-                  variant={
-                    event.action === 'byok.completed'
-                      ? 'secondary'
-                      : event.action === 'byok.failed'
-                        ? 'destructive'
-                        : 'outline'
-                  }
-                >
-                  {byokActionLabel(event.action)}
-                </AdminStatusChip>
-              </TableCell>
-              <TableCell className="max-w-96 text-xs">
-                <dl className="grid gap-1">
+    <TimelineItem className="ms-0! pb-6" step={step}>
+      <TimelineHeader>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <TimelineTitle className="font-mono text-sm font-semibold">
+            {event.connectionId}
+          </TimelineTitle>
+          <Badge size="sm" variant={byokActionVariant(event.action)}>
+            {byokActionLabel(event.action)}
+          </Badge>
+        </div>
+      </TimelineHeader>
+      <TimelineContent className="mt-1.5">
+        <Frame dense spacing="sm" stacked>
+          <Collapsible
+            className="group/collapsible"
+            onOpenChange={onOpenChange}
+            open={open}
+          >
+            <CollapsibleTrigger
+              aria-label={p1_admin_audit_byok_execution_details()}
+              className="flex w-full"
+              type="button"
+            >
+              <FrameHeader className="flex grow flex-row items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-col items-start gap-0.5">
+                  <span className="min-w-0 truncate font-mono text-xs text-foreground">
+                    {event.details?.catalogModelId ?? admin_audit_unknown()}
+                  </span>
+                  <span className="min-w-0 truncate text-xs text-muted-foreground">
+                    {event.createdAt
+                      ? formatLocaleDateTime(event.createdAt)
+                      : admin_audit_unknown()}
+                  </span>
+                </div>
+                <IconChevronRight
+                  aria-hidden="true"
+                  className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-open/collapsible:rotate-90"
+                />
+              </FrameHeader>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <FramePanel className="space-y-2.5">
+                <dl className="grid gap-1 text-xs">
                   <div>
                     <dt className="inline text-muted-foreground">
                       {p1_admin_audit_byok_endpoint_profile_label()}
@@ -250,23 +292,61 @@ function ByokAuditTable({ events }: { events: IntegrationAuditView[] }) {
                     </dd>
                   </div>
                 </dl>
-              </TableCell>
-              <TableCell className="font-mono text-xs">
-                <p>{event.actorId ?? admin_audit_unknown()}</p>
-                <p className="text-muted-foreground">
-                  {event.correlationId ?? admin_audit_unknown()}
-                </p>
-                <p className="text-muted-foreground">{event.connectionId}</p>
-              </TableCell>
-              <TableCell className="text-xs">
-                {event.createdAt
-                  ? formatLocaleDateTime(event.createdAt)
-                  : admin_audit_unknown()}
-              </TableCell>
-            </TableRow>
-          ))
-        )}
-      </TableBody>
-    </Table>
+                <div className="flex flex-wrap items-center justify-between gap-2.5 border-t pt-2">
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-xs text-muted-foreground">
+                      {admin_audit_actor_correlation()}
+                    </span>
+                    <span className="truncate font-mono text-xs">
+                      {event.actorId ?? admin_audit_unknown()}
+                    </span>
+                  </div>
+                  <AuditCopyReferenceButton
+                    value={event.correlationId ?? admin_audit_unknown()}
+                  />
+                </div>
+              </FramePanel>
+            </CollapsibleContent>
+          </Collapsible>
+        </Frame>
+      </TimelineContent>
+    </TimelineItem>
+  );
+}
+
+function ByokAuditTable({ events }: { events: IntegrationAuditView[] }) {
+  const buckets = useMemo(() => groupAuditIntoBuckets(events), [events]);
+  const { openIds, onToggle } = useAuditOpenIds(events);
+
+  if (events.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        {p1_admin_audit_byok_empty()}
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-8">
+      {buckets.map((bucket) => (
+        <div key={bucket.key}>
+          <AuditBucketHeading
+            bucketKey={bucket.key}
+            count={bucket.entries.length}
+          />
+          <Timeline defaultValue={bucket.entries.length}>
+            {bucket.entries.map((event, index) => (
+              <ByokAuditEntry
+                event={event}
+                key={event.id}
+                onOpenChange={(next) => onToggle(event.id, next)}
+                open={openIds.has(event.id)}
+                step={index + 1}
+              />
+            ))}
+          </Timeline>
+        </div>
+      ))}
+    </div>
   );
 }

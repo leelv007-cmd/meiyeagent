@@ -10,15 +10,16 @@
  * `AdminRuntimeConfigControl` 的 admin-config 受控端点（CAS + 审计 + 回滚），
  * 本组件不碰任何配置存储。
  */
+import { SettingField } from '@/components/admin/shared/setting-field';
+import { Badge } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
-import { ListView } from '@/components/heroui-pro';
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
+import { FieldGroup } from '@/components/ui/field';
 import {
   admin_models_catalog_layer_description,
   admin_models_catalog_layer_title,
@@ -64,7 +65,10 @@ function LayerBody({
 }) {
   if (isLoading) {
     return (
-      <output className="text-muted text-sm" data-testid={`${testId}-loading`}>
+      <output
+        className="block px-4 py-4 text-muted-foreground text-sm"
+        data-testid={`${testId}-loading`}
+      >
         {admin_ops_loading()}
       </output>
     );
@@ -72,7 +76,7 @@ function LayerBody({
   if (isError) {
     return (
       <p
-        className="text-destructive text-sm"
+        className="px-4 py-4 text-destructive text-sm"
         data-testid={`${testId}-error`}
         role="alert"
       >
@@ -82,12 +86,24 @@ function LayerBody({
   }
   if (isEmpty) {
     return (
-      <p className="text-muted text-sm" data-testid={`${testId}-empty`}>
+      <p
+        className="px-4 py-4 text-muted-foreground text-sm"
+        data-testid={`${testId}-empty`}
+      >
         {admin_ops_empty()}
       </p>
     );
   }
   return <>{children}</>;
+}
+
+/** 行右侧只放一枚状态标，左侧的标题与说明由 SettingField 排。 */
+function LayerRowBadge({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex @md/field-group:justify-end">
+      <Badge variant="outline">{children}</Badge>
+    </div>
+  );
 }
 
 export function ModelAssemblyLayers() {
@@ -100,101 +116,89 @@ export function ModelAssemblyLayers() {
 
   return (
     <div className="space-y-4" data-testid="admin-model-assembly-layers">
-      <AdminPanel data-testid="admin-models-catalog-layer">
-        <AdminPanelHeader>
-          <AdminPanelTitle>
-            {admin_models_catalog_layer_title()}
-          </AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame className="w-full" data-testid="admin-models-catalog-layer" dense>
+        <FrameHeader>
+          <FrameTitle>{admin_models_catalog_layer_title()}</FrameTitle>
+          <FrameDescription>
             {admin_models_catalog_layer_description()}
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="space-y-4">
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="p-0">
           <LayerBody
             isEmpty={models.length === 0}
             isError={isError}
             isLoading={isLoading}
             testId="admin-models-catalog-layer"
           >
-            <ListView aria-label={admin_models_catalog_layer_title()}>
-              {models.map((model) => (
-                <ListView.Item
-                  data-testid="admin-models-catalog-row"
-                  id={model.id}
-                  key={model.id}
-                >
-                  <ListView.ItemContent>
-                    <ListView.Title>{model.displayName}</ListView.Title>
-                    <ListView.Description>
-                      {[
-                        model.manufacturer,
-                        model.stableModelName,
-                        model.version,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </ListView.Description>
-                  </ListView.ItemContent>
-                  <ListView.ItemAction>
-                    <AdminStatusChip variant="outline">
-                      {model.modality}
-                    </AdminStatusChip>
-                  </ListView.ItemAction>
-                </ListView.Item>
+            <FieldGroup className="gap-0">
+              {models.map((model, index) => (
+                <div data-testid="admin-models-catalog-row" key={model.id}>
+                  <SettingField
+                    description={[
+                      model.manufacturer,
+                      model.stableModelName,
+                      model.version,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                    last={index === models.length - 1}
+                    title={model.displayName}
+                  >
+                    <LayerRowBadge>{model.modality}</LayerRowBadge>
+                  </SettingField>
+                </div>
               ))}
-            </ListView>
+            </FieldGroup>
           </LayerBody>
+        </FramePanel>
+        {/* The control brings its own Frame chrome; a FramePanel around it
+            would stack a card inside a card. */}
+        <div className="px-3 pb-3">
           <AdminRuntimeConfigControl keys={[...CATALOG_LAYER_KEYS]} />
-        </AdminPanelContent>
-      </AdminPanel>
+        </div>
+      </Frame>
 
-      <AdminPanel data-testid="admin-models-channel-layer">
-        <AdminPanelHeader>
-          <AdminPanelTitle>
-            {admin_models_channel_layer_title()}
-          </AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame className="w-full" data-testid="admin-models-channel-layer" dense>
+        <FrameHeader>
+          <FrameTitle>{admin_models_channel_layer_title()}</FrameTitle>
+          <FrameDescription>
             {admin_models_channel_layer_description()}
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="space-y-4">
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="p-0">
           <LayerBody
             isEmpty={channels.length === 0}
             isError={isError}
             isLoading={isLoading}
             testId="admin-models-channel-layer"
           >
-            <ListView aria-label={admin_models_channel_layer_title()}>
-              {channels.map((channel) => (
-                <ListView.Item
-                  data-testid="admin-models-channel-row"
-                  id={channel.id}
-                  key={channel.id}
-                >
-                  <ListView.ItemContent>
-                    <ListView.Title>{channel.id}</ListView.Title>
-                    <ListView.Description>
-                      {[
-                        channel.region,
-                        channel.accountOwnership,
-                        channel.protocolFamily,
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </ListView.Description>
-                  </ListView.ItemContent>
-                  <ListView.ItemAction>
-                    <AdminStatusChip variant="outline">
-                      {channel.kind}
-                    </AdminStatusChip>
-                  </ListView.ItemAction>
-                </ListView.Item>
+            <FieldGroup className="gap-0">
+              {channels.map((channel, index) => (
+                <div data-testid="admin-models-channel-row" key={channel.id}>
+                  <SettingField
+                    description={[
+                      channel.region,
+                      channel.accountOwnership,
+                      channel.protocolFamily,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                    last={index === channels.length - 1}
+                    title={channel.id}
+                  >
+                    <LayerRowBadge>{channel.kind}</LayerRowBadge>
+                  </SettingField>
+                </div>
               ))}
-            </ListView>
+            </FieldGroup>
           </LayerBody>
+        </FramePanel>
+        {/* The control brings its own Frame chrome; a FramePanel around it
+            would stack a card inside a card. */}
+        <div className="px-3 pb-3">
           <AdminRuntimeConfigControl keys={[...CHANNEL_LAYER_KEYS]} />
-        </AdminPanelContent>
-      </AdminPanel>
+        </div>
+      </Frame>
     </div>
   );
 }

@@ -15,17 +15,19 @@ import { toast } from 'sonner';
 import { z } from 'zod';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameFooter,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 import {
   Table,
   TableBody,
@@ -36,6 +38,7 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  admin_config_list_count,
   p1_admin_model_activity_column_previous,
   p1_admin_model_activity_column_stage,
   p1_admin_model_activity_description,
@@ -487,9 +490,9 @@ interface RevisionRollbackAudit {
 function availabilityVariant(
   availability: AdminCatalogModelView['availability']
 ) {
-  if (availability === 'available') return 'secondary' as const;
-  if (availability === 'recorded') return 'outline' as const;
-  return 'destructive' as const;
+  if (availability === 'available') return 'success-light' as const;
+  if (availability === 'recorded') return 'secondary' as const;
+  return 'destructive-light' as const;
 }
 
 function ModelEvidence({
@@ -508,9 +511,9 @@ function ModelEvidence({
             {model.manufacturer} · {model.stableModelName} · {model.version}
           </p>
         </div>
-        <AdminStatusChip variant={availabilityVariant(model.availability)}>
+        <Badge variant={availabilityVariant(model.availability)}>
           {model.availability}
-        </AdminStatusChip>
+        </Badge>
       </div>
       <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
         {apiFamilies.length > 0 ? (
@@ -1083,25 +1086,15 @@ export function AdminModelControl() {
 
       <AdminActivationProbeControl />
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>
-            {p1_admin_model_catalog_safe_title()}
-          </AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame className="w-full" dense>
+        <FrameHeader>
+          <FrameTitle>{p1_admin_model_catalog_safe_title()}</FrameTitle>
+          <FrameDescription>
             {p1_admin_model_catalog_safe_description()}
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="space-y-5">
-          {error ? (
-            <Alert variant="destructive">
-              <AlertTitle>
-                {p1_admin_model_catalog_load_error_title()}
-              </AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          ) : null}
-          <div className="flex justify-end">
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="p-0">
+          <div className="flex flex-wrap items-center justify-end gap-2 px-(--frame-panel-header-px) py-(--frame-panel-header-py)">
             <Button
               disabled={loading || fetching}
               onClick={() => void refresh()}
@@ -1111,57 +1104,76 @@ export function AdminModelControl() {
               {p1_admin_model_refresh_catalog_channels()}
             </Button>
           </div>
-          {snapshots.map((snapshot) => (
-            <section className="space-y-3" key={snapshot.operation}>
-              <div className="flex flex-wrap items-center gap-2">
-                <h3 className="font-medium">
-                  {OPERATIONS.find(
-                    (item) => item.id === snapshot.operation
-                  )?.label() ?? snapshot.operation}
-                </h3>
-                <AdminStatusChip variant="outline">
-                  {snapshot.stage}
-                </AdminStatusChip>
-                <span className="text-xs text-muted-foreground">
-                  revision: {snapshot.revisionId}
-                </span>
-              </div>
-              <div className="grid gap-3 lg:grid-cols-2">
-                {snapshot.models.map((model) => (
-                  <ModelEvidence
-                    apiFamilies={[
-                      ...new Set(
-                        (catalogControl?.catalog.deployments ?? [])
-                          .filter(
-                            (deployment) =>
-                              deployment.catalogModelId === model.id
-                          )
-                          .map((deployment) => deployment.apiFamily)
-                      ),
-                    ].sort()}
-                    key={model.id}
-                    model={model}
-                  />
-                ))}
-              </div>
-              {snapshot.models.length === 0 ? (
-                <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-                  {p1_admin_model_catalog_operation_empty()}
-                </p>
-              ) : null}
-            </section>
-          ))}
-        </AdminPanelContent>
-      </AdminPanel>
+          <Separator />
+          <div className="space-y-5 px-(--frame-panel-px) py-(--frame-panel-py)">
+            {error ? (
+              <Alert variant="destructive">
+                <AlertTitle>
+                  {p1_admin_model_catalog_load_error_title()}
+                </AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            ) : null}
+            {snapshots.map((snapshot) => (
+              <section className="space-y-3" key={snapshot.operation}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="font-medium">
+                    {OPERATIONS.find(
+                      (item) => item.id === snapshot.operation
+                    )?.label() ?? snapshot.operation}
+                  </h3>
+                  <Badge variant="secondary">{snapshot.stage}</Badge>
+                  <span className="text-xs text-muted-foreground">
+                    revision: {snapshot.revisionId}
+                  </span>
+                </div>
+                <div className="grid gap-3 lg:grid-cols-2">
+                  {snapshot.models.map((model) => (
+                    <ModelEvidence
+                      apiFamilies={[
+                        ...new Set(
+                          (catalogControl?.catalog.deployments ?? [])
+                            .filter(
+                              (deployment) =>
+                                deployment.catalogModelId === model.id
+                            )
+                            .map((deployment) => deployment.apiFamily)
+                        ),
+                      ].sort()}
+                      key={model.id}
+                      model={model}
+                    />
+                  ))}
+                </div>
+                {snapshot.models.length === 0 ? (
+                  <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
+                    {p1_admin_model_catalog_operation_empty()}
+                  </p>
+                ) : null}
+              </section>
+            ))}
+          </div>
+        </FramePanel>
+        <FrameFooter>
+          <span className="text-xs text-muted-foreground">
+            {admin_config_list_count({
+              count: snapshots.reduce(
+                (total, snapshot) => total + snapshot.models.length,
+                0
+              ),
+            })}
+          </span>
+        </FrameFooter>
+      </Frame>
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>Route simulator</AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame className="w-full" dense>
+        <FrameHeader>
+          <FrameTitle>Route simulator</FrameTitle>
+          <FrameDescription>
             {p1_admin_model_route_description()}
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="space-y-5">
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="space-y-5">
           <form
             className="grid gap-4 lg:grid-cols-3"
             onSubmit={routeSimulatorForm.handleSubmit(runRouteSimulation, () =>
@@ -1351,120 +1363,142 @@ export function AdminModelControl() {
                 </div>
               </div>
 
-              <div className="overflow-hidden rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>
-                        {p1_admin_model_route_column_rank()}
-                      </TableHead>
-                      <TableHead>
-                        {p1_admin_model_route_column_model()}
-                      </TableHead>
-                      <TableHead>
-                        {p1_admin_model_route_column_region()}
-                      </TableHead>
-                      <TableHead>
-                        {p1_admin_model_route_column_cost()}
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {routeSimulation.rankedCandidates.map((candidate) => (
-                      <TableRow key={candidate.deploymentId}>
-                        <TableCell>#{candidate.rank}</TableCell>
-                        <TableCell>
-                          <p className="font-medium">
-                            {candidate.catalogModelId}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {candidate.deploymentId}
-                          </p>
-                        </TableCell>
-                        <TableCell>
-                          {candidate.region} · {candidate.channel}
-                        </TableCell>
-                        <TableCell>
-                          {formatRouteCost(candidate.costEstimate)}
-                          <p className="text-xs text-muted-foreground">
-                            {candidate.costEstimate.source}
-                          </p>
-                        </TableCell>
+              <Frame className="w-full" dense>
+                <FramePanel className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>
+                          {p1_admin_model_route_column_rank()}
+                        </TableHead>
+                        <TableHead>
+                          {p1_admin_model_route_column_model()}
+                        </TableHead>
+                        <TableHead>
+                          {p1_admin_model_route_column_region()}
+                        </TableHead>
+                        <TableHead>
+                          {p1_admin_model_route_column_cost()}
+                        </TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-                {routeSimulation.rankedCandidates.length === 0 ? (
-                  <p className="p-5 text-center text-sm text-muted-foreground">
-                    {p1_admin_model_route_no_ranked_candidates()}
-                  </p>
-                ) : null}
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {routeSimulation.rankedCandidates.map((candidate) => (
+                        <TableRow key={candidate.deploymentId}>
+                          <TableCell>#{candidate.rank}</TableCell>
+                          <TableCell>
+                            <p className="font-medium">
+                              {candidate.catalogModelId}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {candidate.deploymentId}
+                            </p>
+                          </TableCell>
+                          <TableCell>
+                            {candidate.region} · {candidate.channel}
+                          </TableCell>
+                          <TableCell>
+                            {formatRouteCost(candidate.costEstimate)}
+                            <p className="text-xs text-muted-foreground">
+                              {candidate.costEstimate.source}
+                            </p>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  {routeSimulation.rankedCandidates.length === 0 ? (
+                    <p className="p-5 text-center text-sm text-muted-foreground">
+                      {p1_admin_model_route_no_ranked_candidates()}
+                    </p>
+                  ) : null}
+                </FramePanel>
+                <FrameFooter>
+                  <span className="text-xs text-muted-foreground">
+                    {admin_config_list_count({
+                      count: routeSimulation.rankedCandidates.length,
+                    })}
+                  </span>
+                </FrameFooter>
+              </Frame>
 
-              <div className="overflow-hidden rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Deployment</TableHead>
-                      <TableHead>
-                        {p1_admin_model_route_column_decision()}
-                      </TableHead>
-                      <TableHead>
-                        {p1_admin_model_route_column_filter_reason()}
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {routeSimulation.candidateEvaluations.map((candidate) => (
-                      <TableRow key={candidate.deploymentId}>
-                        <TableCell>
-                          <p className="font-medium">
-                            {candidate.catalogModelId}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {candidate.deploymentId}
-                          </p>
-                        </TableCell>
-                        <TableCell>
-                          <AdminStatusChip
-                            variant={
-                              candidate.eligible ? 'secondary' : 'outline'
-                            }
-                          >
-                            {candidate.eligible
-                              ? p1_admin_model_route_eligible()
-                              : p1_admin_model_route_filtered()}
-                          </AdminStatusChip>
-                        </TableCell>
-                        <TableCell>
-                          {candidate.exclusionReasons.length > 0
-                            ? candidate.exclusionReasons
-                                .map((reason) => FILTER_REASON_LABELS[reason]())
-                                .join(p1_admin_model_reason_separator())
-                            : p1_common_none_short()}
-                        </TableCell>
+              <Frame className="w-full" dense>
+                <FramePanel className="p-0">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Deployment</TableHead>
+                        <TableHead>
+                          {p1_admin_model_route_column_decision()}
+                        </TableHead>
+                        <TableHead>
+                          {p1_admin_model_route_column_filter_reason()}
+                        </TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {routeSimulation.candidateEvaluations.map((candidate) => (
+                        <TableRow key={candidate.deploymentId}>
+                          <TableCell>
+                            <p className="font-medium">
+                              {candidate.catalogModelId}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {candidate.deploymentId}
+                            </p>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant={
+                                candidate.eligible
+                                  ? 'success-light'
+                                  : 'secondary'
+                              }
+                            >
+                              {candidate.eligible
+                                ? p1_admin_model_route_eligible()
+                                : p1_admin_model_route_filtered()}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {candidate.exclusionReasons.length > 0
+                              ? candidate.exclusionReasons
+                                  .map((reason) =>
+                                    FILTER_REASON_LABELS[reason]()
+                                  )
+                                  .join(p1_admin_model_reason_separator())
+                              : p1_common_none_short()}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </FramePanel>
+                <FrameFooter>
+                  <span className="text-xs text-muted-foreground">
+                    {admin_config_list_count({
+                      count: routeSimulation.candidateEvaluations.length,
+                    })}
+                  </span>
+                </FrameFooter>
+              </Frame>
             </div>
           ) : (
             <p className="rounded-lg border border-dashed p-5 text-sm text-muted-foreground">
               {p1_admin_model_route_empty_description()}
             </p>
           )}
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>{p1_admin_model_quality_title()}</AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame className="w-full" dense>
+        <FrameHeader>
+          <FrameTitle>{p1_admin_model_quality_title()}</FrameTitle>
+          <FrameDescription>
             {p1_admin_model_quality_description()}
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="space-y-5">
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="space-y-5">
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-lg border p-3">
               <p className="text-xs text-muted-foreground">
@@ -1513,86 +1547,106 @@ export function AdminModelControl() {
 
           {qualityDashboard ? (
             <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-              <div className="overflow-hidden rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>
-                        {p1_admin_model_quality_column_dimension()}
-                      </TableHead>
-                      <TableHead>
-                        {p1_admin_model_quality_column_group()}
-                      </TableHead>
-                      <TableHead>
-                        {p1_admin_model_quality_column_rate()}
-                      </TableHead>
-                      <TableHead>
-                        {p1_admin_model_quality_column_sample()}
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {qualityBreakdowns.flatMap(({ dimension, rows }) =>
-                      rows.map((group) => (
-                        <TableRow key={`${dimension}:${group.key}`}>
-                          <TableCell>{dimension}</TableCell>
-                          <TableCell className="font-medium">
-                            {group.key}
-                          </TableCell>
-                          <TableCell>{Math.round(group.rate * 100)}%</TableCell>
-                          <TableCell>{group.sampleSize}</TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                    {qualityBreakdowns.every(
-                      ({ rows }) => rows.length === 0
-                    ) ? (
+              <Frame className="w-full" dense>
+                <FramePanel className="p-0">
+                  <Table>
+                    <TableHeader>
                       <TableRow>
-                        <TableCell
-                          className="text-muted-foreground"
-                          colSpan={4}
-                        >
-                          {p1_admin_model_quality_sample_empty()}
-                        </TableCell>
+                        <TableHead>
+                          {p1_admin_model_quality_column_dimension()}
+                        </TableHead>
+                        <TableHead>
+                          {p1_admin_model_quality_column_group()}
+                        </TableHead>
+                        <TableHead>
+                          {p1_admin_model_quality_column_rate()}
+                        </TableHead>
+                        <TableHead>
+                          {p1_admin_model_quality_column_sample()}
+                        </TableHead>
                       </TableRow>
-                    ) : null}
-                  </TableBody>
-                </Table>
-              </div>
-              <div className="rounded-lg border p-4">
-                <p className="text-sm font-medium">
-                  {p1_admin_model_quality_funnel_title()}
-                </p>
-                <dl className="mt-3 grid grid-cols-2 gap-3 text-sm">
-                  {[
-                    [
-                      p1_admin_model_quality_funnel_direct(),
-                      qualityDashboard.funnel.adoptedDirectly,
-                    ],
-                    [
-                      p1_admin_model_quality_funnel_small_edit(),
-                      qualityDashboard.funnel.adoptedWithSmallEdit,
-                    ],
-                    [
-                      p1_admin_model_quality_funnel_reroll(),
-                      qualityDashboard.funnel.rerolled,
-                    ],
-                    [
-                      p1_admin_model_quality_funnel_abandoned(),
-                      qualityDashboard.funnel.abandoned,
-                    ],
-                    [
-                      p1_admin_model_quality_funnel_published(),
-                      qualityDashboard.funnel.published,
-                    ],
-                  ].map(([label, value]) => (
-                    <div className="rounded-md bg-muted/40 p-3" key={label}>
-                      <dt className="text-xs text-muted-foreground">{label}</dt>
-                      <dd className="mt-1 text-lg font-semibold">{value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {qualityBreakdowns.flatMap(({ dimension, rows }) =>
+                        rows.map((group) => (
+                          <TableRow key={`${dimension}:${group.key}`}>
+                            <TableCell>{dimension}</TableCell>
+                            <TableCell className="font-medium">
+                              {group.key}
+                            </TableCell>
+                            <TableCell>
+                              {Math.round(group.rate * 100)}%
+                            </TableCell>
+                            <TableCell>{group.sampleSize}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                      {qualityBreakdowns.every(
+                        ({ rows }) => rows.length === 0
+                      ) ? (
+                        <TableRow>
+                          <TableCell
+                            className="text-muted-foreground"
+                            colSpan={4}
+                          >
+                            {p1_admin_model_quality_sample_empty()}
+                          </TableCell>
+                        </TableRow>
+                      ) : null}
+                    </TableBody>
+                  </Table>
+                </FramePanel>
+                <FrameFooter>
+                  <span className="text-xs text-muted-foreground">
+                    {admin_config_list_count({
+                      count: qualityBreakdowns.reduce(
+                        (total, { rows }) => total + rows.length,
+                        0
+                      ),
+                    })}
+                  </span>
+                </FrameFooter>
+              </Frame>
+              <Frame className="w-full" dense headingLevel={3}>
+                <FrameHeader>
+                  <FrameTitle>
+                    {p1_admin_model_quality_funnel_title()}
+                  </FrameTitle>
+                </FrameHeader>
+                <FramePanel>
+                  <dl className="grid grid-cols-2 gap-3 text-sm">
+                    {[
+                      [
+                        p1_admin_model_quality_funnel_direct(),
+                        qualityDashboard.funnel.adoptedDirectly,
+                      ],
+                      [
+                        p1_admin_model_quality_funnel_small_edit(),
+                        qualityDashboard.funnel.adoptedWithSmallEdit,
+                      ],
+                      [
+                        p1_admin_model_quality_funnel_reroll(),
+                        qualityDashboard.funnel.rerolled,
+                      ],
+                      [
+                        p1_admin_model_quality_funnel_abandoned(),
+                        qualityDashboard.funnel.abandoned,
+                      ],
+                      [
+                        p1_admin_model_quality_funnel_published(),
+                        qualityDashboard.funnel.published,
+                      ],
+                    ].map(([label, value]) => (
+                      <div className="rounded-md bg-muted/40 p-3" key={label}>
+                        <dt className="text-xs text-muted-foreground">
+                          {label}
+                        </dt>
+                        <dd className="mt-1 text-lg font-semibold">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </FramePanel>
+              </Frame>
             </div>
           ) : null}
 
@@ -1650,18 +1704,20 @@ export function AdminModelControl() {
                       {qualityRunResultLabel(run)}
                     </span>
                     <span className="flex flex-wrap justify-end gap-1">
-                      <AdminStatusChip variant="secondary">
+                      <Badge variant="info-light">
                         {QUALITY_EVIDENCE_PRESENTATION[
                           run.evidenceKind
                         ].label()}
-                      </AdminStatusChip>
-                      <AdminStatusChip
+                      </Badge>
+                      <Badge
                         variant={
-                          run.status === 'completed' ? 'outline' : 'destructive'
+                          run.status === 'completed'
+                            ? 'success-light'
+                            : 'destructive-light'
                         }
                       >
                         {run.status}
-                      </AdminStatusChip>
+                      </Badge>
                     </span>
                   </span>
                   <span className="mt-1 block text-xs text-muted-foreground">
@@ -1679,93 +1735,108 @@ export function AdminModelControl() {
               ) : null}
             </div>
 
-            <div className="overflow-hidden rounded-lg border">
-              {selectedRun ? (
-                <div className="border-b bg-muted/30 px-4 py-3 text-sm">
-                  <p className="font-medium">
-                    {QUALITY_EVIDENCE_PRESENTATION[
-                      selectedRun.evidenceKind
-                    ].label()}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {QUALITY_EVIDENCE_PRESENTATION[
-                      selectedRun.evidenceKind
-                    ].description()}
-                  </p>
-                </div>
-              ) : null}
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>
-                      {p1_admin_model_quality_column_fixture()}
-                    </TableHead>
-                    <TableHead>
-                      {p1_admin_model_quality_column_scenario()}
-                    </TableHead>
-                    <TableHead>
-                      {p1_admin_model_quality_column_score()}
-                    </TableHead>
-                    <TableHead>
-                      {p1_admin_model_quality_column_result()}
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {selectedRun?.cases.map((testCase) => (
-                    <TableRow key={testCase.id}>
-                      <TableCell>
-                        <p className="font-medium">{testCase.fixtureId}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {testCase.catalogModelId}
-                        </p>
-                      </TableCell>
-                      <TableCell>
-                        {testCase.scenario} · {testCase.platform}
-                      </TableCell>
-                      <TableCell>
-                        {Math.round(testCase.evaluation.dimensionScore * 100)}%
-                      </TableCell>
-                      <TableCell>
-                        <AdminStatusChip
-                          variant={
-                            testCase.passed ? 'secondary' : 'destructive'
-                          }
-                        >
-                          {testCase.passed
-                            ? QUALITY_EVIDENCE_PRESENTATION[
-                                testCase.evidenceKind
-                              ].casePassLabel()
-                            : p1_admin_model_quality_failed()}
-                        </AdminStatusChip>
-                        {testCase.evaluation.warnings.length > 0 ? (
-                          <p className="mt-1 text-xs text-destructive">
-                            {testCase.evaluation.warnings.join(', ')}
-                          </p>
-                        ) : null}
-                      </TableCell>
+            <Frame className="w-full" dense>
+              <FramePanel className="p-0">
+                {selectedRun ? (
+                  <>
+                    <div className="px-(--frame-panel-header-px) py-(--frame-panel-header-py) text-sm">
+                      <p className="font-medium">
+                        {QUALITY_EVIDENCE_PRESENTATION[
+                          selectedRun.evidenceKind
+                        ].label()}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {QUALITY_EVIDENCE_PRESENTATION[
+                          selectedRun.evidenceKind
+                        ].description()}
+                      </p>
+                    </div>
+                    <Separator />
+                  </>
+                ) : null}
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>
+                        {p1_admin_model_quality_column_fixture()}
+                      </TableHead>
+                      <TableHead>
+                        {p1_admin_model_quality_column_scenario()}
+                      </TableHead>
+                      <TableHead>
+                        {p1_admin_model_quality_column_score()}
+                      </TableHead>
+                      <TableHead>
+                        {p1_admin_model_quality_column_result()}
+                      </TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {!selectedRun ? (
-                <p className="p-6 text-center text-sm text-muted-foreground">
-                  {p1_admin_model_quality_select_run()}
-                </p>
-              ) : null}
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {selectedRun?.cases.map((testCase) => (
+                      <TableRow key={testCase.id}>
+                        <TableCell>
+                          <p className="font-medium">{testCase.fixtureId}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {testCase.catalogModelId}
+                          </p>
+                        </TableCell>
+                        <TableCell>
+                          {testCase.scenario} · {testCase.platform}
+                        </TableCell>
+                        <TableCell>
+                          {Math.round(testCase.evaluation.dimensionScore * 100)}
+                          %
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              testCase.passed
+                                ? 'success-light'
+                                : 'destructive-light'
+                            }
+                          >
+                            {testCase.passed
+                              ? QUALITY_EVIDENCE_PRESENTATION[
+                                  testCase.evidenceKind
+                                ].casePassLabel()
+                              : p1_admin_model_quality_failed()}
+                          </Badge>
+                          {testCase.evaluation.warnings.length > 0 ? (
+                            <p className="mt-1 text-xs text-destructive">
+                              {testCase.evaluation.warnings.join(', ')}
+                            </p>
+                          ) : null}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {!selectedRun ? (
+                  <p className="p-6 text-center text-sm text-muted-foreground">
+                    {p1_admin_model_quality_select_run()}
+                  </p>
+                ) : null}
+              </FramePanel>
+              <FrameFooter>
+                <span className="text-xs text-muted-foreground">
+                  {admin_config_list_count({
+                    count: selectedRun?.cases.length ?? 0,
+                  })}
+                </span>
+              </FrameFooter>
+            </Frame>
           </div>
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>{p1_admin_model_rollback_title()}</AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame className="w-full" dense>
+        <FrameHeader>
+          <FrameTitle>{p1_admin_model_rollback_title()}</FrameTitle>
+          <FrameDescription>
             {p1_admin_model_rollback_card_description()}
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent>
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel>
           <form className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="revision-rollback-reason">
@@ -1856,64 +1927,71 @@ export function AdminModelControl() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>
-                      {p1_admin_model_rollback_column_time()}
-                    </TableHead>
-                    <TableHead>
-                      {p1_admin_model_rollback_column_type()}
-                    </TableHead>
-                    <TableHead>
-                      {p1_admin_model_rollback_column_from()}
-                    </TableHead>
-                    <TableHead>{p1_admin_model_rollback_column_to()}</TableHead>
-                    <TableHead>
-                      {p1_admin_model_rollback_column_reason()}
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rollbackAudits.map((audit) => (
-                    <TableRow key={audit.id}>
-                      <TableCell>
-                        {formatLocaleDateTime(audit.createdAt)}
-                      </TableCell>
-                      <TableCell>{audit.kind}</TableCell>
-                      <TableCell className="max-w-48 truncate">
-                        {audit.fromRevisionId}
-                      </TableCell>
-                      <TableCell className="max-w-48 truncate">
-                        {audit.toRevisionId}
-                      </TableCell>
-                      <TableCell>{audit.reason}</TableCell>
+            <Frame className="w-full" dense>
+              <FramePanel className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>
+                        {p1_admin_model_rollback_column_time()}
+                      </TableHead>
+                      <TableHead>
+                        {p1_admin_model_rollback_column_type()}
+                      </TableHead>
+                      <TableHead>
+                        {p1_admin_model_rollback_column_from()}
+                      </TableHead>
+                      <TableHead>
+                        {p1_admin_model_rollback_column_to()}
+                      </TableHead>
+                      <TableHead>
+                        {p1_admin_model_rollback_column_reason()}
+                      </TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              {rollbackAudits.length === 0 ? (
-                <p className="p-6 text-center text-sm text-muted-foreground">
-                  {p1_admin_model_rollback_audit_empty()}
-                </p>
-              ) : null}
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {rollbackAudits.map((audit) => (
+                      <TableRow key={audit.id}>
+                        <TableCell>
+                          {formatLocaleDateTime(audit.createdAt)}
+                        </TableCell>
+                        <TableCell>{audit.kind}</TableCell>
+                        <TableCell className="max-w-48 truncate">
+                          {audit.fromRevisionId}
+                        </TableCell>
+                        <TableCell className="max-w-48 truncate">
+                          {audit.toRevisionId}
+                        </TableCell>
+                        <TableCell>{audit.reason}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {rollbackAudits.length === 0 ? (
+                  <p className="p-6 text-center text-sm text-muted-foreground">
+                    {p1_admin_model_rollback_audit_empty()}
+                  </p>
+                ) : null}
+              </FramePanel>
+              <FrameFooter>
+                <span className="text-xs text-muted-foreground">
+                  {admin_config_list_count({ count: rollbackAudits.length })}
+                </span>
+              </FrameFooter>
+            </Frame>
           </form>
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(22rem,1fr)]">
-        <AdminPanel>
-          <AdminPanelHeader>
-            <AdminPanelTitle>
-              {p1_admin_model_catalog_editor_title()}
-            </AdminPanelTitle>
-            <AdminPanelDescription>
+        <Frame className="w-full" dense>
+          <FrameHeader>
+            <FrameTitle>{p1_admin_model_catalog_editor_title()}</FrameTitle>
+            <FrameDescription>
               {p1_admin_model_catalog_editor_description()}
-            </AdminPanelDescription>
-          </AdminPanelHeader>
-          <AdminPanelContent className="space-y-4">
+            </FrameDescription>
+          </FrameHeader>
+          <FramePanel className="space-y-4">
             {catalogControl ? (
               <div className="rounded-lg border bg-muted/20 p-3 text-sm">
                 <p className="font-medium">
@@ -1923,24 +2001,24 @@ export function AdminModelControl() {
                   })}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <AdminStatusChip variant="outline">
+                  <Badge variant="outline">
                     Provider {catalogControl.catalog.providerProfiles.length}
-                  </AdminStatusChip>
-                  <AdminStatusChip variant="outline">
+                  </Badge>
+                  <Badge variant="outline">
                     Channel {catalogControl.catalog.executionChannels.length}
-                  </AdminStatusChip>
-                  <AdminStatusChip variant="outline">
+                  </Badge>
+                  <Badge variant="outline">
                     Deployment {catalogControl.catalog.deployments.length}
-                  </AdminStatusChip>
-                  <AdminStatusChip variant="outline">
+                  </Badge>
+                  <Badge variant="outline">
                     Capability {catalogControl.catalog.capabilities.length}
-                  </AdminStatusChip>
-                  <AdminStatusChip variant="outline">
+                  </Badge>
+                  <Badge variant="outline">
                     Price {catalogControl.catalog.prices.length}
-                  </AdminStatusChip>
-                  <AdminStatusChip variant="outline">
+                  </Badge>
+                  <Badge variant="outline">
                     Route {catalogControl.catalog.routes.length}
-                  </AdminStatusChip>
+                  </Badge>
                 </div>
               </div>
             ) : null}
@@ -1980,19 +2058,17 @@ export function AdminModelControl() {
                 </Button>
               </div>
             </form>
-          </AdminPanelContent>
-        </AdminPanel>
+          </FramePanel>
+        </Frame>
 
-        <AdminPanel>
-          <AdminPanelHeader>
-            <AdminPanelTitle>
-              {p1_admin_model_lifecycle_title()}
-            </AdminPanelTitle>
-            <AdminPanelDescription>
+        <Frame className="w-full" dense>
+          <FrameHeader>
+            <FrameTitle>{p1_admin_model_lifecycle_title()}</FrameTitle>
+            <FrameDescription>
               {p1_admin_model_lifecycle_description()}
-            </AdminPanelDescription>
-          </AdminPanelHeader>
-          <AdminPanelContent>
+            </FrameDescription>
+          </FrameHeader>
+          <FramePanel>
             <form className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="admin-model-revision-id">Revision ID</Label>
@@ -2059,8 +2135,8 @@ export function AdminModelControl() {
                 </AlertDescription>
               </Alert>
             </form>
-          </AdminPanelContent>
-        </AdminPanel>
+          </FramePanel>
+        </Frame>
       </div>
 
       {catalogControl ? (
@@ -2071,14 +2147,14 @@ export function AdminModelControl() {
         />
       ) : null}
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>{p1_admin_model_activity_title()}</AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame className="w-full" dense>
+        <FrameHeader>
+          <FrameTitle>{p1_admin_model_activity_title()}</FrameTitle>
+          <FrameDescription>
             {p1_admin_model_activity_description()}
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent>
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -2096,9 +2172,7 @@ export function AdminModelControl() {
                   <TableCell>{activity.number}</TableCell>
                   <TableCell>{activity.id}</TableCell>
                   <TableCell>
-                    <AdminStatusChip variant="outline">
-                      {activity.stage}
-                    </AdminStatusChip>
+                    <Badge variant="secondary">{activity.stage}</Badge>
                   </TableCell>
                   <TableCell>{activity.previousRevisionId ?? '—'}</TableCell>
                 </TableRow>
@@ -2110,8 +2184,13 @@ export function AdminModelControl() {
               {p1_admin_model_activity_empty()}
             </p>
           ) : null}
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+        <FrameFooter>
+          <span className="text-xs text-muted-foreground">
+            {admin_config_list_count({ count: activities.length })}
+          </span>
+        </FrameFooter>
+      </Frame>
       <ImpactReviewDialog
         onOpenChange={(open) => !open && setImpactReview(undefined)}
         open={Boolean(impactReview)}

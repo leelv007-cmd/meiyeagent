@@ -79,7 +79,7 @@ test('shared navigation labels resolve in the active locale at access time', () 
   overwriteGetLocale(() => 'zh');
   assert.equal(BUSINESS_NAVIGATION[0].label, '创作');
   assert.equal(SETTINGS_SIDEBAR_ITEMS[0].label, '账户');
-  assert.equal(ADMIN_SIDEBAR_ITEMS[0].label, '模型供应');
+  assert.equal(ADMIN_SIDEBAR_ITEMS[0].label, '供给运行控制台');
   assert.ok(
     ADMIN_SIDEBAR_ITEMS.some(
       (item) =>
@@ -96,7 +96,7 @@ test('shared navigation labels resolve in the active locale at access time', () 
   assert.equal(BUSINESS_NAVIGATION[0].label, 'Create');
   assert.equal(BUSINESS_SIDEBAR_ITEMS[0].label, 'Create');
   assert.equal(SETTINGS_SIDEBAR_ITEMS[0].label, 'Account');
-  assert.equal(ADMIN_SIDEBAR_ITEMS[0].label, 'Model supply');
+  assert.equal(ADMIN_SIDEBAR_ITEMS[0].label, 'Supply operations console');
 
   overwriteGetLocale(() => 'zh');
 });

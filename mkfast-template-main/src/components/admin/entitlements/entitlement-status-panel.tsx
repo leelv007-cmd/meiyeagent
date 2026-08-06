@@ -1,7 +1,7 @@
 /**
  * EntitlementPolicy / AccountAllocation / SupplyPool status surfaces (J4 ← H1).
  */
-import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
+import { Badge } from '@/components/reui/badge';
 import {
   allocationStatusLabel,
   entitlementPolicyStageLabel,
@@ -58,9 +58,9 @@ export function EntitlementStatusPanel({
                 <span className="font-medium">
                   {policy.tier} · r{policy.revision}
                 </span>
-                <AdminStatusChip variant="outline">
+                <Badge variant="outline">
                   {entitlementPolicyStageLabel(policy.stage)}
-                </AdminStatusChip>
+                </Badge>
                 <span className="font-mono text-muted-foreground">
                   {policy.revisionId}
                 </span>
@@ -96,9 +96,9 @@ export function EntitlementStatusPanel({
                 <span className="font-medium">
                   {alloc.kind} · {alloc.targetLabel}
                 </span>
-                <AdminStatusChip variant="secondary">
+                <Badge variant="secondary">
                   {allocationStatusLabel(alloc.status)}
-                </AdminStatusChip>
+                </Badge>
               </div>
               <p className="mt-1 font-mono text-muted-foreground">
                 acct {alloc.accountId} · ws {alloc.workspaceId} · {alloc.source}
@@ -128,10 +128,8 @@ export function EntitlementStatusPanel({
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{pool.displayName}</span>
-                <AdminStatusChip variant="outline">{pool.kind}</AdminStatusChip>
-                <AdminStatusChip variant="secondary">
-                  {pool.status}
-                </AdminStatusChip>
+                <Badge variant="outline">{pool.kind}</Badge>
+                <Badge variant="secondary">{pool.status}</Badge>
               </div>
               <p className="mt-1 font-mono text-muted-foreground">
                 {pool.revisionId}

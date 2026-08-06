@@ -1,3 +1,11 @@
+import { Badge } from '@/components/reui/badge';
+import {
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import { IconPlayerPlay, IconRefresh } from '@tabler/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -12,14 +20,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -221,13 +221,13 @@ export function AdminActivationProbeControl() {
   const runs = runsQuery.data ?? [];
 
   return (
-    <AdminPanel>
-      <AdminPanelHeader className="flex-row items-start justify-between gap-4">
+    <Frame>
+      <FrameHeader className="flex-row items-start justify-between gap-4">
         <div>
-          <AdminPanelTitle>{admin_activation_probe_title()}</AdminPanelTitle>
-          <AdminPanelDescription>
+          <FrameTitle>{admin_activation_probe_title()}</FrameTitle>
+          <FrameDescription>
             {admin_activation_probe_description()}
-          </AdminPanelDescription>
+          </FrameDescription>
         </div>
         <Button
           disabled={statusQuery.isFetching || runsQuery.isFetching}
@@ -238,8 +238,8 @@ export function AdminActivationProbeControl() {
           <IconRefresh />
           {admin_activation_probe_refresh()}
         </Button>
-      </AdminPanelHeader>
-      <AdminPanelContent className="space-y-6">
+      </FrameHeader>
+      <FramePanel className="space-y-6">
         <p className="text-sm text-muted-foreground">
           {admin_activation_probe_onboarding_flow()}
         </p>
@@ -267,24 +267,26 @@ export function AdminActivationProbeControl() {
                     </p>
                   </TableCell>
                   <TableCell>
-                    <AdminStatusChip
+                    <Badge
                       variant={
-                        status.configurationRevision ? 'outline' : 'destructive'
+                        status.configurationRevision
+                          ? 'success-outline'
+                          : 'destructive-outline'
                       }
                     >
                       {status.configurationRevision
                         ? admin_activation_probe_configuration_ready()
                         : admin_activation_probe_configuration_missing()}
-                    </AdminStatusChip>
+                    </Badge>
                   </TableCell>
                   <TableCell>
-                    <AdminStatusChip
+                    <Badge
                       variant={
                         status.stale
-                          ? 'destructive'
+                          ? 'warning-outline'
                           : status.evidence
-                            ? 'secondary'
-                            : 'outline'
+                            ? 'success-outline'
+                            : 'secondary'
                       }
                     >
                       {status.stale
@@ -292,7 +294,7 @@ export function AdminActivationProbeControl() {
                         : status.evidence
                           ? admin_activation_probe_evidence_live()
                           : admin_activation_probe_evidence_unverified()}
-                    </AdminStatusChip>
+                    </Badge>
                     {status.evidence ? (
                       <p className="mt-1 max-w-52 truncate font-mono text-xs text-muted-foreground">
                         {status.evidence.evidenceRef}
@@ -302,15 +304,15 @@ export function AdminActivationProbeControl() {
                   <TableCell>
                     {status.latestProbe ? (
                       <>
-                        <AdminStatusChip
+                        <Badge
                           variant={
                             status.latestProbe.outcome === 'passed'
-                              ? 'secondary'
-                              : 'destructive'
+                              ? 'success-outline'
+                              : 'destructive-outline'
                           }
                         >
                           {outcomeLabel(status.latestProbe.outcome)}
-                        </AdminStatusChip>
+                        </Badge>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {formatLocaleDateTime(status.latestProbe.createdAt)}
                         </p>
@@ -406,15 +408,15 @@ export function AdminActivationProbeControl() {
                       </TableCell>
                       <TableCell>{run.deploymentId}</TableCell>
                       <TableCell>
-                        <AdminStatusChip
+                        <Badge
                           variant={
                             run.outcome === 'passed'
-                              ? 'secondary'
-                              : 'destructive'
+                              ? 'success-outline'
+                              : 'destructive-outline'
                           }
                         >
                           {outcomeLabel(run.outcome)}
-                        </AdminStatusChip>
+                        </Badge>
                       </TableCell>
                       <TableCell>{costLabel(run.providerCost)}</TableCell>
                       <TableCell>{run.latencyMs} ms</TableCell>
@@ -448,7 +450,7 @@ export function AdminActivationProbeControl() {
             </Table>
           </div>
         </section>
-      </AdminPanelContent>
+      </FramePanel>
 
       <AlertDialog
         open={Boolean(selected)}
@@ -483,6 +485,6 @@ export function AdminActivationProbeControl() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </AdminPanel>
+    </Frame>
   );
 }

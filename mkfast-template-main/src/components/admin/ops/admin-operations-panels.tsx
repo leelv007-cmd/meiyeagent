@@ -12,38 +12,37 @@
  * 拿不到数据时显式说「未知」并说明未回退演示数据，不画一个好看的零。
  *
  * U06 把三面从「四行字」换成看一眼就有判断的图：三桶额度按档并排成柱，
- * 近窗口执行结果成饼，权益变更成时间线，关键数字上抬成 KPI 块。
+ * 近窗口执行结果成饼，权益变更成时间线，关键数字上抬成指标卡。
  * 图只是同一份投影的另一种读法——取数在 `admin-operations-chart-model.ts`
  * 单独被测，拿不到就返回 null，这里照旧说「未知」，不画零。
  */
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
-import {
   BarChart,
   ChartTooltip,
-  KPI,
-  KPIGroup,
-  ListView,
   PieChart,
   Timeline,
 } from '@/components/heroui-pro';
+import { Badge, type BadgeProps } from '@/components/reui/badge';
+import {
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
+import { Separator } from '@/components/ui/separator';
 import {
   admin_ops_empty,
   admin_ops_error,
   admin_ops_loading,
+  admin_ops_not_wired,
   admin_ops_outcome_completed,
   admin_ops_outcome_dead_letter,
   admin_ops_outcome_deferred,
   admin_ops_outcome_retry,
   admin_ops_outcome_threw,
-  admin_ops_run_status_accepted,
   admin_ops_run_status_acceptance_unknown,
+  admin_ops_run_status_accepted,
   admin_ops_run_status_draining,
   admin_ops_run_status_failed,
   admin_ops_run_status_queued,
@@ -55,6 +54,7 @@ import {
   admin_ops_tasks_outcome_empty,
   admin_ops_tasks_outcome_share,
   admin_ops_tasks_recent,
+  admin_ops_tasks_source_hint,
   admin_ops_tasks_timeline_empty,
   admin_ops_tasks_timeline_unknown,
   admin_ops_tasks_title,
@@ -63,6 +63,7 @@ import {
   admin_ops_tenants_policies,
   admin_ops_tenants_pools,
   admin_ops_tenants_recent,
+  admin_ops_tenants_source_hint,
   admin_ops_tenants_title,
   admin_ops_tenants_trial_census_unwired,
   admin_ops_tenants_trial_label,
@@ -76,6 +77,7 @@ import {
   admin_ops_usage_consumption_unwired,
   admin_ops_usage_description,
   admin_ops_usage_title,
+  admin_ops_value_absent_hint,
   admin_plan_copy,
   admin_plan_image,
   admin_plan_video,
@@ -153,29 +155,58 @@ function countNumber(count: EntitlementCountEnvelope): null | number {
   return count.status === 'known' ? count.value : null;
 }
 
+/**
+ * 指标卡：指标名在头，数字在体，来源一行押在分隔线下。
+ *
+ * 根节点挂 `data-slot="metric-card"`（盖掉 Frame 自带的 `frame`）——它是测试里
+ * 「数字确实被抬成了卡」的锚点，也是同文件测试切面板用的分界；仓内没有任何
+ * 样式选中 `[data-slot=frame]`，所以只是换了个名字，不改观感。
+ */
 function MetricTile({
+  hint,
   label,
   testId,
   value,
 }: {
+  hint: string;
   label: string;
   testId: string;
   value: null | number;
 }) {
   return (
-    <KPI.Root data-testid={testId}>
-      <KPI.Header>
-        <KPI.Title>{label}</KPI.Title>
-      </KPI.Header>
-      <KPI.Content>
+    <Frame
+      className="h-full min-w-0"
+      data-slot="metric-card"
+      data-testid={testId}
+      dense
+    >
+      <FrameHeader>
+        <FrameTitle className="font-medium text-muted-foreground text-sm">
+          {label}
+        </FrameTitle>
+      </FrameHeader>
+      <FramePanel className="flex flex-1 flex-col gap-2.5">
         {value === null ? (
-          // 未知和零是两件事，所以未知不进数字块，另写一行。
-          <p className="text-muted text-sm">{admin_ops_unknown()}</p>
+          // 未知和零是两件事：数字位上写「未知」，再挂一枚牌说明它没接线。
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium text-2xl text-muted-foreground tracking-tight tabular-nums">
+              {admin_ops_unknown()}
+            </span>
+            <Badge size="sm" variant="outline">
+              {admin_ops_not_wired()}
+            </Badge>
+          </div>
         ) : (
-          <KPI.Value value={value} />
+          <span className="font-medium text-2xl tracking-tight tabular-nums">
+            {value}
+          </span>
         )}
-      </KPI.Content>
-    </KPI.Root>
+        <Separator />
+        <p className="text-muted-foreground text-xs">
+          {value === null ? admin_ops_value_absent_hint() : hint}
+        </p>
+      </FramePanel>
+    </Frame>
   );
 }
 
@@ -195,7 +226,10 @@ function PanelBody({
 }) {
   if (isLoading) {
     return (
-      <output className="text-muted text-sm" data-testid={`${testId}-loading`}>
+      <output
+        className="text-muted-foreground text-sm"
+        data-testid={`${testId}-loading`}
+      >
         {admin_ops_loading()}
       </output>
     );
@@ -213,7 +247,10 @@ function PanelBody({
   }
   if (isEmpty) {
     return (
-      <p className="text-muted text-sm" data-testid={`${testId}-empty`}>
+      <p
+        className="text-muted-foreground text-sm"
+        data-testid={`${testId}-empty`}
+      >
         {admin_ops_empty()}
       </p>
     );
@@ -234,14 +271,12 @@ function AdminUsagePanel() {
   const plans = catalogQuery.data?.plans ?? [];
 
   return (
-    <AdminPanel data-testid="admin-ops-usage">
-      <AdminPanelHeader>
-        <AdminPanelTitle>{admin_ops_usage_title()}</AdminPanelTitle>
-        <AdminPanelDescription>
-          {admin_ops_usage_description()}
-        </AdminPanelDescription>
-      </AdminPanelHeader>
-      <AdminPanelContent className="space-y-4">
+    <Frame className="min-w-0" data-testid="admin-ops-usage" dense>
+      <FrameHeader>
+        <FrameTitle>{admin_ops_usage_title()}</FrameTitle>
+        <FrameDescription>{admin_ops_usage_description()}</FrameDescription>
+      </FrameHeader>
+      <FramePanel className="space-y-4">
         {/*
           面板叫「三桶用量」，所以先回答用量：平台级消耗没有投影，就直说
           「暂无用量数据」。把下面那张额度图当成用量，才是这一面最容易犯的谎。
@@ -251,7 +286,7 @@ function AdminUsagePanel() {
           <p className="font-medium text-sm">
             {admin_ops_usage_consumption_title()}
           </p>
-          <p className="text-muted text-sm">
+          <p className="text-muted-foreground text-sm">
             {PLATFORM_USAGE_CONSUMPTION.status === 'unknown'
               ? admin_ops_usage_consumption_unwired()
               : null}
@@ -294,27 +329,28 @@ function AdminUsagePanel() {
             />
           </BarChart.Root>
           {/* 读屏听到的名字要和眼睛看到的小标题一致：这一列是额度，不是用量。 */}
-          <ListView aria-label={admin_ops_usage_allowance_title()}>
+          <ul
+            aria-label={admin_ops_usage_allowance_title()}
+            className="rounded-lg border"
+          >
             {plans.map((plan) => (
-              <ListView.Item
+              <li
+                className="flex flex-col gap-0.5 border-b px-3 py-2 last:border-b-0"
                 data-testid="admin-ops-usage-row"
-                id={plan.id}
                 key={plan.id}
               >
-                <ListView.ItemContent>
-                  <ListView.Title>{plan.id}</ListView.Title>
-                  <ListView.Description>
-                    {BUCKETS.map(
-                      (bucket) => `${bucket.label} ${plan.allowance[bucket.id]}`
-                    ).join(' · ')}
-                  </ListView.Description>
-                </ListView.ItemContent>
-              </ListView.Item>
+                <span className="font-medium text-sm">{plan.id}</span>
+                <span className="text-muted-foreground text-xs">
+                  {BUCKETS.map(
+                    (bucket) => `${bucket.label} ${plan.allowance[bucket.id]}`
+                  ).join(' · ')}
+                </span>
+              </li>
             ))}
-          </ListView>
+          </ul>
         </PanelBody>
-      </AdminPanelContent>
-    </AdminPanel>
+      </FramePanel>
+    </Frame>
   );
 }
 
@@ -331,6 +367,25 @@ function runStatusLabel(status: string) {
     succeeded: admin_ops_run_status_succeeded,
   };
   return labels[status]?.() ?? status;
+}
+
+/**
+ * 运行状态的语义色。时间线到手时状态已经是中文说法了（`buildTaskTimeline` 只
+ * 收一个 label 函数），所以这里按同一张表把说法回查成色，查不到的照旧中性。
+ */
+const RUN_STATUS_VARIANTS: ReadonlyArray<[string, BadgeProps['variant']]> = [
+  ['succeeded', 'success-light'],
+  ['failed', 'destructive-light'],
+  ['running', 'info-light'],
+  ['queued', 'info-light'],
+];
+
+function runStatusVariant(label: string): BadgeProps['variant'] {
+  return (
+    RUN_STATUS_VARIANTS.find(
+      ([status]) => runStatusLabel(status) === label
+    )?.[1] ?? 'outline'
+  );
 }
 
 function AdminTasksPanel() {
@@ -356,19 +411,23 @@ function AdminTasksPanel() {
     retry: admin_ops_outcome_retry(),
     threw: admin_ops_outcome_threw(),
   });
+  const metricsHint = admin_ops_tasks_source_hint();
   // 三块数字始终在位：拿不到就写「未知」。让它整块消失，运营会以为后台没这项。
   const tiles = [
     {
+      hint: metricsHint,
       id: 'queue-depth',
       label: p1_admin_health_queue_depth(),
       value: metrics ? metricNumber(metrics.queue.queueDepth) : null,
     },
     {
+      hint: metricsHint,
       id: 'active-jobs',
       label: p1_admin_health_worker_active_jobs(),
       value: metrics ? metricNumber(metrics.worker.activeJobs) : null,
     },
     {
+      hint: metricsHint,
       id: 'deferred',
       label: p1_admin_health_runner_deferred(),
       value: metrics ? metricNumber(metrics.runner.deferredCount) : null,
@@ -386,14 +445,12 @@ function AdminTasksPanel() {
       : admin_ops_unknown();
 
   return (
-    <AdminPanel data-testid="admin-ops-tasks">
-      <AdminPanelHeader>
-        <AdminPanelTitle>{admin_ops_tasks_title()}</AdminPanelTitle>
-        <AdminPanelDescription>
-          {admin_ops_tasks_description()}
-        </AdminPanelDescription>
-      </AdminPanelHeader>
-      <AdminPanelContent>
+    <Frame className="min-w-0" data-testid="admin-ops-tasks" dense>
+      <FrameHeader>
+        <FrameTitle>{admin_ops_tasks_title()}</FrameTitle>
+        <FrameDescription>{admin_ops_tasks_description()}</FrameDescription>
+      </FrameHeader>
+      <FramePanel>
         {/*
           两条投影各答一半：观测快照给聚合数字，供给快照给逐条执行。
           任何一条到了就该出内容——两条都在飞才算加载中，两条都倒了才算失败。
@@ -410,25 +467,28 @@ function AdminTasksPanel() {
           testId="admin-ops-tasks"
         >
           <div className="space-y-4">
-            <KPIGroup.Root>
+            <div className="grid gap-3 sm:grid-cols-3">
               {tiles.map((tile) => (
                 <MetricTile
+                  hint={tile.hint}
                   key={tile.id}
                   label={tile.label}
                   testId="admin-ops-tasks-row"
                   value={tile.value}
                 />
               ))}
-            </KPIGroup.Root>
+            </div>
             <div className="space-y-2" data-testid="admin-ops-tasks-outcomes">
               <p className="font-medium text-sm">
                 {admin_ops_tasks_outcome_share()}
               </p>
               {slices === null ? (
                 // 拿不到就说未知。一个全零的饼会被读成「近期一件没跑」，那是另一回事。
-                <p className="text-muted text-sm">{admin_ops_unknown()}</p>
+                <p className="text-muted-foreground text-sm">
+                  {admin_ops_unknown()}
+                </p>
               ) : slices.length === 0 ? (
-                <p className="text-muted text-sm">
+                <p className="text-muted-foreground text-sm">
                   {admin_ops_tasks_outcome_empty()}
                 </p>
               ) : (
@@ -471,7 +531,9 @@ function AdminTasksPanel() {
                       )}
                     />
                   </PieChart.Root>
-                  <p className="text-muted text-xs">{outcomeSummary}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {outcomeSummary}
+                  </p>
                 </>
               )}
             </div>
@@ -479,11 +541,11 @@ function AdminTasksPanel() {
             <div className="space-y-2" data-testid="admin-ops-tasks-timeline">
               <p className="font-medium text-sm">{admin_ops_tasks_recent()}</p>
               {taskTimeline === null ? (
-                <p className="text-muted text-sm">
+                <p className="text-muted-foreground text-sm">
                   {admin_ops_tasks_timeline_unknown()}
                 </p>
               ) : taskTimeline.length === 0 ? (
-                <p className="text-muted text-sm">
+                <p className="text-muted-foreground text-sm">
                   {admin_ops_tasks_timeline_empty()}
                 </p>
               ) : (
@@ -502,11 +564,13 @@ function AdminTasksPanel() {
                           <span className="font-medium text-sm">
                             {entry.title}
                           </span>
-                          <AdminStatusChip variant="outline">
+                          <Badge variant={runStatusVariant(entry.status)}>
                             {entry.status}
-                          </AdminStatusChip>
+                          </Badge>
                         </div>
-                        <p className="text-muted text-xs">{entry.detail}</p>
+                        <p className="text-muted-foreground text-xs">
+                          {entry.detail}
+                        </p>
                       </Timeline.Content>
                     </Timeline.Item>
                   ))}
@@ -515,8 +579,8 @@ function AdminTasksPanel() {
             </div>
           </div>
         </PanelBody>
-      </AdminPanelContent>
-    </AdminPanel>
+      </FramePanel>
+    </Frame>
   );
 }
 
@@ -549,19 +613,23 @@ function AdminTenantsPanel() {
   const trial = buildTrialStatus({
     trialEnabled: catalogQuery.data?.trialEnabled,
   });
+  const snapshotHint = admin_ops_tenants_source_hint();
   const counts = view
     ? [
         {
+          hint: snapshotHint,
           id: 'published-policies',
           label: admin_ops_tenants_policies(),
           value: countNumber(view.publishedPolicyCount),
         },
         {
+          hint: snapshotHint,
           id: 'active-allocations',
           label: admin_ops_tenants_allocations(),
           value: countNumber(view.activeAllocationCount),
         },
         {
+          hint: snapshotHint,
           id: 'supply-pools',
           label: admin_ops_tenants_pools(),
           value: countNumber(view.supplyPoolCount),
@@ -570,14 +638,12 @@ function AdminTenantsPanel() {
     : [];
 
   return (
-    <AdminPanel data-testid="admin-ops-tenants">
-      <AdminPanelHeader>
-        <AdminPanelTitle>{admin_ops_tenants_title()}</AdminPanelTitle>
-        <AdminPanelDescription>
-          {admin_ops_tenants_description()}
-        </AdminPanelDescription>
-      </AdminPanelHeader>
-      <AdminPanelContent className="space-y-4">
+    <Frame className="min-w-0" data-testid="admin-ops-tenants" dense>
+      <FrameHeader>
+        <FrameTitle>{admin_ops_tenants_title()}</FrameTitle>
+        <FrameDescription>{admin_ops_tenants_description()}</FrameDescription>
+      </FrameHeader>
+      <FramePanel className="space-y-4">
         {/*
           「租户与试用」的试用那一半：新店现在到底发不发试用。
           这段不进 PanelBody——供给快照空不空，都不改变「目录里那个开关是开是
@@ -590,16 +656,22 @@ function AdminTenantsPanel() {
           <span className="font-medium text-sm">
             {admin_ops_tenants_trial_label()}
           </span>
-          <AdminStatusChip
-            variant={trial.enabled === true ? 'default' : 'outline'}
+          <Badge
+            variant={
+              trial.enabled === null
+                ? 'outline'
+                : trial.enabled
+                  ? 'success-light'
+                  : 'secondary'
+            }
           >
             {trial.enabled === null
               ? admin_ops_tenants_trial_unknown()
               : trial.enabled
                 ? admin_ops_tenants_trial_on()
                 : admin_ops_tenants_trial_off()}
-          </AdminStatusChip>
-          <span className="text-muted text-xs">
+          </Badge>
+          <span className="text-muted-foreground text-xs">
             {TRIAL_GRANT_CENSUS.status === 'unknown'
               ? admin_ops_tenants_trial_census_unwired()
               : null}
@@ -620,16 +692,17 @@ function AdminTenantsPanel() {
           testId="admin-ops-tenants"
         >
           <div className="space-y-4">
-            <KPIGroup.Root>
+            <div className="grid gap-3 sm:grid-cols-3">
               {counts.map((count) => (
                 <MetricTile
+                  hint={count.hint}
                   key={count.id}
                   label={count.label}
                   testId="admin-ops-tenants-count"
                   value={count.value}
                 />
               ))}
-            </KPIGroup.Root>
+            </div>
             <div className="space-y-2">
               <p className="font-medium text-sm">
                 {admin_ops_tenants_recent()}
@@ -653,11 +726,11 @@ function AdminTenantsPanel() {
                         <span className="font-medium text-sm">
                           {entry.title}
                         </span>
-                        <AdminStatusChip variant="outline">
-                          {entry.status}
-                        </AdminStatusChip>
+                        <Badge variant="outline">{entry.status}</Badge>
                       </div>
-                      <p className="text-muted text-xs">{entry.detail}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {entry.detail}
+                      </p>
                     </Timeline.Content>
                   </Timeline.Item>
                 ))}
@@ -665,8 +738,8 @@ function AdminTenantsPanel() {
             </div>
           </div>
         </PanelBody>
-      </AdminPanelContent>
-    </AdminPanel>
+      </FramePanel>
+    </Frame>
   );
 }
 

@@ -12,7 +12,8 @@ import {
   ImpactReviewDialog,
   type ImpactReviewRequest,
 } from '@/components/admin/impact-review-dialog';
-import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
+import { Badge } from '@/components/reui/badge';
+import { Frame, FramePanel } from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -22,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { cn } from '@/lib/utils';
 import {
   getGovernedQuickAction,
   type GovernedActionsPanelView,
@@ -45,6 +47,21 @@ type ActionOutcome = {
   message: string;
   status: 'pending' | 'succeeded' | 'failed';
 };
+
+/**
+ * Outcome words come from the execution result, so the tone is mapped on the
+ * word rather than picked at the call site. Only failure earns a colour;
+ * pending and success stay on the neutral panel surface.
+ */
+const OUTCOME_TONE: Record<ActionOutcome['status'], string> = {
+  pending: '',
+  succeeded: '',
+  failed: 'border-destructive/40 text-destructive',
+};
+
+function outcomeTone(status: ActionOutcome['status']): string {
+  return OUTCOME_TONE[status] ?? '';
+}
 
 type GovernedActionFormValues = {
   candidateDeploymentIds?: string;
@@ -508,106 +525,105 @@ export function SupplyGovernedActionsPanel({
         </p>
       </header>
 
+      {/* Constraint legend, not health words — these stay neutral by design. */}
       <div className="flex flex-wrap gap-2">
-        <AdminStatusChip variant="outline">禁止密钥回显</AdminStatusChip>
-        <AdminStatusChip variant="outline">禁止直写库</AdminStatusChip>
-        <AdminStatusChip variant="outline">禁止绕发布门</AdminStatusChip>
-        <AdminStatusChip variant="outline">
-          禁止盲目重试 accepted/unknown
-        </AdminStatusChip>
+        <Badge variant="outline">禁止密钥回显</Badge>
+        <Badge variant="outline">禁止直写库</Badge>
+        <Badge variant="outline">禁止绕发布门</Badge>
+        <Badge variant="outline">禁止盲目重试 accepted/unknown</Badge>
       </div>
 
-      <div className="overflow-hidden rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>动作</TableHead>
-              <TableHead>权限</TableHead>
-              <TableHead>预览</TableHead>
-              <TableHead>原因</TableHead>
-              <TableHead>CAS/幂等</TableHead>
-              <TableHead>可逆排空</TableHead>
-              <TableHead>目标</TableHead>
-              <TableHead>原因与执行</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {view.actions.map((action) => (
-              <TableRow
-                key={action.id}
-                data-testid="supply-governed-action-row"
-                data-action-id={action.id}
-                data-permission={action.permission}
-                data-requires-preview="true"
-                data-requires-reason="true"
-                data-cas="true"
-                data-reversible-drain={String(action.reversibleDrain)}
-              >
-                <TableCell>
-                  <p className="font-medium">{action.label}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {action.description}
-                  </p>
-                  <p className="font-mono text-[10px] text-muted-foreground">
-                    {action.id}
-                  </p>
-                </TableCell>
-                <TableCell className="font-mono text-xs">
-                  {action.permission}
-                </TableCell>
-                <TableCell>是</TableCell>
-                <TableCell>是</TableCell>
-                <TableCell>是</TableCell>
-                <TableCell>{action.reversibleDrain ? '是' : '否'}</TableCell>
-                <GovernedActionFormCells
-                  actionId={action.id}
-                  label={action.label}
-                  targets={targets[action.id] ?? []}
-                  disabled={
-                    !onPreview ||
-                    !onExecute ||
-                    (outcome?.actionId === action.id &&
-                      outcome.status === 'pending')
-                  }
-                  onSubmit={(values) => reviewAction(action.id, values)}
-                />
+      <Frame dense>
+        <FramePanel className="p-0!">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>动作</TableHead>
+                <TableHead>权限</TableHead>
+                <TableHead>预览</TableHead>
+                <TableHead>原因</TableHead>
+                <TableHead>CAS/幂等</TableHead>
+                <TableHead>可逆排空</TableHead>
+                <TableHead>目标</TableHead>
+                <TableHead>原因与执行</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {view.actions.map((action) => (
+                <TableRow
+                  key={action.id}
+                  data-testid="supply-governed-action-row"
+                  data-action-id={action.id}
+                  data-permission={action.permission}
+                  data-requires-preview="true"
+                  data-requires-reason="true"
+                  data-cas="true"
+                  data-reversible-drain={String(action.reversibleDrain)}
+                >
+                  <TableCell>
+                    <p className="font-medium">{action.label}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {action.description}
+                    </p>
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      {action.id}
+                    </p>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs">
+                    {action.permission}
+                  </TableCell>
+                  <TableCell>是</TableCell>
+                  <TableCell>是</TableCell>
+                  <TableCell>是</TableCell>
+                  <TableCell>{action.reversibleDrain ? '是' : '否'}</TableCell>
+                  <GovernedActionFormCells
+                    actionId={action.id}
+                    label={action.label}
+                    targets={targets[action.id] ?? []}
+                    disabled={
+                      !onPreview ||
+                      !onExecute ||
+                      (outcome?.actionId === action.id &&
+                        outcome.status === 'pending')
+                    }
+                    onSubmit={(values) => reviewAction(action.id, values)}
+                  />
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </FramePanel>
+      </Frame>
 
       {outcome ? (
-        <div
+        <Frame
+          dense
           data-action-id={outcome.actionId}
           data-testid="supply-governed-action-result"
           role={outcome.status === 'failed' ? 'alert' : 'status'}
-          className={
-            outcome.status === 'failed'
-              ? 'rounded-lg border border-destructive/40 p-3 text-sm text-destructive'
-              : 'rounded-lg border p-3 text-sm'
-          }
         >
-          <p>{outcome.message}</p>
-          {outcome.details ? (
-            <dl
-              className="mt-2 grid gap-1 rounded bg-muted p-2 text-xs"
-              data-testid="supply-governed-action-details"
-            >
-              {outcome.details.map((detail) => (
-                <div className="flex gap-2" key={detail.label}>
-                  <dt className="font-medium">{detail.label}</dt>
-                  <dd>{detail.value}</dd>
-                </div>
-              ))}
-            </dl>
-          ) : null}
-          {outcome.status === 'succeeded' ? (
-            <a className="mt-1 inline-block underline" href="/admin/audit">
-              查看审计
-            </a>
-          ) : null}
-        </div>
+          <FramePanel className={cn('text-sm', outcomeTone(outcome.status))}>
+            <p>{outcome.message}</p>
+            {outcome.details ? (
+              <dl
+                className="mt-2 grid gap-1 rounded bg-muted p-2 text-xs"
+                data-testid="supply-governed-action-details"
+              >
+                {outcome.details.map((detail) => (
+                  <div className="flex gap-2" key={detail.label}>
+                    <dt className="font-medium">{detail.label}</dt>
+                    <dd>{detail.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
+            {outcome.status === 'succeeded' ? (
+              <a className="mt-1 inline-block underline" href="/admin/audit">
+                查看审计
+              </a>
+            ) : null}
+          </FramePanel>
+        </Frame>
       ) : null}
 
       <ImpactReviewDialog

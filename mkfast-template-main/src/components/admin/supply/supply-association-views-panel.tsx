@@ -1,7 +1,14 @@
 /**
  * Five association views panel (J4 / D-058) — forward + reverse.
  */
-import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
+import { Badge, type BadgeProps } from '@/components/reui/badge';
+import {
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import {
   ASSOCIATION_VIEW_IDS,
   ASSOCIATION_VIEW_PATHS,
@@ -11,31 +18,48 @@ import {
   listAssociationViewReachability,
 } from '@/p1/admin-supply-association-views-model';
 
+/**
+ * Traversal direction is a navigation word, not a health word, so both
+ * directions stay neutral; anything unmapped falls through to `outline`
+ * rather than borrowing a colour it has not earned.
+ */
+const DIRECTION_VARIANT: Record<string, BadgeProps['variant']> = {
+  forward: 'secondary',
+  reverse: 'secondary',
+};
+
+function directionVariant(direction: string): BadgeProps['variant'] {
+  return DIRECTION_VARIANT[direction] ?? 'outline';
+}
+
 function ProjectionBlock({
   projection,
 }: {
   projection: AssociationProjection;
 }) {
   return (
-    <div
+    <Frame
+      dense
       data-testid="supply-association-projection"
       data-view={projection.view}
       data-direction={projection.direction}
-      className="rounded-md border p-3 text-xs"
+      className="h-full min-w-0"
     >
-      <div className="mb-2 flex items-center gap-2">
-        <AdminStatusChip variant="outline">
-          {projection.direction}
-        </AdminStatusChip>
-        <span className="font-medium">{projection.view}</span>
-      </div>
-      <pre
-        data-testid="supply-association-json"
-        className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-muted-foreground"
-      >
-        {JSON.stringify(projection, null, 2)}
-      </pre>
-    </div>
+      <FramePanel className="text-xs">
+        <div className="mb-2 flex items-center gap-2">
+          <Badge variant={directionVariant(projection.direction)}>
+            {projection.direction}
+          </Badge>
+          <span className="font-medium">{projection.view}</span>
+        </div>
+        <pre
+          data-testid="supply-association-json"
+          className="max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-muted-foreground"
+        >
+          {JSON.stringify(projection, null, 2)}
+        </pre>
+      </FramePanel>
+    </Frame>
   );
 }
 
@@ -72,48 +96,55 @@ export function SupplyAssociationViewsPanel({
   panel: AssociationViewPanelModel;
 }) {
   return (
-    <section
+    <div
       data-testid="supply-association-views-panel"
       data-view-id={panel.viewId}
       data-path={panel.path}
       className="space-y-4"
     >
-      <header className="space-y-2">
-        <h2 className="text-base font-semibold">五关联视图 · {panel.title}</h2>
-        <p className="text-xs text-muted-foreground">
-          正查 + 反查 · path {panel.path}
-        </p>
-        <SupplyAssociationViewsNav activeViewId={panel.viewId} />
-      </header>
+      <Frame>
+        <FrameHeader className="gap-1">
+          <FrameTitle className="text-base">
+            五关联视图 · {panel.title}
+          </FrameTitle>
+          <FrameDescription className="text-xs">
+            正查 + 反查 · path {panel.path}
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel>
+          <SupplyAssociationViewsNav activeViewId={panel.viewId} />
+        </FramePanel>
+      </Frame>
       <div className="grid gap-3 lg:grid-cols-2">
         <ProjectionBlock projection={panel.forward} />
         <ProjectionBlock projection={panel.reverse} />
       </div>
-    </section>
+    </div>
   );
 }
 
 export function SupplyAssociationViewsIndex() {
   return (
-    <section data-testid="supply-association-index" className="space-y-3">
-      <h2 className="text-base font-semibold">五关联视图入口</h2>
-      <SupplyAssociationViewsNav />
-      <ul className="space-y-1 text-xs">
+    <Frame data-testid="supply-association-index">
+      <FrameHeader className="gap-1">
+        <FrameTitle className="text-base">五关联视图入口</FrameTitle>
+      </FrameHeader>
+      <FramePanel>
+        <SupplyAssociationViewsNav />
+      </FramePanel>
+      <FramePanel className="flex flex-col gap-0 p-0!">
         {ASSOCIATION_VIEW_IDS.map((id) => (
-          <li
+          <a
             key={id}
+            href={ASSOCIATION_VIEW_PATHS[id]}
             data-testid="supply-association-index-row"
             data-view-id={id}
+            className="border-b px-4 py-2 font-mono text-primary text-xs last:border-b-0 hover:bg-muted/40"
           >
-            <a
-              href={ASSOCIATION_VIEW_PATHS[id]}
-              className="font-mono text-primary underline-offset-2 hover:underline"
-            >
-              {ASSOCIATION_VIEW_PATHS[id]}
-            </a>
-          </li>
+            {ASSOCIATION_VIEW_PATHS[id]}
+          </a>
         ))}
-      </ul>
-    </section>
+      </FramePanel>
+    </Frame>
   );
 }

@@ -1,13 +1,13 @@
+import { Badge } from '@/components/reui/badge';
+import {
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import { useState } from 'react';
 
-import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -155,14 +155,14 @@ export function AdminRecipeStudioControl() {
   };
 
   return (
-    <AdminPanel data-testid="recipe-studio-control">
-      <AdminPanelHeader>
-        <AdminPanelTitle>受控发布链</AdminPanelTitle>
-        <AdminPanelDescription>
+    <Frame data-testid="recipe-studio-control">
+      <FrameHeader className="gap-1">
+        <FrameTitle>受控发布链</FrameTitle>
+        <FrameDescription>
           每一步都追加不可变 revision；未通过前一门时，Core 会拒绝下一步。
-        </AdminPanelDescription>
-      </AdminPanelHeader>
-      <AdminPanelContent className="space-y-4">
+        </FrameDescription>
+      </FrameHeader>
+      <FramePanel className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="recipe-studio-definition">受控积木定义</Label>
           <Textarea
@@ -286,9 +286,9 @@ export function AdminRecipeStudioControl() {
           </Button>
         </div>
         {record?.studioRelease?.phase ? (
-          <AdminStatusChip variant="outline">
+          <Badge variant="outline">
             当前阶段：{record.studioRelease.phase}
-          </AdminStatusChip>
+          </Badge>
         ) : null}
         {error ? (
           <p role="alert" className="text-sm text-destructive">
@@ -300,7 +300,7 @@ export function AdminRecipeStudioControl() {
             {JSON.stringify(result, null, 2)}
           </pre>
         ) : null}
-      </AdminPanelContent>
-    </AdminPanel>
+      </FramePanel>
+    </Frame>
   );
 }

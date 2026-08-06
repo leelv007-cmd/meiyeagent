@@ -1,14 +1,14 @@
+import {
+  Frame,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import { useQuery } from '@tanstack/react-query';
 import { IconRefresh } from '@tabler/icons-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelHeader,
-  AdminPanelTitle,
-} from '@/components/admin/shell/admin-panel';
 import {
   p1_admin_health_captured_at,
   p1_admin_health_database_active_connections,
@@ -415,11 +415,11 @@ export function AdminOperationsHealth() {
         </Button>
       </div>
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>{p1_admin_health_queue_title()}</AdminPanelTitle>
-        </AdminPanelHeader>
-        <AdminPanelContent>
+      <Frame>
+        <FrameHeader className="gap-1">
+          <FrameTitle>{p1_admin_health_queue_title()}</FrameTitle>
+        </FrameHeader>
+        <FramePanel>
           <dl className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Metric
               label={p1_admin_health_queue_depth()}
@@ -444,14 +444,14 @@ export function AdminOperationsHealth() {
               metric={snapshot.queue.recoveryCount}
             />
           </dl>
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>PostgreSQL</AdminPanelTitle>
-        </AdminPanelHeader>
-        <AdminPanelContent>
+      <Frame>
+        <FrameHeader className="gap-1">
+          <FrameTitle>PostgreSQL</FrameTitle>
+        </FrameHeader>
+        <FramePanel>
           <dl className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <Metric
               label={p1_admin_health_database_active_connections()}
@@ -502,14 +502,14 @@ export function AdminOperationsHealth() {
               format={bytes}
             />
           </dl>
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>{p1_admin_health_worker_title()}</AdminPanelTitle>
-        </AdminPanelHeader>
-        <AdminPanelContent>
+      <Frame>
+        <FrameHeader className="gap-1">
+          <FrameTitle>{p1_admin_health_worker_title()}</FrameTitle>
+        </FrameHeader>
+        <FramePanel>
           <dl className="grid gap-3 sm:grid-cols-3 lg:grid-cols-7">
             <Metric
               label={p1_admin_health_worker_heartbeat()}
@@ -546,18 +546,18 @@ export function AdminOperationsHealth() {
               format={(value) => duration(value)}
             />
           </dl>
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>
+      <Frame>
+        <FrameHeader className="gap-1">
+          <FrameTitle>
             {p1_admin_health_runner_title({
               minutes: snapshot.runner.windowMinutes ?? 'unknown',
             })}
-          </AdminPanelTitle>
-        </AdminPanelHeader>
-        <AdminPanelContent>
+          </FrameTitle>
+        </FrameHeader>
+        <FramePanel>
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Metric
               label="Handler outcomes"
@@ -578,14 +578,14 @@ export function AdminOperationsHealth() {
               format={formatFailures}
             />
           </dl>
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>{p1_admin_health_revision_title()}</AdminPanelTitle>
-        </AdminPanelHeader>
-        <AdminPanelContent>
+      <Frame>
+        <FrameHeader className="gap-1">
+          <FrameTitle>{p1_admin_health_revision_title()}</FrameTitle>
+        </FrameHeader>
+        <FramePanel>
           <dl className="grid gap-3 sm:grid-cols-3">
             <Metric
               label={p1_admin_health_revision_published()}
@@ -600,8 +600,8 @@ export function AdminOperationsHealth() {
               metric={snapshot.moduleRevisions.rolledBackLast30Days}
             />
           </dl>
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
     </div>
   );
 }

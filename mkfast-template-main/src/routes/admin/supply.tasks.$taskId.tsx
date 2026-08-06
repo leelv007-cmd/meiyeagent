@@ -1,4 +1,5 @@
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
+import { useRecordCrumb } from '@/components/admin/shell/page-crumb';
 import { AdminSupplyTaskDrilldown } from '@/p1/admin-supply-control';
 import { createFileRoute } from '@tanstack/react-router';
 
@@ -18,6 +19,9 @@ function SupplyTaskDrilldownPage({
   taskId?: string;
 } = {}) {
   const taskId = taskIdProp ?? 'task-text-001';
+  // The nav tree can only resolve this route to its section, so the trail stops
+  // at 供给运行控制台 unless the page names the record it is showing.
+  useRecordCrumb(taskId);
   return (
     <AdminRoutePage
       title={`供应任务 · ${taskId}`}

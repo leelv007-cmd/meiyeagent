@@ -159,7 +159,7 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     pageId: 'models',
     path: '/admin/models',
     domain: 'ai_supply_and_generation',
-    title: '模型供应',
+    title: '模型资产与定价',
     functionSummary: '模型目录、默认模型与供应执行配置',
     userImpact: '影响生成通道可用性与模型选择',
     capabilityIds: [

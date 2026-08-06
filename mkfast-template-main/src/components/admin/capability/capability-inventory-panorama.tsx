@@ -1,14 +1,15 @@
 import type { CapabilityInventoryItem } from '@meiye/contracts';
 
 import { InventoryStatusBadge } from '@/components/admin/capability/capability-status-badge';
+import { Badge } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
+import { Separator } from '@/components/ui/separator';
 import {
   groupInventoryByDomain,
   type CapabilityRegistryView,
@@ -31,37 +32,38 @@ export function CapabilityInventoryPanorama({
   const stubCount = view.inventory.items.length - instrumentedCount;
 
   return (
-    <AdminPanel data-testid="capability-inventory-panorama">
-      <AdminPanelHeader>
-        <AdminPanelTitle className="text-base">能力清单全景</AdminPanelTitle>
-        <AdminPanelDescription>
+    <Frame data-testid="capability-inventory-panorama">
+      <FrameHeader className="gap-1">
+        <FrameTitle className="text-base">能力清单全景</FrameTitle>
+        <FrameDescription>
           revision {view.inventory.revision} · 捕获 {view.inventory.capturedAt}{' '}
           · 共 {view.inventory.items.length} 项（已插桩 {instrumentedCount} /
           存根及其他 {stubCount}）
-        </AdminPanelDescription>
-      </AdminPanelHeader>
-      <AdminPanelContent className="space-y-6">
-        {sections.map((section) => (
-          <section
-            key={section.group}
-            className="space-y-2"
-            data-group={section.group}
-          >
-            <h3 className="text-sm font-semibold">{section.label}</h3>
-            <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {section.items.map((item) => (
-                <InventoryItemButton
-                  key={item.id}
-                  item={item}
-                  selected={selectedId === item.id}
-                  onSelect={onSelect}
-                />
-              ))}
-            </ul>
-          </section>
-        ))}
-      </AdminPanelContent>
-    </AdminPanel>
+        </FrameDescription>
+      </FrameHeader>
+      {sections.map((section) => (
+        <FramePanel
+          key={section.group}
+          className="flex flex-col gap-0 p-0!"
+          data-group={section.group}
+        >
+          <h3 className="text-muted-foreground px-4 py-2 text-sm font-medium">
+            {section.label}
+          </h3>
+          <Separator />
+          <ul className="grid gap-2 p-3 sm:grid-cols-2 xl:grid-cols-3">
+            {section.items.map((item) => (
+              <InventoryItemButton
+                key={item.id}
+                item={item}
+                selected={selectedId === item.id}
+                onSelect={onSelect}
+              />
+            ))}
+          </ul>
+        </FramePanel>
+      ))}
+    </Frame>
   );
 }
 
@@ -87,25 +89,26 @@ function InventoryItemButton({
         <span className="text-sm font-medium">{item.name}</span>
         <InventoryStatusBadge status={item.status} />
       </div>
-      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+      <p className="text-muted-foreground mt-1 line-clamp-2 text-xs">
         {item.purpose}
       </p>
-      <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+      <p className="text-muted-foreground mt-1 font-mono text-[11px]">
         {item.id}
       </p>
       {item.notes ? (
-        <p className="mt-1 text-[11px] text-muted-foreground">{item.notes}</p>
+        <p className="text-muted-foreground mt-1 text-[11px]">{item.notes}</p>
       ) : null}
       {item.criticalDependencies.length > 0 ? (
         <div className="mt-2 flex flex-wrap gap-1">
           {item.criticalDependencies.map((dep) => (
-            <AdminStatusChip
+            <Badge
               key={dep}
               variant="outline"
+              size="sm"
               className="font-mono text-[10px]"
             >
               {dep}
-            </AdminStatusChip>
+            </Badge>
           ))}
         </div>
       ) : null}

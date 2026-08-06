@@ -3,17 +3,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge, type BadgeProps } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 import {
   Table,
   TableBody,
@@ -65,18 +66,22 @@ interface SyncResult {
   publishedRevisionCount: number;
 }
 
-function statusVariant(status: AdminFeishuToolRevisionView['status']) {
-  if (status === 'published') return 'secondary' as const;
-  if (status === 'retired') return 'destructive' as const;
-  return 'outline' as const;
+type StatusVariant = NonNullable<BadgeProps['variant']>;
+
+function statusVariant(
+  status: AdminFeishuToolRevisionView['status']
+): StatusVariant {
+  if (status === 'published') return 'success-outline';
+  if (status === 'retired') return 'destructive-outline';
+  return 'secondary';
 }
 
 function compatibilityVariant(
   status: AdminFeishuToolRevisionView['compatibility']['status']
-) {
-  if (status === 'compatible') return 'secondary' as const;
-  if (status === 'incompatible') return 'destructive' as const;
-  return 'outline' as const;
+): StatusVariant {
+  if (status === 'compatible') return 'success-outline';
+  if (status === 'incompatible') return 'destructive-outline';
+  return 'secondary';
 }
 
 function timestamp(value: string | undefined) {
@@ -164,14 +169,14 @@ export function AdminFeishuToolControl() {
         </Alert>
       ) : null}
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>{p1_admin_feishu_manual_title()}</AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame>
+        <FrameHeader className="gap-1">
+          <FrameTitle>{p1_admin_feishu_manual_title()}</FrameTitle>
+          <FrameDescription>
             {p1_admin_feishu_manual_description()}
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="min-w-64 space-y-2">
             <Label htmlFor="admin-feishu-connection">
               {p1_admin_feishu_connection()}
@@ -211,19 +216,20 @@ export function AdminFeishuToolControl() {
             <IconRefresh />
             {p1_admin_feishu_refresh()}
           </Button>
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>{p1_admin_feishu_revisions_title()}</AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame>
+        <FrameHeader className="gap-1">
+          <FrameTitle>{p1_admin_feishu_revisions_title()}</FrameTitle>
+          <FrameDescription>
             {p1_admin_feishu_revisions_description({
               count: revisions.length,
             })}
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent>
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="p-0!">
+          <Separator />
           <Table>
             <TableHeader>
               <TableRow>
@@ -255,13 +261,13 @@ export function AdminFeishuToolControl() {
                     </TableCell>
                     <TableCell>{revision.risk}</TableCell>
                     <TableCell>
-                      <AdminStatusChip
+                      <Badge
                         variant={compatibilityVariant(
                           revision.compatibility.status
                         )}
                       >
                         {revision.compatibility.status}
-                      </AdminStatusChip>
+                      </Badge>
                       {revision.compatibility.reason ? (
                         <p className="mt-1 text-xs text-destructive">
                           {revision.compatibility.reason}
@@ -269,9 +275,9 @@ export function AdminFeishuToolControl() {
                       ) : null}
                     </TableCell>
                     <TableCell>
-                      <AdminStatusChip variant={statusVariant(revision.status)}>
+                      <Badge variant={statusVariant(revision.status)}>
                         {revision.status}
-                      </AdminStatusChip>
+                      </Badge>
                     </TableCell>
                     <TableCell className="font-mono text-xs">
                       {revision.schemaHash.slice(0, 16)}
@@ -293,8 +299,8 @@ export function AdminFeishuToolControl() {
               )}
             </TableBody>
           </Table>
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
     </div>
   );
 }

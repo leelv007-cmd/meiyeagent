@@ -1,48 +1,51 @@
 /**
- * 运营后台外壳 — HeroUI Pro V3 `template-dashboard` 起点（D-130 / dev spec §56）。
+ * 运营后台外壳 — ReUI 模板壳（surge-commerce 骨架），取代 HeroUI Pro 壳。
  *
- * 后台是运营内部面，视觉与商家前台分离：它不再走 `components/layout/sidebar-layout`
- * 的商家壳，而是自己组装 HeroUI Sidebar + Glass token 桥。共享壳（sidebar-layout /
- * dashboard-sidebar / sidebar-config）属于 /dashboard 与 /settings，本票一个字节不动，
- * 只以只读方式复用 `ADMIN_SIDEBAR_ITEMS` 的导航词表，导航文案与语言包保持单一来源。
- *
- * Glass 样式表由 `routes/admin.tsx` 以路由级 <link> 引入；token 桥的选择器是
- * `html:has(.meiye-heroui-glass)`，所以壳根必须带这个 class（见 heroui-pro/README.md）。
+ * 选型记录见 docs/design/admin-reui-restyle-plan-2026-08-06.md：admin 面退役
+ * HeroUI Pro（D-130 在 admin 面由该方案覆盖），商家壳与 heroui-pro 目录不动。
+ * 结构 = Header 全宽在上（sticky, --header-height）+ Sidebar 在下
+ * （collapsible=icon, 按 D2 六域分组）+ SidebarInset。导航词表仍以
+ * `sidebar-config` 为单一来源，分组由 ADMIN_NAV_GROUPS 排布。
  */
 import { authClient } from '@/auth/client';
-import { Sidebar } from '@/components/heroui-pro';
 import { DesktopRelayPage } from '@/components/layout/desktop-relay-page';
-import { Spinner } from '@/components/ui/spinner';
-import { ProductIcon } from '@/components/uiux/product-icon';
 import {
-  ADMIN_SIDEBAR_ITEMS,
-  ADMIN_UTILITY_ITEM,
-} from '@/config/sidebar-config';
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarTrigger,
+} from '@/components/ui/sidebar';
+import { Spinner } from '@/components/ui/spinner';
+import { ADMIN_NAV_GROUPS, ADMIN_UTILITY_ITEM } from '@/config/sidebar-config';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Routes } from '@/lib/routes';
 import {
-  admin_shell_navigation_group,
   common_loading,
   shell_admin_brand,
   shell_admin_navigation_aria,
   shell_return_workbench,
   sidebar_skip_to_content,
 } from '@/locale/paraglide/messages';
-import { AdminShellUser } from './admin-shell-user';
-import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
+import { IconArrowBackUp } from '@tabler/icons-react';
+import {
+  Link,
+  Outlet,
+  useNavigate,
+  useRouterState,
+} from '@tanstack/react-router';
 import { useEffect } from 'react';
-
-/** `/admin` 与 `/admin/` 视作同一项，避免尾斜杠让当前项落空。 */
-function canonicalPath(value: string) {
-  return value.replace(/\/$/, '') || '/';
-}
-
-/**
- * 异常收口首页不在 ADMIN_SIDEBAR_ITEMS 里，它由 ADMIN_UTILITY_ITEM 描述
- * （sidebar-config 已注明「Exception home (J2) is the admin shell entry」）。
- * 两个常量都只读复用，导航词表保持单一真相。
- */
-const NAV_ITEMS = [ADMIN_UTILITY_ITEM, ...ADMIN_SIDEBAR_ITEMS] as const;
+import { AdminBreadcrumbs } from './admin-breadcrumbs';
+import { AdminShellUser } from './admin-shell-user';
+import { activeAdminNavHref, canonicalPath } from './nav-active';
+import { RecordCrumbProvider } from './page-crumb';
 
 export function AdminDashboardShell() {
   const { data: session, isPending } = authClient.useSession();
@@ -77,10 +80,10 @@ export function AdminDashboardShell() {
     return <DesktopRelayPage mode="admin" />;
   }
 
-  const currentPath = canonicalPath(pathname);
+  const activeHref = activeAdminNavHref(canonicalPath(pathname));
 
   return (
-    <div className="meiye-heroui-glass bg-background text-foreground min-h-svh">
+    <RecordCrumbProvider>
       <a
         href="#main-content"
         onClick={(event) => {
@@ -95,66 +98,96 @@ export function AdminDashboardShell() {
         {sidebar_skip_to_content()}
       </a>
 
-      <Sidebar.Provider
-        className="min-h-svh"
-        collapsible="icon"
-        navigate={(href) => {
-          void navigate({ to: href });
-        }}
+      <SidebarProvider
+        className="flex flex-col [--sidebar:var(--color-background)] [--sidebar-accent:color-mix(in_oklab,var(--color-primary)_5%,transparent)] [--sidebar-accent-foreground:var(--color-primary)]"
+        style={
+          {
+            '--sidebar-width': '260px',
+            '--sidebar-width-icon': '62px',
+            '--header-height': '50px',
+          } as React.CSSProperties
+        }
       >
-        <Sidebar>
-          <Sidebar.Header>
-            <span className="text-foreground px-1 py-1 text-sm font-semibold">
-              {shell_admin_brand()}
-            </span>
-          </Sidebar.Header>
+        <header className="border-border bg-background sticky top-0 z-50 flex h-(--header-height) shrink-0 items-center gap-3 border-b px-4">
+          <SidebarTrigger />
+          <span className="text-foreground text-sm font-semibold whitespace-nowrap">
+            {shell_admin_brand()}
+          </span>
+          <div className="bg-border h-4 w-px shrink-0" />
+          <AdminBreadcrumbs />
+        </header>
 
-          <Sidebar.Content>
-            <Sidebar.Group aria-label={shell_admin_navigation_aria()}>
-              <Sidebar.GroupLabel>
-                {admin_shell_navigation_group()}
-              </Sidebar.GroupLabel>
-              <Sidebar.Menu>
-                {NAV_ITEMS.map((item) => (
-                  <Sidebar.MenuItem
-                    href={item.href}
-                    id={item.id}
-                    isCurrent={canonicalPath(item.href) === currentPath}
-                    key={item.id}
+        <div className="flex flex-1">
+          <Sidebar
+            collapsible="icon"
+            className="top-(--header-height) h-[calc(100svh-var(--header-height))]!"
+          >
+            <SidebarContent aria-label={shell_admin_navigation_aria()}>
+              <SidebarGroup>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton
+                        isActive={ADMIN_UTILITY_ITEM.href === activeHref}
+                        tooltip={ADMIN_UTILITY_ITEM.label}
+                        render={<Link to={ADMIN_UTILITY_ITEM.href} />}
+                      >
+                        <ADMIN_UTILITY_ITEM.icon />
+                        <span>{ADMIN_UTILITY_ITEM.label}</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+
+              {ADMIN_NAV_GROUPS.map((group) => (
+                <SidebarGroup key={group.id}>
+                  <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      {group.items.map((item) => (
+                        <SidebarMenuItem key={item.id}>
+                          <SidebarMenuButton
+                            isActive={item.href === activeHref}
+                            tooltip={item.label}
+                            render={<Link to={item.href} />}
+                          >
+                            <item.icon />
+                            <span>{item.label}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </SidebarGroup>
+              ))}
+            </SidebarContent>
+
+            <SidebarFooter>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    tooltip={shell_return_workbench()}
+                    render={<Link to={Routes.Dashboard} />}
                   >
-                    <Sidebar.MenuIcon>
-                      <ProductIcon icon={item.icon} />
-                    </Sidebar.MenuIcon>
-                    <Sidebar.MenuLabel>{item.label}</Sidebar.MenuLabel>
-                  </Sidebar.MenuItem>
-                ))}
-              </Sidebar.Menu>
-            </Sidebar.Group>
-          </Sidebar.Content>
+                    <IconArrowBackUp />
+                    <span>{shell_return_workbench()}</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+              <AdminShellUser user={session.user} />
+            </SidebarFooter>
+          </Sidebar>
 
-          <Sidebar.Footer>
-            <Sidebar.Menu>
-              <Sidebar.MenuItem href={Routes.Dashboard} id="return-workbench">
-                <Sidebar.MenuLabel>
-                  {shell_return_workbench()}
-                </Sidebar.MenuLabel>
-              </Sidebar.MenuItem>
-            </Sidebar.Menu>
-            <AdminShellUser user={session.user} />
-          </Sidebar.Footer>
-          <Sidebar.Rail />
-        </Sidebar>
-
-        <Sidebar.Main className="min-w-0">
-          <div className="border-border flex h-12 items-center gap-2 border-b px-4">
-            <Sidebar.Trigger />
-            <span className="text-muted text-xs">{shell_admin_brand()}</span>
-          </div>
-          <div className="outline-none" id="main-content" tabIndex={-1}>
-            <Outlet />
-          </div>
-        </Sidebar.Main>
-      </Sidebar.Provider>
-    </div>
+          <SidebarInset className="min-w-0">
+            <div className="outline-none" id="main-content" tabIndex={-1}>
+              <div className="mx-auto w-full max-w-7xl p-4 md:p-6">
+                <Outlet />
+              </div>
+            </div>
+          </SidebarInset>
+        </div>
+      </SidebarProvider>
+    </RecordCrumbProvider>
   );
 }

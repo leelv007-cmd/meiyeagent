@@ -8,6 +8,7 @@
  *
  * 表单只负责改值；保存仍走原来的影响面确认 + 写入原因 + CAS，一步没少。
  */
+import { Badge } from '@/components/reui/badge';
 import { ListBox } from '@heroui/react';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { useMemo } from 'react';
@@ -21,7 +22,6 @@ import {
   NativeSelect,
   NumberStepper,
 } from '@/components/heroui-pro';
-import { AdminStatusChip } from '@/components/admin/shell/admin-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -157,9 +157,9 @@ function EnumField(props: FieldViewProps) {
                   <span className="flex flex-wrap items-center gap-2 font-medium">
                     {option.label}
                     {(meta?.chips ?? []).map((chip) => (
-                      <AdminStatusChip key={chip} variant="secondary">
+                      <Badge key={chip} variant="secondary">
                         {chip}
-                      </AdminStatusChip>
+                      </Badge>
                     ))}
                   </span>
                   {option.description ? (

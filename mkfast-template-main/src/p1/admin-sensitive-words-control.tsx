@@ -12,14 +12,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import { Badge } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -154,15 +154,15 @@ export function AdminSensitiveWordsControl() {
   });
 
   return (
-    <AdminPanel data-testid="admin-sensitive-words">
-      <AdminPanelHeader>
+    <Frame data-testid="admin-sensitive-words">
+      <FrameHeader className="flex-row items-start justify-between gap-3">
         <div className="space-y-1">
-          <AdminPanelTitle>违禁词库</AdminPanelTitle>
-          <AdminPanelDescription>
+          <FrameTitle>违禁词库</FrameTitle>
+          <FrameDescription>
             美业专项词库（word / category / replacements /
             status）。生成链检查与红线门共库；批量导入 UI 本票不做，仅单条
             CRUD。
-          </AdminPanelDescription>
+          </FrameDescription>
         </div>
         <Button
           type="button"
@@ -174,97 +174,101 @@ export function AdminSensitiveWordsControl() {
           <IconRefresh className="size-4" />
           刷新
         </Button>
-      </AdminPanelHeader>
-      <AdminPanelContent className="space-y-4">
-        <form
-          className="grid gap-3 rounded-md border p-3 md:grid-cols-2"
-          data-testid="admin-sensitive-words-create"
-          onSubmit={(event) => {
-            event.preventDefault();
-            saveMutation.mutate();
-          }}
-        >
-          <p className="text-sm font-medium md:col-span-2">
-            {editingId ? '编辑词条' : '新增词条'}
-          </p>
-          <div className="space-y-1">
-            <Label htmlFor="sw-word">词条</Label>
-            <Input
-              id="sw-word"
-              value={draft.word}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  word: event.target.value,
-                }))
-              }
-              placeholder="例如：根治"
-              data-testid="admin-sensitive-words-word"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="sw-category">分类</Label>
-            <select
-              id="sw-category"
-              className="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
-              value={draft.category}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  category: event.target
-                    .value as AdminSensitiveWordDraft['category'],
-                }))
-              }
-              data-testid="admin-sensitive-words-category"
+      </FrameHeader>
+      <FramePanel className="space-y-4">
+        <Frame dense headingLevel={3}>
+          <FrameHeader>
+            <FrameTitle>{editingId ? '编辑词条' : '新增词条'}</FrameTitle>
+          </FrameHeader>
+          <FramePanel>
+            <form
+              className="grid gap-3 md:grid-cols-2"
+              data-testid="admin-sensitive-words-create"
+              onSubmit={(event) => {
+                event.preventDefault();
+                saveMutation.mutate();
+              }}
             >
-              {ADMIN_SENSITIVE_WORD_CATEGORIES.map((category) => (
-                <option key={category} value={category}>
-                  {categoryLabel(category)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1 md:col-span-2">
-            <Label htmlFor="sw-replacements">替换建议（逗号分隔）</Label>
-            <Input
-              id="sw-replacements"
-              value={draft.replacementsText}
-              onChange={(event) =>
-                setDraft((current) => ({
-                  ...current,
-                  replacementsText: event.target.value,
-                }))
-              }
-              placeholder="明显改善，持续护理后改善"
-              data-testid="admin-sensitive-words-replacements"
-            />
-          </div>
-          <div className="flex items-end gap-2 md:col-span-2">
-            <Button
-              type="submit"
-              size="sm"
-              disabled={saveMutation.isPending}
-              data-testid="admin-sensitive-words-create-submit"
-            >
-              {editingId ? (
-                <IconEdit className="size-4" />
-              ) : (
-                <IconPlus className="size-4" />
-              )}
-              {editingId ? '保存修改' : '新增'}
-            </Button>
-            {editingId ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="outline"
-                onClick={cancelEditing}
-              >
-                取消编辑
-              </Button>
-            ) : null}
-          </div>
-        </form>
+              <div className="space-y-1">
+                <Label htmlFor="sw-word">词条</Label>
+                <Input
+                  id="sw-word"
+                  value={draft.word}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      word: event.target.value,
+                    }))
+                  }
+                  placeholder="例如：根治"
+                  data-testid="admin-sensitive-words-word"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="sw-category">分类</Label>
+                <select
+                  id="sw-category"
+                  className="border-input bg-background h-9 w-full rounded-md border px-2 text-sm"
+                  value={draft.category}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      category: event.target
+                        .value as AdminSensitiveWordDraft['category'],
+                    }))
+                  }
+                  data-testid="admin-sensitive-words-category"
+                >
+                  {ADMIN_SENSITIVE_WORD_CATEGORIES.map((category) => (
+                    <option key={category} value={category}>
+                      {categoryLabel(category)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1 md:col-span-2">
+                <Label htmlFor="sw-replacements">替换建议（逗号分隔）</Label>
+                <Input
+                  id="sw-replacements"
+                  value={draft.replacementsText}
+                  onChange={(event) =>
+                    setDraft((current) => ({
+                      ...current,
+                      replacementsText: event.target.value,
+                    }))
+                  }
+                  placeholder="明显改善，持续护理后改善"
+                  data-testid="admin-sensitive-words-replacements"
+                />
+              </div>
+              <div className="flex items-end gap-2 md:col-span-2">
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={saveMutation.isPending}
+                  data-testid="admin-sensitive-words-create-submit"
+                >
+                  {editingId ? (
+                    <IconEdit className="size-4" />
+                  ) : (
+                    <IconPlus className="size-4" />
+                  )}
+                  {editingId ? '保存修改' : '新增'}
+                </Button>
+                {editingId ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={cancelEditing}
+                  >
+                    取消编辑
+                  </Button>
+                ) : null}
+              </div>
+            </form>
+          </FramePanel>
+        </Frame>
 
         <div className="flex items-center gap-2">
           <Input
@@ -274,9 +278,9 @@ export function AdminSensitiveWordsControl() {
             className="max-w-xs"
             data-testid="admin-sensitive-words-filter"
           />
-          <AdminStatusChip>
+          <Badge variant="secondary">
             {listQuery.isLoading ? '加载中' : `共 ${sorted.length} 条`}
-          </AdminStatusChip>
+          </Badge>
         </div>
 
         <Table data-testid="admin-sensitive-words-table">
@@ -310,9 +314,13 @@ export function AdminSensitiveWordsControl() {
                     {row.replacements.join('，') || '—'}
                   </TableCell>
                   <TableCell>
-                    <AdminStatusChip>
+                    <Badge
+                      variant={
+                        row.status === 'enabled' ? 'success-light' : 'secondary'
+                      }
+                    >
                       {row.status === 'enabled' ? '启用' : '停用'}
-                    </AdminStatusChip>
+                    </Badge>
                   </TableCell>
                   <TableCell className="space-x-1">
                     <Button
@@ -358,7 +366,7 @@ export function AdminSensitiveWordsControl() {
             )}
           </TableBody>
         </Table>
-      </AdminPanelContent>
-    </AdminPanel>
+      </FramePanel>
+    </Frame>
   );
 }

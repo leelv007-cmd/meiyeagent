@@ -88,8 +88,8 @@ export function AdminUsersContent() {
 
   return (
     <div className="space-y-4">
-      <AdminCreateUserForm />
       <UsersTable
+        actions={<AdminCreateUserForm />}
         data={data?.items ?? []}
         total={data?.total ?? 0}
         pageIndex={page}

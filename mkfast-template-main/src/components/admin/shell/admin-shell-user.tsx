@@ -88,7 +88,7 @@ export function AdminShellUser({ user }: { user: SessionUser }) {
             aria-label={sidebar_user_menu_aria({
               identity: user.name ?? user.email,
             })}
-            className="hover:bg-[var(--surface-secondary)] flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors"
+            className="hover:bg-sidebar-accent flex w-full items-center gap-2 rounded-lg px-2 py-2 text-left transition-colors"
             type="button"
           >
             <UserAvatar
@@ -100,7 +100,9 @@ export function AdminShellUser({ user }: { user: SessionUser }) {
               <span className="text-foreground truncate font-semibold">
                 {user.name}
               </span>
-              <span className="text-muted truncate text-xs">{user.email}</span>
+              <span className="text-muted-foreground truncate text-xs">
+                {user.email}
+              </span>
             </span>
             <IconSelector className="ml-auto size-4 shrink-0" />
           </button>

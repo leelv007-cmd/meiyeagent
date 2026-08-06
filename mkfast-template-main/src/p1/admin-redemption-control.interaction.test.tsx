@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -17,6 +23,13 @@ afterEach(() => {
   cleanup();
   vi.resetAllMocks();
 });
+
+// The recording form lives in a sheet, so every create path opens it first and
+// then reads the fields out of the portalled popup rather than the list panel.
+async function openCreateSheet(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByTestId('admin-redemption-create-trigger'));
+  return within(await screen.findByRole('dialog'));
+}
 
 function renderControl(children: ReactNode = <AdminRedemptionControl />) {
   const client = new QueryClient({
@@ -52,19 +65,20 @@ describe('AdminRedemptionControl credit mode', () => {
         throw new Error('response lost after commit');
       })
       .mockResolvedValueOnce([persisted]);
-    const view = renderControl();
+    renderControl();
 
     await waitFor(() => expect(p1Client.queryP1).toHaveBeenCalledOnce());
-    const credits = view.container.querySelector(
+    const sheet = await openCreateSheet(user);
+    const credits = document.querySelector(
       '#redeem-credits'
     ) as HTMLInputElement;
     await user.clear(credits);
     await user.type(credits, '30');
     await user.type(
-      view.container.querySelector('#redeem-code') as HTMLInputElement,
+      document.querySelector('#redeem-code') as HTMLInputElement,
       'RECOVER30'
     );
-    const create = screen.getByRole('button', { name: /record|录入/u });
+    const create = sheet.getByRole('button', { name: /record|录入/u });
     await user.click(create);
 
     await waitFor(() => expect(p1Client.queryP1).toHaveBeenCalledTimes(2));
@@ -85,16 +99,15 @@ describe('AdminRedemptionControl credit mode', () => {
     const user = userEvent.setup();
     p1Client.queryP1.mockResolvedValue([]);
     p1Client.commandP1.mockRejectedValue(new Error('response lost'));
-    const view = renderControl();
+    renderControl();
 
     await waitFor(() => expect(p1Client.queryP1).toHaveBeenCalledOnce());
-    const credits = view.container.querySelector(
+    const sheet = await openCreateSheet(user);
+    const credits = document.querySelector(
       '#redeem-credits'
     ) as HTMLInputElement;
-    const code = view.container.querySelector(
-      '#redeem-code'
-    ) as HTMLInputElement;
-    const create = screen.getByRole('button', { name: /record|录入/u });
+    const code = document.querySelector('#redeem-code') as HTMLInputElement;
+    const create = sheet.getByRole('button', { name: /record|录入/u });
     await user.type(code, 'ROTATE30');
     await user.click(create);
     await waitFor(() => expect(p1Client.commandP1).toHaveBeenCalledOnce());
@@ -113,21 +126,20 @@ describe('AdminRedemptionControl credit mode', () => {
     const user = userEvent.setup();
     p1Client.queryP1.mockResolvedValue([]);
     p1Client.commandP1.mockResolvedValue([]);
-    const view = renderControl();
+    renderControl();
 
     await waitFor(() => expect(p1Client.queryP1).toHaveBeenCalledOnce());
-    const numericInputs = view.container.querySelectorAll(
-      'input[type="number"]'
-    );
+    const sheet = await openCreateSheet(user);
+    const numericInputs = document.querySelectorAll('input[type="number"]');
     expect(numericInputs).toHaveLength(1);
 
     await user.clear(numericInputs[0] as HTMLInputElement);
     await user.type(numericInputs[0] as HTMLInputElement, '30');
     await user.type(
-      view.container.querySelector('#redeem-code') as HTMLInputElement,
+      document.querySelector('#redeem-code') as HTMLInputElement,
       'CREDIT30'
     );
-    await user.click(screen.getByRole('button', { name: /record|录入/u }));
+    await user.click(sheet.getByRole('button', { name: /record|录入/u }));
 
     await waitFor(() => expect(p1Client.commandP1).toHaveBeenCalledOnce());
     expect(p1Client.commandP1.mock.calls[0]?.[1]).toEqual({

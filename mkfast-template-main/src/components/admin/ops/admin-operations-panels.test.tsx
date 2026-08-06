@@ -39,7 +39,9 @@ function renderPanels(overrides: {
 function panelOf(html: string, testId: string) {
   const start = html.indexOf(`data-testid="${testId}"`);
   assert.notEqual(start, -1, `${testId} did not render`);
-  const end = html.indexOf('data-slot="widget"', start + 1);
+  // 三面各是一个 `data-slot="frame"`，面内的指标卡挂的是 `metric-card`——
+  // 所以下一个 `frame` 就是下一面的开头。
+  const end = html.indexOf('data-slot="frame"', start + 1);
   return end === -1 ? html.slice(start) : html.slice(start, end);
 }
 
@@ -83,7 +85,7 @@ test('the tasks panel lifts queue numbers into KPI tiles and draws the outcome s
     metrics: METRICS_WITH_OUTCOMES,
     snapshot: { runPage: { rows: [] } },
   });
-  assert.match(html, /data-slot="kpi"/);
+  assert.match(html, /data-slot="metric-card"/);
   assert.match(html, /data-testid="admin-ops-tasks-row"/);
   assert.match(html, /data-slot="pie-chart"/);
   // 每一条都拿到了数据，这一面上就不该出现「未知」。

@@ -121,14 +121,18 @@ async function provisioningShape(page: Page): Promise<ProvisioningShape> {
  * buckets, and the recorded row is read back in credits.
  */
 async function recordCode(page: Page, code: string) {
-  await page.locator('#redeem-credits').fill(String(CODE_CREDITS));
-  await page.locator('#redeem-code').fill(code);
+  // The recording form is a sheet: the trigger in the list toolbar and the
+  // submit inside the popup share a label, so the submit is scoped to the sheet.
+  await page.getByTestId('admin-redemption-create-trigger').click();
+  const sheet = page.getByRole('dialog');
+  await sheet.locator('#redeem-credits').fill(String(CODE_CREDITS));
+  await sheet.locator('#redeem-code').fill(code);
   const responsePromise = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
       response.url().includes('/api/core/p1/commands')
   );
-  await page.getByRole('button', { name: /录入兑换码|record code/iu }).click();
+  await sheet.getByRole('button', { name: /录入兑换码|record code/iu }).click();
   const response = await responsePromise;
   expect(response.ok(), await response.text()).toBeTruthy();
   const row = page.getByRole('row').filter({ hasText: code });
@@ -189,15 +193,23 @@ test.describe('registration and redemption chain (#219)', () => {
     const assisted = createE2EUser();
     await page.goto('/admin/users');
     await page.waitForLoadState('networkidle');
-    await page.locator('#admin-create-user-name').fill(assisted.name);
-    await page.locator('#admin-create-user-email').fill(assisted.email);
-    await page.locator('#admin-create-user-password').fill(assisted.password);
+    await page.getByTestId('admin-create-user-trigger').click();
+    const createUserSheet = page.getByRole('dialog');
+    await createUserSheet
+      .locator('#admin-create-user-name')
+      .fill(assisted.name);
+    await createUserSheet
+      .locator('#admin-create-user-email')
+      .fill(assisted.email);
+    await createUserSheet
+      .locator('#admin-create-user-password')
+      .fill(assisted.password);
     const assistedResponsePromise = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
         response.url().includes('/api/auth/admin/create-user')
     );
-    await page
+    await createUserSheet
       .getByRole('button', { name: /^create account$|^创建账号$/iu })
       .click();
     const assistedResponse = await assistedResponsePromise;

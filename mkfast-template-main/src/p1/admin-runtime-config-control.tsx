@@ -1,4 +1,4 @@
-import { IconRefresh, IconRestore, IconSettings } from '@tabler/icons-react';
+import { IconRefresh, IconRestore } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -7,17 +7,19 @@ import {
   ImpactReviewDialog,
   type ImpactReviewRequest,
 } from '@/components/admin/impact-review-dialog';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { SettingField } from '@/components/admin/shared/setting-field';
+import { Badge } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameFooter,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
+import { Alert, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { FieldGroup } from '@/components/ui/field';
 import {
   Table,
   TableBody,
@@ -239,6 +241,21 @@ function wiringLabel(item: AdminConfigItem) {
     : admin_runtime_config_restart_pending();
 }
 
+/**
+ * 接线状态的三种语义色：当前生效＝绿，已保存待重启＝黄，未接线＝灰。
+ * 变体由 `wiringLabel` 的产出反查，两者因此不可能各说各话。
+ */
+function wiringBadge(item: AdminConfigItem) {
+  const label = wiringLabel(item);
+  if (label === admin_runtime_config_unwired()) {
+    return { label, variant: 'secondary' } as const;
+  }
+  if (label === admin_runtime_config_restart_pending()) {
+    return { label, variant: 'warning-light' } as const;
+  }
+  return { label, variant: 'success-light' } as const;
+}
+
 function processLabel(processKind: 'http' | 'job-worker') {
   return processKind === 'http'
     ? admin_runtime_config_process_http()
@@ -345,6 +362,9 @@ export function AdminRuntimeConfigControl({
     : selectableItems.length === 0
       ? (genericItems[0]?.key ?? '')
       : '';
+  const activeGenericItem = genericItems.find(
+    (item) => item.key === activeGenericKey
+  );
   // 表单吃结构值，草稿仍以配置契约的规范 JSON 存放：写入路径一点没变。
   const draftValue = useMemo(() => {
     if (!activeGenericKey) return undefined;
@@ -472,44 +492,31 @@ export function AdminRuntimeConfigControl({
   };
 
   return (
-    <div className="space-y-6">
-      <Alert>
-        <IconSettings />
-        <AlertTitle>{admin_runtime_config_notice_title()}</AlertTitle>
-        <AlertDescription>
-          <div className="space-y-2">
-            <p>{admin_runtime_config_notice_description()}</p>
-            {hotReadItem ? <p>{hotReadDescription(hotReadItem.key)}</p> : null}
-            {hasCommerceConfig ? (
-              <p>{admin_runtime_config_legacy_fallback_notice()}</p>
-            ) : null}
-            <AdminStatusChip variant="outline">
-              {admin_runtime_config_activation({
-                status: activationEvidenceLabel(
-                  items[0]?.activationEvidenceStatus
-                ),
-              })}
-            </AdminStatusChip>
-          </div>
-        </AlertDescription>
-      </Alert>
+    <div className="space-y-5">
       {listQuery.error ? (
         <Alert variant="destructive">
           <AlertTitle>{admin_runtime_config_load_error()}</AlertTitle>
         </Alert>
       ) : null}
-      <div className="flex justify-end">
-        <Button
-          disabled={listQuery.isFetching}
-          onClick={() => void refresh()}
-          variant="outline"
-        >
-          <IconRefresh />
-          {admin_runtime_config_refresh()}
-        </Button>
-      </div>
-      <AdminPanel>
-        <AdminPanelContent className="pt-6">
+      <Frame className="w-full" dense>
+        <FrameHeader>
+          <FrameTitle>{admin_runtime_config_notice_title()}</FrameTitle>
+          <FrameDescription className="space-y-2">
+            <p>{admin_runtime_config_notice_description()}</p>
+            {hotReadItem ? <p>{hotReadDescription(hotReadItem.key)}</p> : null}
+            {hasCommerceConfig ? (
+              <p>{admin_runtime_config_legacy_fallback_notice()}</p>
+            ) : null}
+            <Badge variant="info-light">
+              {admin_runtime_config_activation({
+                status: activationEvidenceLabel(
+                  items[0]?.activationEvidenceStatus
+                ),
+              })}
+            </Badge>
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="p-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -538,20 +545,29 @@ export function AdminRuntimeConfigControl({
                             className="flex flex-wrap items-center gap-1"
                             key={snapshot.processKind}
                           >
-                            <AdminStatusChip variant="outline">
+                            <Badge variant="outline">
                               {processLabel(snapshot.processKind)}
-                            </AdminStatusChip>
+                            </Badge>
                             <span className="font-mono">
                               {displayValue(snapshot.effectiveValue)}
                             </span>
-                            <AdminStatusChip variant="secondary">
+                            <Badge
+                              variant={
+                                runtimeSnapshotStatus(
+                                  item.storedValue,
+                                  snapshot.effectiveValue
+                                ) === 'current'
+                                  ? 'success-light'
+                                  : 'warning-light'
+                              }
+                            >
                               {runtimeSnapshotStatus(
                                 item.storedValue,
                                 snapshot.effectiveValue
                               ) === 'current'
                                 ? admin_runtime_config_current_effective()
                                 : admin_runtime_config_restart_pending()}
-                            </AdminStatusChip>
+                            </Badge>
                             {snapshot.fallbackReason ? (
                               <span className="whitespace-normal text-destructive">
                                 {snapshot.fallbackReason}
@@ -567,12 +583,12 @@ export function AdminRuntimeConfigControl({
                   <TableCell>
                     <div className="flex flex-col items-start gap-1">
                       <span>{item.revision ?? '—'}</span>
-                      <AdminStatusChip variant="outline">
+                      <Badge variant="outline">
                         {statusLabel(item.status)}
-                      </AdminStatusChip>
-                      <AdminStatusChip variant="secondary">
-                        {wiringLabel(item)}
-                      </AdminStatusChip>
+                      </Badge>
+                      <Badge variant={wiringBadge(item).variant}>
+                        {wiringBadge(item).label}
+                      </Badge>
                     </div>
                   </TableCell>
                   <TableCell>{item.actorId ?? '—'}</TableCell>
@@ -581,24 +597,39 @@ export function AdminRuntimeConfigControl({
               ))}
             </TableBody>
           </Table>
-        </AdminPanelContent>
-      </AdminPanel>
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>{admin_runtime_config_edit_title()}</AdminPanelTitle>
-          <AdminPanelDescription>
+        </FramePanel>
+        <FrameFooter className="flex flex-row justify-end gap-3">
+          <Button
+            disabled={listQuery.isFetching}
+            onClick={() => void refresh()}
+            variant="outline"
+          >
+            <IconRefresh />
+            {admin_runtime_config_refresh()}
+          </Button>
+        </FrameFooter>
+      </Frame>
+      <Frame className="w-full" dense>
+        <FrameHeader>
+          <FrameTitle>{admin_runtime_config_edit_title()}</FrameTitle>
+          <FrameDescription>
             {admin_runtime_config_edit_description()}
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="space-y-4">
-          {selectableItems.length > 0 ? (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {selectableItems.map((item) => (
-                <div
-                  className="rounded-lg border p-4"
-                  data-testid={`admin-runtime-config-inline-${item.key}`}
-                  key={item.key}
-                >
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="p-0">
+          <FieldGroup className="gap-0">
+            {selectableItems.map((item, index) => (
+              <SettingField
+                badge={wiringBadge(item)}
+                contentClassName="@md/field-group:w-[30rem]"
+                key={item.key}
+                last={
+                  genericItems.length === 0 &&
+                  index === selectableItems.length - 1
+                }
+                title={adminConfigKeyLabel(item.key)}
+              >
+                <div data-testid={`admin-runtime-config-inline-${item.key}`}>
                   <AdminConfigForm
                     configKey={item.key}
                     onChange={(next) => {
@@ -612,17 +643,16 @@ export function AdminRuntimeConfigControl({
                     value={inlineValueOf(item, selectedKey, draft)}
                   />
                 </div>
-              ))}
-            </div>
-          ) : null}
-          {genericItems.length > 0 ? (
-            <>
-              <div className="space-y-2">
-                <Label htmlFor="admin-runtime-config-key">
-                  {admin_runtime_config_key()}
-                </Label>
+              </SettingField>
+            ))}
+            {genericItems.length > 0 ? (
+              <SettingField
+                labelFor="admin-runtime-config-key"
+                last={!activeGenericKey}
+                title={admin_runtime_config_key()}
+              >
                 <select
-                  className="h-10 w-full rounded-lg border bg-background px-3 text-sm"
+                  className="h-touch-target w-full rounded-lg border border-divider bg-surface-1 px-2.5 text-sm"
                   id="admin-runtime-config-key"
                   onChange={(event) => selectKey(event.target.value)}
                   value={activeGenericKey}
@@ -634,12 +664,18 @@ export function AdminRuntimeConfigControl({
                     </option>
                   ))}
                 </select>
-              </div>
-              {activeGenericKey ? (
-                <div className="space-y-2" id="admin-runtime-config-value">
-                  <p className="font-medium text-sm">
-                    {admin_runtime_config_value()}
-                  </p>
+              </SettingField>
+            ) : null}
+            {genericItems.length > 0 && activeGenericKey ? (
+              <SettingField
+                badge={
+                  activeGenericItem ? wiringBadge(activeGenericItem) : undefined
+                }
+                contentClassName="@md/field-group:w-[30rem]"
+                last
+                title={admin_runtime_config_value()}
+              >
+                <div id="admin-runtime-config-value">
                   <AdminConfigForm
                     configKey={activeGenericKey}
                     onChange={(next) => {
@@ -649,26 +685,31 @@ export function AdminRuntimeConfigControl({
                     value={draftValue}
                   />
                 </div>
-              ) : null}
-            </>
-          ) : null}
+              </SettingField>
+            ) : null}
+          </FieldGroup>
+        </FramePanel>
+        <FrameFooter className="flex flex-row justify-end gap-3">
           {validationError ? (
-            <p className="text-sm text-destructive" role="alert">
+            <p
+              className="mr-auto self-center text-destructive text-sm"
+              role="alert"
+            >
               {validationError}
             </p>
           ) : null}
           <Button disabled={!activeItem} onClick={reviewApply}>
             {admin_runtime_config_save()}
           </Button>
-        </AdminPanelContent>
-      </AdminPanel>
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>{admin_runtime_config_history()}</AdminPanelTitle>
-        </AdminPanelHeader>
-        <AdminPanelContent>
+        </FrameFooter>
+      </Frame>
+      <Frame className="w-full" dense>
+        <FrameHeader>
+          <FrameTitle>{admin_runtime_config_history()}</FrameTitle>
+        </FrameHeader>
+        <FramePanel className="p-0">
           {(historyQuery.data?.length ?? 0) === 0 ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="px-4 py-4 text-muted-foreground text-sm">
               {admin_runtime_config_history_empty()}
             </p>
           ) : (
@@ -690,9 +731,9 @@ export function AdminRuntimeConfigControl({
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <span>{item.revision}</span>
-                        <AdminStatusChip variant="outline">
+                        <Badge variant="outline">
                           {statusLabel(item.status)}
-                        </AdminStatusChip>
+                        </Badge>
                         {item.rolledBackToRevision ? (
                           <span className="text-xs text-muted-foreground">
                             {admin_runtime_config_rollback_source({
@@ -730,8 +771,8 @@ export function AdminRuntimeConfigControl({
               </TableBody>
             </Table>
           )}
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
       <ImpactReviewDialog
         onOpenChange={(open) => !open && setImpactReview(undefined)}
         open={Boolean(impactReview)}

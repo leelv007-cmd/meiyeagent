@@ -3,8 +3,20 @@
  *
  * Three truth layers, self probes, config risks, inventory projection,
  * and deep-link handoff CTAs. No write controls. No CF Queue card.
+ *
+ * 换壳只动外框：分区走 Frame，状态字改语义 Badge。`data-write-actions-allowed`
+ * 一类只读断言点原样保留 —— 它们是这个面「不许写」的证据，不是样式。
  */
 
+import { Badge, type BadgeProps } from '@/components/reui/badge';
+import {
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
+import { Separator } from '@/components/ui/separator';
 import {
   adminCfProbeStatusLabel,
   type AdminCfProbeView,
@@ -14,6 +26,22 @@ import {
   type AdminCfPresentationView,
 } from '@/p1/admin-cloudflare-presentation';
 
+type StatusVariant = NonNullable<BadgeProps['variant']>;
+
+function freshnessVariant(freshness: string): StatusVariant {
+  if (freshness === 'fresh') return 'success-outline';
+  if (freshness === 'stale') return 'warning-outline';
+  if (freshness === 'unavailable') return 'destructive-outline';
+  return 'secondary';
+}
+
+function probeVariant(status: AdminCfProbeView['status']): StatusVariant {
+  if (status === 'ok') return 'success-outline';
+  if (status === 'degraded' || status === 'not_ready') return 'warning-outline';
+  if (status === 'failed') return 'destructive-outline';
+  return 'secondary';
+}
+
 function FreshnessBadge({
   freshness,
   label,
@@ -22,13 +50,13 @@ function FreshnessBadge({
   label: string;
 }) {
   return (
-    <span
+    <Badge
+      variant={freshnessVariant(freshness)}
       data-testid="cf-freshness"
       data-freshness={freshness}
-      className="inline-flex items-center rounded-md border px-2 py-0.5 text-xs"
     >
       {label}
-    </span>
+    </Badge>
   );
 }
 
@@ -39,20 +67,23 @@ function ProbeRow({ probe }: { probe: AdminCfProbeView }) {
       data-probe-kind={probe.kind}
       data-probe-status={probe.status}
       data-mutates-cloudflare="false"
-      className="rounded-md border p-3"
+      className="rounded-lg border p-3"
     >
       <div className="flex items-center justify-between gap-2">
         <span className="font-medium">{probe.title}</span>
-        <span data-testid="cf-probe-status-label" className="text-xs">
+        <Badge
+          variant={probeVariant(probe.status)}
+          data-testid="cf-probe-status-label"
+        >
           {adminCfProbeStatusLabel(probe.status)}
-        </span>
+        </Badge>
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="text-muted-foreground mt-1 text-sm">
         {probe.businessImpact}
       </p>
       {probe.detail ? (
         <p
-          className="mt-1 text-xs text-muted-foreground"
+          className="text-muted-foreground mt-1 text-xs"
           data-testid="cf-probe-detail"
         >
           {probe.detail}
@@ -68,87 +99,98 @@ export function CloudflareReadonlyPanel({
   view: AdminCfPresentationView;
 }) {
   return (
-    <section
+    <div
       data-testid="cloudflare-readonly-panel"
       data-write-actions-allowed="false"
       data-show-queue-card="false"
       data-graphql-deferred="true"
-      className="space-y-6"
+      className="space-y-4"
     >
-      <header className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold">Cloudflare 只读运行投影</h2>
+      <Frame>
+        {/* 标题不再重复一遍页面 h1（AdminRoutePage 已经报过「Cloudflare 只读运行投影」），
+            这一条只带新鲜度与覆盖范围。 */}
+        <FrameHeader className="gap-2">
           <FreshnessBadge
             freshness={view.freshness}
             label={view.freshnessLabel}
           />
-        </div>
-        <p
-          className="text-sm text-muted-foreground"
-          data-testid="cf-coverage-note"
+          <FrameDescription data-testid="cf-coverage-note">
+            {view.coverageNote}
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel
+          className="grid gap-2 text-sm"
+          data-testid="cf-truth-layers"
         >
-          {view.coverageNote}
-        </p>
-      </header>
+          <p data-testid="cf-truth-native">
+            {view.truthLayers.nativeDiagnostics}
+          </p>
+          <p data-testid="cf-truth-projection">
+            {view.truthLayers.productProjection}
+          </p>
+          <p data-testid="cf-truth-actions">
+            {view.truthLayers.productSideActions}
+          </p>
+        </FramePanel>
+      </Frame>
 
-      <div
-        data-testid="cf-truth-layers"
-        className="grid gap-2 rounded-md border p-3 text-sm"
-      >
-        <p data-testid="cf-truth-native">
-          {view.truthLayers.nativeDiagnostics}
-        </p>
-        <p data-testid="cf-truth-projection">
-          {view.truthLayers.productProjection}
-        </p>
-        <p data-testid="cf-truth-actions">
-          {view.truthLayers.productSideActions}
-        </p>
-      </div>
+      <Frame data-testid="cf-config-risks">
+        <FrameHeader>
+          <FrameTitle>配置风险 / 未就绪</FrameTitle>
+        </FrameHeader>
+        <FramePanel className="flex flex-col gap-0 p-0!">
+          {view.configRisks.length === 0 ? (
+            <p className="text-muted-foreground px-4 py-6 text-center text-sm">
+              暂无登记的配置风险
+            </p>
+          ) : (
+            view.configRisks.map((risk) => (
+              <div
+                key={risk.id}
+                data-testid="cf-config-risk"
+                data-risk-id={risk.id}
+                data-severity={risk.severity}
+                className="border-b px-4 py-3 last:border-b-0"
+              >
+                <div className="font-medium">{risk.title}</div>
+                <p className="text-muted-foreground text-sm">
+                  {risk.businessImpact}
+                </p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {risk.evidence}
+                </p>
+              </div>
+            ))
+          )}
+        </FramePanel>
+      </Frame>
 
-      <section data-testid="cf-config-risks" className="space-y-2">
-        <h3 className="text-sm font-semibold">配置风险 / 未就绪</h3>
-        <ul className="space-y-2">
-          {view.configRisks.map((risk) => (
-            <li
-              key={risk.id}
-              data-testid="cf-config-risk"
-              data-risk-id={risk.id}
-              data-severity={risk.severity}
-              className="rounded-md border p-3"
-            >
-              <div className="font-medium">{risk.title}</div>
-              <p className="text-sm text-muted-foreground">
-                {risk.businessImpact}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {risk.evidence}
-              </p>
-            </li>
-          ))}
-        </ul>
-      </section>
+      <Frame data-testid="cf-self-probes">
+        <FrameHeader className="gap-1">
+          <FrameTitle>自有健康探针</FrameTitle>
+          <FrameDescription className="text-xs">
+            总体：{adminCfProbeStatusLabel(view.probeSummary.overall)} · 正常{' '}
+            {view.probeSummary.okCount} · 需关注{' '}
+            {view.probeSummary.attentionCount}
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel>
+          <ul className="grid gap-2 sm:grid-cols-2">
+            {view.probes.map((probe) => (
+              <ProbeRow key={probe.kind} probe={probe} />
+            ))}
+          </ul>
+        </FramePanel>
+      </Frame>
 
-      <section data-testid="cf-self-probes" className="space-y-2">
-        <h3 className="text-sm font-semibold">自有健康探针</h3>
-        <p className="text-xs text-muted-foreground">
-          总体：{adminCfProbeStatusLabel(view.probeSummary.overall)} · 正常{' '}
-          {view.probeSummary.okCount} · 需关注{' '}
-          {view.probeSummary.attentionCount}
-        </p>
-        <ul className="grid gap-2 sm:grid-cols-2">
-          {view.probes.map((probe) => (
-            <ProbeRow key={probe.kind} probe={probe} />
-          ))}
-        </ul>
-      </section>
-
-      <section data-testid="cf-inventory" className="space-y-3">
-        <h3 className="text-sm font-semibold">只读 REST 盘点</h3>
-        <div
+      <Frame data-testid="cf-inventory">
+        <FrameHeader>
+          <FrameTitle>只读 REST 盘点</FrameTitle>
+        </FrameHeader>
+        <FramePanel
+          className="text-sm"
           data-testid="cf-deployments"
           data-field-status={view.deployments.status}
-          className="rounded-md border p-3 text-sm"
         >
           <div className="font-medium">部署</div>
           <p className="text-muted-foreground">
@@ -159,11 +201,11 @@ export function CloudflareReadonlyPanel({
               rows.map((r) => r.deploymentId).join(', ')
             )}
           </p>
-        </div>
-        <div
+        </FramePanel>
+        <FramePanel
+          className="text-sm"
           data-testid="cf-versions"
           data-field-status={view.versions.status}
-          className="rounded-md border p-3 text-sm"
         >
           <div className="font-medium">版本</div>
           <p className="text-muted-foreground">
@@ -174,51 +216,63 @@ export function CloudflareReadonlyPanel({
               rows.map((r) => r.versionId).join(', ')
             )}
           </p>
-        </div>
-        <ul data-testid="cf-resources" className="space-y-2">
-          {view.resources.map((resource) => (
-            <li
-              key={`${resource.kind}:${resource.name}`}
-              data-testid="cf-resource-row"
-              data-resource-kind={resource.kind}
-              data-readiness={resource.readiness}
-              className="rounded-md border p-3 text-sm"
-            >
-              <div className="font-medium">
-                {resource.kind} · {resource.name}
-              </div>
-              <p className="text-muted-foreground">{resource.businessImpact}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section data-testid="cf-deep-links" className="space-y-2">
-        <h3 className="text-sm font-semibold">
-          技术台 deep-link（脱敏上下文）
-        </h3>
-        <ul className="flex flex-wrap gap-2">
-          {view.deepLinks.map((link) => (
-            <li key={link.kind}>
-              <span
-                data-testid="cf-deep-link"
-                data-resource-kind={link.kind}
-                data-mutates-cloudflare="false"
-                className="inline-flex rounded-md border px-3 py-1.5 text-sm"
+        </FramePanel>
+        <FramePanel className="flex flex-col gap-0 p-0!">
+          <div className="text-muted-foreground px-4 py-2 text-sm font-medium">
+            资源
+          </div>
+          <Separator />
+          <ul data-testid="cf-resources">
+            {view.resources.map((resource) => (
+              <li
+                key={`${resource.kind}:${resource.name}`}
+                data-testid="cf-resource-row"
+                data-resource-kind={resource.kind}
+                data-readiness={resource.readiness}
+                className="border-b px-4 py-3 text-sm last:border-b-0"
               >
-                {link.label}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
+                <div className="font-medium">
+                  {resource.kind} · {resource.name}
+                </div>
+                <p className="text-muted-foreground">
+                  {resource.businessImpact}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </FramePanel>
+      </Frame>
 
-      <footer
-        data-testid="cf-write-denials"
-        className="rounded-md border border-dashed p-3 text-xs text-muted-foreground"
-      >
-        写权限零持有：{view.deniedWriteActions.join(', ')}
-      </footer>
-    </section>
+      <Frame data-testid="cf-deep-links">
+        <FrameHeader>
+          <FrameTitle>技术台 deep-link（脱敏上下文）</FrameTitle>
+        </FrameHeader>
+        <FramePanel>
+          <ul className="flex flex-wrap gap-2">
+            {view.deepLinks.map((link) => (
+              <li key={link.kind}>
+                <Badge
+                  variant="outline"
+                  size="xl"
+                  data-testid="cf-deep-link"
+                  data-resource-kind={link.kind}
+                  data-mutates-cloudflare="false"
+                >
+                  {link.label}
+                </Badge>
+              </li>
+            ))}
+          </ul>
+        </FramePanel>
+        <FramePanel
+          className="border-dashed shadow-none"
+          data-testid="cf-write-denials"
+        >
+          <p className="text-muted-foreground text-xs">
+            写权限零持有：{view.deniedWriteActions.join(', ')}
+          </p>
+        </FramePanel>
+      </Frame>
+    </div>
   );
 }

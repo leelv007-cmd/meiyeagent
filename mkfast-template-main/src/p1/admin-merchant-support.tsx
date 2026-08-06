@@ -1,13 +1,13 @@
 import { useQuery } from '@tanstack/react-query';
 
+import { Badge } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import {
   Table,
   TableBody,
@@ -55,13 +55,15 @@ export function MerchantSupportDiagnosticTable({
 }) {
   return (
     <div className="space-y-4">
-      <AdminStatusChip
-        variant={diagnostic.ledgerConsistent ? 'secondary' : 'destructive'}
+      <Badge
+        variant={
+          diagnostic.ledgerConsistent ? 'success-light' : 'destructive-light'
+        }
       >
         {diagnostic.ledgerConsistent
           ? merchant_support_ledger_consistent()
           : merchant_support_ledger_mismatch()}
-      </AdminStatusChip>
+      </Badge>
       <section className="space-y-2">
         <h3 className="font-medium">{merchant_support_quota()}</h3>
         <ul className="space-y-1 text-sm text-muted-foreground">
@@ -140,14 +142,12 @@ export function AdminMerchantSupport() {
     },
   });
   return (
-    <AdminPanel>
-      <AdminPanelHeader>
-        <AdminPanelTitle>{merchant_support_title()}</AdminPanelTitle>
-        <AdminPanelDescription>
-          {merchant_support_description()}
-        </AdminPanelDescription>
-      </AdminPanelHeader>
-      <AdminPanelContent>
+    <Frame dense>
+      <FrameHeader>
+        <FrameTitle>{merchant_support_title()}</FrameTitle>
+        <FrameDescription>{merchant_support_description()}</FrameDescription>
+      </FrameHeader>
+      <FramePanel>
         {query.isPending ? (
           <p className="text-sm text-muted-foreground">
             {merchant_support_loading()}
@@ -159,7 +159,7 @@ export function AdminMerchantSupport() {
         ) : (
           <MerchantSupportDiagnosticTable diagnostic={query.data} />
         )}
-      </AdminPanelContent>
-    </AdminPanel>
+      </FramePanel>
+    </Frame>
   );
 }

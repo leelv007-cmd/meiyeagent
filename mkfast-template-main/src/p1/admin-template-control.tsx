@@ -14,14 +14,14 @@ import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,6 +35,8 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import {
+  admin_templates_description,
+  admin_templates_title,
   p1_admin_template_catalog_description,
   p1_admin_template_catalog_empty,
   p1_admin_template_catalog_error_description,
@@ -147,8 +149,8 @@ const BLANK_DOCUMENT = JSON.stringify(
 );
 
 function statusVariant(status: AdminTemplateView['publicationStatus']) {
-  if (status === 'published') return 'secondary' as const;
-  if (status === 'retired') return 'destructive' as const;
+  if (status === 'published') return 'success-light' as const;
+  if (status === 'retired') return 'destructive-light' as const;
   return 'outline' as const;
 }
 
@@ -404,372 +406,387 @@ export function AdminTemplateControl() {
   );
 
   return (
-    <div className="space-y-6">
-      <Alert>
-        <IconAlertTriangle />
-        <AlertTitle>{p1_admin_template_notice_title()}</AlertTitle>
-        <AlertDescription>
-          {p1_admin_template_notice_description()}
-        </AlertDescription>
-      </Alert>
+    <Frame>
+      <FrameHeader>
+        <FrameTitle>{admin_templates_title()}</FrameTitle>
+        <FrameDescription>{admin_templates_description()}</FrameDescription>
+      </FrameHeader>
+      <FramePanel className="space-y-6">
+        <Alert>
+          <IconAlertTriangle />
+          <AlertTitle>{p1_admin_template_notice_title()}</AlertTitle>
+          <AlertDescription>
+            {p1_admin_template_notice_description()}
+          </AlertDescription>
+        </Alert>
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>{p1_admin_template_create_title()}</AdminPanelTitle>
-          <AdminPanelDescription>
-            {p1_admin_template_create_description()}
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent>
-          <form className="grid gap-4 md:grid-cols-3" onSubmit={createTemplate}>
-            <div className="space-y-2">
-              <Label htmlFor="admin-new-template-name">
-                {p1_admin_template_name()}
-              </Label>
-              <Input
-                id="admin-new-template-name"
-                placeholder={p1_admin_template_name_placeholder()}
-                {...createForm.register('name')}
-              />
-              {createForm.formState.errors.name ? (
-                <p className="text-xs text-destructive">
-                  {createForm.formState.errors.name.message}
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="admin-new-template-family">
-                {p1_admin_template_family()}
-              </Label>
-              <Input
-                id="admin-new-template-family"
-                placeholder="seasonal_campaign"
-                {...createForm.register('family')}
-              />
-              {createForm.formState.errors.family ? (
-                <p className="text-xs text-destructive">
-                  {createForm.formState.errors.family.message}
-                </p>
-              ) : null}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="admin-new-template-tags">
-                {p1_admin_template_tags()}
-              </Label>
-              <Input
-                id="admin-new-template-tags"
-                placeholder={p1_admin_template_tags_placeholder()}
-                {...createForm.register('tags')}
-              />
-              {createForm.formState.errors.tags ? (
-                <p className="text-xs text-destructive">
-                  {createForm.formState.errors.tags.message}
-                </p>
-              ) : null}
-            </div>
-            <div className="md:col-span-3">
-              <Button disabled={Boolean(busy)} type="submit">
-                <IconFilePlus />
-                {busy === 'create-template'
-                  ? p1_admin_template_creating()
-                  : p1_admin_template_create_button()}
-              </Button>
-            </div>
-          </form>
-        </AdminPanelContent>
-      </AdminPanel>
-
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(22rem,1fr)]">
-        <AdminPanel>
-          <AdminPanelHeader>
-            <AdminPanelTitle>
-              {p1_admin_template_catalog_title()}
-            </AdminPanelTitle>
-            <AdminPanelDescription>
-              {p1_admin_template_catalog_description()}
-            </AdminPanelDescription>
-          </AdminPanelHeader>
-          <AdminPanelContent>
-            {error ? (
-              <Alert variant="destructive">
-                <AlertTitle>
-                  {p1_admin_template_catalog_error_title()}
-                </AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            ) : null}
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="admin-template-family-filter">
-                  {p1_admin_template_family_filter()}
+        <Frame dense headingLevel={3}>
+          <FrameHeader>
+            <FrameTitle>{p1_admin_template_create_title()}</FrameTitle>
+            <FrameDescription>
+              {p1_admin_template_create_description()}
+            </FrameDescription>
+          </FrameHeader>
+          <FramePanel>
+            <form
+              className="grid gap-4 md:grid-cols-3"
+              onSubmit={createTemplate}
+            >
+              <div className="space-y-2">
+                <Label htmlFor="admin-new-template-name">
+                  {p1_admin_template_name()}
                 </Label>
-                <select
-                  className="h-9 rounded-md border bg-background px-3 text-sm"
-                  id="admin-template-family-filter"
-                  onChange={(event) => setFamilyFilter(event.target.value)}
-                  value={familyFilter}
-                >
-                  <option value="all">{p1_admin_template_family_all()}</option>
-                  {families.map((family) => (
-                    <option key={family} value={family}>
-                      {family}
-                    </option>
-                  ))}
-                </select>
+                <Input
+                  id="admin-new-template-name"
+                  placeholder={p1_admin_template_name_placeholder()}
+                  {...createForm.register('name')}
+                />
+                {createForm.formState.errors.name ? (
+                  <p className="text-xs text-destructive">
+                    {createForm.formState.errors.name.message}
+                  </p>
+                ) : null}
               </div>
-              <Button
-                disabled={catalogQuery.isFetching}
-                onClick={() => void refresh()}
-                variant="outline"
-              >
-                <IconRefresh />
-                {p1_admin_template_refresh()}
-              </Button>
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor="admin-new-template-family">
+                  {p1_admin_template_family()}
+                </Label>
+                <Input
+                  id="admin-new-template-family"
+                  placeholder="seasonal_campaign"
+                  {...createForm.register('family')}
+                />
+                {createForm.formState.errors.family ? (
+                  <p className="text-xs text-destructive">
+                    {createForm.formState.errors.family.message}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="admin-new-template-tags">
+                  {p1_admin_template_tags()}
+                </Label>
+                <Input
+                  id="admin-new-template-tags"
+                  placeholder={p1_admin_template_tags_placeholder()}
+                  {...createForm.register('tags')}
+                />
+                {createForm.formState.errors.tags ? (
+                  <p className="text-xs text-destructive">
+                    {createForm.formState.errors.tags.message}
+                  </p>
+                ) : null}
+              </div>
+              <div className="md:col-span-3">
+                <Button disabled={Boolean(busy)} type="submit">
+                  <IconFilePlus />
+                  {busy === 'create-template'
+                    ? p1_admin_template_creating()
+                    : p1_admin_template_create_button()}
+                </Button>
+              </div>
+            </form>
+          </FramePanel>
+        </Frame>
+
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(22rem,1fr)]">
+          <Frame dense headingLevel={3}>
+            <FrameHeader>
+              <FrameTitle>{p1_admin_template_catalog_title()}</FrameTitle>
+              <FrameDescription>
+                {p1_admin_template_catalog_description()}
+              </FrameDescription>
+            </FrameHeader>
+            <FramePanel>
+              {error ? (
+                <Alert variant="destructive">
+                  <AlertTitle>
+                    {p1_admin_template_catalog_error_title()}
+                  </AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              ) : null}
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="admin-template-family-filter">
+                    {p1_admin_template_family_filter()}
+                  </Label>
+                  <select
+                    className="h-9 rounded-md border bg-background px-3 text-sm"
+                    id="admin-template-family-filter"
+                    onChange={(event) => setFamilyFilter(event.target.value)}
+                    value={familyFilter}
+                  >
+                    <option value="all">
+                      {p1_admin_template_family_all()}
+                    </option>
+                    {families.map((family) => (
+                      <option key={family} value={family}>
+                        {family}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <Button
+                  disabled={catalogQuery.isFetching}
+                  onClick={() => void refresh()}
+                  variant="outline"
+                >
+                  <IconRefresh />
+                  {p1_admin_template_refresh()}
+                </Button>
+              </div>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{p1_admin_template_column_template()}</TableHead>
+                    <TableHead>{p1_admin_template_column_family()}</TableHead>
+                    <TableHead>{p1_admin_template_column_status()}</TableHead>
+                    <TableHead>{p1_admin_template_column_current()}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {visibleTemplates.map((template) => (
+                    <TableRow
+                      className="cursor-pointer"
+                      data-state={
+                        template.id === templateId ? 'selected' : undefined
+                      }
+                      key={template.id}
+                      onClick={() => {
+                        versionForm.setValue('templateId', template.id);
+                        versionForm.setValue(
+                          'versionId',
+                          template.enabledVersionId ??
+                            template.publishedVersionId ??
+                            ''
+                        );
+                      }}
+                    >
+                      <TableCell>
+                        <div className="font-medium">{template.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {template.id}
+                        </div>
+                      </TableCell>
+                      <TableCell>{template.family}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={statusVariant(template.publicationStatus)}
+                        >
+                          {template.publicationStatus}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {template.enabledVersionId ??
+                          template.publishedVersionId ??
+                          p1_template_version_unpublished()}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {!loading && templates.length === 0 ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  {p1_admin_template_catalog_empty()}
+                </p>
+              ) : null}
+            </FramePanel>
+          </Frame>
+
+          <Frame dense headingLevel={3}>
+            <FrameHeader>
+              <FrameTitle>
+                {p1_admin_template_version_actions_title()}
+              </FrameTitle>
+              <FrameDescription>
+                {p1_admin_template_version_actions_description()}
+              </FrameDescription>
+            </FrameHeader>
+            <FramePanel>
+              <form className="space-y-4" onSubmit={createDraft}>
+                <div className="space-y-2">
+                  <Label htmlFor="admin-template-id">
+                    {p1_admin_template_id()}
+                  </Label>
+                  <Input
+                    id="admin-template-id"
+                    placeholder="official-social_cover"
+                    {...versionForm.register('templateId')}
+                  />
+                  {versionForm.formState.errors.templateId ? (
+                    <p className="text-xs text-destructive">
+                      {versionForm.formState.errors.templateId.message}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="admin-template-version-id">
+                    {p1_admin_template_version_id()}
+                  </Label>
+                  <Input
+                    id="admin-template-version-id"
+                    placeholder={p1_admin_template_version_placeholder()}
+                    {...versionForm.register('versionId')}
+                  />
+                  {versionForm.formState.errors.versionId ? (
+                    <p className="text-xs text-destructive">
+                      {versionForm.formState.errors.versionId.message}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="admin-template-rollout">
+                    {p1_admin_template_rollout()}
+                  </Label>
+                  <Input
+                    id="admin-template-rollout"
+                    inputMode="numeric"
+                    max="100"
+                    min="0"
+                    type="number"
+                    {...versionForm.register('rollout')}
+                  />
+                  {versionForm.formState.errors.rollout ? (
+                    <p className="text-xs text-destructive">
+                      {versionForm.formState.errors.rollout.message}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="admin-template-document">
+                    {p1_admin_template_document()}
+                  </Label>
+                  <Textarea
+                    className="min-h-72 font-mono text-xs"
+                    id="admin-template-document"
+                    spellCheck={false}
+                    {...versionForm.register('document')}
+                  />
+                  {versionForm.formState.errors.document ? (
+                    <p className="text-xs text-destructive">
+                      {versionForm.formState.errors.document.message}
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button disabled={Boolean(busy)} type="submit">
+                    <IconFilePlus />
+                    {busy === 'draft'
+                      ? p1_admin_template_creating()
+                      : p1_admin_template_create_draft()}
+                  </Button>
+                  <Button
+                    disabled={Boolean(busy)}
+                    onClick={() => void preview()}
+                    type="button"
+                    variant="outline"
+                  >
+                    <IconEye />
+                    {busy === 'preview'
+                      ? p1_admin_template_loading()
+                      : p1_admin_template_preview_version()}
+                  </Button>
+                  <Button
+                    disabled={Boolean(busy)}
+                    onClick={() => void enable()}
+                    type="button"
+                    variant="outline"
+                  >
+                    <IconPlayerPlay />
+                    {busy === 'enable'
+                      ? p1_admin_template_enabling()
+                      : p1_admin_template_enable_version()}
+                  </Button>
+                  <Button
+                    disabled={Boolean(busy)}
+                    onClick={() => void publish()}
+                    type="button"
+                    variant="secondary"
+                  >
+                    <IconRocket />
+                    {busy === 'publish'
+                      ? p1_admin_template_publishing()
+                      : p1_admin_template_publish_version()}
+                  </Button>
+                  <Button
+                    disabled={Boolean(busy)}
+                    onClick={() => void retire()}
+                    type="button"
+                    variant="destructive"
+                  >
+                    <IconTrash />
+                    {busy === 'retire'
+                      ? p1_admin_template_retiring()
+                      : p1_admin_template_retire_template()}
+                  </Button>
+                </div>
+              </form>
+            </FramePanel>
+          </Frame>
+        </div>
+
+        <Frame dense headingLevel={3}>
+          <FrameHeader>
+            <FrameTitle>{p1_admin_template_history_title()}</FrameTitle>
+            <FrameDescription>
+              {p1_admin_template_history_description()}
+            </FrameDescription>
+          </FrameHeader>
+          <FramePanel>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{p1_admin_template_column_template()}</TableHead>
-                  <TableHead>{p1_admin_template_column_family()}</TableHead>
+                  <TableHead>{p1_admin_template_column_version_id()}</TableHead>
+                  <TableHead>
+                    {p1_admin_template_column_template_id()}
+                  </TableHead>
                   <TableHead>{p1_admin_template_column_status()}</TableHead>
-                  <TableHead>{p1_admin_template_column_current()}</TableHead>
+                  <TableHead>{p1_admin_template_column_rollout()}</TableHead>
+                  <TableHead>{p1_admin_template_column_summary()}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {visibleTemplates.map((template) => (
-                  <TableRow
-                    className="cursor-pointer"
-                    data-state={
-                      template.id === templateId ? 'selected' : undefined
-                    }
-                    key={template.id}
-                    onClick={() => {
-                      versionForm.setValue('templateId', template.id);
-                      versionForm.setValue(
-                        'versionId',
-                        template.enabledVersionId ??
-                          template.publishedVersionId ??
-                          ''
-                      );
-                    }}
-                  >
+                {visibleVersions.map((version) => (
+                  <TableRow key={version.id}>
                     <TableCell>
-                      <div className="font-medium">{template.name}</div>
+                      <div className="font-medium">v{version.revision}</div>
                       <div className="text-xs text-muted-foreground">
-                        {template.id}
+                        {version.id}
                       </div>
                     </TableCell>
-                    <TableCell>{template.family}</TableCell>
+                    <TableCell>{version.templateId}</TableCell>
                     <TableCell>
-                      <AdminStatusChip
-                        variant={statusVariant(template.publicationStatus)}
-                      >
-                        {template.publicationStatus}
-                      </AdminStatusChip>
+                      <Badge variant={statusVariant(version.status)}>
+                        {version.status}
+                      </Badge>
                     </TableCell>
+                    <TableCell>{version.rolloutPercent}%</TableCell>
                     <TableCell>
-                      {template.enabledVersionId ??
-                        template.publishedVersionId ??
-                        p1_template_version_unpublished()}
+                      {version.documentSummary.width}×
+                      {version.documentSummary.height} ·{' '}
+                      {p1_admin_template_document_summary({
+                        elements: version.documentSummary.elementCount,
+                        pages: version.documentSummary.pageCount,
+                      })}
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-            {!loading && templates.length === 0 ? (
+            {visibleVersions.length === 0 ? (
               <p className="py-8 text-center text-sm text-muted-foreground">
-                {p1_admin_template_catalog_empty()}
+                {p1_admin_template_history_empty()}
               </p>
             ) : null}
-          </AdminPanelContent>
-        </AdminPanel>
-
-        <AdminPanel>
-          <AdminPanelHeader>
-            <AdminPanelTitle>
-              {p1_admin_template_version_actions_title()}
-            </AdminPanelTitle>
-            <AdminPanelDescription>
-              {p1_admin_template_version_actions_description()}
-            </AdminPanelDescription>
-          </AdminPanelHeader>
-          <AdminPanelContent>
-            <form className="space-y-4" onSubmit={createDraft}>
-              <div className="space-y-2">
-                <Label htmlFor="admin-template-id">
-                  {p1_admin_template_id()}
-                </Label>
-                <Input
-                  id="admin-template-id"
-                  placeholder="official-social_cover"
-                  {...versionForm.register('templateId')}
-                />
-                {versionForm.formState.errors.templateId ? (
-                  <p className="text-xs text-destructive">
-                    {versionForm.formState.errors.templateId.message}
-                  </p>
-                ) : null}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="admin-template-version-id">
-                  {p1_admin_template_version_id()}
-                </Label>
-                <Input
-                  id="admin-template-version-id"
-                  placeholder={p1_admin_template_version_placeholder()}
-                  {...versionForm.register('versionId')}
-                />
-                {versionForm.formState.errors.versionId ? (
-                  <p className="text-xs text-destructive">
-                    {versionForm.formState.errors.versionId.message}
-                  </p>
-                ) : null}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="admin-template-rollout">
-                  {p1_admin_template_rollout()}
-                </Label>
-                <Input
-                  id="admin-template-rollout"
-                  inputMode="numeric"
-                  max="100"
-                  min="0"
-                  type="number"
-                  {...versionForm.register('rollout')}
-                />
-                {versionForm.formState.errors.rollout ? (
-                  <p className="text-xs text-destructive">
-                    {versionForm.formState.errors.rollout.message}
-                  </p>
-                ) : null}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="admin-template-document">
-                  {p1_admin_template_document()}
-                </Label>
-                <Textarea
-                  className="min-h-72 font-mono text-xs"
-                  id="admin-template-document"
-                  spellCheck={false}
-                  {...versionForm.register('document')}
-                />
-                {versionForm.formState.errors.document ? (
-                  <p className="text-xs text-destructive">
-                    {versionForm.formState.errors.document.message}
-                  </p>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button disabled={Boolean(busy)} type="submit">
-                  <IconFilePlus />
-                  {busy === 'draft'
-                    ? p1_admin_template_creating()
-                    : p1_admin_template_create_draft()}
-                </Button>
-                <Button
-                  disabled={Boolean(busy)}
-                  onClick={() => void preview()}
-                  type="button"
-                  variant="outline"
-                >
-                  <IconEye />
-                  {busy === 'preview'
-                    ? p1_admin_template_loading()
-                    : p1_admin_template_preview_version()}
-                </Button>
-                <Button
-                  disabled={Boolean(busy)}
-                  onClick={() => void enable()}
-                  type="button"
-                  variant="outline"
-                >
-                  <IconPlayerPlay />
-                  {busy === 'enable'
-                    ? p1_admin_template_enabling()
-                    : p1_admin_template_enable_version()}
-                </Button>
-                <Button
-                  disabled={Boolean(busy)}
-                  onClick={() => void publish()}
-                  type="button"
-                  variant="secondary"
-                >
-                  <IconRocket />
-                  {busy === 'publish'
-                    ? p1_admin_template_publishing()
-                    : p1_admin_template_publish_version()}
-                </Button>
-                <Button
-                  disabled={Boolean(busy)}
-                  onClick={() => void retire()}
-                  type="button"
-                  variant="destructive"
-                >
-                  <IconTrash />
-                  {busy === 'retire'
-                    ? p1_admin_template_retiring()
-                    : p1_admin_template_retire_template()}
-                </Button>
-              </div>
-            </form>
-          </AdminPanelContent>
-        </AdminPanel>
-      </div>
-
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>{p1_admin_template_history_title()}</AdminPanelTitle>
-          <AdminPanelDescription>
-            {p1_admin_template_history_description()}
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{p1_admin_template_column_version_id()}</TableHead>
-                <TableHead>{p1_admin_template_column_template_id()}</TableHead>
-                <TableHead>{p1_admin_template_column_status()}</TableHead>
-                <TableHead>{p1_admin_template_column_rollout()}</TableHead>
-                <TableHead>{p1_admin_template_column_summary()}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {visibleVersions.map((version) => (
-                <TableRow key={version.id}>
-                  <TableCell>
-                    <div className="font-medium">v{version.revision}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {version.id}
-                    </div>
-                  </TableCell>
-                  <TableCell>{version.templateId}</TableCell>
-                  <TableCell>{version.status}</TableCell>
-                  <TableCell>{version.rolloutPercent}%</TableCell>
-                  <TableCell>
-                    {version.documentSummary.width}×
-                    {version.documentSummary.height} ·{' '}
-                    {p1_admin_template_document_summary({
-                      elements: version.documentSummary.elementCount,
-                      pages: version.documentSummary.pageCount,
-                    })}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-          {visibleVersions.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">
-              {p1_admin_template_history_empty()}
-            </p>
-          ) : null}
-        </AdminPanelContent>
-      </AdminPanel>
-      <ImpactReviewDialog
-        onOpenChange={(open) => !open && setImpactReview(undefined)}
-        open={Boolean(impactReview)}
-        request={impactReview}
-      />
-    </div>
+          </FramePanel>
+        </Frame>
+        <ImpactReviewDialog
+          onOpenChange={(open) => !open && setImpactReview(undefined)}
+          open={Boolean(impactReview)}
+          request={impactReview}
+        />
+      </FramePanel>
+    </Frame>
   );
 }

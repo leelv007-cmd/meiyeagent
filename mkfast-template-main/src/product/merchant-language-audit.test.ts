@@ -49,7 +49,6 @@ const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
 const MERCHANT_SOURCE_ROOTS = [
   'mkfast-template-main/src/product',
   'mkfast-template-main/src/components/auth',
-  'mkfast-template-main/src/components/blocks',
   'mkfast-template-main/src/components/chatbox',
   'mkfast-template-main/src/components/contact',
   'mkfast-template-main/src/components/landing',

@@ -1,17 +1,19 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 
+import { Badge } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameFooter,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
@@ -869,17 +871,16 @@ export function AdminSkillsControl() {
 
   return (
     <div className="space-y-6" data-testid="admin-skills-control">
-      <AdminPanel>
-        <AdminPanelHeader>
-          <h2 className="widget__title" data-slot="widget-title">
-            Skill 目录
-          </h2>
-          <AdminPanelDescription>
+      <Frame>
+        <FrameHeader className="gap-1">
+          <FrameTitle>Skill 目录</FrameTitle>
+          <FrameDescription>
             当前承载平台层与行业层的场景配方与行业话术。「来源」列区分收割转译、手写与归纳。
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="space-y-4">
-          <div className="flex items-end gap-3">
+          </FrameDescription>
+        </FrameHeader>
+        {/* 目录面板的节奏：工具条 → Separator → 表格，版本记录落在 FrameFooter。 */}
+        <FramePanel className="flex flex-col gap-0 p-0!">
+          <div className="flex items-end gap-3 px-4 py-3">
             <div className="space-y-2">
               <Label htmlFor="skills-tier-filter">按层级筛选</Label>
               <select
@@ -905,13 +906,14 @@ export function AdminSkillsControl() {
               </p>
             ) : null}
           </div>
+          <Separator />
           {catalogQuery.isError ? (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className="px-4 py-3 text-sm text-destructive">
               目录读取失败，请重试。
             </p>
           ) : null}
           {!catalogQuery.isLoading && !rows.length ? (
-            <p className="text-sm text-muted-foreground">
+            <p className="px-4 py-6 text-center text-sm text-muted-foreground">
               还没有任何 Skill。用下面的「新建做法」建第一条。
             </p>
           ) : null}
@@ -932,13 +934,18 @@ export function AdminSkillsControl() {
                 {rows.map((row) => (
                   <TableRow key={row.skillId}>
                     <TableCell className="font-medium">{row.name}</TableCell>
-                    <TableCell className="max-w-96 text-muted-foreground">
-                      {row.description}
+                    <TableCell className="text-muted-foreground">
+                      <div
+                        className="max-w-96 truncate"
+                        title={row.description}
+                      >
+                        {row.description}
+                      </div>
                     </TableCell>
                     <TableCell>
-                      <AdminStatusChip variant="secondary">
+                      <Badge variant="secondary">
                         {SOURCE_LABELS[row.sourceKind] ?? row.sourceKind}
-                      </AdminStatusChip>
+                      </Badge>
                       {row.sourceRef?.externalUrl ? (
                         <a
                           className="ml-2 text-xs underline"
@@ -972,35 +979,38 @@ export function AdminSkillsControl() {
               </TableBody>
             </Table>
           ) : null}
-          {historySkillId ? (
-            <div className="space-y-2" data-testid="skills-revision-history">
-              <p className="font-medium text-sm">{historySkillId} 的版本记录</p>
-              {historyQuery.isLoading ? (
-                <p className="text-muted-foreground text-sm">读取中…</p>
-              ) : null}
-              {historyQuery.data?.map((revision) => (
-                <div
-                  className="flex justify-between rounded-md border px-3 py-2 text-sm"
-                  key={revision.skillRevisionRef}
-                >
-                  <span>{revision.skillRevisionRef}</span>
-                  <span>{revision.status}</span>
-                </div>
-              ))}
-            </div>
-          ) : null}
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+        {historySkillId ? (
+          <FrameFooter
+            className="gap-2 py-3"
+            data-testid="skills-revision-history"
+          >
+            <p className="font-medium text-sm">{historySkillId} 的版本记录</p>
+            {historyQuery.isLoading ? (
+              <p className="text-muted-foreground text-sm">读取中…</p>
+            ) : null}
+            {historyQuery.data?.map((revision) => (
+              <div
+                className="flex justify-between rounded-lg border px-3 py-2 text-sm"
+                key={revision.skillRevisionRef}
+              >
+                <span>{revision.skillRevisionRef}</span>
+                <span>{revision.status}</span>
+              </div>
+            ))}
+          </FrameFooter>
+        ) : null}
+      </Frame>
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>受控修订</AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame>
+        <FrameHeader className="gap-1">
+          <FrameTitle>受控修订</FrameTitle>
+          <FrameDescription>
             只有“受控做法正文”和“一句话说明”可修改。名称、来源、层级、治理预算、schema
             与 prompt 引用保持只读。
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="space-y-4">
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="space-y-4">
           <div
             className="rounded-md border bg-muted/30 p-3 text-muted-foreground text-sm"
             data-testid="skills-readonly-declaration"
@@ -1113,7 +1123,7 @@ export function AdminSkillsControl() {
                 </p>
               </div>
               {governanceRunQuery.isFetching ? (
-                <AdminStatusChip variant="secondary">刷新中</AdminStatusChip>
+                <Badge variant="secondary">刷新中</Badge>
               ) : null}
             </div>
             {governanceRunResult(governanceRunQuery.data) ? (
@@ -1195,19 +1205,19 @@ export function AdminSkillsControl() {
               </Button>
             </div>
           </div>
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>Published（唯一）</AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame>
+        <FrameHeader className="gap-1">
+          <FrameTitle>Published（唯一）</FrameTitle>
+          <FrameDescription>
             Published 是每个 Skill
             唯一的生命周期指针。切换它不会改动流量目标，也不会让历史版本变成第二个
             Published。
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="space-y-4">
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             {[
               ['runId', '发布运行号'],
@@ -1245,17 +1255,17 @@ export function AdminSkillsControl() {
           {publishResult ? (
             <GovernanceResultView result={publishResult} />
           ) : null}
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>反向依赖与退役</AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame>
+        <FrameHeader className="gap-1">
+          <FrameTitle>反向依赖与退役</FrameTitle>
+          <FrameDescription>
             退役前必须读取精确版本的反向依赖。本工作区与全局依赖显示明细，其他工作区只显示数量。
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="space-y-4">
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="flex-1 space-y-2">
               <Label htmlFor="skills-dependency-ref">版本引用</Label>
@@ -1285,14 +1295,18 @@ export function AdminSkillsControl() {
               data-testid="skills-reverse-dependencies"
             >
               <div className="flex flex-wrap gap-2">
-                <AdminStatusChip
-                  variant={retirementBlocked ? 'destructive' : 'default'}
+                <Badge
+                  variant={
+                    retirementBlocked
+                      ? 'destructive-outline'
+                      : 'success-outline'
+                  }
                 >
                   {retirementBlocked ? '退役已阻断' : '未发现依赖'}
-                </AdminStatusChip>
-                <AdminStatusChip variant="secondary">
+                </Badge>
+                <Badge variant="secondary">
                   其他工作区依赖 {dependencyQuery.data.hiddenCount}
-                </AdminStatusChip>
+                </Badge>
               </div>
               {visibleDependencies.map((dependency, index) => (
                 <div
@@ -1332,17 +1346,17 @@ export function AdminSkillsControl() {
             </p>
           ) : null}
           {retireResult ? <GovernanceResultView result={retireResult} /> : null}
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
 
-      <AdminPanel>
-        <AdminPanelHeader>
-          <AdminPanelTitle>流量目标（新请求）与基础生命周期</AdminPanelTitle>
-          <AdminPanelDescription>
+      <Frame>
+        <FrameHeader className="gap-1">
+          <FrameTitle>流量目标（新请求）与基础生命周期</FrameTitle>
+          <FrameDescription>
             “绑定阶段”和“回滚绑定”只切换随后接纳的新请求；已接纳运行继续使用冻结的精确版本。定义、受理与部署不改变这个边界。
-          </AdminPanelDescription>
-        </AdminPanelHeader>
-        <AdminPanelContent className="space-y-4">
+          </FrameDescription>
+        </FrameHeader>
+        <FramePanel className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="skills-action">操作</Label>
             <select
@@ -1459,8 +1473,8 @@ export function AdminSkillsControl() {
               操作已完成：{action}
             </div>
           ) : null}
-        </AdminPanelContent>
-      </AdminPanel>
+        </FramePanel>
+      </Frame>
     </div>
   );
 }

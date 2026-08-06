@@ -1,14 +1,17 @@
+import { IconKey } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { IconTile } from '@/components/admin/shared/icon-tile';
+import { Badge, type BadgeProps } from '@/components/reui/badge';
 import {
-  AdminPanel,
-  AdminPanelContent,
-  AdminPanelDescription,
-  AdminPanelHeader,
-  AdminPanelTitle,
-  AdminStatusChip,
-} from '@/components/admin/shell/admin-panel';
+  Frame,
+  FrameDescription,
+  FrameFooter,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -64,6 +67,8 @@ interface ProviderCredential {
   updatedAt?: string;
 }
 
+type StatusVariant = NonNullable<BadgeProps['variant']>;
+
 function resolveTrunkStatus(
   credential: ProviderCredential | undefined
 ): CredentialAccountTrunkStatus | 'empty' {
@@ -87,6 +92,19 @@ function trunkStatusLabel(status: CredentialAccountTrunkStatus | 'empty') {
       return '已退役';
     default:
       return admin_provider_credential_empty();
+  }
+}
+
+function trunkStatusVariant(
+  status: CredentialAccountTrunkStatus | 'empty'
+): StatusVariant {
+  switch (status) {
+    case 'active':
+      return 'success-outline';
+    case 'pending':
+      return 'warning-outline';
+    default:
+      return 'secondary';
   }
 }
 
@@ -154,136 +172,144 @@ export function AdminProviderCredentialControl() {
   };
 
   return (
-    <AdminPanel>
-      <AdminPanelHeader>
-        <AdminPanelTitle>{admin_provider_credentials_title()}</AdminPanelTitle>
-        <AdminPanelDescription>
+    <Frame>
+      <FrameHeader className="gap-1">
+        <FrameTitle>{admin_provider_credentials_title()}</FrameTitle>
+        <FrameDescription>
           {admin_provider_credentials_description()}
-        </AdminPanelDescription>
-      </AdminPanelHeader>
-      <AdminPanelContent className="grid gap-4 lg:grid-cols-2">
-        {slots.map((slot) => {
-          const credential = query.data?.find(
-            (item) => item.id === `platform:${slot}`
-          );
-          const hasCredential = Boolean(credential?.credential);
-          const trunk = resolveTrunkStatus(credential);
-          const drain = credential?.drainSubstate ?? 'none';
-          const gateOk = activationGateSatisfied(credential?.credential);
-          const envFallback = credential?.effectiveSource === 'env_fallback';
-          return (
-            <div
-              className="space-y-3 rounded-lg border p-4"
-              data-testid="provider-credential-slot"
-              data-slot={slot}
-              data-trunk-status={trunk}
-              data-drain={drain}
-              data-env-fallback={String(envFallback)}
-              key={slot}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium">{slot}</span>
-                <AdminStatusChip variant="outline">
-                  {trunkStatusLabel(trunk)}
-                </AdminStatusChip>
+        </FrameDescription>
+      </FrameHeader>
+      {slots.map((slot) => {
+        const credential = query.data?.find(
+          (item) => item.id === `platform:${slot}`
+        );
+        const hasCredential = Boolean(credential?.credential);
+        const trunk = resolveTrunkStatus(credential);
+        const drain = credential?.drainSubstate ?? 'none';
+        const gateOk = activationGateSatisfied(credential?.credential);
+        const envFallback = credential?.effectiveSource === 'env_fallback';
+        return (
+          <FramePanel
+            className="space-y-3"
+            data-testid="provider-credential-slot"
+            data-slot={slot}
+            data-trunk-status={trunk}
+            data-drain={drain}
+            data-env-fallback={String(envFallback)}
+            key={slot}
+          >
+            <div className="flex items-center gap-3">
+              <IconTile>
+                <IconKey aria-hidden="true" />
+              </IconTile>
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="text-sm font-medium">{slot}</span>
+                <span className="text-muted-foreground font-mono text-xs">
+                  {credential?.credential
+                    ? `${credential.credential.mask} · v${credential.credential.version}`
+                    : '—'}
+                </span>
               </div>
-              <p className="font-mono text-sm">
-                {credential?.credential
-                  ? `${credential.credential.mask} · v${credential.credential.version}`
-                  : '—'}
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {credential?.effectiveSource ? (
-                  <AdminStatusChip
-                    variant={envFallback ? 'destructive' : 'secondary'}
-                  >
-                    {providerCredentialSource(credential.effectiveSource)}
-                  </AdminStatusChip>
-                ) : null}
-                {hasCredential ? (
-                  <AdminStatusChip variant="outline">
-                    {drain === 'draining' ? '排空中' : '未排空'}
-                  </AdminStatusChip>
-                ) : null}
-                {hasCredential ? (
-                  <AdminStatusChip
-                    variant={gateOk ? 'secondary' : 'outline'}
-                    data-testid="provider-credential-activation-gate"
-                    data-satisfied={String(gateOk)}
-                  >
-                    激活门：{gateOk ? '满足' : '未满足'}
-                  </AdminStatusChip>
-                ) : null}
-              </div>
-              {credential?.credential ? (
-                <p className="text-xs text-muted-foreground">
-                  {admin_provider_credential_scope({
-                    scope: credential.credential.scope.join(', ') || '—',
-                  })}
-                </p>
-              ) : null}
-              {envFallback ? (
-                <p
-                  data-testid="provider-credential-migration-entry"
-                  className="rounded border border-destructive/30 p-2 text-xs text-destructive"
+              <Badge variant={trunkStatusVariant(trunk)} className="shrink-0">
+                {trunkStatusLabel(trunk)}
+              </Badge>
+            </div>
+
+            <div className="flex flex-wrap gap-1">
+              {credential?.effectiveSource ? (
+                <Badge
+                  variant={envFallback ? 'destructive-outline' : 'secondary'}
                 >
-                  环境变量回退风险持续可见：迁移到保险箱写入后重启生效。
-                </p>
+                  {providerCredentialSource(credential.effectiveSource)}
+                </Badge>
               ) : null}
-              <Input
-                aria-label={admin_provider_credential_secret_input({ slot })}
-                autoComplete="new-password"
-                onChange={(event) =>
-                  setValues((current) => ({
-                    ...current,
-                    [slot]: event.target.value,
-                  }))
-                }
-                type="password"
-                value={values[slot] ?? ''}
-              />
-              <div className="flex gap-2">
-                <Button
-                  onClick={() => void save(slot, hasCredential)}
-                  size="sm"
+              {hasCredential ? (
+                <Badge
+                  variant={
+                    drain === 'draining' ? 'warning-outline' : 'secondary'
+                  }
                 >
-                  {hasCredential
-                    ? admin_provider_credential_rotate()
-                    : admin_provider_credential_store()}
-                </Button>
-                {hasCredential ? (
-                  <>
-                    <Button
-                      disabled={testingSlot === slot}
-                      onClick={() => void testConnection(slot)}
-                      size="sm"
-                      variant="outline"
-                    >
-                      {testingSlot === slot
-                        ? admin_provider_credential_testing()
-                        : admin_provider_credential_test()}
-                    </Button>
-                    <Button
-                      onClick={() => void revoke(slot)}
-                      size="sm"
-                      variant="outline"
-                    >
-                      {admin_provider_credential_revoke()}
-                    </Button>
-                  </>
-                ) : null}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {providerTestStatus(credential?.credential?.testStatus)}
+                  {drain === 'draining' ? '排空中' : '未排空'}
+                </Badge>
+              ) : null}
+              {hasCredential ? (
+                <Badge
+                  variant={gateOk ? 'success-outline' : 'warning-outline'}
+                  data-testid="provider-credential-activation-gate"
+                  data-satisfied={String(gateOk)}
+                >
+                  激活门：{gateOk ? '满足' : '未满足'}
+                </Badge>
+              ) : null}
+            </div>
+
+            {credential?.credential ? (
+              <p className="text-muted-foreground text-xs">
+                {admin_provider_credential_scope({
+                  scope: credential.credential.scope.join(', ') || '—',
+                })}
               </p>
+            ) : null}
+            {envFallback ? (
+              <p
+                data-testid="provider-credential-migration-entry"
+                className="border-destructive/30 text-destructive rounded-lg border p-2 text-xs"
+              >
+                环境变量回退风险持续可见：迁移到保险箱写入后重启生效。
+              </p>
+            ) : null}
+
+            <Input
+              aria-label={admin_provider_credential_secret_input({ slot })}
+              autoComplete="new-password"
+              onChange={(event) =>
+                setValues((current) => ({
+                  ...current,
+                  [slot]: event.target.value,
+                }))
+              }
+              type="password"
+              value={values[slot] ?? ''}
+            />
+            <div className="flex gap-2">
+              <Button onClick={() => void save(slot, hasCredential)} size="sm">
+                {hasCredential
+                  ? admin_provider_credential_rotate()
+                  : admin_provider_credential_store()}
+              </Button>
+              {hasCredential ? (
+                <>
+                  <Button
+                    disabled={testingSlot === slot}
+                    onClick={() => void testConnection(slot)}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {testingSlot === slot
+                      ? admin_provider_credential_testing()
+                      : admin_provider_credential_test()}
+                  </Button>
+                  <Button
+                    onClick={() => void revoke(slot)}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {admin_provider_credential_revoke()}
+                  </Button>
+                </>
+              ) : null}
+            </div>
+
+            <div className="text-muted-foreground space-y-1 text-xs">
+              <p>{providerTestStatus(credential?.credential?.testStatus)}</p>
               {credential?.updatedAt ? (
-                <p className="text-xs text-muted-foreground">
+                <p>
                   {admin_provider_credential_rotated_at()}:{' '}
                   {new Date(credential.updatedAt).toLocaleString()}
                 </p>
               ) : null}
               {credential?.credential?.testedAt ? (
-                <p className="text-xs text-muted-foreground">
+                <p>
                   {admin_provider_credential_tested_at({
                     testedAt: new Date(
                       credential.credential.testedAt
@@ -291,17 +317,15 @@ export function AdminProviderCredentialControl() {
                   })}
                 </p>
               ) : null}
-              <p className="text-xs text-muted-foreground">
-                {admin_provider_credential_activation_note()}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {admin_provider_credential_restart_effective()}
-              </p>
             </div>
-          );
-        })}
-      </AdminPanelContent>
-    </AdminPanel>
+          </FramePanel>
+        );
+      })}
+      <FrameFooter className="text-muted-foreground text-xs">
+        <p>{admin_provider_credential_activation_note()}</p>
+        <p>{admin_provider_credential_restart_effective()}</p>
+      </FrameFooter>
+    </Frame>
   );
 }
 
