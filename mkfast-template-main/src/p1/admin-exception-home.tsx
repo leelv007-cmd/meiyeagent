@@ -8,16 +8,19 @@ import {
   readPendingActions,
 } from '@/product/pending-actions-client';
 import {
-  adminOperationalMetricsQueryKey,
-  projectOperationalMetricsCapabilityRegistry,
-  readAdminOperationalMetrics,
+  projectAdminCapabilityRegistry,
+  useAdminCapabilityRegistryProjection,
 } from '@/p1/admin-capability-registry';
-import { projectSixQuestionCompleteness } from '@/p1/admin-capability-registry-model';
+import {
+  projectSixQuestionCompleteness,
+  type CapabilityRegistryView,
+} from '@/p1/admin-capability-registry-model';
 import {
   buildExceptionHomeView,
   type BuildExceptionHomeInput,
   type ExceptionHomeView,
 } from '@/p1/admin-exception-home-model';
+import type { SupplyControlSnapshot } from '@/p1/admin-supply-types';
 
 function isActionableInboxItem(
   item: PendingAction | ActionableInboxItem
@@ -57,11 +60,19 @@ export function projectLiveExceptionHome(input: {
   now?: string | number;
   operationalMetrics?: unknown;
   pendingActionsFailed?: boolean;
+  /** Shared registry projection; when omitted, builds from metrics + supply. */
+  registry?: CapabilityRegistryView;
+  supplyFailed?: boolean;
+  supplySnapshot?: SupplyControlSnapshot;
 }): ExceptionHomeView {
-  let registry = projectOperationalMetricsCapabilityRegistry(
-    input.operationalMetrics,
-    { failed: input.metricsFailed }
-  );
+  let registry =
+    input.registry ??
+    projectAdminCapabilityRegistry({
+      operationalMetrics: input.operationalMetrics,
+      metricsFailed: input.metricsFailed,
+      supplySnapshot: input.supplySnapshot,
+      supplyFailed: input.supplyFailed,
+    });
 
   if (input.pendingActionsFailed) {
     const entry = registry.entries.find(
@@ -112,12 +123,7 @@ function LiveAdminExceptionHome({
 }: {
   input?: BuildExceptionHomeInput;
 }) {
-  const operationalMetrics = useQuery({
-    queryKey: adminOperationalMetricsQueryKey,
-    queryFn: ({ signal }) => readAdminOperationalMetrics(signal),
-    refetchOnWindowFocus: true,
-    staleTime: 15_000,
-  });
+  const projection = useAdminCapabilityRegistryProjection();
   const pendingActions = useQuery({
     queryKey: pendingActionsQueryKey,
     queryFn: ({ signal }) => readPendingActions(signal),
@@ -125,11 +131,10 @@ function LiveAdminExceptionHome({
     refetchOnWindowFocus: true,
   });
 
-  // F-J-04: wait until both sources settle so loading never looks like "no exceptions".
-  const metricsSettled =
-    operationalMetrics.isSuccess || operationalMetrics.isError;
+  // F-J-04: wait until shared projection + pending-actions settle so loading
+  // never looks like "no exceptions".
   const pendingSettled = pendingActions.isSuccess || pendingActions.isError;
-  if (!metricsSettled || !pendingSettled) {
+  if (!projection.isSettled || !pendingSettled) {
     return (
       <output
         data-testid="exception-home-loading"
@@ -141,15 +146,21 @@ function LiveAdminExceptionHome({
   }
 
   if (
-    operationalMetrics.isError &&
+    projection.metricsFailed &&
+    projection.supplyFailed &&
     pendingActions.isError &&
-    !operationalMetrics.data &&
+    !projection.hasMetricsData &&
+    !projection.hasSupplyData &&
     !pendingActions.data
   ) {
     const metricsMessage =
-      operationalMetrics.error instanceof Error
-        ? operationalMetrics.error.message
+      projection.metricsQuery.error instanceof Error
+        ? projection.metricsQuery.error.message
         : 'OperationalMetric 加载失败';
+    const supplyMessage =
+      projection.supplyQuery.error instanceof Error
+        ? projection.supplyQuery.error.message
+        : '供给快照加载失败';
     const pendingMessage =
       pendingActions.error instanceof Error
         ? pendingActions.error.message
@@ -160,7 +171,7 @@ function LiveAdminExceptionHome({
         role="alert"
         className="rounded-lg border border-destructive/40 p-4 text-sm text-destructive"
       >
-        异常优先首页加载失败：{metricsMessage}；{pendingMessage}
+        异常优先首页加载失败：{metricsMessage}；{supplyMessage}；{pendingMessage}
         。当前状态未知，不能宣称无待处理异常。
       </section>
     );
@@ -169,8 +180,7 @@ function LiveAdminExceptionHome({
   return (
     <LiveAdminExceptionHomeReady
       input={input}
-      metricsFailed={operationalMetrics.isError}
-      operationalMetrics={operationalMetrics.data}
+      registry={projection.view}
       pendingActions={pendingActions.data}
       pendingActionsFailed={pendingActions.isError}
     />
@@ -179,14 +189,12 @@ function LiveAdminExceptionHome({
 
 function LiveAdminExceptionHomeReady({
   input,
-  metricsFailed,
-  operationalMetrics,
+  registry,
   pendingActions,
   pendingActionsFailed,
 }: {
   input?: BuildExceptionHomeInput;
-  metricsFailed: boolean;
-  operationalMetrics: unknown;
+  registry: CapabilityRegistryView;
   pendingActions: readonly (PendingAction | ActionableInboxItem)[] | undefined;
   pendingActionsFailed: boolean;
 }) {
@@ -196,18 +204,11 @@ function LiveAdminExceptionHomeReady({
         inboxItems: pendingActions
           ? projectPendingActionsForExceptionHome(pendingActions)
           : undefined,
-        metricsFailed,
         now: input?.now,
-        operationalMetrics,
         pendingActionsFailed,
+        registry,
       }),
-    [
-      input?.now,
-      metricsFailed,
-      operationalMetrics,
-      pendingActions,
-      pendingActionsFailed,
-    ]
+    [input?.now, pendingActions, pendingActionsFailed, registry]
   );
 
   return <ExceptionHomePanel view={view} />;

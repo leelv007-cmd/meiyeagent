@@ -203,7 +203,7 @@ export function SidebarUser({ user }: SidebarUserProps) {
                 <DropdownMenuItem
                   onClick={() => {
                     setOpen(false);
-                    router.navigate({ to: Routes.AdminModels });
+                    router.navigate({ to: Routes.Admin });
                   }}
                 >
                   <IconShieldCheck className="mr-2 size-4" />

@@ -11,11 +11,66 @@ import {
   assertNoAckAssignOwnerUi,
   buildExceptionHomeView,
 } from '@/p1/admin-exception-home-model';
+import {
+  AdminCapabilityRegistry,
+  adminCapabilitySupplySnapshotQueryKey,
+  adminOperationalMetricsQueryKey,
+  projectAdminCapabilityRegistry,
+  projectOperationalMetricsCapabilityRegistry,
+  projectSupplySnapshotCapabilityRegistry,
+} from '@/p1/admin-capability-registry';
 import { buildCapabilityRegistry } from '@/p1/admin-capability-registry-model';
-import { p1QueryKeys } from '@/p1/query-keys';
+import { buildDefaultSupplyControlSnapshot } from '@/p1/admin-supply-fixture';
+import type { SupplyControlSnapshot } from '@/p1/admin-supply-types';
 import { pendingActionsQueryKey } from '@/product/pending-actions-client';
 
 const NOW = '2026-07-20T12:00:00.000Z';
+
+const LIVE_OPERATIONAL_METRICS = {
+  capturedAt: NOW,
+  queue: {
+    queueDepth: { status: 'known' as const, value: 2 },
+    averageClaimLatencyMs: { status: 'known' as const, value: 16 },
+  },
+  runner: {
+    windowMinutes: 30,
+    outcomeCounts: {
+      status: 'known' as const,
+      value: {
+        completed: 4,
+        retry: 0,
+        deferred: 0,
+        dead_letter: 0,
+        threw: 0,
+      },
+    },
+    failuresByKind: { status: 'known' as const, value: {} },
+  },
+};
+
+function buildLiveGenerationImageSupplySnapshot(): SupplyControlSnapshot {
+  const base = buildDefaultSupplyControlSnapshot();
+  return {
+    ...base,
+    healthOverlays: base.healthOverlays.filter(
+      (overlay) => overlay.targetId !== 'dep-image-openai'
+    ),
+    routePolicies: [
+      ...base.routePolicies,
+      {
+        id: 'route-image-edit',
+        operation: 'image.edit',
+        qualityTier: 'quality',
+        hardConstraints: ['data_class_allowed', 'health_not_blocking'],
+        candidateDeploymentIds: ['dep-image-ark', 'dep-image-tuzi'],
+        maxAttempts: 2,
+        fallbackAuthorized: true,
+        publishedAt: '2026-07-15T00:00:00.000Z',
+        revisionId: 'route-image-edit:r1',
+      },
+    ],
+  };
+}
 
 test('SSR exception home renders read-only list from default skeleton', () => {
   const html = renderToStaticMarkup(
@@ -107,7 +162,7 @@ test('SSR negative: no ack / assign / owner workflow UI', () => {
   assert.deepEqual(assertNoAckAssignOwnerUi(html), []);
 });
 
-test('live exception home combines pending-actions with Core OperationalMetric', () => {
+test('live exception home combines pending-actions with shared capability projection', () => {
   const queryClient = new QueryClient();
   queryClient.setQueryData(pendingActionsQueryKey, [
     {
@@ -121,28 +176,12 @@ test('live exception home combines pending-actions with Core OperationalMetric',
     },
   ] satisfies PendingAction[]);
   queryClient.setQueryData(
-    p1QueryKeys.request('job-runtime', 'observability'),
-    {
-      capturedAt: NOW,
-      queue: {
-        queueDepth: { status: 'known', value: 2 },
-        averageClaimLatencyMs: { status: 'known', value: 16 },
-      },
-      runner: {
-        windowMinutes: 30,
-        outcomeCounts: {
-          status: 'known',
-          value: {
-            completed: 4,
-            retry: 0,
-            deferred: 0,
-            dead_letter: 0,
-            threw: 0,
-          },
-        },
-        failuresByKind: { status: 'known', value: {} },
-      },
-    }
+    adminOperationalMetricsQueryKey,
+    LIVE_OPERATIONAL_METRICS
+  );
+  queryClient.setQueryData(
+    adminCapabilitySupplySnapshotQueryKey,
+    buildLiveGenerationImageSupplySnapshot()
   );
 
   const html = renderToStaticMarkup(
@@ -190,4 +229,119 @@ test('live exception home shows explicit loading until sources settle (F-J-04)',
   assert.doesNotMatch(html, /data-testid="exception-empty-state"/);
   assert.doesNotMatch(html, /\u5f53\u524d\u65e0\u5f85\u5904\u7406\u5f02\u5e38/);
   assert.doesNotMatch(html, /data-testid="exception-home-panel"/);
+});
+
+/**
+ * Red evidence preserved as documentation of the pre-#383 contradiction, then
+ * the shared-hook green path with identical mock cache for both pages.
+ */
+test('shared mock cache: home and catalog agree on generation_image (was home not_verified)', () => {
+  const snapshot = buildLiveGenerationImageSupplySnapshot();
+
+  // --- red historical split (metrics-only vs metrics+supply) ---
+  const homeOnly = projectOperationalMetricsCapabilityRegistry(
+    LIVE_OPERATIONAL_METRICS
+  );
+  const catalogOnly = projectSupplySnapshotCapabilityRegistry(
+    snapshot,
+    {},
+    homeOnly
+  );
+  assert.equal(
+    homeOnly.entries.find((entry) => entry.id === 'generation_image')
+      ?.availability,
+    'not_verified'
+  );
+  assert.equal(
+    catalogOnly.entries.find((entry) => entry.id === 'generation_image')
+      ?.availability,
+    'available'
+  );
+
+  // --- green: both pages project through the shared composition ---
+  const shared = projectAdminCapabilityRegistry({
+    operationalMetrics: LIVE_OPERATIONAL_METRICS,
+    supplySnapshot: snapshot,
+  });
+  assert.equal(
+    shared.entries.find((entry) => entry.id === 'generation_image')
+      ?.availability,
+    'available'
+  );
+
+  const homeView = projectLiveExceptionHome({
+    now: NOW,
+    registry: shared,
+  });
+  const homeHtml = renderToStaticMarkup(
+    <AdminExceptionHome view={homeView} />
+  );
+  const catalogHtml = renderToStaticMarkup(
+    <AdminCapabilityRegistry
+      view={shared}
+      initialSelectedId="generation_image"
+    />
+  );
+
+  assert.match(
+    catalogHtml,
+    /data-testid="availability-status-badge"[^>]*data-status="available"/
+  );
+  // Live generation_image is no longer a not_verified exception on the home.
+  assert.doesNotMatch(
+    homeHtml,
+    /data-capability-id="generation_image"[^>]*data-severity="not_verified"/
+  );
+  assert.ok(
+    !homeView.exceptions.some(
+      (row) =>
+        row.affectedCapabilityIds.includes('generation_image') &&
+        row.severity === 'not_verified'
+    ),
+    'shared available generation_image must not surface as not_verified on home'
+  );
+});
+
+test('supply failure is stale on exception home (never green empty)', () => {
+  const view = projectLiveExceptionHome({
+    now: NOW,
+    operationalMetrics: LIVE_OPERATIONAL_METRICS,
+    supplyFailed: true,
+  });
+  const html = renderToStaticMarkup(<AdminExceptionHome view={view} />);
+
+  assert.match(html, /data-severity="stale"/);
+  assert.match(html, /supply_snapshot_query_failed|supply_snapshot_refresh_failed/);
+  assert.doesNotMatch(html, /data-testid="exception-empty-state"/);
+  assert.doesNotMatch(html, /\u5f53\u524d\u65e0\u5f85\u5904\u7406\u5f02\u5e38/);
+});
+
+test('live shared cache: home and catalog both mark generation_image available', () => {
+  const snapshot = buildLiveGenerationImageSupplySnapshot();
+  const queryClient = new QueryClient();
+  queryClient.setQueryData(pendingActionsQueryKey, [] satisfies PendingAction[]);
+  queryClient.setQueryData(
+    adminOperationalMetricsQueryKey,
+    LIVE_OPERATIONAL_METRICS
+  );
+  queryClient.setQueryData(adminCapabilitySupplySnapshotQueryKey, snapshot);
+
+  const homeHtml = renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <AdminExceptionHome input={{ now: NOW }} />
+    </QueryClientProvider>
+  );
+  const catalogHtml = renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <AdminCapabilityRegistry initialSelectedId="generation_image" />
+    </QueryClientProvider>
+  );
+
+  assert.match(homeHtml, /data-testid="exception-home-panel"/);
+  assert.doesNotMatch(homeHtml, /data-testid="exception-home-loading"/);
+  assert.match(
+    catalogHtml,
+    /data-testid="availability-status-badge"[^>]*data-status="available"/
+  );
+  assert.match(catalogHtml, /live_model_supply_snapshot/);
 });

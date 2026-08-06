@@ -24,12 +24,22 @@ import type {
 } from '@/p1/admin-supply-types';
 import { queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
-import { useAdminSupplyControlSnapshot } from '@/p1/use-admin-supply-control';
+import { DEFAULT_RUN_TABLE_URL_STATE } from '@/p1/admin-supply-run-table-model';
+import { ADMIN_SUPPLY_CONTROL_QUERY } from '@/p1/use-admin-supply-control';
 
 export const adminOperationalMetricsQueryKey = p1QueryKeys.request(
   'job-runtime',
   'observability'
 );
+
+/** Default supply snapshot key shared by exception home and capabilities. */
+export const adminCapabilitySupplySnapshotQueryKey = p1QueryKeys.request(
+  'model-supply',
+  ADMIN_SUPPLY_CONTROL_QUERY,
+  { runQuery: DEFAULT_RUN_TABLE_URL_STATE }
+);
+
+const ADMIN_CAPABILITY_PROJECTION_STALE_TIME_MS = 15_000;
 
 export function readAdminOperationalMetrics(signal?: AbortSignal) {
   return queryP1<unknown>(
@@ -495,29 +505,92 @@ export function projectSupplySnapshotCapabilityRegistry(
   );
 }
 
+/**
+ * Fixed metrics → default supply snapshot → registry composition.
+ * Exception home and capabilities both call this pure path so they cannot
+ * reassemble the two projections differently.
+ */
+export function projectAdminCapabilityRegistry(input: {
+  metricsFailed?: boolean;
+  operationalMetrics?: unknown;
+  supplyFailed?: boolean;
+  supplySnapshot?: SupplyControlSnapshot;
+}): CapabilityRegistryView {
+  const operationalView = projectOperationalMetricsCapabilityRegistry(
+    input.operationalMetrics,
+    { failed: input.metricsFailed }
+  );
+  return projectSupplySnapshotCapabilityRegistry(
+    input.supplySnapshot,
+    { failed: input.supplyFailed },
+    operationalView
+  );
+}
+
+/**
+ * Shared live capability projection (Spec F / #383).
+ * Both /admin exception home and /admin/capabilities consume only this hook.
+ */
+export function useAdminCapabilityRegistryProjection() {
+  const metricsQuery = useQuery({
+    queryKey: adminOperationalMetricsQueryKey,
+    queryFn: ({ signal }) => readAdminOperationalMetrics(signal),
+    refetchOnWindowFocus: true,
+    staleTime: ADMIN_CAPABILITY_PROJECTION_STALE_TIME_MS,
+  });
+  // Default run-table snapshot only — same key as useAdminSupplyControlSnapshot().
+  const supplyQuery = useQuery({
+    queryKey: adminCapabilitySupplySnapshotQueryKey,
+    queryFn: ({ signal }) =>
+      queryP1<SupplyControlSnapshot>(
+        'model-supply',
+        {
+          action: ADMIN_SUPPLY_CONTROL_QUERY,
+          payload: { runQuery: DEFAULT_RUN_TABLE_URL_STATE },
+        },
+        signal
+      ),
+    refetchOnWindowFocus: true,
+    staleTime: ADMIN_CAPABILITY_PROJECTION_STALE_TIME_MS,
+  });
+
+  const view = useMemo(
+    () =>
+      projectAdminCapabilityRegistry({
+        operationalMetrics: metricsQuery.data,
+        metricsFailed: metricsQuery.isError,
+        supplySnapshot: supplyQuery.data,
+        supplyFailed: supplyQuery.isError,
+      }),
+    [
+      metricsQuery.data,
+      metricsQuery.isError,
+      supplyQuery.data,
+      supplyQuery.isError,
+    ]
+  );
+
+  const metricsSettled = metricsQuery.isSuccess || metricsQuery.isError;
+  const supplySettled = supplyQuery.isSuccess || supplyQuery.isError;
+
+  return {
+    view,
+    metricsQuery,
+    supplyQuery,
+    isSettled: metricsSettled && supplySettled,
+    metricsFailed: metricsQuery.isError,
+    supplyFailed: supplyQuery.isError,
+    hasMetricsData: metricsQuery.data !== undefined,
+    hasSupplyData: supplyQuery.data !== undefined,
+  };
+}
+
 function LiveAdminCapabilityRegistry({
   initialSelectedId,
 }: {
   initialSelectedId?: string;
 }) {
-  const query = useQuery({
-    queryKey: adminOperationalMetricsQueryKey,
-    queryFn: ({ signal }) => readAdminOperationalMetrics(signal),
-    refetchOnWindowFocus: true,
-    staleTime: 15_000,
-  });
-  const supplyQuery = useAdminSupplyControlSnapshot();
-  const view = useMemo(() => {
-    const operationalView = projectOperationalMetricsCapabilityRegistry(
-      query.data,
-      { failed: query.isError }
-    );
-    return projectSupplySnapshotCapabilityRegistry(
-      supplyQuery.data,
-      { failed: supplyQuery.isError },
-      operationalView
-    );
-  }, [query.data, query.isError, supplyQuery.data, supplyQuery.isError]);
+  const { view } = useAdminCapabilityRegistryProjection();
 
   return (
     <CapabilityRegistryPanel

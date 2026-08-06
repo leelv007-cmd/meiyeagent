@@ -5,6 +5,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { CAPABILITY_INVENTORY } from '@/p1/capability-inventory';
 import {
   AdminCapabilityRegistry,
+  adminCapabilitySupplySnapshotQueryKey,
+  adminOperationalMetricsQueryKey,
+  projectAdminCapabilityRegistry,
   projectOperationalMetricsCapabilityRegistry,
   projectSupplySnapshotCapabilityRegistry,
 } from '@/p1/admin-capability-registry';
@@ -12,6 +15,7 @@ import { buildCapabilityRegistry } from '@/p1/admin-capability-registry-model';
 import { buildDefaultSupplyControlSnapshot } from '@/p1/admin-supply-fixture';
 import { DEFAULT_RUN_TABLE_URL_STATE } from '@/p1/admin-supply-run-table-model';
 import { p1QueryKeys } from '@/p1/query-keys';
+import type { SupplyControlSnapshot } from '@/p1/admin-supply-types';
 
 const SKELETON = buildCapabilityRegistry();
 
@@ -321,9 +325,7 @@ test('live-verified deployments without a published route stay not verified', ()
 test('live control consumes the cached Core supply snapshot', () => {
   const queryClient = new QueryClient();
   queryClient.setQueryData(
-    p1QueryKeys.request('model-supply', 'admin_supply_control', {
-      runQuery: DEFAULT_RUN_TABLE_URL_STATE,
-    }),
+    adminCapabilitySupplySnapshotQueryKey,
     buildDefaultSupplyControlSnapshot()
   );
 
@@ -338,4 +340,178 @@ test('live control consumes the cached Core supply snapshot', () => {
   assert.match(html, />2</);
   assert.match(html, /50.0%/);
   assert.doesNotMatch(html, /domain_reporter_not_wired/);
+});
+
+/**
+ * Stable capability fixture for Spec F / #383 consistency proofs.
+ * Default fixture lacks a published image.edit route, so generation_image
+ * stays not_verified even with a live snapshot — publish edit + clear health.
+ */
+function buildLiveGenerationImageSupplySnapshot(): SupplyControlSnapshot {
+  const base = buildDefaultSupplyControlSnapshot();
+  return {
+    ...base,
+    healthOverlays: base.healthOverlays.filter(
+      (overlay) => overlay.targetId !== 'dep-image-openai'
+    ),
+    routePolicies: [
+      ...base.routePolicies,
+      {
+        id: 'route-image-edit',
+        operation: 'image.edit',
+        qualityTier: 'quality',
+        hardConstraints: ['data_class_allowed', 'health_not_blocking'],
+        candidateDeploymentIds: ['dep-image-ark', 'dep-image-tuzi'],
+        maxAttempts: 2,
+        fallbackAuthorized: true,
+        publishedAt: '2026-07-15T00:00:00.000Z',
+        revisionId: 'route-image-edit:r1',
+      },
+    ],
+  };
+}
+
+function entryAvailability(
+  view: ReturnType<typeof projectAdminCapabilityRegistry>,
+  capabilityId: string
+) {
+  return view.entries.find((entry) => entry.id === capabilityId)?.availability;
+}
+
+/**
+ * Red evidence (historical split): metrics-only home left generation_image as
+ * not_verified while the catalog metrics+supply path was live/available.
+ * Shared projectAdminCapabilityRegistry must eliminate that contradiction.
+ */
+test('historical metrics-only home left generation_image not_verified while catalog was live', () => {
+  const snapshot = buildLiveGenerationImageSupplySnapshot();
+  const homeOnly = projectOperationalMetricsCapabilityRegistry(
+    LIVE_OPERATIONAL_METRICS
+  );
+  const catalog = projectSupplySnapshotCapabilityRegistry(
+    snapshot,
+    {},
+    homeOnly
+  );
+
+  assert.equal(
+    entryAvailability(homeOnly, 'generation_image'),
+    'not_verified',
+    'pre-fix home projected metrics only → generation_image stayed not_verified'
+  );
+  assert.equal(
+    entryAvailability(catalog, 'generation_image'),
+    'available',
+    'pre-fix catalog overlaid supply → generation_image was live/available'
+  );
+});
+
+test('shared projection unifies generation_image for home and catalog', () => {
+  const snapshot = buildLiveGenerationImageSupplySnapshot();
+  const shared = projectAdminCapabilityRegistry({
+    operationalMetrics: LIVE_OPERATIONAL_METRICS,
+    supplySnapshot: snapshot,
+  });
+
+  assert.equal(entryAvailability(shared, 'generation_image'), 'available');
+  assert.equal(
+    shared.entries.find((entry) => entry.id === 'generation_image')
+      ?.evidenceFreshness?.source,
+    'live_model_supply_snapshot'
+  );
+
+  // Both product surfaces consume the same pure composition — identical entry.
+  const homeView = projectAdminCapabilityRegistry({
+    operationalMetrics: LIVE_OPERATIONAL_METRICS,
+    supplySnapshot: snapshot,
+  });
+  const catalogView = projectAdminCapabilityRegistry({
+    operationalMetrics: LIVE_OPERATIONAL_METRICS,
+    supplySnapshot: snapshot,
+  });
+  assert.equal(
+    entryAvailability(homeView, 'generation_image'),
+    entryAvailability(catalogView, 'generation_image')
+  );
+  assert.deepEqual(
+    homeView.entries.find((entry) => entry.id === 'generation_image'),
+    catalogView.entries.find((entry) => entry.id === 'generation_image')
+  );
+});
+
+test('supply failure marks shared projection stale on both pages (no synthetic zero/green)', () => {
+  const snapshot = buildLiveGenerationImageSupplySnapshot();
+  const failedNoData = projectAdminCapabilityRegistry({
+    operationalMetrics: LIVE_OPERATIONAL_METRICS,
+    supplyFailed: true,
+  });
+  const failedWithStale = projectAdminCapabilityRegistry({
+    operationalMetrics: LIVE_OPERATIONAL_METRICS,
+    supplySnapshot: snapshot,
+    supplyFailed: true,
+  });
+
+  assert.equal(entryAvailability(failedNoData, 'generation_image'), 'stale');
+  assert.equal(entryAvailability(failedWithStale, 'generation_image'), 'stale');
+  assert.match(
+    failedWithStale.entries.find((entry) => entry.id === 'generation_image')
+      ?.evidenceFreshness?.source ?? '',
+    /supply_snapshot_refresh_failed_using_stale_data/
+  );
+
+  const html = renderToStaticMarkup(
+    <AdminCapabilityRegistry
+      view={failedNoData}
+      initialSelectedId="generation_image"
+    />
+  );
+  assert.match(
+    html,
+    /data-testid="availability-status-badge"[^>]*data-status="stale"/
+  );
+  assert.doesNotMatch(html, /data-metric-status="known"[^>]*>[\s\S]*?>0</);
+  assert.doesNotMatch(
+    html,
+    /data-testid="availability-status-badge"[^>]*data-status="available"/
+  );
+});
+
+test('shared projection loading keeps generation_image not_verified (never green empty)', () => {
+  const loading = projectAdminCapabilityRegistry({});
+  assert.equal(entryAvailability(loading, 'generation_image'), 'not_verified');
+  assert.equal(
+    loading.entries.find((entry) => entry.id === 'generation_image')
+      ?.evidenceFreshness?.source,
+    'supply_snapshot_loading'
+  );
+
+  // Honest unknown on job_queue remains not_verified unless failures force attention/stale.
+  assert.equal(entryAvailability(loading, 'job_queue_harness'), 'not_verified');
+  assert.notEqual(entryAvailability(loading, 'job_queue_harness'), 'available');
+});
+
+test('live catalog and shared query keys consume the same supply + metrics cache', () => {
+  const queryClient = new QueryClient();
+  const snapshot = buildLiveGenerationImageSupplySnapshot();
+  queryClient.setQueryData(adminOperationalMetricsQueryKey, LIVE_OPERATIONAL_METRICS);
+  queryClient.setQueryData(adminCapabilitySupplySnapshotQueryKey, snapshot);
+
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <AdminCapabilityRegistry initialSelectedId="generation_image" />
+    </QueryClientProvider>
+  );
+
+  assert.match(
+    html,
+    /data-testid="availability-status-badge"[^>]*data-status="available"/
+  );
+  assert.match(html, /live_model_supply_snapshot/);
+  // Shared key equals the default useAdminSupplyControlSnapshot payload.
+  assert.deepEqual(
+    adminCapabilitySupplySnapshotQueryKey,
+    p1QueryKeys.request('model-supply', 'admin_supply_control', {
+      runQuery: DEFAULT_RUN_TABLE_URL_STATE,
+    })
+  );
 });
