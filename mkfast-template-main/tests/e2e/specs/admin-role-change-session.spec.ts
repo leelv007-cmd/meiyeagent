@@ -228,6 +228,11 @@ test.describe('admin role change session revocation', () => {
         error: { code: 'LAST_ADMIN_REQUIRED' },
       });
     } else if (demoteSelf.ok()) {
+      // Self-demotion revoked this session and stripped the admin role, so
+      // the restore must come from a different admin — re-logging in as the
+      // demoted user would only produce a merchant 403.
+      const restorer = await registerE2EUser(request, { role: 'admin' });
+      await loginByForm(page, restorer);
       const restore = await setRole(
         page,
         {
@@ -237,20 +242,7 @@ test.describe('admin role change session revocation', () => {
         },
         origin
       );
-      // Session was revoked by demote — restore may require re-login.
-      if (!restore.ok()) {
-        await loginByForm(page, admin);
-        const restore2 = await setRole(
-          page,
-          {
-            userId: adminId!,
-            role: 'admin',
-            reason: 'restore after non-last demote',
-          },
-          origin
-        );
-        expect(restore2.ok() || restore2.status() === 400).toBeTruthy();
-      }
+      expect(restore.ok(), await restore.text()).toBeTruthy();
     }
   });
 });
