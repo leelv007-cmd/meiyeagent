@@ -226,3 +226,4 @@
 | lane/385 rebase 后 ff | #385 | **可分享 ?exceptions= 筛选（Spec F 收官，F 批三票全闭）**：/admin validateSearch 解析逗号分隔严重度 token（blocked/degraded/attention/not_verified/stale），缺省=全部；URL 初始化＋replace 导航同步（不污染历史）；纯客户端投影筛选（filterExceptionRowsBySeverity），后端查询零改动；工具栏快捷写 blocked,degraded；/admin 各处 Link 补默认 search | 主控亲验：27/27＋tsc；**e2e 4/4**（带参仅对应严重度可见／同 URL 重载保持／无参全清单／replace 不进历史，真栈） | **#385 已关**；**Spec F（#383–385）全闭**；未 push |
 | 4e62a4a9 | #389 | 审计页时间/操作者/动作筛选+CSV 导出（既有查询之上，客户端过滤） | 10/10 模型测+4/4 交互测+tsc 0 err 亲跑 | 退款复核未触碰（#388 防撞）；导出=当前筛选视图 |
 | dc7a4de6 | #388 | 退款复核迁出审计页（/admin/refund-review）+敏感词治理迁出模板页（/admin/sensitive-words），仅挪挂载/导航 | ia-split 5/5+回归 40/40+tsc 0 err+敏感词 e2e 1/1 亲跑 | 路由树扩容致 result-center 推断退化，driver 补 6 处 ResultCenterSearch 注解 |
+| 40d5fb40 | #382 | 商家 user_selected 全旅程 e2e 验收门（published fixture 真 BFF/Core，含取消未注入+租户隔离+审计五轴） | Playwright 3/3 亲跑（1.4m）+核心单测 6/6+契约 2/2+双包 tsc 0 err | driver 修 fixture prompt 钉 intentNaming（stage 冻结不变量）+evidence 改查 runtime_id |
