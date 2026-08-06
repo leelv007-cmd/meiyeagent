@@ -83,6 +83,12 @@ export type ComposerDraft = {
   sources: unknown[];
   assetRights: unknown | null;
   selectedToolIds: string[];
+  /**
+   * Merchant-confirmed skill capability revision refs for this draft only
+   * (Spec E / #380). Zero persistence — never workspace default / localStorage.
+   * Only user_selectable refs from the current merchant projection.
+   */
+  selectedSkillRevisionRefs: string[];
   settings: ComposerSettings;
   delivery: DeliverySuggestion;
   recipeRevisionId: string | null;
@@ -203,6 +209,7 @@ export function emptyComposerDraft(
     sources: [],
     assetRights: null,
     selectedToolIds: [],
+    selectedSkillRevisionRefs: [],
     recipeRevisionId: null,
     surfaceRevisionId: null,
     quoteRevisionId: null,
@@ -467,6 +474,8 @@ function resetLensScopedSettings(draft: ComposerDraft): ComposerDraft {
     quoteRevisionId: null,
     quoteView: null,
     selectedToolIds: [],
+    // Skill capability packs are lens-scoped (merchant projection keyed by lens).
+    selectedSkillRevisionRefs: [],
     // fieldMeta for lens-scoped keys cleared; keep userText ownership
     fieldMeta: Object.fromEntries(
       Object.entries(draft.fieldMeta).filter(
@@ -782,6 +791,22 @@ export function updateSelectedTools(
       ...state.draft.fieldMeta,
       selectedTools: { ownership: 'user', dirty: toolIds.length > 0 },
     },
+  });
+}
+
+/**
+ * Replace the draft skill selection set (already normalized by the caller).
+ * Only mutates draft — never submits or executes.
+ */
+export function setSelectedSkillRevisionRefs(
+  state: ComposerLensState,
+  skillRevisionRefs: readonly string[]
+): ComposerLensState {
+  if (state.phase === 'frozen') return state;
+  const next = [...skillRevisionRefs];
+  return withDraft(state, {
+    ...state.draft,
+    selectedSkillRevisionRefs: next,
   });
 }
 

@@ -49,6 +49,7 @@ export {
   undoChange,
   updateAssetRights,
   updateDeliverySuggestion,
+  setSelectedSkillRevisionRefs,
   updateSelectedTools,
   updateSettings,
   updateSources,
@@ -160,6 +161,24 @@ export {
 } from './recipe-apply';
 
 export { RecipePillRow, type RecipePillRowProps } from './recipe-pill-row';
+
+export {
+  eligibleSkillRevisionRefs,
+  normalizeSelectedSkillRevisionRefs,
+  projectSkillCapabilityViews,
+  pruneSelectedSkillRevisionRefs,
+  toggleSelectedSkillRevisionRef,
+  userSelectedSkillRefsForSubmission,
+  FORBIDDEN_SKILL_PILL_SURFACE_KEYS,
+  type SkillCapabilityItemInput,
+  type SkillCapabilityKind,
+  type SkillCapabilityView,
+} from './skill-capability-selection';
+
+export {
+  SkillCapabilityPillRow,
+  type SkillCapabilityPillRowProps,
+} from './skill-capability-pill-row';
 
 export {
   EXECUTION_CONFIRM_TRIGGER_MODE,

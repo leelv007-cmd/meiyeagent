@@ -176,3 +176,47 @@ test('submits the exact Composer body and returns the durable handles', async ()
     globalThis.fetch = previousFetch;
   }
 });
+
+test('selected skill refs enter the submission payload; empty stays empty', async () => {
+  const previousFetch = globalThis.fetch;
+  let body: unknown;
+  globalThis.fetch = async (input, init) => {
+    const request = new Request(new URL(String(input), 'http://localhost'), init);
+    body = await request.json();
+    return Response.json({
+      data: {
+        contentPackage: { expectedRevision: 0, id: 'package-1' },
+        replayed: false,
+        snapshot: {
+          id: 'snapshot-task-1',
+          identity: { id: 'identity-brand', revision: '2' },
+          schemaVersion: 'creation-execution-snapshot/v1',
+        },
+        task: { id: 'task-1' },
+        usageReservation: { id: 'usage-task-1' },
+        work: { id: 'work-1' },
+      },
+      meta: { correlationId: 'corr-test' },
+    });
+  };
+  try {
+    // Negative unselected
+    await submitComposerSubmission(submissionBody());
+    assert.deepEqual(
+      (body as { userSelectedSkillRefs: string[] }).userSelectedSkillRefs,
+      []
+    );
+
+    // Positive selected
+    await submitComposerSubmission({
+      ...submissionBody(),
+      userSelectedSkillRefs: ['skill.story@3', 'skill.tone@1'],
+    });
+    assert.deepEqual(
+      (body as { userSelectedSkillRefs: string[] }).userSelectedSkillRefs,
+      ['skill.story@3', 'skill.tone@1']
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});

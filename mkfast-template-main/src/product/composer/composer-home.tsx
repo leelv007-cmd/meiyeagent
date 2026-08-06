@@ -56,12 +56,14 @@ import type {
   BriefTriggerInput,
   CreationLensId,
   MemoryEntriesPage,
+  MerchantSkillProjection,
   ResultPanel,
   StoreFact,
 } from '@meiye/contracts';
 import {
   composerSubmissionSignedFieldsSchema,
   memoryTaskSourceConversationId,
+  merchantSkillProjectionSchema,
 } from '@meiye/contracts';
 import type { AccountUsageProjection } from '@/product/account-usage';
 import { uploadProductAsset } from '@/api/product-assets';
@@ -814,6 +816,21 @@ export function ComposerHome({
       surfaceId: 'surface.home.launch',
     }),
     queryFn: ({ signal }) => fetchComposerSurface(signal),
+  });
+  /** Spec E / #380: merchant capability packs for the active lens only. */
+  const skillCapabilityQuery = useQuery({
+    queryKey: p1QueryKeys.request('skills', 'merchant_skill_projection', {
+      lensId: lensId ?? '',
+    }),
+    queryFn: async (): Promise<MerchantSkillProjection> => {
+      const raw = await queryP1<unknown>('skills', {
+        action: 'merchant_skill_projection',
+        payload: { lensId },
+      });
+      return merchantSkillProjectionSchema.parse(raw);
+    },
+    enabled: Boolean(lensId),
+    staleTime: 30_000,
   });
   useEffect(() => {
     if (viralAdaptJourney.phase !== 'sourcing') return;
@@ -3693,6 +3710,9 @@ export function ComposerHome({
                           );
                           setLensState(next);
                         }}
+                        skillCapabilityItems={
+                          skillCapabilityQuery.data?.items ?? []
+                        }
                         surface={surfaceQuery.data}
                         requestServerPreview={({ lensState: state, recipe }) =>
                           requestRecipePatchPreview({

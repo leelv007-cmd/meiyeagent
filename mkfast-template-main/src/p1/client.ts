@@ -1,6 +1,7 @@
 import {
   apiEnvelopeSchema,
   merchantCreditDetailSchema,
+  merchantSkillProjectionSchema,
   p1ModuleRequestSchema,
   publicProductQuoteSnapshotSchema,
   type P1ModuleRequest,
@@ -53,6 +54,7 @@ const responseSchemas = new Map<string, z.ZodType>([
   ['entitlements.credit_detail', merchantCreditDetailSchema],
   ['operations.content_packages', contentPackageProjectionListSchema],
   ['product-billing.quote', publicProductQuoteSnapshotSchema],
+  ['skills.merchant_skill_projection', merchantSkillProjectionSchema],
 ]);
 
 function responseSchema(module: P1Module, action: string) {

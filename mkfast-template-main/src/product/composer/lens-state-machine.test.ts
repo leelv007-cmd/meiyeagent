@@ -19,6 +19,7 @@ import {
   undoChange,
   updateAssetRights,
   updateDeliverySuggestion,
+  setSelectedSkillRevisionRefs,
   updateSelectedTools,
   updateSettings,
   updateSources,
@@ -394,4 +395,26 @@ test('user-dirty settings are not overwritten by system defaults', () => {
   assert.equal(state.draft.settings.aspectRatio, '1:1');
   assert.equal(state.draft.fieldMeta.aspectRatio?.ownership, 'user');
   assert.equal(state.draft.fieldMeta.aspectRatio?.dirty, true);
+});
+
+// ---------------------------------------------------------------------------
+// Spec E / #380 — draft skill capability selection
+// ---------------------------------------------------------------------------
+
+test('selectedSkillRevisionRefs live on draft and clear on lens switch', () => {
+  let state: ComposerLensState = createComposerLensState();
+  assert.deepEqual(state.draft.selectedSkillRevisionRefs, []);
+
+  state = selectLens(state, 'copy');
+  state = setSelectedSkillRevisionRefs(state, ['skill.story@3']);
+  assert.deepEqual(state.draft.selectedSkillRevisionRefs, ['skill.story@3']);
+
+  // Lens-scoped: switch resets skill selection with other lens fields.
+  state = requestSwitchLens(state, 'video');
+  if (state.phase === 'switch_preview') {
+    state = confirmSwitch(state);
+  }
+  assert.equal(state.phase, 'selected');
+  assert.equal(state.lensId, 'video');
+  assert.deepEqual(state.draft.selectedSkillRevisionRefs, []);
 });

@@ -4,6 +4,8 @@
  * Wires the pill row + apply session + patch preview + reuse panel + tip.
  * The pills are the D-164② second level of the lens axis; the host is
  * unchanged, only what it draws.
+ * Spec E / #380: merchant capability-pack pills ride the same catalog host;
+ * selection only mutates the Composer draft (no auto-submit / execute).
  * Mobile: conflict / reuse ride the single bottom-sheet mutex (D-084).
  * Pure UI host — zero business writes (Work/Task/Job/ContentPackage).
  */
@@ -39,8 +41,18 @@ import type { RecipeCardTarget } from './launch-card-seeds';
 import { RecipePatchPreviewSurface } from './recipe-patch-preview-surface';
 import {
   createComposerLensState,
+  setSelectedSkillRevisionRefs,
   type ComposerLensState,
 } from './lens-state-machine';
+import { SkillCapabilityPillRow } from './skill-capability-pill-row';
+import {
+  eligibleSkillRevisionRefs,
+  pruneSelectedSkillRevisionRefs,
+  toggleSelectedSkillRevisionRef,
+  type SkillCapabilityItemInput,
+} from './skill-capability-selection';
+
+const EMPTY_SKILL_CAPABILITY_ITEMS: readonly SkillCapabilityItemInput[] = [];
 
 export type RecipeCardsPanelProps = {
   lensId: CreationLensId | null;
@@ -48,6 +60,11 @@ export type RecipeCardsPanelProps = {
   onLensStateChange?: (state: ComposerLensState) => void;
   surface?: BrowserSurfaceProjection | null;
   recipes?: readonly BrowserRecipeProjection[] | null;
+  /**
+   * Merchant capability packs for the current lens (Spec E / #380).
+   * Parent loads `skills.merchant_skill_projection`; empty when cold / failed.
+   */
+  skillCapabilityItems?: readonly SkillCapabilityItemInput[];
   className?: string;
   /**
    * When true, conflict + reuse panels render inside the single bottom sheet
@@ -70,6 +87,7 @@ export function RecipeCardsPanel({
   onLensStateChange,
   surface,
   recipes,
+  skillCapabilityItems = EMPTY_SKILL_CAPABILITY_ITEMS,
   className,
   useBottomSheet = false,
   sheetFocusKey = null,
@@ -97,9 +115,46 @@ export function RecipeCardsPanel({
     recipes,
   });
 
+  const skillItems = skillCapabilityItems;
+
   const publish = (next: RecipeApplySession) => {
     setSession(next);
     onLensStateChange?.(next.lensState);
+  };
+
+  // Drop draft skill refs that left the current projection (lens / catalog).
+  useEffect(() => {
+    const eligible = eligibleSkillRevisionRefs(skillItems);
+    const current =
+      activeSession.lensState.draft.selectedSkillRevisionRefs ?? [];
+    const pruned = pruneSelectedSkillRevisionRefs(current, eligible);
+    if (
+      pruned.length === current.length &&
+      pruned.every((ref, index) => ref === current[index])
+    ) {
+      return;
+    }
+    const nextLens = setSelectedSkillRevisionRefs(
+      activeSession.lensState,
+      pruned
+    );
+    publish({ ...activeSession, lensState: nextLens });
+    // Only re-prune when the eligible catalog changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberate
+  }, [skillItems]);
+
+  const handleToggleSkill = (skillRevisionRef: string) => {
+    const eligible = eligibleSkillRevisionRefs(skillItems);
+    const nextRefs = toggleSelectedSkillRevisionRef(
+      activeSession.lensState.draft.selectedSkillRevisionRefs ?? [],
+      skillRevisionRef,
+      eligible
+    );
+    const nextLens = setSelectedSkillRevisionRefs(
+      activeSession.lensState,
+      nextRefs
+    );
+    publish({ ...activeSession, lensState: nextLens });
   };
 
   // Keep single sheet mutex in sync with apply phase (mobile only).
@@ -211,7 +266,18 @@ export function RecipeCardsPanel({
       ) : null}
 
       {showPills ? (
-        <RecipePillRow cards={cards} onSelectCard={handleSelectCard} />
+        <>
+          <RecipePillRow cards={cards} onSelectCard={handleSelectCard} />
+          {lensId ? (
+            <SkillCapabilityPillRow
+              items={skillItems}
+              onToggleSelectable={handleToggleSkill}
+              selectedSkillRevisionRefs={
+                activeSession.lensState.draft.selectedSkillRevisionRefs ?? []
+              }
+            />
+          ) : null}
+        </>
       ) : null}
     </div>
   );

@@ -66,6 +66,7 @@ import {
 } from './lens-state-machine';
 import type { ComposerQuoteView } from './quote-wiring';
 import { runComposerSubmitGateLadder } from './composer-submit-gates';
+import { normalizeSelectedSkillRevisionRefs } from './skill-capability-selection';
 import { submissionRoleForStyleReference } from './style-analysis-entry';
 import { admitFreshCreditRun } from './workbench-credit';
 
@@ -360,6 +361,10 @@ export function useComposerRun(options: UseComposerRunOptions) {
           id: options.surface.surfaceId,
           revision: options.surface.revisionId,
         },
+        // Spec E / #380: draft selection freezes into the submission body.
+        userSelectedSkillRefs: normalizeSelectedSkillRevisionRefs(
+          options.lensState.draft.selectedSkillRevisionRefs ?? []
+        ),
       });
     },
     onSuccess: async (created, variables) => {
