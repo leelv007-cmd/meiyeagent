@@ -1,11 +1,11 @@
+import { createAuthCatchAllHandlers } from '@/auth/auth-endpoint-dispatch';
 import { createFileRoute } from '@tanstack/react-router';
-import { createAuth } from '@/auth/auth';
+
+/** Production handlers — tests re-create via createAuthCatchAllHandlers with deps. */
+export const authCatchAllHandlers = createAuthCatchAllHandlers();
 
 export const Route = createFileRoute('/api/auth/$')({
   server: {
-    handlers: {
-      GET: ({ request }) => createAuth().handler(request),
-      POST: ({ request }) => createAuth().handler(request),
-    },
+    handlers: authCatchAllHandlers,
   },
 });

@@ -11,6 +11,8 @@ test('TanStack Start cookie handling is the final Better Auth plugin', async () 
     plugins.findIndex((plugin) => plugin.id === 'tanstack-start-cookies'),
     plugins.length - 1
   );
+  // Spec A / #365: bare endpoints are 404'd at the catch-all, not by dropping admin.
+  assert.ok(plugins.some((plugin) => plugin.id === 'admin'));
 
   const authSource = await readFile(
     new URL('./auth.ts', import.meta.url),
