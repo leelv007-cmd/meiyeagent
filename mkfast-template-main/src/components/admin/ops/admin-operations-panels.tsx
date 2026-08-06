@@ -105,6 +105,7 @@ import {
   buildTrialStatus,
   buildUsageBars,
   PLATFORM_USAGE_CONSUMPTION,
+  plansWithAllowance,
   TRIAL_GRANT_CENSUS,
 } from '@/p1/admin-operations-chart-model';
 import {
@@ -140,7 +141,8 @@ const BUCKETS = [
 ] as const;
 
 interface PlanCatalogOffer {
-  allowance: { audio: number; copy: number; image: number; video: number };
+  /** Credit-based plans (post #289 wave) carry no three-bucket allowance. */
+  allowance?: { audio: number; copy: number; image: number; video: number };
   id: string;
 }
 
@@ -269,6 +271,9 @@ function AdminUsagePanel() {
       ),
   });
   const plans = catalogQuery.data?.plans ?? [];
+  // Credit-based plans carry no three-bucket allowance; this panel charts
+  // allowances only, so they stay out instead of crashing the admin home.
+  const allowancePlans = plansWithAllowance(plans);
 
   return (
     <Frame className="min-w-0" data-testid="admin-ops-usage" dense>
@@ -293,7 +298,7 @@ function AdminUsagePanel() {
           </p>
         </div>
         <PanelBody
-          isEmpty={plans.length === 0}
+          isEmpty={allowancePlans.length === 0}
           isError={Boolean(catalogQuery.error)}
           isLoading={catalogQuery.isPending}
           testId="admin-ops-usage"
@@ -304,7 +309,7 @@ function AdminUsagePanel() {
           {/* 三档四档并排看一眼就知道哪一档给得多，具体数字仍在下面的行里。 */}
           <BarChart.Root
             aria-label={admin_ops_usage_chart_label()}
-            data={buildUsageBars(plans)}
+            data={buildUsageBars(allowancePlans)}
             data-testid="admin-ops-usage-chart"
             height={168}
           >
@@ -333,7 +338,7 @@ function AdminUsagePanel() {
             aria-label={admin_ops_usage_allowance_title()}
             className="rounded-lg border"
           >
-            {plans.map((plan) => (
+            {allowancePlans.map((plan) => (
               <li
                 className="flex flex-col gap-0.5 border-b px-3 py-2 last:border-b-0"
                 data-testid="admin-ops-usage-row"

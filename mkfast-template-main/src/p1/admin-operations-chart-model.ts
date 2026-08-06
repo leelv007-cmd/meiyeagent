@@ -9,8 +9,24 @@ import type { EntitlementStatusView } from '@/p1/admin-entitlement-status-model'
 import type { OperationalMetricView } from '@/p1/admin-operations-health';
 
 export interface PlanAllowanceOffer {
-  allowance: { audio: number; copy: number; image: number; video: number };
+  /** Credit-based plans carry no three-bucket allowance (see #289 wave). */
+  allowance?: { audio: number; copy: number; image: number; video: number };
   id: string;
+}
+
+/** Plans that actually carry a three-bucket allowance — chartable subset. */
+export function plansWithAllowance(
+  plans: readonly PlanAllowanceOffer[]
+): (PlanAllowanceOffer & {
+  allowance: NonNullable<PlanAllowanceOffer['allowance']>;
+})[] {
+  return plans.filter(
+    (
+      plan
+    ): plan is PlanAllowanceOffer & {
+      allowance: NonNullable<PlanAllowanceOffer['allowance']>;
+    } => plan.allowance != null
+  );
 }
 
 export interface UsageBarDatum {
@@ -38,7 +54,7 @@ export const PLATFORM_USAGE_CONSUMPTION = {
 export function buildUsageBars(
   plans: readonly PlanAllowanceOffer[]
 ): UsageBarDatum[] {
-  return plans.map((plan) => ({
+  return plansWithAllowance(plans).map((plan) => ({
     copy: plan.allowance.copy,
     image: plan.allowance.image,
     plan: plan.id,
