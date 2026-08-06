@@ -30,6 +30,11 @@ import {
   mergePublishedRecipeWorkflowRevisionRefsForLens,
 } from '../creation-experience/published-recipe-workflow-catalog.js';
 import {
+  bindingTriggerSpecificity,
+  isWinningBindingInjected,
+  selectHighestCertaintyBindings,
+} from './binding-matrix.js';
+import {
   buildMerchantSkillProjection,
   isCreationLensId,
   isMerchantPresentationPolicy,
@@ -361,6 +366,7 @@ export class SkillService {
     const workflowRevisionRefs =
       await this.listPublishedRecipeWorkflowRevisionRefsForLens(lensId);
 
+    // skillId → best projected item across workflows (specificity, then skillId order).
     const selectedBySkillId = new Map<
       string,
       { item: MerchantSkillCapabilityItem; specificity: number }
@@ -371,16 +377,17 @@ export class SkillService {
         await this.repository.listActiveBindingsForWorkflow(
           workflowRevisionRef,
         );
-      for (const binding of bindings) {
+      const matching = bindings.filter((binding) =>
+        merchantTriggerMatches(binding.triggerCondition, {
+          industryCategory,
+          tenantId: workspaceId,
+        }),
+      );
+      // #381: one winner per skillId; equal-spec mode/revision conflicts throw.
+      const winners = selectHighestCertaintyBindings(matching);
+
+      for (const binding of winners.values()) {
         if (binding.mode === 'disabled') continue;
-        if (
-          !merchantTriggerMatches(binding.triggerCondition, {
-            industryCategory,
-            tenantId: workspaceId,
-          })
-        ) {
-          continue;
-        }
 
         const catalog = await this.repository.getCatalog(binding.skillId);
         if (!catalog) continue;
@@ -416,7 +423,7 @@ export class SkillService {
           catalog,
           skillRevisionRef: binding.skillRevisionRef,
         });
-        const specificity = merchantTriggerSpecificity(binding.triggerCondition);
+        const specificity = bindingTriggerSpecificity(binding.triggerCondition);
         const existing = selectedBySkillId.get(item.skillId);
         if (!existing || specificity > existing.specificity) {
           selectedBySkillId.set(item.skillId, { item, specificity });
@@ -1645,26 +1652,14 @@ export class SkillService {
     const bindings = await this.repository.listActiveBindingsForWorkflow(
       input.workflowRevisionRef,
     );
-    // Highest-specificity active binding wins per skillId (same as stage select).
-    const winners = new Map<string, SkillBinding>();
-    for (const binding of bindings) {
-      if (
-        !merchantTriggerMatches(binding.triggerCondition, {
-          industryCategory: input.industryCategory,
-          tenantId: input.workspaceId,
-        })
-      ) {
-        continue;
-      }
-      const existing = winners.get(binding.skillId);
-      if (
-        !existing ||
-        merchantTriggerSpecificity(binding.triggerCondition) >
-          merchantTriggerSpecificity(existing.triggerCondition)
-      ) {
-        winners.set(binding.skillId, binding);
-      }
-    }
+    const matching = bindings.filter((binding) =>
+      merchantTriggerMatches(binding.triggerCondition, {
+        industryCategory: input.industryCategory,
+        tenantId: input.workspaceId,
+      }),
+    );
+    // Highest-certainty active binding wins per skillId (#381 matrix).
+    const winners = selectHighestCertaintyBindings(matching);
 
     const eligible = new Set<string>();
     for (const binding of winners.values()) {
@@ -1718,21 +1713,14 @@ export class SkillService {
         tenantId: input.tenantId?.trim() || null,
       },
     );
-    const selectedBindings = new Map<string, SkillBinding>();
-    for (const binding of bindings) {
-      const selected = selectedBindings.get(binding.skillId);
-      if (
-        !selected ||
-        triggerSpecificity(binding.triggerCondition) >
-          triggerSpecificity(selected.triggerCondition)
-      ) {
-        selectedBindings.set(binding.skillId, binding);
-      }
-    }
+    // #381: one winner per skillId; conflicts throw SKILL_BINDING_CONFLICT.
+    const selectedBindings = selectHighestCertaintyBindings(bindings);
     const user = new Set(input.userSelectedSkillRefs);
     const revisions: SkillRevision[] = [];
     for (const binding of selectedBindings.values()) {
-      if (binding.mode === 'disabled') continue;
+      if (!isWinningBindingInjected(binding, user)) {
+        continue;
+      }
       const revision = await this.repository.getRevision(
         binding.skillRevisionRef,
       );
@@ -1742,9 +1730,6 @@ export class SkillService {
           input.workflowRevisionRef,
         )
       ) {
-        continue;
-      }
-      if (binding.mode === 'user_selected' && !user.has(binding.skillRevisionRef)) {
         continue;
       }
       revisions.push(revision);
@@ -2256,13 +2241,6 @@ function isSameTriggerCondition(
   );
 }
 
-function triggerSpecificity(condition: SkillTriggerCondition) {
-  return (
-    (condition.industryCategory ? 1 : 0) +
-    (condition.tenantId ? 2 : 0)
-  );
-}
-
 /**
  * Industry/tenant match for merchant projection (stage-agnostic).
  * Global (null) binding dimensions always match; specific dimensions must equal.
@@ -2281,10 +2259,6 @@ function merchantTriggerMatches(
     return false;
   }
   return true;
-}
-
-function merchantTriggerSpecificity(condition: SkillTriggerCondition) {
-  return triggerSpecificity(condition);
 }
 
 function resolvedInstruction(

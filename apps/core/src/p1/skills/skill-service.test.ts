@@ -17,11 +17,14 @@ import {
   materializeSkillInstructions,
   RegistrySkillOutputValidator,
   skillPromptSnapshotPortFromHarness,
+  SkillBindingConflictError,
   SkillFoundationModule,
   SkillPromptAuthorityUnavailableError,
   SkillService,
+  SKILL_BINDING_CONFLICT_CODE,
   SKILL_WORKFLOW_BINDING_INVALID_MESSAGE,
   StaticSkillToolExecutionAuthorizer,
+  UserSelectedSkillIneligibleError,
   type PublishedRecipeWorkflowCatalogPort,
   type SkillBinding,
   type SkillChildEffectExecutor,
@@ -862,6 +865,388 @@ test('retired planner-selected bindings remain auditable but never enter the rea
       (skill) => skill.skillRevisionRef === revisions.get('disabled'),
     ),
     false,
+  );
+});
+
+test('binding matrix: required + user selection of the same skill injects once; selection cannot change mode', async () => {
+  const service = new SkillService(
+    new MemorySkillRepository(),
+    () => NOW,
+    testPromptSnapshots,
+  );
+  const required = await createAcceptedSkill(service, 'matrix-required-once');
+  await service.bindRevision({
+    bindingId: 'binding.matrix-required-once',
+    mode: 'required',
+    skillRevisionRef: required.skillRevisionRef,
+    triggerCondition: { harnessStage: 'intent_naming' },
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+
+  const withoutSelection = await service.resolveStage({
+    stage: 'intent_naming',
+    userSelectedSkillRefs: [],
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+  const withSelection = await service.resolveStage({
+    stage: 'intent_naming',
+    // Selecting a required revision must not double-inject or change mode.
+    userSelectedSkillRefs: [required.skillRevisionRef],
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+
+  assert.deepEqual(
+    withoutSelection.allowlist.map((skill) => skill.skillRevisionRef),
+    [required.skillRevisionRef],
+  );
+  assert.deepEqual(
+    withSelection.allowlist.map((skill) => skill.skillRevisionRef),
+    [required.skillRevisionRef],
+  );
+});
+
+test('binding matrix: disabled winner blocks user selection of that skill', async () => {
+  const service = new SkillService(
+    new MemorySkillRepository(),
+    () => NOW,
+    testPromptSnapshots,
+  );
+  const skill = await createAcceptedSkillWithPresentation(
+    service,
+    'matrix-disabled-wins',
+    'user_selectable',
+  );
+  await service.bindRevision({
+    bindingId: 'binding.matrix-user',
+    mode: 'user_selected',
+    skillRevisionRef: skill.skillRevisionRef,
+    triggerCondition: { harnessStage: 'intent_naming' },
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+  // More-specific disabled supersedes global user_selected for this tenant.
+  await service.bindRevision({
+    bindingId: 'binding.matrix-disabled-tenant',
+    mode: 'disabled',
+    skillRevisionRef: skill.skillRevisionRef,
+    triggerCondition: {
+      harnessStage: 'intent_naming',
+      tenantId: 'tenant-blocked',
+    },
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+
+  const resolved = await service.resolveStage({
+    stage: 'intent_naming',
+    tenantId: 'tenant-blocked',
+    userSelectedSkillRefs: [skill.skillRevisionRef],
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+  assert.deepEqual(resolved.allowlist, []);
+
+  // Without the tenant disable, selection still injects for other tenants.
+  const otherTenant = await service.resolveStage({
+    stage: 'intent_naming',
+    tenantId: 'tenant-ok',
+    userSelectedSkillRefs: [skill.skillRevisionRef],
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+  assert.deepEqual(
+    otherTenant.allowlist.map((entry) => entry.skillRevisionRef),
+    [skill.skillRevisionRef],
+  );
+
+  await assert.rejects(
+    () =>
+      service.assertUserSelectedSkillRefsEligible({
+        workspaceId: 'tenant-blocked',
+        workflowRevisionRef: 'workflow.binding-matrix@1',
+        userSelectedSkillRefs: [skill.skillRevisionRef],
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof UserSelectedSkillIneligibleError);
+      return true;
+    },
+  );
+});
+
+test('binding matrix: equal-specificity mode conflict returns SKILL_BINDING_CONFLICT on stage select', async () => {
+  const repository = new ConflictSeedingSkillRepository();
+  const service = new SkillService(repository, () => NOW, testPromptSnapshots);
+  const skill = await createAcceptedSkillWithPresentation(
+    service,
+    'matrix-mode-conflict',
+    'user_selectable',
+  );
+  await repository.putBinding({
+    bindingId: 'binding.conflict-required',
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+    triggerCondition: {
+      harnessStage: 'intent_naming',
+      industryCategory: null,
+      tenantId: null,
+    },
+    skillId: skill.skillId,
+    skillRevisionRef: skill.skillRevisionRef,
+    mode: 'required',
+    status: 'active',
+    supersededAt: null,
+    supersededByBindingId: null,
+    createdAt: NOW,
+  });
+  await repository.putBinding({
+    bindingId: 'binding.conflict-user',
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+    triggerCondition: {
+      harnessStage: 'intent_naming',
+      industryCategory: null,
+      tenantId: null,
+    },
+    skillId: skill.skillId,
+    skillRevisionRef: skill.skillRevisionRef,
+    mode: 'user_selected',
+    status: 'active',
+    supersededAt: null,
+    supersededByBindingId: null,
+    createdAt: NOW,
+  });
+
+  await assert.rejects(
+    () =>
+      service.resolveStage({
+        stage: 'intent_naming',
+        userSelectedSkillRefs: [skill.skillRevisionRef],
+        workflowRevisionRef: 'workflow.binding-matrix@1',
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof SkillBindingConflictError);
+      assert.equal(error.code, SKILL_BINDING_CONFLICT_CODE);
+      assert.equal(error.reason, 'mode_mismatch');
+      assert.equal(error.skillId, skill.skillId);
+      return true;
+    },
+  );
+});
+
+test('binding matrix: tenant specificity outranks industry and global on stage allowlist', async () => {
+  const service = new SkillService(
+    new MemorySkillRepository(),
+    () => NOW,
+    testPromptSnapshots,
+  );
+  const skill = await createAcceptedSkill(service, 'matrix-specificity');
+  const industryInstruction = 'industry matrix specificity';
+  const tenantInstruction = 'tenant matrix specificity';
+
+  // Re-bind three revisions of the same skill at escalating specificity.
+  const industryDraft = await service.draftRevision({
+    actorId: 'operator-1',
+    expectedRevision: 1,
+    governance: {
+      ...governance(),
+      workflowRevisionRefs: ['workflow.binding-matrix@1'],
+    },
+    instruction: industryInstruction,
+    manifest: {
+      description: 'Industry-specific matrix fixture.',
+      name: 'matrix-specificity',
+    },
+    promptReference: registerPrompt({
+      content: industryInstruction,
+      contentHash: sha256(industryInstruction),
+      isFallback: false,
+      label: 'production',
+      name: 'skills/matrix-specificity',
+      source: 'langfuse',
+      version: '2',
+    }),
+    skillId: skill.skillId,
+  });
+  const industryRun: EvalRun = {
+    ...skillEvalRun(industryDraft.skillRevisionRef),
+    results: [
+      {
+        ...skillEvalRun(industryDraft.skillRevisionRef).results[0]!,
+        promptRevision: 'skills/matrix-specificity@2',
+      },
+    ],
+    runId: 'skills-matrix-specificity-run-2',
+    suiteId: 'skills-matrix-specificity',
+    suiteRevision: 'skills-matrix-specificity@2',
+  };
+  await registerEvalRunForTest(service, industryRun);
+  const industry = await service.acceptAndFreezeRevision({
+    actorId: 'operator-2',
+    evalRunId: industryRun.runId,
+    skillRevisionRef: industryDraft.skillRevisionRef,
+  });
+
+  const tenantDraft = await service.draftRevision({
+    actorId: 'operator-1',
+    expectedRevision: 2,
+    governance: {
+      ...governance(),
+      workflowRevisionRefs: ['workflow.binding-matrix@1'],
+    },
+    instruction: tenantInstruction,
+    manifest: {
+      description: 'Tenant-specific matrix fixture.',
+      name: 'matrix-specificity',
+    },
+    promptReference: registerPrompt({
+      content: tenantInstruction,
+      contentHash: sha256(tenantInstruction),
+      isFallback: false,
+      label: 'production',
+      name: 'skills/matrix-specificity',
+      source: 'langfuse',
+      version: '3',
+    }),
+    skillId: skill.skillId,
+  });
+  const tenantRun: EvalRun = {
+    ...skillEvalRun(tenantDraft.skillRevisionRef),
+    results: [
+      {
+        ...skillEvalRun(tenantDraft.skillRevisionRef).results[0]!,
+        promptRevision: 'skills/matrix-specificity@3',
+      },
+    ],
+    runId: 'skills-matrix-specificity-run-3',
+    suiteId: 'skills-matrix-specificity',
+    suiteRevision: 'skills-matrix-specificity@3',
+  };
+  await registerEvalRunForTest(service, tenantRun);
+  const tenant = await service.acceptAndFreezeRevision({
+    actorId: 'operator-2',
+    evalRunId: tenantRun.runId,
+    skillRevisionRef: tenantDraft.skillRevisionRef,
+  });
+
+  await service.bindRevision({
+    bindingId: 'binding.matrix-global',
+    mode: 'required',
+    skillRevisionRef: skill.skillRevisionRef,
+    triggerCondition: { harnessStage: 'intent_naming' },
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+  await service.bindRevision({
+    bindingId: 'binding.matrix-industry',
+    mode: 'required',
+    skillRevisionRef: industry.skillRevisionRef,
+    triggerCondition: {
+      harnessStage: 'intent_naming',
+      industryCategory: 'hair',
+    },
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+  await service.bindRevision({
+    bindingId: 'binding.matrix-tenant',
+    mode: 'required',
+    skillRevisionRef: tenant.skillRevisionRef,
+    triggerCondition: {
+      harnessStage: 'intent_naming',
+      industryCategory: 'hair',
+      tenantId: 'tenant-a',
+    },
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+
+  assert.deepEqual(
+    (
+      await service.resolveStage({
+        industryCategory: 'hair',
+        stage: 'intent_naming',
+        tenantId: 'tenant-a',
+        userSelectedSkillRefs: [],
+        workflowRevisionRef: 'workflow.binding-matrix@1',
+      })
+    ).allowlist.map((entry) => entry.skillRevisionRef),
+    [tenant.skillRevisionRef],
+  );
+  assert.deepEqual(
+    (
+      await service.resolveStage({
+        industryCategory: 'hair',
+        stage: 'intent_naming',
+        tenantId: 'tenant-b',
+        userSelectedSkillRefs: [],
+        workflowRevisionRef: 'workflow.binding-matrix@1',
+      })
+    ).allowlist.map((entry) => entry.skillRevisionRef),
+    [industry.skillRevisionRef],
+  );
+  assert.deepEqual(
+    (
+      await service.resolveStage({
+        industryCategory: 'nails',
+        stage: 'intent_naming',
+        tenantId: 'tenant-a',
+        userSelectedSkillRefs: [],
+        workflowRevisionRef: 'workflow.binding-matrix@1',
+      })
+    ).allowlist.map((entry) => entry.skillRevisionRef),
+    [skill.skillRevisionRef],
+  );
+});
+
+test('binding matrix: only user_selectable skills may bind as user_selected; selection gates that mode only', async () => {
+  const service = new SkillService(
+    new MemorySkillRepository(),
+    () => NOW,
+    testPromptSnapshots,
+  );
+  const backend = await createAcceptedSkillWithPresentation(
+    service,
+    'matrix-backend-only',
+    'backend_only',
+  );
+  const selectable = await createAcceptedSkillWithPresentation(
+    service,
+    'matrix-user-selectable',
+    'user_selectable',
+  );
+
+  await assert.rejects(
+    () =>
+      service.bindRevision({
+        bindingId: 'binding.backend-as-user',
+        mode: 'user_selected',
+        skillRevisionRef: backend.skillRevisionRef,
+        triggerCondition: { harnessStage: 'intent_naming' },
+        workflowRevisionRef: 'workflow.binding-matrix@1',
+      }),
+    /后台专用 Skill 不能由用户选择/,
+  );
+
+  await service.bindRevision({
+    bindingId: 'binding.selectable-user',
+    mode: 'user_selected',
+    skillRevisionRef: selectable.skillRevisionRef,
+    triggerCondition: { harnessStage: 'intent_naming' },
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+
+  // User selection only injects user_selected mode (negative: empty selection).
+  const unselected = await service.resolveStage({
+    stage: 'intent_naming',
+    userSelectedSkillRefs: [],
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+  assert.equal(
+    unselected.allowlist.some(
+      (entry) => entry.skillRevisionRef === selectable.skillRevisionRef,
+    ),
+    false,
+  );
+
+  const selected = await service.resolveStage({
+    stage: 'intent_naming',
+    userSelectedSkillRefs: [selectable.skillRevisionRef],
+    workflowRevisionRef: 'workflow.binding-matrix@1',
+  });
+  assert.deepEqual(
+    selected.allowlist.map((entry) => entry.skillRevisionRef),
+    [selectable.skillRevisionRef],
   );
 });
 
@@ -3867,6 +4252,29 @@ function withGeneratedOutput(
   };
 }
 
+/**
+ * Memory repository that allows same-slot multi-bindings for #381 conflict
+ * seeding. Production MemorySkillRepository still rejects the slot at put.
+ */
+class ConflictSeedingSkillRepository extends MemorySkillRepository {
+  override async putBinding(binding: SkillBinding) {
+    const canonical: SkillBinding = {
+      ...binding,
+      triggerCondition: {
+        harnessStage: binding.triggerCondition.harnessStage,
+        industryCategory: binding.triggerCondition.industryCategory ?? null,
+        tenantId: binding.triggerCondition.tenantId ?? null,
+      },
+    };
+    // Bypass slot uniqueness so runtime matrix conflicts can be acceptance-tested.
+    const map = (
+      this as unknown as { bindings: Map<string, SkillBinding> }
+    ).bindings;
+    map.set(canonical.bindingId, structuredClone(canonical));
+    return structuredClone(canonical);
+  }
+}
+
 async function createAcceptedSkill(
   service: SkillService,
   suffix: string,
@@ -3876,10 +4284,25 @@ async function createAcceptedSkill(
   ]);
 }
 
+async function createAcceptedSkillWithPresentation(
+  service: SkillService,
+  suffix: string,
+  presentationPolicy: 'backend_only' | 'explainable' | 'user_selectable',
+) {
+  return createAcceptedSkillWithWorkflows(
+    service,
+    suffix,
+    ['workflow.binding-matrix@1'],
+    presentationPolicy,
+  );
+}
+
 async function createAcceptedSkillWithWorkflows(
   service: SkillService,
   suffix: string,
   workflowRevisionRefs: readonly string[],
+  presentationPolicy: 'backend_only' | 'explainable' | 'user_selectable' =
+    suffix === 'user_selected' ? 'user_selectable' : 'backend_only',
 ) {
   const skillId = `skill.${suffix}`;
   const instruction = `Apply the ${suffix} instruction only in the declared stage.`;
@@ -3889,8 +4312,7 @@ async function createAcceptedSkillWithWorkflows(
     description: 'Draft daily industry copy for a store.',
     sourceKind: 'authored',
     tier: 'platform',
-    presentationPolicy:
-      suffix === 'user_selected' ? 'user_selectable' : 'backend_only',
+    presentationPolicy,
     skillId,
   });
   const draft = await service.draftRevision({

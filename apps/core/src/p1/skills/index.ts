@@ -11,6 +11,14 @@ export {
   type SkillGovernanceWorkflowState,
 } from './dbos-governance-workflow.js';
 export {
+  SKILL_BINDING_CONFLICT_CODE,
+  SkillBindingConflictError,
+  bindingTriggerSpecificity,
+  isWinningBindingInjected,
+  selectHighestCertaintyBindings,
+  type SkillBindingConflictReason,
+} from './binding-matrix.js';
+export {
   SkillInvocationValidationError,
   SkillService,
   SKILL_WORKFLOW_BINDING_INVALID_MESSAGE,
