@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
+import { dirname, resolve } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 
@@ -16,11 +19,7 @@ registerHooks({
   },
 });
 
-const recipeRoute = await import('./recipe-studio');
 const skillsRoute = await import('./skills');
-const { AdminRecipeStudioControl } = await import(
-  '@/p1/admin-recipe-studio-control'
-);
 const {
   AdminSkillsControl,
   buildSkillCommandPayload,
@@ -32,6 +31,14 @@ const {
   SKILL_WORKFLOW_BINDING_INVALID_MESSAGE,
 } = await import('@/p1/admin-skills-control');
 const { p1QueryKeys } = await import('@/p1/query-keys');
+const { ADMIN_SIDEBAR_ITEMS } = await import('@/config/sidebar-config');
+const { Routes } = await import('@/lib/routes');
+
+const here = dirname(fileURLToPath(import.meta.url));
+const routeTreeSource = readFileSync(
+  resolve(here, '../../routeTree.gen.ts'),
+  'utf8'
+);
 
 /** Renders the control with a seeded catalog so the table has rows to show. */
 function renderSkillsControl(rows: Record<string, unknown>[] = []) {
@@ -78,24 +85,47 @@ function renderSkillsControl(rows: Record<string, unknown>[] = []) {
   );
 }
 
-test('Recipe Studio admin route exposes the complete four-gate production chain', () => {
-  assert.equal(typeof recipeRoute.Route.options.component, 'function');
-  const html = renderToStaticMarkup(<AdminRecipeStudioControl />);
+test('D3 / #375: generated route tree no longer registers /admin/recipe-studio', () => {
+  // Hand-pruned (lane convention from #419); next dev regen converges.
+  assert.doesNotMatch(routeTreeSource, /\/admin\/recipe-studio/);
+  assert.doesNotMatch(routeTreeSource, /AdminRecipeStudioRoute/);
+  assert.doesNotMatch(routeTreeSource, /routes\/admin\/recipe-studio/);
 
-  assert.match(html, /data-testid="recipe-studio-control"/);
-  assert.match(html, /1\. 编译/);
-  assert.match(html, /2\. 校验/);
-  assert.match(html, /3\. 记录评测/);
-  assert.match(html, /4\. 内测试跑/);
-  assert.match(html, /切换 production/);
-  assert.match(html, /回滚 production/);
-  // Spec D #374: eval / internal-test gates are disabled without server receipts.
-  assert.match(html, /data-testid="recipe-studio-eval-gate-disabled"/);
-  assert.match(html, /data-testid="recipe-studio-internal-test-gate-disabled"/);
-  assert.match(html, /data-testid="recipe-studio-evidence-disabled-notice"/);
-  assert.match(html, /evidence-unavailable/);
-  assert.doesNotMatch(html, /"passed"\s*:\s*true/);
-  assert.doesNotMatch(html, /evalRun/);
+  const fullPathBlock = routeTreeSource.match(
+    /export interface FileRoutesByFullPath \{([\s\S]*?)\n\}/
+  );
+  assert.ok(fullPathBlock, 'FileRoutesByFullPath block required');
+  assert.doesNotMatch(fullPathBlock[1], /'\/admin\/recipe-studio'/);
+  // Templates remains the sole governed Recipe entry.
+  assert.match(fullPathBlock[1], /'\/admin\/templates'/);
+});
+
+test('D3 / #375: Recipe Studio route module and control are gone; nav cannot reach it', async () => {
+  // Source-level absence (routeTree + constants) is the gate; filesystem
+  // checks avoid flaky path-alias resolution in node:test.
+  assert.equal(
+    existsSync(resolve(here, 'recipe-studio.tsx')),
+    false,
+    'admin/recipe-studio route file must be deleted'
+  );
+  assert.equal(
+    existsSync(resolve(here, '../../p1/admin-recipe-studio-control.tsx')),
+    false,
+    'AdminRecipeStudioControl must be deleted'
+  );
+
+  assert.equal('AdminRecipeStudio' in Routes, false);
+  assert.equal(Routes.AdminTemplates, '/admin/templates');
+  const adminIds = ADMIN_SIDEBAR_ITEMS.map((item) => item.id as string);
+  const adminHrefs = ADMIN_SIDEBAR_ITEMS.map((item) => item.href as string);
+  assert.equal(adminIds.includes('recipe-studio'), false);
+  assert.equal(adminHrefs.includes('/admin/recipe-studio'), false);
+  assert.ok(
+    ADMIN_SIDEBAR_ITEMS.some(
+      (item) =>
+        item.id === 'templates' && item.href === Routes.AdminTemplates
+    )
+  );
 });
 
 test('Skills admin route exposes all five structured lifecycle commands', () => {

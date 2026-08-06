@@ -60,7 +60,6 @@ import { Route as AdminTemplatesRouteImport } from './routes/admin/templates'
 import { Route as AdminSupplyRouteImport } from './routes/admin/supply'
 import { Route as AdminSkillsRouteImport } from './routes/admin/skills'
 import { Route as AdminRedemptionsRouteImport } from './routes/admin/redemptions'
-import { Route as AdminRecipeStudioRouteImport } from './routes/admin/recipe-studio'
 import { Route as AdminPlansRouteImport } from './routes/admin/plans'
 import { Route as AdminP1RouteImport } from './routes/admin/p1'
 import { Route as AdminModelsRouteImport } from './routes/admin/models'
@@ -369,11 +368,6 @@ const AdminSkillsRoute = AdminSkillsRouteImport.update({
 const AdminRedemptionsRoute = AdminRedemptionsRouteImport.update({
   id: '/redemptions',
   path: '/redemptions',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminRecipeStudioRoute = AdminRecipeStudioRouteImport.update({
-  id: '/recipe-studio',
-  path: '/recipe-studio',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminPlansRoute = AdminPlansRouteImport.update({
@@ -689,7 +683,6 @@ export interface FileRoutesByFullPath {
   '/admin/models': typeof AdminModelsRoute
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
-  '/admin/recipe-studio': typeof AdminRecipeStudioRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
@@ -793,7 +786,6 @@ export interface FileRoutesByTo {
   '/admin/models': typeof AdminModelsRoute
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
-  '/admin/recipe-studio': typeof AdminRecipeStudioRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
@@ -902,7 +894,6 @@ export interface FileRoutesById {
   '/admin/models': typeof AdminModelsRoute
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
-  '/admin/recipe-studio': typeof AdminRecipeStudioRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
@@ -1012,7 +1003,6 @@ export interface FileRouteTypes {
     | '/admin/models'
     | '/admin/p1'
     | '/admin/plans'
-    | '/admin/recipe-studio'
     | '/admin/redemptions'
     | '/admin/skills'
     | '/admin/supply'
@@ -1116,7 +1106,6 @@ export interface FileRouteTypes {
     | '/admin/models'
     | '/admin/p1'
     | '/admin/plans'
-    | '/admin/recipe-studio'
     | '/admin/redemptions'
     | '/admin/skills'
     | '/admin/supply'
@@ -1224,7 +1213,6 @@ export interface FileRouteTypes {
     | '/admin/models'
     | '/admin/p1'
     | '/admin/plans'
-    | '/admin/recipe-studio'
     | '/admin/redemptions'
     | '/admin/skills'
     | '/admin/supply'
@@ -1708,13 +1696,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRedemptionsRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/recipe-studio': {
-      id: '/admin/recipe-studio'
-      path: '/recipe-studio'
-      fullPath: '/admin/recipe-studio'
-      preLoaderRoute: typeof AdminRecipeStudioRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/plans': {
       id: '/admin/plans'
       path: '/plans'
@@ -2118,7 +2099,6 @@ interface AdminRouteChildren {
   AdminModelsRoute: typeof AdminModelsRoute
   AdminP1Route: typeof AdminP1Route
   AdminPlansRoute: typeof AdminPlansRoute
-  AdminRecipeStudioRoute: typeof AdminRecipeStudioRoute
   AdminRedemptionsRoute: typeof AdminRedemptionsRoute
   AdminSkillsRoute: typeof AdminSkillsRoute
   AdminSupplyRoute: typeof AdminSupplyRouteWithChildren
@@ -2135,7 +2115,6 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminModelsRoute: AdminModelsRoute,
   AdminP1Route: AdminP1Route,
   AdminPlansRoute: AdminPlansRoute,
-  AdminRecipeStudioRoute: AdminRecipeStudioRoute,
   AdminRedemptionsRoute: AdminRedemptionsRoute,
   AdminSkillsRoute: AdminSkillsRoute,
   AdminSupplyRoute: AdminSupplyRouteWithChildren,

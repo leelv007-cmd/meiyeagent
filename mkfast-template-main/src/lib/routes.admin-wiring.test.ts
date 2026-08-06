@@ -5,7 +5,8 @@ import { Routes } from './routes';
 test('Z2-WIRING batch B registers admin capabilities and cloudflare routes', () => {
   assert.equal(Routes.Admin, '/admin');
   assert.equal(Routes.AdminCapabilities, '/admin/capabilities');
-  assert.equal(Routes.AdminRecipeStudio, '/admin/recipe-studio');
+  // D3 / #375: standalone Recipe Studio route retired; Templates is the entry.
+  assert.equal('AdminRecipeStudio' in Routes, false);
   assert.equal(Routes.AdminSkills, '/admin/skills');
   assert.equal(Routes.AdminCloudflare, '/admin/cloudflare');
   // Existing seven admin leaves remain stable.

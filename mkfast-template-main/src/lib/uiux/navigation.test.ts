@@ -80,10 +80,16 @@ test('shared navigation labels resolve in the active locale at access time', () 
   assert.equal(BUSINESS_NAVIGATION[0].label, '创作');
   assert.equal(SETTINGS_SIDEBAR_ITEMS[0].label, '账户');
   assert.equal(ADMIN_SIDEBAR_ITEMS[0].label, '供给运行控制台');
+  // D3 / #375: Recipe Studio sidebar entry removed; Templates stays reachable.
+  const adminIds = ADMIN_SIDEBAR_ITEMS.map((item) => item.id as string);
+  const adminHrefs = ADMIN_SIDEBAR_ITEMS.map((item) => item.href as string);
+  assert.equal(adminIds.includes('recipe-studio'), false);
+  assert.equal(adminHrefs.includes('/admin/recipe-studio'), false);
+  assert.equal('AdminRecipeStudio' in Routes, false);
   assert.ok(
     ADMIN_SIDEBAR_ITEMS.some(
       (item) =>
-        item.href === Routes.AdminRecipeStudio && item.label === 'Recipe Studio'
+        item.href === Routes.AdminTemplates && item.id === 'templates'
     )
   );
   assert.ok(

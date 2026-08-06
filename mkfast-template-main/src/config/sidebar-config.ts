@@ -11,7 +11,6 @@ import {
   admin_navigation_model_catalog,
   admin_navigation_models,
   admin_navigation_plans,
-  admin_navigation_recipe_studio,
   admin_navigation_redemptions,
   admin_navigation_skills,
   admin_navigation_templates,
@@ -117,14 +116,6 @@ export const ADMIN_SIDEBAR_ITEMS = [
     },
     href: Routes.AdminCapabilities,
     icon: IconListDetails,
-  },
-  {
-    id: 'recipe-studio',
-    get label() {
-      return admin_navigation_recipe_studio();
-    },
-    href: Routes.AdminRecipeStudio,
-    icon: IconSparkles,
   },
   {
     id: 'skills',
@@ -239,8 +230,8 @@ function adminItem(id: (typeof ADMIN_SIDEBAR_ITEMS)[number]['id']) {
  * D2 (admin-config-audit 2026-08-06 §6): the sidebar groups the flat
  * ADMIN_SIDEBAR_ITEMS word list by the six capability-catalog L1 domains.
  * ADMIN_SIDEBAR_ITEMS stays the single source of truth for labels/hrefs;
- * groups only arrange it. recipe-studio stays listed until the D3
- * retirement ticket lands — the restyle wave removes no functionality.
+ * groups only arrange it. Recipe Studio sidebar entry retired by D3 / #375
+ * — Templates is the sole governed Recipe entry.
  */
 export const ADMIN_NAV_GROUPS: readonly AdminNavGroup[] = [
   {
@@ -262,11 +253,7 @@ export const ADMIN_NAV_GROUPS: readonly AdminNavGroup[] = [
     get label() {
       return admin_nav_group_content_assets();
     },
-    items: [
-      adminItem('templates'),
-      adminItem('skills'),
-      adminItem('recipe-studio'),
-    ],
+    items: [adminItem('templates'), adminItem('skills')],
   },
   {
     id: 'integrations',

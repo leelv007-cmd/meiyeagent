@@ -29,7 +29,6 @@ const ADMIN_ROUTES = [
   ['/admin/supply/views/model', '供应关联视图'],
   ['/admin/supply/tasks/task-does-not-exist', '供应任务详情'],
   ['/admin/capabilities', '能力目录'],
-  ['/admin/recipe-studio', 'Recipe Studio'],
   ['/admin/skills', 'Skills'],
   ['/admin/models', '模型资产与定价'],
   ['/admin/templates', '官方模板'],
