@@ -142,8 +142,6 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
           msg = admin_users_role_last_admin_error();
         } else if (err.code === 'REASON_REQUIRED') {
           msg = admin_users_role_reason_required();
-        } else if (err.message) {
-          msg = err.message;
         }
       }
       setRoleError(msg);
