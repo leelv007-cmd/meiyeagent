@@ -26,12 +26,16 @@ interface AdminConfigRow {
 
 interface RuntimeEffectiveSnapshotRow {
   booted_at: Date | string;
+  byok_fallback_reason: string | null;
+  byok_mode: string;
+  byok_source: RuntimeEffectiveSnapshot['byokSource'];
   execution_mode: string;
   execution_source: RuntimeEffectiveSnapshot['executionSource'];
   fallback_reason: string | null;
   media_mode: string;
   media_source: RuntimeEffectiveSnapshot['mediaSource'];
   process_kind: RuntimeEffectiveSnapshot['processKind'];
+  runtime_environment: RuntimeEffectiveSnapshot['runtimeEnvironment'];
 }
 
 function effectiveSnapshotFromRow(
@@ -42,12 +46,16 @@ function effectiveSnapshotFromRow(
       row.booted_at instanceof Date
         ? row.booted_at.toISOString()
         : new Date(row.booted_at).toISOString(),
+    byokFallbackReason: row.byok_fallback_reason,
+    byokMode: row.byok_mode,
+    byokSource: row.byok_source,
     executionMode: row.execution_mode,
     executionSource: row.execution_source,
     fallbackReason: row.fallback_reason,
     mediaMode: row.media_mode,
     mediaSource: row.media_source,
     processKind: row.process_kind,
+    runtimeEnvironment: row.runtime_environment,
   };
 }
 
@@ -114,8 +122,20 @@ export class PostgresAdminConfigRepository implements AdminConfigRepository {
         execution_source jsonb NOT NULL,
         media_source jsonb NOT NULL,
         fallback_reason text,
-        booted_at timestamptz NOT NULL
+        booted_at timestamptz NOT NULL,
+        runtime_environment jsonb NOT NULL DEFAULT '{"appEnv":"","modelExecutionMode":""}'::jsonb,
+        byok_mode text NOT NULL DEFAULT 'recorded',
+        byok_source jsonb NOT NULL DEFAULT '{"source":"env_fallback"}'::jsonb,
+        byok_fallback_reason text
       );
+      ALTER TABLE admin_config_effective_snapshots
+        ADD COLUMN IF NOT EXISTS runtime_environment jsonb NOT NULL DEFAULT '{"appEnv":"","modelExecutionMode":""}'::jsonb;
+      ALTER TABLE admin_config_effective_snapshots
+        ADD COLUMN IF NOT EXISTS byok_mode text NOT NULL DEFAULT 'recorded';
+      ALTER TABLE admin_config_effective_snapshots
+        ADD COLUMN IF NOT EXISTS byok_source jsonb NOT NULL DEFAULT '{"source":"env_fallback"}'::jsonb;
+      ALTER TABLE admin_config_effective_snapshots
+        ADD COLUMN IF NOT EXISTS byok_fallback_reason text;
     `);
   }
 
@@ -137,15 +157,25 @@ export class PostgresAdminConfigRepository implements AdminConfigRepository {
          execution_source,
          media_source,
          fallback_reason,
-         booted_at
-       ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6, $7)
+         booted_at,
+         runtime_environment,
+         byok_mode,
+         byok_source,
+         byok_fallback_reason
+       ) VALUES (
+         $1, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8::jsonb, $9, $10::jsonb, $11
+       )
        ON CONFLICT (process_kind) DO UPDATE SET
          execution_mode = EXCLUDED.execution_mode,
          media_mode = EXCLUDED.media_mode,
          execution_source = EXCLUDED.execution_source,
          media_source = EXCLUDED.media_source,
          fallback_reason = EXCLUDED.fallback_reason,
-         booted_at = EXCLUDED.booted_at
+         booted_at = EXCLUDED.booted_at,
+         runtime_environment = EXCLUDED.runtime_environment,
+         byok_mode = EXCLUDED.byok_mode,
+         byok_source = EXCLUDED.byok_source,
+         byok_fallback_reason = EXCLUDED.byok_fallback_reason
        RETURNING *`,
       [
         snapshot.processKind,
@@ -155,6 +185,10 @@ export class PostgresAdminConfigRepository implements AdminConfigRepository {
         JSON.stringify(snapshot.mediaSource),
         snapshot.fallbackReason,
         snapshot.bootedAt,
+        JSON.stringify(snapshot.runtimeEnvironment),
+        snapshot.byokMode,
+        JSON.stringify(snapshot.byokSource),
+        snapshot.byokFallbackReason,
       ],
     );
     return effectiveSnapshotFromRow(result.rows[0]!);

@@ -3,8 +3,11 @@ import {
   modelRuntimeAssemblyFromEnv,
 } from '../model-supply/runtime-config.js';
 import { P1DomainError } from '../foundation/domain.js';
-import type { AdminConfigRepository } from './foundation-module.js';
-import type { RuntimeProcessKind } from './foundation-module.js';
+import type {
+  AdminConfigRepository,
+  RuntimeEffectiveSource,
+  RuntimeProcessKind,
+} from './foundation-module.js';
 import type { ActivationEvidence } from '../model-supply/catalog.js';
 
 const GLOBAL_WORKSPACE_ID = '__global__';
@@ -31,9 +34,18 @@ export function runtimeModeValidatorsFromProviderCredentials(
   };
 }
 
-export type RuntimeConfigSource =
-  | { source: 'db_revision'; revision: number }
-  | { source: 'env_fallback'; revision?: never };
+export type RuntimeConfigSource = RuntimeEffectiveSource;
+
+function runtimeEnvironmentFromEnv(env: NodeJS.ProcessEnv) {
+  return {
+    appEnv: env.APP_ENV ?? '',
+    modelExecutionMode: env.MODEL_EXECUTION_MODE ?? '',
+  };
+}
+
+function byokModeFromEnv(env: NodeJS.ProcessEnv) {
+  return String(env.BYOK_EXECUTION_MODE ?? 'recorded');
+}
 
 export async function modelRuntimeAssemblyFromSources(
   repository: AdminConfigRepository,
@@ -134,14 +146,21 @@ export async function modelRuntimeAssemblyFromSources(
     for (const warning of result.assembly.warnings) {
       console.warn(`[model-runtime] ${warning.message}`);
     }
+    // Same boot assembly records the process environment pair and the actual
+    // BYOK source/mode so admin-config can label all three mode keys honestly.
+    const byok = await integrationAdapterEnvFromSources(repository, env);
     await repository.upsertEffectiveSnapshot({
       bootedAt: (options.clock?.() ?? new Date()).toISOString(),
+      byokFallbackReason: byok.byokFallbackReason,
+      byokMode: byok.byokMode,
+      byokSource: byok.byokSource,
       executionMode: result.assembly.runtime.mode,
       executionSource: result.sources.execution,
       fallbackReason: result.fallbackReason,
       mediaMode: modelMediaExecutionMode(result.assembly.runtime),
       mediaSource: result.sources.media,
       processKind: options.processKind,
+      runtimeEnvironment: runtimeEnvironmentFromEnv(env),
     });
   }
   return result;
@@ -152,9 +171,12 @@ export async function integrationAdapterEnvFromSources(
   env: NodeJS.ProcessEnv,
 ) {
   if (env.APP_ENV === 'e2e' && env.MODEL_EXECUTION_MODE === 'fixture') {
+    const forced = { ...env, BYOK_EXECUTION_MODE: 'recorded' };
     return {
-      env: { ...env, BYOK_EXECUTION_MODE: 'recorded' },
+      env: forced,
+      byokMode: byokModeFromEnv(forced),
       byokSource: { source: 'env_fallback' } as const,
+      byokFallbackReason: null as string | null,
     };
   }
   try {
@@ -163,18 +185,26 @@ export async function integrationAdapterEnvFromSources(
       GLOBAL_WORKSPACE_ID,
       'byok.adapter.assembly',
     );
+    const sourcedEnv = byok
+      ? { ...env, BYOK_EXECUTION_MODE: String(byok.value) }
+      : env;
     return {
-      env: byok
-        ? { ...env, BYOK_EXECUTION_MODE: String(byok.value) }
-        : env,
+      env: sourcedEnv,
+      byokMode: byokModeFromEnv(sourcedEnv),
       byokSource: byok
         ? ({ source: 'db_revision', revision: byok.revision } as const)
         : ({ source: 'env_fallback' } as const),
+      byokFallbackReason: null as string | null,
     };
-  } catch {
+  } catch (error) {
     return {
       env,
+      byokMode: byokModeFromEnv(env),
       byokSource: { source: 'env_fallback' } as const,
+      byokFallbackReason:
+        error instanceof Error
+          ? error.message
+          : 'Config repository is unavailable.',
     };
   }
 }

@@ -43,11 +43,13 @@ import {
   admin_runtime_config_apply_scope,
   admin_runtime_config_apply_success,
   admin_runtime_config_apply_title,
+  admin_runtime_config_booted_at,
   admin_runtime_config_correlation,
   admin_runtime_config_current_effective,
   admin_runtime_config_edit_description,
   admin_runtime_config_edit_title,
   admin_runtime_config_effective,
+  admin_runtime_config_fixture_skip_notice,
   admin_runtime_config_history,
   admin_runtime_config_history_empty,
   admin_runtime_config_hot_read_description,
@@ -73,6 +75,8 @@ import {
   admin_runtime_config_rollback_success,
   admin_runtime_config_rollback_title,
   admin_runtime_config_save,
+  admin_runtime_config_source_db_revision,
+  admin_runtime_config_source_env_fallback,
   admin_runtime_config_status_applied,
   admin_runtime_config_status_rolled_back,
   admin_runtime_config_stored,
@@ -111,6 +115,10 @@ interface AdminConfigItem {
     effectiveValue: unknown;
     fallbackReason: string | null;
     processKind: 'http' | 'job-worker';
+    runtimeEnvironment?: {
+      appEnv: string;
+      modelExecutionMode: string;
+    };
     source:
       | { source: 'db_revision'; revision: number }
       | { source: 'env_fallback' };
@@ -260,6 +268,33 @@ function processLabel(processKind: 'http' | 'job-worker') {
   return processKind === 'http'
     ? admin_runtime_config_process_http()
     : admin_runtime_config_process_worker();
+}
+
+function sourceLabel(
+  source:
+    | { source: 'db_revision'; revision: number }
+    | { source: 'env_fallback' }
+) {
+  return source.source === 'db_revision'
+    ? admin_runtime_config_source_db_revision({
+        revision: String(source.revision),
+      })
+    : admin_runtime_config_source_env_fallback();
+}
+
+/**
+ * Fixture-boot honesty label: only when this process is e2e+fixture AND the
+ * key's effective source is env fallback. Explicit development+recorded boots
+ * still read stored values and must not show this tip.
+ */
+function showsFixtureSkipNotice(
+  snapshot: NonNullable<AdminConfigItem['effectiveSnapshots']>[number]
+) {
+  return (
+    snapshot.runtimeEnvironment?.appEnv === 'e2e' &&
+    snapshot.runtimeEnvironment.modelExecutionMode === 'fixture' &&
+    snapshot.source.source === 'env_fallback'
+  );
 }
 
 /**
@@ -542,34 +577,53 @@ export function AdminRuntimeConfigControl({
                       <div className="flex flex-col items-start gap-1 font-sans">
                         {item.effectiveSnapshots.map((snapshot) => (
                           <div
-                            className="flex flex-wrap items-center gap-1"
+                            className="flex flex-col items-start gap-1"
+                            data-testid={`admin-runtime-snapshot-${snapshot.processKind}`}
                             key={snapshot.processKind}
                           >
-                            <Badge variant="outline">
-                              {processLabel(snapshot.processKind)}
-                            </Badge>
-                            <span className="font-mono">
-                              {displayValue(snapshot.effectiveValue)}
-                            </span>
-                            <Badge
-                              variant={
-                                runtimeSnapshotStatus(
+                            <div className="flex flex-wrap items-center gap-1">
+                              <Badge variant="outline">
+                                {processLabel(snapshot.processKind)}
+                              </Badge>
+                              <span className="font-mono">
+                                {displayValue(snapshot.effectiveValue)}
+                              </span>
+                              <Badge variant="secondary">
+                                {sourceLabel(snapshot.source)}
+                              </Badge>
+                              <Badge
+                                variant={
+                                  runtimeSnapshotStatus(
+                                    item.storedValue,
+                                    snapshot.effectiveValue
+                                  ) === 'current'
+                                    ? 'success-light'
+                                    : 'warning-light'
+                                }
+                              >
+                                {runtimeSnapshotStatus(
                                   item.storedValue,
                                   snapshot.effectiveValue
                                 ) === 'current'
-                                  ? 'success-light'
-                                  : 'warning-light'
-                              }
-                            >
-                              {runtimeSnapshotStatus(
-                                item.storedValue,
-                                snapshot.effectiveValue
-                              ) === 'current'
-                                ? admin_runtime_config_current_effective()
-                                : admin_runtime_config_restart_pending()}
-                            </Badge>
+                                  ? admin_runtime_config_current_effective()
+                                  : admin_runtime_config_restart_pending()}
+                              </Badge>
+                            </div>
+                            <span className="text-muted-foreground text-xs">
+                              {admin_runtime_config_booted_at({
+                                time: displayTime(snapshot.bootedAt),
+                              })}
+                            </span>
+                            {showsFixtureSkipNotice(snapshot) ? (
+                              <Badge
+                                data-testid="admin-runtime-fixture-skip-notice"
+                                variant="warning-light"
+                              >
+                                {admin_runtime_config_fixture_skip_notice()}
+                              </Badge>
+                            ) : null}
                             {snapshot.fallbackReason ? (
-                              <span className="whitespace-normal text-destructive">
+                              <span className="whitespace-normal text-destructive text-xs">
                                 {snapshot.fallbackReason}
                               </span>
                             ) : null}

@@ -149,7 +149,9 @@ test('adapter assembly uses the stored BYOK mode while Douyin remains recorded-o
   });
 
   assert.equal(result.env.BYOK_EXECUTION_MODE, 'live');
+  assert.equal(result.byokMode, 'live');
   assert.deepEqual(result.byokSource, { source: 'db_revision', revision: 1 });
+  assert.equal(result.byokFallbackReason, null);
 });
 
 test('records independent HTTP and worker effective runtime snapshots', async () => {
@@ -191,21 +193,170 @@ test('records independent HTTP and worker effective runtime snapshots', async ()
   assert.deepEqual(await repository.listEffectiveSnapshots(), [
     {
       bootedAt: '2026-07-15T10:00:00.000Z',
+      byokFallbackReason: null,
+      byokMode: 'recorded',
+      byokSource: { source: 'env_fallback' },
       executionMode: 'recorded',
       executionSource: { source: 'db_revision', revision: 1 },
       fallbackReason: null,
       mediaMode: 'disabled',
       mediaSource: { source: 'env_fallback' },
       processKind: 'http',
+      runtimeEnvironment: {
+        appEnv: 'development',
+        modelExecutionMode: 'disabled',
+      },
     },
     {
       bootedAt: '2026-07-15T10:01:00.000Z',
+      byokFallbackReason: null,
+      byokMode: 'recorded',
+      byokSource: { source: 'env_fallback' },
       executionMode: 'disabled',
       executionSource: { source: 'db_revision', revision: 2 },
       fallbackReason: null,
       mediaMode: 'disabled',
       mediaSource: { source: 'env_fallback' },
       processKind: 'job-worker',
+      runtimeEnvironment: {
+        appEnv: 'development',
+        modelExecutionMode: 'recorded',
+      },
     },
   ]);
+});
+
+test('default runtime-profile e2e+fixture snapshot labels env fallback and process environment', async () => {
+  const repository = new MemoryAdminConfigRepository();
+  await repository.apply({
+    ...globalConfig,
+    key: 'model.execution.mode',
+    value: 'recorded',
+    expectedRevision: null,
+  });
+  await repository.apply({
+    ...globalConfig,
+    key: 'byok.adapter.assembly',
+    value: 'live',
+    expectedRevision: null,
+  });
+
+  await modelRuntimeAssemblyFromSources(
+    repository,
+    {
+      APP_ENV: 'e2e',
+      BYOK_EXECUTION_MODE: 'recorded',
+      MODEL_EXECUTION_MODE: 'fixture',
+      MODEL_MEDIA_EXECUTION_MODE: 'disabled',
+    },
+    { processKind: 'http', clock: () => new Date('2026-08-06T12:00:00.000Z') },
+  );
+
+  assert.deepEqual(await repository.listEffectiveSnapshots(), [
+    {
+      bootedAt: '2026-08-06T12:00:00.000Z',
+      byokFallbackReason: null,
+      byokMode: 'recorded',
+      byokSource: { source: 'env_fallback' },
+      executionMode: 'fixture',
+      executionSource: { source: 'env_fallback' },
+      fallbackReason: null,
+      mediaMode: 'fixture',
+      mediaSource: { source: 'env_fallback' },
+      processKind: 'http',
+      runtimeEnvironment: {
+        appEnv: 'e2e',
+        modelExecutionMode: 'fixture',
+      },
+    },
+  ]);
+});
+
+test('explicit development+recorded snapshot reads stored modes and records the process environment', async () => {
+  const repository = new MemoryAdminConfigRepository();
+  await repository.apply({
+    ...globalConfig,
+    key: 'model.execution.mode',
+    value: 'recorded',
+    expectedRevision: null,
+  });
+  await repository.apply({
+    ...globalConfig,
+    key: 'model.media.execution.mode',
+    value: 'disabled',
+    expectedRevision: null,
+  });
+  await repository.apply({
+    ...globalConfig,
+    key: 'byok.adapter.assembly',
+    value: 'recorded',
+    expectedRevision: null,
+  });
+
+  await modelRuntimeAssemblyFromSources(
+    repository,
+    {
+      APP_ENV: 'development',
+      BYOK_EXECUTION_MODE: 'recorded',
+      MODEL_EXECUTION_MODE: 'recorded',
+      MODEL_MEDIA_EXECUTION_MODE: 'disabled',
+    },
+    {
+      processKind: 'job-worker',
+      clock: () => new Date('2026-08-06T12:30:00.000Z'),
+    },
+  );
+
+  assert.deepEqual(await repository.listEffectiveSnapshots(), [
+    {
+      bootedAt: '2026-08-06T12:30:00.000Z',
+      byokFallbackReason: null,
+      byokMode: 'recorded',
+      byokSource: { source: 'db_revision', revision: 1 },
+      executionMode: 'recorded',
+      executionSource: { source: 'db_revision', revision: 1 },
+      fallbackReason: null,
+      mediaMode: 'disabled',
+      mediaSource: { source: 'db_revision', revision: 1 },
+      processKind: 'job-worker',
+      runtimeEnvironment: {
+        appEnv: 'development',
+        modelExecutionMode: 'recorded',
+      },
+    },
+  ]);
+});
+
+test('BYOK snapshot records source and fallback reason when the config repository fails', async () => {
+  const repository = new MemoryAdminConfigRepository();
+  const originalGet = repository.get.bind(repository);
+  repository.get = async (...args) => {
+    if (args[2] === 'byok.adapter.assembly') {
+      throw new Error('BYOK config repository is unavailable.');
+    }
+    return originalGet(...args);
+  };
+
+  await modelRuntimeAssemblyFromSources(
+    repository,
+    {
+      APP_ENV: 'development',
+      BYOK_EXECUTION_MODE: 'recorded',
+      MODEL_EXECUTION_MODE: 'recorded',
+      MODEL_MEDIA_EXECUTION_MODE: 'disabled',
+    },
+    { processKind: 'http', clock: () => new Date('2026-08-06T13:00:00.000Z') },
+  );
+
+  const [snapshot] = await repository.listEffectiveSnapshots();
+  assert.equal(snapshot?.byokMode, 'recorded');
+  assert.deepEqual(snapshot?.byokSource, { source: 'env_fallback' });
+  assert.equal(
+    snapshot?.byokFallbackReason,
+    'BYOK config repository is unavailable.',
+  );
+  assert.deepEqual(snapshot?.runtimeEnvironment, {
+    appEnv: 'development',
+    modelExecutionMode: 'recorded',
+  });
 });

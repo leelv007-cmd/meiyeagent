@@ -129,6 +129,10 @@ test('shows HTTP and worker effective runtime states independently', () => {
           effectiveValue: 'recorded',
           fallbackReason: null,
           processKind: 'http',
+          runtimeEnvironment: {
+            appEnv: 'development',
+            modelExecutionMode: 'recorded',
+          },
           source: { source: 'db_revision', revision: 1 },
         },
         {
@@ -136,6 +140,10 @@ test('shows HTTP and worker effective runtime states independently', () => {
           effectiveValue: 'direct',
           fallbackReason: null,
           processKind: 'job-worker',
+          runtimeEnvironment: {
+            appEnv: 'development',
+            modelExecutionMode: 'recorded',
+          },
           source: { source: 'db_revision', revision: 2 },
         },
       ],
@@ -165,8 +173,147 @@ test('shows HTTP and worker effective runtime states independently', () => {
 
   assert.match(html, /HTTP 进程/);
   assert.match(html, /任务进程/);
+  assert.match(html, /来源：落库版本 1/);
+  assert.match(html, /来源：落库版本 2/);
+  assert.match(html, /开机时间：/);
   assert.match(html, /已保存，重启后生效/);
   assert.match(html, /当前生效配置/);
+  assert.doesNotMatch(html, /当前环境开机不读落库值/);
+});
+
+test('shows fixture skip notice only for e2e+fixture env-fallback boots', () => {
+  const fixtureSnapshots = [
+    {
+      bootedAt: '2026-08-06T12:00:00.000Z',
+      effectiveValue: 'fixture',
+      fallbackReason: null,
+      processKind: 'http' as const,
+      runtimeEnvironment: {
+        appEnv: 'e2e',
+        modelExecutionMode: 'fixture',
+      },
+      source: { source: 'env_fallback' as const },
+    },
+  ];
+  const developmentSnapshots = [
+    {
+      bootedAt: '2026-08-06T12:30:00.000Z',
+      effectiveValue: 'recorded',
+      fallbackReason: null,
+      processKind: 'http' as const,
+      runtimeEnvironment: {
+        appEnv: 'development',
+        modelExecutionMode: 'recorded',
+      },
+      source: { source: 'db_revision' as const, revision: 1 },
+    },
+  ];
+
+  const renderFor = (
+    key: string,
+    snapshots: typeof fixtureSnapshots | typeof developmentSnapshots,
+    effectiveValue: string,
+    storedValue: string
+  ) => {
+    const queryClient = new QueryClient();
+    queryClient.setQueryData(
+      p1QueryKeys.request('admin-config', 'config_list'),
+      [
+        {
+          activationEvidenceStatus: 'recorded_only',
+          actorId: 'platform-admin',
+          correlationId: `fixture-label-${key}`,
+          createdAt: '2026-08-06T12:00:00.000Z',
+          effectiveSnapshots: snapshots,
+          effectiveValue,
+          key,
+          reason: 'label honesty',
+          revision: 1,
+          rolledBackToRevision: null,
+          scope: 'global',
+          status: 'applied',
+          storedValue,
+          wired: true,
+        },
+      ]
+    );
+    queryClient.setQueryData(
+      p1QueryKeys.request('admin-config', 'config_history', { key }),
+      []
+    );
+    return renderToStaticMarkup(
+      <QueryClientProvider client={queryClient}>
+        <AdminRuntimeConfigControl keys={[key]} />
+      </QueryClientProvider>
+    );
+  };
+
+  for (const key of [
+    'model.execution.mode',
+    'model.media.execution.mode',
+    'byok.adapter.assembly',
+  ]) {
+    const fixtureHtml = renderFor(
+      key,
+      key === 'byok.adapter.assembly'
+        ? [
+            {
+              ...fixtureSnapshots[0]!,
+              effectiveValue: 'recorded',
+            },
+          ]
+        : key === 'model.media.execution.mode'
+          ? [
+              {
+                ...fixtureSnapshots[0]!,
+                effectiveValue: 'disabled',
+              },
+            ]
+          : fixtureSnapshots,
+      key === 'byok.adapter.assembly'
+        ? 'recorded'
+        : key === 'model.media.execution.mode'
+          ? 'disabled'
+          : 'fixture',
+      key === 'byok.adapter.assembly'
+        ? 'live'
+        : key === 'model.media.execution.mode'
+          ? 'disabled'
+          : 'recorded'
+    );
+    assert.match(fixtureHtml, /当前环境开机不读落库值/);
+    assert.match(fixtureHtml, /HTTP 进程/);
+    assert.match(fixtureHtml, /来源：环境变量回退/);
+    assert.match(
+      fixtureHtml,
+      new RegExp(
+        key === 'byok.adapter.assembly'
+          ? 'recorded'
+          : key === 'model.media.execution.mode'
+            ? 'disabled'
+            : 'fixture'
+      )
+    );
+    assert.match(fixtureHtml, /开机时间：/);
+
+    const developmentHtml = renderFor(
+      key,
+      key === 'byok.adapter.assembly'
+        ? developmentSnapshots
+        : key === 'model.media.execution.mode'
+          ? [
+              {
+                ...developmentSnapshots[0]!,
+                effectiveValue: 'disabled',
+              },
+            ]
+          : developmentSnapshots,
+      key === 'model.media.execution.mode' ? 'disabled' : 'recorded',
+      key === 'model.media.execution.mode' ? 'disabled' : 'recorded'
+    );
+    assert.doesNotMatch(developmentHtml, /当前环境开机不读落库值/);
+    assert.match(developmentHtml, /来源：落库版本 1/);
+  }
 });
 
 test('shows dedicated selectable controls for model and media execution modes', () => {

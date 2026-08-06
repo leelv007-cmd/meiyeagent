@@ -76,18 +76,27 @@ export interface RollbackConfigInput {
 
 export type RuntimeProcessKind = 'http' | 'job-worker';
 
+export type RuntimeEffectiveSource =
+  | { source: 'db_revision'; revision: number }
+  | { source: 'env_fallback' };
+
+export interface RuntimeEnvironmentPair {
+  appEnv: string;
+  modelExecutionMode: string;
+}
+
 export interface RuntimeEffectiveSnapshot {
   bootedAt: string;
+  byokFallbackReason: string | null;
+  byokMode: string;
+  byokSource: RuntimeEffectiveSource;
   executionMode: string;
-  executionSource:
-    | { source: 'db_revision'; revision: number }
-    | { source: 'env_fallback' };
+  executionSource: RuntimeEffectiveSource;
   fallbackReason: string | null;
   mediaMode: string;
-  mediaSource:
-    | { source: 'db_revision'; revision: number }
-    | { source: 'env_fallback' };
+  mediaSource: RuntimeEffectiveSource;
   processKind: RuntimeProcessKind;
+  runtimeEnvironment: RuntimeEnvironmentPair;
 }
 
 export interface AdminConfigRepository {
@@ -985,22 +994,33 @@ export class AdminConfigFoundationModule implements P1OperationModule {
   ) {
     const runtimeSnapshots = effectiveSnapshots
       .map((snapshot) => {
+        const base = {
+          bootedAt: snapshot.bootedAt,
+          processKind: snapshot.processKind,
+          runtimeEnvironment: snapshot.runtimeEnvironment,
+        };
         if (definition.key === 'model.execution.mode') {
           return {
-            bootedAt: snapshot.bootedAt,
+            ...base,
             effectiveValue: snapshot.executionMode,
             fallbackReason: snapshot.fallbackReason,
-            processKind: snapshot.processKind,
             source: snapshot.executionSource,
           };
         }
         if (definition.key === 'model.media.execution.mode') {
           return {
-            bootedAt: snapshot.bootedAt,
+            ...base,
             effectiveValue: snapshot.mediaMode,
             fallbackReason: snapshot.fallbackReason,
-            processKind: snapshot.processKind,
             source: snapshot.mediaSource,
+          };
+        }
+        if (definition.key === 'byok.adapter.assembly') {
+          return {
+            ...base,
+            effectiveValue: snapshot.byokMode,
+            fallbackReason: snapshot.byokFallbackReason,
+            source: snapshot.byokSource,
           };
         }
         return null;

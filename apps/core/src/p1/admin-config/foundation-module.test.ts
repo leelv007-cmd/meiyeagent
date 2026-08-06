@@ -505,27 +505,44 @@ describe('Admin config application seam', () => {
     });
     await repository.upsertEffectiveSnapshot({
       bootedAt: '2026-07-15T10:00:00.000Z',
+      byokFallbackReason: null,
+      byokMode: 'recorded',
+      byokSource: { source: 'env_fallback' },
       executionMode: 'recorded',
       executionSource: { source: 'db_revision', revision: 1 },
       fallbackReason: null,
       mediaMode: 'disabled',
       mediaSource: { source: 'env_fallback' },
       processKind: 'http',
+      runtimeEnvironment: {
+        appEnv: 'development',
+        modelExecutionMode: 'recorded',
+      },
     });
     await repository.upsertEffectiveSnapshot({
       bootedAt: '2026-07-15T10:01:00.000Z',
+      byokFallbackReason: null,
+      byokMode: 'recorded',
+      byokSource: { source: 'env_fallback' },
       executionMode: 'disabled',
       executionSource: { source: 'db_revision', revision: 2 },
       fallbackReason: null,
       mediaMode: 'disabled',
       mediaSource: { source: 'env_fallback' },
       processKind: 'job-worker',
+      runtimeEnvironment: {
+        appEnv: 'development',
+        modelExecutionMode: 'recorded',
+      },
     });
     const service = new P1ApplicationService(new MemoryFoundationRepository(), {
       operations: [
         new AdminConfigFoundationModule(repository, {
-          runtime: { 'model.execution.mode': 'recorded' },
-          wiredKeys: ['model.execution.mode'],
+          runtime: {
+            'byok.adapter.assembly': 'recorded',
+            'model.execution.mode': 'recorded',
+          },
+          wiredKeys: ['byok.adapter.assembly', 'model.execution.mode'],
         }),
       ],
     });
@@ -544,6 +561,10 @@ describe('Admin config application seam', () => {
         effectiveValue: 'recorded',
         fallbackReason: null,
         processKind: 'http',
+        runtimeEnvironment: {
+          appEnv: 'development',
+          modelExecutionMode: 'recorded',
+        },
         source: { source: 'db_revision', revision: 1 },
       },
       {
@@ -551,7 +572,43 @@ describe('Admin config application seam', () => {
         effectiveValue: 'disabled',
         fallbackReason: null,
         processKind: 'job-worker',
+        runtimeEnvironment: {
+          appEnv: 'development',
+          modelExecutionMode: 'recorded',
+        },
         source: { source: 'db_revision', revision: 2 },
+      },
+    ]);
+
+    const byokProjected = await service.queryModule<
+      Record<string, unknown>,
+      { effectiveSnapshots: Array<Record<string, unknown>> }
+    >(context, 'admin-config', {
+      action: 'config_get',
+      payload: { key: 'byok.adapter.assembly' },
+    });
+    assert.deepEqual(byokProjected.effectiveSnapshots, [
+      {
+        bootedAt: '2026-07-15T10:00:00.000Z',
+        effectiveValue: 'recorded',
+        fallbackReason: null,
+        processKind: 'http',
+        runtimeEnvironment: {
+          appEnv: 'development',
+          modelExecutionMode: 'recorded',
+        },
+        source: { source: 'env_fallback' },
+      },
+      {
+        bootedAt: '2026-07-15T10:01:00.000Z',
+        effectiveValue: 'recorded',
+        fallbackReason: null,
+        processKind: 'job-worker',
+        runtimeEnvironment: {
+          appEnv: 'development',
+          modelExecutionMode: 'recorded',
+        },
+        source: { source: 'env_fallback' },
       },
     ]);
   });
