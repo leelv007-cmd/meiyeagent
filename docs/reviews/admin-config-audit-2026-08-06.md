@@ -77,7 +77,7 @@ dev 档提示：`scripts/dev/runtime-profile.mjs` 对未显式设置的键填默
 - **治理白名单硬编码 `['workflow.copy@1']`**（`admin-skills-control.tsx:334`），而实际配方跑 workflow.image_text@1 / workflow.video.15s@1 等——**从后台新建的 Skill 绑到非文案类配方会静默落空、零报错**。这是「表单成功、生成链无变化」的最可能根因。
 - user_selected 模式恒空转（userSelectedSkillRefs 全仓无生产者，`service.ts:1351`）= 隐性 disabled。
 - 「切换 Published」仅落库不驱动生成链（生成读 bindings 不读 activeRevisionRef）。
-- presentationPolicy、skill_deployment 仅落库不消费；expectedPublicationGeneration 乐观锁声明了但从不渲染。
+- skill_deployment 仅落库不消费；expectedPublicationGeneration 乐观锁声明了但从不渲染。presentationPolicy **在绑定期已被消费**（`apps/core/src/p1/skills/service.ts:1113-1118`：非 `user_selectable` 的 Skill 不允许绑为 `user_selected`），缺的是商家侧的展示/可选消费端——原文「仅落库不消费」不准确，2026-08-06 交叉复核更正。
 - 「绑定阶段」的工作流版本是自由文本，无下拉无校验无联查（`:226`）。
 
 ### 2.6 /admin/recipe-studio 配方工作室 —— 全后台完成度最低
@@ -192,18 +192,22 @@ admin-config 走通用 P1 双端点（`POST /v1/workspaces/:id/p1/commands|query
 
 ### 4.5 权限守卫（机制记录）
 
-服务端 adminRouteMiddleware 判 role（`admin-middleware.ts:18-38`）；客户端壳只查 session 不查 role 且 /admin 是 ssr:false；数据层由 BFF 按 session 下发 x-core-actor 由 Core 裁决；关键写入有 recentAdmin step-up。**跨页安全缺口（P0）**：`/api/core/p1/*` 代理读路径不校验管理员——`workspace-core-authorization.ts:21-27` 只要求 session+emailVerified，且 config_get/list/history 在免二次认证名单（`recent-authentication.ts:40-42`），**任何已验证邮箱的普通商家可直接读全部平台配置（含定价与支付映射）**。写路径靠 Core capability 兜底，读路径在 shell 层 fail-open。
+服务端 adminRouteMiddleware 判 role（`admin-middleware.ts:18-38`）；客户端壳只查 session 不查 role 且 /admin 是 ssr:false；数据层由 BFF 按 session 下发 x-core-actor 由 Core 裁决；关键写入有 recentAdmin step-up。
+
+**纵深防御缺口（原判 P0，2026-08-06 交叉复核后更正为 P2）**：`/api/core/p1/*` 代理的读路径在 shell 层不判管理员——`workspace-core-authorization.ts:8-28` 只要求 session+emailVerified，且 config_get/list/history 在免二次认证名单（`recent-authentication.ts:40-42`）。
+
+> **更正说明**：本条初判为「任何已验证邮箱的普通商家可直接读全部平台配置」，该结论**经代码核验不成立**，属误报。BFF 并不允许商家冒充管理员——`core-client.ts:155-165` 用 `normalizeProductRole` 从 session 推导角色，商家只会拿到自己的工作区角色，`x-core-actor` 恒为 `user`；Core 侧 `config_get/list/history` 一律要求 `config.publish`（`packages/contracts/src/capability-permission.ts:485-500`），而该能力只在 admin 的能力集里（同文件 `:49-82`，`firstBatchAdminCapabilities` 仅授予 admin）。Core 自己的测试已钉死这一点：owner 调 `config_get` 返回 `allow:false / capability_denied`（`apps/core/src/p1/capability-permission/authorizer.test.ts:271-297`）。**因此不存在可利用的越权读路径**；真实缺口只是「shell 层没有独立的管理员门，纵深防御只剩 Core 一层」，属加固项而非安全漏洞。
 
 ---
 
 ## 五、修复优先级汇总
 
-> 2026-08-06 追记：本清单中带决策性质的条目已由 §六 的 D1–D9 拍板收敛，开票时以 §六 为准；本节保留审计原貌。
+> 2026-08-06 追记：本清单中带决策性质的条目已由 §六 的 D1–D9 拍板收敛，开票时以 §六 为准；本节保留审计原貌，另见 §七 交叉复核更正。
 
 **P0（安全/静默数据丢失）**
-1. p1 代理读路径 fail-open，普通商家可读全部平台配置（§4.5）。
+1. ~~p1 代理读路径 fail-open，普通商家可读全部平台配置（§4.5）。~~ **误报，已降级为 P2 加固项——见 §4.5 更正说明与 §七。**
 2. Surface toolEntryRefs 硬编码 `[]`，每存草稿静默抹掉工具区编排（§2.7）。
-3. Skill 治理白名单写死 workflow.copy@1，非文案类 Skill 静默失效（§2.5）。
+3. Skill 治理白名单写死 workflow.copy@1，非文案类 Skill 静默失效（§2.5）。**机制更正**：`skill_bind` 命令本身接受任意非空工作流（`apps/core/src/p1/skills/service.ts:1097-1138` 只做非空校验），静默发生在运行时——`selectStageRevisions` 按治理白名单筛选时该绑定不被选中（同文件 `:1340-1354`）。修复点在治理元数据与运行时筛选，不在 bind 命令的入参校验。
 4. 封禁后 cookie cache 1 小时执行窗口（§2.8）。
 
 **P1（运营会踩的断链/错标）**
@@ -219,7 +223,8 @@ admin-config 走通用 P1 双端点（`POST /v1/workspaces/:id/p1/commands|query
 12. audit 页拆出退款复核；templates 页拆出敏感词。
 13. 审计筛选/导出（缺失）；运行表 q/模型/任务过滤补 UI。
 14. Catalog capabilities/routes 死字段与统计 chip 清理；models 页 revision activity 接真查询。
-15. 后台无 setRole 入口造不出第二个管理员；兑换码惰性过期改定时任务；CREDIT_PLAN_CONFIG_KEYS 三副本收敛；Cloudflare deep-link 接上或撤区块；stop_new_tasks vs isolate 语义裁决；WIRING-DIFF.md 两份过时文档删除或重写；recipe-studio 违反 D-048 裁决。
+15. 后台无 setRole 入口造不出第二个管理员；兑换码惰性过期改定时任务；CREDIT_PLAN_CONFIG_KEYS 三副本收敛；Cloudflare deep-link 接上或撤区块；stop_new_tasks vs isolate 语义裁决；WIRING-DIFF.md **三份**（capability/cloudflare/supply 各一，原文误记两份）过时文档删除或重写；recipe-studio 违反 D-048 裁决。
+16. （新增）p1 代理读路径补 shell 层管理员门（纵深防御，原 P0 降级）。
 
 ---
 
