@@ -1,4 +1,7 @@
-import type { AuthSession, AuthSessionGetter } from '@/auth/recent-admin-session';
+import type {
+  AuthSession,
+  AuthSessionGetter,
+} from '@/auth/recent-admin-session';
 import {
   authorizeAdminConfigProxyRequest,
   observeAdminConfigProxyDenied,
@@ -6,10 +9,7 @@ import {
   type AuthorizeAdminConfigProxyRequestInput,
   type AdminConfigProxyAuthorizationResult,
 } from '@/lib/admin-config-proxy-authorization';
-import {
-  CoreRequestBoundaryError,
-  readRequestText,
-} from '@/lib/core-request';
+import { CoreRequestBoundaryError, readRequestText } from '@/lib/core-request';
 import { authorizeWorkspaceCoreRequest } from '@/lib/workspace-core-authorization';
 
 export type P1ModuleProxyResource = 'p1/commands' | 'p1/query';
@@ -32,14 +32,8 @@ export type P1ModuleProxyHandlerDeps = {
   observeDenied: (observation: AdminConfigProxyDeniedObservation) => void;
 };
 
-export type CreateP1ModuleProxyPostHandlerOptions = Partial<P1ModuleProxyHandlerDeps>;
-
-async function defaultGetSession(
-  options: Parameters<AuthSessionGetter>[0]
-): Promise<AuthSession | null> {
-  const { createAuth } = await import('@/auth/auth');
-  return createAuth().api.getSession(options) as Promise<AuthSession | null>;
-}
+export type CreateP1ModuleProxyPostHandlerOptions =
+  Partial<P1ModuleProxyHandlerDeps>;
 
 async function defaultForwardUpstream(input: {
   request: Request;
@@ -71,12 +65,14 @@ function coreRequestBoundaryResponse(error: unknown) {
  * Real POST handler factory for `/api/core/p1/commands` and `/api/core/p1/query`.
  * Session getter, admin-config action authorizer, and Core upstream are injectable
  * so route-level harness tests can call the same handler code path.
+ *
+ * Production (no getSession override) uses requireActiveSession via
+ * authorizeWorkspaceCoreRequest so cookie-cache hits cannot outlive ban/revoke.
  */
 export function createP1ModuleProxyPostHandler(
   resource: P1ModuleProxyResource,
   options: CreateP1ModuleProxyPostHandlerOptions = {}
 ) {
-  const getSession = options.getSession ?? defaultGetSession;
   const authorizeAdminConfig =
     options.authorizeAdminConfig ?? authorizeAdminConfigProxyRequest;
   const forwardUpstream = options.forwardUpstream ?? defaultForwardUpstream;
@@ -95,7 +91,7 @@ export function createP1ModuleProxyPostHandler(
       request,
       resource,
       body,
-      getSession
+      options.getSession
     );
     if (!authorization.ok) return authorization.response;
 

@@ -1,4 +1,4 @@
-import { createAuth } from '@/auth/auth';
+import { requireActiveSession } from '@/auth/active-session';
 import { redirect } from '@tanstack/react-router';
 import { createMiddleware } from '@tanstack/react-start';
 import { getRequestHeaders } from '@tanstack/react-start/server';
@@ -22,13 +22,13 @@ export const authRouteMiddleware = createMiddleware().server(
     }
 
     const headers = getRequestHeaders();
-    const session = await createAuth().api.getSession({ headers });
+    const active = await requireActiveSession({ headers });
 
-    if (!session?.user) {
+    if (!active.ok) {
       throw redirect({ to: Routes.Login });
     }
 
-    if (!session.user.emailVerified) {
+    if (!active.session.user.emailVerified) {
       throw redirect({
         to: Routes.Login,
         search: { error: 'email_not_verified' },
@@ -45,23 +45,20 @@ export const authRouteMiddleware = createMiddleware().server(
  */
 export const authApiMiddleware = createMiddleware().server(async ({ next }) => {
   const headers = getRequestHeaders();
-  const session = await createAuth().api.getSession({ headers });
+  const active = await requireActiveSession({ headers });
 
-  if (!session?.user) {
-    return Response.json(
-      { error: 'Unauthorized' },
-      { status: 401, headers: { 'Content-Type': 'application/json' } }
-    );
+  if (!active.ok) {
+    return active.response;
   }
 
-  if (!session.user.emailVerified) {
+  if (!active.session.user.emailVerified) {
     return Response.json(
       { error: 'Email not verified', code: 'email_not_verified' },
       { status: 403, headers: { 'Content-Type': 'application/json' } }
     );
   }
 
-  return await next({ context: { userId: session.user.id } });
+  return await next({ context: { userId: active.session.user.id } });
 });
 
 /**
@@ -71,27 +68,27 @@ export const authApiMiddleware = createMiddleware().server(async ({ next }) => {
 export const recentAuthApiMiddleware = createMiddleware().server(
   async ({ next }) => {
     const headers = getRequestHeaders();
-    const session = await createAuth().api.getSession({
+    const active = await requireActiveSession({
       headers,
       query: { disableCookieCache: true, disableRefresh: true },
     });
 
-    if (!session?.user) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 });
+    if (!active.ok) {
+      return active.response;
     }
-    if (!session.user.emailVerified) {
+    if (!active.session.user.emailVerified) {
       return Response.json(
         { error: 'Email not verified', code: 'email_not_verified' },
         { status: 403 }
       );
     }
     try {
-      requireRecentAuthentication(session.session);
+      requireRecentAuthentication(active.session.session);
     } catch (error) {
       if (!(error instanceof RecentAuthenticationRequiredError)) throw error;
       return recentAuthenticationRequiredResponse();
     }
 
-    return await next({ context: { userId: session.user.id } });
+    return await next({ context: { userId: active.session.user.id } });
   }
 );

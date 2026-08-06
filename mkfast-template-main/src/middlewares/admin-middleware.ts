@@ -1,4 +1,4 @@
-import { createAuth } from '@/auth/auth';
+import { requireActiveSession } from '@/auth/active-session';
 import { redirect } from '@tanstack/react-router';
 import { createMiddleware } from '@tanstack/react-start';
 import { getRequestHeaders } from '@tanstack/react-start/server';
@@ -7,7 +7,6 @@ import { websiteConfig } from '@/config/website';
 import {
   ADMIN_ROLE,
   adminForbiddenResponse,
-  adminUnauthorizedResponse,
   requireRecentAdminSession,
 } from '@/auth/recent-admin-session';
 
@@ -22,13 +21,13 @@ export const adminRouteMiddleware = createMiddleware().server(
     }
 
     const headers = getRequestHeaders();
-    const session = await createAuth().api.getSession({ headers });
+    const active = await requireActiveSession({ headers });
 
-    if (!session?.user) {
+    if (!active.ok) {
       throw redirect({ to: Routes.Login });
     }
 
-    const role = session.user.role;
+    const role = active.session.user.role;
     if (role !== ADMIN_ROLE) {
       throw redirect({ to: Routes.Dashboard });
     }
@@ -44,18 +43,18 @@ export const adminRouteMiddleware = createMiddleware().server(
 export const adminApiMiddleware = createMiddleware().server(
   async ({ next }) => {
     const headers = getRequestHeaders();
-    const session = await createAuth().api.getSession({ headers });
+    const active = await requireActiveSession({ headers });
 
-    if (!session?.user) {
-      return adminUnauthorizedResponse();
+    if (!active.ok) {
+      return active.response;
     }
-    if (session.user.role !== ADMIN_ROLE) {
+    if (active.session.user.role !== ADMIN_ROLE) {
       return adminForbiddenResponse();
     }
 
     return await next({
       context: {
-        userId: session.user.id,
+        userId: active.session.user.id,
       },
     });
   }

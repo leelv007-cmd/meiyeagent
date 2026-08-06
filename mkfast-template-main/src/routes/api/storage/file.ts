@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { getRequestHeaders } from '@tanstack/react-start/server';
 import { and, eq } from 'drizzle-orm';
-import { createAuth } from '@/auth/auth';
+import { requireActiveSession } from '@/auth/active-session';
 import { getDb } from '@/db';
 import {
   legacyAvatarAccessClaims,
@@ -44,10 +44,20 @@ async function serveFile(request: Request, headOnly: boolean) {
       Boolean(serviceWorkspaceId) &&
       key.startsWith(`${serviceWorkspaceId}/`);
     const headers = getRequestHeaders();
-    const session = serviceAuthorized
-      ? null
-      : await createAuth().api.getSession({ headers });
-    const userId = session?.user?.id;
+    let userId: string | undefined;
+    if (!serviceAuthorized) {
+      const active = await requireActiveSession({ headers });
+      if (!active.ok) {
+        // Public avatars may still be served below without a session; only
+        // non-public paths require userId. Keep cookie expiry on the reject
+        // response when the caller presented a dead/banned session.
+        if (active.reason !== 'missing') {
+          return active.response;
+        }
+      } else {
+        userId = active.session.user.id;
+      }
+    }
     const db = getDb();
     const legacyKey = isStrictLegacyAvatarKey(key);
     const [legacyClaim] = legacyKey

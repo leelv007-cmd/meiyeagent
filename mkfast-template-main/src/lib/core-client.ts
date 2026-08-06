@@ -1,4 +1,4 @@
-import { createAuth } from '@/auth/auth';
+import { requireActiveSession } from '@/auth/active-session';
 import { getDb } from '@/db';
 import { resolveActiveWorkspace } from '@/db/workspaces';
 import { serverEnv } from '@/env/server';
@@ -34,10 +34,12 @@ export async function forwardAuthenticatedCoreRequest(
   request: Request,
   path: string
 ) {
-  const session = await createAuth().api.getSession({
-    headers: request.headers,
-  });
-  if (!session?.user?.id) {
+  const active = await requireActiveSession({ headers: request.headers });
+  if (!active.ok) {
+    return active.response;
+  }
+  const session = active.session;
+  if (!session.user.id) {
     return Response.json({ error: 'Unauthorized' }, { status: 401 });
   }
   const workspace = await resolveActiveWorkspace(session.user.id);
@@ -139,11 +141,11 @@ export async function forwardWorkspaceCoreRequest(
   } catch (error) {
     return coreRequestBoundaryResponse(error);
   }
+  // Production path: no getSession override → requireActiveSession.
   const authorization = await authorizeWorkspaceCoreRequest(
     request,
     resource,
-    body,
-    (options) => createAuth().api.getSession(options)
+    body
   );
   if (!authorization.ok) return authorization.response;
   const { session } = authorization;
@@ -290,10 +292,12 @@ export async function forwardWorkspaceAssetRequest(request: Request) {
     productRole = 'owner';
     workspaceRole = 'owner';
   } else {
-    const session = await createAuth().api.getSession({
-      headers: request.headers,
-    });
-    if (!session?.user?.id || !session.user.emailVerified) {
+    const active = await requireActiveSession({ headers: request.headers });
+    if (!active.ok) {
+      return active.response;
+    }
+    const session = active.session;
+    if (!session.user.id || !session.user.emailVerified) {
       return Response.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const workspace = await resolveActiveWorkspace(session.user.id);

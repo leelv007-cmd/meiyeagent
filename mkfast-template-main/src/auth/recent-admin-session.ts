@@ -1,4 +1,8 @@
 import {
+  applyExpiredSessionCookies,
+  requireActiveSession,
+} from './active-session';
+import {
   RecentAuthenticationRequiredError,
   recentAuthenticationRequiredResponse,
   requireRecentAuthentication,
@@ -7,19 +11,26 @@ import {
 export const ADMIN_ROLE = 'admin';
 
 export type AuthSession = {
-  session: { createdAt: Date };
+  session: {
+    createdAt: Date;
+    token?: string;
+    id?: string;
+    userId?: string;
+    expiresAt?: Date;
+  };
   user: {
     emailVerified: boolean;
     id: string;
     role?: string | null;
+    banned?: boolean | null;
   };
 };
 
 export type AuthSessionGetter = (options: {
   headers: Headers;
   query?: {
-    disableCookieCache: true;
-    disableRefresh: true;
+    disableCookieCache?: boolean;
+    disableRefresh?: boolean;
   };
 }) => Promise<AuthSession | null>;
 
@@ -41,24 +52,51 @@ export function adminUnauthorizedResponse() {
   );
 }
 
-async function defaultSessionGetter(
-  options: Parameters<AuthSessionGetter>[0]
-): Promise<AuthSession | null> {
-  const { createAuth } = await import('./auth');
-  return createAuth().api.getSession(options);
+function adminUnauthorizedWithExpiredCookies(): Response {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  applyExpiredSessionCookies(headers);
+  return new Response(
+    JSON.stringify({ success: false, error: 'Unauthorized' }),
+    {
+      status: 401,
+      headers,
+    }
+  );
 }
 
+/**
+ * Step-up admin gate. When `getSession` is omitted (production), reads go
+ * through requireActiveSession so ban/revoke take effect on the next request.
+ */
 export async function requireRecentAdminSession(
   request: Pick<Request, 'headers'>,
-  getSession: AuthSessionGetter = defaultSessionGetter
+  getSession?: AuthSessionGetter
 ): Promise<RecentAdminSessionResult> {
-  const session = await getSession({
-    headers: request.headers,
-    query: { disableCookieCache: true, disableRefresh: true },
-  });
-  if (!session?.user?.id || !session.user.emailVerified) {
-    return { ok: false, response: adminUnauthorizedResponse() };
+  let session: AuthSession;
+
+  if (getSession) {
+    const resolved = await getSession({
+      headers: request.headers,
+      query: { disableCookieCache: true, disableRefresh: true },
+    });
+    if (!resolved?.user?.id || !resolved.user.emailVerified) {
+      return { ok: false, response: adminUnauthorizedResponse() };
+    }
+    session = resolved;
+  } else {
+    const active = await requireActiveSession({
+      headers: request.headers,
+      query: { disableCookieCache: true, disableRefresh: true },
+    });
+    if (!active.ok) {
+      return { ok: false, response: adminUnauthorizedWithExpiredCookies() };
+    }
+    if (!active.session.user.emailVerified) {
+      return { ok: false, response: adminUnauthorizedResponse() };
+    }
+    session = active.session;
   }
+
   if (session.user.role !== ADMIN_ROLE) {
     return { ok: false, response: adminForbiddenResponse() };
   }

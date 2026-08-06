@@ -69,6 +69,19 @@ verified users.
 | 4 | Non-admin cannot view admin pages | Sign in as a non-admin user, open `/admin/users`, and expect redirect to `/dashboard`. |
 | 5 | Admin can view users dashboard | Sign in as an admin E2E user, open `/admin/users`, and verify the users dashboard shows the admin email. |
 
+## 2b. Admin Ban Session Immediacy
+
+**File:** `specs/admin-ban-session-immediacy.spec.ts` | **Priority:** P0
+
+Verifies Spec A / #364: after an admin bans a merchant, the merchant browser
+context’s next page and API requests are refused and session cookies are
+cleared, without disabling Better Auth cookie cache. After unban, a fresh
+login succeeds on the first request.
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Ban takes effect on the next merchant request; unban allows re-login | Independent admin and merchant browser contexts. Merchant signs in and can open `/dashboard` and call a BFF API. Admin bans the merchant. Merchant’s next `/dashboard` navigation lands on `/auth/login`; next `/api/core/p1/query` returns 401 with expired `session_token`/`session_data` cookies. Admin unbans; merchant re-login succeeds and the first API request is authenticated. |
+
 ## 3. Protected Page Smoke Test
 
 **File:** `specs/protected-pages.spec.ts` | **Priority:** P0

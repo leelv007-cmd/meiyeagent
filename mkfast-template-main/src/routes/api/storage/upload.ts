@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { createAuth } from '@/auth/auth';
+import { requireActiveSession } from '@/auth/active-session';
 import { resolveActiveWorkspace } from '@/db/workspaces';
 import { requireWorkspaceCapability } from '@/lib/workspace-authorization';
 import { UploadError } from '@/storage/types';
@@ -36,12 +36,11 @@ async function handleUpload(request: Request): Promise<Response> {
     return Response.json({ error: 'Invalid upload purpose' }, { status: 400 });
   }
 
-  const session = await createAuth().api.getSession({
-    headers: request.headers,
-  });
-  if (!session?.user) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 });
+  const active = await requireActiveSession({ headers: request.headers });
+  if (!active.ok) {
+    return active.response;
   }
+  const session = active.session;
   if (!session.user.emailVerified) {
     return Response.json(
       { code: 'email_not_verified', error: 'Email not verified' },
