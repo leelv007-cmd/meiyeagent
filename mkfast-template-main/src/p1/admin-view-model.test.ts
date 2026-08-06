@@ -144,7 +144,17 @@ describe('P1 admin view model', () => {
       workspaceId: 'workspace-a',
     });
 
-    const draft = parseAdminCatalogDraft(createAdminCatalogDraftJson(control));
+    // API normalize still accepts stored capabilities/routes.
+    assert.equal(control.catalog.capabilities[0]?.revision, 1);
+    assert.equal(control.catalog.routes[0]?.revision, 1);
+
+    const draftJson = createAdminCatalogDraftJson(control);
+    const draftSurface = JSON.parse(draftJson) as Record<string, unknown>;
+    // Operator editor omits dead fields (Spec G / #390).
+    assert.equal('capabilities' in draftSurface, false);
+    assert.equal('routes' in draftSurface, false);
+
+    const draft = parseAdminCatalogDraft(draftJson);
     assert.equal(draft.providerProfiles[0]?.lifecycle, 'recorded');
     assert.equal(draft.executionChannels[0]?.revision, 1);
     assert.equal(draft.deployments[0]?.lifecycleRevision, 'deployment-v1');
@@ -160,9 +170,10 @@ describe('P1 admin view model', () => {
         parameters: ['width', 'height', 'strength'],
       },
     ]);
-    assert.equal(draft.capabilities[0]?.revision, 1);
+    // Parse defaults omitted dead fields so Core still receives arrays.
+    assert.deepEqual(draft.capabilities, []);
     assert.equal(draft.prices[0]?.revision, 1);
-    assert.equal(draft.routes[0]?.revision, 1);
+    assert.deepEqual(draft.routes, []);
     assert.equal(draft.models[1]?.modality, 'audio');
     assert.deepEqual(draft.models[0]?.creditPricing, {
       'image.edit': {

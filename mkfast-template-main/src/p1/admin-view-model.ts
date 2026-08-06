@@ -471,14 +471,20 @@ const routeRevisionSchema = z.strictObject({
   revision: z.number().int().positive(),
 });
 
+/**
+ * Operator-editable catalog surface. Top-level `capabilities` / `routes` are
+ * stored by Core but not consumed for routing (RoutePolicy is the truth).
+ * They remain optional on parse so historical payloads still normalize, but the
+ * draft editor intentionally omits them (Spec G / #390).
+ */
 const adminCatalogDraftSchema = z.strictObject({
-  capabilities: z.array(capabilityRevisionSchema),
+  capabilities: z.array(capabilityRevisionSchema).default([]),
   deployments: z.array(deploymentRevisionSchema),
   executionChannels: z.array(executionChannelRevisionSchema),
   models: z.array(catalogModelSchema),
   prices: z.array(priceRevisionSchema),
   providerProfiles: z.array(providerProfileRevisionSchema),
-  routes: z.array(routeRevisionSchema),
+  routes: z.array(routeRevisionSchema).default([]),
 });
 
 const adminCatalogControlSchema = z.strictObject({
@@ -491,12 +497,24 @@ const adminCatalogControlSchema = z.strictObject({
 export type AdminCatalogControl = z.infer<typeof adminCatalogControlSchema>;
 export type AdminCatalogDraft = z.infer<typeof adminCatalogDraftSchema>;
 
+/** Dead catalog fields: stored only, not operator-editable (Spec G / #390). */
+export const DEAD_CATALOG_DRAFT_FIELDS = ['capabilities', 'routes'] as const;
+
 export function normalizeAdminCatalogControl(value: unknown) {
   return adminCatalogControlSchema.parse(value);
 }
 
+/**
+ * Operator draft JSON omits dead capabilities/routes so the catalog editor
+ * cannot present them as if they drove routing.
+ */
 export function createAdminCatalogDraftJson(control: AdminCatalogControl) {
-  return JSON.stringify(control.catalog, null, 2);
+  const {
+    capabilities: _capabilities,
+    routes: _routes,
+    ...editableCatalog
+  } = control.catalog;
+  return JSON.stringify(editableCatalog, null, 2);
 }
 
 export function parseAdminCatalogDraft(value: string) {

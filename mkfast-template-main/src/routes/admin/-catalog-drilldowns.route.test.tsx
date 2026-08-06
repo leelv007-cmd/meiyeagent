@@ -1,5 +1,5 @@
 /**
- * Eight-page drilldown reachability + D-048 ops-path ban (J3 / #259).
+ * Drilldown reachability + D-048 ops-path ban (J3 / #259, Spec G / #390).
  * Memory-router / pure SSR style (no RTL); shared wiring untouched.
  */
 import assert from 'node:assert/strict';
@@ -39,14 +39,14 @@ function resolveAdminP1Redirect(tab: unknown): string {
   return '/admin/models';
 }
 
-test('eight drilldown pages are reachable from catalog projection', () => {
+test('all registered drilldown pages are reachable from catalog projection', () => {
   const view = buildCapabilityCatalog();
   const fromCatalog = view.domains.flatMap((section) =>
     section.evidenceDrilldowns.map((d) => d.pageId)
   );
   const reachability = listDrilldownReachability();
 
-  assert.equal(reachability.length, 8);
+  assert.equal(reachability.length, ADMIN_DRILLDOWN_PAGES.length);
   for (const page of ADMIN_DRILLDOWN_PAGES) {
     assert.ok(
       fromCatalog.includes(page.pageId) || page.domain === 'task_orchestration',
@@ -60,7 +60,15 @@ test('eight drilldown pages are reachable from catalog projection', () => {
     );
   }
 
-  // Every non-empty domain evidence link is one of the eight.
+  // Spec G / #390 gaps must be registered.
+  for (const pageId of ['supply', 'cloudflare', 'capabilities', 'index']) {
+    assert.ok(
+      ADMIN_DRILLDOWN_PAGES.some((page) => page.pageId === pageId),
+      `missing pageId ${pageId}`
+    );
+  }
+
+  // Every non-empty domain evidence link is a registered drilldown.
   for (const pageId of fromCatalog) {
     assert.ok(
       ADMIN_DRILLDOWN_PAGES.some((page) => page.pageId === pageId),
@@ -69,7 +77,7 @@ test('eight drilldown pages are reachable from catalog projection', () => {
   }
 });
 
-test('SSR catalog evidence anchors cover all eight admin paths', () => {
+test('SSR catalog evidence anchors cover all registered admin paths', () => {
   const html = renderToStaticMarkup(
     <CapabilityCatalogPanel view={buildCapabilityCatalog()} />
   );
@@ -93,10 +101,14 @@ test('SSR drilldown banners are domain-tagged for memory-router page bodies', ()
     plans: 'account_and_commerce',
     redemptions: 'account_and_commerce',
     models: 'ai_supply_and_generation',
+    supply: 'ai_supply_and_generation',
     templates: 'content_and_assets',
     skills: 'content_and_assets',
     integrations: 'external_integrations',
     audit: 'runtime_and_governance',
+    cloudflare: 'runtime_and_governance',
+    capabilities: 'runtime_and_governance',
+    index: 'runtime_and_governance',
   };
 
   for (const page of ADMIN_DRILLDOWN_PAGES) {
@@ -114,7 +126,7 @@ test('SSR drilldown banners are domain-tagged for memory-router page bodies', ()
   }
 });
 
-test('p1.tsx compat redirect targets remain among eight regrouped pages', () => {
+test('p1.tsx compat redirect targets remain among registered drilldown pages', () => {
   assert.equal(resolveAdminP1Redirect(undefined), '/admin/models');
   assert.equal(resolveAdminP1Redirect('models'), '/admin/models');
   assert.equal(resolveAdminP1Redirect('templates'), '/admin/templates');

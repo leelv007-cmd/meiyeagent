@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { CREDIT_PLAN_CONFIG_KEYS } from '@meiye/contracts';
 
 import { SettingField } from '@/components/admin/shared/setting-field';
 import {
@@ -23,19 +24,13 @@ import { AdminRuntimeConfigControl } from '@/p1/admin-runtime-config-control';
 import { AdminPlanReferenceNumbersControl } from '@/p1/admin-plan-reference-numbers-control';
 import { p1QueryKeys } from '@/p1/query-keys';
 
-export const CREDIT_PLAN_CONFIG_KEYS = [
-  'plan.credits.trial',
-  'plan.credits.starter',
-  'plan.credits.growth',
-  'plan.credits.pro',
-  'plan.credits.addons',
-  'plan.credits.cycle_coefficients',
-  'plan.credits.trial.enabled',
-] as const;
+/** Re-export contracts authority — no local handwritten key list (Spec G / #390). */
+export { CREDIT_PLAN_CONFIG_KEYS };
 
 /**
  * Credit-plan catalogue plus non-billing governed plan controls.
  * Pre-credit multi-bucket plan dials are retired (#311) — do not re-add them.
+ * `plan.credits.*` keys come only from @meiye/contracts.
  */
 export const PLAN_CONTROL_CONFIG_KEYS = [
   ...CREDIT_PLAN_CONFIG_KEYS,

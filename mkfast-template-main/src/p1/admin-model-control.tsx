@@ -2011,13 +2011,7 @@ export function AdminModelControl() {
                     Deployment {catalogControl.catalog.deployments.length}
                   </Badge>
                   <Badge variant="outline">
-                    Capability {catalogControl.catalog.capabilities.length}
-                  </Badge>
-                  <Badge variant="outline">
                     Price {catalogControl.catalog.prices.length}
-                  </Badge>
-                  <Badge variant="outline">
-                    Route {catalogControl.catalog.routes.length}
                   </Badge>
                 </div>
               </div>

@@ -1,3 +1,4 @@
+import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import {
   admin_capabilities_description,
@@ -22,6 +23,7 @@ function CapabilitiesPage() {
       description={admin_capabilities_description()}
     >
       <div className="space-y-8 text-sm [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm">
+        <CapabilityDrilldownBanner pageId="capabilities" />
         <AdminCapabilityCatalog />
         <section
           className="space-y-4 border-t pt-6"

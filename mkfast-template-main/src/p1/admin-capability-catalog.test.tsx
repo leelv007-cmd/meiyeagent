@@ -42,7 +42,7 @@ test('SSR catalog renders six L1 domains with operator language', () => {
   }
 });
 
-test('SSR catalog lists inventory capabilities and eight evidence drilldowns', () => {
+test('SSR catalog lists inventory capabilities and registered evidence drilldowns', () => {
   const html = renderToStaticMarkup(<AdminCapabilityCatalog />);
 
   for (const item of CAPABILITY_INVENTORY.items) {
@@ -62,6 +62,10 @@ test('SSR catalog lists inventory capabilities and eight evidence drilldowns', (
     'skills',
     'integrations',
     'audit',
+    'supply',
+    'cloudflare',
+    'capabilities',
+    'index',
   ]) {
     assert.match(
       html,
@@ -72,6 +76,10 @@ test('SSR catalog lists inventory capabilities and eight evidence drilldowns', (
 
   assert.match(html, /href="\/admin\/models"/);
   assert.match(html, /href="\/admin\/audit"/);
+  assert.match(html, /href="\/admin\/supply"/);
+  assert.match(html, /href="\/admin\/cloudflare"/);
+  assert.match(html, /href="\/admin\/capabilities"/);
+  assert.match(html, /href="\/admin"/);
   assert.match(html, /data-hosts-health="true"/);
   assert.match(html, /含运行健康/);
   assert.match(html, /data-testid="catalog-l2-dependencies"/);
@@ -90,7 +98,7 @@ test('SSR daily ops catalog path has zero D-048 banned controls', () => {
   assert.doesNotMatch(html, /data-ops-control="(code|sql|env|raw-json|cli)"/);
 });
 
-test('SSR drilldown banners expose domain regroup for all eight pages', () => {
+test('SSR drilldown banners expose domain regroup for all registered pages', () => {
   const pageIds = [
     'users',
     'plans',
@@ -100,6 +108,10 @@ test('SSR drilldown banners expose domain regroup for all eight pages', () => {
     'skills',
     'integrations',
     'audit',
+    'supply',
+    'cloudflare',
+    'capabilities',
+    'index',
   ] as const;
 
   for (const pageId of pageIds) {
@@ -126,6 +138,11 @@ test('SSR drilldown banners expose domain regroup for all eight pages', () => {
     <CapabilityDrilldownBanner pageId="models" />
   );
   assert.match(modelsHtml, /data-domain="ai_supply_and_generation"/);
+
+  const supplyHtml = renderToStaticMarkup(
+    <CapabilityDrilldownBanner pageId="supply" />
+  );
+  assert.match(supplyHtml, /data-domain="ai_supply_and_generation"/);
 });
 
 test('catalog view fixture matches SSR domain count', () => {

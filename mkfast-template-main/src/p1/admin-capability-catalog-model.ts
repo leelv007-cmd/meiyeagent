@@ -2,7 +2,7 @@
  * Capability catalog two-level IA (J3 / D-051 · D-054 · D-048).
  *
  * L1 = operator-facing capability domains (no workspaceId / infra keys).
- * L2 = technical dependency + evidence drilldowns (existing eight admin routes).
+ * L2 = technical dependency + evidence drilldowns (admin routes).
  *
  * Pure projection only — shared wiring (routes/sidebar/locales/routeTree)
  * stays for Z2-WIRING batch B.
@@ -32,7 +32,11 @@ export const CAPABILITY_CATALOG_L1_ORDER = [
 export type CapabilityCatalogL1Id =
   (typeof CAPABILITY_CATALOG_L1_ORDER)[number];
 
-/** Stable ids for the eight existing admin drilldown routes. */
+/**
+ * Stable ids for admin drilldown routes (six-domain IA).
+ * Spec G / #390: cover supply / cloudflare / capabilities / index in addition
+ * to the original eight regrouped pages.
+ */
 export const ADMIN_DRILLDOWN_PAGE_IDS = [
   'users',
   'plans',
@@ -42,6 +46,10 @@ export const ADMIN_DRILLDOWN_PAGE_IDS = [
   'integrations',
   'audit',
   'skills',
+  'supply',
+  'cloudflare',
+  'capabilities',
+  'index',
 ] as const;
 
 export type AdminDrilldownPageId = (typeof ADMIN_DRILLDOWN_PAGE_IDS)[number];
@@ -103,8 +111,8 @@ export const DOMAIN_OPERATOR_COPY: Record<
 };
 
 /**
- * Eight-page regroup: existing admin routes as L2 evidence drilldowns
- * under capability domains (D-048 / D-051). Health = audit page block.
+ * Drilldown regroup: admin routes as L2 evidence under capability domains
+ * (D-048 / D-051 / Spec G). Health = audit page block only.
  */
 export interface AdminDrilldownPage {
   pageId: AdminDrilldownPageId;
@@ -217,6 +225,56 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     capabilityIds: ['content_package_canvas'],
     hostsOperationsHealth: false,
   },
+  {
+    pageId: 'supply',
+    path: '/admin/supply',
+    domain: 'ai_supply_and_generation',
+    title: '供应运行台',
+    functionSummary: '供应运行表、任务下钻与关联视图',
+    userImpact: '影响供应事故排查、任务恢复与通道健康可见性',
+    capabilityIds: [
+      'model_supply_routing_quality',
+      'generation_copy',
+      'generation_image',
+      'generation_video',
+      'generation_audio',
+    ],
+    hostsOperationsHealth: false,
+  },
+  {
+    pageId: 'cloudflare',
+    path: '/admin/cloudflare',
+    domain: 'runtime_and_governance',
+    title: 'Cloudflare 技术台',
+    functionSummary: '边缘/Workers 技术面与运维深链',
+    userImpact: '影响边缘配置、部署可见性与技术移交入口',
+    capabilityIds: ['data_storage', 'config_secrets'],
+    hostsOperationsHealth: false,
+  },
+  {
+    pageId: 'capabilities',
+    path: '/admin/capabilities',
+    domain: 'runtime_and_governance',
+    title: '能力目录',
+    functionSummary: '六域能力清单、证据下钻与技术移交入口',
+    userImpact: '影响运营按域定位能力、证据页与移交上下文',
+    capabilityIds: ['observability_audit', 'config_secrets'],
+    hostsOperationsHealth: false,
+  },
+  {
+    pageId: 'index',
+    path: '/admin',
+    domain: 'runtime_and_governance',
+    title: '异常首页',
+    functionSummary: '只读异常优先清单与运营可视化总览',
+    userImpact: '影响第一屏异常可见性与跨域治理入口',
+    capabilityIds: [
+      'observability_audit',
+      'job_queue_harness',
+      'config_secrets',
+    ],
+    hostsOperationsHealth: false,
+  },
 ] as const;
 
 /** D-048 banned interaction surface tokens on the daily ops path. */
@@ -289,7 +347,7 @@ export interface CapabilityCatalogView {
   capturedAt: string;
   /** Ordered L1 sections. */
   domains: CapabilityCatalogL1Section[];
-  /** Flat eight-page registry for reachability checks. */
+  /** Flat drilldown registry for reachability checks. */
   drilldownPages: readonly AdminDrilldownPage[];
   /** Explicit: workspaceId is not an L1 IA key. */
   l1ExcludesWorkspaceId: true;
@@ -417,7 +475,7 @@ export function getDrilldownPageByPath(
   return ADMIN_DRILLDOWN_PAGES.find((page) => page.path === path);
 }
 
-/** Domain context for an eight-page drilldown route. */
+/** Domain context for a registered drilldown route. */
 export function getDrilldownDomainContext(pageId: AdminDrilldownPageId): {
   page: AdminDrilldownPage;
   domain: CapabilityDomainOperatorCopy;

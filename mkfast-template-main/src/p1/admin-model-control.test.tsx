@@ -90,4 +90,10 @@ test('shows the API family for a custom model deployment', () => {
   );
 
   assert.match(html, /API family<\/dt><dd>custom<\/dd>/u);
+  // Spec G / #390: dead catalog fields must not appear as stats chips.
+  assert.doesNotMatch(html, /Capability\s+\d+/u);
+  assert.doesNotMatch(html, /Route\s+\d+/u);
+  assert.match(html, /Provider\s+\d+/u);
+  assert.match(html, /Deployment\s+\d+/u);
+  assert.match(html, /Price\s+\d+/u);
 });

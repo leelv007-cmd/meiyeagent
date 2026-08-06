@@ -1,3 +1,4 @@
+import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import { AdminOperationsPanels } from '@/components/admin/ops/admin-operations-panels';
 import {
@@ -67,8 +68,9 @@ function AdminHomePage({
       title={admin_exception_home_title()}
       description={admin_exception_home_description()}
     >
-      <AdminOperationsPanels />
       <div className="space-y-4 text-sm [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm">
+        <CapabilityDrilldownBanner pageId="index" />
+        <AdminOperationsPanels />
         <AdminExceptionHome
           severityFilter={severityFilter}
           onSeverityFilterChange={onSeverityFilterChange}

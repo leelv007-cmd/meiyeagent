@@ -1,5 +1,6 @@
 import {
   ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
+  CREDIT_PLAN_CONFIG_KEYS,
   NOTE_STYLE_CONFIG_KEY,
 } from '@meiye/contracts';
 import type { Pool } from 'pg';
@@ -25,17 +26,6 @@ import {
   platformDefaultModelConfigName,
   type PlatformDefaultModelPort,
 } from '../p1/foundation/workspace-provision.js';
-
-const CREDIT_PLAN_CONFIG_KEYS = [
-  'plan.credits.trial',
-  'plan.credits.starter',
-  'plan.credits.growth',
-  'plan.credits.pro',
-  'plan.credits.addons',
-  'plan.credits.cycle_coefficients',
-  'plan.credits.reference_numbers',
-  'plan.credits.trial.enabled',
-] as const;
 
 const COMPLIANCE_CONFIG_KEYS = [
   'compliance.aigc_label.default',

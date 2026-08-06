@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { NOTE_STYLE_CONFIG_KEY } from '@meiye/contracts';
+import {
+  CREDIT_PLAN_CONFIG_KEYS,
+  NOTE_STYLE_CONFIG_KEY,
+} from '@meiye/contracts';
 import {
   ADMIN_CONFIG_KEY_CLASSIFICATION,
   assertAdminConfigKeyConsistency,
@@ -149,4 +152,21 @@ test('plan.payment-mapping is classified as wired', () => {
     ADMIN_CONFIG_KEY_CLASSIFICATION.wiredKeys.includes('plan.payment-mapping'),
     true
   );
+});
+
+// Spec G / #390: plan.credits.* keys come only from @meiye/contracts.
+test('credit plan keys include reference_numbers from the contracts authority', () => {
+  assert.ok(
+    CREDIT_PLAN_CONFIG_KEYS.includes('plan.credits.reference_numbers')
+  );
+  for (const key of CREDIT_PLAN_CONFIG_KEYS) {
+    assert.ok(
+      ADMIN_CONFIG_KEY_CLASSIFICATION.hotReadKeys.includes(key),
+      `missing hot-read classification for ${key}`
+    );
+    assert.ok(
+      ADMIN_CONFIG_KEY_CLASSIFICATION.wiredKeys.includes(key),
+      `missing wired classification for ${key}`
+    );
+  }
 });

@@ -60,6 +60,7 @@ test('L2 technical dependencies and evidence drilldowns are present', () => {
     ai.technicalDependencies.some((dep) => dep.id === 'job_queue_harness')
   );
   assert.ok(ai.evidenceDrilldowns.some((d) => d.pageId === 'models'));
+  assert.ok(ai.evidenceDrilldowns.some((d) => d.pageId === 'supply'));
 
   const commerce = getCatalogDomain(view, 'account_and_commerce');
   assert.ok(commerce);
@@ -73,6 +74,11 @@ test('L2 technical dependencies and evidence drilldowns are present', () => {
   const audit = runtime.evidenceDrilldowns.find((d) => d.pageId === 'audit');
   assert.ok(audit);
   assert.equal(audit.hostsOperationsHealth, true);
+  assert.ok(runtime.evidenceDrilldowns.some((d) => d.pageId === 'cloudflare'));
+  assert.ok(
+    runtime.evidenceDrilldowns.some((d) => d.pageId === 'capabilities')
+  );
+  assert.ok(runtime.evidenceDrilldowns.some((d) => d.pageId === 'index'));
 
   const content = getCatalogDomain(view, 'content_and_assets');
   assert.ok(content?.evidenceDrilldowns.some((d) => d.pageId === 'templates'));
@@ -83,15 +89,15 @@ test('L2 technical dependencies and evidence drilldowns are present', () => {
   );
 });
 
-test('eight-page regroup maps every drilldown under a capability domain', () => {
-  assert.equal(ADMIN_DRILLDOWN_PAGES.length, 8);
+test('drilldown registry covers six-domain pages including Spec G gaps', () => {
+  assert.equal(ADMIN_DRILLDOWN_PAGES.length, 12);
   assert.deepEqual(
     ADMIN_DRILLDOWN_PAGE_IDS.slice().sort(),
     ADMIN_DRILLDOWN_PAGES.map((p) => p.pageId).sort()
   );
 
   const reachability = listDrilldownReachability();
-  assert.equal(reachability.length, 8);
+  assert.equal(reachability.length, 12);
 
   const expectedPaths = [
     '/admin/users',
@@ -102,6 +108,10 @@ test('eight-page regroup maps every drilldown under a capability domain', () => 
     '/admin/skills',
     '/admin/integrations',
     '/admin/audit',
+    '/admin/supply',
+    '/admin/cloudflare',
+    '/admin/capabilities',
+    '/admin',
   ];
   for (const path of expectedPaths) {
     const page = getDrilldownPageByPath(path);
@@ -109,6 +119,13 @@ test('eight-page regroup maps every drilldown under a capability domain', () => 
     assert.ok(
       CAPABILITY_CATALOG_L1_ORDER.includes(page.domain),
       `${path} domain not in L1`
+    );
+  }
+
+  for (const pageId of ['supply', 'cloudflare', 'capabilities', 'index']) {
+    assert.ok(
+      ADMIN_DRILLDOWN_PAGES.some((page) => page.pageId === pageId),
+      `missing Spec G pageId ${pageId}`
     );
   }
 
@@ -173,11 +190,11 @@ test('D-048: ops path ban list + redacted handoff is not one-click repair', () =
   assert.ok(!('secret' in handoff.redactedContext));
 });
 
-test('getDrilldownPage resolves all eight page ids', () => {
+test('getDrilldownPage resolves all registered page ids', () => {
   for (const pageId of ADMIN_DRILLDOWN_PAGE_IDS) {
     const page = getDrilldownPage(pageId);
     assert.ok(page, pageId);
     assert.equal(page.pageId, pageId);
-    assert.match(page.path, /^\/admin\//);
+    assert.match(page.path, /^\/admin(?:\/|$)/);
   }
 });

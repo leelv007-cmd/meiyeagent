@@ -1,3 +1,4 @@
+import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import {
   admin_cloudflare_description,
@@ -16,7 +17,10 @@ function CloudflarePage() {
       title={admin_cloudflare_title()}
       description={admin_cloudflare_description()}
     >
-      <AdminCloudflareControl />
+      <div className="space-y-4 text-sm [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm">
+        <CapabilityDrilldownBanner pageId="cloudflare" />
+        <AdminCloudflareControl />
+      </div>
     </AdminRoutePage>
   );
 }

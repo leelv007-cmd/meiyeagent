@@ -51,6 +51,14 @@ const creditAddOnSchema = z
   })
   .strict();
 
+const creditPlanReferenceOutputsSchema = z
+  .object({
+    copy: z.number().int().nonnegative().max(MAX_CREDIT_PLAN_AMOUNT),
+    image: z.number().int().nonnegative().max(MAX_CREDIT_PLAN_AMOUNT),
+    video: z.number().int().nonnegative().max(MAX_CREDIT_PLAN_AMOUNT),
+  })
+  .strict();
+
 const configSchemas = {
   'byok.adapter.assembly': z.enum(['recorded', 'live']),
   'compliance.aigc_label.default': z.boolean(),
@@ -107,6 +115,25 @@ const configSchemas = {
     creditPlanCycleCoefficientBasisPointsSchema,
   'plan.credits.growth': creditPlanSchema,
   'plan.credits.pro': creditPlanSchema,
+  'plan.credits.reference_numbers': z
+    .object({
+      published: z
+        .object({
+          growth: creditPlanReferenceOutputsSchema,
+          pro: creditPlanReferenceOutputsSchema,
+          starter: creditPlanReferenceOutputsSchema,
+          trial: creditPlanReferenceOutputsSchema,
+        })
+        .strict(),
+      referenceModels: z
+        .object({
+          copy: z.string().min(1).max(200),
+          image: z.string().min(1).max(200),
+          video: z.string().min(1).max(200),
+        })
+        .strict(),
+    })
+    .strict(),
   'plan.credits.starter': creditPlanSchema,
   'plan.credits.trial': trialCreditPlanSchema,
   'plan.credits.trial.enabled': z.boolean(),

@@ -47,6 +47,37 @@ describe('admin config form values', () => {
       ),
       { monthly: 9_000, single_month: 10_000, yearly: 7_500 }
     );
+    assert.deepEqual(
+      parseAdminConfigDraft(
+        'plan.credits.reference_numbers',
+        JSON.stringify({
+          published: {
+            growth: { copy: 1_300, image: 260, video: 26 },
+            pro: { copy: 2_800, image: 560, video: 56 },
+            starter: { copy: 500, image: 100, video: 10 },
+            trial: { copy: 100, image: 20, video: 2 },
+          },
+          referenceModels: {
+            copy: 'deepseek-v4-pro',
+            image: 'seedream-5-pro',
+            video: 'seedance-2',
+          },
+        })
+      ),
+      {
+        published: {
+          growth: { copy: 1_300, image: 260, video: 26 },
+          pro: { copy: 2_800, image: 560, video: 56 },
+          starter: { copy: 500, image: 100, video: 10 },
+          trial: { copy: 100, image: 20, video: 2 },
+        },
+        referenceModels: {
+          copy: 'deepseek-v4-pro',
+          image: 'seedream-5-pro',
+          video: 'seedance-2',
+        },
+      }
+    );
     assert.throws(
       () =>
         parseAdminConfigDraft(

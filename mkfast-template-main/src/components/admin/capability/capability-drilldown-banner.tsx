@@ -6,7 +6,7 @@ import {
 } from '@/p1/admin-capability-catalog-model';
 
 /**
- * Domain context banner for the seven regrouped admin drilldown pages.
+ * Domain context banner for admin drilldown pages (six-domain IA).
  * Shows parent L1 domain in operator language (capability / function / impact).
  */
 export function CapabilityDrilldownBanner({

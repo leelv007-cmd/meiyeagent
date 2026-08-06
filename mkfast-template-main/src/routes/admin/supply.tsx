@@ -1,3 +1,4 @@
+import { CapabilityDrilldownBanner } from '@/components/admin/capability/capability-drilldown-banner';
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import {
   admin_supply_description,
@@ -51,6 +52,7 @@ function SupplyControlCenterPage({
       description={admin_supply_description()}
     >
       <div className="space-y-4 text-sm [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm">
+        <CapabilityDrilldownBanner pageId="supply" />
         <AdminSupplyControl
           runTableState={runTableState}
           onRunTableStateChange={onRunTableStateChange}
