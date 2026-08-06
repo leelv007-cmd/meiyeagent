@@ -14,6 +14,8 @@ export {
   SkillInvocationValidationError,
   SkillService,
   SKILL_WORKFLOW_BINDING_INVALID_MESSAGE,
+  USER_SELECTED_SKILL_INELIGIBLE_CODE,
+  UserSelectedSkillIneligibleError,
   skillAcceptanceGateFailure,
   type PublishedRecipeWorkflowCatalogPort,
 } from './service.js';
@@ -39,7 +41,9 @@ export {
 } from './tool-adapter.js';
 export {
   createDurableSkillRuntime,
+  DurableSkillInstructionResolver,
   skillPromptSnapshotPortFromHarness,
+  type DurableSkillInstructionResolutionInput,
   type DurableSkillRuntime,
 } from './runtime.js';
 export { materializeSkillInstructions } from './stage-injection.js';

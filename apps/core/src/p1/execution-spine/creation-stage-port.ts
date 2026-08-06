@@ -3,6 +3,7 @@ import {
 	type HarnessTaskRequest,
 	type HarnessWorkflowInput,
 } from "../harness/task-admission.js";
+import { UserSelectedSkillIneligibleError } from "../skills/service.js";
 
 import type { CreationExecutionSnapshot } from "./creation-execution-snapshot.js";
 import type {
@@ -40,6 +41,10 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 		_submission: CreationSubmissionRecord,
 		error: unknown,
 	) {
+		// Ineligible merchant skill selection is a deterministic client error.
+		if (error instanceof UserSelectedSkillIneligibleError) {
+			return "terminal_rejection" as const;
+		}
 		if (!(error instanceof HarnessAdmissionError)) return "retry" as const;
 		return error.code === "REQUEST_FINGERPRINT_CONFLICT" ||
 			error.code === "EXECUTION_SNAPSHOT_MISMATCH"

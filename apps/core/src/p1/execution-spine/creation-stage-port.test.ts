@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { HarnessAdmissionError } from "../harness/task-admission.js";
+import { UserSelectedSkillIneligibleError } from "../skills/service.js";
 import { createCreationExecutionSnapshot } from "./creation-execution-snapshot.js";
 import { CreationStagePort } from "./creation-stage-port.js";
 
@@ -196,6 +197,16 @@ test("only permanent immutable-request conflicts terminate a start", async () =>
 			new Error("Acknowledgement unavailable"),
 		),
 		"retry",
+	);
+	assert.equal(
+		await stage.classifyStartFailure(
+			submission,
+			new UserSelectedSkillIneligibleError(
+				"skill.user@3",
+				"越权、已过期、已禁用、非商家可选或不在当前配方绑定目录中。",
+			),
+		),
+		"terminal_rejection",
 	);
 });
 

@@ -57,7 +57,7 @@ export interface HarnessWorkflowInput {
   /**
    * Merchant-confirmed Skill revision refs for this task. Optional on legacy
    * callers; Composer snapshot path always materializes an array (default []).
-   * Admission does not yet consume this for select (#379).
+   * Production select forwards this into stage resolution (#379).
    */
   userSelectedSkillRefs?: readonly string[];
   factScope?: StoreFact['scope'];

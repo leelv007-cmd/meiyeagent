@@ -115,6 +115,7 @@ import {
 } from '../p1/harness/resume-reconciler.js';
 import { assertPendingActionsShareDatabase } from '../p1/harness/runtime-config.js';
 import { createHarnessStructuredModelExecutor } from '../p1/harness/structured-model-runtime.js';
+import { createProductionSkillManifestResolver } from '../p1/harness/production-skill-manifest-resolver.js';
 import { HarnessTaskAdmissionService } from '../p1/harness/task-admission.js';
 import {
   FixtureImageExactTextVerifier,
@@ -1211,33 +1212,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
             },
           }
         ),
-        {
-          async select({ request, stage }) {
-            const recipe = request.executionSnapshot?.recipe;
-            const industryCategory = request.decisionReferences?.find(
-              (reference) => reference.field === 'industry_category'
-            )?.value;
-            return skillRuntime.instructionResolver.selectManifests({
-              workspaceId: request.workspaceId,
-              workflowId:
-                request.executionSnapshot?.task.id ?? request.packageId,
-              workflowRevision: request.workflowRevision,
-              ...(recipe
-                ? {
-                    recipeId: recipe.id,
-                    recipeRevisionId: recipe.revision,
-                  }
-                : {}),
-              stage,
-              ...(industryCategory ? { industryCategory } : {}),
-            });
-          },
-          async materialize({ manifests }) {
-            return skillRuntime.instructionResolver.materializeManifests(
-              manifests
-            );
-          },
-        },
+        // Spec E / #379: production select must forward userSelectedSkillRefs.
+        createProductionSkillManifestResolver(skillRuntime.instructionResolver),
         promptAuditStore
       ),
       harnessDecisions,

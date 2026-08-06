@@ -32,6 +32,8 @@ export type DurableSkillInstructionResolutionInput = Parameters<
   HarnessSkillInstructionResolverPort['resolve']
 >[0] & {
   userSelectedSkillRefs?: readonly string[];
+  /** Creation lens from the execution snapshot; used for selection eligibility. */
+  lensId?: string;
 };
 
 export class DurableSkillInstructionResolver
@@ -45,6 +47,17 @@ export class DurableSkillInstructionResolver
   async selectManifests(input: DurableSkillInstructionResolutionInput) {
     const workflowRevisionRef =
       await this.workflowRevisionRef(input);
+    const userSelectedSkillRefs = [...(input.userSelectedSkillRefs ?? [])];
+    // Fail closed before stage filtering: ineligible refs must not be dropped.
+    await this.service.assertUserSelectedSkillRefsEligible({
+      workspaceId: input.workspaceId,
+      workflowRevisionRef,
+      userSelectedSkillRefs,
+      ...(input.industryCategory
+        ? { industryCategory: input.industryCategory }
+        : {}),
+      ...(input.lensId ? { lensId: input.lensId } : {}),
+    });
     return this.service.selectStageManifests({
       workflowRevisionRef,
       stage: input.stage,
@@ -52,7 +65,7 @@ export class DurableSkillInstructionResolver
         ? { industryCategory: input.industryCategory }
         : {}),
       tenantId: input.workspaceId,
-      userSelectedSkillRefs: [...(input.userSelectedSkillRefs ?? [])],
+      userSelectedSkillRefs,
     });
   }
 

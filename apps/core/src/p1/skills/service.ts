@@ -90,6 +90,34 @@ export const SKILL_WORKFLOW_BINDING_INVALID_MESSAGE =
   'Skill 绑定的工作流未发布或未获该 Skill 治理授权。';
 
 /**
+ * Stable operator-facing message prefix when admission rejects a merchant
+ * Skill selection (Spec E / #379). Mapped to HTTP 400; must not be rephrased
+ * lightly — Web/diagnostics key off the code and message shape.
+ */
+export const USER_SELECTED_SKILL_INELIGIBLE_CODE =
+  'USER_SELECTED_SKILL_INELIGIBLE' as const;
+
+/**
+ * Explicit 4xx for ineligible `userSelectedSkillRefs` at admission.
+ * Never silent-drop: out-of-catalog, expired, disabled, backend_only,
+ * explainable, or workspace/tier/lens-invisible refs fail closed.
+ */
+export class UserSelectedSkillIneligibleError extends Error {
+  readonly status = 400;
+  readonly code = USER_SELECTED_SKILL_INELIGIBLE_CODE;
+
+  constructor(
+    readonly skillRevisionRef: string,
+    detail: string,
+  ) {
+    super(
+      `选用的技能不可用（${skillRevisionRef}）：${detail}`,
+    );
+    this.name = 'UserSelectedSkillIneligibleError';
+  }
+}
+
+/**
  * Read-only published Recipe workflow catalog (#360). Production wires
  * CreationExperienceCatalogService; unit tests may omit the port (only
  * governance membership is enforced on bind) or inject a fixed list.
@@ -1542,6 +1570,137 @@ export class SkillService {
         ...revision.governance.requiredModelCapabilities,
       ],
     }));
+  }
+
+  /**
+   * Admission gate for merchant-confirmed Skill revision refs (Spec E / #379).
+   *
+   * Reuses #378 merchant-projection eligibility (published head, accepted_frozen,
+   * user_selectable presentation, workspace/tier/lens visibility, trigger match)
+   * against the task's workflow binding matrix. Any ineligible ref fails with a
+   * diagnostic 4xx — never silently dropped.
+   */
+  async assertUserSelectedSkillRefsEligible(input: {
+    workspaceId: string;
+    workflowRevisionRef: string;
+    userSelectedSkillRefs: readonly string[];
+    industryCategory?: string | null;
+    lensId?: string;
+  }): Promise<void> {
+    const refs = [
+      ...new Set(
+        input.userSelectedSkillRefs
+          .map((reference) => reference.trim())
+          .filter((reference) => reference.length > 0),
+      ),
+    ];
+    if (refs.length === 0) return;
+
+    const workspaceId = required(input.workspaceId, 'Workspace ID');
+    const workflowRevisionRef = required(
+      input.workflowRevisionRef,
+      'Workflow revision',
+    );
+    const industryCategory = input.industryCategory?.trim() || null;
+
+    if (input.lensId !== undefined && input.lensId !== null) {
+      if (!isCreationLensId(input.lensId)) {
+        fail(`Unknown creation lens "${input.lensId}".`);
+      }
+      const publishedForLens =
+        await this.listPublishedRecipeWorkflowRevisionRefsForLens(input.lensId);
+      if (!publishedForLens.includes(workflowRevisionRef)) {
+        throw new UserSelectedSkillIneligibleError(
+          refs[0]!,
+          '当前配方工作流未在该输出类型下发布，无法选用技能。',
+        );
+      }
+    }
+
+    const eligibleRefs = await this.listEligibleUserSelectedSkillRevisionRefs({
+      workspaceId,
+      workflowRevisionRef,
+      industryCategory,
+    });
+
+    for (const ref of refs) {
+      if (!eligibleRefs.has(ref)) {
+        throw new UserSelectedSkillIneligibleError(
+          ref,
+          '越权、已过期、已禁用、非商家可选或不在当前配方绑定目录中。',
+        );
+      }
+    }
+  }
+
+  /**
+   * Eligible user_selected revision refs for one workflow, sharing filter
+   * semantics with {@link projectMerchantSkills} (without cross-workflow merge).
+   */
+  private async listEligibleUserSelectedSkillRevisionRefs(input: {
+    workspaceId: string;
+    workflowRevisionRef: string;
+    industryCategory: string | null;
+  }): Promise<Set<string>> {
+    const bindings = await this.repository.listActiveBindingsForWorkflow(
+      input.workflowRevisionRef,
+    );
+    // Highest-specificity active binding wins per skillId (same as stage select).
+    const winners = new Map<string, SkillBinding>();
+    for (const binding of bindings) {
+      if (
+        !merchantTriggerMatches(binding.triggerCondition, {
+          industryCategory: input.industryCategory,
+          tenantId: input.workspaceId,
+        })
+      ) {
+        continue;
+      }
+      const existing = winners.get(binding.skillId);
+      if (
+        !existing ||
+        merchantTriggerSpecificity(binding.triggerCondition) >
+          merchantTriggerSpecificity(existing.triggerCondition)
+      ) {
+        winners.set(binding.skillId, binding);
+      }
+    }
+
+    const eligible = new Set<string>();
+    for (const binding of winners.values()) {
+      if (binding.mode !== 'user_selected') continue;
+
+      const catalog = await this.repository.getCatalog(binding.skillId);
+      if (!catalog) continue;
+      // Only user_selectable may enter the selection payload (#378/#379).
+      if (catalog.presentationPolicy !== 'user_selectable') continue;
+      if (!catalog.activeRevisionRef) continue;
+      // Stale / out-of-catalog binding head is not merchant-selectable.
+      if (binding.skillRevisionRef !== catalog.activeRevisionRef) continue;
+
+      const revision = await this.repository.getRevision(
+        binding.skillRevisionRef,
+      );
+      if (!revision || revision.status !== 'accepted_frozen') continue;
+      if (
+        !revision.governance.workflowRevisionRefs.includes(
+          input.workflowRevisionRef,
+        )
+      ) {
+        continue;
+      }
+      if (
+        !isMerchantSkillVisibleToWorkspace({
+          catalog,
+          binding,
+          workspaceId: input.workspaceId,
+        })
+      ) {
+        continue;
+      }
+      eligible.add(binding.skillRevisionRef);
+    }
+    return eligible;
   }
 
   private async selectStageRevisions(input: {
