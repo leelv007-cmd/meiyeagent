@@ -971,10 +971,7 @@ export class ProductionAdminSupplyDomain
       routeDecision = simulation.decisionExplanation;
     } else if (request.action === 'candidate_config_save') {
       after = structuredClone(request.parameters.candidate);
-    } else if (
-      request.action === 'isolate' ||
-      request.action === 'stop_new_tasks'
-    ) {
+    } else if (request.action === 'isolate') {
       after = { mode: 'isolated', reason: request.reason.trim() };
     } else if (request.action === 'drain') {
       after = { mode: 'draining', reason: request.reason.trim() };
@@ -1008,9 +1005,7 @@ export class ProductionAdminSupplyDomain
         request.action === 'credential_rotate'
           ? ['The new credential version requires a fresh connectivity probe.']
           : [],
-      reversible: ['isolate', 'recover', 'stop_new_tasks', 'drain'].includes(
-        request.action
-      ),
+      reversible: ['isolate', 'recover', 'drain'].includes(request.action),
       expectedRevisionId: request.expectedRevisionId,
       before,
       after,
@@ -1063,7 +1058,6 @@ export class ProductionAdminSupplyDomain
         value = await this.rollback(request);
         break;
       case 'isolate':
-      case 'stop_new_tasks':
         value = await this.executeChannelLifecycleTransition(
           request,
           (options) =>
@@ -1209,7 +1203,6 @@ export class ProductionAdminSupplyDomain
           : null;
       }
       case 'isolate':
-      case 'stop_new_tasks':
       case 'drain':
       case 'recover': {
         const current = await this.dependencies.hotAssembly.getChannelLifecycle(
@@ -1316,7 +1309,7 @@ export class ProductionAdminSupplyDomain
   private async executeChannelLifecycleTransition(
     request: Extract<
       AdminSupplyGovernedActionRequest,
-      { action: 'isolate' | 'stop_new_tasks' | 'recover' | 'drain' }
+      { action: 'isolate' | 'recover' | 'drain' }
     >,
     transition: (options: {
       expectedLifecycleRevision?: string;

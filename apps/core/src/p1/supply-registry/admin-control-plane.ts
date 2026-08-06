@@ -404,7 +404,6 @@ export type GovernedSupplyActionId =
   | 'rollback'
   | 'isolate'
   | 'recover'
-  | 'stop_new_tasks'
   | 'drain'
   | 'credential_pre_revoke'
   | 'credential_rotate'
@@ -518,7 +517,7 @@ export type RouteGovernedActionRequest =
   | GovernedRequest<'publish' | 'rollback', RevisionActionTarget>;
 
 export type ChannelGovernedActionRequest = GovernedRequest<
-  'isolate' | 'recover' | 'stop_new_tasks' | 'drain',
+  'isolate' | 'recover' | 'drain',
   ChannelActionTarget
 >;
 
@@ -747,15 +746,6 @@ const ACTIONS: Record<GovernedSupplyActionId, ActionDescriptor> = {
     nullCas: false,
     reversible: true,
   },
-  stop_new_tasks: {
-    kind: 'command',
-    module: 'model-supply',
-    authorizationAction: 'isolate_channel',
-    domain: 'channels',
-    targetTypes: ['channel'],
-    nullCas: false,
-    reversible: true,
-  },
   drain: {
     kind: 'command',
     module: 'model-supply',
@@ -892,7 +882,6 @@ function auditActionFor(request: AdminSupplyGovernedActionRequest): string {
     case 'conformance_probe':
     case 'candidate_config_save':
     case 'candidate_config_validate':
-    case 'stop_new_tasks':
     case 'credential_pre_revoke':
       return request.action;
     case 'health_refresh':

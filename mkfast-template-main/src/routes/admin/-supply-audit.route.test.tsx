@@ -28,3 +28,28 @@ test('supply audit renders the immutable operator reason and correlation', () =>
   assert.match(html, /channel-a/u);
   assert.match(html, /admin-a/u);
 });
+
+test('historical stop_new_tasks audit rows remain readable after D6 retirement', () => {
+  const html = renderToStaticMarkup(
+    <SupplyAuditTable
+      changes={[
+        {
+          action: 'stop_new_tasks',
+          actorId: 'admin-legacy',
+          at: '2026-06-01T12:00:00.000Z',
+          correlationId: 'corr-stop-new-tasks-legacy',
+          id: 'audit-stop-new-tasks-legacy',
+          summary: 'legacy stop_new_tasks before isolate consolidation',
+          targetId: 'channel-legacy',
+          targetType: 'channel',
+        },
+      ]}
+    />
+  );
+
+  assert.match(html, /stop_new_tasks/u);
+  assert.match(html, /legacy stop_new_tasks before isolate consolidation/u);
+  assert.match(html, /corr-stop-new-tasks-legacy/u);
+  assert.match(html, /channel-legacy/u);
+  assert.match(html, /admin-legacy/u);
+});

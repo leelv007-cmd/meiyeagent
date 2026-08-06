@@ -34,7 +34,6 @@ export const GOVERNED_QUICK_ACTION_IDS = [
   'rollback',
   'channel_isolate',
   'channel_recover',
-  'stop_new_tasks',
   'drain',
   'credential_rotate',
   'pre_revoke_impact_check',
@@ -270,21 +269,6 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
       forbids: FORBIDS,
     },
     {
-      id: 'stop_new_tasks',
-      label: '停止接收新任务',
-      description: '渠道停止接单（在途任务继续；可恢复）',
-      module: 'model-supply',
-      action: 'isolate_channel',
-      kind: 'command',
-      requiredPermission: 'channel.lifecycle.manage',
-      requiresImpactPreview: true,
-      requiresReason: true,
-      casIdempotency: true,
-      reversibleDrain: true,
-      immutableAudit: true,
-      forbids: FORBIDS,
-    },
-    {
       id: 'drain',
       label: '排空',
       description: '可逆排空：停新任务，等待异步媒体完成后退役/轮换',
@@ -426,9 +410,8 @@ export function buildImpactPreview(
       );
       break;
     case 'channel_isolate':
-    case 'stop_new_tasks':
       changes.push(
-        `隔离/停新任务：${target.resourceId}`,
+        `隔离并停新任务：${target.resourceId}`,
         '在途任务继续；可经恢复动作撤销'
       );
       break;
@@ -522,17 +505,14 @@ export function buildGovernedCommand(
       break;
     case 'channel_isolate':
     case 'channel_recover':
-    case 'stop_new_tasks':
     case 'drain':
       payload.channelId = target.resourceId;
       payload.intent =
-        def.id === 'stop_new_tasks'
-          ? 'stop_new_tasks'
-          : def.id === 'drain'
-            ? 'drain'
-            : def.id === 'channel_recover'
-              ? 'recover'
-              : 'isolate';
+        def.id === 'drain'
+          ? 'drain'
+          : def.id === 'channel_recover'
+            ? 'recover'
+            : 'isolate';
       break;
     case 'credential_rotate':
       // Secret value is NEVER placed on this payload by UI helpers.

@@ -584,12 +584,7 @@ function governedPorts(
           scope: `${request.target.resourceType}:${request.target.resourceId}`,
           changes: [`Apply ${request.action}`],
           warnings: ['No blind retry for accepted or acceptance_unknown media'],
-          reversible: [
-            'isolate',
-            'recover',
-            'stop_new_tasks',
-            'drain',
-          ].includes(request.action),
+          reversible: ['isolate', 'recover', 'drain'].includes(request.action),
           expectedRevisionId: request.expectedRevisionId,
           before: { revisionId: request.expectedRevisionId },
           after: { action: request.action },
@@ -734,7 +729,6 @@ function requestFor(
       };
     case 'isolate':
     case 'recover':
-    case 'stop_new_tasks':
     case 'drain':
       return {
         ...base,
@@ -779,7 +773,6 @@ const EXPECTED_PERMISSION = {
   rollback: 'config.publish',
   isolate: 'channel.lifecycle.manage',
   recover: 'channel.lifecycle.manage',
-  stop_new_tasks: 'channel.lifecycle.manage',
   drain: 'channel.lifecycle.manage',
   credential_pre_revoke: 'credential.govern',
   credential_rotate: 'credential.govern',
@@ -799,7 +792,6 @@ const EXPECTED_DOMAIN: Record<
   rollback: 'routes',
   isolate: 'channels',
   recover: 'channels',
-  stop_new_tasks: 'channels',
   drain: 'channels',
   credential_pre_revoke: 'credentials',
   credential_rotate: 'credentials',
@@ -807,6 +799,56 @@ const EXPECTED_DOMAIN: Record<
 };
 
 describe('AdminSupplyControlPlane governed dispatcher', () => {
+  it('rejects retired stop_new_tasks while isolate and drain semantics remain', async () => {
+    const calls: GovernedCall[] = [];
+    const control = new AdminSupplyControlPlane({
+      snapshot: snapshotPorts(),
+      permission: createPermissionAuthorizer(),
+      idempotency: new MemoryIdempotencyPort(),
+      governed: governedPorts(calls),
+      clock: () => new Date('2026-07-20T06:00:00.000Z'),
+    });
+
+    await assert.rejects(
+      control.previewAction({
+        ...requestFor('isolate'),
+        action: 'stop_new_tasks',
+      } as unknown as AdminSupplyGovernedActionRequest),
+      /Unknown governed supply action|stop_new_tasks/i,
+    );
+    await assert.rejects(
+      control.dispatchAction({
+        ...requestFor('isolate'),
+        action: 'stop_new_tasks',
+        approvedPreviewId: 'preview:stop_new_tasks:channel-ark-cn:revision-isolate',
+      } as unknown as AdminSupplyGovernedActionRequest & {
+        approvedPreviewId: string;
+      }),
+      /Unknown governed supply action|stop_new_tasks/i,
+    );
+    assert.equal(calls.length, 0);
+
+    const isolatePreview = await control.previewAction(requestFor('isolate'));
+    assert.equal(isolatePreview.reversible, true);
+    const isolate = await control.dispatchAction({
+      ...requestFor('isolate'),
+      approvedPreviewId: isolatePreview.id,
+    });
+    assert.equal(isolate.replayed, false);
+    assert.equal(isolate.audit.permission, 'channel.lifecycle.manage');
+    assert.equal(isolate.action, 'isolate');
+
+    const drainPreview = await control.previewAction(requestFor('drain'));
+    assert.equal(drainPreview.reversible, true);
+    const drain = await control.dispatchAction({
+      ...requestFor('drain'),
+      approvedPreviewId: drainPreview.id,
+    });
+    assert.equal(drain.replayed, false);
+    assert.equal(drain.audit.permission, 'channel.lifecycle.manage');
+    assert.equal(drain.action, 'drain');
+  });
+
   it('routes every J5 action through permission, approved impact, CAS, idempotency, and immutable audit', async () => {
     const actions = Object.keys(EXPECTED_PERMISSION) as Array<
       keyof typeof EXPECTED_PERMISSION

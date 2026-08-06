@@ -58,15 +58,31 @@ function targetFor(id: GovernedQuickActionId): GovernedActionTarget {
   }
 }
 
-test('full governed quick action set includes candidate authoring (14 actions)', () => {
-  assert.equal(GOVERNED_QUICK_ACTION_IDS.length, 14);
-  assert.equal(GOVERNED_QUICK_ACTIONS.length, 14);
+test('full governed quick action set includes candidate authoring (13 actions)', () => {
+  assert.equal(GOVERNED_QUICK_ACTION_IDS.length, 13);
+  assert.equal(GOVERNED_QUICK_ACTIONS.length, 13);
   const panel = buildGovernedActionsPanelView();
-  assert.equal(panel.count, 14);
+  assert.equal(panel.count, 13);
   assert.equal(panel.forbids.secretEcho, true);
   assert.equal(panel.forbids.directDbWrite, true);
   assert.equal(panel.forbids.bypassPublishGate, true);
   assert.equal(panel.forbids.blindRetryAcceptedUnknownMedia, true);
+});
+
+test('action catalog no longer exposes retired stop_new_tasks (D6)', () => {
+  assert.equal(
+    (GOVERNED_QUICK_ACTION_IDS as readonly string[]).includes('stop_new_tasks'),
+    false
+  );
+  assert.equal(
+    GOVERNED_QUICK_ACTIONS.some(
+      (action) => (action.id as string) === 'stop_new_tasks'
+    ),
+    false
+  );
+  assert.ok(GOVERNED_QUICK_ACTION_IDS.includes('channel_isolate'));
+  assert.ok(GOVERNED_QUICK_ACTION_IDS.includes('drain'));
+  assert.ok(GOVERNED_QUICK_ACTION_IDS.includes('channel_recover'));
 });
 
 test('each governed action: command + permission + preview + audit contract', () => {
@@ -180,6 +196,15 @@ test('drain and isolate are reversible; publish is not', () => {
   );
   assert.equal(drainPreview.reversible, true);
   assert.ok(drainPreview.changes.some((c) => /排空|drain/i.test(c)));
+
+  const isolatePreview = buildImpactPreview(
+    getGovernedQuickAction('channel_isolate'),
+    targetFor('channel_isolate')
+  );
+  assert.equal(isolatePreview.reversible, true);
+  assert.ok(
+    isolatePreview.changes.some((c) => /隔离|isolate|停新/i.test(c))
+  );
 });
 
 test('pre-revoke impact check does not execute revoke', () => {

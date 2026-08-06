@@ -42,7 +42,6 @@ export type CanonicalGovernedActionId =
   | 'rollback'
   | 'isolate'
   | 'recover'
-  | 'stop_new_tasks'
   | 'drain'
   | 'credential_pre_revoke'
   | 'credential_rotate'
@@ -159,7 +158,6 @@ const CANONICAL_ACTION_IDS: Record<
   publish: 'publish',
   rollback: 'rollback',
   route_simulate: 'route_simulate',
-  stop_new_tasks: 'stop_new_tasks',
 };
 
 const SECURE_WRITE_RECEIPT_ID =
