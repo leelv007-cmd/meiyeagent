@@ -1,5 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from '@tanstack/react-router';
+import {
   cleanup,
   render,
   screen,
@@ -52,7 +60,35 @@ const existingCredentials = [
   },
 ];
 
-function renderControl() {
+
+// The control renders a router Link to /admin/supply (SPA handoff), so tests
+// mount it inside a memory router with a stub supply route.
+async function renderInRouter(client: QueryClient) {
+  const rootRoute = createRootRoute({ component: Outlet });
+  const controlRoute = createRoute({
+    component: () => (
+      <QueryClientProvider client={client}>
+        <AdminProviderCredentialControl />
+      </QueryClientProvider>
+    ),
+    getParentRoute: () => rootRoute,
+    path: '/',
+  });
+  const supplyRoute = createRoute({
+    component: () => <p>Supply</p>,
+    getParentRoute: () => rootRoute,
+    path: '/admin/supply',
+  });
+  const router = createRouter({
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+    routeTree: rootRoute.addChildren([controlRoute, supplyRoute]),
+  });
+  await router.load();
+  render(<RouterProvider router={router} />);
+  return router;
+}
+
+async function renderControl() {
   const client = new QueryClient({
     defaultOptions: {
       mutations: { retry: false },
@@ -63,11 +99,7 @@ function renderControl() {
     p1QueryKeys.request('integrations', 'admin_provider_credentials'),
     existingCredentials
   );
-  return render(
-    <QueryClientProvider client={client}>
-      <AdminProviderCredentialControl />
-    </QueryClientProvider>
-  );
+  return renderInRouter(client);
 }
 
 beforeEach(() => {
@@ -99,7 +131,7 @@ describe('AdminProviderCredentialControl rotation receipt handoff', () => {
     });
     p1Client.queryP1.mockResolvedValue(existingCredentials);
 
-    renderControl();
+    await renderControl();
 
     const slot = screen
       .getAllByTestId('provider-credential-slot')
@@ -125,7 +157,9 @@ describe('AdminProviderCredentialControl rotation receipt handoff', () => {
     const complete = within(slot).getByTestId(
       'provider-credential-complete-rotation'
     );
-    expect(complete).toHaveAttribute('href', '/admin/supply');
+    // Router Link canonicalizes the supply list's default search params into
+    // the href; only the pathname and receipt absence matter.
+    expect(complete.getAttribute('href')).toMatch(/^\/admin\/supply(\?|$)/);
     expect(complete.getAttribute('href')).not.toMatch(/receipt/i);
     expect(complete.getAttribute('href')).not.toContain(RECEIPT_ID);
 
@@ -170,11 +204,7 @@ describe('AdminProviderCredentialControl rotation receipt handoff', () => {
     // Keep the vault empty on refetch so the control stays on the store path.
     p1Client.queryP1.mockResolvedValue(emptySlots);
 
-    render(
-      <QueryClientProvider client={client}>
-        <AdminProviderCredentialControl />
-      </QueryClientProvider>
-    );
+    await renderInRouter(client);
 
     const slot = screen
       .getAllByTestId('provider-credential-slot')

@@ -132,14 +132,21 @@ test.describe('admin credential rotation handoff (#367)', () => {
     await expect(receiptCard).not.toContainText(stagedSecret);
 
     const completeLink = slot.getByTestId('provider-credential-complete-rotation');
-    await expect(completeLink).toHaveAttribute('href', '/admin/supply');
+    // Router Link carries the supply list's default search params; pathname
+    // and receipt absence are what matter.
+    await expect(completeLink).toHaveAttribute(
+      'href',
+      /^\/admin\/supply(\?|$)/
+    );
     const href = await completeLink.getAttribute('href');
     expect(href).not.toContain(receiptId);
     expect(href).not.toMatch(/receipt/i);
 
     // --- Handoff navigate to supply (same-origin, no receipt in URL) ---
     await completeLink.click();
-    await expect(page).toHaveURL(/\/admin\/supply\/?$/);
+    // The supply list canonicalizes pagination/sort params into the query;
+    // only the pathname matters here (receipt absence is asserted below).
+    await expect(page).toHaveURL(/\/admin\/supply\/?(\?|$)/);
     expect(page.url()).not.toContain(receiptId);
 
     await expect(page.getByTestId('supply-control-center-panel')).toBeVisible({

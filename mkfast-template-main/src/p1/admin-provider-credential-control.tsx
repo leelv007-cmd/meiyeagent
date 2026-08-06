@@ -1,5 +1,6 @@
 import { IconKey } from '@tabler/icons-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { IconTile } from '@/components/admin/shared/icon-tile';
@@ -15,6 +16,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Routes } from '@/lib/routes';
+import { parseRunTableUrlState } from '@/p1/admin-supply-run-table-model';
 import {
   admin_provider_credential_activation_note,
   admin_provider_credential_complete_on_supply,
@@ -403,15 +405,18 @@ export function AdminProviderCredentialControl() {
                 </p>
                 {/*
                   Same-origin navigation only — receiptId must never enter query,
-                  hash, or the link href (Referer risk). Handoff is SPA memory.
+                  hash, or the link href (Referer risk). Handoff lives in SPA
+                  memory, so this must be a router Link: a raw anchor triggers a
+                  full page load and wipes the record.
                 */}
-                <a
+                <Link
                   className="text-primary inline-flex font-medium underline"
                   data-testid="provider-credential-complete-rotation"
-                  href={Routes.AdminSupply}
+                  to={Routes.AdminSupply}
+                  search={parseRunTableUrlState({})}
                 >
                   {admin_provider_credential_complete_on_supply()}
-                </a>
+                </Link>
               </div>
             ) : null}
 
