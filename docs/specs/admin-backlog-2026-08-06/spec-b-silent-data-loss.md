@@ -3,6 +3,8 @@
 > 来源：admin-config-audit-2026-08-06.md §2.5、§2.7、§五 P0，以及本轮对抗式复核裁决。
 >
 > 状态：已批准并开票（2026-08-06）。实施票：#359 三态合并＋Surface 工具引用 · #360 已发布工作流目录端口 · #361 Recipe 草稿字段 · #362 Skill 绑定边界。
+>
+> **2026-08-06 决策更新（wayfinder #398 终局）**：工具链整条剔除（#418→#419），本 spec 第 1 处（Surface `toolEntryRefs`）作废——字段将不复存在，无可透传。三态合并语义保留，消费者改为第 2 处的 Recipe `factTypes`/`skillRevisionRefs`（真·活体 P0，launch seed 有非空 `factTypes` 种子）。#359 已落依赖更新评论收窄范围。
 
 ## Problem Statement
 
