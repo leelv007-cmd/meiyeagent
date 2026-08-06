@@ -10,6 +10,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   AdminCreationExperienceControl,
+  applyPendingRecipeRevisionToRefs,
+  parseRecipeRevisionId,
   type CreationExperienceAdminApi,
 } from './admin-creation-experience-control';
 
@@ -19,8 +21,87 @@ function createLifecycleApi() {
   const histories = new Map<string, Array<Record<string, unknown>>>();
   const heads = new Map<string, Record<string, unknown>>();
   const keyFor = (kind: 'recipe' | 'surface', id: string) => `${kind}:${id}`;
+
+  const buildPublishedRevisions = (
+    surfaceId: string,
+    recipeIds: string[]
+  ) => {
+    const merged = new Set<string>(
+      recipeIds.map((id) => String(id).trim()).filter(Boolean)
+    );
+    const surface = heads.get(keyFor('surface', surfaceId));
+    const refs = Array.isArray(surface?.recipeRefs)
+      ? (surface.recipeRefs as Array<{ recipeRevisionId?: string }>)
+      : [];
+    for (const ref of refs) {
+      const parsed = parseRecipeRevisionId(String(ref.recipeRevisionId ?? ''));
+      if (parsed) merged.add(parsed.recipeId);
+    }
+    const groups = [...merged]
+      .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+      .map((recipeId) => {
+        const history = histories.get(keyFor('recipe', recipeId)) ?? [];
+        const candidates = history
+          .filter((entry) => entry.status === 'published')
+          .map((entry) => ({
+            recipeId,
+            revisionId: String(entry.revisionId),
+            revision: Number(entry.revision),
+            title: String(
+              (entry.presentation as { title?: string } | undefined)?.title ??
+                recipeId
+            ),
+            lensId: (entry.lensId as string) ?? 'image_text',
+            publishedAt: '2026-08-06T00:00:00.000Z',
+          }))
+          .sort((a, b) => b.revision - a.revision);
+        return { recipeId, candidates };
+      });
+    const latestByRecipe = new Map<
+      string,
+      {
+        recipeId: string;
+        revisionId: string;
+        revision: number;
+        title: string;
+        lensId: string;
+        publishedAt: string;
+      }
+    >();
+    for (const [key, history] of histories.entries()) {
+      if (!key.startsWith('recipe:')) continue;
+      const published = history.filter((entry) => entry.status === 'published');
+      const latest = published[published.length - 1];
+      if (!latest) continue;
+      const recipeId = String(latest.recipeId ?? key.slice('recipe:'.length));
+      latestByRecipe.set(recipeId, {
+        recipeId,
+        revisionId: String(latest.revisionId),
+        revision: Number(latest.revision),
+        title: String(
+          (latest.presentation as { title?: string } | undefined)?.title ??
+            recipeId
+        ),
+        lensId: (latest.lensId as string) ?? 'image_text',
+        publishedAt: '2026-08-06T00:00:00.000Z',
+      });
+    }
+    const availableRecipeHeads = [...latestByRecipe.values()].sort((a, b) =>
+      a.recipeId < b.recipeId ? -1 : a.recipeId > b.recipeId ? 1 : 0
+    );
+    return { groups, availableRecipeHeads };
+  };
+
   const api: CreationExperienceAdminApi = {
     query: vi.fn(async (action, payload) => {
+      if (action === 'recipe_published_revisions') {
+        return buildPublishedRevisions(
+          String(payload.surfaceId ?? ''),
+          Array.isArray(payload.recipeIds)
+            ? (payload.recipeIds as string[])
+            : []
+        );
+      }
       const kind = action.startsWith('recipe_') ? 'recipe' : 'surface';
       const id = String(payload[kind === 'recipe' ? 'recipeId' : 'surfaceId']);
       const key = keyFor(kind, id);
@@ -38,7 +119,9 @@ function createLifecycleApi() {
         ? 'draft'
         : action.endsWith('_preview')
           ? 'preview'
-          : 'published';
+          : action.endsWith('_rollback')
+            ? 'published'
+            : 'published';
       const revision = Number(previous?.revision ?? 0) + 1;
       const body = action.endsWith('_draft')
         ? (payload.body as Record<string, unknown>)
@@ -58,13 +141,13 @@ function createLifecycleApi() {
       return record;
     }),
   };
-  return api;
+  return { api, histories, heads, keyFor, buildPublishedRevisions };
 }
 
 describe('Recipe / Surface visual lifecycle editor', () => {
   it('drafts, previews, publishes and rolls back a Recipe through the public API', async () => {
     const user = userEvent.setup();
-    const api = createLifecycleApi();
+    const { api } = createLifecycleApi();
     render(<AdminCreationExperienceControl api={api} />);
 
     await user.type(screen.getByLabelText('Recipe ID'), 'recipe.admin.demo');
@@ -128,12 +211,15 @@ describe('Recipe / Surface visual lifecycle editor', () => {
 
   it('enters Recipe preview before publish validation passes', async () => {
     const user = userEvent.setup();
-    const api = createLifecycleApi();
+    const { api } = createLifecycleApi();
     const query = api.query as ReturnType<typeof vi.fn>;
     query.mockImplementation(
       async (action: string, _payload: Record<string, unknown>) => {
         if (action === 'recipe_validate') {
           return { ok: false, errors: ['publish contract is incomplete'] };
+        }
+        if (action === 'recipe_published_revisions') {
+          return { groups: [], availableRecipeHeads: [] };
         }
         if (action.endsWith('_history')) return [];
         return null;
@@ -641,21 +727,85 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     );
   });
 
-  it('visually edits a Surface without retired Pro Studio tool offers', async () => {
+  it('visually edits a Surface from published revision candidates (no free-text fallback)', async () => {
     const user = userEvent.setup();
-    const api = createLifecycleApi();
+    const { api, histories, heads, keyFor } = createLifecycleApi();
+    // Seed a published Recipe so the Surface card can pick a candidate.
+    const recipeId = 'recipe.admin.demo';
+    const publishedRecipe = {
+      recipeId,
+      revision: 3,
+      revisionId: `${recipeId}@3`,
+      status: 'published',
+      lensId: 'image_text',
+      presentation: {
+        title: '门店活动图文',
+        summary: 'demo',
+        actionLabel: '选择图文并套用',
+      },
+    };
+    histories.set(keyFor('recipe', recipeId), [publishedRecipe]);
+    heads.set(keyFor('recipe', recipeId), publishedRecipe);
+
+    // Seed an empty-ish surface head so candidates query can merge refs later.
+    const surfaceId = 'surface.admin.demo';
+    const surfaceHead = {
+      surfaceId,
+      revision: 0,
+      revisionId: `${surfaceId}@0`,
+      status: 'draft',
+      recipeRefs: [] as Array<Record<string, unknown>>,
+    };
+    // surface_get returns null for brand-new IDs in real Core; seed for load path.
+    heads.set(keyFor('surface', surfaceId), {
+      ...surfaceHead,
+      revision: 1,
+      revisionId: `${surfaceId}@1`,
+      recipeRefs: [
+        {
+          recipeRevisionId: `${recipeId}@3`,
+          lensId: 'image_text',
+          order: 1,
+          featured: true,
+          visible: true,
+        },
+      ],
+    });
+    histories.set(keyFor('surface', surfaceId), [
+      heads.get(keyFor('surface', surfaceId))!,
+    ]);
+
     render(<AdminCreationExperienceControl api={api} />);
     await user.click(screen.getByRole('tab', { name: 'Surface 编辑' }));
 
     const editor = screen.getByTestId('surface-editor');
-    await user.type(
-      within(editor).getByLabelText('Surface ID'),
-      'surface.admin.demo'
+    // Free-text version input must not exist (#376 / Spec D5).
+    expect(
+      within(editor).queryByLabelText('Recipe revision ID')
+    ).not.toBeInTheDocument();
+    expect(
+      within(editor).queryByRole('textbox', { name: /Recipe revision/i })
+    ).not.toBeInTheDocument();
+
+    await user.type(within(editor).getByLabelText('Surface ID'), surfaceId);
+    await user.click(
+      within(editor).getByRole('button', { name: '加载 Surface' })
     );
-    await user.type(
-      within(editor).getByLabelText('Recipe revision ID'),
-      'recipe.admin.demo@3'
+    expect(
+      await screen.findByTestId('surface-lifecycle-status')
+    ).toHaveTextContent('draft · r1');
+
+    const revisionSelect = await within(editor).findByTestId(
+      'surface-recipe-revision-0'
     );
+    expect(revisionSelect.tagName).toBe('SELECT');
+    const options = within(revisionSelect)
+      .getAllByRole('option')
+      .map((option) => option.getAttribute('value'));
+    expect(options).toContain(`${recipeId}@3`);
+    expect(options).not.toContain(`${recipeId}@1`); // draft never listed
+    await user.selectOptions(revisionSelect, `${recipeId}@3`);
+
     await user.type(within(editor).getByLabelText('变更原因'), '上线首页入口');
     expect(within(editor).queryByText('批量去背景')).not.toBeInTheDocument();
     expect(
@@ -670,9 +820,9 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     );
     expect(
       await screen.findByTestId('surface-lifecycle-status')
-    ).toHaveTextContent('draft · r1');
+    ).toHaveTextContent('draft · r2');
     expect(screen.getByTestId('surface-visual-preview')).toHaveTextContent(
-      'recipe.admin.demo@3'
+      `${recipeId}@3`
     );
     await user.click(
       within(editor).getByRole('button', { name: '生成 Surface 预览' })
@@ -682,32 +832,73 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     );
     expect(
       await screen.findByTestId('surface-lifecycle-status')
-    ).toHaveTextContent('published · r3');
+    ).toHaveTextContent('published · r4');
     expect(api.command).toHaveBeenCalledWith(
       'surface_draft',
       expect.objectContaining({
         body: expect.objectContaining({
-          recipeRefs: expect.any(Array),
+          recipeRefs: expect.arrayContaining([
+            expect.objectContaining({ recipeRevisionId: `${recipeId}@3` }),
+          ]),
         }),
       }),
       expect.any(String)
+    );
+    expect(api.query).toHaveBeenCalledWith(
+      'recipe_published_revisions',
+      expect.objectContaining({ surfaceId })
     );
   });
 
   it('serializes Surface publish validation and rollback commands', async () => {
     const user = userEvent.setup();
-    const api = createLifecycleApi();
+    const { api, histories, heads, keyFor } = createLifecycleApi();
+    const recipeId = 'recipe.admin.demo';
+    const publishedRecipe = {
+      recipeId,
+      revision: 3,
+      revisionId: `${recipeId}@3`,
+      status: 'published',
+      lensId: 'image_text',
+      presentation: {
+        title: '门店活动图文',
+        summary: 'demo',
+        actionLabel: 'Go',
+      },
+    };
+    histories.set(keyFor('recipe', recipeId), [publishedRecipe]);
+    heads.set(keyFor('recipe', recipeId), publishedRecipe);
+    const surfaceId = 'surface.admin.race';
+    heads.set(keyFor('surface', surfaceId), {
+      surfaceId,
+      revision: 1,
+      revisionId: `${surfaceId}@1`,
+      status: 'draft',
+      recipeRefs: [
+        {
+          recipeRevisionId: `${recipeId}@3`,
+          lensId: 'image_text',
+          order: 1,
+          featured: true,
+          visible: true,
+        },
+      ],
+    });
+    histories.set(keyFor('surface', surfaceId), [
+      heads.get(keyFor('surface', surfaceId))!,
+    ]);
+
     render(<AdminCreationExperienceControl api={api} />);
     await user.click(screen.getByRole('tab', { name: 'Surface 编辑' }));
 
     const editor = screen.getByTestId('surface-editor');
-    await user.type(
-      within(editor).getByLabelText('Surface ID'),
-      'surface.admin.race'
+    await user.type(within(editor).getByLabelText('Surface ID'), surfaceId);
+    await user.click(
+      within(editor).getByRole('button', { name: '加载 Surface' })
     );
-    await user.type(
-      within(editor).getByLabelText('Recipe revision ID'),
-      'recipe.admin.demo@3'
+    await user.selectOptions(
+      await within(editor).findByTestId('surface-recipe-revision-0'),
+      `${recipeId}@3`
     );
     await user.type(
       within(editor).getByLabelText('变更原因'),
@@ -725,7 +916,7 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     );
     expect(
       await screen.findByTestId('surface-lifecycle-status')
-    ).toHaveTextContent('published · r3');
+    ).toHaveTextContent('published · r4');
 
     await user.click(
       within(editor).getByRole('button', { name: '保存 Surface 草稿' })
@@ -756,7 +947,7 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     );
     await user.selectOptions(
       within(editor).getByLabelText('Surface 回滚版本'),
-      '3'
+      '4'
     );
     expect(
       within(editor).getByRole('button', { name: '回滚 Surface' })
@@ -765,7 +956,7 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     releaseValidation?.();
     await waitFor(() =>
       expect(screen.getByTestId('surface-lifecycle-status')).toHaveTextContent(
-        'published · r6'
+        'published · r7'
       )
     );
     await user.click(
@@ -773,9 +964,478 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     );
     await waitFor(() =>
       expect(screen.getByTestId('surface-lifecycle-status')).toHaveTextContent(
-        'published · r7'
+        'published · r8'
       )
     );
-    expect(within(editor).getByText(/回滚自 r3/)).toBeInTheDocument();
+    expect(within(editor).getByText(/回滚自 r4/)).toBeInTheDocument();
+  });
+
+  it('lists only published revisions descending per card and blocks empty save (#376)', async () => {
+    const user = userEvent.setup();
+    const { api, histories, heads, keyFor } = createLifecycleApi();
+    const recipeId = 'recipe.candidate.sort';
+    const surfaceId = 'surface.candidate.sort';
+    const rows = [
+      {
+        recipeId,
+        revision: 1,
+        revisionId: `${recipeId}@1`,
+        status: 'draft',
+        lensId: 'image_text',
+        presentation: { title: 'Draft', summary: 'd', actionLabel: 'Go' },
+      },
+      {
+        recipeId,
+        revision: 2,
+        revisionId: `${recipeId}@2`,
+        status: 'preview',
+        lensId: 'image_text',
+        presentation: { title: 'Preview', summary: 'p', actionLabel: 'Go' },
+      },
+      {
+        recipeId,
+        revision: 3,
+        revisionId: `${recipeId}@3`,
+        status: 'published',
+        lensId: 'image_text',
+        presentation: { title: 'Live v1', summary: 'l1', actionLabel: 'Go' },
+      },
+      {
+        recipeId,
+        revision: 4,
+        revisionId: `${recipeId}@4`,
+        status: 'retired',
+        lensId: 'image_text',
+        presentation: { title: 'Retired', summary: 'r', actionLabel: 'Go' },
+      },
+      {
+        recipeId,
+        revision: 5,
+        revisionId: `${recipeId}@5`,
+        status: 'published',
+        lensId: 'image_text',
+        presentation: { title: 'Live v2', summary: 'l2', actionLabel: 'Go' },
+      },
+    ];
+    histories.set(keyFor('recipe', recipeId), rows);
+    heads.set(keyFor('recipe', recipeId), rows[rows.length - 1]!);
+    heads.set(keyFor('surface', surfaceId), {
+      surfaceId,
+      revision: 1,
+      revisionId: `${surfaceId}@1`,
+      status: 'draft',
+      recipeRefs: [
+        {
+          recipeRevisionId: `${recipeId}@3`,
+          lensId: 'image_text',
+          order: 1,
+          featured: true,
+          visible: true,
+        },
+      ],
+    });
+
+    render(<AdminCreationExperienceControl api={api} />);
+    await user.click(screen.getByRole('tab', { name: 'Surface 编辑' }));
+    const editor = screen.getByTestId('surface-editor');
+    await user.type(within(editor).getByLabelText('Surface ID'), surfaceId);
+    await user.click(
+      within(editor).getByRole('button', { name: '加载 Surface' })
+    );
+
+    const revisionSelect = await within(editor).findByTestId(
+      'surface-recipe-revision-0'
+    );
+    const values = within(revisionSelect)
+      .getAllByRole('option')
+      .map((option) => option.getAttribute('value'))
+      .filter((value): value is string => Boolean(value));
+    expect(values).toEqual([`${recipeId}@5`, `${recipeId}@3`]);
+    expect(values).not.toContain(`${recipeId}@1`);
+    expect(values).not.toContain(`${recipeId}@2`);
+    expect(values).not.toContain(`${recipeId}@4`);
+
+    // Empty-candidate card cannot save: inject a head with zero published revisions.
+    const emptyRecipeId = 'recipe.never.published';
+    const query = api.query as ReturnType<typeof vi.fn>;
+    const original =
+      query.getMockImplementation() as CreationExperienceAdminApi['query'];
+    query.mockImplementation(async (action, payload) => {
+      if (action === 'recipe_published_revisions') {
+        const base = (await original(action, payload)) as {
+          groups: Array<{ recipeId: string; candidates: unknown[] }>;
+          availableRecipeHeads: Array<{
+            recipeId: string;
+            revisionId: string;
+            revision: number;
+            title: string;
+            lensId: string;
+            publishedAt: string;
+          }>;
+        };
+        return {
+          groups: [
+            ...base.groups.filter((group) => group.recipeId !== emptyRecipeId),
+            { recipeId: emptyRecipeId, candidates: [] },
+          ],
+          availableRecipeHeads: [
+            ...base.availableRecipeHeads.filter(
+              (head) => head.recipeId !== emptyRecipeId
+            ),
+            {
+              recipeId: emptyRecipeId,
+              revisionId: `${emptyRecipeId}@1`,
+              revision: 1,
+              title: 'Never live',
+              lensId: 'copy',
+              publishedAt: '2026-08-06T00:00:00.000Z',
+            },
+          ],
+        };
+      }
+      return original(action, payload);
+    });
+    // Reload so availableRecipeHeads includes the empty-candidate recipe.
+    await user.click(
+      within(editor).getByRole('button', { name: '加载 Surface' })
+    );
+    await user.click(
+      within(editor).getByRole('button', { name: '添加 Recipe' })
+    );
+    await user.selectOptions(
+      await within(editor).findByTestId('surface-recipe-pick-1'),
+      emptyRecipeId
+    );
+    expect(
+      await within(editor).findByTestId('surface-recipe-empty-1')
+    ).toHaveTextContent('暂无已发布版本');
+    expect(within(editor).getByTestId('surface-draft-button')).toBeDisabled();
+  });
+
+  it('shows same-page publish success panel and bridges Surface ref update (#376)', async () => {
+    const user = userEvent.setup();
+    const { api, histories, heads, keyFor } = createLifecycleApi();
+    const recipeId = 'recipe.bridge.demo';
+    const surfaceId = 'surface.bridge.demo';
+
+    // Preload surface with two matching refs + one other recipe.
+    const otherRecipeId = 'recipe.other';
+    histories.set(keyFor('recipe', otherRecipeId), [
+      {
+        recipeId: otherRecipeId,
+        revision: 1,
+        revisionId: `${otherRecipeId}@1`,
+        status: 'published',
+        lensId: 'copy',
+        presentation: { title: 'Other', summary: 'o', actionLabel: 'Go' },
+      },
+    ]);
+    heads.set(keyFor('recipe', otherRecipeId), {
+      recipeId: otherRecipeId,
+      revision: 1,
+      revisionId: `${otherRecipeId}@1`,
+      status: 'published',
+      lensId: 'copy',
+      presentation: { title: 'Other', summary: 'o', actionLabel: 'Go' },
+    });
+    heads.set(keyFor('surface', surfaceId), {
+      surfaceId,
+      revision: 2,
+      revisionId: `${surfaceId}@2`,
+      status: 'published',
+      recipeRefs: [
+        {
+          recipeRevisionId: `${recipeId}@3`,
+          lensId: 'image_text',
+          order: 1,
+          featured: true,
+          visible: true,
+        },
+        {
+          recipeRevisionId: `${recipeId}@3`,
+          lensId: 'image_text',
+          order: 2,
+          featured: false,
+          visible: false,
+        },
+        {
+          recipeRevisionId: `${otherRecipeId}@1`,
+          lensId: 'copy',
+          order: 3,
+          featured: false,
+          visible: true,
+        },
+      ],
+    });
+    histories.set(keyFor('surface', surfaceId), [
+      heads.get(keyFor('surface', surfaceId))!,
+    ]);
+
+    // Seed published r3 history for the recipe so publish can advance to r6.
+    const seedRecipe = {
+      recipeId,
+      revision: 3,
+      revisionId: `${recipeId}@3`,
+      status: 'published',
+      lensId: 'image_text',
+      presentation: {
+        title: '桥接配方',
+        summary: '旧版本',
+        actionLabel: '选择图文并套用',
+      },
+      delivery: {
+        contentPackagePlatform: 'xiaohongshu',
+        distributionTarget: 'export',
+        deliverableKind: 'note',
+        quantity: 1,
+        aspectRatio: '3:4',
+        notePageBound: 3,
+      },
+      modelPolicy: { mode: 'auto' },
+      promptRevisionRef: 'prompt.bridge@1',
+      skillRevisionRefs: [],
+      factTypes: [],
+      targetWorkspaceKind: 'image_text',
+    };
+    histories.set(keyFor('recipe', recipeId), [seedRecipe]);
+    heads.set(keyFor('recipe', recipeId), seedRecipe);
+
+    const hrefBefore = window.location.href;
+    render(<AdminCreationExperienceControl api={api} />);
+
+    // Prefill path: load Surface first so success panel can prefill surfaceId.
+    await user.click(screen.getByRole('tab', { name: 'Surface 编辑' }));
+    const editor = screen.getByTestId('surface-editor');
+    await user.type(within(editor).getByLabelText('Surface ID'), surfaceId);
+    await user.click(
+      within(editor).getByRole('button', { name: '加载 Surface' })
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('surface-lifecycle-status')).toHaveTextContent(
+        'published · r2'
+      )
+    );
+
+    await user.click(screen.getByRole('tab', { name: 'Recipe 编辑' }));
+    await user.type(screen.getByLabelText('Recipe ID'), recipeId);
+    await user.click(screen.getByRole('button', { name: '加载 Recipe' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('recipe-lifecycle-status')).toHaveTextContent(
+        'published · r3'
+      )
+    );
+    await user.clear(screen.getByLabelText('摘要'));
+    await user.type(screen.getByLabelText('摘要'), '新版本摘要');
+    await user.type(screen.getByLabelText('变更原因'), '发布后更新 Surface');
+    await user.click(screen.getByRole('button', { name: '保存 Recipe 草稿' }));
+    await user.click(screen.getByRole('button', { name: '生成 Recipe 预览' }));
+    await user.click(screen.getByRole('button', { name: '发布 Recipe' }));
+
+    const panel = await screen.findByTestId('recipe-publish-success-panel');
+    expect(panel).toBeInTheDocument();
+    expect(screen.getByTestId('recipe-publish-success-revision')).toHaveTextContent(
+      `${recipeId}@6`
+    );
+    // Prefill target surface from loaded Surface editor.
+    expect(screen.getByTestId('publish-success-surface-id')).toHaveValue(
+      surfaceId
+    );
+    // No new route navigation — same page control remains mounted.
+    expect(window.location.href).toBe(hrefBefore);
+    expect(screen.getByTestId('creation-experience-control')).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('update-surface-refs-button'));
+
+    const surfaceEditor = await screen.findByTestId('surface-editor');
+    expect(
+      await within(surfaceEditor).findByTestId('surface-ref-update-notice')
+    ).toHaveTextContent('已更新 2 处匹配的 Recipe 引用');
+    expect(within(surfaceEditor).getByLabelText('Surface ID')).toHaveValue(
+      surfaceId
+    );
+    // Matching refs upgraded; lens/order/featured/visible preserved in form state.
+    expect(
+      within(surfaceEditor).getByTestId('surface-recipe-revision-0')
+    ).toHaveValue(`${recipeId}@6`);
+    expect(
+      within(surfaceEditor).getByTestId('surface-recipe-revision-1')
+    ).toHaveValue(`${recipeId}@6`);
+    expect(
+      within(surfaceEditor).getByTestId('surface-recipe-revision-2')
+    ).toHaveValue(`${otherRecipeId}@1`);
+    expect(
+      within(surfaceEditor).getByLabelText('顺序', {
+        selector: '#surface-recipe-order-0',
+      })
+    ).toHaveValue(1);
+    expect(
+      within(surfaceEditor).getByLabelText('顺序', {
+        selector: '#surface-recipe-order-1',
+      })
+    ).toHaveValue(2);
+
+    await user.type(
+      within(surfaceEditor).getByLabelText('变更原因'),
+      '同步新 revision'
+    );
+    await user.click(
+      within(surfaceEditor).getByRole('button', { name: '保存 Surface 草稿' })
+    );
+    await waitFor(() =>
+      expect(api.command).toHaveBeenCalledWith(
+        'surface_draft',
+        expect.objectContaining({
+          surfaceId,
+          body: expect.objectContaining({
+            recipeRefs: [
+              expect.objectContaining({
+                recipeRevisionId: `${recipeId}@6`,
+                lensId: 'image_text',
+                order: 1,
+                featured: true,
+                visible: true,
+              }),
+              expect.objectContaining({
+                recipeRevisionId: `${recipeId}@6`,
+                lensId: 'image_text',
+                order: 2,
+                featured: false,
+                visible: false,
+              }),
+              expect.objectContaining({
+                recipeRevisionId: `${otherRecipeId}@1`,
+                lensId: 'copy',
+                order: 3,
+              }),
+            ],
+          }),
+        }),
+        expect.any(String)
+      )
+    );
+  });
+
+  it('shows explicit notice when Surface does not reference the published Recipe (#376)', async () => {
+    const user = userEvent.setup();
+    const { api, histories, heads, keyFor } = createLifecycleApi();
+    const recipeId = 'recipe.unreferenced';
+    const surfaceId = 'surface.unreferenced';
+    const otherRecipeId = 'recipe.other.only';
+    histories.set(keyFor('recipe', otherRecipeId), [
+      {
+        recipeId: otherRecipeId,
+        revision: 1,
+        revisionId: `${otherRecipeId}@1`,
+        status: 'published',
+        lensId: 'copy',
+        presentation: { title: 'Only', summary: 'o', actionLabel: 'Go' },
+      },
+    ]);
+    heads.set(keyFor('surface', surfaceId), {
+      surfaceId,
+      revision: 1,
+      revisionId: `${surfaceId}@1`,
+      status: 'published',
+      recipeRefs: [
+        {
+          recipeRevisionId: `${otherRecipeId}@1`,
+          lensId: 'copy',
+          order: 1,
+          featured: true,
+          visible: true,
+        },
+      ],
+    });
+    histories.set(keyFor('surface', surfaceId), [
+      heads.get(keyFor('surface', surfaceId))!,
+    ]);
+    const seedRecipe = {
+      recipeId,
+      revision: 1,
+      revisionId: `${recipeId}@1`,
+      status: 'preview',
+      lensId: 'image_text',
+      presentation: {
+        title: '未挂接',
+        summary: 's',
+        actionLabel: '选择图文并套用',
+      },
+      delivery: {
+        contentPackagePlatform: 'xiaohongshu',
+        distributionTarget: 'export',
+        deliverableKind: 'note',
+        quantity: 1,
+        aspectRatio: '3:4',
+        notePageBound: 3,
+      },
+      modelPolicy: { mode: 'auto' },
+      promptRevisionRef: 'prompt.u@1',
+      skillRevisionRefs: [],
+      factTypes: [],
+      targetWorkspaceKind: 'image_text',
+    };
+    histories.set(keyFor('recipe', recipeId), [seedRecipe]);
+    heads.set(keyFor('recipe', recipeId), seedRecipe);
+
+    render(<AdminCreationExperienceControl api={api} />);
+    await user.type(screen.getByLabelText('Recipe ID'), recipeId);
+    await user.click(screen.getByRole('button', { name: '加载 Recipe' }));
+    await user.type(screen.getByLabelText('变更原因'), 'publish unreferenced');
+    await user.click(screen.getByRole('button', { name: '发布 Recipe' }));
+    // preview → publish: status is preview, publish button enabled.
+    // Wait - head status is preview so publish is enabled without re-preview.
+    const panel = await screen.findByTestId('recipe-publish-success-panel');
+    expect(panel).toBeInTheDocument();
+    await user.type(screen.getByTestId('publish-success-surface-id'), surfaceId);
+    await user.click(screen.getByTestId('update-surface-refs-button'));
+    expect(
+      await screen.findByTestId('surface-ref-update-notice')
+    ).toHaveTextContent('该 Surface 未引用此 Recipe');
+  });
+
+  it('applyPendingRecipeRevisionToRefs updates only matching recipeIds', () => {
+    const pending = 'recipe.a@9';
+    const { refs, matchedCount } = applyPendingRecipeRevisionToRefs(
+      [
+        {
+          recipeRevisionId: 'recipe.a@3',
+          lensId: 'image_text',
+          order: 1,
+          featured: true,
+          visible: true,
+        },
+        {
+          recipeRevisionId: 'recipe.b@1',
+          lensId: 'copy',
+          order: 2,
+          featured: false,
+          visible: true,
+        },
+        {
+          recipeRevisionId: 'recipe.a@3',
+          lensId: 'video',
+          order: 3,
+          featured: false,
+          visible: false,
+        },
+      ],
+      pending
+    );
+    expect(matchedCount).toBe(2);
+    expect(refs[0]).toEqual({
+      recipeRevisionId: pending,
+      lensId: 'image_text',
+      order: 1,
+      featured: true,
+      visible: true,
+    });
+    expect(refs[1]?.recipeRevisionId).toBe('recipe.b@1');
+    expect(refs[2]).toEqual({
+      recipeRevisionId: pending,
+      lensId: 'video',
+      order: 3,
+      featured: false,
+      visible: false,
+    });
   });
 });

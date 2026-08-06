@@ -5,7 +5,7 @@ import type {
   RecipeModelPolicyMode,
   SurfaceRecipeRef,
 } from '@meiye/contracts';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Badge } from '@/components/reui/badge';
 import {
@@ -32,6 +32,37 @@ export interface CreationExperienceAdminApi {
     idempotencyKey: string
   ): Promise<unknown>;
 }
+
+/** Published revision candidate from recipe_published_revisions (#373 / #376). */
+type RecipePublishedRevisionCandidate = {
+  recipeId: string;
+  revisionId: string;
+  revision: number;
+  title: string;
+  lensId: CreationLensId;
+  publishedAt: string;
+};
+
+type RecipePublishedRevisionGroup = {
+  recipeId: string;
+  candidates: RecipePublishedRevisionCandidate[];
+};
+
+type RecipePublishedRevisionsResult = {
+  groups: RecipePublishedRevisionGroup[];
+  availableRecipeHeads: RecipePublishedRevisionCandidate[];
+};
+
+export type RecipePublishSuccess = {
+  recipeId: string;
+  revisionId: string;
+};
+
+export type SurfaceBridgeRequest = {
+  nonce: number;
+  surfaceId: string;
+  pendingRecipeRevisionId: string;
+};
 
 const defaultApi: CreationExperienceAdminApi = {
   query: (action, payload) =>
@@ -211,6 +242,55 @@ function asSurfaceRecord(value: unknown): SurfaceRecord | null {
   return value as SurfaceRecord;
 }
 
+/** Parse `recipeId@revision` revision ids (mirrors Core parseRecipeRevisionId). */
+export function parseRecipeRevisionId(
+  revisionId: string
+): { recipeId: string; revision: number } | null {
+  const at = revisionId.lastIndexOf('@');
+  if (at <= 0) return null;
+  const recipeId = revisionId.slice(0, at);
+  const revision = Number(revisionId.slice(at + 1));
+  if (!recipeId || !Number.isInteger(revision) || revision < 1) return null;
+  return { recipeId, revision };
+}
+
+function asPublishedRevisionsResult(
+  value: unknown
+): RecipePublishedRevisionsResult | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Partial<RecipePublishedRevisionsResult>;
+  if (!Array.isArray(record.groups) || !Array.isArray(record.availableRecipeHeads)) {
+    return null;
+  }
+  return {
+    groups: record.groups as RecipePublishedRevisionGroup[],
+    availableRecipeHeads:
+      record.availableRecipeHeads as RecipePublishedRevisionCandidate[],
+  };
+}
+
+/**
+ * Replace every Surface recipeRef that matches pending recipeId with the new
+ * revisionId; preserve lens/order/featured/visible on each match.
+ */
+export function applyPendingRecipeRevisionToRefs(
+  refs: SurfaceRecipeRef[],
+  pendingRecipeRevisionId: string
+): { refs: SurfaceRecipeRef[]; matchedCount: number } {
+  const pending = parseRecipeRevisionId(pendingRecipeRevisionId);
+  if (!pending) return { refs, matchedCount: 0 };
+  let matchedCount = 0;
+  const next = refs.map((ref) => {
+    const current = parseRecipeRevisionId(ref.recipeRevisionId);
+    if (current?.recipeId === pending.recipeId) {
+      matchedCount += 1;
+      return { ...ref, recipeRevisionId: pendingRecipeRevisionId };
+    }
+    return ref;
+  });
+  return { refs: next, matchedCount };
+}
+
 function publishedRevisions<T extends { revision: number; status: string }>(
   history: T[],
   currentRevision?: number
@@ -267,7 +347,13 @@ function LifecycleHistory({
   );
 }
 
-function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
+function RecipeEditor({
+  api,
+  onPublishSuccess,
+}: {
+  api: CreationExperienceAdminApi;
+  onPublishSuccess?: (success: RecipePublishSuccess) => void;
+}) {
   const [recipeId, setRecipeId] = useState('');
   const [lensId, setLensId] = useState<CreationLensId>('image_text');
   const [title, setTitle] = useState('');
@@ -621,11 +707,29 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
     if (!head || !reason.trim()) return;
     await runOperation(async () => {
       if (action === 'recipe_publish' && !(await validate())) return;
-      await executeCommand(action, {
-        recipeId,
-        expectedRevision: head.revision,
-        reason: reason.trim(),
-      });
+      const result = await api.command(
+        action,
+        {
+          recipeId,
+          expectedRevision: head.revision,
+          reason: reason.trim(),
+        },
+        idempotencyKey(action, recipeId)
+      );
+      const record = asRecipeRecord(result);
+      setHead(record);
+      if (record) hydrate(record);
+      await refreshHistory();
+      if (
+        action === 'recipe_publish' &&
+        record?.status === 'published' &&
+        record.revisionId
+      ) {
+        onPublishSuccess?.({
+          recipeId: record.recipeId,
+          revisionId: record.revisionId,
+        });
+      }
     });
   };
 
@@ -984,49 +1088,171 @@ function newSurfaceRecipeRef(order: number): SurfaceRecipeRef {
   };
 }
 
-function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
+function groupCandidatesForRecipe(
+  groups: RecipePublishedRevisionGroup[],
+  recipeId: string
+): RecipePublishedRevisionCandidate[] {
+  const group = groups.find((entry) => entry.recipeId === recipeId);
+  if (!group) return [];
+  // Core already sorts revision DESC; re-sort defensively for UI contract.
+  return [...group.candidates].sort((a, b) => b.revision - a.revision);
+}
+
+function SurfaceEditor({
+  api,
+  bridgeRequest,
+  onLoadedSurfaceIdChange,
+}: {
+  api: CreationExperienceAdminApi;
+  bridgeRequest?: SurfaceBridgeRequest | null;
+  onLoadedSurfaceIdChange?: (surfaceId: string) => void;
+}) {
   const [surfaceId, setSurfaceId] = useState('');
   const [recipeRefs, setRecipeRefs] = useState<SurfaceRecipeRef[]>([
     newSurfaceRecipeRef(1),
   ]);
+  /** Recipe pick for new cards that do not yet have a revisionId. */
+  const [draftRecipeIds, setDraftRecipeIds] = useState<Record<number, string>>(
+    {}
+  );
   const [reason, setReason] = useState('');
   const [head, setHead] = useState<SurfaceRecord | null>(null);
   const [history, setHistory] = useState<SurfaceRecord[]>([]);
   const [rollbackRevision, setRollbackRevision] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [refUpdateNotice, setRefUpdateNotice] = useState('');
+  const [groups, setGroups] = useState<RecipePublishedRevisionGroup[]>([]);
+  const [availableRecipeHeads, setAvailableRecipeHeads] = useState<
+    RecipePublishedRevisionCandidate[]
+  >([]);
+  const [candidatesReady, setCandidatesReady] = useState(false);
+  const [candidatesFailed, setCandidatesFailed] = useState(false);
   const operationInFlight = useRef(false);
+  const handledBridgeNonce = useRef<number | null>(null);
 
   const hydrate = (record: SurfaceRecord) => {
     setRecipeRefs(
       record.recipeRefs.length ? record.recipeRefs : [newSurfaceRecipeRef(1)]
     );
+    setDraftRecipeIds({});
   };
 
-  const refreshHistory = async () => {
-    const result = await api.query('surface_history', { surfaceId });
+  const refreshHistory = async (id = surfaceId) => {
+    const result = await api.query('surface_history', { surfaceId: id });
     setHistory(Array.isArray(result) ? (result as SurfaceRecord[]) : []);
   };
 
-  const load = async () => {
-    if (!surfaceId.trim()) return;
+  const refreshPublishedCandidates = async (
+    id: string,
+    extraRecipeIds: string[] = []
+  ) => {
+    const trimmed = id.trim();
+    if (!trimmed) {
+      setGroups([]);
+      setAvailableRecipeHeads([]);
+      setCandidatesReady(false);
+      setCandidatesFailed(false);
+      return;
+    }
+    try {
+      const result = asPublishedRevisionsResult(
+        await api.query('recipe_published_revisions', {
+          surfaceId: trimmed,
+          recipeIds: extraRecipeIds,
+        })
+      );
+      if (!result) {
+        setGroups([]);
+        setAvailableRecipeHeads([]);
+        setCandidatesReady(false);
+        setCandidatesFailed(true);
+        return;
+      }
+      setGroups(result.groups);
+      setAvailableRecipeHeads(result.availableRecipeHeads);
+      setCandidatesReady(true);
+      setCandidatesFailed(false);
+    } catch {
+      setGroups([]);
+      setAvailableRecipeHeads([]);
+      setCandidatesReady(false);
+      setCandidatesFailed(true);
+    }
+  };
+
+  const loadSurface = async (
+    id: string,
+    options?: { pendingRecipeRevisionId?: string }
+  ) => {
+    const trimmed = id.trim();
+    if (!trimmed) return;
     setBusy(true);
     setError('');
+    setRefUpdateNotice('');
     try {
       const [record, records] = await Promise.all([
-        api.query('surface_get', { surfaceId: surfaceId.trim() }),
-        api.query('surface_history', { surfaceId: surfaceId.trim() }),
+        api.query('surface_get', { surfaceId: trimmed }),
+        api.query('surface_history', { surfaceId: trimmed }),
       ]);
       const parsed = asSurfaceRecord(record);
+      setSurfaceId(trimmed);
       setHead(parsed);
       setHistory(Array.isArray(records) ? (records as SurfaceRecord[]) : []);
-      if (parsed) hydrate(parsed);
+      let nextRefs: SurfaceRecipeRef[] = parsed?.recipeRefs.length
+        ? parsed.recipeRefs
+        : [newSurfaceRecipeRef(1)];
+      if (options?.pendingRecipeRevisionId) {
+        const applied = applyPendingRecipeRevisionToRefs(
+          nextRefs,
+          options.pendingRecipeRevisionId
+        );
+        nextRefs = applied.refs;
+        if (applied.matchedCount === 0) {
+          setRefUpdateNotice('该 Surface 未引用此 Recipe');
+        } else {
+          setRefUpdateNotice(
+            `已更新 ${applied.matchedCount} 处匹配的 Recipe 引用至 ${options.pendingRecipeRevisionId}`
+          );
+        }
+      }
+      setRecipeRefs(nextRefs);
+      setDraftRecipeIds({});
+      if (parsed) {
+        onLoadedSurfaceIdChange?.(trimmed);
+      }
+      const extraIds = [
+        ...nextRefs
+          .map((ref) => parseRecipeRevisionId(ref.recipeRevisionId)?.recipeId)
+          .filter((value): value is string => Boolean(value)),
+        ...(options?.pendingRecipeRevisionId
+          ? [
+              parseRecipeRevisionId(options.pendingRecipeRevisionId)?.recipeId,
+            ].filter((value): value is string => Boolean(value))
+          : []),
+      ];
+      await refreshPublishedCandidates(trimmed, [...new Set(extraIds)]);
     } catch (loadError) {
       setError(messageOf(loadError));
+      setCandidatesReady(false);
+      setCandidatesFailed(true);
     } finally {
       setBusy(false);
     }
   };
+
+  const load = async () => {
+    await loadSurface(surfaceId);
+  };
+
+  useEffect(() => {
+    if (!bridgeRequest) return;
+    if (handledBridgeNonce.current === bridgeRequest.nonce) return;
+    handledBridgeNonce.current = bridgeRequest.nonce;
+    void loadSurface(bridgeRequest.surfaceId, {
+      pendingRecipeRevisionId: bridgeRequest.pendingRecipeRevisionId,
+    });
+  }, [bridgeRequest]);
 
   const runOperation = async (operation: () => Promise<void>) => {
     if (operationInFlight.current) return;
@@ -1051,8 +1277,17 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
     );
     const record = asSurfaceRecord(result);
     setHead(record);
-    if (record) hydrate(record);
-    await refreshHistory();
+    if (record) {
+      hydrate(record);
+      onLoadedSurfaceIdChange?.(surfaceId.trim());
+    }
+    await refreshHistory(surfaceId.trim());
+    await refreshPublishedCandidates(
+      surfaceId.trim(),
+      record?.recipeRefs
+        .map((ref) => parseRecipeRevisionId(ref.recipeRevisionId)?.recipeId)
+        .filter((value): value is string => Boolean(value)) ?? []
+    );
   };
 
   const execute = (action: string, payload: AdminPayload) =>
@@ -1076,6 +1311,65 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
     );
   };
 
+  const recipeIdForCard = (ref: SurfaceRecipeRef, index: number): string => {
+    const parsed = parseRecipeRevisionId(ref.recipeRevisionId);
+    if (parsed) return parsed.recipeId;
+    return draftRecipeIds[index] ?? '';
+  };
+
+  const candidatesForCard = (
+    ref: SurfaceRecipeRef,
+    index: number
+  ): RecipePublishedRevisionCandidate[] => {
+    const recipeId = recipeIdForCard(ref, index);
+    if (!recipeId) return [];
+    return groupCandidatesForRecipe(groups, recipeId);
+  };
+
+  const cardBlocksSave = (ref: SurfaceRecipeRef, index: number): boolean => {
+    if (!candidatesReady || candidatesFailed) return true;
+    const recipeId = recipeIdForCard(ref, index);
+    if (!recipeId) return true;
+    const candidates = candidatesForCard(ref, index);
+    if (candidates.length === 0) return true;
+    if (!ref.recipeRevisionId.trim()) return true;
+    return !candidates.some(
+      (candidate) => candidate.revisionId === ref.recipeRevisionId
+    );
+  };
+
+  const anyCardBlocksSave = recipeRefs.some((ref, index) =>
+    cardBlocksSave(ref, index)
+  );
+
+  const selectRecipeForNewCard = async (index: number, recipeId: string) => {
+    setDraftRecipeIds((current) => ({ ...current, [index]: recipeId }));
+    const headCandidate = availableRecipeHeads.find(
+      (entry) => entry.recipeId === recipeId
+    );
+    updateRef(index, {
+      recipeRevisionId: '',
+      ...(headCandidate ? { lensId: headCandidate.lensId } : {}),
+    });
+    if (surfaceId.trim()) {
+      await refreshPublishedCandidates(surfaceId.trim(), [recipeId]);
+    }
+  };
+
+  const selectRevisionForCard = (
+    index: number,
+    revisionId: string,
+    candidates: RecipePublishedRevisionCandidate[]
+  ) => {
+    const candidate = candidates.find(
+      (entry) => entry.revisionId === revisionId
+    );
+    updateRef(index, {
+      recipeRevisionId: revisionId,
+      ...(candidate ? { lensId: candidate.lensId } : {}),
+    });
+  };
+
   const draft = () => {
     const refs = recipeRefs
       .filter((ref) => ref.recipeRevisionId.trim())
@@ -1089,6 +1383,14 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
     }
     if (!reason.trim()) {
       setError('请填写变更原因。');
+      return;
+    }
+    if (candidatesFailed || !candidatesReady) {
+      setError('已发布版本候选不可用，无法保存该卡。');
+      return;
+    }
+    if (anyCardBlocksSave) {
+      setError('存在未选择已发布版本的 Recipe 卡，无法保存。');
       return;
     }
     void execute('surface_draft', {
@@ -1124,6 +1426,7 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
   };
 
   const rollbackOptions = publishedRevisions(history, head?.revision);
+  const draftDisabled = busy || anyCardBlocksSave || candidatesFailed;
 
   return (
     <div
@@ -1134,7 +1437,7 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
         <FrameHeader>
           <FrameTitle>Surface 编排</FrameTitle>
           <FrameDescription>
-            按顺序编排已发布 Recipe；工具区只提供通过能力验收的入口。
+            按顺序编排已发布 Recipe；版本仅能从已发布候选中选择。
           </FrameDescription>
         </FrameHeader>
         <FramePanel className="space-y-4">
@@ -1156,6 +1459,15 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
               加载 Surface
             </Button>
           </div>
+          {refUpdateNotice ? (
+            <p
+              role="status"
+              data-testid="surface-ref-update-notice"
+              className="text-sm text-muted-foreground"
+            >
+              {refUpdateNotice}
+            </p>
+          ) : null}
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <Label>Recipe 卡片</Label>
@@ -1173,91 +1485,167 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
                 添加 Recipe
               </Button>
             </div>
-            {recipeRefs.map((ref, index) => (
-              <div
-                key={index}
-                className="grid gap-3 rounded-xl border border-input p-3 sm:grid-cols-2"
-              >
-                <div className="space-y-2 sm:col-span-2">
-                  <Label htmlFor={`surface-recipe-revision-${index}`}>
-                    Recipe revision ID
-                  </Label>
-                  <Input
-                    id={`surface-recipe-revision-${index}`}
-                    value={ref.recipeRevisionId}
-                    onChange={(event) =>
-                      updateRef(index, { recipeRevisionId: event.target.value })
-                    }
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={`surface-recipe-lens-${index}`}>
-                    创作形式
-                  </Label>
-                  <select
-                    id={`surface-recipe-lens-${index}`}
-                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={ref.lensId}
-                    onChange={(event) =>
-                      updateRef(index, {
-                        lensId: event.target.value as CreationLensId,
-                      })
-                    }
-                  >
-                    <option value="copy">文案</option>
-                    <option value="image_text">图文</option>
-                    <option value="video">视频</option>
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor={`surface-recipe-order-${index}`}>顺序</Label>
-                  <Input
-                    id={`surface-recipe-order-${index}`}
-                    type="number"
-                    value={ref.order}
-                    onChange={(event) =>
-                      updateRef(index, { order: Number(event.target.value) })
-                    }
-                  />
-                </div>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={ref.featured}
-                    onChange={(event) =>
-                      updateRef(index, { featured: event.target.checked })
-                    }
-                  />
-                  首页推荐
-                </label>
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={ref.visible}
-                    onChange={(event) =>
-                      updateRef(index, { visible: event.target.checked })
-                    }
-                  />
-                  可见
-                </label>
-                {recipeRefs.length > 1 ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      setRecipeRefs((current) =>
-                        current.filter(
-                          (_, currentIndex) => currentIndex !== index
+            {recipeRefs.map((ref, index) => {
+              const recipeId = recipeIdForCard(ref, index);
+              const candidates = candidatesForCard(ref, index);
+              const isNewCard = !parseRecipeRevisionId(ref.recipeRevisionId);
+              return (
+                <div
+                  key={index}
+                  className="grid gap-3 rounded-xl border border-input p-3 sm:grid-cols-2"
+                  data-testid={`surface-recipe-card-${index}`}
+                >
+                  {isNewCard ? (
+                    <div className="space-y-2 sm:col-span-2">
+                      <Label htmlFor={`surface-recipe-pick-${index}`}>
+                        Recipe
+                      </Label>
+                      <select
+                        id={`surface-recipe-pick-${index}`}
+                        data-testid={`surface-recipe-pick-${index}`}
+                        className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                        value={recipeId}
+                        onChange={(event) =>
+                          void selectRecipeForNewCard(index, event.target.value)
+                        }
+                      >
+                        <option value="">选择已发布 Recipe</option>
+                        {availableRecipeHeads.map((headCandidate) => (
+                          <option
+                            key={headCandidate.recipeId}
+                            value={headCandidate.recipeId}
+                          >
+                            {headCandidate.title} ({headCandidate.recipeId})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="space-y-1 sm:col-span-2">
+                      <p className="text-sm font-medium">{recipeId}</p>
+                    </div>
+                  )}
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor={`surface-recipe-revision-${index}`}>
+                      Recipe 版本
+                    </Label>
+                    <select
+                      id={`surface-recipe-revision-${index}`}
+                      data-testid={`surface-recipe-revision-${index}`}
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={ref.recipeRevisionId}
+                      disabled={!recipeId || candidates.length === 0}
+                      onChange={(event) =>
+                        selectRevisionForCard(
+                          index,
+                          event.target.value,
+                          candidates
                         )
-                      )
-                    }
-                  >
-                    移除
-                  </Button>
-                ) : null}
-              </div>
-            ))}
+                      }
+                    >
+                      <option value="">
+                        {candidates.length === 0
+                          ? '暂无已发布版本'
+                          : '选择已发布版本'}
+                      </option>
+                      {candidates.map((candidate) => (
+                        <option
+                          key={candidate.revisionId}
+                          value={candidate.revisionId}
+                        >
+                          r{candidate.revision} · {candidate.title} (
+                          {candidate.revisionId})
+                        </option>
+                      ))}
+                    </select>
+                    {recipeId && candidates.length === 0 ? (
+                      <p
+                        className="text-sm text-muted-foreground"
+                        data-testid={`surface-recipe-empty-${index}`}
+                      >
+                        暂无已发布版本
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`surface-recipe-lens-${index}`}>
+                      创作形式
+                    </Label>
+                    <select
+                      id={`surface-recipe-lens-${index}`}
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={ref.lensId}
+                      onChange={(event) =>
+                        updateRef(index, {
+                          lensId: event.target.value as CreationLensId,
+                        })
+                      }
+                    >
+                      <option value="copy">文案</option>
+                      <option value="image_text">图文</option>
+                      <option value="video">视频</option>
+                    </select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor={`surface-recipe-order-${index}`}>顺序</Label>
+                    <Input
+                      id={`surface-recipe-order-${index}`}
+                      type="number"
+                      value={ref.order}
+                      onChange={(event) =>
+                        updateRef(index, { order: Number(event.target.value) })
+                      }
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={ref.featured}
+                      onChange={(event) =>
+                        updateRef(index, { featured: event.target.checked })
+                      }
+                    />
+                    首页推荐
+                  </label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={ref.visible}
+                      onChange={(event) =>
+                        updateRef(index, { visible: event.target.checked })
+                      }
+                    />
+                    可见
+                  </label>
+                  {recipeRefs.length > 1 ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setRecipeRefs((current) =>
+                          current.filter(
+                            (_, currentIndex) => currentIndex !== index
+                          )
+                        );
+                        setDraftRecipeIds((current) => {
+                          const next: Record<number, string> = {};
+                          for (const [key, value] of Object.entries(current)) {
+                            const cardIndex = Number(key);
+                            if (cardIndex === index) continue;
+                            next[cardIndex > index ? cardIndex - 1 : cardIndex] =
+                              value;
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      移除
+                    </Button>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
           <div className="space-y-2">
             <Label htmlFor="surface-reason">变更原因</Label>
@@ -1273,7 +1661,12 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
             </p>
           ) : null}
           <div className="flex flex-wrap gap-2">
-            <Button type="button" disabled={busy} onClick={draft}>
+            <Button
+              type="button"
+              disabled={draftDisabled}
+              data-testid="surface-draft-button"
+              onClick={draft}
+            >
               保存 Surface 草稿
             </Button>
             <Button
@@ -1369,25 +1762,102 @@ export function AdminCreationExperienceControl({
 }: {
   api?: CreationExperienceAdminApi;
 }) {
+  const [tab, setTab] = useState('recipe');
+  const [loadedSurfaceId, setLoadedSurfaceId] = useState('');
+  const [publishSuccess, setPublishSuccess] =
+    useState<RecipePublishSuccess | null>(null);
+  const [targetSurfaceId, setTargetSurfaceId] = useState('');
+  const [bridgeRequest, setBridgeRequest] =
+    useState<SurfaceBridgeRequest | null>(null);
+
+  const handlePublishSuccess = (success: RecipePublishSuccess) => {
+    setPublishSuccess(success);
+    setTargetSurfaceId((current) => current || loadedSurfaceId);
+  };
+
+  const handleUpdateSurfaceRefs = () => {
+    if (!publishSuccess || !targetSurfaceId.trim()) return;
+    // Same-page only — no route navigation (Spec D5 / #376).
+    setTab('surface');
+    setBridgeRequest({
+      nonce: Date.now(),
+      surfaceId: targetSurfaceId.trim(),
+      pendingRecipeRevisionId: publishSuccess.revisionId,
+    });
+  };
+
   return (
-    <Frame>
+    <Frame data-testid="creation-experience-control">
       <FrameHeader>
         <FrameTitle>创作入口 Recipe / Surface</FrameTitle>
         <FrameDescription>
           完成草稿、预览、发布与回滚；发布后只影响新的创作会话。
         </FrameDescription>
       </FrameHeader>
-      <FramePanel>
-        <Tabs defaultValue="recipe">
+      <FramePanel className="space-y-4">
+        {publishSuccess ? (
+          <Frame
+            dense
+            headingLevel={3}
+            data-testid="recipe-publish-success-panel"
+          >
+            <FrameHeader>
+              <FrameTitle>Recipe 发布成功</FrameTitle>
+              <FrameDescription>
+                前台仍引用旧 revision，直到你更新并发布目标 Surface。
+              </FrameDescription>
+            </FrameHeader>
+            <FramePanel className="space-y-3">
+              <p className="text-sm" data-testid="recipe-publish-success-revision">
+                已发布版本：{publishSuccess.revisionId}
+              </p>
+              <div className="space-y-2">
+                <Label htmlFor="publish-success-surface-id">目标 Surface ID</Label>
+                <Input
+                  id="publish-success-surface-id"
+                  data-testid="publish-success-surface-id"
+                  value={targetSurfaceId}
+                  onChange={(event) => setTargetSurfaceId(event.target.value)}
+                  placeholder={
+                    loadedSurfaceId
+                      ? loadedSurfaceId
+                      : '填写要更新引用的 Surface ID'
+                  }
+                />
+              </div>
+              <Button
+                type="button"
+                data-testid="update-surface-refs-button"
+                disabled={!targetSurfaceId.trim()}
+                onClick={handleUpdateSurfaceRefs}
+              >
+                更新 Surface 引用
+              </Button>
+            </FramePanel>
+          </Frame>
+        ) : null}
+        <Tabs
+          value={tab}
+          onValueChange={(value) => {
+            if (typeof value === 'string') setTab(value);
+          }}
+        >
           <TabsList aria-label="创作入口编辑器">
             <TabsTrigger value="recipe">Recipe 编辑</TabsTrigger>
             <TabsTrigger value="surface">Surface 编辑</TabsTrigger>
           </TabsList>
           <TabsContent value="recipe" className="pt-4">
-            <RecipeEditor api={api} />
+            <RecipeEditor api={api} onPublishSuccess={handlePublishSuccess} />
           </TabsContent>
           <TabsContent value="surface" className="pt-4">
-            <SurfaceEditor api={api} />
+            <SurfaceEditor
+              api={api}
+              bridgeRequest={bridgeRequest}
+              onLoadedSurfaceIdChange={(id) => {
+                setLoadedSurfaceId(id);
+                setTargetSurfaceId((current) => current || id);
+              }}
+            />
           </TabsContent>
         </Tabs>
       </FramePanel>

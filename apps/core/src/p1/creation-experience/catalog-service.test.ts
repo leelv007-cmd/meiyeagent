@@ -620,6 +620,129 @@ describe('Creation Experience Catalog aggregate', () => {
     );
   });
 
+  it('keeps browser Surface on fixed recipeRevisionId until Surface is re-published (#376)', async () => {
+    const { service } = createService();
+    const recipeId = 'recipe.fixed-ref';
+    const surfaceId = 'surface.fixed-ref';
+
+    const recipeV1 = await publishRecipe(
+      service,
+      recipeId,
+      sampleRecipeBody({
+        presentation: {
+          title: '固定引用 v1',
+          summary: '旧版本',
+          actionLabel: '选择',
+        },
+        promptRevisionRef: 'prompt.fixed@1',
+      }),
+    );
+
+    const surfaceDraft = await service.draftSurface({
+      surfaceId,
+      expectedRevision: null,
+      body: {
+        recipeRefs: [
+          {
+            recipeRevisionId: recipeV1.revisionId,
+            lensId: 'image_text',
+            order: 0,
+            featured: true,
+            visible: true,
+          },
+        ],
+      } satisfies SurfaceBodyInput,
+      ...audit({ reason: 'pin v1' }),
+    });
+    const surfacePreview = await service.previewSurface({
+      surfaceId,
+      expectedRevision: surfaceDraft.revision,
+      ...audit({ reason: 'preview surface' }),
+    });
+    await service.publishSurface({
+      surfaceId,
+      expectedRevision: surfacePreview.revision,
+      ...audit({ reason: 'publish surface with v1' }),
+    });
+
+    // Publish a newer Recipe revision without touching the Surface.
+    const recipeDraft = await service.draftRecipe({
+      recipeId,
+      expectedRevision: recipeV1.revision,
+      body: sampleRecipeBody({
+        presentation: {
+          title: '固定引用 v2',
+          summary: '新版本',
+          actionLabel: '选择',
+        },
+        promptRevisionRef: 'prompt.fixed@2',
+      }),
+      ...audit({ reason: 'recipe v2 draft' }),
+    });
+    const recipePreview = await service.previewRecipe({
+      recipeId,
+      expectedRevision: recipeDraft.revision,
+      ...audit({ reason: 'recipe v2 preview' }),
+    });
+    const recipeV2 = await service.publishRecipe({
+      recipeId,
+      expectedRevision: recipePreview.revision,
+      ...audit({ reason: 'recipe v2 publish — must not move frontend alone' }),
+    });
+    assert.notEqual(recipeV2.revisionId, recipeV1.revisionId);
+
+    const browserAfterRecipeOnly = await service.projectBrowserSurface(surfaceId);
+    assert.equal(
+      browserAfterRecipeOnly.recipeRefs[0]?.recipeRevisionId,
+      recipeV1.revisionId,
+    );
+    assert.equal(browserAfterRecipeOnly.recipes[0]?.revisionId, recipeV1.revisionId);
+    assert.equal(browserAfterRecipeOnly.recipes[0]?.presentation.title, '固定引用 v1');
+
+    // Only after Surface refs are updated and re-published does frontend see v2.
+    const surfaceUpdateDraft = await service.draftSurface({
+      surfaceId,
+      expectedRevision: browserAfterRecipeOnly.revision,
+      body: {
+        recipeRefs: [
+          {
+            recipeRevisionId: recipeV2.revisionId,
+            lensId: 'image_text',
+            order: 0,
+            featured: true,
+            visible: true,
+          },
+        ],
+      } satisfies SurfaceBodyInput,
+      ...audit({ reason: 'point surface at v2' }),
+    });
+    // Draft head must not leak to browser projection.
+    const browserWhileDraft = await service.projectBrowserSurface(surfaceId);
+    assert.equal(
+      browserWhileDraft.recipeRefs[0]?.recipeRevisionId,
+      recipeV1.revisionId,
+    );
+
+    const surfaceUpdatePreview = await service.previewSurface({
+      surfaceId,
+      expectedRevision: surfaceUpdateDraft.revision,
+      ...audit({ reason: 'preview surface v2' }),
+    });
+    await service.publishSurface({
+      surfaceId,
+      expectedRevision: surfaceUpdatePreview.revision,
+      ...audit({ reason: 'publish surface with v2' }),
+    });
+
+    const browserAfterSurface = await service.projectBrowserSurface(surfaceId);
+    assert.equal(
+      browserAfterSurface.recipeRefs[0]?.recipeRevisionId,
+      recipeV2.revisionId,
+    );
+    assert.equal(browserAfterSurface.recipes[0]?.revisionId, recipeV2.revisionId);
+    assert.equal(browserAfterSurface.recipes[0]?.presentation.title, '固定引用 v2');
+  });
+
   it('never ships hidden prompt bodies in browser projection', async () => {
     const { service } = createService();
     const draft = await service.draftRecipe({

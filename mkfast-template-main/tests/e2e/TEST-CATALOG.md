@@ -430,11 +430,12 @@ evidence.
 
 ## 30. Recipe / Surface Admin Lifecycle
 
-**File:** `specs/admin-creation-experience-lifecycle.spec.ts` | **Priority:** P0
+**File:** `specs/admin-creation-experience-lifecycle.spec.ts` | **Priority:** P0 | **Tickets:** #376 / Spec D5
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Admin visually publishes and rolls back Recipe and Surface revisions | Sign in as an admin, use the `/admin/templates` visual editor to draft, preview, publish, revise, and roll back a Recipe; compose a Surface from the published Recipe revision (no Pro Studio tool offer — retired), then draft, preview, publish, revise, and roll back the Surface through the real Creation Experience API. |
+| 1 | Admin visually publishes and rolls back Recipe and Surface revisions | Sign in as an admin, use the `/admin/templates` visual editor to draft, preview, publish, revise, and roll back a Recipe; require the same-page Recipe publish success panel (no new route); seed a Surface, load it, select a published revision from the candidate dropdown (no free-text revision input), then draft, preview, publish, revise, and roll back the Surface through the real Creation Experience API. |
+| 2 | Fixed recipe revision stays on frontend until Surface re-publish | Publish Recipe v1 and Surface pinned to that revision; publish Recipe v2 and assert `surface_browser` still returns v1 (Recipe publish alone is not Surface publish evidence); use the success panel to update Surface refs to v2, explicitly preview/publish Surface, then assert `surface_browser` returns v2. |
 
 ## 31. Admin Supply Operations Acceptance
 
