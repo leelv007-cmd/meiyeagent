@@ -230,3 +230,4 @@
 | 407e27b9 | #390 | Catalog 死字段（capabilities/routes）撤编辑入口与 chip；下钻覆盖补 supply/cloudflare/capabilities/首页；积分套餐配置键收敛 contracts 单一来源+补 reference_numbers | core 7/7+web 30/30+双包 tsc 0 err 亲跑（rebase 后抽 15/15+7/7 复验） | 再存草稿会清历史死字段值（与移除一致） |
 | 455504f7 | #391 | 兑换码过期改后台定时任务（redemption.expire-due），list 读取不再抬 revision | 18/18+PG 店面 4/4（lane419 库）+tsc 0 err 亲跑；先红后绿亲证（还原修复 2 红） | redeem 路径保留内联单码过期（禁兑已过期码语义） |
 | 88ae8ae1 | #392 | Cloudflare deep-link 接真（verified+https 才渲染 anchor，否则不出现）；删三份过时 WIRING-DIFF.md；woz.recipe 文档化为纯版本触发器 | core 42/42+web 13/13+双包 tsc 0 err 亲跑 | 审计写两份实删三份（capability/cloudflare/supply） |
+| 6c1c9b28 | #386 | ops 图表换 ChartContainer/recharts+ReUI Timeline；header 待办 Popover/⌘K 命令面板/通知中心（app-shell-7/3 形态），计数与页面同源 | 14/14+交互 2/2+tsc 0 err 亲跑（rebase 后 25/25 复验） | ReUI Pro demo 只作形态参照未挂运行时；unknown 诚实态保留 |
