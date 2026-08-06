@@ -59,6 +59,34 @@ export {
 } from './recipe-evidence-receipt-registry.js';
 export { PostgresRecipeEvidenceReceiptRegistry } from './postgres-recipe-evidence-receipt-registry.js';
 export {
+  RECIPE_EVIDENCE_ISSUER_ID,
+  RECIPE_EVIDENCE_VALIDITY_DAYS,
+  addUtcDays,
+  buildRecipeEvidenceReceiptId,
+  derivePromptRevisionRefFromEvalRun,
+  issueRecipeEvidenceReceipt,
+  type IssueRecipeEvidenceInput,
+  type IssueRecipeEvidenceResult,
+  type RecipeEvidenceIssuerDeps,
+} from './recipe-evidence-issuer.js';
+export {
+  runAndIssueRecipeGovernanceEvidence,
+  type RunAndIssueRecipeGovernanceEvidenceInput,
+} from './recipe-evidence-suite-runner.js';
+export {
+  RECIPE_INTERNAL_TEST_LABEL,
+  RECIPE_INTERNAL_TEST_SUITE_ID,
+  RECIPE_INTERNAL_TEST_SUITE_REVISION,
+  assertNonProductionTenantForInternalTest,
+  buildInternalTestEvalRun,
+  isNonProductionTenantEnv,
+  runAndIssueRecipeInternalTestEvidence,
+  type RecipeInternalTestCreationExecutor,
+  type RecipeInternalTestCreationOutcome,
+  type RecipeInternalTestSubject,
+  type RunAndIssueRecipeInternalTestEvidenceInput,
+} from './recipe-evidence-internal-test-runner.js';
+export {
   RECIPE_GOVERNANCE_BLOCK_IDS,
   RecipeStudioCompileInputAdapter,
   adaptRecipeGovernanceFormToCompileInput,

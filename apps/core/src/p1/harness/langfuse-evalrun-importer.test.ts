@@ -9,11 +9,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
+import { MemoryRecipeEvidenceReceiptRegistry } from '../creation-experience/recipe-evidence-receipt-registry.js';
 import {
   LANGFUSE_EVAL_RUN_DATASET_ITEM_FIELDS,
   LangfuseEvalRunImporter,
 } from './langfuse-evalrun-importer.js';
 import type { EvalRunRegistryPort } from './eval-run-registry.js';
+import { parseEvalImportCliArgs } from './eval-import-cli-args.js';
 
 const REDLINES_BASELINE = fileURLToPath(
   new URL(
@@ -295,6 +297,53 @@ test('a registry failure can replay the stable Langfuse projections and then suc
   assert.equal(registryAttempts, 2);
   assert.equal(storedRunId, 'skills-five-piece-recorded-v2');
   assert.deepEqual(requestIds.slice(0, 2), requestIds.slice(2));
+});
+
+test('eval:import without recipe flags keeps historical import-only behaviour (no receipt write)', async (t) => {
+  // #395: omitting --recipe/--revision/--kind must not touch the receipt registry.
+  // importArtifact itself is unchanged; CLI only issues when parseEvalImportCliArgs.issue is set.
+  const args = parseEvalImportCliArgs([REDLINES_BASELINE]);
+  assert.equal(args.issue, undefined);
+  assert.equal(args.artifactPath, REDLINES_BASELINE);
+
+  const receiptRegistry = new MemoryRecipeEvidenceReceiptRegistry();
+  const requests: unknown[] = [];
+  const server = createServer(async (request, response) => {
+    requests.push(await readJson(request));
+    sendJson(response, 200, { id: 'ok' });
+  });
+  const registry = memoryRegistry();
+  const importer = new LangfuseEvalRunImporter(
+    {
+      baseUrl: await listen(t, server),
+      publicKey: 'pk-test',
+      secretKey: 'sk-test',
+    },
+    registry.port,
+  );
+
+  const result = await importer.importArtifact(REDLINES_BASELINE);
+  assert.deepEqual(result, {
+    datasetName: 'harness-evalrun:harness-seven-redlines',
+    importedItems: REDLINES_ITEM_COUNT,
+    runId: 'harness-seven-redlines-recorded-v2',
+  });
+  assert.equal(registry.runs.size, 1);
+  assert.equal(
+    await receiptRegistry.listByRecipeRevision({
+      evidenceKind: 'recipe_evaluation',
+      recipeId: 'any',
+      recipeRevision: 1,
+    }).then((rows) => rows.length),
+    0,
+  );
+  // Historical CLI stdout shape depends only on import result fields.
+  const historicalStdout = `Imported ${result.importedItems} EvalRun items from ${result.runId} into ${result.datasetName}.\n`;
+  assert.equal(
+    historicalStdout,
+    'Imported 23 EvalRun items from harness-seven-redlines-recorded-v2 into harness-evalrun:harness-seven-redlines.\n',
+  );
+  assert.equal(requests.length, REDLINES_ITEM_COUNT);
 });
 
 test('CLI exits nonzero when Langfuse environment is not configured', () => {
