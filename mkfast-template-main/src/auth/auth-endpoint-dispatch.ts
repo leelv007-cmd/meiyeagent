@@ -1,10 +1,12 @@
 /**
- * Exact pathname dispatch for `/api/auth/$` (Spec A / #365).
+ * Exact pathname dispatch for `/api/auth/$` (Spec A / #365 + #366).
  *
  * Better Auth registers the admin plugin as a whole, so product-unused
  * admin endpoints are closed here — not by removing the plugin.
- * #366 will extend this same map for a custom `/admin/set-role` handler.
+ * `/admin/set-role` is taken over by the custom transactional handler (#366).
  */
+
+import { handleAdminSetRole } from '@/auth/admin-set-role';
 
 /** Better Auth default base path; must stay in lockstep with createAuth(). */
 export const AUTH_API_BASE_PATH = '/api/auth';
@@ -25,14 +27,17 @@ export const DISABLED_AUTH_ADMIN_ENDPOINTS = [
   '/admin/set-user-password',
 ] as const;
 
+/** Custom product set-role path (not forwarded to Better Auth). */
+export const CUSTOM_AUTH_SET_ROLE_ENDPOINT = '/admin/set-role' as const;
+
 const DISABLED_AUTH_ADMIN_ENDPOINT_SET = new Set<string>(
   DISABLED_AUTH_ADMIN_ENDPOINTS
 );
 
 export type AuthEndpointDispatchDecision =
   | { kind: 'not_found' }
+  | { kind: 'set_role' }
   | { kind: 'forward' };
-// #366 will add: | { kind: 'set_role' }
 
 export type AuthRequestHandler = (
   request: Request
@@ -41,6 +46,8 @@ export type AuthRequestHandler = (
 export type CreateAuthCatchAllHandlersOptions = {
   /** Defaults to `createAuth().handler`. Injectable for route harness tests. */
   handleAuth?: AuthRequestHandler;
+  /** Defaults to `handleAdminSetRole`. Injectable for route harness tests. */
+  handleSetRole?: AuthRequestHandler;
 };
 
 /**
@@ -69,7 +76,9 @@ export function resolveAuthEndpointDispatch(
   if (DISABLED_AUTH_ADMIN_ENDPOINT_SET.has(relative)) {
     return { kind: 'not_found' };
   }
-  // #366: if (relative === '/admin/set-role') return { kind: 'set_role' };
+  if (relative === CUSTOM_AUTH_SET_ROLE_ENDPOINT) {
+    return { kind: 'set_role' };
+  }
   return { kind: 'forward' };
 }
 
@@ -92,14 +101,16 @@ async function defaultHandleAuth(request: Request): Promise<Response> {
 
 /**
  * Real GET/POST handlers for `/api/auth/$`.
- * Disabled bare admin endpoints return 404 before Better Auth; everything else
- * is forwarded unchanged (including self-serve `/delete-user` and live admin
- * ban/unban/create/update paths).
+ * Disabled bare admin endpoints return 404 before Better Auth;
+ * `/admin/set-role` uses the custom transactional handler;
+ * everything else is forwarded unchanged (including self-serve `/delete-user`
+ * and live admin ban/unban/create/update paths).
  */
 export function createAuthCatchAllHandlers(
   options: CreateAuthCatchAllHandlersOptions = {}
 ) {
   const handleAuth = options.handleAuth ?? defaultHandleAuth;
+  const handleSetRole = options.handleSetRole ?? handleAdminSetRole;
 
   const handle = async ({ request }: { request: Request }) => {
     const pathname = new URL(request.url).pathname;
@@ -107,7 +118,9 @@ export function createAuthCatchAllHandlers(
     if (decision.kind === 'not_found') {
       return authEndpointNotFoundResponse();
     }
-    // #366: if (decision.kind === 'set_role') return customSetRoleHandler(request);
+    if (decision.kind === 'set_role') {
+      return handleSetRole(request);
+    }
     return handleAuth(request);
   };
 

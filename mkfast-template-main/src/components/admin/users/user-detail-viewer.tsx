@@ -14,10 +14,20 @@ import {
   admin_users_close,
   admin_users_columns_email,
   admin_users_columns_provisioned_by,
+  admin_users_demote_merchant,
   admin_users_detail_account_title,
   admin_users_detail_summary_title,
   admin_users_email_copied,
   admin_users_joined,
+  admin_users_promote_admin,
+  admin_users_role_error,
+  admin_users_role_last_admin_error,
+  admin_users_role_reason,
+  admin_users_role_reason_placeholder,
+  admin_users_role_reason_required,
+  admin_users_role_recent_auth_error,
+  admin_users_role_section_title,
+  admin_users_role_success,
   admin_users_self_registered,
   admin_users_unban_button,
   admin_users_unban_error,
@@ -50,7 +60,12 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
-import { useBanUser, useUnbanUser } from '@/hooks/use-users';
+import {
+  SetPlatformRoleError,
+  useBanUser,
+  useSetPlatformRole,
+  useUnbanUser,
+} from '@/hooks/use-users';
 import { formatDate } from '@/lib/formatter';
 import { cn } from '@/lib/utils';
 import {
@@ -85,13 +100,57 @@ interface UserDetailViewerProps {
 }
 export function UserDetailViewer({ user }: UserDetailViewerProps) {
   const [error, setError] = useState<string | undefined>();
+  const [roleError, setRoleError] = useState<string | undefined>();
   const [banReason, setBanReason] = useState<string>(
     admin_users_ban_default_reason()
   );
+  const [roleReason, setRoleReason] = useState('');
   const [banExpiresAt, setBanExpiresAt] = useState<Date | undefined>();
   const [calendarOpen, setCalendarOpen] = useState(false);
   const banUserMutation = useBanUser();
   const unbanUserMutation = useUnbanUser();
+  const setPlatformRoleMutation = useSetPlatformRole();
+
+  const isAdmin = user.role === 'admin';
+  const targetRole = isAdmin ? 'user' : 'admin';
+
+  const handleRoleChange = async () => {
+    if (!user.id) {
+      setRoleError(admin_users_role_error());
+      return;
+    }
+    const reason = roleReason.trim();
+    if (!reason) {
+      setRoleError(admin_users_role_reason_required());
+      return;
+    }
+    setRoleError(undefined);
+    try {
+      await setPlatformRoleMutation.mutateAsync({
+        userId: user.id,
+        role: targetRole,
+        reason,
+      });
+      toast.success(admin_users_role_success());
+      setRoleReason('');
+    } catch (err) {
+      let msg: string = admin_users_role_error();
+      if (err instanceof SetPlatformRoleError) {
+        if (err.code === 'RECENT_AUTHENTICATION_REQUIRED') {
+          msg = admin_users_role_recent_auth_error();
+        } else if (err.code === 'LAST_ADMIN_REQUIRED') {
+          msg = admin_users_role_last_admin_error();
+        } else if (err.code === 'REASON_REQUIRED') {
+          msg = admin_users_role_reason_required();
+        } else if (err.message) {
+          msg = err.message;
+        }
+      }
+      setRoleError(msg);
+      toast.error(msg);
+    }
+  };
+
   const handleBan = async () => {
     if (!banReason?.trim()) {
       setError(admin_users_ban_error());
@@ -189,6 +248,47 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
             </Badge>
           </div>
         )}
+      </FramePanel>
+    </Frame>
+  );
+
+  const roleSection = (
+    <Frame dense spacing="sm" className="w-full">
+      <FrameHeader>
+        <FrameTitle>{admin_users_role_section_title()}</FrameTitle>
+      </FrameHeader>
+      <FramePanel className={cn('flex flex-col gap-4', FRAME_PANEL_RESET)}>
+        {roleError && <FieldError>{roleError}</FieldError>}
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant={isAdmin ? 'info-light' : 'secondary'}>
+            {isAdmin ? admin_users_admin() : admin_users_user()}
+          </Badge>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <FieldLabel htmlFor="role-change-reason">
+            {admin_users_role_reason()}
+          </FieldLabel>
+          <Textarea
+            id="role-change-reason"
+            value={roleReason}
+            onChange={(e) => setRoleReason(e.target.value)}
+            placeholder={admin_users_role_reason_placeholder()}
+            required
+          />
+        </div>
+        <Button
+          type="button"
+          variant={isAdmin ? 'outline' : 'default'}
+          onClick={handleRoleChange}
+          disabled={
+            setPlatformRoleMutation.isPending || !roleReason.trim() || !user.id
+          }
+        >
+          {setPlatformRoleMutation.isPending && (
+            <IconLoader2 className="mr-2 size-4 animate-spin" />
+          )}
+          {isAdmin ? admin_users_demote_merchant() : admin_users_promote_admin()}
+        </Button>
       </FramePanel>
     </Frame>
   );
@@ -302,6 +402,7 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
   const leftContent = (
     <div className="flex flex-col gap-4 px-5 py-4 sm:px-6">
       {accountSection}
+      {roleSection}
       {banSection}
     </div>
   );

@@ -29,6 +29,29 @@ import { session as authSession, user } from './auth.schema';
 
 export type WorkspaceRole = 'owner' | 'operator' | 'reviewer' | 'admin';
 
+/**
+ * Immutable platform role-change audit (Spec A / #366).
+ * Database trigger rejects UPDATE and DELETE.
+ */
+export const adminRoleChangeAudit = pgTable(
+  'admin_role_change_audit',
+  {
+    id: text('id').primaryKey(),
+    actorUserId: text('actor_user_id').notNull(),
+    subjectUserId: text('subject_user_id').notNull(),
+    fromRole: text('from_role').notNull(),
+    toRole: text('to_role').notNull(),
+    reason: text('reason').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index('admin_role_change_audit_subject_idx').on(table.subjectUserId),
+    index('admin_role_change_audit_actor_idx').on(table.actorUserId),
+  ]
+);
+
 export const workspaces = pgTable('workspaces', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
