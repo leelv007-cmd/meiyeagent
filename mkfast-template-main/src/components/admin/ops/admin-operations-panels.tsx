@@ -16,12 +16,6 @@
  * 图只是同一份投影的另一种读法——取数在 `admin-operations-chart-model.ts`
  * 单独被测，拿不到就返回 null，这里照旧说「未知」，不画零。
  */
-import {
-  BarChart,
-  ChartTooltip,
-  PieChart,
-  Timeline,
-} from '@/components/heroui-pro';
 import { Badge, type BadgeProps } from '@/components/reui/badge';
 import {
   Frame,
@@ -30,7 +24,32 @@ import {
   FramePanel,
   FrameTitle,
 } from '@/components/reui/frame';
+import {
+  Timeline,
+  TimelineContent,
+  TimelineHeader,
+  TimelineIndicator,
+  TimelineItem,
+  TimelineSeparator,
+  TimelineTitle,
+} from '@/components/reui/timeline';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
 import { Separator } from '@/components/ui/separator';
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import {
   admin_ops_empty,
   admin_ops_error,
@@ -306,33 +325,51 @@ function AdminUsagePanel() {
           <p className="mb-2 font-medium text-sm">
             {admin_ops_usage_allowance_title()}
           </p>
-          {/* 三档四档并排看一眼就知道哪一档给得多，具体数字仍在下面的行里。 */}
-          <BarChart.Root
+          {/*
+            ReUI chart-6 / solution-ai-ops-1 pattern: ChartContainer + recharts.
+            No hand-rolled chart wrapper — shadcn chart primitives only.
+          */}
+          <ChartContainer
             aria-label={admin_ops_usage_chart_label()}
-            data={buildUsageBars(allowancePlans)}
+            className="h-[168px] w-full"
+            config={
+              {
+                copy: { label: admin_plan_copy(), color: 'var(--chart-2)' },
+                image: { label: admin_plan_image(), color: 'var(--chart-3)' },
+                video: { label: admin_plan_video(), color: 'var(--chart-4)' },
+              } satisfies ChartConfig
+            }
             data-testid="admin-ops-usage-chart"
-            height={168}
           >
-            <BarChart.Grid vertical={false} />
-            <BarChart.XAxis dataKey="plan" />
-            <BarChart.YAxis width={36} />
-            <BarChart.Tooltip content={<BarChart.TooltipContent />} />
-            <BarChart.Bar
-              dataKey="copy"
-              fill="var(--chart-2)"
-              name={admin_plan_copy()}
-            />
-            <BarChart.Bar
-              dataKey="image"
-              fill="var(--chart-3)"
-              name={admin_plan_image()}
-            />
-            <BarChart.Bar
-              dataKey="video"
-              fill="var(--chart-4)"
-              name={admin_plan_video()}
-            />
-          </BarChart.Root>
+            <BarChart
+              accessibilityLayer
+              data={buildUsageBars(allowancePlans)}
+              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+            >
+              <CartesianGrid vertical={false} strokeDasharray="3 3" />
+              <XAxis dataKey="plan" tickLine={false} axisLine={false} />
+              <YAxis width={36} tickLine={false} axisLine={false} />
+              <ChartTooltip content={<ChartTooltipContent />} />
+              <Bar
+                dataKey="copy"
+                fill="var(--color-copy)"
+                name={admin_plan_copy()}
+                radius={2}
+              />
+              <Bar
+                dataKey="image"
+                fill="var(--color-image)"
+                name={admin_plan_image()}
+                radius={2}
+              />
+              <Bar
+                dataKey="video"
+                fill="var(--color-video)"
+                name={admin_plan_video()}
+                radius={2}
+              />
+            </BarChart>
+          </ChartContainer>
           {/* 读屏听到的名字要和眼睛看到的小标题一致：这一列是额度，不是用量。 */}
           <ul
             aria-label={admin_ops_usage_allowance_title()}
@@ -498,44 +535,38 @@ function AdminTasksPanel() {
                 </p>
               ) : (
                 <>
-                  <PieChart.Root
+                  <ChartContainer
                     aria-label={admin_ops_runner_outcomes()}
-                    height={168}
+                    className="mx-auto h-[168px] w-full max-w-[240px]"
+                    config={Object.fromEntries(
+                      slices.map((slice, index) => [
+                        slice.id,
+                        {
+                          label: slice.label,
+                          color: `var(--chart-${(index % 5) + 1})`,
+                        },
+                      ])
+                    )}
+                    data-testid="admin-ops-tasks-outcome-chart"
                   >
-                    <PieChart.Pie
-                      data={slices}
-                      dataKey="value"
-                      innerRadius={38}
-                      nameKey="label"
-                      outerRadius={64}
-                    >
-                      {slices.map((slice, index) => (
-                        <PieChart.Cell
-                          fill={`var(--chart-${(index % 5) + 1})`}
-                          key={slice.id}
-                        />
-                      ))}
-                    </PieChart.Pie>
-                    <PieChart.Tooltip
-                      content={({ payload }) => (
-                        <ChartTooltip.Root>
-                          {(payload ?? []).map((entry) => (
-                            <ChartTooltip.Item key={String(entry.name)}>
-                              <ChartTooltip.Indicator
-                                color={entry.payload?.fill}
-                              />
-                              <ChartTooltip.Label>
-                                {String(entry.name)}
-                              </ChartTooltip.Label>
-                              <ChartTooltip.Value>
-                                {String(entry.value)}
-                              </ChartTooltip.Value>
-                            </ChartTooltip.Item>
-                          ))}
-                        </ChartTooltip.Root>
-                      )}
-                    />
-                  </PieChart.Root>
+                    <PieChart>
+                      <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
+                      <Pie
+                        data={slices}
+                        dataKey="value"
+                        nameKey="label"
+                        innerRadius={38}
+                        outerRadius={64}
+                      >
+                        {slices.map((slice, index) => (
+                          <Cell
+                            fill={`var(--chart-${(index % 5) + 1})`}
+                            key={slice.id}
+                          />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ChartContainer>
                   <p className="text-muted-foreground text-xs">
                     {outcomeSummary}
                   </p>
@@ -554,32 +585,27 @@ function AdminTasksPanel() {
                   {admin_ops_tasks_timeline_empty()}
                 </p>
               ) : (
-                <Timeline.Root>
-                  {taskTimeline.map((entry) => (
-                    <Timeline.Item
+                <Timeline defaultValue={taskTimeline.length}>
+                  {taskTimeline.map((entry, index) => (
+                    <TimelineItem
                       data-testid="admin-ops-tasks-run"
                       key={entry.id}
+                      step={index + 1}
                     >
-                      <Timeline.Rail>
-                        <Timeline.Marker />
-                        <Timeline.Connector />
-                      </Timeline.Rail>
-                      <Timeline.Content>
+                      <TimelineHeader className="items-center">
+                        <TimelineSeparator />
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium text-sm">
-                            {entry.title}
-                          </span>
+                          <TimelineTitle>{entry.title}</TimelineTitle>
                           <Badge variant={runStatusVariant(entry.status)}>
                             {entry.status}
                           </Badge>
                         </div>
-                        <p className="text-muted-foreground text-xs">
-                          {entry.detail}
-                        </p>
-                      </Timeline.Content>
-                    </Timeline.Item>
+                        <TimelineIndicator />
+                      </TimelineHeader>
+                      <TimelineContent>{entry.detail}</TimelineContent>
+                    </TimelineItem>
                   ))}
-                </Timeline.Root>
+                </Timeline>
               )}
             </div>
           </div>
@@ -712,34 +738,29 @@ function AdminTenantsPanel() {
               <p className="font-medium text-sm">
                 {admin_ops_tenants_recent()}
               </p>
-              <Timeline.Root>
-                {timeline.map((entry) => (
-                  <Timeline.Item
+              <Timeline defaultValue={timeline.length}>
+                {timeline.map((entry, index) => (
+                  <TimelineItem
                     data-testid={
                       entry.kind === 'policy'
                         ? 'admin-ops-tenants-policy'
                         : 'admin-ops-tenants-allocation'
                     }
                     key={entry.id}
+                    step={index + 1}
                   >
-                    <Timeline.Rail>
-                      <Timeline.Marker />
-                      <Timeline.Connector />
-                    </Timeline.Rail>
-                    <Timeline.Content>
+                    <TimelineHeader className="items-center">
+                      <TimelineSeparator />
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium text-sm">
-                          {entry.title}
-                        </span>
+                        <TimelineTitle>{entry.title}</TimelineTitle>
                         <Badge variant="outline">{entry.status}</Badge>
                       </div>
-                      <p className="text-muted-foreground text-xs">
-                        {entry.detail}
-                      </p>
-                    </Timeline.Content>
-                  </Timeline.Item>
+                      <TimelineIndicator />
+                    </TimelineHeader>
+                    <TimelineContent>{entry.detail}</TimelineContent>
+                  </TimelineItem>
                 ))}
-              </Timeline.Root>
+              </Timeline>
             </div>
           </div>
         </PanelBody>

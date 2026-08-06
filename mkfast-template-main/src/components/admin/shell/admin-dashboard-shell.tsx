@@ -44,6 +44,9 @@ import {
 } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { AdminBreadcrumbs } from './admin-breadcrumbs';
+import { AdminCommandPalette } from './admin-command-palette';
+import { AdminNotificationsPopover } from './admin-notifications-popover';
+import { AdminOperationsTodoPopover } from './admin-operations-todo-popover';
 import { AdminShellUser } from './admin-shell-user';
 import { activeAdminNavHref, canonicalPath } from './nav-active';
 import { RecordCrumbProvider } from './page-crumb';
@@ -116,6 +119,11 @@ export function AdminDashboardShell() {
           </span>
           <div className="bg-border h-4 w-px shrink-0" />
           <AdminBreadcrumbs />
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
+            <AdminOperationsTodoPopover />
+            <AdminNotificationsPopover />
+          </div>
+          <AdminCommandPalette />
         </header>
 
         <div className="flex flex-1">

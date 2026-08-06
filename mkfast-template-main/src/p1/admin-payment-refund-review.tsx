@@ -27,7 +27,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { toast } from 'sonner';
 
-const PAYMENT_REFUND_REVIEW_QUERY_KEY = [
+/** Shared with header ops-todo popover — same query, never a second source. */
+export const PAYMENT_REFUND_REVIEW_QUERY_KEY = [
   'admin',
   'payment-refund-reviews',
 ] as const;

@@ -74,7 +74,7 @@ test('the usage panel draws the three buckets per plan and keeps the exact rows'
     ],
   });
   assert.match(html, /data-testid="admin-ops-usage-chart"/);
-  assert.match(html, /data-slot="bar-chart"/);
+  assert.match(html, /data-slot="chart"/);
   // 图是同一份投影的另一种读法，精确数字仍然留在行里。
   assert.match(html, /admin-ops-usage-row/);
   assert.match(html, /文案参考 20/);
@@ -87,7 +87,8 @@ test('the tasks panel lifts queue numbers into KPI tiles and draws the outcome s
   });
   assert.match(html, /data-slot="metric-card"/);
   assert.match(html, /data-testid="admin-ops-tasks-row"/);
-  assert.match(html, /data-slot="pie-chart"/);
+  assert.match(html, /data-testid="admin-ops-tasks-outcome-chart"/);
+  assert.match(html, /data-slot="chart"/);
   // 每一条都拿到了数据，这一面上就不该出现「未知」。
   assert.doesNotMatch(panelOf(html, 'admin-ops-tasks'), /未知/);
 });
@@ -103,7 +104,7 @@ test('an unwired runner window says unknown instead of drawing a zeroed chart', 
     },
   });
   assert.match(html, /data-testid="admin-ops-tasks-outcomes"/);
-  assert.doesNotMatch(html, /data-slot="pie-chart"/);
+  assert.doesNotMatch(html, /data-testid="admin-ops-tasks-outcome-chart"/);
   assert.match(panelOf(html, 'admin-ops-tasks'), /未知/);
 });
 
