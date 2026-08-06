@@ -10,6 +10,8 @@ export const CORE_ROUTE_AUTH_CLASSES = [
   ['capabilities', 'public'],
   ['workspace-bootstrap', 'service-token'],
   ['e2e-credit-detail-fixture', 'service-token'],
+  ['e2e-user-selected-skill-fixture', 'service-token'],
+  ['e2e-user-selected-skill-evidence', 'service-token'],
   ['public-plan-catalog', 'service-token'],
   ['pending-actions', 'service-token'],
   ['composer-destination-map', 'service-token'],

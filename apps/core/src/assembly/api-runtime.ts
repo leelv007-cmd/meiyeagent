@@ -170,6 +170,8 @@ import { SensitiveWordsFoundationModule } from '../p1/sensitive-words/index.js';
 import {
   CompositeRecordProposalPort,
   createDurableSkillRuntime,
+  E2EUserSelectedSkillEvidenceReader,
+  E2EUserSelectedSkillFixture,
   StoreWorkflowCaptureService,
   StoreWorkflowRecordProposalPort,
 } from '../p1/skills/index.js';
@@ -1445,6 +1447,20 @@ export async function startApi(env: NodeJS.ProcessEnv) {
   const e2eFixtureEnabled =
     env.APP_ENV === 'e2e' && env.NODE_ENV !== 'production';
 
+  const e2eUserSelectedSkillFixture = e2eFixtureEnabled
+    ? new E2EUserSelectedSkillFixture({
+        prompt: requireHarnessFrozenPrompt(
+          await harnessPromptResolver.resolve(),
+          'intentNaming',
+        ),
+        repository: skillRuntime.repository,
+        service: skillRuntime.service,
+      })
+    : undefined;
+  const e2eUserSelectedSkillEvidence = e2eFixtureEnabled
+    ? new E2EUserSelectedSkillEvidenceReader(pool)
+    : undefined;
+
   const server = createCoreServer({
     aiStreamingRunner,
     executionModeGate: streamingModeGate,
@@ -1466,6 +1482,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           subscriptions: creditSubscriptionStore,
         })
       : undefined,
+    e2eUserSelectedSkillFixture,
+    e2eUserSelectedSkillEvidence,
     e2eFixtureEnabled,
     integrationService,
     harnessService,

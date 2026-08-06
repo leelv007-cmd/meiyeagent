@@ -119,6 +119,25 @@ interface CoreServerDependencies {
   e2eCreditDetailFixture?: {
     seed(input: { workspaceId: string }): Promise<{ ready: true }>;
   };
+  /**
+   * E2E-only Spec E user_selected Skill seed (published + bound). Absent from
+   * non-E2E assemblies. Optional foreignWorkspaceId seeds a tenant-scoped pack.
+   */
+  e2eUserSelectedSkillFixture?: {
+    seed(input: {
+      workspaceId: string;
+      foreignWorkspaceId?: string;
+    }): Promise<unknown>;
+  };
+  /**
+   * E2E-only frozen admission evidence for one task (injection + audit axes).
+   */
+  e2eUserSelectedSkillEvidence?: {
+    read(input: {
+      workspaceId: string;
+      taskId: string;
+    }): Promise<unknown | null>;
+  };
   /** Explicit capability guard; the fixture must stay unavailable if omitted. */
   e2eFixtureEnabled?: boolean;
   operationsService?: Pick<
@@ -776,6 +795,8 @@ export function createCoreServer({
   composerSubmission,
   contentPackageReader,
   e2eCreditDetailFixture,
+  e2eUserSelectedSkillFixture,
+  e2eUserSelectedSkillEvidence,
   e2eFixtureEnabled = false,
   harnessService,
   pendingActions,
@@ -1043,6 +1064,124 @@ export function createCoreServer({
           {
             code: 'INVALID_STATE',
             message: 'The E2E credit detail fixture could not be seeded.',
+            status: 400,
+          }
+        );
+        return;
+      },
+    ]);
+
+    routes.add('e2e-user-selected-skill-fixture', [
+      'POST',
+      () =>
+        url.pathname === '/v1/e2e/user-selected-skill-fixture' &&
+        e2eFixtureEnabled &&
+        Boolean(e2eUserSelectedSkillFixture),
+      'service-token',
+      async () => {
+        await handleErrors(
+          async () => {
+            const workspaceId = request.headers['x-workspace-id'];
+            if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+              throw new DomainError(
+                'NOT_FOUND',
+                'Workspace resource was not found.',
+                404
+              );
+            }
+            const context = productIdentity(
+              request,
+              workspaceId,
+              requestCorrelationId
+            );
+            if (context.actor !== 'user') {
+              throw new DomainError(
+                'COMMAND_ACTOR_FORBIDDEN',
+                'The current product role cannot seed E2E user_selected skills.',
+                403
+              );
+            }
+            // Query-only: BFF session proxy does not forward arbitrary e2e headers.
+            const foreignQuery = url.searchParams.get('foreignWorkspaceId');
+            const foreignWorkspaceId =
+              typeof foreignQuery === 'string' && foreignQuery.trim()
+                ? foreignQuery.trim()
+                : undefined;
+            sendJson(
+              response,
+              200,
+              await e2eUserSelectedSkillFixture!.seed({
+                workspaceId: context.workspaceId,
+                ...(foreignWorkspaceId ? { foreignWorkspaceId } : {}),
+              }),
+              requestCorrelationId
+            );
+          },
+          {
+            code: 'INVALID_STATE',
+            message: 'The E2E user_selected skill fixture could not be seeded.',
+            status: 400,
+          }
+        );
+        return;
+      },
+    ]);
+
+    routes.add('e2e-user-selected-skill-evidence', [
+      'POST',
+      () =>
+        url.pathname === '/v1/e2e/user-selected-skill-evidence' &&
+        e2eFixtureEnabled &&
+        Boolean(e2eUserSelectedSkillEvidence),
+      'service-token',
+      async () => {
+        await handleErrors(
+          async () => {
+            const workspaceId = request.headers['x-workspace-id'];
+            if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+              throw new DomainError(
+                'NOT_FOUND',
+                'Workspace resource was not found.',
+                404
+              );
+            }
+            const context = productIdentity(
+              request,
+              workspaceId,
+              requestCorrelationId
+            );
+            if (context.actor !== 'user') {
+              throw new DomainError(
+                'COMMAND_ACTOR_FORBIDDEN',
+                'The current product role cannot read E2E skill evidence.',
+                403
+              );
+            }
+            // Query-only: BFF session proxy does not forward arbitrary e2e headers.
+            const taskQuery = url.searchParams.get('taskId');
+            if (typeof taskQuery !== 'string' || taskQuery.trim().length === 0) {
+              throw new DomainError(
+                'NOT_FOUND',
+                'Task resource was not found.',
+                404
+              );
+            }
+            const evidence = await e2eUserSelectedSkillEvidence!.read({
+              workspaceId: context.workspaceId,
+              taskId: taskQuery.trim(),
+            });
+            if (!evidence) {
+              throw new DomainError(
+                'NOT_FOUND',
+                'Task resource was not found.',
+                404
+              );
+            }
+            sendJson(response, 200, evidence, requestCorrelationId);
+          },
+          {
+            code: 'INVALID_STATE',
+            message: 'The E2E user_selected skill evidence could not be read.',
             status: 400,
           }
         );

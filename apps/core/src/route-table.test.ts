@@ -15,6 +15,8 @@ test('every Core route declares its auth class', () => {
     'diagnostic-resume-retired': 'service-token',
     'diagnostics-create-retired': 'service-token',
     'e2e-credit-detail-fixture': 'service-token',
+    'e2e-user-selected-skill-evidence': 'service-token',
+    'e2e-user-selected-skill-fixture': 'service-token',
     health: 'public',
     'health-assembly': 'public',
     'health-ready': 'public',
@@ -37,5 +39,5 @@ test('every Core route declares its auth class', () => {
     'workflow-events': 'service-token',
     'assistant-stream': 'service-token',
   });
-  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 32);
+  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 34);
 });

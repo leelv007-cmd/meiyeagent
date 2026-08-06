@@ -89,6 +89,8 @@ import { Route as ApiWebhooksStripeRouteImport } from './routes/api/webhooks/str
 import { Route as ApiStorageUploadRouteImport } from './routes/api/storage/upload'
 import { Route as ApiStorageFileRouteImport } from './routes/api/storage/file'
 import { Route as ApiE2eUsersRouteImport } from './routes/api/e2e/users'
+import { Route as ApiE2eUserSelectedSkillFixtureRouteImport } from './routes/api/e2e/user-selected-skill-fixture'
+import { Route as ApiE2eUserSelectedSkillEvidenceRouteImport } from './routes/api/e2e/user-selected-skill-evidence'
 import { Route as ApiE2eCreditDetailFixtureRouteImport } from './routes/api/e2e/credit-detail-fixture'
 import { Route as ApiCoreDiagnosticsRouteImport } from './routes/api/core/diagnostics'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -519,6 +521,18 @@ const ApiE2eUsersRoute = ApiE2eUsersRouteImport.update({
   path: '/api/e2e/users',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiE2eUserSelectedSkillFixtureRoute =
+  ApiE2eUserSelectedSkillFixtureRouteImport.update({
+    id: '/api/e2e/user-selected-skill-fixture',
+    path: '/api/e2e/user-selected-skill-fixture',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiE2eUserSelectedSkillEvidenceRoute =
+  ApiE2eUserSelectedSkillEvidenceRouteImport.update({
+    id: '/api/e2e/user-selected-skill-evidence',
+    path: '/api/e2e/user-selected-skill-evidence',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiE2eCreditDetailFixtureRoute =
   ApiE2eCreditDetailFixtureRouteImport.update({
     id: '/api/e2e/credit-detail-fixture',
@@ -742,6 +756,8 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
+  '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
+  '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
   '/api/storage/file': typeof ApiStorageFileRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
@@ -847,6 +863,8 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
+  '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
+  '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
   '/api/storage/file': typeof ApiStorageFileRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
@@ -957,6 +975,8 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
+  '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
+  '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
   '/api/storage/file': typeof ApiStorageFileRoute
   '/api/storage/upload': typeof ApiStorageUploadRoute
@@ -1068,6 +1088,8 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
+    | '/api/e2e/user-selected-skill-evidence'
+    | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
     | '/api/storage/file'
     | '/api/storage/upload'
@@ -1173,6 +1195,8 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
+    | '/api/e2e/user-selected-skill-evidence'
+    | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
     | '/api/storage/file'
     | '/api/storage/upload'
@@ -1282,6 +1306,8 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
+    | '/api/e2e/user-selected-skill-evidence'
+    | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
     | '/api/storage/file'
     | '/api/storage/upload'
@@ -1342,6 +1368,8 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiCoreDiagnosticsRoute: typeof ApiCoreDiagnosticsRouteWithChildren
   ApiE2eCreditDetailFixtureRoute: typeof ApiE2eCreditDetailFixtureRoute
+  ApiE2eUserSelectedSkillEvidenceRoute: typeof ApiE2eUserSelectedSkillEvidenceRoute
+  ApiE2eUserSelectedSkillFixtureRoute: typeof ApiE2eUserSelectedSkillFixtureRoute
   ApiE2eUsersRoute: typeof ApiE2eUsersRoute
   ApiStorageFileRoute: typeof ApiStorageFileRoute
   ApiStorageUploadRoute: typeof ApiStorageUploadRoute
@@ -1923,6 +1951,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiE2eUsersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/e2e/user-selected-skill-fixture': {
+      id: '/api/e2e/user-selected-skill-fixture'
+      path: '/api/e2e/user-selected-skill-fixture'
+      fullPath: '/api/e2e/user-selected-skill-fixture'
+      preLoaderRoute: typeof ApiE2eUserSelectedSkillFixtureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/e2e/user-selected-skill-evidence': {
+      id: '/api/e2e/user-selected-skill-evidence'
+      path: '/api/e2e/user-selected-skill-evidence'
+      fullPath: '/api/e2e/user-selected-skill-evidence'
+      preLoaderRoute: typeof ApiE2eUserSelectedSkillEvidenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/e2e/credit-detail-fixture': {
       id: '/api/e2e/credit-detail-fixture'
       path: '/api/e2e/credit-detail-fixture'
@@ -2372,6 +2414,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiCoreDiagnosticsRoute: ApiCoreDiagnosticsRouteWithChildren,
   ApiE2eCreditDetailFixtureRoute: ApiE2eCreditDetailFixtureRoute,
+  ApiE2eUserSelectedSkillEvidenceRoute: ApiE2eUserSelectedSkillEvidenceRoute,
+  ApiE2eUserSelectedSkillFixtureRoute: ApiE2eUserSelectedSkillFixtureRoute,
   ApiE2eUsersRoute: ApiE2eUsersRoute,
   ApiStorageFileRoute: ApiStorageFileRoute,
   ApiStorageUploadRoute: ApiStorageUploadRoute,

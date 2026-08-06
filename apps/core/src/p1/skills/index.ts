@@ -68,6 +68,20 @@ export {
   provisionPlatformRecipes,
 } from './platform-provisioning.js';
 export {
+  E2E_TENANT_ISOLATED_BINDING_ID,
+  E2E_TENANT_ISOLATED_SKILL_ID,
+  E2E_USER_SELECTED_BINDING_ID,
+  E2E_USER_SELECTED_SKILL_ID,
+  E2E_USER_SELECTED_STAGE,
+  E2E_USER_SELECTED_WORKFLOW_REF,
+  E2EUserSelectedSkillFixture,
+  type E2EUserSelectedSkillSeedResult,
+} from './e2e-user-selected-skill-fixture.js';
+export {
+  E2EUserSelectedSkillEvidenceReader,
+  type E2EUserSelectedSkillEvidence,
+} from './e2e-user-selected-skill-evidence.js';
+export {
   CompositeRecordProposalPort,
   PostgresStoreWorkflowCaptureRepository,
   StoreWorkflowCaptureService,
