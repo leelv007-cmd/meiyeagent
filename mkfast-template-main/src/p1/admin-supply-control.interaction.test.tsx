@@ -20,6 +20,13 @@ import {
   DEFAULT_RUN_TABLE_URL_STATE,
   type SupplyRunTableUrlState,
 } from '@/p1/admin-supply-run-table-model';
+import {
+  clearCredentialRotationHandoff,
+  peekCredentialRotationHandoff,
+  PLATFORM_CREDENTIAL_WORKSPACE_ID,
+  resetCredentialRotationHandoffForTests,
+  stageCredentialRotationHandoff,
+} from '@/p1/provider-credential-rotation-handoff';
 
 const p1Client = vi.hoisted(() => ({
   commandP1: vi.fn(),
@@ -27,6 +34,10 @@ const p1Client = vi.hoisted(() => ({
 }));
 
 vi.mock('@/p1/client', () => p1Client);
+
+const HANDOFF_RECEIPT_ID =
+  'secure-write-123e4567-e89b-42d3-a456-426614174000';
+const HANDOFF_ACCOUNT_ID = 'cred-provider-ark';
 
 function impactPreview(id: string, scope: string) {
   return {
@@ -104,6 +115,7 @@ function routeDecision(surface: 'simulator' | 'task_audit' = 'simulator') {
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+  resetCredentialRotationHandoffForTests();
 });
 
 function renderWithQueryClient(children: ReactNode) {
@@ -877,6 +889,225 @@ describe('AdminSupplyControl governed actions', () => {
     });
     expect(JSON.stringify(call)).not.toMatch(
       /"(apiKey|authorization|password|secret|token|value)"\s*:/i
+    );
+  });
+
+  it('prefills credential rotation from SPA handoff and clears handoff after success', async () => {
+    const user = userEvent.setup();
+    stageCredentialRotationHandoff({
+      workspaceId: PLATFORM_CREDENTIAL_WORKSPACE_ID,
+      accountId: HANDOFF_ACCOUNT_ID,
+      receiptId: HANDOFF_RECEIPT_ID,
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+    p1Client.queryP1.mockResolvedValueOnce(
+      impactPreview('preview-rotate-handoff', 'credential_account:cred-provider-ark')
+    );
+    p1Client.commandP1.mockResolvedValueOnce({
+      correlationId: 'rotate-handoff-1',
+      after: { secretVersion: 4 },
+    });
+
+    renderControl(buildDefaultSupplyControlSnapshot());
+
+    const row = screen
+      .getAllByTestId('supply-governed-action-row')
+      .find(
+        (candidate) =>
+          candidate.getAttribute('data-action-id') === 'credential_rotate'
+      );
+    if (!row) throw new Error('credential rotate row missing');
+
+    const receipt = within(row).getByTestId('supply-credential-rotate-receipt');
+    expect(receipt).toHaveValue(HANDOFF_RECEIPT_ID);
+    expect(receipt).toHaveAttribute('data-handoff-prefill', 'true');
+    expect(
+      within(row).getByTestId('supply-credential-rotate-handoff-hint')
+    ).toBeInTheDocument();
+    expect(
+      within(row).getByRole('combobox', { name: '凭据轮换目标' })
+    ).toHaveValue(HANDOFF_ACCOUNT_ID);
+
+    // No receiptId in share/external links on the supply surface.
+    const anchors = screen.getAllByRole('link').map((a) => a.getAttribute('href') ?? '');
+    expect(anchors.some((href) => href.includes(HANDOFF_RECEIPT_ID))).toBe(
+      false
+    );
+
+    await user.type(
+      within(row).getByRole('textbox', { name: '凭据轮换原因' }),
+      'Complete rotation via same-origin handoff'
+    );
+    await user.click(within(row).getByRole('button', { name: '凭据轮换' }));
+    const dialog = await screen.findByRole('dialog', { name: '凭据轮换' });
+    await user.click(
+      within(dialog).getByRole('button', { name: '确认凭据轮换' })
+    );
+
+    await waitFor(() => expect(p1Client.commandP1).toHaveBeenCalledTimes(1));
+    expect(peekCredentialRotationHandoff()).toBeNull();
+    expect(p1Client.commandP1.mock.calls[0]?.[1]).toMatchObject({
+      action: 'admin_supply_action',
+      payload: {
+        action: 'credential_rotate',
+        parameters: { secureWriteReceiptId: HANDOFF_RECEIPT_ID },
+        target: {
+          resourceId: HANDOFF_ACCOUNT_ID,
+          resourceType: 'credential_account',
+        },
+      },
+    });
+  });
+
+  it('clears handoff on wrong account binding before Core is called', async () => {
+    const user = userEvent.setup();
+    stageCredentialRotationHandoff({
+      workspaceId: PLATFORM_CREDENTIAL_WORKSPACE_ID,
+      accountId: HANDOFF_ACCOUNT_ID,
+      receiptId: HANDOFF_RECEIPT_ID,
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+    renderControl(buildDefaultSupplyControlSnapshot());
+
+    const row = screen
+      .getAllByTestId('supply-governed-action-row')
+      .find(
+        (candidate) =>
+          candidate.getAttribute('data-action-id') === 'credential_rotate'
+      );
+    if (!row) throw new Error('credential rotate row missing');
+
+    await user.selectOptions(
+      within(row).getByRole('combobox', { name: '凭据轮换目标' }),
+      'cred-provider-tuzi'
+    );
+    await user.type(
+      within(row).getByRole('textbox', { name: '凭据轮换原因' }),
+      'Attempt rotate with mismatched account binding'
+    );
+    await user.click(within(row).getByRole('button', { name: '凭据轮换' }));
+
+    expect(
+      await screen.findByTestId('supply-governed-action-result')
+    ).toHaveTextContent(/绑定不匹配|不匹配/);
+    expect(peekCredentialRotationHandoff()).toBeNull();
+    expect(p1Client.queryP1).not.toHaveBeenCalled();
+    expect(p1Client.commandP1).not.toHaveBeenCalled();
+  });
+
+  it('clears handoff when Core reports the receipt was already consumed', async () => {
+    const user = userEvent.setup();
+    stageCredentialRotationHandoff({
+      workspaceId: PLATFORM_CREDENTIAL_WORKSPACE_ID,
+      accountId: HANDOFF_ACCOUNT_ID,
+      receiptId: HANDOFF_RECEIPT_ID,
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+    p1Client.queryP1.mockResolvedValueOnce(
+      impactPreview('preview-rotate-dup', 'credential_account:cred-provider-ark')
+    );
+    p1Client.commandP1.mockRejectedValueOnce(
+      new Error('The secure-write receipt has already been consumed.')
+    );
+    renderControl(buildDefaultSupplyControlSnapshot());
+
+    const row = screen
+      .getAllByTestId('supply-governed-action-row')
+      .find(
+        (candidate) =>
+          candidate.getAttribute('data-action-id') === 'credential_rotate'
+      );
+    if (!row) throw new Error('credential rotate row missing');
+
+    await user.type(
+      within(row).getByRole('textbox', { name: '凭据轮换原因' }),
+      'Retry after first consumption should clear handoff'
+    );
+    await user.click(within(row).getByRole('button', { name: '凭据轮换' }));
+    const dialog = await screen.findByRole('dialog', { name: '凭据轮换' });
+    await user.click(
+      within(dialog).getByRole('button', { name: '确认凭据轮换' })
+    );
+
+    expect(
+      await screen.findByTestId('supply-governed-action-result')
+    ).toHaveTextContent(/already been consumed|执行失败/);
+    expect(peekCredentialRotationHandoff()).toBeNull();
+  });
+
+  it('clears handoff when Core reports the staged receipt has expired', async () => {
+    const user = userEvent.setup();
+    stageCredentialRotationHandoff({
+      workspaceId: PLATFORM_CREDENTIAL_WORKSPACE_ID,
+      accountId: HANDOFF_ACCOUNT_ID,
+      receiptId: HANDOFF_RECEIPT_ID,
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+    p1Client.queryP1.mockResolvedValueOnce(
+      impactPreview(
+        'preview-rotate-expired',
+        'credential_account:cred-provider-ark'
+      )
+    );
+    p1Client.commandP1.mockRejectedValueOnce(
+      new Error('The secure-write receipt has expired.')
+    );
+    renderControl(buildDefaultSupplyControlSnapshot());
+
+    const row = screen
+      .getAllByTestId('supply-governed-action-row')
+      .find(
+        (candidate) =>
+          candidate.getAttribute('data-action-id') === 'credential_rotate'
+      );
+    if (!row) throw new Error('credential rotate row missing');
+
+    await user.type(
+      within(row).getByRole('textbox', { name: '凭据轮换原因' }),
+      'Core expiry must drop the SPA handoff'
+    );
+    await user.click(within(row).getByRole('button', { name: '凭据轮换' }));
+    const dialog = await screen.findByRole('dialog', { name: '凭据轮换' });
+    await user.click(
+      within(dialog).getByRole('button', { name: '确认凭据轮换' })
+    );
+
+    expect(
+      await screen.findByTestId('supply-governed-action-result')
+    ).toHaveTextContent(/has expired|执行失败/);
+    expect(peekCredentialRotationHandoff()).toBeNull();
+  });
+
+  it('clears handoff on wrong workspace binding', () => {
+    stageCredentialRotationHandoff({
+      workspaceId: 'ws-other-merchant',
+      accountId: HANDOFF_ACCOUNT_ID,
+      receiptId: HANDOFF_RECEIPT_ID,
+      expiresAt: '2099-01-01T00:00:00.000Z',
+    });
+    renderControl(buildDefaultSupplyControlSnapshot());
+    // Prefill binds against platform workspace and drops mismatched handoff.
+    const row = screen
+      .getAllByTestId('supply-governed-action-row')
+      .find(
+        (candidate) =>
+          candidate.getAttribute('data-action-id') === 'credential_rotate'
+      );
+    if (!row) throw new Error('credential rotate row missing');
+    expect(
+      within(row).getByTestId('supply-credential-rotate-receipt')
+    ).toHaveValue('');
+    expect(peekCredentialRotationHandoff()).toBeNull();
+    clearCredentialRotationHandoff();
+  });
+
+  it('does not render secretReference on credential cards', () => {
+    renderControl(buildDefaultSupplyControlSnapshot());
+    const panel = screen.getByTestId('supply-credential-panel');
+    expect(panel.textContent).not.toMatch(/secret:\/\//);
+    expect(panel.textContent).not.toMatch(/secretReference/);
+    expect(panel.innerHTML).not.toMatch(
+      /sk-[A-Za-z0-9]{8,}|Bearer\s+[A-Za-z0-9]/
     );
   });
 

@@ -34,6 +34,13 @@ import {
   type LiveRouteSimulatorState,
 } from '@/p1/admin-supply-route-simulator-model';
 import {
+  clearCredentialRotationHandoff,
+  consumeCredentialRotationHandoff,
+  isTerminalRotationReceiptError,
+  peekCredentialRotationHandoff,
+  PLATFORM_CREDENTIAL_WORKSPACE_ID,
+} from '@/p1/provider-credential-rotation-handoff';
+import {
   isSecureWriteReceiptId,
   type GovernedActionDraft,
   type GovernedActionExecution,
@@ -241,6 +248,34 @@ function projectActionResult(
   return projectRouteDecision(routeDecision?.simulator);
 }
 
+function rotationHandoffPrefill(
+  targets: GovernedExecutionTarget[]
+): Pick<GovernedActionFormValues, 'secureWriteReceiptId' | 'targetId'> {
+  const staged = peekCredentialRotationHandoff();
+  if (!staged) {
+    return { secureWriteReceiptId: '', targetId: '' };
+  }
+  // Bind against the platform workspace before prefill. Mismatch/expiry clear.
+  const bound = consumeCredentialRotationHandoff(
+    {
+      workspaceId: PLATFORM_CREDENTIAL_WORKSPACE_ID,
+      accountId: staged.accountId,
+    },
+    { clearOnReady: false }
+  );
+  if (bound.status !== 'ready') {
+    return { secureWriteReceiptId: '', targetId: '' };
+  }
+  const targetPresent = targets.some(
+    (target) =>
+      (target.selectionId ?? target.resourceId) === bound.record.accountId
+  );
+  return {
+    secureWriteReceiptId: bound.record.receiptId,
+    targetId: targetPresent ? bound.record.accountId : '',
+  };
+}
+
 function GovernedActionFormCells({
   actionId,
   label,
@@ -254,13 +289,17 @@ function GovernedActionFormCells({
   disabled: boolean;
   onSubmit: (values: GovernedActionFormValues) => Promise<void>;
 }) {
+  const handoffDefaults =
+    actionId === 'credential_rotate'
+      ? rotationHandoffPrefill(targets)
+      : { secureWriteReceiptId: '', targetId: '' };
   const form = useForm<GovernedActionFormValues>({
     defaultValues: {
       candidateDeploymentIds: '',
       candidateRevisionId: '',
       reason: '',
-      secureWriteReceiptId: '',
-      targetId: '',
+      secureWriteReceiptId: handoffDefaults.secureWriteReceiptId,
+      targetId: handoffDefaults.targetId,
     },
     mode: 'onChange',
     resolver: zodResolver(governedActionFormSchema(actionId)),
@@ -269,6 +308,9 @@ function GovernedActionFormCells({
     control: form.control,
     name: 'secureWriteReceiptId',
   });
+  const handoffPrefillActive =
+    actionId === 'credential_rotate' &&
+    Boolean(handoffDefaults.secureWriteReceiptId);
 
   return (
     <>
@@ -294,10 +336,20 @@ function GovernedActionFormCells({
               aria-label="凭据轮换安全写入回执"
               autoComplete="off"
               className="mt-2 h-9 min-w-48 rounded-md border bg-background px-2 text-xs"
+              data-handoff-prefill={String(handoffPrefillActive)}
+              data-testid="supply-credential-rotate-receipt"
               placeholder="安全写入回执 ID"
               type="text"
               {...form.register('secureWriteReceiptId')}
             />
+            {handoffPrefillActive ? (
+              <p
+                className="mt-1 text-xs text-muted-foreground"
+                data-testid="supply-credential-rotate-handoff-hint"
+              >
+                已从集成页会话交接预填回执（可手改；刷新后仅可手工输入）。
+              </p>
+            ) : null}
             {receipt && form.formState.errors.secureWriteReceiptId ? (
               <p className="mt-1 text-xs text-destructive">
                 {form.formState.errors.secureWriteReceiptId.message}
@@ -405,6 +457,35 @@ export function SupplyGovernedActionsPanel({
     ) {
       return;
     }
+    if (actionId === 'credential_rotate' && secureWriteReceiptId) {
+      // Re-bind to current platform workspace + selected account before Core.
+      // Mismatch / expiry / missing handoff for this receipt clears memory when
+      // the field still holds the staged receipt id.
+      const staged = peekCredentialRotationHandoff();
+      if (staged && staged.receiptId === secureWriteReceiptId) {
+        const bound = consumeCredentialRotationHandoff(
+          {
+            workspaceId: PLATFORM_CREDENTIAL_WORKSPACE_ID,
+            accountId: target.resourceId,
+          },
+          { clearOnReady: false }
+        );
+        if (bound.status !== 'ready') {
+          setOutcome({
+            actionId,
+            message:
+              bound.status === 'expired'
+                ? '凭据轮换回执已过期，请回到集成页重新暂存。'
+                : bound.status === 'account_mismatch' ||
+                    bound.status === 'workspace_mismatch'
+                  ? '凭据轮换回执与当前账户/工作区绑定不匹配。'
+                  : '凭据轮换回执已不可用，请手工输入或重新暂存。',
+            status: 'failed',
+          });
+          return;
+        }
+      }
+    }
     setOutcome({
       actionId,
       message: `${definition.label}影响预览生成中…`,
@@ -461,6 +542,10 @@ export function SupplyGovernedActionsPanel({
           });
           try {
             const result = await onExecute({ reason: confirmedReason, review });
+            if (actionId === 'credential_rotate' && secureWriteReceiptId) {
+              // One-shot: success always drops the SPA handoff for this receipt.
+              clearCredentialRotationHandoff(secureWriteReceiptId);
+            }
             const resultRecord =
               result && typeof result === 'object'
                 ? (result as Record<string, unknown>)
@@ -477,6 +562,13 @@ export function SupplyGovernedActionsPanel({
               status: 'succeeded',
             });
           } catch (error) {
+            if (
+              actionId === 'credential_rotate' &&
+              secureWriteReceiptId &&
+              isTerminalRotationReceiptError(error)
+            ) {
+              clearCredentialRotationHandoff(secureWriteReceiptId);
+            }
             const message = error instanceof Error ? error.message : '未知错误';
             publishRouteSimulatorError(
               actionId,
@@ -493,6 +585,13 @@ export function SupplyGovernedActionsPanel({
         },
       });
     } catch (error) {
+      if (
+        actionId === 'credential_rotate' &&
+        secureWriteReceiptId &&
+        isTerminalRotationReceiptError(error)
+      ) {
+        clearCredentialRotationHandoff(secureWriteReceiptId);
+      }
       const message = error instanceof Error ? error.message : '未知错误';
       publishRouteSimulatorError(actionId, message, onRouteSimulatorUpdate);
       setOutcome({

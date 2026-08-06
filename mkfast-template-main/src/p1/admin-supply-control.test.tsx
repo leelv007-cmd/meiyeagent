@@ -44,6 +44,9 @@ test('SSR J5 credential UI + route simulator + governed actions', () => {
   assert.match(html, /排空中|未排空/);
   assert.doesNotMatch(html, /sk-[A-Za-z0-9]{8,}/);
   assert.doesNotMatch(html, /Bearer\s+[A-Za-z0-9]/);
+  // Pages must never echo secretReference / raw secret URIs (ticket #367).
+  assert.doesNotMatch(html, /secret:\/\//);
+  assert.doesNotMatch(html, /secretReference/);
 
   assert.match(html, /data-testid="supply-route-simulator-panel"/);
   assert.match(html, /data-testid="supply-route-hard-filter"/);

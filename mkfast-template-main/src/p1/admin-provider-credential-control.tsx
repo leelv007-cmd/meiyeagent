@@ -14,9 +14,14 @@ import {
 } from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Routes } from '@/lib/routes';
 import {
   admin_provider_credential_activation_note,
+  admin_provider_credential_complete_on_supply,
   admin_provider_credential_empty,
+  admin_provider_credential_receipt_expires,
+  admin_provider_credential_receipt_id,
+  admin_provider_credential_receipt_staged,
   admin_provider_credential_restart_effective,
   admin_provider_credential_revoke,
   admin_provider_credential_rotate,
@@ -40,6 +45,10 @@ import {
   admin_provider_credentials_title,
 } from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from './client';
+import {
+  stageCredentialRotationHandoff,
+  type CredentialRotationHandoffRecord,
+} from './provider-credential-rotation-handoff';
 import { p1QueryKeys } from './query-keys';
 
 type ProviderSlot = 'model.direct' | 'ark.media';
@@ -55,6 +64,8 @@ interface ProviderCredential {
   /** CredentialAccount trunk when Core projects registry metadata. */
   accountStatus?: CredentialAccountTrunkStatus;
   drainSubstate?: CredentialDrainSubstateUi;
+  credentialAccountId?: string;
+  workspaceId?: string;
   credential?: {
     mask: string;
     version: number;
@@ -66,6 +77,24 @@ interface ProviderCredential {
   };
   updatedAt?: string;
 }
+
+/** Public metadata returned by admin_rotate_provider_credential stage path. */
+interface StageRotationResponse {
+  account?: { id?: string; workspaceId?: string };
+  secureWriteReceipt?: {
+    id: string;
+    workspaceId: string;
+    accountId: string;
+    nextSecretVersion?: number;
+    expiresAt: string;
+  };
+}
+
+type StagedReceiptView = {
+  receiptId: string;
+  expiresAt: string;
+  accountId: string;
+};
 
 type StatusVariant = NonNullable<BadgeProps['variant']>;
 
@@ -116,11 +145,38 @@ function activationGateSatisfied(
 
 const slots: readonly ProviderSlot[] = ['model.direct', 'ark.media'];
 
+function readStagedReceipt(
+  response: unknown
+): CredentialRotationHandoffRecord | null {
+  if (!response || typeof response !== 'object') return null;
+  const body = response as StageRotationResponse;
+  const receipt = body.secureWriteReceipt;
+  if (
+    !receipt ||
+    typeof receipt.id !== 'string' ||
+    typeof receipt.workspaceId !== 'string' ||
+    typeof receipt.accountId !== 'string' ||
+    typeof receipt.expiresAt !== 'string'
+  ) {
+    return null;
+  }
+  // Never accept or forward secretReference / raw secret from the response.
+  return {
+    workspaceId: receipt.workspaceId,
+    accountId: receipt.accountId,
+    receiptId: receipt.id,
+    expiresAt: receipt.expiresAt,
+  };
+}
+
 export function AdminProviderCredentialControl() {
   const queryClient = useQueryClient();
   const [values, setValues] = useState<Partial<Record<ProviderSlot, string>>>(
     {}
   );
+  const [stagedReceipts, setStagedReceipts] = useState<
+    Partial<Record<ProviderSlot, StagedReceiptView>>
+  >({});
   const [testingSlot, setTestingSlot] = useState<ProviderSlot>();
   const query = useQuery({
     queryKey: p1QueryKeys.request('integrations', 'admin_provider_credentials'),
@@ -139,15 +195,35 @@ export function AdminProviderCredentialControl() {
   const save = async (slot: ProviderSlot, existing: boolean) => {
     const value = values[slot]?.trim();
     if (!value) return;
-    await commandP1('integrations', {
+    const response = await commandP1('integrations', {
       action: existing
         ? 'admin_rotate_provider_credential'
         : 'admin_store_provider_credential',
       payload: { slot, credential: { scope: ['provider.connect'], value } },
     });
     setValues((current) => ({ ...current, [slot]: '' }));
+    const staged = existing ? readStagedReceipt(response) : null;
+    if (staged) {
+      stageCredentialRotationHandoff(staged);
+      setStagedReceipts((current) => ({
+        ...current,
+        [slot]: {
+          receiptId: staged.receiptId,
+          expiresAt: staged.expiresAt,
+          accountId: staged.accountId,
+        },
+      }));
+      toast.success(admin_provider_credential_receipt_staged());
+    } else {
+      setStagedReceipts((current) => {
+        if (!current[slot]) return current;
+        const next = { ...current };
+        delete next[slot];
+        return next;
+      });
+      toast.success(admin_provider_credential_saved());
+    }
     await refresh();
-    toast.success(admin_provider_credential_saved());
   };
 
   const revoke = async (slot: ProviderSlot) => {
@@ -299,6 +375,45 @@ export function AdminProviderCredentialControl() {
                 </>
               ) : null}
             </div>
+
+            {stagedReceipts[slot] ? (
+              <div
+                className="border-primary/30 bg-primary/5 space-y-2 rounded-lg border p-3 text-xs"
+                data-testid="provider-credential-rotation-receipt"
+                data-slot={slot}
+                data-account-id={stagedReceipts[slot]?.accountId}
+              >
+                <p className="font-medium">
+                  {admin_provider_credential_receipt_staged()}
+                </p>
+                <p
+                  className="font-mono break-all"
+                  data-testid="provider-credential-receipt-id"
+                >
+                  {admin_provider_credential_receipt_id({
+                    receiptId: stagedReceipts[slot]?.receiptId ?? '',
+                  })}
+                </p>
+                <p data-testid="provider-credential-receipt-expires">
+                  {admin_provider_credential_receipt_expires({
+                    expiresAt: new Date(
+                      stagedReceipts[slot]?.expiresAt ?? 0
+                    ).toLocaleString(),
+                  })}
+                </p>
+                {/*
+                  Same-origin navigation only — receiptId must never enter query,
+                  hash, or the link href (Referer risk). Handoff is SPA memory.
+                */}
+                <a
+                  className="text-primary inline-flex font-medium underline"
+                  data-testid="provider-credential-complete-rotation"
+                  href={Routes.AdminSupply}
+                >
+                  {admin_provider_credential_complete_on_supply()}
+                </a>
+              </div>
+            ) : null}
 
             <div className="text-muted-foreground space-y-1 text-xs">
               <p>{providerTestStatus(credential?.credential?.testStatus)}</p>

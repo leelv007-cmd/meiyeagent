@@ -127,9 +127,6 @@ export function SupplyCredentialPanel({
                 提供方：
                 {account.providerDisplayName ?? account.providerProfileId}
               </p>
-              <p className="font-mono text-muted-foreground">
-                ref {account.secretReference}
-              </p>
               <p>
                 探针：{account.activationGate.probe.label}
                 {account.activationGate.probe.testedAt
