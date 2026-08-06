@@ -17,8 +17,11 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import type { CapabilityAvailabilityStatus } from '@meiye/contracts';
 import {
+  BLOCKING_EXCEPTION_SEVERITIES,
   exceptionFreshnessLabel,
   exceptionSeverityLabel,
+  filterExceptionRowsBySeverity,
+  isBlockingOnlyExceptionFilter,
   type ExceptionHomeRow,
   type ExceptionHomeView,
   type ExceptionSeverity,
@@ -40,11 +43,6 @@ const SEVERITY_VARIANT: Record<ExceptionSeverity, BadgeProps['variant']> = {
   not_verified: 'outline',
   stale: 'secondary',
 };
-
-/** 工具行只筛「真挡路的两档」，其余仍留在清单里。 */
-function isBlockingSeverity(severity: ExceptionSeverity): boolean {
-  return severity === 'blocked' || severity === 'degraded';
-}
 
 function ExceptionRowCard({ row }: { row: ExceptionHomeRow }) {
   return (
@@ -268,16 +266,51 @@ function EmptyExceptionState({ view }: { view: ExceptionHomeView }) {
 /**
  * Read-only exception-first home panel (J2 / D-055).
  * No ack / assign / owner workflow controls (D-080 C1).
+ *
+ * Severity filter is client-side projection only (#385). When
+ * `onSeverityFilterChange` is provided the parent owns URL sync (replace
+ * navigation); otherwise the toolbar falls back to local state for SSR tests.
  */
-export function ExceptionHomePanel({ view }: { view: ExceptionHomeView }) {
-  // 纯前台视图筛选：不进 URL、不发查询，因此也不改任何对外契约。
-  const [onlyBlocking, setOnlyBlocking] = useState(false);
+export function ExceptionHomePanel({
+  view,
+  severityFilter,
+  onSeverityFilterChange,
+}: {
+  view: ExceptionHomeView;
+  /** Active severity tokens; empty / omitted = show all. */
+  severityFilter?: readonly ExceptionSeverity[];
+  /** Parent wires replace navigation for shareable ?exceptions=. */
+  onSeverityFilterChange?: (next: readonly ExceptionSeverity[]) => void;
+}) {
+  const [localBlocking, setLocalBlocking] = useState(false);
+  const controlled = onSeverityFilterChange != null || severityFilter != null;
+  const activeSeverities: readonly ExceptionSeverity[] = controlled
+    ? (severityFilter ?? [])
+    : localBlocking
+      ? BLOCKING_EXCEPTION_SEVERITIES
+      : [];
+  const onlyBlocking = isBlockingOnlyExceptionFilter(activeSeverities);
   const blockingCount = view.exceptions.filter((row) =>
-    isBlockingSeverity(row.severity)
+    (BLOCKING_EXCEPTION_SEVERITIES as readonly ExceptionSeverity[]).includes(
+      row.severity
+    )
   ).length;
-  const visibleExceptions = onlyBlocking
-    ? view.exceptions.filter((row) => isBlockingSeverity(row.severity))
-    : view.exceptions;
+  const visibleExceptions = filterExceptionRowsBySeverity(
+    view.exceptions,
+    activeSeverities
+  );
+  const filterToken =
+    activeSeverities.length === 0 ? 'all' : activeSeverities.join(',');
+
+  function toggleBlockingFilter() {
+    if (controlled) {
+      onSeverityFilterChange?.(
+        onlyBlocking ? [] : [...BLOCKING_EXCEPTION_SEVERITIES]
+      );
+      return;
+    }
+    setLocalBlocking((current) => !current);
+  }
 
   return (
     <div
@@ -288,8 +321,10 @@ export function ExceptionHomePanel({ view }: { view: ExceptionHomeView }) {
       data-supports-assign="false"
       data-supports-owner-workflow="false"
       data-empty={view.empty ? 'true' : 'false'}
-      // 计数是这一面共有多少条主事件，与工具行筛掉了几条无关。
+      // Full projected count (not the filtered visible subset).
       data-exception-count={view.exceptions.length}
+      data-visible-exception-count={visibleExceptions.length}
+      data-severity-filter={filterToken}
     >
       <Alert>
         <AlertTitle>异常优先首页（只读）</AlertTitle>
@@ -327,7 +362,8 @@ export function ExceptionHomePanel({ view }: { view: ExceptionHomeView }) {
                 type="button"
                 variant={onlyBlocking ? 'secondary' : 'outline'}
                 aria-pressed={onlyBlocking}
-                onClick={() => setOnlyBlocking((current) => !current)}
+                data-testid="exception-filter-blocking"
+                onClick={toggleBlockingFilter}
               >
                 <IconFilter aria-hidden="true" />
                 {admin_exception_only_blocking()}
@@ -336,7 +372,7 @@ export function ExceptionHomePanel({ view }: { view: ExceptionHomeView }) {
             </FrameHeader>
             <FramePanel>
               {visibleExceptions.length === 0 ? (
-                // 真·无异常是另一种状态（exception-empty-state），这里只是筛没了。
+                // True empty is exception-empty-state; this is filter miss only.
                 <p
                   className="text-sm text-muted-foreground"
                   data-testid="exception-filter-empty"

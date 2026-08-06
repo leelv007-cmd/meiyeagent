@@ -7,6 +7,7 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { ADMIN_UTILITY_ITEM } from '@/config/sidebar-config';
+import { parseExceptionHomeUrlState } from '@/p1/admin-exception-home-model';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { Fragment } from 'react';
 import { activeAdminTrail, canonicalPath } from './nav-active';
@@ -36,7 +37,12 @@ export function AdminBreadcrumbs() {
             <BreadcrumbPage>{ADMIN_UTILITY_ITEM.label}</BreadcrumbPage>
           ) : (
             <BreadcrumbLink
-              render={<Link to={ADMIN_UTILITY_ITEM.href} />}
+              render={
+                <Link
+                  to={ADMIN_UTILITY_ITEM.href}
+                  search={parseExceptionHomeUrlState({})}
+                />
+              }
               className="hidden sm:inline-flex"
             >
               {ADMIN_UTILITY_ITEM.label}

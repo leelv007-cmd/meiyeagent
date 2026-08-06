@@ -772,6 +772,148 @@ export function buildExceptionHomeView(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Shareable URL filter: ?exceptions=blocked,attention (Spec F / #385)
+// Client-side projection only — never changes backend queries.
+// ---------------------------------------------------------------------------
+
+/** URL search key for exception severity filter (comma-separated tokens). */
+export const EXCEPTION_HOME_URL_KEYS = {
+  exceptions: 'exceptions',
+} as const;
+
+/**
+ * Validated search state for /admin exception home.
+ * `exceptions` is a comma-joined token string when filtering; omit / empty = all.
+ */
+export interface ExceptionHomeUrlState {
+  exceptions?: string;
+}
+
+export const DEFAULT_EXCEPTION_HOME_URL_STATE: ExceptionHomeUrlState = {};
+
+/** Severities used by the "only blocking" toolbar control. */
+export const BLOCKING_EXCEPTION_SEVERITIES = [
+  'blocked',
+  'degraded',
+] as const satisfies readonly ExceptionSeverity[];
+
+function isExceptionSeverityToken(
+  value: string
+): value is ExceptionSeverity {
+  return (EXCEPTION_SEVERITIES as readonly string[]).includes(value);
+}
+
+/**
+ * Parse `?exceptions=` from URLSearchParams or a plain record.
+ * Invalid tokens are dropped; remaining tokens are canonical-ordered and
+ * de-duplicated. Empty / missing → no filter (all severities).
+ */
+export function parseExceptionHomeUrlState(
+  input: URLSearchParams | Record<string, string | undefined | null | unknown>
+): ExceptionHomeUrlState {
+  const get =
+    input instanceof URLSearchParams
+      ? (key: string) => input.get(key)
+      : (key: string) => {
+          const raw = input[key];
+          if (raw == null) return null;
+          if (typeof raw === 'string' || typeof raw === 'number') {
+            return String(raw);
+          }
+          return null;
+        };
+
+  const raw = get(EXCEPTION_HOME_URL_KEYS.exceptions);
+  if (raw == null || raw.trim() === '') {
+    return { ...DEFAULT_EXCEPTION_HOME_URL_STATE };
+  }
+
+  const selected = new Set<ExceptionSeverity>();
+  for (const token of raw.split(',')) {
+    const trimmed = token.trim();
+    if (isExceptionSeverityToken(trimmed)) {
+      selected.add(trimmed);
+    }
+  }
+
+  if (selected.size === 0) {
+    return { ...DEFAULT_EXCEPTION_HOME_URL_STATE };
+  }
+
+  const ordered = EXCEPTION_SEVERITIES.filter((severity) =>
+    selected.has(severity)
+  );
+  return { exceptions: ordered.join(',') };
+}
+
+/**
+ * Normalize a severity list into URL search state.
+ * Empty list → no `exceptions` key (shareable default = all).
+ */
+export function exceptionHomeUrlStateFromSeverities(
+  severities: readonly ExceptionSeverity[]
+): ExceptionHomeUrlState {
+  const selected = new Set<ExceptionSeverity>();
+  for (const severity of severities) {
+    if (isExceptionSeverityToken(severity)) {
+      selected.add(severity);
+    }
+  }
+  if (selected.size === 0) {
+    return { ...DEFAULT_EXCEPTION_HOME_URL_STATE };
+  }
+  const ordered = EXCEPTION_SEVERITIES.filter((severity) =>
+    selected.has(severity)
+  );
+  return { exceptions: ordered.join(',') };
+}
+
+/**
+ * Selected severity tokens from URL state.
+ * Empty array means "show all" (no active filter).
+ */
+export function exceptionSeveritiesFromUrlState(
+  state: ExceptionHomeUrlState | undefined | null
+): ExceptionSeverity[] {
+  if (!state?.exceptions || state.exceptions.trim() === '') {
+    return [];
+  }
+  const normalized = parseExceptionHomeUrlState({
+    [EXCEPTION_HOME_URL_KEYS.exceptions]: state.exceptions,
+  });
+  if (!normalized.exceptions) return [];
+  return normalized.exceptions
+    .split(',')
+    .filter(isExceptionSeverityToken);
+}
+
+/** True when the active filter is exactly blocked + degraded (toolbar pressed). */
+export function isBlockingOnlyExceptionFilter(
+  severities: readonly ExceptionSeverity[]
+): boolean {
+  if (severities.length !== BLOCKING_EXCEPTION_SEVERITIES.length) {
+    return false;
+  }
+  const set = new Set(severities);
+  return BLOCKING_EXCEPTION_SEVERITIES.every((severity) => set.has(severity));
+}
+
+/**
+ * Client-side projection filter. Empty `severities` = pass all rows through.
+ * Does not touch backend queries or re-project the home view.
+ */
+export function filterExceptionRowsBySeverity(
+  rows: readonly ExceptionHomeRow[],
+  severities: readonly ExceptionSeverity[]
+): ExceptionHomeRow[] {
+  if (severities.length === 0) {
+    return [...rows];
+  }
+  const allowed = new Set(severities);
+  return rows.filter((row) => allowed.has(row.severity));
+}
+
 /** Severity operator label. */
 export function exceptionSeverityLabel(severity: ExceptionSeverity): string {
   switch (severity) {

@@ -27,6 +27,7 @@ import { Spinner } from '@/components/ui/spinner';
 import { ADMIN_NAV_GROUPS, ADMIN_UTILITY_ITEM } from '@/config/sidebar-config';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Routes } from '@/lib/routes';
+import { parseExceptionHomeUrlState } from '@/p1/admin-exception-home-model';
 import {
   common_loading,
   shell_admin_brand,
@@ -130,7 +131,12 @@ export function AdminDashboardShell() {
                       <SidebarMenuButton
                         isActive={ADMIN_UTILITY_ITEM.href === activeHref}
                         tooltip={ADMIN_UTILITY_ITEM.label}
-                        render={<Link to={ADMIN_UTILITY_ITEM.href} />}
+                        render={
+                          <Link
+                            to={ADMIN_UTILITY_ITEM.href}
+                            search={parseExceptionHomeUrlState({})}
+                          />
+                        }
                       >
                         <ADMIN_UTILITY_ITEM.icon />
                         <span>{ADMIN_UTILITY_ITEM.label}</span>

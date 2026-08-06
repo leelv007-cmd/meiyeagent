@@ -19,6 +19,7 @@ import {
   buildExceptionHomeView,
   type BuildExceptionHomeInput,
   type ExceptionHomeView,
+  type ExceptionSeverity,
 } from '@/p1/admin-exception-home-model';
 import { AdminSensitiveWordsGateAlert } from '@/p1/admin-sensitive-words-gate-alert';
 import type { SupplyControlSnapshot } from '@/p1/admin-supply-types';
@@ -121,8 +122,12 @@ export function projectLiveExceptionHome(input: {
 
 function LiveAdminExceptionHome({
   input,
+  severityFilter,
+  onSeverityFilterChange,
 }: {
   input?: BuildExceptionHomeInput;
+  severityFilter?: readonly ExceptionSeverity[];
+  onSeverityFilterChange?: (next: readonly ExceptionSeverity[]) => void;
 }) {
   const projection = useAdminCapabilityRegistryProjection();
   const pendingActions = useQuery({
@@ -196,6 +201,8 @@ function LiveAdminExceptionHome({
         registry={projection.view}
         pendingActions={pendingActions.data}
         pendingActionsFailed={pendingActions.isError}
+        severityFilter={severityFilter}
+        onSeverityFilterChange={onSeverityFilterChange}
       />
     </div>
   );
@@ -206,11 +213,15 @@ function LiveAdminExceptionHomeReady({
   registry,
   pendingActions,
   pendingActionsFailed,
+  severityFilter,
+  onSeverityFilterChange,
 }: {
   input?: BuildExceptionHomeInput;
   registry: CapabilityRegistryView;
   pendingActions: readonly (PendingAction | ActionableInboxItem)[] | undefined;
   pendingActionsFailed: boolean;
+  severityFilter?: readonly ExceptionSeverity[];
+  onSeverityFilterChange?: (next: readonly ExceptionSeverity[]) => void;
 }) {
   const view = useMemo(
     () =>
@@ -225,22 +236,47 @@ function LiveAdminExceptionHomeReady({
     [input?.now, pendingActions, pendingActionsFailed, registry]
   );
 
-  return <ExceptionHomePanel view={view} />;
+  return (
+    <ExceptionHomePanel
+      view={view}
+      severityFilter={severityFilter}
+      onSeverityFilterChange={onSeverityFilterChange}
+    />
+  );
 }
 
 /**
  * Admin exception-first home control (J2 / D-055).
  * Explicit view remains the pure SSR seam; product rendering consumes the
  * existing pending-actions BFF and Core OperationalMetric query.
+ * Severity filter props are client projection only (#385) — never query inputs.
  */
 export function AdminExceptionHome({
   view: viewProp,
   input,
+  severityFilter,
+  onSeverityFilterChange,
 }: {
   view?: ExceptionHomeView;
   input?: BuildExceptionHomeInput;
+  severityFilter?: readonly ExceptionSeverity[];
+  onSeverityFilterChange?: (next: readonly ExceptionSeverity[]) => void;
 } = {}) {
-  if (!viewProp) return <LiveAdminExceptionHome input={input} />;
+  if (!viewProp) {
+    return (
+      <LiveAdminExceptionHome
+        input={input}
+        severityFilter={severityFilter}
+        onSeverityFilterChange={onSeverityFilterChange}
+      />
+    );
+  }
 
-  return <ExceptionHomePanel view={viewProp} />;
+  return (
+    <ExceptionHomePanel
+      view={viewProp}
+      severityFilter={severityFilter}
+      onSeverityFilterChange={onSeverityFilterChange}
+    />
+  );
 }

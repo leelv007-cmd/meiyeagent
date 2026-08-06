@@ -44,6 +44,7 @@ import { authClient } from '@/auth/client';
 import { useRouter } from '@tanstack/react-router';
 import { toast } from 'sonner';
 import { Routes } from '@/lib/routes';
+import { parseExceptionHomeUrlState } from '@/p1/admin-exception-home-model';
 interface SidebarUserProps {
   user: SessionUser;
   className?: string;
@@ -203,7 +204,11 @@ export function SidebarUser({ user }: SidebarUserProps) {
                 <DropdownMenuItem
                   onClick={() => {
                     setOpen(false);
-                    router.navigate({ to: Routes.Admin });
+                    router.navigate({
+                      to: Routes.Admin,
+                      // Index validateSearch requires search; default = all severities.
+                      search: parseExceptionHomeUrlState({}),
+                    });
                   }}
                 >
                   <IconShieldCheck className="mr-2 size-4" />

@@ -6,16 +6,24 @@ import type {
 } from '@meiye/contracts';
 import {
   assertNoAckAssignOwnerUi,
+  BLOCKING_EXCEPTION_SEVERITIES,
   buildExceptionHomeView,
   buildPanoramaStatCards,
   dedupeExceptionCandidates,
+  DEFAULT_EXCEPTION_HOME_URL_STATE,
+  exceptionHomeUrlStateFromSeverities,
+  exceptionSeveritiesFromUrlState,
   EXCEPTION_SEVERITY_RANK,
+  filterExceptionRowsBySeverity,
+  isBlockingOnlyExceptionFilter,
+  parseExceptionHomeUrlState,
   projectCapabilityExceptionCandidates,
   projectEvidenceFreshness,
   projectInboxExceptionCandidates,
   redactHandoffContext,
   sortExceptionRows,
   type ExceptionHomeRow,
+  type ExceptionSeverity,
 } from './admin-exception-home-model';
 import {
   buildCapabilityRegistry,
@@ -400,5 +408,87 @@ test('assertNoAckAssignOwnerUi negative patterns', () => {
   assert.ok(
     assertNoAckAssignOwnerUi('<button data-action="assign">指派负责人</button>')
       .length > 0
+  );
+});
+
+test('parseExceptionHomeUrlState: comma tokens, defaults, garbage, canonical order', () => {
+  assert.deepEqual(parseExceptionHomeUrlState({}), DEFAULT_EXCEPTION_HOME_URL_STATE);
+  assert.deepEqual(
+    parseExceptionHomeUrlState(new URLSearchParams()),
+    DEFAULT_EXCEPTION_HOME_URL_STATE
+  );
+  assert.deepEqual(
+    parseExceptionHomeUrlState({ exceptions: '' }),
+    DEFAULT_EXCEPTION_HOME_URL_STATE
+  );
+  assert.deepEqual(
+    parseExceptionHomeUrlState({ exceptions: 'blocked,attention' }),
+    { exceptions: 'blocked,attention' }
+  );
+  // Reorder + dedupe + drop garbage.
+  assert.deepEqual(
+    parseExceptionHomeUrlState({
+      exceptions: 'attention,blocked,attention,not_a_severity,stale',
+    }),
+    { exceptions: 'blocked,attention,stale' }
+  );
+  assert.deepEqual(
+    parseExceptionHomeUrlState(new URLSearchParams('exceptions=degraded')),
+    { exceptions: 'degraded' }
+  );
+  // All-invalid → all (no filter).
+  assert.deepEqual(
+    parseExceptionHomeUrlState({ exceptions: 'nope,also-bad' }),
+    DEFAULT_EXCEPTION_HOME_URL_STATE
+  );
+});
+
+test('exceptionHomeUrlStateFromSeverities + exceptionSeveritiesFromUrlState round-trip', () => {
+  assert.deepEqual(
+    exceptionHomeUrlStateFromSeverities([]),
+    DEFAULT_EXCEPTION_HOME_URL_STATE
+  );
+  assert.deepEqual(
+    exceptionHomeUrlStateFromSeverities(['attention', 'blocked']),
+    { exceptions: 'blocked,attention' }
+  );
+  assert.deepEqual(
+    exceptionSeveritiesFromUrlState({ exceptions: 'blocked,attention' }),
+    ['blocked', 'attention']
+  );
+  assert.deepEqual(exceptionSeveritiesFromUrlState({}), []);
+  assert.deepEqual(exceptionSeveritiesFromUrlState(undefined), []);
+});
+
+test('isBlockingOnlyExceptionFilter matches blocked+degraded only', () => {
+  assert.equal(
+    isBlockingOnlyExceptionFilter([...BLOCKING_EXCEPTION_SEVERITIES]),
+    true
+  );
+  assert.equal(isBlockingOnlyExceptionFilter(['blocked', 'degraded']), true);
+  assert.equal(isBlockingOnlyExceptionFilter(['degraded', 'blocked']), true);
+  assert.equal(isBlockingOnlyExceptionFilter(['blocked']), false);
+  assert.equal(
+    isBlockingOnlyExceptionFilter(['blocked', 'degraded', 'attention']),
+    false
+  );
+  assert.equal(isBlockingOnlyExceptionFilter([]), false);
+});
+
+test('filterExceptionRowsBySeverity is client-side only (empty = all)', () => {
+  const rows = [
+    { severity: 'blocked' as ExceptionSeverity },
+    { severity: 'attention' as ExceptionSeverity },
+    { severity: 'stale' as ExceptionSeverity },
+  ] as ExceptionHomeRow[];
+
+  assert.equal(filterExceptionRowsBySeverity(rows, []).length, 3);
+  const filtered = filterExceptionRowsBySeverity(rows, [
+    'blocked',
+    'attention',
+  ]);
+  assert.deepEqual(
+    filtered.map((row) => row.severity),
+    ['blocked', 'attention']
   );
 });

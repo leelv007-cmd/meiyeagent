@@ -93,7 +93,47 @@ test('SSR exception home renders read-only list from default skeleton', () => {
   assert.match(html, /data-testid="exception-handoff-link"/);
   assert.match(html, /data-testid="exception-catalog-link"/);
   assert.match(html, /href="\/admin\/capabilities"/);
+  assert.match(html, /data-severity-filter="all"/);
   assert.deepEqual(assertNoAckAssignOwnerUi(html), []);
+});
+
+test('client severity filter hides non-matching rows without changing projection count', () => {
+  const view = buildExceptionHomeView({ now: NOW });
+  assert.ok(view.exceptions.length > 0);
+  const blockedAndAttention = view.exceptions.filter(
+    (row) => row.severity === 'blocked' || row.severity === 'attention'
+  );
+  // Skip if the skeleton has no matching rows for this filter pair.
+  if (blockedAndAttention.length === 0) {
+    return;
+  }
+
+  const html = renderToStaticMarkup(
+    <AdminExceptionHome
+      view={view}
+      severityFilter={['blocked', 'attention']}
+    />
+  );
+  assert.match(html, /data-severity-filter="blocked,attention"/);
+  assert.match(
+    html,
+    new RegExp(`data-exception-count="${view.exceptions.length}"`)
+  );
+  assert.match(
+    html,
+    new RegExp(`data-visible-exception-count="${blockedAndAttention.length}"`)
+  );
+  // Visible rows only carry allowed severities.
+  const severityAttrs = [...html.matchAll(/data-severity="([^"]+)"/g)].map(
+    (match) => match[1]
+  );
+  // Row cards + severity badges both emit data-severity; all must be allowed.
+  for (const severity of severityAttrs) {
+    assert.ok(
+      severity === 'blocked' || severity === 'attention',
+      `unexpected severity visible under filter: ${severity}`
+    );
+  }
 });
 
 test('SSR empty state shows 当前无待处理异常 + panorama + catalog entry', () => {
