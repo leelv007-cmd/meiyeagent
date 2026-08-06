@@ -702,4 +702,137 @@ describe('Creation Experience Catalog aggregate', () => {
       assert.equal('revision' in lens, false);
     }
   });
+
+  describe('three-state optional collection merge on surface draft (#359)', () => {
+    it('create with missing recipeRefs uses the normalized default []', async () => {
+      const { service } = createService();
+      const created = await service.draftSurface({
+        surfaceId: 'surface.merge-create',
+        expectedRevision: null,
+        body: {},
+        ...audit({ reason: 'create omit recipeRefs' }),
+      });
+      assert.equal(created.revision, 1);
+      assert.deepEqual(created.recipeRefs, []);
+    });
+
+    it('update with missing recipeRefs inherits head (does not wipe)', async () => {
+      const { service } = createService();
+      const recipe = await publishRecipe(service, 'recipe.merge-inherit');
+      const seedRefs = [
+        {
+          recipeRevisionId: recipe.revisionId,
+          lensId: 'image_text' as const,
+          order: 0,
+          featured: true,
+          visible: true,
+        },
+      ];
+      const head = await service.draftSurface({
+        surfaceId: 'surface.merge-inherit',
+        expectedRevision: null,
+        body: { recipeRefs: seedRefs },
+        ...audit({ reason: 'seed refs' }),
+      });
+
+      const partial = await service.draftSurface({
+        surfaceId: 'surface.merge-inherit',
+        expectedRevision: head.revision,
+        body: {},
+        ...audit({ reason: 'partial edit omits recipeRefs' }),
+      });
+
+      assert.equal(partial.revision, head.revision + 1);
+      assert.deepEqual(partial.recipeRefs, seedRefs);
+    });
+
+    it('update with explicit empty recipeRefs clears the field', async () => {
+      const { service } = createService();
+      const recipe = await publishRecipe(service, 'recipe.merge-clear');
+      const head = await service.draftSurface({
+        surfaceId: 'surface.merge-clear',
+        expectedRevision: null,
+        body: {
+          recipeRefs: [
+            {
+              recipeRevisionId: recipe.revisionId,
+              lensId: 'image_text',
+              order: 0,
+              featured: true,
+              visible: true,
+            },
+          ],
+        },
+        ...audit({ reason: 'seed refs' }),
+      });
+
+      const cleared = await service.draftSurface({
+        surfaceId: 'surface.merge-clear',
+        expectedRevision: head.revision,
+        body: { recipeRefs: [] },
+        ...audit({ reason: 'explicit clear' }),
+      });
+
+      assert.equal(cleared.revision, head.revision + 1);
+      assert.deepEqual(cleared.recipeRefs, []);
+    });
+
+    it('reads head before normalize/merge so omitted recipeRefs can inherit', async () => {
+      const repository = new MemoryCreationExperienceCatalogRepository();
+      const callOrder: string[] = [];
+      const originalGetHead = repository.getSurfaceHead.bind(repository);
+      const originalAppend = repository.appendSurface.bind(repository);
+      repository.getSurfaceHead = async (surfaceId) => {
+        callOrder.push('getSurfaceHead');
+        return originalGetHead(surfaceId);
+      };
+      repository.appendSurface = async (record, expectedRevision) => {
+        callOrder.push('appendSurface');
+        return originalAppend(record, expectedRevision);
+      };
+
+      const service = new CreationExperienceCatalogService(
+        repository,
+        () => '2026-07-20T00:00:00.000Z',
+        () => 'session-order-1',
+      );
+      const recipe = await publishRecipe(service, 'recipe.merge-order');
+      const seed = await service.draftSurface({
+        surfaceId: 'surface.merge-order',
+        expectedRevision: null,
+        body: {
+          recipeRefs: [
+            {
+              recipeRevisionId: recipe.revisionId,
+              lensId: 'image_text',
+              order: 0,
+              featured: true,
+              visible: true,
+            },
+          ],
+        },
+        ...audit({ reason: 'seed' }),
+      });
+      callOrder.length = 0;
+
+      // Pre-fix failure mode: normalize-first would reject missing recipeRefs
+      // before head could supply the inherit value. Success + order proves
+      // head is read before merge/normalize/write.
+      const next = await service.draftSurface({
+        surfaceId: 'surface.merge-order',
+        expectedRevision: seed.revision,
+        body: {},
+        ...audit({ reason: 'omit after head seeded' }),
+      });
+
+      assert.deepEqual(next.recipeRefs, seed.recipeRefs);
+      assert.deepEqual(callOrder, ['getSurfaceHead', 'appendSurface']);
+      assert.ok(
+        callOrder.indexOf('getSurfaceHead') < callOrder.indexOf('appendSurface'),
+        'head read must complete before append (post-merge write)',
+      );
+    });
+  });
 });
+
+

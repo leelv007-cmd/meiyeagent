@@ -17,6 +17,7 @@ import type { CreationExperienceCatalogRepository } from './memory-repository.js
 import { mergePublishedRecipeWorkflowRevisionRefs } from './published-recipe-workflow-catalog.js';
 import { validateRecipeForComposer } from './recipe-validator.js';
 
+import { resolveThreeStateCollectionField } from './revision-field-merge.js';
 import type {
   CatalogSessionFreeze,
   DraftRecipeInput,
@@ -262,9 +263,11 @@ export class CreationExperienceCatalogService {
   ) {}
 
   async draftRecipe(input: DraftRecipeInput): Promise<ServerRecipeRecord> {
-    const body = normalizeRecipeBody(input.body);
+    // Head + CAS before normalize/hash so #361 can merge optional collections
+    // without defaults landing first (Spec B ordering).
     const head = await this.repository.getRecipeHead(input.recipeId);
     assertExpectedRevision(head?.revision ?? null, input.expectedRevision, 'recipe');
+    const body = normalizeRecipeBody(input.body);
     return this.repository.appendRecipe(
       {
         recipeId: input.recipeId,
@@ -406,9 +409,18 @@ export class CreationExperienceCatalogService {
   }
 
   async draftSurface(input: DraftSurfaceInput): Promise<ServerSurfaceRecord> {
-    const body = normalizeSurfaceBody(input.body);
+    // Spec B ordering: read head + CAS, three-state merge, then normalize + hash.
     const head = await this.repository.getSurfaceHead(input.surfaceId);
     assertExpectedRevision(head?.revision ?? null, input.expectedRevision, 'surface');
+    const mergedBody: SurfaceBodyInput = {
+      recipeRefs: resolveThreeStateCollectionField(
+        input.body,
+        'recipeRefs',
+        head?.recipeRefs,
+        [],
+      ),
+    };
+    const body = normalizeSurfaceBody(mergedBody);
     return this.repository.appendSurface(
       {
         surfaceId: input.surfaceId,

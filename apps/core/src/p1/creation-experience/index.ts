@@ -13,6 +13,12 @@ export {
   type PublishedRecipeWorkflowSource,
 } from './published-recipe-workflow-catalog.js';
 export {
+  draftBodyOwnsField,
+  resolveThreeStateCollectionField,
+  resolveThreeStateDraftField,
+  type ResolveThreeStateDraftFieldInput,
+} from './revision-field-merge.js';
+export {
   RECIPE_STUDIO_STAGES,
   RecipeStudioService,
   type RecipeStudioCompileInput,

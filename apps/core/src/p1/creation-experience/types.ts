@@ -121,8 +121,12 @@ export interface RollbackRecipeInput extends CatalogCasMeta {
   expectedRevision: number;
 }
 
+/**
+ * Surface draft body. Optional collections use three-state merge on draft save
+ * (`revision-field-merge`): omit → create default / update inherit; explicit `[]` clears.
+ */
 export interface SurfaceBodyInput {
-  recipeRefs: SurfaceRecipeRef[];
+  recipeRefs?: SurfaceRecipeRef[];
 }
 
 export interface DraftSurfaceInput extends CatalogCasMeta {
