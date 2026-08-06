@@ -88,6 +88,20 @@ export {
   type RunAndIssueRecipeGovernanceEvidenceInput,
 } from './recipe-evidence-suite-runner.js';
 export {
+  emptyGateView,
+  failedCasesFromEvalRun,
+  isReceiptExpired,
+  projectRecipeEvidenceGateStatus,
+  type ProjectRecipeEvidenceGateStatusInput,
+  type RecipeEvidenceFailedCase,
+  type RecipeEvidenceGateView,
+  type RecipeEvidencePresentationStatus,
+} from './recipe-evidence-status.js';
+export {
+  buildRecipeGovernanceSubjectFromRecipe,
+  resolveRecipeEvidencePromptRevisionRef,
+} from './recipe-evidence-subject.js';
+export {
   RECIPE_INTERNAL_TEST_LABEL,
   RECIPE_INTERNAL_TEST_SUITE_ID,
   RECIPE_INTERNAL_TEST_SUITE_REVISION,

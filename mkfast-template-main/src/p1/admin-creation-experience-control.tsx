@@ -89,6 +89,47 @@ type RecipeStudioReleaseProjection = {
   validation?: { checkedAt?: string; passed?: boolean } | null;
 };
 
+/** Four Spec I #397 presentation states for a recipe evidence gate. */
+type RecipeEvidencePresentationStatus =
+  | 'none'
+  | 'expired'
+  | 'prompt_mismatch'
+  | 'ready';
+
+type RecipeEvidenceFailedCase = {
+  caseId: string;
+  reason: string;
+};
+
+type RecipeEvidenceGateView = {
+  evidenceKind: 'recipe_evaluation' | 'recipe_internal_test';
+  status: RecipeEvidencePresentationStatus;
+  receiptId: string | null;
+  runId: string | null;
+  passed: boolean | null;
+  expiresAt: string | null;
+  promptRevisionRef: string | null;
+  failedCases: RecipeEvidenceFailedCase[];
+};
+
+type RecipeEvidenceStatusResult = {
+  recipeId: string;
+  recipeRevision: number;
+  currentPromptRevisionRef: string;
+  evaluation: RecipeEvidenceGateView;
+  internalTest: RecipeEvidenceGateView;
+};
+
+const EVIDENCE_STATUS_LABELS: Record<
+  RecipeEvidencePresentationStatus,
+  string
+> = {
+  none: '无证据',
+  expired: '证据已过期',
+  prompt_mismatch: '证据与当前 Prompt 不符',
+  ready: '已具备',
+};
+
 type RecipeRecord = {
   recipeId: string;
   revision: number;
@@ -269,6 +310,216 @@ function asPublishedRevisionsResult(
   };
 }
 
+function isEvidencePresentationStatus(
+  value: unknown
+): value is RecipeEvidencePresentationStatus {
+  return (
+    value === 'none' ||
+    value === 'expired' ||
+    value === 'prompt_mismatch' ||
+    value === 'ready'
+  );
+}
+
+function asEvidenceGateView(
+  value: unknown,
+  fallbackKind: RecipeEvidenceGateView['evidenceKind']
+): RecipeEvidenceGateView {
+  if (!value || typeof value !== 'object') {
+    return {
+      evidenceKind: fallbackKind,
+      status: 'none',
+      receiptId: null,
+      runId: null,
+      passed: null,
+      expiresAt: null,
+      promptRevisionRef: null,
+      failedCases: [],
+    };
+  }
+  const record = value as Partial<RecipeEvidenceGateView>;
+  const failedCases = Array.isArray(record.failedCases)
+    ? record.failedCases
+        .filter(
+          (entry): entry is RecipeEvidenceFailedCase =>
+            !!entry &&
+            typeof entry === 'object' &&
+            typeof entry.caseId === 'string' &&
+            typeof entry.reason === 'string'
+        )
+        .map((entry) => ({
+          caseId: entry.caseId,
+          reason: entry.reason,
+        }))
+    : [];
+  return {
+    evidenceKind:
+      record.evidenceKind === 'recipe_internal_test'
+        ? 'recipe_internal_test'
+        : fallbackKind,
+    status: isEvidencePresentationStatus(record.status) ? record.status : 'none',
+    receiptId:
+      typeof record.receiptId === 'string' && record.receiptId.trim()
+        ? record.receiptId
+        : null,
+    runId:
+      typeof record.runId === 'string' && record.runId.trim()
+        ? record.runId
+        : null,
+    passed: typeof record.passed === 'boolean' ? record.passed : null,
+    expiresAt:
+      typeof record.expiresAt === 'string' ? record.expiresAt : null,
+    promptRevisionRef:
+      typeof record.promptRevisionRef === 'string'
+        ? record.promptRevisionRef
+        : null,
+    failedCases,
+  };
+}
+
+function asEvidenceStatusResult(
+  value: unknown
+): RecipeEvidenceStatusResult | null {
+  if (!value || typeof value !== 'object') return null;
+  const record = value as Partial<RecipeEvidenceStatusResult>;
+  if (
+    typeof record.recipeId !== 'string' ||
+    typeof record.recipeRevision !== 'number'
+  ) {
+    return null;
+  }
+  return {
+    recipeId: record.recipeId,
+    recipeRevision: record.recipeRevision,
+    currentPromptRevisionRef:
+      typeof record.currentPromptRevisionRef === 'string'
+        ? record.currentPromptRevisionRef
+        : '',
+    evaluation: asEvidenceGateView(record.evaluation, 'recipe_evaluation'),
+    internalTest: asEvidenceGateView(
+      record.internalTest,
+      'recipe_internal_test'
+    ),
+  };
+}
+
+function emptyEvidenceStatus(
+  recipeId: string,
+  recipeRevision: number
+): RecipeEvidenceStatusResult {
+  return {
+    recipeId,
+    recipeRevision,
+    currentPromptRevisionRef: '',
+    evaluation: asEvidenceGateView(null, 'recipe_evaluation'),
+    internalTest: asEvidenceGateView(null, 'recipe_internal_test'),
+  };
+}
+
+function RecipeEvidencePanel({
+  status,
+  busy,
+  onRunEvaluation,
+}: {
+  status: RecipeEvidenceStatusResult | null;
+  busy: boolean;
+  onRunEvaluation: () => void;
+}) {
+  const evaluation = status?.evaluation;
+  const internalTest = status?.internalTest;
+  const failedCases = evaluation?.failedCases ?? [];
+
+  return (
+    <Frame dense headingLevel={3} data-testid="recipe-evidence-panel">
+      <FrameHeader>
+        <FrameTitle>评测证据</FrameTitle>
+        <FrameDescription>
+          Per-revision server-issued evidence only. Status and receiptId are
+          read-only — no pass-state inputs.
+        </FrameDescription>
+      </FrameHeader>
+      <FramePanel className="space-y-3 text-sm">
+        {!status ? (
+          <p
+            className="text-muted-foreground"
+            data-testid="recipe-evidence-empty"
+          >
+            Load a Recipe revision to inspect evidence status.
+          </p>
+        ) : (
+          <>
+            <p data-testid="recipe-evidence-revision">
+              revision: r{status.recipeRevision}
+            </p>
+            <div
+              className="space-y-1 rounded-md border border-input px-3 py-2"
+              data-testid="recipe-evidence-evaluation"
+              data-status={evaluation?.status ?? 'none'}
+            >
+              <p className="font-medium">评测门</p>
+              <p data-testid="recipe-evidence-evaluation-status">
+                状态: {EVIDENCE_STATUS_LABELS[evaluation?.status ?? 'none']}
+              </p>
+              <p
+                className="break-all"
+                data-testid="recipe-evidence-evaluation-receipt"
+              >
+                receiptId: {evaluation?.receiptId ?? '—'}
+              </p>
+            </div>
+            <div
+              className="space-y-1 rounded-md border border-input px-3 py-2"
+              data-testid="recipe-evidence-internal-test"
+              data-status={internalTest?.status ?? 'none'}
+            >
+              <p className="font-medium">内测门</p>
+              <p data-testid="recipe-evidence-internal-test-status">
+                状态: {EVIDENCE_STATUS_LABELS[internalTest?.status ?? 'none']}
+              </p>
+              <p
+                className="break-all"
+                data-testid="recipe-evidence-internal-test-receipt"
+              >
+                receiptId: {internalTest?.receiptId ?? '—'}
+              </p>
+            </div>
+            {failedCases.length > 0 ? (
+              <div
+                className="space-y-1 rounded-md border border-destructive/40 px-3 py-2"
+                data-testid="recipe-evidence-failed-cases"
+              >
+                <p className="font-medium text-destructive">评测失败用例</p>
+                <ul className="space-y-1">
+                  {failedCases.map((item) => (
+                    <li
+                      key={item.caseId}
+                      data-testid="recipe-evidence-failed-case"
+                      data-case-id={item.caseId}
+                    >
+                      <span className="font-mono text-xs">{item.caseId}</span>
+                      {': '}
+                      {item.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy || !status}
+              data-testid="recipe-evidence-run-evaluation"
+              onClick={onRunEvaluation}
+            >
+              运行评测并签发证据
+            </Button>
+          </>
+        )}
+      </FramePanel>
+    </Frame>
+  );
+}
+
 /**
  * Replace every Surface recipeRef that matches pending recipeId with the new
  * revisionId; preserve lens/order/featured/visible on each match.
@@ -403,6 +654,8 @@ function RecipeEditor({
   const [rollbackRevision, setRollbackRevision] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [evidenceStatus, setEvidenceStatus] =
+    useState<RecipeEvidenceStatusResult | null>(null);
   const operationInFlight = useRef(false);
 
   const hydrate = (record: RecipeRecord) => {
@@ -478,6 +731,28 @@ function RecipeEditor({
     setHistory(Array.isArray(result) ? (result as RecipeRecord[]) : []);
   };
 
+  const refreshEvidenceStatus = async (
+    id: string,
+    revision: number | null | undefined
+  ) => {
+    const trimmed = id.trim();
+    if (!trimmed || revision == null || !Number.isInteger(revision)) {
+      setEvidenceStatus(null);
+      return;
+    }
+    try {
+      const result = asEvidenceStatusResult(
+        await api.query('recipe_evidence_status', {
+          recipeId: trimmed,
+          recipeRevision: revision,
+        })
+      );
+      setEvidenceStatus(result ?? emptyEvidenceStatus(trimmed, revision));
+    } catch {
+      setEvidenceStatus(emptyEvidenceStatus(trimmed, revision));
+    }
+  };
+
   const load = async () => {
     if (!recipeId.trim()) return;
     setBusy(true);
@@ -490,7 +765,12 @@ function RecipeEditor({
       const parsed = asRecipeRecord(record);
       setHead(parsed);
       setHistory(Array.isArray(records) ? (records as RecipeRecord[]) : []);
-      if (parsed) hydrate(parsed);
+      if (parsed) {
+        hydrate(parsed);
+        await refreshEvidenceStatus(parsed.recipeId, parsed.revision);
+      } else {
+        setEvidenceStatus(null);
+      }
     } catch (loadError) {
       setError(messageOf(loadError));
     } finally {
@@ -521,12 +801,43 @@ function RecipeEditor({
     );
     const record = asRecipeRecord(result);
     setHead(record);
-    if (record) hydrate(record);
+    if (record) {
+      hydrate(record);
+      await refreshEvidenceStatus(record.recipeId, record.revision);
+    } else {
+      setEvidenceStatus(null);
+    }
     await refreshHistory();
   };
 
   const execute = (action: string, payload: AdminPayload) =>
     runOperation(() => executeCommand(action, payload));
+
+  const runEvaluationEvidence = () => {
+    if (!head) {
+      setError('请先加载 Recipe revision。');
+      return;
+    }
+    void runOperation(async () => {
+      const result = await api.command(
+        'recipe_evidence_run_evaluation',
+        {
+          recipeId: head.recipeId,
+          expectedRevision: head.revision,
+          reason: reason.trim() || 'Templates evaluation run',
+        },
+        idempotencyKey('recipe_evidence_run_evaluation', head.recipeId)
+      );
+      // Prefer command projection (includes failed cases from the run).
+      const fromCommand = asEvidenceStatusResult(result);
+      if (fromCommand) {
+        setEvidenceStatus(fromCommand);
+        return;
+      }
+      // Fallback: re-query status for the same revision.
+      await refreshEvidenceStatus(head.recipeId, head.revision);
+    });
+  };
 
   const validate = async () => {
     const result = (await api.query('recipe_validate', {
@@ -718,7 +1029,10 @@ function RecipeEditor({
       );
       const record = asRecipeRecord(result);
       setHead(record);
-      if (record) hydrate(record);
+      if (record) {
+        hydrate(record);
+        await refreshEvidenceStatus(record.recipeId, record.revision);
+      }
       await refreshHistory();
       if (
         action === 'recipe_publish' &&
@@ -1072,6 +1386,11 @@ function RecipeEditor({
             </FramePanel>
           </Frame>
         ) : null}
+        <RecipeEvidencePanel
+          status={evidenceStatus}
+          busy={busy}
+          onRunEvaluation={runEvaluationEvidence}
+        />
         <LifecycleHistory history={history} />
       </div>
     </div>

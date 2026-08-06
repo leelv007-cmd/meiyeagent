@@ -45,15 +45,29 @@ import {
   adaptRecipeGovernanceFormToCompileInput,
   parseRecipeGovernanceFormInput,
 } from './recipe-governance-form.js';
+import type { EvalRun } from '../../contracts/index.js';
+import { evalRunSchema } from '../../contracts/index.js';
 import type { EvalRunRegistryPort } from '../harness/eval-run-registry.js';
 import {
   createDefaultDenyRecipeEvaluationEvidencePort,
   createDefaultDenyRecipeInternalTestEvidencePort,
+  type RecipeEvidenceKind,
   type RecipeEvaluationEvidencePort,
   type RecipeInternalTestEvidencePort,
 } from './recipe-evidence-ports.js';
 import { createRegistryBackedRecipeEvidencePorts } from './recipe-evidence-redeem.js';
 import type { RecipeEvidenceReceiptRegistryPort } from './recipe-evidence-receipt-registry.js';
+import {
+  emptyGateView,
+  failedCasesFromEvalRun,
+  projectRecipeEvidenceGateStatus,
+  type RecipeEvidenceGateView,
+} from './recipe-evidence-status.js';
+import {
+  buildRecipeGovernanceSubjectFromRecipe,
+  resolveRecipeEvidencePromptRevisionRef,
+} from './recipe-evidence-subject.js';
+import { runAndIssueRecipeGovernanceEvidence } from './recipe-evidence-suite-runner.js';
 import {
   RecipeStudioService,
   type RecipeStudioCompileInput,
@@ -77,9 +91,11 @@ import type {
   RecipeTransitionInput,
   RollbackRecipeInput,
   RollbackSurfaceInput,
+  ServerRecipeRecord,
   SurfaceBodyInput,
   SurfaceTransitionInput,
 } from './types.js';
+import { recipeRevisionId } from './types.js';
 
 function action(input: Record<string, unknown>) {
   if (typeof input.action !== 'string' || input.action.trim().length === 0) {
@@ -388,6 +404,10 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
   private readonly observabilityEvents: ObservabilityEventAuditPort;
   private readonly taskObservability?: TaskObservabilityContextPort;
   private readonly recipeStudio: RecipeStudioService;
+  /** Spec I #393/#397: shared EvalRun facts for status + suite issuance. */
+  private readonly evalRunRegistry?: EvalRunRegistryPort;
+  /** Spec I #393/#397: immutable evidence receipts for status + suite issuance. */
+  private readonly evidenceReceiptRegistry?: RecipeEvidenceReceiptRegistryPort;
 
   constructor(
     repository: CreationExperienceCatalogRepository = new MemoryCreationExperienceCatalogRepository(),
@@ -406,6 +426,7 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
        * Spec I #396: when both registries are present and evidence ports are
        * not explicitly injected, wire registry-backed redeem adapters.
        * Explicit ports still win (tests / launch-seed permitting seams).
+       * #397 also uses these registries for Templates status + run issuance.
        */
       evalRunRegistry?: EvalRunRegistryPort;
       evidenceReceiptRegistry?: RecipeEvidenceReceiptRegistryPort;
@@ -425,6 +446,8 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
     this.observabilityEvents =
       options.observabilityEvents ?? new MemoryObservabilityEventAudit();
     this.taskObservability = options.taskObservability;
+    this.evalRunRegistry = options.evalRunRegistry;
+    this.evidenceReceiptRegistry = options.evidenceReceiptRegistry;
     const registryPorts =
       options.evalRunRegistry && options.evidenceReceiptRegistry
         ? createRegistryBackedRecipeEvidencePorts({
@@ -513,6 +536,14 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
           recipeId: stringField(value, 'recipeId'),
           expectedRevision,
           ...audit(),
+        });
+      }
+      case 'recipe_evidence_run_evaluation': {
+        // Spec I #397: Templates trigger — suite runner + issuer on Core only.
+        // Browser never constructs EvalRun / passed / receipt; only asks to run.
+        return this.runRecipeEvaluationEvidence({
+          recipeId: stringField(value, 'recipeId'),
+          expectedRevision: numberField(value, 'expectedRevision'),
         });
       }
       case 'recipe_studio_record_eval': {
@@ -985,6 +1016,13 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
           recipeIds,
         });
       }
+      case 'recipe_evidence_status': {
+        // Spec I #397: per-revision four-state evidence for both gates.
+        return this.queryRecipeEvidenceStatus({
+          recipeId: stringField(value, 'recipeId'),
+          recipeRevision: numberField(value, 'recipeRevision'),
+        });
+      }
       case 'recipe_validate': {
         const revision =
           typeof value.revision === 'number' ? value.revision : undefined;
@@ -1133,4 +1171,184 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
         );
     }
   }
+
+  /**
+   * Templates evidence panel (#397): status for evaluation + internal-test
+   * gates on one Recipe revision. Never invents receipts client-side.
+   */
+  private async queryRecipeEvidenceStatus(input: {
+    recipeId: string;
+    recipeRevision: number | null;
+  }) {
+    const recipe = await this.resolveRecipeForEvidence(
+      input.recipeId,
+      input.recipeRevision,
+    );
+    const currentPromptRevisionRef =
+      resolveRecipeEvidencePromptRevisionRef(recipe);
+
+    const evaluation = await this.projectGateEvidenceView({
+      evidenceKind: 'recipe_evaluation',
+      recipe,
+      currentPromptRevisionRef,
+    });
+    const internalTest = await this.projectGateEvidenceView({
+      evidenceKind: 'recipe_internal_test',
+      recipe,
+      currentPromptRevisionRef,
+    });
+
+    return {
+      recipeId: recipe.recipeId,
+      recipeRevision: recipe.revision,
+      currentPromptRevisionRef,
+      evaluation,
+      internalTest,
+    };
+  }
+
+  /**
+   * Templates run trigger (#397): Core suite runner → put EvalRun → issue
+   * receipt. Browser only receives the issued status projection.
+   */
+  private async runRecipeEvaluationEvidence(input: {
+    recipeId: string;
+    expectedRevision: number | null;
+  }) {
+    if (!this.evalRunRegistry || !this.evidenceReceiptRegistry) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        '评测证据签发不可用（evidence-issuer-unavailable）。服务端未装配 EvalRun/回执注册表，不能触发评测运行。',
+      );
+    }
+    if (input.expectedRevision === null) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'expectedRevision is required to run recipe evaluation evidence.',
+      );
+    }
+
+    const recipe = await this.resolveRecipeForEvidence(
+      input.recipeId,
+      input.expectedRevision,
+    );
+    if (recipe.revision !== input.expectedRevision) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Recipe ${input.recipeId} revision ${input.expectedRevision} was not found.`,
+      );
+    }
+
+    const subject = buildRecipeGovernanceSubjectFromRecipe(recipe);
+    const runId = `recipe-gov-${recipe.recipeId}-r${recipe.revision}-${Date.now()}-${createHash('sha256').update(`${recipe.revisionId}:${Date.now()}`).digest('hex').slice(0, 10)}`;
+    const createdAt = new Date().toISOString();
+
+    const issued = await runAndIssueRecipeGovernanceEvidence(
+      {
+        evalRunRegistry: this.evalRunRegistry,
+        receiptRegistry: this.evidenceReceiptRegistry,
+      },
+      {
+        subject,
+        runOptions: {
+          runId,
+          createdAt,
+        },
+      },
+    );
+
+    const currentPromptRevisionRef = subject.promptRevisionRef;
+    const evaluation = projectRecipeEvidenceGateStatus({
+      evidenceKind: 'recipe_evaluation',
+      receipts: [issued.receipt],
+      currentPromptRevisionRef,
+      evalRun: issued.run,
+    });
+    const internalTest = await this.projectGateEvidenceView({
+      evidenceKind: 'recipe_internal_test',
+      recipe,
+      currentPromptRevisionRef,
+    });
+
+    return {
+      recipeId: recipe.recipeId,
+      recipeRevision: recipe.revision,
+      currentPromptRevisionRef,
+      receipt: issued.receipt,
+      run: {
+        runId: issued.run.runId,
+        suiteId: issued.run.suiteId,
+        suiteRevision: issued.run.suiteRevision,
+        mode: issued.run.mode,
+        passed: issued.run.passed,
+        createdAt: issued.run.createdAt,
+      },
+      failedCases: failedCasesFromEvalRun(issued.run),
+      evaluation,
+      internalTest,
+    };
+  }
+
+  private async projectGateEvidenceView(input: {
+    evidenceKind: RecipeEvidenceKind;
+    recipe: ServerRecipeRecord;
+    currentPromptRevisionRef: string;
+  }): Promise<RecipeEvidenceGateView> {
+    if (!this.evidenceReceiptRegistry) {
+      return emptyGateView(input.evidenceKind);
+    }
+
+    const receipts =
+      await this.evidenceReceiptRegistry.listByRecipeRevision({
+        evidenceKind: input.evidenceKind,
+        recipeId: input.recipe.recipeId,
+        recipeRevision: input.recipe.revision,
+      });
+
+    let evalRun: EvalRun | null = null;
+    const latest = receipts[0];
+    if (latest && this.evalRunRegistry) {
+      const raw = await this.evalRunRegistry.get(latest.runId);
+      if (raw) {
+        try {
+          evalRun = evalRunSchema.parse(raw);
+        } catch {
+          evalRun = null;
+        }
+      }
+    }
+
+    return projectRecipeEvidenceGateStatus({
+      evidenceKind: input.evidenceKind,
+      receipts,
+      currentPromptRevisionRef: input.currentPromptRevisionRef,
+      evalRun,
+    });
+  }
+
+  private async resolveRecipeForEvidence(
+    recipeId: string,
+    recipeRevision: number | null,
+  ): Promise<ServerRecipeRecord> {
+    if (recipeRevision !== null) {
+      const byRevision = await this.service.getRecipeByRevisionId(
+        recipeRevisionId(recipeId, recipeRevision),
+      );
+      if (byRevision) return byRevision;
+      throw new P1DomainError(
+        'NOT_FOUND',
+        `Recipe ${recipeId} revision ${recipeRevision} was not found.`,
+      );
+    }
+    const head = await this.service.getRecipeHead(recipeId);
+    if (!head) {
+      throw new P1DomainError(
+        'NOT_FOUND',
+        `Recipe ${recipeId} was not found.`,
+      );
+    }
+    return head;
+  }
 }
+
+

@@ -92,6 +92,32 @@ function createLifecycleApi() {
     return { groups, availableRecipeHeads };
   };
 
+  const emptyEvidenceStatus = (recipeId: string, recipeRevision: number) => ({
+    recipeId,
+    recipeRevision,
+    currentPromptRevisionRef: '',
+    evaluation: {
+      evidenceKind: 'recipe_evaluation' as const,
+      status: 'none' as const,
+      receiptId: null,
+      runId: null,
+      passed: null,
+      expiresAt: null,
+      promptRevisionRef: null,
+      failedCases: [],
+    },
+    internalTest: {
+      evidenceKind: 'recipe_internal_test' as const,
+      status: 'none' as const,
+      receiptId: null,
+      runId: null,
+      passed: null,
+      expiresAt: null,
+      promptRevisionRef: null,
+      failedCases: [],
+    },
+  });
+
   const api: CreationExperienceAdminApi = {
     query: vi.fn(async (action, payload) => {
       if (action === 'recipe_published_revisions') {
@@ -102,6 +128,11 @@ function createLifecycleApi() {
             : []
         );
       }
+      if (action === 'recipe_evidence_status') {
+        const recipeId = String(payload.recipeId ?? '');
+        const recipeRevision = Number(payload.recipeRevision ?? 0);
+        return emptyEvidenceStatus(recipeId, recipeRevision);
+      }
       const kind = action.startsWith('recipe_') ? 'recipe' : 'surface';
       const id = String(payload[kind === 'recipe' ? 'recipeId' : 'surfaceId']);
       const key = keyFor(kind, id);
@@ -110,6 +141,34 @@ function createLifecycleApi() {
       return heads.get(key) ?? null;
     }),
     command: vi.fn(async (action, payload) => {
+      if (action === 'recipe_evidence_run_evaluation') {
+        const recipeId = String(payload.recipeId ?? '');
+        const recipeRevision = Number(payload.expectedRevision ?? 0);
+        return {
+          ...emptyEvidenceStatus(recipeId, recipeRevision),
+          receipt: {
+            receiptId: 'rcpt_lifecycle_eval',
+            evidenceKind: 'recipe_evaluation',
+            runId: 'run-lifecycle',
+            recipeId,
+            recipeRevision,
+            passed: true,
+          },
+          run: {
+            runId: 'run-lifecycle',
+            suiteId: 'recipe-governance',
+            suiteRevision: 'recipe-governance@1',
+            passed: true,
+          },
+          failedCases: [],
+          evaluation: {
+            ...emptyEvidenceStatus(recipeId, recipeRevision).evaluation,
+            status: 'ready',
+            receiptId: 'rcpt_lifecycle_eval',
+            passed: true,
+          },
+        };
+      }
       const kind = action.startsWith('recipe_') ? 'recipe' : 'surface';
       const idField = kind === 'recipe' ? 'recipeId' : 'surfaceId';
       const id = String(payload[idField]);
@@ -1436,6 +1495,483 @@ describe('Recipe / Surface visual lifecycle editor', () => {
       order: 3,
       featured: false,
       visible: false,
+    });
+  });
+
+  describe('Recipe evaluation evidence panel (#397)', () => {
+    function evidenceGate(
+      status: 'none' | 'expired' | 'prompt_mismatch' | 'ready',
+      extras: {
+        receiptId?: string | null;
+        failedCases?: Array<{ caseId: string; reason: string }>;
+        evidenceKind?: 'recipe_evaluation' | 'recipe_internal_test';
+      } = {}
+    ) {
+      return {
+        evidenceKind: extras.evidenceKind ?? 'recipe_evaluation',
+        status,
+        receiptId: extras.receiptId ?? null,
+        runId: extras.receiptId ? `run-${extras.receiptId}` : null,
+        passed: status === 'ready' ? true : status === 'none' ? false : null,
+        expiresAt: null,
+        promptRevisionRef: null,
+        failedCases: extras.failedCases ?? [],
+      };
+    }
+
+    function seedRecipeHead(
+      recipeId: string,
+      revision: number,
+      promptRevisionRef = 'prompt.ev@1'
+    ) {
+      return {
+        recipeId,
+        revision,
+        revisionId: `${recipeId}@${revision}`,
+        status: 'draft',
+        lensId: 'image_text',
+        presentation: {
+          title: 'Evidence recipe',
+          summary: 'status panel',
+          actionLabel: '选择图文并套用',
+        },
+        delivery: {
+          contentPackagePlatform: 'xiaohongshu',
+          distributionTarget: 'export',
+          deliverableKind: 'note',
+          quantity: 1,
+          aspectRatio: '3:4',
+          notePageBound: 3,
+        },
+        modelPolicy: { mode: 'auto' },
+        promptRevisionRef,
+        skillRevisionRefs: [],
+        factTypes: [],
+        targetWorkspaceKind: 'image_text',
+        studioRelease: {
+          phase: 'validated',
+          compilationReceipt: {
+            receiptId: `compile-${recipeId}-${revision}`,
+            industryKey: 'beauty_general',
+            promptRevisionRef,
+            skillRevisionRefs: [],
+          },
+          validation: { passed: true, checkedAt: '2026-08-06T12:00:00.000Z' },
+        },
+      };
+    }
+
+    it.each([
+      {
+        status: 'none' as const,
+        label: '无证据',
+        receiptId: null as string | null,
+      },
+      {
+        status: 'expired' as const,
+        label: '证据已过期',
+        receiptId: 'rcpt_expired',
+      },
+      {
+        status: 'prompt_mismatch' as const,
+        label: '证据与当前 Prompt 不符',
+        receiptId: 'rcpt_prompt',
+      },
+      {
+        status: 'ready' as const,
+        label: '已具备',
+        receiptId: 'rcpt_ready',
+      },
+    ])(
+      'presents evaluation evidence status $status ($label)',
+      async ({ status, label, receiptId }) => {
+        const user = userEvent.setup();
+        const recipeId = `recipe.ev.${status}`;
+        const head = seedRecipeHead(recipeId, 3);
+        const api: CreationExperienceAdminApi = {
+          query: vi.fn(async (action, payload) => {
+            if (action === 'recipe_get') return head;
+            if (action === 'recipe_history') return [head];
+            if (action === 'recipe_evidence_status') {
+              return {
+                recipeId: String(payload.recipeId),
+                recipeRevision: Number(payload.recipeRevision),
+                currentPromptRevisionRef: head.promptRevisionRef,
+                evaluation: evidenceGate(status, { receiptId }),
+                internalTest: evidenceGate('none', {
+                  evidenceKind: 'recipe_internal_test',
+                }),
+              };
+            }
+            return null;
+          }),
+          command: vi.fn(async () => {
+            throw new Error('unexpected command');
+          }),
+        };
+
+        render(<AdminCreationExperienceControl api={api} />);
+        await user.type(screen.getByLabelText('Recipe ID'), recipeId);
+        await user.click(screen.getByRole('button', { name: '加载 Recipe' }));
+
+        const panel = await screen.findByTestId('recipe-evidence-panel');
+        expect(panel).toBeInTheDocument();
+        expect(
+          screen.getByTestId('recipe-evidence-evaluation')
+        ).toHaveAttribute('data-status', status);
+        expect(
+          screen.getByTestId('recipe-evidence-evaluation-status')
+        ).toHaveTextContent(`状态: ${label}`);
+        expect(
+          screen.getByTestId('recipe-evidence-evaluation-receipt')
+        ).toHaveTextContent(
+          receiptId ? `receiptId: ${receiptId}` : 'receiptId: —'
+        );
+        expect(screen.getByTestId('recipe-evidence-revision')).toHaveTextContent(
+          'revision: r3'
+        );
+      }
+    );
+
+    it('does not expose any pass-state submit controls for evidence', async () => {
+      const user = userEvent.setup();
+      const recipeId = 'recipe.ev.no-pass-controls';
+      const head = seedRecipeHead(recipeId, 1);
+      const api: CreationExperienceAdminApi = {
+        query: vi.fn(async (action) => {
+          if (action === 'recipe_get') return head;
+          if (action === 'recipe_history') return [head];
+          if (action === 'recipe_evidence_status') {
+            return {
+              recipeId,
+              recipeRevision: 1,
+              currentPromptRevisionRef: head.promptRevisionRef,
+              evaluation: evidenceGate('none'),
+              internalTest: evidenceGate('none', {
+                evidenceKind: 'recipe_internal_test',
+              }),
+            };
+          }
+          return null;
+        }),
+        command: vi.fn(async () => head),
+      };
+
+      render(<AdminCreationExperienceControl api={api} />);
+      await user.type(screen.getByLabelText('Recipe ID'), recipeId);
+      await user.click(screen.getByRole('button', { name: '加载 Recipe' }));
+      await screen.findByTestId('recipe-evidence-panel');
+
+      const panel = screen.getByTestId('recipe-evidence-panel');
+      expect(
+        within(panel).queryByRole('checkbox', { name: /pass|通过|passed/i })
+      ).not.toBeInTheDocument();
+      expect(
+        within(panel).queryByRole('textbox', { name: /evalRun|runId|passed/i })
+      ).not.toBeInTheDocument();
+      expect(
+        within(panel).queryByLabelText(/passed|evalRun|通过态|评测通过/i)
+      ).not.toBeInTheDocument();
+      expect(
+        within(panel).queryByRole('button', {
+          name: /提交通过|record eval|record_eval|标记通过/i,
+        })
+      ).not.toBeInTheDocument();
+      // Only the server-side run trigger is allowed — not a pass toggle.
+      expect(
+        within(panel).getByTestId('recipe-evidence-run-evaluation')
+      ).toBeInTheDocument();
+    });
+
+    it('shows failed case ids and reasons after a failed evaluation run', async () => {
+      const user = userEvent.setup();
+      const recipeId = 'recipe.ev.fail-cases';
+      const head = seedRecipeHead(recipeId, 2);
+      const api: CreationExperienceAdminApi = {
+        query: vi.fn(async (action) => {
+          if (action === 'recipe_get') return head;
+          if (action === 'recipe_history') return [head];
+          if (action === 'recipe_evidence_status') {
+            return {
+              recipeId,
+              recipeRevision: 2,
+              currentPromptRevisionRef: head.promptRevisionRef,
+              evaluation: evidenceGate('none'),
+              internalTest: evidenceGate('none', {
+                evidenceKind: 'recipe_internal_test',
+              }),
+            };
+          }
+          return null;
+        }),
+        command: vi.fn(async (action, payload) => {
+          if (action !== 'recipe_evidence_run_evaluation') {
+            throw new Error(`unexpected ${action}`);
+          }
+          expect(payload).toEqual(
+            expect.objectContaining({
+              recipeId,
+              expectedRevision: 2,
+            })
+          );
+          // Browser must not be required to send EvalRun/passed.
+          expect(payload).not.toHaveProperty('evalRun');
+          expect(payload).not.toHaveProperty('passed');
+          expect(payload).not.toHaveProperty('evidenceReceiptId');
+          return {
+            recipeId,
+            recipeRevision: 2,
+            currentPromptRevisionRef: head.promptRevisionRef,
+            receipt: {
+              receiptId: 'rcpt_fail_run',
+              evidenceKind: 'recipe_evaluation',
+              runId: 'run-fail',
+              passed: false,
+            },
+            run: {
+              runId: 'run-fail',
+              suiteId: 'recipe-governance',
+              suiteRevision: 'recipe-governance@1',
+              passed: false,
+            },
+            failedCases: [
+              {
+                caseId: 'redline-invented-critical-fact',
+                reason: 'output invents a critical price fact',
+              },
+            ],
+            evaluation: evidenceGate('none', {
+              receiptId: 'rcpt_fail_run',
+              failedCases: [
+                {
+                  caseId: 'redline-invented-critical-fact',
+                  reason: 'output invents a critical price fact',
+                },
+              ],
+            }),
+            internalTest: evidenceGate('none', {
+              evidenceKind: 'recipe_internal_test',
+            }),
+          };
+        }),
+      };
+
+      render(<AdminCreationExperienceControl api={api} />);
+      await user.type(screen.getByLabelText('Recipe ID'), recipeId);
+      await user.click(screen.getByRole('button', { name: '加载 Recipe' }));
+      await screen.findByTestId('recipe-evidence-panel');
+      await user.click(
+        screen.getByRole('button', { name: '运行评测并签发证据' })
+      );
+
+      const failed = await screen.findByTestId('recipe-evidence-failed-cases');
+      expect(failed).toHaveTextContent('redline-invented-critical-fact');
+      expect(failed).toHaveTextContent(
+        'output invents a critical price fact'
+      );
+      expect(screen.getByTestId('recipe-evidence-failed-case')).toHaveAttribute(
+        'data-case-id',
+        'redline-invented-critical-fact'
+      );
+      expect(
+        screen.getByTestId('recipe-evidence-evaluation-receipt')
+      ).toHaveTextContent('rcpt_fail_run');
+      expect(api.command).toHaveBeenCalledWith(
+        'recipe_evidence_run_evaluation',
+        expect.objectContaining({
+          recipeId,
+          expectedRevision: 2,
+        }),
+        expect.any(String)
+      );
+    });
+
+    it('triggers evaluation only via server command (never browser-built evidence)', async () => {
+      const user = userEvent.setup();
+      const recipeId = 'recipe.ev.server-path';
+      const head = seedRecipeHead(recipeId, 4);
+      const api: CreationExperienceAdminApi = {
+        query: vi.fn(async (action) => {
+          if (action === 'recipe_get') return head;
+          if (action === 'recipe_history') return [head];
+          if (action === 'recipe_evidence_status') {
+            return {
+              recipeId,
+              recipeRevision: 4,
+              currentPromptRevisionRef: head.promptRevisionRef,
+              evaluation: evidenceGate('none'),
+              internalTest: evidenceGate('none', {
+                evidenceKind: 'recipe_internal_test',
+              }),
+            };
+          }
+          return null;
+        }),
+        command: vi.fn(async (action, payload) => {
+          if (action !== 'recipe_evidence_run_evaluation') {
+            throw new Error(`unexpected ${action}`);
+          }
+          // Server issues receipt — browser only sent identity + CAS.
+          expect(Object.keys(payload).sort()).toEqual(
+            expect.arrayContaining(['expectedRevision', 'recipeId', 'reason'])
+          );
+          expect(payload).not.toHaveProperty('evalRun');
+          expect(payload).not.toHaveProperty('passed');
+          expect(payload).not.toHaveProperty('runId');
+          expect(payload).not.toHaveProperty('suiteId');
+          expect(payload).not.toHaveProperty('evidenceReceiptId');
+          return {
+            recipeId,
+            recipeRevision: 4,
+            currentPromptRevisionRef: head.promptRevisionRef,
+            receipt: {
+              receiptId: 'rcpt_server_issued',
+              evidenceKind: 'recipe_evaluation',
+              runId: 'run-server',
+              passed: true,
+            },
+            run: {
+              runId: 'run-server',
+              suiteId: 'recipe-governance',
+              suiteRevision: 'recipe-governance@1',
+              passed: true,
+            },
+            failedCases: [],
+            evaluation: evidenceGate('ready', {
+              receiptId: 'rcpt_server_issued',
+            }),
+            internalTest: evidenceGate('none', {
+              evidenceKind: 'recipe_internal_test',
+            }),
+          };
+        }),
+      };
+
+      render(<AdminCreationExperienceControl api={api} />);
+      await user.type(screen.getByLabelText('Recipe ID'), recipeId);
+      await user.click(screen.getByRole('button', { name: '加载 Recipe' }));
+      await user.click(
+        await screen.findByRole('button', { name: '运行评测并签发证据' })
+      );
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId('recipe-evidence-evaluation')
+        ).toHaveAttribute('data-status', 'ready');
+      });
+      expect(
+        screen.getByTestId('recipe-evidence-evaluation-status')
+      ).toHaveTextContent('状态: 已具备');
+      expect(
+        screen.getByTestId('recipe-evidence-evaluation-receipt')
+      ).toHaveTextContent('rcpt_server_issued');
+      expect(api.command).toHaveBeenCalledTimes(1);
+      expect(api.command).toHaveBeenCalledWith(
+        'recipe_evidence_run_evaluation',
+        expect.objectContaining({
+          recipeId,
+          expectedRevision: 4,
+        }),
+        expect.any(String)
+      );
+    });
+
+    it('refreshes evidence status when the loaded revision changes', async () => {
+      const user = userEvent.setup();
+      const recipeId = 'recipe.ev.revision-refresh';
+      const rev1 = seedRecipeHead(recipeId, 1, 'prompt.ev@1');
+      const rev2 = seedRecipeHead(recipeId, 2, 'prompt.ev@2');
+      const statusByRevision = new Map([
+        [
+          1,
+          {
+            recipeId,
+            recipeRevision: 1,
+            currentPromptRevisionRef: 'prompt.ev@1',
+            evaluation: evidenceGate('ready', { receiptId: 'rcpt_r1' }),
+            internalTest: evidenceGate('none', {
+              evidenceKind: 'recipe_internal_test',
+            }),
+          },
+        ],
+        [
+          2,
+          {
+            recipeId,
+            recipeRevision: 2,
+            currentPromptRevisionRef: 'prompt.ev@2',
+            evaluation: evidenceGate('none'),
+            internalTest: evidenceGate('none', {
+              evidenceKind: 'recipe_internal_test',
+            }),
+          },
+        ],
+      ]);
+      let head = rev1;
+      const api: CreationExperienceAdminApi = {
+        query: vi.fn(async (action, payload) => {
+          if (action === 'recipe_get') return head;
+          if (action === 'recipe_history') return [rev1, rev2];
+          if (action === 'recipe_evidence_status') {
+            const revision = Number(payload.recipeRevision);
+            return statusByRevision.get(revision) ?? null;
+          }
+          return null;
+        }),
+        command: vi.fn(async (action) => {
+          if (action === 'recipe_governance_save') {
+            head = rev2;
+            return rev2;
+          }
+          throw new Error(`unexpected ${action}`);
+        }),
+      };
+
+      render(<AdminCreationExperienceControl api={api} />);
+      await user.type(screen.getByLabelText('Recipe ID'), recipeId);
+      await user.click(screen.getByRole('button', { name: '加载 Recipe' }));
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId('recipe-evidence-evaluation')
+        ).toHaveAttribute('data-status', 'ready');
+      });
+      expect(screen.getByTestId('recipe-evidence-revision')).toHaveTextContent(
+        'revision: r1'
+      );
+      expect(
+        screen.getByTestId('recipe-evidence-evaluation-receipt')
+      ).toHaveTextContent('rcpt_r1');
+
+      await user.clear(screen.getByLabelText('变更原因'));
+      await user.type(screen.getByLabelText('变更原因'), 'bump revision');
+      await user.click(
+        screen.getByRole('button', { name: '治理保存 Recipe' })
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('recipe-evidence-revision')).toHaveTextContent(
+          'revision: r2'
+        );
+      });
+      expect(
+        screen.getByTestId('recipe-evidence-evaluation')
+      ).toHaveAttribute('data-status', 'none');
+      expect(
+        screen.getByTestId('recipe-evidence-evaluation-status')
+      ).toHaveTextContent('状态: 无证据');
+      expect(
+        screen.getByTestId('recipe-evidence-evaluation-receipt')
+      ).toHaveTextContent('receiptId: —');
+
+      expect(api.query).toHaveBeenCalledWith(
+        'recipe_evidence_status',
+        expect.objectContaining({ recipeId, recipeRevision: 1 })
+      );
+      expect(api.query).toHaveBeenCalledWith(
+        'recipe_evidence_status',
+        expect.objectContaining({ recipeId, recipeRevision: 2 })
+      );
     });
   });
 });
