@@ -52,6 +52,13 @@ export {
   type RecipeInternalTestEvidencePort,
 } from './recipe-evidence-ports.js';
 export {
+  MemoryRecipeEvidenceReceiptRegistry,
+  parseRecipeEvidenceReceipt,
+  type ListRecipeEvidenceReceiptsFilter,
+  type RecipeEvidenceReceiptRegistryPort,
+} from './recipe-evidence-receipt-registry.js';
+export { PostgresRecipeEvidenceReceiptRegistry } from './postgres-recipe-evidence-receipt-registry.js';
+export {
   RECIPE_GOVERNANCE_BLOCK_IDS,
   RecipeStudioCompileInputAdapter,
   adaptRecipeGovernanceFormToCompileInput,

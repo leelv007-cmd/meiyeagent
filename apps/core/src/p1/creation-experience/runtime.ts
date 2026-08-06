@@ -1,6 +1,8 @@
 import type { Pool } from 'pg';
 
 import { P1DomainError } from '../foundation/domain.js';
+import type { EvalRunRegistryPort } from '../harness/eval-run-registry.js';
+import { PostgresEvalRunRegistry } from '../harness/postgres-eval-run-registry.js';
 import { CreationExperienceCatalogService } from './catalog-service.js';
 import { CreationExperienceBriefSubmissionGate } from './brief-submission-gate.js';
 import { CreationExperienceFoundationModule } from './foundation-module.js';
@@ -21,6 +23,8 @@ import {
   type CurrentProductQuoteSource,
 } from './postgres-brief-revision-context.js';
 import { PostgresCreationExperienceCatalogRepository } from './postgres-repository.js';
+import { PostgresRecipeEvidenceReceiptRegistry } from './postgres-recipe-evidence-receipt-registry.js';
+import type { RecipeEvidenceReceiptRegistryPort } from './recipe-evidence-receipt-registry.js';
 import type { RecipeSkillRevisionValidationPort } from './recipe-studio.js';
 import type { ServerRecipeRecord } from './types.js';
 
@@ -96,6 +100,7 @@ async function ensureLaunchCatalog(
  * - Catalog/Surface/session state is durable in Postgres.
  * - Brief confirmations and privacy-filtered events are workspace-scoped.
  * - First-ship seed publication is restart-safe and serialized across processes.
+ * - Spec I shared services: EvalRun registry (read) + recipe evidence receipts.
  */
 export async function createDurableCreationExperienceRuntime(input: {
   modelCatalog: CurrentModelCatalogSource;
@@ -105,15 +110,30 @@ export async function createDurableCreationExperienceRuntime(input: {
   productQuotes: CurrentProductQuoteSource;
   seedLaunchCatalog?: boolean;
   skillRevisionValidation?: RecipeSkillRevisionValidationPort;
+  /** Optional inject for tests; production uses harness PostgresEvalRunRegistry. */
+  evalRunRegistry?: EvalRunRegistryPort;
+  /** Optional inject for tests; production uses Postgres receipt registry. */
+  evidenceReceiptRegistry?: RecipeEvidenceReceiptRegistryPort;
 }) {
   const repository = new PostgresCreationExperienceCatalogRepository(input.pool);
   const audit = new PostgresCreationExperienceAuditRepository(input.pool);
   const briefRevisionContexts = new PostgresBriefRevisionContextRepository(
     input.pool,
   );
+  const evalRunRegistry =
+    input.evalRunRegistry ?? new PostgresEvalRunRegistry(input.pool);
+  const evidenceReceiptRegistry =
+    input.evidenceReceiptRegistry ??
+    new PostgresRecipeEvidenceReceiptRegistry(input.pool);
   await repository.migrate();
   await audit.migrate();
   await briefRevisionContexts.migrate();
+  if (evalRunRegistry instanceof PostgresEvalRunRegistry) {
+    await evalRunRegistry.migrate();
+  }
+  if (evidenceReceiptRegistry instanceof PostgresRecipeEvidenceReceiptRegistry) {
+    await evidenceReceiptRegistry.migrate();
+  }
   const catalog = new CreationExperienceCatalogService(repository);
   const launch =
     input.seedLaunchCatalog === false
@@ -150,6 +170,10 @@ export async function createDurableCreationExperienceRuntime(input: {
     briefRevisionContexts,
     briefSubmissionGate,
     catalog,
+    /** Shared EvalRun fact store (harness-owned; Skill write path unchanged). */
+    evalRunRegistry,
+    /** Immutable recipe evaluation / internal-test evidence receipts. */
+    evidenceReceiptRegistry,
     foundationModule,
     launch,
     repository,
