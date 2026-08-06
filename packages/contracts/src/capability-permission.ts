@@ -395,6 +395,8 @@ export function requiredP1Capability(
         'store_workflow_catalog',
         'skill_catalog_list',
         'skill_revision_history',
+        // Spec B / #362: bind/define dropdown shares the #360 catalog port.
+        'published_recipe_workflow_revision_refs',
       ]).has(action)
         ? 'workspace.read'
         : null;

@@ -11,6 +11,7 @@ import {
 import { P1DomainError } from '../foundation/domain.js';
 import { LangfuseHarnessPromptResolver } from '../harness/langfuse-prompts.js';
 import type { HarnessFrozenPrompt } from '../harness/langfuse-prompts.js';
+import { mergePublishedRecipeWorkflowRevisionRefs } from '../creation-experience/published-recipe-workflow-catalog.js';
 import {
   MemorySkillRepository,
   materializeSkillInstructions,
@@ -19,7 +20,9 @@ import {
   SkillFoundationModule,
   SkillPromptAuthorityUnavailableError,
   SkillService,
+  SKILL_WORKFLOW_BINDING_INVALID_MESSAGE,
   StaticSkillToolExecutionAuthorizer,
+  type PublishedRecipeWorkflowCatalogPort,
   type SkillBinding,
   type SkillChildEffectExecutor,
   type SkillGovernanceSidecar,
@@ -3251,6 +3254,221 @@ test('backend-only Skill cannot be bound as user-selected', async () => {
   );
 });
 
+// Spec B / #362 — Skill bind governance boundary (not a "non-copy whitelist").
+// Formerly: bind of image_text to a copy-only Skill saved, then resolveStage
+// allowlist was empty. Now bind rejects with a stable INVALID_STATE message.
+test('skill_bind rejects a published workflow outside the Skill governance refs with stable INVALID_STATE', async () => {
+  const launchCatalog: PublishedRecipeWorkflowCatalogPort = {
+    async listPublishedRecipeWorkflowRevisionRefs() {
+      return mergePublishedRecipeWorkflowRevisionRefs([]);
+    },
+  };
+  const service = new SkillService(
+    new MemorySkillRepository(),
+    () => NOW,
+    testPromptSnapshots,
+    undefined,
+    undefined,
+    launchCatalog,
+  );
+  const frozen = await createAcceptedSkillWithWorkflows(
+    service,
+    'copy-only-governance',
+    ['workflow.copy@1'],
+  );
+
+  await assert.rejects(
+    () =>
+      service.bindRevision({
+        bindingId: 'binding.copy-only-to-image-text',
+        mode: 'required',
+        skillRevisionRef: frozen.skillRevisionRef,
+        triggerCondition: { harnessStage: 'intent_naming' },
+        workflowRevisionRef: 'workflow.image_text@1',
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof P1DomainError);
+      assert.equal(error.code, 'INVALID_STATE');
+      assert.equal(error.message, SKILL_WORKFLOW_BINDING_INVALID_MESSAGE);
+      return true;
+    },
+  );
+});
+
+test('skill_bind accepts a launch-seed image_text workflow when governance authorizes it and resolveStage injects the revision', async () => {
+  const launchCatalog: PublishedRecipeWorkflowCatalogPort = {
+    async listPublishedRecipeWorkflowRevisionRefs() {
+      return mergePublishedRecipeWorkflowRevisionRefs([]);
+    },
+  };
+  const service = new SkillService(
+    new MemorySkillRepository(),
+    () => NOW,
+    testPromptSnapshots,
+    undefined,
+    undefined,
+    launchCatalog,
+  );
+  const frozen = await createAcceptedSkillWithWorkflows(
+    service,
+    'image-text-governance',
+    ['workflow.image_text@1'],
+  );
+  await service.bindRevision({
+    bindingId: 'binding.image-text-authorized',
+    mode: 'required',
+    skillRevisionRef: frozen.skillRevisionRef,
+    triggerCondition: { harnessStage: 'intent_naming' },
+    workflowRevisionRef: 'workflow.image_text@1',
+  });
+
+  const resolved = await service.resolveStage({
+    stage: 'intent_naming',
+    userSelectedSkillRefs: [],
+    workflowRevisionRef: 'workflow.image_text@1',
+  });
+  assert.deepEqual(
+    resolved.allowlist.map((skill) => skill.skillRevisionRef),
+    [frozen.skillRevisionRef],
+  );
+});
+
+test('skill_bind rejects an unpublished workflow even when governance lists it', async () => {
+  const launchCatalog: PublishedRecipeWorkflowCatalogPort = {
+    async listPublishedRecipeWorkflowRevisionRefs() {
+      return mergePublishedRecipeWorkflowRevisionRefs([]);
+    },
+  };
+  const service = new SkillService(
+    new MemorySkillRepository(),
+    () => NOW,
+    testPromptSnapshots,
+    undefined,
+    undefined,
+    launchCatalog,
+  );
+  // Define without catalog enforcement by using a service that only checks
+  // governance membership first… but catalog is wired for define too, so
+  // craft the frozen revision via an authoring service without catalog, then
+  // bind through a catalog-wired service sharing the same repository.
+  const repository = new MemorySkillRepository();
+  const authoring = new SkillService(
+    repository,
+    () => NOW,
+    testPromptSnapshots,
+  );
+  const frozen = await createAcceptedSkillWithWorkflows(
+    authoring,
+    'unpublished-governance',
+    ['workflow.not-in-catalog@1'],
+  );
+  const bindingService = new SkillService(
+    repository,
+    () => NOW,
+    testPromptSnapshots,
+    undefined,
+    undefined,
+    launchCatalog,
+  );
+
+  await assert.rejects(
+    () =>
+      bindingService.bindRevision({
+        bindingId: 'binding.unpublished-workflow',
+        mode: 'required',
+        skillRevisionRef: frozen.skillRevisionRef,
+        triggerCondition: { harnessStage: 'intent_naming' },
+        workflowRevisionRef: 'workflow.not-in-catalog@1',
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof P1DomainError);
+      assert.equal(error.code, 'INVALID_STATE');
+      assert.equal(error.message, SKILL_WORKFLOW_BINDING_INVALID_MESSAGE);
+      return true;
+    },
+  );
+});
+
+test('skill_define rejects empty or unpublished governance workflowRevisionRefs when catalog is wired', async () => {
+  const launchCatalog: PublishedRecipeWorkflowCatalogPort = {
+    async listPublishedRecipeWorkflowRevisionRefs() {
+      return mergePublishedRecipeWorkflowRevisionRefs([]);
+    },
+  };
+  const service = new SkillService(
+    new MemorySkillRepository(),
+    () => NOW,
+    testPromptSnapshots,
+    undefined,
+    undefined,
+    launchCatalog,
+  );
+  await service.defineCatalogEntry({
+    actorId: 'operator-1',
+    name: 'empty governance skill',
+    description: 'Must not default a workflow.',
+    sourceKind: 'authored',
+    tier: 'platform',
+    presentationPolicy: 'backend_only',
+    skillId: 'skill.empty-governance',
+  });
+  const instruction = 'Must supply governance workflow refs explicitly.';
+  await assert.rejects(
+    () =>
+      service.draftRevision({
+        actorId: 'operator-1',
+        expectedRevision: null,
+        governance: {
+          ...governance(),
+          workflowRevisionRefs: [],
+        },
+        instruction,
+        manifest: {
+          description: 'Empty governance refs are rejected.',
+          name: 'empty-governance',
+        },
+        promptReference: registerPrompt({
+          content: instruction,
+          contentHash: sha256(instruction),
+          isFallback: false,
+          label: 'production',
+          name: 'skills/empty-governance',
+          source: 'langfuse',
+          version: '1',
+        }),
+        skillId: 'skill.empty-governance',
+      }),
+    /Too small: expected array to have >=1 items|workflowRevisionRefs must be a non-empty list/u,
+  );
+  await assert.rejects(
+    () =>
+      service.draftRevision({
+        actorId: 'operator-1',
+        expectedRevision: null,
+        governance: {
+          ...governance(),
+          workflowRevisionRefs: ['workflow.not-published@9'],
+        },
+        instruction,
+        manifest: {
+          description: 'Unpublished governance refs are rejected.',
+          name: 'unpublished-governance-define',
+        },
+        promptReference: registerPrompt({
+          content: instruction,
+          contentHash: sha256(instruction),
+          isFallback: false,
+          label: 'production',
+          name: 'skills/unpublished-governance-define',
+          source: 'langfuse',
+          version: '1',
+        }),
+        skillId: 'skill.empty-governance',
+      }),
+    /not in the published Recipe workflow catalog/u,
+  );
+});
+
 test('deterministic Skill triggers match stage, industry category, and tenant', async () => {
   const repository = new MemorySkillRepository();
   const service = new SkillService(repository, () => NOW, testPromptSnapshots);
@@ -3653,6 +3871,16 @@ async function createAcceptedSkill(
   service: SkillService,
   suffix: string,
 ) {
+  return createAcceptedSkillWithWorkflows(service, suffix, [
+    'workflow.binding-matrix@1',
+  ]);
+}
+
+async function createAcceptedSkillWithWorkflows(
+  service: SkillService,
+  suffix: string,
+  workflowRevisionRefs: readonly string[],
+) {
   const skillId = `skill.${suffix}`;
   const instruction = `Apply the ${suffix} instruction only in the declared stage.`;
   await service.defineCatalogEntry({
@@ -3670,7 +3898,7 @@ async function createAcceptedSkill(
     expectedRevision: null,
     governance: {
       ...governance(),
-      workflowRevisionRefs: ['workflow.binding-matrix@1'],
+      workflowRevisionRefs: [...workflowRevisionRefs],
     },
     instruction,
     manifest: {

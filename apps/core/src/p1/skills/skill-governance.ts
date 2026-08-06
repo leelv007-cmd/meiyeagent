@@ -25,7 +25,8 @@ const skillGovernanceSchema = z
         timeoutMs: z.number().int().positive(),
       })
       .strict(),
-    workflowRevisionRefs: z.array(z.string()),
+    // Callers must supply refs; SkillService never default-fills a single workflow (Spec B / #362).
+    workflowRevisionRefs: z.array(z.string().trim().min(1)).min(1),
     fallback: z.enum(['skip', 'fail_closed']),
   })
   .strict();

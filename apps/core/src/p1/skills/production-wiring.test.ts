@@ -61,6 +61,7 @@ test('the Skill action registry exposes no export or download verb', () => {
     'skill_revision_history',
     'skill_prompt_reference',
     'skill_reverse_dependencies',
+    'published_recipe_workflow_revision_refs',
   ]);
   const registered = [
     ...SKILL_COMMAND_ACTIONS,
@@ -91,6 +92,7 @@ test('the Skill action registry exposes no export or download verb', () => {
     'store_workflow_catalog',
     'skill_catalog_list',
     'skill_revision_history',
+    'published_recipe_workflow_revision_refs',
   ]) {
     assert.equal(
       requiredP1Capability('query', 'skills', action),

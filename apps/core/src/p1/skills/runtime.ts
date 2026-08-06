@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 
+import { CreationExperienceCatalogService } from '../creation-experience/catalog-service.js';
 import { PostgresCreationExperienceCatalogRepository } from '../creation-experience/postgres-repository.js';
 import {
   HarnessPromptAuthorityUnavailableError,
@@ -139,6 +140,14 @@ export async function createDurableSkillRuntime(input: {
   const repository =
     input.repository ?? new PostgresSkillRepository(input.pool);
   await repository.migrate();
+  // #360 catalog port — sole authority for skill-bind allowlists (Spec B / #362).
+  // Migrate here: skill runtime provisions/binds before creation-experience
+  // runtime is assembled, and listPublishedRecipes must see the tables.
+  const recipes = new PostgresCreationExperienceCatalogRepository(input.pool);
+  await recipes.migrate();
+  const publishedWorkflowCatalog = new CreationExperienceCatalogService(
+    recipes,
+  );
   const service = new SkillService(
     repository,
     undefined,
@@ -148,6 +157,8 @@ export async function createDurableSkillRuntime(input: {
     new StaticSkillToolExecutionAuthorizer(
       input.toolExecutionAllowlist ?? [],
     ),
+    undefined,
+    publishedWorkflowCatalog,
   );
   if (input.provisionPlatformRecipes) {
     if (!input.promptResolver) {
@@ -161,7 +172,6 @@ export async function createDurableSkillRuntime(input: {
       service,
     });
   }
-  const recipes = new PostgresCreationExperienceCatalogRepository(input.pool);
   const instructionResolver = new DurableSkillInstructionResolver(
     service,
     recipes,

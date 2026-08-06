@@ -28,6 +28,8 @@ const {
   buildSkillPublishPayload,
   createGovernanceActionIntentRegistry,
   governanceRunPollInterval,
+  mapSkillBindFormError,
+  SKILL_WORKFLOW_BINDING_INVALID_MESSAGE,
 } = await import('@/p1/admin-skills-control');
 const { p1QueryKeys } = await import('@/p1/query-keys');
 
@@ -60,6 +62,13 @@ function renderSkillsControl(rows: Record<string, unknown>[] = []) {
         industryTierTotal: rows.filter((row) => row.tier === 'industry').length,
         total: rows.length,
       },
+    }
+  );
+  // #360 catalog fixture — bind/define dropdown shares this port (#362).
+  queryClient.setQueryData(
+    p1QueryKeys.request('skills', 'published_recipe_workflow_revision_refs', {}),
+    {
+      workflowRevisionRefs: ['workflow.copy@1', 'workflow.image_text@1'],
     }
   );
   return renderToStaticMarkup(
@@ -291,6 +300,10 @@ test('structured Skill forms build the revision and acceptance contracts', () =>
     source: 'langfuse',
     version: '42',
   } as const;
+  const publishedWorkflowRevisionRefs = [
+    'workflow.copy@1',
+    'workflow.image_text@1',
+  ] as const;
   const definition = buildSkillCommandPayload(
     'skill_define',
     {
@@ -303,8 +316,9 @@ test('structured Skill forms build the revision and acceptance contracts', () =>
       skillId: 'skill.controlled',
       sourceKind: 'authored',
       tier: 'platform',
+      workflowRevisionRefs: 'workflow.image_text@1\nworkflow.copy@1',
     },
-    { promptReference }
+    { promptReference, publishedWorkflowRevisionRefs }
   );
   assert.deepEqual(definition, {
     description: 'A controlled description.',
@@ -326,7 +340,8 @@ test('structured Skill forms build the revision and acceptance contracts', () =>
       outputSchemaRef: 'skill-output.intent-decision@1',
       requiredModelCapabilities: ['structured_output'],
       sideEffectClass: 'none',
-      workflowRevisionRefs: ['workflow.copy@1'],
+      // Sorted; no default single-copy fill (Spec B / #362).
+      workflowRevisionRefs: ['workflow.copy@1', 'workflow.image_text@1'],
     },
     instruction: 'Use only confirmed facts.',
     name: 'Controlled Skill',
@@ -397,6 +412,46 @@ test('structured Skill forms build the revision and acceptance contracts', () =>
       ),
     /production prompt 引用尚未就绪/u
   );
+  assert.throws(
+    () =>
+      buildSkillCommandPayload(
+        'skill_define',
+        {
+          description: 'Missing workflow selection.',
+          expectedRevision: '',
+          instruction: 'Must not be sent.',
+          name: 'Missing workflow',
+          packageName: 'missing-workflow',
+          presentationPolicy: 'backend_only',
+          skillId: 'skill.missing-workflow',
+          sourceKind: 'authored',
+          tier: 'platform',
+        },
+        { promptReference, publishedWorkflowRevisionRefs }
+      ),
+    /至少选择一个治理工作流/u
+  );
+  assert.throws(
+    () =>
+      buildSkillCommandPayload(
+        'skill_bind',
+        {
+          bindingId: 'binding.outside-catalog',
+          harnessStage: 'intent_naming',
+          mode: 'required',
+          skillRevisionRef: 'skill.controlled@1',
+          workflowRevisionRef: 'workflow.not-published@1',
+        },
+        { publishedWorkflowRevisionRefs }
+      ),
+    new RegExp(SKILL_WORKFLOW_BINDING_INVALID_MESSAGE, 'u')
+  );
+  assert.equal(
+    mapSkillBindFormError(
+      `upstream: ${SKILL_WORKFLOW_BINDING_INVALID_MESSAGE}`
+    ),
+    SKILL_WORKFLOW_BINDING_INVALID_MESSAGE
+  );
 });
 
 test('fallback prompt authority disables the Skill lifecycle', () => {
@@ -411,6 +466,10 @@ test('fallback prompt authority disables the Skill lifecycle', () => {
         total: 0,
       },
     }
+  );
+  queryClient.setQueryData(
+    p1QueryKeys.request('skills', 'published_recipe_workflow_revision_refs', {}),
+    { workflowRevisionRefs: ['workflow.copy@1'] }
   );
   queryClient.setQueryData(
     p1QueryKeys.request('skills', 'skill_prompt_reference', {

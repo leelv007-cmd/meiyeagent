@@ -32,6 +32,8 @@ export const SKILL_QUERY_ACTIONS = [
   'skill_revision_history',
   'skill_prompt_reference',
   'skill_reverse_dependencies',
+  // #360 catalog projection for bind/define dropdowns (Spec B / #362).
+  'published_recipe_workflow_revision_refs',
 ] as const;
 
 export const SKILL_COMMAND_ACTIONS = [
@@ -352,6 +354,13 @@ export class SkillFoundationModule implements P1OperationModule {
           targetSkillRevisionRef: text(value, 'skillRevisionRef'),
           viewerWorkspaceId: args.context.workspaceId,
         });
+      }
+      case 'published_recipe_workflow_revision_refs': {
+        onlyKeys(value, [], '已发布 Recipe 工作流目录查询');
+        return {
+          workflowRevisionRefs:
+            await this.service.listPublishedRecipeWorkflowRevisionRefs(),
+        };
       }
       default:
         return name satisfies never;

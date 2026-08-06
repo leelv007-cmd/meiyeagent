@@ -84,7 +84,16 @@ interface CurrentSkillPromptReference {
 
 interface SkillCommandAuthorities {
   promptReference?: CurrentSkillPromptReference;
+  /**
+   * #360 published Recipe workflow catalog — sole client source for define/bind
+   * workflow options (Spec B / #362). Never hardcode a Web-only allowlist.
+   */
+  publishedWorkflowRevisionRefs?: readonly string[];
 }
+
+/** Stable Core INVALID_STATE message for bind boundary (Spec B / #362). */
+export const SKILL_WORKFLOW_BINDING_INVALID_MESSAGE =
+  'Skill 绑定的工作流未发布或未获该 Skill 治理授权。';
 
 interface SkillGovernanceFormValues {
   baseSkillRevisionRef: string;
@@ -140,7 +149,14 @@ interface SkillGovernanceResult {
   }>;
 }
 
-type FieldKind = 'text' | 'select' | 'textarea';
+type FieldKind =
+  | 'text'
+  | 'select'
+  | 'textarea'
+  /** Single pick from #360 published workflow catalog (bind). */
+  | 'workflow_select'
+  /** Multi pick from #360 published workflow catalog (define governance). */
+  | 'workflow_multi';
 
 interface FieldSpec {
   key: string;
@@ -167,6 +183,11 @@ const COMMAND_FORMS = {
         key: 'instruction',
         label: '受控做法正文',
         kind: 'textarea',
+      },
+      {
+        key: 'workflowRevisionRefs',
+        label: '治理工作流（已发布目录，可多选）',
+        kind: 'workflow_multi',
       },
       {
         key: 'expectedRevision',
@@ -225,7 +246,11 @@ const COMMAND_FORMS = {
     label: '绑定阶段',
     fields: [
       { key: 'bindingId', label: '绑定标识', kind: 'text' },
-      { key: 'workflowRevisionRef', label: '工作流版本', kind: 'text' },
+      {
+        key: 'workflowRevisionRef',
+        label: '工作流版本（已发布目录）',
+        kind: 'workflow_select',
+      },
       { key: 'skillRevisionRef', label: '版本引用', kind: 'text' },
       {
         key: 'harnessStage',
@@ -257,7 +282,11 @@ const COMMAND_FORMS = {
       { key: 'bindingId', label: '新绑定标识', kind: 'text' },
       { key: 'sourceBindingId', label: '被回滚的绑定', kind: 'text' },
       { key: 'targetSkillRevisionRef', label: '回到哪个版本', kind: 'text' },
-      { key: 'workflowRevisionRef', label: '工作流版本', kind: 'text' },
+      {
+        key: 'workflowRevisionRef',
+        label: '工作流版本（已发布目录）',
+        kind: 'workflow_select',
+      },
     ],
   },
   skill_deployment: {
@@ -320,7 +349,7 @@ export function createGovernanceActionIntentRegistry(
   };
 }
 
-const ADMIN_SKILL_GOVERNANCE = {
+const ADMIN_SKILL_GOVERNANCE_BASE = {
   budget: {
     maxChildEffects: 0,
     maxCostCents: 0,
@@ -333,8 +362,33 @@ const ADMIN_SKILL_GOVERNANCE = {
   outputSchemaRef: 'skill-output.intent-decision@1',
   requiredModelCapabilities: ['structured_output'],
   sideEffectClass: 'none',
-  workflowRevisionRefs: ['workflow.copy@1'],
 } as const;
+
+/** Parse multi-select workflow refs stored as newline- or comma-separated text. */
+export function parseSelectedWorkflowRevisionRefs(
+  raw: string | undefined
+): string[] {
+  if (!raw?.trim()) return [];
+  return [
+    ...new Set(
+      raw
+        .split(/[\n,]/u)
+        .map((part) => part.trim())
+        .filter((part) => part.length > 0)
+    ),
+  ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+}
+
+/**
+ * Maps Core bind boundary failures onto the bind form without clearing input.
+ * Server is authority; this only normalizes the stable Spec B message.
+ */
+export function mapSkillBindFormError(message: string): string {
+  if (message.includes(SKILL_WORKFLOW_BINDING_INVALID_MESSAGE)) {
+    return SKILL_WORKFLOW_BINDING_INVALID_MESSAGE;
+  }
+  return message;
+}
 
 /**
  * Assembles the nested command payload from flat form values. Shapes the
@@ -358,6 +412,24 @@ export function buildSkillCommandPayload(
     ) {
       throw new Error('当前版本号必须是正整数；首版请留空。');
     }
+    const published = authorities.publishedWorkflowRevisionRefs ?? [];
+    if (published.length === 0) {
+      throw new Error('已发布工作流目录尚未就绪，无法定义 Skill 治理引用。');
+    }
+    const workflowRevisionRefs = parseSelectedWorkflowRevisionRefs(
+      values.workflowRevisionRefs
+    );
+    if (workflowRevisionRefs.length === 0) {
+      throw new Error('请从已发布目录至少选择一个治理工作流。');
+    }
+    const publishedSet = new Set(published);
+    for (const ref of workflowRevisionRefs) {
+      if (!publishedSet.has(ref)) {
+        throw new Error(
+          `治理工作流不在已发布目录中：${ref}。请只从目录中选择。`
+        );
+      }
+    }
     return {
       description: values.description,
       expectedRevision: expectedRevision ? Number(expectedRevision) : null,
@@ -365,7 +437,10 @@ export function buildSkillCommandPayload(
         description: values.description,
         name: values.packageName,
       },
-      governance: ADMIN_SKILL_GOVERNANCE,
+      governance: {
+        ...ADMIN_SKILL_GOVERNANCE_BASE,
+        workflowRevisionRefs,
+      },
       instruction: values.instruction,
       name: values.name,
       packagePaths: ['SKILL.md'],
@@ -395,9 +470,17 @@ export function buildSkillCommandPayload(
     };
   }
   if (action === 'skill_bind') {
+    const workflowRevisionRef = values.workflowRevisionRef?.trim() ?? '';
+    if (!workflowRevisionRef) {
+      throw new Error('请选择已发布目录中的工作流版本。');
+    }
+    const published = authorities.publishedWorkflowRevisionRefs;
+    if (published && !published.includes(workflowRevisionRef)) {
+      throw new Error(SKILL_WORKFLOW_BINDING_INVALID_MESSAGE);
+    }
     return {
       bindingId: values.bindingId,
-      workflowRevisionRef: values.workflowRevisionRef,
+      workflowRevisionRef,
       skillRevisionRef: values.skillRevisionRef,
       mode: values.mode,
       triggerCondition: {
@@ -659,6 +742,26 @@ export function AdminSkillsControl() {
         signal
       ),
   });
+  // #360 catalog via skills query — bind dropdown and define multi-select share
+  // this list with server-side validation (Spec B / #362).
+  const publishedWorkflowQuery = useQuery({
+    queryKey: p1QueryKeys.request(
+      'skills',
+      'published_recipe_workflow_revision_refs',
+      {}
+    ),
+    queryFn: ({ signal }) =>
+      queryP1<{ workflowRevisionRefs: string[] }>(
+        'skills',
+        {
+          action: 'published_recipe_workflow_revision_refs',
+          payload: {},
+        },
+        signal
+      ),
+  });
+  const publishedWorkflowRevisionRefs =
+    publishedWorkflowQuery.data?.workflowRevisionRefs ?? [];
   const governanceRunQuery = useQuery({
     enabled: Boolean(governanceRunId),
     queryKey: p1QueryKeys.request('skills', 'skill_governance_run_get', {
@@ -701,6 +804,7 @@ export function AdminSkillsControl() {
     try {
       const payload = buildSkillCommandPayload(action, values, {
         promptReference: promptReferenceQuery.data,
+        publishedWorkflowRevisionRefs,
       });
       assertReferenceOnlySkillPayload(payload);
       setResult(
@@ -716,8 +820,11 @@ export function AdminSkillsControl() {
         queryKey: p1QueryKeys.module('skills'),
       });
     } catch (cause) {
+      const message =
+        cause instanceof Error ? cause.message : 'Skill 操作失败，请重试。';
+      // Bind form keeps `values` as-is; only map the stable Spec B message.
       setError(
-        cause instanceof Error ? cause.message : 'Skill 操作失败，请重试。'
+        action === 'skill_bind' ? mapSkillBindFormError(message) : message
       );
     } finally {
       setBusy(false);
@@ -1380,7 +1487,14 @@ export function AdminSkillsControl() {
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             {form.fields.map((field) => (
-              <div key={field.key} className="space-y-2">
+              <div
+                key={field.key}
+                className={
+                  field.kind === 'workflow_multi'
+                    ? 'space-y-2 sm:col-span-2'
+                    : 'space-y-2'
+                }
+              >
                 <Label htmlFor={`skills-field-${field.key}`}>
                   {field.label}
                 </Label>
@@ -1404,6 +1518,83 @@ export function AdminSkillsControl() {
                       </option>
                     ))}
                   </select>
+                ) : field.kind === 'workflow_select' ? (
+                  <select
+                    id={`skills-field-${field.key}`}
+                    data-ops-control="select"
+                    data-testid={`skills-field-${field.key}`}
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={values[field.key] ?? ''}
+                    onChange={(event) =>
+                      setValues((current) => ({
+                        ...current,
+                        [field.key]: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">请选择已发布工作流</option>
+                    {publishedWorkflowRevisionRefs.map((ref) => (
+                      <option key={ref} value={ref}>
+                        {ref}
+                      </option>
+                    ))}
+                  </select>
+                ) : field.kind === 'workflow_multi' ? (
+                  <div
+                    className="max-h-48 space-y-2 overflow-y-auto rounded-md border p-3"
+                    data-testid="skills-field-workflowRevisionRefs"
+                  >
+                    {publishedWorkflowQuery.isLoading ? (
+                      <p className="text-muted-foreground text-sm">
+                        正在加载已发布工作流目录…
+                      </p>
+                    ) : null}
+                    {publishedWorkflowQuery.isError ? (
+                      <p role="alert" className="text-destructive text-sm">
+                        已发布工作流目录读取失败，请重试。
+                      </p>
+                    ) : null}
+                    {!publishedWorkflowQuery.isLoading &&
+                    !publishedWorkflowQuery.isError &&
+                    publishedWorkflowRevisionRefs.length === 0 ? (
+                      <p className="text-muted-foreground text-sm">
+                        当前没有已发布的 Recipe 工作流。
+                      </p>
+                    ) : null}
+                    {publishedWorkflowRevisionRefs.map((ref) => {
+                      const selected = new Set(
+                        parseSelectedWorkflowRevisionRefs(
+                          values.workflowRevisionRefs
+                        )
+                      );
+                      return (
+                        <label
+                          key={ref}
+                          className="flex items-center gap-2 text-sm"
+                        >
+                          <input
+                            type="checkbox"
+                            data-ops-control="checkbox"
+                            checked={selected.has(ref)}
+                            onChange={(event) => {
+                              const next = new Set(selected);
+                              if (event.target.checked) next.add(ref);
+                              else next.delete(ref);
+                              setValues((current) => ({
+                                ...current,
+                                workflowRevisionRefs: [...next]
+                                  .sort((left, right) =>
+                                    left < right ? -1 : left > right ? 1 : 0
+                                  )
+                                  .join('\n'),
+                              }));
+                            }}
+                          />
+                          <span className="font-mono text-xs">{ref}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 ) : field.kind === 'textarea' ? (
                   <Textarea
                     id={`skills-field-${field.key}`}

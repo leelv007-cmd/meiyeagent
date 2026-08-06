@@ -20,6 +20,7 @@ import {
   validateSkillFrontmatter,
   validateSkillPackagePaths,
 } from './skill-format.js';
+import { mergePublishedRecipeWorkflowRevisionRefs } from '../creation-experience/published-recipe-workflow-catalog.js';
 import { parseSkillGovernance } from './skill-governance.js';
 import {
   SkillPromptAuthorityUnavailableError,
@@ -64,6 +65,23 @@ import {
 } from './tool-authorization.js';
 
 const registrySkillOutputValidator = new RegistrySkillOutputValidator();
+
+/**
+ * Stable operator-facing message when skill_bind targets a workflow that is
+ * unpublished or outside the Skill revision's governance.workflowRevisionRefs.
+ * Spec B / #362 — do not rephrase; Web maps this exact string to the bind form.
+ */
+export const SKILL_WORKFLOW_BINDING_INVALID_MESSAGE =
+  'Skill 绑定的工作流未发布或未获该 Skill 治理授权。';
+
+/**
+ * Read-only published Recipe workflow catalog (#360). Production wires
+ * CreationExperienceCatalogService; unit tests may omit the port (only
+ * governance membership is enforced on bind) or inject a fixed list.
+ */
+export type PublishedRecipeWorkflowCatalogPort = {
+  listPublishedRecipeWorkflowRevisionRefs(): Promise<string[]>;
+};
 
 function fail(message: string): never {
   throw new P1DomainError('INVALID_STATE', message);
@@ -232,7 +250,25 @@ export class SkillService {
       denyAllSkillToolExecution,
     private readonly primitiveRegistry: AgentPrimitiveRegistry =
       canonicalAgentPrimitiveRegistry,
+    /**
+     * Optional #360 published-workflow catalog. When omitted (most unit
+     * tests), define still requires non-empty governance refs and bind still
+     * enforces governance membership; catalog membership is enforced only
+     * when the port is wired (production runtime always wires it).
+     */
+    private readonly publishedWorkflowCatalog?: PublishedRecipeWorkflowCatalogPort,
   ) {}
+
+  /**
+   * Sole authority list for bind dropdowns and server-side catalog checks.
+   * Falls back to launch-seed merge when no catalog port is wired.
+   */
+  async listPublishedRecipeWorkflowRevisionRefs(): Promise<string[]> {
+    if (this.publishedWorkflowCatalog) {
+      return this.publishedWorkflowCatalog.listPublishedRecipeWorkflowRevisionRefs();
+    }
+    return mergePublishedRecipeWorkflowRevisionRefs([]);
+  }
 
   async defineCatalogEntry(input: {
     skillId: string;
@@ -811,6 +847,12 @@ export class SkillService {
         }`,
       );
     }
+    governance = {
+      ...governance,
+      workflowRevisionRefs: await this.normalizeGovernanceWorkflowRevisionRefs(
+        governance.workflowRevisionRefs,
+      ),
+    };
     validatePrewrite(() =>
       validatePrimitiveAuthority(
         this.primitiveRegistry,
@@ -831,6 +873,63 @@ export class SkillService {
       packagePaths,
       prompt,
     };
+  }
+
+  /**
+   * Callers must supply governance workflow refs; none are default-filled
+   * (Spec B / #362). When the published catalog port is wired, every ref must
+   * appear in that catalog.
+   */
+  private async normalizeGovernanceWorkflowRevisionRefs(
+    refs: readonly string[],
+  ): Promise<string[]> {
+    const normalized = [
+      ...new Set(
+        refs
+          .map((ref) => (typeof ref === 'string' ? ref.trim() : ''))
+          .filter((ref) => ref.length > 0),
+      ),
+    ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+    if (normalized.length === 0) {
+      failPrewrite(
+        'Skill governance workflowRevisionRefs must be a non-empty list; the service does not default a single workflow.',
+      );
+    }
+    if (this.publishedWorkflowCatalog) {
+      const published = new Set(
+        await this.publishedWorkflowCatalog.listPublishedRecipeWorkflowRevisionRefs(),
+      );
+      for (const ref of normalized) {
+        if (!published.has(ref)) {
+          failPrewrite(
+            `Skill governance workflowRevisionRef is not in the published Recipe workflow catalog: ${ref}`,
+          );
+        }
+      }
+    }
+    return normalized;
+  }
+
+  /**
+   * Bind boundary (Spec B / #362): target must be in the published catalog
+   * (when wired) and in the Skill revision's governance refs. Same stable
+   * INVALID_STATE message either way — not a "non-copy whitelist" reject.
+   */
+  private async assertBindableWorkflowRevisionRef(
+    workflowRevisionRef: string,
+    governanceWorkflowRevisionRefs: readonly string[],
+  ): Promise<void> {
+    if (this.publishedWorkflowCatalog) {
+      const published = new Set(
+        await this.publishedWorkflowCatalog.listPublishedRecipeWorkflowRevisionRefs(),
+      );
+      if (!published.has(workflowRevisionRef)) {
+        fail(SKILL_WORKFLOW_BINDING_INVALID_MESSAGE);
+      }
+    }
+    if (!governanceWorkflowRevisionRefs.includes(workflowRevisionRef)) {
+      fail(SKILL_WORKFLOW_BINDING_INVALID_MESSAGE);
+    }
   }
 
   private persistSkillDraft(
@@ -1116,12 +1215,17 @@ export class SkillService {
     ) {
       fail('后台专用 Skill 不能由用户选择；只有用户可选 Skill 支持该模式。');
     }
+    const workflowRevisionRef = required(
+      input.workflowRevisionRef,
+      'Workflow revision',
+    );
+    await this.assertBindableWorkflowRevisionRef(
+      workflowRevisionRef,
+      revision.governance.workflowRevisionRefs,
+    );
     const binding: SkillBinding = {
       bindingId: required(input.bindingId, 'Binding ID'),
-      workflowRevisionRef: required(
-        input.workflowRevisionRef,
-        'Workflow revision',
-      ),
+      workflowRevisionRef,
       triggerCondition: normalizeTriggerCondition(input.triggerCondition),
       ...(input.ownerWorkspaceId?.trim()
         ? { ownerWorkspaceId: input.ownerWorkspaceId.trim() }

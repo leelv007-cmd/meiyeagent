@@ -13,7 +13,9 @@ export {
 export {
   SkillInvocationValidationError,
   SkillService,
+  SKILL_WORKFLOW_BINDING_INVALID_MESSAGE,
   skillAcceptanceGateFailure,
+  type PublishedRecipeWorkflowCatalogPort,
 } from './service.js';
 export {
   SKILL_COMMAND_ACTIONS,
