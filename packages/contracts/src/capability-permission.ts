@@ -349,6 +349,7 @@ export function requiredP1Capability(
         : new Set([
               'recipe_get',
               'recipe_history',
+              'recipe_published_revisions',
               'recipe_validate',
               'surface_get',
               'surface_history',

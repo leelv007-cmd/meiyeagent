@@ -40,6 +40,11 @@ export interface CreationExperienceCatalogRepository {
    * Append-only history is ignored once the head leaves published.
    */
   listPublishedRecipes(): Promise<ServerRecipeRecord[]>;
+  /**
+   * Latest published revision for every Recipe that has at least one.
+   * Ordered by recipeId ascending for stable admin dropdowns (#373).
+   */
+  listLatestPublishedRecipes(): Promise<ServerRecipeRecord[]>;
 
   appendSurface(
     record: ServerSurfaceRecord,
@@ -145,6 +150,15 @@ export class MemoryCreationExperienceCatalogRepository
           : 0,
     );
     return published;
+  }
+
+  async listLatestPublishedRecipes() {
+    const heads: ServerRecipeRecord[] = [];
+    for (const recipeId of [...this.recipes.keys()].sort()) {
+      const latest = await this.latestPublishedRecipe(recipeId);
+      if (latest) heads.push(latest);
+    }
+    return heads;
   }
 
   async appendSurface(

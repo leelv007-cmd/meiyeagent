@@ -69,6 +69,14 @@ test('P1 module actions resolve to the same role capabilities used by the UI', (
     );
   }
   assert.equal(
+    requiredP1Capability(
+      'query',
+      'creation-experience',
+      'recipe_published_revisions',
+    ),
+    'config.publish',
+  );
+  assert.equal(
     requiredP1Capability('query', 'creation-experience', 'surface_browser'),
     'workspace.read',
   );

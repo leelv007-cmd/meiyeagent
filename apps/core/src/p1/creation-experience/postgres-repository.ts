@@ -191,6 +191,16 @@ export class PostgresCreationExperienceCatalogRepository
     return result.rows.map((row) => structuredClone(row.payload));
   }
 
+  async listLatestPublishedRecipes(): Promise<ServerRecipeRecord[]> {
+    const result = await this.pool.query<RevisionRow<ServerRecipeRecord>>(
+      `SELECT DISTINCT ON (recipe_id) payload, revision
+         FROM p1_creation_recipe_revisions
+        WHERE status = 'published'
+        ORDER BY recipe_id ASC, revision DESC`,
+    );
+    return result.rows.map((row) => structuredClone(row.payload));
+  }
+
   appendSurface(
     record: ServerSurfaceRecord,
     expectedRevision: number | null,

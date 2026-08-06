@@ -23,8 +23,11 @@ import type {
   DraftRecipeInput,
   DraftSurfaceInput,
   FreezeSessionInput,
+  ListRecipePublishedRevisionsInput,
   RecipeBodyInput,
   RecipeId,
+  RecipePublishedRevisionCandidate,
+  RecipePublishedRevisionsResult,
   RecipeRevisionId,
   RecipeTransitionInput,
   RollbackRecipeInput,
@@ -36,7 +39,11 @@ import type {
   SurfaceRevisionId,
   SurfaceTransitionInput,
 } from './types.js';
-import { recipeRevisionId, surfaceRevisionId } from './types.js';
+import {
+  parseRecipeRevisionId,
+  recipeRevisionId,
+  surfaceRevisionId,
+} from './types.js';
 
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
@@ -53,6 +60,19 @@ function canonicalJson(value: unknown): string {
 
 function hashBody(value: unknown): string {
   return createHash('sha256').update(canonicalJson(value)).digest('hex');
+}
+
+function toPublishedCandidate(
+  record: ServerRecipeRecord,
+): RecipePublishedRevisionCandidate {
+  return {
+    recipeId: record.recipeId,
+    revisionId: record.revisionId,
+    revision: record.revision,
+    title: record.presentation.title,
+    lensId: record.lensId,
+    publishedAt: record.publishedAt ?? record.createdAt,
+  };
 }
 
 function assertExpectedRevision(
@@ -619,6 +639,63 @@ export class CreationExperienceCatalogService {
   async listPublishedRecipeWorkflowRevisionRefs(): Promise<string[]> {
     const published = await this.repository.listPublishedRecipes();
     return mergePublishedRecipeWorkflowRevisionRefs(published);
+  }
+
+  /**
+   * Surface version-candidate query (Spec D / #373).
+   * Merges Surface head recipeRefs with caller recipeIds; groups keep empty
+   * buckets for missing / unpublished recipes; availableRecipeHeads lists every
+   * catalog Recipe that has a published head.
+   */
+  async listRecipePublishedRevisions(
+    input: ListRecipePublishedRevisionsInput,
+  ): Promise<RecipePublishedRevisionsResult> {
+    const surfaceId = input.surfaceId.trim();
+    if (!surfaceId) {
+      throw new P1DomainError('INVALID_STATE', 'surfaceId is required.');
+    }
+    const surface = await this.repository.getSurfaceHead(surfaceId);
+    if (!surface) {
+      throw new P1DomainError(
+        'NOT_FOUND',
+        `Surface "${surfaceId}" was not found.`,
+      );
+    }
+
+    const merged = new Set<RecipeId>();
+    for (const ref of surface.recipeRefs) {
+      const parsed = parseRecipeRevisionId(ref.recipeRevisionId);
+      if (parsed) merged.add(parsed.recipeId);
+    }
+    for (const raw of input.recipeIds) {
+      if (typeof raw !== 'string') continue;
+      const recipeId = raw.trim();
+      if (recipeId) merged.add(recipeId);
+    }
+
+    const sortedRecipeIds = [...merged].sort((a, b) =>
+      a < b ? -1 : a > b ? 1 : 0,
+    );
+    const groups = await Promise.all(
+      sortedRecipeIds.map(async (recipeId) => {
+        const history = await this.repository.listRecipeHistory(recipeId);
+        const candidates = history
+          .filter((entry) => entry.status === 'published')
+          .map((entry) => toPublishedCandidate(entry))
+          .sort((a, b) => b.revision - a.revision);
+        return { recipeId, candidates };
+      }),
+    );
+
+    const availableRecipeHeads = (
+      await this.repository.listLatestPublishedRecipes()
+    )
+      .map((entry) => toPublishedCandidate(entry))
+      .sort((a, b) =>
+        a.recipeId < b.recipeId ? -1 : a.recipeId > b.recipeId ? 1 : 0,
+      );
+
+    return { groups, availableRecipeHeads };
   }
 
   async getSurfaceHead(surfaceId: SurfaceId) {

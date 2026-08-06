@@ -928,6 +928,28 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
       }
       case 'recipe_history':
         return this.service.listRecipeHistory(stringField(value, 'recipeId'));
+      case 'recipe_published_revisions': {
+        const recipeIdsRaw = value.recipeIds;
+        if (!Array.isArray(recipeIdsRaw)) {
+          throw new P1DomainError(
+            'INVALID_STATE',
+            'recipeIds must be an array of recipe id strings.',
+          );
+        }
+        const recipeIds = recipeIdsRaw.map((entry, index) => {
+          if (typeof entry !== 'string' || entry.trim().length === 0) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              `recipeIds[${index}] must be a non-empty string.`,
+            );
+          }
+          return entry.trim();
+        });
+        return this.service.listRecipePublishedRevisions({
+          surfaceId: stringField(value, 'surfaceId'),
+          recipeIds,
+        });
+      }
       case 'recipe_validate': {
         const revision =
           typeof value.revision === 'number' ? value.revision : undefined;

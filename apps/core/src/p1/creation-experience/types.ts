@@ -263,3 +263,34 @@ export function parseRecipeRevisionId(
 }
 
 
+
+/**
+ * Published revision candidate for Surface version dropdowns (Spec D / #373).
+ * Only status=published rows appear; draft/preview/retired are excluded.
+ */
+export interface RecipePublishedRevisionCandidate {
+  recipeId: RecipeId;
+  revisionId: RecipeRevisionId;
+  revision: number;
+  title: string;
+  lensId: CreationLensId;
+  publishedAt: string;
+}
+
+/** One recipeId bucket; empty candidates when missing or unpublished. */
+export interface RecipePublishedRevisionGroup {
+  recipeId: RecipeId;
+  candidates: RecipePublishedRevisionCandidate[];
+}
+
+export interface RecipePublishedRevisionsResult {
+  /** Surface recipeRefs ∪ request recipeIds; recipeId ASC, revision DESC. */
+  groups: RecipePublishedRevisionGroup[];
+  /** Latest published head per catalog Recipe usable for new Surface cards. */
+  availableRecipeHeads: RecipePublishedRevisionCandidate[];
+}
+
+export interface ListRecipePublishedRevisionsInput {
+  surfaceId: SurfaceId;
+  recipeIds: RecipeId[];
+}

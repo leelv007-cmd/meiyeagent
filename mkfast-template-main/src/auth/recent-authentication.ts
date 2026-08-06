@@ -43,6 +43,7 @@ const CONFIG_PUBLISH_ACTIONS_WITHOUT_STEP_UP = new Set([
   'creation-experience.recipe_draft',
   'creation-experience.recipe_get',
   'creation-experience.recipe_history',
+  'creation-experience.recipe_published_revisions',
   'creation-experience.recipe_preview',
   'creation-experience.recipe_validate',
   'creation-experience.surface_draft',
