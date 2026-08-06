@@ -32,16 +32,11 @@ export {
 } from './memory-repository.js';
 export {
   CREATION_LENS_SEEDS,
-  TOOL_ENTRY_SEEDS,
-  TOOL_ENTRY_ID_SET,
   listCreationLensSeeds,
-  listToolEntrySeeds,
-  getToolEntrySeed,
 } from './static-seeds.js';
 export {
   LAUNCH_SURFACE_ID,
   LAUNCH_RECIPE_SPECS,
-  LAUNCH_TOOL_ENTRY_REFS,
   LAUNCH_ACTOR,
   LENS_LABELS,
   REUSE_CONTENT_FAMILY_ID,

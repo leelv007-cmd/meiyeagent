@@ -2,10 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type {
-  BrowserSurfaceProjection,
-  CreativeToolEntry,
-} from '@meiye/contracts';
+import type { BrowserSurfaceProjection } from '@meiye/contracts';
 
 import {
   CatalogLivePage,
@@ -49,7 +46,6 @@ const surface = {
       visible: true,
     },
   ],
-  toolEntryRefs: [{ toolEntryId: 'tool.multi_size', order: 1, visible: true }],
   recipes: [
     {
       recipeId: 'recipe.server',
@@ -70,22 +66,15 @@ const surface = {
   ],
 } satisfies BrowserSurfaceProjection;
 
-const tools: CreativeToolEntry[] = [
-  {
-    id: 'tool.multi_size',
-    label: '服务端实时多尺寸',
-    summary: '从 tool_list 返回',
-    kind: 'standalone_tool',
-    container: 'route',
-    order: 1,
-  },
-];
-
 afterEach(cleanup);
 
 function renderCatalog(input: { storage: Storage; returnKey?: string }) {
-  const query = vi.fn(async (_module: unknown, call: { action: string }) =>
-    call.action === 'surface_browser' ? surface : tools
+  const queryCalls: Array<{ action: string }> = [];
+  const query = vi.fn(
+    async (_module: unknown, call: { action: string }) => {
+      queryCalls.push(call);
+      return surface;
+    }
   );
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -104,11 +93,11 @@ function renderCatalog(input: { storage: Storage; returnKey?: string }) {
       />
     </QueryClientProvider>
   );
-  return { query, selected, navigated };
+  return { query, queryCalls, selected, navigated };
 }
 
 describe('live fullscreen catalog', () => {
-  it('uses live Recipe data but hides a server ToolEntry without verified capability', async () => {
+  it('selects live Recipe revisions without a tools tab or tool_list query', async () => {
     const user = userEvent.setup();
     const storage = new MemoryStorage();
     const first = renderCatalog({ storage });
@@ -118,13 +107,15 @@ describe('live fullscreen catalog', () => {
       recipeRevisionId: 'recipe.server@7',
       surfaceRevisionId: 'surface.home.launch@7',
     });
-    expect(first.query).toHaveBeenCalledTimes(2);
+    // Surface only — no parallel tool_list fetch.
+    expect(first.query).toHaveBeenCalledTimes(1);
+    expect(first.queryCalls.map((call) => call.action)).toEqual([
+      'surface_browser',
+    ]);
 
-    await user.click(screen.getByTestId('composer-catalog-tab-tools'));
-    expect(screen.queryByText('服务端实时多尺寸')).not.toBeInTheDocument();
-    expect(screen.getByTestId('composer-catalog-empty')).toHaveTextContent(
-      '暂无可用创作工具'
-    );
+    expect(
+      screen.queryByTestId('composer-catalog-tab-tools')
+    ).not.toBeInTheDocument();
     expect(first.navigated).not.toHaveBeenCalled();
   });
 });

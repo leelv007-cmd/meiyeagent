@@ -5,15 +5,15 @@
  * Dashboard integration wires the catalog route to this path.
  */
 
-/** Canonical fullscreen catalog path (templates | tools dual tab). */
+/** Canonical fullscreen catalog path (templates tab). */
 export const COMPOSER_CATALOG_PATH = '/dashboard/catalog';
 
 /** Dashboard home (return target after catalog). */
 export const COMPOSER_HOME_PATH = '/dashboard';
 
 export type ComposerCatalogSearchParams = {
-  /** Initial tab: templates (recipe) or tools. */
-  tab?: 'templates' | 'tools';
+  /** Initial tab: templates (legacy recipe alias maps here). */
+  tab?: 'templates';
   /** Task-language category filter. */
   category?: string;
   /** Surface revision freeze ref (non-sensitive). */
@@ -32,7 +32,7 @@ export function buildComposerCatalogHref(
   params: ComposerCatalogSearchParams = {}
 ): string {
   const search = new URLSearchParams();
-  if (params.tab === 'templates' || params.tab === 'tools') {
+  if (params.tab === 'templates') {
     search.set('tab', params.tab);
   }
   if (params.category?.trim()) {
@@ -65,16 +65,7 @@ export function parseComposerCatalogSearch(
   };
   const tabRaw = get('tab');
   const tab =
-    tabRaw === 'templates' ||
-    tabRaw === 'tools' ||
-    tabRaw === 'recipe' ||
-    tabRaw === 'tool'
-      ? tabRaw === 'recipe'
-        ? 'templates'
-        : tabRaw === 'tool'
-          ? 'tools'
-          : tabRaw
-      : undefined;
+    tabRaw === 'templates' || tabRaw === 'recipe' ? 'templates' : undefined;
   return {
     ...(tab ? { tab } : {}),
     ...(get('category') ? { category: get('category') } : {}),

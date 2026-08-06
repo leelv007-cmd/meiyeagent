@@ -76,7 +76,6 @@ import { Route as legalsTermsRouteImport } from './routes/(legals)/terms'
 import { Route as legalsPrivacyRouteImport } from './routes/(legals)/privacy'
 import { Route as legalsCookieRouteImport } from './routes/(legals)/cookie'
 import { Route as DashboardWorksWorkIdRouteImport } from './routes/dashboard/works_/$workId'
-import { Route as DashboardToolsToolEntryIdRouteImport } from './routes/dashboard/tools_/$toolEntryId'
 import { Route as DashboardTasksTaskIdRouteImport } from './routes/dashboard/tasks_/$taskId'
 import { Route as DashboardSessionsSessionIdRouteImport } from './routes/dashboard/sessions_/$sessionId'
 import { Route as DashboardResultsWorkIdRouteImport } from './routes/dashboard/results_/$workId'
@@ -452,12 +451,6 @@ const DashboardWorksWorkIdRoute = DashboardWorksWorkIdRouteImport.update({
   path: '/works/$workId',
   getParentRoute: () => DashboardRoute,
 } as any)
-const DashboardToolsToolEntryIdRoute =
-  DashboardToolsToolEntryIdRouteImport.update({
-    id: '/tools_/$toolEntryId',
-    path: '/tools/$toolEntryId',
-    getParentRoute: () => DashboardRoute,
-  } as any)
 const DashboardTasksTaskIdRoute = DashboardTasksTaskIdRouteImport.update({
   id: '/tasks_/$taskId',
   path: '/tasks/$taskId',
@@ -754,7 +747,6 @@ export interface FileRoutesByFullPath {
   '/dashboard/results/$workId': typeof DashboardResultsWorkIdRoute
   '/dashboard/sessions/$sessionId': typeof DashboardSessionsSessionIdRoute
   '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
-  '/dashboard/tools/$toolEntryId': typeof DashboardToolsToolEntryIdRoute
   '/dashboard/works/$workId': typeof DashboardWorksWorkIdRoute
   '/admin/supply/tasks/$taskId': typeof AdminSupplyTasksTaskIdRoute
   '/admin/supply/views/$viewId': typeof AdminSupplyViewsViewIdRoute
@@ -859,7 +851,6 @@ export interface FileRoutesByTo {
   '/dashboard/results/$workId': typeof DashboardResultsWorkIdRoute
   '/dashboard/sessions/$sessionId': typeof DashboardSessionsSessionIdRoute
   '/dashboard/tasks/$taskId': typeof DashboardTasksTaskIdRoute
-  '/dashboard/tools/$toolEntryId': typeof DashboardToolsToolEntryIdRoute
   '/dashboard/works/$workId': typeof DashboardWorksWorkIdRoute
   '/admin/supply/tasks/$taskId': typeof AdminSupplyTasksTaskIdRoute
   '/admin/supply/views/$viewId': typeof AdminSupplyViewsViewIdRoute
@@ -969,7 +960,6 @@ export interface FileRoutesById {
   '/dashboard/results_/$workId': typeof DashboardResultsWorkIdRoute
   '/dashboard/sessions_/$sessionId': typeof DashboardSessionsSessionIdRoute
   '/dashboard/tasks_/$taskId': typeof DashboardTasksTaskIdRoute
-  '/dashboard/tools_/$toolEntryId': typeof DashboardToolsToolEntryIdRoute
   '/dashboard/works_/$workId': typeof DashboardWorksWorkIdRoute
   '/admin/supply/tasks/$taskId': typeof AdminSupplyTasksTaskIdRoute
   '/admin/supply/views/$viewId': typeof AdminSupplyViewsViewIdRoute
@@ -1080,7 +1070,6 @@ export interface FileRouteTypes {
     | '/dashboard/results/$workId'
     | '/dashboard/sessions/$sessionId'
     | '/dashboard/tasks/$taskId'
-    | '/dashboard/tools/$toolEntryId'
     | '/dashboard/works/$workId'
     | '/admin/supply/tasks/$taskId'
     | '/admin/supply/views/$viewId'
@@ -1185,7 +1174,6 @@ export interface FileRouteTypes {
     | '/dashboard/results/$workId'
     | '/dashboard/sessions/$sessionId'
     | '/dashboard/tasks/$taskId'
-    | '/dashboard/tools/$toolEntryId'
     | '/dashboard/works/$workId'
     | '/admin/supply/tasks/$taskId'
     | '/admin/supply/views/$viewId'
@@ -1294,7 +1282,6 @@ export interface FileRouteTypes {
     | '/dashboard/results_/$workId'
     | '/dashboard/sessions_/$sessionId'
     | '/dashboard/tasks_/$taskId'
-    | '/dashboard/tools_/$toolEntryId'
     | '/dashboard/works_/$workId'
     | '/admin/supply/tasks/$taskId'
     | '/admin/supply/views/$viewId'
@@ -1833,13 +1820,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardWorksWorkIdRouteImport
       parentRoute: typeof DashboardRoute
     }
-    '/dashboard/tools_/$toolEntryId': {
-      id: '/dashboard/tools_/$toolEntryId'
-      path: '/tools/$toolEntryId'
-      fullPath: '/dashboard/tools/$toolEntryId'
-      preLoaderRoute: typeof DashboardToolsToolEntryIdRouteImport
-      parentRoute: typeof DashboardRoute
-    }
     '/dashboard/tasks_/$taskId': {
       id: '/dashboard/tasks_/$taskId'
       path: '/tasks/$taskId'
@@ -2206,7 +2186,6 @@ interface DashboardRouteChildren {
   DashboardResultsWorkIdRoute: typeof DashboardResultsWorkIdRoute
   DashboardSessionsSessionIdRoute: typeof DashboardSessionsSessionIdRoute
   DashboardTasksTaskIdRoute: typeof DashboardTasksTaskIdRoute
-  DashboardToolsToolEntryIdRoute: typeof DashboardToolsToolEntryIdRoute
   DashboardWorksWorkIdRoute: typeof DashboardWorksWorkIdRoute
 }
 
@@ -2232,7 +2211,6 @@ const DashboardRouteChildren: DashboardRouteChildren = {
   DashboardResultsWorkIdRoute: DashboardResultsWorkIdRoute,
   DashboardSessionsSessionIdRoute: DashboardSessionsSessionIdRoute,
   DashboardTasksTaskIdRoute: DashboardTasksTaskIdRoute,
-  DashboardToolsToolEntryIdRoute: DashboardToolsToolEntryIdRoute,
   DashboardWorksWorkIdRoute: DashboardWorksWorkIdRoute,
 }
 

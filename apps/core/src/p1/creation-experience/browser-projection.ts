@@ -60,7 +60,6 @@ const SURFACE_ALLOWLIST = [
   'revisionId',
   'status',
   'recipeRefs',
-  'toolEntryRefs',
   'contentHash',
   'recipes',
 ] as const;

@@ -344,7 +344,6 @@ export function requiredP1Capability(
         'recipe_browser',
         'session_get',
         'surface_browser',
-        'tool_list',
       ]).has(action)
         ? 'workspace.read'
         : new Set([

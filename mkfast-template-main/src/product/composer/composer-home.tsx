@@ -177,7 +177,6 @@ import {
   projectBriefSurfaceView,
   type BriefSurfaceState,
 } from './brief-surface';
-import { ComposerToolsStrip } from './composer-tools-strip';
 import {
   bindQuoteView,
   createComposerLensState,
@@ -3676,18 +3675,6 @@ export function ComposerHome({
                         }
                         selectionPending={sessionIdentityDecision.isPending}
                         selection={identitySelection}
-                      />
-                      <ComposerToolsStrip
-                        viewport={viewportKind}
-                        surfaceRevisionId={surfaceQuery.data?.revisionId}
-                        onOpenTool={(href) => {
-                          if (typeof window !== 'undefined') {
-                            window.location.assign(href);
-                          }
-                        }}
-                        onViewAll={(href) => {
-                          void navigate({ to: href as '/dashboard/catalog' });
-                        }}
                       />
                     </div>
                   }

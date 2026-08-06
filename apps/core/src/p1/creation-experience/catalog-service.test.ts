@@ -10,9 +10,7 @@ import { CreationExperienceCatalogService } from './catalog-service.js';
 import { MemoryCreationExperienceCatalogRepository } from './memory-repository.js';
 import {
   CREATION_LENS_SEEDS,
-  TOOL_ENTRY_SEEDS,
   listCreationLensSeeds,
-  listToolEntrySeeds,
 } from './static-seeds.js';
 import type { RecipeBodyInput, SurfaceBodyInput } from './types.js';
 
@@ -147,13 +145,6 @@ describe('Creation Experience Catalog aggregate', () => {
             lensId: 'image_text',
             order: 0,
             featured: true,
-            visible: true,
-          },
-        ],
-        toolEntryRefs: [
-          {
-            toolEntryId: 'tool.batch_bg_remove',
-            order: 0,
             visible: true,
           },
         ],
@@ -700,58 +691,15 @@ describe('Creation Experience Catalog aggregate', () => {
     );
   });
 
-  it('exposes lens as static enum and tools as static seed registry', async () => {
+  it('exposes lens as static enum without publish lifecycle fields', async () => {
     assert.deepEqual(
       CREATION_LENS_SEEDS.map((lens) => lens.id),
       ['copy', 'image_text', 'video'],
     );
     assert.equal(listCreationLensSeeds().length, 3);
-    assert.ok(TOOL_ENTRY_SEEDS.length >= 1);
-    assert.ok(listToolEntrySeeds().every((tool) => tool.id.startsWith('tool.')));
-    for (const tool of TOOL_ENTRY_SEEDS) {
-      assert.equal('status' in tool, false);
-      assert.equal('revision' in tool, false);
-      assert.equal('publishedAt' in tool, false);
-    }
     for (const lens of CREATION_LENS_SEEDS) {
       assert.equal('status' in lens, false);
       assert.equal('revision' in lens, false);
     }
-  });
-
-  it('rejects draft surface that references unknown static tools', async () => {
-    const { service } = createService();
-    const recipe = await publishRecipe(service, 'recipe.tool-check');
-    await assert.rejects(
-      () =>
-        service.draftSurface({
-          surfaceId: 'surface.bad-tool',
-          expectedRevision: null,
-          body: {
-            recipeRefs: [
-              {
-                recipeRevisionId: recipe.revisionId,
-                lensId: 'image_text',
-                order: 0,
-                featured: true,
-                visible: true,
-              },
-            ],
-            toolEntryRefs: [
-              {
-                toolEntryId: 'tool.does_not_exist',
-                order: 0,
-                visible: true,
-              },
-            ],
-          },
-          ...audit(),
-        }),
-      (error: unknown) => {
-        assert.ok(error instanceof P1DomainError);
-        assert.match(error.message, /unknown static tool/);
-        return true;
-      },
-    );
   });
 });

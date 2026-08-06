@@ -413,7 +413,6 @@ test(
               visible: true,
             },
           ],
-          toolEntryRefs: first.launch!.surface.toolEntryRefs,
         },
         correlationId: 'corr-recipe-studio-extra',
         expectedRevision: first.launch!.surface.revision,

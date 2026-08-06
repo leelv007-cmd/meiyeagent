@@ -24,7 +24,7 @@ Rules:
 | Official template family + published version | `p1_templates` / `p1_template_versions` (CanvasDocument body) | `CreationRecipeVersion` | One published official template version → one Recipe revision snapshot (presentation, lens, delivery defaults, model policy, workflow/prompt/quote refs). Canvas body is **not** copied into Recipe. | **Map & re-author** as Recipe seeds (A2). Old template rows remain historical until Z1. |
 | Template shortcut pin | `p1_template_shortcuts` + catalog `shortcuts[]` | `CreationSurfaceRevision.recipeRefs[]` with `featured: true` | Shortcut order → Surface `order`; pin/unpin → featured/visible flags. | **Map** into default global Surface seed (A2). |
 | User template | `p1_user_templates` / catalog `userTemplates[]` | — (out of Recipe publish scope) | User-owned drafts are not admin-published Recipes. Future "save as personal recipe" is a separate ticket if product asks. | **Historical only** — keep readable via legacy ops until personal-recipe story exists; not in Surface. |
-| Tool rows in frontend `creation-catalog-model` (`copy.generate` / `image.generate` / `video.generate`) | Frontend static `toolEntries()` | `CreativeToolEntry` static seed + `Surface.toolEntryRefs` | Operation ids are not ToolEntry ids. New tools use D-077 kinds (`composer_recipe` \| `standalone_tool`). | **Replace** with static seed registry (this module). Old operation-tool chips retired with C3. |
+| Tool rows in frontend `creation-catalog-model` (`copy.generate` / `image.generate` / `video.generate`) | Frontend static `toolEntries()` | ~~`CreativeToolEntry` static seed + `Surface.toolEntryRefs`~~ (retired by D-177 / #419) | Operation ids are not ToolEntry ids. Standalone tools removed entirely. | **Retired** — standalone tool chain deleted by D-177 / #419. |
 | Scene / suggestion chips (`SceneVisualButton`, `NAMED_PRESET_CONTRACTS`) | Frontend hardcode | `CreationRecipeVersion` + Surface featured set | Superseded by D-082/D-083/D-084. | **Delete** with C1 (do not port chips). |
 | `selectedPreset.internalIntent` | Frontend apply path | Server `RecipePatchPreview` (A2) | Preserve/stash/change; no silent intent overwrite. | **Delete** direct path with C1. |
 
@@ -60,7 +60,7 @@ Rules:
 | `recipeRefs[].featured` | Shortcut membership | Cold-start six cards = featured ∩ visible. |
 | `recipeRefs[].visible` | published && !retired | |
 | `recipeRefs[].lensId` | — | Must match Recipe.lensId (validated). |
-| `toolEntryRefs[]` | Frontend toolEntries list | Static ids from `TOOL_ENTRY_SEEDS`. |
+| ~~`toolEntryRefs[]`~~ | Frontend toolEntries list | Retired by D-177 / #419 — field removed from Surface. |
 
 ## Lifecycle & session freeze
 

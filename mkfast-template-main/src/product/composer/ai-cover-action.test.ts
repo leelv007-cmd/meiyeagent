@@ -13,7 +13,6 @@ import {
   resolveSignedAiCover,
   shouldShowAiCoverSignatureMismatchNotice,
 } from './ai-cover-action';
-import { COMPOSER_TOOL_ENTRY_SEEDS } from './tool-entry-seeds';
 
 test('three ratios are selectable and each maps to a size', () => {
   assert.deepEqual([...AI_COVER_ASPECT_RATIOS], ['3:4', '1:1', '9:16']);
@@ -87,14 +86,10 @@ test('Delivered secondary + object workspace tool hang; Idle primary does not', 
   assert.equal(projectAiCoverWorkspaceTool({ lensId: 'copy' }), null);
 });
 
-test('Idle ordinary tools do not include AI cover as a primary entry', () => {
+test('Idle primary surface never hosts AI cover', () => {
+  assert.equal(AI_COVER_IDLE_PRIMARY_ENTRY, false);
   assert.equal(
-    COMPOSER_TOOL_ENTRY_SEEDS.some(
-      (tool) =>
-        tool.id.includes('cover') ||
-        tool.label.includes('封面') ||
-        tool.label.includes('AI 封面')
-    ),
+    aiCoverAllowedOnSurface({ surface: 'idle_primary', lensId: 'image_text' }),
     false
   );
 });

@@ -149,7 +149,6 @@ export interface RecipeStudioProductionInput
     import('@meiye/contracts').SurfaceRecipeRef,
     'featured' | 'order' | 'visible'
   >;
-  surfaceToolRefs?: import('@meiye/contracts').SurfaceToolRef[];
 }
 
 export interface RecipeStudioRollbackInput
@@ -724,9 +723,6 @@ export class RecipeStudioService {
       correlationId: input.correlationId,
       body: {
         recipeRefs,
-        toolEntryRefs: (head?.toolEntryRefs ?? input.surfaceToolRefs ?? []).map(
-          (ref) => ({ ...ref }),
-        ),
       },
     });
     const preview = await this.catalog.previewSurface({

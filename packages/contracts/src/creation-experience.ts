@@ -28,7 +28,6 @@ export type CreationLensRevisionId = string;
 
 export type RecipeId = string;
 export type SurfaceId = string;
-export type ToolEntryId = string;
 export type CatalogSessionId = string;
 
 /** Recipe / Surface publish lifecycle (D-078, D-098 C3). */
@@ -189,16 +188,10 @@ export interface SurfaceRecipeRef {
   visible: boolean;
 }
 
-/** Surface → static tool entry ref (no tool publish lifecycle). */
-export interface SurfaceToolRef {
-  toolEntryId: ToolEntryId;
-  order: number;
-  visible: boolean;
-}
-
 /**
  * Pure orchestration Surface revision (D-078).
  * References only — no copied prompt / model / quote / route fields.
+ * Standalone tool refs retired (D-177 / #419).
  */
 export interface CreationSurfaceRevision {
   surfaceId: SurfaceId;
@@ -206,7 +199,6 @@ export interface CreationSurfaceRevision {
   revisionId: SurfaceRevisionId;
   status: CatalogArtifactStatus;
   recipeRefs: SurfaceRecipeRef[];
-  toolEntryRefs: SurfaceToolRef[];
   contentHash: string;
   actorId: string;
   reason: string;
@@ -223,22 +215,8 @@ export interface BrowserSurfaceProjection {
   revisionId: SurfaceRevisionId;
   status: CatalogArtifactStatus;
   recipeRefs: SurfaceRecipeRef[];
-  toolEntryRefs: SurfaceToolRef[];
   contentHash: string;
   recipes: BrowserRecipeProjection[];
-}
-
-/** Static tool registry seed entry (D-098 C3 — no publish lifecycle). */
-export type CreativeToolKind = 'composer_recipe' | 'standalone_tool';
-export type CreativeToolContainer = 'dialog' | 'route' | 'workspace';
-
-export interface CreativeToolEntry {
-  id: ToolEntryId;
-  label: string;
-  summary: string;
-  kind: CreativeToolKind;
-  container?: CreativeToolContainer;
-  order: number;
 }
 
 /** Static lens seed (enum projection; no publish lifecycle). */

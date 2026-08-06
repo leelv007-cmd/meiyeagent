@@ -25,8 +25,6 @@ import { FullscreenCatalogPanel } from './fullscreen-catalog-panel';
 import { resolveComposerCardGridLayout } from './mobile-layout';
 import { RecipePillRow } from './recipe-pill-row';
 import { listColdCardsFromSeeds } from './recipe-cards';
-import { ComposerToolsStrip } from './composer-tools-strip';
-import { COMPOSER_TOOL_ENTRY_SEEDS } from './tool-entry-seeds';
 
 afterEach(() => {
   cleanup();
@@ -239,11 +237,9 @@ describe('catalog search gate + return restore', () => {
   function CatalogHarness({
     recipeCount,
     includeDrafts = 0,
-    withVerifiedTool = false,
   }: {
     recipeCount: number;
     includeDrafts?: number;
-    withVerifiedTool?: boolean;
   }) {
     const [state, setState] = useState<CatalogUiState>(() =>
       createCatalogUiState({ tab: 'templates' })
@@ -263,18 +259,7 @@ describe('catalog search gate + return restore', () => {
         <FullscreenCatalogPanel
           state={state}
           onStateChange={setState}
-          source={{
-            recipes,
-            ...(withVerifiedTool
-              ? {
-                  tools: COMPOSER_TOOL_ENTRY_SEEDS.map((tool) =>
-                    tool.id === 'tool.multi_size'
-                      ? { ...tool, capabilityPublished: true }
-                      : tool
-                  ),
-                }
-              : {}),
-          }}
+          source={{ recipes }}
           onBack={(snap) => setBackSnap(JSON.stringify(snap))}
         />
         <div data-testid="back-snap">{backSnap}</div>
@@ -304,24 +289,24 @@ describe('catalog search gate + return restore', () => {
 
   it('back captures tab/filter/scroll/focus for restore', async () => {
     const user = userEvent.setup();
-    render(<CatalogHarness recipeCount={6} withVerifiedTool />);
+    render(<CatalogHarness recipeCount={6} />);
 
-    await user.click(screen.getByTestId('composer-catalog-tab-tools'));
     expect(screen.getByTestId('composer-fullscreen-catalog')).toHaveAttribute(
       'data-tab',
-      'tools'
+      'templates'
     );
+    expect(
+      screen.queryByTestId('composer-catalog-tab-tools')
+    ).not.toBeInTheDocument();
 
-    await user.click(screen.getByTestId('composer-catalog-category-image'));
-    await user.click(
-      screen.getByTestId('composer-catalog-item-tool.multi_size')
-    );
+    await user.click(screen.getByTestId('composer-catalog-category-copy'));
+    await user.click(screen.getByTestId('composer-catalog-item-recipe.item_0'));
     await user.click(screen.getByTestId('composer-catalog-back'));
 
     const snap = screen.getByTestId('back-snap').textContent ?? '';
-    expect(snap).toContain('"tab":"tools"');
-    expect(snap).toContain('"category":"image"');
-    expect(snap).toContain('tool.multi_size');
+    expect(snap).toContain('"tab":"templates"');
+    expect(snap).toContain('"category":"copy"');
+    expect(snap).toContain('recipe.item_0');
   });
 
   it('projectFullscreenCatalogView pure gate matches panel attrs', () => {
@@ -332,35 +317,5 @@ describe('catalog search gate + return restore', () => {
     );
     expect(view.showSearch).toBe(false);
     expect(view.publishedVisibleCount).toBe(11);
-  });
-});
-
-describe('tools strip caps', () => {
-  it('mobile hides unverified ordinary tools and has no Pro Studio banner', () => {
-    const opens: string[] = [];
-    render(
-      <ComposerToolsStrip
-        viewport="mobile"
-        onOpenTool={(href) => opens.push(href)}
-      />
-    );
-    const strip = screen.getByTestId('composer-tools-strip');
-    expect(strip).toHaveAttribute('data-ordinary-cap', '2');
-    expect(strip).toHaveAttribute('data-ordinary-count', '0');
-    expect(
-      screen.queryByTestId('composer-pro-studio-banner')
-    ).not.toBeInTheDocument();
-  });
-
-  it('desktop shows ≤3 ordinary tools and no Pro Studio banner', () => {
-    render(<ComposerToolsStrip viewport="desktop" />);
-    const strip = screen.getByTestId('composer-tools-strip');
-    expect(strip).toHaveAttribute('data-ordinary-cap', '3');
-    expect(
-      Number(strip.getAttribute('data-ordinary-count'))
-    ).toBeLessThanOrEqual(3);
-    expect(
-      screen.queryByTestId('composer-pro-studio-banner')
-    ).not.toBeInTheDocument();
   });
 });

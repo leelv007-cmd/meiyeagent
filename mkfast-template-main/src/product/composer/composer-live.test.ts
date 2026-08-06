@@ -4,7 +4,6 @@ import { describe, it } from 'node:test';
 import type {
   BrowserSurfaceProjection,
   ComposerSubmissionSignedFields,
-  CreativeToolEntry,
   ProductQuoteSnapshot,
 } from '@meiye/contracts';
 
@@ -45,7 +44,7 @@ describe('Composer live public contracts', () => {
     ]);
   });
 
-  it('loads live Surface recipes and ToolEntry registry for fullscreen catalog', async () => {
+  it('loads live Surface recipes for fullscreen catalog', async () => {
     const calls: unknown[] = [];
     const surface = {
       surfaceId: 'surface.home.launch',
@@ -53,30 +52,19 @@ describe('Composer live public contracts', () => {
       revisionId: 'surface.home.launch@7',
       status: 'published',
       recipeRefs: [],
-      toolEntryRefs: [],
       contentHash: 'hash',
       recipes: [],
     } satisfies BrowserSurfaceProjection;
-    const tools: CreativeToolEntry[] = [
-      {
-        id: 'tool.multi_size',
-        label: '服务端多尺寸',
-        summary: '服务端工具说明',
-        kind: 'standalone_tool',
-        container: 'route',
-        order: 9,
-      },
-    ];
     const result = await fetchComposerCatalogSource(
       undefined,
       async (...args) => {
         calls.push(args);
-        return args[1].action === 'surface_browser' ? surface : tools;
+        return surface;
       }
     );
 
     assert.equal(result.surface, surface);
-    assert.deepEqual(result.tools, tools);
+    assert.equal('tools' in result, false);
     assert.deepEqual(calls, [
       [
         'creation-experience',
@@ -86,7 +74,6 @@ describe('Composer live public contracts', () => {
         },
         undefined,
       ],
-      ['creation-experience', { action: 'tool_list', payload: {} }, undefined],
     ]);
   });
 

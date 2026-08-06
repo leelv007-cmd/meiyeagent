@@ -7,7 +7,6 @@ import { describe, it } from 'node:test';
 import {
   LAUNCH_RECIPE_SPECS,
   LAUNCH_SURFACE_ID,
-  LAUNCH_TOOL_ENTRY_REFS,
   REUSE_CONTENT_ACTION_LABEL,
   REUSE_CONTENT_FAMILY_ID,
   listLaunchCardFamilies,
@@ -224,17 +223,6 @@ describe('launch seeds (D-082 / D-083)', () => {
     assert.equal(defaultLens, undefined);
   });
 
-  it('ships no Pro Studio tool on the launch Surface (D-170 retired)', () => {
-    assert.deepEqual(
-      LAUNCH_TOOL_ENTRY_REFS.map((r) => r.toolEntryId),
-      [],
-    );
-    assert.equal(
-      LAUNCH_TOOL_ENTRY_REFS.some((r) => r.toolEntryId === 'tool.pro_studio'),
-      false,
-    );
-  });
-
   it('publishes all formal seeds through the Recipe Studio four-gate chain', async () => {
     const { repository, service, result } = await seedLaunchCatalogInMemory();
     assert.equal(result.recipes.length, 9);
@@ -265,7 +253,10 @@ describe('launch seeds (D-082 / D-083)', () => {
     assert.equal(result.surface.status, 'published');
     assert.equal(result.surface.surfaceId, LAUNCH_SURFACE_ID);
     assert.equal(result.surface.recipeRefs.length, 9);
-    assert.equal(result.surface.toolEntryRefs.length, 0);
+    assert.equal(
+      'toolEntryRefs' in (result.surface as unknown as Record<string, unknown>),
+      false,
+    );
 
     const browser = await service.projectBrowserSurface(LAUNCH_SURFACE_ID);
     assert.equal(browser.recipes.length, 9);

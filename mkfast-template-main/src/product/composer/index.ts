@@ -5,8 +5,8 @@
  *
  * #96: six-card grid, RecipePatchPreview surface, apply tip,
  * T1 brief chips re-hang (no expand-four-card path).
- * #97: mobile two-col layout, fullscreen dual-tab catalog, single bottom sheet,
- * home tools strip + Pro Studio gate, typed ToolHandoff.
+ * #97: mobile two-col layout, fullscreen templates catalog, single bottom sheet.
+ * Standalone tools / ToolHandoff retired (D-177 / #419).
  * #98: conditional Brief surface + GL-23 quota blocking card with inline redeem.
  * #105: ComposerHome is the dashboard primary creation entry; legacy
  * T6 scene chips / ?workId= bridge retired.
@@ -295,63 +295,13 @@ export {
 } from './composer-nav';
 
 export {
-  FORBIDDEN_TOOL_HANDOFF_KEYS,
-  STANDALONE_TOOL_ENTRY_IDS,
-  TOOL_HANDOFF_ALLOWED_KEYS,
-  TOOL_HANDOFF_FORBIDDEN_WRITES,
-  TOOL_SOURCE_KINDS,
-  assertToolHandoffUrlSafe,
-  buildToolOpenHref,
-  findForbiddenToolHandoffKey,
-  openToolWithHandoff,
-  parseToolHandoffFromSearchParams,
-  projectToolHandoff,
-  returnFromToolHandoff,
-  serializeToolHandoffToSearchParams,
-  type StandaloneToolEntryId,
-  type ToolHandoff,
-  type ToolHandoffAllowedKey,
-  type ToolHandoffOpenResult,
-  type ToolHandoffValidation,
-  type ToolHandoffWriteKind,
-  type ToolSourceKind,
-} from './tool-handoff';
-
-export {
-  COMPOSER_TOOL_ENTRY_SEEDS,
-  TOOL_CATALOG_CATEGORIES,
-  TOOL_CATALOG_CATEGORY_LABELS,
-  getComposerToolEntrySeed,
-  listComposerToolEntrySeeds,
-  type ComposerToolEntrySeed,
-  type ToolCatalogCategory,
-} from './tool-entry-seeds';
-
-export {
-  ORDINARY_TOOL_CAP,
-  listOrdinaryHomeTools,
-  openComposerTool,
-  projectComposerToolsStrip,
-  type ComposerToolChipView,
-  type ComposerToolsStripInput,
-  type ComposerToolsStripView,
-  type ComposerViewportKind,
-} from './composer-tools';
-export {
-  ComposerToolsStrip,
-  type ComposerToolsStripProps,
-} from './composer-tools-strip';
-
-export {
   CATALOG_SEARCH_GATE,
   CATALOG_TABS,
   CATALOG_TAB_LABELS,
   TEMPLATE_CATALOG_CATEGORIES,
   TEMPLATE_CATALOG_CATEGORY_LABELS,
   VIEW_ALL_TEMPLATES_LABEL,
-  VIEW_ALL_TOOLS_LABEL,
   buildViewAllTemplatesHref,
-  buildViewAllToolsHref,
   captureCatalogReturnSnapshot,
   catalogStateFromSearch,
   catalogStateToHref,

@@ -32,9 +32,6 @@ export type {
   CreationLensSeed,
   CreationRecipeVersion,
   CreationSurfaceRevision,
-  CreativeToolContainer,
-  CreativeToolEntry,
-  CreativeToolKind,
   HighRiskFactKind,
   RecipeDeliveryDefaults,
   RecipeDraftFields,
@@ -51,8 +48,6 @@ export type {
   SurfaceId,
   SurfaceRecipeRef,
   SurfaceRevisionId,
-  SurfaceToolRef,
-  ToolEntryId,
 } from '@meiye/contracts';
 
 import type {
@@ -67,8 +62,6 @@ import type {
   SurfaceId,
   SurfaceRecipeRef,
   SurfaceRevisionId,
-  SurfaceToolRef,
-  ToolEntryId,
 } from '@meiye/contracts';
 
 /** Actor / reason / correlation carried on every mutating catalog write. */
@@ -130,7 +123,6 @@ export interface RollbackRecipeInput extends CatalogCasMeta {
 
 export interface SurfaceBodyInput {
   recipeRefs: SurfaceRecipeRef[];
-  toolEntryRefs?: SurfaceToolRef[];
 }
 
 export interface DraftSurfaceInput extends CatalogCasMeta {
@@ -232,7 +224,6 @@ export interface ServerSurfaceRecord {
   revisionId: SurfaceRevisionId;
   status: import('@meiye/contracts').CatalogArtifactStatus;
   recipeRefs: SurfaceRecipeRef[];
-  toolEntryRefs: SurfaceToolRef[];
   contentHash: string;
   actorId: string;
   reason: string;
@@ -267,9 +258,4 @@ export function parseRecipeRevisionId(
   return { recipeId, revision };
 }
 
-export function isKnownToolEntryId(
-  toolEntryId: ToolEntryId,
-  known: ReadonlySet<string>,
-): boolean {
-  return known.has(toolEntryId);
-}
+

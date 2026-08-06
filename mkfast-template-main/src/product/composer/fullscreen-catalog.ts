@@ -1,17 +1,17 @@
 /**
- * Fullscreen dual-tab catalog model (C3 / #97, D-084 / D-093 / D-098 C5).
+ * Fullscreen templates catalog model (C3 / #97, D-084 / D-093 / D-098 C5).
  *
- * Tabs: 模板 | 工具. Task-language categories.
+ * Single tab: 模板. Task-language categories.
  * published-visible count + 12-item search gate (no search UI below gate).
  * Search index/match intentionally NOT implemented this ticket.
- * Return restores tab / filter / scroll / focus.
+ * Return restores filter / scroll / focus.
+ * Standalone tools tab retired (D-177 / #419).
  */
 
 import type {
   BrowserRecipeProjection,
   BrowserSurfaceProjection,
   CreationLensId,
-  CreativeToolEntry,
 } from '@meiye/contracts';
 
 import {
@@ -19,25 +19,16 @@ import {
   parseComposerCatalogSearch,
   type ComposerCatalogSearchParams,
 } from './composer-nav';
-import {
-  COMPOSER_TOOL_ENTRY_SEEDS,
-  TOOL_CATALOG_CATEGORIES,
-  TOOL_CATALOG_CATEGORY_LABELS,
-  getComposerToolEntrySeed,
-  type ComposerToolEntrySeed,
-  type ToolCatalogCategory,
-} from './tool-entry-seeds';
 
 // ---------------------------------------------------------------------------
 // Tabs & categories
 // ---------------------------------------------------------------------------
 
-export const CATALOG_TABS = ['templates', 'tools'] as const;
+export const CATALOG_TABS = ['templates'] as const;
 export type CatalogTab = (typeof CATALOG_TABS)[number];
 
 export const CATALOG_TAB_LABELS: Record<CatalogTab, string> = {
   templates: '模板',
-  tools: '工具',
 };
 
 /** Template task-language categories (D-093). */
@@ -70,7 +61,7 @@ export const CATALOG_SEARCH_GATE = 12;
 // Catalog items
 // ---------------------------------------------------------------------------
 
-export type CatalogItemKind = 'template' | 'tool';
+export type CatalogItemKind = 'template';
 
 export type CatalogItemView = {
   id: string;
@@ -88,7 +79,6 @@ export type CatalogItemView = {
   locked?: boolean;
   lockReason?: string;
   lensId?: CreationLensId | null;
-  toolEntryId?: string;
   recipeId?: string;
   recipeRevisionId?: string;
 };
@@ -97,53 +87,15 @@ export type CatalogItemSource = {
   /** Live surface recipes (preferred). */
   surface?: BrowserSurfaceProjection | null;
   recipes?: readonly BrowserRecipeProjection[] | null;
-  tools?: readonly ComposerToolEntrySeed[] | null;
-  /**
-   * Per-tool capability gate. Missing key → treat as open when seed says published.
-   * Explicit false → hide / do not count.
-   */
-  capabilityGateOpen?: Record<string, boolean>;
-  /**
-   * Surface tool visibility override (toolEntryId → visible).
-   * When surface.toolEntryRefs present, only visible refs count.
-   */
-  toolVisibility?: Record<string, boolean>;
 };
 
-/** Join live server facts with browser-only category/entitlement presentation. */
+/** Join live server surface with browser-only category presentation. */
 export function catalogItemSourceFromLive(
-  surface: BrowserSurfaceProjection,
-  tools: readonly CreativeToolEntry[]
+  surface: BrowserSurfaceProjection
 ): CatalogItemSource {
-  const refs = new Map(
-    surface.toolEntryRefs.map((ref) => [ref.toolEntryId, ref] as const)
-  );
-  const hasSurfaceToolRefs = refs.size > 0;
-  const projectedTools = tools.flatMap((tool) => {
-    const presentation = getComposerToolEntrySeed(tool.id);
-    if (!presentation || tool.kind !== 'standalone_tool') return [];
-    const ref = refs.get(tool.id);
-    return [
-      {
-        ...presentation,
-        label: tool.label,
-        summary: tool.summary,
-        kind: tool.kind,
-        container: tool.container ?? presentation.container,
-        order: ref?.order ?? tool.order,
-      },
-    ];
-  });
   return {
     surface,
     recipes: surface.recipes,
-    tools: projectedTools,
-    toolVisibility: Object.fromEntries(
-      projectedTools.map((tool) => [
-        tool.id,
-        hasSurfaceToolRefs ? refs.get(tool.id)?.visible === true : true,
-      ])
-    ),
   };
 }
 
@@ -177,8 +129,7 @@ export function createCatalogUiState(
 ): CatalogUiState {
   return {
     tab: partial.tab ?? 'templates',
-    category:
-      partial.category ?? (partial.tab === 'tools' ? 'all' : 'featured'),
+    category: partial.category ?? 'featured',
     scrollY: partial.scrollY ?? 0,
     focusKey: partial.focusKey ?? null,
     query: partial.query ?? '',
@@ -288,48 +239,17 @@ function projectTemplateItems(source: CatalogItemSource): CatalogItemView[] {
   });
 }
 
-function projectToolItems(source: CatalogItemSource): CatalogItemView[] {
-  const seeds = source.tools ?? COMPOSER_TOOL_ENTRY_SEEDS;
-  return seeds.map((tool) => {
-    const surfaceVisible =
-      source.toolVisibility?.[tool.id] !== false &&
-      // When surface refs exist without this id, still allow static seeds
-      // unless explicitly marked false.
-      true;
-    const capabilityOk =
-      tool.capabilityPublished &&
-      source.capabilityGateOpen?.[tool.id] !== false;
-    const publishedVisible = surfaceVisible && capabilityOk;
-    return {
-      id: tool.id,
-      kind: 'tool' as const,
-      title: tool.label,
-      summary: tool.summary,
-      order: tool.order,
-      categories: ['all', ...tool.categories],
-      publishedVisible,
-      toolEntryId: tool.id,
-      locked: tool.entitlementLocked,
-      ...(tool.entitlementLocked && tool.lockReason
-        ? { lockReason: tool.lockReason }
-        : {}),
-    };
-  });
-}
-
 export function listCatalogItems(
   tab: CatalogTab,
   source: CatalogItemSource = {}
 ): CatalogItemView[] {
-  const items =
-    tab === 'templates'
-      ? projectTemplateItems(source)
-      : projectToolItems(source);
+  void tab;
+  const items = projectTemplateItems(source);
   return items.slice().sort((a, b) => a.order - b.order);
 }
 
 /**
- * Count only published && visible && capability-gated-open items.
+ * Count only published && visible items.
  * Unpublished / not-through-gate items do not count (D-093).
  */
 export function countPublishedVisible(
@@ -355,15 +275,10 @@ export function listCategoriesForTab(tab: CatalogTab): {
   id: string;
   label: string;
 }[] {
-  if (tab === 'templates') {
-    return TEMPLATE_CATALOG_CATEGORIES.map((id) => ({
-      id,
-      label: TEMPLATE_CATALOG_CATEGORY_LABELS[id],
-    }));
-  }
-  return TOOL_CATALOG_CATEGORIES.map((id) => ({
+  void tab;
+  return TEMPLATE_CATALOG_CATEGORIES.map((id) => ({
     id,
-    label: TOOL_CATALOG_CATEGORY_LABELS[id as ToolCatalogCategory],
+    label: TEMPLATE_CATALOG_CATEGORY_LABELS[id],
   }));
 }
 
@@ -432,8 +347,7 @@ export function projectFullscreenCatalogView(
     focusKey: state.focusKey,
     view: {
       empty: items.length === 0,
-      emptyLabel:
-        state.tab === 'templates' ? '暂无可用模板' : '暂无可用创作工具',
+      emptyLabel: '暂无可用模板',
     },
   };
 }
@@ -450,7 +364,7 @@ export function setCatalogTab(
   return {
     ...state,
     tab,
-    category: tab === 'tools' ? 'all' : 'featured',
+    category: 'featured',
     // Switching tab clears query (and search only reappears if gate open).
     query: '',
     scrollY: 0,
@@ -506,7 +420,7 @@ export function catalogStateFromSearch(
   const parsed: ComposerCatalogSearchParams = parseComposerCatalogSearch(raw);
   return createCatalogUiState({
     tab: parsed.tab ?? 'templates',
-    category: parsed.category ?? (parsed.tab === 'tools' ? 'all' : 'featured'),
+    category: parsed.category ?? 'featured',
     query: parsed.q ?? '',
     surfaceRevisionId: parsed.surfaceRevisionId ?? null,
     returnKey: parsed.returnKey ?? null,
@@ -528,18 +442,10 @@ export function catalogStateToHref(state: CatalogUiState): string {
 
 /** Labels for "查看全部" entry points on the composer home. */
 export const VIEW_ALL_TEMPLATES_LABEL = '查看全部模板';
-export const VIEW_ALL_TOOLS_LABEL = '查看全部创作工具';
 
 export function buildViewAllTemplatesHref(returnKey?: string): string {
   return buildComposerCatalogHref({
     tab: 'templates',
-    ...(returnKey ? { returnKey } : {}),
-  });
-}
-
-export function buildViewAllToolsHref(returnKey?: string): string {
-  return buildComposerCatalogHref({
-    tab: 'tools',
     ...(returnKey ? { returnKey } : {}),
   });
 }

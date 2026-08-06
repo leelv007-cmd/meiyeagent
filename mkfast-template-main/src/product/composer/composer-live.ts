@@ -8,7 +8,6 @@ import type {
   BrowserSurfaceProjection,
   ComposerSubmissionSignedFields,
   CreationLensId,
-  CreativeToolEntry,
   ProductQuoteSnapshot,
   RecipeDraftFields,
   RecipePatchPreview,
@@ -77,17 +76,9 @@ export async function fetchComposerCatalogSource(
   query: ComposerQueryTransport = queryP1
 ): Promise<{
   surface: BrowserSurfaceProjection;
-  tools: CreativeToolEntry[];
 }> {
-  const [surface, tools] = await Promise.all([
-    fetchComposerSurface(signal, query),
-    query(
-      'creation-experience',
-      { action: 'tool_list', payload: {} },
-      signal
-    ) as Promise<CreativeToolEntry[]>,
-  ]);
-  return { surface, tools };
+  const surface = await fetchComposerSurface(signal, query);
+  return { surface };
 }
 
 export async function fetchComposerCatalog(

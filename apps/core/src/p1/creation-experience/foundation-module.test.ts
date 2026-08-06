@@ -49,7 +49,7 @@ describe('Creation Experience FoundationModule seam', () => {
     assert.equal(module.name, 'creation-experience');
   });
 
-  it('lists static lenses and tools via query', async () => {
+  it('lists static lenses via query', async () => {
     const { service } = createService();
     const lenses = await service.queryModule(context, 'creation-experience', {
       action: 'lens_list',
@@ -59,13 +59,6 @@ describe('Creation Experience FoundationModule seam', () => {
       (lenses as Array<{ id: string }>).map((lens) => lens.id),
       ['copy', 'image_text', 'video'],
     );
-
-    const tools = await service.queryModule(context, 'creation-experience', {
-      action: 'tool_list',
-      payload: {},
-    });
-    assert.ok(Array.isArray(tools));
-    assert.ok((tools as unknown[]).length >= 1);
   });
 
   it('projects all Brief safety signals through the public module query', async () => {
@@ -414,13 +407,6 @@ describe('Creation Experience FoundationModule seam', () => {
                 lensId: 'copy',
                 order: 0,
                 featured: true,
-                visible: true,
-              },
-            ],
-            toolEntryRefs: [
-              {
-                toolEntryId: 'tool.multi_size',
-                order: 0,
                 visible: true,
               },
             ],

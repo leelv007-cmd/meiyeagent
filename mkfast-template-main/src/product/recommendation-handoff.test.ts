@@ -64,7 +64,6 @@ const viralSurface = {
       visible: true,
     },
   ],
-  toolEntryRefs: [],
   contentHash: 'surface-hash',
   recipes: [
     {

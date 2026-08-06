@@ -21,7 +21,7 @@ function snapshotFromUnknown(
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const bag = value as Record<string, unknown>;
   if (Object.keys(bag).some((key) => !ALLOWED_KEYS.has(key))) return null;
-  if (bag.tab !== 'templates' && bag.tab !== 'tools') return null;
+  if (bag.tab !== 'templates') return null;
   if (typeof bag.category !== 'string' || !bag.category) return null;
   if (
     typeof bag.scrollY !== 'number' ||

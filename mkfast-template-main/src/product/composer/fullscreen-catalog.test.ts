@@ -1,12 +1,12 @@
 /**
  * Fullscreen catalog count gate + return restore (C3 / #97, D-093 / D-098 C5).
+ * Standalone tools tab retired (D-177 / #419).
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {
   BrowserRecipeProjection,
   BrowserSurfaceProjection,
-  CreativeToolEntry,
 } from '@meiye/contracts';
 
 import {
@@ -26,11 +26,8 @@ import {
   setCatalogCategory,
   setCatalogQuery,
   setCatalogScroll,
-  setCatalogTab,
   shouldShowCatalogSearch,
 } from './fullscreen-catalog';
-import type { ComposerToolEntrySeed } from './tool-entry-seeds';
-import { COMPOSER_TOOL_ENTRY_SEEDS } from './tool-entry-seeds';
 
 function makeRecipe(
   partial: Partial<BrowserRecipeProjection> &
@@ -125,7 +122,6 @@ test('Surface-hidden recipes never render or count when every ref is hidden', ()
       featured: false,
       visible: false,
     })),
-    toolEntryRefs: [],
     contentHash: 'hash',
     recipes,
   } satisfies BrowserSurfaceProjection;
@@ -138,23 +134,7 @@ test('Surface-hidden recipes never render or count when every ref is hidden', ()
   );
 });
 
-test('capability-gated tools do not count', () => {
-  const tools: ComposerToolEntrySeed[] = Array.from({ length: 15 }, (_, i) => ({
-    id: `tool.extra_${i}` as ComposerToolEntrySeed['id'],
-    label: `工具 ${i}`,
-    summary: `说明 ${i}`,
-    kind: 'standalone_tool',
-    container: 'dialog',
-    order: i,
-    categories: ['image'],
-    capabilityPublished: i < 5, // only 5 published
-    entitlementLocked: false,
-  }));
-  assert.equal(countPublishedVisible('tools', { tools }), 5);
-  assert.equal(shouldShowCatalogSearch('tools', { tools }), false);
-});
-
-test('live Surface cannot publish an ordinary tool without a verified capability', () => {
+test('live Surface projects template items from server recipes', () => {
   const recipe = makeRecipe({
     recipeId: 'recipe.live',
     revisionId: 'recipe.live@7',
@@ -176,53 +156,20 @@ test('live Surface cannot publish an ordinary tool without a verified capability
         visible: true,
       },
     ],
-    toolEntryRefs: [
-      { toolEntryId: 'tool.multi_size', order: 4, visible: true },
-      { toolEntryId: 'tool.batch_bg_remove', order: 5, visible: false },
-    ],
     recipes: [recipe],
   } satisfies BrowserSurfaceProjection;
-  const tools: CreativeToolEntry[] = [
-    {
-      id: 'tool.multi_size',
-      label: '服务端多尺寸',
-      summary: '服务端说明',
-      kind: 'standalone_tool',
-      container: 'route',
-      order: 9,
-    },
-    {
-      id: 'tool.batch_bg_remove',
-      label: '不可见工具',
-      summary: '不应渲染',
-      kind: 'standalone_tool',
-      container: 'dialog',
-      order: 10,
-    },
-  ];
 
-  const source = catalogItemSourceFromLive(surface, tools);
+  const source = catalogItemSourceFromLive(surface);
   const templateItems = listCatalogItems('templates', source);
   assert.equal(templateItems[0]?.title, '服务端模板');
   assert.equal(templateItems[0]?.recipeRevisionId, 'recipe.live@7');
-  const toolItems = listCatalogItems('tools', source);
-  assert.ok(toolItems.every((item) => item.publishedVisible === false));
-  assert.equal(countPublishedVisible('tools', source), 0);
+  assert.equal(source.surface, surface);
+  assert.equal(source.recipes, surface.recipes);
 });
 
-test('first-ship tool seeds are below search gate', () => {
-  assert.ok(COMPOSER_TOOL_ENTRY_SEEDS.length < CATALOG_SEARCH_GATE);
-  assert.equal(
-    shouldShowCatalogSearch('tools', { tools: COMPOSER_TOOL_ENTRY_SEEDS }),
-    false
-  );
-});
-
-test('task-language categories for both tabs', () => {
+test('task-language categories for templates tab', () => {
   const templateCats = listCategoriesForTab('templates').map((c) => c.id);
   assert.deepEqual(templateCats, [...TEMPLATE_CATALOG_CATEGORIES]);
-  const toolCats = listCategoriesForTab('tools').map((c) => c.id);
-  assert.deepEqual(toolCats, ['all', 'image', 'video', 'publish']);
 });
 
 test('filter by category keeps only published-visible matches', () => {
@@ -251,32 +198,20 @@ test('filter by category keeps only published-visible matches', () => {
 });
 
 test('return restore snapshot round-trips tab/filter/scroll/focus', () => {
-  let state = createCatalogUiState({ tab: 'tools', category: 'image' });
+  let state = createCatalogUiState({ tab: 'templates', category: 'video' });
   state = setCatalogScroll(state, 420);
-  state = { ...state, focusKey: 'tool.multi_size', query: '' };
+  state = { ...state, focusKey: 'recipe.video_1', query: '' };
   const snap = captureCatalogReturnSnapshot(state);
-  assert.equal(snap.tab, 'tools');
-  assert.equal(snap.category, 'image');
+  assert.equal(snap.tab, 'templates');
+  assert.equal(snap.category, 'video');
   assert.equal(snap.scrollY, 420);
-  assert.equal(snap.focusKey, 'tool.multi_size');
+  assert.equal(snap.focusKey, 'recipe.video_1');
 
   const restored = restoreCatalogUiState(snap);
-  assert.equal(restored.tab, 'tools');
-  assert.equal(restored.category, 'image');
+  assert.equal(restored.tab, 'templates');
+  assert.equal(restored.category, 'video');
   assert.equal(restored.scrollY, 420);
-  assert.equal(restored.focusKey, 'tool.multi_size');
-});
-
-test('setCatalogTab resets category and scroll', () => {
-  let state = createCatalogUiState({
-    tab: 'templates',
-    category: 'video',
-    scrollY: 100,
-  });
-  state = setCatalogTab(state, 'tools');
-  assert.equal(state.tab, 'tools');
-  assert.equal(state.category, 'all');
-  assert.equal(state.scrollY, 0);
+  assert.equal(restored.focusKey, 'recipe.video_1');
 });
 
 test('setCatalogQuery forced empty when below search gate', () => {
@@ -288,7 +223,7 @@ test('setCatalogQuery forced empty when below search gate', () => {
 
 test('catalog URL search is allowlisted only', () => {
   const state = createCatalogUiState({
-    tab: 'tools',
+    tab: 'templates',
     category: 'video',
     returnKey: 'rk',
     surfaceRevisionId: 'surf@1',
@@ -297,13 +232,13 @@ test('catalog URL search is allowlisted only', () => {
   // Force query present even below gate for href serialization check.
   const href = catalogStateToHref({ ...state, query: 'x' });
   assert.ok(href.startsWith('/dashboard/catalog'));
-  assert.ok(href.includes('tab=tools'));
+  assert.ok(href.includes('tab=templates'));
   assert.ok(href.includes('category=video'));
   assert.ok(href.includes('returnKey=rk'));
   assert.ok(!/prompt|provider|userText|body/i.test(href));
 
   const parsed = catalogStateFromSearch(new URL(href, 'http://x').searchParams);
-  assert.equal(parsed.tab, 'tools');
+  assert.equal(parsed.tab, 'templates');
   assert.equal(parsed.category, 'video');
 });
 
@@ -312,4 +247,12 @@ test('setCatalogCategory updates filter without changing tab', () => {
   state = setCatalogCategory(state, 'reuse');
   assert.equal(state.tab, 'templates');
   assert.equal(state.category, 'reuse');
+});
+
+test('empty catalog label is templates-only', () => {
+  const view = projectFullscreenCatalogView(createCatalogUiState(), {
+    recipes: [],
+  });
+  assert.equal(view.view.empty, true);
+  assert.equal(view.view.emptyLabel, '暂无可用模板');
 });

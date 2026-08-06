@@ -82,11 +82,6 @@ type SurfaceRecord = {
   revisionId: string;
   status: CatalogArtifactStatus;
   recipeRefs: SurfaceRecipeRef[];
-  toolEntryRefs: Array<{
-    toolEntryId: string;
-    order: number;
-    visible: boolean;
-  }>;
   rolledBackToRevision?: number | null;
 };
 
@@ -799,7 +794,6 @@ function SurfaceEditor({ api }: { api: CreationExperienceAdminApi }) {
       reason: reason.trim(),
       body: {
         recipeRefs: refs,
-        toolEntryRefs: [],
       },
     });
   };

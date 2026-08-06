@@ -20,7 +20,6 @@ const surface = {
       visible: true,
     },
   ],
-  toolEntryRefs: [],
   contentHash: 'surface-hash',
   recipes: [
     {

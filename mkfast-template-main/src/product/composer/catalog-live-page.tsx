@@ -1,10 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 
-import { saveCatalogReturnSnapshot } from './catalog-return-store';
 import type { CatalogSearch } from './catalog-route-model';
 import {
-  captureCatalogReturnSnapshot,
   catalogItemSourceFromLive,
   catalogStateFromSearch,
   restoreCatalogUiState,
@@ -17,7 +15,6 @@ import {
   fetchComposerCatalogSource,
   type ComposerQueryTransport,
 } from './composer-live';
-import { openComposerTool } from './composer-tools';
 import { loadCatalogReturnSnapshot } from './catalog-return-store';
 
 export type CatalogRecipeSelection = {
@@ -41,7 +38,7 @@ export function CatalogLivePage({
   storage,
   onReplaceState,
   onSelectRecipe,
-  onNavigateHref,
+  onNavigateHref: _onNavigateHref,
   onBack,
 }: CatalogLivePageProps) {
   const initialState = useMemo(() => {
@@ -60,10 +57,7 @@ export function CatalogLivePage({
   const source = useMemo(
     () =>
       sourceQuery.data
-        ? catalogItemSourceFromLive(
-            sourceQuery.data.surface,
-            sourceQuery.data.tools
-          )
+        ? catalogItemSourceFromLive(sourceQuery.data.surface)
         : undefined,
     [sourceQuery.data]
   );
@@ -84,27 +78,11 @@ export function CatalogLivePage({
   const selectItem = (item: CatalogItemView) => {
     if (!sourceQuery.data) return;
     if (item.locked) return;
-    if (item.kind === 'template') {
-      if (!item.recipeRevisionId) return;
-      onSelectRecipe({
-        recipeRevisionId: item.recipeRevisionId,
-        surfaceRevisionId: sourceQuery.data.surface.revisionId,
-      });
-      return;
-    }
-    if (!item.toolEntryId) return;
-    const snapshot = captureCatalogReturnSnapshot({
-      ...state,
-      focusKey: item.id,
+    if (item.kind !== 'template' || !item.recipeRevisionId) return;
+    onSelectRecipe({
+      recipeRevisionId: item.recipeRevisionId,
       surfaceRevisionId: sourceQuery.data.surface.revisionId,
     });
-    const returnKey = saveCatalogReturnSnapshot(snapshot, storage);
-    const opened = openComposerTool(item.toolEntryId, {
-      returnToDraftKey: returnKey,
-      focusKey: item.id,
-      surfaceRevisionId: sourceQuery.data.surface.revisionId,
-    });
-    onNavigateHref(opened.href);
   };
 
   if (sourceQuery.isPending) {

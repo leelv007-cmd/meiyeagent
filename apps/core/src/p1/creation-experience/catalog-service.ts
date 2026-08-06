@@ -15,7 +15,7 @@ import {
 } from './browser-projection.js';
 import type { CreationExperienceCatalogRepository } from './memory-repository.js';
 import { validateRecipeForComposer } from './recipe-validator.js';
-import { TOOL_ENTRY_ID_SET } from './static-seeds.js';
+
 import type {
   CatalogSessionFreeze,
   DraftRecipeInput,
@@ -185,7 +185,6 @@ function recipeContentPayload(
 
 function normalizeSurfaceBody(body: SurfaceBodyInput): {
   recipeRefs: ServerSurfaceRecord['recipeRefs'];
-  toolEntryRefs: ServerSurfaceRecord['toolEntryRefs'];
 } {
   if (!Array.isArray(body.recipeRefs)) {
     throw new P1DomainError('INVALID_STATE', 'Surface recipeRefs is required.');
@@ -213,33 +212,7 @@ function normalizeSurfaceBody(body: SurfaceBodyInput): {
     };
   });
 
-  const toolEntryRefs = (body.toolEntryRefs ?? []).map((ref, index) => {
-    if (!ref.toolEntryId?.trim()) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        `Surface toolEntryRefs[${index}].toolEntryId is required.`,
-      );
-    }
-    if (!TOOL_ENTRY_ID_SET.has(ref.toolEntryId)) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        `Surface toolEntryRefs[${index}] references unknown static tool "${ref.toolEntryId}".`,
-      );
-    }
-    if (!Number.isInteger(ref.order)) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        `Surface toolEntryRefs[${index}].order must be an integer.`,
-      );
-    }
-    return {
-      toolEntryId: ref.toolEntryId.trim(),
-      order: ref.order,
-      visible: ref.visible !== false,
-    };
-  });
-
-  return { recipeRefs, toolEntryRefs };
+  return { recipeRefs };
 }
 
 function bodyFromRecipe(record: ServerRecipeRecord): RecipeBodyInput {
@@ -277,7 +250,6 @@ function bodyFromRecipe(record: ServerRecipeRecord): RecipeBodyInput {
 function bodyFromSurface(record: ServerSurfaceRecord): SurfaceBodyInput {
   return {
     recipeRefs: structuredClone(record.recipeRefs),
-    toolEntryRefs: structuredClone(record.toolEntryRefs),
   };
 }
 
@@ -687,13 +659,6 @@ export class CreationExperienceCatalogService {
       if (recipe.lensId !== ref.lensId) {
         errors.push(
           `recipeRefs[${index}] lens mismatch: ref=${ref.lensId} recipe=${recipe.lensId}`,
-        );
-      }
-    }
-    for (const [index, ref] of record.toolEntryRefs.entries()) {
-      if (!TOOL_ENTRY_ID_SET.has(ref.toolEntryId)) {
-        errors.push(
-          `toolEntryRefs[${index}] unknown static tool "${ref.toolEntryId}"`,
         );
       }
     }

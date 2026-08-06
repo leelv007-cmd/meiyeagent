@@ -209,7 +209,7 @@ describe('Recipe / Surface visual lifecycle editor', () => {
       'surface_draft',
       expect.objectContaining({
         body: expect.objectContaining({
-          toolEntryRefs: [],
+          recipeRefs: expect.any(Array),
         }),
       }),
       expect.any(String)

@@ -56,10 +56,7 @@ import {
 } from './postgres-brief-revision-context.js';
 import type { CreationExperienceCatalogRepository } from './memory-repository.js';
 import { MemoryCreationExperienceCatalogRepository } from './memory-repository.js';
-import {
-  listCreationLensSeeds,
-  listToolEntrySeeds,
-} from './static-seeds.js';
+import { listCreationLensSeeds } from './static-seeds.js';
 import type {
   DraftRecipeInput,
   DraftSurfaceInput,
@@ -959,8 +956,6 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
         );
       case 'lens_list':
         return listCreationLensSeeds();
-      case 'tool_list':
-        return listToolEntrySeeds();
       case 'brief_project': {
         const briefContextId = stringField(value, 'briefContextId');
         const revisionContext =

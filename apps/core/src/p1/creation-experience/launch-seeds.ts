@@ -19,7 +19,6 @@ import type {
   RecipeSourceRequirement,
   StoreFactKind,
   SurfaceId,
-  SurfaceToolRef,
 } from '@meiye/contracts';
 import type { EvalRun } from '../../contracts/index.js';
 import { CreationExperienceCatalogService } from './catalog-service.js';
@@ -433,14 +432,6 @@ export const LAUNCH_RECIPE_SPECS: readonly LaunchRecipeSeedSpec[] = [
   },
 ];
 
-/**
- * Capability-verified standalone tools on the first-ship Surface.
- * Ordinary tools are intentionally absent until their complete execution chain
- * is wired and acceptance-tested; a registry row alone is not publishable.
- * Pro Studio retired (D-170) — no workspace tool on launch Surface.
- */
-export const LAUNCH_TOOL_ENTRY_REFS: readonly SurfaceToolRef[] = [];
-
 export function recipeBodyFromSpec(spec: LaunchRecipeSeedSpec): RecipeBodyInput {
   return {
     lensId: spec.lensId,
@@ -786,7 +777,6 @@ export async function publishLaunchCatalog(
         featured: spec.featured,
         visible: true,
       },
-      surfaceToolRefs: LAUNCH_TOOL_ENTRY_REFS.map((ref) => ({ ...ref })),
       ...audit,
     });
     recipes.push(production.recipe);

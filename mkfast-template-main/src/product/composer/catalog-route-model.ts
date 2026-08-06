@@ -1,5 +1,5 @@
 export type CatalogSearch = {
-  tab?: 'templates' | 'tools';
+  tab?: 'templates';
   category?: string;
   surfaceRevisionId?: string;
   returnKey?: string;
@@ -16,13 +16,11 @@ export function validateCatalogSearch(
 ): CatalogSearch {
   const tabRaw = optionalString(search.tab);
   const tab =
-    tabRaw === 'templates' || tabRaw === 'tools'
+    tabRaw === 'templates'
       ? tabRaw
       : tabRaw === 'recipe'
         ? 'templates'
-        : tabRaw === 'tool'
-          ? 'tools'
-          : undefined;
+        : undefined;
   return {
     ...(tab ? { tab } : {}),
     ...(optionalString(search.category)
