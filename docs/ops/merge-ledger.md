@@ -227,3 +227,4 @@
 | 4e62a4a9 | #389 | 审计页时间/操作者/动作筛选+CSV 导出（既有查询之上，客户端过滤） | 10/10 模型测+4/4 交互测+tsc 0 err 亲跑 | 退款复核未触碰（#388 防撞）；导出=当前筛选视图 |
 | dc7a4de6 | #388 | 退款复核迁出审计页（/admin/refund-review）+敏感词治理迁出模板页（/admin/sensitive-words），仅挪挂载/导航 | ia-split 5/5+回归 40/40+tsc 0 err+敏感词 e2e 1/1 亲跑 | 路由树扩容致 result-center 推断退化，driver 补 6 处 ResultCenterSearch 注解 |
 | 40d5fb40 | #382 | 商家 user_selected 全旅程 e2e 验收门（published fixture 真 BFF/Core，含取消未注入+租户隔离+审计五轴） | Playwright 3/3 亲跑（1.4m）+核心单测 6/6+契约 2/2+双包 tsc 0 err | driver 修 fixture prompt 钉 intentNaming（stage 冻结不变量）+evidence 改查 runtime_id |
+| 407e27b9 | #390 | Catalog 死字段（capabilities/routes）撤编辑入口与 chip；下钻覆盖补 supply/cloudflare/capabilities/首页；积分套餐配置键收敛 contracts 单一来源+补 reference_numbers | core 7/7+web 30/30+双包 tsc 0 err 亲跑（rebase 后抽 15/15+7/7 复验） | 再存草稿会清历史死字段值（与移除一致） |
