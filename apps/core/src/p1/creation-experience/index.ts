@@ -52,6 +52,16 @@ export {
   type RecipeInternalTestEvidencePort,
 } from './recipe-evidence-ports.js';
 export {
+  RECIPE_EVIDENCE_REDEEM_ERRORS,
+  createRegistryBackedRecipeEvidencePorts,
+  createRegistryBackedRecipeEvaluationEvidencePort,
+  createRegistryBackedRecipeInternalTestEvidencePort,
+  redeemEvidenceReceipt,
+  redeemError,
+  type RecipeEvidenceRedeemErrorKey,
+  type RegistryBackedRecipeEvidenceRedeemDeps,
+} from './recipe-evidence-redeem.js';
+export {
   MemoryRecipeEvidenceReceiptRegistry,
   parseRecipeEvidenceReceipt,
   type ListRecipeEvidenceReceiptsFilter,
@@ -65,6 +75,7 @@ export {
   buildRecipeEvidenceReceiptId,
   derivePromptRevisionRefFromEvalRun,
   issueRecipeEvidenceReceipt,
+  issueRecipeEvidenceReceiptWithObservability,
   type IssueRecipeEvidenceInput,
   type IssueRecipeEvidenceResult,
   type RecipeEvidenceIssuerDeps,

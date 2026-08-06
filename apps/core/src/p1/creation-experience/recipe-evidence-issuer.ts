@@ -117,6 +117,38 @@ export async function issueRecipeEvidenceReceipt(
   };
 }
 
+/**
+ * Issue a receipt then optionally push observability (Langfuse). Observability
+ * is never evidence authority: failures are recorded and do not roll back the
+ * receipt or block later redeem (Spec I #396).
+ */
+export async function issueRecipeEvidenceReceiptWithObservability(
+  deps: RecipeEvidenceIssuerDeps,
+  input: IssueRecipeEvidenceInput,
+  observability?: {
+    push?: (issued: IssueRecipeEvidenceResult) => Promise<void>;
+    onPushFailure?: (error: unknown) => void;
+  },
+): Promise<
+  IssueRecipeEvidenceResult & {
+    observabilityFailure: string | null;
+  }
+> {
+  const issued = await issueRecipeEvidenceReceipt(deps, input);
+  if (!observability?.push) {
+    return { ...issued, observabilityFailure: null };
+  }
+  try {
+    await observability.push(issued);
+    return { ...issued, observabilityFailure: null };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : String(error);
+    observability.onPushFailure?.(error);
+    return { ...issued, observabilityFailure: message };
+  }
+}
+
 export function buildRecipeEvidenceReceiptId(input: {
   evidenceKind: RecipeEvidenceKind;
   runId: string;

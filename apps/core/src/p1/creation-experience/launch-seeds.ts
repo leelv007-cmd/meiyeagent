@@ -649,7 +649,7 @@ export interface PublishLaunchCatalogResult {
  * Surface recipeRefs pin the published revision ids (session freeze later).
  *
  * Launch seeds redeem through a server-side permitting evidence seam (not the
- * browser command path). Spec I will replace this with real issued receipts.
+ * browser command path). Production gates use registry-backed redeem (#396).
  */
 export async function publishLaunchCatalog(
   service: CreationExperienceCatalogService,

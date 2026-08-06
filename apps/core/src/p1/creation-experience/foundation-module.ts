@@ -45,12 +45,15 @@ import {
   adaptRecipeGovernanceFormToCompileInput,
   parseRecipeGovernanceFormInput,
 } from './recipe-governance-form.js';
+import type { EvalRunRegistryPort } from '../harness/eval-run-registry.js';
 import {
   createDefaultDenyRecipeEvaluationEvidencePort,
   createDefaultDenyRecipeInternalTestEvidencePort,
   type RecipeEvaluationEvidencePort,
   type RecipeInternalTestEvidencePort,
 } from './recipe-evidence-ports.js';
+import { createRegistryBackedRecipeEvidencePorts } from './recipe-evidence-redeem.js';
+import type { RecipeEvidenceReceiptRegistryPort } from './recipe-evidence-receipt-registry.js';
 import {
   RecipeStudioService,
   type RecipeStudioCompileInput,
@@ -399,6 +402,13 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
       skillRevisionValidation?: RecipeSkillRevisionValidationPort;
       evaluationEvidence?: RecipeEvaluationEvidencePort;
       internalTestEvidence?: RecipeInternalTestEvidencePort;
+      /**
+       * Spec I #396: when both registries are present and evidence ports are
+       * not explicitly injected, wire registry-backed redeem adapters.
+       * Explicit ports still win (tests / launch-seed permitting seams).
+       */
+      evalRunRegistry?: EvalRunRegistryPort;
+      evidenceReceiptRegistry?: RecipeEvidenceReceiptRegistryPort;
     } = {},
   ) {
     this.service =
@@ -415,6 +425,13 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
     this.observabilityEvents =
       options.observabilityEvents ?? new MemoryObservabilityEventAudit();
     this.taskObservability = options.taskObservability;
+    const registryPorts =
+      options.evalRunRegistry && options.evidenceReceiptRegistry
+        ? createRegistryBackedRecipeEvidencePorts({
+            evalRunRegistry: options.evalRunRegistry,
+            receiptRegistry: options.evidenceReceiptRegistry,
+          })
+        : null;
     this.recipeStudio = new RecipeStudioService(
       this.service,
       undefined,
@@ -422,9 +439,11 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
       {
         evaluation:
           options.evaluationEvidence ??
+          registryPorts?.evaluation ??
           createDefaultDenyRecipeEvaluationEvidencePort(),
         internalTest:
           options.internalTestEvidence ??
+          registryPorts?.internalTest ??
           createDefaultDenyRecipeInternalTestEvidencePort(),
       },
     );

@@ -2,7 +2,8 @@
  * Recipe evaluation / internal-test evidence ports (Spec D #374 seam).
  *
  * Field list is fixed for Spec I (#393–#397) implementors — do not invent extra
- * receipt fields. Default adapters deny advancement until a real issuer lands.
+ * receipt fields. Production redeem is registry-backed (#396); default-deny
+ * remains the fail-closed fallback when registries are not wired.
  */
 
 import { P1DomainError } from '../foundation/domain.js';
@@ -106,7 +107,8 @@ export interface PermittingRecipeEvidencePortOptions {
 
 /**
  * Fixture / launch-seed only: redeem a non-empty receipt id into a passing
- * receipt bound to the redeem input. Spec I replaces this for production.
+ * receipt bound to the redeem input. Production uses registry-backed redeem
+ * (#396); do not wire this into the browser command path.
  */
 export function createPermittingRecipeEvaluationEvidencePort(
   options: PermittingRecipeEvidencePortOptions = {},

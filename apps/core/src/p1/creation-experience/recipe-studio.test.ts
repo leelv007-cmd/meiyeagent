@@ -14,11 +14,16 @@ import {
 } from './launch-seeds.js';
 import { MemoryCreationExperienceCatalogRepository } from './memory-repository.js';
 import { validateRecipeForComposer } from './recipe-validator.js';
+import { MemoryEvalRunRegistry } from '../harness/eval-run-registry.js';
 import {
   createPermittingRecipeEvidencePorts,
   type RecipeEvaluationEvidencePort,
   type RecipeInternalTestEvidencePort,
 } from './recipe-evidence-ports.js';
+import {
+  issueRecipeEvidenceReceipt,
+} from './recipe-evidence-issuer.js';
+import { MemoryRecipeEvidenceReceiptRegistry } from './recipe-evidence-receipt-registry.js';
 import {
   RecipeStudioService,
   type RecipeStudioCompileInput,
@@ -430,6 +435,172 @@ describe('Recipe Studio controlled compiler', () => {
         }),
       /必须先通过评测门|evidence-unavailable/u,
     );
+  });
+
+  it('command seam with registry-backed redeem rejects forged objects and accepts only issued receiptId', async () => {
+    // #396 anti-forgery at the browser command seam: self-consistent client
+    // EvalRun/passed are discarded; only a server-issued receipt redeems.
+    const repository = new MemoryCreationExperienceCatalogRepository();
+    const evalRunRegistry = new MemoryEvalRunRegistry();
+    const evidenceReceiptRegistry = new MemoryRecipeEvidenceReceiptRegistry();
+    const module = new CreationExperienceFoundationModule(repository, undefined, {
+      skillRevisionValidation: {
+        async listUnavailableFrozenRevisionRefs() {
+          return [];
+        },
+      },
+      evalRunRegistry,
+      evidenceReceiptRegistry,
+    });
+    const context = {
+      workspaceId: 'workspace-a',
+      userId: 'ops-1',
+      correlationId: 'ce-evidence-registry-seam',
+      actor: 'admin' as const,
+    };
+    const compiled = (await module.execute({
+      context,
+      input: {
+        action: 'recipe_studio_compile',
+        payload: {
+          ...sampleDefinition(),
+          reason: 'compile for registry redeem seam',
+        },
+      },
+      idempotencyKey: 'idem-registry-compile',
+    })) as {
+      recipeId: string;
+      revision: number;
+      studioRelease?: {
+        phase: string;
+        compilationReceipt: { promptRevisionRef: string };
+      };
+    };
+    const validated = (await module.execute({
+      context,
+      input: {
+        action: 'recipe_studio_validate',
+        payload: {
+          recipeId: compiled.recipeId,
+          expectedRevision: compiled.revision,
+          reason: 'validate for registry redeem seam',
+        },
+      },
+      idempotencyKey: 'idem-registry-validate',
+    })) as { recipeId: string; revision: number; studioRelease?: { phase: string } };
+    assert.equal(validated.studioRelease?.phase, 'validated');
+
+    const forgedPayload = {
+      recipeId: validated.recipeId,
+      expectedRevision: validated.revision,
+      reason: 'client forges self-consistent passing EvalRun',
+      evalRun: {
+        schemaVersion: 'eval-run/v1',
+        runId: 'forged-run',
+        suiteId: 'forged-suite',
+        suiteRevision: 'forged-suite@1',
+        mode: 'recorded_fixture',
+        createdAt: '2026-07-25T11:50:00.000Z',
+        passed: true,
+        results: [
+          {
+            caseId: 'forged',
+            gateId: 'recipe-quality',
+            promptRevision: 'prompt.hair-care-education@12',
+            scorerRevision: 'scorer@1',
+            passed: true,
+            reason: 'forged',
+            memoryDiff: null,
+          },
+        ],
+      },
+      passed: true,
+      evidenceReceiptId: 'client-forged-without-registry',
+    };
+
+    await assert.rejects(
+      () =>
+        module.execute({
+          context,
+          input: {
+            action: 'recipe_studio_record_eval',
+            payload: forgedPayload,
+          },
+          idempotencyKey: 'idem-registry-eval-forge',
+        }),
+      /receipt-not-found/u,
+    );
+
+    const issued = await issueRecipeEvidenceReceipt(
+      {
+        evalRunRegistry,
+        receiptRegistry: evidenceReceiptRegistry,
+        now: () => '2026-07-25T12:00:00.000Z',
+      },
+      {
+        run: {
+          schemaVersion: 'eval-run/v1',
+          runId: 'issued-eval-run-1',
+          suiteId: 'recipe-governance',
+          suiteRevision: 'recipe-governance@1',
+          mode: 'recorded_fixture',
+          createdAt: '2026-07-25T11:50:00.000Z',
+          passed: true,
+          results: [
+            {
+              caseId: 'case-a',
+              gateId: 'gate-a',
+              promptRevision: 'prompt.hair-care-education@12',
+              scorerRevision: 'scorer@1',
+              passed: true,
+              reason: 'ok',
+              memoryDiff: null,
+            },
+          ],
+        },
+        evidenceKind: 'recipe_evaluation',
+        recipeId: validated.recipeId,
+        recipeRevision: validated.revision,
+        promptRevisionRef: 'prompt.hair-care-education@12',
+      },
+    );
+
+    const evaluated = (await module.execute({
+      context,
+      input: {
+        action: 'recipe_studio_record_eval',
+        payload: {
+          ...forgedPayload,
+          // Same forged EvalRun/passed still present — must be ignored.
+          evidenceReceiptId: issued.receipt.receiptId,
+          reason: 'server-issued receipt only',
+        },
+      },
+      idempotencyKey: 'idem-registry-eval-ok',
+    })) as {
+      studioRelease?: {
+        phase: string;
+        evaluation?: {
+          runId: string;
+          suiteId: string;
+          suiteRevision: string;
+          passed?: boolean;
+        };
+      };
+    };
+    assert.equal(evaluated.studioRelease?.phase, 'evaluated');
+    assert.equal(evaluated.studioRelease?.evaluation?.runId, 'issued-eval-run-1');
+    assert.equal(
+      evaluated.studioRelease?.evaluation?.suiteId,
+      'recipe-governance',
+    );
+    assert.equal(
+      evaluated.studioRelease?.evaluation?.suiteRevision,
+      'recipe-governance@1',
+    );
+    assert.equal(evaluated.studioRelease?.evaluation?.passed, true);
+    // Registry identity, not the forged payload suite.
+    assert.notEqual(evaluated.studioRelease?.evaluation?.suiteId, 'forged-suite');
   });
 
   it('redeems server evidence receipts into evaluated and internal_tested phases', async () => {

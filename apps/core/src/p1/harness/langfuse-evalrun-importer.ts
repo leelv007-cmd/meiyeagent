@@ -53,6 +53,21 @@ export class LangfuseEvalRunImporter {
     };
   }
 
+  /**
+   * Observability-only push (no registry write). Used after local put+issue so
+   * Langfuse downtime cannot block Spec I receipt issuance (#396).
+   */
+  async pushDatasetItems(run: EvalRun): Promise<{
+    datasetName: string;
+    pushedItems: number;
+  }> {
+    const datasetName = `harness-evalrun:${run.suiteId}`;
+    for (const result of run.results) {
+      await this.postDatasetItem(projectDatasetItem(run, result, datasetName));
+    }
+    return { datasetName, pushedItems: run.results.length };
+  }
+
   private async postDatasetItem(body: unknown) {
     const response = await this.fetch(this.datasetItemsUrl, {
       method: 'POST',
@@ -111,7 +126,7 @@ export function langfuseEvalRunImporterFromEnv(
   );
 }
 
-async function readEvalRunArtifact(artifactPath: string) {
+export async function readEvalRunArtifact(artifactPath: string) {
   try {
     return evalRunSchema.parse(JSON.parse(await readFile(artifactPath, 'utf8')));
   } catch (error) {

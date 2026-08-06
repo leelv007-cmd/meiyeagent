@@ -158,6 +158,9 @@ export async function createDurableCreationExperienceRuntime(input: {
         ? { taskObservability: input.taskObservability }
         : {}),
       skillRevisionValidation: input.skillRevisionValidation,
+      // Spec I #396: production redeem is registry-backed (not default-deny).
+      evalRunRegistry,
+      evidenceReceiptRegistry,
     },
   );
   const briefSubmissionGate = new CreationExperienceBriefSubmissionGate(
