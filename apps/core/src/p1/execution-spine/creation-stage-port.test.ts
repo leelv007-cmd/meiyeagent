@@ -59,6 +59,7 @@ test("the Coordinator starts the existing Harness from one frozen Composer snaps
 				},
 				assetReferences: ["asset-1"],
 			},
+			userSelectedSkillRefs: [],
 			executionSnapshot: snapshot,
 			decisionReferences: [
 				{

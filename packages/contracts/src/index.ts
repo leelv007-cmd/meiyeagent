@@ -382,6 +382,7 @@ export {
   HARNESS_STAGES,
   harnessStageSchema,
   creationModeSchema,
+  userSelectedSkillRefsSchema,
   taskIntentInputSchema,
   harnessTaskSubmissionSchema,
   assistantPatchDecisionSchema,

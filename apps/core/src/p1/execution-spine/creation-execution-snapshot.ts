@@ -13,6 +13,7 @@ import {
 	resolveComposerGenerationParams,
 	resultAdjustTextSelectionScopeSchema,
 	thinkingLevelSchema,
+	userSelectedSkillRefsSchema,
 } from "@meiye/contracts";
 import { z } from "zod";
 
@@ -241,6 +242,8 @@ const creationSubmissionCommandBaseSchema = z
 		briefContext: briefContextSchema,
 		briefConfirmation: revisionReferenceSchema.optional(),
 		contentModules: contentModulesSchema,
+		/** Merchant-confirmed Skill revision refs for this draft (default []). */
+		userSelectedSkillRefs: userSelectedSkillRefsSchema,
 	})
 	// Legacy internal commands may omit signed fields. Composer requests make
 	// the same extensible shape required below and freeze it as one object.
@@ -289,13 +292,17 @@ export const composerSubmissionBodySchema = composerSubmissionRequestBaseSchema
 	.omit({ actorId: true, workspaceId: true })
 	.superRefine(validateSubmission);
 
-export type CreationSubmissionCommand = z.infer<
+/**
+ * Input shapes (z.input): optional fields with defaults may be omitted by
+ * callers. Parse results always materialize defaults (e.g. userSelectedSkillRefs → []).
+ */
+export type CreationSubmissionCommand = z.input<
 	typeof creationSubmissionCommandSchema
 >;
-export type ComposerSubmissionRequest = z.infer<
+export type ComposerSubmissionRequest = z.input<
 	typeof composerSubmissionRequestSchema
 >;
-export type ComposerSubmissionBody = z.infer<
+export type ComposerSubmissionBody = z.input<
 	typeof composerSubmissionBodySchema
 >;
 
@@ -347,6 +354,11 @@ export const creationExecutionSnapshotSchema = z
 		briefConfirmation: revisionReferenceSchema.optional(),
 		contentModules: contentModulesSchema,
 		viralAdaptSource: composerViralAdaptSourceSchema.optional(),
+		/**
+		 * Frozen merchant Skill selection for this execution. Optional on
+		 * historical snapshots; parse defaults missing values to [].
+		 */
+		userSelectedSkillRefs: userSelectedSkillRefsSchema,
 		semanticDecision: z
 			.object({
 				sourceSnapshotId: identifierSchema,
@@ -430,6 +442,7 @@ export function createCreationExecutionSnapshot(
 			briefConfirmation: command.briefConfirmation,
 			contentModules: command.contentModules,
 			viralAdaptSource: command.viralAdaptSource,
+			userSelectedSkillRefs: command.userSelectedSkillRefs,
 		}),
 	);
 }

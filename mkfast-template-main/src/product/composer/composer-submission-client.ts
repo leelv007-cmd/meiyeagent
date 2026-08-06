@@ -1,4 +1,7 @@
-import { composerSubmissionSignedFieldsSchema } from '@meiye/contracts';
+import {
+  composerSubmissionSignedFieldsSchema,
+  userSelectedSkillRefsSchema,
+} from '@meiye/contracts';
 import { z } from 'zod';
 
 import { telemetryFetch } from '@/lib/product-telemetry';
@@ -47,6 +50,8 @@ export const composerSubmissionBodySchema = composerSubmissionSignedFieldsSchema
       })
       .strict(),
     surface: revisionReferenceSchema,
+    /** Merchant-confirmed Skill revision refs; omitted input defaults to []. */
+    userSelectedSkillRefs: userSelectedSkillRefsSchema,
   })
   .strict()
   .superRefine((submission, context) => {
@@ -97,7 +102,8 @@ const composerSubmissionResultSchema = z
   })
   .strict();
 
-export type ComposerSubmissionBody = z.infer<
+/** Input shape: optional defaulted fields (e.g. userSelectedSkillRefs) may be omitted. */
+export type ComposerSubmissionBody = z.input<
   typeof composerSubmissionBodySchema
 >;
 export type ComposerSubmissionResult = z.infer<

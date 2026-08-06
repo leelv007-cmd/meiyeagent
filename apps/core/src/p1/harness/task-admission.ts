@@ -54,6 +54,12 @@ export interface HarnessWorkflowInput {
   creationMode: 'customized' | 'free';
   rawInput: string;
   intent: TaskIntentInput;
+  /**
+   * Merchant-confirmed Skill revision refs for this task. Optional on legacy
+   * callers; Composer snapshot path always materializes an array (default []).
+   * Admission does not yet consume this for select (#379).
+   */
+  userSelectedSkillRefs?: readonly string[];
   factScope?: StoreFact['scope'];
   decisionReferences?: Array<{
     id: string;
@@ -839,6 +845,7 @@ function normalizeRequest(
     creationMode: parsed.creationMode,
     rawInput: parsed.rawInput,
     intent: parsed.intent,
+    userSelectedSkillRefs: parsed.userSelectedSkillRefs,
     factScope: parsed.factScope ?? { storeId: parsed.workspaceId },
     ...(parsed.reuseSeed ? { reuseSeed: parsed.reuseSeed } : {}),
   };
@@ -887,6 +894,7 @@ function snapshotWorkflowInput(
       },
       assetReferences: snapshot.sources.assets.map((asset) => asset.id),
     },
+    userSelectedSkillRefs: snapshot.userSelectedSkillRefs,
     factScope: { storeId: snapshot.workspaceId },
     executionSnapshot: snapshot,
     ...(frozenDecisionReferences.length > 0

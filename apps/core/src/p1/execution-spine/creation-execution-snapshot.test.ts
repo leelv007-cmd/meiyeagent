@@ -55,6 +55,86 @@ test("persisted v1 snapshots with the original three lenses remain readable", ()
 	}
 });
 
+test("userSelectedSkillRefs defaults to [] and freezes explicit refs", () => {
+	const base = {
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+		idempotencyKey: "skill-refs",
+		taskId: "task-skills",
+		workId: "work-skills",
+		contentPackageId: "package-skills",
+		expectedContentPackageRevision: 0,
+		creationMode: "customized" as const,
+		intent: "选用技能提交",
+		surface: { id: "surface-1", revision: "surface-r1" },
+		recipe: { id: "recipe-1", revision: "recipe-r1" },
+		lens: "copy" as const,
+		platform: { id: "xiaohongshu" as const },
+		contentPackagePlatform: "xiaohongshu" as const,
+		distributionTarget: "export" as const,
+		deliverable: { kind: "copy_document" as const, quantity: 1 },
+		deliverables: [{
+			id: "copy-main",
+			kind: "copy" as const,
+			order: 0,
+			quantity: 1,
+		}],
+		sources: { assets: [] as [] },
+		rights: { revision: "rights-r1", summary: "authorized" },
+		identity: { id: "identity-1", revision: "identity-r1" },
+		modelPolicy: { id: "policy-1", revision: "policy-r1", mode: "fixed" as const },
+		catalogModel: { id: "model-1", revision: "model-r1" },
+		quote: { id: "quote-1", revision: "quote-r1" },
+		route: { id: "route-1", revision: "route-r1" },
+		briefContext: { id: "context-1", revision: 1 },
+		contentModules: ["social_cover" as const],
+	};
+
+	const withoutSelection = createCreationExecutionSnapshot(
+		base,
+		"2026-08-06T00:00:00.000Z",
+	);
+	assert.deepEqual(withoutSelection.userSelectedSkillRefs, []);
+	assert.equal(Object.hasOwn(withoutSelection, "userSelectedSkillRefs"), true);
+
+	const withSelection = createCreationExecutionSnapshot(
+		{
+			...base,
+			userSelectedSkillRefs: ["skill.user@3", "skill.tone@1"],
+		},
+		"2026-08-06T00:00:00.000Z",
+	);
+	assert.deepEqual(withSelection.userSelectedSkillRefs, [
+		"skill.user@3",
+		"skill.tone@1",
+	]);
+
+	// Historical snapshot missing the field remains readable as [].
+	const { userSelectedSkillRefs: _dropped, ...legacyShape } = JSON.parse(
+		JSON.stringify(withoutSelection),
+	) as Record<string, unknown>;
+	const replayed = creationExecutionSnapshotSchema.parse(legacyShape);
+	assert.deepEqual(replayed.userSelectedSkillRefs, []);
+
+	assert.equal(
+		creationExecutionSnapshotSchema.safeParse({
+			...withoutSelection,
+			userSelectedSkillRefs: [""],
+		}).success,
+		false,
+	);
+	assert.equal(
+		creationExecutionSnapshotSchema.safeParse({
+			...withoutSelection,
+			userSelectedSkillRefs: Array.from(
+				{ length: 51 },
+				(_, index) => `skill.ref@${index + 1}`,
+			),
+		}).success,
+		false,
+	);
+});
+
 test("image-text note freezes its signed Recipe page bound inside the deliverable", () => {
 	const base = {
 		actorId: "owner-1",

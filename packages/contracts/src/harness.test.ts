@@ -75,7 +75,11 @@ test('parses and round-trips the three frontend inputs', () => {
     rawInput: intent.context.intent,
     intent,
   };
-  assert.deepEqual(roundTrip(harnessTaskSubmissionSchema, task), task);
+  // Omitted userSelectedSkillRefs defaults to [] (backward compatible).
+  assert.deepEqual(roundTrip(harnessTaskSubmissionSchema, task), {
+    ...task,
+    userSelectedSkillRefs: [],
+  });
   assert.equal(
     harnessTaskSubmissionSchema.safeParse({
       ...task,
@@ -124,6 +128,95 @@ test('parses and round-trips the three frontend inputs', () => {
       decision: { state: 'enabled', value: 'invalid' },
     }).success,
     false
+  );
+});
+
+test('harnessTaskSubmissionSchema freezes userSelectedSkillRefs under strict rules', () => {
+  const base = {
+    taskId: 'work-1',
+    packageId: 'package-1',
+    expectedRevision: 0,
+    workflowRevision: 1,
+    creationMode: 'free' as const,
+    rawInput: '写一条夏日护理预约文案',
+    intent: {
+      context: {
+        workId: 'work-1',
+        intent: '写一条夏日护理预约文案',
+        sourceSummaries: [],
+      },
+      assetReferences: [] as string[],
+    },
+  };
+
+  const selected = {
+    ...base,
+    userSelectedSkillRefs: ['skill.user_selectable@3', 'skill.tone@1'],
+  };
+  assert.deepEqual(
+    roundTrip(harnessTaskSubmissionSchema, selected),
+    selected,
+  );
+
+  // Missing field becomes [] — never undefined on the wire/output.
+  const omitted = harnessTaskSubmissionSchema.parse(base);
+  assert.deepEqual(omitted.userSelectedSkillRefs, []);
+  assert.equal(Object.hasOwn(omitted, 'userSelectedSkillRefs'), true);
+
+  // Empty array is explicit and valid.
+  assert.deepEqual(
+    harnessTaskSubmissionSchema.parse({
+      ...base,
+      userSelectedSkillRefs: [],
+    }).userSelectedSkillRefs,
+    [],
+  );
+
+  // Empty string refs are rejected.
+  assert.equal(
+    harnessTaskSubmissionSchema.safeParse({
+      ...base,
+      userSelectedSkillRefs: [''],
+    }).success,
+    false,
+  );
+  assert.equal(
+    harnessTaskSubmissionSchema.safeParse({
+      ...base,
+      userSelectedSkillRefs: ['   '],
+    }).success,
+    false,
+  );
+
+  // Cap at 50 refs.
+  assert.equal(
+    harnessTaskSubmissionSchema.safeParse({
+      ...base,
+      userSelectedSkillRefs: Array.from(
+        { length: 50 },
+        (_, index) => `skill.ref@${index + 1}`,
+      ),
+    }).success,
+    true,
+  );
+  assert.equal(
+    harnessTaskSubmissionSchema.safeParse({
+      ...base,
+      userSelectedSkillRefs: Array.from(
+        { length: 51 },
+        (_, index) => `skill.ref@${index + 1}`,
+      ),
+    }).success,
+    false,
+  );
+
+  // Unknown fields still fail strict.
+  assert.equal(
+    harnessTaskSubmissionSchema.safeParse({
+      ...selected,
+      forgedSkillCatalog: ['skill.backdoor@1'],
+    }).success,
+    false,
   );
 });
 

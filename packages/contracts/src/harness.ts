@@ -36,6 +36,16 @@ const workflowStateSchema = z.enum([
 
 export const creationModeSchema = z.enum(['customized', 'free']);
 
+/**
+ * Merchant-confirmed Skill revision refs for one Composer draft.
+ * Optional on input; parse always yields an array (default empty) so
+ * undefined never leaks downstream. Keep strict at every carrier.
+ */
+export const userSelectedSkillRefsSchema = z
+  .array(nonEmptyTrimmedStringSchema.max(200))
+  .max(50)
+  .default([]);
+
 export const taskIntentInputSchema = z
   .object({
     context: assistantContextSchema,
@@ -52,6 +62,7 @@ export const harnessTaskSubmissionSchema = z
     creationMode: creationModeSchema,
     rawInput: nonEmptyTrimmedStringSchema.max(4_000),
     intent: taskIntentInputSchema,
+    userSelectedSkillRefs: userSelectedSkillRefsSchema,
   })
   .strict();
 
@@ -712,7 +723,8 @@ export type HarnessStage = z.infer<typeof harnessStageSchema>;
 export type WorkflowState = z.infer<typeof workflowStateSchema>;
 export type CreationMode = z.infer<typeof creationModeSchema>;
 export type TaskIntentInput = z.infer<typeof taskIntentInputSchema>;
-export type HarnessTaskSubmission = z.infer<
+/** Request payload input: defaulted fields may be omitted by callers. */
+export type HarnessTaskSubmission = z.input<
   typeof harnessTaskSubmissionSchema
 >;
 export type StructuredDecisionInput = z.infer<

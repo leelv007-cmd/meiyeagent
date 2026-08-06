@@ -167,7 +167,11 @@ test('submits the exact Composer body and returns the durable handles', async ()
       'http://localhost/api/core/p1/composer/submissions'
     );
     assert.equal(request?.headers.get('idempotency-key'), 'composer-submit-1');
-    assert.deepEqual(await request?.json(), submissionBody());
+    // Omitted userSelectedSkillRefs defaults to [] on the wire (no undefined leak).
+    assert.deepEqual(await request?.json(), {
+      ...submissionBody(),
+      userSelectedSkillRefs: [],
+    });
   } finally {
     globalThis.fetch = previousFetch;
   }
