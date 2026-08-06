@@ -59,6 +59,8 @@ import { Route as AdminUsersRouteImport } from './routes/admin/users'
 import { Route as AdminTemplatesRouteImport } from './routes/admin/templates'
 import { Route as AdminSupplyRouteImport } from './routes/admin/supply'
 import { Route as AdminSkillsRouteImport } from './routes/admin/skills'
+import { Route as AdminSensitiveWordsRouteImport } from './routes/admin/sensitive-words'
+import { Route as AdminRefundReviewRouteImport } from './routes/admin/refund-review'
 import { Route as AdminRedemptionsRouteImport } from './routes/admin/redemptions'
 import { Route as AdminPlansRouteImport } from './routes/admin/plans'
 import { Route as AdminP1RouteImport } from './routes/admin/p1'
@@ -363,6 +365,16 @@ const AdminSupplyRoute = AdminSupplyRouteImport.update({
 const AdminSkillsRoute = AdminSkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSensitiveWordsRoute = AdminSensitiveWordsRouteImport.update({
+  id: '/sensitive-words',
+  path: '/sensitive-words',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminRefundReviewRoute = AdminRefundReviewRouteImport.update({
+  id: '/refund-review',
+  path: '/refund-review',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminRedemptionsRoute = AdminRedemptionsRouteImport.update({
@@ -684,6 +696,8 @@ export interface FileRoutesByFullPath {
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
+  '/admin/refund-review': typeof AdminRefundReviewRoute
+  '/admin/sensitive-words': typeof AdminSensitiveWordsRoute
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
@@ -787,6 +801,8 @@ export interface FileRoutesByTo {
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
+  '/admin/refund-review': typeof AdminRefundReviewRoute
+  '/admin/sensitive-words': typeof AdminSensitiveWordsRoute
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
@@ -895,6 +911,8 @@ export interface FileRoutesById {
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
+  '/admin/refund-review': typeof AdminRefundReviewRoute
+  '/admin/sensitive-words': typeof AdminSensitiveWordsRoute
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
@@ -1004,6 +1022,8 @@ export interface FileRouteTypes {
     | '/admin/p1'
     | '/admin/plans'
     | '/admin/redemptions'
+    | '/admin/refund-review'
+    | '/admin/sensitive-words'
     | '/admin/skills'
     | '/admin/supply'
     | '/admin/templates'
@@ -1107,6 +1127,8 @@ export interface FileRouteTypes {
     | '/admin/p1'
     | '/admin/plans'
     | '/admin/redemptions'
+    | '/admin/refund-review'
+    | '/admin/sensitive-words'
     | '/admin/skills'
     | '/admin/supply'
     | '/admin/templates'
@@ -1214,6 +1236,8 @@ export interface FileRouteTypes {
     | '/admin/p1'
     | '/admin/plans'
     | '/admin/redemptions'
+    | '/admin/refund-review'
+    | '/admin/sensitive-words'
     | '/admin/skills'
     | '/admin/supply'
     | '/admin/templates'
@@ -1689,6 +1713,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSkillsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/sensitive-words': {
+      id: '/admin/sensitive-words'
+      path: '/sensitive-words'
+      fullPath: '/admin/sensitive-words'
+      preLoaderRoute: typeof AdminSensitiveWordsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/refund-review': {
+      id: '/admin/refund-review'
+      path: '/refund-review'
+      fullPath: '/admin/refund-review'
+      preLoaderRoute: typeof AdminRefundReviewRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/redemptions': {
       id: '/admin/redemptions'
       path: '/redemptions'
@@ -2100,6 +2138,8 @@ interface AdminRouteChildren {
   AdminP1Route: typeof AdminP1Route
   AdminPlansRoute: typeof AdminPlansRoute
   AdminRedemptionsRoute: typeof AdminRedemptionsRoute
+  AdminRefundReviewRoute: typeof AdminRefundReviewRoute
+  AdminSensitiveWordsRoute: typeof AdminSensitiveWordsRoute
   AdminSkillsRoute: typeof AdminSkillsRoute
   AdminSupplyRoute: typeof AdminSupplyRouteWithChildren
   AdminTemplatesRoute: typeof AdminTemplatesRoute
@@ -2116,6 +2156,8 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminP1Route: AdminP1Route,
   AdminPlansRoute: AdminPlansRoute,
   AdminRedemptionsRoute: AdminRedemptionsRoute,
+  AdminRefundReviewRoute: AdminRefundReviewRoute,
+  AdminSensitiveWordsRoute: AdminSensitiveWordsRoute,
   AdminSkillsRoute: AdminSkillsRoute,
   AdminSupplyRoute: AdminSupplyRouteWithChildren,
   AdminTemplatesRoute: AdminTemplatesRoute,

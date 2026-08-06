@@ -70,7 +70,11 @@ export const Routes = {
   AdminPlans: '/admin/plans',
   AdminRedemptions: '/admin/redemptions',
   AdminUsers: '/admin/users',
+  /** Spec G / #388: write workflow under account_and_commerce. */
+  AdminRefundReview: '/admin/refund-review',
   AdminAudit: '/admin/audit',
+  /** Spec G / #388: compliance governance under runtime_and_governance. */
+  AdminSensitiveWords: '/admin/sensitive-words',
 } as const;
 
 /** Default login redirect route */

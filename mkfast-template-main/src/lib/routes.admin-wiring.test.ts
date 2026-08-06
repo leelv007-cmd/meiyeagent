@@ -17,4 +17,7 @@ test('Z2-WIRING batch B registers admin capabilities and cloudflare routes', () 
   assert.equal(Routes.AdminRedemptions, '/admin/redemptions');
   assert.equal(Routes.AdminUsers, '/admin/users');
   assert.equal(Routes.AdminAudit, '/admin/audit');
+  // Spec G / #388: remounted write surfaces.
+  assert.equal(Routes.AdminRefundReview, '/admin/refund-review');
+  assert.equal(Routes.AdminSensitiveWords, '/admin/sensitive-words');
 });

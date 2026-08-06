@@ -97,6 +97,20 @@ test('shared navigation labels resolve in the active locale at access time', () 
       (item) => item.href === Routes.AdminSkills && item.label === 'Skills'
     )
   );
+  // Spec G / #388 remounts.
+  assert.ok(
+    ADMIN_SIDEBAR_ITEMS.some(
+      (item) =>
+        item.id === 'refund-review' && item.href === Routes.AdminRefundReview
+    )
+  );
+  assert.ok(
+    ADMIN_SIDEBAR_ITEMS.some(
+      (item) =>
+        item.id === 'sensitive-words' &&
+        item.href === Routes.AdminSensitiveWords
+    )
+  );
 
   overwriteGetLocale(() => 'en');
   assert.equal(BUSINESS_NAVIGATION[0].label, 'Create');

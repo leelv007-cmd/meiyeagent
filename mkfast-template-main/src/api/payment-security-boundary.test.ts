@@ -70,8 +70,13 @@ test('credit package checkout is Test-only and binds the owner workspace before 
   );
 });
 
-test('admin audit mounts the protected refund review consumer', async () => {
-  const [routeSource, apiSource] = await Promise.all([
+test('admin refund-review mounts the protected refund review consumer', async () => {
+  // Spec G / #388: write workflow left the read-only audit page.
+  const [routeSource, auditSource, apiSource] = await Promise.all([
+    readFile(
+      resolve(process.cwd(), 'src/routes/admin/refund-review.tsx'),
+      'utf8'
+    ),
     readFile(resolve(process.cwd(), 'src/routes/admin/audit.tsx'), 'utf8'),
     readFile(resolve(process.cwd(), 'src/api/payment-refunds.ts'), 'utf8'),
   ]);
@@ -79,6 +84,10 @@ test('admin audit mounts the protected refund review consumer', async () => {
   assert.match(
     routeSource,
     /import \{ AdminPaymentRefundReview \} from '@\/p1\/admin-payment-refund-review';[\s\S]*?<AdminPaymentRefundReview \/>/u
+  );
+  assert.doesNotMatch(
+    auditSource,
+    /AdminPaymentRefundReview/
   );
   assert.match(
     apiSource,

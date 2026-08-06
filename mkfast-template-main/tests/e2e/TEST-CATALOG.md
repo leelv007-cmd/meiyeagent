@@ -493,7 +493,7 @@ claiming the object-workspace inline replacement owned by #327.
 
 | # | Test name | Flow |
 |---|---|---|
-| 1 | Admin manages one sensitive word through the real stack | Sign in as an administrator, open `/admin/templates`, create one uniquely named medical sensitive word with two replacements, edit its word and replacements, disable it, delete it, and require zero browser console errors. |
+| 1 | Admin manages one sensitive word through the real stack | Sign in as an administrator, open `/admin/sensitive-words`, create one uniquely named medical sensitive word with two replacements, edit its word and replacements, disable it, delete it, and require zero browser console errors. |
 | 2 | Copy Result delivery waits for a clear sensitive-word check | Complete the canonical Composer copy journey, adopt the ContentPackage, and open its real delivery panel. Hold the real Core `check_bar` request at the browser boundary, require the check bar to remain `checking` and every delivery action to stay disabled, then release that same request, require `clear`, and only then continue with the enabled delivery actions. |
 
 ## 32. LIKEPAGE Marketing Landing Page

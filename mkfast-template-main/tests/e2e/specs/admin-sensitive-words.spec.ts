@@ -26,7 +26,8 @@ test.describe('sensitive words operations (#320)', () => {
     });
     const admin = await registerE2EUser(request, { role: 'admin' });
     await loginByForm(page, admin);
-    await page.goto('/admin/templates');
+    // Spec G / #388: sensitive-words governance left /admin/templates.
+    await page.goto('/admin/sensitive-words');
 
     const panel = page.getByTestId('admin-sensitive-words');
     await expect(panel).toBeVisible({ timeout: 30_000 });

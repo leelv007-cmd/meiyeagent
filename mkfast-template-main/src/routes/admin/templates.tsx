@@ -9,7 +9,6 @@ import {
 import { AdminTemplateControl } from '@/p1/admin-template-control';
 import { AdminCreationExperienceControl } from '@/p1/admin-creation-experience-control';
 import { AdminRuntimeConfigControl } from '@/p1/admin-runtime-config-control';
-import { AdminSensitiveWordsControl } from '@/p1/admin-sensitive-words-control';
 import { NOTE_STYLE_CONFIG_KEY } from '@meiye/contracts';
 import { createFileRoute } from '@tanstack/react-router';
 import {
@@ -24,7 +23,8 @@ export const Route = createFileRoute('/admin/templates')({
 });
 
 /**
- * 标题仍读「官方模板」，尽管四个控制台都住在这里 —— 拆页属 P2 IA 票，不在本次换壳。
+ * Templates + note styles + creation experience.
+ * Spec G / #388 moved sensitive-words governance to /admin/sensitive-words.
  */
 function TemplatesPage() {
   return (
@@ -50,7 +50,6 @@ function TemplatesPage() {
           </FrameHeader>
           <AdminRuntimeConfigControl keys={[NOTE_STYLE_CONFIG_KEY]} />
         </Frame>
-        <AdminSensitiveWordsControl />
         <AdminTemplateControl />
       </div>
     </AdminRoutePage>

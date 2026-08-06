@@ -12,6 +12,8 @@ import {
   admin_navigation_models,
   admin_navigation_plans,
   admin_navigation_redemptions,
+  admin_navigation_refund_review,
+  admin_navigation_sensitive_words,
   admin_navigation_skills,
   admin_navigation_templates,
   admin_navigation_users,
@@ -34,8 +36,10 @@ import {
   IconListDetails,
   IconPlugConnected,
   IconReceipt,
+  IconReceiptRefund,
   IconSettings,
   IconShieldCheck,
+  IconShieldLock,
   IconSparkles,
   IconTemplate,
   IconUserCircle,
@@ -166,6 +170,14 @@ export const ADMIN_SIDEBAR_ITEMS = [
     icon: IconReceipt,
   },
   {
+    id: 'refund-review',
+    get label() {
+      return admin_navigation_refund_review();
+    },
+    href: Routes.AdminRefundReview,
+    icon: IconReceiptRefund,
+  },
+  {
     id: 'users',
     get label() {
       return admin_navigation_users();
@@ -180,6 +192,14 @@ export const ADMIN_SIDEBAR_ITEMS = [
     },
     href: Routes.AdminAudit,
     icon: IconHistory,
+  },
+  {
+    id: 'sensitive-words',
+    get label() {
+      return admin_navigation_sensitive_words();
+    },
+    href: Routes.AdminSensitiveWords,
+    icon: IconShieldLock,
   },
   {
     id: 'cloudflare',
@@ -239,7 +259,13 @@ export const ADMIN_NAV_GROUPS: readonly AdminNavGroup[] = [
     get label() {
       return admin_nav_group_account_commerce();
     },
-    items: [adminItem('users'), adminItem('plans'), adminItem('redemptions')],
+    // Spec G / #388: refund review write workflow under commerce/billing.
+    items: [
+      adminItem('users'),
+      adminItem('plans'),
+      adminItem('redemptions'),
+      adminItem('refund-review'),
+    ],
   },
   {
     id: 'ai-supply',
@@ -267,8 +293,10 @@ export const ADMIN_NAV_GROUPS: readonly AdminNavGroup[] = [
     get label() {
       return admin_nav_group_ops_governance();
     },
+    // Spec G / #388: sensitive-words is compliance governance (not templates).
     items: [
       adminItem('capabilities'),
+      adminItem('sensitive-words'),
       adminItem('audit'),
       adminItem('cloudflare'),
     ],
