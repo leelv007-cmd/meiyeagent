@@ -79,6 +79,11 @@ export interface CatalogCasMeta extends CatalogAuditMeta {
 /**
  * Mutable recipe body (excludes revision / status / audit / hash).
  * Hidden prompts are refs only — never bodies.
+ *
+ * Optional collections `factTypes` / `skillRevisionRefs` use three-state merge
+ * on draft save (`revision-field-merge`): omit → create default / update inherit;
+ * explicit `[]` clears. Normalize `?? []` is only the post-merge default — not
+ * a separate overwrite of omitted fields.
  */
 export interface RecipeBodyInput {
   lensId: CreationLensId;

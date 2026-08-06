@@ -55,6 +55,8 @@ type RecipeRecord = {
   };
   delivery?: Record<string, unknown>;
   contextPatches?: Record<string, unknown>;
+  /** Loaded from head; carried through draft payload so title-only edits do not wipe. */
+  factTypes?: string[];
   sourceRequirements?: Array<Record<string, unknown>>;
   modelPolicy: { mode: RecipeModelPolicyMode; catalogModelId?: string };
   settingsPatches?: Record<string, unknown>;
@@ -62,6 +64,8 @@ type RecipeRecord = {
   quotePolicyRevisionRef?: string;
   workflowRevisionRef?: string;
   promptRevisionRef: string;
+  /** Loaded from head; carried through draft payload so title-only edits do not wipe. */
+  skillRevisionRefs?: string[];
   targetWorkspaceKind: CreationLensId;
   rolledBackToRevision?: number | null;
 };
@@ -206,6 +210,8 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
     defaultRecipeDelivery('image_text')
   );
   const [reason, setReason] = useState('');
+  const [factTypes, setFactTypes] = useState<string[]>([]);
+  const [skillRevisionRefs, setSkillRevisionRefs] = useState<string[]>([]);
   const [head, setHead] = useState<RecipeRecord | null>(null);
   const [history, setHistory] = useState<RecipeRecord[]>([]);
   const [rollbackRevision, setRollbackRevision] = useState('');
@@ -224,6 +230,15 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
       ...defaultRecipeDelivery(record.lensId),
       ...(record.delivery as Partial<RecipeDelivery>),
     });
+    // Carry server bindings into edit state (no dedicated UI — still round-trip).
+    setFactTypes(
+      Array.isArray(record.factTypes) ? [...record.factTypes] : []
+    );
+    setSkillRevisionRefs(
+      Array.isArray(record.skillRevisionRefs)
+        ? [...record.skillRevisionRefs]
+        : []
+    );
   };
 
   const refreshHistory = async () => {
@@ -327,6 +342,7 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
         },
         delivery,
         contextPatches: head?.contextPatches ?? {},
+        factTypes,
         sourceRequirements: head?.sourceRequirements ?? [],
         modelPolicy: {
           mode: modelMode,
@@ -345,6 +361,7 @@ function RecipeEditor({ api }: { api: CreationExperienceAdminApi }) {
           ? { workflowRevisionRef: head.workflowRevisionRef }
           : {}),
         promptRevisionRef: promptRevisionRef.trim(),
+        skillRevisionRefs,
         targetWorkspaceKind: lensId,
       },
     });

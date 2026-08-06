@@ -163,6 +163,129 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     );
   });
 
+  it('keeps factTypes and skillRevisionRefs when only the Recipe title changes (#361)', async () => {
+    const user = userEvent.setup();
+    const recipeId = 'recipe.roundtrip.bindings';
+    const existingFactTypes = ['service', 'price'];
+    const existingSkillRevisionRefs = ['skill.bound@1', 'skill.extra@2'];
+    const seedHead = {
+      recipeId,
+      revision: 3,
+      revisionId: `${recipeId}@3`,
+      status: 'published',
+      lensId: 'image_text',
+      familyId: 'xhs-case-note',
+      presentation: {
+        title: '原标题保留绑定',
+        summary: '既有摘要',
+        actionLabel: '选择图文并套用',
+      },
+      delivery: {
+        contentPackagePlatform: 'xiaohongshu',
+        distributionTarget: 'export',
+        deliverableKind: 'note',
+        quantity: 1,
+        aspectRatio: '3:4',
+        notePageBound: 3,
+      },
+      contextPatches: { tone: '专业亲和' },
+      factTypes: existingFactTypes,
+      sourceRequirements: [
+        { slot: 'case_image', required: true, kinds: ['image'] },
+      ],
+      modelPolicy: { mode: 'auto' },
+      settingsPatches: { count: 1 },
+      outputContractRef: 'output.note.v1',
+      quotePolicyRevisionRef: 'quote.policy@1',
+      workflowRevisionRef: 'workflow.image_text@1',
+      promptRevisionRef: 'prompt.roundtrip@1',
+      skillRevisionRefs: existingSkillRevisionRefs,
+      targetWorkspaceKind: 'image_text',
+      rolledBackToRevision: null,
+    };
+
+    // Seed external fixture only — bindings enter state via load/hydrate, not test presets.
+    const histories = new Map<string, Array<Record<string, unknown>>>([
+      [`recipe:${recipeId}`, [seedHead]],
+    ]);
+    const heads = new Map<string, Record<string, unknown>>([
+      [`recipe:${recipeId}`, seedHead],
+    ]);
+    const api: CreationExperienceAdminApi = {
+      query: vi.fn(async (action, payload) => {
+        const id = String(payload.recipeId);
+        const key = `recipe:${id}`;
+        if (action === 'recipe_history') return histories.get(key) ?? [];
+        if (action === 'recipe_validate') return { ok: true, errors: [] };
+        return heads.get(key) ?? null;
+      }),
+      command: vi.fn(async (_action, payload) => {
+        const id = String(payload.recipeId);
+        const key = `recipe:${id}`;
+        const previous = heads.get(key);
+        const revision = Number(previous?.revision ?? 0) + 1;
+        const body = (payload.body as Record<string, unknown>) ?? {};
+        // External revision = body + identity/lifecycle (mirrors catalog append shape).
+        const record = {
+          ...body,
+          recipeId: id,
+          revision,
+          revisionId: `${id}@${revision}`,
+          status: 'draft',
+          rolledBackToRevision: null,
+        };
+        heads.set(key, record);
+        histories.set(key, [...(histories.get(key) ?? []), record]);
+        return record;
+      }),
+    };
+
+    render(<AdminCreationExperienceControl api={api} />);
+
+    await user.type(screen.getByLabelText('Recipe ID'), recipeId);
+    await user.click(screen.getByRole('button', { name: '加载 Recipe' }));
+    expect(
+      await screen.findByTestId('recipe-lifecycle-status')
+    ).toHaveTextContent('published · r3');
+    expect(screen.getByLabelText('标题')).toHaveValue('原标题保留绑定');
+    expect(screen.getByLabelText('摘要')).toHaveValue('既有摘要');
+
+    await user.clear(screen.getByLabelText('标题'));
+    await user.type(screen.getByLabelText('标题'), '只改标题');
+    await user.type(screen.getByLabelText('变更原因'), '标题微调不得丢绑定');
+    await user.click(screen.getByRole('button', { name: '保存 Recipe 草稿' }));
+
+    expect(
+      await screen.findByTestId('recipe-lifecycle-status')
+    ).toHaveTextContent('draft · r4');
+
+    expect(api.command).toHaveBeenCalledWith(
+      'recipe_draft',
+      expect.objectContaining({
+        recipeId,
+        expectedRevision: 3,
+        body: expect.objectContaining({
+          presentation: expect.objectContaining({ title: '只改标题' }),
+          factTypes: existingFactTypes,
+          skillRevisionRefs: existingSkillRevisionRefs,
+        }),
+      }),
+      expect.any(String)
+    );
+
+    // Assert external saved revision (fixture head after command), not internal state.
+    const saved = heads.get(`recipe:${recipeId}`);
+    expect(saved).toEqual(
+      expect.objectContaining({
+        revision: 4,
+        status: 'draft',
+        factTypes: existingFactTypes,
+        skillRevisionRefs: existingSkillRevisionRefs,
+        presentation: expect.objectContaining({ title: '只改标题' }),
+      })
+    );
+  });
+
   it('visually edits a Surface without retired Pro Studio tool offers', async () => {
     const user = userEvent.setup();
     const api = createLifecycleApi();

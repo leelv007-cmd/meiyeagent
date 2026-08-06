@@ -833,6 +833,143 @@ describe('Creation Experience Catalog aggregate', () => {
       );
     });
   });
+
+  describe('three-state optional collection merge on recipe draft (#361)', () => {
+    it('create with missing factTypes/skillRevisionRefs uses normalized default []', async () => {
+      const { service } = createService();
+      const created = await service.draftRecipe({
+        recipeId: 'recipe.merge-create',
+        expectedRevision: null,
+        body: sampleRecipeBody(),
+        ...audit({ reason: 'create omit optional collections' }),
+      });
+      assert.equal(created.revision, 1);
+      assert.deepEqual(created.factTypes, []);
+      assert.deepEqual(created.skillRevisionRefs, []);
+    });
+
+    it('update with missing factTypes/skillRevisionRefs inherits head', async () => {
+      const { service } = createService();
+      const seedFactTypes = ['service', 'price'] as const;
+      const seedSkillRefs = ['skill.bound@1', 'skill.extra@2'];
+      const head = await service.draftRecipe({
+        recipeId: 'recipe.merge-inherit',
+        expectedRevision: null,
+        body: sampleRecipeBody({
+          factTypes: [...seedFactTypes],
+          skillRevisionRefs: [...seedSkillRefs],
+        }),
+        ...audit({ reason: 'seed bindings' }),
+      });
+
+      // Title-only style body: omit the optional collections entirely.
+      const { factTypes: _omitFacts, skillRevisionRefs: _omitSkills, ...rest } =
+        sampleRecipeBody({
+          presentation: {
+            title: '只改标题',
+            summary: head.presentation.summary,
+            actionLabel: head.presentation.actionLabel,
+          },
+        });
+      assert.equal('factTypes' in rest, false);
+      assert.equal('skillRevisionRefs' in rest, false);
+
+      const partial = await service.draftRecipe({
+        recipeId: 'recipe.merge-inherit',
+        expectedRevision: head.revision,
+        body: rest,
+        ...audit({ reason: 'partial edit omits optional collections' }),
+      });
+
+      assert.equal(partial.revision, head.revision + 1);
+      assert.equal(partial.presentation.title, '只改标题');
+      assert.deepEqual(partial.factTypes, [...seedFactTypes]);
+      assert.deepEqual(partial.skillRevisionRefs, [...seedSkillRefs]);
+    });
+
+    it('update with explicit empty factTypes/skillRevisionRefs clears the fields', async () => {
+      const { service } = createService();
+      const head = await service.draftRecipe({
+        recipeId: 'recipe.merge-clear',
+        expectedRevision: null,
+        body: sampleRecipeBody({
+          factTypes: ['service', 'staff_experience'],
+          skillRevisionRefs: ['skill.keep@1'],
+        }),
+        ...audit({ reason: 'seed bindings' }),
+      });
+
+      const cleared = await service.draftRecipe({
+        recipeId: 'recipe.merge-clear',
+        expectedRevision: head.revision,
+        body: sampleRecipeBody({
+          factTypes: [],
+          skillRevisionRefs: [],
+        }),
+        ...audit({ reason: 'explicit clear' }),
+      });
+
+      assert.equal(cleared.revision, head.revision + 1);
+      assert.deepEqual(cleared.factTypes, []);
+      assert.deepEqual(cleared.skillRevisionRefs, []);
+    });
+
+    it('reads head before normalize/merge so omitted recipe collections can inherit', async () => {
+      const repository = new MemoryCreationExperienceCatalogRepository();
+      const callOrder: string[] = [];
+      const originalGetHead = repository.getRecipeHead.bind(repository);
+      const originalAppend = repository.appendRecipe.bind(repository);
+      repository.getRecipeHead = async (recipeId) => {
+        callOrder.push('getRecipeHead');
+        return originalGetHead(recipeId);
+      };
+      repository.appendRecipe = async (record, expectedRevision) => {
+        callOrder.push('appendRecipe');
+        return originalAppend(record, expectedRevision);
+      };
+
+      const service = new CreationExperienceCatalogService(
+        repository,
+        () => '2026-07-20T00:00:00.000Z',
+        () => 'session-recipe-order-1',
+      );
+      const seed = await service.draftRecipe({
+        recipeId: 'recipe.merge-order',
+        expectedRevision: null,
+        body: sampleRecipeBody({
+          factTypes: ['service'],
+          skillRevisionRefs: ['skill.order@1'],
+        }),
+        ...audit({ reason: 'seed' }),
+      });
+      callOrder.length = 0;
+
+      const { factTypes: _f, skillRevisionRefs: _s, ...rest } = sampleRecipeBody({
+        presentation: {
+          title: 'order-check',
+          summary: seed.presentation.summary,
+          actionLabel: seed.presentation.actionLabel,
+        },
+      });
+
+      // Pre-fix: normalize ?? [] would land empty arrays before head inheritance.
+      // Success + order proves head is read before merge/normalize/write.
+      const next = await service.draftRecipe({
+        recipeId: 'recipe.merge-order',
+        expectedRevision: seed.revision,
+        body: rest,
+        ...audit({ reason: 'omit after head seeded' }),
+      });
+
+      assert.deepEqual(next.factTypes, seed.factTypes);
+      assert.deepEqual(next.skillRevisionRefs, seed.skillRevisionRefs);
+      assert.deepEqual(callOrder, ['getRecipeHead', 'appendRecipe']);
+      assert.ok(
+        callOrder.indexOf('getRecipeHead') < callOrder.indexOf('appendRecipe'),
+        'head read must complete before append (post-merge write)',
+      );
+    });
+  });
 });
 
 

@@ -283,11 +283,26 @@ export class CreationExperienceCatalogService {
   ) {}
 
   async draftRecipe(input: DraftRecipeInput): Promise<ServerRecipeRecord> {
-    // Head + CAS before normalize/hash so #361 can merge optional collections
-    // without defaults landing first (Spec B ordering).
+    // Spec B ordering: read head + CAS, three-state merge optional collections,
+    // then normalize + hash (so ?? [] is only a post-merge normalize default).
     const head = await this.repository.getRecipeHead(input.recipeId);
     assertExpectedRevision(head?.revision ?? null, input.expectedRevision, 'recipe');
-    const body = normalizeRecipeBody(input.body);
+    const mergedBody: RecipeBodyInput = {
+      ...input.body,
+      factTypes: resolveThreeStateCollectionField(
+        input.body,
+        'factTypes',
+        head?.factTypes,
+        [],
+      ),
+      skillRevisionRefs: resolveThreeStateCollectionField(
+        input.body,
+        'skillRevisionRefs',
+        head?.skillRevisionRefs,
+        [],
+      ),
+    };
+    const body = normalizeRecipeBody(mergedBody);
     return this.repository.appendRecipe(
       {
         recipeId: input.recipeId,
