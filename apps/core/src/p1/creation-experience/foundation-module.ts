@@ -42,6 +42,10 @@ import {
 } from './observability-events.js';
 import { buildRecipePatchPreview } from './recipe-patch-preview.js';
 import {
+  adaptRecipeGovernanceFormToCompileInput,
+  parseRecipeGovernanceFormInput,
+} from './recipe-governance-form.js';
+import {
   RecipeStudioService,
   type RecipeStudioCompileInput,
   type RecipeSkillRevisionValidationPort,
@@ -445,6 +449,22 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
           ...audit(),
         };
         return this.recipeStudio.compile(input);
+      }
+      case 'recipe_governance_save': {
+        // Templates sole governed save: form → adapter → compile → validate.
+        // studioRelease / blocks / passed are rejected on the form payload.
+        const form = parseRecipeGovernanceFormInput(value, {
+          ...audit(),
+        });
+        const compileInput = adaptRecipeGovernanceFormToCompileInput(form);
+        const compiled = await this.recipeStudio.compile(compileInput);
+        return this.recipeStudio.validate({
+          recipeId: compiled.recipeId,
+          expectedRevision: compiled.revision,
+          actorId: form.actorId,
+          reason: form.reason,
+          correlationId: form.correlationId,
+        });
       }
       case 'recipe_studio_validate': {
         const expectedRevision = numberField(value, 'expectedRevision');

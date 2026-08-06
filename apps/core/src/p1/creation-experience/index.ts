@@ -34,6 +34,16 @@ export {
   type RecipeStudioTransitionInput,
 } from './recipe-studio.js';
 export {
+  RECIPE_GOVERNANCE_BLOCK_IDS,
+  RecipeStudioCompileInputAdapter,
+  adaptRecipeGovernanceFormToCompileInput,
+  assertRecipeGovernanceFormHasNoServerOnlyFields,
+  parseRecipeGovernanceFormInput,
+  type RecipeGovernanceFormInput,
+  type RecipeGovernanceOutputContract,
+  type RecipeGovernancePlatformFields,
+} from './recipe-governance-form.js';
+export {
   RECIPE_STUDIO_SAMPLE_DEFINITIONS,
   listRecipeStudioSampleDefinitions,
 } from './recipe-studio-samples.js';
