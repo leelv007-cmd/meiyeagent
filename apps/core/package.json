@@ -34,6 +34,8 @@
     "langfuse:prompts:push": "node --import tsx src/p1/harness/langfuse-prompt-push-cli.ts",
     "langfuse:outbox:ops": "node --import tsx src/p1/harness/langfuse-outbox-ops-cli.ts",
     "eval:merchant-language": "node --import tsx --test --test-concurrency=1 src/evals/merchant-language/promptfoo-provider.test.ts",
+    "eval:recipe-governance": "node --import tsx --test --test-concurrency=1 src/evals/recipe-governance/recipe-governance.test.ts",
+    "eval:recipe-governance:artifact": "node --import tsx src/evals/recipe-governance/write-recorded-artifact.ts",
     "start": "node --import tsx src/runtime-entry.ts api",
     "start:worker": "node --import tsx src/runtime-entry.ts worker",
     "test": "tsx --test --test-concurrency=1 'src/**/*.test.ts'",
