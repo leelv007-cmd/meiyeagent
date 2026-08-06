@@ -192,49 +192,32 @@ export function AdminRecipeStudioControl() {
             2. 校验
           </Button>
           <Button
-            disabled={busy || !record}
+            type="button"
+            disabled
             variant="outline"
-            onClick={() =>
-              transition('recipe_studio_record_eval', {
-                evalRun: {
-                  schemaVersion: 'eval-run/v1',
-                  runId: `recipe-studio:${crypto.randomUUID()}`,
-                  suiteId: 'recipe-studio-admin',
-                  suiteRevision: 'recipe-studio-admin@1',
-                  mode: 'recorded_fixture',
-                  createdAt: new Date().toISOString(),
-                  passed: true,
-                  results: [
-                    {
-                      caseId: record?.recipeId,
-                      gateId: 'recipe-quality',
-                      promptRevision: record?.promptRevisionRef,
-                      scorerRevision: 'recipe-quality-scorer@1',
-                      passed: true,
-                      reason: '运营确认评测通过。',
-                      memoryDiff: null,
-                    },
-                  ],
-                },
-              })
-            }
+            data-testid="recipe-studio-eval-gate-disabled"
+            title="Evaluation evidence is server-issued only (evidence-unavailable until Spec I)."
           >
             3. 记录评测
           </Button>
           <Button
-            disabled={busy || !record}
+            type="button"
+            disabled
             variant="outline"
-            onClick={() =>
-              transition('recipe_studio_internal_test', {
-                label: 'internal-test',
-                runId: `internal:${crypto.randomUUID()}`,
-                passed: true,
-              })
-            }
+            data-testid="recipe-studio-internal-test-gate-disabled"
+            title="Internal-test evidence is server-issued only (evidence-unavailable until Spec I)."
           >
             4. 内测试跑
           </Button>
         </div>
+        <p
+          className="text-sm text-muted-foreground"
+          data-testid="recipe-studio-evidence-disabled-notice"
+        >
+          评测与内测门已禁用：Core 只接受服务端签发的 evidenceReceiptId，浏览器不能提交
+          EvalRun / passed / runId。compiled → validated 仍可用；生产切换需 Spec I
+          回执签发后恢复（当前 evidence-unavailable）。
+        </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-2">
             <Label htmlFor="recipe-studio-surface-revision">

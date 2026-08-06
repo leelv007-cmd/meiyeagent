@@ -20,10 +20,14 @@ import type {
   StoreFactKind,
   SurfaceId,
 } from '@meiye/contracts';
-import type { EvalRun } from '../../contracts/index.js';
 import { CreationExperienceCatalogService } from './catalog-service.js';
 import type { CreationExperienceCatalogRepository } from './memory-repository.js';
 import { MemoryCreationExperienceCatalogRepository } from './memory-repository.js';
+import {
+  createPermittingRecipeEvidencePorts,
+  type RecipeEvaluationEvidencePort,
+  type RecipeInternalTestEvidencePort,
+} from './recipe-evidence-ports.js';
 import {
   RecipeStudioService,
   type RecipeSkillRevisionValidationPort,
@@ -640,35 +644,12 @@ export interface PublishLaunchCatalogResult {
   surface: ServerSurfaceRecord;
 }
 
-function launchSeedEvalRun(
-  spec: LaunchRecipeSeedSpec,
-  now: () => string,
-): EvalRun {
-  return {
-    schemaVersion: 'eval-run/v1',
-    runId: `launch-seed-eval:${spec.variantKey}`,
-    suiteId: 'recipe-launch-seeds',
-    suiteRevision: 'recipe-launch-seeds@1',
-    mode: 'recorded_fixture',
-    createdAt: now(),
-    passed: true,
-    results: [
-      {
-        caseId: spec.variantKey,
-        gateId: 'recipe-launch-seed',
-        promptRevision: spec.promptRevisionRef,
-        scorerRevision: 'recipe-launch-seed-scorer@1',
-        passed: true,
-        reason: '正式 launch seed 通过受控结构与生产同源校验。',
-        memoryDiff: null,
-      },
-    ],
-  };
-}
-
 /**
  * Draft → preview → publish all formal Recipes, then the launch Surface.
  * Surface recipeRefs pin the published revision ids (session freeze later).
+ *
+ * Launch seeds redeem through a server-side permitting evidence seam (not the
+ * browser command path). Spec I will replace this with real issued receipts.
  */
 export async function publishLaunchCatalog(
   service: CreationExperienceCatalogService,
@@ -679,6 +660,8 @@ export async function publishLaunchCatalog(
     correlationId?: string;
     now?: () => string;
     skillRevisionValidation?: RecipeSkillRevisionValidationPort;
+    evaluationEvidence?: RecipeEvaluationEvidencePort;
+    internalTestEvidence?: RecipeInternalTestEvidencePort;
   } = {},
 ): Promise<PublishLaunchCatalogResult> {
   const audit = {
@@ -688,6 +671,18 @@ export async function publishLaunchCatalog(
   };
   const surfaceId = options.surfaceId ?? LAUNCH_SURFACE_ID;
   const now = options.now ?? (() => new Date().toISOString());
+  const seedEvidence =
+    options.evaluationEvidence || options.internalTestEvidence
+      ? {
+          evaluation: options.evaluationEvidence,
+          internalTest: options.internalTestEvidence,
+        }
+      : createPermittingRecipeEvidencePorts({
+          now,
+          issuerId: LAUNCH_ACTOR.actorId,
+          suiteId: 'recipe-launch-seeds',
+          suiteRevision: 'recipe-launch-seeds@1',
+        });
   const studio = new RecipeStudioService(
     service,
     now,
@@ -696,6 +691,7 @@ export async function publishLaunchCatalog(
         return [];
       },
     },
+    seedEvidence,
   );
   const recipes: ServerRecipeRecord[] = [];
   let surface = await service.getSurfaceHead(surfaceId);
@@ -739,7 +735,7 @@ export async function publishLaunchCatalog(
       head = await studio.recordEvaluation({
         recipeId: spec.recipeId,
         expectedRevision: head.revision,
-        evalRun: launchSeedEvalRun(spec, now),
+        evidenceReceiptId: `launch-seed-eval:${spec.variantKey}`,
         ...audit,
       });
     }
@@ -747,9 +743,7 @@ export async function publishLaunchCatalog(
       head = await studio.recordInternalTest({
         recipeId: spec.recipeId,
         expectedRevision: head.revision,
-        label: 'internal-test',
-        runId: `launch-seed-internal:${spec.variantKey}`,
-        passed: true,
+        evidenceReceiptId: `launch-seed-internal:${spec.variantKey}`,
         ...audit,
       });
     }

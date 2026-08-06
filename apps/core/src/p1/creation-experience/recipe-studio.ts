@@ -11,10 +11,15 @@ import {
   type RecipeSourceRequirement,
   type StoreFactKind,
 } from '@meiye/contracts';
-import { evalRunSchema, type EvalRun } from '../../contracts/index.js';
 
 import { P1DomainError } from '../foundation/domain.js';
 import { CreationExperienceCatalogService } from './catalog-service.js';
+import {
+  createDefaultDenyRecipeEvaluationEvidencePort,
+  createDefaultDenyRecipeInternalTestEvidencePort,
+  type RecipeEvaluationEvidencePort,
+  type RecipeInternalTestEvidencePort,
+} from './recipe-evidence-ports.js';
 import type {
   CatalogAuditMeta,
   RecipeBodyInput,
@@ -131,14 +136,19 @@ export interface RecipeStudioTransitionInput extends CatalogAuditMeta {
 
 export interface RecipeStudioEvaluationInput
   extends RecipeStudioTransitionInput {
-  evalRun: EvalRun;
+  /** Server-issued receipt only — client EvalRun / passed are never authoritative. */
+  evidenceReceiptId: string;
 }
 
 export interface RecipeStudioInternalTestInput
   extends RecipeStudioTransitionInput {
-  label: 'internal-test';
-  runId: string;
-  passed: boolean;
+  /** Server-issued receipt only — client runId / passed / label are never authoritative. */
+  evidenceReceiptId: string;
+}
+
+export interface RecipeStudioEvidencePorts {
+  evaluation?: RecipeEvaluationEvidencePort;
+  internalTest?: RecipeInternalTestEvidencePort;
 }
 
 export interface RecipeStudioProductionInput
@@ -192,6 +202,64 @@ const EXACT_REVISION = /@(?:v)?\d+(?:\.\d+\.\d+)?$/u;
 
 function fail(message: string): never {
   throw new P1DomainError('INVALID_STATE', message);
+}
+
+function requireEvidenceReceiptId(
+  value: string | undefined,
+  gateLabel: string,
+): string {
+  if (typeof value !== 'string' || !value.trim()) {
+    fail(
+      `${gateLabel}门需要服务端签发的证据回执（evidenceReceiptId）；客户端构造的运行对象或 passed 不能作为权威证据。`,
+    );
+  }
+  return value.trim();
+}
+
+function assertRedeemedReceipt(
+  receipt: {
+    evidenceKind: string;
+    passed: boolean;
+    recipeId: string;
+    recipeRevision: number;
+    promptRevisionRef: string;
+    runId: string;
+    suiteId: string;
+    suiteRevision: string;
+  },
+  expected: {
+    evidenceKind: 'recipe_evaluation' | 'recipe_internal_test';
+    recipeId: string;
+    recipeRevision: number;
+    promptRevisionRef: string;
+  },
+): void {
+  if (receipt.evidenceKind !== expected.evidenceKind) {
+    fail('证据回执类型与当前门不匹配。');
+  }
+  if (receipt.passed !== true) {
+    fail(
+      expected.evidenceKind === 'recipe_evaluation'
+        ? '评测未通过，不能进入内测试跑。'
+        : '内测试跑未通过，不能切换生产。',
+    );
+  }
+  if (
+    receipt.recipeId !== expected.recipeId ||
+    receipt.recipeRevision !== expected.recipeRevision
+  ) {
+    fail('证据回执绑定的 Recipe revision 与当前 head 不一致。');
+  }
+  if (receipt.promptRevisionRef !== expected.promptRevisionRef) {
+    fail('证据回执没有使用本次编译冻结的 Prompt 版本。');
+  }
+  if (
+    !receipt.runId.trim() ||
+    !receipt.suiteId.trim() ||
+    !receipt.suiteRevision.trim()
+  ) {
+    fail('证据回执缺少 runId 或套件版本信息。');
+  }
 }
 
 function exactRevision(value: string, label: string) {
@@ -478,6 +546,9 @@ function operatorValidationMessage(errors: string[]) {
 }
 
 export class RecipeStudioService {
+  private readonly evaluationEvidence: RecipeEvaluationEvidencePort;
+  private readonly internalTestEvidence: RecipeInternalTestEvidencePort;
+
   constructor(
     private readonly catalog: CreationExperienceCatalogService,
     private readonly now: () => string = () => new Date().toISOString(),
@@ -486,7 +557,14 @@ export class RecipeStudioService {
         return [...skillRevisionRefs];
       },
     },
-  ) {}
+    evidence: RecipeStudioEvidencePorts = {},
+  ) {
+    this.evaluationEvidence =
+      evidence.evaluation ?? createDefaultDenyRecipeEvaluationEvidencePort();
+    this.internalTestEvidence =
+      evidence.internalTest ??
+      createDefaultDenyRecipeInternalTestEvidencePort();
+  }
 
   async compile(
     input: RecipeStudioCompileInput,
@@ -543,31 +621,33 @@ export class RecipeStudioService {
     if (head.studioRelease?.phase !== 'validated') {
       fail('Recipe 必须先通过生产同源校验，才能记录评测结果。');
     }
-    const parsed = evalRunSchema.safeParse(input.evalRun);
-    if (!parsed.success) {
-      fail('评测结果不符合 EvalRun v1 合同。');
-    }
-    if (!parsed.data.passed) {
-      fail('评测未通过，不能进入内测试跑。');
-    }
-    if (
-      parsed.data.results.some(
-        (result) =>
-          result.promptRevision !==
-          head.studioRelease?.compilationReceipt.promptRevisionRef,
-      )
-    ) {
-      fail('评测结果没有使用本次编译冻结的 Prompt 版本。');
-    }
+    const evidenceReceiptId = requireEvidenceReceiptId(
+      input.evidenceReceiptId,
+      '评测',
+    );
+    const receipt = await this.evaluationEvidence.redeem({
+      evidenceReceiptId,
+      recipeId: head.recipeId,
+      recipeRevision: head.revision,
+      promptRevisionRef:
+        head.studioRelease.compilationReceipt.promptRevisionRef,
+    });
+    assertRedeemedReceipt(receipt, {
+      evidenceKind: 'recipe_evaluation',
+      recipeId: head.recipeId,
+      recipeRevision: head.revision,
+      promptRevisionRef:
+        head.studioRelease.compilationReceipt.promptRevisionRef,
+    });
     const body = bodyFromRecord(head);
     body.studioRelease = {
       ...structuredClone(head.studioRelease),
       phase: 'evaluated',
       evaluation: {
         checkedAt: this.now(),
-        runId: parsed.data.runId,
-        suiteId: parsed.data.suiteId,
-        suiteRevision: parsed.data.suiteRevision,
+        runId: receipt.runId,
+        suiteId: receipt.suiteId,
+        suiteRevision: receipt.suiteRevision,
         passed: true,
       },
     };
@@ -584,21 +664,33 @@ export class RecipeStudioService {
     if (head.studioRelease?.phase !== 'evaluated') {
       fail('Recipe 必须先通过评测门，才能记录内测试跑。');
     }
-    if (
-      input.label !== 'internal-test' ||
-      !input.runId.trim() ||
-      input.passed !== true
-    ) {
-      fail('内测试跑必须在 internal-test 标签下真实通过。');
-    }
+    const evidenceReceiptId = requireEvidenceReceiptId(
+      input.evidenceReceiptId,
+      '内测',
+    );
+    const receipt = await this.internalTestEvidence.redeem({
+      evidenceReceiptId,
+      recipeId: head.recipeId,
+      recipeRevision: head.revision,
+      promptRevisionRef:
+        head.studioRelease.compilationReceipt.promptRevisionRef,
+    });
+    assertRedeemedReceipt(receipt, {
+      evidenceKind: 'recipe_internal_test',
+      recipeId: head.recipeId,
+      recipeRevision: head.revision,
+      promptRevisionRef:
+        head.studioRelease.compilationReceipt.promptRevisionRef,
+    });
     const body = bodyFromRecord(head);
     body.studioRelease = {
       ...structuredClone(head.studioRelease),
       phase: 'internal_tested',
       internalTest: {
         checkedAt: this.now(),
+        // label is server-owned (Spec I); clients no longer submit it.
         label: 'internal-test',
-        runId: input.runId.trim(),
+        runId: receipt.runId,
         passed: true,
       },
     };

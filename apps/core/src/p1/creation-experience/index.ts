@@ -24,6 +24,7 @@ export {
   type RecipeStudioCompileInput,
   type RecipeStudioBlock,
   type RecipeStudioEvaluationInput,
+  type RecipeStudioEvidencePorts,
   type RecipeStudioInternalTestInput,
   type RecipeStudioIntentType,
   type RecipeStudioOutputKind,
@@ -32,7 +33,24 @@ export {
   type RecipeStudioStage,
   type RecipeStudioStorySegment,
   type RecipeStudioTransitionInput,
+  type RecipeSkillRevisionValidationPort,
 } from './recipe-studio.js';
+export {
+  RECIPE_EVALUATION_EVIDENCE_UNAVAILABLE_MESSAGE,
+  RECIPE_INTERNAL_TEST_EVIDENCE_UNAVAILABLE_MESSAGE,
+  createDefaultDenyRecipeEvaluationEvidencePort,
+  createDefaultDenyRecipeInternalTestEvidencePort,
+  createPermittingRecipeEvidencePorts,
+  createPermittingRecipeEvaluationEvidencePort,
+  createPermittingRecipeInternalTestEvidencePort,
+  evidenceUnavailableError,
+  type RecipeEvidenceKind,
+  type RecipeEvidenceMode,
+  type RecipeEvidenceReceipt,
+  type RecipeEvidenceRedeemInput,
+  type RecipeEvaluationEvidencePort,
+  type RecipeInternalTestEvidencePort,
+} from './recipe-evidence-ports.js';
 export {
   RECIPE_GOVERNANCE_BLOCK_IDS,
   RecipeStudioCompileInputAdapter,

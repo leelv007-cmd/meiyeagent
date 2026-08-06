@@ -46,6 +46,12 @@ import {
   parseRecipeGovernanceFormInput,
 } from './recipe-governance-form.js';
 import {
+  createDefaultDenyRecipeEvaluationEvidencePort,
+  createDefaultDenyRecipeInternalTestEvidencePort,
+  type RecipeEvaluationEvidencePort,
+  type RecipeInternalTestEvidencePort,
+} from './recipe-evidence-ports.js';
+import {
   RecipeStudioService,
   type RecipeStudioCompileInput,
   type RecipeSkillRevisionValidationPort,
@@ -391,6 +397,8 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
       observabilityEvents?: ObservabilityEventAuditPort;
       taskObservability?: TaskObservabilityContextPort;
       skillRevisionValidation?: RecipeSkillRevisionValidationPort;
+      evaluationEvidence?: RecipeEvaluationEvidencePort;
+      internalTestEvidence?: RecipeInternalTestEvidencePort;
     } = {},
   ) {
     this.service =
@@ -411,6 +419,14 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
       this.service,
       undefined,
       options.skillRevisionValidation,
+      {
+        evaluation:
+          options.evaluationEvidence ??
+          createDefaultDenyRecipeEvaluationEvidencePort(),
+        internalTest:
+          options.internalTestEvidence ??
+          createDefaultDenyRecipeInternalTestEvidencePort(),
+      },
     );
   }
 
@@ -488,11 +504,12 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
             'expectedRevision is required.',
           );
         }
+        // Browser may still send evalRun/passed; discard them — receipt only.
         return this.recipeStudio.recordEvaluation({
           recipeId: stringField(value, 'recipeId'),
           expectedRevision,
           ...audit(),
-          evalRun: value.evalRun as never,
+          evidenceReceiptId: stringField(value, 'evidenceReceiptId'),
         });
       }
       case 'recipe_studio_internal_test': {
@@ -503,13 +520,12 @@ export class CreationExperienceFoundationModule implements P1OperationModule {
             'expectedRevision is required.',
           );
         }
+        // Browser may still send runId/passed/label; discard them — receipt only.
         return this.recipeStudio.recordInternalTest({
           recipeId: stringField(value, 'recipeId'),
           expectedRevision,
           ...audit(),
-          label: stringField(value, 'label') as 'internal-test',
-          runId: stringField(value, 'runId'),
-          passed: value.passed === true,
+          evidenceReceiptId: stringField(value, 'evidenceReceiptId'),
         });
       }
       case 'recipe_studio_production_switch': {

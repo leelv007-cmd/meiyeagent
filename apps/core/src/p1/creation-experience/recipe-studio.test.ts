@@ -15,12 +15,23 @@ import {
 import { MemoryCreationExperienceCatalogRepository } from './memory-repository.js';
 import { validateRecipeForComposer } from './recipe-validator.js';
 import {
+  createPermittingRecipeEvidencePorts,
+  type RecipeEvaluationEvidencePort,
+  type RecipeInternalTestEvidencePort,
+} from './recipe-evidence-ports.js';
+import {
   RecipeStudioService,
   type RecipeStudioCompileInput,
 } from './recipe-studio.js';
 import { listRecipeStudioSampleDefinitions } from './recipe-studio-samples.js';
 
-function createServices(unavailableSkillRefs: string[] = []) {
+function createServices(
+  unavailableSkillRefs: string[] = [],
+  evidence?: {
+    evaluation?: RecipeEvaluationEvidencePort;
+    internalTest?: RecipeInternalTestEvidencePort;
+  },
+) {
   const repository = new MemoryCreationExperienceCatalogRepository();
   const catalog = new CreationExperienceCatalogService(
     repository,
@@ -37,8 +48,22 @@ function createServices(unavailableSkillRefs: string[] = []) {
           return unavailableSkillRefs;
         },
       },
+      evidence,
     ),
   };
+}
+
+/** Full-chain tests inject permitting ports (Spec I replaces with real issuer). */
+function createServicesWithPermittingEvidence(
+  unavailableSkillRefs: string[] = [],
+) {
+  return createServices(
+    unavailableSkillRefs,
+    createPermittingRecipeEvidencePorts({
+      now: () => '2026-07-25T12:00:00.000Z',
+      issuerId: 'ops-1',
+    }),
+  );
 }
 
 function sampleDefinition(): RecipeStudioCompileInput {
@@ -245,8 +270,170 @@ describe('Recipe Studio controlled compiler', () => {
     );
   });
 
-  it('requires a passing EvalRun before recording the internal-test label', async () => {
-    const { studio: service } = createServices();
+  it('refuses evaluation and internal-test gates without a server-issued evidence receipt', async () => {
+    // Default-deny ports: a self-consistent client "pass" object is no longer accepted.
+    const { catalog, studio: service } = createServices();
+    const compiled = await service.compile(sampleDefinition());
+    const validated = await service.validate({
+      recipeId: compiled.recipeId,
+      expectedRevision: compiled.revision,
+      actorId: 'ops-1',
+      reason: '运行生产同源校验',
+      correlationId: 'corr-recipe-studio-validate',
+    });
+    assert.equal(validated.studioRelease?.phase, 'validated');
+
+    await assert.rejects(
+      () =>
+        service.recordEvaluation({
+          recipeId: validated.recipeId,
+          expectedRevision: validated.revision,
+          actorId: 'ops-1',
+          reason: '伪造客户端评测通过对象',
+          correlationId: 'corr-recipe-studio-eval-forged',
+          // Receipt id without a Spec I issuer must not advance the gate.
+          evidenceReceiptId: 'client-forged-eval-run',
+        }),
+      /evidence-unavailable/u,
+    );
+
+    await assert.rejects(
+      () =>
+        service.recordEvaluation({
+          recipeId: validated.recipeId,
+          expectedRevision: validated.revision,
+          actorId: 'ops-1',
+          reason: '缺少回执仍尝试过门',
+          correlationId: 'corr-recipe-studio-eval-missing',
+          evidenceReceiptId: '',
+        }),
+      /evidenceReceiptId/u,
+    );
+
+    assert.equal(
+      (await catalog.getRecipeHead(validated.recipeId))?.studioRelease?.phase,
+      'validated',
+    );
+
+    // Internal-test cannot be reached without evaluation; with default-deny both fail.
+    await assert.rejects(
+      () =>
+        service.recordInternalTest({
+          recipeId: validated.recipeId,
+          expectedRevision: validated.revision,
+          actorId: 'ops-1',
+          reason: '伪造内测通过',
+          correlationId: 'corr-recipe-studio-internal-forged',
+          evidenceReceiptId: 'client-forged-internal-run',
+        }),
+      /必须先通过评测门/u,
+    );
+  });
+
+  it('command seam discards client evalRun/passed and still denies without receipt', async () => {
+    const repository = new MemoryCreationExperienceCatalogRepository();
+    const module = new CreationExperienceFoundationModule(repository, undefined, {
+      skillRevisionValidation: {
+        async listUnavailableFrozenRevisionRefs() {
+          return [];
+        },
+      },
+    });
+    const context = {
+      workspaceId: 'workspace-a',
+      userId: 'ops-1',
+      correlationId: 'ce-evidence-seam',
+      actor: 'admin' as const,
+    };
+    const compiled = (await module.execute({
+      context,
+      input: {
+        action: 'recipe_studio_compile',
+        payload: {
+          ...sampleDefinition(),
+          reason: 'compile for evidence seam',
+        },
+      },
+      idempotencyKey: 'idem-evidence-compile',
+    })) as { recipeId: string; revision: number; studioRelease?: { phase: string } };
+    const validated = (await module.execute({
+      context,
+      input: {
+        action: 'recipe_studio_validate',
+        payload: {
+          recipeId: compiled.recipeId,
+          expectedRevision: compiled.revision,
+          reason: 'validate for evidence seam',
+        },
+      },
+      idempotencyKey: 'idem-evidence-validate',
+    })) as { recipeId: string; revision: number; studioRelease?: { phase: string } };
+    assert.equal(validated.studioRelease?.phase, 'validated');
+
+    await assert.rejects(
+      () =>
+        module.execute({
+          context,
+          input: {
+            action: 'recipe_studio_record_eval',
+            payload: {
+              recipeId: validated.recipeId,
+              expectedRevision: validated.revision,
+              reason: 'client forges evalRun + missing receipt',
+              // Legacy client fields — must not authorize the gate.
+              evalRun: {
+                schemaVersion: 'eval-run/v1',
+                runId: 'forged-run',
+                suiteId: 'forged-suite',
+                suiteRevision: 'forged-suite@1',
+                mode: 'recorded_fixture',
+                createdAt: '2026-07-25T11:50:00.000Z',
+                passed: true,
+                results: [
+                  {
+                    caseId: 'forged',
+                    gateId: 'recipe-quality',
+                    promptRevision: 'prompt.hair-care-education@12',
+                    scorerRevision: 'scorer@1',
+                    passed: true,
+                    reason: 'forged',
+                    memoryDiff: null,
+                  },
+                ],
+              },
+              passed: true,
+              evidenceReceiptId: 'still-forged-without-issuer',
+            },
+          },
+          idempotencyKey: 'idem-evidence-eval-deny',
+        }),
+      /evidence-unavailable/u,
+    );
+
+    await assert.rejects(
+      () =>
+        module.execute({
+          context,
+          input: {
+            action: 'recipe_studio_internal_test',
+            payload: {
+              recipeId: validated.recipeId,
+              expectedRevision: validated.revision,
+              reason: 'client forges passed=true',
+              label: 'internal-test',
+              runId: 'forged-internal',
+              passed: true,
+              evidenceReceiptId: 'still-forged-internal',
+            },
+          },
+          idempotencyKey: 'idem-evidence-internal-deny',
+        }),
+      /必须先通过评测门|evidence-unavailable/u,
+    );
+  });
+
+  it('redeems server evidence receipts into evaluated and internal_tested phases', async () => {
+    const { studio: service } = createServicesWithPermittingEvidence();
     const compiled = await service.compile(sampleDefinition());
     const validated = await service.validate({
       recipeId: compiled.recipeId,
@@ -262,26 +449,7 @@ describe('Recipe Studio controlled compiler', () => {
       actorId: 'ops-1',
       reason: '记录护发 Recipe 评测',
       correlationId: 'corr-recipe-studio-eval',
-      evalRun: {
-        schemaVersion: 'eval-run/v1',
-        runId: 'recipe-hair-care-eval-1',
-        suiteId: 'recipe-studio-golden-cases',
-        suiteRevision: 'recipe-studio-golden-cases@1',
-        mode: 'recorded_fixture',
-        createdAt: '2026-07-25T11:50:00.000Z',
-        passed: true,
-        results: [
-          {
-            caseId: 'hair-care-education',
-            gateId: 'recipe-quality',
-            promptRevision: 'prompt.hair-care-education@12',
-            scorerRevision: 'recipe-quality-scorer@1',
-            passed: true,
-            reason: '故事结构、事实引用与平台适配均通过。',
-            memoryDiff: null,
-          },
-        ],
-      },
+      evidenceReceiptId: 'recipe-hair-care-eval-1',
     });
     assert.equal(evaluated.studioRelease?.phase, 'evaluated');
     assert.equal(
@@ -295,9 +463,7 @@ describe('Recipe Studio controlled compiler', () => {
       actorId: 'ops-1',
       reason: '内测标签试跑通过',
       correlationId: 'corr-recipe-studio-internal',
-      label: 'internal-test',
-      runId: 'internal-run-hair-care-1',
-      passed: true,
+      evidenceReceiptId: 'internal-run-hair-care-1',
     });
     assert.equal(internalTested.studioRelease?.phase, 'internal_tested');
     assert.deepEqual(internalTested.studioRelease?.internalTest, {
@@ -309,7 +475,7 @@ describe('Recipe Studio controlled compiler', () => {
   });
 
   it('switches a fully gated revision into the production Surface for Composer submission', async () => {
-    const { catalog, repository, studio } = createServices();
+    const { catalog, repository, studio } = createServicesWithPermittingEvidence();
     const launch = await publishLaunchCatalog(catalog);
     const compiled = await studio.compile(sampleDefinition());
     const validated = await studio.validate({
@@ -325,26 +491,7 @@ describe('Recipe Studio controlled compiler', () => {
       actorId: 'ops-1',
       reason: '记录评测',
       correlationId: 'corr-production-eval',
-      evalRun: {
-        schemaVersion: 'eval-run/v1',
-        runId: 'recipe-production-eval-1',
-        suiteId: 'recipe-studio-golden-cases',
-        suiteRevision: 'recipe-studio-golden-cases@1',
-        mode: 'recorded_fixture',
-        createdAt: '2026-07-25T11:50:00.000Z',
-        passed: true,
-        results: [
-          {
-            caseId: 'hair-care-education',
-            gateId: 'recipe-quality',
-            promptRevision: 'prompt.hair-care-education@12',
-            scorerRevision: 'recipe-quality-scorer@1',
-            passed: true,
-            reason: '评测通过。',
-            memoryDiff: null,
-          },
-        ],
-      },
+      evidenceReceiptId: 'recipe-production-eval-1',
     });
     const internalTested = await studio.recordInternalTest({
       recipeId: evaluated.recipeId,
@@ -352,9 +499,7 @@ describe('Recipe Studio controlled compiler', () => {
       actorId: 'ops-1',
       reason: '内测试跑通过',
       correlationId: 'corr-production-internal',
-      label: 'internal-test',
-      runId: 'internal-run-hair-care-1',
-      passed: true,
+      evidenceReceiptId: 'internal-run-hair-care-1',
     });
 
     const production = await studio.switchProduction({
@@ -612,7 +757,7 @@ describe('Recipe Studio controlled compiler', () => {
   });
 
   it('rolls the production Surface back to the previous published Recipe revision', async () => {
-    const { catalog, studio } = createServices();
+    const { catalog, studio } = createServicesWithPermittingEvidence();
     const launch = await publishLaunchCatalog(catalog);
 
     const gate = async (
@@ -633,26 +778,7 @@ describe('Recipe Studio controlled compiler', () => {
         actorId: 'ops-1',
         reason: `eval ${runSuffix}`,
         correlationId: `corr-eval-${runSuffix}`,
-        evalRun: {
-          schemaVersion: 'eval-run/v1',
-          runId: `eval-${runSuffix}`,
-          suiteId: 'recipe-studio-golden-cases',
-          suiteRevision: 'recipe-studio-golden-cases@1',
-          mode: 'recorded_fixture',
-          createdAt: '2026-07-25T11:50:00.000Z',
-          passed: true,
-          results: [
-            {
-              caseId: `case-${runSuffix}`,
-              gateId: 'recipe-quality',
-              promptRevision: definition.dependencies.promptRevisionRef,
-              scorerRevision: 'recipe-quality-scorer@1',
-              passed: true,
-              reason: '评测通过。',
-              memoryDiff: null,
-            },
-          ],
-        },
+        evidenceReceiptId: `eval-${runSuffix}`,
       });
       return studio.recordInternalTest({
         recipeId: evaluated.recipeId,
@@ -660,9 +786,7 @@ describe('Recipe Studio controlled compiler', () => {
         actorId: 'ops-1',
         reason: `internal ${runSuffix}`,
         correlationId: `corr-internal-${runSuffix}`,
-        label: 'internal-test',
-        runId: `internal-${runSuffix}`,
-        passed: true,
+        evidenceReceiptId: `internal-${runSuffix}`,
       });
     };
 

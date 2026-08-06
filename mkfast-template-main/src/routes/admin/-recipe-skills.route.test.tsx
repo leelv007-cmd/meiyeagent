@@ -89,6 +89,13 @@ test('Recipe Studio admin route exposes the complete four-gate production chain'
   assert.match(html, /4\. 内测试跑/);
   assert.match(html, /切换 production/);
   assert.match(html, /回滚 production/);
+  // Spec D #374: eval / internal-test gates are disabled without server receipts.
+  assert.match(html, /data-testid="recipe-studio-eval-gate-disabled"/);
+  assert.match(html, /data-testid="recipe-studio-internal-test-gate-disabled"/);
+  assert.match(html, /data-testid="recipe-studio-evidence-disabled-notice"/);
+  assert.match(html, /evidence-unavailable/);
+  assert.doesNotMatch(html, /"passed"\s*:\s*true/);
+  assert.doesNotMatch(html, /evalRun/);
 });
 
 test('Skills admin route exposes all five structured lifecycle commands', () => {
