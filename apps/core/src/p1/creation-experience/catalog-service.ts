@@ -14,6 +14,7 @@ import {
   projectBrowserSurface,
 } from './browser-projection.js';
 import type { CreationExperienceCatalogRepository } from './memory-repository.js';
+import { mergePublishedRecipeWorkflowRevisionRefs } from './published-recipe-workflow-catalog.js';
 import { validateRecipeForComposer } from './recipe-validator.js';
 
 import type {
@@ -596,6 +597,16 @@ export class CreationExperienceCatalogService {
 
   async listRecipeHistory(recipeId: RecipeId) {
     return this.repository.listRecipeHistory(recipeId);
+  }
+
+  /**
+   * Read-only catalog of workflow revision refs from currently published
+   * Recipe heads, merged with launch-seed fallbacks (Spec B / #360).
+   * Sole authority for skill-bind allowlists — no write path.
+   */
+  async listPublishedRecipeWorkflowRevisionRefs(): Promise<string[]> {
+    const published = await this.repository.listPublishedRecipes();
+    return mergePublishedRecipeWorkflowRevisionRefs(published);
   }
 
   async getSurfaceHead(surfaceId: SurfaceId) {

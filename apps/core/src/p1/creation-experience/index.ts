@@ -7,6 +7,12 @@ export {
 } from './browser-projection.js';
 export { CreationExperienceCatalogService } from './catalog-service.js';
 export {
+  mergePublishedRecipeWorkflowRevisionRefs,
+  normalizeWorkflowRevisionRef,
+  type LaunchRecipeWorkflowSeed,
+  type PublishedRecipeWorkflowSource,
+} from './published-recipe-workflow-catalog.js';
+export {
   RECIPE_STUDIO_STAGES,
   RecipeStudioService,
   type RecipeStudioCompileInput,

@@ -35,6 +35,11 @@ export interface CreationExperienceCatalogRepository {
   latestPublishedRecipe(
     recipeId: RecipeId,
   ): Promise<ServerRecipeRecord | null>;
+  /**
+   * Full-catalog read of currently published Recipe heads (status='published').
+   * Append-only history is ignored once the head leaves published.
+   */
+  listPublishedRecipes(): Promise<ServerRecipeRecord[]>;
 
   appendSurface(
     record: ServerSurfaceRecord,
@@ -122,6 +127,24 @@ export class MemoryCreationExperienceCatalogRepository
       }
     }
     return null;
+  }
+
+  async listPublishedRecipes() {
+    const published: ServerRecipeRecord[] = [];
+    for (const history of this.recipes.values()) {
+      const head = history.at(-1);
+      if (head?.status === 'published') {
+        published.push(structuredClone(head));
+      }
+    }
+    published.sort((left, right) =>
+      left.recipeId < right.recipeId
+        ? -1
+        : left.recipeId > right.recipeId
+          ? 1
+          : 0,
+    );
+    return published;
   }
 
   async appendSurface(

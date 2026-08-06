@@ -178,6 +178,19 @@ export class PostgresCreationExperienceCatalogRepository
     );
   }
 
+  async listPublishedRecipes(): Promise<ServerRecipeRecord[]> {
+    const result = await this.pool.query<RevisionRow<ServerRecipeRecord>>(
+      `SELECT revisions.payload, revisions.revision
+         FROM p1_creation_recipe_heads heads
+         JOIN p1_creation_recipe_revisions revisions
+           ON revisions.recipe_id = heads.recipe_id
+          AND revisions.revision = heads.revision
+        WHERE revisions.status = 'published'
+        ORDER BY heads.recipe_id ASC`,
+    );
+    return result.rows.map((row) => structuredClone(row.payload));
+  }
+
   appendSurface(
     record: ServerSurfaceRecord,
     expectedRevision: number | null,
