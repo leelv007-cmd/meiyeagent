@@ -1,6 +1,8 @@
 # Spec H｜换装遗留与 UI 缺项（heroui 残件替换 + ops 图表件 + 命令面板/通知/待办 Popover）
 
-> 来源：admin-reui-restyle-plan-2026-08-06.md「落地状态」7 项遗留 + 方案 §二未落地的可选部件。DRAFT——UI 层，尽量复用 ReUI 现成 block，不自研。
+> 来源：admin-reui-restyle-plan-2026-08-06.md「落地状态」7 项遗留 + 方案 §二未落地的可选部件。UI 层，尽量复用 ReUI 现成 block，不自研。
+>
+> 状态：已批准并开票（2026-08-06）。实施票：#386 UI 缺项补齐 · #387 heroui 残件替换。
 
 ## Problem Statement
 

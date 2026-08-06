@@ -1,6 +1,8 @@
 # Spec B｜静默数据丢失三处（toolEntryRefs / Recipe 草稿丢字段 / Skill 治理白名单）
 
-> 来源：admin-config-audit-2026-08-06.md §2.5、§2.7、§五 P0，以及本轮对抗式复核裁决。DRAFT。
+> 来源：admin-config-audit-2026-08-06.md §2.5、§2.7、§五 P0，以及本轮对抗式复核裁决。
+>
+> 状态：已批准并开票（2026-08-06）。实施票：#359 三态合并＋Surface 工具引用 · #360 已发布工作流目录端口 · #361 Recipe 草稿字段 · #362 Skill 绑定边界。
 
 ## Problem Statement
 

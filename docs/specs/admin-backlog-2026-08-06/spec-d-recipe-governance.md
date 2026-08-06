@@ -1,6 +1,8 @@
 # Spec D｜配方治理收敛（D3 recipe-studio 下线 + D5 Recipe→Surface 引用流程化）
 
-> 来源：admin-config-audit-2026-08-06.md §2.6、§2.7、§4.3、§六 D3/D5。DRAFT。
+> 来源：admin-config-audit-2026-08-06.md §2.6、§2.7、§4.3、§六 D3/D5。
+>
+> 状态：已批准并开票（2026-08-06）。实施票：#372 表单输入与 adapter · #373 已发布版本候选查询 · #374 证据端口与禁用态 · #375 删除 recipe-studio 路由 · #376 发布成功面板。
 
 ## Problem Statement
 

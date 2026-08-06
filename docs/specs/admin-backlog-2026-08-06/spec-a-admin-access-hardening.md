@@ -1,6 +1,8 @@
 # Spec A｜管理面权限收口（BFF 纵深、封禁时效、平台角色管理）
 
-> 来源：`docs/reviews/admin-config-audit-2026-08-06.md` §2.8、§4.5、§六 D7、报备②，以及本轮对抗式复核裁决。DRAFT——批准后发布 issue 并打 `ready-for-agent`。本 spec 的 BFF 管理员门是 P2 加固项，不把已被 Core 拦截的越权读误报为 P0 漏洞。
+> 来源：`docs/reviews/admin-config-audit-2026-08-06.md` §2.8、§4.5、§六 D7、报备②，以及本轮对抗式复核裁决。本 spec 的 BFF 管理员门是 P2 加固项，不把已被 Core 拦截的越权读误报为 P0 漏洞。
+>
+> 状态：已批准并开票（2026-08-06）。实施票：#363 BFF 管理员门 · #364 封禁即时性 · #365 裸端点 404 · #366 平台角色管理。
 
 ## Problem Statement
 

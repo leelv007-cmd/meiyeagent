@@ -1,6 +1,8 @@
 # Spec E｜商家侧「选用技能」旅程（D4 `user_selected` 模式落地）
 
 > 来源：admin-config-audit-2026-08-06 §2.5、§六 D4；D-108、D-139、D-159③、D-160②、D-165。本文是实施规格，不再把关键选择留给后续设计。
+>
+> 状态：已批准并开票（2026-08-06）。实施票：#377 合同贯通 · #378 merchant projection · #379 admission 注入与冻结 · #380 能力包 pill · #381 绑定矩阵优先级 · #382 端到端旅程。
 
 ## Problem Statement
 

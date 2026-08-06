@@ -1,7 +1,9 @@
 # Spec C｜供给闭环修复（凭据轮换回执 / 测试连接回显 / 模式键环境提示 / 动作去重 / 错标）
 
-> 来源：admin-config-audit-2026-08-06.md §2.2、§2.4、§2.9、§3.2、§六 D6。DRAFT。
+> 来源：admin-config-audit-2026-08-06.md §2.2、§2.4、§2.9、§3.2、§六 D6。
 > 运行表的 `q`、模型、任务等筛选 UI 已在换装波完成；本票只保持其接线，不重新开票或改动筛选实现（`mkfast-template-main/src/p1/admin-supply-run-table-model.ts:37-51`、`mkfast-template-main/src/routes/admin/supply.tsx:13-37`）。
+>
+> 状态：已批准并开票（2026-08-06）。实施票：#367 轮换回执交接 · #368 测试连接桥接 · #369 模式键运行时快照 · #370 stop_new_tasks 去重 · #371 支付映射接线。
 
 ## Problem Statement
 
