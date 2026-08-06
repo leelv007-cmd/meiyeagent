@@ -12,7 +12,12 @@ import type {
   ProviderCredentialOperatorPort,
   ProviderCredentialRuntimeSources,
 } from './provider-credential-runtime.js';
-import { toPublicMetadata } from '../supply-registry/credential-account.js';
+import {
+  PLATFORM_CREDENTIAL_WORKSPACE_ID,
+  toPublicMetadata,
+  type CredentialAccount,
+} from '../supply-registry/credential-account.js';
+import type { ProviderConnectivityStatus } from './provider-connectivity.js';
 
 type ProviderCredentialEffectiveSource = 'vault' | 'env_fallback' | 'env';
 
@@ -20,6 +25,17 @@ const PROVIDER_CREDENTIAL_SLOTS = [
   'model.direct',
   'ark.media',
 ] as const;
+
+/** Controlled evidence ref for admin test-connection → CredentialAccount bridge. */
+function adminTestConnectionEvidenceRef(input: {
+  connectionId: string;
+  credentialVersion: string;
+  testedAt: string;
+  status: ProviderConnectivityStatus;
+}): string {
+  // No secret material — only connection identity, version, status, and time.
+  return `admin-test-connection://${encodeURIComponent(input.connectionId)}/v${input.credentialVersion}/${input.status}/${encodeURIComponent(input.testedAt)}`;
+}
 
 interface IntegrationsFoundationModuleOptions {
   adminActorIds?: readonly string[];
@@ -286,6 +302,51 @@ export class IntegrationsFoundationModule implements P1OperationModule {
     }
   }
 
+  /**
+   * Public admin projection for one platform credential slot from a
+   * CredentialAccount. Shared by admin_provider_credentials and the
+   * admin_test_provider_connection bridge return (query path unchanged).
+   */
+  private projectCredentialAccountSlot(
+    connectionId: string,
+    account: CredentialAccount,
+  ) {
+    const {
+      id: credentialAccountId,
+      secretReference: _secretReference,
+      ...metadata
+    } = toPublicMetadata(account);
+    return {
+      ...metadata,
+      id: connectionId,
+      credentialAccountId,
+      accountStatus: account.status,
+      workspaceId: account.workspaceId,
+      credential: {
+        id: account.credentialId,
+        version: account.secretVersion,
+        mask: '••••••••' as const,
+        scope: [] as string[],
+        status:
+          account.status === 'active'
+            ? ('active' as const)
+            : account.status === 'retired'
+              ? ('revoked' as const)
+              : ('unverified' as const),
+        ...(account.lastTest
+          ? {
+              testedAt: account.lastTest.testedAt,
+              testStatus: account.lastTest.status,
+              ...(account.lastTest.errorCode
+                ? { testErrorCode: account.lastTest.errorCode }
+                : {}),
+            }
+          : {}),
+      },
+      effectiveSource: this.providerCredentialEffectiveSource(connectionId),
+    };
+  }
+
   async execute(args: {
     context: P1Context;
     idempotencyKey: string;
@@ -344,12 +405,88 @@ export class IntegrationsFoundationModule implements P1OperationModule {
       }
       case 'admin_test_provider_connection': {
         const { id } = this.platformCredentialId(payload);
-        return publicConnection(
-          await this.integrations.testProviderConnection(
-            this.platformCredentialContext(args.context),
-            id,
-          ),
+        const platformContext = this.platformCredentialContext(args.context);
+        // IntegrationConnection remains the probe secret input (vault use).
+        const connection = await this.integrations.testProviderConnection(
+          platformContext,
+          id,
         );
+        // Bridge probe outcome onto CredentialAccount so admin_provider_credentials
+        // (which projects lastTest) sees the same truth. Supply probe's record path
+        // is a different entry — this is the explicit command bridge.
+        if (this.providerCredentialOperator) {
+          const accountId = `credential-account:${id}`;
+          const accounts = await this.providerCredentialOperator.listAccounts(
+            PLATFORM_CREDENTIAL_WORKSPACE_ID,
+          );
+          let account =
+            accounts.find(
+              (row) => row.id === accountId || row.connectionId === id,
+            ) ?? null;
+          if (!account) {
+            account =
+              await this.providerCredentialOperator.provisionConnection(
+                connection,
+              );
+          }
+          const testedAt = connection.credential.testedAt;
+          const testStatus = connection.credential.testStatus;
+          if (!testedAt || !testStatus) {
+            throw new IntegrationError(
+              'PROVIDER_CONNECTIVITY_RESULT_MISSING',
+              'Provider connectivity test did not produce a durable result.',
+              500,
+            );
+          }
+          const expectedVersion = account.version;
+          const evidenceRef = adminTestConnectionEvidenceRef({
+            connectionId: id,
+            credentialVersion: expectedVersion,
+            testedAt,
+            status: testStatus,
+          });
+          await this.providerCredentialOperator.recordConnectivityResult({
+            workspaceId: PLATFORM_CREDENTIAL_WORKSPACE_ID,
+            accountId: account.id,
+            expectedVersion,
+            status: testStatus,
+            testedAt,
+            evidenceRef,
+            ...(connection.credential.testErrorCode
+              ? { errorCode: connection.credential.testErrorCode }
+              : {}),
+          });
+          const refreshed =
+            (
+              await this.providerCredentialOperator.listAccounts(
+                PLATFORM_CREDENTIAL_WORKSPACE_ID,
+              )
+            ).find(
+              (row) => row.id === account.id || row.connectionId === id,
+            ) ?? null;
+          if (refreshed) {
+            return this.projectCredentialAccountSlot(id, refreshed);
+          }
+          // Operator mock may not re-list after record — synthesize public view
+          // from known probe fields + pre-record account (status may lag activate).
+          return this.projectCredentialAccountSlot(id, {
+            ...account,
+            lastTest: {
+              status: testStatus,
+              testedAt,
+              evidenceRef,
+              ...(connection.credential.testErrorCode
+                ? { errorCode: connection.credential.testErrorCode }
+                : {}),
+            },
+            lastTestEvidenceRef: evidenceRef,
+            ...(testStatus === 'passed'
+              ? { status: 'active' as const, verifiedAt: testedAt }
+              : {}),
+            updatedAt: testedAt,
+          });
+        }
+        return publicConnection(connection);
       }
       case 'create_connection':
         return publicConnection(
@@ -477,40 +614,7 @@ export class IntegrationsFoundationModule implements P1OperationModule {
                   effectiveSource: this.providerCredentialEffectiveSource(id),
                 };
               }
-              const {
-                id: credentialAccountId,
-                secretReference: _secretReference,
-                ...metadata
-              } = toPublicMetadata(account);
-              return {
-                ...metadata,
-                id,
-                credentialAccountId,
-                accountStatus: account.status,
-                workspaceId: account.workspaceId,
-                credential: {
-                  id: account.credentialId,
-                  version: account.secretVersion,
-                  mask: '••••••••' as const,
-                  scope: [],
-                  status:
-                    account.status === 'active'
-                      ? ('active' as const)
-                      : account.status === 'retired'
-                        ? ('revoked' as const)
-                        : ('unverified' as const),
-                  ...(account.lastTest
-                    ? {
-                        testedAt: account.lastTest.testedAt,
-                        testStatus: account.lastTest.status,
-                        ...(account.lastTest.errorCode
-                          ? { testErrorCode: account.lastTest.errorCode }
-                          : {}),
-                      }
-                    : {}),
-                },
-                effectiveSource: this.providerCredentialEffectiveSource(id),
-              };
+              return this.projectCredentialAccountSlot(id, account);
             });
           }
           const connections = new Map(

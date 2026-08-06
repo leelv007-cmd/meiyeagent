@@ -181,6 +181,97 @@ describe('AdminProviderCredentialControl rotation receipt handoff', () => {
     );
   });
 
+  it('shows updated testStatus/testedAt/testErrorCode on the same page after test connection', async () => {
+    const user = userEvent.setup();
+    const testedAt = '2026-08-07T11:30:00.000Z';
+    const commandReturn = {
+      id: 'platform:model.direct',
+      credentialAccountId: ACCOUNT_ID,
+      workspaceId: PLATFORM_CREDENTIAL_WORKSPACE_ID,
+      accountStatus: 'pending' as const,
+      status: 'pending' as const,
+      version: '2',
+      lastTestEvidenceRef:
+        'admin-test-connection://platform%3Amodel.direct/v2/unauthorized/2026-08-07T11%3A30%3A00.000Z',
+      credential: {
+        id: 'cred-model-direct',
+        mask: '••••••••',
+        scope: [] as string[],
+        status: 'unverified' as const,
+        version: 2,
+        testedAt,
+        testStatus: 'unauthorized' as const,
+        testErrorCode: 'http_401',
+      },
+      effectiveSource: 'vault' as const,
+    };
+    const afterTestCredentials = [
+      {
+        ...existingCredentials[0],
+        accountStatus: 'pending' as const,
+        credential: {
+          ...existingCredentials[0]!.credential,
+          status: 'unverified',
+          testedAt,
+          testStatus: 'unauthorized' as const,
+          testErrorCode: 'http_401',
+        },
+      },
+      existingCredentials[1],
+    ];
+
+    p1Client.commandP1.mockResolvedValueOnce(commandReturn);
+    // invalidateQueries → refetch uses queryP1
+    p1Client.queryP1.mockResolvedValue(afterTestCredentials);
+
+    await renderControl();
+
+    const slot = screen
+      .getAllByTestId('provider-credential-slot')
+      .find((node) => node.getAttribute('data-slot') === 'model.direct');
+    if (!slot) throw new Error('model.direct slot missing');
+
+    // Pre-click projection: last known passed probe.
+    expect(within(slot).getByText(/连接成功|Connection passed/i)).toBeTruthy();
+    expect(
+      within(slot).queryByText(/鉴权失败|Authorization failed/i)
+    ).toBeNull();
+
+    await user.click(
+      within(slot).getByRole('button', { name: /测试连接|Test connection/i })
+    );
+
+    await waitFor(() => {
+      expect(p1Client.commandP1).toHaveBeenCalledWith(
+        'integrations',
+        expect.objectContaining({
+          action: 'admin_test_provider_connection',
+          payload: { slot: 'model.direct' },
+        })
+      );
+    });
+
+    await waitFor(() => {
+      expect(
+        within(slot).getByText(/鉴权失败|Authorization failed/i)
+      ).toBeTruthy();
+    });
+
+    expect(
+      within(slot).queryByText(/连接成功|Connection passed/i)
+    ).toBeNull();
+    // testedAt is rendered via toLocaleString — assert the localized string.
+    const expectedTestedAt = new Date(testedAt).toLocaleString();
+    expect(slot.textContent).toContain(expectedTestedAt);
+    // Public command payload must not carry secrets (negative contract for the mock seam).
+    expect(JSON.stringify(commandReturn)).not.toMatch(
+      /secretRef|secretReference|sk-|apiKey/i
+    );
+    expect(JSON.stringify(afterTestCredentials)).not.toMatch(
+      /secretRef|secretReference|sk-|apiKey/i
+    );
+  });
+
   it('does not stage a handoff for first-time store (no receipt)', async () => {
     const user = userEvent.setup();
     const emptySlots = [

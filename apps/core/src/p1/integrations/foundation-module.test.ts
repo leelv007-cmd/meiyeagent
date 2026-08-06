@@ -3,6 +3,7 @@ import test from 'node:test';
 import { IntegrationApplicationService } from './application-service.js';
 import {
   IntegrationError,
+  type IntegrationConnection,
   type SecretContext,
   type SecretStorePort,
 } from './contracts.js';
@@ -10,13 +11,137 @@ import { IntegrationsFoundationModule } from './foundation-module.js';
 import { MemoryIntegrationRepository } from './repository.js';
 import { RecordedFeishuMcpAdapter } from './feishu.js';
 import { FakeKmsSecretStore } from './secret-store.js';
-import { createCredentialAccount } from '../supply-registry/credential-account.js';
+import {
+  createCredentialAccount,
+  specializeCredentialAccount,
+  toPublicMetadata,
+  type CredentialAccount,
+} from '../supply-registry/credential-account.js';
+import { transitionCredentialLifecycle } from '../supply-registry/credential-lifecycle.js';
+import type {
+  ProviderCredentialConnectivityVerificationInput,
+  ProviderCredentialOperatorPort,
+} from './provider-credential-runtime.js';
 
 const context = {
   correlationId: 'corr-a',
   userId: 'owner-a',
   workspaceId: 'workspace-a',
 };
+
+/** Minimal in-memory operator for foundation-module contract tests. */
+function memoryProviderCredentialOperator(options?: {
+  onRecord?: (input: ProviderCredentialConnectivityVerificationInput) => void;
+}): ProviderCredentialOperatorPort & {
+  accounts: Map<string, CredentialAccount>;
+  provisioned: number;
+} {
+  const accounts = new Map<string, CredentialAccount>();
+  const operator = {
+    accounts,
+    provisioned: 0,
+    async listAccounts(workspaceId: string) {
+      return [...accounts.values()].filter(
+        (account) => account.workspaceId === workspaceId,
+      );
+    },
+    async provisionConnection(connection: IntegrationConnection) {
+      operator.provisioned += 1;
+      const account = specializeCredentialAccount({
+        connection,
+        label: `Platform ${connection.subject ?? connection.id}`,
+        providerProfileId: 'provider-test',
+        type: String(connection.subject ?? 'model.direct'),
+        scope: 'platform',
+        source: 'registry',
+      });
+      accounts.set(account.id, account);
+      return account;
+    },
+    async stageRotation(input: {
+      workspaceId: string;
+      accountId: string;
+      secret: string;
+    }) {
+      const account = accounts.get(input.accountId);
+      return {
+        account: toPublicMetadata(
+          account ??
+            createCredentialAccount({
+              id: input.accountId,
+              label: input.accountId,
+              providerProfileId: 'provider-test',
+              type: 'model.direct',
+              scope: 'platform',
+              secretReference: 'kms://test/v1',
+              version: '1',
+              secretVersion: 1,
+              credentialId: 'cred-test',
+              connectionId: input.accountId.replace(
+                /^credential-account:/,
+                '',
+              ),
+              workspaceId: input.workspaceId,
+              provider: 'model',
+            }),
+        ),
+        secureWriteReceipt: {
+          id: 'secure-write-receipt-v2',
+          workspaceId: input.workspaceId,
+          accountId: input.accountId,
+          nextSecretVersion: (account?.secretVersion ?? 1) + 1,
+          expiresAt: '2026-07-20T00:15:00.000Z',
+        },
+      };
+    },
+    async recordConnectivityResult(
+      input: ProviderCredentialConnectivityVerificationInput,
+    ) {
+      options?.onRecord?.(input);
+      const current = accounts.get(input.accountId);
+      if (!current) {
+        throw new IntegrationError(
+          'CONNECTION_NOT_FOUND',
+          'CredentialAccount must exist before connectivity verification.',
+          404,
+        );
+      }
+      if (current.version !== input.expectedVersion) {
+        throw new IntegrationError(
+          'IDEMPOTENCY_CONFLICT',
+          `CredentialAccount ${input.accountId} changed before connectivity verification.`,
+          409,
+        );
+      }
+      let next = transitionCredentialLifecycle(
+        current,
+        {
+          kind: 'record_test',
+          evidence: {
+            status: input.status,
+            testedAt: input.testedAt,
+            evidenceRef: input.evidenceRef,
+            ...(input.errorCode ? { errorCode: input.errorCode } : {}),
+          },
+        },
+        { now: input.testedAt },
+      );
+      if (input.status === 'passed') {
+        next = transitionCredentialLifecycle(
+          next,
+          { kind: 'activate' },
+          { now: input.testedAt },
+        );
+      }
+      accounts.set(input.accountId, next);
+      return {
+        account: toPublicMetadata(next),
+        activated: next.status === 'active',
+      };
+    },
+  };
+  return operator;
+}
 
 class RecordingSecretStore implements SecretStorePort {
   puts = 0;
@@ -370,8 +495,7 @@ test('platform admin credential query reads global CredentialAccount truth inste
 });
 
 test('provider credential rotation stages a secure-write receipt without echoing the secret', async () => {
-  let provisioned = 0;
-  let receiptIssuedForVersion = 0;
+  const operator = memoryProviderCredentialOperator();
   let rotationWorkspaceId = '';
   const module = new IntegrationsFoundationModule(
     new IntegrationApplicationService({
@@ -385,30 +509,14 @@ test('provider credential rotation stages a secure-write receipt without echoing
     }),
     {
       providerCredentialOperator: {
-        async listAccounts() {
-          return [];
-        },
-        async provisionConnection() {
-          provisioned += 1;
-          return {} as never;
-        },
+        listAccounts: operator.listAccounts.bind(operator),
+        provisionConnection: operator.provisionConnection.bind(operator),
         async stageRotation(input) {
-          receiptIssuedForVersion = 2;
           rotationWorkspaceId = input.workspaceId;
-          return {
-            account: { id: input.accountId, version: '1' } as never,
-            secureWriteReceipt: {
-              id: 'secure-write-receipt-v2',
-              workspaceId: input.workspaceId,
-              accountId: input.accountId,
-              nextSecretVersion: 2,
-              expiresAt: '2026-07-20T00:15:00.000Z',
-            },
-          };
+          return operator.stageRotation(input);
         },
-        async recordConnectivityResult() {
-          return { account: {} as never, activated: false };
-        },
+        recordConnectivityResult:
+          operator.recordConnectivityResult.bind(operator),
       },
     },
   );
@@ -451,8 +559,7 @@ test('provider credential rotation stages a secure-write receipt without echoing
   })) as Record<string, any>;
 
   assert.equal(rotated.account.version, '1');
-  assert.equal(provisioned, 1);
-  assert.equal(receiptIssuedForVersion, 2);
+  assert.equal(operator.provisioned, 1);
   assert.equal(rotationWorkspaceId, '__global__');
   assert.equal(
     rotated.secureWriteReceipt.id,
@@ -460,6 +567,123 @@ test('provider credential rotation stages a secure-write receipt without echoing
   );
   assert.equal('secretReference' in rotated.secureWriteReceipt, false);
   assert.equal(JSON.stringify(rotated).includes('new-secret'), false);
+});
+
+test('admin_test_provider_connection bridges probe results onto CredentialAccount truth', async () => {
+  const observedCredentials: string[] = [];
+  const recordedCalls: ProviderCredentialConnectivityVerificationInput[] = [];
+  const operator = memoryProviderCredentialOperator({
+    onRecord: (input) => {
+      recordedCalls.push(input);
+    },
+  });
+  const module = new IntegrationsFoundationModule(
+    new IntegrationApplicationService({
+      providerConnectivity: {
+        async probe(input) {
+          observedCredentials.push(input.credential);
+          return { errorCode: 'http_401', status: 'unauthorized' };
+        },
+      },
+      repository: new MemoryIntegrationRepository(),
+      secrets: new FakeKmsSecretStore(),
+    }),
+    {
+      providerCredentialOperator: operator,
+      providerCredentialSources: {
+        arkMedia: { source: 'env_fallback' },
+        modelDirect: { source: 'vault', credentialVersion: 1 },
+      },
+    },
+  );
+  const adminContext = {
+    actor: 'admin' as const,
+    correlationId: 'corr-admin-test-bridge',
+    userId: 'admin-provider',
+    workspaceId: 'tenant-must-not-scope-platform-credentials',
+  };
+
+  await module.execute({
+    context: adminContext,
+    idempotencyKey: 'store-platform-model-key-for-bridge',
+    input: {
+      action: 'admin_store_provider_credential',
+      payload: {
+        slot: 'model.direct',
+        credential: {
+          scope: ['models.read'],
+          value: 'bridge-probe-secret-never-echo',
+        },
+      },
+    },
+  });
+
+  const tested = (await module.execute({
+    context: adminContext,
+    idempotencyKey: 'test-platform-model-key-bridge',
+    input: {
+      action: 'admin_test_provider_connection',
+      payload: { slot: 'model.direct' },
+    },
+  })) as Record<string, any>;
+
+  const listed = (await module.query({
+    context: adminContext,
+    input: { action: 'admin_provider_credentials', payload: {} },
+  })) as Array<Record<string, any>>;
+
+  assert.deepEqual(observedCredentials, ['bridge-probe-secret-never-echo']);
+  assert.equal(recordedCalls.length, 1);
+  assert.equal(recordedCalls[0]?.workspaceId, '__global__');
+  assert.equal(
+    recordedCalls[0]?.accountId,
+    'credential-account:platform:model.direct',
+  );
+  assert.equal(recordedCalls[0]?.status, 'unauthorized');
+  assert.equal(recordedCalls[0]?.errorCode, 'http_401');
+  assert.equal(recordedCalls[0]?.expectedVersion, '1');
+  assert.match(
+    recordedCalls[0]?.evidenceRef ?? '',
+    /^admin-test-connection:\/\//,
+  );
+  assert.equal(
+    recordedCalls[0]?.evidenceRef.includes('bridge-probe-secret'),
+    false,
+  );
+
+  // Command return is the CredentialAccount public projection (same seam as query).
+  assert.equal(tested.id, 'platform:model.direct');
+  assert.equal(
+    tested.credentialAccountId,
+    'credential-account:platform:model.direct',
+  );
+  assert.equal(tested.workspaceId, '__global__');
+  assert.equal(tested.credential.testStatus, 'unauthorized');
+  assert.equal(tested.credential.testErrorCode, 'http_401');
+  assert.equal(Number.isFinite(Date.parse(tested.credential.testedAt)), true);
+  assert.equal(tested.credential.mask, '••••••••');
+  assert.equal(tested.effectiveSource, 'vault');
+
+  // Query still reads CredentialAccount only (projection unchanged).
+  assert.equal(listed[0]?.id, 'platform:model.direct');
+  assert.equal(
+    listed[0]?.credentialAccountId,
+    'credential-account:platform:model.direct',
+  );
+  assert.equal(listed[0]?.credential.testStatus, 'unauthorized');
+  assert.equal(listed[0]?.credential.testErrorCode, 'http_401');
+  assert.equal(listed[0]?.credential.testedAt, tested.credential.testedAt);
+  assert.equal(
+    operator.accounts.get('credential-account:platform:model.direct')?.lastTest
+      ?.status,
+    'unauthorized',
+  );
+
+  const serialized = `${JSON.stringify(tested)}\n${JSON.stringify(listed)}`;
+  assert.equal(serialized.includes('bridge-probe-secret-never-echo'), false);
+  assert.equal(serialized.includes('secretRef'), false);
+  assert.equal(/"secretReference"\s*:/.test(serialized), false);
+  assert.equal(serialized.includes('activationEvidence'), false);
 });
 
 test('Feishu activity query exposes only safe product fields and HTTPS links', async () => {
