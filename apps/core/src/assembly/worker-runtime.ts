@@ -10,6 +10,12 @@ import {
   createCreditSubscriptionReconciliationJobHandler,
   registerCreditSubscriptionSchedules,
 } from '../p1/credit-billing/credit-subscription-scheduler.js';
+import {
+  REDEMPTION_EXPIRY_JOB_KIND,
+  RedemptionExpiryRunner,
+  createRedemptionExpiryJobHandler,
+  registerRedemptionExpirySchedule,
+} from '../p1/foundation/redemption-expiry-scheduler.js';
 import { DailyRecommendationDeliveryPort } from '../p1/due-delivery/delivery-port.js';
 import {
   PostgresWorkspaceOwnerMembershipReader,
@@ -76,6 +82,7 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
     creditSubscriptionStore,
     creditLedger,
     creditPlanCatalog,
+    redemptionStore,
     notifier,
     dueDeliveryRepository,
     harnessSchemaStore,
@@ -177,8 +184,10 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
     ),
     dueDeliveryRepository
   );
+  const redemptionExpiry = new RedemptionExpiryRunner(redemptionStore);
   await registerDueDeliveryScannerSchedule(jobRuntime);
   await registerCreditSubscriptionSchedules(jobRuntime);
+  await registerRedemptionExpirySchedule(jobRuntime);
   if (assetRegistrationCleanup) {
     await registerS3AssetRegistrationCleanupSchedule(jobRuntime);
   }
@@ -191,6 +200,8 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
         createCreditSubscriptionReconciliationJobHandler(
           creditSubscriptionScheduler
         ),
+      [REDEMPTION_EXPIRY_JOB_KIND]:
+        createRedemptionExpiryJobHandler(redemptionExpiry),
       [DUE_DELIVERY_SCANNER_JOB_KIND]: createDueDeliveryScannerJobHandler(
         dueDeliveryScanner,
         workerId

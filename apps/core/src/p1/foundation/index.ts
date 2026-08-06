@@ -16,3 +16,4 @@ export * from './payment-mapping.js';
 export * from './redemption.js';
 export * from './postgres-redemption.js';
 export * from './redemption-module.js';
+export * from './redemption-expiry-scheduler.js';

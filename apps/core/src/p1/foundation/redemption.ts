@@ -109,7 +109,11 @@ export interface RedemptionStore {
     codes: RedemptionCode[],
     command?: RedemptionStoreCommand
   ): Promise<RedemptionCode[]>;
-  expireDue(now: string): Promise<void>;
+  /**
+   * Materialize due expirations. Invoked only by the scheduled expiry job —
+   * list reads must not call this (revision jitter / concurrent void races).
+   */
+  expireDue(now: string): Promise<{ expiredCount: number }>;
   getByCode(code: string): Promise<RedemptionCode | null>;
   list(filter?: { batchId?: string; status?: RedemptionCodeStatus }): Promise<
     RedemptionCode[]
@@ -213,6 +217,7 @@ export class MemoryRedemptionStore implements RedemptionStore {
 
   async expireDue(now: string) {
     assertTimestamp(now, 'now');
+    let expiredCount = 0;
     for (const code of this.byCode.values()) {
       if (
         code.status === 'active' &&
@@ -221,8 +226,10 @@ export class MemoryRedemptionStore implements RedemptionStore {
       ) {
         code.status = 'expired';
         code.revision += 1;
+        expiredCount += 1;
       }
     }
+    return { expiredCount };
   }
 
   async getByCode(code: string) {
@@ -556,8 +563,14 @@ export class RedemptionApplicationService {
     batchId?: string;
     status?: RedemptionCodeStatus;
   }): Promise<RedemptionCode[]> {
-    await this.store.expireDue(this.clock().toISOString());
+    // Read-only: expiry is driven by the redemption.expire-due scheduled job.
+    // Lazy expireDue here bumped revision and raced concurrent admin voids.
     return this.store.list(filter);
+  }
+
+  /** Explicit expiry entry for the scheduled job (and focused tests). */
+  async expireDue(now = this.clock().toISOString()) {
+    return this.store.expireDue(now);
   }
 
   async redeem(input: {

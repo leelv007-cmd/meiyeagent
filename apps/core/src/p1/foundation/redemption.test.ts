@@ -260,18 +260,8 @@ describe('redemption domain', () => {
     assert.equal((await store.getByCode(created.code))?.revision, 1);
   });
 
-  it('materializes expired lifecycle on list and rejects unknown grant resources', async () => {
+  it('rejects unknown grant resources without list side effects', async () => {
     const { service } = setup();
-    const [created] = await service.createCodes({
-      code: 'EXPIRED20',
-      grants: { copy: 20 },
-      expiresAt: '2026-07-19T11:59:59.000Z',
-      createdBy: 'admin-1',
-      createdAt: '2026-07-18T12:00:00.000Z',
-    });
-    assert.ok(created);
-    assert.equal((await service.list()).at(0)?.status, 'expired');
-
     await assert.rejects(
       () =>
         service.createCodes({
@@ -284,18 +274,59 @@ describe('redemption domain', () => {
     );
   });
 
-  it('materializes an offset timestamp expiration by instant rather than text order', async () => {
+  /**
+   * #391 red-first: list used to call expireDue and bump revision, so a
+   * concurrent void holding the pre-list revision failed with conflict.
+   * Desired: list is read-only; revision and status stay put until the job.
+   */
+  it('does not bump revision when listing past-due codes', async () => {
     const { service, setNow } = setup();
     const [created] = await service.createCodes({
-      code: 'OFFSET20',
+      code: 'LIST-NO-REV-BUMP',
       grants: { copy: 20 },
-      createdAt: '2026-07-19T10:00:00.000Z',
-      expiresAt: '2026-07-20T00:00:00+08:00',
+      expiresAt: '2026-07-19T11:59:59.000Z',
       createdBy: 'admin-1',
+      createdAt: '2026-07-18T12:00:00.000Z',
     });
     assert.ok(created);
-    setNow('2026-07-19T17:00:00.000Z');
+    assert.equal(created.revision, 1);
+    assert.equal(created.status, 'active');
 
-    assert.equal((await service.list()).at(0)?.status, 'expired');
+    setNow('2026-07-19T12:00:00.000Z');
+    const listed = await service.list();
+    const row = listed.at(0);
+    assert.ok(row);
+    assert.equal(row.status, 'active');
+    assert.equal(row.revision, 1);
+
+    // Concurrent void still succeeds with the revision the operator held.
+    const voided = await service.voidCode({
+      code: created.code,
+      expectedRevision: created.revision,
+    });
+    assert.equal(voided.status, 'voided');
+    assert.equal(voided.revision, 2);
+  });
+
+  it('list refresh no longer races a concurrent void (revision conflict pathology)', async () => {
+    const { service, setNow } = setup();
+    const [created] = await service.createCodes({
+      code: 'VOID-RACE-SAFE',
+      grants: { copy: 1 },
+      expiresAt: '2026-07-19T11:59:59.000Z',
+      createdBy: 'admin-1',
+      createdAt: '2026-07-18T12:00:00.000Z',
+    });
+    assert.ok(created);
+    const operatorRevision = created.revision;
+
+    setNow('2026-07-19T12:00:00.000Z');
+    // Operator B refreshes the admin list while Operator A voids.
+    await service.list();
+    const voided = await service.voidCode({
+      code: created.code,
+      expectedRevision: operatorRevision,
+    });
+    assert.equal(voided.status, 'voided');
   });
 });

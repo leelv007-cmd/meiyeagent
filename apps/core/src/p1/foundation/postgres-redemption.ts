@@ -210,7 +210,7 @@ export class PostgresRedemptionStore implements RedemptionStore {
   }
 
   async expireDue(now: string) {
-    await this.pool.query(
+    const result = await this.pool.query(
       `UPDATE p1_redemption_codes
           SET status = 'expired', revision = revision + 1
         WHERE status = 'active'
@@ -218,6 +218,7 @@ export class PostgresRedemptionStore implements RedemptionStore {
           AND expires_at <= $1::timestamptz`,
       [now]
     );
+    return { expiredCount: result.rowCount ?? 0 };
   }
 
   async getByCode(code: string): Promise<RedemptionCode | null> {
