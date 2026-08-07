@@ -49,10 +49,6 @@ function CommandDialog({
 }) {
   return (
     <Dialog {...props}>
-      <DialogHeader className="sr-only">
-        <DialogTitle>{title}</DialogTitle>
-        <DialogDescription>{description}</DialogDescription>
-      </DialogHeader>
       <DialogContent
         aria-modal="true"
         className={cn(
@@ -61,6 +57,16 @@ function CommandDialog({
         )}
         showCloseButton={showCloseButton}
       >
+        {/*
+          The header lives inside the content: outside it, it sits in the page
+          itself rather than in the portal, so every page carrying a palette
+          announced the palette's own title and shortcut explanation to screen
+          readers whether or not the palette was open.
+        */}
+        <DialogHeader className="sr-only">
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
         {children}
       </DialogContent>
     </Dialog>
