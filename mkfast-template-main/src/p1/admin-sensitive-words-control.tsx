@@ -12,6 +12,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
+import {
+  ImpactReviewDialog,
+  type ImpactReviewRequest,
+} from '@/components/admin/impact-review-dialog';
 import { Badge } from '@/components/reui/badge';
 import {
   Frame,
@@ -38,6 +42,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  admin_sensitive_words_delete_change_shared_lexicon,
+  admin_sensitive_words_delete_change_word,
+  admin_sensitive_words_delete_confirm,
+  admin_sensitive_words_delete_description,
+  admin_sensitive_words_delete_scope,
+  admin_sensitive_words_delete_title,
+} from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import type { SensitiveWordRecord } from '@meiye/contracts';
@@ -64,6 +76,7 @@ export function AdminSensitiveWordsControl() {
   );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
+  const [impactReview, setImpactReview] = useState<ImpactReviewRequest>();
 
   const listQuery = useQuery({
     queryKey: p1QueryKeys.request('sensitive-words', 'list', { q: filter }),
@@ -159,6 +172,22 @@ export function AdminSensitiveWordsControl() {
       toast.error(error.message || '删除失败');
     },
   });
+
+  const reviewDelete = (row: SensitiveWordRecord) => {
+    setImpactReview({
+      title: admin_sensitive_words_delete_title(),
+      description: admin_sensitive_words_delete_description(),
+      scope: admin_sensitive_words_delete_scope({ word: row.word }),
+      changes: [
+        admin_sensitive_words_delete_change_word({ word: row.word }),
+        admin_sensitive_words_delete_change_shared_lexicon(),
+      ],
+      confirmLabel: admin_sensitive_words_delete_confirm(),
+      onConfirm: async () => {
+        await deleteMutation.mutateAsync(row.id);
+      },
+    });
+  };
 
   return (
     <Frame data-testid="admin-sensitive-words">
@@ -360,15 +389,7 @@ export function AdminSensitiveWordsControl() {
                       size="sm"
                       variant="ghost"
                       aria-label="删除"
-                      onClick={() => {
-                        if (
-                          typeof window !== 'undefined' &&
-                          !window.confirm(`删除「${row.word}」？`)
-                        ) {
-                          return;
-                        }
-                        deleteMutation.mutate(row.id);
-                      }}
+                      onClick={() => reviewDelete(row)}
                       data-testid={`admin-sensitive-words-delete-${row.id}`}
                     >
                       <IconTrash className="size-4" aria-hidden="true" />
@@ -380,6 +401,11 @@ export function AdminSensitiveWordsControl() {
           </TableBody>
         </Table>
       </FramePanel>
+      <ImpactReviewDialog
+        onOpenChange={(open) => !open && setImpactReview(undefined)}
+        open={Boolean(impactReview)}
+        request={impactReview}
+      />
     </Frame>
   );
 }

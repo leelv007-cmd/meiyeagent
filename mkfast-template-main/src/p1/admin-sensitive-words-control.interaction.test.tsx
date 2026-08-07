@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -16,6 +19,22 @@ vi.mock('@/p1/client', () => p1Client);
 
 const records: SensitiveWordRecord[] = [];
 
+function seedRecord(overrides: Partial<SensitiveWordRecord> = {}) {
+  const now = '2026-08-02T00:00:00.000Z';
+  const record: SensitiveWordRecord = {
+    id: 'sw-ui-1',
+    word: '特效祛斑王',
+    category: 'medical',
+    replacements: ['色斑护理'],
+    status: 'enabled',
+    createdAt: now,
+    updatedAt: now,
+    ...overrides,
+  };
+  records.push(record);
+  return record;
+}
+
 function renderWithQueryClient(children: ReactNode) {
   const client = new QueryClient({
     defaultOptions: {
@@ -26,6 +45,14 @@ function renderWithQueryClient(children: ReactNode) {
   return render(
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
+}
+
+async function openDeleteReview(
+  user: ReturnType<typeof userEvent.setup>,
+  id = 'sw-ui-1'
+) {
+  await user.click(screen.getByTestId(`admin-sensitive-words-delete-${id}`));
+  return screen.findByRole('dialog', { name: '删除违禁词' });
 }
 
 beforeEach(() => {
@@ -74,12 +101,12 @@ beforeEach(() => {
 describe('AdminSensitiveWordsControl CRUD', () => {
   it('creates, edits, disables, and deletes a word through the mounted controls', async () => {
     const user = userEvent.setup();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderWithQueryClient(<AdminSensitiveWordsControl />);
 
     await screen.findByText('暂无词条（空库会在 Core 启动时 seed 美业基线）。');
     await user.type(screen.getByLabelText('词条'), '特效祛斑王');
-    await user.selectOptions(screen.getByLabelText('分类'), 'medical');
+    await user.click(screen.getByTestId('admin-sensitive-words-category'));
+    await user.click(await screen.findByRole('option', { name: '医疗用语' }));
     await user.type(screen.getByLabelText('替换建议（逗号分隔）'), '色斑护理');
     await user.click(screen.getByRole('button', { name: '新增' }));
 
@@ -134,10 +161,76 @@ describe('AdminSensitiveWordsControl CRUD', () => {
       ).toBeEnabled()
     );
 
-    await user.click(
-      within(screen.getByTestId('admin-sensitive-words-row-sw-ui-1')).getByRole(
-        'button',
-        { name: '删除' }
+    await openDeleteReview(user);
+    await user.type(
+      screen.getByLabelText('执行原因（写入审计）'),
+      '删除错误词条验收'
+    );
+    await user.click(screen.getByRole('button', { name: '确认删除' }));
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId('admin-sensitive-words-row-sw-ui-1')
+      ).not.toBeInTheDocument()
+    );
+  });
+});
+
+describe('AdminSensitiveWordsControl delete ImpactReviewDialog (#425)', () => {
+  it('opens ImpactReviewDialog from the delete entry with blast-radius copy', async () => {
+    const user = userEvent.setup();
+    seedRecord();
+    renderWithQueryClient(<AdminSensitiveWordsControl />);
+
+    await screen.findByTestId('admin-sensitive-words-row-sw-ui-1');
+    const dialog = await openDeleteReview(user);
+
+    expect(dialog).toHaveTextContent('特效祛斑王');
+    expect(dialog).toHaveTextContent(
+      '生成链检查与红线门共用词库，删除会同步影响两处检查'
+    );
+    expect(p1Client.commandP1).not.toHaveBeenCalled();
+  });
+
+  it('cancels without calling delete mutation', async () => {
+    const user = userEvent.setup();
+    seedRecord();
+    renderWithQueryClient(<AdminSensitiveWordsControl />);
+
+    await screen.findByTestId('admin-sensitive-words-row-sw-ui-1');
+    await openDeleteReview(user);
+    await user.click(screen.getByRole('button', { name: '取消' }));
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: '删除违禁词' })
+      ).not.toBeInTheDocument()
+    );
+    expect(p1Client.commandP1).not.toHaveBeenCalled();
+    expect(
+      screen.getByTestId('admin-sensitive-words-row-sw-ui-1')
+    ).toBeInTheDocument();
+  });
+
+  it('confirms through ImpactReviewDialog and calls delete mutation', async () => {
+    const user = userEvent.setup();
+    seedRecord({ word: '根治' });
+    renderWithQueryClient(<AdminSensitiveWordsControl />);
+
+    await screen.findByTestId('admin-sensitive-words-row-sw-ui-1');
+    await openDeleteReview(user);
+    await user.type(
+      screen.getByLabelText('执行原因（写入审计）'),
+      '误录词条，按验收删除'
+    );
+    await user.click(screen.getByRole('button', { name: '确认删除' }));
+
+    await waitFor(() =>
+      expect(p1Client.commandP1).toHaveBeenCalledWith(
+        'sensitive-words',
+        expect.objectContaining({
+          action: 'delete',
+          payload: { id: 'sw-ui-1' },
+        })
       )
     );
     await waitFor(() =>
@@ -145,5 +238,13 @@ describe('AdminSensitiveWordsControl CRUD', () => {
         screen.queryByTestId('admin-sensitive-words-row-sw-ui-1')
       ).not.toBeInTheDocument()
     );
+  });
+
+  it('source has no window.confirm on the delete path', () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname, 'admin-sensitive-words-control.tsx'),
+      'utf8'
+    );
+    expect(source).not.toMatch(/window\.confirm/);
   });
 });
