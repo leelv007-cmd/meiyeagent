@@ -18,6 +18,10 @@ const progressiveFactCard = readFileSync(
   new URL('./progressive-fact-card.tsx', import.meta.url),
   'utf8'
 );
+const storeIntakeWizard = readFileSync(
+  new URL('../store-intake/store-intake-wizard.tsx', import.meta.url),
+  'utf8'
+);
 
 test('progressive store intake uses one finalizer instead of legacy profile writes', () => {
   assert.match(progressiveFact, /finalize_store_intake/u);
@@ -52,16 +56,24 @@ test('Composer qualification gap links to the store admission entry', () => {
   assert.match(composerHome, /hash="store-qualification"/u);
 });
 
-test('Composer mounts the card and submits exactly one finalizer command', () => {
+/*
+ * D-C4: the idle screen keeps one input surface. The Day-0 card stopped being
+ * an intake — no field, no finalizer — and became a reminder pointing at the
+ * store page, where the same projection and the same `finalize_store_intake`
+ * command still run inside the wizard.
+ */
+test('Composer mounts the Day-0 reminder, and it carries no intake of its own', () => {
   assert.match(composerHome, /<ProgressiveFactCard/u);
   assert.match(composerHome, /store_fact_history/u);
+  assert.match(composerHome, /progressive-fact-ledger-retry/u);
   assert.equal(
     composerHome.match(
       /commandP1\(\s*'asset-memory',\s*request,\s*idempotencyKey\s*\)/gu
     )?.length,
-    1
+    undefined
   );
-  assert.match(progressiveFactCard, /buildFinalizeStoreIntakeCommand/u);
-  assert.match(progressiveFactCard, /progressive-fact-retry/u);
-  assert.match(composerHome, /progressive-fact-ledger-retry/u);
+  assert.doesNotMatch(progressiveFactCard, /buildFinalizeStoreIntakeCommand/u);
+  assert.doesNotMatch(progressiveFactCard, /<Input|<Button/u);
+  assert.match(progressiveFactCard, /to="\/dashboard\/store"/u);
+  assert.match(storeIntakeWizard, /buildFinalizeStoreIntakeCommand/u);
 });

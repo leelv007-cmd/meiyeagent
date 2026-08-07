@@ -70,28 +70,21 @@ test('selecting a lens defaults empty destination to xiaohongshu (QA ISSUE-006)'
   // Report: .gstack/qa-reports/qa-report-localhost-3000-2026-08-07.md
   const home = readFileSync(
     new URL('./composer-home.tsx', import.meta.url),
-    'utf8',
+    'utf8'
   );
   assert.match(home, /const handleLensChange = \(next: CreationLensId\) =>/u);
-  assert.match(
-    home,
-    /platform:\s*'xiaohongshu'/u,
-  );
-  assert.match(
-    home,
-    /distributionTarget:\s*'manual_copy'/u,
-  );
+  assert.match(home, /platform:\s*'xiaohongshu'/u);
+  assert.match(home, /distributionTarget:\s*'manual_copy'/u);
 });
 
-test('progressive fact confirm invalidates today recommendation after success', () => {
+test('store intake confirm invalidates today recommendation after success', () => {
   // Regression: ISSUE-008 — cold chips stayed cold after store facts landed.
-  const home = readFileSync(
-    new URL('./composer-home.tsx', import.meta.url),
-    'utf8',
+  // D-C4 moved the confirm out of the idle card and into the store wizard, so
+  // the invalidation moved with it rather than being dropped.
+  const wizard = readFileSync(
+    new URL('../store-intake/store-intake-wizard.tsx', import.meta.url),
+    'utf8'
   );
-  assert.match(
-    home,
-    /queryKey:\s*\['harness',\s*'today-recommendation'\]/u,
-  );
-  assert.match(home, /Promise\.allSettled/u);
+  assert.match(wizard, /queryKey:\s*\['harness',\s*'today-recommendation'\]/u);
+  assert.match(wizard, /intake-finalize:\$\{id\}/u);
 });

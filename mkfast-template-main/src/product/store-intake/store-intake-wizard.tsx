@@ -54,9 +54,12 @@ import {
   store_intake_import_empty,
   store_intake_import_hint,
   store_intake_import_title,
+  store_intake_industry_beauty_salon,
   store_intake_industry_hair_care,
   store_intake_industry_hair_growth,
   store_intake_industry_label,
+  store_intake_industry_lash,
+  store_intake_industry_nail,
   store_intake_industry_skin_management,
   store_intake_next,
   store_intake_origin_ai,
@@ -130,7 +133,7 @@ import type {
   StoreProfile,
   VisualAssetSlot,
 } from '@meiye/contracts';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { IconAlertTriangle, IconCheck, IconRefresh } from '@tabler/icons-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -171,9 +174,18 @@ type ProductController = Pick<
   'refresh' | 'state'
 >;
 
+/**
+ * D-C3: the merchant's own 主营方向, not the supply catalogue. 美甲 and 美睫 are
+ * the first persona and used to have nothing to pick here. Categories with no
+ * published recommendation supply still fall through at the recommendation
+ * layer (`resolveTodayRecommendationIndustrySlug` → undefined).
+ */
 const INDUSTRIES = [
   ['hair_care', store_intake_industry_hair_care],
+  ['nail', store_intake_industry_nail],
+  ['lash', store_intake_industry_lash],
   ['skin_management', store_intake_industry_skin_management],
+  ['beauty_salon', store_intake_industry_beauty_salon],
   ['hair_growth', store_intake_industry_hair_growth],
 ] as const;
 
@@ -224,6 +236,7 @@ export function StoreIntakeWizard({
   const workspaceId = product.state?.workspaceId ?? '';
   const store = product.state?.store;
   const [industry, setIndustry] = useState<string>('hair_care');
+  const queryClient = useQueryClient();
   const complianceDefaults = useComplianceDefaults();
   // Wizard state is declared before the queries because guidance is fetched per
   // industry *and* per asset type: the samples and the recommended fields have
@@ -382,7 +395,16 @@ export function StoreIntakeWizard({
       });
       if (!request) return;
       await commandP1('asset-memory', request, `intake-finalize:${id}`);
-      await Promise.all([product.refresh(), storeFacts.refetch()]);
+      await Promise.all([
+        product.refresh(),
+        storeFacts.refetch(),
+        // Fresh facts are exactly what the cold 今日建议 chip was waiting for
+        // (QA ISSUE-008). The reminder card used to do this when it still
+        // confirmed; the confirm lives here now, so the invalidation does too.
+        queryClient.invalidateQueries({
+          queryKey: ['harness', 'today-recommendation'],
+        }),
+      ]);
     },
     onSuccess: () => setSaved(true),
   });

@@ -1,11 +1,18 @@
+/**
+ * D-C4: the idle Day-0 card is a reminder, not a second input surface.
+ * The capture itself lives on the store page (five-step wizard) and in the
+ * post-send questions; this card only names the next gap and points there.
+ */
 import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router';
+import { cleanup, render, screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { ProgressiveFactCard } from './progressive-fact-card';
 
@@ -35,122 +42,47 @@ const STORE = {
   revision: 3,
 };
 
-describe('ProgressiveFactCard finalizer retry', () => {
-  it('creates the request on first confirm and reuses it after a visible failure', async () => {
-    let now = '2026-07-27T10:00:00.000Z';
-    const onConfirm = vi
-      .fn()
-      .mockRejectedValueOnce(new Error('temporary failure'))
-      .mockResolvedValueOnce(undefined);
-
-    render(
-      <ProgressiveFactCard
-        activeFacts={[]}
-        createConfirmationId={() => 'confirmation-a'}
-        factHeads={[
-          { factId: 'store-project:project-cat-eye:service', revision: 4 },
-          { factId: 'store-project:project-cat-eye:price', revision: 7 },
-        ]}
-        now={() => now}
-        onConfirm={onConfirm}
-        store={STORE}
-        workspaceId="workspace-a"
-      />
-    );
-
-    fireEvent.click(screen.getByTestId('progressive-fact-continue'));
-    fireEvent.click(screen.getByTestId('progressive-fact-continue'));
-    // #244 — the price question is followed by how long the price runs, and the
-    // merchant here says it is a standing one.
-    fireEvent.click(
-      screen.getByTestId('progressive-fact-price-validity-long-term')
-    );
-    fireEvent.click(screen.getByTestId('progressive-fact-continue'));
-
-    now = '2026-07-27T11:30:00.000Z';
-    fireEvent.click(screen.getByTestId('progressive-fact-confirm'));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('progressive-fact-submit-error')).toBeVisible();
-    });
-    const firstRequest = onConfirm.mock.calls[0]?.[0];
-    const firstKey = onConfirm.mock.calls[0]?.[1];
-    expect(firstRequest?.payload.batch.source.capturedAt).toBe(now);
-    expect(firstRequest?.payload.confirmations).toEqual([
-      {
-        candidateId: 'store-project:project-cat-eye:service:candidate',
-        factId: 'store-project:project-cat-eye:service',
-        expectedFactRevision: 4,
-      },
-      {
-        candidateId: 'store-project:project-cat-eye:price:candidate',
-        factId: 'store-project:project-cat-eye:price',
-        expectedFactRevision: 7,
-      },
-    ]);
-
-    fireEvent.click(screen.getByTestId('progressive-fact-retry'));
-    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(2));
-    expect(onConfirm.mock.calls[1]?.[0]).toBe(firstRequest);
-    expect(onConfirm.mock.calls[1]?.[1]).toBe(firstKey);
+/** The card renders a router Link, so it needs a router to render at all. */
+function renderInRouter(ui: ReactNode) {
+  const rootRoute = createRootRoute();
+  const indexRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/',
+    component: () => ui,
   });
-});
+  const storeRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/dashboard/store',
+    component: () => null,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([indexRoute, storeRoute]),
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+  });
+  return render(<RouterProvider router={router as never} />);
+}
 
-describe('ProgressiveFactCard Day-0 regulated default', () => {
-  const answerDayZero = () => {
-    for (const value of ['青禾美甲', '杭州', '透亮猫眼', '299']) {
-      const input = screen.getByTestId('progressive-fact-input');
-      fireEvent.change(input, { target: { value } });
-      fireEvent.click(screen.getByTestId('progressive-fact-continue'));
-    }
-    fireEvent.click(
-      screen.getByTestId('progressive-fact-price-validity-long-term')
-    );
-    fireEvent.click(screen.getByTestId('progressive-fact-continue'));
-  };
+describe('ProgressiveFactCard idle reminder', () => {
+  it('carries no input or submit of its own — only the next gap and the way to it', async () => {
+    renderInRouter(<ProgressiveFactCard activeFacts={[]} />);
 
-  it('withholds confirm until the platform default resolves, then seeds it', async () => {
-    const onConfirm = vi.fn().mockResolvedValue(undefined);
-    const { rerender } = render(
-      <ProgressiveFactCard
-        activeFacts={[]}
-        createConfirmationId={() => 'confirmation-day-zero'}
-        factHeads={[]}
-        now={() => '2026-07-27T10:00:00.000Z'}
-        onConfirm={onConfirm}
-        workspaceId="workspace-a"
-      />
-    );
+    expect(await screen.findByTestId('progressive-fact-card')).toBeVisible();
+    // The three controls that made this a second Composer are gone.
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(screen.queryByTestId('progressive-fact-input')).toBeNull();
+    expect(screen.queryByTestId('progressive-fact-continue')).toBeNull();
+    expect(screen.queryByTestId('progressive-fact-confirm')).toBeNull();
 
-    answerDayZero();
-    expect(screen.getByTestId('progressive-fact-confirm')).toBeDisabled();
-    expect(
-      onConfirm.mock.calls[0]?.[0].payload.profilePatch.projects?.upsert?.[0]
-        ?.priceValidUntil
-    ).toBeUndefined();
+    const link = screen.getByTestId('progressive-fact-store-link');
+    expect(link).toHaveAttribute('href', '/dashboard/store');
+  });
 
-    rerender(
-      <ProgressiveFactCard
-        activeFacts={[]}
-        createConfirmationId={() => 'confirmation-day-zero'}
-        factHeads={[]}
-        now={() => '2026-07-27T10:00:00.000Z'}
-        onConfirm={onConfirm}
-        regulatedDefault={true}
-        workspaceId="workspace-a"
-      />
-    );
+  it('names the next missing fact for a store that already has one', async () => {
+    renderInRouter(<ProgressiveFactCard activeFacts={[]} store={STORE} />);
 
-    fireEvent.click(screen.getByTestId('progressive-fact-confirm'));
-    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
-    expect(onConfirm.mock.calls[0]?.[0].payload.profilePatch.regulated).toBe(
-      true
-    );
-    // The merchant said "it stands" — that is a stated answer, written as null,
-    // and never a default the card filled in for them (#244).
-    expect(
-      onConfirm.mock.calls[0]?.[0].payload.profilePatch.projects?.upsert?.[0]
-        ?.priceValidUntil
-    ).toBe(null);
+    const reminder = await screen.findByTestId('progressive-fact-reminder');
+    // The profile names the store and city; the project facts are not in the
+    // ledger yet, so 主推项目 is the gap the reminder should name.
+    expect(reminder.textContent ?? '').toMatch(/主推项目/u);
   });
 });
