@@ -222,9 +222,20 @@ export function WorksListPage() {
                 <EmptyState.Media variant="icon">
                   <IconPhoto aria-hidden="true" />
                 </EmptyState.Media>
-                <EmptyState.Title data-testid="works-empty-title">
+                {/*
+                  Pro's `EmptyState.Title` hardcodes h3, and this page's only
+                  other heading is the h1 — so the empty state sat one level
+                  below a heading that does not exist. The vendor patch
+                  contract forbids changing what a component renders, so the
+                  h2 is written here with the sheet's own slot class: same
+                  empty-state.css for size and weight, correct rank.
+                */}
+                <h2
+                  className="empty-state__title"
+                  data-testid="works-empty-title"
+                >
                   {copy.emptyTitle}
-                </EmptyState.Title>
+                </h2>
                 <EmptyState.Description data-testid="works-empty-description">
                   {copy.emptyDescription}
                 </EmptyState.Description>

@@ -238,7 +238,10 @@ function PlanCard({
     >
       <div className="space-y-3">
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-lg font-semibold">{planName}</h3>
+          {/* Plan cards hang straight off the page h1 with no group heading in
+              between, so the card name is an h2. Size still comes from
+              text-lg — this changes rank, not looks. */}
+          <h2 className="text-lg font-semibold">{planName}</h2>
           {recommended ? (
             <span
               className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium"

@@ -138,7 +138,7 @@ describe('suggestion capsules', () => {
     );
     expect(
       screen.getByRole('heading', {
-        level: 3,
+        level: 2,
         name: '还没有基于本店事实的推荐',
       })
     ).toBeInTheDocument();
@@ -181,7 +181,7 @@ describe('suggestion capsules', () => {
     );
     expect(
       screen.getByRole('heading', {
-        level: 3,
+        level: 2,
         name: '今天的主推荐还没排出来',
       })
     ).toBeInTheDocument();

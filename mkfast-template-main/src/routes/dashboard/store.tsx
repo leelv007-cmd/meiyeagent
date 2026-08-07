@@ -274,7 +274,16 @@ function StoreProfilePage() {
         <div className="space-y-6">
           <Widget className="meiye-porcelain">
             <Widget.Header>
-              <Widget.Title>{dashboard_store_profile_title()}</Widget.Title>
+              {/*
+                Pro's `Widget.Title` renders a `<span>`, so this page offered a
+                screen reader nothing to jump between: one h1 and three blocks
+                of unranked text. The vendor patch contract forbids changing
+                what a component renders, so the heading is written here with
+                the sheet's own slot class — same CSS, correct outline.
+              */}
+              <h2 className="widget__title">
+                {dashboard_store_profile_title()}
+              </h2>
             </Widget.Header>
             <Widget.Content>
               {store ? (
@@ -355,7 +364,7 @@ function StoreProfilePage() {
 
           <Widget className="meiye-porcelain">
             <Widget.Header>
-              <Widget.Title>{dashboard_store_facts_title()}</Widget.Title>
+              <h2 className="widget__title">{dashboard_store_facts_title()}</h2>
               <Widget.Description>
                 {dashboard_store_facts_description()}
               </Widget.Description>
@@ -427,9 +436,9 @@ function StoreProfilePage() {
           {showQualification ? (
             <Widget className="meiye-porcelain" id="store-qualification">
               <Widget.Header>
-                <Widget.Title>
+                <h2 className="widget__title">
                   {dashboard_store_qualification_tab()}
-                </Widget.Title>
+                </h2>
                 <Widget.Description>
                   {dashboard_store_regulated_description()}
                 </Widget.Description>
