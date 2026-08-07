@@ -9,11 +9,11 @@ import { BillingCard } from '@/components/settings/billing/billing-card';
 import { MerchantCreditDetailPanel } from '@/product/merchant-credit-detail-panel';
 import { RedemptionCard } from '@/p1/redemption-card';
 import {
-  credit_detail_description,
   desktop_relay_return_mobile,
   settings_account_description,
   settings_account_credits_heading,
   settings_account_jump_label,
+  settings_account_mobile_credits_description,
   settings_account_profile_heading,
   settings_account_pwa_heading,
   settings_account_security_heading,
@@ -68,7 +68,9 @@ function AccountPage() {
           : settings_navigation_account()
       }
       description={
-        isMobile ? credit_detail_description() : settings_account_description()
+        isMobile
+          ? settings_account_mobile_credits_description()
+          : settings_account_description()
       }
     >
       {/*
@@ -138,9 +140,12 @@ function AccountPage() {
         </>
       )}
       <section className="scroll-mt-16 space-y-4" id="credits">
-        <h2 className="text-lg font-semibold">
-          {settings_account_credits_heading()}
-        </h2>
+        {/* On the phone the page is this section, and the h1 already says so. */}
+        {isMobile ? null : (
+          <h2 className="text-lg font-semibold">
+            {settings_account_credits_heading()}
+          </h2>
+        )}
         <MerchantCreditDetailPanel />
         <RedemptionCard />
         <BillingCard />
