@@ -58,13 +58,29 @@ export function NavbarMobile({ className, ...props }: NavbarMobileProps) {
           </span>
         </Link>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
           {websiteConfig.auth?.enable &&
             (isPending ? (
               <Skeleton className="size-8 rounded-full" />
             ) : user ? (
               <UserButtonMobile user={user} />
-            ) : null)}
+            ) : (
+              /*
+                注册 used to live only inside the hamburger: on a phone the one
+                action the whole marketing site is asking for took a tap to
+                reveal. It stays in the drawer too (with 登录 next to it) —
+                this is the visible copy of it, not a move.
+              */
+              <Link
+                className={cn(
+                  buttonVariants({ size: 'sm' }),
+                  'shrink-0 pointer-coarse:px-4'
+                )}
+                to={Routes.Register}
+              >
+                {auth_common_signup()}
+              </Link>
+            ))}
           <Button
             type="button"
             variant="ghost"
@@ -72,7 +88,7 @@ export function NavbarMobile({ className, ...props }: NavbarMobileProps) {
             aria-expanded={open}
             aria-label={common_toggle_menu()}
             onClick={() => setOpen((o) => !o)}
-            className="size-8 rounded-md border"
+            className="size-8 rounded-md border pointer-coarse:size-touch-target"
           >
             {open ? (
               <IconX className="size-4" />
@@ -88,7 +104,12 @@ export function NavbarMobile({ className, ...props }: NavbarMobileProps) {
           role="dialog"
           aria-modal="true"
           aria-label={common_mobile_navigation()}
-          className="fixed inset-0 top-14.25 z-50 flex flex-col overflow-y-auto bg-background animate-in fade-in-0 duration-200"
+          /*
+            top-* has to clear the bar itself: py-4 plus a 32px row is 57px,
+            plus a touch-target row is 80px. Growing the controls without moving
+            this would drop the sheet over the hamburger that closes it.
+          */
+          className="fixed inset-0 top-14.25 z-50 flex flex-col overflow-y-auto bg-background animate-in fade-in-0 duration-200 pointer-coarse:top-20"
         >
           <div className="flex flex-1 flex-col items-start gap-4 p-4">
             {websiteConfig.auth?.enable && !user && (

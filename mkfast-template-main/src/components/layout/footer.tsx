@@ -11,6 +11,14 @@ import Container from '@/components/layout/container';
 import { Logo } from '@/components/shared/logo';
 import { Link, useLocation } from '@tanstack/react-router';
 import { websiteConfig } from '@/config/website';
+/*
+ * 页脚链接行高 20px，够看不够点——DESIGN.md §5 的触屏 44px 命中合同同样管外站
+ * 页面。抬的是命中盒不是字号：`pointer: coarse` 上把链接撑成 44px 高的行并把
+ * 列表自身的行距归零，指针设备维持原来的 20px + 12px 密度。
+ */
+const footerLinkClass =
+  'text-sm text-muted-foreground transition-colors duration-150 hover:text-primary focus-visible:text-primary data-[active=true]:font-semibold data-[active=true]:text-primary pointer-coarse:inline-flex pointer-coarse:min-h-touch-target pointer-coarse:min-w-touch-target pointer-coarse:items-center';
+
 export function Footer({ className }: React.HTMLAttributes<HTMLElement>) {
   const pathname = useLocation().pathname;
   const footerLinks = getFooterLinks();
@@ -59,7 +67,7 @@ export function Footer({ className }: React.HTMLAttributes<HTMLElement>) {
               <span className="text-sm font-semibold uppercase">
                 {section.title}
               </span>
-              <ul className="mt-4 list-inside space-y-3">
+              <ul className="mt-4 list-inside space-y-3 pointer-coarse:space-y-0">
                 {section.items?.map(
                   (item) =>
                     item.href && (
@@ -69,7 +77,7 @@ export function Footer({ className }: React.HTMLAttributes<HTMLElement>) {
                             href={item.href}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-sm text-muted-foreground transition-colors duration-150 hover:text-primary focus-visible:text-primary data-[active=true]:font-semibold data-[active=true]:text-primary"
+                            className={footerLinkClass}
                           >
                             {item.title}
                           </a>
@@ -83,7 +91,7 @@ export function Footer({ className }: React.HTMLAttributes<HTMLElement>) {
                                   ? 'true'
                                   : undefined
                             }
-                            className="text-sm text-muted-foreground transition-colors duration-150 hover:text-primary focus-visible:text-primary data-[active=true]:font-semibold data-[active=true]:text-primary"
+                            className={footerLinkClass}
                           >
                             {item.title}
                           </Link>
