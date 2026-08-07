@@ -233,3 +233,4 @@
 | 6c1c9b28 | #386 | ops 图表换 ChartContainer/recharts+ReUI Timeline；header 待办 Popover/⌘K 命令面板/通知中心（app-shell-7/3 形态），计数与页面同源 | 14/14+交互 2/2+tsc 0 err 亲跑（rebase 后 25/25 复验） | ReUI Pro demo 只作形态参照未挂运行时；unknown 诚实态保留 |
 | 8da81980 | #387 | 受控配置表单 heroui 单元格编辑器换 shadcn 表格惯例+表单控件；skills i18n/supply 去重/原生 select 换 base-nova；spike 标注隔离；heroui 扫描门（admin 面零豁免） | 51/51+交互 2/2+tsc 0 err 亲跑 | #386 合入后 ops 豁免过期被扫描自检抓出，driver 清零豁免表 |
 | 77df6196 | #425 | 敏感词删除确认 window.confirm 换 ImpactReviewDialog（影响面文案+审计 reason≥8 字），mutation 签名不动；6 对 zh/en 键 | 交互 5/5+词库单测 9/9+门交互 7/7+tsc 0 err 亲跑 | 源断言无 window.confirm；biome 存量红为 main 基线问题不属本票 |
+| 3b3f512d | #424 | refund-review 面板整块英文入 paraglide（12 对键）+面板标题去重（页头唯一，#387 修法）；query key/写路径未动；新增路由测试钉标题不重复+源无英文 chrome | 交互 2 文件全绿（含待办计数同源仍绿）+路由测 3/3+locale:check OK+tsc 0 err 亲跑（rebase 后 locale/交互复验） | 12 键 zh/en 成对，en 真英文 |
