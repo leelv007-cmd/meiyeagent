@@ -901,7 +901,7 @@ const SidebarTrigger = ({
   const { toggleSidebar } = useSidebar();
   return (
     <Button
-      aria-label="Toggle sidebar"
+      aria-label="Expand or collapse navigation"
       isIconOnly
       className={className}
       data-slot="sidebar-trigger"
@@ -921,7 +921,7 @@ const SidebarRail = ({ className, ...props }: SidebarRailProps) => {
   const { slots, toggleSidebar } = useSidebar();
   return (
     <button
-      aria-label="Toggle sidebar"
+      aria-hidden="true"
       className={composeSlotClassName(slots?.rail, className)}
       data-slot="sidebar-rail"
       tabIndex={-1}

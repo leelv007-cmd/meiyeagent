@@ -158,11 +158,11 @@ test('merchant header exposes a localized non-subscriber pricing entry', () => {
   );
   assert.match(
     zh,
-    /"shell_product_subscription_upgrade":\s*"订阅 \/ 升级本产品套餐"/u
+    /"shell_product_subscription_upgrade":\s*"查看套餐与积分"/u
   );
   assert.match(
     en,
-    /"shell_product_subscription_upgrade":\s*"Subscribe \/ upgrade product plan"/u
+    /"shell_product_subscription_upgrade":\s*"View plans and credits"/u
   );
 });
 
