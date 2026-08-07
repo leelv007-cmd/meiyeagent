@@ -1609,7 +1609,7 @@ function copyRevisionVersionId(
   return `${packageId}-harness-${digest}`;
 }
 
-function publicationPlatform(platform: string) {
+export function publicationPlatform(platform: string) {
   if (
     platform === 'xiaohongshu' ||
     platform === 'douyin' ||
@@ -1617,7 +1617,12 @@ function publicationPlatform(platform: string) {
   ) {
     return platform;
   }
-  if (platform === 'wechat_moments') return undefined;
+  // Moments handoff + offline material export never enter delivery-approval
+  // platforms. Returning undefined keeps ContentPackage write on the export /
+  // handoff path instead of failing the whole run (QA ISSUE offline delivery).
+  if (platform === 'wechat_moments' || platform === 'offline') {
+    return undefined;
+  }
   throw new Error(`Platform ${platform} does not support delivery approval.`);
 }
 
