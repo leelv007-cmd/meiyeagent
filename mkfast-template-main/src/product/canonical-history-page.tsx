@@ -195,7 +195,13 @@ const copy: Record<
     emptyDescription: canonical_history_sessions_empty_description,
     emptyTitle: canonical_history_sessions_empty_title,
     kind: 'session',
-    title: product_navigation_content,
+    /*
+     * Not the navigation label: /dashboard/works already owns 内容, and this
+     * page printed the same word while its tab title, description and empty
+     * state all called it 创作过程. The kind label is what the rest of the
+     * surface already says, so the h1 and the breadcrumb now say it too.
+     */
+    title: legacy_projection_kind_session,
   },
   works: {
     description: legacy_projection_history_works_description,
