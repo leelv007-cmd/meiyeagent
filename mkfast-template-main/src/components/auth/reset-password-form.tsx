@@ -1,6 +1,7 @@
 import { getAuthErrorMessage } from '@/lib/locale';
 import {
   auth_reset_password_back_to_login,
+  auth_reset_password_description,
   auth_reset_password_hide_password,
   auth_reset_password_invalid_token,
   auth_reset_password_min_length,
@@ -55,11 +56,11 @@ export function ResetPasswordForm() {
   if (!token || errorParam === 'invalid_token') {
     return (
       <AuthCard
-        headerLabel={auth_reset_password_title()}
+        title={auth_reset_password_title()}
         bottomButtonLabel={auth_reset_password_back_to_login()}
         bottomButtonHref={Routes.Login}
       >
-        <p className="text-sm text-destructive py-4">
+        <p className="text-sm leading-relaxed text-destructive">
           {auth_reset_password_invalid_token()}
         </p>
       </AuthCard>
@@ -92,7 +93,8 @@ export function ResetPasswordForm() {
   };
   return (
     <AuthCard
-      headerLabel={auth_reset_password_title()}
+      title={auth_reset_password_title()}
+      description={auth_reset_password_description()}
       bottomButtonLabel={auth_reset_password_back_to_login()}
       bottomButtonHref={Routes.Login}
     >

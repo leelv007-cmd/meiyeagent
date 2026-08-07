@@ -43,7 +43,7 @@ function LoginPage() {
   return (
     <div className="flex flex-col gap-5">
       <LoginForm />
-      <div className="text-balance text-center text-xs leading-5 text-muted-foreground">
+      <div className="meiye-auth-meta text-balance text-center">
         {auth_common_by_clicking_continue()}
         <Link
           to={Routes.TermsOfService}

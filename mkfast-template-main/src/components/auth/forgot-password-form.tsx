@@ -2,6 +2,7 @@ import { getAuthErrorMessage } from '@/lib/locale';
 import {
   auth_forgot_password_back_to_login,
   auth_forgot_password_check_email,
+  auth_forgot_password_description,
   auth_forgot_password_email,
   auth_forgot_password_email_required,
   auth_forgot_password_placeholder_email,
@@ -70,7 +71,8 @@ export function ForgotPasswordForm({ className }: { className?: string }) {
   };
   return (
     <AuthCard
-      headerLabel={auth_forgot_password_title()}
+      title={auth_forgot_password_title()}
+      description={auth_forgot_password_description()}
       bottomButtonLabel={auth_forgot_password_back_to_login()}
       bottomButtonHref={Routes.Login}
       className={cn('', className)}

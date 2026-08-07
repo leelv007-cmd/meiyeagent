@@ -36,6 +36,9 @@ function getDisplayMessage(
  * than DESIGN.md §7's `status-danger` (`oklch(0.55 0.2 27)`), which the tone
  * classes below carry — the same values `components/uiux/product-status.tsx`
  * uses, so the 规范化状态标签 vocabulary is identical inside and outside the app.
+ *
+ * The heading and the reason now ride the shared auth header, so the status
+ * label appears once (as the 规范化状态标签 above the action) instead of twice.
  */
 export function ErrorCard({
   errorCode,
@@ -47,12 +50,12 @@ export function ErrorCard({
   const displayMessage = getDisplayMessage(errorCode, errorDescription);
   return (
     <AuthCard
-      headerLabel={auth_error_status_label()}
+      title={auth_error_title()}
+      description={displayMessage}
       bottomButtonHref={Routes.Root}
       bottomButtonLabel={auth_error_back_home()}
-      className="border-none"
     >
-      <div className="flex w-full flex-col items-center gap-3 py-2 text-center">
+      <div className="flex w-full flex-col items-start gap-4">
         <span
           className="inline-flex items-center gap-x-1.5 rounded-md bg-[oklch(0.55_0.2_27/0.1)] px-2 py-1 font-medium text-[oklch(0.45_0.16_27)] text-xs dark:bg-[oklch(0.55_0.2_27/0.18)] dark:text-[oklch(0.84_0.1_27)]"
           data-testid="auth-error-status"
@@ -63,12 +66,8 @@ export function ErrorCard({
           />
           {auth_error_status_label()}
         </span>
-        <h1 className="font-semibold text-lg">{auth_error_title()}</h1>
-        <p className="text-muted-foreground text-sm leading-6">
-          {displayMessage}
-        </p>
         <Link
-          className={cn(buttonVariants({ size: 'default' }), 'w-full')}
+          className={cn(buttonVariants({ size: 'lg' }), 'w-full')}
           data-testid="auth-error-retry"
           to={Routes.Login}
         >

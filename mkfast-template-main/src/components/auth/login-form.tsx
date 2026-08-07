@@ -1,5 +1,6 @@
 import { getAuthErrorMessage } from '@/lib/locale';
 import {
+  auth_login_description,
   auth_login_email,
   auth_login_email_required,
   auth_login_forgot_password,
@@ -104,7 +105,9 @@ export function LoginForm({
   };
   return (
     <AuthCard
-      headerLabel={auth_login_welcome_back()}
+      title={auth_login_welcome_back()}
+      titleTone="display"
+      description={auth_login_description()}
       bottomButtonLabel={auth_login_sign_up_hint()}
       bottomButtonHref={Routes.Register}
       className={cn('', className)}
@@ -198,7 +201,7 @@ export function LoginForm({
           </form>
         </Form>
       )}
-      <div className="mt-4">
+      <div>
         <SocialLoginButton
           callbackUrl={callbackUrl}
           showDivider={credentialLoginEnabled}

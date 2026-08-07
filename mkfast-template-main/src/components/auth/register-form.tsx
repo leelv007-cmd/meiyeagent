@@ -1,7 +1,7 @@
 import { getAuthErrorMessage } from '@/lib/locale';
 import {
   auth_register_check_email,
-  auth_register_create_account,
+  auth_register_description,
   auth_register_email,
   auth_register_email_required,
   auth_register_hide_password,
@@ -15,6 +15,7 @@ import {
   auth_register_show_password,
   auth_register_sign_in_hint,
   auth_register_sign_up,
+  auth_register_welcome,
 } from '@/locale/paraglide/messages';
 import { AuthCard } from '@/components/auth/auth-card';
 import { FormError } from '@/components/shared/form-error';
@@ -95,7 +96,9 @@ export function RegisterForm({
   };
   return (
     <AuthCard
-      headerLabel={auth_register_create_account()}
+      title={auth_register_welcome()}
+      titleTone="display"
+      description={auth_register_description()}
       bottomButtonLabel={auth_register_sign_in_hint()}
       bottomButtonHref={Routes.Login}
     >
@@ -193,7 +196,7 @@ export function RegisterForm({
           </form>
         </Form>
       )}
-      <div className="mt-4">
+      <div>
         <SocialLoginButton
           callbackUrl={callbackUrl}
           showDivider={credentialLoginEnabled}
