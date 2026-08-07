@@ -236,6 +236,8 @@ test('catalog URL search is allowlisted only', () => {
   assert.ok(href.includes('category=video'));
   assert.ok(href.includes('returnKey=rk'));
   assert.ok(!/prompt|provider|userText|body/i.test(href));
+  // Supply-side revision refs stay off the merchant's address bar (PRODUCT.md).
+  assert.ok(!href.includes('surfaceRevisionId'));
 
   const parsed = catalogStateFromSearch(new URL(href, 'http://x').searchParams);
   assert.equal(parsed.tab, 'templates');

@@ -427,15 +427,21 @@ export function catalogStateFromSearch(
   });
 }
 
-/** Serialize UI state to allowlisted catalog href. */
+/**
+ * Serialize UI state to allowlisted catalog href.
+ *
+ * `surfaceRevisionId` is deliberately **not** serialized. It is a supply-side
+ * revision ref (`surface.home.launch@27`), and PRODUCT.md keeps internal object
+ * ids off merchant surfaces — the address bar included. Nothing depends on it
+ * being there: the catalog always fetches the live surface, and the revision a
+ * merchant actually acts on is read from that response, not from the URL. The
+ * parser still accepts the parameter so older links keep working.
+ */
 export function catalogStateToHref(state: CatalogUiState): string {
   return buildComposerCatalogHref({
     tab: state.tab,
     category: state.category,
     ...(state.query ? { q: state.query } : {}),
-    ...(state.surfaceRevisionId
-      ? { surfaceRevisionId: state.surfaceRevisionId }
-      : {}),
     ...(state.returnKey ? { returnKey: state.returnKey } : {}),
   });
 }

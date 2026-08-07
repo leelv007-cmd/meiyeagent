@@ -62,13 +62,16 @@ export function CatalogLivePage({
     [sourceQuery.data]
   );
 
+  // The live surface revision is kept in component state — it rides the return
+  // snapshot so a back-navigation restores the same list — but it is not
+  // published to the URL. Writing it there put `surface.home.launch@27` in the
+  // merchant's address bar for no gain: selection reads the revision straight
+  // off this response, and the fetch below never takes one as an argument.
   useEffect(() => {
     const revisionId = sourceQuery.data?.surface.revisionId;
     if (!revisionId || state.surfaceRevisionId === revisionId) return;
-    const next = { ...state, surfaceRevisionId: revisionId };
-    setState(next);
-    onReplaceState?.(next);
-  }, [onReplaceState, sourceQuery.data, state]);
+    setState({ ...state, surfaceRevisionId: revisionId });
+  }, [sourceQuery.data, state]);
 
   const publishState = (next: CatalogUiState) => {
     setState(next);
