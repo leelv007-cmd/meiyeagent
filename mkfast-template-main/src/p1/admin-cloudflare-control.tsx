@@ -27,6 +27,10 @@ import {
   ADMIN_CF_DEEP_LINK_RESOURCE_KINDS,
   type AdminCfDeepLinkResourceKind,
 } from '@/p1/admin-cloudflare-deep-link';
+import {
+  admin_cloudflare_deploy_versions_only_reflect_app_shell_r_6fde9a61,
+  admin_cloudflare_probe_read_unavailable,
+} from '@/locale/paraglide/messages';
 
 const freshnessSchema = z.enum([
   'fresh',
@@ -64,7 +68,7 @@ const deploymentSchema = z
     ...row,
     note:
       row.note ??
-      '部署版本仅反映 App Shell 发布事实，不是业务数据回滚；不覆盖 Core/Canvas',
+      admin_cloudflare_deploy_versions_only_reflect_app_shell_r_6fde9a61(),
   }));
 const deploymentsFieldSchema = z.discriminatedUnion('status', [
   unknownFieldSchema,
@@ -134,7 +138,7 @@ function unknownProbes(reason: string, observedAt: string): AdminCfProbeView[] {
     projectAdminCfProbe({
       kind,
       status: 'unknown',
-      businessImpact: `自有健康探针读取不可用（${reason}），不得展示为正常`,
+      businessImpact: admin_cloudflare_probe_read_unavailable({ reason }),
       observedAt,
       detail: reason,
     })

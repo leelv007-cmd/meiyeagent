@@ -26,6 +26,31 @@ import type {
   LiveRouteSimulatorState,
   RouteSimulatorPanelView,
 } from '@/p1/admin-supply-route-simulator-model';
+import {
+  admin_capability_evidence_source_a70e1029,
+  admin_supply_acceptance_branch_eaaad5e9,
+  admin_supply_all_passed_3b6e5a12,
+  admin_supply_cost_evidence_source_3c7deb8c,
+  admin_supply_current_state_is_unknown_demo_data_fallb_9f5116b5,
+  admin_supply_data_processing_level_6bb64a54,
+  admin_supply_deployments_6d3c4846,
+  admin_supply_evidence_freshness_bfc825d0,
+  admin_supply_excluded_7b37cc8d,
+  admin_supply_fail_closed_no_compliant_candidates_e9ae46a2,
+  admin_supply_hard_filter_passed_75c41314,
+  admin_supply_live_exclusion_6818702d,
+  admin_supply_max_cost_3c9b4905,
+  admin_supply_no_candidates_74869b6e,
+  admin_supply_no_live_exclusions_7247dbac,
+  admin_supply_no_sort_candidates_34c753a2,
+  admin_supply_not_selected_reason_16e93687,
+  admin_supply_risk_discount_723bd73d,
+  admin_supply_route_simulation_failed_cae5523c,
+  admin_supply_route_simulation_has_not_run_yet_use_the_d3367525,
+  admin_supply_route_simulator_7fcad30f,
+  admin_supply_shares_the_same_explanation_projection_w_cb259181,
+  admin_supply_three_layer_sort_0bd6ffd5,
+} from '@/locale/paraglide/messages';
 
 /**
  * Evidence freshness words come from the projection, so the mapping is on the
@@ -52,31 +77,41 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Frame dense data-testid="supply-route-hard-filter">
           <FramePanel>
-            <p className="text-xs text-muted-foreground">硬过滤通过</p>
+            <p className="text-xs text-muted-foreground">
+              {admin_supply_hard_filter_passed_75c41314()}
+            </p>
             <p className="mt-1 font-medium">
-              {view.hardFilterPassed.length} 个 Deployment
+              {view.hardFilterPassed.length}{' '}
+              {admin_supply_deployments_6d3c4846()}
             </p>
             <p className="text-xs text-muted-foreground">
-              排除 {view.hardFilterExcluded.length}
+              {admin_supply_excluded_7b37cc8d()}{' '}
+              {view.hardFilterExcluded.length}
             </p>
           </FramePanel>
         </Frame>
         <Frame dense data-testid="supply-route-max-cost">
           <FramePanel>
-            <p className="text-xs text-muted-foreground">最大成本</p>
+            <p className="text-xs text-muted-foreground">
+              {admin_supply_max_cost_3c9b4905()}
+            </p>
             <p className="mt-1 font-medium">
               {view.maxCost
                 ? `${(view.maxCost.amountMicros / 1_000_000).toFixed(4)} ${view.maxCost.currency}`
                 : '—'}
             </p>
             <p className="text-xs text-muted-foreground">
-              证据来源 {view.maxCost?.evidenceSource ?? '无候选'}
+              {admin_capability_evidence_source_a70e1029()}{' '}
+              {view.maxCost?.evidenceSource ??
+                admin_supply_no_candidates_74869b6e()}
             </p>
           </FramePanel>
         </Frame>
         <Frame dense data-testid="supply-route-acceptance">
           <FramePanel>
-            <p className="text-xs text-muted-foreground">接受态分支</p>
+            <p className="text-xs text-muted-foreground">
+              {admin_supply_acceptance_branch_eaaad5e9()}
+            </p>
             <p className="mt-1 font-medium">{view.acceptanceBranch.decision}</p>
             <p className="text-xs text-muted-foreground">
               {view.acceptanceBranch.acceptance} ·{' '}
@@ -86,7 +121,9 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
         </Frame>
         <Frame dense data-testid="supply-route-data-level">
           <FramePanel>
-            <p className="text-xs text-muted-foreground">数据处理等级</p>
+            <p className="text-xs text-muted-foreground">
+              {admin_supply_data_processing_level_6bb64a54()}
+            </p>
             <p className="mt-1 font-medium">{view.dataProcessingLevel.level}</p>
             <p className="text-xs text-muted-foreground">
               {view.dataProcessingLevel.copy}
@@ -98,14 +135,15 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
       {view.failClosed ? (
         <Frame dense data-testid="supply-route-fail-closed">
           <FramePanel className="border-destructive/40 text-sm text-destructive">
-            失败关闭：无合规候选（{view.failClosedReason}）
+            {admin_supply_fail_closed_no_compliant_candidates_e9ae46a2()}
+            {view.failClosedReason}）
           </FramePanel>
         </Frame>
       ) : null}
 
       <Frame dense headingLevel={3} data-testid="supply-route-sort">
         <FrameHeader>
-          <FrameTitle>三层排序</FrameTitle>
+          <FrameTitle>{admin_supply_three_layer_sort_0bd6ffd5()}</FrameTitle>
           <FrameDescription className="text-xs">
             {view.layerOrder.join(' → ')}
           </FrameDescription>
@@ -135,7 +173,7 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
           </Table>
           {view.sortRanked.length === 0 ? (
             <p className="p-4 text-center text-sm text-muted-foreground">
-              无排序候选
+              {admin_supply_no_sort_candidates_34c753a2()}
             </p>
           ) : null}
         </FramePanel>
@@ -143,11 +181,13 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
 
       <Frame dense headingLevel={3} data-testid="supply-route-live-exclusions">
         <FrameHeader>
-          <FrameTitle>实时排除</FrameTitle>
+          <FrameTitle>{admin_supply_live_exclusion_6818702d()}</FrameTitle>
         </FrameHeader>
         <FramePanel>
           {view.liveExclusions.length === 0 ? (
-            <p className="text-xs text-muted-foreground">无实时排除</p>
+            <p className="text-xs text-muted-foreground">
+              {admin_supply_no_live_exclusions_7247dbac()}
+            </p>
           ) : (
             <ul className="list-disc space-y-1 pl-5 text-sm">
               {view.liveExclusions.map((row) => (
@@ -163,11 +203,13 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
 
       <Frame dense headingLevel={3} data-testid="supply-route-not-selected">
         <FrameHeader>
-          <FrameTitle>未选原因</FrameTitle>
+          <FrameTitle>{admin_supply_not_selected_reason_16e93687()}</FrameTitle>
         </FrameHeader>
         <FramePanel>
           {view.notSelectedReasons.length === 0 ? (
-            <p className="text-xs text-muted-foreground">全部通过</p>
+            <p className="text-xs text-muted-foreground">
+              {admin_supply_all_passed_3b6e5a12()}
+            </p>
           ) : (
             <ul className="list-disc space-y-1 pl-5 text-sm">
               {view.notSelectedReasons.map((row) => (
@@ -195,7 +237,7 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
         data-testid="supply-route-evidence-freshness"
       >
         <FrameHeader>
-          <FrameTitle>证据新鲜度</FrameTitle>
+          <FrameTitle>{admin_supply_evidence_freshness_bfc825d0()}</FrameTitle>
         </FrameHeader>
         <FramePanel className="p-0!">
           <Table>
@@ -243,7 +285,9 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
 
       <Frame dense headingLevel={3} data-testid="supply-route-cost-evidence">
         <FrameHeader>
-          <FrameTitle>成本证据来源</FrameTitle>
+          <FrameTitle>
+            {admin_supply_cost_evidence_source_3c7deb8c()}
+          </FrameTitle>
         </FrameHeader>
         <FramePanel>
           <ul className="list-disc space-y-1 pl-5 text-sm">
@@ -254,7 +298,9 @@ function ReadyRouteSimulatorBody({ view }: { view: RouteSimulatorPanelView }) {
                 {row.amountMicros != null
                   ? ` · ${row.amountMicros} micros`
                   : ''}
-                {row.riskDiscountApplied ? ' · 风险折扣' : ''}
+                {row.riskDiscountApplied
+                  ? admin_supply_risk_discount_723bd73d()
+                  : ''}
               </li>
             ))}
           </ul>
@@ -289,20 +335,18 @@ export function SupplyRouteSimulatorPanel({
       className="space-y-4"
     >
       <header className="space-y-1">
-        <h2 className="text-base font-semibold">路由模拟器</h2>
+        <h2 className="text-base font-semibold">
+          {admin_supply_route_simulator_7fcad30f()}
+        </h2>
         <p className="text-xs text-muted-foreground">
-          与任务审计共用同一解释投影（G5）：硬过滤 / 排序 / 实时排除 / 最大成本
-          / 接受态 / 未选原因 / 证据新鲜度 / 成本证据来源。经
-          admin_supply_action_preview / admin_supply_action（route_simulate）由
-          Core 生成，禁止演示数据回退。
+          {admin_supply_shares_the_same_explanation_projection_w_cb259181()}
         </p>
       </header>
 
       {resolved.status === 'idle' ? (
         <Frame dense data-testid="supply-route-simulator-idle">
           <FramePanel className="border-dashed text-sm text-muted-foreground">
-            尚未运行路由模拟。使用下方「路由模拟」受治理动作，经 Core
-            预览并执行后，此处展示解释投影。当前为空闲态，不是无候选。
+            {admin_supply_route_simulation_has_not_run_yet_use_the_d3367525()}
           </FramePanel>
         </Frame>
       ) : null}
@@ -310,7 +354,9 @@ export function SupplyRouteSimulatorPanel({
       {resolved.status === 'error' ? (
         <Frame dense data-testid="supply-route-simulator-error" role="alert">
           <FramePanel className="border-destructive/40 text-sm text-destructive">
-            路由模拟失败：{resolved.message}。当前状态未知，未使用演示数据回退。
+            {admin_supply_route_simulation_failed_cae5523c()}
+            {resolved.message}
+            {admin_supply_current_state_is_unknown_demo_data_fallb_9f5116b5()}
           </FramePanel>
         </Frame>
       ) : null}

@@ -11,6 +11,35 @@ import {
 } from '@/components/reui/frame';
 import { Separator } from '@/components/ui/separator';
 import type { SupplyOverviewView } from '@/p1/admin-supply-overview-model';
+import {
+  admin_capability_captured_d98892e9,
+  admin_supply_accounts_90138491,
+  admin_supply_balance_headroom_787465d2,
+  admin_supply_candidates_0461e4db,
+  admin_supply_concurrency_s_8945074e,
+  admin_supply_core_model_dual_channel_coverage_77073887,
+  admin_supply_data_class_coverage_8db6f81b,
+  admin_supply_external_gateway_console_tech_evidence_d_4f2760b7,
+  admin_supply_failure_domains_f5a95a7a,
+  admin_supply_health_blockers_ca106b1d,
+  admin_supply_health_blockers_db4fc647,
+  admin_supply_health_capacity_balance_limits_cost_c7760272,
+  admin_supply_known_run_cost_d89ebb60,
+  admin_supply_none_72077749,
+  admin_supply_not_a_day_to_day_admin_primary_entry_not_214642bd,
+  admin_supply_not_configured_63595e95,
+  admin_supply_open_failed_unknown_d644eb45,
+  admin_supply_pool_routepolicy_effective_revision_cb2b0746,
+  admin_supply_price_evidence_source_003259c9,
+  admin_supply_quota_7d350d87,
+  admin_supply_recent_changes_unified_audit_1e7662a8,
+  admin_supply_six_entity_relationships_89cbbc93,
+  admin_supply_supply_overview_30000464,
+  admin_supply_sync_attempt_async_media_lifecycle_impac_caeea7a6,
+  admin_supply_tasks_3172b317,
+  admin_supply_three_modality_operation_readiness_301e2fe1,
+  admin_supply_unknown_cost_tasks_9dcc94e2,
+} from '@/locale/paraglide/messages';
 
 /**
  * Readiness words come from the projection, so the mapping is on the word, not
@@ -51,15 +80,19 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
       className="space-y-6"
     >
       <header className="space-y-1">
-        <h2 className="text-base font-semibold">供应总览</h2>
+        <h2 className="text-base font-semibold">
+          {admin_supply_supply_overview_30000464()}
+        </h2>
         <p className="text-xs text-muted-foreground">
-          Catalog {view.catalogRevisionId} · r{view.catalogRevisionNumber} ·
-          捕获 {view.capturedAt}
+          Catalog {view.catalogRevisionId} · r{view.catalogRevisionNumber}{' '}
+          {admin_capability_captured_d98892e9()} {view.capturedAt}
         </p>
       </header>
 
       <section data-testid="supply-operation-readiness" className="space-y-2">
-        <h3 className="text-sm font-semibold">三模态 operation readiness</h3>
+        <h3 className="text-sm font-semibold">
+          {admin_supply_three_modality_operation_readiness_301e2fe1()}
+        </h3>
         <div className="grid auto-rows-fr items-stretch gap-3 sm:grid-cols-3">
           {view.operationReadiness.map((row) => (
             <Frame
@@ -75,7 +108,9 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
                   {row.modalityLabel} · {row.operation}
                 </FrameTitle>
                 <FrameDescription className="text-xs">
-                  候选 {row.candidateCount} · 健康阻断 {row.healthBlockingCount}
+                  {admin_supply_candidates_0461e4db()} {row.candidateCount}{' '}
+                  {admin_supply_health_blockers_ca106b1d()}{' '}
+                  {row.healthBlockingCount}
                 </FrameDescription>
               </FrameHeader>
               <FramePanel className="flex flex-1 flex-col gap-2 text-xs">
@@ -94,7 +129,9 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
       </section>
 
       <section data-testid="supply-dual-channel-coverage" className="space-y-2">
-        <h3 className="text-sm font-semibold">核心模型双渠道覆盖</h3>
+        <h3 className="text-sm font-semibold">
+          {admin_supply_core_model_dual_channel_coverage_77073887()}
+        </h3>
         <Frame stacked dense spacing="sm">
           {view.dualChannelCoverage.map((row) => (
             <FramePanel
@@ -107,8 +144,9 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
             >
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">
-                  {row.catalogModelDisplayName ?? '未配置'} (
-                  {row.catalogModelId ?? '—'})
+                  {row.catalogModelDisplayName ??
+                    admin_supply_not_configured_63595e95()}{' '}
+                  ({row.catalogModelId ?? '—'})
                 </span>
                 <Badge
                   variant={row.multiChannelReady ? 'success-light' : 'outline'}
@@ -116,8 +154,8 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
                   {row.label}
                 </Badge>
                 <span className="text-muted-foreground">
-                  故障域 {row.independentFaultDomainCount} ·{' '}
-                  {row.faultDomainKind}
+                  {admin_supply_failure_domains_f5a95a7a()}{' '}
+                  {row.independentFaultDomainCount} · {row.faultDomainKind}
                 </span>
               </div>
               <p className="mt-1 text-muted-foreground">{row.note}</p>
@@ -133,7 +171,9 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
       </section>
 
       <section data-testid="supply-six-entity" className="space-y-2">
-        <h3 className="text-sm font-semibold">六实体关系</h3>
+        <h3 className="text-sm font-semibold">
+          {admin_supply_six_entity_relationships_89cbbc93()}
+        </h3>
         <Frame dense className="grid grid-cols-2 gap-px sm:grid-cols-3">
           {(
             [
@@ -163,7 +203,7 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
       <Frame dense data-testid="supply-effective-revisions">
         <FrameHeader>
           <FrameTitle className="text-sm">
-            Pool / RoutePolicy 生效 revision
+            {admin_supply_pool_routepolicy_effective_revision_cb2b0746()}
           </FrameTitle>
         </FrameHeader>
         <FramePanel>
@@ -187,11 +227,14 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
         <Frame dense data-testid="supply-health-capacity">
           <FrameHeader>
             <FrameTitle className="text-sm">
-              健康 / 容量 / 余额 / 限额 / 成本
+              {admin_supply_health_capacity_balance_limits_cost_c7760272()}
             </FrameTitle>
             <FrameDescription className="text-xs">
-              健康阻断 {view.health.blockingCount} · 已知运行成本{' '}
-              {view.cost.knownRunCostMicros} µ · 未知成本任务{' '}
+              {admin_supply_health_blockers_db4fc647()}{' '}
+              {view.health.blockingCount}{' '}
+              {admin_supply_known_run_cost_d89ebb60()}{' '}
+              {view.cost.knownRunCostMicros}{' '}
+              {admin_supply_unknown_cost_tasks_9dcc94e2()}{' '}
               {view.cost.unknownCostRunCount}
             </FrameDescription>
           </FrameHeader>
@@ -217,17 +260,21 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
                   <span className="font-medium">{c.displayName}</span> ·{' '}
                   {c.kind} · rev {c.revisionId}
                   <br />
-                  rpm {c.rpm ?? '—'} / tpm {c.tpm ?? '—'} / 并发 s
+                  rpm {c.rpm ?? '—'} / tpm {c.tpm ?? '—'}{' '}
+                  {admin_supply_concurrency_s_8945074e()}
                   {c.supplyConcurrency ?? '—'} p{c.productConcurrency ?? '—'}{' '}
                   sys
                   {c.systemConcurrency ?? '—'}
                   <br />
-                  余额 headroom {String(c.balanceHeadroom)} · 配额 {c.quotaHint}
+                  {admin_supply_balance_headroom_787465d2()}{' '}
+                  {String(c.balanceHeadroom)} {admin_supply_quota_7d350d87()}{' '}
+                  {c.quotaHint}
                 </li>
               ))}
             </ul>
             <p className="text-muted-foreground">
-              价格证据源: {view.cost.priceEvidenceSources.join(', ') || '—'}
+              {admin_supply_price_evidence_source_003259c9()}{' '}
+              {view.cost.priceEvidenceSources.join(', ') || '—'}
             </p>
           </FramePanel>
         </Frame>
@@ -235,7 +282,7 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
         <Frame dense data-testid="supply-lifecycle-affected">
           <FrameHeader>
             <FrameTitle className="text-sm">
-              同步 attempt / 异步媒体生命周期 · 受影响面
+              {admin_supply_sync_attempt_async_media_lifecycle_impac_caeea7a6()}
             </FrameTitle>
           </FrameHeader>
           <FramePanel className="space-y-2 text-xs">
@@ -248,21 +295,26 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
             </dl>
             <Separator />
             <p data-testid="supply-affected-accounts">
-              账号 {view.affected.accountIds.join(', ') || '—'}
+              {admin_supply_accounts_90138491()}{' '}
+              {view.affected.accountIds.join(', ') || '—'}
             </p>
             <p data-testid="supply-affected-tasks">
-              任务 {view.affected.taskIds.join(', ') || '—'}
+              {admin_supply_tasks_3172b317()}{' '}
+              {view.affected.taskIds.join(', ') || '—'}
             </p>
             <p className="text-muted-foreground">
-              开放失败/未知{' '}
-              {view.affected.openFailureTaskIds.join(', ') || '无'}
+              {admin_supply_open_failed_unknown_d644eb45()}{' '}
+              {view.affected.openFailureTaskIds.join(', ') ||
+                admin_supply_none_72077749()}
             </p>
           </FramePanel>
         </Frame>
       </div>
 
       <section data-testid="supply-data-class" className="space-y-2">
-        <h3 className="text-sm font-semibold">数据等级覆盖</h3>
+        <h3 className="text-sm font-semibold">
+          {admin_supply_data_class_coverage_8db6f81b()}
+        </h3>
         <ul className="flex flex-wrap gap-2 text-xs">
           {view.dataClassCoverage.map((row) => (
             <li
@@ -283,7 +335,9 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
 
       <Frame dense data-testid="supply-recent-audit">
         <FrameHeader>
-          <FrameTitle className="text-sm">最近变更 · 统一审计</FrameTitle>
+          <FrameTitle className="text-sm">
+            {admin_supply_recent_changes_unified_audit_1e7662a8()}
+          </FrameTitle>
         </FrameHeader>
         <FramePanel>
           <ul className="space-y-1 text-xs">
@@ -309,10 +363,10 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
       <Frame dense data-testid="supply-gateway-deeplinks">
         <FrameHeader>
           <FrameTitle className="text-sm">
-            外部网关 Console（仅技术证据深链）
+            {admin_supply_external_gateway_console_tech_evidence_d_4f2760b7()}
           </FrameTitle>
           <FrameDescription className="text-xs">
-            非日常管理主入口 · 非第二业务真相
+            {admin_supply_not_a_day_to_day_admin_primary_entry_not_214642bd()}
           </FrameDescription>
         </FrameHeader>
         <FramePanel>
@@ -331,7 +385,7 @@ export function SupplyOverviewPanel({ view }: { view: SupplyOverviewView }) {
                   {link.label}
                 </a>
                 <span className="ml-2 text-muted-foreground">
-                  非日常管理主入口 · 非第二业务真相
+                  {admin_supply_not_a_day_to_day_admin_primary_entry_not_214642bd()}
                 </span>
               </li>
             ))}

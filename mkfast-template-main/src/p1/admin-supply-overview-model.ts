@@ -25,6 +25,26 @@ import {
   type SupplyGatewayDeepLink,
   type SupplyRunRecord,
 } from './admin-supply-types';
+import {
+  admin_capability_blocked_a00db105,
+  admin_capability_degraded_d8518883,
+  admin_capability_not_verified_0800371a,
+  admin_creation_video_fa4e33b6,
+  admin_plan_reference_image_be8da62e,
+  admin_supply_channel_resilience_domains,
+  admin_supply_core_catalogmodel_not_configured_bb8d400d,
+  admin_supply_dual_channel_ready_b194fa4d,
+  admin_supply_independent_fault_domains,
+  admin_supply_missing_official_direct_or_upstream_rela_c6e5ad69,
+  admin_supply_missing_stable_account_or_endpoint_ident_3b5e8292,
+  admin_supply_no_available_deployment_1438a7dd,
+  admin_supply_no_deployments_e5bf9daa,
+  admin_supply_no_live_verified_healthy_deployment_22dfb0b5,
+  admin_supply_only_one_qualifying_failure_domain_publi_5f363d37,
+  admin_supply_single_channel_0ff813d8,
+  admin_supply_single_channel_no_fallback_7d020774,
+  admin_supply_text_f1926e9b,
+} from '@/locale/paraglide/messages';
 
 export interface QualifiedDeploymentProjection {
   deploymentId: string;
@@ -157,9 +177,9 @@ export interface SupplyOverviewView {
 }
 
 const MODALITY_LABEL: Record<CoreSupplyOperation, string> = {
-  'copy.generate': '文本',
-  'image.generate': '图片',
-  'video.generate': '视频',
+  'copy.generate': admin_supply_text_f1926e9b(),
+  'image.generate': admin_plan_reference_image_be8da62e(),
+  'video.generate': admin_creation_video_fa4e33b6(),
 };
 
 const BLOCKING_HEALTH: ReadonlySet<HealthOverlayState> = new Set([
@@ -220,8 +240,8 @@ export function projectDualChannelCoverage(input: {
       faultDomainKind: 'none',
       multiChannelReady: false,
       manufacturerIndependent: false,
-      label: '未核验',
-      note: '未配置核心 CatalogModel',
+      label: admin_capability_not_verified_0800371a(),
+      note: admin_supply_core_catalogmodel_not_configured_bb8d400d(),
     };
   }
 
@@ -303,26 +323,33 @@ export function projectDualChannelCoverage(input: {
 
   if (qualified.length === 0) {
     status = candidates.length === 0 ? 'blocked' : 'not_verified';
-    label = status === 'blocked' ? '无部署' : '未核验';
+    label =
+      status === 'blocked'
+        ? admin_supply_no_deployments_e5bf9daa()
+        : admin_capability_not_verified_0800371a();
     note =
       status === 'blocked'
-        ? '无可用 Deployment'
-        : '无 live_verified 且健康的 Deployment';
+        ? admin_supply_no_available_deployment_1438a7dd()
+        : admin_supply_no_live_verified_healthy_deployment_22dfb0b5();
   } else if (multiChannelReady) {
     status = 'multi_channel_ready';
-    label = '双渠道就绪';
+    label = admin_supply_dual_channel_ready_b194fa4d();
     note = manufacturerIndependent
-      ? `独立故障域 ${independentFaultDomainCount}（含制造商级独立）`
-      : `渠道级容灾 ${independentFaultDomainCount} 域（共享制造商，非制造商级双供应）`;
+      ? admin_supply_independent_fault_domains({
+          count: independentFaultDomainCount,
+        })
+      : admin_supply_channel_resilience_domains({
+          count: independentFaultDomainCount,
+        });
   } else {
     status = 'single_channel';
-    label = '单渠道 / 无回退';
+    label = admin_supply_single_channel_no_fallback_7d020774();
     note =
       identityVerified.length < qualified.length
-        ? '缺少稳定账号或端点身份；发布门不得标记 multi-channel ready'
+        ? admin_supply_missing_stable_account_or_endpoint_ident_3b5e8292()
         : independentFaultDomainCount < 2
-          ? '仅一条合格故障域；发布门不得标记 multi-channel ready'
-          : '缺少官方直连或上游中转渠道；发布门不得标记 multi-channel ready';
+          ? admin_supply_only_one_qualifying_failure_domain_publi_5f363d37()
+          : admin_supply_missing_official_direct_or_upstream_rela_c6e5ad69();
   }
 
   return {
@@ -376,11 +403,11 @@ export function projectOperationReadiness(
   else status = 'degraded';
 
   const labelMap: Record<OperationReadinessStatus, string> = {
-    multi_channel_ready: '双渠道就绪',
-    single_channel: '单渠道',
-    degraded: '降级',
-    blocked: '阻塞',
-    not_verified: '未核验',
+    multi_channel_ready: admin_supply_dual_channel_ready_b194fa4d(),
+    single_channel: admin_supply_single_channel_0ff813d8(),
+    degraded: admin_capability_degraded_d8518883(),
+    blocked: admin_capability_blocked_a00db105(),
+    not_verified: admin_capability_not_verified_0800371a(),
   };
 
   return {
@@ -600,15 +627,15 @@ export function operationReadinessLabel(
 ): string {
   switch (status) {
     case 'multi_channel_ready':
-      return '双渠道就绪';
+      return admin_supply_dual_channel_ready_b194fa4d();
     case 'single_channel':
-      return '单渠道';
+      return admin_supply_single_channel_0ff813d8();
     case 'degraded':
-      return '降级';
+      return admin_capability_degraded_d8518883();
     case 'blocked':
-      return '阻塞';
+      return admin_capability_blocked_a00db105();
     case 'not_verified':
-      return '未核验';
+      return admin_capability_not_verified_0800371a();
     default:
       return status;
   }

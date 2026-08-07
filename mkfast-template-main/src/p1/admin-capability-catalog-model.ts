@@ -18,6 +18,70 @@ import {
   capabilityGroupLabel,
   groupInventoryByDomain,
 } from '@/p1/admin-capability-registry-model';
+import {
+  admin_capability_account_auth_gate_19ff97e7,
+  admin_capability_accounts_commercialization_dbc927f4,
+  admin_capability_affects_available_feature_packs_quotas_a_6c38630d,
+  admin_capability_affects_campaign_credit_arrival_and_quot_b8583e74,
+  admin_capability_affects_channel_connectivity_credential_c4b9940f,
+  admin_capability_affects_edge_config_deploy_visibility_an_43c702d3,
+  admin_capability_affects_feishu_douyin_connectivity_and_p_d3b3ea7b,
+  admin_capability_affects_first_screen_exception_visibilit_18d13d9e,
+  admin_capability_affects_generation_channel_availability_cf57d6b6,
+  admin_capability_affects_incident_tracing_runtime_health_cf3903c6,
+  admin_capability_affects_login_admission_and_account_leve_2cb2b49c,
+  admin_capability_affects_ops_locating_capabilities_by_dom_9f5001b3,
+  admin_capability_affects_platform_stability_config_effect_b43ab9fc,
+  admin_capability_affects_queue_wait_stuck_recovery_and_pr_24ac8db1,
+  admin_capability_affects_selectable_creation_templates_an_9e67826c,
+  admin_capability_affects_sign_up_login_available_quota_pl_91ffc4e9,
+  admin_capability_affects_supply_incident_triage_task_reco_cd52c11d,
+  admin_capability_affects_template_choices_material_reuse_6e5f958b,
+  admin_capability_affects_whether_creation_tasks_can_submi_5f0b8154,
+  admin_capability_affects_whether_ops_can_define_accept_bi_46993d0d,
+  admin_capability_ai_supply_generation_2bada48a,
+  admin_capability_audit_runtime_health_d6688ca0,
+  admin_capability_capability_catalog_a4ed742e,
+  admin_capability_catalog_of_scenario_recipes_and_industry_a8c03ed2,
+  admin_capability_channel_integrations_29c2f778,
+  admin_capability_cloudflare_technical_desk_0deb83a7,
+  admin_capability_command_audit_byok_evidence_and_runtime_055e6a3b,
+  admin_capability_config_secret_references_b3364653,
+  admin_capability_content_assets_5ae72969,
+  admin_capability_content_packages_templates_and_canvas_ma_84487289,
+  admin_capability_contentpackage_template_catalog_and_publ_4c8babf8,
+  admin_capability_data_object_storage_a4ba234c,
+  admin_capability_data_storage_config_secrets_observabilit_f027ac08,
+  admin_capability_edge_workers_technical_surface_and_ops_d_2c82626f,
+  admin_capability_entitlement_quota_ledger_9b3483f0,
+  admin_capability_exception_home_73bdde91,
+  admin_capability_external_channel_connectivity_credential_bcbcc158,
+  admin_capability_external_integrations_3cc02b73,
+  admin_capability_feishu_douyin_and_other_external_connect_d5deb074,
+  admin_capability_image_generation_path_4e692dcf,
+  admin_capability_login_identity_plan_entitlements_payment_7a292c73,
+  admin_capability_model_assets_pricing_4648036f,
+  admin_capability_model_catalog_defaults_and_supply_execut_99b8f521,
+  admin_capability_model_supply_routing_070def57,
+  admin_capability_model_supply_routing_quality_and_copy_im_49a57fa6,
+  admin_capability_observability_audit_evidence_ce3e2cd6,
+  admin_capability_plan_definitions_default_quotas_and_enti_7dd5db83,
+  admin_capability_plan_entitlements_644ef7d1,
+  admin_capability_platform_registered_accounts_roles_and_a_42b92bee,
+  admin_capability_read_only_exception_first_list_and_ops_v_946ade68,
+  admin_capability_redemption_codes_7ebc000c,
+  admin_capability_redemption_issue_redeem_and_reconciliati_2fc2c5c8,
+  admin_capability_runtime_governance_f7712550,
+  admin_capability_six_domain_capability_inventory_evidence_5692d605,
+  admin_capability_skill_catalog_e4646dec,
+  admin_capability_supply_ops_console_ba739a80,
+  admin_capability_supply_run_table_task_drill_down_and_ass_a503513d,
+  admin_capability_task_orchestration_7b4c7f16,
+  admin_capability_task_queue_harness_482c7281,
+  admin_capability_task_submit_concurrency_gates_recovery_a_dbb6e393,
+  admin_capability_template_assets_ff05f473,
+  admin_capability_user_accounts_591990d5,
+} from '@/locale/paraglide/messages';
 
 /** L1 domain order fixed by D-054. */
 export const CAPABILITY_CATALOG_L1_ORDER = [
@@ -74,39 +138,51 @@ export const DOMAIN_OPERATOR_COPY: Record<
 > = {
   account_and_commerce: {
     domain: 'account_and_commerce',
-    title: '账号与商业化',
-    functionSummary: '登录身份、套餐权益、支付与兑换发放',
-    userImpact: '影响注册登录、可用额度、套餐升级与兑换码核销',
+    title: admin_capability_accounts_commercialization_dbc927f4(),
+    functionSummary:
+      admin_capability_login_identity_plan_entitlements_payment_7a292c73(),
+    userImpact:
+      admin_capability_affects_sign_up_login_available_quota_pl_91ffc4e9(),
   },
   ai_supply_and_generation: {
     domain: 'ai_supply_and_generation',
-    title: 'AI 供应与生成',
-    functionSummary: '模型供应、路由质量与文案/图片/视频/音频生成',
-    userImpact: '影响创作任务能否提交、生成质量与失败重试体验',
+    title: admin_capability_ai_supply_generation_2bada48a(),
+    functionSummary:
+      admin_capability_model_supply_routing_quality_and_copy_im_49a57fa6(),
+    userImpact:
+      admin_capability_affects_whether_creation_tasks_can_submi_5f0b8154(),
   },
   task_orchestration: {
     domain: 'task_orchestration',
-    title: '任务编排',
-    functionSummary: '任务提交、并发门、恢复与运行指标',
-    userImpact: '影响任务排队时长、卡死恢复与进度可见性',
+    title: admin_capability_task_orchestration_7b4c7f16(),
+    functionSummary:
+      admin_capability_task_submit_concurrency_gates_recovery_a_dbb6e393(),
+    userImpact:
+      admin_capability_affects_queue_wait_stuck_recovery_and_pr_24ac8db1(),
   },
   content_and_assets: {
     domain: 'content_and_assets',
-    title: '内容与资产',
-    functionSummary: '内容包、模板与画布素材资产',
-    userImpact: '影响模板可选性、素材复用与内容包交付',
+    title: admin_capability_content_assets_5ae72969(),
+    functionSummary:
+      admin_capability_content_packages_templates_and_canvas_ma_84487289(),
+    userImpact:
+      admin_capability_affects_template_choices_material_reuse_6e5f958b(),
   },
   external_integrations: {
     domain: 'external_integrations',
-    title: '外部集成',
-    functionSummary: '飞书/抖音等外部连接与发布移交',
-    userImpact: '影响渠道连通、凭据就绪与对外发布移交',
+    title: admin_capability_external_integrations_3cc02b73(),
+    functionSummary:
+      admin_capability_feishu_douyin_and_other_external_connect_d5deb074(),
+    userImpact:
+      admin_capability_affects_channel_connectivity_credential_c4b9940f(),
   },
   runtime_and_governance: {
     domain: 'runtime_and_governance',
-    title: '运行与治理',
-    functionSummary: '数据存储、配置密钥、观测告警与审计证据',
-    userImpact: '影响平台稳定性、配置生效、问题追溯与技术移交',
+    title: admin_capability_runtime_governance_f7712550(),
+    functionSummary:
+      admin_capability_data_storage_config_secrets_observabilit_f027ac08(),
+    userImpact:
+      admin_capability_affects_platform_stability_config_effect_b43ab9fc(),
   },
 };
 
@@ -137,9 +213,11 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     pageId: 'users',
     path: '/admin/users',
     domain: 'account_and_commerce',
-    title: '用户账号',
-    functionSummary: '平台注册账号、角色与账号详情下钻',
-    userImpact: '影响登录准入与账号级权益排查',
+    title: admin_capability_user_accounts_591990d5(),
+    functionSummary:
+      admin_capability_platform_registered_accounts_roles_and_a_42b92bee(),
+    userImpact:
+      admin_capability_affects_login_admission_and_account_leve_2cb2b49c(),
     capabilityIds: ['account_auth'],
     hostsOperationsHealth: false,
   },
@@ -147,9 +225,11 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     pageId: 'plans',
     path: '/admin/plans',
     domain: 'account_and_commerce',
-    title: '套餐权益',
-    functionSummary: '套餐定义、额度默认与权益策略',
-    userImpact: '影响可用功能包、额度与并发档位',
+    title: admin_capability_plan_entitlements_644ef7d1(),
+    functionSummary:
+      admin_capability_plan_definitions_default_quotas_and_enti_7dd5db83(),
+    userImpact:
+      admin_capability_affects_available_feature_packs_quotas_a_6c38630d(),
     capabilityIds: ['entitlements_billing_redemption'],
     hostsOperationsHealth: false,
   },
@@ -157,9 +237,11 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     pageId: 'redemptions',
     path: '/admin/redemptions',
     domain: 'account_and_commerce',
-    title: '兑换码',
-    functionSummary: '兑换码发放、核销与对账入口',
-    userImpact: '影响兑换活动到账与额度补发',
+    title: admin_capability_redemption_codes_7ebc000c(),
+    functionSummary:
+      admin_capability_redemption_issue_redeem_and_reconciliati_2fc2c5c8(),
+    userImpact:
+      admin_capability_affects_campaign_credit_arrival_and_quot_b8583e74(),
     capabilityIds: ['entitlements_billing_redemption'],
     hostsOperationsHealth: false,
   },
@@ -167,9 +249,11 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     pageId: 'models',
     path: '/admin/models',
     domain: 'ai_supply_and_generation',
-    title: '模型资产与定价',
-    functionSummary: '模型目录、默认模型与供应执行配置',
-    userImpact: '影响生成通道可用性与模型选择',
+    title: admin_capability_model_assets_pricing_4648036f(),
+    functionSummary:
+      admin_capability_model_catalog_defaults_and_supply_execut_99b8f521(),
+    userImpact:
+      admin_capability_affects_generation_channel_availability_cf57d6b6(),
     capabilityIds: [
       'model_supply_routing_quality',
       'generation_copy',
@@ -183,9 +267,11 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     pageId: 'templates',
     path: '/admin/templates',
     domain: 'content_and_assets',
-    title: '模板资产',
-    functionSummary: 'ContentPackage 模板目录与发布',
-    userImpact: '影响创作可选模板与交付版式',
+    title: admin_capability_template_assets_ff05f473(),
+    functionSummary:
+      admin_capability_contentpackage_template_catalog_and_publ_4c8babf8(),
+    userImpact:
+      admin_capability_affects_selectable_creation_templates_an_9e67826c(),
     capabilityIds: ['content_package_canvas'],
     hostsOperationsHealth: false,
   },
@@ -193,9 +279,11 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     pageId: 'integrations',
     path: '/admin/integrations',
     domain: 'external_integrations',
-    title: '渠道集成',
-    functionSummary: '外部渠道连通、凭据元数据与工具配置',
-    userImpact: '影响飞书/抖音等连接与发布移交',
+    title: admin_capability_channel_integrations_29c2f778(),
+    functionSummary:
+      admin_capability_external_channel_connectivity_credential_bcbcc158(),
+    userImpact:
+      admin_capability_affects_feishu_douyin_connectivity_and_p_d3b3ea7b(),
     capabilityIds: ['channel_tool_integrations'],
     hostsOperationsHealth: false,
   },
@@ -203,9 +291,11 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     pageId: 'audit',
     path: '/admin/audit',
     domain: 'runtime_and_governance',
-    title: '审计与运行健康',
-    functionSummary: '命令审计、BYOK 证据与运行健康区块',
-    userImpact: '影响问题追溯、运行健康可见性与技术移交',
+    title: admin_capability_audit_runtime_health_d6688ca0(),
+    functionSummary:
+      admin_capability_command_audit_byok_evidence_and_runtime_055e6a3b(),
+    userImpact:
+      admin_capability_affects_incident_tracing_runtime_health_cf3903c6(),
     capabilityIds: [
       'observability_audit',
       'config_secrets',
@@ -218,10 +308,11 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     pageId: 'skills',
     path: '/admin/skills',
     domain: 'content_and_assets',
-    title: 'Skill 目录',
-    functionSummary: '场景配方与行业话术的目录、来源标注与生命周期操作',
+    title: admin_capability_skill_catalog_e4646dec(),
+    functionSummary:
+      admin_capability_catalog_of_scenario_recipes_and_industry_a8c03ed2(),
     userImpact:
-      '影响运营能否按治理链定义、受理、绑定、回滚与登记平台/行业层配方，以及来源可追溯性',
+      admin_capability_affects_whether_ops_can_define_accept_bi_46993d0d(),
     capabilityIds: ['content_package_canvas'],
     hostsOperationsHealth: false,
   },
@@ -229,9 +320,11 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     pageId: 'supply',
     path: '/admin/supply',
     domain: 'ai_supply_and_generation',
-    title: '供应运行台',
-    functionSummary: '供应运行表、任务下钻与关联视图',
-    userImpact: '影响供应事故排查、任务恢复与通道健康可见性',
+    title: admin_capability_supply_ops_console_ba739a80(),
+    functionSummary:
+      admin_capability_supply_run_table_task_drill_down_and_ass_a503513d(),
+    userImpact:
+      admin_capability_affects_supply_incident_triage_task_reco_cd52c11d(),
     capabilityIds: [
       'model_supply_routing_quality',
       'generation_copy',
@@ -245,9 +338,11 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     pageId: 'cloudflare',
     path: '/admin/cloudflare',
     domain: 'runtime_and_governance',
-    title: 'Cloudflare 技术台',
-    functionSummary: '边缘/Workers 技术面与运维深链',
-    userImpact: '影响边缘配置、部署可见性与技术移交入口',
+    title: admin_capability_cloudflare_technical_desk_0deb83a7(),
+    functionSummary:
+      admin_capability_edge_workers_technical_surface_and_ops_d_2c82626f(),
+    userImpact:
+      admin_capability_affects_edge_config_deploy_visibility_an_43c702d3(),
     capabilityIds: ['data_storage', 'config_secrets'],
     hostsOperationsHealth: false,
   },
@@ -255,9 +350,11 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     pageId: 'capabilities',
     path: '/admin/capabilities',
     domain: 'runtime_and_governance',
-    title: '能力目录',
-    functionSummary: '六域能力清单、证据下钻与技术移交入口',
-    userImpact: '影响运营按域定位能力、证据页与移交上下文',
+    title: admin_capability_capability_catalog_a4ed742e(),
+    functionSummary:
+      admin_capability_six_domain_capability_inventory_evidence_5692d605(),
+    userImpact:
+      admin_capability_affects_ops_locating_capabilities_by_dom_9f5001b3(),
     capabilityIds: ['observability_audit', 'config_secrets'],
     hostsOperationsHealth: false,
   },
@@ -265,9 +362,11 @@ export const ADMIN_DRILLDOWN_PAGES: readonly AdminDrilldownPage[] = [
     pageId: 'index',
     path: '/admin',
     domain: 'runtime_and_governance',
-    title: '异常首页',
-    functionSummary: '只读异常优先清单与运营可视化总览',
-    userImpact: '影响第一屏异常可见性与跨域治理入口',
+    title: admin_capability_exception_home_73bdde91(),
+    functionSummary:
+      admin_capability_read_only_exception_first_list_and_ops_v_946ade68(),
+    userImpact:
+      admin_capability_affects_first_screen_exception_visibilit_18d13d9e(),
     capabilityIds: [
       'observability_audit',
       'job_queue_harness',
@@ -357,14 +456,16 @@ export interface CapabilityCatalogView {
 
 /** Known technical dependency labels for L2 projection (static). */
 const TECHNICAL_DEPENDENCY_LABELS: Record<string, string> = {
-  config_secrets: '配置与密钥引用',
-  job_queue_harness: '任务队列 / Harness',
-  observability_audit: '观测与审计证据',
-  data_storage: '数据与对象存储',
-  account_auth: '账号与认证门',
-  model_supply_routing_quality: '模型供应路由',
-  entitlements_billing_redemption: '权益与额度账本',
-  generation_image: '图片生成链路',
+  config_secrets: admin_capability_config_secret_references_b3364653(),
+  job_queue_harness: admin_capability_task_queue_harness_482c7281(),
+  observability_audit: admin_capability_observability_audit_evidence_ce3e2cd6(),
+  data_storage: admin_capability_data_object_storage_a4ba234c(),
+  account_auth: admin_capability_account_auth_gate_19ff97e7(),
+  model_supply_routing_quality:
+    admin_capability_model_supply_routing_070def57(),
+  entitlements_billing_redemption:
+    admin_capability_entitlement_quota_ledger_9b3483f0(),
+  generation_image: admin_capability_image_generation_path_4e692dcf(),
 };
 
 function dependencyLabel(id: string): string {

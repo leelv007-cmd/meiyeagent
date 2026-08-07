@@ -2,6 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  admin_sensitive_word_category_extreme,
+  admin_sensitive_word_category_medical,
+  admin_sensitive_word_error_empty,
+} from '@/locale/paraglide/messages';
+
+import {
   categoryLabel,
   emptySensitiveWordDraft,
   parseReplacementsText,
@@ -18,12 +24,21 @@ test('parseReplacementsText splits Chinese and ASCII separators', () => {
 
 test('validateSensitiveWordDraft rejects empty word', () => {
   const draft = emptySensitiveWordDraft();
-  assert.equal(validateSensitiveWordDraft(draft), '违禁词不能为空');
+  assert.equal(
+    validateSensitiveWordDraft(draft),
+    admin_sensitive_word_error_empty()
+  );
   draft.word = '根治';
   assert.equal(validateSensitiveWordDraft(draft), null);
 });
 
 test('category labels cover all seven buckets', () => {
-  assert.equal(categoryLabel('medical'), '医疗用语');
-  assert.equal(categoryLabel('extreme'), '极限用语');
+  assert.equal(
+    categoryLabel('medical'),
+    admin_sensitive_word_category_medical()
+  );
+  assert.equal(
+    categoryLabel('extreme'),
+    admin_sensitive_word_category_extreme()
+  );
 });

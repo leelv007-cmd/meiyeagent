@@ -8,6 +8,13 @@ import {
   type EntitlementCountEnvelope,
   type EntitlementStatusView,
 } from '@/p1/admin-entitlement-status-model';
+import {
+  admin_entitlement_concurrency_09d869d1,
+  admin_entitlement_effective_assignment_2870dee3,
+  admin_entitlement_entitlement_pool_status_6f054fde,
+  admin_entitlement_published_policy_8bc05794,
+  admin_entitlement_queue_priority_f7c7bdaf,
+} from '@/locale/paraglide/messages';
 
 function formatCount(envelope: EntitlementCountEnvelope): string {
   return envelope.status === 'known'
@@ -23,7 +30,9 @@ export function EntitlementStatusPanel({
   return (
     <section data-testid="entitlement-status-panel" className="space-y-4">
       <header className="space-y-1">
-        <h2 className="text-base font-semibold">权益 / 池状态面</h2>
+        <h2 className="text-base font-semibold">
+          {admin_entitlement_entitlement_pool_status_6f054fde()}
+        </h2>
         <p
           className="text-xs text-muted-foreground"
           data-testid="entitlement-dual-truth"
@@ -31,7 +40,9 @@ export function EntitlementStatusPanel({
           {view.dualTruthNote}
         </p>
         <p className="text-xs">
-          已发布策略 {formatCount(view.publishedPolicyCount)} · 生效分配{' '}
+          {admin_entitlement_published_policy_8bc05794()}{' '}
+          {formatCount(view.publishedPolicyCount)}{' '}
+          {admin_entitlement_effective_assignment_2870dee3()}{' '}
           {formatCount(view.activeAllocationCount)} · SupplyPool{' '}
           {formatCount(view.supplyPoolCount)}
         </p>
@@ -66,7 +77,9 @@ export function EntitlementStatusPanel({
                 </span>
               </div>
               <p className="mt-1">
-                并发 {policy.concurrencyLimit} · 队列优先级{' '}
+                {admin_entitlement_concurrency_09d869d1()}{' '}
+                {policy.concurrencyLimit}{' '}
+                {admin_entitlement_queue_priority_f7c7bdaf()}{' '}
                 {policy.queuePriority} · {policy.supportLabel}
               </p>
               <p className="text-muted-foreground">{policy.allowanceSummary}</p>

@@ -15,6 +15,13 @@ import {
   type CapabilityRegistryView,
 } from '@/p1/admin-capability-registry-model';
 import { cn } from '@/lib/utils';
+import {
+  admin_capability_capability_inventory_panorama_455d7cdf,
+  admin_capability_captured_d98892e9,
+  admin_capability_items_instrumented_cf7f56f7,
+  admin_capability_stubs_and_other_6962783f,
+  admin_capability_total_0e9fac85,
+} from '@/locale/paraglide/messages';
 
 export function CapabilityInventoryPanorama({
   view,
@@ -34,11 +41,15 @@ export function CapabilityInventoryPanorama({
   return (
     <Frame data-testid="capability-inventory-panorama">
       <FrameHeader className="gap-1">
-        <FrameTitle className="text-base">能力清单全景</FrameTitle>
+        <FrameTitle className="text-base">
+          {admin_capability_capability_inventory_panorama_455d7cdf()}
+        </FrameTitle>
         <FrameDescription>
-          revision {view.inventory.revision} · 捕获 {view.inventory.capturedAt}{' '}
-          · 共 {view.inventory.items.length} 项（已插桩 {instrumentedCount} /
-          存根及其他 {stubCount}）
+          revision {view.inventory.revision}{' '}
+          {admin_capability_captured_d98892e9()} {view.inventory.capturedAt}{' '}
+          {admin_capability_total_0e9fac85()} {view.inventory.items.length}{' '}
+          {admin_capability_items_instrumented_cf7f56f7()} {instrumentedCount}{' '}
+          {admin_capability_stubs_and_other_6962783f()} {stubCount}）
         </FrameDescription>
       </FrameHeader>
       {sections.map((section) => (

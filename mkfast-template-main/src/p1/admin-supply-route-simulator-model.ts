@@ -8,6 +8,10 @@
  * projects already-computed planning facts.
  */
 import type { PricingEvidenceSource } from '@meiye/contracts';
+import {
+  admin_supply_protected_channel_restricted_data_classe_530568cb,
+  admin_supply_standard_data_processing_level_fe4edd0a,
+} from '@/locale/paraglide/messages';
 
 export type RouteExplanationSurface = 'simulator' | 'task_audit';
 
@@ -158,8 +162,8 @@ function projectDataProcessingLevel(dataClasses: readonly string[]): {
     level: restricted ? 'protected' : 'standard',
     protectedChannel: restricted,
     copy: restricted
-      ? '受保护通道：受限数据类仅进入双批准 Deployment'
-      : '标准数据处理等级',
+      ? admin_supply_protected_channel_restricted_data_classe_530568cb()
+      : admin_supply_standard_data_processing_level_fe4edd0a(),
   };
 }
 
@@ -634,8 +638,8 @@ export function projectLiveRouteDecision(
       copy:
         asString(dataProcessing.copy) ??
         (dataProcessing.protectedChannel === true
-          ? '受保护通道：受限数据类仅进入双批准 Deployment'
-          : '标准数据处理等级'),
+          ? admin_supply_protected_channel_restricted_data_classe_530568cb()
+          : admin_supply_standard_data_processing_level_fe4edd0a()),
     },
     failClosed,
     failClosedReason,

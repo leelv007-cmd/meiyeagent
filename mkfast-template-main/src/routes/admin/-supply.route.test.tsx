@@ -43,6 +43,10 @@ const {
   querySupplyRunTable,
   serializeRunTableUrlState,
 } = await import('@/p1/admin-supply-run-table-model');
+const { admin_supply_supply_overview_30000464, admin_supply_task_page_title } =
+  await import('@/locale/paraglide/messages');
+const { readFileSync } = await import('node:fs');
+const { resolve } = await import('node:path');
 
 test('admin supply route module exports Route and page components', () => {
   assert.equal(typeof supplyRoute.Route.options.component, 'function');
@@ -63,6 +67,27 @@ test('supply control center body includes overview + run table + entitlements', 
   assert.match(html, /data-testid="entitlement-status-panel"/);
   assert.match(html, /data-external-gateway-deeplink-only="true"/);
   assert.match(html, /data-testid="supply-association-index"/);
+  assert.match(
+    html,
+    new RegExp(
+      admin_supply_supply_overview_30000464().replace(
+        /[.*+?^${}()|[\]\\]/g,
+        '\\$&'
+      )
+    )
+  );
+});
+
+test('supply task page title uses Paraglide messages', () => {
+  const source = readFileSync(
+    resolve(process.cwd(), 'src/routes/admin/supply.tasks.$taskId.tsx'),
+    'utf8'
+  );
+  assert.match(source, /admin_supply_task_page_title\(/);
+  assert.match(source, /admin_supply_task_page_description\(\)/);
+  assert.ok(
+    admin_supply_task_page_title({ taskId: 'task-1' }).includes('task-1')
+  );
 });
 
 test('five association view routes are reachable and render forward+reverse', () => {

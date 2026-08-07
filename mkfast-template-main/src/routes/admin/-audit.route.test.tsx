@@ -22,7 +22,11 @@ registerHooks({
 
 const routeModule = await import('./audit');
 const { AdminAuditControl } = await import('@/p1/admin-audit-control');
-const { admin_audit_title } = await import('@/locale/paraglide/messages');
+const { admin_audit_title, admin_supply_governance_audit_title } = await import(
+  '@/locale/paraglide/messages'
+);
+const { readFileSync } = await import('node:fs');
+const { resolve } = await import('node:path');
 
 test('admin audit route module exposes its page through Route', () => {
   assert.equal(typeof routeModule.Route.options.component, 'function');
@@ -30,6 +34,16 @@ test('admin audit route module exposes its page through Route', () => {
     routeModule.Route,
     'createFileRoute Route export required for Z2 wiring'
   );
+});
+
+test('audit supply governance frame title uses Paraglide messages', () => {
+  const source = readFileSync(
+    resolve(process.cwd(), 'src/routes/admin/audit.tsx'),
+    'utf8'
+  );
+  assert.match(source, /admin_supply_governance_audit_title\(\)/);
+  assert.match(source, /admin_supply_governance_audit_description\(\)/);
+  assert.ok(admin_supply_governance_audit_title().length > 0);
 });
 
 /**

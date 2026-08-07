@@ -5,6 +5,19 @@ import {
   type SensitiveWordStatus,
 } from '@meiye/contracts';
 
+import {
+  admin_sensitive_word_category_cosmetic,
+  admin_sensitive_word_category_extreme,
+  admin_sensitive_word_category_finance,
+  admin_sensitive_word_category_legal,
+  admin_sensitive_word_category_medical,
+  admin_sensitive_word_category_other,
+  admin_sensitive_word_category_vulgar,
+  admin_sensitive_word_error_empty,
+  admin_sensitive_word_error_invalid_category,
+  admin_sensitive_word_error_too_long,
+} from '@/locale/paraglide/messages';
+
 export const ADMIN_SENSITIVE_WORD_CATEGORIES = SENSITIVE_WORD_CATEGORIES;
 
 export type AdminSensitiveWordDraft = {
@@ -49,10 +62,11 @@ export function draftFromRecord(
 export function validateSensitiveWordDraft(
   draft: AdminSensitiveWordDraft
 ): string | null {
-  if (!draft.word.trim()) return '违禁词不能为空';
-  if (draft.word.trim().length > 100) return '违禁词过长';
+  if (!draft.word.trim()) return admin_sensitive_word_error_empty();
+  if (draft.word.trim().length > 100)
+    return admin_sensitive_word_error_too_long();
   if (!ADMIN_SENSITIVE_WORD_CATEGORIES.includes(draft.category)) {
-    return '分类无效';
+    return admin_sensitive_word_error_invalid_category();
   }
   return null;
 }
@@ -60,18 +74,18 @@ export function validateSensitiveWordDraft(
 export function categoryLabel(category: SensitiveWordCategory): string {
   switch (category) {
     case 'extreme':
-      return '极限用语';
+      return admin_sensitive_word_category_extreme();
     case 'medical':
-      return '医疗用语';
+      return admin_sensitive_word_category_medical();
     case 'cosmetic':
-      return '化妆品禁用语';
+      return admin_sensitive_word_category_cosmetic();
     case 'finance':
-      return '金融用语';
+      return admin_sensitive_word_category_finance();
     case 'legal':
-      return '法律风险词';
+      return admin_sensitive_word_category_legal();
     case 'vulgar':
-      return '低俗用语';
+      return admin_sensitive_word_category_vulgar();
     case 'other':
-      return '其他';
+      return admin_sensitive_word_category_other();
   }
 }

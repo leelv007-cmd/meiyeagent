@@ -1,3 +1,18 @@
+import {
+  admin_capability_degraded_d8518883,
+  admin_cloudflare_app_shell_entry_6c445d25,
+  admin_cloudflare_app_shell_http_probe_not_wired_entry_ava_a9611145,
+  admin_cloudflare_business_db_connectivity_dbc79722,
+  admin_cloudflare_business_db_probe_not_wired_task_and_led_d5e4ce99,
+  admin_cloudflare_cloudflare_production_mapping_4f15cd8f,
+  admin_cloudflare_failed_3e3c8068,
+  admin_cloudflare_healthy_f78d037a,
+  admin_cloudflare_not_ready_6789578c,
+  admin_cloudflare_object_storage_binding_3b01912b,
+  admin_cloudflare_object_storage_probe_not_wired_material_df4a68fc,
+  admin_cloudflare_production_cloudflare_mapping_unverified_98ef1ba5,
+  admin_supply_unknown_d9c32a4c,
+} from '@/locale/paraglide/messages';
 /**
  * Admin presentation of product-side Cloudflare self health probes (J6 / D-053).
  *
@@ -28,18 +43,18 @@ export interface AdminCfProbeView {
 }
 
 const PROBE_TITLES: Record<AdminCfProbeKind, string> = {
-  shell_http: 'App Shell 入口',
-  database_connectivity: '业务库连通',
-  object_storage_binding: '对象存储绑定',
-  mapping_readiness: 'Cloudflare 生产映射',
+  shell_http: admin_cloudflare_app_shell_entry_6c445d25(),
+  database_connectivity: admin_cloudflare_business_db_connectivity_dbc79722(),
+  object_storage_binding: admin_cloudflare_object_storage_binding_3b01912b(),
+  mapping_readiness: admin_cloudflare_cloudflare_production_mapping_4f15cd8f(),
 };
 
 const STATUS_LABELS: Record<AdminCfProbeStatus, string> = {
-  ok: '正常',
-  degraded: '降级',
-  failed: '失败',
-  unknown: '未知',
-  not_ready: '未就绪',
+  ok: admin_cloudflare_healthy_f78d037a(),
+  degraded: admin_capability_degraded_d8518883(),
+  failed: admin_cloudflare_failed_3e3c8068(),
+  unknown: admin_supply_unknown_d9c32a4c(),
+  not_ready: admin_cloudflare_not_ready_6789578c(),
 };
 
 export function adminCfProbeStatusLabel(status: AdminCfProbeStatus): string {
@@ -81,21 +96,24 @@ export function defaultAdminCfProbes(
     projectAdminCfProbe({
       kind: 'shell_http',
       status: 'not_ready',
-      businessImpact: 'App Shell HTTP 探针未接线，入口可用性未知',
+      businessImpact:
+        admin_cloudflare_app_shell_http_probe_not_wired_entry_ava_a9611145(),
       observedAt,
       detail: 'probe_not_wired',
     }),
     projectAdminCfProbe({
       kind: 'database_connectivity',
       status: 'not_ready',
-      businessImpact: '业务库探针未接线，任务与账本读写可用性未知',
+      businessImpact:
+        admin_cloudflare_business_db_probe_not_wired_task_and_led_d5e4ce99(),
       observedAt,
       detail: 'probe_not_wired',
     }),
     projectAdminCfProbe({
       kind: 'object_storage_binding',
       status: 'not_ready',
-      businessImpact: '对象存储探针未接线，素材读写可用性未知',
+      businessImpact:
+        admin_cloudflare_object_storage_probe_not_wired_material_df4a68fc(),
       observedAt,
       detail: 'probe_not_wired',
     }),
@@ -103,7 +121,7 @@ export function defaultAdminCfProbes(
       kind: 'mapping_readiness',
       status: 'not_ready',
       businessImpact:
-        '生产 Cloudflare 映射未核验；只读盘点与 deep-link 不得宣称生产可用',
+        admin_cloudflare_production_cloudflare_mapping_unverified_98ef1ba5(),
       observedAt,
       detail: 'mapping.verified=false',
     }),

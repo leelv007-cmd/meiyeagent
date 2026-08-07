@@ -14,6 +14,68 @@ import {
   type P1Module,
   type ProductCapability,
 } from '@meiye/contracts';
+import {
+  admin_supply_audit_writes_actor_reason_before_after_fccdb126,
+  admin_supply_cas_publish_revision,
+  admin_supply_channel_isolate_0d229df6,
+  admin_supply_channel_restore_9b4e663a,
+  admin_supply_conformance_probe_83a23637,
+  admin_supply_connectivity_probe_ffcc4cbe,
+  admin_supply_credential_rotate_06d9527c,
+  admin_supply_do_not_blindly_retry_accepted_acceptance_5192a124,
+  admin_supply_do_not_bypass_the_publish_gate_2ba2386a,
+  admin_supply_do_not_expose_raw_secrets_97c0ee7a,
+  admin_supply_do_not_write_the_database_directly_0e05fd0a,
+  admin_supply_does_not_change_current_effective_head_s_ad58e7ae,
+  admin_supply_does_not_change_effective_routepolicy_ca_96f990d4,
+  admin_supply_done_by_publishing_a_new_revision_no_in_56748fba,
+  admin_supply_drain_7a446bd7,
+  admin_supply_drain_can_be_cancelled_restored_does_not_d7d6360b,
+  admin_supply_health_balance_refresh_dd972bcc,
+  admin_supply_in_flight_tasks_continue_can_be_undone_v_0afe73f2,
+  admin_supply_in_flight_tasks_freeze_the_old_version_b8b05399,
+  admin_supply_isolate_executionchannel_deployment_and_80437a88,
+  admin_supply_isolate_stop_new_tasks,
+  admin_supply_list_affected_deployment_pool_in_flight_95c204ae,
+  admin_supply_must_pass_publish_gate_insufficient_dual_62941671,
+  admin_supply_normalize_results_do_not_record_upstream_70ca65de,
+  admin_supply_only_new_executions_use_it_historical_re_a5cf4d1b,
+  admin_supply_pre_revoke_impact_check_c526c457,
+  admin_supply_preview_affected_deployments_pools_and_i_afb39e64,
+  admin_supply_preview_revoke_impact,
+  admin_supply_probe_pass_model_activation_e628fd53,
+  admin_supply_probe_target_write_evidence,
+  admin_supply_publish_94f172d0,
+  admin_supply_publish_catalog_route_policy_revision_vi_2d2ebeda,
+  admin_supply_read_only_refresh_failures_are_explicit_c057cca6,
+  admin_supply_refresh_health_balance,
+  admin_supply_refresh_health_overlay_and_balance_limit_ff85ecf6,
+  admin_supply_restore_channel_accept,
+  admin_supply_restore_channel_to_accept_tasks_from_iso_cca157eb,
+  admin_supply_restore_does_not_bypass_health_activatio_cb3cd436,
+  admin_supply_reversible_drain_stop_new_tasks_wait_for_07f79ae8,
+  admin_supply_rollback_8a2c437b,
+  admin_supply_rollback_to_a_known_revision_new_revisio_a57c0191,
+  admin_supply_rollback_to_revision,
+  admin_supply_rotate_credential_append,
+  admin_supply_route_simulate_e2ac7bf7,
+  admin_supply_run_connectivity_probe_on_deployment_cre_ef35765f,
+  admin_supply_run_modality_conformance_probe_and_recor_a09a2c32,
+  admin_supply_run_route_simulation_hard_filter_sort_li_3993150c,
+  admin_supply_save_a_new_immutable_candidate_revision_0e70dd0e,
+  admin_supply_save_a_new_immutable_routepolicy_candida_eaa0e8db,
+  admin_supply_save_candidate_config_253ec100,
+  admin_supply_secrets_only_write_to_kms_secretstore_an_a0fc3b64,
+  admin_supply_shared_explanation_projection_for_hard_f_19088b2a,
+  admin_supply_shares_explanation_projection_with_task_e6af953f,
+  admin_supply_start_reversible_drain,
+  admin_supply_stop_new_tasks_wait_for_async_media_to_f_5b231b85,
+  admin_supply_this_action_does_not_perform_revoke_8d5dd5b0,
+  admin_supply_validate_candidate_config_against_hard_f_f3dbb1a9,
+  admin_supply_validate_candidate_config_db106b74,
+  admin_supply_validate_candidate_routepolicy_deploymen_aaaee07d,
+  admin_supply_write_new_secret_reference_and_append_ve_40e02cc7,
+} from '@/locale/paraglide/messages';
 
 /**
  * Same rule as impact-review-dialog `impactReasonSchema` (min 8 after trim).
@@ -134,8 +196,9 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
   [
     {
       id: 'connectivity_probe',
-      label: '连通探针',
-      description: '对 Deployment/凭据发起连通探针（非激活）',
+      label: admin_supply_connectivity_probe_ffcc4cbe(),
+      description:
+        admin_supply_run_connectivity_probe_on_deployment_cre_ef35765f(),
       module: 'model-supply',
       action: 'activation_probe_run',
       kind: 'command',
@@ -149,8 +212,9 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
     },
     {
       id: 'conformance_probe',
-      label: 'Conformance 探针',
-      description: '运行模态 conformance 探针并记录证据',
+      label: admin_supply_conformance_probe_83a23637(),
+      description:
+        admin_supply_run_modality_conformance_probe_and_recor_a09a2c32(),
       module: 'model-supply',
       action: 'activation_probe_run',
       kind: 'command',
@@ -164,9 +228,9 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
     },
     {
       id: 'candidate_config_save',
-      label: '候选配置保存',
+      label: admin_supply_save_candidate_config_253ec100(),
       description:
-        '基于当前 RoutePolicy head 保存新的不可变候选 revision（不发布）',
+        admin_supply_save_a_new_immutable_candidate_revision_0e70dd0e(),
       module: 'model-supply',
       action: 'admin_supply_action',
       kind: 'command',
@@ -180,8 +244,9 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
     },
     {
       id: 'candidate_config_validate',
-      label: '候选配置验证',
-      description: '验证候选 RoutePolicy / Deployment 配置（不发布）',
+      label: admin_supply_validate_candidate_config_db106b74(),
+      description:
+        admin_supply_validate_candidate_routepolicy_deploymen_aaaee07d(),
       module: 'model-supply',
       action: 'route_simulation',
       kind: 'query',
@@ -195,8 +260,9 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
     },
     {
       id: 'route_simulate',
-      label: '路由模拟',
-      description: '硬过滤/排序/实时排除/成本/接受态共用解释投影',
+      label: admin_supply_route_simulate_e2ac7bf7(),
+      description:
+        admin_supply_shared_explanation_projection_for_hard_f_19088b2a(),
       module: 'model-supply',
       action: 'route_simulation',
       kind: 'query',
@@ -210,8 +276,9 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
     },
     {
       id: 'publish',
-      label: '发布',
-      description: '发布 catalog / route policy revision（经发布门）',
+      label: admin_supply_publish_94f172d0(),
+      description:
+        admin_supply_publish_catalog_route_policy_revision_vi_2d2ebeda(),
       module: 'model-supply',
       action: 'catalog_publish',
       kind: 'command',
@@ -225,8 +292,9 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
     },
     {
       id: 'rollback',
-      label: '回滚',
-      description: '回滚到已知 revision（新 revision，不原地覆盖）',
+      label: admin_supply_rollback_8a2c437b(),
+      description:
+        admin_supply_rollback_to_a_known_revision_new_revisio_a57c0191(),
       module: 'model-supply',
       action: 'catalog_rollback',
       kind: 'command',
@@ -240,8 +308,9 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
     },
     {
       id: 'channel_isolate',
-      label: '渠道隔离',
-      description: '隔离 ExecutionChannel / Deployment，停止新流量',
+      label: admin_supply_channel_isolate_0d229df6(),
+      description:
+        admin_supply_isolate_executionchannel_deployment_and_80437a88(),
       module: 'model-supply',
       action: 'isolate_channel',
       kind: 'command',
@@ -255,8 +324,9 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
     },
     {
       id: 'channel_recover',
-      label: '渠道恢复',
-      description: '从隔离/排空恢复渠道接收任务',
+      label: admin_supply_channel_restore_9b4e663a(),
+      description:
+        admin_supply_restore_channel_to_accept_tasks_from_iso_cca157eb(),
       module: 'model-supply',
       action: 'recover_channel',
       kind: 'command',
@@ -270,8 +340,9 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
     },
     {
       id: 'drain',
-      label: '排空',
-      description: '可逆排空：停新任务，等待异步媒体完成后退役/轮换',
+      label: admin_supply_drain_7a446bd7(),
+      description:
+        admin_supply_reversible_drain_stop_new_tasks_wait_for_07f79ae8(),
       module: 'model-supply',
       action: 'drain_channel',
       kind: 'command',
@@ -285,8 +356,9 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
     },
     {
       id: 'credential_rotate',
-      label: '凭据轮换',
-      description: '写入新 secret reference 并追加版本（不回显密钥）',
+      label: admin_supply_credential_rotate_06d9527c(),
+      description:
+        admin_supply_write_new_secret_reference_and_append_ve_40e02cc7(),
       module: 'integrations',
       action: 'admin_rotate_provider_credential',
       kind: 'command',
@@ -300,8 +372,9 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
     },
     {
       id: 'pre_revoke_impact_check',
-      label: '撤销前影响检查',
-      description: '撤销/退役前预览受影响 Deployment、池与在途任务',
+      label: admin_supply_pre_revoke_impact_check_c526c457(),
+      description:
+        admin_supply_preview_affected_deployments_pools_and_i_afb39e64(),
       module: 'integrations',
       action: 'admin_provider_credentials',
       kind: 'query',
@@ -315,8 +388,9 @@ export const GOVERNED_QUICK_ACTIONS: readonly GovernedQuickActionDefinition[] =
     },
     {
       id: 'health_balance_refresh',
-      label: '健康/余额刷新',
-      description: '刷新健康 overlay 与余额/限额证据（只读副作用）',
+      label: admin_supply_health_balance_refresh_dd972bcc(),
+      description:
+        admin_supply_refresh_health_overlay_and_balance_limit_ff85ecf6(),
       module: 'model-supply',
       action: 'activation_status',
       kind: 'query',
@@ -362,90 +436,98 @@ export function buildImpactPreview(
   const scope = `${def.label} → ${target.resourceType}:${target.resourceId}`;
   const changes: string[] = [];
   const warnings: string[] = [
-    '不暴露密钥原值',
-    '不直写数据库',
-    '不绕过发布门',
-    '不对 accepted / acceptance_unknown 媒体任务盲目重试',
+    admin_supply_do_not_expose_raw_secrets_97c0ee7a(),
+    admin_supply_do_not_write_the_database_directly_0e05fd0a(),
+    admin_supply_do_not_bypass_the_publish_gate_2ba2386a(),
+    admin_supply_do_not_blindly_retry_accepted_acceptance_5192a124(),
   ];
 
   switch (def.id) {
     case 'connectivity_probe':
     case 'conformance_probe':
       changes.push(
-        `对 ${target.resourceId} 发起探针并写入证据`,
-        '探针通过 ≠ 模型激活',
-        '结果规范化，不记录上游 Authorization / 完整 endpoint'
+        admin_supply_probe_target_write_evidence({
+          resourceId: target.resourceId,
+        }),
+        admin_supply_probe_pass_model_activation_e628fd53(),
+        admin_supply_normalize_results_do_not_record_upstream_70ca65de()
       );
       break;
     case 'candidate_config_save':
       changes.push(
-        '保存新的不可变 RoutePolicy 候选 revision',
-        '不改变当前生效 head，后续仍需验证和发布'
+        admin_supply_save_a_new_immutable_routepolicy_candida_eaa0e8db(),
+        admin_supply_does_not_change_current_effective_head_s_ad58e7ae()
       );
       break;
     case 'candidate_config_validate':
       changes.push(
-        '验证候选配置与硬过滤/数据政策',
-        '不改变生效 RoutePolicy / Catalog head'
+        admin_supply_validate_candidate_config_against_hard_f_f3dbb1a9(),
+        admin_supply_does_not_change_effective_routepolicy_ca_96f990d4()
       );
       break;
     case 'route_simulate':
       changes.push(
-        '运行路由模拟（硬过滤/排序/实时排除/成本/接受态）',
-        '与任务审计共用解释投影'
+        admin_supply_run_route_simulation_hard_filter_sort_li_3993150c(),
+        admin_supply_shares_explanation_projection_with_task_e6af953f()
       );
       break;
     case 'publish':
       changes.push(
-        `CAS 发布 revision ${target.expectedRevisionId ?? target.resourceId}`,
-        '仅新执行生效；历史 revision 保留',
-        '审计写入 actor / reason / before-after'
+        admin_supply_cas_publish_revision({
+          revision: target.expectedRevisionId ?? target.resourceId,
+        }),
+        admin_supply_only_new_executions_use_it_historical_re_a5cf4d1b(),
+        admin_supply_audit_writes_actor_reason_before_after_fccdb126()
       );
-      warnings.push('必须通过发布门；不足双渠道不得标 multi-channel ready');
+      warnings.push(
+        admin_supply_must_pass_publish_gate_insufficient_dual_62941671()
+      );
       break;
     case 'rollback':
       changes.push(
-        `回滚到已知 revision ${target.resourceId}`,
-        '通过发布新 revision 完成，不原地覆盖'
+        admin_supply_rollback_to_revision({ revision: target.resourceId }),
+        admin_supply_done_by_publishing_a_new_revision_no_in_56748fba()
       );
       break;
     case 'channel_isolate':
       changes.push(
-        `隔离并停新任务：${target.resourceId}`,
-        '在途任务继续；可经恢复动作撤销'
+        admin_supply_isolate_stop_new_tasks({ resourceId: target.resourceId }),
+        admin_supply_in_flight_tasks_continue_can_be_undone_v_0afe73f2()
       );
       break;
     case 'channel_recover':
       changes.push(
-        `恢复渠道 ${target.resourceId} 接收新任务`,
-        '恢复不绕过健康/激活证据门'
+        admin_supply_restore_channel_accept({ resourceId: target.resourceId }),
+        admin_supply_restore_does_not_bypass_health_activatio_cb3cd436()
       );
       break;
     case 'drain':
       changes.push(
-        `开始可逆排空：${target.resourceId}`,
-        '停止新任务；等待异步媒体完成',
-        '排空可取消/恢复，不静默换凭据'
+        admin_supply_start_reversible_drain({ resourceId: target.resourceId }),
+        admin_supply_stop_new_tasks_wait_for_async_media_to_f_5b231b85(),
+        admin_supply_drain_can_be_cancelled_restored_does_not_d7d6360b()
       );
       break;
     case 'credential_rotate':
       changes.push(
-        `轮换凭据 ${target.resourceId}：追加版本快照`,
-        'secret 只写 KMS/SecretStore，永不回显',
-        '运行中任务冻结旧版本'
+        admin_supply_rotate_credential_append({
+          resourceId: target.resourceId,
+        }),
+        admin_supply_secrets_only_write_to_kms_secretstore_an_a0fc3b64(),
+        admin_supply_in_flight_tasks_freeze_the_old_version_b8b05399()
       );
       break;
     case 'pre_revoke_impact_check':
       changes.push(
-        `预览撤销 ${target.resourceId} 的影响面`,
-        '列出受影响 Deployment / Pool / 在途任务',
-        '本动作不执行撤销'
+        admin_supply_preview_revoke_impact({ resourceId: target.resourceId }),
+        admin_supply_list_affected_deployment_pool_in_flight_95c204ae(),
+        admin_supply_this_action_does_not_perform_revoke_8d5dd5b0()
       );
       break;
     case 'health_balance_refresh':
       changes.push(
-        `刷新 ${target.resourceId} 健康/余额证据`,
-        '只读刷新；失败显式 unknown/stale'
+        admin_supply_refresh_health_balance({ resourceId: target.resourceId }),
+        admin_supply_read_only_refresh_failures_are_explicit_c057cca6()
       );
       break;
   }

@@ -43,6 +43,13 @@ import {
   useGovernedSupplyAction,
   useGovernedSupplyActionPreview,
 } from '@/p1/use-admin-supply-control';
+import {
+  admin_supply_current_state_is_unknown_demo_data_fallb_9f5116b5,
+  admin_supply_loading_supply_control_data_9d0fa3bd,
+  admin_supply_supply_control_data_failed_to_load_c39543bf,
+  admin_supply_supply_control_data_failed_to_load_ee44251e,
+  admin_supply_task_not_found_4459e7ac,
+} from '@/locale/paraglide/messages';
 
 type RunTableSearchInput =
   | string
@@ -119,14 +126,16 @@ function LiveAdminSupplyControl({
       const message =
         snapshotQuery.error instanceof Error
           ? snapshotQuery.error.message
-          : '供应控制数据加载失败';
+          : admin_supply_supply_control_data_failed_to_load_c39543bf();
       return (
         <section
           data-testid="supply-control-error"
           role="alert"
           className="rounded-lg border border-destructive/40 p-4 text-sm text-destructive"
         >
-          供应控制数据加载失败：{message}。当前状态未知，未使用演示数据回退。
+          {admin_supply_supply_control_data_failed_to_load_ee44251e()}
+          {message}
+          {admin_supply_current_state_is_unknown_demo_data_fallb_9f5116b5()}
         </section>
       );
     }
@@ -135,7 +144,7 @@ function LiveAdminSupplyControl({
         data-testid="supply-control-loading"
         className="text-sm text-muted-foreground"
       >
-        正在加载供应控制数据…
+        {admin_supply_loading_supply_control_data_9d0fa3bd()}
       </output>
     );
   }
@@ -439,7 +448,7 @@ function AdminSupplyTaskSnapshotView({
   if (!view) {
     return (
       <p data-testid="supply-task-not-found" className="text-sm">
-        未找到任务 {taskId}
+        {admin_supply_task_not_found_4459e7ac()} {taskId}
       </p>
     );
   }
@@ -452,21 +461,25 @@ function SupplyControlLoading() {
       data-testid="supply-control-loading"
       className="text-sm text-muted-foreground"
     >
-      正在加载供应控制数据…
+      {admin_supply_loading_supply_control_data_9d0fa3bd()}
     </output>
   );
 }
 
 function SupplyControlError({ error }: { error: unknown }) {
   const message =
-    error instanceof Error ? error.message : '供应控制数据加载失败';
+    error instanceof Error
+      ? error.message
+      : admin_supply_supply_control_data_failed_to_load_c39543bf();
   return (
     <section
       data-testid="supply-control-error"
       role="alert"
       className="rounded-lg border border-destructive/40 p-4 text-sm text-destructive"
     >
-      供应控制数据加载失败：{message}。当前状态未知，未使用演示数据回退。
+      {admin_supply_supply_control_data_failed_to_load_ee44251e()}
+      {message}
+      {admin_supply_current_state_is_unknown_demo_data_fallb_9f5116b5()}
     </section>
   );
 }

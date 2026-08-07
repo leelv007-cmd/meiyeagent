@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { admin_cloudflare_failed_3e3c8068 } from '@/locale/paraglide/messages';
+
 import {
   adminCfProbeStatusLabel,
   defaultAdminCfProbes,
@@ -48,5 +50,8 @@ test('probe projection and summary prioritize failed over degraded', () => {
   assert.equal(summary.overall, 'failed');
   assert.equal(summary.okCount, 1);
   assert.equal(summary.attentionCount, 2);
-  assert.equal(adminCfProbeStatusLabel('failed'), '失败');
+  assert.equal(
+    adminCfProbeStatusLabel('failed'),
+    admin_cloudflare_failed_3e3c8068()
+  );
 });

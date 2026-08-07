@@ -42,12 +42,42 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  admin_sensitive_words_add_2cd9e6ce,
+  admin_sensitive_words_add_entry_9b56203f,
+  admin_sensitive_words_cancel_edit_c698df94,
+  admin_sensitive_words_category_435c5259,
+  admin_sensitive_words_create_failed_deb39901,
+  admin_sensitive_words_delete_3755f56f,
   admin_sensitive_words_delete_change_shared_lexicon,
   admin_sensitive_words_delete_change_word,
   admin_sensitive_words_delete_confirm,
   admin_sensitive_words_delete_description,
+  admin_sensitive_words_delete_failed_72250c59,
   admin_sensitive_words_delete_scope,
   admin_sensitive_words_delete_title,
+  admin_sensitive_words_disable_d989e551,
+  admin_sensitive_words_e_g_radical_cure_9f727fe0,
+  admin_sensitive_words_edit_a7f814c0,
+  admin_sensitive_words_edit_entry_0d55bad7,
+  admin_sensitive_words_enable_d4e9ca3d,
+  admin_sensitive_words_filter_words_1e810803,
+  admin_sensitive_words_load_failed_confirm_ops_permission_and_c_427065e3,
+  admin_sensitive_words_loading_ce56f617,
+  admin_sensitive_words_no_entries_yet_empty_db_seeds_beauty_bas_bf67178a,
+  admin_sensitive_words_noticeable_improvement_improves_with_ong_1a47c483,
+  admin_sensitive_words_refresh_38108eaa,
+  admin_sensitive_words_replacement_suggestions_comma_separated_ff846274,
+  admin_sensitive_words_replacements_803fd078,
+  admin_sensitive_words_save_changes_60b4ae90,
+  admin_sensitive_words_sensitive_word_created_fc1e483e,
+  admin_sensitive_words_sensitive_word_deleted_dc0c853f,
+  admin_sensitive_words_sensitive_word_updated_6b0d396a,
+  admin_sensitive_words_status_updated_fd9803a8,
+  admin_sensitive_words_total_count,
+  admin_sensitive_words_update_failed_8f8818f0,
+  admin_sensitive_words_word_2357050e,
+  admin_supply_action_f3ea6d34,
+  admin_supply_status_62e951a6,
 } from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
@@ -119,13 +149,22 @@ export function AdminSensitiveWordsControl() {
       return editingId ? ('updated' as const) : ('created' as const);
     },
     onSuccess: async (result) => {
-      toast.success(result === 'updated' ? '违禁词已更新' : '违禁词已创建');
+      toast.success(
+        result === 'updated'
+          ? admin_sensitive_words_sensitive_word_updated_6b0d396a()
+          : admin_sensitive_words_sensitive_word_created_fc1e483e()
+      );
       setEditingId(null);
       setDraft(emptySensitiveWordDraft());
       await invalidate();
     },
     onError: (error: Error) => {
-      toast.error(error.message || (editingId ? '更新失败' : '创建失败'));
+      toast.error(
+        error.message ||
+          (editingId
+            ? admin_sensitive_words_update_failed_8f8818f0()
+            : admin_sensitive_words_create_failed_deb39901())
+      );
     },
   });
 
@@ -149,11 +188,13 @@ export function AdminSensitiveWordsControl() {
         },
       }),
     onSuccess: async () => {
-      toast.success('状态已更新');
+      toast.success(admin_sensitive_words_status_updated_fd9803a8());
       await invalidate();
     },
     onError: (error: Error) => {
-      toast.error(error.message || '更新失败');
+      toast.error(
+        error.message || admin_sensitive_words_update_failed_8f8818f0()
+      );
     },
   });
 
@@ -164,11 +205,13 @@ export function AdminSensitiveWordsControl() {
         payload: { id },
       }),
     onSuccess: async () => {
-      toast.success('违禁词已删除');
+      toast.success(admin_sensitive_words_sensitive_word_deleted_dc0c853f());
       await invalidate();
     },
     onError: (error: Error) => {
-      toast.error(error.message || '删除失败');
+      toast.error(
+        error.message || admin_sensitive_words_delete_failed_72250c59()
+      );
     },
   });
 
@@ -199,13 +242,17 @@ export function AdminSensitiveWordsControl() {
           data-testid="admin-sensitive-words-refresh"
         >
           <IconRefresh className="size-4" />
-          刷新
+          {admin_sensitive_words_refresh_38108eaa()}
         </Button>
       </FrameHeader>
       <FramePanel className="space-y-4">
         <Frame dense headingLevel={3}>
           <FrameHeader>
-            <FrameTitle>{editingId ? '编辑词条' : '新增词条'}</FrameTitle>
+            <FrameTitle>
+              {editingId
+                ? admin_sensitive_words_edit_entry_0d55bad7()
+                : admin_sensitive_words_add_entry_9b56203f()}
+            </FrameTitle>
           </FrameHeader>
           <FramePanel>
             <form
@@ -217,7 +264,9 @@ export function AdminSensitiveWordsControl() {
               }}
             >
               <div className="space-y-1">
-                <Label htmlFor="sw-word">词条</Label>
+                <Label htmlFor="sw-word">
+                  {admin_sensitive_words_word_2357050e()}
+                </Label>
                 <Input
                   id="sw-word"
                   value={draft.word}
@@ -227,12 +276,14 @@ export function AdminSensitiveWordsControl() {
                       word: event.target.value,
                     }))
                   }
-                  placeholder="例如：根治"
+                  placeholder={admin_sensitive_words_e_g_radical_cure_9f727fe0()}
                   data-testid="admin-sensitive-words-word"
                 />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="sw-category">分类</Label>
+                <Label htmlFor="sw-category">
+                  {admin_sensitive_words_category_435c5259()}
+                </Label>
                 <Select
                   onValueChange={(value) => {
                     if (!value) return;
@@ -260,7 +311,9 @@ export function AdminSensitiveWordsControl() {
                 </Select>
               </div>
               <div className="space-y-1 md:col-span-2">
-                <Label htmlFor="sw-replacements">替换建议（逗号分隔）</Label>
+                <Label htmlFor="sw-replacements">
+                  {admin_sensitive_words_replacement_suggestions_comma_separated_ff846274()}
+                </Label>
                 <Input
                   id="sw-replacements"
                   value={draft.replacementsText}
@@ -270,7 +323,7 @@ export function AdminSensitiveWordsControl() {
                       replacementsText: event.target.value,
                     }))
                   }
-                  placeholder="明显改善，持续护理后改善"
+                  placeholder={admin_sensitive_words_noticeable_improvement_improves_with_ong_1a47c483()}
                   data-testid="admin-sensitive-words-replacements"
                 />
               </div>
@@ -286,7 +339,9 @@ export function AdminSensitiveWordsControl() {
                   ) : (
                     <IconPlus className="size-4" />
                   )}
-                  {editingId ? '保存修改' : '新增'}
+                  {editingId
+                    ? admin_sensitive_words_save_changes_60b4ae90()
+                    : admin_sensitive_words_add_2cd9e6ce()}
                 </Button>
                 {editingId ? (
                   <Button
@@ -295,7 +350,7 @@ export function AdminSensitiveWordsControl() {
                     variant="outline"
                     onClick={cancelEditing}
                   >
-                    取消编辑
+                    {admin_sensitive_words_cancel_edit_c698df94()}
                   </Button>
                 ) : null}
               </div>
@@ -307,23 +362,29 @@ export function AdminSensitiveWordsControl() {
           <Input
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
-            placeholder="筛选词条"
+            placeholder={admin_sensitive_words_filter_words_1e810803()}
             className="max-w-xs"
             data-testid="admin-sensitive-words-filter"
           />
           <Badge variant="secondary">
-            {listQuery.isLoading ? '加载中' : `共 ${sorted.length} 条`}
+            {listQuery.isLoading
+              ? admin_sensitive_words_loading_ce56f617()
+              : admin_sensitive_words_total_count({ count: sorted.length })}
           </Badge>
         </div>
 
         <Table data-testid="admin-sensitive-words-table">
           <TableHeader>
             <TableRow>
-              <TableHead>词条</TableHead>
-              <TableHead>分类</TableHead>
-              <TableHead>替换建议</TableHead>
-              <TableHead>状态</TableHead>
-              <TableHead className="w-[140px]">操作</TableHead>
+              <TableHead>{admin_sensitive_words_word_2357050e()}</TableHead>
+              <TableHead>{admin_sensitive_words_category_435c5259()}</TableHead>
+              <TableHead>
+                {admin_sensitive_words_replacements_803fd078()}
+              </TableHead>
+              <TableHead>{admin_supply_status_62e951a6()}</TableHead>
+              <TableHead className="w-[140px]">
+                {admin_supply_action_f3ea6d34()}
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -331,8 +392,8 @@ export function AdminSensitiveWordsControl() {
               <TableRow>
                 <TableCell colSpan={5} className="text-muted-foreground">
                   {listQuery.isError
-                    ? '加载失败，请确认运营权限与 Core 已启动。'
-                    : '暂无词条（空库会在 Core 启动时 seed 美业基线）。'}
+                    ? admin_sensitive_words_load_failed_confirm_ops_permission_and_c_427065e3()
+                    : admin_sensitive_words_no_entries_yet_empty_db_seeds_beauty_bas_bf67178a()}
                 </TableCell>
               </TableRow>
             ) : (
@@ -352,7 +413,9 @@ export function AdminSensitiveWordsControl() {
                         row.status === 'enabled' ? 'success-light' : 'secondary'
                       }
                     >
-                      {row.status === 'enabled' ? '启用' : '停用'}
+                      {row.status === 'enabled'
+                        ? admin_sensitive_words_enable_d4e9ca3d()
+                        : admin_sensitive_words_disable_d989e551()}
                     </Badge>
                   </TableCell>
                   <TableCell className="space-x-1">
@@ -364,7 +427,7 @@ export function AdminSensitiveWordsControl() {
                       data-testid={`admin-sensitive-words-edit-${row.id}`}
                     >
                       <IconEdit className="size-4" aria-hidden="true" />
-                      编辑
+                      {admin_sensitive_words_edit_a7f814c0()}
                     </Button>
                     <Button
                       type="button"
@@ -373,13 +436,15 @@ export function AdminSensitiveWordsControl() {
                       onClick={() => toggleMutation.mutate(row)}
                       data-testid={`admin-sensitive-words-toggle-${row.id}`}
                     >
-                      {row.status === 'enabled' ? '停用' : '启用'}
+                      {row.status === 'enabled'
+                        ? admin_sensitive_words_disable_d989e551()
+                        : admin_sensitive_words_enable_d4e9ca3d()}
                     </Button>
                     <Button
                       type="button"
                       size="sm"
                       variant="ghost"
-                      aria-label="删除"
+                      aria-label={admin_sensitive_words_delete_3755f56f()}
                       onClick={() => reviewDelete(row)}
                       data-testid={`admin-sensitive-words-delete-${row.id}`}
                     >

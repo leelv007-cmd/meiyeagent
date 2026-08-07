@@ -18,6 +18,16 @@ import type {
   SupplyControlSnapshot,
   SupplyRunRecord,
 } from './admin-supply-types';
+import {
+  admin_supply_ark_credential_rotated_to_v3_metadata_on_49239cb0,
+  admin_supply_ark_platform_primary_account_e08488b8,
+  admin_supply_default_shared_pool_62852833,
+  admin_supply_publish_video_dual_channel_routepolicy_r_5fbddb38,
+  admin_supply_tu_zi_new_api_console_technical_evidence_c07f2d4d,
+  admin_supply_tu_zi_relay_4cc3f0f3,
+  admin_supply_tu_zi_relay_primary_account_82b15abf,
+  admin_supply_volcengine_ark_8d0a89d2,
+} from '@/locale/paraglide/messages';
 
 const CAPTURED_AT = '2026-07-20T12:00:00.000Z';
 
@@ -63,14 +73,14 @@ const models: SupplyCatalogModel[] = [
 const providerProfiles: SupplyProviderProfile[] = [
   {
     id: 'provider-ark',
-    displayName: '火山方舟',
+    displayName: admin_supply_volcengine_ark_8d0a89d2(),
     counterparty: 'Volcengine Ark',
     gatewayFingerprint: 'none',
     revisionId: 'provider-ark:r1',
   },
   {
     id: 'provider-tuzi',
-    displayName: '兔子中转',
+    displayName: admin_supply_tu_zi_relay_4cc3f0f3(),
     counterparty: 'tu-zi',
     gatewayFingerprint: 'new_api',
     revisionId: 'provider-tuzi:r1',
@@ -216,7 +226,7 @@ const contracts: SupplyContract[] = [
 const credentials: CredentialAccountMetadata[] = [
   {
     id: 'cred-provider-ark',
-    label: '方舟平台主账号',
+    label: admin_supply_ark_platform_primary_account_e08488b8(),
     providerProfileId: 'provider-ark',
     type: 'api_key',
     scope: 'platform',
@@ -231,7 +241,7 @@ const credentials: CredentialAccountMetadata[] = [
   },
   {
     id: 'cred-provider-tuzi',
-    label: '兔子中转主账号',
+    label: admin_supply_tu_zi_relay_primary_account_82b15abf(),
     providerProfileId: 'provider-tuzi',
     type: 'api_key',
     scope: 'platform',
@@ -261,7 +271,7 @@ const pools: SupplyPool[] = [
   {
     id: 'pool-shared-default',
     kind: 'shared',
-    displayName: '默认共享池',
+    displayName: admin_supply_default_shared_pool_62852833(),
     credentialAccountIds: [
       'cred-provider-ark',
       'cred-provider-tuzi',
@@ -543,7 +553,8 @@ export function buildDefaultSupplyControlSnapshot(): SupplyControlSnapshot {
         action: 'route_policy.publish',
         targetType: 'RoutePolicyRevision',
         targetId: 'route-video-generate',
-        summary: '发布视频双渠道 RoutePolicy r1',
+        summary:
+          admin_supply_publish_video_dual_channel_routepolicy_r_5fbddb38(),
         correlationId: 'corr-route-video-1',
       },
       {
@@ -553,14 +564,15 @@ export function buildDefaultSupplyControlSnapshot(): SupplyControlSnapshot {
         action: 'credential.rotate',
         targetType: 'CredentialAccount',
         targetId: 'cred-provider-ark',
-        summary: '方舟凭据轮换至 v3（元数据 only）',
+        summary:
+          admin_supply_ark_credential_rotated_to_v3_metadata_on_49239cb0(),
         correlationId: 'corr-cred-ark-3',
       },
     ],
     gatewayDeepLinks: [
       {
         id: 'gw-tuzi-console',
-        label: 'tu-zi New API Console（技术证据）',
+        label: admin_supply_tu_zi_new_api_console_technical_evidence_c07f2d4d(),
         href: 'https://example.invalid/tuzi/console',
         gatewayFingerprint: 'new_api',
         evidenceOnly: true,

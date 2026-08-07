@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import {
+  admin_cloudflare_fresh_467bc8d4,
+  admin_cloudflare_stale_not_real_time_c477cd56,
+} from '@/locale/paraglide/messages';
+
 import { defaultAdminCfProbes } from './admin-cloudflare-probe';
 import {
   ADMIN_CF_DENIED_WRITE_ACTIONS,
@@ -57,7 +62,7 @@ test('presentation translates inventory into business impact, not raw metrics', 
   });
 
   assert.equal(view.freshness, 'fresh');
-  assert.equal(view.freshnessLabel, '新鲜');
+  assert.equal(view.freshnessLabel, admin_cloudflare_fresh_467bc8d4());
   assert.match(view.coverageNote, /App Shell/);
   assert.match(view.coverageNote, /Core/);
   assert.equal(view.deployments.status, 'known');
@@ -88,7 +93,8 @@ test('presentation projects only https Dashboard deep-links from Core', () => {
       },
       {
         kind: 'worker_traces',
-        dashboardUrl: 'https://dash.cloudflare.com/acct/workers/services/view/shell/production/observability',
+        dashboardUrl:
+          'https://dash.cloudflare.com/acct/workers/services/view/shell/production/observability',
       },
     ],
   });
@@ -117,7 +123,10 @@ test('stale / unknown / rate-limit / mapping present honestly', () => {
     },
   });
   assert.equal(stale.freshness, 'stale');
-  assert.equal(freshnessLabel('stale'), '过期（非实时）');
+  assert.equal(
+    freshnessLabel('stale'),
+    admin_cloudflare_stale_not_real_time_c477cd56()
+  );
   assert.equal(stale.deployments.status, 'unknown');
   assert.match(stale.deployments.businessImpact, /限流/);
   assert.equal(formatAdminCfField(stale.deployments), 'unknown (rate_limited)');

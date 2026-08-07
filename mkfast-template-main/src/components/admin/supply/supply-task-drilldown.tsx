@@ -3,6 +3,14 @@
  * Summary cards · latency segments · durable timeline · foldable error · artifact.
  */
 import {
+  admin_supply_artifact_preview_2431d916,
+  admin_supply_cost_5354b098,
+  admin_supply_deployment_data_level_c1707902,
+  admin_supply_error_badges_2126f4af,
+  admin_supply_latency_segments_e0ff2a48,
+  admin_supply_operation_model_ad7cc2bc,
+  admin_supply_persistent_timestamp_timeline_d67a6b18,
+  admin_supply_status_62e951a6,
   admin_supply_task_timeline_ended,
   admin_supply_task_timeline_running,
 } from '@/locale/paraglide/messages';
@@ -112,7 +120,7 @@ export function SupplyTaskDrilldown({ view }: { view: TaskDrilldownView }) {
         data-testid="supply-task-summary-cards"
         className="grid auto-rows-fr items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-4"
       >
-        <SummaryCard label="状态">
+        <SummaryCard label={admin_supply_status_62e951a6()}>
           <div className="flex flex-wrap items-center gap-2">
             <Badge
               data-testid="supply-task-status"
@@ -124,7 +132,7 @@ export function SupplyTaskDrilldown({ view }: { view: TaskDrilldownView }) {
           <Separator />
           <div className="text-muted-foreground">{view.summary.lifecycle}</div>
         </SummaryCard>
-        <SummaryCard label="操作 / 模型">
+        <SummaryCard label={admin_supply_operation_model_ad7cc2bc()}>
           <div className="text-base font-medium tracking-tight text-foreground">
             {view.summary.operation}
           </div>
@@ -136,7 +144,7 @@ export function SupplyTaskDrilldown({ view }: { view: TaskDrilldownView }) {
             </div>
           </div>
         </SummaryCard>
-        <SummaryCard label="部署 / 数据等级">
+        <SummaryCard label={admin_supply_deployment_data_level_c1707902()}>
           <div className="font-mono text-sm text-foreground">
             {view.summary.deploymentId}
           </div>
@@ -145,7 +153,7 @@ export function SupplyTaskDrilldown({ view }: { view: TaskDrilldownView }) {
             {view.summary.dataClass}
           </div>
         </SummaryCard>
-        <SummaryCard label="成本">
+        <SummaryCard label={admin_supply_cost_5354b098()}>
           <div
             className="text-base font-medium tracking-tight text-foreground tabular-nums"
             data-testid="supply-task-cost"
@@ -156,7 +164,9 @@ export function SupplyTaskDrilldown({ view }: { view: TaskDrilldownView }) {
       </div>
 
       <section data-testid="supply-task-latency" className="space-y-2">
-        <h3 className="text-sm font-semibold">延迟分段</h3>
+        <h3 className="text-sm font-semibold">
+          {admin_supply_latency_segments_e0ff2a48()}
+        </h3>
         <Frame dense className="grid grid-cols-2 gap-px sm:grid-cols-4">
           {view.latencySegments.map((seg) => (
             <FramePanel
@@ -176,7 +186,9 @@ export function SupplyTaskDrilldown({ view }: { view: TaskDrilldownView }) {
 
       <Frame dense data-testid="supply-task-timeline">
         <FrameHeader>
-          <FrameTitle>持久化时间戳时间线</FrameTitle>
+          <FrameTitle>
+            {admin_supply_persistent_timestamp_timeline_d67a6b18()}
+          </FrameTitle>
           <FrameDescription className="text-xs">
             {runEnded
               ? admin_supply_task_timeline_ended({ count: events.length })
@@ -237,7 +249,9 @@ export function SupplyTaskDrilldown({ view }: { view: TaskDrilldownView }) {
               className="px-(--frame-panel-px) py-(--frame-panel-py) text-xs"
             >
               <summary className="flex cursor-pointer items-center gap-2 font-medium">
-                <Badge variant="destructive-light">错误徽章</Badge>
+                <Badge variant="destructive-light">
+                  {admin_supply_error_badges_2126f4af()}
+                </Badge>
                 <span className="font-mono">{view.error.code}</span>
               </summary>
               <pre className="mt-2 whitespace-pre-wrap text-muted-foreground">
@@ -251,7 +265,7 @@ export function SupplyTaskDrilldown({ view }: { view: TaskDrilldownView }) {
       {view.artifact ? (
         <Frame dense data-testid="supply-task-artifact">
           <FrameHeader>
-            <FrameTitle>产物预览</FrameTitle>
+            <FrameTitle>{admin_supply_artifact_preview_2431d916()}</FrameTitle>
           </FrameHeader>
           <FramePanel
             data-artifact-kind={view.artifact.kind}

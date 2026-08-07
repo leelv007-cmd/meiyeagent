@@ -27,6 +27,8 @@ import {
   admin_audit_title,
   admin_audit_unknown,
   admin_health_evidence_title,
+  admin_supply_governance_audit_description,
+  admin_supply_governance_audit_title,
   common_loading,
   integration_load_error,
   p1_admin_audit_byok_action_completed,
@@ -119,9 +121,9 @@ function AdminSupplyAuditProjection() {
   return (
     <Frame data-testid="admin-supply-audit-projection" dense>
       <FrameHeader>
-        <FrameTitle>模型供应治理审计</FrameTitle>
+        <FrameTitle>{admin_supply_governance_audit_title()}</FrameTitle>
         <FrameDescription>
-          受治理动作的不可变原因、目标、操作者与关联证据。
+          {admin_supply_governance_audit_description()}
         </FrameDescription>
       </FrameHeader>
       <FramePanel>

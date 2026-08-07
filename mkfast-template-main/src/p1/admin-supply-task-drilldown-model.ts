@@ -8,6 +8,17 @@ import type {
   SupplyControlSnapshot,
   SupplyRunRecord,
 } from './admin-supply-types';
+import {
+  admin_supply_acceptance_unknown_do_not_blindly_retry_caedd388,
+  admin_supply_post_process_7efb37f6,
+  admin_supply_queue_cfb281f6,
+  admin_supply_queue_ms,
+  admin_supply_task_entered_execution,
+  admin_supply_terminal_status,
+  admin_supply_total_92bcbf71,
+  admin_supply_upstream_ed38f4ea,
+  admin_supply_upstream_ms_deployment,
+} from '@/locale/paraglide/messages';
 
 export interface LatencySegmentView {
   key: 'queue' | 'provider' | 'postprocess' | 'total';
@@ -71,7 +82,10 @@ function buildTimeline(run: SupplyRunRecord): TimelineEventView[] {
       id: `${run.id}-start`,
       at: run.startedAt,
       phase: 'accepted_by_control_plane',
-      summary: `任务 ${run.taskId} 进入供应执行（${run.lifecycle}）`,
+      summary: admin_supply_task_entered_execution({
+        taskId: run.taskId,
+        lifecycle: run.lifecycle,
+      }),
       durable: true,
     },
   ];
@@ -80,7 +94,7 @@ function buildTimeline(run: SupplyRunRecord): TimelineEventView[] {
       id: `${run.id}-queue`,
       at: run.startedAt,
       phase: 'queue',
-      summary: `排队 ${run.queueMs}ms`,
+      summary: admin_supply_queue_ms({ ms: run.queueMs }),
       durable: true,
     });
   }
@@ -89,7 +103,10 @@ function buildTimeline(run: SupplyRunRecord): TimelineEventView[] {
       id: `${run.id}-provider`,
       at: run.startedAt,
       phase: 'provider',
-      summary: `上游执行 ${run.providerMs}ms · ${run.deploymentId}`,
+      summary: admin_supply_upstream_ms_deployment({
+        ms: run.providerMs,
+        deploymentId: run.deploymentId,
+      }),
       durable: true,
     });
   }
@@ -107,7 +124,7 @@ function buildTimeline(run: SupplyRunRecord): TimelineEventView[] {
       id: `${run.id}-end`,
       at: run.endedAt,
       phase: 'terminal',
-      summary: `终态 ${run.status}`,
+      summary: admin_supply_terminal_status({ status: run.status }),
       durable: true,
     });
   } else if (run.status === 'acceptance_unknown') {
@@ -115,7 +132,7 @@ function buildTimeline(run: SupplyRunRecord): TimelineEventView[] {
       id: `${run.id}-unknown`,
       at: run.startedAt,
       phase: 'acceptance_unknown',
-      summary: '接受态未知 — 禁止盲目重试媒体任务',
+      summary: admin_supply_acceptance_unknown_do_not_blindly_retry_caedd388(),
       durable: true,
     });
   }
@@ -130,10 +147,26 @@ export function buildTaskDrilldownView(
   if (!run) return null;
 
   const latencySegments: LatencySegmentView[] = [
-    { key: 'queue', label: '排队', ms: run.queueMs ?? null },
-    { key: 'provider', label: '上游', ms: run.providerMs ?? null },
-    { key: 'postprocess', label: '后处理', ms: run.postprocessMs ?? null },
-    { key: 'total', label: '合计', ms: run.latencyMs ?? null },
+    {
+      key: 'queue',
+      label: admin_supply_queue_cfb281f6(),
+      ms: run.queueMs ?? null,
+    },
+    {
+      key: 'provider',
+      label: admin_supply_upstream_ed38f4ea(),
+      ms: run.providerMs ?? null,
+    },
+    {
+      key: 'postprocess',
+      label: admin_supply_post_process_7efb37f6(),
+      ms: run.postprocessMs ?? null,
+    },
+    {
+      key: 'total',
+      label: admin_supply_total_92bcbf71(),
+      ms: run.latencyMs ?? null,
+    },
   ];
 
   let artifact: ArtifactPreviewView | null = null;

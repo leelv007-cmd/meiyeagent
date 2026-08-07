@@ -25,6 +25,20 @@ import {
   formatAdminCfField,
   type AdminCfPresentationView,
 } from '@/p1/admin-cloudflare-presentation';
+import {
+  admin_cloudflare_config_risks_not_ready_dd3b5b82,
+  admin_cloudflare_deployments_3220a19f,
+  admin_cloudflare_first_party_health_probes_483be3b0,
+  admin_cloudflare_healthy_52aef5c7,
+  admin_cloudflare_needs_attention_2bbd0faa,
+  admin_cloudflare_no_registered_config_risks_8748be03,
+  admin_cloudflare_overall_42d86197,
+  admin_cloudflare_read_only_rest_inventory_fa749ab2,
+  admin_cloudflare_resources_c5ca3950,
+  admin_cloudflare_technical_desk_deep_link_redacted_contex_7e22a12f,
+  admin_cloudflare_versions_989d1aff,
+  admin_cloudflare_zero_write_access_39da2425,
+} from '@/locale/paraglide/messages';
 
 type StatusVariant = NonNullable<BadgeProps['variant']>;
 
@@ -136,12 +150,14 @@ export function CloudflareReadonlyPanel({
 
       <Frame data-testid="cf-config-risks">
         <FrameHeader>
-          <FrameTitle>配置风险 / 未就绪</FrameTitle>
+          <FrameTitle>
+            {admin_cloudflare_config_risks_not_ready_dd3b5b82()}
+          </FrameTitle>
         </FrameHeader>
         <FramePanel className="flex flex-col gap-0 p-0!">
           {view.configRisks.length === 0 ? (
             <p className="text-muted-foreground px-4 py-6 text-center text-sm">
-              暂无登记的配置风险
+              {admin_cloudflare_no_registered_config_risks_8748be03()}
             </p>
           ) : (
             view.configRisks.map((risk) => (
@@ -167,10 +183,14 @@ export function CloudflareReadonlyPanel({
 
       <Frame data-testid="cf-self-probes">
         <FrameHeader className="gap-1">
-          <FrameTitle>自有健康探针</FrameTitle>
+          <FrameTitle>
+            {admin_cloudflare_first_party_health_probes_483be3b0()}
+          </FrameTitle>
           <FrameDescription className="text-xs">
-            总体：{adminCfProbeStatusLabel(view.probeSummary.overall)} · 正常{' '}
-            {view.probeSummary.okCount} · 需关注{' '}
+            {admin_cloudflare_overall_42d86197()}
+            {adminCfProbeStatusLabel(view.probeSummary.overall)}{' '}
+            {admin_cloudflare_healthy_52aef5c7()} {view.probeSummary.okCount}{' '}
+            {admin_cloudflare_needs_attention_2bbd0faa()}{' '}
             {view.probeSummary.attentionCount}
           </FrameDescription>
         </FrameHeader>
@@ -185,14 +205,18 @@ export function CloudflareReadonlyPanel({
 
       <Frame data-testid="cf-inventory">
         <FrameHeader>
-          <FrameTitle>只读 REST 盘点</FrameTitle>
+          <FrameTitle>
+            {admin_cloudflare_read_only_rest_inventory_fa749ab2()}
+          </FrameTitle>
         </FrameHeader>
         <FramePanel
           className="text-sm"
           data-testid="cf-deployments"
           data-field-status={view.deployments.status}
         >
-          <div className="font-medium">部署</div>
+          <div className="font-medium">
+            {admin_cloudflare_deployments_3220a19f()}
+          </div>
           <p className="text-muted-foreground">
             {view.deployments.businessImpact}
           </p>
@@ -207,7 +231,9 @@ export function CloudflareReadonlyPanel({
           data-testid="cf-versions"
           data-field-status={view.versions.status}
         >
-          <div className="font-medium">版本</div>
+          <div className="font-medium">
+            {admin_cloudflare_versions_989d1aff()}
+          </div>
           <p className="text-muted-foreground">
             {view.versions.businessImpact}
           </p>
@@ -219,7 +245,7 @@ export function CloudflareReadonlyPanel({
         </FramePanel>
         <FramePanel className="flex flex-col gap-0 p-0!">
           <div className="text-muted-foreground px-4 py-2 text-sm font-medium">
-            资源
+            {admin_cloudflare_resources_c5ca3950()}
           </div>
           <Separator />
           <ul data-testid="cf-resources">
@@ -246,7 +272,9 @@ export function CloudflareReadonlyPanel({
       {view.deepLinks.length > 0 ? (
         <Frame data-testid="cf-deep-links">
           <FrameHeader>
-            <FrameTitle>技术台 deep-link（脱敏上下文）</FrameTitle>
+            <FrameTitle>
+              {admin_cloudflare_technical_desk_deep_link_redacted_contex_7e22a12f()}
+            </FrameTitle>
           </FrameHeader>
           <FramePanel>
             <ul className="flex flex-wrap gap-2">
@@ -272,7 +300,8 @@ export function CloudflareReadonlyPanel({
             data-testid="cf-write-denials"
           >
             <p className="text-muted-foreground text-xs">
-              写权限零持有：{view.deniedWriteActions.join(', ')}
+              {admin_cloudflare_zero_write_access_39da2425()}
+              {view.deniedWriteActions.join(', ')}
             </p>
           </FramePanel>
         </Frame>
@@ -283,7 +312,8 @@ export function CloudflareReadonlyPanel({
             data-testid="cf-write-denials"
           >
             <p className="text-muted-foreground text-xs">
-              写权限零持有：{view.deniedWriteActions.join(', ')}
+              {admin_cloudflare_zero_write_access_39da2425()}
+              {view.deniedWriteActions.join(', ')}
             </p>
           </FramePanel>
         </Frame>

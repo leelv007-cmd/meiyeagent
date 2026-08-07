@@ -8,13 +8,21 @@ import {
   useAdminEnabledSensitiveWordsGate,
   type SensitiveWordsGateStatus,
 } from './admin-sensitive-words-gate';
+import {
+  admin_sensitive_words_cannot_confirm_whether_the_enabled_lexic_736644b6,
+  admin_sensitive_words_checking_sensitive_words_gate_96eae102,
+  admin_sensitive_words_no_enabled_sensitive_words_generation_an_851bc69b,
+  admin_sensitive_words_sensitive_words_gate_not_active_fac27e2b,
+  admin_sensitive_words_sensitive_words_gate_status_unverifiable_df2c0c92,
+} from '@/locale/paraglide/messages';
 
 export const SENSITIVE_WORDS_GATE_COPY = {
-  loading: '正在核验敏感词门状态…',
-  error: '敏感词门状态无法核验',
-  inactive: '敏感词门未生效',
+  loading: admin_sensitive_words_checking_sensitive_words_gate_96eae102(),
+  error:
+    admin_sensitive_words_sensitive_words_gate_status_unverifiable_df2c0c92(),
+  inactive: admin_sensitive_words_sensitive_words_gate_not_active_fac27e2b(),
   inactiveDescription:
-    '当前没有启用中的违禁词。生成链与红线门会跳过扫描（冷启动友好，非 fail-closed）。请在违禁词库启用至少一条词条后，内容红线才会把关。',
+    admin_sensitive_words_no_enabled_sensitive_words_generation_an_851bc69b(),
 } as const;
 
 function GateStatusAlert({ status }: { status: SensitiveWordsGateStatus }) {
@@ -43,7 +51,7 @@ function GateStatusAlert({ status }: { status: SensitiveWordsGateStatus }) {
       >
         <AlertTitle>{SENSITIVE_WORDS_GATE_COPY.error}</AlertTitle>
         <AlertDescription>
-          无法确认已启用词库是否为空。不得假定门已生效或未生效；请刷新后重试。
+          {admin_sensitive_words_cannot_confirm_whether_the_enabled_lexic_736644b6()}
         </AlertDescription>
       </Alert>
     );

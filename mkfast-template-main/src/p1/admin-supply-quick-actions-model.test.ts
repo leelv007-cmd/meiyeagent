@@ -133,9 +133,7 @@ test('each governed action: command + permission + preview + audit contract', ()
     assert.ok(pack.preview.warnings.some((w) => w.includes('不直写数据库')));
     assert.ok(pack.preview.warnings.some((w) => w.includes('不绕过发布门')));
     assert.ok(
-      pack.preview.warnings.some((w) =>
-        w.includes('accepted / acceptance_unknown')
-      )
+      pack.preview.warnings.some((w) => w.includes('已受理／受理状态未知'))
     );
 
     // audit
@@ -202,9 +200,7 @@ test('drain and isolate are reversible; publish is not', () => {
     targetFor('channel_isolate')
   );
   assert.equal(isolatePreview.reversible, true);
-  assert.ok(
-    isolatePreview.changes.some((c) => /隔离|isolate|停新/i.test(c))
-  );
+  assert.ok(isolatePreview.changes.some((c) => /隔离|isolate|停新/i.test(c)));
 });
 
 test('pre-revoke impact check does not execute revoke', () => {

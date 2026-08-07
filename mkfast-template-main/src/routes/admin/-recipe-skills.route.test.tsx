@@ -6,6 +6,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
+import * as skillMessages from '@/locale/paraglide/messages';
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -73,7 +74,11 @@ function renderSkillsControl(rows: Record<string, unknown>[] = []) {
   );
   // #360 catalog fixture — bind/define dropdown shares this port (#362).
   queryClient.setQueryData(
-    p1QueryKeys.request('skills', 'published_recipe_workflow_revision_refs', {}),
+    p1QueryKeys.request(
+      'skills',
+      'published_recipe_workflow_revision_refs',
+      {}
+    ),
     {
       workflowRevisionRefs: ['workflow.copy@1', 'workflow.image_text@1'],
     }
@@ -122,8 +127,7 @@ test('D3 / #375: Recipe Studio route module and control are gone; nav cannot rea
   assert.equal(adminHrefs.includes('/admin/recipe-studio'), false);
   assert.ok(
     ADMIN_SIDEBAR_ITEMS.some(
-      (item) =>
-        item.id === 'templates' && item.href === Routes.AdminTemplates
+      (item) => item.id === 'templates' && item.href === Routes.AdminTemplates
     )
   );
 });
@@ -142,6 +146,14 @@ test('Skills admin route exposes all five structured lifecycle commands', () => 
     resolve(process.cwd(), 'src/p1/admin-skills-control.tsx'),
     'utf8'
   );
+  // Labels resolve through paraglide since #428: the source contract is
+  // "COMMAND_FORMS calls a message whose zh value is the expected label".
+  const labelCalls = [
+    ...controlSource.matchAll(/label: (admin_skills_\w+)\(\)/g),
+  ].map((m) => m[1]);
+  const resolvedLabels = labelCalls.map((fn) =>
+    (skillMessages as unknown as Record<string, () => string>)[fn]()
+  );
   for (const label of [
     '新建做法',
     '受理并冻结',
@@ -150,7 +162,7 @@ test('Skills admin route exposes all five structured lifecycle commands', () => 
     '登记部署',
   ]) {
     assert.ok(
-      controlSource.includes(`label: '${label}'`),
+      resolvedLabels.includes(label),
       `missing lifecycle command in COMMAND_FORMS: ${label}`
     );
   }
@@ -515,7 +527,11 @@ test('fallback prompt authority disables the Skill lifecycle', () => {
     }
   );
   queryClient.setQueryData(
-    p1QueryKeys.request('skills', 'published_recipe_workflow_revision_refs', {}),
+    p1QueryKeys.request(
+      'skills',
+      'published_recipe_workflow_revision_refs',
+      {}
+    ),
     { workflowRevisionRefs: ['workflow.copy@1'] }
   );
   queryClient.setQueryData(

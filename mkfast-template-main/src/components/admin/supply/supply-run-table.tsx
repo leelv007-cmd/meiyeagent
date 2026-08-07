@@ -30,6 +30,37 @@ import {
   updateRunTableUrlState,
 } from '@/p1/admin-supply-run-table-model';
 import { IconSearch, IconX } from '@tabler/icons-react';
+import {
+  admin_supply_action_f3ea6d34,
+  admin_supply_apply_filters_758c4639,
+  admin_supply_channel_c152be9f,
+  admin_supply_clear_search_d9e2eaf7,
+  admin_supply_data_class_39ae5796,
+  admin_supply_error_b859c7be,
+  admin_supply_faceted_filters_server_side_page_sort_ur_bdbb621a,
+  admin_supply_filter_all_with_label,
+  admin_supply_filter_by_catalog_model_b5543b26,
+  admin_supply_filter_by_task_id_92eff027,
+  admin_supply_full_text_search_runs_9e37fb19,
+  admin_supply_latency_e9f09214,
+  admin_supply_lifecycle_00920077,
+  admin_supply_modality_525b0a38,
+  admin_supply_next_page_67a246a3,
+  admin_supply_of_af061b41,
+  admin_supply_page_size_with_value,
+  admin_supply_per_page_309c98d3,
+  admin_supply_previous_page_b41561d8,
+  admin_supply_rows_page_824a627c,
+  admin_supply_run_table_707842cf,
+  admin_supply_search_task_model_error_code_5b7d9398,
+  admin_supply_sort_6d3c6f3f,
+  admin_supply_sort_dc35af8d,
+  admin_supply_sort_with_value,
+  admin_supply_status_62e951a6,
+  admin_supply_switch_to_ascending_f2f0ac32,
+  admin_supply_switch_to_descending_fd06f602,
+  admin_supply_tasks_3172b317,
+} from '@/locale/paraglide/messages';
 
 type FacetKey =
   | 'operation'
@@ -135,7 +166,7 @@ function FacetLinks({
         basePath={basePath}
         current={current}
         next={{ [facetKey]: undefined }}
-        label={`${label} 全部`}
+        label={admin_supply_filter_all_with_label({ label })}
         onStateChange={onStateChange}
       />
       {values.map((value) => (
@@ -206,11 +237,11 @@ function SearchForm({
           <IconSearch aria-hidden="true" />
         </InputGroupAddon>
         <InputGroupInput
-          aria-label="全文搜索运行记录"
+          aria-label={admin_supply_full_text_search_runs_9e37fb19()}
           data-testid="supply-run-table-q"
           defaultValue={current.q ?? ''}
           name="q"
-          placeholder="搜索任务 / 模型 / 错误码"
+          placeholder={admin_supply_search_task_model_error_code_5b7d9398()}
         />
         {current.q ? (
           <InputGroupAddon align="inline-end">
@@ -219,7 +250,7 @@ function SearchForm({
               className="size-5 p-0"
               current={current}
               next={{ page: 1, q: undefined }}
-              label="清除搜索词"
+              label={admin_supply_clear_search_d9e2eaf7()}
               onStateChange={onStateChange}
               testId="supply-run-table-q-clear"
             >
@@ -229,7 +260,7 @@ function SearchForm({
         ) : null}
       </InputGroup>
       <Input
-        aria-label="按目录模型筛选"
+        aria-label={admin_supply_filter_by_catalog_model_b5543b26()}
         className="w-full sm:w-44"
         data-testid="supply-run-table-catalog-model-id"
         defaultValue={current.catalogModelId ?? ''}
@@ -237,7 +268,7 @@ function SearchForm({
         placeholder="catalogModelId"
       />
       <Input
-        aria-label="按任务号筛选"
+        aria-label={admin_supply_filter_by_task_id_92eff027()}
         className="w-full sm:w-40"
         data-testid="supply-run-table-task-id"
         defaultValue={current.taskId ?? ''}
@@ -245,7 +276,7 @@ function SearchForm({
         placeholder="taskId"
       />
       <Button size="sm" type="submit" variant="outline">
-        应用筛选
+        {admin_supply_apply_filters_758c4639()}
       </Button>
     </form>
   );
@@ -278,9 +309,9 @@ export function SupplyRunTable({
     >
       <FrameHeader className="flex-col items-start gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-col gap-px">
-          <FrameTitle>运行表</FrameTitle>
+          <FrameTitle>{admin_supply_run_table_707842cf()}</FrameTitle>
           <FrameDescription className="text-xs">
-            faceted 筛选 · 服务端分页排序 · URL 状态同步（刷新/分享保持筛选态）
+            {admin_supply_faceted_filters_server_side_page_sort_ur_bdbb621a()}
           </FrameDescription>
         </div>
         <a
@@ -310,7 +341,7 @@ export function SupplyRunTable({
             basePath={basePath}
             current={page.state}
             facetKey="operation"
-            label="操作"
+            label={admin_supply_action_f3ea6d34()}
             values={page.facets.operations}
             onStateChange={onStateChange}
           />
@@ -318,7 +349,7 @@ export function SupplyRunTable({
             basePath={basePath}
             current={page.state}
             facetKey="status"
-            label="状态"
+            label={admin_supply_status_62e951a6()}
             values={page.facets.statuses}
             onStateChange={onStateChange}
           />
@@ -326,7 +357,7 @@ export function SupplyRunTable({
             basePath={basePath}
             current={page.state}
             facetKey="modality"
-            label="模态"
+            label={admin_supply_modality_525b0a38()}
             values={page.facets.modalities}
             onStateChange={onStateChange}
           />
@@ -334,7 +365,7 @@ export function SupplyRunTable({
             basePath={basePath}
             current={page.state}
             facetKey="channelKind"
-            label="渠道"
+            label={admin_supply_channel_c152be9f()}
             values={page.facets.channelKinds}
             onStateChange={onStateChange}
           />
@@ -342,7 +373,7 @@ export function SupplyRunTable({
             basePath={basePath}
             current={page.state}
             facetKey="dataClass"
-            label="数据类别"
+            label={admin_supply_data_class_39ae5796()}
             values={page.facets.dataClasses}
             onStateChange={onStateChange}
           />
@@ -350,7 +381,9 @@ export function SupplyRunTable({
             className="flex flex-wrap items-center gap-1"
             data-control="sort"
           >
-            <span className="mr-1 font-medium text-muted-foreground">排序</span>
+            <span className="mr-1 font-medium text-muted-foreground">
+              {admin_supply_sort_dc35af8d()}
+            </span>
             {(
               [
                 'startedAt',
@@ -366,7 +399,7 @@ export function SupplyRunTable({
                 basePath={basePath}
                 current={page.state}
                 next={{ sort }}
-                label={`排序 ${sort}`}
+                label={admin_supply_sort_with_value({ sort })}
                 onStateChange={onStateChange}
               />
             ))}
@@ -374,7 +407,11 @@ export function SupplyRunTable({
               basePath={basePath}
               current={page.state}
               next={{ dir: page.state.dir === 'asc' ? 'desc' : 'asc' }}
-              label={page.state.dir === 'asc' ? '切换为降序' : '切换为升序'}
+              label={
+                page.state.dir === 'asc'
+                  ? admin_supply_switch_to_descending_fd06f602()
+                  : admin_supply_switch_to_ascending_f2f0ac32()
+              }
               onStateChange={onStateChange}
             />
           </div>
@@ -382,7 +419,9 @@ export function SupplyRunTable({
             className="flex flex-wrap items-center gap-1"
             data-control="page-size"
           >
-            <span className="mr-1 font-medium text-muted-foreground">每页</span>
+            <span className="mr-1 font-medium text-muted-foreground">
+              {admin_supply_per_page_309c98d3()}
+            </span>
             {[10, 20, 50, 100].map((pageSize) => (
               <StateLink
                 key={pageSize}
@@ -390,7 +429,7 @@ export function SupplyRunTable({
                 basePath={basePath}
                 current={page.state}
                 next={{ pageSize }}
-                label={`每页 ${pageSize}`}
+                label={admin_supply_page_size_with_value({ pageSize })}
                 onStateChange={onStateChange}
               />
             ))}
@@ -449,13 +488,27 @@ export function SupplyRunTable({
           >
             <thead className="border-b bg-muted/40 text-muted-foreground">
               <tr>
-                <th className="px-3 py-2 font-medium">任务</th>
-                <th className="px-3 py-2 font-medium">操作</th>
-                <th className="px-3 py-2 font-medium">状态</th>
-                <th className="px-3 py-2 font-medium">渠道</th>
-                <th className="px-3 py-2 font-medium">延迟</th>
-                <th className="px-3 py-2 font-medium">生命周期</th>
-                <th className="px-3 py-2 font-medium">错误</th>
+                <th className="px-3 py-2 font-medium">
+                  {admin_supply_tasks_3172b317()}
+                </th>
+                <th className="px-3 py-2 font-medium">
+                  {admin_supply_action_f3ea6d34()}
+                </th>
+                <th className="px-3 py-2 font-medium">
+                  {admin_supply_status_62e951a6()}
+                </th>
+                <th className="px-3 py-2 font-medium">
+                  {admin_supply_channel_c152be9f()}
+                </th>
+                <th className="px-3 py-2 font-medium">
+                  {admin_supply_latency_e9f09214()}
+                </th>
+                <th className="px-3 py-2 font-medium">
+                  {admin_supply_lifecycle_00920077()}
+                </th>
+                <th className="px-3 py-2 font-medium">
+                  {admin_supply_error_b859c7be()}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -524,8 +577,9 @@ export function SupplyRunTable({
         className="flex-row flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground"
       >
         <span className="tabular-nums">
-          {page.total === 0 ? 0 : from} - {to} / 共 {page.total} 条 · 第{' '}
-          {page.state.page}/{page.totalPages} 页 · 排序 {page.state.sort}{' '}
+          {page.total === 0 ? 0 : from} - {to} {admin_supply_of_af061b41()}{' '}
+          {page.total} {admin_supply_rows_page_824a627c()} {page.state.page}/
+          {page.totalPages} {admin_supply_sort_6d3c6f3f()} {page.state.sort}{' '}
           {page.state.dir}
         </span>
         <span className="flex items-center gap-1">
@@ -534,7 +588,7 @@ export function SupplyRunTable({
               basePath={basePath}
               current={page.state}
               next={{ page: page.state.page - 1 }}
-              label="上一页"
+              label={admin_supply_previous_page_b41561d8()}
               onStateChange={onStateChange}
               testId="supply-run-table-previous"
             />
@@ -544,7 +598,7 @@ export function SupplyRunTable({
               basePath={basePath}
               current={page.state}
               next={{ page: page.state.page + 1 }}
-              label="下一页"
+              label={admin_supply_next_page_67a246a3()}
               onStateChange={onStateChange}
               testId="supply-run-table-next"
             />

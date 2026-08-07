@@ -24,24 +24,30 @@ import {
 import {
   admin_config_field_amount_micros,
   admin_config_field_amount_micros_hint,
+  admin_config_field_byok_adapter_assembly_a08d2023,
+  admin_config_field_credits,
   admin_config_field_currency,
   admin_config_field_cycle_monthly,
   admin_config_field_cycle_single_month,
   admin_config_field_cycle_yearly,
-  admin_config_field_credits,
   admin_config_field_id,
   admin_config_field_interval,
   admin_config_field_mappings,
   admin_config_field_monthly_price_micros,
   admin_config_field_payment_product_id,
   admin_config_field_platforms,
+  admin_config_field_pricing_page_reference_numbers_c77fe2ac,
   admin_config_field_quantity,
+  admin_config_field_reference_model_ab729d8b,
   admin_config_field_resource,
-  admin_config_field_structure_template,
   admin_config_field_storage_mb,
+  admin_config_field_structure_template,
   admin_config_field_style_name,
   admin_config_field_styles,
   admin_config_field_tier,
+  admin_config_field_trial_6651de8b,
+  admin_config_field_use_the_configured_real_byok_adapter_res_bee7120f,
+  admin_config_field_use_the_recorded_adapter_do_not_call_rea_74383f2d,
   admin_config_field_writing_guide,
   admin_config_key_aigc_label_default,
   admin_config_key_confirmation_hold_timeout,
@@ -50,11 +56,11 @@ import {
   admin_config_key_default_model_image,
   admin_config_key_default_model_video,
   admin_config_key_note_styles,
+  admin_config_key_payment_mapping,
   admin_config_key_plan_addons,
   admin_config_key_plan_credits,
   admin_config_key_plan_credits_addons,
   admin_config_key_plan_credits_cycle_coefficients,
-  admin_config_key_payment_mapping,
   admin_config_key_regulated_mode_default,
   admin_config_key_trial_enabled,
   admin_config_key_watermark_default,
@@ -70,6 +76,17 @@ import {
   admin_config_option_tier_pro,
   admin_config_option_tier_starter,
   admin_config_unsupported_shape,
+  admin_plan_audio,
+  admin_plan_concurrency,
+  admin_plan_copy,
+  admin_plan_expire_days,
+  admin_plan_image,
+  admin_plan_priority_support,
+  admin_plan_published,
+  admin_plan_queue_priority,
+  admin_plan_standard_support,
+  admin_plan_support,
+  admin_plan_video,
   admin_runtime_assembly_byok_live_description,
   admin_runtime_assembly_byok_recorded_description,
   admin_runtime_assembly_byok_title,
@@ -93,17 +110,6 @@ import {
   admin_runtime_mode_recorded_label,
   admin_runtime_mode_tuzi_description,
   admin_runtime_mode_tuzi_label,
-  admin_plan_audio,
-  admin_plan_concurrency,
-  admin_plan_copy,
-  admin_plan_expire_days,
-  admin_plan_published,
-  admin_plan_image,
-  admin_plan_priority_support,
-  admin_plan_queue_priority,
-  admin_plan_standard_support,
-  admin_plan_support,
-  admin_plan_video,
 } from '@/locale/paraglide/messages';
 
 export type AdminConfigFieldPath = readonly (number | string)[];
@@ -316,11 +322,11 @@ const SEGMENT_LABELS: Record<string, () => string> = {
   // plan.credits.reference_numbers (#390): reuse plan-catalog wording; the
   // two segments without a registered message fall back like OPTION_COPY does.
   published: admin_plan_published,
-  referenceModels: () => '参考模型',
+  referenceModels: () => admin_config_field_reference_model_ab729d8b(),
   growth: admin_config_option_tier_growth,
   pro: admin_config_option_tier_pro,
   starter: admin_config_option_tier_starter,
-  trial: () => '试用版',
+  trial: () => admin_config_field_trial_6651de8b(),
   quantity: admin_config_field_quantity,
   queuePriority: admin_plan_queue_priority,
   resource: admin_config_field_resource,
@@ -343,9 +349,13 @@ const TRANSPARENT_GROUPS = new Set(['allowance']);
 const SHORT_TEXT_SEGMENTS = new Set(['id', 'name']);
 
 const KEY_LABELS: Record<string, () => string> = {
-  'plan.credits.reference_numbers': () => '价格页参考数字',
+  'plan.credits.reference_numbers': () =>
+    admin_config_field_pricing_page_reference_numbers_c77fe2ac(),
   'byok.adapter.assembly': () =>
-    assemblyMessage('admin_runtime_assembly_byok_title', 'BYOK 适配器装配'),
+    assemblyMessage(
+      'admin_runtime_assembly_byok_title',
+      admin_config_field_byok_adapter_assembly_a08d2023()
+    ),
   'model.execution.mode': admin_runtime_mode_model_title,
   'model.media.execution.mode': admin_runtime_mode_media_title,
   'compliance.aigc_label.default': admin_config_key_aigc_label_default,
@@ -412,7 +422,7 @@ const OPTION_COPY: Record<
       description: () =>
         assemblyMessage(
           'admin_runtime_assembly_byok_live_description',
-          '使用已配置的真实 BYOK 适配器；保存后需重启生效。'
+          admin_config_field_use_the_configured_real_byok_adapter_res_bee7120f()
         ),
       label: () => assemblyMessage('admin_runtime_assembly_live_label', 'Live'),
     },
@@ -420,7 +430,7 @@ const OPTION_COPY: Record<
       description: () =>
         assemblyMessage(
           'admin_runtime_assembly_byok_recorded_description',
-          '使用录制适配器，不发起真实供应商调用。'
+          admin_config_field_use_the_recorded_adapter_do_not_call_rea_74383f2d()
         ),
       label: () =>
         assemblyMessage('admin_runtime_assembly_recorded_label', 'Recorded'),

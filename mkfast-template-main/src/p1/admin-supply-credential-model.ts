@@ -13,6 +13,27 @@ import type {
 } from '@meiye/contracts';
 
 import type { SupplyControlSnapshot } from './admin-supply-types';
+import {
+  admin_provider_credential_active_b1eea7b8,
+  admin_provider_credential_draining_88a9ae17,
+  admin_provider_credential_not_draining_cabe3fcf,
+  admin_provider_credential_pending_activation_b5464790,
+  admin_provider_credential_retired_0c9e069e,
+  admin_supply_activation_gate_requires_a_recent_passed_e27d13d3,
+  admin_supply_auth_failed_e44243f9,
+  admin_supply_draining_stop_new_tasks_wait_for_async_m_ff40eca7,
+  admin_supply_env_var_fallback_vault_not_owning_b8dfe62b,
+  admin_supply_migrate_to_vault_write_credentialaccount_e1b1da15,
+  admin_supply_migration_source_ad49b2a1,
+  admin_supply_network_failed_928299bf,
+  admin_supply_not_tested_yet_6cfddf70,
+  admin_supply_not_wired_record_only_036ae463,
+  admin_supply_probe_passed_3e55277c,
+  admin_supply_registry_c7bf611e,
+  admin_supply_result_unknown_53d4855a,
+  admin_supply_retired_metadata_view_only_no_rotate_dra_abfd474e,
+  admin_supply_rotate_appends_a_version_snapshot_withou_934f0e83,
+} from '@/locale/paraglide/messages';
 
 export type CredentialTestStatusUi =
   | 'passed'
@@ -108,24 +129,24 @@ export interface CredentialAccountUiEnrichment {
 }
 
 const STATUS_LABEL: Record<CredentialAccountLifecycle, string> = {
-  pending: '待激活',
-  active: '已激活',
-  retired: '已退役',
+  pending: admin_provider_credential_pending_activation_b5464790(),
+  active: admin_provider_credential_active_b1eea7b8(),
+  retired: admin_provider_credential_retired_0c9e069e(),
 };
 
 const SOURCE_LABEL: Record<CredentialAccountMetadata['source'], string> = {
-  registry: '注册表',
-  env_fallback: '环境变量回退（保险箱未接管）',
-  migration: '迁移来源',
+  registry: admin_supply_registry_c7bf611e(),
+  env_fallback: admin_supply_env_var_fallback_vault_not_owning_b8dfe62b(),
+  migration: admin_supply_migration_source_ad49b2a1(),
 };
 
 const PROBE_LABEL: Record<CredentialTestStatusUi, string> = {
-  passed: '探针通过',
-  unauthorized: '鉴权失败',
-  network_failed: '网络失败',
-  unknown: '结果未知',
-  not_wired: '未接线（仅记录）',
-  pending: '尚未测试',
+  passed: admin_supply_probe_passed_3e55277c(),
+  unauthorized: admin_supply_auth_failed_e44243f9(),
+  network_failed: admin_supply_network_failed_928299bf(),
+  unknown: admin_supply_result_unknown_53d4855a(),
+  not_wired: admin_supply_not_wired_record_only_036ae463(),
+  pending: admin_supply_not_tested_yet_6cfddf70(),
 };
 
 const FORBIDDEN_SECRET_KEY =
@@ -188,15 +209,23 @@ function buildRotateDrainFlow(
 ): CredentialRotateDrainFlowView {
   const notes: string[] = [];
   if (status === 'retired') {
-    notes.push('已退役：仅可查看元数据，不可轮换/排空/激活');
+    notes.push(
+      admin_supply_retired_metadata_view_only_no_rotate_dra_abfd474e()
+    );
   } else {
-    notes.push('轮换追加版本快照，不追改历史；运行中任务冻结旧版本');
+    notes.push(
+      admin_supply_rotate_appends_a_version_snapshot_withou_934f0e83()
+    );
   }
   if (status === 'pending' && !gateSatisfied) {
-    notes.push('激活前置门：需最近通过的连通/能力探针');
+    notes.push(
+      admin_supply_activation_gate_requires_a_recent_passed_e27d13d3()
+    );
   }
   if (drain === 'draining') {
-    notes.push('排空中：停止新任务，等待异步媒体完成（可逆）');
+    notes.push(
+      admin_supply_draining_stop_new_tasks_wait_for_async_m_ff40eca7()
+    );
   }
   return {
     canRotate: status !== 'retired',
@@ -257,7 +286,10 @@ export function projectCredentialAccountUi(
     status: meta.status,
     statusLabel: STATUS_LABEL[meta.status],
     drainSubstate: drain,
-    drainLabel: drain === 'draining' ? '排空中' : '未排空',
+    drainLabel:
+      drain === 'draining'
+        ? admin_provider_credential_draining_88a9ae17()
+        : admin_provider_credential_not_draining_cabe3fcf(),
     source: meta.source,
     sourceLabel: SOURCE_LABEL[meta.source],
     ...(meta.verifiedAt ? { verifiedAt: meta.verifiedAt } : {}),
@@ -275,7 +307,7 @@ export function projectCredentialAccountUi(
     envFallbackRisk,
     migrationEntryVisible: envFallbackRisk,
     migrationEntryLabel: envFallbackRisk
-      ? '迁移到保险箱：写入 CredentialAccount 后重启生效'
+      ? admin_supply_migrate_to_vault_write_credentialaccount_e1b1da15()
       : null,
     rotateDrainFlow: buildRotateDrainFlow(meta.status, drain, gateSatisfied),
   };

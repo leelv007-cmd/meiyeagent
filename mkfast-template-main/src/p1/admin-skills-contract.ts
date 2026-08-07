@@ -1,3 +1,7 @@
+import {
+  admin_skills_command_must_not_contain,
+  admin_skills_skill_promptreference_must_use_resolvabl_505aceb4,
+} from '@/locale/paraglide/messages';
 const FORBIDDEN_SKILL_CONTENT_FIELDS = new Set(['content', 'fallbackContent']);
 const PROMPT_FIELDS = new Set(['prompt', 'promptReference']);
 
@@ -5,14 +9,12 @@ export function assertReferenceOnlySkillPayload(value: unknown): void {
   visitPromptFields(value, (field, prompt) => {
     for (const key of Object.keys(prompt)) {
       if (FORBIDDEN_SKILL_CONTENT_FIELDS.has(key)) {
-        throw new Error(
-          `Skill 命令不能包含 ${key}；请只提交已冻结的 prompt 引用。`
-        );
+        throw new Error(admin_skills_command_must_not_contain({ key }));
       }
     }
     if (field === 'promptReference' && !isPinnedPromptReference(prompt)) {
       throw new Error(
-        'Skill promptReference 必须使用可解析的 name、version 与 64 位 contentHash 固定引用。'
+        admin_skills_skill_promptreference_must_use_resolvabl_505aceb4()
       );
     }
   });
@@ -64,7 +66,7 @@ function visitPromptFields(
   for (const [key, nested] of Object.entries(value)) {
     if (key === 'promptReference' && !isRecord(nested)) {
       throw new Error(
-        'Skill promptReference 必须使用可解析的 name、version 与 64 位 contentHash 固定引用。'
+        admin_skills_skill_promptreference_must_use_resolvabl_505aceb4()
       );
     }
     if (PROMPT_FIELDS.has(key) && isRecord(nested)) {

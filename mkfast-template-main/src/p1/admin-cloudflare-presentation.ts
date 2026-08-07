@@ -14,6 +14,37 @@ import {
   type AdminCfProbeView,
   summarizeProbeSuite,
 } from './admin-cloudflare-probe';
+import {
+  admin_capability_not_verified_0800371a,
+  admin_cloudflare_allowed_refresh_read_only_snapshot_first_00164271,
+  admin_cloudflare_app_shell_path_to_postgres_via_hyperdriv_966cae72,
+  admin_cloudflare_cloudflare_api_rate_limited_status_unava_070352b0,
+  admin_cloudflare_cloudflare_read_only_inventory_failed_do_9defdbf5,
+  admin_cloudflare_deploy_versions_only_reflect_app_shell_r_6fde9a61,
+  admin_cloudflare_external_otel_destination_not_configured_b61123a9,
+  admin_cloudflare_fresh_467bc8d4,
+  admin_cloudflare_full_traces_amplify_event_volume_cost_an_ceb657f2,
+  admin_cloudflare_hyperdrive_binding_is_still_a_placeholde_d2834f2f,
+  admin_cloudflare_native_deep_diagnosis_logs_traces_deploy_004e2b12,
+  admin_cloudflare_no_deploy_records_cannot_infer_productio_b303b73e,
+  admin_cloudflare_no_usable_cached_snapshot_9b4f1543,
+  admin_cloudflare_no_version_records_long_term_release_aud_b7d21eb4,
+  admin_cloudflare_outbound_logs_traces_deep_diagnosis_unav_03995d9e,
+  admin_cloudflare_past_retention_window_historical_details_2750a11e,
+  admin_cloudflare_product_admin_only_projects_read_only_de_db73d1d6,
+  admin_cloudflare_production_account_zone_script_mapping_u_d276f681,
+  admin_cloudflare_related_cloudflare_resources_not_configu_25852a43,
+  admin_cloudflare_sampled_data_is_incomplete_not_full_evid_b81c1665,
+  admin_cloudflare_scope_app_shell_cloudflare_workers_only_c268f876,
+  admin_cloudflare_server_read_only_token_not_configured_br_769c07ef,
+  admin_cloudflare_shell_deploys_inventoriable,
+  admin_cloudflare_stale_not_real_time_c477cd56,
+  admin_cloudflare_status_unknown_reason,
+  admin_cloudflare_unavailable_rate_limit_retention_f91da348,
+  admin_cloudflare_worker_version_history_inventoriable_lim_5b46e0f8,
+  admin_cloudflare_workers_trace_sampling_is_100_5b9b1ad6,
+  admin_supply_unknown_d9c32a4c,
+} from '@/locale/paraglide/messages';
 
 export type AdminCfFreshness =
   | 'fresh'
@@ -142,25 +173,25 @@ export const DEFAULT_REPO_CONFIG_RISKS: AdminCfConfigRiskView[] = [
   {
     id: 'trace_sampling_100pct',
     severity: 'config_risk',
-    title: 'Workers trace 采样为 100%',
+    title: admin_cloudflare_workers_trace_sampling_is_100_5b9b1ad6(),
     businessImpact:
-      '全量 trace 放大事件量、费用与敏感字段暴露面；不能当作已优化的生产配置',
+      admin_cloudflare_full_traces_amplify_event_volume_cost_an_ceb657f2(),
     evidence: 'observability.traces.head_sampling_rate=1',
   },
   {
     id: 'hyperdrive_placeholder',
     severity: 'not_ready',
-    title: 'Hyperdrive 绑定仍为占位 ID',
+    title: admin_cloudflare_hyperdrive_binding_is_still_a_placeholde_d2834f2f(),
     businessImpact:
-      'App Shell 经 Hyperdrive 访问 Postgres 的路径未就绪；不得宣称生产数据库加速可用',
+      admin_cloudflare_app_shell_path_to_postgres_via_hyperdriv_966cae72(),
     evidence: 'hyperdrive.id=00000000-0000-0000-0000-000000000000',
   },
   {
     id: 'otel_destination_absent',
     severity: 'not_ready',
-    title: '外部 OTel destination 未配置',
+    title: admin_cloudflare_external_otel_destination_not_configured_b61123a9(),
     businessImpact:
-      'logs/traces 外发深诊断不可用；明细通过 Cloudflare 原生控制台 handoff 下钻',
+      admin_cloudflare_outbound_logs_traces_deep_diagnosis_unav_03995d9e(),
     evidence: 'otel_destination=absent',
   },
 ];
@@ -168,15 +199,15 @@ export const DEFAULT_REPO_CONFIG_RISKS: AdminCfConfigRiskView[] = [
 export function freshnessLabel(freshness: AdminCfFreshness): string {
   switch (freshness) {
     case 'fresh':
-      return '新鲜';
+      return admin_cloudflare_fresh_467bc8d4();
     case 'stale':
-      return '过期（非实时）';
+      return admin_cloudflare_stale_not_real_time_c477cd56();
     case 'unknown':
-      return '未知';
+      return admin_supply_unknown_d9c32a4c();
     case 'not_verified':
-      return '未核验';
+      return admin_capability_not_verified_0800371a();
     case 'unavailable':
-      return '不可用（限流/保留期）';
+      return admin_cloudflare_unavailable_rate_limit_retention_f91da348();
     default:
       return freshness;
   }
@@ -185,23 +216,23 @@ export function freshnessLabel(freshness: AdminCfFreshness): string {
 function unknownReasonImpact(reason: string): string {
   switch (reason) {
     case 'read_failed':
-      return 'Cloudflare 只读盘点读取失败，不能用空列表伪装健康';
+      return admin_cloudflare_cloudflare_read_only_inventory_failed_do_9defdbf5();
     case 'rate_limited':
-      return 'Cloudflare API 限流，当前状态不可用，勿刷新刷爆配额';
+      return admin_cloudflare_cloudflare_api_rate_limited_status_unava_070352b0();
     case 'retention_window_exceeded':
-      return '已超出保留窗口，历史明细不可从 CF 恢复为产品真相';
+      return admin_cloudflare_past_retention_window_historical_details_2750a11e();
     case 'sampled_incomplete':
-      return '数据经采样不完整，不能当作全量证据';
+      return admin_cloudflare_sampled_data_is_incomplete_not_full_evid_b81c1665();
     case 'mapping_not_verified':
-      return '生产 account/zone/script 映射未核验，盘点不能宣称生产可用';
+      return admin_cloudflare_production_account_zone_script_mapping_u_d276f681();
     case 'token_missing':
-      return '服务端只读 Token 未配置，浏览器不得持有账户凭据';
+      return admin_cloudflare_server_read_only_token_not_configured_br_769c07ef();
     case 'not_configured':
-      return '相关 Cloudflare 资源未配置';
+      return admin_cloudflare_related_cloudflare_resources_not_configu_25852a43();
     case 'cache_miss':
-      return '无可用缓存快照';
+      return admin_cloudflare_no_usable_cached_snapshot_9b4f1543();
     default:
-      return `状态未知（${reason}），不得伪装为实时健康`;
+      return admin_cloudflare_status_unknown_reason({ reason });
   }
 }
 
@@ -214,7 +245,7 @@ function projectDeployments(
       ...d,
       note:
         d.note ||
-        '部署版本仅反映 App Shell 发布事实，不是业务数据回滚；不覆盖 Core/Canvas',
+        admin_cloudflare_deploy_versions_only_reflect_app_shell_r_6fde9a61(),
     }));
     return {
       status: 'known',
@@ -222,8 +253,10 @@ function projectDeployments(
       freshness: input.freshness ?? freshness,
       businessImpact:
         value.length > 0
-          ? `最近 ${value.length} 条 Shell 部署可盘点；用户入口版本与灰度比例据此判断`
-          : '暂无部署记录；不能推断生产未发布或已健康',
+          ? admin_cloudflare_shell_deploys_inventoriable({
+              count: value.length,
+            })
+          : admin_cloudflare_no_deploy_records_cannot_infer_productio_b303b73e(),
     };
   }
   return {
@@ -245,8 +278,8 @@ function projectVersions(
       freshness: input.freshness ?? freshness,
       businessImpact:
         input.value.length > 0
-          ? 'Worker 版本历史可盘点（有限窗口，非无限审计）'
-          : '无版本记录；长期发布审计应落我方事件库',
+          ? admin_cloudflare_worker_version_history_inventoriable_lim_5b46e0f8()
+          : admin_cloudflare_no_version_records_long_term_release_aud_b7d21eb4(),
     };
   }
   return {
@@ -303,16 +336,16 @@ export function buildAdminCloudflarePresentation(input: {
   return {
     truthLayers: {
       nativeDiagnostics:
-        '原生深诊断（logs/traces/部署操作）留在 Cloudflare Dashboard / Wrangler',
+        admin_cloudflare_native_deep_diagnosis_logs_traces_deploy_004e2b12(),
       productProjection:
-        '产品后台只投影只读部署/版本/资源盘点与业务影响，不复制 Dashboard 指标',
+        admin_cloudflare_product_admin_only_projects_read_only_de_db73d1d6(),
       productSideActions:
-        '可触发：刷新只读快照、自有健康探针、脱敏 deep-link；零 CF 写权限',
+        admin_cloudflare_allowed_refresh_read_only_snapshot_first_00164271(),
     },
     freshness,
     freshnessLabel: freshnessLabel(freshness),
     coverageNote:
-      '覆盖范围：仅 App Shell（Cloudflare Workers）。不含 Node Core / Canvas 运行指标。',
+      admin_cloudflare_scope_app_shell_cloudflare_workers_only_c268f876(),
     deployments: inventory
       ? projectDeployments(inventory.deployments, freshness)
       : {

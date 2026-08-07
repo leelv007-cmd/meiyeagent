@@ -15,14 +15,14 @@ import {
   FramePanel,
   FrameTitle,
 } from '@/components/reui/frame';
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';;
+} from '@/components/ui/select';
 import { FieldGroup } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
@@ -39,6 +39,30 @@ import {
 } from '@/p1/admin-view-model';
 import { commandP1, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
+import {
+  admin_config_field_pricing_page_reference_numbers_c77fe2ac,
+  admin_creation_copy_26b9c4bd,
+  admin_plan_reference_adopt_all_suggestions_508f61ea,
+  admin_plan_reference_confirm_publish_221f71a4,
+  admin_plan_reference_confirm_publish_reference_numbers_ac1e879e,
+  admin_plan_reference_diverged_9984a398,
+  admin_plan_reference_diverged_pct,
+  admin_plan_reference_image_be8da62e,
+  admin_plan_reference_in_sync_5ab754e5,
+  admin_plan_reference_loading_published_reference_number_confi_f50ae2e0,
+  admin_plan_reference_model_for_category,
+  admin_plan_reference_plan_444903bb,
+  admin_plan_reference_pricing_page_only_reads_the_published_re_65572ffc,
+  admin_plan_reference_published_value_165dfac0,
+  admin_plan_reference_reference_model_or_plan_credits_not_read_4c8ccdcf,
+  admin_plan_reference_reference_model_unavailable_2d87ba60,
+  admin_plan_reference_selected_reference_model_must_have_publi_b3c518a8,
+  admin_plan_reference_suggested_970a5ce1,
+  admin_plan_reference_suggested_numbers_are_admin_draft_only_c_f46f65c7,
+  admin_plan_reference_suggestions_are_live_from_plan_monthly_c_f0b6e4b2,
+  admin_plan_reference_video_15s_8997e5a3,
+  admin_supply_status_62e951a6,
+} from '@/locale/paraglide/messages';
 
 const REFERENCE_NUMBERS_KEY = 'plan.credits.reference_numbers';
 export const MODEL_CATALOG_REFRESH_MS = 5_000;
@@ -149,17 +173,19 @@ export function suggestedReferenceOutputs(
 }
 
 export function referenceStatus(published: number, suggested: number) {
-  if (published === suggested) return '一致';
-  if (suggested === 0) return '偏离 —';
-  return `偏离 ${Math.round((Math.abs(published - suggested) / suggested) * 100)}%`;
+  if (published === suggested) return admin_plan_reference_in_sync_5ab754e5();
+  if (suggested === 0) return admin_plan_reference_diverged_9984a398();
+  return admin_plan_reference_diverged_pct({
+    pct: Math.round((Math.abs(published - suggested) / suggested) * 100),
+  });
 }
 
 function categoryLabel(category: ReferenceCategory) {
   return category === 'copy'
-    ? '文案'
+    ? admin_creation_copy_26b9c4bd()
     : category === 'image'
-      ? '图片'
-      : '视频（15 秒）';
+      ? admin_plan_reference_image_be8da62e()
+      : admin_plan_reference_video_15s_8997e5a3();
 }
 
 function updatePublished(
@@ -227,16 +253,21 @@ export function AdminPlanReferenceNumbersControl() {
 
   const publish = () => {
     if (!draft || !referenceItem?.revision || !suggestions) {
-      setError('参考模型或套餐积分尚未准备好，不能发布。');
+      setError(
+        admin_plan_reference_reference_model_or_plan_credits_not_read_4c8ccdcf()
+      );
       return;
     }
     const published = structuredClone(draft);
     setImpactReview({
-      changes: ['前台价格页只会读取此次确认的已发布参考数字。'],
-      confirmLabel: '确认发布',
-      description: '建议数字只是后台草稿；确认后才会替换前台已发布数字。',
+      changes: [
+        admin_plan_reference_pricing_page_only_reads_the_published_re_65572ffc(),
+      ],
+      confirmLabel: admin_plan_reference_confirm_publish_221f71a4(),
+      description:
+        admin_plan_reference_suggested_numbers_are_admin_draft_only_c_f46f65c7(),
       scope: REFERENCE_NUMBERS_KEY,
-      title: '确认发布参考数字',
+      title: admin_plan_reference_confirm_publish_reference_numbers_ac1e879e(),
       onConfirm: async (reason) => {
         await commandP1('admin-config', {
           action: 'config_apply',
@@ -262,8 +293,12 @@ export function AdminPlanReferenceNumbersControl() {
         dense
       >
         <FrameHeader>
-          <FrameTitle>价格页参考数字</FrameTitle>
-          <FrameDescription>正在读取已发布的参考数字配置。</FrameDescription>
+          <FrameTitle>
+            {admin_config_field_pricing_page_reference_numbers_c77fe2ac()}
+          </FrameTitle>
+          <FrameDescription>
+            {admin_plan_reference_loading_published_reference_number_confi_f50ae2e0()}
+          </FrameDescription>
         </FrameHeader>
       </Frame>
     );
@@ -273,9 +308,11 @@ export function AdminPlanReferenceNumbersControl() {
     <div className="space-y-5" data-testid="admin-plan-reference-numbers">
       <Frame className="w-full" dense>
         <FrameHeader>
-          <FrameTitle>价格页参考数字</FrameTitle>
+          <FrameTitle>
+            {admin_config_field_pricing_page_reference_numbers_c77fe2ac()}
+          </FrameTitle>
           <FrameDescription>
-            建议值按套餐月积分与参考模型积分价实时换算；前台只读取确认发布后的数字。
+            {admin_plan_reference_suggestions_are_live_from_plan_monthly_c_f0b6e4b2()}
           </FrameDescription>
         </FrameHeader>
         <FramePanel className="p-0">
@@ -285,7 +322,9 @@ export function AdminPlanReferenceNumbersControl() {
                 key={category}
                 labelFor={`reference-model-${category}`}
                 last={index === categories.length - 1}
-                title={`${categoryLabel(category)}参考模型`}
+                title={admin_plan_reference_model_for_category({
+                  category: categoryLabel(category),
+                })}
               >
                 <Select
                   onValueChange={(value) => {
@@ -327,20 +366,23 @@ export function AdminPlanReferenceNumbersControl() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>套餐</TableHead>
+                <TableHead>{admin_plan_reference_plan_444903bb()}</TableHead>
                 {categories.map((category) => (
                   <TableHead key={`${category}-suggestion`}>
-                    {categoryLabel(category)}建议值
+                    {categoryLabel(category)}
+                    {admin_plan_reference_suggested_970a5ce1()}
                   </TableHead>
                 ))}
                 {categories.map((category) => (
                   <TableHead key={`${category}-published`}>
-                    {categoryLabel(category)}已发布值
+                    {categoryLabel(category)}
+                    {admin_plan_reference_published_value_165dfac0()}
                   </TableHead>
                 ))}
                 {categories.map((category) => (
                   <TableHead key={`${category}-status`}>
-                    {categoryLabel(category)}状态
+                    {categoryLabel(category)}
+                    {admin_supply_status_62e951a6()}
                   </TableHead>
                 ))}
               </TableRow>
@@ -387,7 +429,7 @@ export function AdminPlanReferenceNumbersControl() {
                           draft.published[plan.id][category],
                           suggestions[plan.id][category]
                         )
-                      : '参考模型不可用';
+                      : admin_plan_reference_reference_model_unavailable_2d87ba60();
                     return (
                       <TableCell
                         data-testid={`reference-status-${plan.id}-${category}`}
@@ -396,7 +438,8 @@ export function AdminPlanReferenceNumbersControl() {
                         <Badge
                           variant={
                             suggestions
-                              ? status === '一致'
+                              ? status ===
+                                admin_plan_reference_in_sync_5ab754e5()
                                 ? 'success-light'
                                 : 'warning-light'
                               : 'secondary'
@@ -416,7 +459,7 @@ export function AdminPlanReferenceNumbersControl() {
           <div className="mr-auto flex flex-col justify-center gap-1 text-destructive text-sm">
             {suggestions ? null : (
               <p role="alert">
-                所选参考模型必须有对应的已发布积分价；视频固定读取 15 秒档。
+                {admin_plan_reference_selected_reference_model_must_have_publi_b3c518a8()}
               </p>
             )}
             {error ? <p role="alert">{error}</p> : null}
@@ -431,10 +474,10 @@ export function AdminPlanReferenceNumbersControl() {
             type="button"
             variant="outline"
           >
-            全部采用建议值
+            {admin_plan_reference_adopt_all_suggestions_508f61ea()}
           </Button>
           <Button disabled={!suggestions} onClick={publish} type="button">
-            确认发布
+            {admin_plan_reference_confirm_publish_221f71a4()}
           </Button>
         </FrameFooter>
       </Frame>

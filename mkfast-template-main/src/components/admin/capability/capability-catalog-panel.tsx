@@ -10,6 +10,26 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Separator } from '@/components/ui/separator';
 import type { CapabilityCatalogView } from '@/p1/admin-capability-catalog-model';
+import {
+  admin_capability_capabilities_e2db9f83,
+  admin_capability_capability_catalog_two_level_ia_6a9c70b1,
+  admin_capability_captured_d98892e9,
+  admin_capability_complex_fix_technical_handoff_9ce0f3b1,
+  admin_capability_domain_evidence_drill_down_98f9d0c6,
+  admin_capability_feature_909b78d7,
+  admin_capability_includes_runtime_health_ac069faa,
+  admin_capability_instrumentation_status_06b0af95,
+  admin_capability_l1_capability_domain_04163a50,
+  admin_capability_l2_evidence_drill_down_9963fcdd,
+  admin_capability_l2_technical_dependencies_53cc5cff,
+  admin_capability_no_existing_admin_page_drill_downs_in_th_6015c80c,
+  admin_capability_no_registered_capabilities_in_this_domai_adcbbb76,
+  admin_capability_no_related_technical_dependencies_19492803,
+  admin_capability_organized_by_capability_domain_at_l1_cap_e1bb0cc4,
+  admin_capability_page_73422182,
+  admin_capability_user_impact_528f48c3,
+  admin_capability_when_code_level_sql_env_or_infrastructur_8158d0d4,
+} from '@/locale/paraglide/messages';
 
 /**
  * Two-level capability catalog (J3).
@@ -35,12 +55,11 @@ export function CapabilityCatalogPanel({
       }
     >
       <Alert>
-        <AlertTitle>能力目录（两层 IA）</AlertTitle>
+        <AlertTitle>
+          {admin_capability_capability_catalog_two_level_ia_6a9c70b1()}
+        </AlertTitle>
         <AlertDescription>
-          一级按能力域组织（能力 / 功能 /
-          用户影响）；二级下钻到技术依赖与既有管理页证据。
-          底层隔离键不进入一级信息架构。日常运营路径不提供 code / SQL / env /
-          原始 JSON / CLI 编辑控件；复杂修复生成可移交脱敏上下文。
+          {admin_capability_organized_by_capability_domain_at_l1_cap_e1bb0cc4()}
         </AlertDescription>
       </Alert>
 
@@ -48,8 +67,10 @@ export function CapabilityCatalogPanel({
         className="text-muted-foreground text-sm"
         data-testid="catalog-revision"
       >
-        revision {view.revision} · 捕获 {view.capturedAt} · L1{' '}
-        {view.domains.length} 域 · 证据下钻 {view.drilldownPages.length} 页
+        revision {view.revision} {admin_capability_captured_d98892e9()}{' '}
+        {view.capturedAt} · L1 {view.domains.length}{' '}
+        {admin_capability_domain_evidence_drill_down_98f9d0c6()}{' '}
+        {view.drilldownPages.length} {admin_capability_page_73422182()}
       </p>
 
       {view.domains.map((section) => (
@@ -62,16 +83,20 @@ export function CapabilityCatalogPanel({
             <div className="flex flex-wrap items-center gap-2">
               <FrameTitle className="text-base">{section.title}</FrameTitle>
               <Badge variant="secondary" data-testid="catalog-l1-badge">
-                L1 能力域
+                {admin_capability_l1_capability_domain_04163a50()}
               </Badge>
             </div>
             <FrameDescription className="space-y-1">
               <p data-testid="catalog-function-summary">
-                <span className="text-foreground font-medium">功能：</span>
+                <span className="text-foreground font-medium">
+                  {admin_capability_feature_909b78d7()}
+                </span>
                 {section.functionSummary}
               </p>
               <p data-testid="catalog-user-impact">
-                <span className="text-foreground font-medium">用户影响：</span>
+                <span className="text-foreground font-medium">
+                  {admin_capability_user_impact_528f48c3()}
+                </span>
                 {section.userImpact}
               </p>
             </FrameDescription>
@@ -82,13 +107,17 @@ export function CapabilityCatalogPanel({
             data-testid="catalog-l2-capabilities"
           >
             <div className="text-muted-foreground flex items-center gap-3 px-4 py-2 text-sm font-medium">
-              <span className="flex-1">能力项</span>
-              <span className="shrink-0">插桩状态</span>
+              <span className="flex-1">
+                {admin_capability_capabilities_e2db9f83()}
+              </span>
+              <span className="shrink-0">
+                {admin_capability_instrumentation_status_06b0af95()}
+              </span>
             </div>
             <Separator />
             {section.capabilities.length === 0 ? (
               <p className="text-muted-foreground px-4 py-6 text-center text-sm">
-                本域暂无登记能力
+                {admin_capability_no_registered_capabilities_in_this_domai_adcbbb76()}
               </p>
             ) : (
               section.capabilities.map((cap) => (
@@ -113,10 +142,12 @@ export function CapabilityCatalogPanel({
           </FramePanel>
 
           <FramePanel data-testid="catalog-l2-dependencies">
-            <h3 className="text-sm font-semibold">二级 · 技术依赖</h3>
+            <h3 className="text-sm font-semibold">
+              {admin_capability_l2_technical_dependencies_53cc5cff()}
+            </h3>
             {section.technicalDependencies.length === 0 ? (
               <p className="text-muted-foreground mt-2 text-sm">
-                无关键技术依赖
+                {admin_capability_no_related_technical_dependencies_19492803()}
               </p>
             ) : (
               <ul className="mt-2 flex flex-wrap gap-2">
@@ -140,12 +171,12 @@ export function CapabilityCatalogPanel({
             data-testid="catalog-l2-evidence"
           >
             <div className="text-muted-foreground px-4 py-2 text-sm font-medium">
-              二级 · 证据下钻
+              {admin_capability_l2_evidence_drill_down_9963fcdd()}
             </div>
             <Separator />
             {section.evidenceDrilldowns.length === 0 ? (
               <p className="text-muted-foreground px-4 py-6 text-center text-sm">
-                本域暂无既有管理页下钻（后续纵向回填）
+                {admin_capability_no_existing_admin_page_drill_downs_in_th_6015c80c()}
               </p>
             ) : (
               section.evidenceDrilldowns.map((drill) => (
@@ -166,7 +197,7 @@ export function CapabilityCatalogPanel({
                         variant="info-outline"
                         data-testid="catalog-health-block-badge"
                       >
-                        含运行健康
+                        {admin_capability_includes_runtime_health_ac069faa()}
                       </Badge>
                     ) : null}
                   </div>
@@ -174,7 +205,8 @@ export function CapabilityCatalogPanel({
                     {drill.functionSummary}
                   </p>
                   <p className="text-muted-foreground text-xs">
-                    用户影响：{drill.userImpact}
+                    {admin_capability_user_impact_528f48c3()}
+                    {drill.userImpact}
                   </p>
                   <p className="text-muted-foreground font-mono text-[11px]">
                     {drill.path}
@@ -188,10 +220,11 @@ export function CapabilityCatalogPanel({
 
       <Frame variant="ghost" data-testid="catalog-handoff-note">
         <FramePanel className="border-dashed shadow-none">
-          <h3 className="text-sm font-semibold">复杂修复 · 技术移交</h3>
+          <h3 className="text-sm font-semibold">
+            {admin_capability_complex_fix_technical_handoff_9ce0f3b1()}
+          </h3>
           <p className="text-muted-foreground mt-1 text-sm">
-            需要代码级、SQL、环境变量或基础设施变更时，生成脱敏移交上下文交给技术同学；
-            不在运营界面伪装成一键修复。
+            {admin_capability_when_code_level_sql_env_or_infrastructur_8158d0d4()}
           </p>
         </FramePanel>
       </Frame>

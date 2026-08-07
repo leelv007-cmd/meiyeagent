@@ -12,6 +12,29 @@ import {
   FrameTitle,
 } from '@/components/reui/frame';
 import type { CredentialUiPanelView } from '@/p1/admin-supply-credential-model';
+import {
+  admin_cloudflare_deployments_3220a19f,
+  admin_supply_activatable_92146623,
+  admin_supply_activation_gate_dcec3252,
+  admin_supply_bindings_6aed7c48,
+  admin_supply_channel_1ef74839,
+  admin_supply_credential_accounts_b7349a07,
+  admin_supply_drainable_5931e598,
+  admin_supply_env_fallback_risk_count,
+  admin_supply_env_var_fallback_vault_not_owning_stays_66cff880,
+  admin_supply_error_code_e08c1d4f,
+  admin_supply_met_3a31adc3,
+  admin_supply_no_env_fallback_risk_accounts_risk_and_m_63c575dd,
+  admin_supply_not_met_de49b7e4,
+  admin_supply_pool_be081010,
+  admin_supply_probe_accee960,
+  admin_supply_provider_74dd99b7,
+  admin_supply_revocable_997c6dc7,
+  admin_supply_rotatable_38b89f85,
+  admin_supply_rotate_drain_flow_7c63537b,
+  admin_supply_three_state_spine_pending_active_retired_b81d9edd,
+  admin_supply_version_history_mask_only_79b3db4a,
+} from '@/locale/paraglide/messages';
 
 /**
  * Lifecycle / drain / source words come from the projection, so the mapping is
@@ -48,12 +71,15 @@ export function SupplyCredentialPanel({
       className="space-y-4"
     >
       <header className="space-y-1">
-        <h2 className="text-base font-semibold">凭据账户</h2>
+        <h2 className="text-base font-semibold">
+          {admin_supply_credential_accounts_b7349a07()}
+        </h2>
         <p className="text-xs text-muted-foreground">
-          三态主干 pending→active→retired；tested 为激活门；draining
-          为异步媒体子状态。密钥永不回显。
+          {admin_supply_three_state_spine_pending_active_retired_b81d9edd()}
           {view.envFallbackCount > 0
-            ? ` · ${view.envFallbackCount} 个环境变量回退风险`
+            ? admin_supply_env_fallback_risk_count({
+                count: view.envFallbackCount,
+              })
             : ''}
         </p>
       </header>
@@ -61,8 +87,7 @@ export function SupplyCredentialPanel({
       {view.envFallbackCount > 0 ? (
         <Frame dense data-testid="supply-credential-env-fallback-banner">
           <FramePanel className="border-destructive/40 bg-destructive/5 text-sm">
-            环境变量回退（保险箱未接管）持续可见：请尽快迁移到 CredentialAccount
-            保险箱写入，重启后生效。
+            {admin_supply_env_var_fallback_vault_not_owning_stays_66cff880()}
           </FramePanel>
         </Frame>
       ) : (
@@ -72,7 +97,7 @@ export function SupplyCredentialPanel({
           data-empty="true"
         >
           <FramePanel className="border-dashed text-xs text-muted-foreground">
-            无 env_fallback 风险账户；风险与迁移入口在出现时将持续可见。
+            {admin_supply_no_env_fallback_risk_accounts_risk_and_m_63c575dd()}
           </FramePanel>
         </Frame>
       )}
@@ -118,38 +143,49 @@ export function SupplyCredentialPanel({
                   data-testid="supply-credential-activation-gate"
                   data-satisfied={String(account.activationGate.satisfied)}
                 >
-                  激活门：
-                  {account.activationGate.satisfied ? '满足' : '未满足'}
+                  {admin_supply_activation_gate_dcec3252()}
+                  {account.activationGate.satisfied
+                    ? admin_supply_met_3a31adc3()
+                    : admin_supply_not_met_de49b7e4()}
                 </Badge>
               </div>
 
               <p>
-                提供方：
+                {admin_supply_provider_74dd99b7()}
                 {account.providerDisplayName ?? account.providerProfileId}
               </p>
               <p>
-                探针：{account.activationGate.probe.label}
+                {admin_supply_probe_accee960()}
+                {account.activationGate.probe.label}
                 {account.activationGate.probe.testedAt
                   ? ` · ${account.activationGate.probe.testedAt}`
                   : ''}
               </p>
               {account.activationGate.probe.errorCode ? (
                 <p className="text-destructive">
-                  错误码 {account.activationGate.probe.errorCode}
+                  {admin_supply_error_code_e08c1d4f()}{' '}
+                  {account.activationGate.probe.errorCode}
                 </p>
               ) : null}
 
               <div data-testid="supply-credential-binding">
-                <p className="font-medium">绑定</p>
+                <p className="font-medium">
+                  {admin_supply_bindings_6aed7c48()}
+                </p>
                 <p>
-                  部署 {account.binding.deploymentIds.length} · 池{' '}
-                  {account.binding.poolIds.length} · 渠道{' '}
+                  {admin_cloudflare_deployments_3220a19f()}{' '}
+                  {account.binding.deploymentIds.length}{' '}
+                  {admin_supply_pool_be081010()}{' '}
+                  {account.binding.poolIds.length}{' '}
+                  {admin_supply_channel_1ef74839()}{' '}
                   {account.binding.executionChannelIds.length}
                 </p>
               </div>
 
               <div data-testid="supply-credential-versions">
-                <p className="font-medium">版本历史（仅 mask）</p>
+                <p className="font-medium">
+                  {admin_supply_version_history_mask_only_79b3db4a()}
+                </p>
                 <ul className="list-disc pl-4">
                   {account.versionHistory.map((row) => (
                     <li key={`${account.id}-${row.version}`}>
@@ -169,16 +205,22 @@ export function SupplyCredentialPanel({
               ) : null}
 
               <div data-testid="supply-credential-rotate-drain">
-                <p className="font-medium">轮换 / 排空流程</p>
+                <p className="font-medium">
+                  {admin_supply_rotate_drain_flow_7c63537b()}
+                </p>
                 <ul className="list-disc pl-4 text-muted-foreground">
                   {account.rotateDrainFlow.notes.map((note) => (
                     <li key={note}>{note}</li>
                   ))}
                 </ul>
                 <p className="mt-1 text-muted-foreground">
-                  可轮换 {String(account.rotateDrainFlow.canRotate)} · 可激活{' '}
-                  {String(account.rotateDrainFlow.canActivate)} · 可排空{' '}
-                  {String(account.rotateDrainFlow.canStartDrain)} · 可撤销{' '}
+                  {admin_supply_rotatable_38b89f85()}{' '}
+                  {String(account.rotateDrainFlow.canRotate)}{' '}
+                  {admin_supply_activatable_92146623()}{' '}
+                  {String(account.rotateDrainFlow.canActivate)}{' '}
+                  {admin_supply_drainable_5931e598()}{' '}
+                  {String(account.rotateDrainFlow.canStartDrain)}{' '}
+                  {admin_supply_revocable_997c6dc7()}{' '}
                   {String(account.rotateDrainFlow.canRevoke)}
                 </p>
               </div>

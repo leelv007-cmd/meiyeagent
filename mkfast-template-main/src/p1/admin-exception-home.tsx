@@ -23,6 +23,17 @@ import {
 } from '@/p1/admin-exception-home-model';
 import { AdminSensitiveWordsGateAlert } from '@/p1/admin-sensitive-words-gate-alert';
 import type { SupplyControlSnapshot } from '@/p1/admin-supply-types';
+import {
+  admin_capability_current_state_is_unknown_cannot_claim_no_cea2a871,
+  admin_capability_exception_first_home_failed_to_load_9bf0cc92,
+  admin_capability_handle_current_issue_544826d7,
+  admin_capability_loading_exception_first_home_1aa54d82,
+  admin_capability_operationalmetric_load_failed_da0f68b4,
+  admin_capability_pending_actions_load_failed_109c406d,
+  admin_capability_supply_snapshot_load_failed_6612670f,
+  admin_capability_task_needs_additional_choice_171c5251,
+  admin_capability_task_waiting_for_operator_confirm_604c9f00,
+} from '@/locale/paraglide/messages';
 
 function isActionableInboxItem(
   item: PendingAction | ActionableInboxItem
@@ -43,8 +54,12 @@ export function projectPendingActionsForExceptionHome(
     return {
       statusKind: 'needs_choice_or_confirm',
       createdAt: item.createdAt,
-      title: item.kind === 'question' ? '任务需要补充选择' : '任务等待操作确认',
-      nextActionLabel: '处理当前问题',
+      // Contract wire labels stay the zh enum surface; messages own the copy keys.
+      title: (item.kind === 'question'
+        ? admin_capability_task_needs_additional_choice_171c5251()
+        : admin_capability_task_waiting_for_operator_confirm_604c9f00()) as ActionableInboxItem['title'],
+      nextActionLabel:
+        admin_capability_handle_current_issue_544826d7() as ActionableInboxItem['nextActionLabel'],
       eventSource: {
         kind: 'pending_action',
         pendingActionKind: item.kind,
@@ -152,7 +167,7 @@ function LiveAdminExceptionHome({
           data-testid="exception-home-loading"
           className="text-sm text-muted-foreground"
         >
-          正在加载异常优先首页…
+          {admin_capability_loading_exception_first_home_1aa54d82()}
         </output>
       </div>
     );
@@ -169,15 +184,15 @@ function LiveAdminExceptionHome({
     const metricsMessage =
       projection.metricsQuery.error instanceof Error
         ? projection.metricsQuery.error.message
-        : 'OperationalMetric 加载失败';
+        : admin_capability_operationalmetric_load_failed_da0f68b4();
     const supplyMessage =
       projection.supplyQuery.error instanceof Error
         ? projection.supplyQuery.error.message
-        : '供给快照加载失败';
+        : admin_capability_supply_snapshot_load_failed_6612670f();
     const pendingMessage =
       pendingActions.error instanceof Error
         ? pendingActions.error.message
-        : 'pending-actions 加载失败';
+        : admin_capability_pending_actions_load_failed_109c406d();
     return (
       <div className="space-y-4">
         {gateAlert}
@@ -186,8 +201,9 @@ function LiveAdminExceptionHome({
           role="alert"
           className="rounded-lg border border-destructive/40 p-4 text-sm text-destructive"
         >
-          异常优先首页加载失败：{metricsMessage}；{supplyMessage}；
-          {pendingMessage}。当前状态未知，不能宣称无待处理异常。
+          {admin_capability_exception_first_home_failed_to_load_9bf0cc92()}
+          {metricsMessage}；{supplyMessage}；{pendingMessage}
+          {admin_capability_current_state_is_unknown_cannot_claim_no_cea2a871()}
         </section>
       </div>
     );

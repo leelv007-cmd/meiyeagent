@@ -28,6 +28,108 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { commandP1, queryP1 } from '@/p1/client';
+import {
+  admin_creation_a_recipe_card_has_no_published_version_s_8d26ae3e,
+  admin_creation_add_recipe_b0d647af,
+  admin_creation_and_apply_63fead31,
+  admin_creation_aspect_ratio_f07fc510,
+  admin_creation_assisted_handoff_fd88c659,
+  admin_creation_auto_4afad877,
+  admin_creation_beta_gate_3c631c32,
+  admin_creation_change_reason_53aecfaa,
+  admin_creation_channels_938efc29,
+  admin_creation_compile_receipt_b6a3340d,
+  admin_creation_complete_draft_preview_publish_and_rollb_1bd36456,
+  admin_creation_copy_26b9c4bd,
+  admin_creation_creation_entry_editor_eb591368,
+  admin_creation_creation_entry_recipe_surface_3c77d678,
+  admin_creation_creation_form_b0fecee8,
+  admin_creation_delivery_method_838f9dde,
+  admin_creation_delivery_platform_b383cae4,
+  admin_creation_douyin_21a8e41c,
+  admin_creation_edit_user_visible_entry_via_form_do_not_e8b3afbc,
+  admin_creation_enter_a_change_reason_81cc98b5,
+  admin_creation_enter_surface_id_and_add_at_least_one_re_17d3033e,
+  admin_creation_enter_surface_id_whose_references_to_upd_73552c54,
+  admin_creation_entry_card_fdbeed73,
+  admin_creation_eval_evidence_6b32ecd6,
+  admin_creation_eval_gate_bd5f9b39,
+  admin_creation_evidence_does_not_match_current_prompt_07d85cf8,
+  admin_creation_evidence_expired_d4956a26,
+  admin_creation_export_finished_assets_d2a467f3,
+  admin_creation_failed_eval_cases_0647d1ae,
+  admin_creation_fill_recipe_id_title_summary_and_prompt_aca2a4ec,
+  admin_creation_fixed_model_a2d298ce,
+  admin_creation_fixed_model_strategy_requires_a_catalog_32922e1b,
+  admin_creation_frontend_still_references_the_old_revisi_420476bd,
+  admin_creation_general_1a0fdce8,
+  admin_creation_generate_recipe_preview_2ebdf809,
+  admin_creation_generate_surface_preview_df027d8f,
+  admin_creation_governed_save_recipe_dc5e9fdd,
+  admin_creation_home_recommendation_de9bb90f,
+  admin_creation_image_text_ad150c43,
+  admin_creation_image_text_page_count_42710303,
+  admin_creation_load_a_recipe_revision_first_8e74feb5,
+  admin_creation_load_recipe_f41eefea,
+  admin_creation_load_surface_a61ac3e3,
+  admin_creation_manual_copy_publish_542f6d1f,
+  admin_creation_model_strategy_c4db4bd7,
+  admin_creation_moments_bb5809e1,
+  admin_creation_no_published_versions_yet_91c308e9,
+  admin_creation_no_versions_yet_ec69b8dd,
+  admin_creation_offline_materials_f50da8df,
+  admin_creation_order_20ee03ce,
+  admin_creation_order_69b892c6,
+  admin_creation_order_published_recipes_versions_only_fr_51a1fb11,
+  admin_creation_output_count_7ee75c43,
+  admin_creation_publish_recipe_420555cd,
+  admin_creation_publish_surface_d039763d,
+  admin_creation_published_version_aa776ed4,
+  admin_creation_published_version_candidates_unavailable_aba9ce38,
+  admin_creation_ready_7bfc2ded,
+  admin_creation_recipe_cards_4239dc57,
+  admin_creation_recipe_configuration_7505ca4a,
+  admin_creation_recipe_edit_797d07ad,
+  admin_creation_recipe_published_successfully_1494a5d6,
+  admin_creation_recipe_revision_not_filled_c1b99f18,
+  admin_creation_recipe_rollback_version_52de245c,
+  admin_creation_recipe_version_6d77c3d5,
+  admin_creation_recipe_visual_preview_e0df2553,
+  admin_creation_recommended_40b82348,
+  admin_creation_remove_2f752c00,
+  admin_creation_request_failed_please_retry_af36bb07,
+  admin_creation_rollback_recipe_bdac5b74,
+  admin_creation_rollback_surface_6f84940c,
+  admin_creation_rolled_back_from,
+  admin_creation_run_eval_and_issue_evidence_7b643d41,
+  admin_creation_save_recipe_draft_5bf71e21,
+  admin_creation_save_surface_draft_42ffaef6,
+  admin_creation_select_70b20820,
+  admin_creation_select_and_apply,
+  admin_creation_select_published_recipe_52f7010d,
+  admin_creation_select_published_version_7851a382,
+  admin_creation_status_f4e22993,
+  admin_creation_summary_46d4c1b4,
+  admin_creation_summary_not_filled_679291ff,
+  admin_creation_surface_edit_c3230fcb,
+  admin_creation_surface_id_not_filled_e0ce0efb,
+  admin_creation_surface_orchestration_88046e50,
+  admin_creation_surface_rollback_version_b8d7451a,
+  admin_creation_surface_visual_preview_e13e4355,
+  admin_creation_target_surface_id_99b6e0e8,
+  admin_creation_this_surface_does_not_reference_this_rec_b5a94db7,
+  admin_creation_title_748d7dc7,
+  admin_creation_title_not_filled_9ce79a2c,
+  admin_creation_unsaved_4123f1fa,
+  admin_creation_update_surface_references_748506f4,
+  admin_creation_updated_recipe_refs,
+  admin_creation_version_history_8770418b,
+  admin_creation_video_duration_seconds_d6fec72d,
+  admin_creation_video_fa4e33b6,
+  admin_creation_visible_fcafc66a,
+  admin_creation_xiaohongshu_e2866d08,
+  admin_supply_no_evidence_878c6b14,
+} from '@/locale/paraglide/messages';
 
 type AdminPayload = Record<string, unknown>;
 
@@ -127,15 +229,14 @@ type RecipeEvidenceStatusResult = {
   internalTest: RecipeEvidenceGateView;
 };
 
-const EVIDENCE_STATUS_LABELS: Record<
-  RecipeEvidencePresentationStatus,
-  string
-> = {
-  none: '无证据',
-  expired: '证据已过期',
-  prompt_mismatch: '证据与当前 Prompt 不符',
-  ready: '已具备',
-};
+const EVIDENCE_STATUS_LABELS: Record<RecipeEvidencePresentationStatus, string> =
+  {
+    none: admin_supply_no_evidence_878c6b14(),
+    expired: admin_creation_evidence_expired_d4956a26(),
+    prompt_mismatch:
+      admin_creation_evidence_does_not_match_current_prompt_07d85cf8(),
+    ready: admin_creation_ready_7bfc2ded(),
+  };
 
 type RecipeRecord = {
   recipeId: string;
@@ -214,9 +315,9 @@ type SurfaceRecord = {
 };
 
 const lensLabels: Record<CreationLensId, string> = {
-  copy: '文案',
-  image_text: '图文',
-  video: '视频',
+  copy: admin_creation_copy_26b9c4bd(),
+  image_text: admin_creation_image_text_ad150c43(),
+  video: admin_creation_video_fa4e33b6(),
 };
 
 function defaultRecipeDelivery(lensId: CreationLensId): RecipeDelivery {
@@ -277,7 +378,9 @@ function idempotencyKey(action: string, id: string) {
 }
 
 function messageOf(error: unknown) {
-  return error instanceof Error ? error.message : '请求失败，请重试。';
+  return error instanceof Error
+    ? error.message
+    : admin_creation_request_failed_please_retry_af36bb07();
 }
 
 function asRecipeRecord(value: unknown): RecipeRecord | null {
@@ -307,7 +410,10 @@ function asPublishedRevisionsResult(
 ): RecipePublishedRevisionsResult | null {
   if (!value || typeof value !== 'object') return null;
   const record = value as Partial<RecipePublishedRevisionsResult>;
-  if (!Array.isArray(record.groups) || !Array.isArray(record.availableRecipeHeads)) {
+  if (
+    !Array.isArray(record.groups) ||
+    !Array.isArray(record.availableRecipeHeads)
+  ) {
     return null;
   }
   return {
@@ -364,7 +470,9 @@ function asEvidenceGateView(
       record.evidenceKind === 'recipe_internal_test'
         ? 'recipe_internal_test'
         : fallbackKind,
-    status: isEvidencePresentationStatus(record.status) ? record.status : 'none',
+    status: isEvidencePresentationStatus(record.status)
+      ? record.status
+      : 'none',
     receiptId:
       typeof record.receiptId === 'string' && record.receiptId.trim()
         ? record.receiptId
@@ -374,8 +482,7 @@ function asEvidenceGateView(
         ? record.runId
         : null,
     passed: typeof record.passed === 'boolean' ? record.passed : null,
-    expiresAt:
-      typeof record.expiresAt === 'string' ? record.expiresAt : null,
+    expiresAt: typeof record.expiresAt === 'string' ? record.expiresAt : null,
     promptRevisionRef:
       typeof record.promptRevisionRef === 'string'
         ? record.promptRevisionRef
@@ -439,7 +546,7 @@ function RecipeEvidencePanel({
   return (
     <Frame dense headingLevel={3} data-testid="recipe-evidence-panel">
       <FrameHeader>
-        <FrameTitle>评测证据</FrameTitle>
+        <FrameTitle>{admin_creation_eval_evidence_6b32ecd6()}</FrameTitle>
         <FrameDescription>
           Per-revision server-issued evidence only. Status and receiptId are
           read-only — no pass-state inputs.
@@ -463,9 +570,12 @@ function RecipeEvidencePanel({
               data-testid="recipe-evidence-evaluation"
               data-status={evaluation?.status ?? 'none'}
             >
-              <p className="font-medium">评测门</p>
+              <p className="font-medium">
+                {admin_creation_eval_gate_bd5f9b39()}
+              </p>
               <p data-testid="recipe-evidence-evaluation-status">
-                状态: {EVIDENCE_STATUS_LABELS[evaluation?.status ?? 'none']}
+                {admin_creation_status_f4e22993()}{' '}
+                {EVIDENCE_STATUS_LABELS[evaluation?.status ?? 'none']}
               </p>
               <p
                 className="break-all"
@@ -479,9 +589,12 @@ function RecipeEvidencePanel({
               data-testid="recipe-evidence-internal-test"
               data-status={internalTest?.status ?? 'none'}
             >
-              <p className="font-medium">内测门</p>
+              <p className="font-medium">
+                {admin_creation_beta_gate_3c631c32()}
+              </p>
               <p data-testid="recipe-evidence-internal-test-status">
-                状态: {EVIDENCE_STATUS_LABELS[internalTest?.status ?? 'none']}
+                {admin_creation_status_f4e22993()}{' '}
+                {EVIDENCE_STATUS_LABELS[internalTest?.status ?? 'none']}
               </p>
               <p
                 className="break-all"
@@ -495,7 +608,9 @@ function RecipeEvidencePanel({
                 className="space-y-1 rounded-md border border-destructive/40 px-3 py-2"
                 data-testid="recipe-evidence-failed-cases"
               >
-                <p className="font-medium text-destructive">评测失败用例</p>
+                <p className="font-medium text-destructive">
+                  {admin_creation_failed_eval_cases_0647d1ae()}
+                </p>
                 <ul className="space-y-1">
                   {failedCases.map((item) => (
                     <li
@@ -518,7 +633,7 @@ function RecipeEvidencePanel({
               data-testid="recipe-evidence-run-evaluation"
               onClick={onRunEvaluation}
             >
-              运行评测并签发证据
+              {admin_creation_run_eval_and_issue_evidence_7b643d41()}
             </Button>
           </>
         )}
@@ -577,11 +692,13 @@ function LifecycleHistory({
   return (
     <Frame dense headingLevel={3}>
       <FrameHeader>
-        <FrameTitle>版本历史</FrameTitle>
+        <FrameTitle>{admin_creation_version_history_8770418b()}</FrameTitle>
       </FrameHeader>
       <FramePanel>
         {history.length === 0 ? (
-          <p className="text-sm text-muted-foreground">尚无版本。</p>
+          <p className="text-sm text-muted-foreground">
+            {admin_creation_no_versions_yet_ec69b8dd()}
+          </p>
         ) : (
           <ol className="grid gap-2 sm:grid-cols-2">
             {[...history].reverse().map((item) => (
@@ -594,7 +711,9 @@ function LifecycleHistory({
                   {item.status}
                 </Badge>
                 {item.rolledBackToRevision
-                  ? `回滚自 r${item.rolledBackToRevision}`
+                  ? admin_creation_rolled_back_from({
+                      revision: item.rolledBackToRevision,
+                    })
                   : ''}
               </li>
             ))}
@@ -678,9 +797,7 @@ function RecipeEditor({
     setCatalogModelId(record.modelPolicy.catalogModelId ?? '');
     setDelivery(nextDelivery);
     // Carry server bindings into edit state (no dedicated UI — still round-trip).
-    setFactTypes(
-      Array.isArray(record.factTypes) ? [...record.factTypes] : []
-    );
+    setFactTypes(Array.isArray(record.factTypes) ? [...record.factTypes] : []);
     setSkillRevisionRefs(
       Array.isArray(record.skillRevisionRefs)
         ? [...record.skillRevisionRefs]
@@ -698,7 +815,10 @@ function RecipeEditor({
         : RECIPE_GOVERNANCE_DEFAULTS.industryKey
     );
     setIntentTypes(
-      stringArrayField(plan?.intentTypes, RECIPE_GOVERNANCE_DEFAULTS.intentTypes)
+      stringArrayField(
+        plan?.intentTypes,
+        RECIPE_GOVERNANCE_DEFAULTS.intentTypes
+      )
     );
     setStorySegments(
       stringArrayField(
@@ -822,7 +942,7 @@ function RecipeEditor({
 
   const runEvaluationEvidence = () => {
     if (!head) {
-      setError('请先加载 Recipe revision。');
+      setError(admin_creation_load_a_recipe_revision_first_8e74feb5());
       return;
     }
     void runOperation(async () => {
@@ -864,15 +984,19 @@ function RecipeEditor({
       !summary.trim() ||
       !promptRevisionRef.trim()
     ) {
-      setError('请填写 Recipe ID、标题、摘要和 Prompt revision。');
+      setError(
+        admin_creation_fill_recipe_id_title_summary_and_prompt_aca2a4ec()
+      );
       return;
     }
     if (modelMode === 'fixed' && !catalogModelId.trim()) {
-      setError('固定模型策略需要填写 Catalog model ID。');
+      setError(
+        admin_creation_fixed_model_strategy_requires_a_catalog_32922e1b()
+      );
       return;
     }
     if (!reason.trim()) {
-      setError('请填写变更原因。');
+      setError(admin_creation_enter_a_change_reason_81cc98b5());
       return;
     }
     // Plain draft path remains for title/binding round-trips (#361). Governed
@@ -887,7 +1011,9 @@ function RecipeEditor({
         presentation: {
           title: title.trim(),
           summary: summary.trim(),
-          actionLabel: `选择${lensLabels[lensId]}并套用`,
+          actionLabel: admin_creation_select_and_apply({
+            label: lensLabels[lensId],
+          }),
           ...(head?.presentation.previewAssetRef
             ? { previewAssetRef: head.presentation.previewAssetRef }
             : {}),
@@ -927,9 +1053,7 @@ function RecipeEditor({
    * pass-through governance fields. Never includes studioRelease / passed /
    * hiddenPromptBody / blocks / evalRun (server-only).
    */
-  const buildGovernanceFormPayload = (
-    normalizedId: string
-  ): AdminPayload => {
+  const buildGovernanceFormPayload = (normalizedId: string): AdminPayload => {
     const presentation: Record<string, string> = {
       title: title.trim(),
       summary: summary.trim(),
@@ -970,7 +1094,8 @@ function RecipeEditor({
         workflowRevisionRef.trim() ||
         RECIPE_GOVERNANCE_DEFAULTS.workflowRevisionRef,
       outputContractRef:
-        outputContractRef.trim() || RECIPE_GOVERNANCE_DEFAULTS.outputContractRef,
+        outputContractRef.trim() ||
+        RECIPE_GOVERNANCE_DEFAULTS.outputContractRef,
       quotePolicyRevisionRef:
         quotePolicyRevisionRef.trim() ||
         RECIPE_GOVERNANCE_DEFAULTS.quotePolicyRevisionRef,
@@ -1007,18 +1132,25 @@ function RecipeEditor({
       !summary.trim() ||
       !promptRevisionRef.trim()
     ) {
-      setError('请填写 Recipe ID、标题、摘要和 Prompt revision。');
+      setError(
+        admin_creation_fill_recipe_id_title_summary_and_prompt_aca2a4ec()
+      );
       return;
     }
     if (modelMode === 'fixed' && !catalogModelId.trim()) {
-      setError('固定模型策略需要填写 Catalog model ID。');
+      setError(
+        admin_creation_fixed_model_strategy_requires_a_catalog_32922e1b()
+      );
       return;
     }
     if (!reason.trim()) {
-      setError('请填写变更原因。');
+      setError(admin_creation_enter_a_change_reason_81cc98b5());
       return;
     }
-    void execute('recipe_governance_save', buildGovernanceFormPayload(normalizedId));
+    void execute(
+      'recipe_governance_save',
+      buildGovernanceFormPayload(normalizedId)
+    );
   };
 
   const transition = async (action: 'recipe_preview' | 'recipe_publish') => {
@@ -1073,9 +1205,11 @@ function RecipeEditor({
     >
       <Frame dense headingLevel={3}>
         <FrameHeader>
-          <FrameTitle>Recipe 配置</FrameTitle>
+          <FrameTitle>
+            {admin_creation_recipe_configuration_7505ca4a()}
+          </FrameTitle>
           <FrameDescription>
-            用表单编辑用户可见入口，不暴露 Prompt 正文。
+            {admin_creation_edit_user_visible_entry_via_form_do_not_e8b3afbc()}
           </FrameDescription>
         </FrameHeader>
         <FramePanel className="space-y-4">
@@ -1094,11 +1228,13 @@ function RecipeEditor({
               disabled={busy || !recipeId.trim()}
               onClick={() => void load()}
             >
-              加载 Recipe
+              {admin_creation_load_recipe_f41eefea()}
             </Button>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="recipe-lens">创作形式</Label>
+            <Label htmlFor="recipe-lens">
+              {admin_creation_creation_form_b0fecee8()}
+            </Label>
             <Select
               onValueChange={(value) => {
                 if (!value) return;
@@ -1112,15 +1248,23 @@ function RecipeEditor({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="copy">文案</SelectItem>
-                <SelectItem value="image_text">图文</SelectItem>
-                <SelectItem value="video">视频</SelectItem>
+                <SelectItem value="copy">
+                  {admin_creation_copy_26b9c4bd()}
+                </SelectItem>
+                <SelectItem value="image_text">
+                  {admin_creation_image_text_ad150c43()}
+                </SelectItem>
+                <SelectItem value="video">
+                  {admin_creation_video_fa4e33b6()}
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="recipe-delivery-platform">交付平台</Label>
+              <Label htmlFor="recipe-delivery-platform">
+                {admin_creation_delivery_platform_b383cae4()}
+              </Label>
               <Select
                 onValueChange={(value) => {
                   if (!value) return;
@@ -1135,17 +1279,31 @@ function RecipeEditor({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="xiaohongshu">小红书</SelectItem>
-                  <SelectItem value="douyin">抖音</SelectItem>
-                  <SelectItem value="video_account">视频号</SelectItem>
-                  <SelectItem value="wechat_moments">朋友圈</SelectItem>
-                  <SelectItem value="offline_material">线下物料</SelectItem>
-                  <SelectItem value="generic">通用</SelectItem>
+                  <SelectItem value="xiaohongshu">
+                    {admin_creation_xiaohongshu_e2866d08()}
+                  </SelectItem>
+                  <SelectItem value="douyin">
+                    {admin_creation_douyin_21a8e41c()}
+                  </SelectItem>
+                  <SelectItem value="video_account">
+                    {admin_creation_channels_938efc29()}
+                  </SelectItem>
+                  <SelectItem value="wechat_moments">
+                    {admin_creation_moments_bb5809e1()}
+                  </SelectItem>
+                  <SelectItem value="offline_material">
+                    {admin_creation_offline_materials_f50da8df()}
+                  </SelectItem>
+                  <SelectItem value="generic">
+                    {admin_creation_general_1a0fdce8()}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="recipe-distribution-target">交付方式</Label>
+              <Label htmlFor="recipe-distribution-target">
+                {admin_creation_delivery_method_838f9dde()}
+              </Label>
               <Select
                 onValueChange={(value) => {
                   if (!value) return;
@@ -1163,14 +1321,22 @@ function RecipeEditor({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="export">导出成品</SelectItem>
-                  <SelectItem value="manual_copy">手动复制发布</SelectItem>
-                  <SelectItem value="assisted_handoff">辅助交接</SelectItem>
+                  <SelectItem value="export">
+                    {admin_creation_export_finished_assets_d2a467f3()}
+                  </SelectItem>
+                  <SelectItem value="manual_copy">
+                    {admin_creation_manual_copy_publish_542f6d1f()}
+                  </SelectItem>
+                  <SelectItem value="assisted_handoff">
+                    {admin_creation_assisted_handoff_fd88c659()}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="recipe-delivery-quantity">成品数量</Label>
+              <Label htmlFor="recipe-delivery-quantity">
+                {admin_creation_output_count_7ee75c43()}
+              </Label>
               <Input
                 id="recipe-delivery-quantity"
                 type="number"
@@ -1186,7 +1352,9 @@ function RecipeEditor({
             </div>
             {lensId !== 'copy' ? (
               <div className="space-y-2">
-                <Label htmlFor="recipe-aspect-ratio">画面比例</Label>
+                <Label htmlFor="recipe-aspect-ratio">
+                  {admin_creation_aspect_ratio_f07fc510()}
+                </Label>
                 <Input
                   id="recipe-aspect-ratio"
                   value={delivery.aspectRatio ?? ''}
@@ -1201,7 +1369,9 @@ function RecipeEditor({
             ) : null}
             {lensId === 'image_text' ? (
               <div className="space-y-2">
-                <Label htmlFor="recipe-note-page-bound">图文页数</Label>
+                <Label htmlFor="recipe-note-page-bound">
+                  {admin_creation_image_text_page_count_42710303()}
+                </Label>
                 <Input
                   id="recipe-note-page-bound"
                   type="number"
@@ -1218,7 +1388,9 @@ function RecipeEditor({
             ) : null}
             {lensId === 'video' ? (
               <div className="space-y-2">
-                <Label htmlFor="recipe-duration-seconds">视频时长（秒）</Label>
+                <Label htmlFor="recipe-duration-seconds">
+                  {admin_creation_video_duration_seconds_d6fec72d()}
+                </Label>
                 <Input
                   id="recipe-duration-seconds"
                   type="number"
@@ -1235,7 +1407,9 @@ function RecipeEditor({
             ) : null}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="recipe-title">标题</Label>
+            <Label htmlFor="recipe-title">
+              {admin_creation_title_748d7dc7()}
+            </Label>
             <Input
               id="recipe-title"
               value={title}
@@ -1243,7 +1417,9 @@ function RecipeEditor({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="recipe-summary">摘要</Label>
+            <Label htmlFor="recipe-summary">
+              {admin_creation_summary_46d4c1b4()}
+            </Label>
             <Textarea
               id="recipe-summary"
               value={summary}
@@ -1260,7 +1436,9 @@ function RecipeEditor({
           </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="recipe-model-mode">模型策略</Label>
+              <Label htmlFor="recipe-model-mode">
+                {admin_creation_model_strategy_c4db4bd7()}
+              </Label>
               <Select
                 onValueChange={(value) => {
                   if (!value) return;
@@ -1272,8 +1450,12 @@ function RecipeEditor({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto">自动</SelectItem>
-                  <SelectItem value="fixed">固定模型</SelectItem>
+                  <SelectItem value="auto">
+                    {admin_creation_auto_4afad877()}
+                  </SelectItem>
+                  <SelectItem value="fixed">
+                    {admin_creation_fixed_model_a2d298ce()}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1289,7 +1471,9 @@ function RecipeEditor({
             ) : null}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="recipe-reason">变更原因</Label>
+            <Label htmlFor="recipe-reason">
+              {admin_creation_change_reason_53aecfaa()}
+            </Label>
             <Input
               id="recipe-reason"
               value={reason}
@@ -1303,7 +1487,7 @@ function RecipeEditor({
           ) : null}
           <div className="flex flex-wrap gap-2">
             <Button type="button" disabled={busy} onClick={draft}>
-              保存 Recipe 草稿
+              {admin_creation_save_recipe_draft_5bf71e21()}
             </Button>
             <Button
               type="button"
@@ -1312,7 +1496,7 @@ function RecipeEditor({
               data-testid="recipe-governance-save"
               onClick={governanceSave}
             >
-              治理保存 Recipe
+              {admin_creation_governed_save_recipe_dc5e9fdd()}
             </Button>
             <Button
               type="button"
@@ -1322,19 +1506,21 @@ function RecipeEditor({
               }
               onClick={() => void transition('recipe_preview')}
             >
-              生成 Recipe 预览
+              {admin_creation_generate_recipe_preview_2ebdf809()}
             </Button>
             <Button
               type="button"
               disabled={busy || head?.status !== 'preview'}
               onClick={() => void transition('recipe_publish')}
             >
-              发布 Recipe
+              {admin_creation_publish_recipe_420555cd()}
             </Button>
           </div>
           <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
             <div className="space-y-2">
-              <Label htmlFor="recipe-rollback">Recipe 回滚版本</Label>
+              <Label htmlFor="recipe-rollback">
+                {admin_creation_recipe_rollback_version_52de245c()}
+              </Label>
               <Select
                 onValueChange={(value) => {
                   if (value == null) return;
@@ -1343,7 +1529,9 @@ function RecipeEditor({
                 value={rollbackRevision || undefined}
               >
                 <SelectTrigger className="w-full" id="recipe-rollback">
-                  <SelectValue placeholder="选择已发布版本" />
+                  <SelectValue
+                    placeholder={admin_creation_select_published_version_7851a382()}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {rollbackOptions.map((record) => (
@@ -1360,7 +1548,7 @@ function RecipeEditor({
               disabled={busy || !rollbackRevision}
               onClick={rollback}
             >
-              回滚 Recipe
+              {admin_creation_rollback_recipe_bdac5b74()}
             </Button>
           </div>
         </FramePanel>
@@ -1370,30 +1558,47 @@ function RecipeEditor({
         <Frame dense headingLevel={3} data-testid="recipe-visual-preview">
           <FrameHeader>
             <div className="flex items-center justify-between gap-3">
-              <FrameTitle>Recipe 可视预览</FrameTitle>
+              <FrameTitle>
+                {admin_creation_recipe_visual_preview_e0df2553()}
+              </FrameTitle>
               <Badge
                 variant={lifecycleBadgeVariant(head?.status)}
                 data-testid="recipe-lifecycle-status"
               >
-                {head ? `${head.status} · r${head.revision}` : '未保存'}
+                {head
+                  ? `${head.status} · r${head.revision}`
+                  : admin_creation_unsaved_4123f1fa()}
               </Badge>
             </div>
-            <FrameDescription>{lensLabels[lensId]}入口卡片</FrameDescription>
+            <FrameDescription>
+              {lensLabels[lensId]}
+              {admin_creation_entry_card_fdbeed73()}
+            </FrameDescription>
           </FrameHeader>
           <FramePanel className="space-y-2">
-            <p className="font-semibold">{title || '未填写标题'}</p>
+            <p className="font-semibold">
+              {title || admin_creation_title_not_filled_9ce79a2c()}
+            </p>
             <p className="text-sm text-muted-foreground">
-              {summary || '未填写摘要'}
+              {summary || admin_creation_summary_not_filled_679291ff()}
             </p>
             <Button type="button" size="sm" disabled>
-              选择{lensLabels[lensId]}并套用
+              {admin_creation_select_70b20820()}
+              {lensLabels[lensId]}
+              {admin_creation_and_apply_63fead31()}
             </Button>
           </FramePanel>
         </Frame>
         {studioRelease?.compilationReceipt ? (
-          <Frame dense headingLevel={3} data-testid="recipe-compilation-receipt">
+          <Frame
+            dense
+            headingLevel={3}
+            data-testid="recipe-compilation-receipt"
+          >
             <FrameHeader>
-              <FrameTitle>编译回执</FrameTitle>
+              <FrameTitle>
+                {admin_creation_compile_receipt_b6a3340d()}
+              </FrameTitle>
               <FrameDescription>
                 Server-issued compile/validate receipt (read-only).
               </FrameDescription>
@@ -1402,9 +1607,7 @@ function RecipeEditor({
               <p data-testid="recipe-studio-phase">
                 phase: {studioRelease.phase}
               </p>
-              <p>
-                industry: {studioRelease.compilationReceipt.industryKey}
-              </p>
+              <p>industry: {studioRelease.compilationReceipt.industryKey}</p>
               <p className="break-all">
                 receipt: {studioRelease.compilationReceipt.receiptId}
               </p>
@@ -1559,10 +1762,15 @@ function SurfaceEditor({
         );
         nextRefs = applied.refs;
         if (applied.matchedCount === 0) {
-          setRefUpdateNotice('该 Surface 未引用此 Recipe');
+          setRefUpdateNotice(
+            admin_creation_this_surface_does_not_reference_this_rec_b5a94db7()
+          );
         } else {
           setRefUpdateNotice(
-            `已更新 ${applied.matchedCount} 处匹配的 Recipe 引用至 ${options.pendingRecipeRevisionId}`
+            admin_creation_updated_recipe_refs({
+              count: applied.matchedCount,
+              revision: options.pendingRecipeRevisionId,
+            })
           );
         }
       }
@@ -1728,19 +1936,25 @@ function SurfaceEditor({
         recipeRevisionId: ref.recipeRevisionId.trim(),
       }));
     if (!surfaceId.trim() || refs.length === 0) {
-      setError('请填写 Surface ID，并至少添加一个 Recipe revision。');
+      setError(
+        admin_creation_enter_surface_id_and_add_at_least_one_re_17d3033e()
+      );
       return;
     }
     if (!reason.trim()) {
-      setError('请填写变更原因。');
+      setError(admin_creation_enter_a_change_reason_81cc98b5());
       return;
     }
     if (candidatesFailed || !candidatesReady) {
-      setError('已发布版本候选不可用，无法保存该卡。');
+      setError(
+        admin_creation_published_version_candidates_unavailable_aba9ce38()
+      );
       return;
     }
     if (anyCardBlocksSave) {
-      setError('存在未选择已发布版本的 Recipe 卡，无法保存。');
+      setError(
+        admin_creation_a_recipe_card_has_no_published_version_s_8d26ae3e()
+      );
       return;
     }
     void execute('surface_draft', {
@@ -1785,9 +1999,11 @@ function SurfaceEditor({
     >
       <Frame dense headingLevel={3}>
         <FrameHeader>
-          <FrameTitle>Surface 编排</FrameTitle>
+          <FrameTitle>
+            {admin_creation_surface_orchestration_88046e50()}
+          </FrameTitle>
           <FrameDescription>
-            按顺序编排已发布 Recipe；版本仅能从已发布候选中选择。
+            {admin_creation_order_published_recipes_versions_only_fr_51a1fb11()}
           </FrameDescription>
         </FrameHeader>
         <FramePanel className="space-y-4">
@@ -1806,7 +2022,7 @@ function SurfaceEditor({
               disabled={busy || !surfaceId.trim()}
               onClick={() => void load()}
             >
-              加载 Surface
+              {admin_creation_load_surface_a61ac3e3()}
             </Button>
           </div>
           {refUpdateNotice ? (
@@ -1820,7 +2036,7 @@ function SurfaceEditor({
           ) : null}
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
-              <Label>Recipe 卡片</Label>
+              <Label>{admin_creation_recipe_cards_4239dc57()}</Label>
               <Button
                 type="button"
                 size="sm"
@@ -1832,7 +2048,7 @@ function SurfaceEditor({
                   ])
                 }
               >
-                添加 Recipe
+                {admin_creation_add_recipe_b0d647af()}
               </Button>
             </div>
             {recipeRefs.map((ref, index) => {
@@ -1862,7 +2078,9 @@ function SurfaceEditor({
                           data-testid={`surface-recipe-pick-${index}`}
                           id={`surface-recipe-pick-${index}`}
                         >
-                          <SelectValue placeholder="选择已发布 Recipe" />
+                          <SelectValue
+                            placeholder={admin_creation_select_published_recipe_52f7010d()}
+                          />
                         </SelectTrigger>
                         <SelectContent>
                           {availableRecipeHeads.map((headCandidate) => (
@@ -1883,7 +2101,7 @@ function SurfaceEditor({
                   )}
                   <div className="space-y-2 sm:col-span-2">
                     <Label htmlFor={`surface-recipe-revision-${index}`}>
-                      Recipe 版本
+                      {admin_creation_recipe_version_6d77c3d5()}
                     </Label>
                     <Select
                       disabled={!recipeId || candidates.length === 0}
@@ -1901,8 +2119,8 @@ function SurfaceEditor({
                         <SelectValue
                           placeholder={
                             candidates.length === 0
-                              ? '暂无已发布版本'
-                              : '选择已发布版本'
+                              ? admin_creation_no_published_versions_yet_91c308e9()
+                              : admin_creation_select_published_version_7851a382()
                           }
                         />
                       </SelectTrigger>
@@ -1923,13 +2141,13 @@ function SurfaceEditor({
                         className="text-sm text-muted-foreground"
                         data-testid={`surface-recipe-empty-${index}`}
                       >
-                        暂无已发布版本
+                        {admin_creation_no_published_versions_yet_91c308e9()}
                       </p>
                     ) : null}
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor={`surface-recipe-lens-${index}`}>
-                      创作形式
+                      {admin_creation_creation_form_b0fecee8()}
                     </Label>
                     <Select
                       onValueChange={(value) => {
@@ -1947,14 +2165,22 @@ function SurfaceEditor({
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="copy">文案</SelectItem>
-                        <SelectItem value="image_text">图文</SelectItem>
-                        <SelectItem value="video">视频</SelectItem>
+                        <SelectItem value="copy">
+                          {admin_creation_copy_26b9c4bd()}
+                        </SelectItem>
+                        <SelectItem value="image_text">
+                          {admin_creation_image_text_ad150c43()}
+                        </SelectItem>
+                        <SelectItem value="video">
+                          {admin_creation_video_fa4e33b6()}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor={`surface-recipe-order-${index}`}>顺序</Label>
+                    <Label htmlFor={`surface-recipe-order-${index}`}>
+                      {admin_creation_order_20ee03ce()}
+                    </Label>
                     <Input
                       id={`surface-recipe-order-${index}`}
                       type="number"
@@ -1972,7 +2198,7 @@ function SurfaceEditor({
                         updateRef(index, { featured: event.target.checked })
                       }
                     />
-                    首页推荐
+                    {admin_creation_home_recommendation_de9bb90f()}
                   </label>
                   <label className="flex items-center gap-2 text-sm">
                     <input
@@ -1982,7 +2208,7 @@ function SurfaceEditor({
                         updateRef(index, { visible: event.target.checked })
                       }
                     />
-                    可见
+                    {admin_creation_visible_fcafc66a()}
                   </label>
                   {recipeRefs.length > 1 ? (
                     <Button
@@ -2000,14 +2226,15 @@ function SurfaceEditor({
                           for (const [key, value] of Object.entries(current)) {
                             const cardIndex = Number(key);
                             if (cardIndex === index) continue;
-                            next[cardIndex > index ? cardIndex - 1 : cardIndex] =
-                              value;
+                            next[
+                              cardIndex > index ? cardIndex - 1 : cardIndex
+                            ] = value;
                           }
                           return next;
                         });
                       }}
                     >
-                      移除
+                      {admin_creation_remove_2f752c00()}
                     </Button>
                   ) : null}
                 </div>
@@ -2015,7 +2242,9 @@ function SurfaceEditor({
             })}
           </div>
           <div className="space-y-2">
-            <Label htmlFor="surface-reason">变更原因</Label>
+            <Label htmlFor="surface-reason">
+              {admin_creation_change_reason_53aecfaa()}
+            </Label>
             <Input
               id="surface-reason"
               value={reason}
@@ -2034,7 +2263,7 @@ function SurfaceEditor({
               data-testid="surface-draft-button"
               onClick={draft}
             >
-              保存 Surface 草稿
+              {admin_creation_save_surface_draft_42ffaef6()}
             </Button>
             <Button
               type="button"
@@ -2044,19 +2273,21 @@ function SurfaceEditor({
               }
               onClick={() => void transition('surface_preview')}
             >
-              生成 Surface 预览
+              {admin_creation_generate_surface_preview_df027d8f()}
             </Button>
             <Button
               type="button"
               disabled={busy || head?.status !== 'preview'}
               onClick={() => void transition('surface_publish')}
             >
-              发布 Surface
+              {admin_creation_publish_surface_d039763d()}
             </Button>
           </div>
           <div className="grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
             <div className="space-y-2">
-              <Label htmlFor="surface-rollback">Surface 回滚版本</Label>
+              <Label htmlFor="surface-rollback">
+                {admin_creation_surface_rollback_version_b8d7451a()}
+              </Label>
               <Select
                 onValueChange={(value) => {
                   if (value == null) return;
@@ -2065,7 +2296,9 @@ function SurfaceEditor({
                 value={rollbackRevision || undefined}
               >
                 <SelectTrigger className="w-full" id="surface-rollback">
-                  <SelectValue placeholder="选择已发布版本" />
+                  <SelectValue
+                    placeholder={admin_creation_select_published_version_7851a382()}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {rollbackOptions.map((record) => (
@@ -2082,7 +2315,7 @@ function SurfaceEditor({
               disabled={busy || !rollbackRevision}
               onClick={rollback}
             >
-              回滚 Surface
+              {admin_creation_rollback_surface_6f84940c()}
             </Button>
           </div>
         </FramePanel>
@@ -2092,16 +2325,20 @@ function SurfaceEditor({
         <Frame dense headingLevel={3} data-testid="surface-visual-preview">
           <FrameHeader>
             <div className="flex items-center justify-between gap-3">
-              <FrameTitle>Surface 可视预览</FrameTitle>
+              <FrameTitle>
+                {admin_creation_surface_visual_preview_e13e4355()}
+              </FrameTitle>
               <Badge
                 variant={lifecycleBadgeVariant(head?.status)}
                 data-testid="surface-lifecycle-status"
               >
-                {head ? `${head.status} · r${head.revision}` : '未保存'}
+                {head
+                  ? `${head.status} · r${head.revision}`
+                  : admin_creation_unsaved_4123f1fa()}
               </Badge>
             </div>
             <FrameDescription>
-              {surfaceId || '未填写 Surface ID'}
+              {surfaceId || admin_creation_surface_id_not_filled_e0ce0efb()}
             </FrameDescription>
           </FrameHeader>
           <FramePanel className="space-y-3">
@@ -2113,11 +2350,13 @@ function SurfaceEditor({
                   className="rounded-xl border border-input p-3"
                 >
                   <p className="font-medium">
-                    {ref.recipeRevisionId || '未填写 Recipe revision'}
+                    {ref.recipeRevisionId ||
+                      admin_creation_recipe_revision_not_filled_c1b99f18()}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {lensLabels[ref.lensId]} · 顺序 {ref.order}
-                    {ref.featured ? ' · 推荐' : ''}
+                    {lensLabels[ref.lensId]} {admin_creation_order_69b892c6()}{' '}
+                    {ref.order}
+                    {ref.featured ? admin_creation_recommended_40b82348() : ''}
                   </p>
                 </div>
               ))}
@@ -2161,9 +2400,11 @@ export function AdminCreationExperienceControl({
   return (
     <Frame data-testid="creation-experience-control">
       <FrameHeader>
-        <FrameTitle>创作入口 Recipe / Surface</FrameTitle>
+        <FrameTitle>
+          {admin_creation_creation_entry_recipe_surface_3c77d678()}
+        </FrameTitle>
         <FrameDescription>
-          完成草稿、预览、发布与回滚；发布后只影响新的创作会话。
+          {admin_creation_complete_draft_preview_publish_and_rollb_1bd36456()}
         </FrameDescription>
       </FrameHeader>
       <FramePanel className="space-y-4">
@@ -2174,17 +2415,25 @@ export function AdminCreationExperienceControl({
             data-testid="recipe-publish-success-panel"
           >
             <FrameHeader>
-              <FrameTitle>Recipe 发布成功</FrameTitle>
+              <FrameTitle>
+                {admin_creation_recipe_published_successfully_1494a5d6()}
+              </FrameTitle>
               <FrameDescription>
-                前台仍引用旧 revision，直到你更新并发布目标 Surface。
+                {admin_creation_frontend_still_references_the_old_revisi_420476bd()}
               </FrameDescription>
             </FrameHeader>
             <FramePanel className="space-y-3">
-              <p className="text-sm" data-testid="recipe-publish-success-revision">
-                已发布版本：{publishSuccess.revisionId}
+              <p
+                className="text-sm"
+                data-testid="recipe-publish-success-revision"
+              >
+                {admin_creation_published_version_aa776ed4()}
+                {publishSuccess.revisionId}
               </p>
               <div className="space-y-2">
-                <Label htmlFor="publish-success-surface-id">目标 Surface ID</Label>
+                <Label htmlFor="publish-success-surface-id">
+                  {admin_creation_target_surface_id_99b6e0e8()}
+                </Label>
                 <Input
                   id="publish-success-surface-id"
                   data-testid="publish-success-surface-id"
@@ -2193,7 +2442,7 @@ export function AdminCreationExperienceControl({
                   placeholder={
                     loadedSurfaceId
                       ? loadedSurfaceId
-                      : '填写要更新引用的 Surface ID'
+                      : admin_creation_enter_surface_id_whose_references_to_upd_73552c54()
                   }
                 />
               </div>
@@ -2203,7 +2452,7 @@ export function AdminCreationExperienceControl({
                 disabled={!targetSurfaceId.trim()}
                 onClick={handleUpdateSurfaceRefs}
               >
-                更新 Surface 引用
+                {admin_creation_update_surface_references_748506f4()}
               </Button>
             </FramePanel>
           </Frame>
@@ -2214,9 +2463,15 @@ export function AdminCreationExperienceControl({
             if (typeof value === 'string') setTab(value);
           }}
         >
-          <TabsList aria-label="创作入口编辑器">
-            <TabsTrigger value="recipe">Recipe 编辑</TabsTrigger>
-            <TabsTrigger value="surface">Surface 编辑</TabsTrigger>
+          <TabsList
+            aria-label={admin_creation_creation_entry_editor_eb591368()}
+          >
+            <TabsTrigger value="recipe">
+              {admin_creation_recipe_edit_797d07ad()}
+            </TabsTrigger>
+            <TabsTrigger value="surface">
+              {admin_creation_surface_edit_c3230fcb()}
+            </TabsTrigger>
           </TabsList>
           <TabsContent value="recipe" className="pt-4">
             <RecipeEditor api={api} onPublishSuccess={handlePublishSuccess} />

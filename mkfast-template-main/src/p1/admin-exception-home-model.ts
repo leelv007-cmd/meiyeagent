@@ -23,6 +23,38 @@ import {
   findInventoryItem,
   type CapabilityRegistryView,
 } from '@/p1/admin-capability-registry-model';
+import {
+  admin_capability_awaiting_domain_self_report_do_not_fake_64cee49b,
+  admin_capability_blocked_a00db105,
+  admin_capability_capability_domains_9464155f,
+  admin_capability_degraded_d8518883,
+  admin_capability_evidence_drill_down_pages_2a7c2d4a,
+  admin_capability_evidence_stale_0fd73cb0,
+  admin_capability_instrumented_capabilities_e1925262,
+  admin_capability_l1_catalog_coverage_0dad53af,
+  admin_capability_needs_attention_284b34e1,
+  admin_capability_not_verified_0800371a,
+  admin_capability_open_capability_catalog_ba830cd4,
+  admin_capability_open_capability_drill_down_81ee4d4d,
+  admin_capability_open_route_simulator_f1b8b182,
+  admin_capability_open_task_recovery_authorized_bd241322,
+  admin_capability_open_technical_desk_handoff_b605c729,
+  admin_capability_operational_facts_domains_wired_to_skele_6f54e411,
+  admin_capability_reuse_of_existing_admin_pages_38a5650f,
+  admin_capability_stale_7cf7bfff,
+  admin_capability_structured_but_not_production_verified_9ea597cd,
+  admin_capability_stub_not_instrumented_b3d2cbe3,
+  admin_capability_technical_desk_handoff_redacted_050756d6,
+  admin_capability_two_level_ia_l1_capability_domains_featu_cd000492,
+  admin_capability_unverified_capabilities_d2fea75b,
+  admin_capability_view_plan_catalog_0ab1b897,
+  admin_capability_view_queue_health_5d8e9a1d,
+  admin_capability_view_redemption_codes_28e03439,
+  admin_capability_view_supply_center_cbbfd5f2,
+  admin_cloudflare_fresh_467bc8d4,
+  admin_exception_same_root_capabilities,
+  admin_supply_unknown_d9c32a4c,
+} from '@/locale/paraglide/messages';
 
 /** Exception severities shown on the home list (D-055). */
 export const EXCEPTION_SEVERITIES = [
@@ -340,7 +372,7 @@ function buildHandoffLink(input: {
 
   return {
     href,
-    label: '技术台移交（脱敏）',
+    label: admin_capability_technical_desk_handoff_redacted_050756d6(),
     oneClickRepair: false,
     correlationHints: base.correlationHints,
     redactedContext: redactHandoffContext(base.redactedContext),
@@ -501,7 +533,9 @@ export function projectCapabilityExceptionCandidates(
       evidenceCapturedAt: capturedAt,
       freshness: freshnessInfo.freshness,
       recentChangeSummary,
-      nextActionLabel: nextSafe ? safeActionLabel(nextSafe) : '打开技术台移交',
+      nextActionLabel: nextSafe
+        ? safeActionLabel(nextSafe)
+        : admin_capability_open_technical_desk_handoff_b605c729(),
       origin: 'capability_metric',
       drilldownKey: entry.drilldownKey,
       group: entry.group as CapabilityCatalogL1Id,
@@ -525,21 +559,21 @@ export function projectCapabilityExceptionCandidates(
 function safeActionLabel(action: string): string {
   switch (action) {
     case 'view_supply_center':
-      return '查看供应中心';
+      return admin_capability_view_supply_center_cbbfd5f2();
     case 'open_route_simulator':
-      return '打开路由模拟';
+      return admin_capability_open_route_simulator_f1b8b182();
     case 'view_queue_health':
-      return '查看队列健康';
+      return admin_capability_view_queue_health_5d8e9a1d();
     case 'open_task_recover_if_authorized':
-      return '打开任务恢复（需授权）';
+      return admin_capability_open_task_recovery_authorized_bd241322();
     case 'view_plan_catalog':
-      return '查看套餐目录';
+      return admin_capability_view_plan_catalog_0ab1b897();
     case 'view_redemptions':
-      return '查看兑换码';
+      return admin_capability_view_redemption_codes_28e03439();
     case 'view_drilldown':
-      return '打开能力下钻';
+      return admin_capability_open_capability_drill_down_81ee4d4d();
     case 'open_technical_handoff':
-      return '打开技术台移交';
+      return admin_capability_open_technical_desk_handoff_b605c729();
     default:
       return action.replace(/_/g, ' ');
   }
@@ -609,7 +643,10 @@ export function dedupeExceptionCandidates(
 
     const title =
       capabilityIds.length > 1
-        ? `${availabilityLabel(severity)} · ${capabilityIds.length} 项能力同源`
+        ? admin_exception_same_root_capabilities({
+            status: availabilityLabel(severity),
+            count: capabilityIds.length,
+          })
         : primary.title;
 
     const groupId =
@@ -696,33 +733,33 @@ export function buildPanoramaStatCards(
   return [
     {
       id: 'instrumented',
-      label: '已插桩能力',
+      label: admin_capability_instrumented_capabilities_e1925262(),
       value: String(instrumented),
-      hint: '运行事实域已接入骨架',
+      hint: admin_capability_operational_facts_domains_wired_to_skele_6f54e411(),
     },
     {
       id: 'stub_or_gap',
-      label: '存根 / 未插桩',
+      label: admin_capability_stub_not_instrumented_b3d2cbe3(),
       value: String(stubOrGap),
-      hint: '待域自报，不伪装健康',
+      hint: admin_capability_awaiting_domain_self_report_do_not_fake_64cee49b(),
     },
     {
       id: 'domains',
-      label: '能力域',
+      label: admin_capability_capability_domains_9464155f(),
       value: String(domains),
-      hint: '一级目录覆盖',
+      hint: admin_capability_l1_catalog_coverage_0dad53af(),
     },
     {
       id: 'not_verified',
-      label: '未核验能力',
+      label: admin_capability_unverified_capabilities_d2fea75b(),
       value: String(notVerified),
-      hint: '有结构无生产核验',
+      hint: admin_capability_structured_but_not_production_verified_9ea597cd(),
     },
     {
       id: 'drilldowns',
-      label: '证据下钻页',
+      label: admin_capability_evidence_drill_down_pages_2a7c2d4a(),
       value: String(drilldowns),
-      hint: '既有管理页复用',
+      hint: admin_capability_reuse_of_existing_admin_pages_38a5650f(),
     },
   ];
 }
@@ -761,9 +798,9 @@ export function buildExceptionHomeView(
     panoramaStats: buildPanoramaStatCards(registry),
     catalogEntry: {
       path: CAPABILITY_CATALOG_PATH,
-      label: '打开能力目录',
+      label: admin_capability_open_capability_catalog_ba830cd4(),
       description:
-        '两层信息架构：一级能力域（功能/用户影响），二级技术依赖与证据下钻。',
+        admin_capability_two_level_ia_l1_capability_domains_featu_cd000492(),
     },
     readOnly: true,
     supportsAck: false,
@@ -798,9 +835,7 @@ export const BLOCKING_EXCEPTION_SEVERITIES = [
   'degraded',
 ] as const satisfies readonly ExceptionSeverity[];
 
-function isExceptionSeverityToken(
-  value: string
-): value is ExceptionSeverity {
+function isExceptionSeverityToken(value: string): value is ExceptionSeverity {
   return (EXCEPTION_SEVERITIES as readonly string[]).includes(value);
 }
 
@@ -883,9 +918,7 @@ export function exceptionSeveritiesFromUrlState(
     [EXCEPTION_HOME_URL_KEYS.exceptions]: state.exceptions,
   });
   if (!normalized.exceptions) return [];
-  return normalized.exceptions
-    .split(',')
-    .filter(isExceptionSeverityToken);
+  return normalized.exceptions.split(',').filter(isExceptionSeverityToken);
 }
 
 /** True when the active filter is exactly blocked + degraded (toolbar pressed). */
@@ -918,15 +951,15 @@ export function filterExceptionRowsBySeverity(
 export function exceptionSeverityLabel(severity: ExceptionSeverity): string {
   switch (severity) {
     case 'blocked':
-      return '阻塞';
+      return admin_capability_blocked_a00db105();
     case 'degraded':
-      return '降级';
+      return admin_capability_degraded_d8518883();
     case 'attention':
-      return '需关注';
+      return admin_capability_needs_attention_284b34e1();
     case 'not_verified':
-      return '未核验';
+      return admin_capability_not_verified_0800371a();
     case 'stale':
-      return '证据过期';
+      return admin_capability_evidence_stale_0fd73cb0();
     default:
       return severity;
   }
@@ -935,11 +968,11 @@ export function exceptionSeverityLabel(severity: ExceptionSeverity): string {
 export function exceptionFreshnessLabel(freshness: ExceptionFreshness): string {
   switch (freshness) {
     case 'fresh':
-      return '新鲜';
+      return admin_cloudflare_fresh_467bc8d4();
     case 'stale':
-      return '过期';
+      return admin_capability_stale_7cf7bfff();
     case 'unknown':
-      return '未知';
+      return admin_supply_unknown_d9c32a4c();
     default:
       return freshness;
   }
@@ -966,7 +999,11 @@ export function assertNoAckAssignOwnerUi(html: string): string[] {
   if (/data-testid="[^"]*ack[^"]*"/.test(html)) {
     hits.push('testid-contains-ack');
   }
-  if (/指派负责人|确认异常|分配给|Acknowledge|Assign owner/i.test(html)) {
+  if (
+    /\u6307\u6d3e\u8d1f\u8d23\u4eba|\u786e\u8ba4\u5f02\u5e38|\u5206\u914d\u7ed9|Acknowledge|Assign owner/i.test(
+      html
+    )
+  ) {
     hits.push('forbidden-workflow-copy');
   }
   return hits;

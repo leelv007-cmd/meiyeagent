@@ -1,3 +1,14 @@
+import {
+  admin_cloudflare_open_cloudflare_billing_48db8a97,
+  admin_cloudflare_open_cloudflare_deployments_and_versions_4dd3a986,
+  admin_cloudflare_open_cloudflare_dns_45dc414a,
+  admin_cloudflare_open_cloudflare_hyperdrive_a5f81bda,
+  admin_cloudflare_open_cloudflare_log_details_41c95baf,
+  admin_cloudflare_open_cloudflare_r2_b11f3b16,
+  admin_cloudflare_open_cloudflare_security_events_49701c1c,
+  admin_cloudflare_open_cloudflare_trace_details_f284b979,
+  admin_cloudflare_open_cloudflare_worker_observability_17701712,
+} from '@/locale/paraglide/messages';
 /**
  * Admin Cloudflare deep-link builder (J6 / D-052).
  *
@@ -211,24 +222,24 @@ export function adminCfDeepLinkLabel(
 ): string {
   switch (kind) {
     case 'worker_observability':
-      return '到 Cloudflare 查看 Worker 观测';
+      return admin_cloudflare_open_cloudflare_worker_observability_17701712();
     case 'worker_deployments':
     case 'worker_versions':
-      return '到 Cloudflare 查看部署与版本';
+      return admin_cloudflare_open_cloudflare_deployments_and_versions_4dd3a986();
     case 'worker_logs':
-      return '到 Cloudflare 查看日志明细';
+      return admin_cloudflare_open_cloudflare_log_details_41c95baf();
     case 'worker_traces':
-      return '到 Cloudflare 查看 Trace 明细';
+      return admin_cloudflare_open_cloudflare_trace_details_f284b979();
     case 'r2_bucket':
-      return '到 Cloudflare 查看 R2';
+      return admin_cloudflare_open_cloudflare_r2_b11f3b16();
     case 'hyperdrive':
-      return '到 Cloudflare 查看 Hyperdrive';
+      return admin_cloudflare_open_cloudflare_hyperdrive_a5f81bda();
     case 'zone_dns':
-      return '到 Cloudflare 查看 DNS';
+      return admin_cloudflare_open_cloudflare_dns_45dc414a();
     case 'security_events':
-      return '到 Cloudflare 查看安全事件';
+      return admin_cloudflare_open_cloudflare_security_events_49701c1c();
     case 'billing':
-      return '到 Cloudflare 查看账单';
+      return admin_cloudflare_open_cloudflare_billing_48db8a97();
     default: {
       const _exhaustive: never = kind;
       return _exhaustive;

@@ -19,17 +19,49 @@ import {
 } from '@/components/reui/frame';
 import { Separator } from '@/components/ui/separator';
 import type { CapabilitySixQuestionProjection } from '@/p1/admin-capability-registry-model';
+import {
+  admin_capability_allowed_safe_actions_752db8df,
+  admin_capability_call_volume_412ad29f,
+  admin_capability_complete_6e6e5811,
+  admin_capability_config_revision_and_effective_scope_6bd71afc,
+  admin_capability_copy_bbeca838,
+  admin_capability_cost_c78bb59f,
+  admin_capability_d_051_six_question_fields_b4aaad1c,
+  admin_capability_dependencies_b613ae88,
+  admin_capability_dependencies_forward_c02e9746,
+  admin_capability_dependency_forward_reverse_lookup_static_6cd981d1,
+  admin_capability_dependents_reverse_e3de259c,
+  admin_capability_evidence_source_suffix,
+  admin_capability_evidence_time_d55733fd,
+  admin_capability_missing_2fe9b758,
+  admin_capability_no_reverse_dependents_033d10df,
+  admin_capability_not_instrumented_fbb74e8c,
+  admin_capability_not_instrumented_operational_facts_not_w_5fc10507,
+  admin_capability_not_verified_0800371a,
+  admin_capability_operational_facts_9e7769a3,
+  admin_capability_operational_facts_operationalmetric_7efed438,
+  admin_capability_operational_facts_summary_d5d5df88,
+  admin_capability_p95_latency_ba65a873,
+  admin_capability_purpose_and_availability_ae9b9db4,
+  admin_capability_quota_headroom_94ccca4a,
+  admin_capability_recent_changes_and_audit_refs_4649e007,
+  admin_capability_safe_actions_handoff_envelope_40eb0ad5,
+  admin_capability_six_question_field_coverage_48d846f5,
+  admin_capability_success_rate_df9dc72f,
+  admin_capability_technical_handoff_envelope_41c55a95,
+} from '@/locale/paraglide/messages';
 
 const QUESTION_TITLES: Record<
   keyof CapabilitySixQuestionProjection['questions'],
   string
 > = {
-  purposeStatus: '① 用途与可用状态',
-  configRevisionScope: '② 配置 revision 与生效范围',
-  dependencies: '③ 依赖',
-  runtimeFacts: '④ 运行事实摘要',
-  recentEvidence: '⑤ 最近变更与审计引用',
-  safeActionsHandoff: '⑥ 安全操作 / 移交 envelope',
+  purposeStatus: admin_capability_purpose_and_availability_ae9b9db4(),
+  configRevisionScope:
+    admin_capability_config_revision_and_effective_scope_6bd71afc(),
+  dependencies: admin_capability_dependencies_b613ae88(),
+  runtimeFacts: admin_capability_operational_facts_summary_d5d5df88(),
+  recentEvidence: admin_capability_recent_changes_and_audit_refs_4649e007(),
+  safeActionsHandoff: admin_capability_safe_actions_handoff_envelope_40eb0ad5(),
 };
 
 function CompletenessMark({
@@ -40,7 +72,7 @@ function CompletenessMark({
   if (status === 'complete') {
     return (
       <Badge variant="success-outline" data-completeness="complete">
-        完整
+        {admin_capability_complete_6e6e5811()}
       </Badge>
     );
   }
@@ -51,20 +83,20 @@ function CompletenessMark({
         data-completeness="not_instrumented"
         data-testid="not-instrumented-mark"
       >
-        未插桩
+        {admin_capability_not_instrumented_fbb74e8c()}
       </Badge>
     );
   }
   if (status === 'not_verified') {
     return (
       <Badge variant="secondary" data-completeness="not_verified">
-        未核验
+        {admin_capability_not_verified_0800371a()}
       </Badge>
     );
   }
   return (
     <Badge variant="destructive-outline" data-completeness="missing">
-      缺失
+      {admin_capability_missing_2fe9b758()}
     </Badge>
   );
 }
@@ -101,9 +133,12 @@ export function CapabilityDetailCard({
           </p>
           {entry.evidenceFreshness?.capturedAt ? (
             <p className="text-xs">
-              证据时间 {entry.evidenceFreshness.capturedAt}
+              {admin_capability_evidence_time_d55733fd()}{' '}
+              {entry.evidenceFreshness.capturedAt}
               {entry.evidenceFreshness.source
-                ? ` · 来源 ${entry.evidenceFreshness.source}`
+                ? admin_capability_evidence_source_suffix({
+                    source: entry.evidenceFreshness.source,
+                  })
                 : ''}
             </p>
           ) : null}
@@ -113,10 +148,10 @@ export function CapabilityDetailCard({
       <FramePanel
         className="flex flex-col gap-0 p-0!"
         data-testid="six-question-projection"
-        aria-label="六问字段承载"
+        aria-label={admin_capability_six_question_field_coverage_48d846f5()}
       >
         <h3 className="text-muted-foreground px-4 py-2 text-sm font-medium">
-          D-051 六问字段
+          {admin_capability_d_051_six_question_fields_b4aaad1c()}
         </h3>
         <Separator />
         <dl>
@@ -154,15 +189,18 @@ export function CapabilityDetailCard({
       {showRuntimeMetrics ? (
         <FramePanel className="space-y-3" data-testid="runtime-facts-metrics">
           <h3 className="text-sm font-semibold">
-            运行事实（OperationalMetric）
+            {admin_capability_operational_facts_operationalmetric_7efed438()}
           </h3>
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {facts.calls ? (
-              <MetricEnvelopeView label="调用量" metric={facts.calls} />
+              <MetricEnvelopeView
+                label={admin_capability_call_volume_412ad29f()}
+                metric={facts.calls}
+              />
             ) : null}
             {facts.successRate ? (
               <MetricEnvelopeView
-                label="成功率"
+                label={admin_capability_success_rate_df9dc72f()}
                 metric={facts.successRate}
                 format={(value) =>
                   typeof value === 'number'
@@ -173,19 +211,22 @@ export function CapabilityDetailCard({
             ) : null}
             {facts.p95LatencyMs ? (
               <MetricEnvelopeView
-                label="p95 延迟"
+                label={admin_capability_p95_latency_ba65a873()}
                 metric={facts.p95LatencyMs}
                 format={(value) => `${value} ms`}
               />
             ) : null}
             {facts.entitlementHeadroom ? (
               <MetricEnvelopeView
-                label="额度余量"
+                label={admin_capability_quota_headroom_94ccca4a()}
                 metric={facts.entitlementHeadroom}
               />
             ) : null}
             {facts.costMicros ? (
-              <MetricEnvelopeView label="成本 (µ)" metric={facts.costMicros} />
+              <MetricEnvelopeView
+                label={admin_capability_cost_c78bb59f()}
+                metric={facts.costMicros}
+              />
             ) : null}
           </dl>
           {facts.note ? (
@@ -197,9 +238,11 @@ export function CapabilityDetailCard({
           className="border-dashed"
           data-testid="runtime-facts-not-instrumented"
         >
-          <h3 className="text-sm font-semibold">运行事实</h3>
+          <h3 className="text-sm font-semibold">
+            {admin_capability_operational_facts_9e7769a3()}
+          </h3>
           <p className="text-muted-foreground mt-1 text-sm">
-            not_instrumented — 运行事实未接入；其余五问仍由 manifest/自报承载。
+            {admin_capability_not_instrumented_operational_facts_not_w_5fc10507()}
           </p>
           {facts?.note ? (
             <p className="text-muted-foreground mt-1 text-xs">{facts.note}</p>
@@ -208,12 +251,16 @@ export function CapabilityDetailCard({
       )}
 
       <FramePanel className="space-y-3" data-testid="dependency-join">
-        <h3 className="text-sm font-semibold">依赖正反查（静态查找表）</h3>
+        <h3 className="text-sm font-semibold">
+          {admin_capability_dependency_forward_reverse_lookup_static_6cd981d1()}
+        </h3>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-lg border p-3">
-            <p className="text-muted-foreground text-xs">依赖（正向）</p>
+            <p className="text-muted-foreground text-xs">
+              {admin_capability_dependencies_forward_c02e9746()}
+            </p>
             {dependsOn.length === 0 ? (
-              <p className="mt-1 text-sm">无关键依赖</p>
+              <p className="mt-1 text-sm">{admin_capability_copy_bbeca838()}</p>
             ) : (
               <ul className="mt-1 space-y-1 font-mono text-sm">
                 {dependsOn.map((edge) => (
@@ -228,9 +275,13 @@ export function CapabilityDetailCard({
             )}
           </div>
           <div className="rounded-lg border p-3">
-            <p className="text-muted-foreground text-xs">被依赖（反向）</p>
+            <p className="text-muted-foreground text-xs">
+              {admin_capability_dependents_reverse_e3de259c()}
+            </p>
             {dependents.length === 0 ? (
-              <p className="mt-1 text-sm">无反向依赖</p>
+              <p className="mt-1 text-sm">
+                {admin_capability_no_reverse_dependents_033d10df()}
+              </p>
             ) : (
               <ul className="mt-1 space-y-1 font-mono text-sm">
                 {dependents.map((edge) => (
@@ -249,7 +300,9 @@ export function CapabilityDetailCard({
 
       {entry.allowedSafeActions && entry.allowedSafeActions.length > 0 ? (
         <FramePanel className="space-y-2" data-testid="safe-actions">
-          <h3 className="text-sm font-semibold">允许的安全操作</h3>
+          <h3 className="text-sm font-semibold">
+            {admin_capability_allowed_safe_actions_752db8df()}
+          </h3>
           <ul className="flex flex-wrap gap-2">
             {entry.allowedSafeActions.map((action) => (
               <li key={action}>
@@ -264,7 +317,9 @@ export function CapabilityDetailCard({
 
       {entry.technicalHandoff ? (
         <FramePanel className="space-y-2" data-testid="technical-handoff">
-          <h3 className="text-sm font-semibold">技术移交 envelope</h3>
+          <h3 className="text-sm font-semibold">
+            {admin_capability_technical_handoff_envelope_41c55a95()}
+          </h3>
           {entry.technicalHandoff.deepLink ? (
             <p className="font-mono text-xs">
               deepLink={entry.technicalHandoff.deepLink}

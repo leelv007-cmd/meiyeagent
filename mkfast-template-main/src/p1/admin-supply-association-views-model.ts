@@ -17,6 +17,13 @@ import type {
 
 import { buildDefaultSupplyControlSnapshot } from './admin-supply-fixture';
 import type { SupplyControlSnapshot } from './admin-supply-types';
+import {
+  admin_supply_counterparty_channel_associations_bc2cb47d,
+  admin_supply_credential_associations_d7c44840,
+  admin_supply_deployment_associations_523d4aea,
+  admin_supply_model_associations_f19395ed,
+  admin_supply_route_associations_2bf36c13,
+} from '@/locale/paraglide/messages';
 
 export const ASSOCIATION_VIEW_IDS = [
   'model',
@@ -417,11 +424,12 @@ export interface AssociationViewPanelModel {
 }
 
 const VIEW_TITLES: Record<AssociationViewId, string> = {
-  model: '模型关联',
-  'counterparty-channel': '交易方 / 渠道关联',
-  deployment: '部署关联',
-  credential: '凭据关联',
-  route: '路由关联',
+  model: admin_supply_model_associations_f19395ed(),
+  'counterparty-channel':
+    admin_supply_counterparty_channel_associations_bc2cb47d(),
+  deployment: admin_supply_deployment_associations_523d4aea(),
+  credential: admin_supply_credential_associations_d7c44840(),
+  route: admin_supply_route_associations_2bf36c13(),
 };
 
 export function buildAssociationViewPanel(

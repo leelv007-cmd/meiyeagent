@@ -11,6 +11,14 @@ import {
   lookupDependents,
   type CapabilityRegistryView,
 } from '@/p1/admin-capability-registry-model';
+import {
+  admin_capability_all_778fc8f9,
+  admin_capability_capabilities_satisfy_the_six_question_re_ecdb66d8,
+  admin_capability_capability_registry_skeleton_j1_5b56859d,
+  admin_capability_no_capability_selected_742ec6ce,
+  admin_capability_six_question_completeness_gaps_821f21a2,
+  admin_capability_status_is_domain_self_report_versioned_i_a07368ec,
+} from '@/locale/paraglide/messages';
 
 export function CapabilityRegistryPanel({
   view,
@@ -49,16 +57,19 @@ export function CapabilityRegistryPanel({
   return (
     <div className="space-y-6" data-testid="capability-registry-panel">
       <Alert>
-        <AlertTitle>能力注册表骨架（J1）</AlertTitle>
+        <AlertTitle>
+          {admin_capability_capability_registry_skeleton_j1_5b56859d()}
+        </AlertTitle>
         <AlertDescription>
-          状态由各域自报 + 版本化 inventory
-          投影；缺数据显示未插桩/未核验，禁止零值或静态绿伪装健康。依赖为正反查静态表，无严重度传播引擎。
+          {admin_capability_status_is_domain_self_report_versioned_i_a07368ec()}
         </AlertDescription>
       </Alert>
 
       {incomplete.length > 0 ? (
         <Alert variant="destructive" data-testid="completeness-gap-alert">
-          <AlertTitle>六问完整性缺口</AlertTitle>
+          <AlertTitle>
+            {admin_capability_six_question_completeness_gaps_821f21a2()}
+          </AlertTitle>
           <AlertDescription>
             {incomplete
               .map((row) => `${row.name}(${row.capabilityId})`)
@@ -70,8 +81,8 @@ export function CapabilityRegistryPanel({
           className="text-sm text-muted-foreground"
           data-testid="completeness-ok"
         >
-          全部 {view.projections.length} 项能力满足六问必填投影（Q4 允许
-          not_instrumented）。
+          {admin_capability_all_778fc8f9()} {view.projections.length}{' '}
+          {admin_capability_capabilities_satisfy_the_six_question_re_ecdb66d8()}
         </p>
       )}
 
@@ -90,7 +101,9 @@ export function CapabilityRegistryPanel({
           dependents={selected.dependents}
         />
       ) : (
-        <p className="text-sm text-muted-foreground">未选择能力。</p>
+        <p className="text-sm text-muted-foreground">
+          {admin_capability_no_capability_selected_742ec6ce()}
+        </p>
       )}
     </div>
   );

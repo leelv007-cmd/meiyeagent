@@ -17,6 +17,37 @@ import type {
   OperationalMetricEnvelope,
 } from '@meiye/contracts';
 import { CAPABILITY_INVENTORY } from '@/p1/capability-inventory';
+import {
+  admin_capability_accounts_commercialization_dbc927f4,
+  admin_capability_ai_supply_generation_2bada48a,
+  admin_capability_available_e91365cf,
+  admin_capability_blocked_a00db105,
+  admin_capability_config_revision_effective_scope_missing_9b221b28,
+  admin_capability_content_assets_5ae72969,
+  admin_capability_copy_bbeca838,
+  admin_capability_degraded_d8518883,
+  admin_capability_dependency_items,
+  admin_capability_dependency_refs_missing_533c87ee,
+  admin_capability_evidence_stale_0fd73cb0,
+  admin_capability_external_integrations_3cc02b73,
+  admin_capability_instrumented_f6b5619d,
+  admin_capability_needs_attention_284b34e1,
+  admin_capability_not_instrumented_fbb74e8c,
+  admin_capability_not_verified_0800371a,
+  admin_capability_operational_facts_not_instrumented_9b39f49e,
+  admin_capability_operational_facts_summary_empty_6b55d9c3,
+  admin_capability_operational_facts_summary_missing_22d9e028,
+  admin_capability_out_of_scope_for_supply_v1_9975d2b0,
+  admin_capability_purpose_missing_8e304425,
+  admin_capability_purpose_status,
+  admin_capability_purpose_status_not_instrumented,
+  admin_capability_purpose_status_not_verified,
+  admin_capability_recent_changes_audit_refs_missing_53cbc39e,
+  admin_capability_runtime_governance_f7712550,
+  admin_capability_safe_actions_handoff_envelope_missing_7dbd5d14,
+  admin_capability_stub_295e4635,
+  admin_capability_task_orchestration_7b4c7f16,
+} from '@/locale/paraglide/messages';
 
 /** D-051 six-question keys in operator order. */
 export const SIX_QUESTION_KEYS = [
@@ -86,12 +117,12 @@ export function isDeepCapabilityId(id: string): id is DeepCapabilityId {
 }
 
 const GROUP_LABELS: Record<CapabilityInventoryItem['group'], string> = {
-  account_and_commerce: '账号与商业化',
-  ai_supply_and_generation: 'AI 供应与生成',
-  task_orchestration: '任务编排',
-  content_and_assets: '内容与资产',
-  external_integrations: '外部集成',
-  runtime_and_governance: '运行与治理',
+  account_and_commerce: admin_capability_accounts_commercialization_dbc927f4(),
+  ai_supply_and_generation: admin_capability_ai_supply_generation_2bada48a(),
+  task_orchestration: admin_capability_task_orchestration_7b4c7f16(),
+  content_and_assets: admin_capability_content_assets_5ae72969(),
+  external_integrations: admin_capability_external_integrations_3cc02b73(),
+  runtime_and_governance: admin_capability_runtime_governance_f7712550(),
 };
 
 export function capabilityGroupLabel(
@@ -105,13 +136,13 @@ export function inventoryStatusLabel(
 ): string {
   switch (status) {
     case 'instrumented':
-      return '已插桩';
+      return admin_capability_instrumented_f6b5619d();
     case 'stub':
-      return '存根';
+      return admin_capability_stub_295e4635();
     case 'not_instrumented':
-      return '未插桩';
+      return admin_capability_not_instrumented_fbb74e8c();
     case 'not_in_scope_for_supply_v1':
-      return '供应 v1 范围外';
+      return admin_capability_out_of_scope_for_supply_v1_9975d2b0();
     default:
       return status;
   }
@@ -122,19 +153,19 @@ export function availabilityLabel(
 ): string {
   switch (status) {
     case 'available':
-      return '可用';
+      return admin_capability_available_e91365cf();
     case 'degraded':
-      return '降级';
+      return admin_capability_degraded_d8518883();
     case 'blocked':
-      return '阻塞';
+      return admin_capability_blocked_a00db105();
     case 'attention':
-      return '需关注';
+      return admin_capability_needs_attention_284b34e1();
     case 'not_verified':
-      return '未核验';
+      return admin_capability_not_verified_0800371a();
     case 'not_instrumented':
-      return '未插桩';
+      return admin_capability_not_instrumented_fbb74e8c();
     case 'stale':
-      return '证据过期';
+      return admin_capability_evidence_stale_0fd73cb0();
     default:
       return status;
   }
@@ -515,25 +546,32 @@ function projectPurposeStatus(
   if (!nonEmpty(entry.purpose)) {
     return {
       status: 'missing',
-      summary: '用途缺失',
+      summary: admin_capability_purpose_missing_8e304425(),
       reason: 'purpose_absent',
     };
   }
   if (entry.availability === 'not_instrumented') {
     return {
       status: 'complete',
-      summary: `${entry.purpose} · 状态=未插桩`,
+      summary: admin_capability_purpose_status_not_instrumented({
+        purpose: entry.purpose,
+      }),
     };
   }
   if (entry.availability === 'not_verified') {
     return {
       status: 'complete',
-      summary: `${entry.purpose} · 状态=未核验`,
+      summary: admin_capability_purpose_status_not_verified({
+        purpose: entry.purpose,
+      }),
     };
   }
   return {
     status: 'complete',
-    summary: `${entry.purpose} · 状态=${availabilityLabel(entry.availability)}`,
+    summary: admin_capability_purpose_status({
+      purpose: entry.purpose,
+      status: availabilityLabel(entry.availability),
+    }),
   };
 }
 
@@ -543,7 +581,8 @@ function projectConfig(entry: CapabilityRegistryEntry): QuestionCompleteness {
   if (!nonEmpty(revision) && !nonEmpty(scope)) {
     return {
       status: 'missing',
-      summary: '配置 revision / 生效范围缺失',
+      summary:
+        admin_capability_config_revision_effective_scope_missing_9b221b28(),
       reason: 'config_absent',
     };
   }
@@ -565,7 +604,7 @@ function projectDependencies(
   if (!Array.isArray(entry.dependencyRefs)) {
     return {
       status: 'missing',
-      summary: '依赖引用缺失',
+      summary: admin_capability_dependency_refs_missing_533c87ee(),
       reason: 'dependency_refs_absent',
     };
   }
@@ -573,8 +612,11 @@ function projectDependencies(
     status: 'complete',
     summary:
       entry.dependencyRefs.length === 0
-        ? '无关键依赖'
-        : `依赖 ${entry.dependencyRefs.length} 项：${entry.dependencyRefs.join(', ')}`,
+        ? admin_capability_copy_bbeca838()
+        : admin_capability_dependency_items({
+            count: entry.dependencyRefs.length,
+            items: entry.dependencyRefs.join(', '),
+          }),
   };
 }
 
@@ -591,7 +633,9 @@ function projectRuntimeFacts(
   ) {
     return {
       status: 'not_instrumented',
-      summary: facts?.note ?? '运行事实未插桩',
+      summary:
+        facts?.note ??
+        admin_capability_operational_facts_not_instrumented_9b39f49e(),
       reason: instrument,
     };
   }
@@ -599,7 +643,7 @@ function projectRuntimeFacts(
   if (!facts) {
     return {
       status: 'missing',
-      summary: '运行事实摘要缺失',
+      summary: admin_capability_operational_facts_summary_missing_22d9e028(),
       reason: 'runtime_facts_absent',
     };
   }
@@ -625,7 +669,7 @@ function projectRuntimeFacts(
   if (metricParts.length === 0 && !nonEmpty(facts.note)) {
     return {
       status: 'missing',
-      summary: '运行事实摘要为空',
+      summary: admin_capability_operational_facts_summary_empty_6b55d9c3(),
       reason: 'runtime_facts_empty',
     };
   }
@@ -643,7 +687,7 @@ function projectRecentEvidence(
   if (!refs || refs.length === 0) {
     return {
       status: 'missing',
-      summary: '最近变更/审计引用缺失',
+      summary: admin_capability_recent_changes_audit_refs_missing_53cbc39e(),
       reason: 'recent_evidence_absent',
     };
   }
@@ -661,7 +705,8 @@ function projectSafeActionsHandoff(
   if ((!actions || actions.length === 0) && !handoff) {
     return {
       status: 'missing',
-      summary: '安全操作/移交 envelope 缺失',
+      summary:
+        admin_capability_safe_actions_handoff_envelope_missing_7dbd5d14(),
       reason: 'safe_actions_handoff_absent',
     };
   }

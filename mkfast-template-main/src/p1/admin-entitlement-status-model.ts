@@ -14,6 +14,17 @@ import type {
   EntitlementPolicyStatusRecord,
   SupplyControlSnapshot,
 } from './admin-supply-types';
+import {
+  admin_entitlement_draft_0f436818,
+  admin_entitlement_effective_4de07ee0,
+  admin_entitlement_expired_1354374f,
+  admin_entitlement_product_concurrency,
+  admin_entitlement_product_side_only_shows_entitlements_quo_266852c3,
+  admin_entitlement_published_176a2eb4,
+  admin_entitlement_rolled_back_c4ab8c16,
+  admin_entitlement_superseded_d424f501,
+  admin_entitlement_supply_concurrency,
+} from '@/locale/paraglide/messages';
 
 export type {
   AccountAllocationStatus,
@@ -59,8 +70,10 @@ function poolCapacityLabel(pool: SupplyPool): string {
   const s = pool.capacity?.supplyAccount;
   const p = pool.capacity?.productAccount;
   const parts: string[] = [];
-  if (s?.concurrency != null) parts.push(`supply并发 ${s.concurrency}`);
-  if (p?.concurrency != null) parts.push(`产品并发 ${p.concurrency}`);
+  if (s?.concurrency != null)
+    parts.push(admin_entitlement_supply_concurrency({ count: s.concurrency }));
+  if (p?.concurrency != null)
+    parts.push(admin_entitlement_product_concurrency({ count: p.concurrency }));
   if (s?.rpm != null) parts.push(`rpm ${s.rpm}`);
   return parts.length > 0 ? parts.join(' · ') : 'unknown (capacity_absent)';
 }
@@ -101,7 +114,7 @@ export function buildEntitlementStatusView(
     allocations,
     pools,
     dualTruthNote:
-      '产品侧只展示权益/额度/并发/可选池；上游 token、账号余额、RPM 不出现在用户投影。',
+      admin_entitlement_product_side_only_shows_entitlements_quo_266852c3(),
     publishedPolicyCount: sourcePolicies
       ? {
           status: 'known',
@@ -134,13 +147,13 @@ export function entitlementPolicyStageLabel(
 ): string {
   switch (stage) {
     case 'draft':
-      return '草稿';
+      return admin_entitlement_draft_0f436818();
     case 'published':
-      return '已发布';
+      return admin_entitlement_published_176a2eb4();
     case 'superseded':
-      return '已替代';
+      return admin_entitlement_superseded_d424f501();
     case 'rolled_back':
-      return '已回滚';
+      return admin_entitlement_rolled_back_c4ab8c16();
     default:
       return stage;
   }
@@ -149,11 +162,11 @@ export function entitlementPolicyStageLabel(
 export function allocationStatusLabel(status: AccountAllocationStatus): string {
   switch (status) {
     case 'active':
-      return '生效中';
+      return admin_entitlement_effective_4de07ee0();
     case 'expired':
-      return '已过期';
+      return admin_entitlement_expired_1354374f();
     case 'rolled_back':
-      return '已回滚';
+      return admin_entitlement_rolled_back_c4ab8c16();
     default:
       return status;
   }

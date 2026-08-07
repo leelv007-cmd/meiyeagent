@@ -1,4 +1,23 @@
 import {
+  admin_capability_affected_capabilities_a8f39e94,
+  admin_capability_aggregates_blocked_degraded_attention_no_513b7d7c,
+  admin_capability_complex_fixes_need_the_technical_desk_do_1bb076df,
+  admin_capability_evidence_captured_75d90d23,
+  admin_capability_evidence_source_a70e1029,
+  admin_capability_exception_first_home_read_only_01d1fd0a,
+  admin_capability_freshness_8c142505,
+  admin_capability_go_to_capability_catalog_eb042018,
+  admin_capability_impact_scope_aaabff1b,
+  admin_capability_next_step_d51b4bdc,
+  admin_capability_no_blocked_degraded_attention_not_verifi_4e95aa66,
+  admin_capability_no_pending_exceptions_65eecc3c,
+  admin_capability_no_pending_exceptions_75462798,
+  admin_capability_open_drill_down_handoff_context_e9afa198,
+  admin_capability_primary_events_6e0b2ae8,
+  admin_capability_projected_at_2cf51c9c,
+  admin_capability_recent_related_changes_01451876,
+  admin_capability_root_cause_key_3422616b,
+  admin_capability_started_last_changed_76a00a58,
   admin_exception_filter_empty,
   admin_exception_list_title,
   admin_exception_only_blocking,
@@ -74,17 +93,18 @@ function ExceptionRowCard({ row }: { row: ExceptionHomeRow }) {
                 data-testid="exception-freshness"
                 data-freshness={row.freshness}
               >
-                新鲜度 · {exceptionFreshnessLabel(row.freshness)}
+                {admin_capability_freshness_8c142505()}{' '}
+                {exceptionFreshnessLabel(row.freshness)}
               </Badge>
             </div>
             {row.nextActionLabel ? (
               <Badge variant="secondary" data-testid="exception-next-action">
-                下一步 · {row.nextActionLabel}
+                {admin_capability_next_step_d51b4bdc()} {row.nextActionLabel}
               </Badge>
             ) : null}
           </div>
           <p className="text-xs text-muted-foreground">
-            根因键{' '}
+            {admin_capability_root_cause_key_3422616b()}{' '}
             <span className="font-mono" data-testid="exception-root-cause-key">
               {row.rootCauseKey}
             </span>
@@ -94,25 +114,33 @@ function ExceptionRowCard({ row }: { row: ExceptionHomeRow }) {
         <FramePanel>
           <dl className="grid gap-2 text-xs sm:grid-cols-2">
             <div>
-              <dt className="text-muted-foreground">证据来源</dt>
+              <dt className="text-muted-foreground">
+                {admin_capability_evidence_source_a70e1029()}
+              </dt>
               <dd className="font-mono" data-testid="exception-evidence-source">
                 {row.evidenceSource}
               </dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">证据捕获</dt>
+              <dt className="text-muted-foreground">
+                {admin_capability_evidence_captured_75d90d23()}
+              </dt>
               <dd data-testid="exception-evidence-captured-at">
                 {row.evidenceCapturedAt}
               </dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">开始 / 最近变化</dt>
+              <dt className="text-muted-foreground">
+                {admin_capability_started_last_changed_76a00a58()}
+              </dt>
               <dd data-testid="exception-timeline">
                 {row.startedAt} → {row.lastChangedAt}
               </dd>
             </div>
             <div>
-              <dt className="text-muted-foreground">最近相关变更</dt>
+              <dt className="text-muted-foreground">
+                {admin_capability_recent_related_changes_01451876()}
+              </dt>
               <dd data-testid="exception-recent-change">
                 {row.recentChangeSummary}
               </dd>
@@ -121,7 +149,9 @@ function ExceptionRowCard({ row }: { row: ExceptionHomeRow }) {
 
           {row.affectedCapabilityIds.length > 0 ? (
             <div className="mt-3" data-testid="exception-affected-capabilities">
-              <p className="text-xs text-muted-foreground">受影响能力</p>
+              <p className="text-xs text-muted-foreground">
+                {admin_capability_affected_capabilities_a8f39e94()}
+              </p>
               <ul className="mt-1 flex flex-wrap gap-1">
                 {row.affectedCapabilityIds.map((id) => (
                   <li key={id}>
@@ -142,7 +172,9 @@ function ExceptionRowCard({ row }: { row: ExceptionHomeRow }) {
 
           {row.affectedScope.length > 0 ? (
             <div className="mt-2" data-testid="exception-affected-scope">
-              <p className="text-xs text-muted-foreground">影响范围</p>
+              <p className="text-xs text-muted-foreground">
+                {admin_capability_impact_scope_aaabff1b()}
+              </p>
               <p className="mt-1 font-mono text-[11px] text-muted-foreground">
                 {row.affectedScope.join(' · ')}
               </p>
@@ -164,11 +196,11 @@ function ExceptionRowCard({ row }: { row: ExceptionHomeRow }) {
                 data-testid="exception-handoff-link"
                 data-handoff-href={row.technicalHandoff.href}
               >
-                打开下钻 / 移交上下文
+                {admin_capability_open_drill_down_handoff_context_e9afa198()}
               </a>
             </div>
             <p className="mt-1 text-[11px] text-muted-foreground">
-              复杂修复需技术台接手；不在运营界面伪装一键修复。
+              {admin_capability_complex_fixes_need_the_technical_desk_do_1bb076df()}
             </p>
             <ul
               className="mt-2 space-y-0.5 font-mono text-[10px] text-muted-foreground"
@@ -203,7 +235,7 @@ function CatalogEntryFrame({ view }: { view: ExceptionHomeView }) {
           className="text-sm font-medium text-primary underline-offset-4 hover:underline"
           data-testid="exception-catalog-link"
         >
-          前往能力目录
+          {admin_capability_go_to_capability_catalog_eb042018()}
         </a>
       </FramePanel>
     </Frame>
@@ -219,11 +251,10 @@ function EmptyExceptionState({ view }: { view: ExceptionHomeView }) {
     >
       <Alert data-testid="exception-empty-banner">
         <AlertTitle data-testid="exception-empty-title">
-          当前无待处理异常
+          {admin_capability_no_pending_exceptions_75462798()}
         </AlertTitle>
         <AlertDescription>
-          系统未投影出 blocked / degraded / attention / not_verified / 长时间
-          stale 事件。下方为能力全景摘要与目录入口（非装饰性红绿大屏）。
+          {admin_capability_no_blocked_degraded_attention_not_verifi_4e95aa66()}
         </AlertDescription>
       </Alert>
 
@@ -327,11 +358,11 @@ export function ExceptionHomePanel({
       data-severity-filter={filterToken}
     >
       <Alert>
-        <AlertTitle>异常优先首页（只读）</AlertTitle>
+        <AlertTitle>
+          {admin_capability_exception_first_home_read_only_01d1fd0a()}
+        </AlertTitle>
         <AlertDescription>
-          聚合 blocked / degraded / attention / not_verified / 长时间
-          stale；按严重度 × 范围 × 持续时间 × 最近变化排序；同源根因去重为主事件
-          + 受影响能力。无确认 / 指派 / 负责人工作流；复杂修复走脱敏技术移交。
+          {admin_capability_aggregates_blocked_degraded_attention_no_513b7d7c()}
         </AlertDescription>
       </Alert>
 
@@ -341,7 +372,8 @@ export function ExceptionHomePanel({
             className="text-sm text-muted-foreground"
             data-testid="exception-projected-at"
           >
-            投影于 {view.projectedAt} · 无待处理异常
+            {admin_capability_projected_at_2cf51c9c()} {view.projectedAt}{' '}
+            {admin_capability_no_pending_exceptions_65eecc3c()}
           </p>
           <EmptyExceptionState view={view} />
         </>
@@ -355,7 +387,9 @@ export function ExceptionHomePanel({
                   className="text-xs"
                   data-testid="exception-projected-at"
                 >
-                  投影于 {view.projectedAt} · {view.exceptions.length} 条主事件
+                  {admin_capability_projected_at_2cf51c9c()} {view.projectedAt}{' '}
+                  · {view.exceptions.length}{' '}
+                  {admin_capability_primary_events_6e0b2ae8()}
                 </FrameDescription>
               </div>
               <Button

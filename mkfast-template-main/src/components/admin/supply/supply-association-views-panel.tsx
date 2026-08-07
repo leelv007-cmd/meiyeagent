@@ -8,6 +8,7 @@ import {
   FramePanel,
   FrameTitle,
 } from '@/components/reui/frame';
+import { admin_supply_association_views_entry_title } from '@/locale/paraglide/messages';
 import {
   ASSOCIATION_VIEW_IDS,
   ASSOCIATION_VIEW_PATHS,
@@ -119,7 +120,9 @@ export function SupplyAssociationViewsIndex() {
   return (
     <Frame data-testid="supply-association-index">
       <FrameHeader className="gap-1">
-        <FrameTitle className="text-base">五关联视图入口</FrameTitle>
+        <FrameTitle className="text-base">
+          {admin_supply_association_views_entry_title()}
+        </FrameTitle>
       </FrameHeader>
       <FramePanel>
         <SupplyAssociationViewsNav />

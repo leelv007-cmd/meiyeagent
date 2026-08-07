@@ -54,6 +54,67 @@ import {
   type GovernedActionReview,
   type GovernedExecutionTarget,
 } from '@/p1/use-admin-supply-control';
+import {
+  admin_supply_acceptance_state_b5835164,
+  admin_supply_action_d9d98278,
+  admin_supply_action_executing,
+  admin_supply_action_failed,
+  admin_supply_action_success,
+  admin_supply_all_via_core_typed_commands_capability_p_13b9729e,
+  admin_supply_audit_reason_of_at_least_8_characters_49450638,
+  admin_supply_candidate_deployment_ids_bc4efa40,
+  admin_supply_candidate_revision_id_e2433ed4,
+  admin_supply_cas_idempotency_4f4772a6,
+  admin_supply_confirm_label,
+  admin_supply_constraint,
+  admin_supply_cost_evidence_source_3c7deb8c,
+  admin_supply_credential_rotate_receipt_does_not_match_ef599ff8,
+  admin_supply_credential_rotate_receipt_expired_restag_b8643321,
+  admin_supply_credential_rotate_receipt_is_no_longer_a_b9f0f544,
+  admin_supply_credential_rotate_safe_write_receipt_bcb2778d,
+  admin_supply_data_processing_level_6bb64a54,
+  admin_supply_data_processing_protected,
+  admin_supply_enter_at_least_one_deployment_id_930a0781,
+  admin_supply_enter_candidate_revision_id_120b8caa,
+  admin_supply_enter_safe_write_receipt_id_do_not_paste_3f97452c,
+  admin_supply_evidence_freshness_bfc825d0,
+  admin_supply_governed_quick_actions_2029dea2,
+  admin_supply_hard_filter_ec352341,
+  admin_supply_hard_filter_passed_excluded,
+  admin_supply_impact_preview_loading,
+  admin_supply_irreversible_0235ca64,
+  admin_supply_label_reason,
+  admin_supply_label_target,
+  admin_supply_live_exclusion_6818702d,
+  admin_supply_max_cost_3c9b4905,
+  admin_supply_no_8bf5c10a,
+  admin_supply_no_blind_retry_of_accepted_unknown_5ca78898,
+  admin_supply_no_candidates_74869b6e,
+  admin_supply_no_direct_db_writes_65c80a14,
+  admin_supply_no_evidence_878c6b14,
+  admin_supply_no_publish_gate_bypass_69d56aff,
+  admin_supply_no_secret_echo_1d752c89,
+  admin_supply_none_72077749,
+  admin_supply_not_selected_reason_16e93687,
+  admin_supply_permission_560165a6,
+  admin_supply_preview_de61aa8e,
+  admin_supply_preview_failed,
+  admin_supply_preview_from_core,
+  admin_supply_reason_1ff9c3d0,
+  admin_supply_reason_and_execute_287aa02e,
+  admin_supply_receipt_prefilled_from_integrations_page_1d9e8a84,
+  admin_supply_reversibility,
+  admin_supply_reversible_16954c95,
+  admin_supply_reversible_drain_a1d54996,
+  admin_supply_safe_write_receipt_id_e64c3440,
+  admin_supply_select_target_bd2f8146,
+  admin_supply_target_941f0831,
+  admin_supply_three_layer_sort_0bd6ffd5,
+  admin_supply_unknown_d9c32a4c,
+  admin_supply_unknown_error_5f76edc5,
+  admin_supply_view_audit_0cdc970f,
+  admin_supply_yes_30160a21,
+} from '@/locale/paraglide/messages';
 
 type ActionOutcome = {
   actionId: GovernedQuickActionId;
@@ -99,7 +160,7 @@ function governedActionFormSchema(actionId: GovernedQuickActionId) {
         if (!value.candidateRevisionId?.trim()) {
           context.addIssue({
             code: 'custom',
-            message: '请输入候选 Revision ID',
+            message: admin_supply_enter_candidate_revision_id_120b8caa(),
             path: ['candidateRevisionId'],
           });
         }
@@ -110,7 +171,7 @@ function governedActionFormSchema(actionId: GovernedQuickActionId) {
         ) {
           context.addIssue({
             code: 'custom',
-            message: '请输入至少一个 Deployment ID',
+            message: admin_supply_enter_at_least_one_deployment_id_930a0781(),
             path: ['candidateDeploymentIds'],
           });
         }
@@ -121,7 +182,8 @@ function governedActionFormSchema(actionId: GovernedQuickActionId) {
       ) {
         context.addIssue({
           code: 'custom',
-          message: '请输入安全写入回执 ID，不要粘贴密钥',
+          message:
+            admin_supply_enter_safe_write_receipt_id_do_not_paste_3f97452c(),
           path: ['secureWriteReceiptId'],
         });
       }
@@ -201,48 +263,69 @@ function projectRouteDecision(
 
   return [
     {
-      label: '硬过滤',
-      value: `通过 ${stringList(hardFilter?.passedDeploymentIds).join('、') || '无'}；排除 ${exclusions(hardFilter?.excluded) || '无'}`,
+      label: admin_supply_hard_filter_ec352341(),
+      value: admin_supply_hard_filter_passed_excluded({
+        passed:
+          stringList(hardFilter?.passedDeploymentIds).join('、') ||
+          admin_supply_none_72077749(),
+        excluded:
+          exclusions(hardFilter?.excluded) || admin_supply_none_72077749(),
+      }),
     },
     {
-      label: '三层排序',
-      value: `${stringList(sort?.layerOrder).join(' → ') || '无'}；${ranked || '无候选'}`,
+      label: admin_supply_three_layer_sort_0bd6ffd5(),
+      value: `${stringList(sort?.layerOrder).join(' → ') || admin_supply_none_72077749()}；${ranked || admin_supply_no_candidates_74869b6e()}`,
     },
     {
-      label: '实时排除',
-      value: exclusions(explanation.liveExclusions) || '无',
+      label: admin_supply_live_exclusion_6818702d(),
+      value:
+        exclusions(explanation.liveExclusions) || admin_supply_none_72077749(),
     },
     {
-      label: '最大成本',
+      label: admin_supply_max_cost_3c9b4905(),
       value:
         typeof maxCost?.amountMicros === 'number' &&
         typeof maxCost.currency === 'string'
           ? `${maxCost.amountMicros} μ${maxCost.currency}（${String(maxCost.evidenceSource ?? 'unknown')}）`
-          : '未知',
+          : admin_supply_unknown_d9c32a4c(),
     },
     {
-      label: '接受态',
+      label: admin_supply_acceptance_state_b5835164(),
       value: `${String(acceptance?.decision ?? 'unknown')}（${String(acceptance?.reason ?? 'unknown')}）`,
     },
     {
-      label: '未选原因',
-      value: exclusions(explanation.notSelectedReasons) || '无',
+      label: admin_supply_not_selected_reason_16e93687(),
+      value:
+        exclusions(explanation.notSelectedReasons) ||
+        admin_supply_none_72077749(),
     },
-    { label: '证据新鲜度', value: freshness || '无证据' },
-    { label: '成本证据来源', value: costEvidence || '未知' },
     {
-      label: '数据处理等级',
+      label: admin_supply_evidence_freshness_bfc825d0(),
+      value: freshness || admin_supply_no_evidence_878c6b14(),
+    },
+    {
+      label: admin_supply_cost_evidence_source_3c7deb8c(),
+      value: costEvidence || admin_supply_unknown_d9c32a4c(),
+    },
+    {
+      label: admin_supply_data_processing_level_6bb64a54(),
       value:
         typeof dataProcessing?.copy === 'string'
           ? dataProcessing.copy
-          : `${String(dataProcessing?.level ?? 'unknown')}；受保护通道 ${dataProcessing?.protectedChannel === true ? '是' : '否'}`,
+          : admin_supply_data_processing_protected({
+              level: String(dataProcessing?.level ?? 'unknown'),
+              protected:
+                dataProcessing?.protectedChannel === true
+                  ? admin_supply_yes_30160a21()
+                  : admin_supply_no_8bf5c10a(),
+            }),
     },
     {
       label: 'Fail closed',
       value:
         explanation.failClosed === true
-          ? String(explanation.failClosedReason ?? '是')
-          : '否',
+          ? String(explanation.failClosedReason ?? admin_supply_yes_30160a21())
+          : admin_supply_no_8bf5c10a(),
     },
   ];
 }
@@ -331,10 +414,12 @@ function GovernedActionFormCells({
               value={field.value || undefined}
             >
               <SelectTrigger
-                aria-label={`${label}目标`}
+                aria-label={admin_supply_label_target({ label })}
                 className="h-9 min-w-48 data-size:h-9"
               >
-                <SelectValue placeholder="选择目标" />
+                <SelectValue
+                  placeholder={admin_supply_select_target_bd2f8146()}
+                />
               </SelectTrigger>
               <SelectContent>
                 {targets.map((target) => {
@@ -352,12 +437,12 @@ function GovernedActionFormCells({
         {actionId === 'credential_rotate' ? (
           <div>
             <input
-              aria-label="凭据轮换安全写入回执"
+              aria-label={admin_supply_credential_rotate_safe_write_receipt_bcb2778d()}
               autoComplete="off"
               className="mt-2 h-9 min-w-48 rounded-md border bg-background px-2 text-xs"
               data-handoff-prefill={String(handoffPrefillActive)}
               data-testid="supply-credential-rotate-receipt"
-              placeholder="安全写入回执 ID"
+              placeholder={admin_supply_safe_write_receipt_id_e64c3440()}
               type="text"
               {...form.register('secureWriteReceiptId')}
             />
@@ -366,7 +451,7 @@ function GovernedActionFormCells({
                 className="mt-1 text-xs text-muted-foreground"
                 data-testid="supply-credential-rotate-handoff-hint"
               >
-                已从集成页会话交接预填回执（可手改；刷新后仅可手工输入）。
+                {admin_supply_receipt_prefilled_from_integrations_page_1d9e8a84()}
               </p>
             ) : null}
             {receipt && form.formState.errors.secureWriteReceiptId ? (
@@ -379,14 +464,14 @@ function GovernedActionFormCells({
         {actionId === 'candidate_config_save' ? (
           <div>
             <input
-              aria-label="候选 Revision ID"
+              aria-label={admin_supply_candidate_revision_id_e2433ed4()}
               className="mt-2 h-9 min-w-48 rounded-md border bg-background px-2 text-xs"
               placeholder="route-policy:rN"
               type="text"
               {...form.register('candidateRevisionId')}
             />
             <input
-              aria-label="候选 Deployment IDs"
+              aria-label={admin_supply_candidate_deployment_ids_bc4efa40()}
               className="mt-2 h-9 min-w-48 rounded-md border bg-background px-2 text-xs"
               placeholder="deployment-a, deployment-b"
               type="text"
@@ -397,9 +482,9 @@ function GovernedActionFormCells({
       </TableCell>
       <TableCell>
         <input
-          aria-label={`${label}原因`}
+          aria-label={admin_supply_label_reason({ label })}
           className="mb-2 h-9 min-w-56 rounded-md border bg-background px-2 text-xs"
-          placeholder="至少 8 个字符的审计原因"
+          placeholder={admin_supply_audit_reason_of_at_least_8_characters_49450638()}
           type="text"
           {...form.register('reason')}
         />
@@ -494,11 +579,11 @@ export function SupplyGovernedActionsPanel({
             actionId,
             message:
               bound.status === 'expired'
-                ? '凭据轮换回执已过期，请回到集成页重新暂存。'
+                ? admin_supply_credential_rotate_receipt_expired_restag_b8643321()
                 : bound.status === 'account_mismatch' ||
                     bound.status === 'workspace_mismatch'
-                  ? '凭据轮换回执与当前账户/工作区绑定不匹配。'
-                  : '凭据轮换回执已不可用，请手工输入或重新暂存。',
+                  ? admin_supply_credential_rotate_receipt_does_not_match_ef599ff8()
+                  : admin_supply_credential_rotate_receipt_is_no_longer_a_b9f0f544(),
             status: 'failed',
           });
           return;
@@ -507,7 +592,7 @@ export function SupplyGovernedActionsPanel({
     }
     setOutcome({
       actionId,
-      message: `${definition.label}影响预览生成中…`,
+      message: admin_supply_impact_preview_loading({ label: definition.label }),
       status: 'pending',
     });
     try {
@@ -541,22 +626,30 @@ export function SupplyGovernedActionsPanel({
       setOutcome(undefined);
       setImpactReview({
         title: definition.label,
-        description: `${definition.description}。本预览由 Core 生成。`,
+        description: admin_supply_preview_from_core({
+          description: definition.description,
+        }),
         scope: review.preview.scope,
         changes: [
           ...review.preview.changes,
-          `可逆性：${review.preview.reversible ? '可逆' : '不可逆'}`,
-          ...review.preview.warnings.map((warning) => `约束：${warning}`),
+          admin_supply_reversibility({
+            value: review.preview.reversible
+              ? admin_supply_reversible_16954c95()
+              : admin_supply_irreversible_0235ca64(),
+          }),
+          ...review.preview.warnings.map((warning) =>
+            admin_supply_constraint({ warning })
+          ),
           ...(routeDecision ?? []).map(
             (detail) => `${detail.label}：${detail.value}`
           ),
         ],
-        confirmLabel: `确认${definition.label}`,
+        confirmLabel: admin_supply_confirm_label({ label: definition.label }),
         initialReason: reason,
         onConfirm: async (confirmedReason) => {
           setOutcome({
             actionId,
-            message: `${definition.label}执行中…`,
+            message: admin_supply_action_executing({ label: definition.label }),
             status: 'pending',
           });
           try {
@@ -577,7 +670,7 @@ export function SupplyGovernedActionsPanel({
             setOutcome({
               actionId,
               details: projectActionResult(result),
-              message: `${definition.label}执行成功`,
+              message: admin_supply_action_success({ label: definition.label }),
               status: 'succeeded',
             });
           } catch (error) {
@@ -588,7 +681,10 @@ export function SupplyGovernedActionsPanel({
             ) {
               clearCredentialRotationHandoff(secureWriteReceiptId);
             }
-            const message = error instanceof Error ? error.message : '未知错误';
+            const message =
+              error instanceof Error
+                ? error.message
+                : admin_supply_unknown_error_5f76edc5();
             publishRouteSimulatorError(
               actionId,
               message,
@@ -596,7 +692,10 @@ export function SupplyGovernedActionsPanel({
             );
             setOutcome({
               actionId,
-              message: `${definition.label}执行失败：${message}`,
+              message: admin_supply_action_failed({
+                label: definition.label,
+                message,
+              }),
               status: 'failed',
             });
             throw error;
@@ -611,11 +710,17 @@ export function SupplyGovernedActionsPanel({
       ) {
         clearCredentialRotationHandoff(secureWriteReceiptId);
       }
-      const message = error instanceof Error ? error.message : '未知错误';
+      const message =
+        error instanceof Error
+          ? error.message
+          : admin_supply_unknown_error_5f76edc5();
       publishRouteSimulatorError(actionId, message, onRouteSimulatorUpdate);
       setOutcome({
         actionId,
-        message: `${definition.label}预览失败：${message}`,
+        message: admin_supply_preview_failed({
+          label: definition.label,
+          message,
+        }),
         status: 'failed',
       });
     }
@@ -634,21 +739,28 @@ export function SupplyGovernedActionsPanel({
       className="space-y-4"
     >
       <header className="space-y-1">
-        <h2 className="text-base font-semibold">受治理快捷动作</h2>
+        <h2 className="text-base font-semibold">
+          {admin_supply_governed_quick_actions_2029dea2()}
+        </h2>
         <p className="text-xs text-muted-foreground">
-          全部走 Core 类型化命令 + capability permission + 影响预览 + 原因 +
-          CAS/幂等 + 可逆排空 +
-          不可变审计。不暴露密钥、不直写库、不绕发布门、不对 accepted/unknown
-          媒体盲目重试。
+          {admin_supply_all_via_core_typed_commands_capability_p_13b9729e()}
         </p>
       </header>
 
       {/* Constraint legend, not health words — these stay neutral by design. */}
       <div className="flex flex-wrap gap-2">
-        <Badge variant="outline">禁止密钥回显</Badge>
-        <Badge variant="outline">禁止直写库</Badge>
-        <Badge variant="outline">禁止绕发布门</Badge>
-        <Badge variant="outline">禁止盲目重试 accepted/unknown</Badge>
+        <Badge variant="outline">
+          {admin_supply_no_secret_echo_1d752c89()}
+        </Badge>
+        <Badge variant="outline">
+          {admin_supply_no_direct_db_writes_65c80a14()}
+        </Badge>
+        <Badge variant="outline">
+          {admin_supply_no_publish_gate_bypass_69d56aff()}
+        </Badge>
+        <Badge variant="outline">
+          {admin_supply_no_blind_retry_of_accepted_unknown_5ca78898()}
+        </Badge>
       </div>
 
       <Frame dense>
@@ -656,14 +768,18 @@ export function SupplyGovernedActionsPanel({
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>动作</TableHead>
-                <TableHead>权限</TableHead>
-                <TableHead>预览</TableHead>
-                <TableHead>原因</TableHead>
-                <TableHead>CAS/幂等</TableHead>
-                <TableHead>可逆排空</TableHead>
-                <TableHead>目标</TableHead>
-                <TableHead>原因与执行</TableHead>
+                <TableHead>{admin_supply_action_d9d98278()}</TableHead>
+                <TableHead>{admin_supply_permission_560165a6()}</TableHead>
+                <TableHead>{admin_supply_preview_de61aa8e()}</TableHead>
+                <TableHead>{admin_supply_reason_1ff9c3d0()}</TableHead>
+                <TableHead>{admin_supply_cas_idempotency_4f4772a6()}</TableHead>
+                <TableHead>
+                  {admin_supply_reversible_drain_a1d54996()}
+                </TableHead>
+                <TableHead>{admin_supply_target_941f0831()}</TableHead>
+                <TableHead>
+                  {admin_supply_reason_and_execute_287aa02e()}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -690,10 +806,14 @@ export function SupplyGovernedActionsPanel({
                   <TableCell className="font-mono text-xs">
                     {action.permission}
                   </TableCell>
-                  <TableCell>是</TableCell>
-                  <TableCell>是</TableCell>
-                  <TableCell>是</TableCell>
-                  <TableCell>{action.reversibleDrain ? '是' : '否'}</TableCell>
+                  <TableCell>{admin_supply_yes_30160a21()}</TableCell>
+                  <TableCell>{admin_supply_yes_30160a21()}</TableCell>
+                  <TableCell>{admin_supply_yes_30160a21()}</TableCell>
+                  <TableCell>
+                    {action.reversibleDrain
+                      ? admin_supply_yes_30160a21()
+                      : admin_supply_no_8bf5c10a()}
+                  </TableCell>
                   <GovernedActionFormCells
                     actionId={action.id}
                     label={action.label}
@@ -737,7 +857,7 @@ export function SupplyGovernedActionsPanel({
             ) : null}
             {outcome.status === 'succeeded' ? (
               <a className="mt-1 inline-block underline" href="/admin/audit">
-                查看审计
+                {admin_supply_view_audit_0cdc970f()}
               </a>
             ) : null}
           </FramePanel>

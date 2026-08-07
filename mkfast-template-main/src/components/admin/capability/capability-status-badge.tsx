@@ -6,6 +6,13 @@ import type {
 
 import { Badge, type BadgeProps } from '@/components/reui/badge';
 import {
+  admin_capability_instrument_instrumented,
+  admin_capability_instrument_not_instrumented,
+  admin_capability_instrument_not_verified,
+  admin_capability_instrument_out_of_scope,
+  admin_capability_instrument_stub,
+} from '@/locale/paraglide/messages';
+import {
   availabilityLabel,
   inventoryStatusLabel,
 } from '@/p1/admin-capability-registry-model';
@@ -82,15 +89,15 @@ export function InstrumentStatusBadge({
 }) {
   const label =
     status === 'instrumented'
-      ? '已插桩'
+      ? admin_capability_instrument_instrumented()
       : status === 'stub'
-        ? '存根'
+        ? admin_capability_instrument_stub()
         : status === 'not_instrumented'
-          ? '未插桩'
+          ? admin_capability_instrument_not_instrumented()
           : status === 'not_verified'
-            ? '未核验'
+            ? admin_capability_instrument_not_verified()
             : status === 'not_in_scope_for_supply_v1'
-              ? '供应 v1 范围外'
+              ? admin_capability_instrument_out_of_scope()
               : status;
 
   return (

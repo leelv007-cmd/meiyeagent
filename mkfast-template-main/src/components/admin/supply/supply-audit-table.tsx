@@ -1,6 +1,11 @@
 import { Badge, type BadgeProps } from '@/components/reui/badge';
 import { Frame, FramePanel } from '@/components/reui/frame';
 import type { SupplyAuditChange } from '@/p1/admin-supply-types';
+import {
+  admin_supply_actor_and_correlation_4a6773ae,
+  admin_supply_no_supply_governance_audit_records_yet_108b8c16,
+  admin_supply_target_941f0831,
+} from '@/locale/paraglide/messages';
 
 /**
  * Colour follows what the governance action did to supply: taking capacity out
@@ -27,7 +32,9 @@ export function SupplyAuditTable({
     return (
       <Frame dense spacing="sm" stacked>
         <FramePanel>
-          <p className="text-sm text-muted-foreground">暂无供应治理审计记录</p>
+          <p className="text-sm text-muted-foreground">
+            {admin_supply_no_supply_governance_audit_records_yet_108b8c16()}
+          </p>
         </FramePanel>
       </Frame>
     );
@@ -52,13 +59,17 @@ export function SupplyAuditTable({
           </div>
           <dl className="grid gap-1 text-xs sm:grid-cols-2">
             <div>
-              <dt className="inline text-muted-foreground">目标</dt>{' '}
+              <dt className="inline text-muted-foreground">
+                {admin_supply_target_941f0831()}
+              </dt>{' '}
               <dd className="inline font-mono">
                 {change.targetType}/{change.targetId}
               </dd>
             </div>
             <div>
-              <dt className="inline text-muted-foreground">操作者与关联</dt>{' '}
+              <dt className="inline text-muted-foreground">
+                {admin_supply_actor_and_correlation_4a6773ae()}
+              </dt>{' '}
               <dd className="inline font-mono">
                 {change.actorId} · {change.correlationId}
               </dd>

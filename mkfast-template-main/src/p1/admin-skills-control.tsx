@@ -36,18 +36,149 @@ import {
 } from '@/p1/admin-skills-contract';
 import { commandP1, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
+import {
+  admin_capability_all_778fc8f9,
+  admin_capability_skill_catalog_e4646dec,
+  admin_sensitive_words_disable_d989e551,
+  admin_skills_accept_and_freeze_62c55e1e,
+  admin_skills_admin_cancel_recoverable_379b7eac,
+  admin_skills_admin_only_256d9f9a,
+  admin_skills_approve_and_continue_f2d98e71,
+  admin_skills_assembly_delivery_0a6156e1,
+  admin_skills_base_version_ref_d58f0e4f,
+  admin_skills_before_retire_load_reverse_dependencies_db0e6004,
+  admin_skills_bind_stage_and_rollback_binding_only_swi_849e87d0,
+  admin_skills_bind_stage_f5f28c8d,
+  admin_skills_binding_being_rolled_back_090d688b,
+  admin_skills_binding_id_d9d88c74,
+  admin_skills_binding_mode_cd3b4321,
+  admin_skills_brief_compile_90d7c5e5,
+  admin_skills_business_terminate_irrecoverable_66a07809,
+  admin_skills_catalog_read_failed_please_retry_717c437d,
+  admin_skills_context_injection_eec79988,
+  admin_skills_controlled_practice_body_7353e406,
+  admin_skills_controlled_revision_ad2b3dcf,
+  admin_skills_controlled_revision_failed_to_start_plea_dfef11e8,
+  admin_skills_current_production_prompt_ref_is_not_rea_36b5074a,
+  admin_skills_current_production_prompt_ref_unavailabl_892d6852,
+  admin_skills_current_prompt_07bd4ba9,
+  admin_skills_current_version_46e66f63,
+  admin_skills_current_version_must_be_a_positive_integ_01c0ce22,
+  admin_skills_current_version_number_31e02486,
+  admin_skills_current_version_number_leave_empty_for_f_e4914e80,
+  admin_skills_current_version_number_must_be_a_positiv_b06507aa,
+  admin_skills_currently_hosts_platform_and_industry_la_21e67a8f,
+  admin_skills_dependency_read_failed_retire_stays_bloc_4d091c9f,
+  admin_skills_deployment_id_bd91c8a9,
+  admin_skills_display_policy_88e66a3f,
+  admin_skills_effective_stage_2d94ddf6,
+  admin_skills_eval_run_id_c39c4257,
+  admin_skills_execution_selection_e8fa9ec7,
+  admin_skills_explainable_701f9b47,
+  admin_skills_field_required,
+  admin_skills_filter_by_layer_de4f93bc,
+  admin_skills_global_a5644f4b,
+  admin_skills_governance_run_8165d3ab,
+  admin_skills_governance_run_id_5f00ef9c,
+  admin_skills_governance_run_operation_failed_please_r_ef7a5191,
+  admin_skills_governance_workflows_published_catalog_m_161b3621,
+  admin_skills_handwritten_19002f60,
+  admin_skills_harvest_source_url_harvested_translation_15630f3a,
+  admin_skills_harvest_time_iso_8601_harvested_translat_e92c5e86,
+  admin_skills_harvested_translation_838ef818,
+  admin_skills_immutable_name_source_layer_governance_b_e5a81b71,
+  admin_skills_industry_layer_9fad7f92,
+  admin_skills_industry_layer_second_source_cross_check_caed8dad,
+  admin_skills_intent_naming_72027f84,
+  admin_skills_layer_dac36cb8,
+  admin_skills_loading_b21b631c,
+  admin_skills_loading_f950213a,
+  admin_skills_loading_published_workflow_catalog_091eca78,
+  admin_skills_merchant_optional_19ea6539,
+  admin_skills_merchant_selectable_0ee88adf,
+  admin_skills_name_1be7ae4f,
+  admin_skills_new_binding_id_ef9fc32e,
+  admin_skills_new_practice_3ed9bf79,
+  admin_skills_no_dependencies_found_93ae6ed5,
+  admin_skills_no_published_recipe_workflows_yet_290f9354,
+  admin_skills_no_skills_yet_use_new_practice_below_to_724789ca,
+  admin_skills_not_yet_accepted_9e65dd32,
+  admin_skills_one_line_description_f960848c,
+  admin_skills_only_controlled_practice_body_and_one_li_9d4a8ac0,
+  admin_skills_operation_completed_d285ee4a,
+  admin_skills_other_workspace_deps_5f81764d,
+  admin_skills_peer_skill_id_4afb57a0,
+  admin_skills_peer_version_af4bbbbe,
+  admin_skills_platform_layer_dbecdefc,
+  admin_skills_please_select_382f4b55,
+  admin_skills_processing_1cac8ac7,
+  admin_skills_provider_62e38921,
+  admin_skills_publish_run_id_41466e91,
+  admin_skills_published_generation_must_be_a_non_negat_94635ba1,
+  admin_skills_published_is_each_skill_s_unique_lifecyc_f734ef29,
+  admin_skills_published_switch_failed_please_retry_19e2f54b,
+  admin_skills_published_unique_81041b5a,
+  admin_skills_published_workflow_catalog_not_ready_can_c00a173a,
+  admin_skills_published_workflow_catalog_read_failed_p_9a03a8d7,
+  admin_skills_refresh_status_7cc7f07a,
+  admin_skills_refreshing_d47379f9,
+  admin_skills_register_deployment_3c3afb30,
+  admin_skills_required_7800d5bb,
+  admin_skills_resume_after_admin_cancel_4bae812b,
+  admin_skills_retire_blocked_91eb75f1,
+  admin_skills_retire_run_id_2f94a368,
+  admin_skills_retire_this_version_20cc3f32,
+  admin_skills_retiring_97c3815f,
+  admin_skills_reverse_dependencies_remain_this_version_b88675b0,
+  admin_skills_reverse_dependencies_retire_ca2bbf94,
+  admin_skills_rollback_binding_efc3f534,
+  admin_skills_rollback_to_version_a6407e2c,
+  admin_skills_run_state_resumes_here_after_start_ce3af0bc,
+  admin_skills_select_a_published_workflow_c466f863,
+  admin_skills_select_a_valid_skill_id_from_the_current_f94d8342,
+  admin_skills_select_a_workflow_version_from_the_publi_4852acd8,
+  admin_skills_select_at_least_one_governance_workflow_c7273436,
+  admin_skills_skill_bound_workflow_is_unpublished_or_n_8a446a82,
+  admin_skills_skill_id_0ba503b6,
+  admin_skills_skill_operation_failed_please_retry_25350fdc,
+  admin_skills_source_c63f79e6,
+  admin_skills_standard_package_name_26c6592b,
+  admin_skills_start_revision_run_cdffed85,
+  admin_skills_store_layer_d3bcb4a6,
+  admin_skills_submit_governed_command_1430e707,
+  admin_skills_submitting_17e519c5,
+  admin_skills_switch_published_306a0aaf,
+  admin_skills_switching_717bbfb3,
+  admin_skills_synthesized_19ab899d,
+  admin_skills_target_version_ref_ddaa8254,
+  admin_skills_this_workspace_ba93d643,
+  admin_skills_traffic_targets_new_requests_base_lifecy_66c8a83e,
+  admin_skills_updated_at_093dea88,
+  admin_skills_version_records_4173c9ea,
+  admin_skills_version_records_7c9253ad,
+  admin_skills_version_ref_9b17a444,
+  admin_skills_version_ref_cannot_be_empty_438f7f5d,
+  admin_skills_version_retire_failed_please_retry_7bb0464e,
+  admin_skills_view_provenance_84ec1d0a,
+  admin_skills_view_reverse_dependencies_073dbd6f,
+  admin_skills_view_versions_31140423,
+  admin_skills_workflow_not_in_catalog,
+  admin_skills_workflow_version_published_catalog_8da8a089,
+  admin_supply_action_f3ea6d34,
+  admin_supply_channel_c152be9f,
+} from '@/locale/paraglide/messages';
 
 /** Operator-facing labels for the source column (a hard catalog requirement). */
 const SOURCE_LABELS = {
-  harvested: '收割转译',
-  authored: '手写',
-  induced: '归纳',
+  harvested: admin_skills_harvested_translation_838ef818(),
+  authored: admin_skills_handwritten_19002f60(),
+  induced: admin_skills_synthesized_19ab899d(),
 } as const;
 
 const TIER_LABELS = {
-  platform: '平台层',
-  industry: '行业层',
-  store: '门店层',
+  platform: admin_skills_platform_layer_dbecdefc(),
+  industry: admin_skills_industry_layer_9fad7f92(),
+  store: admin_skills_store_layer_d3bcb4a6(),
 } as const;
 
 type SourceKind = keyof typeof SOURCE_LABELS;
@@ -100,7 +231,7 @@ interface SkillCommandAuthorities {
 
 /** Stable Core INVALID_STATE message for bind boundary (Spec B / #362). */
 export const SKILL_WORKFLOW_BINDING_INVALID_MESSAGE =
-  'Skill 绑定的工作流未发布或未获该 Skill 治理授权。';
+  admin_skills_skill_bound_workflow_is_unpublished_or_n_8a446a82();
 
 interface SkillGovernanceFormValues {
   baseSkillRevisionRef: string;
@@ -180,131 +311,214 @@ interface FieldSpec {
  */
 const COMMAND_FORMS = {
   skill_define: {
-    label: '新建做法',
+    label: admin_skills_new_practice_3ed9bf79(),
     fields: [
-      { key: 'skillId', label: 'Skill 标识', kind: 'text' },
-      { key: 'name', label: '名称', kind: 'text' },
-      { key: 'packageName', label: '标准包名', kind: 'text' },
-      { key: 'description', label: '一句话说明', kind: 'text' },
+      { key: 'skillId', label: admin_skills_skill_id_0ba503b6(), kind: 'text' },
+      { key: 'name', label: admin_skills_name_1be7ae4f(), kind: 'text' },
+      {
+        key: 'packageName',
+        label: admin_skills_standard_package_name_26c6592b(),
+        kind: 'text',
+      },
+      {
+        key: 'description',
+        label: admin_skills_one_line_description_f960848c(),
+        kind: 'text',
+      },
       {
         key: 'instruction',
-        label: '受控做法正文',
+        label: admin_skills_controlled_practice_body_7353e406(),
         kind: 'textarea',
       },
       {
         key: 'workflowRevisionRefs',
-        label: '治理工作流（已发布目录，可多选）',
+        label: admin_skills_governance_workflows_published_catalog_m_161b3621(),
         kind: 'workflow_multi',
       },
       {
         key: 'expectedRevision',
-        label: '当前版本号（首版留空）',
+        label: admin_skills_current_version_number_leave_empty_for_f_e4914e80(),
         kind: 'text',
       },
       {
         key: 'sourceKind',
-        label: '来源',
+        label: admin_skills_source_c63f79e6(),
         kind: 'select',
         options: [
-          { value: 'harvested', label: '收割转译' },
-          { value: 'authored', label: '手写' },
-          { value: 'induced', label: '归纳' },
+          {
+            value: 'harvested',
+            label: admin_skills_harvested_translation_838ef818(),
+          },
+          { value: 'authored', label: admin_skills_handwritten_19002f60() },
+          { value: 'induced', label: admin_skills_synthesized_19ab899d() },
         ],
       },
       {
         key: 'tier',
-        label: '层级',
+        label: admin_skills_layer_dac36cb8(),
         kind: 'select',
         options: [
-          { value: 'platform', label: '平台层' },
-          { value: 'industry', label: '行业层' },
+          { value: 'platform', label: admin_skills_platform_layer_dbecdefc() },
+          { value: 'industry', label: admin_skills_industry_layer_9fad7f92() },
         ],
       },
       {
         key: 'sourceExternalUrl',
-        label: '收割来源链接（仅收割转译）',
+        label: admin_skills_harvest_source_url_harvested_translation_15630f3a(),
         kind: 'text',
       },
       {
         key: 'sourceHarvestedAt',
-        label: '收割时间（ISO 8601，仅收割转译）',
+        label: admin_skills_harvest_time_iso_8601_harvested_translat_e92c5e86(),
         kind: 'text',
       },
       {
         key: 'presentationPolicy',
-        label: '展示策略',
+        label: admin_skills_display_policy_88e66a3f(),
         kind: 'select',
         options: [
-          { value: 'backend_only', label: '仅后台使用' },
-          { value: 'explainable', label: '可解释' },
-          { value: 'user_selectable', label: '可由商家选用' },
+          { value: 'backend_only', label: admin_skills_admin_only_256d9f9a() },
+          { value: 'explainable', label: admin_skills_explainable_701f9b47() },
+          {
+            value: 'user_selectable',
+            label: admin_skills_merchant_selectable_0ee88adf(),
+          },
         ],
       },
     ],
   },
   skill_accept: {
-    label: '受理并冻结',
+    label: admin_skills_accept_and_freeze_62c55e1e(),
     fields: [
-      { key: 'skillRevisionRef', label: '版本引用', kind: 'text' },
-      { key: 'evalRunId', label: '评测运行号', kind: 'text' },
+      {
+        key: 'skillRevisionRef',
+        label: admin_skills_version_ref_9b17a444(),
+        kind: 'text',
+      },
+      {
+        key: 'evalRunId',
+        label: admin_skills_eval_run_id_c39c4257(),
+        kind: 'text',
+      },
     ],
   },
   skill_bind: {
-    label: '绑定阶段',
+    label: admin_skills_bind_stage_f5f28c8d(),
     fields: [
-      { key: 'bindingId', label: '绑定标识', kind: 'text' },
+      {
+        key: 'bindingId',
+        label: admin_skills_binding_id_d9d88c74(),
+        kind: 'text',
+      },
       {
         key: 'workflowRevisionRef',
-        label: '工作流版本（已发布目录）',
+        label: admin_skills_workflow_version_published_catalog_8da8a089(),
         kind: 'workflow_select',
       },
-      { key: 'skillRevisionRef', label: '版本引用', kind: 'text' },
+      {
+        key: 'skillRevisionRef',
+        label: admin_skills_version_ref_9b17a444(),
+        kind: 'text',
+      },
       {
         key: 'harnessStage',
-        label: '生效阶段',
+        label: admin_skills_effective_stage_2d94ddf6(),
         kind: 'select',
         options: [
-          { value: 'intent_naming', label: '意图命名' },
-          { value: 'context_injection', label: '上下文注入' },
-          { value: 'brief_compilation', label: '简报编译' },
-          { value: 'execution_selection', label: '执行选择' },
-          { value: 'assembly_delivery', label: '装配交付' },
+          {
+            value: 'intent_naming',
+            label: admin_skills_intent_naming_72027f84(),
+          },
+          {
+            value: 'context_injection',
+            label: admin_skills_context_injection_eec79988(),
+          },
+          {
+            value: 'brief_compilation',
+            label: admin_skills_brief_compile_90d7c5e5(),
+          },
+          {
+            value: 'execution_selection',
+            label: admin_skills_execution_selection_e8fa9ec7(),
+          },
+          {
+            value: 'assembly_delivery',
+            label: admin_skills_assembly_delivery_0a6156e1(),
+          },
         ],
       },
       {
         key: 'mode',
-        label: '绑定模式',
+        label: admin_skills_binding_mode_cd3b4321(),
         kind: 'select',
         options: [
-          { value: 'required', label: '必用' },
-          { value: 'user_selected', label: '商家可选' },
-          { value: 'disabled', label: '停用' },
+          { value: 'required', label: admin_skills_required_7800d5bb() },
+          {
+            value: 'user_selected',
+            label: admin_skills_merchant_optional_19ea6539(),
+          },
+          {
+            value: 'disabled',
+            label: admin_sensitive_words_disable_d989e551(),
+          },
         ],
       },
     ],
   },
   skill_rollback: {
-    label: '回滚绑定',
+    label: admin_skills_rollback_binding_efc3f534(),
     fields: [
-      { key: 'bindingId', label: '新绑定标识', kind: 'text' },
-      { key: 'sourceBindingId', label: '被回滚的绑定', kind: 'text' },
-      { key: 'targetSkillRevisionRef', label: '回到哪个版本', kind: 'text' },
+      {
+        key: 'bindingId',
+        label: admin_skills_new_binding_id_ef9fc32e(),
+        kind: 'text',
+      },
+      {
+        key: 'sourceBindingId',
+        label: admin_skills_binding_being_rolled_back_090d688b(),
+        kind: 'text',
+      },
+      {
+        key: 'targetSkillRevisionRef',
+        label: admin_skills_rollback_to_version_a6407e2c(),
+        kind: 'text',
+      },
       {
         key: 'workflowRevisionRef',
-        label: '工作流版本（已发布目录）',
+        label: admin_skills_workflow_version_published_catalog_8da8a089(),
         kind: 'workflow_select',
       },
     ],
   },
   skill_deployment: {
-    label: '登记部署',
+    label: admin_skills_register_deployment_3c3afb30(),
     fields: [
-      { key: 'deploymentId', label: '部署标识', kind: 'text' },
-      { key: 'skillRevisionRef', label: '版本引用', kind: 'text' },
-      { key: 'provider', label: '供应方', kind: 'text' },
-      { key: 'channel', label: '渠道', kind: 'text' },
-      { key: 'nativeSkillId', label: '对端 Skill 标识', kind: 'text' },
-      { key: 'nativeVersion', label: '对端版本', kind: 'text' },
+      {
+        key: 'deploymentId',
+        label: admin_skills_deployment_id_bd91c8a9(),
+        kind: 'text',
+      },
+      {
+        key: 'skillRevisionRef',
+        label: admin_skills_version_ref_9b17a444(),
+        kind: 'text',
+      },
+      {
+        key: 'provider',
+        label: admin_skills_provider_62e38921(),
+        kind: 'text',
+      },
+      { key: 'channel', label: admin_supply_channel_c152be9f(), kind: 'text' },
+      {
+        key: 'nativeSkillId',
+        label: admin_skills_peer_skill_id_4afb57a0(),
+        kind: 'text',
+      },
+      {
+        key: 'nativeVersion',
+        label: admin_skills_peer_version_af4bbbbe(),
+        kind: 'text',
+      },
     ],
   },
 } as const satisfies Record<
@@ -410,31 +624,37 @@ export function buildSkillCommandPayload(
   if (action === 'skill_define') {
     const promptReference = authorities.promptReference;
     if (!promptReference?.eligibleForAcceptance) {
-      throw new Error('当前 production prompt 引用尚未就绪。');
+      throw new Error(
+        admin_skills_current_production_prompt_ref_is_not_rea_36b5074a()
+      );
     }
     const expectedRevision = values.expectedRevision?.trim();
     if (
       expectedRevision &&
       (!/^\d+$/u.test(expectedRevision) || Number(expectedRevision) < 1)
     ) {
-      throw new Error('当前版本号必须是正整数；首版请留空。');
+      throw new Error(
+        admin_skills_current_version_must_be_a_positive_integ_01c0ce22()
+      );
     }
     const published = authorities.publishedWorkflowRevisionRefs ?? [];
     if (published.length === 0) {
-      throw new Error('已发布工作流目录尚未就绪，无法定义 Skill 治理引用。');
+      throw new Error(
+        admin_skills_published_workflow_catalog_not_ready_can_c00a173a()
+      );
     }
     const workflowRevisionRefs = parseSelectedWorkflowRevisionRefs(
       values.workflowRevisionRefs
     );
     if (workflowRevisionRefs.length === 0) {
-      throw new Error('请从已发布目录至少选择一个治理工作流。');
+      throw new Error(
+        admin_skills_select_at_least_one_governance_workflow_c7273436()
+      );
     }
     const publishedSet = new Set(published);
     for (const ref of workflowRevisionRefs) {
       if (!publishedSet.has(ref)) {
-        throw new Error(
-          `治理工作流不在已发布目录中：${ref}。请只从目录中选择。`
-        );
+        throw new Error(admin_skills_workflow_not_in_catalog({ ref }));
       }
     }
     return {
@@ -479,7 +699,9 @@ export function buildSkillCommandPayload(
   if (action === 'skill_bind') {
     const workflowRevisionRef = values.workflowRevisionRef?.trim() ?? '';
     if (!workflowRevisionRef) {
-      throw new Error('请选择已发布目录中的工作流版本。');
+      throw new Error(
+        admin_skills_select_a_workflow_version_from_the_publi_4852acd8()
+      );
     }
     const published = authorities.publishedWorkflowRevisionRefs;
     if (published && !published.includes(workflowRevisionRef)) {
@@ -514,22 +736,30 @@ export function buildSkillGovernanceStartPayload(
 ) {
   const expectedHeadRevision = Number(values.expectedHeadRevision);
   if (!Number.isInteger(expectedHeadRevision) || expectedHeadRevision < 1) {
-    throw new Error('当前版本号必须是正整数。');
+    throw new Error(
+      admin_skills_current_version_number_must_be_a_positiv_b06507aa()
+    );
   }
   return {
     baseSkillRevisionRef: requiredFormValue(
       values.baseSkillRevisionRef,
-      '基础版本引用'
+      admin_skills_base_version_ref_d58f0e4f()
     ),
     expectedHeadRevision,
     patch: {
-      instruction: requiredFormValue(values.instruction, '受控做法正文'),
+      instruction: requiredFormValue(
+        values.instruction,
+        admin_skills_controlled_practice_body_7353e406()
+      ),
       'manifest.description': requiredFormValue(
         values.description,
-        '一句话说明'
+        admin_skills_one_line_description_f960848c()
       ),
     },
-    runId: requiredFormValue(values.runId, '治理运行号'),
+    runId: requiredFormValue(
+      values.runId,
+      admin_skills_governance_run_id_5f00ef9c()
+    ),
   };
 }
 
@@ -541,24 +771,32 @@ export function buildSkillPublishPayload(values: SkillPublishFormValues) {
     !Number.isInteger(expectedPublicationGeneration) ||
     expectedPublicationGeneration < 0
   ) {
-    throw new Error('Published 代数必须是非负整数。');
+    throw new Error(
+      admin_skills_published_generation_must_be_a_non_negat_94635ba1()
+    );
   }
   return {
     expectedPublicationGeneration,
     expectedPublishedRevisionRef:
       values.expectedPublishedRevisionRef.trim() || null,
-    runId: requiredFormValue(values.runId, '发布运行号'),
-    skillId: requiredFormValue(values.skillId, 'Skill 标识'),
+    runId: requiredFormValue(
+      values.runId,
+      admin_skills_publish_run_id_41466e91()
+    ),
+    skillId: requiredFormValue(
+      values.skillId,
+      admin_skills_skill_id_0ba503b6()
+    ),
     targetSkillRevisionRef: requiredFormValue(
       values.targetSkillRevisionRef,
-      '目标版本引用'
+      admin_skills_target_version_ref_ddaa8254()
     ),
   };
 }
 
 function requiredFormValue(value: string, label: string) {
   const normalized = value.trim();
-  if (!normalized) throw new Error(`${label}不能为空。`);
+  if (!normalized) throw new Error(admin_skills_field_required({ label }));
   return normalized;
 }
 
@@ -610,10 +848,10 @@ export function governanceRunPollInterval(
 
 function governanceRunStatusLabel(status: string | undefined) {
   if (status === 'administrative_cancelled') {
-    return '管理取消（可恢复）';
+    return admin_skills_admin_cancel_recoverable_379b7eac();
   }
   if (status === 'business_cancelled') {
-    return '业务终止（不可恢复）';
+    return admin_skills_business_terminate_irrecoverable_66a07809();
   }
   return status;
 }
@@ -828,7 +1066,9 @@ export function AdminSkillsControl() {
       });
     } catch (cause) {
       const message =
-        cause instanceof Error ? cause.message : 'Skill 操作失败，请重试。';
+        cause instanceof Error
+          ? cause.message
+          : admin_skills_skill_operation_failed_please_retry_25350fdc();
       // Bind form keeps `values` as-is; only map the stable Spec B message.
       setError(
         action === 'skill_bind' ? mapSkillBindFormError(message) : message
@@ -859,7 +1099,9 @@ export function AdminSkillsControl() {
       });
     } catch (cause) {
       setGovernanceError(
-        cause instanceof Error ? cause.message : '受控修订启动失败，请重试。'
+        cause instanceof Error
+          ? cause.message
+          : admin_skills_controlled_revision_failed_to_start_plea_dfef11e8()
       );
     } finally {
       setGovernanceBusy(false);
@@ -887,7 +1129,9 @@ export function AdminSkillsControl() {
       await governanceRunQuery.refetch();
     } catch (cause) {
       setGovernanceError(
-        cause instanceof Error ? cause.message : '治理运行操作失败，请重试。'
+        cause instanceof Error
+          ? cause.message
+          : admin_skills_governance_run_operation_failed_please_r_ef7a5191()
       );
     } finally {
       setGovernanceBusy(false);
@@ -902,7 +1146,9 @@ export function AdminSkillsControl() {
         (row) => row.skillId === publishValues.skillId.trim()
       );
       if (!catalog) {
-        throw new Error('请先从当前目录选择有效 Skill 标识。');
+        throw new Error(
+          admin_skills_select_a_valid_skill_id_from_the_current_f94d8342()
+        );
       }
       const payload = buildSkillPublishPayload({
         ...publishValues,
@@ -920,7 +1166,9 @@ export function AdminSkillsControl() {
       });
     } catch (cause) {
       setPublishError(
-        cause instanceof Error ? cause.message : 'Published 切换失败，请重试。'
+        cause instanceof Error
+          ? cause.message
+          : admin_skills_published_switch_failed_please_retry_19e2f54b()
       );
     } finally {
       setPublishBusy(false);
@@ -931,7 +1179,7 @@ export function AdminSkillsControl() {
     const target = dependencyInput.trim();
     setRetireResult(null);
     if (!target) {
-      setRetireError('版本引用不能为空。');
+      setRetireError(admin_skills_version_ref_cannot_be_empty_438f7f5d());
       return;
     }
     setRetireError('');
@@ -954,10 +1202,18 @@ export function AdminSkillsControl() {
     setRetireError('');
     setRetireResult(null);
     try {
-      const runId = requiredFormValue(retireRunId, '退役运行号');
-      const skillRevisionRef = requiredFormValue(dependencyTarget, '版本引用');
+      const runId = requiredFormValue(
+        retireRunId,
+        admin_skills_retire_run_id_2f94a368()
+      );
+      const skillRevisionRef = requiredFormValue(
+        dependencyTarget,
+        admin_skills_version_ref_9b17a444()
+      );
       if (retirementBlocked) {
-        throw new Error('仍有反向依赖，当前版本不能退役。');
+        throw new Error(
+          admin_skills_reverse_dependencies_remain_this_version_b88675b0()
+        );
       }
       const response = await commandP1<SkillGovernanceResult>(
         'skills',
@@ -973,7 +1229,9 @@ export function AdminSkillsControl() {
       });
     } catch (cause) {
       setRetireError(
-        cause instanceof Error ? cause.message : '版本退役失败，请重试。'
+        cause instanceof Error
+          ? cause.message
+          : admin_skills_version_retire_failed_please_retry_7bb0464e()
       );
     } finally {
       setRetireBusy(false);
@@ -987,16 +1245,18 @@ export function AdminSkillsControl() {
     <div className="space-y-6" data-testid="admin-skills-control">
       <Frame>
         <FrameHeader className="gap-1">
-          <FrameTitle>Skill 目录</FrameTitle>
+          <FrameTitle>{admin_capability_skill_catalog_e4646dec()}</FrameTitle>
           <FrameDescription>
-            当前承载平台层与行业层的场景配方与行业话术。「来源」列区分收割转译、手写与归纳。
+            {admin_skills_currently_hosts_platform_and_industry_la_21e67a8f()}
           </FrameDescription>
         </FrameHeader>
         {/* 目录面板的节奏：工具条 → Separator → 表格，版本记录落在 FrameFooter。 */}
         <FramePanel className="flex flex-col gap-0 p-0!">
           <div className="flex items-end gap-3 px-4 py-3">
             <div className="space-y-2">
-              <Label htmlFor="skills-tier-filter">按层级筛选</Label>
+              <Label htmlFor="skills-tier-filter">
+                {admin_skills_filter_by_layer_de4f93bc()}
+              </Label>
               <Select
                 onValueChange={(value) => {
                   if (value == null) return;
@@ -1012,15 +1272,21 @@ export function AdminSkillsControl() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__all__">全部</SelectItem>
-                  <SelectItem value="platform">平台层</SelectItem>
-                  <SelectItem value="industry">行业层</SelectItem>
+                  <SelectItem value="__all__">
+                    {admin_capability_all_778fc8f9()}
+                  </SelectItem>
+                  <SelectItem value="platform">
+                    {admin_skills_platform_layer_dbecdefc()}
+                  </SelectItem>
+                  <SelectItem value="industry">
+                    {admin_skills_industry_layer_9fad7f92()}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
             {stats?.industryTierTotal ? (
               <p className="pb-2 text-sm text-muted-foreground">
-                行业层第二来源交叉验证占比：
+                {admin_skills_industry_layer_second_source_cross_check_caed8dad()}
                 {Math.round(
                   (stats.industryTierCorroborated / stats.industryTierTotal) *
                     100
@@ -1032,25 +1298,31 @@ export function AdminSkillsControl() {
           <Separator />
           {catalogQuery.isError ? (
             <p role="alert" className="px-4 py-3 text-sm text-destructive">
-              目录读取失败，请重试。
+              {admin_skills_catalog_read_failed_please_retry_717c437d()}
             </p>
           ) : null}
           {!catalogQuery.isLoading && !rows.length ? (
             <p className="px-4 py-6 text-center text-sm text-muted-foreground">
-              还没有任何 Skill。用下面的「新建做法」建第一条。
+              {admin_skills_no_skills_yet_use_new_practice_below_to_724789ca()}
             </p>
           ) : null}
           {rows.length ? (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>名称</TableHead>
-                  <TableHead>一句话说明</TableHead>
-                  <TableHead>来源</TableHead>
-                  <TableHead>层级</TableHead>
-                  <TableHead>当前版本</TableHead>
-                  <TableHead>更新时间</TableHead>
-                  <TableHead>版本记录</TableHead>
+                  <TableHead>{admin_skills_name_1be7ae4f()}</TableHead>
+                  <TableHead>
+                    {admin_skills_one_line_description_f960848c()}
+                  </TableHead>
+                  <TableHead>{admin_skills_source_c63f79e6()}</TableHead>
+                  <TableHead>{admin_skills_layer_dac36cb8()}</TableHead>
+                  <TableHead>
+                    {admin_skills_current_version_46e66f63()}
+                  </TableHead>
+                  <TableHead>{admin_skills_updated_at_093dea88()}</TableHead>
+                  <TableHead>
+                    {admin_skills_version_records_7c9253ad()}
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1076,13 +1348,14 @@ export function AdminSkillsControl() {
                           rel="noreferrer"
                           target="_blank"
                         >
-                          查看出处
+                          {admin_skills_view_provenance_84ec1d0a()}
                         </a>
                       ) : null}
                     </TableCell>
                     <TableCell>{TIER_LABELS[row.tier] ?? row.tier}</TableCell>
                     <TableCell className="font-mono text-xs">
-                      {row.activeRevisionRef ?? '尚未受理'}
+                      {row.activeRevisionRef ??
+                        admin_skills_not_yet_accepted_9e65dd32()}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {row.updatedAt}
@@ -1094,7 +1367,7 @@ export function AdminSkillsControl() {
                         variant="outline"
                         onClick={() => setHistorySkillId(row.skillId)}
                       >
-                        查看版本
+                        {admin_skills_view_versions_31140423()}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -1108,9 +1381,13 @@ export function AdminSkillsControl() {
             className="gap-2 py-3"
             data-testid="skills-revision-history"
           >
-            <p className="font-medium text-sm">{historySkillId} 的版本记录</p>
+            <p className="font-medium text-sm">
+              {historySkillId} {admin_skills_version_records_4173c9ea()}
+            </p>
             {historyQuery.isLoading ? (
-              <p className="text-muted-foreground text-sm">读取中…</p>
+              <p className="text-muted-foreground text-sm">
+                {admin_skills_loading_f950213a()}
+              </p>
             ) : null}
             {historyQuery.data?.map((revision) => (
               <div
@@ -1127,10 +1404,9 @@ export function AdminSkillsControl() {
 
       <Frame>
         <FrameHeader className="gap-1">
-          <FrameTitle>受控修订</FrameTitle>
+          <FrameTitle>{admin_skills_controlled_revision_ad2b3dcf()}</FrameTitle>
           <FrameDescription>
-            只有“受控做法正文”和“一句话说明”可修改。名称、来源、层级、治理预算、schema
-            与 prompt 引用保持只读。
+            {admin_skills_only_controlled_practice_body_and_one_li_9d4a8ac0()}
           </FrameDescription>
         </FrameHeader>
         <FramePanel className="space-y-4">
@@ -1138,12 +1414,13 @@ export function AdminSkillsControl() {
             className="rounded-md border bg-muted/30 p-3 text-muted-foreground text-sm"
             data-testid="skills-readonly-declaration"
           >
-            不可覆盖：名称、来源、层级、治理预算、schema、prompt
-            引用、版本号与审计归属。
+            {admin_skills_immutable_name_source_layer_governance_b_e5a81b71()}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">
-              <Label htmlFor="skills-governance-run-id">治理运行号</Label>
+              <Label htmlFor="skills-governance-run-id">
+                {admin_skills_governance_run_id_5f00ef9c()}
+              </Label>
               <Input
                 id="skills-governance-run-id"
                 data-ops-control="text"
@@ -1157,7 +1434,9 @@ export function AdminSkillsControl() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="skills-governance-base-ref">基础版本引用</Label>
+              <Label htmlFor="skills-governance-base-ref">
+                {admin_skills_base_version_ref_d58f0e4f()}
+              </Label>
               <Input
                 id="skills-governance-base-ref"
                 data-ops-control="text"
@@ -1171,7 +1450,9 @@ export function AdminSkillsControl() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="skills-governance-head">当前版本号</Label>
+              <Label htmlFor="skills-governance-head">
+                {admin_skills_current_version_number_31e02486()}
+              </Label>
               <Input
                 id="skills-governance-head"
                 data-ops-control="text"
@@ -1186,7 +1467,9 @@ export function AdminSkillsControl() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="skills-governance-description">一句话说明</Label>
+              <Label htmlFor="skills-governance-description">
+                {admin_skills_one_line_description_f960848c()}
+              </Label>
               <Input
                 id="skills-governance-description"
                 data-ops-control="text"
@@ -1201,7 +1484,7 @@ export function AdminSkillsControl() {
             </div>
             <div className="space-y-2 sm:col-span-2">
               <Label htmlFor="skills-governance-instruction">
-                受控做法正文
+                {admin_skills_controlled_practice_body_7353e406()}
               </Label>
               <Textarea
                 id="skills-governance-instruction"
@@ -1221,7 +1504,9 @@ export function AdminSkillsControl() {
             disabled={governanceBusy}
             onClick={() => void startGovernanceRun()}
           >
-            {governanceBusy ? '处理中…' : '启动修订运行'}
+            {governanceBusy
+              ? admin_skills_processing_1cac8ac7()
+              : admin_skills_start_revision_run_cdffed85()}
           </Button>
           {governanceError ? (
             <p role="alert" className="text-sm text-destructive">
@@ -1234,19 +1519,23 @@ export function AdminSkillsControl() {
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="font-medium text-sm">治理运行</p>
+                <p className="font-medium text-sm">
+                  {admin_skills_governance_run_8165d3ab()}
+                </p>
                 <p className="text-muted-foreground text-sm">
                   {governanceRunId
                     ? `${governanceRunId} · ${
                         governanceRunStatusLabel(
                           governanceRunStatus(governanceRunQuery.data)
-                        ) ?? '读取中'
+                        ) ?? admin_skills_loading_b21b631c()
                       }`
-                    : '启动后会在这里恢复运行状态。'}
+                    : admin_skills_run_state_resumes_here_after_start_ce3af0bc()}
                 </p>
               </div>
               {governanceRunQuery.isFetching ? (
-                <Badge variant="secondary">刷新中</Badge>
+                <Badge variant="secondary">
+                  {admin_skills_refreshing_d47379f9()}
+                </Badge>
               ) : null}
             </div>
             {governanceRunResult(governanceRunQuery.data) ? (
@@ -1268,7 +1557,7 @@ export function AdminSkillsControl() {
                 size="sm"
                 variant="outline"
               >
-                批准并继续
+                {admin_skills_approve_and_continue_f2d98e71()}
               </Button>
               <Button
                 data-ops-control="button"
@@ -1285,7 +1574,7 @@ export function AdminSkillsControl() {
                 size="sm"
                 variant="outline"
               >
-                管理取消（可恢复）
+                {admin_skills_admin_cancel_recoverable_379b7eac()}
               </Button>
               <Button
                 data-ops-control="button"
@@ -1300,7 +1589,7 @@ export function AdminSkillsControl() {
                 size="sm"
                 variant="outline"
               >
-                业务终止（不可恢复）
+                {admin_skills_business_terminate_irrecoverable_66a07809()}
               </Button>
               <Button
                 data-ops-control="button"
@@ -1315,7 +1604,7 @@ export function AdminSkillsControl() {
                 size="sm"
                 variant="outline"
               >
-                恢复管理取消
+                {admin_skills_resume_after_admin_cancel_4bae812b()}
               </Button>
               <Button
                 data-ops-control="button"
@@ -1324,7 +1613,7 @@ export function AdminSkillsControl() {
                 size="sm"
                 variant="ghost"
               >
-                刷新状态
+                {admin_skills_refresh_status_7cc7f07a()}
               </Button>
             </div>
           </div>
@@ -1333,19 +1622,20 @@ export function AdminSkillsControl() {
 
       <Frame>
         <FrameHeader className="gap-1">
-          <FrameTitle>Published（唯一）</FrameTitle>
+          <FrameTitle>{admin_skills_published_unique_81041b5a()}</FrameTitle>
           <FrameDescription>
-            Published 是每个 Skill
-            唯一的生命周期指针。切换它不会改动流量目标，也不会让历史版本变成第二个
-            Published。
+            {admin_skills_published_is_each_skill_s_unique_lifecyc_f734ef29()}
           </FrameDescription>
         </FrameHeader>
         <FramePanel className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
             {[
-              ['runId', '发布运行号'],
-              ['skillId', 'Skill 标识'],
-              ['targetSkillRevisionRef', '目标版本引用'],
+              ['runId', admin_skills_publish_run_id_41466e91()],
+              ['skillId', admin_skills_skill_id_0ba503b6()],
+              [
+                'targetSkillRevisionRef',
+                admin_skills_target_version_ref_ddaa8254(),
+              ],
             ].map(([key, label]) => (
               <div className="space-y-2" key={key}>
                 <Label htmlFor={`skills-publish-${key}`}>{label}</Label>
@@ -1368,7 +1658,9 @@ export function AdminSkillsControl() {
             disabled={publishBusy}
             onClick={() => void publishRevision()}
           >
-            {publishBusy ? '切换中…' : '切换 Published'}
+            {publishBusy
+              ? admin_skills_switching_717bbfb3()
+              : admin_skills_switch_published_306a0aaf()}
           </Button>
           {publishError ? (
             <p role="alert" className="text-sm text-destructive">
@@ -1383,15 +1675,19 @@ export function AdminSkillsControl() {
 
       <Frame>
         <FrameHeader className="gap-1">
-          <FrameTitle>反向依赖与退役</FrameTitle>
+          <FrameTitle>
+            {admin_skills_reverse_dependencies_retire_ca2bbf94()}
+          </FrameTitle>
           <FrameDescription>
-            退役前必须读取精确版本的反向依赖。本工作区与全局依赖显示明细，其他工作区只显示数量。
+            {admin_skills_before_retire_load_reverse_dependencies_db0e6004()}
           </FrameDescription>
         </FrameHeader>
         <FramePanel className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="flex-1 space-y-2">
-              <Label htmlFor="skills-dependency-ref">版本引用</Label>
+              <Label htmlFor="skills-dependency-ref">
+                {admin_skills_version_ref_9b17a444()}
+              </Label>
               <Input
                 id="skills-dependency-ref"
                 data-ops-control="text"
@@ -1404,12 +1700,12 @@ export function AdminSkillsControl() {
               onClick={inspectDependencies}
               variant="outline"
             >
-              查看反向依赖
+              {admin_skills_view_reverse_dependencies_073dbd6f()}
             </Button>
           </div>
           {dependencyQuery.isError ? (
             <p role="alert" className="text-sm text-destructive">
-              依赖读取失败，退役保持阻断。
+              {admin_skills_dependency_read_failed_retire_stays_bloc_4d091c9f()}
             </p>
           ) : null}
           {dependencyQuery.data ? (
@@ -1425,10 +1721,13 @@ export function AdminSkillsControl() {
                       : 'success-outline'
                   }
                 >
-                  {retirementBlocked ? '退役已阻断' : '未发现依赖'}
+                  {retirementBlocked
+                    ? admin_skills_retire_blocked_91eb75f1()
+                    : admin_skills_no_dependencies_found_93ae6ed5()}
                 </Badge>
                 <Badge variant="secondary">
-                  其他工作区依赖 {dependencyQuery.data.hiddenCount}
+                  {admin_skills_other_workspace_deps_5f81764d()}{' '}
+                  {dependencyQuery.data.hiddenCount}
                 </Badge>
               </div>
               {visibleDependencies.map((dependency, index) => (
@@ -1438,7 +1737,9 @@ export function AdminSkillsControl() {
                 >
                   <span>{dependency.consumerLabel}</span>
                   <span className="text-muted-foreground">
-                    {dependency.scopeKind === 'global' ? '全局' : '本工作区'}
+                    {dependency.scopeKind === 'global'
+                      ? admin_skills_global_a5644f4b()
+                      : admin_skills_this_workspace_ba93d643()}
                   </span>
                 </div>
               ))}
@@ -1446,7 +1747,9 @@ export function AdminSkillsControl() {
           ) : null}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="flex-1 space-y-2">
-              <Label htmlFor="skills-retire-run-id">退役运行号</Label>
+              <Label htmlFor="skills-retire-run-id">
+                {admin_skills_retire_run_id_2f94a368()}
+              </Label>
               <Input
                 id="skills-retire-run-id"
                 data-ops-control="text"
@@ -1460,7 +1763,9 @@ export function AdminSkillsControl() {
               onClick={() => void retireRevision()}
               variant="outline"
             >
-              {retireBusy ? '退役中…' : '退役这个版本'}
+              {retireBusy
+                ? admin_skills_retiring_97c3815f()
+                : admin_skills_retire_this_version_20cc3f32()}
             </Button>
           </div>
           {retireError ? (
@@ -1474,14 +1779,18 @@ export function AdminSkillsControl() {
 
       <Frame>
         <FrameHeader className="gap-1">
-          <FrameTitle>流量目标（新请求）与基础生命周期</FrameTitle>
+          <FrameTitle>
+            {admin_skills_traffic_targets_new_requests_base_lifecy_66c8a83e()}
+          </FrameTitle>
           <FrameDescription>
-            “绑定阶段”和“回滚绑定”只切换随后接纳的新请求；已接纳运行继续使用冻结的精确版本。定义、受理与部署不改变这个边界。
+            {admin_skills_bind_stage_and_rollback_binding_only_swi_849e87d0()}
           </FrameDescription>
         </FrameHeader>
         <FramePanel className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="skills-action">操作</Label>
+            <Label htmlFor="skills-action">
+              {admin_supply_action_f3ea6d34()}
+            </Label>
             <Select
               onValueChange={(value) => {
                 if (!value) return;
@@ -1537,7 +1846,9 @@ export function AdminSkillsControl() {
                       data-ops-control="select"
                       id={`skills-field-${field.key}`}
                     >
-                      <SelectValue placeholder="请选择" />
+                      <SelectValue
+                        placeholder={admin_skills_please_select_382f4b55()}
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {field.options?.map((option) => (
@@ -1564,7 +1875,9 @@ export function AdminSkillsControl() {
                       data-testid={`skills-field-${field.key}`}
                       id={`skills-field-${field.key}`}
                     >
-                      <SelectValue placeholder="请选择已发布工作流" />
+                      <SelectValue
+                        placeholder={admin_skills_select_a_published_workflow_c466f863()}
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {publishedWorkflowRevisionRefs.map((ref) => (
@@ -1581,19 +1894,19 @@ export function AdminSkillsControl() {
                   >
                     {publishedWorkflowQuery.isLoading ? (
                       <p className="text-muted-foreground text-sm">
-                        正在加载已发布工作流目录…
+                        {admin_skills_loading_published_workflow_catalog_091eca78()}
                       </p>
                     ) : null}
                     {publishedWorkflowQuery.isError ? (
                       <p role="alert" className="text-destructive text-sm">
-                        已发布工作流目录读取失败，请重试。
+                        {admin_skills_published_workflow_catalog_read_failed_p_9a03a8d7()}
                       </p>
                     ) : null}
                     {!publishedWorkflowQuery.isLoading &&
                     !publishedWorkflowQuery.isError &&
                     publishedWorkflowRevisionRefs.length === 0 ? (
                       <p className="text-muted-foreground text-sm">
-                        当前没有已发布的 Recipe 工作流。
+                        {admin_skills_no_published_recipe_workflows_yet_290f9354()}
                       </p>
                     ) : null}
                     {publishedWorkflowRevisionRefs.map((ref) => {
@@ -1663,7 +1976,7 @@ export function AdminSkillsControl() {
               className="text-muted-foreground text-sm"
               data-testid="skills-current-prompt-reference"
             >
-              当前 prompt：
+              {admin_skills_current_prompt_07bd4ba9()}
               {promptReferenceQuery.data.name}@
               {promptReferenceQuery.data.version} ·{' '}
               {promptReferenceQuery.data.source} ·{' '}
@@ -1676,7 +1989,7 @@ export function AdminSkillsControl() {
           (promptReferenceQuery.data &&
             !promptReferenceQuery.data.eligibleForAcceptance) ? (
             <p role="alert" className="text-sm text-destructive">
-              当前 production prompt 引用不可用，生命周期操作已禁用。
+              {admin_skills_current_production_prompt_ref_unavailabl_892d6852()}
             </p>
           ) : null}
           <Button
@@ -1684,7 +1997,9 @@ export function AdminSkillsControl() {
             disabled={busy || authorityUnavailable}
             onClick={() => void submit()}
           >
-            {busy ? '提交中…' : '提交受控命令'}
+            {busy
+              ? admin_skills_submitting_17e519c5()
+              : admin_skills_submit_governed_command_1430e707()}
           </Button>
           {error ? (
             <p role="alert" className="text-sm text-destructive">
@@ -1696,7 +2011,8 @@ export function AdminSkillsControl() {
               className="rounded-lg border p-3 text-sm"
               data-testid="skills-operation-result"
             >
-              操作已完成：{action}
+              {admin_skills_operation_completed_d285ee4a()}
+              {action}
             </div>
           ) : null}
         </FramePanel>

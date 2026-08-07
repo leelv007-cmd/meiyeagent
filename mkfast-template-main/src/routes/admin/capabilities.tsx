@@ -3,6 +3,7 @@ import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import {
   admin_capabilities_description,
   admin_capabilities_title,
+  admin_capability_registry_section_title,
 } from '@/locale/paraglide/messages';
 import { AdminCapabilityCatalog } from '@/p1/admin-capability-catalog';
 import { AdminCapabilityRegistry } from '@/p1/admin-capability-registry';
@@ -29,7 +30,9 @@ function CapabilitiesPage() {
           className="space-y-4 border-t pt-6"
           data-testid="capability-registry-section"
         >
-          <h2 className="text-base font-semibold">能力注册表 · 六问详情</h2>
+          <h2 className="text-base font-semibold">
+            {admin_capability_registry_section_title()}
+          </h2>
           <AdminCapabilityRegistry />
         </section>
       </div>

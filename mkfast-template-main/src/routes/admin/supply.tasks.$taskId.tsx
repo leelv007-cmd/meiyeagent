@@ -1,5 +1,9 @@
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
 import { useRecordCrumb } from '@/components/admin/shell/page-crumb';
+import {
+  admin_supply_task_page_description,
+  admin_supply_task_page_title,
+} from '@/locale/paraglide/messages';
 import { AdminSupplyTaskDrilldown } from '@/p1/admin-supply-control';
 import { createFileRoute } from '@tanstack/react-router';
 
@@ -24,8 +28,8 @@ function SupplyTaskDrilldownPage({
   useRecordCrumb(taskId);
   return (
     <AdminRoutePage
-      title={`供应任务 · ${taskId}`}
-      description="摘要卡 / 延迟分段 / 持久化时间线 / 错误折叠 / 产物预览"
+      title={admin_supply_task_page_title({ taskId })}
+      description={admin_supply_task_page_description()}
     >
       <div className="space-y-4 text-sm [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm">
         <AdminSupplyTaskDrilldown taskId={taskId} />

@@ -2,6 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  admin_entitlement_draft_0f436818,
+  admin_entitlement_effective_4de07ee0,
+  admin_entitlement_expired_1354374f,
+  admin_entitlement_published_176a2eb4,
+} from '@/locale/paraglide/messages';
+
+import {
   allocationStatusLabel,
   buildEntitlementStatusView,
   entitlementPolicyStageLabel,
@@ -79,10 +86,22 @@ test('pool projection carries revision and capacity without upstream secrets', (
 });
 
 test('stage and allocation labels are operator language', () => {
-  assert.equal(entitlementPolicyStageLabel('published'), '已发布');
-  assert.equal(entitlementPolicyStageLabel('draft'), '草稿');
-  assert.equal(allocationStatusLabel('active'), '生效中');
-  assert.equal(allocationStatusLabel('expired'), '已过期');
+  assert.equal(
+    entitlementPolicyStageLabel('published'),
+    admin_entitlement_published_176a2eb4()
+  );
+  assert.equal(
+    entitlementPolicyStageLabel('draft'),
+    admin_entitlement_draft_0f436818()
+  );
+  assert.equal(
+    allocationStatusLabel('active'),
+    admin_entitlement_effective_4de07ee0()
+  );
+  assert.equal(
+    allocationStatusLabel('expired'),
+    admin_entitlement_expired_1354374f()
+  );
 });
 
 test('custom input overrides defaults', () => {

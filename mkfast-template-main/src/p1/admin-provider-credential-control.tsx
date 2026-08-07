@@ -19,12 +19,18 @@ import { Routes } from '@/lib/routes';
 import { parseRunTableUrlState } from '@/p1/admin-supply-run-table-model';
 import {
   admin_provider_credential_activation_note,
+  admin_provider_credential_active_b1eea7b8,
   admin_provider_credential_complete_on_supply,
+  admin_provider_credential_draining_88a9ae17,
   admin_provider_credential_empty,
+  admin_provider_credential_env_var_fallback_risk_stays_visible_migr_ae6a6c65,
+  admin_provider_credential_not_draining_cabe3fcf,
+  admin_provider_credential_pending_activation_b5464790,
   admin_provider_credential_receipt_expires,
   admin_provider_credential_receipt_id,
   admin_provider_credential_receipt_staged,
   admin_provider_credential_restart_effective,
+  admin_provider_credential_retired_0c9e069e,
   admin_provider_credential_revoke,
   admin_provider_credential_rotate,
   admin_provider_credential_rotated_at,
@@ -45,6 +51,9 @@ import {
   admin_provider_credential_testing,
   admin_provider_credentials_description,
   admin_provider_credentials_title,
+  admin_supply_activation_gate_dcec3252,
+  admin_supply_met_3a31adc3,
+  admin_supply_not_met_de49b7e4,
 } from '@/locale/paraglide/messages';
 import { commandP1, queryP1 } from './client';
 import {
@@ -116,11 +125,11 @@ function resolveTrunkStatus(
 function trunkStatusLabel(status: CredentialAccountTrunkStatus | 'empty') {
   switch (status) {
     case 'pending':
-      return '待激活';
+      return admin_provider_credential_pending_activation_b5464790();
     case 'active':
-      return '已激活';
+      return admin_provider_credential_active_b1eea7b8();
     case 'retired':
-      return '已退役';
+      return admin_provider_credential_retired_0c9e069e();
     default:
       return admin_provider_credential_empty();
   }
@@ -307,7 +316,9 @@ export function AdminProviderCredentialControl() {
                     drain === 'draining' ? 'warning-outline' : 'secondary'
                   }
                 >
-                  {drain === 'draining' ? '排空中' : '未排空'}
+                  {drain === 'draining'
+                    ? admin_provider_credential_draining_88a9ae17()
+                    : admin_provider_credential_not_draining_cabe3fcf()}
                 </Badge>
               ) : null}
               {hasCredential ? (
@@ -316,7 +327,10 @@ export function AdminProviderCredentialControl() {
                   data-testid="provider-credential-activation-gate"
                   data-satisfied={String(gateOk)}
                 >
-                  激活门：{gateOk ? '满足' : '未满足'}
+                  {admin_supply_activation_gate_dcec3252()}
+                  {gateOk
+                    ? admin_supply_met_3a31adc3()
+                    : admin_supply_not_met_de49b7e4()}
                 </Badge>
               ) : null}
             </div>
@@ -333,7 +347,7 @@ export function AdminProviderCredentialControl() {
                 data-testid="provider-credential-migration-entry"
                 className="border-destructive/30 text-destructive rounded-lg border p-2 text-xs"
               >
-                环境变量回退风险持续可见：迁移到保险箱写入后重启生效。
+                {admin_provider_credential_env_var_fallback_risk_stays_visible_migr_ae6a6c65()}
               </p>
             ) : null}
 

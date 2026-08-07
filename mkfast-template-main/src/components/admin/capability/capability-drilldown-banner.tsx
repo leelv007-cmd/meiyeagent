@@ -4,6 +4,12 @@ import {
   getDrilldownDomainContext,
   type AdminDrilldownPageId,
 } from '@/p1/admin-capability-catalog-model';
+import {
+  admin_capability_back_to_capability_catalog_e2f0cae2,
+  admin_capability_feature_909b78d7,
+  admin_capability_runtime_health_section_2346a237,
+  admin_capability_user_impact_528f48c3,
+} from '@/locale/paraglide/messages';
 
 /**
  * Domain context banner for admin drilldown pages (six-domain IA).
@@ -40,7 +46,7 @@ export function CapabilityDrilldownBanner({
         </span>
         {page.hostsOperationsHealth ? (
           <Badge variant="info-outline" data-testid="drilldown-health-badge">
-            运行健康区块
+            {admin_capability_runtime_health_section_2346a237()}
           </Badge>
         ) : null}
       </div>
@@ -48,14 +54,18 @@ export function CapabilityDrilldownBanner({
         className="mt-2 text-muted-foreground"
         data-testid="drilldown-function"
       >
-        <span className="font-medium text-foreground">功能：</span>
+        <span className="font-medium text-foreground">
+          {admin_capability_feature_909b78d7()}
+        </span>
         {page.functionSummary}
       </p>
       <p
         className="mt-1 text-muted-foreground"
         data-testid="drilldown-user-impact"
       >
-        <span className="font-medium text-foreground">用户影响：</span>
+        <span className="font-medium text-foreground">
+          {admin_capability_user_impact_528f48c3()}
+        </span>
         {page.userImpact}
       </p>
       <p className="mt-2">
@@ -64,7 +74,8 @@ export function CapabilityDrilldownBanner({
           className="text-primary underline-offset-4 hover:underline"
           data-testid="drilldown-back-to-catalog"
         >
-          ← 返回能力目录（{domain.title}）
+          {admin_capability_back_to_capability_catalog_e2f0cae2()}
+          {domain.title}）
         </a>
       </p>
     </aside>
