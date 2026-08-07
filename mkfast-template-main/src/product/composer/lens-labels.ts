@@ -16,6 +16,8 @@ export const COMPOSER_LENS_OPTIONS = creationLensIds.map((id) => ({
 }));
 
 export const LENS_GROUP_LABEL = '创作类型';
+/** Rendered beside the group label so 必选 reads before the first press, not after. */
+export const LENS_GROUP_REQUIRED_SUFFIX = '（必选）';
 export const LENS_REQUIRED_SUBMIT_HINT = '选择创作类型后继续';
 
 export function lensLabel(id: CreationLensId): string {

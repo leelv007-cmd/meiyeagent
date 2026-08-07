@@ -5,6 +5,14 @@
  * - Cold: no selected value
  * - No inferred-lens live announcements while typing
  * - Keyboard / focus friendly
+ *
+ * D-C2: D-081 keeps its no-default-lens rule, so the merchant must choose —
+ * which means the requirement has to be readable before the first press, not
+ * only after one fails. The group carries 「（必选）」and the hint text stands
+ * whenever nothing is selected; `showRequiredHint` now only escalates it to an
+ * alert for the press that was actually refused. The options also stop looking
+ * like the suggestion capsules above them: unselected reads as an empty slot
+ * (dashed) rather than another optional thing to try.
  */
 
 import type { CreationLensId } from '@meiye/contracts';
@@ -13,6 +21,7 @@ import { cn } from '@/lib/utils';
 import {
   COMPOSER_LENS_OPTIONS,
   LENS_GROUP_LABEL,
+  LENS_GROUP_REQUIRED_SUFFIX,
   LENS_REQUIRED_SUBMIT_HINT,
 } from './lens-labels';
 
@@ -39,13 +48,13 @@ export function LensRadiogroup({
   id = GROUP_ID,
   className,
 }: LensRadiogroupProps) {
+  const unselected = value === null;
   return (
     <div className={cn('flex flex-col gap-2', className)}>
       <div id={LABEL_ID} className="text-sm font-medium text-foreground">
         {LENS_GROUP_LABEL}
-        <span className="text-destructive" aria-hidden="true">
-          {' '}
-          *
+        <span className="text-muted-foreground">
+          {LENS_GROUP_REQUIRED_SUFFIX}
         </span>
       </div>
 
@@ -55,8 +64,9 @@ export function LensRadiogroup({
         aria-labelledby={LABEL_ID}
         aria-required="true"
         aria-invalid={showRequiredHint || undefined}
-        aria-describedby={showRequiredHint ? HINT_ID : undefined}
+        aria-describedby={unselected ? HINT_ID : undefined}
         data-testid="composer-lens-radiogroup"
+        data-required-unmet={unselected ? 'true' : 'false'}
         className="flex flex-wrap gap-2"
       >
         {COMPOSER_LENS_OPTIONS.map((option) => {
@@ -68,7 +78,7 @@ export function LensRadiogroup({
                 'relative inline-flex min-h-12 min-w-12 items-center justify-center rounded-full border px-4 py-2 text-sm font-medium transition-colors',
                 selected
                   ? 'border-primary bg-primary text-primary-foreground'
-                  : 'border-input bg-background text-foreground hover:bg-accent',
+                  : 'border-dashed border-foreground/35 bg-background text-foreground hover:bg-accent',
                 disabled && 'cursor-not-allowed opacity-50'
               )}
             >
@@ -132,12 +142,17 @@ export function LensRadiogroup({
         })}
       </div>
 
-      {showRequiredHint ? (
+      {unselected ? (
         <p
           id={HINT_ID}
-          role="alert"
+          // Only the press that was refused warrants an alert; standing there
+          // unselected is a state, not an error.
+          role={showRequiredHint ? 'alert' : undefined}
           data-testid="composer-lens-required-hint"
-          className="text-sm text-destructive"
+          className={cn(
+            'text-sm',
+            showRequiredHint ? 'text-destructive' : 'text-muted-foreground'
+          )}
         >
           {LENS_REQUIRED_SUBMIT_HINT}
         </p>

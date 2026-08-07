@@ -1085,6 +1085,10 @@ export function ComposerPromptBar({
   const showSecondaryCapsules = !idleCompact || moreExpanded;
   const moreSummary = [lensSummary, recipeSummary].filter(Boolean).join(' · ');
   const moreRequired = Boolean(lensRequired && !lensSummary);
+  // D-C2: a required control cannot live behind 「更多」. While 创作类型 is still
+  // unchosen its capsule stays on the default idle face, so the one thing that
+  // blocks send is the one thing the merchant can see.
+  const showLensCapsule = showSecondaryCapsules || moreRequired;
 
   return (
     <div
@@ -1196,15 +1200,8 @@ export function ComposerPromptBar({
           <CapsuleTrigger
             active={moreExpanded || Boolean(moreSummary)}
             aria-expanded={moreExpanded}
-            aria-label={
-              moreSummary
-                ? `更多设置：${moreSummary}`
-                : moreRequired
-                  ? '更多设置（输出类型必填）'
-                  : '更多设置'
-            }
+            aria-label={moreSummary ? `更多设置：${moreSummary}` : '更多设置'}
             onClick={() => setMoreExpanded((open) => !open)}
-            required={moreRequired && !moreExpanded}
             testId="composer-capsule-more"
           >
             <span>{moreExpanded ? '收起' : '更多'}</span>
@@ -1242,7 +1239,7 @@ export function ComposerPromptBar({
           </Popover>
         ) : null}
 
-        {showSecondaryCapsules && lensSlot ? (
+        {showLensCapsule && lensSlot ? (
           <Popover>
             <PopoverTrigger
               render={(triggerProps) => (
@@ -1251,14 +1248,22 @@ export function ComposerPromptBar({
                   active={Boolean(lensSummary)}
                   aria-label={
                     lensSummary
-                      ? `输出类型：${lensSummary}`
-                      : '选择输出类型（必填）'
+                      ? `创作类型：${lensSummary}`
+                      : '选择创作类型（必选）'
                   }
                   aria-required={true}
-                  required={lensRequired && !lensSummary}
+                  // Ink emphasis, not the destructive ring `required` paints:
+                  // an unmade required choice is a state, not an error, and the
+                  // rose accent is reserved for AI spark (DESIGN.md).
+                  className={
+                    moreRequired
+                      ? 'ring-foreground/30 font-semibold ring-1'
+                      : undefined
+                  }
+                  data-required-unmet={moreRequired ? 'true' : 'false'}
                   testId="composer-capsule-lens"
                 >
-                  <span>{lensSummary ?? '输出类型'}</span>
+                  <span>{lensSummary ?? '创作类型（必选）'}</span>
                   <span aria-hidden="true">▾</span>
                 </CapsuleTrigger>
               )}
@@ -1439,6 +1444,7 @@ export function ComposerPromptBar({
         ) : null}
 
         <button
+          aria-describedby={submitHint ? SUBMIT_HINT_ID : undefined}
           aria-label={submitLabel}
           className={cn(
             'ml-auto inline-flex size-10 shrink-0 items-center justify-center rounded-full',
