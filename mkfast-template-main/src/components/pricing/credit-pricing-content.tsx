@@ -4,12 +4,14 @@ import {
   pricing_billing_cycle_single_month,
   pricing_billing_cycle_yearly,
   pricing_booster_buy,
+  pricing_booster_credits,
   pricing_booster_description,
   pricing_booster_expire_days,
   pricing_booster_heading,
   pricing_booster_login_to_buy,
   pricing_card_credits_monthly,
   pricing_card_credits_trial,
+  pricing_card_price_free,
   pricing_plan_login_to_subscribe,
   pricing_plan_notify_me,
   pricing_plan_payment_not_open,
@@ -135,65 +137,69 @@ export function CreditPricingContent({
         </div>
       </section>
 
+      {/*
+        Packs used to be three bordered cards inside this panel's own card —
+        card-in-card, and three more purchase decisions competing at the same
+        weight as the four plans above. Every SKU is still here (the catalog
+        owns them), but the band is now one surface: a divider-separated list,
+        smaller type, no per-pack card. Plans are the decision; a pack is what
+        you reach for once you already have one.
+      */}
       <section
         id="credit-boosters"
         data-testid="pricing-credit-boosters"
-        className="scroll-mt-24 space-y-4 rounded-3xl border bg-card p-6 text-card-foreground"
+        className="scroll-mt-24 rounded-2xl border bg-card px-5 py-4 text-card-foreground"
       >
-        <div className="space-y-1 text-center md:text-left">
-          <h2 className="text-xl font-semibold">{pricing_booster_heading()}</h2>
+        <div className="space-y-0.5">
+          <h2 className="text-base font-semibold">
+            {pricing_booster_heading()}
+          </h2>
           <p className="text-sm text-muted-foreground">
             {pricing_booster_description()}
           </p>
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
+        <ul className="mt-3 divide-y border-t">
           {catalog.addOns.map((addon) => (
-            <article
+            <li
               key={addon.id}
-              className="flex flex-col gap-3 rounded-2xl border p-4"
+              className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3"
               data-testid={`pricing-booster-${addon.id}`}
             >
-              <div className="space-y-1">
-                <p className="text-2xl font-semibold tabular-nums">
-                  {addon.credits}
-                </p>
-                <p className="text-lg font-medium tabular-nums">
+              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+                <span className="font-medium tabular-nums">
+                  {pricing_booster_credits({ credits: String(addon.credits) })}
+                </span>
+                <span className="font-medium tabular-nums">
                   {formatPublishedPrice(
                     addon.amountMicros,
                     addon.currency,
                     locale
                   )}
-                </p>
-                <p className="text-xs text-muted-foreground">
+                </span>
+                <span className="text-xs text-muted-foreground">
                   {pricing_booster_expire_days({
                     days: String(addon.expireDays),
                   })}
-                </p>
+                </span>
               </div>
-              <div className="mt-auto">
-                {isAuthenticated ? (
-                  <CreditPackageCheckoutButton
-                    offerId={addon.id}
-                    className="w-full"
-                    data-testid={`pricing-booster-checkout-${addon.id}`}
-                  >
-                    {pricing_booster_buy()}
-                  </CreditPackageCheckoutButton>
-                ) : (
-                  <a
-                    href={Routes.Login}
-                    className={cn(
-                      buttonVariants({ variant: 'outline' }),
-                      'w-full'
-                    )}
-                  >
-                    {pricing_booster_login_to_buy()}
-                  </a>
-                )}
-              </div>
-            </article>
+              {isAuthenticated ? (
+                <CreditPackageCheckoutButton
+                  offerId={addon.id}
+                  data-testid={`pricing-booster-checkout-${addon.id}`}
+                >
+                  {pricing_booster_buy()}
+                </CreditPackageCheckoutButton>
+              ) : (
+                <a
+                  href={Routes.Login}
+                  className={cn(buttonVariants({ variant: 'outline' }))}
+                >
+                  {pricing_booster_login_to_buy()}
+                </a>
+              )}
+            </li>
           ))}
-        </div>
+        </ul>
       </section>
     </div>
   );
@@ -271,8 +277,14 @@ function PlanCard({
             className="text-2xl font-semibold tabular-nums"
             data-testid={`pricing-price-${plan.id}`}
           >
+            {/*
+              A bare em dash in the price slot reads as a missing number rather
+              than as a price — worst on a phone, where it is one stroke alone
+              on a line. The free tier does have an answer to "what does it
+              cost", and this is it.
+            */}
             {plan.monthlyPriceMicros === 0 && priced.amountMicros === 0
-              ? '—'
+              ? pricing_card_price_free()
               : formatPublishedPrice(
                   priced.amountMicros,
                   plan.currency,
