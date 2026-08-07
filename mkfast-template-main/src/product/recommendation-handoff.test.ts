@@ -140,3 +140,77 @@ test('viral recommendation fails closed when the formal recipe is not visible', 
   assert.equal(outcome.kind, 'recipe_unavailable');
   assert.equal(outcome.state.draft.recipeRevisionId, null);
 });
+
+// ---------------------------------------------------------------------------
+// D-C1 空填入、脏不碰
+// ---------------------------------------------------------------------------
+
+const XHS_CHIP = {
+  intent: '帮我做一篇小红书图文笔记。',
+  outputHint: 'image_text',
+  recipeChipId: 'xhs_image_text',
+} as const;
+
+const VIRAL_CHIP = {
+  intent: '帮我复刻一条爆款笔记。',
+  outputHint: 'image_text',
+  recipeChipId: 'viral_adapt',
+} as const;
+
+test('D-C1: a chip fills an empty box', () => {
+  const outcome = applyRecommendationHandoffWithRecipe({
+    state: createComposerLensState(),
+    handoff: XHS_CHIP,
+    surface: viralSurface,
+  });
+
+  assert.equal(outcome.text, 'prefilled');
+  assert.equal(outcome.state.draft.userText, XHS_CHIP.intent);
+  assert.equal(outcome.state.lensId, 'image_text');
+});
+
+test('D-C1: a chip never rewrites a sentence the merchant already typed', () => {
+  const typed = '帮我写一条美甲店夏日新款的小红书种草文案';
+  const outcome = applyRecommendationHandoffWithRecipe({
+    state: createComposerLensState({ userText: typed }),
+    handoff: XHS_CHIP,
+    surface: viralSurface,
+  });
+
+  assert.equal(outcome.text, 'kept_user_text');
+  assert.equal(outcome.state.draft.userText, typed);
+  // The lens hint still lands — only the sentence is theirs.
+  assert.equal(outcome.state.lensId, 'image_text');
+});
+
+test('D-C1: whitespace-only counts as empty', () => {
+  const outcome = applyRecommendationHandoffWithRecipe({
+    state: createComposerLensState({ userText: '   \n ' }),
+    handoff: XHS_CHIP,
+    surface: viralSurface,
+  });
+
+  assert.equal(outcome.text, 'prefilled');
+  assert.equal(outcome.state.draft.userText, XHS_CHIP.intent);
+});
+
+test('D-C1: a second chip binds its recipe and still leaves the text alone', () => {
+  const typed = '帮我写一条美甲店夏日新款的小红书种草文案';
+  const first = applyRecommendationHandoffWithRecipe({
+    state: createComposerLensState({ userText: typed }),
+    handoff: XHS_CHIP,
+    surface: viralSurface,
+  });
+  const second = applyRecommendationHandoffWithRecipe({
+    state: first.state,
+    handoff: VIRAL_CHIP,
+    surface: viralSurface,
+  });
+
+  assert.equal(second.kind, 'recipe_bound');
+  assert.equal(second.text, 'kept_user_text');
+  // The live repro this closes: the second chip used to leave the box empty.
+  assert.notEqual(second.state.draft.userText, '');
+  assert.equal(second.state.draft.userText, typed);
+  assert.equal(second.state.draft.recipeRevisionId, 'recipe.viral_adapt@2');
+});

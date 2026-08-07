@@ -4,6 +4,13 @@
  * Prefill only: never auto-submit, never charge. `outputHint` selects a lens
  * when the recommendation knows one; absent hint leaves the lens untouched
  * (must not hardcode `copy`).
+ *
+ * D-C1 「空填入、脏不碰」: a chip fills an empty box and never rewrites a box the
+ * merchant has already typed into. The lens state machine's own contract is
+ * "Switch always keeps user text", and PRODUCT.md promises no silent overwrite;
+ * the handoff used to break both by calling `updateUserText` unconditionally.
+ * The lens hint and the recipe binding still land either way — only the sentence
+ * is theirs.
  */
 
 import type {
@@ -48,7 +55,21 @@ export function buildRecommendationHandoff(
   return outputHint ? { intent, outputHint } : { intent };
 }
 
-/** Apply handoff to the lens draft: text always; lens only when hint is present. */
+/** What the handoff did to the sentence in the box. */
+export type RecommendationHandoffTextOutcome = 'prefilled' | 'kept_user_text';
+
+/**
+ * True when the draft already carries a sentence the merchant would mind
+ * losing. Exported so the host can name the outcome in the undo bar without
+ * re-deriving the rule.
+ */
+export function recommendationHandoffKeepsUserText(
+  state: ComposerLensState
+): boolean {
+  return state.draft.userText.trim().length > 0;
+}
+
+/** Apply handoff to the lens draft: lens on hint; text only into an empty box. */
 export function applyRecommendationHandoff(
   state: ComposerLensState,
   handoff: RecommendationHandoff
@@ -56,13 +77,16 @@ export function applyRecommendationHandoff(
   const withLens = handoff.outputHint
     ? selectLens(state, handoff.outputHint)
     : state;
-  return updateUserText(withLens, handoff.intent);
+  return recommendationHandoffKeepsUserText(withLens)
+    ? withLens
+    : updateUserText(withLens, handoff.intent);
 }
 
-export type RecommendationRecipeHandoffOutcome =
-  | { kind: 'prefilled'; state: ComposerLensState }
-  | { kind: 'recipe_bound'; state: ComposerLensState }
-  | { kind: 'recipe_unavailable'; state: ComposerLensState };
+export type RecommendationRecipeHandoffOutcome = {
+  kind: 'prefilled' | 'recipe_bound' | 'recipe_unavailable';
+  text: RecommendationHandoffTextOutcome;
+  state: ComposerLensState;
+};
 
 /**
  * Bind structured chips to their exact visible, published server Recipe.
@@ -74,12 +98,16 @@ export function applyRecommendationHandoffWithRecipe(input: {
   handoff: RecommendationHandoff;
   surface?: BrowserSurfaceProjection;
 }): RecommendationRecipeHandoffOutcome {
+  const text: RecommendationHandoffTextOutcome =
+    recommendationHandoffKeepsUserText(input.state)
+      ? 'kept_user_text'
+      : 'prefilled';
   const prefilled = applyRecommendationHandoff(input.state, input.handoff);
   if (input.handoff.recipeChipId !== 'viral_adapt') {
-    return { kind: 'prefilled', state: prefilled };
+    return { kind: 'prefilled', text, state: prefilled };
   }
   const surface = input.surface;
-  if (!surface) return { kind: 'recipe_unavailable', state: prefilled };
+  if (!surface) return { kind: 'recipe_unavailable', text, state: prefilled };
   const visibleRevisions = new Set(
     surface.recipeRefs
       .filter((reference) => reference.visible)
@@ -92,9 +120,10 @@ export function applyRecommendationHandoffWithRecipe(input: {
       candidate.status === 'published' &&
       visibleRevisions.has(candidate.revisionId)
   );
-  if (!recipe) return { kind: 'recipe_unavailable', state: prefilled };
+  if (!recipe) return { kind: 'recipe_unavailable', text, state: prefilled };
   return {
     kind: 'recipe_bound',
+    text,
     state: applyRecipeToLensState(prefilled, browserRecipeToTarget(recipe)),
   };
 }
