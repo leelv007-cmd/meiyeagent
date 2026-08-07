@@ -80,6 +80,12 @@ export function createDevelopmentRuntimeProfile(input) {
 
   const { APP_ENV, MODEL_EXECUTION_MODE } = resolveAppEnvAndModelMode(input);
 
+  // Vite SSR OOM'd under long QA (~1.4GB). Keep an explicit heap floor for the
+  // whole stack without clobbering a caller that already set NODE_OPTIONS.
+  const nodeOptions = hasExplicit(input, 'NODE_OPTIONS')
+    ? String(input.NODE_OPTIONS)
+    : '--max-old-space-size=8192';
+
   return {
     ...input,
     APP_BASE_URL: `http://localhost:${webPort}`,
@@ -109,6 +115,7 @@ export function createDevelopmentRuntimeProfile(input) {
       : 'recorded',
     MAIN_APP_ORIGIN: `http://localhost:${webPort}`,
     MODEL_EXECUTION_MODE,
+    NODE_OPTIONS: nodeOptions,
     P1_ASSET_PUBLIC_BASE_URL: `http://localhost:${webPort}/api/core/p1/assets?objectKey=`,
     PORT: webPort,
     VITE_BASE_URL: `http://localhost:${webPort}`,

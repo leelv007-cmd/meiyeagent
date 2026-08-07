@@ -106,3 +106,16 @@ test('development runtime preserves an explicit separate DBOS database', () => {
     'postgres://meiye:meiye@127.0.0.1:54329/meiye_system',
   );
 });
+
+test('dev profile floors Node heap unless NODE_OPTIONS is already set', () => {
+  const profile = createDevelopmentRuntimeProfile({
+    DATABASE_URL: 'postgres://meiye:meiye@127.0.0.1:54329/meiye',
+  });
+  assert.equal(profile.NODE_OPTIONS, '--max-old-space-size=8192');
+
+  const custom = createDevelopmentRuntimeProfile({
+    DATABASE_URL: 'postgres://meiye:meiye@127.0.0.1:54329/meiye',
+    NODE_OPTIONS: '--max-old-space-size=4096',
+  });
+  assert.equal(custom.NODE_OPTIONS, '--max-old-space-size=4096');
+});
