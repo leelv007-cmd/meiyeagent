@@ -338,9 +338,13 @@ describe('AdminSupplyControl governed actions', () => {
     const actionButton = within(row).getByRole('button', { name: '渠道隔离' });
     expect(actionButton).toBeDisabled();
 
-    await user.selectOptions(
-      within(row).getByRole('combobox', { name: '渠道隔离目标' }),
-      'channel-ark-direct'
+    await user.click(
+      within(row).getByRole('combobox', { name: '渠道隔离目标' })
+    );
+    await user.click(
+      await screen.findByRole('option', {
+        name: 'channel-ark-direct · official_direct',
+      })
     );
     expect(actionButton).toBeDisabled();
     await user.type(
@@ -419,9 +423,13 @@ describe('AdminSupplyControl governed actions', () => {
           candidate.getAttribute('data-action-id') === 'channel_isolate'
       );
     if (!row) throw new Error('channel isolate row missing');
-    await user.selectOptions(
-      within(row).getByRole('combobox', { name: '渠道隔离目标' }),
-      'channel-ark-direct'
+    await user.click(
+      within(row).getByRole('combobox', { name: '渠道隔离目标' })
+    );
+    await user.click(
+      await screen.findByRole('option', {
+        name: 'channel-ark-direct · official_direct',
+      })
     );
     await user.type(
       within(row).getByRole('textbox', { name: '渠道隔离原因' }),
@@ -464,9 +472,11 @@ describe('AdminSupplyControl governed actions', () => {
           candidate.getAttribute('data-action-id') === 'route_simulate'
       );
     if (!row) throw new Error('route simulate row missing');
-    await user.selectOptions(
-      within(row).getByRole('combobox', { name: '路由模拟目标' }),
-      'copy.generate'
+    await user.click(
+      within(row).getByRole('combobox', { name: '路由模拟目标' })
+    );
+    await user.click(
+      await screen.findByRole('option', { name: 'copy.generate' })
     );
     await user.type(
       within(row).getByRole('textbox', { name: '路由模拟原因' }),
@@ -540,9 +550,13 @@ describe('AdminSupplyControl governed actions', () => {
           candidate.getAttribute('data-action-id') === 'connectivity_probe'
       );
     if (!row) throw new Error('connectivity probe row missing');
-    await user.selectOptions(
-      within(row).getByRole('combobox', { name: '连通探针目标' }),
-      'dep-text-ark::copy.generate'
+    await user.click(
+      within(row).getByRole('combobox', { name: '连通探针目标' })
+    );
+    await user.click(
+      await screen.findByRole('option', {
+        name: 'dep-text-ark · copy.generate',
+      })
     );
     await user.type(
       within(row).getByRole('textbox', { name: '连通探针原因' }),
@@ -589,9 +603,13 @@ describe('AdminSupplyControl governed actions', () => {
           'candidate_config_validate'
       );
     if (!row) throw new Error('candidate validation row missing');
-    await user.selectOptions(
-      within(row).getByRole('combobox', { name: '候选配置验证目标' }),
-      'route-image-generate:r2'
+    await user.click(
+      within(row).getByRole('combobox', { name: '候选配置验证目标' })
+    );
+    await user.click(
+      await screen.findByRole('option', {
+        name: 'image.generate · route-image-generate:r2',
+      })
     );
     await user.type(
       within(row).getByRole('textbox', { name: '候选配置验证原因' }),
@@ -644,9 +662,13 @@ describe('AdminSupplyControl governed actions', () => {
           candidate.getAttribute('data-action-id') === 'candidate_config_save'
       );
     if (!row) throw new Error('candidate save row missing');
-    await user.selectOptions(
-      within(row).getByRole('combobox', { name: '候选配置保存目标' }),
-      'route-image-generate:r2'
+    await user.click(
+      within(row).getByRole('combobox', { name: '候选配置保存目标' })
+    );
+    await user.click(
+      await screen.findByRole('option', {
+        name: 'image.generate · route-image-generate:r2',
+      })
     );
     await user.type(
       within(row).getByRole('textbox', { name: '候选 Revision ID' }),
@@ -691,7 +713,8 @@ describe('AdminSupplyControl governed actions', () => {
     });
   });
 
-  it('offers real route-policy revisions for publish and rollback, not the current catalog head', () => {
+  it('offers real route-policy revisions for publish and rollback, not the current catalog head', async () => {
+    const user = userEvent.setup();
     renderControl(buildDefaultSupplyControlSnapshot());
 
     for (const [actionId, label] of [
@@ -707,16 +730,19 @@ describe('AdminSupplyControl governed actions', () => {
       const select = within(row).getByRole('combobox', {
         name: `${label}目标`,
       });
+      await user.click(select);
       expect(
-        within(select).getByRole('option', {
+        await screen.findByRole('option', {
           name: 'copy.generate · route-copy-generate:r3',
         })
-      ).toHaveValue('route-copy-generate:r3');
+      ).toBeInTheDocument();
       expect(
-        within(select).queryByRole('option', {
+        screen.queryByRole('option', {
           name: /catalog-default-expand/i,
         })
       ).toBeNull();
+      // Close listbox before opening the next action's select.
+      await user.keyboard('{Escape}');
     }
   });
 
@@ -758,13 +784,17 @@ describe('AdminSupplyControl governed actions', () => {
             candidateRow.getAttribute('data-action-id') === actionId
         );
       if (!row) throw new Error(`${actionId} row missing`);
-      const option = within(row).getByRole('option', {
-        name: 'copy.generate · route-copy-generate:r4',
+      const combobox = within(row).getByRole('combobox', {
+        name: `${label}目标`,
       });
-      expect(option).toHaveValue('route-copy-generate:r4');
+      expect(combobox).toBeInTheDocument();
+      await user.click(combobox);
       expect(
-        within(row).getByRole('combobox', { name: `${label}目标` })
+        await screen.findByRole('option', {
+          name: 'copy.generate · route-copy-generate:r4',
+        })
       ).toBeInTheDocument();
+      await user.keyboard('{Escape}');
     }
 
     const rollbackRow = screen
@@ -774,16 +804,20 @@ describe('AdminSupplyControl governed actions', () => {
           candidateRow.getAttribute('data-action-id') === 'rollback'
       );
     if (!rollbackRow) throw new Error('rollback row missing');
+    await user.click(
+      within(rollbackRow).getByRole('combobox', { name: '回滚目标' })
+    );
     expect(
-      within(rollbackRow).getByRole('option', {
+      await screen.findByRole('option', {
         name: 'copy.generate · route-copy-generate:r2',
       })
-    ).toHaveValue('route-copy-generate:r2');
+    ).toBeInTheDocument();
     expect(
-      within(rollbackRow).queryByRole('option', {
+      screen.queryByRole('option', {
         name: 'copy.generate · route-copy-generate:r4',
       })
     ).toBeNull();
+    await user.keyboard('{Escape}');
 
     const validationRow = screen
       .getAllByTestId('supply-governed-action-row')
@@ -793,11 +827,15 @@ describe('AdminSupplyControl governed actions', () => {
           'candidate_config_validate'
       );
     if (!validationRow) throw new Error('candidate validation row missing');
-    await user.selectOptions(
+    await user.click(
       within(validationRow).getByRole('combobox', {
         name: '候选配置验证目标',
-      }),
-      candidate.revisionId
+      })
+    );
+    await user.click(
+      await screen.findByRole('option', {
+        name: 'copy.generate · route-copy-generate:r4',
+      })
     );
     await user.type(
       within(validationRow).getByRole('textbox', {
@@ -845,9 +883,13 @@ describe('AdminSupplyControl governed actions', () => {
       );
     if (!row) throw new Error('credential rotate row missing');
     const button = within(row).getByRole('button', { name: '凭据轮换' });
-    await user.selectOptions(
-      within(row).getByRole('combobox', { name: '凭据轮换目标' }),
-      'cred-provider-ark'
+    await user.click(
+      within(row).getByRole('combobox', { name: '凭据轮换目标' })
+    );
+    await user.click(
+      await screen.findByRole('option', {
+        name: '方舟平台主账号 · active',
+      })
     );
     expect(button).toBeDisabled();
 
@@ -926,7 +968,7 @@ describe('AdminSupplyControl governed actions', () => {
     ).toBeInTheDocument();
     expect(
       within(row).getByRole('combobox', { name: '凭据轮换目标' })
-    ).toHaveValue(HANDOFF_ACCOUNT_ID);
+    ).toHaveTextContent(HANDOFF_ACCOUNT_ID);
 
     // No receiptId in share/external links on the supply surface.
     const anchors = screen.getAllByRole('link').map((a) => a.getAttribute('href') ?? '');
@@ -977,9 +1019,13 @@ describe('AdminSupplyControl governed actions', () => {
       );
     if (!row) throw new Error('credential rotate row missing');
 
-    await user.selectOptions(
-      within(row).getByRole('combobox', { name: '凭据轮换目标' }),
-      'cred-provider-tuzi'
+    await user.click(
+      within(row).getByRole('combobox', { name: '凭据轮换目标' })
+    );
+    await user.click(
+      await screen.findByRole('option', {
+        name: '兔子中转主账号 · active',
+      })
     );
     await user.type(
       within(row).getByRole('textbox', { name: '凭据轮换原因' }),
@@ -1123,9 +1169,13 @@ describe('AdminSupplyControl governed actions', () => {
           candidate.getAttribute('data-action-id') === 'channel_isolate'
       );
     if (!row) throw new Error('channel isolate row missing');
-    await user.selectOptions(
-      within(row).getByRole('combobox', { name: '渠道隔离目标' }),
-      'channel-ark-direct'
+    await user.click(
+      within(row).getByRole('combobox', { name: '渠道隔离目标' })
+    );
+    await user.click(
+      await screen.findByRole('option', {
+        name: 'channel-ark-direct · official_direct',
+      })
     );
     await user.type(
       within(row).getByRole('textbox', { name: '渠道隔离原因' }),

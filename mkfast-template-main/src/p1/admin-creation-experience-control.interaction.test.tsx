@@ -256,7 +256,8 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     await user.click(screen.getByRole('button', { name: '保存 Recipe 草稿' }));
     await user.click(screen.getByRole('button', { name: '生成 Recipe 预览' }));
     await user.click(screen.getByRole('button', { name: '发布 Recipe' }));
-    await user.selectOptions(screen.getByLabelText('Recipe 回滚版本'), '3');
+    await user.click(screen.getByLabelText('Recipe 回滚版本'));
+    await user.click(await screen.findByRole('option', { name: 'r3' }));
     await user.click(screen.getByRole('button', { name: '回滚 Recipe' }));
     expect(
       await screen.findByTestId('recipe-lifecycle-status')
@@ -857,13 +858,17 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     const revisionSelect = await within(editor).findByTestId(
       'surface-recipe-revision-0'
     );
-    expect(revisionSelect.tagName).toBe('SELECT');
-    const options = within(revisionSelect)
-      .getAllByRole('option')
-      .map((option) => option.getAttribute('value'));
-    expect(options).toContain(`${recipeId}@3`);
-    expect(options).not.toContain(`${recipeId}@1`); // draft never listed
-    await user.selectOptions(revisionSelect, `${recipeId}@3`);
+    expect(revisionSelect).toHaveAttribute('role', 'combobox');
+    await waitFor(() => expect(revisionSelect).toBeEnabled());
+    await user.click(revisionSelect);
+    const publishedOption = await screen.findByRole('option', {
+      name: /r3 · 门店活动图文/,
+    });
+    expect(publishedOption).toHaveTextContent(`${recipeId}@3`);
+    expect(
+      screen.queryByRole('option', { name: new RegExp(`${recipeId}@1`) })
+    ).toBeNull(); // draft never listed
+    await user.click(publishedOption);
 
     await user.type(within(editor).getByLabelText('变更原因'), '上线首页入口');
     expect(within(editor).queryByText('批量去背景')).not.toBeInTheDocument();
@@ -955,10 +960,18 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     await user.click(
       within(editor).getByRole('button', { name: '加载 Surface' })
     );
-    await user.selectOptions(
-      await within(editor).findByTestId('surface-recipe-revision-0'),
-      `${recipeId}@3`
-    );
+    {
+      const revisionSelect = await within(editor).findByTestId(
+        'surface-recipe-revision-0'
+      );
+      await waitFor(() => expect(revisionSelect).toBeEnabled());
+      await user.click(revisionSelect);
+      await user.click(
+        await screen.findByRole('option', {
+          name: /r3 · 门店活动图文/,
+        })
+      );
+    }
     await user.type(
       within(editor).getByLabelText('变更原因'),
       '验证发布与回滚串行执行'
@@ -1004,10 +1017,8 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     await user.click(
       within(editor).getByRole('button', { name: '发布 Surface' })
     );
-    await user.selectOptions(
-      within(editor).getByLabelText('Surface 回滚版本'),
-      '4'
-    );
+    await user.click(within(editor).getByLabelText('Surface 回滚版本'));
+    await user.click(await screen.findByRole('option', { name: 'r4' }));
     expect(
       within(editor).getByRole('button', { name: '回滚 Surface' })
     ).toBeDisabled();
@@ -1105,14 +1116,25 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     const revisionSelect = await within(editor).findByTestId(
       'surface-recipe-revision-0'
     );
-    const values = within(revisionSelect)
-      .getAllByRole('option')
-      .map((option) => option.getAttribute('value'))
-      .filter((value): value is string => Boolean(value));
-    expect(values).toEqual([`${recipeId}@5`, `${recipeId}@3`]);
-    expect(values).not.toContain(`${recipeId}@1`);
-    expect(values).not.toContain(`${recipeId}@2`);
-    expect(values).not.toContain(`${recipeId}@4`);
+    await waitFor(() => expect(revisionSelect).toBeEnabled());
+    await user.click(revisionSelect);
+    const optionNames = (await screen.findAllByRole('option')).map((option) =>
+      (option.textContent ?? '').replace(/\s+/g, ' ').trim()
+    );
+    expect(optionNames).toEqual([
+      `r5 · Live v2 (${recipeId}@5)`,
+      `r3 · Live v1 (${recipeId}@3)`,
+    ]);
+    expect(optionNames.some((name) => name.includes(`${recipeId}@1`))).toBe(
+      false
+    );
+    expect(optionNames.some((name) => name.includes(`${recipeId}@2`))).toBe(
+      false
+    );
+    expect(optionNames.some((name) => name.includes(`${recipeId}@4`))).toBe(
+      false
+    );
+    await user.keyboard('{Escape}');
 
     // Empty-candidate card cannot save: inject a head with zero published revisions.
     const emptyRecipeId = 'recipe.never.published';
@@ -1161,9 +1183,13 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     await user.click(
       within(editor).getByRole('button', { name: '添加 Recipe' })
     );
-    await user.selectOptions(
-      await within(editor).findByTestId('surface-recipe-pick-1'),
-      emptyRecipeId
+    await user.click(
+      await within(editor).findByTestId('surface-recipe-pick-1')
+    );
+    await user.click(
+      await screen.findByRole('option', {
+        name: `Never live (${emptyRecipeId})`,
+      })
     );
     expect(
       await within(editor).findByTestId('surface-recipe-empty-1')
@@ -1313,15 +1339,12 @@ describe('Recipe / Surface visual lifecycle editor', () => {
       surfaceId
     );
     // Matching refs upgraded; lens/order/featured/visible preserved in form state.
+    const preview = within(surfaceEditor).getByTestId('surface-visual-preview');
+    expect(preview).toHaveTextContent(`${recipeId}@6`);
+    expect(preview).toHaveTextContent(`${otherRecipeId}@1`);
     expect(
-      within(surfaceEditor).getByTestId('surface-recipe-revision-0')
-    ).toHaveValue(`${recipeId}@6`);
-    expect(
-      within(surfaceEditor).getByTestId('surface-recipe-revision-1')
-    ).toHaveValue(`${recipeId}@6`);
-    expect(
-      within(surfaceEditor).getByTestId('surface-recipe-revision-2')
-    ).toHaveValue(`${otherRecipeId}@1`);
+      within(surfaceEditor).getByTestId('surface-ref-update-notice')
+    ).toHaveTextContent(`${recipeId}@6`);
     expect(
       within(surfaceEditor).getByLabelText('顺序', {
         selector: '#surface-recipe-order-0',
