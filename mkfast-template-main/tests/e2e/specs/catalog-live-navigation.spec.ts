@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 import {
+import { ensureComposerSecondaryCapsules } from '../fixtures/ui-journey';
   cleanupE2EUsers,
   loginByForm,
   registerE2EUser,
@@ -43,6 +44,7 @@ test.describe('live creation catalog capability gate', () => {
     );
     // L3-2: radiogroup lives in the lens capsule panel. Catalog apply still
     // selects copy; open the panel to assert radio state, then face echo.
+    await ensureComposerSecondaryCapsules(page);
     await page.getByTestId('composer-capsule-lens').click();
     await expect(page.getByTestId('composer-capsule-lens-panel')).toBeVisible();
     // The lens options are native radios (`lens-radiogroup.tsx`), so selection
@@ -54,6 +56,7 @@ test.describe('live creation catalog capability gate', () => {
     await expect(copyLens).toHaveAttribute('data-state', 'checked');
     await page.keyboard.press('Escape');
     await expect(page.getByTestId('composer-capsule-lens-panel')).toBeHidden();
+    await ensureComposerSecondaryCapsules(page);
     await expect(page.getByTestId('composer-capsule-lens')).toContainText(
       '文案'
     );

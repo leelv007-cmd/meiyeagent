@@ -25,6 +25,8 @@ export interface CreditPlanConfigRepository {
 
 const CREDIT_PLAN_SEED_ACTOR_ID = "system:credit-plan-catalog-seed";
 const CREDIT_PLAN_UPGRADE_ACTOR_ID = "system:credit-plan-catalog-upgrade";
+const CREDIT_PLAN_HKD_MIGRATION_ACTOR_ID =
+	"system:credit-plan-catalog-hkd-migration";
 
 const LEGACY_CREDIT_PLAN_KEYS = [
 	"plan.credits.trial",
@@ -107,6 +109,124 @@ function isLegacyCreditPlanConfigKey(
 ): key is LegacyCreditPlanConfigKey {
 	return LEGACY_CREDIT_PLAN_KEYS.some((candidate) => candidate === key);
 }
+
+/**
+ * Explicit CAS migration for published plan/addon currency that is still not
+ * HKD. ensureCreditPlanCatalogDefaults intentionally leaves legacy CNY alone;
+ * bootstrap calls this after seed/upgrade so local and shipped catalogs heal
+ * without a silent currency rewrite inside ensure.
+ */
+export async function migrateCreditPlanCatalogCurrencyToHkd(
+	repository: Pick<AdminConfigRepository, "apply" | "get">,
+) {
+	const migratableKeys = [
+		...LEGACY_CREDIT_PLAN_KEYS,
+		"plan.credits.addons",
+	] as const;
+
+	for (const key of migratableKeys) {
+		for (let attempt = 0; attempt < 2; attempt += 1) {
+			const existing = await repository.get("global", GLOBAL_WORKSPACE_ID, key);
+			if (!existing) break;
+			const migrated =
+				key === "plan.credits.addons"
+					? migrateLegacyAddOnCurrencyToHkd(existing.value)
+					: migrateLegacyPlanCurrencyToHkd(key, existing.value);
+			if (!migrated) break;
+			try {
+				await repository.apply({
+					actorId: CREDIT_PLAN_HKD_MIGRATION_ACTOR_ID,
+					correlationId: `bootstrap:hkd-migration:${key}`,
+					expectedRevision: existing.revision,
+					key,
+					reason:
+						"Migrate published credit plan catalog currency from non-HKD to governed HKD prices.",
+					scope: "global",
+					value: migrated,
+					workspaceId: GLOBAL_WORKSPACE_ID,
+				});
+				break;
+			} catch (error) {
+				if (attempt === 1) throw error;
+			}
+		}
+	}
+}
+
+function migrateLegacyPlanCurrencyToHkd(
+	key: LegacyCreditPlanConfigKey,
+	value: unknown,
+) {
+	if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+	const plan = value as Record<string, unknown>;
+	if (plan.currency === "HKD") return null;
+	if (
+		!positiveInteger(plan.credits) ||
+		!(key === "plan.credits.trial"
+			? nonnegativeInteger(plan.monthlyPriceMicros)
+			: typeof plan.monthlyPriceMicros === "number" &&
+				Number.isSafeInteger(plan.monthlyPriceMicros) &&
+				plan.monthlyPriceMicros >= 0) ||
+		!positiveInteger(plan.storageMb) ||
+		!positiveInteger(plan.concurrencyLimit) ||
+		!positiveInteger(plan.queuePriority) ||
+		(plan.supportLabel !== "standard" && plan.supportLabel !== "priority")
+	) {
+		return null;
+	}
+	const defaults = CREDIT_PLAN_CONFIG_DEFAULTS[key];
+	return {
+		...plan,
+		currency: defaults.currency,
+		monthlyPriceMicros: defaults.monthlyPriceMicros,
+	};
+}
+
+function migrateLegacyAddOnCurrencyToHkd(value: unknown) {
+	if (!Array.isArray(value)) return null;
+	const defaults = CREDIT_PLAN_CONFIG_DEFAULTS["plan.credits.addons"];
+	let needsMigration = false;
+	const migrated = value.map((raw) => {
+		if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+			return raw;
+		}
+		const offer = raw as Record<string, unknown>;
+		if (offer.currency === "HKD") return offer;
+		needsMigration = true;
+		const matched = defaults.find((candidate) => candidate.id === offer.id);
+		if (!matched) {
+			return {
+				...offer,
+				currency: "HKD",
+			};
+		}
+		return {
+			...offer,
+			amountMicros: matched.amountMicros,
+			currency: matched.currency,
+		};
+	});
+	if (!needsMigration) return null;
+	if (
+		!migrated.every(
+			(offer) =>
+				offer &&
+				typeof offer === "object" &&
+				!Array.isArray(offer) &&
+				typeof (offer as { id?: unknown }).id === "string" &&
+				((offer as { id: string }).id.trim().length > 0) &&
+				positiveInteger((offer as { credits?: unknown }).credits) &&
+				Number.isSafeInteger((offer as { amountMicros?: unknown }).amountMicros) &&
+				((offer as { amountMicros: number }).amountMicros >= 0) &&
+				(offer as { currency?: unknown }).currency === "HKD" &&
+				positiveInteger((offer as { expireDays?: unknown }).expireDays),
+		)
+	) {
+		return null;
+	}
+	return migrated;
+}
+
 
 /**
  * Credit billing reads only these revisioned admin-config keys. The former

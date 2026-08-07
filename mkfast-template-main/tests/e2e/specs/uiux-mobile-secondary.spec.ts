@@ -5,6 +5,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { productState } from '../fixtures/product';
+import { ensureComposerSecondaryCapsules } from '../fixtures/ui-journey';
 
 const PNG_FIXTURE = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
@@ -32,7 +33,9 @@ for (const viewport of [
         await expect(page.getByTestId('composer-home')).toBeVisible();
         // L3-2: lens radiogroup is inside the capsule popover; cold mobile still
         // exposes the required lens capsule trigger on the prompt bar.
+        await ensureComposerSecondaryCapsules(page);
         await expect(page.getByTestId('composer-capsule-lens')).toBeVisible();
+        await ensureComposerSecondaryCapsules(page);
         await expect(page.getByTestId('composer-capsule-lens')).toHaveAttribute(
           'aria-required',
           'true'

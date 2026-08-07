@@ -9,6 +9,7 @@ import { productState, seedConfirmedStore } from '../fixtures/product';
 import {
   assertThreeModalDiscovery,
   closeComposerCapsule,
+  ensureComposerSecondaryCapsules,
   openComposerCapsule,
   openComposerRecipeCard,
   selectComposerLens,
@@ -41,6 +42,7 @@ test('cold Composer exposes the required lenses without a merchant submission', 
   await expect(page.getByTestId('composer-turn-merchant')).toHaveCount(0);
   // A cold Composer must still be the thing that would open one — the capsule
   // bar and submit control are live, they are just not a conversation yet.
+  await ensureComposerSecondaryCapsules(page);
   await expect(page.getByTestId('composer-capsule-lens')).toBeVisible();
 });
 

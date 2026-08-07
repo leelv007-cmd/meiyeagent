@@ -11,6 +11,7 @@
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -57,6 +58,13 @@ function renderSection() {
       <DashboardContinueSection />
     </QueryClientProvider>
   );
+}
+
+async function expandShelf() {
+  const user = userEvent.setup();
+  const expand = await screen.findByTestId('activity-shelf-expand');
+  await user.click(expand);
+  return screen.findByTestId('activity-shelf');
 }
 
 afterEach(() => {
@@ -124,7 +132,8 @@ describe('Activity Shelf (DashboardContinueSection)', () => {
     expect(
       await screen.findByTestId('dashboard-section-continue')
     ).toBeInTheDocument();
-    expect(screen.getByTestId('activity-shelf')).toBeInTheDocument();
+    expect(screen.getByTestId('activity-shelf-expand')).toBeInTheDocument();
+    await expandShelf();
 
     const cards = screen.getAllByTestId('activity-shelf-card');
     expect(cards.length).toBeLessThanOrEqual(3);
@@ -159,7 +168,7 @@ describe('Activity Shelf (DashboardContinueSection)', () => {
     );
 
     renderSection();
-    await screen.findByTestId('activity-shelf');
+    await expandShelf();
 
     expect(
       screen.getByRole('link', { name: /春季染发活动套图/u })
@@ -190,6 +199,7 @@ describe('Activity Shelf (DashboardContinueSection)', () => {
     );
 
     renderSection();
+    await expandShelf();
     const thumb = await screen.findByTestId('activity-shelf-thumb');
     expect(thumb).toHaveAttribute('data-thumb-kind', 'video');
     expect(thumb.querySelector('video')).not.toBeNull();

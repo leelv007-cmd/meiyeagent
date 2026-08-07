@@ -6,6 +6,7 @@ import {
 } from '../fixtures/auth';
 import {
   closeComposerCapsule,
+  ensureComposerSecondaryCapsules,
   openComposerCapsule,
 } from '../fixtures/ui-journey';
 
@@ -77,6 +78,7 @@ test('keeps identity, assets, and camera authorization reachable on mobile', asy
     // is not mounted while that popover is closed. What mobile has to keep
     // reachable is the trigger; the group itself is asserted inside the panel
     // the merchant opens, exactly as the desktop journeys do.
+    await ensureComposerSecondaryCapsules(page);
     await expect(page.getByTestId('composer-capsule-lens')).toBeVisible();
     const lensPanel = await openComposerCapsule(page, 'lens');
     await expect(

@@ -337,12 +337,18 @@ export function CanonicalHistoryList({
                 {canonical_history_assets_empty_upload_action()}
               </Button>
             ) : (
-              <a
-                className={buttonVariants()}
-                href={getPathWithLocale(Routes.StoreProfile)}
+              <Button
+                type="button"
+                onClick={() =>
+                  document
+                    .querySelector<HTMLButtonElement>(
+                      '[data-testid="asset-store-intake-open"]'
+                    )
+                    ?.click()
+                }
               >
                 {canonical_history_assets_empty_store_action()}
-              </a>
+              </Button>
             )
           }
           description={canonical_history_assets_empty_description()}
@@ -652,7 +658,9 @@ export function CanonicalHistoryPage({
           {mode === 'assets' ? (
             <CanonicalAssetCapture product={product} />
           ) : null}
-          {children}
+          {/* Assets cold-start: keep library + upload as the hero. Route-level
+              secondary tools (intake entry, voice) render after the grid. */}
+          {mode === 'assets' ? null : children}
           {mode === 'search' || mode === 'assets' ? (
             <label
               className="grid max-w-xl gap-1.5 text-sm font-medium"
@@ -712,6 +720,7 @@ export function CanonicalHistoryPage({
               mode={mode}
             />
           ) : null}
+          {mode === 'assets' ? children : null}
         </div>
       </div>
     </>

@@ -20,7 +20,7 @@ import type {
 import { domMax, LazyMotion } from 'motion/react';
 import * as m from 'motion/react-m';
 import type { CSSProperties } from 'react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   ChatConversation,
@@ -979,6 +979,12 @@ export type ComposerPromptBarProps = {
   intentError?: string | null;
   /** Host-owned page composition — DESIGN.md 白瓷 Composer 大卡 lands here. */
   className?: string;
+  /**
+   * Idle density (P0): secondary capsules (素材 / 输出类型 / 配方 / @) collapse
+   * behind 「更多」so the default face is intent + 发到哪 + send. Full keeps the
+   * flat capsule row for Active sticky composer.
+   */
+  controlDensity?: 'full' | 'idle-compact';
 };
 
 const INTENT_ERROR_ID = 'composer-intent-error';
@@ -1019,8 +1025,10 @@ function CapsuleTrigger({
 /**
  * Composer prompt surface (L3-2 capsule contract / spec §2.4).
  *
- * Idle form: intent textarea + one bottom icon capsule row
- * (＋素材 / 输出类型 / 配方 / @ / 发到哪 / 积分 / circular send).
+ * Default Idle face: intent textarea + compact bottom row
+ * (更多 / 发到哪 / 弱化积分 / circular send). Secondary capsules
+ * (＋素材 / 输出类型 / 配方 / @) expand from 「更多」.
+ * Active sticky bar uses controlDensity="full" for flat capsules.
  * Creation-mode segmenter is outside this card (R-1).
  */
 export function ComposerPromptBar({
@@ -1055,7 +1063,9 @@ export function ComposerPromptBar({
   submitHint = null,
   intentError = null,
   className,
+  controlDensity = 'full',
 }: ComposerPromptBarProps) {
+  const [moreExpanded, setMoreExpanded] = useState(false);
   const describedBy =
     [intentError ? INTENT_ERROR_ID : null, submitHint ? SUBMIT_HINT_ID : null]
       .filter(Boolean)
@@ -1067,6 +1077,14 @@ export function ComposerPromptBar({
   const destinationLabel = destinationOption
     ? destinationOption.label
     : '发到哪';
+
+  const hasSecondaryControls = Boolean(
+    attachmentSlot || lensSlot || recipePillSlot || mentionSlot
+  );
+  const idleCompact = controlDensity === 'idle-compact';
+  const showSecondaryCapsules = !idleCompact || moreExpanded;
+  const moreSummary = [lensSummary, recipeSummary].filter(Boolean).join(' · ');
+  const moreRequired = Boolean(lensRequired && !lensSummary);
 
   return (
     <div
@@ -1163,14 +1181,44 @@ export function ComposerPromptBar({
 
       {/*
         Bottom icon capsule — L3-2 / prototype 04:286-294.
+        Idle-compact collapses 素材/输出类型/配方/@ behind 「更多」so the default
+        face is 发到哪 + send (+ weak credits). Active uses the flat row.
         Popovers host the former stacked controls; selected state echoes on
         the capsule labels. Radiogroup / fieldset a11y stays inside popovers.
       */}
       <div
         className="meiye-glass-piece flex flex-wrap items-center gap-1 rounded-full p-1.5"
+        data-control-density={controlDensity}
+        data-more-expanded={showSecondaryCapsules ? 'true' : 'false'}
         data-testid="composer-prompt-capsule"
       >
-        {attachmentSlot ? (
+        {idleCompact && hasSecondaryControls ? (
+          <CapsuleTrigger
+            active={moreExpanded || Boolean(moreSummary)}
+            aria-expanded={moreExpanded}
+            aria-label={
+              moreSummary
+                ? `更多设置：${moreSummary}`
+                : moreRequired
+                  ? '更多设置（输出类型必填）'
+                  : '更多设置'
+            }
+            onClick={() => setMoreExpanded((open) => !open)}
+            required={moreRequired && !moreExpanded}
+            testId="composer-capsule-more"
+          >
+            <span>{moreExpanded ? '收起' : '更多'}</span>
+            {moreSummary && !moreExpanded ? (
+              <span className="max-w-[6rem] truncate text-muted-foreground">
+                {moreSummary}
+              </span>
+            ) : (
+              <span aria-hidden="true">{moreExpanded ? '▴' : '▾'}</span>
+            )}
+          </CapsuleTrigger>
+        ) : null}
+
+        {showSecondaryCapsules && attachmentSlot ? (
           <Popover>
             <PopoverTrigger
               render={(triggerProps) => (
@@ -1194,7 +1242,7 @@ export function ComposerPromptBar({
           </Popover>
         ) : null}
 
-        {lensSlot ? (
+        {showSecondaryCapsules && lensSlot ? (
           <Popover>
             <PopoverTrigger
               render={(triggerProps) => (
@@ -1225,7 +1273,7 @@ export function ComposerPromptBar({
           </Popover>
         ) : null}
 
-        {recipePillSlot ? (
+        {showSecondaryCapsules && recipePillSlot ? (
           <Popover>
             <PopoverTrigger
               render={(triggerProps) => (
@@ -1254,7 +1302,7 @@ export function ComposerPromptBar({
           </Popover>
         ) : null}
 
-        {mentionSlot ? (
+        {showSecondaryCapsules && mentionSlot ? (
           <Popover>
             <PopoverTrigger
               render={(triggerProps) => (
@@ -1364,8 +1412,13 @@ export function ComposerPromptBar({
               render={(triggerProps) => (
                 <CapsuleTrigger
                   {...triggerProps}
-                  active={Boolean(creditSummary)}
+                  active={Boolean(creditSummary) && !idleCompact}
                   aria-label={creditSummary ?? '积分'}
+                  className={
+                    idleCompact && !creditShort
+                      ? 'text-muted-foreground font-normal'
+                      : undefined
+                  }
                   required={creditShort}
                   testId="composer-capsule-credit"
                 >

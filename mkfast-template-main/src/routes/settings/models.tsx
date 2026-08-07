@@ -1,10 +1,5 @@
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import {
   settings_models_byok_description,
   settings_models_byok_heading,
   settings_models_description,
@@ -14,7 +9,6 @@ import {
 } from '@/locale/paraglide/messages';
 import { ModelSettings } from '@/p1/model-settings';
 import { ModelByokSettings } from '@/p1/integration-settings';
-import { IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 
@@ -50,33 +44,24 @@ function ModelsPage() {
         <h2 className="meiye-type-body font-semibold">
           {settings_models_preferences_heading()}
         </h2>
-        <ModelSettings />
+        <ModelSettings
+          advancedOpen={advancedOpen}
+          onAdvancedOpenChange={setAdvancedOpen}
+          advancedExtra={
+            <section className="space-y-3 border-t border-divider pt-6" id="byok">
+              <div>
+                <h3 className="meiye-type-body font-semibold">
+                  {settings_models_byok_heading()}
+                </h3>
+                <p className="meiye-type-aux mt-1 text-muted-foreground">
+                  {settings_models_byok_description()}
+                </p>
+              </div>
+              <ModelByokSettings />
+            </section>
+          }
+        />
       </section>
-      <Collapsible
-        className="border-t border-divider pt-6"
-        id="byok"
-        onOpenChange={setAdvancedOpen}
-        open={advancedOpen}
-      >
-        <CollapsibleTrigger className="flex min-h-touch-target w-full items-center justify-between gap-4 rounded-lg bg-surface-1 p-4 text-left">
-          <span>
-            <span className="meiye-type-body block font-semibold">
-              {settings_models_byok_heading()}
-            </span>
-            <span className="meiye-type-aux mt-1 block">
-              {settings_models_byok_description()}
-            </span>
-          </span>
-          {advancedOpen ? (
-            <IconChevronUp aria-hidden="true" className="size-5 shrink-0" />
-          ) : (
-            <IconChevronDown aria-hidden="true" className="size-5 shrink-0" />
-          )}
-        </CollapsibleTrigger>
-        <CollapsibleContent className="pt-4">
-          <ModelByokSettings />
-        </CollapsibleContent>
-      </Collapsible>
     </DashboardLayout>
   );
 }

@@ -127,6 +127,15 @@ const COMPOSER_CAPSULE_KINDS: readonly ComposerCapsuleKind[] = [
  * Idempotent when the panel is already open. Closes any other capsule panel
  * first so Escape/open sequences stay stable under the single-popover UI.
  */
+/** Expand Idle 「更多」so secondary capsules (lens/recipe/attach/@) mount. */
+export async function ensureComposerSecondaryCapsules(page: Page): Promise<void> {
+  const more = page.getByTestId('composer-capsule-more');
+  if (!(await more.isVisible().catch(() => false))) return;
+  if ((await more.getAttribute('aria-expanded')) === 'true') return;
+  await more.click();
+  await expect(more).toHaveAttribute('aria-expanded', 'true');
+}
+
 export async function openComposerCapsule(
   page: Page,
   kind: ComposerCapsuleKind
@@ -140,6 +149,10 @@ export async function openComposerCapsule(
       await page.keyboard.press('Escape');
       await expect(otherPanel).toBeHidden();
     }
+  }
+  // Idle-compact hides 素材/输出类型/配方/@ behind 「更多」until expanded.
+  if (kind === 'attach' || kind === 'lens' || kind === 'recipe' || kind === 'mention') {
+    await ensureComposerSecondaryCapsules(page);
   }
   await page.getByTestId(`composer-capsule-${kind}`).click();
   await expect(panel).toBeVisible();
@@ -190,8 +203,9 @@ export async function openComposerRecipeCard(
 
 export async function assertThreeModalDiscovery(page: Page) {
   await expect(page.getByTestId('composer-home')).toBeVisible();
-  // L3-2: lens lives in a bottom capsule; cold required semantics land on the
-  // trigger (aria-required), with the radiogroup still required inside the panel.
+  // L3-2: lens lives in a bottom capsule (Idle: behind 「更多」); cold required
+  // semantics land on the trigger (aria-required), radiogroup inside the panel.
+  await ensureComposerSecondaryCapsules(page);
   const lensCapsule = page.getByTestId('composer-capsule-lens');
   await expect(lensCapsule).toBeVisible();
   await expect(lensCapsule).toHaveAttribute('aria-required', 'true');

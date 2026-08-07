@@ -77,16 +77,71 @@ export function DashboardContinueSection() {
 
   if (!workbenchHasWork(workbench.data)) return null;
 
-  const cards = projectActivityShelfCards(workbench.data);
+  return <ActivityShelfReady workbench={workbench.data} />;
+}
+
+/** Idle default: one-line reminder; expand to the horizontal object shelf. */
+function ActivityShelfReady({
+  workbench,
+}: {
+  workbench: CreativeWorkbenchProjection;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const cards = projectActivityShelfCards(workbench);
+  const lead = cards[0];
+  const summary =
+    cards.length <= 1
+      ? (lead?.title ?? dashboard_continue_title())
+      : `${lead?.title ?? dashboard_continue_title()} 等 ${cards.length} 条`;
+
+  if (!expanded) {
+    return (
+      <section
+        className="space-y-2"
+        data-activity-shelf="ready"
+        data-shelf-card-count={cards.length}
+        data-shelf-collapsed="true"
+        data-testid="dashboard-section-continue"
+      >
+        <button
+          className="meiye-type-aux hover:text-foreground flex w-full min-h-touch-target items-center justify-between gap-3 rounded-full border border-border/50 bg-muted/30 px-3 py-2 text-left transition-colors"
+          data-testid="activity-shelf-expand"
+          onClick={() => setExpanded(true)}
+          type="button"
+        >
+          <span className="min-w-0 truncate">
+            <span className="font-medium text-foreground">
+              {dashboard_continue_title()}
+            </span>
+            <span className="text-muted-foreground"> · {summary}</span>
+          </span>
+          <span aria-hidden="true" className="shrink-0 text-muted-foreground">
+            ▾
+          </span>
+        </button>
+      </section>
+    );
+  }
 
   return (
     <section
       className="space-y-4"
       data-activity-shelf="ready"
       data-shelf-card-count={cards.length}
+      data-shelf-collapsed="false"
       data-testid="dashboard-section-continue"
     >
-      <h2 className="meiye-type-aux">{dashboard_continue_title()}</h2>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="meiye-type-aux">{dashboard_continue_title()}</h2>
+        <button
+          className="meiye-type-aux text-muted-foreground hover:text-foreground text-xs underline-offset-4 hover:underline"
+          data-testid="activity-shelf-collapse"
+          onClick={() => setExpanded(false)}
+          type="button"
+        >
+          收起
+        </button>
+      </div>
       {/*
         Horizontal shelf with generous whitespace (D6 / prototype). Cards stay
         compact object faces — never a dense vertical link list.

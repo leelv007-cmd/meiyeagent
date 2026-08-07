@@ -5,6 +5,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { seedConfirmedStore } from '../fixtures/product';
+import { ensureComposerSecondaryCapsules } from '../fixtures/ui-journey';
 
 test.afterEach(async ({ request }) => {
   await cleanupE2EUsers(request);
@@ -25,6 +26,7 @@ test('keyboard submits the Composer and announces the streamed candidate', async
   // PopoverTrigger props (composer-conversation.tsx CapsuleTrigger /
   // PopoverTrigger). Native button activation (Space/Enter) fires the click
   // that opens the popover; the radiogroup stays unmounted until then.
+  await ensureComposerSecondaryCapsules(page);
   const lensTrigger = page.getByTestId('composer-capsule-lens');
   const lensPanel = page.getByTestId('composer-capsule-lens-panel');
   const lens = page.getByTestId('composer-lens-option-copy');

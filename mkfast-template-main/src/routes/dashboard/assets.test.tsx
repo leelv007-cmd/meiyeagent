@@ -38,6 +38,9 @@ const { CanonicalHistoryNavigation } = await import(
 const { marketingIdentitiesQuery } = await import(
   '@/product/marketing-identity-queries'
 );
+const { StoreIntakeWizard } = await import(
+  '@/product/store-intake/store-intake-wizard'
+);
 const { Route: assetsFileRoute } = await import('./assets');
 const AssetLibraryPage = assetsFileRoute.options.component;
 
@@ -50,11 +53,33 @@ function containsComponent(node: ReactNode, component: ComponentType): boolean {
   );
 }
 
-test('asset library route exposes identity management on the asset page', () => {
+function collectElementTypes(node: ReactNode, into = new Set<unknown>()) {
+  if (!isValidElement(node)) return into;
+  into.add(node.type);
+  const element = node as ReactElement<{ children?: ReactNode }>;
+  for (const child of Children.toArray(element.props.children)) {
+    collectElementTypes(child, into);
+  }
+  return into;
+}
+
+test('asset library route keeps library chrome without stacking intake/voice heroes', () => {
   assert.equal(typeof AssetLibraryPage, 'function');
-  assert.equal(
-    containsComponent(AssetLibraryPage!({}), MarketingIdentityManager),
-    true
+  const tree = AssetLibraryPage!({});
+  const types = collectElementTypes(tree);
+
+  // Cold-start: wizard and identity manager stay behind secondary entries —
+  // they must not mount as first-class siblings of the history page shell.
+  assert.equal(types.has(StoreIntakeWizard), false);
+  assert.equal(types.has(MarketingIdentityManager), false);
+
+  // Secondary host still exists so capabilities remain one click away.
+  assert.equal((tree as ReactElement<{ mode?: string }>).props.mode, 'assets');
+  assert.ok(
+    Children.count(
+      (tree as ReactElement<{ children?: ReactNode }>).props.children
+    ) >= 1,
+    'assets page still composes a secondary host child'
   );
 });
 

@@ -197,6 +197,7 @@ test('P1-3 / D6: Activity Shelf object cards (≤3, status + next action)', () =
   assert.match(shelf, /statusLabel/u);
   const section = readSource('src/product/dashboard-continue-section.tsx');
   assert.match(section, /data-testid="activity-shelf"/u);
+  assert.match(section, /data-testid="activity-shelf-expand"/u);
   assert.match(section, /data-testid="activity-shelf-card"/u);
   assert.match(section, /activity-shelf-status/u);
   assert.match(section, /activity-shelf-thumb/u);

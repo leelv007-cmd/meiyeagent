@@ -28,6 +28,7 @@ import {
   creation_entry_intent_aria,
   creation_entry_intent_placeholder,
   creation_entry_submit,
+  product_navigation_workbench,
   workbench_credit_balance,
   workbench_credit_expiring,
   composer_credit_block_title,
@@ -3033,7 +3034,7 @@ export function ComposerHome({
               </span>
             ) : null
           }
-          breadcrumbs={[{ label: '工作台', isCurrentPage: true }]}
+          breadcrumbs={[{ label: product_navigation_workbench(), isCurrentPage: true }]}
         />
       }
       widthMode={widthMode}
@@ -3572,6 +3573,13 @@ export function ComposerHome({
                   ariaLabel={creation_entry_intent_aria()}
                   // DESIGN.md 白瓷 Composer 大卡 — pinned by the product shell contract.
                   className="meiye-composer meiye-entry-card rounded-3xl p-4 sm:p-5"
+                  controlDensity={
+                    session.phase === 'running' ||
+                    session.phase === 'submitting' ||
+                    session.phase === 'awaiting_answer'
+                      ? 'full'
+                      : 'idle-compact'
+                  }
                   attachmentSlot={composerAttachmentSlot}
                   creditShort={quotaBlocked}
                   creditSlot={

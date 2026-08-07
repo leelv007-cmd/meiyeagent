@@ -8,6 +8,11 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { Skeleton } from '@/components/ui/skeleton';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -16,6 +21,7 @@ import {
   model_card_channel_single,
   model_card_preview_alt,
   model_settings_capability_pending,
+  model_settings_current,
   model_settings_empty,
   model_settings_favorite,
   model_settings_favorite_added,
@@ -51,12 +57,21 @@ import {
   model_settings_workspace_default,
   model_settings_workspace_default_action,
   model_settings_workspace_default_updated,
+  settings_models_advanced_description,
+  settings_models_advanced_heading,
+  settings_models_summary_auto,
+  settings_models_summary_detail_named,
+  settings_models_summary_line,
+  settings_models_summary_loading,
+  settings_models_system_blurb,
 } from '@/locale/paraglide/messages';
 import { cn } from '@/lib/utils';
 import { commandP1, queryP1 } from '@/p1/client';
 import {
   readCurrentModelSelection,
+  resolveCreationModelSelection,
   writeCurrentModelSelection,
+  type CreationModelSelection,
 } from '@/p1/model-current-selection';
 import { modelPreviewUrl } from '@/p1/model-preview';
 import {
@@ -71,14 +86,20 @@ import { p1QueryKeys } from '@/p1/query-keys';
 import { useWorkspaceAccess } from '@/p1/use-workspace-access';
 import {
   IconCheck,
+  IconChevronDown,
+  IconChevronUp,
   IconHeart,
   IconPhoto,
   IconRefresh,
   IconSparkles,
   IconVideo,
 } from '@tabler/icons-react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
+import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
+import {
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { toast } from 'sonner';
 
 interface ModelSection {
@@ -119,6 +140,67 @@ const MODEL_TAGLINES: Record<string, () => string> = {
   'llm-gemini': model_settings_tagline_gemini,
   'llm-openai': model_settings_tagline_openai,
 };
+
+export interface ModelSettingsSummaryLine {
+  detail: string;
+  operation: ModelOperation;
+  sectionId: ModelSection['id'];
+  typeLabel: string;
+}
+
+function sourceLabel(source: CreationModelSelection['source']): string {
+  switch (source) {
+    case 'current_selection':
+      return model_settings_current();
+    case 'user_default':
+      return model_settings_personal_default();
+    case 'workspace_default':
+      return model_settings_workspace_default();
+    case 'platform_default':
+      return settings_models_summary_auto();
+  }
+}
+
+/** Pure summary projection for the merchant default view (and unit tests). */
+export function buildModelSettingsSummaryLines(input: {
+  currentSelections: Partial<Record<ModelOperation, string>>;
+  sections: ReadonlyArray<{
+    id: ModelSection['id'];
+    operation: ModelOperation;
+    title: () => string;
+  }>;
+  snapshots: ReadonlyArray<{
+    catalog: CatalogModelView[];
+    preferences: ModelPreferencesView;
+  }>;
+}): ModelSettingsSummaryLine[] {
+  return input.sections.map((section, index) => {
+    const snapshot = input.snapshots[index] ?? {
+      catalog: [],
+      preferences: { favorites: [], recent: [] },
+    };
+    const resolved = resolveCreationModelSelection({
+      catalog: snapshot.catalog,
+      currentSelection: input.currentSelections[section.operation],
+      platformDefault: snapshot.preferences.platformDefault,
+      userDefault: snapshot.preferences.userDefault,
+      workspaceDefault: snapshot.preferences.workspaceDefault,
+    });
+    const typeLabel = section.title();
+    const detail = resolved
+      ? settings_models_summary_detail_named({
+          name: resolved.model.displayName,
+          source: sourceLabel(resolved.source),
+        })
+      : settings_models_summary_auto();
+    return {
+      detail,
+      operation: section.operation,
+      sectionId: section.id,
+      typeLabel,
+    };
+  });
+}
 
 function ModelStatus({ model }: { model: CatalogModelView }) {
   if (model.availabilityKind === 'local_fixture') {
@@ -291,9 +373,34 @@ function LoadingCards() {
   );
 }
 
-export function ModelSettings() {
+export interface ModelSettingsProps {
+  /** Extra content inside the advanced panel (e.g. BYOK). */
+  advancedExtra?: ReactNode;
+  /** Controlled advanced open state. */
+  advancedOpen?: boolean;
+  /** Uncontrolled initial advanced open state. */
+  defaultAdvancedOpen?: boolean;
+  onAdvancedOpenChange?: (open: boolean) => void;
+}
+
+export function ModelSettings({
+  advancedExtra,
+  advancedOpen: advancedOpenProp,
+  defaultAdvancedOpen = false,
+  onAdvancedOpenChange,
+}: ModelSettingsProps = {}) {
   const access = useWorkspaceAccess();
   const [sectionId, setSectionId] = useState<ModelSection['id']>('llm');
+  const [uncontrolledAdvancedOpen, setUncontrolledAdvancedOpen] = useState(
+    defaultAdvancedOpen
+  );
+  const advancedOpen = advancedOpenProp ?? uncontrolledAdvancedOpen;
+  const setAdvancedOpen = (open: boolean) => {
+    if (advancedOpenProp === undefined) {
+      setUncontrolledAdvancedOpen(open);
+    }
+    onAdvancedOpenChange?.(open);
+  };
   const [currentSelections, setCurrentSelections] = useState<
     Partial<Record<ModelOperation, string>>
   >(() =>
@@ -308,29 +415,38 @@ export function ModelSettings() {
   const section =
     MODEL_SECTIONS.find((candidate) => candidate.id === sectionId) ??
     MODEL_SECTIONS[0];
+  const sectionIndex = MODEL_SECTIONS.findIndex(
+    (candidate) => candidate.id === section.id
+  );
   const queryClient = useQueryClient();
-  const catalogQuery = useQuery({
-    queryKey: p1QueryKeys.request('model-supply', 'catalog', {
-      operation: section.operation,
-    }),
-    queryFn: ({ signal }) =>
-      queryP1<unknown>(
-        'model-supply',
-        { action: 'catalog', payload: { operation: section.operation } },
-        signal
-      ),
+
+  const catalogQueries = useQueries({
+    queries: MODEL_SECTIONS.map((item) => ({
+      queryKey: p1QueryKeys.request('model-supply', 'catalog', {
+        operation: item.operation,
+      }),
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        queryP1<unknown>(
+          'model-supply',
+          { action: 'catalog', payload: { operation: item.operation } },
+          signal
+        ),
+    })),
   });
-  const preferencesQuery = useQuery({
-    queryKey: p1QueryKeys.request('model-supply', 'preferences', {
-      operation: section.operation,
-    }),
-    queryFn: ({ signal }) =>
-      queryP1<unknown>(
-        'model-supply',
-        { action: 'preferences', payload: { operation: section.operation } },
-        signal
-      ),
+  const preferencesQueries = useQueries({
+    queries: MODEL_SECTIONS.map((item) => ({
+      queryKey: p1QueryKeys.request('model-supply', 'preferences', {
+        operation: item.operation,
+      }),
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        queryP1<unknown>(
+          'model-supply',
+          { action: 'preferences', payload: { operation: item.operation } },
+          signal
+        ),
+    })),
   });
+
   const commandMutation = useMutation({
     mutationFn: (request: {
       action: string;
@@ -346,23 +462,55 @@ export function ModelSettings() {
         queryKey: p1QueryKeys.module('model-supply'),
       }),
   });
+
+  const snapshots = useMemo(
+    () =>
+      MODEL_SECTIONS.map((item, index) => ({
+        catalog: normalizeCatalog(
+          catalogQueries[index]?.data,
+          item.operation
+        ).models,
+        preferences: normalizePreferences(preferencesQueries[index]?.data),
+      })),
+    [catalogQueries, preferencesQueries]
+  );
+
+  const summaryLines = useMemo(
+    () =>
+      buildModelSettingsSummaryLines({
+        currentSelections,
+        sections: MODEL_SECTIONS,
+        snapshots,
+      }),
+    [currentSelections, snapshots]
+  );
+
   const catalog = useMemo<CatalogView>(
-    () => normalizeCatalog(catalogQuery.data, section.operation),
-    [catalogQuery.data, section.operation]
+    () => ({ models: snapshots[sectionIndex]?.catalog ?? [] }),
+    [sectionIndex, snapshots]
   );
-  const preferences = useMemo<ModelPreferencesView>(
-    () => normalizePreferences(preferencesQuery.data),
-    [preferencesQuery.data]
-  );
-  const loading = catalogQuery.isPending || preferencesQuery.isPending;
-  const errorCause = catalogQuery.error ?? preferencesQuery.error;
+  const preferences = snapshots[sectionIndex]?.preferences ?? {
+    favorites: [],
+    recent: [],
+  };
+  const catalogQuery = catalogQueries[sectionIndex];
+  const preferencesQuery = preferencesQueries[sectionIndex];
+  const summaryLoading =
+    catalogQueries.some((query) => query.isPending) ||
+    preferencesQueries.some((query) => query.isPending);
+  const loading =
+    Boolean(catalogQuery?.isPending) || Boolean(preferencesQuery?.isPending);
+  const errorCause = catalogQuery?.error ?? preferencesQuery?.error;
   const error = errorCause ? model_settings_load_error() : undefined;
   const busy = commandMutation.isPending;
   const canPersonalize = access.can('personal.preferences.manage');
   const canManageWorkspace = access.can('workspace.models.manage');
 
   const refresh = () =>
-    Promise.all([catalogQuery.refetch(), preferencesQuery.refetch()]);
+    Promise.all([
+      ...catalogQueries.map((query) => query.refetch()),
+      ...preferencesQueries.map((query) => query.refetch()),
+    ]);
 
   const execute = async (
     action: string,
@@ -400,129 +548,182 @@ export function ModelSettings() {
   const SectionIcon = section.icon;
 
   return (
-    <Tabs
-      onValueChange={(value) => {
-        const nextId = value as ModelSection['id'];
-        setSectionId(nextId);
-      }}
-      value={sectionId}
-    >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <TabsList aria-label={model_settings_model_types()}>
-          {MODEL_SECTIONS.map((item) => {
-            const Icon = item.icon;
-            return (
-              <TabsTrigger key={item.id} value={item.id}>
-                <Icon />
-                {item.title()}
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-        <Button
-          disabled={loading}
-          onClick={() => void refresh()}
-          variant="outline"
-        >
-          <IconRefresh />
-          {model_settings_refresh()}
-        </Button>
-      </div>
-
-      {MODEL_SECTIONS.map((item) => (
-        <TabsContent key={item.id} value={item.id}>
-          <div className="mb-4 flex items-center gap-4 rounded-xl bg-surface-1 p-4">
-            <item.icon className="size-5 shrink-0 text-primary" />
-            <div className="min-w-0 flex-1">
-              <h2 className="font-medium">{item.title()}</h2>
-              <p className="meiye-type-aux mt-1">{item.description()}</p>
-            </div>
-            <img
-              alt={model_card_preview_alt({ name: item.title() })}
-              className="size-20 shrink-0 rounded-lg object-cover"
-              loading="lazy"
-              src={modelPreviewUrl(item.id)}
-            />
-          </div>
-        </TabsContent>
-      ))}
-
-      {error ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>{model_settings_load_error_title()}</CardTitle>
-            <CardDescription>{error}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button onClick={() => void refresh()} variant="outline">
-              {model_settings_retry()}
-            </Button>
-          </CardContent>
-        </Card>
-      ) : loading ? (
-        <LoadingCards />
-      ) : (
-        <div className="space-y-4">
-          <RadioGroup
-            aria-label={model_settings_use_this_run()}
-            className="grid gap-4 lg:grid-cols-2"
-            onValueChange={(value) => {
-              const model = catalog.models.find(
-                (candidate) => candidate.id === value
-              );
-              if (!model || model.id === currentSelection) return;
-              void selectModel(model);
-            }}
-            value={currentSelection ?? ''}
-          >
-            {catalog.models.map((model) => (
-              <ModelCard
-                busy={busy}
-                canManageWorkspace={canManageWorkspace}
-                canPersonalize={canPersonalize}
-                current={currentSelection === model.id}
-                key={model.id}
-                model={model}
-                onFavorite={(candidate) =>
-                  execute(
-                    'set_favorite',
-                    {
-                      favorite: !preferences.favorites.includes(candidate.id),
-                      modelId: candidate.id,
-                    },
-                    preferences.favorites.includes(candidate.id)
-                      ? model_settings_favorite_removed()
-                      : model_settings_favorite_added()
-                  )
-                }
-                onSetUserDefault={(candidate) =>
-                  execute(
-                    'set_user_default',
-                    { modelId: candidate.id },
-                    model_settings_personal_default_updated()
-                  )
-                }
-                onSetWorkspaceDefault={(candidate) =>
-                  execute(
-                    'set_workspace_default',
-                    { modelId: candidate.id },
-                    model_settings_workspace_default_updated()
-                  )
-                }
-                preferences={preferences}
-              />
+    <div className="space-y-4">
+      <section
+        className="space-y-3 rounded-xl bg-surface-1 p-4"
+        data-testid="model-settings-default"
+      >
+        <p className="meiye-type-body">{settings_models_system_blurb()}</p>
+        {summaryLoading ? (
+          <p className="meiye-type-aux text-muted-foreground">
+            {settings_models_summary_loading()}
+          </p>
+        ) : (
+          <ul className="space-y-1" data-testid="model-settings-summary">
+            {summaryLines.map((line) => (
+              <li className="meiye-type-aux" key={line.operation}>
+                {settings_models_summary_line({
+                  detail: line.detail,
+                  type: line.typeLabel,
+                })}
+              </li>
             ))}
-          </RadioGroup>
-          {catalog.models.length === 0 ? (
-            <Card>
-              <CardContent className="py-6 text-center text-muted-foreground">
-                <SectionIcon className="mx-auto mb-2 size-6" />
-                {model_settings_empty()}
-              </CardContent>
-            </Card>
-          ) : null}
-        </div>
-      )}
-    </Tabs>
+          </ul>
+        )}
+      </section>
+
+      <Collapsible
+        onOpenChange={setAdvancedOpen}
+        open={advancedOpen}
+      >
+        <CollapsibleTrigger
+          className="flex min-h-touch-target w-full items-center justify-between gap-4 rounded-lg border border-divider bg-surface-1 p-4 text-left"
+          data-testid="model-settings-advanced-trigger"
+        >
+          <span>
+            <span className="meiye-type-body block font-semibold">
+              {settings_models_advanced_heading()}
+            </span>
+            <span className="meiye-type-aux mt-1 block text-muted-foreground">
+              {settings_models_advanced_description()}
+            </span>
+          </span>
+          {advancedOpen ? (
+            <IconChevronUp aria-hidden="true" className="size-5 shrink-0" />
+          ) : (
+            <IconChevronDown aria-hidden="true" className="size-5 shrink-0" />
+          )}
+        </CollapsibleTrigger>
+        <CollapsibleContent className="space-y-6 pt-4">
+          <Tabs
+            onValueChange={(value) => {
+              const nextId = value as ModelSection['id'];
+              setSectionId(nextId);
+            }}
+            value={sectionId}
+          >
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <TabsList aria-label={model_settings_model_types()}>
+                {MODEL_SECTIONS.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <TabsTrigger key={item.id} value={item.id}>
+                      <Icon />
+                      {item.title()}
+                    </TabsTrigger>
+                  );
+                })}
+              </TabsList>
+              <Button
+                disabled={loading}
+                onClick={() => void refresh()}
+                variant="outline"
+              >
+                <IconRefresh />
+                {model_settings_refresh()}
+              </Button>
+            </div>
+
+            {MODEL_SECTIONS.map((item) => (
+              <TabsContent key={item.id} value={item.id}>
+                <div className="mb-4 flex items-center gap-4 rounded-xl bg-surface-1 p-4">
+                  <item.icon className="size-5 shrink-0 text-primary" />
+                  <div className="min-w-0 flex-1">
+                    <h2 className="font-medium">{item.title()}</h2>
+                    <p className="meiye-type-aux mt-1">{item.description()}</p>
+                  </div>
+                  <img
+                    alt={model_card_preview_alt({ name: item.title() })}
+                    className="size-20 shrink-0 rounded-lg object-cover"
+                    loading="lazy"
+                    src={modelPreviewUrl(item.id)}
+                  />
+                </div>
+              </TabsContent>
+            ))}
+
+            {error ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle>{model_settings_load_error_title()}</CardTitle>
+                  <CardDescription>{error}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button onClick={() => void refresh()} variant="outline">
+                    {model_settings_retry()}
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : loading ? (
+              <LoadingCards />
+            ) : (
+              <div className="space-y-4">
+                <RadioGroup
+                  aria-label={model_settings_use_this_run()}
+                  className="grid gap-4 lg:grid-cols-2"
+                  onValueChange={(value) => {
+                    const model = catalog.models.find(
+                      (candidate) => candidate.id === value
+                    );
+                    if (!model || model.id === currentSelection) return;
+                    void selectModel(model);
+                  }}
+                  value={currentSelection ?? ''}
+                >
+                  {catalog.models.map((model) => (
+                    <ModelCard
+                      busy={busy}
+                      canManageWorkspace={canManageWorkspace}
+                      canPersonalize={canPersonalize}
+                      current={currentSelection === model.id}
+                      key={model.id}
+                      model={model}
+                      onFavorite={(candidate) =>
+                        execute(
+                          'set_favorite',
+                          {
+                            favorite: !preferences.favorites.includes(
+                              candidate.id
+                            ),
+                            modelId: candidate.id,
+                          },
+                          preferences.favorites.includes(candidate.id)
+                            ? model_settings_favorite_removed()
+                            : model_settings_favorite_added()
+                        )
+                      }
+                      onSetUserDefault={(candidate) =>
+                        execute(
+                          'set_user_default',
+                          { modelId: candidate.id },
+                          model_settings_personal_default_updated()
+                        )
+                      }
+                      onSetWorkspaceDefault={(candidate) =>
+                        execute(
+                          'set_workspace_default',
+                          { modelId: candidate.id },
+                          model_settings_workspace_default_updated()
+                        )
+                      }
+                      preferences={preferences}
+                    />
+                  ))}
+                </RadioGroup>
+                {catalog.models.length === 0 ? (
+                  <Card>
+                    <CardContent className="py-6 text-center text-muted-foreground">
+                      <SectionIcon className="mx-auto mb-2 size-6" />
+                      {model_settings_empty()}
+                    </CardContent>
+                  </Card>
+                ) : null}
+              </div>
+            )}
+          </Tabs>
+          {advancedExtra}
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
   );
 }

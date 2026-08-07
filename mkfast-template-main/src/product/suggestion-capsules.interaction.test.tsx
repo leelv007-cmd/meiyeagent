@@ -143,7 +143,7 @@ describe('suggestion capsules', () => {
       })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole('button', { name: '开始下一次任务' })
+      screen.getByRole('button', { name: '开始下一次创作' })
     ).toBeInTheDocument();
 
     // Pending: workspace has produced work but no current recommendation.
@@ -185,7 +185,7 @@ describe('suggestion capsules', () => {
         name: '今天的主推荐还没排出来',
       })
     ).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '开始下一次任务' }));
+    await user.click(screen.getByRole('button', { name: '开始下一次创作' }));
     expect(onStart).toHaveBeenCalled();
     // silence unused
     void rerender;

@@ -4,6 +4,7 @@ import { PostgresDiagnosticRepository } from '../diagnostics/postgres-repository
 import {
   AdminConfigCreditPlanCatalogSource,
   ensureCreditPlanCatalogDefaults,
+  migrateCreditPlanCatalogCurrencyToHkd,
 } from '../p1/admin-config/credit-plan-catalog-source.js';
 import {
   AdminConfigEntitlementCatalogSource,
@@ -848,6 +849,7 @@ export async function assembleCoreGraph(
     notifier,
   ]);
   await ensureCreditPlanCatalogDefaults(adminConfigRepository);
+  await migrateCreditPlanCatalogCurrencyToHkd(adminConfigRepository);
   if (modelRuntime.mode === 'fixture') {
     await initializeWorkspaceCatalog(PLATFORM_SUPPLY_SCOPE_ID);
   }

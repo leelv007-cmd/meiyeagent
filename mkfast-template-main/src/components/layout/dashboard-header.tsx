@@ -18,6 +18,7 @@ import {
   shell_product_subscription_upgrade_short,
   shell_product_usage_entry,
   shell_product_usage_entry_aria,
+  sidebar_toggle,
 } from '@/locale/paraglide/messages';
 import { IconGauge, IconSparkles } from '@tabler/icons-react';
 import { Link, useRouterState } from '@tanstack/react-router';
@@ -60,7 +61,7 @@ export function DashboardHeader({
       <div className="flex w-full min-w-0 items-center gap-2 px-4 lg:px-6">
         {!isMobile ? (
           <>
-            <Sidebar.Trigger className="-ml-1 shrink-0" />
+            <Sidebar.Trigger aria-label={sidebar_toggle()} className="-ml-1 shrink-0" />
             <Separator
               orientation="vertical"
               className="mx-2 h-4 data-vertical:self-auto"

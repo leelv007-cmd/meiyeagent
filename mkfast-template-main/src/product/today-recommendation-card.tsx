@@ -344,8 +344,8 @@ function emptyDescription(kind: 'cold' | 'pending' | 'stale') {
 }
 
 /**
- * Expanded empty face: honest h3 title + start CTA (W04 / e2e contract).
- * Keeps the action-oriented 「开始下一次任务」accessible name.
+ * Idle empty face (P0 density): one personified line + start CTA.
+ * Honest title stays the accessible name; no second heavy porcelain card.
  */
 function EmptyRecommendationPanel({
   kind,
@@ -356,21 +356,21 @@ function EmptyRecommendationPanel({
 }) {
   return (
     <div
-      className="meiye-porcelain space-y-2 rounded-2xl border border-border/60 p-4"
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-full border border-border/50 bg-muted/30 px-3 py-2"
       data-testid="today-recommendation-empty-panel"
     >
-      <h3 className="text-base font-semibold leading-6">
+      <h3 className="min-w-0 flex-1 text-sm font-medium leading-5 text-foreground">
         {emptyChipLabel(kind)}
+        <span className="mt-0.5 block text-xs font-normal text-muted-foreground sm:mt-0 sm:ml-2 sm:inline">
+          {emptyDescription(kind)}
+        </span>
       </h3>
-      <p className="text-sm leading-6 text-muted-foreground">
-        {emptyDescription(kind)}
-      </p>
       <Button
         data-testid="today-recommendation-start"
         onClick={onStart}
         size="sm"
         type="button"
-        variant="outline"
+        variant="ghost"
       >
         {today_recommendation_start()}
       </Button>

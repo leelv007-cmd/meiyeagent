@@ -2,15 +2,27 @@ import {
   pricing_description,
   pricing_plan_subtitle,
   pricing_title,
+  pricing_unavailable_contact,
+  pricing_unavailable_description,
+  pricing_unavailable_retry,
+  pricing_unavailable_title,
 } from '@/locale/paraglide/messages';
 import { getPublicPlanCatalog } from '@/api/plan-catalog';
 import { authClient } from '@/auth/client';
 import Container from '@/components/layout/container';
 import { CreditPricingContent } from '@/components/pricing/credit-pricing-content';
 import { PricingShell } from '@/components/pricing/pricing-shell';
+import { buttonVariants } from '@/components/ui/button';
 import { websiteConfig } from '@/config/website';
+import { Routes } from '@/lib/routes';
 import { seo } from '@/lib/seo';
-import { createFileRoute } from '@tanstack/react-router';
+import { cn } from '@/lib/utils';
+import { getPathWithLocale } from '@/lib/urls';
+import {
+  createFileRoute,
+  type ErrorComponentProps,
+  useRouter,
+} from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 
 export const Route = createFileRoute('/(pages)/pricing')({
@@ -21,6 +33,7 @@ export const Route = createFileRoute('/(pages)/pricing')({
     }),
   loader: () => getPublicPlanCatalog(),
   component: PricingPage,
+  errorComponent: PricingErrorState,
 });
 
 function PricingPage() {
@@ -51,6 +64,42 @@ function PricingPage() {
             isAuthenticated={isAuthenticated}
             userId={userId}
           />
+        </div>
+      </Container>
+    </PricingShell>
+  );
+}
+
+function PricingErrorState(_props: ErrorComponentProps) {
+  const router = useRouter();
+
+  return (
+    <PricingShell>
+      <Container className="px-4 py-16">
+        <div className="mx-auto flex max-w-xl flex-col items-center gap-6 text-center">
+          <h1 className="text-3xl font-semibold tracking-tight">
+            {pricing_unavailable_title()}
+          </h1>
+          <p className="text-base text-muted-foreground">
+            {pricing_unavailable_description()}
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              type="button"
+              className={cn(buttonVariants({ size: 'lg', variant: 'default' }))}
+              onClick={() => {
+                void router.invalidate();
+              }}
+            >
+              {pricing_unavailable_retry()}
+            </button>
+            <a
+              href={getPathWithLocale(Routes.Contact)}
+              className={cn(buttonVariants({ size: 'lg', variant: 'outline' }))}
+            >
+              {pricing_unavailable_contact()}
+            </a>
+          </div>
         </div>
       </Container>
     </PricingShell>

@@ -10,6 +10,7 @@ import {
 	AdminConfigCreditPlanCatalogSource,
 	type CreditPlanConfigRepository,
 	ensureCreditPlanCatalogDefaults,
+	migrateCreditPlanCatalogCurrencyToHkd,
 } from "../admin-config/credit-plan-catalog-source.js";
 import { MemoryAdminConfigRepository } from "../admin-config/foundation-module.js";
 import {
@@ -209,6 +210,90 @@ test("a legacy CNY publication stays unchanged and fails closed until an explici
 	);
 	assert.equal((starter?.value as { currency: string }).currency, "CNY");
 	assert.equal(starter?.revision, 1);
+});
+
+test("explicit HKD migration upgrades legacy CNY publication so public catalog is readable", async () => {
+	const repository = new MemoryAdminConfigRepository();
+	for (const key of CREDIT_PLAN_CONFIG_KEYS) {
+		const value: unknown = structuredClone(CREDIT_PLAN_CONFIG_DEFAULTS[key]);
+		if (
+			key.startsWith("plan.credits.") &&
+			key !== "plan.credits.cycle_coefficients" &&
+			key !== "plan.credits.reference_numbers" &&
+			key !== "plan.credits.trial.enabled"
+		) {
+			if (Array.isArray(value)) {
+				for (const offer of value) {
+					(offer as Record<string, unknown>).currency = "CNY";
+				}
+			} else if (value && typeof value === "object") {
+				(value as Record<string, unknown>).currency = "CNY";
+			}
+		}
+		await repository.apply({
+			actorId: "platform-admin",
+			correlationId: `legacy-cny-migrate:${key}`,
+			expectedRevision: null,
+			key,
+			reason: "Preserve the legacy CNY revision for explicit migration.",
+			scope: "global",
+			value,
+			workspaceId: "__global__",
+		});
+	}
+
+	await ensureCreditPlanCatalogDefaults(repository);
+	await assert.rejects(
+		new AdminConfigCreditPlanCatalogSource(repository).get(),
+		/published credit plan configuration/i,
+	);
+
+	await migrateCreditPlanCatalogCurrencyToHkd(repository);
+
+	const catalog = await new AdminConfigCreditPlanCatalogSource(repository).get();
+	assert.equal(
+		catalog.plans.every((plan) => plan.currency === "HKD"),
+		true,
+	);
+	assert.equal(
+		catalog.addOns.every((offer) => offer.currency === "HKD"),
+		true,
+	);
+	const publicView = await new AdminConfigCreditPlanCatalogSource(
+		repository,
+	).publicView();
+	assert.equal(
+		publicView.plans.every((plan) => plan.currency === "HKD"),
+		true,
+	);
+
+	const starterHistory = await repository.history(
+		"global",
+		"__global__",
+		"plan.credits.starter",
+	);
+	assert.equal(starterHistory.length, 2);
+	assert.equal(
+		starterHistory[1]?.actorId,
+		"system:credit-plan-catalog-hkd-migration",
+	);
+	assert.equal(
+		(starterHistory[1]?.value as { currency: string }).currency,
+		"HKD",
+	);
+
+	// Idempotent: second migration does not add another revision.
+	await migrateCreditPlanCatalogCurrencyToHkd(repository);
+	assert.equal(
+		(
+			await repository.history(
+				"global",
+				"__global__",
+				"plan.credits.starter",
+			)
+		).length,
+		2,
+	);
 });
 
 test("initializes an empty installation with revisioned credit plan seeds exactly once", async () => {
