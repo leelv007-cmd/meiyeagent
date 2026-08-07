@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   BUSINESS_NAVIGATION,
+  isMobileReachableSettingsSurface,
   resolveAdminP1Redirect,
   resolveLegacyRedirect,
   resolveTrustedReturnAnchor,
@@ -196,5 +197,39 @@ test('trusted return anchors are typed object locations rather than open URLs', 
       objectType: 'work',
     }),
     undefined
+  );
+});
+
+test('the mobile settings wall opens for the credits surface and nothing else', () => {
+  assert.equal(
+    isMobileReachableSettingsSurface('/settings/account', {
+      section: 'credits',
+    }),
+    true
+  );
+  // Locale-prefixed paths are the same destination.
+  assert.equal(
+    isMobileReachableSettingsSurface('/zh/settings/account/', {
+      section: 'credits',
+    }),
+    true
+  );
+  // The rest of the account page keeps the desktop relay.
+  assert.equal(isMobileReachableSettingsSurface('/settings/account', {}), false);
+  assert.equal(
+    isMobileReachableSettingsSurface('/settings/account', {
+      section: 'profile',
+    }),
+    false
+  );
+  assert.equal(
+    isMobileReachableSettingsSurface('/settings/models', {
+      section: 'credits',
+    }),
+    false
+  );
+  assert.equal(
+    isMobileReachableSettingsSurface('/settings/connections', undefined),
+    false
   );
 });

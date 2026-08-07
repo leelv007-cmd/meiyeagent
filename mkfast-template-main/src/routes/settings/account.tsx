@@ -9,6 +9,8 @@ import { BillingCard } from '@/components/settings/billing/billing-card';
 import { MerchantCreditDetailPanel } from '@/product/merchant-credit-detail-panel';
 import { RedemptionCard } from '@/p1/redemption-card';
 import {
+  credit_detail_description,
+  desktop_relay_return_mobile,
   settings_account_description,
   settings_account_credits_heading,
   settings_account_jump_label,
@@ -19,6 +21,7 @@ import {
   settings_title,
 } from '@/locale/paraglide/messages';
 import { InstallPrompt } from '@/pwa/install-prompt';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface AccountSearch {
   section?: 'profile' | 'security' | 'credits';
@@ -36,8 +39,19 @@ export const Route = createFileRoute('/settings/account')({
   component: AccountPage,
 });
 
+const JUMP_PILL_CLASS =
+  'inline-flex min-h-touch-target items-center rounded-full bg-surface-1 px-4 text-sm';
+
 function AccountPage() {
   const { section } = Route.useSearch();
+  /*
+    The phone reaches this route through one door only — `?section=credits`,
+    the hole `isMobileReachableSettingsSurface` opens in the desktop relay.
+    So it shows that one section and names itself after it; 个人资料 / 登录安全
+    / 应用安装 stay desktop-side, and their in-page jump pills would otherwise
+    scroll to nothing.
+  */
+  const isMobile = useIsMobile();
   useEffect(() => {
     if (!section) return;
     document.getElementById(section)?.scrollIntoView({ block: 'start' });
@@ -48,9 +62,29 @@ function AccountPage() {
         { label: settings_title(), isCurrentPage: false },
         { label: settings_navigation_account(), isCurrentPage: true },
       ]}
-      title={settings_navigation_account()}
-      description={settings_account_description()}
+      title={
+        isMobile
+          ? settings_account_credits_heading()
+          : settings_navigation_account()
+      }
+      description={
+        isMobile ? credit_detail_description() : settings_account_description()
+      }
     >
+      {/*
+        Settings has no sidebar and no bottom bar on a phone, so without this
+        the credits hole is a room with no door back out.
+      */}
+      {isMobile ? (
+        <Link
+          className={JUMP_PILL_CLASS}
+          data-testid="settings-account-mobile-return"
+          to="/dashboard"
+        >
+          {desktop_relay_return_mobile()}
+        </Link>
+      ) : null}
+
       {/*
         The account sections were reachable only by typing a `?section=` URL — the
         legacy aliases (/settings/profile · /settings/security · /settings/billing
@@ -60,7 +94,7 @@ function AccountPage() {
       */}
       <nav
         aria-label={settings_account_jump_label()}
-        className="flex flex-wrap items-center gap-2"
+        className={isMobile ? 'hidden' : 'flex flex-wrap items-center gap-2'}
         data-testid="settings-account-section-nav"
       >
         <span className="text-sm text-muted-foreground">
@@ -74,7 +108,7 @@ function AccountPage() {
           ] as const
         ).map(([id, label]) => (
           <Link
-            className="inline-flex min-h-touch-target items-center rounded-full bg-surface-1 px-4 text-sm"
+            className={JUMP_PILL_CLASS}
             key={id}
             search={{ section: id }}
             to="/settings/account"
@@ -84,7 +118,9 @@ function AccountPage() {
         ))}
       </nav>
 
-      <section className="scroll-mt-16 space-y-4" id="profile">
+      {isMobile ? null : (
+        <>
+          <section className="scroll-mt-16 space-y-4" id="profile">
         <h2 className="text-lg font-semibold">
           {settings_account_profile_heading()}
         </h2>
@@ -99,6 +135,8 @@ function AccountPage() {
         </h2>
         <PasswordCardWrapper />
       </section>
+        </>
+      )}
       <section className="scroll-mt-16 space-y-4" id="credits">
         <h2 className="text-lg font-semibold">
           {settings_account_credits_heading()}
@@ -107,12 +145,14 @@ function AccountPage() {
         <RedemptionCard />
         <BillingCard />
       </section>
-      <section className="scroll-mt-16 space-y-4" id="pwa-install">
-        <h2 className="text-lg font-semibold">
-          {settings_account_pwa_heading()}
-        </h2>
-        <InstallPrompt variant="settings" />
-      </section>
+      {isMobile ? null : (
+        <section className="scroll-mt-16 space-y-4" id="pwa-install">
+          <h2 className="text-lg font-semibold">
+            {settings_account_pwa_heading()}
+          </h2>
+          <InstallPrompt variant="settings" />
+        </section>
+      )}
     </DashboardLayout>
   );
 }

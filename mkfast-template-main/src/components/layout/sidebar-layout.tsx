@@ -4,7 +4,8 @@ import { Sidebar } from '@/components/heroui-pro';
 import { Spinner } from '@/components/ui/spinner';
 import { authClient } from '@/auth/client';
 import { Routes } from '@/lib/routes';
-import { Outlet, useNavigate } from '@tanstack/react-router';
+import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
+import { isMobileReachableSettingsSurface } from '@/lib/uiux/navigation';
 import { useEffect, type ReactNode } from 'react';
 import type { ShellMode } from '@/config/sidebar-config';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -46,6 +47,7 @@ export function SidebarLayout({
   const { data: session, isPending } = authClient.useSession();
   const navigate = useNavigate();
   const isMobile = useIsMobile();
+  const location = useRouterState({ select: (state) => state.location });
 
   useEffect(() => {
     if (isPending) return;
@@ -72,7 +74,14 @@ export function SidebarLayout({
     return null;
   }
 
-  if (isMobile && mode !== 'product') {
+  // 加油包购买是当场动作，不是桌面杂务：积分见底的店主正卡在创作里，工作台的
+  // 可用积分胶囊与顶栏积分入口都指向这里。墙只为它开一条缝，其余设置照旧接力。
+  const relayOnMobile =
+    isMobile &&
+    mode !== 'product' &&
+    !isMobileReachableSettingsSurface(location.pathname, location.search);
+
+  if (relayOnMobile) {
     return <DesktopRelayPage mode={mode} />;
   }
 

@@ -82,6 +82,35 @@ const legacyRedirects = new Map<string, string>([
   ['/admin/p1?tab=integrations', Routes.AdminIntegrations],
 ]);
 
+/**
+ * The one hole in the mobile settings wall.
+ *
+ * PRODUCT.md gives the phone four surfaces (拍摄上传/任务确认/进度查看/发布交接)
+ * and everything else relays to desktop — but buying credits is not a settings
+ * chore, it is the on-the-spot unblock for a merchant whose balance ran out
+ * mid-creation. The workbench 可用积分 capsule and the topbar 积分 pill both
+ * point here, so on a phone they used to land on 「完整设置请在桌面继续」.
+ *
+ * Deliberately narrow: only `/settings/account?section=credits`. Every other
+ * settings destination — including `/settings/account` with no section, or with
+ * `section=profile` — keeps the relay.
+ *
+ * `pathname` may carry a locale prefix (`/zh/settings/account`), so match the
+ * suffix rather than the whole string.
+ */
+export function isMobileReachableSettingsSurface(
+  pathname: string,
+  search: unknown
+) {
+  const path = pathname.replace(/\/+$/, '');
+  if (!path.endsWith(Routes.SettingsAccount)) return false;
+  return (
+    typeof search === 'object' &&
+    search !== null &&
+    (search as { section?: unknown }).section === 'credits'
+  );
+}
+
 export function resolveLegacyRedirect(location: string) {
   if (!location.startsWith('/') || location.startsWith('//')) return undefined;
   const parsed = new URL(location, 'https://meiye.internal');
