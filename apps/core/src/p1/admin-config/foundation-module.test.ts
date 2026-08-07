@@ -87,6 +87,7 @@ describe('Admin config application seam', () => {
       storedValue: 'direct',
       effectiveValue: 'recorded',
       wired: false,
+      readOnly: false,
       activationEvidenceStatus: 'recorded_only',
       revision: 1,
       status: 'applied',
@@ -1074,6 +1075,42 @@ describe('Admin config application seam', () => {
       'compliance.watermark.default': false,
     });
     assert.equal(JSON.stringify(result).includes('actorId'), false);
+  });
+
+  // #422: config_list surfaces domain-rules readOnlyKeys so the shell can
+  // lock retired plan keys instead of mislabeling them as unwired.
+  it('projects retired plan keys as readOnly in config_list', async () => {
+    const service = new P1ApplicationService(new MemoryFoundationRepository(), {
+      operations: [
+        new AdminConfigFoundationModule(new MemoryAdminConfigRepository(), {
+          ...ADMIN_CONFIG_KEY_CLASSIFICATION,
+        }),
+      ],
+    });
+
+    const projected = await service.queryModule<
+      Record<string, unknown>,
+      Array<{
+        key: string;
+        readOnly: boolean;
+        wired: boolean;
+      }>
+    >(context, 'admin-config', {
+      action: 'config_list',
+      payload: {},
+    });
+
+    for (const key of ['plan.addons', 'plan.trial.enabled'] as const) {
+      const item = projected.find((entry) => entry.key === key);
+      assert.ok(item, `expected ${key} in config_list`);
+      assert.equal(item.readOnly, true, `${key} must be readOnly`);
+      assert.equal(item.wired, false, `${key} stays unwired`);
+    }
+
+    const growth = projected.find((entry) => entry.key === 'plan.credits.growth');
+    assert.ok(growth);
+    assert.equal(growth.readOnly, false);
+    assert.equal(growth.wired, true);
   });
 
   // #371: classification → projection. Not a settlement consumption proof.

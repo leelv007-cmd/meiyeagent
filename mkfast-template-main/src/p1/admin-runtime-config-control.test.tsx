@@ -7,6 +7,7 @@ import { p1QueryKeys } from './query-keys';
 import {
   adminConfigApplyRequest,
   AdminRuntimeConfigControl,
+  editableAdminConfigItems,
 } from './admin-runtime-config-control';
 import { defaultAdminConfigValue } from './admin-config-field-model';
 import { ADMIN_CONFIG_KEYS } from './admin-config-view-model';
@@ -507,4 +508,123 @@ test('labels credit commerce config as hot-read while disclosing the legacy Prod
   assert.match(html, /admin-config-form-plan\.credits\.growth/);
   assert.doesNotMatch(html, /<textarea/);
   assert.match(html, /data-slot="config-number-field"/);
+});
+
+function retiredPlanConfigItem(key: 'plan.addons' | 'plan.trial.enabled') {
+  const storedValue = key === 'plan.trial.enabled' ? false : [];
+  return {
+    activationEvidenceStatus: 'recorded_only',
+    actorId: 'platform-admin',
+    correlationId: `readonly-${key}`,
+    createdAt: '2026-08-07T00:00:00.000Z',
+    effectiveValue: storedValue,
+    key,
+    reason: 'retired',
+    revision: 1,
+    rolledBackToRevision: null,
+    scope: 'global' as const,
+    status: 'applied' as const,
+    storedValue,
+    wired: false,
+    readOnly: true,
+  };
+}
+
+test('retired plan keys render as locked read-only rows, not unwired or editable', () => {
+  const queryClient = new QueryClient();
+  const retiredKeys = ['plan.addons', 'plan.trial.enabled'] as const;
+  queryClient.setQueryData(
+    p1QueryKeys.request('admin-config', 'config_list'),
+    retiredKeys.map(retiredPlanConfigItem)
+  );
+  for (const key of retiredKeys) {
+    queryClient.setQueryData(
+      p1QueryKeys.request('admin-config', 'config_history', { key }),
+      []
+    );
+  }
+
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <AdminRuntimeConfigControl keys={[...retiredKeys]} />
+    </QueryClientProvider>
+  );
+
+  for (const key of retiredKeys) {
+    assert.match(
+      html,
+      new RegExp(`admin-runtime-config-readonly-${key.replaceAll('.', '\\.')}`),
+      `${key} missing read-only row`
+    );
+    assert.doesNotMatch(
+      html,
+      new RegExp(`admin-config-form-${key.replaceAll('.', '\\.')}`),
+      `${key} still rendered an edit form`
+    );
+  }
+  assert.match(html, /只读/);
+  assert.doesNotMatch(html, /已记录（未接线）/);
+  // Save must stay inert when the filtered set is all read-only.
+  assert.match(
+    html,
+    /disabled[^>]*>[\s\S]*审阅并记录|审阅并记录[\s\S]*disabled/
+  );
+});
+
+test('editableAdminConfigItems drops readOnly keys from the submit set', () => {
+  const items = [
+    { key: 'plan.credits.growth', readOnly: false },
+    { key: 'plan.addons', readOnly: true },
+    { key: 'plan.trial.enabled', readOnly: true },
+    { key: 'plan.payment-mapping' },
+  ];
+  assert.deepEqual(
+    editableAdminConfigItems(items).map((item) => item.key),
+    ['plan.credits.growth', 'plan.payment-mapping']
+  );
+});
+
+test('mixed list keeps editable forms while locking retired plan keys', () => {
+  const queryClient = new QueryClient();
+  queryClient.setQueryData(p1QueryKeys.request('admin-config', 'config_list'), [
+    {
+      activationEvidenceStatus: 'recorded_only',
+      actorId: 'platform-admin',
+      correlationId: 'growth-editable',
+      createdAt: '2026-08-07T00:00:00.000Z',
+      effectiveValue: defaultAdminConfigValue('plan.credits.growth'),
+      key: 'plan.credits.growth',
+      reason: 'live',
+      revision: 2,
+      rolledBackToRevision: null,
+      scope: 'global',
+      status: 'applied',
+      storedValue: defaultAdminConfigValue('plan.credits.growth'),
+      wired: true,
+      readOnly: false,
+    },
+    retiredPlanConfigItem('plan.addons'),
+    retiredPlanConfigItem('plan.trial.enabled'),
+  ]);
+  queryClient.setQueryData(
+    p1QueryKeys.request('admin-config', 'config_history', {
+      key: 'plan.credits.growth',
+    }),
+    []
+  );
+
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={queryClient}>
+      <AdminRuntimeConfigControl
+        keys={['plan.credits.growth', 'plan.addons', 'plan.trial.enabled']}
+      />
+    </QueryClientProvider>
+  );
+
+  assert.match(html, /admin-config-form-plan\.credits\.growth/);
+  assert.match(html, /admin-runtime-config-readonly-plan\.addons/);
+  assert.match(html, /admin-runtime-config-readonly-plan\.trial\.enabled/);
+  assert.doesNotMatch(html, /admin-config-form-plan\.addons/);
+  assert.doesNotMatch(html, /admin-config-form-plan\.trial\.enabled/);
+  assert.doesNotMatch(html, /已记录（未接线）/);
 });

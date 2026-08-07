@@ -451,6 +451,7 @@
   "admin_runtime_config_notice_title": "Stored configuration and runtime truth are shown side by side",
   "admin_runtime_config_process_http": "HTTP process",
   "admin_runtime_config_process_worker": "Background task worker",
+  "admin_runtime_config_read_only": "Read-only",
   "admin_runtime_config_reason": "Reason",
   "admin_runtime_config_refresh": "Refresh configuration",
   "admin_runtime_config_restart_pending": "Saved; restart required",

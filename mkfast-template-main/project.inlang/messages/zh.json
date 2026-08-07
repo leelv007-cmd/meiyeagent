@@ -451,6 +451,7 @@
   "admin_runtime_config_notice_title": "存储配置与运行时真相并列展示",
   "admin_runtime_config_process_http": "HTTP 进程",
   "admin_runtime_config_process_worker": "任务进程",
+  "admin_runtime_config_read_only": "只读",
   "admin_runtime_config_reason": "变更原因",
   "admin_runtime_config_refresh": "刷新配置",
   "admin_runtime_config_restart_pending": "已保存，重启后生效",

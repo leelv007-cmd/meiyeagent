@@ -1087,6 +1087,7 @@ export class AdminConfigFoundationModule implements P1OperationModule {
         ? { effectiveSnapshots: runtimeSnapshots }
         : {}),
       wired: this.wiredKeys.has(definition.key),
+      readOnly: this.readOnlyKeys.has(definition.key),
       activationEvidenceStatus: this.activationEvidenceStatus,
       ...(modeAvailability.length > 0 ? { modeAvailability } : {}),
       revision: revision?.revision ?? null,

@@ -70,6 +70,7 @@ import {
   admin_runtime_config_notice_title,
   admin_runtime_config_process_http,
   admin_runtime_config_process_worker,
+  admin_runtime_config_read_only,
   admin_runtime_config_reason,
   admin_runtime_config_refresh,
   admin_runtime_config_restart_pending,
@@ -136,6 +137,8 @@ interface AdminConfigItem {
     value: string;
   }>;
   wired: boolean;
+  /** Retired keys from Core domain-rules readOnlyKeys; shell must not edit. */
+  readOnly?: boolean;
   activationEvidenceStatus: string | null;
   revision: number | null;
   status: 'applied' | 'rolled_back' | null;
@@ -233,7 +236,19 @@ function hotReadDescription(key: string) {
     : admin_runtime_config_hot_read_description();
 }
 
+function isReadOnlyConfigItem(item: Pick<AdminConfigItem, 'readOnly'>) {
+  return item.readOnly === true;
+}
+
+/** Editable subset only — read-only retired keys never enter a submit set. */
+export function editableAdminConfigItems<
+  T extends Pick<AdminConfigItem, 'readOnly'>,
+>(items: readonly T[]) {
+  return items.filter((item) => !isReadOnlyConfigItem(item));
+}
+
 function wiringLabel(item: AdminConfigItem) {
+  if (isReadOnlyConfigItem(item)) return admin_runtime_config_read_only();
   if (!item.wired) return admin_runtime_config_unwired();
   if (
     HOT_READ_KEYS.has(item.key) &&
@@ -257,11 +272,14 @@ function wiringLabel(item: AdminConfigItem) {
 }
 
 /**
- * 接线状态的三种语义色：当前生效＝绿，已保存待重启＝黄，未接线＝灰。
+ * 接线状态的语义色：当前生效＝绿，已保存待重启＝黄，未接线＝灰，只读退役＝锁定灰。
  * 变体由 `wiringLabel` 的产出反查，两者因此不可能各说各话。
  */
 function wiringBadge(item: AdminConfigItem) {
   const label = wiringLabel(item);
+  if (label === admin_runtime_config_read_only()) {
+    return { label, variant: 'invert-light' } as const;
+  }
   if (label === admin_runtime_config_unwired()) {
     return { label, variant: 'secondary' } as const;
   }
@@ -395,10 +413,17 @@ export function AdminRuntimeConfigControl({
   const items = (listQuery.data ?? []).filter(
     (item) => !keys || keys.includes(item.key)
   );
+  // 退役只读键只展示、不进编辑分流；可编辑子集才走常驻/下拉表单。
+  const editableItems = editableAdminConfigItems(items);
+  const readOnlyItems = items.filter(isReadOnlyConfigItem);
   // 常驻展开还是藏在下拉后面，由字段树的形态决定（整项就是一个单选枚举的常驻），
   // 不再是一张硬编码键名清单——两条通道渲染的都是同一个 schema renderer。
-  const selectableItems = items.filter((item) => isInlineConfigKey(item.key));
-  const genericItems = items.filter((item) => !isInlineConfigKey(item.key));
+  const selectableItems = editableItems.filter((item) =>
+    isInlineConfigKey(item.key)
+  );
+  const genericItems = editableItems.filter(
+    (item) => !isInlineConfigKey(item.key)
+  );
   const activeGenericKey = genericItems.some((item) => item.key === selectedKey)
     ? selectedKey
     : selectableItems.length === 0
@@ -416,15 +441,18 @@ export function AdminRuntimeConfigControl({
       return defaultAdminConfigValue(activeGenericKey);
     }
   }, [activeGenericKey, draft]);
-  const hotReadItem = items.find((item) => HOT_READ_KEYS.has(item.key));
+  const hotReadItem = editableItems.find((item) => HOT_READ_KEYS.has(item.key));
   const hasCommerceConfig = items.some((item) => isCommerceKey(item.key));
   const selectedItem = useMemo(
-    () => items.find((item) => item.key === selectedKey),
-    [items, selectedKey]
+    () => editableItems.find((item) => item.key === selectedKey),
+    [editableItems, selectedKey]
   );
-  const activeItem = selectedItem ?? items[0];
+  const activeItem = selectedItem ?? editableItems[0];
+  const canSubmitActive = Boolean(
+    activeItem && !isReadOnlyConfigItem(activeItem)
+  );
   const historyQuery = useQuery({
-    enabled: selectedKey.length > 0,
+    enabled: selectedKey.length > 0 && canSubmitActive,
     queryKey: p1QueryKeys.request('admin-config', 'config_history', {
       key: selectedKey,
     }),
@@ -437,10 +465,14 @@ export function AdminRuntimeConfigControl({
   });
 
   useEffect(() => {
-    if (selectedKey || !items[0]) return;
-    setSelectedKey(items[0].key);
-    setDraft(startingDraft(items[0]));
-  }, [items, selectedKey]);
+    if (!editableItems[0]) {
+      if (selectedKey) setSelectedKey('');
+      return;
+    }
+    if (editableItems.some((item) => item.key === selectedKey)) return;
+    setSelectedKey(editableItems[0].key);
+    setDraft(startingDraft(editableItems[0]));
+  }, [editableItems, selectedKey]);
 
   const refresh = async () => {
     await Promise.all([
@@ -454,14 +486,15 @@ export function AdminRuntimeConfigControl({
   };
 
   const selectKey = (key: string) => {
-    const item = items.find((candidate) => candidate.key === key);
+    const item = editableItems.find((candidate) => candidate.key === key);
+    if (!item) return;
     setSelectedKey(key);
-    setDraft(item ? startingDraft(item) : '');
+    setDraft(startingDraft(item));
     setValidationError(undefined);
   };
 
   const reviewApply = () => {
-    if (!activeItem) return;
+    if (!activeItem || isReadOnlyConfigItem(activeItem)) return;
     try {
       const sourceDraft =
         selectedKey.length > 0
@@ -686,6 +719,7 @@ export function AdminRuntimeConfigControl({
                 key={item.key}
                 last={
                   genericItems.length === 0 &&
+                  readOnlyItems.length === 0 &&
                   index === selectableItems.length - 1
                 }
                 title={adminConfigKeyLabel(item.key)}
@@ -709,7 +743,7 @@ export function AdminRuntimeConfigControl({
             {genericItems.length > 0 ? (
               <SettingField
                 labelFor="admin-runtime-config-key"
-                last={!activeGenericKey}
+                last={!activeGenericKey && readOnlyItems.length === 0}
                 title={admin_runtime_config_key()}
               >
                 <Select
@@ -740,7 +774,7 @@ export function AdminRuntimeConfigControl({
                   activeGenericItem ? wiringBadge(activeGenericItem) : undefined
                 }
                 contentClassName="@md/field-group:w-[30rem]"
-                last
+                last={readOnlyItems.length === 0}
                 title={admin_runtime_config_value()}
               >
                 <div id="admin-runtime-config-value">
@@ -755,6 +789,22 @@ export function AdminRuntimeConfigControl({
                 </div>
               </SettingField>
             ) : null}
+            {readOnlyItems.map((item, index) => (
+              <SettingField
+                badge={wiringBadge(item)}
+                contentClassName="@md/field-group:w-[30rem]"
+                key={item.key}
+                last={index === readOnlyItems.length - 1}
+                title={adminConfigKeyLabel(item.key)}
+              >
+                <p
+                  className="truncate font-mono text-sm"
+                  data-testid={`admin-runtime-config-readonly-${item.key}`}
+                >
+                  {displayValue(item.storedValue ?? item.effectiveValue)}
+                </p>
+              </SettingField>
+            ))}
           </FieldGroup>
         </FramePanel>
         <FrameFooter className="flex flex-row justify-end gap-3">
@@ -766,7 +816,7 @@ export function AdminRuntimeConfigControl({
               {validationError}
             </p>
           ) : null}
-          <Button disabled={!activeItem} onClick={reviewApply}>
+          <Button disabled={!canSubmitActive} onClick={reviewApply}>
             {admin_runtime_config_save()}
           </Button>
         </FrameFooter>
