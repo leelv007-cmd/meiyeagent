@@ -2114,7 +2114,17 @@ export function ComposerHome({
     setViralAdaptJourney((current) =>
       current.phase === 'idle' ? current : cancelViralAdaptJourney(current)
     );
-    setLensState((current) => selectLens(current, next));
+    setLensState((current) => {
+      const selected = selectLens(current, next);
+      // QA ISSUE-006: empty destination often lands on offline by accident in
+      // the chip row. Default the first explicit lens pick to 小红书 when the
+      // merchant has not chosen a platform yet — still user-overridable.
+      if (selected.draft.delivery.platform != null) return selected;
+      return updateDeliverySuggestion(selected, {
+        distributionTarget: 'manual_copy',
+        platform: 'xiaohongshu',
+      });
+    });
   };
 
   const handleCreationModeChange = (next: ComposerCreationMode) => {
@@ -3110,7 +3120,16 @@ export function ComposerHome({
             onConfirm={async (request, idempotencyKey) => {
               await commandP1('asset-memory', request, idempotencyKey);
               setSubmissionGroundingBlocked(null);
-              await Promise.all([product.refresh(), storeFacts.refetch()]);
+              // Command already committed. Refresh failures must not look like
+              // a failed confirm — refetch best-effort and still invalidate the
+              // today recommendation so cold chips can light up (QA ISSUE-003/008).
+              await Promise.allSettled([
+                product.refresh(),
+                storeFacts.refetch(),
+                queryClient.invalidateQueries({
+                  queryKey: ['harness', 'today-recommendation'],
+                }),
+              ]);
             }}
             pending={product.pending}
             regulatedDefault={

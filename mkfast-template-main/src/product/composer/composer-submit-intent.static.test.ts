@@ -63,3 +63,35 @@ test('the quote line carries no bare cost figure', () => {
   assert.doesNotMatch(home, /currentQuoteView\.amount\}/u);
   assert.match(home, /currentQuoteView\.billingNote \?\?/u);
 });
+
+test('selecting a lens defaults empty destination to xiaohongshu (QA ISSUE-006)', () => {
+  // Regression: ISSUE-006 — destination chip order made offline easy to land on.
+  // Found by /qa on 2026-08-07
+  // Report: .gstack/qa-reports/qa-report-localhost-3000-2026-08-07.md
+  const home = readFileSync(
+    new URL('./composer-home.tsx', import.meta.url),
+    'utf8',
+  );
+  assert.match(home, /const handleLensChange = \(next: CreationLensId\) =>/u);
+  assert.match(
+    home,
+    /platform:\s*'xiaohongshu'/u,
+  );
+  assert.match(
+    home,
+    /distributionTarget:\s*'manual_copy'/u,
+  );
+});
+
+test('progressive fact confirm invalidates today recommendation after success', () => {
+  // Regression: ISSUE-008 — cold chips stayed cold after store facts landed.
+  const home = readFileSync(
+    new URL('./composer-home.tsx', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    home,
+    /queryKey:\s*\['harness',\s*'today-recommendation'\]/u,
+  );
+  assert.match(home, /Promise\.allSettled/u);
+});

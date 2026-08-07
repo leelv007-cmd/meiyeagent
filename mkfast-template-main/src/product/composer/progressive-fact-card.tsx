@@ -144,7 +144,11 @@ export function ProgressiveFactCard({
         taskId: `progressive-task:${id}`,
         workspaceId,
       });
-      if (!request) return;
+      // readyToConfirm can race regulatedDefault / price validity; never silent.
+      if (!request) {
+        setSubmissionError(true);
+        return;
+      }
       submission = {
         idempotencyKey: `progressive-finalize:${id}`,
         request,
@@ -155,6 +159,9 @@ export function ProgressiveFactCard({
     setSubmitting(true);
     try {
       await onConfirm(submission.request, submission.idempotencyKey);
+      // Success clears the cached idempotency payload so a later edit+confirm
+      // is a new batch rather than replaying the first finalize key forever.
+      requestRef.current = null;
     } catch {
       setSubmissionError(true);
     } finally {
