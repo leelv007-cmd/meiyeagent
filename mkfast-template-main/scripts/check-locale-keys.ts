@@ -108,55 +108,31 @@ const ADMIN_SURFACE_CJK_EXEMPT = new Set<string>([
   'src/components/admin/capability/capability-registry-panel.tsx', // #428 清零
   'src/components/admin/capability/capability-status-badge.tsx', // #428 清零
   'src/components/admin/capability/exception-home-panel.tsx', // #428 清零
-  'src/components/admin/capability/metric-envelope-view.tsx', // #428 清零
   'src/components/admin/cloudflare/cloudflare-readonly-panel.tsx', // #428 清零
   'src/components/admin/entitlements/entitlement-status-panel.tsx', // #428 清零
-  'src/components/admin/shared/icon-tile.tsx', // #428 清零
-  'src/components/admin/shared/page-header.tsx', // #428 清零
-  'src/components/admin/shared/setting-field.tsx', // #428 清零
-  'src/components/admin/shared/use-route-sheet.ts', // #428 清零
-  'src/components/admin/shell/admin-breadcrumbs.tsx', // #428 清零
-  'src/components/admin/shell/admin-command-model.ts', // #428 清零
-  'src/components/admin/shell/admin-notifications-model.ts', // #428 清零
-  'src/components/admin/shell/admin-operations-todo-model.ts', // #428 清零
-  'src/components/admin/shell/nav-active.ts', // #428 清零
-  'src/components/admin/shell/page-crumb.tsx', // #428 清零
-  'src/components/admin/shell/use-admin-ops-header-queries.ts', // #428 清零
   'src/components/admin/supply/supply-association-views-panel.tsx', // #428 清零
   'src/components/admin/supply/supply-audit-table.tsx', // #428 清零
-  'src/components/admin/supply/supply-control-center-panel.tsx', // #428 清零
   'src/components/admin/supply/supply-credential-panel.tsx', // #428 清零
   'src/components/admin/supply/supply-governed-actions-panel.tsx', // #428 清零
   'src/components/admin/supply/supply-overview-panel.tsx', // #428 清零
   'src/components/admin/supply/supply-route-simulator-panel.tsx', // #428 清零
   'src/components/admin/supply/supply-run-table.tsx', // #428 清零
   'src/components/admin/supply/supply-task-drilldown.tsx', // #428 清零
-  'src/components/admin/users/admin-create-user.ts', // #428 清零
-  'src/components/admin/users/admin-users-content.tsx', // #428 清零
-  'src/p1/admin-audit-filter-model.ts', // #428 清零
-  'src/p1/admin-audit-timeline-model.ts', // #428 清零
   'src/p1/admin-capability-catalog-model.ts', // #428 清零
-  'src/p1/admin-capability-catalog.tsx', // #428 清零
   'src/p1/admin-capability-registry-model.ts', // #428 清零
-  'src/p1/admin-capability-registry.tsx', // #428 清零
   'src/p1/admin-cloudflare-control.tsx', // #428 清零
   'src/p1/admin-cloudflare-deep-link.ts', // #428 清零
   'src/p1/admin-cloudflare-presentation.ts', // #428 清零
   'src/p1/admin-cloudflare-probe.ts', // #428 清零
   'src/p1/admin-config-field-model.ts', // #428 清零
-  'src/p1/admin-config-view-model.ts', // #428 清零
   'src/p1/admin-creation-experience-control.tsx', // #428 清零
   'src/p1/admin-entitlement-status-model.ts', // #428 清零
   'src/p1/admin-exception-home-model.ts', // #428 清零
   'src/p1/admin-exception-home.tsx', // #428 清零
-  'src/p1/admin-feishu-view-model.ts', // #428 清零
-  'src/p1/admin-operations-chart-model.ts', // #428 清零
-  'src/p1/admin-payment-refund-review.tsx', // #428 清零
   'src/p1/admin-plan-reference-numbers-control.tsx', // #428 清零
   'src/p1/admin-provider-credential-control.tsx', // #428 清零
   'src/p1/admin-sensitive-words-control.tsx', // #428 清零
   'src/p1/admin-sensitive-words-gate-alert.tsx', // #428 清零
-  'src/p1/admin-sensitive-words-gate.ts', // #428 清零
   'src/p1/admin-sensitive-words-model.ts', // #428 清零
   'src/p1/admin-skills-contract.ts', // #428 清零
   'src/p1/admin-skills-control.tsx', // #428 清零
@@ -167,15 +143,10 @@ const ADMIN_SURFACE_CJK_EXEMPT = new Set<string>([
   'src/p1/admin-supply-overview-model.ts', // #428 清零
   'src/p1/admin-supply-quick-actions-model.ts', // #428 清零
   'src/p1/admin-supply-route-simulator-model.ts', // #428 清零
-  'src/p1/admin-supply-run-table-model.ts', // #428 清零
   'src/p1/admin-supply-task-drilldown-model.ts', // #428 清零
-  'src/p1/admin-supply-types.ts', // #428 清零
-  'src/p1/use-admin-supply-control.ts', // #428 清零
   'src/routes/admin/audit.tsx', // #428 清零
   'src/routes/admin/capabilities.tsx', // #428 清零
-  'src/routes/admin/p1.tsx', // #428 清零
   'src/routes/admin/supply.tasks.$taskId.tsx', // #428 清零
-  'src/routes/admin/supply.views.$viewId.tsx', // #428 清零
 ]);
 
 function listTsSources(dir: string, webRoot: string): string[] {
@@ -292,6 +263,7 @@ const configErrors = [
     : ['locales must include en and zh']),
 ];
 const productShellSources = collectProductShellSources(process.cwd());
+const explicitShellSources = new Set<string>(PRODUCT_SHELL_SOURCES_EXPLICIT);
 const mixedTrackFiles = (
   await Promise.all(
     productShellSources.map(async (file) => ({
@@ -299,12 +271,15 @@ const mixedTrackFiles = (
       source: await readFile(file, 'utf8'),
     }))
   )
-).flatMap(({ file, source }) =>
-  source.includes('@/locale/paraglide/messages') &&
-  !sourceHasCjkOutsideComments(source, file)
-    ? []
-    : [file]
-);
+).flatMap(({ file, source }) => {
+  const hasCjk = sourceHasCjkOutsideComments(source, file);
+  // Explicit shell sources always carry copy: require the paraglide track.
+  // Default-included admin files may be pure logic: only actual CJK fails.
+  const ok = explicitShellSources.has(file)
+    ? source.includes('@/locale/paraglide/messages') && !hasCjk
+    : !hasCjk;
+  return ok ? [] : [file];
+});
 
 for (const key of JSON_MESSAGE_KEYS) {
   for (const [locale, messages] of [

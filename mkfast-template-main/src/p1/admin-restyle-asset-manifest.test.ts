@@ -31,10 +31,7 @@ const ASSET_MANIFEST = [
  * Assets allowed to have zero consumers until their wiring ticket lands.
  * Remove entries when consumers appear — do not grow this set casually.
  */
-const EXEMPT_ZERO_CONSUMERS = new Set<string>([
-  // #423 接线后清零
-  'src/components/admin/shared/use-route-sheet.ts',
-]);
+const EXEMPT_ZERO_CONSUMERS = new Set<string>([]);
 
 const IMPORT_SPEC_RE = /(?:from\s+['"]([^'"]+)['"]|import\s+['"]([^'"]+)['"])/g;
 
