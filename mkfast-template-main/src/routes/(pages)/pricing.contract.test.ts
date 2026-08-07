@@ -471,6 +471,45 @@ test('credit matrix module owns anchors, cycle switcher and checkout CTAs', () =
   assert.match(content, /pricing_plan_purchase_unavailable/u);
 });
 
+test('the closed subscription channel offers a control, not just a promise', () => {
+  // The plan CTA is honestly disabled while the channel is shut, but the hint
+  // under it promised「开通后第一时间通知你」with nothing to press — a promise the
+  // merchant had no way to accept. The disabled button stays; the promise now
+  // has a link, and it carries which plan she was reading.
+  const content = read('src/components/pricing/credit-pricing-content.tsx');
+  assert.match(content, /pricing_plan_notify_me/u);
+  assert.match(content, /Routes\.Contact\}\?plan=\$\{plan\.id\}/u);
+  assert.match(content, /variant="secondary" className="w-full" disabled/u);
+
+  // /contact must actually receive that plan and say it back, or the link is a
+  // redirect wearing a promise's clothes.
+  const route = read('src/routes/(pages)/contact.tsx');
+  assert.match(route, /validateSearch/u);
+  assert.match(route, /planId=\{plan\}/u);
+  const card = read('src/components/contact/contact-form-card.tsx');
+  assert.match(card, /contact_plan_interest_notice/u);
+  assert.match(card, /contact_plan_interest_message/u);
+  assert.match(card, /planDisplayName/u);
+
+  const zh = JSON.parse(read('project.inlang/messages/zh.json'));
+  const en = JSON.parse(read('project.inlang/messages/en.json'));
+  for (const key of [
+    'contact_plan_interest_notice',
+    'contact_plan_interest_message',
+  ]) {
+    assert.match(zh[key], /\{plan\}/u, `zh ${key} must name the plan`);
+    assert.match(en[key], /\{plan\}/u, `en ${key} must name the plan`);
+  }
+  // The prefilled message has to clear the contact form's own 10-char floor,
+  // or the merchant lands on a form that rejects what we wrote for her.
+  assert.ok(
+    zh.contact_plan_interest_message.replace('{plan}', '成长').length >= 10
+  );
+  assert.ok(
+    en.contact_plan_interest_message.replace('{plan}', 'Growth').length >= 10
+  );
+});
+
 test('new pricing copy is merchant Chinese and reaches zh/en parity', () => {
   const zh = JSON.parse(read('project.inlang/messages/zh.json'));
   const en = JSON.parse(read('project.inlang/messages/en.json'));
@@ -485,7 +524,9 @@ test('new pricing copy is merchant Chinese and reaches zh/en parity', () => {
     'pricing_reference_estimate',
     'pricing_trial_no_purchase',
     'pricing_plan_login_to_subscribe',
+    'pricing_plan_notify_me',
     'pricing_plan_payment_not_open',
+    'pricing_plan_payment_not_open_hint',
     'pricing_plan_purchase_unavailable',
     'pricing_plan_subscribe',
     'pricing_plan_subtitle',

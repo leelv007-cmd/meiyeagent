@@ -70,14 +70,22 @@ test('pricing comparison and shared accessibility copy use Paraglide', () => {
   const pricingContent = readSource(
     'src/components/pricing/credit-pricing-content.tsx'
   );
+  // The plan-name map moved down into the model module when /contact started
+  // reading it (a merchant who asks to be told when a plan opens should see
+  // that plan named back to her). The Paraglide rule follows the labels.
+  const pricingModel = readSource(
+    'src/components/pricing/credit-pricing-model.ts'
+  );
   const sidebarLayout = readSource('src/components/layout/sidebar-layout.tsx');
   const sidebar = readSource('src/components/ui/sidebar.tsx');
 
   assert.doesNotMatch(pricing, /[\u3400-\u9fff]/);
   assert.doesNotMatch(pricingContent, /[\u3400-\u9fff]/);
-  assert.match(pricingContent, /\bpricing_output_[a-z0-9_]+\b/);
+  assert.doesNotMatch(pricingModel, /[\u3400-\u9fff]/);
+  assert.match(pricingModel, /\bpricing_output_[a-z0-9_]+\b/);
   assert.match(pricing, /from ['"]@\/locale\/paraglide\/messages['"]/);
   assert.match(pricingContent, /from ['"]@\/locale\/paraglide\/messages['"]/);
+  assert.match(pricingModel, /from ['"]@\/locale\/paraglide\/messages['"]/);
   assert.doesNotMatch(sidebarLayout, />Loading\.\.\.</);
   assert.doesNotMatch(sidebar, />Sidebar</);
   assert.doesNotMatch(sidebar, /Displays the mobile sidebar\./);
@@ -181,8 +189,10 @@ test('peripheral Paraglide handoff records every new key in both languages', () 
     'src/p1/settings-view-model.ts',
     'src/components/ui/sidebar.tsx',
     'src/routes/(pages)/pricing.tsx',
-    // Plan-name keys moved here with the credit-matrix extract (#310).
+    // Plan-name keys moved here with the credit-matrix extract (#310), then
+    // down into the model module when /contact began naming plans too.
     'src/components/pricing/credit-pricing-content.tsx',
+    'src/components/pricing/credit-pricing-model.ts',
   ];
   const enMessages = JSON.parse(
     readSource('project.inlang/messages/en.json')

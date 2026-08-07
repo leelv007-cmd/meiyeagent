@@ -12,16 +12,20 @@ import {
   contact_placeholder_email,
   contact_placeholder_message,
   contact_placeholder_name,
+  contact_plan_interest_message,
+  contact_plan_interest_notice,
   contact_send,
   contact_sending,
   contact_success,
 } from '@/locale/paraglide/messages';
 import { sendContactMessage } from '@/api/contact';
+import { planDisplayName } from '@/components/pricing/credit-pricing-model';
 import { FormError } from '@/components/shared/form-error';
 import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
+  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -50,11 +54,22 @@ const schema = z.object({
     .max(500, contact_message_max()),
 });
 type FormValues = z.infer<typeof schema>;
-export function ContactFormCard() {
+export function ContactFormCard({ planId }: { planId?: string }) {
   const [error, setError] = useState<string | undefined>();
+  // /pricing sends her here when the subscription channel is closed. Landing on
+  // a blank form would drop everything she had just told us; naming the plan and
+  // writing the first sentence for her is what makes「开通后通知我」an answer
+  // rather than a redirect.
+  const planName = planId ? planDisplayName(planId) : null;
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { name: '', email: '', message: '' },
+    defaultValues: {
+      name: '',
+      email: '',
+      message: planName
+        ? contact_plan_interest_message({ plan: planName })
+        : '',
+    },
   });
   const isPending = form.formState.isSubmitting;
   async function onSubmit(values: FormValues) {
@@ -75,6 +90,11 @@ export function ContactFormCard() {
         <CardTitle className="text-lg font-semibold">
           {contact_form_title()}
         </CardTitle>
+        {planName ? (
+          <CardDescription data-testid="contact-plan-interest-notice">
+            {contact_plan_interest_notice({ plan: planName })}
+          </CardDescription>
+        ) : null}
       </CardHeader>
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col">

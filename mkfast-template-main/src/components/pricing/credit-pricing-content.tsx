@@ -10,11 +10,8 @@ import {
   pricing_booster_login_to_buy,
   pricing_card_credits_monthly,
   pricing_card_credits_trial,
-  pricing_output_plan_growth,
-  pricing_output_plan_pro,
-  pricing_output_plan_starter,
-  pricing_output_plan_trial,
   pricing_plan_login_to_subscribe,
+  pricing_plan_notify_me,
   pricing_plan_payment_not_open,
   pricing_plan_payment_not_open_hint,
   pricing_plan_purchase_unavailable,
@@ -31,6 +28,7 @@ import {
 } from '@/components/pricing/create-checkout-button';
 import {
   formatPublishedPrice,
+  PLAN_NAME,
   planPriceForCycle,
   publishedReferenceOutputs,
   type PricingBillingCycle,
@@ -42,6 +40,7 @@ import {
   PUBLIC_PAID_MONTHLY_PRICE_TESTID,
 } from '@/lib/price-plan';
 import { Routes } from '@/lib/routes';
+import { getPathWithLocale } from '@/lib/urls';
 import { cn } from '@/lib/utils';
 import { getLocale } from '@/locale/paraglide/runtime';
 import { PlanIntervals } from '@/payment/types';
@@ -72,13 +71,6 @@ const CYCLE_TO_PLAN_INTERVAL = {
   monthly: PlanIntervals.MONTHLY,
   yearly: PlanIntervals.YEARLY,
 } as const;
-
-const PLAN_NAME: Record<PublicPlanOffer['id'], () => string> = {
-  trial: pricing_output_plan_trial,
-  starter: pricing_output_plan_starter,
-  growth: pricing_output_plan_growth,
-  pro: pricing_output_plan_pro,
-};
 
 export function CreditPricingContent({
   catalog,
@@ -370,11 +362,25 @@ function PlanCheckoutCta({
   }
 
   if (!paymentEnabled) {
+    // The subscription channel really is closed, so the plan button stays
+    // disabled and honest. What was missing is the other half: the hint under
+    // it promised to tell her the moment it opens and gave her nothing to
+    // press, so the promise had no way to come true. This link carries the plan
+    // she was reading over to /contact, which names it back to her. A plain
+    // anchor rather than a Link: this module is rendered outside a router by
+    // the public-pricing contract test.
     return (
       <div className="space-y-2">
         <Button variant="secondary" className="w-full" disabled>
           {pricing_plan_payment_not_open()}
         </Button>
+        <a
+          className={cn(buttonVariants({ variant: 'outline' }), 'w-full')}
+          data-testid={`pricing-notify-${plan.id}`}
+          href={getPathWithLocale(`${Routes.Contact}?plan=${plan.id}`)}
+        >
+          {pricing_plan_notify_me()}
+        </a>
         <p className="text-xs text-muted-foreground">
           {pricing_plan_payment_not_open_hint()}
         </p>
