@@ -1,6 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import {
+  admin_refund_review_load_failed,
+  admin_refund_review_resolution_note,
+  admin_refund_review_resolve,
+} from '@/locale/paraglide/messages';
 import type { PaymentRefundReviewItem } from '@/payment/payment-refunds';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminPaymentRefundReview } from './admin-payment-refund-review';
@@ -84,11 +89,11 @@ describe('AdminPaymentRefundReview', () => {
     expect(existingResolvedRow).toHaveTextContent('admin-existing');
 
     const resolveButton = within(pendingRow).getByRole('button', {
-      name: 'Resolve review',
+      name: admin_refund_review_resolve(),
     });
     expect(resolveButton).toBeDisabled();
     await user.type(
-      within(pendingRow).getByLabelText('Resolution note'),
+      within(pendingRow).getByLabelText(admin_refund_review_resolution_note()),
       'Matched the signed provider refund receipt.'
     );
     expect(resolveButton).toBeEnabled();
@@ -127,9 +132,9 @@ describe('AdminPaymentRefundReview', () => {
       </QueryClientProvider>
     );
 
-    await screen.findByText('Refund reviews could not be loaded.');
+    await screen.findByText(admin_refund_review_load_failed());
     expect(
-      screen.queryByRole('button', { name: 'Resolve review' })
+      screen.queryByRole('button', { name: admin_refund_review_resolve() })
     ).not.toBeInTheDocument();
     expect(paymentRefundApi.resolvePaymentRefund).not.toHaveBeenCalled();
   });

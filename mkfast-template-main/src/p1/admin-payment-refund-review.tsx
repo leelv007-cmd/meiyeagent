@@ -3,13 +3,7 @@ import {
   resolvePaymentRefund,
 } from '@/api/payment-refunds';
 import { Badge } from '@/components/reui/badge';
-import {
-  Frame,
-  FrameDescription,
-  FrameHeader,
-  FramePanel,
-  FrameTitle,
-} from '@/components/reui/frame';
+import { Frame, FramePanel } from '@/components/reui/frame';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
@@ -22,6 +16,20 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { formatLocaleDateTime } from '@/lib/locale';
+import {
+  admin_refund_review_audit,
+  admin_refund_review_empty,
+  admin_refund_review_load_failed,
+  admin_refund_review_loading,
+  admin_refund_review_provider_facts,
+  admin_refund_review_refund,
+  admin_refund_review_resolution_note,
+  admin_refund_review_resolve,
+  admin_refund_review_resolve_failed,
+  admin_refund_review_resolve_success,
+  admin_refund_review_status,
+  admin_refund_review_unknown_resolution_time,
+} from '@/locale/paraglide/messages';
 import type { PaymentRefundReviewItem } from '@/payment/payment-refunds';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
@@ -58,42 +66,39 @@ export function AdminPaymentRefundReview() {
       await queryClient.invalidateQueries({
         queryKey: PAYMENT_REFUND_REVIEW_QUERY_KEY,
       });
-      toast.success('Refund review resolved.');
+      toast.success(admin_refund_review_resolve_success());
     },
-    onError: () => toast.error('Refund review could not be resolved.'),
+    onError: () => toast.error(admin_refund_review_resolve_failed()),
   });
   const rows = reviews.data ?? [];
 
   return (
     <Frame data-testid="admin-payment-refund-review" dense>
-      <FrameHeader>
-        <FrameTitle>Payment refund review</FrameTitle>
-        <FrameDescription>
-          Review provider refund facts without changing customer credits.
-        </FrameDescription>
-      </FrameHeader>
+      {/* Page header already carries title/description; panel only hosts table. */}
       <FramePanel className="overflow-x-auto">
         {reviews.isPending ? (
-          <p className="text-sm text-muted-foreground">Loading...</p>
+          <p className="text-sm text-muted-foreground">
+            {admin_refund_review_loading()}
+          </p>
         ) : reviews.isError ? (
           <p className="text-sm text-destructive">
-            Refund reviews could not be loaded.
+            {admin_refund_review_load_failed()}
           </p>
         ) : (
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Status</TableHead>
-                <TableHead>Refund</TableHead>
-                <TableHead>Provider facts</TableHead>
-                <TableHead>Audit</TableHead>
+                <TableHead>{admin_refund_review_status()}</TableHead>
+                <TableHead>{admin_refund_review_refund()}</TableHead>
+                <TableHead>{admin_refund_review_provider_facts()}</TableHead>
+                <TableHead>{admin_refund_review_audit()}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.length === 0 ? (
                 <TableRow>
                   <TableCell className="text-muted-foreground" colSpan={4}>
-                    No refund reviews.
+                    {admin_refund_review_empty()}
                   </TableCell>
                 </TableRow>
               ) : (
@@ -176,12 +181,14 @@ function RefundReviewRow({
             <p className="text-muted-foreground">
               {item.resolvedAt
                 ? formatLocaleDateTime(item.resolvedAt)
-                : 'Unknown resolution time'}
+                : admin_refund_review_unknown_resolution_time()}
             </p>
           </div>
         ) : (
           <div className="grid gap-2">
-            <Label htmlFor={noteId}>Resolution note</Label>
+            <Label htmlFor={noteId}>
+              {admin_refund_review_resolution_note()}
+            </Label>
             <Textarea
               id={noteId}
               maxLength={2_000}
@@ -193,7 +200,7 @@ function RefundReviewRow({
               onClick={onResolve}
               type="button"
             >
-              Resolve review
+              {admin_refund_review_resolve()}
             </Button>
           </div>
         )}
