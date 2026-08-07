@@ -187,9 +187,9 @@ describe('AdminPlanReferenceNumbersControl', () => {
       screen.getByTestId('reference-suggestion-growth-video')
     ).toHaveTextContent('26');
 
-    await user.selectOptions(
-      screen.getByLabelText('图片参考模型'),
-      'image-alternate'
+    await user.click(screen.getByLabelText('图片参考模型'));
+    await user.click(
+      await screen.findByRole('option', { name: '图片备选参考模型' })
     );
     expect(
       screen.getByTestId('reference-suggestion-growth-image')
