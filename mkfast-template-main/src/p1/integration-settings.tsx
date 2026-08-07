@@ -47,7 +47,6 @@ import {
   integration_audit_description,
   integration_audit_empty,
   integration_audit_title,
-  integration_available,
   integration_capabilities,
   integration_capability_active,
   integration_capability_degraded,
@@ -57,6 +56,7 @@ import {
   integration_capability_pending_owner,
   integration_configured_connections,
   integration_configured_description,
+  integration_connected,
   integration_connection_count,
   integration_connection_created,
   integration_connection_description,
@@ -119,9 +119,11 @@ import {
   integration_load_error_title,
   integration_new_connection,
   integration_not_connected,
+  integration_not_connected_next_step,
   integration_not_marked,
   integration_not_yet_created,
   integration_pending_configuration,
+  integration_pending_configuration_next_step,
   integration_provider_feishu_capability_tools,
   integration_provider_feishu_description,
   integration_provider_feishu_secret,
@@ -1055,6 +1057,7 @@ export function IntegrationSettings({
       ? 'workspace.models.manage'
       : 'workspace.connections.manage'
   );
+  const canReadAudit = access.can('audit.view');
   const [rotateConnectionId, setRotateConnectionId] = useState<string>();
   const createAttempt = useRef<ConnectionCreationAttempt | undefined>(
     undefined
@@ -1395,6 +1398,20 @@ export function IntegrationSettings({
           const activeConnections = providerConnections[item.provider].filter(
             (connection) => connection.status !== 'revoked'
           );
+          /*
+            One connector, one status word. The card used to print two at once
+            — a "not connected" line beside a "needs setup" badge — which read
+            as two verdicts on the same thing. The three states are ordered by
+            how far the merchant has got, and the line beside the badge says
+            what happens next instead of repeating the badge.
+          */
+          const status = activeConnections.some(
+            (connection) => connection.status === 'available'
+          )
+            ? 'connected'
+            : activeConnections.length > 0
+              ? 'pending'
+              : 'disconnected';
           return (
             <Card className="bg-surface-1" key={item.provider}>
               <CardHeader>
@@ -1404,23 +1421,26 @@ export function IntegrationSettings({
                 </CardTitle>
                 <CardDescription>{item.description()}</CardDescription>
               </CardHeader>
-              <CardContent className="flex items-center justify-between">
+              <CardContent className="flex items-center justify-between gap-3">
                 <span className="text-sm text-muted-foreground">
-                  {activeConnections.length > 0
+                  {status === 'connected'
                     ? integration_connection_count({
                         count: activeConnections.length,
                       })
-                    : integration_not_connected()}
+                    : status === 'pending'
+                      ? integration_pending_configuration_next_step()
+                      : integration_not_connected_next_step()}
                 </span>
-                {activeConnections.some(
-                  (connection) => connection.status === 'available'
-                ) ? (
-                  <Badge variant="secondary">{integration_available()}</Badge>
-                ) : (
-                  <Badge variant="outline">
-                    {integration_pending_configuration()}
-                  </Badge>
-                )}
+                <Badge
+                  data-testid={`integration-status-${item.provider}`}
+                  variant={status === 'connected' ? 'secondary' : 'outline'}
+                >
+                  {status === 'connected'
+                    ? integration_connected()
+                    : status === 'pending'
+                      ? integration_pending_configuration()
+                      : integration_not_connected()}
+                </Badge>
               </CardContent>
             </Card>
           );
@@ -1638,54 +1658,65 @@ export function IntegrationSettings({
             ))
         : null}
 
-      <Collapsible>
-        <CollapsibleTrigger className="flex min-h-touch-target w-full items-center justify-between gap-4 rounded-lg bg-surface-1 p-4 text-left">
-          <span>
-            <span className="block font-semibold">
-              {integration_audit_title()}
+      {/*
+        The activity panel reads `integrations/audit`, which the capability
+        registry pins to `audit.view` — a platform-admin key. On a merchant's
+        own settings page it could only ever report "no activity yet" while
+        the request behind it 403'd, so it is shown to the roles that can
+        actually read it.
+      */}
+      {canReadAudit ? (
+        <Collapsible>
+          <CollapsibleTrigger className="flex min-h-touch-target w-full items-center justify-between gap-4 rounded-lg bg-surface-1 p-4 text-left">
+            <span>
+              <span className="block font-semibold">
+                {integration_audit_title()}
+              </span>
+              <span className="mt-1 block text-sm font-normal text-muted-foreground">
+                {integration_audit_description()}
+              </span>
             </span>
-            <span className="mt-1 block text-sm font-normal text-muted-foreground">
-              {integration_audit_description()}
-            </span>
-          </span>
-          <IconChevronDown aria-hidden="true" className="size-5 shrink-0" />
-        </CollapsibleTrigger>
-        <CollapsibleContent className="rounded-b-lg bg-surface-1 px-4 pb-4">
-          {visibleAudit.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {integration_audit_empty()}
-            </p>
-          ) : (
-            <ol className="divide-y divide-divider">
-              {visibleAudit.slice(0, 10).map((event) => {
-                const connection = visibleConnections.find(
-                  (candidate) => candidate.id === event.connectionId
-                );
-                return (
-                  <li
-                    className="flex flex-col justify-between gap-1 py-3 sm:flex-row sm:items-center"
-                    key={event.id}
-                  >
-                    <div>
-                      <p className="font-medium">{auditLabel(event.action)}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {integration_audit_connection_name({
-                          name: connection
-                            ? connectionPublicName(connection)
-                            : integration_unknown(),
-                        })}
-                      </p>
-                    </div>
-                    <time className="text-xs text-muted-foreground">
-                      {dateTimeLabel(event.createdAt)}
-                    </time>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-        </CollapsibleContent>
-      </Collapsible>
+            <IconChevronDown aria-hidden="true" className="size-5 shrink-0" />
+          </CollapsibleTrigger>
+          <CollapsibleContent className="rounded-b-lg bg-surface-1 px-4 pb-4">
+            {visibleAudit.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {integration_audit_empty()}
+              </p>
+            ) : (
+              <ol className="divide-y divide-divider">
+                {visibleAudit.slice(0, 10).map((event) => {
+                  const connection = visibleConnections.find(
+                    (candidate) => candidate.id === event.connectionId
+                  );
+                  return (
+                    <li
+                      className="flex flex-col justify-between gap-1 py-3 sm:flex-row sm:items-center"
+                      key={event.id}
+                    >
+                      <div>
+                        <p className="font-medium">
+                          {auditLabel(event.action)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {integration_audit_connection_name({
+                            name: connection
+                              ? connectionPublicName(connection)
+                              : integration_unknown(),
+                          })}
+                        </p>
+                      </div>
+                      <time className="text-xs text-muted-foreground">
+                        {dateTimeLabel(event.createdAt)}
+                      </time>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </CollapsibleContent>
+        </Collapsible>
+      ) : null}
     </div>
   );
 }

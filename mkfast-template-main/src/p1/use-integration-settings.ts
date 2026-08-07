@@ -19,6 +19,7 @@ import {
   type FeishuToolView,
   type IntegrationConnectionView,
 } from '@/p1/settings-view-model';
+import { useWorkspaceAccess } from '@/p1/use-workspace-access';
 
 export interface FeishuProductState {
   activities: FeishuActivityView[];
@@ -99,6 +100,11 @@ async function loadFeishuProducts(
 }
 export function useIntegrationSettings(enabled = true) {
   const queryClient = useQueryClient();
+  // `integrations/audit` is registered against `audit.view`, which belongs to
+  // the platform-admin batch — a shop owner never holds it. Firing it anyway
+  // spent three requests per visit on a guaranteed 403, printed them in the
+  // merchant's console, and pushed the whole page into its load-error state.
+  const canReadAudit = useWorkspaceAccess().can('audit.view');
   const connectionsQuery = useQuery({
     enabled,
     queryKey: p1QueryKeys.request('integrations', 'connections'),
@@ -111,7 +117,7 @@ export function useIntegrationSettings(enabled = true) {
     select: normalizeConnections,
   });
   const auditQuery = useQuery({
-    enabled,
+    enabled: enabled && canReadAudit,
     queryKey: p1QueryKeys.request('integrations', 'audit'),
     queryFn: ({ signal }) =>
       queryP1<unknown>(
@@ -165,7 +171,7 @@ export function useIntegrationSettings(enabled = true) {
     feishuProducts: feishuProductsQuery.data ?? {},
     loading:
       connectionsQuery.isPending ||
-      auditQuery.isPending ||
+      (canReadAudit && auditQuery.isPending) ||
       (feishuConnections.length > 0 && feishuProductsQuery.isPending),
     refresh: () =>
       queryClient.refetchQueries({
