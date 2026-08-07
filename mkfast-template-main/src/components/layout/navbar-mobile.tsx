@@ -26,11 +26,13 @@ import { LocaleSwitcher } from '@/components/layout/locale-switcher';
 import { UserButtonMobile } from '@/components/shared/user-button-mobile';
 import { LoginWrapper } from '@/components/auth/login-wrapper';
 import { websiteConfig } from '@/config/website';
+// p-2 around one line of text is a 40px row (36 for the sub-links) — under the
+// touch-target floor on the one surface that is only ever read with a thumb.
 const mobileLinkClass =
-  'flex w-full items-center rounded-md p-2 text-base text-muted-foreground transition-colors duration-150 hover:text-foreground';
+  'flex w-full items-center rounded-md p-2 text-base text-muted-foreground transition-colors duration-150 hover:text-foreground pointer-coarse:min-h-touch-target';
 const mobileLinkActiveClass = 'font-semibold text-primary';
 const mobileSubLinkClass =
-  'flex w-full items-center gap-4 rounded-md p-2 text-sm text-muted-foreground transition-colors duration-150 hover:text-foreground';
+  'flex w-full items-center gap-4 rounded-md p-2 text-sm text-muted-foreground transition-colors duration-150 hover:text-foreground pointer-coarse:min-h-touch-target';
 interface NavbarMobileProps extends React.HTMLAttributes<HTMLDivElement> {}
 export function NavbarMobile({ className, ...props }: NavbarMobileProps) {
   const pathname = useLocation().pathname;
