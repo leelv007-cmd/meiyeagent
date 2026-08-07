@@ -62,6 +62,7 @@ import { queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
 import { optionalSourceId } from '@/p1/source-object-navigation';
 import { useProductState } from '@/product/client';
+import { requiresMedicalQualification } from '@/product/store-intake/store-industry';
 import { StoreIntakeWizard } from '@/product/store-intake/store-intake-wizard';
 import type { ProductCommand, StoreFact } from '@meiye/contracts';
 import { useQuery } from '@tanstack/react-query';
@@ -210,6 +211,10 @@ function StoreProfilePage() {
   }
 
   const store = state.store;
+  const showQualification = requiresMedicalQualification({
+    regulated: store?.regulated,
+    hasQualificationRecord: Boolean(state.qualification),
+  });
 
   return (
     <>
@@ -414,31 +419,40 @@ function StoreProfilePage() {
               the one finalize channel. */}
           <StoreIntakeWizard product={{ refresh, state }} surface="store" />
 
-          <Widget className="meiye-porcelain" id="store-qualification">
-            <Widget.Header>
-              <Widget.Title>{dashboard_store_qualification_tab()}</Widget.Title>
-              <Widget.Description>
-                {dashboard_store_regulated_description()}
-              </Widget.Description>
-            </Widget.Header>
-            <Widget.Content>
-              {store?.regulated && !state.qualification?.confirmed ? (
-                <output
-                  className="text-foreground mb-4 block text-sm"
-                  data-testid="store-qualification-required"
-                >
-                  {dashboard_store_qualification_required()}
-                </output>
-              ) : null}
-              <QualificationForm
-                existing={state.qualification}
-                onConfirm={(qualification) =>
-                  void run({ type: 'confirm_qualification', qualification })
-                }
-                pending={pending}
-              />
-            </Widget.Content>
-          </Widget>
+          {/* D-C3: this is a regulated-category admission form, and the first
+              launch admits no medical category — so an ordinary beauty store is
+              no longer asked for a clinic licence it must never hold. The block
+              itself is unchanged and returns for any store the platform marks
+              regulated, or one that already filed a record. */}
+          {showQualification ? (
+            <Widget className="meiye-porcelain" id="store-qualification">
+              <Widget.Header>
+                <Widget.Title>
+                  {dashboard_store_qualification_tab()}
+                </Widget.Title>
+                <Widget.Description>
+                  {dashboard_store_regulated_description()}
+                </Widget.Description>
+              </Widget.Header>
+              <Widget.Content>
+                {store?.regulated && !state.qualification?.confirmed ? (
+                  <output
+                    className="text-foreground mb-4 block text-sm"
+                    data-testid="store-qualification-required"
+                  >
+                    {dashboard_store_qualification_required()}
+                  </output>
+                ) : null}
+                <QualificationForm
+                  existing={state.qualification}
+                  onConfirm={(qualification) =>
+                    void run({ type: 'confirm_qualification', qualification })
+                  }
+                  pending={pending}
+                />
+              </Widget.Content>
+            </Widget>
+          ) : null}
         </div>
       </main>
     </>

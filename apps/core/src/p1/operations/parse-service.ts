@@ -538,10 +538,17 @@ export class FixtureVisualAssetClassifier implements VisualAssetClassifier {
 
 export const DEFAULT_ASSET_INTAKE_GUIDANCE =
   assetIntakeGuidanceConfigSchema.parse({
+    // One entry per merchant-selectable 主营方向 (D-C3). `experience()` throws
+    // GUIDANCE_NOT_FOUND for an industry with no entry, which would take the
+    // whole five-step wizard down for a 美甲 store — so the vocabulary the web
+    // offers and the vocabulary seeded here move together.
     entries: [
-      ['hair_care', '护发'],
+      ['hair_care', '美发'],
+      ['nail', '美甲'],
+      ['lash', '美睫'],
       ['skin_management', '皮肤管理'],
-      ['hair_growth', '生发'],
+      ['beauty_salon', '生活美容'],
+      ['hair_growth', '养发生发'],
     ].flatMap(([industry, industryLabel]) =>
       [
         ['price_list', '项目价目表'],

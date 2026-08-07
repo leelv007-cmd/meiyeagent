@@ -308,6 +308,9 @@ const TODAY_RECOMMENDATION_INDUSTRY_ALIASES: Readonly<
   皮肤管理: 'skin_management',
   生发: 'hair_growth',
   养发: 'hair_growth',
+  // D-C3 relabelled the merchant-facing option 生发 → 养发生发; the published
+  // supply behind it did not move, so the new wording resolves to it too.
+  养发生发: 'hair_growth',
 };
 
 /** Deterministic label/slug → published industry slug. Unmapped values (incl. 美甲) → undefined. */

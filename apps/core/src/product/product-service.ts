@@ -3299,10 +3299,19 @@ export class ProductService implements ProductApplicationService {
       case 'display_preflight': {
         const content = findContent(state, command.contentId);
         const { version } = currentVersion(content);
+        // D-C3: medical qualification is a regulated-category requirement, and
+        // `state.store.regulated` is the flag that carries it — the same gate
+        // `request_handoff` below already uses. Telling a 美甲 store it is
+        // 缺少机构执业许可证 named a document it must never hold.
+        const regulated = Boolean(state.store?.regulated);
         const warnings = [
-          !state.qualification?.institutionLicense ? '缺少机构执业许可证' : '',
-          !state.qualification?.treatmentScope ? '缺少诊疗范围' : '',
-          !state.qualification?.advertisingCertificate
+          regulated && !state.qualification?.institutionLicense
+            ? '缺少机构执业许可证'
+            : '',
+          regulated && !state.qualification?.treatmentScope
+            ? '缺少诊疗范围'
+            : '',
+          regulated && !state.qualification?.advertisingCertificate
             ? '缺少医疗广告审查证明'
             : '',
           '发布前核对平台类目规则',

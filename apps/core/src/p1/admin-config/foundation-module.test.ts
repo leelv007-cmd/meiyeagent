@@ -26,6 +26,7 @@ import {
   MemoryAdminConfigRepository,
   normalizeHarnessTodayRecommendationConfig,
   resolveTodayRecommendationIndustrySlug,
+  TODAY_RECOMMENDATION_INDUSTRY_SLUGS,
 } from './foundation-module.js';
 
 /** Explicit bypass for tests of AdminConfigFoundationModule's own scope rules. */
@@ -1469,5 +1470,24 @@ describe('today recommendation industry whyNow key migration (A7)', () => {
     assert.equal(resolveTodayRecommendationIndustrySlug('养发'), 'hair_growth');
     assert.equal(resolveTodayRecommendationIndustrySlug('美甲'), undefined);
     assert.equal(resolveTodayRecommendationIndustrySlug('随便'), undefined);
+  });
+
+  /*
+   * D-C3 widened the merchant's 主营方向 vocabulary. The published supply did
+   * not widen with it, and that asymmetry is deliberate: the categories with no
+   * content still fall through here rather than being promoted to a slug.
+   */
+  it('keeps the widened merchant vocabulary falling through where supply is absent', () => {
+    assert.equal(
+      resolveTodayRecommendationIndustrySlug('养发生发'),
+      'hair_growth',
+    );
+    assert.equal(resolveTodayRecommendationIndustrySlug('美睫'), undefined);
+    assert.equal(resolveTodayRecommendationIndustrySlug('生活美容'), undefined);
+    assert.deepEqual([...TODAY_RECOMMENDATION_INDUSTRY_SLUGS], [
+      'hair_care',
+      'skin_management',
+      'hair_growth',
+    ]);
   });
 });
