@@ -85,11 +85,11 @@ const legacyRedirects = new Map<string, string>([
 /**
  * The one hole in the mobile settings wall.
  *
- * PRODUCT.md gives the phone four surfaces (拍摄上传/任务确认/进度查看/发布交接)
- * and everything else relays to desktop — but buying credits is not a settings
- * chore, it is the on-the-spot unblock for a merchant whose balance ran out
- * mid-creation. The workbench 可用积分 capsule and the topbar 积分 pill both
- * point here, so on a phone they used to land on 「完整设置请在桌面继续」.
+ * PRODUCT.md gives the phone four task surfaces and relays everything else to
+ * desktop — but buying credits is not a settings chore, it is the on-the-spot
+ * unblock for a merchant whose balance ran out mid-creation. The workbench
+ * credit capsule and the topbar credit pill both point here, so on a phone
+ * they used to land on the desktop-relay page.
  *
  * Deliberately narrow: only `/settings/account?section=credits`. Every other
  * settings destination — including `/settings/account` with no section, or with
@@ -97,6 +97,9 @@ const legacyRedirects = new Map<string, string>([
  *
  * `pathname` may carry a locale prefix (`/zh/settings/account`), so match the
  * suffix rather than the whole string.
+ *
+ * (Comments in this file stay ASCII: `product-surface-contract.test.ts` reads
+ * it whole to prove the shell carries no hardcoded Chinese copy.)
  */
 export function isMobileReachableSettingsSurface(
   pathname: string,
