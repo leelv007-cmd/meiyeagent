@@ -134,20 +134,36 @@ test('HeroUI empty-state foreground mapping is owned by the shared product layer
   );
 });
 
-test('merchant header exposes a localized non-subscriber pricing entry', () => {
+test('merchant header carries exactly one credits entry, styled as a topbar pill', () => {
+  // SUPERSEDES「exposes a localized non-subscriber pricing entry」. That contract
+  // pinned a second pill —「查看套餐与积分」, gated on useCurrentPlan — sitting
+  // next to the credits pill, and on the workbench a third capsule printing the
+  // balance. Three controls for one question, and on
+  // /settings/account?section=credits one of them pointed at the page being
+  // read. The successor contract is the count: one credits entry, naming the
+  // credits page, and it stops being a link once that is where you are.
+  // Upgrading did not lose a home — BillingCard owns 升级套餐 on that same page.
   const header = readSource('src/components/layout/dashboard-header.tsx');
   const styles = readSource('src/styles.css');
-  const zh = readSource('project.inlang/messages/zh.json');
-  const en = readSource('project.inlang/messages/en.json');
 
-  assert.match(header, /useCurrentPlan/u);
-  assert.match(header, /useCurrentPlan\(!isAdmin\)/u);
-  assert.match(header, /currentPlan\.isSuccess/u);
-  assert.match(header, /!currentPlan\.data\?\.currentPlan\?\.isLifetime/u);
-  assert.match(header, /!currentPlan\.data\?\.subscription/u);
-  assert.match(header, /Routes\.Pricing/u);
-  assert.match(header, /shell_product_subscription_upgrade/u);
-  assert.match(header, /IconSparkles/u);
+  const entries =
+    header.match(/className="meiye-product-subscription-entry/gu) ?? [];
+  assert.equal(entries.length, 2, 'one entry in two states: link and current');
+  assert.equal(
+    (header.match(/data-testid="product-usage-entry"/gu) ?? []).length,
+    2
+  );
+  assert.doesNotMatch(
+    header,
+    /data-testid="product-subscription-entry"/u,
+    'the second topbar pill is retired, not merely hidden'
+  );
+  assert.doesNotMatch(header, /useCurrentPlan/u);
+  assert.doesNotMatch(header, /IconSparkles/u);
+  // Current-page state is real suppression of the dead link, not just ARIA.
+  assert.match(header, /isMobileReachableSettingsSurface/u);
+  assert.match(header, /aria-current="page"/u);
+  // The pill shape it is painted with is unchanged.
   assert.match(
     styles,
     /\.meiye-product-shell \.meiye-topbar-capsule\s*\{[\s\S]*?padding:\s*4px 8px 4px 12px/u
@@ -155,14 +171,6 @@ test('merchant header exposes a localized non-subscriber pricing entry', () => {
   assert.match(
     styles,
     /\.light \.meiye-product-shell\[data-shell-mode="product"\][\s\S]*?\.meiye-product-subscription-entry\s*\{[\s\S]*?background:\s*var\(--paper\)[\s\S]*?color:\s*var\(--ink-90\)/u
-  );
-  assert.match(
-    zh,
-    /"shell_product_subscription_upgrade":\s*"查看套餐与积分"/u
-  );
-  assert.match(
-    en,
-    /"shell_product_subscription_upgrade":\s*"View plans and credits"/u
   );
 });
 

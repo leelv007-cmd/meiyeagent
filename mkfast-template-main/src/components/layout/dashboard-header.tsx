@@ -11,16 +11,13 @@ import { Sidebar } from '@/components/heroui-pro';
 import { LocaleSwitcher } from '@/components/layout/locale-switcher';
 import { ModeSwitcher } from '@/components/theme/mode-switcher';
 import { websiteConfig } from '@/config/website';
-import { useCurrentPlan } from '@/hooks/use-payment';
-import { Routes } from '@/lib/routes';
+import { isMobileReachableSettingsSurface } from '@/lib/uiux/navigation';
 import {
-  shell_product_subscription_upgrade,
-  shell_product_subscription_upgrade_short,
   shell_product_usage_entry,
   shell_product_usage_entry_aria,
   sidebar_toggle,
 } from '@/locale/paraglide/messages';
-import { IconGauge, IconSparkles } from '@tabler/icons-react';
+import { IconGauge } from '@tabler/icons-react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import React from 'react';
@@ -35,6 +32,13 @@ export interface DashboardBreadcrumbItem {
 interface DashboardHeaderProps {
   breadcrumbs: DashboardBreadcrumbItem[];
   actions?: ReactNode;
+  /**
+   * Balance text for the topbar credits entry, from whichever surface already
+   * knows it. When present the single entry prints the balance instead of the
+   * bare label — one control answering「我还剩多少」and taking her to where the
+   * rest of the answer is, rather than a readout parked beside a link.
+   */
+  creditsSummary?: string;
 }
 
 /**
@@ -43,25 +47,36 @@ interface DashboardHeaderProps {
 export function DashboardHeader({
   breadcrumbs,
   actions,
+  creditsSummary,
 }: DashboardHeaderProps) {
   const showModeSwitch = websiteConfig.ui?.mode?.enableSwitch ?? false;
   const isMobile = useIsMobile();
   const isAdmin = useRouterState({
     select: (state) => state.location.pathname.startsWith('/admin'),
   });
-  const currentPlan = useCurrentPlan(!isAdmin);
-  const showSubscriptionEntry =
-    !isAdmin &&
-    currentPlan.isSuccess &&
-    !currentPlan.data?.currentPlan?.isLifetime &&
-    !currentPlan.data?.subscription;
+  /*
+   * Whether the credits surface is the page we are already on. TanStack marks
+   * the link `aria-current="page"` there, which a screen reader hears but a
+   * merchant looking at an identical pill does not — so it stops being a link
+   * at all and stays as the balance readout it already was.
+   */
+  const onCreditsSurface = useRouterState({
+    select: (state) =>
+      isMobileReachableSettingsSurface(
+        state.location.pathname,
+        state.location.search
+      ),
+  });
 
   return (
     <header className="meiye-topbar flex h-(--header-height) shrink-0 items-center border-b transition-[width,height] ease-linear">
       <div className="flex w-full min-w-0 items-center gap-2 px-4 lg:px-6">
         {!isMobile ? (
           <>
-            <Sidebar.Trigger aria-label={sidebar_toggle()} className="-ml-1 shrink-0" />
+            <Sidebar.Trigger
+              aria-label={sidebar_toggle()}
+              className="-ml-1 shrink-0"
+            />
             <Separator
               orientation="vertical"
               className="mx-2 h-4 data-vertical:self-auto"
@@ -111,42 +126,70 @@ export function DashboardHeader({
         <div className="meiye-topbar-capsule ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
           {actions}
           {/*
-            「我还剩多少」was reachable only by typing the URL: the pricing CTA
-            answers「买什么」, not「剩多少」. The credits section is the one place
-            that answers it, so the capsule links straight at it. Literal `to`
-            instead of `Routes.SettingsAccount` — the typed router needs the
-            path literal to accept `search`.
+            One credits entry, not two. The topbar used to carry this pill
+            beside a second「查看套餐与积分」pill, and on the workbench a third
+            capsule printing the balance — three controls for one question,
+            and on the credits page itself one of them pointed at the page the
+            merchant was already reading. What is left answers「我还剩多少」and
+            goes where the rest of the answer is; 「升级套餐」 lives on that page,
+            next to the plan it would change (BillingCard), and on /pricing.
+            Literal `to` instead of `Routes.SettingsAccount` — the typed router
+            needs the path literal to accept `search`.
             `meiye-product-subscription-entry` is the shared topbar-pill shape,
             not a subscription-only style; see the handover note on renaming it.
           */}
           {!isAdmin ? (
-            <Link
-              aria-label={shell_product_usage_entry_aria()}
-              className="meiye-product-subscription-entry"
-              data-testid="product-usage-entry"
-              search={{ section: 'credits' }}
-              to="/settings/account"
-            >
-              <IconGauge aria-hidden="true" className="size-4" />
-              <span>{shell_product_usage_entry()}</span>
-            </Link>
-          ) : null}
-          {showSubscriptionEntry ? (
-            <Link
-              aria-label={shell_product_subscription_upgrade()}
-              className="meiye-product-subscription-entry"
-              data-testid="product-subscription-entry"
-              to={Routes.Pricing}
-            >
-              <IconSparkles aria-hidden="true" className="size-4 text-spark" />
-              {/* 390px used to leave a bare spark with no words next to it. */}
-              <span className="sm:hidden">
-                {shell_product_subscription_upgrade_short()}
+            onCreditsSurface ? (
+              <span
+                aria-current="page"
+                className="meiye-product-subscription-entry max-w-[min(60vw,22rem)]"
+                data-testid="product-usage-entry"
+                title={creditsSummary ?? undefined}
+              >
+                <IconGauge aria-hidden="true" className="size-4" />
+                {/*
+                  The workbench balance handle rides on the entry it merged
+                  into, so what used to be a capsule of its own is still one
+                  named thing for the browser suite to read.
+                */}
+                <span
+                  className="truncate"
+                  data-testid={
+                    creditsSummary
+                      ? 'workbench-credit-topbar-balance'
+                      : undefined
+                  }
+                >
+                  {creditsSummary ?? shell_product_usage_entry()}
+                </span>
               </span>
-              <span className="hidden sm:inline">
-                {shell_product_subscription_upgrade()}
-              </span>
-            </Link>
+            ) : (
+              <Link
+                aria-label={shell_product_usage_entry_aria()}
+                className="meiye-product-subscription-entry max-w-[min(60vw,22rem)]"
+                data-testid="product-usage-entry"
+                search={{ section: 'credits' }}
+                title={creditsSummary ?? undefined}
+                to="/settings/account"
+              >
+                <IconGauge aria-hidden="true" className="size-4" />
+                {/*
+                  The workbench balance handle rides on the entry it merged
+                  into, so what used to be a capsule of its own is still one
+                  named thing for the browser suite to read.
+                */}
+                <span
+                  className="truncate"
+                  data-testid={
+                    creditsSummary
+                      ? 'workbench-credit-topbar-balance'
+                      : undefined
+                  }
+                >
+                  {creditsSummary ?? shell_product_usage_entry()}
+                </span>
+              </Link>
+            )
           ) : null}
           <LocaleSwitcher />
           {showModeSwitch && <ModeSwitcher />}

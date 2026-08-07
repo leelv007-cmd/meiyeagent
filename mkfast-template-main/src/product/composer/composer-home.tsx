@@ -3076,16 +3076,17 @@ export function ComposerHome({
       stickyComposer={stickyComposer}
       topbar={
         <DashboardHeader
-          actions={
-            workbenchCreditBalance.visible ? (
-              <span
-                className="meiye-product-subscription-entry max-w-[min(60vw,22rem)]"
-                data-testid="workbench-credit-topbar-balance"
-                title={creditSummary ?? undefined}
-              >
-                <span className="truncate">{creditSummary}</span>
-              </span>
-            ) : null
+          /*
+           * The balance used to sit in its own capsule next to the topbar's
+           * credits pill — the same fact twice, in adjacent controls. It is
+           * handed to the pill instead, so the workbench topbar carries one
+           * credits entry that both states the balance and reaches the page
+           * behind it.
+           */
+          creditsSummary={
+            workbenchCreditBalance.visible
+              ? (creditSummary ?? undefined)
+              : undefined
           }
           breadcrumbs={[
             { label: product_navigation_workbench(), isCurrentPage: true },

@@ -592,6 +592,22 @@
     color: var(--ink-90);
     box-shadow: var(--shadow-ambient);
   }
+  /*
+   * The credits entry on the credits page. It stops being a link there — the
+   * destination is the page under it — and this is the other half of that:
+   * without it the readout keeps a pill's raised paper and a hover it can no
+   * longer honour, which is a control's promise made by something that is not
+   * one. Written at the light rule's specificity so it wins in that shell too.
+   */
+  .meiye-product-shell .meiye-product-subscription-entry[aria-current="page"],
+  .light
+    .meiye-product-shell[data-shell-mode="product"]
+    .meiye-product-subscription-entry[aria-current="page"] {
+    background: transparent;
+    box-shadow: none;
+    color: var(--ink-60);
+    cursor: default;
+  }
 
   .dark .meiye-product-shell {
     --product-focus: oklch(0.85 0.08 18);

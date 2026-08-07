@@ -284,5 +284,11 @@ test('no topbar entry degrades to a bare icon on a 390px screen', () => {
   const desktopOnly = header.match(/className="hidden sm:inline"/gu) ?? [];
   const mobileOnly = header.match(/className="sm:hidden"/gu) ?? [];
   assert.equal(desktopOnly.length, mobileOnly.length);
-  assert.match(header, /shell_product_subscription_upgrade_short\(\)/u);
+  // The breakpoint-swapped label pair belonged to the retired second pill (see
+  // shell-visual-contract「exactly one credits entry」). The remaining entry
+  // never swaps its label, so what has to hold instead is that its words are
+  // present at every width rather than shortened away to the gauge glyph.
+  assert.match(header, /IconGauge/u);
+  assert.match(header, /shell_product_usage_entry\(\)/u);
+  assert.doesNotMatch(header, /className="hidden sm:inline"/u);
 });
