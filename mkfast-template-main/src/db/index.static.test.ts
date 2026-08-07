@@ -1,5 +1,6 @@
 /**
- * Regression: ISSUE-004 — getDb must not mint a new postgres client per call.
+ * Regression: ISSUE-004 — getDb must not leak Postgres clients under local SSR,
+ * and must not share CF Workers I/O across requests.
  * Found by /qa on 2026-08-07
  * Report: .gstack/qa-reports/qa-report-localhost-3000-2026-08-07.md
  */
@@ -14,13 +15,11 @@ const source = readFileSync(
   'utf8',
 );
 
-test('getDb reuses one postgres client per isolate (no per-call connect)', () => {
-  assert.match(source, /__meiyeDb/u);
-  assert.match(source, /__meiyeDbConnectionString/u);
+test('getDb keeps max:1 Hyperdrive clients with idle recycling', () => {
   assert.match(source, /max:\s*1/u);
-  // Must short-circuit when the cached client matches the binding.
-  assert.match(
-    source,
-    /g\.__meiyeDb && g\.__meiyeDbConnectionString === connectionString/u,
-  );
+  assert.match(source, /idle_timeout:\s*5/u);
+  assert.match(source, /max_lifetime:\s*60 \* 5/u);
+  // Must not cache a process-wide client (CF cross-request I/O ban).
+  assert.doesNotMatch(source, /__meiyeDb/u);
+  assert.doesNotMatch(source, /globalThis\.__meiye/u);
 });

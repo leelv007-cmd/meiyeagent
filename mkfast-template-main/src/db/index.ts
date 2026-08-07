@@ -7,42 +7,32 @@ import {
   hasDatabaseBinding,
 } from './runtime';
 
-type MeiyeDb = ReturnType<typeof drizzle<typeof schema>>;
-
-type DbGlobal = typeof globalThis & {
-  __meiyeDb?: MeiyeDb;
-  __meiyeDbConnectionString?: string;
-  __meiyeDbClient?: ReturnType<typeof postgres>;
-};
-
 /**
- * One client per Worker isolate / local Node process.
+ * Hyperdrive + Workers local needs max:1 clients that do not outlive the
+ * request. A process-wide singleton reuses Writable/I/O across CF request
+ * contexts and throws:
+ *   "Cannot perform I/O on behalf of a different request"
  *
- * Hyperdrive docs recommend max:1 per isolate. Creating a fresh postgres.js
- * client on every getDb() call never ends the previous one, so local SSR
- * exhausts Postgres (`sorry, too many clients already`) after a few dozen
- * requests. Cache by connection string; HMR-safe via globalThis.
+ * Without idle_timeout, each getDb() also leaked a live connection until the
+ * process exited (QA ISSUE-004: too many clients already). Short idle timeout
+ * recycles unused clients while keeping one connection per active request.
  */
-function createDatabase(connectionString: string): MeiyeDb {
-  const client = postgres(connectionString, {
+function createDatabase() {
+  if (!hasDatabaseBinding(env)) {
+    throw new DatabaseBindingUnavailableError();
+  }
+  const client = postgres(env.HYPERDRIVE.connectionString, {
     max: 1,
     prepare: false,
+    // seconds — drop idle sockets so local Vite SSR cannot pin hundreds open
+    idle_timeout: 5,
+    max_lifetime: 60 * 5,
+    connect_timeout: 10,
   });
-  (globalThis as DbGlobal).__meiyeDbClient = client;
+
   return drizzle(client, { schema });
 }
 
 export function getDb() {
-  if (!hasDatabaseBinding(env)) {
-    throw new DatabaseBindingUnavailableError();
-  }
-  const connectionString = env.HYPERDRIVE.connectionString;
-  const g = globalThis as DbGlobal;
-  if (g.__meiyeDb && g.__meiyeDbConnectionString === connectionString) {
-    return g.__meiyeDb;
-  }
-  const db = createDatabase(connectionString);
-  g.__meiyeDb = db;
-  g.__meiyeDbConnectionString = connectionString;
-  return db;
+  return createDatabase();
 }
