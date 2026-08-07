@@ -117,6 +117,29 @@ test('task drilldown route body renders information completeness contract', () =
   assert.equal(typeof tasksRoute.Route.options.component, 'function');
 });
 
+/**
+ * #426 restyle residual: the task page header already shows
+ * 「供应任务 · {taskId}」 + the summary blurb; the drilldown body must not
+ * restate a near-duplicate title/description pair.
+ */
+test('task drilldown panel does not repeat the page header title', () => {
+  const html = renderToStaticMarkup(
+    <AdminSupplyTaskDrilldown
+      snapshot={buildDefaultSupplyControlSnapshot()}
+      taskId="task-image-002"
+    />
+  );
+  assert.match(html, /data-testid="supply-task-drilldown"/);
+  assert.doesNotMatch(html, /任务下钻 ·/);
+  assert.doesNotMatch(
+    html,
+    /摘要卡 \/ 延迟分段 \/ 持久化时间戳时间线 \/ 错误徽章折叠 \/ 产物预览/
+  );
+  // Body projections remain.
+  assert.match(html, /data-testid="supply-task-summary-cards"/);
+  assert.match(html, /data-testid="supply-task-timeline"/);
+});
+
 test('run table URL state sync preserves shareable filter contract on control', () => {
   const state = parseRunTableUrlState(
     new URLSearchParams(

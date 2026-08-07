@@ -108,13 +108,6 @@ export function SupplyTaskDrilldown({ view }: { view: TaskDrilldownView }) {
       data-task-id={view.taskId}
       className="space-y-4"
     >
-      <header className="space-y-1">
-        <h2 className="text-base font-semibold">任务下钻 · {view.taskId}</h2>
-        <p className="text-xs text-muted-foreground">
-          摘要卡 / 延迟分段 / 持久化时间戳时间线 / 错误徽章折叠 / 产物预览
-        </p>
-      </header>
-
       <div
         data-testid="supply-task-summary-cards"
         className="grid auto-rows-fr items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-4"

@@ -502,6 +502,8 @@
   "admin_sensitive_words_title": "Sensitive-word governance",
   "admin_skills_description": "Define, accept-freeze, bind, and roll back product Skill versions.",
   "admin_skills_title": "Skills",
+  "admin_supply_association_view_description": "Forward + reverse · {path}",
+  "admin_supply_association_view_title": "Five association views · {viewId}",
   "admin_supply_description": "Overview of tri-modal readiness, dual-channel coverage, six-entity relations, effective revisions, run table and task drilldown, five association views, and entitlement/pool status. External gateway consoles are evidence deep-links only.",
   "admin_supply_task_timeline_ended": "{count} persisted checkpoints · finished",
   "admin_supply_task_timeline_running": "{count} persisted checkpoints · running",

@@ -502,6 +502,8 @@
   "admin_sensitive_words_title": "敏感词治理",
   "admin_skills_description": "定义、受理冻结、绑定与回滚产品 Skill 版本。",
   "admin_skills_title": "Skills",
+  "admin_supply_association_view_description": "正查 + 反查 · {path}",
+  "admin_supply_association_view_title": "五关联视图 · {viewId}",
   "admin_supply_description": "总览三模态 readiness、双渠道覆盖、六实体关系、生效 revision、运行表与任务下钻、五关联视图与权益池状态。外部网关 Console 仅作技术证据深链。",
   "admin_supply_task_timeline_ended": "{count} 个持久化节点 · 已终态",
   "admin_supply_task_timeline_running": "{count} 个持久化节点 · 执行中",

@@ -1,10 +1,5 @@
 import { Badge, type BadgeProps } from '@/components/reui/badge';
-import {
-  Frame,
-  FrameHeader,
-  FramePanel,
-  FrameTitle,
-} from '@/components/reui/frame';
+import { Frame, FrameHeader, FramePanel } from '@/components/reui/frame';
 import {
   Timeline,
   TimelineContent,
@@ -42,7 +37,6 @@ import {
   admin_audit_refresh,
   admin_audit_scope_diff,
   admin_audit_template_lifecycle_reason,
-  admin_audit_title,
   admin_audit_unknown,
 } from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
@@ -367,11 +361,9 @@ function AuditListFiltersBar({
   onExport: () => void;
   exportDisabled: boolean;
 }) {
-  const setField =
-    (field: keyof AuditListFilters) =>
-    (value: string) => {
-      onChange({ ...filters, [field]: value });
-    };
+  const setField = (field: keyof AuditListFilters) => (value: string) => {
+    onChange({ ...filters, [field]: value });
+  };
 
   return (
     <div
@@ -567,8 +559,7 @@ export function AdminAuditControl() {
 
   return (
     <Frame dense data-testid="admin-audit-control">
-      <FrameHeader className="flex-row items-center justify-between gap-3">
-        <FrameTitle>{admin_audit_title()}</FrameTitle>
+      <FrameHeader className="flex-row items-center justify-end gap-3">
         <Button
           disabled={
             templateQuery.isFetching ||

@@ -19,7 +19,6 @@ import {
 import { Badge } from '@/components/reui/badge';
 import {
   Frame,
-  FrameDescription,
   FrameHeader,
   FramePanel,
   FrameTitle,
@@ -191,15 +190,7 @@ export function AdminSensitiveWordsControl() {
 
   return (
     <Frame data-testid="admin-sensitive-words">
-      <FrameHeader className="flex-row items-start justify-between gap-3">
-        <div className="space-y-1">
-          <FrameTitle>违禁词库</FrameTitle>
-          <FrameDescription>
-            美业专项词库（word / category / replacements /
-            status）。生成链检查与红线门共库；批量导入 UI 本票不做，仅单条
-            CRUD。
-          </FrameDescription>
-        </div>
+      <FrameHeader className="flex-row items-start justify-end gap-3">
         <Button
           type="button"
           variant="outline"

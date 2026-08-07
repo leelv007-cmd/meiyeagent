@@ -1,4 +1,9 @@
 import { AdminRoutePage } from '@/components/admin/admin-route-page';
+import { useRecordCrumb } from '@/components/admin/shell/page-crumb';
+import {
+  admin_supply_association_view_description,
+  admin_supply_association_view_title,
+} from '@/locale/paraglide/messages';
 import {
   ASSOCIATION_VIEW_PATHS,
   isAssociationViewId,
@@ -25,11 +30,14 @@ function SupplyAssociationViewPage({
   const viewId = viewIdProp ?? 'model';
   const resolved = isAssociationViewId(viewId) ? viewId : 'model';
   const path = ASSOCIATION_VIEW_PATHS[resolved];
+  // Nav tree only resolves this route to the supply section; publish the view
+  // id so the trail names the record and demotes the section from current page.
+  useRecordCrumb(resolved);
 
   return (
     <AdminRoutePage
-      title={`五关联视图 · ${resolved}`}
-      description={`正查 + 反查 · ${path}`}
+      title={admin_supply_association_view_title({ viewId: resolved })}
+      description={admin_supply_association_view_description({ path })}
     >
       <div className="space-y-4 text-sm [&_h2]:text-base [&_h2]:font-semibold [&_h3]:text-sm">
         <AdminSupplyAssociationView viewId={resolved} />
