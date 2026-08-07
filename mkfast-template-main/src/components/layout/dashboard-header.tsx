@@ -69,7 +69,15 @@ export function DashboardHeader({
           </>
         ) : null}
 
-        <Breadcrumb className="min-w-0 flex-1">
+        {/*
+          Every crumb but the last is already `hidden md:block`, so on a phone
+          this renders one non-interactive word — and the same word is the h1
+          right below it. At 390px the capsule row is 350 of the 358 available,
+          which squeezed that word down to 14px and wrapped it one character
+          per line. Drop the duplicate rather than shave the controls: the
+          phone reads its location from the page title and the bottom bar.
+        */}
+        <Breadcrumb className="hidden min-w-0 flex-1 md:block">
           <BreadcrumbList className="text-sm font-medium">
             {breadcrumbs.map((item, index) => (
               <React.Fragment key={`breadcrumb-${index}`}>
