@@ -1,4 +1,6 @@
+import { readdirSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { join, relative, resolve } from 'node:path';
 import ts from 'typescript';
 
 const JSON_MESSAGE_KEYS = ['auth_error_codes'] as const;
@@ -41,7 +43,11 @@ const RETIRED_NAVIGATION_KEYS = [
   'product_navigation_tasks',
 ] as const;
 
-const PRODUCT_SHELL_SOURCES = [
+/**
+ * Non-admin product shell sources remain an explicit list (merchant shell).
+ * Admin surfaces use directory-default inclusion below (#427).
+ */
+const PRODUCT_SHELL_SOURCES_EXPLICIT = [
   'src/lib/uiux/navigation.ts',
   'src/lib/uiux/status.ts',
   'src/components/uiux/object-evidence.tsx',
@@ -50,15 +56,6 @@ const PRODUCT_SHELL_SOURCES = [
   'src/components/shared/logo.tsx',
   'src/config/sidebar-config.ts',
   'src/components/layout/sidebar-user.tsx',
-  'src/p1/admin-audit-control.tsx',
-  'src/p1/admin-feishu-tool-control.tsx',
-  'src/p1/admin-model-control.tsx',
-  'src/p1/admin-view-model.ts',
-  'src/p1/admin-operations-health.tsx',
-  'src/p1/admin-plan-control.tsx',
-  'src/p1/admin-redemption-control.tsx',
-  'src/p1/admin-template-control.tsx',
-  'src/p1/admin-template-forms.ts',
   'src/p1/canvas-product-assets.ts',
   'src/p1/integration-settings-forms.ts',
   'src/p1/integration-settings.tsx',
@@ -89,6 +86,148 @@ const PRODUCT_SHELL_SOURCES = [
   'src/product/creative-object-page.tsx',
   'src/lib/uiux/duration-estimate.ts',
 ] as const;
+
+/**
+ * Admin surface directories: default-include all source files.
+ * New files under these trees are scanned unless listed in EXEMPT.
+ */
+const ADMIN_SURFACE_DIRS = [
+  'src/routes/admin',
+  'src/components/admin',
+] as const;
+
+/**
+ * Stock admin-surface CJK / mixed-track violators. Clear under #428.
+ * Each entry is skipped by the product-shell CJK gate until migrated.
+ */
+const ADMIN_SURFACE_CJK_EXEMPT = new Set<string>([
+  'src/components/admin/capability/capability-catalog-panel.tsx', // #428 清零
+  'src/components/admin/capability/capability-detail-card.tsx', // #428 清零
+  'src/components/admin/capability/capability-drilldown-banner.tsx', // #428 清零
+  'src/components/admin/capability/capability-inventory-panorama.tsx', // #428 清零
+  'src/components/admin/capability/capability-registry-panel.tsx', // #428 清零
+  'src/components/admin/capability/capability-status-badge.tsx', // #428 清零
+  'src/components/admin/capability/exception-home-panel.tsx', // #428 清零
+  'src/components/admin/capability/metric-envelope-view.tsx', // #428 清零
+  'src/components/admin/cloudflare/cloudflare-readonly-panel.tsx', // #428 清零
+  'src/components/admin/entitlements/entitlement-status-panel.tsx', // #428 清零
+  'src/components/admin/shared/icon-tile.tsx', // #428 清零
+  'src/components/admin/shared/page-header.tsx', // #428 清零
+  'src/components/admin/shared/setting-field.tsx', // #428 清零
+  'src/components/admin/shared/use-route-sheet.ts', // #428 清零
+  'src/components/admin/shell/admin-breadcrumbs.tsx', // #428 清零
+  'src/components/admin/shell/admin-command-model.ts', // #428 清零
+  'src/components/admin/shell/admin-notifications-model.ts', // #428 清零
+  'src/components/admin/shell/admin-operations-todo-model.ts', // #428 清零
+  'src/components/admin/shell/nav-active.ts', // #428 清零
+  'src/components/admin/shell/page-crumb.tsx', // #428 清零
+  'src/components/admin/shell/use-admin-ops-header-queries.ts', // #428 清零
+  'src/components/admin/supply/supply-association-views-panel.tsx', // #428 清零
+  'src/components/admin/supply/supply-audit-table.tsx', // #428 清零
+  'src/components/admin/supply/supply-control-center-panel.tsx', // #428 清零
+  'src/components/admin/supply/supply-credential-panel.tsx', // #428 清零
+  'src/components/admin/supply/supply-governed-actions-panel.tsx', // #428 清零
+  'src/components/admin/supply/supply-overview-panel.tsx', // #428 清零
+  'src/components/admin/supply/supply-route-simulator-panel.tsx', // #428 清零
+  'src/components/admin/supply/supply-run-table.tsx', // #428 清零
+  'src/components/admin/supply/supply-task-drilldown.tsx', // #428 清零
+  'src/components/admin/users/admin-create-user.ts', // #428 清零
+  'src/components/admin/users/admin-users-content.tsx', // #428 清零
+  'src/p1/admin-audit-filter-model.ts', // #428 清零
+  'src/p1/admin-audit-timeline-model.ts', // #428 清零
+  'src/p1/admin-capability-catalog-model.ts', // #428 清零
+  'src/p1/admin-capability-catalog.tsx', // #428 清零
+  'src/p1/admin-capability-registry-model.ts', // #428 清零
+  'src/p1/admin-capability-registry.tsx', // #428 清零
+  'src/p1/admin-cloudflare-control.tsx', // #428 清零
+  'src/p1/admin-cloudflare-deep-link.ts', // #428 清零
+  'src/p1/admin-cloudflare-presentation.ts', // #428 清零
+  'src/p1/admin-cloudflare-probe.ts', // #428 清零
+  'src/p1/admin-config-field-model.ts', // #428 清零
+  'src/p1/admin-config-view-model.ts', // #428 清零
+  'src/p1/admin-creation-experience-control.tsx', // #428 清零
+  'src/p1/admin-entitlement-status-model.ts', // #428 清零
+  'src/p1/admin-exception-home-model.ts', // #428 清零
+  'src/p1/admin-exception-home.tsx', // #428 清零
+  'src/p1/admin-feishu-view-model.ts', // #428 清零
+  'src/p1/admin-operations-chart-model.ts', // #428 清零
+  'src/p1/admin-payment-refund-review.tsx', // #428 清零
+  'src/p1/admin-plan-reference-numbers-control.tsx', // #428 清零
+  'src/p1/admin-provider-credential-control.tsx', // #428 清零
+  'src/p1/admin-sensitive-words-control.tsx', // #428 清零
+  'src/p1/admin-sensitive-words-gate-alert.tsx', // #428 清零
+  'src/p1/admin-sensitive-words-gate.ts', // #428 清零
+  'src/p1/admin-sensitive-words-model.ts', // #428 清零
+  'src/p1/admin-skills-contract.ts', // #428 清零
+  'src/p1/admin-skills-control.tsx', // #428 清零
+  'src/p1/admin-supply-association-views-model.ts', // #428 清零
+  'src/p1/admin-supply-control.tsx', // #428 清零
+  'src/p1/admin-supply-credential-model.ts', // #428 清零
+  'src/p1/admin-supply-fixture.ts', // #428 清零
+  'src/p1/admin-supply-overview-model.ts', // #428 清零
+  'src/p1/admin-supply-quick-actions-model.ts', // #428 清零
+  'src/p1/admin-supply-route-simulator-model.ts', // #428 清零
+  'src/p1/admin-supply-run-table-model.ts', // #428 清零
+  'src/p1/admin-supply-task-drilldown-model.ts', // #428 清零
+  'src/p1/admin-supply-types.ts', // #428 清零
+  'src/p1/use-admin-supply-control.ts', // #428 清零
+  'src/routes/admin/audit.tsx', // #428 清零
+  'src/routes/admin/capabilities.tsx', // #428 清零
+  'src/routes/admin/p1.tsx', // #428 清零
+  'src/routes/admin/supply.tasks.$taskId.tsx', // #428 清零
+  'src/routes/admin/supply.views.$viewId.tsx', // #428 清零
+]);
+
+function listTsSources(dir: string, webRoot: string): string[] {
+  const out: string[] = [];
+  const walk = (current: string) => {
+    for (const name of readdirSync(current)) {
+      const full = join(current, name);
+      const st = statSync(full);
+      if (st.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!/\.(ts|tsx)$/.test(name)) continue;
+      if (name.endsWith('.test.ts') || name.endsWith('.test.tsx')) continue;
+      if (name.endsWith('.interaction.test.tsx')) continue;
+      out.push(relative(webRoot, full).split('\\').join('/'));
+    }
+  };
+  walk(dir);
+  return out;
+}
+
+function isAdminP1Source(rel: string): boolean {
+  if (!rel.startsWith('src/p1/')) return false;
+  const base = rel.slice('src/p1/'.length);
+  return (
+    base.startsWith('admin-') ||
+    base.startsWith('use-admin-') ||
+    base.includes('admin-')
+  );
+}
+
+function listAdminSurfaceSources(webRoot: string): string[] {
+  const files = new Set<string>();
+  for (const dir of ADMIN_SURFACE_DIRS) {
+    for (const rel of listTsSources(resolve(webRoot, dir), webRoot)) {
+      files.add(rel);
+    }
+  }
+  for (const rel of listTsSources(resolve(webRoot, 'src/p1'), webRoot)) {
+    if (isAdminP1Source(rel)) files.add(rel);
+  }
+  return [...files].filter((rel) => !ADMIN_SURFACE_CJK_EXEMPT.has(rel)).sort();
+}
+
+function collectProductShellSources(webRoot: string): string[] {
+  const files = new Set<string>(PRODUCT_SHELL_SOURCES_EXPLICIT);
+  for (const rel of listAdminSurfaceSources(webRoot)) {
+    files.add(rel);
+  }
+  return [...files].sort();
+}
 
 async function readMessages(locale: 'en' | 'zh') {
   const raw = await readFile(`project.inlang/messages/${locale}.json`, 'utf8');
@@ -152,9 +291,10 @@ const configErrors = [
     ? []
     : ['locales must include en and zh']),
 ];
+const productShellSources = collectProductShellSources(process.cwd());
 const mixedTrackFiles = (
   await Promise.all(
-    PRODUCT_SHELL_SOURCES.map(async (file) => ({
+    productShellSources.map(async (file) => ({
       file,
       source: await readFile(file, 'utf8'),
     }))

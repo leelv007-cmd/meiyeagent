@@ -84,7 +84,7 @@ test('the merchant hold control is editable and described as hot-read', () => {
     'harness.confirmation_card.hold_timeout_seconds'
   );
   assert.match(html, /商家决策保留期（秒）/);
-  assert.match(html, /data-slot="number-stepper"/);
+  assert.match(html, /data-slot="config-number-field"/);
   assert.match(html, /热加载已生效/);
 });
 
@@ -506,5 +506,5 @@ test('labels credit commerce config as hot-read while disclosing the legacy Prod
   // U05：受控配置一律走结构化表单，后台不再留手敲 JSON 的口子（D-107）。
   assert.match(html, /admin-config-form-plan\.credits\.growth/);
   assert.doesNotMatch(html, /<textarea/);
-  assert.match(html, /data-slot="number-stepper"/);
+  assert.match(html, /data-slot="config-number-field"/);
 });

@@ -32,12 +32,16 @@ test('plan credits render steppers for period credits and a dial for priority', 
     storageMb: 512,
     supportLabel: 'standard',
   });
-  assert.match(html, /data-slot="number-stepper"/);
+  assert.match(html, /data-slot="config-number-field"/);
   assert.match(html, /data-slot="slider"/);
   assert.match(html, /data-slot="select-trigger"/);
   assert.doesNotMatch(html, /<textarea/);
   // No heroui cell-editor residue.
-  assert.doesNotMatch(html, /data-slot="cell-switch"|data-slot="cell-select"|data-slot="cell-slider"|data-slot="native-select/);
+  assert.doesNotMatch(
+    html,
+    /data-slot="cell-switch"|data-slot="cell-select"|data-slot="cell-slider"|data-slot="native-select/
+  );
+  assert.doesNotMatch(html, /data-slot="number-stepper"/);
 });
 
 test('add-on offers render as a grid with an add control', () => {
@@ -50,7 +54,11 @@ test('add-on offers render as a grid with an add control', () => {
       resource: 'copy',
     },
   ]);
-  assert.match(html, /data-slot="data-grid"|data-slot="table"/);
+  // shadcn Table owns data-slot="table"; no heroui data-grid override.
+  assert.match(html, /data-slot="table"/);
+  assert.match(html, /data-slot="table-header"/);
+  assert.match(html, /data-slot="table-body"/);
+  assert.doesNotMatch(html, /data-slot="data-grid"/);
   assert.match(html, /data-testid="admin-config-plan-addons-value-add"/);
   assert.match(html, /data-slot="select-trigger"/);
 });

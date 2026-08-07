@@ -275,7 +275,7 @@ function NumberField(props: FieldViewProps) {
       <Label htmlFor={domId(props)}>{field.label}</Label>
       <div
         className="flex w-fit items-center gap-1"
-        data-slot="number-stepper"
+        data-slot="config-number-field"
       >
         <Button
           aria-label="decrement"
@@ -462,7 +462,7 @@ function ListField(props: FieldViewProps) {
     return (
       <div className="space-y-3" data-testid={domId(props)}>
         {header}
-        <Table aria-label={field.label} data-slot="data-grid">
+        <Table aria-label={field.label}>
           <TableHeader>
             <TableRow>
               {field.itemFields.map((itemField) => (

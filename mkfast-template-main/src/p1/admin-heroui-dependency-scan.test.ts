@@ -18,6 +18,7 @@ const webRoot = resolve(process.cwd());
 
 const SCAN_ROOTS = [
   'src/routes/admin',
+  'src/routes/admin.tsx',
   'src/components/admin',
   'src/p1',
 ] as const;
@@ -25,8 +26,9 @@ const SCAN_ROOTS = [
 /** Relative paths (posix) allowed to still import heroui — tracked elsewhere. */
 const IMPORT_EXEMPT = new Set<string>([]);
 
+/** Matches `@heroui/*` packages and `@/components/heroui-pro` re-exports. */
 const IMPORT_RE =
-  /from\s+['"]@heroui\/react['"]|from\s+['"]@\/components\/heroui-pro(?:\/[^'"]*)?['"]|import\s+['"]@\/components\/heroui-pro/;
+  /from\s+['"]@heroui\/[^'"]+['"]|from\s+['"]@\/components\/heroui-pro(?:\/[^'"]*)?['"]|import\s+['"]@\/components\/heroui-pro/;
 
 function listSourceFiles(dir: string): string[] {
   const out: string[] = [];
@@ -48,25 +50,25 @@ function listSourceFiles(dir: string): string[] {
   return out;
 }
 
-function isAdminP1File(rel: string): boolean {
-  if (!rel.startsWith('src/p1/')) return false;
-  const base = rel.slice('src/p1/'.length);
-  // Admin controls and fixtures only — not merchant product helpers in p1.
-  return (
-    base.startsWith('admin-') ||
-    base.startsWith('use-admin-') ||
-    base.includes('admin-')
-  );
+/** Resolve a scan root that may be a directory or a single file. */
+function listScanTargets(root: string): string[] {
+  const abs = resolve(webRoot, root);
+  const st = statSync(abs);
+  if (st.isFile()) {
+    if (!/\.(ts|tsx)$/.test(abs)) return [];
+    if (abs.endsWith('.test.ts') || abs.endsWith('.test.tsx')) return [];
+    if (abs.endsWith('.interaction.test.tsx')) return [];
+    return [abs];
+  }
+  return listSourceFiles(abs);
 }
 
 test('admin product sources do not import heroui (except #386 ops charts)', () => {
   const hits: string[] = [];
 
   for (const root of SCAN_ROOTS) {
-    const abs = resolve(webRoot, root);
-    for (const file of listSourceFiles(abs)) {
+    for (const file of listScanTargets(root)) {
       const rel = relative(webRoot, file).split('\\').join('/');
-      if (root === 'src/p1' && !isAdminP1File(rel)) continue;
       if (IMPORT_EXEMPT.has(rel)) continue;
 
       const source = readFileSync(file, 'utf8');
@@ -126,7 +128,7 @@ test('heroui import exemptions still resolve to heroui consumers', () => {
 // Fail closed if a scan root was renamed away (empty tree is a silent pass).
 test('admin heroui scan roots are non-empty on disk', () => {
   for (const root of SCAN_ROOTS) {
-    const files = listSourceFiles(resolve(webRoot, root));
+    const files = listScanTargets(root);
     assert.ok(files.length > 0, `scan root empty: ${root}`);
   }
 });
