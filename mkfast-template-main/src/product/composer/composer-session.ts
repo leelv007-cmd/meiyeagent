@@ -242,12 +242,21 @@ export function openComposerTurn(
 ): ComposerSession {
   const trimmed = text.trim();
   if (!trimmed) return session;
+  // Index keeps React keys unique across multiple merchant sentences in one
+  // session (retry / revise-in-place). A bare `:merchant` suffix collides.
+  const merchantIndex = session.turns.filter(
+    (turn) => turn.kind === 'merchant',
+  ).length;
   return {
     ...session,
     phase: 'submitting',
     turns: [
       ...session.turns,
-      { kind: 'merchant', id: `${session.sessionId}:merchant`, text: trimmed },
+      {
+        kind: 'merchant',
+        id: `${session.sessionId}:merchant:${merchantIndex}`,
+        text: trimmed,
+      },
     ],
   };
 }

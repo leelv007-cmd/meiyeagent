@@ -60,7 +60,7 @@ test('the merchant sentence opens the run and the task binds the candidate area'
   );
   assert.equal(opened.phase, 'submitting');
   assert.deepEqual(opened.turns, [
-    { kind: 'merchant', id: 'session-1:merchant', text: '写一条周末预约文案' },
+    { kind: 'merchant', id: 'session-1:merchant:0', text: '写一条周末预约文案' },
   ]);
 
   const bound = bindComposerTask(opened, TASK);
@@ -77,6 +77,24 @@ test('the merchant sentence opens the run and the task binds the candidate area'
 test('blank input never opens a turn', () => {
   const session = createComposerSession('session-1');
   assert.equal(openComposerTurn(session, '   '), session);
+});
+
+test('each merchant sentence in one session gets a unique turn id', () => {
+  // Regression: ISSUE-001 — duplicate React key `:merchant` on retry/revise.
+  // Found by /qa on 2026-08-07
+  // Report: .gstack/qa-reports/qa-report-localhost-3000-2026-08-07.md
+  let session = openComposerTurn(
+    createComposerSession('session-1'),
+    '第一条意图'
+  );
+  session = openComposerTurn(session, '第二条意图');
+  const merchantIds = session.turns
+    .filter((turn) => turn.kind === 'merchant')
+    .map((turn) => turn.id);
+  assert.deepEqual(merchantIds, [
+    'session-1:merchant:0',
+    'session-1:merchant:1',
+  ]);
 });
 
 test('intent_naming success is the D-111 route notice; other stages are stage turns', () => {
