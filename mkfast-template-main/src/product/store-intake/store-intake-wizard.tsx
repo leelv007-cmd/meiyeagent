@@ -15,6 +15,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
 import {
   account_usage_retry,
   progressive_fact_address_label,
@@ -94,8 +95,7 @@ import {
   store_intake_step_ai_arrange,
   store_intake_step_choose_recommendations,
   store_intake_step_confirm_each,
-  store_intake_step_optional,
-  store_intake_step_required,
+  store_intake_step_required_note,
   store_intake_step_say_or_upload,
   store_intake_step_see_examples,
   store_intake_target_label,
@@ -430,6 +430,14 @@ export function StoreIntakeWizard({
   }, [seededRevision, store, storeFacts.data, storeFacts.isSuccess, untouched]);
 
   const steps = experience.data?.steps ?? [];
+  /*
+   * The contract ships exactly one non-optional step, and the note names it.
+   * If a future contract marks more than one the sentence would be wrong, so
+   * it simply does not render — saying nothing beats saying something false.
+   */
+  const requiredSteps = steps.filter((item) => !item.optional);
+  const requiredStep =
+    requiredSteps.length === 1 ? requiredSteps[0] : undefined;
   const step = experience.data
     ? currentStep(experience.data, state)
     : undefined;
@@ -676,27 +684,39 @@ export function StoreIntakeWizard({
 
       {experience.data && step ? (
         <>
+          {/*
+            A progress track, not a menu. Every chip used to carry its own
+            「可跳过」/「必做」 tag, which turned five ordered steps into five
+            co-equal options and told the merchant four fifths of the guide was
+            skippable before she had seen any of it. Position is what the row
+            shows now — visited / here / ahead — and the one thing she has to
+            do herself is said once, down beside the control that skips.
+          */}
           <ol
             className="mt-4 flex flex-wrap gap-2 text-xs"
             data-testid="store-intake-steps"
           >
-            {steps.map((item, index) => (
-              <li
-                aria-current={item.id === step.id ? 'step' : undefined}
-                className={
-                  item.id === step.id
-                    ? 'rounded-full bg-primary px-3 py-1 text-primary-foreground'
-                    : 'rounded-full bg-muted px-3 py-1 text-muted-foreground'
-                }
-                data-step={item.id}
-                key={item.id}
-              >
-                {index + 1}. {STEP_LABELS[item.id]()} ·{' '}
-                {item.optional
-                  ? store_intake_step_optional()
-                  : store_intake_step_required()}
-              </li>
-            ))}
+            {steps.map((item, index) => {
+              const current = item.id === step.id;
+              const visited = index < state.stepIndex;
+              return (
+                <li
+                  aria-current={current ? 'step' : undefined}
+                  className={cn(
+                    'rounded-full px-3 py-1',
+                    current
+                      ? 'bg-primary text-primary-foreground'
+                      : visited
+                        ? 'bg-surface-1 text-foreground'
+                        : 'bg-muted text-muted-foreground'
+                  )}
+                  data-step={item.id}
+                  key={item.id}
+                >
+                  {index + 1}. {STEP_LABELS[item.id]()}
+                </li>
+              );
+            })}
           </ol>
 
           <div className="mt-4 space-y-3">
@@ -1240,30 +1260,42 @@ export function StoreIntakeWizard({
             ) : null}
           </div>
 
-          <div className="mt-4 flex gap-2">
-            <Button
-              data-testid="store-intake-back"
-              disabled={state.stepIndex === 0}
-              onClick={() =>
-                setState((current) => goToStep(experience.data!, current, -1))
-              }
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {store_intake_back()}
-            </Button>
-            <Button
-              data-testid="store-intake-next"
-              disabled={state.stepIndex >= steps.length - 1}
-              onClick={() =>
-                setState((current) => goToStep(experience.data!, current, 1))
-              }
-              size="sm"
-              type="button"
-            >
-              {store_intake_next()}
-            </Button>
+          <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className="flex gap-2">
+              <Button
+                data-testid="store-intake-back"
+                disabled={state.stepIndex === 0}
+                onClick={() =>
+                  setState((current) => goToStep(experience.data!, current, -1))
+                }
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {store_intake_back()}
+              </Button>
+              <Button
+                data-testid="store-intake-next"
+                disabled={state.stepIndex >= steps.length - 1}
+                onClick={() =>
+                  setState((current) => goToStep(experience.data!, current, 1))
+                }
+                size="sm"
+                type="button"
+              >
+                {store_intake_next()}
+              </Button>
+            </div>
+            {requiredStep ? (
+              <p
+                className="text-xs text-muted-foreground"
+                data-testid="store-intake-step-required-note"
+              >
+                {store_intake_step_required_note({
+                  step: STEP_LABELS[requiredStep.id](),
+                })}
+              </p>
+            ) : null}
           </div>
         </>
       ) : null}

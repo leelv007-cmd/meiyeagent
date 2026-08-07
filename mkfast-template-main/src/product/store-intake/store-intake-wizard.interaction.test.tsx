@@ -138,13 +138,17 @@ afterEach(() => {
 });
 
 describe('StoreIntakeWizard', () => {
-  it('walks the five server-declared steps and marks the last one required', async () => {
+  it('walks the five server-declared steps and names the required one once', async () => {
     renderWizard();
     const steps = await screen.findByTestId('store-intake-steps');
     expect(steps.querySelectorAll('li')).toHaveLength(5);
-    expect(
-      steps.querySelector('[data-step="confirm_each"]')?.textContent
-    ).toContain('必做');
+    // The chips used to carry a 「可跳过」/「必做」 tag each, which read as five
+    // co-equal options rather than an ordered walk. Requiredness is stated
+    // once now, beside the control that skips, and it names the step it means.
+    expect(steps.textContent).not.toContain('可跳过');
+    expect(steps.textContent).not.toContain('必做');
+    const note = screen.getByTestId('store-intake-step-required-note');
+    expect(note.textContent).toContain('你逐条点头');
     expect(await screen.findByTestId('store-intake-example')).toBeTruthy();
 
     for (let index = 0; index < 4; index += 1) {
