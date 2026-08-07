@@ -51,7 +51,6 @@ import {
   normalizePreferences,
 } from '@/p1/settings-view-model';
 import { resolveCreationModelSelection } from '@/p1/model-current-selection';
-import { useComplianceDefaults } from '@/p1/use-compliance-defaults';
 import type {
   BriefBoundRevisions,
   BriefTriggerInput,
@@ -97,7 +96,10 @@ import {
   DashboardHomeGreeting,
   DashboardHomeSurface,
 } from '@/product/dashboard-home-surface';
-import { applyRecommendationHandoffWithRecipe } from '@/product/recommendation-handoff';
+import {
+  applyRecommendationHandoffWithRecipe,
+  recommendationHandoffKeepsUserText,
+} from '@/product/recommendation-handoff';
 import type { RecommendationHandoff } from '@/product/recommendation-handoff';
 import type { ConfirmedAssetFacts } from '@/product/creation-entry-model';
 import { ViralAdaptPanel } from '@/product/viral-adapt/viral-adapt-panel';
@@ -167,6 +169,10 @@ import {
 } from './composer-style-reference-control';
 import { toggleStyleReferenceAsset } from './style-analysis-entry';
 import { ProgressiveFactCard } from './progressive-fact-card';
+import {
+  projectComposerHandoffNotice,
+  type ComposerHandoffNoticeView,
+} from './handoff-notice';
 import {
   hasMissingProgressiveStoreFacts,
   shouldShowProgressiveFactCard,
@@ -266,7 +272,7 @@ import {
   type ComposerCreationMode,
   type ComposerReuseChip,
 } from './composer-conversation';
-import { COMPOSER_LENS_LABELS } from './lens-labels';
+import { COMPOSER_LENS_LABELS, LENS_REQUIRED_SUBMIT_HINT } from './lens-labels';
 import { ComposerQuestionCard } from './composer-question-card';
 import { composerQuestionHold } from './composer-question-timeout';
 import type { ComposerDeliveryOpenInput } from './composer-delivery-card';
@@ -388,11 +394,25 @@ type PendingCreditRun = {
  * and it used to look identical in both, so a merchant pressed what they read
  * as 开始创作 and got a question instead. This says which one is armed before
  * the press, and the same sentence becomes the button's accessible name.
+ *
+ * D-C2: the lens gate is checked first because it is the one blocker that stops
+ * the press outright. It used to be invisible until a press failed, while the
+ * 门店信息 line below promised that pressing send would just ask a few
+ * questions — a promise that branch cannot keep for a missing 创作类型. Ordering
+ * it first means the 门店信息 sentence is only ever shown when it is true, and
+ * it now says which gap it is talking about.
  */
 function composerSubmitIntent(input: {
   groundingBlocker: ComposerGroundingBlocker | null;
+  lensSelected: boolean;
   storeFactsPending: boolean;
 }): { label: string; hint: string | null } {
+  if (!input.lensSelected) {
+    return {
+      label: LENS_REQUIRED_SUBMIT_HINT,
+      hint: '还没选创作类型：在上面的「创作类型（必选）」里选一个，发送就会亮起来。',
+    };
+  }
   if (input.groundingBlocker === 'source') {
     return {
       label: '先确认素材来源',
@@ -408,7 +428,7 @@ function composerSubmitIntent(input: {
   if (input.storeFactsPending) {
     return {
       label: '先补门店信息',
-      hint: '门店信息还没补齐，点发送会先问你几个问题，补完才开始生成。',
+      hint: '门店信息还差几条：点发送我先问这几条，补完接着生成。',
     };
   }
   return { label: creation_entry_submit(), hint: null };
@@ -510,10 +530,6 @@ export function ComposerHome({
         signal
       ),
   });
-  // `regulated` is a platform/category admission call, not a merchant answer:
-  // the Day-0 profile has to be seeded with the admin default rather than a
-  // hardcoded `false` (W01 / D-151④).
-  const complianceDefaults = useComplianceDefaults();
   const primaryProjectId = product.state?.store?.projects[0]?.id;
   const primaryServiceFactId = primaryProjectId
     ? `store-project:${primaryProjectId}:service`
@@ -603,6 +619,17 @@ export function ComposerHome({
   const [viralAdaptBinding, setViralAdaptBinding] =
     useState<ViralAdaptRunBinding | null>(null);
   const [showRequiredHint, setShowRequiredHint] = useState(false);
+  /**
+   * D-C1: what the last suggestion chip changed, plus the snapshot that takes
+   * it back. Held outside `lensState` because undo has to restore that state
+   * wholesale — lens, recipe binding and sentence together — and a record that
+   * lived inside it would be restored away by the very action it describes.
+   */
+  const [handoffNotice, setHandoffNotice] = useState<{
+    view: ComposerHandoffNoticeView;
+    lensState: ComposerLensState;
+    viralAdaptJourney: ViralAdaptJourneyState;
+  } | null>(null);
   /**
    * Why the last send press did not start a run (WCAG 3.3.1).
    *
@@ -2102,8 +2129,24 @@ export function ComposerHome({
         submissionRecipe?.recipeId === 'recipe.viral_adapt',
       viralSubmissionRecipeReady,
     });
+  /**
+   * D-C1 撤销: put the composer back exactly where the chip found it. The
+   * snapshot covers the lens draft and the 爆款复刻 journey together, because a
+   * chip can start both and undoing only half would leave a sourcing card open
+   * over a draft that no longer asks for it.
+   */
+  const undoHandoff = () => {
+    if (!handoffNotice) return;
+    setViralAdaptBinding(null);
+    cancelViralOpenCliRead();
+    setViralAdaptJourney(handoffNotice.viralAdaptJourney);
+    setLensState(handoffNotice.lensState);
+    setHandoffNotice(null);
+  };
+
   const handleLensChange = (next: CreationLensId) => {
     setShowRequiredHint(false);
+    setHandoffNotice(null);
     setSubmissionGroundingBlocked(null);
     setFreeCatalogModelId(null);
     // A press was for one form of content at one price. Choosing another form
@@ -2133,6 +2176,7 @@ export function ComposerHome({
     setCreationMode(next);
     setFreeCatalogModelId(null);
     setShowRequiredHint(false);
+    setHandoffNotice(null);
     setSubmissionGroundingBlocked(null);
     setSubmitBlockedMessage(null);
     armedQuoteIdRef.current = null;
@@ -2245,6 +2289,8 @@ export function ComposerHome({
   const handleIntentChange = (value: string) => {
     setSubmissionGroundingBlocked(null);
     setSubmitBlockedMessage(null);
+    // Once they start editing, the chip's change is theirs — nothing to undo.
+    setHandoffNotice(null);
     destinationAutoSubmitIntentRef.current = null;
     setDestinationPreflight(null);
     setViralAdaptBinding(null);
@@ -2891,6 +2937,7 @@ export function ComposerHome({
       !product.error
         ? groundingBlockerFromMissing(missingGrounding)
         : null,
+    lensSelected: lensId != null,
     storeFactsPending: creationMode === 'customized' && showProgressiveFact,
   });
 
@@ -3034,7 +3081,9 @@ export function ComposerHome({
               </span>
             ) : null
           }
-          breadcrumbs={[{ label: product_navigation_workbench(), isCurrentPage: true }]}
+          breadcrumbs={[
+            { label: product_navigation_workbench(), isCurrentPage: true },
+          ]}
         />
       }
       widthMode={widthMode}
@@ -3116,28 +3165,8 @@ export function ComposerHome({
         {creationMode === 'customized' && showProgressiveFact ? (
           <ProgressiveFactCard
             activeFacts={product.state?.store ? (storeFacts.data ?? []) : []}
-            factHeads={product.state?.store ? storeFactHeads : []}
             key={`progressive-fact:${product.state?.workspaceId}:${product.state?.store?.revision ?? 0}:${storeFactHeadRevisionKey}`}
-            onConfirm={async (request, idempotencyKey) => {
-              await commandP1('asset-memory', request, idempotencyKey);
-              setSubmissionGroundingBlocked(null);
-              // Command already committed. Refresh failures must not look like
-              // a failed confirm — refetch best-effort and still invalidate the
-              // today recommendation so cold chips can light up (QA ISSUE-003/008).
-              await Promise.allSettled([
-                product.refresh(),
-                storeFacts.refetch(),
-                queryClient.invalidateQueries({
-                  queryKey: ['harness', 'today-recommendation'],
-                }),
-              ]);
-            }}
-            pending={product.pending}
-            regulatedDefault={
-              complianceDefaults.data?.['compliance.regulated_mode.default']
-            }
             store={product.state?.store}
-            workspaceId={product.state?.workspaceId ?? ''}
           />
         ) : null}
 
@@ -3569,6 +3598,27 @@ export function ComposerHome({
               <WorkbenchStickyComposerClearance sticky={stickyComposer} />
               {/* P1-2: Active morph Composer to sticky bottom; clear mobile-nav. */}
               <WorkbenchStickyComposerHost sticky={stickyComposer}>
+                {/* D-C1: what the last chip changed, and the way back out. */}
+                {handoffNotice ? (
+                  <output
+                    className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1.5"
+                    data-testid="composer-handoff-notice"
+                  >
+                    <span className="min-w-0 text-xs text-foreground">
+                      {handoffNotice.view.message}
+                    </span>
+                    <Button
+                      className="h-7 px-2 text-xs"
+                      data-testid="composer-handoff-undo"
+                      onClick={undoHandoff}
+                      size="sm"
+                      type="button"
+                      variant="ghost"
+                    >
+                      {handoffNotice.view.undoLabel}
+                    </Button>
+                  </output>
+                ) : null}
                 <ComposerPromptBar
                   ariaLabel={creation_entry_intent_aria()}
                   // DESIGN.md 白瓷 Composer 大卡 — pinned by the product shell contract.
@@ -3663,6 +3713,10 @@ export function ComposerHome({
                     lensState.phase === 'frozen'
                   }
                   submitDisabled={
+                    // D-C2: no lens means `canSubmit` will refuse, so the
+                    // control says so instead of accepting a press that goes
+                    // nowhere. The reason rides `submitHint` next to it.
+                    lensId == null ||
                     createWork.isPending ||
                     creditAdmissionPending ||
                     briefPending ||
@@ -3677,7 +3731,7 @@ export function ComposerHome({
                     // that resolves the wait the one click the merchant cannot make.
                     (lensId != null && !currentQuoteView && !quoteSettling)
                   }
-                  lensRequired={showRequiredHint}
+                  lensRequired={lensId == null}
                   lensSlot={
                     <>
                       <LensRadiogroup
@@ -4093,6 +4147,18 @@ export function ComposerHome({
             // P0-4 / F1: typed handoff. Respect outputHint when present;
             // never hard-code copy lens when the recommendation has no hint.
             focusIntentAfterPrefillRef.current = true;
+            // D-C1: read the outcome before the update so the undo bar can say
+            // which of the two things happened — 填入 or 只挂配方.
+            setHandoffNotice({
+              view: projectComposerHandoffNotice({
+                handoff,
+                text: recommendationHandoffKeepsUserText(lensState)
+                  ? 'kept_user_text'
+                  : 'prefilled',
+              }),
+              lensState,
+              viralAdaptJourney,
+            });
             setViralAdaptBinding(null);
             if (lensState.phase === 'frozen' || session.phase === 'delivered') {
               sessionIdRef.current = newComposerSessionId();
