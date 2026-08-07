@@ -1,4 +1,5 @@
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
+import { appPageHead } from '@/lib/seo';
 import {
   settings_models_byok_description,
   settings_models_byok_heading,
@@ -16,6 +17,7 @@ export const Route = createFileRoute('/settings/models')({
   validateSearch: (search: Record<string, unknown>) => ({
     section: search.section === 'byok' ? 'byok' : undefined,
   }),
+  head: () => appPageHead(settings_navigation_models()),
   component: ModelsPage,
 });
 
@@ -48,7 +50,10 @@ function ModelsPage() {
           advancedOpen={advancedOpen}
           onAdvancedOpenChange={setAdvancedOpen}
           advancedExtra={
-            <section className="space-y-3 border-t border-divider pt-6" id="byok">
+            <section
+              className="space-y-3 border-t border-divider pt-6"
+              id="byok"
+            >
               <div>
                 <h3 className="meiye-type-body font-semibold">
                   {settings_models_byok_heading()}

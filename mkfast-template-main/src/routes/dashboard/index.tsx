@@ -7,6 +7,8 @@ import {
 } from '@/product/composer/ai-cover-action';
 import { desktopRelayLanding } from '@/product/device-relay';
 import { useIsMobile } from '@/hooks/use-mobile';
+import { appPageHead } from '@/lib/seo';
+import { product_navigation_workbench } from '@/locale/paraglide/messages';
 import { createFileRoute } from '@tanstack/react-router';
 import { useEffect } from 'react';
 
@@ -89,6 +91,7 @@ export const Route = createFileRoute('/dashboard/')({
       ? { workId: search.workId }
       : {}),
   }),
+  head: () => appPageHead(product_navigation_workbench()),
   component: DashboardHome,
 });
 

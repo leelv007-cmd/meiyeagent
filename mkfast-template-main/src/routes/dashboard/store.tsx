@@ -57,6 +57,7 @@ import {
   product_navigation_workspace,
 } from '@/locale/paraglide/messages';
 import { formatLocaleDateTime } from '@/lib/locale';
+import { appPageHead } from '@/lib/seo';
 import { Routes } from '@/lib/routes';
 import { queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
@@ -125,6 +126,7 @@ export const Route = createFileRoute('/dashboard/store')({
       });
     }
   },
+  head: () => appPageHead(product_navigation_store()),
   component: StoreProfilePage,
 });
 

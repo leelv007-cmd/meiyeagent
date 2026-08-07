@@ -1,4 +1,5 @@
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
+import { appPageHead } from '@/lib/seo';
 import { IntegrationSettings } from '@/p1/integration-settings';
 import { createFileRoute } from '@tanstack/react-router';
 import {
@@ -8,6 +9,7 @@ import {
 } from '@/locale/paraglide/messages';
 
 export const Route = createFileRoute('/settings/connections')({
+  head: () => appPageHead(settings_navigation_connections()),
   component: ConnectionsPage,
 });
 

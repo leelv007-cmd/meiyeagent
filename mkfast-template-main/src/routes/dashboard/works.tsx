@@ -1,3 +1,5 @@
+import { appPageHead } from '@/lib/seo';
+import { product_navigation_content } from '@/locale/paraglide/messages';
 import { WorksListPage } from '@/product/works';
 import { createFileRoute } from '@tanstack/react-router';
 
@@ -13,5 +15,6 @@ import { createFileRoute } from '@tanstack/react-router';
  * --radius collide with the shadcn tokens the rest of the app still uses.
  */
 export const Route = createFileRoute('/dashboard/works')({
+  head: () => appPageHead(product_navigation_content()),
   component: WorksListPage,
 });

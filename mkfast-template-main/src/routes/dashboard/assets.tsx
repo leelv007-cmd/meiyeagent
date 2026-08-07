@@ -1,5 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { getLocale } from '@/lib/locale';
+import { appPageHead } from '@/lib/seo';
+import { product_navigation_assets } from '@/locale/paraglide/messages';
 import { CanonicalHistoryPage } from '@/product/canonical-history-page';
 import { useProductState } from '@/product/client';
 import { MarketingIdentityManager } from '@/product/marketing-identity-manager';
@@ -8,6 +10,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useState } from 'react';
 
 export const Route = createFileRoute('/dashboard/assets')({
+  head: () => appPageHead(product_navigation_assets()),
   component: AssetLibraryPage,
 });
 

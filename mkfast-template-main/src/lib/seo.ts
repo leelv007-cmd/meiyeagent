@@ -53,6 +53,21 @@ export function seo(
   };
 }
 
+/**
+ * Head for a signed-in product page.
+ *
+ * Marketing pages call `seo()` and get the whole crawler kit; a merchant tab
+ * needs none of that — it needs to be tellable apart from the other seven tabs
+ * the same merchant has open. Every /dashboard/* and /settings/* page used to
+ * inherit the root's marketing title, so the browser showed eight identical
+ * tabs and history was unsearchable. Same page-then-site order as /pricing.
+ */
+export function appPageHead(title: string) {
+  return {
+    meta: [{ title: `${title} | ${websiteConfig.metadata?.name}` }],
+  };
+}
+
 export const metadata = ({
   title,
   description,

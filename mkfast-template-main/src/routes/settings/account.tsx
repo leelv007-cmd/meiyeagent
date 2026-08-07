@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect } from 'react';
 
+import { appPageHead } from '@/lib/seo';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { UpdateAvatarCard } from '@/components/settings/profile/update-avatar-card';
 import { UpdateNameCard } from '@/components/settings/profile/update-name-card';
@@ -36,6 +37,7 @@ export const Route = createFileRoute('/settings/account')({
       ? { section }
       : {};
   },
+  head: () => appPageHead(settings_navigation_account()),
   component: AccountPage,
 });
 

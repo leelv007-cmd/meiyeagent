@@ -1,4 +1,5 @@
 import { DashboardHeader } from '@/components/layout/dashboard-header';
+import { appPageHead } from '@/lib/seo';
 import {
   memory_page_title,
   product_navigation_memory,
@@ -11,6 +12,7 @@ import { createFileRoute } from '@tanstack/react-router';
  * surface lives in product/, same shape as the identity route next door.
  */
 export const Route = createFileRoute('/dashboard/memory')({
+  head: () => appPageHead(product_navigation_memory()),
   component: MemoryVaultRoute,
 });
 
