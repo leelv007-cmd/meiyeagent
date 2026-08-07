@@ -69,6 +69,9 @@ import {
   canonical_history_recent_title,
   canonical_history_retry,
   canonical_history_search_title,
+  canonical_history_sessions_empty_action,
+  canonical_history_sessions_empty_description,
+  canonical_history_sessions_empty_title,
   canonical_history_untitled_asset,
   canonical_history_untitled_material,
   canonical_media_kind_image,
@@ -157,6 +160,14 @@ const copy: Record<
     description: () => string;
     title: () => string;
     kind?: CanonicalHistoryKind;
+    /**
+     * Empty-state copy for modes that can say what would appear here. Without
+     * it the shared fallback repeats its own title as the body, which tells
+     * the merchant nothing and names no next step.
+     */
+    emptyAction?: () => string;
+    emptyDescription?: () => string;
+    emptyTitle?: () => string;
   }
 > = {
   assets: {
@@ -180,6 +191,9 @@ const copy: Record<
   },
   sessions: {
     description: legacy_projection_history_sessions_description,
+    emptyAction: canonical_history_sessions_empty_action,
+    emptyDescription: canonical_history_sessions_empty_description,
+    emptyTitle: canonical_history_sessions_empty_title,
     kind: 'session',
     title: product_navigation_content,
   },
@@ -358,19 +372,23 @@ export function CanonicalHistoryList({
       );
     }
 
+    const modeCopy = copy[mode];
     return (
       <WarmEmptyState
         action={
           <a
             className={buttonVariants()}
+            data-testid="canonical-history-empty-action"
             href={getPathWithLocale(Routes.Dashboard)}
           >
-            {product_navigation_workbench()}
+            {(modeCopy.emptyAction ?? product_navigation_workbench)()}
           </a>
         }
-        description={canonical_history_empty_description()}
+        description={(
+          modeCopy.emptyDescription ?? canonical_history_empty_description
+        )()}
         media={<IconPhoto />}
-        title={canonical_history_empty_title()}
+        title={(modeCopy.emptyTitle ?? canonical_history_empty_title)()}
       />
     );
   }
