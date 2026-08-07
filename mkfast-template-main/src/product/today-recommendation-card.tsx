@@ -347,7 +347,12 @@ function emptyDescription(kind: 'cold' | 'pending' | 'stale') {
 
 /**
  * Idle empty face (P0 density): one personified line + start CTA.
- * Honest title stays the accessible name; no second heavy porcelain card.
+ *
+ * The strip fills with the same solid surface as the neutral capsules beside
+ * it: an alpha token over the ambient layer resolves to no base at all, so the
+ * line would read straight off the backdrop image (panel-material contract).
+ * The description is a sibling of the heading, never a child of it — nesting it
+ * made the honest title and the whole explanation one accessible name.
  */
 function EmptyRecommendationPanel({
   kind,
@@ -358,15 +363,17 @@ function EmptyRecommendationPanel({
 }) {
   return (
     <div
-      className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-full border border-border/50 bg-muted/30 px-3 py-2"
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-full border border-border/50 bg-background px-3 py-2"
       data-testid="today-recommendation-empty-panel"
     >
-      <h2 className="min-w-0 flex-1 text-sm font-medium leading-5 text-foreground">
-        {emptyChipLabel(kind)}
-        <span className="mt-0.5 block text-xs font-normal text-muted-foreground sm:mt-0 sm:ml-2 sm:inline">
+      <div className="min-w-0 flex-1">
+        <h2 className="text-sm font-medium leading-5 text-foreground sm:inline">
+          {emptyChipLabel(kind)}
+        </h2>
+        <p className="mt-0.5 text-xs text-muted-foreground sm:mt-0 sm:ml-2 sm:inline">
           {emptyDescription(kind)}
-        </span>
-      </h2>
+        </p>
+      </div>
       <Button
         data-testid="today-recommendation-start"
         onClick={onStart}
