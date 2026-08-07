@@ -63,9 +63,27 @@
   --warning-foreground: var(--color-yellow-900);
   --invert: var(--color-zinc-900);
   --invert-foreground: var(--color-zinc-50);
+  /* 氛围层（DESIGN.md §1/§7）：一张磨砂渐变光晕 + 两档纱。数值只在这里和下面的
+     `.dark` 各一份 —— 两个消费者（工作台壳的 ::before、auth 面的 ::before）读同一组
+     token，46% 最坏点的实测值不留第二个答案。压字色 `--ambient-text` 不在这里，它跟
+     各自壳的 `--ink` 走，明暗自行反转。 */
+  --ambient-image: url("/seed/ambient-gradient.webp");
+  --ambient-scrim-top: oklch(1 0 0 / 0.34);
+  /* 46% 是整条氛围带的最坏点：第三档是不透明的 --canvas，从这里往下遮罩越来越实、
+     对比度回升。原值 0.14 在图像最暗像素处只把 --ink-60 托到 4.22:1。0.30 → 4.53:1。
+     逐像素解 ambient-gradient.webp 全部 2000×1125，在 gamma sRGB 空间合成（CSS 的
+     alpha 合成就在 gamma 空间），最暗像素 rgb(226,135,93)。 */
+  --ambient-scrim-mid: oklch(1 0 0 / 0.3);
+  --ambient-text-shadow: 0 1px 2px oklch(1 0 0 / 0.55);
 }
 
 .dark {
+  /* 同一张浅色渐变底图，暗色下压黑纱降到暗背景该有的亮度，字回到浅色。同上 46%
+     最坏点：原值 0.52 在图像最亮像素 rgb(254,251,240) 处只把压字色（暗色 --ink
+     oklch(0.94 0 0)，Y = 0.94³ = 0.8306）托到 3.68:1 —— 低于 WCAG AA。0.60 → 4.94:1。 */
+  --ambient-scrim-top: oklch(0 0 0 / 0.74);
+  --ambient-scrim-mid: oklch(0 0 0 / 0.6);
+  --ambient-text-shadow: 0 1px 2px oklch(0 0 0 / 0.45);
   --surface-0: oklch(0.145 0 0);
   --surface-1: oklch(0.205 0 0);
   --surface-2: oklch(0.245 0 0);
@@ -232,18 +250,9 @@
     --shadow-overlay: 0 4px 20px oklch(0 0 0 / 0.12);
     --shadow-rose-glow: 0 6px 16px oklch(0.63 0.13 18 / 0.24);
     --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
-    /* 首屏氛围底图：磨砂玻璃质感的渐变光晕，不再用人物照片。
-       浅色下用白纱压一层保证压在上面的深色字可读；暗色下换成黑纱（见下方
-       .dark 覆盖），--ambient-text 跟着 --ink 走，两个主题各自反转。 */
-    --ambient-image: url("/seed/ambient-gradient.webp");
-    --ambient-scrim-top: oklch(1 0 0 / 0.34);
-    /* 46% 是整条氛围带的最坏点：第三档是不透明的 --canvas，从这里往下遮罩反而
-       越来越实、对比度回升。原值 0.14 在图像最暗像素处只把 --ink-60 托到 4.22:1。
-       0.30 → 4.53:1。逐像素解 ambient-gradient.webp 全部 2000×1125，在 gamma sRGB
-       空间合成（CSS 的 alpha 合成就在 gamma 空间），最暗像素 rgb(226,135,93)。 */
-    --ambient-scrim-mid: oklch(1 0 0 / 0.3);
+    /* 首屏氛围底图与两档纱的数值在文件顶部的 :root / .dark 里，工作台与 auth 面
+       共用同一组 token（见那里的实测说明）。这里只留壳自己的压字色别名。 */
     --ambient-text: var(--ink);
-    --ambient-text-shadow: 0 1px 2px oklch(1 0 0 / 0.55);
     --surface-0: var(--canvas);
     --surface-1: oklch(0.985 0 0);
     --surface-2: var(--paper);
@@ -603,13 +612,6 @@
     --spark: oklch(0.72 0.11 18);
     --spark-wash: oklch(0.3 0.045 18);
     --spark-deep: oklch(0.88 0.05 18);
-    /* 同一张浅色渐变底图，暗色下压黑纱降到暗背景该有的亮度，字回到浅色 */
-    --ambient-scrim-top: oklch(0 0 0 / 0.74);
-    /* 同上 46% 最坏点。原值 0.52 在图像最亮像素 rgb(254,251,240) 处只把
-       --ambient-text（暗色 = --ink oklch(0.94 0 0)，Y = 0.94³ = 0.8306）托到
-       3.68:1 —— 低于 WCAG AA，且这是氛围层换血那次从未验过的数。0.60 → 4.94:1。 */
-    --ambient-scrim-mid: oklch(0 0 0 / 0.6);
-    --ambient-text-shadow: 0 1px 2px oklch(0 0 0 / 0.45);
     --surface-0: var(--canvas);
     --surface-1: oklch(0.21 0 0);
     --surface-2: oklch(0.25 0 0);
@@ -669,6 +671,160 @@
   .meiye-auth-shell [data-slot="button"].bg-primary:hover,
   .meiye-auth-shell button.bg-primary:hover {
     background: oklch(0.32 0 0);
+  }
+
+  /*
+   * ── auth 五页：商家的第一触点，也回到「门店橱窗」 ───────────────────────────
+   *
+   * `.meiye-auth-shell` 上面那一段是 auth 与 /privacy 共用的中性壳（墨丸主色、白瓷
+   * 画布），它只保证「不是营销橙」。auth 面自己还差两件事：**没有氛围层、没有暗色**
+   * —— 五页在暗色主题下恒亮白，而工作台一进去就是暗的；字阶也只有 12 / 12.8 / 14
+   * 三档（最大比 1.3:1），问候语「欢迎回来，接着做今天的宣发」当时是 14px 的
+   * CardDescription，比工作台同一句话的 Display 低了整整两个层级。
+   *
+   * 这一段只加在 `.meiye-auth-window` 上（auth 布局独有），/privacy 不受影响：那页
+   * 是长正文，套氛围层没有意义，暗色化也不属本次范围。
+   *
+   * 材质一件不新造：氛围层读文件顶部 :root/.dark 的同一组 `--ambient-*`（同一张
+   * 底图、同一组实测 scrim），卡片走 `.meiye-porcelain`（meiye-materials.css，全站
+   * 唯一定义处）。DESIGN.md §4 明确表单属实体内容区，只准白瓷不准玻璃，所以这里
+   * 没有一片 glass。玫瑰金一处也没有 —— auth 没有 AI 时刻（一点胭脂法则）。
+   */
+  .meiye-auth-window {
+    --ink: oklch(0.22 0 0);
+    --ink-90: oklch(0 0 0 / 0.9);
+    --ink-60: oklch(0 0 0 / 0.6);
+    --ink-40: oklch(0 0 0 / 0.4);
+    --paper: oklch(1 0 0);
+    --canvas: oklch(0.965 0 0);
+    --glass-edge: oklch(1 0 0 / 0.55);
+    --hairline: oklch(0 0 0 / 0.04);
+    --shadow-ambient: 0 2px 20px oklch(0 0 0 / 0.03);
+    --ambient-text: var(--ink);
+    position: relative;
+    isolation: isolate;
+    background: var(--canvas);
+    color: var(--ink);
+  }
+
+  /* 与工作台壳同一张底图、同一组纱、同一个 46% 转折点，只是这里铺满整页而不是
+     铺在侧栏壳下面。 */
+  .meiye-auth-window::before {
+    position: absolute;
+    inset: 0 0 auto;
+    height: max(100svh, 720px);
+    background:
+      linear-gradient(
+        to bottom,
+        var(--ambient-scrim-top) 0%,
+        var(--ambient-scrim-mid) 46%,
+        var(--canvas) 100%
+      ),
+      var(--ambient-image) center 36% / cover no-repeat;
+    content: "";
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  .dark .meiye-auth-window {
+    /* DESIGN.md §7 的暗色对应物，逐值同 `.dark .meiye-product-shell`。 */
+    --ink: oklch(0.94 0 0);
+    --ink-90: oklch(1 0 0 / 0.92);
+    --ink-60: oklch(1 0 0 / 0.66);
+    --ink-40: oklch(1 0 0 / 0.4);
+    --paper: oklch(0.21 0 0);
+    --canvas: oklch(0.17 0 0);
+    --glass-edge: oklch(1 0 0 / 0.18);
+    --hairline: oklch(1 0 0 / 0.1);
+    --primary: var(--ink);
+    --primary-foreground: var(--canvas);
+    --ring: oklch(0.85 0.08 18);
+    --background: var(--canvas);
+    --foreground: var(--ink);
+    --card: var(--paper);
+    --card-foreground: var(--ink);
+    --popover: oklch(0.22 0 0);
+    --popover-foreground: var(--ink);
+    --muted-foreground: var(--ink-60);
+    --border: oklch(1 0 0 / 0.1);
+    --input: oklch(1 0 0 / 0.14);
+    --surface-0: var(--canvas);
+    /* 输入框走 surface-1，而 auth 面的白瓷底就是 --paper(0.21) —— 照 DESIGN.md §7
+       的 surface-1 取值填，字段和它坐着的卡是同一个 rgb(24,24,24)，暗色下整张表单
+       只剩描边可辨。往上挪一档（0.25 = §7 的 surface-2），字段回到卡里的一口浅井，
+       和浅色下白瓷 1.0 / 字段 0.985 的关系同构；hover 再高一档。 */
+    --surface-1: oklch(0.25 0 0);
+    --surface-2: oklch(0.29 0 0);
+    --surface-divider: var(--hairline);
+  }
+  .dark .meiye-auth-window [data-slot="button"].bg-primary,
+  .dark .meiye-auth-window button.bg-primary {
+    background: var(--ink);
+    color: var(--canvas);
+  }
+  .dark .meiye-auth-window [data-slot="button"].bg-primary:hover,
+  .dark .meiye-auth-window button.bg-primary:hover {
+    background: oklch(1 0 0 / 0.88);
+  }
+
+  /*
+   * 字阶（DESIGN.md §3）。改前五页只有 12 / 12.8 / 14 三档，问候语和法务小字差
+   * 1.17 倍，页面读不出「先看哪一句」。改后四档：
+   *
+   *   Display  200 / clamp(1.75rem, 3.5vw, 2.75rem) / 1.2   登录 + 注册的问候语
+   *   Headline 600 / 1.5rem / 1.25                          忘记密码 / 重置 / 出错
+   *   Lead     400 / 1rem / 1.75                            标题下那一句说明
+   *   Body     400 / 0.875rem / 1.55（表单）  Meta 0.75rem / 1.6（法务与页脚）
+   *
+   * 为什么顶档分两种：DESIGN.md §3「问候语法则」写死 Display 只承载拟人化问候，
+   * 禁止放功能标题。「忘记密码」「重置密码」是功能标题，所以走 Headline —— 同一族
+   * 里按页面角色取档，不是五页五套。
+   *
+   * 中文行高不跟英文：Lead 用 1.75、正文 1.55，比模板默认的 leading-none（表单
+   * label 实测 line-height 就是 14px = 1.0）留得住中文的上下伸展。
+   */
+  /* 这四档不锁在 `.meiye-auth-window` 里：同一个 LoginForm 还会被 navbar 的
+     LoginWrapper 以模态渲染在营销页上（那里没有氛围层），fallback 让它在两处都
+     拿到同一套字阶，只是压字色退回该处的前景色。 */
+  .meiye-auth-display {
+    color: var(--ambient-text, var(--foreground));
+    font-size: clamp(1.75rem, 3.5vw, 2.75rem);
+    font-weight: 200;
+    line-height: 1.2;
+    text-shadow: var(--ambient-text-shadow);
+    /* 中文可以在任意两字之间断行，问候语因此断成过「开个账号，今／天就能发第一条」。
+       keep-all 把 CJK 之间的断点全关掉，只剩标点后那一处 —— 两句都是「短句，长句」
+       的写法，所以断在逗号后正好是它本来的读法。段落文字不设这条（`.meiye-auth-lead`
+       要正常排版），只给这两档标题。 */
+    word-break: keep-all;
+  }
+  .meiye-auth-headline {
+    color: var(--ambient-text, var(--foreground));
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.25;
+    text-shadow: var(--ambient-text-shadow);
+    word-break: keep-all;
+  }
+  .meiye-auth-lead {
+    color: var(--ink-90, var(--foreground));
+    font-size: 1rem;
+    font-weight: 400;
+    line-height: 1.75;
+    text-shadow: var(--ambient-text-shadow);
+  }
+  .meiye-auth-meta {
+    color: var(--ink-60, var(--muted-foreground));
+    font-size: 0.75rem;
+    font-weight: 400;
+    line-height: 1.6;
+  }
+  /* 表单 label 的行高在文件末尾的无 layer 段 —— 模板给 label 的 `leading-none`
+     是工具类，@layer components 里的任何一条都压不过它。占位符不在这里改：模板的
+     `placeholder:text-muted-foreground` 在本壳里解到 --ink-60（实测 5.74:1），比
+     DESIGN.md 给占位的 ink-40 更稳，留着它。 */
+  .meiye-auth-window [data-slot="form-label"] {
+    color: var(--ink-90);
   }
 }
 
@@ -732,4 +888,15 @@
 [data-rich-colors="true"][data-sonner-toast][data-type="success"]
   [data-close-button] {
   color: hsl(140 100% 22%);
+}
+
+/*
+ * auth 表单 label 的中文行高。模板的 `Label` 自带 `leading-none`（实测 line-height
+ * 就是 14px，即 1.0），中文在这个行高里贴着盒子上下沿。这条得待在**无 layer** 段：
+ * 上面 @layer components 里的同一条选择器权重再高也压不过一个工具类，而 label 的
+ * `leading-none` 正是工具类。字号与字重不用在这里重复，模板给的 text-sm/500 就是
+ * DESIGN.md Label 档的值。
+ */
+.meiye-auth-window [data-slot="form-label"] {
+  line-height: 1.4;
 }
