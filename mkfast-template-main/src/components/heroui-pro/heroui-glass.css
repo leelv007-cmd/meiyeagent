@@ -126,6 +126,21 @@
 }
 
 /*
+ * 第五面是尺寸：vendored Segment 的 sm 档格高 28px、md 档 32px（同上表），鼠标
+ * 够用，手指不够——DESIGN.md §5 的「触屏最小命中 44px」是硬合同。和上面四段同
+ * 一收法：不逐个调用处加类，在共享边界上收一次；取的是壳自己的 48px
+ * --spacing-touch-target，与 `Button` 在 coarse 上的档位同一个数。
+ *
+ * 门限用 `pointer: coarse` 而不是宽度断点：断点会把窄窗口的桌面用户一起加粗，
+ * 而这条约束的是手指不是视口。指针设备一格不动。
+ */
+@media (pointer: coarse) {
+  .meiye-product-shell .segment__item {
+    min-height: var(--spacing-touch-target, 48px);
+  }
+}
+
+/*
  * 第四面在工具类上：`text-muted` 解析成 --color-muted → --muted，同样是壳里的
  * 底色，于是「素材」「获客台账」两面的说明文案被涂成近乎不可见的字。
  *

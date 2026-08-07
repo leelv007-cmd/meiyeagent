@@ -1005,7 +1005,10 @@ function CapsuleTrigger({
   return (
     <button
       className={cn(
-        'inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition-colors',
+        // 36px is the 紧凑 button height (DESIGN.md §5); a finger needs 44.
+        // Bound to `pointer: coarse` rather than a width breakpoint so the
+        // desktop density stays put even in a narrow window.
+        'inline-flex min-h-9 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-medium transition-colors pointer-coarse:min-h-touch-target',
         'text-foreground hover:bg-foreground/5',
         active && 'ring-foreground/15 bg-foreground/5 ring-1',
         required && 'text-destructive ring-destructive/40 ring-1',
@@ -1447,7 +1450,7 @@ export function ComposerPromptBar({
           aria-describedby={submitHint ? SUBMIT_HINT_ID : undefined}
           aria-label={submitLabel}
           className={cn(
-            'ml-auto inline-flex size-10 shrink-0 items-center justify-center rounded-full',
+            'ml-auto inline-flex size-10 shrink-0 items-center justify-center rounded-full pointer-coarse:size-touch-target',
             'bg-primary text-primary-foreground shadow-sm transition-opacity',
             'hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50'
           )}
