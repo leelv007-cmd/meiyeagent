@@ -57,6 +57,8 @@
 
 ## 落地状态（2026-08-06 当日完成，未提交）
 
+> ⚠️ 2026-08-07 复核更正：本段「全部落地并通过终验」与代码实态不符——§一 公共语言 9 项资产仅落地 3 项（DataGrid/Filters/RouteProgress/IconStack 未拷入、useRouteSheet 零消费）、Sheet 下钻承诺全线未做。差距全录见 `docs/reviews/admin-reui-restyle-review-2026-08-07.md`，拍板处置见本文 §五。
+
 壳层 + 批次 A/B/C 全部落地并通过终验：`pnpm typecheck` 0 错、`pnpm test` 1842/1854（0 败，12 条预存在 skip）、`pnpm test:interaction` 491/491、14 页浏览器逐页走查通过。**D-130（admin 面 HeroUI Pro 壳）自本日起由本方案取代；heroui-pro 目录与商家面壳完全未动。** 终验期间修复：sidebar-config 注释含中文触发 product-surface 契约测试、navigation.test 与 merchant-language-audit 的 D1 改名/blocks 删除同步、skills 目录表说明列溢出截断、孤儿键 admin_shell_navigation_group 删除。
 
 已知遗留（后续开票）：① admin 面还剩两处 heroui 依赖——admin-operations-panels 的图表件（reui 无图表件）与 admin-config-form 的整套单元格编辑器（换装成本畸高）；② /admin/skills 路由标题/描述硬编码中文（无 admin_skills_title 键）；③ supply.views.$viewId 面板标题与页头同文；④ 原生 `<select>` 残留多处（绑 react-hook-form，属交互层改造）；⑤ 敏感词删除仍走 window.confirm 未走 ImpactReviewDialog（逻辑门，审计报告已记）；⑥ heroui-spike 路由仍消费 heroui ListView（spike 性质，未动）；⑦ recipe-studio 未换装仅机械替换容器（待 D3 下线票）。
@@ -67,3 +69,23 @@
 - 全程只换表现层：**任何 use-admin-* / p1 hooks / commandP1/queryP1 调用签名不动**；动作的确认流（ImpactReviewDialog、reason≥8 字）原样保留。
 - 验证：dev:3000 浏览器逐页走查；批次完成后停 dev 跑 typecheck/test:interaction（locale:compile 冲突纪律）；admin 相关 route 测试（-supply.route.test 等）必须绿。
 - 风险纪律：不覆盖任何既有 `src/components/ui/*`（历史事故 703f79df）；模板文件拷入一律走 `src/components/reui/`、`src/components/shared/` 新增路径。
+
+## 五、改约与更正（2026-08-07 拍板）
+
+依据 `docs/reviews/admin-reui-restyle-review-2026-08-07.md`（三路反驳立场复核 + 浏览器走查 + 引证抽查），用户拍板如下：
+
+**改约（正式不采用，§一/§三 相关字样按本节口径读）：**
+- **DataGrid 全家桶、Filters 不补装**。理由：现实现已保住 URL 驱动筛选与服务端分页两条硬语义（supply 运行表的 StateLink 无 JS 可用，强于模板原版），补装收益主要是列头排序/列显隐等交互能力，成本横跨 users/redemptions/models/skills/supply 五页。表格语汇统一口径：优先仓内 `data-table/*`（users 现行），轻表用裸 `<Table>`；§一 表中「DataGrid 全家桶」行与 §三 各行「data-grid」字样均改读「data-table 语汇」。`@dnd-kit/*` 不装。
+- **RouteProgress、IconStack 不采用**。§一「RouteProgress（全局）」与 §三 index 行「Empty/IconStack 空态」撤销；现行加载/空态语言（Frame + Alert + 诚实 unknown）为准。
+- **Sheet 下钻收窄**：仅 users 详情按 #423 补路由驱动 Sheet（`useRouteSheet` 唯一指定消费点）；supply Reference 三段式、tasks 右栏、skills sheet 的承诺撤销，整页跳转形态为准。
+- **假槽位名纠正**：`data-slot="data-grid"`/`"number-stepper"` 贴牌与配套或运算断言由 #427 改为如实命名+真判据。
+
+**遗留清单更正：**
+- ②「/admin/skills 硬编码中文」严重低报——实态为组件层数百行（中英皆有），扩容为 #428 收口。
+- ④「原生 `<select>` 残留多处」已由 #387 清零，条目过期作废。
+- ⑤ 敏感词 `window.confirm`：#388 拆页后已成新页主删除路径，升级为 #425。
+- 新增：#387 同文修复只修 views 一处，同类还剩 audit / tasks / sensitive-words 三处（#426）+ refund 面板英译一处（#424）；`supply.views.$viewId` 缺 `useRecordCrumb` 致深链面包屑错标（#426）。
+
+**§二 六域成员现状更正**（代码为准，`-ia-split.route.test.tsx` 已锁）：账号与商业化 + refund-review（#388 拆入）；运行与治理 + sensitive-words（#388 拆入）；内容与资产 − recipe-studio（#375 路由已删）。
+
+**整改票**：#422 plans 退役键只读（Core readOnly 投影+壳层）｜#423 users 路由驱动详情 Sheet+权限谓词行操作｜#424 refund-review 面板 i18n｜#425 敏感词删除走 ImpactReviewDialog｜#426 同文三处+views RecordCrumb｜#427 四道护栏门（资产清单/断言真判据/heroui 扫描三洞/CJK 门默认纳新）｜#428 硬编码文案入 paraglide。
