@@ -6,6 +6,7 @@
  * projections live in `task-experience.ts`.
  */
 
+import { IconChevronDown } from '@tabler/icons-react';
 import { Link } from '@tanstack/react-router';
 
 import {
@@ -36,14 +37,28 @@ import type {
 function ExperienceFrame({
   children,
   className,
+  defaultOpen = true,
+  disclosure = false,
   testId,
   title,
 }: {
   children: React.ReactNode;
   className?: string;
+  /** Disclosure frames only: start expanded when there is something to read. */
+  defaultOpen?: boolean;
+  /**
+   * A frame that explains a rule rather than reporting an event earns its space
+   * only when the merchant asks for it — the title stays on the main axis, the
+   * explanation folds away behind it. `details`/`summary` keeps that free with
+   * the keyboard and announces itself as a disclosure.
+   */
+  disclosure?: boolean;
   testId: string;
   title: string;
 }) {
+  const heading = (
+    <h2 className="text-foreground text-xs font-medium">{title}</h2>
+  );
   return (
     <section
       aria-label={title}
@@ -51,8 +66,23 @@ function ExperienceFrame({
       data-agent-frame="memory"
       data-testid={testId}
     >
-      <h2 className="text-foreground text-xs font-medium">{title}</h2>
-      <div className="mt-2">{children}</div>
+      {disclosure ? (
+        <details className="group" open={defaultOpen}>
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 pointer-coarse:min-h-touch-target [&::-webkit-details-marker]:hidden">
+            {heading}
+            <IconChevronDown
+              aria-hidden="true"
+              className="text-muted-foreground size-3.5 shrink-0 transition-transform group-open:rotate-180"
+            />
+          </summary>
+          <div className="mt-2">{children}</div>
+        </details>
+      ) : (
+        <>
+          {heading}
+          <div className="mt-2">{children}</div>
+        </>
+      )}
     </section>
   );
 }
@@ -195,17 +225,20 @@ export function ExperienceCorrectionSurface({
   projection: ExperienceCorrectionProjection;
   className?: string;
 }) {
+  const hasCorrection =
+    projection.state !== 'empty' && projection.kind !== null;
   return (
     <ExperienceFrame
       className={className}
+      // Nothing classified yet means the body is house rules, not news: it
+      // folds behind the title until the merchant opens it. A real
+      // classification is news, so it arrives already open.
+      defaultOpen={hasCorrection}
+      disclosure
       testId="experience-correction-surface"
       title={experience_correction_title()}
     >
-      {projection.state === 'empty' || projection.kind === null ? (
-        <p className="meiye-type-aux" data-testid="experience-correction-empty">
-          {experience_correction_empty()}
-        </p>
-      ) : (
+      {hasCorrection ? (
         <div
           data-correction-kind={projection.kind}
           data-testid="experience-correction-ready"
@@ -222,6 +255,10 @@ export function ExperienceCorrectionSurface({
               : experience_correction_task_body()}
           </p>
         </div>
+      ) : (
+        <p className="meiye-type-aux" data-testid="experience-correction-empty">
+          {experience_correction_empty()}
+        </p>
       )}
     </ExperienceFrame>
   );
