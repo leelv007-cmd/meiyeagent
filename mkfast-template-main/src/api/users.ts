@@ -129,3 +129,43 @@ export const listUsers = createServerFn({ method: 'GET' })
       total: Number(count),
     };
   });
+
+const getUserByIdInputSchema = z.object({
+  userId: z.string().min(1),
+});
+
+/**
+ * Single-user read for the route-driven detail sheet (deep link / hard refresh).
+ * Does not change listUsers; same AdminUserListItem shape and attribution rules.
+ */
+export const getUserById = createServerFn({ method: 'GET' })
+  .inputValidator(getUserByIdInputSchema)
+  .middleware([adminApiMiddleware])
+  .handler(async ({ data }): Promise<AdminUserListItem | null> => {
+    const db = getDb();
+    const [row] = await db
+      .select()
+      .from(user)
+      .where(eq(user.id, data.userId))
+      .limit(1);
+    if (!row) return null;
+
+    const { provisionedByUserId, ...safeUser } = row;
+    let provisionerName: string | null = null;
+    if (provisionedByUserId) {
+      const [provisioner] = await db
+        .select({ id: user.id, name: user.name })
+        .from(user)
+        .where(eq(user.id, provisionedByUserId))
+        .limit(1);
+      provisionerName = provisioner?.name ?? null;
+    }
+
+    return {
+      ...safeUser,
+      provisioningAttribution: publicAdminProvisioningAttribution({
+        provisionedByUserId,
+        provisionerName,
+      }),
+    };
+  });

@@ -94,6 +94,7 @@ import { Route as ApiE2eUserSelectedSkillEvidenceRouteImport } from './routes/ap
 import { Route as ApiE2eCreditDetailFixtureRouteImport } from './routes/api/e2e/credit-detail-fixture'
 import { Route as ApiCoreDiagnosticsRouteImport } from './routes/api/core/diagnostics'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
+import { Route as AdminUsersUserIdRouteImport } from './routes/admin/users.$userId'
 import { Route as ApiCoreProductStateRouteImport } from './routes/api/core/product/state'
 import { Route as ApiCoreProductCommandsRouteImport } from './routes/api/core/product/commands'
 import { Route as ApiCoreP1QueryRouteImport } from './routes/api/core/p1/query'
@@ -549,6 +550,11 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   path: '/api/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminUsersUserIdRoute = AdminUsersUserIdRouteImport.update({
+  id: '/$userId',
+  path: '/$userId',
+  getParentRoute: () => AdminUsersRoute,
+} as any)
 const ApiCoreProductStateRoute = ApiCoreProductStateRouteImport.update({
   id: '/api/core/product/state',
   path: '/api/core/product/state',
@@ -715,7 +721,7 @@ export interface FileRoutesByFullPath {
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
-  '/admin/users': typeof AdminUsersRoute
+  '/admin/users': typeof AdminUsersRouteWithChildren
   '/api/ping': typeof ApiPingRoute
   '/auth/error': typeof AuthErrorRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
@@ -753,6 +759,7 @@ export interface FileRoutesByFullPath {
   '/dashboard/': typeof DashboardIndexRoute
   '/heroui-spike/': typeof HerouiSpikeIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/admin/users/$userId': typeof AdminUsersUserIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
@@ -822,7 +829,7 @@ export interface FileRoutesByTo {
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
-  '/admin/users': typeof AdminUsersRoute
+  '/admin/users': typeof AdminUsersRouteWithChildren
   '/api/ping': typeof ApiPingRoute
   '/auth/error': typeof AuthErrorRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
@@ -860,6 +867,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardIndexRoute
   '/heroui-spike': typeof HerouiSpikeIndexRoute
   '/settings': typeof SettingsIndexRoute
+  '/admin/users/$userId': typeof AdminUsersUserIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
@@ -934,7 +942,7 @@ export interface FileRoutesById {
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
-  '/admin/users': typeof AdminUsersRoute
+  '/admin/users': typeof AdminUsersRouteWithChildren
   '/api/ping': typeof ApiPingRoute
   '/auth/error': typeof AuthErrorRoute
   '/auth/forgot-password': typeof AuthForgotPasswordRoute
@@ -972,6 +980,7 @@ export interface FileRoutesById {
   '/dashboard/': typeof DashboardIndexRoute
   '/heroui-spike/': typeof HerouiSpikeIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/admin/users/$userId': typeof AdminUsersUserIdRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
@@ -1085,6 +1094,7 @@ export interface FileRouteTypes {
     | '/dashboard/'
     | '/heroui-spike/'
     | '/settings/'
+    | '/admin/users/$userId'
     | '/api/auth/$'
     | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
@@ -1192,6 +1202,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/heroui-spike'
     | '/settings'
+    | '/admin/users/$userId'
     | '/api/auth/$'
     | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
@@ -1303,6 +1314,7 @@ export interface FileRouteTypes {
     | '/dashboard/'
     | '/heroui-spike/'
     | '/settings/'
+    | '/admin/users/$userId'
     | '/api/auth/$'
     | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
@@ -1986,6 +1998,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/users/$userId': {
+      id: '/admin/users/$userId'
+      path: '/$userId'
+      fullPath: '/admin/users/$userId'
+      preLoaderRoute: typeof AdminUsersUserIdRouteImport
+      parentRoute: typeof AdminUsersRoute
+    }
     '/api/core/product/state': {
       id: '/api/core/product/state'
       path: '/api/core/product/state'
@@ -2171,6 +2190,18 @@ const AdminSupplyRouteWithChildren = AdminSupplyRoute._addFileChildren(
   AdminSupplyRouteChildren,
 )
 
+interface AdminUsersRouteChildren {
+  AdminUsersUserIdRoute: typeof AdminUsersUserIdRoute
+}
+
+const AdminUsersRouteChildren: AdminUsersRouteChildren = {
+  AdminUsersUserIdRoute: AdminUsersUserIdRoute,
+}
+
+const AdminUsersRouteWithChildren = AdminUsersRoute._addFileChildren(
+  AdminUsersRouteChildren,
+)
+
 interface AdminRouteChildren {
   AdminAuditRoute: typeof AdminAuditRoute
   AdminCapabilitiesRoute: typeof AdminCapabilitiesRoute
@@ -2185,7 +2216,7 @@ interface AdminRouteChildren {
   AdminSkillsRoute: typeof AdminSkillsRoute
   AdminSupplyRoute: typeof AdminSupplyRouteWithChildren
   AdminTemplatesRoute: typeof AdminTemplatesRoute
-  AdminUsersRoute: typeof AdminUsersRoute
+  AdminUsersRoute: typeof AdminUsersRouteWithChildren
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
@@ -2203,7 +2234,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminSkillsRoute: AdminSkillsRoute,
   AdminSupplyRoute: AdminSupplyRouteWithChildren,
   AdminTemplatesRoute: AdminTemplatesRoute,
-  AdminUsersRoute: AdminUsersRoute,
+  AdminUsersRoute: AdminUsersRouteWithChildren,
   AdminIndexRoute: AdminIndexRoute,
 }
 

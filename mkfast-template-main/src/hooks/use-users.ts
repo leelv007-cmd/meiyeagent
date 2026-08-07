@@ -1,5 +1,5 @@
 import { authClient } from '@/auth/client';
-import { listUsers } from '@/api/users';
+import { getUserById, listUsers, type AdminUserListItem } from '@/api/users';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { ColumnSort } from '@tanstack/react-table';
 
@@ -20,6 +20,7 @@ export const usersKeys = {
     sorting: UsersSortingState;
     filters: SimpleFilter[];
   }) => [...usersKeys.lists(), params] as const,
+  detail: (userId: string) => [...usersKeys.all, 'detail', userId] as const,
 };
 
 /**
@@ -66,6 +67,29 @@ export function useUsers(
 }
 
 /**
+ * Load one user for the route-owned detail sheet.
+ * Prefers any list-cache hit so opening from the grid is instant; falls back
+ * to getUserById for deep links and hard refresh.
+ */
+export function useUser(userId: string) {
+  const queryClient = useQueryClient();
+  return useQuery({
+    queryKey: usersKeys.detail(userId),
+    queryFn: async (): Promise<AdminUserListItem | null> => {
+      const lists = queryClient.getQueriesData<{
+        items: AdminUserListItem[];
+      }>({ queryKey: usersKeys.lists() });
+      for (const [, data] of lists) {
+        const hit = data?.items.find((item) => item.id === userId);
+        if (hit) return hit;
+      }
+      return getUserById({ data: { userId } });
+    },
+    enabled: Boolean(userId),
+  });
+}
+
+/**
  * Ban user via Better Auth admin plugin
  */
 export function useBanUser() {
@@ -81,8 +105,11 @@ export function useBanUser() {
         banReason: opts.banReason,
         banExpiresIn: opts.banExpiresIn,
       }),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: usersKeys.all });
+      queryClient.invalidateQueries({
+        queryKey: usersKeys.detail(vars.userId),
+      });
     },
   });
 }
@@ -95,8 +122,11 @@ export function useUnbanUser() {
   return useMutation({
     mutationFn: async (opts: { userId: string }) =>
       authClient.admin.unbanUser({ userId: opts.userId }),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: usersKeys.all });
+      queryClient.invalidateQueries({
+        queryKey: usersKeys.detail(vars.userId),
+      });
     },
   });
 }
@@ -138,16 +168,12 @@ export function useSetPlatformRole() {
           reason: opts.reason,
         }),
       });
-      const body = (await response.json().catch(() => null)) as
-        | {
-            user?: { id?: string; role?: string };
-            audit?: Record<string, unknown>;
-            error?:
-              | string
-              | { code?: string; message?: string };
-            code?: string;
-          }
-        | null;
+      const body = (await response.json().catch(() => null)) as {
+        user?: { id?: string; role?: string };
+        audit?: Record<string, unknown>;
+        error?: string | { code?: string; message?: string };
+        code?: string;
+      } | null;
 
       if (!response.ok) {
         const nested =
@@ -168,8 +194,11 @@ export function useSetPlatformRole() {
 
       return body;
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: usersKeys.all });
+      queryClient.invalidateQueries({
+        queryKey: usersKeys.detail(vars.userId),
+      });
     },
   });
 }

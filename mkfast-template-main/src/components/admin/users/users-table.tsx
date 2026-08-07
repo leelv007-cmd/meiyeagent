@@ -1,6 +1,9 @@
 import {
   admin_users_active,
   admin_users_admin,
+  admin_users_ban_button,
+  admin_users_bulk_ban,
+  admin_users_bulk_unban,
   admin_users_clear_search,
   admin_users_columns_ban_expires,
   admin_users_columns_ban_reason,
@@ -10,20 +13,48 @@ import {
   admin_users_columns_provisioned_by,
   admin_users_columns_role,
   admin_users_columns_status,
+  admin_users_demote_merchant,
   admin_users_email_copied,
   admin_users_inactive,
   admin_users_no_results,
+  admin_users_promote_admin,
+  admin_users_row_actions,
   admin_users_search,
+  admin_users_select_all,
+  admin_users_select_row,
   admin_users_self_registered,
+  admin_users_unban_button,
   admin_users_user,
+  admin_users_view_details,
 } from '@/locale/paraglide/messages';
-import { UserDetailViewer } from '@/components/admin/users/user-detail-viewer';
+import { UserNameLink } from '@/components/admin/users/user-name-link';
+import {
+  canBanUser,
+  canSetPlatformRole,
+  canUnbanUser,
+  isPlatformAdmin,
+} from '@/components/admin/users/user-action-predicates';
+import {
+  DataTableActionBar,
+  DataTableActionBarAction,
+  DataTableActionBarSelection,
+} from '@/components/data-table/data-table-action-bar';
 import { DataTableColumnHeader } from '@/components/data-table/data-table-column-header';
 import { DataTableFacetedFilter } from '@/components/data-table/data-table-faceted-filter';
 import { DataTablePagination } from '@/components/data-table/data-table-pagination';
 import { DataTableViewOptions } from '@/components/data-table/data-table-view-options';
 import { Badge } from '@/components/reui/badge';
 import { Frame, FrameFooter, FramePanel } from '@/components/reui/frame';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import {
@@ -38,6 +69,7 @@ import type { AdminUserListItem } from '@/api/users';
 import {
   type ColumnDef,
   type ColumnFiltersState,
+  type RowSelectionState,
   type SortingState,
   type VisibilityState,
   flexRender,
@@ -46,21 +78,34 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import {
+  IconDots,
+  IconEye,
   IconMailCheck,
   IconMailQuestion,
   IconUserCheck,
+  IconUserDown,
+  IconUserUp,
   IconUserX,
   IconX,
 } from '@tabler/icons-react';
+import { Link } from '@tanstack/react-router';
 import { type ReactNode, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { formatDate, formatDateTime } from '@/lib/formatter';
+
 function TableRowSkeleton({ columns }: { columns: number }) {
   return (
     <TableRow className="h-14">
       {Array.from({ length: columns }).map((_, i) => {
         if (i === 0) {
+          return (
+            <TableCell key={i} className="py-3">
+              <Skeleton className="size-4 rounded" />
+            </TableCell>
+          );
+        }
+        if (i === 1) {
           return (
             <TableCell key={i} className="py-3">
               <div className="flex items-center gap-2">
@@ -70,14 +115,14 @@ function TableRowSkeleton({ columns }: { columns: number }) {
             </TableCell>
           );
         }
-        if (i === 1) {
+        if (i === 2) {
           return (
             <TableCell key={i} className="py-3">
               <Skeleton className="h-6 w-32" />
             </TableCell>
           );
         }
-        if (i === 2 || i === 4) {
+        if (i === 3 || i === 5) {
           return (
             <TableCell key={i} className="py-3">
               <Skeleton className="h-6 w-16" />
@@ -93,6 +138,90 @@ function TableRowSkeleton({ columns }: { columns: number }) {
     </TableRow>
   );
 }
+
+function UsersRowActions({ user }: { user: AdminUserListItem }) {
+  const banAllowed = canBanUser(user);
+  const unbanAllowed = canUnbanUser(user);
+  const roleAllowed = canSetPlatformRole(user);
+  const isAdmin = isPlatformAdmin(user);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label={admin_users_row_actions()}
+            data-testid="user-row-actions"
+          />
+        }
+      >
+        <IconDots className="size-4" aria-hidden="true" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="bottom" align="end" className="min-w-40">
+        <DropdownMenuGroup>
+          <DropdownMenuItem
+            render={
+              <Link
+                to="/admin/users/$userId"
+                params={{ userId: user.id }}
+                data-testid="user-row-view-details"
+              />
+            }
+          >
+            <IconEye className="size-4" aria-hidden="true" />
+            {admin_users_view_details()}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            disabled={!banAllowed}
+            data-testid="user-row-ban"
+            render={
+              banAllowed ? (
+                <Link to="/admin/users/$userId" params={{ userId: user.id }} />
+              ) : undefined
+            }
+          >
+            <IconUserX className="size-4" aria-hidden="true" />
+            {admin_users_ban_button()}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={!unbanAllowed}
+            data-testid="user-row-unban"
+            render={
+              unbanAllowed ? (
+                <Link to="/admin/users/$userId" params={{ userId: user.id }} />
+              ) : undefined
+            }
+          >
+            <IconUserCheck className="size-4" aria-hidden="true" />
+            {admin_users_unban_button()}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={!roleAllowed}
+            data-testid="user-row-role"
+            render={
+              roleAllowed ? (
+                <Link to="/admin/users/$userId" params={{ userId: user.id }} />
+              ) : undefined
+            }
+          >
+            {isAdmin ? (
+              <IconUserDown className="size-4" aria-hidden="true" />
+            ) : (
+              <IconUserUp className="size-4" aria-hidden="true" />
+            )}
+            {isAdmin
+              ? admin_users_demote_merchant()
+              : admin_users_promote_admin()}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 interface UsersTableProps {
   data: AdminUserListItem[];
   total: number;
@@ -109,6 +238,7 @@ interface UsersTableProps {
   onSortingChange: (sorting: SortingState) => void;
   onFiltersChange?: (filters: ColumnFiltersState) => void;
 }
+
 export function UsersTable({
   data,
   total,
@@ -126,8 +256,37 @@ export function UsersTable({
   onFiltersChange,
 }: UsersTableProps) {
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({});
+
   const columns: ColumnDef<AdminUserListItem>[] = useMemo(
     () => [
+      {
+        id: 'select',
+        enableHiding: false,
+        enableSorting: false,
+        header: ({ table }) => (
+          <Checkbox
+            checked={table.getIsAllPageRowsSelected()}
+            indeterminate={
+              table.getIsSomePageRowsSelected() &&
+              !table.getIsAllPageRowsSelected()
+            }
+            onCheckedChange={(value) =>
+              table.toggleAllPageRowsSelected(!!value)
+            }
+            aria-label={admin_users_select_all()}
+          />
+        ),
+        cell: ({ row }) => (
+          <Checkbox
+            checked={row.getIsSelected()}
+            onCheckedChange={(value) => row.toggleSelected(!!value)}
+            aria-label={admin_users_select_row()}
+          />
+        ),
+        size: 40,
+        minSize: 40,
+      },
       {
         id: 'name',
         accessorKey: 'name',
@@ -142,7 +301,7 @@ export function UsersTable({
             label={admin_users_columns_name()}
           />
         ),
-        cell: ({ row }) => <UserDetailViewer user={row.original} />,
+        cell: ({ row }) => <UserNameLink user={row.original} />,
         meta: { label: admin_users_columns_name() },
         minSize: 120,
         size: 160,
@@ -324,6 +483,15 @@ export function UsersTable({
         minSize: 140,
         size: 160,
       },
+      {
+        id: 'actions',
+        enableHiding: false,
+        enableSorting: false,
+        header: () => null,
+        cell: ({ row }) => <UsersRowActions user={row.original} />,
+        size: 48,
+        minSize: 48,
+      },
     ],
     []
   );
@@ -349,6 +517,7 @@ export function UsersTable({
       sorting,
       columnFilters: filters,
       columnVisibility,
+      rowSelection,
       pagination: { pageIndex, pageSize },
     },
     onSortingChange: (updater) => {
@@ -361,6 +530,7 @@ export function UsersTable({
       onPageChange(0);
     },
     onColumnVisibilityChange: setColumnVisibility,
+    onRowSelectionChange: setRowSelection,
     onPaginationChange: (updater) => {
       const next =
         typeof updater === 'function'
@@ -375,11 +545,22 @@ export function UsersTable({
     },
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
+    getRowId: (row) => row.id,
+    enableRowSelection: true,
     manualPagination: true,
     manualSorting: true,
     manualFiltering: true,
     enableMultiSort: false,
   });
+
+  const selectedUsers = table
+    .getFilteredSelectedRowModel()
+    .rows.map((row) => row.original);
+  const bulkBanAllowed =
+    selectedUsers.length > 0 && selectedUsers.every((u) => canBanUser(u));
+  const bulkUnbanAllowed =
+    selectedUsers.length > 0 && selectedUsers.every((u) => canUnbanUser(u));
+
   return (
     <Frame dense className="w-full">
       <FramePanel className="p-0! shadow-none!">
@@ -487,6 +668,21 @@ export function UsersTable({
       <FrameFooter>
         <DataTablePagination table={table} className="px-0" />
       </FrameFooter>
+      <DataTableActionBar table={table} data-testid="users-action-bar">
+        <DataTableActionBarSelection table={table} />
+        <DataTableActionBarAction
+          disabled={!bulkBanAllowed}
+          data-testid="users-bulk-ban"
+        >
+          {admin_users_bulk_ban()}
+        </DataTableActionBarAction>
+        <DataTableActionBarAction
+          disabled={!bulkUnbanAllowed}
+          data-testid="users-bulk-unban"
+        >
+          {admin_users_bulk_unban()}
+        </DataTableActionBarAction>
+      </DataTableActionBar>
     </Frame>
   );
 }

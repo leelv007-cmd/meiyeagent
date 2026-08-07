@@ -16,6 +16,12 @@ import {
   admin_users_columns_provisioned_by,
   admin_users_demote_merchant,
   admin_users_detail_account_title,
+  admin_users_detail_back,
+  admin_users_detail_error,
+  admin_users_detail_error_description,
+  admin_users_detail_loading,
+  admin_users_detail_not_found,
+  admin_users_detail_not_found_description,
   admin_users_detail_summary_title,
   admin_users_email_copied,
   admin_users_joined,
@@ -36,6 +42,13 @@ import {
   admin_users_user,
 } from '@/locale/paraglide/messages';
 import type { AdminUserListItem } from '@/api/users';
+import {
+  canBanUser,
+  canSetPlatformRole,
+  canUnbanUser,
+  isPlatformAdmin,
+} from '@/components/admin/users/user-action-predicates';
+import { useRouteSheet } from '@/components/admin/shared/use-route-sheet';
 import { UserAvatar } from '@/components/shared/user-avatar';
 import { Badge } from '@/components/reui/badge';
 import {
@@ -57,7 +70,6 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from '@/components/ui/sheet';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -68,19 +80,25 @@ import {
 } from '@/hooks/use-users';
 import { formatDate } from '@/lib/formatter';
 import { cn } from '@/lib/utils';
+import { Link, useNavigate } from '@tanstack/react-router';
 import {
+  IconAlertTriangle,
   IconCalendar,
   IconLoader2,
   IconMailCheck,
   IconMailQuestion,
+  IconPackageOff,
   IconUserCheck,
   IconUserX,
 } from '@tabler/icons-react';
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 
 const FRAME_PANEL_RESET = 'shadow-none!';
+
+const SHEET_CONTENT_CLASS =
+  'flex flex-col gap-0 overflow-hidden rounded-xl p-0 outline-none data-[side=right]:inset-y-4 data-[side=right]:right-4 data-[side=right]:left-auto data-[side=right]:h-[calc(100svh-2rem)] data-[side=right]:w-[min(56rem,calc(100vw-2rem))] data-[side=right]:max-w-none data-[side=right]:sm:max-w-none';
 
 function toDate(v: Date | string | number | null | undefined): Date | null {
   return v ? new Date(v) : null;
@@ -95,10 +113,11 @@ function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-interface UserDetailViewerProps {
-  user: AdminUserListItem;
-}
-export function UserDetailViewer({ user }: UserDetailViewerProps) {
+/**
+ * Detail body + write paths (role / ban). Mutation signatures match the
+ * previous uncontrolled sheet — only the host chrome moved to the route.
+ */
+export function UserDetailPanel({ user }: { user: AdminUserListItem }) {
   const [error, setError] = useState<string | undefined>();
   const [roleError, setRoleError] = useState<string | undefined>();
   const [banReason, setBanReason] = useState<string>(
@@ -111,8 +130,11 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
   const unbanUserMutation = useUnbanUser();
   const setPlatformRoleMutation = useSetPlatformRole();
 
-  const isAdmin = user.role === 'admin';
+  const isAdmin = isPlatformAdmin(user);
   const targetRole = isAdmin ? 'user' : 'admin';
+  const roleChangeAllowed = canSetPlatformRole(user);
+  const banAllowed = canBanUser(user);
+  const unbanAllowed = canUnbanUser(user);
 
   const handleRoleChange = async () => {
     if (!user.id) {
@@ -279,13 +301,18 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
           variant={isAdmin ? 'outline' : 'default'}
           onClick={handleRoleChange}
           disabled={
-            setPlatformRoleMutation.isPending || !roleReason.trim() || !user.id
+            setPlatformRoleMutation.isPending ||
+            !roleReason.trim() ||
+            !roleChangeAllowed
           }
+          data-testid="user-role-change"
         >
           {setPlatformRoleMutation.isPending && (
             <IconLoader2 className="mr-2 size-4 animate-spin" />
           )}
-          {isAdmin ? admin_users_demote_merchant() : admin_users_promote_admin()}
+          {isAdmin
+            ? admin_users_demote_merchant()
+            : admin_users_promote_admin()}
         </Button>
       </FramePanel>
     </Frame>
@@ -412,107 +439,217 @@ export function UserDetailViewer({ user }: UserDetailViewerProps) {
   );
 
   return (
-    <Sheet>
-      <div className="flex items-center gap-2">
-        <UserAvatar
-          name={user.name ?? null}
-          image={user.image ?? null}
-          className="size-8 shrink-0 border"
-        />
-        <SheetTrigger
-          render={
-            <Button
-              variant="link"
-              className="w-fit px-0 text-left text-foreground"
-            />
-          }
-        >
-          <span className="font-medium hover:underline hover:underline-offset-4">
-            {user.name}
-          </span>
-        </SheetTrigger>
+    <>
+      <SheetHeader className="shrink-0 border-b px-5 py-4 sm:px-6">
+        <div className="flex items-center gap-4">
+          <UserAvatar
+            name={user.name ?? null}
+            image={user.image ?? null}
+            className="size-12 border"
+          />
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <SheetTitle className="truncate">{user.name}</SheetTitle>
+              <Badge
+                variant={user.banned ? 'destructive-light' : 'success-light'}
+              >
+                {user.banned ? admin_users_banned() : admin_users_active()}
+              </Badge>
+            </div>
+            <SheetDescription>
+              {admin_users_joined()}
+              {': '}
+              {toDate(user.createdAt)
+                ? formatDate(toDate(user.createdAt)!)
+                : '-'}
+            </SheetDescription>
+          </div>
+        </div>
+      </SheetHeader>
+
+      <div className="min-h-0 flex-1 lg:hidden">
+        <ScrollArea className="h-full">
+          {leftContent}
+          <Separator />
+          {rightContent}
+        </ScrollArea>
       </div>
+
+      <div className="hidden min-h-0 flex-1 flex-row lg:flex">
+        <div className="min-h-0 min-w-0 flex-1">
+          <ScrollArea className="h-full">{leftContent}</ScrollArea>
+        </div>
+        <Separator orientation="vertical" className="self-stretch" />
+        <div className="min-h-0 w-[320px] shrink-0">
+          <ScrollArea className="h-full">{rightContent}</ScrollArea>
+        </div>
+      </div>
+
+      <SheetFooter className="shrink-0 flex-row items-center justify-end gap-2 border-t bg-muted/40 px-5 py-4 sm:px-6">
+        <SheetClose render={<Button type="button" variant="outline" />}>
+          {admin_users_close()}
+        </SheetClose>
+        {user.banned ? (
+          <Button
+            variant="destructive"
+            onClick={handleUnban}
+            disabled={unbanUserMutation.isPending || !unbanAllowed}
+            data-testid="user-unban"
+          >
+            {unbanUserMutation.isPending && (
+              <IconLoader2 className="mr-2 size-4 animate-spin" />
+            )}
+            {admin_users_unban_button()}
+          </Button>
+        ) : (
+          <Button
+            variant="destructive"
+            onClick={handleBan}
+            disabled={
+              banUserMutation.isPending || !banReason?.trim() || !banAllowed
+            }
+            data-testid="user-ban"
+          >
+            {banUserMutation.isPending && (
+              <IconLoader2 className="mr-2 size-4 animate-spin" />
+            )}
+            {admin_users_ban_button()}
+          </Button>
+        )}
+      </SheetFooter>
+    </>
+  );
+}
+
+/** Route-owned detail sheet: close = navigate back to the users list. */
+export function UserDetailSheet({ user }: { user: AdminUserListItem }) {
+  const navigate = useNavigate();
+  const handleClosed = useCallback(() => {
+    void navigate({ to: '/admin/users' });
+  }, [navigate]);
+  const sheet = useRouteSheet(handleClosed);
+
+  return (
+    <Sheet {...sheet}>
       <SheetContent
         side="right"
         showCloseButton={false}
-        className="flex flex-col gap-0 overflow-hidden rounded-xl p-0 outline-none data-[side=right]:inset-y-4 data-[side=right]:right-4 data-[side=right]:left-auto data-[side=right]:h-[calc(100svh-2rem)] data-[side=right]:w-[min(56rem,calc(100vw-2rem))] data-[side=right]:max-w-none data-[side=right]:sm:max-w-none"
+        className={SHEET_CONTENT_CLASS}
+        data-testid="user-detail-sheet"
       >
-        <SheetHeader className="shrink-0 border-b px-5 py-4 sm:px-6">
-          <div className="flex items-center gap-4">
-            <UserAvatar
-              name={user.name ?? null}
-              image={user.image ?? null}
-              className="size-12 border"
-            />
-            <div className="flex min-w-0 flex-col gap-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <SheetTitle className="truncate">{user.name}</SheetTitle>
-                <Badge
-                  variant={user.banned ? 'destructive-light' : 'success-light'}
-                >
-                  {user.banned ? admin_users_banned() : admin_users_active()}
-                </Badge>
-              </div>
-              <SheetDescription>
-                {admin_users_joined()}
-                {': '}
-                {toDate(user.createdAt)
-                  ? formatDate(toDate(user.createdAt)!)
-                  : '-'}
-              </SheetDescription>
-            </div>
-          </div>
-        </SheetHeader>
-
-        {/* Mobile: one stacked scroll area */}
-        <div className="min-h-0 flex-1 lg:hidden">
-          <ScrollArea className="h-full">
-            {leftContent}
-            <Separator />
-            {rightContent}
-          </ScrollArea>
-        </div>
-
-        {/* Desktop: two independent scroll areas split by a separator */}
-        <div className="hidden min-h-0 flex-1 flex-row lg:flex">
-          <div className="min-h-0 min-w-0 flex-1">
-            <ScrollArea className="h-full">{leftContent}</ScrollArea>
-          </div>
-          <Separator orientation="vertical" className="self-stretch" />
-          <div className="min-h-0 w-[320px] shrink-0">
-            <ScrollArea className="h-full">{rightContent}</ScrollArea>
-          </div>
-        </div>
-
-        <SheetFooter className="shrink-0 flex-row items-center justify-end gap-2 border-t bg-muted/40 px-5 py-4 sm:px-6">
-          <SheetClose render={<Button type="button" variant="outline" />}>
-            {admin_users_close()}
-          </SheetClose>
-          {user.banned ? (
-            <Button
-              variant="destructive"
-              onClick={handleUnban}
-              disabled={unbanUserMutation.isPending}
-            >
-              {unbanUserMutation.isPending && (
-                <IconLoader2 className="mr-2 size-4 animate-spin" />
-              )}
-              {admin_users_unban_button()}
-            </Button>
-          ) : (
-            <Button
-              variant="destructive"
-              onClick={handleBan}
-              disabled={banUserMutation.isPending || !banReason?.trim()}
-            >
-              {banUserMutation.isPending && (
-                <IconLoader2 className="mr-2 size-4 animate-spin" />
-              )}
-              {admin_users_ban_button()}
-            </Button>
-          )}
-        </SheetFooter>
+        <UserDetailPanel user={user} />
       </SheetContent>
     </Sheet>
+  );
+}
+
+/** Shared chrome for pending / not-found / error so they overlay the list. */
+export function UserDetailStateSheet({ children }: { children: ReactNode }) {
+  const navigate = useNavigate();
+  const handleClosed = useCallback(() => {
+    void navigate({ to: '/admin/users' });
+  }, [navigate]);
+  const sheet = useRouteSheet(handleClosed);
+
+  return (
+    <Sheet {...sheet}>
+      <SheetContent
+        side="right"
+        showCloseButton={false}
+        className={SHEET_CONTENT_CLASS}
+        data-testid="user-detail-state-sheet"
+      >
+        <SheetHeader className="shrink-0 border-b px-5 py-4 sm:px-6">
+          <div className="flex items-center justify-between gap-2">
+            <SheetTitle className="truncate">
+              {admin_users_detail_account_title()}
+            </SheetTitle>
+            <SheetClose
+              render={
+                <Button type="button" variant="outline" size="sm">
+                  {admin_users_close()}
+                </Button>
+              }
+            />
+          </div>
+          <SheetDescription className="sr-only">
+            {admin_users_detail_account_title()}
+          </SheetDescription>
+        </SheetHeader>
+        <div className="flex min-h-0 flex-1 items-center justify-center p-8">
+          {children}
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+export function UserDetailLoadingState() {
+  return (
+    <UserDetailStateSheet>
+      <div className="flex flex-col items-center gap-3 text-center">
+        <IconLoader2
+          className="size-10 animate-spin text-muted-foreground"
+          aria-hidden="true"
+        />
+        <p className="text-sm text-muted-foreground">
+          {admin_users_detail_loading()}
+        </p>
+      </div>
+    </UserDetailStateSheet>
+  );
+}
+
+export function UserDetailNotFoundState() {
+  return (
+    <UserDetailStateSheet>
+      <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+        <IconPackageOff
+          className="size-10 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-medium text-foreground">
+            {admin_users_detail_not_found()}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {admin_users_detail_not_found_description()}
+          </p>
+        </div>
+        <Link
+          to="/admin/users"
+          className="inline-flex h-8 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium shadow-xs hover:bg-accent hover:text-accent-foreground"
+        >
+          {admin_users_detail_back()}
+        </Link>
+      </div>
+    </UserDetailStateSheet>
+  );
+}
+
+export function UserDetailErrorState() {
+  return (
+    <UserDetailStateSheet>
+      <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+        <IconAlertTriangle
+          className="size-10 text-muted-foreground"
+          aria-hidden="true"
+        />
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-medium text-foreground">
+            {admin_users_detail_error()}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {admin_users_detail_error_description()}
+          </p>
+        </div>
+        <Link
+          to="/admin/users"
+          className="inline-flex h-8 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium shadow-xs hover:bg-accent hover:text-accent-foreground"
+        >
+          {admin_users_detail_back()}
+        </Link>
+      </div>
+    </UserDetailStateSheet>
   );
 }
