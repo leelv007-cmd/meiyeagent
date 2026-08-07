@@ -43,6 +43,7 @@ import {
   workbench_grounding_source_required,
   workbench_grounding_store_required,
   workbench_operation_failed,
+  workbench_work_create_failed,
 } from '@/locale/paraglide/messages';
 import { commandP1, operationsQuery, p1ErrorCode, queryP1 } from '@/p1/client';
 import { p1QueryKeys } from '@/p1/query-keys';
@@ -4007,9 +4008,25 @@ export function ComposerHome({
                   >
                     {workbench_grounding_source_required()}
                   </p>
-                ) : createWork.isError ? (
-                  <p className="text-destructive text-sm" role="alert">
-                    {workbench_operation_failed()}
+                ) : createWork.isError && !quotaBlocked ? (
+                  /*
+                    The single surface for a run that failed to start. It used to
+                    be one of two: this alert said 「操作未完成」 while a toast from
+                    `createWork.onError` said 「暂时无法建立创作记录」, so one failure
+                    spoke twice and disagreed with itself. The toast is gone; this
+                    sentence names what happened, what to do next, and what it cost
+                    (nothing — admission only reads the balance, the reservation is
+                    taken when the run starts, so a run that never starts is never
+                    charged). Suppressed when the shortfall alert below is already
+                    speaking, since that one names the real cause and carries the
+                    action that fixes it.
+                  */
+                  <p
+                    className="text-destructive text-sm"
+                    data-testid="composer-run-create-failed"
+                    role="alert"
+                  >
+                    {workbench_work_create_failed()}
                   </p>
                 ) : null}
 

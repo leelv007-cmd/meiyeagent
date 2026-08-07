@@ -18,11 +18,7 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import {
-  workbench_grounding_qualification_required,
-  workbench_grounding_source_required,
-  workbench_grounding_store_required,
   workbench_operation_failed,
-  workbench_work_create_failed,
   workbench_work_created,
 } from '@/locale/paraglide/messages';
 import { P1RequestError, p1ErrorCode, queryP1 } from '@/p1/client';
@@ -202,14 +198,6 @@ export function briefSourcesFromDraft(sources: unknown[]): BriefSourceSignal[] {
       },
     ];
   });
-}
-
-function groundingBlockerMessage(blocker: ComposerGroundingBlocker) {
-  if (blocker === 'store') return workbench_grounding_store_required();
-  if (blocker === 'qualification') {
-    return workbench_grounding_qualification_required();
-  }
-  return workbench_grounding_source_required();
 }
 
 function groundingBlockerFromError(error: unknown) {
@@ -400,8 +388,10 @@ export function useComposerRun(options: UseComposerRunOptions) {
           groundingBlockerFromError(error) ??
           groundingBlockerFromMissing(options.missingGrounding);
         if (blocker) {
+          // Same rule as below: the blocker renders inline with the link that
+          // fixes it, so a toast repeating the identical sentence only doubled
+          // the message.
           options.setSubmissionGroundingBlocked(blocker);
-          toast.error(groundingBlockerMessage(blocker));
           return;
         }
       }
@@ -414,7 +404,12 @@ export function useComposerRun(options: UseComposerRunOptions) {
           queryKey: options.creditProjectionQueryKey,
         });
       }
-      toast.error(workbench_work_create_failed());
+      // No toast here. `createWork.isError` already renders the failure inline
+      // under the send button, and a toast on top of it made one failed run say
+      // two different things at once — 「操作未完成」 in the alert and 「暂时无法
+      // 建立创作记录」 in the toast (live-tested 2026-08-07). The inline alert is
+      // the surface that keeps: it sits where the merchant clicked and it stays
+      // put, where a toast is gone before she has read it.
     },
   });
 

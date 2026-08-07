@@ -6,7 +6,7 @@ import type {
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { type ReactNode, useRef, useState } from 'react';
-import { expect, test, vi } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 import { P1RequestError } from '@/p1/client';
 
@@ -24,6 +24,27 @@ import { createComposerSession } from './composer-session';
 import { type ComposerRunTransports, useComposerRun } from './use-composer-run';
 import type { ComposerDestinationPreflightState } from './composer-destination-preflight';
 import type { ComposerGroundingBlocker } from './composer-grounding-blocker';
+
+/**
+ * A failed run used to say two different things at once: `createWork.onError`
+ * fired a toast while `createWork.isError` rendered an alert under the send
+ * button, so one failure produced 「操作未完成」 and 「暂时无法建立创作记录」 side by
+ * side (live-tested 2026-08-07). The inline alert is the surface that keeps —
+ * it sits where she clicked and it stays put — so these tests hold the toast
+ * channel silent on the failure paths.
+ */
+const { toastError, toastSuccess } = vi.hoisted(() => ({
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
+}));
+vi.mock('sonner', () => ({
+  toast: { error: toastError, success: toastSuccess },
+}));
+
+beforeEach(() => {
+  toastError.mockClear();
+  toastSuccess.mockClear();
+});
 
 const QUOTE = productQuoteFixture({
   billingMode: 'per_request',
@@ -229,31 +250,17 @@ test('attemptSubmit passes all gates and creates through injected transports', a
 });
 
 /**
- * #345: Core resolves creative grounding for every submission with no notion of
- * creation mode (`ProductCreativeGroundingResolver.resolve`), while free
- * creation carries no client-side store pre-check — so the server is the first
- * thing that tells a Day-0 merchant their store is unconfirmed. That refusal
- * has to name the gap: the Composer already renders a `store` blocker with the
- * copy and the store link, and a press that is refused must produce a described
- * reason rather than the generic failure toast.
+ * One submission run under injected transports. Both failure tests below read
+ * the same surfaces, so the harness is shared rather than copied.
  */
-test('a submission refused for store grounding names the gap the server sent', async () => {
+function renderSubmissionRun(transports: ComposerRunTransports) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const transports = createTransports();
-  transports.submitSubmission = vi.fn(async () => {
-    throw new P1RequestError(
-      'Confirmed Product grounding is incomplete: confirmed_store, confirmed_project.',
-      'CREATIVE_GROUNDING_INCOMPLETE',
-      { missing: ['confirmed_store', 'confirmed_project'] },
-      409
-    );
-  }) as ComposerRunTransports['submitSubmission'];
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
-  const view = renderHook(
+  return renderHook(
     () => {
       const initialLens = bindQuoteView(
         updateUserText(
@@ -344,6 +351,29 @@ test('a submission refused for store grounding names the gap the server sent', a
     },
     { wrapper }
   );
+}
+
+/**
+ * #345: Core resolves creative grounding for every submission with no notion of
+ * creation mode (`ProductCreativeGroundingResolver.resolve`), while free
+ * creation carries no client-side store pre-check — so the server is the first
+ * thing that tells a Day-0 merchant their store is unconfirmed. That refusal
+ * has to name the gap: the Composer already renders a `store` blocker with the
+ * copy and the store link, and a press that is refused must produce a described
+ * reason rather than the generic failure toast.
+ */
+
+test('a submission refused for store grounding names the gap the server sent', async () => {
+  const transports = createTransports();
+  transports.submitSubmission = vi.fn(async () => {
+    throw new P1RequestError(
+      'Confirmed Product grounding is incomplete: confirmed_store, confirmed_project.',
+      'CREATIVE_GROUNDING_INCOMPLETE',
+      { missing: ['confirmed_store', 'confirmed_project'] },
+      409
+    );
+  }) as ComposerRunTransports['submitSubmission'];
+  const view = renderSubmissionRun(transports);
 
   await act(() => view.result.current.run.attemptSubmit());
   await waitFor(() =>
@@ -353,4 +383,29 @@ test('a submission refused for store grounding names the gap the server sent', a
   await waitFor(() =>
     expect(view.result.current.submissionGroundingBlocked).toBe('store')
   );
+  // The blocker copy renders inline with the link that fixes it; a toast
+  // carrying the identical sentence was the second half of the double message.
+  expect(toastError).not.toHaveBeenCalled();
+});
+
+/**
+ * The generic failure — no grounding gap, no shortfall, just a run that did not
+ * start. `createWork.isError` is what the Composer renders the one sentence
+ * from, so the run has to leave that flag set and the toast channel silent.
+ */
+test('a run that fails to start speaks once, through createWork.isError', async () => {
+  const transports = createTransports();
+  transports.submitSubmission = vi.fn(async () => {
+    throw new Error('Core refused the submission.');
+  }) as ComposerRunTransports['submitSubmission'];
+  const view = renderSubmissionRun(transports);
+
+  await act(() => view.result.current.run.attemptSubmit());
+  await waitFor(() =>
+    expect(view.result.current.run.createWork.isError).toBe(true)
+  );
+
+  expect(view.result.current.submissionGroundingBlocked).toBe(null);
+  expect(toastError).not.toHaveBeenCalled();
+  expect(toastSuccess).not.toHaveBeenCalled();
 });
