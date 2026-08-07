@@ -15,8 +15,14 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        // The ring is not decoration. In the product and pricing shells
+        // --surface-2 resolves to --paper, the same white the panels are
+        // painted with, so a secondary button standing on a card had no edge at
+        // all — 「管理续费」, 「购买加油包」 and a disabled 「上一步」 all read as
+        // loose grey words rather than controls. DESIGN.md §玻璃有边法则 already
+        // rules that out: every secondary pill carries a 1px edge.
         outline:
-          "bg-surface-2 hover:bg-surface-1 hover:text-foreground aria-expanded:bg-surface-1 aria-expanded:text-foreground",
+          "bg-surface-2 ring-1 ring-foreground/15 hover:bg-surface-1 hover:text-foreground aria-expanded:bg-surface-1 aria-expanded:text-foreground",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
