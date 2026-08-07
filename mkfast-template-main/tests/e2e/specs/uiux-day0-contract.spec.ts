@@ -300,8 +300,8 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       // relies on an inferred default. Since L3-2 the radio lives in the lens
       // capsule, so the select costs two trusted activations (open + pick) —
       // the capsule face and the checked radio are both asserted by the fixture.
+      await ensureComposerSecondaryCapsules(page);
       await expect(
-        await ensureComposerSecondaryCapsules(page);
         page.getByTestId('composer-capsule-lens'),
         'pure text path requires a visible lens/mode capsule (输出类型); red until C/D Composer enforces D-081 if absent'
       ).toBeVisible();
@@ -366,8 +366,8 @@ test.describe('V1 Day-0 experience contract hard gate (D-098 C6)', () => {
       await assertZeroBlockingBeforeSubmit(page);
 
       // Base C6 budget under D-173: open lens capsule + lens select + start = 3.
+      await ensureComposerSecondaryCapsules(page);
       await expect(
-        await ensureComposerSecondaryCapsules(page);
         page.getByTestId('composer-capsule-lens'),
         'video path requires a visible 输出类型 capsule holding the 做视频 radio'
       ).toBeVisible();

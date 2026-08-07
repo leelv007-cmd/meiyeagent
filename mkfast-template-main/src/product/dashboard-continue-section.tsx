@@ -75,7 +75,7 @@ export function DashboardContinueSection() {
     );
   }
 
-  if (!workbenchHasWork(workbench.data)) return null;
+  if (!workbench.data || !workbenchHasWork(workbench.data)) return null;
 
   return <ActivityShelfReady workbench={workbench.data} />;
 }

@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test';
 
 import {
-import { ensureComposerSecondaryCapsules } from '../fixtures/ui-journey';
   cleanupE2EUsers,
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
+import { ensureComposerSecondaryCapsules } from '../fixtures/ui-journey';
 
 test.describe('live creation catalog capability gate', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));

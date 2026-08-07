@@ -5,7 +5,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   Children,
   isValidElement,
-  type ComponentType,
   type ReactElement,
   type ReactNode,
 } from 'react';
@@ -43,15 +42,6 @@ const { StoreIntakeWizard } = await import(
 );
 const { Route: assetsFileRoute } = await import('./assets');
 const AssetLibraryPage = assetsFileRoute.options.component;
-
-function containsComponent(node: ReactNode, component: ComponentType): boolean {
-  if (!isValidElement(node)) return false;
-  if (node.type === component) return true;
-  const element = node as ReactElement<{ children?: ReactNode }>;
-  return Children.toArray(element.props.children).some((child) =>
-    containsComponent(child, component)
-  );
-}
 
 function collectElementTypes(node: ReactNode, into = new Set<unknown>()) {
   if (!isValidElement(node)) return into;

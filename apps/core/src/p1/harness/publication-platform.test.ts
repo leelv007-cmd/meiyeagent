@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { publicationPlatform } from './production-stage-ports.ts';
+import { publicationPlatform } from './production-stage-ports.js';
 
 test('publication platforms that need delivery approval stay mapped', () => {
   assert.equal(publicationPlatform('xiaohongshu'), 'xiaohongshu');
