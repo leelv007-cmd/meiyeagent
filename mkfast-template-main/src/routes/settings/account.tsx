@@ -123,20 +123,20 @@ function AccountPage() {
       {isMobile ? null : (
         <>
           <section className="scroll-mt-16 space-y-4" id="profile">
-        <h2 className="text-lg font-semibold">
-          {settings_account_profile_heading()}
-        </h2>
-        <div className="grid gap-4 xl:grid-cols-2">
-          <UpdateNameCard />
-          <UpdateAvatarCard />
-        </div>
-      </section>
-      <section className="scroll-mt-16 space-y-4" id="security">
-        <h2 className="text-lg font-semibold">
-          {settings_account_security_heading()}
-        </h2>
-        <PasswordCardWrapper />
-      </section>
+            <h2 className="text-lg font-semibold">
+              {settings_account_profile_heading()}
+            </h2>
+            <div className="grid gap-4 xl:grid-cols-2">
+              <UpdateNameCard />
+              <UpdateAvatarCard />
+            </div>
+          </section>
+          <section className="scroll-mt-16 space-y-4" id="security">
+            <h2 className="text-lg font-semibold">
+              {settings_account_security_heading()}
+            </h2>
+            <PasswordCardWrapper />
+          </section>
         </>
       )}
       <section className="scroll-mt-16 space-y-4" id="credits">

@@ -215,7 +215,10 @@ test('the mobile settings wall opens for the credits surface and nothing else', 
     true
   );
   // The rest of the account page keeps the desktop relay.
-  assert.equal(isMobileReachableSettingsSurface('/settings/account', {}), false);
+  assert.equal(
+    isMobileReachableSettingsSurface('/settings/account', {}),
+    false
+  );
   assert.equal(
     isMobileReachableSettingsSurface('/settings/account', {
       section: 'profile',
