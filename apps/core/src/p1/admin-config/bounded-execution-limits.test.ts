@@ -257,6 +257,7 @@ test('platform admin applies calibrated bounds through the existing CAS and audi
       'Calibrated default and hard-cap values for bounded Harness execution.',
     effectiveValue: null,
     key: BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
+    readOnly: false,
     reason: 'Apply issue 255 calibration',
     revision: 1,
     rolledBackToRevision: null,
