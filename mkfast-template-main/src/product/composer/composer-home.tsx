@@ -880,12 +880,18 @@ export function ComposerHome({
       });
     });
   }, [sourceReferences, viralAdaptJourney.phase]);
+  /**
+   * Safety net: a confirmed 爆款复刻 whose recipe did not bind gets one more
+   * attempt once the surface is in hand. It used to require the draft text to
+   * equal the journey's own sentence — a proxy for "still this journey" that
+   * D-C1 retired, since a merchant who wrote their own sentence now keeps it.
+   * The phase and the missing binding are the real conditions.
+   */
   useEffect(() => {
     if (
       !surfaceQuery.data ||
       viralAdaptJourney.phase !== 'ready' ||
       !viralAdaptJourney.merchantIntent ||
-      userText !== viralAdaptJourney.merchantIntent ||
       surfaceQuery.data.recipeRefs.some(
         (reference) =>
           reference.visible &&
@@ -915,7 +921,6 @@ export function ComposerHome({
   }, [
     lensState.draft.recipeRevisionId,
     surfaceQuery.data,
-    userText,
     viralAdaptJourney.merchantIntent,
     viralAdaptJourney.phase,
   ]);
