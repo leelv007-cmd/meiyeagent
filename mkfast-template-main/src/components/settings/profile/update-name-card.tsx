@@ -106,7 +106,14 @@ export function UpdateNameCard({ className }: UpdateNameCardProps) {
               name="name"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{settings_profile_name_title()}</FormLabel>
+                  {/*
+                    The card title above already says 「名字」. Printing it again
+                    as a field label put the same word twice in one card, so the
+                    label stays for screen readers and drops out of the layout.
+                  */}
+                  <FormLabel className="sr-only">
+                    {settings_profile_name_title()}
+                  </FormLabel>
                   <FormControl>
                     <Input
                       placeholder={settings_profile_name_placeholder()}

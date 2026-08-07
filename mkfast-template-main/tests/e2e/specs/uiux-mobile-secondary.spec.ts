@@ -151,7 +151,7 @@ test.describe('mobile upload and relay', () => {
       ).toBeVisible();
       await expect(page.getByText('模型偏好', { exact: true })).toHaveCount(0);
       await expect(
-        page.getByRole('link', { name: '安全返回掌心行动簿' })
+        page.getByRole('link', { name: '返回移动工作台' })
       ).toHaveAttribute('href', '/dashboard');
 
       await page.goto('/admin/models');

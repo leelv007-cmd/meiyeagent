@@ -100,6 +100,24 @@ test('locale copy never surfaces provider routing slugs', () => {
   assert.deepEqual(merchantCopyLeaks(en, PROVIDER_SLUG_LEAK), []);
 });
 
+test('Chinese copy addresses the merchant as 你, never 您', () => {
+  // The workbench has always said 你 (专业口语折中, PRODUCT.md). The template
+  // copy it shipped alongside — auth, settings, mail — said 您, so the same
+  // product greeted the same merchant in two voices depending on which page she
+  // was standing on. Mail is inside this rule on purpose: a reset mail that
+  // says 您 while the app says 你 does not read as politeness, it reads as a
+  // different sender.
+  assert.deepEqual(merchantCopyLeaks(zh, /您/u), []);
+});
+
+test('the mobile task surface is called what it is', () => {
+  // 「掌心行动簿」 was a name invented for this product that no merchant has ever
+  // heard; the surface it pointed at is 移动工作台 (`mobile_action_title`), and
+  // an aria label made of a coined noun tells a screen-reader user even less.
+  assert.deepEqual(merchantCopyLeaks(zh, /掌心|行动簿/u), []);
+  assert.deepEqual(merchantCopyLeaks(en, /action book/iu), []);
+});
+
 test('product shell CSS degrades rose-glow under prefers-reduced-motion', () => {
   const styles = readFileSync(
     new URL('../../styles.css', import.meta.url),
