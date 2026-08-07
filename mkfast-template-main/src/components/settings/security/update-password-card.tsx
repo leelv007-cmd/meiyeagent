@@ -18,13 +18,10 @@ import {
 import { FormError } from '@/components/shared/form-error';
 import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  SettingsRow,
+  SettingsRowFooter,
+  SettingsRowHeader,
+} from '@/components/settings/settings-section';
 import {
   Form,
   FormControl,
@@ -92,118 +89,101 @@ export function UpdatePasswordCard({ className }: UpdatePasswordCardProps) {
     );
   };
   return (
-    <Card
-      className={cn(
-        'w-full overflow-hidden pt-6 pb-0 flex flex-col',
-        className
-      )}
-    >
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold">
-          {settings_security_update_password_title()}
-        </CardTitle>
-        <CardDescription>
-          {settings_security_update_password_description()}
-        </CardDescription>
-      </CardHeader>
+    <SettingsRow className={cn(className)}>
+      <SettingsRowHeader
+        description={settings_security_update_password_description()}
+        title={settings_security_update_password_title()}
+      />
       <Form {...form}>
-        <form
-          onSubmit={form.handleSubmit(onSubmit)}
-          className="flex flex-col flex-1"
-        >
-          <CardContent className="space-y-4 flex-1">
-            <FormField
-              control={form.control}
-              name="currentPassword"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {settings_security_update_password_current_password()}
-                  </FormLabel>
-                  <div className="relative">
-                    <FormControl>
-                      <Input
-                        type={showCurrent ? 'text' : 'password'}
-                        placeholder={settings_security_update_password_placeholder_current()}
-                        {...field}
-                      />
-                    </FormControl>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                      onClick={() => setShowCurrent(!showCurrent)}
-                    >
-                      {showCurrent ? (
-                        <IconEyeOff className="size-4" />
-                      ) : (
-                        <IconEye className="size-4" />
-                      )}
-                      <span className="sr-only">
-                        {showCurrent
-                          ? settings_security_update_password_hide_password()
-                          : settings_security_update_password_show_password()}
-                      </span>
-                    </Button>
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="newPassword"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>
-                    {settings_security_update_password_new_password()}
-                  </FormLabel>
-                  <div className="relative">
-                    <FormControl>
-                      <Input
-                        type={showNew ? 'text' : 'password'}
-                        placeholder={settings_security_update_password_placeholder_new()}
-                        {...field}
-                      />
-                    </FormControl>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
-                      onClick={() => setShowNew(!showNew)}
-                    >
-                      {showNew ? (
-                        <IconEyeOff className="size-4" />
-                      ) : (
-                        <IconEye className="size-4" />
-                      )}
-                      <span className="sr-only">
-                        {showNew
-                          ? settings_security_update_password_hide_password()
-                          : settings_security_update_password_show_password()}
-                      </span>
-                    </Button>
-                  </div>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormError message={error} />
-          </CardContent>
-          <CardFooter className="mt-6 px-6 py-4 flex justify-between items-center bg-muted rounded-none">
-            <p className="text-sm text-muted-foreground">
-              {settings_security_update_password_hint()}
-            </p>
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <FormField
+            control={form.control}
+            name="currentPassword"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>
+                  {settings_security_update_password_current_password()}
+                </FormLabel>
+                <div className="relative">
+                  <FormControl>
+                    <Input
+                      type={showCurrent ? 'text' : 'password'}
+                      placeholder={settings_security_update_password_placeholder_current()}
+                      {...field}
+                    />
+                  </FormControl>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                    onClick={() => setShowCurrent(!showCurrent)}
+                  >
+                    {showCurrent ? (
+                      <IconEyeOff className="size-4" />
+                    ) : (
+                      <IconEye className="size-4" />
+                    )}
+                    <span className="sr-only">
+                      {showCurrent
+                        ? settings_security_update_password_hide_password()
+                        : settings_security_update_password_show_password()}
+                    </span>
+                  </Button>
+                </div>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name="newPassword"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>
+                  {settings_security_update_password_new_password()}
+                </FormLabel>
+                <div className="relative">
+                  <FormControl>
+                    <Input
+                      type={showNew ? 'text' : 'password'}
+                      placeholder={settings_security_update_password_placeholder_new()}
+                      {...field}
+                    />
+                  </FormControl>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                    onClick={() => setShowNew(!showNew)}
+                  >
+                    {showNew ? (
+                      <IconEyeOff className="size-4" />
+                    ) : (
+                      <IconEye className="size-4" />
+                    )}
+                    <span className="sr-only">
+                      {showNew
+                        ? settings_security_update_password_hide_password()
+                        : settings_security_update_password_show_password()}
+                    </span>
+                  </Button>
+                </div>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormError message={error} />
+          <SettingsRowFooter hint={settings_security_update_password_hint()}>
             <Button type="submit" disabled={isSaving}>
               {isSaving
                 ? settings_security_update_password_saving()
                 : settings_security_update_password_save()}
             </Button>
-          </CardFooter>
+          </SettingsRowFooter>
         </form>
       </Form>
-    </Card>
+    </SettingsRow>
   );
 }

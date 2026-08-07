@@ -4,12 +4,9 @@ import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  SettingsRow,
+  SettingsRowHeader,
+} from '@/components/settings/settings-section';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -51,12 +48,12 @@ export function RedemptionCard() {
   });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{settings_redemption_title()}</CardTitle>
-        <CardDescription>{settings_redemption_description()}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end">
+    <SettingsRow>
+      <SettingsRowHeader
+        description={settings_redemption_description()}
+        title={settings_redemption_title()}
+      />
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <div className="grid flex-1 gap-2">
           <Label htmlFor="workspace-redemption-code">
             {settings_redemption_code_label()}
@@ -80,7 +77,7 @@ export function RedemptionCard() {
         >
           {settings_redemption_submit()}
         </Button>
-      </CardContent>
-    </Card>
+      </div>
+    </SettingsRow>
   );
 }

@@ -17,6 +17,10 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import {
+  SettingsRow,
+  SettingsRowFooter,
+} from '@/components/settings/settings-section';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 
@@ -136,19 +140,65 @@ export function InstallPrompt({
 
   if (!showInstallButton && !showIosGuide && !showUnavailable) return null;
 
+  const body = (
+    <>
+      {showIosGuide ? (
+        <>
+          <p>{pwa_install_ios_hint()}</p>
+          <p className="whitespace-pre-line">{pwa_install_ios_steps()}</p>
+        </>
+      ) : null}
+      {showUnavailable ? <p>{pwa_install_unavailable()}</p> : null}
+    </>
+  );
+  const installButton = showInstallButton ? (
+    <Button
+      data-testid="pwa-install-button"
+      onClick={() => void onInstall()}
+      type="button"
+    >
+      {pwa_install_button()}
+    </Button>
+  ) : null;
+
+  /*
+   * The settings copy is a group inside the 应用安装 section, not a card of its
+   * own: it used to open a card titled 安装应用 directly under a heading that
+   * already said the same thing. The floating mobile hint keeps its card —
+   * there it really is a thing hovering over the page.
+   */
+  if (variant === 'settings') {
+    return (
+      <SettingsRow
+        className={cn(className)}
+        data-testid="pwa-install-settings-card"
+      >
+        {/*
+          No group title here: the section heading above is 应用安装 and this
+          card was called 安装应用 — the same two words, one row apart. The
+          description says what the section heading cannot.
+        */}
+        <p className="text-sm text-muted-foreground">
+          {pwa_install_prompt_description()}
+        </p>
+        <div className="flex flex-col space-y-3 text-sm text-muted-foreground">
+          {body}
+        </div>
+        {installButton ? (
+          <SettingsRowFooter>{installButton}</SettingsRowFooter>
+        ) : null}
+      </SettingsRow>
+    );
+  }
+
   return (
     <Card
       className={cn(
         'w-full overflow-hidden pt-6 pb-0 flex flex-col',
-        variant === 'mobile-hint' &&
-          'fixed bottom-20 left-3 right-3 z-40 shadow-lg sm:left-auto sm:right-4 sm:w-96',
+        'fixed bottom-20 left-3 right-3 z-40 shadow-lg sm:left-auto sm:right-4 sm:w-96',
         className
       )}
-      data-testid={
-        variant === 'mobile-hint'
-          ? 'pwa-install-mobile-hint'
-          : 'pwa-install-settings-card'
-      }
+      data-testid="pwa-install-mobile-hint"
     >
       <CardHeader>
         <CardTitle className="text-lg font-semibold">
@@ -157,34 +207,18 @@ export function InstallPrompt({
         <CardDescription>{pwa_install_prompt_description()}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col space-y-3 flex-1 text-sm text-muted-foreground">
-        {showIosGuide ? (
-          <>
-            <p>{pwa_install_ios_hint()}</p>
-            <p className="whitespace-pre-line">{pwa_install_ios_steps()}</p>
-          </>
-        ) : null}
-        {showUnavailable ? <p>{pwa_install_unavailable()}</p> : null}
+        {body}
       </CardContent>
       <CardFooter className="px-6 py-4 flex flex-wrap justify-end items-center gap-2 bg-muted rounded-none">
-        {variant === 'mobile-hint' ? (
-          <Button
-            data-testid="pwa-install-dismiss"
-            onClick={onDismiss}
-            type="button"
-            variant="ghost"
-          >
-            {pwa_install_dismiss()}
-          </Button>
-        ) : null}
-        {showInstallButton ? (
-          <Button
-            data-testid="pwa-install-button"
-            onClick={() => void onInstall()}
-            type="button"
-          >
-            {pwa_install_button()}
-          </Button>
-        ) : null}
+        <Button
+          data-testid="pwa-install-dismiss"
+          onClick={onDismiss}
+          type="button"
+          variant="ghost"
+        >
+          {pwa_install_dismiss()}
+        </Button>
+        {installButton}
       </CardFooter>
     </Card>
   );

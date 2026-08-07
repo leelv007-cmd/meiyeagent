@@ -13,13 +13,10 @@ import {
 import { FormError } from '@/components/shared/form-error';
 import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  SettingsRow,
+  SettingsRowFooter,
+  SettingsRowHeader,
+} from '@/components/settings/settings-section';
 import {
   Form,
   FormControl,
@@ -83,61 +80,46 @@ export function UpdateNameCard({ className }: UpdateNameCardProps) {
     );
   };
   return (
-    <Card
-      className={cn(
-        'w-full overflow-hidden pt-6 pb-0 flex flex-col',
-        className
-      )}
-    >
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold">
-          {settings_profile_name_title()}
-        </CardTitle>
-        <CardDescription>{settings_profile_name_description()}</CardDescription>
-      </CardHeader>
+    <SettingsRow className={cn(className)}>
+      <SettingsRowHeader
+        description={settings_profile_name_description()}
+        title={settings_profile_name_title()}
+      />
       <Form {...form}>
-        <form
-          onSubmit={form.handleSubmit(onSubmit)}
-          className="flex flex-col flex-1"
-        >
-          <CardContent className="space-y-4 flex-1">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  {/*
-                    The card title above already says 「名字」. Printing it again
-                    as a field label put the same word twice in one card, so the
+        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+          <FormField
+            control={form.control}
+            name="name"
+            render={({ field }) => (
+              <FormItem>
+                {/*
+                    The group title above already says 「名字」. Printing it again
+                    as a field label put the same word twice in one group, so the
                     label stays for screen readers and drops out of the layout.
                   */}
-                  <FormLabel className="sr-only">
-                    {settings_profile_name_title()}
-                  </FormLabel>
-                  <FormControl>
-                    <Input
-                      placeholder={settings_profile_name_placeholder()}
-                      {...field}
-                    />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormError message={error} />
-          </CardContent>
-          <CardFooter className="mt-6 px-6 py-4 flex justify-between items-center bg-muted rounded-none">
-            <p className="text-sm text-muted-foreground">
-              {settings_profile_name_hint()}
-            </p>
+                <FormLabel className="sr-only">
+                  {settings_profile_name_title()}
+                </FormLabel>
+                <FormControl>
+                  <Input
+                    placeholder={settings_profile_name_placeholder()}
+                    {...field}
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormError message={error} />
+          <SettingsRowFooter hint={settings_profile_name_hint()}>
             <Button type="submit" disabled={isSaving}>
               {isSaving
                 ? settings_profile_name_saving()
                 : settings_profile_name_save()}
             </Button>
-          </CardFooter>
+          </SettingsRowFooter>
         </form>
       </Form>
-    </Card>
+    </SettingsRow>
   );
 }

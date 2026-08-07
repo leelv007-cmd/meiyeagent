@@ -6,13 +6,10 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { CustomerPortalButton } from '@/components/pricing/customer-portal-button';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  SettingsRow,
+  SettingsRowFooter,
+  SettingsRowHeader,
+} from '@/components/settings/settings-section';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   credit_billing_credits_this_period,
@@ -37,9 +34,6 @@ import {
 import { formatLocaleDate } from '@/lib/locale';
 import { Routes } from '@/lib/routes';
 import { useMerchantCreditDetail } from '@/product/use-merchant-credit-detail';
-
-const cardClass = 'w-full overflow-hidden';
-const footerClass = 'flex justify-end bg-muted px-6 py-4';
 
 const PLAN_LABELS: Record<
   NonNullable<MerchantCreditDetail['billing']>['tier'],
@@ -66,16 +60,14 @@ export function BillingCard() {
 
   if (query.isPending) {
     return (
-      <Card className={cardClass} data-testid="credit-billing-card-loading">
-        <CardHeader>
-          <CardTitle>{credit_billing_title()}</CardTitle>
-          <CardDescription>{credit_billing_description()}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Skeleton className="h-8 w-1/3" />
-          <Skeleton className="h-16 w-full" />
-        </CardContent>
-      </Card>
+      <SettingsRow data-testid="credit-billing-card-loading">
+        <SettingsRowHeader
+          description={credit_billing_description()}
+          title={credit_billing_title()}
+        />
+        <Skeleton className="h-8 w-1/3" />
+        <Skeleton className="h-16 w-full" />
+      </SettingsRow>
     );
   }
 
@@ -100,12 +92,12 @@ export function BillingCard() {
 
   const billing = query.data.billing;
   return (
-    <Card className={cardClass} data-testid="credit-billing-card">
-      <CardHeader>
-        <CardTitle>{credit_billing_title()}</CardTitle>
-        <CardDescription>{credit_billing_description()}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
+    <SettingsRow data-testid="credit-billing-card">
+      <SettingsRowHeader
+        description={credit_billing_description()}
+        title={credit_billing_title()}
+      />
+      <div className="space-y-3">
         {billing ? (
           <dl className="grid gap-3 text-sm sm:grid-cols-2">
             <div>
@@ -146,18 +138,24 @@ export function BillingCard() {
             {credit_billing_no_active_subscription()}
           </p>
         )}
-      </CardContent>
-      <CardFooter className={`${footerClass} gap-3`}>
-        <CustomerPortalButton variant="outline">
-          {credit_billing_renew()}
-        </CustomerPortalButton>
-        <Link
-          className={buttonVariants({ variant: 'default' })}
-          to={Routes.Pricing}
-        >
-          {credit_billing_upgrade()}
-        </Link>
-      </CardFooter>
-    </Card>
+      </div>
+      {/*
+        升级套餐 is the topbar's retired second pill, landed where it belongs:
+        beside the plan it would change, on the page that answers「我还剩多少」.
+      */}
+      <SettingsRowFooter>
+        <span className="flex flex-wrap gap-3">
+          <CustomerPortalButton variant="outline">
+            {credit_billing_renew()}
+          </CustomerPortalButton>
+          <Link
+            className={buttonVariants({ variant: 'default' })}
+            to={Routes.Pricing}
+          >
+            {credit_billing_upgrade()}
+          </Link>
+        </span>
+      </SettingsRowFooter>
+    </SettingsRow>
   );
 }

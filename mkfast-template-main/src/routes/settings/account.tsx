@@ -6,6 +6,7 @@ import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { UpdateAvatarCard } from '@/components/settings/profile/update-avatar-card';
 import { UpdateNameCard } from '@/components/settings/profile/update-name-card';
 import { PasswordCardWrapper } from '@/components/settings/security/password-card-wrapper';
+import { SettingsSection } from '@/components/settings/settings-section';
 import { BillingCard } from '@/components/settings/billing/billing-card';
 import { MerchantCreditDetailPanel } from '@/product/merchant-credit-detail-panel';
 import { RedemptionCard } from '@/p1/redemption-card';
@@ -122,43 +123,46 @@ function AccountPage() {
         ))}
       </nav>
 
+      {/*
+        One surface per section. Every group below used to be a card of its own
+        under the section heading — two names for one thing where the heading
+        already said it (登录安全 over a card called 修改密码), and three cards
+        competing at equal weight under 积分与账单. The section is the panel now
+        and the groups are separated by a rule.
+      */}
       {isMobile ? null : (
         <>
-          <section className="scroll-mt-16 space-y-4" id="profile">
-            <h2 className="text-lg font-semibold">
-              {settings_account_profile_heading()}
-            </h2>
-            <div className="grid gap-4 xl:grid-cols-2">
-              <UpdateNameCard />
-              <UpdateAvatarCard />
-            </div>
-          </section>
-          <section className="scroll-mt-16 space-y-4" id="security">
-            <h2 className="text-lg font-semibold">
-              {settings_account_security_heading()}
-            </h2>
+          <SettingsSection
+            id="profile"
+            title={settings_account_profile_heading()}
+          >
+            <UpdateNameCard />
+            <UpdateAvatarCard />
+          </SettingsSection>
+          <SettingsSection
+            id="security"
+            title={settings_account_security_heading()}
+          >
             <PasswordCardWrapper />
-          </section>
+          </SettingsSection>
         </>
       )}
-      <section className="scroll-mt-16 space-y-4" id="credits">
-        {/* On the phone the page is this section, and the h1 already says so. */}
-        {isMobile ? null : (
-          <h2 className="text-lg font-semibold">
-            {settings_account_credits_heading()}
-          </h2>
-        )}
+      {/* On the phone the page is this section, and the h1 already says so. */}
+      <SettingsSection
+        id="credits"
+        title={isMobile ? undefined : settings_account_credits_heading()}
+      >
         <MerchantCreditDetailPanel />
         <RedemptionCard />
         <BillingCard />
-      </section>
+      </SettingsSection>
       {isMobile ? null : (
-        <section className="scroll-mt-16 space-y-4" id="pwa-install">
-          <h2 className="text-lg font-semibold">
-            {settings_account_pwa_heading()}
-          </h2>
+        <SettingsSection
+          id="pwa-install"
+          title={settings_account_pwa_heading()}
+        >
           <InstallPrompt variant="settings" />
-        </section>
+        </SettingsSection>
       )}
     </DashboardLayout>
   );

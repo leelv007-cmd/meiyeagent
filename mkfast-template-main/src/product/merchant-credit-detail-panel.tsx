@@ -5,12 +5,10 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  SettingsRow,
+  SettingsRowHeader,
+  useSettingsHeadingLevel,
+} from '@/components/settings/settings-section';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -114,19 +112,23 @@ const TRANSACTION_OPERATION_LABELS: Record<
 
 export function MerchantCreditDetailPanel() {
   const query = useMerchantCreditDetail();
+  /*
+   * These two tables are named one rank below whatever names this group, which
+   * moves with the section: the phone renders the credits section alone and
+   * lets the page h1 title it, so the group is an h2 there and an h3 elsewhere.
+   */
+  const TableHeading = useSettingsHeadingLevel() === 2 ? 'h3' : 'h4';
 
   if (query.isPending) {
     return (
-      <Card data-testid="merchant-credit-detail-loading">
-        <CardHeader>
-          <CardTitle>{credit_detail_title()}</CardTitle>
-          <CardDescription>{credit_detail_description()}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-24 w-full" />
-        </CardContent>
-      </Card>
+      <SettingsRow data-testid="merchant-credit-detail-loading">
+        <SettingsRowHeader
+          description={credit_detail_description()}
+          title={credit_detail_title()}
+        />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </SettingsRow>
     );
   }
 
@@ -150,16 +152,19 @@ export function MerchantCreditDetailPanel() {
   }
 
   return (
-    <Card data-testid="merchant-credit-detail">
-      <CardHeader>
-        <CardTitle>{credit_detail_title()}</CardTitle>
-        <CardDescription>{credit_detail_description()}</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-8">
+    <SettingsRow data-testid="merchant-credit-detail">
+      <SettingsRowHeader
+        description={credit_detail_description()}
+        title={credit_detail_title()}
+      />
+      <div className="space-y-8">
         <section aria-labelledby="merchant-credit-batches">
-          <h3 className="mb-3 font-medium" id="merchant-credit-batches">
+          <TableHeading
+            className="mb-3 font-medium"
+            id="merchant-credit-batches"
+          >
             {credit_detail_batches_title()}
-          </h3>
+          </TableHeading>
           <Table>
             <TableHeader>
               <TableRow>
@@ -191,9 +196,12 @@ export function MerchantCreditDetailPanel() {
         </section>
 
         <section aria-labelledby="merchant-credit-transactions">
-          <h3 className="mb-3 font-medium" id="merchant-credit-transactions">
+          <TableHeading
+            className="mb-3 font-medium"
+            id="merchant-credit-transactions"
+          >
             {credit_detail_transactions_title()}
-          </h3>
+          </TableHeading>
           <Table>
             <TableHeader>
               <TableRow>
@@ -243,7 +251,7 @@ export function MerchantCreditDetailPanel() {
             </TableBody>
           </Table>
         </section>
-      </CardContent>
-    </Card>
+      </div>
+    </SettingsRow>
   );
 }

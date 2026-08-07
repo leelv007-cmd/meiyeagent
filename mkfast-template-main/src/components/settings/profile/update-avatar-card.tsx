@@ -12,13 +12,10 @@ import { FormError } from '@/components/shared/form-error';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { buttonVariants } from '@/components/ui/button';
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+  SettingsRow,
+  SettingsRowFooter,
+  SettingsRowHeader,
+} from '@/components/settings/settings-section';
 import { websiteConfig } from '@/config/website';
 import { authClient } from '@/auth/client';
 import { useUploadUserAvatar } from '@/hooks/use-user-files';
@@ -89,54 +86,39 @@ export function UpdateAvatarCard({ className }: UpdateAvatarCardProps) {
     });
   };
   return (
-    <Card
-      className={cn(
-        'w-full overflow-hidden py-0 pt-6 flex flex-col',
-        className
-      )}
-    >
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold">
-          {settings_profile_avatar_title()}
-        </CardTitle>
-        <CardDescription>
-          {settings_profile_avatar_description()}
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4 flex-1">
-        <div className="flex flex-col items-center sm:flex-row gap-4 sm:gap-8">
-          <Avatar className="h-16 w-16 border">
-            <AvatarImage src={avatarUrl ?? ''} alt={user.name ?? ''} />
-            <AvatarFallback className="absolute inset-0">
-              <IconUser className="h-8 w-8 text-muted-foreground" />
-            </AvatarFallback>
-          </Avatar>
-          <label
-            className={cn(
-              buttonVariants({ variant: 'outline', size: 'sm' }),
-              'cursor-pointer',
-              uploadMutation.isPending && 'pointer-events-none opacity-50'
-            )}
-          >
-            <input
-              type="file"
-              accept="image/png, image/jpeg, image/webp"
-              onChange={handleFileChange}
-              className="sr-only"
-              disabled={uploadMutation.isPending}
-            />
-            {uploadMutation.isPending
-              ? settings_profile_avatar_uploading()
-              : settings_profile_avatar_upload_avatar()}
-          </label>
-        </div>
-        <FormError message={error} />
-      </CardContent>
-      <CardFooter className="mt-auto px-6 py-4 flex justify-between items-center bg-muted rounded-none">
-        <p className="text-sm text-muted-foreground">
-          {settings_profile_avatar_hint()}
-        </p>
-      </CardFooter>
-    </Card>
+    <SettingsRow className={cn(className)}>
+      <SettingsRowHeader
+        description={settings_profile_avatar_description()}
+        title={settings_profile_avatar_title()}
+      />
+      <div className="flex flex-col items-center sm:flex-row gap-4 sm:gap-8">
+        <Avatar className="h-16 w-16 border">
+          <AvatarImage src={avatarUrl ?? ''} alt={user.name ?? ''} />
+          <AvatarFallback className="absolute inset-0">
+            <IconUser className="h-8 w-8 text-muted-foreground" />
+          </AvatarFallback>
+        </Avatar>
+        <label
+          className={cn(
+            buttonVariants({ variant: 'outline', size: 'sm' }),
+            'cursor-pointer',
+            uploadMutation.isPending && 'pointer-events-none opacity-50'
+          )}
+        >
+          <input
+            type="file"
+            accept="image/png, image/jpeg, image/webp"
+            onChange={handleFileChange}
+            className="sr-only"
+            disabled={uploadMutation.isPending}
+          />
+          {uploadMutation.isPending
+            ? settings_profile_avatar_uploading()
+            : settings_profile_avatar_upload_avatar()}
+        </label>
+      </div>
+      <FormError message={error} />
+      <SettingsRowFooter hint={settings_profile_avatar_hint()} />
+    </SettingsRow>
   );
 }
