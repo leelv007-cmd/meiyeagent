@@ -17,6 +17,10 @@ import {
 } from '../p1/admin-config/index.js';
 import { AGENT_SEMANTIC_EVENT_ADAPTER_FLAG } from '../p1/agent-semantic-events/semantic-event-projector.js';
 import {
+  SHADOW_RECONCILIATION_SAMPLE_RATE_KEY,
+  SHADOW_RECONCILIATION_WINDOW_DAYS_KEY,
+} from '../p1/harness/shadow-reconciliation.js';
+import {
   AGENT_MEMORY_FLAGS,
   AGENT_MEMORY_KILL_SWITCH_KEYS,
 } from '../p1/operations/agent-memory-platform.js';
@@ -52,6 +56,9 @@ const SHARED_HOT_AND_WIRED_CONFIG_KEYS = [
   NOTE_STYLE_CONFIG_KEY,
   // V31-03: Semantic event adapter flag (hot-read by shadow dual-write reader).
   AGENT_SEMANTIC_EVENT_ADAPTER_FLAG,
+  // V31-13: Make shadow reconciliation sample rate + timebox window (hot-read).
+  SHADOW_RECONCILIATION_SAMPLE_RATE_KEY,
+  SHADOW_RECONCILIATION_WINDOW_DAYS_KEY,
   // V31-18: Memory platform flags + kill switches (hot-read by AgentMemoryPlatform).
   AGENT_MEMORY_FLAGS.read,
   AGENT_MEMORY_FLAGS.candidateWrite,

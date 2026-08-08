@@ -167,6 +167,22 @@ test('agent_semantic_event_adapter_v1 is hot-read and wired (V31-03 shadow gate)
   );
 });
 
+test('make.shadow_reconciliation.* keys are hot-read and wired (V31-13)', () => {
+  for (const key of [
+    'make.shadow_reconciliation.sample_rate',
+    'make.shadow_reconciliation.window_days',
+  ]) {
+    assert.ok(
+      ADMIN_CONFIG_KEY_CLASSIFICATION.hotReadKeys.includes(key),
+      `missing hot-read classification for ${key}`,
+    );
+    assert.ok(
+      ADMIN_CONFIG_KEY_CLASSIFICATION.wiredKeys.includes(key),
+      `missing wired classification for ${key}`,
+    );
+  }
+});
+
 // Spec G / #390: plan.credits.* keys come only from @meiye/contracts.
 test('credit plan keys include reference_numbers from the contracts authority', () => {
   assert.ok(

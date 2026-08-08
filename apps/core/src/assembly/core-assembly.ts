@@ -109,6 +109,11 @@ import {
   PostgresHarnessObservabilityStore,
   PostgresHarnessStore,
 } from '../p1/harness/postgres-store.js';
+import {
+  resolveShadowReconciliationConfigFromAdmin,
+  ShadowReconciliationService,
+} from '../p1/harness/shadow-reconciliation.js';
+import { PostgresShadowReconciliationStore } from '../p1/harness/shadow-reconciliation-store.js';
 import { DEFAULT_HOLD_RESERVATION_TTL_SECONDS } from '../p1/harness/reservation-sweeper.js';
 import {
   initializeJobWorkerHarnessRuntime,
@@ -723,6 +728,17 @@ export async function assembleCoreGraph(
   /** V31-14: durable pending interrupts (CAS resume / listPending). */
   const interruptStore = new PostgresInterruptStore(pool);
   /**
+   * V31-13: shadow reconciliation evidence + program state (PG production).
+   * Memory store is test-only; sampling hangs off Make complete path (no daemon).
+   */
+  const shadowReconciliationStore = new PostgresShadowReconciliationStore(pool);
+  const shadowReconciliationService = new ShadowReconciliationService({
+    store: shadowReconciliationStore,
+    audit: opsConsoleStore,
+    resolveConfig: () =>
+      resolveShadowReconciliationConfigFromAdmin(adminConfigRepository),
+  });
+  /**
    * V31-08: late-bound billing quote resolver. productQuoteAuthority is
    * assembled further down; ports are only invoked at turn time.
    */
@@ -1095,6 +1111,8 @@ export async function assembleCoreGraph(
     executionPlanAdmissionMigration,
     // V31-14 durable Interrupt store (pending confirm survives restart).
     interruptStore,
+    // V31-13 shadow reconciliation samples + program state (ops audit reuse).
+    shadowReconciliationStore,
   ]);
   await ensureCreditPlanCatalogDefaults(adminConfigRepository);
   await migrateCreditPlanCatalogCurrencyToHkd(adminConfigRepository);
@@ -1572,6 +1590,8 @@ export async function assembleCoreGraph(
     executionPlanAdmissionService,
     executionPlanSnapshotStore: executionPlanAdmissionMigration.store,
     interruptStore,
+    shadowReconciliationStore,
+    shadowReconciliationService,
     foundationLedgerService,
     productEntitlements,
     executionEntitlementPolicy,

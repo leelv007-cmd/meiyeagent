@@ -30,6 +30,14 @@ import {
   AGENT_MEMORY_KILL_SWITCH_KEYS,
 } from '../operations/agent-memory-platform.js';
 import {
+  DEFAULT_SHADOW_SAMPLE_RATE,
+  DEFAULT_SHADOW_WINDOW_DAYS,
+  MAX_SHADOW_WINDOW_DAYS,
+  MIN_SHADOW_WINDOW_DAYS,
+  SHADOW_RECONCILIATION_SAMPLE_RATE_KEY,
+  SHADOW_RECONCILIATION_WINDOW_DAYS_KEY,
+} from '../harness/shadow-reconciliation.js';
+import {
   BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
   BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
   boundedExecutionLiveCalibrationConfigSchema,
@@ -610,6 +618,23 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     description:
       'Feature flag agent_semantic_event_adapter_v1 — default off when unset. When true, hot-read enables shadow dual-write of workflow progress/token into AgentSemanticEventProjector; when false/unset, zero projector writes and existing workflow SSE is unchanged.',
     valueSchema: z.boolean(),
+  },
+  // V31-13 / V3.1 §23.2: Make shadow reconciliation sampling + timebox (hot-read).
+  {
+    key: SHADOW_RECONCILIATION_SAMPLE_RATE_KEY,
+    scope: 'global',
+    description: `Shadow reconciliation sample rate (0..1) for deterministic-field compare on Make complete. Default ${DEFAULT_SHADOW_SAMPLE_RATE} (~10%).`,
+    valueSchema: z.number().min(0).max(1),
+  },
+  {
+    key: SHADOW_RECONCILIATION_WINDOW_DAYS_KEY,
+    scope: 'global',
+    description: `Shadow reconciliation timebox window in days (${MIN_SHADOW_WINDOW_DAYS}–${MAX_SHADOW_WINDOW_DAYS}). Continuous mismatch=0 for this window enables early close. Default ${DEFAULT_SHADOW_WINDOW_DAYS}.`,
+    valueSchema: z
+      .number()
+      .int()
+      .min(MIN_SHADOW_WINDOW_DAYS)
+      .max(MAX_SHADOW_WINDOW_DAYS),
   },
   // V31-18 / V3.1 §41: Memory platform feature flags + kill switches (spec-E §14).
   {

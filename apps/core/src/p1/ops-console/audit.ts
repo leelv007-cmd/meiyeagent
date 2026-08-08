@@ -13,7 +13,11 @@ export type OpsConsoleAuditAction =
   | 'rollback_production'
   | 'record_rollback_drill'
   | 'create_tool_policy_revision'
-  | 'set_kill_switch';
+  | 'set_kill_switch'
+  /** V31-13: shadow deterministic-field mismatch (evidence only). */
+  | 'shadow_reconciliation_mismatch'
+  /** V31-13: shadow program close (timebox or early mismatch=0). */
+  | 'close_shadow_reconciliation';
 
 export type OpsConsoleAuditEntry = {
   id: string;

@@ -293,6 +293,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     planCompiler,
     executionPlanAdmissionService,
     interruptStore,
+    shadowReconciliationService,
     productEntitlements,
     executionEntitlementPolicy,
     p1ModelSupplyService,
@@ -1240,6 +1241,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           );
           return state?.enabled === true;
         },
+        // V31-13: shadow reconcil sample on Make complete (PG store + ops audit).
+        shadowReconciliation: shadowReconciliationService,
       }
     );
     // V31-14: typed Interrupt protocol — durable Postgres store (restart-safe).
