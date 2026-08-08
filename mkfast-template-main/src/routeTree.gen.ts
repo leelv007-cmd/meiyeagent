@@ -60,11 +60,11 @@ import { Route as AdminTemplatesRouteImport } from './routes/admin/templates'
 import { Route as AdminSupplyRouteImport } from './routes/admin/supply'
 import { Route as AdminSkillsRouteImport } from './routes/admin/skills'
 import { Route as AdminSensitiveWordsRouteImport } from './routes/admin/sensitive-words'
-import { Route as AdminOpsConsoleRouteImport } from './routes/admin/ops-console'
 import { Route as AdminRefundReviewRouteImport } from './routes/admin/refund-review'
 import { Route as AdminRedemptionsRouteImport } from './routes/admin/redemptions'
 import { Route as AdminPlansRouteImport } from './routes/admin/plans'
 import { Route as AdminP1RouteImport } from './routes/admin/p1'
+import { Route as AdminOpsConsoleRouteImport } from './routes/admin/ops-console'
 import { Route as AdminModelsRouteImport } from './routes/admin/models'
 import { Route as AdminIntegrationsRouteImport } from './routes/admin/integrations'
 import { Route as AdminCloudflareRouteImport } from './routes/admin/cloudflare'
@@ -376,11 +376,6 @@ const AdminSensitiveWordsRoute = AdminSensitiveWordsRouteImport.update({
   path: '/sensitive-words',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminOpsConsoleRoute = AdminOpsConsoleRouteImport.update({
-  id: '/ops-console',
-  path: '/ops-console',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminRefundReviewRoute = AdminRefundReviewRouteImport.update({
   id: '/refund-review',
   path: '/refund-review',
@@ -399,6 +394,11 @@ const AdminPlansRoute = AdminPlansRouteImport.update({
 const AdminP1Route = AdminP1RouteImport.update({
   id: '/p1',
   path: '/p1',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminOpsConsoleRoute = AdminOpsConsoleRouteImport.update({
+  id: '/ops-console',
+  path: '/ops-console',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminModelsRoute = AdminModelsRouteImport.update({
@@ -719,12 +719,12 @@ export interface FileRoutesByFullPath {
   '/admin/cloudflare': typeof AdminCloudflareRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/models': typeof AdminModelsRoute
+  '/admin/ops-console': typeof AdminOpsConsoleRoute
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
   '/admin/refund-review': typeof AdminRefundReviewRoute
   '/admin/sensitive-words': typeof AdminSensitiveWordsRoute
-  '/admin/ops-console': typeof AdminOpsConsoleRoute
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
@@ -828,12 +828,12 @@ export interface FileRoutesByTo {
   '/admin/cloudflare': typeof AdminCloudflareRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/models': typeof AdminModelsRoute
+  '/admin/ops-console': typeof AdminOpsConsoleRoute
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
   '/admin/refund-review': typeof AdminRefundReviewRoute
   '/admin/sensitive-words': typeof AdminSensitiveWordsRoute
-  '/admin/ops-console': typeof AdminOpsConsoleRoute
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
@@ -942,12 +942,12 @@ export interface FileRoutesById {
   '/admin/cloudflare': typeof AdminCloudflareRoute
   '/admin/integrations': typeof AdminIntegrationsRoute
   '/admin/models': typeof AdminModelsRoute
+  '/admin/ops-console': typeof AdminOpsConsoleRoute
   '/admin/p1': typeof AdminP1Route
   '/admin/plans': typeof AdminPlansRoute
   '/admin/redemptions': typeof AdminRedemptionsRoute
   '/admin/refund-review': typeof AdminRefundReviewRoute
   '/admin/sensitive-words': typeof AdminSensitiveWordsRoute
-  '/admin/ops-console': typeof AdminOpsConsoleRoute
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
@@ -1057,12 +1057,12 @@ export interface FileRouteTypes {
     | '/admin/cloudflare'
     | '/admin/integrations'
     | '/admin/models'
+    | '/admin/ops-console'
     | '/admin/p1'
     | '/admin/plans'
     | '/admin/redemptions'
     | '/admin/refund-review'
     | '/admin/sensitive-words'
-    | '/admin/ops-console'
     | '/admin/skills'
     | '/admin/supply'
     | '/admin/templates'
@@ -1166,12 +1166,12 @@ export interface FileRouteTypes {
     | '/admin/cloudflare'
     | '/admin/integrations'
     | '/admin/models'
+    | '/admin/ops-console'
     | '/admin/p1'
     | '/admin/plans'
     | '/admin/redemptions'
     | '/admin/refund-review'
     | '/admin/sensitive-words'
-    | '/admin/ops-console'
     | '/admin/skills'
     | '/admin/supply'
     | '/admin/templates'
@@ -1279,12 +1279,12 @@ export interface FileRouteTypes {
     | '/admin/cloudflare'
     | '/admin/integrations'
     | '/admin/models'
+    | '/admin/ops-console'
     | '/admin/p1'
     | '/admin/plans'
     | '/admin/redemptions'
     | '/admin/refund-review'
     | '/admin/sensitive-words'
-    | '/admin/ops-console'
     | '/admin/skills'
     | '/admin/supply'
     | '/admin/templates'
@@ -1772,13 +1772,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSensitiveWordsRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/ops-console': {
-      id: '/admin/ops-console'
-      path: '/ops-console'
-      fullPath: '/admin/ops-console'
-      preLoaderRoute: typeof AdminOpsConsoleRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/refund-review': {
       id: '/admin/refund-review'
       path: '/refund-review'
@@ -1805,6 +1798,13 @@ declare module '@tanstack/react-router' {
       path: '/p1'
       fullPath: '/admin/p1'
       preLoaderRoute: typeof AdminP1RouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/ops-console': {
+      id: '/admin/ops-console'
+      path: '/ops-console'
+      fullPath: '/admin/ops-console'
+      preLoaderRoute: typeof AdminOpsConsoleRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/models': {
@@ -2227,12 +2227,12 @@ interface AdminRouteChildren {
   AdminCloudflareRoute: typeof AdminCloudflareRoute
   AdminIntegrationsRoute: typeof AdminIntegrationsRoute
   AdminModelsRoute: typeof AdminModelsRoute
+  AdminOpsConsoleRoute: typeof AdminOpsConsoleRoute
   AdminP1Route: typeof AdminP1Route
   AdminPlansRoute: typeof AdminPlansRoute
   AdminRedemptionsRoute: typeof AdminRedemptionsRoute
   AdminRefundReviewRoute: typeof AdminRefundReviewRoute
   AdminSensitiveWordsRoute: typeof AdminSensitiveWordsRoute
-  AdminOpsConsoleRoute: typeof AdminOpsConsoleRoute
   AdminSkillsRoute: typeof AdminSkillsRoute
   AdminSupplyRoute: typeof AdminSupplyRouteWithChildren
   AdminTemplatesRoute: typeof AdminTemplatesRoute
@@ -2246,12 +2246,12 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminCloudflareRoute: AdminCloudflareRoute,
   AdminIntegrationsRoute: AdminIntegrationsRoute,
   AdminModelsRoute: AdminModelsRoute,
+  AdminOpsConsoleRoute: AdminOpsConsoleRoute,
   AdminP1Route: AdminP1Route,
   AdminPlansRoute: AdminPlansRoute,
   AdminRedemptionsRoute: AdminRedemptionsRoute,
   AdminRefundReviewRoute: AdminRefundReviewRoute,
   AdminSensitiveWordsRoute: AdminSensitiveWordsRoute,
-  AdminOpsConsoleRoute: AdminOpsConsoleRoute,
   AdminSkillsRoute: AdminSkillsRoute,
   AdminSupplyRoute: AdminSupplyRouteWithChildren,
   AdminTemplatesRoute: AdminTemplatesRoute,

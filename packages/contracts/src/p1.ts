@@ -19,6 +19,7 @@ export const p1ModuleRequestSchema = z.object({
   module: z.enum([
     'advanced-canvas',
     'admin-config',
+    'agent-session',
     'asset-memory',
     'context',
     'creation-experience',

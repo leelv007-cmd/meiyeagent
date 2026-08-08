@@ -77,8 +77,23 @@ export type AgentWorkbenchClientState = {
   lastEventId: string | null;
   lastStreamOffset: string | null;
   snapshotRevision: string | null;
+  /**
+   * §4 / §27.6: explicit threadId from URL / host — wins over session
+   * projection auto-resume. Survives reset / patch_failed like taskId.
+   */
+  explicitThreadId: string | null;
   /** §27.6: explicit taskId from URL / host — never overwritten by "recent". */
   explicitTaskId: string | null;
+  /**
+   * How the current session was chosen (Idle when session is null and
+   * resolveSource is idle).
+   */
+  resolveSource:
+    | 'explicit_thread'
+    | 'active_turn'
+    | 'recent_thread'
+    | 'idle'
+    | null;
   seenEventIds: ReadonlySet<string>;
   deliveredKeys: ReadonlySet<string>;
   needsSnapshotResync: boolean;
@@ -94,7 +109,12 @@ export type ClientSnapshotCursor = {
 export type AgentWorkbenchAction =
   | { type: 'set_connection'; connection: AgentConnectionState }
   | { type: 'set_session'; session: WorkbenchSessionProjection | null }
+  | { type: 'set_explicit_thread_id'; threadId: string | null }
   | { type: 'set_explicit_task_id'; taskId: string | null }
+  | {
+      type: 'set_resolve_source';
+      resolveSource: AgentWorkbenchClientState['resolveSource'];
+    }
   | { type: 'set_mobile_pane'; pane: 'process' | 'works' }
   | { type: 'toggle_activity_collapsed'; activityId: string }
   | {
@@ -104,6 +124,7 @@ export type AgentWorkbenchAction =
       events: readonly AgentSemanticEventWire[];
       /** Ignored when explicitTaskId already set (§27.6). */
       recentTaskId?: string | null;
+      resolveSource?: AgentWorkbenchClientState['resolveSource'];
     }
   | { type: 'apply_semantic_event'; event: AgentSemanticEventWire }
   | { type: 'apply_events_batch'; events: readonly AgentSemanticEventWire[] }
@@ -130,7 +151,9 @@ export function createEmptyAgentWorkbenchState(): AgentWorkbenchClientState {
     lastEventId: null,
     lastStreamOffset: null,
     snapshotRevision: null,
+    explicitThreadId: null,
     explicitTaskId: null,
+    resolveSource: null,
     seenEventIds: new Set(),
     deliveredKeys: new Set(),
     needsSnapshotResync: false,
@@ -175,8 +198,12 @@ export function reduceAgentWorkbench(
       return ok({ ...state, connection: action.connection });
     case 'set_session':
       return ok({ ...state, session: action.session });
+    case 'set_explicit_thread_id':
+      return ok({ ...state, explicitThreadId: action.threadId });
     case 'set_explicit_task_id':
       return ok({ ...state, explicitTaskId: action.taskId });
+    case 'set_resolve_source':
+      return ok({ ...state, resolveSource: action.resolveSource });
     case 'set_mobile_pane':
       return ok({ ...state, mobilePane: action.pane });
     case 'toggle_activity_collapsed': {
@@ -196,6 +223,7 @@ export function reduceAgentWorkbench(
     case 'reset':
       return ok({
         ...createEmptyAgentWorkbenchState(),
+        explicitThreadId: state.explicitThreadId,
         explicitTaskId: state.explicitTaskId,
       });
     case 'patch_failed':
@@ -223,7 +251,9 @@ function discardProjectionForResync(
 ): AgentWorkbenchClientState {
   return {
     ...createEmptyAgentWorkbenchState(),
+    explicitThreadId: state.explicitThreadId,
     explicitTaskId: state.explicitTaskId,
+    resolveSource: state.resolveSource,
     mobilePane: state.mobilePane,
     connection: 'resyncing',
     needsSnapshotResync: true,
@@ -236,7 +266,9 @@ function hydrateReplay(
 ): AgentWorkbenchClientState {
   let next: AgentWorkbenchClientState = {
     ...createEmptyAgentWorkbenchState(),
+    explicitThreadId: prev.explicitThreadId,
     explicitTaskId: prev.explicitTaskId,
+    resolveSource: action.resolveSource ?? prev.resolveSource,
     mobilePane: prev.mobilePane,
     session: action.session,
     snapshotRevision: action.snapshot.revision,

@@ -1,6 +1,9 @@
 export * from './agent-session-store.js';
 export * from './memory-agent-session-store.js';
 export * from './postgres-agent-session-store.js';
+// V31-05 Thread list / Workbench session restore (P1 surface)
+export * from './foundation-module.js';
+export * from './workbench-session.js';
 // V31-06 Session Harness core
 export * from './agent-kernel.js';
 export * from './ai-sdk-agent-kernel.js';
