@@ -60,6 +60,21 @@ test('V31-15: Workstream production path mounts ArtifactCanvas (not worksSlot-on
   assert.match(host, /onArtifactViewRevision/u);
 });
 
+test('V31-17: Delivered publish handoff wired into Workstream + ComposerHome', () => {
+  const stream = readSource('src/product/agent-workbench/agent-workstream.tsx');
+  assert.match(stream, /PublishHandoffPanel/u);
+  assert.match(stream, /publishHandoffView/u);
+  assert.match(stream, /data-delivered/u);
+  const home = readSource('src/product/composer/composer-home.tsx');
+  assert.match(home, /usePublishHandoff/u);
+  assert.match(home, /publishHandoffView=\{publishHandoff\.publishHandoffView\}/u);
+  assert.match(home, /prepare_mobile_publish_handoff|usePublishHandoff/u);
+  const index = readSource('src/product/agent-workbench/index.ts');
+  assert.match(index, /PublishHandoffPanel/u);
+  assert.match(index, /usePublishHandoff/u);
+  assert.match(index, /projectPublishHandoffPanel/u);
+});
+
 test('no second global state library introduced for workbench', () => {
   const files = [
     'src/product/agent-workbench/agent-event-store.ts',

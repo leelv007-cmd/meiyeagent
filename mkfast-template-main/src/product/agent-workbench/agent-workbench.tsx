@@ -12,6 +12,8 @@ import { useEffect, useRef } from 'react';
 
 import { queryP1 } from '@/p1/client';
 
+import type { OutcomeSelfReportChipSignal } from '@meiye/contracts';
+
 import {
   reconnectAgentWorkbench,
   type AgentReplayLoader,
@@ -23,6 +25,7 @@ import {
 } from './agent-event-store';
 import { AgentWorkstream } from './agent-workstream';
 import type { WorkstreamMobilePane } from './mobile-workstream-switch';
+import type { PublishHandoffPanelView } from './publish-handoff';
 import {
   workbenchRootMode,
   type WorkbenchSessionResolveResponse,
@@ -49,6 +52,22 @@ export type AgentWorkbenchHostProps = {
   worksSlot?: React.ReactNode;
   /** Work inline projection / legacy conversation stream. */
   processSlot?: React.ReactNode;
+  /** V31-17 Delivered publish handoff materials (production path). */
+  publishHandoffView?: PublishHandoffPanelView | null;
+  selfReportPrompt?: string | null;
+  selfReportChips?: readonly OutcomeSelfReportChipSignal[];
+  onPublishHandoffCopy?: (role: string, value: string) => void;
+  onPublishHandoffDownloadZip?: (fileName: string) => void | Promise<void>;
+  onPublishHandoffRecordPublished?: (input: {
+    contentPackageId: string;
+    contentPackageRevision: number;
+    platformUrl?: string;
+    note?: string;
+  }) => void | Promise<void>;
+  onSelfReportChip?: (
+    signal: OutcomeSelfReportChipSignal,
+  ) => void | Promise<void>;
+  onSelfReportIgnore?: () => void | Promise<void>;
   className?: string;
 };
 
@@ -69,6 +88,14 @@ export function AgentWorkbenchHost({
   viewport = 'desktop',
   worksSlot,
   processSlot,
+  publishHandoffView = null,
+  selfReportPrompt = null,
+  selfReportChips,
+  onPublishHandoffCopy,
+  onPublishHandoffDownloadZip,
+  onPublishHandoffRecordPublished,
+  onSelfReportChip,
+  onSelfReportIgnore,
   className,
 }: AgentWorkbenchHostProps) {
   const store = getAgentWorkbenchHostStore();
@@ -173,10 +200,18 @@ export function AgentWorkbenchHost({
         onMobilePaneChange={(pane: WorkstreamMobilePane) =>
           dispatch({ type: 'set_mobile_pane', pane })
         }
+        onPublishHandoffCopy={onPublishHandoffCopy}
+        onPublishHandoffDownloadZip={onPublishHandoffDownloadZip}
+        onPublishHandoffRecordPublished={onPublishHandoffRecordPublished}
+        onSelfReportChip={onSelfReportChip}
+        onSelfReportIgnore={onSelfReportIgnore}
         onToggleActivity={(activityId) =>
           dispatch({ type: 'toggle_activity_collapsed', activityId })
         }
         processSlot={processSlot}
+        publishHandoffView={publishHandoffView}
+        selfReportChips={selfReportChips}
+        selfReportPrompt={selfReportPrompt}
         state={state}
         viewport={viewport}
         worksSlot={worksSlot}

@@ -1,0 +1,467 @@
+/**
+ * V31-17 P1 action tests: publish handoff, A19 reject, capability three-state,
+ * merchant published revision binding, self-report idempotency via OutcomeEvidence.
+ */
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {
+  buildOutcomeEvidenceIdempotencyKey,
+  type ContentPackage,
+} from '@meiye/contracts';
+
+import {
+  ContentPackageDeliveryService,
+  type ContentPackagePublishPort,
+} from './content-package-delivery.js';
+import {
+  projectPublishHandoffView,
+  PublishHandoffError,
+  PublishHandoffService,
+} from './publish-handoff.js';
+import { MemoryOperationsRepository } from './repository.js';
+import type { OperationContext, OperationsWorkspaceState } from './types.js';
+
+const context: OperationContext = {
+  actor: 'owner',
+  correlationId: 'publish-handoff-test',
+  userId: 'owner-a',
+  workspaceId: 'workspace-a',
+};
+
+test('projectPublishHandoffView: copy blocks + ordered images + no fake direct publish', () => {
+  const view = projectPublishHandoffView({
+    contentPackage: contentPackage({
+      title: '周末护理',
+      body: '预约从速',
+      topics: ['美甲'],
+      conversionHook: '私信预约',
+      orderedAssetIds: ['img-1', 'img-2'],
+    }),
+    platform: 'xiaohongshu',
+    variantVersionId: 'xhs-v1',
+    capabilityMode: 'assisted',
+    storeName: '美美店',
+  });
+  assert.deepEqual(
+    view.copyBlocks.map((b) => b.role),
+    ['title', 'body', 'topics', 'cta'],
+  );
+  assert.deepEqual(view.orderedImagePaths, ['images/01.jpg', 'images/02.jpg']);
+  assert.equal(view.capability.showDirectPublish, false);
+  assert.equal(view.publicationBindingRevision, 1);
+  assert.match(view.zipFileName ?? '', /美美店-图文-小红书-20260808-r1\.zip/);
+});
+
+test('unavailable capability never presents as direct publish', () => {
+  const view = projectPublishHandoffView({
+    contentPackage: contentPackage(),
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    capabilityMode: 'unavailable',
+  });
+  assert.equal(view.capability.mode, 'unavailable');
+  assert.equal(view.capability.showDirectPublish, false);
+  assert.equal(view.capability.showAssistedHandoff, false);
+  assert.equal(view.capability.showExportAndCopy, true);
+});
+
+test('A19: attemptPublishFromHandoff rejects driven intents', async () => {
+  const setup = await createSetup('assisted');
+  for (const intent of [
+    'system_driven_publish',
+    'automatic_verified_publish',
+    'platform_api_publish',
+  ] as const) {
+    const decision = setup.handoff.attemptPublishFromHandoff({
+      handoffToken: 'any-token',
+      intent,
+    });
+    assert.equal(decision.ok, false);
+    if (!decision.ok) {
+      assert.equal(decision.code, 'DRIVEN_PUBLISH_FROM_HANDOFF_REJECTED');
+      assert.equal(decision.authority, 'A19');
+    }
+  }
+  const allowed = setup.handoff.attemptPublishFromHandoff({
+    handoffToken: 'any-token',
+    intent: 'merchant_self_publish',
+  });
+  assert.equal(allowed.ok, true);
+});
+
+test('prepareMobilePublishHandoff freezes merchant_self_publish QR materials', async () => {
+  const setup = await createSetup('assisted');
+  const view = await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+  assert.ok(view.mobileHandoff);
+  assert.equal(view.mobileHandoff?.publishActor, 'merchant_self_publish');
+  assert.equal(view.mobileHandoff?.systemDrivenPublishAllowed, false);
+  assert.equal(view.mobileHandoff?.contentPackageRef.revision, 1);
+  assert.match(view.mobileHandoff?.handoffUrl ?? '', /\/dashboard\/handoff\//);
+  assert.equal(view.capability.showDirectPublish, false);
+
+  // Driven attempt with the prepared token still rejects.
+  const reject = setup.handoff.attemptPublishFromHandoff({
+    handoffToken: view.mobileHandoff!.token,
+    intent: 'system_driven_publish',
+  });
+  assert.equal(reject.ok, false);
+});
+
+test('recordMerchantPublished binds exact ContentPackage revision', async () => {
+  const setup = await createSetup('assisted');
+  const updated = await setup.handoff.recordMerchantPublished(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    platformUrl: 'https://www.douyin.com/video/manual-1',
+    note: '已在手机发布',
+  });
+  assert.equal(updated.revision, 2);
+  const event = updated.deliveryEvents?.find(
+    (row) => row.type === 'manual_publish_result',
+  );
+  assert.ok(event);
+  if (event?.type === 'manual_publish_result') {
+    assert.equal(event.status, 'published');
+    assert.equal(event.variantVersionId, 'douyin-v1');
+  }
+
+  await assert.rejects(
+    setup.handoff.recordMerchantPublished(context, {
+      packageId: 'package-a',
+      expectedRevision: 1, // stale
+      platform: 'douyin',
+      variantVersionId: 'douyin-v1',
+      note: 'stale retry different',
+      platformUrl: 'https://www.douyin.com/video/other',
+    }),
+    (error: unknown) =>
+      error instanceof Error &&
+      /revision/iu.test(error.message),
+  );
+});
+
+test('self-report write path is OutcomeEvidence-idempotent and binds package revision', async () => {
+  const setup = await createSetup('assisted');
+  await setup.handoff.recordMerchantPublished(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+  });
+
+  const input = {
+    packageId: 'package-a',
+    expectedRevision: 2,
+    signal: 'inquiry' as const,
+    sourceRef: 'chip:inquiry',
+    occurredAt: '2026-08-08T10:00:00.000Z',
+    workId: 'work-1',
+  };
+  const first = await setup.handoff.recordSelfReportSignal(context, input);
+  assert.equal(first.resultSignals?.length, 1);
+  assert.equal(first.resultSignals?.[0]?.kind, 'inquiry');
+  assert.equal(first.resultSignals?.[0]?.source, 'merchant_recorded');
+
+  const key = buildOutcomeEvidenceIdempotencyKey({
+    contentPackageId: 'package-a',
+    contentPackageRevision: 2,
+    signal: 'inquiry',
+    observedAt: '2026-08-08T10:00:00.000Z',
+    sourceRef: 'chip:inquiry',
+  });
+  assert.match(key, /package-a\|2\|inquiry/);
+
+  // Same identity retries do not append (idempotent).
+  const retry = await setup.handoff.recordSelfReportSignal(context, {
+    ...input,
+    expectedRevision: first.revision,
+  });
+  assert.equal(retry.resultSignals?.length, 1);
+
+  // no_activity first-class chip
+  const quiet = await setup.handoff.recordSelfReportSignal(context, {
+    packageId: 'package-a',
+    expectedRevision: retry.revision,
+    signal: 'no_activity',
+    sourceRef: 'chip:no_activity',
+    occurredAt: '2026-08-08T11:00:00.000Z',
+  });
+  assert.equal(
+    quiet.resultSignals?.some((row) => row.kind === 'no_activity'),
+    true,
+  );
+});
+
+test('U2 self-report ask: next day once, one ask per work, two ignores store backoff', async () => {
+  const setup = await createSetup('assisted', () => '2026-08-09T12:00:00.000Z');
+
+  const notYet = await setup.handoff.evaluateSelfReportAskForWork(context, {
+    workId: 'work-1',
+    contentPackageId: 'package-a',
+    contentPackageRevision: 1,
+    publishHandoffCompletedAt: '2026-08-09T10:00:00.000Z',
+  });
+  assert.equal(notYet.kind, 'skip');
+
+  const ready = await setup.handoff.evaluateSelfReportAskForWork(context, {
+    workId: 'work-1',
+    contentPackageId: 'package-a',
+    contentPackageRevision: 1,
+    publishHandoffCompletedAt: '2026-08-08T10:00:00.000Z',
+  });
+  assert.equal(ready.kind, 'ask');
+
+  await setup.handoff.recordSelfReportAsk(context, {
+    workId: 'work-1',
+    contentPackageId: 'package-a',
+    contentPackageRevision: 1,
+    action: 'mark_asked',
+  });
+  const again = await setup.handoff.evaluateSelfReportAskForWork(context, {
+    workId: 'work-1',
+    contentPackageId: 'package-a',
+    contentPackageRevision: 1,
+    publishHandoffCompletedAt: '2026-08-08T10:00:00.000Z',
+  });
+  assert.equal(again.kind, 'skip');
+  if (again.kind === 'skip') {
+    assert.equal(again.reason, 'already_asked_this_work');
+  }
+
+  // Two consecutive ignores → store backoff for a new work.
+  await setup.handoff.recordSelfReportAsk(context, {
+    workId: 'work-1',
+    contentPackageId: 'package-a',
+    contentPackageRevision: 1,
+    action: 'mark_ignored',
+  });
+  await setup.handoff.recordSelfReportAsk(context, {
+    workId: 'work-2',
+    contentPackageId: 'package-a',
+    contentPackageRevision: 1,
+    action: 'mark_asked',
+  });
+  await setup.handoff.recordSelfReportAsk(context, {
+    workId: 'work-2',
+    contentPackageId: 'package-a',
+    contentPackageRevision: 1,
+    action: 'mark_ignored',
+  });
+  const backoff = await setup.handoff.evaluateSelfReportAskForWork(context, {
+    workId: 'work-3',
+    contentPackageId: 'package-a',
+    contentPackageRevision: 1,
+    publishHandoffCompletedAt: '2026-08-08T10:00:00.000Z',
+  });
+  assert.equal(backoff.kind, 'skip');
+  if (backoff.kind === 'skip') {
+    assert.equal(backoff.reason, 'store_backoff');
+  }
+});
+
+test('video handoff projects subtitle/cover safety checklist', () => {
+  const view = projectPublishHandoffView({
+    contentPackage: contentPackage({ kind: 'video', orderedAssetIds: ['vid-1'] }),
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    capabilityMode: 'assisted',
+    isVideo: true,
+    hasSubtitles: true,
+  });
+  assert.ok(view.videoSafety);
+  assert.equal(view.videoSafety?.includeCoverSlot, true);
+  assert.equal(view.videoSafety?.includeSubtitlesTrack, true);
+  assert.match(view.videoSafety?.platformSafeZoneReminder ?? '', /安全区/);
+});
+
+// ─── fixtures ───────────────────────────────────────────────────────────────
+
+async function createSetup(
+  mode: 'assisted' | 'automatic_verified' | 'unavailable',
+  clock: () => string = () => '2026-08-08T12:00:00.000Z',
+) {
+  const repository = new MemoryOperationsRepository();
+  repository.grantMembership('owner-a', 'workspace-a');
+  await repository.saveWorkspace(workspaceState());
+
+  const publisher: ContentPackagePublishPort = {
+    async publish() {
+      return {
+        platformUrl: 'https://example.com/auto',
+        providerReceiptId: 'prov-1',
+        status: 'published',
+      };
+    },
+  };
+  const delivery = new ContentPackageDeliveryService(repository, {
+    approvalPolicy: {
+      async resolve() {
+        return {
+          contextBundle: {
+            bundleId: 'bundle-a',
+            hash: 'bundle-hash-a',
+            revision: 1,
+          },
+          policy: {
+            brief: {},
+            bundle: { revision: 1, workspaceId: 'workspace-a' },
+            candidate: {
+              assetRefs: [],
+              candidateId: 'candidate-a',
+              factClaims: [],
+              intendedUse: 'public_content',
+              workspaceId: 'workspace-a',
+            },
+            identityRefs: [],
+            rightsRefs: [],
+            sourceRefs: [],
+          },
+        };
+      },
+    },
+    async capability(platform) {
+      return { mode, platform, reason: `test_${mode}` };
+    },
+    clock,
+    createId: idSequence('delivery'),
+    publisher,
+  });
+
+  const handoff = new PublishHandoffService(repository, delivery, {
+    clock,
+    createId: idSequence('handoff'),
+    resolveCapability: async (platform) => ({
+      mode,
+      platform: platform as 'douyin',
+      reason: `test_${mode}`,
+    }),
+  });
+
+  return { delivery, handoff, repository };
+}
+
+function contentPackage(
+  overrides: {
+    title?: string;
+    body?: string;
+    topics?: string[];
+    conversionHook?: string;
+    orderedAssetIds?: string[];
+    kind?: ContentPackage['kind'];
+  } = {},
+): ContentPackage {
+  const versionId = overrides.kind === 'video' ? 'douyin-v1' : 'xhs-v1';
+  const platform =
+    overrides.kind === 'video' || !overrides.title
+      ? ('douyin' as const)
+      : ('xiaohongshu' as const);
+  const version = {
+    body: overrides.body ?? '正文',
+    createdAt: '2026-08-08T06:00:00.000Z',
+    id: versionId,
+    orderedAssetIds: overrides.orderedAssetIds ?? ['asset-1'],
+    title: overrides.title ?? '标题',
+    topics: overrides.topics ?? ['护理'],
+    ...(overrides.conversionHook
+      ? { conversionHook: overrides.conversionHook }
+      : { conversionHook: '私信预约' }),
+  };
+  return {
+    compliance: { aigcLabelEnabled: true, watermarkEnabled: false },
+    createdAt: '2026-08-08T06:00:00.000Z',
+    exportReceipts: [],
+    generated: { assetIds: [], childRuns: [] },
+    id: 'package-a',
+    kind: overrides.kind ?? 'image_text',
+    lineage: {},
+    revision: 1,
+    rights: { state: 'authorized' },
+    source: { assetIds: [], workflowId: 'workflow-a' },
+    status: 'accepted',
+    updatedAt: '2026-08-08T06:00:00.000Z',
+    variants: [
+      {
+        currentVersionId: versionId,
+        id: `variant-${platform}`,
+        platform,
+        versions: [version],
+      },
+    ],
+    versions: [version],
+    workspaceId: 'workspace-a',
+  };
+}
+
+function workspaceState(): OperationsWorkspaceState {
+  const version = {
+    body: '正文',
+    createdAt: '2026-08-08T06:00:00.000Z',
+    conversionHook: '私信预约',
+    id: 'douyin-v1',
+    orderedAssetIds: ['asset-1'],
+    title: '标题',
+    topics: ['护理'],
+  };
+  const packageDouyin: ContentPackage = {
+    compliance: { aigcLabelEnabled: true, watermarkEnabled: false },
+    createdAt: '2026-08-08T06:00:00.000Z',
+    exportReceipts: [],
+    generated: { assetIds: [], childRuns: [] },
+    id: 'package-a',
+    kind: 'image_text',
+    lineage: {},
+    revision: 1,
+    rights: { state: 'authorized' },
+    source: { assetIds: [], workflowId: 'workflow-a' },
+    status: 'accepted',
+    updatedAt: '2026-08-08T06:00:00.000Z',
+    variants: [
+      {
+        currentVersionId: 'douyin-v1',
+        id: 'variant-douyin',
+        platform: 'douyin',
+        versions: [version],
+      },
+    ],
+    versions: [version],
+    workspaceId: 'workspace-a',
+  };
+  return {
+    auditEvents: [],
+    commandReceipts: [],
+    composerConversations: [],
+    contentPackages: [packageDouyin],
+    creationEvents: [],
+    creativeAssets: [],
+    creativeContents: [],
+    creativeJobs: [],
+    creativeWorks: [],
+    exportReceipts: [],
+    imageJobs: [],
+    taskEvents: [],
+    taskSourceLinks: [],
+    tasks: [],
+    templateShortcuts: [],
+    triggerConfigs: [],
+    triggerRuns: [],
+    userTemplates: [],
+    weeklyBatchExecutions: [],
+    weeklyFacts: [],
+    weeklyReviews: [],
+    works: [],
+    workspaceId: 'workspace-a',
+  };
+}
+
+function idSequence(prefix: string) {
+  let value = 0;
+  return () => `${prefix}-id-${++value}`;
+}

@@ -110,3 +110,21 @@ export {
   type PublishArtifactProps,
   type VideoArtifactProps,
 } from './artifact';
+
+export {
+  PUBLISH_HANDOFF_SURFACE_KEYS,
+  PublishHandoffPanel,
+  evaluateDrivenPublishFromQr,
+  panelViewFromPublishHandoff,
+  projectPublishHandoffPanel,
+  projectSelfReportJourney,
+  registerPublishHandoffSurfaces,
+  SELF_REPORT_CHIP_LABEL,
+  usePublishHandoff,
+  type PublishHandoffPanelFacts,
+  type PublishHandoffPanelProps,
+  type PublishHandoffPanelView,
+  type PublishHandoffSurfaceKey,
+  type UsePublishHandoffInput,
+  type UsePublishHandoffResult,
+} from './publish-handoff';

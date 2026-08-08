@@ -5,6 +5,7 @@
  */
 
 import { cn } from '@/lib/utils';
+import type { OutcomeSelfReportChipSignal } from '@meiye/contracts';
 
 import {
   projectVisibleActivities,
@@ -21,6 +22,11 @@ import {
   WORKSTREAM_MOBILE_PANE_LABELS,
   type WorkstreamMobilePane,
 } from './mobile-workstream-switch';
+import {
+  PublishHandoffPanel,
+  type PublishHandoffPanelView,
+} from './publish-handoff';
+import './publish-handoff/publish-handoff-registry';
 import { ActivityLine } from './stream/activity-line';
 import { NarrativeLine } from './stream/narrative-line';
 
@@ -38,6 +44,25 @@ export type AgentWorkstreamProps = {
   worksSlot?: React.ReactNode;
   /** Optional legacy conversation / composer stream under process pane. */
   processSlot?: React.ReactNode;
+  /**
+   * V31-17 Delivered publish handoff materials (production path after delivery).
+   * When set, panel renders under Artifact canvas in works pane.
+   */
+  publishHandoffView?: PublishHandoffPanelView | null;
+  selfReportPrompt?: string | null;
+  selfReportChips?: readonly OutcomeSelfReportChipSignal[];
+  onPublishHandoffCopy?: (role: string, value: string) => void;
+  onPublishHandoffDownloadZip?: (fileName: string) => void | Promise<void>;
+  onPublishHandoffRecordPublished?: (input: {
+    contentPackageId: string;
+    contentPackageRevision: number;
+    platformUrl?: string;
+    note?: string;
+  }) => void | Promise<void>;
+  onSelfReportChip?: (
+    signal: OutcomeSelfReportChipSignal,
+  ) => void | Promise<void>;
+  onSelfReportIgnore?: () => void | Promise<void>;
   className?: string;
 };
 
@@ -49,6 +74,14 @@ export function AgentWorkstream({
   onArtifactViewRevision,
   worksSlot,
   processSlot,
+  publishHandoffView,
+  selfReportPrompt,
+  selfReportChips,
+  onPublishHandoffCopy,
+  onPublishHandoffDownloadZip,
+  onPublishHandoffRecordPublished,
+  onSelfReportChip,
+  onSelfReportIgnore,
   className,
 }: AgentWorkstreamProps) {
   const layout = resolveMobileWorkstreamLayout({
@@ -60,11 +93,29 @@ export function AgentWorkstream({
   const artifacts = projectVisibleArtifacts(state);
   const interrupts = state.pendingInterrupts;
   const mobileWorksOpen = viewport === 'mobile' && layout.showWorks;
+  // deliveredKeys from semantic stream OR host-provided handoff view after
+  // composer session phase reaches delivered (production path).
+  const delivered =
+    state.deliveredKeys.size > 0 || Boolean(publishHandoffView);
+
+  const publishHandoffNode = publishHandoffView ? (
+    <PublishHandoffPanel
+      onCopyBlock={onPublishHandoffCopy}
+      onDownloadZip={onPublishHandoffDownloadZip}
+      onIgnoreSelfReport={onSelfReportIgnore}
+      onRecordPublished={onPublishHandoffRecordPublished}
+      onSelfReport={onSelfReportChip}
+      selfReportChips={selfReportChips}
+      selfReportPrompt={selfReportPrompt}
+      view={publishHandoffView}
+    />
+  ) : null;
 
   return (
     <div
       className={cn('meiye-agent-workstream flex flex-col gap-3', className)}
       data-connection={state.connection}
+      data-delivered={delivered ? 'true' : 'false'}
       data-mobile-pane={layout.activePane}
       data-testid="agent-workstream"
       data-viewport={viewport}
@@ -113,6 +164,7 @@ export function AgentWorkstream({
             onViewRevision={onArtifactViewRevision}
             viewport="desktop"
           />
+          {publishHandoffNode}
           {worksSlot}
         </div>
       ) : null}
@@ -124,6 +176,7 @@ export function AgentWorkstream({
           onViewRevision={onArtifactViewRevision}
           open
         >
+          {publishHandoffNode}
           {worksSlot}
         </ArtifactMobileSheet>
       ) : null}

@@ -8,11 +8,15 @@ import {
   contentPackageMigrationQuerySchema,
   contentPackagesQuerySchema,
   editContentPackageVersionCommandSchema,
+  attemptPublishFromHandoffCommandSchema,
   deliverContentPackageCommandSchema,
   generateContentPackageVariantsCommandSchema,
+  prepareMobilePublishHandoffCommandSchema,
   recordContentPackageManualResultCommandSchema,
   recordContentPackageResultReviewActionCommandSchema,
   recordContentPackageResultSignalCommandSchema,
+  recordMerchantPublishedCommandSchema,
+  recordSelfReportAskCommandSchema,
   rollbackContentPackageVersionCommandSchema,
   toPublicContentPackage,
   type ContentPackage,
@@ -34,6 +38,10 @@ import type {
   SearchQuery,
 } from './types.js';
 import type { ContentPackageDeliveryService } from './content-package-delivery.js';
+import {
+  PublishHandoffError,
+  type PublishHandoffService,
+} from './publish-handoff.js';
 
 const CREATIVE_CONTENT_MODULES = new Set<CreativeContentModuleId>([
   'social_cover',
@@ -287,6 +295,8 @@ export class OperationsFoundationModule implements P1OperationModule {
         status(workspaceId: string, runId: string): unknown;
       };
       delivery?: ContentPackageDeliveryService;
+      /** V31-17 publish handoff + self-report journey. */
+      publishHandoff?: PublishHandoffService;
     } = {}
   ) {
     this.adminActorIds = new Set(options.adminActorIds ?? []);
@@ -515,6 +525,92 @@ export class OperationsFoundationModule implements P1OperationModule {
             parsed.data
           )
         );
+      }
+      case 'prepare_mobile_publish_handoff': {
+        const parsed =
+          prepareMobilePublishHandoffCommandSchema.safeParse(payload);
+        if (!parsed.success || !this.options.publishHandoff) {
+          throw new OperationsError(
+            'PUBLISH_HANDOFF_UNAVAILABLE',
+            parsed.success
+              ? 'Publish handoff is unavailable.'
+              : parsed.error.message,
+            parsed.success ? 503 : 400
+          );
+        }
+        try {
+          return await this.options.publishHandoff.prepareMobilePublishHandoff(
+            context,
+            parsed.data
+          );
+        } catch (error) {
+          throw mapPublishHandoffError(error);
+        }
+      }
+      case 'attempt_publish_from_handoff': {
+        const parsed =
+          attemptPublishFromHandoffCommandSchema.safeParse(payload);
+        if (!parsed.success || !this.options.publishHandoff) {
+          throw new OperationsError(
+            'PUBLISH_HANDOFF_UNAVAILABLE',
+            parsed.success
+              ? 'Publish handoff is unavailable.'
+              : parsed.error.message,
+            parsed.success ? 503 : 400
+          );
+        }
+        const decision =
+          this.options.publishHandoff.attemptPublishFromHandoff(parsed.data);
+        if (!decision.ok) {
+          throw new OperationsError(
+            decision.code,
+            decision.message,
+            403
+          );
+        }
+        return decision;
+      }
+      case 'record_merchant_published': {
+        const parsed = recordMerchantPublishedCommandSchema.safeParse(payload);
+        if (!parsed.success || !this.options.publishHandoff) {
+          throw new OperationsError(
+            'PUBLISH_HANDOFF_UNAVAILABLE',
+            parsed.success
+              ? 'Publish handoff is unavailable.'
+              : parsed.error.message,
+            parsed.success ? 503 : 400
+          );
+        }
+        try {
+          return merchantContentPackage(
+            await this.options.publishHandoff.recordMerchantPublished(
+              context,
+              parsed.data
+            )
+          );
+        } catch (error) {
+          throw mapPublishHandoffError(error);
+        }
+      }
+      case 'record_self_report_ask': {
+        const parsed = recordSelfReportAskCommandSchema.safeParse(payload);
+        if (!parsed.success || !this.options.publishHandoff) {
+          throw new OperationsError(
+            'PUBLISH_HANDOFF_UNAVAILABLE',
+            parsed.success
+              ? 'Publish handoff is unavailable.'
+              : parsed.error.message,
+            parsed.success ? 503 : 400
+          );
+        }
+        try {
+          return await this.options.publishHandoff.recordSelfReportAsk(
+            context,
+            parsed.data
+          );
+        } catch (error) {
+          throw mapPublishHandoffError(error);
+        }
       }
       case 'rollback_content_package_version': {
         const parsed =
@@ -844,8 +940,48 @@ export class OperationsFoundationModule implements P1OperationModule {
             ? payload.templateId
             : undefined
         );
+      case 'self_report_ask': {
+        if (!this.options.publishHandoff) {
+          throw new OperationsError(
+            'PUBLISH_HANDOFF_UNAVAILABLE',
+            'Publish handoff is unavailable.',
+            503
+          );
+        }
+        const workId = requiredString(payload, 'workId');
+        const contentPackageId = requiredString(payload, 'contentPackageId');
+        const contentPackageRevision = requiredPositiveInteger(
+          payload,
+          'contentPackageRevision'
+        );
+        const publishHandoffCompletedAt =
+          typeof payload.publishHandoffCompletedAt === 'string'
+            ? payload.publishHandoffCompletedAt
+            : null;
+        try {
+          return await this.options.publishHandoff.evaluateSelfReportAskForWork(
+            context,
+            {
+              workId,
+              contentPackageId,
+              contentPackageRevision,
+              publishHandoffCompletedAt,
+            }
+          );
+        } catch (error) {
+          throw mapPublishHandoffError(error);
+        }
+      }
       default:
         throw new Error(`Unknown operations query ${action}.`);
     }
   }
+}
+
+function mapPublishHandoffError(error: unknown): never {
+  if (error instanceof PublishHandoffError) {
+    throw new OperationsError(error.code, error.message, error.status);
+  }
+  if (error instanceof OperationsError) throw error;
+  throw error;
 }

@@ -150,6 +150,7 @@ import {
   OperationsReusableAssetSourceVerifier,
   ProductionMemorySedimentationCoordinator,
   ProductLegacyDeliveryProjection,
+  PublishHandoffService,
   resolveAgentMemoryKillSwitch,
   ReuseMemoryComposerConversationDeletionNotifier,
   ReuseMemoryRecordProposalPort,
@@ -405,21 +406,24 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     },
     pool,
   });
+  const contentPackageDeliveryCapabilityResolver = async (
+    platform: Parameters<typeof contentPackageDeliveryCapability>[0]['platform']
+  ) =>
+    contentPackageDeliveryCapability({
+      accountAndScopeVerified: false,
+      callbackVerified: false,
+      exportAvailable: true,
+      liveAdapter: false,
+      platform,
+      publishRecoveryVerified: false,
+      snapshotSource: 'legacy_handoff',
+      submitAndPollVerified: false,
+    });
   const contentPackageDelivery = new ContentPackageDeliveryService(
     operationsRepository,
     {
       approvalPolicy: contentPackageApprovalPolicy,
-      capability: async (platform) =>
-        contentPackageDeliveryCapability({
-          accountAndScopeVerified: false,
-          callbackVerified: false,
-          exportAvailable: true,
-          liveAdapter: false,
-          platform,
-          publishRecoveryVerified: false,
-          snapshotSource: 'legacy_handoff',
-          submitAndPollVerified: false,
-        }),
+      capability: contentPackageDeliveryCapabilityResolver,
       legacy: new ProductLegacyDeliveryProjection(productRepository),
       publisher: {
         async publish() {
@@ -428,6 +432,18 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           );
         },
       },
+    }
+  );
+  const publishHandoffService = new PublishHandoffService(
+    operationsRepository,
+    contentPackageDelivery,
+    {
+      resolveCapability: async (platform) =>
+        contentPackageDeliveryCapabilityResolver(
+          platform as Parameters<
+            typeof contentPackageDeliveryCapability
+          >[0]['platform'],
+        ),
     }
   );
   const contextInvalidationRuntime = createContextInvalidationRuntime({
@@ -772,6 +788,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         adminActorIds: modelAdminActorIds,
         contentPackageMigration,
         delivery: contentPackageDelivery,
+        publishHandoff: publishHandoffService,
       }),
     ],
     writeOwnershipReader: createWriteOwnershipReader(pool),
