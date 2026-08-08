@@ -18,6 +18,12 @@ export {
 } from './agent-event-client';
 
 export {
+  loadAgentWorkbenchReplay,
+  subscribeAgentSemanticEvents,
+  type AgentLiveSubscriber,
+} from './agent-event-transport';
+
+export {
   createEmptyAgentWorkbenchState,
   isActivityVisible,
   measureArtifactDuplicateObjectRate,
@@ -107,7 +113,10 @@ export {
 } from './mobile-workstream-switch';
 
 export { ActivityLine, type ActivityLineProps } from './stream/activity-line';
-export { NarrativeLine, type NarrativeLineProps } from './stream/narrative-line';
+export {
+  NarrativeLine,
+  type NarrativeLineProps,
+} from './stream/narrative-line';
 
 export {
   ARTIFACT_SURFACE_KEYS,

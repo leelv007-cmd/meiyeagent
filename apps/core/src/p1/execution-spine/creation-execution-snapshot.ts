@@ -283,7 +283,15 @@ const composerSubmissionRequestBaseSchema = creationSubmissionCommandBaseSchema
 		platform: true,
 		signedSubmission: true,
 	})
-	.extend(composerSubmissionSignedFieldsBaseSchema.shape);
+	.extend(composerSubmissionSignedFieldsBaseSchema.shape)
+	.extend({
+		/**
+		 * Browser continuation hint for the Agent Thread root. Core validates the
+		 * Thread against workspaceId before reuse; it never enters the frozen Make
+		 * execution snapshot.
+		 */
+		agentThreadId: identifierSchema.optional(),
+	});
 
 export const composerSubmissionRequestSchema =
 	composerSubmissionRequestBaseSchema.superRefine(validateSubmission);

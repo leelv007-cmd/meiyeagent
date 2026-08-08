@@ -40,8 +40,11 @@ export async function reconnectAgentWorkbench(input: {
   store.dispatch({ type: 'set_connection', connection: 'connecting' });
 
   const before = store.getState();
+  const changesThread = Boolean(
+    input.threadId && input.threadId !== before.session?.threadId
+  );
   // On resync after patch fail, always re-fetch from empty cursor
-  const clientLastEventId = before.needsSnapshotResync
+  const clientLastEventId = before.needsSnapshotResync || changesThread
     ? null
     : before.lastEventId;
 
@@ -54,6 +57,7 @@ export async function reconnectAgentWorkbench(input: {
 
   store.dispatch({
     type: 'hydrate_replay',
+    incremental: clientLastEventId !== null,
     session: pack.session,
     snapshot: pack.snapshot,
     events: pack.events,

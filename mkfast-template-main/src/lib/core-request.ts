@@ -238,6 +238,8 @@ export type WorkspaceWorkflowEventResource = `p1/workflows/${string}/events`;
 export type WorkspaceComposerDestinationResource =
   'p1/composer/destination-map';
 export type WorkspaceComposerSubmissionResource = 'p1/composer/submissions';
+export type WorkspaceAgentSemanticResource =
+  `p1/agent-threads/${string}/${'events' | 'replay'}`;
 export type WorkspaceHarnessTaskCollectionResource = 'p1/harness/tasks';
 export type WorkspacePendingActionsResource = 'p1/pending-actions';
 export type WorkspaceHarnessDecisionResource =
@@ -256,6 +258,13 @@ export function workspaceWorkflowEventResource(
   workflowId: string
 ): WorkspaceWorkflowEventResource {
   return `p1/workflows/${encodeURIComponent(workflowId)}/events`;
+}
+
+export function workspaceAgentSemanticResource(
+  threadId: string,
+  kind: 'events' | 'replay'
+): WorkspaceAgentSemanticResource {
+  return `p1/agent-threads/${encodeURIComponent(threadId)}/${kind}`;
 }
 
 export function workspaceHarnessDecisionResource(

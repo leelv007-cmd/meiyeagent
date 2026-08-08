@@ -969,6 +969,42 @@ class RecordingHarnessStarter implements CreationSubmissionHarnessStarter {
 	}
 }
 
+test("Composer returns authoritative Agent binding and treats the Thread hint outside receipt identity", async () => {
+	const submissions = new MemorySubmissionStore();
+	const continuationHints: Array<string | undefined> = [];
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		new RecordingHarnessStarter(),
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				continuationHints.push(input.continuationThreadId);
+				return { threadId: "thread-authoritative", runId: "run-authoritative" };
+			},
+		}
+	);
+	const command: Parameters<CreationSubmissionCoordinator["submit"]>[0] = {
+		...submissionPayload(),
+		actorId: "owner-1",
+		agentThreadId: "thread-browser-a",
+		workspaceId: "workspace-1",
+	};
+
+	const created = await coordinator.submit(command);
+	const replayed = await coordinator.submit({
+		...command,
+		agentThreadId: "thread-browser-b",
+	});
+
+	assert.equal(created.threadId, "thread-authoritative");
+	assert.equal(created.runId, "run-authoritative");
+	assert.equal(replayed.replayed, true);
+	assert.equal(replayed.threadId, "thread-authoritative");
+	assert.deepEqual(continuationHints, ["thread-browser-a", "thread-browser-b"]);
+});
+
 test("a failed Harness start releases the same submission for an idempotent retry", async () => {
 	const submissions = new MemorySubmissionStore();
 	let starts = 0;

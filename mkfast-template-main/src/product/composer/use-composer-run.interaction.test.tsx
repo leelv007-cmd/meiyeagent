@@ -121,7 +121,9 @@ function createTransports() {
     requestBrief: vi.fn(async () => projection),
     submitSubmission: vi.fn(async () => ({
       contentPackage: { id: 'package-1' },
+      runId: 'run-authoritative',
       task: { id: 'task-1' },
+      threadId: 'thread-authoritative',
       work: { id: 'work-1' },
     })),
     syncBrief: vi.fn(async () => ({
@@ -137,6 +139,7 @@ test('attemptSubmit passes all gates and creates through injected transports', a
     defaultOptions: { queries: { retry: false } },
   });
   const transports = createTransports();
+  const onAgentBinding = vi.fn();
   const wrapper = ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
@@ -173,6 +176,7 @@ test('attemptSubmit passes all gates and creates through injected transports', a
       const focusIntentAfterPrefillRef = useRef(false);
       const sessionIdRef = useRef('session-1');
       const run = useComposerRun({
+        agentThreadId: 'thread-previous',
         armedQuoteIdRef,
         briefContextRevisionRef,
         briefInputRef,
@@ -189,6 +193,7 @@ test('attemptSubmit passes all gates and creates through injected transports', a
         imageCardinalityValid: true,
         lensState,
         missingGrounding: [],
+        onAgentBinding,
         productGroundingReady: true,
         quotaBlocked: false,
         quote: QUOTE,
@@ -241,6 +246,13 @@ test('attemptSubmit passes all gates and creates through injected transports', a
   expect(transports.requestBrief).toHaveBeenCalledTimes(2);
   expect(transports.admitRun).toHaveBeenCalledOnce();
   expect(transports.loadCreditProjection).toHaveBeenCalled();
+  expect(transports.submitSubmission).toHaveBeenCalledWith(
+    expect.objectContaining({ agentThreadId: 'thread-previous' })
+  );
+  expect(onAgentBinding).toHaveBeenCalledWith({
+    threadId: 'thread-authoritative',
+    runId: 'run-authoritative',
+  });
   expect(view.result.current.session.task).toEqual({
     packageId: 'package-1',
     taskId: 'task-1',

@@ -45,13 +45,7 @@ test.describe('V31-10 Living Plan journey (§37.4-C first half)', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));
 
-/**
- * KNOWN GAP (2026-08-09): the workbench plan/interrupt surfaces do not render
- * deterministically on the Composer journey — see
- * docs/tickets/v3.1/V31-28-composer-plan-surface-integration.md. This test is
- * the acceptance contract for V31-28; do not weaken its assertions.
- */
-  test.fixme('检索 → 一问 → Living Plan → 调整（前半段）', async ({
+  test('检索 → 一问 → Living Plan → 调整（前半段）', async ({
     page,
     request,
   }) => {

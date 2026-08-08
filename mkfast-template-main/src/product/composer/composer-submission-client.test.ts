@@ -37,13 +37,17 @@ function submissionBody() {
 }
 
 test('browser submission carries signed public fields without server truth', () => {
-  const parsed = composerSubmissionBodySchema.parse(submissionBody());
+  const parsed = composerSubmissionBodySchema.parse({
+    ...submissionBody(),
+    agentThreadId: 'thread-authoritative-1',
+  });
   assert.equal('route' in parsed, false);
   assert.equal('rights' in parsed, false);
   assert.equal('deliverables' in parsed, false);
   assert.equal('modelPolicy' in parsed, false);
   assert.equal(parsed.contentPackagePlatform, 'douyin');
   assert.equal(parsed.distributionTarget, 'export');
+  assert.equal(parsed.agentThreadId, 'thread-authoritative-1');
 });
 
 test('browser submission accepts P2-09 beauty voice and thinking level injection', () => {
@@ -146,12 +150,14 @@ test('submits the exact Composer body and returns the durable handles', async ()
       data: {
         contentPackage: { expectedRevision: 0, id: 'package-1' },
         replayed: false,
+        runId: 'run-1',
         snapshot: {
           id: 'snapshot-task-1',
           identity: { id: 'identity-brand', revision: '2' },
           schemaVersion: 'creation-execution-snapshot/v1',
         },
         task: { id: 'task-1' },
+        threadId: 'thread-1',
         usageReservation: { id: 'usage-task-1' },
         work: { id: 'work-1' },
       },
@@ -162,6 +168,8 @@ test('submits the exact Composer body and returns the durable handles', async ()
     const result = await submitComposerSubmission(submissionBody());
     assert.equal(result.work.id, 'work-1');
     assert.equal(result.task.id, 'task-1');
+    assert.equal(result.threadId, 'thread-1');
+    assert.equal(result.runId, 'run-1');
     assert.equal(
       request?.url,
       'http://localhost/api/core/p1/composer/submissions'
@@ -181,18 +189,23 @@ test('selected skill refs enter the submission payload; empty stays empty', asyn
   const previousFetch = globalThis.fetch;
   let body: unknown;
   globalThis.fetch = async (input, init) => {
-    const request = new Request(new URL(String(input), 'http://localhost'), init);
+    const request = new Request(
+      new URL(String(input), 'http://localhost'),
+      init
+    );
     body = await request.json();
     return Response.json({
       data: {
         contentPackage: { expectedRevision: 0, id: 'package-1' },
         replayed: false,
+        runId: 'run-1',
         snapshot: {
           id: 'snapshot-task-1',
           identity: { id: 'identity-brand', revision: '2' },
           schemaVersion: 'creation-execution-snapshot/v1',
         },
         task: { id: 'task-1' },
+        threadId: 'thread-1',
         usageReservation: { id: 'usage-task-1' },
         work: { id: 'work-1' },
       },

@@ -89,16 +89,16 @@ export async function loadReplayPackage(input: {
     session: input.session,
   });
 
-  // When client has no cursor, serve full snapshot and no delta events.
-  // When client has a cursor, replay only events after that id.
+  // The browser snapshot currently carries cursors/session metadata, not the
+  // full Workstream projection. A cold client therefore needs the full durable
+  // event stream to reconstruct plans and interrupts. Reconnects with a cursor
+  // receive only the strict suffix.
   const afterEventId = input.clientLastEventId;
-  const events = afterEventId
-    ? await input.store.listByThread({
-        resourceId: input.session.resourceId,
-        threadId: input.session.threadId,
-        afterEventId,
-      })
-    : [];
+  const events = await input.store.listByThread({
+    resourceId: input.session.resourceId,
+    threadId: input.session.threadId,
+    ...(afterEventId ? { afterEventId } : {}),
+  });
 
   return {
     session: input.session,

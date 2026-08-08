@@ -68,7 +68,9 @@ import { admitFreshCreditRun } from './workbench-credit';
 
 type ComposerCreated = {
   contentPackage: { id: string };
+  runId?: string;
   task: { id: string };
+  threadId?: string;
   work: { id: string };
 };
 
@@ -111,6 +113,7 @@ export type ComposerCreateInput = {
 type CurrentRef<T> = { current: T };
 
 export type UseComposerRunOptions = {
+  agentThreadId?: string | null;
   activeViralAdaptSource?: ViralAdaptSourcePayload;
   briefContextRevisionRef: CurrentRef<number | null>;
   briefInputRef: CurrentRef<BriefTriggerInput | null>;
@@ -162,6 +165,7 @@ export type UseComposerRunOptions = {
   styleReferenceAssetIds: string[];
   surface?: BrowserSurfaceProjection;
   transports?: Partial<ComposerRunTransports>;
+  onAgentBinding?: (binding: { threadId: string; runId: string }) => void;
   viralJourneyActive: boolean;
   viralSubmissionRecipeReady: boolean;
   flushQuoteSettle: () => void;
@@ -309,6 +313,9 @@ export function useComposerRun(options: UseComposerRunOptions) {
       }
       return transports.submitSubmission({
         ...options.signedSubmission,
+        ...(options.agentThreadId
+          ? { agentThreadId: options.agentThreadId }
+          : {}),
         ...(input.briefConfirmationId
           ? {
               briefConfirmation: {
@@ -356,6 +363,12 @@ export function useComposerRun(options: UseComposerRunOptions) {
       });
     },
     onSuccess: async (created, variables) => {
+      if (created.threadId && created.runId) {
+        options.onAgentBinding?.({
+          threadId: created.threadId,
+          runId: created.runId,
+        });
+      }
       const submitted = submitComposer(options.lensState, {
         videoConfirmAccepted:
           variables.lensId === 'video'

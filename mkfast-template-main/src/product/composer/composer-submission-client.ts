@@ -34,6 +34,8 @@ export const composerSubmissionBodySchema = composerSubmissionSignedFieldsSchema
       .strict()
       .optional(),
     idempotencyKey: identifierSchema,
+    /** Continuation hint; Core verifies workspace ownership before reuse. */
+    agentThreadId: identifierSchema.optional(),
     quote: revisionReferenceSchema,
     sources: z
       .object({
@@ -82,6 +84,8 @@ const composerSubmissionResultSchema = z
       })
       .strict(),
     replayed: z.boolean(),
+    threadId: identifierSchema,
+    runId: identifierSchema,
     snapshot: z
       .object({
         id: identifierSchema,

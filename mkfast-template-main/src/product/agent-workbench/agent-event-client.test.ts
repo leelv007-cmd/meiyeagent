@@ -175,6 +175,66 @@ test('patch failure triggers automatic snapshot resync via reconnect only', asyn
   assert.equal(projectVisibleNarratives(store.getState()).length, 1);
 });
 
+test('same-Thread cursor replay preserves the materialized projection', async () => {
+  const store = createAgentEventStore();
+  const first = wire({
+    eventId: 'e1',
+    streamOffset: '1',
+    eventType: 'message.final',
+    payload: { text: '第一条' },
+  });
+  const second = wire({
+    eventId: 'e2',
+    streamOffset: '2',
+    eventType: 'message.final',
+    payload: { text: '第二条' },
+  });
+
+  await reconnectAgentWorkbench({ store, loadReplay: loader([first]) });
+  await reconnectAgentWorkbench({ store, loadReplay: loader([first, second]) });
+
+  assert.deepEqual(
+    projectVisibleNarratives(store.getState()).map(({ text }) => text),
+    ['第一条', '第二条']
+  );
+  assert.equal(store.getState().lastEventId, 'e2');
+});
+
+test('switching Threads starts replay without the previous Thread cursor', async () => {
+  const store = createAgentEventStore();
+  store.dispatch({
+    type: 'hydrate_replay',
+    session: session({ threadId: 'thread-old' }),
+    snapshot: {
+      revision: '9',
+      lastEventId: 'event-old-9',
+      lastStreamOffset: '9',
+    },
+    events: [],
+  });
+  let receivedCursor: string | null | undefined;
+
+  await reconnectAgentWorkbench({
+    store,
+    threadId: 'thread-new',
+    loadReplay: async (input) => {
+      receivedCursor = input.clientLastEventId;
+      return {
+        session: session({ threadId: 'thread-new' }),
+        snapshot: {
+          revision: '0',
+          lastEventId: null,
+          lastStreamOffset: null,
+        },
+        events: [],
+      };
+    },
+  });
+
+  assert.equal(receivedCursor, null);
+  assert.equal(store.getState().session?.threadId, 'thread-new');
+});
+
 test('live apply that fails marks resync and does not keep partial bad state', () => {
   const store = createAgentEventStore();
   store.dispatch({

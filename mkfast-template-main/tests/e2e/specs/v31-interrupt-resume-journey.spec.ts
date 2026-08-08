@@ -39,13 +39,7 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));
 
-/**
- * KNOWN GAP (2026-08-09): the workbench plan/interrupt surfaces do not render
- * deterministically on the Composer journey — see
- * docs/tickets/v3.1/V31-28-composer-plan-surface-integration.md. This test is
- * the acceptance contract for V31-28; do not weaken its assertions.
- */
-  test.fixme('pending interrupt 刷新/重连不丢 → resume by interruptId', async ({
+  test('pending interrupt 刷新/重连不丢 → resume by interruptId', async ({
     page,
     request,
   }) => {
@@ -88,7 +82,8 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     expect(afterText.length).toBeGreaterThan(0);
 
     // Resume by accepting / confirming (stable interruptId+revision CAS on Core).
-    const resume = page
+    const resume = interruptHost
+      .first()
       .getByRole('button', { name: /确认执行|确认|继续|同意/ })
       .first();
     if (await resume.isVisible().catch(() => false)) {

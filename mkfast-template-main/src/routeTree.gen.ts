@@ -112,6 +112,8 @@ import { Route as ApiCoreP1AssistantStreamRouteImport } from './routes/api/core/
 import { Route as ApiCoreDiagnosticsIdResumeRouteImport } from './routes/api/core/diagnostics/$id/resume'
 import { Route as ApiCoreDiagnosticsIdEventsRouteImport } from './routes/api/core/diagnostics/$id/events'
 import { Route as ApiCoreP1WorkflowsWorkflowIdEventsRouteImport } from './routes/api/core/p1/workflows/$workflowId/events'
+import { Route as ApiCoreP1AgentThreadsThreadIdReplayRouteImport } from './routes/api/core/p1/agent-threads/$threadId/replay'
+import { Route as ApiCoreP1AgentThreadsThreadIdEventsRouteImport } from './routes/api/core/p1/agent-threads/$threadId/events'
 import { Route as ApiCoreP1HarnessTasksTaskIdProductMetricsRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/product-metrics'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction'
 import { Route as ApiCoreP1HarnessTasksTaskIdDecisionRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/decision'
@@ -648,6 +650,18 @@ const ApiCoreP1WorkflowsWorkflowIdEventsRoute =
     path: '/api/core/p1/workflows/$workflowId/events',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiCoreP1AgentThreadsThreadIdReplayRoute =
+  ApiCoreP1AgentThreadsThreadIdReplayRouteImport.update({
+    id: '/api/core/p1/agent-threads/$threadId/replay',
+    path: '/api/core/p1/agent-threads/$threadId/replay',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiCoreP1AgentThreadsThreadIdEventsRoute =
+  ApiCoreP1AgentThreadsThreadIdEventsRouteImport.update({
+    id: '/api/core/p1/agent-threads/$threadId/events',
+    path: '/api/core/p1/agent-threads/$threadId/events',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCoreP1HarnessTasksTaskIdProductMetricsRoute =
   ApiCoreP1HarnessTasksTaskIdProductMetricsRouteImport.update({
     id: '/$taskId/product-metrics',
@@ -800,6 +814,8 @@ export interface FileRoutesByFullPath {
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
+  '/api/core/p1/agent-threads/$threadId/events': typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
+  '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
@@ -909,6 +925,8 @@ export interface FileRoutesByTo {
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
+  '/api/core/p1/agent-threads/$threadId/events': typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
+  '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
@@ -1023,6 +1041,8 @@ export interface FileRoutesById {
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
+  '/api/core/p1/agent-threads/$threadId/events': typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
+  '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
@@ -1138,6 +1158,8 @@ export interface FileRouteTypes {
     | '/api/core/p1/composer/submissions'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
+    | '/api/core/p1/agent-threads/$threadId/events'
+    | '/api/core/p1/agent-threads/$threadId/replay'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
@@ -1247,6 +1269,8 @@ export interface FileRouteTypes {
     | '/api/core/p1/composer/submissions'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
+    | '/api/core/p1/agent-threads/$threadId/events'
+    | '/api/core/p1/agent-threads/$threadId/replay'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
@@ -1360,6 +1384,8 @@ export interface FileRouteTypes {
     | '/api/core/p1/composer/submissions'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
+    | '/api/core/p1/agent-threads/$threadId/events'
+    | '/api/core/p1/agent-threads/$threadId/replay'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
@@ -1410,6 +1436,8 @@ export interface RootRouteChildren {
   ApiCoreP1ComposerSubmissionsRoute: typeof ApiCoreP1ComposerSubmissionsRoute
   ApiCoreP1HarnessRecommendationRoute: typeof ApiCoreP1HarnessRecommendationRoute
   ApiCoreP1HarnessTasksRoute: typeof ApiCoreP1HarnessTasksRouteWithChildren
+  ApiCoreP1AgentThreadsThreadIdEventsRoute: typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
+  ApiCoreP1AgentThreadsThreadIdReplayRoute: typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
   ApiCoreP1WorkflowsWorkflowIdEventsRoute: typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
 }
 
@@ -2136,6 +2164,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCoreP1WorkflowsWorkflowIdEventsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/core/p1/agent-threads/$threadId/replay': {
+      id: '/api/core/p1/agent-threads/$threadId/replay'
+      path: '/api/core/p1/agent-threads/$threadId/replay'
+      fullPath: '/api/core/p1/agent-threads/$threadId/replay'
+      preLoaderRoute: typeof ApiCoreP1AgentThreadsThreadIdReplayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/core/p1/agent-threads/$threadId/events': {
+      id: '/api/core/p1/agent-threads/$threadId/events'
+      path: '/api/core/p1/agent-threads/$threadId/events'
+      fullPath: '/api/core/p1/agent-threads/$threadId/events'
+      preLoaderRoute: typeof ApiCoreP1AgentThreadsThreadIdEventsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/core/p1/harness/tasks/$taskId/product-metrics': {
       id: '/api/core/p1/harness/tasks/$taskId/product-metrics'
       path: '/$taskId/product-metrics'
@@ -2484,6 +2526,10 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCoreP1ComposerSubmissionsRoute: ApiCoreP1ComposerSubmissionsRoute,
   ApiCoreP1HarnessRecommendationRoute: ApiCoreP1HarnessRecommendationRoute,
   ApiCoreP1HarnessTasksRoute: ApiCoreP1HarnessTasksRouteWithChildren,
+  ApiCoreP1AgentThreadsThreadIdEventsRoute:
+    ApiCoreP1AgentThreadsThreadIdEventsRoute,
+  ApiCoreP1AgentThreadsThreadIdReplayRoute:
+    ApiCoreP1AgentThreadsThreadIdReplayRoute,
   ApiCoreP1WorkflowsWorkflowIdEventsRoute:
     ApiCoreP1WorkflowsWorkflowIdEventsRoute,
 }

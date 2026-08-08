@@ -3,6 +3,7 @@
  * V31-24: Idle primary goal + proactive suggestions on Idle first screen.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { agentSemanticEventWireSchema } from '@meiye/contracts';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,6 +27,78 @@ function renderWithQuery(node: React.ReactNode) {
 }
 
 describe('AgentWorkbenchHost Thread-root restore', () => {
+  it('resumes the authenticated live seam from replay cursors and applies plan events', async () => {
+    const subscribeLive = vi.fn(async (input) => {
+      await input.onEvent(
+        agentSemanticEventWireSchema.parse({
+          schemaVersion: 'agent-semantic-event/v1',
+          threadId: 'thread-live',
+          contextRole: 'included',
+          sourceDomain: 'marketing_plan',
+          sourceEntityId: 'plan-live',
+          sourceRevision: '1',
+          correlationId: 'run-live',
+          payload: {
+            planId: 'plan-live',
+            revision: 1,
+            goal: { summary: '实时计划' },
+            deliverables: [{ kind: 'note', quantity: 4 }],
+          },
+          occurredAt: '2026-08-09T08:00:00.000Z',
+          eventId: 'event-plan-live',
+          streamOffset: '8',
+          eventType: 'plan.created',
+        })
+      );
+      await new Promise<void>((resolve) =>
+        input.signal.addEventListener('abort', () => resolve(), { once: true })
+      );
+    });
+
+    render(
+      <AgentWorkbenchHost
+        enableIdleGoalProactive={false}
+        explicitThreadId="thread-live"
+        loadSession={async () => ({
+          resolveSource: 'explicit_thread',
+          session: {
+            resourceId: 'ws-live',
+            threadId: 'thread-live',
+            sessionRevision: 2,
+          },
+        })}
+        loadReplay={async () => ({
+          session: {
+            resourceId: 'ws-live',
+            threadId: 'thread-live',
+            sessionRevision: 2,
+          },
+          snapshot: {
+            revision: '7',
+            lastEventId: 'event-7',
+            lastStreamOffset: '7',
+          },
+          events: [],
+        })}
+        subscribeLive={subscribeLive}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('agent-living-plan')).toHaveAttribute(
+        'data-plan-id',
+        'plan-live'
+      );
+    });
+    expect(subscribeLive).toHaveBeenCalledWith(
+      expect.objectContaining({
+        threadId: 'thread-live',
+        lastEventId: 'event-7',
+        lastStreamOffset: '7',
+      })
+    );
+  });
+
   it('restores explicit threadId into host session projection', async () => {
     const loadSession = vi.fn(
       async (): Promise<WorkbenchSessionResolveResponse> => ({
@@ -102,7 +175,9 @@ describe('AgentWorkbenchHost Thread-root restore', () => {
       <AgentWorkbenchHost
         enableIdleGoalProactive={false}
         enableSessionRestore={false}
-        processSlot={<div data-testid="work-inline-projection">work stream</div>}
+        processSlot={
+          <div data-testid="work-inline-projection">work stream</div>
+        }
       />
     );
 

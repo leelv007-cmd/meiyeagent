@@ -155,6 +155,8 @@ export type AgentWorkbenchAction =
       session: WorkbenchSessionProjection;
       snapshot: ClientSnapshotCursor;
       events: readonly AgentSemanticEventWire[];
+      /** Same-Thread cursor replay keeps the already materialized projection. */
+      incremental?: boolean;
       /** Ignored when explicitTaskId already set (§27.6). */
       recentTaskId?: string | null;
       resolveSource?: AgentWorkbenchClientState['resolveSource'];
@@ -278,8 +280,20 @@ export function reduceAgentWorkbench(
   switch (action.type) {
     case 'set_connection':
       return ok({ ...state, connection: action.connection });
-    case 'set_session':
+    case 'set_session': {
+      const currentThreadId = state.session?.threadId ?? null;
+      const nextThreadId = action.session?.threadId ?? null;
+      if (nextThreadId === null || nextThreadId !== currentThreadId) {
+        return ok({
+          ...state,
+          session: action.session,
+          plans: {},
+          activePlanId: null,
+          pendingInterrupts: [],
+        });
+      }
       return ok({ ...state, session: action.session });
+    }
     case 'set_explicit_thread_id':
       return ok({ ...state, explicitThreadId: action.threadId });
     case 'set_explicit_task_id':
@@ -361,19 +375,30 @@ function hydrateReplay(
   prev: AgentWorkbenchClientState,
   action: Extract<AgentWorkbenchAction, { type: 'hydrate_replay' }>
 ): AgentWorkbenchClientState {
-  let next: AgentWorkbenchClientState = {
-    ...createEmptyAgentWorkbenchState(),
-    explicitThreadId: prev.explicitThreadId,
-    explicitTaskId: prev.explicitTaskId,
-    resolveSource: action.resolveSource ?? prev.resolveSource,
-    mobilePane: prev.mobilePane,
-    session: action.session,
-    snapshotRevision: action.snapshot.revision,
-    lastEventId: action.snapshot.lastEventId,
-    lastStreamOffset: action.snapshot.lastStreamOffset,
-    connection: 'replaying',
-    needsSnapshotResync: false,
-  };
+  const canApplyIncrementally =
+    action.incremental === true &&
+    prev.session?.threadId === action.session.threadId;
+  let next: AgentWorkbenchClientState = canApplyIncrementally
+    ? {
+        ...prev,
+        session: action.session,
+        snapshotRevision: action.snapshot.revision,
+        connection: 'replaying',
+        needsSnapshotResync: false,
+      }
+    : {
+        ...createEmptyAgentWorkbenchState(),
+        explicitThreadId: prev.explicitThreadId,
+        explicitTaskId: prev.explicitTaskId,
+        resolveSource: action.resolveSource ?? prev.resolveSource,
+        mobilePane: prev.mobilePane,
+        session: action.session,
+        snapshotRevision: action.snapshot.revision,
+        lastEventId: action.snapshot.lastEventId,
+        lastStreamOffset: action.snapshot.lastStreamOffset,
+        connection: 'replaying',
+        needsSnapshotResync: false,
+      };
 
   // §27.6: never let recent-task overwrite explicit taskId
   void action.recentTaskId;
@@ -824,7 +849,10 @@ function coerceLegacyArtifactPayload(
   let revision = 1;
   if (typeof revisionRaw === 'number' && Number.isFinite(revisionRaw)) {
     revision = Math.max(1, Math.trunc(revisionRaw));
-  } else if (typeof revisionRaw === 'string' && /^(0|[1-9]\d*)$/u.test(revisionRaw)) {
+  } else if (
+    typeof revisionRaw === 'string' &&
+    /^(0|[1-9]\d*)$/u.test(revisionRaw)
+  ) {
     revision = Math.max(1, Number(revisionRaw));
   } else if (/^(0|[1-9]\d*)$/u.test(streamOffset)) {
     revision = Math.max(1, Number(streamOffset));

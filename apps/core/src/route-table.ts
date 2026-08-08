@@ -20,6 +20,8 @@ export const CORE_ROUTE_AUTH_CLASSES = [
   ['composer-submissions', 'service-token'],
   ['composer-task-events', 'service-token'],
   ['composer-content-package', 'service-token'],
+  ['agent-semantic-replay', 'service-token'],
+  ['agent-semantic-events', 'service-token'],
   ['harness-recommendation', 'service-token'],
   ['harness-product-metrics', 'service-token'],
   ['harness-active-tasks', 'service-token'],
