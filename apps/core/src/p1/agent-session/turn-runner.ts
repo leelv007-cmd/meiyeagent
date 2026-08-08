@@ -1,9 +1,12 @@
 /**
- * Agent Session Harness turn runner (V31-06 / V3.1 §21.4).
+ * Agent Session Harness turn runner (V31-06 / V3.1 §21.4 + V31-08 levels).
  *
- * Orchestrates: release controlLimits (U11) → context projection → middleware
- * → AgentKernel (no durable ckpt) → system-only intercept → decision parse →
- * partial activity → optional compaction.
+ * Orchestrates: progressive level classify → release controlLimits (U11) →
+ * context projection → middleware → AgentKernel (no durable ckpt) →
+ * system-only intercept → decision parse → partial activity → optional compaction.
+ *
+ * Level 0: deterministic revise — zero LLM (kernel not invoked).
+ * Level 1 pure copy: interpreting → handing_off + billing UX (A5).
  *
  * Read-only session turns (durability=exit) must not call paid primitives such
  * as `record` — enforced via tool call log + didNotCall helper.
@@ -20,6 +23,13 @@ import { assertControlLimitsFullySet } from '../harness/harness-release.js';
 import type { AgentKernel, AgentKernelToolDefinition } from './agent-kernel.js';
 import { assertNoDurableCheckpointSurface } from './agent-kernel.js';
 import {
+  projectSessionBillingUx,
+  type SessionBillingBalancePort,
+  type SessionBillingQuoteFacts,
+  type SessionBillingQuotePort,
+  type SessionBillingUxProjection,
+} from './billing-ux.js';
+import {
   buildModelContextProjection,
   type ModelContextProjection,
   type ModelContextSource,
@@ -35,6 +45,13 @@ import {
   type PolicyControlDecision,
   type RegisteredPolicy,
 } from './policy-middleware.js';
+import {
+  applyConfirmationKillSwitch,
+  classifyProgressiveLevel,
+  type ProgressiveLevelInput,
+  type ProgressiveLevelResult,
+} from './progressive-level.js';
+import { didNotCall } from './quick-checks.js';
 import {
   canTransition,
   transition,
@@ -53,31 +70,8 @@ export type ToolCallLogEntry = {
   toolName: string;
   args: unknown;
   sideEffect: AgentKernelToolDefinition['sideEffect'];
+  error?: unknown;
 };
-
-/**
- * Quick-check style helper (V31-08 will promote to shared registry).
- * Negative assertion for read-only session turns.
- */
-export function didNotCall(
-  toolCalls: readonly ToolCallLogEntry[],
-  toolName: string,
-): boolean {
-  return !toolCalls.some((call) => call.toolName === toolName);
-}
-
-export function toolOrder(
-  toolCalls: readonly ToolCallLogEntry[],
-  expected: readonly string[],
-): boolean {
-  const names = toolCalls.map((call) => call.toolName);
-  let index = 0;
-  for (const name of names) {
-    if (name === expected[index]) index += 1;
-    if (index === expected.length) return true;
-  }
-  return index === expected.length;
-}
 
 export type ReleaseControlLimitsSource = {
   /**
@@ -109,6 +103,30 @@ export type AgentTurnRunnerDeps = {
   initialState?: SessionHarnessState;
   /** Optional creation mode for projection (D-175 free layering). */
   creationMode?: 'customized' | 'free';
+  /**
+   * V31-08: progressive level facts beyond merchantMessage.
+   * Kill switch / carriers / paid-media units come from server authority.
+   */
+  resolveLevelInput?: (
+    input: AgentTurnInput,
+  ) => ProgressiveLevelInput | Promise<ProgressiveLevelInput>;
+  /** Kill switch: when true, pure-copy exemption is disabled (tighten only). */
+  forceConfirmationKillSwitch?: boolean | (() => boolean | Promise<boolean>);
+  /** A5 billing quote port — product quote authority facts only. */
+  billingQuotePort?: SessionBillingQuotePort;
+  /** A5 balance port — credit ledger projection only. */
+  billingBalancePort?: SessionBillingBalancePort;
+  /**
+   * Optional pre-resolved quote for tests / admission paths that already
+   * froze a ProductQuoteSnapshot. Takes precedence over billingQuotePort.
+   */
+  billingQuote?:
+    | SessionBillingQuoteFacts
+    | null
+    | ((
+        input: AgentTurnInput,
+        level: ProgressiveLevelResult,
+      ) => SessionBillingQuoteFacts | null | Promise<SessionBillingQuoteFacts | null>);
 };
 
 export type AgentTurnRunnerResult = {
@@ -124,6 +142,12 @@ export type AgentTurnRunnerResult = {
   releaseId: string;
   /** Middleware state bag (question budget / high-risk filters). */
   policyState: Record<string, unknown>;
+  /** V31-08 progressive level classification. */
+  progressiveLevel: ProgressiveLevelResult;
+  /** Kernel invocations this turn (0 for Level 0). */
+  llmCallCount: number;
+  /** A5 billing UX projection (populated on L0/L1 confirmation-exempt paths). */
+  billingUx: SessionBillingUxProjection | null;
 };
 
 export class AgentTurnRunner {
@@ -167,7 +191,10 @@ export class AgentTurnRunner {
       limits: controlLimits,
     };
 
-    this.advance('interpreting');
+    // V31-08: progressive level before any LLM loop.
+    const progressiveLevel = await this.resolveProgressiveLevel(
+      authoritativeInput,
+    );
 
     const source =
       typeof this.deps.contextSource === 'function'
@@ -181,6 +208,54 @@ export class AgentTurnRunner {
             },
           });
     const projection = buildModelContextProjection(authoritativeInput, source);
+    const releaseId =
+      release.releaseId ?? authoritativeInput.harnessReleaseId;
+
+    // Level 0: deterministic light edit — do not enter state machine or LLM.
+    if (progressiveLevel.level === 0) {
+      const billingUx = await this.resolveBillingUx(
+        authoritativeInput,
+        progressiveLevel,
+      );
+      const decision = buildLevel0Decision(
+        authoritativeInput,
+        progressiveLevel,
+      );
+      const activityStableId = `turn-activity:${authoritativeInput.runId}`;
+      this.activity.replaceWithFinal({
+        stableId: activityStableId,
+        payload: {
+          decision,
+          progressiveLevel,
+          billingUx,
+          llmCallCount: 0,
+        },
+      });
+      return {
+        decision,
+        state: this.state, // remains idle — Level 0 never enters the graph
+        toolCalls: [],
+        projection,
+        controlLimits,
+        systemOnlyBlock: null,
+        policyDecision: { control: 'continue' },
+        activityStableId,
+        compaction: null,
+        releaseId,
+        policyState: { progressiveLevel },
+        progressiveLevel,
+        llmCallCount: 0,
+        billingUx,
+      };
+    }
+
+    this.advance('interpreting');
+
+    // Level 1 pure-copy confirmation-exempt: interpreting → handing_off (U1).
+    // Concise brief is still produced by the kernel when tools/model run, but
+    // plan_ready / awaiting_approval are skipped via state shortcut below.
+    const level1Shortcut =
+      progressiveLevel.level === 1 && progressiveLevel.confirmationExempt;
 
     const bindings = release.middlewareBindings ?? [];
     const middleware = new PolicyMiddlewareRunner(
@@ -192,7 +267,7 @@ export class AgentTurnRunner {
       phase: authoritativeInput.phase,
       runId: authoritativeInput.runId,
       workspaceId: authoritativeInput.workspaceId,
-      state: {} as Record<string, unknown>,
+      state: { progressiveLevel } as Record<string, unknown>,
     };
 
     const before = await middleware.runBeforeModel(middlewareCtx);
@@ -203,7 +278,12 @@ export class AgentTurnRunner {
         controlLimits,
         policyDecision: before,
         toolCalls: [],
-        releaseId: release.releaseId ?? authoritativeInput.harnessReleaseId,
+        releaseId,
+        progressiveLevel,
+        llmCallCount: 0,
+        billingUx: level1Shortcut
+          ? await this.resolveBillingUx(authoritativeInput, progressiveLevel)
+          : null,
       });
     }
 
@@ -223,8 +303,9 @@ export class AgentTurnRunner {
       (name) => name in tools,
     );
 
-    // Retrieval phase when tools will run (state machine signal).
+    // Level 1 shortcut skips retrieval/plan phases (interpreting → handing_off).
     if (
+      !level1Shortcut &&
       activeToolNames.length > 0 &&
       canTransition(this.state, 'retrieving')
     ) {
@@ -258,6 +339,7 @@ export class AgentTurnRunner {
         },
       }),
     );
+    const llmCallCount = 1;
 
     const toolCalls: ToolCallLogEntry[] = [];
     if (
@@ -295,6 +377,11 @@ export class AgentTurnRunner {
         ? (kernelResult as Awaited<ReturnType<AgentKernel['runTurn']>>).decision
         : kernelResult;
 
+    const billingUx =
+      level1Shortcut || progressiveLevel.confirmationExempt
+        ? await this.resolveBillingUx(authoritativeInput, progressiveLevel)
+        : null;
+
     // System-only proposal intercept (after-model layer).
     const systemOnlyBlock = interceptSystemOnlyProposal(rawDecision);
     if (systemOnlyBlock.blocked) {
@@ -326,15 +413,22 @@ export class AgentTurnRunner {
             : afterBlocked,
         activityStableId,
         compaction: null,
-        releaseId: release.releaseId ?? authoritativeInput.harnessReleaseId,
+        releaseId,
         policyState: { ...middlewareCtx.state },
+        progressiveLevel,
+        llmCallCount,
+        billingUx,
       };
     }
 
     let decision = parseAgentTurnDecision(rawDecision);
 
-    // hypothesis_ready after successful decision parse (pre-policy).
-    if (canTransition(this.state, 'hypothesis_ready')) {
+    // Level 1 shortcut: skip hypothesis_ready / plan_compiling → handing_off.
+    if (level1Shortcut) {
+      if (canTransition(this.state, 'handing_off')) {
+        this.state = transition(this.state, 'handing_off');
+      }
+    } else if (canTransition(this.state, 'hypothesis_ready')) {
       this.state = transition(this.state, 'hypothesis_ready');
     }
 
@@ -359,10 +453,16 @@ export class AgentTurnRunner {
 
     this.activity.replaceWithFinal({
       stableId: activityStableId,
-      payload: decision,
+      payload: { decision, progressiveLevel, billingUx },
     });
 
-    if (decision.action.kind === 'ask_merchant') {
+    if (level1Shortcut) {
+      // Stay on handing_off even if model asked — L1 exempt path hands off.
+      // Balance shortfall still surfaces via billingUx.submitBlocked.
+      if (this.state !== 'handing_off' && canTransition(this.state, 'handing_off')) {
+        this.state = transition(this.state, 'handing_off');
+      }
+    } else if (decision.action.kind === 'ask_merchant') {
       if (canTransition(this.state, 'awaiting_clarification')) {
         this.state = transition(this.state, 'awaiting_clarification');
       }
@@ -388,7 +488,7 @@ export class AgentTurnRunner {
         threadId: authoritativeInput.threadId,
         sections: {
           goal: decision.merchantMessage.slice(0, 500),
-          progress: `phase=${authoritativeInput.phase}; action=${decision.action.kind}`,
+          progress: `phase=${authoritativeInput.phase}; action=${decision.action.kind}; level=${progressiveLevel.level}`,
           keyDecisions: decision.assumptions
             .map((item) => `${item.key}:${item.statement}`)
             .join('; ')
@@ -417,9 +517,59 @@ export class AgentTurnRunner {
       policyDecision: after,
       activityStableId,
       compaction,
-      releaseId: release.releaseId ?? authoritativeInput.harnessReleaseId,
+      releaseId,
       policyState: { ...middlewareCtx.state },
+      progressiveLevel,
+      llmCallCount,
+      billingUx,
     };
+  }
+
+  private async resolveProgressiveLevel(
+    input: AgentTurnInput,
+  ): Promise<ProgressiveLevelResult> {
+    const base: ProgressiveLevelInput = this.deps.resolveLevelInput
+      ? await this.deps.resolveLevelInput(input)
+      : { merchantMessage: input.merchantMessage };
+    const levelInput: ProgressiveLevelInput = {
+      ...base,
+      merchantMessage: base.merchantMessage || input.merchantMessage,
+    };
+    let result = classifyProgressiveLevel(levelInput);
+    const kill =
+      typeof this.deps.forceConfirmationKillSwitch === 'function'
+        ? await this.deps.forceConfirmationKillSwitch()
+        : this.deps.forceConfirmationKillSwitch === true;
+    if (kill || levelInput.forceConfirmationKillSwitch) {
+      result = applyConfirmationKillSwitch(result, true);
+    }
+    return result;
+  }
+
+  private async resolveBillingUx(
+    input: AgentTurnInput,
+    level: ProgressiveLevelResult,
+  ): Promise<SessionBillingUxProjection> {
+    let quote: SessionBillingQuoteFacts | null = null;
+    if (typeof this.deps.billingQuote === 'function') {
+      quote = await this.deps.billingQuote(input, level);
+    } else if (this.deps.billingQuote) {
+      quote = this.deps.billingQuote;
+    } else if (this.deps.billingQuotePort) {
+      quote = await this.deps.billingQuotePort.resolveQuote({
+        workspaceId: input.workspaceId,
+        runId: input.runId,
+        merchantMessage: input.merchantMessage,
+        level: level.level,
+        isPureCopy: level.isPureCopy,
+      });
+    }
+    const balance = this.deps.billingBalancePort
+      ? await this.deps.billingBalancePort.resolveBalance({
+          workspaceId: input.workspaceId,
+        })
+      : null;
+    return projectSessionBillingUx({ quote, balance });
   }
 
   private advance(to: SessionHarnessState): void {
@@ -433,6 +583,9 @@ export class AgentTurnRunner {
     policyDecision: PolicyControlDecision;
     toolCalls: ToolCallLogEntry[];
     releaseId: string;
+    progressiveLevel: ProgressiveLevelResult;
+    llmCallCount: number;
+    billingUx: SessionBillingUxProjection | null;
   }): AgentTurnRunnerResult {
     const activityStableId = `turn-activity:${args.input.runId}`;
     this.activity.replaceWithFinal({
@@ -451,8 +604,31 @@ export class AgentTurnRunner {
       compaction: null,
       releaseId: args.releaseId,
       policyState: {},
+      progressiveLevel: args.progressiveLevel,
+      llmCallCount: args.llmCallCount,
+      billingUx: args.billingUx,
     };
   }
+}
+
+function buildLevel0Decision(
+  input: AgentTurnInput,
+  level: ProgressiveLevelResult,
+): AgentTurnDecision {
+  const instruction =
+    level.deterministicEdit?.instruction ?? input.merchantMessage;
+  return parseAgentTurnDecision({
+    merchantMessage: `已按确定性轻修改处理：${instruction}`,
+    action: { kind: 'finish_turn' },
+    evidenceRefs: [],
+    assumptions: [
+      {
+        key: 'progressive_level',
+        statement: `level_0:${level.deterministicEdit?.kind ?? 'generic_light_edit'}`,
+        risk: 'low',
+      },
+    ],
+  });
 }
 
 /** Convenience: extract controlLimits from a full release artifact. */

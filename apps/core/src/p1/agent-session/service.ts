@@ -1,14 +1,19 @@
 /**
- * Agent Session Harness service façade (V31-06).
+ * Agent Session Harness service façade (V31-06 / V31-08).
  *
  * Thin assembly over store + turn runner + sole checkpoint writer.
- * Intent/retrieval/levels mount in V31-07/08 without rewriting this core.
+ * Progressive levels + billing UX ports mount here (V31-08) without rewriting
+ * the turn-runner core.
  */
 
 import type { AgentControlLimits, HarnessMiddlewareBinding } from '@meiye/contracts';
 
 import type { AgentSessionStore } from './agent-session-store.js';
 import type { AgentKernel, AgentKernelToolDefinition } from './agent-kernel.js';
+import type {
+  SessionBillingBalancePort,
+  SessionBillingQuotePort,
+} from './billing-ux.js';
 import {
   ThreadCheckpointWriter,
   assertSoleCheckpointWriter,
@@ -18,6 +23,7 @@ import {
 } from './compaction.js';
 import type { ModelContextSource } from './context-projection.js';
 import type { RegisteredPolicy } from './policy-middleware.js';
+import type { ProgressiveLevelInput } from './progressive-level.js';
 import type { AgentToolRegistry } from './tool-registry.js';
 import {
   parseAgentTurnInput,
@@ -57,6 +63,16 @@ export type AgentSessionHarnessServiceOptions = {
   ) => 'customized' | 'free' | undefined;
   /** Register this process's sole Thread checkpoint writer (default true). */
   registerCheckpointWriter?: boolean;
+  /** V31-08 progressive level facts (carriers / paid units / kill switch). */
+  resolveLevelInput?: (
+    input: AgentTurnInput,
+  ) => ProgressiveLevelInput | Promise<ProgressiveLevelInput>;
+  /** V31-08 kill switch: tighten pure-copy exemption only. */
+  forceConfirmationKillSwitch?: boolean | (() => boolean | Promise<boolean>);
+  /** V31-08 A5 quote port (product quote authority). */
+  billingQuotePort?: SessionBillingQuotePort;
+  /** V31-08 A5 balance port (credit ledger projection). */
+  billingBalancePort?: SessionBillingBalancePort;
 };
 
 export class AgentSessionHarnessService {
@@ -99,6 +115,10 @@ export class AgentSessionHarnessService {
       resourceId: input.resourceId,
       readOnly: input.readOnly,
       creationMode,
+      resolveLevelInput: this.options.resolveLevelInput,
+      forceConfirmationKillSwitch: this.options.forceConfirmationKillSwitch,
+      billingQuotePort: this.options.billingQuotePort,
+      billingBalancePort: this.options.billingBalancePort,
     });
   }
 

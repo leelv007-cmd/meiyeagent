@@ -19,3 +19,7 @@ export * from './context-retrieval.js';
 export * from './intent-interpreter.js';
 export * from './intent-retrieval-policies.js';
 export * from './tool-registry.js';
+// V31-08 Progressive levels + billing UX + Quick Checks
+export * from './billing-ux.js';
+export * from './progressive-level.js';
+export * from './quick-checks.js';

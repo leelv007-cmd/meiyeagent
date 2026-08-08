@@ -162,6 +162,29 @@ jobs:
         env:
           NODE_OPTIONS: --test-reporter=spec
 
+  # V31-08 / V3.1 §31.1b: Session Quick Checks zero-LLM behavior gates.
+  # Required. V31-23 extends the shared registry only — do not replace this job.
+  session-quick-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Session Quick Checks + Progressive Level 0/1 gates (zero LLM)
+        run: >-
+          pnpm --filter @meiye/core exec node --import tsx --test
+          --test-concurrency=1
+          src/p1/agent-session/quick-checks.test.ts
+          src/p1/agent-session/progressive-levels.test.ts
+        env:
+          NODE_OPTIONS: --test-reporter=spec
+
   production-dependency-audit:
     runs-on: ubuntu-latest
     steps:
@@ -415,6 +438,7 @@ jobs:
     needs:
       - redline-evals
       - core
+      - session-quick-checks
       - root-quality
       - core-persistence
       - production-main-journey
@@ -428,6 +452,7 @@ jobs:
         env:
           REQUIRED_CORE_PERSISTENCE_RESULT: ${{ needs.core-persistence.result }}
           REQUIRED_CORE_RESULT: ${{ needs.core.result }}
+          REQUIRED_SESSION_QUICK_CHECKS_RESULT: ${{ needs.session-quick-checks.result }}
           REQUIRED_PRODUCTION_MAIN_JOURNEY_RESULT: ${{ needs.production-main-journey.result }}
           REQUIRED_P2_BROWSER_ACCEPTANCE_RESULT: ${{ needs.p2-browser-acceptance.result }}
           REQUIRED_PRODUCTION_DEPENDENCY_AUDIT_RESULT: ${{ needs.production-dependency-audit.result }}

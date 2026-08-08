@@ -7,6 +7,7 @@ const scriptPath = resolve(import.meta.dirname, 'assert-required-jobs.mjs');
 const requiredResultKeys = [
   'REQUIRED_REDLINE_EVALS_RESULT',
   'REQUIRED_CORE_RESULT',
+  'REQUIRED_SESSION_QUICK_CHECKS_RESULT',
   'REQUIRED_ROOT_QUALITY_RESULT',
   'REQUIRED_CORE_PERSISTENCE_RESULT',
   'REQUIRED_PRODUCTION_MAIN_JOURNEY_RESULT',

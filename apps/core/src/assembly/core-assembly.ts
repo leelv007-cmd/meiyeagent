@@ -31,6 +31,7 @@ import {
   createRetrievalToolRegistry,
   createSessionAgentKernel,
   createSessionRetrievalPorts,
+  type SessionBillingQuoteFacts,
 } from '../p1/agent-session/index.js';
 import { PostgresAgentSemanticEventStore } from '../p1/agent-semantic-events/index.js';
 import { createPermissionAuthorizer } from '../p1/capability-permission/index.js';
@@ -680,7 +681,21 @@ export async function assembleCoreGraph(
   /** Durable agent session store (V31-02) — also backs Session Harness service. */
   const agentSessionStore = new PostgresAgentSessionStore(pool);
   /**
+   * V31-08: late-bound billing quote resolver. productQuoteAuthority is
+   * assembled further down; ports are only invoked at turn time.
+   */
+  const sessionBillingQuoteBridge: {
+    resolve?: (input: {
+      workspaceId: string;
+      runId: string;
+      merchantMessage: string;
+      level: 0 | 1 | 2 | 3;
+      isPureCopy: boolean;
+    }) => Promise<SessionBillingQuoteFacts | null>;
+  } = {};
+  /**
    * V31-07 Session Harness service: kernel + retrieval tools + intent policies.
+   * V31-08: progressive levels + billing UX ports (A5) on the production path.
    * Only assembled when a kernel is available (fixture always; live when verified).
    */
   const sessionAgentHarness = sessionAgentKernel
@@ -720,6 +735,25 @@ export async function assembleCoreGraph(
         createPolicies: () => createIntentRetrievalPolicies({}),
         resolveCreationMode: (turn) => turn.creationMode,
         registerCheckpointWriter: true,
+        // Kill switch can only tighten pure-copy exemption (U1 / A13).
+        forceConfirmationKillSwitch: () => {
+          const raw =
+            env.MEIYE_SESSION_FORCE_CONFIRMATION ??
+            env.SESSION_FORCE_CONFIRMATION;
+          return raw === '1' || raw === 'true';
+        },
+        billingBalancePort: {
+          resolveBalance: async ({ workspaceId }) => {
+            const projection = await creditLedger.project(workspaceId);
+            return { availableCredits: projection.availableCredits };
+          },
+        },
+        billingQuotePort: {
+          resolveQuote: async (input) => {
+            if (!sessionBillingQuoteBridge.resolve) return null;
+            return sessionBillingQuoteBridge.resolve(input);
+          },
+        },
       })
     : undefined;
   const foundationLedgerService = new P1ApplicationService(
@@ -819,6 +853,43 @@ export async function assembleCoreGraph(
       );
     },
   });
+  /**
+   * V31-08 production quote bridge for confirmation-exempt paths (A5).
+   * Resolves only pure-copy default pricing from catalog authority — never
+   * invents creditCost / failureRefundsCredits outside product quote facts.
+   */
+  sessionBillingQuoteBridge.resolve = async (input) => {
+    if (!input.isPureCopy) return null;
+    try {
+      const snapshot = await platformDefaultModelSource.getSnapshot();
+      const catalogModelId =
+        snapshot.copy?.catalogModelId ??
+        e2ePlatformModelDefaults.copy ??
+        undefined;
+      if (!catalogModelId) return null;
+      const buildInput = await productQuoteAuthority.resolve({
+        workspaceId: input.workspaceId,
+        catalogModelId,
+        operation: 'copy.generate',
+        quoteId: `session-level:${input.runId}`,
+        quantity: 1,
+      });
+      if (
+        !Number.isSafeInteger(buildInput.creditCost) ||
+        (buildInput.creditCost ?? 0) <= 0 ||
+        typeof buildInput.failureRefundsCredits !== 'boolean'
+      ) {
+        return null;
+      }
+      return {
+        creditCost: buildInput.creditCost as number,
+        failureRefundsCredits: buildInput.failureRefundsCredits,
+      };
+    } catch {
+      // Fail closed: missing catalog/model → chip hidden + submit blocked.
+      return null;
+    }
+  };
   const providerConnectivity = providerConnectivityProbeFromEnv(
     providerCredentialRuntime.env
   );

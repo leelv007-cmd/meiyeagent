@@ -83,3 +83,12 @@ export function transition(
 export function level1ShortcutPath(): readonly SessionHarnessState[] {
   return ['idle', 'interpreting', 'handing_off', 'completed'];
 }
+
+/**
+ * Level 0 deterministic light edit never enters the harness graph (V3.1 §21.1).
+ * Exported for constructive proof that L0 stays outside SESSION_HARNESS_STATES
+ * transitions for the turn.
+ */
+export function level0StaysOutsideMachine(): readonly SessionHarnessState[] {
+  return ['idle'];
+}
