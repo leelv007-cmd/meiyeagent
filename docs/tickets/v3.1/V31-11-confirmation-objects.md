@@ -3,7 +3,7 @@
 **Parent**: spec-C（#3）`docs/specs/v3.1-agent-specs-2026-08-08/spec-C-431-confirm-execute.md`；权威 V3.1 §14.3、U7/U8
 **批次**: 3
 **Blocked by**: V31-09
-**Status**: ready-for-agent
+**Status**: done (merged, 2026-08-08)
 
 ## What to build
 
