@@ -1014,6 +1014,141 @@ test('a result note carrying contact details is refused by the server, not only 
   assert.equal(stored.resultSignals?.at(-1)?.note, '带朋友一起来的');
 });
 
+test('V31-19: no_activity is first-class; feedback stand-in is rejected', async () => {
+  const setup = await createSetup('assisted');
+  await setup.service.recordManualResult(context, {
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+  const recorded = await setup.service.recordResultSignal(context, {
+    expectedRevision: 2,
+    kind: 'no_activity',
+    occurredAt: '2026-07-17T09:30:00.000Z',
+    packageId: 'package-a',
+    sourceRef: 'chip:no_activity',
+  });
+  assert.equal(recorded.resultSignals?.at(-1)?.kind, 'no_activity');
+  const results = await setup.service.results(context, 'package-a');
+  assert.equal(results.signals.merchant.at(-1)?.kind, 'no_activity');
+  // Negative chip must not advance the ladder past published.
+  assert.deepEqual(
+    results.ladder.filter((step) => step.reached).map((step) => step.id),
+    ['published'],
+  );
+  // Inferred projection must not invent absence.
+  assert.equal(
+    results.signals.inferred.some((row) => row.kind === 'no_activity'),
+    false,
+  );
+});
+
+test('V31-19: result signal write is idempotent on package+signal+observedAt+sourceRef', async () => {
+  const setup = await createSetup('assisted');
+  await setup.service.recordManualResult(context, {
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+  const input = {
+    expectedRevision: 2,
+    kind: 'inquiry' as const,
+    note: '有人私信问价',
+    occurredAt: '2026-07-17T10:00:00.000Z',
+    packageId: 'package-a',
+    sourceRef: 'self-report:1',
+  };
+  const first = await setup.service.recordResultSignal(context, input);
+  assert.equal(first.resultSignals?.length, 1);
+  // Retry after success — same key, same payload, no second row.
+  const retry = await setup.service.recordResultSignal(context, {
+    ...input,
+    expectedRevision: 99, // OCC not required on pure idempotent hit
+  });
+  assert.equal(retry.revision, first.revision);
+  assert.equal(retry.resultSignals?.length, 1);
+
+  await assert.rejects(
+    setup.service.recordResultSignal(context, {
+      ...input,
+      note: '换一句备注',
+    }),
+    (error: unknown) =>
+      error instanceof ContentPackageDeliveryError &&
+      error.code === 'RESULT_SIGNAL_IDEMPOTENCY_CONFLICT',
+  );
+});
+
+test('V31-19: correct and withdraw are append-only and bind exact package revision', async () => {
+  const setup = await createSetup('assisted');
+  await setup.service.recordManualResult(context, {
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+  const first = await setup.service.recordResultSignal(context, {
+    expectedRevision: 2,
+    kind: 'inquiry',
+    occurredAt: '2026-07-17T10:00:00.000Z',
+    packageId: 'package-a',
+    sourceRef: 'self-report:correct-1',
+  });
+  const priorId = first.resultSignals?.at(-1)?.id;
+  assert.ok(priorId);
+
+  const corrected = await setup.service.recordResultSignal(context, {
+    action: 'correct',
+    expectedRevision: 3,
+    kind: 'store_visit',
+    note: '其实已经到店了',
+    occurredAt: '2026-07-17T11:00:00.000Z',
+    packageId: 'package-a',
+    supersedesSignalId: priorId,
+  });
+  assert.equal(corrected.resultSignals?.length, 2);
+  assert.equal(corrected.resultSignals?.at(-1)?.kind, 'store_visit');
+  assert.equal(corrected.resultSignals?.at(-1)?.supersedesSignalId, priorId);
+  assert.equal(corrected.revision, 4);
+
+  const afterCorrect = await setup.service.results(context, 'package-a');
+  assert.equal(afterCorrect.signals.merchant.length, 1);
+  assert.equal(afterCorrect.signals.merchant[0]?.kind, 'store_visit');
+  assert.equal(afterCorrect.signals.history?.length, 2);
+
+  const activeId = afterCorrect.signals.merchant[0]?.id;
+  assert.ok(activeId);
+  const withdrawn = await setup.service.recordResultSignal(context, {
+    action: 'withdraw',
+    expectedRevision: 4,
+    kind: 'store_visit',
+    packageId: 'package-a',
+    supersedesSignalId: activeId,
+  });
+  assert.equal(withdrawn.resultSignals?.at(-1)?.status, 'withdrawn');
+  const afterWithdraw = await setup.service.results(context, 'package-a');
+  assert.equal(afterWithdraw.signals.merchant.length, 0);
+  assert.equal(afterWithdraw.signals.history?.length, 3);
+
+  await assert.rejects(
+    setup.service.recordResultSignal(context, {
+      action: 'withdraw',
+      expectedRevision: 5,
+      kind: 'store_visit',
+      packageId: 'package-a',
+      supersedesSignalId: 'missing-row',
+    }),
+    (error: unknown) =>
+      error instanceof ContentPackageDeliveryError &&
+      error.code === 'RESULT_SIGNAL_SUPERSEDES_NOT_FOUND',
+  );
+});
+
 async function createSetup(
   mode: 'assisted' | 'automatic_verified',
   legacy = false,

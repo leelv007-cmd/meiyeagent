@@ -30,6 +30,14 @@ import {
   marketingPlanRevisionSchema,
   memoryInjectionReceiptSchema,
   outcomeEvidenceSchema,
+  buildOutcomeEvidenceIdempotencyKey,
+  isForbiddenNoActivityEncoding,
+  mapContentPackageResultKindToOutcomeSignal,
+  OUTCOME_SELF_REPORT_CHIP_SIGNALS,
+  OUTCOME_SELF_REPORT_FREQUENCY_PARAMS,
+  outcomeSelfReportFrequencyParamsSchema,
+  projectLatestOutcomeEvidence,
+  recordOutcomeEvidenceCommandSchema,
   agentExecutionConfirmationRequestSchema,
   planConfirmationDecisionSchema,
 } from './agent-domain.js';
@@ -502,10 +510,152 @@ test('steering command and outcome evidence contracts parse', () => {
   const outcome = outcomeEvidenceSchema.parse({
     schemaVersion: 'outcome-evidence/v1',
     evidenceId: 'out-1',
+    workspaceId: 'ws-1',
     contentPackageRef: { id: 'pkg-1', revision: 2 },
     signal: 'inquiry',
     source: 'merchant_reported',
     observedAt: TS,
+    recordedAt: TS,
+    actorId: 'actor-1',
+    status: 'active',
   });
   assert.equal(outcome.source, 'merchant_reported');
+});
+
+test('outcome evidence accepts no_activity and rejects feedback stand-in', () => {
+  const noActivity = outcomeEvidenceSchema.parse({
+    schemaVersion: 'outcome-evidence/v1',
+    evidenceId: 'out-no-activity',
+    workspaceId: 'ws-1',
+    contentPackageRef: { id: 'pkg-1', revision: 3 },
+    signal: 'no_activity',
+    source: 'merchant_reported',
+    observedAt: TS,
+    recordedAt: TS,
+    actorId: 'actor-1',
+    status: 'active',
+  });
+  assert.equal(noActivity.signal, 'no_activity');
+  assert.equal(OUTCOME_SELF_REPORT_CHIP_SIGNALS.includes('no_activity'), true);
+  assert.equal(isForbiddenNoActivityEncoding('feedback', '没动静'), true);
+  assert.equal(isForbiddenNoActivityEncoding('no_activity', '没动静'), false);
+  assert.equal(
+    mapContentPackageResultKindToOutcomeSignal('no_activity'),
+    'no_activity',
+  );
+
+  assert.equal(
+    recordOutcomeEvidenceCommandSchema.safeParse({
+      schemaVersion: 'outcome-evidence/v1',
+      workspaceId: 'ws-1',
+      contentPackageRef: { id: 'pkg-1', revision: 3 },
+      signal: 'feedback',
+      note: '没动静',
+      actorId: 'actor-1',
+    }).success,
+    false,
+  );
+});
+
+test('outcome evidence idempotency key and latest projection', () => {
+  const key = buildOutcomeEvidenceIdempotencyKey({
+    contentPackageId: 'pkg-1',
+    contentPackageRevision: 2,
+    signal: 'inquiry',
+    observedAt: TS,
+    sourceRef: 'shot-1',
+  });
+  assert.equal(key, `pkg-1|2|inquiry|${TS}|shot-1`);
+  assert.equal(
+    buildOutcomeEvidenceIdempotencyKey({
+      contentPackageId: 'pkg-1',
+      contentPackageRevision: 2,
+      signal: 'inquiry',
+      observedAt: TS,
+    }),
+    `pkg-1|2|inquiry|${TS}|_`,
+  );
+
+  const base = {
+    schemaVersion: 'outcome-evidence/v1' as const,
+    workspaceId: 'ws-1',
+    contentPackageRef: { id: 'pkg-1', revision: 2 },
+    source: 'merchant_reported' as const,
+    observedAt: TS,
+    recordedAt: TS,
+    actorId: 'actor-1',
+  };
+  const first = outcomeEvidenceSchema.parse({
+    ...base,
+    evidenceId: 'e1',
+    signal: 'inquiry',
+    status: 'active',
+  });
+  const correction = outcomeEvidenceSchema.parse({
+    ...base,
+    evidenceId: 'e2',
+    signal: 'booking',
+    status: 'active',
+    supersedesEvidenceId: 'e1',
+    recordedAt: '2026-08-08T13:00:00.000Z',
+  });
+  const withdraw = outcomeEvidenceSchema.parse({
+    ...base,
+    evidenceId: 'e3',
+    signal: 'booking',
+    status: 'withdrawn',
+    supersedesEvidenceId: 'e2',
+    recordedAt: '2026-08-08T14:00:00.000Z',
+  });
+  assert.deepEqual(
+    projectLatestOutcomeEvidence([first, correction]).map((row) => row.evidenceId),
+    ['e2'],
+  );
+  assert.deepEqual(projectLatestOutcomeEvidence([first, correction, withdraw]), []);
+});
+
+test('U2 self-report frequency params are observation-only (not a hard gate)', () => {
+  const params = outcomeSelfReportFrequencyParamsSchema.parse(
+    OUTCOME_SELF_REPORT_FREQUENCY_PARAMS,
+  );
+  assert.equal(params.askTiming, 'next_day_once');
+  assert.equal(params.maxAsksPerWork, 1);
+  assert.equal(params.consecutiveIgnoreThresholdForStoreBackoff, 2);
+  assert.equal(params.coverageGateMode, 'observation_only');
+  assert.equal(params.coverageObservationTarget, 0.4);
+});
+
+test('record outcome evidence command rejects inferred writes and requires supersedes for correct', () => {
+  assert.equal(
+    recordOutcomeEvidenceCommandSchema.safeParse({
+      schemaVersion: 'outcome-evidence/v1',
+      workspaceId: 'ws-1',
+      contentPackageRef: { id: 'pkg-1', revision: 1 },
+      signal: 'inquiry',
+      source: 'inferred',
+      actorId: 'actor-1',
+    }).success,
+    false,
+  );
+  assert.equal(
+    recordOutcomeEvidenceCommandSchema.safeParse({
+      schemaVersion: 'outcome-evidence/v1',
+      action: 'correct',
+      workspaceId: 'ws-1',
+      contentPackageRef: { id: 'pkg-1', revision: 1 },
+      signal: 'inquiry',
+      actorId: 'actor-1',
+    }).success,
+    false,
+  );
+  const ok = recordOutcomeEvidenceCommandSchema.parse({
+    schemaVersion: 'outcome-evidence/v1',
+    action: 'correct',
+    workspaceId: 'ws-1',
+    contentPackageRef: { id: 'pkg-1', revision: 1 },
+    signal: 'no_activity',
+    actorId: 'actor-1',
+    supersedesEvidenceId: 'e1',
+  });
+  assert.equal(ok.signal, 'no_activity');
 });

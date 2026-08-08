@@ -45,4 +45,34 @@ test('close-loop commands retain merchant-safe publication facts and canonical o
     }).success,
     true
   );
+
+  // V31-19: no_activity is a first-class signal; correct requires supersedes.
+  assert.equal(
+    recordContentPackageResultSignalCommandSchema.safeParse({
+      expectedRevision: 4,
+      kind: 'no_activity',
+      packageId: 'package-a',
+      sourceRef: 'chip:no_activity',
+    }).success,
+    true,
+  );
+  assert.equal(
+    recordContentPackageResultSignalCommandSchema.safeParse({
+      action: 'correct',
+      expectedRevision: 4,
+      kind: 'store_visit',
+      packageId: 'package-a',
+    }).success,
+    false,
+  );
+  assert.equal(
+    recordContentPackageResultSignalCommandSchema.safeParse({
+      action: 'withdraw',
+      expectedRevision: 4,
+      kind: 'store_visit',
+      packageId: 'package-a',
+      supersedesSignalId: 'signal-prior',
+    }).success,
+    true,
+  );
 });
