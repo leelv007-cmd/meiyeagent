@@ -585,6 +585,11 @@ export const contentPackageDeliveryCapabilitySchema = z.object({
   reason: nonEmptyTrimmedStringSchema,
 });
 
+/**
+ * Manual outcome evidence rows on ContentPackage (canonical store for V31-19).
+ * Domain shape = OutcomeEvidence; this is the physical append-only ledger.
+ * Hard delete forbidden (D-168②) — correct/withdraw via supersedesSignalId.
+ */
 export const contentPackageResultSignalSchema = z.object({
   actorId: contentPackageIdSchema,
   id: contentPackageIdSchema,
@@ -600,6 +605,8 @@ export const contentPackageResultSignalSchema = z.object({
     'redemption',
     'redeemed',
     'store_visit',
+    /** U2「没动静」— explicit; never encode via feedback note. */
+    'no_activity',
   ]),
   note: nonEmptyTrimmedStringSchema.optional(),
   occurredAt: contentPackageTimestampSchema,
@@ -609,6 +616,18 @@ export const contentPackageResultSignalSchema = z.object({
     'merchant_recorded',
     'inferred_temporal',
   ]),
+  /**
+   * Optional external source pointer; with occurredAt forms the submit
+   * idempotency key (contentPackageRef + signal + observedAt/sourceRef).
+   */
+  sourceRef: nonEmptyTrimmedStringSchema.max(500).optional(),
+  /**
+   * Append-only lifecycle. Absent rows are treated as active by projection.
+   * withdrawn is an explicit append; superseded is usually derived.
+   */
+  status: z.enum(['active', 'superseded', 'withdrawn']).optional(),
+  /** Correction / withdraw chain (append-only; binds to prior row id). */
+  supersedesSignalId: contentPackageIdSchema.optional(),
 });
 
 export const contentPackageResultReviewActionSchema = z.object({
@@ -932,23 +951,54 @@ export const recordContentPackageManualResultCommandSchema = z.object({
   status: z.enum(['published', 'failed', 'unknown']),
   variantVersionId: contentPackageIdSchema,
 });
-export const recordContentPackageResultSignalCommandSchema = z.object({
-  expectedRevision: contentPackageExpectedRevisionSchema,
-  kind: contentPackageResultSignalSchema.shape.kind,
-  note: nonEmptyTrimmedStringSchema.optional(),
-  /**
-   * When the merchant says it happened — 「这是昨天的」. Absent means now.
-   * Backdating moves the signal's own clock only; the package's updatedAt and
-   * its audit row still carry the moment the row was written.
-   *
-   * Format only. The window it must land in (no future, at most
-   * RESULT_SIGNAL_BACKDATE_WINDOW_DAYS back) is decided against the write clock
-   * in the core delivery service, which is the only place that clock exists.
-   */
-  occurredAt: contentPackageTimestampSchema.optional(),
-  packageId: contentPackageIdSchema,
-  quantity: z.number().int().positive().optional(),
-});
+export const recordContentPackageResultSignalCommandSchema = z
+  .object({
+    expectedRevision: contentPackageExpectedRevisionSchema,
+    kind: contentPackageResultSignalSchema.shape.kind,
+    note: nonEmptyTrimmedStringSchema.optional(),
+    /**
+     * When the merchant says it happened — 「这是昨天的」. Absent means now.
+     * Backdating moves the signal's own clock only; the package's updatedAt and
+     * its audit row still carry the moment the row was written.
+     *
+     * Format only. The window it must land in (no future, at most
+     * RESULT_SIGNAL_BACKDATE_WINDOW_DAYS back) is decided against the write clock
+     * in the core delivery service, which is the only place that clock exists.
+     *
+     * With sourceRef, forms OutcomeEvidence idempotency key
+     * (contentPackageRef + signal + observedAt/sourceRef).
+     */
+    occurredAt: contentPackageTimestampSchema.optional(),
+    packageId: contentPackageIdSchema,
+    quantity: z.number().int().positive().optional(),
+    sourceRef: nonEmptyTrimmedStringSchema.max(500).optional(),
+    /**
+     * V31-19 write actions on the same manual outcome writer.
+     * correct/withdraw append a new row bound to supersedesSignalId.
+     */
+    action: z.enum(['record', 'correct', 'withdraw']).optional(),
+    supersedesSignalId: contentPackageIdSchema.optional(),
+  })
+  .superRefine((command, context) => {
+    const action = command.action ?? 'record';
+    if (
+      (action === 'correct' || action === 'withdraw') &&
+      !command.supersedesSignalId
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: `${action} requires supersedesSignalId.`,
+        path: ['supersedesSignalId'],
+      });
+    }
+    if (action === 'record' && command.supersedesSignalId) {
+      context.addIssue({
+        code: 'custom',
+        message: 'record must not set supersedesSignalId; use correct.',
+        path: ['supersedesSignalId'],
+      });
+    }
+  });
 export const recordContentPackageResultReviewActionCommandSchema = z.object({
   action: contentPackageResultReviewActionSchema.shape.action,
   expectedRevision: contentPackageExpectedRevisionSchema,

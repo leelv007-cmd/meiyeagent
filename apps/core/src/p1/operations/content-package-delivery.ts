@@ -1,7 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import {
   approvalReceiptSchema,
+  buildOutcomeEvidenceIdempotencyKey,
   contentPackageDeliveryAttemptId,
+  isForbiddenNoActivityEncoding,
+  mapContentPackageResultKindToOutcomeSignal,
   pendingApprovalRequestSchema,
 } from '@meiye/contracts';
 import type {
@@ -87,7 +90,10 @@ export class ContentPackageDeliveryError extends Error {
       | 'CONTENT_PACKAGE_REVISION_CONFLICT'
       | 'CONTENT_PACKAGE_VARIANT_NOT_FOUND'
       | 'RESULT_SIGNAL_NOTE_REJECTED'
-      | 'RESULT_SIGNAL_OCCURRED_AT_OUT_OF_RANGE',
+      | 'RESULT_SIGNAL_OCCURRED_AT_OUT_OF_RANGE'
+      | 'RESULT_SIGNAL_IDEMPOTENCY_CONFLICT'
+      | 'RESULT_SIGNAL_SUPERSEDES_NOT_FOUND'
+      | 'RESULT_SIGNAL_FEEDBACK_NO_ACTIVITY_FORBIDDEN',
     message: string
   ) {
     super(message);
@@ -435,19 +441,21 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
   async recordResultSignal(
     context: OperationContext,
     input: {
+      action?: 'record' | 'correct' | 'withdraw';
       expectedRevision: number;
       kind: ContentPackageResultSignal['kind'];
       note?: string;
       occurredAt?: string;
       packageId: string;
       quantity?: number;
+      sourceRef?: string;
+      supersedesSignalId?: string;
     }
   ) {
-    const contentPackage = await this.requirePackage(
-      context,
-      input.packageId,
-      input.expectedRevision
-    );
+    const action = input.action ?? 'record';
+    // Load without OCC first so duplicate submits can short-circuit (same
+    // pattern as recordManualResult / P1-D2 idempotency).
+    const contentPackage = await this.requirePackage(context, input.packageId);
     if (!hasPublishedDelivery(contentPackage)) {
       throw new ContentPackageDeliveryError(
         'CONTENT_PACKAGE_NOT_PUBLISHED',
@@ -460,6 +468,26 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
         'A result note must stay a short reminder and must not carry contact details.'
       );
     }
+    const domainSignal = mapContentPackageResultKindToOutcomeSignal(input.kind);
+    if (
+      domainSignal &&
+      isForbiddenNoActivityEncoding(domainSignal, input.note)
+    ) {
+      throw new ContentPackageDeliveryError(
+        'RESULT_SIGNAL_FEEDBACK_NO_ACTIVITY_FORBIDDEN',
+        'no_activity must use kind=no_activity; do not encode via feedback notes.'
+      );
+    }
+    if (
+      (action === 'correct' || action === 'withdraw') &&
+      !input.supersedesSignalId
+    ) {
+      throw new ContentPackageDeliveryError(
+        'RESULT_SIGNAL_SUPERSEDES_NOT_FOUND',
+        `${action} requires supersedesSignalId.`
+      );
+    }
+
     // 「这是昨天的」 backdates the signal's own clock. The row is still written
     // now, so the package's updatedAt and its audit event keep the write time —
     // a backdated signal must never make the package look older than it is.
@@ -467,15 +495,44 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
     if (input.occurredAt) {
       assertResultSignalOccurredAtInWindow(input.occurredAt, recordedAt);
     }
-    const signal: ContentPackageResultSignal = {
-      actorId: context.userId,
-      id: this.id(),
-      kind: input.kind,
-      ...(input.note ? { note: input.note } : {}),
-      occurredAt: input.occurredAt ?? recordedAt,
-      ...(input.quantity ? { quantity: input.quantity } : {}),
-      source: 'merchant_recorded',
-    };
+    const observedAt = input.occurredAt ?? recordedAt;
+
+    // Idempotency key = contentPackage id + signal + observedAt/sourceRef.
+    // Revision is the exact package binding snapshot at write time; lookup
+    // matches on signal identity so retries after success stay idempotent.
+    if (action === 'record') {
+      const existing = contentPackage.resultSignals ?? [];
+      const duplicate = existing.find((row) =>
+        resultSignalMatchesIdempotencyIdentity(row, {
+          packageId: contentPackage.id,
+          kind: input.kind,
+          observedAt,
+          sourceRef: input.sourceRef,
+        })
+      );
+      if (duplicate) {
+        const samePayload =
+          duplicate.kind === input.kind &&
+          (duplicate.note ?? '') === (input.note ?? '') &&
+          (duplicate.quantity ?? null) === (input.quantity ?? null) &&
+          (duplicate.sourceRef ?? '') === (input.sourceRef ?? '');
+        if (!samePayload) {
+          throw new ContentPackageDeliveryError(
+            'RESULT_SIGNAL_IDEMPOTENCY_CONFLICT',
+            'A different result signal already exists for this idempotency key.'
+          );
+        }
+        return structuredClone(contentPackage);
+      }
+    }
+
+    // New write still requires the caller's expected revision (exact binding).
+    await this.requirePackage(
+      context,
+      input.packageId,
+      input.expectedRevision
+    );
+
     return this.repository.withWorkspaceLock(
       context.workspaceId,
       async (repository) => {
@@ -484,9 +541,52 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
           (candidate) => candidate.id === contentPackage.id
         );
         const current = state.contentPackages[index]!;
+        const existing = current.resultSignals ?? [];
+
+        if (action === 'correct' || action === 'withdraw') {
+          const prior = existing.find(
+            (row) => row.id === input.supersedesSignalId
+          );
+          if (!prior) {
+            throw new ContentPackageDeliveryError(
+              'RESULT_SIGNAL_SUPERSEDES_NOT_FOUND',
+              'The supersedesSignalId does not exist on this ContentPackage.'
+            );
+          }
+        }
+
+        // Re-check idempotency under the lock for concurrent record races.
+        if (action === 'record') {
+          const duplicate = existing.find((row) =>
+            resultSignalMatchesIdempotencyIdentity(row, {
+              packageId: current.id,
+              kind: input.kind,
+              observedAt,
+              sourceRef: input.sourceRef,
+            })
+          );
+          if (duplicate) {
+            return structuredClone(current);
+          }
+        }
+
+        const signal: ContentPackageResultSignal = {
+          actorId: context.userId,
+          id: this.id(),
+          kind: input.kind,
+          ...(input.note ? { note: input.note } : {}),
+          occurredAt: observedAt,
+          ...(input.quantity ? { quantity: input.quantity } : {}),
+          source: 'merchant_recorded',
+          ...(input.sourceRef ? { sourceRef: input.sourceRef } : {}),
+          status: action === 'withdraw' ? 'withdrawn' : 'active',
+          ...(input.supersedesSignalId
+            ? { supersedesSignalId: input.supersedesSignalId }
+            : {}),
+        };
         const updated = {
           ...current,
-          resultSignals: [...(current.resultSignals ?? []), signal],
+          resultSignals: [...existing, signal],
           revision: current.revision + 1,
           updatedAt: recordedAt,
         };
@@ -496,7 +596,11 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
             this.id,
             context,
             recordedAt,
-            'content_package.result_signal_recorded',
+            action === 'withdraw'
+              ? 'content_package.result_signal_withdrawn'
+              : action === 'correct'
+                ? 'content_package.result_signal_corrected'
+                : 'content_package.result_signal_recorded',
             current.id
           )
         );
@@ -508,22 +612,30 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
 
   async results(context: OperationContext, packageId: string) {
     const contentPackage = await this.requirePackage(context, packageId);
-    const merchant = (contentPackage.resultSignals ?? []).filter(
+    const history = contentPackage.resultSignals ?? [];
+    const latest = projectActiveResultSignals(history);
+    const merchant = latest.filter(
       (signal) => signal.source === 'merchant_recorded'
     );
-    const verified = (contentPackage.resultSignals ?? []).filter(
+    const verified = latest.filter(
       (signal) => signal.source === 'verified_adapter'
     );
+    // Inferred is a pure projection of active merchant rows — temporal
+    // correlation only, never written as a second ledger (V31-19).
+    // no_activity is merchant-only and must not spawn inferred absence.
     const inferred: ContentPackageResultSignal[] = hasPublishedDelivery(
       contentPackage
     )
-      ? merchant.map((signal) => ({
-          ...signal,
-          actorId: 'system:temporal-association',
-          id: `inferred:${signal.id}`,
-          note: '仅时间与内容关联，不代表由该内容导致。',
-          source: 'inferred_temporal',
-        }))
+      ? merchant
+          .filter((signal) => signal.kind !== 'no_activity')
+          .map((signal) => ({
+            ...signal,
+            actorId: 'system:temporal-association',
+            id: `inferred:${signal.id}`,
+            note: '仅时间与内容关联，不代表由该内容导致。',
+            source: 'inferred_temporal' as const,
+            status: 'active' as const,
+          }))
       : [];
     return {
       ladder: resultLadder(contentPackage, merchant),
@@ -531,6 +643,7 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
         inferred,
         merchant,
         verified,
+        history,
       },
     };
   }
@@ -1253,12 +1366,71 @@ function policyFactKind(key: string) {
   return null;
 }
 
+/**
+ * Active latest projection over append-only resultSignals (V31-19).
+ * Superseded = referenced by a later supersedesSignalId; withdrawn excluded.
+ */
+export function projectActiveResultSignals(
+  history: readonly ContentPackageResultSignal[]
+): ContentPackageResultSignal[] {
+  const superseded = new Set(
+    history
+      .map((row) => row.supersedesSignalId)
+      .filter((id): id is string => Boolean(id))
+  );
+  return history.filter(
+    (row) =>
+      (row.status ?? 'active') !== 'withdrawn' &&
+      (row.status ?? 'active') !== 'superseded' &&
+      !superseded.has(row.id)
+  );
+}
+
+/**
+ * Identity half of the OutcomeEvidence idempotency key inside one package:
+ * signal + observedAt + sourceRef (package id is ambient).
+ */
+function resultSignalMatchesIdempotencyIdentity(
+  row: ContentPackageResultSignal,
+  identity: {
+    packageId: string;
+    kind: ContentPackageResultSignal['kind'];
+    observedAt: string;
+    sourceRef?: string;
+  }
+): boolean {
+  if ((row.status ?? 'active') === 'withdrawn') return false;
+  const rowSignal =
+    mapContentPackageResultKindToOutcomeSignal(row.kind) ?? 'feedback';
+  const inputSignal =
+    mapContentPackageResultKindToOutcomeSignal(identity.kind) ?? 'feedback';
+  // Revision is bound at write time on the package; identity compare uses the
+  // stable package id + signal + clocks (MAJOR-13 submit key).
+  const rowKey = buildOutcomeEvidenceIdempotencyKey({
+    contentPackageId: identity.packageId,
+    contentPackageRevision: '_',
+    signal: rowSignal,
+    observedAt: row.occurredAt,
+    sourceRef: row.sourceRef,
+  });
+  const inputKey = buildOutcomeEvidenceIdempotencyKey({
+    contentPackageId: identity.packageId,
+    contentPackageRevision: '_',
+    signal: inputSignal,
+    observedAt: identity.observedAt,
+    sourceRef: identity.sourceRef,
+  });
+  return rowKey === inputKey;
+}
+
 function resultLadder(
   contentPackage: ContentPackage,
   signals: ContentPackageResultSignal[]
 ) {
   const published = hasPublishedDelivery(contentPackage);
   const stage = signals.reduce((highest, signal) => {
+    // no_activity is a negative chip — it must not advance the ladder.
+    if (signal.kind === 'no_activity') return highest;
     const current =
       signal.kind === 'redeemed' ||
       signal.kind === 'redemption' ||

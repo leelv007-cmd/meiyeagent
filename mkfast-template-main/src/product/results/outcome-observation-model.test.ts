@@ -97,6 +97,48 @@ describe('outcome-observation-model', () => {
     );
   });
 
+  it('maps no_activity chip and keeps it off the ladder', () => {
+    assert.equal(mapLegacyResultSignalKind('no_activity'), 'no_activity');
+    const ladder = projectOutcomeLadder({
+      hasPublicationRecord: true,
+      activeObservations: [obs({ id: 'o-none', kind: 'no_activity' })],
+    });
+    assert.deepEqual(
+      ladder.filter((s) => s.reached).map((s) => s.id),
+      ['published'],
+    );
+
+    const facts = observationsFromResultSignals({
+      workspaceId: 'ws-a',
+      contentPackageId: 'pkg-a',
+      contentPackageRevision: 2,
+      signals: [
+        {
+          id: 's1',
+          kind: 'no_activity',
+          source: 'merchant_recorded',
+          actorId: 'actor-a',
+          occurredAt: '2026-07-20T10:00:00.000Z',
+        },
+        {
+          id: 's2',
+          kind: 'inquiry',
+          source: 'merchant_recorded',
+          actorId: 'actor-a',
+          occurredAt: '2026-07-20T11:00:00.000Z',
+          supersedesSignalId: 's1',
+        },
+      ],
+    });
+    assert.equal(facts.length, 2);
+    assert.equal(facts[1]?.supersedesObservationId, 's1');
+    const active = activeOutcomeObservations(facts);
+    assert.deepEqual(
+      active.map((o) => o.id),
+      ['s2'],
+    );
+  });
+
   it('maps legacy signals and rejects unsafe notes', () => {
     assert.equal(mapLegacyResultSignalKind('private_message'), 'inquiry');
     assert.equal(mapLegacyResultSignalKind('wechat_added'), 'contact_added');

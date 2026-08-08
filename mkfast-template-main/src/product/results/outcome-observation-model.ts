@@ -14,6 +14,8 @@ export const OUTCOME_OBSERVATION_KINDS = [
   'voucher_purchase',
   'redemption',
   'store_visit',
+  /** U2「没动静」— first-class; never encode via feedback (V31-19). */
+  'no_activity',
 ] as const;
 
 export type OutcomeObservationKind = (typeof OUTCOME_OBSERVATION_KINDS)[number];
@@ -29,7 +31,18 @@ export const OUTCOME_OBSERVATION_KIND_LABEL: Record<
   voucher_purchase: '买券',
   redemption: '核销',
   store_visit: '到店',
+  no_activity: '没动静',
 };
+
+/** U2 self-report chips (six). attention/redemption stay available as extended. */
+export const OUTCOME_SELF_REPORT_CHIP_KINDS = [
+  'inquiry',
+  'contact_added',
+  'appointment',
+  'voucher_purchase',
+  'store_visit',
+  'no_activity',
+] as const satisfies readonly OutcomeObservationKind[];
 
 export const OUTCOME_SOURCE_TIERS = [
   'verified',
@@ -161,6 +174,8 @@ export function mapLegacyResultSignalKind(
       return 'redemption';
     case 'store_visit':
       return 'store_visit';
+    case 'no_activity':
+      return 'no_activity';
     default:
       return null;
   }
@@ -212,6 +227,9 @@ function ladderStage(kind: OutcomeObservationKind): number {
     case 'redemption':
     case 'store_visit':
       return 4;
+    case 'no_activity':
+      // Negative chip: does not advance the evidence ladder.
+      return 0;
   }
 }
 
@@ -407,13 +425,20 @@ export function observationsFromResultSignals(input: {
     occurredAt: string;
     quantity?: number;
     note?: string;
+    supersedesSignalId?: string;
+    status?: 'active' | 'superseded' | 'withdrawn';
   }[];
 }): OutcomeObservationFact[] {
   const out: OutcomeObservationFact[] = [];
   for (const signal of input.signals) {
+    if (signal.status === 'withdrawn') continue;
     const kind = mapLegacyResultSignalKind(signal.kind);
     const sourceTier = mapLegacyResultSignalSource(signal.source);
     if (!kind || !sourceTier) continue;
+    // Inferred projection never carries no_activity (merchant-only negative).
+    if (sourceTier === 'inferred_association' && kind === 'no_activity') {
+      continue;
+    }
     out.push({
       id: signal.id,
       workspaceId: input.workspaceId,
@@ -429,6 +454,9 @@ export function observationsFromResultSignals(input: {
       sourceTier,
       ...(signal.quantity !== undefined ? { quantity: signal.quantity } : {}),
       ...(signal.note ? { note: signal.note } : {}),
+      ...(signal.supersedesSignalId
+        ? { supersedesObservationId: signal.supersedesSignalId }
+        : {}),
     });
   }
   return out;
