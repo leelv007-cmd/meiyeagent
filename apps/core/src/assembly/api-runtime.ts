@@ -280,6 +280,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     platformDefaultModelSource,
     adminConfigRuntime,
     aiStreamingRunner,
+    sessionAgentKernel,
+    sessionAgentHarness,
+    sessionRetrievalExperiencePort,
     productEntitlements,
     executionEntitlementPolicy,
     p1ModelSupplyService,
@@ -354,6 +357,14 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     memoryInjectionReceiptStore,
     () => resolveAgentMemoryKillSwitch(adminConfigRepository)
   );
+  // V31-07: session retrieval `read_confirmed_experience` consumes Memory platform.
+  sessionRetrievalExperiencePort.current = agentMemoryPlatform;
+  // Constructive assembly guard: kernel and harness must co-exist (fixture always).
+  if (Boolean(sessionAgentKernel) !== Boolean(sessionAgentHarness)) {
+    throw new Error(
+      'Session harness assembly mismatch: sessionAgentKernel and sessionAgentHarness must both be set or both unset.',
+    );
+  }
   operationsService.attachComposerConversationDeletionNotifier(
     new ReuseMemoryComposerConversationDeletionNotifier(reuseMemoryService)
   );

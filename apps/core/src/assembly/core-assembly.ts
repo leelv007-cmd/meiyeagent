@@ -22,7 +22,16 @@ import {
   modelRuntimeAssemblyFromSources,
   PostgresAdminConfigRepository,
 } from '../p1/admin-config/index.js';
-import { PostgresAgentSessionStore } from '../p1/agent-session/index.js';
+import {
+  AgentSessionHarnessService,
+  PostgresAgentSessionStore,
+  controlLimitsFromArtifact,
+  createDefaultIntentRetrievalBindings,
+  createIntentRetrievalPolicies,
+  createRetrievalToolRegistry,
+  createSessionAgentKernel,
+  createSessionRetrievalPorts,
+} from '../p1/agent-session/index.js';
 import { PostgresAgentSemanticEventStore } from '../p1/agent-semantic-events/index.js';
 import { createPermissionAuthorizer } from '../p1/capability-permission/index.js';
 import { CloudflareInventoryAdapter } from '../p1/cloudflare-read/index.js';
@@ -133,7 +142,6 @@ import {
   RECORDED_CATALOG_REVISION_ID,
   seedCapabilityHotAssemblyFromCatalog,
 } from '../p1/model-supply/index.js';
-import { createSessionAgentKernel } from '../p1/agent-session/ai-sdk-agent-kernel.js';
 import { LOCAL_FIXTURE_PROVIDER_REFERENCE_POLICY } from '../p1/model-supply/reference-asset-delivery.js';
 import {
   AiSdkStructuredObjectExecutor,
@@ -620,6 +628,100 @@ export async function assembleCoreGraph(
     activation: modelRuntime.activation,
     direct: modelRuntime.direct,
   });
+  /**
+   * V31-07: retrieval ports wrap product / store-fact / identity (no re-query).
+   * Memory experience is attached after AgentMemoryPlatform is available below
+   * (sessionHarnessService factory closes over mutable experience port).
+   */
+  const sessionRetrievalExperiencePort: {
+    current?: {
+      retrieveForInjection: (query: {
+        workspaceId: string;
+        scope: Record<string, unknown>;
+        threadId?: string;
+        limit?: number;
+      }) => Promise<
+        Array<{
+          memoryId: string;
+          statement: string;
+          kind?: string;
+          authority?: string;
+        }>
+      >;
+    };
+  } = {};
+  const sessionRetrievalPorts = createSessionRetrievalPorts({
+    product: relationalProductRepository,
+    storeFacts: storeFactLedger,
+    identities: marketingIdentities,
+    experience: {
+      retrieveForInjection: async (query) => {
+        if (!sessionRetrievalExperiencePort.current) return [];
+        return sessionRetrievalExperiencePort.current.retrieveForInjection(
+          query,
+        );
+      },
+    },
+    // Late-bound: operationsService is assembled further down; port is only
+    // invoked at turn time, after assembleCoreGraph completes.
+    contentPackages: {
+      list: async (workspaceId) => {
+        if (!operationsService) return [];
+        return operationsService.listContentPackages({
+          actor: 'worker',
+          correlationId: 'session-retrieval:read-recent-content',
+          userId: 'session-harness-worker',
+          workspaceId,
+        });
+      },
+    },
+    now: () => new Date().toISOString(),
+  });
+  /** Durable agent session store (V31-02) — also backs Session Harness service. */
+  const agentSessionStore = new PostgresAgentSessionStore(pool);
+  /**
+   * V31-07 Session Harness service: kernel + retrieval tools + intent policies.
+   * Only assembled when a kernel is available (fixture always; live when verified).
+   */
+  const sessionAgentHarness = sessionAgentKernel
+    ? new AgentSessionHarnessService({
+        store: agentSessionStore,
+        kernel: sessionAgentKernel,
+        resolveRelease: async (harnessReleaseId) => {
+          const artifact =
+            await harnessReleaseStore.getArtifact(harnessReleaseId);
+          if (!artifact) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              `Harness release not found for session turn: ${harnessReleaseId}`,
+            );
+          }
+          const base = controlLimitsFromArtifact(artifact);
+          const existing = base.middlewareBindings ?? [];
+          const defaults = createDefaultIntentRetrievalBindings();
+          const present = new Set(existing.map((item) => item.policyId));
+          return {
+            ...base,
+            middlewareBindings: [
+              ...existing,
+              ...defaults.filter((item) => !present.has(item.policyId)),
+            ],
+          };
+        },
+        createToolRegistry: (turn) =>
+          createRetrievalToolRegistry({
+            ports: sessionRetrievalPorts,
+            context: {
+              workspaceId: turn.workspaceId,
+              threadId: turn.threadId,
+              creationMode: turn.creationMode ?? 'customized',
+            },
+          }),
+        createPolicies: () => createIntentRetrievalPolicies({}),
+        resolveCreationMode: (turn) => turn.creationMode,
+        registerCheckpointWriter: true,
+      })
+    : undefined;
   const foundationLedgerService = new P1ApplicationService(
     foundationRepository
   );
@@ -869,7 +971,7 @@ export async function assembleCoreGraph(
     operationalTelemetryStore,
     notifier,
     // Agent session + semantic event tables (V31-02/03). Shadow: no Task/billing/UI write path.
-    new PostgresAgentSessionStore(pool),
+    agentSessionStore,
     new PostgresAgentSemanticEventStore(pool),
   ]);
   await ensureCreditPlanCatalogDefaults(adminConfigRepository);
@@ -1278,6 +1380,10 @@ export async function assembleCoreGraph(
     adminConfigRuntime,
     aiStreamingRunner,
     sessionAgentKernel,
+    agentSessionStore,
+    sessionRetrievalPorts,
+    sessionRetrievalExperiencePort,
+    sessionAgentHarness,
     foundationLedgerService,
     productEntitlements,
     executionEntitlementPolicy,

@@ -1,0 +1,285 @@
+/**
+ * Intent/retrieval policy middleware bindings (V31-07).
+ *
+ * - question_budget: after_model — max 1 ask per Intent/Plan; no re-ask known
+ * - high_risk_assumption_gate: after_model — strip rights/facts/fees LLM defaults
+ * - tool_governance: wrap_tool_call — registry phase/maxCalls/refusal projection
+ *
+ * Bindings order is caller/release-owned; helpers emit ready RegisteredPolicy[].
+ */
+
+import type { HarnessMiddlewareBinding } from '@meiye/contracts';
+
+import {
+  admitMerchantQuestion,
+  createQuestionBudgetState,
+  filterAssumptionsForAuthority,
+  markKnownFields,
+  recordMerchantQuestion,
+  type ImpactCategory,
+  type QuestionBudgetState,
+} from './ambiguity-policy.js';
+import type {
+  PolicyControlDecision,
+  RegisteredPolicy,
+  ToolCallIntercept,
+} from './policy-middleware.js';
+import type { AgentToolRegistry } from './tool-registry.js';
+import { evaluateToolCall, isToolCallRefusal } from './tool-registry.js';
+import type { AgentTurnDecision } from './turn-contracts.js';
+
+export const INTENT_RETRIEVAL_POLICY_IDS = {
+  questionBudget: 'session.question_budget',
+  highRiskAssumption: 'session.high_risk_assumption_gate',
+  toolGovernance: 'session.tool_governance',
+} as const;
+
+export type IntentRetrievalPolicyOptions = {
+  /** Fields already known from projection/retrieval (do not re-ask). */
+  knownFields?: readonly string[];
+  /** Assumption key → impact for high-risk filter. */
+  impactByKey?: ReadonlyMap<string, ImpactCategory>;
+  /** Keys with system/merchant authority. */
+  authoritativeKeys?: ReadonlySet<string>;
+  /** Shared budget state across turns when session reuses runner. */
+  budgetState?: QuestionBudgetState;
+  /** Optional registry for wrap_tool_call governance (when not already in tool execute). */
+  toolRegistry?: AgentToolRegistry;
+  /** Mutable call counts for registry admission. */
+  toolCallCounts?: Map<string, number>;
+};
+
+export function createQuestionBudgetBinding(
+  order = 10,
+): HarnessMiddlewareBinding {
+  return {
+    policyId: INTENT_RETRIEVAL_POLICY_IDS.questionBudget,
+    revision: 'v31-07',
+    kind: 'after_model',
+    order,
+    allowedControlActions: ['continue', 'end_turn', 'ask_merchant'],
+  };
+}
+
+export function createHighRiskAssumptionBinding(
+  order = 20,
+): HarnessMiddlewareBinding {
+  return {
+    policyId: INTENT_RETRIEVAL_POLICY_IDS.highRiskAssumption,
+    revision: 'v31-07',
+    kind: 'after_model',
+    order,
+    allowedControlActions: ['continue', 'ask_merchant'],
+  };
+}
+
+export function createToolGovernanceBinding(
+  order = 0,
+): HarnessMiddlewareBinding {
+  return {
+    policyId: INTENT_RETRIEVAL_POLICY_IDS.toolGovernance,
+    revision: 'v31-07',
+    kind: 'wrap_tool_call',
+    order,
+    allowedControlActions: ['continue'],
+  };
+}
+
+export function createDefaultIntentRetrievalBindings(): HarnessMiddlewareBinding[] {
+  return [
+    createToolGovernanceBinding(0),
+    createQuestionBudgetBinding(10),
+    createHighRiskAssumptionBinding(20),
+  ];
+}
+
+function asDecision(modelOutput: unknown): AgentTurnDecision | null {
+  if (
+    modelOutput &&
+    typeof modelOutput === 'object' &&
+    'action' in modelOutput &&
+    'assumptions' in modelOutput
+  ) {
+    return modelOutput as AgentTurnDecision;
+  }
+  return null;
+}
+
+/**
+ * Build registered policies for intent/retrieval gates.
+ * State is closed over so after_model can mutate budget across a turn.
+ */
+export function createIntentRetrievalPolicies(
+  options: IntentRetrievalPolicyOptions = {},
+): RegisteredPolicy[] {
+  const budget =
+    options.budgetState ??
+    createQuestionBudgetState(options.knownFields ?? []);
+  if (options.knownFields?.length) {
+    markKnownFields(budget, options.knownFields);
+  }
+  const callCounts = options.toolCallCounts ?? new Map<string, number>();
+
+  const questionBudgetPolicy: RegisteredPolicy = {
+    binding: createQuestionBudgetBinding(),
+    handlers: {
+      after_model: (ctx): PolicyControlDecision => {
+        const decision = asDecision(ctx.modelOutput);
+        if (!decision || decision.action.kind !== 'ask_merchant') {
+          return { control: 'continue' };
+        }
+        const field =
+          decision.action.question.itemId ||
+          decision.action.question.question.slice(0, 80);
+        const admission = admitMerchantQuestion({
+          phase: ctx.phase,
+          field,
+          state: budget,
+          maxPerPhase: 1,
+          lowRiskFallback: {
+            statement: `本轮问题预算已用尽，暂以可逆默认继续：${field}`,
+          },
+        });
+        if (!admission.allowed) {
+          if (admission.fallbackAssumption) {
+            // Convert ask → continue with visible low-risk assumption patch.
+            return {
+              control: 'continue',
+              patch: {
+                questionBudgetRefusal: {
+                  gateId: admission.gateId,
+                  reason: admission.reason,
+                },
+                forcedAssumption: admission.fallbackAssumption,
+                suppressAsk: true,
+              },
+            };
+          }
+          return {
+            control: 'continue',
+            patch: {
+              questionBudgetRefusal: {
+                gateId: admission.gateId,
+                reason: admission.reason,
+              },
+              suppressAsk: true,
+            },
+          };
+        }
+        recordMerchantQuestion(budget, ctx.phase, field);
+        return {
+          control: 'ask_merchant',
+          question: decision.action.question,
+          reason: 'question_budget_admitted',
+        };
+      },
+    },
+  };
+
+  const highRiskPolicy: RegisteredPolicy = {
+    binding: createHighRiskAssumptionBinding(),
+    handlers: {
+      after_model: (ctx): PolicyControlDecision => {
+        const decision = asDecision(ctx.modelOutput);
+        if (!decision) return { control: 'continue' };
+        const filtered = filterAssumptionsForAuthority({
+          assumptions: decision.assumptions,
+          impactByKey: options.impactByKey,
+          authoritativeKeys: options.authoritativeKeys,
+        });
+        if (filtered.blocked.length === 0) {
+          return { control: 'continue' };
+        }
+        return {
+          control: 'continue',
+          patch: {
+            assumptionsFiltered: filtered.assumptions,
+            highRiskBlocked: filtered.blocked,
+          },
+        };
+      },
+    },
+  };
+
+  const toolGovernancePolicy: RegisteredPolicy = {
+    binding: createToolGovernanceBinding(),
+    handlers: {
+      wrap_tool_call: async (ctx, next): Promise<unknown | ToolCallIntercept> => {
+        const toolName = ctx.toolName;
+        if (!toolName || !options.toolRegistry) {
+          return next();
+        }
+        const registered = options.toolRegistry.get(toolName);
+        const prior = callCounts.get(toolName) ?? 0;
+        const admission = evaluateToolCall(registered?.policy, {
+          toolName,
+          phase: ctx.phase,
+          priorCallCount: prior,
+        });
+        if (!admission.allowed) {
+          return {
+            allowed: false,
+            gateId: admission.gateId,
+            reason: admission.reason,
+          } satisfies ToolCallIntercept;
+        }
+        const outcome = await next();
+        if (isToolCallRefusal(outcome)) return outcome;
+        callCounts.set(toolName, prior + 1);
+        return outcome;
+      },
+    },
+  };
+
+  return [toolGovernancePolicy, questionBudgetPolicy, highRiskPolicy];
+}
+
+/**
+ * Apply after_model patches onto a decision (deterministic post-policy).
+ * Used by turn-runner so suppressAsk / filtered assumptions take effect.
+ */
+export function applyIntentRetrievalDecisionPatch(
+  decision: AgentTurnDecision,
+  state: Record<string, unknown>,
+): AgentTurnDecision {
+  let next = decision;
+
+  if (state.assumptionsFiltered && Array.isArray(state.assumptionsFiltered)) {
+    next = {
+      ...next,
+      assumptions: state.assumptionsFiltered as AgentTurnDecision['assumptions'],
+    };
+  }
+
+  if (state.forcedAssumption && typeof state.forcedAssumption === 'object') {
+    const forced = state.forcedAssumption as {
+      key: string;
+      statement: string;
+      risk: 'low' | 'medium' | 'high';
+    };
+    const without = next.assumptions.filter((item) => item.key !== forced.key);
+    next = {
+      ...next,
+      assumptions: [
+        ...without,
+        {
+          key: forced.key,
+          statement: forced.statement,
+          risk: forced.risk,
+        },
+      ],
+    };
+  }
+
+  if (state.suppressAsk === true && next.action.kind === 'ask_merchant') {
+    next = {
+      ...next,
+      action: { kind: 'finish_turn' },
+      merchantMessage:
+        next.merchantMessage ||
+        '已根据已知信息与可逆默认继续，本轮不再追问。',
+    };
+  }
+
+  return next;
+}
