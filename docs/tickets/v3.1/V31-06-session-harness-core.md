@@ -3,7 +3,7 @@
 **Parent**: spec-B（#2）`docs/specs/v3.1-agent-specs-2026-08-08/spec-B-430-session-plan.md`；权威 V3.1 §18–§21
 **批次**: 2 ｜ **语义锁**: 06/07/08 同域（Session Harness），建议单 lane 串行
 **Blocked by**: V31-01, V31-02
-**Status**: ready-for-agent
+**Status**: done (merged, 2026-08-08)
 
 ## What to build
 
