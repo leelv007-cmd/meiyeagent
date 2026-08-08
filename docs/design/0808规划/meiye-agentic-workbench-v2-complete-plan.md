@@ -1,3 +1,5 @@
+> **⚠️ 本文已被取代（2026-08-08）**：权威版本为同目录 `meiye-agent-v3.1-authoritative-plan-2026-08-08.md`。冲突处以 V3.1 为准；本文保留作历史底稿与细节补充参考。修订依据见 `docs/reviews/0808-agentic-plan-cross-review-2026-08-08.md`。
+
 # 丽客美页 Agent 原生工作台 V2：Intent → Living Plan → Make × LLM/Harness 完整升级规划
 
 **版本**：V2.0 / 2026-08-08  
