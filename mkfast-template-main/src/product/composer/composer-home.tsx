@@ -213,6 +213,7 @@ import {
   WorkbenchStickyComposerHost,
 } from './workbench-shell-layout';
 import { useWorkbenchViewportWidth } from './use-workbench-viewport-width';
+import { AgentWorkbenchHost } from '@/product/agent-workbench';
 import { LensRadiogroup } from './lens-radiogroup';
 import { LensSwitchPreviewPanel } from './lens-switch-preview-panel';
 import { ComposerIdentityCard } from './composer-identity-card';
@@ -3292,13 +3293,20 @@ export function ComposerHome({
           }
           stream={
             <>
-              {/* Layer ① — the conversation. Stage announcements, the 引导补问卡 and the
+              {/* V31-04: Thread Workstream host (reducer + Narrative/Activity +
+               * Controlled Surface Registry). processSlot keeps legacy conversation
+               * until V31-05 Thread-root cutover; mobile 过程/作品 switch is live. */}
+              <AgentWorkbenchHost
+                explicitTaskId={initialTaskId ?? null}
+                processSlot={
+                  <>
+                    {/* Layer ① — the conversation. Stage announcements, the 引导补问卡 and the
             streaming candidate all land here; nothing navigates away.
             Identity lives in the Composer @ capsule (L3-2), not the stream. */}
-              <ComposerConversation
-                experienceBasis={experienceBasis}
-                experienceCorrection={experienceCorrection}
-                experienceSediment={experienceSediment}
+                    <ComposerConversation
+                      experienceBasis={experienceBasis}
+                      experienceCorrection={experienceCorrection}
+                      experienceSediment={experienceSediment}
                 onSedimentKeepLater={(entryId) => {
                   if (
                     !canActOnExperienceSediment(experienceSediment, entryId)
@@ -3580,8 +3588,35 @@ export function ComposerHome({
                     taskId={taskId}
                   />
                 }
-                session={session}
-                stream={tokenStream}
+                      session={session}
+                      stream={tokenStream}
+                    />
+                  </>
+                }
+                viewport={viewportKind === 'mobile' ? 'mobile' : 'desktop'}
+                worksSlot={
+                  viewportKind === 'mobile' ? (
+                    <WorkbenchInspectorPanel
+                      onOpenFullWorkspace={
+                        inspectorWorkId
+                          ? () =>
+                              openDelivery({
+                                action: 'open',
+                                revision: null,
+                                taskId: session.task?.taskId ?? '',
+                                workId: inspectorWorkId,
+                              })
+                          : undefined
+                      }
+                      phase={inspectorPhase}
+                      platformLabel={inspectorPlatformLabel}
+                      progressLabel={inspectorProgressLabel}
+                      stageLabel={inspectorStageLabel}
+                      summary={inspectorSummary}
+                      workId={inspectorWorkId}
+                    />
+                  ) : undefined
+                }
               />
 
               {preferencesQuery.isError ? (
