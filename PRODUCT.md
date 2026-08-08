@@ -22,6 +22,8 @@ web
 
 工作台形态权威（2026-08-01，D-171）：四态工作台（Idle/Active/Waiting/Delivered）、创作入口 IA（输出轴一级／配方二级，XHS 专项住图文轴配方层不新增导航）、对象工作区三件套（富文本编辑器＋手机样式嵌套笔记预览＋小红书瀑布流样式封面预览）以 `docs/specs/xhs-vertical-integration-spec-2026-08-01.md` 为准；「记忆」改名「经验」按 P2 节奏，先做诚实性（去 JSON、待确认优先）再做承诺。
 
+Agent-native 工作台权威（2026-08-08，D-178）：产品升级为以 **AgentThread 长期会话**为根的 agent-native 工作台——双 Harness（会话层只读优先＋执行层 DBOS durable）以冻结 ExecutionPlanSnapshot 交接（商家确认的方案与实际执行逐字段一致），Progressive Plan 分级（纯文案免确认直达结果、复杂创作 Living Plan、Campaign 每付费 Work 单独确认）、Memory 平台（纠正一次不再犯、注入清单可见可撤销）、运行中 Steering 精准纠偏；实施与架构细节以 `docs/design/0808规划/meiye-agent-v3.1-authoritative-plan-2026-08-08.md`（V3.1）＋ADR-0020 为准，工作台四态与对象工作区（D-171）在 Thread 之上继续有效。
+
 计费与售卖口径（2026-08-01，D-172；**#298–#312 已落地**）：套餐＝**订阅周期积分**（按月发放、月末清零）＋可购**加油包**（独立效期），运营按模型×操作定积分价；价格页＝积分卡阵（trial/starter/growth/pro + 周期切换 + 加油包），「约可生成 X 条」仅供参考；升级当日清零重开、降级下周期生效。支付＝**Waffo Pancake**（Creem 已退役）。对外只讲积分与参考条数，永不暴露上游模型成本（D-061）。权威＝`docs/specs/credit-billing-spec-2026-08-01.md`；合入台账＝`docs/ops/merge-ledger.md`。
 
 ## Brand Personality

@@ -3600,6 +3600,16 @@ Skill 选中
 - 证据边界：#402/#413/#418 资解（票内留档）；本条不动 D-101/D-107/D-108 的编译链、能力清单与 Skill 合同。
 - Supersedes：D-092 三工具项与上下文 handoff 中对应三工具的引用；D-078 standalone 切片；收窄 D-093 范围。
 
+## D-178 Agent-native 工作台 V3.1 权威规划：双 Harness、plan-as-data 与九张实施 spec
+
+- 日期：2026-08-08
+- 状态：`accepted`（用户全程拍板：V2/V3 交叉复核合并→V3.1 三轮评审修订→codex 交叉复核 U1–U12 逐项过→九 spec codex 复核轮 U13–U14；完整决策记录＝V3.1 附录 B 共 14 项）
+- 决定：产品升级为 **agent-native 工作台**，实施与架构权威＝`docs/design/0808规划/meiye-agent-v3.1-authoritative-plan-2026-08-08.md`（V3.1，44 节＋附录 A 19 条硬约束＋附录 B 14 项决策＋附录 C 框架引用来源）。骨架：**双 Harness**——Agent Session Harness（AI SDK streamText 工具环，只读优先，Intent/Plan/Steering 低延迟层）＋ Production Make Harness（DBOS durable，付费副作用），两者以冻结 `ExecutionPlanSnapshot` 为唯一交接物（`approvalBasis: merchant_confirmed | policy_exempt_copy`，纯 copy 免确认不免冻结，U1/U9）；**plan-as-data**（`CompiledExecutionPlan`＝typed unit 列表＋依赖分组＋有界重试默认关，控制流留在 DBOS TS 代码，无 grammar 解释器）；AgentThread/AgentRun 一等对象＋三层语义事件（canonical/semantic/ephemeral）＋Thread-root Workstream 文档时间线前台；Progressive Plan Level 0–3；确认拆「待决请求（创建事务内先 reserve，U8）＋不可变决定」；Memory 平台五层认知分类＋authority 双通道＋生命周期分置存储（U5）；HarnessRelease 三对象（immutable Artifact/Lifecycle/Rollout，U10/U11）＋ L0/L0.5/L1 eval（U3/U12）；三 runner 收敛为单 executor，五阶段只留 trace taxonomy（V3.1 §22.4，与 D-036 口径一致）。
+- 实施：九张 spec 编号 **#1–#9**（A 地基→B 会话与方案→C 确认与执行→D 交付→E Memory/Evidence 并行 lane→F Goal/Proactive→G Release/Eval→H 运营控制面单列→I Legacy 退役）；**票面真相＝本地快照** `docs/specs/v3.1-agent-specs-2026-08-08/`＋`docs/specs/v3.1-spec-{H,I}-*.md`。GitHub 侧：leelv008/meiyeagent 曾发布 #1–#7 后账号被关联封禁（2026-08-08 晚，详见 ops 备忘），两账号（leelv007-cmd/leelv008）均待申诉，恢复前一切以本地文件为准、不做 GitHub 写操作；原 leelv007-cmd/meiyeweb-agent #429–#435 废弃不再引用。评审链：`docs/reviews/0808-agentic-plan-cross-review-2026-08-08.md`、`docs/reviews/v3.1-product-first-framework-benchmark-review-2026-08-08.md`、`docs/reviews/v3.1-codex-xcheck-2026-08-08.md`、`docs/reviews/v3.1-specs-codex-xcheck-2026-08-08.md`（27 findings 双反驳复核处置＋§6 裁决记录）。
+- 影响：**ADR-0020** 为本条实施投影；ADR-0007（增补 Session Harness 层）、ADR-0013（五段执行拓扑由 §22.4 收敛路线接管）、ADR-0014（主容器升级为 Thread-root Workstream）头部已加 2026-08-08 修订注。过渡期新旧链共存，退役门＝V3.1 §35 批次 6（前置条件全满足才开工，U14 归档条件门）。
+- 证据边界：Mastra 1.57 / pi.dev 0.84 / LangChain-LangGraph 1.x 三路实查引用逐条登记于 V3.1 附录 C（A1–C4→框架＋URL 对照）；借鉴均为实践参照，零新 agent runtime 引入。
+- Supersedes：D-088（`/dashboard/recent` 收编为 Thread 列表投影）；D-016 部分（登记见 V3.1 §0.4）；ADR-0013 五段状态机的长期执行拓扑地位（trace taxonomy 化）。不改写旧 D 正文。
+
 已拍板转正：视频成片首发地位 → D-027；文案/成片两层交付 → D-028；Day-0 零资产首屏 → D-029；定位边界 → D-030；前台无槽位填表、结构化输入融入对话流 → D-031；Agent Workflow 编排总纲（收编原「阻塞作用域」「沉淀检测」两项为推论一/二）→ D-032；Task 统一交互单元与 Harness 五段式 → D-033（均 2026-07-17）；Harness 实现选型四题 + 工程约束（11 号简报全案采纳，提示词承载 = Langfuse 先行）→ D-034~D-038（2026-07-17 深夜，证据 = 10 份调研 + 9 路 Codex 对抗交叉验证（r08 三次容量失败未产出，Dify 在 D-037 中仅为战术搁置项，见其证据边界与 08 号报告头部横幅），`references/analysis/harness-research-2026-07-17/`）；09 合规章义务清单去向（2026-07-18 一致性复核 escalate 项）= 并入 Week 0 预登记文档 → D-039（2026-07-18）。
 
 2026-07-17 合并评审识别的待拍板项已全部转正（即上列清单）；本行不作全局声明——2026-07-20 起新决策产生的「待继续拍板」项以各决策条内记录为权威（见 D-072 起各决策条内记录，现至 D-151；D-079 为跳号未使用）。

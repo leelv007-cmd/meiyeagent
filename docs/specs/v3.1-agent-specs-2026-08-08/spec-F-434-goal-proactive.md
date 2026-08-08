@@ -1,8 +1,8 @@
 # V3.1-F 目标与主动性：MarketingGoal（提议式创建）+ Proactive Opportunity（evidence 门控）+ 学习闭环
 
-> **已发布**：https://github.com/leelv007-cmd/meiyeweb-agent/issues/434（label: ready-for-agent）；本文为票面本地快照。
+> **已发布**：https://github.com/leelv008/meiyeagent/issues/6（label: ready-for-agent）；本文为票面本地快照。原 leelv007-cmd/meiyeweb-agent#434 因账号封禁废弃。
 > 决策权威：V3.1 §11、§25、§26.2、§3 Level 3；决策记录附录 B（U2 阈值、U7）；硬约束附录 A。
-> 依赖：#432（Memory/Evidence）、#433（交付与自报旅程，Campaign 派生 Work 的确认粒度合同在 #431）。
+> 依赖：#5（Memory/Evidence）、#4（交付与自报旅程，Campaign 派生 Work 的确认粒度合同在 #3）。
 
 ## Problem Statement
 
@@ -35,7 +35,7 @@ MarketingGoal 成为一等对象但**不建 CRUD 管理面**：只在对话中�
 - Proactive 准入门阈值待样本形成后定（U2 遗留参数），门本身先实现为可配置；阈值 unset 时该门默认关闭（不出建议），coverage 只作观测；基线形成前运营可用既有 `proactive_opportunity_v1` flag 按 workspace allowlist 临时开启（试点/演示，U13，不新增机制）；分母、观察窗与最小样本随 U2 基线形成后另拍。dismiss 率与 stale opportunity rate 进观测指标。
 - candidate 本体=derived projection（不建聚合表，遵 V3.1 §33.1）；商家 accept/dismiss 落一张最小 append-only 决定记录（candidateId + resourceId + actorId + decision + decidedAt），accept 幂等键=candidateId（接受一次只创建一个 Thread turn）；projection=detector 输出叠加最新决定；expiry 由 detector 的 expiresAt 计算、不落状态。此为对 §33.1「不建 OpportunityCandidate 表」的窄化解读（禁的是候选聚合表，不含决定日志），非 supersede。
 - 评价事件携带版本上下文（contentPackage/work/goal/skill/capability/recipe/release/scene，V3.1 §26.2）。
-- Goal 进度呈现消费 #432 evidence 与 #433 交付事实，不新建统计真相。
+- Goal 进度呈现消费 #5 evidence 与 #4 交付事实，不新建统计真相。
 
 ## Testing Decisions
 

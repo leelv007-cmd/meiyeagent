@@ -1,8 +1,8 @@
 # V3.1-G 发布与评估设施（开发侧）：Prompt Pack + HarnessRelease 三对象 + Quick Checks/三态 verdict + Observability
 
-> **已发布**：https://github.com/leelv007-cmd/meiyeweb-agent/issues/435（label: ready-for-agent）；本文为票面本地快照。
+> **已发布**：https://github.com/leelv008/meiyeagent/issues/7（label: ready-for-agent）；本文为票面本地快照。原 leelv007-cmd/meiyeweb-agent#435 因账号封禁废弃。
 > 决策权威：V3.1 §29、§31、§32；决策记录附录 B（U3/U10/U11/U12）；硬约束附录 A（A14 strict 供给、A7 红线门禁）。
-> 依赖：**实现依赖 #429**（Agent 域 release 合同，`packages/contracts` 属主在 A）；**集成验收依赖 #430**（Session Harness 消费 release pin）、**#431**（执行链记录 releaseId）——release 合同/resolver 实现不等 B/C，集成验收才等。运营操作面单列在 V3.1-H。
+> 依赖：**实现依赖 #1**（Agent 域 release 合同，`packages/contracts` 属主在 A）；**集成验收依赖 #2**（Session Harness 消费 release pin）、**#3**（执行链记录 releaseId）——release 合同/resolver 实现不等 B/C，集成验收才等。运营操作面单列在 V3.1-H。
 
 ## Problem Statement
 
@@ -33,7 +33,7 @@ Prompt 注册表 22 键全量冻结：纯文案任务被无关 viral prompt 的�
 
 - pack 归属：agentControl/copy/note(含 xhsNoteGen)/media(briefImage)/cover/viral/video，与注册表 22 键全覆盖（V3.1 §29.2）。
 - D-165 三轴（skillRevision/promptVersion/catalogRevision）仍是扁平顶层键，pack 化不得引入嵌套（附录 A14）。
-- middlewareBindings（policyId/revision/kind/order/allowedControlActions）随 release 冻结，resolver 输出 exact composition（供 #430 的策略挂点消费）。
+- middlewareBindings（policyId/revision/kind/order/allowedControlActions）随 release 冻结，resolver 输出 exact composition（供 #2 的策略挂点消费）。
 - Artifact 增加 controlLimits 绑定（AgentControlLimits 全部标定值随 release 冻结）；任一 limit 未标定（unset）→ 发布失败（U11），resolver 保证返回非空 controlLimits——不复用语义不等价的 budgetPolicyRevision。
 - Langfuse label 只用于候选选择和发布；运行时只读 release 冻结的 exact version。
 - 表：p1_harness_release_artifacts / p1_harness_release_lifecycle / p1_harness_release_rollouts（V3.1 §33.1）。
@@ -42,7 +42,7 @@ Prompt 注册表 22 键全量冻结：纯文案任务被无关 viral prompt 的�
 ## Testing Decisions
 
 - 主 seam：release 发布/解析/回滚在 P1 action 边界断言（immutability、manifestHash、per-run 选择、pack 覆盖失败拒发布）；Quick Checks 本身即测试资产。
-- Quick Checks assertion API 与 Session 侧 checks 由 #430 落地（批次 2 进 CI）；本票只扩共享 registry、生产抽样、verdict 存储与 release 绑定，复用不重写。
+- Quick Checks assertion API 与 Session 侧 checks 由 #2 落地（批次 2 进 CI）；本票只扩共享 registry、生产抽样、verdict 存储与 release 绑定，复用不重写。
 - 现存合同测试模式承载 pack 覆盖构造性测试与 D-165 三轴扁平断言。
 - Playwright journey：Harness Release（V3.1 §37.4-J：canary 命中候选/非 canary 用 production/rollback 后新任务回旧 release/在途任务保留冻结 release）。
 - 退出门（V3.1 §35 批次 5）纳入验收；「自动回滚门可演练」改读「人工回滚演练通过」。

@@ -3,6 +3,8 @@
 Status: accepted (2026-07-24)
 
 > 本 ADR 凝结自合并权威版决策日志 D-032/D-033/D-041/D-101/D-104/D-110/D-112/D-113/D-118（`docs/design/beauty-marketing-agent-product-design-2026-07-17.md`），是实施投影不是第二真相源；任何冲突以决策日志为准。
+>
+> **2026-08-08 修订注（D-178/ADR-0020）**：五段状态机的**长期执行拓扑地位被收敛路线接管**——三 runner 按 V3.1 §22.4 先六原语化再收敛为单 `CompiledExecutionPlan → DBOS executor`，五阶段只保留为 trace taxonomy（与 D-036 一致）。DBOS 载体边界、D-038 五条、pg-boss 分工与④段等待语义在过渡期继续有效；退役门＝V3.1 §35 批次 6（spec-I）。
 
 ## Context
 

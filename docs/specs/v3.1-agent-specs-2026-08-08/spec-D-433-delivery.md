@@ -1,8 +1,8 @@
 # V3.1-D 交付：Artifact 原位生长 + Steering 双队列 + 发布交接 + 商家自报旅程
 
-> **已发布**：https://github.com/leelv007-cmd/meiyeweb-agent/issues/433（label: ready-for-agent）；本文为票面本地快照。
+> **已发布**：https://github.com/leelv008/meiyeagent/issues/4（label: ready-for-agent）；本文为票面本地快照。原 leelv007-cmd/meiyeweb-agent#433 因账号封禁废弃。
 > 决策权威：V3.1 §5.5–5.6、§6、§24、§26.1（消费侧）、§27.5；决策记录附录 B（U2）；硬约束附录 A（A19 二维码限定、D-155 白名单）。
-> 依赖：#431（冻结计划执行链）；**仅自报落库子交付**另依赖 #432 的 OutcomeEvidence 合同，其余交付不受其阻塞（#432 是并行 lane、不阻塞主线，V3.1 §35）。
+> 依赖：#3（冻结计划执行链）；**仅自报落库子交付**另依赖 #5 的 OutcomeEvidence 合同，其余交付不受其阻塞（#5 是并行 lane、不阻塞主线，V3.1 §35）。
 
 ## Problem Statement
 
@@ -36,10 +36,10 @@
 - Steering 分类四态：future_step_patch（不重报价）/ derived_revision / plan_change（回方案层 replan+requote）/ unsafe_or_conflicting（解释并要求修正）（V3.1 §5.6/§23.3）。
 - 发布交接全部落在 D-155 白名单内（交付与导出、assisted_handoff/manual_copy/export、商家自报记账）；二维码语义=MobilePublishHandoff 商家自发，扫码后我方驱动发布被 reject（附录 A19）。
 - assisted 交接承接既有 receipt 细则：24h 未确认提醒、一次性链接 72h 失效、「已交接」与「已发布」分离。
-- 自报写路径消费 #432 的 OutcomeEvidence 合同（merchant_reported；幂等键 contentPackageRef+signal+observedAt/sourceRef）；40% 覆盖率首窗只观测（U2）。
+- 自报写路径消费 #5 的 OutcomeEvidence 合同（merchant_reported；幂等键 contentPackageRef+signal+observedAt/sourceRef）；40% 覆盖率首窗只观测（U2）。
 - 移动端：过程/作品胶囊切换、Artifact 全屏 Sheet、付费 Interrupt 全宽底部面板；不在手机暴露复杂编辑器（V3.1 §4.3）。
 - Delivered 精修仍走对象工作区真相面（NoteObjectWorkspace 方向），本 spec 不重写编辑器。
-- ArtifactUpdate wire 为 discriminated union：`{mode:'snapshot', full}` / `{mode:'delta', baseRevision, patch}`；patch schema 按 artifactType 受控（非 unknown）；同 revision 重放幂等、跳 revision 退回取 snapshot，对接 #429 的重连顺序（V3.1 §27.6、§35 批次 4「snapshot/delta」交付项）。
+- ArtifactUpdate wire 为 discriminated union：`{mode:'snapshot', full}` / `{mode:'delta', baseRevision, patch}`；patch schema 按 artifactType 受控（非 unknown）；同 revision 重放幂等、跳 revision 退回取 snapshot，对接 #1 的重连顺序（V3.1 §27.6、§35 批次 4「snapshot/delta」交付项）。
 
 ## Testing Decisions
 
