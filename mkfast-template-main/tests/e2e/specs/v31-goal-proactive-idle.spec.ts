@@ -291,7 +291,9 @@ test.describe('V31-24 Goal + Proactive Idle', () => {
       'idle',
       { timeout: 30_000 }
     );
-    await expect(page.getByTestId('idle-goal-proactive')).toBeVisible({
+    // Empty gate states render a zero-height section on purpose ("surface may
+    // be empty or ready" above) — mounted is the contract, visible is not.
+    await expect(page.getByTestId('idle-goal-proactive')).toBeAttached({
       timeout: 30_000,
     });
   });

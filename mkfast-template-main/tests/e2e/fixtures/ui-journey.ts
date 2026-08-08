@@ -178,14 +178,32 @@ export async function selectComposerLens(
   modality: JourneyModality
 ): Promise<void> {
   const trigger = page.getByTestId('composer-capsule-lens');
+  const moreFace = page.getByTestId('composer-capsule-more');
   const panel = await openComposerCapsule(page, 'lens');
   const lens = page.getByTestId(`composer-lens-option-${modality}`);
   await lens.click();
-  await expect(lens).toBeChecked();
-  await expect(lens).toHaveAttribute('data-state', 'checked');
-  await closeComposerCapsule(page, panel);
-  await expect(trigger).toContainText(COMPOSER_LENS_FACE_LABEL[modality]);
-  await expect(trigger).toHaveAttribute('data-active', 'true');
+  // Picking the required lens can fold the idle-compact capsule row back
+  // behind 「更多设置」 (D-C2: the capsule was only surfaced by
+  // required-unmet), unmounting the radio and its trigger in the same
+  // render. The selection then lives on the folded face's summary instead —
+  // assert it on whichever face survived rather than the radio itself.
+  const label = COMPOSER_LENS_FACE_LABEL[modality];
+  await expect(async () => {
+    if (await trigger.isVisible().catch(() => false)) {
+      expect((await trigger.textContent()) ?? '').toContain(label);
+      expect(await trigger.getAttribute('data-active')).toBe('true');
+      return;
+    }
+    expect((await moreFace.textContent().catch(() => '')) ?? '').toContain(
+      label
+    );
+    expect(await moreFace.getAttribute('data-active')).toBe('true');
+  }).toPass({ timeout: 10_000 });
+  if (await panel.isVisible().catch(() => false)) {
+    await expect(lens).toBeChecked();
+    await expect(lens).toHaveAttribute('data-state', 'checked');
+    await closeComposerCapsule(page, panel);
+  }
 }
 
 /**
