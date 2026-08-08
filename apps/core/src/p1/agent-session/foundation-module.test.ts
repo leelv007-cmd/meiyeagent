@@ -13,9 +13,26 @@ import type { P1Context } from '../foundation/domain.js';
 import { P1DomainError } from '../foundation/domain.js';
 import { AgentSessionFoundationModule } from './foundation-module.js';
 import { MemoryAgentSessionStore } from './memory-agent-session-store.js';
+import { MemorySteeringCommandStore } from './steering-command-store.js';
+import {
+  MAKE_STEERING_FLAG,
+  MAKE_STEERING_KILL_SWITCH,
+  SteeringService,
+  resolveMakeSteeringGate,
+} from './steering-service.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
 const TS2 = '2026-08-08T13:00:00.000Z';
+
+/** Stands in for the admin-config head reader the assembly binds. */
+const adminConfigValues = new Map<string, unknown>();
+const adminConfigReader = {
+  async get(_scope: 'global', _workspaceId: string, key: string) {
+    return adminConfigValues.has(key)
+      ? { value: adminConfigValues.get(key) }
+      : null;
+  },
+};
 
 function context(workspaceId = 'ws-agent-session'): P1Context {
   return {
@@ -252,15 +269,84 @@ test('list_threads is workspace-scoped', async () => {
   );
 });
 
-test('production api-runtime registers AgentSessionFoundationModule', () => {
+test('production api-runtime registers AgentSessionFoundationModule with steering', () => {
   const source = readFileSync(
     new URL('../../assembly/api-runtime.ts', import.meta.url),
     'utf8',
   );
   assert.match(source, /AgentSessionFoundationModule/u);
+  // V31-16 hung steering_submit on the same module; V31-27 makes the merchant
+  // surface depend on it, so the assembly must pass the service — a module
+  // built without it answers every steering action with INVALID_STATE.
   assert.match(
     source,
-    /new AgentSessionFoundationModule\(\s*new PostgresAgentSessionStore\(pool\)\s*\)/u,
+    /new AgentSessionFoundationModule\(\s*new PostgresAgentSessionStore\(pool\),\s*steeringService,?\s*\)/u,
   );
   assert.match(source, /from '\.\.\/p1\/agent-session\/index\.js'/u);
+});
+
+test('capability map: steering submit + history + gate are registered', () => {
+  // Unregistered pairs default-deny at the HTTP boundary (WT-K #120), so a
+  // seam the browser cannot call is the same as a seam that does not exist.
+  assert.equal(
+    requiredP1Capability('command', 'agent-session', 'steering_submit'),
+    'content.create',
+  );
+  for (const action of ['list_steering_commands', 'steering_gate'] as const) {
+    assert.equal(
+      requiredP1Capability('query', 'agent-session', action),
+      'workspace.read',
+    );
+  }
+});
+
+test('steering_gate reports the kill switch so the entry can disappear', async () => {
+  const store = new MemoryAgentSessionStore();
+  const steering = new SteeringService({
+    store: new MemorySteeringCommandStore(),
+    resolveGate: () => resolveMakeSteeringGate(adminConfigReader),
+  });
+  const module = new AgentSessionFoundationModule(store, steering);
+
+  assert.deepEqual(
+    await module.query({ context: context(), input: { action: 'steering_gate' } }),
+    { enabled: true, reason: 'enabled' },
+  );
+
+  adminConfigValues.set(MAKE_STEERING_KILL_SWITCH, true);
+  assert.deepEqual(
+    await module.query({ context: context(), input: { action: 'steering_gate' } }),
+    { enabled: false, reason: 'kill_switch' },
+  );
+
+  adminConfigValues.clear();
+  adminConfigValues.set(MAKE_STEERING_FLAG, false);
+  assert.deepEqual(
+    await module.query({ context: context(), input: { action: 'steering_gate' } }),
+    { enabled: false, reason: 'feature_flag_off' },
+  );
+  adminConfigValues.clear();
+});
+
+test('steering module without a service refuses instead of half-answering', async () => {
+  const { module } = moduleOf();
+  await assert.rejects(
+    () =>
+      module.execute({
+        context: context(),
+        idempotencyKey: 'steer-no-service',
+        input: {
+          action: 'steering_submit',
+          payload: {
+            threadId: 'thread-1',
+            taskId: 'task-1',
+            instruction: '封面少写两个字',
+            sourcePlanRevision: 1,
+            units: [],
+          },
+        },
+      }),
+    (error: unknown) =>
+      error instanceof P1DomainError && error.code === 'INVALID_STATE',
+  );
 });

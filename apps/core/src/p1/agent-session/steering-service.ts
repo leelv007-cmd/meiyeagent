@@ -380,6 +380,16 @@ export class SteeringService {
     this.idFactory = options.idFactory ?? (() => `steer-${randomUUID()}`);
   }
 
+  /**
+   * Current gate state (V31-27). The merchant surface has to know whether the
+   * mid-run entry may exist *before* an instruction is typed — an entry that
+   * only reveals a disabled path after submit is a kill switch that does not
+   * switch anything off.
+   */
+  async gate(): Promise<MakeSteeringGate> {
+    return readGate(this.resolveGate);
+  }
+
   async submit(input: SubmitSteeringInput): Promise<SubmitSteeringResult> {
     const instruction = input.instruction?.trim();
     if (!instruction) {
