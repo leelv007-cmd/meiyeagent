@@ -3,7 +3,7 @@
 **Parent**: spec-H（#8）`docs/specs/v3.1-spec-H-ops-console-pending-publish.md`；权威 V3.1 §30、§41、§42、U12
 **批次**: 5（可与批次 4/6 并行开发，验收依赖 V31-21 数据面）
 **Blocked by**: V31-21
-**Status**: ready-for-agent
+**Status**: done (merged, 2026-08-08)
 
 ## What to build
 
