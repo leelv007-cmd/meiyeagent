@@ -64,17 +64,20 @@ test('the quote line carries no bare cost figure', () => {
   assert.match(home, /currentQuoteView\.billingNote \?\?/u);
 });
 
-test('selecting a lens defaults empty destination to xiaohongshu (QA ISSUE-006)', () => {
+test('selecting a lens defaults empty destination per Day-0 contract (QA ISSUE-006)', () => {
   // Regression: ISSUE-006 — destination chip order made offline easy to land on.
   // Found by /qa on 2026-08-07
   // Report: .gstack/qa-reports/qa-report-localhost-3000-2026-08-07.md
+  // The default must stay lens-aware (D-128 / Z1): a blanket 小红书 default
+  // regressed the copy journey to a 小红书 package instead of 朋友圈分段包.
   const home = readFileSync(
     new URL('./composer-home.tsx', import.meta.url),
     'utf8'
   );
   assert.match(home, /const handleLensChange = \(next: CreationLensId\) =>/u);
-  assert.match(home, /platform:\s*'xiaohongshu'/u);
-  assert.match(home, /distributionTarget:\s*'manual_copy'/u);
+  assert.match(home, /copy:\s*'wechat_moments'/u);
+  assert.match(home, /image_text:\s*'xiaohongshu'/u);
+  assert.match(home, /video:\s*'douyin'/u);
 });
 
 test('store intake confirm invalidates today recommendation after success', () => {

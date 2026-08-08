@@ -2177,12 +2177,21 @@ export function ComposerHome({
     setLensState((current) => {
       const selected = selectLens(current, next);
       // QA ISSUE-006: empty destination often lands on offline by accident in
-      // the chip row. Default the first explicit lens pick to 小红书 when the
-      // merchant has not chosen a platform yet — still user-overridable.
+      // the chip row, so a first explicit lens pick fills the destination —
+      // still user-overridable. The default follows the Day-0 contract per
+      // lens (D-128 / Z1 journeys): 文案→朋友圈, 图文→小红书, 视频→抖音. A
+      // blanket 小红书 here regressed the copy journey to a 小红书 package.
       if (selected.draft.delivery.platform != null) return selected;
+      const defaultPlatform: Record<CreationLensId, string> = {
+        copy: 'wechat_moments',
+        image_text: 'xiaohongshu',
+        video: 'douyin',
+      };
+      const fallback = composerDestinationContract(defaultPlatform[next]);
+      if (!fallback) return selected;
       return updateDeliverySuggestion(selected, {
-        distributionTarget: 'manual_copy',
-        platform: 'xiaohongshu',
+        distributionTarget: fallback.distributionTarget,
+        platform: fallback.contentPackagePlatform,
       });
     });
   };
