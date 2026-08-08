@@ -487,6 +487,11 @@ export type ComposerHomeProps = {
   initialSessionIdentityId?: string;
   /** D-145 时间桥深链: reopen this in-flight run rather than the newest one. */
   initialTaskId?: string;
+  /**
+   * V31-05 / V3.1 §4: explicit Thread-root deep link. Host restores this
+   * Thread first; without it WorkbenchSessionProjection chooses Idle/resume.
+   */
+  initialThreadId?: string;
   /** Result/workspace AI-cover handoff; current surface supplies the recipe. */
   initialAiCover?: {
     aspectRatio: AiCoverAspectRatio;
@@ -507,6 +512,7 @@ export function ComposerHome({
   initialSessionIdentityId,
   initialSurfaceRevisionId,
   initialTaskId,
+  initialThreadId,
   sessionStore,
   viralOpenCliBridge,
 }: ComposerHomeProps = {}) {
@@ -3293,11 +3299,12 @@ export function ComposerHome({
           }
           stream={
             <>
-              {/* V31-04: Thread Workstream host (reducer + Narrative/Activity +
-               * Controlled Surface Registry). processSlot keeps legacy conversation
-               * until V31-05 Thread-root cutover; mobile 过程/作品 switch is live. */}
+              {/* V31-05: Thread-root Workbench host. explicit threadId wins;
+               * otherwise session projection chooses Idle vs resume. processSlot
+               * keeps Work inline projection (legacy conversation stream). */}
               <AgentWorkbenchHost
                 explicitTaskId={initialTaskId ?? null}
+                explicitThreadId={initialThreadId ?? null}
                 processSlot={
                   <>
                     {/* Layer ① — the conversation. Stage announcements, the 引导补问卡 and the

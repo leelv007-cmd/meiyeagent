@@ -106,6 +106,7 @@ export function normalizeProductRole(input: {
 export type P1Module =
   | 'advanced-canvas'
   | 'admin-config'
+  | 'agent-session'
   | 'asset-memory'
   | 'context'
   | 'creation-experience'
@@ -704,6 +705,22 @@ export function requiredP1Capability(
       return 'config.publish';
     }
     return null;
+  }
+
+  // V31-05: Thread list + Workbench session restore (consume AgentSessionStore).
+  if (module === 'agent-session') {
+    if (kind === 'query') {
+      return new Set([
+        'list_threads',
+        'get_workbench_session',
+        'get_thread',
+      ]).has(action)
+        ? 'workspace.read'
+        : null;
+    }
+    return new Set(['open_legacy_work_thread', 'create_thread']).has(action)
+      ? 'content.create'
+      : null;
   }
 
   // V31-22: platform ops control plane (Release / Tool Policy / Kill Switch).

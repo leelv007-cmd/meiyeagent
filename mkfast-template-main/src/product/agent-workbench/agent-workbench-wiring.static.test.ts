@@ -1,6 +1,6 @@
 /**
- * V31-04 production wiring gate: reducer / Workstream / registry must land on
- * the real dashboard create host — not library-only.
+ * V31-05 production wiring gate: Thread-root host must land on the real
+ * dashboard create path; recent must be Thread list projection.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -10,20 +10,40 @@ import test from 'node:test';
 const readSource = (rel: string) =>
   readFileSync(resolve(process.cwd(), rel), 'utf8');
 
-test('ComposerHome imports and mounts AgentWorkbenchHost', () => {
+test('ComposerHome imports and mounts AgentWorkbenchHost with Thread-root props', () => {
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /from '@\/product\/agent-workbench'/u);
   assert.match(home, /AgentWorkbenchHost/u);
-  assert.match(home, /data-testid="agent-workbench-host"|AgentWorkbenchHost/u);
+  assert.match(home, /explicitThreadId=\{initialThreadId/u);
+  assert.match(home, /explicitTaskId=\{initialTaskId/u);
+  assert.match(home, /initialThreadId\?:/u);
 });
 
-test('agent-workbench module exports reducer + registry + reconnect client', () => {
+test('dashboard route accepts threadId and passes it to ComposerHome', () => {
+  const route = readSource('src/routes/dashboard/index.tsx');
+  assert.match(route, /threadId\?: string/u);
+  assert.match(route, /initialThreadId=\{search\.threadId\}/u);
+});
+
+test('/dashboard/recent is Thread list projection (supersede D-088)', () => {
+  const recent = readSource('src/routes/dashboard/recent.tsx');
+  assert.match(recent, /ThreadListPage/u);
+  assert.doesNotMatch(recent, /CanonicalHistoryPage mode="recent"/u);
+  const page = readSource('src/product/thread-list-page.tsx');
+  assert.match(page, /agent-session/u);
+  assert.match(page, /list_threads/u);
+  assert.match(page, /threadDashboardHref|threadId=/u);
+});
+
+test('agent-workbench module exports Thread-root restore + reconnect client', () => {
   const index = readSource('src/product/agent-workbench/index.ts');
   assert.match(index, /reduceAgentWorkbench/u);
   assert.match(index, /resolveControlledSurface/u);
   assert.match(index, /reconnectAgentWorkbench/u);
   assert.match(index, /AgentWorkbenchHost/u);
   assert.match(index, /AgentWorkstream/u);
+  assert.match(index, /resolveDashboardThreadTarget/u);
+  assert.match(index, /threadDashboardHref/u);
 });
 
 test('no second global state library introduced for workbench', () => {

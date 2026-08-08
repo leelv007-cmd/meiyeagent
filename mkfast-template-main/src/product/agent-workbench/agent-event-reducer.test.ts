@@ -338,3 +338,30 @@ test('set_explicit_task_id updates the reconnect preference', () => {
   }).state;
   assert.equal(state.explicitTaskId, 'task-from-url');
 });
+
+test('set_explicit_thread_id survives reset and patch_failed', () => {
+  let state = reduceAgentWorkbench(empty(), {
+    type: 'set_explicit_thread_id',
+    threadId: 'thread-from-url',
+  }).state;
+  assert.equal(state.explicitThreadId, 'thread-from-url');
+
+  state = reduceAgentWorkbench(state, {
+    type: 'set_session',
+    session: session(),
+  }).state;
+  state = reduceAgentWorkbench(state, { type: 'reset' }).state;
+  assert.equal(state.explicitThreadId, 'thread-from-url');
+  assert.equal(state.session, null);
+
+  state = reduceAgentWorkbench(state, {
+    type: 'set_session',
+    session: session(),
+  }).state;
+  state = reduceAgentWorkbench(state, {
+    type: 'patch_failed',
+    reason: 'test',
+  }).state;
+  assert.equal(state.explicitThreadId, 'thread-from-url');
+  assert.equal(state.connection, 'resyncing');
+});

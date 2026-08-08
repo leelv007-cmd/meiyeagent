@@ -37,6 +37,11 @@ interface DashboardSearch {
   stage?: 'action' | 'progress' | 'handoff';
   /** D-145 时间桥: reopen the conversation for one in-flight run. */
   taskId?: string;
+  /**
+   * V31-05 / V3.1 §4: explicit Thread-root target. Wins over auto-resume
+   * from WorkbenchSessionProjection.
+   */
+  threadId?: string;
   view?: 'recent' | 'works';
   /** @deprecated Z1: accepted only to redirect → /dashboard/results/$workId */
   workId?: string;
@@ -83,6 +88,9 @@ export const Route = createFileRoute('/dashboard/')({
       : {}),
     ...(typeof search.taskId === 'string' && search.taskId.length > 0
       ? { taskId: search.taskId }
+      : {}),
+    ...(typeof search.threadId === 'string' && search.threadId.length > 0
+      ? { threadId: search.threadId }
       : {}),
     ...(search.view === 'recent' || search.view === 'works'
       ? { view: search.view }
@@ -167,6 +175,7 @@ function DashboardHome() {
       initialSessionIdentityId={search.identity}
       initialSurfaceRevisionId={search.catalogSurfaceRevisionId}
       initialTaskId={search.taskId}
+      initialThreadId={search.threadId}
     />
   );
 }

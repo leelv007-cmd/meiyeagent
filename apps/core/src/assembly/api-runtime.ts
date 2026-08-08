@@ -173,6 +173,10 @@ import {
   OpsConsoleService,
 } from '../p1/ops-console/index.js';
 import { HarnessReleaseService } from '../p1/harness/harness-release.js';
+import {
+  AgentSessionFoundationModule,
+  PostgresAgentSessionStore,
+} from '../p1/agent-session/index.js';
 import { SensitiveWordsFoundationModule } from '../p1/sensitive-words/index.js';
 import {
   CompositeRecordProposalPort,
@@ -737,6 +741,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         videoWorkflow: canonicalVideoWorkflow,
       }),
       new SensitiveWordsFoundationModule(sensitiveWordsRepository),
+      // V31-05: Thread list + Workbench session restore (consumes V31-02 store).
+      new AgentSessionFoundationModule(new PostgresAgentSessionStore(pool)),
       new OpsConsoleFoundationModule(
         new OpsConsoleService({
           releases: new HarnessReleaseService(harnessReleaseStore),

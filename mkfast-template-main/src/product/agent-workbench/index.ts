@@ -1,6 +1,6 @@
 /**
- * Agent Workbench foundation (V31-04): event reducer, Workstream, Controlled
- * Surface Registry. Directory layout follows V3.1 §28.3.
+ * Agent Workbench foundation (V31-04/05): event reducer, Workstream,
+ * Controlled Surface Registry, Thread-root host. Layout: V3.1 §28.3.
  */
 
 export {
@@ -42,7 +42,18 @@ export {
 export {
   AgentWorkbenchHost,
   type AgentWorkbenchHostProps,
+  type AgentWorkbenchSessionLoader,
 } from './agent-workbench';
+
+export {
+  resolveDashboardThreadTarget,
+  threadDashboardHref,
+  workbenchRootMode,
+  type ThreadListItem,
+  type ThreadListResponse,
+  type WorkbenchResolveSource,
+  type WorkbenchSessionResolveResponse,
+} from './thread-session';
 
 export {
   AgentWorkstream,

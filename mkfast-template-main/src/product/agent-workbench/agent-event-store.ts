@@ -73,6 +73,8 @@ export function useAgentWorkbenchState(
 
 export function useAgentWorkbenchDispatch(
   store: AgentEventStore = getAgentWorkbenchHostStore()
-): (action: AgentWorkbenchAction) => ReduceResult {
-  return (action) => store.dispatch(action);
+): AgentEventStore['dispatch'] {
+  // Return the store method directly — a fresh arrow each render would
+  // re-trigger effects that list `dispatch` in their dependency arrays.
+  return store.dispatch;
 }
