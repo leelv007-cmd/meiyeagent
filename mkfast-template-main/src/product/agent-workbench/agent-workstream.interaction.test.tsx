@@ -119,7 +119,7 @@ describe('AgentWorkstream document timeline', () => {
     );
   });
 
-  it('mobile shows 过程/作品 switch; works pane hides process stream', () => {
+  it('mobile shows 过程/作品 switch; works pane opens fullscreen Artifact sheet', () => {
     let state = withNarratives();
     const onPane = vi.fn();
     const { rerender } = render(
@@ -136,6 +136,7 @@ describe('AgentWorkstream document timeline', () => {
     ).toBeTruthy();
     expect(screen.getByTestId('agent-workstream-process')).toBeTruthy();
     expect(screen.queryByTestId('agent-workstream-works')).toBeNull();
+    expect(screen.queryByTestId('agent-artifact-mobile-sheet')).toBeNull();
 
     fireEvent.click(screen.getByTestId('agent-mobile-pane-works'));
     expect(onPane).toHaveBeenCalledWith('works');
@@ -154,12 +155,13 @@ describe('AgentWorkstream document timeline', () => {
       />
     );
     expect(screen.queryByTestId('agent-workstream-process')).toBeNull();
+    expect(screen.getByTestId('agent-artifact-mobile-sheet')).toBeTruthy();
     expect(screen.getByTestId('agent-workstream-works')).toHaveTextContent(
       'works'
     );
   });
 
-  it('desktop does not show mobile switch and keeps process visible', () => {
+  it('desktop does not show mobile switch and keeps process + artifact rail visible', () => {
     render(
       <AgentWorkstream
         state={withNarratives()}
@@ -172,6 +174,8 @@ describe('AgentWorkstream document timeline', () => {
     ).toBeNull();
     expect(screen.getByTestId('agent-workstream-process')).toBeTruthy();
     expect(screen.getByTestId('agent-workstream-works')).toBeTruthy();
+    expect(screen.getByTestId('agent-artifact-canvas-empty')).toBeTruthy();
+    expect(screen.getByTestId('works-body')).toHaveTextContent('works');
   });
 });
 

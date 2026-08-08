@@ -163,6 +163,13 @@ export function AgentWorkbenchHost({
     >
       <AgentWorkstream
         className={className}
+        onArtifactViewRevision={(artifactId, revision) =>
+          dispatch({
+            type: 'set_artifact_viewing_revision',
+            artifactId,
+            revision,
+          })
+        }
         onMobilePaneChange={(pane: WorkstreamMobilePane) =>
           dispatch({ type: 'set_mobile_pane', pane })
         }
