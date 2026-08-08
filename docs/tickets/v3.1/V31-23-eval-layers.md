@@ -3,7 +3,7 @@
 **Parent**: spec-G（#7）；权威 V3.1 §31、§32、U3/U12
 **批次**: 5
 **Blocked by**: V31-08（复用其 Quick Checks 资产）, V31-21
-**Status**: ready-for-agent
+**Status**: done (merged, 2026-08-08)
 
 ## What to build
 
