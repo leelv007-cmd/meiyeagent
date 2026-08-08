@@ -336,7 +336,18 @@ export async function seedComposerInlineAuthorize(
   // L3-2: gallery input lives in the attach capsule popover (portal).
   const attachPanel = page.getByTestId('composer-capsule-attach-panel');
   if (!(await attachPanel.isVisible().catch(() => false))) {
-    await page.getByTestId('composer-capsule-attach').click();
+    // Idle-compact folds the attach capsule behind 「更多」 — expand it first
+    // when the trigger is not already on the face.
+    const attachTrigger = page.getByTestId('composer-capsule-attach');
+    if (!(await attachTrigger.isVisible().catch(() => false))) {
+      const more = page.getByTestId('composer-capsule-more');
+      await more.waitFor({ state: 'visible', timeout: 15_000 });
+      if ((await more.getAttribute('aria-expanded')) !== 'true') {
+        await more.click();
+        await expect(more).toHaveAttribute('aria-expanded', 'true');
+      }
+    }
+    await attachTrigger.click();
     await expect(attachPanel).toBeVisible({ timeout: 15_000 });
   }
   const galleryInput = page.locator('#composer-gallery-input');
