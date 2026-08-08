@@ -3,7 +3,7 @@
 **Parent**: V31-16（票已关，本票承接其未落地的前台部分）
 **批次**: 收尾
 **Blocked by**: None — can start immediately
-**Status**: ready-for-agent
+**Status**: done (merged aaad2a0f1, 2026-08-09)
 
 ## What to build
 
