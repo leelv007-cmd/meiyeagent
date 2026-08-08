@@ -14,6 +14,7 @@
 1. 运行中（composer session running / workstream 流式中）出现中途指令入口（steering composer），可输入如「封面不要写最后两个名额，第二页少点字」。
 2. 提交后得到影响范围反馈（steering impact）：哪些页会改、哪些页保持、费用是否变化。
 3. future_step_patch / derived_revision 不弹重报价；plan_change 回方案层 replan + requote 确认；unsafe_or_conflicting 给出解释并要求修正。
+   **计费口径（2026-08-09 用户拍板）**：已触发上游 API 调用的单元一律正常计费不退免；局部修改＝生成「修改对象」并按正常口径计费。影响反馈里必须把这两点讲清楚（积分口径、D-061 不暴露上游成本），例：「封面与第 2 页将按修改重新生成并计 X 分；其余页不变不计费」。
 4. 指令形成可追踪 command（绑定 revision/snapshot），在会话恢复后仍可见。
 
 ## Acceptance criteria
