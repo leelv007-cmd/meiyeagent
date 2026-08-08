@@ -139,10 +139,13 @@ export interface HarnessReleaseStore {
     artifact: HarnessReleaseArtifact,
   ): Promise<HarnessReleaseArtifact>;
   getArtifact(releaseId: string): Promise<HarnessReleaseArtifact | null>;
+  /** Ops-console catalog (V31-22); additive read, does not mutate artifacts. */
+  listArtifacts(): Promise<HarnessReleaseArtifact[]>;
   putLifecycle(
     lifecycle: HarnessReleaseLifecycle,
   ): Promise<HarnessReleaseLifecycle>;
   getLifecycle(releaseId: string): Promise<HarnessReleaseLifecycle | null>;
+  listLifecycles(): Promise<HarnessReleaseLifecycle[]>;
   /**
    * At most one production / one canary (unique partial indexes in PG).
    */
@@ -151,6 +154,7 @@ export interface HarnessReleaseStore {
   ): Promise<HarnessReleaseLifecycle | null>;
   putRollout(rollout: HarnessReleaseRollout): Promise<HarnessReleaseRollout>;
   getRollout(releaseId: string): Promise<HarnessReleaseRollout | null>;
+  listRollouts(): Promise<HarnessReleaseRollout[]>;
 }
 
 export class MemoryHarnessReleaseStore implements HarnessReleaseStore {
@@ -181,6 +185,10 @@ export class MemoryHarnessReleaseStore implements HarnessReleaseStore {
     return value ? structuredClone(value) : null;
   }
 
+  async listArtifacts(): Promise<HarnessReleaseArtifact[]> {
+    return [...this.artifacts.values()].map((value) => structuredClone(value));
+  }
+
   async putLifecycle(
     lifecycle: HarnessReleaseLifecycle,
   ): Promise<HarnessReleaseLifecycle> {
@@ -209,6 +217,10 @@ export class MemoryHarnessReleaseStore implements HarnessReleaseStore {
     return value ? structuredClone(value) : null;
   }
 
+  async listLifecycles(): Promise<HarnessReleaseLifecycle[]> {
+    return [...this.lifecycles.values()].map((value) => structuredClone(value));
+  }
+
   async getLifecycleByStatus(
     status: 'production' | 'canary',
   ): Promise<HarnessReleaseLifecycle | null> {
@@ -229,6 +241,10 @@ export class MemoryHarnessReleaseStore implements HarnessReleaseStore {
   async getRollout(releaseId: string): Promise<HarnessReleaseRollout | null> {
     const value = this.rollouts.get(releaseId);
     return value ? structuredClone(value) : null;
+  }
+
+  async listRollouts(): Promise<HarnessReleaseRollout[]> {
+    return [...this.rollouts.values()].map((value) => structuredClone(value));
   }
 }
 

@@ -116,6 +116,7 @@ export type P1Module =
   | 'memory'
   | 'model-supply'
   | 'operations'
+  | 'ops-console'
   | 'product-billing'
   | 'redemptions'
   | 'result-delivery'
@@ -703,6 +704,38 @@ export function requiredP1Capability(
       return 'config.publish';
     }
     return null;
+  }
+
+  // V31-22: platform ops control plane (Release / Tool Policy / Kill Switch).
+  if (module === 'ops-console') {
+    const opsConsoleQueries = new Set([
+      'list_releases',
+      'get_release',
+      'diff_releases',
+      'list_candidate_trials',
+      'list_rollback_drills',
+      'list_tool_policies',
+      'get_tool_policy',
+      'list_kill_switches',
+      'list_audit',
+      'langfuse_release_url',
+    ]);
+    const opsConsoleCommands = new Set([
+      'publish_release',
+      'transition_lifecycle',
+      'set_canary_allowlist',
+      'set_candidate_trial',
+      'promote_to_production',
+      'rollback_production',
+      'record_rollback_drill',
+      'create_tool_policy_revision',
+      'update_tool_policy',
+      'set_kill_switch',
+    ]);
+    if (kind === 'query') {
+      return opsConsoleQueries.has(action) ? 'platform.manage' : null;
+    }
+    return opsConsoleCommands.has(action) ? 'platform.manage' : null;
   }
 
   // Unknown module/action: default deny (no broad fallthrough).

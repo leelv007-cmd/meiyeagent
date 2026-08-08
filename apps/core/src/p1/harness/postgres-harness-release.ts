@@ -116,6 +116,15 @@ export class PostgresHarnessReleaseStore implements HarnessReleaseStore {
     return payload ? harnessReleaseArtifactSchema.parse(payload) : null;
   }
 
+  async listArtifacts(): Promise<HarnessReleaseArtifact[]> {
+    const result = await this.pool.query<PayloadRow<unknown>>(
+      'SELECT payload FROM p1_harness_release_artifacts ORDER BY created_at DESC',
+    );
+    return result.rows.map((row) =>
+      harnessReleaseArtifactSchema.parse(clonePayload(row)),
+    );
+  }
+
   async putLifecycle(
     lifecycle: HarnessReleaseLifecycle,
   ): Promise<HarnessReleaseLifecycle> {
@@ -185,6 +194,15 @@ export class PostgresHarnessReleaseStore implements HarnessReleaseStore {
     return payload ? harnessReleaseLifecycleSchema.parse(payload) : null;
   }
 
+  async listLifecycles(): Promise<HarnessReleaseLifecycle[]> {
+    const result = await this.pool.query<PayloadRow<unknown>>(
+      'SELECT payload FROM p1_harness_release_lifecycle ORDER BY updated_at DESC',
+    );
+    return result.rows.map((row) =>
+      harnessReleaseLifecycleSchema.parse(clonePayload(row)),
+    );
+  }
+
   async getLifecycleByStatus(
     status: 'production' | 'canary',
   ): Promise<HarnessReleaseLifecycle | null> {
@@ -234,5 +252,14 @@ export class PostgresHarnessReleaseStore implements HarnessReleaseStore {
     );
     const payload = clonePayload(result.rows[0]);
     return payload ? harnessReleaseRolloutSchema.parse(payload) : null;
+  }
+
+  async listRollouts(): Promise<HarnessReleaseRollout[]> {
+    const result = await this.pool.query<PayloadRow<unknown>>(
+      'SELECT payload FROM p1_harness_release_rollouts ORDER BY updated_at DESC',
+    );
+    return result.rows.map((row) =>
+      harnessReleaseRolloutSchema.parse(clonePayload(row)),
+    );
   }
 }
