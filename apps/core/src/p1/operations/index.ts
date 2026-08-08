@@ -6,6 +6,7 @@ export * from './asset-memory-foundation-module.js';
 export * from './content-package.js';
 export * from './content-package-approval.js';
 export * from './content-package-delivery.js';
+export * from './publish-handoff.js';
 export * from './legacy-content-package-delivery-projection.js';
 export * from './context-compiler.js';
 export * from './context-bundle-repository.js';

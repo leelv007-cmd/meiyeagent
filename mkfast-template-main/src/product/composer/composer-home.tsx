@@ -213,7 +213,10 @@ import {
   WorkbenchStickyComposerHost,
 } from './workbench-shell-layout';
 import { useWorkbenchViewportWidth } from './use-workbench-viewport-width';
-import { AgentWorkbenchHost } from '@/product/agent-workbench';
+import {
+  AgentWorkbenchHost,
+  usePublishHandoff,
+} from '@/product/agent-workbench';
 import { LensRadiogroup } from './lens-radiogroup';
 import { LensSwitchPreviewPanel } from './lens-switch-preview-panel';
 import { ComposerIdentityCard } from './composer-identity-card';
@@ -2995,6 +2998,16 @@ export function ComposerHome({
         )?.label ?? lensState.draft.delivery.platform)
       : null;
 
+  // V31-17: Delivered → prepare MobilePublishHandoff + self-report journey on
+  // the Thread-root workbench (production path, not result-center only).
+  const publishHandoff = usePublishHandoff({
+    phase: session.phase,
+    packageId: session.task?.packageId,
+    platform: lensState.draft.delivery.platform ?? 'xiaohongshu',
+    variantVersionId: workflowStream.harnessDelivery?.versionId ?? null,
+    workId: session.task?.workId ?? null,
+  });
+
   // Mobile inspector sheet is the dual-column equivalent — dismiss when desktop
   // dual column takes over so the two surfaces never stack.
   useEffect(() => {
@@ -3305,6 +3318,18 @@ export function ComposerHome({
               <AgentWorkbenchHost
                 explicitTaskId={initialTaskId ?? null}
                 explicitThreadId={initialThreadId ?? null}
+                onPublishHandoffCopy={publishHandoff.onPublishHandoffCopy}
+                onPublishHandoffDownloadZip={
+                  publishHandoff.onPublishHandoffDownloadZip
+                }
+                onPublishHandoffRecordPublished={
+                  publishHandoff.onPublishHandoffRecordPublished
+                }
+                onSelfReportChip={publishHandoff.onSelfReportChip}
+                onSelfReportIgnore={publishHandoff.onSelfReportIgnore}
+                publishHandoffView={publishHandoff.publishHandoffView}
+                selfReportChips={publishHandoff.selfReportChips}
+                selfReportPrompt={publishHandoff.selfReportPrompt}
                 processSlot={
                   <>
                     {/* Layer ① — the conversation. Stage announcements, the 引导补问卡 and the

@@ -5,6 +5,7 @@
  */
 
 import { cn } from '@/lib/utils';
+import type { OutcomeSelfReportChipSignal } from '@meiye/contracts';
 
 import {
   projectActivePlanRevisions,
@@ -23,10 +24,17 @@ import {
   type WorkstreamMobilePane,
 } from './mobile-workstream-switch';
 import {
+<<<<<<< HEAD
   LivingPlan,
   type CommitStripAction,
   type CommitStripView,
 } from './plan';
+=======
+  PublishHandoffPanel,
+  type PublishHandoffPanelView,
+} from './publish-handoff';
+import './publish-handoff/publish-handoff-registry';
+>>>>>>> lane/v31-17
 import { ActivityLine } from './stream/activity-line';
 import { NarrativeLine } from './stream/narrative-line';
 
@@ -44,11 +52,33 @@ export type AgentWorkstreamProps = {
   worksSlot?: React.ReactNode;
   /** Optional legacy conversation / composer stream under process pane. */
   processSlot?: React.ReactNode;
+<<<<<<< HEAD
   /** When true, Living Plan mounts as Compact Plan (Brief/quote/confirm unified). */
   livingPlanCompact?: boolean;
   /** Optional live commit-strip overlay (balance/quote). */
   livingPlanCommitStrip?: CommitStripView;
   onLivingPlanCommitAction?: (action: CommitStripAction) => void;
+=======
+  /**
+   * V31-17 Delivered publish handoff materials (production path after delivery).
+   * When set, panel renders under Artifact canvas in works pane.
+   */
+  publishHandoffView?: PublishHandoffPanelView | null;
+  selfReportPrompt?: string | null;
+  selfReportChips?: readonly OutcomeSelfReportChipSignal[];
+  onPublishHandoffCopy?: (role: string, value: string) => void;
+  onPublishHandoffDownloadZip?: (fileName: string) => void | Promise<void>;
+  onPublishHandoffRecordPublished?: (input: {
+    contentPackageId: string;
+    contentPackageRevision: number;
+    platformUrl?: string;
+    note?: string;
+  }) => void | Promise<void>;
+  onSelfReportChip?: (
+    signal: OutcomeSelfReportChipSignal,
+  ) => void | Promise<void>;
+  onSelfReportIgnore?: () => void | Promise<void>;
+>>>>>>> lane/v31-17
   className?: string;
 };
 
@@ -60,9 +90,20 @@ export function AgentWorkstream({
   onArtifactViewRevision,
   worksSlot,
   processSlot,
+<<<<<<< HEAD
   livingPlanCompact = false,
   livingPlanCommitStrip,
   onLivingPlanCommitAction,
+=======
+  publishHandoffView,
+  selfReportPrompt,
+  selfReportChips,
+  onPublishHandoffCopy,
+  onPublishHandoffDownloadZip,
+  onPublishHandoffRecordPublished,
+  onSelfReportChip,
+  onSelfReportIgnore,
+>>>>>>> lane/v31-17
   className,
 }: AgentWorkstreamProps) {
   const layout = resolveMobileWorkstreamLayout({
@@ -75,11 +116,29 @@ export function AgentWorkstream({
   const planRevisions = projectActivePlanRevisions(state);
   const interrupts = state.pendingInterrupts;
   const mobileWorksOpen = viewport === 'mobile' && layout.showWorks;
+  // deliveredKeys from semantic stream OR host-provided handoff view after
+  // composer session phase reaches delivered (production path).
+  const delivered =
+    state.deliveredKeys.size > 0 || Boolean(publishHandoffView);
+
+  const publishHandoffNode = publishHandoffView ? (
+    <PublishHandoffPanel
+      onCopyBlock={onPublishHandoffCopy}
+      onDownloadZip={onPublishHandoffDownloadZip}
+      onIgnoreSelfReport={onSelfReportIgnore}
+      onRecordPublished={onPublishHandoffRecordPublished}
+      onSelfReport={onSelfReportChip}
+      selfReportChips={selfReportChips}
+      selfReportPrompt={selfReportPrompt}
+      view={publishHandoffView}
+    />
+  ) : null;
 
   return (
     <div
       className={cn('meiye-agent-workstream flex flex-col gap-3', className)}
       data-connection={state.connection}
+      data-delivered={delivered ? 'true' : 'false'}
       data-mobile-pane={layout.activePane}
       data-testid="agent-workstream"
       data-viewport={viewport}
@@ -137,6 +196,7 @@ export function AgentWorkstream({
             onViewRevision={onArtifactViewRevision}
             viewport="desktop"
           />
+          {publishHandoffNode}
           {worksSlot}
         </div>
       ) : null}
@@ -148,6 +208,7 @@ export function AgentWorkstream({
           onViewRevision={onArtifactViewRevision}
           open
         >
+          {publishHandoffNode}
           {worksSlot}
         </ArtifactMobileSheet>
       ) : null}

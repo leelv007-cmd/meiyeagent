@@ -1310,4 +1310,14 @@ export interface OperationsWorkspaceState {
   contentPackages: ContentPackage[];
   creationEvents: CreationActivationEvent[];
   auditEvents: OperationsAuditEvent[];
+  /**
+   * V31-17 MobilePublishHandoff index (token → materials). Optional; absent on
+   * historical workspaces.
+   */
+  mobilePublishHandoffs?: import('@meiye/contracts').MobilePublishHandoff[];
+  /**
+   * V31-17 U2 self-report ask log (append-only). Optional; absent on historical
+   * workspaces.
+   */
+  selfReportAskEvents?: import('@meiye/contracts').SelfReportAskEvent[];
 }
