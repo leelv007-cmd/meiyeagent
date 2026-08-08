@@ -109,17 +109,24 @@ export type AgentSemanticLiveSink = {
   publish(frame: AgentSemanticFrame): void | Promise<void>;
 };
 
+export type AgentSemanticLiveSource = {
+  subscribe(input: {
+    threadId: string;
+    signal?: AbortSignal;
+  }): AsyncIterable<AgentSemanticFrame>;
+};
+
 export class AgentSemanticEventProjector {
   constructor(
     private readonly store: AgentSemanticEventStore,
-    private readonly live: AgentSemanticLiveSink = { publish: () => undefined },
+    private readonly live: AgentSemanticLiveSink = { publish: () => undefined }
   ) {}
 
   /**
    * Project one outbox candidate: assign streamOffset, persist, fan-out wire frame.
    */
   async project(
-    candidate: SemanticEventCandidate,
+    candidate: SemanticEventCandidate
   ): Promise<ProjectedSemanticEvent> {
     const projected = await this.store.appendProjected(candidate);
     if (!projected.replayed) {
@@ -261,15 +268,29 @@ export class AgentSemanticEventProjector {
   async *streamReplay(input: {
     session: WorkbenchSessionProjection;
     lastEventId?: string;
+    lastStreamOffset?: string;
     signal?: AbortSignal;
   }): AsyncGenerator<AgentSemanticFrame> {
+    const liveSource = isLiveSource(this.live) ? this.live : null;
+    // Register before the durable read so an event committed during the query
+    // is either in the backlog, the live queue, or both (deduped below).
+    const liveFrames = liveSource?.subscribe({
+      threadId: input.session.threadId,
+      signal: input.signal,
+    });
     const events = await this.store.listByThread({
       resourceId: input.session.resourceId,
       threadId: input.session.threadId,
-      afterEventId: input.lastEventId,
+      ...(input.lastEventId
+        ? { afterEventId: input.lastEventId }
+        : input.lastStreamOffset
+          ? { afterStreamOffset: BigInt(input.lastStreamOffset) }
+          : {}),
     });
+    const seenEventIds = new Set<string>();
     for (const event of events) {
       if (input.signal?.aborted) return;
+      seenEventIds.add(event.eventId);
       yield semanticFrameFromDomain(event);
     }
     if (input.signal?.aborted) return;
@@ -278,7 +299,31 @@ export class AgentSemanticEventProjector {
       session: input.session,
     });
     yield stateFrame(snapshot);
+
+    if (!liveFrames) return;
+    for await (const frame of liveFrames) {
+      if (input.signal?.aborted) return;
+      if (
+        frame.event === 'agent.semantic' &&
+        seenEventIds.has(frame.data.eventId)
+      ) {
+        continue;
+      }
+      if (frame.event === 'agent.semantic') {
+        seenEventIds.add(frame.data.eventId);
+      }
+      yield frame;
+    }
   }
+}
+
+function isLiveSource(
+  value: AgentSemanticLiveSink
+): value is AgentSemanticLiveSink & AgentSemanticLiveSource {
+  return (
+    'subscribe' in value &&
+    typeof (value as { subscribe?: unknown }).subscribe === 'function'
+  );
 }
 
 /** Collect store write probes for constructive ephemeral checks. */
@@ -287,7 +332,7 @@ export type SemanticStoreWriteProbe = {
 };
 
 export function asWriteProbe(
-  store: AgentSemanticEventStore,
+  store: AgentSemanticEventStore
 ): SemanticStoreWriteProbe | null {
   if (
     typeof store === 'object' &&

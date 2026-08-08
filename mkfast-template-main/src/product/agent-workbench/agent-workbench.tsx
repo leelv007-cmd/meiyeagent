@@ -16,9 +16,11 @@ import { queryP1 } from '@/p1/client';
 import type { OutcomeSelfReportChipSignal } from '@meiye/contracts';
 
 import {
+  applyLiveSemanticEvent,
   reconnectAgentWorkbench,
   type AgentReplayLoader,
 } from './agent-event-client';
+import type { AgentLiveSubscriber } from './agent-event-transport';
 import {
   getAgentWorkbenchHostStore,
   useAgentWorkbenchDispatch,
@@ -59,6 +61,8 @@ export type AgentWorkbenchHostProps = {
   loadSession?: AgentWorkbenchSessionLoader;
   /** Optional semantic replay package loader (snapshot+events). */
   loadReplay?: AgentReplayLoader;
+  /** Authenticated live semantic subscriber, resumed from replay cursors. */
+  subscribeLive?: AgentLiveSubscriber;
   /**
    * V31-24: Idle first-screen Goal + proactive suggestions loader.
    * Only used when WorkbenchSessionProjection is Idle.
@@ -92,7 +96,7 @@ export type AgentWorkbenchHostProps = {
     note?: string;
   }) => void | Promise<void>;
   onSelfReportChip?: (
-    signal: OutcomeSelfReportChipSignal,
+    signal: OutcomeSelfReportChipSignal
   ) => void | Promise<void>;
   onSelfReportIgnore?: () => void | Promise<void>;
   className?: string;
@@ -112,6 +116,7 @@ export function AgentWorkbenchHost({
   enableSessionRestore = true,
   loadSession = defaultLoadSession,
   loadReplay,
+  subscribeLive,
   loadIdleGoalProactive,
   enableIdleGoalProactive = true,
   onAcceptProactiveSuggestion,
@@ -208,6 +213,47 @@ export function AgentWorkbenchHost({
       }
     })();
   }, [enableSessionRestore, explicitThreadId, loadReplay, loadSession, store]);
+
+  useEffect(() => {
+    const threadId = state.session?.threadId;
+    if (
+      !subscribeLive ||
+      !loadReplay ||
+      !threadId ||
+      state.connection !== 'live'
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    const cursor = store.getState();
+    void subscribeLive({
+      threadId,
+      lastEventId: cursor.lastEventId,
+      lastStreamOffset: cursor.lastStreamOffset,
+      signal: controller.signal,
+      onEvent: async (event) => {
+        const applied = applyLiveSemanticEvent(store, event);
+        if (applied.ok || controller.signal.aborted) return;
+        await reconnectAgentWorkbench({
+          store,
+          loadReplay,
+          resourceId: store.getState().session?.resourceId,
+          threadId,
+        });
+      },
+    }).catch(() => {
+      if (!controller.signal.aborted) {
+        store.dispatch({ type: 'set_connection', connection: 'offline' });
+      }
+    });
+    return () => controller.abort();
+  }, [
+    loadReplay,
+    state.connection,
+    state.session?.threadId,
+    store,
+    subscribeLive,
+  ]);
 
   const rootMode = workbenchRootMode({
     session: state.session,

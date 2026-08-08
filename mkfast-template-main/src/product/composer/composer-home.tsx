@@ -215,6 +215,8 @@ import {
 import { useWorkbenchViewportWidth } from './use-workbench-viewport-width';
 import {
   AgentWorkbenchHost,
+  loadAgentWorkbenchReplay,
+  subscribeAgentSemanticEvents,
   usePublishHandoff,
 } from '@/product/agent-workbench';
 import { LensRadiogroup } from './lens-radiogroup';
@@ -693,6 +695,11 @@ export function ComposerHome({
   const [session, setSession] = useState<ComposerSession>(() =>
     createComposerSession(sessionIdRef.current)
   );
+  const [agentBinding, setAgentBinding] = useState<{
+    runId: string;
+    threadId: string;
+  } | null>(null);
+  const activeAgentThreadId = agentBinding?.threadId ?? initialThreadId ?? null;
   const notePlanCanonicalPackageRef = useRef<PublicContentPackage | null>(null);
   const notePlanHydratedPackageRef = useRef<string | null>(null);
   const notePlanOutlineIntentKeysRef = useRef(new Map<string, string>());
@@ -2091,6 +2098,7 @@ export function ComposerHome({
       : undefined;
   const { attemptSubmit, createWork, creditAdmissionPending, runCreate } =
     useComposerRun({
+      agentThreadId: activeAgentThreadId,
       activeViralAdaptSource,
       armedQuoteIdRef,
       briefContextRevisionRef,
@@ -2115,6 +2123,7 @@ export function ComposerHome({
         creationMode === 'customized' ? coldCards[0]?.title : undefined,
       lensState,
       missingGrounding: creationMode === 'customized' ? missingGrounding : [],
+      onAgentBinding: setAgentBinding,
       productGroundingReady:
         creationMode === 'free' ||
         (Boolean(product.state) && !product.loading && !product.error),
@@ -3339,7 +3348,8 @@ export function ComposerHome({
                * keeps Work inline projection (legacy conversation stream). */}
               <AgentWorkbenchHost
                 explicitTaskId={initialTaskId ?? null}
-                explicitThreadId={initialThreadId ?? null}
+                explicitThreadId={activeAgentThreadId}
+                loadReplay={loadAgentWorkbenchReplay}
                 onPublishHandoffCopy={publishHandoff.onPublishHandoffCopy}
                 onPublishHandoffDownloadZip={
                   publishHandoff.onPublishHandoffDownloadZip
@@ -3352,6 +3362,7 @@ export function ComposerHome({
                 publishHandoffView={publishHandoff.publishHandoffView}
                 selfReportChips={publishHandoff.selfReportChips}
                 selfReportPrompt={publishHandoff.selfReportPrompt}
+                subscribeLive={subscribeAgentSemanticEvents}
                 processSlot={
                   <>
                     {/* Layer ① — the conversation. Stage announcements, the 引导补问卡 and the
@@ -3804,9 +3815,7 @@ export function ComposerHome({
                       : null
                   }
                   disabled={
-                    createWork.isPending ||
-                    creditAdmissionPending ||
-                    lensState.phase === 'frozen'
+                    createWork.isPending || creditAdmissionPending
                   }
                   submitDisabled={
                     // D-C2: no lens means `canSubmit` will refuse, so the

@@ -53,13 +53,7 @@ test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));
 
-/**
- * KNOWN GAP (2026-08-09): the workbench plan/interrupt surfaces do not render
- * deterministically on the Composer journey — see
- * docs/tickets/v3.1/V31-28-composer-plan-surface-integration.md. This test is
- * the acceptance contract for V31-28; do not weaken its assertions.
- */
-  test.fixme('§37.4-E plan stale shows reconfirm surface (not silent continue)', async ({
+  test('§37.4-E plan stale shows reconfirm surface (not silent continue)', async ({
     page,
     request,
   }) => {

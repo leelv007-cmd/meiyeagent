@@ -4,6 +4,8 @@ import { CORE_ROUTE_AUTH_CLASSES } from './route-table.js';
 
 test('every Core route declares its auth class', () => {
   assert.deepEqual(Object.fromEntries(CORE_ROUTE_AUTH_CLASSES), {
+    'agent-semantic-events': 'service-token',
+    'agent-semantic-replay': 'service-token',
     assets: 'service-token',
     capabilities: 'public',
     'canvas-text-stream': 'service-token',
@@ -41,5 +43,5 @@ test('every Core route declares its auth class', () => {
     'workflow-events': 'service-token',
     'assistant-stream': 'service-token',
   });
-  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 36);
+  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 38);
 });

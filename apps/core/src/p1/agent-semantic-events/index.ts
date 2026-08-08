@@ -6,3 +6,4 @@ export * from './snapshot-replay.js';
 export * from './ag-ui-adapter.js';
 export * from './agent-semantic-frames.js';
 export * from './shadow-workflow-event-reader.js';
+export * from './semantic-live-hub.js';

@@ -62,6 +62,12 @@ import {
   type ComposerDestinationMappingPort,
 } from './p1/execution-spine/composer-destination-mapper.js';
 import type { CreationSubmissionCoordinator } from './p1/execution-spine/submission-coordinator.js';
+import {
+  encodeAgentSemanticSseFrame,
+  type AgentSemanticFrame,
+  type ReplayPackage,
+  type WorkbenchSessionProjection,
+} from './p1/agent-semantic-events/index.js';
 import type { PendingActionsService } from './p1/pending-actions.js';
 import {
   encodeWorkflowSseFrame,
@@ -147,6 +153,23 @@ interface CoreServerDependencies {
   composerDestinationMapper?: ComposerDestinationMappingPort;
   composerSubmission?: {
     coordinator: Pick<CreationSubmissionCoordinator, 'submit'>;
+  };
+  /** Workspace-authenticated semantic replay/read seam (V31-28). */
+  agentSemanticEvents?: {
+    resolveSession(input: {
+      workspaceId: string;
+      threadId: string;
+    }): Promise<WorkbenchSessionProjection | null>;
+    loadReplay(input: {
+      session: WorkbenchSessionProjection;
+      clientLastEventId?: string;
+    }): Promise<ReplayPackage>;
+    streamReplay(input: {
+      session: WorkbenchSessionProjection;
+      lastEventId?: string;
+      lastStreamOffset?: string;
+      signal?: AbortSignal;
+    }): AsyncIterable<AgentSemanticFrame>;
   };
   contentPackageReader?: {
     read(context: OperationContext, packageId: string): Promise<ContentPackage>;
@@ -467,6 +490,36 @@ function workspaceComposerContentPackageRoute(pathname: string) {
   } catch {
     return null;
   }
+}
+
+function workspaceAgentSemanticRoute(pathname: string) {
+  const match = pathname.match(
+    /^\/v1\/workspaces\/([^/]+)\/p1\/agent-threads\/([^/]+)\/(replay|events)$/
+  );
+  if (!match?.[1] || !match[2] || !match[3]) return null;
+  try {
+    return {
+      workspaceId: decodeURIComponent(match[1]),
+      threadId: decodeURIComponent(match[2]),
+      kind: match[3] as 'replay' | 'events',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function semanticCursor(value: string | null | undefined): string | undefined {
+  const cursor = value?.trim();
+  if (!cursor || cursor.length > 200) return undefined;
+  return cursor;
+}
+
+function semanticStreamOffset(
+  value: string | null | undefined
+): string | undefined {
+  const cursor = value?.trim();
+  if (!cursor || !/^(0|[1-9]\d*)$/u.test(cursor)) return undefined;
+  return cursor;
 }
 
 function diagnosticIdentity(
@@ -809,6 +862,7 @@ export function createCoreServer({
   operationsService,
   composerDestinationMapper,
   composerSubmission,
+  agentSemanticEvents,
   contentPackageReader,
   e2eCreditDetailFixture,
   e2eUserSelectedSkillFixture,
@@ -1585,6 +1639,112 @@ export function createCoreServer({
             status: 503,
           }
         );
+        return;
+      },
+    ]);
+
+    const agentSemanticRoute = workspaceAgentSemanticRoute(url.pathname);
+    routes.add('agent-semantic-replay', [
+      'GET',
+      () =>
+        Boolean(agentSemanticEvents && agentSemanticRoute?.kind === 'replay'),
+      'service-token',
+      async () => {
+        await handleErrors(
+          async () => {
+            const context = p1Identity(
+              request,
+              agentSemanticRoute!.workspaceId,
+              requestCorrelationId
+            );
+            authorizeP1Request(context, 'query', 'agent-session', 'get_thread');
+            const session = await agentSemanticEvents!.resolveSession({
+              workspaceId: context.workspaceId,
+              threadId: agentSemanticRoute!.threadId,
+            });
+            if (!session) {
+              throw new DomainError(
+                'NOT_FOUND',
+                'Agent Thread was not found in this workspace.',
+                404
+              );
+            }
+            const clientLastEventId = semanticCursor(
+              url.searchParams.get('lastEventId')
+            );
+            const replay = await agentSemanticEvents!.loadReplay({
+              session,
+              ...(clientLastEventId ? { clientLastEventId } : {}),
+            });
+            sendJson(response, 200, replay, requestCorrelationId);
+          },
+          {
+            code: 'AGENT_SEMANTIC_REPLAY_UNAVAILABLE',
+            message: 'Agent Thread replay is unavailable.',
+            status: 503,
+          }
+        );
+        return;
+      },
+    ]);
+
+    routes.add('agent-semantic-events', [
+      'GET',
+      () =>
+        Boolean(agentSemanticEvents && agentSemanticRoute?.kind === 'events'),
+      'service-token',
+      async () => {
+        await streamSse({
+          disconnectMessage: 'Agent semantic stream disconnected.',
+          errorFallback: {
+            code: 'AGENT_SEMANTIC_EVENTS_UNAVAILABLE',
+            message: 'Agent semantic events are unavailable.',
+            status: 503,
+          },
+          heartbeatMs: workflowHeartbeatMs,
+          observeRequestClose: true,
+          protocol: 'agent-semantic-events-v1',
+          request,
+          requestCorrelationId,
+          response,
+          source: async ({ ready, signal, write }) => {
+            const context = p1Identity(
+              request,
+              agentSemanticRoute!.workspaceId,
+              requestCorrelationId
+            );
+            authorizeP1Request(context, 'query', 'agent-session', 'get_thread');
+            const session = await agentSemanticEvents!.resolveSession({
+              workspaceId: context.workspaceId,
+              threadId: agentSemanticRoute!.threadId,
+            });
+            if (!session) {
+              throw new DomainError(
+                'NOT_FOUND',
+                'Agent Thread was not found in this workspace.',
+                404
+              );
+            }
+            const lastEventId = semanticCursor(
+              typeof request.headers['last-event-id'] === 'string'
+                ? request.headers['last-event-id']
+                : url.searchParams.get('lastEventId')
+            );
+            const lastStreamOffset = semanticStreamOffset(
+              url.searchParams.get('lastStreamOffset')
+            );
+            await ready();
+            for await (const frame of agentSemanticEvents!.streamReplay({
+              session,
+              ...(lastEventId ? { lastEventId } : {}),
+              ...(!lastEventId && lastStreamOffset ? { lastStreamOffset } : {}),
+              signal,
+            })) {
+              if (signal.aborted) break;
+              await write(encodeAgentSemanticSseFrame(frame));
+            }
+          },
+        });
         return;
       },
     ]);

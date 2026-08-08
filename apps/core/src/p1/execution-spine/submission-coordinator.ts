@@ -121,6 +121,19 @@ export interface CreationSubmissionIdFactory {
 	now(): string;
 }
 
+export type ComposerAgentBinding = {
+	threadId: string;
+	runId: string;
+};
+
+/** Composer → Agent Session/Plan seam. Web never projects plan events. */
+export interface ComposerSubmissionAgentPlanningPort {
+	prepare(input: {
+		continuationThreadId?: string;
+		submission: CreationSubmissionRecord;
+	}): Promise<ComposerAgentBinding>;
+}
+
 export interface CreationSubmissionAdmissionPort {
 	/**
 	 * Validates server-owned facts before the Coordinator claims its idempotency
@@ -184,6 +197,7 @@ export class CreationSubmissionCoordinator {
 			ProductBillingApplicationPort,
 			"buildQuote" | "confirm" | "getQuote"
 		>,
+		private readonly agentPlanning?: ComposerSubmissionAgentPlanningPort
 	) {}
 
 	async prepareResultTextSelection(input: {
@@ -208,8 +222,12 @@ export class CreationSubmissionCoordinator {
 			throw new CreationSubmissionConflictError();
 		}
 		if (receipt.kind === "existing") {
+			const agentBinding = await this.prepareAgentPlan(
+				receipt.submission,
+				request.agentThreadId
+			);
 			await this.startHarness(receipt.submission);
-			return submissionResponse(receipt.submission, true);
+			return submissionResponse(receipt.submission, true, agentBinding);
 		}
 
 		const admitted = await this.admission.admit(request);
@@ -238,8 +256,10 @@ export class CreationSubmissionCoordinator {
 			route: admitted.route,
 			rights: admitted.rights,
 		};
+		const { agentThreadId: _agentThreadId, ...executionRequest } =
+			serverBoundRequest;
 		const command = creationSubmissionCommandSchema.parse({
-			...serverBoundRequest,
+			...executionRequest,
 			signedSubmission: pickComposerSubmissionSignedFields(request),
 			taskId: admitted.taskId,
 			workId: this.ids.createId("work"),
@@ -268,11 +288,27 @@ export class CreationSubmissionCoordinator {
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();
 		}
+		const agentBinding = await this.prepareAgentPlan(
+			claimed.submission,
+			request.agentThreadId
+		);
 		await this.startHarness(claimed.submission);
 		return submissionResponse(
 			claimed.submission,
 			claimed.kind === "existing",
+			agentBinding
 		);
+	}
+
+	private prepareAgentPlan(
+		submission: CreationSubmissionRecord,
+		continuationThreadId?: string
+	): Promise<ComposerAgentBinding | undefined> {
+		if (!this.agentPlanning) return Promise.resolve(undefined);
+		return this.agentPlanning.prepare({
+			...(continuationThreadId ? { continuationThreadId } : {}),
+			submission,
+		});
 	}
 
 	async submitResultAdjustment(input: {
@@ -713,6 +749,7 @@ function receiptPayload(request: ComposerSubmissionRequest) {
 	// Fingerprint only the canonical browser-owned request. Workspace/key are
 	// receipt lookup roots; mutable admission owns the omitted server fields.
 	const {
+		agentThreadId: _agentThreadId,
 		actorId: _actorId,
 		contentModules: _contentModules,
 		deliverables: _deliverables,
@@ -730,9 +767,13 @@ function receiptPayload(request: ComposerSubmissionRequest) {
 function submissionResponse(
 	submission: CreationSubmissionRecord,
 	replayed: boolean,
+	agentBinding?: ComposerAgentBinding
 ) {
 	return {
 		contentPackage: submission.contentPackage,
+		...(agentBinding
+			? { threadId: agentBinding.threadId, runId: agentBinding.runId }
+			: {}),
 		replayed,
 		snapshot: {
 			id: submission.snapshot.id,

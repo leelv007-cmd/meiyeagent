@@ -64,6 +64,15 @@ function wire(overrides: {
   });
 }
 
+function livingPlanPayload(planId: string) {
+  return {
+    planId,
+    revision: 1,
+    goal: { summary: 'Thread-scoped plan' },
+    deliverables: [{ kind: 'note', quantity: 1 }],
+  };
+}
+
 function empty(
   overrides: Partial<AgentWorkbenchClientState> = {}
 ): AgentWorkbenchClientState {
@@ -152,6 +161,81 @@ test('foreign thread events are ignored', () => {
   assert.equal(result.foreign, true);
   assert.equal(projectVisibleNarratives(result.state).length, 0);
   assert.equal(result.state.lastEventId, null);
+});
+
+test('set_session atomically clears plan and interrupt projections across Threads', () => {
+  let state = empty({ session: session({ threadId: 'thread-a' }) });
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_events_batch',
+    events: [
+      wire({
+        eventId: 'plan-a',
+        streamOffset: '1',
+        threadId: 'thread-a',
+        eventType: 'plan.created',
+        payload: livingPlanPayload('plan-a'),
+      }),
+      wire({
+        eventId: 'interrupt-a',
+        streamOffset: '2',
+        threadId: 'thread-a',
+        eventType: 'interrupt.requested',
+        payload: {
+          interruptId: 'interrupt-a',
+          interruptType: 'execution_confirm',
+          description: '确认方案',
+          revision: 1,
+        },
+      }),
+    ],
+  }).state;
+  assert.equal(state.activePlanId, 'plan-a');
+  assert.equal(state.pendingInterrupts.length, 1);
+
+  state = reduceAgentWorkbench(state, {
+    type: 'set_session',
+    session: session({ threadId: 'thread-b' }),
+  }).state;
+  assert.deepEqual(state.plans, {});
+  assert.equal(state.activePlanId, null);
+  assert.deepEqual(state.pendingInterrupts, []);
+});
+
+test('set_session clears plan and interrupts on Idle but preserves same-Thread refresh', () => {
+  const projectedPlan = {
+    'plan-a': {
+      planId: 'plan-a',
+      latestRevision: 1,
+      revisions: [],
+    },
+  };
+  const interrupt = {
+    interruptId: 'interrupt-a',
+    interruptType: 'execution_confirm',
+    description: '确认方案',
+    revision: 1,
+    streamOffset: '2',
+  };
+  let state = empty({
+    session: session({ threadId: 'thread-a' }),
+    plans: projectedPlan,
+    activePlanId: 'plan-a',
+    pendingInterrupts: [interrupt],
+  });
+  state = reduceAgentWorkbench(state, {
+    type: 'set_session',
+    session: session({ threadId: 'thread-a', sessionRevision: 2 }),
+  }).state;
+  assert.equal(state.plans, projectedPlan);
+  assert.equal(state.pendingInterrupts[0], interrupt);
+
+  state = reduceAgentWorkbench(state, {
+    type: 'set_session',
+    session: null,
+  }).state;
+  assert.deepEqual(state.plans, {});
+  assert.equal(state.activePlanId, null);
+  assert.deepEqual(state.pendingInterrupts, []);
 });
 
 test('empty activity.snapshot is not projected (card reduction)', () => {
@@ -765,9 +849,7 @@ test('V31-10: plan.created projects Living Plan revision history', () => {
         planId: 'plan-1',
         revision: 1,
         goal: { summary: '推奶油风美甲' },
-        deliverables: [
-          { kind: 'note', platform: '小红书', quantity: 6 },
-        ],
+        deliverables: [{ kind: 'note', platform: '小红书', quantity: 6 }],
         costDuration: { creditCost: 38, failureRefundsCredits: true },
       },
     }),
@@ -809,9 +891,7 @@ test('V31-10: plan.revised appends new revision; prior rows stay immutable', () 
           planId: 'plan-1',
           revision: 2,
           goal: { summary: '推奶油风美甲' },
-          deliverables: [
-            { kind: 'note', platform: '小红书', quantity: 4 },
-          ],
+          deliverables: [{ kind: 'note', platform: '小红书', quantity: 4 }],
           adjustmentSummary: '只做小红书，减到 4 页',
           costDuration: { creditCost: 24 },
         },

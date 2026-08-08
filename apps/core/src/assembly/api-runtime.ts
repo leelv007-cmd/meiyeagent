@@ -179,7 +179,10 @@ import {
 import { HarnessReleaseService } from '../p1/harness/harness-release.js';
 import {
   AgentSessionFoundationModule,
+  ComposerPlanSessionCoordinator,
   PostgresAgentSessionStore,
+  findActiveExitRun,
+  projectThreadToSession,
   resolveMakeSteeringGate,
 } from '../p1/agent-session/index.js';
 import {
@@ -210,6 +213,7 @@ import {
 } from '../p1/supply-registry/index.js';
 import {
   AgentSemanticEventProjector,
+  AgentSemanticLiveHub,
   PostgresAgentSemanticEventStore,
   resolveAgentSemanticEventAdapterEnabled,
   ShadowSemanticWorkflowEventReader,
@@ -302,8 +306,10 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     adminConfigRuntime,
     aiStreamingRunner,
     sessionAgentKernel,
+    agentSessionStore,
     sessionAgentHarness,
     sessionRetrievalExperiencePort,
+    marketingPlanStore,
     planCompiler,
     executionPlanAdmissionService,
     interruptStore,
@@ -398,6 +404,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
   let interruptProtocolService: InterruptProtocolService | undefined;
   let composerDestinationMapper: ComposerDestinationMappingPort | undefined;
   let composerSubmissionCoordinator: CreationSubmissionCoordinator | undefined;
+  let agentSemanticEventProjector: AgentSemanticEventProjector | undefined;
   // Pending-actions is an unconditional platform service (Z2-WIRING / #94 handoff).
   // Harness questions need the harness_runtime schema; approvals come from operations.
   const pendingActionsQuestionStore = harnessInteractionStore;
@@ -1472,6 +1479,23 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       },
       harnessInteractions
     );
+    // V31-28: one projector instance owns durable writes, replay, and live SSE.
+    const agentSemanticEventStore = new PostgresAgentSemanticEventStore(pool);
+    const agentSemanticLiveHub = new AgentSemanticLiveHub();
+    const semanticProjectorForHarness = new AgentSemanticEventProjector(
+      agentSemanticEventStore,
+      agentSemanticLiveHub
+    );
+    agentSemanticEventProjector = semanticProjectorForHarness;
+    planCompiler.bindSemanticEventProjector(semanticProjectorForHarness);
+    const composerPlanSession = new ComposerPlanSessionCoordinator(
+      agentSessionStore,
+      marketingPlanStore,
+      sessionAgentHarness ?? {
+        compilePlan: (input) => planCompiler.compile(input),
+        adjustPlan: (input) => planCompiler.adjust(input),
+      }
+    );
     composerSubmissionCoordinator = new CreationSubmissionCoordinator(
       creationSubmissionStore,
       new CreationStagePort(harnessService),
@@ -1502,7 +1526,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         ),
         sourcePackages: sourceContentPackageAdmissionReader,
       }),
-      productQuoteService
+      productQuoteService,
+      composerPlanSession
     );
     const pendingStartCoordinator = composerSubmissionCoordinator;
     await runIfPostgresSchemaStable(pool, async () => {
@@ -1535,16 +1560,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     harnessPendingStartRecoveryInterval.unref();
     // V31-03: shadow dual-write of workflow progress/token → semantic projector.
     // Gated by agent_semantic_event_adapter_v1 (default off = zero projection writes).
-    const agentSemanticEventStore = new PostgresAgentSemanticEventStore(pool);
-    const agentSemanticEventProjector = new AgentSemanticEventProjector(
-      agentSemanticEventStore,
-    );
-    // V31-10: PlanCompiler → plan.created/plan.revised after append-only revision.
-    // Not gated by shadow flag — Living Plan is first-class Workstream truth once compiled.
-    planCompiler.bindSemanticEventProjector(agentSemanticEventProjector);
     // V31-14 / V31-15 producer: note page progress → artifact.revised via projector.
     harnessStages.note.artifactProgressEmitter = {
-      project: (candidate) => agentSemanticEventProjector.project(candidate),
+      project: (candidate) => semanticProjectorForHarness.project(candidate),
     };
     // V31-16: page-unit boundary drains steer queue (follow_up also at last page /
     // terminal success via registerHarnessDbosWorkflow.makeSteeringBoundary).
@@ -1561,7 +1579,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     harnessWorkflowEventSource = new HarnessWorkflowEventSource(
       new ShadowSemanticWorkflowEventReader(
         harnessEventReader,
-        agentSemanticEventProjector,
+        semanticProjectorForHarness,
         () => resolveAgentSemanticEventAdapterEnabled(adminConfigRepository),
       ),
     );
@@ -1721,6 +1739,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     ? new E2EUserSelectedSkillEvidenceReader(pool)
     : undefined;
 
+  const semanticProjector = agentSemanticEventProjector;
   const server = createCoreServer({
     aiStreamingRunner,
     executionModeGate: streamingModeGate,
@@ -1728,6 +1747,24 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     composerDestinationMapper,
     composerSubmission: composerSubmissionCoordinator
       ? { coordinator: composerSubmissionCoordinator }
+      : undefined,
+    agentSemanticEvents: semanticProjector
+      ? {
+          async resolveSession({ workspaceId, threadId }) {
+            const thread = await agentSessionStore.getThread({
+              resourceId: workspaceId,
+              threadId,
+            });
+            if (!thread) return null;
+            const activeRun = await findActiveExitRun(agentSessionStore, {
+              resourceId: workspaceId,
+              threadId,
+            });
+            return projectThreadToSession(thread, activeRun);
+          },
+          loadReplay: (input) => semanticProjector.loadReplay(input),
+          streamReplay: (input) => semanticProjector.streamReplay(input),
+        }
       : undefined,
     contentPackageReader: {
       read(context, packageId) {
