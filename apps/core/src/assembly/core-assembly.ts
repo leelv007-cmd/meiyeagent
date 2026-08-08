@@ -23,6 +23,7 @@ import {
   PostgresAdminConfigRepository,
 } from '../p1/admin-config/index.js';
 import { PostgresAgentSessionStore } from '../p1/agent-session/index.js';
+import { PostgresAgentSemanticEventStore } from '../p1/agent-semantic-events/index.js';
 import { createPermissionAuthorizer } from '../p1/capability-permission/index.js';
 import { CloudflareInventoryAdapter } from '../p1/cloudflare-read/index.js';
 import { CreditBillingService } from '../p1/credit-billing/credit-billing-service.js';
@@ -860,8 +861,9 @@ export async function assembleCoreGraph(
     tracerJobRepository,
     operationalTelemetryStore,
     notifier,
-    // Schema only until V31-03 wires a reader; no business write path uses it.
+    // Agent session + semantic event tables (V31-02/03). Shadow: no Task/billing/UI write path.
     new PostgresAgentSessionStore(pool),
+    new PostgresAgentSemanticEventStore(pool),
   ]);
   await ensureCreditPlanCatalogDefaults(adminConfigRepository);
   await migrateCreditPlanCatalogCurrencyToHkd(adminConfigRepository);

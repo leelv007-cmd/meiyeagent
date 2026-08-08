@@ -24,6 +24,7 @@ import {
   type CloudflareResourceMapping,
   type CloudflareSelfProbeResult,
 } from '../cloudflare-read/index.js';
+import { AGENT_SEMANTIC_EVENT_ADAPTER_FLAG } from '../agent-semantic-events/semantic-event-projector.js';
 import {
   AGENT_MEMORY_FLAGS,
   AGENT_MEMORY_KILL_SWITCH_KEYS,
@@ -601,6 +602,14 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     scope: 'global',
     description: 'Media execution mode recorded by platform administration.',
     valueSchema: z.enum(['disabled', 'ark', 'tuzi', 'ark,tuzi']),
+  },
+  // V31-03 / V3.1 §41 batch 1: semantic event AG-UI adapter flag (spec-A).
+  {
+    key: AGENT_SEMANTIC_EVENT_ADAPTER_FLAG,
+    scope: 'global',
+    description:
+      'Feature flag agent_semantic_event_adapter_v1 — default off when unset. When true, hot-read enables shadow dual-write of workflow progress/token into AgentSemanticEventProjector; when false/unset, zero projector writes and existing workflow SSE is unchanged.',
+    valueSchema: z.boolean(),
   },
   // V31-18 / V3.1 §41: Memory platform feature flags + kill switches (spec-E §14).
   {

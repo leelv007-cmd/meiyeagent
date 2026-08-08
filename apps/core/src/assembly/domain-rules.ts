@@ -15,6 +15,7 @@ import {
   HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
   HARNESS_WOZ_RECIPE_CONFIG_KEY,
 } from '../p1/admin-config/index.js';
+import { AGENT_SEMANTIC_EVENT_ADAPTER_FLAG } from '../p1/agent-semantic-events/semantic-event-projector.js';
 import {
   AGENT_MEMORY_FLAGS,
   AGENT_MEMORY_KILL_SWITCH_KEYS,
@@ -49,6 +50,8 @@ const SHARED_HOT_AND_WIRED_CONFIG_KEYS = [
   BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
   BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
   NOTE_STYLE_CONFIG_KEY,
+  // V31-03: Semantic event adapter flag (hot-read by shadow dual-write reader).
+  AGENT_SEMANTIC_EVENT_ADAPTER_FLAG,
   // V31-18: Memory platform flags + kill switches (hot-read by AgentMemoryPlatform).
   AGENT_MEMORY_FLAGS.read,
   AGENT_MEMORY_FLAGS.candidateWrite,
