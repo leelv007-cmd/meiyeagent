@@ -9,6 +9,26 @@
 
 商家在 /dashboard Composer 提交 image_text 定制创作后，Living Plan（agent-living-plan 五节文档）、commit strip（agent-commit-strip）、plan diff 与 typed interrupt 的刷新持久面必须**确定性**出现在旅程里。当前 Core 侧事件与 UI 组件都存在（V31-10 组件、V31-05 AgentWorkbenchHost 已挂在 composer stream 槽），但真实浏览器旅程中这些面不出现（跑十余轮仅历史上偶发出现过一次），商家看得到叙述/进度/方向问答/生成流，却看不到计划文档与确认条。
 
+## 诊断结论（2026-08-09 codex CLI 四问取证＋主控亲验，取代下方旧 triage 假设）
+
+**不是时序竞态（置信 0.98）——是三段生产接线从未存在**（主控已逐条亲验）：
+
+1. **Core 生产者缺口（0.99）**：Composer submission 编排从不调用 Session Harness / PlanCompiler，该路径根本不产生 `plan.created/plan.revised` 语义事件（compilePlan/adjustPlan 只有 service 定义，composer 侧零调用者）。
+2. **Thread 绑定缺口（0.99）**：提交响应未携带/未回写权威 threadId/runId，AgentWorkbenchHost 会话投影不会绑定到新 run 的 thread。
+3. **语义传输缺口（0.99）**：`applyLiveSemanticEvent` 除 index 转出口外零生产调用者；loadReplay/streamReplay 未接鉴权 HTTP/SSE seam，Composer Host 未注入生产 loadReplay 与 live subscriber。
+4. **跨 Thread 状态不隔离（0.90，独立真缺陷）**：reducer `set_session` 仅替换 session 不清 `plans/activePlanId`（agent-event-reducer.ts）；单例 store 下旧投影可残留误显——这也是历史「偶发绿一次」的最可能解释（置信 0.72）。
+
+## 实施范围（按诊断四项）
+
+1. Core：Composer submission 边界幂等创建/复用 Agent Thread+Run 并接入 Session Harness/PlanCompiler，产出真实 plan 语义事件（禁止 web 伪造 plan 事件）。
+2. 提交响应携带权威 threadId/runId；web 成功后更新 Workbench 绑定或失效重取 get_workbench_session。
+3. 为 loadReplay/streamReplay 接鉴权 HTTP/SSE 生产 seam；Composer Host 注入生产 loadReplay + live subscriber，从 snapshot 的 lastEventId/lastStreamOffset 续传。
+4. Thread 变化/回 Idle 时原子清空计划与中断投影（set_session 语义修正）。
+
+Living Plan 组件与 plan reducer 主逻辑无需重写。诊断打点现场保留在 lane-28 worktree（美业内容2-lane-28，spec 已解 fixme＋网络/宿主打点＋afterAll 暂移；PG 证据库 meiye_lane28），实施 lane 可直接取用。
+
+**排期约束**：与 V31-27（steering 前台）语义相邻（同触 composer-home / workbench 会话面），按语义锁纪律串行——V31-27 合入后再开工本票。
+
 ## 2026-08-09 triage 证据（merge controller，全程留存）
 
 - 提交链已修通：image_text 无 case_image 源时 Core 400 fail-closed（`INVALID_STATE: Required source slot case_image`）——spec 已补 `seedComposerInlineAuthorize` 种子；种子后 run 正常起（叙述→创作进度→两种图文方向问答→「正在写第一版…」流式）。
