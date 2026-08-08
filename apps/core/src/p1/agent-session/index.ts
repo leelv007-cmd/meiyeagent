@@ -31,3 +31,9 @@ export * from './memory-plan-store.js';
 export * from './postgres-plan-store.js';
 export * from './plan-compiler.js';
 export * from './plan-compiler-production-ports.js';
+// V31-11 ExecutionConfirmationRequest + PlanConfirmationDecision (U7/U8)
+export * from './execution-confirmation-store.js';
+export * from './execution-confirmation-projection.js';
+export * from './execution-confirmation-service.js';
+export * from './memory-execution-confirmation-store.js';
+export * from './postgres-execution-confirmation-store.js';

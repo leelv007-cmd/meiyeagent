@@ -90,6 +90,43 @@ export function ExecutionConfirmCard({
           {cost.notice}
         </p>
       ) : null}
+      {cost.heldNotice ? (
+        <p
+          className="text-sm text-foreground"
+          data-testid="execution-confirm-held"
+        >
+          {cost.heldNotice}
+        </p>
+      ) : null}
+      {cost.balanceNotice ? (
+        <p
+          className="meiye-type-aux"
+          data-testid="execution-confirm-balance"
+        >
+          {cost.balanceNotice}
+        </p>
+      ) : null}
+      {cost.refundNotice ? (
+        <p
+          className="meiye-type-aux"
+          data-testid="execution-confirm-refund"
+        >
+          {cost.refundNotice}
+        </p>
+      ) : null}
+      {cost.rightsNotice ? (
+        <p
+          className="meiye-type-aux"
+          data-testid="execution-confirm-rights"
+        >
+          {cost.rightsNotice}
+        </p>
+      ) : null}
+      {cost.factNotice ? (
+        <p className="meiye-type-aux" data-testid="execution-confirm-facts">
+          {cost.factNotice}
+        </p>
+      ) : null}
       {cost.billingNote ? (
         <p
           className="meiye-type-aux"

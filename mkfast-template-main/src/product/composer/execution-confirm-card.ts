@@ -291,7 +291,43 @@ export type ExecutionCostView = {
    */
   readonly short: boolean;
   readonly shortNotice: string | null;
+  /**
+   * V31-11 wait-period hold line: 「已预留 N 分」when pre-confirm reserve landed.
+   */
+  readonly heldNotice: string | null;
+  /**
+   * V31-11 / A5 dual-state refund line from the model failure-refund switch.
+   * 「失败自动退回」/「该模型失败不退回」.
+   */
+  readonly refundNotice: string | null;
+  /** Optional merchant-language rights line (read-only). */
+  readonly rightsNotice: string | null;
+  /** Optional merchant-language fact line (read-only). */
+  readonly factNotice: string | null;
+  /** Optional balance line: 「当前可用 N 分」. */
+  readonly balanceNotice: string | null;
 };
+
+/** A5 refund dual-state — same wording as Session billing-ux / credit chip. */
+export function projectRefundDualStateNotice(
+  failureRefundsCredits: boolean | null | undefined,
+): string | null {
+  if (typeof failureRefundsCredits !== 'boolean') return null;
+  return failureRefundsCredits ? '失败自动退回' : '该模型失败不退回';
+}
+
+export function projectHeldCreditsNotice(
+  reservedCredits: number | null | undefined,
+): string | null {
+  if (
+    typeof reservedCredits !== 'number' ||
+    !Number.isSafeInteger(reservedCredits) ||
+    reservedCredits <= 0
+  ) {
+    return null;
+  }
+  return `已预留 ${reservedCredits} 分`;
+}
 
 export function projectExecutionCost(input: {
   requirements: QuotaRequirement[];
@@ -299,6 +335,13 @@ export function projectExecutionCost(input: {
   creditCost?: number | null;
   billingNote?: string | null;
   shortNotice?: string | null;
+  /** Pre-confirm reserved credits (U8 wait period). */
+  reservedCredits?: number | null;
+  /** Model-level failure refund switch (A5). */
+  failureRefundsCredits?: boolean | null;
+  availableCredits?: number | null;
+  rightsSummary?: string | null;
+  factSummary?: string | null;
 }): ExecutionCostView {
   const creditCost =
     typeof input.creditCost === 'number' &&
@@ -306,6 +349,12 @@ export function projectExecutionCost(input: {
     input.creditCost > 0
       ? input.creditCost
       : null;
+  const reserved =
+    typeof input.reservedCredits === 'number' &&
+    Number.isSafeInteger(input.reservedCredits) &&
+    input.reservedCredits > 0
+      ? input.reservedCredits
+      : creditCost;
   return {
     billingNote: input.billingNote ?? null,
     // Silent until the quote lands: a cost sentence with no quote behind it is
@@ -315,6 +364,16 @@ export function projectExecutionCost(input: {
       creditCost === null ? '' : workbench_credit_quote({ count: creditCost }),
     short: Boolean(input.shortNotice),
     shortNotice: input.shortNotice ?? null,
+    heldNotice: projectHeldCreditsNotice(reserved),
+    refundNotice: projectRefundDualStateNotice(input.failureRefundsCredits),
+    rightsNotice: input.rightsSummary?.trim() || null,
+    factNotice: input.factSummary?.trim() || null,
+    balanceNotice:
+      typeof input.availableCredits === 'number' &&
+      Number.isSafeInteger(input.availableCredits) &&
+      input.availableCredits >= 0
+        ? `当前可用 ${input.availableCredits} 分`
+        : null,
     units: input.requirements.map((requirement) => ({
       cost: requirement.cost,
       resource: requirement.resource,
@@ -392,6 +451,11 @@ const EMPTY_COST: ExecutionCostView = {
   notice: '',
   short: false,
   shortNotice: null,
+  heldNotice: null,
+  refundNotice: null,
+  rightsNotice: null,
+  factNotice: null,
+  balanceNotice: null,
   units: [],
 };
 

@@ -7,6 +7,9 @@ import {
 } from './execution-cost-feedback';
 import {
   EXECUTION_CONFIRM_TRIGGER_MODE,
+  projectExecutionCost,
+  projectHeldCreditsNotice,
+  projectRefundDualStateNotice,
   shouldOpenExecutionConfirm,
 } from './execution-confirm-card';
 
@@ -60,6 +63,29 @@ test('settlement that has not come back says nothing at all', () => {
       String(settledCredits)
     );
   }
+});
+
+test('V31-11 confirmation strip projects held credits and A5 refund dual-state', () => {
+  assert.equal(projectHeldCreditsNotice(12), '已预留 12 分');
+  assert.equal(projectHeldCreditsNotice(0), null);
+  assert.equal(projectRefundDualStateNotice(true), '失败自动退回');
+  assert.equal(projectRefundDualStateNotice(false), '该模型失败不退回');
+
+  const cost = projectExecutionCost({
+    requirements: [],
+    creditCost: 12,
+    reservedCredits: 12,
+    failureRefundsCredits: true,
+    availableCredits: 40,
+    rightsSummary: '素材授权有效',
+    factSummary: '门店地址已确认',
+  });
+  assert.equal(cost.heldNotice, '已预留 12 分');
+  assert.equal(cost.refundNotice, '失败自动退回');
+  assert.equal(cost.balanceNotice, '当前可用 40 分');
+  assert.equal(cost.rightsNotice, '素材授权有效');
+  assert.equal(cost.factNotice, '门店地址已确认');
+  assert.match(cost.notice, /12/);
 });
 
 test('a deterministic edit is never gated, in any trigger mode', () => {

@@ -744,9 +744,27 @@ export type ExecutionPlanSnapshot = z.infer<typeof executionPlanSnapshotSchema>;
 /**
  * V3.1 §14.3 pending confirmation request (reserve+hold domain object).
  * Distinct from harness UI `executionConfirmationRequestSchema` (card protocol).
+ *
+ * Campaign fields (U7): plan_only approves schedule only; each paid Work uses
+ * single_work with its own request (no pre-authorization of future charges).
+ * holdExpiresAt is business TTL on the *request* only (1h–30d, D-153 / U8).
+ * Decisions never carry wait-period TTL.
  */
 export const AGENT_EXECUTION_CONFIRMATION_REQUEST_SCHEMA_VERSION =
   'agent-execution-confirmation-request/v1' as const;
+
+/** Hold window bounds for ExecutionConfirmationRequest (seconds). */
+export const CONFIRMATION_HOLD_MIN_SECONDS = 60 * 60; // 1h
+export const CONFIRMATION_HOLD_MAX_SECONDS = 30 * 24 * 60 * 60; // 30d
+
+export const confirmationApprovalScopeSchema = z.enum([
+  'plan_only',
+  'single_work',
+]);
+
+export type ConfirmationApprovalScope = z.infer<
+  typeof confirmationApprovalScopeSchema
+>;
 
 export const agentExecutionConfirmationRequestSchema = z
   .object({
@@ -761,13 +779,57 @@ export const agentExecutionConfirmationRequestSchema = z
     createdAt: timestampSchema,
     holdExpiresAt: timestampSchema,
     status: z.enum(['pending', 'decided', 'expired']),
+    /**
+     * U7 Campaign: which plan this derived Work belongs to.
+     * Required together with workOrdinal + approvalScope when any is set.
+     */
+    campaignPlanRef: agentRevisionRefSchema.optional(),
+    workOrdinal: z.number().int().positive().safe().optional(),
+    approvalScope: confirmationApprovalScopeSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((request, context) => {
+    const campaignBits = [
+      request.campaignPlanRef !== undefined,
+      request.workOrdinal !== undefined,
+      request.approvalScope !== undefined,
+    ];
+    const present = campaignBits.filter(Boolean).length;
+    if (present > 0 && present < 3) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Campaign confirmation requires campaignPlanRef, workOrdinal, and approvalScope together.',
+        path: ['approvalScope'],
+      });
+    }
+    const createdMs = Date.parse(request.createdAt);
+    const expiresMs = Date.parse(request.holdExpiresAt);
+    if (!Number.isFinite(createdMs) || !Number.isFinite(expiresMs)) {
+      return;
+    }
+    const holdSeconds = Math.floor((expiresMs - createdMs) / 1000);
+    if (
+      holdSeconds < CONFIRMATION_HOLD_MIN_SECONDS ||
+      holdSeconds > CONFIRMATION_HOLD_MAX_SECONDS
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'holdExpiresAt must be between 1 hour and 30 days after createdAt (D-153).',
+        path: ['holdExpiresAt'],
+      });
+    }
+  });
 
 export type AgentExecutionConfirmationRequest = z.infer<
   typeof agentExecutionConfirmationRequestSchema
 >;
 
+/**
+ * Immutable merchant confirm/reject decision (V3.1 §14.3).
+ * No holdExpiresAt / TTL — wait-period belongs only on the pending request.
+ */
 export const PLAN_CONFIRMATION_DECISION_SCHEMA_VERSION =
   'plan-confirmation-decision/v1' as const;
 
@@ -780,7 +842,20 @@ export const planConfirmationDecisionSchema = z
     decision: z.enum(['confirmed', 'rejected']),
     decidedAt: timestampSchema,
   })
-  .strict();
+  .strict()
+  .superRefine((decision, context) => {
+    // Constructive: decision payload must not grow wait-period fields.
+    const forbidden = ['holdExpiresAt', 'expiresAt', 'timeoutSeconds'] as const;
+    for (const key of forbidden) {
+      if (key in (decision as Record<string, unknown>)) {
+        context.addIssue({
+          code: 'custom',
+          message: `PlanConfirmationDecision must not carry ${key} (U8).`,
+          path: [key],
+        });
+      }
+    }
+  });
 
 export type PlanConfirmationDecision = z.infer<
   typeof planConfirmationDecisionSchema
