@@ -34,6 +34,10 @@ import {
   type ExecutionPlanAdmissionPort,
   type SnapshotLiveFacts,
 } from './execution-plan-admission.js';
+import {
+  projectLegacyFromMakeRequest,
+  type ShadowReconciliationService,
+} from './shadow-reconciliation.js';
 import type {
   HarnessDecisionService,
   HarnessDecisionStore,
@@ -348,6 +352,14 @@ interface HarnessDbosWorkflowOptions {
   resolveForceLegacyFiveStage?: () =>
     | Promise<boolean>
     | boolean;
+  /**
+   * V31-13: shadow reconciliation on Make complete (sample + evidence only).
+   * No daemon — triggered from this path only.
+   */
+  shadowReconciliation?: Pick<
+    ShadowReconciliationService,
+    'maybeReconcileOnExecutionComplete'
+  >;
 }
 
 export function registerHarnessDbosWorkflow(
@@ -367,6 +379,7 @@ export function registerHarnessDbosWorkflow(
     executionPlanAdmission,
     resolveExecutionPlanLiveFacts,
     resolveForceLegacyFiveStage,
+    shadowReconciliation,
   } = options;
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -903,6 +916,45 @@ export function registerHarnessDbosWorkflow(
       const completedAt = taskRecallDue
         ? new Date(await DBOS.now()).toISOString()
         : undefined;
+      // V31-13: sample shadow reconcile on successful Make complete (no daemon).
+      // Failures inside the service are swallowed; this step must not fail the run.
+      if (shadowReconciliation && request.executionPlanSnapshot) {
+        await DBOS.runStep(
+          async () => {
+            const snapshot = request.executionPlanSnapshot!;
+            const decisionFactRefs = request.decisionReferences?.map(
+              (ref) => ref.id,
+            );
+            const oldChain = projectLegacyFromMakeRequest({
+              snapshot,
+              boundedExecution: request.boundedExecution,
+              observedDeliverables: request.executionSnapshot?.deliverables?.map(
+                (item) => ({
+                  kind: item.kind,
+                  quantity: item.quantity,
+                }),
+              ),
+              // Only pass when the request independently carries fact refs.
+              observedFactRefs:
+                decisionFactRefs && decisionFactRefs.length > 0
+                  ? decisionFactRefs
+                  : undefined,
+            });
+            if (!oldChain) return { sampled: false as const };
+            const now = new Date(await DBOS.now()).toISOString();
+            return shadowReconciliation.maybeReconcileOnExecutionComplete({
+              workflowId,
+              workspaceId: request.workspaceId,
+              snapshot,
+              oldChain,
+              now,
+              operatorId: 'system',
+              correlationId: workflowId,
+            });
+          },
+          { name: 'shadow-reconciliation-sample' },
+        );
+      }
       await settleHarnessTerminalSuccess({
         billing,
         completedAt,
