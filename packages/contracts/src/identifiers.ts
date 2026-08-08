@@ -35,6 +35,8 @@ export const planConfirmationDecisionIdSchema =
   identifierSchema.brand<'PlanConfirmationDecisionId'>();
 export const agentExecutionConfirmationRequestIdSchema =
   identifierSchema.brand<'AgentExecutionConfirmationRequestId'>();
+/** Stable interrupt id for typed HITL resume (V3.1 §27.6 / V31-14). */
+export const interruptIdSchema = identifierSchema.brand<'InterruptId'>();
 
 export type ApprovalReceiptId = z.infer<typeof approvalReceiptIdSchema>;
 export type AssetIntakeBatchId = z.infer<typeof assetIntakeBatchIdSchema>;
@@ -56,3 +58,4 @@ export type PlanConfirmationDecisionId = z.infer<
 export type AgentExecutionConfirmationRequestId = z.infer<
   typeof agentExecutionConfirmationRequestIdSchema
 >;
+export type InterruptId = z.infer<typeof interruptIdSchema>;

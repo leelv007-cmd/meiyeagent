@@ -42,6 +42,7 @@ import {
 } from '../p1/agent-session/index.js';
 import { ExecutionPlanAdmissionService } from '../p1/harness/execution-plan-admission.js';
 import { PostgresExecutionPlanAdmissionMigration } from '../p1/harness/postgres-execution-plan-admission-store.js';
+import { PostgresInterruptStore } from '../p1/harness/postgres-interrupt-store.js';
 import { PostgresAgentSemanticEventStore } from '../p1/agent-semantic-events/index.js';
 import { createPermissionAuthorizer } from '../p1/capability-permission/index.js';
 import { CloudflareInventoryAdapter } from '../p1/cloudflare-read/index.js';
@@ -719,6 +720,8 @@ export async function assembleCoreGraph(
   const executionPlanAdmissionService = new ExecutionPlanAdmissionService(
     executionPlanAdmissionMigration.store,
   );
+  /** V31-14: durable pending interrupts (CAS resume / listPending). */
+  const interruptStore = new PostgresInterruptStore(pool);
   /**
    * V31-08: late-bound billing quote resolver. productQuoteAuthority is
    * assembled further down; ports are only invoked at turn time.
@@ -1090,6 +1093,8 @@ export async function assembleCoreGraph(
     executionConfirmationMigration,
     // V31-12 ExecutionPlanSnapshot admission (one-shot immutable).
     executionPlanAdmissionMigration,
+    // V31-14 durable Interrupt store (pending confirm survives restart).
+    interruptStore,
   ]);
   await ensureCreditPlanCatalogDefaults(adminConfigRepository);
   await migrateCreditPlanCatalogCurrencyToHkd(adminConfigRepository);
@@ -1566,6 +1571,7 @@ export async function assembleCoreGraph(
     planConfirmationDecisionStore: executionConfirmationMigration.decisionStore,
     executionPlanAdmissionService,
     executionPlanSnapshotStore: executionPlanAdmissionMigration.store,
+    interruptStore,
     foundationLedgerService,
     productEntitlements,
     executionEntitlementPolicy,

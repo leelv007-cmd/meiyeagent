@@ -67,8 +67,9 @@ export const OPS_KILL_SWITCH_CATALOG: Readonly<
       'Forces plan confirmation even for policy-exempt copy paths (holds before Make).',
   },
   force_legacy_five_stage: {
-    landed: false,
-    providerTicket: 'V31-14/V31-26',
+    // V31-14 lands the runtime hook (snapshot consume path + switch read).
+    landed: true,
+    providerTicket: 'V31-14',
     impactScope:
       'Routes new Make work through legacy five-stage path instead of snapshot consume.',
   },

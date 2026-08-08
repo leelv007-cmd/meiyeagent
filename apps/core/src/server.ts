@@ -153,6 +153,22 @@ interface CoreServerDependencies {
   };
   harnessService?: HarnessApplicationService;
   pendingActions?: Pick<PendingActionsService, 'list'>;
+  /**
+   * V31-14 typed Interrupt protocol (listPending + resume CAS).
+   * Workspace membership is enforced inside the service.
+   */
+  interruptProtocol?: {
+    listPending(input: {
+      userId: string;
+      workspaceId: string;
+      query: { resourceId: string; threadId?: string };
+    }): Promise<unknown[]>;
+    resume(input: {
+      userId: string;
+      workspaceId: string;
+      command: unknown;
+    }): Promise<unknown>;
+  };
   /** Read side of the merchant credit catalogue for the public pricing page. */
   planCatalog?: {
     get(): Promise<CreditPlanCatalog>;
@@ -800,6 +816,7 @@ export function createCoreServer({
   e2eFixtureEnabled = false,
   harnessService,
   pendingActions,
+  interruptProtocol,
   planCatalog,
   runtimeTruth,
   serviceToken,
@@ -1247,6 +1264,90 @@ export function createCoreServer({
           {
             code: 'PENDING_ACTIONS_UNAVAILABLE',
             message: 'Pending actions are unavailable.',
+            status: 400,
+            unknownMessage: 'error',
+          }
+        );
+        return;
+      },
+    ]);
+
+    // V31-14: listPendingInterrupts({ resourceId, threadId? }) workspace auth.
+    const pendingInterruptsWorkspaceId = workspaceRoute(
+      url.pathname,
+      'p1/pending-interrupts'
+    );
+    routes.add('pending-interrupts-list', [
+      'GET',
+      () => Boolean(interruptProtocol && pendingInterruptsWorkspaceId),
+      'service-token',
+      async () => {
+        await handleErrors(
+          async () => {
+            const context = p1Identity(
+              request,
+              pendingInterruptsWorkspaceId!,
+              requestCorrelationId
+            );
+            const threadId = url.searchParams.get('threadId')?.trim();
+            sendJson(
+              response,
+              200,
+              {
+                interrupts: await interruptProtocol!.listPending({
+                  userId: context.userId,
+                  workspaceId: context.workspaceId,
+                  query: {
+                    resourceId: context.workspaceId,
+                    ...(threadId ? { threadId } : {}),
+                  },
+                }),
+              },
+              requestCorrelationId
+            );
+          },
+          {
+            code: 'PENDING_INTERRUPTS_UNAVAILABLE',
+            message: 'Pending interrupts are unavailable.',
+            status: 400,
+            unknownMessage: 'error',
+          }
+        );
+        return;
+      },
+    ]);
+
+    const resumeInterruptWorkspaceId = workspaceRoute(
+      url.pathname,
+      'p1/interrupts/resume'
+    );
+    routes.add('pending-interrupts-resume', [
+      'POST',
+      () => Boolean(interruptProtocol && resumeInterruptWorkspaceId),
+      'service-token',
+      async () => {
+        await handleErrors(
+          async () => {
+            const context = p1Identity(
+              request,
+              resumeInterruptWorkspaceId!,
+              requestCorrelationId
+            );
+            const body = await readJson(request);
+            sendJson(
+              response,
+              200,
+              await interruptProtocol!.resume({
+                userId: context.userId,
+                workspaceId: context.workspaceId,
+                command: body,
+              }),
+              requestCorrelationId
+            );
+          },
+          {
+            code: 'INTERRUPT_RESUME_FAILED',
+            message: 'Interrupt resume failed.',
             status: 400,
             unknownMessage: 'error',
           }

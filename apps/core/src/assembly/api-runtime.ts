@@ -83,6 +83,8 @@ import {
 } from '../p1/harness/interaction-service.js';
 import { requireHarnessFrozenPrompt } from '../p1/harness/langfuse-prompts.js';
 import { langfuseSenderFromEnv } from '../p1/harness/langfuse-sender.js';
+import { createResolveExecutionPlanLiveFacts } from '../p1/harness/execution-plan-live-facts.js';
+import { InterruptProtocolService } from '../p1/harness/interrupt-protocol.js';
 import { PostgresNoteMediaAdmissionCoordinator } from '../p1/harness/note-media-admission.js';
 import {
   HarnessObservabilityReconciler,
@@ -289,6 +291,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     sessionRetrievalExperiencePort,
     planCompiler,
     executionPlanAdmissionService,
+    interruptStore,
     productEntitlements,
     executionEntitlementPolicy,
     p1ModelSupplyService,
@@ -375,6 +378,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     new ReuseMemoryComposerConversationDeletionNotifier(reuseMemoryService)
   );
   let harnessService: HarnessApplicationService | undefined;
+  let interruptProtocolService: InterruptProtocolService | undefined;
   let composerDestinationMapper: ComposerDestinationMappingPort | undefined;
   let composerSubmissionCoordinator: CreationSubmissionCoordinator | undefined;
   // Pending-actions is an unconditional platform service (Z2-WIRING / #94 handoff).
@@ -1188,7 +1192,48 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         interactions: harnessInteractions,
         // V31-12: DBOS pre-run re-verification of admitted ExecutionPlanSnapshot.
         executionPlanAdmission: executionPlanAdmissionService,
+        // V31-14: production live fence reader (quote + rights heads).
+        resolveExecutionPlanLiveFacts: createResolveExecutionPlanLiveFacts({
+          async resolveQuoteHead({ workspaceId, quoteId }) {
+            const quote = await productQuoteService.getQuote(
+              quoteId,
+              workspaceId,
+            );
+            if (!quote) return null;
+            return {
+              quoteId,
+              revision: quote.revision,
+            };
+          },
+          async resolveRightsHeads({ rightsRevisionRefs }) {
+            // Freeze refs are opaque revision ids from Plan Compiler. Without a
+            // dedicated rights-revision head table, production reports the freeze
+            // set as current (not revoked). Package/asset revocation is still
+            // fail-closed at delivery and mid-execution fence ports.
+            return rightsRevisionRefs.map((revisionId) => ({
+              revisionId,
+              revoked: false,
+            }));
+          },
+        }),
+        // V31-14: force_legacy_five_stage kill switch (landed).
+        async resolveForceLegacyFiveStage() {
+          const state = await opsConsoleStore.getKillSwitch(
+            'force_legacy_five_stage',
+          );
+          return state?.enabled === true;
+        },
       }
+    );
+    // V31-14: typed Interrupt protocol — durable Postgres store (restart-safe).
+    // migrate already ran in assembleCoreGraph; MemoryInterruptStore is test-only.
+    interruptProtocolService = new InterruptProtocolService(
+      interruptStore,
+      {
+        async hasMembership(userId, workspaceId) {
+          return operationsRepository.hasMembership(userId, workspaceId);
+        },
+      },
     );
     await DBOS.launch();
     harnessService = new HarnessApplicationService(
@@ -1364,6 +1409,10 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     // V31-10: PlanCompiler → plan.created/plan.revised after append-only revision.
     // Not gated by shadow flag — Living Plan is first-class Workstream truth once compiled.
     planCompiler.bindSemanticEventProjector(agentSemanticEventProjector);
+    // V31-14 / V31-15 producer: note page progress → artifact.revised via projector.
+    harnessStages.note.artifactProgressEmitter = {
+      project: (candidate) => agentSemanticEventProjector.project(candidate),
+    };
     const harnessEventReader = new HarnessDbosWorkflowEventReader(
       harnessSchemaStore,
       undefined,
@@ -1560,6 +1609,27 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     integrationService,
     harnessService,
     pendingActions,
+    interruptProtocol: interruptProtocolService
+      ? {
+          listPending: (input) =>
+            interruptProtocolService.listPending({
+              userId: input.userId,
+              workspaceId: input.workspaceId,
+              query: {
+                resourceId: input.query.resourceId as never,
+                ...(input.query.threadId
+                  ? { threadId: input.query.threadId as never }
+                  : {}),
+              },
+            }),
+          resume: (input) =>
+            interruptProtocolService.resume({
+              userId: input.userId,
+              workspaceId: input.workspaceId,
+              command: input.command as never,
+            }),
+        }
+      : undefined,
     operationsService,
     planCatalog: creditPlanCatalog,
     productService,
