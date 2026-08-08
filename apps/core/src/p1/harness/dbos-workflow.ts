@@ -348,6 +348,11 @@ interface HarnessDbosWorkflowOptions {
   /**
    * V31-14: ops kill switch force_legacy_five_stage — when true, Make keeps
    * legacy intent/brief LLM nodes even if a snapshot is present.
+   *
+   * V31-25 release SOP hook (D-038⑤): this flag is an admission-time path tag
+   * for new runs only. In-flight durable instances stick to their
+   * HARNESS_DBOS_APPLICATION_VERSION; do not hot-cut carrier programs mid-run.
+   * See docs/ops/harness-release-sop.md §「V31-25 runner 收敛发布挂点」.
    */
   resolveForceLegacyFiveStage?: () =>
     | Promise<boolean>

@@ -1,9 +1,12 @@
 /**
- * Make Harness ExecutionPlanSnapshot consumption (V31-14 / V3.1 §23).
+ * Make Harness ExecutionPlanSnapshot consumption (V31-14 / V3.1 §23; V31-25).
  *
  * When a durable task carries a frozen ExecutionPlanSnapshot and the
  * force_legacy_five_stage kill switch is off, intent_naming / brief_compilation
  * nodes demote to validators: no LLM re-call; mismatch fail closed.
+ *
+ * V31-25 extends materialization to note + media briefs (compileNoteBrief /
+ * compileMediaBrief no longer re-invoke structured LLM on the snapshot path).
  *
  * Stage names stay for durable topology compatibility; new-task semantics are
  * verification → context/rights fence → deterministic execution.
@@ -12,8 +15,11 @@
 import { isDeepStrictEqual } from 'node:util';
 
 import {
+  DEFAULT_NOTE_STYLES,
   executionPlanSnapshotSchema,
   type ExecutionPlanSnapshot,
+  type NotePlan,
+  type NoteStyleCandidates,
 } from '@meiye/contracts';
 
 import type { IntentDeclaration } from './structured-nodes.js';
@@ -221,6 +227,225 @@ export function materializeCopyBriefFromSnapshot(input: {
     },
     llmInvoked: false,
     mode: MAKE_SNAPSHOT_CONSUME_TRACE_MODE,
+  };
+}
+
+/**
+ * Deterministic media brief from frozen snapshot (no structured brief LLM).
+ * V31-25: media runner converges onto snapshot materialization like copy.
+ */
+export function materializeMediaBriefFromSnapshot(input: {
+  snapshot: ExecutionPlanSnapshot;
+  declaration: IntentDeclaration;
+  request: HarnessWorkflowInput;
+}): {
+  brief:
+    | {
+        kind: 'image';
+        intent: {
+          operation: 'image.generate';
+          purpose: string;
+          subject: string;
+          scene: string;
+          composition: string;
+          references: [];
+          exactText: [];
+          changes: [];
+          invariants: [];
+          factRefs: string[];
+          rightsRefs: string[];
+          outputPlan: { kind: 'single' };
+        };
+        prompt: string;
+        referenceAssetIds: string[];
+        parameters: { ratio: string; resolution: string };
+        constraints: string[];
+      }
+    | {
+        kind: 'video';
+        storyboard: Array<{
+          index: number;
+          description: string;
+          durationSeconds: number;
+        }>;
+        firstFramePrompt: string;
+        referenceAssetIds: string[];
+        parameters: { durationSeconds: number; ratio: string };
+        constraints: string[];
+      };
+  llmInvoked: false;
+  mode: typeof MAKE_SNAPSHOT_CONSUME_TRACE_MODE;
+} {
+  const { snapshot, declaration, request } = input;
+  validateIntentAgainstSnapshot({ snapshot, declaration });
+  const lens = request.executionSnapshot?.lens;
+  const kind = lens === 'video' ? ('video' as const) : ('image' as const);
+  const summary = declaration.normalizedIntent;
+  const constraints = [
+    '不得编造价格、效果、资质或顾客案例',
+    '只使用已确认的本店事实与授权素材',
+    `snapshotHash=${snapshot.snapshotHash}`,
+  ];
+  if (kind === 'video') {
+    return {
+      brief: {
+        kind: 'video',
+        storyboard: [
+          {
+            index: 1,
+            description: `按已确认方案「${summary}」开场`,
+            durationSeconds: 3,
+          },
+          {
+            index: 2,
+            description: `呈现本店项目与预约行动`,
+            durationSeconds: 5,
+          },
+        ],
+        firstFramePrompt:
+          `按已确认方案「${summary}」生成竖版视频首帧，真实门店场景，主体清晰，不得编造价格与效果。`,
+        referenceAssetIds: [],
+        parameters: { durationSeconds: 8, ratio: '9:16' },
+        constraints,
+      },
+      llmInvoked: false,
+      mode: MAKE_SNAPSHOT_CONSUME_TRACE_MODE,
+    };
+  }
+  return {
+    brief: {
+      kind: 'image',
+      intent: {
+        operation: 'image.generate',
+        purpose: `按已确认方案生成门店活动图片`,
+        subject: summary.slice(0, 80) || '门店项目',
+        scene: '真实门店场景',
+        composition: '竖版主体居中',
+        references: [],
+        exactText: [],
+        changes: [],
+        invariants: [],
+        factRefs: [...snapshot.factRevisionRefs],
+        rightsRefs: [...snapshot.rightsRevisionRefs],
+        outputPlan: { kind: 'single' },
+      },
+      prompt:
+        `按已确认方案「${summary}」生成竖版门店活动海报，保留品牌主视觉和预约行动号召，不得编造价格与效果。snapshotHash=${snapshot.snapshotHash}`,
+      referenceAssetIds: [],
+      parameters: { ratio: '9:16', resolution: '1080p' },
+      constraints,
+    },
+    llmInvoked: false,
+    mode: MAKE_SNAPSHOT_CONSUME_TRACE_MODE,
+  };
+}
+
+/**
+ * Deterministic note brief (style candidates) from freeze + DEFAULT_NOTE_STYLES.
+ * No structured note-plan LLM (V31-25). Page text remains scaffold; execution
+ * selection still runs page generation ports under generate/check/revise.
+ */
+export function materializeNoteBriefFromSnapshot(input: {
+  snapshot: ExecutionPlanSnapshot;
+  declaration: IntentDeclaration;
+  request: HarnessWorkflowInput;
+}): {
+  brief: {
+    kind: 'image_text_note';
+    candidates: NoteStyleCandidates;
+  };
+  llmInvoked: false;
+  mode: typeof MAKE_SNAPSHOT_CONSUME_TRACE_MODE;
+} {
+  const { snapshot, declaration } = input;
+  validateIntentAgainstSnapshot({ snapshot, declaration });
+  const themeAnchor =
+    declaration.normalizedIntent.trim().slice(0, 40) || '本店服务科普';
+  const candidates: NoteStyleCandidates = {
+    candidates: DEFAULT_NOTE_STYLES.styles.map((style) => ({
+      styleId: style.id,
+      styleName: style.name,
+      positioning: style.writingGuide,
+      plan: buildDeterministicNotePlan({
+        themeAnchor,
+        styleId: style.id,
+        styleName: style.name,
+        factRefs: snapshot.factRevisionRefs,
+        rightsRefs: snapshot.rightsRevisionRefs,
+        snapshotHash: snapshot.snapshotHash,
+      }),
+    })),
+  };
+  return {
+    brief: {
+      kind: 'image_text_note',
+      candidates,
+    },
+    llmInvoked: false,
+    mode: MAKE_SNAPSHOT_CONSUME_TRACE_MODE,
+  };
+}
+
+function buildDeterministicNotePlan(input: {
+  themeAnchor: string;
+  styleId: string;
+  styleName: string;
+  factRefs: readonly string[];
+  rightsRefs: readonly string[];
+  snapshotHash: string;
+}): NotePlan {
+  const imageIntent = (purpose: string, subject: string) => ({
+    operation: 'image.generate' as const,
+    purpose,
+    subject,
+    scene: '真实门店场景',
+    composition: '主体清晰',
+    references: [] as [],
+    exactText: [] as [],
+    changes: [] as [],
+    invariants: [] as [],
+    factRefs: [...input.factRefs],
+    rightsRefs: [...input.rightsRefs],
+    outputPlan: { kind: 'single' as const },
+  });
+  return {
+    schema: 'note-plan/v1',
+    themeAnchor: input.themeAnchor,
+    style: {
+      id: input.styleId,
+      name: input.styleName,
+      positioning: `${input.styleName}（快照确定性脚手架）`,
+    },
+    pages: [
+      {
+        id: 'page-1',
+        order: 1,
+        revision: 1,
+        pageRole: 'cover',
+        pagePurpose: 'capture_attention',
+        imageIntent: imageIntent('封面配图', input.themeAnchor),
+        textBlock: {
+          title: input.themeAnchor,
+          body: `按已确认方案呈现本店要点（${input.styleName}）。不得编造价格与效果。`,
+          exactText: [],
+        },
+        dependencies: [],
+      },
+      {
+        id: 'page-2',
+        order: 2,
+        revision: 1,
+        pageRole: 'cta_guide',
+        pagePurpose: 'drive_action',
+        imageIntent: imageIntent('行动页配图', '预约行动'),
+        textBlock: {
+          title: '预约建议',
+          body: `私信了解详情并预约。snapshotHash=${input.snapshotHash}`,
+          exactText: [],
+        },
+        dependencies: [{ pageId: 'page-1', kind: 'text_sequence' }],
+      },
+    ],
   };
 }
 
