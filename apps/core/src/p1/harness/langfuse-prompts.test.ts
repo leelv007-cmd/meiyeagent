@@ -199,22 +199,30 @@ test("XHS vertical sites resolve with version pin and pilot builtin fallback", a
 	);
 });
 
-test("strict policy rejects incomplete pins including new XHS vertical keys", () => {
-	// All keys pinned except one XHS key — must name xhsOutline specifically.
+test("boot strict policy accepts partial pins; completeness is release-publish / resolveKeys concern (V31-20)", () => {
+	// §29.3: boot no longer requires every registry key in LANGFUSE_PROMPT_VERSIONS.
+	// Missing xhsOutline at boot is allowed; release publish and selective resolve
+	// fail closed when that key is actually required.
 	const pinsMissingXhsOutline = Object.fromEntries(
 		Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES)
 			.filter((key) => key !== "xhsOutline")
 			.map((key) => [key, 1]),
 	);
-	assert.throws(
-		() =>
-			assertLangfusePromptRuntimePolicy({
-				LANGFUSE_BASE_URL: "https://langfuse.example",
-				LANGFUSE_PUBLIC_KEY: "pk-prompt",
-				LANGFUSE_SECRET_KEY: "sk-prompt",
-				LANGFUSE_PROMPT_VERSIONS: JSON.stringify(pinsMissingXhsOutline),
-			}),
-		/xhsOutline/u,
+	assert.doesNotThrow(() =>
+		assertLangfusePromptRuntimePolicy({
+			LANGFUSE_BASE_URL: "https://langfuse.example",
+			LANGFUSE_PUBLIC_KEY: "pk-prompt",
+			LANGFUSE_SECRET_KEY: "sk-prompt",
+			LANGFUSE_PROMPT_VERSIONS: JSON.stringify(pinsMissingXhsOutline),
+		}),
+	);
+	// Empty / absent pin map is also allowed at boot when credentials exist.
+	assert.doesNotThrow(() =>
+		assertLangfusePromptRuntimePolicy({
+			LANGFUSE_BASE_URL: "https://langfuse.example",
+			LANGFUSE_PUBLIC_KEY: "pk-prompt",
+			LANGFUSE_SECRET_KEY: "sk-prompt",
+		}),
 	);
 
 	const completePins = Object.fromEntries(
@@ -284,19 +292,31 @@ test("viral adapt prompts stay paste-track honest (no scrape language)", () => {
 });
 
 test("strict prompt policy is the default and rejects missing runtime configuration", () => {
+	// Boot requires credentials only; full pin map is no longer a boot dependency.
 	assert.throws(
 		() => assertLangfusePromptRuntimePolicy({}),
-		/LANGFUSE_BASE_URL, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_PROMPT_VERSIONS/u,
+		/LANGFUSE_BASE_URL, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY/u,
 	);
-	assert.throws(
-		() =>
-			assertLangfusePromptRuntimePolicy({
-				LANGFUSE_BASE_URL: "https://langfuse.example",
-				LANGFUSE_PUBLIC_KEY: "pk-prompt",
-				LANGFUSE_SECRET_KEY: "sk-prompt",
-				LANGFUSE_PROMPT_VERSIONS: JSON.stringify({ intentNaming: 7 }),
-			}),
-		/briefCompilation/u,
+	assert.doesNotMatch(
+		(() => {
+			try {
+				assertLangfusePromptRuntimePolicy({});
+				return "";
+			} catch (error) {
+				return error instanceof Error ? error.message : String(error);
+			}
+		})(),
+		/LANGFUSE_PROMPT_VERSIONS/u,
+	);
+	// Partial pins at boot are accepted (selective pack resolve / release publish
+	// enforce completeness for the keys actually in scope).
+	assert.doesNotThrow(() =>
+		assertLangfusePromptRuntimePolicy({
+			LANGFUSE_BASE_URL: "https://langfuse.example",
+			LANGFUSE_PUBLIC_KEY: "pk-prompt",
+			LANGFUSE_SECRET_KEY: "sk-prompt",
+			LANGFUSE_PROMPT_VERSIONS: JSON.stringify({ intentNaming: 7 }),
+		}),
 	);
 	assert.throws(
 		() =>
@@ -377,7 +397,7 @@ test("strict prompt resolver fetches every prompt by an explicit version", async
 	);
 });
 
-test("strict prompt resolver checks the complete pin set before any remote request", async () => {
+test("strict prompt resolver checks pins for resolved keys before any remote request", async () => {
 	let requests = 0;
 	const resolver = new LangfuseHarnessPromptResolver({
 		baseUrl: "https://langfuse.example",
@@ -391,8 +411,40 @@ test("strict prompt resolver checks the complete pin set before any remote reque
 		versions: { intentNaming: 7 },
 	});
 
+	// Full resolve still needs every registry key pin.
 	await assert.rejects(resolver.resolve(), /briefCompilation/u);
 	assert.equal(requests, 0);
+
+	// Selective resolve only requires pins for the requested subset.
+	await assert.rejects(
+		resolver.resolveKeys(["intentNaming", "briefCompilation"]),
+		/briefCompilation/u,
+	);
+	assert.equal(requests, 0);
+
+	const selectiveOnlyIntent = new LangfuseHarnessPromptResolver({
+		baseUrl: "https://langfuse.example",
+		fetch: async () => {
+			requests += 1;
+			return new Response(
+				JSON.stringify({
+					name: "harness/intent-naming",
+					version: 7,
+					type: "text",
+					prompt: "Intent prompt v7 with exact production instructions.",
+				}),
+				{ status: 200, headers: { "content-type": "application/json" } },
+			);
+		},
+		publicKey: "pk-prompt",
+		secretKey: "sk-prompt",
+		policy: "strict",
+		versions: { intentNaming: 7 },
+	});
+	const frozen = await selectiveOnlyIntent.resolveKeys(["intentNaming"]);
+	assert.equal(frozen.intentNaming?.version, "7");
+	assert.equal(frozen.briefCompilation, undefined);
+	assert.equal(requests, 1);
 });
 
 test("configured prompt versions are fetched by version and surfaced as immutable references", async (t) => {

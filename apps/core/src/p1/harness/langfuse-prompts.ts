@@ -29,8 +29,10 @@ const PLAIN_TEXT_REQUIREMENT = {
  *   `harness/xhs-*` (beauty-rewritten builtins; version pin + fallback).
  * - Site count is therefore 22 = 14 core + 8 XHS vertical
  *   (6 from #315 + viral rewrite / viral image vision from #324).
- * - New vertical keys do not invent a parallel pin policy: strict still
- *   requires every key; pilot still falls back to builtin-v1.
+ * - Pack subsets (V31-20 / V3.1 §29.2) live in prompt-packs.ts; tasks freeze
+ *   only the keys they need via resolveKeys. Strict completeness for the full
+ *   registry is enforced at HarnessRelease publish, not at process boot.
+ * - Pilot still falls back to builtin-v1; isFallback remains an audit signal.
  */
 export const HARNESS_PROMPT_SITES = {
 	intentNaming: {
@@ -561,7 +563,37 @@ export type HarnessPromptRevisionReference = ReturnType<
 >;
 
 export interface HarnessPromptResolver {
+	/** Full registry freeze (legacy callers). Prefer resolveKeys for task packs. */
 	resolve(): Promise<HarnessFrozenPrompts>;
+	/**
+	 * Selective freeze (V3.1 §29.2). Only the requested keys are resolved;
+	 * unrelated missing pins do not block. Strict still fails closed for any
+	 * requested key that cannot be pinned exactly.
+	 *
+	 * Optional for test doubles; use resolveHarnessPromptKeys() which falls
+	 * back to full resolve + pick when absent.
+	 */
+	resolveKeys?(
+		keys: readonly HarnessPromptKey[],
+	): Promise<Partial<Record<HarnessPromptKey, HarnessFrozenPrompt>>>;
+}
+
+/**
+ * Selective freeze helper. Uses native resolveKeys when present; otherwise
+ * freezes the full registry and picks the requested keys (test doubles).
+ */
+export async function resolveHarnessPromptKeys(
+	resolver: HarnessPromptResolver,
+	keys: readonly HarnessPromptKey[],
+): Promise<Partial<Record<HarnessPromptKey, HarnessFrozenPrompt>>> {
+	if (resolver.resolveKeys) {
+		return resolver.resolveKeys(keys);
+	}
+	const full = await resolver.resolve();
+	const unique = uniquePromptKeys(keys);
+	return Object.fromEntries(
+		unique.map((key) => [key, requireHarnessFrozenPrompt(full, key)]),
+	) as Partial<Record<HarnessPromptKey, HarnessFrozenPrompt>>;
 }
 
 export class HarnessPromptAuthorityUnavailableError extends Error {
@@ -627,13 +659,19 @@ export class LangfuseHarnessPromptResolver implements HarnessPromptResolver {
 	}
 
 	async resolve(): Promise<HarnessFrozenPrompts> {
-		const entries = Object.entries(HARNESS_LANGFUSE_PROMPT_NAMES) as Array<
-			[HarnessPromptKey, string]
-		>;
+		const allKeys = Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES) as HarnessPromptKey[];
+		const selective = await this.resolveKeys(allKeys);
+		return selective as HarnessFrozenPrompts;
+	}
+
+	async resolveKeys(
+		keys: readonly HarnessPromptKey[],
+	): Promise<Partial<Record<HarnessPromptKey, HarnessFrozenPrompt>>> {
+		const uniqueKeys = uniquePromptKeys(keys);
 		if ((this.options.policy ?? "strict") === "strict") {
-			const missing = entries
-				.filter(([key]) => this.options.versions?.[key] === undefined)
-				.map(([key]) => key);
+			const missing = uniqueKeys.filter(
+				(key) => this.options.versions?.[key] === undefined,
+			);
 			if (missing.length > 0) {
 				throw new Error(
 					`Strict Langfuse prompt resolution is missing pinned prompts: ${missing.join(", ")}.`,
@@ -641,15 +679,21 @@ export class LangfuseHarnessPromptResolver implements HarnessPromptResolver {
 			}
 		}
 		const resolved = await Promise.all(
-			entries.map(
-				async ([key, name]) =>
+			uniqueKeys.map(
+				async (key) =>
 					[
 						key,
-						await this.resolveOne(key, name, HARNESS_BUILTIN_PROMPTS[key]),
+						await this.resolveOne(
+							key,
+							HARNESS_LANGFUSE_PROMPT_NAMES[key],
+							HARNESS_BUILTIN_PROMPTS[key],
+						),
 					] as const,
 			),
 		);
-		return Object.fromEntries(resolved) as HarnessFrozenPrompts;
+		return Object.fromEntries(resolved) as Partial<
+			Record<HarnessPromptKey, HarnessFrozenPrompt>
+		>;
 	}
 
 	private async resolveOne(
@@ -748,6 +792,19 @@ function isPromptAuthorityUnavailableReason(reason: string) {
 	return code === 408 || code === 425 || code === 429 || code >= 500;
 }
 
+/**
+ * Boot-time Langfuse credential / policy gate (V3.1 §29.3).
+ *
+ * Strict mode requires live credentials only. Full registry pin completeness
+ * is NOT checked here — that gate runs at HarnessRelease publish via
+ * validateReleasePromptPublish (prompt-packs.ts). Optional pin JSON in
+ * LANGFUSE_PROMPT_VERSIONS is still parsed when present (shape/known-key
+ * validation), but partial pins are allowed so unused pack sites do not
+ * block deploy.
+ *
+ * When a production release is wired (V31-21), callers should also invoke
+ * assertProductionReleasePromptResolvable after this check.
+ */
 export function assertLangfusePromptRuntimePolicy(
 	env: Record<string, string | undefined> = process.env,
 ) {
@@ -762,13 +819,12 @@ function readLangfusePromptRuntimeConfig(
 	const publicKey = env.LANGFUSE_PUBLIC_KEY?.trim();
 	const secretKey = env.LANGFUSE_SECRET_KEY?.trim();
 	if (policy === "strict") {
+		// Credentials only at boot. LANGFUSE_PROMPT_VERSIONS is optional; release
+		// publish enforces exact pack pins (V31-20 / §29.3).
 		const missing = [
 			...(baseUrl ? [] : ["LANGFUSE_BASE_URL"]),
 			...(publicKey ? [] : ["LANGFUSE_PUBLIC_KEY"]),
 			...(secretKey ? [] : ["LANGFUSE_SECRET_KEY"]),
-			...(env.LANGFUSE_PROMPT_VERSIONS?.trim()
-				? []
-				: ["LANGFUSE_PROMPT_VERSIONS"]),
 		];
 		if (missing.length > 0) {
 			throw new Error(
@@ -915,15 +971,22 @@ function promptVersionsFromEnv(
 		}
 		versions[key as HarnessPromptKey] = version;
 	}
-	if (policy === "strict") {
-		const missing = Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).filter(
-			(key) => versions[key as HarnessPromptKey] === undefined,
-		);
-		if (missing.length > 0) {
-			throw new Error(
-				`LANGFUSE_PROMPT_VERSIONS is missing pinned prompts: ${missing.join(", ")}.`,
-			);
-		}
-	}
+	// Strict no longer requires every registry key at env parse / boot time.
+	// Completeness is validated at release publish (prompt-packs) and per
+	// resolveKeys call for the keys a task actually freezes.
 	return versions;
+}
+
+function uniquePromptKeys(keys: readonly HarnessPromptKey[]): HarnessPromptKey[] {
+	const seen = new Set<HarnessPromptKey>();
+	const ordered: HarnessPromptKey[] = [];
+	for (const key of keys) {
+		if (!(key in HARNESS_PROMPT_SITES)) {
+			throw new Error(`Unknown harness prompt key: ${String(key)}.`);
+		}
+		if (seen.has(key)) continue;
+		seen.add(key);
+		ordered.push(key);
+	}
+	return ordered;
 }
