@@ -3,7 +3,7 @@
 **Parent**: spec-E（#5）；权威 V3.1 §26.1、U2
 **Lane**: Memory 并行 lane
 **Blocked by**: V31-01
-**Status**: ready-for-agent
+**Status**: done (2026-08-08, lane merged)
 
 ## What to build
 

@@ -3,7 +3,7 @@
 **Parent**: spec-G（#7）`docs/specs/v3.1-agent-specs-2026-08-08/spec-G-435-release-eval.md`；权威 V3.1 §29.2–29.3、附录 A14
 **批次**: 5
 **Blocked by**: V31-01
-**Status**: ready-for-agent
+**Status**: done (2026-08-08, lane merged)
 
 ## What to build
 
