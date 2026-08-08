@@ -25,6 +25,10 @@ import {
   type CloudflareSelfProbeResult,
 } from '../cloudflare-read/index.js';
 import {
+  AGENT_MEMORY_FLAGS,
+  AGENT_MEMORY_KILL_SWITCH_KEYS,
+} from '../operations/agent-memory-platform.js';
+import {
   BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
   BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
   boundedExecutionLiveCalibrationConfigSchema,
@@ -597,6 +601,35 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     scope: 'global',
     description: 'Media execution mode recorded by platform administration.',
     valueSchema: z.enum(['disabled', 'ark', 'tuzi', 'ark,tuzi']),
+  },
+  // V31-18 / V3.1 §41: Memory platform feature flags + kill switches (spec-E §14).
+  {
+    key: AGENT_MEMORY_FLAGS.read,
+    scope: 'global',
+    description:
+      'Feature flag agent_memory_read_v1 — when false, memory retrieval and injection receipt reads are disabled.',
+    valueSchema: z.boolean(),
+  },
+  {
+    key: AGENT_MEMORY_FLAGS.candidateWrite,
+    scope: 'global',
+    description:
+      'Feature flag agent_memory_candidate_write_v1 — when false, memory candidate writes are disabled.',
+    valueSchema: z.boolean(),
+  },
+  {
+    key: AGENT_MEMORY_KILL_SWITCH_KEYS.disableWrite,
+    scope: 'global',
+    description:
+      'Kill switch disable_memory_write — force-disables memory writes independent of feature flags.',
+    valueSchema: z.boolean(),
+  },
+  {
+    key: AGENT_MEMORY_KILL_SWITCH_KEYS.disableRead,
+    scope: 'global',
+    description:
+      'Kill switch disable_memory_read — force-disables memory reads independent of feature flags.',
+    valueSchema: z.boolean(),
   },
   {
     key: 'plan.trial.enabled',

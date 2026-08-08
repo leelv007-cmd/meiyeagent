@@ -71,6 +71,12 @@ test('record proposes a preference with server-owned identity and a conversation
       sourceTurnId: 'turn-a',
       messageRange: { start: 12, end: 19 },
     },
+    kind: 'preference',
+    authority: 'observation',
+    memoryState: 'proposed',
+    decay: { mode: 'soft_preference', halfLifeDays: 90 },
+    confidence: 0.5,
+    channel: 'cross_thread',
   });
 });
 

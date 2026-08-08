@@ -1027,6 +1027,11 @@ export {
   preferenceCandidateSchema,
   sourcedPreferenceCandidateSchema,
   preferenceSchema,
+  preferenceMemoryKindSchema,
+  preferenceMemoryAuthoritySchema,
+  preferenceMemoryStateSchema,
+  preferenceMemoryDecaySchema,
+  preferenceMemoryChannelSchema,
   type ReusableAssetScope,
   type ReusableScopeDecision,
   type ReusableFixedItem,
@@ -1043,6 +1048,11 @@ export {
   type MemoryEntryProjection,
   type MemoryEntriesPage,
   type Preference,
+  type PreferenceMemoryKind,
+  type PreferenceMemoryAuthority,
+  type PreferenceMemoryState,
+  type PreferenceMemoryDecay,
+  type PreferenceMemoryChannel,
 } from './reuse-memory.js';
 
 export {

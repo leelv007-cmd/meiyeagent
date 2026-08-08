@@ -163,6 +163,7 @@ import {
   PostgresMarketingIdentityRepository,
   PostgresOperationsRepository,
   PostgresParseRepository,
+  PostgresMemoryInjectionReceiptStore,
   PostgresReuseMemoryRepository,
   PostgresStoreFactLedger,
   ProductContentPackageRightsResolver,
@@ -308,6 +309,10 @@ export async function assembleCoreGraph(
     new PostgresStoreIntakeFinalizationRepository(pool);
   const parseRepository = new PostgresParseRepository(pool);
   const reuseMemoryRepository = new PostgresReuseMemoryRepository(pool);
+  // V31-18: MemoryInjectionReceipt durable store (production; memory store stays for unit tests).
+  const memoryInjectionReceiptStore = new PostgresMemoryInjectionReceiptStore(
+    pool
+  );
   const contentPackageWriteOwnership = new PostgresContentPackageWriteOwnership(
     pool
   );
@@ -836,6 +841,7 @@ export async function assembleCoreGraph(
     storeIntakeFinalizations,
     parseRepository,
     reuseMemoryRepository,
+    memoryInjectionReceiptStore,
     contentPackageWriteOwnership,
     contentPackageMigrationRuns,
     modelSupplyRepository,
@@ -1191,6 +1197,7 @@ export async function assembleCoreGraph(
     storeIntakeFinalizations,
     parseRepository,
     reuseMemoryRepository,
+    memoryInjectionReceiptStore,
     contentPackageWriteOwnership,
     contentPackageMigrationRuns,
     contentPackageMigration,

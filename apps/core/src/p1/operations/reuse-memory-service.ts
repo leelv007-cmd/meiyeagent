@@ -1350,6 +1350,7 @@ export class ReuseMemoryService {
       decidedAt,
       fallbackDecisionId: `reuse-memory:${input.idempotencyKey}`,
     });
+    const kind = candidate.kind ?? 'preference';
     const preference = preferenceSchema.parse({
       preferenceId: input.preferenceId,
       revision: input.expectedRevision + 1,
@@ -1370,6 +1371,18 @@ export class ReuseMemoryService {
       changedBy: context.userId,
       changedAt: decidedAt,
       changeReason: 'candidate_confirmed',
+      // V3.1 §12.5: cross-thread confirm → confirmed/active; copy ledger expansion
+      kind,
+      authority: 'confirmed' as const,
+      memoryState: 'active' as const,
+      decay:
+        candidate.decay ??
+        (kind === 'correction'
+          ? { mode: 'none' as const }
+          : { mode: 'soft_preference' as const, halfLifeDays: 90 }),
+      confidence: candidate.confidence ?? 1,
+      statement: candidate.statement,
+      channel: 'cross_thread' as const,
     });
     const decision: MemoryCandidateDecision = {
       decisionId: `memory:confirmed:${input.idempotencyKey}`,
@@ -1466,6 +1479,7 @@ export class ReuseMemoryService {
       ...current,
       revision: input.expectedRevision + 1,
       recordState: 'revoked',
+      memoryState: 'revoked',
       revokedAt,
       changedBy: context.userId,
       changedAt: revokedAt,
@@ -1632,5 +1646,10 @@ export class ReuseMemoryService {
       deletedAt: this.now(),
       deletedBy: context.userId,
     });
+  }
+
+  /** A11: ApprovalReceipts survive memory entry deletion. */
+  async listMemoryApprovalReceipts(workspaceId: string) {
+    return this.repository.listMemoryApprovalReceipts(workspaceId);
   }
 }
