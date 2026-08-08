@@ -13,9 +13,12 @@ import {
 
 import {
   createEmptyAgentWorkbenchState,
+  measureArtifactDuplicateObjectRate,
   projectVisibleActivities,
+  projectVisibleArtifacts,
   projectVisibleNarratives,
   reduceAgentWorkbench,
+  resolveArtifactViewBody,
   type AgentWorkbenchClientState,
   type WorkbenchSessionProjection,
 } from './agent-event-reducer';
@@ -364,4 +367,385 @@ test('set_explicit_thread_id survives reset and patch_failed', () => {
   }).state;
   assert.equal(state.explicitThreadId, 'thread-from-url');
   assert.equal(state.connection, 'resyncing');
+});
+
+// ─── V31-15 Artifact reconciliation ──────────────────────────────────────────
+
+function noteSnapshotPayload(overrides: {
+  artifactId?: string;
+  revision: number;
+  status?: string;
+  pages?: unknown[];
+  parentRevision?: number;
+  summary?: string;
+}) {
+  return {
+    schemaVersion: 'artifact-update/v1',
+    mode: 'snapshot',
+    artifactId: overrides.artifactId ?? 'art-note-1',
+    artifactType: 'note',
+    revision: overrides.revision,
+    status: overrides.status ?? 'skeleton',
+    full: {
+      pages: overrides.pages ?? [{ pageIndex: 0, stage: 'skeleton' }],
+    },
+    ...(overrides.summary !== undefined ? { summary: overrides.summary } : {}),
+    ...(overrides.parentRevision !== undefined
+      ? { parentRevision: overrides.parentRevision }
+      : {}),
+  };
+}
+
+function noteDeltaPayload(overrides: {
+  revision: number;
+  baseRevision: number;
+  status?: string;
+  pages: unknown[];
+  parentRevision?: number;
+}) {
+  return {
+    schemaVersion: 'artifact-update/v1',
+    mode: 'delta',
+    artifactId: 'art-note-1',
+    artifactType: 'note',
+    revision: overrides.revision,
+    status: overrides.status ?? 'partial',
+    baseRevision: overrides.baseRevision,
+    patch: { pages: overrides.pages },
+    ...(overrides.parentRevision !== undefined
+      ? { parentRevision: overrides.parentRevision }
+      : {}),
+  };
+}
+
+test('V31-15: artifact.revised snapshot/delta grows same artifactId in place', () => {
+  let state = empty({ session: session() });
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'art-1',
+      streamOffset: '1',
+      eventType: 'artifact.revised',
+      payload: noteSnapshotPayload({
+        revision: 1,
+        pages: [
+          { pageIndex: 0, stage: 'skeleton' },
+          { pageIndex: 1, stage: 'skeleton' },
+        ],
+      }),
+    }),
+  }).state;
+
+  assert.equal(projectVisibleArtifacts(state).length, 1);
+  assert.equal(state.artifacts['art-note-1']?.revision, 1);
+  assert.equal(measureArtifactDuplicateObjectRate(state), 0);
+
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'art-2',
+      streamOffset: '2',
+      eventType: 'artifact.revised',
+      payload: noteDeltaPayload({
+        revision: 2,
+        baseRevision: 1,
+        pages: [
+          {
+            pageIndex: 0,
+            stage: 'copy',
+            title: '封面',
+            body: '周末护理',
+          },
+        ],
+      }),
+    }),
+  }).state;
+
+  assert.equal(projectVisibleArtifacts(state).length, 1);
+  assert.equal(state.artifacts['art-note-1']?.revision, 2);
+  const body = state.artifacts['art-note-1']?.body;
+  assert.ok(body && 'pages' in body);
+  if (body && 'pages' in body) {
+    assert.equal(body.pages[0]?.stage, 'copy');
+    assert.equal(body.pages[0]?.body, '周末护理');
+    assert.equal(body.pages[1]?.stage, 'skeleton');
+  }
+  assert.equal(measureArtifactDuplicateObjectRate(state), 0);
+});
+
+test('V31-15: same revision re-apply is idempotent (duplicate object rate stays 0)', () => {
+  const event = wire({
+    eventId: 'art-dup',
+    streamOffset: '1',
+    eventType: 'artifact.revised',
+    payload: noteSnapshotPayload({ revision: 1 }),
+  });
+  let state = empty({ session: session() });
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event,
+  }).state;
+  // same eventId is stream-level duplicate
+  const again = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event,
+  });
+  assert.equal(again.duplicate, true);
+  assert.equal(projectVisibleArtifacts(again.state).length, 1);
+
+  // same revision different eventId still idempotent at artifact layer
+  state = reduceAgentWorkbench(again.state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'art-dup-2',
+      streamOffset: '2',
+      eventType: 'artifact.revised',
+      payload: noteSnapshotPayload({ revision: 1 }),
+    }),
+  }).state;
+  assert.equal(state.artifacts['art-note-1']?.revision, 1);
+  assert.equal(measureArtifactDuplicateObjectRate(state), 0);
+});
+
+test('V31-15: skip revision / cold delta fails apply → needs snapshot resync path', () => {
+  let state = empty({ session: session() });
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'art-1',
+      streamOffset: '1',
+      eventType: 'artifact.revised',
+      payload: noteSnapshotPayload({ revision: 1 }),
+    }),
+  }).state;
+
+  const skip = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'art-skip',
+      streamOffset: '2',
+      eventType: 'artifact.revised',
+      payload: noteDeltaPayload({
+        revision: 5,
+        baseRevision: 4,
+        pages: [{ pageIndex: 0, stage: 'image', imageStatus: 'ready' }],
+      }),
+    }),
+  });
+  assert.equal(skip.ok, false);
+  assert.match(skip.error ?? '', /artifact_needs_snapshot/u);
+
+  // batch path: apply failure discards projection for resync
+  const batch = reduceAgentWorkbench(state, {
+    type: 'apply_events_batch',
+    events: [
+      wire({
+        eventId: 'art-skip-b',
+        streamOffset: '3',
+        eventType: 'artifact.revised',
+        payload: noteDeltaPayload({
+          revision: 9,
+          baseRevision: 8,
+          pages: [{ pageIndex: 0, stage: 'copy' }],
+        }),
+      }),
+    ],
+  });
+  assert.equal(batch.ok, false);
+  assert.equal(batch.state.needsSnapshotResync, true);
+  assert.equal(batch.state.connection, 'resyncing');
+});
+
+test('V31-15: out-of-order batch sorts; reconnect hydrate rebuilds artifacts', () => {
+  const events = [
+    wire({
+      eventId: 'art-2',
+      streamOffset: '2',
+      eventType: 'artifact.revised',
+      payload: noteDeltaPayload({
+        revision: 2,
+        baseRevision: 1,
+        pages: [{ pageIndex: 0, stage: 'copy', body: '文案到位' }],
+      }),
+    }),
+    wire({
+      eventId: 'art-1',
+      streamOffset: '1',
+      eventType: 'artifact.revised',
+      payload: noteSnapshotPayload({
+        revision: 1,
+        pages: [{ pageIndex: 0, stage: 'skeleton' }],
+      }),
+    }),
+  ];
+
+  const state = reduceAgentWorkbench(empty({ session: session() }), {
+    type: 'apply_events_batch',
+    events,
+  }).state;
+
+  assert.equal(state.artifacts['art-note-1']?.revision, 2);
+  const body = state.artifacts['art-note-1']?.body;
+  assert.ok(body && 'pages' in body && body.pages[0]?.body === '文案到位');
+
+  // reconnect: hydrate from snapshot events (delta after snapshot)
+  const hydrated = reduceAgentWorkbench(empty(), {
+    type: 'hydrate_replay',
+    session: session(),
+    snapshot: { revision: '0', lastEventId: null, lastStreamOffset: null },
+    events: [
+      wire({
+        eventId: 'h1',
+        streamOffset: '1',
+        eventType: 'artifact.revised',
+        payload: noteSnapshotPayload({
+          revision: 2,
+          status: 'partial',
+          pages: [{ pageIndex: 0, stage: 'copy', body: '文案到位' }],
+        }),
+      }),
+    ],
+  }).state;
+  assert.equal(hydrated.artifacts['art-note-1']?.revision, 2);
+  assert.equal(measureArtifactDuplicateObjectRate(hydrated), 0);
+});
+
+test('V31-15: ready content requires derived parentRevision; version 回看', () => {
+  let state = empty({ session: session() });
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'art-ready',
+      streamOffset: '1',
+      eventType: 'artifact.revised',
+      payload: noteSnapshotPayload({
+        revision: 3,
+        status: 'ready',
+        pages: [
+          {
+            pageIndex: 0,
+            stage: 'image',
+            body: '最后两个名额',
+            imageStatus: 'ready',
+          },
+        ],
+      }),
+    }),
+  }).state;
+
+  const silent = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'art-silent',
+      streamOffset: '2',
+      eventType: 'artifact.revised',
+      payload: noteSnapshotPayload({
+        revision: 4,
+        status: 'ready',
+        pages: [
+          {
+            pageIndex: 0,
+            stage: 'image',
+            body: '温馨预约',
+            imageStatus: 'ready',
+          },
+        ],
+      }),
+    }),
+  });
+  assert.equal(silent.ok, false);
+  assert.match(silent.error ?? '', /silent_overwrite/u);
+
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'art-derived',
+      streamOffset: '3',
+      eventType: 'artifact.revised',
+      payload: noteSnapshotPayload({
+        revision: 4,
+        status: 'ready',
+        parentRevision: 3,
+        pages: [
+          {
+            pageIndex: 0,
+            stage: 'image',
+            body: '温馨预约',
+            imageStatus: 'ready',
+          },
+        ],
+      }),
+    }),
+  }).state;
+
+  assert.equal(state.artifacts['art-note-1']?.revision, 4);
+  assert.equal(state.artifacts['art-note-1']?.versionHistory.length, 1);
+  assert.equal(state.artifacts['art-note-1']?.versionHistory[0]?.revision, 3);
+
+  state = reduceAgentWorkbench(state, {
+    type: 'set_artifact_viewing_revision',
+    artifactId: 'art-note-1',
+    revision: 3,
+  }).state;
+  const art = state.artifacts['art-note-1']!;
+  const viewed = resolveArtifactViewBody(art);
+  assert.ok('pages' in viewed && viewed.pages[0]?.body === '最后两个名额');
+});
+
+test('V31-15: video artifact delta grows scenes in place', () => {
+  let state = empty({ session: session() });
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'vid-1',
+      streamOffset: '1',
+      eventType: 'artifact.revised',
+      payload: {
+        schemaVersion: 'artifact-update/v1',
+        mode: 'snapshot',
+        artifactId: 'art-vid-1',
+        artifactType: 'video',
+        revision: 1,
+        status: 'skeleton',
+        full: {
+          scenes: [{ sceneIndex: 0, storyboard: '开场外景' }],
+        },
+      },
+    }),
+  }).state;
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'vid-2',
+      streamOffset: '2',
+      eventType: 'artifact.revised',
+      payload: {
+        schemaVersion: 'artifact-update/v1',
+        mode: 'delta',
+        artifactId: 'art-vid-1',
+        artifactType: 'video',
+        revision: 2,
+        status: 'partial',
+        baseRevision: 1,
+        patch: {
+          scenes: [
+            {
+              sceneIndex: 0,
+              keyframeStatus: 'ready',
+              subtitle: '周末到店护理',
+              coverStatus: 'generating',
+            },
+          ],
+        },
+      },
+    }),
+  }).state;
+  assert.equal(projectVisibleArtifacts(state).length, 1);
+  const body = state.artifacts['art-vid-1']?.body;
+  assert.ok(body && 'scenes' in body);
+  if (body && 'scenes' in body) {
+    assert.equal(body.scenes[0]?.storyboard, '开场外景');
+    assert.equal(body.scenes[0]?.keyframeStatus, 'ready');
+    assert.equal(body.scenes[0]?.subtitle, '周末到店护理');
+  }
 });

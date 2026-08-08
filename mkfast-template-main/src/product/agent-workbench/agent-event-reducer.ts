@@ -8,8 +8,13 @@
  */
 
 import {
+  applyArtifactUpdate,
+  artifactDuplicateObjectRate,
+  artifactUpdateWireSchema,
   compareStreamOffsetWire,
   type AgentSemanticEventWire,
+  type ArtifactProjectionState,
+  type ArtifactUpdateWire,
 } from '@meiye/contracts';
 
 // ─── Session / projections ───────────────────────────────────────────────────
@@ -52,12 +57,17 @@ export type InterruptProjection = {
   streamOffset: string;
 };
 
-export type ArtifactProjection = {
-  artifactId: string;
+/**
+ * Right-rail Artifact projection (V31-15).
+ * Stable artifactId reconciliation; body grows in place.
+ * `kind` retained as alias of artifactType for V31-04 callers.
+ */
+export type ArtifactProjection = ArtifactProjectionState & {
+  /** @deprecated use artifactType — kept for V31-04 field name compat */
   kind: string;
-  revision: string;
-  summary?: string;
   streamOffset: string;
+  /** Selected history revision for 版本回看; undefined = live head. */
+  viewingRevision?: number;
 };
 
 export type AgentConnectionState =
@@ -117,6 +127,12 @@ export type AgentWorkbenchAction =
     }
   | { type: 'set_mobile_pane'; pane: 'process' | 'works' }
   | { type: 'toggle_activity_collapsed'; activityId: string }
+  | {
+      type: 'set_artifact_viewing_revision';
+      artifactId: string;
+      /** null = return to live head */
+      revision: number | null;
+    }
   | {
       type: 'hydrate_replay';
       session: WorkbenchSessionProjection;
@@ -189,6 +205,44 @@ export function isActivityVisible(activity: AgentActivity): boolean {
   return true;
 }
 
+/** Stable-id ordered artifacts for the right rail (duplicate rate gate = 0). */
+export function projectVisibleArtifacts(
+  state: AgentWorkbenchClientState
+): ArtifactProjection[] {
+  return Object.values(state.artifacts).sort((left, right) =>
+    compareStreamOffsetWire(left.streamOffset, right.streamOffset)
+  );
+}
+
+/** Acceptance helper: must stay 0 under stable-id reconciliation. */
+export function measureArtifactDuplicateObjectRate(
+  state: AgentWorkbenchClientState
+): number {
+  const asProjection: Record<string, ArtifactProjectionState> = {};
+  for (const [key, value] of Object.entries(state.artifacts)) {
+    asProjection[key] = value;
+  }
+  return artifactDuplicateObjectRate(asProjection);
+}
+
+/**
+ * Resolve body for display: live head or a historical version record.
+ */
+export function resolveArtifactViewBody(
+  artifact: ArtifactProjection
+): ArtifactProjectionState['body'] {
+  if (
+    artifact.viewingRevision === undefined ||
+    artifact.viewingRevision === artifact.revision
+  ) {
+    return artifact.body;
+  }
+  const historical = artifact.versionHistory.find(
+    (entry) => entry.revision === artifact.viewingRevision
+  );
+  return historical?.body ?? artifact.body;
+}
+
 export function reduceAgentWorkbench(
   state: AgentWorkbenchClientState,
   action: AgentWorkbenchAction
@@ -216,6 +270,21 @@ export function reduceAgentWorkbench(
           [action.activityId]: {
             ...current,
             collapsed: !current.collapsed,
+          },
+        },
+      });
+    }
+    case 'set_artifact_viewing_revision': {
+      const current = state.artifacts[action.artifactId];
+      if (!current) return ok(state);
+      return ok({
+        ...state,
+        artifacts: {
+          ...state.artifacts,
+          [action.artifactId]: {
+            ...current,
+            viewingRevision:
+              action.revision === null ? undefined : action.revision,
           },
         },
       });
@@ -515,16 +584,48 @@ function projectEvent(
       };
     }
     case 'artifact.revised': {
-      const artifactId = readString(payload, 'artifactId')?.trim() ?? '';
-      if (!artifactId) {
-        return { ok: false, error: 'artifact.revised missing artifactId' };
+      // V31-15: payload is ArtifactUpdate wire (snapshot|delta).
+      // Legacy minimal payloads (artifactId/kind/revision string) still accepted
+      // as a thin snapshot shim for forward-compat during rollout.
+      const parsed = artifactUpdateWireSchema.safeParse(payload);
+      let update: ArtifactUpdateWire | null = null;
+      if (parsed.success) {
+        update = parsed.data;
+      } else {
+        update = coerceLegacyArtifactPayload(payload, event.streamOffset);
       }
-      const artifact: ArtifactProjection = {
-        artifactId,
-        kind: readString(payload, 'kind')?.trim() || 'unknown',
-        revision: readString(payload, 'revision')?.trim() || event.streamOffset,
-        summary: readString(payload, 'summary')?.trim() || undefined,
+      if (!update) {
+        return {
+          ok: false,
+          error: 'artifact.revised payload is not a valid ArtifactUpdate',
+        };
+      }
+      const existing = state.artifacts[update.artifactId] ?? null;
+      const applied = applyArtifactUpdate(existing, update);
+      if (!applied.ok) {
+        if (applied.reason === 'needs_snapshot') {
+          // Skip revision / cold delta → reconnect for snapshot (V3.1 §27.6).
+          return {
+            ok: false,
+            error: `artifact_needs_snapshot:${applied.detail ?? update.artifactId}`,
+          };
+        }
+        if (applied.reason === 'silent_overwrite') {
+          return {
+            ok: false,
+            error: `artifact_silent_overwrite:${applied.detail ?? update.artifactId}`,
+          };
+        }
+        return {
+          ok: false,
+          error: `artifact_apply_failed:${applied.reason}`,
+        };
+      }
+      const next: ArtifactProjection = {
+        ...applied.state,
+        kind: applied.state.artifactType,
         streamOffset: event.streamOffset,
+        viewingRevision: existing?.viewingRevision,
       };
       return {
         ok: true,
@@ -532,7 +633,7 @@ function projectEvent(
           ...state,
           artifacts: {
             ...state.artifacts,
-            [artifactId]: artifact,
+            [update.artifactId]: next,
           },
         },
       };
@@ -586,4 +687,70 @@ function readActivityStatus(value: unknown): AgentActivityStatus {
     return value;
   }
   return 'running';
+}
+
+/**
+ * Minimal pre-V31-15 payload shim: { artifactId, kind|artifactType, revision, summary? }
+ * → synthetic snapshot with empty type body so stream still reconciles.
+ */
+function coerceLegacyArtifactPayload(
+  payload: Record<string, unknown>,
+  streamOffset: string
+): ArtifactUpdateWire | null {
+  const artifactId = readString(payload, 'artifactId')?.trim();
+  if (!artifactId) return null;
+  const typeRaw =
+    readString(payload, 'artifactType')?.trim() ||
+    readString(payload, 'kind')?.trim() ||
+    'copy';
+  const artifactType =
+    typeRaw === 'plan' ||
+    typeRaw === 'copy' ||
+    typeRaw === 'note' ||
+    typeRaw === 'image' ||
+    typeRaw === 'video' ||
+    typeRaw === 'publish'
+      ? typeRaw
+      : 'copy';
+  const revisionRaw = payload.revision;
+  let revision = 1;
+  if (typeof revisionRaw === 'number' && Number.isFinite(revisionRaw)) {
+    revision = Math.max(1, Math.trunc(revisionRaw));
+  } else if (typeof revisionRaw === 'string' && /^(0|[1-9]\d*)$/u.test(revisionRaw)) {
+    revision = Math.max(1, Number(revisionRaw));
+  } else if (/^(0|[1-9]\d*)$/u.test(streamOffset)) {
+    revision = Math.max(1, Number(streamOffset));
+  }
+  const statusRaw = readString(payload, 'status')?.trim();
+  const status =
+    statusRaw === 'skeleton' ||
+    statusRaw === 'partial' ||
+    statusRaw === 'ready' ||
+    statusRaw === 'failed'
+      ? statusRaw
+      : 'partial';
+  const emptyFull =
+    artifactType === 'note'
+      ? { pages: [] }
+      : artifactType === 'video'
+        ? { scenes: [] }
+        : artifactType === 'plan'
+          ? { sections: [] }
+          : artifactType === 'image'
+            ? { imageStatus: 'pending' as const }
+            : artifactType === 'publish'
+              ? { items: [] }
+              : { blocks: [] };
+  const candidate = {
+    schemaVersion: 'artifact-update/v1' as const,
+    mode: 'snapshot' as const,
+    artifactId,
+    artifactType,
+    revision,
+    status,
+    summary: readString(payload, 'summary')?.trim() || undefined,
+    full: emptyFull,
+  };
+  const parsed = artifactUpdateWireSchema.safeParse(candidate);
+  return parsed.success ? parsed.data : null;
 }

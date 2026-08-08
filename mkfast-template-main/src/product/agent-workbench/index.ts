@@ -1,6 +1,7 @@
 /**
- * Agent Workbench foundation (V31-04/05): event reducer, Workstream,
- * Controlled Surface Registry, Thread-root host. Layout: V3.1 §28.3.
+ * Agent Workbench foundation (V31-04/05) + Artifact protocol (V31-15):
+ * event reducer, Workstream, Controlled Surface Registry, Thread-root host,
+ * Artifact canvas. Layout: V3.1 §28.3.
  */
 
 export {
@@ -14,9 +15,12 @@ export {
 export {
   createEmptyAgentWorkbenchState,
   isActivityVisible,
+  measureArtifactDuplicateObjectRate,
   projectVisibleActivities,
+  projectVisibleArtifacts,
   projectVisibleNarratives,
   reduceAgentWorkbench,
+  resolveArtifactViewBody,
   type AgentActivity,
   type AgentActivityStatus,
   type AgentConnectionState,
@@ -88,3 +92,21 @@ export {
 
 export { ActivityLine, type ActivityLineProps } from './stream/activity-line';
 export { NarrativeLine, type NarrativeLineProps } from './stream/narrative-line';
+
+export {
+  ARTIFACT_SURFACE_KEYS,
+  ArtifactCanvas,
+  ArtifactMobileSheet,
+  CopyArtifact,
+  NoteArtifact,
+  PublishArtifact,
+  VideoArtifact,
+  registerArtifactSurfaces,
+  type ArtifactCanvasProps,
+  type ArtifactMobileSheetProps,
+  type ArtifactSurfaceKey,
+  type CopyArtifactProps,
+  type NoteArtifactProps,
+  type PublishArtifactProps,
+  type VideoArtifactProps,
+} from './artifact';

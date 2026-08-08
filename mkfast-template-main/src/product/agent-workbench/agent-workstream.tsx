@@ -1,16 +1,21 @@
 /**
  * Agent Workstream shell: Narrative document lines + collapsible Activity,
- * pending-interrupt priority strip, mobile 过程/作品 switch (V31-04).
+ * pending-interrupt priority strip, mobile 过程/作品 switch (V31-04),
+ * right-rail Artifact canvas (V31-15 production wiring).
  */
 
 import { cn } from '@/lib/utils';
 
 import {
   projectVisibleActivities,
+  projectVisibleArtifacts,
   projectVisibleNarratives,
   type AgentWorkbenchClientState,
   type InterruptProjection,
 } from './agent-event-reducer';
+import { ArtifactCanvas } from './artifact/artifact-canvas';
+import { ArtifactMobileSheet } from './artifact/artifact-mobile-sheet';
+import './artifact/artifact-registry';
 import {
   resolveMobileWorkstreamLayout,
   WORKSTREAM_MOBILE_PANE_LABELS,
@@ -24,7 +29,12 @@ export type AgentWorkstreamProps = {
   viewport?: 'mobile' | 'desktop';
   onToggleActivity?: (activityId: string) => void;
   onMobilePaneChange?: (pane: WorkstreamMobilePane) => void;
-  /** Desktop dual-column works rail / mobile works pane content. */
+  /** Version 回看: null returns to live head. */
+  onArtifactViewRevision?: (
+    artifactId: string,
+    revision: number | null
+  ) => void;
+  /** Desktop dual-column works rail / mobile works pane content (extra). */
   worksSlot?: React.ReactNode;
   /** Optional legacy conversation / composer stream under process pane. */
   processSlot?: React.ReactNode;
@@ -36,6 +46,7 @@ export function AgentWorkstream({
   viewport = 'desktop',
   onToggleActivity,
   onMobilePaneChange,
+  onArtifactViewRevision,
   worksSlot,
   processSlot,
   className,
@@ -46,7 +57,9 @@ export function AgentWorkstream({
   });
   const narratives = projectVisibleNarratives(state);
   const activities = projectVisibleActivities(state);
+  const artifacts = projectVisibleArtifacts(state);
   const interrupts = state.pendingInterrupts;
+  const mobileWorksOpen = viewport === 'mobile' && layout.showWorks;
 
   return (
     <div
@@ -90,8 +103,29 @@ export function AgentWorkstream({
         </div>
       ) : null}
 
-      {layout.showWorks && worksSlot ? (
-        <div data-testid="agent-workstream-works">{worksSlot}</div>
+      {layout.showWorks && viewport === 'desktop' ? (
+        <div
+          className="flex flex-col gap-3"
+          data-testid="agent-workstream-works"
+        >
+          <ArtifactCanvas
+            artifacts={artifacts}
+            onViewRevision={onArtifactViewRevision}
+            viewport="desktop"
+          />
+          {worksSlot}
+        </div>
+      ) : null}
+
+      {mobileWorksOpen ? (
+        <ArtifactMobileSheet
+          artifacts={artifacts}
+          onClose={() => onMobilePaneChange?.('process')}
+          onViewRevision={onArtifactViewRevision}
+          open
+        >
+          {worksSlot}
+        </ArtifactMobileSheet>
       ) : null}
     </div>
   );

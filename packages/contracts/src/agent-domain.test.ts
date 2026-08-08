@@ -14,6 +14,9 @@ import {
   agentSemanticEventToWire,
   agentSemanticEventWireSchema,
   agentThreadSchema,
+  applyArtifactUpdate,
+  artifactDuplicateObjectRate,
+  artifactUpdateWireSchema,
   compareStreamOffsetWire,
   COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
   compiledExecutionPlanSchema,
@@ -38,6 +41,8 @@ import {
   outcomeSelfReportFrequencyParamsSchema,
   projectLatestOutcomeEvidence,
   recordOutcomeEvidenceCommandSchema,
+  type ArtifactProjectionState,
+  type ArtifactUpdateWire,
   agentExecutionConfirmationRequestSchema,
   planConfirmationDecisionSchema,
 } from './agent-domain.js';
@@ -658,4 +663,299 @@ test('record outcome evidence command rejects inferred writes and requires super
     supersedesEvidenceId: 'e1',
   });
   assert.equal(ok.signal, 'no_activity');
+});
+
+// ─── V31-15 ArtifactUpdate wire + reconciliation ─────────────────────────────
+
+test('ArtifactUpdate wire: snapshot/delta discriminated union; patch schema by type', () => {
+  const noteSnap = artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'snapshot',
+    artifactId: 'art-note-1',
+    artifactType: 'note',
+    revision: 1,
+    status: 'skeleton',
+    full: {
+      pages: [{ pageIndex: 0, stage: 'skeleton' }],
+    },
+  });
+  assert.equal(noteSnap.mode, 'snapshot');
+
+  const noteDelta = artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'delta',
+    artifactId: 'art-note-1',
+    artifactType: 'note',
+    revision: 2,
+    status: 'partial',
+    baseRevision: 1,
+    patch: {
+      pages: [{ pageIndex: 0, stage: 'copy', body: '周末预约限时' }],
+    },
+  });
+  assert.equal(noteDelta.mode, 'delta');
+
+  const videoSnap = artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'snapshot',
+    artifactId: 'art-vid-1',
+    artifactType: 'video',
+    revision: 1,
+    status: 'partial',
+    full: {
+      scenes: [
+        {
+          sceneIndex: 0,
+          storyboard: '开场门店外景',
+          keyframeStatus: 'pending',
+        },
+      ],
+    },
+  });
+  assert.equal(videoSnap.artifactType, 'video');
+
+  // type/body mismatch rejected
+  assert.equal(
+    artifactUpdateWireSchema.safeParse({
+      schemaVersion: 'artifact-update/v1',
+      mode: 'snapshot',
+      artifactId: 'art-x',
+      artifactType: 'note',
+      revision: 1,
+      status: 'skeleton',
+      full: { scenes: [{ sceneIndex: 0 }] },
+    }).success,
+    false,
+  );
+
+  // unknown free-form patch rejected (strict)
+  assert.equal(
+    artifactUpdateWireSchema.safeParse({
+      schemaVersion: 'artifact-update/v1',
+      mode: 'delta',
+      artifactId: 'art-x',
+      artifactType: 'note',
+      revision: 2,
+      status: 'partial',
+      baseRevision: 1,
+      patch: { arbitraryHtml: '<b>x</b>' },
+    }).success,
+    false,
+  );
+
+  // baseRevision >= revision rejected
+  assert.equal(
+    artifactUpdateWireSchema.safeParse({
+      schemaVersion: 'artifact-update/v1',
+      mode: 'delta',
+      artifactId: 'art-x',
+      artifactType: 'note',
+      revision: 1,
+      status: 'partial',
+      baseRevision: 1,
+      patch: { pages: [{ pageIndex: 0, stage: 'copy' }] },
+    }).success,
+    false,
+  );
+});
+
+test('applyArtifactUpdate: in-place growth, same-revision idempotent, skip → needs_snapshot', () => {
+  const snap1 = artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'snapshot',
+    artifactId: 'art-note-1',
+    artifactType: 'note',
+    revision: 1,
+    status: 'skeleton',
+    full: { pages: [{ pageIndex: 0, stage: 'skeleton' }, { pageIndex: 1, stage: 'skeleton' }] },
+  }) satisfies ArtifactUpdateWire;
+
+  const r1 = applyArtifactUpdate(null, snap1);
+  assert.equal(r1.ok, true);
+  if (!r1.ok) return;
+  assert.equal(r1.state.revision, 1);
+  assert.equal(r1.duplicate, false);
+  assert.equal('pages' in r1.state.body && r1.state.body.pages.length, 2);
+
+  // same revision re-apply is idempotent
+  const again = applyArtifactUpdate(r1.state, snap1);
+  assert.equal(again.ok, true);
+  if (!again.ok) return;
+  assert.equal(again.duplicate, true);
+  assert.equal(again.state.revision, 1);
+
+  // delta grows page 0 copy
+  const d2 = artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'delta',
+    artifactId: 'art-note-1',
+    artifactType: 'note',
+    revision: 2,
+    status: 'partial',
+    baseRevision: 1,
+    patch: {
+      pages: [{ pageIndex: 0, stage: 'copy', title: '周末护理', body: '预约从这里' }],
+    },
+  });
+  const r2 = applyArtifactUpdate(r1.state, d2);
+  assert.equal(r2.ok, true);
+  if (!r2.ok) return;
+  assert.equal(r2.state.revision, 2);
+  if ('pages' in r2.state.body) {
+    assert.equal(r2.state.body.pages[0]?.stage, 'copy');
+    assert.equal(r2.state.body.pages[0]?.body, '预约从这里');
+    assert.equal(r2.state.body.pages[1]?.stage, 'skeleton');
+  }
+
+  // skip revision (base != head) → needs_snapshot
+  const skip = artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'delta',
+    artifactId: 'art-note-1',
+    artifactType: 'note',
+    revision: 5,
+    status: 'partial',
+    baseRevision: 4,
+    patch: { pages: [{ pageIndex: 0, stage: 'image', imageStatus: 'ready' }] },
+  });
+  const rSkip = applyArtifactUpdate(r2.state, skip);
+  assert.equal(rSkip.ok, false);
+  if (rSkip.ok) return;
+  assert.equal(rSkip.reason, 'needs_snapshot');
+
+  // cold delta without head → needs_snapshot
+  const cold = applyArtifactUpdate(null, d2);
+  assert.equal(cold.ok, false);
+  if (cold.ok) return;
+  assert.equal(cold.reason, 'needs_snapshot');
+});
+
+test('applyArtifactUpdate: ready never silent-overwritten; derived version history 回看', () => {
+  let state: ArtifactProjectionState | null = null;
+  const toReady = artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'snapshot',
+    artifactId: 'art-note-1',
+    artifactType: 'note',
+    revision: 3,
+    status: 'ready',
+    full: {
+      pages: [
+        {
+          pageIndex: 0,
+          stage: 'image',
+          title: '封面',
+          body: '最后两个名额',
+          imageStatus: 'ready',
+        },
+      ],
+    },
+  });
+  const ready = applyArtifactUpdate(state, toReady);
+  assert.equal(ready.ok, true);
+  if (!ready.ok) return;
+  state = ready.state;
+  assert.equal(state.status, 'ready');
+
+  // silent overwrite without parentRevision → reject
+  const silent = artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'snapshot',
+    artifactId: 'art-note-1',
+    artifactType: 'note',
+    revision: 4,
+    status: 'ready',
+    full: {
+      pages: [
+        {
+          pageIndex: 0,
+          stage: 'image',
+          title: '封面',
+          body: '温馨预约',
+          imageStatus: 'ready',
+        },
+      ],
+    },
+  });
+  const blocked = applyArtifactUpdate(state, silent);
+  assert.equal(blocked.ok, false);
+  if (blocked.ok) return;
+  assert.equal(blocked.reason, 'silent_overwrite');
+
+  // derived revision with parentRevision archives ready head
+  const derived = artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'snapshot',
+    artifactId: 'art-note-1',
+    artifactType: 'note',
+    revision: 4,
+    status: 'ready',
+    parentRevision: 3,
+    full: {
+      pages: [
+        {
+          pageIndex: 0,
+          stage: 'image',
+          title: '封面',
+          body: '温馨预约',
+          imageStatus: 'ready',
+        },
+      ],
+    },
+  });
+  const next = applyArtifactUpdate(state, derived);
+  assert.equal(next.ok, true);
+  if (!next.ok) return;
+  assert.equal(next.state.revision, 4);
+  assert.equal(next.state.parentRevision, 3);
+  assert.equal(next.state.versionHistory.length, 1);
+  assert.equal(next.state.versionHistory[0]?.revision, 3);
+  if ('pages' in next.state.versionHistory[0]!.body) {
+    assert.equal(next.state.versionHistory[0]!.body.pages[0]?.body, '最后两个名额');
+  }
+  if ('pages' in next.state.body) {
+    assert.equal(next.state.body.pages[0]?.body, '温馨预约');
+  }
+});
+
+test('artifact stable id: duplicate object rate is 0 for map keyed by artifactId', () => {
+  const map: Record<string, ArtifactProjectionState> = {};
+  const a = applyArtifactUpdate(null, artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'snapshot',
+    artifactId: 'a1',
+    artifactType: 'copy',
+    revision: 1,
+    status: 'partial',
+    full: { blocks: [{ blockId: 'b1', role: 'title', text: '标题' }] },
+  }));
+  const b = applyArtifactUpdate(null, artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'snapshot',
+    artifactId: 'a2',
+    artifactType: 'video',
+    revision: 1,
+    status: 'skeleton',
+    full: { scenes: [{ sceneIndex: 0, storyboard: '开场' }] },
+  }));
+  assert.equal(a.ok && b.ok, true);
+  if (!a.ok || !b.ok) return;
+  map[a.state.artifactId] = a.state;
+  map[b.state.artifactId] = b.state;
+  // second update same id replaces (in-place), still rate 0
+  const a2 = applyArtifactUpdate(a.state, artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'delta',
+    artifactId: 'a1',
+    artifactType: 'copy',
+    revision: 2,
+    status: 'ready',
+    baseRevision: 1,
+    patch: { blocks: [{ blockId: 'b1', role: 'title', text: '新标题', status: 'ready' }] },
+  }));
+  assert.equal(a2.ok, true);
+  if (!a2.ok) return;
+  map[a2.state.artifactId] = a2.state;
+  assert.equal(Object.keys(map).length, 2);
+  assert.equal(artifactDuplicateObjectRate(map), 0);
 });
