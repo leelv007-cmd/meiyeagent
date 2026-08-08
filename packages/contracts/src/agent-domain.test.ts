@@ -415,6 +415,81 @@ test('agent execution confirmation request and immutable decision parse', () => 
     decidedAt: TS,
   });
   assert.equal(decision.decision, 'confirmed');
+  // Decision must not accept wait-period TTL fields (U8).
+  assert.equal(
+    planConfirmationDecisionSchema.safeParse({
+      ...decision,
+      holdExpiresAt: '2026-08-09T00:00:00.000Z',
+    }).success,
+    false,
+  );
+});
+
+test('campaign confirmation requires full U7 triple and rejects partial', () => {
+  const base = {
+    schemaVersion: 'agent-execution-confirmation-request/v1' as const,
+    requestId: 'req-campaign-1',
+    workspaceId: 'ws-1',
+    planId: 'work-plan-1',
+    planRevision: 1,
+    snapshotHash: 'snap-hash-c1',
+    quoteRef: { id: 'quote-c1', revision: 1 },
+    reservationIdempotencyKey: 'reserve-c1',
+    createdAt: TS,
+    holdExpiresAt: '2026-08-09T12:00:00.000Z',
+    status: 'pending' as const,
+  };
+  assert.equal(
+    agentExecutionConfirmationRequestSchema.safeParse({
+      ...base,
+      approvalScope: 'single_work',
+    }).success,
+    false,
+  );
+  const full = agentExecutionConfirmationRequestSchema.parse({
+    ...base,
+    campaignPlanRef: { id: 'campaign-plan-1', revision: 2 },
+    workOrdinal: 2,
+    approvalScope: 'single_work',
+  });
+  assert.equal(full.workOrdinal, 2);
+  assert.equal(full.approvalScope, 'single_work');
+});
+
+test('holdExpiresAt must stay within 1h–30d of createdAt', () => {
+  const base = {
+    schemaVersion: 'agent-execution-confirmation-request/v1' as const,
+    requestId: 'req-hold-1',
+    workspaceId: 'ws-1',
+    planId: 'plan-1',
+    planRevision: 1,
+    snapshotHash: 'snap-hash-1',
+    quoteRef: { id: 'quote-1', revision: 1 },
+    reservationIdempotencyKey: 'reserve-hold-1',
+    createdAt: TS,
+    status: 'pending' as const,
+  };
+  assert.equal(
+    agentExecutionConfirmationRequestSchema.safeParse({
+      ...base,
+      holdExpiresAt: '2026-08-08T12:30:00.000Z', // 30m — too short
+    }).success,
+    false,
+  );
+  assert.equal(
+    agentExecutionConfirmationRequestSchema.safeParse({
+      ...base,
+      holdExpiresAt: '2026-09-20T12:00:00.000Z', // >30d
+    }).success,
+    false,
+  );
+  assert.equal(
+    agentExecutionConfirmationRequestSchema.safeParse({
+      ...base,
+      holdExpiresAt: '2026-08-08T13:00:00.000Z', // exactly 1h
+    }).success,
+    true,
+  );
 });
 
 test('harness release artifact requires middlewareBindings and controlLimits', () => {

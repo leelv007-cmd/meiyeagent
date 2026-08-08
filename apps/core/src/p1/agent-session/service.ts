@@ -40,6 +40,15 @@ import {
   type AgentTurnRunnerResult,
   type ReleaseControlLimitsSource,
 } from './turn-runner.js';
+import type {
+  CreateExecutionConfirmationInput,
+  CreateExecutionConfirmationResult,
+  DecideExecutionConfirmationInput,
+  DecideExecutionConfirmationResult,
+  ExecutionConfirmationService,
+  ExpireExecutionConfirmationInput,
+  ExpireExecutionConfirmationResult,
+} from './execution-confirmation-service.js';
 
 export type AgentSessionHarnessServiceOptions = {
   store: AgentSessionStore;
@@ -84,16 +93,23 @@ export type AgentSessionHarnessServiceOptions = {
    * bindPlanCompiler when production ports assemble after the harness shell.
    */
   planCompiler?: PlanCompiler;
+  /**
+   * V31-11 confirmation objects (create reserve + decide + hold expiry).
+   * Bound from production assembly onto the Session confirmation path.
+   */
+  executionConfirmation?: ExecutionConfirmationService;
 };
 
 export class AgentSessionHarnessService {
   readonly checkpointWriter: ThreadCheckpointWriter;
   private readonly options: AgentSessionHarnessServiceOptions;
   private planCompiler: PlanCompiler | undefined;
+  private executionConfirmation: ExecutionConfirmationService | undefined;
 
   constructor(options: AgentSessionHarnessServiceOptions) {
     this.options = options;
     this.planCompiler = options.planCompiler;
+    this.executionConfirmation = options.executionConfirmation;
     this.checkpointWriter = new ThreadCheckpointWriter(options.store);
     assertSoleCheckpointWriter(this.checkpointWriter);
     if (options.registerCheckpointWriter !== false) {
@@ -108,6 +124,36 @@ export class AgentSessionHarnessService {
 
   getPlanCompiler(): PlanCompiler | undefined {
     return this.planCompiler;
+  }
+
+  /**
+   * Late-bind confirmation service (V31-11) onto the Session confirmation path.
+   * createRequest must complete balance check + FEFO reserve before the card waits.
+   */
+  bindExecutionConfirmation(service: ExecutionConfirmationService): void {
+    this.executionConfirmation = service;
+  }
+
+  getExecutionConfirmation(): ExecutionConfirmationService | undefined {
+    return this.executionConfirmation;
+  }
+
+  async createExecutionConfirmation(
+    input: CreateExecutionConfirmationInput,
+  ): Promise<CreateExecutionConfirmationResult> {
+    return this.requireExecutionConfirmation().createRequest(input);
+  }
+
+  async decideExecutionConfirmation(
+    input: DecideExecutionConfirmationInput,
+  ): Promise<DecideExecutionConfirmationResult> {
+    return this.requireExecutionConfirmation().decide(input);
+  }
+
+  async expireExecutionConfirmationHold(
+    input: ExpireExecutionConfirmationInput,
+  ): Promise<ExpireExecutionConfirmationResult> {
+    return this.requireExecutionConfirmation().expireHold(input);
   }
 
   async compilePlan(input: CompilePlanInput): Promise<CompilePlanResult> {
@@ -127,6 +173,15 @@ export class AgentSessionHarnessService {
       );
     }
     return this.planCompiler;
+  }
+
+  private requireExecutionConfirmation(): ExecutionConfirmationService {
+    if (!this.executionConfirmation) {
+      throw new Error(
+        'ExecutionConfirmationService is not bound on AgentSessionHarnessService (V31-11 assembly required).',
+      );
+    }
+    return this.executionConfirmation;
   }
 
   createTurnRunner(input: {

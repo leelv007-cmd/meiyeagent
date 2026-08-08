@@ -53,6 +53,17 @@ export function ExecutionConfirmationInteractionCard({
     request.revision,
   ]);
 
+  /**
+   * Compact confirmation strip expansion (V31-11): when debitPreview carries
+   * media units we surface a held-credits hint. Refund dual-state / rights /
+   * facts are projected by the host when available via outline title lines —
+   * the card stays read-only with only reject / confirm.
+   */
+  const heldUnits = request.frozen.debitPreview.reduce(
+    (sum, unit) => sum + unit.quantity,
+    0,
+  );
+
   return (
     <section
       className="meiye-porcelain rounded-2xl p-4"
@@ -68,6 +79,14 @@ export function ExecutionConfirmationInteractionCard({
           </div>
         ))}
       </dl>
+      {heldUnits > 0 ? (
+        <p
+          className="text-foreground mt-3 text-sm"
+          data-testid="execution-confirmation-held"
+        >
+          已预留额度（等待确认）
+        </p>
+      ) : null}
       {request.frozen.outline ? (
         <div
           className="mt-4 space-y-2"

@@ -24,7 +24,10 @@ import {
 } from '../p1/admin-config/index.js';
 import {
   AgentSessionHarnessService,
+  confirmationCreditPortFromPostgresLedger,
+  ExecutionConfirmationService,
   PostgresAgentSessionStore,
+  PostgresExecutionConfirmationMigration,
   PostgresMarketingPlanStore,
   controlLimitsFromArtifact,
   createDefaultIntentRetrievalBindings,
@@ -686,6 +689,17 @@ export async function assembleCoreGraph(
   /** Append-only MarketingPlanRevision store (V31-09 Plan Compiler). */
   const marketingPlanStore = new PostgresMarketingPlanStore(pool);
   /**
+   * V31-11: ExecutionConfirmationRequest + PlanConfirmationDecision.
+   * createRequest runs balance check + FEFO reserve under workspace credit lock.
+   */
+  const executionConfirmationMigration =
+    new PostgresExecutionConfirmationMigration(pool);
+  const executionConfirmationService = new ExecutionConfirmationService(
+    executionConfirmationMigration.requestStore,
+    executionConfirmationMigration.decisionStore,
+    confirmationCreditPortFromPostgresLedger(creditLedger),
+  );
+  /**
    * V31-08: late-bound billing quote resolver. productQuoteAuthority is
    * assembled further down; ports are only invoked at turn time.
    */
@@ -1052,6 +1066,8 @@ export async function assembleCoreGraph(
     new PostgresAgentSemanticEventStore(pool),
     // Marketing plan revisions (V31-09 Plan Compiler) — append-only, no status column.
     marketingPlanStore,
+    // V31-11 confirmation objects (request + immutable decision).
+    executionConfirmationMigration,
   ]);
   await ensureCreditPlanCatalogDefaults(adminConfigRepository);
   await migrateCreditPlanCatalogCurrencyToHkd(adminConfigRepository);
@@ -1294,6 +1310,8 @@ export async function assembleCoreGraph(
     }),
   });
   sessionAgentHarness?.bindPlanCompiler(planCompiler);
+  // V31-11: confirmation objects on the Session confirmation path (create/decide/expire).
+  sessionAgentHarness?.bindExecutionConfirmation(executionConfirmationService);
 
   const contentPackageRightsBasisResolver =
     new ContentPackageRightsBasisResolver(
@@ -1507,6 +1525,10 @@ export async function assembleCoreGraph(
     sessionAgentHarness,
     marketingPlanStore,
     planCompiler,
+    executionConfirmationService,
+    executionConfirmationRequestStore:
+      executionConfirmationMigration.requestStore,
+    planConfirmationDecisionStore: executionConfirmationMigration.decisionStore,
     foundationLedgerService,
     productEntitlements,
     executionEntitlementPolicy,

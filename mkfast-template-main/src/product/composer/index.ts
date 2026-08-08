@@ -188,6 +188,8 @@ export {
   projectExecutionConfirmCard,
   projectExecutionCost,
   projectExecutionParams,
+  projectHeldCreditsNotice,
+  projectRefundDualStateNotice,
   rejectExecution,
   shouldOpenExecutionConfirm,
   type ExecutionConfirmCardProps,
