@@ -3,7 +3,7 @@
 **Parent**: spec-D（#4）；权威 V3.1 §5.6、§23.3、§24.2
 **批次**: 4
 **Blocked by**: V31-14, V31-15
-**Status**: ready-for-agent
+**Status**: done (merged, 2026-08-09)
 
 ## What to build
 
