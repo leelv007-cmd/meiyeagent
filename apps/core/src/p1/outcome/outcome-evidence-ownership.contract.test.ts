@@ -85,6 +85,9 @@ test('result ledger and observability do not call recordResultSignal', () => {
   assert.deepEqual(callers, [
     'apps/core/src/p1/operations/content-package-delivery.ts',
     'apps/core/src/p1/operations/foundation-module.ts',
+    // V31-17 merchant self-report goes through the canonical writer (exact
+    // revision OCC) — a caller of the API, not a second writer.
+    'apps/core/src/p1/operations/publish-handoff.ts',
   ]);
 
   // Observability events for delivery_rating are a separate merchant surface;
