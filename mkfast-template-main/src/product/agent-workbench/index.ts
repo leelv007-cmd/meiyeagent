@@ -117,7 +117,6 @@ export {
   type PublishArtifactProps,
   type VideoArtifactProps,
 } from './artifact';
-<<<<<<< HEAD
 export {
   AGENT_PLAN_SURFACE_KEYS,
   CommitStrip,
@@ -141,7 +140,6 @@ export {
   type LivingPlanView,
   type PlanDiffView,
 } from './plan';
-=======
 
 export {
   PUBLISH_HANDOFF_SURFACE_KEYS,
@@ -160,4 +158,3 @@ export {
   type UsePublishHandoffInput,
   type UsePublishHandoffResult,
 } from './publish-handoff';
->>>>>>> lane/v31-17
