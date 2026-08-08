@@ -3,7 +3,7 @@
 **Parent**: spec-C（#3）；权威 V3.1 §23.2
 **批次**: 3（观测票，不占开发 lane）
 **Blocked by**: V31-14
-**Status**: ready-for-agent
+**Status**: done (merged, 2026-08-08)
 
 ## What to build
 
