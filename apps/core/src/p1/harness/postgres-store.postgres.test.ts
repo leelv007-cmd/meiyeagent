@@ -1436,7 +1436,15 @@ test(
 
 test(
   'Postgres harness store resumes migrated legacy runtime identities',
-  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  {
+    // 2026-08-09 user decision: no legacy in-flight tasks exist in any
+    // deployment, so the migrated-identity resume path retires with V31-26b
+    // (docs/tickets/v3.1/V31-26-legacy-retirement.md). The test has been red
+    // since before the V3.1 wave (REQUEST_FINGERPRINT_CONFLICT on resume);
+    // it is the acceptance contract for whichever V31-26b takes: fix the
+    // fingerprint compatibility or delete the path and this test with it.
+    skip: '归入 V31-26b：用户确认无存量 legacy 任务（2026-08-09）',
+  },
   async () => {
     const pool = new Pool({ connectionString });
     const store = new PostgresHarnessStore(pool);

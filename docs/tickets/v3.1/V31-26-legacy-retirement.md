@@ -9,6 +9,7 @@
 
 - **V31-26a（本地可做，现在执行）**：零消费者证明矩阵（grep 级+运行时引用计数）、replay 归档条件门监控接线、feature flag 逐个翻转/回退机制与演练记录、可安全删除项（构造性证明通过者）逐项删除。`force_legacy_five_stage` **不删**。
 - **V31-26b（试点依赖，挂起等真实商家数据）**：依赖「真实商家试点优于旧流程」结论的最终退役收官（force_legacy_five_stage 删除、U14 归档 fail-closed 执行、全量 journey 全绿收官）。触发点=试点结论出具。
+- **26b 追加项（2026-08-09 用户确认无存量）**：legacy 身份迁移恢复路径（`postgres-store.postgres.test.ts`「resumes migrated legacy runtime identities」，wave 前即红=REQUEST_FINGERPRINT_CONFLICT）随 26b 一并处理——修指纹兼容或连路径带测试一起删；测试已标 skip 留因，26b 收口时去除 skip。
 
 ## What to build
 
