@@ -1022,6 +1022,82 @@ class RetryStore implements HarnessLangfuseOutboxStore {
   }
 }
 
+test('eval_layer.result outbox items project release tags and score-create events', async (t) => {
+  let body:
+    | { batch: Array<{ type: string; body: Record<string, unknown> }> }
+    | undefined;
+  const server = createServer(async (request, response) => {
+    body = await readJson(request);
+    sendJson(response, 200, { successes: [] });
+  });
+  const sender = new LangfuseHttpSender({
+    baseUrl: await listen(t, server),
+    publicKey: 'pk-test',
+    secretKey: 'sk-test',
+  });
+
+  await sender.send({
+    auditId: 'audit-eval-layer-1',
+    workflowId: 'eval:release-1:result-1',
+    stage: 'eval_layer',
+    eventType: 'eval_layer.result',
+    occurredAt: '2026-08-08T06:00:00.000Z',
+    attempts: 1,
+    payload: {
+      kind: 'eval_layer.result',
+      harnessReleaseId: 'release-1',
+      resultId: 'result-1',
+      layer: 'l1',
+      evalSuiteRevision: 'eval/1',
+      datasetRevision: null,
+      verdict: 'scored',
+      scoredBookkept: true,
+      releasable: true,
+      sampleTraceId: null,
+      tags: ['releaseId:release-1'],
+      scores: [
+        {
+          name: 'eval.layer.verdict',
+          value: 0.5,
+          comment: 'verdict=scored',
+          metadata: {
+            resultId: 'result-1',
+            harnessReleaseId: 'release-1',
+            verdict: 'scored',
+          },
+        },
+        {
+          name: 'eval.gate.fidelity',
+          value: 1,
+          comment: 'gate=g-f',
+          metadata: { gateId: 'g-f', kind: 'fidelity' },
+        },
+      ],
+    },
+  });
+
+  const types = body?.batch.map((event) => event.type) ?? [];
+  assert.ok(types.includes('trace-create'));
+  assert.ok(types.includes('span-create'));
+  assert.equal(types.filter((type) => type === 'score-create').length, 2);
+
+  const trace = body?.batch.find((event) => event.type === 'trace-create');
+  assert.deepEqual(trace?.body.tags, [
+    'harness',
+    'eval_layer',
+    'releaseId:release-1',
+  ]);
+
+  const verdictScore = body?.batch.find(
+    (event) =>
+      event.type === 'score-create' &&
+      event.body.name === 'eval.layer.verdict',
+  );
+  assert.equal(verdictScore?.body.value, 0.5);
+  assert.equal(JSON.stringify(body).includes('apiKey'), false);
+  assert.equal(JSON.stringify(body).includes('upstreamUsdCost'), false);
+});
+
 async function readJson(request: IncomingMessage) {
   const chunks: Buffer[] = [];
   for await (const chunk of request) chunks.push(Buffer.from(chunk));

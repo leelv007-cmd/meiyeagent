@@ -2859,6 +2859,29 @@ export class PostgresHarnessAuditStore
     }
   }
 
+  /**
+   * V31-23: enqueue eval layer result into audit_events + langfuse_outbox.
+   * Same detached pattern as appendPromptAudit (no task_requests row required).
+   * Enqueue success transfers delivery to the existing outbox worker.
+   */
+  async appendEvalLayerAudit(event: HarnessAuditEvent) {
+    const runtimeWorkflowId = harnessRuntimeId(
+      event.workspaceId,
+      event.workflowId,
+    );
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      await writeAuditAndOutbox(client, event, runtimeWorkflowId);
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async recordStageTrace(input: {
     workspaceId: string;
     id: string;

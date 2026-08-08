@@ -34,6 +34,7 @@ import {
   createRetrievalToolRegistry,
   createSessionAgentKernel,
   createSessionRetrievalPorts,
+  getDefaultSessionQuickCheckRegistry,
   type SessionBillingQuoteFacts,
 } from '../p1/agent-session/index.js';
 import { PostgresAgentSemanticEventStore } from '../p1/agent-semantic-events/index.js';
@@ -89,6 +90,12 @@ import {
   modelSupplyPromptResolverFromHarness,
 } from '../p1/harness/langfuse-prompts.js';
 import { PostgresHarnessReleaseStore } from '../p1/harness/postgres-harness-release.js';
+import {
+  createProductionEvalLayersAssembly,
+  evalLangfuseOutboxFromAuditStore,
+  OutboxLangfuseEvalWriter,
+  PostgresEvalVerdictStore,
+} from '../p1/eval/index.js';
 import { PostgresOpsConsoleStore } from '../p1/ops-console/postgres-ops-console.js';
 import {
   PostgresHarnessAuditStore,
@@ -406,6 +413,7 @@ export async function assembleCoreGraph(
   );
   const harnessReleaseStore = new PostgresHarnessReleaseStore(pool);
   const opsConsoleStore = new PostgresOpsConsoleStore(pool);
+  const evalVerdictStore = new PostgresEvalVerdictStore(pool);
   const promptAuditStore = new PostgresHarnessAuditStore(pool);
   const harnessInteractionStore = new PostgresHarnessInteractionStore(pool);
   const harnessObservabilityStore = new PostgresHarnessObservabilityStore(pool);
@@ -417,6 +425,7 @@ export async function assembleCoreGraph(
     harnessSchemaStore,
     harnessReleaseStore,
     opsConsoleStore,
+    evalVerdictStore,
     skillRepository,
     storeWorkflowCaptureRepository,
     supplyControlRepository,
@@ -1406,6 +1415,17 @@ export async function assembleCoreGraph(
     triggerScheduler: entitlementJobRuntime,
   });
 
+  const evalLayersAssembly = createProductionEvalLayersAssembly({
+    releases: harnessReleaseStore,
+    verdicts: evalVerdictStore,
+    registry: getDefaultSessionQuickCheckRegistry(),
+    // Enqueue into harness langfuse_outbox; worker/sender own delivery.
+    langfuseWriter: new OutboxLangfuseEvalWriter(
+      evalLangfuseOutboxFromAuditStore(promptAuditStore),
+    ),
+    rollbackDrills: opsConsoleStore,
+  });
+
   return {
     harnessPromptResolver,
     modelSupplyPromptResolver,
@@ -1457,6 +1477,8 @@ export async function assembleCoreGraph(
     harnessSchemaStore,
     harnessReleaseStore,
     opsConsoleStore,
+    evalVerdictStore,
+    evalLayersAssembly,
     promptAuditStore,
     harnessInteractionStore,
     harnessObservabilityStore,

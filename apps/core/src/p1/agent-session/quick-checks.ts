@@ -154,8 +154,34 @@ export class QuickCheckRegistry {
     trace: QuickCheckTrace,
     tag: string,
   ): QuickCheckVerdict[] {
+    return this.runMatching(trace, { includeTags: [tag] });
+  }
+
+  /**
+   * V31-23 production sampling filter.
+   * includeTags: assertion must include every listed tag (AND).
+   * excludeTags: drop assertion if any listed tag is present.
+   */
+  runMatching(
+    trace: QuickCheckTrace,
+    filter: {
+      includeTags?: readonly string[];
+      excludeTags?: readonly string[];
+    } = {},
+  ): QuickCheckVerdict[] {
+    const include = filter.includeTags ?? [];
+    const exclude = filter.excludeTags ?? [];
     return this.list()
-      .filter((assertion) => assertion.tags?.includes(tag))
+      .filter((assertion) => {
+        const tags = assertion.tags ?? [];
+        if (include.length > 0 && !include.every((tag) => tags.includes(tag))) {
+          return false;
+        }
+        if (exclude.some((tag) => tags.includes(tag))) {
+          return false;
+        }
+        return true;
+      })
       .map((assertion) => {
         const verdict = assertion.assert(trace);
         return { ...verdict, id: assertion.id };
