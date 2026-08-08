@@ -19,3 +19,11 @@ export * from './context-retrieval.js';
 export * from './intent-interpreter.js';
 export * from './intent-retrieval-policies.js';
 export * from './tool-registry.js';
+// V31-09 Plan Compiler (plan-as-data + MarketingPlanRevision)
+export * from './execution-unit-registry.js';
+export * from './plan-readiness.js';
+export * from './plan-store.js';
+export * from './memory-plan-store.js';
+export * from './postgres-plan-store.js';
+export * from './plan-compiler.js';
+export * from './plan-compiler-production-ports.js';

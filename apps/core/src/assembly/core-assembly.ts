@@ -25,9 +25,12 @@ import {
 import {
   AgentSessionHarnessService,
   PostgresAgentSessionStore,
+  PostgresMarketingPlanStore,
   controlLimitsFromArtifact,
   createDefaultIntentRetrievalBindings,
   createIntentRetrievalPolicies,
+  createProductionPlanCompiler,
+  createProductionPlanCompilerPorts,
   createRetrievalToolRegistry,
   createSessionAgentKernel,
   createSessionRetrievalPorts,
@@ -679,9 +682,12 @@ export async function assembleCoreGraph(
   });
   /** Durable agent session store (V31-02) — also backs Session Harness service. */
   const agentSessionStore = new PostgresAgentSessionStore(pool);
+  /** Append-only MarketingPlanRevision store (V31-09 Plan Compiler). */
+  const marketingPlanStore = new PostgresMarketingPlanStore(pool);
   /**
    * V31-07 Session Harness service: kernel + retrieval tools + intent policies.
    * Only assembled when a kernel is available (fixture always; live when verified).
+   * V31-09 PlanCompiler is late-bound after rights/model ports assemble.
    */
   const sessionAgentHarness = sessionAgentKernel
     ? new AgentSessionHarnessService({
@@ -973,6 +979,8 @@ export async function assembleCoreGraph(
     // Agent session + semantic event tables (V31-02/03). Shadow: no Task/billing/UI write path.
     agentSessionStore,
     new PostgresAgentSemanticEventStore(pool),
+    // Marketing plan revisions (V31-09 Plan Compiler) — append-only, no status column.
+    marketingPlanStore,
   ]);
   await ensureCreditPlanCatalogDefaults(adminConfigRepository);
   await migrateCreditPlanCatalogCurrencyToHkd(adminConfigRepository);
@@ -1174,6 +1182,48 @@ export async function assembleCoreGraph(
   const contentPackageRightsResolver = new ProductContentPackageRightsResolver(
     relationalProductRepository
   );
+  /**
+   * V31-09 Plan Compiler — deterministic ports over rights + model catalog.
+   * Bound onto Session Harness when the kernel is assembled (harness surface).
+   */
+  const planCompiler = createProductionPlanCompiler({
+    store: marketingPlanStore,
+    ports: createProductionPlanCompilerPorts({
+      rights: {
+        resolve: async (input) => {
+          const platform =
+            input.platform === 'xiaohongshu' ||
+            input.platform === 'douyin' ||
+            input.platform === 'video_account'
+              ? input.platform
+              : undefined;
+          const resolved = await contentPackageRightsResolver.resolve({
+            workspaceId: input.workspaceId,
+            assetIds: input.assetIds,
+            ...(platform ? { platform } : {}),
+          });
+          return {
+            knownAssetIds: resolved.knownAssetIds ?? [],
+            unauthorizedAssetIds: resolved.unauthorizedAssetIds,
+          };
+        },
+      },
+      models: {
+        getCatalog: async (workspaceId, operation) => {
+          const view = await modelControlPlane.getCatalog(
+            workspaceId,
+            operation,
+          );
+          return {
+            revisionId: view.revisionId,
+            models: view.models.map((model) => ({ id: model.id })),
+          };
+        },
+      },
+    }),
+  });
+  sessionAgentHarness?.bindPlanCompiler(planCompiler);
+
   const contentPackageRightsBasisResolver =
     new ContentPackageRightsBasisResolver(
       contentPackageRightsResolver,
@@ -1384,6 +1434,8 @@ export async function assembleCoreGraph(
     sessionRetrievalPorts,
     sessionRetrievalExperiencePort,
     sessionAgentHarness,
+    marketingPlanStore,
+    planCompiler,
     foundationLedgerService,
     productEntitlements,
     executionEntitlementPolicy,
