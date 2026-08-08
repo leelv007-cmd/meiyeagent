@@ -287,6 +287,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     sessionAgentKernel,
     sessionAgentHarness,
     sessionRetrievalExperiencePort,
+    executionPlanAdmissionService,
     productEntitlements,
     executionEntitlementPolicy,
     p1ModelSupplyService,
@@ -1184,6 +1185,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         taskRecallDue: new TaskRecallDueProducer(dueDeliveryRepository),
         askMerchant: p1HarnessAskInvoker,
         interactions: harnessInteractions,
+        // V31-12: DBOS pre-run re-verification of admitted ExecutionPlanSnapshot.
+        executionPlanAdmission: executionPlanAdmissionService,
       }
     );
     await DBOS.launch();
@@ -1268,7 +1271,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         ),
         // Spec E / #379: production select must forward userSelectedSkillRefs.
         createProductionSkillManifestResolver(skillRuntime.instructionResolver),
-        promptAuditStore
+        promptAuditStore,
+        // V31-12: one-shot ExecutionPlanSnapshot write on the real admission path.
+        executionPlanAdmissionService
       ),
       harnessDecisions,
       harnessSchemaStore,

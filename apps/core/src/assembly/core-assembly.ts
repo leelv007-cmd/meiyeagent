@@ -39,6 +39,8 @@ import {
   createSessionRetrievalPorts,
   type SessionBillingQuoteFacts,
 } from '../p1/agent-session/index.js';
+import { ExecutionPlanAdmissionService } from '../p1/harness/execution-plan-admission.js';
+import { PostgresExecutionPlanAdmissionMigration } from '../p1/harness/postgres-execution-plan-admission-store.js';
 import { PostgresAgentSemanticEventStore } from '../p1/agent-semantic-events/index.js';
 import { createPermissionAuthorizer } from '../p1/capability-permission/index.js';
 import { CloudflareInventoryAdapter } from '../p1/cloudflare-read/index.js';
@@ -700,6 +702,15 @@ export async function assembleCoreGraph(
     confirmationCreditPortFromPostgresLedger(creditLedger),
   );
   /**
+   * V31-12: ExecutionPlanSnapshot admission (sole writer of execution_plan_snapshot).
+   * One-shot write on task-admission; DBOS re-verifies before run.
+   */
+  const executionPlanAdmissionMigration =
+    new PostgresExecutionPlanAdmissionMigration(pool);
+  const executionPlanAdmissionService = new ExecutionPlanAdmissionService(
+    executionPlanAdmissionMigration.store,
+  );
+  /**
    * V31-08: late-bound billing quote resolver. productQuoteAuthority is
    * assembled further down; ports are only invoked at turn time.
    */
@@ -1068,6 +1079,8 @@ export async function assembleCoreGraph(
     marketingPlanStore,
     // V31-11 confirmation objects (request + immutable decision).
     executionConfirmationMigration,
+    // V31-12 ExecutionPlanSnapshot admission (one-shot immutable).
+    executionPlanAdmissionMigration,
   ]);
   await ensureCreditPlanCatalogDefaults(adminConfigRepository);
   await migrateCreditPlanCatalogCurrencyToHkd(adminConfigRepository);
@@ -1529,6 +1542,8 @@ export async function assembleCoreGraph(
     executionConfirmationRequestStore:
       executionConfirmationMigration.requestStore,
     planConfirmationDecisionStore: executionConfirmationMigration.decisionStore,
+    executionPlanAdmissionService,
+    executionPlanSnapshotStore: executionPlanAdmissionMigration.store,
     foundationLedgerService,
     productEntitlements,
     executionEntitlementPolicy,

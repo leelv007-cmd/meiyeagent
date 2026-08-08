@@ -2,6 +2,7 @@ import {
   agentPrimitiveLifecycleEventSchema,
   boundedExecutionLimitsSchema,
   boundedExecutionSnapshotSchema,
+  executionPlanSnapshotSchema,
   HARNESS_STAGES,
   harnessTaskSubmissionSchema,
   MODEL_CAPABILITY_VOCABULARY_VERSION,
@@ -13,6 +14,7 @@ import {
   type BoundedExecutionLimitName,
   type BoundedExecutionLimits,
   type BoundedExecutionSnapshot,
+  type ExecutionPlanSnapshot,
   type HarnessStage,
   type ModelCapabilityRequirementAxis,
   type AgentPrimitiveLifecycleEvent,
@@ -33,6 +35,10 @@ import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { RouteSnapshot } from '../model-supply/index.js';
 import { serverAuditReference } from '../creation-experience/creation-experience-events.js';
 import type { ResolvedSkillInstruction } from '../skills/types.js';
+import type {
+  ExecutionPlanAdmissionPort,
+  SnapshotLiveFacts,
+} from './execution-plan-admission.js';
 import {
   HARNESS_CORE_PROMPT_KEYS,
   harnessPromptCapabilityRequirement,
@@ -81,6 +87,11 @@ export interface HarnessWorkflowInput {
   promptRevisionRefs?: Record<string, HarnessPromptRevisionReference>;
   /** Server-owned D-165 assembly snapshot bound to the DBOS workflow ID. */
   executionAssembly?: HarnessExecutionAssemblySnapshot;
+  /**
+   * V31-12 frozen Session→Make handoff. When present, task-admission one-shot
+   * writes the ExecutionPlanSnapshot row (sole writer). Absent ⇒ legacy replay.
+   */
+  executionPlanSnapshot?: ExecutionPlanSnapshot;
 }
 
 export interface HarnessSkillManifestSnapshot {
@@ -123,6 +134,11 @@ export interface HarnessTaskRequest extends Omit<
   | 'promptRevisionRefs'
 > {
   taskId: string;
+  /**
+   * Admission-time live facts for stale-confirm rejection (V31-12).
+   * Not part of the durable workflow input / fingerprint.
+   */
+  executionPlanLiveFacts?: SnapshotLiveFacts;
 }
 
 export type HarnessWorkflowInputBeforeBounds = Omit<
@@ -290,6 +306,11 @@ export class HarnessTaskAdmissionService {
     private readonly frozenRoutes?: HarnessFrozenRouteSnapshotResolver,
     private readonly skillManifests?: HarnessSkillManifestResolver,
     private readonly assemblyAudits?: HarnessExecutionAssemblyAuditPort,
+    /**
+     * V31-12: sole writer of execution_plan_snapshot on the real admission path.
+     * Required when submit carries executionPlanSnapshot; absent skips write.
+     */
+    private readonly executionPlanAdmission?: ExecutionPlanAdmissionPort,
   ) {}
 
   async submit(input: HarnessTaskRequest) {
@@ -327,6 +348,26 @@ export class HarnessTaskAdmissionService {
       ...normalized,
       boundedExecution,
     };
+    // V31-12: one-shot snapshot row write on the real task-admission path.
+    // Must run before registry.claim so replays share the same frozen hash.
+    if (request.executionPlanSnapshot) {
+      if (!this.executionPlanAdmission) {
+        throw new HarnessAdmissionError(
+          'FROZEN_REQUEST_MISSING',
+          'ExecutionPlanSnapshot admission requires the production admission writer (V31-12).',
+        );
+      }
+      const admitted = await this.executionPlanAdmission.admitSnapshot({
+        workflowId: input.taskId,
+        workspaceId: request.workspaceId,
+        snapshot: request.executionPlanSnapshot,
+        live: input.executionPlanLiveFacts,
+      });
+      request = {
+        ...request,
+        executionPlanSnapshot: admitted.admitted.snapshot,
+      };
+    }
     const selectedSkillStages = await this.selectSkillManifests(normalized);
     if (normalized.executionSnapshot) {
       if (!this.frozenRoutes) {
@@ -822,19 +863,28 @@ function normalizeRequest(
     decisionReferences,
     executionSnapshot,
     usageReservation,
+    executionPlanSnapshot,
+    executionPlanLiveFacts: _executionPlanLiveFacts,
     ...request
   } = input;
+  void _executionPlanLiveFacts;
   const parsed = harnessTaskRequestSchema.parse(request);
+  const planSnapshot = executionPlanSnapshot
+    ? executionPlanSnapshotSchema.parse(executionPlanSnapshot)
+    : undefined;
   const snapshot = executionSnapshot
     ? creationExecutionSnapshotSchema.parse(executionSnapshot)
     : undefined;
   if (snapshot) {
     assertExecutionSnapshotMatchesRequest(snapshot, parsed);
-    return snapshotWorkflowInput(
-      snapshot,
-      usageReservation,
-      decisionReferences,
-    );
+    return {
+      ...snapshotWorkflowInput(
+        snapshot,
+        usageReservation,
+        decisionReferences,
+      ),
+      ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
+    };
   }
   return {
     actorId: parsed.actorId,
@@ -848,6 +898,7 @@ function normalizeRequest(
     userSelectedSkillRefs: parsed.userSelectedSkillRefs,
     factScope: parsed.factScope ?? { storeId: parsed.workspaceId },
     ...(parsed.reuseSeed ? { reuseSeed: parsed.reuseSeed } : {}),
+    ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
   };
 }
 
