@@ -1,12 +1,13 @@
 /**
  * Agent Workstream shell: Narrative document lines + collapsible Activity,
- * pending-interrupt priority strip, mobile 过程/作品 switch (V31-04),
- * right-rail Artifact canvas (V31-15 production wiring).
+ * Living Plan (V31-10), pending-interrupt priority strip, mobile 过程/作品
+ * switch (V31-04), right-rail Artifact canvas (V31-15 production wiring).
  */
 
 import { cn } from '@/lib/utils';
 
 import {
+  projectActivePlanRevisions,
   projectVisibleActivities,
   projectVisibleArtifacts,
   projectVisibleNarratives,
@@ -21,6 +22,11 @@ import {
   WORKSTREAM_MOBILE_PANE_LABELS,
   type WorkstreamMobilePane,
 } from './mobile-workstream-switch';
+import {
+  LivingPlan,
+  type CommitStripAction,
+  type CommitStripView,
+} from './plan';
 import { ActivityLine } from './stream/activity-line';
 import { NarrativeLine } from './stream/narrative-line';
 
@@ -38,6 +44,11 @@ export type AgentWorkstreamProps = {
   worksSlot?: React.ReactNode;
   /** Optional legacy conversation / composer stream under process pane. */
   processSlot?: React.ReactNode;
+  /** When true, Living Plan mounts as Compact Plan (Brief/quote/confirm unified). */
+  livingPlanCompact?: boolean;
+  /** Optional live commit-strip overlay (balance/quote). */
+  livingPlanCommitStrip?: CommitStripView;
+  onLivingPlanCommitAction?: (action: CommitStripAction) => void;
   className?: string;
 };
 
@@ -49,6 +60,9 @@ export function AgentWorkstream({
   onArtifactViewRevision,
   worksSlot,
   processSlot,
+  livingPlanCompact = false,
+  livingPlanCommitStrip,
+  onLivingPlanCommitAction,
   className,
 }: AgentWorkstreamProps) {
   const layout = resolveMobileWorkstreamLayout({
@@ -58,6 +72,7 @@ export function AgentWorkstream({
   const narratives = projectVisibleNarratives(state);
   const activities = projectVisibleActivities(state);
   const artifacts = projectVisibleArtifacts(state);
+  const planRevisions = projectActivePlanRevisions(state);
   const interrupts = state.pendingInterrupts;
   const mobileWorksOpen = viewport === 'mobile' && layout.showWorks;
 
@@ -99,6 +114,15 @@ export function AgentWorkstream({
               onToggle={onToggleActivity}
             />
           ))}
+          {planRevisions.length > 0 ? (
+            <LivingPlan
+              commitStrip={livingPlanCommitStrip}
+              compact={livingPlanCompact}
+              onCommitAction={onLivingPlanCommitAction}
+              revisions={planRevisions}
+              viewport={viewport}
+            />
+          ) : null}
           {processSlot}
         </div>
       ) : null}

@@ -42,6 +42,11 @@ import {
   projectMarketingPlanReadiness,
   type PlanReadinessFacts,
 } from './plan-readiness.js';
+import {
+  buildPlanSemanticEventCandidate,
+  type PlanLivingPlanBillingOverlay,
+  type PlanSemanticEventSink,
+} from './plan-semantic-event.js';
 import type {
   MarketingPlanCompileArtifact,
   MarketingPlanStore,
@@ -142,6 +147,11 @@ export type PlanCompilerPorts = {
 
 export type CompilePlanInput = {
   workspaceId: string;
+  /**
+   * Tenant boundary for semantic event projection. Defaults to workspaceId
+   * (same as shadow workflow projector resourceId mapping).
+   */
+  resourceId?: string;
   threadId: string;
   goalIds?: string[];
   scope?: MarketingPlanRevision['scope'];
@@ -160,6 +170,8 @@ export type CompilePlanInput = {
   contextRevision: string;
   harnessReleaseId: string;
   now?: string;
+  /** Optional merchant billing overlay for Living Plan cost section (no invention). */
+  livingPlanBilling?: PlanLivingPlanBillingOverlay;
   /**
    * Contamination channel for constructive tests: anything the model might
    * illegally put in a proposal envelope. Compiler MUST ignore these.
@@ -218,20 +230,36 @@ export class PlanCompiler {
   private readonly registry: ExecutionUnitRegistry;
   private readonly ports: PlanCompilerPorts;
   private readonly store: MarketingPlanStore;
+  private semanticEvents: PlanSemanticEventSink | undefined;
 
   constructor(options: {
     store: MarketingPlanStore;
     ports: PlanCompilerPorts;
     registry?: ExecutionUnitRegistry;
+    /** Optional: projector.project sink (late-bound in production assembly). */
+    semanticEvents?: PlanSemanticEventSink;
   }) {
     this.store = options.store;
     this.ports = options.ports;
     this.registry =
       options.registry ?? createCanonicalExecutionUnitRegistry();
+    this.semanticEvents = options.semanticEvents;
   }
 
   get unitRegistry(): ExecutionUnitRegistry {
     return this.registry;
+  }
+
+  /**
+   * Late-bind AgentSemanticEventProjector (api-runtime creates projector after
+   * core graph). No-op when unset: unit tests without projector stay silent.
+   */
+  bindSemanticEventProjector(sink: PlanSemanticEventSink): void {
+    this.semanticEvents = sink;
+  }
+
+  getSemanticEventProjector(): PlanSemanticEventSink | undefined {
+    return this.semanticEvents;
   }
 
   /**
@@ -407,6 +435,12 @@ export class PlanCompiler {
       now,
     });
 
+    await this.emitPlanSemanticEvent({
+      input,
+      revision: stored.revision,
+      readiness,
+    });
+
     return {
       revision: stored.revision,
       executionPlan: stored.executionPlan,
@@ -443,6 +477,31 @@ export class PlanCompiler {
     now: string;
   }): MarketingPlanReadiness {
     return projectMarketingPlanReadiness(input);
+  }
+
+  /**
+   * After append-only store write: project plan.created (r1) or plan.revised (r>1).
+   * Failures surface to caller — plan row already committed; projector is
+   * idempotent on eventId so retry is safe.
+   */
+  private async emitPlanSemanticEvent(input: {
+    input: CompilePlanInput;
+    revision: MarketingPlanRevision;
+    readiness: MarketingPlanReadiness;
+  }): Promise<void> {
+    if (!this.semanticEvents) return;
+    const resourceId =
+      input.input.resourceId?.trim() || input.input.workspaceId;
+    const candidate = buildPlanSemanticEventCandidate({
+      resourceId,
+      revision: input.revision,
+      readiness: input.readiness,
+      adjustmentSummary: input.input.patch?.summary,
+      billing: input.input.livingPlanBilling,
+      correlationId: input.input.threadId,
+      occurredAt: input.revision.createdAt,
+    });
+    await this.semanticEvents.project(candidate);
   }
 
   private buildDeliverables(proposal: PlanProposal): PlanDeliverable[] {
@@ -731,6 +790,7 @@ export function createProductionPlanCompiler(options: {
   store: MarketingPlanStore;
   ports: PlanCompilerPorts;
   registry?: ExecutionUnitRegistry;
+  semanticEvents?: PlanSemanticEventSink;
 }): PlanCompiler {
   for (const key of ['quote', 'rights', 'models', 'recipeSkills'] as const) {
     if (!options.ports[key]) {

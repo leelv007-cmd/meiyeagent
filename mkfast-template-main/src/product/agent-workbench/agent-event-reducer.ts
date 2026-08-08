@@ -17,6 +17,11 @@ import {
   type ArtifactUpdateWire,
 } from '@meiye/contracts';
 
+import {
+  parseLivingPlanEventPayload,
+  type LivingPlanRevisionFacts,
+} from './plan/living-plan-model';
+
 // ─── Session / projections ───────────────────────────────────────────────────
 
 /** Minimal session projection for reconnect (aligns with Core snapshot-replay). */
@@ -70,6 +75,14 @@ export type ArtifactProjection = ArtifactProjectionState & {
   viewingRevision?: number;
 };
 
+/** Append-only Living Plan projection per planId (V31-10 / V3.1 §5.3). */
+export type PlanProjectionState = {
+  planId: string;
+  /** Sorted ascending by revision number; never mutates prior rows. */
+  revisions: LivingPlanRevisionFacts[];
+  latestRevision: number;
+};
+
 export type AgentConnectionState =
   | 'connecting'
   | 'live'
@@ -82,6 +95,10 @@ export type AgentWorkbenchClientState = {
   messages: NarrativeMessage[];
   activities: Record<string, AgentActivity>;
   artifacts: Record<string, ArtifactProjection>;
+  /** planId → append-only revision history (Living Plan UI). */
+  plans: Record<string, PlanProjectionState>;
+  /** Most recently touched plan (Workstream renders this). */
+  activePlanId: string | null;
   pendingInterrupts: InterruptProjection[];
   connection: AgentConnectionState;
   lastEventId: string | null;
@@ -162,6 +179,8 @@ export function createEmptyAgentWorkbenchState(): AgentWorkbenchClientState {
     messages: [],
     activities: {},
     artifacts: {},
+    plans: {},
+    activePlanId: null,
     pendingInterrupts: [],
     connection: 'offline',
     lastEventId: null,
@@ -175,6 +194,15 @@ export function createEmptyAgentWorkbenchState(): AgentWorkbenchClientState {
     needsSnapshotResync: false,
     mobilePane: 'process',
   };
+}
+
+/** Active plan revision history for Workstream Living Plan mount. */
+export function projectActivePlanRevisions(
+  state: AgentWorkbenchClientState
+): readonly LivingPlanRevisionFacts[] {
+  if (!state.activePlanId) return [];
+  const plan = state.plans[state.activePlanId];
+  return plan?.revisions ?? [];
 }
 
 /** Visible narrative lines in stream order (card reduction already applied). */
@@ -638,20 +666,98 @@ function projectEvent(
         },
       };
     }
+    case 'plan.created':
+    case 'plan.revised': {
+      const facts = parseLivingPlanEventPayload(payload);
+      if (!facts) {
+        // Malformed plan payload: advance cursor only (fail closed on UI body)
+        return { ok: true, state };
+      }
+      const withCursor: LivingPlanRevisionFacts = {
+        ...facts,
+        streamOffset: event.streamOffset,
+        occurredAt: event.occurredAt,
+      };
+      return {
+        ok: true,
+        state: appendPlanRevision(state, withCursor),
+      };
+    }
     case 'run.started':
     case 'goal.updated':
-    case 'plan.created':
-    case 'plan.revised':
     case 'memory.proposed':
     case 'memory.promoted':
     case 'work.waiting':
     case 'outcome.recorded':
-      // Known semantic types without Workstream card body in V31-04 — cursor only
+      // Known semantic types without Workstream card body yet — cursor only
       return { ok: true, state };
     default:
       // Unknown event types: accept for forward-compat, no UI mutation
       return { ok: true, state };
   }
+}
+
+/**
+ * Append-only plan revision projection. Never mutates prior revision rows.
+ * Duplicate revision numbers for the same planId are ignored (idempotent).
+ */
+function appendPlanRevision(
+  state: AgentWorkbenchClientState,
+  facts: LivingPlanRevisionFacts
+): AgentWorkbenchClientState {
+  const existing = state.plans[facts.planId];
+  if (existing) {
+    if (existing.revisions.some((row) => row.revision === facts.revision)) {
+      return {
+        ...state,
+        activePlanId: facts.planId,
+      };
+    }
+    if (facts.revision <= existing.latestRevision) {
+      // Out-of-order lower revision: still record if not present, keep sort
+      const revisions = [...existing.revisions, facts].sort(
+        (left, right) => left.revision - right.revision
+      );
+      return {
+        ...state,
+        activePlanId: facts.planId,
+        plans: {
+          ...state.plans,
+          [facts.planId]: {
+            planId: facts.planId,
+            revisions,
+            latestRevision: revisions[revisions.length - 1]!.revision,
+          },
+        },
+      };
+    }
+    const revisions = [...existing.revisions, facts];
+    return {
+      ...state,
+      activePlanId: facts.planId,
+      plans: {
+        ...state.plans,
+        [facts.planId]: {
+          planId: facts.planId,
+          revisions,
+          latestRevision: facts.revision,
+        },
+      },
+    };
+  }
+
+  return {
+    ...state,
+    activePlanId: facts.planId,
+    plans: {
+      ...state.plans,
+      [facts.planId]: {
+        planId: facts.planId,
+        revisions: [facts],
+        latestRevision: facts.revision,
+      },
+    },
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -674,7 +780,9 @@ function readNumber(
   key: string
 ): number | undefined {
   const value = record[key];
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
 }
 
 function readActivityStatus(value: unknown): AgentActivityStatus {

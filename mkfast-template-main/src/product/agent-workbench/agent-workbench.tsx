@@ -6,6 +6,7 @@
  * 2. else WorkbenchSessionProjection decides Idle vs resume active/recent
  * 3. explicit taskId is preserved independently (Work deep link)
  * Work inline projection stays available via processSlot.
+ * Living Plan (V31-10) mounts inside Workstream when plan.* events land.
  */
 
 import { useEffect, useRef } from 'react';
@@ -23,10 +24,16 @@ import {
 } from './agent-event-store';
 import { AgentWorkstream } from './agent-workstream';
 import type { WorkstreamMobilePane } from './mobile-workstream-switch';
+import type { CommitStripAction, CommitStripView } from './plan';
+import { registerPlanSurfaces } from './plan/register-plan-surfaces';
 import {
   workbenchRootMode,
   type WorkbenchSessionResolveResponse,
 } from './thread-session';
+
+// Production bootstrap: plan surfaces must be registered before any stream
+// resolveControlledSurface call (V31-10 acceptance: real Workstream path).
+registerPlanSurfaces();
 
 export type AgentWorkbenchSessionLoader = (input: {
   explicitThreadId: string | null;
@@ -49,6 +56,10 @@ export type AgentWorkbenchHostProps = {
   worksSlot?: React.ReactNode;
   /** Work inline projection / legacy conversation stream. */
   processSlot?: React.ReactNode;
+  /** Compact Plan mode (Brief/quote/confirm unified strip). */
+  livingPlanCompact?: boolean;
+  livingPlanCommitStrip?: CommitStripView;
+  onLivingPlanCommitAction?: (action: CommitStripAction) => void;
   className?: string;
 };
 
@@ -69,6 +80,9 @@ export function AgentWorkbenchHost({
   viewport = 'desktop',
   worksSlot,
   processSlot,
+  livingPlanCompact = false,
+  livingPlanCommitStrip,
+  onLivingPlanCommitAction,
   className,
 }: AgentWorkbenchHostProps) {
   const store = getAgentWorkbenchHostStore();
@@ -163,6 +177,8 @@ export function AgentWorkbenchHost({
     >
       <AgentWorkstream
         className={className}
+        livingPlanCommitStrip={livingPlanCommitStrip}
+        livingPlanCompact={livingPlanCompact}
         onArtifactViewRevision={(artifactId, revision) =>
           dispatch({
             type: 'set_artifact_viewing_revision',
@@ -170,6 +186,7 @@ export function AgentWorkbenchHost({
             revision,
           })
         }
+        onLivingPlanCommitAction={onLivingPlanCommitAction}
         onMobilePaneChange={(pane: WorkstreamMobilePane) =>
           dispatch({ type: 'set_mobile_pane', pane })
         }

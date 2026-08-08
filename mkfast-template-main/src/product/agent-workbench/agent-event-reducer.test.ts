@@ -14,6 +14,7 @@ import {
 import {
   createEmptyAgentWorkbenchState,
   measureArtifactDuplicateObjectRate,
+  projectActivePlanRevisions,
   projectVisibleActivities,
   projectVisibleArtifacts,
   projectVisibleNarratives,
@@ -748,4 +749,113 @@ test('V31-15: video artifact delta grows scenes in place', () => {
     assert.equal(body.scenes[0]?.keyframeStatus, 'ready');
     assert.equal(body.scenes[0]?.subtitle, '周末到店护理');
   }
+});
+
+// ─── V31-10 Living Plan revisions ────────────────────────────────────────────
+
+test('V31-10: plan.created projects Living Plan revision history', () => {
+  let state = empty({ session: session() });
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'evt-plan-1',
+      streamOffset: '10',
+      eventType: 'plan.created',
+      payload: {
+        planId: 'plan-1',
+        revision: 1,
+        goal: { summary: '推奶油风美甲' },
+        deliverables: [
+          { kind: 'note', platform: '小红书', quantity: 6 },
+        ],
+        costDuration: { creditCost: 38, failureRefundsCredits: true },
+      },
+    }),
+  }).state;
+
+  assert.equal(state.activePlanId, 'plan-1');
+  const revisions = projectActivePlanRevisions(state);
+  assert.equal(revisions.length, 1);
+  assert.equal(revisions[0]?.revision, 1);
+  assert.equal(revisions[0]?.goal.summary, '推奶油风美甲');
+  assert.equal(revisions[0]?.costDuration.creditCost, 38);
+});
+
+test('V31-10: plan.revised appends new revision; prior rows stay immutable', () => {
+  let state = empty({ session: session() });
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_events_batch',
+    events: [
+      wire({
+        eventId: 'evt-plan-1',
+        streamOffset: '1',
+        eventType: 'plan.created',
+        payload: {
+          planId: 'plan-1',
+          revision: 1,
+          goal: { summary: '推奶油风美甲' },
+          deliverables: [
+            { kind: 'note', platform: '小红书', quantity: 6 },
+            { kind: 'copy', platform: '朋友圈', quantity: 1 },
+          ],
+          costDuration: { creditCost: 38 },
+        },
+      }),
+      wire({
+        eventId: 'evt-plan-2',
+        streamOffset: '2',
+        eventType: 'plan.revised',
+        payload: {
+          planId: 'plan-1',
+          revision: 2,
+          goal: { summary: '推奶油风美甲' },
+          deliverables: [
+            { kind: 'note', platform: '小红书', quantity: 4 },
+          ],
+          adjustmentSummary: '只做小红书，减到 4 页',
+          costDuration: { creditCost: 24 },
+        },
+      }),
+    ],
+  }).state;
+
+  const revisions = projectActivePlanRevisions(state);
+  assert.equal(revisions.length, 2);
+  assert.equal(revisions[0]?.deliverables[0]?.quantity, 6);
+  assert.equal(revisions[1]?.deliverables[0]?.quantity, 4);
+  assert.equal(revisions[1]?.adjustmentSummary, '只做小红书，减到 4 页');
+  // Prior row not overwritten
+  assert.equal(revisions[0]?.costDuration.creditCost, 38);
+});
+
+test('V31-10: duplicate plan revision is idempotent (no silent overwrite)', () => {
+  let state = empty({ session: session() });
+  const payload = {
+    planId: 'plan-1',
+    revision: 1,
+    goal: { summary: 'A' },
+    deliverables: [{ kind: 'note', quantity: 1 }],
+  };
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'evt-a',
+      streamOffset: '1',
+      eventType: 'plan.created',
+      payload,
+    }),
+  }).state;
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: wire({
+      eventId: 'evt-b',
+      streamOffset: '2',
+      eventType: 'plan.revised',
+      payload: { ...payload, goal: { summary: 'B-overwrite-attempt' } },
+    }),
+  }).state;
+
+  const revisions = projectActivePlanRevisions(state);
+  assert.equal(revisions.length, 1);
+  assert.equal(revisions[0]?.goal.summary, 'A');
 });

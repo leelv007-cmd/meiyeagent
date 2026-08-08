@@ -40,3 +40,4 @@ export * from './execution-confirmation-projection.js';
 export * from './execution-confirmation-service.js';
 export * from './memory-execution-confirmation-store.js';
 export * from './postgres-execution-confirmation-store.js';
+export * from './plan-semantic-event.js';

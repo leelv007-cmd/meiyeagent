@@ -1,8 +1,13 @@
 /**
- * Agent Workbench foundation (V31-04/05) + Artifact protocol (V31-15):
- * event reducer, Workstream, Controlled Surface Registry, Thread-root host,
- * Artifact canvas. Layout: V3.1 §28.3.
+ * Agent Workbench foundation (V31-04/05) + Artifact protocol (V31-15)
+ * + Living Plan (V31-10): event reducer, Workstream, Controlled Surface
+ * Registry, Thread-root host, Artifact canvas, plan surfaces. Layout: V3.1 §28.3.
  */
+
+import { registerPlanSurfaces } from './plan/register-plan-surfaces';
+
+// Side-effect import: production consumers of the barrel get plan surfaces.
+registerPlanSurfaces();
 
 export {
   applyLiveSemanticEvent,
@@ -16,6 +21,7 @@ export {
   createEmptyAgentWorkbenchState,
   isActivityVisible,
   measureArtifactDuplicateObjectRate,
+  projectActivePlanRevisions,
   projectVisibleActivities,
   projectVisibleArtifacts,
   projectVisibleNarratives,
@@ -30,6 +36,7 @@ export {
   type ClientSnapshotCursor,
   type InterruptProjection,
   type NarrativeMessage,
+  type PlanProjectionState,
   type ReduceResult,
   type WorkbenchSessionProjection,
 } from './agent-event-reducer';
@@ -110,3 +117,26 @@ export {
   type PublishArtifactProps,
   type VideoArtifactProps,
 } from './artifact';
+export {
+  AGENT_PLAN_SURFACE_KEYS,
+  CommitStrip,
+  CompactPlan,
+  LivingPlan,
+  PlanDiff,
+  PlanSection,
+  __resetPlanSurfaceRegistrationForTests,
+  commitStripInputFromPlanFacts,
+  diffLivingPlanFacts,
+  diffLivingPlanViews,
+  livingPlanFactsFromRevision,
+  parseLivingPlanEventPayload,
+  projectCommitStrip,
+  projectLivingPlanView,
+  registerPlanSurfaces,
+  type AgentPlanSurfaceKey,
+  type CommitStripAction,
+  type CommitStripView,
+  type LivingPlanRevisionFacts,
+  type LivingPlanView,
+  type PlanDiffView,
+} from './plan';

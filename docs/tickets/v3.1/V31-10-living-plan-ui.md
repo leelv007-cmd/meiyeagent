@@ -3,7 +3,7 @@
 **Parent**: spec-B（#2）；权威 V3.1 §5.2–5.3
 **批次**: 2（frontend lane 可承接）
 **Blocked by**: V31-04, V31-09
-**Status**: ready-for-agent
+**Status**: done (merged, 2026-08-08)
 
 ## What to build
 
