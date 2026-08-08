@@ -2,7 +2,7 @@
 
 ## Scope and authority
 
-- Branch: `leelv007-cmd/t45-confirmation-timeout`
+- Branch: `legacy-origin-a/t45-confirmation-timeout`
 - Merge-path base: local `main` at `5aee7c5d` (includes T20 and T28).
 - The browser journey input follows T44's promotion-gap behavior; its governed
   admin-config setup only separates answer and timeout timing deterministically.

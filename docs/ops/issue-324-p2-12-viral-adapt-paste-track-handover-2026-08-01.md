@@ -1,6 +1,6 @@
 # #324 P2-12 交底 —— 爆款复刻端到端（粘贴轨先行）
 
-- 分支：`leelv007-cmd/lane-324`（worktree `lane-324`）；**未 push、未关票**，合入与批换锚由主控执行。
+- 分支：`legacy-origin-a/lane-324`（worktree `lane-324`）；**未 push、未关票**，合入与批换锚由主控执行。
 - 规格锚：`docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §4.3 / §5 / §8.3 P2-4 / §8.4。
 - 前置（merge-ledger）：#315、#317、#319 已关票。
 - 关联：OpenCLI live 核销与链接主路径转正 → **#328**（本票仅保留 UI 位 + 诚实不可用）。

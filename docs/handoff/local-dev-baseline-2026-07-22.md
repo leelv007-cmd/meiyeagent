@@ -6,11 +6,11 @@
 ## 本次整理动作
 
 - **回收 8 个 worktree**：qa-20260722 + orca workspaces 下 7 个（ci-baseline-a1 / L1–L5 / pr-review），全部 `git worktree remove`，回到单一主仓。
-- **保住 L3 未提交成果**：254 行 execution-spine 新代码（`verifiedSourceObjects` 逻辑 + 测试）→ commit `7ad9b29`，提交到 `leelv007-cmd/L3-p0-spine` 本地分支。
+- **保住 L3 未提交成果**：254 行 execution-spine 新代码（`verifiedSourceObjects` 逻辑 + 测试）→ commit `7ad9b29`，提交到 `legacy-origin-a/L3-p0-spine` 本地分支。
 - **abort L2 中断的 rebase**：原状态 detached HEAD + 7 个未解冲突（rebase 到旧的 `6f75020` 半途停住）→ `rebase --abort` 干净回到 `4232e7b`（= 远端）。
 - **归档 2 份文档进 main**：orca handoff（#129-169）+ wave-1 PR review（#170-174）→ commit `f37b4aa`，已 push。
 - **清除生成物噪音**：所有 worktree 的 `mkfast-template-main/worker-configuration.d.ts`（wrangler types 生成物，含 `REACTBITS_LICENSE_KEY`）统一 checkout 丢弃。
-- **删除已回收分支**：`qa/beauty-marketing-agent-20260722`、`leelv007-cmd/pr-review-170-174`（提交都已在 main、review doc 已归档）。
+- **删除已回收分支**：`qa/beauty-marketing-agent-20260722`、`legacy-origin-a/pr-review-170-174`（提交都已在 main、review doc 已归档）。
 
 ## 当前工作区拓扑
 

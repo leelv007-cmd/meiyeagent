@@ -9,7 +9,7 @@ source_of_truth:
   - 合并权威产品设计 D-001~D-099
   - ADR-0007 / ADR-0010 / ADR-0011 / ADR-0012
   - UI/用户旅程重建、ContentPackage 产品化与全量功能开发规格
-tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/130
+tracker_issue: https://github.com/legacy-origin-a/legacy-web-repo/issues/130
 ---
 
 # 美业宣发经营 Agent P1 产品化规格：结果体验、资产治理与经营闭环
@@ -342,7 +342,7 @@ Content 和 Assets 已有基本列表，但用户可见投影仍可能暴露 AID
 
 ## Further Notes
 
-- **Issue Tracker**：本规格发布于 GitHub Issue [#130](https://github.com/leelv007-cmd/meiyeweb-agent/issues/130)，并以 `ready-for-agent` 标记；P0 Issue [#129](https://github.com/leelv007-cmd/meiyeweb-agent/issues/129) 是完整上线前置。
+- **Issue Tracker**：本规格发布于 GitHub Issue [#130](https://github.com/legacy-origin-a/legacy-web-repo/issues/130)，并以 `ready-for-agent` 标记；P0 Issue [#129](https://github.com/legacy-origin-a/legacy-web-repo/issues/129) 是完整上线前置。
 - **本地权威文件**：`docs/specs/beauty-marketing-agent-p1-productization-spec-2026-07-22.md` 与 Issue #130 正文保持同步；代码评审和拆票优先引用本地固定路径，Tracker 用于执行状态。
 - **测试接缝裁决**：本规格主 seam 是完整登录浏览器旅程，底层仍只读写 P0 已冻结的公共 HTTP/SSE 和 ContentPackage 合同。Result、Content、Assets、Mobile 不得用各自 mock store 作为完成证据。
 - **P0 依赖**：CreationExecutionSnapshot、单一 Harness、共享对象存储、公共 DTO 清洗和商家界面内部标识清零必须先进入稳定基线；否则 P1 页面只能算开发中投影。

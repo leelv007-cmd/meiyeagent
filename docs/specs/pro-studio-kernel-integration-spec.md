@@ -10,7 +10,7 @@ source_of_truth:
   - ADR-0011 ContentPackage 唯一成品聚合
   - ADR-0012 Composer 与 Pro Studio 两线产品边界
   - A2/A3 书面授权: docs/evidence/pro-studio/a2-authorization-2026-07-19.md、a3-authorization-2026-07-19.md
-  - 书面仪器: docs/design/# Git 仓库开发授权书.md（csyqlz + basketikun → leelv007-cmd）
+  - 书面仪器: docs/design/# Git 仓库开发授权书.md（csyqlz + basketikun → legacy-origin-a）
   - 上游钉死: csyqlz/vozeb @ a2c52c7aacf68d825563b7455efa9c34f3db0123（v1.0.0）
   - 票状态基线: .scratch/vozeb-pro-studio/STATUS.md（SaaS 壳 19 implemented / 6 partial）
   - 票包: .scratch/pro-studio-kernel-integration/
@@ -150,7 +150,7 @@ source_of_truth:
 - **禁拷：** 任意路径代理、Points 结算、本地 Agent 桥、独立注册/首用户 admin、服务端 task Map、WebDAV、874 prompt 库 bulk 数据。
 - 目标树建议：`apps/canvas` 下独立 vendor 命名空间；**exact-copy 行禁止静默改算法**；适配代码放在 vendor 外且不进 sha 行。
 - 每行 manifest：`source`、`target`、`sha256`、`authorizationStatus: authorized`、A2/A3 证据路径；含第三方资产则 `thirdPartyNotes` 或替换为我方资产。
-- A2 证据与书面仪器（双授权方 csyqlz + basketikun，被授权方 leelv007-cmd，目的商业开发及复制）已归档；本规格实施时 **不得清空** 该授权记录。
+- A2 证据与书面仪器（双授权方 csyqlz + basketikun，被授权方 legacy-origin-a，目的商业开发及复制）已归档；本规格实施时 **不得清空** 该授权记录。
 
 ### 4. 最小嵌入
 
@@ -262,4 +262,4 @@ source_of_truth:
 - **升单验证门：** 仍建议 ≥3 真实样本完成「进内核→合格成品→采用→导出」；本规格交付的是可验证工程面，不是商务放行。
 - **与票 21/25 关系：** K02 关闭「copy 空清单」残留；K10 推进内核路径 smoke；不自动关闭 N2/定价。
 - **票包路径：** `.scratch/pro-studio-kernel-integration/`（MAP / STATUS / issues/K01–K11）。
-- **GitHub：** 规格 [#61](https://github.com/leelv007-cmd/meiyeweb-agent/issues/61)；票 K01–K11 = [#62](https://github.com/leelv007-cmd/meiyeweb-agent/issues/62)–[#72](https://github.com/leelv007-cmd/meiyeweb-agent/issues/72)，均 `ready-for-agent`。实施分支 `spec/pro-studio-kernel-integration-2026-07-19`，合入策略由交付时另定。
+- **GitHub：** 规格 [#61](https://github.com/legacy-origin-a/legacy-web-repo/issues/61)；票 K01–K11 = [#62](https://github.com/legacy-origin-a/legacy-web-repo/issues/62)–[#72](https://github.com/legacy-origin-a/legacy-web-repo/issues/72)，均 `ready-for-agent`。实施分支 `spec/pro-studio-kernel-integration-2026-07-19`，合入策略由交付时另定。

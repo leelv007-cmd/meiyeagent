@@ -133,7 +133,7 @@ git -C <主仓> worktree remove /Users/bin/orca/workspaces/美业内容2/<name>
 
 ```bash
 gh issue view <n>   # 底部 "Blocked by" 区列出前置；全部 closed 才 unblock
-gh api repos/leelv007-cmd/meiyeweb-agent/issues/<n>/dependencies/blocked_by --jq '[.[].number]'
+gh api repos/legacy-origin-a/legacy-web-repo/issues/<n>/dependencies/blocked_by --jq '[.[].number]'
 ```
 
 **根节点（`blocked_by=[]` = 立即可开）**：#131 #134 #135 #136 #137 #142（P0 六起点）· #163（Canvas K1）· #119（真机门）——即第 3 节阶段① 的全部 worktree 起点。

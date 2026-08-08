@@ -2,7 +2,7 @@
 
 ## Scope
 
-- Branch: `leelv007-cmd/t44-day0-no-blocking-question`
+- Branch: `legacy-origin-a/t44-day0-no-blocking-question`
 - Final rework base: local `main` at `2e4030af`
 - Fixture/local evidence only; no credential or live-provider call was used.
 - No frontend component, visual surface, or original D-043 assertion was changed.

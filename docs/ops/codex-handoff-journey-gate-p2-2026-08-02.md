@@ -68,7 +68,7 @@ e149967a docs(ops): run full journey once before merge
 | E | `c37e195f` | cancelled | 被更新 tip 取代 |
 | F | **`3bf21723` run `30709104009`** | 交接时 **in_progress** | root-quality **已绿**；journey step11 曾跑 60+ min |
 
-Run F 链接：https://github.com/leelv007-cmd/meiyeweb-agent/actions/runs/30709104009  
+Run F 链接：https://github.com/legacy-origin-a/legacy-web-repo/actions/runs/30709104009  
 
 **先做：**
 
@@ -138,12 +138,12 @@ Worktree 根：`/Users/bin/orca/workspaces/美业内容2/lane-<N>`
 
 | 票 | HEAD | 分支 | 主题 |
 | --- | --- | --- | --- |
-| #320 | `8394b848` | `leelv007-cmd/lane-320` | 违禁词库 / 检查 / CRUD |
-| #321 | `486ebb7b` | `leelv007-cmd/lane-321` | tone/role + 深度思考 |
-| #322 | `d00123c5` | `leelv007-cmd/lane-322` | 对象工作区 + Tiptap + 六动作 |
-| #323 | `481296b4` | `leelv007-cmd/lane-323` | AI 封面 + 七维风格 |
-| #324 | `973e0d92` | `leelv007-cmd/lane-324` | 爆款复刻粘贴轨 |
-| #325 | `5e0c73d1` | `leelv007-cmd/lane-325` | 「经验」+ 三处露出 + morph |
+| #320 | `8394b848` | `legacy-origin-a/lane-320` | 违禁词库 / 检查 / CRUD |
+| #321 | `486ebb7b` | `legacy-origin-a/lane-321` | tone/role + 深度思考 |
+| #322 | `d00123c5` | `legacy-origin-a/lane-322` | 对象工作区 + Tiptap + 六动作 |
+| #323 | `481296b4` | `legacy-origin-a/lane-323` | AI 封面 + 七维风格 |
+| #324 | `973e0d92` | `legacy-origin-a/lane-324` | 爆款复刻粘贴轨 |
+| #325 | `5e0c73d1` | `legacy-origin-a/lane-325` | 「经验」+ 三处露出 + morph |
 
 **建议合入序（journey 绿后，主控）：**  
 #320 → #321 → #325 → #322 → #323 → #324  
@@ -185,9 +185,9 @@ Worktree 根：`/Users/bin/orca/workspaces/美业内容2/lane-<N>`
 
 ## 11. 速查链接
 
-- 当前门禁 run：https://github.com/leelv007-cmd/meiyeweb-agent/actions/runs/30709104009  
-- 旧方向卡失败 run：https://github.com/leelv007-cmd/meiyeweb-agent/actions/runs/30699271165  
-- 旧 118c 假红 run：https://github.com/leelv007-cmd/meiyeweb-agent/actions/runs/30705186695  
+- 当前门禁 run：https://github.com/legacy-origin-a/legacy-web-repo/actions/runs/30709104009  
+- 旧方向卡失败 run：https://github.com/legacy-origin-a/legacy-web-repo/actions/runs/30699271165  
+- 旧 118c 假红 run：https://github.com/legacy-origin-a/legacy-web-repo/actions/runs/30705186695  
 - 规格：`docs/specs/xhs-vertical-integration-spec-2026-08-01.md`  
 - 派发手册：`docs/ops/agent-dispatch-runbook-2026-07-29.md`  
 

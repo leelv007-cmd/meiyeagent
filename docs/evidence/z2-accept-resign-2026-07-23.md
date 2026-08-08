@@ -5,7 +5,7 @@
 **Code + live evidence SHA:** `d6787b292cc12db0fd3ecef738f34b9842262856`  
 **Live artifact:** `apps/core/provider-live-evidence/provider-live-gate.json` (gitignored)  
 **Live acceptance write-up:** `docs/evidence/provider-live-local-acceptance-2026-07-23.md`  
-**Docs PR (redacted summary onto origin/main):** https://github.com/leelv007-cmd/meiyeweb-agent/pull/189
+**Docs PR (redacted summary onto origin/main):** https://github.com/legacy-origin-a/legacy-web-repo/pull/189
 
 ## Five gates (re-run)
 

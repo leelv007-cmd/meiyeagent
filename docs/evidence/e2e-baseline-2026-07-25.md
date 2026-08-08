@@ -10,7 +10,7 @@ reason is known.
 
 ## How it was run
 
-- Lane fe3 worktree, branch `leelv007-cmd/t37-m04-browser-hard-gate`, baseline
+- Lane fe3 worktree, branch `legacy-origin-a/t37-m04-browser-hard-gate`, baseline
   commit `7ea3de75` (local `main` after T34 merged).
 - `TEST_DATABASE_URL` → `meiye_fe3` on the real Postgres at `127.0.0.1:54329`;
   `PORT=3108`, `PLAYWRIGHT_CORE_PORT=4108`, `PLAYWRIGHT_CANVAS_PORT=4208`.

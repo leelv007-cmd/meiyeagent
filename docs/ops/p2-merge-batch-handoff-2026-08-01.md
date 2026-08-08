@@ -30,7 +30,7 @@
 
 | 字段 | 值 |
 | --- | --- |
-| Run | https://github.com/leelv007-cmd/meiyeweb-agent/actions/runs/30699271165 |
+| Run | https://github.com/legacy-origin-a/legacy-web-repo/actions/runs/30699271165 |
 | SHA | `69cf06e1a6e18734fcefef8122a833e8a4b8e3a7` |
 | 第一次 attempt | step11 挂至 job **timeout 90m** → job **`cancelled`**；全 run `cancelled`，`required=failure` |
 | 首 attempt 真因（证据包） | artifact `production-main-journey-evidence`：M-04 **`image_text → xiaohongshu`** 在 `chooseImageTextDirection`（`ui-journey.ts:181`）**稳定失败**——`the direction must land — by merchant click or frozen-route pre-answer`，**300s × 3 retries**；resume 行「已按你选的方向继续准备整套图文」始终未可见。**不是** sticky delivery-card 点击拦截（`69cf06e1` 已修那条）。3×5min 重试叠其他用例 → 逼近 90m 被 cancel |
@@ -58,12 +58,12 @@
 
 | 票 | 标题 | lane HEAD | 分支 | 交底 |
 | --- | --- | --- | --- | --- |
-| #320 | 违禁词库 / 检查条 / CRUD | `8394b848` | `leelv007-cmd/lane-320` | `docs/ops/issue-320-p2-08-sensitive-words-handover-2026-08-01.md` |
-| #321 | tone/role + 深度思考 | `486ebb7b` | `leelv007-cmd/lane-321` | `docs/handoff/issue-321-generation-params-2026-08-01.md` |
-| #322 | 对象工作区 + Tiptap + 六动作 | `d00123c5` | `leelv007-cmd/lane-322` | `docs/ops/issue-322-p2-10-object-workspace-tiptap-selection-ai-handover-2026-08-01.md` |
-| #323 | AI 封面 + 七维风格 | `481296b4` | `leelv007-cmd/lane-323` | `docs/ops/issue-323-p2-11-ai-cover-style-analysis-handover-2026-08-01.md` |
-| #324 | 爆款复刻粘贴轨 | `973e0d92` | `leelv007-cmd/lane-324` | `docs/ops/issue-324-p2-12-viral-adapt-paste-track-handover-2026-08-01.md` |
-| #325 | 「经验」+ 三处露出 + morph | `5e0c73d1` | `leelv007-cmd/lane-325` | `docs/ops/issue-325-p2-13-experience-surfaces-handover-2026-08-01.md` |
+| #320 | 违禁词库 / 检查条 / CRUD | `8394b848` | `legacy-origin-a/lane-320` | `docs/ops/issue-320-p2-08-sensitive-words-handover-2026-08-01.md` |
+| #321 | tone/role + 深度思考 | `486ebb7b` | `legacy-origin-a/lane-321` | `docs/handoff/issue-321-generation-params-2026-08-01.md` |
+| #322 | 对象工作区 + Tiptap + 六动作 | `d00123c5` | `legacy-origin-a/lane-322` | `docs/ops/issue-322-p2-10-object-workspace-tiptap-selection-ai-handover-2026-08-01.md` |
+| #323 | AI 封面 + 七维风格 | `481296b4` | `legacy-origin-a/lane-323` | `docs/ops/issue-323-p2-11-ai-cover-style-analysis-handover-2026-08-01.md` |
+| #324 | 爆款复刻粘贴轨 | `973e0d92` | `legacy-origin-a/lane-324` | `docs/ops/issue-324-p2-12-viral-adapt-paste-track-handover-2026-08-01.md` |
+| #325 | 「经验」+ 三处露出 + morph | `5e0c73d1` | `legacy-origin-a/lane-325` | `docs/ops/issue-325-p2-13-experience-surfaces-handover-2026-08-01.md` |
 
 Worktree 根：`/Users/bin/orca/workspaces/美业内容2/lane-<N>`。
 
@@ -123,7 +123,7 @@ gh run rerun 30699271165 --failed
 
 # 合入示例（主 checkout，journey 绿后）
 git fetch origin main && git checkout main && git pull --ff-only
-git merge --ff-only leelv007-cmd/lane-320   # 或 cherry-pick 8394b848
+git merge --ff-only legacy-origin-a/lane-320   # 或 cherry-pick 8394b848
 # 写 merge-ledger → commit → push → gh issue close 320
 ```
 

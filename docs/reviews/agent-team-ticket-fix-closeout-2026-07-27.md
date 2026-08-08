@@ -4,7 +4,7 @@
 >
 > 依据：`docs/reviews/agent-team-ticket-implementation-review-2026-07-27.md`
 >
-> 工作分支：`leelv007-cmd/review-closeout-2026-07-27`
+> 工作分支：`legacy-origin-a/review-closeout-2026-07-27`
 >
 > 工作树：`/Users/bin/orca/workspaces/美业内容2/review-closeout-2026-07-27`
 >

@@ -1,6 +1,6 @@
 # V3.1-B 会话与方案：Agent Session Harness + 分级 Progressive Plan + Living Plan + Plan Compiler（plan-as-data）
 
-> **已发布**：https://github.com/leelv008/meiyeagent/issues/2（label: ready-for-agent）；本文为票面本地快照。原 leelv007-cmd/meiyeweb-agent#430 因账号封禁废弃。
+> **已发布**：https://github.com/legacy-origin-b/meiyeagent/issues/2（label: ready-for-agent）；本文为票面本地快照。原 legacy-origin-a/legacy-web-repo#430 因账号封禁废弃。
 > 决策权威：V3.1 §3、§5.2–5.3、§13、§16–§22.2、§7.3–7.4；决策记录附录 B（U1/U3/U4/U11）；硬约束附录 A（A6/A7/A8/A13/A18）。
 > 依赖：#1（Thread/Run/事件地基）。
 

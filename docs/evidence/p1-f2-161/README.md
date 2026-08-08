@@ -1,6 +1,6 @@
 # P1-F2 / #161 连续旅程验收证据
 
-> **Issue**: [#161](https://github.com/leelv007-cmd/meiyeweb-agent/issues/161) — `[P1-F2] P1 生产构建视觉、无障碍与连续旅程总验收`  
+> **Issue**: [#161](https://github.com/legacy-origin-a/legacy-web-repo/issues/161) — `[P1-F2] P1 生产构建视觉、无障碍与连续旅程总验收`  
 > **规格**: `docs/specs/beauty-marketing-agent-p1-productization-spec-2026-07-22.md`  
 > **Harness**: `mkfast-template-main/tests/e2e/specs/p1-f2-acceptance.spec.ts`  
 > **Catalog**: `mkfast-template-main/tests/e2e/TEST-CATALOG.md` §35

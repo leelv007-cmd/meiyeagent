@@ -1,7 +1,7 @@
 # Z2-ACCEPT gap list — same-increment AP + MP (#128)
 
 **Date:** 2026-07-23 (refreshed after single-channel local completion audit)
-**Ticket:** #128 / `leelv007-cmd/issue-128-z2-accept-ap`  
+**Ticket:** #128 / `legacy-origin-a/issue-128-z2-accept-ap`  
 **Discipline:** honest gaps only — no silent degrade of acceptance claims.  
 **Recorded/fake gates and D-048 Playwright are green; only G-LIVE-* remains env-gated.**
 

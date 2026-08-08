@@ -1,6 +1,6 @@
 # #320 P2-08 交底 —— 违禁词库、生成链检查条与运营 CRUD
 
-- 分支：`leelv007-cmd/lane-320`（worktree `/Users/bin/orca/workspaces/美业内容2/lane-320`）；**未 push、未关票**，合入与 P1/P2 门禁由主控核验。
+- 分支：`legacy-origin-a/lane-320`（worktree `/Users/bin/orca/workspaces/美业内容2/lane-320`）；**未 push、未关票**，合入与 P1/P2 门禁由主控核验。
 - 规格锚：`docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §4.6 / §6.3 / §8 P2-3 / §10.3-2。
 - 语义锁属主：`sensitive_words` 词库 / 生成链检查 / 运营 CRUD。**不**含对象工作区扫词 UI（#327）、Composer/Tiptap。
 

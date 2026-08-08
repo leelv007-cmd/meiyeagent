@@ -11,7 +11,7 @@
 | Field | Value |
 | --- | --- |
 | Grantors (授权方) | **`csyqlz`** and **`basketikun`** (both confirmed) |
-| Grantee (被授权方) | `leelv007-cmd` |
+| Grantee (被授权方) | `legacy-origin-a` |
 | Confirmation channel | **Written instrument** (see §2) + product-owner confirmation both authors agreed |
 | Confirmation date (as recorded) | 2026-07-19 |
 | Recorded by | Product owner (repository operator) |
@@ -57,7 +57,7 @@ Each concrete `copies[]` row must still list `source`, `target`, `sha256`, `auth
 | --- | --- |
 | `csyqlz` | Co-grantor on written instrument; Vozeb repo owner / majority public commits |
 | `basketikun` | Co-grantor on written instrument; technical upstream / infinite-canvas author |
-| `leelv007-cmd` | Named grantee on written instrument |
+| `legacy-origin-a` | Named grantee on written instrument |
 
 Dual-author residual from the earlier oral-only draft is **closed** for grantor identity.
 

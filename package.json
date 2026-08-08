@@ -1,5 +1,5 @@
 {
-  "name": "meiyeweb-agent",
+  "name": "legacy-web-repo",
   "private": true,
   "engines": {
     "node": ">=22"

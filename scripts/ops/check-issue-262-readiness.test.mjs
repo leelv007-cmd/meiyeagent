@@ -214,7 +214,7 @@ process.stdout.write(JSON.stringify({
   state: "OPEN",
   url: "https://example.test/issues/262",
   comments: [{
-    author: { login: "leelv007-cmd" },
+    author: { login: "legacy-origin-a" },
     authorAssociation: "OWNER",
     body: "**主控亲验记录（fixture）：已合入 main@${productSha}。**"
   }]

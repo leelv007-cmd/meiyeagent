@@ -6,7 +6,7 @@
 | Spec | `docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §4.5 / §4.7 |
 | Date | 2026-08-01 |
 | Merge-review follow-up | 2026-08-02 |
-| Branch | `leelv007-cmd/lane-321` |
+| Branch | `legacy-origin-a/lane-321` |
 | Baseline | `69cf06e1a6e18734fcefef8122a833e8a4b8e3a7` |
 
 ## 1. 「实施时定」闭合

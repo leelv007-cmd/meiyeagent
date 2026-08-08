@@ -4,7 +4,7 @@ status: superseded
 triage: historical
 date: 2026-07-22
 revision: 2
-tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/162
+tracker_issue: https://github.com/legacy-origin-a/legacy-web-repo/issues/162
 source_of_truth:
   - 决策: D-099（docs/design/beauty-marketing-agent-product-design-2026-07-17.md）— **superseded by D-170**
   - 退役权威: docs/specs/pro-studio-retirement-spec-2026-08-01.md + D-170
@@ -224,7 +224,7 @@ source_of_truth:
 
 ## Further Notes
 
-- 开发票包：K1 [#163](https://github.com/leelv007-cmd/meiyeweb-agent/issues/163) → K2 [#164](https://github.com/leelv007-cmd/meiyeweb-agent/issues/164)；K3 [#165](https://github.com/leelv007-cmd/meiyeweb-agent/issues/165)、K4 [#166](https://github.com/leelv007-cmd/meiyeweb-agent/issues/166)、K5 [#167](https://github.com/leelv007-cmd/meiyeweb-agent/issues/167) 在 K1/K2 后按功能面实施；K6 [#168](https://github.com/leelv007-cmd/meiyeweb-agent/issues/168) 收口工程/adoption/导出；K7 [#169](https://github.com/leelv007-cmd/meiyeweb-agent/issues/169) 统一验收。GitHub 原生 `Blocked by` 为执行权威。
+- 开发票包：K1 [#163](https://github.com/legacy-origin-a/legacy-web-repo/issues/163) → K2 [#164](https://github.com/legacy-origin-a/legacy-web-repo/issues/164)；K3 [#165](https://github.com/legacy-origin-a/legacy-web-repo/issues/165)、K4 [#166](https://github.com/legacy-origin-a/legacy-web-repo/issues/166)、K5 [#167](https://github.com/legacy-origin-a/legacy-web-repo/issues/167) 在 K1/K2 后按功能面实施；K6 [#168](https://github.com/legacy-origin-a/legacy-web-repo/issues/168) 收口工程/adoption/导出；K7 [#169](https://github.com/legacy-origin-a/legacy-web-repo/issues/169) 统一验收。GitHub 原生 `Blocked by` 为执行权威。
 - 差距行级依据、G01–G48 行级核销索引与 vendor 挂载状态清单见验收基线文档；本规格不重复行级表。
 - 当前 G01–G48 代码事实基线钉死于产品仓库 commit `4625e4238748196a7fcb12226cb11e2c0420083b`；若 K1 开工前 P0/P1 或其他分支改动 `apps/canvas/**`、`apps/core/src/pro-studio/**`、共享 model-supply/result-delivery 接缝，必须重跑基线并记录差异，不能沿用过期“当前状态”。
 - 量级如实口径：真实 port 闭包约 86 文件/1.9 万行，是祖规格"约 23–36 人周"中被 K03 简版化绕过的主体工作量。K1–K7 是编号/收口顺序；实际依赖 DAG 为：**K1 底座 → K2 组合根/交互 → K3 精修、K4 生成 UX、K5 资源、K6 工程管理/导出按功能面并行 → K7 对标验收（含 D19 继承门）**。其中 K3/K6 另等 P0 #142，K6 另等 P0 #141，K7 另等 P0 #143；K1 不冻结，K2–K7 不开工。

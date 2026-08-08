@@ -9,7 +9,7 @@
 
 ## 1. Relationship to A2
 
-- **A2** (`a2-authorization-2026-07-19.md`): `csyqlz` + `basketikun` written grant to `leelv007-cmd` for commercial development and copy of `https://github.com/csyqlz/vozeb`, with product policy limiting exact-copy rows to canvas/render/retouch core at the pinned commit.
+- **A2** (`a2-authorization-2026-07-19.md`): `csyqlz` + `basketikun` written grant to `legacy-origin-a` for commercial development and copy of `https://github.com/csyqlz/vozeb`, with product policy limiting exact-copy rows to canvas/render/retouch core at the pinned commit.
 - **A3** (this file): disposition of **third-party and non-grantor** materials that may appear next to or inside those files.
 
 The written instrument §五 requires the grantee to avoid unlicensed third-party code/assets and to respect open-source licenses when introducing dependencies. That clause **reinforces** A3; it does **not** auto-clear third-party works that the grantors do not own.

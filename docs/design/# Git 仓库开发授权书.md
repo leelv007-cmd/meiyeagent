@@ -1,7 +1,7 @@
 # Git 仓库开发授权书
 
 授权方（项目/公司）：csyqlz / basketikun 
-被授权方（开发人员/团队）：___leelv007-cmd_______________  
+被授权方（开发人员/团队）：___legacy-origin-a_______________  
 
 仓库地址：_https://github.com/csyqlz/vozeb_________________________________  
 

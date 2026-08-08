@@ -1,6 +1,6 @@
 # V3.1-G 发布与评估设施（开发侧）：Prompt Pack + HarnessRelease 三对象 + Quick Checks/三态 verdict + Observability
 
-> **已发布**：https://github.com/leelv008/meiyeagent/issues/7（label: ready-for-agent）；本文为票面本地快照。原 leelv007-cmd/meiyeweb-agent#435 因账号封禁废弃。
+> **已发布**：https://github.com/legacy-origin-b/meiyeagent/issues/7（label: ready-for-agent）；本文为票面本地快照。原 legacy-origin-a/legacy-web-repo#435 因账号封禁废弃。
 > 决策权威：V3.1 §29、§31、§32；决策记录附录 B（U3/U10/U11/U12）；硬约束附录 A（A14 strict 供给、A7 红线门禁）。
 > 依赖：**实现依赖 #1**（Agent 域 release 合同，`packages/contracts` 属主在 A）；**集成验收依赖 #2**（Session Harness 消费 release pin）、**#3**（执行链记录 releaseId）——release 合同/resolver 实现不等 B/C，集成验收才等。运营操作面单列在 V3.1-H。
 

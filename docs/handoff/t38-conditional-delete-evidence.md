@@ -1,7 +1,7 @@
 # T38 conditional deletion evidence
 
 Date: 2026-07-26
-Branch: `leelv007-cmd/t38-conditional-delete-1d-1b`
+Branch: `legacy-origin-a/t38-conditional-delete-1d-1b`
 Baseline: `980c4899`
 
 ## Final predicate disposition

@@ -596,7 +596,7 @@ AI Elements 提供 Conversation、Message、PromptInput 等可复制进代码库
 
 # 资料基础
 
-- 项目仓库：<https://github.com/leelv007-cmd/meiyeweb-agent>
+- 项目仓库：<https://github.com/legacy-origin-a/legacy-web-repo>
 - 产品文档：《美业宣发经营 Agent：产品设计与决策日志（合并权威版）》
 - 产品文档状态：`ACCEPTED PRODUCT DIRECTION, RESEARCH OPEN`
 - 分析重点：D-114、D-126、D-139、D-159～D-164，以及仓库当前 Dashboard、Composer、Memory、Result Center 和设计系统实现。

@@ -2,7 +2,7 @@
 
 Status: accepted (2026-08-08)
 
-> 本 ADR 凝结自 **V3.1 权威规划**（`docs/design/0808规划/meiye-agent-v3.1-authoritative-plan-2026-08-08.md`，决策日志 D-178；14 项拍板 U1–U14 见其附录 B），是实施投影不是第二真相源；任何冲突以 V3.1 与决策日志为准。实施票＝leelv008/meiyeagent #1–#9（本地票面快照 `docs/specs/v3.1-agent-specs-2026-08-08/`）。
+> 本 ADR 凝结自 **V3.1 权威规划**（`docs/design/0808规划/meiye-agent-v3.1-authoritative-plan-2026-08-08.md`，决策日志 D-178；14 项拍板 U1–U14 见其附录 B），是实施投影不是第二真相源；任何冲突以 V3.1 与决策日志为准。实施票＝legacy-origin-b/meiyeagent #1–#9（本地票面快照 `docs/specs/v3.1-agent-specs-2026-08-08/`）。
 
 ## Context
 

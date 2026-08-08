@@ -5,11 +5,11 @@ Last synchronized: 2026-07-24（D-101～D-109：单店单人、双创作主线�
 2026-07-27 追加：D-133～D-138 补录（原始拍板在 Orca run 收口阶段，来源 `.scratch/orca-run-2026-07-25/`）；D-139～D-149＝产品规划落地差距审计 12 项拍板（审计报告 `docs/reviews/product-plan-implementation-gap-review-2026-07-27.md`，7 路只读审计：首页入口/成品结果/资产身份/商业化/对话流/HeroUI 采用/Harness 编排）；D-150＝流程决策「完成语义锚定旅程」——消费者证明关票门/接缝对称防线/假绿治理/支线旅程硬门，根治「后端建满前台不接」复发机制，约束此后全部开票。
 2026-08-01 追加：**D-170 Pro Studio 全量退役（RETIRE）**——取代 D-127 FREEZE「只留入口」、D-110③ keep-code、D-103 画布保留假设、D-099 parity 现行入口、D-075/077/084/092 入口族现行声张、ADR-0012 作为现行法；实施权威＝`docs/specs/pro-studio-retirement-spec-2026-08-01.md`；主线仅定制创作＋自由创作薄路径，无无限画布接替。
 Branch: `main`
-Repo: `leelv007-cmd/meiyeweb-agent`
+Repo: `legacy-origin-a/legacy-web-repo`
 Status: ACCEPTED PRODUCT DIRECTION, RESEARCH OPEN
 Mode: Startup
 Supersedes as product authority: `bin-main-design-20260717-130101.md`
-执行权威: Wave 1 验证与执行合同见 `/Users/bin/.gstack/projects/leelv007-cmd-meiyeweb-agent/bin-main-design-20260717-183658.md`（已批准）与验证手册 `references/analysis/beauty-marketing-validation-2026-07-17/VALIDATION-PLAYBOOK.md`；量化指标命名、硬失败清单、进场节奏与本文冲突时，以 Week 0 预登记口径为准（另见 D-026）。
+执行权威: Wave 1 验证与执行合同见 `/Users/bin/.gstack/projects/legacy-origin-a-legacy-web-repo/bin-main-design-20260717-183658.md`（已批准）与验证手册 `references/analysis/beauty-marketing-validation-2026-07-17/VALIDATION-PLAYBOOK.md`；量化指标命名、硬失败清单、进场节奏与本文冲突时，以 Week 0 预登记口径为准（另见 D-026）。
 Preserves from prior design: 已核验的 ContentPackage、异步恢复、唯一写入边界和发布安全结论仍是实现约束，不再决定前台产品结构。
 
 本文分两部分：第一部分为产品设计正文；第二部分为决策日志（D-001 起）与待验证、待拍板清单。
@@ -468,9 +468,9 @@ Recommendation: 选择 Approach B，同时用 Approach A 的任务货架做可�
 - 条目默认日期：2026-07-17
 - 条目默认状态：`accepted_design_default`，表示已进入设计基线，不等于已承诺生产实现
 - 当前产品设计基线：本文第一部分
-- 执行权威：`/Users/bin/.gstack/projects/leelv007-cmd-meiyeweb-agent/bin-main-design-20260717-183658.md`（Wave 1 验证与执行合同，已批准；入账见 D-026）
+- 执行权威：`/Users/bin/.gstack/projects/legacy-origin-a-legacy-web-repo/bin-main-design-20260717-183658.md`（Wave 1 验证与执行合同，已批准；入账见 D-026）
 - 前一版工程设计快照：[`raw/design-baseline-bin-main-design-20260717-130101.md`](../../references/analysis/hitl-research-2026-07-17/raw/design-baseline-bin-main-design-20260717-130101.md)
-- 本机 gstack 源路径：`/Users/bin/.gstack/projects/leelv007-cmd-meiyeweb-agent/bin-main-design-20260717-162033.md`（产品设计）、`bin-main-design-20260717-183658.md`（执行合同）
+- 本机 gstack 源路径：`/Users/bin/.gstack/projects/legacy-origin-a-legacy-web-repo/bin-main-design-20260717-162033.md`（产品设计）、`bin-main-design-20260717-183658.md`（执行合同）
 - 相关调研：[`references/analysis/hitl-research-2026-07-17/`](../../references/analysis/hitl-research-2026-07-17/)、[`references/analysis/beauty-marketing-validation-2026-07-17/`](../../references/analysis/beauty-marketing-validation-2026-07-17/)
 
 ## 记录规则
@@ -1727,7 +1727,7 @@ Recommendation: 选择 Approach B，同时用 Approach A 的任务货架做可�
 - 决定：发布链固定为 `draft -> preview -> compile -> schema/policy/eval gates -> internal test -> published revision -> production label`，回滚只把 routing label 切回上一条不可变已发布 revision。发布硬门至少覆盖未知字段/节点/依赖为零、事实/权利/安全/额度违规为零、required Skill 执行、planner-selected Skill 误选率、输出合同完整、相对 production 的质量回归、延迟/供应成本/用户用量包络，以及所有依赖和 `workflowImplementationRevision` / `adapterImplementationRevision` / Schema dialect / validator revision 可解析并进入 ExecutionSnapshot 或 CompilationReceipt。
 - 原因：当前代码已经有不可变 `CreationRecipeVersion`、Recipe/Surface 草稿预览发布回滚、五阶段 `runHarnessWorkflow()`、DBOS 恢复与幂等、Langfuse Prompt 冻结和 admin-config/Catalog 审计基础；真正缺口是 Recipe 后台只编辑标题、摘要、Prompt ref 与 auto/fixed model，其他编排字段原样复制，`workflowRevisionRef` 尚未驱动运行时，Skill 领域对象为空，ExecutionSnapshot 也未冻结完整 Workflow/Skill/Profile/Capability/实现 lineage。整体迁移 Dify/Mastra/n8n 会重复运行时和状态真相；只做固定表单又不能满足运营重新组合的需求，方案 B 是在现有可靠内核上补最薄作者层。
 - 影响：扩展现有 Creation Experience Catalog 与后台“内容能力”而非新建通用低代码产品；首批需要定义 `StageTypeRegistry`、`WorkflowRecipeRevision`、`RecipeCompiler`、`CompiledExecutionPlan`、`CompilationReceipt`、SkillBinding、动态表单 Schema 和完整执行快照，并把当前 Recipe 编辑器中原样复制的 context/settings/source/output/workflow 字段改成受约束的结构化作者面。首批可用性验收要求非技术运营不看代码或 raw JSON，能完成一次局部调优、一次阶段内重新组合、candidate/production 对比、内部发布与回滚。
-- 证据边界：代码事实核对基于 2026-07-24 当前 `packages/contracts/src/creation-experience.ts`、`apps/core/src/p1/creation-experience/`、`apps/core/src/p1/harness/`、`apps/core/src/p1/execution-spine/creation-execution-snapshot.ts` 与 `mkfast-template-main/src/p1/admin-creation-experience-control.tsx` / `admin-model-control.tsx`；完整分析保存在 `/Users/bin/.gstack/projects/leelv007-cmd-meiyeweb-agent/office-hours-gap-analysis-checkpoint-20260724.md` §20。本条确认产品与架构边界，不代表 compiler、Skill Catalog、动态表单或运营可用性已经实现。
+- 证据边界：代码事实核对基于 2026-07-24 当前 `packages/contracts/src/creation-experience.ts`、`apps/core/src/p1/creation-experience/`、`apps/core/src/p1/harness/`、`apps/core/src/p1/execution-spine/creation-execution-snapshot.ts` 与 `mkfast-template-main/src/p1/admin-creation-experience-control.tsx` / `admin-model-control.tsx`；完整分析保存在 `/Users/bin/.gstack/projects/legacy-origin-a-legacy-web-repo/office-hours-gap-analysis-checkpoint-20260724.md` §20。本条确认产品与架构边界，不代表 compiler、Skill Catalog、动态表单或运营可用性已经实现。
 - 待验证：首批阶段积木的精确目录和每项 config Schema；Recipe dependency revision 的原子发布事务；五阶段现有代码如何消费 CompiledExecutionPlan 而不破坏 DBOS 恢复；ExecutionSnapshot v2 与旧任务兼容；5～10 个真实美业能力包能否覆盖在受控语法内；非技术运营的 15 分钟局部调优、30 分钟复制/重组/内部发布目标；何时出现足以解锁 React Flow 编辑视图的真实分支复杂度。
 - Supersedes：细化 D-037 的“代码骨架 + 数据化常变层”，将其 React Flow“只读 viewer”绝对限制修订为“首版不用、真实复杂分支触发后可作受限编辑视图”；细化 D-078 的“可配置不开放底层任意编排”和 D-082 的“不建设任意节点 / 通用 DSL”；继续遵守 D-098 C3 的 `CreationRecipeVersion + CreationSurfaceRevision` 顶层发布收敛，只为 Recipe 内部依赖补不可变 revision 与编译合同，不恢复四类对象全面独立发布。
 
@@ -3518,7 +3518,7 @@ Skill 选中
 - 决定：以 `docs/specs/xhs-vertical-integration-spec-2026-08-01.md` 为唯一实施入口，定案七件：① **工作台四态**（Idle/Active/Waiting/Delivered）＋文档时间线对话（AgentFrame 六族作实现注册表）＋宽度合同（对话 800／媒体 1240）＋轻胶囊建议行＋Activity Shelf；② **ContentPackage kind 产品口径三枚举** `media|copy|note`（note=图文复合：页组+封面+正文；旧 `image_text→note`、`video→media` 为兼容别名，起步不做破坏性迁移）；③ **执行确认判定升级为「操作是否触发付费媒体执行」**（D-164③ 实现口径由「仅 media 工作流路径」升级；纯 copy 免确认继承 D-043 不动；**note 过卡在 P1 激活**，与流内 AG-UI interrupt 呈现、e2e 合同同步一体落地）；④ **xhswork 九功能 8 adopt/adapt＋1 reject**（扫码发布出范围）；对象工作区三件套＝Tiptap 编辑器（选区 AI＋违禁词内联替换）＋手机样式嵌套笔记预览＋小红书 App 瀑布流样式嵌套封面预览；违禁词＝美业自建词库与红线门合流共库；⑤ **爆款复刻取材双轨**＝OpenCLI 用户自有登录态（live 门：真实账号跑通 note+download 一次核销）＋手动粘贴兜底；红线＝匿名抓取／逆向签名／账号池；⑥ **UI 实现基线**＝HeroUI Pro AI showcase 模板族＋assistant-ui 示例；零新 agent runtime（AG-UI/assistant-ui/CopilotKit 只抄协议与模式，DBOS/Task/ContentPackage 真相链不换）；Tiptap 只进对象工作区；⑦ **记忆产品化三步走**：P0 去 JSON＋待确认优先＋诚实空态、P1 三层页、P2 改名「经验」＋任务内三处露出。分期 P0/P1/P2 与验收门以规格 §8 为准。
 - 原因：#281 有意遗留的 copy/note 集中开票、两版 codex UI/UX 方案对撞合流、xhswork 参考项目九功能盘点三线在同一张 wayfinder 地图收敛；两版方案对现状的事实断言经代码逐条核对基本属实（推荐卡硬编码 copy／双滚动／交付重复等）。
 - 影响：P0 实施票 **#286/#287/#288** 已开（工作台收敛／记忆诚实／kind 合同起步）；文档同步＝本条＋CONTEXT 批次段＋PRODUCT/DESIGN 指针＋merge-ledger #281 行备注＋两版方案 supersede banner＋双 AGENTS 约束块；prompt 资产（xhswork 六文件美业化改写）挂 Langfuse 版本化（D-036）。
-- 证据边界：wayfinder `.wayfinder/map-xhs-vertical-integration.md`（九票＋两丢弃式原型）；研究报告 `references/analysis/xhswork-integration-2026-08-01/01~03-*.md`；两版方案原稿 `docs/meiyeweb-agent-UI-UX-Agent化调整建议0801.md`、`docs/美业宣发经营Agent-UI-UX调整建议-完整版0801.md`（已挂 banner）。
+- 证据边界：wayfinder `.wayfinder/map-xhs-vertical-integration.md`（九票＋两丢弃式原型）；研究报告 `references/analysis/xhswork-integration-2026-08-01/01~03-*.md`；两版方案原稿 `docs/legacy-web-repo-UI-UX-Agent化调整建议0801.md`、`docs/美业宣发经营Agent-UI-UX调整建议-完整版0801.md`（已挂 banner）。
 - 待验证：OpenCLI live 门已于 2026-08-01 核销（见下方实施核销补记）；其余 P0-P2 各期验收门（规格 §8.1-8.3）、kind 全链读侧收敛与 image_text 迁移方式仍按实施证据核销。
 - Supersedes（产品权威，**不改写旧 D 正文**）：
   - **D-164③ 实现口径**「确认卡只挂 media 工作流路径」（#281 主控收窄裁决）→ 按分期升级为付费媒体执行操作判定（copy 免确认结论继承不废）
@@ -3605,7 +3605,7 @@ Skill 选中
 - 日期：2026-08-08
 - 状态：`accepted`（用户全程拍板：V2/V3 交叉复核合并→V3.1 三轮评审修订→codex 交叉复核 U1–U12 逐项过→九 spec codex 复核轮 U13–U14；完整决策记录＝V3.1 附录 B 共 14 项）
 - 决定：产品升级为 **agent-native 工作台**，实施与架构权威＝`docs/design/0808规划/meiye-agent-v3.1-authoritative-plan-2026-08-08.md`（V3.1，44 节＋附录 A 19 条硬约束＋附录 B 14 项决策＋附录 C 框架引用来源）。骨架：**双 Harness**——Agent Session Harness（AI SDK streamText 工具环，只读优先，Intent/Plan/Steering 低延迟层）＋ Production Make Harness（DBOS durable，付费副作用），两者以冻结 `ExecutionPlanSnapshot` 为唯一交接物（`approvalBasis: merchant_confirmed | policy_exempt_copy`，纯 copy 免确认不免冻结，U1/U9）；**plan-as-data**（`CompiledExecutionPlan`＝typed unit 列表＋依赖分组＋有界重试默认关，控制流留在 DBOS TS 代码，无 grammar 解释器）；AgentThread/AgentRun 一等对象＋三层语义事件（canonical/semantic/ephemeral）＋Thread-root Workstream 文档时间线前台；Progressive Plan Level 0–3；确认拆「待决请求（创建事务内先 reserve，U8）＋不可变决定」；Memory 平台五层认知分类＋authority 双通道＋生命周期分置存储（U5）；HarnessRelease 三对象（immutable Artifact/Lifecycle/Rollout，U10/U11）＋ L0/L0.5/L1 eval（U3/U12）；三 runner 收敛为单 executor，五阶段只留 trace taxonomy（V3.1 §22.4，与 D-036 口径一致）。
-- 实施：九张 spec 编号 **#1–#9**（A 地基→B 会话与方案→C 确认与执行→D 交付→E Memory/Evidence 并行 lane→F Goal/Proactive→G Release/Eval→H 运营控制面单列→I Legacy 退役）；**票面真相＝本地快照** `docs/specs/v3.1-agent-specs-2026-08-08/`＋`docs/specs/v3.1-spec-{H,I}-*.md`。GitHub 侧：leelv008/meiyeagent 曾发布 #1–#7 后账号被关联封禁（2026-08-08 晚，详见 ops 备忘），两账号（leelv007-cmd/leelv008）均待申诉，恢复前一切以本地文件为准、不做 GitHub 写操作；原 leelv007-cmd/meiyeweb-agent #429–#435 废弃不再引用。评审链：`docs/reviews/0808-agentic-plan-cross-review-2026-08-08.md`、`docs/reviews/v3.1-product-first-framework-benchmark-review-2026-08-08.md`、`docs/reviews/v3.1-codex-xcheck-2026-08-08.md`、`docs/reviews/v3.1-specs-codex-xcheck-2026-08-08.md`（27 findings 双反驳复核处置＋§6 裁决记录）。
+- 实施：九张 spec 编号 **#1–#9**（A 地基→B 会话与方案→C 确认与执行→D 交付→E Memory/Evidence 并行 lane→F Goal/Proactive→G Release/Eval→H 运营控制面单列→I Legacy 退役）；**票面真相＝本地快照** `docs/specs/v3.1-agent-specs-2026-08-08/`＋`docs/specs/v3.1-spec-{H,I}-*.md`。GitHub 侧：历史远程仓（legacy-origin-a／legacy-origin-b）已停用，一切以本地文件为准；原 legacy 仓 #429–#435 废弃不再引用。评审链：`docs/reviews/0808-agentic-plan-cross-review-2026-08-08.md`、`docs/reviews/v3.1-product-first-framework-benchmark-review-2026-08-08.md`、`docs/reviews/v3.1-codex-xcheck-2026-08-08.md`、`docs/reviews/v3.1-specs-codex-xcheck-2026-08-08.md`（27 findings 双反驳复核处置＋§6 裁决记录）。
 - 影响：**ADR-0020** 为本条实施投影；ADR-0007（增补 Session Harness 层）、ADR-0013（五段执行拓扑由 §22.4 收敛路线接管）、ADR-0014（主容器升级为 Thread-root Workstream）头部已加 2026-08-08 修订注。过渡期新旧链共存，退役门＝V3.1 §35 批次 6（前置条件全满足才开工，U14 归档条件门）。
 - 证据边界：Mastra 1.57 / pi.dev 0.84 / LangChain-LangGraph 1.x 三路实查引用逐条登记于 V3.1 附录 C（A1–C4→框架＋URL 对照）；借鉴均为实践参照，零新 agent runtime 引入。
 - Supersedes：D-088（`/dashboard/recent` 收编为 Thread 列表投影）；D-016 部分（登记见 V3.1 §0.4）；ADR-0013 五段状态机的长期执行拓扑地位（trace taxonomy 化）。不改写旧 D 正文。

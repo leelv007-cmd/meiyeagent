@@ -1,6 +1,6 @@
 # V3.1-E Memory 平台与 Outcome Evidence：双通道经验、生命周期分置存储、注入透明化、结果证据统一
 
-> **已发布**：https://github.com/leelv008/meiyeagent/issues/5（label: ready-for-agent）；本文为票面本地快照。原 leelv007-cmd/meiyeweb-agent#432 因账号封禁废弃。
+> **已发布**：https://github.com/legacy-origin-b/meiyeagent/issues/5（label: ready-for-agent）；本文为票面本地快照。原 legacy-origin-a/legacy-web-repo#432 因账号封禁废弃。
 > 决策权威：V3.1 §12（全部）、§26.1；决策记录附录 B（U4/U5）；硬约束附录 A（A11 分离删除）。
 > 依赖：#1（Thread/事件地基）；working 切片另依赖 #2（Thread checkpoint 单 writer）。preference/correction/outcome 切片与 #2/#3/#4 并行 lane，不阻塞主线。
 

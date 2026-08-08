@@ -1,7 +1,7 @@
 # 积分制计费规格（Credit Billing Spec）
 
 - 日期：2026-08-01
-- 状态：终稿（wayfinder 图 [#289](https://github.com/leelv007-cmd/meiyeweb-agent/issues/289) 终点交付物；经 Codex CLI 对抗复核一轮，11 条 findings（3 BLOCKER/8 MAJOR）全数吸收，复核记录在票 #295）。2026-08-01 增补 §11 开发纪律与提交合并规范（Codex 实施轮治理）。
+- 状态：终稿（wayfinder 图 [#289](https://github.com/legacy-origin-a/legacy-web-repo/issues/289) 终点交付物；经 Codex CLI 对抗复核一轮，11 条 findings（3 BLOCKER/8 MAJOR）全数吸收，复核记录在票 #295）。2026-08-01 增补 §11 开发纪律与提交合并规范（Codex 实施轮治理）。
 - 决策来源：图 #289 的 12 条开图决策 + 五张子票资解（#290 Waffo 接入调研、#291 条数额度全触点盘点、#292 降级退订语义、#293 初始数值口径、#294 价格页原型）。票面资解是各决策的唯一详情出处，本规格只收束不复述论证。
 - 实施方式：本规格锁死全部产品决策，实施另行集中开票（见 §10）。
 
@@ -254,7 +254,7 @@ refund 回到**原扣批次**；若退还发生时原批次已过效期，退还
 
 ## §11 开发纪律与提交合并规范（Codex 实施轮）
 
-实施票 = [#298](https://github.com/leelv007-cmd/meiyeweb-agent/issues/298)（L1）/ [#299](https://github.com/leelv007-cmd/meiyeweb-agent/issues/299)（L2）/ [#300](https://github.com/leelv007-cmd/meiyeweb-agent/issues/300)（L3）/ [#301](https://github.com/leelv007-cmd/meiyeweb-agent/issues/301)（L4）/ [#302](https://github.com/leelv007-cmd/meiyeweb-agent/issues/302)（L5）。通用纪律全文以 `docs/ops/agent-dispatch-runbook-2026-07-29.md` 为准（环境铁律／关票纪律／受阻轮询协议全部适用），本节只列本效力面的增量与收束，冲突时以手册为底、本节为特化。
+实施票 = [#298](https://github.com/legacy-origin-a/legacy-web-repo/issues/298)（L1）/ [#299](https://github.com/legacy-origin-a/legacy-web-repo/issues/299)（L2）/ [#300](https://github.com/legacy-origin-a/legacy-web-repo/issues/300)（L3）/ [#301](https://github.com/legacy-origin-a/legacy-web-repo/issues/301)（L4）/ [#302](https://github.com/legacy-origin-a/legacy-web-repo/issues/302)（L5）。通用纪律全文以 `docs/ops/agent-dispatch-runbook-2026-07-29.md` 为准（环境铁律／关票纪律／受阻轮询协议全部适用），本节只列本效力面的增量与收束，冲突时以手册为底、本节为特化。
 
 ### 11.1 角色与主权
 

@@ -3,7 +3,7 @@
 # 丽客美页 Agent 原生工作台 V2：Intent → Living Plan → Make × LLM/Harness 完整升级规划
 
 **版本**：V2.0 / 2026-08-08  
-**适用仓库**：`leelv007-cmd/meiyeweb-agent`  
+**适用仓库**：`legacy-origin-a/legacy-web-repo`  
 **方案性质**：产品、用户旅程、LLM 编排、Harness、AG-UI 事件、技术架构、UI/UX、测试、发布与运营控制面的统一实施规格  
 **配套原型**：`meiye-agentic-workbench-harness-v2-prototype.html`
 

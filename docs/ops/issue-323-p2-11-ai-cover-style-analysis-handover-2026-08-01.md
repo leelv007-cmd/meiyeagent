@@ -1,6 +1,6 @@
 # #323 P2-11 交底 —— AI 封面与参考图风格分析
 
-- 分支：`leelv007-cmd/lane-323`（worktree `/Users/bin/orca/workspaces/美业内容2/lane-323`）
+- 分支：`legacy-origin-a/lane-323`（worktree `/Users/bin/orca/workspaces/美业内容2/lane-323`）
 - **未 push、未关票**；合入与 P1 齐验门由主控执行
 - 开工基线 sha：`69cf06e1a6e18734fcefef8122a833e8a4b8e3a7`
 - 规格锚：`docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §4.2 / §4.8 / §4.10 / §6.1

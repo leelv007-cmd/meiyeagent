@@ -1,7 +1,7 @@
 # T16 R-07 auth and email hardening evidence
 
 Date: 2026-07-26
-Branch: `leelv007-cmd/t16-auth-email-hardening`
+Branch: `legacy-origin-a/t16-auth-email-hardening`
 
 ## Typecheck evidence discrepancy
 

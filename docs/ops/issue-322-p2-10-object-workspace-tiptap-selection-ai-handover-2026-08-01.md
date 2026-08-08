@@ -1,6 +1,6 @@
 # #322 P2-10 交底 —— 对象工作区壳、Tiptap 与选区 AI 六动作
 
-- 分支：`leelv007-cmd/lane-322`（worktree `/Users/bin/orca/workspaces/美业内容2/lane-322`）；**未 push、未关票**，合入与 P1 验收门由主控执行。
+- 分支：`legacy-origin-a/lane-322`（worktree `/Users/bin/orca/workspaces/美业内容2/lane-322`）；**未 push、未关票**，合入与 P1 验收门由主控执行。
 - 开工基线：`69cf06e1a6e18734fcefef8122a833e8a4b8e3a7`（与派发基线 / origin/main 一致）。
 - 规格锚：`docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §3.5 / §4.4 / §7.2 / P2-2 前半。
 - 约束：D-171 零新 agent runtime；Tiptap 只进对象工作区；无匿名抓取。

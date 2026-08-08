@@ -1,7 +1,7 @@
 # T39 · R 门收口联调核销报告（issue #233）
 
 日期：2026-07-27
-分支：`leelv007-cmd/t39-r-gate-closeout`（worktree `/Users/bin/orca/workspaces/美业内容2/t39-r-gate-closeout`）
+分支：`legacy-origin-a/t39-r-gate-closeout`（worktree `/Users/bin/orca/workspaces/美业内容2/t39-r-gate-closeout`）
 起始基线：`13562b5380dc9872eccd5937576e5b2edc9aa4a6`（T37 合入后的 main）
 车道：fe1 — `TEST_DATABASE_URL=postgres://meiye:meiye@127.0.0.1:54329/meiye_fe1`
 模型档：fixture（`MODEL_EXECUTION_MODE=fixture`，`runtime-profile.mjs:31,50` 硬编码 `APP_ENV=e2e`，

@@ -6,7 +6,7 @@
 - Product phase: 0–4 周付费验证通过后进入 P0 build
 - Source priority: 最新 P0 决策 > 已接受 ADR > 数据模型与 API 合同 > 页面蓝图 > 历史研究
 - Publication: historical decision/evidence record; not a current implementation entry
-- Issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/1
+- Issue: https://github.com/legacy-origin-a/legacy-web-repo/issues/1
 
 > **历史记录说明（2026-07-11，已 superseded）**：本文是 P0 实施规格与验收证据，不是当前实施入口。当前 P1、ContentPackage 和 Composer/Pro Studio 两线边界以 `CONTEXT.md`、`docs/specs/beauty-content-agent-p1-spec.md`、`docs/specs/contentpackage-productization-spec.md`、ADR-0011/0012 和最新代码为准。本文中把创作阶段合规、AIGC 标识或水印写成固定门禁/不可关闭的旧表述，均由最新结论修订；P0 的历史验收数据不因此伪装成当前实现。
 
@@ -384,4 +384,4 @@
 - “贴店铺/团单链接”不进入 P0；当前降级方案是截图 OCR 与粘贴文本。
 - KickArt 只有在自建链路被证伪且商户规模达到约 50 家后才重新评估商业接入；当前不做订阅白标。
 - 规格执行时应先更新 E2E Test Catalog 的对应业务旅程，再按 Spec → Code → Verify → Test → Green 的顺序实现。
-- GitHub 远端为 `leelv007-cmd/meiyeweb-agent`；该 spec 同步发布到仓库 issue tracker，并使用 `ready-for-agent` triage 标签。
+- GitHub 远端为 `legacy-origin-a/legacy-web-repo`；该 spec 同步发布到仓库 issue tracker，并使用 `ready-for-agent` triage 标签。

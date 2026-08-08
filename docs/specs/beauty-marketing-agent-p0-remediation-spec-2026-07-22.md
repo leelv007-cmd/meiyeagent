@@ -9,7 +9,7 @@ source_of_truth:
   - 合并权威产品设计 D-001~D-099
   - ADR-0006 / ADR-0007 / ADR-0008 / ADR-0009 / ADR-0010 / ADR-0011 / ADR-0012
   - UI/用户旅程重建、ContentPackage 产品化、后台供应控制与全量功能开发规格
-tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/129
+tracker_issue: https://github.com/legacy-origin-a/legacy-web-repo/issues/129
 ---
 
 # 美业宣发经营 Agent P0 整改规格：发布可信度与统一执行主干
@@ -317,7 +317,7 @@ tracker_issue: https://github.com/leelv007-cmd/meiyeweb-agent/issues/129
 
 ## Further Notes
 
-- **Issue Tracker**：本规格发布于 GitHub Issue [#129](https://github.com/leelv007-cmd/meiyeweb-agent/issues/129)，并以 `ready-for-agent` 标记；既有全量父项 #24、Provider live gate #119 与同增量验收 #128 是关联证据，不因新 Issue 自动关闭。
+- **Issue Tracker**：本规格发布于 GitHub Issue [#129](https://github.com/legacy-origin-a/legacy-web-repo/issues/129)，并以 `ready-for-agent` 标记；既有全量父项 #24、Provider live gate #119 与同增量验收 #128 是关联证据，不因新 Issue 自动关闭。
 - **本地权威文件**：`docs/specs/beauty-marketing-agent-p0-remediation-spec-2026-07-22.md` 与 Issue #129 正文保持同步；代码评审和拆票优先引用本地固定路径，Tracker 用于执行状态。
 - **测试接缝裁决**：本规格采用一个最高公共 seam——Composer 提交 HTTP + SSE + ContentPackage 投影。五阶段纯函数和 Adapter 测试只用于不变量与故障定位，不另立平行产品验收口径。
 - **依赖复用**：Provider live gate 复用现有真实 Adapter 探针；发布硬门只要求三模态官方主渠道真实生成。现有双渠道故障矩阵继续保留为增强证据，但不阻塞本轮 release candidate。若旧 Issue 的证据不绑定当前 commit，则视为未满足本规格。

@@ -120,7 +120,7 @@ pilot 本地未配置时 6 新位点自动 `builtin-v1` fallback（已单测）�
 ## 领票留痕（#315 / P1-03）
 
 - **worktree**: `/Users/bin/orca/workspaces/美业内容2/lane-315`
-- **branch**: `leelv007-cmd/lane-315`
+- **branch**: `legacy-origin-a/lane-315`
 - **开工基线 sha**: `08288ac50f98c5a12544dc6554b2dd27b3204a9f`
 - **实现 commit**: `66f156fa67ae8277e47e31f53d0cc177b778b074`（首版）+ `20ea32cd7d7e21b335464c0a0b20537e26b22ec6`（复核修复）
 - **范围**: 六 prompt 美业改写挂 `HARNESS_PROMPT_SITES`；四处内联评估写交底；不接线 pipeline 运行时

@@ -1,6 +1,6 @@
 # #325 P2-13 经验化收官 — 交底
 
-**分支**：`leelv007-cmd/lane-325`
+**分支**：`legacy-origin-a/lane-325`
 
 **开工基线**：`69cf06e1a6e18734fcefef8122a833e8a4b8e3a7`
 

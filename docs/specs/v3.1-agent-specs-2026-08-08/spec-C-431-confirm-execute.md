@@ -1,6 +1,6 @@
 # V3.1-C 确认与执行：ExecutionPlanSnapshot 冻结 + 确认请求/决定（确认前 reserve）+ Make Harness 消费冻结计划 + Interrupt 协议
 
-> **已发布**：https://github.com/leelv008/meiyeagent/issues/3（label: ready-for-agent）；本文为票面本地快照。原 leelv007-cmd/meiyeweb-agent#431 因账号封禁废弃。
+> **已发布**：https://github.com/legacy-origin-b/meiyeagent/issues/3（label: ready-for-agent）；本文为票面本地快照。原 legacy-origin-a/legacy-web-repo#431 因账号封禁废弃。
 > 决策权威：V3.1 §5.4、§14、§22.3–22.4（前置迁移）、§23、§27.6；决策记录附录 B（U7/U8/U9）；硬约束附录 A（A2/A3/A4/A5/A6/A13）。
 > 依赖：#1（事件地基）、#2（Plan Compiler 产出 CompiledExecutionPlan）。
 

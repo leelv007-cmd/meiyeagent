@@ -136,7 +136,7 @@ ZIP 内英文路径名（`images/`、`evidence/rights-and-facts.json`）同理�
 
 **⑤ `meiye-` CSS/存储命名空间 —— 内部标识，禁改。**
 `src/`、`tests/`、`apps/` 共 825 处（`meiye-product-shell`、`meiye-sidebar-nav-item`、约 60 个 DB/存储键前缀），
-从不对用户可见。`package.json:2` 的 `"name": "meiyeweb-agent"` 同理。按 D-152① 明确排除。
+从不对用户可见。`package.json:2` 的 `"name": "legacy-web-repo"` 同理。按 D-152① 明确排除。
 
 ## 6. 顺带发现的邻近缺口（不在本票，不擅自扩边界）
 

@@ -47,7 +47,7 @@
 
 ### 0.4 输入方案原文（对撞候选，非现行权威）
 
-- `docs/meiyeweb-agent-UI-UX-Agent化调整建议0801.md`（方案一）
+- `docs/legacy-web-repo-UI-UX-Agent化调整建议0801.md`（方案一）
 - `docs/美业宣发经营Agent-UI-UX调整建议-完整版0801.md`（方案二）
 - 合流裁决以 [锁定工作台 Agent 化目标形态](../../.wayfinder/issues/xhs-05-lock-agent-workbench-form.md) 为准
 
@@ -699,7 +699,7 @@ xhswork 按操作扣分（大纲 / 配图 / 正文 / 封面各自 `consume*`，`
 
 ## §11 开发纪律与留痕（实施批 #313–#328）
 
-实施票：P1 = [#313](https://github.com/leelv007-cmd/meiyeweb-agent/issues/313)–[#319](https://github.com/leelv007-cmd/meiyeweb-agent/issues/319)，P2 = [#320](https://github.com/leelv007-cmd/meiyeweb-agent/issues/320)–[#328](https://github.com/leelv007-cmd/meiyeweb-agent/issues/328)（编号即开发顺序；票上原生 blocked-by 边为机器判据）。通用纪律全文以 `docs/ops/agent-dispatch-runbook-2026-07-29.md` 为准（环境铁律／关票纪律／受阻轮询协议全部适用），与 `docs/specs/credit-billing-spec-2026-08-01.md` §11 同构；本节只列本效力面的收束，冲突时以手册为底、本节为特化。
+实施票：P1 = [#313](https://github.com/legacy-origin-a/legacy-web-repo/issues/313)–[#319](https://github.com/legacy-origin-a/legacy-web-repo/issues/319)，P2 = [#320](https://github.com/legacy-origin-a/legacy-web-repo/issues/320)–[#328](https://github.com/legacy-origin-a/legacy-web-repo/issues/328)（编号即开发顺序；票上原生 blocked-by 边为机器判据）。通用纪律全文以 `docs/ops/agent-dispatch-runbook-2026-07-29.md` 为准（环境铁律／关票纪律／受阻轮询协议全部适用），与 `docs/specs/credit-billing-spec-2026-08-01.md` §11 同构；本节只列本效力面的收束，冲突时以手册为底、本节为特化。
 
 ### 11.1 角色与主权
 

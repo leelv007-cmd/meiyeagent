@@ -1,6 +1,6 @@
 # #319 P1-07 交底 —— 多页编辑时间线与 note 载体写方接入
 
-- 分支：`leelv007-cmd/lane-319`（worktree `lane-319`）；**未 push、未关票**，合入与批换锚由主控执行。
+- 分支：`legacy-origin-a/lane-319`（worktree `lane-319`）；**未 push、未关票**，合入与批换锚由主控执行。
 - 规格锚：`docs/specs/xhs-vertical-integration-spec-2026-08-01.md` §4.1 / §8.2 / §3.1 / §10.3-1（P1-5 / P1-8）。
 - 前置：#313 AgentFrame 壳、#314 carrier 消费点、#315 prompt、#317 流内确认 + note 过卡、#318 Activity Shelf 均已合入 main（merge-ledger）。
 

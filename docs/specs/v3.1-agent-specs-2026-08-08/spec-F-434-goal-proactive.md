@@ -1,6 +1,6 @@
 # V3.1-F 目标与主动性：MarketingGoal（提议式创建）+ Proactive Opportunity（evidence 门控）+ 学习闭环
 
-> **已发布**：https://github.com/leelv008/meiyeagent/issues/6（label: ready-for-agent）；本文为票面本地快照。原 leelv007-cmd/meiyeweb-agent#434 因账号封禁废弃。
+> **已发布**：https://github.com/legacy-origin-b/meiyeagent/issues/6（label: ready-for-agent）；本文为票面本地快照。原 legacy-origin-a/legacy-web-repo#434 因账号封禁废弃。
 > 决策权威：V3.1 §11、§25、§26.2、§3 Level 3；决策记录附录 B（U2 阈值、U7）；硬约束附录 A。
 > 依赖：#5（Memory/Evidence）、#4（交付与自报旅程，Campaign 派生 Work 的确认粒度合同在 #3）。
 

@@ -1,7 +1,7 @@
 # T34 内容页＋运营旧面换壳下线 — 「旧面 → 新面」替代对照表
 
 票：T34 / issue #228（Spec #194；归桶矩阵 §3 old-ia-reshell 三行）
-分支：`leelv007-cmd/t34-content-operations-reshell`
+分支：`legacy-origin-a/t34-content-operations-reshell`
 用途：**T38 条件删除批（1D）第三段清单的逐行核对依据**。本票只做路由下线＋入口收敛＋替代面收口，一行未删。
 
 删除谓词（矩阵 §1 实现决定 1）：`1D ＝ 换壳票组全部合入 ＋ 旧页零路由引用`。
