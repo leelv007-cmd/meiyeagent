@@ -131,6 +131,7 @@ import {
   RECORDED_CATALOG_REVISION_ID,
   seedCapabilityHotAssemblyFromCatalog,
 } from '../p1/model-supply/index.js';
+import { createSessionAgentKernel } from '../p1/agent-session/ai-sdk-agent-kernel.js';
 import { LOCAL_FIXTURE_PROVIDER_REFERENCE_POLICY } from '../p1/model-supply/reference-asset-delivery.js';
 import {
   AiSdkStructuredObjectExecutor,
@@ -609,6 +610,12 @@ export async function assembleCoreGraph(
       : modelRuntime.activation === 'live_verified' && modelRuntime.direct
         ? new OpenAiCompatibleAiSdkRunner(modelRuntime.direct)
         : undefined;
+  /** V31-06 Session Harness AgentKernel (fixture always green; live = AI SDK). */
+  const sessionAgentKernel = createSessionAgentKernel({
+    mode: modelRuntime.mode,
+    activation: modelRuntime.activation,
+    direct: modelRuntime.direct,
+  });
   const foundationLedgerService = new P1ApplicationService(
     foundationRepository
   );
@@ -1263,6 +1270,7 @@ export async function assembleCoreGraph(
     platformDefaultModelSource,
     adminConfigRuntime,
     aiStreamingRunner,
+    sessionAgentKernel,
     foundationLedgerService,
     productEntitlements,
     executionEntitlementPolicy,
