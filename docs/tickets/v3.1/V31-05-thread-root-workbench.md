@@ -3,7 +3,7 @@
 **Parent**: spec-A（#1）；权威 V3.1 §4–§5.1、§35 批次 1 退出门、§38
 **批次**: 1（批次收口票）
 **Blocked by**: V31-02, V31-04
-**Status**: ready-for-agent
+**Status**: done (merged, 2026-08-08) — 遗留：A16 三态截图基线重拍、基线真数待 analytics 导出后跑 collector --mode=from-export
 
 ## What to build
 
