@@ -183,6 +183,12 @@ import {
   resolvePlatformDefaultBindings,
 } from '../p1/supply-registry/index.js';
 import {
+  AgentSemanticEventProjector,
+  PostgresAgentSemanticEventStore,
+  resolveAgentSemanticEventAdapterEnabled,
+  ShadowSemanticWorkflowEventReader,
+} from '../p1/agent-semantic-events/index.js';
+import {
   HarnessWorkflowEventSource,
   WorkflowEventApplicationService,
 } from '../p1/workflow-events.js';
@@ -1307,13 +1313,24 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       Number(env.HARNESS_COMPENSATION_POLL_MS ?? 1_000)
     );
     harnessPendingStartRecoveryInterval.unref();
+    // V31-03: shadow dual-write of workflow progress/token → semantic projector.
+    // Gated by agent_semantic_event_adapter_v1 (default off = zero projection writes).
+    const agentSemanticEventStore = new PostgresAgentSemanticEventStore(pool);
+    const agentSemanticEventProjector = new AgentSemanticEventProjector(
+      agentSemanticEventStore,
+    );
+    const harnessEventReader = new HarnessDbosWorkflowEventReader(
+      harnessSchemaStore,
+      undefined,
+      undefined,
+      productQuoteService,
+    );
     harnessWorkflowEventSource = new HarnessWorkflowEventSource(
-      new HarnessDbosWorkflowEventReader(
-        harnessSchemaStore,
-        undefined,
-        undefined,
-        productQuoteService
-      )
+      new ShadowSemanticWorkflowEventReader(
+        harnessEventReader,
+        agentSemanticEventProjector,
+        () => resolveAgentSemanticEventAdapterEnabled(adminConfigRepository),
+      ),
     );
     const billingCompensationWorker = new HarnessBillingCompensationWorker(
       billingCompensations,

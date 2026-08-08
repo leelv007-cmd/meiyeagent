@@ -136,6 +136,7 @@ describe('Admin config application seam', () => {
       [
         'agent_memory_candidate_write_v1',
         'agent_memory_read_v1',
+        'agent_semantic_event_adapter_v1',
         ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
         'byok.adapter.assembly',
         'compliance.aigc_label.default',
