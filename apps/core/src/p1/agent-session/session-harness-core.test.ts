@@ -52,11 +52,8 @@ import {
   parseAgentTurnDecision,
   parseAgentTurnInput,
 } from './turn-contracts.js';
-import {
-  AgentTurnRunner,
-  didNotCall,
-  toolOrder,
-} from './turn-runner.js';
+import { didNotCall, toolOrder } from './quick-checks.js';
+import { AgentTurnRunner } from './turn-runner.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
 
