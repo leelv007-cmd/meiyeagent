@@ -167,6 +167,19 @@ test('agent_semantic_event_adapter_v1 is hot-read and wired (V31-03 shadow gate)
   );
 });
 
+test('make_steering_v1 and disable_make_steering are hot-read and wired (V31-16)', () => {
+  for (const key of ['make_steering_v1', 'disable_make_steering'] as const) {
+    assert.ok(
+      ADMIN_CONFIG_KEY_CLASSIFICATION.hotReadKeys.includes(key),
+      `${key} missing from hotReadKeys`,
+    );
+    assert.ok(
+      ADMIN_CONFIG_KEY_CLASSIFICATION.wiredKeys.includes(key),
+      `${key} missing from wiredKeys`,
+    );
+  }
+});
+
 // Spec G / #390: plan.credits.* keys come only from @meiye/contracts.
 test('credit plan keys include reference_numbers from the contracts authority', () => {
   assert.ok(

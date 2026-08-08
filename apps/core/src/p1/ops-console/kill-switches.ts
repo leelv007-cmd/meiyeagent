@@ -51,7 +51,8 @@ export const OPS_KILL_SWITCH_CATALOG: Readonly<
     impactScope: 'Blocks memory injection/read; agents run without shop experience recall.',
   },
   disable_make_steering: {
-    landed: false,
+    // V31-16 lands the runtime hook (SteeringService gate + admin-config hot-read).
+    landed: true,
     providerTicket: 'V31-16',
     impactScope: 'Disables mid-execution Make steering; in-flight plans finish without replan.',
   },

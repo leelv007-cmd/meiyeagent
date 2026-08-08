@@ -348,6 +348,12 @@ interface HarnessDbosWorkflowOptions {
   resolveForceLegacyFiveStage?: () =>
     | Promise<boolean>
     | boolean;
+  /**
+   * V31-16: dual-queue Make steering drain at terminal success (follow_up).
+   * Page-unit steer drain is on note page progress; this is the all-complete hang.
+   * Flag off / kill switch ⇒ port no-ops (zero behavior change).
+   */
+  makeSteeringBoundary?: import('./make-steering-boundary.js').MakeSteeringBoundaryPort;
 }
 
 export function registerHarnessDbosWorkflow(
@@ -367,6 +373,7 @@ export function registerHarnessDbosWorkflow(
     executionPlanAdmission,
     resolveExecutionPlanLiveFacts,
     resolveForceLegacyFiveStage,
+    makeSteeringBoundary,
   } = options;
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -911,6 +918,8 @@ export function registerHarnessDbosWorkflow(
         settlement,
         taskRecallDue,
         workflowId,
+        // V31-16: follow_up queue drains when the whole Make run is terminal.
+        makeSteeringBoundary,
       });
       return result;
     } finally {
@@ -937,6 +946,11 @@ export async function settleHarnessTerminalSuccess(input: {
   settlement: HarnessBillingSettlementInput | null;
   taskRecallDue?: TaskRecallDuePort;
   workflowId: string;
+  /**
+   * V31-16: all-units-terminal drain for follow_up (and any remaining steer).
+   * Gated inside the port — disabled flag/kill switch = zero work.
+   */
+  makeSteeringBoundary?: import('./make-steering-boundary.js').MakeSteeringBoundaryPort;
 }) {
   if (input.billing && input.settlement) {
     await commitHarnessBillingOrSchedule({
@@ -957,6 +971,20 @@ export async function settleHarnessTerminalSuccess(input: {
         sourceTaskId: input.workflowId,
         workspaceId: input.request.workspaceId,
       }),
+    );
+  }
+  // V31-16: dual-queue follow_up inserts only after all units complete.
+  if (input.makeSteeringBoundary) {
+    await input.runStep('make-steering-all-units-terminal', () =>
+      input.makeSteeringBoundary!.onUnitBoundary({
+        workspaceId: input.request.workspaceId,
+        taskId: input.workflowId,
+        cursor: {
+          justCompletedUnitId: null,
+          remainingUnitIds: [],
+          allUnitsTerminal: true,
+        },
+      }).then(() => undefined),
     );
   }
 }

@@ -30,6 +30,10 @@ import {
   AGENT_MEMORY_KILL_SWITCH_KEYS,
 } from '../operations/agent-memory-platform.js';
 import {
+  MAKE_STEERING_FLAG,
+  MAKE_STEERING_KILL_SWITCH,
+} from '../agent-session/steering-service.js';
+import {
   BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
   BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
   boundedExecutionLiveCalibrationConfigSchema,
@@ -638,6 +642,21 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     scope: 'global',
     description:
       'Kill switch disable_memory_read — force-disables memory reads independent of feature flags.',
+    valueSchema: z.boolean(),
+  },
+  // V31-16 / V3.1 §41 batch 4: Make steering flag + kill switch (spec-D §16).
+  {
+    key: MAKE_STEERING_FLAG,
+    scope: 'global',
+    description:
+      'Feature flag make_steering_v1 — when false, mid-run Make steering submits are recorded as disabled and not applied. Default on when unset.',
+    valueSchema: z.boolean(),
+  },
+  {
+    key: MAKE_STEERING_KILL_SWITCH,
+    scope: 'global',
+    description:
+      'Kill switch disable_make_steering — force-disables mid-run Make steering independent of feature flags.',
     valueSchema: z.boolean(),
   },
   {

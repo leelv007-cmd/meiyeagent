@@ -179,7 +179,9 @@ import { HarnessReleaseService } from '../p1/harness/harness-release.js';
 import {
   AgentSessionFoundationModule,
   PostgresAgentSessionStore,
+  resolveMakeSteeringGate,
 } from '../p1/agent-session/index.js';
+import { createMakeSteeringBoundaryPort } from '../p1/harness/make-steering-boundary.js';
 import { SensitiveWordsFoundationModule } from '../p1/sensitive-words/index.js';
 import {
   CompositeRecordProposalPort,
@@ -293,6 +295,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     planCompiler,
     executionPlanAdmissionService,
     interruptStore,
+    steeringService,
     productEntitlements,
     executionEntitlementPolicy,
     p1ModelSupplyService,
@@ -764,7 +767,11 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       }),
       new SensitiveWordsFoundationModule(sensitiveWordsRepository),
       // V31-05: Thread list + Workbench session restore (consumes V31-02 store).
-      new AgentSessionFoundationModule(new PostgresAgentSessionStore(pool)),
+      // V31-16: steering_submit / list_steering_commands on the same P1 surface.
+      new AgentSessionFoundationModule(
+        new PostgresAgentSessionStore(pool),
+        steeringService,
+      ),
       new OpsConsoleFoundationModule(
         new OpsConsoleService({
           releases: new HarnessReleaseService(harnessReleaseStore),
@@ -1240,6 +1247,11 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           );
           return state?.enabled === true;
         },
+        // V31-16: dual-queue Make steering at unit/terminal boundaries.
+        makeSteeringBoundary: createMakeSteeringBoundaryPort({
+          service: steeringService,
+          resolveGate: () => resolveMakeSteeringGate(adminConfigRepository),
+        }),
       }
     );
     // V31-14: typed Interrupt protocol — durable Postgres store (restart-safe).
@@ -1430,6 +1442,12 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     harnessStages.note.artifactProgressEmitter = {
       project: (candidate) => agentSemanticEventProjector.project(candidate),
     };
+    // V31-16: page-unit boundary drains steer queue (follow_up also at last page /
+    // terminal success via registerHarnessDbosWorkflow.makeSteeringBoundary).
+    harnessStages.note.makeSteeringBoundary = createMakeSteeringBoundaryPort({
+      service: steeringService,
+      resolveGate: () => resolveMakeSteeringGate(adminConfigRepository),
+    });
     const harnessEventReader = new HarnessDbosWorkflowEventReader(
       harnessSchemaStore,
       undefined,

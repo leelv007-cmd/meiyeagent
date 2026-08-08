@@ -142,6 +142,7 @@ describe('Admin config application seam', () => {
         'compliance.aigc_label.default',
         'compliance.regulated_mode.default',
         'compliance.watermark.default',
+        'disable_make_steering',
         'disable_memory_read',
         'disable_memory_write',
         DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
@@ -154,6 +155,7 @@ describe('Admin config application seam', () => {
         HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY,
         HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
+        'make_steering_v1',
         ...createDefaultDeployments()
           .map(
             (deployment) =>

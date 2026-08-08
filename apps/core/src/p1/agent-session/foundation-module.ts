@@ -1,8 +1,9 @@
 /**
- * Agent-session P1 module (V31-05): Thread list + Workbench session restore.
+ * Agent-session P1 module (V31-05 / V31-16):
+ * Thread list + Workbench session restore + steering_submit.
  *
- * Consumes AgentSessionStore only. Merchant-facing queries; open_legacy is the
- * sole write command on this surface (lazy legacy Thread, V3.1 §33.2).
+ * open_legacy / create_thread / steering_submit are the write commands.
+ * list_threads / get_workbench_session / get_thread / list_steering_commands are queries.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -19,6 +20,11 @@ import {
   listWorkbenchThreads,
   resolveWorkbenchSession,
 } from './workbench-session.js';
+import {
+  SteeringService,
+  SteeringServiceError,
+  type SteeringUnitProgress,
+} from './steering-service.js';
 
 function actionName(input: Record<string, unknown>): string {
   if (typeof input.action !== 'string' || input.action.trim().length === 0) {
@@ -58,6 +64,15 @@ function resourceIdOf(context: P1Context): string {
 }
 
 function mapSessionError(error: unknown): never {
+  if (error instanceof SteeringServiceError) {
+    if (error.code === 'NOT_FOUND') {
+      throw new P1DomainError('NOT_FOUND', error.message);
+    }
+    if (error.code === 'IDEMPOTENCY_CONFLICT') {
+      throw new P1DomainError('IDEMPOTENCY_CONFLICT', error.message);
+    }
+    throw new P1DomainError('INVALID_STATE', error.message);
+  }
   if (error instanceof AgentSessionError) {
     if (error.code === 'AGENT_THREAD_NOT_FOUND') {
       throw new P1DomainError('NOT_FOUND', error.message);
@@ -111,10 +126,59 @@ const createThreadPayloadSchema = z
   })
   .strict();
 
+const unitProgressSchema = z
+  .object({
+    unitId: z.string().trim().min(1),
+    status: z.enum(['pending', 'running', 'completed', 'failed']),
+    label: z.string().trim().min(1).max(200).optional(),
+    pageIndex: z.number().int().nonnegative().max(50).optional(),
+  })
+  .strict();
+
+/** V31-16 P1 action steering_submit (V3.1 §21.3). */
+const steeringSubmitPayloadSchema = z
+  .object({
+    commandId: z.string().trim().min(1).max(200).optional(),
+    threadId: z.string().trim().min(1),
+    taskId: z.string().trim().min(1),
+    workId: z.string().trim().min(1).optional(),
+    instruction: z.string().trim().min(1).max(4_000),
+    sourcePlanRevision: z.number().int().positive(),
+    sourceContentVersionIds: z.array(z.string().trim().min(1)).max(50).optional(),
+    snapshotHash: z.string().trim().min(1).max(128).optional(),
+    units: z.array(unitProgressSchema).max(100).default([]),
+    queueModeHint: z.enum(['steer', 'follow_up']).optional(),
+    applyImmediately: z.boolean().optional(),
+    signals: z
+      .object({
+        affectedUnitIds: z.array(z.string().trim().min(1)).max(100).optional(),
+        changesQuantity: z.boolean().optional(),
+        changesPlatform: z.boolean().optional(),
+        changesModel: z.boolean().optional(),
+        changesCost: z.boolean().optional(),
+        changesFacts: z.boolean().optional(),
+        conflictReason: z.string().trim().min(1).max(2_000).optional(),
+      })
+      .strict()
+      .optional(),
+    createdAt: z.iso.datetime().optional(),
+  })
+  .strict();
+
+const listSteeringPayloadSchema = z
+  .object({
+    taskId: z.string().trim().min(1),
+  })
+  .strict();
+
 export class AgentSessionFoundationModule implements P1OperationModule {
   readonly name = 'agent-session';
 
-  constructor(private readonly store: AgentSessionStore) {}
+  constructor(
+    private readonly store: AgentSessionStore,
+    /** V31-16 Make Steering — optional so read-only session surfaces stay thin. */
+    private readonly steering?: SteeringService,
+  ) {}
 
   async execute(args: {
     context: P1Context;
@@ -169,6 +233,44 @@ export class AgentSessionFoundationModule implements P1OperationModule {
               sessionRevision: thread.sessionRevision,
               title: thread.title,
             },
+          };
+        }
+        case 'steering_submit': {
+          if (!this.steering) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Steering service is not assembled on agent-session (V31-16).',
+            );
+          }
+          const input = parse(steeringSubmitPayloadSchema, value);
+          const units = input.units as SteeringUnitProgress[];
+          const result = await this.steering.submit({
+            commandId: input.commandId ?? args.idempotencyKey,
+            workspaceId: resourceId,
+            threadId: input.threadId,
+            taskId: input.taskId,
+            workId: input.workId,
+            actorId: args.context.userId,
+            instruction: input.instruction,
+            sourcePlanRevision: input.sourcePlanRevision,
+            sourceContentVersionIds: input.sourceContentVersionIds,
+            snapshotHash: input.snapshotHash,
+            units,
+            queueModeHint: input.queueModeHint,
+            applyImmediately: input.applyImmediately,
+            signals: input.signals,
+            createdAt: input.createdAt,
+          });
+          return {
+            command: result.command,
+            classification: result.classification,
+            queueMode: result.queueMode,
+            applicationStatus: result.applicationStatus,
+            impactSummary: result.impactSummary,
+            preservedUnitIds: result.preservedUnitIds,
+            affectedUnitIds: result.affectedUnitIds,
+            nextAction: result.nextAction,
+            replayed: result.replayed,
           };
         }
         default:
@@ -228,6 +330,20 @@ export class AgentSessionFoundationModule implements P1OperationModule {
             );
           }
           return { thread };
+        }
+        case 'list_steering_commands': {
+          if (!this.steering) {
+            throw new P1DomainError(
+              'INVALID_STATE',
+              'Steering service is not assembled on agent-session (V31-16).',
+            );
+          }
+          const input = parse(listSteeringPayloadSchema, value);
+          const commands = await this.steering.listByTask({
+            workspaceId: resourceId,
+            taskId: input.taskId,
+          });
+          return { commands };
         }
         default:
           throw new P1DomainError(

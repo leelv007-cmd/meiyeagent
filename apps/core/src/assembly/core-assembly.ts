@@ -43,6 +43,11 @@ import {
 import { ExecutionPlanAdmissionService } from '../p1/harness/execution-plan-admission.js';
 import { PostgresExecutionPlanAdmissionMigration } from '../p1/harness/postgres-execution-plan-admission-store.js';
 import { PostgresInterruptStore } from '../p1/harness/postgres-interrupt-store.js';
+import { PostgresSteeringCommandStore } from '../p1/agent-session/postgres-steering-command-store.js';
+import {
+  SteeringService,
+  resolveMakeSteeringGate,
+} from '../p1/agent-session/steering-service.js';
 import { PostgresAgentSemanticEventStore } from '../p1/agent-semantic-events/index.js';
 import { createPermissionAuthorizer } from '../p1/capability-permission/index.js';
 import { CloudflareInventoryAdapter } from '../p1/cloudflare-read/index.js';
@@ -723,6 +728,15 @@ export async function assembleCoreGraph(
   /** V31-14: durable pending interrupts (CAS resume / listPending). */
   const interruptStore = new PostgresInterruptStore(pool);
   /**
+   * V31-16: append-only Make steering commands (Postgres sole writer).
+   * Gate hot-reads make_steering_v1 + disable_make_steering.
+   */
+  const steeringCommandStore = new PostgresSteeringCommandStore(pool);
+  const steeringService = new SteeringService({
+    store: steeringCommandStore,
+    resolveGate: () => resolveMakeSteeringGate(adminConfigRepository),
+  });
+  /**
    * V31-08: late-bound billing quote resolver. productQuoteAuthority is
    * assembled further down; ports are only invoked at turn time.
    */
@@ -1095,6 +1109,8 @@ export async function assembleCoreGraph(
     executionPlanAdmissionMigration,
     // V31-14 durable Interrupt store (pending confirm survives restart).
     interruptStore,
+    // V31-16 append-only Make steering commands (PG sole writer).
+    steeringCommandStore,
   ]);
   await ensureCreditPlanCatalogDefaults(adminConfigRepository);
   await migrateCreditPlanCatalogCurrencyToHkd(adminConfigRepository);
@@ -1572,6 +1588,8 @@ export async function assembleCoreGraph(
     executionPlanAdmissionService,
     executionPlanSnapshotStore: executionPlanAdmissionMigration.store,
     interruptStore,
+    steeringCommandStore,
+    steeringService,
     foundationLedgerService,
     productEntitlements,
     executionEntitlementPolicy,
