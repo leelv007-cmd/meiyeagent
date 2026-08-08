@@ -64,7 +64,11 @@ const STAGE_NAMES: Record<string, string> = {
   execution_selection: '04-execution-selection',
   assembly_delivery: '05-assembly-delivery',
   product_billing: 'product-billing',
+  eval_layer: 'eval-layer',
 };
+
+/** V31-23 outbox event type for eval layer scores (see apps/core/src/p1/eval). */
+const EVAL_LAYER_RESULT_EVENT_TYPE = 'eval_layer.result';
 
 const LANGFUSE_SCORE_REASON_CODE = 'model_score_reason_redacted';
 
@@ -365,16 +369,36 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
     skillRevisionRefs.length > 0 || skillContentHashes.length > 0
       ? { skillRevisionRefs, skillContentHashes }
       : {};
+  const evalPayload =
+    item.eventType === EVAL_LAYER_RESULT_EVENT_TYPE
+      ? isRecord(item.payload)
+      : null;
+  const evalTags =
+    evalPayload && Array.isArray(evalPayload.tags)
+      ? evalPayload.tags.filter(
+          (tag): tag is string => typeof tag === 'string' && tag.length > 0,
+        )
+      : [];
   const traceBody = exactFields(LANGFUSE_TRACE_BODY_FIELDS, {
     id: traceId,
-    name: 'beauty-marketing-task',
+    name:
+      item.eventType === EVAL_LAYER_RESULT_EVENT_TYPE
+        ? 'eval-layer-result'
+        : 'beauty-marketing-task',
     sessionId: item.workflowId,
-    tags: ['harness', item.stage],
+    tags: ['harness', item.stage, ...evalTags],
     metadata: {
       taskId,
       workflowId: item.workflowId,
       ...traceObservabilityAxes,
       ...skillLineage,
+      ...(evalPayload
+        ? {
+            harnessReleaseId: evalPayload.harnessReleaseId,
+            evalResultId: evalPayload.resultId,
+            evalVerdict: evalPayload.verdict,
+          }
+        : {}),
     },
   });
   const spanMetadata: Record<string, unknown> = {
@@ -421,6 +445,7 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
   events.push(...selectionScores(item, traceId, spanId));
   events.push(...metricScores(item, traceId, spanId, prompt, metrics));
   events.push(...productMetricScores(item, traceId, spanId, productMetrics));
+  events.push(...evalLayerScores(item, traceId, spanId));
   return {
     batch: events,
     datasetItem: metricsDatasetItem(
@@ -432,6 +457,48 @@ function mapOutboxItem(item: HarnessLangfuseOutboxItem) {
       metrics,
     ),
   };
+}
+
+/**
+ * V31-23: project eval_layer.result outbox payloads into score-create events.
+ * Scores are pre-sanitized at enqueue (D-061); sender only maps the allowlisted shape.
+ */
+function evalLayerScores(
+  item: HarnessLangfuseOutboxItem,
+  traceId: string,
+  spanId: string,
+): IngestionEvent[] {
+  if (item.eventType !== EVAL_LAYER_RESULT_EVENT_TYPE) return [];
+  const payload = isRecord(item.payload);
+  const scores = Array.isArray(payload?.scores) ? payload.scores : [];
+  return scores.flatMap((raw, index) => {
+    if (!isRecord(raw)) return [];
+    if (typeof raw.name !== 'string' || typeof raw.value !== 'number') {
+      return [];
+    }
+    if (!Number.isFinite(raw.value)) return [];
+    const metadata = isRecord(raw.metadata) ? raw.metadata : {};
+    const body = exactFields(LANGFUSE_SCORE_BODY_FIELDS, {
+      id: stableUuid(`score:${item.auditId}:eval:${raw.name}:${index}`),
+      traceId,
+      observationId: spanId,
+      name: raw.name,
+      value: raw.value,
+      comment:
+        typeof raw.comment === 'string' && raw.comment.length > 0
+          ? raw.comment
+          : raw.name,
+      metadata,
+    });
+    return [
+      ingestionEvent(
+        item,
+        `eval-score:${index}:${raw.name}`,
+        'score-create',
+        body,
+      ),
+    ];
+  });
 }
 
 function selectionScores(

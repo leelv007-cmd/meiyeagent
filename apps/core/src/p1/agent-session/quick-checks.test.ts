@@ -82,6 +82,31 @@ test('output includes / excludes / matches', () => {
   assert.equal(outputIncludes(output, 'token_cost_usd'), false);
 });
 
+test('runMatching supports include/exclude tag filters (V31-23)', () => {
+  resetDefaultSessionQuickCheckRegistryForTests();
+  const registry = createSessionBehaviorQuickCheckRegistry();
+  const makeTrace: QuickCheckTrace = {
+    toolCalls: [
+      { toolName: 'read_context' },
+      { toolName: 'generate' },
+      { toolName: 'check' },
+      { toolName: 'record' },
+    ],
+  };
+  const withoutReadonly = registry.runMatching(makeTrace, {
+    includeTags: ['l0.5'],
+    excludeTags: ['readonly'],
+  });
+  assert.ok(
+    withoutReadonly.every((item) => item.id !== 'session.didNotCall.record_readonly'),
+  );
+  assert.equal(
+    withoutReadonly.find((item) => item.id === 'session.toolOrder.canonical_make')
+      ?.passed,
+    true,
+  );
+});
+
 test('default session registry gates Level 0 zero-LLM trace', () => {
   resetDefaultSessionQuickCheckRegistryForTests();
   const registry = getDefaultSessionQuickCheckRegistry();
