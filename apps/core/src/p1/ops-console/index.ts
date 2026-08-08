@@ -37,3 +37,24 @@ export {
   type AgentToolPolicyRevision,
   type ToolPolicyStore,
 } from './tool-policy.js';
+export {
+  evaluateLegacyReplayArchiveGate,
+  LEGACY_REPLAY_DEFAULT_OPS_BUFFER_DAYS,
+  LEGACY_REPLAY_MAX_HOLD_WINDOW_DAYS,
+  LEGACY_REPLAY_OPS_BUFFER_DAYS_KEY,
+  MemoryLegacyReplayInventory,
+  type LegacyReplayArchiveGateFacts,
+  type LegacyReplayArchiveGateResult,
+  type LegacyReplayInventoryPort,
+  type LegacyReplayInventorySnapshot,
+} from './legacy-replay-archive-gate.js';
+export { PostgresLegacyReplayInventory } from './postgres-legacy-replay-inventory.js';
+export {
+  getV31FlagCatalogEntry,
+  listLandedV31Flags,
+  MemoryKillSwitchAdminConfigMirror,
+  V31_FEATURE_FLAG_CATALOG,
+  V31_KILL_SWITCHES_MIRROR_TO_ADMIN_CONFIG,
+  type KillSwitchAdminConfigMirror,
+  type V31FlagCatalogEntry,
+} from './v31-feature-flags.js';

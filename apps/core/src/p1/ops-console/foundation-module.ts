@@ -259,6 +259,26 @@ export class OpsConsoleFoundationModule implements P1OperationModule {
       };
     }
 
+    // V31-26a / U14: legacy replay archive condition gate (read-only, fail closed).
+    if (action === 'legacy_replay_archive_gate') {
+      return this.service.legacyReplayArchiveGate({
+        now: typeof payload.now === 'string' ? payload.now : undefined,
+      });
+    }
+
+    // V31-26a: audit export for archive evidence (read-only).
+    if (action === 'export_legacy_replay_audit') {
+      return this.service.exportLegacyReplayAudit({
+        limit: typeof payload.limit === 'number' ? payload.limit : undefined,
+        now: typeof payload.now === 'string' ? payload.now : undefined,
+      });
+    }
+
+    // V31-26a: feature flag / kill switch inventory with flip paths.
+    if (action === 'list_v31_feature_flags') {
+      return this.service.listV31FeatureFlags();
+    }
+
     throw new P1DomainError(
       'INVALID_STATE',
       `Unknown ops-console query ${action}.`,

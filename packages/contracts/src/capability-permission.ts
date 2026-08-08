@@ -767,6 +767,10 @@ export function requiredP1Capability(
       'list_kill_switches',
       'list_audit',
       'langfuse_release_url',
+      // V31-26a / U14
+      'legacy_replay_archive_gate',
+      'export_legacy_replay_audit',
+      'list_v31_feature_flags',
     ]);
     const opsConsoleCommands = new Set([
       'publish_release',
