@@ -75,9 +75,10 @@ test('selecting a lens defaults empty destination per Day-0 contract (QA ISSUE-0
     'utf8'
   );
   assert.match(home, /const handleLensChange = \(next: CreationLensId\) =>/u);
-  assert.match(home, /copy:\s*'wechat_moments'/u);
-  assert.match(home, /image_text:\s*'xiaohongshu'/u);
-  assert.match(home, /video:\s*'douyin'/u);
+  assert.match(home, /copy:\s*\{\s*platform:\s*'wechat_moments'/u);
+  assert.match(home, /image_text:\s*\{\s*platform:\s*'xiaohongshu'/u);
+  assert.match(home, /video:\s*\{\s*platform:\s*'douyin'/u);
+  assert.match(home, /distributionTarget:\s*'manual_copy'/u);
 });
 
 test('store intake confirm invalidates today recommendation after success', () => {

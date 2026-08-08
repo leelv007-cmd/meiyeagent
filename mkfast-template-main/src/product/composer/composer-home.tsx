@@ -2182,16 +2182,29 @@ export function ComposerHome({
       // lens (D-128 / Z1 journeys): 文案→朋友圈, 图文→小红书, 视频→抖音. A
       // blanket 小红书 here regressed the copy journey to a 小红书 package.
       if (selected.draft.delivery.platform != null) return selected;
-      const defaultPlatform: Record<CreationLensId, string> = {
-        copy: 'wechat_moments',
-        image_text: 'xiaohongshu',
-        video: 'douyin',
+      // Pairs must be ones Core's destination mapper accepts (`export` here
+      // made submissions fail to start): 朋友圈 defaults to its contract
+      // target 协办交接, the platform lenses to 手动复制.
+      const lensDefault: Record<
+        CreationLensId,
+        {
+          platform: 'wechat_moments' | 'xiaohongshu' | 'douyin';
+          distributionTarget: 'assisted_handoff' | 'manual_copy';
+        }
+      > = {
+        copy: {
+          platform: 'wechat_moments',
+          distributionTarget: 'assisted_handoff',
+        },
+        image_text: {
+          platform: 'xiaohongshu',
+          distributionTarget: 'manual_copy',
+        },
+        video: { platform: 'douyin', distributionTarget: 'manual_copy' },
       };
-      const fallback = composerDestinationContract(defaultPlatform[next]);
-      if (!fallback) return selected;
       return updateDeliverySuggestion(selected, {
-        distributionTarget: fallback.distributionTarget,
-        platform: fallback.contentPackagePlatform,
+        distributionTarget: lensDefault[next].distributionTarget,
+        platform: lensDefault[next].platform,
       });
     });
   };
