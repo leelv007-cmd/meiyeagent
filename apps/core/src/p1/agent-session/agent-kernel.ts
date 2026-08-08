@@ -5,6 +5,8 @@
  * DBOS remains the sole durable runtime (D-016 residual half).
  */
 
+import type { z } from 'zod';
+
 import type { AgentTurnDecision } from './turn-contracts.js';
 import { parseAgentTurnDecision } from './turn-contracts.js';
 
@@ -18,6 +20,11 @@ export type AgentKernelToolDefinition = {
   description: string;
   /** Side-effect class for read-only turn guards. */
   sideEffect: 'none' | 'internal_write' | 'paid' | 'external';
+  /**
+   * Per-tool Zod input schema (V31-07). When absent, AI SDK adapter uses
+   * passthrough object for fixture-only tools.
+   */
+  inputSchema?: z.ZodType;
   execute: (args: unknown) => Promise<unknown> | unknown;
 };
 

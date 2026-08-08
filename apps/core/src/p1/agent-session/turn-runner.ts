@@ -28,6 +28,7 @@ import type {
   CompactionWriteResult,
   ThreadCheckpointWriter,
 } from './compaction.js';
+import { applyIntentRetrievalDecisionPatch } from './intent-retrieval-policies.js';
 import { PartialActivityBuffer } from './partial-activity.js';
 import {
   PolicyMiddlewareRunner,
@@ -40,6 +41,7 @@ import {
   type SessionHarnessState,
 } from './state-machine.js';
 import { interceptSystemOnlyProposal } from './system-only-intercept.js';
+import type { AgentToolRegistry } from './tool-registry.js';
 import {
   parseAgentTurnDecision,
   parseAgentTurnInput,
@@ -92,6 +94,11 @@ export type AgentTurnRunnerDeps = {
   /** Resolve release pin for the turn; must return fully calibrated limits. */
   resolveRelease: (harnessReleaseId: string) => Promise<ReleaseControlLimitsSource>;
   tools?: Record<string, AgentKernelToolDefinition>;
+  /**
+   * V31-07: server-owned tool registry. When set, tools for the turn are
+   * `registry.toKernelTools(phase) ∩ approvedToolNames` (registry wins merge).
+   */
+  toolRegistry?: AgentToolRegistry;
   policies?: readonly RegisteredPolicy[];
   contextSource?: ModelContextSource | ((input: AgentTurnInput) => ModelContextSource);
   activity?: PartialActivityBuffer;
@@ -100,6 +107,8 @@ export type AgentTurnRunnerDeps = {
   readOnly?: boolean;
   resourceId?: string;
   initialState?: SessionHarnessState;
+  /** Optional creation mode for projection (D-175 free layering). */
+  creationMode?: 'customized' | 'free';
 };
 
 export type AgentTurnRunnerResult = {
@@ -113,6 +122,8 @@ export type AgentTurnRunnerResult = {
   activityStableId: string;
   compaction: CompactionWriteResult | null;
   releaseId: string;
+  /** Middleware state bag (question budget / high-risk filters). */
+  policyState: Record<string, unknown>;
 };
 
 export class AgentTurnRunner {
@@ -162,7 +173,12 @@ export class AgentTurnRunner {
       typeof this.deps.contextSource === 'function'
         ? this.deps.contextSource(authoritativeInput)
         : (this.deps.contextSource ?? {
-            merchantRequest: { text: authoritativeInput.merchantMessage },
+            merchantRequest: {
+              text: authoritativeInput.merchantMessage,
+              ...(this.deps.creationMode
+                ? { creationMode: this.deps.creationMode }
+                : {}),
+            },
           });
     const projection = buildModelContextProjection(authoritativeInput, source);
 
@@ -191,10 +207,29 @@ export class AgentTurnRunner {
       });
     }
 
-    const tools = this.deps.tools ?? {};
+    // Server-owned tools: registry (V31-07) merged over static map; approved ∩ registered.
+    const staticTools = this.deps.tools ?? {};
+    const registryTools = this.deps.toolRegistry
+      ? this.deps.toolRegistry.toKernelTools({
+          phase: authoritativeInput.phase,
+          allowNames: authoritativeInput.approvedToolNames,
+        })
+      : {};
+    const tools: Record<string, AgentKernelToolDefinition> = {
+      ...staticTools,
+      ...registryTools,
+    };
     const activeToolNames = authoritativeInput.approvedToolNames.filter(
       (name) => name in tools,
     );
+
+    // Retrieval phase when tools will run (state machine signal).
+    if (
+      activeToolNames.length > 0 &&
+      canTransition(this.state, 'retrieving')
+    ) {
+      this.state = transition(this.state, 'retrieving');
+    }
 
     const activityStableId = `turn-activity:${authoritativeInput.runId}`;
     const readOnly = this.deps.readOnly !== false;
@@ -292,18 +327,39 @@ export class AgentTurnRunner {
         activityStableId,
         compaction: null,
         releaseId: release.releaseId ?? authoritativeInput.harnessReleaseId,
+        policyState: { ...middlewareCtx.state },
       };
     }
 
-    const decision = parseAgentTurnDecision(rawDecision);
-    this.activity.replaceWithFinal({
-      stableId: activityStableId,
-      payload: decision,
-    });
+    let decision = parseAgentTurnDecision(rawDecision);
+
+    // hypothesis_ready after successful decision parse (pre-policy).
+    if (canTransition(this.state, 'hypothesis_ready')) {
+      this.state = transition(this.state, 'hypothesis_ready');
+    }
 
     const after = await middleware.runAfterModel({
       ...middlewareCtx,
       modelOutput: decision,
+    });
+
+    // V31-07: apply question-budget / high-risk assumption patches onto decision.
+    decision = applyIntentRetrievalDecisionPatch(decision, middlewareCtx.state);
+    // Policy may force ask_merchant control without mutating decision — honor it.
+    if (
+      after.control === 'ask_merchant' &&
+      decision.action.kind !== 'ask_merchant' &&
+      after.question
+    ) {
+      decision = {
+        ...decision,
+        action: { kind: 'ask_merchant', question: after.question },
+      };
+    }
+
+    this.activity.replaceWithFinal({
+      stableId: activityStableId,
+      payload: decision,
     });
 
     if (decision.action.kind === 'ask_merchant') {
@@ -362,6 +418,7 @@ export class AgentTurnRunner {
       activityStableId,
       compaction,
       releaseId: release.releaseId ?? authoritativeInput.harnessReleaseId,
+      policyState: { ...middlewareCtx.state },
     };
   }
 
@@ -393,6 +450,7 @@ export class AgentTurnRunner {
       activityStableId,
       compaction: null,
       releaseId: args.releaseId,
+      policyState: {},
     };
   }
 }

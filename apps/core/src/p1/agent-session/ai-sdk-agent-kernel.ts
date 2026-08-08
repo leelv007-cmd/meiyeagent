@@ -37,10 +37,10 @@ import {
 } from './turn-contracts.js';
 
 /**
- * Free-form tool args until V31-07 pins per-tool Zod.
- * Use passthrough object (same family as ai-sdk-runner assistant tools).
+ * Fallback when a tool definition omits inputSchema (fixture-only paths).
+ * Production retrieval tools pin Zod via tool-registry (V31-07).
  */
-const agentKernelToolArgsSchema = z.object({}).passthrough();
+const agentKernelToolArgsPassthroughSchema = z.object({}).passthrough();
 
 export type AiSdkAgentKernelOptions = {
   model: LanguageModel;
@@ -127,7 +127,8 @@ function buildAiSdkTools(
     // same pattern used when assembling server-owned tool maps at runtime.
     tools[name] = tool({
       description: definition.description,
-      inputSchema: agentKernelToolArgsSchema,
+      inputSchema:
+        definition.inputSchema ?? agentKernelToolArgsPassthroughSchema,
       execute: async (args) => {
         const result = await definition.execute(args);
         toolCalls.push({ toolName: name, args, result });

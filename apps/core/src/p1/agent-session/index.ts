@@ -13,3 +13,9 @@ export * from './state-machine.js';
 export * from './system-only-intercept.js';
 export * from './turn-contracts.js';
 export * from './turn-runner.js';
+// V31-07 Intent interpreter + ambiguity policy + retrieval tools
+export * from './ambiguity-policy.js';
+export * from './context-retrieval.js';
+export * from './intent-interpreter.js';
+export * from './intent-retrieval-policies.js';
+export * from './tool-registry.js';

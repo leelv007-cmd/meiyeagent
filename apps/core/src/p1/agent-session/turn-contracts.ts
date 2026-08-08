@@ -56,6 +56,11 @@ export const agentTurnInputSchema = z
     phase: agentTurnPhaseSchema,
     merchantMessage: z.string().min(1).max(8_000),
     proactiveMode: proactiveModeSchema,
+    /**
+     * D-175 free vs customized fact layering (V31-07).
+     * free: store/project facts waived; never invent store claims.
+     */
+    creationMode: z.enum(['customized', 'free']).optional(),
     sessionRevision: z.number().int().nonnegative().safe(),
     activePlanRef: revisionRefSchema.optional(),
     activeTaskRef: taskRefSchema.optional(),

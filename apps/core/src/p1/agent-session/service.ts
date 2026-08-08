@@ -18,7 +18,11 @@ import {
 } from './compaction.js';
 import type { ModelContextSource } from './context-projection.js';
 import type { RegisteredPolicy } from './policy-middleware.js';
-import type { AgentTurnInput } from './turn-contracts.js';
+import type { AgentToolRegistry } from './tool-registry.js';
+import {
+  parseAgentTurnInput,
+  type AgentTurnInput,
+} from './turn-contracts.js';
 import {
   AgentTurnRunner,
   type AgentTurnRunnerResult,
@@ -30,10 +34,27 @@ export type AgentSessionHarnessServiceOptions = {
   kernel: AgentKernel;
   resolveRelease: (harnessReleaseId: string) => Promise<ReleaseControlLimitsSource>;
   tools?: Record<string, AgentKernelToolDefinition>;
+  /** V31-07 server-owned retrieval + governed tool registry (static). */
+  toolRegistry?: AgentToolRegistry;
+  /**
+   * Per-turn registry factory (workspace isolation + creationMode).
+   * Preferred in production assembly over a static toolRegistry.
+   */
+  createToolRegistry?: (input: AgentTurnInput) => AgentToolRegistry;
+  /**
+   * Factory so each turn can close over fresh knownFields / call counters.
+   * When omitted, `policies` static list is used.
+   */
+  createPolicies?: (input: AgentTurnInput) => readonly RegisteredPolicy[];
   policies?: readonly RegisteredPolicy[];
   contextSource?:
     | ModelContextSource
     | ((input: AgentTurnInput) => ModelContextSource);
+  creationMode?: 'customized' | 'free';
+  /** Optional resolver when creationMode is turn-dependent. */
+  resolveCreationMode?: (
+    input: AgentTurnInput,
+  ) => 'customized' | 'free' | undefined;
   /** Register this process's sole Thread checkpoint writer (default true). */
   registerCheckpointWriter?: boolean;
 };
@@ -54,16 +75,30 @@ export class AgentSessionHarnessService {
   createTurnRunner(input: {
     resourceId: string;
     readOnly?: boolean;
+    turn?: AgentTurnInput;
   }): AgentTurnRunner {
+    const policies =
+      input.turn && this.options.createPolicies
+        ? this.options.createPolicies(input.turn)
+        : this.options.policies;
+    const toolRegistry =
+      input.turn && this.options.createToolRegistry
+        ? this.options.createToolRegistry(input.turn)
+        : this.options.toolRegistry;
+    const creationMode =
+      (input.turn && this.options.resolveCreationMode?.(input.turn)) ??
+      this.options.creationMode;
     return new AgentTurnRunner({
       kernel: this.options.kernel,
       resolveRelease: this.options.resolveRelease,
       tools: this.options.tools,
-      policies: this.options.policies,
+      toolRegistry,
+      policies,
       contextSource: this.options.contextSource,
       checkpointWriter: this.checkpointWriter,
       resourceId: input.resourceId,
       readOnly: input.readOnly,
+      creationMode,
     });
   }
 
@@ -72,6 +107,16 @@ export class AgentSessionHarnessService {
     turn: unknown;
     readOnly?: boolean;
   }): Promise<AgentTurnRunnerResult> {
+    // Per-turn factories need a parsed turn before constructing the runner.
+    if (this.options.createPolicies || this.options.createToolRegistry) {
+      const turn = parseAgentTurnInput(input.turn);
+      const runner = this.createTurnRunner({
+        resourceId: input.resourceId,
+        readOnly: input.readOnly,
+        turn,
+      });
+      return runner.run(turn);
+    }
     const runner = this.createTurnRunner({
       resourceId: input.resourceId,
       readOnly: input.readOnly,
