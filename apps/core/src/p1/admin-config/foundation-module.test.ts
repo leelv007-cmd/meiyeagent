@@ -156,10 +156,10 @@ describe('Admin config application seam', () => {
         HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY,
         HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
+        'make_steering_v1',
         'make.shadow_reconciliation.sample_rate',
         'make.shadow_reconciliation.window_days',
         'marketing_goal_v1',
-        'make_steering_v1',
         ...createDefaultDeployments()
           .map(
             (deployment) =>
