@@ -11,6 +11,8 @@ import {
   emitNotePageArtifactProgress,
   type ArtifactProgressEmitterPort,
 } from './artifact-progress-emitter.js';
+import type { MakeSteeringBoundaryPort } from './make-steering-boundary.js';
+import { createNotePageSteeringBoundaryTracker } from './make-steering-boundary.js';
 
 export type NotePagePlanLike = {
   pages: Array<{ id: string; order: number; textBlock?: { title?: string } }>;
@@ -44,7 +46,8 @@ export type NotePageProgressReporter = (
 ) => Promise<void>;
 
 /**
- * Build the note runner page progress callback (progress + optional artifact.revised).
+ * Build the note runner page progress callback (progress + optional artifact.revised
+ * + V31-16 Make steering dual-queue unit boundary on page success).
  */
 export function createNotePageProgressReporter(input: {
   plan: NotePagePlanLike;
@@ -60,7 +63,30 @@ export function createNotePageProgressReporter(input: {
     nextRevision: () => number;
     now: () => string;
   };
+  /**
+   * Optional V31-16: drain steer queue after each successful page unit.
+   * When the last page succeeds, follow_up also drains (allUnitsTerminal).
+   */
+  makeSteeringBoundary?: MakeSteeringBoundaryPort;
+  steeringContext?: {
+    workspaceId: string;
+    taskId: string;
+  };
 }): NotePageProgressReporter {
+  const unitIds = input.plan.pages
+    .slice()
+    .sort((a, b) => a.order - b.order)
+    .map((page) => page.id);
+  const steeringTracker =
+    input.makeSteeringBoundary && input.steeringContext
+      ? createNotePageSteeringBoundaryTracker({
+          workspaceId: input.steeringContext.workspaceId,
+          taskId: input.steeringContext.taskId,
+          unitIds,
+          boundary: input.makeSteeringBoundary,
+        })
+      : null;
+
   return async (event) => {
     const order = notePageOrderLabel(input.plan, event.pageId);
     await input.reportProgress({
@@ -95,6 +121,11 @@ export function createNotePageProgressReporter(input: {
         title: page?.textBlock?.title,
         occurredAt: input.artifactContext.now(),
       });
+    }
+
+    // V31-16: unit completion boundary — steer inserts after current page unit.
+    if (event.state === 'success' && steeringTracker) {
+      await steeringTracker.onPageSuccess(event.pageId);
     }
   };
 }

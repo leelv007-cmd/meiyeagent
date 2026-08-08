@@ -395,6 +395,11 @@ export interface HarnessNoteExecutionStagePorts {
    * Absent in fixture tests; production assembly wires AgentSemanticEventProjector.
    */
   artifactProgressEmitter?: import('./artifact-progress-emitter.js').ArtifactProgressEmitterPort;
+  /**
+   * Optional V31-16: dual-queue Make steering drain at page-unit boundaries.
+   * Absent ⇒ zero steering behavior (fixture tests). Production wires SteeringService.
+   */
+  makeSteeringBoundary?: import('./make-steering-boundary.js').MakeSteeringBoundaryPort;
 }
 
 export interface HarnessNoteStagePorts
@@ -2132,6 +2137,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
         }
       : {}),
     // V31-14: page frame moved to note-page-execution-frame (symbol anchor).
+    // V31-16: makeSteeringBoundary drains steer on each page success (follow_up on last).
     onPageProgress: createNotePageProgressReporter({
       plan: activeNoteCandidate.plan,
       reportProgress,
@@ -2150,6 +2156,16 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
                 return noteArtifactRevision;
               },
               now: () => new Date().toISOString(),
+            },
+          }
+        : {}),
+      ...(ports.makeSteeringBoundary
+        ? {
+            makeSteeringBoundary: ports.makeSteeringBoundary,
+            steeringContext: {
+              workspaceId: activeRequest.workspaceId,
+              // Durable Make taskId === workflowId (task-admission identity).
+              taskId: workflowId,
             },
           }
         : {}),

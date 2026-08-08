@@ -229,6 +229,9 @@ export class UnifiedHarnessStagePorts
 	private readonly executionChildObservability?: HarnessExecutionChildObservabilityFactory;
 	private readonly sensitiveLexicon?: SensitiveLexiconReadPort;
 	private readonly sourceContentPackages?: ExecutionSourceContentPackageResolverPort;
+	/** Optional V31-15 / V31-16 producers assigned by production assembly. */
+	artifactProgressEmitter?: HarnessNoteExecutionStagePorts["artifactProgressEmitter"];
+	makeSteeringBoundary?: HarnessNoteExecutionStagePorts["makeSteeringBoundary"];
 
 	constructor(options: UnifiedHarnessStagePortsOptions) {
 		this.copy = options.collaborators.copy;
@@ -587,6 +590,18 @@ export class UnifiedHarnessStagePorts
 					notePageBound: requireNotePageBound(input.request),
 					...(input.onPageProgress
 						? { onPageProgress: input.onPageProgress }
+						: {}),
+					// V31-16: accepted future_step_patch overlays into remaining page generation.
+					// Bound to command/snapshot chain; does not rewrite frozen ExecutionPlanSnapshot.
+					...(this.makeSteeringBoundary
+						? {
+								resolveFutureStepPatches: async (pageId: string) =>
+									this.makeSteeringBoundary!.resolveFutureStepPatches({
+										workspaceId: input.request.workspaceId,
+										taskId: input.workflowId,
+										unitId: pageId,
+									}),
+							}
 						: {}),
 				});
 		return {

@@ -28,6 +28,10 @@ import {
   PROACTIVE_FEATURE_FLAGS,
   PROACTIVE_KILL_SWITCH_KEYS,
 } from '../p1/goal-proactive/evidence-gate.js';
+import {
+  MAKE_STEERING_FLAG,
+  MAKE_STEERING_KILL_SWITCH,
+} from '../p1/agent-session/steering-service.js';
 import { P1DomainError } from '../p1/foundation/index.js';
 import {
   type ActivationEvidence,
@@ -73,6 +77,9 @@ const SHARED_HOT_AND_WIRED_CONFIG_KEYS = [
   PROACTIVE_FEATURE_FLAGS.proactiveOpportunity,
   PROACTIVE_FEATURE_FLAGS.evidenceCoverageThreshold,
   PROACTIVE_KILL_SWITCH_KEYS.disableProactiveAgent,
+  // V31-16: Make steering flag + kill switch (hot-read by SteeringService).
+  MAKE_STEERING_FLAG,
+  MAKE_STEERING_KILL_SWITCH,
   // Settlement hot-reads this key on every paid grant; no process-boot default.
   // Unwritten projection may leave effectiveValue empty (#371 / Spec C §支付映射).
   'plan.payment-mapping',

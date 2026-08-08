@@ -623,11 +623,17 @@ test('kill switch panel lists seven switches; unlanded cannot enable; toggle lea
   assert.equal(listed.items.length, OPS_KILL_SWITCH_IDS.length);
   assert.equal(listed.items.length, 7);
   const byId = new Map(listed.items.map((item) => [item.switchId, item]));
-  // V31-24 lands disable_proactive_agent; others remain unlanded until provider tickets.
+  // Landed by provider tickets: force_legacy_five_stage (V31-14),
+  // disable_make_steering (V31-16), disable_proactive_agent (V31-24).
+  const landedIds = new Set([
+    'force_legacy_five_stage',
+    'disable_make_steering',
+    'disable_proactive_agent',
+  ]);
   for (const item of listed.items) {
     assert.ok(item.impactScope.length > 0);
     assert.equal(item.enabled, false);
-    if (item.switchId === 'disable_proactive_agent') {
+    if (landedIds.has(item.switchId)) {
       assert.equal(item.landed, true);
       assert.equal(item.canEnable, true);
       assert.equal(item.unavailableReason, null);
@@ -638,6 +644,7 @@ test('kill switch panel lists seven switches; unlanded cannot enable; toggle lea
     }
   }
   assert.ok(byId.has('disable_proactive_agent'));
+  assert.ok(byId.get('disable_make_steering')?.landed);
 
   await assert.rejects(
     module.execute({
@@ -655,6 +662,23 @@ test('kill switch panel lists seven switches; unlanded cannot enable; toggle lea
       error instanceof P1DomainError &&
       error.message.includes('提供方票未落地'),
   );
+
+  // Landed kill switch can enable.
+  const enabled = (await module.execute({
+    context: adminCtx('ops-steer'),
+    input: {
+      action: 'set_kill_switch',
+      payload: {
+        switchId: 'disable_make_steering',
+        enabled: true,
+        reason: 'incident: pause mid-run steering',
+      },
+    },
+  })) as unknown as {
+    switch: { enabled: boolean; switchId: string };
+  };
+  assert.equal(enabled.switch.switchId, 'disable_make_steering');
+  assert.equal(enabled.switch.enabled, true);
 
   // Disabling an already-off unlanded switch is a no-op-safe write (allowed)
   // so audit can still record explicit "confirm off" actions.

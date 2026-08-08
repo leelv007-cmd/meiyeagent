@@ -142,6 +142,7 @@ describe('Admin config application seam', () => {
         'compliance.aigc_label.default',
         'compliance.regulated_mode.default',
         'compliance.watermark.default',
+        'disable_make_steering',
         'disable_memory_read',
         'disable_memory_write',
         'disable_proactive_agent',
@@ -158,6 +159,7 @@ describe('Admin config application seam', () => {
         'make.shadow_reconciliation.sample_rate',
         'make.shadow_reconciliation.window_days',
         'marketing_goal_v1',
+        'make_steering_v1',
         ...createDefaultDeployments()
           .map(
             (deployment) =>

@@ -16,6 +16,7 @@ import {
 import { ZodError } from 'zod';
 import { StructuredNodeRunError } from '../model-supply/structured-node-runner.js';
 import { check } from './check.js';
+import { applyFutureStepPatchesToNotePage } from './make-steering-boundary.js';
 
 // 这份默认集合已搬进契约（后台风格编辑器也要用同一份），此处保留导出口不动。
 export { DEFAULT_NOTE_STYLES };
@@ -281,6 +282,14 @@ export class NotePlanCompiler {
       pageId: string;
       state: 'running' | 'success';
     }) => Promise<void> | void;
+    /**
+     * V31-16: resolve accepted future_step_patch overlays for a page unit.
+     * Applied only to matching pages before generation; frozen brief/plan source
+     * is not rewritten in place (runtime overlay → delivery page copy).
+     */
+    resolveFutureStepPatches?: (
+      pageId: string,
+    ) => Promise<readonly { instruction: string }[]> | readonly { instruction: string }[];
   }) {
     const selected = input.candidates.candidates.find(
       ({ styleId }) => styleId === input.selectedStyleId,
@@ -298,18 +307,33 @@ export class NotePlanCompiler {
     const initial: Array<
       Awaited<ReturnType<NotePlanImagePort['generate']>>
     > = [];
+    /** Effective pages after runtime steering overlays (source plan unchanged). */
+    const effectivePages: NotePlan['pages'] = [];
     for (const page of selected.plan.pages) {
       await input.onPageProgress?.({ pageId: page.id, state: 'running' });
+      const patches = input.resolveFutureStepPatches
+        ? await input.resolveFutureStepPatches(page.id)
+        : [];
+      const effectivePage = applyFutureStepPatchesToNotePage(page, patches);
+      effectivePages.push(effectivePage);
       const generation = await this.images.generate({
-        page,
+        page: effectivePage,
         reason: 'initial',
+        ...(patches.length > 0
+          ? {
+              evaluationReason: patches
+                .map((patch) => patch.instruction.trim())
+                .filter(Boolean)
+                .join('；'),
+            }
+          : {}),
       });
       initial.push(generation);
       await input.onPageProgress?.({ pageId: page.id, state: 'success' });
     }
     let plan = notePlanSchema.parse({
       ...selected.plan,
-      pages: selected.plan.pages.map((page, index) => ({
+      pages: effectivePages.map((page, index) => ({
         ...page,
         imageAssetId: initial[index]?.asset.id,
       })),

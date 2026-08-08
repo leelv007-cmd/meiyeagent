@@ -1,0 +1,248 @@
+/**
+ * PostgreSQL SteeringCommandStore (V31-16).
+ *
+ * Table p1_make_steering_commands — append-only mid-run steering commands.
+ * Memory store is test-only; this is the production writer.
+ */
+
+import { isDeepStrictEqual } from 'node:util';
+
+import {
+  makeSteeringCommandSchema,
+  type MakeSteeringCommand,
+} from '@meiye/contracts';
+import type { Pool, PoolClient } from 'pg';
+
+import type { PostgresSchemaMigrator } from '../../postgres-schema-migration.js';
+import {
+  SteeringCommandStoreError,
+  type SteeringCommandStore,
+  type StoredSteeringCommand,
+} from './steering-command-store.js';
+
+type SteeringRow = {
+  command_id: string;
+  workspace_id: string;
+  thread_id: string;
+  task_id: string;
+  application_status: string;
+  impact_summary: string;
+  payload: unknown;
+  created_at: Date | string;
+};
+
+type Queryable = Pick<Pool, 'query'>;
+
+const SELECT_COLS = `
+  command_id, workspace_id, thread_id, task_id,
+  application_status, impact_summary, payload, created_at
+`;
+
+function parseRow(row: SteeringRow): StoredSteeringCommand {
+  const command = makeSteeringCommandSchema.parse(row.payload);
+  return {
+    command,
+    workspaceId: row.workspace_id,
+    applicationStatus:
+      row.application_status as StoredSteeringCommand['applicationStatus'],
+    impactSummary: row.impact_summary,
+  };
+}
+
+export class PostgresSteeringCommandStore
+  implements SteeringCommandStore, PostgresSchemaMigrator
+{
+  constructor(private readonly pool: Pool) {}
+
+  async migrate(client?: PoolClient): Promise<void> {
+    const db: Queryable = client ?? this.pool;
+    await db.query(`
+      SELECT pg_advisory_xact_lock(
+        hashtext('p1-make-steering-commands-migration-v1')
+      );
+      CREATE TABLE IF NOT EXISTS p1_make_steering_commands (
+        command_id text PRIMARY KEY,
+        workspace_id text NOT NULL,
+        thread_id text NOT NULL,
+        task_id text NOT NULL,
+        work_id text NULL,
+        source_plan_revision bigint NOT NULL,
+        snapshot_hash text NULL,
+        queue_mode text NOT NULL CHECK (queue_mode IN ('steer', 'follow_up')),
+        application_status text NOT NULL CHECK (
+          application_status IN (
+            'accepted',
+            'queued_steer',
+            'queued_follow_up',
+            'requires_replan_confirm',
+            'rejected_unsafe',
+            'disabled'
+          )
+        ),
+        impact_summary text NOT NULL,
+        payload jsonb NOT NULL,
+        created_at timestamptz NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS p1_make_steering_commands_task_idx
+        ON p1_make_steering_commands (workspace_id, task_id, created_at);
+      CREATE INDEX IF NOT EXISTS p1_make_steering_commands_thread_idx
+        ON p1_make_steering_commands (workspace_id, thread_id, created_at);
+      CREATE INDEX IF NOT EXISTS p1_make_steering_commands_queued_idx
+        ON p1_make_steering_commands (workspace_id, task_id, created_at)
+        WHERE application_status IN ('queued_steer', 'queued_follow_up');
+    `);
+  }
+
+  async put(row: StoredSteeringCommand): Promise<StoredSteeringCommand> {
+    const command = makeSteeringCommandSchema.parse(row.command);
+    const inserted = await this.pool.query<SteeringRow>(
+      `INSERT INTO p1_make_steering_commands (
+         command_id, workspace_id, thread_id, task_id, work_id,
+         source_plan_revision, snapshot_hash, queue_mode,
+         application_status, impact_summary, payload, created_at
+       ) VALUES (
+         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12::timestamptz
+       )
+       ON CONFLICT (command_id) DO NOTHING
+       RETURNING ${SELECT_COLS}`,
+      [
+        command.commandId,
+        row.workspaceId,
+        command.threadId,
+        command.taskId,
+        command.workId ?? null,
+        command.sourcePlanRevision,
+        command.snapshotHash ?? null,
+        command.queueMode,
+        row.applicationStatus,
+        row.impactSummary,
+        JSON.stringify(command),
+        command.createdAt,
+      ],
+    );
+    if (inserted.rows[0]) {
+      return parseRow(inserted.rows[0]);
+    }
+    const existing = await this.getById(command.commandId);
+    if (!existing) {
+      throw new SteeringCommandStoreError(
+        'INVALID_COMMAND',
+        `Steering command ${command.commandId} insert raced and row is missing.`,
+      );
+    }
+    if (
+      existing.workspaceId === row.workspaceId &&
+      isDeepStrictEqual(existing.command, command)
+    ) {
+      return existing;
+    }
+    throw new SteeringCommandStoreError(
+      'IDEMPOTENCY_CONFLICT',
+      `Steering command ${command.commandId} already exists with a different payload.`,
+    );
+  }
+
+  async getById(commandId: string): Promise<StoredSteeringCommand | null> {
+    const result = await this.pool.query<SteeringRow>(
+      `SELECT ${SELECT_COLS}
+         FROM p1_make_steering_commands
+        WHERE command_id = $1`,
+      [commandId],
+    );
+    return result.rows[0] ? parseRow(result.rows[0]) : null;
+  }
+
+  async listByTask(input: {
+    workspaceId: string;
+    taskId: string;
+  }): Promise<StoredSteeringCommand[]> {
+    const result = await this.pool.query<SteeringRow>(
+      `SELECT ${SELECT_COLS}
+         FROM p1_make_steering_commands
+        WHERE workspace_id = $1 AND task_id = $2
+        ORDER BY created_at ASC, command_id ASC`,
+      [input.workspaceId, input.taskId],
+    );
+    return result.rows.map(parseRow);
+  }
+
+  async listByThread(input: {
+    workspaceId: string;
+    threadId: string;
+  }): Promise<StoredSteeringCommand[]> {
+    const result = await this.pool.query<SteeringRow>(
+      `SELECT ${SELECT_COLS}
+         FROM p1_make_steering_commands
+        WHERE workspace_id = $1 AND thread_id = $2
+        ORDER BY created_at ASC, command_id ASC`,
+      [input.workspaceId, input.threadId],
+    );
+    return result.rows.map(parseRow);
+  }
+
+  async listQueued(input: {
+    workspaceId: string;
+    taskId: string;
+  }): Promise<StoredSteeringCommand[]> {
+    const result = await this.pool.query<SteeringRow>(
+      `SELECT ${SELECT_COLS}
+         FROM p1_make_steering_commands
+        WHERE workspace_id = $1
+          AND task_id = $2
+          AND application_status IN ('queued_steer', 'queued_follow_up')
+        ORDER BY created_at ASC, command_id ASC`,
+      [input.workspaceId, input.taskId],
+    );
+    return result.rows.map(parseRow);
+  }
+
+  async markApplied(input: {
+    commandId: string;
+    applicationStatus: StoredSteeringCommand['applicationStatus'];
+    impactSummary: string;
+  }): Promise<StoredSteeringCommand> {
+    const existing = await this.getById(input.commandId);
+    if (!existing) {
+      throw new SteeringCommandStoreError(
+        'NOT_FOUND',
+        `Steering command ${input.commandId} was not found.`,
+      );
+    }
+    if (
+      existing.applicationStatus === input.applicationStatus &&
+      existing.impactSummary === input.impactSummary
+    ) {
+      return existing;
+    }
+    if (
+      existing.applicationStatus === 'accepted' &&
+      input.applicationStatus !== 'accepted'
+    ) {
+      throw new SteeringCommandStoreError(
+        'IDEMPOTENCY_CONFLICT',
+        `Steering command ${input.commandId} is already accepted.`,
+      );
+    }
+    const result = await this.pool.query<SteeringRow>(
+      `UPDATE p1_make_steering_commands
+          SET application_status = $2,
+              impact_summary = $3
+        WHERE command_id = $1
+        RETURNING ${SELECT_COLS}`,
+      [input.commandId, input.applicationStatus, input.impactSummary],
+    );
+    if (!result.rows[0]) {
+      throw new SteeringCommandStoreError(
+        'NOT_FOUND',
+        `Steering command ${input.commandId} was not found.`,
+      );
+    }
+    return parseRow(result.rows[0]);
+  }
+}
+
+/** Test helper: migrate table when TEST_DATABASE_URL is present. */
+export async function migrateSteeringCommandStore(pool: Pool): Promise<void> {
+  const store = new PostgresSteeringCommandStore(pool);
+  await store.migrate();
+}
