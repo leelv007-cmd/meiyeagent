@@ -3,7 +3,7 @@
 **Parent**: spec-G（#7）；权威 V3.1 §29、U10/U11
 **批次**: 5
 **Blocked by**: V31-01, V31-20（**集成验收**另需 V31-06 消费 release pin、V31-14 执行链记 releaseId）
-**Status**: ready-for-agent
+**Status**: done (2026-08-08, lane merged)
 
 ## What to build
 
