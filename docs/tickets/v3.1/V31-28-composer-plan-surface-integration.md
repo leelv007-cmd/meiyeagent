@@ -3,7 +3,7 @@
 **Parent**: V31-10 / V31-14（票已关，本票承接其浏览器旅程未闭合部分）
 **批次**: 收尾
 **Blocked by**: None — can start immediately
-**Status**: ready-for-agent
+**Status**: done (merged 6bf659915, 2026-08-09)
 
 ## What to build
 
