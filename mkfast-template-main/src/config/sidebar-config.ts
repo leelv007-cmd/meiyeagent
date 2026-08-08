@@ -13,6 +13,7 @@ import {
   admin_navigation_plans,
   admin_navigation_redemptions,
   admin_navigation_refund_review,
+  admin_navigation_ops_console,
   admin_navigation_sensitive_words,
   admin_navigation_skills,
   admin_navigation_templates,
@@ -37,6 +38,7 @@ import {
   IconPlugConnected,
   IconReceipt,
   IconReceiptRefund,
+  IconRocket,
   IconSettings,
   IconShieldCheck,
   IconShieldLock,
@@ -202,6 +204,14 @@ export const ADMIN_SIDEBAR_ITEMS = [
     icon: IconShieldLock,
   },
   {
+    id: 'ops-console',
+    get label() {
+      return admin_navigation_ops_console();
+    },
+    href: Routes.AdminOpsConsole,
+    icon: IconRocket,
+  },
+  {
     id: 'cloudflare',
     get label() {
       return admin_navigation_cloudflare();
@@ -294,9 +304,11 @@ export const ADMIN_NAV_GROUPS: readonly AdminNavGroup[] = [
       return admin_nav_group_ops_governance();
     },
     // Spec G / #388: sensitive-words is compliance governance (not templates).
+    // V31-22: ops-console is release / tool-policy / kill-switch control plane.
     items: [
       adminItem('capabilities'),
       adminItem('sensitive-words'),
+      adminItem('ops-console'),
       adminItem('audit'),
       adminItem('cloudflare'),
     ],

@@ -5075,5 +5075,22 @@
   "model_settings_default_summary": "The system already picks copy, image, and video models for this shop. You usually do not need to change them.",
   "model_settings_advanced_toggle": "Choose models yourself",
   "model_settings_advanced_hide": "Hide advanced options",
-  "model_settings_page_description": "Defaults stay automatic; open advanced only when you want to pick."
+  "model_settings_page_description": "Defaults stay automatic; open advanced only when you want to pick.",
+  "admin_navigation_ops_console": "Ops console",
+  "admin_ops_console_title": "Ops console",
+  "admin_ops_console_description": "Release desk, Tool Policy, and Kill Switch. Metrics/trace/eval open Langfuse (releaseId tag).",
+  "admin_ops_console_releases_title": "Release desk",
+  "admin_ops_console_tool_policy_title": "Tool Policy",
+  "admin_ops_console_kill_switch_title": "Kill Switch",
+  "admin_ops_console_audit_title": "Ops audit",
+  "admin_ops_console_langfuse_link": "Open in Langfuse",
+  "admin_ops_console_provider_not_landed": "Provider ticket not landed",
+  "admin_ops_console_rollback_reason_required": "Rollback requires reason and evidence",
+  "admin_ops_console_empty_releases": "No releases yet",
+  "admin_ops_console_status_production": "Production",
+  "admin_ops_console_status_canary": "Canary",
+  "admin_ops_console_status_draft": "Draft",
+  "admin_ops_console_promote": "Promote (manual)",
+  "admin_ops_console_rollback": "Rollback",
+  "admin_ops_console_refresh": "Refresh"
 }

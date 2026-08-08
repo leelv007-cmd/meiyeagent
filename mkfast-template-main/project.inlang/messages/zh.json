@@ -5075,5 +5075,22 @@
   "model_settings_default_summary": "系统已按当前门店自动选好文案、图片和视频模型。一般不用改。",
   "model_settings_advanced_toggle": "自己挑选模型",
   "model_settings_advanced_hide": "收起高级选项",
-  "model_settings_page_description": "默认交给系统自动选择；需要时再自己挑。"
+  "model_settings_page_description": "默认交给系统自动选择；需要时再自己挑。",
+  "admin_navigation_ops_console": "运营控制台",
+  "admin_ops_console_title": "运营控制台",
+  "admin_ops_console_description": "Release 台、Tool Policy 与 Kill Switch。指标/trace/eval 跳转 Langfuse（releaseId tag）。",
+  "admin_ops_console_releases_title": "Release 台",
+  "admin_ops_console_tool_policy_title": "Tool Policy",
+  "admin_ops_console_kill_switch_title": "Kill Switch",
+  "admin_ops_console_audit_title": "操作留痕",
+  "admin_ops_console_langfuse_link": "在 Langfuse 查看",
+  "admin_ops_console_provider_not_landed": "提供方票未落地",
+  "admin_ops_console_rollback_reason_required": "回滚必须填写理由与证据",
+  "admin_ops_console_empty_releases": "暂无 release",
+  "admin_ops_console_status_production": "生产",
+  "admin_ops_console_status_canary": "金丝雀",
+  "admin_ops_console_status_draft": "草稿",
+  "admin_ops_console_promote": "人工放量",
+  "admin_ops_console_rollback": "一键回滚",
+  "admin_ops_console_refresh": "刷新"
 }

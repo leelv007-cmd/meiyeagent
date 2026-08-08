@@ -60,6 +60,7 @@ import { Route as AdminTemplatesRouteImport } from './routes/admin/templates'
 import { Route as AdminSupplyRouteImport } from './routes/admin/supply'
 import { Route as AdminSkillsRouteImport } from './routes/admin/skills'
 import { Route as AdminSensitiveWordsRouteImport } from './routes/admin/sensitive-words'
+import { Route as AdminOpsConsoleRouteImport } from './routes/admin/ops-console'
 import { Route as AdminRefundReviewRouteImport } from './routes/admin/refund-review'
 import { Route as AdminRedemptionsRouteImport } from './routes/admin/redemptions'
 import { Route as AdminPlansRouteImport } from './routes/admin/plans'
@@ -373,6 +374,11 @@ const AdminSkillsRoute = AdminSkillsRouteImport.update({
 const AdminSensitiveWordsRoute = AdminSensitiveWordsRouteImport.update({
   id: '/sensitive-words',
   path: '/sensitive-words',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminOpsConsoleRoute = AdminOpsConsoleRouteImport.update({
+  id: '/ops-console',
+  path: '/ops-console',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminRefundReviewRoute = AdminRefundReviewRouteImport.update({
@@ -718,6 +724,7 @@ export interface FileRoutesByFullPath {
   '/admin/redemptions': typeof AdminRedemptionsRoute
   '/admin/refund-review': typeof AdminRefundReviewRoute
   '/admin/sensitive-words': typeof AdminSensitiveWordsRoute
+  '/admin/ops-console': typeof AdminOpsConsoleRoute
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
@@ -826,6 +833,7 @@ export interface FileRoutesByTo {
   '/admin/redemptions': typeof AdminRedemptionsRoute
   '/admin/refund-review': typeof AdminRefundReviewRoute
   '/admin/sensitive-words': typeof AdminSensitiveWordsRoute
+  '/admin/ops-console': typeof AdminOpsConsoleRoute
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
@@ -939,6 +947,7 @@ export interface FileRoutesById {
   '/admin/redemptions': typeof AdminRedemptionsRoute
   '/admin/refund-review': typeof AdminRefundReviewRoute
   '/admin/sensitive-words': typeof AdminSensitiveWordsRoute
+  '/admin/ops-console': typeof AdminOpsConsoleRoute
   '/admin/skills': typeof AdminSkillsRoute
   '/admin/supply': typeof AdminSupplyRouteWithChildren
   '/admin/templates': typeof AdminTemplatesRoute
@@ -1053,6 +1062,7 @@ export interface FileRouteTypes {
     | '/admin/redemptions'
     | '/admin/refund-review'
     | '/admin/sensitive-words'
+    | '/admin/ops-console'
     | '/admin/skills'
     | '/admin/supply'
     | '/admin/templates'
@@ -1161,6 +1171,7 @@ export interface FileRouteTypes {
     | '/admin/redemptions'
     | '/admin/refund-review'
     | '/admin/sensitive-words'
+    | '/admin/ops-console'
     | '/admin/skills'
     | '/admin/supply'
     | '/admin/templates'
@@ -1273,6 +1284,7 @@ export interface FileRouteTypes {
     | '/admin/redemptions'
     | '/admin/refund-review'
     | '/admin/sensitive-words'
+    | '/admin/ops-console'
     | '/admin/skills'
     | '/admin/supply'
     | '/admin/templates'
@@ -1760,6 +1772,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSensitiveWordsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/ops-console': {
+      id: '/admin/ops-console'
+      path: '/ops-console'
+      fullPath: '/admin/ops-console'
+      preLoaderRoute: typeof AdminOpsConsoleRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/refund-review': {
       id: '/admin/refund-review'
       path: '/refund-review'
@@ -2213,6 +2232,7 @@ interface AdminRouteChildren {
   AdminRedemptionsRoute: typeof AdminRedemptionsRoute
   AdminRefundReviewRoute: typeof AdminRefundReviewRoute
   AdminSensitiveWordsRoute: typeof AdminSensitiveWordsRoute
+  AdminOpsConsoleRoute: typeof AdminOpsConsoleRoute
   AdminSkillsRoute: typeof AdminSkillsRoute
   AdminSupplyRoute: typeof AdminSupplyRouteWithChildren
   AdminTemplatesRoute: typeof AdminTemplatesRoute
@@ -2231,6 +2251,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminRedemptionsRoute: AdminRedemptionsRoute,
   AdminRefundReviewRoute: AdminRefundReviewRoute,
   AdminSensitiveWordsRoute: AdminSensitiveWordsRoute,
+  AdminOpsConsoleRoute: AdminOpsConsoleRoute,
   AdminSkillsRoute: AdminSkillsRoute,
   AdminSupplyRoute: AdminSupplyRouteWithChildren,
   AdminTemplatesRoute: AdminTemplatesRoute,

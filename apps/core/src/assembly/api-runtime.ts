@@ -166,6 +166,11 @@ import {
   OperationsVisualAdoptionPort,
 } from '../p1/result-delivery/operations-visual-adoption.js';
 import { PostgresResultAdjustSnapshotReadPort } from '../p1/result-delivery/postgres-result-adjust-snapshot.js';
+import {
+  OpsConsoleFoundationModule,
+  OpsConsoleService,
+} from '../p1/ops-console/index.js';
+import { HarnessReleaseService } from '../p1/harness/harness-release.js';
 import { SensitiveWordsFoundationModule } from '../p1/sensitive-words/index.js';
 import {
   CompositeRecordProposalPort,
@@ -243,6 +248,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     storeWorkflowCaptureRepository,
     supplyControlRepository,
     harnessSchemaStore,
+    harnessReleaseStore,
+    opsConsoleStore,
     promptAuditStore,
     harnessInteractionStore,
     harnessObservabilityStore,
@@ -704,6 +711,18 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         videoWorkflow: canonicalVideoWorkflow,
       }),
       new SensitiveWordsFoundationModule(sensitiveWordsRepository),
+      new OpsConsoleFoundationModule(
+        new OpsConsoleService({
+          releases: new HarnessReleaseService(harnessReleaseStore),
+          catalog: harnessReleaseStore,
+          toolPolicies: opsConsoleStore,
+          audit: opsConsoleStore,
+          killSwitches: opsConsoleStore,
+          trials: opsConsoleStore,
+          drills: opsConsoleStore,
+          langfuseBaseUrl: env.LANGFUSE_BASE_URL ?? null,
+        }),
+      ),
       new MarketingIdentityFoundationModule(
         marketingIdentities,
         undefined,

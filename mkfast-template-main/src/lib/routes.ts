@@ -75,6 +75,8 @@ export const Routes = {
   AdminAudit: '/admin/audit',
   /** Spec G / #388: compliance governance under runtime_and_governance. */
   AdminSensitiveWords: '/admin/sensitive-words',
+  /** V31-22 / V3.1-H: Release desk + Tool Policy + Kill Switch. */
+  AdminOpsConsole: '/admin/ops-console',
 } as const;
 
 /** Default login redirect route */
