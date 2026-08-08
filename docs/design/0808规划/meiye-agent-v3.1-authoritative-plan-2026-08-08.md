@@ -1197,7 +1197,7 @@ interface OpportunityCandidate {
 
 OpportunityCandidate 是可过期 derived record，不是重量级核心聚合。接受后：Opportunity → Thread turn → Goal/Plan → Work。建议不自动产生付费副作用。
 
-**准入门（R11）**：该商家 evidence 覆盖率 ≥ 阈值（附录 B-2 拍板）才开启主动建议——没有 evidence 的建议是拍脑袋打扰，dismiss 率会杀死功能信任。
+**准入门（R11）**：该商家 evidence 覆盖率 ≥ 阈值（附录 B-2 拍板）才开启主动建议——没有 evidence 的建议是拍脑袋打扰，dismiss 率会杀死功能信任。阈值 unset 时门默认关闭、coverage 只观测；基线形成前运营可用既有 `proactive_opportunity_v1` flag 按 workspace allowlist 临时开启（U13）。
 
 ## 26. Outcome Evidence 与学习闭环
 
@@ -1703,7 +1703,7 @@ mkfast-template-main/src/product/harness-admin/**     （§30.1 砍半后范围�
 - Signal model、Opportunity detector（deterministic filter 先行）、proactive proposal、Goal-aware planning、Outcome→Memory 闭环；**evidence 覆盖率准入门**；
 - 退役：Thread=Work 假设、旧 result conversation glue、重复 planning DTO、三套 workflow runner（§22.4 顺序完成后）、第二份 Prompt pack 映射、手工硬编码 Tool allowlist、已无消费者的旧 Harness surface、重复 UI。
 
-**退役前置条件（全部满足才动手）**：执行确认覆盖所有确认语义；新任务完全消费 ExecutionPlanSnapshot；Interrupt、费用、权利、stale 和 refund 旅程全绿；真实商家试点优于旧流程；rollback 已演练；legacy durable replay 有明确保留期限。
+**退役前置条件（全部满足才动手）**：执行确认覆盖所有确认语义；新任务完全消费 ExecutionPlanSnapshot；Interrupt、费用、权利、stale 和 refund 旅程全绿；真实商家试点优于旧流程；rollback 已演练；legacy durable replay 归档走条件门（U14：零 active/pending 旧实例 + 最长 hold 窗口 30d 走完 + 审计导出与回滚证明齐备 + ops policy 安全缓冲，之后归档 fail closed）。
 
 **Goal 时点**：MarketingGoal 合同在批次 1 落 contracts，但 Goal 的产品面（提议创建、归组确认、Goal-aware planning）在批次 6 随 Proactive 一起激活——**不在首切片建 Goal 管理面**。
 
@@ -1935,9 +1935,9 @@ Goal → Understand → Plan → Execute → Deliver
 | A18 | 条件/判断位禁止副作用（durable 重放语义崩塌） | D-167⑤ | §22.2 编译期展开/代码内确定性分支 |
 | A19 | 二维码交接=商家自发（MobilePublishHandoff）；扫码后我方驱动发布被 reject | D-171④、D-155 冻结面 | §6.2 |
 
-# 附录 B：决策记录（12 项已全部拍板，2026-08-08，逐项经用户确认）
+# 附录 B：决策记录（14 项已全部拍板，2026-08-08，逐项经用户确认）
 
-复核来源：`docs/reviews/v3.1-codex-xcheck-2026-08-08.md` §3（U1–U6 为原附录 B 六项校准，U7–U12 为 codex 复核新增）。正文落点已同步。
+复核来源：`docs/reviews/v3.1-codex-xcheck-2026-08-08.md` §3（U1–U6 为原附录 B 六项校准，U7–U12 为 codex 复核新增）；U13–U14 来自九张 spec 的 codex 交叉复核（`docs/reviews/v3.1-specs-codex-xcheck-2026-08-08.md` §4 的 D2/D3，D1 随 BLOCK-02 证伪关闭）。正文落点已同步。
 
 | # | 决策 | 拍板结果 | 正文落点 |
 |---|---|---|---|
@@ -1953,6 +1953,10 @@ Goal → Understand → Plan → Execute → Deliver
 | U10 | per-run 试跑口径 | **A**：只能选择完整 immutable candidate releaseId；禁字段级覆写 | §29.4 |
 | U11 | AgentControlLimits 首版数值 | **B**：recorded/fixture 回放校准后随 release 发布；未标定项显式 unset 并拒进生产路径 | §21.2 |
 | U12 | canary 放量与 scored verdict 准入 | **B**：gates 全过为底线；scored 只记账、放量人工决定；自动门待样本足够再定义 | §29.4、§31.3 |
+| U13 | Proactive evidence 准入门无基线期间的启用策略 | **默认关 + 人工 allowlist**：阈值 unset 时门默认关闭、coverage 只观测；运营可用既有 `proactive_opportunity_v1` flag 按 workspace 临时开启（试点/演示），不新增机制；分母/观察窗/最小样本随 U2 基线形成后另拍 | §25.3 |
+| U14 | legacy durable replay 归档时机 | **条件门 + 安全缓冲**：零 active/pending 旧实例 + 最长 hold 窗口（30d）走完 + 审计导出与回滚证明齐备，再加 ops policy 给值的固定缓冲后归档 fail closed；不用日历一刀切 | §22.4、§35 批次 6 |
+
+**补充裁决留痕（2026-08-08 spec 复核轮）**：Goal status 迁移（active→paused/completed/abandoned）走「Agent 对话中提议→商家确认→落新 revision」路径（无管理页、revision OCC），系对 §11 状态迁移空白的补充，落点见 V3.1-F 票面。
 
 # 附录 C：参考依据
 
