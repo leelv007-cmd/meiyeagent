@@ -43,6 +43,10 @@ import {
 import { ExecutionPlanAdmissionService } from '../p1/harness/execution-plan-admission.js';
 import { PostgresExecutionPlanAdmissionMigration } from '../p1/harness/postgres-execution-plan-admission-store.js';
 import { PostgresAgentSemanticEventStore } from '../p1/agent-semantic-events/index.js';
+import {
+  PostgresMarketingGoalStore,
+  PostgresOpportunityDecisionStore,
+} from '../p1/goal-proactive/index.js';
 import { createPermissionAuthorizer } from '../p1/capability-permission/index.js';
 import { CloudflareInventoryAdapter } from '../p1/cloudflare-read/index.js';
 import { CreditBillingService } from '../p1/credit-billing/credit-billing-service.js';
@@ -697,6 +701,9 @@ export async function assembleCoreGraph(
   });
   /** Durable agent session store (V31-02) — also backs Session Harness service. */
   const agentSessionStore = new PostgresAgentSessionStore(pool);
+  /** V31-24 MarketingGoal + opportunity decision log (production PG only). */
+  const marketingGoalStore = new PostgresMarketingGoalStore(pool);
+  const opportunityDecisionStore = new PostgresOpportunityDecisionStore(pool);
   /** Append-only MarketingPlanRevision store (V31-09 Plan Compiler). */
   const marketingPlanStore = new PostgresMarketingPlanStore(pool);
   /**
@@ -1084,6 +1091,9 @@ export async function assembleCoreGraph(
     // Agent session + semantic event tables (V31-02/03). Shadow: no Task/billing/UI write path.
     agentSessionStore,
     new PostgresAgentSemanticEventStore(pool),
+    // V31-24 MarketingGoal + opportunity decision append-only log (no candidate table).
+    marketingGoalStore,
+    opportunityDecisionStore,
     // Marketing plan revisions (V31-09 Plan Compiler) — append-only, no status column.
     marketingPlanStore,
     // V31-11 confirmation objects (request + immutable decision).

@@ -24,6 +24,7 @@ import {
   resolveExecutionRunReplay,
   runWithStatus,
   threadIdTaken,
+  threadWithActiveGoalIds,
   threadWithStartedTurn,
   threadWithSummary,
   type AgentSessionStore,
@@ -34,6 +35,7 @@ import {
   type LinkExecutionRunInput,
   type OpenLegacyWorkThreadInput,
   type RecordThreadSummaryInput,
+  type SetActiveGoalIdsInput,
   type StartWriteTurnInput,
   type UpdateAgentRunStatusInput,
 } from './agent-session-store.js';
@@ -386,6 +388,36 @@ export class PostgresAgentSessionStore
         ],
       );
       return summarized;
+    });
+  }
+
+  async setActiveGoalIds(input: SetActiveGoalIdsInput): Promise<AgentThread> {
+    return this.inTransaction(async (client) => {
+      const locked = await client.query<PayloadRow>(
+        `SELECT payload
+           FROM p1_agent_threads
+          WHERE resource_id = $1 AND thread_id = $2
+          FOR UPDATE`,
+        [input.resourceId, input.threadId],
+      );
+      const thread = assertThreadFound(
+        locked.rows[0] ? parseThread(locked.rows[0]) : null,
+        input.threadId,
+      );
+      const next = threadWithActiveGoalIds(
+        thread,
+        input.activeGoalIds,
+        input.now,
+      );
+      // session_revision untouched: goal mount is metadata, not a write turn.
+      await client.query(
+        `UPDATE p1_agent_threads
+            SET payload = $2::jsonb,
+                updated_at = $3::timestamptz
+          WHERE thread_id = $1`,
+        [next.threadId, JSON.stringify(next), next.updatedAt],
+      );
+      return next;
     });
   }
 

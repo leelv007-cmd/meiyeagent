@@ -56,7 +56,7 @@ export const OPS_KILL_SWITCH_CATALOG: Readonly<
     impactScope: 'Disables mid-execution Make steering; in-flight plans finish without replan.',
   },
   disable_proactive_agent: {
-    landed: false,
+    landed: true,
     providerTicket: 'V31-24',
     impactScope: 'Stops proactive opportunity proposals; merchant must initiate.',
   },

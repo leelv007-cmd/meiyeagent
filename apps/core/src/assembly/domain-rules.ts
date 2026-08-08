@@ -20,6 +20,10 @@ import {
   AGENT_MEMORY_FLAGS,
   AGENT_MEMORY_KILL_SWITCH_KEYS,
 } from '../p1/operations/agent-memory-platform.js';
+import {
+  PROACTIVE_FEATURE_FLAGS,
+  PROACTIVE_KILL_SWITCH_KEYS,
+} from '../p1/goal-proactive/evidence-gate.js';
 import { P1DomainError } from '../p1/foundation/index.js';
 import {
   type ActivationEvidence,
@@ -57,6 +61,11 @@ const SHARED_HOT_AND_WIRED_CONFIG_KEYS = [
   AGENT_MEMORY_FLAGS.candidateWrite,
   AGENT_MEMORY_KILL_SWITCH_KEYS.disableWrite,
   AGENT_MEMORY_KILL_SWITCH_KEYS.disableRead,
+  // V31-24: Goal + Proactive flags / kill switch (hot-read by ProactiveService).
+  PROACTIVE_FEATURE_FLAGS.marketingGoal,
+  PROACTIVE_FEATURE_FLAGS.proactiveOpportunity,
+  PROACTIVE_FEATURE_FLAGS.evidenceCoverageThreshold,
+  PROACTIVE_KILL_SWITCH_KEYS.disableProactiveAgent,
   // Settlement hot-reads this key on every paid grant; no process-boot default.
   // Unwritten projection may leave effectiveValue empty (#371 / Spec C §支付映射).
   'plan.payment-mapping',

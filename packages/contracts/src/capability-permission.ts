@@ -111,6 +111,7 @@ export type P1Module =
   | 'context'
   | 'creation-experience'
   | 'entitlements'
+  | 'goal-proactive'
   | 'integrations'
   | 'job-runtime'
   | 'marketing-identity'
@@ -724,6 +725,31 @@ export function requiredP1Capability(
         : null;
     }
     return new Set(['open_legacy_work_thread', 'create_thread']).has(action)
+      ? 'content.create'
+      : null;
+  }
+
+  // V31-24: MarketingGoal product surface + Proactive suggestions.
+  if (module === 'goal-proactive') {
+    if (kind === 'query') {
+      return new Set([
+        'list_goals',
+        'get_primary_goal',
+        'get_goal_progress',
+        'list_proactive_suggestions',
+        'get_idle_projection',
+      ]).has(action)
+        ? 'workspace.read'
+        : null;
+    }
+    return new Set([
+      'propose_create_goal',
+      'propose_attach_works',
+      'propose_status_transition',
+      'confirm_goal_proposal',
+      'accept_opportunity',
+      'dismiss_opportunity',
+    ]).has(action)
       ? 'content.create'
       : null;
   }

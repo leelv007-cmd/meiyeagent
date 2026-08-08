@@ -178,6 +178,17 @@ import {
   AgentSessionFoundationModule,
   PostgresAgentSessionStore,
 } from '../p1/agent-session/index.js';
+import {
+  ContentPackageEvidenceCoveragePort,
+  GoalProactiveFoundationModule,
+  GoalService,
+  OwnedDataProactiveSignalSource,
+  PostgresMarketingGoalStore,
+  PostgresOpportunityDecisionStore,
+  ProactiveService,
+  resolveProactiveGateConfig,
+  type OwnedContentPackageFact,
+} from '../p1/goal-proactive/index.js';
 import { SensitiveWordsFoundationModule } from '../p1/sensitive-words/index.js';
 import {
   CompositeRecordProposalPort,
@@ -761,6 +772,56 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       new SensitiveWordsFoundationModule(sensitiveWordsRepository),
       // V31-05: Thread list + Workbench session restore (consumes V31-02 store).
       new AgentSessionFoundationModule(new PostgresAgentSessionStore(pool)),
+      // V31-24: MarketingGoal product surface + Proactive pipeline (PG stores only).
+      (() => {
+        const agentSessionStoreForGoals = new PostgresAgentSessionStore(pool);
+        const marketingGoalStore = new PostgresMarketingGoalStore(pool);
+        const opportunityDecisionStore = new PostgresOpportunityDecisionStore(
+          pool,
+        );
+        const goalService = new GoalService({
+          goals: marketingGoalStore,
+          threads: agentSessionStoreForGoals,
+        });
+        /** Read-only ContentPackage facts for coverage + signals (ops PG-backed). */
+        const contentPackageFactsReader = {
+          async listPackages(input: { resourceId: string }) {
+            const rows = await operationsService.listContentPackages({
+              actor: 'worker',
+              correlationId: 'goal-proactive:content-package-facts',
+              userId: 'goal-proactive-worker',
+              workspaceId: input.resourceId,
+            });
+            return rows as OwnedContentPackageFact[];
+          },
+        };
+        const proactiveService = new ProactiveService({
+          decisions: opportunityDecisionStore,
+          threads: agentSessionStoreForGoals,
+          configReader: {
+            get: (scope, workspaceId, key) =>
+              adminConfigRepository.get(scope, workspaceId, key),
+          },
+          // Coverage denominator/numerator from delivered CP + active resultSignals.
+          coverage: new ContentPackageEvidenceCoveragePort(
+            contentPackageFactsReader,
+          ),
+          // Owned-data signals: goal_stalled + unpublished + published-without-evidence.
+          signals: new OwnedDataProactiveSignalSource({
+            goals: marketingGoalStore,
+            contentPackages: contentPackageFactsReader,
+          }),
+        });
+        // Hot-read probe at assembly time keeps the kill-switch path wired.
+        void resolveProactiveGateConfig(
+          {
+            get: (scope, workspaceId, key) =>
+              adminConfigRepository.get(scope, workspaceId, key),
+          },
+          '__assembly_probe__',
+        ).catch(() => undefined);
+        return new GoalProactiveFoundationModule(goalService, proactiveService);
+      })(),
       new OpsConsoleFoundationModule(
         new OpsConsoleService({
           releases: new HarnessReleaseService(harnessReleaseStore),

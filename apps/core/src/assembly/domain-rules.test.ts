@@ -167,6 +167,24 @@ test('agent_semantic_event_adapter_v1 is hot-read and wired (V31-03 shadow gate)
   );
 });
 
+test('V31-24 goal/proactive flags and kill switch are hot-read and wired', () => {
+  for (const key of [
+    'marketing_goal_v1',
+    'proactive_opportunity_v1',
+    'proactive_evidence_coverage_threshold',
+    'disable_proactive_agent',
+  ] as const) {
+    assert.ok(
+      ADMIN_CONFIG_KEY_CLASSIFICATION.hotReadKeys.includes(key),
+      `${key} should be hot-read`,
+    );
+    assert.ok(
+      ADMIN_CONFIG_KEY_CLASSIFICATION.wiredKeys.includes(key),
+      `${key} should be wired`,
+    );
+  }
+});
+
 // Spec G / #390: plan.credits.* keys come only from @meiye/contracts.
 test('credit plan keys include reference_numbers from the contracts authority', () => {
   assert.ok(

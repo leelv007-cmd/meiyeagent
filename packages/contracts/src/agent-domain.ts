@@ -179,7 +179,13 @@ export const marketingGoalObjectiveSchema = z.enum([
   'custom',
 ]);
 
+export type MarketingGoalObjective = z.infer<
+  typeof marketingGoalObjectiveSchema
+>;
+
 export const marketingGoalPrioritySchema = z.enum(['low', 'normal', 'high']);
+
+export type MarketingGoalPriority = z.infer<typeof marketingGoalPrioritySchema>;
 
 export const marketingGoalStatusSchema = z.enum([
   'active',
@@ -187,6 +193,8 @@ export const marketingGoalStatusSchema = z.enum([
   'completed',
   'abandoned',
 ]);
+
+export type MarketingGoalStatus = z.infer<typeof marketingGoalStatusSchema>;
 
 export const marketingGoalSchema = z
   .object({
@@ -212,6 +220,212 @@ export const marketingGoalSchema = z
   .strict();
 
 export type MarketingGoal = z.infer<typeof marketingGoalSchema>;
+
+/**
+ * Goal product surface commands (V31-24 / V3.1 §11).
+ * Create / attach / status migration all go propose → merchant confirm.
+ * Status confirm uses revision OCC; conflict returns current revision.
+ */
+export const MARKETING_GOAL_PROPOSAL_SCHEMA_VERSION =
+  'marketing-goal-proposal/v1' as const;
+
+export const marketingGoalProposalKindSchema = z.enum([
+  'create',
+  'attach_works',
+  'status_transition',
+]);
+
+export const marketingGoalCreateDraftSchema = z
+  .object({
+    objective: marketingGoalObjectiveSchema,
+    statement: nonEmptyTrimmedStringSchema.max(2_000),
+    horizon: z
+      .object({
+        from: timestampSchema.optional(),
+        until: timestampSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    priority: marketingGoalPrioritySchema.default('normal'),
+    evidenceRefs: z.array(agentEvidenceRefSchema).max(100).default([]),
+  })
+  .strict();
+
+export type MarketingGoalCreateDraft = z.infer<
+  typeof marketingGoalCreateDraftSchema
+>;
+
+export const marketingGoalProposalSchema = z
+  .object({
+    schemaVersion: z.literal(MARKETING_GOAL_PROPOSAL_SCHEMA_VERSION),
+    proposalId: identifierSchema,
+    resourceId: merchantResourceIdSchema,
+    kind: marketingGoalProposalKindSchema,
+    /** Present for attach_works / status_transition. */
+    goalId: marketingGoalIdSchema.optional(),
+    /** create draft when kind=create. */
+    create: marketingGoalCreateDraftSchema.optional(),
+    /** Work / content package ids proposed for attach_works. */
+    workRefs: z.array(identifierSchema).max(50).optional(),
+    /** Target status when kind=status_transition. */
+    nextStatus: marketingGoalStatusSchema.optional(),
+    /** OCC cursor expected on confirm (status_transition / attach may omit for create). */
+    expectedRevision: revisionNumberSchema.optional(),
+    why: nonEmptyTrimmedStringSchema.max(2_000).optional(),
+    createdAt: timestampSchema,
+  })
+  .strict()
+  .superRefine((proposal, context) => {
+    if (proposal.kind === 'create' && !proposal.create) {
+      context.addIssue({
+        code: 'custom',
+        message: 'create proposal requires create draft.',
+        path: ['create'],
+      });
+    }
+    if (proposal.kind !== 'create' && !proposal.goalId) {
+      context.addIssue({
+        code: 'custom',
+        message: `${proposal.kind} proposal requires goalId.`,
+        path: ['goalId'],
+      });
+    }
+    if (proposal.kind === 'attach_works' && (!proposal.workRefs || proposal.workRefs.length === 0)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'attach_works proposal requires workRefs.',
+        path: ['workRefs'],
+      });
+    }
+    if (proposal.kind === 'status_transition' && !proposal.nextStatus) {
+      context.addIssue({
+        code: 'custom',
+        message: 'status_transition proposal requires nextStatus.',
+        path: ['nextStatus'],
+      });
+    }
+  });
+
+export type MarketingGoalProposal = z.infer<typeof marketingGoalProposalSchema>;
+
+/** Progress is a projection over delivered Work + OutcomeEvidence — not a new truth. */
+export const marketingGoalProgressSchema = z
+  .object({
+    goalId: marketingGoalIdSchema,
+    resourceId: merchantResourceIdSchema,
+    status: marketingGoalStatusSchema,
+    priority: marketingGoalPrioritySchema,
+    statement: nonEmptyTrimmedStringSchema.max(2_000),
+    deliveredWorkCount: z.number().int().nonnegative().safe(),
+    evidenceCount: z.number().int().nonnegative().safe(),
+    lastDeliveredAt: timestampSchema.optional(),
+    lastEvidenceAt: timestampSchema.optional(),
+  })
+  .strict();
+
+export type MarketingGoalProgress = z.infer<typeof marketingGoalProgressSchema>;
+
+// ─── 3b. Proactive Opportunity (V3.1 §25 / V31-24) ───────────────────────────
+
+export const OPPORTUNITY_CANDIDATE_SCHEMA_VERSION =
+  'opportunity-candidate/v1' as const;
+
+export const opportunityCandidateStatusSchema = z.enum([
+  'proposed',
+  'accepted',
+  'dismissed',
+  'expired',
+]);
+
+export type OpportunityCandidateStatus = z.infer<
+  typeof opportunityCandidateStatusSchema
+>;
+
+/**
+ * Derived projection only — not a core aggregate, no candidate table.
+ * status is computed: detector output + latest decision + expiresAt clock.
+ */
+export const opportunityCandidateSchema = z
+  .object({
+    schemaVersion: z.literal(OPPORTUNITY_CANDIDATE_SCHEMA_VERSION),
+    candidateId: identifierSchema,
+    resourceId: merchantResourceIdSchema,
+    goalId: marketingGoalIdSchema.optional(),
+    /** Merchant-facing "why now" line — required for every proactive suggestion. */
+    reason: nonEmptyTrimmedStringSchema.max(2_000),
+    evidenceRefs: z.array(agentEvidenceRefSchema).min(1).max(50),
+    signalKinds: z.array(nonEmptyTrimmedStringSchema.max(100)).max(20).default([]),
+    expiresAt: timestampSchema.optional(),
+    status: opportunityCandidateStatusSchema,
+    rankScore: z.number().finite().optional(),
+    createdAt: timestampSchema,
+  })
+  .strict();
+
+export type OpportunityCandidate = z.infer<typeof opportunityCandidateSchema>;
+
+/**
+ * Minimal append-only decision log (narrow reading of §33.1:
+ * forbids candidate aggregate table, not the decision log).
+ * accept idempotency key = candidateId (one Thread turn per accept).
+ */
+export const OPPORTUNITY_DECISION_SCHEMA_VERSION =
+  'opportunity-decision/v1' as const;
+
+export const opportunityDecisionKindSchema = z.enum(['accepted', 'dismissed']);
+
+export const opportunityDecisionSchema = z
+  .object({
+    schemaVersion: z.literal(OPPORTUNITY_DECISION_SCHEMA_VERSION),
+    decisionId: identifierSchema,
+    candidateId: identifierSchema,
+    resourceId: merchantResourceIdSchema,
+    actorId: nonEmptyTrimmedStringSchema.max(200),
+    decision: opportunityDecisionKindSchema,
+    decidedAt: timestampSchema,
+    /** Set when decision=accepted — the single Thread turn created for this accept. */
+    threadId: agentThreadIdSchema.optional(),
+    runId: agentRunIdSchema.optional(),
+  })
+  .strict()
+  .superRefine((row, context) => {
+    if (row.decision === 'accepted' && !row.threadId) {
+      context.addIssue({
+        code: 'custom',
+        message: 'accepted decision must bind the created Thread turn (threadId).',
+        path: ['threadId'],
+      });
+    }
+  });
+
+export type OpportunityDecision = z.infer<typeof opportunityDecisionSchema>;
+
+/** Owned signal kinds for the proactive detector (V3.1 §25). */
+export const PROACTIVE_SIGNAL_KINDS = [
+  'unpublished_duration',
+  'campaign_approaching',
+  'asset_accumulation',
+  'project_added',
+  'goal_stalled',
+  'historical_performance',
+  'merchant_hot_topic',
+] as const;
+
+export type ProactiveSignalKind = (typeof PROACTIVE_SIGNAL_KINDS)[number];
+
+export const proactiveSignalSchema = z
+  .object({
+    kind: z.enum(PROACTIVE_SIGNAL_KINDS),
+    resourceId: merchantResourceIdSchema,
+    observedAt: timestampSchema,
+    summary: nonEmptyTrimmedStringSchema.max(500),
+    evidenceRefs: z.array(agentEvidenceRefSchema).min(1).max(20),
+    goalId: marketingGoalIdSchema.optional(),
+    weight: z.number().finite().nonnegative().default(1),
+  })
+  .strict();
+
+export type ProactiveSignal = z.infer<typeof proactiveSignalSchema>;
 
 // ─── 4. Plan revision (V3.1 §13) ─────────────────────────────────────────────
 

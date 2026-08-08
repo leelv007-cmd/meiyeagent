@@ -57,6 +57,15 @@ export {
 } from './agent-workbench';
 
 export {
+  IdleGoalProactivePanel,
+  type IdleGoalProactiveLoader,
+  type IdleGoalProactivePanelProps,
+  type IdleGoalProactiveProjection,
+  type IdlePrimaryGoal,
+  type IdleProactiveSuggestion,
+} from './idle-goal-proactive';
+
+export {
   resolveDashboardThreadTarget,
   threadDashboardHref,
   workbenchRootMode,
