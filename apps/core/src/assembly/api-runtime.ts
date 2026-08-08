@@ -283,6 +283,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     sessionAgentKernel,
     sessionAgentHarness,
     sessionRetrievalExperiencePort,
+    planCompiler,
     productEntitlements,
     executionEntitlementPolicy,
     p1ModelSupplyService,
@@ -1349,6 +1350,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     const agentSemanticEventProjector = new AgentSemanticEventProjector(
       agentSemanticEventStore,
     );
+    // V31-10: PlanCompiler → plan.created/plan.revised after append-only revision.
+    // Not gated by shadow flag — Living Plan is first-class Workstream truth once compiled.
+    planCompiler.bindSemanticEventProjector(agentSemanticEventProjector);
     const harnessEventReader = new HarnessDbosWorkflowEventReader(
       harnessSchemaStore,
       undefined,

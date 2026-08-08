@@ -1,7 +1,12 @@
 /**
- * Agent Workbench foundation (V31-04): event reducer, Workstream, Controlled
- * Surface Registry. Directory layout follows V3.1 §28.3.
+ * Agent Workbench foundation (V31-04 + V31-10 Living Plan): event reducer,
+ * Workstream, Controlled Surface Registry, plan surfaces. Layout: V3.1 §28.3.
  */
+
+import { registerPlanSurfaces } from './plan/register-plan-surfaces';
+
+// Side-effect import: production consumers of the barrel get plan surfaces.
+registerPlanSurfaces();
 
 export {
   applyLiveSemanticEvent,
@@ -14,6 +19,7 @@ export {
 export {
   createEmptyAgentWorkbenchState,
   isActivityVisible,
+  projectActivePlanRevisions,
   projectVisibleActivities,
   projectVisibleNarratives,
   reduceAgentWorkbench,
@@ -26,6 +32,7 @@ export {
   type ClientSnapshotCursor,
   type InterruptProjection,
   type NarrativeMessage,
+  type PlanProjectionState,
   type ReduceResult,
   type WorkbenchSessionProjection,
 } from './agent-event-reducer';
@@ -76,4 +83,31 @@ export {
 } from './mobile-workstream-switch';
 
 export { ActivityLine, type ActivityLineProps } from './stream/activity-line';
-export { NarrativeLine, type NarrativeLineProps } from './stream/narrative-line';
+export {
+  NarrativeLine,
+  type NarrativeLineProps,
+} from './stream/narrative-line';
+
+export {
+  AGENT_PLAN_SURFACE_KEYS,
+  CommitStrip,
+  CompactPlan,
+  LivingPlan,
+  PlanDiff,
+  PlanSection,
+  __resetPlanSurfaceRegistrationForTests,
+  commitStripInputFromPlanFacts,
+  diffLivingPlanFacts,
+  diffLivingPlanViews,
+  livingPlanFactsFromRevision,
+  parseLivingPlanEventPayload,
+  projectCommitStrip,
+  projectLivingPlanView,
+  registerPlanSurfaces,
+  type AgentPlanSurfaceKey,
+  type CommitStripAction,
+  type CommitStripView,
+  type LivingPlanRevisionFacts,
+  type LivingPlanView,
+  type PlanDiffView,
+} from './plan';

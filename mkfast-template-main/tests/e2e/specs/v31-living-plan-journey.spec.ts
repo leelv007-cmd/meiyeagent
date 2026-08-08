@@ -1,0 +1,134 @@
+import { expect, test, type Page } from '@playwright/test';
+
+import {
+  cleanupE2EUsers,
+  loginByForm,
+  registerE2EUser,
+} from '../fixtures/auth';
+import { seedConfirmedStore } from '../fixtures/product';
+import { selectComposerLens } from '../fixtures/ui-journey';
+
+/**
+ * V31-10 / V3.1 §37.4-C first half — Living Plan journey (spec only).
+ *
+ * Journey under test (Level 2 定制图文):
+ *   检索 → 一问 → Living Plan → 自然语言调整
+ *
+ * Real browser run is owned by the merge controller. This file is the
+ * Playwright seam contract: selectors + ordering of merchant-visible steps.
+ * Do not run in agent lanes (`pnpm e2e` is forbidden for execution agents).
+ *
+ * Confirm / Make / note page regen / publish handoff are out of scope here
+ * (V31-11+ / §37.4-C second half).
+ */
+
+async function openCustomizedCreate(page: Page) {
+  await page.goto('/dashboard');
+  // Customized image-text path (Level 2 Living Plan), not pure-copy Level 1.
+  await selectComposerLens(page, 'image_text');
+  await expect(page.getByTestId('composer-home')).toBeVisible();
+}
+
+test.describe('V31-10 Living Plan journey (§37.4-C first half)', () => {
+  test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
+  test.afterAll(async ({ request }) => cleanupE2EUsers(request));
+
+  test('检索 → 一问 → Living Plan → 调整（前半段）', async ({
+    page,
+    request,
+  }) => {
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+
+    await openCustomizedCreate(page);
+
+    // Merchant states a fuzzy business goal (not a filled form).
+    const intent = page.getByTestId('composer-intent-input');
+    await intent.fill(
+      '明天下午还有两个空档，帮我发点奶油风美甲，不要太像广告。'
+    );
+    await page.getByTestId('composer-submit').click();
+
+    // 1) Retrieval is visible as Workstream Activity / narrative (not a form).
+    await expect(page.getByTestId('agent-workstream')).toBeVisible({
+      timeout: 60_000,
+    });
+    // Prefer activity about store/assets when present; narrative is acceptable.
+    const retrievalSignal = page
+      .getByTestId('agent-activity-line')
+      .or(page.getByTestId('agent-narrative-line'));
+    await expect(retrievalSignal.first()).toBeVisible({ timeout: 60_000 });
+
+    // 2) At most one merchant-facing question this turn (question budget).
+    // Ask-merchant group is the production renderer; legacy question card is fallback.
+    const question = page
+      .getByTestId('composer-question-card')
+      .or(page.getByTestId('ask-merchant-group-card'))
+      .or(page.getByTestId('composer-stage-line'));
+    // May already be answered by defaults; if visible, answer once.
+    if (await question.first().isVisible().catch(() => false)) {
+      const choice = page
+        .getByRole('button', { name: /空档|新品|预约|确认|继续/ })
+        .first();
+      if (await choice.isVisible().catch(() => false)) {
+        await choice.click();
+      } else {
+        // Free-text answer path when no chip.
+        const answer = page.getByTestId('composer-intent-input');
+        if (await answer.isVisible().catch(() => false)) {
+          await answer.fill('主要是填空档');
+          await page.getByTestId('composer-submit').click();
+        }
+      }
+    }
+
+    // 3) Living Plan grows in the same Workstream (five-section document).
+    await expect(page.getByTestId('agent-living-plan')).toBeVisible({
+      timeout: 90_000,
+    });
+    await expect(page.getByTestId('agent-plan-section-goal')).toBeVisible();
+    await expect(
+      page.getByTestId('agent-plan-section-deliverables')
+    ).toBeVisible();
+    await expect(
+      page.getByTestId('agent-plan-section-expression')
+    ).toBeVisible();
+    await expect(
+      page.getByTestId('agent-plan-section-facts_assets')
+    ).toBeVisible();
+    await expect(
+      page.getByTestId('agent-plan-section-cost_duration')
+    ).toBeVisible();
+
+    // Compact Plan / commit strip unifies Brief/quote/confirm presentation.
+    const commitOrCompact = page
+      .getByTestId('agent-commit-strip')
+      .or(page.getByTestId('agent-compact-plan'));
+    await expect(commitOrCompact.first()).toBeVisible();
+
+    // 4) Natural-language adjust → new revision + readable diff; prior revision browsable.
+    await page
+      .getByTestId('composer-intent-input')
+      .fill('只做小红书，减到 4 页');
+    await page.getByTestId('composer-submit').click();
+
+    await expect(page.getByTestId('agent-living-plan')).toHaveAttribute(
+      'data-revision',
+      /[2-9]|\d{2,}/,
+      { timeout: 90_000 }
+    );
+    await expect(page.getByTestId('agent-plan-diff')).toBeVisible({
+      timeout: 60_000,
+    });
+    // Old version remains reachable (revision chips when history length > 1).
+    const rev1 = page.getByTestId('agent-living-plan-revision-1');
+    if (await rev1.isVisible().catch(() => false)) {
+      await rev1.click();
+      await expect(page.getByTestId('agent-living-plan')).toHaveAttribute(
+        'data-revision',
+        '1'
+      );
+    }
+  });
+});

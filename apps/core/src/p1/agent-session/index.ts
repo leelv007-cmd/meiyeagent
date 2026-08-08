@@ -31,3 +31,4 @@ export * from './memory-plan-store.js';
 export * from './postgres-plan-store.js';
 export * from './plan-compiler.js';
 export * from './plan-compiler-production-ports.js';
+export * from './plan-semantic-event.js';
