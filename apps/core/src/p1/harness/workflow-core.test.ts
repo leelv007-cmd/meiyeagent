@@ -28,6 +28,170 @@ import {
   resumeWithRaisedServerLimit,
 } from './bounded-execution-controller.js';
 
+test('V31-14 snapshot consume path: zero nameIntent/compileBrief LLM re-call (trace)', async () => {
+  const {
+    buildExecutionPlanSnapshot,
+    freezeExecutionPlanContent,
+  } = await import('./execution-plan-admission.js');
+  const { COMPILED_EXECUTION_PLAN_SCHEMA_VERSION } = await import(
+    '@meiye/contracts'
+  );
+
+  const content = {
+    planId: 'plan-snap-1',
+    planRevision: 1,
+    intentDeclaration: { summary: '推广本店团购' },
+    contextBundleRef: {
+      bundleId: 'bundle-1',
+      revision: 1,
+      hash: 'a'.repeat(64),
+    },
+    executionPlan: {
+      schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+      units: [
+        {
+          unitId: 'unit-1',
+          unitType: 'copy.generate',
+          primitive: 'generate' as const,
+        },
+      ],
+      dependencyGroups: [{ groupId: 'g1', unitIds: ['unit-1'] }],
+      boundedRetry: {
+        'unit-1': {
+          maxAttempts: 1,
+          maxCostCents: 0,
+          retry: { enabled: false as const },
+        },
+      },
+    },
+    deliverables: [{ deliverableId: 'd1', kind: 'copy', quantity: 1 }],
+    promptRevisionRefs: {},
+    skillManifestRefs: {},
+    routeRequirements: [],
+    quoteRef: { id: 'quote-1', revision: 1 },
+    rightsRevisionRefs: ['rights-1'],
+    factRevisionRefs: ['fact-1'],
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1' as const,
+      maxIterations: 10,
+      maxCostCents: 100,
+      maxWallClockMs: 60_000,
+      maxDelegations: 2,
+      requiredLimits: ['maxIterations', 'maxCostCents'] as const,
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+    harnessReleaseId: 'release-1',
+    approvalBasis: 'policy_exempt_copy' as const,
+  };
+  const { snapshotHash } = freezeExecutionPlanContent(content as never);
+  const planSnapshot = buildExecutionPlanSnapshot({
+    content: content as never,
+    snapshotHash,
+  });
+
+  let nameIntentCalls = 0;
+  let compileBriefCalls = 0;
+  const traces: Array<{ stage: string; payload: unknown }> = [];
+  const stages = fixtureStages();
+  const originalName = stages.nameIntent.bind(stages);
+  const originalBrief = stages.compileBrief!.bind(stages);
+  stages.nameIntent = async (input) => {
+    nameIntentCalls += 1;
+    return originalName(input);
+  };
+  stages.compileBrief = async (input) => {
+    compileBriefCalls += 1;
+    return originalBrief(input);
+  };
+  // injectContext must match freeze ref for validator soft path (different bundle id OK)
+  stages.injectContext = async () => ({
+    bundle: {
+      bundleId: 'other-bundle',
+      revision: 1,
+      hash: 'b'.repeat(64),
+      serializerVersion: 'context-bundle-c14n-v1',
+      workspaceId: 'workspace-1',
+      taskId: 'task-snap',
+      frozenAt: '2026-07-18T00:00:00.000Z',
+      frozenBy: 'owner-1',
+      previousRevision: null,
+      referencedFactRevisions: [],
+      sourceRevisions: {
+        facts: 2,
+        assets: 1,
+        identity: 1,
+        rights: 1,
+        preferences: 1,
+        recipe: 1,
+        platformRules: 1,
+        currentSignal: 1,
+      },
+      dimensions: {
+        promotion_task: {},
+        traffic_opportunity: {},
+        expression_identity: {},
+        platform_mechanism: {},
+        store_facts_assets: {},
+        conversion_action: {},
+      },
+    },
+    factsRevision: 7,
+    policyReferences: { sourceRefs: [], rightsRefs: [], identityRefs: [] },
+  });
+
+  await runHarnessWorkflow(
+    'task-snap',
+    {
+      ...taskInput(),
+      executionPlanSnapshot: planSnapshot,
+    },
+    stages,
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        throw new Error('Unexpected decision wait.');
+      },
+      async recordTrace(input) {
+        traces.push({ stage: input.stage, payload: input.payload });
+      },
+    },
+  );
+
+  assert.equal(nameIntentCalls, 0, 'snapshot path must not re-call nameIntent LLM');
+  assert.equal(
+    compileBriefCalls,
+    0,
+    'snapshot path must not re-call compileBrief LLM',
+  );
+  const intentTrace = traces.find((t) => t.stage === 'intent_naming');
+  const briefTrace = traces.find((t) => t.stage === 'brief_compilation');
+  assert.ok(intentTrace);
+  assert.ok(briefTrace);
+  assert.equal(
+    (intentTrace!.payload as { llmInvoked?: boolean }).llmInvoked,
+    false,
+  );
+  assert.equal(
+    (briefTrace!.payload as { llmInvoked?: boolean }).llmInvoked,
+    false,
+  );
+  assert.equal(
+    (intentTrace!.payload as { makeConsume?: string }).makeConsume,
+    'snapshot_validator',
+  );
+});
+
 test('five semantic stages run in order with stable effect keys and a delivery fence', async () => {
   const calls: string[] = [];
   const progress: Array<{ stage: string; state: string; message: string }> = [];

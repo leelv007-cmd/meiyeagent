@@ -341,6 +341,13 @@ interface HarnessDbosWorkflowOptions {
     workflowId: string;
     request: HarnessWorkflowInput;
   }) => Promise<SnapshotLiveFacts | undefined> | SnapshotLiveFacts | undefined;
+  /**
+   * V31-14: ops kill switch force_legacy_five_stage — when true, Make keeps
+   * legacy intent/brief LLM nodes even if a snapshot is present.
+   */
+  resolveForceLegacyFiveStage?: () =>
+    | Promise<boolean>
+    | boolean;
 }
 
 export function registerHarnessDbosWorkflow(
@@ -359,6 +366,7 @@ export function registerHarnessDbosWorkflow(
     interactions,
     executionPlanAdmission,
     resolveExecutionPlanLiveFacts,
+    resolveForceLegacyFiveStage,
   } = options;
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -819,7 +827,16 @@ export function registerHarnessDbosWorkflow(
     try {
       let result;
       try {
-        result = await runHarnessWorkflow(workflowId, request, ports, runtime);
+        const forceLegacyFiveStage = resolveForceLegacyFiveStage
+          ? await resolveForceLegacyFiveStage()
+          : false;
+        result = await runHarnessWorkflow(
+          workflowId,
+          request,
+          ports,
+          runtime,
+          { forceLegacyFiveStage },
+        );
       } catch (error) {
         if (error instanceof HarnessInteractionLayoutResetRequiredError) {
           closeProgressStream = false;

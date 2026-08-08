@@ -32,6 +32,8 @@ test('every Core route declares its auth class', () => {
     'p1-commands': 'service-token',
     'p1-query': 'service-token',
     'pending-actions': 'service-token',
+    'pending-interrupts-list': 'service-token',
+    'pending-interrupts-resume': 'service-token',
     'product-commands': 'service-token',
     'product-state': 'service-token',
     'public-plan-catalog': 'service-token',
@@ -39,5 +41,5 @@ test('every Core route declares its auth class', () => {
     'workflow-events': 'service-token',
     'assistant-stream': 'service-token',
   });
-  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 34);
+  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 36);
 });

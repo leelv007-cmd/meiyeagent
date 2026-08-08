@@ -45,6 +45,10 @@ import {
   type ArtifactUpdateWire,
   agentExecutionConfirmationRequestSchema,
   planConfirmationDecisionSchema,
+  INTERRUPT_PAYLOAD_SCHEMA_VERSION,
+  interruptPayloadSchema,
+  resumeInterruptCommandSchema,
+  listPendingInterruptsQuerySchema,
 } from './agent-domain.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
@@ -1033,4 +1037,64 @@ test('artifact stable id: duplicate object rate is 0 for map keyed by artifactId
   map[a2.state.artifactId] = a2.state;
   assert.equal(Object.keys(map).length, 2);
   assert.equal(artifactDuplicateObjectRate(map), 0);
+});
+
+// ─── V31-14 Interrupt typed protocol ─────────────────────────────────────────
+
+test('InterruptPayload requires thread/run/workflow/step/revision/schemaVersion; resume is id+revision CAS', () => {
+  const payload = interruptPayloadSchema.parse({
+    schemaVersion: INTERRUPT_PAYLOAD_SCHEMA_VERSION,
+    interruptId: 'int-1',
+    threadId: 'thread-1',
+    runId: 'run-1',
+    workflowId: 'wf-1',
+    step: 'execution_selection',
+    revision: 3,
+    action: 'confirm_paid_execution',
+    args: { quoteId: 'q1' },
+    config: {
+      allowAccept: true,
+      allowEdit: false,
+      allowReject: true,
+      allowRespond: false,
+    },
+    description: '确认执行付费生成',
+    resourceId: 'ws-1',
+  });
+  assert.equal(payload.interruptId, 'int-1');
+  assert.equal(payload.expiresAt, undefined);
+
+  const withHold = interruptPayloadSchema.parse({
+    ...payload,
+    expiresAt: '2026-08-08T12:00:00.000Z',
+  });
+  assert.equal(withHold.expiresAt, '2026-08-08T12:00:00.000Z');
+
+  assert.equal(
+    interruptPayloadSchema.safeParse({
+      ...payload,
+      revision: -1,
+    }).success,
+    false,
+  );
+
+  const resume = resumeInterruptCommandSchema.parse({
+    schemaVersion: INTERRUPT_PAYLOAD_SCHEMA_VERSION,
+    interruptId: 'int-1',
+    revision: 3,
+    type: 'accept',
+  });
+  assert.equal(resume.interruptId, 'int-1');
+  assert.equal(resume.revision, 3);
+
+  const query = listPendingInterruptsQuerySchema.parse({
+    resourceId: 'ws-1',
+    threadId: 'thread-1',
+  });
+  assert.equal(query.resourceId, 'ws-1');
+  // threadId is optional filter only
+  assert.equal(
+    listPendingInterruptsQuerySchema.parse({ resourceId: 'ws-1' }).threadId,
+    undefined,
+  );
 });

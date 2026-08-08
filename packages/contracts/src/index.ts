@@ -228,6 +228,19 @@ export {
   type OutcomeSelfReportFrequencyParams,
   recordOutcomeEvidenceCommandSchema,
   type RecordOutcomeEvidenceCommand,
+  INTERRUPT_PAYLOAD_SCHEMA_VERSION,
+  interruptActionSchema,
+  type InterruptAction,
+  interruptConfigSchema,
+  type InterruptConfig,
+  interruptPayloadSchema,
+  type InterruptPayload,
+  resumeInterruptTypeSchema,
+  type ResumeInterruptType,
+  resumeInterruptCommandSchema,
+  type ResumeInterruptCommand,
+  listPendingInterruptsQuerySchema,
+  type ListPendingInterruptsQuery,
 } from './agent-domain.js';
 
 export {
@@ -755,6 +768,7 @@ export {
   executionUnitIdSchema,
   planConfirmationDecisionIdSchema,
   agentExecutionConfirmationRequestIdSchema,
+  interruptIdSchema,
   type ApprovalReceiptId,
   type AssetIntakeBatchId,
   type MarketingIdentityId,
@@ -771,6 +785,7 @@ export {
   type ExecutionUnitId,
   type PlanConfirmationDecisionId,
   type AgentExecutionConfirmationRequestId,
+  type InterruptId,
 } from './identifiers.js';
 
 export {

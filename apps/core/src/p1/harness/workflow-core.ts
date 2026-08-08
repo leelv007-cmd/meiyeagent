@@ -54,15 +54,31 @@ import {
   merchantBriefFallbackNotice,
   merchantPartialFailure,
   merchantPartialDeliveryReport,
-  merchantPaidGenerationConfirmationAccepted,
-  merchantPaidGenerationConfirmationQuestion,
-  merchantPaidGenerationConfirmationReason,
   merchantProgressMessage,
   merchantStyleAnalysisProgress,
   merchantTaskSummary,
 } from './merchant-delivery-language.js';
 import type { RecipeFactSatisfaction } from './fact-satisfaction.js';
 import { mediaBoundedCurrentBestSchema } from './media-bounded-execution.js';
+import {
+  isMakeSnapshotConsumePath,
+  materializeCopyBriefFromSnapshot,
+  materializeIntentFromSnapshot,
+  resolveMakeSnapshotConsume,
+  snapshotConsumeTracePayload,
+  validateContextBundleAgainstSnapshot,
+} from './make-snapshot-consume.js';
+import { confirmPaidGenerationExecution } from './paid-generation-confirmation.js';
+import { createNotePageProgressReporter } from './note-page-execution-frame.js';
+
+export {
+  confirmPaidGenerationExecution,
+  triggersPaidMediaExecution,
+} from './paid-generation-confirmation.js';
+export {
+  notePageOrderLabel,
+  createNotePageProgressReporter,
+} from './note-page-execution-frame.js';
 
 type CopyBrief = Extract<ExecutionBrief, { kind: 'copy' }>;
 type MediaBrief = Exclude<ExecutionBrief, { kind: 'copy' }>;
@@ -374,6 +390,11 @@ export interface HarnessNoteExecutionStagePorts {
     selection: HarnessNoteSelectionResult;
     skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<ContentPackageRevisionDelivery>;
+  /**
+   * Optional V31-15 producer: page progress emits artifact.revised via projector.
+   * Absent in fixture tests; production assembly wires AgentSemanticEventProjector.
+   */
+  artifactProgressEmitter?: import('./artifact-progress-emitter.js').ArtifactProgressEmitterPort;
 }
 
 export interface HarnessNoteStagePorts
@@ -1103,6 +1124,8 @@ async function runWorkflowPrelude(input: {
   request: HarnessWorkflowInput;
   runtime: HarnessWorkflowRuntime;
   workflowId: string;
+  /** Ops kill switch force_legacy_five_stage — when true, keep LLM five-stage. */
+  forceLegacyFiveStage?: boolean;
 }) {
   const { descriptor, ports, reportProgress, request, runtime, workflowId } =
     input;
@@ -1113,6 +1136,11 @@ async function runWorkflowPrelude(input: {
     runtime,
   );
   const intentSkills = stageSkills.intent_naming;
+  const snapshotConsume = resolveMakeSnapshotConsume({
+    request,
+    forceLegacyFiveStage: input.forceLegacyFiveStage,
+  });
+  // V31-14: snapshot path demotes intent LLM to validator materialization.
   const intent = await runtime.runStep(
     harnessEffectKey(
       workflowId,
@@ -1120,14 +1148,21 @@ async function runWorkflowPrelude(input: {
       skillEffectUnit('intent', intentSkills.instructions),
       '0',
     ),
-    () =>
-      ports.nameIntent({
+    async () => {
+      if (isMakeSnapshotConsumePath(snapshotConsume)) {
+        return materializeIntentFromSnapshot({
+          snapshot: snapshotConsume.snapshot,
+          request,
+        });
+      }
+      return ports.nameIntent({
         workflowId,
         request,
         ...(intentSkills.instructions.length > 0
           ? { skillInstructions: intentSkills.instructions }
           : {}),
-      }),
+      });
+    },
   );
   if (
     descriptor.scopeError &&
@@ -1135,15 +1170,21 @@ async function runWorkflowPrelude(input: {
   ) {
     throw new HarnessMediaScopeError(descriptor.scopeError);
   }
-  const routed = await resolveIntentRoute({
-    workflowId,
-    request,
-    intent,
-    ports,
-    runtime,
-    reportProgress,
-    skills: intentSkills,
-  });
+  const routed = isMakeSnapshotConsumePath(snapshotConsume)
+    ? {
+        request,
+        declaration: intent.declaration,
+        notice: undefined as string | undefined,
+      }
+    : await resolveIntentRoute({
+        workflowId,
+        request,
+        intent,
+        ports,
+        runtime,
+        reportProgress,
+        skills: intentSkills,
+      });
   let activeRequest = routed.request;
   const executionRootRequest = descriptor.useActiveRequestForExecutionRoot
     ? activeRequest
@@ -1160,19 +1201,34 @@ async function runWorkflowPrelude(input: {
     ...(descriptor.includeEntryTrace && request.prompts?.intentNaming
       ? { prompt: promptTraceReference(request.prompts.intentNaming) }
       : {}),
-    ...(descriptor.includeEntryTrace && intent.metrics
+    ...(descriptor.includeEntryTrace &&
+    'metrics' in intent &&
+    intent.metrics
       ? { metrics: intent.metrics }
       : {}),
     ...(descriptor.includeEntryTrace && intentSkills.instructions.length > 0
       ? skillTraceLineage(intentSkills)
       : {}),
+    ...(isMakeSnapshotConsumePath(snapshotConsume)
+      ? snapshotConsumeTracePayload({
+          snapshotHash: snapshotConsume.snapshot.snapshotHash,
+          approvalBasis: snapshotConsume.snapshot.approvalBasis,
+          stage: 'intent_naming',
+          llmInvoked: false,
+        })
+      : { makeConsume: 'legacy_llm', llmInvoked: true }),
   });
   await reportProgress({
     stage: 'intent_naming',
     state: 'success',
     message: merchantRouteMessage(
       routed.declaration,
-      descriptor.routeNotice ? routed.notice : undefined,
+      descriptor.routeNotice &&
+        routed.notice !== undefined &&
+        (routed.notice === 'confirmed_materials' ||
+          routed.notice === 'neutral_fallback')
+        ? routed.notice
+        : undefined,
     ),
   });
 
@@ -1216,6 +1272,12 @@ async function runWorkflowPrelude(input: {
     message: merchantContextMessage(activeRequest),
     experienceBasis: projectHarnessExperienceBasis(context.bundle),
   });
+  if (isMakeSnapshotConsumePath(snapshotConsume)) {
+    validateContextBundleAgainstSnapshot({
+      snapshot: snapshotConsume.snapshot,
+      bundle: context.bundle,
+    });
+  }
   const factGate = await resolveFactSatisfaction({
     workflowId,
     request: activeRequest,
@@ -1235,8 +1297,14 @@ async function runWorkflowPrelude(input: {
     intent,
     routed,
     stageSkills,
+    snapshotConsume,
   };
 }
+
+export type RunHarnessWorkflowOptions = {
+  /** Ops kill switch force_legacy_five_stage (V31-14). */
+  forceLegacyFiveStage?: boolean;
+};
 
 export async function runHarnessWorkflow(
   workflowId: string,
@@ -1247,6 +1315,7 @@ export async function runHarnessWorkflow(
     | HarnessNoteStagePorts
     | HarnessStageCollaborators,
   runtime: HarnessWorkflowRuntime,
+  options: RunHarnessWorkflowOptions = {},
 ): Promise<HarnessWorkflowResult> {
   const collaborators = stageCollaborators(
     stagePorts,
@@ -1268,6 +1337,7 @@ export async function runHarnessWorkflow(
     request,
     runtime,
     workflowId,
+    forceLegacyFiveStage: options.forceLegacyFiveStage,
   });
   return descriptor.execute({
     descriptor,
@@ -1497,6 +1567,7 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
   let bundle = prelude.context;
 
   const briefSkills = stageSkills.brief_compilation;
+  const snapshotConsume = prelude.snapshotConsume;
   let compiledBrief = await runtime.runStep(
     harnessEffectKey(
       workflowId,
@@ -1504,8 +1575,15 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
       skillEffectUnit('copy', briefSkills.instructions),
       '0',
     ),
-    () =>
-      ports.compileBrief({
+    async () => {
+      if (isMakeSnapshotConsumePath(snapshotConsume)) {
+        return materializeCopyBriefFromSnapshot({
+          snapshot: snapshotConsume.snapshot,
+          declaration: routed.declaration,
+          request: activeRequest,
+        }).brief;
+      }
+      return ports.compileBrief({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
@@ -1516,7 +1594,8 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
         ...(briefSkills.instructions.length > 0
           ? { skillInstructions: briefSkills.instructions }
           : {}),
-      }),
+      });
+    },
   );
   let {
     brief,
@@ -1539,6 +1618,14 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
     ...(briefMetrics ? { metrics: briefMetrics } : {}),
     ...(briefDegraded ? { degraded: true } : {}),
     ...skillTraceLineage(briefSkills),
+    ...(isMakeSnapshotConsumePath(snapshotConsume)
+      ? snapshotConsumeTracePayload({
+          snapshotHash: snapshotConsume.snapshot.snapshotHash,
+          approvalBasis: snapshotConsume.snapshot.approvalBasis,
+          stage: 'brief_compilation',
+          llmInvoked: false,
+        })
+      : { makeConsume: 'legacy_llm', llmInvoked: true }),
     },
     `r${bundle.bundle.revision}`,
   );
@@ -1553,8 +1640,11 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
   activeRequest = await confirmPaidGenerationExecution({
     workflowId,
     request: activeRequest,
-    runtime,
     reportProgress,
+    awaitResolvedDecision: (question, stage) =>
+      awaitResolvedDecision(runtime, question, stage),
+    applyCurrentTaskDecision: (wfId, req, command) =>
+      applyCurrentTaskDecision(wfId, req, command, runtime),
   });
 
   const executionSkills = stageSkills.execution_selection;
@@ -2011,12 +2101,16 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   activeRequest = await confirmPaidGenerationExecution({
     workflowId,
     request: activeRequest,
-    runtime,
     reportProgress,
     noteOutline: noteOutlineSummary,
+    awaitResolvedDecision: (question, stage) =>
+      awaitResolvedDecision(runtime, question, stage),
+    applyCurrentTaskDecision: (wfId, req, command) =>
+      applyCurrentTaskDecision(wfId, req, command, runtime),
   });
 
   const executionSkills = stageSkills.execution_selection;
+  let noteArtifactRevision = 0;
   const noteSelectionInput = {
     workflowId,
     request: activeRequest,
@@ -2037,20 +2131,29 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
           ),
         }
       : {}),
-    onPageProgress: async (event: {
-      pageId: string;
-      state: 'running' | 'success';
-    }) => {
-      await reportProgress({
-        stage: 'execution_selection',
-        state: event.state,
-        pageId: event.pageId,
-        message:
-          event.state === 'running'
-            ? `正在生成第 ${notePageOrderLabel(activeNoteCandidate.plan, event.pageId)} 页配图`
-            : `第 ${notePageOrderLabel(activeNoteCandidate.plan, event.pageId)} 页配图已完成`,
-      });
-    },
+    // V31-14: page frame moved to note-page-execution-frame (symbol anchor).
+    onPageProgress: createNotePageProgressReporter({
+      plan: activeNoteCandidate.plan,
+      reportProgress,
+      ...(ports.artifactProgressEmitter
+        ? {
+            artifactEmitter: ports.artifactProgressEmitter,
+            artifactContext: {
+              workspaceId: activeRequest.workspaceId,
+              workflowId,
+              threadId:
+                activeRequest.executionPlanSnapshot?.planId ??
+                `shadow-workflow:${workflowId}`,
+              artifactId: `note:${activeRequest.packageId ?? workflowId}`,
+              nextRevision: () => {
+                noteArtifactRevision += 1;
+                return noteArtifactRevision;
+              },
+              now: () => new Date().toISOString(),
+            },
+          }
+        : {}),
+    }),
   };
   const selection = await runSelectionStage(
     runtime,
@@ -2293,8 +2396,11 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
   activeRequest = await confirmPaidGenerationExecution({
     workflowId,
     request: activeRequest,
-    runtime,
     reportProgress,
+    awaitResolvedDecision: (question, stage) =>
+      awaitResolvedDecision(runtime, question, stage),
+    applyCurrentTaskDecision: (wfId, req, command) =>
+      applyCurrentTaskDecision(wfId, req, command, runtime),
   });
   const executionSkills = stageSkills.execution_selection;
   const executeMediaSelectionToCompletion = async (
@@ -3234,156 +3340,6 @@ async function applyCurrentTaskDecision(
       },
     ],
   };
-}
-
-type SnapshotBackedHarnessWorkflowInput = HarnessWorkflowInput & {
-  executionSnapshot: NonNullable<HarnessWorkflowInput['executionSnapshot']>;
-};
-
-type ReservedUsageResource = NonNullable<
-  HarnessWorkflowInput['usageReservation']
->['units'][number]['resource'];
-
-/**
- * Usage resources that count as paid media execution (not pure copy).
- * Typed against the reservation union on purpose: this set guards spend, and an
- * untyped `Set<string>` would let a rename of the resource union pass silently.
- */
-const PAID_MEDIA_USAGE_RESOURCES = new Set<ReservedUsageResource>([
-  'image',
-  'video',
-]);
-
-/**
- * xhs-vertical-integration-spec §3.2 / D-164③:
- * Whether this request would trigger paid media execution and therefore needs
- * a pre-run confirmation hold. Pure copy remains free of confirmation (D-043).
- *
- * Judgment is operation-based — what the reserved units say this run will
- * spend — not "which Harness path am I on".
- *
- * Note path (image_text_note) calls the same gate after plan.ready — style
- * selected and brief fenced — so batch page generation cannot spend before
- * merchant confirm (P1-05 / xhs-spec §8.2 P1-6).
- */
-export function triggersPaidMediaExecution(
-  request: HarnessWorkflowInput,
-): request is SnapshotBackedHarnessWorkflowInput {
-  const reservation = request.usageReservation;
-  if (!request.executionSnapshot?.quote || !reservation) {
-    return false;
-  }
-  const units = reservation.units;
-  if (!Array.isArray(units)) {
-    // Fail closed: a reserved run with no unit breakdown cannot be shown to be
-    // copy-only, and this gate stands in front of spend. The Coordinator always
-    // persists an array for production submissions.
-    return true;
-  }
-  if (units.length === 0) {
-    // Credit-priced submissions intentionally carry no legacy product units.
-    // Their frozen lens is server-owned: copy keeps the D-043 exemption, while
-    // media and note lenses still require confirmation before provider spend.
-    if (reservation.credits !== undefined) {
-      return request.executionSnapshot.lens !== 'copy';
-    }
-    return true;
-  }
-  return units.some((unit) => PAID_MEDIA_USAGE_RESOURCES.has(unit.resource));
-}
-
-/**
- * D-164③ paid-generation execution confirmation (xhs-spec §3.2).
- *
- * Trigger: the operation would execute paid media generation — frozen
- * executionSnapshot quote + usageReservation that includes media units
- * (image|video), or media/note lens when units are absent. Pure copy units
- * alone never hold (D-043 / composer-card-family T31).
- *
- * This is generation-point cost confirmation, not D-013 class-7 external
- * publish approval. Called from the copy, media, and note Harness paths; the
- * gate itself decides whether to hold (operation units, not path).
- *
- * Wire kind stays `external_action` so the existing interaction renderer gate
- * (`executionConfirmationInteractionRequestFromQuestion`) and e2e fixtures keep
- * working. That kind is the execution-confirmation surface marker, not the
- * class-7 `external_action_approval` ruleset (which still only covers publish).
- */
-function notePageOrderLabel(
-  plan: { pages: Array<{ id: string; order: number }> },
-  pageId: string,
-) {
-  return String(plan.pages.find(({ id }) => id === pageId)?.order ?? pageId);
-}
-
-async function confirmPaidGenerationExecution(input: {
-  workflowId: string;
-  request: HarnessWorkflowInput;
-  runtime: HarnessWorkflowRuntime;
-  reportProgress: (
-    event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
-  ) => Promise<void>;
-  noteOutline?: {
-    pageCount: number;
-    pages: Array<{ order: number; title: string }>;
-  };
-}) {
-  let request = input.request;
-  for (;;) {
-    if (!triggersPaidMediaExecution(request)) {
-      return request;
-    }
-    const snapshot = request.executionSnapshot;
-    const question = questionCardSchema.parse({
-      questionId: `execution-confirmation:${snapshot.id}`,
-      workflowId: input.workflowId,
-      workflowRevision: request.workflowRevision,
-      question: merchantPaidGenerationConfirmationQuestion(),
-      options: [
-        { id: 'approved', label: '确认执行' },
-        { id: 'rejected', label: '暂不执行' },
-      ],
-      freeText: { enabled: false },
-      response: {
-        field: 'execution_confirmation',
-        reason: merchantPaidGenerationConfirmationReason(),
-      },
-      unattended: 'hold',
-      executionConfirmationAuthority: {
-        kind: 'external_action',
-        revision: 'execution-external-action/v1',
-        ...(input.noteOutline ? { outline: input.noteOutline } : {}),
-      },
-      scope: 'current_task',
-    });
-    await input.reportProgress({
-      stage: 'execution_selection',
-      state: 'suspended',
-      message: question.question,
-    });
-    const command = await awaitResolvedDecision(
-      input.runtime,
-      question,
-      'execution_selection',
-    );
-    if (
-      command.decision.state === 'accepted' &&
-      command.decision.value === 'approved'
-    ) {
-      await input.reportProgress({
-        stage: 'execution_selection',
-        state: 'success',
-        message: merchantPaidGenerationConfirmationAccepted(),
-      });
-      return request;
-    }
-    request = await applyCurrentTaskDecision(
-      input.workflowId,
-      request,
-      command,
-      input.runtime,
-    );
-  }
 }
 
 async function resolveFactSatisfaction(input: {
