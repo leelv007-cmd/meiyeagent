@@ -73,6 +73,7 @@ import {
   langfusePromptResolverFromEnv,
   modelSupplyPromptResolverFromHarness,
 } from '../p1/harness/langfuse-prompts.js';
+import { PostgresHarnessReleaseStore } from '../p1/harness/postgres-harness-release.js';
 import {
   PostgresHarnessAuditStore,
   PostgresHarnessInteractionStore,
@@ -382,6 +383,7 @@ export async function assembleCoreGraph(
     storeFactLedger,
     adminConfigRepository
   );
+  const harnessReleaseStore = new PostgresHarnessReleaseStore(pool);
   const promptAuditStore = new PostgresHarnessAuditStore(pool);
   const harnessInteractionStore = new PostgresHarnessInteractionStore(pool);
   const harnessObservabilityStore = new PostgresHarnessObservabilityStore(pool);
@@ -391,6 +393,7 @@ export async function assembleCoreGraph(
     dueDeliveryRepository,
     integrationRepository,
     harnessSchemaStore,
+    harnessReleaseStore,
     skillRepository,
     storeWorkflowCaptureRepository,
     supplyControlRepository,
