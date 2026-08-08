@@ -41,12 +41,16 @@ export const OPS_KILL_SWITCH_CATALOG: Readonly<
       'Stops agent planning / specialist delegation; Session Harness falls back to non-planning path.',
   },
   disable_memory_write: {
-    landed: false,
+    // V31-18 lands runtime hook (AgentMemoryPlatform admin-config hot-read).
+    // V31-26a: ops panel dual-writes admin-config on flip.
+    landed: true,
     providerTicket: 'V31-18',
     impactScope: 'Blocks memory candidate writes; existing memory remains readable.',
   },
   disable_memory_read: {
-    landed: false,
+    // V31-18 lands runtime hook (AgentMemoryPlatform admin-config hot-read).
+    // V31-26a: ops panel dual-writes admin-config on flip.
+    landed: true,
     providerTicket: 'V31-18',
     impactScope: 'Blocks memory injection/read; agents run without shop experience recall.',
   },

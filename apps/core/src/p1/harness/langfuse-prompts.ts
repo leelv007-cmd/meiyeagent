@@ -7,6 +7,7 @@ import type {
 	LanguageModelOperation,
 	ModelSupplyPromptResolver,
 } from "../model-supply/index.js";
+import { LANGUAGE_MODEL_PROMPT_KEY_BY_OPERATION } from "../model-supply/route-contracts.js";
 
 const STRUCTURED_TEXT_REQUIREMENT = {
 	requiredProtocolCapabilities: ["structured-output"],
@@ -617,11 +618,16 @@ export function requireHarnessFrozenPrompt(
 	return prompt;
 }
 
-const MODEL_SUPPLY_PROMPT_KEY_BY_OPERATION = {
-	"copy.generate": "copyGeneration",
-	"copy.adapt": "platformAdaptation",
-	"text.respond": "textResponse",
-} as const satisfies Record<LanguageModelOperation, HarnessPromptKey>;
+/**
+ * V31-26a: second private copy of the operation→prompt map removed.
+ * Sole authority = LANGUAGE_MODEL_PROMPT_KEY_BY_OPERATION (model-supply).
+ * Values are HarnessPromptKey names used by the harness freeze table.
+ */
+const MODEL_SUPPLY_PROMPT_KEY_BY_OPERATION =
+	LANGUAGE_MODEL_PROMPT_KEY_BY_OPERATION as Record<
+		LanguageModelOperation,
+		HarnessPromptKey
+	>;
 
 export function modelSupplyPromptResolverFromHarness(
 	resolver: HarnessPromptResolver,

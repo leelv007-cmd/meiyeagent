@@ -174,6 +174,7 @@ import { PostgresResultAdjustSnapshotReadPort } from '../p1/result-delivery/post
 import {
   OpsConsoleFoundationModule,
   OpsConsoleService,
+  PostgresLegacyReplayInventory,
 } from '../p1/ops-console/index.js';
 import { HarnessReleaseService } from '../p1/harness/harness-release.js';
 import {
@@ -844,6 +845,45 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           trials: opsConsoleStore,
           drills: opsConsoleStore,
           langfuseBaseUrl: env.LANGFUSE_BASE_URL ?? null,
+          // V31-26a / U14: production PG inventory for legacy replay archive gate.
+          legacyReplayInventory: new PostgresLegacyReplayInventory(pool),
+          // V31-26a: dual-write admin-config for kill switches runtime hot-reads there.
+          killSwitchAdminConfigMirror: {
+            async applyBoolean(input) {
+              const current = await adminConfigRepository.get(
+                'global',
+                '__global__',
+                input.key,
+              );
+              await adminConfigRepository.apply({
+                key: input.key,
+                scope: 'global',
+                workspaceId: '__global__',
+                value: input.value,
+                expectedRevision: current?.revision ?? null,
+                actorId: input.actorId,
+                reason: input.reason,
+                correlationId: input.correlationId,
+              });
+            },
+            async getBoolean(key) {
+              const row = await adminConfigRepository.get(
+                'global',
+                '__global__',
+                key,
+              );
+              if (!row) return null;
+              return row.value === true;
+            },
+          },
+          async resolveLegacyReplayOpsBufferDays() {
+            const row = await adminConfigRepository.get(
+              'global',
+              '__global__',
+              'legacy.replay.archive_ops_buffer_days',
+            );
+            return typeof row?.value === 'number' ? row.value : 7;
+          },
         }),
       ),
       new MarketingIdentityFoundationModule(

@@ -624,11 +624,14 @@ test('kill switch panel lists seven switches; unlanded cannot enable; toggle lea
   assert.equal(listed.items.length, 7);
   const byId = new Map(listed.items.map((item) => [item.switchId, item]));
   // Landed by provider tickets: force_legacy_five_stage (V31-14),
-  // disable_make_steering (V31-16), disable_proactive_agent (V31-24).
+  // disable_make_steering (V31-16), disable_proactive_agent (V31-24),
+  // disable_memory_* (V31-18; ops flip dual-write marked landed in V31-26a).
   const landedIds = new Set([
     'force_legacy_five_stage',
     'disable_make_steering',
     'disable_proactive_agent',
+    'disable_memory_write',
+    'disable_memory_read',
   ]);
   for (const item of listed.items) {
     assert.ok(item.impactScope.length > 0);
@@ -687,7 +690,7 @@ test('kill switch panel lists seven switches; unlanded cannot enable; toggle lea
     input: {
       action: 'set_kill_switch',
       payload: {
-        switchId: 'disable_memory_write',
+        switchId: 'disable_agent_planning',
         enabled: false,
         reason: 'confirm default off during panel ship',
       },
@@ -700,4 +703,136 @@ test('kill switch panel lists seven switches; unlanded cannot enable; toggle lea
   assert.equal(off.audit.operatorId, 'ops-k');
   assert.equal(off.audit.action, 'set_kill_switch');
   assert.ok(off.audit.reason.includes('confirm default'));
+});
+
+test('V31-26a U14: archive gate fails closed without inventory; export and flag list wired', async () => {
+  const { module, service } = createHarness();
+
+  // Inventory not wired on default harness → fail closed.
+  const unWired = (await module.query({
+    context: adminCtx(),
+    input: { action: 'legacy_replay_archive_gate', payload: {} },
+  })) as {
+    gate: { archiveAllowed: boolean; blockingReasons: string[] };
+    inventory: null;
+  };
+  assert.equal(unWired.gate.archiveAllowed, false);
+  assert.equal(unWired.inventory, null);
+  assert.ok(
+    unWired.gate.blockingReasons.some((reason) =>
+      reason.includes('not wired'),
+    ),
+  );
+
+  // Wire inventory + passed drill → still need hold/buffer unless never-had-legacy.
+  const {
+    MemoryLegacyReplayInventory,
+  } = await import('./legacy-replay-archive-gate.js');
+  const inv = new MemoryLegacyReplayInventory({
+    activePendingCount: 0,
+    oldestActiveCreatedAt: null,
+    sampleTaskIds: [],
+    lastLegacyTerminalAt: null,
+  });
+  // Recreate service with inventory via private deps is hard; call service method with deps.
+  // Instead re-build module with inventory.
+  const {
+    MemoryOpsConsoleAuditStore,
+  } = await import('./audit.js');
+  const {
+    MemoryOpsCandidateTrialStore,
+    MemoryOpsKillSwitchStore,
+    MemoryOpsRollbackDrillStore,
+  } = await import('./state-stores.js');
+  const { MemoryToolPolicyStore } = await import('./tool-policy.js');
+  const { MemoryHarnessReleaseStore, HarnessReleaseService } = await import(
+    '../harness/harness-release.js'
+  );
+  const { OpsConsoleService } = await import('./ops-console-service.js');
+  const { OpsConsoleFoundationModule } = await import('./foundation-module.js');
+
+  const store = new MemoryHarnessReleaseStore();
+  const drills = new MemoryOpsRollbackDrillStore();
+  const wiredService = new OpsConsoleService({
+    releases: new HarnessReleaseService(store),
+    catalog: store,
+    toolPolicies: new MemoryToolPolicyStore(),
+    audit: new MemoryOpsConsoleAuditStore(),
+    killSwitches: new MemoryOpsKillSwitchStore(),
+    trials: new MemoryOpsCandidateTrialStore(),
+    drills,
+    legacyReplayInventory: inv,
+  });
+  const wired = new OpsConsoleFoundationModule(wiredService);
+
+  // No rollback drill → fail closed even with zero inventory.
+  const noDrill = (await wired.query({
+    context: adminCtx(),
+    input: {
+      action: 'legacy_replay_archive_gate',
+      payload: { now: '2026-08-09T00:00:00.000Z' },
+    },
+  })) as { gate: { archiveAllowed: boolean } };
+  assert.equal(noDrill.gate.archiveAllowed, false);
+
+  await drills.appendRollbackDrill({
+    id: 'drill-1',
+    releaseId: 'rel-1',
+    result: 'passed',
+    notes: 'V31-26a gate drill',
+    operatorId: 'ops',
+    reason: 'prove rollback path',
+    evidence: 'unit-test',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  });
+
+  const open = (await wired.query({
+    context: adminCtx(),
+    input: {
+      action: 'legacy_replay_archive_gate',
+      payload: { now: '2026-08-09T00:00:00.000Z' },
+    },
+  })) as {
+    gate: { archiveAllowed: boolean };
+    inventory: { activePendingCount: number };
+  };
+  assert.equal(open.gate.archiveAllowed, true);
+  assert.equal(open.inventory.activePendingCount, 0);
+
+  const exported = (await wired.query({
+    context: adminCtx(),
+    input: { action: 'export_legacy_replay_audit', payload: { limit: 10 } },
+  })) as unknown as {
+    exportedAt: string;
+    audit: unknown[];
+    rollbackDrills: { id: string }[];
+    gate: { archiveAllowed: boolean };
+  };
+  assert.ok(exported.exportedAt);
+  assert.equal(exported.rollbackDrills.length, 1);
+  assert.equal(exported.gate.archiveAllowed, true);
+
+  const flags = (await module.query({
+    context: adminCtx(),
+    input: { action: 'list_v31_feature_flags', payload: {} },
+  })) as { items: { key: string; landed: boolean }[]; landedCount: number };
+  assert.ok(flags.items.length >= 10);
+  assert.ok(flags.landedCount >= 5);
+  assert.ok(
+    flags.items.some((item) => item.key === 'force_legacy_five_stage'),
+  );
+
+  // Capability map covers new queries.
+  for (const action of [
+    'legacy_replay_archive_gate',
+    'export_legacy_replay_audit',
+    'list_v31_feature_flags',
+  ] as const) {
+    assert.equal(
+      requiredP1Capability('query', 'ops-console', action),
+      'platform.manage',
+    );
+  }
+
+  void service;
 });

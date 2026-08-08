@@ -37,6 +37,21 @@ import {
   type AgentToolPolicyRevision,
   type ToolPolicyStore,
 } from './tool-policy.js';
+import {
+  evaluateLegacyReplayArchiveGate,
+  LEGACY_REPLAY_DEFAULT_OPS_BUFFER_DAYS,
+  LEGACY_REPLAY_MAX_HOLD_WINDOW_DAYS,
+  type LegacyReplayArchiveGateResult,
+  type LegacyReplayInventoryPort,
+  type LegacyReplayInventorySnapshot,
+} from './legacy-replay-archive-gate.js';
+import {
+  listLandedV31Flags,
+  V31_FEATURE_FLAG_CATALOG,
+  V31_KILL_SWITCHES_MIRROR_TO_ADMIN_CONFIG,
+  type KillSwitchAdminConfigMirror,
+  type V31FlagCatalogEntry,
+} from './v31-feature-flags.js';
 
 export type {
   OpsCandidateTrial,
@@ -73,6 +88,21 @@ export type OpsConsoleServiceDeps = {
   trials: OpsCandidateTrialStore;
   drills: OpsRollbackDrillStore;
   langfuseBaseUrl?: string | null;
+  /**
+   * V31-26a / U14: inventory of active/pending legacy durable tasks.
+   * Production wires PostgresLegacyReplayInventory; Memory for tests.
+   * Absent ⇒ archive gate fails closed (inventory unavailable).
+   */
+  legacyReplayInventory?: LegacyReplayInventoryPort | null;
+  /**
+   * V31-26a: dual-write admin-config for kill switches whose runtime
+   * hot-read is admin-config (not the ops kill-switch store).
+   */
+  killSwitchAdminConfigMirror?: KillSwitchAdminConfigMirror | null;
+  /** Ops policy buffer days after 30d hold (U14). Default 7. */
+  resolveLegacyReplayOpsBufferDays?: () =>
+    | number
+    | Promise<number>;
 };
 
 function nowIso(now?: string): string {
@@ -560,20 +590,210 @@ export class OpsConsoleService {
       updatedBy: context.userId,
       reason,
     });
+
+    // V31-26a: dual-write admin-config so ops panel flips reach runtime hot-reads.
+    let adminConfigMirrored = false;
+    if (
+      V31_KILL_SWITCHES_MIRROR_TO_ADMIN_CONFIG.has(input.switchId) &&
+      this.deps.killSwitchAdminConfigMirror
+    ) {
+      await this.deps.killSwitchAdminConfigMirror.applyBoolean({
+        key: input.switchId,
+        value: input.enabled,
+        actorId: context.userId,
+        reason,
+        correlationId: context.correlationId,
+      });
+      adminConfigMirrored = true;
+    }
+
     const entry = await this.audit(
       context,
       'set_kill_switch',
       input.switchId,
       reason,
       meta.evidence?.trim() || null,
-      { enabled: input.enabled },
+      { enabled: input.enabled, adminConfigMirrored },
       meta.now,
     );
-    return { switch: state, audit: entry };
+    return { switch: state, audit: entry, adminConfigMirrored };
   }
 
   async listAudit(limit = 100) {
     return this.deps.audit.list(limit);
+  }
+
+  /**
+   * V31-26a / U14: read-only archive condition gate.
+   * Fail closed when inventory or audit is unavailable.
+   */
+  async legacyReplayArchiveGate(input?: {
+    now?: string;
+  }): Promise<{
+    gate: LegacyReplayArchiveGateResult;
+    inventory: LegacyReplayInventorySnapshot | null;
+  }> {
+    const inventoryPort = this.deps.legacyReplayInventory;
+    if (!inventoryPort) {
+      const gate = evaluateLegacyReplayArchiveGate({
+        inventory: {
+          activePendingCount: Number.POSITIVE_INFINITY,
+          oldestActiveCreatedAt: null,
+          sampleTaskIds: [],
+          lastLegacyTerminalAt: null,
+        },
+        now: nowIso(input?.now),
+        rollbackDrillPassed: false,
+        auditExportAvailable: false,
+        maxHoldWindowDays: LEGACY_REPLAY_MAX_HOLD_WINDOW_DAYS,
+        opsPolicyBufferDays: LEGACY_REPLAY_DEFAULT_OPS_BUFFER_DAYS,
+      });
+      // Force fail-closed messaging when inventory is not wired.
+      return {
+        gate: {
+          ...gate,
+          archiveAllowed: false,
+          blockingReasons: [
+            'Legacy replay inventory port is not wired in assembly; fail closed.',
+            ...gate.blockingReasons,
+          ],
+          conditions: {
+            ...gate.conditions,
+            zeroActivePendingLegacy: {
+              ok: false,
+              count: -1,
+              detail:
+                'Inventory port missing — cannot prove zero active/pending legacy.',
+            },
+            auditExportAvailable: {
+              ok: false,
+              detail: 'Inventory port missing — audit export not evaluated.',
+            },
+          },
+        },
+        inventory: null,
+      };
+    }
+
+    let inventory: LegacyReplayInventorySnapshot;
+    try {
+      inventory = await inventoryPort.snapshot();
+    } catch (error) {
+      const detail =
+        error instanceof Error
+          ? error.message
+          : 'inventory snapshot failed';
+      return {
+        gate: {
+          archiveAllowed: false,
+          evaluatedAt: nowIso(input?.now),
+          conditions: {
+            zeroActivePendingLegacy: {
+              ok: false,
+              count: -1,
+              detail: `Inventory snapshot failed; fail closed (${detail}).`,
+            },
+            holdWindowComplete: {
+              ok: false,
+              detail: 'Inventory snapshot failed; fail closed.',
+            },
+            auditExportAvailable: {
+              ok: false,
+              detail: 'Inventory snapshot failed; fail closed.',
+            },
+            rollbackProofPresent: {
+              ok: false,
+              detail: 'Inventory snapshot failed; fail closed.',
+            },
+            opsPolicyBufferComplete: {
+              ok: false,
+              detail: 'Inventory snapshot failed; fail closed.',
+            },
+          },
+          blockingReasons: [
+            `Legacy replay inventory snapshot failed; fail closed (${detail}).`,
+          ],
+        },
+        inventory: null,
+      };
+    }
+
+    const drills = await this.deps.drills.listRollbackDrills();
+    const rollbackDrillPassed = drills.some((drill) => drill.result === 'passed');
+    // Audit store is always present on the service; list is the export primitive.
+    let auditExportAvailable = false;
+    try {
+      await this.deps.audit.list(1);
+      auditExportAvailable = true;
+    } catch {
+      auditExportAvailable = false;
+    }
+
+    let opsPolicyBufferDays: number = LEGACY_REPLAY_DEFAULT_OPS_BUFFER_DAYS;
+    if (this.deps.resolveLegacyReplayOpsBufferDays) {
+      const resolved = await this.deps.resolveLegacyReplayOpsBufferDays();
+      if (
+        typeof resolved === 'number' &&
+        Number.isFinite(resolved) &&
+        resolved >= 0
+      ) {
+        opsPolicyBufferDays = Math.floor(resolved);
+      }
+    }
+
+    const gate = evaluateLegacyReplayArchiveGate({
+      inventory,
+      now: nowIso(input?.now),
+      rollbackDrillPassed,
+      auditExportAvailable,
+      maxHoldWindowDays: LEGACY_REPLAY_MAX_HOLD_WINDOW_DAYS,
+      opsPolicyBufferDays,
+    });
+    return { gate, inventory };
+  }
+
+  /**
+   * V31-26a: read-only audit export for archive/rollback evidence.
+   * Returns recent ops audit + rollback drills + current gate snapshot.
+   */
+  async exportLegacyReplayAudit(input?: {
+    limit?: number;
+    now?: string;
+  }): Promise<{
+    exportedAt: string;
+    audit: OpsConsoleAuditEntry[];
+    rollbackDrills: OpsRollbackDrillRecord[];
+    gate: LegacyReplayArchiveGateResult;
+    inventory: LegacyReplayInventorySnapshot | null;
+  }> {
+    const limit =
+      typeof input?.limit === 'number' && input.limit > 0
+        ? Math.min(input.limit, 500)
+        : 200;
+    const audit = await this.deps.audit.list(limit);
+    const rollbackDrills = await this.deps.drills.listRollbackDrills();
+    const { gate, inventory } = await this.legacyReplayArchiveGate({
+      now: input?.now,
+    });
+    return {
+      exportedAt: nowIso(input?.now),
+      audit,
+      rollbackDrills,
+      gate,
+      inventory,
+    };
+  }
+
+  /** V31-26a: list all known V3.1 flags/switches with flip metadata. */
+  listV31FeatureFlags(): {
+    items: V31FlagCatalogEntry[];
+    landedCount: number;
+  } {
+    const items = [...V31_FEATURE_FLAG_CATALOG];
+    return {
+      items,
+      landedCount: listLandedV31Flags().length,
+    };
   }
 }
 
