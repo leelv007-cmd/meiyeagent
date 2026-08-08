@@ -26,12 +26,9 @@ import {
 } from './agent-event-store';
 import { AgentWorkstream } from './agent-workstream';
 import type { WorkstreamMobilePane } from './mobile-workstream-switch';
-<<<<<<< HEAD
 import type { CommitStripAction, CommitStripView } from './plan';
 import { registerPlanSurfaces } from './plan/register-plan-surfaces';
-=======
 import type { PublishHandoffPanelView } from './publish-handoff';
->>>>>>> lane/v31-17
 import {
   workbenchRootMode,
   type WorkbenchSessionResolveResponse,
@@ -62,12 +59,10 @@ export type AgentWorkbenchHostProps = {
   worksSlot?: React.ReactNode;
   /** Work inline projection / legacy conversation stream. */
   processSlot?: React.ReactNode;
-<<<<<<< HEAD
   /** Compact Plan mode (Brief/quote/confirm unified strip). */
   livingPlanCompact?: boolean;
   livingPlanCommitStrip?: CommitStripView;
   onLivingPlanCommitAction?: (action: CommitStripAction) => void;
-=======
   /** V31-17 Delivered publish handoff materials (production path). */
   publishHandoffView?: PublishHandoffPanelView | null;
   selfReportPrompt?: string | null;
@@ -84,7 +79,6 @@ export type AgentWorkbenchHostProps = {
     signal: OutcomeSelfReportChipSignal,
   ) => void | Promise<void>;
   onSelfReportIgnore?: () => void | Promise<void>;
->>>>>>> lane/v31-17
   className?: string;
 };
 
@@ -105,11 +99,9 @@ export function AgentWorkbenchHost({
   viewport = 'desktop',
   worksSlot,
   processSlot,
-<<<<<<< HEAD
   livingPlanCompact = false,
   livingPlanCommitStrip,
   onLivingPlanCommitAction,
-=======
   publishHandoffView = null,
   selfReportPrompt = null,
   selfReportChips,
@@ -118,7 +110,6 @@ export function AgentWorkbenchHost({
   onPublishHandoffRecordPublished,
   onSelfReportChip,
   onSelfReportIgnore,
->>>>>>> lane/v31-17
   className,
 }: AgentWorkbenchHostProps) {
   const store = getAgentWorkbenchHostStore();

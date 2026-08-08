@@ -24,17 +24,15 @@ import {
   type WorkstreamMobilePane,
 } from './mobile-workstream-switch';
 import {
-<<<<<<< HEAD
   LivingPlan,
   type CommitStripAction,
   type CommitStripView,
 } from './plan';
-=======
+import {
   PublishHandoffPanel,
   type PublishHandoffPanelView,
 } from './publish-handoff';
 import './publish-handoff/publish-handoff-registry';
->>>>>>> lane/v31-17
 import { ActivityLine } from './stream/activity-line';
 import { NarrativeLine } from './stream/narrative-line';
 
@@ -52,13 +50,11 @@ export type AgentWorkstreamProps = {
   worksSlot?: React.ReactNode;
   /** Optional legacy conversation / composer stream under process pane. */
   processSlot?: React.ReactNode;
-<<<<<<< HEAD
   /** When true, Living Plan mounts as Compact Plan (Brief/quote/confirm unified). */
   livingPlanCompact?: boolean;
   /** Optional live commit-strip overlay (balance/quote). */
   livingPlanCommitStrip?: CommitStripView;
   onLivingPlanCommitAction?: (action: CommitStripAction) => void;
-=======
   /**
    * V31-17 Delivered publish handoff materials (production path after delivery).
    * When set, panel renders under Artifact canvas in works pane.
@@ -78,7 +74,6 @@ export type AgentWorkstreamProps = {
     signal: OutcomeSelfReportChipSignal,
   ) => void | Promise<void>;
   onSelfReportIgnore?: () => void | Promise<void>;
->>>>>>> lane/v31-17
   className?: string;
 };
 
@@ -90,11 +85,9 @@ export function AgentWorkstream({
   onArtifactViewRevision,
   worksSlot,
   processSlot,
-<<<<<<< HEAD
   livingPlanCompact = false,
   livingPlanCommitStrip,
   onLivingPlanCommitAction,
-=======
   publishHandoffView,
   selfReportPrompt,
   selfReportChips,
@@ -103,7 +96,6 @@ export function AgentWorkstream({
   onPublishHandoffRecordPublished,
   onSelfReportChip,
   onSelfReportIgnore,
->>>>>>> lane/v31-17
   className,
 }: AgentWorkstreamProps) {
   const layout = resolveMobileWorkstreamLayout({
