@@ -3,7 +3,8 @@
  * Thread list + Workbench session restore + steering_submit.
  *
  * open_legacy / create_thread / steering_submit are the write commands.
- * list_threads / get_workbench_session / get_thread / list_steering_commands are queries.
+ * list_threads / get_workbench_session / get_thread / list_steering_commands /
+ * steering_gate are queries.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -330,6 +331,12 @@ export class AgentSessionFoundationModule implements P1OperationModule {
             );
           }
           return { thread };
+        }
+        case 'steering_gate': {
+          if (!this.steering) {
+            return { enabled: false, reason: 'feature_flag_off' };
+          }
+          return this.steering.gate();
         }
         case 'list_steering_commands': {
           if (!this.steering) {

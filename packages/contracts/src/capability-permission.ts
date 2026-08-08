@@ -714,17 +714,24 @@ export function requiredP1Capability(
   }
 
   // V31-05: Thread list + Workbench session restore (consume AgentSessionStore).
+  // V31-16/V31-27: Make steering submit + command history + gate read.
   if (module === 'agent-session') {
     if (kind === 'query') {
       return new Set([
         'list_threads',
         'get_workbench_session',
         'get_thread',
+        'list_steering_commands',
+        'steering_gate',
       ]).has(action)
         ? 'workspace.read'
         : null;
     }
-    return new Set(['open_legacy_work_thread', 'create_thread']).has(action)
+    return new Set([
+      'open_legacy_work_thread',
+      'create_thread',
+      'steering_submit',
+    ]).has(action)
       ? 'content.create'
       : null;
   }

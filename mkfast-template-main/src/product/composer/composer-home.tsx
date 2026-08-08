@@ -277,6 +277,7 @@ import {
   type ComposerCreationMode,
   type ComposerReuseChip,
 } from './composer-conversation';
+import { SteeringComposerHost } from './steering-composer-panel';
 import { COMPOSER_LENS_LABELS, LENS_REQUIRED_SUBMIT_HINT } from './lens-labels';
 import { ComposerQuestionCard } from './composer-question-card';
 import { composerQuestionHold } from './composer-question-timeout';
@@ -310,6 +311,7 @@ import {
   restoreComposerSessionFromActiveTask,
   serializeComposerSession,
   updateComposerNotePlan,
+  type ComposerNotePlanTurn,
   type ComposerSession,
 } from './composer-session';
 import { useComposerInteractions } from './use-composer-interactions';
@@ -1812,6 +1814,16 @@ export function ComposerHome({
   }, [activeTasksQuery.data, initialTaskId, session.task]);
 
   const taskId = session.task?.taskId ?? '';
+  // V31-27: the note outline is the unit list a mid-run instruction targets.
+  const activeNotePlanTimeline =
+    session.turns.find(
+      (turn): turn is ComposerNotePlanTurn => turn.kind === 'note_plan'
+    )?.timeline ?? null;
+  // The turn is removed on settle, so its presence means 确认执行 is still the
+  // live hold — paid media has not started and nothing has been sent upstream.
+  const awaitingExecutionConfirm = session.turns.some(
+    (turn) => turn.kind === 'execution_confirm'
+  );
   const clientExecutionConfirmOpen = executionConfirm.phase === 'open';
   const {
     acknowledgeAskMerchantRenderer,
@@ -3644,6 +3656,25 @@ export function ComposerHome({
                 }
                       session={session}
                       stream={tokenStream}
+                    />
+                    {/* V31-27 / §37.4-G: 中途指令 while Make is still in
+                        flight. Only mounts on a steerable run, and only when
+                        Core's steering gate is open. */}
+                    <SteeringComposerHost
+                      awaitingExecutionConfirm={awaitingExecutionConfirm}
+                      notePlanTimeline={activeNotePlanTimeline}
+                      onCarryToComposer={(seedIntent) => {
+                        // plan_change cannot be applied to the running plan, so
+                        // the sentence goes back to the box that can re-quote it
+                        // (D-164⑤: prefill, never submit).
+                        setLensState((current) =>
+                          updateUserText(current, seedIntent)
+                        );
+                        focusComposerIntentInput();
+                      }}
+                      phase={session.phase}
+                      taskId={session.task?.taskId ?? null}
+                      workId={session.task?.workId ?? null}
                     />
                   </>
                 }
