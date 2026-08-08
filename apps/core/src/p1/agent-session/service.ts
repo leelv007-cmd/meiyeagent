@@ -4,6 +4,7 @@
  * Thin assembly over store + turn runner + sole checkpoint writer.
  * Progressive levels + billing UX ports mount here (V31-08) without rewriting
  * the turn-runner core.
+ * Plan Compiler mounts in V31-09 (bindPlanCompiler / compilePlan / adjustPlan).
  */
 
 import type { AgentControlLimits, HarnessMiddlewareBinding } from '@meiye/contracts';
@@ -22,6 +23,11 @@ import {
   type RetainedTailMessage,
 } from './compaction.js';
 import type { ModelContextSource } from './context-projection.js';
+import type {
+  CompilePlanInput,
+  CompilePlanResult,
+  PlanCompiler,
+} from './plan-compiler.js';
 import type { RegisteredPolicy } from './policy-middleware.js';
 import type { ProgressiveLevelInput } from './progressive-level.js';
 import type { AgentToolRegistry } from './tool-registry.js';
@@ -73,19 +79,54 @@ export type AgentSessionHarnessServiceOptions = {
   billingQuotePort?: SessionBillingQuotePort;
   /** V31-08 A5 balance port (credit ledger projection). */
   billingBalancePort?: SessionBillingBalancePort;
+  /**
+   * V31-09 Plan Compiler. May be bound at construction or later via
+   * bindPlanCompiler when production ports assemble after the harness shell.
+   */
+  planCompiler?: PlanCompiler;
 };
 
 export class AgentSessionHarnessService {
   readonly checkpointWriter: ThreadCheckpointWriter;
   private readonly options: AgentSessionHarnessServiceOptions;
+  private planCompiler: PlanCompiler | undefined;
 
   constructor(options: AgentSessionHarnessServiceOptions) {
     this.options = options;
+    this.planCompiler = options.planCompiler;
     this.checkpointWriter = new ThreadCheckpointWriter(options.store);
     assertSoleCheckpointWriter(this.checkpointWriter);
     if (options.registerCheckpointWriter !== false) {
       registerSoleCheckpointWriter(this.checkpointWriter);
     }
+  }
+
+  /** Late-bind Plan Compiler after deterministic quote/rights/model ports exist. */
+  bindPlanCompiler(compiler: PlanCompiler): void {
+    this.planCompiler = compiler;
+  }
+
+  getPlanCompiler(): PlanCompiler | undefined {
+    return this.planCompiler;
+  }
+
+  async compilePlan(input: CompilePlanInput): Promise<CompilePlanResult> {
+    return this.requirePlanCompiler().compile(input);
+  }
+
+  async adjustPlan(
+    input: CompilePlanInput & { existingPlanId: string },
+  ): Promise<CompilePlanResult> {
+    return this.requirePlanCompiler().adjust(input);
+  }
+
+  private requirePlanCompiler(): PlanCompiler {
+    if (!this.planCompiler) {
+      throw new Error(
+        'PlanCompiler is not bound on AgentSessionHarnessService (V31-09 assembly required).',
+      );
+    }
+    return this.planCompiler;
   }
 
   createTurnRunner(input: {
