@@ -22,6 +22,7 @@ import {
   modelRuntimeAssemblyFromSources,
   PostgresAdminConfigRepository,
 } from '../p1/admin-config/index.js';
+import { PostgresAgentSessionStore } from '../p1/agent-session/index.js';
 import { createPermissionAuthorizer } from '../p1/capability-permission/index.js';
 import { CloudflareInventoryAdapter } from '../p1/cloudflare-read/index.js';
 import { CreditBillingService } from '../p1/credit-billing/credit-billing-service.js';
@@ -847,6 +848,8 @@ export async function assembleCoreGraph(
     tracerJobRepository,
     operationalTelemetryStore,
     notifier,
+    // Schema only until V31-03 wires a reader; no business write path uses it.
+    new PostgresAgentSessionStore(pool),
   ]);
   await ensureCreditPlanCatalogDefaults(adminConfigRepository);
   await migrateCreditPlanCatalogCurrencyToHkd(adminConfigRepository);
