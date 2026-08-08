@@ -64,12 +64,20 @@ import {
   isMakeSnapshotConsumePath,
   materializeCopyBriefFromSnapshot,
   materializeIntentFromSnapshot,
+  materializeMediaBriefFromSnapshot,
+  materializeNoteBriefFromSnapshot,
   resolveMakeSnapshotConsume,
   snapshotConsumeTracePayload,
   validateContextBundleAgainstSnapshot,
 } from './make-snapshot-consume.js';
 import { confirmPaidGenerationExecution } from './paid-generation-confirmation.js';
 import { createNotePageProgressReporter } from './note-page-execution-frame.js';
+import {
+  createCarrierProgramRegistry,
+  executeCompiledCarrierPlan,
+} from './compiled-carrier-executor.js';
+import { attachStageTaxonomy } from './five-stage-trace-taxonomy.js';
+import type { StageTaxonomyPayload } from './five-stage-trace-taxonomy.js';
 
 export {
   confirmPaidGenerationExecution,
@@ -1311,6 +1319,15 @@ export type RunHarnessWorkflowOptions = {
   forceLegacyFiveStage?: boolean;
 };
 
+/**
+ * Runtime → executor path tag for D-036 taxonomy traces (V31-25).
+ * WeakMap keeps concurrent workflows isolated without changing runtime surface.
+ */
+const executorPathByRuntime = new WeakMap<
+  HarnessWorkflowRuntime,
+  StageTaxonomyPayload['executorPath']
+>();
+
 export async function runHarnessWorkflow(
   workflowId: string,
   request: HarnessWorkflowInput,
@@ -1335,6 +1352,13 @@ export async function runHarnessWorkflow(
   const reportProgress = (
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
   ) => runtime.progress({ ...event, sequence: progress.sequence++ });
+  // Tag path before prelude traces so D-036 taxonomy is consistent for all stages.
+  executorPathByRuntime.set(
+    runtime,
+    options.forceLegacyFiveStage
+      ? 'legacy_five_stage_runner'
+      : 'compiled_plan_executor',
+  );
   const prelude = await runWorkflowPrelude({
     descriptor,
     ports,
@@ -1344,16 +1368,39 @@ export async function runHarnessWorkflow(
     workflowId,
     forceLegacyFiveStage: options.forceLegacyFiveStage,
   });
-  return descriptor.execute({
-    descriptor,
-    ports,
-    prelude,
-    progress,
-    reportProgress,
-    request,
-    runtime,
-    workflowId,
+  // V31-25 §22.4 step 3: single CompiledExecutionPlan → executor entry.
+  // Carrier programs are the former three runners; new carriers register a
+  // recipe + program instead of forking workflow-core.
+  const programs = createCarrierProgramRegistry<
+    HarnessStageExecutionInput,
+    HarnessWorkflowResult
+  >({
+    copy: executeCopyHarnessStages,
+    note: executeNoteHarnessStages,
+    media: executeMediaHarnessStages,
   });
+  const { result } = await executeCompiledCarrierPlan({
+    context: {
+      lens: request.executionSnapshot?.lens,
+      frozenExecutionPlan: request.executionPlanSnapshot?.executionPlan,
+      forceLegacyFiveStage: options.forceLegacyFiveStage,
+    },
+    programInput: {
+      descriptor,
+      ports,
+      prelude,
+      progress,
+      reportProgress,
+      request,
+      runtime,
+      workflowId,
+    },
+    programs,
+    onResolved: (resolution) => {
+      executorPathByRuntime.set(runtime, resolution.executorPath);
+    },
+  });
+  return result;
 }
 
 async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
@@ -1930,6 +1977,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   }
 
   const briefSkills = stageSkills.brief_compilation;
+  const snapshotConsume = prelude.snapshotConsume;
   let brief = await runtime.runStep(
     harnessEffectKey(
       workflowId,
@@ -1937,8 +1985,16 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
       skillEffectUnit('image_text_note', briefSkills.instructions),
       '0',
     ),
-    () =>
-      ports.compileNoteBrief({
+    async () => {
+      // V31-25: snapshot path materializes note brief without structured LLM.
+      if (isMakeSnapshotConsumePath(snapshotConsume)) {
+        return materializeNoteBriefFromSnapshot({
+          snapshot: snapshotConsume.snapshot,
+          declaration: routed.declaration,
+          request: activeRequest,
+        }).brief;
+      }
+      return ports.compileNoteBrief({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
@@ -1949,7 +2005,8 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
         ...(briefSkills.instructions.length > 0
           ? { skillInstructions: briefSkills.instructions }
           : {}),
-      }),
+      });
+    },
   );
   await trace(
     runtime,
@@ -1966,6 +2023,14 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
       ({ pageRole }) => pageRole,
     ),
     ...skillTraceLineage(briefSkills),
+    ...(isMakeSnapshotConsumePath(snapshotConsume)
+      ? snapshotConsumeTracePayload({
+          snapshotHash: snapshotConsume.snapshot.snapshotHash,
+          approvalBasis: snapshotConsume.snapshot.approvalBasis,
+          stage: 'brief_compilation',
+          llmInvoked: false,
+        })
+      : { makeConsume: 'legacy_llm', llmInvoked: true }),
     },
     `r${context.bundle.revision}`,
   );
@@ -2045,8 +2110,15 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
         ),
         '0',
       ),
-      () =>
-        ports.compileNoteBrief({
+      async () => {
+        if (isMakeSnapshotConsumePath(snapshotConsume)) {
+          return materializeNoteBriefFromSnapshot({
+            snapshot: snapshotConsume.snapshot,
+            declaration: routed.declaration,
+            request: activeRequest,
+          }).brief;
+        }
+        return ports.compileNoteBrief({
           workflowId,
           request: activeRequest,
           declaration: routed.declaration,
@@ -2057,7 +2129,8 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
           ...(briefSkills.instructions.length > 0
             ? { skillInstructions: briefSkills.instructions }
             : {}),
-        }),
+        });
+      },
     );
     if (
       !brief.candidates.candidates.some(
@@ -2366,6 +2439,7 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
   let factGate = prelude.factGate;
 
   const briefSkills = stageSkills.brief_compilation;
+  const snapshotConsume = prelude.snapshotConsume;
   let compiledBrief = await runtime.runStep(
     harnessEffectKey(
       workflowId,
@@ -2373,8 +2447,16 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
       skillEffectUnit(kind, briefSkills.instructions),
       '0',
     ),
-    () =>
-      ports.compileMediaBrief({
+    async () => {
+      // V31-25: snapshot path materializes media brief without structured LLM.
+      if (isMakeSnapshotConsumePath(snapshotConsume)) {
+        return materializeMediaBriefFromSnapshot({
+          snapshot: snapshotConsume.snapshot,
+          declaration: routed.declaration,
+          request: activeRequest,
+        }).brief;
+      }
+      return ports.compileMediaBrief({
         workflowId,
         request: activeRequest,
         declaration: routed.declaration,
@@ -2385,7 +2467,8 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
         ...(briefSkills.instructions.length > 0
           ? { skillInstructions: briefSkills.instructions }
           : {}),
-      }),
+      });
+    },
   );
   let { brief, metrics: briefMetrics } = unpackMediaBrief(compiledBrief);
   await trace(
@@ -2400,6 +2483,14 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
       : {}),
     ...(briefMetrics ? { metrics: briefMetrics } : {}),
     ...skillTraceLineage(briefSkills),
+    ...(isMakeSnapshotConsumePath(snapshotConsume)
+      ? snapshotConsumeTracePayload({
+          snapshotHash: snapshotConsume.snapshot.snapshotHash,
+          approvalBasis: snapshotConsume.snapshot.approvalBasis,
+          stage: 'brief_compilation',
+          llmInvoked: false,
+        })
+      : { makeConsume: 'legacy_llm', llmInvoked: true }),
     },
     `r${bundle.bundle.revision}`,
   );
@@ -2694,8 +2785,15 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
         ),
         '0',
       ),
-      () =>
-        ports.compileMediaBrief({
+      async () => {
+        if (isMakeSnapshotConsumePath(snapshotConsume)) {
+          return materializeMediaBriefFromSnapshot({
+            snapshot: snapshotConsume.snapshot,
+            declaration: routed.declaration,
+            request: activeRequest,
+          }).brief;
+        }
+        return ports.compileMediaBrief({
           workflowId,
           request: activeRequest,
           declaration: routed.declaration,
@@ -2706,7 +2804,8 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
           ...(briefSkills.instructions.length > 0
             ? { skillInstructions: briefSkills.instructions }
             : {}),
-        }),
+        });
+      },
     );
     ({ brief, metrics: briefMetrics } = unpackMediaBrief(compiledBrief));
     await trace(
@@ -3763,12 +3862,15 @@ function trace(
   discriminator?: string,
   afterPersist?: () => Promise<void>,
 ) {
+  // V31-25 / D-036: five stages demoted to trace taxonomy + six-primitive mounts.
+  const executorPath =
+    executorPathByRuntime.get(runtime) ?? 'compiled_plan_executor';
   return runtime.recordTrace(
     {
       id: `trace-${workflowId}-${stage}${discriminator ? `-${discriminator}` : ''}`,
       taskId: workflowId,
       stage,
-      payload,
+      payload: attachStageTaxonomy(stage, payload, { executorPath }),
     },
     afterPersist,
   );
