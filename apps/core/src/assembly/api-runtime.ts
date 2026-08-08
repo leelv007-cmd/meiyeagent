@@ -779,7 +779,11 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       }),
       new SensitiveWordsFoundationModule(sensitiveWordsRepository),
       // V31-05: Thread list + Workbench session restore (consumes V31-02 store).
-      new AgentSessionFoundationModule(new PostgresAgentSessionStore(pool)),
+      // V31-16: steering_submit / list_steering_commands on the same module.
+      new AgentSessionFoundationModule(
+        new PostgresAgentSessionStore(pool),
+        steeringService,
+      ),
       // V31-24: MarketingGoal product surface + Proactive pipeline (PG stores only).
       (() => {
         const agentSessionStoreForGoals = new PostgresAgentSessionStore(pool);
@@ -830,11 +834,6 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         ).catch(() => undefined);
         return new GoalProactiveFoundationModule(goalService, proactiveService);
       })(),
-      // V31-16: steering_submit / list_steering_commands on the same P1 surface.
-      new AgentSessionFoundationModule(
-        new PostgresAgentSessionStore(pool),
-        steeringService,
-      ),
       new OpsConsoleFoundationModule(
         new OpsConsoleService({
           releases: new HarnessReleaseService(harnessReleaseStore),
