@@ -15,6 +15,10 @@ import {
   HARNESS_TODAY_RECOMMENDATION_CONFIG_KEY,
   HARNESS_WOZ_RECIPE_CONFIG_KEY,
 } from '../p1/admin-config/index.js';
+import {
+  AGENT_MEMORY_FLAGS,
+  AGENT_MEMORY_KILL_SWITCH_KEYS,
+} from '../p1/operations/agent-memory-platform.js';
 import { P1DomainError } from '../p1/foundation/index.js';
 import {
   type ActivationEvidence,
@@ -45,6 +49,11 @@ const SHARED_HOT_AND_WIRED_CONFIG_KEYS = [
   BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
   BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
   NOTE_STYLE_CONFIG_KEY,
+  // V31-18: Memory platform flags + kill switches (hot-read by AgentMemoryPlatform).
+  AGENT_MEMORY_FLAGS.read,
+  AGENT_MEMORY_FLAGS.candidateWrite,
+  AGENT_MEMORY_KILL_SWITCH_KEYS.disableWrite,
+  AGENT_MEMORY_KILL_SWITCH_KEYS.disableRead,
   // Settlement hot-reads this key on every paid grant; no process-boot default.
   // Unwritten projection may leave effectiveValue empty (#371 / Spec C §支付映射).
   'plan.payment-mapping',

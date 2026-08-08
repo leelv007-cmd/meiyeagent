@@ -143,12 +143,14 @@ import {
   ContextFoundationModule,
   createContextInvalidationRuntime,
   ExpiredFactInvalidationWorker,
+  AgentMemoryPlatform,
   MarketingIdentityFoundationModule,
   MemoryFoundationModule,
   OperationsFoundationModule,
   OperationsReusableAssetSourceVerifier,
   ProductionMemorySedimentationCoordinator,
   ProductLegacyDeliveryProjection,
+  resolveAgentMemoryKillSwitch,
   ReuseMemoryComposerConversationDeletionNotifier,
   ReuseMemoryRecordProposalPort,
   ReuseMemoryService,
@@ -231,6 +233,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     assetIntakeRepository,
     storeIntakeFinalizations,
     reuseMemoryRepository,
+    memoryInjectionReceiptStore,
     contentPackageMigration,
     adminConfigRepository,
     sensitiveWordsRepository,
@@ -331,6 +334,12 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       contentPackageRightsResolver,
       contextBundleRepository
     )
+  );
+  // V31-18: production AgentMemoryPlatform — Postgres injection receipts + admin-config kill switches.
+  const agentMemoryPlatform = new AgentMemoryPlatform(
+    reuseMemoryService,
+    memoryInjectionReceiptStore,
+    () => resolveAgentMemoryKillSwitch(adminConfigRepository)
   );
   operationsService.attachComposerConversationDeletionNotifier(
     new ReuseMemoryComposerConversationDeletionNotifier(reuseMemoryService)
@@ -716,7 +725,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         storeIntakeFinalizer,
         storeProfileImportPreparer
       ),
-      new MemoryFoundationModule(reuseMemoryService),
+      new MemoryFoundationModule(reuseMemoryService, agentMemoryPlatform),
       new OperationsFoundationModule(operationsService, {
         adminActorIds: modelAdminActorIds,
         contentPackageMigration,

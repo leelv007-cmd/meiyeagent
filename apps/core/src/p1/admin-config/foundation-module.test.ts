@@ -134,11 +134,15 @@ describe('Admin config application seam', () => {
     assert.deepEqual(
       projected.map((item) => item.key),
       [
+        'agent_memory_candidate_write_v1',
+        'agent_memory_read_v1',
         ASSET_INTAKE_GUIDANCE_CONFIG_KEY,
         'byok.adapter.assembly',
         'compliance.aigc_label.default',
         'compliance.regulated_mode.default',
         'compliance.watermark.default',
+        'disable_memory_read',
+        'disable_memory_write',
         DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
         BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
         BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,

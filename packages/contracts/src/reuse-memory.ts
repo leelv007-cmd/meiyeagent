@@ -382,6 +382,46 @@ export const memoryEntriesPageSchema = z
   })
   .strict();
 
+/**
+ * V3.1 §12.5 preference/correction ledger expansion (U5=C).
+ * Stored on existing three-table jsonb payloads — no p1_agent_memory_entries.
+ * Optional for backward-compatible legacy rows; normalize on read in Core.
+ */
+export const preferenceMemoryKindSchema = z.enum([
+  'preference',
+  'correction',
+  'procedure',
+]);
+
+export const preferenceMemoryAuthoritySchema = z.enum([
+  'observation',
+  'session',
+  'strong',
+  'confirmed',
+]);
+
+export const preferenceMemoryStateSchema = z.enum([
+  'active',
+  'proposed',
+  'superseded',
+  'revoked',
+  'expired',
+]);
+
+/** Soft preferences decay; corrections / facts use mode none. */
+export const preferenceMemoryDecaySchema = z
+  .object({
+    mode: z.enum(['none', 'soft_preference']),
+    halfLifeDays: z.number().positive().optional(),
+  })
+  .strict();
+
+/** Dual-channel write surface: session = Thread-local; cross_thread = confirm gate. */
+export const preferenceMemoryChannelSchema = z.enum([
+  'session',
+  'cross_thread',
+]);
+
 export const preferenceCandidateSchema = z
   .object({
     candidateId: idSchema,
@@ -395,6 +435,16 @@ export const preferenceCandidateSchema = z
     status: z.enum(['pending', 'confirmed', 'rejected']),
     proposedAt: timestampSchema,
     source: memoryCandidateSourceSchema.optional(),
+    // V3.1 §12.5 expansion (optional on legacy rows)
+    kind: preferenceMemoryKindSchema.optional(),
+    authority: preferenceMemoryAuthoritySchema.optional(),
+    memoryState: preferenceMemoryStateSchema.optional(),
+    decay: preferenceMemoryDecaySchema.optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    statement: nonEmptyTrimmedStringSchema.max(4_000).optional(),
+    /** Session channel binds the Thread; required when authority=session. */
+    threadId: idSchema.optional(),
+    channel: preferenceMemoryChannelSchema.optional(),
   })
   .strict();
 
@@ -429,6 +479,15 @@ export const preferenceSchema = z
       'user_revoked',
       'superseded',
     ]),
+    // V3.1 §12.5 expansion (optional on legacy rows)
+    kind: preferenceMemoryKindSchema.optional(),
+    authority: preferenceMemoryAuthoritySchema.optional(),
+    memoryState: preferenceMemoryStateSchema.optional(),
+    decay: preferenceMemoryDecaySchema.optional(),
+    confidence: z.number().min(0).max(1).optional(),
+    statement: nonEmptyTrimmedStringSchema.max(4_000).optional(),
+    threadId: idSchema.optional(),
+    channel: preferenceMemoryChannelSchema.optional(),
   })
   .strict()
   .superRefine(validateScopeDecision);
@@ -463,3 +522,12 @@ export type MemoryEntryProjection = z.infer<
 >;
 export type MemoryEntriesPage = z.infer<typeof memoryEntriesPageSchema>;
 export type Preference = z.infer<typeof preferenceSchema>;
+export type PreferenceMemoryKind = z.infer<typeof preferenceMemoryKindSchema>;
+export type PreferenceMemoryAuthority = z.infer<
+  typeof preferenceMemoryAuthoritySchema
+>;
+export type PreferenceMemoryState = z.infer<typeof preferenceMemoryStateSchema>;
+export type PreferenceMemoryDecay = z.infer<typeof preferenceMemoryDecaySchema>;
+export type PreferenceMemoryChannel = z.infer<
+  typeof preferenceMemoryChannelSchema
+>;

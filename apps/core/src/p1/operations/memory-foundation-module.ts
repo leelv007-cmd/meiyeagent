@@ -9,6 +9,7 @@ import { z } from 'zod';
 
 import { P1DomainError, type P1Context } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
+import type { AgentMemoryPlatform } from './agent-memory-platform.js';
 import type { ReuseMemoryService } from './reuse-memory-service.js';
 
 function inputAction(input: Record<string, unknown>) {
@@ -40,7 +41,16 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
 export class MemoryFoundationModule implements P1OperationModule {
   readonly name = 'memory';
 
-  constructor(private readonly memory: ReuseMemoryService) {}
+  constructor(
+    private readonly memory: ReuseMemoryService,
+    /** V31-18 production-wired Agent Memory platform (optional for unit tests). */
+    private readonly agentMemory?: AgentMemoryPlatform,
+  ) {}
+
+  /** Production AgentMemoryPlatform when assembly-wired; undefined in pure unit tests. */
+  get agentMemoryPlatform(): AgentMemoryPlatform | undefined {
+    return this.agentMemory;
+  }
 
   async execute(args: {
     context: P1Context;

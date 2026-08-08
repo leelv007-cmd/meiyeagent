@@ -42,6 +42,8 @@ export * from './production-memory-sedimentation.js';
 export * from './canonical-memory-redline.js';
 export * from './memory-foundation-module.js';
 export * from './reuse-memory-source-verifier.js';
+export * from './agent-memory-platform.js';
+export * from './postgres-memory-injection-receipt.js';
 export * from './search.js';
 export * from './store-fact-ledger.js';
 export * from './postgres-store-fact-ledger.js';

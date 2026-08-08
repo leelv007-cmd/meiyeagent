@@ -68,6 +68,8 @@ export class ReuseMemoryRecordProposalPort implements RecordProposalPort {
           .join(',')}`,
       );
     }
+    // V31-18 / §12.3–12.4: passive sedimentation always lands proposed observation
+    // candidates — never session-active or confirmed heads (false_persistence gate).
     await this.service.proposePreference(sourcedPreferenceCandidateSchema.parse({
       candidateId,
       workspaceId: input.workspaceId,
@@ -84,6 +86,12 @@ export class ReuseMemoryRecordProposalPort implements RecordProposalPort {
         sourceTurnId: provenance.sourceTurnId,
         messageRange: provenance.messageRange,
       },
+      kind: 'preference',
+      authority: 'observation',
+      memoryState: 'proposed',
+      decay: { mode: 'soft_preference', halfLifeDays: 90 },
+      confidence: 0.5,
+      channel: 'cross_thread',
     }));
     return { proposalRef: candidateId, status: 'proposed' };
   }

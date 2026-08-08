@@ -294,6 +294,70 @@ test('preference confirmation can only create an inactive_stage2 record', () => 
   );
 });
 
+test('V31-18 preference ledger accepts kind/authority/memoryState/decay expansion', () => {
+  const candidate = preferenceCandidateSchema.parse({
+    candidateId: 'preference-candidate-b',
+    workspaceId: 'workspace-a',
+    semanticKey: 'name.display',
+    proposedValue: '小林不是老板娘',
+    defaultScope: { storeId: 'store-a' },
+    evidenceDecisionIds: ['decision-x'],
+    evidenceTaskIds: ['task-x'],
+    trigger: 'explicit_long_term_intent',
+    status: 'pending',
+    proposedAt: '2026-08-08T03:00:00.000Z',
+    kind: 'correction',
+    authority: 'observation',
+    memoryState: 'proposed',
+    decay: { mode: 'none' },
+    confidence: 0.95,
+    statement: '小林不是老板娘',
+    channel: 'cross_thread',
+  });
+  assert.equal(candidate.kind, 'correction');
+  assert.equal(candidate.memoryState, 'proposed');
+  assert.equal(candidate.decay?.mode, 'none');
+
+  const preference = preferenceSchema.parse({
+    preferenceId: 'preference-b',
+    revision: 1,
+    workspaceId: 'workspace-a',
+    candidateId: candidate.candidateId,
+    semanticKey: candidate.semanticKey,
+    value: candidate.proposedValue,
+    defaultScope: candidate.defaultScope,
+    finalScope: candidate.defaultScope,
+    scopeDecision: {
+      mode: 'accepted_default',
+      decisionId: 'decision-confirm-b',
+      decidedBy: 'owner-a',
+      decidedAt: '2026-08-08T03:01:00.000Z',
+    },
+    positiveExamples: [],
+    negativeExamples: [],
+    evidenceDecisionIds: candidate.evidenceDecisionIds,
+    status: 'inactive_stage2',
+    recordState: 'current',
+    confirmedBy: 'owner-a',
+    confirmedAt: '2026-08-08T03:01:00.000Z',
+    revokedAt: null,
+    supersededByPreferenceId: null,
+    changedBy: 'owner-a',
+    changedAt: '2026-08-08T03:01:00.000Z',
+    changeReason: 'candidate_confirmed',
+    kind: 'correction',
+    authority: 'confirmed',
+    memoryState: 'active',
+    decay: { mode: 'none' },
+    confidence: 0.95,
+    statement: '小林不是老板娘',
+    channel: 'cross_thread',
+  });
+  assert.equal(preference.kind, 'correction');
+  assert.equal(preference.authority, 'confirmed');
+  assert.equal(preference.memoryState, 'active');
+});
+
 test('production preference proposals require a complete conversation pointer', () => {
   const candidate = {
     candidateId: 'candidate-a',
