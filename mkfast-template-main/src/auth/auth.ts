@@ -13,6 +13,7 @@ import { assembleVerifiedUser } from '@/auth/user-assembly';
 import { ensurePersonalWorkspace } from '@/lib/auth/workspace-bootstrap';
 import { ensureVerifiedWorkspaceProvisioned } from '@/lib/auth/workspace-provisioning';
 import { createAuthPlugins } from '@/auth/plugins';
+import { resolveTrustedAuthOrigins } from '@/auth/trusted-origins';
 
 /**
  * Better Auth Configuration
@@ -28,6 +29,7 @@ export function createAuth() {
 
   return betterAuth({
     baseURL: getBaseUrl(),
+    trustedOrigins: resolveTrustedAuthOrigins(import.meta.env.DEV === true),
     appName: websiteConfig.metadata?.name,
     database: drizzleAdapter(getDb(), {
       provider: 'pg',
