@@ -28,6 +28,12 @@ import type {
   HarnessWorkflowInput,
   HarnessWorkflowStarter,
 } from './task-admission.js';
+import {
+  resolveDurableReplayBranch,
+  verifyExecutionPlanSnapshotForDbos,
+  type ExecutionPlanAdmissionPort,
+  type SnapshotLiveFacts,
+} from './execution-plan-admission.js';
 import type {
   HarnessDecisionService,
   HarnessDecisionStore,
@@ -318,6 +324,23 @@ interface HarnessDbosWorkflowOptions {
     HarnessInteractionService,
     'expireUnrendered' | 'submitSystemDefault'
   >;
+  /**
+   * V31-12: DBOS pre-run verification against the admitted ExecutionPlanSnapshot.
+   * When the request carries a snapshot, verification runs before context/rights
+   * fence consumption (mismatch fail closed).
+   */
+  executionPlanAdmission?: Pick<
+    ExecutionPlanAdmissionPort,
+    'verifyAdmittedForDbos'
+  >;
+  /**
+   * Optional live fence facts resolved just before DBOS verification.
+   * Production may inject rights/context head readers here.
+   */
+  resolveExecutionPlanLiveFacts?: (input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+  }) => Promise<SnapshotLiveFacts | undefined> | SnapshotLiveFacts | undefined;
 }
 
 export function registerHarnessDbosWorkflow(
@@ -334,6 +357,8 @@ export function registerHarnessDbosWorkflow(
     taskRecallDue,
     askMerchant,
     interactions,
+    executionPlanAdmission,
+    resolveExecutionPlanLiveFacts,
   } = options;
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
@@ -348,6 +373,37 @@ export function registerHarnessDbosWorkflow(
       actionId: HARNESS_ACTION_CARRIERS.replay,
       caller: 'server',
     });
+    // V31-12: verification → context/rights fence. Snapshot path re-checks hash
+    // against the admitted row; legacy path is independent (no dual-write).
+    await DBOS.runStep(
+      async () => {
+        const branch = resolveDurableReplayBranch(request);
+        if (branch.branch === 'legacy') {
+          return { branch: 'legacy' as const };
+        }
+        const live = resolveExecutionPlanLiveFacts
+          ? await resolveExecutionPlanLiveFacts({ workflowId, request })
+          : undefined;
+        // Always recompute hash on the request-carried snapshot (fail closed).
+        verifyExecutionPlanSnapshotForDbos({
+          snapshot: branch.snapshot,
+          live,
+        });
+        // When the admission writer is wired, also re-verify the stored row.
+        if (executionPlanAdmission) {
+          await executionPlanAdmission.verifyAdmittedForDbos({
+            workflowId,
+            snapshotHash: branch.snapshot.snapshotHash,
+            live,
+          });
+        }
+        return {
+          branch: 'execution_plan_snapshot' as const,
+          snapshotHash: branch.snapshot.snapshotHash,
+        };
+      },
+      { name: 'execution-plan-snapshot-verification' },
+    );
     const runtime: HarnessWorkflowRuntime = {
       runStep(effectIdempotencyKey, operation) {
         return DBOS.runStep(operation, {

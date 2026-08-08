@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { BoundedExecutionLimits } from '@meiye/contracts';
+import {
+  COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+  type BoundedExecutionLimits,
+} from '@meiye/contracts';
 import type { RouteSnapshot } from '../model-supply/index.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 
@@ -28,6 +31,13 @@ import {
   HARNESS_CORE_PROMPT_KEYS,
   HARNESS_LANGFUSE_PROMPT_NAMES,
 } from './langfuse-prompts.js';
+import {
+  buildExecutionPlanSnapshot,
+  ExecutionPlanAdmissionService,
+  freezeExecutionPlanContent,
+  type ExecutionPlanFrozenContent,
+} from './execution-plan-admission.js';
+import { MemoryExecutionPlanSnapshotStore } from './memory-execution-plan-admission-store.js';
 
 test('same task and payload returns the original workflow handle', async () => {
   const registry = new MemoryRequestRegistry();
@@ -966,6 +976,87 @@ test('changed server execution bounds do not change the client request fingerpri
   );
 });
 
+test('V31-12 task-admission one-shot writes ExecutionPlanSnapshot and replays without double-write', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const snapshotStore = new MemoryExecutionPlanSnapshotStore();
+  const admission = new ExecutionPlanAdmissionService(snapshotStore);
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    admission,
+  );
+
+  const content = planFrozenContent();
+  const { snapshotHash } = freezeExecutionPlanContent(content);
+  const planSnapshot = buildExecutionPlanSnapshot({ content, snapshotHash });
+
+  const first = await service.submit({
+    ...taskRequest({ taskId: 'task-v31-12' }),
+    executionPlanSnapshot: planSnapshot,
+  });
+  assert.equal(first.replayed, false);
+  assert.equal(
+    starter.requests[0]?.executionPlanSnapshot?.snapshotHash,
+    snapshotHash,
+  );
+  const stored = await snapshotStore.getByWorkflowId('task-v31-12');
+  assert.equal(stored?.snapshot.snapshotHash, snapshotHash);
+
+  const second = await service.submit({
+    ...taskRequest({ taskId: 'task-v31-12' }),
+    executionPlanSnapshot: planSnapshot,
+  });
+  assert.equal(second.replayed, true);
+  // Registry replay path does not re-claim; snapshot row stays one-shot.
+  const storedAgain = await snapshotStore.getByWorkflowId('task-v31-12');
+  assert.equal(storedAgain?.admittedAt, stored?.admittedAt);
+
+  // Stale confirmation rejected on a fresh task (unique hash + drifted quote).
+  const staleSnapshot = buildExecutionPlanSnapshot({
+    content: {
+      ...planFrozenContent(),
+      planId: 'plan-admit-stale',
+    } as unknown as ExecutionPlanFrozenContent,
+  });
+  await assert.rejects(
+    () =>
+      service.submit({
+        ...taskRequest({ taskId: 'task-v31-12-stale' }),
+        executionPlanSnapshot: staleSnapshot,
+        executionPlanLiveFacts: { quoteRevision: 99 },
+      }),
+    (error: unknown) =>
+      error instanceof Error &&
+      /stale|STALE/i.test(String((error as { code?: string }).code ?? error)),
+  );
+});
+
+test('V31-12 submit with ExecutionPlanSnapshot without admission writer fails closed', async () => {
+  const service = new HarnessTaskAdmissionService(
+    new MemoryRequestRegistry(),
+    new RecordingStarter(),
+  );
+  const content = planFrozenContent();
+  const planSnapshot = buildExecutionPlanSnapshot({ content });
+  await assert.rejects(
+    () =>
+      service.submit({
+        ...taskRequest({ taskId: 'task-v31-12-no-writer' }),
+        executionPlanSnapshot: planSnapshot,
+      }),
+    (error: unknown) =>
+      error instanceof HarnessAdmissionError &&
+      error.code === 'FROZEN_REQUEST_MISSING',
+  );
+});
+
 class MemoryRequestRegistry implements HarnessTaskRequestRegistry {
   readonly claims: Array<{ taskId: string; fingerprint: string }> = [];
   readonly lookups: Array<{ taskId: string; fingerprint: string }> = [];
@@ -1095,6 +1186,62 @@ function prompt(name: string, content: string, version: number) {
     source: 'langfuse' as const,
     isFallback: false,
   };
+}
+
+function planFrozenContent(): ExecutionPlanFrozenContent {
+  return {
+    planId: 'plan-admit-1',
+    planRevision: 1,
+    intentDeclaration: { summary: 'task admission freeze' },
+    contextBundleRef: {
+      bundleId: 'bundle-1',
+      revision: 1,
+      hash: 'ctx-hash',
+    },
+    executionPlan: {
+      schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+      units: [
+        {
+          unitId: 'unit-1',
+          unitType: 'copy.generate',
+          primitive: 'generate',
+        },
+      ],
+      dependencyGroups: [{ groupId: 'g1', unitIds: ['unit-1'] }],
+      boundedRetry: {
+        'unit-1': {
+          maxAttempts: 1,
+          maxCostCents: 0,
+          retry: { enabled: false },
+        },
+      },
+    },
+    deliverables: [{ deliverableId: 'd1', kind: 'copy', quantity: 1 }],
+    promptRevisionRefs: {},
+    skillManifestRefs: {},
+    routeRequirements: [],
+    quoteRef: { id: 'quote-1', revision: 1 },
+    rightsRevisionRefs: [],
+    factRevisionRefs: [],
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1',
+      maxIterations: 10,
+      maxCostCents: 100,
+      maxWallClockMs: 60_000,
+      maxDelegations: 2,
+      requiredLimits: ['maxIterations', 'maxCostCents'],
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+    harnessReleaseId: 'release-1',
+    approvalBasis: 'policy_exempt_copy',
+  } as unknown as ExecutionPlanFrozenContent;
 }
 
 function taskRequest(overrides: { rawInput?: string; taskId?: string } = {}) {
