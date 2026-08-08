@@ -11,6 +11,18 @@ import test from 'node:test';
 const readSource = (rel: string) =>
   readFileSync(resolve(process.cwd(), rel), 'utf8');
 
+test('V31-24 Idle goal-proactive panel is mounted from AgentWorkbenchHost Idle path', () => {
+  const host = readSource('src/product/agent-workbench/agent-workbench.tsx');
+  assert.match(host, /IdleGoalProactivePanel/u);
+  assert.match(host, /rootMode === 'idle'/u);
+  assert.match(host, /enableIdleGoalProactive/u);
+  const panel = readSource(
+    'src/product/agent-workbench/idle-goal-proactive.tsx',
+  );
+  assert.match(panel, /idle-suggestion-why-now/u);
+  assert.match(panel, /accept_opportunity/u);
+});
+
 test('ComposerHome imports and mounts AgentWorkbenchHost with Thread-root props', () => {
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /from '@\/product\/agent-workbench'/u);

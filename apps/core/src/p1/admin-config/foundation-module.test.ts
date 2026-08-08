@@ -144,6 +144,7 @@ describe('Admin config application seam', () => {
         'compliance.watermark.default',
         'disable_memory_read',
         'disable_memory_write',
+        'disable_proactive_agent',
         DUE_DELIVERY_RETENTION_DAYS_CONFIG_KEY,
         BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
         BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
@@ -156,6 +157,7 @@ describe('Admin config application seam', () => {
         HARNESS_WOZ_RECIPE_CONFIG_KEY,
         'make.shadow_reconciliation.sample_rate',
         'make.shadow_reconciliation.window_days',
+        'marketing_goal_v1',
         ...createDefaultDeployments()
           .map(
             (deployment) =>
@@ -179,6 +181,8 @@ describe('Admin config application seam', () => {
         'platform.defaultModel.copy',
         'platform.defaultModel.image',
         'platform.defaultModel.video',
+        'proactive_evidence_coverage_threshold',
+        'proactive_opportunity_v1',
       ],
     );
     assert.ok(
@@ -1036,7 +1040,7 @@ describe('Admin config application seam', () => {
       });
     assert.deepEqual(
       workspaceVisible.map((item) => item.key),
-      [HARNESS_WOZ_RECIPE_CONFIG_KEY],
+      [HARNESS_WOZ_RECIPE_CONFIG_KEY, 'proactive_opportunity_v1'],
     );
   });
 

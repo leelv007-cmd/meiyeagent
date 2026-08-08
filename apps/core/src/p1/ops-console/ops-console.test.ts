@@ -622,13 +622,22 @@ test('kill switch panel lists seven switches; unlanded cannot enable; toggle lea
   };
   assert.equal(listed.items.length, OPS_KILL_SWITCH_IDS.length);
   assert.equal(listed.items.length, 7);
+  const byId = new Map(listed.items.map((item) => [item.switchId, item]));
+  // V31-24 lands disable_proactive_agent; others remain unlanded until provider tickets.
   for (const item of listed.items) {
-    assert.equal(item.landed, false);
-    assert.equal(item.canEnable, false);
-    assert.equal(item.unavailableReason, '提供方票未落地');
     assert.ok(item.impactScope.length > 0);
     assert.equal(item.enabled, false);
+    if (item.switchId === 'disable_proactive_agent') {
+      assert.equal(item.landed, true);
+      assert.equal(item.canEnable, true);
+      assert.equal(item.unavailableReason, null);
+    } else {
+      assert.equal(item.landed, false);
+      assert.equal(item.canEnable, false);
+      assert.equal(item.unavailableReason, '提供方票未落地');
+    }
   }
+  assert.ok(byId.has('disable_proactive_agent'));
 
   await assert.rejects(
     module.execute({

@@ -23,6 +23,7 @@ export const p1ModuleRequestSchema = z.object({
     'asset-memory',
     'context',
     'creation-experience',
+    'goal-proactive',
     'operations',
     'entitlements',
     'integrations',

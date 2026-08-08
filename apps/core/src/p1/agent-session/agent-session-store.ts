@@ -150,6 +150,14 @@ export type RecordThreadSummaryInput = {
   now: string;
 };
 
+/** V31-24: mount confirmed MarketingGoal ids on a Thread (no sessionRevision bump). */
+export type SetActiveGoalIdsInput = {
+  resourceId: string;
+  threadId: string;
+  activeGoalIds: readonly string[];
+  now: string;
+};
+
 export interface AgentSessionStore {
   createThread(input: CreateAgentThreadInput): Promise<AgentThread>;
   /** Lazy legacy thread: idempotent per (resourceId, legacyWorkId). */
@@ -180,6 +188,11 @@ export interface AgentSessionStore {
   }): Promise<AgentRunRecord[]>;
   /** Summary compaction bumps summaryRevision only — never arbitrates writes. */
   recordThreadSummary(input: RecordThreadSummaryInput): Promise<AgentThread>;
+  /**
+   * V31-24 Goal mount: updates activeGoalIds without touching sessionRevision
+   * (summary-like metadata; OCC stays on write turns).
+   */
+  setActiveGoalIds(input: SetActiveGoalIdsInput): Promise<AgentThread>;
 }
 
 export function newAgentThread(input: CreateAgentThreadInput): AgentThread {
@@ -313,6 +326,18 @@ export function threadWithSummary(
     ...thread,
     summary,
     summaryRevision: thread.summaryRevision + 1,
+    updatedAt: now,
+  });
+}
+
+export function threadWithActiveGoalIds(
+  thread: AgentThread,
+  activeGoalIds: readonly string[],
+  now: string,
+): AgentThread {
+  return agentThreadSchema.parse({
+    ...thread,
+    activeGoalIds: [...activeGoalIds].slice(0, 50),
     updatedAt: now,
   });
 }

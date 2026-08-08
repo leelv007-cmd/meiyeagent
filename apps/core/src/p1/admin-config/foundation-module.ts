@@ -38,6 +38,10 @@ import {
   SHADOW_RECONCILIATION_WINDOW_DAYS_KEY,
 } from '../harness/shadow-reconciliation.js';
 import {
+  PROACTIVE_FEATURE_FLAGS,
+  PROACTIVE_KILL_SWITCH_KEYS,
+} from '../goal-proactive/evidence-gate.js';
+import {
   BOUNDED_EXECUTION_LIVE_CALIBRATION_CONFIG_KEY,
   BOUNDED_EXECUTION_LIMITS_CONFIG_KEY,
   boundedExecutionLiveCalibrationConfigSchema,
@@ -663,6 +667,35 @@ const CONFIG_DEFINITIONS: readonly AdminConfigDefinition[] = [
     scope: 'global',
     description:
       'Kill switch disable_memory_read — force-disables memory reads independent of feature flags.',
+    valueSchema: z.boolean(),
+  },
+  // V31-24 / V3.1 §41 batch 6: MarketingGoal + Proactive flags / kill switch (spec-F).
+  {
+    key: PROACTIVE_FEATURE_FLAGS.marketingGoal,
+    scope: 'global',
+    description:
+      'Feature flag marketing_goal_v1 — when false, goal product surface is disabled. Default on when unset.',
+    valueSchema: z.boolean(),
+  },
+  {
+    key: PROACTIVE_FEATURE_FLAGS.proactiveOpportunity,
+    scope: 'workspace',
+    description:
+      'Feature flag proactive_opportunity_v1 — workspace allowlist for proactive suggestions when evidence coverage threshold is unset (U13 pilot).',
+    valueSchema: z.boolean(),
+  },
+  {
+    key: PROACTIVE_FEATURE_FLAGS.evidenceCoverageThreshold,
+    scope: 'global',
+    description:
+      'Proactive evidence coverage threshold (0–1). Unset ⇒ gate closed, coverage observational only (U2/U13).',
+    valueSchema: z.number().min(0).max(1),
+  },
+  {
+    key: PROACTIVE_KILL_SWITCH_KEYS.disableProactiveAgent,
+    scope: 'global',
+    description:
+      'Kill switch disable_proactive_agent — force-disables proactive opportunity proposals.',
     valueSchema: z.boolean(),
   },
   {

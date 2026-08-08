@@ -18,6 +18,7 @@ import {
   resolveExecutionRunReplay,
   runWithStatus,
   threadIdTaken,
+  threadWithActiveGoalIds,
   threadWithStartedTurn,
   threadWithSummary,
   type AgentSessionStore,
@@ -28,6 +29,7 @@ import {
   type LinkExecutionRunInput,
   type OpenLegacyWorkThreadInput,
   type RecordThreadSummaryInput,
+  type SetActiveGoalIdsInput,
   type StartWriteTurnInput,
   type UpdateAgentRunStatusInput,
 } from './agent-session-store.js';
@@ -174,6 +176,20 @@ export class MemoryAgentSessionStore implements AgentSessionStore {
     const summarized = threadWithSummary(thread, input.summary, input.now);
     this.threads.set(summarized.threadId, summarized);
     return structuredClone(summarized);
+  }
+
+  async setActiveGoalIds(input: SetActiveGoalIdsInput): Promise<AgentThread> {
+    const thread = assertThreadFound(
+      await this.getThread(input),
+      input.threadId,
+    );
+    const next = threadWithActiveGoalIds(
+      thread,
+      input.activeGoalIds,
+      input.now,
+    );
+    this.threads.set(next.threadId, next);
+    return structuredClone(next);
   }
 }
 

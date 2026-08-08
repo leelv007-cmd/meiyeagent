@@ -25,6 +25,10 @@ import {
   useAgentWorkbenchState,
 } from './agent-event-store';
 import { AgentWorkstream } from './agent-workstream';
+import {
+  IdleGoalProactivePanel,
+  type IdleGoalProactiveLoader,
+} from './idle-goal-proactive';
 import type { WorkstreamMobilePane } from './mobile-workstream-switch';
 import type { CommitStripAction, CommitStripView } from './plan';
 import { registerPlanSurfaces } from './plan/register-plan-surfaces';
@@ -55,6 +59,18 @@ export type AgentWorkbenchHostProps = {
   loadSession?: AgentWorkbenchSessionLoader;
   /** Optional semantic replay package loader (snapshot+events). */
   loadReplay?: AgentReplayLoader;
+  /**
+   * V31-24: Idle first-screen Goal + proactive suggestions loader.
+   * Only used when WorkbenchSessionProjection is Idle.
+   */
+  loadIdleGoalProactive?: IdleGoalProactiveLoader;
+  /** When false, skip Idle goal/proactive panel (tests). Default true. */
+  enableIdleGoalProactive?: boolean;
+  onAcceptProactiveSuggestion?: (input: {
+    candidateId: string;
+    threadId: string;
+    runId: string;
+  }) => void;
   viewport?: 'mobile' | 'desktop';
   worksSlot?: React.ReactNode;
   /** Work inline projection / legacy conversation stream. */
@@ -96,6 +112,9 @@ export function AgentWorkbenchHost({
   enableSessionRestore = true,
   loadSession = defaultLoadSession,
   loadReplay,
+  loadIdleGoalProactive,
+  enableIdleGoalProactive = true,
+  onAcceptProactiveSuggestion,
   viewport = 'desktop',
   worksSlot,
   processSlot,
@@ -202,6 +221,12 @@ export function AgentWorkbenchHost({
       data-thread-id={state.session?.threadId ?? ''}
       data-workbench-root={rootMode}
     >
+      {rootMode === 'idle' && enableIdleGoalProactive ? (
+        <IdleGoalProactivePanel
+          loadProjection={loadIdleGoalProactive}
+          onAccept={onAcceptProactiveSuggestion}
+        />
+      ) : null}
       <AgentWorkstream
         className={className}
         livingPlanCommitStrip={livingPlanCommitStrip}

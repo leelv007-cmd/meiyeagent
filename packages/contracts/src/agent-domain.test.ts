@@ -30,6 +30,11 @@ import {
   harnessReleaseRolloutSchema,
   makeSteeringCommandSchema,
   marketingGoalSchema,
+  marketingGoalProposalSchema,
+  marketingGoalProgressSchema,
+  opportunityCandidateSchema,
+  opportunityDecisionSchema,
+  proactiveSignalSchema,
   marketingPlanRevisionSchema,
   memoryInjectionReceiptSchema,
   outcomeEvidenceSchema,
@@ -184,6 +189,95 @@ test('marketing goal and plan revision contracts parse V3.1 shapes', () => {
     updatedAt: TS,
   });
   assert.equal(goal.objective, 'inquiry');
+
+  const createProposal = marketingGoalProposalSchema.parse({
+    schemaVersion: 'marketing-goal-proposal/v1',
+    proposalId: 'prop-1',
+    resourceId: 'resource-1',
+    kind: 'create',
+    create: {
+      objective: 'inquiry',
+      statement: '8 月头皮护理新客',
+      priority: 'high',
+      evidenceRefs: [{ kind: 'merchant_said', ref: 'msg-1' }],
+    },
+    createdAt: TS,
+  });
+  assert.equal(createProposal.kind, 'create');
+
+  assert.equal(
+    marketingGoalProposalSchema.safeParse({
+      schemaVersion: 'marketing-goal-proposal/v1',
+      proposalId: 'prop-bad',
+      resourceId: 'resource-1',
+      kind: 'status_transition',
+      goalId: 'goal-1',
+      createdAt: TS,
+    }).success,
+    false,
+  );
+
+  const progress = marketingGoalProgressSchema.parse({
+    goalId: 'goal-1',
+    resourceId: 'resource-1',
+    status: 'active',
+    priority: 'normal',
+    statement: '本月多接新客咨询',
+    deliveredWorkCount: 2,
+    evidenceCount: 1,
+    lastDeliveredAt: TS,
+  });
+  assert.equal(progress.deliveredWorkCount, 2);
+
+  const candidate = opportunityCandidateSchema.parse({
+    schemaVersion: 'opportunity-candidate/v1',
+    candidateId: 'cand-1',
+    resourceId: 'resource-1',
+    goalId: 'goal-1',
+    reason: '目标两周未推进，素材已积累 5 张',
+    evidenceRefs: [{ kind: 'goal_stalled', ref: 'goal-1' }],
+    signalKinds: ['goal_stalled', 'asset_accumulation'],
+    status: 'proposed',
+    createdAt: TS,
+  });
+  assert.equal(candidate.evidenceRefs.length, 1);
+  assert.equal(
+    opportunityCandidateSchema.safeParse({
+      ...candidate,
+      evidenceRefs: [],
+    }).success,
+    false,
+  );
+
+  const accepted = opportunityDecisionSchema.parse({
+    schemaVersion: 'opportunity-decision/v1',
+    decisionId: 'dec-1',
+    candidateId: 'cand-1',
+    resourceId: 'resource-1',
+    actorId: 'merchant-1',
+    decision: 'accepted',
+    decidedAt: TS,
+    threadId: 'thread-1',
+    runId: 'run-1',
+  });
+  assert.equal(accepted.decision, 'accepted');
+  assert.equal(
+    opportunityDecisionSchema.safeParse({
+      ...accepted,
+      threadId: undefined,
+    }).success,
+    false,
+  );
+
+  const signal = proactiveSignalSchema.parse({
+    kind: 'goal_stalled',
+    resourceId: 'resource-1',
+    observedAt: TS,
+    summary: '目标 14 天无交付',
+    evidenceRefs: [{ kind: 'goal_stalled', ref: 'goal-1' }],
+    goalId: 'goal-1',
+  });
+  assert.equal(signal.kind, 'goal_stalled');
 
   const plan = marketingPlanRevisionSchema.parse({
     schemaVersion: 'marketing-plan-revision/v1',

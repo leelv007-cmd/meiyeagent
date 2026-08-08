@@ -3,7 +3,7 @@
 **Parent**: spec-F（#6）`docs/specs/v3.1-agent-specs-2026-08-08/spec-F-434-goal-proactive.md`；权威 V3.1 §11、§25、§26.2、U2/U13
 **批次**: 6
 **Blocked by**: V31-17, V31-18, V31-19
-**Status**: ready-for-agent
+**Status**: done (merged, 2026-08-08)
 
 ## What to build
 
