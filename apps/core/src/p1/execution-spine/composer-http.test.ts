@@ -965,6 +965,27 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		}
 	}
 
+	async markHarnessStartDispatched(input: {
+		leaseId: string;
+		workspaceId: string;
+		submissionId: string;
+	}) {
+		const current = this.harnessStarts.get(input.submissionId);
+		if (current?.state !== "starting" || current.leaseId !== input.leaseId) {
+			throw new Error(`Stale harness lease ${input.leaseId}`);
+		}
+		const claim = [...this.claims.values()].find(
+			(candidate) =>
+				candidate.workspaceId === input.workspaceId &&
+				candidate.submission.snapshot.id === input.submissionId,
+		);
+		if (!claim) throw new Error("Submission dispatch target missing.");
+		if (claim.submission.confirmationDispatch) {
+			claim.submission.confirmationDispatch.state = "dispatched";
+		}
+		return structuredClone(claim.submission);
+	}
+
 	async releaseHarnessStart(input: {
 		leaseId: string;
 		workspaceId: string;
@@ -1096,6 +1117,7 @@ test("the compiled freeze is durable in the claim transaction before a paid Harn
 			async start(submission) {
 				started = true;
 				assert.ok(submission.executionPlanFreeze);
+				assert.equal(submission.confirmationDispatch?.state, "dispatched");
 				assert.equal(submission.confirmationDispatch?.requestId, undefined);
 				return {
 					executionConfirmationRequestId:

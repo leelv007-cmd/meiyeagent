@@ -1261,6 +1261,38 @@ test('execution receipt forwards trusted per-bucket product units to settlement'
   );
 });
 
+test('successor settlement uses the effective plan quote and confirmation operation', () => {
+  const request = {
+    workspaceId: 'workspace-successor-settlement',
+    executionSnapshot: {
+      quote: { id: 'quote-successor', revision: 'quote-r1' },
+    },
+    executionPlanSnapshot: {
+      planRevision: 1,
+      quoteRef: { id: 'quote-successor', revision: 'quote-r1' },
+    },
+    pendingExecutionPlanSnapshot: {
+      content: {
+        planRevision: 2,
+        quoteRef: { id: 'quote-successor', revision: 'quote-r2' },
+      },
+    },
+    executionConfirmationReservationIdempotencyKey:
+      'consume:confirmation:successor-r2',
+  } as HarnessWorkflowInput;
+
+  assert.deepEqual(
+    harnessBillingSettlementInput(request, 'task-successor-settlement'),
+    {
+      workspaceId: 'workspace-successor-settlement',
+      taskId: 'task-successor-settlement',
+      quoteId: 'quote-successor',
+      quoteRevision: 'quote-r2',
+      creditUsageOperationId: 'consume:confirmation:successor-r2',
+    },
+  );
+});
+
 // ─── V31-14 P1-a: typed Interrupt protocol mirror + resume bridge ───────────
 
 function interruptQuestion(overrides: Record<string, unknown> = {}) {

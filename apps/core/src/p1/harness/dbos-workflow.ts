@@ -731,45 +731,6 @@ export function registerHarnessDbosWorkflow(
       actionId: HARNESS_ACTION_CARRIERS.replay,
       caller: 'server',
     });
-    // V31-12: verification → context/rights fence. Snapshot path re-checks hash
-    // against the admitted row; legacy path is independent (no dual-write).
-    await DBOS.runStep(
-      async () => {
-        const branch = resolveDurableReplayBranch(request);
-        if (branch.branch === 'pending_confirmation') {
-          return {
-            branch: 'pending_confirmation' as const,
-            snapshotHash: branch.snapshotHash,
-          };
-        }
-        if (branch.branch === 'legacy') {
-          return { branch: 'legacy' as const };
-        }
-        const live = resolveExecutionPlanLiveFacts
-          ? await resolveExecutionPlanLiveFacts({ workflowId, request })
-          : undefined;
-        // Always recompute hash on the request-carried snapshot (fail closed).
-        verifyExecutionPlanSnapshotForDbos({
-          snapshot: branch.snapshot,
-          live,
-        });
-        // When the admission writer is wired, also re-verify the stored row.
-        if (executionPlanAdmission) {
-          await executionPlanAdmission.verifyAdmittedForDbos({
-            workflowId: executionPlanAdmissionWorkflowId(workflowId, {
-              executionPlanSnapshot: branch.snapshot,
-            }),
-            snapshotHash: branch.snapshot.snapshotHash,
-            live,
-          });
-        }
-        return {
-          branch: 'execution_plan_snapshot' as const,
-          snapshotHash: branch.snapshot.snapshotHash,
-        };
-      },
-      { name: 'execution-plan-snapshot-verification' },
-    );
     const runtime: HarnessWorkflowRuntime = {
       runStep(effectIdempotencyKey, operation) {
         return DBOS.runStep(operation, {
@@ -1236,6 +1197,44 @@ export function registerHarnessDbosWorkflow(
     try {
       let result;
       try {
+        // V31-12: verification → context/rights fence. Keep this inside the
+        // billing compensation boundary so an admitted stale snapshot cannot
+        // strand its reservation before workflow execution starts.
+        await DBOS.runStep(
+          async () => {
+            const branch = resolveDurableReplayBranch(request);
+            if (branch.branch === 'pending_confirmation') {
+              return {
+                branch: 'pending_confirmation' as const,
+                snapshotHash: branch.snapshotHash,
+              };
+            }
+            if (branch.branch === 'legacy') {
+              return { branch: 'legacy' as const };
+            }
+            const live = resolveExecutionPlanLiveFacts
+              ? await resolveExecutionPlanLiveFacts({ workflowId, request })
+              : undefined;
+            verifyExecutionPlanSnapshotForDbos({
+              snapshot: branch.snapshot,
+              live,
+            });
+            if (executionPlanAdmission) {
+              await executionPlanAdmission.verifyAdmittedForDbos({
+                workflowId: executionPlanAdmissionWorkflowId(workflowId, {
+                  executionPlanSnapshot: branch.snapshot,
+                }),
+                snapshotHash: branch.snapshot.snapshotHash,
+                live,
+              });
+            }
+            return {
+              branch: 'execution_plan_snapshot' as const,
+              snapshotHash: branch.snapshot.snapshotHash,
+            };
+          },
+          { name: 'execution-plan-snapshot-verification' },
+        );
         const forceLegacyFiveStage = resolveForceLegacyFiveStage
           ? await resolveForceLegacyFiveStage()
           : false;
@@ -1325,17 +1324,17 @@ export function registerHarnessDbosWorkflow(
         : undefined;
       // V31-13: sample shadow reconcile on successful Make complete (no daemon).
       // Failures inside the service are swallowed; this step must not fail the run.
-      if (shadowReconciliation && request.executionPlanSnapshot) {
+      if (shadowReconciliation && effectiveRequest.executionPlanSnapshot) {
         await DBOS.runStep(
           async () => {
-            const snapshot = request.executionPlanSnapshot!;
-            const decisionFactRefs = request.decisionReferences?.map(
+            const snapshot = effectiveRequest.executionPlanSnapshot!;
+            const decisionFactRefs = effectiveRequest.decisionReferences?.map(
               (ref) => ref.id,
             );
             const oldChain = projectLegacyFromMakeRequest({
               snapshot,
-              boundedExecution: request.boundedExecution,
-              observedDeliverables: request.executionSnapshot?.deliverables?.map(
+              boundedExecution: effectiveRequest.boundedExecution,
+              observedDeliverables: effectiveRequest.executionSnapshot?.deliverables?.map(
                 (item) => ({
                   kind: item.kind,
                   quantity: item.quantity,
@@ -1351,7 +1350,7 @@ export function registerHarnessDbosWorkflow(
             const now = new Date(await DBOS.now()).toISOString();
             return shadowReconciliation.maybeReconcileOnExecutionComplete({
               workflowId,
-              workspaceId: request.workspaceId,
+              workspaceId: effectiveRequest.workspaceId,
               snapshot,
               oldChain,
               now,
@@ -1369,13 +1368,13 @@ export function registerHarnessDbosWorkflow(
       // facts and the toolOrder/level0/readonly assertions are excluded —
       // sampled verdicts assert bounded + error-free execution structure.
       // Failures are swallowed; sampling must never fail the run.
-      if (productionSampling && request.executionPlanSnapshot) {
+      if (productionSampling && effectiveRequest.executionPlanSnapshot) {
         await DBOS.runStep(
           () =>
             sampleProductionL05({
               productionSampling,
               workflowId,
-              request,
+              request: effectiveRequest,
             }),
           { name: 'production-l0-5-sample' },
         );
@@ -1383,7 +1382,7 @@ export function registerHarnessDbosWorkflow(
       await settleHarnessTerminalSuccess({
         billing,
         completedAt,
-        request,
+        request: effectiveRequest,
         runStep: dbosBillingStep,
         settlement,
         taskRecallDue,
@@ -1704,12 +1703,19 @@ export function harnessBillingSettlementInput(
 ): HarnessBillingSettlementInput | null {
   const snapshot = request.executionSnapshot;
   if (!snapshot) return null;
+  const admittedPlan = request.executionPlanSnapshot;
+  const pendingPlan = request.pendingExecutionPlanSnapshot?.content;
+  const effectiveQuote =
+    pendingPlan &&
+    (!admittedPlan || pendingPlan.planRevision > admittedPlan.planRevision)
+      ? pendingPlan.quoteRef
+      : (admittedPlan?.quoteRef ?? snapshot.quote);
   const trustedUsage = billingTrustedUsage(result);
   return {
     workspaceId: request.workspaceId,
     taskId: workflowId,
-    quoteId: snapshot.quote.id,
-    quoteRevision: snapshot.quote.revision,
+    quoteId: effectiveQuote.id,
+    quoteRevision: String(effectiveQuote.revision),
     ...(request.executionConfirmationReservationIdempotencyKey
       ? {
           creditUsageOperationId:

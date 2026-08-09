@@ -13,6 +13,8 @@ import { agentExecutionConfirmationRequestSchema } from '@meiye/contracts';
 import { creditUsageOperationId } from '../credit-billing/credit-ledger.js';
 import { PostgresCreditLedger } from '../credit-billing/postgres-credit-ledger.js';
 import { HarnessProductBillingSettlementExecutor } from '../harness/product-billing-settlement.js';
+import { harnessBillingSettlementInput } from '../harness/dbos-workflow.js';
+import type { HarnessWorkflowInput } from '../harness/task-admission.js';
 import { PgBossJobPort } from '../job-runtime/pg-boss-job-port.js';
 import { DurableProductBillingService } from '../product-billing/durable-service.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
@@ -388,20 +390,37 @@ test(
         undefined,
         fixture.creditLedger,
       );
-      await settlement.refund({
-        workspaceId: fixture.workspaceId,
+      const refundInput = harnessBillingSettlementInput(
+        {
+          workspaceId: fixture.workspaceId,
+          executionSnapshot: {
+            quote: { id: quoteId, revision: quote.revision },
+          },
+          executionPlanSnapshot: {
+            planRevision: 1,
+            quoteRef: { id: quoteId, revision: quote.revision },
+          },
+          pendingExecutionPlanSnapshot: {
+            content: {
+              planRevision: 2,
+              quoteRef: { id: quoteId, revision: repricedRevision },
+            },
+          },
+          executionConfirmationReservationIdempotencyKey:
+            successorOperationId,
+        } as HarnessWorkflowInput,
         taskId,
-        quoteId,
-        quoteRevision: repricedRevision,
-        creditUsageOperationId: successorOperationId,
-      });
-      await settlement.refund({
-        workspaceId: fixture.workspaceId,
-        taskId,
-        quoteId,
-        quoteRevision: repricedRevision,
-        creditUsageOperationId: successorOperationId,
-      });
+      );
+      assert.ok(refundInput);
+      await assert.rejects(
+        settlement.refund({
+          ...refundInput,
+          quoteRevision: String(quote.revision),
+        }),
+        /no longer matches the accepted execution contract/u,
+      );
+      await settlement.refund(refundInput);
+      await settlement.refund(refundInput);
 
       assert.equal(
         (await repository.getUsage(fixture.workspaceId, taskId))?.status,
@@ -424,6 +443,66 @@ test(
             transaction.operationId === successorOperationId,
         ).length,
         1,
+      );
+
+      const committedTaskId = 'task-successor-commit';
+      const committedQuoteId = 'quote-successor-commit';
+      const committedOperationId =
+        'consume:confirmation:successor-commit';
+      const committedQuote = await billing.buildQuote({
+        billingMode: 'per_request',
+        catalogModelId: 'copy-model-successor',
+        catalogModelRevision: 'catalog-r1',
+        creditCost: 5,
+        failureRefundsCredits: true,
+        frozenCandidateDeploymentIds: ['copy-deployment-successor'],
+        quoteId: committedQuoteId,
+        quotePolicyRevision: 'quote-policy-r1',
+        routeSnapshotRef: 'route-successor',
+        unitRate: 5,
+        workspaceId: fixture.workspaceId,
+      });
+      await billing.confirm({
+        quoteId: committedQuoteId,
+        taskId: committedTaskId,
+        workspaceId: fixture.workspaceId,
+      });
+      await billing.reserve({
+        quoteId: committedQuoteId,
+        units: [],
+        workspaceId: fixture.workspaceId,
+      });
+      await fixture.creditLedger.consume({
+        workspaceId: fixture.workspaceId,
+        credits: 5,
+        transactionId: committedOperationId,
+        actorId: 'merchant-successor',
+        correlationId: `confirmation:${committedTaskId}`,
+        createdAt: '2026-08-09T10:06:00.000Z',
+      });
+      const commitInput = harnessBillingSettlementInput(
+        {
+          workspaceId: fixture.workspaceId,
+          executionSnapshot: {
+            quote: { id: committedQuoteId, revision: 'obsolete-quote-r1' },
+          },
+          executionPlanSnapshot: {
+            quoteRef: {
+              id: committedQuoteId,
+              revision: committedQuote.revision,
+            },
+          },
+          executionConfirmationReservationIdempotencyKey:
+            committedOperationId,
+        } as HarnessWorkflowInput,
+        committedTaskId,
+      );
+      assert.ok(commitInput);
+      await settlement.commit(commitInput);
+      assert.equal(
+        (await repository.getUsage(fixture.workspaceId, committedTaskId))
+          ?.status,
+        'committed',
       );
       const successorUsageTransactionIds = new Set(
         transactions

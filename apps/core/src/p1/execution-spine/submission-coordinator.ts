@@ -102,6 +102,16 @@ export interface CreationSubmissionStore {
 		| { kind: "failed" }
 		| { kind: "started" }
 	>;
+	/**
+	 * Durably records that the paid confirmation dispatch has crossed the
+	 * external-start boundary. The lease remains starting until the idempotent
+	 * Harness admission returns and completeHarnessStart stores its authority ID.
+	 */
+	markHarnessStartDispatched(input: {
+		leaseId: string;
+		workspaceId: string;
+		submissionId: string;
+	}): Promise<CreationSubmissionRecord>;
 	completeHarnessStart(input: {
 		leaseId: string;
 		workspaceId: string;
@@ -750,23 +760,29 @@ export class CreationSubmissionCoordinator {
 		}
 		if (harnessClaim.kind === "started") return false;
 		const leasedStart = { ...startLease, leaseId: harnessClaim.leaseId };
+		let startSubmission = submission;
 		let started = false;
 		try {
-			const startedResult = await this.harness.start(submission);
 			if (submission.confirmationDispatch) {
+				startSubmission = await this.store.markHarnessStartDispatched(
+					leasedStart,
+				);
+			}
+			const startedResult = await this.harness.start(startSubmission);
+			if (startSubmission.confirmationDispatch) {
 				const requestId = startedResult?.executionConfirmationRequestId;
 				if (!requestId) {
 					throw new Error(
 						"Paid Harness admission did not return its confirmation authority ID.",
 					);
 				}
-				submission.confirmationDispatch.requestId = requestId;
+				startSubmission.confirmationDispatch.requestId = requestId;
 			}
 			started = true;
 			await this.store.completeHarnessStart({
 				...leasedStart,
-				...(submission.confirmationDispatch
-					? { confirmationDispatch: submission.confirmationDispatch }
+				...(startSubmission.confirmationDispatch
+					? { confirmationDispatch: startSubmission.confirmationDispatch }
 					: {}),
 			});
 			return true;
@@ -775,7 +791,7 @@ export class CreationSubmissionCoordinator {
 				try {
 					const disposition =
 						(await this.harness.classifyStartFailure?.(
-							submission,
+							startSubmission,
 							error,
 						)) ?? "retry";
 					if (disposition === "terminal_rejection") {
