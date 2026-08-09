@@ -1357,6 +1357,132 @@ test(
 );
 
 test(
+  "Postgres start-dispatch and start-completion replays stay idempotent and reject a stale lease",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresCreationSubmissionStore(pool, {
+      async reserve() {},
+    });
+    const suffix = randomUUID();
+    const workspaceId = `spine-dispatch-replay-${suffix}`;
+    const submission = reserveRecord(
+      workspaceId,
+      `spine-dispatch-quote-${suffix}`,
+      suffix,
+    );
+    submission.usageReservation = {
+      id: submission.usageReservation.id,
+      credits: 4,
+      units: [],
+    };
+    submission.executionPlanFreeze = recoveryExecutionPlanFreeze(
+      submission,
+      "merchant_confirmed",
+    );
+    submission.confirmationDispatch = {
+      state: "pending",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    };
+
+    try {
+      await store.applySchema();
+      await store.claim({
+        idempotencyKey: `dispatch-replay-${suffix}`,
+        payloadHash: `payload-dispatch-replay-${suffix}`,
+        submission,
+        workspaceId,
+      });
+      const lease = await store.claimHarnessStart({
+        submissionId: submission.snapshot.id,
+        workspaceId,
+      });
+      assert.equal(lease.kind, "start");
+      if (lease.kind !== "start") throw new Error("Expected a start lease.");
+      const leasedStart = {
+        leaseId: lease.leaseId,
+        submissionId: submission.snapshot.id,
+        workspaceId,
+      };
+
+      // A retried dispatch marker must not become a second arming event.
+      const firstDispatch = await store.markHarnessStartDispatched(leasedStart);
+      const replayedDispatch =
+        await store.markHarnessStartDispatched(leasedStart);
+      assert.deepEqual(firstDispatch.confirmationDispatch, {
+        state: "dispatched",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      });
+      assert.deepEqual(
+        replayedDispatch.confirmationDispatch,
+        firstDispatch.confirmationDispatch,
+      );
+
+      // Negative exit: nobody outside the current lease may arm or close it.
+      const foreignLease = {
+        leaseId: randomUUID(),
+        submissionId: submission.snapshot.id,
+        workspaceId,
+      };
+      await assert.rejects(
+        () => store.markHarnessStartDispatched(foreignLease),
+        /no longer current/,
+      );
+      await assert.rejects(
+        () => store.completeHarnessStart(foreignLease),
+        /no longer current/,
+      );
+
+      const dispatch = {
+        requestId: `confirmation:${submission.task.id}`,
+        state: "dispatched" as const,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      };
+      await store.completeHarnessStart({
+        ...leasedStart,
+        confirmationDispatch: dispatch,
+      });
+      // Replay after the authority ID landed is a no-op, not a second start.
+      await store.completeHarnessStart({
+        ...leasedStart,
+        confirmationDispatch: dispatch,
+      });
+      assert.deepEqual(
+        await store.claimHarnessStart({
+          submissionId: submission.snapshot.id,
+          workspaceId,
+        }),
+        { kind: "started" },
+      );
+      const receipt = await store.readReceipt({
+        workspaceId,
+        idempotencyKey: `dispatch-replay-${suffix}`,
+        payloadHash: `payload-dispatch-replay-${suffix}`,
+      });
+      assert.equal(receipt.kind, "existing");
+      if (receipt.kind === "existing") {
+        assert.deepEqual(receipt.submission.confirmationDispatch, dispatch);
+      }
+      // A started submission is out of recovery scope entirely.
+      assert.equal(
+        (await store.listRecoverableHarnessStarts({ limit: 100 })).some(
+          (candidate) =>
+            candidate.submission.snapshot.id === submission.snapshot.id,
+        ),
+        false,
+      );
+    } finally {
+      await pool.query(
+        `DELETE FROM execution_spine.creation_submissions
+         WHERE workspace_id=$1`,
+        [workspaceId],
+      ).catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
   "Postgres Coordinator fences a permanently failed Harness start out of recovery",
   { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
   async () => {
