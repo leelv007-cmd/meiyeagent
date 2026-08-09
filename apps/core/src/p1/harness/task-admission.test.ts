@@ -1053,6 +1053,225 @@ test('V31-12 task-admission one-shot writes ExecutionPlanSnapshot and replays wi
   );
 });
 
+/**
+ * V31-11/12/14 paid main chain. The cycle this pins closed: a paid submission
+ * arrives with no ExecutionPlanSnapshot, so admission may only assemble the
+ * *pending* freeze and open a reserve-backed request. The immutable decision —
+ * and therefore the admitted snapshot — cannot exist yet.
+ */
+function paidMediaSubmission(
+  snapshot: ReturnType<typeof mediaComposerSnapshot>,
+  credits: number,
+) {
+  return {
+    ...snapshotTaskRequest(snapshot),
+    usageReservation: {
+      id: `usage-${snapshot.task.id}`,
+      credits,
+      units: [],
+    },
+    executionPlanFreeze: {
+      ...planFrozenContent(),
+      planId: 'plan-paid-media-1',
+      approvalBasis: 'merchant_confirmed',
+      quoteRef: snapshot.quote,
+    },
+    executionConfirmationContext: {
+      campaignPlanRef: { id: 'campaign-plan-1', revision: 3 },
+      workOrdinal: 2,
+      approvalScope: 'single_work' as const,
+    },
+  } as unknown as Parameters<HarnessTaskAdmissionService['submit']>[0];
+}
+
+function paidMediaService(
+  snapshot: ReturnType<typeof mediaComposerSnapshot>,
+  order: string[],
+  options: { createRequest?: () => Promise<never> } = {},
+) {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const originalStart = starter.start.bind(starter);
+  starter.start = async (input) => {
+    order.push('start');
+    return originalStart(input);
+  };
+  const snapshotStore = new MemoryExecutionPlanSnapshotStore();
+  const authorities: unknown[] = [];
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    new MutablePromptResolver(),
+    undefined,
+    undefined,
+    {
+      async resolve() {
+        return structuredClone(mediaRoute(snapshot));
+      },
+    },
+    undefined,
+    undefined,
+    new ExecutionPlanAdmissionService(snapshotStore),
+    {
+      async createRequest(input) {
+        order.push('create-confirmation-request');
+        if (options.createRequest) return options.createRequest();
+        return {
+          stored: {
+            request: {
+              requestId: 'confirmation:task-media-1',
+              reservationIdempotencyKey: 'consume:confirmation:task-media-1',
+            },
+            projection: {},
+          },
+          card: {},
+          reservedCredits: 7,
+          ...(input ? {} : {}),
+        } as never;
+      },
+      async putCurrent(input) {
+        order.push('put-pending-authority');
+        authorities.push(structuredClone(input));
+        return undefined as never;
+      },
+    },
+  );
+  return { service, starter, snapshotStore, authorities, registry };
+}
+
+test('a paid submission without a snapshot reserves a pending confirmation before Make starts', async () => {
+  const snapshot = mediaComposerSnapshot();
+  const order: string[] = [];
+  const { service, starter, snapshotStore, authorities } = paidMediaService(
+    snapshot,
+    order,
+  );
+
+  const result = await service.submit(paidMediaSubmission(snapshot, 7));
+
+  // The reserve-backed request is opened before the workflow can spend.
+  assert.deepEqual(order, [
+    'put-pending-authority',
+    'create-confirmation-request',
+    'start',
+  ]);
+  assert.equal(
+    result.executionConfirmationRequestId,
+    'confirmation:task-media-1',
+  );
+  const started = starter.requests[0]!;
+  assert.equal(started.executionPlanSnapshot, undefined);
+  assert.equal(
+    started.pendingExecutionPlanSnapshot?.content.planId,
+    'plan-paid-media-1',
+  );
+  assert.equal(
+    started.executionConfirmationRequestId,
+    'confirmation:task-media-1',
+  );
+  assert.equal(
+    started.executionConfirmationReservationIdempotencyKey,
+    'consume:confirmation:task-media-1',
+  );
+  assert.equal(started.executionConfirmationReservedCredits, 7);
+  // U7: the Campaign triple reaches the confirmation authority intact.
+  assert.deepEqual(
+    (authorities[0] as { executionConfirmationContext?: unknown })
+      .executionConfirmationContext,
+    {
+      campaignPlanRef: { id: 'campaign-plan-1', revision: 3 },
+      workOrdinal: 2,
+      approvalScope: 'single_work',
+    },
+  );
+  // No admitted snapshot may exist without an immutable decision.
+  assert.equal(
+    await snapshotStore.getByWorkflowId(
+      `${snapshot.task.id}:plan:1:${started.pendingExecutionPlanSnapshot!.snapshotHash}`,
+    ),
+    null,
+  );
+});
+
+test('a paid submission with no server-owned credit quote never starts Make', async () => {
+  const snapshot = mediaComposerSnapshot();
+  const order: string[] = [];
+  const { service, starter } = paidMediaService(snapshot, order);
+
+  await assert.rejects(
+    () => service.submit(paidMediaSubmission(snapshot, 0)),
+    (error: unknown) =>
+      error instanceof HarnessAdmissionError &&
+      error.code === 'FROZEN_REQUEST_MISSING',
+  );
+  assert.equal(starter.requests.length, 0);
+  assert.equal(order.includes('start'), false);
+});
+
+test('a paid submission whose reserve fails leaves no started workflow', async () => {
+  const snapshot = mediaComposerSnapshot();
+  const order: string[] = [];
+  const { service, starter } = paidMediaService(snapshot, order, {
+    async createRequest() {
+      throw new Error('INSUFFICIENT_CREDITS');
+    },
+  });
+
+  await assert.rejects(
+    () => service.submit(paidMediaSubmission(snapshot, 7)),
+    /INSUFFICIENT_CREDITS/,
+  );
+  assert.equal(starter.requests.length, 0);
+  assert.equal(order.includes('start'), false);
+});
+
+/**
+ * The one remaining legacy fall-through, pinned so it stays deliberate: a task
+ * that was admitted before the compile freeze existed carries neither snapshot
+ * nor freeze on replay. It must stay on the legacy replay branch and must not
+ * open a confirmation request — there is no frozen plan to confirm. Every other
+ * paid precondition fails closed instead (see the two tests above).
+ */
+test('a durable task with no freeze replays on legacy and opens no confirmation', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const snapshotStore = new MemoryExecutionPlanSnapshotStore();
+  const confirmations: string[] = [];
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    new ExecutionPlanAdmissionService(snapshotStore),
+    {
+      async createRequest() {
+        confirmations.push('create');
+        throw new Error('Legacy replay must not create a confirmation.');
+      },
+      async putCurrent() {
+        confirmations.push('putCurrent');
+        throw new Error('Legacy replay must not pin a pending authority.');
+      },
+    },
+  );
+
+  const first = await service.submit(taskRequest({ taskId: 'task-legacy-1' }));
+  const replay = await service.submit(taskRequest({ taskId: 'task-legacy-1' }));
+
+  assert.equal(first.replayed, false);
+  assert.equal(replay.replayed, true);
+  assert.deepEqual(confirmations, []);
+  for (const request of starter.requests) {
+    assert.equal(request.executionPlanSnapshot, undefined);
+    assert.equal(request.pendingExecutionPlanSnapshot, undefined);
+    assert.equal(request.executionConfirmationRequestId, undefined);
+  }
+});
+
 test('V31-12 submit with ExecutionPlanSnapshot without admission writer fails closed', async () => {
   const service = new HarnessTaskAdmissionService(
     new MemoryRequestRegistry(),

@@ -47,7 +47,7 @@ export type ContextFenceAction =
     }
   | {
       action: 'safe_stop';
-      reason: 'rights_revoked';
+      reason: 'rights_revoked' | 'quote_missing';
       message: string;
       /** Billing: do not re-charge / re-reserve on this stop. */
       noAdditionalCharge: true;
@@ -118,6 +118,15 @@ export type MidExecutionFenceInput = {
 export function evaluateMidExecutionContextFence(
   input: MidExecutionFenceInput,
 ): ContextFenceAction {
+  if (input.live.quoteMissing === true) {
+    return {
+      action: 'safe_stop',
+      reason: 'quote_missing',
+      message: '执行报价已失效，已安全停止并退回本次预留积分。',
+      noAdditionalCharge: true,
+      refundIfReserved: true,
+    };
+  }
   if (input.live.rightsRevoked === true) {
     return {
       action: 'safe_stop',
@@ -204,6 +213,15 @@ export function evaluatePostConfirmPreExecuteFence(input: {
   snapshot: ExecutionPlanSnapshot;
   live: SnapshotLiveFacts;
 }): ContextFenceAction {
+  if (input.live.quoteMissing === true) {
+    return {
+      action: 'safe_stop',
+      reason: 'quote_missing',
+      message: '执行报价已失效，无法按确认方案继续执行。',
+      noAdditionalCharge: true,
+      refundIfReserved: true,
+    };
+  }
   if (input.live.rightsRevoked === true) {
     return {
       action: 'safe_stop',

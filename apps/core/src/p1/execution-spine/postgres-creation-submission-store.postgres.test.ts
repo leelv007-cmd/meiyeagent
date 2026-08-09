@@ -1038,6 +1038,13 @@ test(
       boundaryQuoteId,
       boundarySuffix,
     );
+    const dispatchedSuffix = randomUUID();
+    const dispatchedQuoteId = `spine-outbox-quote-${dispatchedSuffix}`;
+    const dispatchedSubmission = reserveRecord(
+      workspaceId,
+      dispatchedQuoteId,
+      dispatchedSuffix,
+    );
     try {
       await operations.migrate();
       await billingRepository.migrate();
@@ -1203,13 +1210,262 @@ test(
         )?.status,
         "refunded",
       );
+
+      const dispatchedQuote = await seedQuote(
+        billingRepository,
+        workspaceId,
+        dispatchedQuoteId,
+        dispatchedSubmission.task.id,
+        { creditCost: 4 },
+      );
+      dispatchedSubmission.snapshot = createSnapshot({
+        contentPackagePlatform: "wechat_moments",
+        distributionTarget: "manual_copy",
+        platformId: "wechat_moments",
+        quoteId: dispatchedQuoteId,
+        quoteRevision: dispatchedQuote.revision,
+        submission: dispatchedSubmission,
+        workspaceId,
+      });
+      dispatchedSubmission.usageReservation = {
+        id: dispatchedSubmission.usageReservation.id,
+        credits: 4,
+        units: [],
+      };
+      dispatchedSubmission.executionPlanFreeze = recoveryExecutionPlanFreeze(
+        dispatchedSubmission,
+        "merchant_confirmed",
+      );
+      dispatchedSubmission.confirmationDispatch = {
+        state: "pending",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      };
+      await store.claim({
+        idempotencyKey: `outbox-dispatched-${dispatchedSuffix}`,
+        payloadHash: `payload-dispatched-${dispatchedSuffix}`,
+        submission: dispatchedSubmission,
+        workspaceId,
+      });
+      const dispatchedLease = await store.claimHarnessStart({
+        submissionId: dispatchedSubmission.snapshot.id,
+        workspaceId,
+      });
+      assert.equal(dispatchedLease.kind, "start");
+      if (dispatchedLease.kind !== "start") {
+        throw new Error("Expected a dispatched Harness lease.");
+      }
+      const durableDispatch = await store.markHarnessStartDispatched({
+        leaseId: dispatchedLease.leaseId,
+        submissionId: dispatchedSubmission.snapshot.id,
+        workspaceId,
+      });
+      assert.deepEqual(durableDispatch.confirmationDispatch, {
+        state: "dispatched",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      });
+      await pool.query(
+        `UPDATE execution_spine.creation_submissions
+            SET harness_lease_expires_at = clock_timestamp() - interval '1 second',
+                submission = jsonb_set(
+                  submission,
+                  '{confirmationDispatch,expiresAt}',
+                  to_jsonb('2026-07-01T00:00:01.000Z'::text),
+                  true
+                )
+          WHERE workspace_id = $1 AND id = $2`,
+        [workspaceId, dispatchedSubmission.snapshot.id],
+      );
+      assert.equal(
+        await store.expireUndispatchedConfirmationHolds({ limit: 10 }),
+        0,
+      );
+      assert.equal(
+        (await billingRepository.getUsage(workspaceId, dispatchedSubmission.task.id))
+          ?.status,
+        "reserved",
+      );
+      const recoveredTaskIds: string[] = [];
+      const recovery = new CreationSubmissionCoordinator(
+        store,
+        {
+          async start(record) {
+            recoveredTaskIds.push(record.task.id);
+            assert.equal(record.confirmationDispatch?.state, "dispatched");
+            return {
+              executionConfirmationRequestId:
+                "confirmation:authority-digest-after-crash",
+            };
+          },
+        },
+        {
+          createId() {
+            return "unused-crash-recovery-id";
+          },
+          now() {
+            return "2026-08-09T00:00:00.000Z";
+          },
+        },
+        {
+          async admit() {
+            throw new Error("Recovery must not create a new admission.");
+          },
+        },
+      );
+      assert.deepEqual(await recovery.recoverPendingStarts(), {
+        attempted: 1,
+        failed: 0,
+        started: 1,
+      });
+      assert.deepEqual(recoveredTaskIds, [dispatchedSubmission.task.id]);
+      const recoveredReceipt = await store.readReceipt({
+        workspaceId,
+        idempotencyKey: `outbox-dispatched-${dispatchedSuffix}`,
+        payloadHash: `payload-dispatched-${dispatchedSuffix}`,
+      });
+      assert.equal(recoveredReceipt.kind, "existing");
+      if (recoveredReceipt.kind === "existing") {
+        assert.deepEqual(recoveredReceipt.submission.confirmationDispatch, {
+          requestId: "confirmation:authority-digest-after-crash",
+          state: "dispatched",
+          expiresAt: "2026-07-01T00:00:01.000Z",
+        });
+      }
     } finally {
       await cleanup(pool, workspaceId, submission).catch(() => undefined);
       await cleanup(pool, workspaceId, boundarySubmission).catch(
         () => undefined,
       );
+      await cleanup(pool, workspaceId, dispatchedSubmission).catch(
+        () => undefined,
+      );
       await pool.query("DELETE FROM workspaces WHERE id = $1", [workspaceId])
         .catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "Postgres start-dispatch and start-completion replays stay idempotent and reject a stale lease",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresCreationSubmissionStore(pool, {
+      async reserve() {},
+    });
+    const suffix = randomUUID();
+    const workspaceId = `spine-dispatch-replay-${suffix}`;
+    const submission = reserveRecord(
+      workspaceId,
+      `spine-dispatch-quote-${suffix}`,
+      suffix,
+    );
+    submission.usageReservation = {
+      id: submission.usageReservation.id,
+      credits: 4,
+      units: [],
+    };
+    submission.executionPlanFreeze = recoveryExecutionPlanFreeze(
+      submission,
+      "merchant_confirmed",
+    );
+    submission.confirmationDispatch = {
+      state: "pending",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    };
+
+    try {
+      await store.applySchema();
+      await store.claim({
+        idempotencyKey: `dispatch-replay-${suffix}`,
+        payloadHash: `payload-dispatch-replay-${suffix}`,
+        submission,
+        workspaceId,
+      });
+      const lease = await store.claimHarnessStart({
+        submissionId: submission.snapshot.id,
+        workspaceId,
+      });
+      assert.equal(lease.kind, "start");
+      if (lease.kind !== "start") throw new Error("Expected a start lease.");
+      const leasedStart = {
+        leaseId: lease.leaseId,
+        submissionId: submission.snapshot.id,
+        workspaceId,
+      };
+
+      // A retried dispatch marker must not become a second arming event.
+      const firstDispatch = await store.markHarnessStartDispatched(leasedStart);
+      const replayedDispatch =
+        await store.markHarnessStartDispatched(leasedStart);
+      assert.deepEqual(firstDispatch.confirmationDispatch, {
+        state: "dispatched",
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      });
+      assert.deepEqual(
+        replayedDispatch.confirmationDispatch,
+        firstDispatch.confirmationDispatch,
+      );
+
+      // Negative exit: nobody outside the current lease may arm or close it.
+      const foreignLease = {
+        leaseId: randomUUID(),
+        submissionId: submission.snapshot.id,
+        workspaceId,
+      };
+      await assert.rejects(
+        () => store.markHarnessStartDispatched(foreignLease),
+        /no longer current/,
+      );
+      await assert.rejects(
+        () => store.completeHarnessStart(foreignLease),
+        /no longer current/,
+      );
+
+      const dispatch = {
+        requestId: `confirmation:${submission.task.id}`,
+        state: "dispatched" as const,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      };
+      await store.completeHarnessStart({
+        ...leasedStart,
+        confirmationDispatch: dispatch,
+      });
+      // Replay after the authority ID landed is a no-op, not a second start.
+      await store.completeHarnessStart({
+        ...leasedStart,
+        confirmationDispatch: dispatch,
+      });
+      assert.deepEqual(
+        await store.claimHarnessStart({
+          submissionId: submission.snapshot.id,
+          workspaceId,
+        }),
+        { kind: "started" },
+      );
+      const receipt = await store.readReceipt({
+        workspaceId,
+        idempotencyKey: `dispatch-replay-${suffix}`,
+        payloadHash: `payload-dispatch-replay-${suffix}`,
+      });
+      assert.equal(receipt.kind, "existing");
+      if (receipt.kind === "existing") {
+        assert.deepEqual(receipt.submission.confirmationDispatch, dispatch);
+      }
+      // A started submission is out of recovery scope entirely.
+      assert.equal(
+        (await store.listRecoverableHarnessStarts({ limit: 100 })).some(
+          (candidate) =>
+            candidate.submission.snapshot.id === submission.snapshot.id,
+        ),
+        false,
+      );
+    } finally {
+      await pool.query(
+        `DELETE FROM execution_spine.creation_submissions
+         WHERE workspace_id=$1`,
+        [workspaceId],
+      ).catch(() => undefined);
       await pool.end();
     }
   },

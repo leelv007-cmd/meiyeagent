@@ -1219,6 +1219,74 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     }
   }
 
+  async markHarnessStartDispatched(input: {
+    leaseId: string;
+    workspaceId: string;
+    submissionId: string;
+  }) {
+    const client = await this.pool.connect();
+    let inTransaction = false;
+    try {
+      await client.query("BEGIN");
+      inTransaction = true;
+      const row = await this.lockSubmission(client, input);
+      if (
+        row.harness_state !== "starting" ||
+        row.harness_lease_id !== input.leaseId
+      ) {
+        throw new Error(
+          `Harness start lease ${input.leaseId} is no longer current.`,
+        );
+      }
+      const submission = storedSubmission(row.submission);
+      if (!submission.confirmationDispatch) {
+        await client.query("COMMIT");
+        inTransaction = false;
+        return submission;
+      }
+      if (submission.confirmationDispatch.state === "expired") {
+        throw new Error(
+          `Confirmation dispatch for ${input.submissionId} already expired.`,
+        );
+      }
+      const updated = await client.query<{ submission: unknown }>(
+        `UPDATE execution_spine.creation_submissions
+            SET submission = jsonb_set(
+                  submission,
+                  '{confirmationDispatch,state}',
+                  '"dispatched"'::jsonb,
+                  true
+                ),
+                updated_at = $4::timestamptz
+          WHERE workspace_id = $1
+            AND id = $2
+            AND harness_state = 'starting'
+            AND harness_lease_id = $3
+        RETURNING submission`,
+        [
+          input.workspaceId,
+          input.submissionId,
+          input.leaseId,
+          (await databaseNow(client)).toISOString(),
+        ],
+      );
+      const persisted = updated.rows[0];
+      if (!persisted) {
+        throw new Error(
+          `Harness start lease ${input.leaseId} is no longer current.`,
+        );
+      }
+      await client.query("COMMIT");
+      inTransaction = false;
+      return storedSubmission(persisted.submission);
+    } catch (error) {
+      if (inTransaction) await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async releaseHarnessStart(input: {
     leaseId: string;
     workspaceId: string;

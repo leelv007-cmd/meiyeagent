@@ -1003,6 +1003,27 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		};
 	}
 
+	async markHarnessStartDispatched(input: {
+		leaseId: string;
+		workspaceId: string;
+		submissionId: string;
+	}) {
+		const current = this.harnessStarts.get(input.submissionId);
+		if (current?.state !== "starting" || current.leaseId !== input.leaseId) {
+			throw new Error(`Stale harness lease ${input.leaseId}`);
+		}
+		const claim = [...this.claims.values()].find(
+			(candidate) =>
+				candidate.workspaceId === input.workspaceId &&
+				candidate.submission.snapshot.id === input.submissionId,
+		);
+		if (!claim) throw new Error("Submission dispatch target missing.");
+		if (claim.submission.confirmationDispatch) {
+			claim.submission.confirmationDispatch.state = "dispatched";
+		}
+		return structuredClone(claim.submission);
+	}
+
 	async releaseHarnessStart(input: {
 		leaseId: string;
 		workspaceId: string;
@@ -1542,6 +1563,147 @@ test("a failed Harness start releases the same submission for an idempotent retr
 	assert.equal(replayed.replayed, true);
 	assert.equal(starts, 2);
 	assert.equal(submissions.count(), 1);
+});
+
+test("the compiled freeze is durable in the claim transaction before a paid Harness start", async () => {
+	const submissions = new MemorySubmissionStore();
+	let started = false;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		{
+			async start(submission) {
+				started = true;
+				assert.ok(submission.executionPlanFreeze);
+				assert.equal(submission.confirmationDispatch?.state, "dispatched");
+				assert.equal(submission.confirmationDispatch?.requestId, undefined);
+				return {
+					executionConfirmationRequestId:
+						"confirmation:authority-digest-freeze",
+				};
+			},
+		},
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare({ submission }) {
+				submission.executionPlanFreeze = recoveryExecutionPlanFreeze(submission);
+				return { threadId: "thread-freeze", runId: "run-freeze" };
+			},
+		},
+	);
+	const command: Parameters<CreationSubmissionCoordinator["submit"]>[0] = {
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	};
+
+	await coordinator.submit(command);
+
+	assert.equal(started, true);
+	assert.ok(
+		submissions.claimedSubmission("workspace-1", command.idempotencyKey)
+			?.executionPlanFreeze,
+		"claim must already carry the freeze; no post-claim patch window",
+	);
+	assert.equal(
+		submissions.freezePresentAtClaim.get(
+			`workspace-1:${command.idempotencyKey}`,
+		),
+		true,
+	);
+	assert.deepEqual(
+		submissions.claimedSubmission("workspace-1", command.idempotencyKey)
+			?.confirmationDispatch,
+		{
+			requestId: "confirmation:authority-digest-freeze",
+			state: "dispatched",
+			expiresAt: "2026-07-24T09:00:00.000Z",
+		},
+	);
+	assert.equal(
+		submissions.confirmationStateAtClaim.get(
+			`workspace-1:${command.idempotencyKey}`,
+		),
+		"pending",
+	);
+});
+
+test("the Campaign producer submits the second paid Work with its own U7 context", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	let id = 0;
+	const baseAdmission = fixedAdmission();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		{
+			createId(prefix) {
+				id += 1;
+				return `${prefix}-${id}`;
+			},
+			now: fixedIds().now,
+		},
+		{
+			async admit(input) {
+				const admitted = await baseAdmission.admit(input);
+				return {
+					...admitted,
+					taskId: `campaign-task-${input.idempotencyKey}`,
+					creditCost: 4,
+				};
+			},
+		},
+		undefined,
+		{
+			async prepare({ submission }) {
+				submission.executionPlanFreeze = recoveryExecutionPlanFreeze(submission);
+				return {
+					threadId: `thread-${submission.task.id}`,
+					runId: `run-${submission.task.id}`,
+				};
+			},
+		},
+	);
+	const producer = new CampaignPaidWorkProducer(coordinator);
+	const slots = projectCampaignWeeklySlots({
+		campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
+		horizonFrom: "2026-08-10T00:00:00.000Z",
+		horizonUntil: "2026-08-24T00:00:00.000Z",
+	});
+
+	await producer.produce({
+		slots,
+		buildSubmission(slot) {
+			return {
+				...submissionPayload(),
+				actorId: "owner-1",
+				workspaceId: "workspace-1",
+				idempotencyKey: `campaign-work-${slot.workOrdinal}`,
+			};
+		},
+	});
+
+	assert.deepEqual(
+		starter.starts.map((submission) => ({
+			requestId: submission.confirmationDispatch?.requestId,
+			...submission.executionConfirmationContext,
+		})),
+		[
+			{
+				requestId: undefined,
+				campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
+				workOrdinal: 1,
+				approvalScope: "single_work",
+			},
+			{
+				requestId: undefined,
+				campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
+				workOrdinal: 2,
+				approvalScope: "single_work",
+			},
+		],
+	);
 });
 
 test("a definitive pre-admission Harness rejection becomes terminal", async () => {
