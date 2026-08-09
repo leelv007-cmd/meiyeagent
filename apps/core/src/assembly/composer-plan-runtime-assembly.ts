@@ -25,6 +25,8 @@ export function assembleProductionComposerPlanSession(input: {
     store: AgentSemanticEventStore;
     projector: Pick<AgentSemanticEventProjector, 'project'>;
   };
+  /** True only under the fixture kernel, which cannot propose a plan. */
+  compileFromSubmissionWithoutProposal: boolean;
 }) {
   if (!input.sessionHarness) {
     throw new Error(
@@ -38,6 +40,8 @@ export function assembleProductionComposerPlanSession(input: {
     {
       requireSessionTurn: true,
       requireQuoteAuthority: true,
+      compileFromSubmissionWithoutProposal:
+        input.compileFromSubmissionWithoutProposal,
       clarificationInterrupts: new ComposerSemanticClarificationInterrupts(
         input.semanticEvents.store,
         input.semanticEvents.projector,

@@ -1666,6 +1666,11 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         store: agentSemanticEventStore,
         projector: semanticProjectorForHarness,
       },
+      // The fixture kernel returns one canned decision for every turn and its
+      // request carries no submission, so it can neither propose this
+      // merchant's plan nor ask about it. Falling back to the submission is the
+      // only honest exit; with a live model the same silence stays a failure.
+      compileFromSubmissionWithoutProposal: modelRuntime.mode === 'fixture',
     });
     composerSubmissionCoordinator = new CreationSubmissionCoordinator(
       creationSubmissionStore,

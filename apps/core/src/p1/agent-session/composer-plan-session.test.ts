@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { Pool } from 'pg';
 
@@ -219,8 +220,20 @@ test('production Composer assembly fails closed when Session runTurn is missing'
           store: semanticStore,
           projector: new AgentSemanticEventProjector(semanticStore),
         },
+        compileFromSubmissionWithoutProposal: false,
       }),
     /requires Session runTurn/u,
+  );
+});
+
+test('the submission fallback reaches production bound to fixture mode only', async () => {
+  const source = await readFile(
+    new URL('../../assembly/api-runtime.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    source,
+    /compileFromSubmissionWithoutProposal:\s*modelRuntime\.mode === 'fixture'/u,
   );
 });
 
@@ -472,6 +485,54 @@ test('a turn that neither proposes nor asks fails the run instead of parking it'
   assert.deepEqual(
     runs.map((run) => run.status),
     ['failed'],
+  );
+});
+
+test('a fixture kernel that offers no plan compiles the submission it was given', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const coordinator = new ComposerPlanSessionCoordinator(
+    sessions,
+    plans,
+    {
+      async runComposerTurn() {
+        return {
+          decision: {
+            merchantMessage: 'fixture-session-turn',
+            action: { kind: 'finish_turn' },
+            evidenceRefs: [],
+            assumptions: [],
+          },
+        } as never;
+      },
+      compilePlan: (input) => compiler.compile(input),
+      adjustPlan: (input) => compiler.adjust(input),
+    },
+    // The fixture kernel is a single assembly-level instance and its turn
+    // request carries no submission, so it cannot propose this merchant's plan.
+    // Rather than let it invent one, the submission itself becomes the
+    // proposal — the same fallback the live path uses. Live mode keeps failing
+    // loudly, because there a silent fallback would mean a paid model call with
+    // no effect on the plan.
+    { compileFromSubmissionWithoutProposal: true },
+  );
+
+  const submission = record('task-fixture-fallback', '做一组图文');
+  const binding = await coordinator.prepare({ submission });
+
+  assert.equal(binding.makeReady, false);
+  const freeze = submission.executionPlanFreeze;
+  assert.ok(freeze, 'the fixture turn must still leave a plan to look at');
+  const compiled = await plans.getLatest(freeze.planId);
+  assert.ok(compiled);
+  assert.deepEqual(
+    compiled.revision.deliverables.map((item) => item.quantity),
+    [6],
+    'the plan must carry the submission its merchant actually signed',
   );
 });
 

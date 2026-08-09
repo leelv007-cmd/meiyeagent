@@ -77,6 +77,14 @@ export type ComposerPlanSessionOptions = {
   resolveHarnessReleaseId?: (
     submission: CreationSubmissionRecord
   ) => string | Promise<string>;
+  /**
+   * Compile from the submission when the turn offers no proposal and asks
+   * nothing. Only the fixture kernel is allowed this: it is one assembly-level
+   * instance whose turn request carries no submission, so it cannot propose
+   * this merchant's plan and must not invent one. With a real model the same
+   * silence is a paid call that left the plan untouched, and that fails loudly.
+   */
+  compileFromSubmissionWithoutProposal?: boolean;
 };
 
 export type ComposerPlanQuoteAuthority = {
@@ -104,6 +112,7 @@ export class ComposerPlanSessionCoordinator
   ) => string | Promise<string>;
   private readonly quoteAuthority?: ComposerPlanQuoteAuthority;
   private readonly clarificationInterrupts?: ComposerClarificationInterruptPort;
+  private readonly compileFromSubmissionWithoutProposal: boolean;
 
   constructor(
     private readonly sessions: AgentSessionStore,
@@ -119,10 +128,25 @@ export class ComposerPlanSessionCoordinator
     }
     this.quoteAuthority = options.quoteAuthority;
     this.clarificationInterrupts = options.clarificationInterrupts;
+    this.compileFromSubmissionWithoutProposal =
+      options.compileFromSubmissionWithoutProposal === true;
     this.now = options.now ?? (() => new Date().toISOString());
     this.resolveHarnessReleaseId =
       options.resolveHarnessReleaseId ??
       (() => COMPOSER_PLAN_HARNESS_RELEASE_ID);
+  }
+
+  /**
+   * A turn that answered, blocked nothing, and asked nothing: it declined to
+   * propose. Only the fixture kernel may fall back to the submission here — a
+   * missing decision or a system-only block is still a wait with no producer
+   * for its exit, and stays parked so the leak keeps its own report.
+   */
+  private turnDeclinedToPlan(result: AgentTurnRunnerResult | null): boolean {
+    if (!this.compileFromSubmissionWithoutProposal) return false;
+    const decision = result?.decision;
+    if (!decision || result?.systemOnlyBlock) return false;
+    return decision.action.kind !== 'ask_merchant';
   }
 
   async prepare(input: {
@@ -185,7 +209,11 @@ export class ComposerPlanSessionCoordinator
           sessionRevision: started.thread.sessionRevision,
           harnessReleaseId: started.run.harnessReleaseId,
         });
-        if (this.compiler.runComposerTurn && !isCompilableTurn(turnResult)) {
+        if (
+          this.compiler.runComposerTurn &&
+          !isCompilableTurn(turnResult) &&
+          !this.turnDeclinedToPlan(turnResult)
+        ) {
           assertTurnCanBeWaitedOn(turnResult);
           await this.requestClarificationInterrupt({
             resourceId,
