@@ -372,7 +372,7 @@ export class PostgresPlanConfirmationDecisionStore
       `INSERT INTO p1_plan_confirmation_decisions (
          decision_id, request_id, actor_id, decision, decided_at, payload
        ) VALUES ($1, $2, $3, $4, $5::timestamptz, $6::jsonb)
-       ON CONFLICT (decision_id) DO NOTHING
+       ON CONFLICT DO NOTHING
        RETURNING decision_id, request_id, payload`,
       [
         parsed.decisionId,
@@ -414,7 +414,7 @@ export class PostgresPlanConfirmationDecisionStore
     return this.getByIdWithClient(this.pool, decisionId);
   }
 
-  private async getByIdWithClient(
+  async getByIdWithClient(
     client: Queryable,
     decisionId: string,
   ): Promise<PlanConfirmationDecision | null> {
@@ -482,109 +482,71 @@ export class PostgresExecutionConfirmationMigration
 /**
  * Postgres credit ledger adapter that runs create under one workspace lock.
  */
+type CreditProjection = import('../credit-billing/credit-ledger.js').CreditBalanceProjection;
+type CreditTransaction = import('../credit-billing/credit-ledger.js').CreditLotTransaction;
+type CreditConsumeInput = Parameters<
+  import('../credit-billing/postgres-credit-ledger.js').PostgresCreditLedger['consume']
+>[0];
+type CreditRefundInput = Parameters<
+  import('../credit-billing/postgres-credit-ledger.js').PostgresCreditLedger['refundUsageOperation']
+>[0];
+
+export interface PostgresConfirmationCreditLedger {
+  withWorkspaceCreditLock<T>(
+    workspaceId: string,
+    action: (client: PoolClient) => Promise<T>,
+  ): Promise<T>;
+  projectWithClient(
+    client: PoolClient,
+    workspaceId: string,
+    asOf?: string,
+  ): Promise<CreditProjection>;
+  consumeWithClient(
+    client: PoolClient,
+    input: CreditConsumeInput,
+  ): Promise<readonly CreditTransaction[]>;
+  refundUsageOperationWithClient(
+    client: PoolClient,
+    input: CreditRefundInput,
+  ): Promise<readonly CreditTransaction[]>;
+}
+
 export function confirmationCreditPortFromPostgresLedger(
-  ledger: {
-    project(
-      workspaceId: string,
-      asOf?: string,
-    ):
-      | Promise<import('../credit-billing/credit-ledger.js').CreditBalanceProjection>
-      | import('../credit-billing/credit-ledger.js').CreditBalanceProjection;
-    consume(input: {
-      workspaceId: string;
-      credits: number;
-      transactionId: string;
-      actorId: string;
-      correlationId: string;
-      createdAt: string;
-    }): Promise<
-      readonly import('../credit-billing/credit-ledger.js').CreditLotTransaction[]
-    >;
-    refundUsageOperation(input: {
-      workspaceId: string;
-      usageOperationId: string;
-      refundOperationId: string;
-      actorId: string;
-      correlationId: string;
-      createdAt: string;
-    }): Promise<
-      readonly import('../credit-billing/credit-ledger.js').CreditLotTransaction[]
-    >;
-    withWorkspaceCreditLock?<T>(
-      workspaceId: string,
-      action: (client: PoolClient) => Promise<T>,
-    ): Promise<T>;
-    consumeWithClient?(
-      client: PoolClient,
-      input: {
-        workspaceId: string;
-        credits: number;
-        transactionId: string;
-        actorId: string;
-        correlationId: string;
-        createdAt: string;
-      },
-    ): Promise<
-      readonly import('../credit-billing/credit-ledger.js').CreditLotTransaction[]
-    >;
-    refundUsageOperationWithClient?(
-      client: PoolClient,
-      input: {
-        workspaceId: string;
-        usageOperationId: string;
-        refundOperationId: string;
-        actorId: string;
-        correlationId: string;
-        createdAt: string;
-      },
-    ): Promise<
-      readonly import('../credit-billing/credit-ledger.js').CreditLotTransaction[]
-    >;
-    projectWithClient?(
-      client: PoolClient,
-      workspaceId: string,
-      asOf?: string,
-    ): Promise<import('../credit-billing/credit-ledger.js').CreditBalanceProjection>;
-  },
+  ledger: PostgresConfirmationCreditLedger,
 ): import('./execution-confirmation-service.js').ConfirmationCreditLedgerPort {
   type Port =
     import('./execution-confirmation-service.js').ConfirmationCreditLedgerPort;
   if (
-    ledger.withWorkspaceCreditLock &&
-    (!ledger.projectWithClient ||
-      !ledger.consumeWithClient ||
-      !ledger.refundUsageOperationWithClient)
+    typeof ledger.withWorkspaceCreditLock !== 'function' ||
+    typeof ledger.projectWithClient !== 'function' ||
+    typeof ledger.consumeWithClient !== 'function' ||
+    typeof ledger.refundUsageOperationWithClient !== 'function'
   ) {
     throw new Error(
       'Confirmation credit transactions require projectWithClient, consumeWithClient and refundUsageOperationWithClient.',
     );
   }
-  const lock = ledger.withWorkspaceCreditLock?.bind(ledger);
-  const projectWithClient = ledger.projectWithClient?.bind(ledger);
-  const consumeWithClient = ledger.consumeWithClient?.bind(ledger);
-  const refundWithClient = ledger.refundUsageOperationWithClient?.bind(ledger);
+  const lock = ledger.withWorkspaceCreditLock.bind(ledger);
+  const projectWithClient = ledger.projectWithClient.bind(ledger);
+  const consumeWithClient = ledger.consumeWithClient.bind(ledger);
+  const refundWithClient = ledger.refundUsageOperationWithClient.bind(ledger);
+  const outsideTransaction = (): never => {
+    throw new Error('Confirmation credit operations require a workspace transaction.');
+  };
   return {
-    project: (workspaceId, asOf) => ledger.project(workspaceId, asOf),
-    consume: (input) => ledger.consume(input),
-    refundUsageOperation: (input) => ledger.refundUsageOperation(input),
-    withWorkspaceCreditTransaction: lock
-      ? async (workspaceId, action) => {
-          return lock(workspaceId, async (client) => {
-            if (!projectWithClient || !consumeWithClient || !refundWithClient) {
-              throw new Error(
-                'Confirmation credit transaction client operations are unavailable.',
-              );
-            }
-            const txLedger: Port = {
-              project: (ws, asOf) => projectWithClient(client, ws, asOf),
-              transactionClient: client,
-              consume: (input) => consumeWithClient(client, input),
-              refundUsageOperation: (input) => refundWithClient(client, input),
-            };
-            return action(txLedger);
-          });
-        }
-      : undefined,
+    project: outsideTransaction,
+    consume: outsideTransaction,
+    refundUsageOperation: outsideTransaction,
+    withWorkspaceCreditTransaction: async (workspaceId, action) =>
+      lock(workspaceId, async (client) => {
+        const txLedger: Port = {
+          project: (ws, asOf) => projectWithClient(client, ws, asOf),
+          transactionClient: client,
+          consume: (input) => consumeWithClient(client, input),
+          refundUsageOperation: (input) => refundWithClient(client, input),
+        };
+        return action(txLedger);
+      }),
   };
 }
 

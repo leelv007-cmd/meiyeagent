@@ -173,6 +173,16 @@ test('PlanConfirmationDecision is immutable and carries no TTL', async () => {
   });
   assert.equal(replay.decision.decisionId, 'dec-1');
 
+  const laterClockReplay = await service.decide({
+    decisionId: 'dec-1',
+    requestId: 'req-1',
+    workspaceId: 'ws-1',
+    actorId: 'merchant-1',
+    decision: 'confirmed',
+    decidedAt: '2026-08-08T12:45:00.000Z',
+  });
+  assert.equal(laterClockReplay.decision.decidedAt, '2026-08-08T12:30:00.000Z');
+
   // Different decision for same request → fail closed.
   await assert.rejects(
     () =>
@@ -452,9 +462,30 @@ test('Postgres credit adapter fails fast without every client-aware operation', 
         project: async () => ({}) as never,
         consume: async () => [],
         refundUsageOperation: async () => [],
-        withWorkspaceCreditLock: async (_workspaceId, action) =>
+        withWorkspaceCreditLock: async (
+          _workspaceId: string,
+          action: (client: never) => Promise<unknown>,
+        ) =>
           action({} as never),
-      }),
+      } as never),
     /client-aware|transaction/i,
+  );
+});
+
+test('Postgres credit adapter never constructs a split non-transactional port', () => {
+  assert.throws(
+    () =>
+      confirmationCreditPortFromPostgresLedger({
+        async project() {
+          return {} as never;
+        },
+        async consume() {
+          return [];
+        },
+        async refundUsageOperation() {
+          return [];
+        },
+      } as never),
+    /transaction/i,
   );
 });

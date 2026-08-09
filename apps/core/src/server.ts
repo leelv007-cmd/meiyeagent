@@ -57,13 +57,13 @@ import type { OperationsApplicationService } from './p1/operations/application-s
 import type { OperationContext } from './p1/operations/types.js';
 import type { HarnessApplicationService } from './p1/harness/application-service.js';
 import type {
-  CreateExecutionConfirmationInput,
   CreateExecutionConfirmationResult,
   DecideExecutionConfirmationInput,
   DecideExecutionConfirmationResult,
   ExpireExecutionConfirmationInput,
   ExpireExecutionConfirmationResult,
 } from './p1/agent-session/execution-confirmation-service.js';
+import type { CreateExecutionConfirmationAuthorityInput } from './p1/agent-session/execution-confirmation-authority.js';
 import { ExecutionConfirmationError } from './p1/agent-session/execution-confirmation-store.js';
 import type { StoredConfirmationRequest } from './p1/agent-session/execution-confirmation-store.js';
 import { composerSubmissionBodySchema } from './p1/execution-spine/creation-execution-snapshot.js';
@@ -247,7 +247,7 @@ interface CoreServerDependencies {
    */
   executionConfirmation?: {
     create(
-      input: CreateExecutionConfirmationInput,
+      input: CreateExecutionConfirmationAuthorityInput,
     ): Promise<CreateExecutionConfirmationResult>;
     decide(
       input: DecideExecutionConfirmationInput,
@@ -320,33 +320,13 @@ const workspaceBootstrapRequestSchema = z.object({
   }),
 });
 
-const agentRevisionRefBodySchema = z.object({
-  id: z.string().trim().min(1).max(200),
-  revision: z.union([
-    z.number().int().nonnegative(),
-    z.string().trim().min(1).max(64),
-  ]),
-});
-
 // V31-11: confirmation-card create body (domain service re-validates deeply
 // via agentExecutionConfirmationRequestSchema — hold window + campaign bits).
-const executionConfirmationCreateBodySchema = z.object({
-  requestId: z.string().trim().min(1).max(200),
-  planId: z.string().trim().min(1).max(200),
-  planRevision: z.number().int().positive(),
-  snapshotHash: z.string().trim().min(1).max(200),
-  quoteRef: agentRevisionRefBodySchema,
-  reservationIdempotencyKey: z.string().trim().min(1).max(200),
-  createdAt: z.string().trim().min(1).max(64),
-  holdExpiresAt: z.string().trim().min(1).max(64),
-  creditCost: z.number().int().nonnegative(),
-  failureRefundsCredits: z.boolean(),
-  rightsSummary: z.string().max(2000).nullish(),
-  factSummary: z.string().max(2000).nullish(),
-  campaignPlanRef: agentRevisionRefBodySchema.optional(),
-  workOrdinal: z.number().int().positive().optional(),
-  approvalScope: z.enum(['plan_only', 'single_work']).optional(),
-});
+const executionConfirmationCreateBodySchema = z
+  .object({
+    workflowId: z.string().trim().min(1).max(200),
+  })
+  .strict();
 
 const executionConfirmationDecideBodySchema = z.object({
   decisionId: z.string().trim().min(1).max(200),

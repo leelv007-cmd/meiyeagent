@@ -21,6 +21,7 @@ import {
   MemoryExecutionConfirmationRequestStore,
   MemoryPlanConfirmationDecisionStore,
 } from './memory-execution-confirmation-store.js';
+import { ExecutionConfirmationError } from './execution-confirmation-store.js';
 
 const CREATED = '2026-08-08T12:00:00.000Z';
 const HOLD = '2026-08-09T12:00:00.000Z'; // 24h
@@ -58,18 +59,7 @@ function makeService(credits = 20) {
 
 function createBody(overrides: Record<string, unknown> = {}) {
   return {
-    requestId: 'req-http-1',
-    planId: 'plan-1',
-    planRevision: 1,
-    snapshotHash: 'snap-hash-1',
-    quoteRef: { id: 'quote-1', revision: 1 },
-    reservationIdempotencyKey: 'reserve-http-1',
-    createdAt: CREATED,
-    holdExpiresAt: HOLD,
-    creditCost: 5,
-    failureRefundsCredits: true,
-    rightsSummary: '素材授权有效至本月末',
-    factSummary: '门店地址已确认',
+    workflowId: 'workflow-1',
     ...overrides,
   };
 }
@@ -77,14 +67,35 @@ function createBody(overrides: Record<string, unknown> = {}) {
 async function startServer(
   t: test.TestContext,
   now = '2026-08-09T13:00:00.000Z',
+  credits = 20,
 ) {
-  const { ledger, service } = makeService();
+  const { ledger, service } = makeService(credits);
   const server = createCoreServer({
     diagnosticRepository: diagnostics,
     clock: () => new Date(now),
     serviceToken: 'confirm-test-token',
     executionConfirmation: {
-      create: (input) => service.createRequest(input),
+      create: (input) => {
+        if (input.workspaceId !== 'ws-1') {
+          throw new ExecutionConfirmationError('NOT_FOUND', 'Plan was not found.');
+        }
+        return service.createRequest({
+          requestId: `confirmation:${input.workflowId}`,
+          planId: 'plan-1',
+          planRevision: 1,
+          snapshotHash: `snapshot:${input.workflowId}`,
+          quoteRef: { id: `quote:${input.workflowId}`, revision: 1 },
+          reservationIdempotencyKey: `reserve:${input.workflowId}`,
+          createdAt: CREATED,
+          holdExpiresAt: HOLD,
+          creditCost: 5,
+          failureRefundsCredits: true,
+          rightsSummary: '素材授权有效至本月末',
+          factSummary: '门店地址已确认',
+          actorId: input.actorId,
+          workspaceId: input.workspaceId,
+        });
+      },
       decide: (input) => service.decide(input),
       expire: (input) => service.expireHold(input),
       listPending: (workspaceId) => service.listPendingByWorkspace(workspaceId),
@@ -137,10 +148,10 @@ test('confirmation HTTP surface creates, lists, decides and enforces the immutab
   assert.equal(requests.length, 1);
   assert.equal(
     (requests[0] as { request: { requestId: string } }).request.requestId,
-    'req-http-1',
+    'confirmation:workflow-1',
   );
 
-  const decided = await jsonFetch(`${base}/req-http-1/decide`, {
+  const decided = await jsonFetch(`${base}/confirmation%3Aworkflow-1/decide`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -155,7 +166,7 @@ test('confirmation HTTP surface creates, lists, decides and enforces the immutab
     'confirmed',
   );
 
-  const conflictingDecision = await jsonFetch(`${base}/req-http-1/decide`, {
+  const conflictingDecision = await jsonFetch(`${base}/confirmation%3Aworkflow-1/decide`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -166,12 +177,29 @@ test('confirmation HTTP surface creates, lists, decides and enforces the immutab
   assert.equal(conflictingDecision.response.status, 409);
 
   // Decided holds cannot expire (INVALID_STATE → 409 via p1Statuses).
-  const expired = await jsonFetch(`${base}/req-http-1/expire`, {
+  const expired = await jsonFetch(`${base}/confirmation%3Aworkflow-1/expire`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ now: '2026-08-09T13:00:00.000Z' }),
   });
   assert.equal(expired.response.status, 409);
+});
+
+test('ordinary confirmation HTTP create rejects caller-supplied authority facts', async (t) => {
+  const { base, headers } = await startServer(t);
+  const forged = await jsonFetch(base, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      ...createBody(),
+      creditCost: 1,
+      approvalScope: 'plan_only',
+      quoteRef: { id: 'forged', revision: 99 },
+      snapshotHash: 'forged-hash',
+      createdAt: '2099-01-01T00:00:00.000Z',
+    }),
+  });
+  assert.equal(forged.response.status, 400);
 });
 
 test('confirmation expire path cancels + refunds an expired hold', async (t) => {
@@ -181,7 +209,7 @@ test('confirmation expire path cancels + refunds an expired hold', async (t) => 
     headers,
     body: JSON.stringify(createBody()),
   });
-  const expired = await jsonFetch(`${base}/req-http-1/expire`, {
+  const expired = await jsonFetch(`${base}/confirmation%3Aworkflow-1/expire`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ now: '2026-08-09T13:00:00.000Z' }),
@@ -194,19 +222,19 @@ test('confirmation expire path cancels + refunds an expired hold', async (t) => 
 });
 
 test('confirmation create rejects insufficient credits (409) and bad body (400)', async (t) => {
-  const { base, headers } = await startServer(t);
+  const { base, headers } = await startServer(t, undefined, 4);
 
   const bad = await jsonFetch(base, {
     method: 'POST',
     headers,
-    body: JSON.stringify(createBody({ creditCost: 999 })),
+    body: JSON.stringify(createBody()),
   });
   assert.equal(bad.response.status, 409);
 
   const malformed = await jsonFetch(base, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ requestId: 'short' }),
+    body: JSON.stringify({ planId: 'short' }),
   });
   assert.equal(malformed.response.status, 400);
 });
@@ -236,8 +264,7 @@ test('foreign workspace cannot decide or expire another workspace confirmation',
     headers,
     body: JSON.stringify(
       createBody({
-        requestId: 'req-http-2',
-        reservationIdempotencyKey: 'reserve-http-2',
+        workflowId: 'workflow-2',
       }),
     ),
   });
@@ -248,7 +275,7 @@ test('foreign workspace cannot decide or expire another workspace confirmation',
     'x-workspace-id': 'ws-2',
   };
   const foreignBase = base.replace('/workspaces/ws-1/', '/workspaces/ws-2/');
-  const decided = await jsonFetch(`${foreignBase}/req-http-1/decide`, {
+  const decided = await jsonFetch(`${foreignBase}/confirmation%3Aworkflow-1/decide`, {
     method: 'POST',
     headers: foreignHeaders,
     body: JSON.stringify({
@@ -259,7 +286,7 @@ test('foreign workspace cannot decide or expire another workspace confirmation',
   });
   assert.equal(decided.response.status, 404);
 
-  const expired = await jsonFetch(`${foreignBase}/req-http-2/expire`, {
+  const expired = await jsonFetch(`${foreignBase}/confirmation%3Aworkflow-2/expire`, {
     method: 'POST',
     headers: foreignHeaders,
     body: JSON.stringify({ now: '2026-08-09T13:00:00.000Z' }),
@@ -312,7 +339,7 @@ test('foreign workspace cannot replay-create another workspace request id', asyn
   );
 });
 
-test('same request id replay with changed authoritative facts is rejected', async (t) => {
+test('stable workflow replay reuses server-authoritative facts without another debit', async (t) => {
   const { base, headers, ledger } = await startServer(t);
   const created = await jsonFetch(base, {
     method: 'POST',
@@ -324,12 +351,10 @@ test('same request id replay with changed authoritative facts is rejected', asyn
   const replay = await jsonFetch(base, {
     method: 'POST',
     headers,
-    body: JSON.stringify(
-      createBody({ snapshotHash: 'changed-snapshot', creditCost: 7 }),
-    ),
+    body: JSON.stringify(createBody()),
   });
 
-  assert.equal(replay.response.status, 409);
+  assert.equal(replay.response.status, 201);
   assert.equal(
     (await ledger.project('ws-1', '2026-08-08T13:00:00.000Z'))
       .availableCredits,
@@ -346,7 +371,7 @@ test('confirmation HTTP timestamps are server-owned and cannot advance expiry', 
     body: JSON.stringify(createBody()),
   });
 
-  const decided = await jsonFetch(`${base}/req-http-1/decide`, {
+  const decided = await jsonFetch(`${base}/confirmation%3Aworkflow-1/decide`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
@@ -367,12 +392,11 @@ test('confirmation HTTP timestamps are server-owned and cannot advance expiry', 
     headers,
     body: JSON.stringify(
       createBody({
-        requestId: 'req-http-clock-2',
-        reservationIdempotencyKey: 'reserve-http-clock-2',
+        workflowId: 'workflow-clock-2',
       }),
     ),
   });
-  const expired = await jsonFetch(`${base}/req-http-clock-2/expire`, {
+  const expired = await jsonFetch(`${base}/confirmation%3Aworkflow-clock-2/expire`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ now: '2099-01-01T00:00:00.000Z' }),

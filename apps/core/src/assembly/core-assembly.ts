@@ -25,6 +25,7 @@ import {
 import {
   AgentSessionHarnessService,
   confirmationCreditPortFromPostgresLedger,
+  ConfirmationAuthorityAssembler,
   ExecutionConfirmationService,
   PostgresAgentSessionStore,
   PostgresExecutionConfirmationMigration,
@@ -762,6 +763,11 @@ export async function assembleCoreGraph(
     new PostgresExecutionPlanAdmissionMigration(pool);
   const executionPlanAdmissionService = new ExecutionPlanAdmissionService(
     executionPlanAdmissionMigration.store,
+  );
+  const executionConfirmationAuthority = new ConfirmationAuthorityAssembler(
+    executionConfirmationService,
+    executionPlanAdmissionService,
+    productQuoteService,
   );
   /** V31-14: durable pending interrupts (CAS resume / listPending). */
   const interruptStore = new PostgresInterruptStore(pool);
@@ -1653,6 +1659,7 @@ export async function assembleCoreGraph(
     marketingPlanStore,
     planCompiler,
     executionConfirmationService,
+    executionConfirmationAuthority,
     executionConfirmationRequestStore:
       executionConfirmationMigration.requestStore,
     planConfirmationDecisionStore: executionConfirmationMigration.decisionStore,

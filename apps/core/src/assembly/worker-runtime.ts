@@ -3,6 +3,11 @@ import { shutdownLangfuseTracing } from '../instrumentation.js';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { hostname } from 'node:os';
 import {
+  CONFIRMATION_EXPIRY_JOB_KIND,
+  createConfirmationExpiryJobHandler,
+  registerConfirmationExpirySchedule,
+} from '../p1/agent-session/execution-confirmation-expiry-job.js';
+import {
   CREDIT_SUBSCRIPTION_CYCLE_JOB_KIND,
   CREDIT_SUBSCRIPTION_RECONCILIATION_JOB_KIND,
   CreditSubscriptionCycleScheduler,
@@ -93,6 +98,7 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
     operationsService,
     operationalTelemetryStore,
     harnessRuntimeConfig,
+    executionConfirmationService,
   } = await assembleCoreGraph(env, { role: 'worker' });
   const foundationAssetReferences = new FoundationOwnedAssetReferenceVerifier(
     foundationRepository
@@ -188,6 +194,7 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
   await registerDueDeliveryScannerSchedule(jobRuntime);
   await registerCreditSubscriptionSchedules(jobRuntime);
   await registerRedemptionExpirySchedule(jobRuntime);
+  await registerConfirmationExpirySchedule(jobRuntime);
   if (assetRegistrationCleanup) {
     await registerS3AssetRegistrationCleanupSchedule(jobRuntime);
   }
@@ -202,6 +209,8 @@ export async function startWorker(env: NodeJS.ProcessEnv) {
         ),
       [REDEMPTION_EXPIRY_JOB_KIND]:
         createRedemptionExpiryJobHandler(redemptionExpiry),
+      [CONFIRMATION_EXPIRY_JOB_KIND]:
+        createConfirmationExpiryJobHandler(executionConfirmationService),
       [DUE_DELIVERY_SCANNER_JOB_KIND]: createDueDeliveryScannerJobHandler(
         dueDeliveryScanner,
         workerId

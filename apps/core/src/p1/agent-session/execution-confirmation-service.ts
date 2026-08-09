@@ -371,7 +371,7 @@ export class ExecutionConfirmationService {
       );
     }
 
-    const decision = planConfirmationDecisionSchema.parse({
+    const candidate = planConfirmationDecisionSchema.parse({
       schemaVersion: 'plan-confirmation-decision/v1',
       decisionId: input.decisionId,
       requestId: input.requestId,
@@ -380,8 +380,23 @@ export class ExecutionConfirmationService {
       decidedAt: input.decidedAt,
     });
 
+    const prior = await this.getDecisionById(
+      input.decisionId,
+      ledger.transactionClient,
+    );
+    if (
+      prior &&
+      (prior.requestId !== candidate.requestId ||
+        prior.actorId !== candidate.actorId ||
+        prior.decision !== candidate.decision)
+    ) {
+      throw new ExecutionConfirmationError(
+        'DECISION_IMMUTABLE',
+        `PlanConfirmationDecision ${input.decisionId} is immutable.`,
+      );
+    }
     const appended = await this.appendDecision(
-      decision,
+      prior ?? candidate,
       ledger.transactionClient,
     );
     if (stored.request.status === 'pending') {
@@ -405,7 +420,7 @@ export class ExecutionConfirmationService {
           reservationIdempotencyKey: stored.request.reservationIdempotencyKey,
           requestId: stored.request.requestId,
           actorId: input.actorId,
-          createdAt: input.decidedAt,
+          createdAt: appended.decidedAt,
           reservedCredits: stored.projection.reservedCredits,
         },
         ledger,
@@ -713,6 +728,21 @@ export class ExecutionConfirmationService {
     return client && txStore.appendWithClient
       ? txStore.appendWithClient(client, decision)
       : this.decisions.append(decision);
+  }
+
+  private async getDecisionById(
+    decisionId: string,
+    client?: import('pg').PoolClient,
+  ): Promise<PlanConfirmationDecision | null> {
+    const txStore = this.decisions as PlanConfirmationDecisionStore & {
+      getByIdWithClient?(
+        client: import('pg').PoolClient,
+        decisionId: string,
+      ): Promise<PlanConfirmationDecision | null>;
+    };
+    return client && txStore.getByIdWithClient
+      ? txStore.getByIdWithClient(client, decisionId)
+      : this.decisions.getById(decisionId);
   }
 
   private async markOwnedStatus(

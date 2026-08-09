@@ -13,10 +13,17 @@ import { agentExecutionConfirmationRequestSchema } from '@meiye/contracts';
 import { PostgresCreditLedger } from '../credit-billing/postgres-credit-ledger.js';
 import { ExecutionConfirmationService } from './execution-confirmation-service.js';
 import {
+  CONFIRMATION_EXPIRY_JOB_KIND,
+  createConfirmationExpiryJobHandler,
+} from './execution-confirmation-expiry-job.js';
+import {
   confirmationCreditPortFromPostgresLedger,
   PostgresExecutionConfirmationMigration,
 } from './postgres-execution-confirmation-store.js';
-import type { ConfirmationRequestProjectionFacts } from './execution-confirmation-store.js';
+import {
+  ExecutionConfirmationError,
+  type ConfirmationRequestProjectionFacts,
+} from './execution-confirmation-store.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 
@@ -319,8 +326,14 @@ test(
   },
   async () => {
     const fixture = await createFixture();
-    const { service, creditLedger, requestStore, workspaceId, cleanup } =
-      fixture;
+    const {
+      service,
+      creditLedger,
+      decisionStore,
+      requestStore,
+      workspaceId,
+      cleanup,
+    } = fixture;
     try {
       await seedRejectedConfirmation(fixture, 'status');
       const originalMark =
@@ -463,8 +476,14 @@ test(
   },
   async () => {
     const fixture = await createFixture();
-    const { service, creditLedger, requestStore, workspaceId, cleanup } =
-      fixture;
+    const {
+      service,
+      creditLedger,
+      decisionStore,
+      requestStore,
+      workspaceId,
+      cleanup,
+    } = fixture;
     try {
       await creditLedger.grant({
         id: 'confirm-pkg-sweeper',
@@ -489,23 +508,41 @@ test(
         creditCost: 4,
         failureRefundsCredits: true,
       });
-      const sweep = (
-        service as unknown as {
-          expireDueHolds?: (input: { now: string; limit?: number }) => Promise<{
-            expiredRequestIds: string[];
-          }>;
-        }
-      ).expireDueHolds;
-      assert.equal(typeof sweep, 'function');
+      const restartedService = new ExecutionConfirmationService(
+        requestStore,
+        decisionStore,
+        confirmationCreditPortFromPostgresLedger(creditLedger),
+      );
+      const first = await createConfirmationExpiryJobHandler(restartedService)(
+        {
+          id: 'confirmation-expiry-after-restart-1',
+          workspaceId: '__system__',
+          kind: CONFIRMATION_EXPIRY_JOB_KIND,
+          payload: {},
+        } as never,
+        { claimedAt: '2026-08-09T12:00:01.000Z' } as never,
+      );
+      assert.equal(first.status, 'completed');
+      assert.deepEqual(first.output, { expiredRequestIds: ['req-sweeper'] });
 
-      const first = await sweep!.call(service, {
-        now: '2026-08-09T12:00:01.000Z',
-      });
-      assert.deepEqual(first.expiredRequestIds, ['req-sweeper']);
-      const second = await sweep!.call(service, {
-        now: '2026-08-09T13:00:00.000Z',
-      });
-      assert.deepEqual(second.expiredRequestIds, []);
+      const secondRestartedService = new ExecutionConfirmationService(
+        requestStore,
+        decisionStore,
+        confirmationCreditPortFromPostgresLedger(creditLedger),
+      );
+      const second = await createConfirmationExpiryJobHandler(
+        secondRestartedService,
+      )(
+        {
+          id: 'confirmation-expiry-after-restart-2',
+          workspaceId: '__system__',
+          kind: CONFIRMATION_EXPIRY_JOB_KIND,
+          payload: {},
+        } as never,
+        { claimedAt: '2026-08-09T13:00:00.000Z' } as never,
+      );
+      assert.equal(second.status, 'completed');
+      assert.deepEqual(second.output, { expiredRequestIds: [] });
       assert.equal(
         (await requestStore.getByWorkspaceId(workspaceId, 'req-sweeper'))
           ?.request.status,
@@ -524,6 +561,62 @@ test(
         (row) => row.transactionType === 'REFUND',
       );
       assert.equal(refund?.actorId, 'system:confirmation-expiry-sweeper');
+    } finally {
+      await cleanup();
+    }
+  },
+);
+
+test(
+  'request unique decision conflict maps to DECISION_IMMUTABLE instead of leaking pg 23505',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const { cleanup, service, creditLedger, workspaceId } = await createFixture();
+    try {
+      await creditLedger.grant({
+        id: 'decision-request-unique-lot',
+        workspaceId,
+        credits: 10,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'decision-request-unique',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      await service.createRequest({
+        requestId: 'req-decision-request-unique',
+        workspaceId,
+        planId: 'plan-decision-request-unique',
+        planRevision: 1,
+        snapshotHash: 'snapshot-decision-request-unique',
+        quoteRef: { id: 'quote-decision-request-unique', revision: 1 },
+        reservationIdempotencyKey: 'reserve-decision-request-unique',
+        createdAt: '2026-08-09T12:00:00.000Z',
+        holdExpiresAt: '2026-08-10T12:00:00.000Z',
+        actorId: 'merchant-1',
+        creditCost: 1,
+        failureRefundsCredits: true,
+      });
+      await service.decide({
+        decisionId: 'decision-request-unique-1',
+        requestId: 'req-decision-request-unique',
+        workspaceId,
+        actorId: 'merchant-1',
+        decision: 'confirmed',
+        decidedAt: '2026-08-09T12:10:00.000Z',
+      });
+      await assert.rejects(
+        () => service.decide({
+          decisionId: 'decision-request-unique-2',
+          requestId: 'req-decision-request-unique',
+          workspaceId,
+          actorId: 'merchant-1',
+          decision: 'confirmed',
+          decidedAt: '2026-08-09T12:11:00.000Z',
+        }),
+        (error: unknown) =>
+          error instanceof ExecutionConfirmationError &&
+          error.code === 'DECISION_IMMUTABLE',
+      );
     } finally {
       await cleanup();
     }
