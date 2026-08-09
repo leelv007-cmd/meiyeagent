@@ -510,6 +510,18 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
         }, contentPackage.id)
       );
       if (duplicate) {
+        // An idempotent replay may quote the revision it originally consumed
+        // (row binding) or the current one it just re-read; anything else is
+        // a stale caller and keeps the OCC contract.
+        if (
+          input.expectedRevision !== duplicate.contentPackageRevision &&
+          input.expectedRevision !== contentPackage.revision
+        ) {
+          throw new ContentPackageDeliveryError(
+            'CONTENT_PACKAGE_REVISION_CONFLICT',
+            'ContentPackage revision changed. Refresh and retry.'
+          );
+        }
         if (!resultSignalPayloadMatches(duplicate, input)) {
           throw new ContentPackageDeliveryError(
             'RESULT_SIGNAL_IDEMPOTENCY_CONFLICT',
@@ -559,6 +571,15 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
             }, current.id)
           );
           if (duplicate) {
+            if (
+              input.expectedRevision !== duplicate.contentPackageRevision &&
+              input.expectedRevision !== current.revision
+            ) {
+              throw new ContentPackageDeliveryError(
+                'CONTENT_PACKAGE_REVISION_CONFLICT',
+                'ContentPackage revision changed. Refresh and retry.'
+              );
+            }
             if (!resultSignalPayloadMatches(duplicate, input)) {
               throw new ContentPackageDeliveryError(
                 'RESULT_SIGNAL_IDEMPOTENCY_CONFLICT',
@@ -1415,7 +1436,6 @@ function resultSignalMatchesIdempotencyIdentity(
   row: ContentPackageResultSignal,
   identity: {
     packageId: string;
-    contentPackageRevision: number;
     kind: ContentPackageResultSignal['kind'];
     observedAt: string;
     sourceRef?: string;
@@ -1426,19 +1446,22 @@ function resultSignalMatchesIdempotencyIdentity(
     mapContentPackageResultKindToOutcomeSignal(row.kind) ?? 'feedback';
   const inputSignal =
     mapContentPackageResultKindToOutcomeSignal(identity.kind) ?? 'feedback';
-  // New rows carry the exact consumed revision. Quarantined historical rows
-  // cannot satisfy a new idempotency identity and remain read-only.
+  // Quarantined historical rows (no consumed revision) cannot satisfy a new
+  // idempotency identity and remain read-only.
   if (typeof row.contentPackageRevision !== 'number') return false;
+  // Revision is bound at write time on the package; identity compare uses the
+  // stable package id + signal + clocks (MAJOR-13 submit key). A retry that
+  // re-read a bumped revision is still the same evidence.
   const rowKey = buildOutcomeEvidenceIdempotencyKey({
     contentPackageId: identity.packageId,
-    contentPackageRevision: row.contentPackageRevision,
+    contentPackageRevision: '_',
     signal: rowSignal,
     observedAt: row.occurredAt,
     sourceRef: row.sourceRef,
   });
   const inputKey = buildOutcomeEvidenceIdempotencyKey({
     contentPackageId: identity.packageId,
-    contentPackageRevision: identity.contentPackageRevision,
+    contentPackageRevision: '_',
     signal: inputSignal,
     observedAt: identity.observedAt,
     sourceRef: identity.sourceRef,
@@ -1461,7 +1484,6 @@ function resultSignalMatchesWriteIdentity(
   if (input.action === 'record') {
     return resultSignalMatchesIdempotencyIdentity(row, {
       packageId,
-      contentPackageRevision: input.expectedRevision,
       kind: input.kind,
       observedAt: input.observedAt,
       sourceRef: input.sourceRef,

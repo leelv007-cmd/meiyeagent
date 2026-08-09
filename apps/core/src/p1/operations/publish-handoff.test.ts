@@ -384,7 +384,7 @@ function contentPackage(
     lineage: {},
     revision: 1,
     rights: { state: 'authorized' },
-    source: { assetIds: [], workflowId: 'workflow-a' },
+    source: { assetIds: [], workflowId: 'workflow-a', workId: 'work-1' },
     status: 'accepted',
     updatedAt: '2026-08-08T06:00:00.000Z',
     variants: [
@@ -420,7 +420,7 @@ function workspaceState(): OperationsWorkspaceState {
     lineage: {},
     revision: 1,
     rights: { state: 'authorized' },
-    source: { assetIds: [], workflowId: 'workflow-a' },
+    source: { assetIds: [], workflowId: 'workflow-a', workId: 'work-1' },
     status: 'accepted',
     updatedAt: '2026-08-08T06:00:00.000Z',
     variants: [

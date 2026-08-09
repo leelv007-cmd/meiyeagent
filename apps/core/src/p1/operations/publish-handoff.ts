@@ -257,6 +257,7 @@ function handoffAuditEvent(
   id: string,
   createdAt: string,
   handoff: MobilePublishHandoff,
+  binding: { workId?: string; variantVersionId: string },
 ): OperationsAuditEvent {
   return {
     id,
@@ -266,7 +267,9 @@ function handoffAuditEvent(
     action: AUDIT_MOBILE_HANDOFF,
     entityType: 'mobile_publish_handoff',
     entityId: handoff.handoffId,
-    details: { handoff },
+    // Top-level binding is what getPublishHandoffRecovery matches on; the
+    // handoff payload itself does not carry workId.
+    details: { handoff, ...binding },
     createdAt,
   };
 }
@@ -391,7 +394,10 @@ export class PublishHandoffService {
         }
         // Durable via existing audit event table (no new collection).
         state.auditEvents.push(
-          handoffAuditEvent(context, this.id(), this.now(), mobileHandoff),
+          handoffAuditEvent(context, this.id(), this.now(), mobileHandoff, {
+            ...(input.workId ? { workId: input.workId } : {}),
+            variantVersionId: input.variantVersionId,
+          }),
         );
         await repository.saveWorkspace(state);
       },
