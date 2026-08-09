@@ -8,7 +8,6 @@ import {
 } from "@meiye/contracts";
 
 import { fingerprintValue } from "../job-runtime/job-contracts.js";
-import { executionConfirmationAuthorityRequestId } from "../agent-session/execution-confirmation-authority.js";
 import type { PendingConfirmationAuthority } from "../agent-session/execution-confirmation-authority-store.js";
 import { selectImageIntentOperation } from "../harness/image-intent-compiler.js";
 import type { ExecutionPlanCompileFreeze } from "../harness/execution-plan-admission.js";
@@ -415,11 +414,20 @@ export class CreationSubmissionCoordinator {
 		) {
 			throw new Error("Paid Composer start requires the exact prepared plan authority.");
 		}
-		const requestId = executionConfirmationAuthorityRequestId({
-			workflowId,
-			planRevision: planAuthority.planRevision,
-			snapshotHash: planAuthority.snapshotHash,
-		});
+		// The authority ID is not a pure function of {workflowId, planRevision,
+		// snapshotHash} once a prior terminal decision exists on this base:
+		// resolveRequestId (execution-confirmation-authority.ts:199) derives a
+		// `:r:` successor from the decision history, so recomputing it here would
+		// resolve a stale, superseded request whenever the prepared attempt is a
+		// successor. The dispatch that requested this confirmation already
+		// persisted the exact authority ID it received (:743/:751); resolve that
+		// instead of rederiving it.
+		const requestId = submission.confirmationDispatch?.requestId;
+		if (!requestId) {
+			throw new Error(
+				"Paid Composer start requires a durable confirmation authority ID.",
+			);
+		}
 		const authority = await this.explicitConfirmations.getRequest(requestId);
 		if (
 			!authority ||
@@ -1212,11 +1220,16 @@ export class CreationSubmissionCoordinator {
 		let started = 0;
 		for (const candidate of recoverable) {
 			try {
-				// V31-18 P0-1: recovery must re-enter plan preparation, not go
-				// around it. `prepare()` is idempotent (deterministic Thread/Run),
-				// rehydrates the freeze for rows persisted before it became
-				// durable, and performs the confirmed-memory retrieval whose
-				// receipt would otherwise be silently skipped on recovery.
+				// V31-18 P0-1: recovery must call prepareAgentPlan, not go around
+				// it — but what that call does depends on what the claim already
+				// carries. A durable claim from the atomic order (prepare before
+				// claim, ~:703-708) already has its agentBinding + freeze, so the
+				// short-circuit at ~:785-787 intentionally no-ops here: the frozen
+				// plan is the merchant-confirmed authority (V31-39) and must not be
+				// silently re-derived. Only a legacy claim predating that
+				// invariant — no agentBinding, no freeze — makes this call
+				// genuinely re-enter `prepare()` and re-run the confirmed-memory
+				// retrieval a persisted freeze would otherwise skip.
 				await this.prepareAgentPlan(candidate.submission);
 				if (await this.startHarness(candidate.submission)) started += 1;
 			} catch {
