@@ -203,13 +203,37 @@ spec 仍绿。§37.4 把「每轮必要问题 ≤1」写成**产品行为**（§
 > Playwright result 写真实结果（如 `12/12 pass`）；没跑就留 `—`，不写「应该通过」之类
 > 的推测。required CI job 写 `.github/workflows/core-quality.yml` 里的 job 名。
 > 单元格内的 `|` 必须转义成 `\|`。空值统一写 `—`。
-> **一行未填满，对应 AC 不得勾选。**
+> **三个结果列各守一轴，不得跨轴填**：`unit/eval result` 只收单测与离线评测结果，
+> `PG result` 只收真实 Postgres 套件结果，`Playwright result` 只收浏览器旅程结果。
+> 把 `biome` / `tsc` / 单测结果写进 `Playwright result` 属跨轴，须改回本轴。
+> 三个结果列的空值分三种，必须区分：`—`＝该格未填（脚手架初始态）；`n/a`＝该 AC 在该轴上
+> **没有**证据要求（须在表下用一句话说明为何没有）；`未跑`＝该轴有要求但本轮未执行（须写出
+> 未执行的原因）。writer / consumer / failure-recovery test / required CI job 四列的空值
+> 仍统一写 `—`。
+> **勾选规则**：writer / consumer / failure-recovery test / required CI job 四列非空，**且**
+> 三个结果列每一格都是真实结果或 `n/a` ⇒ 方可勾选。任一结果格为 `—` 或 `未跑` ⇒ 不得勾选。
+> （原规则是「一行未填满，对应 AC 不得勾选」。在只有 PG / Playwright 两个结果列时，它把
+> 「本来就不该有 PG 证据的 AC」也判成未验收——列集扩展史见 V31-29「Evidence」节末。）
 
-| AC | production writer | production consumer | failure-recovery test | PG result | Playwright result | required CI job |
-|---|---|---|---|---|---|---|
-| AC1 | `tests/e2e/fixtures/ui-journey.ts:404-431` | `tests/e2e/fixtures/ui-journey.ts:543` | hermetic A/B「失败终态」对照（修复前绿／修复后红＋含报告原文，且遗留失败卡不误判） | — | `10/10 pass`（hermetic A/B 全套，5.2 min） | `production-main-journey`、`p2-browser-acceptance`（**本轮未实跑，见 AC6**） |
-| AC2 | 同 AC1／AC3／AC4 | 同 AC1／AC3／AC4 | 三处各一组对照，全部实跑 | — | `10/10 pass` | — |
-| AC3 | `tests/e2e/fixtures/ui-journey.ts:700-708` | `tests/e2e/fixtures/ui-journey.ts:718` | hermetic A/B「worksurface 从不渲染」对照（修复前该断言照过、红在更靠后处；修复后该断言自身红） | — | `10/10 pass` | 同 AC1 |
-| AC4 | `tests/e2e/fixtures/ui-journey.ts:338-341`、`:375-393` | `tests/e2e/fixtures/ui-journey.ts:543` | hermetic A/B「无卡片」与「卡片到达时已结算」两条对照，均由绿转红 | — | `10/10 pass` | 同 AC1 |
-| AC5 | `tests/e2e/fixtures/ui-journey.ts:340`、`:386`、`:422`、`:705` | 断言消息即判据本身 | 「monotonic downstream state」措辞已删；新消息逐条对应实际断言 | — | `biome check` 通过；单文件 `tsc --noEmit --strict` 退出 0 | — |
-| AC6 | — | — | — | — | **未取得** | **未实跑**：本机 load average 74（其他 lane 重型 test 饱和），Web webServer 连续两轮 120s 起不来；无 push 权限故无法走 CI 复核 |
+| AC | production writer | production consumer | failure-recovery test | unit/eval result | PG result | Playwright result | required CI job |
+|---|---|---|---|---|---|---|---|
+| AC1 | `tests/e2e/fixtures/ui-journey.ts:404-431` | `tests/e2e/fixtures/ui-journey.ts:543` | hermetic A/B「失败终态」对照（修复前绿／修复后红＋含报告原文，且遗留失败卡不误判） | — | — | `10/10 pass`（hermetic A/B 全套，5.2 min） | `production-main-journey`、`p2-browser-acceptance`（**本轮未实跑，见 AC6**） |
+| AC2 | 同 AC1／AC3／AC4 | 同 AC1／AC3／AC4 | 三处各一组对照，全部实跑 | — | — | `10/10 pass` | — |
+| AC3 | `tests/e2e/fixtures/ui-journey.ts:700-708` | `tests/e2e/fixtures/ui-journey.ts:718` | hermetic A/B「worksurface 从不渲染」对照（修复前该断言照过、红在更靠后处；修复后该断言自身红） | — | — | `10/10 pass` | 同 AC1 |
+| AC4 | `tests/e2e/fixtures/ui-journey.ts:338-341`、`:375-393` | `tests/e2e/fixtures/ui-journey.ts:543` | hermetic A/B「无卡片」与「卡片到达时已结算」两条对照，均由绿转红 | — | — | `10/10 pass` | 同 AC1 |
+| AC5 | `tests/e2e/fixtures/ui-journey.ts:340`、`:386`、`:422`、`:705` | 断言消息即判据本身 | 「monotonic downstream state」措辞已删；新消息逐条对应实际断言 | `biome check` 通过；单文件 `tsc --noEmit --strict` 退出 0 | `n/a` | `n/a`（该 AC 是断言文案口径，无浏览器可断言之物） | — |
+| AC6 | — | — | — | — | `n/a` | `未跑`（原写「未取得」，同义，按新规则统一措辞） | — |
+
+**AC6 未跑的原因（原在 `required CI job` 格内，按新规则移出，原文逐字保留）**：「**未实跑**：本机 load average 74（其他 lane 重型 test 饱和），Web webServer 连续两轮 120s 起不来；无 push 权限故无法走 CI 复核」。
+
+### 列集扩展史（2026-08-10，review-memory 在 Wave 4，主控裁决 2）
+
+**改了什么**：Evidence scaffold 由 7 列扩为 8 列，在 `failure-recovery test` 与 `PG result` 之间插入 **`unit/eval result`**，并改写填表规则（三个结果列各守一轴、`—`/`n/a`/`未跑` 三态区分、勾选规则由「整行填满」改为「四列非空 ＋ 三个结果格全为真实结果或 `n/a`」）。**30 张带该 scaffold 的 v3.1 票全部同批改**（脚本改写，改后逐票校验所有 markdown 表列数一致）。
+
+**为什么改**：旧列集只有 `PG result` / `Playwright result` 两个结果列，而不少 AC 的证据轴是单测或离线评测。旧勾选规则「一行未填满，对应 AC 不得勾选」于是把**本来就不该有 PG 证据的 AC** 也判成未验收——一个永远填不满的格子等于一个永远不能勾的框。V31-18 回填时五条 AC 里有三条撞上这个（详见该票「表下说明 ②」）。
+
+**本票就是最硬的旁证，而且比 V31-18 的论证更强**：本票 AC5 的**真实结果原本被填在 `Playwright result` 格里**（内容是 `biome check` 通过 ＋ 单文件 `tsc --noEmit --strict` 退出 0）——那既不是 Playwright 结果，也不是 PG 结果。也就是说列集不够用时，填表人不会留空，**会把结果塞进最近的那一格**，于是表面看起来填满了、机器读到的却是错的轴。本轮把它移进 `unit/eval result` 并把 `Playwright result` 标为 `n/a`（AC5 是断言文案口径，浏览器上无可断言之物）；AC6 的「未取得」统一为 `未跑`，其原因文字从 `required CI job` 格移到表下（原文逐字保留，未删一字）。
+
+**前置核实（裁决 2 的条件）**：改列前已确认**无机器读表方**——`grep -rn "docs/tickets" scripts/ .github/workflows/` 命中 0；`grep -rniE "production writer|production consumer|failure-recovery|required CI job|PG result|Playwright result" scripts/ .github/` 命中 0；`scripts/ci/quality-gates.test.mjs` 只钉 spec 名单、不碰票面；全仓唯一解析 markdown 表格列的脚本 `scripts/ops/check-issue-262-readiness.mjs` 读的是 `docs/ops/merge-ledger.md`（`:11`），不是票面。代码里对 `docs/tickets` 的引用全是文档注释（如 `recipe-pill-row.tsx:11`、`postgres-store.postgres.test.ts:1442`），无解析。**故无需同批更新任何解析器。**
+
+**还原方式**：删除 `unit/eval result` 列、把本票 AC5 的 unit/eval 内容移回 `Playwright result`、AC6 原因文字移回 `required CI job`、并把规则块恢复为单行 `> **一行未填满，对应 AC 不得勾选。**` 即回到改前状态。改动只涉及 `docs/tickets/v3.1/*.md`，无代码。

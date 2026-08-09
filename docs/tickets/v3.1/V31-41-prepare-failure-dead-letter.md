@@ -21,6 +21,8 @@
 ## 证据（行号为 `codex/v31-s0-live` @ `319ea3922` 亲验态）
 
 > 派件锚点出自 T4 树，本节锚点出自 S0 树；**两套都成立，差的只是署树**（已只读核对 T4 树坐实）。结论与机制**完全成立**。两树对照与署树协议见文末「锚点对照」。
+>
+> **Wave 4 补充（2026-08-10，review-memory）**：S0 分支已合入集成树，实施将在集成树或其后继上进行，故文末对照表已补**第三列＝集成树 `codex/v31-integration` @ `98949870a`**，并逐条只读亲验。**实施 lane 请认集成树列**；本节 S0 行号保留不改，作为发现时的原始留痕。机制、四段缺口与结论在集成树上逐条复核成立（无任何一段被别的 lane 顺手修掉）。
 
 ### ① 计数器只在 start 侧自增，prepare 失败走不到
 
@@ -67,9 +69,14 @@
 
 ## 关联
 
-- **V31-33**（recovery sweep tenant scoping，同为 execution-spine / confirmation 域，L-T4 复核产出）：与本票**共同触及 `recoverPendingStarts` 与补偿扫描选取路径**，实施时须互引并串行——两票都改扫描侧，语义锁纪律要求不并发开工。
-  > 注：V31-33 票面文件在本 worktree 尚未落地（L-T4 域，待其提交）。本条为前置声明；V31-33 落地后由主控在两票间补双向引用，本票不再改动。
+- **V31-33**（`V31-33-recovery-sweep-tenant-scoping.md`，recovery sweep tenant scoping，同为 execution-spine / confirmation 域，L-T4 复核产出）：与本票**共同触及 `recoverPendingStarts` 与补偿扫描选取路径**，实施时须互引并串行——两票都改扫描侧，语义锁纪律要求不并发开工。
+  > **Wave 4 解除前置声明（2026-08-10）**：V31-33 票面文件已在集成树 `98949870a` 落地，**双向引用已建成**（V31-33 的「关联」节反向指回本票）。两票的冲突面是**同一条 SQL 谓词的两个不同维度**：V31-33 改 WHERE 的租户维度，本票改 `harness_start_attempts` 的自增时机与退避维度（集成树 `postgres-creation-submission-store.ts:1286-1308` 同一段）。并发改必冲突。
+- **V31-39**（`V31-39-fixture-kernel-composer-decision.md`，`:r:` 与 `startPrepared` 终裁）：**三票成三角**。本票与 V31-39 的关系不是共享谓词而是**共享同一笔钱的两种悬挂形态**——V31-39 是「已确认但启动不了」（`startPrepared` 重算 base 撞不上 `:r:` 后继），本票是「规划恒败但从不终止」；两者都让已扣费预留停在 `reserved`／`decided` 而无出口，且**都不是清扫器能碰的状态**（清扫谓词只吃 `status='pending'`）。实施任一票时必须读另一票的栅栏节，避免用「给 confirmed 加 TTL」这类会破 U8 的解药去修本票的钱出口。三票分工：V31-33 管扫描公平性、本票管终止性、V31-39 管入口正确性。
 - V31-31（退役额度词汇）同为「钱的口径」类缺口但不同机制，无实施依赖。
+
+**W4 裁决约束（2026-08-10，主控裁决，全文在 V31-18「裁决 — 恢复路径 P0-1 的满足机制变了」）**：恢复路径的**双臂语义已定**——持久臂（有 `agentBinding` ＋ 有 `executionPlanFreeze`）在 `submission-coordinator.ts:777`（@ `98949870a`）／**`:785`（@ 合入后 `bb6fe34be`，实施 lane 认这个）** 短路，prepare 不重跑；可达臂（pre-durable 遗留行）才真跑。**实施本票时不得回退该短路**，它是防确认后计划漂移的守卫，回退会违反 V31-39 的付费确认语义。
+
+这条对本票**尤其要紧**，因为本票就是在改 prepare 侧的失败计数与终态：`recoverPendingStarts` 的循环体（`:1213-1225`）里 `prepareAgentPlan(candidate.submission)`（`:1220`）与 `startHarness`（`:1221`）之间只有一个裸 `catch`（`:1222-1224`），本票要在这里分类与落死信。**分类时必须按臂分**——持久臂根本没跑 prepare，它的失败不可能是「prepare 失败」；把两臂的失败混进同一个计数器，会让死信的原因字段从第一天就是错的。另外原 `:1215-1219` 的代码注释曾**过宽**（声称恢复会做记忆检索，持久臂不会）——**已由 W4-B 的 `111022d1d`（merged `bb6fe34be`）与测试重钉同批改成双臂如实描述**。本票现在可以照那段注释的字面写分类逻辑了，但仍须按臂分。
 
 ## Acceptance criteria（行为为证）
 
@@ -95,21 +102,26 @@
 | 运营信号带 submissionId/原因 | | | |
 | Core 受影响套件（一次性 PG 库） | | | |
 
-## 锚点对照（两树，非错号）
+## 锚点对照（三树，非错号）
 
 派件锚点出自 **T4 树** `codex/v31-fix-memory-outcome`（review-memory 在该树复核）；本票锚点出自 **S0 树** `codex/v31-s0-live` @ `319ea3922`。**两套行号都成立，差的只是署树**——已只读核对 T4 树坐实：该树 `claimHarnessStart` 起 `:609`、自增在 `:648`，`:642-651` 确在其内。机制与结论逐条成立。
 
-**协议（2026-08-09 立）：跨 lane 传递的任何 `file:line` 锚必须署树（worktree 名或 commit SHA）。** 实施 lane 认本票面锚＝认 S0 树；换树先重新定位符号，勿信裸行号。
+**协议（2026-08-09 立）：跨 lane 传递的任何 `file:line` 锚必须署树（worktree 名或 commit SHA）。** 换树先重新定位符号，勿信裸行号。**Wave 4 起实施 lane 认第三列＝集成树 `codex/v31-integration` @ `98949870a`**（S0 分支已合入集成树，实施在集成树或其后继上进行）；开工前先 `git -C <树> log -1 --format=%H` 取真 HEAD，若已前进则以当时 HEAD 重新定位。
 
-| T4 树锚（派件） | S0 树锚（本票） |
-|---|---|
-| `postgres-creation-submission-store.ts:642-651`（attempts 自增，方法起 `:609`） | `:743`；方法 `claimHarnessStart` 起 `:690`。注意 S0 树的 `:642-651` 落在 `claimSemanticDecisionResumption`（起 `:592`）——同一组数字在两树指向不同函数，这正是必须署树的原因 |
-| `api-runtime.ts:1662-1666`（补偿扫描 / `HARNESS_COMPENSATION_POLL_MS ?? 1000`） | 文件为 `apps/core/src/assembly/api-runtime.ts`；poll 常量在 `:1061`、`:1740`、`:1817`；poller 体 `:1718-1741` |
-| `submission-coordinator.ts:659-679`（`prepareAgentPlan` 重入） | `recoverPendingStarts` 起 `:727`，重入在 `:734`，裸 catch 在 `:736-738` |
-| `:759-765`（`classifyStartFailure→terminal_rejection→harness_state='failed'`） | 协调器 `:789-802`（分类 `:793`、判定 `:797`、`failHarnessStart` `:799`）；落库在 store `:939-948`；被读取在协调器 `:775-777` |
-| 「除 `console.error` 无运营信号」 | 成立，但位置在 `api-runtime.ts:1726`（gate `result.failed > 0`）。`submission-coordinator.ts` 全域无 `console.*`——失败**原因**被 `:736-738` 的裸 catch 丢弃，只有计数出得去。缺口比派件描述略重 |
+集成树列的漂移量本身就是这条协议的实证：同一批符号相对 S0 树漂了约 300–400 行（store 侧 `:743 → :1063`、协调器侧 `:727 → :1190`），**任何裸行号在换树后都会指错函数**。
+
+| 符号 / 事实 | T4 树锚（派件） | S0 树锚（发现时，本票正文） | **集成树 `98949870a`（实施基准，Wave 4 亲验）** |
+|---|---|---|---|
+| attempts 唯一自增点 | `postgres-creation-submission-store.ts:642-651`（方法起 `:609`） | `:743`；方法 `claimHarnessStart` 起 `:690`。注意 S0 树的 `:642-651` 落在 `claimSemanticDecisionResumption`（起 `:592`）——同一组数字在两树指向不同函数，这正是必须署树的原因 | **`:1063`**；`claimHarnessStart` 起 **`:1010`** |
+| 补偿扫描 poll 常量 / poller 体 | `api-runtime.ts:1662-1666`（`HARNESS_COMPENSATION_POLL_MS ?? 1000`） | 文件为 `apps/core/src/assembly/api-runtime.ts`；poll 常量在 `:1061`、`:1740`、`:1817`；poller 体 `:1718-1741` | poll 常量 **`:1027`**、**`:1853`**、**`:2010`**；poller 体 **`:1832-1853`** |
+| `prepareAgentPlan` 重入 / prepare-先-start-后 / 裸 catch | `submission-coordinator.ts:659-679` | `recoverPendingStarts` 起 `:727`，重入在 `:734`，裸 catch 在 `:736-738` | `recoverPendingStarts` 起 **`:1190`**，重入 **`:1220`**，`startHarness` 紧随 **`:1221`**（顺序成立），裸 catch **`:1222-1224`**（`failed += 1` 在 `:1223`） |
+| start 侧死信对等物（prepare 侧应对齐的目标形状） | `:759-765`（`classifyStartFailure→terminal_rejection→harness_state='failed'`） | 协调器 `:789-802`（分类 `:793`、判定 `:797`、`failHarnessStart` `:799`）；落库在 store `:939-948`；被读取在协调器 `:775-777` | 分类 **`:1288`**、判定 **`:1292`**、`failHarnessStart` **`:1294`**；落库 store **`:1257`**（方法）/ **`:1264`**（`SET harness_state = 'failed'`）；被读取 **`:1244-1246`**（`claimHarnessStart` 返 `failed` → 抛 `Harness start permanently failed.`） |
+| 扫描选取谓词（**与 V31-33 的冲突面**） | — | `:962-977` | **`:1281-1312`**（SQL 谓词体 **`:1286-1308`**；该体内 `workspace_id` 命中数＝0，即 V31-33 的缺口与本票的退避维度落在同一段 SQL 上） |
+| 「除 `console.error` 无运营信号」 | 同左 | 成立，但位置在 `api-runtime.ts:1726`（gate `result.failed > 0`）。`submission-coordinator.ts` 全域无 `console.*`——失败**原因**被 `:736-738` 的裸 catch 丢弃，只有计数出得去。缺口比派件描述略重 | 成立且**未变**，位置 **`api-runtime.ts:1839`**（同一 gate `result.failed > 0`）；裸 catch 仍在 **`:1222-1224`** |
 
 ## 留痕
 
 - 发现链：review-memory 二轮复核 L-T4（`codex/v31-fix-memory-outcome`）时发现，主控判为 spine 域缺口，派 L-S0（确认链/spine domain owner）开票不实施，2026-08-09。
 - 本票只开票，未做任何实施改动；`apps/core` 与 `mkfast-template-main` 在本 commit 中零改动。
+- Wave 4（2026-08-10，review-memory 在 `codex/v31-w4-tickets`）：锚点对照表由两树扩为**三树**，第三列＝集成树 `98949870a` 逐条只读亲验（机制与四段缺口在集成树上全部复现，无一段被顺手修掉）；解除「V31-33 尚未落地」前置声明并建成双向引用；补 V31-39 为三角第三票并写明冲突面性质（共享同一笔钱的两种悬挂形态，且两者都不是清扫器能碰的状态）。仍为纯 docs，`apps/core` 与 `mkfast-template-main` 零改动。
+- Wave 4 追加（同日）：并入主控对 T4/T7 崩溃恢复语义碰撞的裁决——「关联」节末补双臂语义与「不得回退 `:777` 短路」的实施红线，并指出本票的失败分类**必须按臂分**（持久臂根本没跑 prepare，其失败不可能是「prepare 失败」），以及 `:1215-1219` 代码注释过宽、不要照字面写分类逻辑。裁决全文在 V31-18。
