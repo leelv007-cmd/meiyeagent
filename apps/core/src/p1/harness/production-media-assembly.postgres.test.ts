@@ -95,6 +95,7 @@ import {
   langfuseTraceId,
 } from './langfuse-sender.js';
 import { PostgresNoteMediaAdmissionCoordinator } from './note-media-admission.js';
+import { promptKeysForPacks } from './prompt-packs.js';
 import type { HarnessLangfuseOutboxItem } from './outbox-worker.js';
 import { unconfiguredNotePlanEnhancementJudgeResolver } from './note-plan-structured-port.js';
 import { LedgerBackedHarnessContextPort } from './production-context-port.js';
@@ -393,6 +394,7 @@ test(
       });
       DBOS.setConfig({
         name: 'beauty-marketing-production-media-assembly',
+        runAdminServer: false,
         systemDatabaseUrl,
         applicationVersion: `production-media-assembly-${suffix}`,
       });
@@ -549,9 +551,14 @@ test(
         executionAssembly.promptRevisionRefs.intentNaming?.fallbackReason,
         'langfuse_http_503',
       );
-      assert.equal(
-        Object.keys(executionAssembly.promptRevisionRefs).length,
-        Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).length,
+      // Admission freezes a pin for exactly the prompt sites this task's packs
+      // claim, not for every registered site. This task's lens is 'image', so
+      // the selection is agentControl + media + cover. Comparing the key set
+      // rather than a count catches both a site that should have been frozen
+      // and dropped out, and a pack that was frozen but the task never uses.
+      assert.deepEqual(
+        Object.keys(executionAssembly.promptRevisionRefs).sort(),
+        promptKeysForPacks(['agentControl', 'media', 'cover']).sort(),
       );
       assert.deepEqual(executionAssembly.rootAxes, {
         axisScope: 'task_root',
@@ -785,9 +792,12 @@ test(
             AND audit.event_type='langfuse_prompt_fallback'`,
         [runtimeId],
       );
+      // One fallback audit per prompt this task actually resolved, so the
+      // expected row count follows the same pack-scoped selection as the
+      // frozen pin set above — not the whole site registry.
       assert.equal(
         fallbackAudits.rowCount,
-        Object.keys(HARNESS_LANGFUSE_PROMPT_NAMES).length,
+        promptKeysForPacks(['agentControl', 'media', 'cover']).length,
       );
       assert.ok(
         fallbackAudits.rows.every(
@@ -1732,6 +1742,7 @@ test(
       });
       DBOS.setConfig({
         name: 'beauty-marketing-production-credit-media',
+        runAdminServer: false,
         systemDatabaseUrl,
         applicationVersion: `production-credit-media-${suffix}`,
       });
