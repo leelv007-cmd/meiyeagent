@@ -37,6 +37,8 @@ const REQUIRED_JOURNEY_SCRIPT = resolve(
 );
 
 const HARD_GATE_SPEC = 'tests/e2e/specs/m04-browser-hard-gate.spec.ts';
+const MEMORY_INJECTION_B2_SPEC =
+  'tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts';
 
 /** Split so this gate never matches itself. */
 const RETIRED_ACTIONS = [
@@ -98,6 +100,15 @@ test('the M-04 mainline journey is in the required PR spec set', () => {
     /required_hard_gate_spec/u,
     'the hard gate spec must be an overridable named variable, like the assembly gate'
   );
+});
+
+test('the V31 memory B2 journey is in the required production browser set', () => {
+  const script = readFileSync(REQUIRED_JOURNEY_SCRIPT, 'utf8');
+  assert.ok(
+    script.includes(MEMORY_INJECTION_B2_SPEC),
+    'production journey must run the V31 memory injection B2 spec'
+  );
+  assert.match(script, /REQUIRED_V31_MEMORY_INJECTION_SPEC/u);
 });
 
 test('the image-text direction helper fails fast on real click errors', () => {

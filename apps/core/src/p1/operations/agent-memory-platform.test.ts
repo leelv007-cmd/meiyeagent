@@ -12,10 +12,12 @@ import type { PreferenceCandidate } from '@meiye/contracts';
 import {
   AgentMemoryPlatform,
   DefaultWorkingMemoryExtractStrategy,
+  MemoryInjectionReceiptMemoryStore,
   WORKING_MEMORY_CHECKPOINT_WRITE_HOOK,
   applyMemoryDecay,
   memoryScopeMatches,
   projectPreferenceToAgentMemoryEntry,
+  type MemoryInjectionReceiptStore,
 } from './agent-memory-platform.js';
 import {
   MemoryReuseMemoryRepository,
@@ -583,6 +585,68 @@ test('injection receipt is recorded on the real injection path when turn context
     },
   });
   assert.equal(await mem.getInjectionReceiptByRun('run-no-task'), null);
+});
+
+test('receipt persistence failure blocks injection and retry commits before apply', async () => {
+  const { reuse } = platform();
+  const durable = new MemoryInjectionReceiptMemoryStore();
+  let attempts = 0;
+  const store: MemoryInjectionReceiptStore = {
+    async save(receipt) {
+      attempts += 1;
+      if (attempts === 1) throw new Error('receipt store unavailable');
+      return durable.save(receipt);
+    },
+    getByTask: (taskId) => durable.getByTask(taskId),
+    getByRun: (runId) => durable.getByRun(runId),
+  };
+  const mem = new AgentMemoryPlatform(reuse, store, undefined, () => now);
+  const candidate = (
+    await mem.onExtracted({
+      workspaceId: context.workspaceId,
+      idempotencyPrefix: 'receipt-failure',
+      items: [
+        {
+          itemId: 'receipt-failure-item',
+          kind: 'preference',
+          semanticKey: 'tone.receipt-failure',
+          proposedValue: '简洁',
+          defaultScope: { storeId: 'store-a' },
+          decisionEventId: 'receipt-failure-decision',
+          taskId: 'receipt-failure-source-task',
+          source: source('receipt-failure-conversation'),
+          statement: '文案简洁',
+        },
+      ],
+    })
+  )[0];
+  assert.ok(candidate);
+  await mem.confirmMemoryCandidate(context, {
+    candidateId: candidate.candidateId,
+    preferenceId: 'receipt-failure-preference',
+    idempotencyKey: 'receipt-failure-confirm',
+  });
+  const query = {
+    workspaceId: context.workspaceId,
+    scope: { storeId: 'store-a' },
+    injectionContext: {
+      taskId: 'receipt-failure-task',
+      runId: 'receipt-failure-run',
+      harnessReleaseId: 'receipt-failure-release',
+    },
+  };
+  await assert.rejects(
+    mem.retrieveForInjection(query),
+    /receipt store unavailable/u,
+  );
+  assert.equal(await durable.getByTask('receipt-failure-task'), null);
+  const injected = await mem.retrieveForInjection(query);
+  assert.equal(injected.length, 1);
+  assert.equal(attempts, 2);
+  assert.equal(
+    (await durable.getByTask('receipt-failure-task'))?.entries[0]?.memoryId,
+    'receipt-failure-preference',
+  );
 });
 
 test('A11 separate deletion: source deleted marks entry; memory delete keeps approval receipts', async () => {

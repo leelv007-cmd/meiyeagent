@@ -43,44 +43,79 @@ export class PostgresMemoryInjectionReceiptStore
         ON p1_memory_injection_receipts (run_id);
       CREATE INDEX IF NOT EXISTS p1_memory_injection_receipts_release_idx
         ON p1_memory_injection_receipts (harness_release_id);
+      CREATE TABLE IF NOT EXISTS p1_memory_injection_receipt_outbox (
+        task_id text PRIMARY KEY REFERENCES p1_memory_injection_receipts(task_id)
+          ON DELETE CASCADE,
+        payload jsonb NOT NULL,
+        status text NOT NULL CHECK (status IN ('ready')),
+        created_at timestamptz NOT NULL
+      );
     `);
   }
 
   async save(input: MemoryInjectionReceipt): Promise<MemoryInjectionReceipt> {
     const receipt = memoryInjectionReceiptSchema.parse(input);
-    const inserted = await this.pool.query<PayloadRow>(
-      `INSERT INTO p1_memory_injection_receipts (
-         task_id,
-         run_id,
-         harness_release_id,
-         payload,
-         injected_at
-       ) VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz)
-       ON CONFLICT (task_id) DO NOTHING
-       RETURNING payload`,
-      [
-        receipt.taskId,
-        receipt.runId,
-        receipt.harnessReleaseId,
-        JSON.stringify(receipt),
-        receipt.injectedAt,
-      ],
-    );
-    if (inserted.rows[0]) {
-      return memoryInjectionReceiptSchema.parse(inserted.rows[0].payload);
-    }
-    const existing = await this.pool.query<PayloadRow>(
-      `SELECT payload FROM p1_memory_injection_receipts WHERE task_id = $1`,
-      [receipt.taskId],
-    );
-    const stored = clonePayload(existing.rows[0]);
-    if (stored && isDeepStrictEqual(stored, receipt)) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const inserted = await client.query<PayloadRow>(
+        `INSERT INTO p1_memory_injection_receipts (
+           task_id,
+           run_id,
+           harness_release_id,
+           payload,
+           injected_at
+         ) VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz)
+         ON CONFLICT (task_id) DO NOTHING
+         RETURNING payload`,
+        [
+          receipt.taskId,
+          receipt.runId,
+          receipt.harnessReleaseId,
+          JSON.stringify(receipt),
+          receipt.injectedAt,
+        ],
+      );
+      const stored = inserted.rows[0]?.payload ?? (
+        await client.query<PayloadRow>(
+          `SELECT payload FROM p1_memory_injection_receipts WHERE task_id = $1`,
+          [receipt.taskId],
+        )
+      ).rows[0]?.payload;
+      if (!stored || !isDeepStrictEqual(stored, receipt)) {
+        throw new ReuseMemoryError(
+          'CONFLICT',
+          `Injection receipt for task ${receipt.taskId} already exists with another payload.`,
+        );
+      }
+      await client.query(
+        `INSERT INTO p1_memory_injection_receipt_outbox (
+           task_id,
+           payload,
+           status,
+           created_at
+         ) VALUES ($1, $2::jsonb, 'ready', $3::timestamptz)
+         ON CONFLICT (task_id) DO NOTHING`,
+        [receipt.taskId, JSON.stringify(receipt), receipt.injectedAt],
+      );
+      const outbox = await client.query<PayloadRow>(
+        `SELECT payload FROM p1_memory_injection_receipt_outbox WHERE task_id = $1`,
+        [receipt.taskId],
+      );
+      if (!outbox.rows[0] || !isDeepStrictEqual(outbox.rows[0].payload, receipt)) {
+        throw new ReuseMemoryError(
+          'CONFLICT',
+          `Injection receipt outbox for task ${receipt.taskId} is missing or divergent.`,
+        );
+      }
+      await client.query('COMMIT');
       return memoryInjectionReceiptSchema.parse(stored);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-    throw new ReuseMemoryError(
-      'CONFLICT',
-      `Injection receipt for task ${receipt.taskId} already exists with another payload.`,
-    );
   }
 
   async getByTask(taskId: string): Promise<MemoryInjectionReceipt | null> {

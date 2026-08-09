@@ -810,24 +810,19 @@ export class AgentMemoryPlatform {
 
     const result = entries.slice(0, limit);
 
-    // V31-18: record the injection receipt at the real injection point when
-    // the generation turn bound task/run/release context. Best-effort — the
-    // receipt is observability; it must never break the turn it traces.
+    // Persist the receipt before returning injectable memory. Plan compilation
+    // may only apply these entries after the durable receipt/outbox commits.
     const injection = query.injectionContext;
     const confirmedForInjection = result.filter(
       (entry) => entry.authority !== 'session',
     );
     if (injection && confirmedForInjection.length > 0 && injection.taskId) {
-      try {
-        await this.recordInjectionReceipt({
-          taskId: injection.taskId,
-          runId: injection.runId,
-          harnessReleaseId: injection.harnessReleaseId,
-          entries: confirmedForInjection,
-        });
-      } catch {
-        // Receipt recording is a side channel; retrieval keeps serving.
-      }
+      await this.recordInjectionReceipt({
+        taskId: injection.taskId,
+        runId: injection.runId,
+        harnessReleaseId: injection.harnessReleaseId,
+        entries: confirmedForInjection,
+      });
     }
 
     return result;

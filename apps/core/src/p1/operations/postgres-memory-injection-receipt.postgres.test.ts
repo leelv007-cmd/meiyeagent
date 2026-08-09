@@ -38,8 +38,12 @@ test(
     const platform = new AgentMemoryPlatform(reuse, store, undefined, () => now);
 
     const taskId = `task-inj-${randomUUID()}`;
+    const retryTaskId = `task-inj-retry-${randomUUID()}`;
     const runId = `run-inj-${randomUUID()}`;
     const releaseId = `release-inj-${randomUUID()}`;
+    const triggerSuffix = randomUUID().replaceAll('-', '');
+    const triggerName = `memory_outbox_fail_${triggerSuffix}`;
+    const functionName = `memory_outbox_fail_fn_${triggerSuffix}`;
 
     try {
       const [candidate] = await platform.onExtracted({
@@ -116,10 +120,74 @@ test(
       assert.deepEqual(byTask, receipt);
       const byRun = await restarted.getByRun(runId);
       assert.deepEqual(byRun, receipt);
-    } finally {
-      await pool.query(
-        `DELETE FROM p1_memory_injection_receipts WHERE task_id = $1`,
+
+      const outbox = await pool.query<{ payload: unknown; status: string }>(
+        `SELECT payload, status
+         FROM p1_memory_injection_receipt_outbox
+         WHERE task_id = $1`,
         [taskId],
+      );
+      assert.equal(outbox.rows[0]?.status, 'ready');
+      assert.deepEqual(outbox.rows[0]?.payload, receipt);
+
+      await pool.query(`
+        CREATE FUNCTION ${functionName}() RETURNS trigger AS $$
+        BEGIN
+          RAISE EXCEPTION 'forced outbox failure';
+        END;
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER ${triggerName}
+          BEFORE INSERT ON p1_memory_injection_receipt_outbox
+          FOR EACH ROW
+          WHEN (NEW.task_id = '${retryTaskId}')
+          EXECUTE FUNCTION ${functionName}();
+      `);
+      await assert.rejects(
+        platform.recordInjectionReceipt({
+          taskId: retryTaskId,
+          runId: `${runId}-retry`,
+          harnessReleaseId: releaseId,
+          entries,
+          injectedAt: now,
+        }),
+        /forced outbox failure/u,
+      );
+      const rolledBack = await pool.query<{ receipt_count: string; outbox_count: string }>(
+        `SELECT
+           (SELECT count(*) FROM p1_memory_injection_receipts WHERE task_id = $1)::text AS receipt_count,
+           (SELECT count(*) FROM p1_memory_injection_receipt_outbox WHERE task_id = $1)::text AS outbox_count`,
+        [retryTaskId],
+      );
+      assert.deepEqual(rolledBack.rows[0], {
+        receipt_count: '0',
+        outbox_count: '0',
+      });
+      await pool.query(`DROP TRIGGER ${triggerName} ON p1_memory_injection_receipt_outbox`);
+      await pool.query(`DROP FUNCTION ${functionName}()`);
+      const retried = await platform.recordInjectionReceipt({
+        taskId: retryTaskId,
+        runId: `${runId}-retry`,
+        harnessReleaseId: releaseId,
+        entries,
+        injectedAt: now,
+      });
+      assert.equal(retried.taskId, retryTaskId);
+      const committed = await pool.query<{ receipt_count: string; outbox_count: string }>(
+        `SELECT
+           (SELECT count(*) FROM p1_memory_injection_receipts WHERE task_id = $1)::text AS receipt_count,
+           (SELECT count(*) FROM p1_memory_injection_receipt_outbox WHERE task_id = $1)::text AS outbox_count`,
+        [retryTaskId],
+      );
+      assert.deepEqual(committed.rows[0], {
+        receipt_count: '1',
+        outbox_count: '1',
+      });
+    } finally {
+      await pool.query(`DROP TRIGGER IF EXISTS ${triggerName} ON p1_memory_injection_receipt_outbox`).catch(() => undefined);
+      await pool.query(`DROP FUNCTION IF EXISTS ${functionName}()`).catch(() => undefined);
+      await pool.query(
+        `DELETE FROM p1_memory_injection_receipts WHERE task_id = ANY($1::text[])`,
+        [[taskId, retryTaskId]],
       );
       await pool.end();
     }
