@@ -600,7 +600,16 @@ export class HarnessTaskAdmissionService {
     ]);
     await this.recordPromptFallbackAudits(input.taskId, request);
     if (!dispatch) {
-      return { workflowId: input.taskId, replayed: false as const };
+      return {
+        workflowId: input.taskId,
+        replayed: false as const,
+        ...(request.executionConfirmationRequestId
+          ? {
+              executionConfirmationRequestId:
+                request.executionConfirmationRequestId,
+            }
+          : {}),
+      };
     }
     const handle = await this.starter.start({
       workflowId: input.taskId,
@@ -634,7 +643,16 @@ export class HarnessTaskAdmissionService {
         'Task ID was reused with a different Harness request payload.',
       );
     }
-    return { workflowId: claim.workflowId, replayed: true as const };
+    return {
+      workflowId: claim.workflowId,
+      replayed: true as const,
+      ...(claim.request.executionConfirmationRequestId
+        ? {
+            executionConfirmationRequestId:
+              claim.request.executionConfirmationRequestId,
+          }
+        : {}),
+    };
   }
 
   private async ensurePendingExecutionConfirmation(

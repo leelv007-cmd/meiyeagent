@@ -86,6 +86,14 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 		if (prepared.workflowId !== attemptId) {
 			throw new Error("Harness preparation must preserve the Coordinator task ID.");
 		}
+		return {
+			...(prepared.executionConfirmationRequestId
+				? {
+						executionConfirmationRequestId:
+							prepared.executionConfirmationRequestId,
+					}
+				: {}),
+		};
 	}
 
 	async classifyStartFailure(

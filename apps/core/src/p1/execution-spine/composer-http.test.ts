@@ -894,6 +894,7 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		workspaceId: string;
 		submissionId: string;
 		freeze: CreationSubmissionRecord["executionPlanFreeze"];
+		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
 	}) {
 		const claim = [...this.claims.values()].find(
 			(candidate) =>
@@ -903,6 +904,11 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		if (!claim || !input.freeze) throw new Error("Submission freeze target missing.");
 		claim.submission.executionPlanFreeze = structuredClone(input.freeze);
 		claim.submission.agentPlanPending = false;
+		if (input.confirmationDispatch) {
+			claim.submission.confirmationDispatch = structuredClone(
+				input.confirmationDispatch,
+			);
+		}
 		return structuredClone(claim.submission);
 	}
 
@@ -975,6 +981,28 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		});
 	}
 
+	async markHarnessStartDispatched(input: {
+		leaseId: string;
+		workspaceId: string;
+		submissionId: string;
+		confirmationDispatch: NonNullable<CreationSubmissionRecord["confirmationDispatch"]>;
+	}) {
+		const current = this.harnessStarts.get(input.submissionId);
+		if (current?.state !== "starting" || current.leaseId !== input.leaseId) {
+			throw new Error(`Stale harness lease ${input.leaseId}`);
+		}
+		const claim = [...this.claims.values()].find(
+			(candidate) =>
+				candidate.workspaceId === input.workspaceId &&
+				candidate.submission.snapshot.id === input.submissionId,
+		);
+		if (!claim) throw new Error("Submission dispatch target missing.");
+		claim.submission.confirmationDispatch = {
+			...structuredClone(input.confirmationDispatch),
+			state: "dispatched",
+		};
+	}
+
 	async releaseHarnessStart(input: {
 		leaseId: string;
 		workspaceId: string;
@@ -1035,6 +1063,9 @@ class RecordingHarnessStarter implements CreationSubmissionHarnessStarter {
 
 	async preparePendingConfirmation(input: CreationSubmissionRecord) {
 		this.preparations.push(structuredClone(input));
+		return {
+			executionConfirmationRequestId: `confirmation:authority:${input.task.id}`,
+		};
 	}
 }
 

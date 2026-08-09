@@ -1089,6 +1089,63 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     }
   }
 
+  async markHarnessStartDispatched(input: {
+    leaseId: string;
+    workspaceId: string;
+    submissionId: string;
+    confirmationDispatch: NonNullable<CreationSubmissionRecord['confirmationDispatch']>;
+  }) {
+    if (!input.confirmationDispatch.requestId) {
+      throw new Error('Harness dispatch requires an exact confirmation request ID.');
+    }
+    const client = await this.pool.connect();
+    let inTransaction = false;
+    try {
+      await client.query('BEGIN');
+      inTransaction = true;
+      const row = await this.lockSubmission(client, input);
+      if (
+        row.harness_state !== 'starting' ||
+        row.harness_lease_id !== input.leaseId
+      ) {
+        throw new Error(`Harness start lease ${input.leaseId} is no longer current.`);
+      }
+      const stored = storedSubmission(row.submission);
+      const current = stored.confirmationDispatch;
+      if (
+        !current ||
+        current.requestId !== input.confirmationDispatch.requestId ||
+        (current.state !== 'pending' && current.state !== 'dispatched')
+      ) {
+        throw new Error('Harness dispatch confirmation authority is no longer current.');
+      }
+      await client.query(
+        `UPDATE execution_spine.creation_submissions
+            SET submission = jsonb_set(
+                  submission,
+                  '{confirmationDispatch,state}',
+                  '"dispatched"'::jsonb,
+                  true
+                ),
+                updated_at = $4::timestamptz
+          WHERE workspace_id = $1 AND id = $2 AND harness_lease_id = $3`,
+        [
+          input.workspaceId,
+          input.submissionId,
+          input.leaseId,
+          (await databaseNow(client)).toISOString(),
+        ],
+      );
+      await client.query('COMMIT');
+      inTransaction = false;
+    } catch (error) {
+      if (inTransaction) await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async completeHarnessStart(input: {
     leaseId: string;
     workspaceId: string;

@@ -131,6 +131,12 @@ export interface CreationSubmissionStore {
 		submissionId: string;
 		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
 	}): Promise<void>;
+	markHarnessStartDispatched?(input: {
+		leaseId: string;
+		workspaceId: string;
+		submissionId: string;
+		confirmationDispatch: NonNullable<CreationSubmissionRecord["confirmationDispatch"]>;
+	}): Promise<void>;
 	releaseHarnessStart(input: {
 		leaseId: string;
 		workspaceId: string;
@@ -158,7 +164,10 @@ export interface CreationSubmissionHarnessStarter {
 		| { executionConfirmationRequestId?: string }
 		| void
 	>;
-	preparePendingConfirmation?(input: CreationSubmissionRecord): Promise<void>;
+	preparePendingConfirmation?(input: CreationSubmissionRecord): Promise<
+		| { executionConfirmationRequestId?: string }
+		| void
+	>;
 	classifyStartFailure?(
 		input: CreationSubmissionRecord,
 		error: unknown,
@@ -645,10 +654,31 @@ export class CreationSubmissionCoordinator {
 
 	private async preparePendingConfirmation(submission: CreationSubmissionRecord) {
 		if (!submission.executionPlanFreeze) return;
+		ensureConfirmationDispatch(submission);
 		if (!this.harness.preparePendingConfirmation) {
 			throw new Error("Pending Harness confirmation preparation is unavailable.");
 		}
-		await this.harness.preparePendingConfirmation(submission);
+		const prepared = await this.harness.preparePendingConfirmation(submission);
+		const requestId = prepared?.executionConfirmationRequestId;
+		if (!requestId || !submission.confirmationDispatch) {
+			throw new Error(
+				"Pending Harness confirmation did not return its exact authority ID.",
+			);
+		}
+		submission.confirmationDispatch = {
+			...submission.confirmationDispatch,
+			requestId,
+			state: "pending",
+		};
+		const persisted = await this.store.saveExecutionPlanFreeze({
+			workspaceId: submission.snapshot.workspaceId,
+			submissionId: submission.snapshot.id,
+			freeze: submission.executionPlanFreeze,
+			quoteRef: submission.snapshot.quote,
+			credits: submission.usageReservation.credits,
+			confirmationDispatch: submission.confirmationDispatch,
+		});
+		submission.confirmationDispatch = persisted.confirmationDispatch;
 	}
 
 	private async prepareAgentPlan(
@@ -1052,15 +1082,29 @@ export class CreationSubmissionCoordinator {
 		const leasedStart = { ...startLease, leaseId: harnessClaim.leaseId };
 		let started = false;
 		try {
+			if (submission.confirmationDispatch) {
+				if (
+					!submission.confirmationDispatch.requestId ||
+					!this.store.markHarnessStartDispatched
+				) {
+					throw new Error(
+						"Paid Harness dispatch requires its durable confirmation authority marker.",
+					);
+				}
+				await this.store.markHarnessStartDispatched({
+					...leasedStart,
+					confirmationDispatch: submission.confirmationDispatch,
+				});
+				submission.confirmationDispatch.state = "dispatched";
+			}
 			const startedResult = await this.harness.start(submission);
 			if (submission.confirmationDispatch) {
 				const requestId = startedResult?.executionConfirmationRequestId;
-				if (!requestId) {
+				if (requestId !== submission.confirmationDispatch.requestId) {
 					throw new Error(
-						"Paid Harness admission did not return its confirmation authority ID.",
+						"Paid Harness admission returned a different confirmation authority ID.",
 					);
 				}
-				submission.confirmationDispatch.requestId = requestId;
 			}
 			started = true;
 			await this.store.completeHarnessStart({
