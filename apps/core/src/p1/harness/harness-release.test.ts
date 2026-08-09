@@ -25,6 +25,10 @@ import {
   diffHarnessReleaseArtifacts,
   type PublishHarnessReleaseInput,
 } from './harness-release.js';
+import {
+  ensureSeedProductionRelease,
+  SEED_HARNESS_RELEASE_ID,
+} from './seed-harness-release.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
 
@@ -185,6 +189,49 @@ test('production publish rejects an empty prompt pack manifest', async () => {
       error instanceof P1DomainError &&
       error.code === 'INVALID_STATE' &&
       error.message.includes('prompt pack'),
+  );
+});
+
+test('legacy empty immutable production is atomically replaced by exact-pin seed', async () => {
+  const source = createService();
+  const valid = await source.service.publishArtifact(basePublish('legacy-empty'));
+  const store = new MemoryHarnessReleaseStore();
+  await store.putArtifactImmutable({
+    ...valid.artifact,
+    promptBindings: {},
+    promptPackBindings: {},
+  });
+  await store.putLifecycle({
+    ...valid.lifecycle,
+    status: 'production',
+  });
+  await store.putRollout(valid.rollout);
+  const service = new HarnessReleaseService(store);
+
+  await ensureSeedProductionRelease({ store, service });
+
+  const production = await store.getLifecycleByStatus('production');
+  assert.equal(production?.releaseId, SEED_HARNESS_RELEASE_ID);
+  assert.equal((await store.getLifecycle('legacy-empty'))?.status, 'retired');
+  const seed = await service.getExactRelease(SEED_HARNESS_RELEASE_ID);
+  assert.ok(Object.keys(seed.promptPackBindings).length > 0);
+  assert.ok(Object.values(seed.promptBindings).every((ref) => ref.version === '1'));
+});
+
+test('rollback rejects draft and evaluating releases without production history', async () => {
+  const { service } = createService();
+  await service.publishArtifact(basePublish('never-production'));
+  await assert.rejects(
+    service.rollbackProduction({ toReleaseId: 'never-production' }),
+    /must be retired/,
+  );
+  await service.transitionLifecycle({
+    releaseId: 'never-production',
+    toStatus: 'evaluating',
+  });
+  await assert.rejects(
+    service.rollbackProduction({ toReleaseId: 'never-production' }),
+    /must be retired/,
   );
 });
 

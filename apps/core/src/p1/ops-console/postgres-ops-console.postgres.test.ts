@@ -165,6 +165,9 @@ test(
         operatorId: 'ops-pg',
         reason: 'trial',
         updatedAt: ts2,
+        expiresAt: '2026-08-09T01:00:00.000Z',
+        consumedByRunId: null,
+        consumedAt: null,
       });
       const drillId = `drill-${randomUUID()}`;
       await store.appendRollbackDrill({

@@ -18,6 +18,7 @@
  * the service semantics or fails red.
  */
 import { expect, test, type Page } from '@playwright/test';
+import postgres from 'postgres';
 
 import {
   cleanupE2EUsers,
@@ -25,11 +26,17 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import { productState } from '../fixtures/product';
+import { selectComposerLens } from '../fixtures/ui-journey';
 
 type P1Envelope<T> = {
   data?: T;
   error?: { code?: string; message?: string };
 };
+
+const TEST_DATABASE_URL =
+  process.env.TEST_DATABASE_URL ??
+  process.env.DATABASE_URL ??
+  'postgres://meiye:meiye@127.0.0.1:54329/meiye';
 
 const CONTROL_LIMITS = {
   maxDelegations: 2,
@@ -41,6 +48,39 @@ const CONTROL_LIMITS = {
   maxToolCalls: 8,
   maxContextTokens: 32_000,
 };
+
+const PROMPT_PACK_BINDINGS = {
+  agentControl: [
+    'intentNaming',
+    'factSatisfaction',
+    'factCriticality',
+    'destinationMapping',
+  ],
+  copy: [
+    'briefCompilation',
+    'copyCandidate',
+    'copyGeneration',
+    'platformAdaptation',
+  ],
+  note: [
+    'xhsOutline',
+    'xhsContent',
+    'xhsImagePrompt',
+    'notePlan',
+    'noteTextBlock',
+    'noteConsistency',
+    'xhsNoteGen',
+  ],
+  media: ['briefImage'],
+  cover: ['xhsCoverPrompt', 'xhsStyleAnalysis'],
+  viral: ['xhsViralRewrite', 'xhsViralImageVision'],
+  video: ['briefVideo', 'textResponse'],
+} as const;
+const PROMPT_BINDINGS = Object.fromEntries(
+  Object.values(PROMPT_PACK_BINDINGS)
+    .flat()
+    .map((key) => [key, { key, version: '1' }])
+);
 
 function publishInput(
   releaseId: string,
@@ -58,9 +98,10 @@ function publishInput(
     middlewareBindings: [],
     modelPolicyRevision: 'model/1',
     planSchemaRevision: 'plan-schema/v1',
-    promptBindings: {},
-    promptPackBindings: {},
+    promptBindings: PROMPT_BINDINGS,
+    promptPackBindings: PROMPT_PACK_BINDINGS,
     releaseId,
+    reason: 'e2e publish release',
     rightsPolicyRevision: 'rights/1',
     schemaBindings: {},
     skillBindings: {},
@@ -69,6 +110,84 @@ function publishInput(
     version: 1,
     ...overrides,
   };
+}
+
+async function seedPassedReleaseVerdict(releaseId: string, suffix: string) {
+  const sql = postgres(TEST_DATABASE_URL);
+  const createdAt = new Date().toISOString();
+  const result = {
+    schemaVersion: 'eval-layer-result/v1',
+    resultId: `eval-${suffix}-${releaseId}`,
+    layer: 'l1',
+    harnessReleaseId: releaseId,
+    evalSuiteRevision: 'eval/1',
+    gates: ['fidelity', 'rights', 'redline'].map((kind) => ({
+      id: `${kind}-${suffix}`,
+      kind,
+      passed: true,
+    })),
+    thresholds: [],
+    verdict: 'passed',
+    scoredBookkept: false,
+    releasable: true,
+    createdAt,
+  };
+  try {
+    await sql`INSERT INTO p1_eval_layer_results
+      (result_id, harness_release_id, layer, verdict, payload, created_at)
+      VALUES (${result.resultId}, ${releaseId}, ${result.layer}, ${result.verdict}, ${sql.json(result)}, ${createdAt})`;
+  } finally {
+    await sql.end();
+  }
+}
+
+async function submitCopyRun(page: Page, intent: string) {
+  await page.goto('/dashboard');
+  await selectComposerLens(page, 'copy');
+  await page.getByTestId('composer-intent-input').fill(intent);
+  await expect(page.getByTestId('composer-submit')).toBeEnabled({
+    timeout: 30_000,
+  });
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  await page.getByTestId('composer-submit').click();
+  const brief = page.getByTestId('composer-brief-surface');
+  if (await brief.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await page.getByTestId('composer-brief-confirm').click();
+  }
+  const response = await responsePromise;
+  expect(response.ok()).toBeTruthy();
+}
+
+async function latestWorkspaceRun(workspaceId: string) {
+  const sql = postgres(TEST_DATABASE_URL);
+  try {
+    const result = await sql<{ run_id: string; harness_release_id: string }[]>`
+      SELECT runs.run_id, runs.harness_release_id
+       FROM p1_agent_runs runs
+       JOIN p1_agent_threads threads ON threads.thread_id = runs.thread_id
+       WHERE threads.resource_id = ${workspaceId}
+       ORDER BY runs.started_at DESC LIMIT 1`;
+    if (!result[0]) throw new Error(`No Agent Run found for ${workspaceId}`);
+    return result[0];
+  } finally {
+    await sql.end();
+  }
+}
+
+async function exactRunRelease(runId: string) {
+  const sql = postgres(TEST_DATABASE_URL);
+  try {
+    const result = await sql<{ harness_release_id: string }[]>`
+      SELECT harness_release_id FROM p1_agent_runs WHERE run_id = ${runId}`;
+    return result[0]?.harness_release_id ?? null;
+  } finally {
+    await sql.end();
+  }
 }
 
 async function p1Query<T>(
@@ -274,39 +393,54 @@ test.describe('V31-22 Ops Console release journey (AC4)', () => {
         `transition-a-${toStatus}-${suffix}`
       );
     }
-    await p1Command(
-      page,
-      'ops-console',
-      'set_canary_allowlist',
-      {
-        releaseId: releaseA,
-        reason: 'e2e canary allowlist',
-        workspaceAllowlist: [workspaceId],
-      },
-      `canary-allowlist-a-${suffix}`
-    );
-
-    // ── candidate 试跑。
-    await p1Command(
-      page,
-      'ops-console',
-      'set_candidate_trial',
-      {
-        candidateReleaseId: releaseA,
-        reason: 'e2e candidate trial',
-        workspaceId,
-      },
-      `candidate-trial-${suffix}`
-    );
+    await page.goto('/admin/ops-console');
+    await expect(page.getByTestId('admin-ops-console')).toBeVisible();
+    await page
+      .getByTestId('admin-ops-console-allowlist-release')
+      .fill(releaseA);
+    await page
+      .getByTestId('admin-ops-console-allowlist-workspaces')
+      .fill(workspaceId);
+    await page
+      .getByTestId('admin-ops-console-allowlist-reason')
+      .fill('e2e canary allowlist');
+    await page.getByTestId('admin-ops-console-allowlist-submit').click();
+    await expect
+      .poll(
+        async () =>
+          (
+            await p1Query<OpsReleaseList>(page, 'ops-console', 'list_releases')
+          ).items.find((item) => item.releaseId === releaseA)
+            ?.workspaceAllowlist
+      )
+      .toEqual([workspaceId]);
 
     // ── 人工放量 (U12 human click)。
+    await seedPassedReleaseVerdict(releaseA, `a-${suffix}`);
     await p1Command(
       page,
       'ops-console',
-      'promote_to_production',
-      { releaseId: releaseA, reason: 'e2e promote A' },
-      `promote-a-${suffix}`
+      'record_rollback_drill',
+      {
+        releaseId: releaseA,
+        result: 'passed',
+        reason: 'e2e readiness A',
+        evidence: 'e2e readiness A',
+      },
+      `readiness-a-${suffix}`
     );
+    await page.getByTestId('admin-ops-console-promote-release').fill(releaseA);
+    await page
+      .getByTestId('admin-ops-console-promote-reason')
+      .fill('e2e promote A');
+    await page.getByTestId('admin-ops-console-promote-submit').click();
+    await expect
+      .poll(
+        async () =>
+          (await p1Query<OpsReleaseList>(page, 'ops-console', 'list_releases'))
+            .production
+      )
+      .toBe(releaseA);
 
     const afterPromoteA = await p1Query<OpsReleaseList>(
       page,
@@ -326,9 +460,26 @@ test.describe('V31-22 Ops Console release journey (AC4)', () => {
       page,
       'ops-console',
       'publish_release',
-      publishInput(releaseB, { version: 2 }),
+      publishInput(releaseB, { version: 2, toolPolicyRevision: 'tool/2' }),
       `publish-b-${suffix}`
     );
+    await page.goto('/admin/ops-console');
+    await page
+      .getByTestId('admin-ops-console-trial-workspace')
+      .fill(workspaceId);
+    await page.getByTestId('admin-ops-console-trial-release').fill(releaseB);
+    await page
+      .getByTestId('admin-ops-console-trial-reason')
+      .fill('e2e one-run candidate trial');
+    await page.getByTestId('admin-ops-console-trial-submit').click();
+    await submitCopyRun(page, `candidate release B ${suffix}`);
+    const candidateRun = await latestWorkspaceRun(workspaceId);
+    expect(candidateRun.harness_release_id).toBe(releaseB);
+    await submitCopyRun(page, `non-canary production release A ${suffix}`);
+    const productionRun = await latestWorkspaceRun(workspaceId);
+    expect(productionRun.run_id).not.toBe(candidateRun.run_id);
+    expect(productionRun.harness_release_id).toBe(releaseA);
+
     for (const toStatus of ['evaluating', 'canary'] as const) {
       await p1Command(
         page,
@@ -353,13 +504,32 @@ test.describe('V31-22 Ops Console release journey (AC4)', () => {
       },
       `canary-allowlist-b-${suffix}`
     );
+    await page.goto('/admin/ops-console');
+    await seedPassedReleaseVerdict(releaseB, `b-${suffix}`);
     await p1Command(
       page,
       'ops-console',
-      'promote_to_production',
-      { releaseId: releaseB, reason: 'e2e promote B' },
-      `promote-b-${suffix}`
+      'record_rollback_drill',
+      {
+        releaseId: releaseB,
+        result: 'passed',
+        reason: 'e2e readiness B',
+        evidence: 'e2e readiness B',
+      },
+      `readiness-b-${suffix}`
     );
+    await page.getByTestId('admin-ops-console-promote-release').fill(releaseB);
+    await page
+      .getByTestId('admin-ops-console-promote-reason')
+      .fill('e2e promote B');
+    await page.getByTestId('admin-ops-console-promote-submit').click();
+    await expect
+      .poll(
+        async () =>
+          (await p1Query<OpsReleaseList>(page, 'ops-console', 'list_releases'))
+            .production
+      )
+      .toBe(releaseB);
 
     // ── diff 可读(放量前对照)。
     const diff = await p1Query<{ changes: unknown[] }>(
@@ -371,22 +541,21 @@ test.describe('V31-22 Ops Console release journey (AC4)', () => {
     expect(diff.changes.length).toBeGreaterThan(0);
 
     // ── 一键 rollback 回 A，带 reason + evidence(强制留痕)。
-    const rolled = await p1Command<{
-      previousProduction: { releaseId: string } | null;
-      production: { releaseId: string };
-    }>(
-      page,
-      'ops-console',
-      'rollback_production',
-      {
-        evidence: 'e2e rollback drill evidence link',
-        reason: 'e2e rollback to A after B regression',
-        toReleaseId: releaseA,
-      },
-      `rollback-${suffix}`
-    );
-    expect(rolled.production.releaseId).toBe(releaseA);
-    expect(rolled.previousProduction?.releaseId).toBe(releaseB);
+    await page.getByTestId('admin-ops-console-rollback-target').fill(releaseA);
+    await page
+      .getByTestId('admin-ops-console-rollback-reason')
+      .fill('e2e rollback to A after B regression');
+    await page
+      .getByTestId('admin-ops-console-rollback-evidence')
+      .fill('e2e rollback drill evidence link');
+    await page.getByTestId('admin-ops-console-rollback-submit').click();
+    await expect
+      .poll(
+        async () =>
+          (await p1Query<OpsReleaseList>(page, 'ops-console', 'list_releases'))
+            .production
+      )
+      .toBe(releaseA);
 
     // ── rollback 后新任务走旧 release: resolveForRun 只读 production
     // lifecycle,production 指针即新任务的解析结果。
@@ -406,6 +575,12 @@ test.describe('V31-22 Ops Console release journey (AC4)', () => {
       ({ releaseId }) => releaseId === releaseA
     );
     expect(itemAAfter?.status).toBe('production');
+    expect(await exactRunRelease(candidateRun.run_id)).toBe(releaseB);
+    await submitCopyRun(page, `post rollback production release A ${suffix}`);
+    expect((await latestWorkspaceRun(workspaceId)).harness_release_id).toBe(
+      releaseA
+    );
+    await page.goto('/admin/ops-console');
 
     // ── 回滚演练留痕。
     const drill = await p1Command<{ drill: { id: string; result: string } }>(
@@ -468,10 +643,18 @@ test.describe('V31-22 Ops Console release journey (AC4)', () => {
     expect(auditByTarget.get('rollback_production')!.evidence).toMatch(
       /e2e rollback/i
     );
-    expect(auditByTarget.get('record_rollback_drill')!.evidence).toMatch(
-      /e2e drill/i
-    );
-    const rollbackTarget = auditByTarget.get('rollback_production')!.target;
-    expect(rollbackTarget).toBe(releaseA);
+    expect(
+      audit.items.some(
+        (entry) =>
+          entry.action === 'record_rollback_drill' &&
+          /e2e drill/i.test(entry.evidence ?? '')
+      )
+    ).toBe(true);
+    expect(
+      audit.items.some(
+        (entry) =>
+          entry.action === 'rollback_production' && entry.target === releaseA
+      )
+    ).toBe(true);
   });
 });

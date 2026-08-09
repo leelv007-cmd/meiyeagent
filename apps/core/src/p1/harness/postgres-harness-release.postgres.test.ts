@@ -17,6 +17,10 @@ import {
 } from './harness-release.js';
 import { PostgresHarnessReleaseStore } from './postgres-harness-release.js';
 import {
+  ensureSeedProductionRelease,
+  SEED_HARNESS_RELEASE_ID,
+} from './seed-harness-release.js';
+import {
   defaultPromptPackBindings,
   promptKeysForAllPacks,
 } from './prompt-packs.js';
@@ -178,6 +182,48 @@ test(
 );
 
 test(
+  'Postgres startup upgrades legacy empty immutable production to exact-pin seed',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessReleaseStore(pool);
+    await store.migrate();
+    const service = new HarnessReleaseService(store);
+    const legacyId = `hr-legacy-empty-${randomUUID()}`;
+    const ids = [legacyId, SEED_HARNESS_RELEASE_ID];
+    try {
+      await service.publishArtifact(publishInput(legacyId));
+      for (const toStatus of ['evaluating', 'canary', 'production'] as const) {
+        await service.transitionLifecycle({ releaseId: legacyId, toStatus });
+      }
+      await pool.query(
+        `UPDATE p1_harness_release_artifacts
+         SET payload = jsonb_set(jsonb_set(payload, '{promptBindings}', '{}'::jsonb), '{promptPackBindings}', '{}'::jsonb)
+         WHERE release_id = $1`,
+        [legacyId],
+      );
+
+      await ensureSeedProductionRelease({ store, service });
+
+      assert.equal(
+        (await store.getLifecycleByStatus('production'))?.releaseId,
+        SEED_HARNESS_RELEASE_ID,
+      );
+      assert.equal((await store.getLifecycle(legacyId))?.status, 'retired');
+      assert.ok(
+        Object.keys((await service.getExactRelease(SEED_HARNESS_RELEASE_ID)).promptBindings).length > 0,
+      );
+    } finally {
+      await pool.query('DELETE FROM p1_harness_release_production_history WHERE release_id = ANY($1::text[])', [ids]);
+      await pool.query('DELETE FROM p1_harness_release_rollouts WHERE release_id = ANY($1::text[])', [ids]);
+      await pool.query('DELETE FROM p1_harness_release_lifecycle WHERE release_id = ANY($1::text[])', [ids]);
+      await pool.query('DELETE FROM p1_harness_release_artifacts WHERE release_id = ANY($1::text[])', [ids]);
+      await pool.end();
+    }
+  },
+);
+
+test(
   'Postgres lifecycle swap serializes concurrent production changes atomically',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
@@ -186,6 +232,8 @@ test(
     await store.migrate();
     const service = new HarnessReleaseService(store);
     const ids = [0, 1, 2].map(() => `hr-swap-${randomUUID()}`);
+    const staleId = `hr-stale-${randomUUID()}`;
+    const cleanupIds = [...ids, staleId];
     try {
       for (const [index, releaseId] of ids.entries()) {
         await service.publishArtifact(
@@ -195,9 +243,29 @@ test(
           }),
         );
       }
-      for (const toStatus of ['evaluating', 'canary', 'production'] as const) {
-        await service.transitionLifecycle({ releaseId: ids[0]!, toStatus });
+      await service.publishArtifact(publishInput(staleId, { version: 4 }));
+      const staleLifecycle = await store.getLifecycle(staleId);
+      assert.ok(staleLifecycle);
+      const staleRace = await Promise.allSettled([
+        store.transitionLifecycleAtomic('draft', {
+          ...staleLifecycle,
+          status: 'evaluating',
+          updatedAt: '2026-08-08T13:00:00.000Z',
+        }),
+        store.transitionLifecycleAtomic('draft', {
+          ...staleLifecycle,
+          status: 'retired',
+          updatedAt: '2026-08-08T13:00:01.000Z',
+        }),
+      ]);
+      assert.equal(staleRace.filter((item) => item.status === 'fulfilled').length, 1);
+      assert.equal(staleRace.filter((item) => item.status === 'rejected').length, 1);
+      for (const releaseId of ids) {
+        for (const toStatus of ['evaluating', 'canary', 'production'] as const) {
+          await service.transitionLifecycle({ releaseId, toStatus });
+        }
       }
+      await service.rollbackProduction({ toReleaseId: ids[0]! });
 
       await Promise.all([
         service.rollbackProduction({ toReleaseId: ids[1]!, approvedBy: 'ops-a' }),
@@ -218,16 +286,20 @@ test(
       );
     } finally {
       await pool.query(
+        'DELETE FROM p1_harness_release_production_history WHERE release_id = ANY($1::text[])',
+        [cleanupIds],
+      );
+      await pool.query(
         'DELETE FROM p1_harness_release_rollouts WHERE release_id = ANY($1::text[])',
-        [ids],
+        [cleanupIds],
       );
       await pool.query(
         'DELETE FROM p1_harness_release_lifecycle WHERE release_id = ANY($1::text[])',
-        [ids],
+        [cleanupIds],
       );
       await pool.query(
         'DELETE FROM p1_harness_release_artifacts WHERE release_id = ANY($1::text[])',
-        [ids],
+        [cleanupIds],
       );
       await pool.end();
     }

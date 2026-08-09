@@ -15,6 +15,9 @@ export type OpsCandidateTrial = {
   operatorId: string;
   reason: string;
   updatedAt: string;
+  expiresAt: string;
+  consumedByRunId: string | null;
+  consumedAt: string | null;
 };
 
 export type OpsRollbackDrillRecord = {
@@ -37,6 +40,12 @@ export interface OpsKillSwitchStore {
 export interface OpsCandidateTrialStore {
   putCandidateTrial(trial: OpsCandidateTrial): Promise<OpsCandidateTrial>;
   getCandidateTrial(workspaceId: string): Promise<OpsCandidateTrial | null>;
+  consumeCandidateTrial(input: {
+    workspaceId: string;
+    runId: string;
+    now: string;
+  }): Promise<OpsCandidateTrial | null>;
+  clearCandidateTrials(): Promise<void>;
   listCandidateTrials(): Promise<OpsCandidateTrial[]>;
 }
 
@@ -110,6 +119,26 @@ export class MemoryOpsCandidateTrialStore implements OpsCandidateTrialStore {
   async getCandidateTrial(workspaceId: string): Promise<OpsCandidateTrial | null> {
     const item = this.byWorkspace.get(workspaceId);
     return item ? structuredClone(item) : null;
+  }
+
+  async consumeCandidateTrial(input: { workspaceId: string; runId: string; now: string }) {
+    const item = this.byWorkspace.get(input.workspaceId);
+    if (!item || item.expiresAt <= input.now) {
+      if (item) this.byWorkspace.delete(input.workspaceId);
+      return null;
+    }
+    if (item.consumedByRunId && item.consumedByRunId !== input.runId) return null;
+    const consumed = {
+      ...item,
+      consumedByRunId: input.runId,
+      consumedAt: item.consumedAt ?? input.now,
+    };
+    this.byWorkspace.set(input.workspaceId, consumed);
+    return structuredClone(consumed);
+  }
+
+  async clearCandidateTrials(): Promise<void> {
+    this.byWorkspace.clear();
   }
 }
 

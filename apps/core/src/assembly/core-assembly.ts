@@ -108,6 +108,7 @@ import { PostgresHarnessReleaseStore } from '../p1/harness/postgres-harness-rele
 import {
   HarnessReleaseService,
 } from '../p1/harness/harness-release.js';
+import { ensureSeedProductionRelease } from '../p1/harness/seed-harness-release.js';
 import {
   assertProductionReleasePromptResolvable,
 } from '../p1/harness/prompt-packs.js';
@@ -462,12 +463,12 @@ export async function assembleCoreGraph(
   ]);
   await sensitiveWordsRepository.ensurePlatformBaseline();
   await harnessObservabilityStore.activateObservabilityReconciliationCutover();
-  /**
-   * Boot validates an existing production release only. A fresh environment
-   * remains unpinned until ops publishes an explicit, complete manifest; new
-   * runs then fail closed instead of inventing a second prompt authority.
-   */
+  /** Boot upgrades only absent/legacy-empty production to the checked-in seed. */
   const harnessReleaseService = new HarnessReleaseService(harnessReleaseStore);
+  await ensureSeedProductionRelease({
+    store: harnessReleaseStore,
+    service: harnessReleaseService,
+  });
   const bootProductionLifecycle =
     await harnessReleaseStore.getLifecycleByStatus('production');
   const bootProductionArtifact = bootProductionLifecycle

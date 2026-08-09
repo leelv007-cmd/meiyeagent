@@ -16,6 +16,7 @@ import {
 
 import type { P1Context } from '../foundation/domain.js';
 import { P1DomainError } from '../foundation/domain.js';
+import { MemoryEvalVerdictStore } from '../eval/verdict-store.js';
 import {
   defaultPromptPackBindings,
   HARNESS_PROMPT_PACKS,
@@ -127,6 +128,7 @@ function createHarness() {
   const killSwitches = new MemoryOpsKillSwitchStore();
   const trials = new MemoryOpsCandidateTrialStore();
   const drills = new MemoryOpsRollbackDrillStore();
+  const verdicts = new MemoryEvalVerdictStore();
   const service = new OpsConsoleService({
     releases,
     catalog: store,
@@ -135,10 +137,41 @@ function createHarness() {
     killSwitches,
     trials,
     drills,
+    verdicts,
     langfuseBaseUrl: 'https://langfuse.example.test',
   });
   const module = new OpsConsoleFoundationModule(service);
-  return { store, releases, service, module, audit, toolPolicies, trials };
+  return { store, releases, service, module, audit, toolPolicies, trials, drills, verdicts };
+}
+
+async function recordGreenPromotionGates(
+  releaseId: string,
+  verdicts: MemoryEvalVerdictStore,
+  drills: MemoryOpsRollbackDrillStore,
+) {
+  await verdicts.putImmutable({
+    schemaVersion: 'eval-layer-result/v1',
+    resultId: `green-${releaseId}`,
+    layer: 'l1',
+    harnessReleaseId: releaseId as never,
+    evalSuiteRevision: 'eval/1',
+    gates: (['fidelity', 'rights', 'redline'] as const).map((kind) => ({ id: `${kind}-${releaseId}`, kind, passed: true })),
+    thresholds: [],
+    verdict: 'passed',
+    scoredBookkept: false,
+    releasable: true,
+    createdAt: TS,
+  });
+  await drills.appendRollbackDrill({
+    id: `drill-${releaseId}`,
+    releaseId,
+    operatorId: 'ops-a',
+    reason: 'readiness',
+    evidence: 'playbook',
+    result: 'passed',
+    notes: null,
+    createdAt: TS,
+  });
 }
 
 test('capability map: ops-console admin actions require platform.manage; operator lacks it', () => {
@@ -230,7 +263,7 @@ test('publish_release rejects missing prompt pin and surfaces pack key', async (
 });
 
 test('publish → canary allowlist → candidate trial → promote → rollback with audit', async () => {
-  const { module, service, releases, trials: trialStore } = createHarness();
+  const { module, service, releases, trials: trialStore, verdicts, drills } = createHarness();
 
   const published = (await module.execute({
     context: adminCtx('ops-a'),
@@ -261,6 +294,7 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
       },
     },
   });
+  await recordGreenPromotionGates('rel-prod', verdicts, drills);
   await module.execute({
     context: adminCtx('ops-a'),
     input: {
@@ -335,10 +369,20 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
   // The workspace trial assignment is consumed by the new-run resolver.
   const trialResolve = await resolveWorkspaceHarnessRelease({
     workspaceId: 'ws-trial',
+    runId: 'run-trial-1',
+    now: TS,
     releases,
     trials: trialStore,
   });
   assert.equal(trialResolve.selection, 'candidate');
+  const nextRun = await resolveWorkspaceHarnessRelease({
+    workspaceId: 'ws-trial',
+    runId: 'run-trial-2',
+    now: TS,
+    releases,
+    trials: trialStore,
+  });
+  assert.equal(nextRun.selection, 'production');
 
   await module.execute({
     context: adminCtx('ops-a'),
@@ -352,6 +396,7 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
       },
     },
   });
+  await recordGreenPromotionGates('rel-next', verdicts, drills);
   await module.execute({
     context: adminCtx('ops-a'),
     input: {
@@ -430,6 +475,7 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
 
   const newTask = await releases.resolveForRun({ workspaceId: 'ws-x' });
   assert.equal(newTask.releaseId, 'rel-prod');
+  assert.equal((await trialStore.listCandidateTrials()).length, 0);
   const stillFrozen = await releases.resolveForRun({
     workspaceId: 'ws-x',
     frozenReleaseId: 'rel-next',
@@ -495,7 +541,40 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
   })) as unknown as { drill: { result: string }; audit: { action: string } };
   assert.equal(drill.drill.result, 'passed');
   assert.equal(drill.audit.action, 'record_rollback_drill');
-  assert.equal((await service.listRollbackDrills()).length, 1);
+  assert.equal(
+    (await service.listRollbackDrills()).filter(
+      (item) => item.evidence === 'drill-run-1',
+    ).length,
+    1,
+  );
+});
+
+test('promotion reads release-bound gates and treats scored as audit-only', async () => {
+  const { releases, service, verdicts, drills } = createHarness();
+  await releases.publishArtifact(basePublish('rel-scored'));
+  await releases.transitionLifecycle({ releaseId: 'rel-scored', toStatus: 'evaluating' });
+  await releases.transitionLifecycle({ releaseId: 'rel-scored', toStatus: 'canary' });
+  await verdicts.putImmutable({
+    schemaVersion: 'eval-layer-result/v1',
+    resultId: 'scored-rel-scored',
+    layer: 'l1',
+    harnessReleaseId: 'rel-scored' as never,
+    evalSuiteRevision: 'eval/1',
+    gates: (['fidelity', 'rights', 'redline'] as const).map((kind) => ({ id: `${kind}-scored`, kind, passed: true })),
+    thresholds: [{ id: 'brand-tone', kind: 'brand_tone', score: 0, direction: 'min', bound: 1, met: false }],
+    verdict: 'scored',
+    scoredBookkept: true,
+    releasable: true,
+    createdAt: TS,
+  });
+  await drills.appendRollbackDrill({
+    id: 'drill-scored', releaseId: 'rel-scored', operatorId: 'ops-a',
+    reason: 'readiness', evidence: 'run', result: 'passed', notes: null, createdAt: TS,
+  });
+  await assert.rejects(
+    service.promoteToProduction(adminCtx(), { releaseId: 'rel-scored' }, { reason: 'human click' }),
+    /scored=1 is audit-only/,
+  );
 });
 
 test('tool policy edits only create new revisions; in-place update is blocked', async () => {

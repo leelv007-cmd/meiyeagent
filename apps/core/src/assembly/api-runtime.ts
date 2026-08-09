@@ -129,6 +129,7 @@ import {
   shouldSampleShadowReconciliation,
 } from '../p1/harness/shadow-reconciliation.js';
 import { HarnessTaskAdmissionService } from '../p1/harness/task-admission.js';
+import { PostgresEvalVerdictStore } from '../p1/eval/postgres-verdict-store.js';
 import {
   FixtureImageExactTextVerifier,
   ModelSupplyImageExactTextVerifier,
@@ -865,6 +866,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           killSwitches: opsConsoleStore,
           trials: opsConsoleStore,
           drills: opsConsoleStore,
+          verdicts: new PostgresEvalVerdictStore(pool),
           langfuseBaseUrl: env.LANGFUSE_BASE_URL ?? null,
           // V31-26a / U14: production PG inventory for legacy replay archive gate.
           legacyReplayInventory: new PostgresLegacyReplayInventory(pool),
@@ -1558,6 +1560,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
               ? await harnessReleaseService.resolveForRun({ frozenReleaseId })
               : await resolveWorkspaceHarnessRelease({
                   workspaceId: request.workspaceId,
+                  runId: request.taskId,
                   releases: harnessReleaseService,
                   trials: opsConsoleStore,
                 });
@@ -1604,9 +1607,10 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         // (canary workspace-allowlist applies here). The pinned releaseId is
         // then frozen on the Run + ExecutionPlanSnapshot — rollback changes
         // only what *new* runs resolve to, never in-flight pins.
-        resolveHarnessReleaseId: async (submission) => {
+        resolveHarnessReleaseId: async (submission, runId) => {
           const resolved = await resolveWorkspaceHarnessRelease({
             workspaceId: submission.snapshot.workspaceId,
+            runId,
             releases: harnessReleaseService,
             trials: opsConsoleStore,
           });

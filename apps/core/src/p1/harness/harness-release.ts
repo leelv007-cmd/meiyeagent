@@ -144,9 +144,11 @@ export interface HarnessReleaseStore {
   putLifecycle(
     lifecycle: HarnessReleaseLifecycle,
   ): Promise<HarnessReleaseLifecycle>;
-  /** Atomically retire the exclusive status holder and install the successor. */
-  putLifecycleExclusive(
+  /** CAS the target lifecycle and atomically swap exclusive holders. */
+  transitionLifecycleAtomic(
+    expectedStatus: HarnessReleaseLifecycleStatus,
     lifecycle: HarnessReleaseLifecycle,
+    options?: { requirePriorProduction?: boolean },
   ): Promise<{
     lifecycle: HarnessReleaseLifecycle;
     previousHolder: HarnessReleaseLifecycle | null;
@@ -168,6 +170,7 @@ export class MemoryHarnessReleaseStore implements HarnessReleaseStore {
   private readonly artifacts = new Map<string, HarnessReleaseArtifact>();
   private readonly lifecycles = new Map<string, HarnessReleaseLifecycle>();
   private readonly rollouts = new Map<string, HarnessReleaseRollout>();
+  private readonly productionHistory = new Set<string>();
 
   async putArtifactImmutable(
     artifact: HarnessReleaseArtifact,
@@ -214,22 +217,35 @@ export class MemoryHarnessReleaseStore implements HarnessReleaseStore {
       }
     }
     this.lifecycles.set(parsed.releaseId, structuredClone(parsed));
+    if (parsed.status === 'production') this.productionHistory.add(parsed.releaseId);
     return structuredClone(parsed);
   }
 
-  async putLifecycleExclusive(lifecycle: HarnessReleaseLifecycle) {
+  async transitionLifecycleAtomic(
+    expectedStatus: HarnessReleaseLifecycleStatus,
+    lifecycle: HarnessReleaseLifecycle,
+    options: { requirePriorProduction?: boolean } = {},
+  ) {
     const parsed = harnessReleaseLifecycleSchema.parse(lifecycle);
-    if (parsed.status !== 'production' && parsed.status !== 'canary') {
+    const current = this.lifecycles.get(parsed.releaseId);
+    if (!current || current.status !== expectedStatus) {
       throw new P1DomainError(
         'INVALID_STATE',
-        'Exclusive lifecycle swap only supports production or canary.',
+        `Stale lifecycle transition for ${parsed.releaseId}; expected ${expectedStatus}, found ${current?.status ?? 'missing'}.`,
       );
     }
+    const allowed = LIFECYCLE_TRANSITIONS[current.status];
+    if (!allowed.includes(parsed.status)) {
+      throw new P1DomainError('INVALID_STATE', `Illegal lifecycle transition ${current.status} → ${parsed.status} for ${parsed.releaseId}.`);
+    }
+    if (options.requirePriorProduction && !this.productionHistory.has(parsed.releaseId)) {
+      throw new P1DomainError('INVALID_STATE', `Rollback target ${parsed.releaseId} has no prior production identity.`);
+    }
     let previousHolder: HarnessReleaseLifecycle | null = null;
-    for (const [id, current] of this.lifecycles) {
-      if (id !== parsed.releaseId && current.status === parsed.status) {
+    for (const [id, holder] of this.lifecycles) {
+      if (id !== parsed.releaseId && holder.status === parsed.status && (parsed.status === 'production' || parsed.status === 'canary')) {
         previousHolder = harnessReleaseLifecycleSchema.parse({
-          ...current,
+          ...holder,
           status: 'retired',
           updatedAt: parsed.updatedAt,
         });
@@ -238,6 +254,7 @@ export class MemoryHarnessReleaseStore implements HarnessReleaseStore {
       }
     }
     this.lifecycles.set(parsed.releaseId, structuredClone(parsed));
+    if (parsed.status === 'production') this.productionHistory.add(parsed.releaseId);
     return {
       lifecycle: structuredClone(parsed),
       previousHolder: previousHolder ? structuredClone(previousHolder) : null,
@@ -545,10 +562,9 @@ export class HarnessReleaseService {
           : current.approvedAt,
       updatedAt,
     });
-    if (next.status === 'production' || next.status === 'canary') {
-      return (await this.store.putLifecycleExclusive(next)).lifecycle;
-    }
-    return this.store.putLifecycle(next);
+    return (
+      await this.store.transitionLifecycleAtomic(current.status, next)
+    ).lifecycle;
   }
 
   async updateRollout(input: {
@@ -673,10 +689,15 @@ export class HarnessReleaseService {
     if (target.status === 'production') {
       return { production: target, previousProduction: null };
     }
-    // Allow rollback from retired (or any non-production) by forcing
-    // transition path: retire current production, then set target production.
+    if (target.status !== 'retired') {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Rollback target ${input.toReleaseId} must be retired, found ${target.status}.`,
+      );
+    }
     const updatedAt = nowIso(input.now);
-    const swapped = await this.store.putLifecycleExclusive(
+    const swapped = await this.store.transitionLifecycleAtomic(
+      'retired',
       harnessReleaseLifecycleSchema.parse({
         schemaVersion: HARNESS_RELEASE_LIFECYCLE_SCHEMA_VERSION,
         releaseId: input.toReleaseId,
@@ -685,6 +706,7 @@ export class HarnessReleaseService {
         approvedAt: updatedAt,
         updatedAt,
       }),
+      { requirePriorProduction: true },
     );
     return {
       production: swapped.lifecycle,

@@ -9,6 +9,7 @@ import type { HarnessReleaseLifecycle } from '@meiye/contracts';
 
 import { P1DomainError } from '../foundation/domain.js';
 import type { P1Context } from '../foundation/domain.js';
+import type { EvalVerdictStore } from '../eval/verdict-store.js';
 import {
   HarnessReleaseService,
   type HarnessReleaseStore,
@@ -77,10 +78,16 @@ export type OpsWriteMeta = {
 
 export async function resolveWorkspaceHarnessRelease(input: {
   workspaceId: string;
+  runId: string;
+  now?: string;
   releases: HarnessReleaseService;
   trials: OpsCandidateTrialStore;
 }) {
-  const trial = await input.trials.getCandidateTrial(input.workspaceId);
+  const trial = await input.trials.consumeCandidateTrial({
+    workspaceId: input.workspaceId,
+    runId: input.runId,
+    now: input.now ?? new Date().toISOString(),
+  });
   return input.releases.resolveForRun({
     workspaceId: input.workspaceId,
     ...(trial ? { candidateReleaseId: trial.candidateReleaseId } : {}),
@@ -99,6 +106,7 @@ export type OpsConsoleServiceDeps = {
   killSwitches: OpsKillSwitchStore;
   trials: OpsCandidateTrialStore;
   drills: OpsRollbackDrillStore;
+  verdicts?: Pick<EvalVerdictStore, 'listByRelease'>;
   langfuseBaseUrl?: string | null;
   /**
    * V31-26a / U14: inventory of active/pending legacy durable tasks.
@@ -341,6 +349,9 @@ export class OpsConsoleService {
       operatorId: context.userId,
       reason,
       updatedAt: nowIso(meta.now),
+      expiresAt: new Date(new Date(nowIso(meta.now)).getTime() + 15 * 60_000).toISOString(),
+      consumedByRunId: null,
+      consumedAt: null,
     };
     const stored = await this.deps.trials.putCandidateTrial(trial);
     const entry = await this.audit(
@@ -366,9 +377,31 @@ export class OpsConsoleService {
     input: { releaseId: string },
     meta: OpsWriteMeta,
   ) {
-    // U12: human click only — no auto promotion. scored verdicts are not
-    // consulted here; gates are assumed already reviewed outside this action.
     const reason = requireReason(meta.reason, 'promote_to_production');
+    const artifact = await this.deps.releases.getExactRelease(input.releaseId);
+    const [results, drills] = await Promise.all([
+      this.deps.verdicts?.listByRelease(input.releaseId, 50) ?? [],
+      this.deps.drills.listRollbackDrills(50),
+    ]);
+    const passed = results.find(
+      (result) =>
+        result.verdict === 'passed' &&
+        result.evalSuiteRevision === artifact.evalSuiteRevision,
+    );
+    const requiredKinds = ['fidelity', 'rights', 'redline'] as const;
+    const gatesGreen = requiredKinds.every((kind) =>
+      passed?.gates.some((gate) => gate.kind === kind && gate.passed),
+    );
+    const readinessGreen = drills.some(
+      (drill) => drill.releaseId === input.releaseId && drill.result === 'passed',
+    );
+    if (!passed || !gatesGreen || !readinessGreen) {
+      const scoredCount = results.filter((result) => result.verdict === 'scored').length;
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Promotion gates are not green for ${input.releaseId}: fidelity/rights/redline/readiness are required; scored=${scoredCount} is audit-only.`,
+      );
+    }
     const lifecycle = await this.deps.releases.transitionLifecycle({
       releaseId: input.releaseId,
       toStatus: 'production',
@@ -399,6 +432,7 @@ export class OpsConsoleService {
       approvedBy: context.userId,
       now: meta.now,
     });
+    await this.deps.trials.clearCandidateTrials();
     const entry = await this.audit(
       context,
       'rollback_production',

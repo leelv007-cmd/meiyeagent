@@ -255,6 +255,36 @@ test('copy admission resolves only its declared prompt packs', async () => {
   );
 });
 
+for (const assetIds of [[], ['asset-viral-1']] as const) {
+  test(`viral admission selects rewrite ${assetIds.length ? 'with' : 'without'} image vision`, async () => {
+    const registry = new MemoryRequestRegistry();
+    const resolver = new SelectivePromptResolver();
+    const snapshot = composerSnapshot(assetIds);
+    const base = promptKeysForPacks(['agentControl', 'copy', 'viral']);
+    const expected = assetIds.length
+      ? base
+      : base.filter((key) => key !== 'xhsViralImageVision');
+    const service = new HarnessTaskAdmissionService(
+      registry,
+      new RecordingStarter(),
+      resolver,
+      undefined,
+      undefined,
+      { async resolve() { return copyRoute(snapshot); } },
+      undefined,
+      undefined,
+      undefined,
+      {
+        async resolvePromptBindings() {
+          return Object.fromEntries(expected.map((key) => [key, { key, version: 'release-viral' }]));
+        },
+      },
+    );
+    await service.submit(snapshotTaskRequest(snapshot));
+    assert.deepEqual(resolver.requestedKeys, [expected]);
+  });
+}
+
 test('accepted task replay reads the frozen request before prompt resolution', async () => {
   const registry = new MemoryRequestRegistry();
   const starter = new RecordingStarter();
@@ -1331,7 +1361,7 @@ function taskRequest(overrides: { rawInput?: string; taskId?: string } = {}) {
   };
 }
 
-function composerSnapshot() {
+function composerSnapshot(viralAssetIds: readonly string[] | null = null) {
   return createCreationExecutionSnapshot(
     {
       actorId: 'owner-1',
@@ -1344,13 +1374,31 @@ function composerSnapshot() {
       creationMode: 'customized',
       intent: '为夏日护理项目写一条预约文案',
       surface: { id: 'surface-1', revision: 'surface-r1' },
-      recipe: { id: 'recipe-1', revision: 'recipe-r1' },
+      recipe: viralAssetIds
+        ? { id: 'recipe.viral_adapt', revision: 'recipe.viral_adapt@1' }
+        : { id: 'recipe-1', revision: 'recipe-r1' },
       lens: 'copy' as const,
       platform: { id: 'douyin' as const },
       deliverables: [
         { id: 'copy-primary', kind: 'copy' as const, quantity: 1, order: 1 },
       ],
-      sources: { assets: [] },
+      sources: {
+        assets: (viralAssetIds ?? []).map((id) => ({
+          id,
+          revision: '1',
+          role: 'source' as const,
+        })),
+      },
+      ...(viralAssetIds
+        ? {
+            viralAdaptSource: {
+              schemaVersion: 'viral-adapt-source/v1' as const,
+              track: 'paste' as const,
+              noteText: '夏日护理笔记',
+              authorizedAssetIds: [...viralAssetIds],
+            },
+          }
+        : {}),
       rights: { revision: 'rights-r1', summary: 'authorized' },
       identity: { id: 'identity-1', revision: 'identity-r1' },
       modelPolicy: {

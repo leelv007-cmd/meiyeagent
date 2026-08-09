@@ -31,7 +31,8 @@ export type ComposerPlanCompilerPort = {
 export type ComposerPlanSessionOptions = {
   now?: () => string;
   resolveHarnessReleaseId?: (
-    submission: CreationSubmissionRecord
+    submission: CreationSubmissionRecord,
+    runId: string,
   ) => string | Promise<string>;
 };
 
@@ -42,7 +43,8 @@ export class ComposerPlanSessionCoordinator
 {
   private readonly now: () => string;
   private readonly resolveHarnessReleaseId: (
-    submission: CreationSubmissionRecord
+    submission: CreationSubmissionRecord,
+    runId: string,
   ) => string | Promise<string>;
 
   constructor(
@@ -90,7 +92,7 @@ export class ComposerPlanSessionCoordinator
           expectedSessionRevision: thread.sessionRevision,
           runId,
           trigger: 'merchant_turn',
-          harnessReleaseId: await this.resolveHarnessReleaseId(submission),
+          harnessReleaseId: await this.resolveHarnessReleaseId(submission, runId),
           now,
         });
 

@@ -297,6 +297,48 @@ export class PostgresOpsConsoleStore
     return result.rows[0] ? structuredClone(result.rows[0].payload) : null;
   }
 
+  async consumeCandidateTrial(input: { workspaceId: string; runId: string; now: string }) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query<PayloadRow<OpsCandidateTrial>>(
+        `SELECT payload FROM p1_ops_console_candidate_trials
+         WHERE workspace_id = $1 FOR UPDATE`,
+        [input.workspaceId],
+      );
+      const current = result.rows[0]?.payload;
+      if (!current || current.expiresAt <= input.now) {
+        if (current) await client.query('DELETE FROM p1_ops_console_candidate_trials WHERE workspace_id = $1', [input.workspaceId]);
+        await client.query('COMMIT');
+        return null;
+      }
+      if (current.consumedByRunId && current.consumedByRunId !== input.runId) {
+        await client.query('COMMIT');
+        return null;
+      }
+      const consumed: OpsCandidateTrial = {
+        ...current,
+        consumedByRunId: input.runId,
+        consumedAt: current.consumedAt ?? input.now,
+      };
+      await client.query(
+        'UPDATE p1_ops_console_candidate_trials SET payload = $2::jsonb WHERE workspace_id = $1',
+        [input.workspaceId, JSON.stringify(consumed)],
+      );
+      await client.query('COMMIT');
+      return structuredClone(consumed);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async clearCandidateTrials(): Promise<void> {
+    await this.pool.query('DELETE FROM p1_ops_console_candidate_trials');
+  }
+
   // ── Rollback drills (append-only) ────────────────────────────────────────
 
   async appendRollbackDrill(

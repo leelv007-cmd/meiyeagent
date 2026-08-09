@@ -17,7 +17,10 @@ import {
 } from '@meiye/contracts';
 
 import { P1DomainError } from '../foundation/domain.js';
-import type { HarnessReleaseStore } from './harness-release.js';
+import type {
+  HarnessReleaseLifecycleStatus,
+  HarnessReleaseStore,
+} from './harness-release.js';
 
 type PayloadRow<T> = { payload: T };
 
@@ -59,6 +62,15 @@ export class PostgresHarnessReleaseStore implements HarnessReleaseStore {
       CREATE UNIQUE INDEX IF NOT EXISTS p1_harness_release_lifecycle_canary_uq
         ON p1_harness_release_lifecycle ((status))
         WHERE status = 'canary';
+      CREATE TABLE IF NOT EXISTS p1_harness_release_production_history (
+        release_id text PRIMARY KEY,
+        first_promoted_at timestamptz NOT NULL
+      );
+      INSERT INTO p1_harness_release_production_history (release_id, first_promoted_at)
+      SELECT release_id, COALESCE(approved_at, updated_at)
+      FROM p1_harness_release_lifecycle
+      WHERE status = 'production'
+      ON CONFLICT (release_id) DO NOTHING;
       CREATE TABLE IF NOT EXISTS p1_harness_release_rollouts (
         release_id text PRIMARY KEY,
         workspace_allowlist jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -169,6 +181,13 @@ export class PostgresHarnessReleaseStore implements HarnessReleaseStore {
           JSON.stringify(parsed),
         ],
       );
+      if (parsed.status === 'production') {
+        await client.query(
+          `INSERT INTO p1_harness_release_production_history (release_id, first_promoted_at)
+           VALUES ($1, $2::timestamptz) ON CONFLICT (release_id) DO NOTHING`,
+          [parsed.releaseId, parsed.updatedAt],
+        );
+      }
       await client.query('COMMIT');
       return harnessReleaseLifecycleSchema.parse(result.rows[0]!.payload);
     } catch (error) {
@@ -183,20 +202,50 @@ export class PostgresHarnessReleaseStore implements HarnessReleaseStore {
     }
   }
 
-  async putLifecycleExclusive(lifecycle: HarnessReleaseLifecycle) {
+  async transitionLifecycleAtomic(
+    expectedStatus: HarnessReleaseLifecycleStatus,
+    lifecycle: HarnessReleaseLifecycle,
+    options: { requirePriorProduction?: boolean } = {},
+  ) {
     const parsed = harnessReleaseLifecycleSchema.parse(lifecycle);
-    if (parsed.status !== 'production' && parsed.status !== 'canary') {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'Exclusive lifecycle swap only supports production or canary.',
-      );
-    }
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
       await client.query(
         `SELECT pg_advisory_xact_lock(hashtext('p1-harness-release-lifecycle-swap'))`,
       );
+      const targetResult = await client.query<PayloadRow<unknown>>(
+        `SELECT payload FROM p1_harness_release_lifecycle
+          WHERE release_id = $1 FOR UPDATE`,
+        [parsed.releaseId],
+      );
+      const targetPayload = clonePayload(targetResult.rows[0]);
+      if (!targetPayload) {
+        throw new P1DomainError('NOT_FOUND', `HarnessReleaseLifecycle not found: ${parsed.releaseId}`);
+      }
+      const target = harnessReleaseLifecycleSchema.parse(targetPayload);
+      if (target.status !== expectedStatus) {
+        throw new P1DomainError('INVALID_STATE', `Stale lifecycle transition for ${parsed.releaseId}; expected ${expectedStatus}, found ${target.status}.`);
+      }
+      const transitions: Record<HarnessReleaseLifecycleStatus, readonly HarnessReleaseLifecycleStatus[]> = {
+        draft: ['evaluating', 'retired'],
+        evaluating: ['canary', 'draft', 'retired'],
+        canary: ['production', 'evaluating', 'retired'],
+        production: ['retired'],
+        retired: ['production'],
+      };
+      if (!transitions[target.status].includes(parsed.status)) {
+        throw new P1DomainError('INVALID_STATE', `Illegal lifecycle transition ${target.status} → ${parsed.status} for ${parsed.releaseId}.`);
+      }
+      if (options.requirePriorProduction) {
+        const history = await client.query(
+          'SELECT 1 FROM p1_harness_release_production_history WHERE release_id = $1',
+          [parsed.releaseId],
+        );
+        if (!history.rows[0]) {
+          throw new P1DomainError('INVALID_STATE', `Rollback target ${parsed.releaseId} has no prior production identity.`);
+        }
+      }
       const holderResult = await client.query<PayloadRow<unknown>>(
         `SELECT payload FROM p1_harness_release_lifecycle
           WHERE status = $1 AND release_id <> $2
@@ -205,7 +254,7 @@ export class PostgresHarnessReleaseStore implements HarnessReleaseStore {
       );
       let previousHolder: HarnessReleaseLifecycle | null = null;
       const holderPayload = clonePayload(holderResult.rows[0]);
-      if (holderPayload) {
+      if (holderPayload && (parsed.status === 'production' || parsed.status === 'canary')) {
         const holder = harnessReleaseLifecycleSchema.parse(holderPayload);
         previousHolder = harnessReleaseLifecycleSchema.parse({
           ...holder,
@@ -224,15 +273,10 @@ export class PostgresHarnessReleaseStore implements HarnessReleaseStore {
         );
       }
       const result = await client.query<PayloadRow<HarnessReleaseLifecycle>>(
-        `INSERT INTO p1_harness_release_lifecycle
-           (release_id, status, approved_by, approved_at, updated_at, payload)
-         VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz, $6::jsonb)
-         ON CONFLICT (release_id) DO UPDATE SET
-           status = EXCLUDED.status,
-           approved_by = EXCLUDED.approved_by,
-           approved_at = EXCLUDED.approved_at,
-           updated_at = EXCLUDED.updated_at,
-           payload = EXCLUDED.payload
+        `UPDATE p1_harness_release_lifecycle SET
+           status = $2, approved_by = $3, approved_at = $4::timestamptz,
+           updated_at = $5::timestamptz, payload = $6::jsonb
+         WHERE release_id = $1 AND status = $7
          RETURNING payload`,
         [
           parsed.releaseId,
@@ -241,8 +285,19 @@ export class PostgresHarnessReleaseStore implements HarnessReleaseStore {
           parsed.approvedAt ?? null,
           parsed.updatedAt,
           JSON.stringify(parsed),
+          expectedStatus,
         ],
       );
+      if (!result.rows[0]) {
+        throw new P1DomainError('INVALID_STATE', `Stale lifecycle transition for ${parsed.releaseId}.`);
+      }
+      if (parsed.status === 'production') {
+        await client.query(
+          `INSERT INTO p1_harness_release_production_history (release_id, first_promoted_at)
+           VALUES ($1, $2::timestamptz) ON CONFLICT (release_id) DO NOTHING`,
+          [parsed.releaseId, parsed.updatedAt],
+        );
+      }
       await client.query('COMMIT');
       return {
         lifecycle: harnessReleaseLifecycleSchema.parse(result.rows[0]!.payload),

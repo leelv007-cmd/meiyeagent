@@ -737,7 +737,8 @@ export class HarnessTaskAdmissionService {
 function promptKeysForAdmission(
   request: HarnessWorkflowInputBeforeBounds,
 ) {
-  const lens = request.executionSnapshot?.lens;
+  const snapshot = request.executionSnapshot;
+  const lens = snapshot?.lens;
   if (!lens) {
     return promptKeysForPacks([
       'agentControl',
@@ -757,7 +758,17 @@ function promptKeysForAdmission(
         : lens === 'video'
           ? ['agentControl', 'video']
           : ['agentControl', 'media', 'cover'];
-  return promptKeysForPacks(packIds);
+  const selected = snapshot.recipe.id === 'recipe.viral_adapt'
+    ? [...packIds, 'viral' as const]
+    : packIds;
+  const keys = promptKeysForPacks(selected);
+  if (
+    snapshot.recipe.id === 'recipe.viral_adapt' &&
+    (snapshot.viralAdaptSource?.authorizedAssetIds.length ?? 0) === 0
+  ) {
+    return keys.filter((key) => key !== 'xhsViralImageVision');
+  }
+  return keys;
 }
 
 export function assertHarnessExecutionAssemblyPinned(
