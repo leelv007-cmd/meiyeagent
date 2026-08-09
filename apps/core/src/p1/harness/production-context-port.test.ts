@@ -118,6 +118,22 @@ test('execution fence adapter reads current fact and asset-rights heads', async 
     recordedBy: 'owner-1',
   });
   let revoked = false;
+  const rightsWithRevision = {
+    async resolve({ assetIds }: { assetIds: string[] }) {
+      return {
+        knownAssetIds: [...assetIds],
+        unauthorizedAssetIds: revoked ? [...assetIds] : [],
+      };
+    },
+    async resolveWithRevision({ assetIds }: { assetIds: string[] }) {
+      return {
+        knownAssetIds: [...assetIds],
+        // The live policy head, never an echo of the frozen coordinate.
+        rightsRevision: revoked ? 'rights-live-2' : 'rights-live-1',
+        unauthorizedAssetIds: revoked ? [...assetIds] : [],
+      };
+    },
+  };
   const ports = createAuthoritativeExecutionPlanLiveFactsPorts({
     facts,
     now: () => '2026-07-18T00:03:00.000Z',
@@ -125,14 +141,7 @@ test('execution fence adapter reads current fact and asset-rights heads', async 
       ...taskInput(),
       intent: { ...taskInput().intent, assetReferences: ['asset-1'] },
     },
-    rights: {
-      async resolve({ assetIds }) {
-        return {
-          knownAssetIds: [...assetIds],
-          unauthorizedAssetIds: revoked ? [...assetIds] : [],
-        };
-      },
-    },
+    rights: rightsWithRevision,
   });
 
   assert.deepEqual(
@@ -153,7 +162,33 @@ test('execution fence adapter reads current fact and asset-rights heads', async 
       workspaceId: 'workspace-1',
       rightsRevisionRefs: ['rights-freeze-1'],
     }),
-    [{ revisionId: 'rights-freeze-1', revoked: false }],
+    [
+      {
+        frozenRevisionId: 'rights-freeze-1',
+        revisionId: 'rights-live-1',
+        revoked: false,
+      },
+    ],
+  );
+  // V31-14: a resolver that cannot answer with a revision yields no head at
+  // all, so resolveExecutionPlanLiveFactsFromPorts treats the freeze as
+  // revoked. Reporting the frozen ref back as its own live head is the
+  // retired behaviour this asserts against.
+  const withoutRevisionHead = createAuthoritativeExecutionPlanLiveFactsPorts({
+    facts,
+    now: () => '2026-07-18T00:03:00.000Z',
+    request: {
+      ...taskInput(),
+      intent: { ...taskInput().intent, assetReferences: ['asset-1'] },
+    },
+    rights: { resolve: rightsWithRevision.resolve },
+  });
+  assert.deepEqual(
+    await withoutRevisionHead.resolveRightsHeads?.({
+      workspaceId: 'workspace-1',
+      rightsRevisionRefs: ['rights-freeze-1'],
+    }),
+    [],
   );
 
   await facts.append({
@@ -194,7 +229,13 @@ test('execution fence adapter reads current fact and asset-rights heads', async 
       workspaceId: 'workspace-1',
       rightsRevisionRefs: ['rights-freeze-1'],
     }),
-    [{ revisionId: 'rights-freeze-1', revoked: true }],
+    [
+      {
+        frozenRevisionId: 'rights-freeze-1',
+        revisionId: 'rights-live-2',
+        revoked: true,
+      },
+    ],
   );
 });
 
