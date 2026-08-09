@@ -1420,6 +1420,10 @@ export async function runHarnessWorkflow(
       workflowId,
     },
     programs,
+    executionId: workflowId,
+    effectStore: {
+      run: (key, operation) => runtime.runStep(key, operation),
+    },
     onResolved: (resolution) => {
       executorPathByRuntime.set(runtime, resolution.executorPath);
     },

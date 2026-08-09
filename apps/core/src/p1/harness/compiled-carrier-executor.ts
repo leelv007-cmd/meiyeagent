@@ -9,7 +9,10 @@
  * recipe + program registration (see carrier-unit-recipes constructive gate).
  */
 
-import type { CompiledExecutionPlan } from '@meiye/contracts';
+import type {
+  CompiledExecutionPlan,
+  ExecutionUnit,
+} from '@meiye/contracts';
 
 import {
   createCanonicalCarrierUnitRecipeRegistry,
@@ -60,6 +63,57 @@ export type CarrierProgramRegistry<TInput, TResult> = {
   ): (input: TInput) => Promise<TResult>;
   list(): ContentCarrierKind[];
 };
+
+export type CompiledPrimitiveId = NonNullable<ExecutionUnit['primitive']>;
+
+export type CompiledPrimitiveHandlerInput<TInput> = {
+  unit: ExecutionUnit;
+  programInput: TInput;
+  priorOutputs: ReadonlyMap<string, unknown>;
+};
+
+export type CompiledPrimitiveHandlers<TInput> = Record<
+  CompiledPrimitiveId,
+  (input: CompiledPrimitiveHandlerInput<TInput>) => Promise<unknown>
+>;
+
+/** Durable boundary used by DBOS in production and a restartable store in tests. */
+export interface PrimitiveEffectStore {
+  run<Output>(
+    idempotencyKey: string,
+    operation: () => Promise<Output>,
+  ): Promise<Output>;
+}
+
+export function createMemoryPrimitiveEffectStore(): PrimitiveEffectStore {
+  const completed = new Map<string, unknown>();
+  return {
+    async run<Output>(key: string, operation: () => Promise<Output>) {
+      if (completed.has(key)) return structuredClone(completed.get(key)) as Output;
+      const output = await operation();
+      completed.set(key, structuredClone(output));
+      return structuredClone(output);
+    },
+  };
+}
+
+const immediateEffectStore: PrimitiveEffectStore = {
+  run(_key, operation) {
+    return operation();
+  },
+};
+
+function inertPrimitiveHandlers<TInput>(): CompiledPrimitiveHandlers<TInput> {
+  const inert = async () => null;
+  return {
+    read_context: inert,
+    ask_merchant: inert,
+    generate: inert,
+    check: inert,
+    revise: inert,
+    record: inert,
+  };
+}
 
 export function createCarrierProgramRegistry<TInput, TResult>(
   programs: Partial<
@@ -128,7 +182,10 @@ export function resolveCompiledCarrierExecution(
 export async function executeCompiledCarrierPlan<TInput, TResult>(input: {
   context: CompiledCarrierExecutorContext;
   programInput: TInput;
-  programs: CarrierProgramRegistry<TInput, TResult>;
+  programs?: CarrierProgramRegistry<TInput, TResult>;
+  primitiveHandlers?: CompiledPrimitiveHandlers<TInput>;
+  effectStore?: PrimitiveEffectStore;
+  executionId?: string;
   recipeRegistry?: CarrierUnitRecipeRegistry;
   /**
    * Optional hook for observability / shadow — receives resolved plan before
@@ -140,17 +197,77 @@ export async function executeCompiledCarrierPlan<TInput, TResult>(input: {
     input.context,
     input.recipeRegistry,
   );
-  if (!input.programs.has(resolution.carrier)) {
+  if (input.programs && !input.programs.has(resolution.carrier)) {
     throw new CompiledCarrierExecutorError(
       `Carrier ${resolution.carrier} has a recipe but no program. Constructive gate failed.`,
     );
   }
   await input.onResolved?.(resolution);
-  // A18 / §22.2: no grammar interpreter — program is registered TS only.
   assertNoGrammarInterpreter(resolution.executionPlan);
-  const program = input.programs.resolve(resolution.carrier);
-  const result = await program(input.programInput);
+  const outputs = await executePrimitiveUnits({
+    plan: resolution.executionPlan,
+    programInput: input.programInput,
+    handlers: input.primitiveHandlers ?? inertPrimitiveHandlers<TInput>(),
+    effectStore: input.effectStore ?? immediateEffectStore,
+    executionId: input.executionId ?? resolution.carrier,
+  });
+  const result = input.programs
+    ? await input.programs.resolve(resolution.carrier)(input.programInput)
+    : (outputs.at(-1)?.output as TResult);
   return { result, resolution };
+}
+
+export async function executePrimitiveUnits<TInput>(input: {
+  plan: CompiledExecutionPlan;
+  programInput: TInput;
+  handlers: CompiledPrimitiveHandlers<TInput>;
+  effectStore: PrimitiveEffectStore;
+  executionId: string;
+}): Promise<Array<{ unitId: string; primitive: CompiledPrimitiveId; output: unknown }>> {
+  const unitsById = new Map(input.plan.units.map((unit) => [unit.unitId, unit]));
+  const scheduled = input.plan.dependencyGroups.flatMap((group) => group.unitIds);
+  if (scheduled.length !== input.plan.units.length || new Set(scheduled).size !== scheduled.length) {
+    throw new CompiledCarrierExecutorError(
+      'Every execution unit must appear exactly once in dependencyGroups.',
+    );
+  }
+  const priorOutputs = new Map<string, unknown>();
+  const results: Array<{
+    unitId: string;
+    primitive: CompiledPrimitiveId;
+    output: unknown;
+  }> = [];
+  for (const unitId of scheduled) {
+    const unit = unitsById.get(unitId);
+    if (!unit) {
+      throw new CompiledCarrierExecutorError(
+        `Dependency group references unknown unit ${unitId}.`,
+      );
+    }
+    if (!unit.primitive) {
+      throw new CompiledCarrierExecutorError(
+        `Execution unit ${unit.unitId} has no primitive binding.`,
+      );
+    }
+    const handler = input.handlers[unit.primitive];
+    if (!handler) {
+      throw new CompiledCarrierExecutorError(
+        `No primitive handler bound for ${unit.primitive}.`,
+      );
+    }
+    const output = await input.effectStore.run(
+      `compiled-primitive:${input.executionId}:${unit.unitId}`,
+      () =>
+        handler({
+          unit,
+          programInput: input.programInput,
+          priorOutputs,
+        }),
+    );
+    priorOutputs.set(unit.unitId, output);
+    results.push({ unitId: unit.unitId, primitive: unit.primitive, output });
+  }
+  return results;
 }
 
 /** Fail closed if a plan embeds forbidden interpreter shapes. */

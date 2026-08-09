@@ -124,13 +124,30 @@ test('U14 gate allows archive only when all conditions pass', () => {
   }
 });
 
-test('U14 gate vacuously allows when never had legacy and proofs present', () => {
+test('U14 gate fails closed on null history without an audited no-history proof', () => {
   const result = evaluateLegacyReplayArchiveGate({
     inventory: {
       activePendingCount: 0,
       oldestActiveCreatedAt: null,
       sampleTaskIds: [],
       lastLegacyTerminalAt: null,
+    },
+    now: NOW,
+    rollbackDrillPassed: true,
+    auditExportAvailable: true,
+  });
+  assert.equal(result.archiveAllowed, false);
+  assert.equal(result.conditions.holdWindowComplete.ok, false);
+});
+
+test('U14 gate accepts null history only with explicit audited no-history proof', () => {
+  const result = evaluateLegacyReplayArchiveGate({
+    inventory: {
+      activePendingCount: 0,
+      oldestActiveCreatedAt: null,
+      sampleTaskIds: [],
+      lastLegacyTerminalAt: null,
+      noHistoryProofAuditId: 'audit:no-legacy-history:2026-08-09',
     },
     now: NOW,
     rollbackDrillPassed: true,

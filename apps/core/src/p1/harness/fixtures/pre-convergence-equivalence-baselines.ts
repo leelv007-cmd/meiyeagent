@@ -7,11 +7,9 @@
  * runner convergence). Extraction mirrors runner-equivalence.ts.
  *
  * Regeneration:
- *   1. git worktree add <wt> 64bdaded8^
- *   2. point <wt>/apps/core/scripts/gen-v31-25-pre-convergence-baseline.ts
- *      at the post-convergence fixture helpers (see git history of that
- *      script), run with npx tsx, write <out>/<fixture>.json
- *   3. convert JSON snapshots back into this module.
+ *   scripts/generate-v31-25-pre-convergence-baselines.sh <output.json>
+ * The script checks out the fixed commit in a temporary worktree and leaves
+ * workflow-core.ts at that commit while copying in only the fixture exporter.
  *
  * Provenance: 64bdaded8^, captured 2026-08-09, DBOS-free fixture run.
  */

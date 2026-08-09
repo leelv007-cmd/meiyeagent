@@ -226,6 +226,11 @@ test('five semantic stages run in order with stable effect keys and a delivery f
     'skill:resolve:intent',
     'wf:task-35:s1:intent:0',
     'wf:task-35:s2:context:0',
+    'compiled-primitive:task-35:unit-copy-context',
+    'compiled-primitive:task-35:unit-copy-brief',
+    'compiled-primitive:task-35:unit-copy-select',
+    'compiled-primitive:task-35:unit-copy-check',
+    'compiled-primitive:task-35:unit-copy-assemble',
     'wf:task-35:s3:copy:0',
     'wf:task-35:s4:copy:selection',
     'wf:task-35:s2:fence:r1',
@@ -426,15 +431,15 @@ test('selected Skill refs freeze and enter all five stage effects and traces wit
     'wf:task-35:s2:context:skills=skill.context_injection%402:0',
   );
   assert.equal(
-    calls[3],
+    calls[8],
     'wf:task-35:s3:copy:skills=skill.brief_compilation%402:0',
   );
   assert.equal(
-    calls[4],
+    calls[9],
     'wf:task-35:s4:copy:skills=skill.execution_selection%402:selection',
   );
   assert.equal(
-    calls[6],
+    calls[11],
     'wf:task-35:s5:package:skills=skill.assembly_delivery%402:0',
   );
   for (const trace of traces) {
@@ -704,6 +709,11 @@ test('image and video snapshots use the same five Harness stages with modality-s
       'skill:resolve:intent',
       `wf:task-${kind}:s1:intent:0`,
       `wf:task-${kind}:s2:context:0`,
+      `compiled-primitive:task-${kind}:unit-media-context`,
+      `compiled-primitive:task-${kind}:unit-media-brief`,
+      `compiled-primitive:task-${kind}:unit-media-select`,
+      `compiled-primitive:task-${kind}:unit-media-check`,
+      `compiled-primitive:task-${kind}:unit-media-assemble`,
       `wf:task-${kind}:s3:${kind}:0`,
       `wf:task-${kind}:s4:${kind}:selection`,
       `wf:task-${kind}:s2:fence:r1`,
@@ -1503,6 +1513,13 @@ test('image-text note uses the fourth Harness fork and waits for style choice be
     'skill:resolve:intent',
     'wf:task-image-text-note:s1:intent:0',
     'wf:task-image-text-note:s2:context:0',
+    'compiled-primitive:task-image-text-note:unit-note-context',
+    'compiled-primitive:task-image-text-note:unit-note-brief',
+    'compiled-primitive:task-image-text-note:unit-note-style-ask',
+    'compiled-primitive:task-image-text-note:unit-note-pages',
+    'compiled-primitive:task-image-text-note:unit-note-check',
+    'compiled-primitive:task-image-text-note:unit-note-revise',
+    'compiled-primitive:task-image-text-note:unit-note-assemble',
     'wf:task-image-text-note:s3:image_text_note:0',
     'wf:task-image-text-note:s2:fence:r1',
     'wf:task-image-text-note:s4:image_text_note:selection',
@@ -2134,6 +2151,11 @@ test('an existing pending industry question replays the original decision sequen
     'skill:resolve:intent',
     'wf:task-copy:s1:intent:0',
     'wf:task-copy:s2:context:0',
+    'compiled-primitive:task-copy:unit-copy-context',
+    'compiled-primitive:task-copy:unit-copy-brief',
+    'compiled-primitive:task-copy:unit-copy-select',
+    'compiled-primitive:task-copy:unit-copy-check',
+    'compiled-primitive:task-copy:unit-copy-assemble',
     'wf:task-copy:s3:copy:0',
     'wf:task-copy:s4:copy:selection',
     'wf:task-copy:s2:fence:r1',

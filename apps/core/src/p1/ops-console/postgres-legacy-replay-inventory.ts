@@ -11,15 +11,6 @@ import type {
   LegacyReplayInventorySnapshot,
 } from './legacy-replay-archive-gate.js';
 
-function isMissingExecutionPlanSnapshot(request: unknown): boolean {
-  if (!request || typeof request !== 'object' || Array.isArray(request)) {
-    return true;
-  }
-  const snapshot = (request as { executionPlanSnapshot?: unknown })
-    .executionPlanSnapshot;
-  return snapshot === undefined || snapshot === null;
-}
-
 function toIso(value: Date | string | null | undefined): string | null {
   if (value === null || value === undefined) return null;
   if (value instanceof Date) return value.toISOString();
@@ -35,17 +26,18 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
     // Mirror listActiveTasks terminal exclusions so merchant-visible actives
     // and archive-gate actives stay consistent.
     const active = await this.pool.query<{
-      task_id: string;
-      workflow_id: string;
-      request: unknown;
-      created_at: Date | string;
+      active_count: string;
+      oldest_created_at: Date | string | null;
+      sample_task_ids: string[];
     }>(
-      `select requests.task_id,
-              requests.workflow_id,
-              requests.request,
-              requests.created_at
-       from harness_runtime.task_requests requests
-       where not exists (
+      `with active_legacy as (
+         select requests.task_id, requests.workflow_id, requests.created_at
+         from harness_runtime.task_requests requests
+         where (
+           requests.request->'executionPlanSnapshot' is null
+           or jsonb_typeof(requests.request->'executionPlanSnapshot') = 'null'
+         )
+         and not exists (
            select 1 from harness_runtime.audit_events events
            where events.workflow_id = requests.task_id
              and events.event_type in (
@@ -57,13 +49,19 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
            where decisions.task_id = requests.task_id
              and decisions.resolution_source = 'core_hold_expired'
          )
-       order by requests.created_at asc
-       limit 500`,
+       )
+       select count(*)::text as active_count,
+              min(created_at) as oldest_created_at,
+              array(
+                select coalesce(workflow_id, task_id)
+                from active_legacy
+                order by created_at asc
+                limit 10
+              ) as sample_task_ids
+       from active_legacy`,
     );
-
-    const activeLegacy = active.rows.filter((row) =>
-      isMissingExecutionPlanSnapshot(row.request),
-    );
+    const activeRow = active.rows[0];
+    const activePendingCount = Number(activeRow?.active_count ?? 0);
 
     const terminal = await this.pool.query<{
       terminal_at: Date | string | null;
@@ -91,15 +89,11 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
     );
 
     return {
-      activePendingCount: activeLegacy.length,
-      oldestActiveCreatedAt:
-        activeLegacy.length > 0
-          ? toIso(activeLegacy[0]!.created_at)
-          : null,
-      sampleTaskIds: activeLegacy
-        .slice(0, 10)
-        .map((row) => row.workflow_id || row.task_id),
+      activePendingCount,
+      oldestActiveCreatedAt: toIso(activeRow?.oldest_created_at),
+      sampleTaskIds: activeRow?.sample_task_ids ?? [],
       lastLegacyTerminalAt: toIso(terminal.rows[0]?.terminal_at ?? null),
+      noHistoryProofAuditId: null,
     };
   }
 }

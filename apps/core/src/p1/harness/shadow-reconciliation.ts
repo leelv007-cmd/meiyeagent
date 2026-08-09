@@ -322,6 +322,8 @@ export class ShadowReconciliationService {
     input: ShadowReconcileOnCompleteInput,
   ): Promise<ShadowReconcileOutcome> {
     try {
+      const state = await this.deps.store.getProgramState();
+      if (state?.status === 'closed') return { sampled: false };
       const config = await this.deps.resolveConfig();
       if (
         !shouldSampleShadowReconciliation({
@@ -411,6 +413,8 @@ export class ShadowReconciliationService {
       const freeAnchorMs = Date.parse(freeAnchorIso);
       const continuousFreeMs = nowMs - freeAnchorMs;
       const elapsedMs = nowMs - openedMs;
+      // The mismatch at the anchor starts the next clean interval; it is not
+      // part of that interval. Stores therefore implement this as sampledAt > anchor.
       const mismatchesSinceAnchor =
         await this.deps.store.countMismatchesSince(freeAnchorIso);
 
@@ -578,8 +582,16 @@ export function projectLegacyFromMakeRequest(input: {
   observedRightsRefs?: readonly string[];
   observedQuoteRef?: { id: string; revision: number | string };
 }): ShadowDeterministicFields | null {
-  if (!input.boundedExecution) return null;
-  const mappedObserved = (input.observedDeliverables ?? [])
+  if (
+    !input.boundedExecution ||
+    !input.observedDeliverables ||
+    !input.observedFactRefs ||
+    !input.observedRightsRefs ||
+    !input.observedQuoteRef
+  ) {
+    return null;
+  }
+  const mappedObserved = input.observedDeliverables
     .map((item) => {
       const kind = mapExecutionLensToCarrier(item.kind);
       return kind ? { kind, quantity: item.quantity } : null;
@@ -587,17 +599,12 @@ export function projectLegacyFromMakeRequest(input: {
     .filter((item): item is { kind: ShadowDeliverableCarrier; quantity: number } =>
       item !== null,
     );
+  if (mappedObserved.length === 0) return null;
   return projectLegacyDeterministicFields({
-    deliverables:
-      mappedObserved.length > 0
-        ? mappedObserved
-        : input.snapshot.deliverables.map((d) => ({
-            kind: d.kind,
-            quantity: d.quantity,
-          })),
-    factRefs: input.observedFactRefs ?? input.snapshot.factRevisionRefs,
-    rightsRefs: input.observedRightsRefs ?? input.snapshot.rightsRevisionRefs,
-    quoteRef: input.observedQuoteRef ?? input.snapshot.quoteRef,
+    deliverables: mappedObserved,
+    factRefs: input.observedFactRefs,
+    rightsRefs: input.observedRightsRefs,
+    quoteRef: input.observedQuoteRef,
     bounds: boundsFromSnapshot(input.boundedExecution),
   });
 }

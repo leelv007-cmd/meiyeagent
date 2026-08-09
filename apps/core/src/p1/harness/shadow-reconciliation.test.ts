@@ -25,6 +25,7 @@ import {
   compareShadowDeterministicFields,
   extractDeterministicFieldsFromSnapshot,
   projectLegacyDeterministicFields,
+  projectLegacyFromMakeRequest,
   resolveShadowReconciliationConfig,
   shouldSampleShadowReconciliation,
 } from './shadow-reconciliation.js';
@@ -185,6 +186,29 @@ test('compareShadowDeterministicFields: field-level diffs locate mismatch', () =
   const quantityDiff = result.diffs.find((d) => d.field === 'deliverables');
   assert.ok(quantityDiff);
   assert.notDeepEqual(quantityDiff!.expected, quantityDiff!.actual);
+});
+
+test('legacy projection refuses snapshot self-fallback and requires independent observations', () => {
+  const snapshot = buildSnapshot();
+  assert.equal(
+    projectLegacyFromMakeRequest({
+      snapshot,
+      boundedExecution: snapshot.boundedExecution,
+      observedDeliverables: [{ kind: 'copy', quantity: 2 }],
+    }),
+    null,
+  );
+  const projected = projectLegacyFromMakeRequest({
+    snapshot,
+    boundedExecution: snapshot.boundedExecution,
+    observedDeliverables: [{ kind: 'copy', quantity: 7 }],
+    observedFactRefs: ['legacy-fact'],
+    observedRightsRefs: ['legacy-rights'],
+    observedQuoteRef: { id: 'legacy-quote', revision: 8 },
+  });
+  assert.equal(projected?.deliverables[0]?.quantity, 7);
+  assert.deepEqual(projected?.factRefs, ['legacy-fact']);
+  assert.equal(projected?.quoteRef.id, 'legacy-quote');
 });
 
 // ─── Sampling gate ──────────────────────────────────────────────────────────
@@ -464,6 +488,63 @@ test('idempotent sample for same workflowId does not double-count', async () => 
   await service.maybeReconcileOnExecutionComplete(input);
   await service.maybeReconcileOnExecutionComplete(input);
   assert.equal((await store.listSamples()).length, 1);
+});
+
+test('closed shadow program stops sampling completely', async () => {
+  const store = new MemoryShadowReconciliationStore();
+  await store.putProgramState({
+    status: 'closed',
+    openedAt: '2026-08-01T00:00:00.000Z',
+    updatedAt: '2026-08-15T00:00:00.000Z',
+    closeReason: 'early_achieved',
+    closedAt: '2026-08-15T00:00:00.000Z',
+    closedBy: 'ops',
+    lastMismatchAt: null,
+    sampleCount: 1,
+    mismatchCount: 0,
+  });
+  const service = new ShadowReconciliationService({
+    store,
+    audit: new MemoryOpsConsoleAuditStore(),
+    resolveConfig: async () => ({ sampleRate: 1, windowDays: 14 }),
+  });
+  const snapshot = buildSnapshot();
+  const result = await service.maybeReconcileOnExecutionComplete({
+    workflowId: 'wf-after-close',
+    workspaceId: 'ws-1',
+    snapshot,
+    oldChain: extractDeterministicFieldsFromSnapshot(snapshot),
+    now: '2026-08-16T00:00:00.000Z',
+  });
+  assert.equal(result.sampled, false);
+  assert.equal((await store.listSamples()).length, 0);
+});
+
+test('mismatch at window anchor is excluded from the following clean window', async () => {
+  const store = new MemoryShadowReconciliationStore();
+  const audit = new MemoryOpsConsoleAuditStore();
+  const service = new ShadowReconciliationService({
+    store,
+    audit,
+    resolveConfig: async () => ({ sampleRate: 1, windowDays: 14 }),
+  });
+  const snapshot = buildSnapshot();
+  await service.maybeReconcileOnExecutionComplete({
+    workflowId: 'wf-anchor-mismatch',
+    workspaceId: 'ws-1',
+    snapshot,
+    oldChain: projectLegacyDeterministicFields({
+      ...extractDeterministicFieldsFromSnapshot(snapshot),
+      deliverables: [{ kind: 'copy', quantity: 99 }],
+    }),
+    now: '2026-08-01T00:00:00.000Z',
+  });
+  const closed = await service.tryCloseIfEligible({
+    now: '2026-08-15T00:00:00.000Z',
+    operatorId: 'ops',
+    correlationId: 'clean-window',
+  });
+  assert.equal(closed?.reason, 'early_achieved');
 });
 
 test('service never throws into production path on store failure', async () => {

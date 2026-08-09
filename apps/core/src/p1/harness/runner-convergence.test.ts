@@ -9,6 +9,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -25,6 +26,7 @@ import {
   assertNoGrammarInterpreter,
   assertRecipesHavePrograms,
   createCarrierProgramRegistry,
+  createMemoryPrimitiveEffectStore,
   executeCompiledCarrierPlan,
   resolveCompiledCarrierExecution,
 } from './compiled-carrier-executor.js';
@@ -186,6 +188,78 @@ test('V31-25: resolveCompiledCarrierExecution prefers frozen plan when present',
     forceLegacyFiveStage: true,
   });
   assert.equal(legacy.executorPath, 'legacy_five_stage_runner');
+});
+
+test('V31-25: changing a typed plan unit changes primitive execution', async () => {
+  const recipe = createCanonicalCarrierUnitRecipeRegistry().resolve('copy');
+  const calls: string[] = [];
+  const handlers = Object.fromEntries(
+    ['read_context', 'generate', 'check', 'revise', 'record', 'ask_merchant'].map(
+      (primitive) => [
+        primitive,
+        async ({ unit }: { unit: { unitId: string } }) => {
+          calls.push(`${primitive}:${unit.unitId}`);
+          return primitive === 'record' ? { deliveredBy: unit.unitId } : null;
+        },
+      ],
+    ),
+  );
+
+  const first = await executeCompiledCarrierPlan({
+    context: { lens: 'copy', frozenExecutionPlan: recipe.plan },
+    programInput: { ignored: true },
+    primitiveHandlers: handlers as never,
+  });
+  assert.deepEqual(first.result, { deliveredBy: 'unit-copy-assemble' });
+
+  const mutated = structuredClone(recipe.plan);
+  const check = mutated.units.find((unit) => unit.unitId === 'unit-copy-check');
+  assert.ok(check);
+  check.primitive = 'revise';
+  calls.length = 0;
+  await executeCompiledCarrierPlan({
+    context: { lens: 'copy', frozenExecutionPlan: mutated },
+    programInput: { ignored: true },
+    primitiveHandlers: handlers as never,
+  });
+  assert.ok(calls.includes('revise:unit-copy-check'));
+  assert.ok(!calls.includes('check:unit-copy-check'));
+});
+
+test('V31-25: durable primitive effects survive executor restart without duplicate writes', async () => {
+  const store = createMemoryPrimitiveEffectStore();
+  let contextReads = 0;
+  let businessWrites = 0;
+  let killOnce = true;
+  const handlers = {
+    read_context: async () => ({ readNumber: ++contextReads }),
+    generate: async () => {
+      if (killOnce) {
+        killOnce = false;
+        throw new Error('simulated worker kill');
+      }
+      return null;
+    },
+    check: async () => null,
+    revise: async () => null,
+    ask_merchant: async () => null,
+    record: async () => ({ writeNumber: ++businessWrites }),
+  };
+  const run = () =>
+    executeCompiledCarrierPlan({
+      context: { lens: 'copy' as const },
+      programInput: { ignored: true },
+      primitiveHandlers: handlers,
+      effectStore: store,
+      executionId: 'durable-run-1',
+    });
+
+  await assert.rejects(run, /simulated worker kill/);
+  const afterRestart = await run();
+  const replay = await run();
+  assert.deepEqual(replay.result, afterRestart.result);
+  assert.equal(contextReads, 1);
+  assert.equal(businessWrites, 1);
 });
 
 // ─── Equivalence baseline + kill/restart ─────────────────────────────────────
@@ -353,10 +427,30 @@ test('V31-25: every fixture task matches its frozen pre-convergence baseline (de
   // markers, effect idempotency keys, progress sequence and trace stage names;
   // it does not compare trace payload decoration (D-036 taxonomy fields were
   // added by the convergence commit and are pinned by their own test).
+  const generated: Partial<Record<FixtureTaskId, RunnerEquivalenceSnapshot>> = {};
   for (const fixtureId of Object.keys(PRE_CONVERGENCE_BASELINES) as FixtureTaskId[]) {
     const actual = await runFixtureSnapshot(fixtureId);
+    generated[fixtureId] = actual;
     assertMatchesPreConvergenceBaseline(fixtureId, actual);
   }
+  if (process.env.V31_PRE_CONVERGENCE_BASELINE_OUTPUT) {
+    writeFileSync(
+      process.env.V31_PRE_CONVERGENCE_BASELINE_OUTPUT,
+      `${JSON.stringify(generated, null, 2)}\n`,
+      'utf8',
+    );
+  }
+});
+
+test('V31-25: equivalence comparison detects a mutated generated baseline', async () => {
+  const actual = await runFixtureSnapshot('copy-legacy');
+  const mutated = structuredClone(actual);
+  if (!mutated.deliverable.delivery) throw new Error('fixture must deliver');
+  mutated.deliverable.delivery.packageId = 'mutated-package';
+  assert.ok(
+    diffRunnerEquivalence(PRE_CONVERGENCE_BASELINES['copy-legacy'], mutated)
+      .some((item) => item.path === 'deliverable.delivery.packageId'),
+  );
 });
 
 test('V31-25: kill/restart replay of every fixture lands on the pre-convergence effect key multiset', async () => {
@@ -373,7 +467,7 @@ test('V31-25: kill/restart replay of every fixture lands on the pre-convergence 
       secondEffectKeys: secondKeys,
     });
     assert.deepEqual(
-      [...firstKeys].sort(),
+      firstKeys.filter((key) => !key.startsWith('compiled-primitive:')).sort(),
       [...PRE_CONVERGENCE_BASELINES[fixtureId].recovery.effectKeys].sort(),
       `${fixtureId} replay effect keys drifted from pre-convergence baseline`,
     );

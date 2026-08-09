@@ -61,7 +61,7 @@ export class MemoryShadowReconciliationStore
   async countMismatchesSince(sinceIso: string): Promise<number> {
     let count = 0;
     for (const sample of this.samples.values()) {
-      if (!sample.matched && sample.sampledAt >= sinceIso) count += 1;
+      if (!sample.matched && sample.sampledAt > sinceIso) count += 1;
     }
     return count;
   }
@@ -185,7 +185,7 @@ export class PostgresShadowReconciliationStore
       `SELECT count(*)::text AS count
          FROM p1_shadow_reconciliation_samples
         WHERE matched = false
-          AND sampled_at >= $1::timestamptz`,
+          AND sampled_at > $1::timestamptz`,
       [sinceIso],
     );
     return Number(result.rows[0]?.count ?? 0);
