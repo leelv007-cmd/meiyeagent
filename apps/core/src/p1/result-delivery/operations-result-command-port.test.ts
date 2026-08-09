@@ -27,6 +27,11 @@ const textSelectionScope = {
 
 function fixture(
   options: {
+    frozenLineage?:
+      | 'authoritative'
+      | 'legacy'
+      | 'no_ready_revision'
+      | 'unreadable';
     noteSnapshot?: boolean;
     packageBody?: string;
     packageBodyAfterPrepare?: string;
@@ -301,8 +306,20 @@ function fixture(
             }
           : {}),
 		} as unknown as CreationExecutionSnapshot,
-		agentThreadId: asAgentThreadIdentity('thread-source'),
-		artifactLineage: { artifactId: 'note:package-1', parentRevision: 7 },
+		// 'legacy' is every Result delivered before agentBinding.threadId existed;
+		// 'no_ready_revision' is a run that never reached a ready artifact
+		// revision; 'unreadable' is a ready revision whose payload does not read
+		// as artifact-update/v1.
+		...(options.frozenLineage === 'legacy'
+		  ? {}
+		  : { agentThreadId: asAgentThreadIdentity('thread-source') }),
+		...(options.frozenLineage === undefined ||
+		options.frozenLineage === 'authoritative'
+		  ? { artifactLineage: { artifactId: 'note:package-1', parentRevision: 7 } }
+		  : {}),
+		...(options.frozenLineage === 'unreadable'
+		  ? { artifactLineageUnreadable: true as const }
+		  : {}),
 	  };
     },
   };
@@ -648,6 +665,94 @@ test('copy text selection confirmation rejects equal-length late body drift', as
       error instanceof Error &&
       'code' in error &&
       error.code === 'RESULT_ADJUST_SCOPE_MISMATCH',
+  );
+  assert.deepEqual(composerCalls, []);
+});
+
+for (const frozenLineage of ['legacy', 'no_ready_revision'] as const) {
+  test(`a frozen Result with ${frozenLineage} artifact lineage stays adjustable without continuation`, async () => {
+    const { composerCalls, port } = fixture({
+      frozenLineage,
+      noteSnapshot: true,
+      quoteStatus: 'quoted',
+      scopedAssetIds: ['asset-1'],
+    });
+    const source = {
+      expectedPackageRevision: 3,
+      kind: 'content_package_snapshot' as const,
+      packageId: 'package-1',
+      snapshotId: 'snapshot-task-1',
+      workflowId: 'task-1',
+    };
+    const prepared = await port.prepareAdjust(
+      context,
+      {
+        expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+        instruction: '只调整当前图片',
+        scope: { assetId: 'asset-1', kind: 'asset' },
+        source,
+        workId: 'work-1',
+      },
+      `adjust-${frozenLineage}-prepare`,
+    );
+    await port.adjust(
+      context,
+      {
+        billingQuoteId: 'quote-fresh',
+        derivedTaskId: prepared.task.id,
+        derivedWorkId: prepared.work.id,
+        instruction: '只调整当前图片',
+        scope: { assetId: 'asset-1', kind: 'asset' },
+        source,
+      },
+      `adjust-${frozenLineage}-confirm`,
+    );
+
+    assert.equal(composerCalls.length, 1);
+    const submitted = composerCalls[0] as {
+      sourceAgentThreadId?: string;
+      sourceArtifactLineage?: unknown;
+    };
+    assert.equal(submitted.sourceArtifactLineage, undefined);
+    // The Thread binding still travels whenever the frozen Result has one; only
+    // a Result older than agentBinding.threadId leaves the new run unbound.
+    assert.equal(
+      submitted.sourceAgentThreadId,
+      frozenLineage === 'legacy' ? undefined : 'thread-source',
+    );
+  });
+}
+
+test('a ready artifact revision that cannot be read refuses the adjustment', async () => {
+  const { composerCalls, port } = fixture({
+    frozenLineage: 'unreadable',
+    noteSnapshot: true,
+    scopedAssetIds: ['asset-1'],
+  });
+  await assert.rejects(
+    port.prepareAdjust(
+      context,
+      {
+        expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+        instruction: '只调整当前图片',
+        scope: { assetId: 'asset-1', kind: 'asset' },
+        source: {
+          expectedPackageRevision: 3,
+          kind: 'content_package_snapshot',
+          packageId: 'package-1',
+          snapshotId: 'snapshot-task-1',
+          workflowId: 'task-1',
+        },
+        workId: 'work-1',
+      },
+      'adjust-unreadable-lineage',
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'RESULT_ADJUST_SOURCE_NOT_FOUND' &&
+      'status' in error &&
+      error.status === 409,
   );
   assert.deepEqual(composerCalls, []);
 });

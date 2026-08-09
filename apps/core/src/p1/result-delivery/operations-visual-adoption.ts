@@ -44,6 +44,12 @@ export interface ResultAdjustSnapshotReadPort {
 		  targetUnitIds?: string[];
 		  sourceUnitMappings?: Array<{ sourceUnitId: string; executionUnitId: string }>;
 		};
+		/**
+		 * The ready artifact revision was found but could not be read as
+		 * artifact-update/v1. Distinguishes untrustworthy lineage (fail closed)
+		 * from absent lineage (legacy Result, adjustable without continuation).
+		 */
+		artifactLineageUnreadable?: true;
 	  }
 	| null
   >;
@@ -332,10 +338,25 @@ export class OperationsResultCommandPort {
         404,
       );
     }
-	if (this.composerSubmissions && (!agentThreadId || !artifactLineage)) {
+	// Absent lineage is not an error. `agentBinding.threadId` arrived with V31-15,
+	// so no Result delivered before it carries one, and a run that never reached a
+	// ready artifact revision (a note that ended partial, a video adjusted before
+	// its scenes completed) has none either. Those Results stay adjustable; the
+	// submit payload below already treats both fields as optional, and the new run
+	// publishes a fresh artifact instead of continuing the old one.
+	//
+	// Fail closed only where the lineage exists and cannot be trusted: a ready
+	// artifact revision was found for this Thread and artifact but did not read as
+	// artifact-update/v1. Continuing from an unreadable parent revision would
+	// splice the merchant's next revision onto a base nobody can reconstruct.
+	if (
+	  snapshotResult &&
+	  'artifactLineageUnreadable' in snapshotResult &&
+	  snapshotResult.artifactLineageUnreadable
+	) {
 	  throw new OperationsError(
 		'RESULT_ADJUST_SOURCE_NOT_FOUND',
-		'The frozen Result is missing authoritative Thread or artifact lineage.',
+		'The frozen Result artifact lineage could not be read.',
 		409,
 	  );
 	}

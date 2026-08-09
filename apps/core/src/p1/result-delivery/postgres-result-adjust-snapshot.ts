@@ -59,6 +59,13 @@ export class PostgresResultAdjustSnapshotReadPort
 	);
 	const event = artifact.rows[0]?.payload as { payload?: unknown } | undefined;
 	const wire = event?.payload ? artifactUpdateWireSchema.safeParse(event.payload) : undefined;
+	// No ready revision at all is ordinary: the run may have ended partial, or the
+	// Result predates artifact lineage. A ready revision we cannot read is not —
+	// the caller fails closed on it rather than starting a fresh artifact and
+	// losing the merchant's revision history.
+	if (wire && !wire.success) {
+	  return { snapshot: parsed, agentThreadId, artifactLineageUnreadable: true as const };
+	}
 	return {
 	  snapshot: parsed,
 	  agentThreadId,
