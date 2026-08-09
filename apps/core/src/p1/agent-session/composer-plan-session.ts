@@ -224,7 +224,8 @@ export class ExecutionPlanFreezeError extends Error {
  * deliverable list. Freezing a multi-carrier revision would therefore promise
  * every deliverable while executing only the first carrier's units: a silent
  * half-delivery that the merchant has already been quoted for. That fails closed
- * here, naming the carriers, until one Make per carrier is actually wired.
+ * here, naming the carriers, until one Make per carrier is actually wired
+ * (V31-47).
  */
 export function compileFinalizeExecutionPlanFreeze(input: {
   result: Pick<CompilePlanResult, 'revision' | 'executionPlan'>;
