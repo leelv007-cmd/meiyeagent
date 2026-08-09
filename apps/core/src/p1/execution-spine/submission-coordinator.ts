@@ -141,12 +141,6 @@ export interface CreationSubmissionStore {
 		submissionId: string;
 		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
 	}): Promise<void>;
-	markHarnessStartDispatched?(input: {
-		leaseId: string;
-		workspaceId: string;
-		submissionId: string;
-		confirmationDispatch: NonNullable<CreationSubmissionRecord["confirmationDispatch"]>;
-	}): Promise<void>;
 	releaseHarnessStart(input: {
 		leaseId: string;
 		workspaceId: string;
@@ -548,8 +542,39 @@ export class CreationSubmissionCoordinator {
 	}
 
 	async submit(input: ComposerSubmissionRequest) {
+		return this.submitWithConfirmationContext(input);
+	}
+
+	/**
+	 * U7: each Campaign schedule slot submits its own paid Work with a distinct
+	 * confirmation context, so one approval never covers a second Work.
+	 */
+	async submitCampaignWork(input: {
+		submission: ComposerSubmissionRequest;
+		campaignPlanRef: { id: string; revision: number | string };
+		workOrdinal: number;
+	}) {
+		if (!Number.isSafeInteger(input.workOrdinal) || input.workOrdinal < 1) {
+			throw new Error("Campaign workOrdinal must be a positive integer.");
+		}
+		return this.submitWithConfirmationContext(input.submission, {
+			campaignPlanRef: input.campaignPlanRef,
+			workOrdinal: input.workOrdinal,
+			approvalScope: "single_work",
+		});
+	}
+
+	private async submitWithConfirmationContext(
+		input: ComposerSubmissionRequest,
+		executionConfirmationContext?: NonNullable<
+			CreationSubmissionRecord["executionConfirmationContext"]
+		>,
+	) {
 		const request = composerSubmissionRequestSchema.parse(input);
-		const payloadHash = fingerprintValue(receiptPayload(request));
+		const payloadHash = fingerprintValue({
+			...receiptPayload(request),
+			...(executionConfirmationContext ? { executionConfirmationContext } : {}),
+		});
 		const receipt = await this.store.readReceipt({
 			workspaceId: request.workspaceId,
 			idempotencyKey: request.idempotencyKey,
@@ -624,6 +649,7 @@ export class CreationSubmissionCoordinator {
 					: { units: admitted.usageUnits ?? productUsageUnits(snapshot) }),
 			},
 			...(this.agentPlanning ? { agentPlanPending: true } : {}),
+			...(executionConfirmationContext ? { executionConfirmationContext } : {}),
 		};
 		const preparedBinding = await this.prepareAgentPlan(
 			submission,
@@ -665,12 +691,16 @@ export class CreationSubmissionCoordinator {
 	private async preparePendingConfirmation(submission: CreationSubmissionRecord) {
 		if (!submission.executionPlanFreeze) return;
 		ensureConfirmationDispatch(submission);
+		// An exempt plan (pure copy, U9) carries no confirmation authority, so
+		// there is no pending request to prepare — and demanding one here would
+		// reject the exempt freeze the clarification path just committed.
+		if (!submission.confirmationDispatch) return;
 		if (!this.harness.preparePendingConfirmation) {
 			throw new Error("Pending Harness confirmation preparation is unavailable.");
 		}
 		const prepared = await this.harness.preparePendingConfirmation(submission);
 		const requestId = prepared?.executionConfirmationRequestId;
-		if (!requestId || !submission.confirmationDispatch) {
+		if (!requestId) {
 			throw new Error(
 				"Pending Harness confirmation did not return its exact authority ID.",
 			);
@@ -1051,12 +1081,23 @@ export class CreationSubmissionCoordinator {
 		await this.store.expireUndispatchedConfirmationHolds?.({ limit });
 		const recoverable = (
 			await this.store.listRecoverableHarnessStarts({ limit })
-		).filter(
-			(candidate) =>
-				candidate.submission.agentPlanPending !== true &&
+		).filter((candidate) => {
+			if (candidate.submission.agentPlanPending === true) return false;
+			if (
 				candidate.submission.executionPlanFreeze?.approvalBasis !==
-					"merchant_confirmed",
-		);
+				"merchant_confirmed"
+			) {
+				return true;
+			}
+			// A merchant-confirmed plan is started only by the explicit start
+			// command, so recovery must not replay one that is still awaiting the
+			// merchant. The single exception is a submission whose confirmation
+			// dispatch already crossed the external start boundary: its Harness run
+			// may be live while its exact authority ID never came back, and the
+			// undispatched-hold sweeper only scans `pending`, so nothing else would
+			// ever release that lease.
+			return candidate.submission.confirmationDispatch?.state === "dispatched";
+		});
 		let failed = 0;
 		let started = 0;
 		for (const candidate of recoverable) {

@@ -24,6 +24,10 @@ import {
 import { toHarnessWorkflowInput } from "./creation-stage-port.js";
 import { ProductQuoteService } from "../product-billing/quote-service.js";
 import { triggersPaidMediaExecution } from "../harness/workflow-core.js";
+import {
+	CampaignPaidWorkProducer,
+	projectCampaignWeeklySlots,
+} from "../goal-proactive/campaign-weekly-schedule.js";
 import type { ComposerSubmissionBody } from "./creation-execution-snapshot.js";
 import {
 	CreationSubmissionCoordinator,
@@ -822,6 +826,8 @@ test("legacy Harness task admission stays retired without a configured Harness s
 
 class MemorySubmissionStore implements CreationSubmissionStore {
 	private readonly claims = new Map<string, CreationSubmissionStoreClaim>();
+	readonly freezePresentAtClaim = new Map<string, boolean>();
+	readonly confirmationStateAtClaim = new Map<string, string | undefined>();
 	private readonly harnessStarts = new Map<
 		string,
 		{
@@ -872,6 +878,14 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 
 	async claim(input: CreationSubmissionStoreClaim) {
 		const key = `${input.workspaceId}:${input.idempotencyKey}`;
+		this.freezePresentAtClaim.set(
+			key,
+			input.submission.executionPlanFreeze !== undefined,
+		);
+		this.confirmationStateAtClaim.set(
+			key,
+			input.submission.confirmationDispatch?.state,
+		);
 		const existing = this.claims.get(key);
 		if (!existing) {
 			this.claims.set(key, structuredClone(input));
@@ -979,28 +993,6 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 			attempts: current.attempts,
 			state: "started",
 		});
-	}
-
-	async markHarnessStartDispatched(input: {
-		leaseId: string;
-		workspaceId: string;
-		submissionId: string;
-		confirmationDispatch: NonNullable<CreationSubmissionRecord["confirmationDispatch"]>;
-	}) {
-		const current = this.harnessStarts.get(input.submissionId);
-		if (current?.state !== "starting" || current.leaseId !== input.leaseId) {
-			throw new Error(`Stale harness lease ${input.leaseId}`);
-		}
-		const claim = [...this.claims.values()].find(
-			(candidate) =>
-				candidate.workspaceId === input.workspaceId &&
-				candidate.submission.snapshot.id === input.submissionId,
-		);
-		if (!claim) throw new Error("Submission dispatch target missing.");
-		claim.submission.confirmationDispatch = {
-			...structuredClone(input.confirmationDispatch),
-			state: "dispatched",
-		};
 	}
 
 	async markHarnessStartDispatched(input: {
@@ -1565,23 +1557,12 @@ test("a failed Harness start releases the same submission for an idempotent retr
 	assert.equal(submissions.count(), 1);
 });
 
-test("the compiled freeze is durable in the claim transaction before a paid Harness start", async () => {
+test("the compiled freeze is durable in the claim transaction and a paid submit stops at pending confirmation", async () => {
 	const submissions = new MemorySubmissionStore();
-	let started = false;
+	const starter = new RecordingHarnessStarter();
 	const coordinator = new CreationSubmissionCoordinator(
 		submissions,
-		{
-			async start(submission) {
-				started = true;
-				assert.ok(submission.executionPlanFreeze);
-				assert.equal(submission.confirmationDispatch?.state, "dispatched");
-				assert.equal(submission.confirmationDispatch?.requestId, undefined);
-				return {
-					executionConfirmationRequestId:
-						"confirmation:authority-digest-freeze",
-				};
-			},
-		},
+		starter,
 		fixedIds(),
 		fixedAdmission(),
 		undefined,
@@ -1598,9 +1579,12 @@ test("the compiled freeze is durable in the claim transaction before a paid Harn
 		workspaceId: "workspace-1",
 	};
 
-	await coordinator.submit(command);
+	const response = await coordinator.submit(command);
 
-	assert.equal(started, true);
+	// V31-10/V31-28: a merchant_confirmed freeze must never start Make on submit.
+	assert.equal(response.makeReady, false);
+	assert.deepEqual(starter.starts, []);
+	assert.equal(starter.preparations.length, 1);
 	assert.ok(
 		submissions.claimedSubmission("workspace-1", command.idempotencyKey)
 			?.executionPlanFreeze,
@@ -1616,8 +1600,11 @@ test("the compiled freeze is durable in the claim transaction before a paid Harn
 		submissions.claimedSubmission("workspace-1", command.idempotencyKey)
 			?.confirmationDispatch,
 		{
-			requestId: "confirmation:authority-digest-freeze",
-			state: "dispatched",
+			requestId: `confirmation:authority:${
+				submissions.claimedSubmission("workspace-1", command.idempotencyKey)!
+					.task.id
+			}`,
+			state: "pending",
 			expiresAt: "2026-07-24T09:00:00.000Z",
 		},
 	);
@@ -1627,6 +1614,14 @@ test("the compiled freeze is durable in the claim transaction before a paid Harn
 		),
 		"pending",
 	);
+	// Crash recovery is an unauthorized inbound edge for a plan the merchant has
+	// not approved: it must leave the submission waiting, not spend the hold.
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 0,
+		failed: 0,
+		started: 0,
+	});
+	assert.deepEqual(starter.starts, []);
 });
 
 test("the Campaign producer submits the second paid Work with its own U7 context", async () => {
@@ -1684,20 +1679,55 @@ test("the Campaign producer submits the second paid Work with its own U7 context
 		},
 	});
 
+	// Each slot raises its own pending confirmation authority; one approval can
+	// never cover the next Work, and no Work starts Make before that approval.
+	assert.deepEqual(starter.starts, []);
 	assert.deepEqual(
-		starter.starts.map((submission) => ({
+		starter.preparations.map((submission) => ({
 			requestId: submission.confirmationDispatch?.requestId,
+			state: submission.confirmationDispatch?.state,
 			...submission.executionConfirmationContext,
 		})),
 		[
 			{
 				requestId: undefined,
+				state: "pending",
 				campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
 				workOrdinal: 1,
 				approvalScope: "single_work",
 			},
 			{
 				requestId: undefined,
+				state: "pending",
+				campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
+				workOrdinal: 2,
+				approvalScope: "single_work",
+			},
+		],
+	);
+	assert.deepEqual(
+		[1, 2].map((workOrdinal) => {
+			const claimed = submissions.claimedSubmission(
+				"workspace-1",
+				`campaign-work-${workOrdinal}`,
+			);
+			return {
+				requestId: claimed?.confirmationDispatch?.requestId,
+				state: claimed?.confirmationDispatch?.state,
+				...claimed?.executionConfirmationContext,
+			};
+		}),
+		[
+			{
+				requestId: "confirmation:authority:campaign-task-campaign-work-1",
+				state: "pending",
+				campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
+				workOrdinal: 1,
+				approvalScope: "single_work",
+			},
+			{
+				requestId: "confirmation:authority:campaign-task-campaign-work-2",
+				state: "pending",
 				campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
 				workOrdinal: 2,
 				approvalScope: "single_work",
@@ -2831,5 +2861,47 @@ function modalitySubmissionPayload(
 		modelPolicy: { id: `browser-policy-${kind}`, mode: "fixed", revision: "browser-r1" },
 		recipe: { id: `recipe-${kind}-1`, revision: `recipe-${kind}-r1` },
 		route: { id: `route-${kind}-1`, revision: `route-${kind}-r1` },
+	};
+}
+
+function recoveryExecutionPlanFreeze(
+	submission: CreationSubmissionRecord,
+): NonNullable<CreationSubmissionRecord["executionPlanFreeze"]> {
+	return {
+		planId: `plan-${submission.task.id}` as never,
+		planRevision: 1,
+		intentDeclaration: { summary: submission.snapshot.intent.text },
+		contextBundleRef: {
+			bundleId: submission.snapshot.briefContext.id,
+			revision: submission.snapshot.briefContext.revision,
+			hash: "context-freeze-hash",
+		},
+		executionPlan: {
+			schemaVersion: "compiled-execution-plan/v1",
+			units: [
+				{
+					unitId: "unit-1" as never,
+					unitType: "copy.generate",
+					primitive: "generate",
+				},
+			],
+			dependencyGroups: [
+				{ groupId: "group-1", unitIds: ["unit-1" as never] },
+			],
+			boundedRetry: {
+				"unit-1": {
+					maxAttempts: 1,
+					maxCostCents: 0,
+					retry: { enabled: false },
+				},
+			},
+		},
+		deliverables: [
+			{ deliverableId: "deliverable-1", kind: "copy", quantity: 1 },
+		],
+		quoteRef: submission.snapshot.quote,
+		rightsRevisionRefs: [submission.snapshot.rights.revision],
+		harnessReleaseId: "release-recovery-1" as never,
+		approvalBasis: "merchant_confirmed",
 	};
 }
