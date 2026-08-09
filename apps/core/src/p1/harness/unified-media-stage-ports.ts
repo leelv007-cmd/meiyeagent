@@ -692,6 +692,10 @@ export class UnifiedHarnessStagePorts
 						onPageProgress: (event) => input.onPageProgress?.({
 							...event,
 							sourcePageId: sourcePage.id,
+							// Page identity for merchant copy and artifact patches
+							// must come from the frozen source: the reporter's plan
+							// was compiled this run and has none of these ids.
+							sourcePageOrder: sourcePage.order,
 						}),
 					  }
 					: {}),

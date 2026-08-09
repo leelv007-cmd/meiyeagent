@@ -37,6 +37,13 @@ export type NotePageProgressEvent = {
   pageId: string;
   /** Frozen source page mapped by the subset runner after execution planning. */
   sourcePageId?: string;
+  /**
+   * 1-based order of the frozen source page. Subset regeneration iterates the
+   * frozen source plan, whose page ids are absent from the plan compiled this
+   * run, so page identity cannot be looked up in `input.plan` — without this
+   * every delta collapses onto pageIndex 0 (V31-15).
+   */
+  sourcePageOrder?: number;
   state: 'running' | 'success';
 };
 
@@ -106,7 +113,10 @@ export function createNotePageProgressReporter(input: {
 	let derivedParentRevision: number | undefined = input.artifactContext?.parentRevision;
 
   return async (event) => {
-    const order = notePageOrderLabel(input.plan, event.pageId);
+    const order =
+      event.sourcePageOrder !== undefined
+        ? String(event.sourcePageOrder)
+        : notePageOrderLabel(input.plan, event.pageId);
     await input.reportProgress({
       stage: 'execution_selection',
       state: event.state,

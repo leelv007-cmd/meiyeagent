@@ -904,6 +904,102 @@ test('V31-15 video wiring: real media stage ports emit per-scene artifact.revise
   assert.equal(successorUpdates.at(-1)?.status, 'ready');
 });
 
+test('V31-15 note wiring: the page reporter reads identity from this run’s brief plan, and a frozen subset page keeps its source order', async () => {
+  const projected: SemanticEventCandidate[] = [];
+  const pageProgress: string[] = [];
+  // noteBrief() compiles page-1/page-2 for *this* run. A subset regeneration
+  // executes the frozen source note instead, whose page ids the run plan never
+  // contains — the shape that collapsed every delta onto pageIndex 0.
+  const stages = noteStages(false, async (input) => {
+    for (const state of ['running', 'success'] as const) {
+      await input.onPageProgress?.({
+        pageId: 'frozen-page-3',
+        sourcePageId: 'frozen-page-3',
+        sourcePageOrder: 3,
+        state,
+      });
+    }
+    await input.onPageProgress?.({ pageId: 'page-2', state: 'running' });
+  });
+  stages.artifactProgressEmitter = {
+    async project(candidate) {
+      projected.push(candidate);
+    },
+  };
+
+  const request = {
+    ...mediaTaskInput('image_text_note'),
+    agentThreadId: 'thread:note:artifact-wiring',
+  } as unknown as HarnessWorkflowInput;
+  await runHarnessWorkflow('task-note-artifact-wiring', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress(event) {
+      if (
+        event.stage === 'execution_selection' &&
+        typeof event.message === 'string' &&
+        event.message.includes('配图')
+      ) {
+        pageProgress.push(event.message);
+      }
+    },
+    async token() {},
+    async awaitDecision(question) {
+      return {
+        idempotencyKey: 'choose-story-artifact-wiring',
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: 'note_style',
+          value: '故事版',
+          reason: '选择图文方向',
+        },
+        decision: { state: 'accepted', value: '故事版' },
+      };
+    },
+    async recordTrace() {},
+  });
+
+  const updates = projected.map((candidate) => {
+    assert.equal(candidate.threadId, 'thread:note:artifact-wiring');
+    return artifactUpdateWireSchema.parse(candidate.payload);
+  });
+  const pageIndexes = updates.map((update) =>
+    update.mode === 'snapshot' && 'pages' in update.full
+      ? update.full.pages.map(({ pageIndex }) => pageIndex)
+      : update.mode === 'delta' && 'pages' in update.patch
+        ? update.patch.pages?.map(({ pageIndex }) => pageIndex)
+        : undefined,
+  );
+  // frozen source page 3 → skeleton/copy/image(running), image(success), then
+  // run-plan page-2 → pageIndex 1 from the brief plan the production wiring
+  // hands the reporter.
+  assert.deepEqual(pageIndexes, [[2], [2], [2], [2], [1], [1], [1]]);
+  assert.deepEqual(pageProgress, [
+    '正在生成第 3 页配图',
+    '第 3 页配图已完成',
+    '正在生成第 2 页配图',
+  ]);
+  // Run-plan pages still carry their copy; a frozen source page is only
+  // re-drawn, so its title/body must stay absent instead of being overwritten
+  // with this run's freshly drafted copy.
+  const runPlanCopy = updates[5];
+  assert.ok(runPlanCopy && runPlanCopy.mode === 'delta');
+  assert.deepEqual(
+    runPlanCopy.mode === 'delta' && 'pages' in runPlanCopy.patch
+      ? runPlanCopy.patch.pages?.map(({ title, body }) => ({ title, body }))
+      : undefined,
+    [{ title: '预约建议', body: '私信了解详情' }],
+  );
+  assert.equal(
+    updates[1]?.mode === 'delta' && 'pages' in updates[1].patch
+      ? updates[1].patch.pages?.[0]?.body
+      : 'unexpected',
+    undefined,
+  );
+});
+
 test('configured media bounds fail closed when the bounded media port is unavailable', async () => {
   const request = mediaTaskInput('image');
   request.boundedExecution = boundedExecutionSnapshot(0, 1);

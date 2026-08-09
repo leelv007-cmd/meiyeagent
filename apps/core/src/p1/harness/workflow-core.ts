@@ -77,6 +77,12 @@ import {
 import { confirmPaidGenerationExecution } from './paid-generation-confirmation.js';
 import { createNotePageProgressReporter } from './note-page-execution-frame.js';
 import type {
+  NotePagePlanLike,
+  NotePageProgressFrameEvent,
+  NotePageProgressReporter,
+} from './note-page-execution-frame.js';
+import type { MakeSteeringBoundaryPort } from './make-steering-boundary.js';
+import type {
   CreateExecutionConfirmationInput,
   CreateExecutionConfirmationResult,
 } from '../agent-session/execution-confirmation-service.js';
@@ -410,6 +416,7 @@ export interface HarnessNoteExecutionStagePorts {
     onPageProgress?: (event: {
       pageId: string;
 	  sourcePageId?: string;
+	  sourcePageOrder?: number;
       state: 'running' | 'success';
     }) => Promise<void> | void;
   }): Promise<HarnessNoteSelectionResult>;
@@ -1976,6 +1983,71 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
   };
 }
 
+/**
+ * V31-15 production wiring for the note page artifact reporter.
+ *
+ * Extracted so there is exactly one place that maps a HarnessWorkflowInput onto
+ * the reporter's artifact/steering context. Tests that hand-assemble the
+ * reporter cannot prove this mapping: the subset-regeneration `pageIndex`
+ * collapse survived a green suite precisely because the test built a reporter
+ * whose `plan` was the frozen source plan while production passes the plan
+ * compiled this run.
+ *
+ * Grep anchor: createNoteExecutionArtifactReporter.
+ */
+export function createNoteExecutionArtifactReporter(input: {
+  /** Plan compiled by *this* run — subset runs execute the frozen source. */
+  plan: NotePagePlanLike;
+  request: HarnessWorkflowInput;
+  workflowId: string;
+  reportProgress: (event: NotePageProgressFrameEvent) => Promise<void>;
+  artifactEmitter?: ArtifactProgressEmitterPort;
+  makeSteeringBoundary?: MakeSteeringBoundaryPort;
+  now?: () => string;
+}): NotePageProgressReporter {
+  const { plan, request, workflowId } = input;
+  const now = input.now ?? (() => new Date().toISOString());
+  let artifactRevision = request.artifactLineage?.parentRevision ?? 0;
+  return createNotePageProgressReporter({
+    plan,
+    reportProgress: input.reportProgress,
+    ...(input.artifactEmitter
+      ? {
+          artifactEmitter: input.artifactEmitter,
+          artifactContext: {
+            workspaceId: request.workspaceId,
+            workflowId,
+            threadId: request.agentThreadId ?? `legacy-workflow:${workflowId}`,
+            artifactId:
+              request.artifactLineage?.artifactId ??
+              `note:${request.packageId ?? workflowId}`,
+            ...(request.artifactLineage
+              ? {
+                  parentRevision: request.artifactLineage.parentRevision,
+                  targetSourceUnitIds: request.artifactLineage.targetUnitIds,
+                }
+              : {}),
+            nextRevision: () => {
+              artifactRevision += 1;
+              return artifactRevision;
+            },
+            now,
+          },
+        }
+      : {}),
+    ...(input.makeSteeringBoundary
+      ? {
+          makeSteeringBoundary: input.makeSteeringBoundary,
+          steeringContext: {
+            workspaceId: request.workspaceId,
+            // Durable Make taskId === workflowId (task-admission identity).
+            taskId: workflowId,
+          },
+        }
+      : {}),
+  });
+}
+
 async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   const {
     ports: stagePorts,
@@ -2217,7 +2289,6 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   });
 
   const executionSkills = stageSkills.execution_selection;
-	let noteArtifactRevision = activeRequest.artifactLineage?.parentRevision ?? 0;
   const noteSelectionInput = {
     workflowId,
     request: activeRequest,
@@ -2240,43 +2311,16 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
       : {}),
     // V31-14: page frame moved to note-page-execution-frame (symbol anchor).
     // V31-16: makeSteeringBoundary drains steer on each page success (follow_up on last).
-    onPageProgress: createNotePageProgressReporter({
+    onPageProgress: createNoteExecutionArtifactReporter({
       plan: activeNoteCandidate.plan,
+      request: activeRequest,
+      workflowId,
       reportProgress,
       ...(ports.artifactProgressEmitter
-        ? {
-            artifactEmitter: ports.artifactProgressEmitter,
-            artifactContext: {
-              workspaceId: activeRequest.workspaceId,
-              workflowId,
-              threadId:
-                activeRequest.agentThreadId ?? `legacy-workflow:${workflowId}`,
-			  artifactId:
-				activeRequest.artifactLineage?.artifactId ??
-				`note:${activeRequest.packageId ?? workflowId}`,
-			  ...(activeRequest.artifactLineage
-				? {
-					parentRevision: activeRequest.artifactLineage.parentRevision,
-					targetSourceUnitIds: activeRequest.artifactLineage.targetUnitIds,
-				  }
-				: {}),
-              nextRevision: () => {
-                noteArtifactRevision += 1;
-                return noteArtifactRevision;
-              },
-              now: () => new Date().toISOString(),
-            },
-          }
+        ? { artifactEmitter: ports.artifactProgressEmitter }
         : {}),
       ...(ports.makeSteeringBoundary
-        ? {
-            makeSteeringBoundary: ports.makeSteeringBoundary,
-            steeringContext: {
-              workspaceId: activeRequest.workspaceId,
-              // Durable Make taskId === workflowId (task-admission identity).
-              taskId: workflowId,
-            },
-          }
+        ? { makeSteeringBoundary: ports.makeSteeringBoundary }
         : {}),
     }),
   };
