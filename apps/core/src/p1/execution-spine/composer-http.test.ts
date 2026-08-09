@@ -1066,11 +1066,15 @@ class RecordingHarnessStarter implements CreationSubmissionHarnessStarter {
 		Parameters<CreationSubmissionHarnessStarter["start"]>[0]
 	> = [];
 	readonly preparations: CreationSubmissionRecord[] = [];
+	/** Makes admission answer with an authority other than the persisted one. */
+	startRequestIdOverride?: string;
 
 	async start(input: Parameters<CreationSubmissionHarnessStarter["start"]>[0]) {
 		this.starts.push(structuredClone(input));
 		return {
-			executionConfirmationRequestId: `confirmation:authority:${input.task.id}`,
+			executionConfirmationRequestId:
+				this.startRequestIdOverride ??
+				`confirmation:authority:${input.task.id}`,
 		};
 	}
 
@@ -1280,6 +1284,111 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 		planRevision: 2,
 	});
 	assert.equal(harness.starts.length, 1);
+});
+
+test("admission answering with a second authority ID fails the start", async () => {
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	let completed = 0;
+	const freeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-paid",
+		planRevision: 1,
+		quoteRef: { id: "quote-1", revision: "quote-r5" },
+	} as never;
+	const snapshotHash = computeExecutionPlanSnapshotHash(freeze);
+	let immutableDecision: PlanConfirmationDecision | null = null;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				input.submission.executionPlanFreeze = freeze;
+				return { threadId: "thread-wait", runId: "run-wait", makeReady: false };
+			},
+			async completeExplicitStart() {
+				return { threadId: "thread-wait", runId: "run-wait", makeReady: true };
+			},
+			async markExplicitStartCompleted() {
+				completed += 1;
+			},
+		},
+		{
+			async getDecision() {
+				return immutableDecision;
+			},
+			async getRequest(requestId) {
+				return {
+					request: {
+						requestId,
+						planId: "plan-paid",
+						planRevision: 1,
+						snapshotHash,
+						quoteRef: { id: "quote-1", revision: "quote-r5" },
+						status: "decided",
+					},
+				};
+			},
+			async getCurrentByWorkflowId(workflowId) {
+				return {
+					workflowId,
+					workspaceId: "workspace-1",
+					planId: "plan-paid",
+					planRevision: 1,
+					snapshotHash,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+					rightsRevisionRefs: [],
+					factRevisionRefs: [],
+					frozenAt: "2026-08-09T08:00:00.000Z",
+				};
+			},
+		},
+	);
+
+	const created = await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	const persistedRequestId = submissions.claimedSubmission(
+		"workspace-1",
+		"composer-submit-1",
+	)?.confirmationDispatch?.requestId;
+	assert.equal(persistedRequestId, `confirmation:authority:${created.task.id}`);
+	immutableDecision = planConfirmationDecisionSchema.parse({
+		schemaVersion: "plan-confirmation-decision/v1",
+		decisionId: `decision:${created.task.id}:merchant-confirmed`,
+		requestId: executionConfirmationAuthorityRequestId({
+			workflowId: `${created.task.id}:plan-r1`,
+			planRevision: 1,
+			snapshotHash,
+		}),
+		actorId: "owner-1",
+		decision: "confirmed",
+		decidedAt: "2026-08-09T08:00:00.000Z",
+	});
+
+	// The pending confirmation already told the merchant which authority they
+	// were approving. Admission re-affirming a *different* one would mean the
+	// money was held against one request and spent against another.
+	harness.startRequestIdOverride = "confirmation:authority:someone-elses-run";
+	await assert.rejects(
+		coordinator.startPrepared({
+			workspaceId: "workspace-1",
+			taskId: created.task.id,
+			planRevision: 1,
+		}),
+		/returned a different confirmation authority ID/u,
+	);
+	assert.equal(completed, 0);
+	assert.equal(
+		submissions.claimedSubmission("workspace-1", "composer-submit-1")
+			?.confirmationDispatch?.requestId,
+		persistedRequestId,
+	);
 });
 
 test("clarification answer continues the prepared task and durably stores its compiled freeze", async () => {
