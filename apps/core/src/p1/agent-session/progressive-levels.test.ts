@@ -79,6 +79,15 @@ function baseTurn(overrides: Record<string, unknown> = {}) {
 
 // ─── Classifier unit ────────────────────────────────────────────────────────
 
+test('merchant prose without structured lens or paid-unit authority is never copy-exempt', () => {
+  const result = classifyProgressiveLevel({
+    merchantMessage: '写一条朋友圈护理介绍',
+  });
+  assert.equal(result.level, 2);
+  assert.equal(result.confirmationExempt, false);
+  assert.equal(result.reason, 'structured_execution_authority_missing');
+});
+
 test('Level 0: deterministic light edit patterns', () => {
   const result = classifyProgressiveLevel({
     merchantMessage: '删除最后一句',

@@ -74,6 +74,7 @@ export type PlanCompilerQuotePort = {
     planRevision: number;
     deliverables: PlanDeliverable[];
     harnessReleaseId: string;
+    quoteRefHint?: AgentRevisionRef;
   }): Promise<PlanCompilerQuoteResolution>;
 };
 
@@ -169,6 +170,8 @@ export type CompilePlanInput = {
   contextBundleId: string;
   contextRevision: string;
   harnessReleaseId: string;
+  /** Server-owned quote authority already admitted for this submission. */
+  quoteRefHint?: AgentRevisionRef;
   now?: string;
   /** Optional merchant billing overlay for Living Plan cost section (no invention). */
   livingPlanBilling?: PlanLivingPlanBillingOverlay;
@@ -280,6 +283,46 @@ export class PlanCompiler {
     );
 
     const latest = await this.store.getLatest(planId);
+    const expectedGoalSummary =
+      input.patch !== undefined
+        ? `${proposal.goalNarrative} · 调整：${input.patch.summary}`.slice(0, 2_000)
+        : proposal.goalNarrative;
+    if (
+      latest &&
+      latest.revision.boundRevisions.intentRevision === input.intentRevision &&
+      latest.revision.boundRevisions.contextBundleId === input.contextBundleId &&
+      latest.revision.boundRevisions.contextRevision === input.contextRevision &&
+      latest.revision.boundRevisions.harnessReleaseId === input.harnessReleaseId &&
+      latest.revision.goal.summary === expectedGoalSummary
+    ) {
+      const readiness = projectMarketingPlanReadiness({
+        revision: latest.revision,
+        facts: {
+          contextRevision: input.contextRevision,
+          recipeRevisionIds: latest.revision.boundRevisions.recipeRevisionIds,
+          catalogRevisionId: latest.revision.boundRevisions.catalogRevisionId,
+          modelRevisionIds: latest.revision.boundRevisions.modelRevisionIds,
+          sourceRevisionIds: latest.revision.boundRevisions.sourceRevisionIds,
+          rightsRevisionIds: latest.revision.boundRevisions.rightsRevisionIds,
+        },
+        now,
+      });
+      // Explicit repair seam: append may have committed before projector I/O
+      // failed. Stable eventId makes this replay idempotent and, critically,
+      // the same compile intent never fabricates a second plan revision.
+      await this.emitPlanSemanticEvent({
+        input,
+        revision: latest.revision,
+        readiness,
+      });
+      return {
+        revision: latest.revision,
+        executionPlan: latest.executionPlan,
+        readiness,
+        skillInvocationReceipts: [],
+        unitCacheKeys: {},
+      };
+    }
     const nextRevision = latest ? latest.revision.revision + 1 : 1;
 
     const deliverables = this.buildDeliverables(proposal);
@@ -307,6 +350,7 @@ export class PlanCompiler {
         planRevision: nextRevision,
         deliverables,
         harnessReleaseId: input.harnessReleaseId,
+        quoteRefHint: input.quoteRefHint,
       }),
     ]);
 
@@ -323,13 +367,7 @@ export class PlanCompiler {
         : {}),
     };
 
-    const goalSummary =
-      input.patch !== undefined
-        ? `${proposal.goalNarrative} · 调整：${input.patch.summary}`.slice(
-            0,
-            2_000,
-          )
-        : proposal.goalNarrative;
+    const goalSummary = expectedGoalSummary;
 
     const revisionDraft: MarketingPlanRevision = marketingPlanRevisionSchema.parse(
       {

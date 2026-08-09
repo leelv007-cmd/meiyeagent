@@ -850,6 +850,15 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		};
 	}
 
+	async readByTask(input: { workspaceId: string; taskId: string }) {
+		const claim = [...this.claims.values()].find(
+			(item) =>
+				item.workspaceId === input.workspaceId &&
+				item.submission.task.id === input.taskId,
+		);
+		return claim ? structuredClone(claim.submission) : null;
+	}
+
 	async claim(input: CreationSubmissionStoreClaim) {
 		const key = `${input.workspaceId}:${input.idempotencyKey}`;
 		const existing = this.claims.get(key);
@@ -1003,6 +1012,62 @@ test("Composer returns authoritative Agent binding and treats the Thread hint ou
 	assert.equal(replayed.replayed, true);
 	assert.equal(replayed.threadId, "thread-authoritative");
 	assert.deepEqual(continuationHints, ["thread-browser-a", "thread-browser-b"]);
+});
+
+test("paid Composer plan waits until exact explicit start before dispatching Make", async () => {
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	let completed = 0;
+	let revised = 0;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare() {
+				return { threadId: "thread-wait", runId: "run-wait", makeReady: false };
+			},
+			async completeExplicitStart(input) {
+				assert.equal(input.planRevision, 2);
+				return { threadId: "thread-wait", runId: "run-wait", makeReady: true };
+			},
+			async markExplicitStartCompleted() {
+				completed += 1;
+			},
+			async revisePrepared(input) {
+				assert.equal(input.planRevision, 1);
+				assert.equal(input.merchantInstruction, "减到 4 页");
+				revised += 1;
+				return { threadId: "thread-wait", runId: "run-wait", makeReady: false };
+			},
+		},
+	);
+	const created = await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	assert.equal(created.makeReady, false);
+	assert.equal(harness.starts.length, 0);
+	await coordinator.revisePrepared({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		planRevision: 1,
+		merchantInstruction: "减到 4 页",
+	});
+	assert.equal(revised, 1);
+	assert.equal(harness.starts.length, 0);
+
+	const started = await coordinator.startPrepared({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		planRevision: 2,
+	});
+	assert.equal(started.makeReady, true);
+	assert.equal(harness.starts.length, 1);
+	assert.equal(completed, 1);
 });
 
 test("a failed Harness start releases the same submission for an idempotent retry", async () => {

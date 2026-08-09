@@ -110,6 +110,105 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
   );
 });
 
+test('Composer production seam runs Session intent before PlanCompiler and paid Make stays waiting', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const calls: string[] = [];
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    async runComposerTurn(input) {
+      calls.push(`turn:${input.authority.progressiveLevel.lens}`);
+      assert.equal(input.authority.knownFields.includes('rights'), true);
+      return {
+        decision: {
+          merchantMessage: '已识别为图文计划',
+          action: {
+            kind: 'propose_plan',
+            proposal: {
+              goalNarrative: '以门店授权素材制作图文',
+              recommendedDeliverables: [
+                { carrier: 'note', platform: 'xiaohongshu', quantity: 3 },
+              ],
+            },
+          },
+          evidenceRefs: [],
+          assumptions: [],
+        },
+      } as never;
+    },
+    async compilePlan(input) {
+      calls.push('compile');
+      assert.deepEqual(input.quoteRefHint, {
+        id: 'quote-task-session-first',
+        revision: 'quote-r1',
+      });
+      return compiler.compile(input);
+    },
+    async adjustPlan(input) {
+      calls.push('adjust');
+      return compiler.adjust(input);
+    },
+  });
+
+  const binding = await coordinator.prepare({
+    submission: record('task-session-first', '为夏日护理做 6 页图文'),
+  });
+
+  assert.deepEqual(calls, ['turn:note', 'compile']);
+  assert.equal(binding.makeReady, false);
+  const run = await sessions.getRun({
+    resourceId: 'workspace-1',
+    runId: binding.runId,
+  });
+  assert.equal(run?.status, 'running');
+});
+
+test('explicit start fails closed when the latest plan has unauthorized assets', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const ports = createFixturePlanCompilerPorts();
+  ports.rights = {
+    async resolveRights() {
+      return {
+        rightsSummary: { unauthorizedAssetIds: ['asset-case-1'] },
+        rightsRevisionIds: ['rights-denied-r1'],
+        assetUsages: [],
+        factUsages: [],
+        blocked: true,
+      };
+    },
+  };
+  const compiler = new PlanCompiler({ store: plans, ports });
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    async runComposerTurn() {
+      return null as never;
+    },
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+  const submission = record('task-rights-denied', '使用门店素材制作图文');
+  const binding = await coordinator.prepare({ submission });
+
+  await assert.rejects(
+    () =>
+      coordinator.completeExplicitStart({
+        submission,
+        planRevision: submission.executionPlanFreeze!.planRevision,
+      }),
+    /latest plan is blocked/u,
+  );
+  assert.equal(
+    (await sessions.getRun({
+      resourceId: submission.snapshot.workspaceId,
+      runId: binding.runId,
+    }))?.status,
+    'running',
+  );
+});
+
 test('a continuation Thread is resolved inside the submission workspace', async () => {  const sessions = new MemoryAgentSessionStore();
   const plans = new MemoryMarketingPlanStore();
   const compiler = new PlanCompiler({

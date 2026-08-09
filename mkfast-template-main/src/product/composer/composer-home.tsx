@@ -22,7 +22,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { DashboardHeader } from '@/components/layout/dashboard-header';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { emitTelemetry } from '@/lib/product-telemetry';
+import { emitTelemetry, telemetryFetch } from '@/lib/product-telemetry';
 import {
   account_usage_retry,
   creation_entry_intent_aria,
@@ -215,6 +215,7 @@ import {
 import { useWorkbenchViewportWidth } from './use-workbench-viewport-width';
 import {
   AgentWorkbenchHost,
+  getAgentWorkbenchHostStore,
   loadAgentWorkbenchReplay,
   subscribeAgentSemanticEvents,
   usePublishHandoff,
@@ -610,6 +611,7 @@ export function ComposerHome({
   const [lensState, setLensState] = useState<ComposerLensState>(() =>
     createComposerLensState()
   );
+  const [revisingLivingPlan, setRevisingLivingPlan] = useState(false);
   /** #324/#328 爆款复刻 dual-track journey. */
   const viralOpenCliBridgeRef = useRef<ViralOpenCliBridge | null>(null);
   const viralOpenCliReadCoordinatorRef =
@@ -3369,9 +3371,40 @@ export function ComposerHome({
                * otherwise session projection chooses Idle vs resume. processSlot
                * keeps Work inline projection (legacy conversation stream). */}
               <AgentWorkbenchHost
-                explicitTaskId={initialTaskId ?? null}
+                explicitTaskId={session.task?.taskId ?? initialTaskId ?? null}
                 explicitThreadId={activeAgentThreadId}
                 loadReplay={loadAgentWorkbenchReplay}
+                onLivingPlanCommitAction={(action) => {
+                  if (action === 'revise') {
+                    setRevisingLivingPlan(true);
+                    focusComposerIntentInput();
+                    return;
+                  }
+                  const taskId = session.task?.taskId ?? initialTaskId;
+                  const workbench = getAgentWorkbenchHostStore().getState();
+                  const activePlan = workbench.activePlanId
+                    ? workbench.plans[workbench.activePlanId]
+                    : undefined;
+                  const revision = activePlan?.revisions.at(-1)?.revision;
+                  if (!taskId || !revision) {
+                    toast.error('方案还没有准备好，请稍后重试');
+                    return;
+                  }
+                  setRevisingLivingPlan(false);
+                  void telemetryFetch(
+                    `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/start`,
+                    {
+                      body: JSON.stringify({ planRevision: revision }),
+                      credentials: 'same-origin',
+                      headers: { 'content-type': 'application/json' },
+                      method: 'POST',
+                    }
+                  ).then((response) => {
+                    if (!response.ok) {
+                      toast.error('开始制作失败，请重试');
+                    }
+                  });
+                }}
                 onPublishHandoffCopy={publishHandoff.onPublishHandoffCopy}
                 onPublishHandoffDownloadZip={
                   publishHandoff.onPublishHandoffDownloadZip
@@ -4001,7 +4034,41 @@ export function ComposerHome({
                   modelChannelReadiness={
                     selectedModel?.channelReadiness ?? null
                   }
-                  onSubmit={() => void attemptSubmit()}
+                  onSubmit={() => {
+                    if (!revisingLivingPlan) {
+                      void attemptSubmit();
+                      return;
+                    }
+                    const taskId = session.task?.taskId ?? initialTaskId;
+                    const workbench = getAgentWorkbenchHostStore().getState();
+                    const activePlan = workbench.activePlanId
+                      ? workbench.plans[workbench.activePlanId]
+                      : undefined;
+                    const revision = activePlan?.revisions.at(-1)?.revision;
+                    const merchantInstruction = lensState.draft.userText.trim();
+                    if (!taskId || !revision || !merchantInstruction) {
+                      toast.error('请先写下方案调整要求');
+                      return;
+                    }
+                    void telemetryFetch(
+                      `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/revise`,
+                      {
+                        body: JSON.stringify({
+                          planRevision: revision,
+                          merchantInstruction,
+                        }),
+                        credentials: 'same-origin',
+                        headers: { 'content-type': 'application/json' },
+                        method: 'POST',
+                      }
+                    ).then((response) => {
+                      if (response.ok) {
+                        setRevisingLivingPlan(false);
+                      } else {
+                        toast.error('方案调整失败，请重试');
+                      }
+                    });
+                  }}
                   onValueChange={handleIntentChange}
                   placeholder={
                     creationMode === 'free'

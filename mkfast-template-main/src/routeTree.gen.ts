@@ -118,6 +118,8 @@ import { Route as ApiCoreP1AgentThreadsThreadIdEventsRouteImport } from './route
 import { Route as ApiCoreP1HarnessTasksTaskIdProductMetricsRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/product-metrics'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction'
 import { Route as ApiCoreP1HarnessTasksTaskIdDecisionRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/decision'
+import { Route as ApiCoreP1ComposerTasksTaskIdStartRouteImport } from './routes/api/core/p1/composer/tasks/$taskId/start'
+import { Route as ApiCoreP1ComposerTasksTaskIdReviseRouteImport } from './routes/api/core/p1/composer/tasks/$taskId/revise'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionRendererRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/renderer'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionMessageRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/message'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionEditingRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/editing'
@@ -687,6 +689,18 @@ const ApiCoreP1HarnessTasksTaskIdDecisionRoute =
     path: '/$taskId/decision',
     getParentRoute: () => ApiCoreP1HarnessTasksRoute,
   } as any)
+const ApiCoreP1ComposerTasksTaskIdStartRoute =
+  ApiCoreP1ComposerTasksTaskIdStartRouteImport.update({
+    id: '/api/core/p1/composer/tasks/$taskId/start',
+    path: '/api/core/p1/composer/tasks/$taskId/start',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiCoreP1ComposerTasksTaskIdReviseRoute =
+  ApiCoreP1ComposerTasksTaskIdReviseRouteImport.update({
+    id: '/api/core/p1/composer/tasks/$taskId/revise',
+    path: '/api/core/p1/composer/tasks/$taskId/revise',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute =
   ApiCoreP1HarnessTasksTaskIdInteractionRendererRouteImport.update({
     id: '/renderer',
@@ -825,6 +839,8 @@ export interface FileRoutesByFullPath {
   '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
   '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
+  '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
+  '/api/core/p1/composer/tasks/$taskId/start': typeof ApiCoreP1ComposerTasksTaskIdStartRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
   '/api/core/p1/harness/tasks/$taskId/product-metrics': typeof ApiCoreP1HarnessTasksTaskIdProductMetricsRoute
@@ -937,6 +953,8 @@ export interface FileRoutesByTo {
   '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
   '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
+  '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
+  '/api/core/p1/composer/tasks/$taskId/start': typeof ApiCoreP1ComposerTasksTaskIdStartRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
   '/api/core/p1/harness/tasks/$taskId/product-metrics': typeof ApiCoreP1HarnessTasksTaskIdProductMetricsRoute
@@ -1054,6 +1072,8 @@ export interface FileRoutesById {
   '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
   '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
+  '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
+  '/api/core/p1/composer/tasks/$taskId/start': typeof ApiCoreP1ComposerTasksTaskIdStartRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
   '/api/core/p1/harness/tasks/$taskId/product-metrics': typeof ApiCoreP1HarnessTasksTaskIdProductMetricsRoute
@@ -1172,6 +1192,8 @@ export interface FileRouteTypes {
     | '/api/core/p1/agent-threads/$threadId/replay'
     | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
+    | '/api/core/p1/composer/tasks/$taskId/revise'
+    | '/api/core/p1/composer/tasks/$taskId/start'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
     | '/api/core/p1/harness/tasks/$taskId/product-metrics'
@@ -1284,6 +1306,8 @@ export interface FileRouteTypes {
     | '/api/core/p1/agent-threads/$threadId/replay'
     | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
+    | '/api/core/p1/composer/tasks/$taskId/revise'
+    | '/api/core/p1/composer/tasks/$taskId/start'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
     | '/api/core/p1/harness/tasks/$taskId/product-metrics'
@@ -1400,6 +1424,8 @@ export interface FileRouteTypes {
     | '/api/core/p1/agent-threads/$threadId/replay'
     | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
+    | '/api/core/p1/composer/tasks/$taskId/revise'
+    | '/api/core/p1/composer/tasks/$taskId/start'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
     | '/api/core/p1/harness/tasks/$taskId/product-metrics'
@@ -1453,6 +1479,8 @@ export interface RootRouteChildren {
   ApiCoreP1AgentThreadsThreadIdReplayRoute: typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
   ApiCoreP1ConfirmationRequestsRequestIdDecideRoute: typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   ApiCoreP1WorkflowsWorkflowIdEventsRoute: typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
+  ApiCoreP1ComposerTasksTaskIdReviseRoute: typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
+  ApiCoreP1ComposerTasksTaskIdStartRoute: typeof ApiCoreP1ComposerTasksTaskIdStartRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -2220,6 +2248,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCoreP1HarnessTasksTaskIdDecisionRouteImport
       parentRoute: typeof ApiCoreP1HarnessTasksRoute
     }
+    '/api/core/p1/composer/tasks/$taskId/start': {
+      id: '/api/core/p1/composer/tasks/$taskId/start'
+      path: '/api/core/p1/composer/tasks/$taskId/start'
+      fullPath: '/api/core/p1/composer/tasks/$taskId/start'
+      preLoaderRoute: typeof ApiCoreP1ComposerTasksTaskIdStartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/core/p1/composer/tasks/$taskId/revise': {
+      id: '/api/core/p1/composer/tasks/$taskId/revise'
+      path: '/api/core/p1/composer/tasks/$taskId/revise'
+      fullPath: '/api/core/p1/composer/tasks/$taskId/revise'
+      preLoaderRoute: typeof ApiCoreP1ComposerTasksTaskIdReviseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/core/p1/harness/tasks/$taskId/interaction/renderer': {
       id: '/api/core/p1/harness/tasks/$taskId/interaction/renderer'
       path: '/renderer'
@@ -2555,6 +2597,10 @@ const rootRouteChildren: RootRouteChildren = {
     ApiCoreP1ConfirmationRequestsRequestIdDecideRoute,
   ApiCoreP1WorkflowsWorkflowIdEventsRoute:
     ApiCoreP1WorkflowsWorkflowIdEventsRoute,
+  ApiCoreP1ComposerTasksTaskIdReviseRoute:
+    ApiCoreP1ComposerTasksTaskIdReviseRoute,
+  ApiCoreP1ComposerTasksTaskIdStartRoute:
+    ApiCoreP1ComposerTasksTaskIdStartRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

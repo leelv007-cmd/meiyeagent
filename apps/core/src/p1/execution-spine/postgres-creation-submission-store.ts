@@ -433,6 +433,19 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
       : { kind: "conflict" as const };
   }
 
+  async readByTask(input: { workspaceId: string; taskId: string }) {
+    const result = await this.pool.query<{ submission: unknown }>(
+      `SELECT submission
+         FROM execution_spine.creation_submissions
+        WHERE workspace_id = $1 AND task_id = $2
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [input.workspaceId, input.taskId],
+    );
+    const row = result.rows[0];
+    return row ? storedSubmission(row.submission) : null;
+  }
+
   async claim(input: CreationSubmissionStoreClaim) {
     const client = await this.pool.connect();
     let inTransaction = false;

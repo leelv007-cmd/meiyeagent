@@ -61,6 +61,10 @@ export interface CreationSubmissionStoreClaim {
 }
 
 export interface CreationSubmissionStore {
+	readByTask?(input: {
+		workspaceId: string;
+		taskId: string;
+	}): Promise<CreationSubmissionRecord | null>;
 	readReceipt(input: {
 		workspaceId: string;
 		idempotencyKey: string;
@@ -132,6 +136,8 @@ export interface CreationSubmissionIdFactory {
 export type ComposerAgentBinding = {
 	threadId: string;
 	runId: string;
+	/** False while a paid Living Plan waits for an explicit merchant start. */
+	makeReady?: boolean;
 };
 
 /** Composer → Agent Session/Plan seam. Web never projects plan events. */
@@ -139,6 +145,18 @@ export interface ComposerSubmissionAgentPlanningPort {
 	prepare(input: {
 		continuationThreadId?: string;
 		submission: CreationSubmissionRecord;
+	}): Promise<ComposerAgentBinding>;
+	completeExplicitStart?(input: {
+		submission: CreationSubmissionRecord;
+		planRevision: number;
+	}): Promise<ComposerAgentBinding>;
+	markExplicitStartCompleted?(input: {
+		submission: CreationSubmissionRecord;
+	}): Promise<void>;
+	revisePrepared?(input: {
+		submission: CreationSubmissionRecord;
+		planRevision: number;
+		merchantInstruction: string;
 	}): Promise<ComposerAgentBinding>;
 }
 
@@ -218,6 +236,52 @@ export class CreationSubmissionCoordinator {
 		return this.admission.prepareResultTextSelection(input);
 	}
 
+	async startPrepared(input: {
+		workspaceId: string;
+		taskId: string;
+		planRevision: number;
+	}) {
+		if (!this.store.readByTask || !this.agentPlanning?.completeExplicitStart) {
+			throw new Error("Explicit Composer plan start is unavailable.");
+		}
+		const submission = await this.store.readByTask({
+			workspaceId: input.workspaceId,
+			taskId: input.taskId,
+		});
+		if (!submission) throw new Error("Prepared Composer task was not found.");
+		const binding = await this.agentPlanning.completeExplicitStart({
+			submission,
+			planRevision: input.planRevision,
+		});
+		await this.startHarness(submission);
+		await this.agentPlanning.markExplicitStartCompleted?.({ submission });
+		return submissionResponse(submission, true, {
+			...binding,
+			makeReady: true,
+		});
+	}
+
+	async revisePrepared(input: {
+		workspaceId: string;
+		taskId: string;
+		planRevision: number;
+		merchantInstruction: string;
+	}) {
+		if (!this.store.readByTask || !this.agentPlanning?.revisePrepared) {
+			throw new Error("Composer plan revision is unavailable.");
+		}
+		const submission = await this.store.readByTask({
+			workspaceId: input.workspaceId,
+			taskId: input.taskId,
+		});
+		if (!submission) throw new Error("Prepared Composer task was not found.");
+		return this.agentPlanning.revisePrepared({
+			submission,
+			planRevision: input.planRevision,
+			merchantInstruction: input.merchantInstruction,
+		});
+	}
+
 	async submit(input: ComposerSubmissionRequest) {
 		const request = composerSubmissionRequestSchema.parse(input);
 		const payloadHash = fingerprintValue(receiptPayload(request));
@@ -234,7 +298,9 @@ export class CreationSubmissionCoordinator {
 				receipt.submission,
 				request.agentThreadId
 			);
-			await this.startHarness(receipt.submission);
+			if (agentBinding?.makeReady !== false) {
+				await this.startHarness(receipt.submission);
+			}
 			return submissionResponse(receipt.submission, true, agentBinding);
 		}
 
@@ -300,7 +366,9 @@ export class CreationSubmissionCoordinator {
 			claimed.submission,
 			request.agentThreadId
 		);
-		await this.startHarness(claimed.submission);
+		if (agentBinding?.makeReady !== false) {
+			await this.startHarness(claimed.submission);
+		}
 		return submissionResponse(
 			claimed.submission,
 			claimed.kind === "existing",
@@ -780,7 +848,11 @@ function submissionResponse(
 	return {
 		contentPackage: submission.contentPackage,
 		...(agentBinding
-			? { threadId: agentBinding.threadId, runId: agentBinding.runId }
+			? {
+					threadId: agentBinding.threadId,
+					runId: agentBinding.runId,
+					makeReady: agentBinding.makeReady !== false,
+				}
 			: {}),
 		replayed,
 		snapshot: {

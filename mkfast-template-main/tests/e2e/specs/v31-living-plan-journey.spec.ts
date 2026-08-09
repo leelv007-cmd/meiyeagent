@@ -9,10 +9,7 @@ import {
   seedComposerInlineAuthorize,
   seedConfirmedStore,
 } from '../fixtures/product';
-import {
-  chooseImageTextDirection,
-  selectComposerLens,
-} from '../fixtures/ui-journey';
+import { selectComposerLens } from '../fixtures/ui-journey';
 
 /**
  * V31-10 / V3.1 §37.4-C first half — Living Plan journey (spec only).
@@ -74,10 +71,13 @@ test.describe('V31-10 Living Plan journey (§37.4-C first half)', () => {
       .or(page.getByTestId('composer-progress-card'));
     await expect(retrievalSignal.first()).toBeVisible({ timeout: 60_000 });
 
-    // 2) At most one merchant-facing question this turn (question budget).
-    // For image_text the one question is the 图文方向 pick — answer it through
-    // the shared fixture (it also proves the frozen-route resume path).
-    await chooseImageTextDirection(page);
+    // 2) Session question budget is structural: zero or one visible question,
+    // never a second card. Known platform/lens/rights/quote fields are server-
+    // owned and therefore must not be re-asked.
+    const visibleQuestions = page
+      .getByTestId('ask-merchant-group-card')
+      .or(page.getByTestId('composer-question-card'));
+    await expect(visibleQuestions).toHaveCount(0);
 
     // 3) Living Plan grows in the same Workstream (five-section document).
     await expect(page.getByTestId('agent-living-plan')).toBeVisible({
@@ -98,12 +98,11 @@ test.describe('V31-10 Living Plan journey (§37.4-C first half)', () => {
     ).toBeVisible();
 
     // Compact Plan / commit strip unifies Brief/quote/confirm presentation.
-    const commitOrCompact = page
-      .getByTestId('agent-commit-strip')
-      .or(page.getByTestId('agent-compact-plan'));
-    await expect(commitOrCompact.first()).toBeVisible();
+    await expect(page.getByTestId('agent-commit-strip')).toBeVisible();
+    await expect(page.getByTestId('agent-commit-strip-start')).toBeEnabled();
 
     // 4) Natural-language adjust → new revision + readable diff; prior revision browsable.
+    await page.getByTestId('agent-commit-strip-revise').click();
     await page
       .getByTestId('composer-intent-input')
       .fill('只做小红书，减到 4 页');
@@ -119,12 +118,11 @@ test.describe('V31-10 Living Plan journey (§37.4-C first half)', () => {
     });
     // Old version remains reachable (revision chips when history length > 1).
     const rev1 = page.getByTestId('agent-living-plan-revision-1');
-    if (await rev1.isVisible().catch(() => false)) {
-      await rev1.click();
-      await expect(page.getByTestId('agent-living-plan')).toHaveAttribute(
-        'data-revision',
-        '1'
-      );
-    }
+    await expect(rev1).toBeVisible();
+    await rev1.click();
+    await expect(page.getByTestId('agent-living-plan')).toHaveAttribute(
+      'data-revision',
+      '1'
+    );
   });
 });

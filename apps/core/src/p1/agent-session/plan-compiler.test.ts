@@ -82,6 +82,45 @@ function compileInput(
 
 // ─── Deterministic authority overrides model contamination ──────────────────
 
+test('projector crash repairs the same revision instead of appending a phantom revision', async () => {
+  const store = new MemoryMarketingPlanStore();
+  const projected: string[] = [];
+  let failOnce = true;
+  const compiler = new PlanCompiler({
+    store,
+    ports: createFixturePlanCompilerPorts(),
+    semanticEvents: {
+      async project(candidate) {
+        if (failOnce) {
+          failOnce = false;
+          throw new Error('projector unavailable after plan commit');
+        }
+        projected.push(candidate.eventId);
+        return { event: candidate, replayed: false };
+      },
+    },
+  });
+  const input = {
+    workspaceId: 'ws-repair',
+    resourceId: 'ws-repair',
+    threadId: 'thread-repair',
+    proposal: baseProposal(),
+    intentRevision: 7,
+    contextBundleId: 'bundle-repair',
+    contextRevision: 'ctx-7',
+    harnessReleaseId: 'release-repair',
+    now: TS,
+    planId: 'plan-repair-1',
+  };
+
+  await assert.rejects(() => compiler.compile(input), /projector unavailable/u);
+  assert.equal((await store.listRevisions(input.planId)).length, 1);
+  const repaired = await compiler.compile(input);
+  assert.equal(repaired.revision.revision, 1);
+  assert.equal((await store.listRevisions(input.planId)).length, 1);
+  assert.deepEqual(projected, ['plan:plan-repair-1:r1']);
+});
+
 test('compiler ignores model quote/balance/rights/availability contamination', async () => {
   const store = new MemoryMarketingPlanStore();
   let quoteCalls = 0;
@@ -538,6 +577,21 @@ test('harness service surface exposes compilePlan/adjustPlan after bindPlanCompi
     now: TS,
   });
   assert.equal(adjusted.revision.revision, 2);
+
+  const steered = await harness.revisePlanFromMerchantInstruction({
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    existingPlanId: 'plan-harness-1',
+    proposal: baseProposal(),
+    merchantInstruction: '改成更克制的口吻',
+    intentRevision: 1,
+    contextBundleId: 'b',
+    contextRevision: '1',
+    harnessReleaseId: 'r',
+    now: TS,
+  });
+  assert.equal(steered.revision.revision, 3);
+  assert.equal(steered.revision.expression.narrativeStructure, '改成更克制的口吻');
   assert.equal(harness.getPlanCompiler()?.unitRegistry.has('note.generate'), true);
 });
 

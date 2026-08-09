@@ -84,6 +84,8 @@ const composerSubmissionResultSchema = z
       })
       .strict(),
     replayed: z.boolean(),
+    /** False while a paid Living Plan waits for explicit merchant start. */
+    makeReady: z.boolean(),
     threadId: identifierSchema,
     runId: identifierSchema,
     snapshot: z
