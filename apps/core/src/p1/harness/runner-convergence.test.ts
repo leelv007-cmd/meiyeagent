@@ -513,6 +513,55 @@ test('V31-25: production primitive topology never nests a durable step', async (
   assert.equal(maximumDepth, 1);
 });
 
+test('V31-25: frozen note and media keep page/provider effects at one durable depth', async () => {
+  for (const kind of ['image_text_note', 'image'] as const) {
+    let depth = 0;
+    let maximumDepth = 0;
+    const runtime: HarnessWorkflowRuntime = {
+      ...recordingRuntime([]),
+      async runStep(_key, operation) {
+        depth += 1;
+        maximumDepth = Math.max(maximumDepth, depth);
+        assert.equal(depth, 1, `nested durable step for ${kind}`);
+        try {
+          return await operation();
+        } finally {
+          depth -= 1;
+        }
+      },
+      async awaitDecision(question) {
+        return noteStyleOrPaidDecision(question);
+      },
+    };
+    if (kind === 'image_text_note') {
+      const stages = fixtureNoteStages();
+      const execute = stages.executeNoteAndSelect;
+      stages.executeNoteAndSelect = (input) =>
+        input.runStep!('legacy-note-page-effect', () => execute(input));
+      await runHarnessWorkflow(
+        `frozen-depth-${kind}`,
+        mediaTaskInput(kind),
+        stages,
+        runtime,
+        { forceLegacyFiveStage: true },
+      );
+    } else {
+      const stages = fixtureMediaStages();
+      const execute = stages.executeMediaAndSelect;
+      stages.executeMediaAndSelect = (input) =>
+        input.runStep!('legacy-media-provider-effect', () => execute(input));
+      await runHarnessWorkflow(
+        `frozen-depth-${kind}`,
+        mediaTaskInput(kind),
+        stages,
+        runtime,
+        { forceLegacyFiveStage: true },
+      );
+    }
+    assert.equal(maximumDepth, 1);
+  }
+});
+
 // ─── Equivalence baseline + kill/restart ─────────────────────────────────────
 
 /**

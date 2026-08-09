@@ -212,35 +212,33 @@ async function runFrozenNote(
         brief,
         await resolveLegacyStyleDecision(input, brief),
       );
-  const selection = await input.runtime.runStep(
+  const selection = await ports.executeNoteAndSelect({
+    workflowId: input.workflowId,
+    request: activeRequest,
+    brief,
+    context,
+    selectedStyleId,
+    ...(executionSkills.length > 0
+      ? { skillInstructions: executionSkills }
+      : {}),
+    ...(input.runtime.awaitSignal
+      ? { awaitSignal: input.runtime.awaitSignal.bind(input.runtime) }
+      : {}),
+    runStep: input.runtime.runStep.bind(input.runtime),
+  });
+  await input.runtime.runStep(
     legacyEffectKey(
       input.workflowId,
       4,
       legacySkillUnit('image_text_note', executionSkills),
-      'selection',
+      'execution-check',
     ),
-    async () => {
-      const selected = await ports.executeNoteAndSelect({
-        workflowId: input.workflowId,
-        request: activeRequest,
-        brief,
-        context,
-        selectedStyleId,
-        ...(executionSkills.length > 0
-          ? { skillInstructions: executionSkills }
-          : {}),
-        ...(input.runtime.awaitSignal
-          ? { awaitSignal: input.runtime.awaitSignal.bind(input.runtime) }
-          : {}),
-        runStep: input.runtime.runStep.bind(input.runtime),
-      });
-      await ports.recordExecutionAssemblyStep?.({
+    () =>
+      ports.recordExecutionAssemblyStep?.({
         workflowId: input.workflowId,
         request: activeRequest,
         step: 'execution_check',
-      });
-      return selected;
-    },
+      }) ?? Promise.resolve(),
   );
   const delivery = await input.runtime.runStep(
     legacyEffectKey(
@@ -314,41 +312,42 @@ async function runFrozenMedia(
       }),
   );
   const brief = unwrapMeasuredBrief(compiledBrief);
-  const selection = await input.runtime.runStep(
+  const executionInput = {
+    workflowId: input.workflowId,
+    request: activeRequest,
+    brief,
+    context,
+    ...(executionSkills.length > 0
+      ? { skillInstructions: executionSkills }
+      : {}),
+    ...(input.runtime.awaitSignal
+      ? { awaitSignal: input.runtime.awaitSignal.bind(input.runtime) }
+      : {}),
+    runStep: input.runtime.runStep.bind(input.runtime),
+  };
+  const selection =
+    activeRequest.boundedExecution && ports.executeMediaAndSelectBounded
+      ? await ports.executeMediaAndSelectBounded(executionInput)
+      : await ports.executeMediaAndSelect(executionInput);
+  if (isBoundedExecutionSuspension(selection)) {
+    throw new Error('Frozen legacy media execution suspended at its bound.');
+  }
+  await input.runtime.runStep(
     legacyEffectKey(
       input.workflowId,
       4,
-      legacySkillUnit(input.request.executionSnapshot?.lens ?? 'image', executionSkills),
-      'selection',
+      legacySkillUnit(
+        input.request.executionSnapshot?.lens ?? 'image',
+        executionSkills,
+      ),
+      'execution-check',
     ),
-    async () => {
-      const executionInput = {
-        workflowId: input.workflowId,
-        request: activeRequest,
-        brief,
-        context,
-        ...(executionSkills.length > 0
-          ? { skillInstructions: executionSkills }
-          : {}),
-        ...(input.runtime.awaitSignal
-          ? { awaitSignal: input.runtime.awaitSignal.bind(input.runtime) }
-          : {}),
-        runStep: input.runtime.runStep.bind(input.runtime),
-      };
-      const selected =
-        activeRequest.boundedExecution && ports.executeMediaAndSelectBounded
-          ? await ports.executeMediaAndSelectBounded(executionInput)
-          : await ports.executeMediaAndSelect(executionInput);
-      if (isBoundedExecutionSuspension(selected)) {
-        throw new Error('Frozen legacy media execution suspended at its bound.');
-      }
-      await ports.recordExecutionAssemblyStep?.({
+    () =>
+      ports.recordExecutionAssemblyStep?.({
         workflowId: input.workflowId,
         request: activeRequest,
         step: 'execution_check',
-      });
-      return selected;
-    },
+      }) ?? Promise.resolve(),
   );
   await finalizeLegacyMerchantExecution(
     input,
