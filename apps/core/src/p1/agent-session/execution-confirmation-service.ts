@@ -66,6 +66,14 @@ export type ConfirmationCreditTransactionPort = {
   }):
     | Promise<readonly CreditLotTransaction[]>
     | readonly CreditLotTransaction[];
+  replaceProductReservation?(input: {
+    workspaceId: string;
+    taskId: string;
+    quoteRef: AgentRevisionRef;
+    predecessorCredits: number;
+    successorCredits: number;
+    updatedAt: string;
+  }): Promise<void>;
   transactionClient: ConfirmationTransactionClient;
 };
 
@@ -85,6 +93,10 @@ export type CreateExecutionConfirmationInput = {
   snapshotHash: string;
   quoteRef: AgentRevisionRef;
   reservationIdempotencyKey: string;
+  predecessorRequestId?: string;
+  replacesReservationIdempotencyKey?: string;
+  /** ProductBilling task whose reserved credit projection must follow reprice. */
+  billingTaskId?: string;
   createdAt: string;
   holdExpiresAt: string;
   actorId: string;
@@ -187,6 +199,15 @@ export class ExecutionConfirmationService {
       snapshotHash: input.snapshotHash,
       quoteRef: input.quoteRef,
       reservationIdempotencyKey: input.reservationIdempotencyKey,
+      ...(input.predecessorRequestId
+        ? { predecessorRequestId: input.predecessorRequestId }
+        : {}),
+      ...(input.replacesReservationIdempotencyKey
+        ? {
+            replacesReservationIdempotencyKey:
+              input.replacesReservationIdempotencyKey,
+          }
+        : {}),
       createdAt: input.createdAt,
       holdExpiresAt: input.holdExpiresAt,
       status: 'pending',
@@ -326,11 +347,88 @@ export class ExecutionConfirmationService {
 
       if (requiresReserve) {
         const balance = await ledger.project(input.workspaceId, input.createdAt);
-        if (balance.availableCredits < input.creditCost) {
+        let replacedCredits = 0;
+        if (
+          input.predecessorRequestId &&
+          input.replacesReservationIdempotencyKey
+        ) {
+          const predecessor = await this.getOwnedRequest(
+            input.workspaceId,
+            input.predecessorRequestId,
+            ledger.transactionClient,
+            true,
+          );
+          const predecessorDecision =
+            await this.decisions.getByRequestIdInTransaction(
+              ledger.transactionClient,
+              input.predecessorRequestId,
+            );
+          if (
+            !predecessor ||
+            predecessor.request.status !== 'decided' ||
+            predecessorDecision?.decision !== 'confirmed' ||
+            predecessor.request.planId !== input.planId ||
+            predecessor.request.planRevision >= input.planRevision ||
+            predecessor.request.quoteRef.id !== input.quoteRef.id ||
+            predecessor.request.reservationIdempotencyKey !==
+              input.replacesReservationIdempotencyKey
+          ) {
+            throw new ExecutionConfirmationError(
+              'INVALID_STATE',
+              `Confirmation predecessor ${input.predecessorRequestId} is not an exact confirmed hold.`,
+            );
+          }
+          const priorSuccessor =
+            await this.requests.findSuccessorByPredecessorInTransaction(
+              ledger.transactionClient,
+              input.predecessorRequestId,
+            );
+          if (priorSuccessor) {
+            throw new ExecutionConfirmationError(
+              'IDEMPOTENCY_CONFLICT',
+              `Confirmation predecessor ${input.predecessorRequestId} already has successor ${priorSuccessor.request.requestId}.`,
+            );
+          }
+          replacedCredits = predecessor.projection.reservedCredits;
+        }
+        if (balance.availableCredits + replacedCredits < input.creditCost) {
           throw new ExecutionConfirmationError(
             'INSUFFICIENT_CREDITS',
-            `Insufficient credits: need ${input.creditCost}, available ${balance.availableCredits}.`,
+            `Insufficient credits: need ${input.creditCost}, available ${balance.availableCredits + replacedCredits}.`,
           );
+        }
+        if (
+          input.predecessorRequestId &&
+          input.replacesReservationIdempotencyKey &&
+          input.billingTaskId
+        ) {
+          if (!ledger.replaceProductReservation) {
+            throw new ExecutionConfirmationError(
+              'INVALID_STATE',
+              'Product reservation replacement is unavailable for repricing.',
+            );
+          }
+          await ledger.replaceProductReservation({
+            workspaceId: input.workspaceId,
+            taskId: input.billingTaskId,
+            quoteRef: input.quoteRef,
+            predecessorCredits: replacedCredits,
+            successorCredits: input.creditCost,
+            updatedAt: input.createdAt,
+          });
+        }
+        if (
+          input.predecessorRequestId &&
+          input.replacesReservationIdempotencyKey
+        ) {
+          await ledger.refundUsageOperation({
+            workspaceId: input.workspaceId,
+            usageOperationId: input.replacesReservationIdempotencyKey,
+            refundOperationId: `confirmation-reprice:${input.requestId}`,
+            actorId: input.actorId,
+            correlationId: `confirmation:${input.requestId}`,
+            createdAt: input.createdAt,
+          });
         }
         await ledger.consume({
           workspaceId: input.workspaceId,

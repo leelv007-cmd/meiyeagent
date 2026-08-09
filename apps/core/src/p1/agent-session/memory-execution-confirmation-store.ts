@@ -47,6 +47,18 @@ export class MemoryExecutionConfirmationRequestStore
         `Confirmation request ${request.requestId} already exists with different facts.`,
       );
     }
+    if (request.predecessorRequestId) {
+      const successor = [...this.#byId.values()].find(
+        (row) =>
+          row.request.predecessorRequestId === request.predecessorRequestId,
+      );
+      if (successor) {
+        throw new ExecutionConfirmationError(
+          'IDEMPOTENCY_CONFLICT',
+          `Confirmation predecessor ${request.predecessorRequestId} already has successor ${successor.request.requestId}.`,
+        );
+      }
+    }
     if (
       request.approvalScope === 'single_work' &&
       request.campaignPlanRef &&
@@ -173,6 +185,16 @@ export class MemoryExecutionConfirmationRequestStore
   ) {
     const stored = await this.getById(requestId);
     return stored?.request.workspaceId === workspaceId ? stored : null;
+  }
+
+  async findSuccessorByPredecessorInTransaction(
+    _client: ConfirmationTransactionClient,
+    predecessorRequestId: string,
+  ) {
+    const stored = [...this.#byId.values()].find(
+      (row) => row.request.predecessorRequestId === predecessorRequestId,
+    );
+    return stored ? structuredClone(stored) : null;
   }
 
   async markOwnedStatusInTransaction(

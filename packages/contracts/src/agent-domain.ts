@@ -1773,6 +1773,9 @@ export const agentExecutionConfirmationRequestSchema = z
     snapshotHash: hashStringSchema,
     quoteRef: agentRevisionRefSchema,
     reservationIdempotencyKey: identifierSchema,
+    /** Exact predecessor hold replaced atomically by a repriced successor. */
+    predecessorRequestId: agentExecutionConfirmationRequestIdSchema.optional(),
+    replacesReservationIdempotencyKey: identifierSchema.optional(),
     createdAt: timestampSchema,
     holdExpiresAt: timestampSchema,
     status: z.enum(['pending', 'decided', 'expired']),
@@ -1786,6 +1789,17 @@ export const agentExecutionConfirmationRequestSchema = z
   })
   .strict()
   .superRefine((request, context) => {
+    if (
+      (request.predecessorRequestId === undefined) !==
+      (request.replacesReservationIdempotencyKey === undefined)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message:
+          'Successor confirmation replacement requires both predecessor request and reservation identities.',
+        path: ['predecessorRequestId'],
+      });
+    }
     const campaignBits = [
       request.campaignPlanRef !== undefined,
       request.workOrdinal !== undefined,

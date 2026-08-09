@@ -25,6 +25,7 @@ import {
 import {
   AgentSessionHarnessService,
   confirmationCreditPortFromPostgresLedger,
+  PostgresProductReservationReplacement,
   ConfirmationAuthorityAssembler,
   ExecutionConfirmationService,
   PostgresAgentSessionStore,
@@ -756,7 +757,10 @@ export async function assembleCoreGraph(
   const executionConfirmationService = new ExecutionConfirmationService(
     executionConfirmationMigration.requestStore,
     executionConfirmationMigration.decisionStore,
-    confirmationCreditPortFromPostgresLedger(creditLedger),
+    confirmationCreditPortFromPostgresLedger(
+      creditLedger,
+      new PostgresProductReservationReplacement(pool),
+    ),
     executionConfirmationAuthorityStore,
   );
   /**

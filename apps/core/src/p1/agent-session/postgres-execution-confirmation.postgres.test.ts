@@ -10,8 +10,12 @@ import { Pool } from 'pg';
 
 import { agentExecutionConfirmationRequestSchema } from '@meiye/contracts';
 
+import { creditUsageOperationId } from '../credit-billing/credit-ledger.js';
 import { PostgresCreditLedger } from '../credit-billing/postgres-credit-ledger.js';
+import { HarnessProductBillingSettlementExecutor } from '../harness/product-billing-settlement.js';
 import { PgBossJobPort } from '../job-runtime/pg-boss-job-port.js';
+import { DurableProductBillingService } from '../product-billing/durable-service.js';
+import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
 import { ConfirmationAuthorityAssembler } from './execution-confirmation-authority.js';
 import { ExecutionConfirmationService } from './execution-confirmation-service.js';
 import { PostgresConfirmationAuthorityStore } from './execution-confirmation-authority-store.js';
@@ -23,6 +27,7 @@ import {
 import {
   confirmationCreditPortFromPostgresLedger,
   PostgresExecutionConfirmationMigration,
+  PostgresProductReservationReplacement,
 } from './postgres-execution-confirmation-store.js';
 import {
   ExecutionConfirmationError,
@@ -215,6 +220,231 @@ test(
       );
     } finally {
       await cleanup();
+    }
+  },
+);
+
+test(
+  'Postgres successor reprice atomically replaces the product reservation and settles its exact credit operation',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const fixture = await createFixture();
+    const taskId = 'task-successor-reprice';
+    const quoteId = 'quote-successor-reprice';
+    const initialOperationId = creditUsageOperationId(taskId);
+    const repository = new PostgresProductBillingRepository(fixture.pool);
+    const billing = new DurableProductBillingService(
+      repository,
+      () => new Date('2026-08-09T10:00:00.000Z'),
+    );
+    try {
+      await repository.migrate();
+      await fixture.creditLedger.grant({
+        id: 'successor-reprice-balance',
+        workspaceId: fixture.workspaceId,
+        credits: 10,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'successor-reprice',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      const quote = await billing.buildQuote({
+        billingMode: 'per_request',
+        catalogModelId: 'copy-model-successor',
+        catalogModelRevision: 'catalog-r1',
+        creditCost: 6,
+        failureRefundsCredits: true,
+        frozenCandidateDeploymentIds: ['copy-deployment-successor'],
+        quoteId,
+        quotePolicyRevision: 'quote-policy-r1',
+        routeSnapshotRef: 'route-successor',
+        unitRate: 6,
+        workspaceId: fixture.workspaceId,
+      });
+      await billing.confirm({ quoteId, taskId, workspaceId: fixture.workspaceId });
+      await billing.reserve({ quoteId, units: [], workspaceId: fixture.workspaceId });
+      const service = new ExecutionConfirmationService(
+        fixture.requestStore,
+        fixture.decisionStore,
+        confirmationCreditPortFromPostgresLedger(
+          fixture.creditLedger,
+          new PostgresProductReservationReplacement(fixture.pool),
+        ),
+      );
+      const initial = await service.createRequest({
+        requestId: 'req-successor-reprice-r1',
+        workspaceId: fixture.workspaceId,
+        planId: 'plan-successor-reprice',
+        planRevision: 1,
+        snapshotHash: 'snapshot-successor-reprice-r1',
+        quoteRef: { id: quoteId, revision: quote.revision },
+        reservationIdempotencyKey: initialOperationId,
+        createdAt: '2026-08-09T10:00:00.000Z',
+        holdExpiresAt: '2026-08-11T10:00:00.000Z',
+        actorId: 'merchant-successor',
+        creditCost: 6,
+        failureRefundsCredits: true,
+      });
+      await service.decide({
+        decisionId: 'decision-successor-reprice-r1',
+        requestId: initial.stored.request.requestId,
+        workspaceId: fixture.workspaceId,
+        actorId: 'merchant-successor',
+        decision: 'confirmed',
+        decidedAt: '2026-08-09T10:01:00.000Z',
+      });
+
+      const repricedRevision = 'quote-successor-reprice-r2';
+      await repository.saveQuote(fixture.workspaceId, {
+        ...(await repository.getQuote(fixture.workspaceId, quoteId))!,
+        revision: repricedRevision,
+        creditCost: 7,
+      });
+      const successorInput = {
+        requestId: 'req-successor-reprice-r2',
+        workspaceId: fixture.workspaceId,
+        planId: 'plan-successor-reprice',
+        planRevision: 2,
+        snapshotHash: 'snapshot-successor-reprice-r2',
+        quoteRef: { id: quoteId, revision: repricedRevision },
+        reservationIdempotencyKey: 'consume:confirmation:successor-reprice-a',
+        predecessorRequestId: initial.stored.request.requestId,
+        replacesReservationIdempotencyKey: initialOperationId,
+        billingTaskId: taskId,
+        createdAt: '2026-08-09T10:02:00.000Z',
+        holdExpiresAt: '2026-08-11T10:02:00.000Z',
+        actorId: 'merchant-successor',
+        creditCost: 7,
+        failureRefundsCredits: true,
+      };
+      const competingInput = {
+        ...successorInput,
+        requestId: 'req-successor-reprice-r2-competing',
+        snapshotHash: 'snapshot-successor-reprice-r2-competing',
+        reservationIdempotencyKey:
+          'consume:confirmation:successor-reprice-b',
+      };
+      const outcomes = await Promise.allSettled([
+        service.createRequest(successorInput),
+        service.createRequest(competingInput),
+      ]);
+      const fulfilled = outcomes.filter(
+        (outcome): outcome is PromiseFulfilledResult<
+          Awaited<ReturnType<ExecutionConfirmationService['createRequest']>>
+        > => outcome.status === 'fulfilled',
+      );
+      const rejected = outcomes.filter(
+        (outcome): outcome is PromiseRejectedResult =>
+          outcome.status === 'rejected',
+      );
+      assert.equal(fulfilled.length, 1);
+      assert.equal(rejected.length, 1);
+      assert.ok(
+        rejected[0]?.reason instanceof ExecutionConfirmationError &&
+          rejected[0].reason.code === 'IDEMPOTENCY_CONFLICT',
+      );
+      const successor = fulfilled[0]!.value;
+      const successorOperationId =
+        successor.stored.request.reservationIdempotencyKey;
+      const replay = await service.createRequest(
+        successor.stored.request.requestId === successorInput.requestId
+          ? successorInput
+          : competingInput,
+      );
+
+      assert.equal(replay.stored.request.requestId, successor.stored.request.requestId);
+      assert.equal(
+        successor.stored.request.predecessorRequestId,
+        initial.stored.request.requestId,
+      );
+      assert.equal(
+        successor.stored.request.replacesReservationIdempotencyKey,
+        initialOperationId,
+      );
+      assert.equal(
+        (await repository.getUsage(fixture.workspaceId, taskId))?.reservedCredits,
+        7,
+      );
+      assert.equal(
+        (await fixture.creditLedger.project(
+          fixture.workspaceId,
+          '2026-08-09T10:03:00.000Z',
+        )).availableCredits,
+        3,
+      );
+
+      await service.decide({
+        decisionId: 'decision-successor-reprice-r2',
+        requestId: successor.stored.request.requestId,
+        workspaceId: fixture.workspaceId,
+        actorId: 'merchant-successor',
+        decision: 'confirmed',
+        decidedAt: '2026-08-09T10:03:00.000Z',
+      });
+      const settlement = new HarnessProductBillingSettlementExecutor(
+        billing,
+        undefined,
+        () => new Date('2026-08-09T10:04:00.000Z'),
+        undefined,
+        fixture.creditLedger,
+      );
+      await settlement.refund({
+        workspaceId: fixture.workspaceId,
+        taskId,
+        quoteId,
+        quoteRevision: repricedRevision,
+        creditUsageOperationId: successorOperationId,
+      });
+      await settlement.refund({
+        workspaceId: fixture.workspaceId,
+        taskId,
+        quoteId,
+        quoteRevision: repricedRevision,
+        creditUsageOperationId: successorOperationId,
+      });
+
+      assert.equal(
+        (await repository.getUsage(fixture.workspaceId, taskId))?.status,
+        'refunded',
+      );
+      assert.equal(
+        (await fixture.creditLedger.project(
+          fixture.workspaceId,
+          '2026-08-09T10:05:00.000Z',
+        )).availableCredits,
+        10,
+      );
+      const transactions = await fixture.creditLedger.listTransactions(
+        fixture.workspaceId,
+      );
+      assert.equal(
+        transactions.filter(
+          (transaction) =>
+            transaction.transactionType === 'USAGE' &&
+            transaction.operationId === successorOperationId,
+        ).length,
+        1,
+      );
+      const successorUsageTransactionIds = new Set(
+        transactions
+          .filter(
+            (transaction) =>
+              transaction.transactionType === 'USAGE' &&
+              transaction.operationId === successorOperationId,
+          )
+          .map((transaction) => transaction.id),
+      );
+      assert.equal(
+        transactions.filter(
+          (transaction) =>
+            transaction.transactionType === 'REFUND' &&
+            transaction.relatedTransactionId !== undefined &&
+            successorUsageTransactionIds.has(transaction.relatedTransactionId),
+        ).length,
+        1,
+      );
+    } finally {
+      await fixture.cleanup();
     }
   },
 );

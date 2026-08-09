@@ -954,6 +954,10 @@ test(
         {
           async start(record) {
             recoveredStarts.push(record.task.id);
+            return {
+              executionConfirmationRequestId:
+                'confirmation:authority-digest-recovered',
+            };
           },
         },
         {
@@ -984,7 +988,7 @@ test(
       assert.equal(completed.kind, "existing");
       if (completed.kind === "existing") {
         assert.deepEqual(completed.submission.confirmationDispatch, {
-          requestId: `confirmation:${submission.task.id}`,
+          requestId: 'confirmation:authority-digest-recovered',
           state: "dispatched",
         });
       }

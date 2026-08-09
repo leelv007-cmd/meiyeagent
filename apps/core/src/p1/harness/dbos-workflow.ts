@@ -43,6 +43,7 @@ import type {
   CreateExecutionConfirmationAuthorityInput,
 } from '../agent-session/execution-confirmation-authority.js';
 import type { ConfirmationAuthorityStore } from '../agent-session/execution-confirmation-authority-store.js';
+import type { PlanCompiler } from '../agent-session/plan-compiler.js';
 import { resumeWithRaisedServerLimit } from './bounded-execution-controller.js';
 import {
   executionPlanAdmissionWorkflowId,
@@ -644,6 +645,8 @@ export interface HarnessDbosWorkflowOptions {
     workflowId: string;
     request: HarnessWorkflowInput;
   }) => Promise<SnapshotLiveFacts | undefined> | SnapshotLiveFacts | undefined;
+  /** Compiler-owned append-only writer for a post-confirm live binding refresh. */
+  refreshExecutionPlanLiveBindings?: PlanCompiler['refreshLiveBindings'];
   /**
    * V31-14: ops kill switch force_legacy_five_stage — when true, Make keeps
    * legacy intent/brief LLM nodes even if a snapshot is present.
@@ -708,6 +711,7 @@ export function registerHarnessDbosWorkflow(
       interactions,
       executionPlanAdmission,
       resolveExecutionPlanLiveFacts,
+      refreshExecutionPlanLiveBindings,
       resolveForceLegacyFiveStage,
       shadowReconciliation,
       productionSampling,
@@ -1228,6 +1232,7 @@ export function registerHarnessDbosWorkflow(
       },
     };
     let closeProgressStream = true;
+    let effectiveRequest = request;
     try {
       let result;
       try {
@@ -1242,9 +1247,15 @@ export function registerHarnessDbosWorkflow(
             executionConfirmation,
             executionPlanAdmission,
             resolveExecutionPlanLiveFacts,
+            refreshExecutionPlanLiveBindings,
           ),
           runtime,
-          { forceLegacyFiveStage },
+          {
+            forceLegacyFiveStage,
+            onActiveRequest(activeRequest) {
+              effectiveRequest = activeRequest;
+            },
+          },
         );
       } catch (error) {
         if (error instanceof HarnessInteractionLayoutResetRequiredError) {
@@ -1255,13 +1266,13 @@ export function registerHarnessDbosWorkflow(
           return settleHarnessCancellation({
             billing,
             cancellation: error,
-            request,
+            request: effectiveRequest,
             runStep: dbosBillingStep,
             workflowId,
           });
         }
         const settlement = harnessBillingSettlementInput(
-          request,
+          effectiveRequest,
           workflowId,
           undefined,
           true,
@@ -1305,7 +1316,7 @@ export function registerHarnessDbosWorkflow(
         throw error;
       }
       const settlement = harnessBillingSettlementInput(
-        request,
+        effectiveRequest,
         workflowId,
         result,
       );
@@ -1414,6 +1425,9 @@ function withExecutionConfirmationStagePort(
   resolveExecutionPlanLiveFacts:
     | NonNullable<HarnessDbosWorkflowOptions['resolveExecutionPlanLiveFacts']>
     | undefined,
+  refreshExecutionPlanLiveBindings:
+    | NonNullable<HarnessDbosWorkflowOptions['refreshExecutionPlanLiveBindings']>
+    | undefined,
 ): HarnessStagePorts | HarnessStageCollaborators {
   if (!executionConfirmation || !executionPlanAdmission) return ports;
   const confirmationPorts = {
@@ -1447,6 +1461,7 @@ function withExecutionConfirmationStagePort(
             },
           })
       : undefined,
+    refreshExecutionPlanLiveBindings,
     putExecutionConfirmationAuthority: (input: Parameters<
       ConfirmationAuthorityStore['putCurrent']
     >[0]) => executionConfirmation.putCurrent(input),
@@ -1695,6 +1710,12 @@ export function harnessBillingSettlementInput(
     taskId: workflowId,
     quoteId: snapshot.quote.id,
     quoteRevision: snapshot.quote.revision,
+    ...(request.executionConfirmationReservationIdempotencyKey
+      ? {
+          creditUsageOperationId:
+            request.executionConfirmationReservationIdempotencyKey,
+        }
+      : {}),
     ...(trustedUsage ? { trustedUsage } : {}),
     ...(forceCreditRefund ? { forceCreditRefund: true } : {}),
   };

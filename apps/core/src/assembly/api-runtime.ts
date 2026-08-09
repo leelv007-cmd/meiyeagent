@@ -1504,6 +1504,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           resolveRightsHeads: resolveExecutionRightsHeads,
           resolveFactHeads: resolveExecutionFactHeads,
         }),
+        refreshExecutionPlanLiveBindings: (input) =>
+          planCompiler.refreshLiveBindings(input),
         // V31-14: force_legacy_five_stage kill switch (landed).
         async resolveForceLegacyFiveStage() {
           const state = await opsConsoleStore.getKillSwitch(

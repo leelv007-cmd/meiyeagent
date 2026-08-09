@@ -215,6 +215,44 @@ test('natural-language adjust only appends a new revision; old is intact', async
   assert.equal('status' in revisions[1]!, false);
 });
 
+test('live binding refresh appends one durable revision and replays the same successor', async () => {
+  const store = new MemoryMarketingPlanStore();
+  const { compiler, input } = compileInput(store, {
+    planId: 'plan-live-refresh-1',
+  });
+  const first = await compiler.compile(input);
+
+  const refresh = {
+    planId: first.revision.planId,
+    expectedRevision: first.revision.revision,
+    quoteRef: { id: 'authority-quote-live', revision: 'quote-r2' },
+    rightsRevisionRefs: ['rights-live-2'],
+    factRevisionRefs: ['identity:identity-1@2', 'brief:bundle-1@2'],
+    now: '2026-08-08T12:30:00.000Z',
+  };
+  const successor = await compiler.refreshLiveBindings(refresh);
+  const replay = await compiler.refreshLiveBindings(refresh);
+
+  assert.equal(successor.revision.revision, 2);
+  assert.equal(replay.revision.contentHash, successor.revision.contentHash);
+  assert.deepEqual(successor.revision.quoteRef, refresh.quoteRef);
+  assert.deepEqual(
+    successor.revision.boundRevisions.rightsRevisionIds,
+    refresh.rightsRevisionRefs,
+  );
+  assert.deepEqual(successor.factRevisionRefs, refresh.factRevisionRefs);
+  assert.deepEqual(
+    successor.revision.factUsages,
+    refresh.factRevisionRefs.map((factRef) => ({ factRef })),
+  );
+  assert.equal((await store.listRevisions(refresh.planId)).length, 2);
+  store.assertNotOverwritten(
+    first.revision.planId,
+    first.revision.revision,
+    first.revision.contentHash,
+  );
+});
+
 // ─── Readiness is projection only ───────────────────────────────────────────
 
 test('readiness is projection: ready → stale → reprice_required → blocked', async () => {

@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type { ProductQuoteSnapshot } from '@meiye/contracts';
 
 import { creditUsageOperationId } from '../credit-billing/credit-ledger.js';
+import { executionConfirmationAuthorityRequestId } from '../harness/execution-confirmation-id.js';
 import type {
   CreateExecutionConfirmationResult,
   ExecutionConfirmationService,
@@ -118,6 +119,22 @@ export class ConfirmationAuthorityAssembler {
     const createdAt = existing?.request.createdAt ?? this.clock().toISOString();
     const taskId = quote.taskId ?? input.workflowId;
     const baseReservationId = creditUsageOperationId(taskId);
+    const predecessor = plan.predecessorRequestId
+      ? await this.confirmations.getRequest(plan.predecessorRequestId)
+      : null;
+    if (
+      plan.predecessorRequestId &&
+      (!predecessor || predecessor.request.workspaceId !== input.workspaceId)
+    ) {
+      throw new ExecutionConfirmationError(
+        'INVALID_STATE',
+        `Confirmation predecessor ${plan.predecessorRequestId} was not found.`,
+      );
+    }
+    const reservationIdempotencyKey =
+      requestId === baseRequestId && plan.reservationAttempt !== 'successor'
+        ? baseReservationId
+        : `consume:confirmation:${digest(`${baseReservationId}\0${requestId}`)}`;
     return this.confirmations.createRequest({
       workflowId: input.workflowId,
       requestId,
@@ -126,10 +143,14 @@ export class ConfirmationAuthorityAssembler {
       planRevision: plan.planRevision,
       snapshotHash: plan.snapshotHash,
       quoteRef: { id: quote.quoteId, revision: quote.revision },
-      reservationIdempotencyKey:
-        requestId === baseRequestId && plan.reservationAttempt !== 'successor'
-          ? baseReservationId
-          : `consume:confirmation:${digest(`${baseReservationId}\0${requestId}`)}`,
+      reservationIdempotencyKey,
+      ...(predecessor
+        ? {
+            predecessorRequestId: predecessor.request.requestId,
+            replacesReservationIdempotencyKey:
+              predecessor.request.reservationIdempotencyKey,
+          }
+        : {}),
       createdAt,
       holdExpiresAt:
         existing?.request.holdExpiresAt ??
@@ -137,6 +158,7 @@ export class ConfirmationAuthorityAssembler {
       actorId: input.actorId,
       creditCost: quote.creditCost!,
       failureRefundsCredits: quote.failureRefundsCredits === true,
+      billingTaskId: taskId,
       rightsSummary: [...plan.rightsRevisionRefs].sort().join(', ') || null,
       factSummary: [...plan.factRevisionRefs].sort().join(', ') || null,
       ...(plan.executionConfirmationContext ?? {}),
@@ -147,7 +169,11 @@ export class ConfirmationAuthorityAssembler {
     workflowId: string,
     plan: PendingConfirmationAuthority,
   ): Promise<{ baseRequestId: string; requestId: string }> {
-    const base = `confirmation:${digest(`${workflowId}\0${plan.planRevision}\0${plan.snapshotHash}`)}`;
+    const base = executionConfirmationAuthorityRequestId({
+      workflowId,
+      planRevision: plan.planRevision,
+      snapshotHash: plan.snapshotHash,
+    });
     let candidate = base;
     for (;;) {
       const existing = await this.confirmations.getRequest(candidate);

@@ -936,6 +936,7 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		leaseId: string;
 		workspaceId: string;
 		submissionId: string;
+		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
 	}) {
 		const current = this.harnessStarts.get(input.submissionId);
 		if (!current) {
@@ -956,7 +957,11 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 				candidate.submission.snapshot.id === input.submissionId,
 		);
 		if (claim?.submission.confirmationDispatch) {
-			claim.submission.confirmationDispatch.state = "dispatched";
+			claim.submission.confirmationDispatch = {
+				...(input.confirmationDispatch ??
+					claim.submission.confirmationDispatch),
+				state: "dispatched",
+			};
 		}
 	}
 
@@ -1012,6 +1017,9 @@ class RecordingHarnessStarter implements CreationSubmissionHarnessStarter {
 
 	async start(input: Parameters<CreationSubmissionHarnessStarter["start"]>[0]) {
 		this.starts.push(structuredClone(input));
+		return {
+			executionConfirmationRequestId: `confirmation:authority:${input.task.id}`,
+		};
 	}
 }
 
@@ -1088,6 +1096,11 @@ test("the compiled freeze is durable in the claim transaction before a paid Harn
 			async start(submission) {
 				started = true;
 				assert.ok(submission.executionPlanFreeze);
+				assert.equal(submission.confirmationDispatch?.requestId, undefined);
+				return {
+					executionConfirmationRequestId:
+						"confirmation:authority-digest-freeze",
+				};
 			},
 		},
 		fixedIds(),
@@ -1124,7 +1137,7 @@ test("the compiled freeze is durable in the claim transaction before a paid Harn
 		submissions.claimedSubmission("workspace-1", command.idempotencyKey)
 			?.confirmationDispatch,
 		{
-			requestId: "confirmation:task-1",
+			requestId: "confirmation:authority-digest-freeze",
 			state: "dispatched",
 			expiresAt: "2026-07-24T09:00:00.000Z",
 		},
@@ -1199,13 +1212,13 @@ test("the Campaign producer submits the second paid Work with its own U7 context
 		})),
 		[
 			{
-				requestId: "confirmation:campaign-task-campaign-work-1",
+				requestId: undefined,
 				campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
 				workOrdinal: 1,
 				approvalScope: "single_work",
 			},
 			{
-				requestId: "confirmation:campaign-task-campaign-work-2",
+				requestId: undefined,
 				campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
 				workOrdinal: 2,
 				approvalScope: "single_work",

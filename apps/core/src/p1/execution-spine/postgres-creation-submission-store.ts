@@ -771,6 +771,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     leaseId: string;
     workspaceId: string;
     submissionId: string;
+    confirmationDispatch?: CreationSubmissionRecord['confirmationDispatch'];
   }) {
     const client = await this.pool.connect();
     let inTransaction = false;
@@ -803,21 +804,29 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
                 harness_lease_expires_at = NULL,
                 harness_started_lease_id = $3,
                 submission = CASE
-                  WHEN submission ? 'confirmationDispatch'
+                  WHEN $4::jsonb IS NOT NULL
                     THEN jsonb_set(
                       submission,
-                      '{confirmationDispatch,state}',
-                      '"dispatched"'::jsonb,
+                      '{confirmationDispatch}',
+                      jsonb_set(
+                        COALESCE($4::jsonb, '{}'::jsonb),
+                        '{state}',
+                        '"dispatched"'::jsonb,
+                        true
+                      ),
                       true
                     )
                   ELSE submission
                 END,
-                updated_at = $4::timestamptz
+                updated_at = $5::timestamptz
           WHERE workspace_id = $1 AND id = $2`,
         [
           input.workspaceId,
           input.submissionId,
           input.leaseId,
+          input.confirmationDispatch
+            ? JSON.stringify(input.confirmationDispatch)
+            : null,
           (await databaseNow(client)).toISOString(),
         ],
       );
@@ -1111,7 +1120,8 @@ function storedConfirmationDispatch(
   }
   const dispatch = value as Record<string, unknown>;
   if (
-    typeof dispatch.requestId !== 'string' ||
+    (dispatch.requestId !== undefined &&
+      typeof dispatch.requestId !== 'string') ||
     (dispatch.expiresAt !== undefined &&
       typeof dispatch.expiresAt !== 'string') ||
     (dispatch.state !== 'pending' &&
@@ -1121,7 +1131,9 @@ function storedConfirmationDispatch(
     throw new Error('Stored creation submission has invalid confirmation dispatch.');
   }
   return {
-    requestId: dispatch.requestId,
+    ...(typeof dispatch.requestId === 'string'
+      ? { requestId: dispatch.requestId }
+      : {}),
     state: dispatch.state,
     ...(typeof dispatch.expiresAt === 'string'
       ? { expiresAt: dispatch.expiresAt }

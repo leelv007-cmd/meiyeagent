@@ -89,8 +89,32 @@ test(
       });
       assert.equal(second.revision.revision, 2);
 
+      const refreshInput = {
+        planId,
+        expectedRevision: 2,
+        quoteRef: { id: 'quote-pg-live', revision: 'quote-live-r2' },
+        rightsRevisionRefs: ['rights-pg-live-r2'],
+        factRevisionRefs: ['fact-pg-live-r2'],
+        now: '2026-08-08T12:06:00.000Z',
+      };
+      const [refreshed, replayed] = await Promise.all([
+        compiler.refreshLiveBindings(refreshInput),
+        compiler.refreshLiveBindings(refreshInput),
+      ]);
+      assert.equal(refreshed.revision.revision, 3);
+      assert.equal(replayed.revision.contentHash, refreshed.revision.contentHash);
+      assert.deepEqual(refreshed.revision.quoteRef, refreshInput.quoteRef);
+      assert.deepEqual(
+        refreshed.revision.boundRevisions.rightsRevisionIds,
+        refreshInput.rightsRevisionRefs,
+      );
+      assert.deepEqual(
+        refreshed.revision.factUsages,
+        [{ factRef: 'fact-pg-live-r2' }],
+      );
+
       const listed = await store.listRevisions(planId);
-      assert.equal(listed.length, 2);
+      assert.equal(listed.length, 3);
       assert.equal(listed[0]!.contentHash, first.revision.contentHash);
 
       const reloaded = await store.getRevision(planId, 1);

@@ -19,6 +19,8 @@ export type PendingConfirmationAuthority = {
   frozenAt: string;
   /** Successor attempts must not reuse the Coordinator's initial reservation. */
   reservationAttempt?: 'initial' | 'successor';
+  /** Confirmed authority attempt whose hold this successor replaces. */
+  predecessorRequestId?: string;
   executionConfirmationContext?: {
     campaignPlanRef: AgentRevisionRef;
     workOrdinal: number;
