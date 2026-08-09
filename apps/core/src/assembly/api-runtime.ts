@@ -867,6 +867,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           trials: opsConsoleStore,
           drills: opsConsoleStore,
           verdicts: new PostgresEvalVerdictStore(pool),
+          rollbackOperations: opsConsoleStore,
+          allowFixtureEval: env.APP_ENV === 'e2e',
+          runPins: opsConsoleStore,
           langfuseBaseUrl: env.LANGFUSE_BASE_URL ?? null,
           // V31-26a / U14: production PG inventory for legacy replay archive gate.
           legacyReplayInventory: new PostgresLegacyReplayInventory(pool),
@@ -1563,6 +1566,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
                   runId: request.taskId,
                   releases: harnessReleaseService,
                   trials: opsConsoleStore,
+                  rollbackOperations: opsConsoleStore,
                 });
             return resolved.artifact.promptBindings;
           },
@@ -1613,6 +1617,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
             runId,
             releases: harnessReleaseService,
             trials: opsConsoleStore,
+            rollbackOperations: opsConsoleStore,
           });
           return resolved.releaseId;
         },

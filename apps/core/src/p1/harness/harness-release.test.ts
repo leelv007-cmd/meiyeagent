@@ -235,6 +235,28 @@ test('rollback rejects draft and evaluating releases without production history'
   );
 });
 
+test('retired release without authoritative history is isolated until explicitly authorized', async () => {
+  const { service } = createService();
+  await service.publishArtifact(basePublish('retired-unproven'));
+  await service.transitionLifecycle({
+    releaseId: 'retired-unproven',
+    toStatus: 'retired',
+  });
+
+  await assert.rejects(
+    service.rollbackProduction({ toReleaseId: 'retired-unproven' }),
+    /no prior production identity/,
+  );
+  await service.authorizeProductionHistory({
+    releaseId: 'retired-unproven',
+    promotedAt: TS,
+  });
+  const rolled = await service.rollbackProduction({
+    toReleaseId: 'retired-unproven',
+  });
+  assert.equal(rolled.production.releaseId, 'retired-unproven');
+});
+
 test('publish rejects unset controlLimits (U11)', async () => {
   const { service } = createService();
   const partial = { ...CONTROL_LIMITS } as Record<string, number | undefined>;

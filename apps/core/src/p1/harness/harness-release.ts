@@ -155,6 +155,8 @@ export interface HarnessReleaseStore {
   }>;
   getLifecycle(releaseId: string): Promise<HarnessReleaseLifecycle | null>;
   listLifecycles(): Promise<HarnessReleaseLifecycle[]>;
+  recordProductionHistory(releaseId: string, promotedAt: string): Promise<void>;
+  hasProductionHistory(releaseId: string): Promise<boolean>;
   /**
    * At most one production / one canary (unique partial indexes in PG).
    */
@@ -270,6 +272,14 @@ export class MemoryHarnessReleaseStore implements HarnessReleaseStore {
 
   async listLifecycles(): Promise<HarnessReleaseLifecycle[]> {
     return [...this.lifecycles.values()].map((value) => structuredClone(value));
+  }
+
+  async recordProductionHistory(releaseId: string): Promise<void> {
+    this.productionHistory.add(releaseId);
+  }
+
+  async hasProductionHistory(releaseId: string): Promise<boolean> {
+    return this.productionHistory.has(releaseId);
   }
 
   async getLifecycleByStatus(
@@ -678,22 +688,9 @@ export class HarnessReleaseService {
     production: HarnessReleaseLifecycle;
     previousProduction: HarnessReleaseLifecycle | null;
   }> {
-    await this.getExactRelease(input.toReleaseId);
-    const target = await this.store.getLifecycle(input.toReleaseId);
-    if (!target) {
-      throw new P1DomainError(
-        'NOT_FOUND',
-        `HarnessReleaseLifecycle not found: ${input.toReleaseId}`,
-      );
-    }
+    const target = await this.assertRollbackEligible(input.toReleaseId);
     if (target.status === 'production') {
       return { production: target, previousProduction: null };
-    }
-    if (target.status !== 'retired') {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        `Rollback target ${input.toReleaseId} must be retired, found ${target.status}.`,
-      );
     }
     const updatedAt = nowIso(input.now);
     const swapped = await this.store.transitionLifecycleAtomic(
@@ -712,6 +709,50 @@ export class HarnessReleaseService {
       production: swapped.lifecycle,
       previousProduction: swapped.previousHolder,
     };
+  }
+
+  async assertRollbackEligible(
+    releaseId: string,
+  ): Promise<HarnessReleaseLifecycle> {
+    await this.getExactRelease(releaseId);
+    const target = await this.store.getLifecycle(releaseId);
+    if (!target) {
+      throw new P1DomainError(
+        'NOT_FOUND',
+        `HarnessReleaseLifecycle not found: ${releaseId}`,
+      );
+    }
+    if (target.status !== 'production' && target.status !== 'retired') {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Rollback target ${releaseId} must be retired, found ${target.status}.`,
+      );
+    }
+    if (!(await this.store.hasProductionHistory(releaseId))) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Rollback target ${releaseId} has no prior production identity.`,
+      );
+    }
+    return target;
+  }
+
+  async authorizeProductionHistory(input: {
+    releaseId: string;
+    promotedAt?: string;
+  }): Promise<void> {
+    await this.getExactRelease(input.releaseId);
+    const lifecycle = await this.store.getLifecycle(input.releaseId);
+    if (!lifecycle || lifecycle.status !== 'retired') {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Production history migration requires a retired release: ${input.releaseId}.`,
+      );
+    }
+    await this.store.recordProductionHistory(
+      input.releaseId,
+      input.promotedAt ?? new Date().toISOString(),
+    );
   }
 
   async diffReleases(

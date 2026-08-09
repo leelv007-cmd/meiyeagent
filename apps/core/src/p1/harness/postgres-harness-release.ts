@@ -335,6 +335,25 @@ export class PostgresHarnessReleaseStore implements HarnessReleaseStore {
     );
   }
 
+  async recordProductionHistory(
+    releaseId: string,
+    promotedAt: string,
+  ): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO p1_harness_release_production_history (release_id, first_promoted_at)
+       VALUES ($1, $2::timestamptz) ON CONFLICT (release_id) DO NOTHING`,
+      [releaseId, promotedAt],
+    );
+  }
+
+  async hasProductionHistory(releaseId: string): Promise<boolean> {
+    const result = await this.pool.query(
+      'SELECT 1 FROM p1_harness_release_production_history WHERE release_id = $1',
+      [releaseId],
+    );
+    return Boolean(result.rows[0]);
+  }
+
   async getLifecycleByStatus(
     status: 'production' | 'canary',
   ): Promise<HarnessReleaseLifecycle | null> {

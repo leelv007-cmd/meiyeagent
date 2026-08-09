@@ -25,6 +25,9 @@ import {
   type OpsKillSwitchStore,
   type OpsRollbackDrillRecord,
   type OpsRollbackDrillStore,
+  parseOpsCandidateTrial,
+  type OpsRollbackOperation,
+  type OpsRollbackOperationStore,
 } from './state-stores.js';
 import type {
   AgentToolPolicyRevision,
@@ -43,6 +46,7 @@ export class PostgresOpsConsoleStore
     ToolPolicyStore,
     OpsKillSwitchStore,
     OpsCandidateTrialStore,
+    OpsRollbackOperationStore,
     OpsRollbackDrillStore
 {
   constructor(private readonly pool: Pool) {}
@@ -96,6 +100,34 @@ export class PostgresOpsConsoleStore
       );
       CREATE INDEX IF NOT EXISTS p1_ops_console_candidate_trials_updated_idx
         ON p1_ops_console_candidate_trials (updated_at DESC);
+      DELETE FROM p1_ops_console_candidate_trials
+      WHERE NOT (payload ? 'expiresAt')
+         OR jsonb_typeof(payload->'expiresAt') <> 'string';
+
+      CREATE TABLE IF NOT EXISTS p1_ops_console_rollback_operations (
+        id text PRIMARY KEY,
+        to_release_id text NOT NULL,
+        created_at timestamptz NOT NULL,
+        payload jsonb NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS p1_harness_release_production_history (
+        release_id text PRIMARY KEY,
+        first_promoted_at timestamptz NOT NULL
+      );
+      DO $backfill$
+      BEGIN
+        IF to_regclass('public.p1_harness_release_lifecycle') IS NOT NULL THEN
+          INSERT INTO p1_harness_release_production_history (release_id, first_promoted_at)
+          SELECT audit.target, MIN(audit.created_at)
+          FROM p1_ops_console_audit audit
+          JOIN p1_harness_release_lifecycle lifecycle
+            ON lifecycle.release_id = audit.target
+          WHERE audit.action IN ('promote_to_production', 'rollback_production')
+            AND lifecycle.status IN ('production', 'retired')
+          GROUP BY audit.target
+          ON CONFLICT (release_id) DO NOTHING;
+        END IF;
+      END $backfill$;
 
       CREATE TABLE IF NOT EXISTS p1_ops_console_rollback_drills (
         id text PRIMARY KEY,
@@ -257,7 +289,7 @@ export class PostgresOpsConsoleStore
   async putCandidateTrial(
     trial: OpsCandidateTrial,
   ): Promise<OpsCandidateTrial> {
-    const payload = structuredClone(trial);
+    const payload = parseOpsCandidateTrial(trial);
     await this.pool.query(
       `INSERT INTO p1_ops_console_candidate_trials
          (workspace_id, candidate_release_id, operator_id, reason, updated_at, payload)
@@ -285,19 +317,27 @@ export class PostgresOpsConsoleStore
       `SELECT payload FROM p1_ops_console_candidate_trials
         ORDER BY updated_at DESC`,
     );
-    return result.rows.map((row) => structuredClone(row.payload));
+    return result.rows.map((row) => parseOpsCandidateTrial(row.payload));
   }
 
-  async getCandidateTrial(workspaceId: string): Promise<OpsCandidateTrial | null> {
+  async getCandidateTrial(
+    workspaceId: string,
+  ): Promise<OpsCandidateTrial | null> {
     const result = await this.pool.query<PayloadRow<OpsCandidateTrial>>(
       `SELECT payload FROM p1_ops_console_candidate_trials
         WHERE workspace_id = $1`,
       [workspaceId],
     );
-    return result.rows[0] ? structuredClone(result.rows[0].payload) : null;
+    return result.rows[0]
+      ? parseOpsCandidateTrial(result.rows[0].payload)
+      : null;
   }
 
-  async consumeCandidateTrial(input: { workspaceId: string; runId: string; now: string }) {
+  async consumeCandidateTrial(input: {
+    workspaceId: string;
+    runId: string;
+    now: string;
+  }) {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -306,9 +346,15 @@ export class PostgresOpsConsoleStore
          WHERE workspace_id = $1 FOR UPDATE`,
         [input.workspaceId],
       );
-      const current = result.rows[0]?.payload;
+      const current = result.rows[0]?.payload
+        ? parseOpsCandidateTrial(result.rows[0].payload)
+        : null;
       if (!current || current.expiresAt <= input.now) {
-        if (current) await client.query('DELETE FROM p1_ops_console_candidate_trials WHERE workspace_id = $1', [input.workspaceId]);
+        if (current)
+          await client.query(
+            'DELETE FROM p1_ops_console_candidate_trials WHERE workspace_id = $1',
+            [input.workspaceId],
+          );
         await client.query('COMMIT');
         return null;
       }
@@ -337,6 +383,101 @@ export class PostgresOpsConsoleStore
 
   async clearCandidateTrials(): Promise<void> {
     await this.pool.query('DELETE FROM p1_ops_console_candidate_trials');
+  }
+
+  async listRecentRunPins(limit = 20): Promise<
+    Array<{
+      runId: string;
+      workspaceId: string;
+      harnessReleaseId: string;
+      startedAt: string;
+    }>
+  > {
+    const result = await this.pool.query<{
+      run_id: string;
+      resource_id: string;
+      harness_release_id: string;
+      started_at: Date;
+    }>(
+      `SELECT runs.run_id, threads.resource_id, runs.harness_release_id, runs.started_at
+       FROM p1_agent_runs runs
+       JOIN p1_agent_threads threads ON threads.thread_id = runs.thread_id
+       ORDER BY runs.started_at DESC LIMIT $1`,
+      [limit],
+    );
+    return result.rows.map((row) => ({
+      runId: row.run_id,
+      workspaceId: row.resource_id,
+      harnessReleaseId: row.harness_release_id,
+      startedAt: row.started_at.toISOString(),
+    }));
+  }
+
+  async beginRollbackOperation(operation: OpsRollbackOperation): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO p1_ops_console_rollback_operations (id, to_release_id, created_at, payload)
+       VALUES ($1, $2, $3::timestamptz, $4::jsonb)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        operation.id,
+        operation.toReleaseId,
+        operation.createdAt,
+        JSON.stringify(operation),
+      ],
+    );
+  }
+
+  async listPendingRollbackOperations(): Promise<OpsRollbackOperation[]> {
+    const result = await this.pool.query<PayloadRow<OpsRollbackOperation>>(
+      'SELECT payload FROM p1_ops_console_rollback_operations ORDER BY created_at ASC',
+    );
+    return result.rows.map((row) => structuredClone(row.payload));
+  }
+
+  async completeRollbackOperation(
+    operationId: string,
+  ): Promise<OpsConsoleAuditEntry> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const pending = await client.query<PayloadRow<OpsRollbackOperation>>(
+        'SELECT payload FROM p1_ops_console_rollback_operations WHERE id = $1 FOR UPDATE',
+        [operationId],
+      );
+      const operation = pending.rows[0]?.payload;
+      if (!operation)
+        throw new Error(`Rollback operation not found: ${operationId}`);
+      await client.query('DELETE FROM p1_ops_console_candidate_trials');
+      const audit = operation.audit;
+      await client.query(
+        `INSERT INTO p1_ops_console_audit
+           (id, action, operator_id, reason, evidence, target, created_at, correlation_id, payload)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8, $9::jsonb)
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          audit.id,
+          audit.action,
+          audit.operatorId,
+          audit.reason,
+          audit.evidence,
+          audit.target,
+          audit.createdAt,
+          audit.correlationId,
+          JSON.stringify(audit),
+        ],
+      );
+      await client.query(
+        'DELETE FROM p1_ops_console_rollback_operations WHERE id = $1',
+        [operationId],
+      );
+      await client.query('COMMIT');
+      return structuredClone(audit);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   // ── Rollback drills (append-only) ────────────────────────────────────────

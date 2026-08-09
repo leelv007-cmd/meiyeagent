@@ -90,6 +90,16 @@ export function AdminOpsConsoleControl() {
   const [toolDescription, setToolDescription] = useState('');
   const [toolReason, setToolReason] = useState('');
   const [killReason, setKillReason] = useState('');
+  const [publishReleaseId, setPublishReleaseId] = useState('');
+  const [publishVersion, setPublishVersion] = useState('1');
+  const [publishToolPolicy, setPublishToolPolicy] = useState('tool-policy/v1');
+  const [publishReason, setPublishReason] = useState('');
+  const [evalReleaseId, setEvalReleaseId] = useState('');
+  const [evalReason, setEvalReason] = useState('');
+  const [evalObservation, setEvalObservation] = useState<{
+    releaseId: string;
+    verdict: string;
+  } | null>(null);
 
   const releasesQuery = useQuery({
     queryKey: p1QueryKeys.request(MODULE, 'list_releases'),
@@ -116,6 +126,28 @@ export function AdminOpsConsoleControl() {
     queryFn: () =>
       queryP1<OpsToolPolicyListView>(MODULE, { action: 'list_tool_policies' }),
   });
+  const trialsQuery = useQuery({
+    queryKey: p1QueryKeys.request(MODULE, 'list_candidate_trials'),
+    queryFn: () =>
+      queryP1<{
+        items: Array<{
+          workspaceId: string;
+          candidateReleaseId: string;
+          consumedByRunId: string | null;
+        }>;
+      }>(MODULE, { action: 'list_candidate_trials' }),
+  });
+  const runPinsQuery = useQuery({
+    queryKey: p1QueryKeys.request(MODULE, 'list_recent_run_pins'),
+    queryFn: () =>
+      queryP1<{
+        items: Array<{
+          runId: string;
+          workspaceId: string;
+          harnessReleaseId: string;
+        }>;
+      }>(MODULE, { action: 'list_recent_run_pins' }),
+  });
 
   const invalidateAll = async () => {
     await Promise.all([
@@ -137,6 +169,39 @@ export function AdminOpsConsoleControl() {
     onSuccess: async () => {
       toast.success('Promoted to production');
       setPromoteReason('');
+      await invalidateAll();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const publishMutation = useMutation({
+    mutationFn: () =>
+      commandP1(MODULE, {
+        action: 'publish_seed_candidate',
+        payload: {
+          releaseId: publishReleaseId.trim(),
+          version: Number(publishVersion),
+          toolPolicyRevision: publishToolPolicy.trim(),
+          reason: publishReason.trim(),
+        },
+      }),
+    onSuccess: async () => {
+      toast.success('Published exact-pin candidate');
+      setPublishReason('');
+      await invalidateAll();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const evalMutation = useMutation({
+    mutationFn: () =>
+      commandP1<{ releaseId: string; verdict: string }>(MODULE, {
+        action: 'run_release_eval_fixture',
+        payload: { releaseId: evalReleaseId.trim(), reason: evalReason.trim() },
+      }),
+    onSuccess: async (result) => {
+      setEvalObservation(result);
+      toast.success('Release-bound eval recorded');
       await invalidateAll();
     },
     onError: (error: Error) => toast.error(error.message),
@@ -266,7 +331,7 @@ export function AdminOpsConsoleControl() {
       releasesQuery.data
         ? bucketReleases(releasesQuery.data)
         : { production: [], canary: [], draft: [], other: [] },
-    [releasesQuery.data],
+    [releasesQuery.data]
   );
 
   const loadDiff = async () => {
@@ -297,7 +362,9 @@ export function AdminOpsConsoleControl() {
       }
       window.open(result.url, '_blank', 'noopener,noreferrer');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Langfuse link failed');
+      toast.error(
+        error instanceof Error ? error.message : 'Langfuse link failed'
+      );
     }
   };
 
@@ -353,7 +420,11 @@ export function AdminOpsConsoleControl() {
                   ...buckets.draft,
                   ...buckets.other,
                 ].map((item) => (
-                  <TableRow key={item.releaseId}>
+                  <TableRow
+                    key={item.releaseId}
+                    data-testid={`admin-ops-console-release-${item.releaseId}`}
+                    data-status={item.status}
+                  >
                     <TableCell className="font-mono text-xs">
                       {item.releaseId}
                       <span className="ml-2 text-muted-foreground">
@@ -395,6 +466,84 @@ export function AdminOpsConsoleControl() {
             className="grid gap-3 md:grid-cols-2"
             data-testid="admin-ops-console-release-actions"
           >
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-sm font-medium">Publish exact-pin candidate</p>
+              <Input
+                data-testid="admin-ops-console-publish-release"
+                placeholder="releaseId"
+                value={publishReleaseId}
+                onChange={(event) => setPublishReleaseId(event.target.value)}
+              />
+              <Input
+                data-testid="admin-ops-console-publish-version"
+                placeholder="version"
+                value={publishVersion}
+                onChange={(event) => setPublishVersion(event.target.value)}
+              />
+              <Input
+                data-testid="admin-ops-console-publish-tool-policy"
+                placeholder="tool policy revision"
+                value={publishToolPolicy}
+                onChange={(event) => setPublishToolPolicy(event.target.value)}
+              />
+              <Input
+                data-testid="admin-ops-console-publish-reason"
+                placeholder="reason"
+                value={publishReason}
+                onChange={(event) => setPublishReason(event.target.value)}
+              />
+              <Button
+                data-testid="admin-ops-console-publish-submit"
+                type="button"
+                size="sm"
+                disabled={
+                  !publishReleaseId.trim() ||
+                  !publishReason.trim() ||
+                  publishMutation.isPending
+                }
+                onClick={() => publishMutation.mutate()}
+              >
+                Publish
+              </Button>
+            </div>
+
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-sm font-medium">Release-bound eval fixture</p>
+              <Input
+                data-testid="admin-ops-console-eval-release"
+                placeholder="releaseId"
+                value={evalReleaseId}
+                onChange={(event) => setEvalReleaseId(event.target.value)}
+              />
+              <Input
+                data-testid="admin-ops-console-eval-reason"
+                placeholder="reason"
+                value={evalReason}
+                onChange={(event) => setEvalReason(event.target.value)}
+              />
+              <Button
+                data-testid="admin-ops-console-eval-submit"
+                type="button"
+                size="sm"
+                disabled={
+                  !evalReleaseId.trim() ||
+                  !evalReason.trim() ||
+                  evalMutation.isPending
+                }
+                onClick={() => evalMutation.mutate()}
+              >
+                Run fixture eval
+              </Button>
+              {evalObservation ? (
+                <p
+                  data-testid="admin-ops-console-eval-observation"
+                  className="text-xs"
+                >
+                  {evalObservation.releaseId}: {evalObservation.verdict}
+                </p>
+              ) : null}
+            </div>
+
             <div className="space-y-2 rounded-md border p-3">
               <p className="text-sm font-medium">Advance lifecycle</p>
               <Input
@@ -638,6 +787,33 @@ export function AdminOpsConsoleControl() {
         </FramePanel>
       </Frame>
 
+      <Frame data-testid="admin-ops-console-run-pins">
+        <FrameHeader>
+          <FrameTitle>Recent release pins</FrameTitle>
+        </FrameHeader>
+        <FramePanel className="space-y-1">
+          {trialsQuery.data?.items.map((item) => (
+            <p
+              key={item.workspaceId}
+              data-testid={`admin-ops-console-trial-observation-${item.candidateReleaseId}`}
+              className="text-xs"
+            >
+              trial {item.workspaceId}: {item.candidateReleaseId} /{' '}
+              {item.consumedByRunId ?? 'pending'}
+            </p>
+          ))}
+          {runPinsQuery.data?.items.map((item) => (
+            <p
+              key={item.runId}
+              data-testid="admin-ops-console-run-pin"
+              className="text-xs"
+            >
+              {item.workspaceId}: {item.runId} / {item.harnessReleaseId}
+            </p>
+          ))}
+        </FramePanel>
+      </Frame>
+
       <Frame data-testid="admin-ops-console-tool-policy">
         <FrameHeader>
           <FrameTitle>{admin_ops_console_tool_policy_title()}</FrameTitle>
@@ -673,7 +849,9 @@ export function AdminOpsConsoleControl() {
               </TableBody>
             </Table>
           ) : (
-            <p className="text-sm text-muted-foreground">No tool policies yet</p>
+            <p className="text-sm text-muted-foreground">
+              No tool policies yet
+            </p>
           )}
           <div className="grid gap-2 md:grid-cols-2">
             <Input
@@ -759,7 +937,9 @@ export function AdminOpsConsoleControl() {
                   </TableCell>
                   <TableCell>
                     {item.canEnable ? (
-                      <Badge variant={item.enabled ? 'destructive' : 'secondary'}>
+                      <Badge
+                        variant={item.enabled ? 'destructive' : 'secondary'}
+                      >
                         {item.enabled ? 'ON' : 'OFF'}
                       </Badge>
                     ) : (
@@ -782,7 +962,11 @@ export function AdminOpsConsoleControl() {
                         })
                       }
                     >
-                      {item.canEnable ? (item.enabled ? 'Disable' : 'Enable') : '—'}
+                      {item.canEnable
+                        ? item.enabled
+                          ? 'Disable'
+                          : 'Enable'
+                        : '—'}
                     </Button>
                   </TableCell>
                 </TableRow>

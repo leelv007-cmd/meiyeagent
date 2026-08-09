@@ -15,6 +15,7 @@ import {
   type HarnessReleaseStore,
   type PublishHarnessReleaseInput,
 } from '../harness/harness-release.js';
+import { seedHarnessReleaseManifest } from '../harness/seed-harness-release.js';
 import {
   type OpsConsoleAuditAction,
   type OpsConsoleAuditEntry,
@@ -32,6 +33,7 @@ import {
   type OpsKillSwitchStore,
   type OpsRollbackDrillRecord,
   type OpsRollbackDrillStore,
+  type OpsRollbackOperationStore,
 } from './state-stores.js';
 import {
   AGENT_TOOL_POLICY_SCHEMA_VERSION,
@@ -82,7 +84,19 @@ export async function resolveWorkspaceHarnessRelease(input: {
   now?: string;
   releases: HarnessReleaseService;
   trials: OpsCandidateTrialStore;
+  rollbackOperations?: OpsRollbackOperationStore;
 }) {
+  if (input.rollbackOperations) {
+    const pending =
+      await input.rollbackOperations.listPendingRollbackOperations();
+    for (const operation of pending) {
+      await input.releases.rollbackProduction({
+        toReleaseId: operation.toReleaseId,
+        approvedBy: operation.audit.operatorId,
+      });
+      await input.rollbackOperations.completeRollbackOperation(operation.id);
+    }
+  }
   const trial = await input.trials.consumeCandidateTrial({
     workspaceId: input.workspaceId,
     runId: input.runId,
@@ -106,7 +120,19 @@ export type OpsConsoleServiceDeps = {
   killSwitches: OpsKillSwitchStore;
   trials: OpsCandidateTrialStore;
   drills: OpsRollbackDrillStore;
-  verdicts?: Pick<EvalVerdictStore, 'listByRelease'>;
+  verdicts?: Pick<EvalVerdictStore, 'listByRelease' | 'putImmutable'>;
+  rollbackOperations?: OpsRollbackOperationStore;
+  allowFixtureEval?: boolean;
+  runPins?: {
+    listRecentRunPins(limit?: number): Promise<
+      Array<{
+        runId: string;
+        workspaceId: string;
+        harnessReleaseId: string;
+        startedAt: string;
+      }>
+    >;
+  };
   langfuseBaseUrl?: string | null;
   /**
    * V31-26a / U14: inventory of active/pending legacy durable tasks.
@@ -279,6 +305,81 @@ export class OpsConsoleService {
     return { ...published, audit: entry };
   }
 
+  async publishSeedCandidate(
+    context: P1Context,
+    input: { releaseId: string; version: number; toolPolicyRevision?: string },
+    meta: OpsWriteMeta,
+  ) {
+    return this.publishRelease(
+      context,
+      {
+        ...seedHarnessReleaseManifest(),
+        releaseId: input.releaseId,
+        version: input.version,
+        toolPolicyRevision: input.toolPolicyRevision ?? 'tool-policy/v1',
+        createdAt: nowIso(meta.now),
+      },
+      meta,
+    );
+  }
+
+  async runReleaseEvalFixture(
+    context: P1Context,
+    input: { releaseId: string },
+    meta: OpsWriteMeta,
+  ) {
+    if (!this.deps.allowFixtureEval || !this.deps.verdicts) {
+      throw new P1DomainError(
+        'FORBIDDEN',
+        'Release eval fixture is available only in the E2E fixture runtime.',
+      );
+    }
+    const reason = requireReason(meta.reason, 'run_release_eval_fixture');
+    const artifact = await this.deps.releases.getExactRelease(input.releaseId);
+    const createdAt = nowIso(meta.now);
+    const result = await this.deps.verdicts.putImmutable({
+      schemaVersion: 'eval-layer-result/v1',
+      resultId: `ops-fixture-${randomUUID()}` as never,
+      layer: 'l1',
+      harnessReleaseId: artifact.releaseId,
+      evalSuiteRevision: artifact.evalSuiteRevision,
+      gates: (['fidelity', 'rights', 'redline'] as const).map((kind) => ({
+        id: `${kind}-${randomUUID()}` as never,
+        kind,
+        passed: true,
+      })),
+      thresholds: [],
+      verdict: 'passed',
+      scoredBookkept: false,
+      releasable: true,
+      createdAt,
+    });
+    await this.deps.drills.appendRollbackDrill({
+      id: randomUUID(),
+      releaseId: input.releaseId,
+      operatorId: context.userId,
+      reason,
+      evidence: `fixture-eval://${result.resultId}`,
+      result: 'passed',
+      notes: 'E2E release readiness fixture',
+      createdAt,
+    });
+    await this.audit(
+      context,
+      'record_rollback_drill',
+      input.releaseId,
+      reason,
+      `fixture-eval://${result.resultId}`,
+      { verdict: result.verdict },
+      meta.now,
+    );
+    return {
+      releaseId: input.releaseId,
+      verdict: result.verdict,
+      resultId: result.resultId,
+    };
+  }
+
   async transitionLifecycle(
     context: P1Context,
     input: {
@@ -349,7 +450,9 @@ export class OpsConsoleService {
       operatorId: context.userId,
       reason,
       updatedAt: nowIso(meta.now),
-      expiresAt: new Date(new Date(nowIso(meta.now)).getTime() + 15 * 60_000).toISOString(),
+      expiresAt: new Date(
+        new Date(nowIso(meta.now)).getTime() + 15 * 60_000,
+      ).toISOString(),
       consumedByRunId: null,
       consumedAt: null,
     };
@@ -372,6 +475,11 @@ export class OpsConsoleService {
     return this.deps.trials.listCandidateTrials();
   }
 
+  async listRecentRunPins() {
+    if (!this.deps.runPins) return [];
+    return this.deps.runPins.listRecentRunPins(20);
+  }
+
   async promoteToProduction(
     context: P1Context,
     input: { releaseId: string },
@@ -383,20 +491,23 @@ export class OpsConsoleService {
       this.deps.verdicts?.listByRelease(input.releaseId, 50) ?? [],
       this.deps.drills.listRollbackDrills(50),
     ]);
-    const passed = results.find(
-      (result) =>
-        result.verdict === 'passed' &&
-        result.evalSuiteRevision === artifact.evalSuiteRevision,
-    );
     const requiredKinds = ['fidelity', 'rights', 'redline'] as const;
-    const gatesGreen = requiredKinds.every((kind) =>
-      passed?.gates.some((gate) => gate.kind === kind && gate.passed),
+    const releasable = results.find(
+      (result) =>
+        (result.verdict === 'passed' || result.verdict === 'scored') &&
+        result.evalSuiteRevision === artifact.evalSuiteRevision &&
+        requiredKinds.every((kind) =>
+          result.gates.some((gate) => gate.kind === kind && gate.passed),
+        ),
     );
     const readinessGreen = drills.some(
-      (drill) => drill.releaseId === input.releaseId && drill.result === 'passed',
+      (drill) =>
+        drill.releaseId === input.releaseId && drill.result === 'passed',
     );
-    if (!passed || !gatesGreen || !readinessGreen) {
-      const scoredCount = results.filter((result) => result.verdict === 'scored').length;
+    if (!releasable || !readinessGreen) {
+      const scoredCount = results.filter(
+        (result) => result.verdict === 'scored',
+      ).length;
       throw new P1DomainError(
         'INVALID_STATE',
         `Promotion gates are not green for ${input.releaseId}: fidelity/rights/redline/readiness are required; scored=${scoredCount} is audit-only.`,
@@ -427,25 +538,67 @@ export class OpsConsoleService {
   ) {
     const reason = requireReason(meta.reason, 'rollback_production');
     const evidence = requireEvidence(meta.evidence, 'rollback_production');
+    const auditEntry: OpsConsoleAuditEntry = {
+      id: randomUUID(),
+      action: 'rollback_production',
+      operatorId: context.userId,
+      reason,
+      evidence,
+      target: input.toReleaseId,
+      detail: { requestedProduction: input.toReleaseId },
+      createdAt: nowIso(meta.now),
+      correlationId: context.correlationId,
+    };
+    await this.deps.releases.assertRollbackEligible(input.toReleaseId);
+    await this.deps.rollbackOperations?.beginRollbackOperation({
+      id: auditEntry.id,
+      toReleaseId: input.toReleaseId,
+      audit: auditEntry,
+      createdAt: auditEntry.createdAt,
+    });
     const rolled = await this.deps.releases.rollbackProduction({
       toReleaseId: input.toReleaseId,
       approvedBy: context.userId,
       now: meta.now,
     });
-    await this.deps.trials.clearCandidateTrials();
-    const entry = await this.audit(
+    const entry = this.deps.rollbackOperations
+      ? await this.deps.rollbackOperations.completeRollbackOperation(
+          auditEntry.id,
+        )
+      : await (async () => {
+          await this.deps.trials.clearCandidateTrials();
+          return this.deps.audit.append({
+            ...auditEntry,
+            detail: {
+              previousProduction: rolled.previousProduction?.releaseId ?? null,
+              production: rolled.production.releaseId,
+            },
+          });
+        })();
+    return { ...rolled, audit: entry };
+  }
+
+  async authorizeProductionHistoryMigration(
+    context: P1Context,
+    input: { releaseId: string; promotedAt?: string },
+    meta: OpsWriteMeta,
+  ) {
+    const reason = requireReason(meta.reason, 'authorize_production_history');
+    const evidence = requireEvidence(
+      meta.evidence,
+      'authorize_production_history',
+    );
+    await this.deps.releases.authorizeProductionHistory(input);
+    const audit = await this.audit(
       context,
-      'rollback_production',
-      input.toReleaseId,
+      'authorize_production_history',
+      input.releaseId,
       reason,
       evidence,
-      {
-        previousProduction: rolled.previousProduction?.releaseId ?? null,
-        production: rolled.production.releaseId,
-      },
+      { migration: 'production_history', promotedAt: input.promotedAt ?? null },
       meta.now,
     );
-    return { ...rolled, audit: entry };
+    return { releaseId: input.releaseId, audit };
   }
 
   async recordRollbackDrill(
@@ -603,9 +756,7 @@ export class OpsConsoleService {
         reason: state.reason,
         /** Unlanded switches cannot be enabled from this panel. */
         canEnable: catalog.landed,
-        unavailableReason: catalog.landed
-          ? null
-          : '提供方票未落地',
+        unavailableReason: catalog.landed ? null : '提供方票未落地',
       };
     });
   }
@@ -673,9 +824,7 @@ export class OpsConsoleService {
    * V31-26a / U14: read-only archive condition gate.
    * Fail closed when inventory or audit is unavailable.
    */
-  async legacyReplayArchiveGate(input?: {
-    now?: string;
-  }): Promise<{
+  async legacyReplayArchiveGate(input?: { now?: string }): Promise<{
     gate: LegacyReplayArchiveGateResult;
     inventory: LegacyReplayInventorySnapshot | null;
   }> {
@@ -726,9 +875,7 @@ export class OpsConsoleService {
       inventory = await inventoryPort.snapshot();
     } catch (error) {
       const detail =
-        error instanceof Error
-          ? error.message
-          : 'inventory snapshot failed';
+        error instanceof Error ? error.message : 'inventory snapshot failed';
       return {
         gate: {
           archiveAllowed: false,
@@ -765,7 +912,9 @@ export class OpsConsoleService {
     }
 
     const drills = await this.deps.drills.listRollbackDrills();
-    const rollbackDrillPassed = drills.some((drill) => drill.result === 'passed');
+    const rollbackDrillPassed = drills.some(
+      (drill) => drill.result === 'passed',
+    );
     // Audit store is always present on the service; list is the export primitive.
     let auditExportAvailable = false;
     try {

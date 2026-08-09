@@ -769,6 +769,7 @@ export function requiredP1Capability(
       'get_release',
       'diff_releases',
       'list_candidate_trials',
+      'list_recent_run_pins',
       'list_rollback_drills',
       'list_tool_policies',
       'get_tool_policy',
@@ -782,11 +783,14 @@ export function requiredP1Capability(
     ]);
     const opsConsoleCommands = new Set([
       'publish_release',
+      'publish_seed_candidate',
+      'run_release_eval_fixture',
       'transition_lifecycle',
       'set_canary_allowlist',
       'set_candidate_trial',
       'promote_to_production',
       'rollback_production',
+      'authorize_production_history',
       'record_rollback_drill',
       'create_tool_policy_revision',
       'update_tool_policy',
