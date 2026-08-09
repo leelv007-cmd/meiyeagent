@@ -650,21 +650,31 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
       await client.query('BEGIN');
       const result = await client.query<{ submission: unknown }>(
       `UPDATE execution_spine.creation_submissions
-          SET submission = jsonb_set(jsonb_set(
-              jsonb_set(
-                jsonb_set(submission,
-                '{executionPlanFreeze}',
-                $3::jsonb,
-                true
-                ),
-                '{snapshot,quote}',
-                COALESCE($4::jsonb, submission#>'{snapshot,quote}'),
-                true
-              ),
-              '{usageReservation,credits}',
-              COALESCE($5::jsonb, submission#>'{usageReservation,credits}'),
+          SET submission = jsonb_set(
+              CASE WHEN $5::jsonb IS NULL THEN
+                jsonb_set(
+                  jsonb_set(submission, '{executionPlanFreeze}', $3::jsonb, true),
+                  '{snapshot,quote}',
+                  COALESCE($4::jsonb, submission#>'{snapshot,quote}'),
+                  true
+                )
+              ELSE
+                jsonb_set(
+                  jsonb_set(
+                    jsonb_set(submission, '{executionPlanFreeze}', $3::jsonb, true),
+                    '{snapshot,quote}',
+                    COALESCE($4::jsonb, submission#>'{snapshot,quote}'),
+                    true
+                  ),
+                  '{usageReservation,credits}',
+                  $5::jsonb,
+                  true
+                )
+              END,
+              '{agentPlanPending}',
+              'false'::jsonb,
               true
-            ), '{agentPlanPending}', 'false'::jsonb, true),
+            ),
               updated_at = clock_timestamp()
         WHERE workspace_id = $1
           AND id = $2
