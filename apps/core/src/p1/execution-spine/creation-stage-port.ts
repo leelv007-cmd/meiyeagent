@@ -24,6 +24,11 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 	constructor(private readonly admission: HarnessCreationAdmissionPort) {}
 
 	async start(submission: CreationSubmissionRecord) {
+		if (submission.executionPlanFreeze && !submission.agentBinding) {
+			throw new Error(
+				"Planned submission is missing its authoritative Agent Thread binding.",
+			);
+		}
 		const started = await this.admission.submit({
 			taskId: submission.task.id,
 			...toHarnessWorkflowInput(
@@ -32,6 +37,7 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				submission.decisionReferences,
 				submission.executionPlanFreeze,
 				submission.agentBinding?.threadId,
+				submission.artifactLineage,
 			),
 		});
 		if (started.workflowId !== submission.task.id) {
@@ -61,6 +67,7 @@ export function toHarnessWorkflowInput(
 	frozenDecisionReferences?: CreationSubmissionRecord["decisionReferences"],
 	executionPlanFreeze?: CreationSubmissionRecord["executionPlanFreeze"],
 	agentThreadId?: NonNullable<CreationSubmissionRecord["agentBinding"]>["threadId"],
+	artifactLineage?: CreationSubmissionRecord["artifactLineage"],
 ): HarnessWorkflowInput {
 	const semanticDecision = snapshot.semanticDecision;
 	const decisionReferences = [
@@ -69,6 +76,7 @@ export function toHarnessWorkflowInput(
 	];
 	return {
 		...(agentThreadId ? { agentThreadId } : {}),
+		...(artifactLineage ? { artifactLineage } : {}),
 		actorId: snapshot.actorId,
 		workspaceId: snapshot.workspaceId,
 		packageId: snapshot.contentPackage.id,

@@ -84,6 +84,24 @@ test("the Coordinator starts the existing Harness from one frozen Composer snaps
 	]);
 });
 
+test("planned Harness admission fails closed without an authoritative Agent Thread", async () => {
+	const stage = new CreationStagePort({
+		async submit() { throw new Error("must not submit"); },
+	});
+	const snapshot = createCreationExecutionSnapshot(command(), "2026-07-22T09:00:00.000Z");
+	await assert.rejects(
+		stage.start({
+			snapshot,
+			work: { id: "work-1" },
+			task: { id: "task-1" },
+			contentPackage: { id: "package-1", expectedRevision: 0 },
+			usageReservation: { id: "usage-1", units: [] },
+			executionPlanFreeze: {} as never,
+		}),
+		/authoritative Agent Thread/u,
+	);
+});
+
 test("a terminal successor carries the late answer into Harness context and decision references", async () => {
 	const calls: Array<Record<string, unknown>> = [];
 	const stage = new CreationStagePort({

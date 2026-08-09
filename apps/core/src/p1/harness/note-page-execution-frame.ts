@@ -66,6 +66,10 @@ export function createNotePageProgressReporter(input: {
     /** Starting revision; increments per success event. */
     nextRevision: () => number;
     now: () => string;
+	/** Number of pages targeted by this execution (may be a local regeneration subset). */
+	terminalUnitCount?: number;
+	/** Ready revision of the source artifact continued by this execution. */
+	parentRevision?: number;
   };
   /**
    * Optional V31-16: drain steer queue after each successful page unit.
@@ -95,8 +99,8 @@ export function createNotePageProgressReporter(input: {
   const skeletonEmitted = new Set<string>();
   const copyEmitted = new Set<string>();
   const completedPages = new Set<string>();
-  let readyRevision: number | undefined;
-  let derivedParentRevision: number | undefined;
+  let readyRevision: number | undefined = input.artifactContext?.parentRevision;
+	let derivedParentRevision: number | undefined = input.artifactContext?.parentRevision;
 
   return async (event) => {
     const order = notePageOrderLabel(input.plan, event.pageId);
@@ -161,7 +165,8 @@ export function createNotePageProgressReporter(input: {
         }
       }
       if (event.state === 'success') completedPages.add(event.pageId);
-      const terminal = completedPages.size === unitIds.length;
+		const terminalUnitCount = input.artifactContext.terminalUnitCount ?? unitIds.length;
+		const terminal = completedPages.size >= terminalUnitCount;
       const revision = input.artifactContext.nextRevision();
       await emitNotePageArtifactProgress(input.artifactEmitter, {
         ...base,

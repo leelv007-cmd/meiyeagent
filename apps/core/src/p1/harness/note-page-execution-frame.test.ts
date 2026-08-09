@@ -167,3 +167,37 @@ test('skeleton/copy stages emit once per page across regeneration runs', async (
   );
 	assert.equal(updates[4]?.parentRevision, 4);
 });
+
+test('local regeneration continues the source artifact revision and becomes ready for its target subset', async () => {
+  const projected: SemanticEventCandidate[] = [];
+  let revision = 7;
+  const report = createNotePageProgressReporter({
+    plan: {
+      pages: [
+        { id: 'p1', order: 1, textBlock: { title: 'one' } },
+        { id: 'p2', order: 2, textBlock: { title: 'two' } },
+      ],
+    },
+    reportProgress: async () => undefined,
+    artifactEmitter: { async project(candidate) { projected.push(candidate); } },
+    artifactContext: {
+      workspaceId: 'ws-1',
+      workflowId: 'wf-successor',
+      threadId: 'thread-source',
+      artifactId: 'note:source-package',
+      parentRevision: 7,
+      terminalUnitCount: 1,
+      nextRevision: () => { revision += 1; return revision; },
+      now: () => '2026-08-09T12:00:00.000Z',
+    },
+  });
+
+  await report({ pageId: 'p2', state: 'running' });
+  await report({ pageId: 'p2', state: 'success' });
+
+  const updates = projected.map((candidate) => artifactUpdateWireSchema.parse(candidate.payload));
+  assert.equal(updates[0]?.artifactId, 'note:source-package');
+  assert.equal(updates[0]?.mode, 'delta');
+  assert.equal(updates[0]?.parentRevision, 7);
+  assert.equal(updates.at(-1)?.status, 'ready');
+});

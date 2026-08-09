@@ -35,14 +35,16 @@ export interface CreationSubmissionRecord {
 		units: CreationSubmissionUsageUnit[];
 	};
 	/**
-	 * V31-12 compile-finalize freeze, written in-memory by the Composer plan
-	 * session after compile and consumed by the Harness admission path. Not
-	 * part of the durable submission payload; replays reconstruct the same
-	 * snapshot from the frozen harness request.
+	 * V31-12 compile-finalize freeze, durably written by the Composer plan
+	 * session before the Harness admission lease is claimed.
 	 */
 	executionPlanFreeze?: ExecutionPlanCompileFreeze;
 	/** Authoritative Session identity bound before the Harness starts. */
 	agentBinding?: ComposerAgentBinding;
+	/** Durable continuation hint needed if the process crashes before planning. */
+	agentContinuationThreadId?: AgentThreadIdentity;
+	/** Stable artifact identity continued by a Result successor. */
+	artifactLineage?: { artifactId: string; parentRevision: number };
 }
 
 export interface CreationSubmissionUsageUnit {
@@ -79,6 +81,12 @@ export interface CreationSubmissionStore {
 		| { kind: "existing"; submission: CreationSubmissionRecord }
 		| { kind: "conflict" }
 	>;
+	persistAgentPlanning(input: {
+		workspaceId: string;
+		submissionId: string;
+		agentBinding: ComposerAgentBinding;
+		executionPlanFreeze: ExecutionPlanCompileFreeze;
+	}): Promise<CreationSubmissionRecord>;
 	/**
 	 * Separately leases the one external Harness start after the submission
 	 * transaction has committed. A retry can reclaim a released lease without
@@ -290,6 +298,9 @@ export class CreationSubmissionCoordinator {
 		});
 		const snapshot = createCreationExecutionSnapshot(command, this.ids.now());
 		const submission: CreationSubmissionRecord = {
+			...(request.agentThreadId
+				? { agentContinuationThreadId: asAgentThreadIdentity(request.agentThreadId) }
+				: {}),
 			snapshot,
 			work: { id: snapshot.work.id },
 			task: { id: snapshot.task.id },
@@ -326,13 +337,39 @@ export class CreationSubmissionCoordinator {
 		submission: CreationSubmissionRecord,
 		continuationThreadId?: string
 	): Promise<ComposerAgentBinding | undefined> {
-		if (!this.agentPlanning) return undefined;
+		if (!this.agentPlanning) {
+			if (submission.executionPlanFreeze && !submission.agentBinding) {
+				throw new Error("Planned submission is missing its authoritative Agent Thread binding.");
+			}
+			return submission.agentBinding;
+		}
+		if (submission.agentBinding && submission.executionPlanFreeze) {
+			return submission.agentBinding;
+		}
+		const durableContinuationThreadId =
+			continuationThreadId ?? submission.agentContinuationThreadId;
 		const binding = await this.agentPlanning.prepare({
-			...(continuationThreadId ? { continuationThreadId } : {}),
+			...(durableContinuationThreadId
+				? { continuationThreadId: durableContinuationThreadId }
+				: {}),
 			submission,
 		});
 		submission.agentBinding = binding;
-		return binding;
+		if (!submission.executionPlanFreeze) {
+			throw new Error("Agent planning did not freeze an execution plan.");
+		}
+		const persisted = await this.store.persistAgentPlanning({
+			workspaceId: submission.snapshot.workspaceId,
+			submissionId: submission.snapshot.id,
+			agentBinding: binding,
+			executionPlanFreeze: submission.executionPlanFreeze,
+		});
+		if (!persisted.agentBinding || !persisted.executionPlanFreeze) {
+			throw new Error("Durable Agent planning record is incomplete.");
+		}
+		submission.agentBinding = persisted.agentBinding;
+		submission.executionPlanFreeze = persisted.executionPlanFreeze;
+		return persisted.agentBinding;
 	}
 
 	async submitResultAdjustment(input: {
@@ -346,12 +383,17 @@ export class CreationSubmissionCoordinator {
 		sourceContentPackage: { id: string; revision: number };
 		sourceNoteStyleId?: string;
 		sourceSnapshot: CreationExecutionSnapshot;
+		sourceAgentThreadId?: AgentThreadIdentity;
+		sourceArtifactLineage?: { artifactId: string; parentRevision: number };
 		taskId: string;
 		textSelectionScope?: ResultAdjustTextSelectionScope;
 		workId: string;
 		workspaceId: string;
 	}) {
 		const source = creationExecutionSnapshotSchema.parse(input.sourceSnapshot);
+		if (this.agentPlanning && (!input.sourceAgentThreadId || !input.sourceArtifactLineage)) {
+			throw new Error("Result adjustment requires authoritative Thread and artifact lineage.");
+		}
 		if (source.workspaceId !== input.workspaceId) {
 			throw new Error("Result adjustment source does not match its workspace.");
 		}
@@ -468,6 +510,10 @@ export class CreationSubmissionCoordinator {
 		});
 		const snapshot = createCreationExecutionSnapshot(command, this.ids.now());
 		const submission: CreationSubmissionRecord = {
+			...(input.sourceAgentThreadId
+				? { agentContinuationThreadId: input.sourceAgentThreadId }
+				: {}),
+			...(input.sourceArtifactLineage ? { artifactLineage: input.sourceArtifactLineage } : {}),
 			contentPackage: { ...snapshot.contentPackage },
 			...(source.lens === "image_text_note" &&
 			input.sourceNoteStyleId &&
@@ -519,10 +565,15 @@ export class CreationSubmissionCoordinator {
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();
 		}
+		const agentBinding = await this.prepareAgentPlan(
+			claimed.submission,
+			input.sourceAgentThreadId,
+		);
 		await this.startHarness(claimed.submission);
 		return submissionResponse(
 			claimed.submission,
 			claimed.kind === "existing",
+			agentBinding,
 		);
 	}
 
@@ -632,6 +683,12 @@ export class CreationSubmissionCoordinator {
 			workId: this.ids.createId("work"),
 		});
 		const submission: CreationSubmissionRecord = {
+			...(input.request.agentThreadId
+				? { agentContinuationThreadId: input.request.agentThreadId }
+				: {}),
+			...(input.request.artifactLineage
+				? { artifactLineage: input.request.artifactLineage }
+				: {}),
 			contentPackage: { ...snapshot.contentPackage },
 			snapshot,
 			task: { id: snapshot.task.id },
@@ -656,10 +713,15 @@ export class CreationSubmissionCoordinator {
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();
 		}
+		const agentBinding = await this.prepareAgentPlan(
+			claimed.submission,
+			input.request.agentThreadId,
+		);
 		await this.startHarness(claimed.submission);
 		return submissionResponse(
 			claimed.submission,
 			claimed.kind === "existing",
+			agentBinding,
 		);
 	}
 
@@ -670,6 +732,7 @@ export class CreationSubmissionCoordinator {
 		let started = 0;
 		for (const candidate of recoverable) {
 			try {
+				await this.prepareAgentPlan(candidate.submission);
 				if (await this.startHarness(candidate.submission)) started += 1;
 			} catch {
 				failed += 1;

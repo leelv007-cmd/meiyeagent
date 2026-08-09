@@ -57,6 +57,7 @@ import type {
 export interface HarnessWorkflowInput {
 	/** Session-owned identity; never substitute planId or workflowId. */
 	agentThreadId?: AgentThreadIdentity;
+	artifactLineage?: { artifactId: string; parentRevision: number };
   actorId: string;
   workspaceId: string;
   packageId: string;
@@ -184,6 +185,7 @@ export interface HarnessSkillManifestResolver {
 export const harnessTaskRequestSchema = harnessTaskSubmissionSchema
   .extend({
 		agentThreadId: z.string().trim().min(1).optional(),
+		artifactLineage: z.object({ artifactId: z.string().trim().min(1), parentRevision: z.number().int().positive() }).strict().optional(),
     actorId: z.string().trim().min(1),
     workspaceId: z.string().trim().min(1),
     packageId: z.string().trim().min(1),
@@ -1012,6 +1014,7 @@ function normalizeRequest(
         usageReservation,
         decisionReferences,
 		parsed.agentThreadId as AgentThreadIdentity | undefined,
+		parsed.artifactLineage,
       ),
       ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
     };
@@ -1032,6 +1035,7 @@ function normalizeRequest(
 		...(parsed.agentThreadId
 			? { agentThreadId: parsed.agentThreadId as AgentThreadIdentity }
 			: {}),
+		...(parsed.artifactLineage ? { artifactLineage: parsed.artifactLineage } : {}),
   };
 }
 
@@ -1040,6 +1044,7 @@ function snapshotWorkflowInput(
   usageReservation?: CreationSubmissionRecord['usageReservation'],
   decisionReferences?: HarnessWorkflowInput['decisionReferences'],
 	agentThreadId?: AgentThreadIdentity,
+	artifactLineage?: HarnessWorkflowInput["artifactLineage"],
 ): HarnessWorkflowInputBeforeBounds {
   const semanticDecision = snapshot.semanticDecision;
   const frozenDecisionReferences = [
@@ -1055,6 +1060,7 @@ function snapshotWorkflowInput(
   }
   return {
 		...(agentThreadId ? { agentThreadId } : {}),
+		...(artifactLineage ? { artifactLineage } : {}),
     actorId: snapshot.actorId,
     workspaceId: snapshot.workspaceId,
     packageId: snapshot.contentPackage.id,

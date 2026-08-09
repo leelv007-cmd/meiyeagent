@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 
 import { AgentSemanticEventProjector } from '../apps/core/src/p1/agent-semantic-events/semantic-event-projector.ts';
 import { MemoryAgentSemanticEventStore } from '../apps/core/src/p1/agent-semantic-events/memory-semantic-event-store.ts';
-import {
-  encodeAgentSemanticSseFrame,
-  semanticFrameFromDomain,
-} from '../apps/core/src/p1/agent-semantic-events/agent-semantic-frames.ts';
+import { createCoreServer } from '../apps/core/src/server.ts';
+import type { DiagnosticRepository } from '../apps/core/src/diagnostics/repository.ts';
+import type { AgentSemanticEventWire, DiagnosticRun } from '@meiye/contracts';
 import { createCreationExecutionSnapshot } from '../apps/core/src/p1/execution-spine/creation-execution-snapshot.ts';
 import type { CreationSubmissionRecord } from '../apps/core/src/p1/execution-spine/submission-coordinator.ts';
 import { emitVideoScenesArtifactProgress } from '../apps/core/src/p1/harness/artifact-progress-emitter.ts';
@@ -25,7 +26,7 @@ import {
 
 const TS = '2026-08-09T08:00:00.000Z';
 
-test('real Composer identity and Artifact producer survive SSE into one ready Workbench artifact', async () => {
+test('Composer artifact survives production HTTP replay and Last-Event-ID SSE into Workbench resync rules', async (t) => {
   const sessions = new MemoryAgentSessionStore();
   const plans = new MemoryMarketingPlanStore();
   const events = new MemoryAgentSemanticEventStore();
@@ -72,22 +73,65 @@ test('real Composer identity and Artifact producer survive SSE into one ready Wo
     });
   }
 
-  const durable = await events.listByThread({
-    resourceId: submission.snapshot.workspaceId,
-    threadId: binding.threadId,
-  });
-  const sseWires = durable
-    .filter(({ eventType }) => eventType === 'artifact.revised')
-    .map((event) => {
-      const frame = encodeAgentSemanticSseFrame(semanticFrameFromDomain(event));
-      const data = frame
-        .split('\n')
-        .find((line) => line.startsWith('data: '));
-      assert.ok(data);
-      return JSON.parse(data.slice('data: '.length));
-    });
+	const session = await sessions.getThread({
+	  resourceId: submission.snapshot.workspaceId,
+	  threadId: binding.threadId,
+	});
+	assert.ok(session);
+	const cursors: Array<string | undefined> = [];
+	const diagnostics: DiagnosticRepository = {
+	  async create(run: DiagnosticRun) { return run; },
+	  async get() { return null; },
+	  async save(run: DiagnosticRun) { return run; },
+	};
+	const server = createCoreServer({
+	  diagnosticRepository: diagnostics,
+	  serviceToken: 'journey-token',
+	  agentSemanticEvents: {
+		async resolveSession({ workspaceId, threadId }) {
+		  if (workspaceId !== submission.snapshot.workspaceId || threadId !== binding.threadId) return null;
+		  return { resourceId: workspaceId, threadId, sessionRevision: session.revision };
+		},
+		loadReplay: (input) => projector.loadReplay(input),
+		streamReplay(input) {
+		  cursors.push(input.lastEventId);
+		  return projector.streamReplay(input);
+		},
+	  },
+	});
+	server.listen(0, '127.0.0.1');
+	await once(server, 'listening');
+	t.after(() => server.close());
+	const port = (server.address() as AddressInfo).port;
+	const base = `http://127.0.0.1:${port}/v1/workspaces/${submission.snapshot.workspaceId}/p1/agent-threads/${binding.threadId}`;
+	const headers = {
+	  'x-service-token': 'journey-token',
+	  'x-user-id': 'owner-1',
+	  'x-workspace-id': submission.snapshot.workspaceId,
+	  'x-workspace-role': 'owner',
+	};
+	const replayResponse = await fetch(`${base}/replay`, { headers });
+	assert.equal(replayResponse.status, 200);
+	const replayBody = await replayResponse.json() as { data: { events: unknown[]; snapshot: { lastEventId: string } } };
+	const sseWires = replayBody.data.events.filter((candidate) =>
+	  (candidate as { eventType?: string }).eventType === 'artifact.revised'
+	) as AgentSemanticEventWire[];
   assert.equal(sseWires[0]?.payload.mode, 'snapshot');
   assert.equal(sseWires.at(-1)?.payload.status, 'ready');
+
+	const firstArtifact = sseWires[0];
+	const finalArtifact = sseWires.at(-1);
+	assert.ok(firstArtifact);
+	assert.ok(finalArtifact);
+	const reconnectAfter = firstArtifact.eventId;
+	const streamResponse = await fetch(`${base}/events`, {
+	  headers: { ...headers, 'last-event-id': reconnectAfter },
+	});
+	const streamBody = await streamResponse.text();
+	assert.equal(streamResponse.status, 200);
+	assert.deepEqual(cursors, [reconnectAfter]);
+	assert.match(streamBody, /event: agent\.semantic/u);
+	assert.doesNotMatch(streamBody, new RegExp(`id: ${reconnectAfter}\\n`, 'u'));
 
   let workbench = reduceAgentWorkbench(createEmptyAgentWorkbenchState(), {
     type: 'set_session',
@@ -107,6 +151,23 @@ test('real Composer identity and Artifact producer survive SSE into one ready Wo
   assert.equal(artifacts[0]?.status, 'ready');
   assert.equal(artifacts[0]?.revision, 4);
   assert.equal(artifacts[0]?.artifactId, `video:${submission.contentPackage.id}`);
+
+	const duplicate = reduceAgentWorkbench(workbench, {
+	  type: 'apply_events_batch',
+	  events: [finalArtifact, firstArtifact],
+	});
+	assert.equal(duplicate.ok, true);
+	assert.equal(duplicate.state.needsSnapshotResync, false);
+	const jumped = structuredClone(finalArtifact);
+	jumped.eventId = 'event-revision-jump';
+	jumped.streamOffset = '999';
+	jumped.payload.revision += 2;
+	const resync = reduceAgentWorkbench(workbench, {
+	  type: 'apply_events_batch',
+	  events: [jumped],
+	});
+	assert.equal(resync.state.connection, 'resyncing');
+	assert.equal(resync.state.needsSnapshotResync, true);
 });
 
 function composerRecord(): CreationSubmissionRecord {

@@ -19,11 +19,14 @@ import {
 } from "../product-billing/product-usage-ledger.js";
 import { creationExecutionSnapshotSchema } from "./creation-execution-snapshot.js";
 import type {
+	ComposerAgentBinding,
   CreationSubmissionRecord,
   CreationSubmissionStore,
   CreationSubmissionStoreClaim,
   CreationSubmissionUsageUnit,
 } from "./submission-coordinator.js";
+
+import { asAgentThreadIdentity } from "./submission-coordinator.js";
 
 type HarnessStartState = "failed" | "reserved" | "starting" | "started";
 
@@ -502,6 +505,42 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     }
   }
 
+  async persistAgentPlanning(input: {
+	workspaceId: string;
+	submissionId: string;
+	agentBinding: ComposerAgentBinding;
+	executionPlanFreeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+  }) {
+	const client = await this.pool.connect();
+	try {
+	  await client.query("BEGIN");
+	  const row = await this.lockSubmission(client, input);
+	  const current = storedSubmission(row.submission);
+	  if (current.agentBinding || current.executionPlanFreeze) {
+		if (
+		  JSON.stringify(current.agentBinding) !== JSON.stringify(input.agentBinding) ||
+		  JSON.stringify(current.executionPlanFreeze) !== JSON.stringify(input.executionPlanFreeze)
+		) throw new Error("Agent planning persistence conflict.");
+	  } else {
+		current.agentBinding = input.agentBinding;
+		current.executionPlanFreeze = input.executionPlanFreeze;
+		await client.query(
+		  `UPDATE execution_spine.creation_submissions
+		      SET submission = $3::jsonb, updated_at = clock_timestamp()
+		    WHERE workspace_id = $1 AND id = $2`,
+		  [input.workspaceId, input.submissionId, JSON.stringify(current)],
+		);
+	  }
+	  await client.query("COMMIT");
+	  return current;
+	} catch (error) {
+	  await client.query("ROLLBACK");
+	  throw error;
+	} finally {
+	  client.release();
+	}
+  }
+
   /**
    * Persists the immutable successor snapshot for a semantic answer without
    * creating another Work, Task, ContentPackage, or usage reservation. The
@@ -844,12 +883,16 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     throw new Error("Stored creation submission is invalid.");
   }
   const candidate = value as {
+	agentBinding?: unknown;
+	agentContinuationThreadId?: unknown;
+	artifactLineage?: unknown;
     contentPackage?: { expectedRevision?: unknown; id?: unknown };
     decisionReferences?: unknown;
     snapshot?: unknown;
     task?: { id?: unknown };
     usageReservation?: { id?: unknown; credits?: unknown; units?: unknown };
     work?: { id?: unknown };
+	executionPlanFreeze?: unknown;
   };
   const snapshot = creationExecutionSnapshotSchema.parse(candidate.snapshot);
   const decisionReferences = storedDecisionReferences(
@@ -892,7 +935,65 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
       ...(credits !== undefined ? { credits } : {}),
     },
     work: { id: workId },
+	...(storedContinuationThreadId(candidate.agentContinuationThreadId)
+		? { agentContinuationThreadId: storedContinuationThreadId(candidate.agentContinuationThreadId) }
+		: {}),
+	...(storedArtifactLineage(candidate.artifactLineage) ? { artifactLineage: storedArtifactLineage(candidate.artifactLineage) } : {}),
+	...(storedAgentBinding(candidate.agentBinding) ? { agentBinding: storedAgentBinding(candidate.agentBinding) } : {}),
+	...(storedExecutionPlanFreeze(candidate.executionPlanFreeze)
+		? { executionPlanFreeze: storedExecutionPlanFreeze(candidate.executionPlanFreeze) }
+		: {}),
   };
+}
+
+function storedArtifactLineage(value: unknown): CreationSubmissionRecord["artifactLineage"] {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Stored creation submission has invalid artifact lineage.");
+  const candidate = value as { artifactId?: unknown; parentRevision?: unknown };
+  if (typeof candidate.artifactId !== "string" || !candidate.artifactId.trim() || !Number.isSafeInteger(candidate.parentRevision) || (candidate.parentRevision as number) < 1) {
+	throw new Error("Stored creation submission has invalid artifact lineage.");
+  }
+  return { artifactId: candidate.artifactId, parentRevision: candidate.parentRevision as number };
+}
+
+function storedExecutionPlanFreeze(
+  value: unknown,
+): CreationSubmissionRecord["executionPlanFreeze"] {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+	throw new Error("Stored creation submission has invalid execution plan freeze.");
+  }
+  const candidate = value as { planId?: unknown; planRevision?: unknown; approvalBasis?: unknown };
+  if (
+	typeof candidate.planId !== "string" ||
+	!candidate.planId.trim() ||
+	!Number.isSafeInteger(candidate.planRevision) ||
+	(candidate.planRevision as number) < 1 ||
+	(candidate.approvalBasis !== "merchant_confirmed" && candidate.approvalBasis !== "policy_exempt_copy")
+  ) {
+	throw new Error("Stored creation submission has invalid execution plan freeze.");
+  }
+  return value as NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+}
+
+function storedAgentBinding(value: unknown): ComposerAgentBinding | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+	throw new Error("Stored creation submission has an invalid Agent binding.");
+  }
+  const candidate = value as { threadId?: unknown; runId?: unknown };
+  if (typeof candidate.threadId !== "string" || typeof candidate.runId !== "string" || !candidate.runId.trim()) {
+	throw new Error("Stored creation submission has an invalid Agent binding.");
+  }
+  return { threadId: asAgentThreadIdentity(candidate.threadId), runId: candidate.runId };
+}
+
+function storedContinuationThreadId(value: unknown) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+	throw new Error("Stored creation submission has an invalid continuation Thread.");
+  }
+  return asAgentThreadIdentity(value);
 }
 
 function storedDecisionReferences(

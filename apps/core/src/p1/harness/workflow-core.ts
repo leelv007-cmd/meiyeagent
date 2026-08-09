@@ -2216,7 +2216,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   });
 
   const executionSkills = stageSkills.execution_selection;
-  let noteArtifactRevision = 0;
+	let noteArtifactRevision = activeRequest.artifactLineage?.parentRevision ?? 0;
   const noteSelectionInput = {
     workflowId,
     request: activeRequest,
@@ -2250,7 +2250,15 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
               workflowId,
               threadId:
                 activeRequest.agentThreadId ?? `legacy-workflow:${workflowId}`,
-              artifactId: `note:${activeRequest.packageId ?? workflowId}`,
+			  artifactId:
+				activeRequest.artifactLineage?.artifactId ??
+				`note:${activeRequest.packageId ?? workflowId}`,
+			  ...(activeRequest.artifactLineage
+				? {
+					parentRevision: activeRequest.artifactLineage.parentRevision,
+					terminalUnitCount: activeRequest.executionSnapshot?.deliverable.quantity,
+				  }
+				: {}),
               nextRevision: () => {
                 noteArtifactRevision += 1;
                 return noteArtifactRevision;

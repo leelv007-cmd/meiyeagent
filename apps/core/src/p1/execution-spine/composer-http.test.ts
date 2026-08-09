@@ -26,6 +26,7 @@ import {
 	CreationSubmissionCoordinator,
 	type CreationSubmissionAdmissionPort,
 	type CreationSubmissionHarnessStarter,
+	type CreationSubmissionRecord,
 	type CreationSubmissionStore,
 	type CreationSubmissionStoreClaim,
 } from "./submission-coordinator.js";
@@ -817,6 +818,7 @@ test("legacy Harness task admission stays retired without a configured Harness s
 });
 
 class MemorySubmissionStore implements CreationSubmissionStore {
+	failNextPlanningPersistence = false;
 	private readonly claims = new Map<string, CreationSubmissionStoreClaim>();
 	private readonly harnessStarts = new Map<
 		string,
@@ -869,6 +871,33 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 			kind: "existing" as const,
 			submission: structuredClone(existing.submission),
 		};
+	}
+
+	async persistAgentPlanning(input: {
+		workspaceId: string;
+		submissionId: string;
+		agentBinding: NonNullable<CreationSubmissionRecord["agentBinding"]>;
+		executionPlanFreeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+	}) {
+		if (this.failNextPlanningPersistence) {
+			this.failNextPlanningPersistence = false;
+			throw new Error("planning persistence unavailable");
+		}
+		const claim = [...this.claims.values()].find(
+			(entry) =>
+				entry.workspaceId === input.workspaceId &&
+				entry.submission.snapshot.id === input.submissionId,
+		);
+		if (!claim) throw new Error(`Unknown submission ${input.submissionId}`);
+		const current = claim.submission;
+		if (current.agentBinding || current.executionPlanFreeze) {
+			assert.deepEqual(current.agentBinding, input.agentBinding);
+			assert.deepEqual(current.executionPlanFreeze, input.executionPlanFreeze);
+		} else {
+			current.agentBinding = structuredClone(input.agentBinding);
+			current.executionPlanFreeze = structuredClone(input.executionPlanFreeze);
+		}
+		return structuredClone(current);
 	}
 
 	async claimHarnessStart(input: {
@@ -982,6 +1011,9 @@ test("Composer returns authoritative Agent binding and treats the Thread hint ou
 		{
 			async prepare(input) {
 				continuationHints.push(input.continuationThreadId);
+				input.submission.executionPlanFreeze = {} as NonNullable<
+					CreationSubmissionRecord["executionPlanFreeze"]
+				>;
 				return {
 					threadId: asAgentThreadIdentity("thread-authoritative"),
 					runId: "run-authoritative",
@@ -1006,7 +1038,140 @@ test("Composer returns authoritative Agent binding and treats the Thread hint ou
 	assert.equal(created.runId, "run-authoritative");
 	assert.equal(replayed.replayed, true);
 	assert.equal(replayed.threadId, "thread-authoritative");
-	assert.deepEqual(continuationHints, ["thread-browser-a", "thread-browser-b"]);
+	assert.deepEqual(continuationHints, ["thread-browser-a"]);
+});
+
+test("crash recovery idempotently persists Agent planning before Harness starts", async () => {
+	const submissions = new MemorySubmissionStore();
+	submissions.failNextPlanningPersistence = true;
+	const starts: CreationSubmissionRecord[] = [];
+	let plans = 0;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		{ async start(input) { starts.push(structuredClone(input)); } },
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				plans += 1;
+				input.submission.executionPlanFreeze = {} as NonNullable<
+					CreationSubmissionRecord["executionPlanFreeze"]
+				>;
+				return {
+					threadId: asAgentThreadIdentity("thread-durable"),
+					runId: "run-durable",
+				};
+			},
+		},
+	);
+	const command = {
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	};
+
+	await assert.rejects(coordinator.submit(command), /planning persistence/u);
+	assert.equal(starts.length, 0);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 1,
+		failed: 0,
+		started: 1,
+	});
+	assert.equal(plans, 2);
+	assert.equal(starts[0]?.agentBinding?.threadId, "thread-durable");
+	assert.ok(starts[0]?.executionPlanFreeze);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 0,
+		failed: 0,
+		started: 0,
+	});
+});
+
+test("recovery completes a claim that crashed before Agent planning", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starts: CreationSubmissionRecord[] = [];
+	let plans = 0;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		{ async start(input) { starts.push(structuredClone(input)); } },
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				plans += 1;
+				if (plans === 1) throw new Error("process crashed before plan");
+				input.submission.executionPlanFreeze = {} as NonNullable<
+					CreationSubmissionRecord["executionPlanFreeze"]
+				>;
+				return {
+					threadId: asAgentThreadIdentity("thread-after-crash"),
+					runId: "run-after-crash",
+				};
+			},
+		},
+	);
+	await assert.rejects(
+		coordinator.submit({
+			...submissionPayload(),
+			actorId: "owner-1",
+			workspaceId: "workspace-1",
+		}),
+		/crashed before plan/u,
+	);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 1,
+		failed: 0,
+		started: 1,
+	});
+	assert.equal(starts[0]?.agentBinding?.threadId, "thread-after-crash");
+});
+
+test("recovery reuses durable Agent planning after a crash before Harness acknowledgement", async () => {
+	const submissions = new MemorySubmissionStore();
+	let plans = 0;
+	let starts = 0;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		{
+			async start(input) {
+				starts += 1;
+				assert.equal(input.agentBinding?.threadId, "thread-persisted");
+				if (starts === 1) throw new Error("crashed before harness acknowledgement");
+			},
+		},
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				plans += 1;
+				input.submission.executionPlanFreeze = {} as NonNullable<
+					CreationSubmissionRecord["executionPlanFreeze"]
+				>;
+				return {
+					threadId: asAgentThreadIdentity("thread-persisted"),
+					runId: "run-persisted",
+				};
+			},
+		},
+	);
+	await assert.rejects(
+		coordinator.submit({
+			...submissionPayload(),
+			actorId: "owner-1",
+			workspaceId: "workspace-1",
+		}),
+		/before harness acknowledgement/u,
+	);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 1,
+		failed: 0,
+		started: 1,
+	});
+	assert.equal(plans, 1);
+	assert.equal(starts, 2);
 });
 
 test("a failed Harness start releases the same submission for an idempotent retry", async () => {

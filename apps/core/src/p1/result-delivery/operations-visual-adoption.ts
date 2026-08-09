@@ -15,6 +15,7 @@ import {
 
 import type { P1Context } from '../foundation/domain.js';
 import type { CreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import type { AgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import { resolveAuthoritativeContentPackageVersionPlatform } from '../execution-spine/source-content-package-resolver.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import {
@@ -32,7 +33,15 @@ export interface ResultAdjustSnapshotReadPort {
   get(input: {
     snapshotId: string;
     workspaceId: string;
-  }): Promise<CreationExecutionSnapshot | null>;
+  }): Promise<
+	| CreationExecutionSnapshot
+	| {
+		snapshot: CreationExecutionSnapshot;
+		agentThreadId?: AgentThreadIdentity;
+		artifactLineage?: { artifactId: string; parentRevision: number };
+	  }
+	| null
+  >;
 }
 
 export interface ResultAdjustComposerSubmissionPort {
@@ -50,6 +59,8 @@ export interface ResultAdjustComposerSubmissionPort {
     sourceContentPackage: { id: string; revision: number };
     sourceNoteStyleId?: string;
     sourceSnapshot: CreationExecutionSnapshot;
+	sourceAgentThreadId?: AgentThreadIdentity;
+	sourceArtifactLineage?: { artifactId: string; parentRevision: number };
     taskId: string;
     textSelectionScope?: ResultAdjustTextSelectionScope;
     workId: string;
@@ -268,10 +279,19 @@ export class OperationsResultCommandPort {
         409,
       );
     }
-    const snapshot = await this.snapshots?.get({
+	const snapshotResult = await this.snapshots?.get({
       snapshotId: source.snapshotId,
       workspaceId: operation.workspaceId,
     });
+	const snapshot = snapshotResult && "snapshot" in snapshotResult
+		? snapshotResult.snapshot
+		: snapshotResult;
+	const agentThreadId = snapshotResult && "snapshot" in snapshotResult
+		? snapshotResult.agentThreadId
+		: undefined;
+	const artifactLineage = snapshotResult && "snapshot" in snapshotResult
+		? snapshotResult.artifactLineage
+		: undefined;
     const snapshotRef = contentPackage.source.creationExecutionSnapshot;
     const snapshotMatchesSource =
       snapshotRef?.id === snapshot?.id ||
@@ -302,7 +322,14 @@ export class OperationsResultCommandPort {
         404,
       );
     }
-    return { contentPackage, snapshot };
+	if (this.composerSubmissions && (!agentThreadId || !artifactLineage)) {
+	  throw new OperationsError(
+		'RESULT_ADJUST_SOURCE_NOT_FOUND',
+		'The frozen Result is missing authoritative Thread or artifact lineage.',
+		409,
+	  );
+	}
+    return { contentPackage, snapshot, agentThreadId, artifactLineage };
   }
 
   private async adjustmentExecution(input: {
@@ -784,6 +811,8 @@ export class OperationsResultCommandPort {
             },
             ...(sourceNoteStyleId ? { sourceNoteStyleId } : {}),
             sourceSnapshot: frozen.snapshot,
+			...(frozen.agentThreadId ? { sourceAgentThreadId: frozen.agentThreadId } : {}),
+			...(frozen.artifactLineage ? { sourceArtifactLineage: frozen.artifactLineage } : {}),
             taskId: composerCommand.derivedTaskId,
             ...(composerCommand.scope?.kind === 'text_selection'
               ? { textSelectionScope: composerCommand.scope }

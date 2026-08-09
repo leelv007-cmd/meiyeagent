@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import type { OperationsApplicationService } from '../operations/application-service.js';
 import type { CreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import type { ProductBillingApplicationPort } from '../product-billing/durable-service.js';
 import { OperationsResultCommandPort } from './operations-visual-adoption.js';
 
@@ -248,6 +249,7 @@ function fixture(
   const snapshots = {
     async get() {
       return {
+		snapshot: {
         catalogModel: { id: 'image-model-old', revision: 'catalog-old' },
         contentModules: ['social_cover'] as ['social_cover'],
         contentPackagePlatform:
@@ -291,7 +293,10 @@ function fixture(
               },
             }
           : {}),
-      } as unknown as CreationExecutionSnapshot;
+		} as unknown as CreationExecutionSnapshot,
+		agentThreadId: asAgentThreadIdentity('thread-source'),
+		artifactLineage: { artifactId: 'note:package-1', parentRevision: 7 },
+	  };
     },
   };
   const composerSubmissions = {
@@ -706,6 +711,14 @@ test('Composer snapshot adjustment keeps the latest semantic decision snapshot',
     (composerCalls[0] as { sourceNoteStyleId?: string }).sourceNoteStyleId,
     'story',
   );
+	assert.equal(
+	  (composerCalls[0] as { sourceAgentThreadId?: string }).sourceAgentThreadId,
+	  'thread-source',
+	);
+	assert.deepEqual(
+	  (composerCalls[0] as { sourceArtifactLineage?: unknown }).sourceArtifactLineage,
+	  { artifactId: 'note:package-1', parentRevision: 7 },
+	);
   assert.equal(
     (
       composerCalls[0] as {
