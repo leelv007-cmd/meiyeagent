@@ -238,6 +238,9 @@ export type WorkspaceWorkflowEventResource = `p1/workflows/${string}/events`;
 export type WorkspaceComposerDestinationResource =
   'p1/composer/destination-map';
 export type WorkspaceComposerSubmissionResource = 'p1/composer/submissions';
+export type WorkspaceCampaignPaidWorkResource =
+  | 'p1/campaigns/paid-works'
+  | `p1/campaigns/paid-works/${string}`;
 export type WorkspaceAgentSemanticResource =
   `p1/agent-threads/${string}/${'events' | 'replay'}`;
 export type WorkspaceHarnessTaskCollectionResource = 'p1/harness/tasks';

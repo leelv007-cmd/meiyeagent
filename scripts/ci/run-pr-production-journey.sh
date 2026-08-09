@@ -13,6 +13,8 @@ required_hard_gate_spec="${REQUIRED_BROWSER_HARD_GATE_SPEC:-tests/e2e/specs/m04-
 # note object workspace. Kept as a dedicated lean file so the journey budget
 # stays near three minutes for this path without pulling the full T20 suite.
 xhs_image_text_main_spec="${XHS_IMAGE_TEXT_MAIN_JOURNEY_SPEC:-tests/e2e/specs/xhs-image-text-main-journey.spec.ts}"
+# V31 U7: visible Campaign plan_only + two sequential single_work confirms.
+campaign_paid_work_spec="${CAMPAIGN_PAID_WORK_JOURNEY_SPEC:-tests/e2e/specs/campaign-paid-work-confirmation.spec.ts}"
 mkdir -p "${evidence_dir}"
 
 export PLAYWRIGHT_PRODUCTION_CANDIDATE=true
@@ -29,4 +31,5 @@ pnpm --filter @meiye/web exec playwright test \
   tests/e2e/specs/marketing-identity-flow.spec.ts \
   tests/e2e/specs/w12-identity-draft-assistant.spec.ts \
   "${xhs_image_text_main_spec}" \
+  "${campaign_paid_work_spec}" \
   2>&1 | tee "${evidence_dir}/playwright-production-journey.log"

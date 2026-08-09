@@ -73,6 +73,14 @@ export class CampaignPaidWorkProducer<TSubmission, TResult> {
     >,
   ) {}
 
+  async produceWork(input: {
+    submission: TSubmission;
+    campaignPlanRef: AgentRevisionRef;
+    workOrdinal: number;
+  }): Promise<TResult> {
+    return this.submissions.submitCampaignWork(input);
+  }
+
   async produce(input: {
     slots: readonly CampaignWeeklySlot[];
     buildSubmission(slot: CampaignWeeklySlot): TSubmission;
@@ -80,7 +88,7 @@ export class CampaignPaidWorkProducer<TSubmission, TResult> {
     const results: TResult[] = [];
     for (const slot of input.slots) {
       results.push(
-        await this.submissions.submitCampaignWork({
+        await this.produceWork({
           submission: input.buildSubmission(slot),
           campaignPlanRef: slot.campaignPlanRef,
           workOrdinal: slot.workOrdinal,

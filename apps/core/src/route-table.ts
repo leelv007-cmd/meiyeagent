@@ -18,6 +18,8 @@ export const CORE_ROUTE_AUTH_CLASSES = [
   ['pending-interrupts-resume', 'service-token'],
   ['composer-destination-map', 'service-token'],
   ['composer-submissions', 'service-token'],
+  ['campaign-paid-work-start', 'service-token'],
+  ['campaign-paid-work-status', 'service-token'],
   ['composer-task-events', 'service-token'],
   ['composer-content-package', 'service-token'],
   ['agent-semantic-replay', 'service-token'],

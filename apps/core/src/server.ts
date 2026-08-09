@@ -73,6 +73,10 @@ import {
 } from './p1/execution-spine/composer-destination-mapper.js';
 import type { CreationSubmissionCoordinator } from './p1/execution-spine/submission-coordinator.js';
 import {
+  campaignPaidWorkStartBodySchema,
+  type CampaignPaidWorkApplication,
+} from './p1/goal-proactive/campaign-paid-work-application.js';
+import {
   encodeAgentSemanticSseFrame,
   type AgentSemanticFrame,
   type ReplayPackage,
@@ -165,6 +169,7 @@ interface CoreServerDependencies {
   composerSubmission?: {
     coordinator: Pick<CreationSubmissionCoordinator, 'submit'>;
   };
+  campaignPaidWorks?: Pick<CampaignPaidWorkApplication, 'start' | 'advance'>;
   /** Workspace-authenticated semantic replay/read seam (V31-28). */
   agentSemanticEvents?: {
     resolveSession(input: {
@@ -557,6 +562,21 @@ function workspaceComposerContentPackageRoute(pathname: string) {
   }
 }
 
+function workspaceCampaignPaidWorkRoute(pathname: string) {
+  const match = pathname.match(
+    /^\/v1\/workspaces\/([^/]+)\/p1\/campaigns\/paid-works(?:\/([^/]+))?$/
+  );
+  if (!match?.[1]) return null;
+  try {
+    return {
+      workspaceId: decodeURIComponent(match[1]),
+      campaignId: match[2] ? decodeURIComponent(match[2]) : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function workspaceAgentSemanticRoute(pathname: string) {
   const match = pathname.match(
     /^\/v1\/workspaces\/([^/]+)\/p1\/agent-threads\/([^/]+)\/(replay|events)$/
@@ -927,6 +947,7 @@ export function createCoreServer({
   operationsService,
   composerDestinationMapper,
   composerSubmission,
+  campaignPaidWorks,
   agentSemanticEvents,
   contentPackageReader,
   e2eCreditDetailFixture,
@@ -1576,6 +1597,79 @@ export function createCoreServer({
           {
             code: 'INVALID_COMPOSER_SUBMISSION',
             message: 'Composer submission is invalid.',
+            status: 400,
+            unknownMessage: 'error',
+          }
+        );
+        return;
+      },
+    ]);
+
+    const campaignPaidWorkRoute = workspaceCampaignPaidWorkRoute(url.pathname);
+    routes.add('campaign-paid-work-start', [
+      'POST',
+      () =>
+        Boolean(
+          campaignPaidWorks &&
+            campaignPaidWorkRoute &&
+            !campaignPaidWorkRoute.campaignId
+        ),
+      'service-token',
+      async () => {
+        await handleErrors(
+          async () => {
+            const context = p1Identity(
+              request,
+              campaignPaidWorkRoute!.workspaceId,
+              requestCorrelationId
+            );
+            authorizeContentCreation(context);
+            const body = campaignPaidWorkStartBodySchema.parse(
+              await readJson(request)
+            );
+            const result = await campaignPaidWorks!.start({
+              ...body,
+              actorId: context.userId,
+              workspaceId: context.workspaceId,
+            });
+            sendJson(response, 202, result, requestCorrelationId);
+          },
+          {
+            code: 'INVALID_CAMPAIGN_PAID_WORK_START',
+            message: 'Campaign paid Work could not be started.',
+            status: 400,
+            unknownMessage: 'error',
+          }
+        );
+        return;
+      },
+    ]);
+    routes.add('campaign-paid-work-status', [
+      'GET',
+      () =>
+        Boolean(
+          campaignPaidWorks &&
+            campaignPaidWorkRoute?.campaignId
+        ),
+      'service-token',
+      async () => {
+        await handleErrors(
+          async () => {
+            const context = p1Identity(
+              request,
+              campaignPaidWorkRoute!.workspaceId,
+              requestCorrelationId
+            );
+            authorizeContentCreation(context);
+            const result = await campaignPaidWorks!.advance(
+              context.workspaceId,
+              campaignPaidWorkRoute!.campaignId!
+            );
+            sendJson(response, 200, result, requestCorrelationId);
+          },
+          {
+            code: 'CAMPAIGN_PAID_WORK_UNAVAILABLE',
+            message: 'Campaign paid Work is unavailable.',
             status: 400,
             unknownMessage: 'error',
           }

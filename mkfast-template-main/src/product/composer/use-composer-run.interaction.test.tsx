@@ -126,6 +126,9 @@ function createTransports() {
       threadId: 'thread-authoritative',
       work: { id: 'work-1' },
     })),
+    submitCampaign: vi.fn(async () => {
+      throw new Error('Campaign transport is not used in this fixture.');
+    }),
     syncBrief: vi.fn(async () => ({
       briefContextId: 'composer:session-1',
       currentRevisions: projection.bindRevisions,

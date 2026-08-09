@@ -108,11 +108,13 @@ import { Route as ApiCoreP1HarnessTasksRouteImport } from './routes/api/core/p1/
 import { Route as ApiCoreP1HarnessRecommendationRouteImport } from './routes/api/core/p1/harness/recommendation'
 import { Route as ApiCoreP1ComposerSubmissionsRouteImport } from './routes/api/core/p1/composer/submissions'
 import { Route as ApiCoreP1ComposerDestinationMapRouteImport } from './routes/api/core/p1/composer/destination-map'
+import { Route as ApiCoreP1CampaignsPaidWorksRouteImport } from './routes/api/core/p1/campaigns/paid-works'
 import { Route as ApiCoreP1AssistantStreamRouteImport } from './routes/api/core/p1/assistant/stream'
 import { Route as ApiCoreDiagnosticsIdResumeRouteImport } from './routes/api/core/diagnostics/$id/resume'
 import { Route as ApiCoreDiagnosticsIdEventsRouteImport } from './routes/api/core/diagnostics/$id/events'
 import { Route as ApiCoreP1WorkflowsWorkflowIdEventsRouteImport } from './routes/api/core/p1/workflows/$workflowId/events'
 import { Route as ApiCoreP1ConfirmationRequestsRequestIdDecideRouteImport } from './routes/api/core/p1/confirmation-requests/$requestId/decide'
+import { Route as ApiCoreP1CampaignsPaidWorksCampaignIdRouteImport } from './routes/api/core/p1/campaigns/paid-works.$campaignId'
 import { Route as ApiCoreP1AgentThreadsThreadIdReplayRouteImport } from './routes/api/core/p1/agent-threads/$threadId/replay'
 import { Route as ApiCoreP1AgentThreadsThreadIdEventsRouteImport } from './routes/api/core/p1/agent-threads/$threadId/events'
 import { Route as ApiCoreP1HarnessTasksTaskIdProductMetricsRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/product-metrics'
@@ -627,6 +629,12 @@ const ApiCoreP1ComposerDestinationMapRoute =
     path: '/api/core/p1/composer/destination-map',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiCoreP1CampaignsPaidWorksRoute =
+  ApiCoreP1CampaignsPaidWorksRouteImport.update({
+    id: '/api/core/p1/campaigns/paid-works',
+    path: '/api/core/p1/campaigns/paid-works',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCoreP1AssistantStreamRoute =
   ApiCoreP1AssistantStreamRouteImport.update({
     id: '/api/core/p1/assistant/stream',
@@ -656,6 +664,12 @@ const ApiCoreP1ConfirmationRequestsRequestIdDecideRoute =
     id: '/api/core/p1/confirmation-requests/$requestId/decide',
     path: '/api/core/p1/confirmation-requests/$requestId/decide',
     getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiCoreP1CampaignsPaidWorksCampaignIdRoute =
+  ApiCoreP1CampaignsPaidWorksCampaignIdRouteImport.update({
+    id: '/$campaignId',
+    path: '/$campaignId',
+    getParentRoute: () => ApiCoreP1CampaignsPaidWorksRoute,
   } as any)
 const ApiCoreP1AgentThreadsThreadIdReplayRoute =
   ApiCoreP1AgentThreadsThreadIdReplayRouteImport.update({
@@ -817,12 +831,14 @@ export interface FileRoutesByFullPath {
   '/api/core/diagnostics/$id/events': typeof ApiCoreDiagnosticsIdEventsRoute
   '/api/core/diagnostics/$id/resume': typeof ApiCoreDiagnosticsIdResumeRoute
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
+  '/api/core/p1/campaigns/paid-works': typeof ApiCoreP1CampaignsPaidWorksRouteWithChildren
   '/api/core/p1/composer/destination-map': typeof ApiCoreP1ComposerDestinationMapRoute
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
   '/api/core/p1/agent-threads/$threadId/events': typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
   '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
+  '/api/core/p1/campaigns/paid-works/$campaignId': typeof ApiCoreP1CampaignsPaidWorksCampaignIdRoute
   '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
@@ -929,12 +945,14 @@ export interface FileRoutesByTo {
   '/api/core/diagnostics/$id/events': typeof ApiCoreDiagnosticsIdEventsRoute
   '/api/core/diagnostics/$id/resume': typeof ApiCoreDiagnosticsIdResumeRoute
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
+  '/api/core/p1/campaigns/paid-works': typeof ApiCoreP1CampaignsPaidWorksRouteWithChildren
   '/api/core/p1/composer/destination-map': typeof ApiCoreP1ComposerDestinationMapRoute
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
   '/api/core/p1/agent-threads/$threadId/events': typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
   '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
+  '/api/core/p1/campaigns/paid-works/$campaignId': typeof ApiCoreP1CampaignsPaidWorksCampaignIdRoute
   '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
@@ -1046,12 +1064,14 @@ export interface FileRoutesById {
   '/api/core/diagnostics/$id/events': typeof ApiCoreDiagnosticsIdEventsRoute
   '/api/core/diagnostics/$id/resume': typeof ApiCoreDiagnosticsIdResumeRoute
   '/api/core/p1/assistant/stream': typeof ApiCoreP1AssistantStreamRoute
+  '/api/core/p1/campaigns/paid-works': typeof ApiCoreP1CampaignsPaidWorksRouteWithChildren
   '/api/core/p1/composer/destination-map': typeof ApiCoreP1ComposerDestinationMapRoute
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
   '/api/core/p1/agent-threads/$threadId/events': typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
   '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
+  '/api/core/p1/campaigns/paid-works/$campaignId': typeof ApiCoreP1CampaignsPaidWorksCampaignIdRoute
   '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
@@ -1164,12 +1184,14 @@ export interface FileRouteTypes {
     | '/api/core/diagnostics/$id/events'
     | '/api/core/diagnostics/$id/resume'
     | '/api/core/p1/assistant/stream'
+    | '/api/core/p1/campaigns/paid-works'
     | '/api/core/p1/composer/destination-map'
     | '/api/core/p1/composer/submissions'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
     | '/api/core/p1/agent-threads/$threadId/events'
     | '/api/core/p1/agent-threads/$threadId/replay'
+    | '/api/core/p1/campaigns/paid-works/$campaignId'
     | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/harness/tasks/$taskId/decision'
@@ -1276,12 +1298,14 @@ export interface FileRouteTypes {
     | '/api/core/diagnostics/$id/events'
     | '/api/core/diagnostics/$id/resume'
     | '/api/core/p1/assistant/stream'
+    | '/api/core/p1/campaigns/paid-works'
     | '/api/core/p1/composer/destination-map'
     | '/api/core/p1/composer/submissions'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
     | '/api/core/p1/agent-threads/$threadId/events'
     | '/api/core/p1/agent-threads/$threadId/replay'
+    | '/api/core/p1/campaigns/paid-works/$campaignId'
     | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/harness/tasks/$taskId/decision'
@@ -1392,12 +1416,14 @@ export interface FileRouteTypes {
     | '/api/core/diagnostics/$id/events'
     | '/api/core/diagnostics/$id/resume'
     | '/api/core/p1/assistant/stream'
+    | '/api/core/p1/campaigns/paid-works'
     | '/api/core/p1/composer/destination-map'
     | '/api/core/p1/composer/submissions'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
     | '/api/core/p1/agent-threads/$threadId/events'
     | '/api/core/p1/agent-threads/$threadId/replay'
+    | '/api/core/p1/campaigns/paid-works/$campaignId'
     | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/harness/tasks/$taskId/decision'
@@ -1445,6 +1471,7 @@ export interface RootRouteChildren {
   ApiCoreProductCommandsRoute: typeof ApiCoreProductCommandsRoute
   ApiCoreProductStateRoute: typeof ApiCoreProductStateRoute
   ApiCoreP1AssistantStreamRoute: typeof ApiCoreP1AssistantStreamRoute
+  ApiCoreP1CampaignsPaidWorksRoute: typeof ApiCoreP1CampaignsPaidWorksRouteWithChildren
   ApiCoreP1ComposerDestinationMapRoute: typeof ApiCoreP1ComposerDestinationMapRoute
   ApiCoreP1ComposerSubmissionsRoute: typeof ApiCoreP1ComposerSubmissionsRoute
   ApiCoreP1HarnessRecommendationRoute: typeof ApiCoreP1HarnessRecommendationRoute
@@ -2150,6 +2177,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCoreP1ComposerDestinationMapRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/core/p1/campaigns/paid-works': {
+      id: '/api/core/p1/campaigns/paid-works'
+      path: '/api/core/p1/campaigns/paid-works'
+      fullPath: '/api/core/p1/campaigns/paid-works'
+      preLoaderRoute: typeof ApiCoreP1CampaignsPaidWorksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/core/p1/assistant/stream': {
       id: '/api/core/p1/assistant/stream'
       path: '/api/core/p1/assistant/stream'
@@ -2184,6 +2218,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/core/p1/confirmation-requests/$requestId/decide'
       preLoaderRoute: typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/api/core/p1/campaigns/paid-works/$campaignId': {
+      id: '/api/core/p1/campaigns/paid-works/$campaignId'
+      path: '/$campaignId'
+      fullPath: '/api/core/p1/campaigns/paid-works/$campaignId'
+      preLoaderRoute: typeof ApiCoreP1CampaignsPaidWorksCampaignIdRouteImport
+      parentRoute: typeof ApiCoreP1CampaignsPaidWorksRoute
     }
     '/api/core/p1/agent-threads/$threadId/replay': {
       id: '/api/core/p1/agent-threads/$threadId/replay'
@@ -2461,6 +2502,21 @@ const ApiCoreDiagnosticsRouteChildren: ApiCoreDiagnosticsRouteChildren = {
 const ApiCoreDiagnosticsRouteWithChildren =
   ApiCoreDiagnosticsRoute._addFileChildren(ApiCoreDiagnosticsRouteChildren)
 
+interface ApiCoreP1CampaignsPaidWorksRouteChildren {
+  ApiCoreP1CampaignsPaidWorksCampaignIdRoute: typeof ApiCoreP1CampaignsPaidWorksCampaignIdRoute
+}
+
+const ApiCoreP1CampaignsPaidWorksRouteChildren: ApiCoreP1CampaignsPaidWorksRouteChildren =
+  {
+    ApiCoreP1CampaignsPaidWorksCampaignIdRoute:
+      ApiCoreP1CampaignsPaidWorksCampaignIdRoute,
+  }
+
+const ApiCoreP1CampaignsPaidWorksRouteWithChildren =
+  ApiCoreP1CampaignsPaidWorksRoute._addFileChildren(
+    ApiCoreP1CampaignsPaidWorksRouteChildren,
+  )
+
 interface ApiCoreP1HarnessTasksTaskIdInteractionRouteChildren {
   ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionEditingRoute
   ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute: typeof ApiCoreP1HarnessTasksTaskIdInteractionMessageRoute
@@ -2543,6 +2599,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCoreProductCommandsRoute: ApiCoreProductCommandsRoute,
   ApiCoreProductStateRoute: ApiCoreProductStateRoute,
   ApiCoreP1AssistantStreamRoute: ApiCoreP1AssistantStreamRoute,
+  ApiCoreP1CampaignsPaidWorksRoute:
+    ApiCoreP1CampaignsPaidWorksRouteWithChildren,
   ApiCoreP1ComposerDestinationMapRoute: ApiCoreP1ComposerDestinationMapRoute,
   ApiCoreP1ComposerSubmissionsRoute: ApiCoreP1ComposerSubmissionsRoute,
   ApiCoreP1HarnessRecommendationRoute: ApiCoreP1HarnessRecommendationRoute,
