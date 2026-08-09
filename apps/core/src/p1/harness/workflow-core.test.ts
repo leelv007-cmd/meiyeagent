@@ -1000,6 +1000,71 @@ test('V31-15 note wiring: the page reporter reads identity from this run’s bri
   );
 });
 
+test('a failed artifact projection does not abort the paid note run it describes', async () => {
+  const attempted: string[] = [];
+  const pagesGenerated: string[] = [];
+  const stages = noteStages(false, async (input) => {
+    for (const pageId of ['page-1', 'page-2']) {
+      await input.onPageProgress?.({ pageId, state: 'running' });
+      pagesGenerated.push(pageId);
+      await input.onPageProgress?.({ pageId, state: 'success' });
+    }
+  });
+  stages.artifactProgressEmitter = {
+    async project(candidate) {
+      attempted.push(candidate.eventId);
+      // Transient projector write failure, after the page image is generated
+      // and charged.
+      throw new Error('projector unavailable');
+    },
+  };
+
+  let delivered = 0;
+  const deliver = stages.assembleNoteAndDeliver.bind(stages);
+  stages.assembleNoteAndDeliver = async (input) => {
+    delivered += 1;
+    return deliver(input);
+  };
+
+  const request = {
+    ...mediaTaskInput('image_text_note'),
+    agentThreadId: 'thread:note:projection-failure',
+  } as unknown as HarnessWorkflowInput;
+  await runHarnessWorkflow(
+    'task-note-projection-failure',
+    request,
+    stages,
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        return {
+          idempotencyKey: 'choose-story-projection-failure',
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: 'note_style',
+            value: '故事版',
+            reason: '选择图文方向',
+          },
+          decision: { state: 'accepted', value: '故事版' },
+        };
+      },
+      async recordTrace() {},
+    },
+  );
+
+  assert.equal(delivered, 1);
+  assert.deepEqual(pagesGenerated, ['page-1', 'page-2']);
+  // Every revision was still attempted — the failure is dropped per revision,
+  // not after the first one aborts the loop. Four per page: skeleton, copy,
+  // image running, image success.
+  assert.equal(attempted.length, 8);
+});
+
 for (const kind of ['image_text_note', 'video'] as const) {
   test(`a ${kind} run with no Agent Thread publishes no artifact revisions`, async () => {
     const projected: SemanticEventCandidate[] = [];

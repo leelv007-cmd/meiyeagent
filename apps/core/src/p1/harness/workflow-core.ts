@@ -38,6 +38,7 @@ import type {
 import type { StyleAnalysisResult } from './xhs-style-analysis.js';
 import {
   emitVideoScenesArtifactProgress,
+  nonBlockingArtifactEmitter,
   type ArtifactProgressEmitterPort,
 } from './artifact-progress-emitter.js';
 import type {
@@ -2018,7 +2019,14 @@ export function createNoteExecutionArtifactReporter(input: {
     reportProgress: input.reportProgress,
     ...(input.artifactEmitter && threadId
       ? {
-          artifactEmitter: input.artifactEmitter,
+          artifactEmitter: nonBlockingArtifactEmitter(
+            input.artifactEmitter,
+            (error) =>
+              console.error(
+                'Note page artifact revision was dropped; the client resyncs from the gap.',
+                error,
+              ),
+          ),
           artifactContext: {
             workspaceId: request.workspaceId,
             workflowId,
@@ -2575,7 +2583,12 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
     const parentRevision = state === 'running' ? videoReadyRevision : undefined;
     if (parentRevision !== undefined) videoReadyRevision = undefined;
     await emitVideoScenesArtifactProgress(
-      ports.artifactProgressEmitter,
+      nonBlockingArtifactEmitter(ports.artifactProgressEmitter, (error) =>
+        console.error(
+          'Video scene artifact revision was dropped; the client resyncs from the gap.',
+          error,
+        ),
+      ),
       {
         workspaceId: activeRequest.workspaceId,
         workflowId,

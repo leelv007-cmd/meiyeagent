@@ -18,6 +18,34 @@ export type ArtifactProgressEmitterPort = {
   project(candidate: SemanticEventCandidate): Promise<unknown>;
 };
 
+/**
+ * Wraps a projector so a projection failure cannot abort the run that produced
+ * it. By the time a revision is emitted the page image is generated and the
+ * merchant is charged for it, so a transient write error must not throw back
+ * into the page loop.
+ *
+ * The dropped revision leaves a gap, and the client already answers a gap with
+ * a snapshot resync (`needsSnapshotResync` on a revision jump), so losing one
+ * delta degrades to a re-fetch rather than losing the merchant's work. Nothing
+ * is swallowed silently: every failure reaches `onDropped`. A durable outbox
+ * (S2-2) is the real answer and replaces this.
+ */
+export function nonBlockingArtifactEmitter(
+  emitter: ArtifactProgressEmitterPort,
+  onDropped: (error: unknown) => void,
+): ArtifactProgressEmitterPort {
+  return {
+    async project(candidate) {
+      try {
+        return await emitter.project(candidate);
+      } catch (error) {
+        onDropped(error);
+        return undefined;
+      }
+    },
+  };
+}
+
 export type NotePageProgressArtifactInput = {
   workspaceId: string;
   workflowId: string;
