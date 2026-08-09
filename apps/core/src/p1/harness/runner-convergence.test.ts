@@ -1353,6 +1353,233 @@ test('V31-25: copy fixture equivalence baseline is stable across dual runs', asy
   assert.equal(a.settlement.cancelled, false);
 });
 
+/**
+ * V31-25 P1-E: a real restart, counted.
+ *
+ * The two tests around this one run the workflow twice with a fresh
+ * non-durable runtime and compare effect-key multisets. Two independent runs
+ * trivially produce the same keys, so those tests cannot detect duplication:
+ * nothing crashes, nothing survives, and no port invocation is counted. Here a
+ * single durable store survives the kill, the restart resumes against it, and
+ * every business port is counted across both attempts.
+ */
+function durableRestartRuntime(input: {
+  completed: Map<string, unknown>;
+  keys: string[];
+  killAt?: (key: string) => boolean;
+}): HarnessWorkflowRuntime {
+  return {
+    ...recordingRuntime(input.keys),
+    async runStep(key, operation) {
+      if (input.completed.has(key)) {
+        return structuredClone(input.completed.get(key)) as never;
+      }
+      const output = await operation();
+      input.completed.set(key, structuredClone(output));
+      if (input.killAt?.(key)) {
+        throw new Error(`worker killed after ${key}`);
+      }
+      return output;
+    },
+    async awaitDecision(question) {
+      return noteStyleOrPaidDecision(question);
+    },
+  };
+}
+
+type NotePortCounts = {
+  compileNoteBrief: number;
+  executeNoteAndSelect: number;
+  assembleNoteAndDeliver: number;
+  recordExecutionAssemblyStep: number;
+};
+
+function countingNoteStages(): {
+  stages: HarnessNoteStagePorts;
+  calls: NotePortCounts;
+} {
+  const calls: NotePortCounts = {
+    compileNoteBrief: 0,
+    executeNoteAndSelect: 0,
+    assembleNoteAndDeliver: 0,
+    recordExecutionAssemblyStep: 0,
+  };
+  const base = fixtureNoteStages();
+  return {
+    calls,
+    stages: {
+      ...base,
+      async compileNoteBrief(portInput) {
+        calls.compileNoteBrief += 1;
+        return base.compileNoteBrief(portInput);
+      },
+      async executeNoteAndSelect(portInput) {
+        calls.executeNoteAndSelect += 1;
+        return base.executeNoteAndSelect(portInput);
+      },
+      async assembleNoteAndDeliver(portInput) {
+        calls.assembleNoteAndDeliver += 1;
+        return base.assembleNoteAndDeliver(portInput);
+      },
+      async recordExecutionAssemblyStep() {
+        calls.recordExecutionAssemblyStep += 1;
+      },
+    },
+  };
+}
+
+test('V31-25 P1-E: a real kill and restart invokes no note port more often than a clean run', async () => {
+  const noteRequest = () => mediaTaskInput('image_text_note');
+
+  // Baseline: one clean uninterrupted run through the same durable runtime.
+  const clean = countingNoteStages();
+  const cleanResult = await runHarnessWorkflow(
+    'p1e-note-clean',
+    noteRequest(),
+    clean.stages,
+    durableRestartRuntime({ completed: new Map(), keys: [] }),
+  );
+  assert.equal(cleanResult.delivery.packageId, 'package-1');
+  assert.ok(
+    clean.calls.executeNoteAndSelect > 0 && clean.calls.compileNoteBrief > 0,
+    'baseline must actually exercise the paid ports',
+  );
+
+  for (const killAfter of [
+    ':s3:image_text_note:',
+    ':s4:image_text_note:selection',
+    ':s5:package:',
+  ]) {
+    const { stages, calls } = countingNoteStages();
+    // One durable store shared by the killed attempt and the restart.
+    const completed = new Map<string, unknown>();
+    let killArmed = true;
+    const workflowId = `p1e-note-restart-${killAfter.replaceAll(':', '-')}`;
+    const run = (killAt?: (key: string) => boolean) =>
+      runHarnessWorkflow(
+        workflowId,
+        noteRequest(),
+        stages,
+        durableRestartRuntime({
+          completed,
+          keys: [],
+          ...(killAt ? { killAt } : {}),
+        }),
+      );
+
+    await assert.rejects(
+      () =>
+        run((key) => {
+          if (!killArmed || !key.includes(killAfter)) return false;
+          killArmed = false;
+          return true;
+        }),
+      /worker killed after/,
+      `${killAfter}: the kill must actually interrupt the run`,
+    );
+    assert.equal(killArmed, false, `${killAfter}: kill never fired`);
+
+    const restarted = await run();
+    assert.equal(restarted.delivery.packageId, 'package-1');
+    assert.deepEqual(
+      calls,
+      clean.calls,
+      `${killAfter}: restart changed port invocation counts`,
+    );
+  }
+});
+
+test('V31-25 P1-E: a real kill and restart does not re-run the media billing promotion', async () => {
+  // finalizeMerchantExecution promotes the reserved charge, so a duplicate here
+  // is a double charge. It is counted across a real restart rather than inferred
+  // from effect-key equality.
+  const noteRequest = () => mediaTaskInput('image');
+  const build = () => {
+    const calls = {
+      compileMediaBrief: 0,
+      executeMediaAndSelect: 0,
+      assembleMediaAndDeliver: 0,
+      finalizeMerchantExecution: 0,
+    };
+    const base = fixtureMediaStages();
+    const stages: HarnessMediaStagePorts = {
+      ...base,
+      async compileMediaBrief(portInput) {
+        calls.compileMediaBrief += 1;
+        return base.compileMediaBrief(portInput);
+      },
+      async executeMediaAndSelect(portInput) {
+        calls.executeMediaAndSelect += 1;
+        return base.executeMediaAndSelect(portInput);
+      },
+      async assembleMediaAndDeliver(portInput) {
+        calls.assembleMediaAndDeliver += 1;
+        return base.assembleMediaAndDeliver(portInput);
+      },
+    };
+    return { stages, calls };
+  };
+  const runtimeFor = (
+    calls: { finalizeMerchantExecution: number },
+    completed: Map<string, unknown>,
+    killAt?: (key: string) => boolean,
+  ): HarnessWorkflowRuntime => ({
+    ...durableRestartRuntime({
+      completed,
+      keys: [],
+      ...(killAt ? { killAt } : {}),
+    }),
+    async awaitDecision(question) {
+      return approvePaid(question);
+    },
+    async finalizeMerchantExecution() {
+      calls.finalizeMerchantExecution += 1;
+    },
+  });
+
+  const clean = build();
+  await runHarnessWorkflow(
+    'p1e-media-clean',
+    noteRequest(),
+    clean.stages,
+    runtimeFor(clean.calls, new Map()),
+  );
+
+  for (const killAfter of [':s4:image:selection', ':s5:package:']) {
+    const { stages, calls } = build();
+    const completed = new Map<string, unknown>();
+    let killArmed = true;
+    const workflowId = `p1e-media-restart-${killAfter.replaceAll(':', '-')}`;
+    await assert.rejects(
+      () =>
+        runHarnessWorkflow(
+          workflowId,
+          noteRequest(),
+          stages,
+          runtimeFor(calls, completed, (key) => {
+            if (!killArmed || !key.includes(killAfter)) return false;
+            killArmed = false;
+            return true;
+          }),
+        ),
+      /worker killed after/,
+    );
+    assert.equal(killArmed, false, `${killAfter}: kill never fired`);
+    const restarted = await runHarnessWorkflow(
+      workflowId,
+      noteRequest(),
+      stages,
+      runtimeFor(calls, completed),
+    );
+    assert.equal(restarted.delivery.packageId, 'package-1');
+    assert.deepEqual(
+      calls,
+      clean.calls,
+      `${killAfter}: restart changed media port invocation counts`,
+    );
+  }
+});
+
 test('V31-25: kill/restart replay yields zero duplicate side effects', async () => {
   const keys: string[] = [];
   const stages = fixtureCopyStages();

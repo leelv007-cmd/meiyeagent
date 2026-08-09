@@ -2465,7 +2465,15 @@ function createNoteCarrierStepMachine(
     `image_text_note${selectionEffectDiscriminatorSuffix(unit)}`,
     executionSkills.instructions,
     noteSelectionInput,
-    (stageInput) => ports.executeNoteAndSelect(stageInput),
+    async (stageInput) => {
+      const selected = await ports.executeNoteAndSelect(stageInput);
+      await ports.recordExecutionAssemblyStep?.({
+        workflowId,
+        request: stageInput.request,
+        step: 'execution_check',
+      });
+      return selected;
+    },
   );
   noteRegenerationSignals = selection.auditSignals.filter(
     (signal) => signal.eventType === 'note_page_regenerated',
@@ -2485,9 +2493,12 @@ function createNoteCarrierStepMachine(
     return { selection, brief };
   };
 
-  // check owns the note consistency verification the plan asks for. Its rubric
-  // is a declared unit parameter, and the assembly-step record for the check
-  // moved here from inside the selection port: the check unit owns it now.
+  // check owns the note consistency verification the plan asks for, and its
+  // rubric is a declared unit parameter. It deliberately performs no business
+  // write: check is self-durable, so its body replays after a restart, and the
+  // `execution_check` assembly-step record therefore stays inside the durable
+  // selection step where the pre-convergence runner put it. Moving that write
+  // here made it fire a second time on every restart.
   const checkConsistencyStep: CarrierStep = async ({ unit }) => {
     const readiness = projectDeliveryReadiness({
       unit,
@@ -2496,11 +2507,6 @@ function createNoteCarrierStepMachine(
       plannedTargets: activeNoteCandidate.plan.pages.map((page) => page.id),
       producedTargets: selection.version.plan.pages.map((page) => page.id),
       partialTargets: selection.partial?.unresolvedPageIds ?? [],
-    });
-    await ports.recordExecutionAssemblyStep?.({
-      workflowId,
-      request: activeRequest,
-      step: 'execution_check',
     });
     await reportProgress({
       stage: 'execution_selection',
