@@ -124,5 +124,5 @@ export function useLivingPlanController(input: {
     [input.taskId, revising]
   );
 
-  return { onCommitAction, submitPlanCommand };
+  return { onCommitAction, revising, submitPlanCommand };
 }

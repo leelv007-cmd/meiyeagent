@@ -4028,10 +4028,14 @@ export function ComposerHome({
                   running={
                     // Lock/glow only while generating — keep intent editable
                     // while Brief is open so the merchant can invalidate it
-                    // (stale-Brief path / M-04 English brief gate).
-                    session.phase === 'running' ||
-                    (session.phase === 'submitting' &&
-                      briefState.phase !== 'open')
+                    // (stale-Brief path / M-04 English brief gate), and while
+                    // 返回修改 is waiting for the merchant's adjustment: a
+                    // presented plan keeps the session in `running`, and the
+                    // lock disables the very box we just asked them to type in.
+                    !livingPlanController.revising &&
+                    (session.phase === 'running' ||
+                      (session.phase === 'submitting' &&
+                        briefState.phase !== 'open'))
                   }
                   signedPreview={signedPreview}
                   submitHint={submitIntent.hint}
