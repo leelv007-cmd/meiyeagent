@@ -537,17 +537,6 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
         const current = state.contentPackages[index]!;
         const existing = current.resultSignals ?? [];
 
-        // V31-19: the expectedRevision check above ran before the lock, so two
-        // writers holding the same revision both passed it. Re-check the head
-        // here — under the lock the loser sees the winner's bump and conflicts
-        // instead of appending a second row against a revision that is gone.
-        if (current.revision !== input.expectedRevision) {
-          throw new ContentPackageDeliveryError(
-            'CONTENT_PACKAGE_REVISION_CONFLICT',
-            `ContentPackage ${current.id} moved to revision ${current.revision}; the result signal expected ${input.expectedRevision}.`
-          );
-        }
-
         if (action === 'correct' || action === 'withdraw') {
           const prior = existing.find(
             (row) => row.id === input.supersedesSignalId
@@ -604,9 +593,6 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
           ...(input.supersedesSignalId
             ? { supersedesSignalId: input.supersedesSignalId }
             : {}),
-          // Exact package revision this outcome describes (V31-19). The write
-          // bumps the head, so store the revision the merchant was looking at.
-          contentPackageRevision: current.revision,
         };
         const updated = {
           ...current,
