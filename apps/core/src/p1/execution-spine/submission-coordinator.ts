@@ -49,7 +49,7 @@ export interface CreationSubmissionRecord {
 	executionConfirmationContext?: HarnessWorkflowInput["executionConfirmationContext"];
 	/** Reliable outbox marker committed with the credit reservation and freeze. */
 	confirmationDispatch?: {
-		requestId: string;
+		requestId?: string;
 		state: "pending" | "dispatched" | "expired";
 		expiresAt?: string;
 	};
@@ -129,6 +129,7 @@ export interface CreationSubmissionStore {
 		leaseId: string;
 		workspaceId: string;
 		submissionId: string;
+		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
 	}): Promise<void>;
 	releaseHarnessStart(input: {
 		leaseId: string;
@@ -153,7 +154,10 @@ export interface CreationSubmissionStore {
 
 /** StagePort boundary: the coordinator never imports DBOS or a durable carrier. */
 export interface CreationSubmissionHarnessStarter {
-	start(input: CreationSubmissionRecord): Promise<void>;
+	start(input: CreationSubmissionRecord): Promise<
+		| { executionConfirmationRequestId?: string }
+		| void
+	>;
 	preparePendingConfirmation?(input: CreationSubmissionRecord): Promise<void>;
 	classifyStartFailure?(
 		input: CreationSubmissionRecord,
@@ -1048,9 +1052,23 @@ export class CreationSubmissionCoordinator {
 		const leasedStart = { ...startLease, leaseId: harnessClaim.leaseId };
 		let started = false;
 		try {
-			await this.harness.start(submission);
+			const startedResult = await this.harness.start(submission);
+			if (submission.confirmationDispatch) {
+				const requestId = startedResult?.executionConfirmationRequestId;
+				if (!requestId) {
+					throw new Error(
+						"Paid Harness admission did not return its confirmation authority ID.",
+					);
+				}
+				submission.confirmationDispatch.requestId = requestId;
+			}
 			started = true;
-			await this.store.completeHarnessStart(leasedStart);
+			await this.store.completeHarnessStart({
+				...leasedStart,
+				...(submission.confirmationDispatch
+					? { confirmationDispatch: submission.confirmationDispatch }
+					: {}),
+			});
 			return true;
 		} catch (error) {
 			if (!started) {
@@ -1098,7 +1116,6 @@ function ensureConfirmationDispatch(submission: CreationSubmissionRecord) {
 	}
 	const attemptId = composerPreparedAttemptId(submission);
 	submission.confirmationDispatch ??= {
-		requestId: `confirmation:${attemptId}`,
 		state: "pending",
 		expiresAt: new Date(
 			Date.parse(submission.snapshot.createdAt) + 48 * 60 * 60 * 1_000,

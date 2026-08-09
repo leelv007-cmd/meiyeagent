@@ -18,8 +18,14 @@ import {
  * semantic stages without reconstructing browser selections from intent text.
  */
 export interface HarnessCreationAdmissionPort {
-	preparePendingConfirmation(input: HarnessTaskRequest): Promise<{ workflowId: string }>;
-	dispatchPrepared(input: HarnessTaskRequest): Promise<{ workflowId: string }>;
+	preparePendingConfirmation(input: HarnessTaskRequest): Promise<{
+		workflowId: string;
+		executionConfirmationRequestId?: string;
+	}>;
+	dispatchPrepared(input: HarnessTaskRequest): Promise<{
+		workflowId: string;
+		executionConfirmationRequestId?: string;
+	}>;
 }
 
 export class CreationStagePort implements CreationSubmissionHarnessStarter {
@@ -51,6 +57,11 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 		if (started.workflowId !== attemptId) {
 			throw new Error("Harness admission must preserve the Coordinator task ID.");
 		}
+		return {
+			...(started.executionConfirmationRequestId
+				? { executionConfirmationRequestId: started.executionConfirmationRequestId }
+				: {}),
+		};
 	}
 
 	async preparePendingConfirmation(submission: CreationSubmissionRecord) {

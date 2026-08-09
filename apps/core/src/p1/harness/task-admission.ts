@@ -111,6 +111,8 @@ export interface HarnessWorkflowInput {
   pendingExecutionPlanSnapshot?: PendingExecutionPlanSnapshot;
   /** Deterministic request identity for the currently frozen confirmation attempt. */
   executionConfirmationRequestId?: string;
+  /** Exact credit operation owned by the current confirmation attempt. */
+  executionConfirmationReservationIdempotencyKey?: string;
   /** Credits durably held for the exact pending confirmation attempt. */
   executionConfirmationReservedCredits?: number;
   /** Merchant-visible stale fields that caused the current re-confirmation. */
@@ -604,7 +606,16 @@ export class HarnessTaskAdmissionService {
       workflowId: input.taskId,
       request,
     });
-    return { workflowId: handle.workflowId, replayed: false as const };
+    return {
+      workflowId: handle.workflowId,
+      replayed: false as const,
+      ...(request.executionConfirmationRequestId
+        ? {
+            executionConfirmationRequestId:
+              request.executionConfirmationRequestId,
+          }
+        : {}),
+    };
   }
 
   private preparedExisting(
@@ -661,6 +672,8 @@ export class HarnessTaskAdmissionService {
       actorId: request.actorId,
     });
     request.executionConfirmationRequestId = created.stored.request.requestId;
+    request.executionConfirmationReservationIdempotencyKey =
+      created.stored.request.reservationIdempotencyKey;
     request.executionConfirmationReservedCredits = created.reservedCredits;
   }
 
@@ -773,7 +786,16 @@ export class HarnessTaskAdmissionService {
       request: frozenRequest,
       ...(claim.runtimeId ? { runtimeId: claim.runtimeId } : {}),
     });
-    return { workflowId: handle.workflowId, replayed: true as const };
+    return {
+      workflowId: handle.workflowId,
+      replayed: true as const,
+      ...(frozenRequest.executionConfirmationRequestId
+        ? {
+            executionConfirmationRequestId:
+              frozenRequest.executionConfirmationRequestId,
+          }
+        : {}),
+    };
   }
 
   private async recordExecutionAssemblyAudit(
@@ -1178,6 +1200,10 @@ function normalizeRequest(
     executionPlanSnapshot,
     executionConfirmationContext,
     sourceTaskId,
+    executionConfirmationRequestId,
+    executionConfirmationReservationIdempotencyKey,
+    executionConfirmationReservedCredits,
+    executionConfirmationDiffFields,
     pendingExecutionPlanSnapshot,
     executionPlanLiveFacts: _executionPlanLiveFacts,
     executionPlanFreeze: _executionPlanFreeze,
@@ -1205,6 +1231,16 @@ function normalizeRequest(
       ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
       ...(pendingExecutionPlanSnapshot ? { pendingExecutionPlanSnapshot } : {}),
       ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
+      ...(executionConfirmationRequestId ? { executionConfirmationRequestId } : {}),
+      ...(executionConfirmationReservationIdempotencyKey
+        ? { executionConfirmationReservationIdempotencyKey }
+        : {}),
+      ...(executionConfirmationReservedCredits
+        ? { executionConfirmationReservedCredits }
+        : {}),
+      ...(executionConfirmationDiffFields
+        ? { executionConfirmationDiffFields }
+        : {}),
     };
   }
   return {
@@ -1222,6 +1258,16 @@ function normalizeRequest(
     ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
     ...(pendingExecutionPlanSnapshot ? { pendingExecutionPlanSnapshot } : {}),
     ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
+    ...(executionConfirmationRequestId ? { executionConfirmationRequestId } : {}),
+    ...(executionConfirmationReservationIdempotencyKey
+      ? { executionConfirmationReservationIdempotencyKey }
+      : {}),
+    ...(executionConfirmationReservedCredits
+      ? { executionConfirmationReservedCredits }
+      : {}),
+    ...(executionConfirmationDiffFields
+      ? { executionConfirmationDiffFields }
+      : {}),
   };
 }
 

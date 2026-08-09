@@ -142,6 +142,125 @@ test('createRequest concurrent attempts never over-debit (A3 memory seam)', asyn
   assert.equal((await ledger.project('ws-1', CREATED)).usedCredits, 3);
 });
 
+test('successor confirmation atomically replaces the prior hold instead of double-debiting', async () => {
+  const { service, ledger } = makeService(10);
+  await service.createRequest(
+    baseCreate({
+      requestId: 'req-reprice-r1',
+      reservationIdempotencyKey: 'reserve-reprice-r1',
+      creditCost: 6,
+    }),
+  );
+  await service.decide({
+    decisionId: 'decision-reprice-r1',
+    requestId: 'req-reprice-r1',
+    workspaceId: 'ws-1',
+    actorId: 'merchant-1',
+    decision: 'confirmed',
+    decidedAt: '2026-08-08T12:10:00.000Z',
+  });
+
+  const successor = await service.createRequest(
+    baseCreate({
+      requestId: 'req-reprice-r2',
+      planRevision: 2,
+      snapshotHash: 'snap-hash-2',
+      quoteRef: { id: 'quote-1', revision: 2 },
+      reservationIdempotencyKey: 'reserve-reprice-r2',
+      predecessorRequestId: 'req-reprice-r1',
+      replacesReservationIdempotencyKey: 'reserve-reprice-r1',
+      creditCost: 7,
+    }),
+  );
+  const replay = await service.createRequest(
+    baseCreate({
+      requestId: 'req-reprice-r2',
+      planRevision: 2,
+      snapshotHash: 'snap-hash-2',
+      quoteRef: { id: 'quote-1', revision: 2 },
+      reservationIdempotencyKey: 'reserve-reprice-r2',
+      predecessorRequestId: 'req-reprice-r1',
+      replacesReservationIdempotencyKey: 'reserve-reprice-r1',
+      creditCost: 7,
+    }),
+  );
+
+  assert.equal(successor.reservedCredits, 7);
+  assert.equal(replay.stored.request.requestId, 'req-reprice-r2');
+  assert.equal(
+    successor.stored.request.replacesReservationIdempotencyKey,
+    'reserve-reprice-r1',
+  );
+  const balance = ledger.project('ws-1', CREATED);
+  assert.equal(balance.availableCredits, 3);
+  assert.equal(balance.usedCredits, 13);
+  assert.equal(balance.refundedCredits, 6);
+
+  await assert.rejects(
+    () =>
+      service.createRequest(
+        baseCreate({
+          requestId: 'req-reprice-r2-duplicate',
+          planRevision: 2,
+          snapshotHash: 'snap-hash-2-duplicate',
+          quoteRef: { id: 'quote-1', revision: 2 },
+          reservationIdempotencyKey: 'reserve-reprice-r2-duplicate',
+          predecessorRequestId: 'req-reprice-r1',
+          replacesReservationIdempotencyKey: 'reserve-reprice-r1',
+          creditCost: 7,
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof ExecutionConfirmationError &&
+      error.code === 'IDEMPOTENCY_CONFLICT',
+  );
+  assert.deepEqual(ledger.project('ws-1', CREATED), balance);
+});
+
+test('successor replacement rejects a confirmed hold from another plan or quote', async () => {
+  for (const lineage of [
+    { planId: 'plan-other', quoteRef: { id: 'quote-1', revision: 2 } },
+    { planId: 'plan-1', quoteRef: { id: 'quote-other', revision: 2 } },
+  ]) {
+    const { service, ledger } = makeService(10);
+    await service.createRequest(
+      baseCreate({
+        requestId: 'req-lineage-r1',
+        reservationIdempotencyKey: 'reserve-lineage-r1',
+        creditCost: 6,
+      }),
+    );
+    await service.decide({
+      decisionId: 'decision-lineage-r1',
+      requestId: 'req-lineage-r1',
+      workspaceId: 'ws-1',
+      actorId: 'merchant-1',
+      decision: 'confirmed',
+      decidedAt: '2026-08-08T12:10:00.000Z',
+    });
+
+    await assert.rejects(
+      () =>
+        service.createRequest(
+          baseCreate({
+            ...lineage,
+            requestId: 'req-lineage-r2',
+            planRevision: 2,
+            snapshotHash: 'snap-lineage-r2',
+            reservationIdempotencyKey: 'reserve-lineage-r2',
+            predecessorRequestId: 'req-lineage-r1',
+            replacesReservationIdempotencyKey: 'reserve-lineage-r1',
+            creditCost: 7,
+          }),
+        ),
+      (error: unknown) =>
+        error instanceof ExecutionConfirmationError &&
+        error.code === 'INVALID_STATE',
+    );
+    assert.equal(ledger.project('ws-1', CREATED).availableCredits, 4);
+  }
+});
+
 test('createRequest compensates orphan hold when row insert fails (non-tx seam)', async () => {
   const ledger = new MemoryCreditLedger();
   ledger.grant({

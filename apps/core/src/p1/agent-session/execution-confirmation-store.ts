@@ -78,6 +78,10 @@ export interface ExecutionConfirmationRequestStore {
     requestId: string,
     forUpdate?: boolean,
   ): Promise<StoredConfirmationRequest | null>;
+  findSuccessorByPredecessorInTransaction(
+    client: ConfirmationTransactionClient,
+    predecessorRequestId: string,
+  ): Promise<StoredConfirmationRequest | null>;
   markOwnedStatusInTransaction(
     client: ConfirmationTransactionClient,
     input: {

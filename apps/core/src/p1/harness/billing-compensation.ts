@@ -5,6 +5,8 @@ export interface HarnessBillingSettlementInput {
   taskId: string;
   quoteId: string;
   quoteRevision: string;
+  /** Exact credit reservation accepted by the confirmed authority. */
+  creditUsageOperationId?: string;
   trustedUsage?: TrustedUsageEvidence;
   /** Platform failures and expired holds always refund merchant credits. */
   forceCreditRefund?: boolean;

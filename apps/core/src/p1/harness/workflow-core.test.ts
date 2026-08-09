@@ -118,6 +118,39 @@ test('paid decision admits the snapshot before Make: zero nameIntent/compileBrie
       decidedAt: '2026-08-09T00:00:00.000Z',
     });
   };
+  let liveReads = 0;
+  let refreshCalls = 0;
+  stages.resolveExecutionPlanLiveFacts = async () => {
+    liveReads += 1;
+    return {
+      quoteRevision: 2,
+      rightsRevisionRefs: ['rights-2'],
+      factRevisionRefs: ['fact-2'],
+    };
+  };
+  stages.refreshExecutionPlanLiveBindings = async (input) => {
+    refreshCalls += 1;
+    return {
+      revision: {
+        revision: input.expectedRevision + 1,
+        quoteRef: input.quoteRef,
+        boundRevisions: { rightsRevisionIds: input.rightsRevisionRefs },
+      },
+      executionPlan: content.executionPlan,
+      factRevisionRefs: input.factRevisionRefs,
+    } as never;
+  };
+  stages.putExecutionConfirmationAuthority = async () => ({}) as never;
+  stages.createExecutionConfirmationRequest = async () =>
+    ({
+      stored: {
+        request: {
+          requestId: 'confirmation-successor-workflow-core',
+          reservationIdempotencyKey: 'reserve-successor-workflow-core',
+        },
+      },
+      reservedCredits: 6,
+    }) as never;
   stages.admitExecutionPlanSnapshot = async ({ snapshot }) => snapshot;
   // injectContext must match freeze ref for validator soft path (different bundle id OK)
   stages.injectContext = async () => ({
@@ -155,6 +188,7 @@ test('paid decision admits the snapshot before Make: zero nameIntent/compileBrie
     policyReferences: { sourceRefs: [], rightsRefs: [], identityRefs: [] },
   });
 
+  let effectiveRequest: HarnessWorkflowInput | undefined;
   await runHarnessWorkflow(
     'task-snap',
     {
@@ -180,9 +214,20 @@ test('paid decision admits the snapshot before Make: zero nameIntent/compileBrie
         traces.push({ stage: input.stage, payload: input.payload });
       },
     },
+    {
+      onActiveRequest(request) {
+        effectiveRequest = request;
+      },
+    },
   );
 
   assert.equal(nameIntentCalls, 0, 'snapshot path must not re-call nameIntent LLM');
+  assert.equal(liveReads, 2);
+  assert.equal(refreshCalls, 1);
+  assert.equal(
+    effectiveRequest?.executionConfirmationReservationIdempotencyKey,
+    'reserve-successor-workflow-core',
+  );
   assert.equal(
     compileBriefCalls,
     0,

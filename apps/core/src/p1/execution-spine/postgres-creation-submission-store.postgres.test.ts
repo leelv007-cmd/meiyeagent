@@ -955,6 +955,10 @@ test(
         {
           async start(record) {
             recoveredStarts.push(record.task.id);
+            return {
+              executionConfirmationRequestId:
+                'confirmation:authority-digest-recovered',
+            };
           },
         },
         {
@@ -977,6 +981,18 @@ test(
         started: 1,
       });
       assert.deepEqual(recoveredStarts, [submission.task.id]);
+      const completed = await store.readReceipt({
+        idempotencyKey: "submit-copy-1",
+        payloadHash: "payload-a",
+        workspaceId,
+      });
+      assert.equal(completed.kind, "existing");
+      if (completed.kind === "existing") {
+        assert.deepEqual(completed.submission.confirmationDispatch, {
+          requestId: 'confirmation:authority-digest-recovered',
+          state: "dispatched",
+        });
+      }
       await store.releaseHarnessStart({
         leaseId: leaseOne.leaseId,
         submissionId: submission.snapshot.id,
@@ -1078,7 +1094,10 @@ test(
         credits: 4,
         units: [],
       };
-      submission.executionPlanFreeze = recoveryExecutionPlanFreeze(submission);
+      submission.executionPlanFreeze = recoveryExecutionPlanFreeze(
+        submission,
+        "merchant_confirmed",
+      );
       submission.confirmationDispatch = {
         requestId: `confirmation:${submission.task.id}`,
         state: "pending",
@@ -1161,6 +1180,7 @@ test(
       };
       boundarySubmission.executionPlanFreeze = recoveryExecutionPlanFreeze(
         boundarySubmission,
+        "merchant_confirmed",
       );
       boundarySubmission.confirmationDispatch = {
         requestId: `confirmation:${boundarySubmission.task.id}`,
@@ -2245,6 +2265,7 @@ test(
 
 function recoveryExecutionPlanFreeze(
   submission: CreationSubmissionRecord,
+  approvalBasis: 'policy_exempt_copy' | 'merchant_confirmed' = 'policy_exempt_copy',
 ): NonNullable<CreationSubmissionRecord['executionPlanFreeze']> {
   return {
     planId: `plan-${submission.task.id}` as never,
@@ -2267,7 +2288,7 @@ function recoveryExecutionPlanFreeze(
     quoteRef: submission.snapshot.quote,
     rightsRevisionRefs: [submission.snapshot.rights.revision],
     harnessReleaseId: 'release-recovery-1' as never,
-    approvalBasis: 'policy_exempt_copy',
+    approvalBasis,
   };
 }
 

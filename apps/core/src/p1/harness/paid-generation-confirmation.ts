@@ -23,6 +23,10 @@ import type {
   ConfirmationAuthorityStore,
 } from '../agent-session/execution-confirmation-authority-store.js';
 import type { CreateExecutionConfirmationResult } from '../agent-session/execution-confirmation-service.js';
+import type {
+  RefreshPlanLiveBindingsInput,
+  RefreshPlanLiveBindingsResult,
+} from '../agent-session/plan-compiler.js';
 import { executionConfirmationRequestId } from './execution-confirmation-id.js';
 import {
   buildExecutionPlanSnapshot,
@@ -113,6 +117,7 @@ export type ConfirmPaidGenerationProgressEvent = {
 export type ConfirmPaidGenerationExecutionInput = {
   workflowId: string;
   request: HarnessWorkflowInput;
+  onActiveRequest?: (request: HarnessWorkflowInput) => void;
   reportProgress: (
     event: ConfirmPaidGenerationProgressEvent,
   ) => Promise<void>;
@@ -145,6 +150,9 @@ export type ConfirmPaidGenerationExecutionInput = {
     request: HarnessWorkflowInput;
     snapshot: ExecutionPlanSnapshot;
   }) => Promise<SnapshotLiveFacts | undefined>;
+  refreshExecutionPlanLiveBindings?: (
+    input: RefreshPlanLiveBindingsInput,
+  ) => Promise<RefreshPlanLiveBindingsResult>;
   createExecutionConfirmationRequest?: (
     input: CreateExecutionConfirmationAuthorityInput,
   ) => Promise<CreateExecutionConfirmationResult>;
@@ -226,6 +234,7 @@ export async function confirmPaidGenerationExecution(
       const confirmed = await admitConfirmedExecutionPlan(input, request);
       if (confirmed.executionPlanSnapshot) return confirmed;
       request = confirmed;
+      input.onActiveRequest?.(request);
       continue;
     }
     request = await input.applyCurrentTaskDecision(
@@ -233,6 +242,7 @@ export async function confirmPaidGenerationExecution(
       request,
       command,
     );
+    input.onActiveRequest?.(request);
   }
 }
 
@@ -281,9 +291,14 @@ async function admitConfirmedExecutionPlan(
       if (live.rightsRevoked === true) {
         throw new Error('Paid execution rights were revoked after confirmation.');
       }
-      const refreshed = freezeExecutionPlanContent({
-        ...pending.content,
-        planRevision: pending.content.planRevision + 1,
+      if (!input.refreshExecutionPlanLiveBindings) {
+        throw new Error(
+          'Paid execution cannot re-confirm drift without a durable plan revision writer.',
+        );
+      }
+      const refreshedPlan = await input.refreshExecutionPlanLiveBindings({
+        planId: pending.content.planId,
+        expectedRevision: pending.content.planRevision,
         quoteRef:
           live.quoteRevision === undefined
             ? pending.content.quoteRef
@@ -296,6 +311,16 @@ async function admitConfirmedExecutionPlan(
           live.factRevisionRefs === undefined
             ? pending.content.factRevisionRefs
             : [...live.factRevisionRefs],
+        now: decision.decidedAt,
+      });
+      const refreshed = freezeExecutionPlanContent({
+        ...pending.content,
+        planRevision: refreshedPlan.revision.revision,
+        quoteRef: refreshedPlan.revision.quoteRef,
+        rightsRevisionRefs: [
+          ...refreshedPlan.revision.boundRevisions.rightsRevisionIds,
+        ],
+        factRevisionRefs: [...refreshedPlan.factRevisionRefs],
       });
       if (refreshed.snapshotHash === pending.snapshotHash) {
         throw new Error(
@@ -323,6 +348,7 @@ async function admitConfirmedExecutionPlan(
         factRevisionRefs: [...refreshed.content.factRevisionRefs],
         frozenAt: decision.decidedAt,
         reservationAttempt: 'successor',
+        predecessorRequestId: requestId,
         ...(request.executionConfirmationContext
           ? {
               executionConfirmationContext:
@@ -341,6 +367,8 @@ async function admitConfirmedExecutionPlan(
         ...request,
         pendingExecutionPlanSnapshot: refreshed,
         executionConfirmationRequestId: reconfirmationRequestId,
+        executionConfirmationReservationIdempotencyKey:
+          reconfirmation.stored.request.reservationIdempotencyKey,
         executionConfirmationReservedCredits: reconfirmation.reservedCredits,
         executionConfirmationDiffFields: Object.keys(staleness.diff),
       };

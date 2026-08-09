@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { MemoryCreditLedger } from '../credit-billing/credit-ledger.js';
+import { executionConfirmationAuthorityRequestId } from '../harness/execution-confirmation-id.js';
 import {
   ConfirmationAuthorityAssembler,
   type ConfirmationAuthorityPlanReader,
@@ -94,7 +95,14 @@ test('authority assembler freezes plan, quote, rights, facts and clock from serv
     approvalScope: 'single_work',
     status: 'pending',
   });
-  assert.match(result.stored.request.requestId, /^confirmation:[a-f0-9]{40}$/u);
+  assert.equal(
+    result.stored.request.requestId,
+    executionConfirmationAuthorityRequestId({
+      workflowId: 'workflow-1',
+      planRevision: 7,
+      snapshotHash: 'hash-authority',
+    }),
+  );
   assert.match(
     result.stored.request.reservationIdempotencyKey,
     /^consume:confirmation:[a-f0-9]{40}$/u,

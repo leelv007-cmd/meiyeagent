@@ -195,18 +195,33 @@ test('confirm gate fails closed when a pending paid freeze has no domain decisio
 
 test('post-confirm live quote drift creates a diff-bound request and requires re-confirmation', async () => {
   const request = paidRequest({ credits: 7, plan: true });
+  request.executionConfirmationRequestId = 'confirmation-authority-r1';
+  request.executionConfirmationReservationIdempotencyKey =
+    'consume:task:wf-drift';
   const questions: string[] = [];
   const created: Array<{ requestId: string; quoteRevision: number | string }> = [];
   const admissionWorkflowIds: string[] = [];
   let authoritativeSnapshotHash = '';
   let liveReads = 0;
+  let activeReservationId: string | undefined;
   const out = await confirmPaidGenerationExecution({
     workflowId: 'wf-drift',
     request,
     reportProgress: async () => undefined,
     awaitResolvedDecision: async (question) => {
       questions.push(`${question.questionId}:${question.question}`);
+      if (questions.length === 2) {
+        assert.equal(
+          activeReservationId,
+          'consume:confirmation:successor-r2',
+          'successor settlement authority must publish before the second decision wait',
+        );
+      }
       return approve().awaitResolvedDecision(question);
+    },
+    onActiveRequest(activeRequest) {
+      activeReservationId =
+        activeRequest.executionConfirmationReservationIdempotencyKey;
     },
     applyCurrentTaskDecision: async (_wf, req) => req,
     getExecutionConfirmationDecision: async (_workspaceId, requestId) =>
@@ -224,8 +239,24 @@ test('post-confirm live quote drift creates a diff-bound request and requires re
         quoteRevision: liveReads === 1 ? 'r2' : snapshot.quoteRef.revision,
       };
     },
+    refreshExecutionPlanLiveBindings: async (input) => ({
+      revision: {
+        planId: input.planId,
+        revision: input.expectedRevision + 1,
+        quoteRef: input.quoteRef,
+        boundRevisions: {
+          rightsRevisionIds: [...input.rightsRevisionRefs],
+        },
+      },
+      executionPlan: request.pendingExecutionPlanSnapshot!.content.executionPlan,
+      factRevisionRefs: [...input.factRevisionRefs],
+    }) as never,
     putExecutionConfirmationAuthority: async (input) => {
       authoritativeSnapshotHash = input.snapshotHash;
+      assert.equal(
+        input.predecessorRequestId,
+        'confirmation-authority-r1',
+      );
       created.push({
         quoteRevision: input.quoteRef.revision,
         requestId: `confirmation:wf-drift:${input.snapshotHash}`,
@@ -235,6 +266,7 @@ test('post-confirm live quote drift creates a diff-bound request and requires re
     createExecutionConfirmationRequest: async () => {
       return confirmationResult(
         `confirmation:wf-drift:${authoritativeSnapshotHash}`,
+        'consume:confirmation:successor-r2',
       );
     },
     admitExecutionPlanSnapshot: async ({ workflowId, snapshot }) => {
@@ -263,11 +295,18 @@ test('post-confirm live quote drift creates a diff-bound request and requires re
     out.executionPlanSnapshot?.confirmationDecisionRef,
     `decision-${created[0]!.requestId}`,
   );
+  assert.equal(
+    out.executionConfirmationReservationIdempotencyKey,
+    'consume:confirmation:successor-r2',
+  );
 });
 
-function confirmationResult(requestId: string): CreateExecutionConfirmationResult {
+function confirmationResult(
+  requestId: string,
+  reservationIdempotencyKey = 'consume:task:test',
+): CreateExecutionConfirmationResult {
   return {
-    stored: { request: { requestId } },
+    stored: { request: { requestId, reservationIdempotencyKey } },
   } as CreateExecutionConfirmationResult;
 }
 

@@ -111,7 +111,9 @@ export class HarnessProductBillingSettlementExecutor
         taskId: input.taskId,
       });
       const usageOperationId =
-        submission?.usageReservation.creditUsageOperationId ?? creditUsageOperationId(input.taskId);
+        input.creditUsageOperationId ??
+        submission?.usageReservation.creditUsageOperationId ??
+        creditUsageOperationId(input.taskId);
       await this.credits.refundUsageOperation({
         workspaceId: input.workspaceId,
         usageOperationId,

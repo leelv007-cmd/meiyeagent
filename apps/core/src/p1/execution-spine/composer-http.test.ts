@@ -1028,6 +1028,9 @@ class RecordingHarnessStarter implements CreationSubmissionHarnessStarter {
 
 	async start(input: Parameters<CreationSubmissionHarnessStarter["start"]>[0]) {
 		this.starts.push(structuredClone(input));
+		return {
+			executionConfirmationRequestId: `confirmation:authority:${input.task.id}`,
+		};
 	}
 
 	async preparePendingConfirmation(input: CreationSubmissionRecord) {
