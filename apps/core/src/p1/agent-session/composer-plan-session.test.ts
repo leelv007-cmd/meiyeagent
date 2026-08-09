@@ -365,6 +365,47 @@ test('V31-18 P0-1: a failed planning attempt leaves the Run resumable', async ()
   );
 });
 
+test('V31-18 P0-1: a crash-recovered submission rehydrates the compile freeze', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  let compileCalls = 0;
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    compilePlan: (input) => {
+      compileCalls += 1;
+      return compiler.compile(input);
+    },
+    adjustPlan: (input) => compiler.adjust(input),
+    retrieveConfirmedExperience: noConfirmedExperience,
+  });
+
+  // Attempt 1 compiles and freezes normally.
+  const first = copyRecord('task-refreeze', '写一条周末护理文案');
+  await coordinator.prepare({ submission: first });
+  const compiledFreeze = first.executionPlanFreeze;
+  assert.ok(compiledFreeze);
+
+  // Attempt 2 is what production actually replays: `submit()`'s existing-receipt
+  // branch and `recoverPendingStarts()` both rebuild the record from
+  // `execution_spine.creation_submissions`, and `storedSubmission` has no
+  // `executionPlanFreeze` key — the freeze only ever lived in memory. A retry
+  // must therefore be a FRESH record, not the object attempt 1 mutated.
+  const replayed = copyRecord('task-refreeze', '写一条周末护理文案');
+  assert.equal(replayed.executionPlanFreeze, undefined);
+  await coordinator.prepare({ submission: replayed });
+
+  // Compile is correctly skipped (the plan is durable and immutable)...
+  assert.equal(compileCalls, 1);
+  // ...but skipping it must not drop the freeze: without it, task-admission
+  // takes the legacy five-stage branch (`task-admission.ts:427` requires
+  // `input.executionPlanFreeze`) and the recovered paid submission silently
+  // loses its ExecutionPlanSnapshot.
+  assert.deepEqual(replayed.executionPlanFreeze, compiledFreeze);
+});
+
 test('server pre-plan retrieval runs with a kernel that makes zero tool calls', async () => {
   const sessions = new MemoryAgentSessionStore();
   const plans = new MemoryMarketingPlanStore();

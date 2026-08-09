@@ -503,6 +503,14 @@ export class CreationSubmissionCoordinator {
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();
 		}
+		// V31-18 P0-2: a correction is the path on which a merchant checks whether
+		// the preference they confirmed actually took hold, so it must prepare its
+		// plan exactly like a first submission. Claiming and starting Make directly
+		// skipped confirmed-experience retrieval and its MemoryInjectionReceipt on
+		// the one surface that tests recurrence. Confirmed preferences are
+		// workspace-scoped (`agent-memory-platform.ts:801`), so a fresh Thread for
+		// the adjustment task still retrieves them.
+		await this.prepareAgentPlan(claimed.submission);
 		await this.startHarness(claimed.submission);
 		return submissionResponse(
 			claimed.submission,
@@ -654,6 +662,14 @@ export class CreationSubmissionCoordinator {
 		let started = 0;
 		for (const candidate of recoverable) {
 			try {
+				// V31-18 P0-1: recovery must re-enter plan preparation, not go
+				// around it. `listRecoverableHarnessStarts` rebuilds the record
+				// from storage and `executionPlanFreeze` never persisted, so
+				// starting Make directly dropped the ExecutionPlanSnapshot onto the
+				// legacy branch and skipped confirmed-memory retrieval entirely.
+				// `prepare()` is idempotent: it reuses the deterministic Thread/Run
+				// and rehydrates the freeze from the durable compiled plan.
+				await this.prepareAgentPlan(candidate.submission);
 				if (await this.startHarness(candidate.submission)) started += 1;
 			} catch {
 				failed += 1;

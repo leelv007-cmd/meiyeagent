@@ -213,6 +213,25 @@ export class ComposerPlanSessionCoordinator
         memoryContext,
         now,
       });
+    } else if (latest) {
+      // V31-18 P0-1 (出口证明, second half): skipping compile must not skip the
+      // freeze. `executionPlanFreeze` is in-memory only — `storedSubmission`
+      // has no key for it — so every replay that rebuilds the record from
+      // `execution_spine.creation_submissions` (`submit()`'s existing-receipt
+      // branch and `recoverPendingStarts()`) arrives with it unset. Leaving it
+      // unset made the *recovered* submission fall through
+      // `task-admission.ts:427` onto the legacy five-stage branch: the retry
+      // stopped being bricked but silently lost its ExecutionPlanSnapshot. The
+      // compiled plan is durable and immutable, so rebuild the identical freeze
+      // from it instead of recompiling.
+      input.submission.executionPlanFreeze = compileFinalizeExecutionPlanFreeze(
+        {
+          result: latest,
+          contextBundleId: submission.snapshot.briefContext.id,
+          contextRevision: String(submission.snapshot.briefContext.revision),
+          approvalBasis: approvalBasisForSubmission(submission.snapshot.lens),
+        }
+      );
     }
 
     const currentRun = await this.sessions.getRun({ resourceId, runId });
