@@ -21,6 +21,19 @@ function clonePayload(row: PayloadRow | undefined): unknown | null {
   return row ? structuredClone(row.payload) : null;
 }
 
+function hasSameInjectionBusinessIdentity(
+  left: MemoryInjectionReceipt,
+  right: MemoryInjectionReceipt,
+): boolean {
+  return (
+    left.schemaVersion === right.schemaVersion &&
+    left.taskId === right.taskId &&
+    left.runId === right.runId &&
+    left.harnessReleaseId === right.harnessReleaseId &&
+    isDeepStrictEqual(left.entries, right.entries)
+  );
+}
+
 export class PostgresMemoryInjectionReceiptStore
   implements MemoryInjectionReceiptStore, PostgresSchemaMigrator
 {
@@ -76,13 +89,17 @@ export class PostgresMemoryInjectionReceiptStore
           receipt.injectedAt,
         ],
       );
-      const stored = inserted.rows[0]?.payload ?? (
+      const storedPayload = inserted.rows[0]?.payload ?? (
         await client.query<PayloadRow>(
           `SELECT payload FROM p1_memory_injection_receipts WHERE task_id = $1`,
           [receipt.taskId],
         )
       ).rows[0]?.payload;
-      if (!stored || !isDeepStrictEqual(stored, receipt)) {
+      const stored = memoryInjectionReceiptSchema.safeParse(storedPayload);
+      if (
+        !stored.success ||
+        !hasSameInjectionBusinessIdentity(stored.data, receipt)
+      ) {
         throw new ReuseMemoryError(
           'CONFLICT',
           `Injection receipt for task ${receipt.taskId} already exists with another payload.`,
@@ -96,20 +113,27 @@ export class PostgresMemoryInjectionReceiptStore
            created_at
          ) VALUES ($1, $2::jsonb, 'ready', $3::timestamptz)
          ON CONFLICT (task_id) DO NOTHING`,
-        [receipt.taskId, JSON.stringify(receipt), receipt.injectedAt],
+        [
+          receipt.taskId,
+          JSON.stringify(stored.data),
+          stored.data.injectedAt,
+        ],
       );
       const outbox = await client.query<PayloadRow>(
         `SELECT payload FROM p1_memory_injection_receipt_outbox WHERE task_id = $1`,
         [receipt.taskId],
       );
-      if (!outbox.rows[0] || !isDeepStrictEqual(outbox.rows[0].payload, receipt)) {
+      if (
+        !outbox.rows[0] ||
+        !isDeepStrictEqual(outbox.rows[0].payload, stored.data)
+      ) {
         throw new ReuseMemoryError(
           'CONFLICT',
           `Injection receipt outbox for task ${receipt.taskId} is missing or divergent.`,
         );
       }
       await client.query('COMMIT');
-      return memoryInjectionReceiptSchema.parse(stored);
+      return stored.data;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;

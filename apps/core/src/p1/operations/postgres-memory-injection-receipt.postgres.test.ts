@@ -9,7 +9,10 @@ import test from 'node:test';
 
 import { Pool } from 'pg';
 
-import { AgentMemoryPlatform } from './agent-memory-platform.js';
+import {
+  AgentMemoryPlatform,
+  type MemoryInjectionReceiptStore,
+} from './agent-memory-platform.js';
 import { PostgresMemoryInjectionReceiptStore } from './postgres-memory-injection-receipt.js';
 import {
   MemoryReuseMemoryRepository,
@@ -39,6 +42,7 @@ test(
 
     const taskId = `task-inj-${randomUUID()}`;
     const retryTaskId = `task-inj-retry-${randomUUID()}`;
+    const commitLostTaskId = `task-inj-commit-lost-${randomUUID()}`;
     const runId = `run-inj-${randomUUID()}`;
     const releaseId = `release-inj-${randomUUID()}`;
     const triggerSuffix = randomUUID().replaceAll('-', '');
@@ -100,6 +104,96 @@ test(
         injectedAt: now,
       });
       assert.deepEqual(again, receipt);
+
+      // The transaction committed, but the caller lost the response. A retry
+      // after the process clock advances must return the first durable receipt.
+      let loseFirstCommittedResponse = true;
+      let retryClock = now;
+      const commitLostStore: MemoryInjectionReceiptStore = {
+        async save(input) {
+          const saved = await store.save(input);
+          if (loseFirstCommittedResponse) {
+            loseFirstCommittedResponse = false;
+            throw new Error('response lost after commit');
+          }
+          return saved;
+        },
+        getByTask: (id) => store.getByTask(id),
+        getByRun: (id) => store.getByRun(id),
+      };
+      const commitLostPlatform = new AgentMemoryPlatform(
+        reuse,
+        commitLostStore,
+        undefined,
+        () => retryClock,
+      );
+      await assert.rejects(
+        commitLostPlatform.recordInjectionReceipt({
+          taskId: commitLostTaskId,
+          runId: `${runId}-commit-lost`,
+          harnessReleaseId: releaseId,
+          entries,
+        }),
+        /response lost after commit/u,
+      );
+      const firstCommitted = await store.getByTask(commitLostTaskId);
+      assert.equal(firstCommitted?.injectedAt, now);
+      const firstCommittedOutbox = await pool.query<{
+        payload: unknown;
+        row_version: string;
+      }>(
+        `SELECT payload, xmin::text AS row_version
+         FROM p1_memory_injection_receipt_outbox
+         WHERE task_id = $1`,
+        [commitLostTaskId],
+      );
+      assert.deepEqual(firstCommittedOutbox.rows[0]?.payload, firstCommitted);
+      retryClock = '2026-08-08T12:05:00.000Z';
+      const recovered = await commitLostPlatform.recordInjectionReceipt({
+        taskId: commitLostTaskId,
+        runId: `${runId}-commit-lost`,
+        harnessReleaseId: releaseId,
+        entries,
+      });
+      assert.deepEqual(recovered, firstCommitted);
+      const recoveredOutbox = await pool.query<{
+        payload: unknown;
+        row_version: string;
+      }>(
+        `SELECT payload, xmin::text AS row_version
+         FROM p1_memory_injection_receipt_outbox
+         WHERE task_id = $1`,
+        [commitLostTaskId],
+      );
+      assert.deepEqual(recoveredOutbox.rows[0], firstCommittedOutbox.rows[0]);
+
+      for (const divergentEntries of [
+        entries.map((entry, index) =>
+          index === 0
+            ? {
+                ...entry,
+                memoryId: `${entry.memoryId}-other` as typeof entry.memoryId,
+              }
+            : entry,
+        ),
+        entries.map((entry, index) =>
+          index === 0 ? { ...entry, revision: entry.revision + 1 } : entry,
+        ),
+        entries.map((entry, index) =>
+          index === 0 ? { ...entry, statement: `${entry.statement}。` } : entry,
+        ),
+      ]) {
+        await assert.rejects(
+          commitLostPlatform.recordInjectionReceipt({
+            taskId: commitLostTaskId,
+            runId: `${runId}-commit-lost`,
+            harnessReleaseId: releaseId,
+            entries: divergentEntries,
+          }),
+          (error: unknown) =>
+            error instanceof ReuseMemoryError && error.code === 'CONFLICT',
+        );
+      }
 
       // Divergent payload conflicts.
       await assert.rejects(
@@ -187,7 +281,7 @@ test(
       await pool.query(`DROP FUNCTION IF EXISTS ${functionName}()`).catch(() => undefined);
       await pool.query(
         `DELETE FROM p1_memory_injection_receipts WHERE task_id = ANY($1::text[])`,
-        [[taskId, retryTaskId]],
+        [[taskId, retryTaskId, commitLostTaskId]],
       );
       await pool.end();
     }

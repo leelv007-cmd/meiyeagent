@@ -166,6 +166,19 @@ export interface MemoryInjectionReceiptStore {
   getByRun(runId: string): Promise<MemoryInjectionReceipt | null>;
 }
 
+function hasSameInjectionBusinessIdentity(
+  left: MemoryInjectionReceipt,
+  right: MemoryInjectionReceipt,
+): boolean {
+  return (
+    left.schemaVersion === right.schemaVersion &&
+    left.taskId === right.taskId &&
+    left.runId === right.runId &&
+    left.harnessReleaseId === right.harnessReleaseId &&
+    JSON.stringify(left.entries) === JSON.stringify(right.entries)
+  );
+}
+
 export class MemoryInjectionReceiptMemoryStore
   implements MemoryInjectionReceiptStore
 {
@@ -176,8 +189,8 @@ export class MemoryInjectionReceiptMemoryStore
     const receipt = memoryInjectionReceiptSchema.parse(input);
     const existing = this.byTask.get(receipt.taskId);
     if (existing) {
-      // Idempotent on exact payload; conflict on divergence.
-      if (JSON.stringify(existing) !== JSON.stringify(receipt)) {
+      // A retry can have a later clock after the first response was lost.
+      if (!hasSameInjectionBusinessIdentity(existing, receipt)) {
         throw new ReuseMemoryError(
           'CONFLICT',
           `Injection receipt for task ${receipt.taskId} already exists with another payload.`,
