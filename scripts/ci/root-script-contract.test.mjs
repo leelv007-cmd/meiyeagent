@@ -9,6 +9,7 @@ import {
   commandHead,
   gateFamilyViolations,
   REMEDIATION,
+  SCRIPT_GATE_FAMILIES,
   splitCommandSegments,
 } from './root-script-contract.mjs';
 
@@ -73,6 +74,10 @@ const OFFENDING_SCRIPTS = {
     'tsx --test tests/v31-artifact-composer-sse-workbench.journey.test.ts',
 };
 
+/** The registered families, as one `node --test` invocation. */
+const healthyGateRun = (extra = '') =>
+  `pnpm -r --if-present test && node --test ${SCRIPT_GATE_FAMILIES.join(' ')}${extra}`;
+
 test('the contract rejects a bare binary root script', () => {
   const violations = bareCommandViolations(OFFENDING_SCRIPTS);
   assert.equal(violations.length, 1);
@@ -86,25 +91,35 @@ test('the contract rejects a command spliced ahead of the gate families', () => 
   assert.match(violations[0], /pnpm run test:journeys/u);
 });
 
-test('the contract rejects a dropped or unregistered gate family', () => {
-  const dropped = gateFamilyViolations(
-    'pnpm -r --if-present test && node --test scripts/dev/*.test.mjs ' +
-      'scripts/uiux/*.test.mjs scripts/recovery/*.test.mjs ' +
-      'scripts/ops/*.test.mjs'
-  );
-  assert.deepEqual(dropped, [
-    'gate families missing from the run: scripts/polotno-retirement-gate.test.mjs',
-  ]);
+test('the contract rejects a dropped gate family', () => {
+  for (const family of SCRIPT_GATE_FAMILIES) {
+    const remaining = SCRIPT_GATE_FAMILIES.filter((entry) => entry !== family);
+    const violations = gateFamilyViolations(
+      `pnpm -r --if-present test && node --test ${remaining.join(' ')}`
+    );
+    assert.deepEqual(violations, [
+      `gate families missing from the run: ${family}`,
+    ]);
+  }
+});
 
-  const smuggled = gateFamilyViolations(
-    'pnpm -r --if-present test && node --test scripts/dev/*.test.mjs ' +
-      'scripts/uiux/*.test.mjs scripts/recovery/*.test.mjs ' +
-      'scripts/ops/*.test.mjs scripts/polotno-retirement-gate.test.mjs ' +
-      'scripts/journeys/*.test.mjs'
+/**
+ * Registering `scripts/ci/*.test.mjs` widened the legitimate set, so this pins
+ * that the check still rejects one more argument on top of the real list — a
+ * legitimate addition must not become cover for an unregistered one.
+ */
+test('the contract rejects an argument smuggled past the registered families', () => {
+  const violations = gateFamilyViolations(
+    healthyGateRun(' scripts/journeys/*.test.mjs')
   );
-  assert.equal(smuggled.length, 1);
-  assert.match(smuggled[0], /unregistered arguments/u);
-  assert.match(smuggled[0], /scripts\/journeys\/\*\.test\.mjs/u);
+  assert.equal(violations.length, 1);
+  assert.match(violations[0], /unregistered arguments/u);
+  assert.match(violations[0], /scripts\/journeys\/\*\.test\.mjs/u);
+  assert.doesNotMatch(violations[0], /scripts\/ci\/\*\.test\.mjs/u);
+});
+
+test('the healthy shape this contract describes is accepted', () => {
+  assert.deepEqual(gateFamilyViolations(healthyGateRun()), []);
 });
 
 test('the contract rejects a gate family hidden behind its own step', () => {

@@ -8,14 +8,43 @@
  *    binary resolves only from whatever the author has installed globally:
  *    green on that machine, `command not found` in CI, and the required
  *    `root-quality` job goes red for a reason the author cannot reproduce.
+ *    Observed: a lane added `test:journeys` = `tsx --test …` while `which tsx`
+ *    resolved to a global `~/.npm-global/bin/tsx`.
  *
  * 2. Masked gate families. The script-gate suites are independent. Chaining a
  *    command ahead of them with `&&` makes every family after the failure point
- *    unreachable, so one broken step silently stops five gates from running
- *    while CI still reports a single red.
+ *    unreachable, so one broken step silently stops several gates from running
+ *    while CI still reports a single red. The same commit did this too: the
+ *    bare-binary script was spliced into the middle of the `&&` chain, putting
+ *    every gate family behind it.
  *
- * The verdicts here are install-independent and PATH-independent on purpose: a
- * gate against machine-dependent breakage must not itself depend on the machine.
+ * Why the verdicts never look at what is installed
+ * ------------------------------------------------
+ * The obvious "improvement" here is to check whether the binary actually
+ * resolves — probe `node_modules/.bin`, or shell out to `which`. Do not do it.
+ * This gate exists because a command resolved on one machine and not another;
+ * a gate whose own verdict depends on the machine reproduces the bug class it
+ * was written to catch. It would pass on the laptop that has `tsx` globally —
+ * precisely the laptop that introduced the bug — and it would fail on a fresh
+ * checkout before `pnpm install`, where nothing is linked and every script
+ * would look broken. Both failures are confusing in the same way the original
+ * bug was confusing: the answer depends on who ran it.
+ *
+ * So the verdict is a closed allowlist of launchers, decided from the manifest
+ * text alone. The `node_modules/.bin` probe in the test enriches the failure
+ * message and never votes.
+ *
+ * Why this is root-only, and why widening it would be wrong
+ * --------------------------------------------------------
+ * The narrow scope is the point, not an oversight. Root is the special case
+ * *because* it declares no devDependencies — a bare binary there can only come
+ * from a machine-global install. Workspace packages (`apps/core`,
+ * `mkfast-template-main`, `packages/*`) declare their own devDependencies and
+ * get a populated `node_modules/.bin`, so a bare binary in their scripts is
+ * legitimately resolvable and correct. Applying this rule to them would report
+ * working scripts as violations, and the usual response to a gate that cries
+ * wolf is to delete the gate. Reach workspace binaries from root the supported
+ * way: `pnpm --filter <pkg> exec <binary>`.
  */
 
 /**
@@ -34,6 +63,13 @@ export const ALLOWED_COMMAND_HEADS = ['bash', 'node', 'pnpm'];
  * `&&` step.
  */
 export const SCRIPT_GATE_FAMILIES = [
+  // The CI gate contracts themselves, including this file's tests. Wired into
+  // root `test` so a developer sees a broken gate locally instead of finding it
+  // in CI, which is the slowest possible place to learn it. `root-quality`
+  // already runs this family as its own step before the gates, so in CI it now
+  // runs twice; that duplicate costs seconds and is not a reason to unregister
+  // it here, because removing it takes the local run away with it.
+  'scripts/ci/*.test.mjs',
   'scripts/dev/*.test.mjs',
   'scripts/uiux/*.test.mjs',
   'scripts/recovery/*.test.mjs',
@@ -130,8 +166,8 @@ export function bareCommandViolations(scripts, describeBin = () => null) {
 }
 
 /**
- * Every way the root `test` script could let one step mask another, so that the
- * five gate families no longer share a single unmaskable run.
+ * Every way the root `test` script could let one step mask another, so that
+ * every registered gate family keeps sharing a single unmaskable run.
  */
 export function gateFamilyViolations(testScript) {
   const segments = splitCommandSegments(testScript ?? '');
