@@ -27,19 +27,20 @@ import {
  * interruptId+revision through to a delivered 成片 with exactly one debit.
  *
  * Three §37.4-D legs cannot be asserted against this HEAD and are declared as
- * `test.fixme` below rather than approximated — each names its blocker so a
- * reader can tell a product gap from a missing test:
- *   1. 分镜 in the *Plan*. `planDeliverableSchema`
+ * `test.fixme` below rather than approximated — each names its blocker and the
+ * ticket that owns the debt (V31-35 / V31-36 / V31-37), so a reader can tell a
+ * product gap from a missing test:
+ *   1. 分镜 in the *Plan* — V31-35. `planDeliverableSchema`
  *      (`packages/contracts/src/agent-domain.ts:444-452`) is `.strict()` and
  *      carries kind/platform/quantity/purpose only, and the five Living Plan
  *      sections (`plan/living-plan-model.ts:17-33`) have no storyboard row.
  *      The shot list only exists downstream, on the worksurface
  *      (`results/video/video-worksurface.tsx:154-164`).
- *   2. 部分失败. Core has no video scene-failure path at all: the only partial
+ *   2. 部分失败 — V31-36. Core has no video scene-failure path at all: the only partial
  *      delivery machinery is note pages (`harness/workflow-core.ts:173,2406`
  *      `unresolvedPageIds`), and the only fixture trigger is the image_text
  *      theme anchor at `model-supply/ai-sdk-runner.ts:1604`.
- *   3. 字幕/封面 assisted fallback. #264 retired the product-owned subtitle
+ *   3. 字幕/封面 assisted fallback — V31-37. #264 retired the product-owned subtitle
  *      track (`results/video/video-worksurface.tsx:117`) and its interaction
  *      test pins `video-subtitle-panel` / `video-cover-panel` as absent. The
  *      surviving per-scene surface belongs to V31-15
@@ -236,7 +237,7 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
   });
 
   test.fixme(
-    '§37.4-D 分镜 is readable in the Plan before confirmation (blocked: planDeliverableSchema carries no scene field)',
+    '§37.4-D 分镜 is readable in the Plan before confirmation (blocked by V31-35: planDeliverableSchema carries no scene field)',
     async () => {
       // Needs a storyboard coordinate on the plan revision contract plus a
       // Living Plan row projecting it. Until then the shot list only exists
@@ -245,7 +246,7 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
   );
 
   test.fixme(
-    '§37.4-D 部分失败 delivers the scenes that succeeded (blocked: Core has no video scene-failure path)',
+    '§37.4-D 部分失败 delivers the scenes that succeeded (blocked by V31-36: Core has no video scene-failure path)',
     async () => {
       // Needs a scene-level partial result in the video harness, mirroring the
       // note path's unresolvedPageIds, before a journey can produce one.
@@ -253,7 +254,7 @@ test.describe('V31-14 paid video execution journey (§37.4-D)', () => {
   );
 
   test.fixme(
-    '§37.4-D 字幕/封面 fall back to assisted (blocked: #264 retired the panels; the artifact surface has no producer)',
+    '§37.4-D 字幕/封面 fall back to assisted (blocked by V31-37: #264 retired the panels; the artifact surface has no producer)',
     async () => {
       // Needs either a §37.4 amendment recognising #264, or a production
       // producer for the V31-15 per-scene subtitle/cover artifact fields.
