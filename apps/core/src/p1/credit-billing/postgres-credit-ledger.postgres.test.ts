@@ -332,7 +332,9 @@ test(
       assert.equal(successor?.lifecycleStatus, 'reserved');
       assert.equal(released?.lifecycleStatus, 'refunded');
       assert.equal(releasedSecond?.lifecycleStatus, 'refunded');
-      assert.equal(balance.usedCredits, 3);
+      // Projection exposes gross usage and refunds independently: 2 + 4 + 3
+      // consumed, with the first two revision operations refunded.
+      assert.equal(balance.usedCredits, 9);
       assert.equal(balance.refundedCredits, 6);
       assert.equal(balance.availableCredits, 7);
       const usageOperations = (await creditLedger.listTransactions(workspaceId))
