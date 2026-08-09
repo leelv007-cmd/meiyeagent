@@ -319,8 +319,13 @@ test('Level 0 turn: zero LLM calls and state stays outside machine', async () =>
   assert.equal(result.decision?.action.kind, 'finish_turn');
   assert.ok(result.billingUx);
   assert.equal(result.billingUx?.quoteChip.visible, true);
-  // "Cheap" is asserted structurally, not by wall clock: a wall-clock bound is
-  // load-dependent and went red only when suites shared a host.
+  // "Cheap" is asserted structurally, not by wall clock. The old `<50ms` bound
+  // passed standalone at ~9ms and failed at 76-134ms whenever the rest of this
+  // file ran first or the host was busy, so it measured the host, not Level 0.
+  // What Level 0 actually promises is that no billable work happens: no kernel
+  // invocation, no LLM call, no tool call, and no state written into the
+  // machine — all four asserted above. The latency figure itself belongs to the
+  // V31-05 baseline capture (Task 10), which measures it on a quiet host.
   assert.deepEqual(result.toolCalls, []);
 });
 
