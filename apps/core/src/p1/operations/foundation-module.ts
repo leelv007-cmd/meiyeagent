@@ -948,24 +948,17 @@ export class OperationsFoundationModule implements P1OperationModule {
             503
           );
         }
-        const workId = requiredString(payload, 'workId');
-        const contentPackageId = requiredString(payload, 'contentPackageId');
-        const contentPackageRevision = requiredPositiveInteger(
-          payload,
-          'contentPackageRevision'
-        );
-        const publishHandoffCompletedAt =
-          typeof payload.publishHandoffCompletedAt === 'string'
-            ? payload.publishHandoffCompletedAt
-            : null;
+        // publishHandoffCompletedAt and the package revision are server facts:
+        // the ask window is resolved from the durable publish event, never from
+        // a timestamp the caller supplies.
         try {
           return await this.options.publishHandoff.evaluateSelfReportAskForWork(
             context,
             {
-              workId,
-              contentPackageId,
-              contentPackageRevision,
-              publishHandoffCompletedAt,
+              workId: requiredString(payload, 'workId'),
+              contentPackageId: requiredString(payload, 'contentPackageId'),
+              platform: requiredString(payload, 'platform'),
+              variantVersionId: requiredString(payload, 'variantVersionId'),
             }
           );
         } catch (error) {

@@ -118,13 +118,15 @@ export function usePublishHandoff(
         setView(panelViewFromPublishHandoff(prepared));
 
         if (workId && publishedAtRef.current) {
+          // Core resolves the ask window from the durable publish event; the
+          // browser only names which package/variant it is asking about.
           const decision = await queryP1<SelfReportAskDecision>('operations', {
             action: 'self_report_ask',
             payload: {
               workId,
               contentPackageId: packageId,
-              contentPackageRevision: matched.revision,
-              publishHandoffCompletedAt: publishedAtRef.current,
+              platform,
+              variantVersionId: resolvedVariant,
             },
           });
           if (cancelled) return;
@@ -218,8 +220,8 @@ export function usePublishHandoff(
             payload: {
               workId,
               contentPackageId: record.contentPackageId,
-              contentPackageRevision: record.contentPackageRevision + 1,
-              publishHandoffCompletedAt: publishedAtRef.current,
+              platform,
+              variantVersionId: resolvedVariant,
             },
           });
           setSelfReport(decision);

@@ -167,6 +167,11 @@ export class ProactiveService {
     threadId?: string;
     runId?: string;
     harnessReleaseId?: string;
+    /**
+     * In-process gate config seam (mirrors listSuggestions). The HTTP module
+     * never forwards it, so a browser cannot hand itself an open gate.
+     */
+    config?: ProactiveGateConfig;
   }): Promise<{
     decision: OpportunityDecision;
     replayed: boolean;
@@ -196,6 +201,19 @@ export class ProactiveService {
     if (existing?.decision === 'dismissed') {
       throw new Error(
         `Candidate ${input.candidateId} was already dismissed and cannot be accepted.`,
+      );
+    }
+
+    // The kill switch has to hold on the accept path itself, not only on the
+    // list that produced the card. A browser still holding a rendered proposal
+    // from before ops closed the path must not be able to spend it.
+    const gate = await this.resolveGate({
+      resourceId: input.resourceId,
+      ...(input.config ? { config: input.config } : {}),
+    });
+    if (!gate.open) {
+      throw new Error(
+        `Proactive candidate acceptance is disabled: ${gate.reason}.`,
       );
     }
 
@@ -266,6 +284,8 @@ export class ProactiveService {
     actorId: string;
     now: string;
     decisionId?: string;
+    /** In-process gate config seam; never forwarded from HTTP. */
+    config?: ProactiveGateConfig;
   }): Promise<{ decision: OpportunityDecision; replayed: boolean }> {
     const existing = await this.deps.decisions.latestForCandidate({
       resourceId: input.resourceId,
@@ -278,6 +298,15 @@ export class ProactiveService {
     }
     if (existing?.decision === 'dismissed') {
       return { decision: existing, replayed: true };
+    }
+    const gate = await this.resolveGate({
+      resourceId: input.resourceId,
+      ...(input.config ? { config: input.config } : {}),
+    });
+    if (!gate.open) {
+      throw new Error(
+        `Proactive candidate dismissal is disabled: ${gate.reason}.`,
+      );
     }
     return this.deps.decisions.append({
       decisionId: input.decisionId ?? `odec:${randomUUID()}`,

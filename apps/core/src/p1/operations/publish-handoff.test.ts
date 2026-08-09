@@ -201,69 +201,69 @@ test('self-report write path is OutcomeEvidence-idempotent and binds package rev
 });
 
 test('U2 self-report ask: next day once, one ask per work, two ignores store backoff', async () => {
-  const setup = await createSetup('assisted', () => '2026-08-09T12:00:00.000Z');
+  // The ask window is read from the durable publish event, so this test builds
+  // the real handoff + publish facts and then moves the clock, instead of
+  // handing the service a publishHandoffCompletedAt it chose.
+  let now = '2026-08-08T10:00:00.000Z';
+  const setup = await createSetup('assisted', () => now);
+  const askFor = (workId: string) =>
+    setup.handoff.evaluateSelfReportAskForWork(context, {
+      workId,
+      contentPackageId: 'package-a',
+      platform: 'douyin',
+      variantVersionId: 'douyin-v1',
+    });
 
-  const notYet = await setup.handoff.evaluateSelfReportAskForWork(context, {
-    workId: 'work-1',
-    contentPackageId: 'package-a',
-    contentPackageRevision: 1,
-    publishHandoffCompletedAt: '2026-08-09T10:00:00.000Z',
-  });
-  assert.equal(notYet.kind, 'skip');
+  // No publish yet: nothing to follow up on.
+  const beforePublish = await askFor('work-1');
+  assert.equal(beforePublish.kind, 'skip');
 
-  const ready = await setup.handoff.evaluateSelfReportAskForWork(context, {
+  await setup.handoff.prepareMobilePublishHandoff(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
     workId: 'work-1',
-    contentPackageId: 'package-a',
-    contentPackageRevision: 1,
-    publishHandoffCompletedAt: '2026-08-08T10:00:00.000Z',
   });
+  await setup.handoff.recordMerchantPublished(context, {
+    packageId: 'package-a',
+    expectedRevision: 1,
+    platform: 'douyin',
+    variantVersionId: 'douyin-v1',
+    workId: 'work-1',
+  });
+
+  // Same day as the publish — the follow-up is a next-day question.
+  const sameDay = await askFor('work-1');
+  assert.equal(sameDay.kind, 'skip');
+
+  now = '2026-08-09T12:00:00.000Z';
+  const ready = await askFor('work-1');
   assert.equal(ready.kind, 'ask');
+  if (ready.kind === 'ask') {
+    // The ask carries the server head, not a revision the caller named.
+    assert.equal(ready.contentPackageRevision, 2);
+  }
 
   await setup.handoff.recordSelfReportAsk(context, {
     workId: 'work-1',
     contentPackageId: 'package-a',
-    contentPackageRevision: 1,
+    contentPackageRevision: 2,
     action: 'mark_asked',
   });
-  const again = await setup.handoff.evaluateSelfReportAskForWork(context, {
-    workId: 'work-1',
-    contentPackageId: 'package-a',
-    contentPackageRevision: 1,
-    publishHandoffCompletedAt: '2026-08-08T10:00:00.000Z',
-  });
+  const again = await askFor('work-1');
   assert.equal(again.kind, 'skip');
   if (again.kind === 'skip') {
     assert.equal(again.reason, 'already_asked_this_work');
   }
 
-  // Two consecutive ignores → store backoff for a new work.
-  await setup.handoff.recordSelfReportAsk(context, {
-    workId: 'work-1',
-    contentPackageId: 'package-a',
-    contentPackageRevision: 1,
-    action: 'mark_ignored',
-  });
-  await setup.handoff.recordSelfReportAsk(context, {
-    workId: 'work-2',
-    contentPackageId: 'package-a',
-    contentPackageRevision: 1,
-    action: 'mark_asked',
-  });
-  await setup.handoff.recordSelfReportAsk(context, {
-    workId: 'work-2',
-    contentPackageId: 'package-a',
-    contentPackageRevision: 1,
-    action: 'mark_ignored',
-  });
-  const backoff = await setup.handoff.evaluateSelfReportAskForWork(context, {
-    workId: 'work-3',
-    contentPackageId: 'package-a',
-    contentPackageRevision: 1,
-    publishHandoffCompletedAt: '2026-08-08T10:00:00.000Z',
-  });
-  assert.equal(backoff.kind, 'skip');
-  if (backoff.kind === 'skip') {
-    assert.equal(backoff.reason, 'store_backoff');
+  // A work with no durable publish of its own never gets a follow-up, however
+  // the browser asks. (The two-ignore store backoff rule itself is covered on
+  // the pure evaluator in packages/contracts/src/publish-handoff.test.ts.)
+  const foreignWork = await askFor('work-3');
+  assert.equal(foreignWork.kind, 'skip');
+  if (foreignWork.kind === 'skip') {
+    assert.equal(foreignWork.reason, 'no_publish_handoff');
   }
 });
 

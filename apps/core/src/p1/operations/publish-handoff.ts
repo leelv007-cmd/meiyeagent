@@ -487,10 +487,20 @@ export class PublishHandoffService {
     input: {
       workId: string;
       contentPackageId: string;
-      contentPackageRevision: number;
-      publishHandoffCompletedAt: string | null;
+      platform: string;
+      variantVersionId: string;
     },
   ): Promise<SelfReportAskDecision> {
+    // Whether the merchant published, and when, is a durable delivery fact.
+    // Reading it back here — instead of taking the browser's word for it — is
+    // what keeps the next-day follow-up from being triggerable on demand, and
+    // is also what makes the ask survive a refresh with no client state.
+    const recovery = await this.getPublishHandoffRecovery(context, {
+      packageId: input.contentPackageId,
+      workId: input.workId,
+      platform: input.platform,
+      variantVersionId: input.variantVersionId,
+    });
     const state = await this.repository.loadWorkspace(context.workspaceId);
     const history = projectSelfReportAskEvents(state?.auditEvents ?? []);
     const workHistory = history.filter((row) => row.workId === input.workId);
@@ -498,8 +508,8 @@ export class PublishHandoffService {
     return evaluateSelfReportAsk({
       workId: input.workId,
       contentPackageId: input.contentPackageId,
-      contentPackageRevision: input.contentPackageRevision,
-      publishHandoffCompletedAt: input.publishHandoffCompletedAt,
+      contentPackageRevision: recovery.latestRevision,
+      publishHandoffCompletedAt: recovery.publishHandoffCompletedAt,
       now: this.now(),
       workAskHistory: workHistory,
       storeConsecutiveIgnores,

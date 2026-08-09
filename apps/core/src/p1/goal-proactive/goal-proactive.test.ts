@@ -407,6 +407,61 @@ test('pipeline filters signals without evidence and ranks candidates', async () 
   assert.deepEqual(closed, []);
 });
 
+const OPEN_GATE = {
+  disableProactiveAgent: false,
+  proactiveFeatureOn: true,
+  workspaceAllowlisted: true,
+  coverageThreshold: null as number | null,
+};
+
+test('V31-24: the kill switch closes accept and dismiss, not just the list', async () => {
+  const threads = new MemoryAgentSessionStore();
+  const decisions = new MemoryOpportunityDecisionStore();
+  const service = new ProactiveService({ decisions, threads });
+  const killed = { ...OPEN_GATE, disableProactiveAgent: true };
+  const candidateId = buildCandidateId({
+    resourceId: 'ws-kill',
+    signalKinds: ['goal_stalled'],
+    goalId: 'goal-1',
+    reason: '目标两周未推进',
+  });
+
+  await assert.rejects(
+    () =>
+      service.acceptCandidate({
+        resourceId: 'ws-kill',
+        candidateId,
+        actorId: 'merchant-1',
+        now: TS,
+        reason: '目标两周未推进',
+        evidenceRefs: [{ kind: 'goal_stalled', ref: 'goal-1' }],
+        config: killed,
+      }),
+    /acceptance is disabled: kill_switch/u,
+  );
+  await assert.rejects(
+    () =>
+      service.dismissCandidate({
+        resourceId: 'ws-kill',
+        candidateId,
+        actorId: 'merchant-1',
+        now: TS,
+        config: killed,
+      }),
+    /dismissal is disabled: kill_switch/u,
+  );
+
+  // Zero side effect: no decision row, no thread, no orphan waiting turn.
+  assert.deepEqual(await decisions.listForResource({ resourceId: 'ws-kill' }), []);
+  assert.equal(
+    await threads.getThread({
+      resourceId: 'ws-kill',
+      threadId: `thread:proactive:${candidateId}`,
+    }),
+    null,
+  );
+});
+
 test('accept is idempotent on candidateId and never produces paid side effects', async () => {
   const threads = new MemoryAgentSessionStore();
   const decisions = new MemoryOpportunityDecisionStore();
@@ -440,6 +495,7 @@ test('accept is idempotent on candidateId and never produces paid side effects',
     goalId: 'goal-1',
     threadId: 'thread-accept-1',
     runId: 'run-accept-1',
+    config: OPEN_GATE,
   });
   assert.equal(first.replayed, false);
   assert.equal(first.paidSideEffect, false);
@@ -462,6 +518,7 @@ test('accept is idempotent on candidateId and never produces paid side effects',
     reason: '目标两周未推进',
     evidenceRefs: [{ kind: 'goal_stalled', ref: 'goal-1' }],
     goalId: 'goal-1',
+    config: OPEN_GATE,
     // Different thread/run ids — must replay original, not create another turn.
     threadId: 'thread-should-not-create',
     runId: 'run-should-not-create',
@@ -512,6 +569,7 @@ test('dismiss then listSuggestions remembers decision after refresh/replay', asy
     candidateId,
     actorId: 'merchant-1',
     now: TS2,
+    config: OPEN_GATE,
   });
 
   // Fresh listSuggestions call = refresh/replay.
