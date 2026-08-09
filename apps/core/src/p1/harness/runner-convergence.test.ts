@@ -1286,6 +1286,96 @@ test('V31-25: every fixture task matches its frozen pre-convergence baseline (de
   }
 });
 
+/**
+ * V31-25 P1-D: measured drift of the legacy rollback module, pinned.
+ *
+ * FIXTURE_TASKS never set forceLegacyFiveStage, so the module that described
+ * itself as c8e679fef's five-stage runner had never once been compared against
+ * the pre-convergence baseline. Running that comparison shows it is NOT a
+ * faithful freeze: on all three carriers it diverges on trace stages, progress
+ * sequence, effect keys and recommendation deliverables, and on note it also
+ * diverges on billing-receipt presence.
+ *
+ * Those axes are pinned here rather than asserted equal, because the drift is
+ * real and unfixed. This is a change detector in both directions: further drift
+ * fails, and so does a fix, which then has to shrink this list deliberately. It
+ * is not a freeze proof, and the module no longer claims to be one.
+ */
+const LEGACY_ROLLBACK_MEASURED_DRIFT: Record<string, readonly string[]> = {
+  'copy-legacy': [
+    'deliverable.recommendationDeliverables',
+    'recovery.effectKeys',
+    'recovery.progressSequence',
+    'recovery.traceStages',
+  ],
+  'note-legacy': [
+    'deliverable.billingReceiptPresent',
+    'deliverable.recommendationDeliverables',
+    'recovery.effectKeys',
+    'recovery.progressSequence',
+    'recovery.traceStages',
+    'settlement.hasBillingReceipt',
+  ],
+  'media-legacy': [
+    'deliverable.recommendationDeliverables',
+    'recovery.effectKeys',
+    'recovery.progressSequence',
+    'recovery.traceStages',
+  ],
+};
+
+test('V31-25 P1-D: the legacy rollback module is compared, and its drift is exactly the pinned set', async () => {
+  const drift: Array<{ fixtureId: FixtureTaskId; paths: string[] }> = [];
+  for (const fixtureId of ['copy-legacy', 'note-legacy', 'media-legacy'] as const) {
+    const fixture = FIXTURE_TASKS[fixtureId];
+    const keys: string[] = [];
+    const progress: Array<{ stage: string; state: string }> = [];
+    const traces: Array<{ stage: string }> = [];
+    const result = await runHarnessWorkflow(
+      fixture.workflowId,
+      fixture.buildRequest(),
+      fixture.buildStages(),
+      {
+        ...recordingRuntime(keys),
+        ...(fixture.awaitDecision
+          ? {
+              awaitDecision: async (
+                question: Parameters<HarnessWorkflowRuntime['awaitDecision']>[0],
+                stage: Parameters<HarnessWorkflowRuntime['awaitDecision']>[1],
+              ) => fixture.awaitDecision!(question, stage),
+            }
+          : {}),
+        async progress(event) {
+          progress.push({ stage: event.stage, state: event.state });
+        },
+        async recordTrace(input) {
+          traces.push({ stage: input.stage });
+        },
+      },
+      { forceLegacyFiveStage: true },
+    );
+    // The legacy path emits no compiled-primitive markers, so the expectation is
+    // the raw pre-convergence baseline.
+    const mismatches = diffRunnerEquivalence(
+      PRE_CONVERGENCE_BASELINES[fixtureId],
+      buildRunnerEquivalenceSnapshot({ result, effectKeys: keys, progress, traces }),
+    );
+    drift.push({
+      fixtureId,
+      paths: [...new Set(mismatches.map((item) => item.path))].sort(),
+    });
+  }
+  for (const { fixtureId, paths } of drift) {
+    assert.deepEqual(
+      paths,
+      [...(LEGACY_ROLLBACK_MEASURED_DRIFT[fixtureId] ?? [])],
+      `${fixtureId}: legacy rollback drift changed; update LEGACY_ROLLBACK_MEASURED_DRIFT deliberately (shrinking it is a fix, growing it is a regression)`,
+    );
+  }
+  // The rollback path must at least still deliver on every carrier.
+  assert.equal(drift.length, 3);
+});
+
 test('V31-25 P1-F: the recovery expectation is pinned, not read back from the production resolver', async () => {
   // Drift guard for the guard: if the pinned primitive keys were derived from
   // resolveCompiledCarrierExecution again, adding a unit to a carrier recipe

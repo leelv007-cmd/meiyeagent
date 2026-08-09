@@ -1,13 +1,27 @@
 /**
- * Frozen five-stage rollback truth retained until V31-26b pilot acceptance.
+ * Legacy five-stage rollback path retained until V31-26b pilot acceptance.
  *
- * Source truth: c8e679fef11ecdefcb542e5d12296bb7bcd5e91b
- * (the fixed parent of the V31-25 convergence commit).
+ * Derived from c8e679fef11ecdefcb542e5d12296bb7bcd5e91b (the fixed parent of the
+ * V31-25 convergence commit), but NOT a verified freeze of it. This module
+ * previously described itself as frozen source truth while no test had ever
+ * compared it against that commit's behaviour. The comparison now exists
+ * (runner-convergence.test.ts, "the legacy rollback module is compared") and it
+ * measures real divergence on every carrier:
  *
- * This module intentionally does not import the compiled executor or any
- * carrier primitive program. Its adapter contracts, orchestration, and effect
- * topology are fixed so a regression in the new executor cannot disable the
- * rollback path.
+ * - stage traces for brief_compilation / execution_selection / assembly_delivery
+ *   are not emitted, so progressSequence and traceStages differ;
+ * - recovery effect keys differ;
+ * - recommendation deliverables differ;
+ * - the note path differs on billing-receipt presence.
+ *
+ * Also missing relative to that commit: bounded-execution continuation and the
+ * permission HITL step. Until those are restored, this path delivers on all
+ * three carriers but must not be described as behaviour-identical rollback, and
+ * V31-26b cannot be accepted on the strength of it. The measured drift is pinned
+ * in LEGACY_ROLLBACK_MEASURED_DRIFT so any change to it is deliberate.
+ *
+ * It does not import the compiled executor or any carrier step machine, so a
+ * regression in the new executor cannot disable this path.
  */
 
 import { isBoundedExecutionSuspension } from './bounded-execution-controller.js';
