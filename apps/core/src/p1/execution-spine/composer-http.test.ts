@@ -1123,7 +1123,11 @@ test("the compiled freeze is durable in the claim transaction before a paid Harn
 	assert.deepEqual(
 		submissions.claimedSubmission("workspace-1", command.idempotencyKey)
 			?.confirmationDispatch,
-		{ requestId: "confirmation:task-1", state: "dispatched" },
+		{
+			requestId: "confirmation:task-1",
+			state: "dispatched",
+			expiresAt: "2026-07-24T09:00:00.000Z",
+		},
 	);
 	assert.equal(
 		submissions.confirmationStateAtClaim.get(

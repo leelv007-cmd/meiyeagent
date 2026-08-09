@@ -44,7 +44,8 @@ export interface CreationSubmissionRecord {
 	/** Reliable outbox marker committed with the credit reservation and freeze. */
 	confirmationDispatch?: {
 		requestId: string;
-		state: "pending" | "dispatched";
+		state: "pending" | "dispatched" | "expired";
+		expiresAt?: string;
 	};
 }
 
@@ -124,6 +125,7 @@ export interface CreationSubmissionStore {
 	listRecoverableHarnessStarts(input: {
 		limit: number;
 	}): Promise<Array<{ submission: CreationSubmissionRecord }>>;
+	expireUndispatchedConfirmationHolds?(input: { limit: number }): Promise<number>;
 }
 
 /** StagePort boundary: the coordinator never imports DBOS or a durable carrier. */
@@ -709,6 +711,7 @@ export class CreationSubmissionCoordinator {
 
 	/** Replays only committed, reclaimable starts after a process crash. */
 	async recoverPendingStarts(limit = 100) {
+		await this.store.expireUndispatchedConfirmationHolds?.({ limit });
 		const recoverable = await this.store.listRecoverableHarnessStarts({ limit });
 		let failed = 0;
 		let started = 0;
@@ -786,6 +789,9 @@ function ensureConfirmationDispatch(submission: CreationSubmissionRecord) {
 	submission.confirmationDispatch ??= {
 		requestId: `confirmation:${submission.task.id}`,
 		state: "pending",
+		expiresAt: new Date(
+			Date.parse(submission.snapshot.createdAt) + 48 * 60 * 60 * 1_000,
+		).toISOString(),
 	};
 }
 

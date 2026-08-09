@@ -1109,7 +1109,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           grantLotLedger,
           creditLedger
         )
-      )
+      ),
+      { creditLedger }
     );
     await creationSubmissionStore.migrate();
     const structuredNodeRunnerFactory = {

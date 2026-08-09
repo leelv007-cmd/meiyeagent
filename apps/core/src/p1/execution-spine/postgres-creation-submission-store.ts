@@ -322,10 +322,19 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
   constructor(
     private readonly pool: Pool,
     private readonly persistence: CreationSubmissionPersistencePort,
-    options: { harnessStartLeaseMs?: number } = {},
+    options: {
+      harnessStartLeaseMs?: number;
+      creditLedger?: Pick<PostgresCreditLedger, 'refundUsageOperationWithClient'>;
+    } = {},
   ) {
     this.harnessStartLeaseMs = options.harnessStartLeaseMs ?? 60_000;
+    this.creditLedger = options.creditLedger;
   }
+
+  private readonly creditLedger?: Pick<
+    PostgresCreditLedger,
+    'refundUsageOperationWithClient'
+  >;
 
   async migrate(client?: PoolClient) {
     await (client ?? this.pool).query(`
@@ -888,6 +897,70 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     return result.rows.map((row) => ({ submission: storedSubmission(row.submission) }));
   }
 
+  async expireUndispatchedConfirmationHolds(input: { limit: number }) {
+    if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) {
+      throw new Error('Confirmation expiry limit must be from 1 through 100.');
+    }
+    if (!this.creditLedger) return 0;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const due = await client.query<{ id: string; submission: unknown }>(
+        `SELECT id, submission
+           FROM execution_spine.creation_submissions
+          WHERE harness_state IN ('reserved', 'starting')
+            AND submission->'confirmationDispatch'->>'state' = 'pending'
+            AND COALESCE(
+                  (submission->'confirmationDispatch'->>'expiresAt')::timestamptz,
+                  (submission->'snapshot'->>'createdAt')::timestamptz
+                    + interval '48 hours'
+                ) <= clock_timestamp()
+          ORDER BY updated_at, id
+          LIMIT $1
+          FOR UPDATE SKIP LOCKED`,
+        [input.limit],
+      );
+      const now = (await databaseNow(client)).toISOString();
+      for (const row of due.rows) {
+        const submission = storedSubmission(row.submission);
+        const credits = storedUsageCredits(submission.usageReservation.credits);
+        if (credits !== undefined) {
+          await this.creditLedger.refundUsageOperationWithClient(client, {
+            workspaceId: submission.snapshot.workspaceId,
+            usageOperationId: creditUsageOperationId(submission.task.id),
+            refundOperationId: `confirmation-outbox-expiry:${submission.task.id}`,
+            credits,
+            actorId: 'system',
+            correlationId: `confirmation:${submission.task.id}`,
+            createdAt: now,
+          });
+        }
+        await client.query(
+          `UPDATE execution_spine.creation_submissions
+              SET harness_state = 'failed',
+                  harness_lease_id = NULL,
+                  harness_lease_expires_at = NULL,
+                  submission = jsonb_set(
+                    submission,
+                    '{confirmationDispatch,state}',
+                    '"expired"'::jsonb,
+                    true
+                  ),
+                  updated_at = $3::timestamptz
+            WHERE workspace_id = $1 AND id = $2`,
+          [submission.snapshot.workspaceId, row.id, now],
+        );
+      }
+      await client.query('COMMIT');
+      return due.rowCount ?? 0;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   private async lockSubmission(
     client: PoolClient,
     input: { workspaceId: string; submissionId: string },
@@ -1002,11 +1075,21 @@ function storedConfirmationDispatch(
   const dispatch = value as Record<string, unknown>;
   if (
     typeof dispatch.requestId !== 'string' ||
-    (dispatch.state !== 'pending' && dispatch.state !== 'dispatched')
+    (dispatch.expiresAt !== undefined &&
+      typeof dispatch.expiresAt !== 'string') ||
+    (dispatch.state !== 'pending' &&
+      dispatch.state !== 'dispatched' &&
+      dispatch.state !== 'expired')
   ) {
     throw new Error('Stored creation submission has invalid confirmation dispatch.');
   }
-  return { requestId: dispatch.requestId, state: dispatch.state };
+  return {
+    requestId: dispatch.requestId,
+    state: dispatch.state,
+    ...(typeof dispatch.expiresAt === 'string'
+      ? { expiresAt: dispatch.expiresAt }
+      : {}),
+  };
 }
 
 function storedExecutionPlanFreeze(

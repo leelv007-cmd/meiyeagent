@@ -516,6 +516,10 @@ test(
         migrationClient.release();
       }
       await store.applySchema();
+      await pool.query(
+		"INSERT INTO workspaces (id, name) VALUES ($1, 'Execution spine store test')",
+        [workspaceId],
+      );
       await creditLedger.grant({
         id: `credit-${suffix}`,
         workspaceId,
@@ -1006,6 +1010,134 @@ test(
       );
     } finally {
       await cleanup(pool, workspaceId, submission).catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  "Postgres confirmation outbox expiry refunds an undispatched credit hold",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const creditLedger = new PostgresCreditLedger(pool);
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(
+          pool,
+          noOpGrantLots,
+          creditLedger,
+        ),
+      ),
+      { creditLedger },
+    );
+    const suffix = randomUUID();
+    const workspaceId = `spine-outbox-${suffix}`;
+    const quoteId = `spine-outbox-quote-${suffix}`;
+    const submission = reserveRecord(workspaceId, quoteId, suffix);
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      const migrationClient = await pool.connect();
+      try {
+        await creditLedger.migrate(migrationClient);
+      } finally {
+        migrationClient.release();
+      }
+      await store.applySchema();
+      await pool.query(
+        "INSERT INTO workspaces (id, name) VALUES ($1, 'Confirmation outbox expiry test')",
+        [workspaceId],
+      );
+      await creditLedger.grant({
+        id: `outbox-credit-${suffix}`,
+        workspaceId,
+        credits: 10,
+        expirationDate: "2026-09-01T00:00:00.000Z",
+        transactionType: "PURCHASE_PACKAGE",
+        sourceRef: `outbox-${suffix}`,
+        createdAt: "2026-07-01T00:00:00.000Z",
+      });
+      const quote = await seedQuote(
+        billingRepository,
+        workspaceId,
+        quoteId,
+        submission.task.id,
+        { creditCost: 4 },
+      );
+      submission.snapshot = createSnapshot({
+        contentPackagePlatform: "wechat_moments",
+        distributionTarget: "manual_copy",
+        platformId: "wechat_moments",
+        quoteId,
+        quoteRevision: quote.revision,
+        submission,
+        workspaceId,
+      });
+      submission.usageReservation = {
+        id: submission.usageReservation.id,
+        credits: 4,
+        units: [],
+      };
+      submission.executionPlanFreeze = recoveryExecutionPlanFreeze(
+        submission,
+        "merchant_confirmed",
+      );
+      submission.confirmationDispatch = {
+        requestId: `confirmation:${submission.task.id}`,
+        state: "pending",
+        expiresAt: "2026-07-01T00:00:01.000Z",
+      };
+      await store.claim({
+        idempotencyKey: `outbox-${suffix}`,
+        payloadHash: `payload-${suffix}`,
+        submission,
+        workspaceId,
+      });
+      assert.equal(
+        (await creditLedger.project(workspaceId, submission.snapshot.createdAt))
+          .availableCredits,
+        6,
+      );
+
+      assert.equal(
+        await store.expireUndispatchedConfirmationHolds({ limit: 10 }),
+        1,
+      );
+      assert.equal(
+        (await creditLedger.project(workspaceId, new Date().toISOString()))
+          .availableCredits,
+        10,
+      );
+      const receipt = await store.readReceipt({
+        workspaceId,
+        idempotencyKey: `outbox-${suffix}`,
+        payloadHash: `payload-${suffix}`,
+      });
+      assert.equal(
+        receipt.kind === "existing"
+          ? receipt.submission.confirmationDispatch?.state
+          : null,
+        "expired",
+      );
+      assert.deepEqual(
+        (await store.listRecoverableHarnessStarts({ limit: 100 })).filter(
+          (candidate) =>
+            candidate.submission.snapshot.workspaceId === workspaceId,
+        ),
+        [],
+      );
+      assert.equal(
+        await store.expireUndispatchedConfirmationHolds({ limit: 10 }),
+        0,
+      );
+    } finally {
+      await cleanup(pool, workspaceId, submission).catch(() => undefined);
+      await pool.query("DELETE FROM workspaces WHERE id = $1", [workspaceId])
+        .catch(() => undefined);
       await pool.end();
     }
   },
