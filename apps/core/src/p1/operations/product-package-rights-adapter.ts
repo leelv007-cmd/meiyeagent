@@ -3,6 +3,7 @@ import {
   type Platform,
 } from '@meiye/contracts';
 import type { ProductContext } from '@meiye/contracts';
+import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { OperationsApplicationService } from './application-service.js';
 import type {
   ContentPackageAssetExportPolicyPort,
@@ -39,10 +40,19 @@ export class ProductContentPackageRightsResolver
   async resolve(
     input: Parameters<ContentPackageRightsResolverPort['resolve']>[0]
   ) {
+    const { rightsRevision: _rightsRevision, ...decision } =
+      await this.resolveWithRevision(input);
+    return decision;
+  }
+
+  async resolveWithRevision(
+    input: Parameters<ContentPackageRightsResolverPort['resolve']>[0]
+  ) {
     const state = await this.product.load(input.workspaceId);
     if (!state) {
       return {
         knownAssetIds: [],
+        rightsRevision: productRightsRevision(input, null),
         unauthorizedAssetIds: [...new Set(input.assetIds)],
       };
     }
@@ -51,6 +61,7 @@ export class ProductContentPackageRightsResolver
     const now = this.clock();
     return {
       knownAssetIds: knownAssets.map((asset) => asset.id),
+      rightsRevision: productRightsRevision(input, state),
       unauthorizedAssetIds: knownAssets
         .filter(
           (asset) =>
@@ -127,6 +138,36 @@ export class ProductContentPackageRightsResolver
     }
     return { kind: 'authorized' as const };
   }
+}
+
+function productRightsRevision(
+  input: Parameters<ContentPackageRightsResolverPort['resolve']>[0],
+  state: Awaited<ReturnType<ProductAssetRightsRepository['load']>>,
+): string {
+  const requestedAssetIds = [...new Set(input.assetIds)].sort();
+  const requested = new Set(requestedAssetIds);
+  const assets = (state?.assets ?? [])
+    .filter((asset) => requested.has(asset.id))
+    .map((asset) => ({
+      authorizationStatus: asset.authorizationStatus,
+      category: asset.category ?? null,
+      consentScope: asset.consentScope,
+      containsPerson: asset.containsPerson ?? false,
+      id: asset.id,
+      rightsEvidence: asset.rightsEvidence?.trim() ?? null,
+      rightsNoFixedExpiry: asset.rightsNoFixedExpiry ?? false,
+      rightsPlatforms: [...(asset.rightsPlatforms ?? [])].sort(),
+      rightsValidUntil: asset.rightsValidUntil ?? null,
+      sourceType: asset.sourceType,
+    }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const revision = fingerprintValue({
+    assets,
+    platform: input.platform ?? null,
+    requestedAssetIds,
+    workspaceId: input.workspaceId,
+  }).slice(0, 16);
+  return `rights:${input.workspaceId}:${revision}`;
 }
 
 function hasExpiredRights(

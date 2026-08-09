@@ -27,6 +27,15 @@ export type ProductionPlanRightsResolver = {
     knownAssetIds?: string[];
     unauthorizedAssetIds: string[];
   }>;
+  resolveWithRevision?(input: {
+    workspaceId: string;
+    assetIds: string[];
+    platform?: string;
+  }): Promise<{
+    knownAssetIds?: string[];
+    rightsRevision: string;
+    unauthorizedAssetIds: string[];
+  }>;
 };
 
 export function planCompilerRightsRevisionId(input: {
@@ -84,14 +93,26 @@ export function createProductionPlanCompilerPorts(deps: {
         /^[A-Za-z0-9_.:-]{3,}$/u.test(value),
       );
       const platform = input.deliverables.find((item) => item.platform)?.platform;
-      const resolved =
-        assetIds.length > 0
-          ? await deps.rights.resolve({
-              workspaceId: input.workspaceId,
-              assetIds,
-              ...(platform ? { platform } : {}),
-            })
-          : { knownAssetIds: [] as string[], unauthorizedAssetIds: [] as string[] };
+      const rightsInput = {
+        workspaceId: input.workspaceId,
+        assetIds,
+        ...(platform ? { platform } : {}),
+      };
+      let authoritativeRevision: string | undefined;
+      let resolved: {
+        knownAssetIds?: string[];
+        unauthorizedAssetIds: string[];
+      };
+      if (deps.rights.resolveWithRevision) {
+        const decision = await deps.rights.resolveWithRevision(rightsInput);
+        authoritativeRevision = decision.rightsRevision;
+        resolved = decision;
+      } else {
+        resolved =
+          assetIds.length > 0
+            ? await deps.rights.resolve(rightsInput)
+            : { knownAssetIds: [], unauthorizedAssetIds: [] };
+      }
       const knownAssetIds = resolved.knownAssetIds ?? [];
       const unauthorizedAssetIds = resolved.unauthorizedAssetIds;
 
@@ -100,7 +121,6 @@ export function createProductionPlanCompilerPorts(deps: {
         known: knownAssetIds,
         unauthorized: unauthorizedAssetIds,
       }).slice(0, 16);
-
       return {
         rightsSummary: {
           source: 'content_package_rights',
@@ -108,7 +128,10 @@ export function createProductionPlanCompilerPorts(deps: {
           unauthorizedAssetIds,
           status: unauthorizedAssetIds.length > 0 ? 'partial' : 'resolved',
         },
-        rightsRevisionIds: [`rights:${input.workspaceId}:${rightsFingerprint}`],
+        rightsRevisionIds: [
+          authoritativeRevision ??
+            `rights:${input.workspaceId}:${rightsFingerprint}`,
+        ],
         assetUsages: knownAssetIds.map((assetRef) => ({ assetRef })),
         factUsages: input.factIntentions.map((factRef) => ({ factRef })),
         // Rights are an execution authority, not a warning. Any unauthorized

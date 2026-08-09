@@ -190,7 +190,6 @@ import {
   AgentSessionFoundationModule,
   PostgresAgentSessionStore,
   findActiveExitRun,
-  planCompilerRightsRevisionId,
   projectThreadToSession,
   resolveMakeSteeringGate,
 } from '../p1/agent-session/index.js';
@@ -425,21 +424,16 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       platformCandidate === 'video_account'
         ? platformCandidate
         : undefined;
-    const resolved = await contentPackageRightsResolver.resolve({
+    const resolved = await contentPackageRightsResolver.resolveWithRevision({
       workspaceId,
       assetIds,
       ...(platform ? { platform } : {}),
     });
     const knownAssetIds = resolved.knownAssetIds ?? [];
     const unauthorizedAssetIds = resolved.unauthorizedAssetIds;
-    const currentRevisionId = planCompilerRightsRevisionId({
-      workspaceId,
-      knownAssetIds,
-      unauthorizedAssetIds,
-    });
     return rightsRevisionRefs.map((frozenRevisionId) => ({
       frozenRevisionId,
-      revisionId: currentRevisionId,
+      revisionId: resolved.rightsRevision,
       revoked: unauthorizedAssetIds.length > 0,
     }));
   };

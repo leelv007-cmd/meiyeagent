@@ -2,6 +2,41 @@ import assert from 'node:assert/strict';
 import { it } from 'node:test';
 import { ProductContentPackageRightsResolver } from './product-package-rights-adapter.js';
 
+it('changes the authoritative rights revision when live policy facts change', async () => {
+  let consentScope: 'public_marketing' | 'paid_advertising' =
+    'public_marketing';
+  const resolver = new ProductContentPackageRightsResolver({
+    async load() {
+      return {
+        assets: [
+          {
+            authorizationStatus: 'authorized',
+            consentScope,
+            id: 'asset-policy',
+            rightsEvidence: 'release-v1.pdf',
+            rightsNoFixedExpiry: true,
+            sourceType: 'real',
+          },
+        ],
+      };
+    },
+  });
+
+  const first = (await resolver.resolveWithRevision({
+    assetIds: ['asset-policy'],
+    workspaceId: 'workspace-rights',
+  })).rightsRevision;
+  consentScope = 'paid_advertising';
+  const second = (await resolver.resolveWithRevision({
+    assetIds: ['asset-policy'],
+    workspaceId: 'workspace-rights',
+  })).rightsRevision;
+
+  assert.match(first, /^rights:workspace-rights:[a-f0-9]{16}$/u);
+  assert.match(second, /^rights:workspace-rights:[a-f0-9]{16}$/u);
+  assert.notEqual(second, first);
+});
+
 it('resolves current Product authorization without requiring propagation into ContentPackage', async () => {
   const resolver = new ProductContentPackageRightsResolver({
     async load(workspaceId) {

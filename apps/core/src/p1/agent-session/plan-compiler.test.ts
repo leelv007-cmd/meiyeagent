@@ -27,8 +27,50 @@ import {
   PlanCompilerError,
 } from './plan-compiler.js';
 import { projectMarketingPlanReadiness } from './plan-readiness.js';
+import { createProductionPlanCompilerPorts } from './plan-compiler-production-ports.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
+
+test('production compiler freezes the authoritative live rights policy revision', async () => {
+  const ports = createProductionPlanCompilerPorts({
+    rights: {
+      async resolve() {
+        return { knownAssetIds: ['asset-1'], unauthorizedAssetIds: [] };
+      },
+      async resolveWithRevision() {
+        return {
+          knownAssetIds: ['asset-1'],
+          rightsRevision: 'rights:ws-1:policy-current',
+          unauthorizedAssetIds: [],
+        };
+      },
+    },
+    models: {
+      async getCatalog() {
+        return { revisionId: 'model-r1', models: [{ id: 'model-1' }] };
+      },
+    },
+  });
+
+  const rights = await ports.rights.resolveRights({
+    workspaceId: 'ws-1',
+    assetIntentions: ['asset-1'],
+    factIntentions: [],
+    deliverables: [
+      {
+        deliverableId: 'deliverable-1',
+        kind: 'note',
+        platform: 'xiaohongshu',
+        quantity: 1,
+        purpose: '案例种草笔记',
+      },
+    ],
+  });
+
+  assert.deepEqual(rights.rightsRevisionIds, [
+    'rights:ws-1:policy-current',
+  ]);
+});
 
 function baseProposal(overrides: Partial<PlanProposal> = {}): PlanProposal {
   return {
