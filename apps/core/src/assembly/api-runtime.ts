@@ -4,7 +4,6 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import { confirmationCardTimeoutSecondsSchema } from '@meiye/contracts';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
-import { fingerprintValue } from '../p1/job-runtime/job-contracts.js';
 import {
   ADMIN_CONFIG_KEY_CLASSIFICATION,
   createMarketingIdentityReferenceResolver,

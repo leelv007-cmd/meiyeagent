@@ -37,8 +37,6 @@ import {
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
 import type {
-  CreateExecutionConfirmationInput,
-  CreateExecutionConfirmationResult,
   ExecutionConfirmationService,
 } from '../agent-session/execution-confirmation-service.js';
 import { resumeWithRaisedServerLimit } from './bounded-execution-controller.js';
@@ -622,15 +620,11 @@ export interface HarnessDbosWorkflowOptions {
   semanticResumptions?: HarnessSemanticDecisionResumptionStore;
   billing?: HarnessBillingSettlementPort;
   /**
-   * V31-11 confirmation objects: ExecutionConfirmationService.createRequest
-   * bound onto the confirmation gate. After merchant approval the domain
-   * request reserves under the workspace credit lock with the same operation
-   * id the Coordinator submission consumed (U8=A), so execution-time
-   * settlement never debits twice. Absent ⇒ legacy submission-time hold only.
+   * Authoritative confirmation decision used to admit the exact paid plan.
    */
   executionConfirmation?: Pick<
     ExecutionConfirmationService,
-    'createRequest'
+    'getDecision'
   >;
   config?: Pick<AdminConfigRepository, 'get'>;
   decisions?: Pick<HarnessDecisionService, 'submitCoreTimeout'> &
@@ -649,7 +643,7 @@ export interface HarnessDbosWorkflowOptions {
    */
   executionPlanAdmission?: Pick<
     ExecutionPlanAdmissionPort,
-    'verifyAdmittedForDbos'
+    'admitSnapshot' | 'verifyAdmittedForDbos'
   >;
   /**
    * Optional live fence facts resolved just before DBOS verification.
@@ -1244,6 +1238,7 @@ export function registerHarnessDbosWorkflow(
         const executionPorts = withExecutionConfirmationStagePort(
           ports,
           executionConfirmation,
+          executionPlanAdmission,
         );
         for (;;) {
           try {
@@ -1474,32 +1469,41 @@ type BillingRunStep = <T>(
   operation: () => Promise<T>,
 ) => Promise<T>;
 
-/**
- * V31-11 confirmation-objects merge: bind ExecutionConfirmationService
- * createRequest onto the shared stage ports so the confirmation gate creates
- * the domain request after merchant approval. Returns the input ports
- * untouched when the option is absent (legacy submission-time hold only), so
- * fixture paths and pre-wiring assemblies keep their exact behavior.
- */
+/** Bind the confirmed decision and immutable snapshot admission to Make. */
 function withExecutionConfirmationStagePort(
   ports: HarnessStagePorts | HarnessStageCollaborators,
-  executionConfirmation: Pick<ExecutionConfirmationService, 'createRequest'> |
+  executionConfirmation: Pick<ExecutionConfirmationService, 'getDecision'> |
     undefined,
+  executionPlanAdmission:
+    | Pick<ExecutionPlanAdmissionPort, 'admitSnapshot' | 'verifyAdmittedForDbos'>
+    | undefined,
 ): HarnessStagePorts | HarnessStageCollaborators {
-  if (!executionConfirmation) return ports;
-  const createExecutionConfirmationRequest = (
-    input: CreateExecutionConfirmationInput,
-  ): Promise<CreateExecutionConfirmationResult> =>
-    executionConfirmation.createRequest(input);
+  if (!executionConfirmation || !executionPlanAdmission) return ports;
+  const confirmationPorts = {
+    getExecutionConfirmationDecision: (requestId: string) =>
+      executionConfirmation.getDecision(requestId),
+    async admitExecutionPlanSnapshot(input: {
+      workflowId: string;
+      workspaceId: string;
+      snapshot: import('@meiye/contracts').ExecutionPlanSnapshot;
+    }) {
+      const admitted = await executionPlanAdmission.admitSnapshot(input);
+      await executionPlanAdmission.verifyAdmittedForDbos({
+        workflowId: input.workflowId,
+        snapshotHash: admitted.admitted.snapshot.snapshotHash,
+      });
+      return admitted.admitted.snapshot;
+    },
+  };
   if ('shared' in ports) {
     return {
       ...ports,
-      shared: { ...ports.shared, createExecutionConfirmationRequest },
+      shared: { ...ports.shared, ...confirmationPorts },
     };
   }
   return {
     ...(ports as HarnessStagePorts),
-    createExecutionConfirmationRequest,
+    ...confirmationPorts,
   };
 }
 
