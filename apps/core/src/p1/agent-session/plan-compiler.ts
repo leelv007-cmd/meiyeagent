@@ -314,19 +314,8 @@ export class PlanCompiler {
     ]);
 
     // Deterministic authorities always win — never take model quote/rights/etc.
-    const memoryInstruction = input.memoryContext?.entries
-      .map((entry) => entry.statement)
-      .join('；');
     const expression = {
       ...(proposal.expressionStrategy ?? {}),
-      ...(memoryInstruction
-        ? {
-            voice: [proposal.expressionStrategy?.voice, memoryInstruction]
-              .filter(Boolean)
-              .join('；')
-              .slice(0, 500),
-          }
-        : {}),
       ...(input.patch
         ? {
             // Patch is narrative only; does not rewrite quote/rights.
@@ -354,12 +343,7 @@ export class PlanCompiler {
         goalIds: input.goalIds ?? [],
         scope: input.scope ?? 'single_work',
         intent: {
-          summary: memoryInstruction
-            ? `${proposal.goalNarrative}\n已确认偏好：${memoryInstruction}`.slice(
-                0,
-                2_000,
-              )
-            : proposal.goalNarrative,
+          summary: proposal.goalNarrative,
           assumptions: proposal.assumptions,
           desiredActions: deliverables
             .map((item) => item.purpose)

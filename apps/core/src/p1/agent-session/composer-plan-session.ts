@@ -21,6 +21,7 @@ import type {
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { ExecutionPlanCompileFreeze } from '../harness/execution-plan-admission.js';
 import type { AgentSessionStore } from './agent-session-store.js';
+import type { RetrievalExperience } from './context-retrieval.js';
 import type { CompilePlanInput, CompilePlanResult } from './plan-compiler.js';
 import type { MarketingPlanStore } from './plan-store.js';
 import type { AgentTurnInput, PlanProposal } from './turn-contracts.js';
@@ -31,6 +32,15 @@ export type ComposerPlanCompilerPort = {
   adjustPlan(
     input: CompilePlanInput & { existingPlanId: string }
   ): Promise<CompilePlanResult>;
+  retrieveConfirmedExperience?(input: {
+    workspaceId: string;
+    threadId: string;
+    taskId: string;
+    runId: string;
+    harnessReleaseId: string;
+    storeId: string;
+    platform: string;
+  }): Promise<RetrievalExperience[]>;
   runTurn?(input: {
     resourceId: string;
     turn: AgentTurnInput;
@@ -130,12 +140,19 @@ export class ComposerPlanSessionCoordinator
         );
       }
       try {
-        const memoryContext = await this.runSessionTurn({
+        const turnResult = await this.runSessionTurn({
           submission,
           threadId,
           runId,
           sessionRevision: started.thread.sessionRevision,
           harnessReleaseId: started.run.harnessReleaseId,
+        });
+        const memoryContext = await this.retrievePlanMemoryContext({
+          submission,
+          threadId,
+          runId,
+          harnessReleaseId:
+            turnResult?.releaseId ?? started.run.harnessReleaseId,
         });
         await this.compile({
           submission,
@@ -185,10 +202,10 @@ export class ComposerPlanSessionCoordinator
     runId: string;
     sessionRevision: number;
     harnessReleaseId: string;
-  }): Promise<PlanMemoryContext | null> {
+  }): Promise<Pick<AgentTurnRunnerResult, 'releaseId' | 'toolCalls'> | null> {
     if (!this.compiler.runTurn) return null;
     const snapshot = input.submission.snapshot;
-    const result = await this.compiler.runTurn({
+    return this.compiler.runTurn({
       resourceId: snapshot.workspaceId,
       readOnly: true,
       turn: {
@@ -209,15 +226,44 @@ export class ComposerPlanSessionCoordinator
           storeId: snapshot.workspaceId,
           platform: snapshot.contentPackagePlatform,
         },
-        approvedToolNames: ['read_confirmed_experience'],
+        // Confirmed experience is a server-owned pre-plan lookup below; the
+        // model must not control whether this authority is loaded.
+        approvedToolNames: [],
         limits: COMPOSER_SESSION_LIMITS,
         harnessReleaseId: input.harnessReleaseId,
       },
     });
-    return planMemoryContextFromTurn({
-      result,
+  }
+
+  private async retrievePlanMemoryContext(input: {
+    submission: CreationSubmissionRecord;
+    threadId: string;
+    runId: string;
+    harnessReleaseId: string;
+  }): Promise<PlanMemoryContext | null> {
+    if (!this.compiler.retrieveConfirmedExperience) {
+      if (this.compiler.runTurn) {
+        throw new Error(
+          'Session production planning requires server-owned confirmed experience retrieval.'
+        );
+      }
+      return null;
+    }
+    const snapshot = input.submission.snapshot;
+    const entries = await this.compiler.retrieveConfirmedExperience({
+      workspaceId: snapshot.workspaceId,
+      threadId: input.threadId,
+      taskId: input.submission.task.id,
+      runId: input.runId,
+      harnessReleaseId: input.harnessReleaseId,
+      storeId: snapshot.workspaceId,
+      platform: snapshot.contentPackagePlatform,
+    });
+    return planMemoryContextFromConfirmedExperience({
+      entries,
       runId: input.runId,
       taskId: input.submission.task.id,
+      harnessReleaseId: input.harnessReleaseId,
     });
   }
 
@@ -318,46 +364,39 @@ export function approvalBasisForSubmission(
   return lens === 'copy' ? 'policy_exempt_copy' : 'merchant_confirmed';
 }
 
-function planMemoryContextFromTurn(input: {
-  result: Pick<AgentTurnRunnerResult, 'releaseId' | 'toolCalls'>;
+function planMemoryContextFromConfirmedExperience(input: {
+  entries: RetrievalExperience[];
   runId: string;
   taskId: string;
+  harnessReleaseId: string;
 }): PlanMemoryContext | null {
-  const entries = input.result.toolCalls
-    .filter((call) => call.toolName === 'read_confirmed_experience')
-    .flatMap((call) => {
-      if (!call.result || typeof call.result !== 'object') return [];
-      const confirmed = (call.result as { confirmed?: unknown }).confirmed;
-      if (!Array.isArray(confirmed)) return [];
-      return confirmed.flatMap((candidate) => {
-        if (!candidate || typeof candidate !== 'object') return [];
-        const row = candidate as Record<string, unknown>;
-        if (
-          typeof row.ref !== 'string' ||
-          !row.ref.startsWith('experience:') ||
-          typeof row.instruction !== 'string' ||
-          typeof row.revision !== 'number' ||
-          !Number.isInteger(row.revision) ||
-          row.revision < 0
-        ) {
-          return [];
-        }
-        return [
-          {
-            memoryId: row.ref.slice('experience:'.length),
-            revision: row.revision,
-            statement: row.instruction,
-          },
-        ];
-      });
-    });
+  const confirmed = input.entries.filter(
+    (entry) => entry.status === 'confirmed' && entry.ref.startsWith('experience:')
+  );
+  const entries = confirmed.map((entry) => ({
+    memoryId: entry.ref.slice('experience:'.length),
+    revision: entry.revision,
+  }));
   if (entries.length === 0) return null;
+  const statements = confirmed.map((entry) => entry.instruction).join('\n');
+  const concise = /简洁|简短|精炼/u.test(statements);
+  const restrained = /克制|不夸张|少夸张/u.test(statements);
   return planMemoryContextSchema.parse({
     entries,
     receiptRef: {
-      harnessReleaseId: input.result.releaseId,
+      harnessReleaseId: input.harnessReleaseId,
       runId: input.runId,
       taskId: input.taskId,
+    },
+    styleConstraints: {
+      forbiddenPhrases: restrained ? ['绝对', '保证', '必然'] : [],
+      maxBodyChars: concise ? 32 : 4_000,
+      maxSentenceChars: concise ? 24 : 500,
+      maxTitleChars: concise ? 24 : 500,
+      tones: [
+        ...(concise ? (['concise'] as const) : []),
+        ...(restrained ? (['restrained'] as const) : []),
+      ],
     },
   });
 }

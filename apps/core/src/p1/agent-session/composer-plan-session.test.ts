@@ -31,15 +31,27 @@ import {
 } from './composer-plan-session.js';
 import { MemoryAgentSessionStore } from './memory-agent-session-store.js';
 import { MemoryMarketingPlanStore } from './memory-plan-store.js';
+import { FixtureAgentKernel } from './agent-kernel.js';
 import { PostgresAgentSessionStore } from './postgres-agent-session-store.js';
 import { PostgresMarketingPlanStore } from './postgres-plan-store.js';
 import {
   createFixturePlanCompilerPorts,
   PlanCompiler,
 } from './plan-compiler.js';
+import { AgentSessionHarnessService } from './service.js';
 
 const TS = '2026-08-09T08:00:00.000Z';
 const connectionString = process.env.TEST_DATABASE_URL;
+const COMPOSER_SESSION_LIMITS_FOR_TEST = {
+  maxLlmSteps: 6,
+  maxToolCalls: 12,
+  maxRetrievalCalls: 6,
+  maxMerchantQuestions: 1,
+  maxReplans: 2,
+  maxSchemaRepairs: 2,
+  maxContextTokens: 32_000,
+  maxDelegations: 2,
+};
 
 test('Composer submission creates/reuses Thread+Run and appends real plan semantic revisions', async () => {
   const sessions = new MemoryAgentSessionStore();
@@ -58,31 +70,22 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
     {
       compilePlan: (input) => compiler.compile(input),
       adjustPlan: (input) => compiler.adjust(input),
+      retrieveConfirmedExperience: async () => [
+        {
+          instruction: '文案保持简洁克制',
+          kind: 'preference',
+          ref: 'experience:preference-1',
+          revision: 3,
+          status: 'confirmed',
+        },
+      ],
       runTurn: async (input) => {
         sessionTurns.push(
           structuredClone(input.turn as Record<string, unknown>)
         );
         return {
           releaseId: 'release-memory-1',
-          toolCalls: [
-            {
-              args: {},
-              result: {
-                confirmed: [
-                  {
-                    instruction: '文案保持简洁克制',
-                    ref: 'experience:preference-1',
-                    revision: 3,
-                    status: 'confirmed',
-                  },
-                ],
-                pending: [],
-                response_format: 'concise',
-              },
-              sideEffect: 'none',
-              toolName: 'read_confirmed_experience',
-            },
-          ],
+          toolCalls: [],
         };
       },
     },
@@ -123,7 +126,6 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
       {
         memoryId: 'preference-1',
         revision: 3,
-        statement: '文案保持简洁克制',
       },
     ],
     receiptRef: {
@@ -131,8 +133,18 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
       runId: firstBinding.runId,
       taskId: 'task-1',
     },
+    styleConstraints: {
+      forbiddenPhrases: ['绝对', '保证', '必然'],
+      maxBodyChars: 32,
+      maxSentenceChars: 24,
+      maxTitleChars: 24,
+      tones: ['concise', 'restrained'],
+    },
   });
-  assert.match(firstPlan?.revision.intent.summary ?? '', /文案保持简洁克制/u);
+  assert.doesNotMatch(
+    JSON.stringify(firstPlan?.revision),
+    /文案保持简洁克制/u
+  );
   assert.deepEqual(
     firstPlan?.executionPlan.units.find(
       (unit) => unit.unitType === 'context.read'
@@ -184,6 +196,81 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
   assert.equal(
     proposalFromSubmission(adjusted).recommendedDeliverables[0]?.quantity,
     4
+  );
+});
+
+test('server pre-plan retrieval runs with a kernel that makes zero tool calls', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  let retrievalCalls = 0;
+  const harness = new AgentSessionHarnessService({
+    store: sessions,
+    kernel: new FixtureAgentKernel({
+      decision: {
+        merchantMessage: 'done',
+        action: { kind: 'finish_turn' },
+        evidenceRefs: [],
+        assumptions: [],
+      },
+      toolCallPlan: [],
+    }),
+    resolveRelease: async () => ({
+      controlLimits: COMPOSER_SESSION_LIMITS_FOR_TEST,
+      releaseId: 'resolved-live-release',
+    }),
+    retrieveConfirmedExperience: async () => {
+      retrievalCalls += 1;
+      return [
+        {
+          instruction: '文案保持简洁克制',
+          ref: 'experience:preference-live',
+          revision: 5,
+          status: 'confirmed',
+        },
+      ];
+    },
+    registerCheckpointWriter: false,
+  });
+  harness.bindPlanCompiler(compiler);
+  const coordinator = new ComposerPlanSessionCoordinator(
+    sessions,
+    plans,
+    harness
+  );
+  const submission = copyRecord('task-live-lookup', '写一条周末护理文案');
+  const binding = await coordinator.prepare({ submission });
+  const freeze = submission.executionPlanFreeze;
+  assert.ok(freeze);
+  assert.equal(retrievalCalls, 1);
+  assert.deepEqual(
+    freeze.executionPlan.units.find(
+      (unit) => unit.unitType === 'copy.generate'
+    )?.input,
+    {
+      deliverableId: 'd1-copy',
+      index: 0,
+      kind: 'copy',
+      memoryContext: {
+        entries: [{ memoryId: 'preference-live', revision: 5 }],
+        receiptRef: {
+          harnessReleaseId: 'resolved-live-release',
+          runId: binding.runId,
+          taskId: submission.task.id,
+        },
+        styleConstraints: {
+          forbiddenPhrases: ['绝对', '保证', '必然'],
+          maxBodyChars: 32,
+          maxSentenceChars: 24,
+          maxTitleChars: 24,
+          tones: ['concise', 'restrained'],
+        },
+      },
+      quoteRef: freeze.quoteRef,
+    }
   );
 });
 

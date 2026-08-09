@@ -35,6 +35,12 @@ test(
             occurredAt: '2026-08-02T00:00:00.000Z',
             contentPackageRevision: 4,
           },
+          {
+            id: 'signal-c',
+            kind: 'appointment',
+            occurredAt: '2026-08-03T00:00:00.000Z',
+            contentPackageRevision: '4',
+          },
         ],
       };
       await pool.query(
@@ -63,24 +69,31 @@ test(
       );
 
       await repository.migrate();
-      await repository.migrate();
       const result = await pool.query<{
         payload: {
           resultSignals: Array<{
             contentPackageRevision: number | 'unknown';
           }>;
         };
+        xmin: string;
       }>(
-        'SELECT payload FROM p1_content_packages WHERE workspace_id = $1 AND id = $2',
+        'SELECT payload, xmin::text AS xmin FROM p1_content_packages WHERE workspace_id = $1 AND id = $2',
         [workspaceId, id]
       );
       assert.deepEqual(
         result.rows[0]?.payload.resultSignals.map(
           (row) => row.contentPackageRevision
         ),
-        [2, 'unknown']
+        [2, 4, 'unknown']
       );
-      assert.equal(result.rows[0]?.payload.resultSignals.length, 2);
+      assert.equal(result.rows[0]?.payload.resultSignals.length, 3);
+      const repairedXmin = result.rows[0]?.xmin;
+      await repository.migrate();
+      const replay = await pool.query<{ xmin: string }>(
+        'SELECT xmin::text AS xmin FROM p1_content_packages WHERE workspace_id = $1 AND id = $2',
+        [workspaceId, id]
+      );
+      assert.equal(replay.rows[0]?.xmin, repairedXmin);
 
       await assert.rejects(
         pool.query(

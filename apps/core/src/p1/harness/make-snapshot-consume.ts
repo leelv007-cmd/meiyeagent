@@ -17,6 +17,7 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   DEFAULT_NOTE_STYLES,
   executionPlanSnapshotSchema,
+  planMemoryContextSchema,
   type ExecutionPlanSnapshot,
   type NotePlan,
   type NoteStyleCandidates,
@@ -208,11 +209,24 @@ export function materializeCopyBriefFromSnapshot(input: {
       : ('xiaohongshu' as const);
   const quantity =
     snapshot.deliverables.find((d) => d.kind === 'copy')?.quantity ?? 1;
+  const memoryContext = snapshot.executionPlan.units
+    .map((unit) => {
+      if (!unit.input || typeof unit.input !== 'object') return null;
+      return planMemoryContextSchema.safeParse(
+        (unit.input as Record<string, unknown>).memoryContext
+      );
+    })
+    .find((result) => result?.success)?.data;
+  const style = memoryContext?.styleConstraints;
+  const styleInstruction = style
+    ? `结构化风格约束：语气=${style.tones.join('、') || 'default'}；标题不超过 ${style.maxTitleChars} 字；正文不超过 ${style.maxBodyChars} 字；单句不超过 ${style.maxSentenceChars} 字；禁用词=${style.forbiddenPhrases.join('、') || '无'}。`
+    : '';
   return {
     brief: {
       kind: 'copy',
       instructions:
         `按已确认方案「${declaration.normalizedIntent}」生成 ${quantity} 条文案。` +
+        styleInstruction +
         '只使用冻结事实与授权素材，不得编造价格、日期、效果或顾客案例，不得偏离 ExecutionPlanSnapshot。',
       platform,
       cta: '私信了解详情并预约',
@@ -222,6 +236,7 @@ export function materializeCopyBriefFromSnapshot(input: {
       constraints: [
         '不得编造价格、效果、资质或顾客案例',
         '只使用已确认的本店事实',
+        ...(style ? [styleInstruction] : []),
         `snapshotHash=${snapshot.snapshotHash}`,
       ],
     },

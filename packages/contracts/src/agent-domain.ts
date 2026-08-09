@@ -491,12 +491,20 @@ export const planMemoryContextSchema = z
         z
           .object({
             memoryId: memoryIdSchema,
-            statement: nonEmptyTrimmedStringSchema.max(4_000),
             revision: revisionNumberSchema,
           })
           .strict(),
       )
       .max(100),
+    styleConstraints: z
+      .object({
+        tones: z.array(z.enum(['concise', 'restrained'])).max(2),
+        maxTitleChars: z.number().int().positive().max(500),
+        maxBodyChars: z.number().int().positive().max(4_000),
+        maxSentenceChars: z.number().int().positive().max(500),
+        forbiddenPhrases: z.array(nonEmptyTrimmedStringSchema.max(100)).max(20),
+      })
+      .strict(),
   })
   .strict();
 

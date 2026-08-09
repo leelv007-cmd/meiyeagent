@@ -206,6 +206,48 @@ test('materializeCopyBriefFromSnapshot: deterministic brief, zero LLM, freeze fa
   );
 });
 
+test('materializeCopyBriefFromSnapshot consumes structured memory style without leaking its statement', () => {
+  const snapshot = buildSnapshot({
+    executionPlan: {
+      ...COMPILED,
+      units: [
+        {
+          ...COMPILED.units[0],
+          input: {
+            memoryContext: {
+              entries: [{ memoryId: 'preference-1', revision: 3 }],
+              receiptRef: {
+                taskId: 'task-1',
+                runId: 'run-1',
+                harnessReleaseId: 'release-1',
+              },
+              styleConstraints: {
+                tones: ['concise', 'restrained'],
+                maxTitleChars: 24,
+                maxBodyChars: 32,
+                maxSentenceChars: 24,
+                forbiddenPhrases: ['绝对', '保证', '必然'],
+              },
+            },
+          },
+        },
+      ],
+    } as unknown as ExecutionPlanFrozenContent['executionPlan'],
+  });
+  const intent = materializeIntentFromSnapshot({
+    snapshot,
+    request: baseRequest(snapshot),
+  });
+  const result = materializeCopyBriefFromSnapshot({
+    snapshot,
+    declaration: intent.declaration,
+    request: baseRequest(snapshot),
+  });
+  assert.match(result.brief.instructions, /正文不超过 32 字/u);
+  assert.match(result.brief.instructions, /语气=concise、restrained/u);
+  assert.doesNotMatch(result.brief.instructions, /以后每次文案/u);
+});
+
 test('validateIntentAgainstSnapshot: hard drift fail closed', () => {
   const snapshot = buildSnapshot();
   assert.throws(

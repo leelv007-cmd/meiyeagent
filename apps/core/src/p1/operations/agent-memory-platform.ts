@@ -814,13 +814,16 @@ export class AgentMemoryPlatform {
     // the generation turn bound task/run/release context. Best-effort — the
     // receipt is observability; it must never break the turn it traces.
     const injection = query.injectionContext;
-    if (injection && result.length > 0 && injection.taskId) {
+    const confirmedForInjection = result.filter(
+      (entry) => entry.authority !== 'session',
+    );
+    if (injection && confirmedForInjection.length > 0 && injection.taskId) {
       try {
         await this.recordInjectionReceipt({
           taskId: injection.taskId,
           runId: injection.runId,
           harnessReleaseId: injection.harnessReleaseId,
-          entries: result,
+          entries: confirmedForInjection,
         });
       } catch {
         // Receipt recording is a side channel; retrieval keeps serving.

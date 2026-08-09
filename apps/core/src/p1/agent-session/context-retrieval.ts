@@ -94,6 +94,7 @@ export type SessionRetrievalPorts = {
     workspaceId: string;
     threadId?: string;
     limit?: number;
+    injectionContext?: MemoryInjectionTurnBinding;
     scope?: {
       storeId?: string;
       personaId?: string;
@@ -718,9 +719,16 @@ export function createSessionRetrievalPorts(deps: {
       }));
     },
 
-    async listConfirmedExperience({ workspaceId, threadId, limit, scope }) {
+    async listConfirmedExperience({
+      workspaceId,
+      threadId,
+      limit,
+      scope,
+      injectionContext: boundInjectionContext,
+    }) {
       if (!deps.experience) return [];
-      const injectionContext = currentMemoryInjectionTurnBinding();
+      const injectionContext =
+        boundInjectionContext ?? currentMemoryInjectionTurnBinding();
       const entries = await deps.experience.retrieveForInjection({
         workspaceId,
         scope: scope ?? {},

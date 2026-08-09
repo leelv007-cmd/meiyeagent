@@ -115,7 +115,13 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
     await waitForResultJourney(page, copyContract, injectedWorkId);
     await expect(
       page.getByTestId(copyContract.resultSurfaceTestId)
-    ).toContainText(DURABLE_PREFERENCE);
+    ).not.toContainText(DURABLE_PREFERENCE);
+    const conciseTitle = await page.getByTestId('copy-field-title').inputValue();
+    const conciseBody =
+      (await page.getByTestId('copy-field-body').textContent()) ?? '';
+    expect(conciseTitle.length).toBeLessThanOrEqual(24);
+    expect(conciseBody.length).toBeLessThanOrEqual(32);
+    expect(conciseBody).not.toMatch(/绝对|保证|必然/u);
 
     await page.goto(`/dashboard?taskId=${encodeURIComponent(injectedTaskId)}`);
     const panel = page.getByTestId('memory-injection-receipt-panel');
@@ -156,6 +162,9 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
     await expect(
       page.getByTestId(copyContract.resultSurfaceTestId)
     ).not.toContainText(DURABLE_PREFERENCE);
+    const restoredBody =
+      (await page.getByTestId('copy-field-body').textContent()) ?? '';
+    expect(restoredBody.length).toBeGreaterThan(32);
 
     const laterReceiptLoaded = page.waitForResponse((response) => {
       const body = response.request().postData() ?? '';

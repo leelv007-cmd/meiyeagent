@@ -844,6 +844,21 @@ export async function assembleCoreGraph(
               ...(turn.memoryScope ?? {}),
             },
           }),
+        retrieveConfirmedExperience: async (input) =>
+          sessionRetrievalPorts.listConfirmedExperience?.({
+            workspaceId: input.workspaceId,
+            threadId: input.threadId,
+            limit: 8,
+            injectionContext: {
+              taskId: input.taskId,
+              runId: input.runId,
+              harnessReleaseId: input.harnessReleaseId,
+            },
+            scope: {
+              storeId: input.storeId,
+              platform: input.platform,
+            },
+          }) ?? [],
         createPolicies: () => createIntentRetrievalPolicies({}),
         resolveCreationMode: (turn) => turn.creationMode,
         registerCheckpointWriter: true,
