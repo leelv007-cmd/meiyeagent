@@ -1279,6 +1279,114 @@ test('V31-19: correct and withdraw are append-only and bind exact package revisi
   );
 });
 
+test('V31-19: two writers on the same expectedRevision — exactly one wins', async () => {
+  const setup = await createSetup('assisted');
+  await setup.service.recordManualResult(context, {
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+
+  // Distinct idempotency identities, so neither is a duplicate short-circuit:
+  // this is a genuine concurrent append against one revision, which the
+  // pre-lock check alone let both writers through.
+  const settled = await Promise.allSettled([
+    setup.service.recordResultSignal(context, {
+      expectedRevision: 2,
+      kind: 'inquiry',
+      occurredAt: '2026-07-17T10:00:00.000Z',
+      packageId: 'package-a',
+      sourceRef: 'self-report:occ-a',
+    }),
+    setup.service.recordResultSignal(context, {
+      expectedRevision: 2,
+      kind: 'store_visit',
+      occurredAt: '2026-07-17T10:05:00.000Z',
+      packageId: 'package-a',
+      sourceRef: 'self-report:occ-b',
+    }),
+  ]);
+
+  const winners = settled.filter((row) => row.status === 'fulfilled');
+  const losers = settled.filter((row) => row.status === 'rejected');
+  assert.equal(winners.length, 1);
+  assert.equal(losers.length, 1);
+  assert.equal(
+    (losers[0] as PromiseRejectedResult).reason instanceof
+      ContentPackageDeliveryError &&
+      (losers[0] as PromiseRejectedResult).reason.code,
+    'CONTENT_PACKAGE_REVISION_CONFLICT',
+  );
+
+  // The loser left no row and no revision bump behind.
+  const state = (await setup.repository.loadWorkspace('workspace-a'))!;
+  const stored = state.contentPackages[0]!;
+  assert.equal(stored.resultSignals?.length, 1);
+  assert.equal(stored.revision, 3);
+  // Every signal row carries the exact package revision it described.
+  assert.equal(stored.resultSignals?.[0]?.contentPackageRevision, 2);
+});
+
+test('V31-19: correct and withdraw rows also carry the exact package revision', async () => {
+  const setup = await createSetup('assisted');
+  await setup.service.recordManualResult(context, {
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+  const recorded = await setup.service.recordResultSignal(context, {
+    expectedRevision: 2,
+    kind: 'inquiry',
+    occurredAt: '2026-07-17T10:00:00.000Z',
+    packageId: 'package-a',
+    sourceRef: 'self-report:revision-bind',
+  });
+  const priorId = recorded.resultSignals?.at(-1)?.id;
+  assert.ok(priorId);
+  assert.equal(recorded.resultSignals?.at(-1)?.contentPackageRevision, 2);
+
+  const corrected = await setup.service.recordResultSignal(context, {
+    action: 'correct',
+    expectedRevision: 3,
+    kind: 'store_visit',
+    occurredAt: '2026-07-17T11:00:00.000Z',
+    packageId: 'package-a',
+    supersedesSignalId: priorId,
+  });
+  assert.equal(corrected.resultSignals?.at(-1)?.contentPackageRevision, 3);
+
+  const withdrawn = await setup.service.recordResultSignal(context, {
+    action: 'withdraw',
+    expectedRevision: 4,
+    kind: 'store_visit',
+    packageId: 'package-a',
+    supersedesSignalId: corrected.resultSignals!.at(-1)!.id,
+  });
+  assert.equal(withdrawn.resultSignals?.at(-1)?.contentPackageRevision, 4);
+
+  // Negative inbound: a stale correction is rejected with zero side effect.
+  await assert.rejects(
+    setup.service.recordResultSignal(context, {
+      action: 'correct',
+      expectedRevision: 3,
+      kind: 'inquiry',
+      occurredAt: '2026-07-17T12:00:00.000Z',
+      packageId: 'package-a',
+      supersedesSignalId: priorId,
+    }),
+    (error: unknown) =>
+      error instanceof ContentPackageDeliveryError &&
+      error.code === 'CONTENT_PACKAGE_REVISION_CONFLICT',
+  );
+  const state = (await setup.repository.loadWorkspace('workspace-a'))!;
+  assert.equal(state.contentPackages[0]?.resultSignals?.length, 3);
+  assert.equal(state.contentPackages[0]?.revision, 5);
+});
+
 async function createSetup(
   mode: 'assisted' | 'automatic_verified',
   legacy = false,

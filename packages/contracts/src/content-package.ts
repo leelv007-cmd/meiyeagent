@@ -633,6 +633,15 @@ export const contentPackageResultSignalSchema = z.object({
   status: z.enum(['active', 'superseded', 'withdrawn']).optional(),
   /** Correction / withdraw chain (append-only; binds to prior row id). */
   supersedesSignalId: contentPackageIdSchema.optional(),
+  /**
+   * Exact ContentPackage revision this row was written against (V31-19).
+   *
+   * Optional only so rows written before the field existed still parse; every
+   * new record / correct / withdraw carries it, because "which version of the
+   * package did this outcome describe" is unanswerable from a package head that
+   * has moved on since.
+   */
+  contentPackageRevision: z.number().int().nonnegative().optional(),
 });
 
 export const contentPackageResultReviewActionSchema = z.object({
