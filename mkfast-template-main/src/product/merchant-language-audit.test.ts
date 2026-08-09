@@ -94,9 +94,14 @@ const CORE_RETIRED_UNIT_DEBT = [
   // Produced, but no Web consumer reads it today.
   'apps/core/src/p1/integrations/application-service.ts',
   // Legacy video `job.step` labels: '技术处理失败，额度已退还' and
-  // '任务已取消，视频额度已退还'. `cancel_video` is still admitted by
-  // `productCommandSchema`, so the string is wire-reachable; no Web caller
-  // sends it.
+  // '任务已取消，视频额度已退还'. `productCommandSchema` still admits
+  // `cancel_video` (`packages/contracts/src/product-schema.ts`), so the command
+  // reaches the service — but the production assembly pins
+  // `legacyVideoPath: 'disabled'` (`apps/core/src/assembly/core-assembly.ts`),
+  // and that path rejects the whole legacy video command set with
+  // `LEGACY_VIDEO_PATH_RETIRED` before any label is written. So these two are
+  // unreachable copy under the shipped assembly, not a live merchant-facing
+  // lie — ledgered because the flag is an option, not a deletion.
   'apps/core/src/product/product-service.ts',
 ];
 
