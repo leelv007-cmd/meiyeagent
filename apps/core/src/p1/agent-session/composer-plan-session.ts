@@ -6,8 +6,12 @@
  * retried submission reuse its Run instead of appending another plan revision.
  */
 
-import type { ExecutionPlanApprovalBasis } from '@meiye/contracts';
-import type { MarketingPlanRevision } from '@meiye/contracts';
+import {
+  planMemoryContextSchema,
+  type ExecutionPlanApprovalBasis,
+  type MarketingPlanRevision,
+  type PlanMemoryContext,
+} from '@meiye/contracts';
 
 import type {
   ComposerAgentBinding,
@@ -20,6 +24,7 @@ import type { AgentSessionStore } from './agent-session-store.js';
 import type { CompilePlanInput, CompilePlanResult } from './plan-compiler.js';
 import type { MarketingPlanStore } from './plan-store.js';
 import type { AgentTurnInput, PlanProposal } from './turn-contracts.js';
+import type { AgentTurnRunnerResult } from './turn-runner.js';
 
 export type ComposerPlanCompilerPort = {
   compilePlan(input: CompilePlanInput): Promise<CompilePlanResult>;
@@ -30,7 +35,7 @@ export type ComposerPlanCompilerPort = {
     resourceId: string;
     turn: AgentTurnInput;
     readOnly?: boolean;
-  }): Promise<unknown>;
+  }): Promise<Pick<AgentTurnRunnerResult, 'releaseId' | 'toolCalls'>>;
 };
 
 export type ComposerPlanSessionOptions = {
@@ -125,7 +130,7 @@ export class ComposerPlanSessionCoordinator
         );
       }
       try {
-        await this.runSessionTurn({
+        const memoryContext = await this.runSessionTurn({
           submission,
           threadId,
           runId,
@@ -139,6 +144,7 @@ export class ComposerPlanSessionCoordinator
           planId,
           previous: latest?.revision ?? null,
           harnessReleaseId: started.run.harnessReleaseId,
+          memoryContext,
           now,
         });
       } catch (error) {
@@ -179,10 +185,10 @@ export class ComposerPlanSessionCoordinator
     runId: string;
     sessionRevision: number;
     harnessReleaseId: string;
-  }): Promise<void> {
-    if (!this.compiler.runTurn) return;
+  }): Promise<PlanMemoryContext | null> {
+    if (!this.compiler.runTurn) return null;
     const snapshot = input.submission.snapshot;
-    await this.compiler.runTurn({
+    const result = await this.compiler.runTurn({
       resourceId: snapshot.workspaceId,
       readOnly: true,
       turn: {
@@ -208,6 +214,11 @@ export class ComposerPlanSessionCoordinator
         harnessReleaseId: input.harnessReleaseId,
       },
     });
+    return planMemoryContextFromTurn({
+      result,
+      runId: input.runId,
+      taskId: input.submission.task.id,
+    });
   }
 
   private async compile(input: {
@@ -217,6 +228,7 @@ export class ComposerPlanSessionCoordinator
     planId: string;
     previous: MarketingPlanRevision | null;
     harnessReleaseId: string;
+    memoryContext: PlanMemoryContext | null;
     now: string;
   }): Promise<void> {
     const snapshot = input.submission.snapshot;
@@ -230,6 +242,7 @@ export class ComposerPlanSessionCoordinator
       contextBundleId: snapshot.briefContext.id,
       contextRevision: String(snapshot.briefContext.revision),
       harnessReleaseId: input.harnessReleaseId,
+      memoryContext: input.memoryContext,
       now: input.now,
       ...(input.submission.usageReservation.credits !== undefined
         ? {
@@ -303,6 +316,50 @@ export function approvalBasisForSubmission(
   lens: CreationSubmissionRecord['snapshot']['lens'],
 ): ExecutionPlanApprovalBasis {
   return lens === 'copy' ? 'policy_exempt_copy' : 'merchant_confirmed';
+}
+
+function planMemoryContextFromTurn(input: {
+  result: Pick<AgentTurnRunnerResult, 'releaseId' | 'toolCalls'>;
+  runId: string;
+  taskId: string;
+}): PlanMemoryContext | null {
+  const entries = input.result.toolCalls
+    .filter((call) => call.toolName === 'read_confirmed_experience')
+    .flatMap((call) => {
+      if (!call.result || typeof call.result !== 'object') return [];
+      const confirmed = (call.result as { confirmed?: unknown }).confirmed;
+      if (!Array.isArray(confirmed)) return [];
+      return confirmed.flatMap((candidate) => {
+        if (!candidate || typeof candidate !== 'object') return [];
+        const row = candidate as Record<string, unknown>;
+        if (
+          typeof row.ref !== 'string' ||
+          !row.ref.startsWith('experience:') ||
+          typeof row.instruction !== 'string' ||
+          typeof row.revision !== 'number' ||
+          !Number.isInteger(row.revision) ||
+          row.revision < 0
+        ) {
+          return [];
+        }
+        return [
+          {
+            memoryId: row.ref.slice('experience:'.length),
+            revision: row.revision,
+            statement: row.instruction,
+          },
+        ];
+      });
+    });
+  if (entries.length === 0) return null;
+  return planMemoryContextSchema.parse({
+    entries,
+    receiptRef: {
+      harnessReleaseId: input.result.releaseId,
+      runId: input.runId,
+      taskId: input.taskId,
+    },
+  });
 }
 
 export function proposalFromSubmission(

@@ -606,6 +606,7 @@ test('V31-18 read_confirmed_experience forwards the per-turn injection binding',
               {
                 memoryId: 'pref-x',
                 statement: '语气轻一点',
+                revision: 1,
                 kind: 'preference',
                 authority: 'confirmed',
               },

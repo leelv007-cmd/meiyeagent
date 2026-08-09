@@ -113,6 +113,9 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
       }
     );
     await waitForResultJourney(page, copyContract, injectedWorkId);
+    await expect(
+      page.getByTestId(copyContract.resultSurfaceTestId)
+    ).toContainText(DURABLE_PREFERENCE);
 
     await page.goto(`/dashboard?taskId=${encodeURIComponent(injectedTaskId)}`);
     const panel = page.getByTestId('memory-injection-receipt-panel');
@@ -150,6 +153,9 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
       }
     );
     await waitForResultJourney(page, copyContract, laterWorkId);
+    await expect(
+      page.getByTestId(copyContract.resultSurfaceTestId)
+    ).not.toContainText(DURABLE_PREFERENCE);
 
     const laterReceiptLoaded = page.waitForResponse((response) => {
       const body = response.request().postData() ?? '';

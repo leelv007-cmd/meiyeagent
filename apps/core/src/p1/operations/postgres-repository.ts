@@ -379,18 +379,31 @@ export class PostgresOperationsRepository implements OperationsRepository {
         '{resultSignals}',
         (
           SELECT jsonb_agg(
-            CASE
-              WHEN signal.value ? 'contentPackageRevision' THEN signal.value
-              ELSE signal.value || jsonb_build_object(
-                'contentPackageRevision',
-                GREATEST(
-                  0,
-                  COALESCE((package.payload->>'revision')::integer, package.revision::integer)
-                    - jsonb_array_length(package.payload->'resultSignals')
-                    + signal.ordinality::integer - 1
-                )
+            signal.value || jsonb_build_object(
+              'contentPackageRevision',
+              COALESCE(
+                (
+                  SELECT audit.payload->'details'->'contentPackageRevision'
+                  FROM p1_operations_audit_events AS audit
+                  WHERE audit.workspace_id = package.workspace_id
+                    AND audit.payload->>'entityId' = package.id
+                    AND audit.payload->>'action' IN (
+                      'content_package.result_signal_recorded',
+                      'content_package.result_signal_corrected',
+                      'content_package.result_signal_withdrawn'
+                    )
+                    AND audit.payload->'details'->>'signalId' = signal.value->>'id'
+                    AND jsonb_typeof(
+                      audit.payload->'details'->'contentPackageRevision'
+                    ) = 'number'
+                    AND audit.payload->'details'->>'contentPackageRevision'
+                      ~ '^[0-9]+$'
+                  ORDER BY audit.updated_at DESC
+                  LIMIT 1
+                ),
+                '"unknown"'::jsonb
               )
-            END
+            )
             ORDER BY signal.ordinality
           )
           FROM jsonb_array_elements(package.payload->'resultSignals')
@@ -398,11 +411,7 @@ export class PostgresOperationsRepository implements OperationsRepository {
         )
       )
       WHERE jsonb_typeof(package.payload->'resultSignals') = 'array'
-        AND jsonb_array_length(package.payload->'resultSignals') > 0
-        AND jsonb_path_exists(
-          package.payload,
-          '$.resultSignals[*] ? (!exists(@.contentPackageRevision))'
-        );
+        AND jsonb_array_length(package.payload->'resultSignals') > 0;
       ALTER TABLE p1_content_packages
         DROP CONSTRAINT IF EXISTS p1_content_packages_result_signal_revision_required;
       ALTER TABLE p1_content_packages
@@ -411,6 +420,10 @@ export class PostgresOperationsRepository implements OperationsRepository {
           NOT jsonb_path_exists(
             payload,
             '$.resultSignals[*] ? (!exists(@.contentPackageRevision))'
+          )
+          AND NOT jsonb_path_exists(
+            payload,
+            '$.resultSignals[*] ? (!((@.contentPackageRevision.type() == "number" && @.contentPackageRevision >= 0) || (@.contentPackageRevision.type() == "string" && @.contentPackageRevision == "unknown")))'
           )
         );
       CREATE INDEX IF NOT EXISTS p1_content_packages_status_updated_idx

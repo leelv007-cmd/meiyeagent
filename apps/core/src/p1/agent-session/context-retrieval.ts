@@ -61,6 +61,7 @@ export type RetrievalContent = {
 export type RetrievalExperience = {
   ref: string;
   instruction: string;
+  revision: number;
   status: 'confirmed' | 'pending';
   kind?: string;
 };
@@ -598,6 +599,7 @@ export function createSessionRetrievalPorts(deps: {
       Array<{
         memoryId: string;
         statement: string;
+        revision: number;
         kind?: string;
         authority?: string;
       }>
@@ -729,6 +731,7 @@ export function createSessionRetrievalPorts(deps: {
       return entries.map((entry) => ({
         ref: `experience:${entry.memoryId}`,
         instruction: entry.statement,
+        revision: entry.revision,
         status:
           entry.authority === 'session'
             ? ('pending' as const)

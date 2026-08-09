@@ -611,7 +611,11 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
               : action === 'correct'
                 ? 'content_package.result_signal_corrected'
                 : 'content_package.result_signal_recorded',
-            current.id
+            current.id,
+            {
+              contentPackageRevision: current.revision,
+              signalId: signal.id,
+            }
           )
         );
         await repository.saveWorkspace(state);
@@ -624,6 +628,9 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
     const contentPackage = await this.requirePackage(context, packageId);
     const history = contentPackage.resultSignals ?? [];
     const latest = projectActiveResultSignals(history);
+    const quarantined = history.filter(
+      (signal) => signal.contentPackageRevision === 'unknown'
+    );
     const merchant = latest.filter(
       (signal) => signal.source === 'merchant_recorded'
     );
@@ -652,6 +659,7 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       signals: {
         inferred,
         merchant,
+        quarantined,
         verified,
         history,
       },
@@ -1347,7 +1355,8 @@ function auditEvent(
   context: OperationContext,
   createdAt: string,
   action: string,
-  entityId: string
+  entityId: string,
+  details?: Record<string, unknown>
 ): OperationsAuditEvent {
   return {
     action,
@@ -1356,6 +1365,7 @@ function auditEvent(
     createdAt,
     entityId,
     entityType: 'content_package',
+    ...(details ? { details } : {}),
     id: id(),
     workspaceId: context.workspaceId,
   };
@@ -1390,6 +1400,7 @@ export function projectActiveResultSignals(
   );
   return history.filter(
     (row) =>
+      typeof row.contentPackageRevision === 'number' &&
       (row.status ?? 'active') !== 'withdrawn' &&
       (row.status ?? 'active') !== 'superseded' &&
       !superseded.has(row.id)
@@ -1415,9 +1426,9 @@ function resultSignalMatchesIdempotencyIdentity(
     mapContentPackageResultKindToOutcomeSignal(row.kind) ?? 'feedback';
   const inputSignal =
     mapContentPackageResultKindToOutcomeSignal(identity.kind) ?? 'feedback';
-  // New rows carry the exact consumed revision. Historical rows without this
-  // field cannot satisfy a new idempotency identity and remain read-only.
-  if (row.contentPackageRevision === undefined) return false;
+  // New rows carry the exact consumed revision. Quarantined historical rows
+  // cannot satisfy a new idempotency identity and remain read-only.
+  if (typeof row.contentPackageRevision !== 'number') return false;
   const rowKey = buildOutcomeEvidenceIdempotencyKey({
     contentPackageId: identity.packageId,
     contentPackageRevision: row.contentPackageRevision,

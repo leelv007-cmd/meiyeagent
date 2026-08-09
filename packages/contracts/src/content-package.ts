@@ -592,8 +592,11 @@ export const contentPackageDeliveryCapabilitySchema = z.object({
  */
 export const contentPackageResultSignalSchema = z.object({
   actorId: contentPackageIdSchema,
-  /** Exact ContentPackage revision consumed by this append. */
-  contentPackageRevision: z.number().int().nonnegative(),
+  /** Exact consumed revision, or explicit quarantine for unprovable legacy rows. */
+  contentPackageRevision: z.union([
+    z.number().int().nonnegative(),
+    z.literal('unknown'),
+  ]),
   id: contentPackageIdSchema,
   kind: z.enum([
     'attention',

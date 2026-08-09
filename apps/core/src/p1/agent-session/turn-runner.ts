@@ -70,6 +70,7 @@ import {
 export type ToolCallLogEntry = {
   toolName: string;
   args: unknown;
+  result?: unknown;
   sideEffect: AgentKernelToolDefinition['sideEffect'];
   error?: unknown;
 };
@@ -353,6 +354,7 @@ export class AgentTurnRunner {
         toolCalls.push({
           toolName: call.toolName,
           args: call.args,
+          ...(call.result === undefined ? {} : { result: call.result }),
           sideEffect,
         });
       }

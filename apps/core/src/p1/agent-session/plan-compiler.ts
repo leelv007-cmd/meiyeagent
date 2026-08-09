@@ -29,6 +29,7 @@ import {
   type MarketingPlanReadiness,
   type MarketingPlanRevision,
   type PlanDeliverable,
+  type PlanMemoryContext,
 } from '@meiye/contracts';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
@@ -169,6 +170,8 @@ export type CompilePlanInput = {
   contextBundleId: string;
   contextRevision: string;
   harnessReleaseId: string;
+  /** Confirmed memories returned by this Session turn, with exact receipt binding. */
+  memoryContext?: PlanMemoryContext | null;
   now?: string;
   /** Optional merchant billing overlay for Living Plan cost section (no invention). */
   livingPlanBilling?: PlanLivingPlanBillingOverlay;
@@ -311,8 +314,19 @@ export class PlanCompiler {
     ]);
 
     // Deterministic authorities always win — never take model quote/rights/etc.
+    const memoryInstruction = input.memoryContext?.entries
+      .map((entry) => entry.statement)
+      .join('；');
     const expression = {
       ...(proposal.expressionStrategy ?? {}),
+      ...(memoryInstruction
+        ? {
+            voice: [proposal.expressionStrategy?.voice, memoryInstruction]
+              .filter(Boolean)
+              .join('；')
+              .slice(0, 500),
+          }
+        : {}),
       ...(input.patch
         ? {
             // Patch is narrative only; does not rewrite quote/rights.
@@ -340,7 +354,12 @@ export class PlanCompiler {
         goalIds: input.goalIds ?? [],
         scope: input.scope ?? 'single_work',
         intent: {
-          summary: proposal.goalNarrative,
+          summary: memoryInstruction
+            ? `${proposal.goalNarrative}\n已确认偏好：${memoryInstruction}`.slice(
+                0,
+                2_000,
+              )
+            : proposal.goalNarrative,
           assumptions: proposal.assumptions,
           desiredActions: deliverables
             .map((item) => item.purpose)
@@ -349,6 +368,7 @@ export class PlanCompiler {
             .map((item) => item.platform)
             .filter((value): value is string => Boolean(value)),
         },
+        memoryContext: input.memoryContext ?? null,
         goal: {
           summary: goalSummary,
           whyNow: proposal.whyNow ?? null,
@@ -395,6 +415,7 @@ export class PlanCompiler {
         goal: revisionDraft.goal,
         deliverables: revisionDraft.deliverables,
         expression: revisionDraft.expression,
+        memoryContext: revisionDraft.memoryContext,
         quoteRef: revisionDraft.quoteRef,
         boundRevisions: revisionDraft.boundRevisions,
         rightsSummary: revisionDraft.rightsSummary,
@@ -538,6 +559,9 @@ export class PlanCompiler {
       input: {
         contextBundleId: input.revision.boundRevisions.contextBundleId,
         contextRevision: input.revision.boundRevisions.contextRevision,
+        ...(input.revision.memoryContext
+          ? { memoryContext: input.revision.memoryContext }
+          : {}),
       },
     });
     boundedRetry[contextUnitId] = defaultRetryOff();
@@ -565,6 +589,9 @@ export class PlanCompiler {
           kind: deliverable.kind,
           index: i,
           quoteRef: input.revision.quoteRef,
+          ...(input.revision.memoryContext
+            ? { memoryContext: input.revision.memoryContext }
+            : {}),
         };
         units.push({
           unitId: generateUnitId,

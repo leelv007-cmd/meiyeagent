@@ -703,6 +703,7 @@ export async function assembleCoreGraph(
         Array<{
           memoryId: string;
           statement: string;
+          revision: number;
           kind?: string;
           authority?: string;
         }>

@@ -21,6 +21,7 @@ import {
   ContentPackageDeliveryError,
   ContentPackageDeliveryService,
   contentPackageDeliveryCapability,
+  projectActiveResultSignals,
   type ContentPackagePublishPort,
 } from './content-package-delivery.js';
 import { OperationsFoundationModule } from './foundation-module.js';
@@ -35,6 +36,33 @@ const context: OperationContext = {
   userId: 'owner-a',
   workspaceId: 'workspace-a',
 };
+
+test('unprovable legacy result signals stay quarantined from exact evidence', () => {
+  const active = projectActiveResultSignals([
+    {
+      actorId: 'legacy-actor',
+      contentPackageRevision: 'unknown',
+      id: 'legacy-signal',
+      kind: 'inquiry',
+      occurredAt: '2026-08-01T00:00:00.000Z',
+      source: 'merchant_recorded',
+      status: 'active',
+    },
+    {
+      actorId: 'owner-a',
+      contentPackageRevision: 4,
+      id: 'exact-signal',
+      kind: 'store_visit',
+      occurredAt: '2026-08-02T00:00:00.000Z',
+      source: 'merchant_recorded',
+      status: 'active',
+    },
+  ]);
+  assert.deepEqual(
+    active.map((signal) => signal.id),
+    ['exact-signal']
+  );
+});
 
 test('the three-state gate opens automatic publish only with complete live evidence', () => {
   const base = {

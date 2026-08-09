@@ -59,8 +59,31 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
       compilePlan: (input) => compiler.compile(input),
       adjustPlan: (input) => compiler.adjust(input),
       runTurn: async (input) => {
-        sessionTurns.push(structuredClone(input.turn as Record<string, unknown>));
-        return {} as never;
+        sessionTurns.push(
+          structuredClone(input.turn as Record<string, unknown>)
+        );
+        return {
+          releaseId: 'release-memory-1',
+          toolCalls: [
+            {
+              args: {},
+              result: {
+                confirmed: [
+                  {
+                    instruction: '文案保持简洁克制',
+                    ref: 'experience:preference-1',
+                    revision: 3,
+                    status: 'confirmed',
+                  },
+                ],
+                pending: [],
+                response_format: 'concise',
+              },
+              sideEffect: 'none',
+              toolName: 'read_confirmed_experience',
+            },
+          ],
+        };
       },
     },
     { now: () => new Date(Date.parse(TS) + tick++ * 1_000).toISOString() }
@@ -93,6 +116,44 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
   assert.deepEqual(
     events.map((event) => event.eventType),
     ['plan.created']
+  );
+  const firstPlan = await plans.getLatest(events[0]!.sourceEntityId);
+  assert.deepEqual(firstPlan?.revision.memoryContext, {
+    entries: [
+      {
+        memoryId: 'preference-1',
+        revision: 3,
+        statement: '文案保持简洁克制',
+      },
+    ],
+    receiptRef: {
+      harnessReleaseId: 'release-memory-1',
+      runId: firstBinding.runId,
+      taskId: 'task-1',
+    },
+  });
+  assert.match(firstPlan?.revision.intent.summary ?? '', /文案保持简洁克制/u);
+  assert.deepEqual(
+    firstPlan?.executionPlan.units.find(
+      (unit) => unit.unitType === 'context.read'
+    )?.input,
+    {
+      contextBundleId: 'context-task-1',
+      contextRevision: '1',
+      memoryContext: firstPlan?.revision.memoryContext,
+    }
+  );
+  assert.deepEqual(
+    firstPlan?.executionPlan.units.find(
+      (unit) => unit.unitType === 'note.generate'
+    )?.input,
+    {
+      deliverableId: 'd1-note',
+      index: 0,
+      kind: 'note',
+      memoryContext: firstPlan?.revision.memoryContext,
+      quoteRef: firstPlan?.revision.quoteRef,
+    }
   );
 
   const adjusted = record('task-2', '只做小红书，减到 4 页');
