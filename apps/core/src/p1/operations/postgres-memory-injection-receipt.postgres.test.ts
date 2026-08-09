@@ -224,10 +224,15 @@ test(
       );
       assert.equal(retired.rows[0]?.present, false);
 
-      // A failure anywhere inside save() must leave no receipt behind, and the
-      // retry must then succeed. Previously forced through a trigger on the
-      // retired outbox; now forced on the receipt insert itself, which is the
-      // row that actually matters.
+      // Transaction cleanup, NOT cross-table atomicity — that property left with
+      // the retired outbox, because save() now writes exactly one table.
+      //
+      // Be precise about which half has teeth: the trigger is BEFORE INSERT, so
+      // the row never lands and the `receipt_count: '0'` below is true no matter
+      // what save() does with its transaction. The assertion that bites is the
+      // *retry succeeding* afterwards — if save() failed to ROLLBACK, the pooled
+      // client would be handed back carrying an aborted transaction and the
+      // retry would fail with 25P02 instead of committing.
       await pool.query(`
         CREATE FUNCTION ${functionName}() RETURNS trigger AS $$
         BEGIN
