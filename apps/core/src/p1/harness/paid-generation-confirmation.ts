@@ -273,6 +273,9 @@ async function admitConfirmedExecutionPlan(
     snapshot,
   });
   if (live) {
+    if (live.quoteMissing === true) {
+      throw new Error('Paid execution quote is missing after confirmation.');
+    }
     const staleness = evaluateExecutionPlanStaleness({ snapshot, live });
     if (staleness.status === 'stale') {
       if (live.rightsRevoked === true) {

@@ -114,6 +114,20 @@ test('missing rights head treated as revoked', async () => {
   assert.equal(live.rightsRevoked, true);
 });
 
+test('missing quote head is projected as a fail-closed live fact', async () => {
+  const snap = snapshot();
+  const live = await resolveExecutionPlanLiveFactsFromPorts({
+    snapshot: snap,
+    workspaceId: 'ws-1',
+    ports: {
+      async resolveQuoteHead() {
+        return null;
+      },
+    },
+  });
+  assert.equal(live.quoteMissing, true);
+});
+
 test('an authorized rights head revision advances without being classified as revoked', async () => {
   const snap = snapshot();
   const live = await resolveExecutionPlanLiveFactsFromPorts({
