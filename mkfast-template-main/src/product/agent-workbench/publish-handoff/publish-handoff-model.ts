@@ -14,8 +14,6 @@ import {
   type PublishFromHandoffIntent,
   type PublishHandoffCopyBlock,
   type PublishHandoffView,
-  type SelfReportAskDecision,
-  type SelfReportAskEvent,
   type VideoHandoffSafetyChecklist,
 } from '@meiye/contracts';
 
