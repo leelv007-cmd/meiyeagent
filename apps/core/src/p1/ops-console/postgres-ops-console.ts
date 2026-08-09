@@ -390,6 +390,7 @@ export class PostgresOpsConsoleStore
       runId: string;
       workspaceId: string;
       harnessReleaseId: string;
+      status: string;
       startedAt: string;
     }>
   > {
@@ -397,18 +398,74 @@ export class PostgresOpsConsoleStore
       run_id: string;
       resource_id: string;
       harness_release_id: string;
+      status: string;
       started_at: Date;
     }>(
-      `SELECT runs.run_id, threads.resource_id, runs.harness_release_id, runs.started_at
-       FROM p1_agent_runs runs
-       JOIN p1_agent_threads threads ON threads.thread_id = runs.thread_id
-       ORDER BY runs.started_at DESC LIMIT $1`,
+      `WITH release_pins AS (
+         SELECT runs.run_id, threads.resource_id, runs.harness_release_id,
+                runs.status, runs.started_at
+         FROM p1_agent_runs runs
+         JOIN p1_agent_threads threads ON threads.thread_id = runs.thread_id
+         UNION ALL
+         SELECT requests.task_id AS run_id,
+                requests.request->>'workspaceId' AS resource_id,
+                requests.request#>>'{executionPlanSnapshot,harnessReleaseId}' AS harness_release_id,
+                'waiting' AS status,
+                requests.created_at AS started_at
+         FROM harness_runtime.task_requests requests
+         JOIN harness_runtime.pending_questions questions
+           ON questions.task_id = requests.task_id AND questions.status = 'pending'
+         WHERE requests.request->>'workspaceId' IS NOT NULL
+           AND requests.request#>>'{executionPlanSnapshot,harnessReleaseId}' IS NOT NULL
+       )
+       SELECT run_id, resource_id, harness_release_id, status, started_at
+       FROM release_pins ORDER BY started_at DESC LIMIT $1`,
       [limit],
     );
     return result.rows.map((row) => ({
       runId: row.run_id,
       workspaceId: row.resource_id,
       harnessReleaseId: row.harness_release_id,
+      status: row.status,
+      startedAt: row.started_at.toISOString(),
+    }));
+  }
+
+  async listActiveRunPins(limit = 100) {
+    const result = await this.pool.query<{
+      run_id: string;
+      resource_id: string;
+      harness_release_id: string;
+      status: string;
+      started_at: Date;
+    }>(
+      `WITH active_release_pins AS (
+         SELECT runs.run_id, threads.resource_id, runs.harness_release_id,
+                runs.status, runs.started_at
+         FROM p1_agent_runs runs
+         JOIN p1_agent_threads threads ON threads.thread_id = runs.thread_id
+         WHERE runs.status IN ('running', 'waiting')
+         UNION ALL
+         SELECT requests.task_id AS run_id,
+                requests.request->>'workspaceId' AS resource_id,
+                requests.request#>>'{executionPlanSnapshot,harnessReleaseId}' AS harness_release_id,
+                'waiting' AS status,
+                requests.created_at AS started_at
+         FROM harness_runtime.task_requests requests
+         JOIN harness_runtime.pending_questions questions
+           ON questions.task_id = requests.task_id AND questions.status = 'pending'
+         WHERE requests.request->>'workspaceId' IS NOT NULL
+           AND requests.request#>>'{executionPlanSnapshot,harnessReleaseId}' IS NOT NULL
+       )
+       SELECT run_id, resource_id, harness_release_id, status, started_at
+       FROM active_release_pins ORDER BY started_at DESC LIMIT $1`,
+      [limit],
+    );
+    return result.rows.map((row) => ({
+      runId: row.run_id,
+      workspaceId: row.resource_id,
+      harnessReleaseId: row.harness_release_id,
+      status: row.status,
       startedAt: row.started_at.toISOString(),
     }));
   }
@@ -445,8 +502,19 @@ export class PostgresOpsConsoleStore
         [operationId],
       );
       const operation = pending.rows[0]?.payload;
-      if (!operation)
+      if (!operation) {
+        const completed = await client.query<PayloadRow<OpsConsoleAuditEntry>>(
+          `SELECT payload FROM p1_ops_console_audit
+           WHERE id = $1 AND action = 'rollback_production'`,
+          [operationId],
+        );
+        const audit = clonePayload(completed.rows[0]);
+        if (audit) {
+          await client.query('COMMIT');
+          return audit;
+        }
         throw new Error(`Rollback operation not found: ${operationId}`);
+      }
       await client.query('DELETE FROM p1_ops_console_candidate_trials');
       const audit = operation.audit;
       await client.query(

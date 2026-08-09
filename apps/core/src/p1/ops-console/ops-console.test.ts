@@ -16,6 +16,7 @@ import {
 
 import type { P1Context } from '../foundation/domain.js';
 import { P1DomainError } from '../foundation/domain.js';
+import { createDefaultProductionQuickCheckSampler } from '../eval/production-sampling.js';
 import { MemoryEvalVerdictStore } from '../eval/verdict-store.js';
 import {
   defaultPromptPackBindings,
@@ -32,6 +33,7 @@ import { OpsConsoleFoundationModule } from './foundation-module.js';
 import { OPS_KILL_SWITCH_IDS } from './kill-switches.js';
 import {
   OpsConsoleService,
+  type OpsConsoleServiceDeps,
   resolveWorkspaceHarnessRelease,
 } from './ops-console-service.js';
 import {
@@ -120,7 +122,9 @@ function operatorCtx(): P1Context {
   };
 }
 
-function createHarness() {
+function createHarness(options: {
+  runPins?: OpsConsoleServiceDeps['runPins'];
+} = {}) {
   const store = new MemoryHarnessReleaseStore();
   const releases = new HarnessReleaseService(store);
   const audit = new MemoryOpsConsoleAuditStore();
@@ -129,6 +133,10 @@ function createHarness() {
   const trials = new MemoryOpsCandidateTrialStore();
   const drills = new MemoryOpsRollbackDrillStore();
   const verdicts = new MemoryEvalVerdictStore();
+  const evaluator = createDefaultProductionQuickCheckSampler({
+    releases: store,
+    verdicts,
+  });
   const service = new OpsConsoleService({
     releases,
     catalog: store,
@@ -138,6 +146,8 @@ function createHarness() {
     trials,
     drills,
     verdicts,
+    evaluator,
+    ...(options.runPins ? { runPins: options.runPins } : {}),
     langfuseBaseUrl: 'https://langfuse.example.test',
   });
   const module = new OpsConsoleFoundationModule(service);
@@ -181,8 +191,7 @@ test('capability map: ops-console admin actions require platform.manage; operato
     'set_kill_switch',
     'create_tool_policy_revision',
     'promote_to_production',
-    'publish_seed_candidate',
-    'run_release_eval_fixture',
+    'run_release_eval',
     'authorize_production_history',
   ] as const) {
     assert.equal(
@@ -266,7 +275,49 @@ test('publish_release rejects missing prompt pin and surfaces pack key', async (
   );
 });
 
+test('run_release_eval derives release-bound verdict from the production quick-check evaluator', async () => {
+  const { module, audit } = createHarness();
+  await module.execute({
+    context: adminCtx('ops-eval'),
+    input: {
+      action: 'publish_release',
+      payload: { ...basePublish('rel-eval'), reason: 'publish eval target' },
+    },
+  });
+
+  const evaluated = (await module.execute({
+    context: adminCtx('ops-eval'),
+    input: {
+      action: 'run_release_eval',
+      payload: {
+        releaseId: 'rel-eval',
+        reason: 'evaluate candidate trace',
+        trace: {
+          toolCalls: [],
+          tags: ['l0.5'],
+        },
+        verdict: 'passed',
+      },
+    },
+  })) as unknown as {
+    releaseId: string;
+    verdict: string;
+    evalSuiteRevision: string;
+  };
+
+  assert.equal(evaluated.releaseId, 'rel-eval');
+  assert.equal(evaluated.verdict, 'failed');
+  assert.equal(evaluated.evalSuiteRevision, 'eval/1');
+  assert.ok(
+    (await audit.list()).some(
+      (entry) =>
+        entry.action === 'run_release_eval' && entry.target === 'rel-eval',
+    ),
+  );
+});
+
 test('publish → canary allowlist → candidate trial → promote → rollback with audit', async () => {
+  const activeRunId = 'run-inflight-rel-next';
   const {
     module,
     service,
@@ -274,7 +325,24 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
     trials: trialStore,
     verdicts,
     drills,
-  } = createHarness();
+  } = createHarness({
+    runPins: {
+      async listRecentRunPins() {
+        return [];
+      },
+      async listActiveRunPins() {
+        return [
+          {
+            runId: activeRunId,
+            workspaceId: 'ws-x',
+            harnessReleaseId: 'rel-next',
+            status: 'running',
+            startedAt: TS,
+          },
+        ];
+      },
+    },
+  });
 
   const published = (await module.execute({
     context: adminCtx('ops-a'),
@@ -505,7 +573,14 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
   const audit = (await module.query({
     context: adminCtx(),
     input: { action: 'list_audit', payload: { limit: 50 } },
-  })) as { items: { action: string; operatorId: string; reason: string }[] };
+  })) as {
+    items: {
+      action: string;
+      operatorId: string;
+      reason: string;
+      detail: Record<string, unknown>;
+    }[];
+  };
   assert.ok(audit.items.length >= 5);
   assert.ok(
     audit.items.some(
@@ -514,6 +589,11 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
         entry.operatorId === 'ops-b' &&
         entry.reason.includes('error rate'),
     ),
+  );
+  assert.deepEqual(
+    audit.items.find((entry) => entry.action === 'rollback_production')
+      ?.detail.inFlightRunIds,
+    [activeRunId],
   );
 
   const diff = (await module.query({

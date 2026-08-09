@@ -3,6 +3,7 @@
  * Admin action boundary for Release desk / Tool Policy / Kill Switch / audit.
  */
 
+import type { QuickCheckTrace } from '../agent-session/quick-checks.js';
 import type { P1Context } from '../foundation/domain.js';
 import { P1DomainError } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
@@ -88,25 +89,24 @@ export class OpsConsoleFoundationModule implements P1OperationModule {
       return this.service.publishRelease(args.context, input, meta);
     }
 
-    if (action === 'publish_seed_candidate') {
-      return this.service.publishSeedCandidate(
+    if (action === 'run_release_eval') {
+      const trace = payload.trace;
+      if (
+        !trace ||
+        typeof trace !== 'object' ||
+        !Array.isArray((trace as Record<string, unknown>).toolCalls)
+      ) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'run_release_eval requires a QuickCheckTrace with toolCalls.',
+        );
+      }
+      return this.service.runReleaseEval(
         args.context,
         {
           releaseId: stringField(payload, 'releaseId'),
-          version: typeof payload.version === 'number' ? payload.version : 1,
-          toolPolicyRevision:
-            typeof payload.toolPolicyRevision === 'string'
-              ? payload.toolPolicyRevision
-              : undefined,
+          trace: trace as QuickCheckTrace,
         },
-        meta,
-      );
-    }
-
-    if (action === 'run_release_eval_fixture') {
-      return this.service.runReleaseEvalFixture(
-        args.context,
-        { releaseId: stringField(payload, 'releaseId') },
         meta,
       );
     }

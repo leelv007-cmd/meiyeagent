@@ -12,6 +12,8 @@ import test from 'node:test';
 
 import { Pool } from 'pg';
 
+import type { HarnessReleaseService } from '../harness/harness-release.js';
+import { resolveWorkspaceHarnessRelease } from './ops-console-service.js';
 import { PostgresOpsConsoleStore } from './postgres-ops-console.js';
 import { AGENT_TOOL_POLICY_SCHEMA_VERSION } from './tool-policy.js';
 
@@ -243,6 +245,91 @@ test(
         (await restarted.list(50)).some(
           (entry) => entry.id === rollbackOperationId,
         ),
+      );
+
+      const concurrentOperationId = `rollback-op-concurrent-${randomUUID()}`;
+      await restarted.putCandidateTrial({
+        workspaceId: `ws-${randomUUID()}`,
+        candidateReleaseId: 'rel-cand',
+        operatorId: 'ops-pg',
+        reason: 'must be cleared by recovery',
+        updatedAt: ts2,
+        expiresAt: '2026-08-09T01:00:00.000Z',
+        consumedByRunId: null,
+        consumedAt: null,
+      });
+      await restarted.beginRollbackOperation({
+        id: concurrentOperationId,
+        toReleaseId: 'rel-pg-0',
+        createdAt: ts2,
+        audit: {
+          id: concurrentOperationId,
+          action: 'rollback_production',
+          operatorId: 'ops-pg',
+          reason: 'concurrent recovery',
+          evidence: 'incident-concurrent',
+          target: 'rel-pg-0',
+          detail: {},
+          createdAt: ts2,
+          correlationId: 'corr-concurrent',
+        },
+      });
+      let pendingListCalls = 0;
+      let releaseListBarrier!: () => void;
+      const bothListed = new Promise<void>((resolve) => {
+        releaseListBarrier = resolve;
+      });
+      const rollbackOperations = {
+        beginRollbackOperation: (
+          operation: Parameters<
+            typeof restarted.beginRollbackOperation
+          >[0],
+        ) => restarted.beginRollbackOperation(operation),
+        async listPendingRollbackOperations() {
+          const operations = await restarted.listPendingRollbackOperations();
+          pendingListCalls += 1;
+          if (pendingListCalls === 2) releaseListBarrier();
+          await bothListed;
+          return operations;
+        },
+        completeRollbackOperation: (operationId: string) =>
+          restarted.completeRollbackOperation(operationId),
+      };
+      const releases = {
+        async rollbackProduction() {
+          return {};
+        },
+        async resolveForRun() {
+          return { releaseId: 'rel-pg-0' };
+        },
+      } as unknown as HarnessReleaseService;
+      const recovered = await Promise.all([
+        resolveWorkspaceHarnessRelease({
+          workspaceId: 'ws-concurrent-a',
+          runId: 'run-concurrent-a',
+          releases,
+          trials: restarted,
+          rollbackOperations,
+        }),
+        resolveWorkspaceHarnessRelease({
+          workspaceId: 'ws-concurrent-b',
+          runId: 'run-concurrent-b',
+          releases,
+          trials: restarted,
+          rollbackOperations,
+        }),
+      ]);
+      assert.deepEqual(
+        recovered.map((item) => item.releaseId),
+        ['rel-pg-0', 'rel-pg-0'],
+      );
+      assert.equal((await restarted.listPendingRollbackOperations()).length, 0);
+      assert.equal((await restarted.listCandidateTrials()).length, 0);
+      assert.equal(
+        (await restarted.list(50)).filter(
+          (entry) => entry.id === concurrentOperationId,
+        ).length,
+        1,
       );
     } finally {
       await pool.query(

@@ -7,6 +7,8 @@ import { createHash, randomUUID } from 'node:crypto';
 
 import type { HarnessReleaseLifecycle } from '@meiye/contracts';
 
+import type { QuickCheckTrace } from '../agent-session/quick-checks.js';
+import type { ProductionQuickCheckSampler } from '../eval/production-sampling.js';
 import { P1DomainError } from '../foundation/domain.js';
 import type { P1Context } from '../foundation/domain.js';
 import type { EvalVerdictStore } from '../eval/verdict-store.js';
@@ -15,7 +17,6 @@ import {
   type HarnessReleaseStore,
   type PublishHarnessReleaseInput,
 } from '../harness/harness-release.js';
-import { seedHarnessReleaseManifest } from '../harness/seed-harness-release.js';
 import {
   type OpsConsoleAuditAction,
   type OpsConsoleAuditEntry,
@@ -120,15 +121,25 @@ export type OpsConsoleServiceDeps = {
   killSwitches: OpsKillSwitchStore;
   trials: OpsCandidateTrialStore;
   drills: OpsRollbackDrillStore;
-  verdicts?: Pick<EvalVerdictStore, 'listByRelease' | 'putImmutable'>;
+  verdicts?: Pick<EvalVerdictStore, 'listByRelease'>;
+  evaluator?: Pick<ProductionQuickCheckSampler, 'sample'>;
   rollbackOperations?: OpsRollbackOperationStore;
-  allowFixtureEval?: boolean;
   runPins?: {
     listRecentRunPins(limit?: number): Promise<
       Array<{
         runId: string;
         workspaceId: string;
         harnessReleaseId: string;
+        status: string;
+        startedAt: string;
+      }>
+    >;
+    listActiveRunPins(limit?: number): Promise<
+      Array<{
+        runId: string;
+        workspaceId: string;
+        harnessReleaseId: string;
+        status: string;
         startedAt: string;
       }>
     >;
@@ -305,78 +316,45 @@ export class OpsConsoleService {
     return { ...published, audit: entry };
   }
 
-  async publishSeedCandidate(
+  async runReleaseEval(
     context: P1Context,
-    input: { releaseId: string; version: number; toolPolicyRevision?: string },
+    input: { releaseId: string; trace: QuickCheckTrace },
     meta: OpsWriteMeta,
   ) {
-    return this.publishRelease(
-      context,
-      {
-        ...seedHarnessReleaseManifest(),
-        releaseId: input.releaseId,
-        version: input.version,
-        toolPolicyRevision: input.toolPolicyRevision ?? 'tool-policy/v1',
-        createdAt: nowIso(meta.now),
-      },
-      meta,
-    );
-  }
-
-  async runReleaseEvalFixture(
-    context: P1Context,
-    input: { releaseId: string },
-    meta: OpsWriteMeta,
-  ) {
-    if (!this.deps.allowFixtureEval || !this.deps.verdicts) {
-      throw new P1DomainError(
-        'FORBIDDEN',
-        'Release eval fixture is available only in the E2E fixture runtime.',
-      );
+    if (!this.deps.evaluator) {
+      throw new P1DomainError('INVALID_STATE', 'Production eval is not wired.');
     }
-    const reason = requireReason(meta.reason, 'run_release_eval_fixture');
-    const artifact = await this.deps.releases.getExactRelease(input.releaseId);
-    const createdAt = nowIso(meta.now);
-    const result = await this.deps.verdicts.putImmutable({
-      schemaVersion: 'eval-layer-result/v1',
-      resultId: `ops-fixture-${randomUUID()}` as never,
-      layer: 'l1',
-      harnessReleaseId: artifact.releaseId,
-      evalSuiteRevision: artifact.evalSuiteRevision,
-      gates: (['fidelity', 'rights', 'redline'] as const).map((kind) => ({
-        id: `${kind}-${randomUUID()}` as never,
-        kind,
-        passed: true,
-      })),
-      thresholds: [],
-      verdict: 'passed',
-      scoredBookkept: false,
-      releasable: true,
-      createdAt,
+    const reason = requireReason(meta.reason, 'run_release_eval');
+    await this.deps.releases.getExactRelease(input.releaseId);
+    const outcome = await this.deps.evaluator.sample({
+      harnessReleaseId: input.releaseId,
+      trace: input.trace,
+      sampleTraceId: `ops:${context.correlationId}:${randomUUID()}`,
+      includeTags: ['l0.5'],
+      excludeTags: ['readonly'],
+      resultId: `ops-eval-${randomUUID()}`,
+      createdAt: nowIso(meta.now),
     });
-    await this.deps.drills.appendRollbackDrill({
-      id: randomUUID(),
-      releaseId: input.releaseId,
-      operatorId: context.userId,
-      reason,
-      evidence: `fixture-eval://${result.resultId}`,
-      result: 'passed',
-      notes: 'E2E release readiness fixture',
-      createdAt,
-    });
-    await this.audit(
+    const audit = await this.audit(
       context,
-      'record_rollback_drill',
+      'run_release_eval',
       input.releaseId,
       reason,
-      `fixture-eval://${result.resultId}`,
-      { verdict: result.verdict },
+      meta.evidence?.trim() || null,
+      {
+        resultId: outcome.result.resultId,
+        verdict: outcome.result.verdict,
+        evalSuiteRevision: outcome.result.evalSuiteRevision,
+      },
       meta.now,
     );
     return {
       releaseId: input.releaseId,
-      verdict: result.verdict,
-      resultId: result.resultId,
+      verdict: outcome.result.verdict,
+      resultId: outcome.result.resultId,
+      evalSuiteRevision: outcome.result.evalSuiteRevision,
+      gates: outcome.result.gates,
+      audit,
     };
   }
 
@@ -538,6 +516,11 @@ export class OpsConsoleService {
   ) {
     const reason = requireReason(meta.reason, 'rollback_production');
     const evidence = requireEvidence(meta.evidence, 'rollback_production');
+    const inFlightRunIds = this.deps.runPins
+      ? (await this.deps.runPins.listActiveRunPins(100)).map(
+          (run) => run.runId,
+        )
+      : [];
     const auditEntry: OpsConsoleAuditEntry = {
       id: randomUUID(),
       action: 'rollback_production',
@@ -545,7 +528,7 @@ export class OpsConsoleService {
       reason,
       evidence,
       target: input.toReleaseId,
-      detail: { requestedProduction: input.toReleaseId },
+      detail: { requestedProduction: input.toReleaseId, inFlightRunIds },
       createdAt: nowIso(meta.now),
       correlationId: context.correlationId,
     };
@@ -570,6 +553,7 @@ export class OpsConsoleService {
           return this.deps.audit.append({
             ...auditEntry,
             detail: {
+              ...auditEntry.detail,
               previousProduction: rolled.previousProduction?.releaseId ?? null,
               production: rolled.production.releaseId,
             },

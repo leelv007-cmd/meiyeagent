@@ -22,6 +22,7 @@ p2_specs=(
   tests/e2e/specs/p2-browser-closure.spec.ts
   tests/e2e/specs/admin-sensitive-words.spec.ts
   tests/e2e/specs/composer-card-family.spec.ts
+  tests/e2e/specs/v31-ops-console-release-journey.spec.ts
 )
 
 node scripts/production-network-boundary-gate.mjs \

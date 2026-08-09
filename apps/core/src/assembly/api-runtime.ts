@@ -129,7 +129,6 @@ import {
   shouldSampleShadowReconciliation,
 } from '../p1/harness/shadow-reconciliation.js';
 import { HarnessTaskAdmissionService } from '../p1/harness/task-admission.js';
-import { PostgresEvalVerdictStore } from '../p1/eval/postgres-verdict-store.js';
 import {
   FixtureImageExactTextVerifier,
   ModelSupplyImageExactTextVerifier,
@@ -866,9 +865,17 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           killSwitches: opsConsoleStore,
           trials: opsConsoleStore,
           drills: opsConsoleStore,
-          verdicts: new PostgresEvalVerdictStore(pool),
+          verdicts: evalLayersAssembly.verdicts,
+          evaluator: {
+            async sample(input) {
+              const outcome = await evalLayersAssembly.sampler.sample(input);
+              await evalLayersAssembly.langfuseWriter.writeEvalResult(
+                outcome.result,
+              );
+              return outcome;
+            },
+          },
           rollbackOperations: opsConsoleStore,
-          allowFixtureEval: env.APP_ENV === 'e2e',
           runPins: opsConsoleStore,
           langfuseBaseUrl: env.LANGFUSE_BASE_URL ?? null,
           // V31-26a / U14: production PG inventory for legacy replay archive gate.

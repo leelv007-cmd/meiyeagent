@@ -6,6 +6,7 @@
 
 export type OpsConsoleAuditAction =
   | 'publish_release'
+  | 'run_release_eval'
   | 'transition_lifecycle'
   | 'set_canary_allowlist'
   | 'set_candidate_trial'

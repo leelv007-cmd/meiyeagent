@@ -783,8 +783,7 @@ export function requiredP1Capability(
     ]);
     const opsConsoleCommands = new Set([
       'publish_release',
-      'publish_seed_candidate',
-      'run_release_eval_fixture',
+      'run_release_eval',
       'transition_lifecycle',
       'set_canary_allowlist',
       'set_candidate_trial',

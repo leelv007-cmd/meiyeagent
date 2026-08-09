@@ -40,6 +40,7 @@ export type OpsAuditEntryView = {
   reason: string;
   evidence: string | null;
   target: string;
+  detail: Record<string, unknown>;
   createdAt: string;
 };
 
