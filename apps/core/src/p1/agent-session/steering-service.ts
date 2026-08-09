@@ -301,6 +301,137 @@ export function settlePartialDelivery(input: {
   };
 }
 
+// ─── Merchant-facing impact + credit projection (V31-27 / D-061) ─────────────
+
+/**
+ * What this instruction costs and what it leaves alone.
+ *
+ * Every field here is derived from the server's own unit progress and its own
+ * classification. The browser used to work this out from the page labels it was
+ * rendering, which made the fee sentence a second opinion about the merchant's
+ * balance — and it got the money question wrong in exactly the case that
+ * matters (a page whose upstream call had already gone out).
+ *
+ * Credits only. Provider cost, tokens and currency never appear (D-061).
+ */
+export type SteeringImpactProjection = {
+  /** Merchant-facing labels for the units this instruction changes. */
+  affectedLabels: string[];
+  /** Merchant-facing labels for the units that stay exactly as they are. */
+  preservedLabels: string[];
+  /**
+   * True when the change produces a fresh billable generation: a 修改对象 for
+   * units already sent upstream. False for a future_step_patch whose units have
+   * not been dispatched yet.
+   */
+  rebilled: boolean;
+  /** Units already sent upstream that this instruction touches. */
+  alreadyInvokedUnitIds: string[];
+  /** plan_change — the merchant reconfirms a new credit quote before Make continues. */
+  requiresRequote: boolean;
+  /** unsafe_or_conflicting — explain, then let the merchant rewrite. */
+  requiresCorrection: boolean;
+  /** 费用是否变化, in credits. Empty for an instruction Core refused. */
+  feeNote: string;
+  /** 已发生的调用照常计费、不退免 — only when something was already sent. */
+  settledNote: string | null;
+  /** Queued behind the current unit / the whole run (dual queue). */
+  queueNote: string | null;
+};
+
+const STEERING_QUEUE_NOTES: Partial<
+  Record<StoredSteeringCommand['applicationStatus'], string>
+> = {
+  queued_steer: '当前这一步做完就按你的话改。',
+  queued_follow_up: '整套做完之后再按你的话处理。',
+};
+
+function steeringUnitLabel(
+  unitId: string,
+  units: readonly SteeringUnitProgress[],
+): string {
+  const unit = units.find((item) => item.unitId === unitId);
+  if (unit?.label) return unit.label;
+  if (typeof unit?.pageIndex === 'number') {
+    return unit.pageIndex === 0 ? '封面' : `第${unit.pageIndex + 1}页`;
+  }
+  return '这一步';
+}
+
+/**
+ * `pending` is the only status whose upstream call has not gone out. Anything
+ * else has a provider side effect that steering never rolls back and never
+ * refunds (PROVIDER_SIDE_EFFECT_IMMUTABLE), so changing it means paying for a
+ * second generation.
+ */
+function steeringUnitAlreadyInvoked(
+  unitId: string,
+  units: readonly SteeringUnitProgress[],
+): boolean {
+  const unit = units.find((item) => item.unitId === unitId);
+  return unit !== undefined && unit.status !== 'pending';
+}
+
+export function projectSteeringImpact(input: {
+  classificationKind: MakeSteeringCommand['classification']['kind'];
+  applicationStatus: StoredSteeringCommand['applicationStatus'];
+  affectedUnitIds: readonly string[];
+  preservedUnitIds: readonly string[];
+  units: readonly SteeringUnitProgress[];
+  /** Server-priced credits for the re-generation, when a quote produced one. */
+  rebillCredits?: number | null;
+}): SteeringImpactProjection {
+  const requiresRequote = input.classificationKind === 'plan_change';
+  const requiresCorrection =
+    input.classificationKind === 'unsafe_or_conflicting';
+  const affectedLabels = input.affectedUnitIds.map((id) =>
+    steeringUnitLabel(id, input.units),
+  );
+  const preservedLabels = input.preservedUnitIds.map((id) =>
+    steeringUnitLabel(id, input.units),
+  );
+  const alreadyInvokedUnitIds = input.affectedUnitIds.filter((id) =>
+    steeringUnitAlreadyInvoked(id, input.units),
+  );
+  const rebilled =
+    !requiresRequote &&
+    !requiresCorrection &&
+    (input.classificationKind === 'derived_revision' ||
+      alreadyInvokedUnitIds.length > 0);
+
+  const target =
+    affectedLabels.length > 0 ? affectedLabels.join('、') : '改动的页';
+  const keepNote = preservedLabels.length > 0 ? '；其余页不动，不另算积分' : '';
+  // A figure the server never priced is a claim about her balance made from
+  // missing data — name the rule and omit the number instead.
+  const amount =
+    typeof input.rebillCredits === 'number' && input.rebillCredits > 0
+      ? `并计 ${input.rebillCredits} 积分`
+      : '，按正常生成一样算积分';
+
+  const feeNote = requiresCorrection
+    ? ''
+    : requiresRequote
+      ? '这次改动会动到方案范围，积分要重新算一次，确认后才继续。'
+      : rebilled
+        ? `${target}会按你的改法重新生成${amount}${keepNote}。`
+        : `${target}还没开始做，直接按你的话调整，不额外算积分${keepNote ? '；其余页也不受影响' : ''}。`;
+
+  return {
+    affectedLabels,
+    preservedLabels,
+    rebilled,
+    alreadyInvokedUnitIds: [...alreadyInvokedUnitIds],
+    requiresRequote,
+    requiresCorrection,
+    feeNote,
+    settledNote: rebilled
+      ? '之前已经生成的那次照常计费、不退回，原来那版也会留着。'
+      : null,
+    queueNote: STEERING_QUEUE_NOTES[input.applicationStatus] ?? null,
+  };
+}
+
 // ─── Submit / apply ──────────────────────────────────────────────────────────
 
 export type SubmitSteeringInput = {
@@ -334,6 +465,8 @@ export type SubmitSteeringResult = {
   impactSummary: string;
   preservedUnitIds: string[];
   affectedUnitIds: string[];
+  /** Core-owned scope + credit projection; the browser renders it verbatim. */
+  impact: SteeringImpactProjection;
   /**
    * plan_change → consumer must replan+requote via Plan Compiler (V31-09)
    * and confirmation objects (V31-11). This service does not invent money.
@@ -448,6 +581,13 @@ export class SteeringService {
         impactSummary: stored.impactSummary,
         preservedUnitIds: classified.preservedUnitIds,
         affectedUnitIds: classified.affectedUnitIds,
+        impact: projectSteeringImpact({
+          classificationKind: classified.classification.kind,
+          applicationStatus: 'disabled',
+          affectedUnitIds: classified.affectedUnitIds,
+          preservedUnitIds: classified.preservedUnitIds,
+          units: input.units,
+        }),
         nextAction: 'disabled',
         replayed: false,
       };
@@ -471,6 +611,13 @@ export class SteeringService {
             impactSummary: existing.impactSummary,
             preservedUnitIds: [],
             affectedUnitIds: existing.command.affectedUnitIds,
+            impact: projectSteeringImpact({
+              classificationKind: existing.command.classification.kind,
+              applicationStatus: existing.applicationStatus,
+              affectedUnitIds: existing.command.affectedUnitIds,
+              preservedUnitIds: [],
+              units: input.units,
+            }),
             nextAction: nextActionOf(
               existing.command.classification.kind,
               existing.applicationStatus,
@@ -530,6 +677,13 @@ export class SteeringService {
       impactSummary: stored.impactSummary,
       preservedUnitIds: classified.preservedUnitIds,
       affectedUnitIds: classified.affectedUnitIds,
+      impact: projectSteeringImpact({
+        classificationKind: classified.classification.kind,
+        applicationStatus: stored.applicationStatus,
+        affectedUnitIds: classified.affectedUnitIds,
+        preservedUnitIds: classified.preservedUnitIds,
+        units: input.units,
+      }),
       nextAction: nextActionOf(
         classified.classification.kind,
         stored.applicationStatus,

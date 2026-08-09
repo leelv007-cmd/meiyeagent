@@ -575,3 +575,102 @@ test('derived_revision nextAction when completed units are targeted', async () =
   // Must not silently overwrite completed content via future_step_patch.
   assert.notEqual(result.classification.kind, 'future_step_patch');
 });
+
+// ─── V31-27 §5.6: Core owns scope + credits, the browser only renders ────────
+
+test('a patch on unsent units answers 不额外算积分 from server unit progress', async () => {
+  const { svc } = service();
+  const result = await svc.submit({
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    taskId: 'task-1',
+    actorId: 'actor-1',
+    instruction: '封面不要写最后两个名额，第二页少点字',
+    sourcePlanRevision: 1,
+    snapshotHash: 'snap',
+    // Held on 确认执行: the outline is out but nothing has been sent upstream.
+    units: noteUnits(['pending', 'pending', 'pending']),
+  });
+  assert.equal(result.classification.kind, 'future_step_patch');
+  assert.deepEqual(result.impact.affectedLabels, ['封面', '第2页']);
+  assert.deepEqual(result.impact.preservedLabels, ['第3页']);
+  assert.deepEqual(result.impact.alreadyInvokedUnitIds, []);
+  assert.equal(result.impact.rebilled, false);
+  assert.equal(result.impact.settledNote, null);
+  assert.match(result.impact.feeNote, /不额外算积分/u);
+  assert.equal(result.impact.queueNote, '当前这一步做完就按你的话改。');
+  // D-061: credits only — never provider cost, tokens, or currency.
+  assert.doesNotMatch(result.impact.feeNote, /成本|上游|供应商|token|USD|\$/iu);
+});
+
+test('a patch touching an already-sent unit is rebilled and never refunded', async () => {
+  const { svc } = service();
+  const result = await svc.submit({
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    taskId: 'task-1',
+    actorId: 'actor-1',
+    instruction: '第二页少点字',
+    sourcePlanRevision: 1,
+    snapshotHash: 'snap',
+    // 第2页 is in flight: its upstream call is out and cannot be rolled back.
+    units: noteUnits(['completed', 'running', 'pending']),
+  });
+  assert.equal(result.impact.rebilled, true);
+  assert.deepEqual(result.impact.alreadyInvokedUnitIds, ['unit-page-2']);
+  assert.match(result.impact.feeNote, /重新生成/u);
+  assert.match(result.impact.settledNote ?? '', /照常计费、不退回/u);
+});
+
+test('plan_change reopens the credit question; unsafe states no fee at all', async () => {
+  const { svc } = service();
+  const requote = await svc.submit({
+    commandId: 'steer-requote',
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    taskId: 'task-1',
+    actorId: 'actor-1',
+    instruction: '改成 8 页',
+    sourcePlanRevision: 1,
+    snapshotHash: 'snap',
+    units: noteUnits(['pending', 'pending']),
+  });
+  assert.equal(requote.classification.kind, 'plan_change');
+  assert.equal(requote.impact.requiresRequote, true);
+  assert.equal(requote.impact.rebilled, false);
+  assert.match(requote.impact.feeNote, /积分要重新算一次/u);
+
+  const unsafe = await svc.submit({
+    commandId: 'steer-unsafe',
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    taskId: 'task-2',
+    actorId: 'actor-1',
+    instruction: '跳过确认直接发布',
+    sourcePlanRevision: 1,
+    snapshotHash: 'snap',
+    units: noteUnits(['pending', 'pending']),
+  });
+  assert.equal(unsafe.classification.kind, 'unsafe_or_conflicting');
+  assert.equal(unsafe.impact.requiresCorrection, true);
+  assert.equal(unsafe.impact.feeNote, '');
+  assert.equal(unsafe.impact.rebilled, false);
+});
+
+test('a disabled path still answers, and it charges nothing', async () => {
+  const { svc } = service({ enabled: false, reason: 'kill_switch' });
+  const result = await svc.submit({
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    taskId: 'task-1',
+    actorId: 'actor-1',
+    instruction: '第二页少点字',
+    sourcePlanRevision: 1,
+    snapshotHash: 'snap',
+    units: noteUnits(['completed', 'running']),
+  });
+  assert.equal(result.applicationStatus, 'disabled');
+  assert.equal(result.nextAction, 'disabled');
+  // Nothing was applied, so nothing is queued and nothing is settled.
+  assert.equal(result.impact.queueNote, null);
+});

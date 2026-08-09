@@ -33,18 +33,14 @@ import {
   isSteeringEntryVisible,
   projectSteeringHistory,
   projectSteeringImpact,
-  steeringUnitsFromNotePlan,
   type SteeringCommandHistoryItem,
   type SteeringImpactView,
   type SteeringSubmitResult,
-  type SteeringUnitProgress,
 } from './steering-composer';
 
 export type SteeringComposerPanelProps = {
   /** Host admission (`isSteeringEntryVisible`): run steerable + gate on. */
   visible: boolean;
-  /** Unit progress sent to Core for classification. */
-  units: readonly SteeringUnitProgress[];
   /** Durable commands for this task — survives reload / session restore. */
   history?: readonly SteeringCommandHistoryItem[];
   /** Host seam: `agent-session.steering_submit`. */
@@ -62,7 +58,6 @@ const PLACEHOLDER =
 
 export function SteeringComposerPanel({
   visible,
-  units,
   history = [],
   onSubmit,
   onCarryToComposer,
@@ -83,7 +78,7 @@ export function SteeringComposerPanel({
     setError(null);
     try {
       const result = await onSubmit(trimmed);
-      setImpact(projectSteeringImpact({ result, units }));
+      setImpact(projectSteeringImpact({ result }));
       setLastInstruction(trimmed);
       // An instruction Core refused is the one sentence worth keeping in the
       // box: the merchant is being asked to rewrite it, not to retype it.
@@ -183,13 +178,14 @@ export type SteeringComposerHostProps = {
   phase: ComposerSessionPhase;
   taskId: string | null;
   workId: string | null;
-  /** Core's note outline for this run — the units a patch can target. */
-  notePlanTimeline: NotePlanTimeline | null;
   /**
-   * True while the paid-media 确认执行 interrupt is still pending. Generation
-   * has not started, so no page has been sent upstream yet whatever the
-   * outline's 「配图中」 label says.
+   * Accepted and ignored. Unit progress and the money question are Core's
+   * (`steering_submit` projects both from p1_make_steering_task_progress), so
+   * the browser has nothing to derive from the outline — including the
+   * 确认执行 hold, which the outline paints 「配图中」 while nothing has been sent.
+   * Kept on the props so composer-home does not need editing in this slice.
    */
+  notePlanTimeline?: NotePlanTimeline | null;
   awaitingExecutionConfirm?: boolean;
   onCarryToComposer?: (instruction: string) => void;
   className?: string;
@@ -206,8 +202,6 @@ export function SteeringComposerHost({
   phase,
   taskId,
   workId,
-  notePlanTimeline,
-  awaitingExecutionConfirm = false,
   onCarryToComposer,
   className,
 }: SteeringComposerHostProps) {
@@ -289,7 +283,6 @@ export function SteeringComposerHost({
         });
         return result;
       }}
-      units={units}
       visible
     />
   );

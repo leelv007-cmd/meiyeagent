@@ -270,6 +270,8 @@ export class AgentSessionFoundationModule implements P1OperationModule {
             impactSummary: result.impactSummary,
             preservedUnitIds: result.preservedUnitIds,
             affectedUnitIds: result.affectedUnitIds,
+            // Scope + credits are Core's projection; the browser renders it.
+            impact: result.impact,
             nextAction: result.nextAction,
             replayed: result.replayed,
           };
