@@ -377,6 +377,77 @@ test(
 );
 
 test(
+  'Postgres decide versus expiry boundary uses one server-clock lock owner',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const fixture = await createFixture();
+    const expiresAt = '2026-08-09T12:00:00.000Z';
+    const service = new ExecutionConfirmationService(
+      fixture.requestStore,
+      fixture.decisionStore,
+      confirmationCreditPortFromPostgresLedger(fixture.creditLedger),
+      undefined,
+      { clock: () => new Date(expiresAt) },
+    );
+    try {
+      await fixture.creditLedger.grant({
+        id: 'confirm-boundary-balance',
+        workspaceId: fixture.workspaceId,
+        credits: 9,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'confirm-boundary-balance',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      await service.createRequest({
+        requestId: 'req-boundary',
+        workspaceId: fixture.workspaceId,
+        planId: 'plan-boundary',
+        planRevision: 1,
+        snapshotHash: 'snapshot-boundary',
+        quoteRef: { id: 'quote-boundary', revision: 1 },
+        reservationIdempotencyKey: 'reserve-boundary',
+        createdAt: '2026-08-08T12:00:00.000Z',
+        holdExpiresAt: expiresAt,
+        actorId: 'merchant-boundary',
+        creditCost: 4,
+        failureRefundsCredits: true,
+      });
+
+      const [decide, expire] = await Promise.allSettled([
+        service.decideForWorkspace({
+          decisionId: 'decision-boundary',
+          requestId: 'req-boundary',
+          workspaceId: fixture.workspaceId,
+          actorId: 'merchant-boundary',
+          decision: 'confirmed',
+          decidedAt: '2099-01-01T00:00:00.000Z',
+        }),
+        service.expireForWorkspace({
+          requestId: 'req-boundary',
+          workspaceId: fixture.workspaceId,
+          now: expiresAt,
+        }),
+      ]);
+      assert.equal(decide.status, 'rejected');
+      assert.equal(expire.status, 'fulfilled');
+      assert.equal(
+        (await service.getRequest('req-boundary'))?.request.status,
+        'expired',
+      );
+      assert.equal(await service.getDecision('req-boundary'), null);
+      assert.equal(
+        (await fixture.creditLedger.project(fixture.workspaceId, expiresAt))
+          .availableCredits,
+        9,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+test(
   'Postgres authority closes reject/expire successor TOCTOU inside the workspace transaction',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {

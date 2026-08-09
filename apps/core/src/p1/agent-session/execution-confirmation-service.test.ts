@@ -27,7 +27,10 @@ import { confirmationCreditPortFromPostgresLedger } from './postgres-execution-c
 const CREATED = '2026-08-08T12:00:00.000Z';
 const HOLD = '2026-08-09T12:00:00.000Z'; // 24h
 
-function makeService(credits = 20) {
+function makeService(
+  credits = 20,
+  clock = () => new Date('2026-08-08T12:30:00.000Z'),
+) {
   const ledger = new MemoryCreditLedger();
   ledger.grant({
     id: 'lot-1',
@@ -44,6 +47,8 @@ function makeService(credits = 20) {
     requests,
     decisions,
     confirmationCreditPortFromMemoryLedger(ledger),
+    undefined,
+    { clock },
   );
   return { service, ledger, requests, decisions };
 }
@@ -376,6 +381,28 @@ test('hold expiry cancels + refunds + plain D-153 message (durable seam)', async
     now: '2026-08-09T13:00:00.000Z',
   });
   assert.equal(again.request.status, 'expired');
+});
+
+test('decide at the server-clock expiry boundary atomically expires and refunds', async () => {
+  const { service, ledger } = makeService(20, () => new Date(HOLD));
+  await service.createRequest(baseCreate());
+
+  await assert.rejects(
+    service.decideForWorkspace({
+      decisionId: 'dec-at-expiry',
+      requestId: 'req-1',
+      workspaceId: 'ws-1',
+      actorId: 'merchant-1',
+      decision: 'confirmed',
+      decidedAt: CREATED,
+    }),
+    (error: unknown) =>
+      error instanceof ExecutionConfirmationError &&
+      error.code === 'INVALID_STATE',
+  );
+  assert.equal((await service.getRequest('req-1'))?.request.status, 'expired');
+  assert.equal(ledger.project('ws-1', HOLD).availableCredits, 20);
+  assert.equal(await service.getDecision('req-1'), null);
 });
 
 test('Campaign second paid Work requires its own confirmation (U7)', async () => {
