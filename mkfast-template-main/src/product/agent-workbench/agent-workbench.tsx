@@ -22,11 +22,11 @@ import type {
 import { MemoryInjectionReceiptPanel } from '@/product/memory-injection-receipt';
 
 import {
-  applyLiveSemanticEvent,
   reconnectAgentWorkbench,
   type AgentReplayLoader,
 } from './agent-event-client';
 import type { AgentLiveSubscriber } from './agent-event-transport';
+import { runAgentLiveReconnectLoop } from './agent-live-reconnect';
 import {
   getAgentWorkbenchHostStore,
   useAgentWorkbenchDispatch,
@@ -313,40 +313,21 @@ export function AgentWorkbenchHost({
 
   useEffect(() => {
     const threadId = state.session?.threadId;
-    if (
-      !subscribeLive ||
-      !loadReplay ||
-      !threadId ||
-      state.connection !== 'live'
-    ) {
-      return;
-    }
+    if (!subscribeLive || !loadReplay || !threadId) return;
     const controller = new AbortController();
-    const cursor = store.getState();
-    void subscribeLive({
+    void runAgentLiveReconnectLoop({
+      store,
+      loadReplay,
+      subscribeLive,
       threadId,
-      lastEventId: cursor.lastEventId,
-      lastStreamOffset: cursor.lastStreamOffset,
       signal: controller.signal,
-      onEvent: async (event) => {
-        const applied = applyLiveSemanticEvent(store, event);
-        if (applied.ok || controller.signal.aborted) return;
-        await reconnectAgentWorkbench({
-          store,
-          loadReplay,
-          resourceId: store.getState().session?.resourceId,
-          threadId,
-        });
-      },
-    }).catch(() => {
-      if (!controller.signal.aborted) {
-        store.dispatch({ type: 'set_connection', connection: 'offline' });
-      }
+      resourceId: state.session?.resourceId,
+      onlineTarget: window,
     });
     return () => controller.abort();
   }, [
     loadReplay,
-    state.connection,
+    state.session?.resourceId,
     state.session?.threadId,
     store,
     subscribeLive,

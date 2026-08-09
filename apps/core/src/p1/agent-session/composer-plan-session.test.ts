@@ -99,6 +99,8 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
   const replayedBinding = await coordinator.prepare({ submission: first });
 
   assert.deepEqual(replayedBinding, firstBinding);
+  assert.ok(first.executionPlanFreeze);
+  assert.notEqual(firstBinding.threadId, first.executionPlanFreeze.planId);
   assert.equal(
     (
       await sessions.listRuns({
@@ -511,8 +513,18 @@ test(
           workspaceId
         ),
       });
+	  const firstFreeze = JSON.parse(
+		JSON.stringify(first.executionPlanFreeze),
+	  ) as NonNullable<CreationSubmissionRecord['executionPlanFreeze']>;
+	  assert.ok(firstFreeze);
+	  assert.equal(firstFreeze.planRevision, 1);
+	  delete first.executionPlanFreeze;
+	  delete first.agentBinding;
+	  const crashRecovered = await coordinator.prepare({ submission: first });
 
       assert.deepEqual(replayed, created);
+	  assert.deepEqual(crashRecovered, created);
+	  assert.deepEqual(first.executionPlanFreeze, firstFreeze);
       assert.equal(revised.threadId, created.threadId);
       assert.equal(
         (await sessions.listRuns({ resourceId: workspaceId, threadId })).length,
@@ -655,7 +667,7 @@ test('Composer submit → task-admission assembles and one-shot writes the Execu
   });
 
   const submission = copyRecord('task-chain-1', '为夏日项目写预约文案');
-  await coordinator.prepare({ submission });
+  const binding = await coordinator.prepare({ submission });
   assert.ok(submission.executionPlanFreeze);
 
   const registry = new MemoryHarnessRegistry();
@@ -683,6 +695,8 @@ test('Composer submit → task-admission assembles and one-shot writes the Execu
   );
   assert.ok(admitted);
   assert.ok(first?.executionPlanSnapshot);
+  assert.equal(first?.agentThreadId, binding.threadId);
+  assert.notEqual(first?.agentThreadId, first?.executionPlanSnapshot.planId);
   assert.equal(
     first.executionPlanSnapshot.snapshotHash,
     admitted.snapshot.snapshotHash
@@ -1442,4 +1456,45 @@ test('server pre-plan retrieval runs with a kernel that makes zero tool calls', 
       quoteRef: freeze.quoteRef,
     }
   );
+});
+
+test('real Composer recovery deterministically rebuilds a missing freeze from its durable compiled plan', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  let compiles = 0;
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    retrieveConfirmedExperience: async () => [],
+    async compilePlan(input) {
+      compiles += 1;
+      return compiler.compile(input);
+    },
+    async adjustPlan(input) {
+      compiles += 1;
+      return compiler.adjust(input);
+    },
+  });
+  const submitted = record('task-crash-after-plan', '生成三页护理图文');
+  const binding = await coordinator.prepare({ submission: submitted });
+  const expectedFreeze = structuredClone(submitted.executionPlanFreeze);
+  assert.ok(expectedFreeze);
+	const later = record('task-after-crash', '把这次内容改成五页');
+	await coordinator.prepare({
+	  continuationThreadId: binding.threadId,
+	  submission: later,
+	});
+	assert.equal(later.executionPlanFreeze?.planRevision, 2);
+
+  const recovered = structuredClone(submitted);
+  delete recovered.executionPlanFreeze;
+  delete recovered.agentBinding;
+  const recoveredBinding = await coordinator.prepare({ submission: recovered });
+
+  assert.deepEqual(recoveredBinding, binding);
+  assert.deepEqual(recovered.executionPlanFreeze, expectedFreeze);
+	assert.equal(compiles, 2, 'recovery must not append another plan revision');
+	assert.equal((await plans.listRevisions(expectedFreeze.planId)).length, 2);
 });

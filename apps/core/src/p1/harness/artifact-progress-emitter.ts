@@ -12,11 +12,52 @@ import {
   type ArtifactUpdateWire,
 } from '@meiye/contracts';
 
-import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-event-store.js';
+import {
+  AgentSemanticEventStoreError,
+  type SemanticEventCandidate,
+} from '../agent-semantic-events/semantic-event-store.js';
 
 export type ArtifactProgressEmitterPort = {
   project(candidate: SemanticEventCandidate): Promise<unknown>;
 };
+
+/**
+ * Wraps a projector so a projection failure cannot abort the run that produced
+ * it. By the time a revision is emitted the page image is generated and the
+ * merchant is charged for it, so a transient write error must not throw back
+ * into the page loop.
+ *
+ * The dropped revision leaves a gap, and the client already answers a gap with
+ * a snapshot resync (`needsSnapshotResync` on a revision jump), so losing one
+ * delta degrades to a re-fetch rather than losing the merchant's work. Nothing
+ * is swallowed silently: every failure reaches `onDropped`. A durable outbox
+ * (S2-2) is the real answer and replaces this.
+ */
+export function nonBlockingArtifactEmitter(
+  emitter: ArtifactProgressEmitterPort,
+  onDropped: (error: unknown) => void,
+): ArtifactProgressEmitterPort {
+  return {
+    async project(candidate) {
+      try {
+        return await emitter.project(candidate);
+      } catch (error) {
+        // A divergence conflict is not a transient write failure and must not be
+        // dropped: it says this run's content disagrees with the revision
+        // already published under that id. Swallowing it restores exactly the
+        // silent splice the store's guard exists to end.
+        if (
+          error instanceof AgentSemanticEventStoreError &&
+          error.code === 'AGENT_SEMANTIC_EVENT_CONFLICT'
+        ) {
+          throw error;
+        }
+        onDropped(error);
+        return undefined;
+      }
+    },
+  };
+}
 
 export type NotePageProgressArtifactInput = {
   workspaceId: string;
@@ -29,6 +70,8 @@ export type NotePageProgressArtifactInput = {
   stage: 'skeleton' | 'copy' | 'image';
   state: 'running' | 'success' | 'failed';
   revision: number;
+  status?: 'skeleton' | 'partial' | 'ready' | 'failed';
+  parentRevision?: number;
   title?: string;
   /** Copy body lands on the copy stage; kept by in-place reconciliation. */
   body?: string;
@@ -44,6 +87,8 @@ export type VideoSceneProgressArtifactInput = {
   sceneIndex: number;
   state: 'running' | 'success' | 'failed';
   revision: number;
+  status?: 'skeleton' | 'partial' | 'ready' | 'failed';
+  parentRevision?: number;
   storyboard?: string;
   occurredAt: string;
   correlationId?: string;
@@ -64,32 +109,33 @@ export function buildNotePageArtifactUpdate(
   input: NotePageProgressArtifactInput,
 ): ArtifactUpdateWire {
   const status =
-    input.state === 'failed'
-      ? ('failed' as const)
-      : input.state === 'success'
-        ? ('partial' as const)
-        : ('partial' as const);
+    input.status ??
+    (input.state === 'failed' ? ('failed' as const) : ('partial' as const));
+  const page = {
+    pageIndex: input.pageIndex,
+    stage: input.stage,
+    ...(input.title ? { title: input.title } : {}),
+    ...(input.body ? { body: input.body } : {}),
+    ...(input.stage === 'image'
+      ? { imageStatus: noteImageStatus(input.state) }
+      : {}),
+  };
   return artifactUpdateWireSchema.parse({
     schemaVersion: ARTIFACT_UPDATE_SCHEMA_VERSION,
-    mode: 'delta',
     artifactId: input.artifactId,
     artifactType: 'note',
     revision: input.revision,
     status,
-    baseRevision: Math.max(0, input.revision - 1),
-    patch: {
-      pages: [
-        {
-          pageIndex: input.pageIndex,
-          stage: input.stage,
-          ...(input.title ? { title: input.title } : {}),
-          ...(input.body ? { body: input.body } : {}),
-          ...(input.stage === 'image'
-            ? { imageStatus: noteImageStatus(input.state) }
-            : {}),
-        },
-      ],
-    },
+    ...(input.parentRevision !== undefined
+      ? { parentRevision: input.parentRevision }
+      : {}),
+    ...(input.revision === 1
+      ? { mode: 'snapshot' as const, full: { pages: [page] } }
+      : {
+          mode: 'delta' as const,
+          baseRevision: input.revision - 1,
+          patch: { pages: [page] },
+        }),
     summary: `note page ${input.pageIndex + 1} ${input.stage} ${input.state}`,
   });
 }
@@ -106,23 +152,27 @@ export function buildVideoSceneArtifactUpdate(
       : input.state === 'success'
         ? ('ready' as const)
         : ('failed' as const);
+  const scene = {
+    sceneIndex: input.sceneIndex,
+    ...(input.storyboard ? { storyboard: input.storyboard } : {}),
+    keyframeStatus,
+  };
   return artifactUpdateWireSchema.parse({
     schemaVersion: ARTIFACT_UPDATE_SCHEMA_VERSION,
-    mode: 'delta',
     artifactId: input.artifactId,
     artifactType: 'video',
     revision: input.revision,
-    status: input.state === 'failed' ? 'failed' : 'partial',
-    baseRevision: Math.max(0, input.revision - 1),
-    patch: {
-      scenes: [
-        {
-          sceneIndex: input.sceneIndex,
-          ...(input.storyboard ? { storyboard: input.storyboard } : {}),
-          keyframeStatus,
-        },
-      ],
-    },
+    status: input.status ?? (input.state === 'failed' ? 'failed' : 'partial'),
+    ...(input.parentRevision !== undefined
+      ? { parentRevision: input.parentRevision }
+      : {}),
+    ...(input.revision === 1
+      ? { mode: 'snapshot' as const, full: { scenes: [scene] } }
+      : {
+          mode: 'delta' as const,
+          baseRevision: input.revision - 1,
+          patch: { scenes: [scene] },
+        }),
     summary: `video scene ${input.sceneIndex + 1} ${input.state}`,
   });
 }
@@ -213,10 +263,11 @@ export async function emitVideoScenesArtifactProgress(
     nextRevision: () => number;
     occurredAt: string;
     correlationId?: string;
+    parentRevision?: number;
   },
 ): Promise<void> {
   if (!emitter) return;
-  for (const scene of input.scenes) {
+  for (const [index, scene] of input.scenes.entries()) {
     await emitVideoSceneArtifactProgress(emitter, {
       workspaceId: input.workspaceId,
       workflowId: input.workflowId,
@@ -225,6 +276,12 @@ export async function emitVideoScenesArtifactProgress(
       sceneIndex: scene.sceneIndex,
       state: input.state,
       revision: input.nextRevision(),
+      ...(index === 0 && input.parentRevision !== undefined
+        ? { parentRevision: input.parentRevision }
+        : {}),
+      ...(input.state === 'success' && index === input.scenes.length - 1
+        ? { status: 'ready' as const }
+        : {}),
       ...(scene.storyboard ? { storyboard: scene.storyboard } : {}),
       occurredAt: input.occurredAt,
       correlationId: input.correlationId,

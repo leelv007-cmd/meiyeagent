@@ -37,6 +37,8 @@ import type {
   PendingConfirmationAuthority,
 } from '../agent-session/execution-confirmation-authority-store.js';
 import type { CreateExecutionConfirmationResult } from '../agent-session/execution-confirmation-service.js';
+import type { AgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
+import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { RouteSnapshot } from '../model-supply/index.js';
 import { serverAuditReference } from '../creation-experience/creation-experience-events.js';
@@ -64,6 +66,14 @@ import type {
 } from './langfuse-prompts.js';
 
 export interface HarnessWorkflowInput {
+	/** Session-owned identity; never substitute planId or workflowId. */
+	agentThreadId?: AgentThreadIdentity;
+	artifactLineage?: {
+	  artifactId: string;
+	  parentRevision: number;
+	  targetUnitIds?: string[];
+	  sourceUnitMappings?: Array<{ sourceUnitId: string; executionUnitId: string }>;
+	};
   actorId: string;
   workspaceId: string;
   packageId: string;
@@ -206,6 +216,16 @@ export interface HarnessSkillManifestResolver {
 
 export const harnessTaskRequestSchema = harnessTaskSubmissionSchema
   .extend({
+		agentThreadId: z.string().trim().min(1).optional(),
+		artifactLineage: z.object({
+		  artifactId: z.string().trim().min(1),
+		  parentRevision: z.number().int().positive(),
+		  targetUnitIds: z.array(z.string().trim().min(1)).min(1).optional(),
+		  sourceUnitMappings: z.array(z.object({
+			sourceUnitId: z.string().trim().min(1),
+			executionUnitId: z.string().trim().min(1),
+		  }).strict()).min(1).optional(),
+		}).strict().optional(),
     actorId: z.string().trim().min(1),
     workspaceId: z.string().trim().min(1),
     packageId: z.string().trim().min(1),
@@ -1173,6 +1193,10 @@ function normalizeRequest(
         snapshot,
         usageReservation,
         decisionReferences,
+		parsed.agentThreadId
+			? asAgentThreadIdentity(parsed.agentThreadId)
+			: undefined,
+		parsed.artifactLineage,
       ),
       ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
       ...(pendingExecutionPlanSnapshot ? { pendingExecutionPlanSnapshot } : {}),
@@ -1214,6 +1238,10 @@ function normalizeRequest(
     ...(executionConfirmationDiffFields
       ? { executionConfirmationDiffFields }
       : {}),
+		...(parsed.agentThreadId
+			? { agentThreadId: asAgentThreadIdentity(parsed.agentThreadId) }
+			: {}),
+		...(parsed.artifactLineage ? { artifactLineage: parsed.artifactLineage } : {}),
   };
 }
 
@@ -1221,6 +1249,8 @@ function snapshotWorkflowInput(
   snapshot: CreationExecutionSnapshot,
   usageReservation?: CreationSubmissionRecord['usageReservation'],
   decisionReferences?: HarnessWorkflowInput['decisionReferences'],
+	agentThreadId?: AgentThreadIdentity,
+	artifactLineage?: HarnessWorkflowInput["artifactLineage"],
 ): HarnessWorkflowInputBeforeBounds {
   const semanticDecision = snapshot.semanticDecision;
   const frozenDecisionReferences = [
@@ -1235,6 +1265,8 @@ function snapshotWorkflowInput(
     frozenDecisionReferences.unshift(semanticDecision.reference);
   }
   return {
+		...(agentThreadId ? { agentThreadId } : {}),
+		...(artifactLineage ? { artifactLineage } : {}),
     actorId: snapshot.actorId,
     workspaceId: snapshot.workspaceId,
     packageId: snapshot.contentPackage.id,

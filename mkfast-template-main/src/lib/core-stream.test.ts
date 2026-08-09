@@ -10,6 +10,7 @@ test('preserves AI stream protocol and correlation headers', () => {
       'content-type': 'text/event-stream; charset=utf-8',
       'x-correlation-id': 'corr-123',
       'x-meiye-catalog-model-id': 'llm-openai',
+      'x-meiye-e2e-agent-fault-applied': 'artifact-gap-close',
       'x-meiye-stream-protocol': 'ai-sdk-ui-message-v1',
       'x-vercel-ai-ui-message-stream': 'v1',
       'x-private-upstream': 'secret',
@@ -20,6 +21,10 @@ test('preserves AI stream protocol and correlation headers', () => {
   assert.equal(headers.get('content-type'), 'text/event-stream; charset=utf-8');
   assert.equal(headers.get('x-correlation-id'), 'corr-123');
   assert.equal(headers.get('x-meiye-catalog-model-id'), 'llm-openai');
+  assert.equal(
+    headers.get('x-meiye-e2e-agent-fault-applied'),
+    'artifact-gap-close'
+  );
   assert.equal(headers.get('x-meiye-stream-protocol'), 'ai-sdk-ui-message-v1');
   assert.equal(headers.get('x-vercel-ai-ui-message-stream'), 'v1');
   assert.equal(headers.get('content-encoding'), 'identity');

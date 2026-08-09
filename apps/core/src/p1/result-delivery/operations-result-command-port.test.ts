@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import type { OperationsApplicationService } from '../operations/application-service.js';
 import type { CreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import type { ProductBillingApplicationPort } from '../product-billing/durable-service.js';
 import { OperationsResultCommandPort } from './operations-visual-adoption.js';
 
@@ -26,6 +27,11 @@ const textSelectionScope = {
 
 function fixture(
   options: {
+    frozenLineage?:
+      | 'authoritative'
+      | 'legacy'
+      | 'no_ready_revision'
+      | 'unreadable';
     noteSnapshot?: boolean;
     packageBody?: string;
     packageBodyAfterPrepare?: string;
@@ -157,7 +163,14 @@ function fixture(
             ...(options.noteSnapshot
               ? {
                   note: {
-                    plan: { style: { id: 'story' } },
+					plan: {
+					  style: { id: 'story' },
+					  pages: [
+						{ id: 'page-1', imageAssetId: 'asset-1' },
+						{ id: 'page-2', imageAssetId: 'asset-2' },
+						{ id: 'page-3', imageAssetId: 'asset-3' },
+					  ],
+					},
                   },
                 }
               : {}),
@@ -168,7 +181,7 @@ function fixture(
             conversionHook: '私信预约',
             createdAt: '2026-07-20T00:00:00.000Z',
             id: options.packageVersionId ?? 'version-1',
-            orderedAssetIds: ['asset-1', 'asset-2'],
+			orderedAssetIds: ['asset-1', 'asset-2', 'asset-3'],
             title: '夏日护理',
             topics: ['护理'],
           },
@@ -248,6 +261,7 @@ function fixture(
   const snapshots = {
     async get() {
       return {
+		snapshot: {
         catalogModel: { id: 'image-model-old', revision: 'catalog-old' },
         contentModules: ['social_cover'] as ['social_cover'],
         contentPackagePlatform:
@@ -291,7 +305,22 @@ function fixture(
               },
             }
           : {}),
-      } as unknown as CreationExecutionSnapshot;
+		} as unknown as CreationExecutionSnapshot,
+		// 'legacy' is every Result delivered before agentBinding.threadId existed;
+		// 'no_ready_revision' is a run that never reached a ready artifact
+		// revision; 'unreadable' is a ready revision whose payload does not read
+		// as artifact-update/v1.
+		...(options.frozenLineage === 'legacy'
+		  ? {}
+		  : { agentThreadId: asAgentThreadIdentity('thread-source') }),
+		...(options.frozenLineage === undefined ||
+		options.frozenLineage === 'authoritative'
+		  ? { artifactLineage: { artifactId: 'note:package-1', parentRevision: 7 } }
+		  : {}),
+		...(options.frozenLineage === 'unreadable'
+		  ? { artifactLineageUnreadable: true as const }
+		  : {}),
+	  };
     },
   };
   const composerSubmissions = {
@@ -640,6 +669,94 @@ test('copy text selection confirmation rejects equal-length late body drift', as
   assert.deepEqual(composerCalls, []);
 });
 
+for (const frozenLineage of ['legacy', 'no_ready_revision'] as const) {
+  test(`a frozen Result with ${frozenLineage} artifact lineage stays adjustable without continuation`, async () => {
+    const { composerCalls, port } = fixture({
+      frozenLineage,
+      noteSnapshot: true,
+      quoteStatus: 'quoted',
+      scopedAssetIds: ['asset-1'],
+    });
+    const source = {
+      expectedPackageRevision: 3,
+      kind: 'content_package_snapshot' as const,
+      packageId: 'package-1',
+      snapshotId: 'snapshot-task-1',
+      workflowId: 'task-1',
+    };
+    const prepared = await port.prepareAdjust(
+      context,
+      {
+        expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+        instruction: '只调整当前图片',
+        scope: { assetId: 'asset-1', kind: 'asset' },
+        source,
+        workId: 'work-1',
+      },
+      `adjust-${frozenLineage}-prepare`,
+    );
+    await port.adjust(
+      context,
+      {
+        billingQuoteId: 'quote-fresh',
+        derivedTaskId: prepared.task.id,
+        derivedWorkId: prepared.work.id,
+        instruction: '只调整当前图片',
+        scope: { assetId: 'asset-1', kind: 'asset' },
+        source,
+      },
+      `adjust-${frozenLineage}-confirm`,
+    );
+
+    assert.equal(composerCalls.length, 1);
+    const submitted = composerCalls[0] as {
+      sourceAgentThreadId?: string;
+      sourceArtifactLineage?: unknown;
+    };
+    assert.equal(submitted.sourceArtifactLineage, undefined);
+    // The Thread binding still travels whenever the frozen Result has one; only
+    // a Result older than agentBinding.threadId leaves the new run unbound.
+    assert.equal(
+      submitted.sourceAgentThreadId,
+      frozenLineage === 'legacy' ? undefined : 'thread-source',
+    );
+  });
+}
+
+test('a ready artifact revision that cannot be read refuses the adjustment', async () => {
+  const { composerCalls, port } = fixture({
+    frozenLineage: 'unreadable',
+    noteSnapshot: true,
+    scopedAssetIds: ['asset-1'],
+  });
+  await assert.rejects(
+    port.prepareAdjust(
+      context,
+      {
+        expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+        instruction: '只调整当前图片',
+        scope: { assetId: 'asset-1', kind: 'asset' },
+        source: {
+          expectedPackageRevision: 3,
+          kind: 'content_package_snapshot',
+          packageId: 'package-1',
+          snapshotId: 'snapshot-task-1',
+          workflowId: 'task-1',
+        },
+        workId: 'work-1',
+      },
+      'adjust-unreadable-lineage',
+    ),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'RESULT_ADJUST_SOURCE_NOT_FOUND' &&
+      'status' in error &&
+      error.status === 409,
+  );
+  assert.deepEqual(composerCalls, []);
+});
+
 test('Composer snapshot adjustment preparation does not create a legacy Work', async () => {
   const { deriveCalls, port } = fixture({
     sourceSessionId: 'composer:surface-copy:copy@r1',
@@ -706,6 +823,18 @@ test('Composer snapshot adjustment keeps the latest semantic decision snapshot',
     (composerCalls[0] as { sourceNoteStyleId?: string }).sourceNoteStyleId,
     'story',
   );
+	assert.equal(
+	  (composerCalls[0] as { sourceAgentThreadId?: string }).sourceAgentThreadId,
+	  'thread-source',
+	);
+	assert.deepEqual(
+	  (composerCalls[0] as { sourceArtifactLineage?: unknown }).sourceArtifactLineage,
+	  {
+		artifactId: 'note:package-1',
+		parentRevision: 7,
+		targetUnitIds: ['page-1'],
+	  },
+	);
   assert.equal(
     (
       composerCalls[0] as {
@@ -713,6 +842,106 @@ test('Composer snapshot adjustment keeps the latest semantic decision snapshot',
       }
     ).sourceSnapshot.semanticDecision?.reference.value,
     '故事版',
+  );
+});
+
+test('note set adjustment freezes non-contiguous source page units without inventing execution ids', async () => {
+  const { composerCalls, port } = fixture({
+    noteSnapshot: true,
+    semanticSnapshot: true,
+    quoteOutputCount: 2,
+    quoteStatus: 'quoted',
+  });
+  const source = {
+	expectedPackageRevision: 3,
+    kind: 'content_package_snapshot' as const,
+    packageId: 'package-1',
+    snapshotId: 'snapshot-task-1',
+    workflowId: 'task-1',
+  };
+  const scope = { kind: 'set' as const, assetIds: ['asset-1', 'asset-3'] };
+  const prepared = await port.prepareAdjust(
+    context,
+    {
+      expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+      instruction: '只重做第一和第三页',
+      scope,
+      source,
+      workId: 'work-1',
+    },
+    'adjust-note-set-prepare',
+  );
+  await port.adjust(
+    context,
+    {
+      billingQuoteId: 'quote-fresh',
+      derivedTaskId: prepared.task.id,
+      derivedWorkId: prepared.work.id,
+      instruction: '只重做第一和第三页',
+      scope,
+      source,
+    },
+    'adjust-note-set-confirm',
+  );
+
+  assert.deepEqual(
+    (composerCalls[0] as { sourceArtifactLineage?: unknown }).sourceArtifactLineage,
+    {
+      artifactId: 'note:package-1',
+      parentRevision: 7,
+      targetUnitIds: ['page-1', 'page-3'],
+    },
+  );
+  assert.deepEqual(
+    (composerCalls[0] as { pageRegenerationTargetAssetIds?: unknown })
+      .pageRegenerationTargetAssetIds,
+    ['asset-1', 'asset-3'],
+  );
+});
+
+test('whole-note adjustment without scope keeps the full-plan execution path', async () => {
+  const { composerCalls, port } = fixture({
+    noteSnapshot: true,
+    quoteOutputCount: 2,
+    quoteStatus: 'quoted',
+  });
+  const source = {
+    expectedPackageRevision: 3,
+    kind: 'content_package_snapshot' as const,
+    packageId: 'package-1',
+    snapshotId: 'snapshot-task-1',
+    workflowId: 'task-1',
+  };
+  const prepared = await port.prepareAdjust(
+    context,
+    {
+      expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+      instruction: '整份笔记重新生成',
+      source,
+      workId: 'work-1',
+    },
+    'adjust-whole-note-prepare',
+  );
+  await port.adjust(
+    context,
+    {
+      billingQuoteId: 'quote-fresh',
+      derivedTaskId: prepared.task.id,
+      derivedWorkId: prepared.work.id,
+      instruction: '整份笔记重新生成',
+      source,
+    },
+    'adjust-whole-note-confirm',
+  );
+
+  assert.equal(
+    (composerCalls[0] as { pageRegenerationTargetAssetIds?: unknown })
+      .pageRegenerationTargetAssetIds,
+    undefined,
+  );
+  assert.deepEqual(
+    (composerCalls[0] as { sourceArtifactLineage?: unknown }).sourceArtifactLineage,
+    { artifactId: 'note:package-1', parentRevision: 7 },
   );
 });
 

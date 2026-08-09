@@ -19,11 +19,14 @@ import {
 } from "../product-billing/product-usage-ledger.js";
 import { creationExecutionSnapshotSchema } from "./creation-execution-snapshot.js";
 import type {
+	ComposerAgentBinding,
   CreationSubmissionRecord,
   CreationSubmissionStore,
   CreationSubmissionStoreClaim,
   CreationSubmissionUsageUnit,
 } from "./submission-coordinator.js";
+
+import { asAgentThreadIdentity } from "./submission-coordinator.js";
 
 type HarnessStartState = "failed" | "reserved" | "starting" | "started";
 
@@ -524,96 +527,103 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     }
   }
 
-  async saveExecutionPlanFreeze(input: {
-    workspaceId: string;
-    submissionId: string;
-    freeze: CreationSubmissionRecord['executionPlanFreeze'];
-    quoteRef?: CreationSubmissionRecord['snapshot']['quote'];
-    credits?: number;
-    confirmationDispatch?: CreationSubmissionRecord['confirmationDispatch'];
+  async persistAgentPlanning(input: {
+	workspaceId: string;
+	submissionId: string;
+	agentBinding: ComposerAgentBinding;
+	executionPlanFreeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+	quoteRef?: CreationSubmissionRecord['snapshot']['quote'];
+	credits?: number;
+	confirmationDispatch?: CreationSubmissionRecord['confirmationDispatch'];
   }) {
-    if (!input.freeze) {
-      throw new Error('Execution plan freeze is required.');
-    }
-    const result = await this.pool.query<{ submission: unknown }>(
-      `UPDATE execution_spine.creation_submissions
-          SET submission = jsonb_set(
-              jsonb_set(
-                jsonb_set(
-                  jsonb_set(
-                    submission,
-                    '{executionPlanFreeze}',
-                    $3::jsonb,
-                    true
-                  ),
-                  '{confirmationDispatch}',
-                  $4::jsonb,
-                  true
-                ),
-                '{snapshot,quote}',
-                COALESCE($5::jsonb, submission#>'{snapshot,quote}'),
-                true
-              ),
-              '{usageReservation,credits}',
-              COALESCE($6::jsonb, submission#>'{usageReservation,credits}'),
-              true
-            ),
-              updated_at = clock_timestamp()
-        WHERE workspace_id = $1
-          AND id = $2
-          AND (
-            harness_state = 'reserved'
-            OR (
-              harness_state = 'starting'
-              AND harness_lease_expires_at <= clock_timestamp()
-            )
-          )
-          AND (
-            submission->'executionPlanFreeze' IS NULL
-            OR submission->'executionPlanFreeze' = $3::jsonb
-            OR (
-              submission#>>'{executionPlanFreeze,planId}' = $7
-              AND (submission#>>'{executionPlanFreeze,planRevision}')::integer < $8
-            )
-          )
-        RETURNING submission`,
-      [
-        input.workspaceId,
-        input.submissionId,
-        JSON.stringify(input.freeze),
-        JSON.stringify(input.confirmationDispatch ?? null),
-        input.quoteRef ? JSON.stringify(input.quoteRef) : null,
-        input.credits !== undefined ? JSON.stringify(input.credits) : null,
-        input.freeze.planId,
-        input.freeze.planRevision,
-      ],
-    );
-    const row = result.rows[0];
-    if (!row) {
-      const existing = await this.pool.query<{ submission: unknown }>(
-        `SELECT submission
-           FROM execution_spine.creation_submissions
-          WHERE workspace_id = $1 AND id = $2`,
-        [input.workspaceId, input.submissionId],
-      );
-      const stored = existing.rows[0];
-      if (!stored) {
-        throw new Error(`Creation submission ${input.submissionId} was not found.`);
-      }
-      const submission = storedSubmission(stored.submission);
-      if (
-        JSON.stringify(submission.executionPlanFreeze) !==
-          JSON.stringify(input.freeze) ||
-        JSON.stringify(submission.confirmationDispatch) !==
-          JSON.stringify(input.confirmationDispatch)
-      ) {
-        throw new Error(
-          `Creation submission ${input.submissionId} cannot change its execution plan freeze after Harness admission.`,
-        );
-      }
-      return submission;
-    }
-    return storedSubmission(row.submission);
+	// `makeReady` is transient turn state; only the identity is durable.
+	const durableBinding = {
+	  threadId: input.agentBinding.threadId,
+	  runId: input.agentBinding.runId,
+	};
+	const client = await this.pool.connect();
+	try {
+	  await client.query('BEGIN');
+	  const row = await this.lockSubmission(client, input);
+	  const current = storedSubmission(row.submission);
+	  // Canonical, not `JSON.stringify`: `current` came back through jsonb,
+	  // which stores object keys in its own order, so a byte comparison
+	  // against the in-memory literal reports a conflict for values that are
+	  // equal. `{ threadId, runId }` round-trips as `{ runId, threadId }` —
+	  // every idempotent replay of a bound submission raised a 500.
+	  if (
+		current.agentBinding &&
+		canonicalJson(current.agentBinding) !== canonicalJson(durableBinding)
+	  ) {
+		throw new Error('Agent planning persistence conflict.');
+	  }
+	  const freezeReplayed =
+		canonicalJson(current.executionPlanFreeze) ===
+		canonicalJson(input.executionPlanFreeze);
+	  if (current.executionPlanFreeze && !freezeReplayed) {
+		// The only permitted change is the revise path: the same plan at a
+		// strictly higher compiled revision (V31-12 append-only).
+		const revised =
+		  current.executionPlanFreeze.planId ===
+			input.executionPlanFreeze.planId &&
+		  current.executionPlanFreeze.planRevision <
+			input.executionPlanFreeze.planRevision;
+		if (!revised) {
+		  throw new Error(
+			`Creation submission ${input.submissionId} cannot change its execution plan freeze after Harness admission.`,
+		  );
+		}
+	  }
+	  const dispatchReplayed =
+		input.confirmationDispatch === undefined ||
+		canonicalJson(current.confirmationDispatch) ===
+		  canonicalJson(input.confirmationDispatch);
+	  if (
+		current.agentBinding &&
+		current.executionPlanFreeze &&
+		freezeReplayed &&
+		dispatchReplayed
+	  ) {
+		await client.query('COMMIT');
+		return current;
+	  }
+	  current.agentBinding = durableBinding;
+	  current.executionPlanFreeze = input.executionPlanFreeze;
+	  if (input.confirmationDispatch !== undefined) {
+		current.confirmationDispatch = input.confirmationDispatch;
+	  }
+	  if (input.quoteRef) {
+		current.snapshot.quote = input.quoteRef;
+	  }
+	  if (input.credits !== undefined) {
+		current.usageReservation.credits = input.credits;
+	  }
+	  const update = await client.query(
+		`UPDATE execution_spine.creation_submissions
+			SET submission = $3::jsonb, updated_at = clock_timestamp()
+		  WHERE workspace_id = $1 AND id = $2
+			AND (
+			  harness_state = 'reserved'
+			  OR (
+				harness_state = 'starting'
+				AND harness_lease_expires_at <= clock_timestamp()
+			  )
+			)`,
+		[input.workspaceId, input.submissionId, JSON.stringify(current)],
+	  );
+	  if (update.rowCount !== 1) {
+		throw new Error(
+		  `Creation submission ${input.submissionId} cannot change its execution plan freeze after Harness admission.`,
+		);
+	  }
+	  await client.query('COMMIT');
+	  return current;
+	} catch (error) {
+	  await client.query('ROLLBACK');
+	  throw error;
+	} finally {
+	  client.release();
+	}
   }
 
   /**
@@ -1146,6 +1156,9 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     throw new Error("Stored creation submission is invalid.");
   }
   const candidate = value as {
+	agentBinding?: unknown;
+	agentContinuationThreadId?: unknown;
+	artifactLineage?: unknown;
     contentPackage?: { expectedRevision?: unknown; id?: unknown };
     decisionReferences?: unknown;
     executionPlanFreeze?: unknown;
@@ -1209,6 +1222,14 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
       ...(credits !== undefined ? { credits } : {}),
     },
     work: { id: workId },
+	...(storedContinuationThreadId(candidate.agentContinuationThreadId)
+		? { agentContinuationThreadId: storedContinuationThreadId(candidate.agentContinuationThreadId) }
+		: {}),
+	...(storedArtifactLineage(candidate.artifactLineage) ? { artifactLineage: storedArtifactLineage(candidate.artifactLineage) } : {}),
+	...(storedAgentBinding(candidate.agentBinding) ? { agentBinding: storedAgentBinding(candidate.agentBinding) } : {}),
+	...(storedExecutionPlanFreeze(candidate.executionPlanFreeze)
+		? { executionPlanFreeze: storedExecutionPlanFreeze(candidate.executionPlanFreeze) }
+		: {}),
   };
 }
 
@@ -1252,6 +1273,43 @@ function confirmationDispatchExpired(
     ? Date.parse(dispatch.expiresAt)
     : Date.parse(submission.snapshot.createdAt) + 48 * 60 * 60 * 1_000;
   return Number.isFinite(expiresAt) && expiresAt <= now.getTime();
+}
+
+function storedArtifactLineage(value: unknown): CreationSubmissionRecord["artifactLineage"] {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Stored creation submission has invalid artifact lineage.");
+	const candidate = value as {
+	  artifactId?: unknown;
+	  parentRevision?: unknown;
+	  targetUnitIds?: unknown;
+	  sourceUnitMappings?: unknown;
+	};
+  if (typeof candidate.artifactId !== "string" || !candidate.artifactId.trim() || !Number.isSafeInteger(candidate.parentRevision) || (candidate.parentRevision as number) < 1) {
+	throw new Error("Stored creation submission has invalid artifact lineage.");
+  }
+	if (candidate.targetUnitIds !== undefined && (
+	  !Array.isArray(candidate.targetUnitIds) ||
+	  candidate.targetUnitIds.length === 0 ||
+	  candidate.targetUnitIds.some((id) => typeof id !== "string" || !id.trim())
+	)) throw new Error("Stored creation submission has invalid artifact target units.");
+	if (candidate.sourceUnitMappings !== undefined && (
+	  !Array.isArray(candidate.sourceUnitMappings) ||
+	  candidate.sourceUnitMappings.length === 0 ||
+	  candidate.sourceUnitMappings.some((mapping) => {
+		if (!mapping || typeof mapping !== "object" || Array.isArray(mapping)) return true;
+		const item = mapping as { sourceUnitId?: unknown; executionUnitId?: unknown };
+		return typeof item.sourceUnitId !== "string" || !item.sourceUnitId.trim() ||
+		  typeof item.executionUnitId !== "string" || !item.executionUnitId.trim();
+	  })
+	)) throw new Error("Stored creation submission has invalid artifact unit mappings.");
+	return {
+	  artifactId: candidate.artifactId,
+	  parentRevision: candidate.parentRevision as number,
+	  ...(candidate.targetUnitIds ? { targetUnitIds: candidate.targetUnitIds as string[] } : {}),
+	  ...(candidate.sourceUnitMappings
+		? { sourceUnitMappings: candidate.sourceUnitMappings as Array<{ sourceUnitId: string; executionUnitId: string }> }
+		: {}),
+	};
 }
 
 function storedExecutionPlanFreeze(
@@ -1299,6 +1357,46 @@ function storedExecutionConfirmationContext(
     throw new Error('Stored creation submission has invalid Campaign confirmation context.');
   }
   return structuredClone(value) as CreationSubmissionRecord['executionConfirmationContext'];
+}
+
+function storedAgentBinding(value: unknown): ComposerAgentBinding | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+	throw new Error("Stored creation submission has an invalid Agent binding.");
+  }
+  const candidate = value as { threadId?: unknown; runId?: unknown };
+  if (typeof candidate.threadId !== "string" || typeof candidate.runId !== "string" || !candidate.runId.trim()) {
+	throw new Error("Stored creation submission has an invalid Agent binding.");
+  }
+  return { threadId: asAgentThreadIdentity(candidate.threadId), runId: candidate.runId };
+}
+
+/**
+ * Key-order-independent JSON for comparing a jsonb round-trip against an
+ * in-memory value. Keeps `JSON.stringify`'s treatment of `undefined` members so
+ * it agrees with what the column can hold.
+ */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+
+function storedContinuationThreadId(value: unknown) {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+	throw new Error("Stored creation submission has an invalid continuation Thread.");
+  }
+  return asAgentThreadIdentity(value);
 }
 
 function storedDecisionReferences(

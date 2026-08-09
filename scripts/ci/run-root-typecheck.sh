@@ -9,3 +9,7 @@ pnpm --filter @meiye/core typecheck
 # generated module contract as a local development workspace.
 pnpm --filter @meiye/web build
 pnpm --filter @meiye/web typecheck
+
+# Root `tests/` crosses package boundaries (Core + Web + contracts) so it is in
+# no workspace tsconfig. tsconfig.journeys.json is its only owner.
+pnpm typecheck:journeys

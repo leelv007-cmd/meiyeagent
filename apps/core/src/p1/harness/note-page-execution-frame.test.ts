@@ -83,12 +83,18 @@ test('createNotePageProgressReporter reports progress and may emit artifact.revi
   const updates = projected.map((candidate) => {
     assert.equal(candidate.eventType, 'artifact.revised');
     const parsed = artifactUpdateWireSchema.parse(candidate.payload);
-    if (parsed.mode !== 'delta') throw new Error('expected delta');
-    if (!('pages' in parsed.patch)) throw new Error('expected note patch');
+    const pages =
+      parsed.mode === 'snapshot' && 'pages' in parsed.full
+        ? parsed.full.pages
+        : parsed.mode === 'delta' && 'pages' in parsed.patch
+          ? parsed.patch.pages
+          : undefined;
+    if (!pages) throw new Error('expected note artifact body');
     return {
       artifactId: parsed.artifactId,
       revision: parsed.revision,
-      page: parsed.patch.pages?.[0],
+      page: pages[0],
+		status: parsed.status,
     };
   });
   assert.deepEqual(
@@ -101,6 +107,7 @@ test('createNotePageProgressReporter reports progress and may emit artifact.revi
   );
   assert.equal(new Set(updates.map(({ artifactId }) => artifactId)).size, 1);
   assert.equal(updates[1]!.page?.body, '周末护理限时');
+	assert.equal(updates.at(-1)?.status, 'ready');
 });
 
 test('skeleton/copy stages emit once per page across regeneration runs', async () => {
@@ -139,11 +146,17 @@ test('skeleton/copy stages emit once per page across regeneration runs', async (
   const updates = projected.map((candidate) => {
     assert.equal(candidate.eventType, 'artifact.revised');
     const parsed = artifactUpdateWireSchema.parse(candidate.payload);
-    if (parsed.mode !== 'delta') throw new Error('expected delta');
-    if (!('pages' in parsed.patch)) throw new Error('expected note patch');
+    const pages =
+      parsed.mode === 'snapshot' && 'pages' in parsed.full
+        ? parsed.full.pages
+        : parsed.mode === 'delta' && 'pages' in parsed.patch
+          ? parsed.patch.pages
+          : undefined;
+    if (!pages) throw new Error('expected note artifact body');
     return {
       revision: parsed.revision,
-      page: parsed.patch.pages?.[0],
+      page: pages[0],
+		parentRevision: parsed.parentRevision,
     };
   });
   const stages = updates.map(({ page }) => page!.stage);
@@ -151,5 +164,80 @@ test('skeleton/copy stages emit once per page across regeneration runs', async (
   assert.deepEqual(
     updates.map(({ revision }) => revision),
     [1, 2, 3, 4, 5, 6],
+  );
+	assert.equal(updates[4]?.parentRevision, 4);
+});
+
+test('local regeneration continues the source artifact revision and becomes ready for its target subset', async () => {
+  const projected: SemanticEventCandidate[] = [];
+  let revision = 7;
+  const report = createNotePageProgressReporter({
+    plan: {
+      pages: [
+        { id: 'p1', order: 1, textBlock: { title: 'one' } },
+        { id: 'p2', order: 2, textBlock: { title: 'two' } },
+      ],
+    },
+    reportProgress: async () => undefined,
+    artifactEmitter: { async project(candidate) { projected.push(candidate); } },
+    artifactContext: {
+      workspaceId: 'ws-1',
+      workflowId: 'wf-successor',
+      threadId: 'thread-source',
+      artifactId: 'note:source-package',
+      parentRevision: 7,
+	  targetSourceUnitIds: ['p2'],
+      nextRevision: () => { revision += 1; return revision; },
+      now: () => '2026-08-09T12:00:00.000Z',
+    },
+  });
+
+  await report({ pageId: 'p2', sourcePageId: 'p2', state: 'running' });
+  await report({ pageId: 'p2', sourcePageId: 'p2', state: 'success' });
+
+  const updates = projected.map((candidate) => artifactUpdateWireSchema.parse(candidate.payload));
+  assert.equal(updates[0]?.artifactId, 'note:source-package');
+  assert.equal(updates[0]?.mode, 'delta');
+  assert.equal(updates[0]?.parentRevision, 7);
+  assert.equal(updates.at(-1)?.status, 'ready');
+});
+
+test('non-contiguous subset becomes ready only after runner maps every source page to an executed page', async () => {
+  const projected: SemanticEventCandidate[] = [];
+  let revision = 7;
+  const report = createNotePageProgressReporter({
+    plan: {
+      pages: [
+        { id: 'execution-p1', order: 1 },
+        { id: 'execution-p2', order: 2 },
+        { id: 'execution-p3', order: 3 },
+      ],
+    },
+    reportProgress: async () => undefined,
+    artifactEmitter: { async project(candidate) { projected.push(candidate); } },
+    artifactContext: {
+      workspaceId: 'ws-1',
+      workflowId: 'wf-successor',
+      threadId: 'thread-source',
+      artifactId: 'note:source-package',
+      parentRevision: 7,
+      targetSourceUnitIds: ['source-p1', 'source-p3'],
+      nextRevision: () => { revision += 1; return revision; },
+      now: () => '2026-08-09T12:00:00.000Z',
+    },
+  });
+
+  await report({ pageId: 'execution-p1', sourcePageId: 'source-p1', state: 'running' });
+  await report({ pageId: 'execution-p1', sourcePageId: 'source-p1', state: 'success' });
+  assert.notEqual(
+    artifactUpdateWireSchema.parse(projected.at(-1)?.payload).status,
+    'ready',
+  );
+  await report({ pageId: 'execution-p3', sourcePageId: 'source-p3', state: 'running' });
+  await report({ pageId: 'execution-p3', sourcePageId: 'source-p3', state: 'success' });
+
+  assert.equal(
+    artifactUpdateWireSchema.parse(projected.at(-1)?.payload).status,
+    'ready',
   );
 });

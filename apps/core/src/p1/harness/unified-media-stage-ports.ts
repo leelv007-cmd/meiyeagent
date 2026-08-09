@@ -636,21 +636,21 @@ export class UnifiedHarnessStagePorts
 	private async executeNotePageRegeneration(
 		input: Parameters<HarnessNoteStagePorts["executeNoteAndSelect"]>[0],
 		compiler: NotePlanCompiler,
-		pageRegeneration: { targetAssetId: string },
+		pageRegeneration: { targetAssetIds: string[] },
 		enhancementJudge: NotePlanEnhancementJudgeState,
 	) {
 		const sourceRef = input.request.executionSnapshot?.sources.contentPackage;
 		if (!sourceRef) {
 			throw new HarnessMediaExecutionError(
 				"MEDIA_SNAPSHOT_MISMATCH",
-				"Single-page note regeneration requires a frozen ContentPackage source.",
+				"Note subset regeneration requires a frozen ContentPackage source.",
 				409,
 			);
 		}
 		if (!this.sourceContentPackages) {
 			throw new HarnessMediaExecutionError(
 				"MEDIA_SNAPSHOT_MISMATCH",
-				"Single-page note regeneration requires the source ContentPackage resolver.",
+				"Note subset regeneration requires the source ContentPackage resolver.",
 				409,
 			);
 		}
@@ -668,21 +668,50 @@ export class UnifiedHarnessStagePorts
 				409,
 			);
 		}
-		const page = sourceNote.plan.pages.find(
-			({ imageAssetId }) => imageAssetId === pageRegeneration.targetAssetId,
-		);
-		if (!page) {
+		const targetAssets = new Set(pageRegeneration.targetAssetIds);
+		const pages = sourceNote.plan.pages
+			.filter(({ imageAssetId }) => imageAssetId && targetAssets.has(imageAssetId))
+			.sort((a, b) => a.order - b.order);
+		if (pages.length !== targetAssets.size) {
 			throw new HarnessMediaExecutionError(
 				"MEDIA_SNAPSHOT_MISMATCH",
 				"The requested page image is not part of the frozen note plan.",
 				409,
 			);
 		}
-		const regenerated = await compiler.regenerateMerchantPage({
-			version: sourceNote,
-			pageId: page.id,
-			...(input.onPageProgress ? { onPageProgress: input.onPageProgress } : {}),
-		});
+		let version = sourceNote;
+		const auditSignals = [] as HarnessNoteSelectionResult['auditSignals'];
+		const childRuns = [] as HarnessNoteSelectionResult['childRuns'];
+		const ownedAssets = [] as HarnessNoteSelectionResult['ownedAssets'];
+		for (const sourcePage of pages) {
+			const regenerated = await compiler.regenerateMerchantPage({
+				version,
+				pageId: sourcePage.id,
+				...(input.onPageProgress
+					? {
+						onPageProgress: (event) => input.onPageProgress?.({
+							...event,
+							sourcePageId: sourcePage.id,
+							// Page identity for merchant copy and artifact patches
+							// must come from the frozen source: the reporter's plan
+							// was compiled this run and has none of these ids.
+							sourcePageOrder: sourcePage.order,
+						}),
+					  }
+					: {}),
+			});
+			version = regenerated.version;
+			auditSignals.push(...regenerated.auditSignals);
+			childRuns.push(...regenerated.childRuns);
+			ownedAssets.push(...regenerated.ownedAssets);
+		}
+		const regenerated = {
+			auditSignals,
+			childRuns,
+			ownedAssets,
+			selectedStyleId: sourceNote.plan.style.id,
+			version,
+		};
 		// Keep assembleNoteAndDeliver fail-closed: unconfigured judges must
 		// still carry the self-correction-disabled audit signal.
 		if (enhancementJudge.status === "unconfigured") {
@@ -804,7 +833,7 @@ export class UnifiedHarnessStagePorts
 		const pageRegeneration =
 			input.request.executionSnapshot?.sources.pageRegeneration;
 		const imageUsageQuantity = pageRegeneration
-			? 1
+			? pageRegeneration.targetAssetIds.length
 			: input.selection.version.plan.pages.length;
 		const copyUsageQuantity = pageRegeneration
 			? 0
@@ -828,7 +857,7 @@ export class UnifiedHarnessStagePorts
 					},
 				],
 				evidenceRef: pageRegeneration
-					? `note-page-regeneration:${pageRegeneration.targetAssetId}`
+					? `note-page-regeneration:${pageRegeneration.targetAssetIds.join(',')}`
 					: `note-plan-pages:${input.selection.version.plan.pages
 							.map(({ id, revision: pageRevision }) => `${id}@${pageRevision}`)
 							.join(",")}`,

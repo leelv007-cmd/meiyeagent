@@ -49,6 +49,17 @@ export interface CreationSubmissionRecord {
 		state: "pending" | "dispatched" | "expired";
 		expiresAt?: string;
 	};
+	/** Authoritative Session identity bound before the Harness starts. */
+	agentBinding?: ComposerAgentBinding;
+	/** Durable continuation hint needed if the process crashes before planning. */
+	agentContinuationThreadId?: AgentThreadIdentity;
+	/** Stable artifact identity continued by a Result successor. */
+	artifactLineage?: {
+		artifactId: string;
+		parentRevision: number;
+		targetUnitIds?: string[];
+		sourceUnitMappings?: Array<{ sourceUnitId: string; executionUnitId: string }>;
+	};
 }
 
 export interface CreationSubmissionUsageUnit {
@@ -89,10 +100,11 @@ export interface CreationSubmissionStore {
 		| { kind: "existing"; submission: CreationSubmissionRecord }
 		| { kind: "conflict" }
 	>;
-	saveExecutionPlanFreeze(input: {
+	persistAgentPlanning(input: {
 		workspaceId: string;
 		submissionId: string;
-		freeze: ExecutionPlanCompileFreeze;
+		agentBinding: ComposerAgentBinding;
+		executionPlanFreeze: ExecutionPlanCompileFreeze;
 		quoteRef?: CreationSubmissionRecord["snapshot"]["quote"];
 		credits?: number;
 		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
@@ -164,8 +176,20 @@ export interface CreationSubmissionIdFactory {
 	now(): string;
 }
 
+declare const agentThreadIdentityBrand: unique symbol;
+
+export type AgentThreadIdentity = string & {
+	readonly [agentThreadIdentityBrand]: "AgentThreadIdentity";
+};
+
+export function asAgentThreadIdentity(value: string): AgentThreadIdentity {
+	const normalized = value.trim();
+	if (!normalized) throw new Error("Agent Thread identity cannot be empty.");
+	return normalized as AgentThreadIdentity;
+}
+
 export type ComposerAgentBinding = {
-	threadId: string;
+	threadId: AgentThreadIdentity;
 	runId: string;
 	/** False while a paid Living Plan waits for an explicit merchant start. */
 	makeReady?: boolean;
@@ -382,10 +406,11 @@ export class CreationSubmissionCoordinator {
 		if (!submission.executionPlanFreeze) {
 			throw new Error("Revised Composer plan did not produce a durable freeze.");
 		}
-		await this.store.saveExecutionPlanFreeze({
+		await this.store.persistAgentPlanning({
 			workspaceId: input.workspaceId,
 			submissionId: submission.snapshot.id,
-			freeze: submission.executionPlanFreeze,
+			agentBinding: { threadId: binding.threadId, runId: binding.runId },
+			executionPlanFreeze: submission.executionPlanFreeze,
 			quoteRef: submission.snapshot.quote,
 			credits: submission.usageReservation.credits,
 		});
@@ -479,6 +504,9 @@ export class CreationSubmissionCoordinator {
 		});
 		const snapshot = createCreationExecutionSnapshot(command, this.ids.now());
 		const submission: CreationSubmissionRecord = {
+			...(request.agentThreadId
+				? { agentContinuationThreadId: asAgentThreadIdentity(request.agentThreadId) }
+				: {}),
 			snapshot,
 			work: { id: snapshot.work.id },
 			task: { id: snapshot.task.id },
@@ -529,22 +557,45 @@ export class CreationSubmissionCoordinator {
 		continuationThreadId?: string,
 		persistExisting = true,
 	): Promise<ComposerAgentBinding | undefined> {
-		const binding = this.agentPlanning
-			? await this.agentPlanning.prepare({
-					...(continuationThreadId ? { continuationThreadId } : {}),
-					submission,
-				})
-			: undefined;
+		if (!this.agentPlanning) {
+			if (submission.executionPlanFreeze && !submission.agentBinding) {
+				throw new Error("Planned submission is missing its authoritative Agent Thread binding.");
+			}
+			return submission.agentBinding;
+		}
+		if (submission.agentBinding && submission.executionPlanFreeze) {
+			return submission.agentBinding;
+		}
+		const durableContinuationThreadId =
+			continuationThreadId ?? submission.agentContinuationThreadId;
+		const binding = await this.agentPlanning.prepare({
+			...(durableContinuationThreadId
+				? { continuationThreadId: durableContinuationThreadId }
+				: {}),
+			submission,
+		});
 		ensureConfirmationDispatch(submission);
+		// A parked turn (makeReady === false) legitimately returns without a
+		// freeze — the merchant still owes an answer or an explicit start.
+		// Only a ready binding must have frozen a plan.
+		if (binding.makeReady !== false && !submission.executionPlanFreeze) {
+			throw new Error("Agent planning did not freeze an execution plan.");
+		}
+		submission.agentBinding = { threadId: binding.threadId, runId: binding.runId };
 		if (persistExisting && submission.executionPlanFreeze) {
-			const persisted = await this.store.saveExecutionPlanFreeze({
+			const persisted = await this.store.persistAgentPlanning({
 				workspaceId: submission.snapshot.workspaceId,
 				submissionId: submission.snapshot.id,
-				freeze: submission.executionPlanFreeze,
+				agentBinding: submission.agentBinding,
+				executionPlanFreeze: submission.executionPlanFreeze,
 				quoteRef: submission.snapshot.quote,
 				credits: submission.usageReservation.credits,
 				confirmationDispatch: submission.confirmationDispatch,
 			});
+			if (!persisted.agentBinding || !persisted.executionPlanFreeze) {
+				throw new Error("Durable Agent planning record is incomplete.");
+			}
+			submission.agentBinding = persisted.agentBinding;
 			submission.executionPlanFreeze = persisted.executionPlanFreeze;
 		}
 		return binding;
@@ -555,18 +606,29 @@ export class CreationSubmissionCoordinator {
 		idempotencyKey: string;
 		instruction: string;
 		outputCount: number;
-		/** Single-page note image regenerate target (result_adjust asset scope). */
-		pageRegenerationTargetAssetId?: string;
+		/** Frozen note image subset (result_adjust asset/set scope). */
+		pageRegenerationTargetAssetIds?: string[];
 		quote: { id: string; revision: string };
 		sourceContentPackage: { id: string; revision: number };
 		sourceNoteStyleId?: string;
 		sourceSnapshot: CreationExecutionSnapshot;
+		sourceAgentThreadId?: AgentThreadIdentity;
+		sourceArtifactLineage?: CreationSubmissionRecord["artifactLineage"];
 		taskId: string;
 		textSelectionScope?: ResultAdjustTextSelectionScope;
 		workId: string;
 		workspaceId: string;
 	}) {
 		const source = creationExecutionSnapshotSchema.parse(input.sourceSnapshot);
+		// No lineage requirement here either. `agentBinding.threadId` arrived with
+		// V31-15, so no Result delivered before it carries one, and a run that
+		// never reached a ready artifact revision has no lineage. Refusing them
+		// made every pre-existing Result unadjustable — and refusing here was
+		// worse than refusing at prepare, because the merchant had already
+		// confirmed a quote. Both fields spread conditionally onto the submission
+		// below; without them the successor publishes a fresh artifact instead of
+		// continuing the old one. The read port fails closed only on lineage that
+		// exists and cannot be read (`artifactLineageUnreadable`).
 		if (source.workspaceId !== input.workspaceId) {
 			throw new Error("Result adjustment source does not match its workspace.");
 		}
@@ -665,10 +727,10 @@ export class CreationSubmissionCoordinator {
 					id: input.sourceContentPackage.id,
 					revision: String(input.sourceContentPackage.revision),
 				},
-				...(input.pageRegenerationTargetAssetId
+				...(input.pageRegenerationTargetAssetIds
 					? {
 							pageRegeneration: {
-								targetAssetId: input.pageRegenerationTargetAssetId,
+								targetAssetIds: input.pageRegenerationTargetAssetIds,
 							},
 						}
 					: {}),
@@ -683,6 +745,10 @@ export class CreationSubmissionCoordinator {
 		});
 		const snapshot = createCreationExecutionSnapshot(command, this.ids.now());
 		const submission: CreationSubmissionRecord = {
+			...(input.sourceAgentThreadId
+				? { agentContinuationThreadId: input.sourceAgentThreadId }
+				: {}),
+			...(input.sourceArtifactLineage ? { artifactLineage: input.sourceArtifactLineage } : {}),
 			contentPackage: { ...snapshot.contentPackage },
 			...(source.lens === "image_text_note" &&
 			input.sourceNoteStyleId &&
@@ -741,11 +807,15 @@ export class CreationSubmissionCoordinator {
 		// the one surface that tests recurrence. Confirmed preferences are
 		// workspace-scoped (`agent-memory-platform.ts:801`), so a fresh Thread for
 		// the adjustment task still retrieves them.
-		await this.prepareAgentPlan(claimed.submission);
+		const agentBinding = await this.prepareAgentPlan(
+			claimed.submission,
+			input.sourceAgentThreadId,
+		);
 		await this.startHarness(claimed.submission);
 		return submissionResponse(
 			claimed.submission,
 			claimed.kind === "existing",
+			agentBinding,
 		);
 	}
 
@@ -855,6 +925,12 @@ export class CreationSubmissionCoordinator {
 			workId: this.ids.createId("work"),
 		});
 		const submission: CreationSubmissionRecord = {
+			...(input.request.agentThreadId
+				? { agentContinuationThreadId: input.request.agentThreadId }
+				: {}),
+			...(input.request.artifactLineage
+				? { artifactLineage: input.request.artifactLineage }
+				: {}),
 			contentPackage: { ...snapshot.contentPackage },
 			snapshot,
 			task: { id: snapshot.task.id },
@@ -879,10 +955,15 @@ export class CreationSubmissionCoordinator {
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();
 		}
+		const agentBinding = await this.prepareAgentPlan(
+			claimed.submission,
+			input.request.agentThreadId,
+		);
 		await this.startHarness(claimed.submission);
 		return submissionResponse(
 			claimed.submission,
 			claimed.kind === "existing",
+			agentBinding,
 		);
 	}
 

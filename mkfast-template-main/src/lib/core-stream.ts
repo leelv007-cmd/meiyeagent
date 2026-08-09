@@ -2,6 +2,7 @@ const FORWARDED_RESPONSE_HEADERS = [
   'content-type',
   'x-correlation-id',
   'x-meiye-catalog-model-id',
+  'x-meiye-e2e-agent-fault-applied',
   'x-meiye-stream-protocol',
   'x-vercel-ai-ui-message-stream',
   'x-accel-buffering',

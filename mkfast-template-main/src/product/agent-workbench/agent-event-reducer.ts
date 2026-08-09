@@ -411,6 +411,7 @@ function hydrateReplay(
 
   const batch = applyBatch(next, action.events);
   next = batch.state;
+  if (!batch.ok) return next;
   next = {
     ...next,
     connection: 'live',

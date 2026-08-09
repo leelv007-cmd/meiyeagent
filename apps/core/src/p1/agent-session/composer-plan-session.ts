@@ -18,6 +18,7 @@ import type {
   ComposerSubmissionAgentPlanningPort,
   CreationSubmissionRecord,
 } from '../execution-spine/submission-coordinator.js';
+import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { isAgentMemoryDisabledError } from '../operations/agent-memory-platform.js';
 import type { ExecutionPlanCompileFreeze } from '../harness/execution-plan-admission.js';
@@ -217,11 +218,45 @@ export class ComposerPlanSessionCoordinator
           now,
         });
 
-    const latest = await this.plans.getLatest(planId);
-    const alreadyCompiled =
-      existingRun?.status === 'completed' ||
-      latest?.revision.boundRevisions.intentRevision ===
-        started.thread.sessionRevision;
+	const exitRuns = (await this.sessions.listRuns({ resourceId, threadId }))
+	  .filter((run) => run.durability === 'exit')
+	  .sort((left, right) =>
+		left.startedAt.localeCompare(right.startedAt) || left.runId.localeCompare(right.runId),
+	  );
+	const runIndex = exitRuns.findIndex((run) => run.runId === runId);
+	if (runIndex < 0) throw new Error(`Composer Run ${runId} is missing from its Thread.`);
+	const expectedIntentRevision = runIndex + 1;
+	const revisions = await this.plans.listRevisions(planId);
+	const matchingRevisions = revisions.filter((revision) =>
+	  revision.boundRevisions.intentRevision === expectedIntentRevision &&
+	  revision.intent.summary === submission.snapshot.intent.text &&
+	  revision.boundRevisions.contextBundleId === submission.snapshot.briefContext.id &&
+	  revision.boundRevisions.contextRevision === String(submission.snapshot.briefContext.revision) &&
+	  revision.boundRevisions.harnessReleaseId === started.run.harnessReleaseId,
+	);
+	if (matchingRevisions.length > 1) {
+	  throw new Error(`Composer Run ${runId} has ambiguous durable plan revisions.`);
+	}
+	const matchedRevision = matchingRevisions[0];
+	const exactCompiled = matchedRevision
+	  ? await this.plans.getRevision(planId, matchedRevision.revision)
+	  : null;
+	if (matchedRevision && !exactCompiled) {
+	  throw new Error(`Composer Run ${runId} durable plan revision is missing.`);
+	}
+	if (
+	  exactCompiled &&
+	  (exactCompiled.revision.boundRevisions.intentRevision !== expectedIntentRevision ||
+		!exactCompiled.revision.quoteRef.id ||
+		!String(exactCompiled.revision.quoteRef.revision).trim())
+	) {
+	  throw new Error(`Composer Run ${runId} durable plan binding is invalid.`);
+	}
+	const latest = await this.plans.getLatest(planId);
+	const alreadyCompiled = exactCompiled !== null;
+	if (existingRun?.status === 'completed' && !alreadyCompiled) {
+	  throw new Error(`Completed Composer Run ${runId} has no exact durable plan revision.`);
+	}
 
     if (!alreadyCompiled) {
       if (
@@ -250,7 +285,7 @@ export class ComposerPlanSessionCoordinator
           runId,
           status: 'waiting',
         });
-        return { threadId, runId, makeReady: false };
+        return { threadId: asAgentThreadIdentity(threadId), runId, makeReady: false };
       }
       const memoryContext = await this.retrievePlanMemoryContext({
         submission,
@@ -279,29 +314,21 @@ export class ComposerPlanSessionCoordinator
           ? turnResult.decision.action.proposal
           : proposalFromSubmission(submission),
       });
-    }
-
-    // V31-18 P0-1 (出口证明, second half): skipping compile must not skip the
-    // freeze. `executionPlanFreeze` is in-memory only — `storedSubmission` has
-    // no key for it — so every replay that rebuilds the record from
-    // `execution_spine.creation_submissions` (`submit()`'s existing-receipt
-    // branch and `recoverPendingStarts()`) arrives with it unset. Leaving it
-    // unset made the *recovered* submission fall through `task-admission.ts`'s
-    // legacy five-stage branch: the retry stopped being bricked but silently
-    // lost its ExecutionPlanSnapshot. The compiled plan is durable and
-    // immutable, so rebuild the identical freeze from it instead of
-    // recompiling.
-    if (!submission.executionPlanFreeze) {
-      const compiled = await this.plans.getLatest(planId);
-      if (!compiled) {
-        throw new Error(`Composer plan ${planId} was not found after compile.`);
-      }
-      submission.executionPlanFreeze = compileFinalizeExecutionPlanFreeze({
-        result: compiled,
-        contextBundleId: submission.snapshot.briefContext.id,
-        contextRevision: String(submission.snapshot.briefContext.revision),
-        approvalBasis: approvalBasisForSubmission(submission.snapshot.lens),
-      });
+	} else if (exactCompiled && !submission.executionPlanFreeze) {
+	  // A process may die after PlanCompiler durably appends the revision but
+	  // before the submission row stores its freeze. Rebuild only from that
+	  // durable compiled artifact; never compile/append a second revision.
+	  // (V31-18 P0-1, second half: every replay rebuilds the record from
+	  // `execution_spine.creation_submissions` and the in-memory freeze is
+	  // gone — skipping this rebuild drops the recovered paid submission onto
+	  // the legacy admission branch and silently loses its
+	  // ExecutionPlanSnapshot.)
+	  submission.executionPlanFreeze = compileFinalizeExecutionPlanFreeze({
+		result: exactCompiled,
+		contextBundleId: submission.snapshot.briefContext.id,
+		contextRevision: String(submission.snapshot.briefContext.revision),
+		approvalBasis: approvalBasisForSubmission(submission.snapshot.lens),
+	  });
     }
 
     const currentRun = await this.sessions.getRun({ resourceId, runId });
@@ -319,7 +346,13 @@ export class ComposerPlanSessionCoordinator
       });
     }
 
-    return { threadId, runId, makeReady };
+    const binding = {
+      threadId: asAgentThreadIdentity(threadId),
+      runId,
+      makeReady,
+    };
+    submission.agentBinding = { threadId: binding.threadId, runId };
+    return binding;
   }
 
   async answerClarification(input: {
@@ -349,7 +382,7 @@ export class ComposerPlanSessionCoordinator
       merchantMessage: answer,
     });
     if (!isCompilableTurn(turnResult)) {
-      return { threadId: run.threadId, runId, makeReady: false };
+      return { threadId: asAgentThreadIdentity(run.threadId), runId, makeReady: false };
     }
     const memoryContext = await this.retrievePlanMemoryContext({
       submission: input.submission,
@@ -368,7 +401,7 @@ export class ComposerPlanSessionCoordinator
       memoryContext,
       now: this.now(),
     });
-    return { threadId: run.threadId, runId, makeReady: false };
+    return { threadId: asAgentThreadIdentity(run.threadId), runId, makeReady: false };
   }
 
   async completeExplicitStart(input: {
@@ -421,7 +454,7 @@ export class ComposerPlanSessionCoordinator
     ) {
       throw new Error(`Composer Agent Run ${runId} cannot start from ${run.status}.`);
     }
-    return { threadId: run.threadId, runId, makeReady: true };
+    return { threadId: asAgentThreadIdentity(run.threadId), runId, makeReady: true };
   }
 
   async markExplicitStartCompleted(input: {
@@ -511,7 +544,7 @@ export class ComposerPlanSessionCoordinator
       contextRevision: String(snapshot.briefContext.revision),
       approvalBasis: approvalBasisForSubmission(snapshot.lens),
     });
-    return { threadId: run.threadId, runId, makeReady: false };
+    return { threadId: asAgentThreadIdentity(run.threadId), runId, makeReady: false };
   }
 
   private runIntentTurn(input: {

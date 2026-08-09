@@ -20,6 +20,7 @@ import {
   contentPackageCarrierOf,
   contentPackageSchema,
   imageTextNoteVersionSchema,
+  artifactUpdateWireSchema,
   type ContentPackage,
   type NotePlan,
 } from '@meiye/contracts';
@@ -38,6 +39,8 @@ import { buildContentPackage } from '../operations/content-package.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
 import { ProductContentPackageRightsResolver } from '../operations/product-package-rights-adapter.js';
 import { unconfiguredNotePlanEnhancementJudgeResolver } from './note-plan-structured-port.js';
+import { createNoteExecutionArtifactReporter } from './workflow-core.js';
+import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-event-store.js';
 import {
   UnifiedHarnessStagePorts,
   type HarnessMediaExecutionPort,
@@ -143,7 +146,7 @@ async function seedPageRegenFixture(pool: Pool): Promise<PageRegenFixture> {
     derivedPackageId,
     taskId,
     workId,
-    targetAssetId: genAsset2,
+    targetAssetIds: [genAsset2],
   });
   const snapshot = request.executionSnapshot!;
 
@@ -476,6 +479,111 @@ test(
 );
 
 test(
+  'non-contiguous note subset runs source pages 1 and 3 and reporter becomes ready from actual runner mappings',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const pool = new Pool({ connectionString });
+    let cleanup: (() => Promise<void>) | undefined;
+    try {
+      const fixture = await seedPageRegenFixture(pool);
+      cleanup = fixture.cleanup;
+      const {
+        derivedPackageId,
+        genAsset3,
+        merchantAssetId,
+        packageId,
+        plan,
+        ports,
+        request,
+        taskId,
+        workspaceId,
+      } = fixture;
+      const subsetRequest = pageRegenRequest({
+        workspaceId,
+        packageId,
+        derivedPackageId,
+        taskId,
+        workId: request.executionSnapshot!.work.id,
+        targetAssetIds: [merchantAssetId, genAsset3],
+        agentThreadId: 'thread-subset',
+        artifactLineage: {
+          artifactId: `note:${packageId}`,
+          parentRevision: 10,
+          targetUnitIds: [plan.pages[0]!.id, plan.pages[2]!.id],
+        },
+      });
+      const projected: SemanticEventCandidate[] = [];
+      const progress: Array<{ pageId: string; message: string }> = [];
+      // Production consumer (workflow-core), not a hand-built reporter: the plan
+      // is the one compiled this run, so frozen source page ids are absent from
+      // it exactly as in production.
+      const runPlan = freshlyCompiledPlan(plan);
+      const report = createNoteExecutionArtifactReporter({
+        plan: runPlan,
+        request: subsetRequest,
+        workflowId: taskId,
+        reportProgress: async ({ pageId, message }) => {
+          progress.push({ pageId, message });
+        },
+        artifactEmitter: { async project(candidate) { projected.push(candidate); } },
+        now: () => '2026-08-09T12:00:00.000Z',
+      });
+      assert.ok(
+        runPlan.pages.every(({ id }) => !plan.pages.some((page) => page.id === id)),
+        'the run plan must not share page ids with the frozen source',
+      );
+
+      const selection = await ports.executeNoteAndSelect({
+        workflowId: taskId,
+        request: subsetRequest,
+        brief: noteBrief(runPlan),
+        context: emptyContext(subsetRequest, [merchantAssetId]),
+        selectedStyleId: runPlan.style.id,
+        onPageProgress: report,
+      });
+
+      assert.equal(fixture.imageCalls(), 2);
+      assert.deepEqual(
+        selection.auditSignals
+          .filter(({ eventType }) => eventType === 'note_page_regenerated')
+          .map(({ payload }) => payload.pageId),
+        [plan.pages[0]!.id, plan.pages[2]!.id],
+      );
+      const updates = projected.map(({ payload }) => artifactUpdateWireSchema.parse(payload));
+      assert.ok(updates.slice(0, -1).every(({ status }) => status !== 'ready'));
+      assert.equal(updates.at(-1)?.status, 'ready');
+      // Every delta must land on the *frozen source* page it regenerated:
+      // source page 1 → pageIndex 0 (skeleton, copy, image running, image
+      // success), then source page 3 → pageIndex 2. Pre-fix all eight collapsed
+      // onto pageIndex 0, so page 1 was overwritten twice and page 3 never
+      // changed.
+      assert.deepEqual(
+        updates.map((update) =>
+          update.mode === 'delta' && 'pages' in update.patch
+            ? update.patch.pages?.map(({ pageIndex }) => pageIndex)
+            : null,
+        ),
+        [[0], [0], [0], [0], [2], [2], [2], [2]],
+      );
+      assert.deepEqual(
+        progress.map(({ message }) => message),
+        [
+          '正在生成第 1 页配图',
+          '第 1 页配图已完成',
+          '正在生成第 3 页配图',
+          '第 3 页配图已完成',
+        ],
+      );
+    } finally {
+      if (cleanup) await cleanup();
+      await pool.end();
+    }
+  },
+);
+
+test(
   'delivery refuses a merchant source asset revoked mid-execution',
   {
     skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
@@ -611,13 +719,34 @@ function ownedAsset(id: string) {
   };
 }
 
+/**
+ * The plan the note stage compiles for *this* run. Production always mints new
+ * page ids here, so a subset run's frozen source ids are absent from it — the
+ * shape that collapsed every regeneration delta onto pageIndex 0.
+ */
+function freshlyCompiledPlan(source: NotePlan): NotePlan {
+  return {
+    ...source,
+    pages: source.pages.map((page) => ({
+      ...page,
+      id: `run-${page.id}`,
+      dependencies: page.dependencies.map((dependency) => ({
+        ...dependency,
+        pageId: `run-${dependency.pageId}`,
+      })),
+    })),
+  };
+}
+
 function pageRegenRequest(input: {
   workspaceId: string;
   packageId: string;
   derivedPackageId: string;
   taskId: string;
   workId: string;
-  targetAssetId: string;
+  targetAssetIds: string[];
+  agentThreadId?: string;
+  artifactLineage?: HarnessWorkflowInput['artifactLineage'];
 }): HarnessWorkflowInput {
   const snapshot = createCreationExecutionSnapshot(
     {
@@ -656,7 +785,7 @@ function pageRegenRequest(input: {
       sources: {
         assets: [],
         contentPackage: { id: input.packageId, revision: '1' },
-        pageRegeneration: { targetAssetId: input.targetAssetId },
+        pageRegeneration: { targetAssetIds: input.targetAssetIds },
       },
       rights: { revision: 'rights-r1', summary: 'authorized' },
       identity: { id: 'identity-1', revision: 'identity-r1' },
@@ -671,6 +800,10 @@ function pageRegenRequest(input: {
     '2026-08-02T01:00:00.000Z',
   );
   return {
+    ...(input.agentThreadId
+      ? { agentThreadId: input.agentThreadId as HarnessWorkflowInput['agentThreadId'] }
+      : {}),
+    ...(input.artifactLineage ? { artifactLineage: input.artifactLineage } : {}),
     actorId: snapshot.actorId,
     workspaceId: snapshot.workspaceId,
     packageId: input.derivedPackageId,

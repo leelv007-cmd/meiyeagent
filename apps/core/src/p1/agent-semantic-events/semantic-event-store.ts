@@ -133,6 +133,46 @@ export function buildProjectedEvent(
   });
 }
 
+/**
+ * Key-order-independent JSON, so a payload that came back through a jsonb column
+ * compares equal to the in-memory value it was written from.
+ */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * Refuse a replay that carries different content under an already-projected
+ * eventId.
+ *
+ * The idempotent-on-eventId contract used to return the stored event without
+ * looking at what the caller brought. That is silent for the one case it must
+ * not be: a DBOS re-execution re-emitting an artifact revision whose content
+ * differs from the first attempt's. The stored row wins, the caller believes its
+ * own version was projected, and the artifact ends up a splice of two attempts
+ * that nothing reports. A replay carrying identical content is still a plain
+ * no-op — the normal crash-window case.
+ */
+export function assertProjectedReplayMatches(
+  stored: AgentSemanticEvent,
+  candidate: SemanticEventCandidate,
+): void {
+  if (canonicalJson(stored.payload) === canonicalJson(candidate.payload)) return;
+  throw new AgentSemanticEventStoreError(
+    'AGENT_SEMANTIC_EVENT_CONFLICT',
+    `Semantic event ${candidate.eventId} was already projected with different content.`,
+    { eventId: candidate.eventId, threadId: candidate.threadId },
+  );
+}
+
 export function eventThreadIsolation(
   threadId: string,
   resourceId: string,

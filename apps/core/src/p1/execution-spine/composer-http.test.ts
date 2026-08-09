@@ -33,6 +33,7 @@ import {
 } from "../goal-proactive/campaign-weekly-schedule.js";
 import type { ComposerSubmissionBody } from "./creation-execution-snapshot.js";
 import {
+	asAgentThreadIdentity,
 	CreationSubmissionCoordinator,
 	type CreationSubmissionAdmissionPort,
 	type CreationSubmissionHarnessStarter,
@@ -828,6 +829,7 @@ test("legacy Harness task admission stays retired without a configured Harness s
 });
 
 class MemorySubmissionStore implements CreationSubmissionStore {
+	failNextPlanningPersistence = false;
 	private readonly claims = new Map<string, CreationSubmissionStoreClaim>();
 	readonly freezePresentAtClaim = new Map<string, boolean>();
 	readonly confirmationStateAtClaim = new Map<string, string | undefined>();
@@ -896,23 +898,55 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		};
 	}
 
-	async saveExecutionPlanFreeze(input: {
+	async persistAgentPlanning(input: {
 		workspaceId: string;
 		submissionId: string;
-		freeze: CreationSubmissionRecord["executionPlanFreeze"];
+		agentBinding: NonNullable<CreationSubmissionRecord["agentBinding"]>;
+		executionPlanFreeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		quoteRef?: CreationSubmissionRecord["snapshot"]["quote"];
+		credits?: number;
 		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
 	}) {
+		if (this.failNextPlanningPersistence) {
+			this.failNextPlanningPersistence = false;
+			throw new Error("planning persistence unavailable");
+		}
 		const claim = [...this.claims.values()].find(
-			(candidate) =>
-				candidate.workspaceId === input.workspaceId &&
-				candidate.submission.snapshot.id === input.submissionId,
+			(entry) =>
+				entry.workspaceId === input.workspaceId &&
+				entry.submission.snapshot.id === input.submissionId,
 		);
-		if (!claim || !input.freeze) throw new Error("Submission freeze target missing.");
-		claim.submission.executionPlanFreeze = structuredClone(input.freeze);
-		claim.submission.confirmationDispatch = structuredClone(
-			input.confirmationDispatch,
-		);
-		return structuredClone(claim.submission);
+		if (!claim) throw new Error(`Unknown submission ${input.submissionId}`);
+		const current = claim.submission;
+		const binding = {
+			threadId: input.agentBinding.threadId,
+			runId: input.agentBinding.runId,
+		};
+		const revised =
+			current.executionPlanFreeze !== undefined &&
+			current.executionPlanFreeze.planId === input.executionPlanFreeze.planId &&
+			current.executionPlanFreeze.planRevision <
+				input.executionPlanFreeze.planRevision;
+		if ((current.agentBinding || current.executionPlanFreeze) && !revised) {
+			if (current.agentBinding) {
+				assert.deepEqual(current.agentBinding, binding);
+			}
+			if (current.executionPlanFreeze) {
+				assert.deepEqual(current.executionPlanFreeze, input.executionPlanFreeze);
+			}
+		}
+		current.agentBinding = structuredClone(binding);
+		current.executionPlanFreeze = structuredClone(input.executionPlanFreeze);
+		if (input.confirmationDispatch !== undefined) {
+			current.confirmationDispatch = structuredClone(input.confirmationDispatch);
+		}
+		if (input.quoteRef) {
+			current.snapshot.quote = structuredClone(input.quoteRef);
+		}
+		if (input.credits !== undefined) {
+			current.usageReservation.credits = input.credits;
+		}
+		return structuredClone(current);
 	}
 
 	async claimHarnessStart(input: {
@@ -1063,7 +1097,13 @@ test("Composer returns authoritative Agent binding and treats the Thread hint ou
 		{
 			async prepare(input) {
 				continuationHints.push(input.continuationThreadId);
-				return { threadId: "thread-authoritative", runId: "run-authoritative" };
+				input.submission.executionPlanFreeze = {} as NonNullable<
+					CreationSubmissionRecord["executionPlanFreeze"]
+				>;
+				return {
+					threadId: asAgentThreadIdentity("thread-authoritative"),
+					runId: "run-authoritative",
+				};
 			},
 		}
 	);
@@ -1084,7 +1124,140 @@ test("Composer returns authoritative Agent binding and treats the Thread hint ou
 	assert.equal(created.runId, "run-authoritative");
 	assert.equal(replayed.replayed, true);
 	assert.equal(replayed.threadId, "thread-authoritative");
-	assert.deepEqual(continuationHints, ["thread-browser-a", "thread-browser-b"]);
+	assert.deepEqual(continuationHints, ["thread-browser-a"]);
+});
+
+test("crash recovery idempotently persists Agent planning before Harness starts", async () => {
+	const submissions = new MemorySubmissionStore();
+	submissions.failNextPlanningPersistence = true;
+	const starts: CreationSubmissionRecord[] = [];
+	let plans = 0;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		{ async start(input) { starts.push(structuredClone(input)); } },
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				plans += 1;
+				input.submission.executionPlanFreeze = {} as NonNullable<
+					CreationSubmissionRecord["executionPlanFreeze"]
+				>;
+				return {
+					threadId: asAgentThreadIdentity("thread-durable"),
+					runId: "run-durable",
+				};
+			},
+		},
+	);
+	const command = {
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	};
+
+	await assert.rejects(coordinator.submit(command), /planning persistence/u);
+	assert.equal(starts.length, 0);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 1,
+		failed: 0,
+		started: 1,
+	});
+	assert.equal(plans, 2);
+	assert.equal(starts[0]?.agentBinding?.threadId, "thread-durable");
+	assert.ok(starts[0]?.executionPlanFreeze);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 0,
+		failed: 0,
+		started: 0,
+	});
+});
+
+test("recovery completes a claim that crashed before Agent planning", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starts: CreationSubmissionRecord[] = [];
+	let plans = 0;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		{ async start(input) { starts.push(structuredClone(input)); } },
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				plans += 1;
+				if (plans === 1) throw new Error("process crashed before plan");
+				input.submission.executionPlanFreeze = {} as NonNullable<
+					CreationSubmissionRecord["executionPlanFreeze"]
+				>;
+				return {
+					threadId: asAgentThreadIdentity("thread-after-crash"),
+					runId: "run-after-crash",
+				};
+			},
+		},
+	);
+	await assert.rejects(
+		coordinator.submit({
+			...submissionPayload(),
+			actorId: "owner-1",
+			workspaceId: "workspace-1",
+		}),
+		/crashed before plan/u,
+	);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 1,
+		failed: 0,
+		started: 1,
+	});
+	assert.equal(starts[0]?.agentBinding?.threadId, "thread-after-crash");
+});
+
+test("recovery reuses durable Agent planning after a crash before Harness acknowledgement", async () => {
+	const submissions = new MemorySubmissionStore();
+	let plans = 0;
+	let starts = 0;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		{
+			async start(input) {
+				starts += 1;
+				assert.equal(input.agentBinding?.threadId, "thread-persisted");
+				if (starts === 1) throw new Error("crashed before harness acknowledgement");
+			},
+		},
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				plans += 1;
+				input.submission.executionPlanFreeze = {} as NonNullable<
+					CreationSubmissionRecord["executionPlanFreeze"]
+				>;
+				return {
+					threadId: asAgentThreadIdentity("thread-persisted"),
+					runId: "run-persisted",
+				};
+			},
+		},
+	);
+	await assert.rejects(
+		coordinator.submit({
+			...submissionPayload(),
+			actorId: "owner-1",
+			workspaceId: "workspace-1",
+		}),
+		/before harness acknowledgement/u,
+	);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 1,
+		failed: 0,
+		started: 1,
+	});
+	assert.equal(plans, 1);
+	assert.equal(starts, 2);
 });
 
 test("a failed Harness start releases the same submission for an idempotent retry", async () => {
@@ -1138,7 +1311,7 @@ test("the compiled freeze is durable in the claim transaction before a paid Harn
 		{
 			async prepare({ submission }) {
 				submission.executionPlanFreeze = recoveryExecutionPlanFreeze(submission);
-				return { threadId: "thread-freeze", runId: "run-freeze" };
+				return { threadId: asAgentThreadIdentity("thread-freeze"), runId: "run-freeze" };
 			},
 		},
 	);
@@ -1209,7 +1382,7 @@ test("the Campaign producer submits the second paid Work with its own U7 context
 			async prepare({ submission }) {
 				submission.executionPlanFreeze = recoveryExecutionPlanFreeze(submission);
 				return {
-					threadId: `thread-${submission.task.id}`,
+					threadId: asAgentThreadIdentity(`thread-${submission.task.id}`),
 					runId: `run-${submission.task.id}`,
 				};
 			},
@@ -1484,6 +1657,74 @@ test("a terminal late answer preserves the frozen merchant credit quote policy",
 	assert.ok(successorQuote?.submissionContractHash);
 });
 
+test("a Result adjustment without artifact lineage still starts its successor under Agent planning", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const continuationHints: Array<string | undefined> = [];
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				continuationHints.push(input.continuationThreadId);
+				input.submission.executionPlanFreeze = {} as NonNullable<
+					CreationSubmissionRecord["executionPlanFreeze"]
+				>;
+				return {
+					threadId: asAgentThreadIdentity("thread-authoritative"),
+					runId: "run-authoritative",
+				};
+			},
+		}
+	);
+	await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	const source = starter.starts[0]!;
+
+	// A Result delivered before agentBinding.threadId existed: no source Thread,
+	// no artifact lineage. Refusing it here was worse than refusing at prepare —
+	// the merchant had already confirmed the quote.
+	await coordinator.submitResultAdjustment({
+		actorId: "owner-1",
+		idempotencyKey: "result-adjust-legacy",
+		instruction: "语气更自然",
+		outputCount: 1,
+		quote: { id: "quote-adjust-legacy", revision: "quote-adjust-legacy-r1" },
+		sourceContentPackage: { id: source.contentPackage.id, revision: 3 },
+		sourceSnapshot: structuredClone(source.snapshot),
+		taskId: "composer-task:result-adjust:legacy",
+		textSelectionScope: {
+			end: 9,
+			field: "body",
+			kind: "text_selection",
+			packageId: source.contentPackage.id,
+			selectedText: "预约到店",
+			sourceTextSha256:
+				"53bb35f895648a58695272f4be5b28010ddaaf5ff8adc4934f3f2130c3b25477",
+			start: 5,
+			versionId: "version-1",
+		},
+		workId: "work-result-adjust-legacy",
+		workspaceId: "workspace-1",
+	});
+
+	assert.equal(starter.starts.length, 2);
+	const adjusted = starter.starts[1]!;
+	assert.equal(adjusted.task.id, "composer-task:result-adjust:legacy");
+	assert.equal(adjusted.artifactLineage, undefined);
+	assert.equal(adjusted.agentContinuationThreadId, undefined);
+	// Planning still binds the successor to a Thread of its own; only the
+	// continuation hint is absent, so it publishes a fresh artifact.
+	assert.equal(adjusted.agentBinding?.threadId, "thread-authoritative");
+	assert.deepEqual(continuationHints, [undefined, undefined]);
+});
+
 test("a Result adjustment starts one new-chain submission from the frozen source", async () => {
 	const submissions = new MemorySubmissionStore();
 	const starter = new RecordingHarnessStarter();
@@ -1685,7 +1926,7 @@ test("an image-text note Result adjustment reserves the quoted image output", as
 		idempotencyKey: "result-adjust-note-1",
 		instruction: "重做指定图片",
 		outputCount: 1,
-		pageRegenerationTargetAssetId: "asset-page-2",
+		pageRegenerationTargetAssetIds: ["asset-page-2"],
 		quote: { id: "quote-adjust-note-1", revision: "quote-adjust-note-r1" },
 		sourceContentPackage: { id: source.contentPackage.id, revision: 1 },
 		sourceNoteStyleId: "story",
@@ -1703,7 +1944,7 @@ test("an image-text note Result adjustment reserves the quoted image output", as
 	assert.equal(adjusted.snapshot.signedSubmission?.beautyVoiceRole, "customer");
 	assert.equal(adjusted.snapshot.signedSubmission?.thinkingLevel, "deep");
 	assert.deepEqual(adjusted.snapshot.sources.pageRegeneration, {
-		targetAssetId: "asset-page-2",
+		targetAssetIds: ["asset-page-2"],
 	});
 	const noteStyleDecision = starter.starts[1]?.decisionReferences?.[0];
 	assert.match(noteStyleDecision?.id ?? "", /^decision-[a-f0-9]{24}$/u);
@@ -2476,7 +2717,7 @@ test("V31-18 P0-1: crash recovery starts Make through plan preparation, not arou
 			async prepare(input) {
 				prepareCalls += 1;
 				input.submission.executionPlanFreeze = freezeForRecoveryTest();
-				return { threadId: "thread-recovered", runId: "run-recovered" };
+				return { threadId: asAgentThreadIdentity("thread-recovered"), runId: "run-recovered" };
 			},
 		},
 	);

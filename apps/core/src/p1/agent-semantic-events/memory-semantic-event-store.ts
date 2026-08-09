@@ -5,6 +5,7 @@
 import type { AgentSemanticEvent } from '@meiye/contracts';
 
 import {
+  assertProjectedReplayMatches,
   buildProjectedEvent,
   type AgentSemanticEventStore,
   type ListSemanticEventsInput,
@@ -37,6 +38,7 @@ export class MemoryAgentSemanticEventStore implements AgentSemanticEventStore {
           `Semantic event ${candidate.eventId} already projected under another boundary.`,
         );
       }
+      assertProjectedReplayMatches(existing.event, candidate);
       return { event: structuredClone(existing.event), replayed: true };
     }
 

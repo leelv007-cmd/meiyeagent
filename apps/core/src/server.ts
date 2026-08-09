@@ -178,6 +178,8 @@ interface CoreServerDependencies {
   };
   /** Workspace-authenticated semantic replay/read seam (V31-28). */
   agentSemanticEvents?: {
+    /** Explicit E2E-only transport fault seam; production assemblies omit it. */
+    e2eFaultInjectionEnabled?: boolean;
     resolveSession(input: {
       workspaceId: string;
       threadId: string;
@@ -1853,6 +1855,39 @@ export function createCoreServer({
               session,
               ...(clientLastEventId ? { clientLastEventId } : {}),
             });
+            const replayFault = agentSemanticEvents!.e2eFaultInjectionEnabled
+              ? url.searchParams.get('e2eAgentFault')
+              : null;
+            if (replayFault === 'artifact-head-replay') {
+              const firstArtifactIndex = replay.events.findIndex(
+                (event) => event.eventType === 'artifact.revised'
+              );
+              if (firstArtifactIndex >= 0) {
+                response.setHeader(
+                  'x-meiye-e2e-agent-fault-applied',
+                  replayFault
+                );
+                sendJson(
+                  response,
+                  200,
+                  {
+                    ...replay,
+                    events: replay.events.slice(0, firstArtifactIndex + 1),
+                    snapshot: {
+                      ...replay.snapshot,
+                      revision: '0',
+                      lastEventId: null,
+                      lastStreamOffset: null,
+                      includedEventIds: [],
+                      summarizedEventIds: [],
+                      excludedEventIds: [],
+                    },
+                  },
+                  requestCorrelationId
+                );
+                return;
+              }
+            }
             sendJson(response, 200, replay, requestCorrelationId);
           },
           {
@@ -1871,7 +1906,17 @@ export function createCoreServer({
         Boolean(agentSemanticEvents && agentSemanticRoute?.kind === 'events'),
       'service-token',
       async () => {
+        const streamFault = agentSemanticEvents!.e2eFaultInjectionEnabled
+          ? url.searchParams.get('e2eAgentFault')
+          : null;
         await streamSse({
+          ...(streamFault === 'artifact-gap-close'
+            ? {
+                additionalResponseHeaders: {
+                  'x-meiye-e2e-agent-fault-applied': streamFault,
+                },
+              }
+            : {}),
           disconnectMessage: 'Agent semantic stream disconnected.',
           errorFallback: {
             code: 'AGENT_SEMANTIC_EVENTS_UNAVAILABLE',
@@ -1911,6 +1956,7 @@ export function createCoreServer({
               url.searchParams.get('lastStreamOffset')
             );
             await ready();
+            let skippedArtifactRevision = false;
             for await (const frame of agentSemanticEvents!.streamReplay({
               session,
               ...(lastEventId ? { lastEventId } : {}),
@@ -1918,6 +1964,18 @@ export function createCoreServer({
               signal,
             })) {
               if (signal.aborted) break;
+              if (
+                streamFault === 'artifact-gap-close' &&
+                frame.event === 'agent.semantic' &&
+                frame.data.eventType === 'artifact.revised'
+              ) {
+                if (!skippedArtifactRevision) {
+                  skippedArtifactRevision = true;
+                  continue;
+                }
+                await write(encodeAgentSemanticSseFrame(frame));
+                return;
+              }
               await write(encodeAgentSemanticSseFrame(frame));
             }
           },

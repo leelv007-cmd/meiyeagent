@@ -41,6 +41,7 @@ import type { StyleAnalysisResult } from './xhs-style-analysis.js';
 import { HarnessExecutionFencePauseError } from './context-fence.js';
 import {
   emitVideoScenesArtifactProgress,
+  nonBlockingArtifactEmitter,
   type ArtifactProgressEmitterPort,
 } from './artifact-progress-emitter.js';
 import type {
@@ -82,9 +83,18 @@ import {
   type ConfirmPaidGenerationExecutionInput,
 } from './paid-generation-confirmation.js';
 import type { CreateExecutionConfirmationAuthorityInput } from '../agent-session/execution-confirmation-authority.js';
-import type { CreateExecutionConfirmationResult } from '../agent-session/execution-confirmation-service.js';
 import type { SnapshotLiveFacts } from './execution-plan-admission.js';
 import { createNotePageProgressReporter } from './note-page-execution-frame.js';
+import type {
+  NotePagePlanLike,
+  NotePageProgressFrameEvent,
+  NotePageProgressReporter,
+} from './note-page-execution-frame.js';
+import type { MakeSteeringBoundaryPort } from './make-steering-boundary.js';
+import type {
+  CreateExecutionConfirmationInput,
+  CreateExecutionConfirmationResult,
+} from '../agent-session/execution-confirmation-service.js';
 import {
   createCarrierProgramRegistry,
   executeCompiledCarrierPlan,
@@ -430,6 +440,8 @@ export interface HarnessNoteExecutionStagePorts {
     runStep?: HarnessEffectRunner;
     onPageProgress?: (event: {
       pageId: string;
+	  sourcePageId?: string;
+	  sourcePageOrder?: number;
       state: 'running' | 'success';
     }) => Promise<void> | void;
   }): Promise<HarnessNoteSelectionResult>;
@@ -2030,6 +2042,106 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
   };
 }
 
+/**
+ * V31-15 production wiring for the note page artifact reporter.
+ *
+ * Extracted so there is exactly one place that maps a HarnessWorkflowInput onto
+ * the reporter's artifact/steering context. Tests that hand-assemble the
+ * reporter cannot prove this mapping: the subset-regeneration `pageIndex`
+ * collapse survived a green suite precisely because the test built a reporter
+ * whose `plan` was the frozen source plan while production passes the plan
+ * compiled this run.
+ *
+ * Grep anchor: createNoteExecutionArtifactReporter.
+ */
+export function createNoteExecutionArtifactReporter(input: {
+  /** Plan compiled by *this* run — subset runs execute the frozen source. */
+  plan: NotePagePlanLike;
+  request: HarnessWorkflowInput;
+  workflowId: string;
+  reportProgress: (event: NotePageProgressFrameEvent) => Promise<void>;
+  artifactEmitter?: ArtifactProgressEmitterPort;
+  makeSteeringBoundary?: MakeSteeringBoundaryPort;
+  /**
+   * Durable effect runner for the artifact revisions this run emits. Present in
+   * the durable runtime; a fixture run leaves it out and keeps in-process
+   * counters.
+   */
+  runtime?: Pick<HarnessWorkflowRuntime, 'runStep'>;
+  now?: () => string;
+}): NotePageProgressReporter {
+  const { plan, request, workflowId } = input;
+  const now = input.now ?? (() => new Date().toISOString());
+  let artifactRevision = request.artifactLineage?.parentRevision ?? 0;
+  // An unbound run publishes nothing. The Thread id is the only address an
+  // artifact has: replay, SSE and the adjust lineage lookup all key on it, so a
+  // synthesised `legacy-workflow:<id>` thread wrote revisions that no Thread
+  // owns and no reader can reach, while looking like a working producer.
+  const threadId = request.agentThreadId;
+  return createNotePageProgressReporter({
+    plan,
+    reportProgress: input.reportProgress,
+    ...(input.artifactEmitter && threadId
+      ? {
+          artifactEmitter: nonBlockingArtifactEmitter(
+            input.artifactEmitter,
+            (error) =>
+              console.error(
+                'Note page artifact revision was dropped; the client resyncs from the gap.',
+                error,
+              ),
+          ),
+          artifactContext: {
+            workspaceId: request.workspaceId,
+            workflowId,
+            threadId,
+            artifactId:
+              request.artifactLineage?.artifactId ??
+              `note:${request.packageId ?? workflowId}`,
+            ...(request.artifactLineage
+              ? {
+                  parentRevision: request.artifactLineage.parentRevision,
+                  targetSourceUnitIds: request.artifactLineage.targetUnitIds,
+                }
+              : {}),
+            nextRevision: () => {
+              artifactRevision += 1;
+              return artifactRevision;
+            },
+            observeRevision: (revision) => {
+              artifactRevision = Math.max(artifactRevision, revision);
+            },
+            ...(input.runtime
+              ? {
+                  runStep: (key, operation) =>
+                    input.runtime!.runStep(
+                      harnessEffectKey(
+                        workflowId,
+                        4,
+                        'artifact-revision',
+                        key,
+                      ),
+                      operation,
+                    ),
+                }
+              : {}),
+            now,
+          },
+        }
+      : {}),
+    ...(input.makeSteeringBoundary
+      ? {
+          makeSteeringBoundary: input.makeSteeringBoundary,
+          steeringContext: {
+            workspaceId: request.workspaceId,
+            // Durable Make taskId === workflowId (task-admission identity).
+            taskId: workflowId,
+          },
+        }
+      : {}),
+  });
+}
+
 async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   const {
     ports: stagePorts,
@@ -2280,7 +2392,6 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   input.onActiveRequest?.(activeRequest);
 
   const executionSkills = stageSkills.execution_selection;
-  let noteArtifactRevision = 0;
   const noteSelectionInput = {
     workflowId,
     request: activeRequest,
@@ -2303,36 +2414,17 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
       : {}),
     // V31-14: page frame moved to note-page-execution-frame (symbol anchor).
     // V31-16: makeSteeringBoundary drains steer on each page success (follow_up on last).
-    onPageProgress: createNotePageProgressReporter({
+    onPageProgress: createNoteExecutionArtifactReporter({
       plan: activeNoteCandidate.plan,
+      request: activeRequest,
+      workflowId,
       reportProgress,
+      runtime,
       ...(ports.artifactProgressEmitter
-        ? {
-            artifactEmitter: ports.artifactProgressEmitter,
-            artifactContext: {
-              workspaceId: activeRequest.workspaceId,
-              workflowId,
-              threadId:
-                activeRequest.executionPlanSnapshot?.planId ??
-                `shadow-workflow:${workflowId}`,
-              artifactId: `note:${activeRequest.packageId ?? workflowId}`,
-              nextRevision: () => {
-                noteArtifactRevision += 1;
-                return noteArtifactRevision;
-              },
-              now: () => new Date().toISOString(),
-            },
-          }
+        ? { artifactEmitter: ports.artifactProgressEmitter }
         : {}),
       ...(ports.makeSteeringBoundary
-        ? {
-            makeSteeringBoundary: ports.makeSteeringBoundary,
-            steeringContext: {
-              workspaceId: activeRequest.workspaceId,
-              // Durable Make taskId === workflowId (task-admission identity).
-              taskId: workflowId,
-            },
-          }
+        ? { makeSteeringBoundary: ports.makeSteeringBoundary }
         : {}),
     }),
   };
@@ -2475,7 +2567,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   const pageRegeneration =
     activeRequest.executionSnapshot?.sources.pageRegeneration;
   const imageUsageQuantity = pageRegeneration
-    ? 1
+    ? pageRegeneration.targetAssetIds.length
     : selection.version.plan.pages.length;
   const copyUsageQuantity = pageRegeneration
     ? 0
@@ -2500,7 +2592,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
           },
         ],
         evidenceRef: pageRegeneration
-          ? `note-page-regeneration:${pageRegeneration.targetAssetId}`
+          ? `note-page-regeneration:${pageRegeneration.targetAssetIds.join(',')}`
           : `note-plan-pages:${selection.version.plan.pages
               .map(({ id, revision }) => `${id}@${revision}`)
               .join(',')}`,
@@ -2566,21 +2658,35 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
   // V31-15: video scene artifact producer. Scenes land running once the
   // storyboard is compiled, success once the rendered video is selected.
   // Emitter absent in fixture tests (optional port); no-op otherwise.
-  let videoArtifactRevision = 0;
-  const emitVideoSceneProgress = (
+	let videoArtifactRevision = activeRequest.artifactLineage?.parentRevision ?? 0;
+	let videoReadyRevision: number | undefined = activeRequest.artifactLineage?.parentRevision;
+  const emitVideoSceneProgress = async (
     source: MediaBrief,
     state: 'running' | 'success',
-  ): Promise<void> | undefined => {
-    if (source.kind !== 'video' || !ports.artifactProgressEmitter) return;
-    return emitVideoScenesArtifactProgress(
-      ports.artifactProgressEmitter,
+  ): Promise<void> => {
+    // Same rule as the note producer: no Thread, no publication. A synthesised
+    // thread id addresses nothing that replay or the adjust lineage lookup can
+    // find.
+    const threadId = activeRequest.agentThreadId;
+    if (source.kind !== 'video' || !ports.artifactProgressEmitter || !threadId) {
+      return;
+    }
+    const parentRevision = state === 'running' ? videoReadyRevision : undefined;
+    if (parentRevision !== undefined) videoReadyRevision = undefined;
+    await emitVideoScenesArtifactProgress(
+      nonBlockingArtifactEmitter(ports.artifactProgressEmitter, (error) =>
+        console.error(
+          'Video scene artifact revision was dropped; the client resyncs from the gap.',
+          error,
+        ),
+      ),
       {
         workspaceId: activeRequest.workspaceId,
         workflowId,
-        threadId:
-          activeRequest.executionPlanSnapshot?.planId ??
-          `shadow-workflow:${workflowId}`,
-        artifactId: `video:${activeRequest.packageId ?? workflowId}`,
+        threadId,
+		artifactId:
+		  activeRequest.artifactLineage?.artifactId ??
+		  `video:${activeRequest.packageId ?? workflowId}`,
         scenes: source.storyboard.map(({ index, description }) => ({
           sceneIndex: index - 1,
           ...(state === 'running' ? { storyboard: description } : {}),
@@ -2591,8 +2697,10 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
           return videoArtifactRevision;
         },
         occurredAt: new Date().toISOString(),
+        ...(parentRevision !== undefined ? { parentRevision } : {}),
       },
     );
+    if (state === 'success') videoReadyRevision = videoArtifactRevision;
   };
   await trace(
     runtime,

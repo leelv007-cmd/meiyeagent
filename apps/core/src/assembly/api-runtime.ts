@@ -1787,6 +1787,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     harnessStages.note.artifactProgressEmitter = {
       project: (candidate) => semanticProjectorForHarness.project(candidate),
     };
+    harnessStages.media.artifactProgressEmitter =
+      harnessStages.note.artifactProgressEmitter;
     // V31-16: page-unit boundary drains steer queue (follow_up also at last page /
     // terminal success via registerHarnessDbosWorkflow.makeSteeringBoundary).
     harnessStages.note.makeSteeringBoundary = createMakeSteeringBoundaryPort({
@@ -2051,6 +2053,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       : undefined,
     agentSemanticEvents: semanticProjector
       ? {
+		  ...(e2eFixtureEnabled ? { e2eFaultInjectionEnabled: true } : {}),
           async resolveSession({ workspaceId, threadId }) {
             const thread = await agentSessionStore.getThread({
               resourceId: workspaceId,

@@ -37,6 +37,8 @@
     "security:production-boundary": "node scripts/production-network-boundary-gate.mjs",
     "security:production-boundary:test": "node --test scripts/production-network-boundary-gate.test.mjs",
     "test": "pnpm -r --if-present test && node --test scripts/dev/*.test.mjs scripts/uiux/*.test.mjs scripts/recovery/*.test.mjs scripts/ops/*.test.mjs scripts/polotno-retirement-gate.test.mjs",
+    "test:journeys": "pnpm --filter @meiye/core exec tsx --test ../../tests/v31-artifact-composer-sse-workbench.journey.test.ts",
+    "typecheck:journeys": "pnpm --filter @meiye/core exec tsc -p ../../tsconfig.journeys.json",
     "typecheck": "bash scripts/ci/run-root-typecheck.sh",
     "uiux:baseline": "node scripts/uiux/baseline-manifest.mjs --pre-cutover 0cba260",
     "uiux:bundle-check": "node scripts/uiux/bundle-budget.mjs",

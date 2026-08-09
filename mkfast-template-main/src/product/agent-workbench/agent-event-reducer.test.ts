@@ -454,6 +454,34 @@ test('set_explicit_thread_id survives reset and patch_failed', () => {
   assert.equal(state.connection, 'resyncing');
 });
 
+test('hydrate_replay keeps snapshot resync requested when a replay patch cannot apply', () => {
+  const result = reduceAgentWorkbench(empty(), {
+    type: 'hydrate_replay',
+    session: session(),
+    snapshot: {
+      revision: '1',
+      lastEventId: null,
+      lastStreamOffset: '0',
+    },
+    events: [
+      wire({
+        eventId: 'bad-replay-patch',
+        streamOffset: '5',
+        eventType: 'artifact.revised',
+        payload: noteDeltaPayload({
+          revision: 5,
+          baseRevision: 4,
+          pages: [{ pageIndex: 0, stage: 'copy', body: '丢失基线' }],
+        }),
+      }),
+    ],
+  });
+
+  assert.equal(result.state.connection, 'resyncing');
+  assert.equal(result.state.needsSnapshotResync, true);
+  assert.equal(result.state.artifacts['art-note-1'], undefined);
+});
+
 // ─── V31-15 Artifact reconciliation ──────────────────────────────────────────
 
 function noteSnapshotPayload(overrides: {

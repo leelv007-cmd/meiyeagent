@@ -69,8 +69,8 @@ const assetReferenceSchema = revisionReferenceSchema
 
 const pageRegenerationReferenceSchema = z
 	.object({
-		/** Frozen page image asset that the merchant asked to regenerate. */
-		targetAssetId: identifierSchema,
+		/** Frozen page image assets that the merchant asked to regenerate. */
+		targetAssetIds: z.array(identifierSchema).min(1),
 	})
 	.strict();
 
@@ -78,7 +78,7 @@ const sourceReferencesSchema = z
 	.object({
 		assets: z.array(assetReferenceSchema).max(50),
 		contentPackage: revisionReferenceSchema.optional(),
-		/** Single-page note regenerate (result_adjust asset scope). */
+		/** Note subset regenerate (result_adjust asset/set scope). */
 		pageRegeneration: pageRegenerationReferenceSchema.optional(),
 		textSelection: resultAdjustTextSelectionScopeSchema.optional(),
 	})

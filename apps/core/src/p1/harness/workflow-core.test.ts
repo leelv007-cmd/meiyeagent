@@ -29,6 +29,8 @@ import {
   resumeWithRaisedServerLimit,
 } from './bounded-execution-controller.js';
 import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-event-store.js';
+import { MemoryAgentSemanticEventStore } from '../agent-semantic-events/memory-semantic-event-store.js';
+import { AgentSemanticEventProjector } from '../agent-semantic-events/semantic-event-projector.js';
 import { applyArtifactUpdate, artifactUpdateWireSchema } from '@meiye/contracts';
 
 test('paid decision admits the snapshot before Make: zero nameIntent/compileBrief LLM re-call', async () => {
@@ -839,9 +841,13 @@ test('V31-15 video wiring: real media stage ports emit per-scene artifact.revise
     },
   };
 
+  const request = {
+    ...mediaTaskInput('video'),
+    agentThreadId: 'thread:composer:artifact-journey',
+  } as unknown as HarnessWorkflowInput;
   await runHarnessWorkflow(
     'task-video-artifact',
-    mediaTaskInput('video'),
+    request,
     stages,
     {
       async runStep(_key, operation) {
@@ -859,14 +865,20 @@ test('V31-15 video wiring: real media stage ports emit per-scene artifact.revise
   const wires = projected.map((candidate) => {
     assert.equal(candidate.eventType, 'artifact.revised');
     assert.equal(candidate.sourceDomain, 'make_harness.artifact');
+    assert.equal(candidate.threadId, 'thread:composer:artifact-journey');
     const parsed = artifactUpdateWireSchema.parse(candidate.payload);
-    if (parsed.mode !== 'delta') throw new Error('expected delta');
-    if (!('scenes' in parsed.patch)) throw new Error('expected video patch');
     return {
       wire: parsed,
-      scene: parsed.patch.scenes?.[0],
+      scene:
+        parsed.mode === 'delta' && 'scenes' in parsed.patch
+          ? parsed.patch.scenes?.[0]
+          : parsed.mode === 'snapshot' && 'scenes' in parsed.full
+            ? parsed.full.scenes[0]
+            : undefined,
     };
   });
+  assert.equal(wires[0]?.wire.mode, 'snapshot');
+  assert.equal(wires.at(-1)?.wire.status, 'ready');
   assert.equal(wires.length, 4);
   const updates = wires.map(({ wire }) => wire);
   const [scene0Run, scene1Run, scene0Ready, scene1Ready] = wires.map(
@@ -910,7 +922,494 @@ test('V31-15 video wiring: real media stage ports emit per-scene artifact.revise
     assert.equal(state.state.body.scenes[1]?.storyboard, '护理前后对比特写。');
     assert.equal(state.state.body.scenes[1]?.keyframeStatus, 'ready');
   }
+
+  const successorEvents: SemanticEventCandidate[] = [];
+  stages.artifactProgressEmitter = {
+    async project(candidate) {
+      successorEvents.push(candidate);
+    },
+  };
+  await runHarnessWorkflow(
+    'task-video-artifact-successor',
+    {
+      ...request,
+      artifactLineage: {
+        artifactId: 'video:original-package',
+        parentRevision: 9,
+      },
+    },
+    stages,
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        throw new Error('Unexpected media decision wait.');
+      },
+      async recordTrace() {},
+    },
+  );
+  const successorUpdates = successorEvents.map((candidate) =>
+    artifactUpdateWireSchema.parse(candidate.payload),
+  );
+  assert.equal(successorUpdates[0]?.artifactId, 'video:original-package');
+  assert.equal(successorUpdates[0]?.mode, 'delta');
+  assert.equal(successorUpdates[0]?.parentRevision, 9);
+  assert.deepEqual(
+    successorUpdates.map(({ revision }) => revision),
+    [10, 11, 12, 13],
+  );
+  assert.equal(successorUpdates.at(-1)?.status, 'ready');
 });
+
+test('V31-15 note wiring: the page reporter reads identity from this run’s brief plan, and a frozen subset page keeps its source order', async () => {
+  const projected: SemanticEventCandidate[] = [];
+  const pageProgress: string[] = [];
+  // noteBrief() compiles page-1/page-2 for *this* run. A subset regeneration
+  // executes the frozen source note instead, whose page ids the run plan never
+  // contains — the shape that collapsed every delta onto pageIndex 0.
+  const stages = noteStages(false, async (input) => {
+    for (const state of ['running', 'success'] as const) {
+      await input.onPageProgress?.({
+        pageId: 'frozen-page-3',
+        sourcePageId: 'frozen-page-3',
+        sourcePageOrder: 3,
+        state,
+      });
+    }
+    await input.onPageProgress?.({ pageId: 'page-2', state: 'running' });
+  });
+  stages.artifactProgressEmitter = {
+    async project(candidate) {
+      projected.push(candidate);
+    },
+  };
+
+  const request = {
+    ...mediaTaskInput('image_text_note'),
+    agentThreadId: 'thread:note:artifact-wiring',
+  } as unknown as HarnessWorkflowInput;
+  await runHarnessWorkflow('task-note-artifact-wiring', request, stages, {
+    async runStep(_key, operation) {
+      return operation();
+    },
+    async progress(event) {
+      if (
+        event.stage === 'execution_selection' &&
+        typeof event.message === 'string' &&
+        event.message.includes('配图')
+      ) {
+        pageProgress.push(event.message);
+      }
+    },
+    async token() {},
+    async awaitDecision(question) {
+      return {
+        idempotencyKey: 'choose-story-artifact-wiring',
+        questionId: question.questionId,
+        workflowRevision: question.workflowRevision,
+        patch: {
+          field: 'note_style',
+          value: '故事版',
+          reason: '选择图文方向',
+        },
+        decision: { state: 'accepted', value: '故事版' },
+      };
+    },
+    async recordTrace() {},
+  });
+
+  const updates = projected.map((candidate) => {
+    assert.equal(candidate.threadId, 'thread:note:artifact-wiring');
+    return artifactUpdateWireSchema.parse(candidate.payload);
+  });
+  const pageIndexes = updates.map((update) =>
+    update.mode === 'snapshot' && 'pages' in update.full
+      ? update.full.pages.map(({ pageIndex }) => pageIndex)
+      : update.mode === 'delta' && 'pages' in update.patch
+        ? update.patch.pages?.map(({ pageIndex }) => pageIndex)
+        : undefined,
+  );
+  // frozen source page 3 → skeleton/copy/image(running), image(success), then
+  // run-plan page-2 → pageIndex 1 from the brief plan the production wiring
+  // hands the reporter.
+  assert.deepEqual(pageIndexes, [[2], [2], [2], [2], [1], [1], [1]]);
+  assert.deepEqual(pageProgress, [
+    '正在生成第 3 页配图',
+    '第 3 页配图已完成',
+    '正在生成第 2 页配图',
+  ]);
+  // Run-plan pages still carry their copy; a frozen source page is only
+  // re-drawn, so its title/body must stay absent instead of being overwritten
+  // with this run's freshly drafted copy.
+  const runPlanCopy = updates[5];
+  assert.ok(runPlanCopy && runPlanCopy.mode === 'delta');
+  assert.deepEqual(
+    runPlanCopy.mode === 'delta' && 'pages' in runPlanCopy.patch
+      ? runPlanCopy.patch.pages?.map(({ title, body }) => ({ title, body }))
+      : undefined,
+    [{ title: '预约建议', body: '私信了解详情' }],
+  );
+  assert.equal(
+    updates[1]?.mode === 'delta' && 'pages' in updates[1].patch
+      ? updates[1].patch.pages?.[0]?.body
+      : 'unexpected',
+    undefined,
+  );
+});
+
+for (const durable of [true, false] as const) {
+  test(
+    durable
+      ? 'a DBOS re-execution replays the first attempt’s artifact revisions into the real store'
+      : 'without the durable memo the same re-execution is refused by the store as divergent',
+    async () => {
+      // One store and one workflow id across both attempts: the same Thread and
+      // the same durable identity, which is what makes revision numbers collide.
+      const store = new MemoryAgentSemanticEventStore();
+      const projector = new AgentSemanticEventProjector(store);
+      // Only the durable case keeps the memo across attempts. Clearing it
+      // reproduces the in-process counter: the numbers restart, the content does
+      // not.
+      const memo = new Map<string, unknown>();
+      const threadId = 'thread:note:reexecution';
+
+      const runAttempt = async (
+        marker: string,
+        crashAfterFirstPage: boolean,
+      ) => {
+        const brief = noteBrief();
+        for (const candidate of brief.candidates.candidates) {
+          for (const page of candidate.plan.pages) {
+            page.textBlock.body = `${page.textBlock.body}-${marker}`;
+          }
+        }
+        const stages = noteStages(false, async (input) => {
+          await input.onPageProgress?.({ pageId: 'page-1', state: 'running' });
+          await input.onPageProgress?.({ pageId: 'page-1', state: 'success' });
+          // The crash window F9 is about: revisions are already published while
+          // the selection step itself never completes, so a re-execution runs
+          // the selection again from the top.
+          if (crashAfterFirstPage) throw new Error('worker lost mid-selection');
+          await input.onPageProgress?.({ pageId: 'page-2', state: 'running' });
+          await input.onPageProgress?.({ pageId: 'page-2', state: 'success' });
+        });
+        stages.compileNoteBrief = async () => brief;
+        stages.artifactProgressEmitter = {
+          project: (candidate) => projector.project(candidate),
+        };
+        if (!durable) memo.clear();
+        const runner = runHarnessWorkflow(
+          'task-note-reexecution',
+          {
+            ...mediaTaskInput('image_text_note'),
+            agentThreadId: threadId,
+          } as unknown as HarnessWorkflowInput,
+          stages,
+          {
+            async runStep(key, operation) {
+              if (memo.has(key)) return memo.get(key) as never;
+              const value = await operation();
+              memo.set(key, value);
+              return value;
+            },
+            async progress() {},
+            async token() {},
+            async awaitDecision(question) {
+              return {
+                idempotencyKey: 'choose-story-reexecution',
+                questionId: question.questionId,
+                workflowRevision: question.workflowRevision,
+                patch: {
+                  field: 'note_style',
+                  value: '故事版',
+                  reason: '选择图文方向',
+                },
+                decision: { state: 'accepted', value: '故事版' },
+              };
+            },
+            async recordTrace() {},
+          },
+        );
+        return crashAfterFirstPage
+          ? assert.rejects(runner, /worker lost mid-selection/u)
+          : runner;
+      };
+
+      await runAttempt('A', true);
+      const afterCrash = await store.listByThread({
+        resourceId: 'workspace-1',
+        threadId,
+      });
+      assert.equal(afterCrash.length, 4);
+
+      if (!durable) {
+        // The re-execution mints r1..r4 again over attempt B's copy. The store
+        // used to keep attempt A and answer `replayed: true`, so the run
+        // believed its own version had landed and the artifact became a splice
+        // of two attempts that nothing reported.
+        await assert.rejects(
+          runAttempt('B', false),
+          (error: unknown) =>
+            error instanceof Error &&
+            'code' in error &&
+            error.code === 'AGENT_SEMANTIC_EVENT_CONFLICT' &&
+            /already projected with different content/u.test(error.message),
+        );
+        return;
+      }
+
+      const publishedPrefix = afterCrash.map((event) =>
+        artifactUpdateWireSchema.parse(event.payload),
+      );
+      const writesBeforeReplay = store.writeCount;
+      assert.equal(writesBeforeReplay, 4);
+
+      await runAttempt('B', false);
+      const events = await store.listByThread({
+        resourceId: 'workspace-1',
+        threadId,
+      });
+      const updates = events.map((event) =>
+        artifactUpdateWireSchema.parse(event.payload),
+      );
+      // One monotonic chain: the re-execution continued after the revisions the
+      // crashed attempt had already published instead of minting them again.
+      assert.deepEqual(
+        updates.map(({ revision }) => revision),
+        [1, 2, 3, 4, 5, 6, 7, 8],
+      );
+      // The published prefix is byte-identical, so the store saw four plain
+      // replays and inserted nothing for them — only the four revisions the
+      // re-execution genuinely reached are new writes.
+      assert.deepEqual(updates.slice(0, 4), publishedPrefix);
+      assert.equal(store.writeCount, 8);
+      // Content came from the memoised brief, which is why the replayed
+      // revisions match at all: durable steps upstream are what make the
+      // re-emission reproducible rather than merely re-numbered.
+      const copyBody = (update: (typeof updates)[number]) =>
+        update.mode === 'delta' && 'pages' in update.patch
+          ? update.patch.pages?.[0]?.body
+          : undefined;
+      assert.match(copyBody(updates[1]!) ?? '', /-A$/u);
+      assert.match(copyBody(updates[5]!) ?? '', /-A$/u);
+    },
+  );
+}
+
+test('a re-execution that emits pages in another order is refused rather than published over', async () => {
+  // The scenario a durable memo cannot repair: the crashed attempt published
+  // page 2, the re-execution starts from page 1. Keyed by page rather than by
+  // position, the memo has nothing to replay for page 1, so the revision it
+  // allocates collides with the one already stored — and that must be refused,
+  // not written over. An ordinal-keyed memo instead replayed page 2's payload
+  // under page 1's emission: eight revisions, all page 2, page 1 never
+  // published, and no error anywhere, because the replayed payloads matched
+  // what was stored.
+  const store = new MemoryAgentSemanticEventStore();
+  const projector = new AgentSemanticEventProjector(store);
+  const memo = new Map<string, unknown>();
+  const threadId = 'thread:note:reorder';
+  const runAttempt = (pageIds: string[], crashAfterFirst: boolean) => {
+    const stages = noteStages(false, async (input) => {
+      for (const pageId of pageIds) {
+        await input.onPageProgress?.({ pageId, state: 'running' });
+        await input.onPageProgress?.({ pageId, state: 'success' });
+        if (crashAfterFirst) throw new Error('worker lost mid-selection');
+      }
+    });
+    stages.artifactProgressEmitter = {
+      project: (candidate) => projector.project(candidate),
+    };
+    return runHarnessWorkflow(
+      'task-note-reorder',
+      {
+        ...mediaTaskInput('image_text_note'),
+        agentThreadId: threadId,
+      } as unknown as HarnessWorkflowInput,
+      stages,
+      {
+        async runStep(key, operation) {
+          if (memo.has(key)) return memo.get(key) as never;
+          const value = await operation();
+          memo.set(key, value);
+          return value;
+        },
+        async progress() {},
+        async token() {},
+        async awaitDecision(question) {
+          return {
+            idempotencyKey: 'choose-story-reorder',
+            questionId: question.questionId,
+            workflowRevision: question.workflowRevision,
+            patch: {
+              field: 'note_style',
+              value: '故事版',
+              reason: '选择图文方向',
+            },
+            decision: { state: 'accepted', value: '故事版' },
+          };
+        },
+        async recordTrace() {},
+      },
+    );
+  };
+
+  await assert.rejects(
+    runAttempt(['page-2'], true),
+    /worker lost mid-selection/u,
+  );
+  await assert.rejects(
+    runAttempt(['page-1', 'page-2'], false),
+    (error: unknown) =>
+      error instanceof Error &&
+      'code' in error &&
+      error.code === 'AGENT_SEMANTIC_EVENT_CONFLICT',
+  );
+
+  const events = await store.listByThread({
+    resourceId: 'workspace-1',
+    threadId,
+  });
+  const pageIndexes = events.map((event) => {
+    const update = artifactUpdateWireSchema.parse(event.payload);
+    const pages =
+      update.mode === 'snapshot' && 'pages' in update.full
+        ? update.full.pages
+        : update.mode === 'delta' && 'pages' in update.patch
+          ? update.patch.pages
+          : undefined;
+    return pages?.[0]?.pageIndex;
+  });
+  // The artifact still holds exactly what the crashed attempt published — one
+  // page, four revisions — instead of a mixture of two attempts.
+  assert.deepEqual(pageIndexes, [1, 1, 1, 1]);
+  assert.equal(store.writeCount, 4);
+});
+
+test('a failed artifact projection does not abort the paid note run it describes', async () => {
+  const attempted: string[] = [];
+  const pagesGenerated: string[] = [];
+  const stages = noteStages(false, async (input) => {
+    for (const pageId of ['page-1', 'page-2']) {
+      await input.onPageProgress?.({ pageId, state: 'running' });
+      pagesGenerated.push(pageId);
+      await input.onPageProgress?.({ pageId, state: 'success' });
+    }
+  });
+  stages.artifactProgressEmitter = {
+    async project(candidate) {
+      attempted.push(candidate.eventId);
+      // Transient projector write failure, after the page image is generated
+      // and charged.
+      throw new Error('projector unavailable');
+    },
+  };
+
+  let delivered = 0;
+  const deliver = stages.assembleNoteAndDeliver.bind(stages);
+  stages.assembleNoteAndDeliver = async (input) => {
+    delivered += 1;
+    return deliver(input);
+  };
+
+  const request = {
+    ...mediaTaskInput('image_text_note'),
+    agentThreadId: 'thread:note:projection-failure',
+  } as unknown as HarnessWorkflowInput;
+  await runHarnessWorkflow(
+    'task-note-projection-failure',
+    request,
+    stages,
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        return {
+          idempotencyKey: 'choose-story-projection-failure',
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: 'note_style',
+            value: '故事版',
+            reason: '选择图文方向',
+          },
+          decision: { state: 'accepted', value: '故事版' },
+        };
+      },
+      async recordTrace() {},
+    },
+  );
+
+  assert.equal(delivered, 1);
+  assert.deepEqual(pagesGenerated, ['page-1', 'page-2']);
+  // Every revision was still attempted — the failure is dropped per revision,
+  // not after the first one aborts the loop. Four per page: skeleton, copy,
+  // image running, image success.
+  assert.equal(attempted.length, 8);
+});
+
+for (const kind of ['image_text_note', 'video'] as const) {
+  test(`a ${kind} run with no Agent Thread publishes no artifact revisions`, async () => {
+    const projected: SemanticEventCandidate[] = [];
+    const stages =
+      kind === 'image_text_note'
+        ? noteStages(false, async (input) => {
+            await input.onPageProgress?.({ pageId: 'page-1', state: 'running' });
+            await input.onPageProgress?.({ pageId: 'page-1', state: 'success' });
+          })
+        : mediaStages('video');
+    stages.artifactProgressEmitter = {
+      async project(candidate) {
+        projected.push(candidate);
+      },
+    };
+    if (kind === 'video') {
+      (stages as HarnessMediaStagePorts).compileMediaBrief = async () => ({
+        kind: 'video',
+        firstFramePrompt: '夏日护理项目门店开场，展示明确的品牌主视觉。',
+        storyboard: [
+          { index: 1, description: '门店护理场景与主视觉展示。', durationSeconds: 8 },
+        ],
+        referenceAssetIds: ['asset-1'],
+        parameters: { durationSeconds: 8, ratio: '9:16' },
+        constraints: ['不得编造价格'],
+      });
+    }
+
+    // No agentThreadId: the request never came through a Composer Thread.
+    await runHarnessWorkflow(`task-${kind}-unbound`, mediaTaskInput(kind), stages, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        return {
+          idempotencyKey: `choose-story-unbound-${kind}`,
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: 'note_style',
+            value: '故事版',
+            reason: '选择图文方向',
+          },
+          decision: { state: 'accepted', value: '故事版' },
+        };
+      },
+      async recordTrace() {},
+    });
+
+    // A synthesised `legacy-workflow:<id>` thread used to absorb these: rows no
+    // Thread owns, that replay and the adjust lineage lookup can never reach.
+    assert.deepEqual(projected, []);
+  });
+}
 
 test('configured media bounds fail closed when the bounded media port is unavailable', async () => {
   const request = mediaTaskInput('image');

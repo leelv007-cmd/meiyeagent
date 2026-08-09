@@ -15,6 +15,7 @@ import {
 
 import type { P1Context } from '../foundation/domain.js';
 import type { CreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
+import type { AgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import { resolveAuthoritativeContentPackageVersionPlatform } from '../execution-spine/source-content-package-resolver.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import {
@@ -32,7 +33,26 @@ export interface ResultAdjustSnapshotReadPort {
   get(input: {
     snapshotId: string;
     workspaceId: string;
-  }): Promise<CreationExecutionSnapshot | null>;
+  }): Promise<
+	| CreationExecutionSnapshot
+	| {
+		snapshot: CreationExecutionSnapshot;
+		agentThreadId?: AgentThreadIdentity;
+		artifactLineage?: {
+		  artifactId: string;
+		  parentRevision: number;
+		  targetUnitIds?: string[];
+		  sourceUnitMappings?: Array<{ sourceUnitId: string; executionUnitId: string }>;
+		};
+		/**
+		 * The ready artifact revision was found but could not be read as
+		 * artifact-update/v1. Distinguishes untrustworthy lineage (fail closed)
+		 * from absent lineage (legacy Result, adjustable without continuation).
+		 */
+		artifactLineageUnreadable?: true;
+	  }
+	| null
+  >;
 }
 
 export interface ResultAdjustComposerSubmissionPort {
@@ -45,11 +65,18 @@ export interface ResultAdjustComposerSubmissionPort {
     idempotencyKey: string;
     instruction: string;
     outputCount: number;
-    pageRegenerationTargetAssetId?: string;
+    pageRegenerationTargetAssetIds?: string[];
     quote: { id: string; revision: string };
     sourceContentPackage: { id: string; revision: number };
     sourceNoteStyleId?: string;
     sourceSnapshot: CreationExecutionSnapshot;
+	sourceAgentThreadId?: AgentThreadIdentity;
+	sourceArtifactLineage?: {
+	  artifactId: string;
+	  parentRevision: number;
+	  targetUnitIds?: string[];
+	  sourceUnitMappings?: Array<{ sourceUnitId: string; executionUnitId: string }>;
+	};
     taskId: string;
     textSelectionScope?: ResultAdjustTextSelectionScope;
     workId: string;
@@ -268,10 +295,19 @@ export class OperationsResultCommandPort {
         409,
       );
     }
-    const snapshot = await this.snapshots?.get({
+	const snapshotResult = await this.snapshots?.get({
       snapshotId: source.snapshotId,
       workspaceId: operation.workspaceId,
     });
+	const snapshot = snapshotResult && "snapshot" in snapshotResult
+		? snapshotResult.snapshot
+		: snapshotResult;
+	const agentThreadId = snapshotResult && "snapshot" in snapshotResult
+		? snapshotResult.agentThreadId
+		: undefined;
+	const artifactLineage = snapshotResult && "snapshot" in snapshotResult
+		? snapshotResult.artifactLineage
+		: undefined;
     const snapshotRef = contentPackage.source.creationExecutionSnapshot;
     const snapshotMatchesSource =
       snapshotRef?.id === snapshot?.id ||
@@ -302,7 +338,29 @@ export class OperationsResultCommandPort {
         404,
       );
     }
-    return { contentPackage, snapshot };
+	// Absent lineage is not an error. `agentBinding.threadId` arrived with V31-15,
+	// so no Result delivered before it carries one, and a run that never reached a
+	// ready artifact revision (a note that ended partial, a video adjusted before
+	// its scenes completed) has none either. Those Results stay adjustable; the
+	// submit payload below already treats both fields as optional, and the new run
+	// publishes a fresh artifact instead of continuing the old one.
+	//
+	// Fail closed only where the lineage exists and cannot be trusted: a ready
+	// artifact revision was found for this Thread and artifact but did not read as
+	// artifact-update/v1. Continuing from an unreadable parent revision would
+	// splice the merchant's next revision onto a base nobody can reconstruct.
+	if (
+	  snapshotResult &&
+	  'artifactLineageUnreadable' in snapshotResult &&
+	  snapshotResult.artifactLineageUnreadable
+	) {
+	  throw new OperationsError(
+		'RESULT_ADJUST_SOURCE_NOT_FOUND',
+		'The frozen Result artifact lineage could not be read.',
+		409,
+	  );
+	}
+    return { contentPackage, snapshot, agentThreadId, artifactLineage };
   }
 
   private async adjustmentExecution(input: {
@@ -761,6 +819,33 @@ export class OperationsResultCommandPort {
               404,
             );
           }
+          const notePages = currentPackageVersion?.note?.plan.pages;
+          const hasPageSubsetScope =
+            composerCommand.scope?.kind === 'asset' ||
+            composerCommand.scope?.kind === 'set';
+          const scopedAssetIds = new Set(
+            resultAdjustScopeAssetIds(composerCommand.scope),
+          );
+          const targetUnitIds = notePages && hasPageSubsetScope
+            ? notePages
+                .filter(
+                  (page) =>
+                    page.imageAssetId !== undefined &&
+                    scopedAssetIds.has(page.imageAssetId),
+                )
+                .map((page) => page.id)
+            : undefined;
+          if (
+            frozen.snapshot.lens === 'image_text_note' &&
+            hasPageSubsetScope &&
+            (!targetUnitIds || targetUnitIds.length !== expectedOutputCount)
+          ) {
+            throw new OperationsError(
+              'RESULT_ADJUST_SCOPE_MISMATCH',
+              'The frozen note target pages do not match the adjustment scope.',
+              409,
+            );
+          }
           return this.composerSubmissions!.submit({
             actorId: operation.userId,
             idempotencyKey: `result-adjust:${idempotencyKey}`,
@@ -769,13 +854,8 @@ export class OperationsResultCommandPort {
               composerCommand.scope,
             ),
             outputCount: expectedOutputCount,
-            ...(frozen.snapshot.lens === 'image_text_note' &&
-            composerCommand.scope?.kind === 'asset' &&
-            expectedOutputCount === 1
-              ? {
-                  pageRegenerationTargetAssetId:
-                    composerCommand.scope.assetId,
-                }
+            ...(frozen.snapshot.lens === 'image_text_note' && hasPageSubsetScope
+              ? { pageRegenerationTargetAssetIds: [...scopedAssetIds] }
               : {}),
             quote: { id: quote.quoteId, revision: quote.revision },
             sourceContentPackage: {
@@ -784,6 +864,15 @@ export class OperationsResultCommandPort {
             },
             ...(sourceNoteStyleId ? { sourceNoteStyleId } : {}),
             sourceSnapshot: frozen.snapshot,
+			...(frozen.agentThreadId ? { sourceAgentThreadId: frozen.agentThreadId } : {}),
+			...(frozen.artifactLineage
+			  ? {
+				  sourceArtifactLineage: {
+					...frozen.artifactLineage,
+					...(targetUnitIds ? { targetUnitIds } : {}),
+				  },
+				}
+			  : {}),
             taskId: composerCommand.derivedTaskId,
             ...(composerCommand.scope?.kind === 'text_selection'
               ? { textSelectionScope: composerCommand.scope }
