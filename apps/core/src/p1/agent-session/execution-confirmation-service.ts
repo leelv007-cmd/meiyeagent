@@ -137,6 +137,8 @@ export type ExpireExecutionConfirmationResult = {
 };
 
 export class ExecutionConfirmationService {
+  private readonly clock: () => Date;
+
   constructor(
     private readonly requests: ExecutionConfirmationRequestStore,
     private readonly decisions: PlanConfirmationDecisionStore,
@@ -145,7 +147,9 @@ export class ExecutionConfirmationService {
       ConfirmationAuthorityStore,
       'getCurrentByWorkflowIdInTransaction'
     >,
+    options: { clock?: () => Date } = {},
   ) {
+    this.clock = options.clock ?? (() => new Date());
     if (typeof credits.withWorkspaceCreditTransaction !== 'function') {
       throw new Error('Execution confirmation requires a workspace transaction port.');
     }
@@ -386,13 +390,26 @@ export class ExecutionConfirmationService {
   ): Promise<DecideExecutionConfirmationResult> {
     const run = (ledger: ConfirmationCreditTransactionPort) =>
       this.completeDecision(input, ledger);
-    return this.credits.withWorkspaceCreditTransaction(input.workspaceId, run);
+    const result = await this.credits.withWorkspaceCreditTransaction(
+      input.workspaceId,
+      run,
+    );
+    if (result.kind === 'expired') {
+      throw new ExecutionConfirmationError(
+        'INVALID_STATE',
+        `Confirmation request ${input.requestId} already expired.`,
+      );
+    }
+    return result.value;
   }
 
   private async completeDecision(
     input: DecideExecutionConfirmationInput,
     ledger: ConfirmationCreditTransactionPort,
-  ): Promise<DecideExecutionConfirmationResult> {
+  ): Promise<
+    | { kind: 'decided'; value: DecideExecutionConfirmationResult }
+    | { kind: 'expired' }
+  > {
     const stored = await this.getOwnedRequest(
       input.workspaceId,
       input.requestId,
@@ -406,10 +423,35 @@ export class ExecutionConfirmationService {
       );
     }
     if (stored.request.status === 'expired') {
-      throw new ExecutionConfirmationError(
-        'INVALID_STATE',
-        `Confirmation request ${input.requestId} already expired.`,
+      return { kind: 'expired' };
+    }
+    const serverNow = this.clock().toISOString();
+    if (
+      stored.request.status === 'pending' &&
+      Date.parse(serverNow) >= Date.parse(stored.request.holdExpiresAt)
+    ) {
+      await this.refundHold(
+        {
+          workspaceId: stored.request.workspaceId,
+          reservationIdempotencyKey:
+            stored.request.reservationIdempotencyKey,
+          requestId: stored.request.requestId,
+          actorId: 'system',
+          createdAt: serverNow,
+          reservedCredits: stored.projection.reservedCredits,
+        },
+        ledger,
       );
+      await this.markOwnedStatus(
+        {
+          workspaceId: input.workspaceId,
+          requestId: input.requestId,
+          status: 'expired',
+          expectedStatus: 'pending',
+        },
+        ledger.transactionClient,
+      );
+      return { kind: 'expired' };
     }
 
     const candidate = planConfirmationDecisionSchema.parse({
@@ -418,7 +460,7 @@ export class ExecutionConfirmationService {
       requestId: input.requestId,
       actorId: input.actorId,
       decision: input.decision,
-      decidedAt: input.decidedAt,
+      decidedAt: serverNow,
     });
 
     const prior = await this.getDecisionById(
@@ -475,10 +517,13 @@ export class ExecutionConfirmationService {
       ledger.transactionClient,
     );
     return {
-      decision: appended,
-      request: updated?.request ?? { ...stored.request, status: 'decided' },
-      merchantMessage,
-      refundedCredits,
+      kind: 'decided',
+      value: {
+        decision: appended,
+        request: updated?.request ?? { ...stored.request, status: 'decided' },
+        merchantMessage,
+        refundedCredits,
+      },
     };
   }
 
