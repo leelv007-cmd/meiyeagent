@@ -101,6 +101,30 @@ spec 仍绿。§37.4 把「每轮必要问题 ≤1」写成**产品行为**（§
 - 调用方清单与 required 交集由 `grep -rl` ＋ 比对 `scripts/ci/run-pr-production-journey.sh`、
   `scripts/ci/run-p2-browser-acceptance.sh` 实测得出，非估计。
 
+## 附带观察（**不在本票范围**，记录待主控决定，勿在本票内动手）
+
+**本仓的 lint 有配置、但没有任何 CI 步骤执行它。**
+
+- 仓根 `biome.json` 存在，且 `files.includes` 就是 `["**"]`——配置层面它**声称**覆盖仓根
+  `scripts/`；`scripts/ci/quality-gates.test.mjs:276-282` 还有一条测试在断言这份配置的内容。
+- 但 `grep -rn 'lint' .github/` **零命中**：三个 workflow（`core-quality.yml`／`deploy.yml`／
+  `provider-live.yml`）没有任何一步跑 lint。全仓唯一的 `lint` 脚本是
+  `mkfast-template-main/package.json:15` 的 `biome check --write .`，在该子目录内执行、
+  用该子目录自己的 `biome.json`，因此即便有人手工跑它也到不了仓根 `scripts/`。
+- 结论：`scripts/ci/`、`scripts/uiux/`、`scripts/ops/`、`scripts/recovery/`、`scripts/dev/`
+  下的全部门禁脚本实际处于**未 lint 状态**——不是因为缺配置，而是因为**没有任何调用方**
+  （2026-08-09 L-CI 实测）。
+
+> **口径更正（L-CI 自陈）**：本节初稿写的是「仓根没有 `biome.json`／ESLint 配置」，
+> **该判断是错的**——根 `biome.json` 存在且有测试断言它。恢复班次复核时实测更正为上述
+> 「有配置、无调用」。两者的处置建议相同，但性质不同：前者是遗漏，后者是**配置声称覆盖
+> 而无人执行**，也就是一条自身不被验证的覆盖声明，比单纯缺配置更值得拍板。
+
+不建议在任何 V3.1 票里顺手修：给 CI 加一条 lint 步骤会一次性暴露仓根 `scripts/` 下的全部
+既有告警，爆炸半径是仓库级，属于需要单独立项与单独排期的事。**列在这里是为了让它被「决定」
+而不是被「发现」**——「保管所有 CI 门的目录自己不受门管」这件事值得有人明确拍一次板，
+哪怕结论是「就这样，接受」。
+
 ## Evidence
 
 > 空表由 L-CI 脚手架落盘，**Wave 4 对着真实证据填**。填表规则（机器可判优先）：
