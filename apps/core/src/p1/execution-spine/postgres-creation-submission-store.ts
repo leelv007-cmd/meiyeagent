@@ -949,7 +949,12 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
 function storedArtifactLineage(value: unknown): CreationSubmissionRecord["artifactLineage"] {
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Stored creation submission has invalid artifact lineage.");
-	const candidate = value as { artifactId?: unknown; parentRevision?: unknown; targetUnitIds?: unknown };
+	const candidate = value as {
+	  artifactId?: unknown;
+	  parentRevision?: unknown;
+	  targetUnitIds?: unknown;
+	  sourceUnitMappings?: unknown;
+	};
   if (typeof candidate.artifactId !== "string" || !candidate.artifactId.trim() || !Number.isSafeInteger(candidate.parentRevision) || (candidate.parentRevision as number) < 1) {
 	throw new Error("Stored creation submission has invalid artifact lineage.");
   }
@@ -958,10 +963,23 @@ function storedArtifactLineage(value: unknown): CreationSubmissionRecord["artifa
 	  candidate.targetUnitIds.length === 0 ||
 	  candidate.targetUnitIds.some((id) => typeof id !== "string" || !id.trim())
 	)) throw new Error("Stored creation submission has invalid artifact target units.");
+	if (candidate.sourceUnitMappings !== undefined && (
+	  !Array.isArray(candidate.sourceUnitMappings) ||
+	  candidate.sourceUnitMappings.length === 0 ||
+	  candidate.sourceUnitMappings.some((mapping) => {
+		if (!mapping || typeof mapping !== "object" || Array.isArray(mapping)) return true;
+		const item = mapping as { sourceUnitId?: unknown; executionUnitId?: unknown };
+		return typeof item.sourceUnitId !== "string" || !item.sourceUnitId.trim() ||
+		  typeof item.executionUnitId !== "string" || !item.executionUnitId.trim();
+	  })
+	)) throw new Error("Stored creation submission has invalid artifact unit mappings.");
 	return {
 	  artifactId: candidate.artifactId,
 	  parentRevision: candidate.parentRevision as number,
 	  ...(candidate.targetUnitIds ? { targetUnitIds: candidate.targetUnitIds as string[] } : {}),
+	  ...(candidate.sourceUnitMappings
+		? { sourceUnitMappings: candidate.sourceUnitMappings as Array<{ sourceUnitId: string; executionUnitId: string }> }
+		: {}),
 	};
 }
 

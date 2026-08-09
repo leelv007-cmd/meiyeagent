@@ -2256,7 +2256,10 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
 			  ...(activeRequest.artifactLineage
 				? {
 					parentRevision: activeRequest.artifactLineage.parentRevision,
-					targetUnitIds: activeRequest.artifactLineage.targetUnitIds,
+					targetUnitIds:
+					  activeRequest.artifactLineage.sourceUnitMappings?.map(
+						({ executionUnitId }) => executionUnitId,
+					  ) ?? activeRequest.artifactLineage.targetUnitIds,
 				  }
 				: {}),
               nextRevision: () => {

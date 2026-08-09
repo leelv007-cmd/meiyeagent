@@ -57,7 +57,12 @@ import type {
 export interface HarnessWorkflowInput {
 	/** Session-owned identity; never substitute planId or workflowId. */
 	agentThreadId?: AgentThreadIdentity;
-	artifactLineage?: { artifactId: string; parentRevision: number; targetUnitIds?: string[] };
+	artifactLineage?: {
+	  artifactId: string;
+	  parentRevision: number;
+	  targetUnitIds?: string[];
+	  sourceUnitMappings?: Array<{ sourceUnitId: string; executionUnitId: string }>;
+	};
   actorId: string;
   workspaceId: string;
   packageId: string;
@@ -189,6 +194,10 @@ export const harnessTaskRequestSchema = harnessTaskSubmissionSchema
 		  artifactId: z.string().trim().min(1),
 		  parentRevision: z.number().int().positive(),
 		  targetUnitIds: z.array(z.string().trim().min(1)).min(1).optional(),
+		  sourceUnitMappings: z.array(z.object({
+			sourceUnitId: z.string().trim().min(1),
+			executionUnitId: z.string().trim().min(1),
+		  }).strict()).min(1).optional(),
 		}).strict().optional(),
     actorId: z.string().trim().min(1),
     workspaceId: z.string().trim().min(1),

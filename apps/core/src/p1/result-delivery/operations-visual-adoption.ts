@@ -42,6 +42,7 @@ export interface ResultAdjustSnapshotReadPort {
 		  artifactId: string;
 		  parentRevision: number;
 		  targetUnitIds?: string[];
+		  sourceUnitMappings?: Array<{ sourceUnitId: string; executionUnitId: string }>;
 		};
 	  }
 	| null
@@ -68,6 +69,7 @@ export interface ResultAdjustComposerSubmissionPort {
 	  artifactId: string;
 	  parentRevision: number;
 	  targetUnitIds?: string[];
+	  sourceUnitMappings?: Array<{ sourceUnitId: string; executionUnitId: string }>;
 	};
     taskId: string;
     textSelectionScope?: ResultAdjustTextSelectionScope;
@@ -846,6 +848,14 @@ export class OperationsResultCommandPort {
 				  sourceArtifactLineage: {
 					...frozen.artifactLineage,
 					...(targetUnitIds ? { targetUnitIds } : {}),
+					...(targetUnitIds
+					  ? {
+						  sourceUnitMappings: targetUnitIds.map((pageId) => ({
+							sourceUnitId: pageId,
+							executionUnitId: pageId,
+						  })),
+						}
+					  : {}),
 				  },
 				}
 			  : {}),

@@ -163,6 +163,7 @@ function fixture(
 					  pages: [
 						{ id: 'page-1', imageAssetId: 'asset-1' },
 						{ id: 'page-2', imageAssetId: 'asset-2' },
+						{ id: 'page-3', imageAssetId: 'asset-3' },
 					  ],
 					},
                   },
@@ -175,7 +176,7 @@ function fixture(
             conversionHook: '私信预约',
             createdAt: '2026-07-20T00:00:00.000Z',
             id: options.packageVersionId ?? 'version-1',
-            orderedAssetIds: ['asset-1', 'asset-2'],
+			orderedAssetIds: ['asset-1', 'asset-2', 'asset-3'],
             title: '夏日护理',
             topics: ['护理'],
           },
@@ -727,6 +728,9 @@ test('Composer snapshot adjustment keeps the latest semantic decision snapshot',
 		artifactId: 'note:package-1',
 		parentRevision: 7,
 		targetUnitIds: ['page-1'],
+		sourceUnitMappings: [
+		  { sourceUnitId: 'page-1', executionUnitId: 'page-1' },
+		],
 	  },
 	);
   assert.equal(
@@ -736,6 +740,55 @@ test('Composer snapshot adjustment keeps the latest semantic decision snapshot',
       }
     ).sourceSnapshot.semanticDecision?.reference.value,
     '故事版',
+  );
+});
+
+test('note set adjustment freezes non-contiguous source-to-execution page units', async () => {
+  const { composerCalls, port } = fixture({
+    noteSnapshot: true,
+    semanticSnapshot: true,
+    quoteOutputCount: 2,
+    quoteStatus: 'quoted',
+  });
+  const source = {
+	expectedPackageRevision: 3,
+    kind: 'content_package_snapshot' as const,
+    packageId: 'package-1',
+    snapshotId: 'snapshot-task-1',
+    workflowId: 'task-1',
+  };
+  const scope = { kind: 'set' as const, assetIds: ['asset-1', 'asset-3'] };
+  const prepared = await port.prepareAdjust(
+    context,
+    {
+      expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+      instruction: '只重做第一和第三页',
+      scope,
+      source,
+      workId: 'work-1',
+    },
+    'adjust-note-set-prepare',
+  );
+  await port.adjust(
+    context,
+    {
+      billingQuoteId: 'quote-fresh',
+      derivedTaskId: prepared.task.id,
+      derivedWorkId: prepared.work.id,
+      instruction: '只重做第一和第三页',
+      scope,
+      source,
+    },
+    'adjust-note-set-confirm',
+  );
+
+  assert.deepEqual(
+    (composerCalls[0] as { sourceArtifactLineage?: { sourceUnitMappings?: unknown } })
+      .sourceArtifactLineage?.sourceUnitMappings,
+    [
+      { sourceUnitId: 'page-1', executionUnitId: 'page-1' },
+      { sourceUnitId: 'page-3', executionUnitId: 'page-3' },
+    ],
   );
 });
 

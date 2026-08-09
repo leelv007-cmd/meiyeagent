@@ -134,6 +134,12 @@ test('real Composer recovery deterministically rebuilds a missing freeze from it
   const binding = await coordinator.prepare({ submission: submitted });
   const expectedFreeze = structuredClone(submitted.executionPlanFreeze);
   assert.ok(expectedFreeze);
+	const later = record('task-after-crash', '把这次内容改成五页');
+	await coordinator.prepare({
+	  continuationThreadId: binding.threadId,
+	  submission: later,
+	});
+	assert.equal(later.executionPlanFreeze?.planRevision, 2);
 
   const recovered = structuredClone(submitted);
   delete recovered.executionPlanFreeze;
@@ -142,8 +148,8 @@ test('real Composer recovery deterministically rebuilds a missing freeze from it
 
   assert.deepEqual(recoveredBinding, binding);
   assert.deepEqual(recovered.executionPlanFreeze, expectedFreeze);
-  assert.equal(compiles, 1, 'recovery must not append another plan revision');
-  assert.equal((await plans.listRevisions(expectedFreeze.planId)).length, 1);
+	assert.equal(compiles, 2, 'recovery must not append another plan revision');
+	assert.equal((await plans.listRevisions(expectedFreeze.planId)).length, 2);
 });
 
 test('a continuation Thread is resolved inside the submission workspace', async () => {  const sessions = new MemoryAgentSessionStore();
@@ -212,8 +218,18 @@ test(
           workspaceId
         ),
       });
+	  const firstFreeze = JSON.parse(
+		JSON.stringify(first.executionPlanFreeze),
+	  ) as NonNullable<CreationSubmissionRecord['executionPlanFreeze']>;
+	  assert.ok(firstFreeze);
+	  assert.equal(firstFreeze.planRevision, 1);
+	  delete first.executionPlanFreeze;
+	  delete first.agentBinding;
+	  const crashRecovered = await coordinator.prepare({ submission: first });
 
       assert.deepEqual(replayed, created);
+	  assert.deepEqual(crashRecovered, created);
+	  assert.deepEqual(first.executionPlanFreeze, firstFreeze);
       assert.equal(revised.threadId, created.threadId);
       assert.equal(
         (await sessions.listRuns({ resourceId: workspaceId, threadId })).length,

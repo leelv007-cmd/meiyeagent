@@ -95,11 +95,45 @@ export class ComposerPlanSessionCoordinator
           now,
         });
 
-    const latest = await this.plans.getLatest(planId);
-    const alreadyCompiled =
-      existingRun?.status === 'completed' ||
-      latest?.revision.boundRevisions.intentRevision ===
-        started.thread.sessionRevision;
+	const exitRuns = (await this.sessions.listRuns({ resourceId, threadId }))
+	  .filter((run) => run.durability === 'exit')
+	  .sort((left, right) =>
+		left.startedAt.localeCompare(right.startedAt) || left.runId.localeCompare(right.runId),
+	  );
+	const runIndex = exitRuns.findIndex((run) => run.runId === runId);
+	if (runIndex < 0) throw new Error(`Composer Run ${runId} is missing from its Thread.`);
+	const expectedIntentRevision = runIndex + 1;
+	const revisions = await this.plans.listRevisions(planId);
+	const matchingRevisions = revisions.filter((revision) =>
+	  revision.boundRevisions.intentRevision === expectedIntentRevision &&
+	  revision.intent.summary === submission.snapshot.intent.text &&
+	  revision.boundRevisions.contextBundleId === submission.snapshot.briefContext.id &&
+	  revision.boundRevisions.contextRevision === String(submission.snapshot.briefContext.revision) &&
+	  revision.boundRevisions.harnessReleaseId === started.run.harnessReleaseId,
+	);
+	if (matchingRevisions.length > 1) {
+	  throw new Error(`Composer Run ${runId} has ambiguous durable plan revisions.`);
+	}
+	const matchedRevision = matchingRevisions[0];
+	const exactCompiled = matchedRevision
+	  ? await this.plans.getRevision(planId, matchedRevision.revision)
+	  : null;
+	if (matchedRevision && !exactCompiled) {
+	  throw new Error(`Composer Run ${runId} durable plan revision is missing.`);
+	}
+	if (
+	  exactCompiled &&
+	  (exactCompiled.revision.boundRevisions.intentRevision !== expectedIntentRevision ||
+		!exactCompiled.revision.quoteRef.id ||
+		!String(exactCompiled.revision.quoteRef.revision).trim())
+	) {
+	  throw new Error(`Composer Run ${runId} durable plan binding is invalid.`);
+	}
+	const latest = await this.plans.getLatest(planId);
+	const alreadyCompiled = exactCompiled !== null;
+	if (existingRun?.status === 'completed' && !alreadyCompiled) {
+	  throw new Error(`Completed Composer Run ${runId} has no exact durable plan revision.`);
+	}
 
     if (!alreadyCompiled) {
       if (
@@ -134,12 +168,12 @@ export class ComposerPlanSessionCoordinator
         }
         throw error;
       }
-	} else if (latest && !submission.executionPlanFreeze) {
+	} else if (exactCompiled && !submission.executionPlanFreeze) {
 	  // A process may die after PlanCompiler durably appends the revision but
 	  // before the submission row stores its freeze. Rebuild only from that
 	  // durable compiled artifact; never compile/append a second revision.
 	  submission.executionPlanFreeze = compileFinalizeExecutionPlanFreeze({
-		result: latest,
+		result: exactCompiled,
 		contextBundleId: submission.snapshot.briefContext.id,
 		contextRevision: String(submission.snapshot.briefContext.revision),
 		approvalBasis: approvalBasisForSubmission(submission.snapshot.lens),

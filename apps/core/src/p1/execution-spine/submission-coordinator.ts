@@ -48,6 +48,7 @@ export interface CreationSubmissionRecord {
 		artifactId: string;
 		parentRevision: number;
 		targetUnitIds?: string[];
+		sourceUnitMappings?: Array<{ sourceUnitId: string; executionUnitId: string }>;
 	};
 }
 
