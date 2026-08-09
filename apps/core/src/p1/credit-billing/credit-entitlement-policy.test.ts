@@ -34,7 +34,10 @@ test('booster-only credits never restore paid non-credit entitlements', async ()
     createdAt: now.toISOString(),
   });
 
-  assert.equal(ledger.project('workspace-booster').availableCredits, 95);
+  assert.equal(
+    ledger.project('workspace-booster', now.toISOString()).availableCredits,
+    95,
+  );
   assert.deepEqual(
     await policy.resolve('workspace-booster'),
     defaultPolicy('trial', 'credit-entitlement:default:workspace-booster'),
