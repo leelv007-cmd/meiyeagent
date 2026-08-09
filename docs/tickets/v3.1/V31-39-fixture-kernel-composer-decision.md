@@ -127,6 +127,17 @@ R4 把付费确认权威 ID 交给浏览器并落进 `sessionStorage`（`session
 
 > **未核证项（review-memory 自陈，2026-08-10）**：上面两条 AC 的代码已落地（`0761bccfa`，`postgres-execution-confirmation.postgres.test.ts` **+202 行**，merged `bb6fe34be`、主控亲验），但**我没有勾选**，因为我写在 AC 里的两项要求无法由 diff 单独证明：① 断言是否真压在 SQL 收窄那一层（`postgres-execution-confirmation-store.ts:212` 的谓词）而非只压 HTTP 状态码；② **变异背书**是否真做过——把 `server.ts:2557-2562` 的 spread 顺序反转后该断言必须转红。`0761bccfa` 只改了一个测试文件，变异测试按定义不会在 diff 里留痕。**请主控在勾选前确认这两点**；若已确认，直接把这两个框勾上即可，无需改文字。
 
+> **两点已确认 — 主控亲验复现两组变异（2026-08-10，集成树 `bb6fe34be` 后）**。一次性库 `meiye_v31_mc_verify_20260810_050947`（+`_dbos`）建→验→清，双还原终跑后 porcelain 空：
+>
+> | 步骤 | 变异内容 | 结果 |
+> |---|---|---|
+> | 基线 | 无 | **17/17** |
+> | 变异 A | schema 加 `.passthrough()` ＋ decide handler 的 spread 反转（`...body` 放最后） | **恰好断言 2 翻红**（16/17，body 夹带的 `workspaceId` 真生效了） |
+> | 还原后变异 B | store `getByWorkspaceIdWithClient` 的 WHERE 改成 `(TRUE OR workspace_id=$1)` | **恰好断言 1 翻红**（16/17，跨 workspace decide 被放行） |
+> | 双还原终跑 | 无 | **17/17** |
+>
+> **变异 B 正是我那条疑虑①的答案**：把 SQL 谓词打穿就能让断言 1 单独翻红，说明该断言**真压在收窄那一层**，不是只压 HTTP 状态码——若只压状态码，改 WHERE 不会动它。变异 A 同理答复疑虑②：spread 顺序反转确实能让断言 2 翻红，变异背书成立。两组都是**恰好一条**翻红（16/17 而非更多），说明两条断言各自独立、没有互相兜底。据此两框已勾。
+
 
 - [ ] `decision == null` 有 RED→GREEN：run 终态为 `failed`、错误文案指名原因、无中断行写入
 - [ ] `systemOnlyBlock` 有 RED→GREEN：产生可锚定的商家阻塞面，run 不停在无出边 `waiting`
@@ -139,8 +150,8 @@ R4 把付费确认权威 ID 交给浏览器并落进 `sessionStorage`（`session
 - [ ] 强制改稿实现在旅程/前台（拒绝后引导商家进编辑态）；**权威层不得出现「同 base 第二次请求一律拒绝」**——加了就会打死过期臂且无红灯
 - [ ] 存量清理不得给 `confirmed` 加 TTL（U8，`ed370e197`）；释放走「执行消费」或 V31-41 族的一次性清理
 - [ ] 票面三道栅栏与 U8 归因随实施保留，不得因「看起来是死码/看起来是缺陷」而删
-- [ ] **（W4-B 代码，`0761bccfa` merged `bb6fe34be` 已落地；勾选待主控，见下方「未核证项」）跨 workspace decide 被拒**：workspace A 的会话持 workspace B 的 requestId 去 decide → 得 `NOT_FOUND`/404，**且与「requestId 完全不存在」返回同一状态**（不得出现可区分的存在性 oracle）。断言要压在 SQL 收窄那一层（`postgres-execution-confirmation-store.ts:212` 的谓词），不是只压 HTTP 状态码
-- [ ] **（W4-B 代码，`0761bccfa` merged `bb6fe34be` 已落地；勾选待主控，见下方「未核证项」）body 夹带 `workspaceId` 不生效**：请求体带一个异租户 `workspaceId` → 被 zod strip 掉、decide 仍用会话上下文的 workspace。**变异背书**：把 `server.ts:2557-2562` 的 spread 顺序反转（`...body` 放到显式键之后）→ 该断言必须转红；不转红说明断言压错了层
+- [x] **（W4-B 代码 `0761bccfa` merged `bb6fe34be`；变异 B 主控亲验，见「未核证项」下的复现记录）跨 workspace decide 被拒**：workspace A 的会话持 workspace B 的 requestId 去 decide → 得 `NOT_FOUND`/404，**且与「requestId 完全不存在」返回同一状态**（不得出现可区分的存在性 oracle）。断言要压在 SQL 收窄那一层（`postgres-execution-confirmation-store.ts:212` 的谓词），不是只压 HTTP 状态码
+- [x] **（W4-B 代码 `0761bccfa` merged `bb6fe34be`；变异 A 主控亲验，见「未核证项」下的复现记录）body 夹带 `workspaceId` 不生效**：请求体带一个异租户 `workspaceId` → 被 zod strip 掉、decide 仍用会话上下文的 workspace。**变异背书**：把 `server.ts:2557-2562` 的 spread 顺序反转（`...body` 放到显式键之后）→ 该断言必须转红；不转红说明断言压错了层
 - [ ] 上面两条以**行为为证**，不接受「读一遍代码确认安全」；补完后本节「缺口」段随之改写为已覆盖
 
 ## per-file 对账基准（T7 域，review-memory 实测，2026-08-09）
@@ -185,3 +196,4 @@ R4 把付费确认权威 ID 交给浏览器并落进 `sessionStorage`（`session
 
 - Wave 4（2026-08-10，review-memory 在 `codex/v31-w4-tickets`，基座 `98949870a`）：七跳表加集成树列；新建「追加项：decide 四层防线零测试覆盖」节（四层锚点表，含中央 `route-table.ts:42` 这个第二锚点）＋两条承重 AC；落 T7 域 per-file 对账基准与 432/432 对账。
 - Wave 4 追加（同日，回填 W4-B 交付 SHA）：两条承重 AC 的代码已由 W4-B 落地 ⇒ `0761bccfa`（`test(agent-session): pin decide's cross-workspace rejection and body-smuggled workspaceId rejection`，`postgres-execution-confirmation.postgres.test.ts` **+202 行**），经 merge `bb6fe34be` 入集成树、主控亲验。七跳表第 ① 跳的缺陷亦已修 ⇒ `5d7326e35`（同 commit 改产品与测试两个文件）。**该 merge 共带三个 commit**（第三条是 `111022d1d` 崩溃恢复重钉，见 V31-18），**三者都不碰 `agent-memory-platform`**——即 V31-18 AC1 的 Business Fact 守卫测试（W4-B 任务 5）**尚未落地**，那个引用位仍留 `待补录`，勿误认为已闭合。
+- Wave 4 追加（同日，两框已勾）：主控在集成树（`bb6fe34be` 后）**亲手复现两组变异**并核销我留的两点未核证项——基线 17/17；变异 A（schema `.passthrough()` ＋ spread 反转）恰好断言 2 翻红；还原后变异 B（store WHERE 改 `(TRUE OR workspace_id=$1)`）恰好断言 1 翻红，**这条直接证明断言 1 压在 SQL 收窄层而非 HTTP 状态码**；双还原终跑 17/17、porcelain 空；一次性库 `meiye_v31_mc_verify_20260810_050947` 建→验→清。两组都只翻红一条（16/17），说明两条断言各自独立无互相兜底。**两条承重 AC 据此勾选**，复现记录已逐条落在「未核证项」下方。
