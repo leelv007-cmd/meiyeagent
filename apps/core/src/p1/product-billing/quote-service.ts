@@ -108,6 +108,7 @@ function revisionFor(input: BuildProductQuoteInput): string {
         creditCost: input.creditCost,
         debitUnits: input.debitUnits,
         failureRefundsCredits: input.failureRefundsCredits,
+        expiresAt: input.expiresAt,
         minChargeSeconds: input.minChargeSeconds,
         outputCount: input.outputCount,
         outputLabel: input.outputLabel,
@@ -261,6 +262,9 @@ export class ProductQuoteService {
     }
 
     const now = this.clock().toISOString();
+    if (input.expiresAt && Date.parse(input.expiresAt) <= Date.parse(now)) {
+      throw new P1DomainError('INVALID_STATE', 'Quote expiry must be in the future.');
+    }
     const snapshot: ProductQuoteSnapshot = {
       quoteId: input.quoteId,
       revision: revisionFor(input),
@@ -334,6 +338,7 @@ export class ProductQuoteService {
         : {}),
       lifecycleStatus: 'quoted',
       createdAt: now,
+      ...(input.expiresAt ? { expiresAt: input.expiresAt } : {}),
     };
 
     this.quotes.set(input.quoteId, snapshot);

@@ -7,6 +7,7 @@ import {
 	pickComposerSubmissionSignedFields,
 	type ContentPackage,
 	type DiagnosticRun,
+	type PlanConfirmationDecision,
 } from "@meiye/contracts";
 
 import type { DiagnosticRepository } from "../../diagnostics/repository.js";
@@ -1035,6 +1036,8 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 	const harness = new RecordingHarnessStarter();
 	let completed = 0;
 	let revised = 0;
+	let confirmationDecisions = 0;
+	let immutableDecision: PlanConfirmationDecision | null = null;
 	const coordinator = new CreationSubmissionCoordinator(
 		submissions,
 		harness,
@@ -1042,7 +1045,10 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 		fixedAdmission(),
 		undefined,
 		{
-			async prepare() {
+			async prepare(input) {
+				input.submission.executionPlanFreeze = {
+					approvalBasis: "merchant_confirmed",
+				} as never;
 				return { threadId: "thread-wait", runId: "run-wait", makeReady: false };
 			},
 			async completeExplicitStart(input) {
@@ -1059,12 +1065,28 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 				return { threadId: "thread-wait", runId: "run-wait", makeReady: false };
 			},
 		},
+		{
+			async getDecision() {
+				return immutableDecision;
+			},
+			async decide(input) {
+				assert.equal(input.requestId, `confirmation:${createdTaskId}`);
+				confirmationDecisions += 1;
+				immutableDecision = {
+						schemaVersion: "plan-confirmation-decision/v1",
+						...input,
+					} as PlanConfirmationDecision;
+				return { decision: immutableDecision };
+			},
+		},
 	);
+	let createdTaskId = "";
 	const created = await coordinator.submit({
 		...submissionPayload(),
 		actorId: "owner-1",
 		workspaceId: "workspace-1",
 	});
+	createdTaskId = created.task.id;
 	assert.equal(created.makeReady, false);
 	assert.equal(harness.starts.length, 0);
 	await coordinator.revisePrepared({
@@ -1083,7 +1105,15 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 	});
 	assert.equal(started.makeReady, true);
 	assert.equal(harness.starts.length, 1);
+	assert.equal(confirmationDecisions, 1);
 	assert.equal(completed, 1);
+	await coordinator.startPrepared({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		planRevision: 2,
+	});
+	assert.equal(harness.starts.length, 1);
+	assert.equal(confirmationDecisions, 1);
 });
 
 test("a failed Harness start releases the same submission for an idempotent retry", async () => {

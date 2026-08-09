@@ -55,25 +55,12 @@ export function createProductionPlanCompilerPorts(deps: {
   catalogRevisionId?: string;
   clock?: () => Date;
 }): PlanCompilerPorts {
-  const clock = deps.clock ?? (() => new Date());
-
   const quote: PlanCompilerQuotePort = {
     async resolveQuote(input) {
-      if (!input.quoteRefHint) {
-        throw new Error('Plan compile requires a server-admitted quote ref.');
+      if (!input.quoteResolutionHint) {
+        throw new Error('Plan compile requires a ProductQuote authority snapshot.');
       }
-      return {
-        quoteRef: input.quoteRefHint,
-        expiresAt: new Date(clock().getTime() + 60 * 60 * 1000).toISOString(),
-        summary: {
-          source: 'submission_quote_authority',
-          deliverableKinds: input.deliverables.map((item) => item.kind),
-          quantity: input.deliverables.reduce(
-            (sum, item) => sum + item.quantity,
-            0,
-          ),
-        },
-      };
+      return input.quoteResolutionHint;
     },
   };
 

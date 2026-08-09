@@ -94,6 +94,7 @@ import {
   assetHttpPolicyFor,
 } from './p1/model-supply/asset-http-policy.js';
 import { RouteTable } from './route-table.js';
+import { registerComposerPlanCommandRoutes } from './composer-plan-route-registrar.js';
 
 interface CoreServerDependencies {
   assetReader?: Partial<AssetHttpPolicyPort> & {
@@ -553,36 +554,6 @@ function workspaceWorkflowEventRoute(pathname: string) {
 function workspaceComposerTaskEventRoute(pathname: string) {
   const match = pathname.match(
     /^\/v1\/workspaces\/([^/]+)\/p1\/composer\/tasks\/([^/]+)\/events$/
-  );
-  if (!match?.[1] || !match[2]) return null;
-  try {
-    return {
-      taskId: decodeURIComponent(match[2]),
-      workspaceId: decodeURIComponent(match[1]),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function workspaceComposerTaskStartRoute(pathname: string) {
-  const match = pathname.match(
-    /^\/v1\/workspaces\/([^/]+)\/p1\/composer\/tasks\/([^/]+)\/start$/
-  );
-  if (!match?.[1] || !match[2]) return null;
-  try {
-    return {
-      taskId: decodeURIComponent(match[2]),
-      workspaceId: decodeURIComponent(match[1]),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function workspaceComposerTaskReviseRoute(pathname: string) {
-  const match = pathname.match(
-    /^\/v1\/workspaces\/([^/]+)\/p1\/composer\/tasks\/([^/]+)\/revise$/
   );
   if (!match?.[1] || !match[2]) return null;
   try {
@@ -1636,19 +1607,16 @@ export function createCoreServer({
       },
     ]);
 
-    const composerTaskStartRoute = workspaceComposerTaskStartRoute(url.pathname);
-    routes.add('composer-task-start', [
-      'POST',
-      () =>
-        Boolean(
-          composerSubmission?.coordinator.startPrepared && composerTaskStartRoute
-        ),
-      'service-token',
-      async () => {
+    registerComposerPlanCommandRoutes({
+      routes,
+      pathname: url.pathname,
+      startAvailable: Boolean(composerSubmission?.coordinator.startPrepared),
+      reviseAvailable: Boolean(composerSubmission?.coordinator.revisePrepared),
+      async onStart(composerTaskStartRoute) {
         await handleErrors(async () => {
           const context = p1Identity(
             request,
-            composerTaskStartRoute!.workspaceId,
+            composerTaskStartRoute.workspaceId,
             requestCorrelationId
           );
           authorizeContentCreation(context);
@@ -1658,7 +1626,7 @@ export function createCoreServer({
             .parse(await readJson(request));
           const result = await composerSubmission!.coordinator.startPrepared!({
             workspaceId: context.workspaceId,
-            taskId: composerTaskStartRoute!.taskId,
+            taskId: composerTaskStartRoute.taskId,
             planRevision: body.planRevision,
           });
           sendJson(response, 202, result, requestCorrelationId);
@@ -1668,21 +1636,11 @@ export function createCoreServer({
           status: 409,
         });
       },
-    ]);
-
-    const composerTaskReviseRoute = workspaceComposerTaskReviseRoute(url.pathname);
-    routes.add('composer-task-revise', [
-      'POST',
-      () =>
-        Boolean(
-          composerSubmission?.coordinator.revisePrepared && composerTaskReviseRoute
-        ),
-      'service-token',
-      async () => {
+      async onRevise(composerTaskReviseRoute) {
         await handleErrors(async () => {
           const context = p1Identity(
             request,
-            composerTaskReviseRoute!.workspaceId,
+            composerTaskReviseRoute.workspaceId,
             requestCorrelationId
           );
           authorizeContentCreation(context);
@@ -1695,7 +1653,7 @@ export function createCoreServer({
             .parse(await readJson(request));
           const result = await composerSubmission!.coordinator.revisePrepared!({
             workspaceId: context.workspaceId,
-            taskId: composerTaskReviseRoute!.taskId,
+            taskId: composerTaskReviseRoute.taskId,
             planRevision: body.planRevision,
             merchantInstruction: body.merchantInstruction,
           });
@@ -1706,7 +1664,7 @@ export function createCoreServer({
           status: 409,
         });
       },
-    ]);
+    });
 
     const composerTaskEventRoute = workspaceComposerTaskEventRoute(
       url.pathname

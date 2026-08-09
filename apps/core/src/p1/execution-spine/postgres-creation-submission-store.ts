@@ -519,6 +519,8 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     workspaceId: string;
     submissionId: string;
     freeze: CreationSubmissionRecord['executionPlanFreeze'];
+    quoteRef?: CreationSubmissionRecord['snapshot']['quote'];
+    credits?: number;
   }) {
     if (!input.freeze) {
       throw new Error('Execution plan freeze is required.');
@@ -526,11 +528,20 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     const result = await this.pool.query<{ submission: unknown }>(
       `UPDATE execution_spine.creation_submissions
           SET submission = jsonb_set(
-                submission,
+              jsonb_set(
+                jsonb_set(submission,
                 '{executionPlanFreeze}',
                 $3::jsonb,
                 true
+                ),
+                '{snapshot,quote}',
+                COALESCE($4::jsonb, submission#>'{snapshot,quote}'),
+                true
               ),
+              '{usageReservation,credits}',
+              COALESCE($5::jsonb, submission#>'{usageReservation,credits}'),
+              true
+            ),
               updated_at = clock_timestamp()
         WHERE workspace_id = $1
           AND id = $2
@@ -538,9 +549,21 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
           AND (
             submission->'executionPlanFreeze' IS NULL
             OR submission->'executionPlanFreeze' = $3::jsonb
+            OR (
+              submission#>>'{executionPlanFreeze,planId}' = $6
+              AND (submission#>>'{executionPlanFreeze,planRevision}')::integer < $7
+            )
           )
         RETURNING submission`,
-      [input.workspaceId, input.submissionId, JSON.stringify(input.freeze)],
+      [
+        input.workspaceId,
+        input.submissionId,
+        JSON.stringify(input.freeze),
+        input.quoteRef ? JSON.stringify(input.quoteRef) : null,
+        input.credits !== undefined ? JSON.stringify(input.credits) : null,
+        input.freeze.planId,
+        input.freeze.planRevision,
+      ],
     );
     const row = result.rows[0];
     if (!row) {

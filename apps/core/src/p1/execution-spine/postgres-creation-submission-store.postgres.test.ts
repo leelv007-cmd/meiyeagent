@@ -535,6 +535,20 @@ test(
         freeze: executionPlanFreeze,
       });
       assert.deepEqual(frozen.executionPlanFreeze, executionPlanFreeze);
+      const restartedStore = new PostgresCreationSubmissionStore(
+        pool,
+        new PostgresCreationSubmissionPersistence(
+          new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
+        ),
+      );
+      const recoveredAfterCrash = await restartedStore.readByTask({
+        workspaceId,
+        taskId: submission.task.id,
+      });
+      assert.deepEqual(
+        recoveredAfterCrash?.executionPlanFreeze,
+        executionPlanFreeze,
+      );
       const reservedQuote = await billingRepository.getQuote(
         workspaceId,
         quoteId,

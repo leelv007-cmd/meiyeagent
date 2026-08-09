@@ -360,6 +360,7 @@ export class HarnessTaskAdmissionService {
     });
     if (existing) {
       if (existing.kind === 'existing') {
+        if (!existing.request) return this.resumeExisting(existing);
         await this.ensurePendingExecutionConfirmation(
           input.taskId,
           existing.request,
@@ -531,6 +532,7 @@ export class HarnessTaskAdmissionService {
       );
     }
     if (claim.kind === 'existing') {
+      if (!claim.request) return this.resumeExisting(claim);
       await this.ensurePendingExecutionConfirmation(input.taskId, claim.request);
       return this.resumeExisting(claim);
     }

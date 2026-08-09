@@ -166,6 +166,204 @@ test('Composer production seam runs Session intent before PlanCompiler and paid 
   assert.equal(run?.status, 'running');
 });
 
+test('production Composer assembly fails closed when Session runTurn is missing', () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+
+  assert.throws(
+    () =>
+      new ComposerPlanSessionCoordinator(
+        sessions,
+        plans,
+        {
+          compilePlan: (input) => compiler.compile(input),
+          adjustPlan: (input) => compiler.adjust(input),
+        },
+        { requireSessionTurn: true },
+      ),
+    /requires Session runTurn/u,
+  );
+});
+
+test('ask_merchant waits for a clarification answer and never fallback-compiles', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  let turn = 0;
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    async runComposerTurn(input) {
+      turn += 1;
+      if (turn === 1) {
+        return {
+          decision: {
+            merchantMessage: '需要确认页数',
+            action: { kind: 'ask_merchant', question: '需要几页？' },
+            evidenceRefs: [],
+            assumptions: [],
+          },
+        } as never;
+      }
+      assert.equal(input.merchantMessage, '4 页');
+      return {
+        decision: {
+          merchantMessage: '已确认',
+          action: {
+            kind: 'propose_plan',
+            proposal: {
+              goalNarrative: '四页图文',
+              recommendedDeliverables: [
+                { carrier: 'note', platform: 'xiaohongshu', quantity: 4 },
+              ],
+            },
+          },
+          evidenceRefs: [],
+          assumptions: [],
+        },
+      } as never;
+    },
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+  const submission = record('task-clarification', '做一组图文');
+  const waiting = await coordinator.prepare({ submission });
+
+  assert.equal(await plans.getLatest(`plan:workspace-1:${waiting.threadId}`), null);
+  assert.equal(Boolean(submission.executionPlanFreeze), false);
+  assert.equal(
+    (await sessions.getRun({ resourceId: 'workspace-1', runId: waiting.runId }))
+      ?.status,
+    'waiting',
+  );
+
+  await coordinator.answerClarification({ submission, merchantAnswer: '4 页' });
+  assert.equal(submission.executionPlanFreeze?.deliverables[0]?.quantity, 4);
+});
+
+test('system-only block and empty decision never fallback-compile a plan', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const results = [
+    {
+      decision: null,
+      systemOnlyBlock: {
+        blocked: true,
+        gateId: 'system-only',
+        reason: 'system-only proposal',
+        nextAction: 'ask_merchant',
+      },
+    },
+    { decision: null, systemOnlyBlock: null },
+  ];
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    async runComposerTurn() {
+      return results.shift() as never;
+    },
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+
+  for (const taskId of ['task-system-block', 'task-empty-decision']) {
+    const submission = record(taskId, '做一组图文');
+    const binding = await coordinator.prepare({ submission });
+    assert.equal(Boolean(submission.executionPlanFreeze), false);
+    assert.equal(
+      (await sessions.getRun({ resourceId: 'workspace-1', runId: binding.runId }))
+        ?.status,
+      'waiting',
+    );
+  }
+});
+
+test('revise recompiles six pages into four units and binds a fresh ProductQuote', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const ports = createFixturePlanCompilerPorts();
+  ports.quote = {
+    async resolveQuote(input) {
+      assert.ok(input.quoteResolutionHint);
+      return input.quoteResolutionHint;
+    },
+  };
+  const compiler = new PlanCompiler({ store: plans, ports });
+  const coordinator = new ComposerPlanSessionCoordinator(
+    sessions,
+    plans,
+    {
+      async runComposerTurn() {
+        return {
+          decision: {
+            merchantMessage: '六页方案',
+            action: {
+              kind: 'propose_plan',
+              proposal: {
+                goalNarrative: '六页图文',
+                recommendedDeliverables: [
+                  { carrier: 'note', platform: 'xiaohongshu', quantity: 6 },
+                ],
+              },
+            },
+            evidenceRefs: [],
+            assumptions: [],
+          },
+        } as never;
+      },
+      compilePlan: (input) => compiler.compile(input),
+      adjustPlan: (input) => compiler.adjust(input),
+    },
+    {
+      requireSessionTurn: true,
+      requireQuoteAuthority: true,
+      quoteAuthority: {
+        async resolveCurrent() {
+          return {
+            quoteRef: { id: 'product-quote-6', revision: 'r6' },
+            expiresAt: '2026-08-09T10:00:00.000Z',
+          };
+        },
+        async reprice(input) {
+          assert.equal(input.quantity, 4);
+          return {
+            quoteRef: { id: 'product-quote-4', revision: 'r4' },
+            expiresAt: '2026-08-09T11:00:00.000Z',
+            summary: { creditCost: 4 },
+          };
+        },
+      },
+    },
+  );
+  const submission = record('task-real-four-pages', '先做 6 页图文');
+  const binding = await coordinator.prepare({ submission });
+  await coordinator.revisePrepared({
+    submission,
+    planRevision: 1,
+    merchantInstruction: '只做小红书，减到 4 页',
+  });
+
+  const freeze = submission.executionPlanFreeze!;
+  assert.equal(freeze.planRevision, 2);
+  assert.equal(freeze.deliverables[0]?.quantity, 4);
+  assert.equal(
+    freeze.executionPlan.units.filter((unit) => unit.unitType === 'note.generate')
+      .length,
+    4,
+  );
+  assert.deepEqual(freeze.quoteRef, { id: 'product-quote-4', revision: 'r4' });
+  assert.equal(submission.snapshot.quote.id, 'product-quote-4');
+  assert.equal(submission.usageReservation.credits, 4);
+  assert.equal(binding.makeReady, false);
+});
+
 test('explicit start fails closed when the latest plan has unauthorized assets', async () => {
   const sessions = new MemoryAgentSessionStore();
   const plans = new MemoryMarketingPlanStore();
@@ -183,9 +381,6 @@ test('explicit start fails closed when the latest plan has unauthorized assets',
   };
   const compiler = new PlanCompiler({ store: plans, ports });
   const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
-    async runComposerTurn() {
-      return null as never;
-    },
     compilePlan: (input) => compiler.compile(input),
     adjustPlan: (input) => compiler.adjust(input),
   });
@@ -205,7 +400,7 @@ test('explicit start fails closed when the latest plan has unauthorized assets',
       resourceId: submission.snapshot.workspaceId,
       runId: binding.runId,
     }))?.status,
-    'running',
+    'completed',
   );
 });
 

@@ -40,6 +40,7 @@ import {
   type AgentTurnRunnerResult,
   type ReleaseControlLimitsSource,
 } from './turn-runner.js';
+import { canonicalPlanPatchFromMerchantInstruction } from './turn-contracts.js';
 import type {
   CreateExecutionConfirmationInput,
   CreateExecutionConfirmationResult,
@@ -213,10 +214,7 @@ export class AgentSessionHarnessService {
     const { merchantInstruction: _merchantInstruction, ...compile } = input;
     return this.requirePlanCompiler().adjust({
       ...compile,
-      patch: {
-        summary: instruction,
-        instructions: instruction,
-      },
+      patch: canonicalPlanPatchFromMerchantInstruction(instruction),
     });
   }
 

@@ -52,6 +52,7 @@ import type {
   MarketingPlanStore,
 } from './plan-store.js';
 import {
+  canonicalPlanPatchFromMerchantInstruction,
   planProposalSchema,
   type PlanPatchProposal,
   type PlanProposal,
@@ -75,6 +76,7 @@ export type PlanCompilerQuotePort = {
     deliverables: PlanDeliverable[];
     harnessReleaseId: string;
     quoteRefHint?: AgentRevisionRef;
+    quoteResolutionHint?: PlanCompilerQuoteResolution;
   }): Promise<PlanCompilerQuoteResolution>;
 };
 
@@ -172,6 +174,8 @@ export type CompilePlanInput = {
   harnessReleaseId: string;
   /** Server-owned quote authority already admitted for this submission. */
   quoteRefHint?: AgentRevisionRef;
+  /** Exact ProductQuote authority snapshot, including its validity window. */
+  quoteResolutionHint?: PlanCompilerQuoteResolution;
   now?: string;
   /** Optional merchant billing overlay for Living Plan cost section (no invention). */
   livingPlanBilling?: PlanLivingPlanBillingOverlay;
@@ -325,7 +329,14 @@ export class PlanCompiler {
     }
     const nextRevision = latest ? latest.revision.revision + 1 : 1;
 
-    const deliverables = this.buildDeliverables(proposal);
+    const canonicalPatch = input.patch
+      ? canonicalPlanPatchFromMerchantInstruction(input.patch.instructions)
+      : undefined;
+    const deliverables = this.buildDeliverables(proposal).map((deliverable) =>
+      canonicalPatch?.deliverableQuantity !== undefined
+        ? { ...deliverable, quantity: canonicalPatch.deliverableQuantity }
+        : deliverable,
+    );
     const [rights, models, recipeSkills, quote] = await Promise.all([
       this.ports.rights.resolveRights({
         workspaceId: input.workspaceId,
@@ -351,6 +362,7 @@ export class PlanCompiler {
         deliverables,
         harnessReleaseId: input.harnessReleaseId,
         quoteRefHint: input.quoteRefHint,
+        quoteResolutionHint: input.quoteResolutionHint,
       }),
     ]);
 

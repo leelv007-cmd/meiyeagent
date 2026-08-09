@@ -110,9 +110,12 @@ test.describe('V31-10 Living Plan journey (§37.4-C first half)', () => {
 
     await expect(page.getByTestId('agent-living-plan')).toHaveAttribute(
       'data-revision',
-      /[2-9]|\d{2,}/,
+      '2',
       { timeout: 90_000 }
     );
+    await expect(
+      page.getByTestId('agent-plan-section-deliverables')
+    ).toContainText('4 页');
     await expect(page.getByTestId('agent-plan-diff')).toBeVisible({
       timeout: 60_000,
     });

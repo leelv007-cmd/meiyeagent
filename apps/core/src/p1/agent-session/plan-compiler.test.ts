@@ -569,7 +569,7 @@ test('harness service surface exposes compilePlan/adjustPlan after bindPlanCompi
     threadId: 'thread-1',
     existingPlanId: 'plan-harness-1',
     proposal: baseProposal(),
-    patch: { summary: '减到 1 页', instructions: 'quantity 1' },
+    patch: { summary: '减到 4 页', instructions: '减到 4 页' },
     intentRevision: 1,
     contextBundleId: 'b',
     contextRevision: '1',
@@ -577,6 +577,7 @@ test('harness service surface exposes compilePlan/adjustPlan after bindPlanCompi
     now: TS,
   });
   assert.equal(adjusted.revision.revision, 2);
+  assert.equal(adjusted.revision.deliverables[0]?.quantity, 4);
 
   const steered = await harness.revisePlanFromMerchantInstruction({
     workspaceId: 'ws-1',
