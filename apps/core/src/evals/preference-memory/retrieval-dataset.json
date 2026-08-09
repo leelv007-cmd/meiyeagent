@@ -1,0 +1,135 @@
+{
+  "schemaVersion": "memory-retrieval-dataset/v1",
+  "datasetId": "beauty-memory-retrieval-v1",
+  "cases": [
+    {
+      "caseId": "tenant-and-scope-fence",
+      "query": {
+        "workspaceId": "workspace-a",
+        "scope": { "storeId": "store-a", "platform": "xiaohongshu" },
+        "limit": 5
+      },
+      "memories": [
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-correction",
+          "kind": "correction",
+          "semanticKey": "tone.no-hard-sell",
+          "statement": "不要写强促销话术",
+          "scope": { "storeId": "store-a" },
+          "confidence": 0.8
+        },
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-xhs",
+          "kind": "preference",
+          "semanticKey": "tone.xhs",
+          "statement": "小红书语气轻一点",
+          "scope": { "storeId": "store-a", "platform": "xiaohongshu" },
+          "confidence": 0.7
+        },
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-wrong-store",
+          "kind": "preference",
+          "semanticKey": "tone.other-store",
+          "statement": "另一家店要热情",
+          "scope": { "storeId": "store-b" },
+          "confidence": 1
+        },
+        {
+          "workspaceId": "workspace-b",
+          "preferenceId": "pref-other-tenant",
+          "kind": "correction",
+          "semanticKey": "tone.other-tenant",
+          "statement": "其他租户的纠正",
+          "scope": { "storeId": "store-a", "platform": "xiaohongshu" },
+          "confidence": 1
+        }
+      ],
+      "relevantIds": ["pref-correction", "pref-xhs"],
+      "expectedRetrievedIds": ["pref-correction", "pref-xhs"],
+      "minimumPrecision": 1,
+      "minimumRecall": 1
+    },
+    {
+      "caseId": "authority-before-similarity",
+      "query": {
+        "workspaceId": "workspace-a",
+        "scope": { "storeId": "store-a", "platform": "xiaohongshu" },
+        "limit": 2,
+        "similarityByMemoryId": {
+          "pref-global": 1,
+          "pref-narrow": 0.1,
+          "pref-correction": 0
+        }
+      },
+      "memories": [
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-global",
+          "kind": "preference",
+          "semanticKey": "tone.global",
+          "statement": "全局偏好",
+          "scope": { "storeId": "store-a" },
+          "confidence": 1
+        },
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-narrow",
+          "kind": "preference",
+          "semanticKey": "tone.narrow",
+          "statement": "当前店小红书偏好",
+          "scope": { "storeId": "store-a", "platform": "xiaohongshu" },
+          "confidence": 0.5
+        },
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-correction",
+          "kind": "correction",
+          "semanticKey": "tone.correction",
+          "statement": "不要称呼老板娘",
+          "scope": { "storeId": "store-a" },
+          "confidence": 0.2
+        }
+      ],
+      "relevantIds": ["pref-correction", "pref-narrow"],
+      "expectedRetrievedIds": ["pref-correction", "pref-narrow"],
+      "minimumPrecision": 1,
+      "minimumRecall": 1
+    },
+    {
+      "caseId": "revoked-head-is-not-retrieved",
+      "query": {
+        "workspaceId": "workspace-a",
+        "scope": { "storeId": "store-a" },
+        "limit": 5
+      },
+      "memories": [
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-active",
+          "kind": "preference",
+          "semanticKey": "tone.active",
+          "statement": "保持简洁",
+          "scope": { "storeId": "store-a" },
+          "confidence": 0.8
+        },
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-revoked",
+          "kind": "preference",
+          "semanticKey": "tone.revoked",
+          "statement": "已撤销的偏好",
+          "scope": { "storeId": "store-a" },
+          "confidence": 1,
+          "revoked": true
+        }
+      ],
+      "relevantIds": ["pref-active"],
+      "expectedRetrievedIds": ["pref-active"],
+      "minimumPrecision": 1,
+      "minimumRecall": 1
+    }
+  ]
+}

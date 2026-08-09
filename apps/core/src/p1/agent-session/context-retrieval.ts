@@ -6,6 +6,7 @@
  * Free creation (D-175): store/project tools return empty without blocking.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
 
 import {
@@ -123,9 +124,21 @@ export type MemoryInjectionTurnBinding = {
   harnessReleaseId: string;
 };
 
-export const memoryInjectionTurnBridge: {
-  current?: MemoryInjectionTurnBinding;
-} = {};
+const memoryInjectionTurnContext =
+  new AsyncLocalStorage<MemoryInjectionTurnBinding>();
+
+export function runWithMemoryInjectionTurnBinding<T>(
+  binding: MemoryInjectionTurnBinding,
+  callback: () => T,
+): T {
+  return memoryInjectionTurnContext.run(binding, callback);
+}
+
+export function currentMemoryInjectionTurnBinding():
+  | MemoryInjectionTurnBinding
+  | undefined {
+  return memoryInjectionTurnContext.getStore();
+}
 
 const INTENT_PLAN_PHASES = ['intent', 'plan', 'make', 'delivery'] as const;
 
@@ -690,14 +703,13 @@ export function createSessionRetrievalPorts(deps: {
 
     async listConfirmedExperience({ workspaceId, threadId, limit }) {
       if (!deps.experience) return [];
+      const injectionContext = currentMemoryInjectionTurnBinding();
       const entries = await deps.experience.retrieveForInjection({
         workspaceId,
         scope: {},
         threadId,
         limit: limit ?? 8,
-        ...(memoryInjectionTurnBridge.current
-          ? { injectionContext: memoryInjectionTurnBridge.current }
-          : {}),
+        ...(injectionContext ? { injectionContext } : {}),
       });
       return entries.map((entry) => ({
         ref: `experience:${entry.memoryId}`,

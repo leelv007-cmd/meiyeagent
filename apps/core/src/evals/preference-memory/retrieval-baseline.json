@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "memory-retrieval-baseline/v1",
+  "datasetId": "beauty-memory-retrieval-v1",
+  "passed": true,
+  "macroPrecision": 1,
+  "macroRecall": 1,
+  "cases": [
+    {
+      "caseId": "tenant-and-scope-fence",
+      "retrievedIds": ["pref-correction", "pref-xhs"],
+      "precision": 1,
+      "recall": 1,
+      "passed": true
+    },
+    {
+      "caseId": "authority-before-similarity",
+      "retrievedIds": ["pref-correction", "pref-narrow"],
+      "precision": 1,
+      "recall": 1,
+      "passed": true
+    },
+    {
+      "caseId": "revoked-head-is-not-retrieved",
+      "retrievedIds": ["pref-active"],
+      "precision": 1,
+      "recall": 1,
+      "passed": true
+    }
+  ]
+}

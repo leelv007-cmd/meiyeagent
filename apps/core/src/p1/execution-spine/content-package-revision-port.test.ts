@@ -7,7 +7,46 @@ import { ContentPackageRightsBasisResolver } from "../operations/content-package
 import {
 	ContentPackageRevisionWriteError,
 	MemoryContentPackageRevisionWritePort,
+	SteeringDerivedRevisionWriteAdapter,
+	type ContentPackageRevisionWriteInput,
+	type ContentPackageRevisionWritePort,
+	type SteeringDerivedRevisionWriteInput,
 } from "./content-package-revision-port.js";
+
+test("Steering derived revision adapter delegates to the sole OCC writer", async () => {
+	let received: ContentPackageRevisionWriteInput | undefined;
+	const delivery = {
+		packageId: "package-steered",
+		revision: 6,
+	} as Awaited<ReturnType<ContentPackageRevisionWritePort["write"]>>;
+	const writer: ContentPackageRevisionWritePort = {
+		async write(input) {
+			received = input;
+			return delivery;
+		},
+	};
+	const adapter = new SteeringDerivedRevisionWriteAdapter(writer);
+	const derivedDelivery = {
+		kind: "image_text",
+	} as SteeringDerivedRevisionWriteInput["derivedDelivery"];
+
+	const result = await adapter.createDerivedRevision({
+		workspaceId: "workspace-1",
+		packageId: "package-steered",
+		expectedRevision: 5,
+		steeringCommandId: "steer-123",
+		derivedDelivery,
+	});
+
+	assert.equal(result, delivery);
+	assert.deepEqual(received, {
+		...derivedDelivery,
+		workspaceId: "workspace-1",
+		packageId: "package-steered",
+		expectedRevision: 5,
+		idempotencyKey: "steering-derived:steer-123:package-steered:5",
+	});
+});
 
 test("Copy revision writes are idempotent and retain existing owned receipts", async () => {
 	let selectedAssetAvailable = true;

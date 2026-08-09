@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   contentPackageDeliveryEventSchema,
+  contentPackageResultSignalSchema,
   recordContentPackageManualResultCommandSchema,
   recordContentPackageResultSignalCommandSchema,
 } from './content-package.js';
@@ -36,6 +37,23 @@ test('close-loop commands retain merchant-safe publication facts and canonical o
   assert.equal(event.type, 'manual_publish_result');
   assert.equal(event.accountDisplayLabel, '花间美甲抖音');
   assert.equal(event.occurredAt, '2026-07-23T09:30:00.000Z');
+
+  const evidence = contentPackageResultSignalSchema.parse({
+    actorId: 'owner-a',
+    contentPackageRevision: 4,
+    id: 'signal-a',
+    kind: 'attention',
+    occurredAt: '2026-07-24T09:30:00.000Z',
+    source: 'merchant_recorded',
+  });
+  assert.equal(evidence.contentPackageRevision, 4);
+  assert.equal(
+    contentPackageResultSignalSchema.safeParse({
+      ...evidence,
+      contentPackageRevision: -1,
+    }).success,
+    false,
+  );
 
   assert.equal(
     recordContentPackageResultSignalCommandSchema.safeParse({

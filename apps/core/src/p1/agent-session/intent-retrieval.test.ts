@@ -23,10 +23,14 @@ import {
 import {
   createRetrievalToolRegistry,
   createSessionRetrievalPorts,
-  memoryInjectionTurnBridge,
   RETRIEVAL_TOOL_NAMES,
+  runWithMemoryInjectionTurnBinding,
 } from './context-retrieval.js';
-import { FixtureAgentKernel } from './agent-kernel.js';
+import {
+  FixtureAgentKernel,
+  type AgentKernel,
+  type AgentKernelTurnRequest,
+} from './agent-kernel.js';
 import {
   pickSingleQuestionField,
   resolveFreeCreationGrounding,
@@ -628,8 +632,7 @@ test('V31-18 read_confirmed_experience forwards the per-turn injection binding',
     runId: 'run-1',
     harnessReleaseId: 'release-1',
   };
-  memoryInjectionTurnBridge.current = binding;
-  try {
+  await runWithMemoryInjectionTurnBinding(binding, async () => {
     const result = await tools.read_confirmed_experience!.execute({
       response_format: 'concise',
     });
@@ -638,9 +641,7 @@ test('V31-18 read_confirmed_experience forwards the per-turn injection binding',
       1,
     );
     assert.deepEqual(seen[1]?.injectionContext, binding);
-  } finally {
-    memoryInjectionTurnBridge.current = undefined;
-  }
+  });
 
   // Bridge restored → next read is read-only again.
   await tools.read_confirmed_experience!.execute({
@@ -648,3 +649,120 @@ test('V31-18 read_confirmed_experience forwards the per-turn injection binding',
   });
   assert.equal(seen[2]?.injectionContext, undefined);
 });
+
+test('V31-18 concurrent workspace turns keep memory injection bindings isolated', async () => {
+  const seen = new Map<string, object | undefined>();
+  const enteredA = deferred<void>();
+  const enteredB = deferred<void>();
+  const releaseA = deferred<void>();
+  const releaseB = deferred<void>();
+
+  function runnerFor(
+    workspaceId: string,
+    kernel: AgentKernel,
+  ): AgentTurnRunner {
+    const ports = createSessionRetrievalPorts({
+      experience: {
+        retrieveForInjection: async (query) => {
+          seen.set(workspaceId, query.injectionContext);
+          return [];
+        },
+      },
+    });
+    return new AgentTurnRunner({
+      kernel,
+      toolRegistry: createRetrievalToolRegistry({
+        ports,
+        context: { workspaceId, creationMode: 'customized' },
+      }),
+      resolveRelease: async () => ({
+        controlLimits: { ...CONTROL_LIMITS },
+        middlewareBindings: [],
+        releaseId: 'release-1',
+      }),
+      readOnly: true,
+    });
+  }
+
+  const runnerA = runnerFor(
+    'ws-a',
+    coordinatedRetrievalKernel(enteredA, releaseA),
+  );
+  const runnerB = runnerFor(
+    'ws-b',
+    coordinatedRetrievalKernel(enteredB, releaseB),
+  );
+
+  const turnA = runnerA.run(
+    baseTurn({
+      activeTaskRef: { taskId: 'task-a', workflowId: 'workflow-a' },
+      approvedToolNames: ['read_confirmed_experience'],
+      runId: 'run-a',
+      threadId: 'thread-a',
+      workspaceId: 'ws-a',
+    }),
+  );
+  await enteredA.promise;
+  const turnB = runnerB.run(
+    baseTurn({
+      activeTaskRef: { taskId: 'task-b', workflowId: 'workflow-b' },
+      approvedToolNames: ['read_confirmed_experience'],
+      runId: 'run-b',
+      threadId: 'thread-b',
+      workspaceId: 'ws-b',
+    }),
+  );
+  await enteredB.promise;
+
+  // Both kernel turns are now active. Release A while B is the most recently
+  // entered turn; a module-global binding leaks B into A here.
+  releaseA.resolve();
+  await turnA;
+  releaseB.resolve();
+  await turnB;
+
+  assert.deepEqual(seen.get('ws-a'), {
+    taskId: 'task-a',
+    runId: 'run-a',
+    harnessReleaseId: 'release-1',
+  });
+  assert.deepEqual(seen.get('ws-b'), {
+    taskId: 'task-b',
+    runId: 'run-b',
+    harnessReleaseId: 'release-1',
+  });
+});
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+function coordinatedRetrievalKernel(
+  entered: ReturnType<typeof deferred<void>>,
+  release: ReturnType<typeof deferred<void>>,
+): AgentKernel {
+  return {
+    async runTurn(request: AgentKernelTurnRequest) {
+      entered.resolve();
+      await release.promise;
+      const args = { response_format: 'concise' };
+      const result = await request.tools.read_confirmed_experience!.execute(args);
+      return {
+        decision: {
+          merchantMessage: '检索完成',
+          action: { kind: 'finish_turn' },
+          evidenceRefs: [],
+          assumptions: [],
+        },
+        toolCalls: [
+          { toolName: 'read_confirmed_experience', args, result },
+        ],
+        steps: 1,
+      };
+    },
+  };
+}

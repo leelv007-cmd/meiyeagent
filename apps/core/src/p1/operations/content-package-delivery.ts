@@ -505,6 +505,7 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       const duplicate = existing.find((row) =>
         resultSignalMatchesIdempotencyIdentity(row, {
           packageId: contentPackage.id,
+          contentPackageRevision: input.expectedRevision,
           kind: input.kind,
           observedAt,
           sourceRef: input.sourceRef,
@@ -560,6 +561,7 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
           const duplicate = existing.find((row) =>
             resultSignalMatchesIdempotencyIdentity(row, {
               packageId: current.id,
+              contentPackageRevision: input.expectedRevision,
               kind: input.kind,
               observedAt,
               sourceRef: input.sourceRef,
@@ -570,8 +572,19 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
           }
         }
 
+        // The earlier check is only an optimistic fast-fail. The authoritative
+        // OCC comparison must happen after acquiring the workspace lock so two
+        // distinct writes cannot both consume the same package revision.
+        if (current.revision !== input.expectedRevision) {
+          throw new ContentPackageDeliveryError(
+            'CONTENT_PACKAGE_REVISION_CONFLICT',
+            'ContentPackage revision changed. Refresh and retry.'
+          );
+        }
+
         const signal: ContentPackageResultSignal = {
           actorId: context.userId,
+          contentPackageRevision: current.revision,
           id: this.id(),
           kind: input.kind,
           ...(input.note ? { note: input.note } : {}),
@@ -1394,6 +1407,7 @@ function resultSignalMatchesIdempotencyIdentity(
   row: ContentPackageResultSignal,
   identity: {
     packageId: string;
+    contentPackageRevision: number;
     kind: ContentPackageResultSignal['kind'];
     observedAt: string;
     sourceRef?: string;
@@ -1404,18 +1418,19 @@ function resultSignalMatchesIdempotencyIdentity(
     mapContentPackageResultKindToOutcomeSignal(row.kind) ?? 'feedback';
   const inputSignal =
     mapContentPackageResultKindToOutcomeSignal(identity.kind) ?? 'feedback';
-  // Revision is bound at write time on the package; identity compare uses the
-  // stable package id + signal + clocks (MAJOR-13 submit key).
+  // New rows carry the exact consumed revision. Historical rows without this
+  // field cannot satisfy a new idempotency identity and remain read-only.
+  if (row.contentPackageRevision === undefined) return false;
   const rowKey = buildOutcomeEvidenceIdempotencyKey({
     contentPackageId: identity.packageId,
-    contentPackageRevision: '_',
+    contentPackageRevision: row.contentPackageRevision,
     signal: rowSignal,
     observedAt: row.occurredAt,
     sourceRef: row.sourceRef,
   });
   const inputKey = buildOutcomeEvidenceIdempotencyKey({
     contentPackageId: identity.packageId,
-    contentPackageRevision: '_',
+    contentPackageRevision: identity.contentPackageRevision,
     signal: inputSignal,
     observedAt: identity.observedAt,
     sourceRef: identity.sourceRef,

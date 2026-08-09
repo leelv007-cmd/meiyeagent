@@ -5,6 +5,7 @@ import test from 'node:test';
 import { evalRunSchema } from '../../contracts/index.js';
 
 import { runBeautyPreferenceMemoryEval } from './runner.js';
+import { runMemoryRetrievalEval } from './retrieval-eval.js';
 
 test('BeautyPreferenceMemoryEval enforces every memory hard equality', async () => {
   const evaluation = await runBeautyPreferenceMemoryEval();
@@ -43,4 +44,21 @@ test('BeautyPreferenceMemoryEval matches the versioned EvalRun baseline', async 
   );
 
   assert.deepEqual(evaluation.artifact, baseline);
+});
+
+test('memory retrieval runs the versioned dataset against the real platform', async () => {
+  const dataset = JSON.parse(
+    readFileSync(
+      new URL('./retrieval-dataset.json', import.meta.url),
+      'utf8',
+    ),
+  );
+  const baseline = JSON.parse(
+    readFileSync(
+      new URL('./retrieval-baseline.json', import.meta.url),
+      'utf8',
+    ),
+  );
+
+  assert.deepEqual(await runMemoryRetrievalEval(dataset), baseline);
 });

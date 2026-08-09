@@ -1064,13 +1064,21 @@ test('V31-19: result signal write is idempotent on package+signal+observedAt+sou
   };
   const first = await setup.service.recordResultSignal(context, input);
   assert.equal(first.resultSignals?.length, 1);
+  assert.equal(first.resultSignals?.[0]?.contentPackageRevision, 2);
   // Retry after success — same key, same payload, no second row.
-  const retry = await setup.service.recordResultSignal(context, {
-    ...input,
-    expectedRevision: 99, // OCC not required on pure idempotent hit
-  });
+  const retry = await setup.service.recordResultSignal(context, input);
   assert.equal(retry.revision, first.revision);
   assert.equal(retry.resultSignals?.length, 1);
+
+  await assert.rejects(
+    setup.service.recordResultSignal(context, {
+      ...input,
+      expectedRevision: 99,
+    }),
+    (error: unknown) =>
+      error instanceof ContentPackageDeliveryError &&
+      error.code === 'CONTENT_PACKAGE_REVISION_CONFLICT',
+  );
 
   await assert.rejects(
     setup.service.recordResultSignal(context, {
@@ -1081,6 +1089,46 @@ test('V31-19: result signal write is idempotent on package+signal+observedAt+sou
       error instanceof ContentPackageDeliveryError &&
       error.code === 'RESULT_SIGNAL_IDEMPOTENCY_CONFLICT',
   );
+});
+
+test('V31-19: concurrent result signals with the same expected revision allow one writer', async () => {
+  const setup = await createSetup('assisted');
+  await setup.service.recordManualResult(context, {
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+
+  const writes = await Promise.allSettled([
+    setup.service.recordResultSignal(context, {
+      expectedRevision: 2,
+      kind: 'inquiry',
+      occurredAt: '2026-07-17T10:00:00.000Z',
+      packageId: 'package-a',
+      sourceRef: 'self-report:concurrent-a',
+    }),
+    setup.service.recordResultSignal(context, {
+      expectedRevision: 2,
+      kind: 'store_visit',
+      occurredAt: '2026-07-17T10:01:00.000Z',
+      packageId: 'package-a',
+      sourceRef: 'self-report:concurrent-b',
+    }),
+  ]);
+
+  assert.equal(writes.filter((result) => result.status === 'fulfilled').length, 1);
+  const rejection = writes.find((result) => result.status === 'rejected');
+  assert.ok(rejection && rejection.status === 'rejected');
+  assert.ok(
+    rejection.reason instanceof ContentPackageDeliveryError &&
+      rejection.reason.code === 'CONTENT_PACKAGE_REVISION_CONFLICT',
+  );
+
+  const state = (await setup.repository.loadWorkspace('workspace-a'))!;
+  assert.equal(state.contentPackages[0]?.revision, 3);
+  assert.equal(state.contentPackages[0]?.resultSignals?.length, 1);
 });
 
 test('V31-19: correct and withdraw are append-only and bind exact package revision', async () => {
