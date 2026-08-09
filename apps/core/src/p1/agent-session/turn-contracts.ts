@@ -147,10 +147,25 @@ export const planPatchProposalSchema = z
   .object({
     summary: z.string().min(1).max(2_000),
     instructions: z.string().min(1).max(4_000),
+    deliverableQuantity: z.number().int().min(1).max(50).optional(),
   })
   .strict();
 
 export type PlanPatchProposal = z.infer<typeof planPatchProposalSchema>;
+
+export function canonicalPlanPatchFromMerchantInstruction(
+  merchantInstruction: string,
+): PlanPatchProposal {
+  const instruction = merchantInstruction.trim();
+  if (!instruction) throw new Error('Plan revision requires a merchant instruction.');
+  const matched = instruction.match(/(?:减到|改成|做成|只做)?\s*(\d{1,2})\s*页/u);
+  const quantity = matched?.[1] ? Number(matched[1]) : undefined;
+  return planPatchProposalSchema.parse({
+    summary: instruction,
+    instructions: instruction,
+    ...(quantity !== undefined ? { deliverableQuantity: quantity } : {}),
+  });
+}
 
 export const makeSteeringProposalSchema = z
   .object({

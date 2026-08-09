@@ -24,6 +24,15 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 	constructor(private readonly admission: HarnessCreationAdmissionPort) {}
 
 	async start(submission: CreationSubmissionRecord) {
+		if (
+			submission.snapshot.lens !== "copy" &&
+			!submission.executionPlanFreeze
+		) {
+			throw new HarnessAdmissionError(
+				"FROZEN_REQUEST_MISSING",
+				"Paid Composer Make requires a durable ExecutionPlanFreeze.",
+			);
+		}
 		const started = await this.admission.submit({
 			taskId: submission.task.id,
 			...toHarnessWorkflowInput(

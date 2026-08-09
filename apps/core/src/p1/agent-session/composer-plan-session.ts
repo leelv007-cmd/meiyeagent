@@ -17,22 +17,69 @@ import type {
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { ExecutionPlanCompileFreeze } from '../harness/execution-plan-admission.js';
 import type { AgentSessionStore } from './agent-session-store.js';
-import type { CompilePlanInput, CompilePlanResult } from './plan-compiler.js';
+import type {
+  CompilePlanInput,
+  CompilePlanResult,
+  PlanCompilerQuoteResolution,
+} from './plan-compiler.js';
 import type { MarketingPlanStore } from './plan-store.js';
-import type { PlanProposal } from './turn-contracts.js';
+import { projectMarketingPlanReadiness } from './plan-readiness.js';
+import {
+  canonicalPlanPatchFromMerchantInstruction,
+  type PlanProposal,
+} from './turn-contracts.js';
+import type { AgentTurnRunnerResult } from './turn-runner.js';
 
 export type ComposerPlanCompilerPort = {
   compilePlan(input: CompilePlanInput): Promise<CompilePlanResult>;
   adjustPlan(
     input: CompilePlanInput & { existingPlanId: string }
   ): Promise<CompilePlanResult>;
+  runComposerTurn?(input: {
+    resourceId: string;
+    threadId: string;
+    runId: string;
+    actorId: string;
+    sessionRevision: number;
+    harnessReleaseId: string;
+    merchantMessage: string;
+    creationMode: 'customized' | 'free';
+    activeTaskRef: { taskId: string; workflowId: string };
+    approvedToolNames: string[];
+    authority: {
+      progressiveLevel: {
+        lens: 'copy' | 'note' | 'media' | 'image_text' | 'video';
+        carriers: Array<'copy' | 'note' | 'media'>;
+        includesPaidMediaExecution: boolean;
+        paidMediaUnitResources: string[];
+      };
+      knownFields: string[];
+      impactByKey: ReadonlyMap<string, 'rights' | 'facts' | 'fees'>;
+      authoritativeKeys: ReadonlySet<string>;
+    };
+  }): Promise<AgentTurnRunnerResult>;
 };
 
 export type ComposerPlanSessionOptions = {
   now?: () => string;
+  /** Production must never bypass the Session intent turn. */
+  requireSessionTurn?: boolean;
+  requireQuoteAuthority?: boolean;
+  quoteAuthority?: ComposerPlanQuoteAuthority;
   resolveHarnessReleaseId?: (
     submission: CreationSubmissionRecord
   ) => string | Promise<string>;
+};
+
+export type ComposerPlanQuoteAuthority = {
+  resolveCurrent(input: {
+    submission: CreationSubmissionRecord;
+  }): Promise<PlanCompilerQuoteResolution>;
+  reprice(input: {
+    submission: CreationSubmissionRecord;
+    merchantInstruction: string;
+    quantity: number;
+  }): Promise<PlanCompilerQuoteResolution>;
 };
 
 const COMPOSER_PLAN_HARNESS_RELEASE_ID = 'composer-plan-surface-v1';
@@ -44,6 +91,7 @@ export class ComposerPlanSessionCoordinator
   private readonly resolveHarnessReleaseId: (
     submission: CreationSubmissionRecord
   ) => string | Promise<string>;
+  private readonly quoteAuthority?: ComposerPlanQuoteAuthority;
 
   constructor(
     private readonly sessions: AgentSessionStore,
@@ -51,6 +99,13 @@ export class ComposerPlanSessionCoordinator
     private readonly compiler: ComposerPlanCompilerPort,
     options: ComposerPlanSessionOptions = {}
   ) {
+    if (options.requireSessionTurn && !compiler.runComposerTurn) {
+      throw new Error('Production Composer requires Session runTurn.');
+    }
+    if (options.requireQuoteAuthority && !options.quoteAuthority) {
+      throw new Error('Production Composer requires ProductQuote authority.');
+    }
+    this.quoteAuthority = options.quoteAuthority;
     this.now = options.now ?? (() => new Date().toISOString());
     this.resolveHarnessReleaseId =
       options.resolveHarnessReleaseId ??
@@ -110,6 +165,21 @@ export class ComposerPlanSessionCoordinator
         );
       }
       try {
+        const turnResult = await this.runIntentTurn({
+          submission,
+          threadId,
+          runId,
+          sessionRevision: started.thread.sessionRevision,
+          harnessReleaseId: started.run.harnessReleaseId,
+        });
+        if (this.compiler.runComposerTurn && !isCompilableTurn(turnResult)) {
+          await this.sessions.updateRunStatus({
+            resourceId,
+            runId,
+            status: 'waiting',
+          });
+          return { threadId, runId, makeReady: false };
+        }
         await this.compile({
           submission,
           threadId,
@@ -118,6 +188,9 @@ export class ComposerPlanSessionCoordinator
           previous: latest?.revision ?? null,
           harnessReleaseId: started.run.harnessReleaseId,
           now,
+          proposal: isCompilableTurn(turnResult)
+            ? turnResult.decision.action.proposal
+            : proposalFromSubmission(submission),
         });
       } catch (error) {
         if (
@@ -135,11 +208,26 @@ export class ComposerPlanSessionCoordinator
       }
     }
 
+    if (!submission.executionPlanFreeze) {
+      const compiled = await this.plans.getLatest(planId);
+      if (!compiled) {
+        throw new Error(`Composer plan ${planId} was not found after compile.`);
+      }
+      submission.executionPlanFreeze = compileFinalizeExecutionPlanFreeze({
+        result: compiled,
+        contextBundleId: submission.snapshot.briefContext.id,
+        contextRevision: String(submission.snapshot.briefContext.revision),
+        approvalBasis: approvalBasisForSubmission(submission.snapshot.lens),
+      });
+    }
+
     const currentRun = await this.sessions.getRun({ resourceId, runId });
-    if (
-      currentRun &&
-      (currentRun.status === 'running' || currentRun.status === 'waiting')
-    ) {
+    const makeReady =
+      !this.compiler.runComposerTurn ||
+      approvalBasisForSubmission(submission.snapshot.lens) ===
+        'policy_exempt_copy';
+    if (makeReady && currentRun &&
+      (currentRun.status === 'running' || currentRun.status === 'waiting')) {
       await this.sessions.updateRunStatus({
         resourceId,
         runId,
@@ -148,7 +236,255 @@ export class ComposerPlanSessionCoordinator
       });
     }
 
-    return { threadId, runId };
+    return { threadId, runId, makeReady };
+  }
+
+  async answerClarification(input: {
+    submission: CreationSubmissionRecord;
+    merchantAnswer: string;
+  }): Promise<ComposerAgentBinding> {
+    const answer = input.merchantAnswer.trim();
+    if (!answer) throw new Error('Clarification answer is required.');
+    const resourceId = input.submission.snapshot.workspaceId;
+    const runId = composerRunId(input.submission);
+    const run = await this.sessions.getRun({ resourceId, runId });
+    if (!run || run.status !== 'waiting') {
+      throw new Error('Composer clarification requires a waiting Session run.');
+    }
+    const thread = await this.sessions.getThread({
+      resourceId,
+      threadId: run.threadId,
+    });
+    if (!thread) throw new Error(`Composer Thread ${run.threadId} was not found.`);
+    const planId = composerPlanId(resourceId, run.threadId);
+    const turnResult = await this.runIntentTurn({
+      submission: input.submission,
+      threadId: run.threadId,
+      runId,
+      sessionRevision: thread.sessionRevision,
+      harnessReleaseId: run.harnessReleaseId,
+      merchantMessage: answer,
+    });
+    if (!isCompilableTurn(turnResult)) {
+      return { threadId: run.threadId, runId, makeReady: false };
+    }
+    await this.compile({
+      submission: input.submission,
+      threadId: run.threadId,
+      runSessionRevision: thread.sessionRevision,
+      planId,
+      previous: (await this.plans.getLatest(planId))?.revision ?? null,
+      proposal: turnResult.decision.action.proposal,
+      harnessReleaseId: run.harnessReleaseId,
+      now: this.now(),
+    });
+    return { threadId: run.threadId, runId, makeReady: false };
+  }
+
+  async completeExplicitStart(input: {
+    submission: CreationSubmissionRecord;
+    planRevision: number;
+  }): Promise<ComposerAgentBinding> {
+    const resourceId = input.submission.snapshot.workspaceId;
+    const runId = composerRunId(input.submission);
+    const run = await this.sessions.getRun({ resourceId, runId });
+    if (!run) throw new Error(`Composer Agent Run ${runId} was not found.`);
+    const planId = composerPlanId(resourceId, run.threadId);
+    const latest = await this.plans.getLatest(planId);
+    if (!latest || latest.revision.revision !== input.planRevision) {
+      throw new Error(
+        `Explicit start requires latest plan revision ${latest?.revision.revision ?? 'missing'}.`,
+      );
+    }
+    const freeze = input.submission.executionPlanFreeze;
+    if (
+      !freeze ||
+      freeze.planId !== latest.revision.planId ||
+      freeze.planRevision !== latest.revision.revision ||
+      freeze.approvalBasis !== 'merchant_confirmed' ||
+      freeze.quoteRef.id !== latest.revision.quoteRef.id ||
+      String(freeze.quoteRef.revision) !== String(latest.revision.quoteRef.revision)
+    ) {
+      throw new Error('Explicit start requires the exact durable latest plan freeze.');
+    }
+    const rightsSummary = latest.revision.rightsSummary as {
+      unauthorizedAssetIds?: unknown[];
+    };
+    const capabilitySummary = latest.revision.capabilitySummary as {
+      modelAvailable?: boolean;
+    };
+    const readiness = projectMarketingPlanReadiness({
+      revision: latest.revision,
+      facts: {
+        blocked: (rightsSummary.unauthorizedAssetIds?.length ?? 0) > 0,
+        modelUnavailable: capabilitySummary.modelAvailable === false,
+      },
+      now: this.now(),
+    });
+    if (readiness !== 'ready') {
+      throw new Error(`Explicit start denied because latest plan is ${readiness}.`);
+    }
+    if (
+      run.status !== 'running' &&
+      run.status !== 'waiting' &&
+      run.status !== 'completed'
+    ) {
+      throw new Error(`Composer Agent Run ${runId} cannot start from ${run.status}.`);
+    }
+    return { threadId: run.threadId, runId, makeReady: true };
+  }
+
+  async markExplicitStartCompleted(input: {
+    submission: CreationSubmissionRecord;
+  }): Promise<void> {
+    const resourceId = input.submission.snapshot.workspaceId;
+    const runId = composerRunId(input.submission);
+    const run = await this.sessions.getRun({ resourceId, runId });
+    if (run?.status === 'running' || run?.status === 'waiting') {
+      await this.sessions.updateRunStatus({
+        resourceId,
+        runId,
+        status: 'completed',
+        finishedAt: this.now(),
+      });
+    }
+  }
+
+  async revisePrepared(input: {
+    submission: CreationSubmissionRecord;
+    planRevision: number;
+    merchantInstruction: string;
+  }): Promise<ComposerAgentBinding> {
+    const resourceId = input.submission.snapshot.workspaceId;
+    const runId = composerRunId(input.submission);
+    const run = await this.sessions.getRun({ resourceId, runId });
+    if (!run || (run.status !== 'running' && run.status !== 'waiting')) {
+      throw new Error('Only a waiting Composer plan can be revised.');
+    }
+    const planId = composerPlanId(resourceId, run.threadId);
+    const latest = await this.plans.getLatest(planId);
+    if (!latest || latest.revision.revision !== input.planRevision) {
+      throw new Error(
+        `Plan revision conflict; latest is ${latest?.revision.revision ?? 'missing'}.`,
+      );
+    }
+    const instruction = input.merchantInstruction.trim();
+    if (!instruction) throw new Error('Plan revision instruction is required.');
+    const snapshot = input.submission.snapshot;
+    const patch = canonicalPlanPatchFromMerchantInstruction(instruction);
+    const quantity =
+      patch.deliverableQuantity ?? latest.revision.deliverables[0]?.quantity ?? 1;
+    const quoteResolutionHint = await this.quoteAuthority?.reprice({
+      submission: input.submission,
+      merchantInstruction: instruction,
+      quantity,
+    });
+    const result = await this.compiler.adjustPlan({
+      workspaceId: resourceId,
+      resourceId,
+      threadId: run.threadId,
+      planId,
+      existingPlanId: planId,
+      proposal: proposalFromSubmission(input.submission),
+      patch,
+      intentRevision: latest.revision.boundRevisions.intentRevision,
+      contextBundleId: snapshot.briefContext.id,
+      contextRevision: String(snapshot.briefContext.revision),
+      harnessReleaseId: run.harnessReleaseId,
+      quoteRefHint: snapshot.quote,
+      ...(quoteResolutionHint ? { quoteResolutionHint } : {}),
+      now: this.now(),
+      ...(input.submission.usageReservation.credits !== undefined
+        ? {
+            livingPlanBilling: {
+              creditCost: input.submission.usageReservation.credits,
+            },
+          }
+        : {}),
+    });
+    if (quoteResolutionHint) {
+      input.submission.snapshot = {
+        ...input.submission.snapshot,
+        quote: {
+          id: quoteResolutionHint.quoteRef.id,
+          revision: String(quoteResolutionHint.quoteRef.revision),
+        },
+      };
+      const creditCost = quoteResolutionHint.summary?.creditCost;
+      if (Number.isSafeInteger(creditCost) && (creditCost as number) > 0) {
+        input.submission.usageReservation.credits = creditCost as number;
+      }
+    }
+    input.submission.executionPlanFreeze = compileFinalizeExecutionPlanFreeze({
+      result,
+      contextBundleId: snapshot.briefContext.id,
+      contextRevision: String(snapshot.briefContext.revision),
+      approvalBasis: approvalBasisForSubmission(snapshot.lens),
+    });
+    return { threadId: run.threadId, runId, makeReady: false };
+  }
+
+  private runIntentTurn(input: {
+    submission: CreationSubmissionRecord;
+    threadId: string;
+    runId: string;
+    sessionRevision: number;
+    harnessReleaseId: string;
+    merchantMessage?: string;
+  }): Promise<AgentTurnRunnerResult | null> {
+    if (!this.compiler.runComposerTurn) return Promise.resolve(null);
+    const { submission } = input;
+    const snapshot = submission.snapshot;
+    const carrier = carrierForLens(snapshot.lens);
+    const paidResources = submission.usageReservation.units
+      .filter((unit) => unit.resource !== 'copy')
+      .map((unit) => unit.resource);
+    return this.compiler.runComposerTurn({
+      resourceId: snapshot.workspaceId,
+      threadId: input.threadId,
+      runId: input.runId,
+      actorId: snapshot.actorId,
+      sessionRevision: input.sessionRevision,
+      harnessReleaseId: input.harnessReleaseId,
+      merchantMessage: input.merchantMessage ?? snapshot.intent.text,
+      creationMode: snapshot.creationMode,
+      activeTaskRef: {
+        taskId: submission.task.id,
+        workflowId: submission.task.id,
+      },
+      approvedToolNames: [
+        'find_store_projects',
+        'read_confirmed_store_facts',
+        'find_authorized_assets',
+        'read_marketing_identity',
+        'read_recent_content',
+        'read_confirmed_experience',
+        'read_platform_requirements',
+        'read_model_capabilities',
+      ],
+      authority: {
+        progressiveLevel: {
+          lens: progressiveLens(snapshot.lens),
+          carriers: [carrier],
+          includesPaidMediaExecution: paidResources.length > 0,
+          paidMediaUnitResources: paidResources,
+        },
+        knownFields: [
+          'intent',
+          'platform',
+          'lens',
+          'identity',
+          'rights',
+          'quote',
+        ],
+        impactByKey: new Map([
+          ['rights', 'rights'],
+          ['price', 'facts'],
+          ['fees', 'fees'],
+        ]),
+        authoritativeKeys: new Set(['rights', 'price', 'fees']),
+      },
+    });
   }
 
   private async compile(input: {
@@ -157,20 +493,26 @@ export class ComposerPlanSessionCoordinator
     runSessionRevision: number;
     planId: string;
     previous: MarketingPlanRevision | null;
+    proposal?: PlanProposal;
     harnessReleaseId: string;
     now: string;
   }): Promise<void> {
     const snapshot = input.submission.snapshot;
+    const quoteResolutionHint = await this.quoteAuthority?.resolveCurrent({
+      submission: input.submission,
+    });
     const compileInput: CompilePlanInput = {
       workspaceId: snapshot.workspaceId,
       resourceId: snapshot.workspaceId,
       threadId: input.threadId,
       planId: input.planId,
-      proposal: proposalFromSubmission(input.submission),
+      proposal: input.proposal ?? proposalFromSubmission(input.submission),
       intentRevision: input.runSessionRevision,
       contextBundleId: snapshot.briefContext.id,
       contextRevision: String(snapshot.briefContext.revision),
       harnessReleaseId: input.harnessReleaseId,
+      quoteRefHint: snapshot.quote,
+      ...(quoteResolutionHint ? { quoteResolutionHint } : {}),
       now: input.now,
       ...(input.submission.usageReservation.credits !== undefined
         ? {
@@ -246,6 +588,20 @@ export function approvalBasisForSubmission(
   return lens === 'copy' ? 'policy_exempt_copy' : 'merchant_confirmed';
 }
 
+function isCompilableTurn(
+  result: AgentTurnRunnerResult | null,
+): result is AgentTurnRunnerResult & {
+  decision: NonNullable<AgentTurnRunnerResult['decision']> & {
+    action: { kind: 'propose_plan'; proposal: PlanProposal };
+  };
+} {
+  return (
+    Boolean(result) &&
+    !result!.systemOnlyBlock &&
+    result!.decision?.action.kind === 'propose_plan'
+  );
+}
+
 export function proposalFromSubmission(
   submission: CreationSubmissionRecord
 ): PlanProposal {
@@ -315,4 +671,20 @@ function composerRunId(submission: CreationSubmissionRecord): string {
 
 function composerPlanId(resourceId: string, threadId: string): string {
   return `plan_${fingerprintValue({ resourceId, threadId }).slice(0, 24)}`;
+}
+
+function carrierForLens(
+  lens: CreationSubmissionRecord['snapshot']['lens'],
+): 'copy' | 'note' | 'media' {
+  if (lens === 'copy') return 'copy';
+  if (lens === 'image_text_note') return 'note';
+  return 'media';
+}
+
+function progressiveLens(
+  lens: CreationSubmissionRecord['snapshot']['lens'],
+): 'copy' | 'note' | 'media' | 'image_text' | 'video' {
+  if (lens === 'image_text_note') return 'note';
+  if (lens === 'image') return 'media';
+  return lens;
 }

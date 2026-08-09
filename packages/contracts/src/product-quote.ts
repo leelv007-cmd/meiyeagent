@@ -139,6 +139,8 @@ export interface ProductQuoteSnapshot {
    */
   platformAbsorbedAmount?: number;
   createdAt?: string;
+  /** Server quote-authority validity window; consumers must not invent it. */
+  expiresAt?: string;
   confirmedAt?: string;
   reservedAt?: string;
   settledAt?: string;
@@ -364,4 +366,6 @@ export interface BuildProductQuoteInput {
   taskId?: string;
   /** Optional explicit ceiling override (defaults to computed confirmed amount). */
   authorizedCeiling?: number;
+  /** Absolute validity from ProductQuote authority. */
+  expiresAt?: string;
 }

@@ -527,6 +527,28 @@ test(
         workspaceId,
       });
       assert.equal(first.kind, "created");
+      const executionPlanFreeze = recoveryExecutionPlanFreeze(submission);
+      submission.executionPlanFreeze = executionPlanFreeze;
+      const frozen = await store.saveExecutionPlanFreeze({
+        workspaceId,
+        submissionId: submission.snapshot.id,
+        freeze: executionPlanFreeze,
+      });
+      assert.deepEqual(frozen.executionPlanFreeze, executionPlanFreeze);
+      const restartedStore = new PostgresCreationSubmissionStore(
+        pool,
+        new PostgresCreationSubmissionPersistence(
+          new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
+        ),
+      );
+      const recoveredAfterCrash = await restartedStore.readByTask({
+        workspaceId,
+        taskId: submission.task.id,
+      });
+      assert.deepEqual(
+        recoveredAfterCrash?.executionPlanFreeze,
+        executionPlanFreeze,
+      );
       const reservedQuote = await billingRepository.getQuote(
         workspaceId,
         quoteId,
@@ -884,14 +906,17 @@ test(
           WHERE workspace_id = $1 AND id = $2`,
         [workspaceId, submission.snapshot.id],
       );
+      const recoverable = (await store.listRecoverableHarnessStarts({ limit: 10 }))
+        .filter(
+          (candidate) => candidate.submission.snapshot.workspaceId === workspaceId,
+        );
       assert.deepEqual(
-        (await store.listRecoverableHarnessStarts({ limit: 10 }))
-          .filter(
-            (candidate) =>
-              candidate.submission.snapshot.workspaceId === workspaceId,
-          )
-          .map((candidate) => candidate.submission.snapshot.id),
+        recoverable.map((candidate) => candidate.submission.snapshot.id),
         [submission.snapshot.id],
+      );
+      assert.deepEqual(
+        recoverable[0]?.submission.executionPlanFreeze,
+        executionPlanFreeze,
       );
       if (leaseOne.kind !== "start") {
         throw new Error("Expected the initial Harness lease claim.");
@@ -1986,6 +2011,34 @@ test(
     }
   },
 );
+
+function recoveryExecutionPlanFreeze(
+  submission: CreationSubmissionRecord,
+): NonNullable<CreationSubmissionRecord['executionPlanFreeze']> {
+  return {
+    planId: `plan-${submission.task.id}` as never,
+    planRevision: 1,
+    intentDeclaration: { summary: submission.snapshot.intent.text },
+    contextBundleRef: {
+      bundleId: submission.snapshot.briefContext.id,
+      revision: submission.snapshot.briefContext.revision,
+      hash: 'context-freeze-hash',
+    },
+    executionPlan: {
+      schemaVersion: 'compiled-execution-plan/v1',
+      units: [{ unitId: 'unit-1' as never, unitType: 'copy.generate', primitive: 'generate' }],
+      dependencyGroups: [{ groupId: 'group-1', unitIds: ['unit-1' as never] }],
+      boundedRetry: {
+        'unit-1': { maxAttempts: 1, maxCostCents: 0, retry: { enabled: false } },
+      },
+    },
+    deliverables: [{ deliverableId: 'deliverable-1', kind: 'copy', quantity: 1 }],
+    quoteRef: submission.snapshot.quote,
+    rightsRevisionRefs: [submission.snapshot.rights.revision],
+    harnessReleaseId: 'release-recovery-1' as never,
+    approvalBasis: 'policy_exempt_copy',
+  };
+}
 
 function reserveRecord(
   workspaceId: string,

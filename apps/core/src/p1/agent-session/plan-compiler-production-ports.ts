@@ -55,34 +55,12 @@ export function createProductionPlanCompilerPorts(deps: {
   catalogRevisionId?: string;
   clock?: () => Date;
 }): PlanCompilerPorts {
-  const clock = deps.clock ?? (() => new Date());
-
   const quote: PlanCompilerQuotePort = {
     async resolveQuote(input) {
-      // Server-owned plan quote authority: fingerprint deliverables + release.
-      // Amounts stay in billing domain; compiler only stores quoteRef.
-      const revision = fingerprintValue({
-        workspaceId: input.workspaceId,
-        planId: input.planId,
-        planRevision: input.planRevision,
-        deliverables: input.deliverables,
-        harnessReleaseId: input.harnessReleaseId,
-      }).slice(0, 24);
-      return {
-        quoteRef: {
-          id: `plan-quote:${input.planId}`,
-          revision,
-        },
-        expiresAt: new Date(clock().getTime() + 60 * 60 * 1000).toISOString(),
-        summary: {
-          source: 'plan_compiler_quote_authority',
-          deliverableKinds: input.deliverables.map((item) => item.kind),
-          quantity: input.deliverables.reduce(
-            (sum, item) => sum + item.quantity,
-            0,
-          ),
-        },
-      };
+      if (!input.quoteResolutionHint) {
+        throw new Error('Plan compile requires a ProductQuote authority snapshot.');
+      }
+      return input.quoteResolutionHint;
     },
   };
 
@@ -118,16 +96,12 @@ export function createProductionPlanCompilerPorts(deps: {
           status: unauthorizedAssetIds.length > 0 ? 'partial' : 'resolved',
         },
         rightsRevisionIds: [`rights:${input.workspaceId}:${rightsFingerprint}`],
-        assetUsages: input.assetIntentions.map((intention, index) => ({
-          intention,
-          assetRef: knownAssetIds[index] ?? `intent:${index + 1}`,
-        })),
-        factUsages: input.factIntentions.map((intention, index) => ({
-          intention,
-          factRef: `fact-intent:${index + 1}`,
-        })),
-        // Compile stays open with partial rights; hard block is for total model unavailability.
-        blocked: false,
+        assetUsages: knownAssetIds.map((assetRef) => ({ assetRef })),
+        factUsages: input.factIntentions.map((factRef) => ({ factRef })),
+        // Rights are an execution authority, not a warning. Any unauthorized
+        // referenced asset makes readiness blocked until a new revision binds
+        // an authorized set.
+        blocked: unauthorizedAssetIds.length > 0,
       };
     },
   };

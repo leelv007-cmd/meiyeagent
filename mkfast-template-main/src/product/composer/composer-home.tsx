@@ -213,6 +213,7 @@ import {
   WorkbenchStickyComposerHost,
 } from './workbench-shell-layout';
 import { useWorkbenchViewportWidth } from './use-workbench-viewport-width';
+import { useLivingPlanController } from './use-living-plan-controller';
 import {
   AgentWorkbenchHost,
   loadAgentWorkbenchReplay,
@@ -697,6 +698,10 @@ export function ComposerHome({
   const [session, setSession] = useState<ComposerSession>(() =>
     createComposerSession(sessionIdRef.current)
   );
+  const livingPlanController = useLivingPlanController({
+    taskId: session.task?.taskId ?? initialTaskId ?? null,
+    focusIntent: focusComposerIntentInput,
+  });
   const [agentBinding, setAgentBinding] = useState<{
     runId: string;
     threadId: string;
@@ -3369,9 +3374,10 @@ export function ComposerHome({
                * otherwise session projection chooses Idle vs resume. processSlot
                * keeps Work inline projection (legacy conversation stream). */}
               <AgentWorkbenchHost
-                explicitTaskId={initialTaskId ?? null}
+                explicitTaskId={session.task?.taskId ?? initialTaskId ?? null}
                 explicitThreadId={activeAgentThreadId}
                 loadReplay={loadAgentWorkbenchReplay}
+                onLivingPlanCommitAction={livingPlanController.onCommitAction}
                 onPublishHandoffCopy={publishHandoff.onPublishHandoffCopy}
                 onPublishHandoffDownloadZip={
                   publishHandoff.onPublishHandoffDownloadZip
@@ -4001,7 +4007,15 @@ export function ComposerHome({
                   modelChannelReadiness={
                     selectedModel?.channelReadiness ?? null
                   }
-                  onSubmit={() => void attemptSubmit()}
+                  onSubmit={() => {
+                    if (
+                      !livingPlanController.submitRevision(
+                        lensState.draft.userText
+                      )
+                    ) {
+                      void attemptSubmit();
+                    }
+                  }}
                   onValueChange={handleIntentChange}
                   placeholder={
                     creationMode === 'free'

@@ -61,7 +61,10 @@ export interface ProductPricingCatalogPort {
 
 /** Resolves every money and policy fact from the current server catalog. */
 export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
-  constructor(private readonly catalog: ProductPricingCatalogPort) {}
+  constructor(
+    private readonly catalog: ProductPricingCatalogPort,
+    private readonly clock: () => Date = () => new Date(),
+  ) {}
 
   async resolve(
     input: PublicProductQuoteIntent,
@@ -130,6 +133,9 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
         'quantity must be an integer between 1 and 20.',
       );
     }
+    const expiresAt = new Date(
+      this.clock().getTime() + 60 * 60 * 1000,
+    ).toISOString();
     const billingMode = 'per_request' as const;
     const billableQuantity =
       input.operation === 'image.generate'
@@ -227,6 +233,7 @@ export class CatalogProductQuoteAuthority implements ProductQuoteAuthority {
         : {}),
       unitRate: creditCost,
       workspaceId: input.workspaceId,
+      expiresAt,
     };
   }
 }

@@ -7,6 +7,7 @@ import {
 	pickComposerSubmissionSignedFields,
 	type ContentPackage,
 	type DiagnosticRun,
+	type PlanConfirmationDecision,
 } from "@meiye/contracts";
 
 import type { DiagnosticRepository } from "../../diagnostics/repository.js";
@@ -25,6 +26,7 @@ import {
 	CreationSubmissionCoordinator,
 	type CreationSubmissionAdmissionPort,
 	type CreationSubmissionHarnessStarter,
+	type CreationSubmissionRecord,
 	type CreationSubmissionStore,
 	type CreationSubmissionStoreClaim,
 } from "./submission-coordinator.js";
@@ -850,6 +852,15 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		};
 	}
 
+	async readByTask(input: { workspaceId: string; taskId: string }) {
+		const claim = [...this.claims.values()].find(
+			(item) =>
+				item.workspaceId === input.workspaceId &&
+				item.submission.task.id === input.taskId,
+		);
+		return claim ? structuredClone(claim.submission) : null;
+	}
+
 	async claim(input: CreationSubmissionStoreClaim) {
 		const key = `${input.workspaceId}:${input.idempotencyKey}`;
 		const existing = this.claims.get(key);
@@ -868,6 +879,21 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 			kind: "existing" as const,
 			submission: structuredClone(existing.submission),
 		};
+	}
+
+	async saveExecutionPlanFreeze(input: {
+		workspaceId: string;
+		submissionId: string;
+		freeze: CreationSubmissionRecord["executionPlanFreeze"];
+	}) {
+		const claim = [...this.claims.values()].find(
+			(candidate) =>
+				candidate.workspaceId === input.workspaceId &&
+				candidate.submission.snapshot.id === input.submissionId,
+		);
+		if (!claim || !input.freeze) throw new Error("Submission freeze target missing.");
+		claim.submission.executionPlanFreeze = structuredClone(input.freeze);
+		return structuredClone(claim.submission);
 	}
 
 	async claimHarnessStart(input: {
@@ -1003,6 +1029,91 @@ test("Composer returns authoritative Agent binding and treats the Thread hint ou
 	assert.equal(replayed.replayed, true);
 	assert.equal(replayed.threadId, "thread-authoritative");
 	assert.deepEqual(continuationHints, ["thread-browser-a", "thread-browser-b"]);
+});
+
+test("paid Composer plan waits until exact explicit start before dispatching Make", async () => {
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	let completed = 0;
+	let revised = 0;
+	let confirmationDecisions = 0;
+	let immutableDecision: PlanConfirmationDecision | null = null;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				input.submission.executionPlanFreeze = {
+					approvalBasis: "merchant_confirmed",
+				} as never;
+				return { threadId: "thread-wait", runId: "run-wait", makeReady: false };
+			},
+			async completeExplicitStart(input) {
+				assert.equal(input.planRevision, 2);
+				return { threadId: "thread-wait", runId: "run-wait", makeReady: true };
+			},
+			async markExplicitStartCompleted() {
+				completed += 1;
+			},
+			async revisePrepared(input) {
+				assert.equal(input.planRevision, 1);
+				assert.equal(input.merchantInstruction, "减到 4 页");
+				revised += 1;
+				return { threadId: "thread-wait", runId: "run-wait", makeReady: false };
+			},
+		},
+		{
+			async getDecision() {
+				return immutableDecision;
+			},
+			async decide(input) {
+				assert.equal(input.requestId, `confirmation:${createdTaskId}`);
+				confirmationDecisions += 1;
+				immutableDecision = {
+						schemaVersion: "plan-confirmation-decision/v1",
+						...input,
+					} as PlanConfirmationDecision;
+				return { decision: immutableDecision };
+			},
+		},
+	);
+	let createdTaskId = "";
+	const created = await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	createdTaskId = created.task.id;
+	assert.equal(created.makeReady, false);
+	assert.equal(harness.starts.length, 0);
+	await coordinator.revisePrepared({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		planRevision: 1,
+		merchantInstruction: "减到 4 页",
+	});
+	assert.equal(revised, 1);
+	assert.equal(harness.starts.length, 0);
+
+	const started = await coordinator.startPrepared({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		planRevision: 2,
+	});
+	assert.equal(started.makeReady, true);
+	assert.equal(harness.starts.length, 1);
+	assert.equal(confirmationDecisions, 1);
+	assert.equal(completed, 1);
+	await coordinator.startPrepared({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		planRevision: 2,
+	});
+	assert.equal(harness.starts.length, 1);
+	assert.equal(confirmationDecisions, 1);
 });
 
 test("a failed Harness start releases the same submission for an idempotent retry", async () => {

@@ -40,6 +40,7 @@ import {
   type AgentTurnRunnerResult,
   type ReleaseControlLimitsSource,
 } from './turn-runner.js';
+import { canonicalPlanPatchFromMerchantInstruction } from './turn-contracts.js';
 import type {
   CreateExecutionConfirmationInput,
   CreateExecutionConfirmationResult,
@@ -66,7 +67,10 @@ export type AgentSessionHarnessServiceOptions = {
    * Factory so each turn can close over fresh knownFields / call counters.
    * When omitted, `policies` static list is used.
    */
-  createPolicies?: (input: AgentTurnInput) => readonly RegisteredPolicy[];
+  createPolicies?: (
+    input: AgentTurnInput,
+    authority?: ServerOwnedTurnAuthority,
+  ) => readonly RegisteredPolicy[];
   policies?: readonly RegisteredPolicy[];
   contextSource?:
     | ModelContextSource
@@ -98,6 +102,32 @@ export type AgentSessionHarnessServiceOptions = {
    * Bound from production assembly onto the Session confirmation path.
    */
   executionConfirmation?: ExecutionConfirmationService;
+};
+
+/**
+ * Internal-only projection used by production adapters. It is deliberately
+ * outside AgentTurnInput so a browser/model cannot supply level, known-field,
+ * or high-risk authority.
+ */
+export type ServerOwnedTurnAuthority = {
+  progressiveLevel: Omit<ProgressiveLevelInput, 'merchantMessage'>;
+  knownFields: readonly string[];
+  impactByKey?: ReadonlyMap<string, import('./ambiguity-policy.js').ImpactCategory>;
+  authoritativeKeys?: ReadonlySet<string>;
+};
+
+export type ComposerSessionTurnInput = {
+  resourceId: string;
+  threadId: string;
+  runId: string;
+  actorId: string;
+  sessionRevision: number;
+  harnessReleaseId: string;
+  merchantMessage: string;
+  creationMode: 'customized' | 'free';
+  activeTaskRef: { taskId: string; workflowId: string };
+  approvedToolNames: string[];
+  authority: ServerOwnedTurnAuthority;
 };
 
 export class AgentSessionHarnessService {
@@ -166,6 +196,28 @@ export class AgentSessionHarnessService {
     return this.requirePlanCompiler().adjust(input);
   }
 
+  /**
+   * Public coordination seam for commit-strip/steering revisions. Callers
+   * provide their server-owned compile context and merchant instruction; this
+   * method owns the canonical patch shape and append-only adjustment.
+   */
+  async revisePlanFromMerchantInstruction(
+    input: CompilePlanInput & {
+      existingPlanId: string;
+      merchantInstruction: string;
+    },
+  ): Promise<CompilePlanResult> {
+    const instruction = input.merchantInstruction.trim();
+    if (!instruction) {
+      throw new Error('Plan revision requires a merchant instruction.');
+    }
+    const { merchantInstruction: _merchantInstruction, ...compile } = input;
+    return this.requirePlanCompiler().adjust({
+      ...compile,
+      patch: canonicalPlanPatchFromMerchantInstruction(instruction),
+    });
+  }
+
   private requirePlanCompiler(): PlanCompiler {
     if (!this.planCompiler) {
       throw new Error(
@@ -188,10 +240,11 @@ export class AgentSessionHarnessService {
     resourceId: string;
     readOnly?: boolean;
     turn?: AgentTurnInput;
+    authority?: ServerOwnedTurnAuthority;
   }): AgentTurnRunner {
     const policies =
       input.turn && this.options.createPolicies
-        ? this.options.createPolicies(input.turn)
+        ? this.options.createPolicies(input.turn, input.authority)
         : this.options.policies;
     const toolRegistry =
       input.turn && this.options.createToolRegistry
@@ -215,6 +268,52 @@ export class AgentSessionHarnessService {
       forceConfirmationKillSwitch: this.options.forceConfirmationKillSwitch,
       billingQuotePort: this.options.billingQuotePort,
       billingBalancePort: this.options.billingBalancePort,
+      ...(input.authority
+        ? {
+            resolveLevelInput: (turn: AgentTurnInput) => ({
+              merchantMessage: turn.merchantMessage,
+              ...input.authority!.progressiveLevel,
+            }),
+          }
+        : {}),
+    });
+  }
+
+  /** Production Composer seam: structured authority enters before PlanCompiler. */
+  async runComposerTurn(
+    input: ComposerSessionTurnInput,
+  ): Promise<AgentTurnRunnerResult> {
+    const turn: AgentTurnInput = {
+      threadId: input.threadId,
+      runId: input.runId,
+      workspaceId: input.resourceId,
+      actorId: input.actorId,
+      phase: 'intent',
+      merchantMessage: input.merchantMessage,
+      proactiveMode: 'balanced',
+      creationMode: input.creationMode,
+      sessionRevision: input.sessionRevision,
+      activeTaskRef: input.activeTaskRef,
+      approvedToolNames: [...input.approvedToolNames],
+      // Parsed for shape only. AgentTurnRunner replaces it with the exact
+      // HarnessRelease control limits before model/tool execution.
+      limits: {
+        maxLlmSteps: 1,
+        maxToolCalls: 1,
+        maxRetrievalCalls: 1,
+        maxMerchantQuestions: 1,
+        maxReplans: 0,
+        maxSchemaRepairs: 0,
+        maxContextTokens: 1,
+        maxDelegations: 0,
+      },
+      harnessReleaseId: input.harnessReleaseId,
+    };
+    return this.runTurn({
+      resourceId: input.resourceId,
+      readOnly: true,
+      turn,
+      authority: input.authority,
     });
   }
 
@@ -222,6 +321,8 @@ export class AgentSessionHarnessService {
     resourceId: string;
     turn: unknown;
     readOnly?: boolean;
+    /** Internal production authority; never accepted from an HTTP payload. */
+    authority?: ServerOwnedTurnAuthority;
   }): Promise<AgentTurnRunnerResult> {
     // Per-turn factories need a parsed turn before constructing the runner.
     if (this.options.createPolicies || this.options.createToolRegistry) {
@@ -230,12 +331,14 @@ export class AgentSessionHarnessService {
         resourceId: input.resourceId,
         readOnly: input.readOnly,
         turn,
+        authority: input.authority,
       });
       return runner.run(turn);
     }
     const runner = this.createTurnRunner({
       resourceId: input.resourceId,
       readOnly: input.readOnly,
+      authority: input.authority,
     });
     return runner.run(input.turn);
   }

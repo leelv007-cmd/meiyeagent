@@ -31,6 +31,8 @@ import {
   type CreationExecutionSnapshot,
 } from '../execution-spine/creation-execution-snapshot.js';
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
+import type { CreateExecutionConfirmationInput } from '../agent-session/execution-confirmation-service.js';
+import { creditUsageOperationId } from '../credit-billing/credit-ledger.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { RouteSnapshot } from '../model-supply/index.js';
 import { serverAuditReference } from '../creation-experience/creation-experience-events.js';
@@ -38,9 +40,14 @@ import type { ResolvedSkillInstruction } from '../skills/types.js';
 import type {
   ExecutionPlanAdmissionPort,
   ExecutionPlanCompileFreeze,
+  PendingExecutionPlanSnapshot,
   SnapshotLiveFacts,
 } from './execution-plan-admission.js';
-import { assembleExecutionPlanSnapshot } from './execution-plan-admission.js';
+import {
+  assembleExecutionPlanSnapshot,
+  assemblePendingExecutionPlanSnapshot,
+} from './execution-plan-admission.js';
+import { executionConfirmationRequestId } from './execution-confirmation-id.js';
 import {
   HARNESS_CORE_PROMPT_KEYS,
   harnessPromptCapabilityRequirement,
@@ -94,6 +101,14 @@ export interface HarnessWorkflowInput {
    * writes the ExecutionPlanSnapshot row (sole writer). Absent ⇒ legacy replay.
    */
   executionPlanSnapshot?: ExecutionPlanSnapshot;
+  /** Durable frozen content while a paid Work waits for its immutable decision. */
+  pendingExecutionPlanSnapshot?: PendingExecutionPlanSnapshot;
+  /** Campaign Works carry the full U7 triple and never inherit plan approval. */
+  executionConfirmationContext?: {
+    campaignPlanRef: { id: string; revision: number | string };
+    workOrdinal: number;
+    approvalScope: 'single_work';
+  };
   /**
    * V31-12 compile-finalize freeze produced by the Composer plan session.
    * Submit-input only: normalizeRequest strips it before the durable request,
@@ -320,6 +335,9 @@ export class HarnessTaskAdmissionService {
      * Required when submit carries executionPlanSnapshot; absent skips write.
      */
     private readonly executionPlanAdmission?: ExecutionPlanAdmissionPort,
+    private readonly executionConfirmation?: {
+      createRequest(input: CreateExecutionConfirmationInput): Promise<unknown>;
+    },
   ) {}
 
   async submit(input: HarnessTaskRequest) {
@@ -341,6 +359,13 @@ export class HarnessTaskAdmissionService {
       request: normalized,
     });
     if (existing) {
+      if (existing.kind === 'existing') {
+        if (!existing.request) return this.resumeExisting(existing);
+        await this.ensurePendingExecutionConfirmation(
+          input.taskId,
+          existing.request,
+        );
+      }
       return this.resumeExisting(existing);
     }
     const limits = boundedExecutionLimitsSchema.parse(
@@ -421,9 +446,9 @@ export class HarnessTaskAdmissionService {
     );
     // V31-12 producer seam: assemble the full snapshot from the compile-finalize
     // freeze plus the harness fields resolved above, then one-shot admit it.
-    // policy_exempt_copy (pure copy, U9) closes end-to-end here; merchant_confirmed
-    // requires confirmationDecisionRef, which the confirmation side (V31-11)
-    // supplies once wired — until then it stays on the legacy replay branch.
+    // Pure copy is admitted immediately. Paid media carries the same frozen
+    // content/hash into a reserve-backed pending request; the immutable decision
+    // is attached by the confirmation gate before Make begins.
     if (!request.executionPlanSnapshot && input.executionPlanFreeze) {
       const freeze = input.executionPlanFreeze;
       if (freeze.approvalBasis === 'policy_exempt_copy') {
@@ -458,6 +483,24 @@ export class HarnessTaskAdmissionService {
           ...request,
           executionPlanSnapshot: admitted.admitted.snapshot,
         };
+      } else {
+        const pendingExecutionPlanSnapshot =
+          assemblePendingExecutionPlanSnapshot({
+            freeze,
+            promptRevisionRefs: promptRevisionRefsForSnapshot(
+              request.promptRevisionRefs,
+            ),
+            skillManifestRefs: skillManifestRefsFromStages(skillStages),
+            routeRequirements: capabilityRequirementsFromAxes([
+              ...primaryTaskCapabilityRequirements(normalized.executionSnapshot!),
+              ...skillCapabilityRequirements(selectedSkillStages),
+            ]),
+            factRevisionRefs: factRevisionRefsFromSnapshot(
+              normalized.executionSnapshot!,
+            ),
+            boundedExecution,
+          });
+        request = { ...request, pendingExecutionPlanSnapshot };
       }
     }
     if (
@@ -489,8 +532,11 @@ export class HarnessTaskAdmissionService {
       );
     }
     if (claim.kind === 'existing') {
+      if (!claim.request) return this.resumeExisting(claim);
+      await this.ensurePendingExecutionConfirmation(input.taskId, claim.request);
       return this.resumeExisting(claim);
     }
+    await this.ensurePendingExecutionConfirmation(input.taskId, request);
     await this.recordExecutionAssemblyAudit(request, [
       'manifest_resolution',
       'hot_assembly',
@@ -503,6 +549,47 @@ export class HarnessTaskAdmissionService {
       request,
     });
     return { workflowId: handle.workflowId, replayed: false as const };
+  }
+
+  private async ensurePendingExecutionConfirmation(
+    workflowId: string,
+    request: HarnessWorkflowInput,
+  ): Promise<void> {
+    if (!request.pendingExecutionPlanSnapshot) return;
+    const create = this.executionConfirmation?.createRequest;
+    const pending = request.pendingExecutionPlanSnapshot;
+    const snapshot = request.executionSnapshot;
+    const credits = request.usageReservation?.credits;
+    if (!create || !pending || !snapshot) {
+      throw new HarnessAdmissionError(
+        'FROZEN_REQUEST_MISSING',
+        'Paid execution requires the confirmation writer and durable plan freeze.',
+      );
+    }
+    if (!Number.isSafeInteger(credits) || (credits ?? 0) <= 0) {
+      throw new HarnessAdmissionError(
+        'FROZEN_REQUEST_MISSING',
+        'Paid execution requires a positive server-owned credit quote.',
+      );
+    }
+    const createdAt = new Date().toISOString();
+    await create({
+      requestId: executionConfirmationRequestId(workflowId),
+      workspaceId: request.workspaceId,
+      planId: pending.content.planId,
+      planRevision: pending.content.planRevision,
+      snapshotHash: pending.snapshotHash,
+      quoteRef: pending.content.quoteRef,
+      reservationIdempotencyKey: creditUsageOperationId(snapshot.task.id),
+      createdAt,
+      holdExpiresAt: new Date(
+        Date.parse(createdAt) + 48 * 60 * 60 * 1000,
+      ).toISOString(),
+      actorId: request.actorId,
+      creditCost: credits!,
+      failureRefundsCredits: true,
+      ...(request.executionConfirmationContext ?? {}),
+    });
   }
 
   private async selectSkillManifests(
@@ -987,6 +1074,8 @@ function normalizeRequest(
     executionSnapshot,
     usageReservation,
     executionPlanSnapshot,
+    executionConfirmationContext,
+    pendingExecutionPlanSnapshot,
     executionPlanLiveFacts: _executionPlanLiveFacts,
     executionPlanFreeze: _executionPlanFreeze,
     ...request
@@ -1009,6 +1098,8 @@ function normalizeRequest(
         decisionReferences,
       ),
       ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
+      ...(pendingExecutionPlanSnapshot ? { pendingExecutionPlanSnapshot } : {}),
+      ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
     };
   }
   return {
@@ -1024,6 +1115,8 @@ function normalizeRequest(
     factScope: parsed.factScope ?? { storeId: parsed.workspaceId },
     ...(parsed.reuseSeed ? { reuseSeed: parsed.reuseSeed } : {}),
     ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
+    ...(pendingExecutionPlanSnapshot ? { pendingExecutionPlanSnapshot } : {}),
+    ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
   };
 }
 

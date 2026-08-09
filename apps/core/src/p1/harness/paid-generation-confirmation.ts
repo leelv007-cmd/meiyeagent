@@ -153,6 +153,14 @@ export async function confirmPaidGenerationExecution(
     if (!snapshot) {
       return request;
     }
+    if (request.pendingExecutionPlanSnapshot) {
+      const existingDecision = await input.getExecutionConfirmationDecision?.(
+        executionConfirmationRequestId(input.workflowId),
+      );
+      if (existingDecision?.decision === 'confirmed') {
+        return admitConfirmedExecutionPlan(input, request);
+      }
+    }
     const question = questionCardSchema.parse({
       questionId: `execution-confirmation:${snapshot.id}`,
       workflowId: input.workflowId,

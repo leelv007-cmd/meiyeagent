@@ -1,11 +1,13 @@
 import {
 	pickComposerSubmissionSignedFields,
 	structuredDecisionInputSchema,
+	type PlanConfirmationDecision,
 	type ResultAdjustTextSelectionScope,
 	type StructuredDecisionInput,
 } from "@meiye/contracts";
 
 import { fingerprintValue } from "../job-runtime/job-contracts.js";
+import { executionConfirmationRequestId } from "../harness/execution-confirmation-id.js";
 import { selectImageIntentOperation } from "../harness/image-intent-compiler.js";
 import type { ExecutionPlanCompileFreeze } from "../harness/execution-plan-admission.js";
 import type { HarnessWorkflowInput } from "../harness/task-admission.js";
@@ -35,12 +37,11 @@ export interface CreationSubmissionRecord {
 		units: CreationSubmissionUsageUnit[];
 	};
 	/**
-	 * V31-12 compile-finalize freeze, written in-memory by the Composer plan
-	 * session after compile and consumed by the Harness admission path. Not
-	 * part of the durable submission payload; replays reconstruct the same
-	 * snapshot from the frozen harness request.
+	 * V31-12 compile-finalize freeze persisted with the durable submission so a
+	 * restarted worker can reconstruct the exact merchant-confirmed plan.
 	 */
 	executionPlanFreeze?: ExecutionPlanCompileFreeze;
+	executionConfirmationContext?: HarnessWorkflowInput["executionConfirmationContext"];
 }
 
 export interface CreationSubmissionUsageUnit {
@@ -61,6 +62,10 @@ export interface CreationSubmissionStoreClaim {
 }
 
 export interface CreationSubmissionStore {
+	readByTask?(input: {
+		workspaceId: string;
+		taskId: string;
+	}): Promise<CreationSubmissionRecord | null>;
 	readReceipt(input: {
 		workspaceId: string;
 		idempotencyKey: string;
@@ -77,6 +82,13 @@ export interface CreationSubmissionStore {
 		| { kind: "existing"; submission: CreationSubmissionRecord }
 		| { kind: "conflict" }
 	>;
+	saveExecutionPlanFreeze(input: {
+		workspaceId: string;
+		submissionId: string;
+		freeze: ExecutionPlanCompileFreeze;
+		quoteRef?: CreationSubmissionRecord["snapshot"]["quote"];
+		credits?: number;
+	}): Promise<CreationSubmissionRecord>;
 	/**
 	 * Separately leases the one external Harness start after the submission
 	 * transaction has committed. A retry can reclaim a released lease without
@@ -132,6 +144,8 @@ export interface CreationSubmissionIdFactory {
 export type ComposerAgentBinding = {
 	threadId: string;
 	runId: string;
+	/** False while a paid Living Plan waits for an explicit merchant start. */
+	makeReady?: boolean;
 };
 
 /** Composer → Agent Session/Plan seam. Web never projects plan events. */
@@ -140,6 +154,33 @@ export interface ComposerSubmissionAgentPlanningPort {
 		continuationThreadId?: string;
 		submission: CreationSubmissionRecord;
 	}): Promise<ComposerAgentBinding>;
+	completeExplicitStart?(input: {
+		submission: CreationSubmissionRecord;
+		planRevision: number;
+	}): Promise<ComposerAgentBinding>;
+	markExplicitStartCompleted?(input: {
+		submission: CreationSubmissionRecord;
+	}): Promise<void>;
+	revisePrepared?(input: {
+		submission: CreationSubmissionRecord;
+		planRevision: number;
+		merchantInstruction: string;
+	}): Promise<ComposerAgentBinding>;
+	answerClarification?(input: {
+		submission: CreationSubmissionRecord;
+		merchantAnswer: string;
+	}): Promise<ComposerAgentBinding>;
+}
+
+export interface ComposerExplicitConfirmationPort {
+	getDecision(requestId: string): Promise<PlanConfirmationDecision | null>;
+	decide(input: {
+		decisionId: string;
+		requestId: string;
+		actorId: string;
+		decision: "confirmed";
+		decidedAt: string;
+	}): Promise<{ decision: PlanConfirmationDecision }>;
 }
 
 export interface CreationSubmissionAdmissionPort {
@@ -205,7 +246,8 @@ export class CreationSubmissionCoordinator {
 			ProductBillingApplicationPort,
 			"buildQuote" | "confirm" | "getQuote"
 		>,
-		private readonly agentPlanning?: ComposerSubmissionAgentPlanningPort
+		private readonly agentPlanning?: ComposerSubmissionAgentPlanningPort,
+		private readonly explicitConfirmations?: ComposerExplicitConfirmationPort
 	) {}
 
 	async prepareResultTextSelection(input: {
@@ -216,6 +258,106 @@ export class CreationSubmissionCoordinator {
 			throw new Error("Result text-selection admission is unavailable.");
 		}
 		return this.admission.prepareResultTextSelection(input);
+	}
+
+	async startPrepared(input: {
+		workspaceId: string;
+		taskId: string;
+		planRevision: number;
+	}) {
+		if (!this.store.readByTask || !this.agentPlanning?.completeExplicitStart) {
+			throw new Error("Explicit Composer plan start is unavailable.");
+		}
+		const submission = await this.store.readByTask({
+			workspaceId: input.workspaceId,
+			taskId: input.taskId,
+		});
+		if (!submission) throw new Error("Prepared Composer task was not found.");
+		if (
+			!submission.executionPlanFreeze ||
+			submission.executionPlanFreeze.approvalBasis !== "merchant_confirmed"
+		) {
+			throw new Error(
+				"Paid Composer start requires a durable merchant-confirmed plan freeze.",
+			);
+		}
+		if (!this.explicitConfirmations) {
+			throw new Error("Paid Composer start requires confirmation authority.");
+		}
+		const binding = await this.agentPlanning.completeExplicitStart({
+			submission,
+			planRevision: input.planRevision,
+		});
+		await this.startHarness(submission);
+		const requestId = executionConfirmationRequestId(submission.task.id);
+		let decision = await this.explicitConfirmations.getDecision(requestId);
+		if (!decision) {
+			decision = (
+				await this.explicitConfirmations.decide({
+					decisionId: `decision:${submission.task.id}:merchant-confirmed`,
+					requestId,
+					actorId: submission.snapshot.actorId,
+					decision: "confirmed",
+					decidedAt: this.ids.now(),
+				})
+			).decision;
+		}
+		if (decision.decision !== "confirmed") {
+			throw new Error("Paid Composer start requires an immutable confirmed decision.");
+		}
+		await this.agentPlanning.markExplicitStartCompleted?.({ submission });
+		return submissionResponse(submission, true, {
+			...binding,
+			makeReady: true,
+		});
+	}
+
+	async revisePrepared(input: {
+		workspaceId: string;
+		taskId: string;
+		planRevision: number;
+		merchantInstruction: string;
+	}) {
+		if (
+			!this.store.readByTask ||
+			(!this.agentPlanning?.revisePrepared &&
+				!this.agentPlanning?.answerClarification)
+		) {
+			throw new Error("Composer plan revision is unavailable.");
+		}
+		const submission = await this.store.readByTask({
+			workspaceId: input.workspaceId,
+			taskId: input.taskId,
+		});
+		if (!submission) throw new Error("Prepared Composer task was not found.");
+		if (!submission.executionPlanFreeze) {
+			if (!this.agentPlanning.answerClarification) {
+				throw new Error("Composer clarification answer is unavailable.");
+			}
+			return this.agentPlanning.answerClarification({
+				submission,
+				merchantAnswer: input.merchantInstruction,
+			});
+		}
+		if (!this.agentPlanning.revisePrepared) {
+			throw new Error("Composer plan revision is unavailable.");
+		}
+		const binding = await this.agentPlanning.revisePrepared({
+			submission,
+			planRevision: input.planRevision,
+			merchantInstruction: input.merchantInstruction,
+		});
+		if (!submission.executionPlanFreeze) {
+			throw new Error("Revised Composer plan did not produce a durable freeze.");
+		}
+		await this.store.saveExecutionPlanFreeze({
+			workspaceId: input.workspaceId,
+			submissionId: submission.snapshot.id,
+			freeze: submission.executionPlanFreeze,
+			quoteRef: submission.snapshot.quote,
+			credits: submission.usageReservation.credits,
+		});
+		return binding;
 	}
 
 	async submit(input: ComposerSubmissionRequest) {
@@ -234,7 +376,9 @@ export class CreationSubmissionCoordinator {
 				receipt.submission,
 				request.agentThreadId
 			);
-			await this.startHarness(receipt.submission);
+			if (agentBinding?.makeReady !== false) {
+				await this.startHarness(receipt.submission);
+			}
 			return submissionResponse(receipt.submission, true, agentBinding);
 		}
 
@@ -300,7 +444,9 @@ export class CreationSubmissionCoordinator {
 			claimed.submission,
 			request.agentThreadId
 		);
-		await this.startHarness(claimed.submission);
+		if (agentBinding?.makeReady !== false) {
+			await this.startHarness(claimed.submission);
+		}
 		return submissionResponse(
 			claimed.submission,
 			claimed.kind === "existing",
@@ -308,15 +454,26 @@ export class CreationSubmissionCoordinator {
 		);
 	}
 
-	private prepareAgentPlan(
+	private async prepareAgentPlan(
 		submission: CreationSubmissionRecord,
 		continuationThreadId?: string
 	): Promise<ComposerAgentBinding | undefined> {
 		if (!this.agentPlanning) return Promise.resolve(undefined);
-		return this.agentPlanning.prepare({
+		const binding = await this.agentPlanning.prepare({
 			...(continuationThreadId ? { continuationThreadId } : {}),
 			submission,
 		});
+		if (submission.executionPlanFreeze) {
+			const persisted = await this.store.saveExecutionPlanFreeze({
+				workspaceId: submission.snapshot.workspaceId,
+				submissionId: submission.snapshot.id,
+				freeze: submission.executionPlanFreeze,
+				quoteRef: submission.snapshot.quote,
+				credits: submission.usageReservation.credits,
+			});
+			submission.executionPlanFreeze = persisted.executionPlanFreeze;
+		}
+		return binding;
 	}
 
 	async submitResultAdjustment(input: {
@@ -780,7 +937,11 @@ function submissionResponse(
 	return {
 		contentPackage: submission.contentPackage,
 		...(agentBinding
-			? { threadId: agentBinding.threadId, runId: agentBinding.runId }
+			? {
+					threadId: agentBinding.threadId,
+					runId: agentBinding.runId,
+					makeReady: agentBinding.makeReady !== false,
+				}
 			: {}),
 		replayed,
 		snapshot: {
