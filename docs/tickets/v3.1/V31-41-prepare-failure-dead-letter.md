@@ -20,7 +20,7 @@
 
 ## 证据（行号为 `codex/v31-s0-live` @ `319ea3922` 亲验态）
 
-> 派件时给的行号与本分支不符，已逐条核实更正；结论与机制**完全成立**，仅锚点位移。更正对照表见文末「引证更正」。
+> 派件锚点出自 T4 树，本节锚点出自 S0 树；**两套都成立，差的只是署树**（已只读核对 T4 树坐实）。结论与机制**完全成立**。两树对照与署树协议见文末「锚点对照」。
 
 ### ① 计数器只在 start 侧自增，prepare 失败走不到
 
@@ -95,13 +95,15 @@
 | 运营信号带 submissionId/原因 | | | |
 | Core 受影响套件（一次性 PG 库） | | | |
 
-## 引证更正（派件锚点 → 本分支实测锚点）
+## 锚点对照（两树，非错号）
 
-派件所给行号均不匹配本分支；机制与结论逐条成立，仅锚点位移。实施时以符号定位为准，勿信行号。
+派件锚点出自 **T4 树** `codex/v31-fix-memory-outcome`（review-memory 在该树复核）；本票锚点出自 **S0 树** `codex/v31-s0-live` @ `319ea3922`。**两套行号都成立，差的只是署树**——已只读核对 T4 树坐实：该树 `claimHarnessStart` 起 `:609`、自增在 `:648`，`:642-651` 确在其内。机制与结论逐条成立。
 
-| 派件锚点 | 本分支实测 |
+**协议（2026-08-09 立）：跨 lane 传递的任何 `file:line` 锚必须署树（worktree 名或 commit SHA）。** 实施 lane 认本票面锚＝认 S0 树；换树先重新定位符号，勿信裸行号。
+
+| T4 树锚（派件） | S0 树锚（本票） |
 |---|---|
-| `postgres-creation-submission-store.ts:642-651`（attempts 自增） | `:743`；方法 `claimHarnessStart` 起 `:690`。`:642-651` 落在 `claimSemanticDecisionResumption`（起 `:592`），与本缺口无关 |
+| `postgres-creation-submission-store.ts:642-651`（attempts 自增，方法起 `:609`） | `:743`；方法 `claimHarnessStart` 起 `:690`。注意 S0 树的 `:642-651` 落在 `claimSemanticDecisionResumption`（起 `:592`）——同一组数字在两树指向不同函数，这正是必须署树的原因 |
 | `api-runtime.ts:1662-1666`（补偿扫描 / `HARNESS_COMPENSATION_POLL_MS ?? 1000`） | 文件为 `apps/core/src/assembly/api-runtime.ts`；poll 常量在 `:1061`、`:1740`、`:1817`；poller 体 `:1718-1741` |
 | `submission-coordinator.ts:659-679`（`prepareAgentPlan` 重入） | `recoverPendingStarts` 起 `:727`，重入在 `:734`，裸 catch 在 `:736-738` |
 | `:759-765`（`classifyStartFailure→terminal_rejection→harness_state='failed'`） | 协调器 `:789-802`（分类 `:793`、判定 `:797`、`failHarnessStart` `:799`）；落库在 store `:939-948`；被读取在协调器 `:775-777` |
