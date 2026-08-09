@@ -21,6 +21,7 @@ import {
   type ExecutionPlanSnapshot,
   type NotePlan,
   type NoteStyleCandidates,
+  type PlanMemoryContext,
 } from '@meiye/contracts';
 
 import type { IntentDeclaration } from './structured-nodes.js';
@@ -209,18 +210,8 @@ export function materializeCopyBriefFromSnapshot(input: {
       : ('xiaohongshu' as const);
   const quantity =
     snapshot.deliverables.find((d) => d.kind === 'copy')?.quantity ?? 1;
-  const memoryContext = snapshot.executionPlan.units
-    .map((unit) => {
-      if (!unit.input || typeof unit.input !== 'object') return null;
-      return planMemoryContextSchema.safeParse(
-        (unit.input as Record<string, unknown>).memoryContext
-      );
-    })
-    .find((result) => result?.success)?.data;
-  const style = memoryContext?.styleConstraints;
-  const styleInstruction = style
-    ? `结构化风格约束：语气=${style.tones.join('、') || 'default'}；标题不超过 ${style.maxTitleChars} 字；正文不超过 ${style.maxBodyChars} 字；单句不超过 ${style.maxSentenceChars} 字；禁用词=${style.forbiddenPhrases.join('、') || '无'}。`
-    : '';
+  const style = snapshotMemoryStyleConstraints(snapshot);
+  const styleInstruction = memoryStyleInstruction(style);
   return {
     brief: {
       kind: 'copy',
@@ -243,6 +234,33 @@ export function materializeCopyBriefFromSnapshot(input: {
     llmInvoked: false,
     mode: MAKE_SNAPSHOT_CONSUME_TRACE_MODE,
   };
+}
+
+/**
+ * Merchant-confirmed style constraints as the plan froze them onto every
+ * execution unit. Shared by the copy, media and note materializers: a
+ * MemoryInjectionReceipt tells the merchant their preference was injected, so
+ * every carrier that shows 已注入 must actually consume it (V31-18 P1-8).
+ */
+export function snapshotMemoryStyleConstraints(
+  snapshot: ExecutionPlanSnapshot
+): NonNullable<PlanMemoryContext['styleConstraints']> | undefined {
+  return snapshot.executionPlan.units
+    .map((unit) => {
+      if (!unit.input || typeof unit.input !== 'object') return null;
+      return planMemoryContextSchema.safeParse(
+        (unit.input as Record<string, unknown>).memoryContext
+      );
+    })
+    .find((result) => result?.success)?.data?.styleConstraints;
+}
+
+/** Model-facing rendering of the confirmed style; empty when none was injected. */
+export function memoryStyleInstruction(
+  style: NonNullable<PlanMemoryContext['styleConstraints']> | undefined
+): string {
+  if (!style) return '';
+  return `结构化风格约束：语气=${style.tones.join('、') || 'default'}；标题不超过 ${style.maxTitleChars} 字；正文不超过 ${style.maxBodyChars} 字；单句不超过 ${style.maxSentenceChars} 字；禁用词=${style.forbiddenPhrases.join('、') || '无'}。`;
 }
 
 /**
@@ -296,9 +314,16 @@ export function materializeMediaBriefFromSnapshot(input: {
   const lens = request.executionSnapshot?.lens;
   const kind = lens === 'video' ? ('video' as const) : ('image' as const);
   const summary = declaration.normalizedIntent;
+  // V31-18 P1-8: the plan stamps `memoryContext` on media units too and the
+  // receipt panel tells the merchant it was 已注入, but only the copy
+  // materializer used to read it — so a confirmed preference had zero effect on
+  // image and video output while the UI claimed otherwise.
+  const style = snapshotMemoryStyleConstraints(snapshot);
+  const styleInstruction = memoryStyleInstruction(style);
   const constraints = [
     '不得编造价格、效果、资质或顾客案例',
     '只使用已确认的本店事实与授权素材',
+    ...(styleInstruction ? [styleInstruction] : []),
     `snapshotHash=${snapshot.snapshotHash}`,
   ];
   if (kind === 'video') {
@@ -318,7 +343,7 @@ export function materializeMediaBriefFromSnapshot(input: {
           },
         ],
         firstFramePrompt:
-          `按已确认方案「${summary}」生成竖版视频首帧，真实门店场景，主体清晰，不得编造价格与效果。`,
+          `按已确认方案「${summary}」生成竖版视频首帧，真实门店场景，主体清晰，不得编造价格与效果。${styleInstruction}`,
         referenceAssetIds: [],
         parameters: { durationSeconds: 8, ratio: '9:16' },
         constraints,
@@ -345,7 +370,7 @@ export function materializeMediaBriefFromSnapshot(input: {
         outputPlan: { kind: 'single' },
       },
       prompt:
-        `按已确认方案「${summary}」生成竖版门店活动海报，保留品牌主视觉和预约行动号召，不得编造价格与效果。snapshotHash=${snapshot.snapshotHash}`,
+        `按已确认方案「${summary}」生成竖版门店活动海报，保留品牌主视觉和预约行动号召，不得编造价格与效果。${styleInstruction}snapshotHash=${snapshot.snapshotHash}`,
       referenceAssetIds: [],
       parameters: { ratio: '9:16', resolution: '1080p' },
       constraints,
@@ -376,11 +401,17 @@ export function materializeNoteBriefFromSnapshot(input: {
   validateIntentAgainstSnapshot({ snapshot, declaration });
   const themeAnchor =
     declaration.normalizedIntent.trim().slice(0, 40) || '本店服务科普';
+  // V31-18 P1-8: the note carrier stamps and receipts `memoryContext` like copy
+  // does, so the confirmed style must reach the page scaffold the downstream
+  // page generation consumes — otherwise 已注入 is a claim with no effect.
+  const styleInstruction = memoryStyleInstruction(
+    snapshotMemoryStyleConstraints(snapshot)
+  );
   const candidates: NoteStyleCandidates = {
     candidates: DEFAULT_NOTE_STYLES.styles.map((style) => ({
       styleId: style.id,
       styleName: style.name,
-      positioning: style.writingGuide,
+      positioning: `${style.writingGuide}${styleInstruction}`,
       plan: buildDeterministicNotePlan({
         themeAnchor,
         styleId: style.id,
@@ -388,6 +419,7 @@ export function materializeNoteBriefFromSnapshot(input: {
         factRefs: snapshot.factRevisionRefs,
         rightsRefs: snapshot.rightsRevisionRefs,
         snapshotHash: snapshot.snapshotHash,
+        memoryStyleInstruction: styleInstruction,
       }),
     })),
   };
@@ -408,6 +440,7 @@ function buildDeterministicNotePlan(input: {
   factRefs: readonly string[];
   rightsRefs: readonly string[];
   snapshotHash: string;
+  memoryStyleInstruction?: string;
 }): NotePlan {
   const imageIntent = (purpose: string, subject: string) => ({
     operation: 'image.generate' as const,
@@ -429,7 +462,7 @@ function buildDeterministicNotePlan(input: {
     style: {
       id: input.styleId,
       name: input.styleName,
-      positioning: `${input.styleName}（快照确定性脚手架）`,
+      positioning: `${input.styleName}（快照确定性脚手架）${input.memoryStyleInstruction ?? ''}`,
     },
     pages: [
       {

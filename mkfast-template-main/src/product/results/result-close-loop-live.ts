@@ -219,6 +219,8 @@ export function projectResultCloseLoopFacts(input: {
     occurredAt: string;
     quantity?: number;
     note?: string;
+    /** V31-19: declared so the derived tier is not the next laundering path. */
+    contentPackageRevision?: number | 'unknown';
   }[];
   nowIso: string;
   preferredPlatform: ContentPackagePlatform | null;

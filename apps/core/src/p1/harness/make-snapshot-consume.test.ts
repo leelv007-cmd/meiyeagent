@@ -20,6 +20,8 @@ import {
   MakeSnapshotConsumeError,
   materializeCopyBriefFromSnapshot,
   materializeIntentFromSnapshot,
+  materializeMediaBriefFromSnapshot,
+  materializeNoteBriefFromSnapshot,
   resolveMakeSnapshotConsume,
   snapshotConsumeTracePayload,
   validateContextBundleAgainstSnapshot,
@@ -245,7 +247,93 @@ test('materializeCopyBriefFromSnapshot consumes structured memory style without 
   });
   assert.match(result.brief.instructions, /正文不超过 32 字/u);
   assert.match(result.brief.instructions, /语气=concise、restrained/u);
-  assert.doesNotMatch(result.brief.instructions, /以后每次文案/u);
+  // The previous assertion here checked for a merchant statement, which
+  // `planMemoryContextSchema` is `.strict()` about never carrying — it could not
+  // fail. What CAN leak is the receipt's internal identity, so assert that: the
+  // model must receive the derived constraint, never memory/run bookkeeping.
+  const serializedBrief = JSON.stringify(result.brief);
+  assert.doesNotMatch(serializedBrief, /preference-1/u);
+  assert.doesNotMatch(serializedBrief, /run-1/u);
+  assert.doesNotMatch(serializedBrief, /release-1/u);
+});
+
+test('V31-18 P1-8: media and note briefs consume the same injected memory style', () => {
+  const snapshot = buildSnapshot({
+    executionPlan: {
+      ...COMPILED,
+      units: [
+        {
+          ...COMPILED.units[0],
+          input: {
+            memoryContext: {
+              entries: [{ memoryId: 'preference-1', revision: 3 }],
+              receiptRef: {
+                taskId: 'task-1',
+                runId: 'run-1',
+                harnessReleaseId: 'release-1',
+              },
+              styleConstraints: {
+                tones: ['concise', 'restrained'],
+                maxTitleChars: 24,
+                maxBodyChars: 32,
+                maxSentenceChars: 24,
+                forbiddenPhrases: ['绝对', '保证', '必然'],
+              },
+            },
+          },
+        },
+      ],
+    } as unknown as ExecutionPlanFrozenContent['executionPlan'],
+  });
+  const declaration = materializeIntentFromSnapshot({
+    snapshot,
+    request: baseRequest(snapshot),
+  }).declaration;
+
+  // A MemoryInjectionReceipt is written for note and media carriers too, and the
+  // receipt panel tells the merchant 已注入 — so the confirmed preference has to
+  // actually reach their briefs, not only the copy one.
+  const image = materializeMediaBriefFromSnapshot({
+    snapshot,
+    declaration,
+    request: { ...baseRequest(snapshot), executionSnapshot: { lens: 'image', platform: { id: 'xiaohongshu' } } } as unknown as HarnessWorkflowInput,
+  });
+  assert.ok(
+    image.brief.constraints.some((line) => /正文不超过 32 字/u.test(line)),
+    'image constraints must carry the confirmed style',
+  );
+  assert.match(JSON.stringify(image.brief), /语气=concise、restrained/u);
+
+  const video = materializeMediaBriefFromSnapshot({
+    snapshot,
+    declaration,
+    request: { ...baseRequest(snapshot), executionSnapshot: { lens: 'video', platform: { id: 'douyin' } } } as unknown as HarnessWorkflowInput,
+  });
+  assert.ok(
+    video.brief.constraints.some((line) => /正文不超过 32 字/u.test(line)),
+    'video constraints must carry the confirmed style',
+  );
+
+  const note = materializeNoteBriefFromSnapshot({
+    snapshot,
+    declaration,
+    request: baseRequest(snapshot),
+  });
+  assert.ok(note.brief.candidates.candidates.length > 0);
+  for (const candidate of note.brief.candidates.candidates) {
+    assert.match(candidate.positioning, /正文不超过 32 字/u);
+    assert.match(candidate.plan.style.positioning, /正文不超过 32 字/u);
+  }
+
+  // Same no-leak rule as copy on every carrier.
+  for (const serialized of [
+    JSON.stringify(image.brief),
+    JSON.stringify(video.brief),
+    JSON.stringify(note.brief),
+  ]) {
+    assert.doesNotMatch(serialized, /preference-1/u);
+    assert.doesNotMatch(serialized, /run-1/u);
+  }
 });
 
 test('validateIntentAgainstSnapshot: hard drift fail closed', () => {

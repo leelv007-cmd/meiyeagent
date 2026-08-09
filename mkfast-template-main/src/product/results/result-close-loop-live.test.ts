@@ -52,9 +52,22 @@ function contentPackage(): PublicContentPackage {
     resultSignals: [
       {
         actorId: 'owner-a',
+        // Deliberately NOT the package's current revision (3): a signal
+        // observes the revision that was live when it happened, and the
+        // projection must carry that, not restamp the current one.
+        contentPackageRevision: 1,
         id: 'signal-a',
         kind: 'attention',
         occurredAt: '2026-07-22T10:00:00.000Z',
+        source: 'merchant_recorded',
+      },
+      {
+        actorId: 'owner-a',
+        // Quarantined by the V31-19 backfill: unprovable, so not evidence.
+        contentPackageRevision: 'unknown',
+        id: 'signal-quarantined',
+        kind: 'store_visit',
+        occurredAt: '2026-07-22T11:00:00.000Z',
         source: 'merchant_recorded',
       },
     ],
@@ -129,6 +142,14 @@ test('projects the canonical package into an honest Result close-loop journey', 
     '2026-07-22T09:30:00.000Z'
   );
   assert.equal(facts.observations[0]?.kind, 'attention');
+  // V31-19 P1-3: the projection must carry each signal's OWN revision, not
+  // restamp the package's current one (3), and must drop the quarantined row
+  // instead of laundering `'unknown'` into an exact number that renders bound.
+  assert.equal(facts.observations[0]?.contentPackageRevision, 1);
+  assert.deepEqual(
+    facts.observations.map((row) => row.id),
+    ['signal-a']
+  );
   assert.equal(facts.weeklyReview.publications.length, 1);
   assert.equal(facts.weeklyReview.observations.length, 1);
   assert.equal(facts.hasOneShotLink, true);

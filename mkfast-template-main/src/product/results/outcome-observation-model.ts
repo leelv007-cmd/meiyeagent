@@ -427,11 +427,23 @@ export function observationsFromResultSignals(input: {
     note?: string;
     supersedesSignalId?: string;
     status?: 'active' | 'superseded' | 'withdrawn';
+    /**
+     * V31-19: the exact revision this signal observed, or `'unknown'` for the
+     * quarantined legacy rows the migration could not prove. Required on the
+     * contract (`content-package.ts:595`) — omitting it here silently dropped
+     * the field and let every row inherit the package's current revision.
+     */
+    contentPackageRevision?: number | 'unknown';
   }[];
 }): OutcomeObservationFact[] {
   const out: OutcomeObservationFact[] = [];
   for (const signal of input.signals) {
     if (signal.status === 'withdrawn') continue;
+    // A row that cannot name the revision it observed is not provable evidence,
+    // so it must never be laundered into the package's current revision and
+    // rendered as bound. Same rule as the Core twin
+    // (`content-package-facts.ts:109`).
+    if (signal.contentPackageRevision === 'unknown') continue;
     const kind = mapLegacyResultSignalKind(signal.kind);
     const sourceTier = mapLegacyResultSignalSource(signal.source);
     if (!kind || !sourceTier) continue;
@@ -443,7 +455,8 @@ export function observationsFromResultSignals(input: {
       id: signal.id,
       workspaceId: input.workspaceId,
       contentPackageId: input.contentPackageId,
-      contentPackageRevision: input.contentPackageRevision,
+      contentPackageRevision:
+        signal.contentPackageRevision ?? input.contentPackageRevision,
       ...(input.publicationRecordId
         ? { publicationRecordId: input.publicationRecordId }
         : {}),
