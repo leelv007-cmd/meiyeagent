@@ -1620,6 +1620,12 @@ export function ComposerHome({
                 count: workbenchCreditShortfall.missingCredits,
               })
             : null,
+          // A5 refund dual-state + balance line: same server quote / projection
+          // the passive chip prints, so one run is never described two ways.
+          failureRefundsCredits: workbenchCreditQuote.failureRefundsCredits,
+          availableCredits: workbenchCreditBalance.visible
+            ? workbenchCreditBalance.availableCredits
+            : null,
         }),
         params: projectExecutionParams({
           aspectRatio: submissionAspectRatio,
@@ -2903,6 +2909,10 @@ export function ComposerHome({
               cost: unit.quantity,
               resource: unit.resource as ComposerQuotaResource,
             })),
+            failureRefundsCredits: pending.quote.failureRefundsCredits ?? null,
+            availableCredits: workbenchCreditBalance.visible
+              ? workbenchCreditBalance.availableCredits
+              : null,
           }),
           params: projectExecutionParams({
             aspectRatio: pending.aspectRatio ?? null,

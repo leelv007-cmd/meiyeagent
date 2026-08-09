@@ -89,6 +89,24 @@ export type InterruptMembershipPort = {
   hasMembership(userId: string, workspaceId: string): Promise<boolean>;
 };
 
+/**
+ * Resume delivery bridge (V31-14 P1-a closed loop).
+ *
+ * After a CAS-applied (or replay-recovered) resume, the service hands the
+ * resolved interrupt back to the executing workflow. Implementations must be
+ * idempotent (e.g. DBOS.send with a stable idempotency key) so a retry after
+ * a failed delivery re-delivers without duplicate side effects.
+ */
+export type InterruptResumeBridgeInput = {
+  workspaceId: string;
+  payload: InterruptPayload;
+  command: ResumeInterruptCommand;
+};
+
+export type InterruptResumeBridgePort = {
+  deliver(input: InterruptResumeBridgeInput): Promise<void>;
+};
+
 function resumeFingerprint(command: ResumeInterruptCommand): string {
   const payload = {
     interruptId: command.interruptId,
@@ -204,6 +222,12 @@ export class InterruptProtocolService {
     private readonly store: InterruptStore,
     private readonly membership: InterruptMembershipPort,
     private readonly now: () => string = () => new Date().toISOString(),
+    /**
+     * V31-14 P1-a: after the resume CAS applies, deliver the resume back into
+     * the executing workflow (DBOS recv channel). Invoked for 'applied' and
+     * 'replayed' alike so a failed delivery can be retried at-least-once.
+     */
+    private readonly resumeBridge?: InterruptResumeBridgePort,
   ) {}
 
   /**
@@ -284,9 +308,20 @@ export class InterruptProtocolService {
     });
     switch (result.outcome) {
       case 'applied':
-        return { outcome: 'applied', record: result.row, command };
-      case 'replayed':
-        return { outcome: 'replayed', record: result.row, command };
+      case 'replayed': {
+        // At-least-once workflow delivery: 'replayed' keeps retrying after a
+        // bridge failure because the CAS row is already resolved. Bridge
+        // implementations dedup on the command idempotency key, so duplicate
+        // resume remains side-effect free (V31-14 durable seam).
+        if (this.resumeBridge) {
+          await this.resumeBridge.deliver({
+            workspaceId: input.workspaceId,
+            payload: result.row.payload,
+            command,
+          });
+        }
+        return { outcome: result.outcome, record: result.row, command };
+      }
       case 'stale':
         throw new InterruptProtocolError(
           'STALE_REVISION',
@@ -313,6 +348,49 @@ export class InterruptProtocolService {
         return _exhaustive;
       }
     }
+  }
+
+  /**
+   * Workflow-side resolution sync (best-effort, never throws).
+   *
+   * The workflow may resolve a pending question through its own channels
+   * (decision recv, core timeout, hold expiry, system default). Mark the
+   * mirrored interrupt resolved so the home/mobile pending list stays honest.
+   * Duplicate calls replay; a row resolved by an interrupt resume already
+   * stays resolved. Missing/stale/expired rows are treated as no-ops.
+   */
+  async resolveByWorkflow(input: {
+    workspaceId: string;
+    interruptId: string;
+    revision: number;
+    source:
+      | 'decision'
+      | 'core_timeout'
+      | 'core_hold_expired'
+      | 'system_default'
+      | 'reservation_released';
+  }): Promise<'applied' | 'replayed'> {
+    const row = await this.store.getById(input.interruptId);
+    if (!row || row.workspaceId !== input.workspaceId) return 'replayed';
+    const command = resumeInterruptCommandSchema.parse({
+      schemaVersion: INTERRUPT_PAYLOAD_SCHEMA_VERSION,
+      interruptId: input.interruptId,
+      revision: input.revision,
+      type: 'reject',
+      args: { resolvedByWorkflow: input.source },
+      idempotencyKey: `workflow-resolve:${input.source}:${input.interruptId}:${input.revision}`,
+    });
+    const fingerprint = resumeFingerprint(command);
+    const result = await this.store.resolveCas({
+      interruptId: input.interruptId,
+      expectedRevision: input.revision,
+      command,
+      fingerprint,
+      resolvedAt: this.now(),
+    });
+    if (result.outcome === 'applied') return 'applied';
+    // replayed / stale / conflict / expired / missing: nothing more to do.
+    return 'replayed';
   }
 
   /**

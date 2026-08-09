@@ -6,6 +6,7 @@
  * retried submission reuse its Run instead of appending another plan revision.
  */
 
+import type { ExecutionPlanApprovalBasis } from '@meiye/contracts';
 import type { MarketingPlanRevision } from '@meiye/contracts';
 
 import type {
@@ -14,6 +15,7 @@ import type {
   CreationSubmissionRecord,
 } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import type { ExecutionPlanCompileFreeze } from '../harness/execution-plan-admission.js';
 import type { AgentSessionStore } from './agent-session-store.js';
 import type { CompilePlanInput, CompilePlanResult } from './plan-compiler.js';
 import type { MarketingPlanStore } from './plan-store.js';
@@ -179,19 +181,69 @@ export class ComposerPlanSessionCoordinator
         : {}),
     };
 
-    if (input.previous) {
-      await this.compiler.adjustPlan({
-        ...compileInput,
-        existingPlanId: input.planId,
-        patch: {
-          summary: snapshot.intent.text,
-          instructions: snapshot.intent.text,
-        },
-      });
-      return;
-    }
-    await this.compiler.compilePlan(compileInput);
+    // V31-12 producer: the compile-finalize boundary freezes the compiled
+    // plan so admission can bind the ExecutionPlanSnapshot one-shot.
+    const result = input.previous
+      ? await this.compiler.adjustPlan({
+          ...compileInput,
+          existingPlanId: input.planId,
+          patch: {
+            summary: snapshot.intent.text,
+            instructions: snapshot.intent.text,
+          },
+        })
+      : await this.compiler.compilePlan(compileInput);
+    input.submission.executionPlanFreeze = compileFinalizeExecutionPlanFreeze({
+      result,
+      contextBundleId: compileInput.contextBundleId,
+      contextRevision: compileInput.contextRevision,
+      approvalBasis: approvalBasisForSubmission(snapshot.lens),
+    });
   }
+}
+
+/**
+ * Deterministic bundle fingerprint for the freeze: same bundle + revision
+ * always yields the same contextBundleRef.hash (idempotent freeze).
+ */
+export function compileFinalizeExecutionPlanFreeze(input: {
+  result: Pick<CompilePlanResult, 'revision' | 'executionPlan'>;
+  contextBundleId: string;
+  contextRevision: string;
+  approvalBasis: ExecutionPlanApprovalBasis;
+}): ExecutionPlanCompileFreeze {
+  const { result } = input;
+  const revision = result.revision;
+  return {
+    planId: revision.planId,
+    planRevision: revision.revision,
+    intentDeclaration: revision.intent,
+    contextBundleRef: {
+      bundleId: input.contextBundleId,
+      revision: Number(input.contextRevision),
+      hash: fingerprintValue({
+        bundleId: input.contextBundleId,
+        revision: input.contextRevision,
+      }),
+    },
+    executionPlan: result.executionPlan,
+    deliverables: revision.deliverables,
+    quoteRef: revision.quoteRef,
+    rightsRevisionRefs: revision.boundRevisions.rightsRevisionIds,
+    harnessReleaseId: revision.boundRevisions.harnessReleaseId,
+    approvalBasis: input.approvalBasis,
+  };
+}
+
+/**
+ * U9: only pure copy is exempt from confirmation; every paid-media
+ * execution freezes as merchant_confirmed. Exemption skips the decision,
+ * never the freeze.
+ */
+export function approvalBasisForSubmission(
+  lens: CreationSubmissionRecord['snapshot']['lens'],
+): ExecutionPlanApprovalBasis {
+  return lens === 'copy' ? 'policy_exempt_copy' : 'merchant_confirmed';
 }
 
 export function proposalFromSubmission(

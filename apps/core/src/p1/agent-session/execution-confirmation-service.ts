@@ -70,6 +70,13 @@ export type ConfirmationCreditLedgerPort = {
     workspaceId: string,
     action: (ledger: ConfirmationCreditLedgerPort) => Promise<T>,
   ): Promise<T>;
+  /**
+   * Postgres seam: the transaction client, present only while running inside
+   * withWorkspaceCreditTransaction. Lets the create path insert the pending
+   * request row into the same DB transaction as balance check + reservation +
+   * FEFO deduction (P1-b — no "row without deduction" window).
+   */
+  transactionClient?: import('pg').PoolClient;
 };
 
 export type CreateExecutionConfirmationInput = {
@@ -247,11 +254,26 @@ export class ExecutionConfirmationService {
       };
 
       let stored: StoredConfirmationRequest;
+      const txClient = ledger.transactionClient;
+      const txAwareStore = this.requests as ExecutionConfirmationRequestStore & {
+        savePendingWithClient?(
+          client: import('pg').PoolClient,
+          input: StoredConfirmationRequest,
+        ): Promise<StoredConfirmationRequest>;
+      };
       try {
-        stored = await this.requests.savePending({ request, projection });
+        stored =
+          txClient && txAwareStore.savePendingWithClient
+            ? await txAwareStore.savePendingWithClient(txClient, {
+                request,
+                projection,
+              })
+            : await this.requests.savePending({ request, projection });
       } catch (error) {
-        // Compensate orphan FEFO hold if request row fails after consume.
-        if (reservedCredits > 0) {
+        // Compensate an orphan FEFO hold only on the non-transactional path:
+        // inside a workspace transaction the rollback already removes the
+        // reserve, and refunding on the aborted client would mask the error.
+        if (!txClient && reservedCredits > 0) {
           await ledger.refundUsageOperation({
             workspaceId: input.workspaceId,
             usageOperationId: input.reservationIdempotencyKey,
@@ -420,6 +442,16 @@ export class ExecutionConfirmationService {
     requestId: string,
   ): Promise<StoredConfirmationRequest | null> {
     return this.requests.getById(requestId);
+  }
+
+  /**
+   * Read projection for the confirmation-card HTTP surface (V31-11 wiring):
+   * pending confirmation requests for one workspace.
+   */
+  async listPendingByWorkspace(
+    workspaceId: string,
+  ): Promise<StoredConfirmationRequest[]> {
+    return this.requests.listPendingByWorkspace(workspaceId);
   }
 
   async getDecision(

@@ -59,6 +59,45 @@ export type ContextFenceAction =
       message: string;
     };
 
+/**
+ * §23.4 in-flight rights revocation — fail-closed stop without re-charge.
+ * Thrown by production runner ports so the workflow failure settlement refunds
+ * the reserved credits instead of charging again (noAdditionalCharge).
+ * `code` and `merchantMessage` ride through normalizeHarnessTerminalFailure.
+ */
+export class HarnessExecutionFenceSafeStopError extends Error {
+  readonly code = 'HARNESS_EXECUTION_FENCE_SAFE_STOP';
+  readonly status = 409;
+  readonly noAdditionalCharge = true;
+  readonly refundIfReserved = true;
+  readonly merchantMessage: string;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'HarnessExecutionFenceSafeStopError';
+    this.merchantMessage = message;
+  }
+}
+
+/**
+ * §23.4 in-flight referenced price/date change — pause with prompt.
+ * The runner throws this so the run stops with the merchant-visible prompt
+ * recorded on the terminal failure.
+ */
+export class HarnessExecutionFencePauseError extends Error {
+  readonly code = 'HARNESS_EXECUTION_FENCE_PAUSE_REQUIRED';
+  readonly status = 409;
+  readonly merchantMessage: string;
+  readonly diff: SnapshotStaleDiff;
+
+  constructor(message: string, diff: SnapshotStaleDiff) {
+    super(message);
+    this.name = 'HarnessExecutionFencePauseError';
+    this.merchantMessage = message;
+    this.diff = diff;
+  }
+}
+
 export type MidExecutionFenceInput = {
   snapshot: ExecutionPlanSnapshot;
   live: SnapshotLiveFacts;

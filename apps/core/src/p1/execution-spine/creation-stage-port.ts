@@ -30,6 +30,7 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				submission.snapshot,
 				submission.usageReservation,
 				submission.decisionReferences,
+				submission.executionPlanFreeze,
 			),
 		});
 		if (started.workflowId !== submission.task.id) {
@@ -57,6 +58,7 @@ export function toHarnessWorkflowInput(
 	snapshot: CreationExecutionSnapshot,
 	usageReservation?: CreationSubmissionRecord["usageReservation"],
 	frozenDecisionReferences?: CreationSubmissionRecord["decisionReferences"],
+	executionPlanFreeze?: CreationSubmissionRecord["executionPlanFreeze"],
 ): HarnessWorkflowInput {
 	const semanticDecision = snapshot.semanticDecision;
 	const decisionReferences = [
@@ -93,5 +95,8 @@ export function toHarnessWorkflowInput(
 		executionSnapshot: snapshot,
 		...(decisionReferences.length > 0 ? { decisionReferences } : {}),
 		...(usageReservation ? { usageReservation } : {}),
+		...(executionPlanFreeze
+			? { executionPlanFreeze }
+			: {}),
 	};
 }

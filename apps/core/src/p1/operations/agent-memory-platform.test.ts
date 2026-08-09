@@ -509,6 +509,82 @@ test('injection receipt is visible; revoke excludes memory from future injection
   );
 });
 
+test('injection receipt is recorded on the real injection path when turn context is bound', async () => {
+  const { platform: mem } = platform();
+  const candidate = (
+    await mem.onExtracted({
+      workspaceId: context.workspaceId,
+      idempotencyPrefix: 'realpath',
+      items: [
+        {
+          itemId: 'rp',
+          kind: 'preference',
+          semanticKey: 'tone.rp',
+          proposedValue: '轻一点',
+          defaultScope: { storeId: 'store-a' },
+          decisionEventId: 'd-rp',
+          taskId: 't-rp',
+          source: source('c-rp'),
+          statement: '语气轻一点',
+        },
+      ],
+    })
+  )[0];
+  assert.ok(candidate);
+  await mem.confirmMemoryCandidate(context, {
+    candidateId: candidate.candidateId,
+    preferenceId: 'pref-rp',
+    idempotencyKey: 'confirm-rp',
+  });
+
+  // Read-only retrieval (no turn context) must NOT write a receipt.
+  await mem.retrieveForInjection({
+    workspaceId: context.workspaceId,
+    scope: { storeId: 'store-a' },
+  });
+  assert.equal(await mem.getInjectionReceiptByTask('task-gen-real'), null);
+
+  // Generation turn binds task/run/release → receipt lands after injection.
+  const entries = await mem.retrieveForInjection({
+    workspaceId: context.workspaceId,
+    scope: { storeId: 'store-a' },
+    injectionContext: {
+      taskId: 'task-gen-real',
+      runId: 'run-real',
+      harnessReleaseId: 'release-real',
+    },
+  });
+  assert.equal(entries.length, 1);
+  const receipt = await mem.getInjectionReceiptByTask('task-gen-real');
+  assert.equal(receipt?.runId, 'run-real');
+  assert.equal(receipt?.harnessReleaseId, 'release-real');
+  assert.equal(receipt?.entries[0]?.memoryId, 'pref-rp');
+
+  // Idempotent re-injection keeps a single receipt row.
+  await mem.retrieveForInjection({
+    workspaceId: context.workspaceId,
+    scope: { storeId: 'store-a' },
+    injectionContext: {
+      taskId: 'task-gen-real',
+      runId: 'run-real',
+      harnessReleaseId: 'release-real',
+    },
+  });
+  const again = await mem.getInjectionReceiptByTask('task-gen-real');
+  assert.deepEqual(again, receipt);
+
+  // A turn without a task binding records nothing (session-only turn).
+  await mem.retrieveForInjection({
+    workspaceId: context.workspaceId,
+    scope: { storeId: 'store-a' },
+    injectionContext: {
+      runId: 'run-no-task',
+      harnessReleaseId: 'release-real',
+    },
+  });
+  assert.equal(await mem.getInjectionReceiptByRun('run-no-task'), null);
+});
+
 test('A11 separate deletion: source deleted marks entry; memory delete keeps approval receipts', async () => {
   const { platform: mem, reuse, repository } = platform();
   await repository.saveMemorySourceConversation({

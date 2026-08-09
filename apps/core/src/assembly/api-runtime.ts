@@ -69,6 +69,8 @@ import { HarnessBillingCompensationWorker } from '../p1/harness/billing-compensa
 import { HarnessDbosWorkflowEventReader } from '../p1/harness/dbos-workflow-events.js';
 import {
   abandonReleasedHarnessReservation,
+  createHarnessInterruptProtocolPort,
+  createHarnessInterruptResumeBridge,
   DbosHarnessWorkflowStarter,
   DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
   registerHarnessDbosWorkflow,
@@ -118,6 +120,10 @@ import {
 import { assertPendingActionsShareDatabase } from '../p1/harness/runtime-config.js';
 import { createHarnessStructuredModelExecutor } from '../p1/harness/structured-model-runtime.js';
 import { createProductionSkillManifestResolver } from '../p1/harness/production-skill-manifest-resolver.js';
+import {
+  resolveShadowReconciliationConfigFromAdmin,
+  shouldSampleShadowReconciliation,
+} from '../p1/harness/shadow-reconciliation.js';
 import { HarnessTaskAdmissionService } from '../p1/harness/task-admission.js';
 import {
   FixtureImageExactTextVerifier,
@@ -283,7 +289,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     supplyControlRepository,
     harnessSchemaStore,
     harnessReleaseStore,
+    harnessReleaseService,
     opsConsoleStore,
+    evalLayersAssembly,
     promptAuditStore,
     harnessInteractionStore,
     harnessObservabilityStore,
@@ -308,6 +316,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     sessionAgentKernel,
     agentSessionStore,
     sessionAgentHarness,
+    executionConfirmationService,
     sessionRetrievalExperiencePort,
     marketingPlanStore,
     planCompiler,
@@ -1195,6 +1204,34 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       policy: {
         sensitiveLexicon: sensitiveWordsRepository,
       },
+      // V31-14 (§23.4): mid-execution fence — rights revocation safe-stops
+      // without re-charge; referenced price/date drift pauses with a prompt.
+      fence: {
+        resolveLiveFacts: async ({ request }) =>
+          createResolveExecutionPlanLiveFacts({
+            async resolveQuoteHead({ workspaceId, quoteId }) {
+              const quote = await productQuoteService.getQuote(
+                quoteId,
+                workspaceId,
+              );
+              if (!quote) return null;
+              return {
+                quoteId,
+                revision: quote.revision,
+              };
+            },
+            async resolveRightsHeads({ rightsRevisionRefs }) {
+              // Freeze refs are opaque revision ids from Plan Compiler; the
+              // dedicated rights head table is a documented gap — production
+              // reports the freeze set as current, delivery/fence ports stay
+              // fail-closed on package/asset revocation.
+              return rightsRevisionRefs.map((revisionId) => ({
+                revisionId,
+                revoked: false,
+              }));
+            },
+          })({ workflowId: request.workflowRevision ? String(request.workflowRevision) : '', request }),
+      },
     });
     // Single wiring owner: wrap copy ports so image/video share the same
     // Coordinator → StagePort → Harness path (#139/#140).
@@ -1297,11 +1334,41 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     const boundedExecutionLimits = new AdminConfigBoundedExecutionLimitsSource(
       adminConfigRepository
     );
+    // V31-14: typed Interrupt protocol — durable Postgres store (restart-safe).
+    // Constructed before registerHarnessDbosWorkflow so the DBOS pending
+    // mirror port can capture awaitDecision questions into p1_agent_interrupts.
+    interruptProtocolService = new InterruptProtocolService(
+      interruptStore,
+      {
+        async hasMembership(userId, workspaceId) {
+          return operationsRepository.hasMembership(userId, workspaceId);
+        },
+      },
+      () => new Date().toISOString(),
+      // Resume CAS → DBOS recv re-injection (exactly-once send topic).
+      createHarnessInterruptResumeBridge()
+    );
     const harnessWorkflow = registerHarnessDbosWorkflow(
       harnessStages,
       harnessInteractionStore,
       {
         semanticResumptions: creationSubmissionStore,
+        // V31-14: DBOS pending questions mirrored into p1_agent_interrupts so
+        // home/mobile "pending confirmations" list and resume stay alive
+        // across refresh/reconnect; lifecycle syncs via resolveByWorkflow.
+        interrupts: createHarnessInterruptProtocolPort({
+          request: (input) => interruptProtocolService!.request(input),
+          resolveByWorkflow: (input) =>
+            interruptProtocolService!.resolveByWorkflow(input),
+          getById: (id) => interruptStore.getById(id),
+        }),
+        // V31-11: confirmation gate binds ExecutionConfirmationService; the
+        // same credit operation id makes execution-time settlement a no-op
+        // (U8=A — reserve before confirm, single debit).
+        executionConfirmation: {
+          createRequest: (input) =>
+            executionConfirmationService.createRequest(input),
+        },
         billing: {
           commit: (input) => harnessBilling.commit(input),
           promoteMerchantExecution: (input) =>
@@ -1358,22 +1425,29 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         },
         // V31-13: shadow reconcil sample on Make complete (PG store + ops audit).
         shadowReconciliation: shadowReconciliationService,
+        // V31-23 L0.5: production sample on Make complete (same sampling point,
+        // same admin-config sample rate as shadow reconciliation). Verdicts are
+        // bound to the release and written through the eval assembly.
+        productionSampling: {
+          shouldSample: async (sampleKey) => {
+            const config =
+              await resolveShadowReconciliationConfigFromAdmin(
+                adminConfigRepository,
+              );
+            return shouldSampleShadowReconciliation({
+              sampleRate: config.sampleRate,
+              sampleKey,
+            });
+          },
+          sample: (input) => evalLayersAssembly.sampler.sample(input),
+          recordAndEmit: (input) => evalLayersAssembly.recordAndEmit(input),
+        },
         // V31-16: dual-queue Make steering at unit/terminal boundaries.
         makeSteeringBoundary: createMakeSteeringBoundaryPort({
           service: steeringService,
           resolveGate: () => resolveMakeSteeringGate(adminConfigRepository),
         }),
       }
-    );
-    // V31-14: typed Interrupt protocol — durable Postgres store (restart-safe).
-    // migrate already ran in assembleCoreGraph; MemoryInterruptStore is test-only.
-    interruptProtocolService = new InterruptProtocolService(
-      interruptStore,
-      {
-        async hasMembership(userId, workspaceId) {
-          return operationsRepository.hasMembership(userId, workspaceId);
-        },
-      },
     );
     await DBOS.launch();
     harnessService = new HarnessApplicationService(
@@ -1494,6 +1568,18 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       sessionAgentHarness ?? {
         compilePlan: (input) => planCompiler.compile(input),
         adjustPlan: (input) => planCompiler.adjust(input),
+      },
+      {
+        // V31-21 P1-a: new submissions pin the current production release
+        // (canary workspace-allowlist applies here). The pinned releaseId is
+        // then frozen on the Run + ExecutionPlanSnapshot — rollback changes
+        // only what *new* runs resolve to, never in-flight pins.
+        resolveHarnessReleaseId: async (submission) => {
+          const resolved = await harnessReleaseService.resolveForRun({
+            workspaceId: submission.snapshot.workspaceId,
+          });
+          return resolved.releaseId;
+        },
       }
     );
     composerSubmissionCoordinator = new CreationSubmissionCoordinator(
@@ -1782,6 +1868,19 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     e2eUserSelectedSkillFixture,
     e2eUserSelectedSkillEvidence,
     e2eFixtureEnabled,
+    // V31-11: confirmation-card HTTP surface via the bound session harness.
+    executionConfirmation: sessionAgentHarness
+      ? {
+          create: (input) =>
+            sessionAgentHarness.createExecutionConfirmation(input),
+          decide: (input) =>
+            sessionAgentHarness.decideExecutionConfirmation(input),
+          expire: (input) =>
+            sessionAgentHarness.expireExecutionConfirmationHold(input),
+          listPending: (workspaceId) =>
+            executionConfirmationService.listPendingByWorkspace(workspaceId),
+        }
+      : undefined,
     integrationService,
     harnessService,
     pendingActions,

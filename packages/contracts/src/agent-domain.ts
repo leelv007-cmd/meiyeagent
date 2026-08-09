@@ -1354,7 +1354,9 @@ function archiveIfTerminal(
  *
  * - same artifactId only (caller keys the map)
  * - same revision → idempotent (duplicate=true)
- * - delta baseRevision mismatch / cold delta → needs_snapshot
+ * - cold delta with baseRevision=0 bootstraps from the typed empty body
+ *   (producer cold-start marker; prevents infinite resync on first frame)
+ * - cold delta with baseRevision>0 / baseRevision mismatch → needs_snapshot
  * - ready head advanced without parentRevision → silent_overwrite
  */
 export function applyArtifactUpdate(
@@ -1404,10 +1406,43 @@ export function applyArtifactUpdate(
 
   if (update.mode === 'delta') {
     if (!current) {
+      if (update.baseRevision !== 0) {
+        return {
+          ok: false,
+          reason: 'needs_snapshot',
+          detail: 'delta without local head',
+        };
+      }
+      // Cold-start delta: baseRevision=0 is the producer's explicit bootstrap
+      // marker for the first frame of a fresh artifact. Apply the patch onto
+      // the typed empty body — the same projection a full replay would build
+      // for the first event — so a cold client converges instead of looping
+      // on needs_snapshot.
+      const nextBody = applyPatchToBody(
+        update.artifactType,
+        emptyBodyForType(update.artifactType),
+        update.patch,
+      );
+      if (!nextBody) {
+        return {
+          ok: false,
+          reason: 'invalid_patch',
+          detail: 'patch failed for artifactType',
+        };
+      }
       return {
-        ok: false,
-        reason: 'needs_snapshot',
-        detail: 'delta without local head',
+        ok: true,
+        duplicate: false,
+        state: {
+          artifactId: update.artifactId,
+          artifactType: update.artifactType,
+          revision: update.revision,
+          status: update.status,
+          body: nextBody,
+          summary: update.summary,
+          parentRevision: update.parentRevision,
+          versionHistory: [],
+        },
       };
     }
     if (update.baseRevision !== current.revision) {

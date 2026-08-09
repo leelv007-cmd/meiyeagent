@@ -4,17 +4,32 @@ import test from 'node:test';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import {
   questionCardSchema,
+  resumeInterruptCommandSchema,
+  type InterruptPayload,
+  type ResumeInterruptCommand,
   type StructuredDecisionInput,
 } from '@meiye/contracts';
 import { ADMIN_CONFIG_KEY_CLASSIFICATION } from '../../assembly/domain-rules.js';
 import { HARNESS_CONFIRMATION_CARD_HOLD_TIMEOUT_CONFIG_KEY } from '../admin-config/index.js';
 
 import {
+  InterruptProtocolService,
+  MemoryInterruptStore,
+} from './interrupt-protocol.js';
+import { HarnessExecutionFenceSafeStopError } from './context-fence.js';
+import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
+
+import {
   commitHarnessBillingOrSchedule,
   assertHarnessInteractionContinuationLayout,
   confirmationCardDecision,
+  createHarnessInterruptProtocolPort,
+  createHarnessInterruptResumeBridge,
   failHarnessWorkflowPreservingExecutionError,
   harnessBillingSettlementInput,
+  harnessInterruptMirrorInput,
+  interruptQuestionFromPayload,
+  interruptResumeDecision,
   invokeHarnessAskMerchantPrimitive,
   readConfirmationCardHoldTimeoutSeconds,
   readConfirmationCardTimeoutSeconds,
@@ -23,6 +38,7 @@ import {
   resolveHarnessBoundedExecutionContinuation,
   resumeHarnessDbosInteractionWorkflow,
   resumeHarnessDbosWorkflow,
+  sampleProductionL05,
   suspensionQuestionFailOpen,
   settleHarnessCancellation,
   settleHarnessTerminalSuccess,
@@ -30,6 +46,7 @@ import {
   HARNESS_INTERACTION_CONTINUATION_LAYOUT,
   type HarnessAskMerchantPrimitivePort,
   type HarnessBillingSettlementPort,
+  type HarnessDbosWorkflowOptions,
 } from './dbos-workflow.js';
 import {
   HarnessBillingCompensationConflictError,
@@ -1242,4 +1259,412 @@ test('execution receipt forwards trusted per-bucket product units to settlement'
       },
     },
   );
+});
+
+// ─── V31-14 P1-a: typed Interrupt protocol mirror + resume bridge ───────────
+
+function interruptQuestion(overrides: Record<string, unknown> = {}) {
+  const merged: Record<string, unknown> = {
+    questionId: 'question-1',
+    workflowId: 'workflow-1',
+    workflowRevision: 3,
+    question: '请确认执行付费生成',
+    options: [
+      { id: 'approved', label: '确认执行' },
+      { id: 'rejected', label: '暂不执行' },
+    ],
+    freeText: { enabled: false },
+    response: { field: 'execution_confirmation', reason: '付费执行前确认' },
+    unattended: 'hold',
+    executionConfirmationAuthority: {
+      kind: 'external_action',
+      revision: 'execution-external-action/v1',
+    },
+    scope: 'current_task',
+  };
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) delete merged[key];
+    else merged[key] = value;
+  }
+  return questionCardSchema.parse(merged);
+}
+
+function interruptRequest() {
+  return { workspaceId: 'workspace-1' } as import('./task-admission.js').HarnessWorkflowInput;
+}
+
+function interruptResume(overrides: Record<string, unknown> = {}): ResumeInterruptCommand {
+  return resumeInterruptCommandSchema.parse({
+    schemaVersion: 'interrupt-payload/v1',
+    interruptId: 'question-1',
+    revision: 3,
+    type: 'accept',
+    ...overrides,
+  });
+}
+
+test('mirror input maps a pending question into the typed interrupt payload', () => {
+  const { workspaceId, payload } = harnessInterruptMirrorInput({
+    question: interruptQuestion(),
+    stage: 'execution_selection',
+    request: interruptRequest(),
+  });
+  assert.equal(workspaceId, 'workspace-1');
+  assert.equal(payload.interruptId, 'question-1');
+  assert.equal(payload.threadId, 'harness-thread:workflow-1');
+  assert.equal(payload.runId, 'workflow-1');
+  assert.equal(payload.workflowId, 'workflow-1');
+  assert.equal(payload.step, 'execution_selection');
+  assert.equal(payload.revision, 3);
+  assert.equal(payload.action, 'confirm_paid_execution');
+  assert.deepEqual(payload.config, {
+    allowAccept: true,
+    allowEdit: false,
+    allowReject: true,
+    allowRespond: false,
+  });
+  assert.equal(payload.resourceId, 'workspace-1');
+  assert.equal(payload.expiresAt, undefined, 'no business hold deadline without holdTimeoutSeconds');
+  assert.equal(interruptQuestionFromPayload(payload).questionId, 'question-1');
+});
+
+test('mirror input carries the QuestionCard roundtrip and hold deadline', () => {
+  const { payload } = harnessInterruptMirrorInput({
+    question: interruptQuestion({ executionConfirmationAuthority: undefined }),
+    stage: 'intent_naming',
+    request: interruptRequest(),
+  });
+  assert.equal(payload.action, 'answer_question');
+  assert.equal(
+    payload.expiresAt,
+    undefined,
+    'no deadline without holdTimeoutSeconds',
+  );
+  const held = harnessInterruptMirrorInput({
+    question: interruptQuestion({ executionConfirmationAuthority: undefined }),
+    stage: 'intent_naming',
+    request: interruptRequest(),
+    holdTimeoutSeconds: 60,
+  });
+  assert.ok(held.payload.expiresAt);
+  const roundtrip = interruptQuestionFromPayload(held.payload);
+  assert.equal(roundtrip.questionId, 'question-1');
+  assert.equal(roundtrip.response.field, 'execution_confirmation');
+});
+
+test('resume decision maps typed resume commands onto the question response', () => {
+  const question = interruptQuestion();
+  const accepted = interruptResumeDecision(question, interruptResume({ idempotencyKey: 'resume-1' }));
+  assert.equal(accepted.questionId, 'question-1');
+  assert.equal(accepted.workflowRevision, 3);
+  assert.equal(accepted.patch.field, 'execution_confirmation');
+  assert.equal(accepted.decision.state, 'accepted');
+  assert.equal(accepted.decision.value, 'approved');
+  assert.equal(accepted.idempotencyKey, 'resume-1');
+  assert.deepEqual(confirmationCardDecision(question, accepted), accepted);
+
+  const rejected = interruptResumeDecision(question, interruptResume({ type: 'reject' }));
+  assert.equal(rejected.decision.state, 'ignored');
+  assert.equal(rejected.decision.value, 'rejected');
+  assert.equal(rejected.idempotencyKey, 'interrupt:question-1:r3');
+
+  const respond = interruptResumeDecision(
+    question,
+    interruptResume({ type: 'respond', args: { value: '用方案B' } }),
+  );
+  assert.equal(respond.decision.state, 'accepted');
+  assert.equal(respond.decision.value, '用方案B');
+  assert.equal(respond.patch.value, '用方案B');
+});
+
+test('resume decision fails closed when respond/edit lacks a merchant value', () => {
+  const question = interruptQuestion();
+  assert.throws(
+    () => interruptResumeDecision(question, interruptResume({ type: 'respond' })),
+    /requires a merchant value/u,
+  );
+  assert.throws(
+    () => interruptResumeDecision(question, interruptResume({ type: 'edit' })),
+    /requires a merchant value/u,
+  );
+});
+
+test('resume bridge sends the reconstructed decision on the workflow topic with a stable dedup key', async (t) => {
+  const sent: unknown[][] = [];
+  t.mock.method(DBOS, 'send', async (...args: unknown[]) => {
+    sent.push(args);
+  });
+  const bridge = createHarnessInterruptResumeBridge({
+    async workflowRuntimeId() {
+      return 'runtime-workflow-1';
+    },
+  });
+  const { payload } = harnessInterruptMirrorInput({
+    question: interruptQuestion(),
+    stage: 'execution_selection',
+    request: interruptRequest(),
+  });
+  const command = interruptResume({ idempotencyKey: 'resume-1' });
+  await bridge.deliver({ workspaceId: 'workspace-1', payload, command });
+
+  assert.equal(sent.length, 1);
+  const [destination, message, topic, idempotencyKey] = sent[0] as [
+    string,
+    StructuredDecisionInput,
+    string,
+    string,
+  ];
+  assert.equal(destination, 'runtime-workflow-1');
+  assert.equal(topic, 'structured-decision:question-1');
+  assert.equal(idempotencyKey, 'harness-interrupt:workspace-1:runtime-workflow-1:question-1:resume-1');
+  assert.equal(message.questionId, 'question-1');
+  assert.equal(message.decision.value, 'approved');
+
+  // Duplicate resume → same dedup key → exactly-once send semantics.
+  await bridge.deliver({ workspaceId: 'workspace-1', payload, command });
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1]?.[3], sent[0]?.[3]);
+});
+
+test('mirror port tolerates a durable retry that recomputes the hold expiry', async () => {
+  const store = new MemoryInterruptStore();
+  const service = new InterruptProtocolService(
+    store,
+    {
+      async hasMembership() {
+        return true;
+      },
+    },
+    () => '2026-08-08T12:00:00.000Z',
+  );
+  const port = createHarnessInterruptProtocolPort({
+    request: (input) => service.request(input),
+    resolveByWorkflow: (input) => service.resolveByWorkflow(input),
+    getById: (id) => store.getById(id),
+  });
+  const question = interruptQuestion({ executionConfirmationAuthority: undefined });
+  const mirrorInput = {
+    workspaceId: 'workspace-1',
+    question,
+    stage: 'intent_naming' as const,
+    request: interruptRequest(),
+  };
+  // First step attempt writes with one deadline…
+  await port.mirrorPending({ ...mirrorInput, holdTimeoutSeconds: 60 });
+  // …a durable retry recomputes Date.now() and would produce a new deadline.
+  await port.mirrorPending({ ...mirrorInput, holdTimeoutSeconds: 60 });
+  const row = await store.getById('question-1');
+  assert.equal(row?.status, 'pending');
+  assert.equal(row?.payload.revision, 3);
+
+  await port.resolvePending({
+    workspaceId: 'workspace-1',
+    interruptId: 'question-1',
+    revision: 3,
+    source: 'core_hold_expired',
+  });
+  const pending = await store.listPending({
+    workspaceId: 'workspace-1',
+    resourceId: 'workspace-1',
+  });
+  assert.equal(pending.length, 0, 'workflow resolution clears the mirrored row');
+});
+
+test('mirror port rejects a genuine same-revision payload conflict', async () => {
+  const store = new MemoryInterruptStore();
+  const service = new InterruptProtocolService(
+    store,
+    {
+      async hasMembership() {
+        return true;
+      },
+    },
+    () => '2026-08-08T12:00:00.000Z',
+  );
+  const port = createHarnessInterruptProtocolPort({
+    request: (input) => service.request(input),
+    resolveByWorkflow: (input) => service.resolveByWorkflow(input),
+    getById: (id) => store.getById(id),
+  });
+  const base = {
+    workspaceId: 'workspace-1',
+    question: interruptQuestion(),
+    stage: 'execution_selection' as const,
+    request: interruptRequest(),
+  };
+  await port.mirrorPending(base);
+  await assert.rejects(
+    () =>
+      port.mirrorPending({
+        ...base,
+        question: interruptQuestion({ question: '内容被篡改的另一个问题' }),
+      }),
+    (error: unknown) =>
+      error instanceof Error &&
+      error.name === 'InterruptProtocolError' &&
+      (error as { code?: string }).code === 'IDEMPOTENCY_CONFLICT',
+  );
+});
+
+// ─── V31-14 P1-b: §23.4 safe stop refunds the reservation, never re-charges ──
+
+test('rights-revoked safe stop refunds the reservation without committing a new charge', async () => {
+  const events: string[] = [];
+  const safeStop = new HarnessExecutionFenceSafeStopError(
+    '素材授权已撤销，已安全停止且不会重复扣费。',
+  );
+  await assert.rejects(
+    failHarnessWorkflowPreservingExecutionError({
+      billing: {
+        async commit() {
+          events.push('commit');
+          throw new Error('commit must not run for a safe stop');
+        },
+        async refund() {
+          events.push('refund');
+        },
+        async scheduleCompensation() {
+          throw new Error('compensation must not be needed');
+        },
+      },
+      input: settlement,
+      error: safeStop,
+      runStep: async (_name, operation) => operation(),
+      async recordTerminalFailure(quotaRefunded) {
+        events.push(`terminal:refunded=${quotaRefunded}`);
+      },
+    }),
+    (error) => error === safeStop,
+  );
+  assert.deepEqual(
+    events,
+    ['refund', 'terminal:refunded=true'],
+    'safe stop refunds once and reports the refund; no commit step runs',
+  );
+  assert.equal(
+    normalizeHarnessTerminalFailure(safeStop).code,
+    'HARNESS_EXECUTION_FENCE_SAFE_STOP',
+  );
+  assert.equal(
+    normalizeHarnessTerminalFailure(safeStop).merchantMessage,
+    safeStop.merchantMessage,
+  );
+});
+
+test('L0.5 production sampling gates by rate and lands a release-bound verdict (V31-23)', async () => {
+  const calls: Array<{ kind: string; releaseId: string; resultId?: string }> =
+    [];
+  const outcome = await sampleProductionL05({
+    productionSampling: {
+      shouldSample: async () => true,
+      sample: async (input) => {
+        calls.push({
+          kind: 'sample',
+          releaseId: input.harnessReleaseId,
+          resultId: input.resultId,
+        });
+        return {
+          result: {
+            resultId: input.resultId ?? 'sample-result',
+            gates: [
+              { id: 'l0.5.proxy.fidelity', kind: 'fidelity', passed: true },
+              { id: 'l0.5.proxy.rights', kind: 'rights', passed: true },
+              { id: 'l0.5.proxy.redline', kind: 'redline', passed: true },
+            ],
+            quickCheckIds: ['a', 'b'],
+            evalSuiteRevision: 'eval/sampling-1',
+            createdAt: '2026-08-08T01:00:00.000Z',
+            verdict: 'passed',
+          },
+          quickCheckVerdicts: [],
+        } as unknown as Awaited<
+          ReturnType<
+            NonNullable<HarnessDbosWorkflowOptions['productionSampling']>['sample']
+          >
+        >;
+      },
+      recordAndEmit: async (input) => {
+        calls.push({ kind: 'emit', releaseId: input.harnessReleaseId });
+      },
+    },
+    workflowId: 'wf-l05-1',
+    request: {
+      workspaceId: 'ws-1',
+      executionSnapshot: { lens: 'copy' } as HarnessWorkflowInput['executionSnapshot'],
+      executionPlanSnapshot: {
+        harnessReleaseId: 'release-1',
+        contextBundleRef: { bundleId: 'ctx-1', revision: 1, hash: 'h' },
+        planId: 'plan-1',
+        planRevision: 1,
+      } as HarnessWorkflowInput['executionPlanSnapshot'],
+    } as HarnessWorkflowInput,
+  });
+
+  assert.equal(outcome.sampled, true);
+  assert.equal(outcome.verdict, 'passed');
+  assert.deepEqual(calls, [
+    { kind: 'sample', releaseId: 'release-1', resultId: 'l0.5:make:wf-l05-1' },
+    { kind: 'emit', releaseId: 'release-1' },
+  ]);
+});
+
+test('L0.5 production sampling is gated off by the sample rate and never throws', async () => {
+  const calls: string[] = [];
+  const off = await sampleProductionL05({
+    productionSampling: {
+      shouldSample: async () => false,
+      sample: async () => {
+        calls.push('sample');
+        throw new Error('must not run');
+      },
+      recordAndEmit: async () => {
+        calls.push('emit');
+      },
+    },
+    workflowId: 'wf-l05-off',
+    request: {
+      executionPlanSnapshot: {
+        harnessReleaseId: 'release-1',
+      } as HarnessWorkflowInput['executionPlanSnapshot'],
+    } as HarnessWorkflowInput,
+  });
+  assert.deepEqual(off, { sampled: false });
+  assert.equal(calls.length, 0);
+
+  const failing = await sampleProductionL05({
+    productionSampling: {
+      shouldSample: async () => true,
+      sample: async () => {
+        throw new Error('sampler exploded');
+      },
+      recordAndEmit: async () => {
+        calls.push('emit');
+      },
+    },
+    workflowId: 'wf-l05-fail',
+    request: {
+      executionPlanSnapshot: {
+        harnessReleaseId: 'release-1',
+      } as HarnessWorkflowInput['executionPlanSnapshot'],
+    } as HarnessWorkflowInput,
+  });
+  assert.deepEqual(failing, { sampled: false, error: true });
+  assert.equal(calls.length, 0);
+
+  const noSnapshot = await sampleProductionL05({
+    productionSampling: {
+      shouldSample: async () => true,
+      sample: async () => {
+        calls.push('sample');
+        throw new Error('no snapshot means sample must not run');
+      },
+      recordAndEmit: async () => {
+        calls.push('emit');
+      },
+    },
+    workflowId: 'wf-l05-none',
+    request: { workspaceId: 'ws-1' } as HarnessWorkflowInput,
+  });
+  assert.deepEqual(noSnapshot, { sampled: false });
+  assert.equal(calls.length, 0);
 });

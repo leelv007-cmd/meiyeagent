@@ -15,6 +15,8 @@ import { queryP1 } from '@/p1/client';
 
 import type { OutcomeSelfReportChipSignal } from '@meiye/contracts';
 
+import { MemoryInjectionReceiptPanel } from '@/product/memory-injection-receipt';
+
 import {
   applyLiveSemanticEvent,
   reconnectAgentWorkbench,
@@ -273,6 +275,10 @@ export function AgentWorkbenchHost({
           onAccept={onAcceptProactiveSuggestion}
         />
       ) : null}
+      {/* V31-18: injection receipt visibility on the task-detail surface.
+       * explicitTaskId is the only task-scoped identity the host owns; the
+       * panel no-ops when the task has no receipt yet. */}
+      {explicitTaskId ? <MemoryInjectionReceiptPanel taskId={explicitTaskId} /> : null}
       <AgentWorkstream
         className={className}
         livingPlanCommitStrip={livingPlanCommitStrip}

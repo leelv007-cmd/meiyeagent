@@ -24,6 +24,10 @@ test('every Core route declares its auth class', () => {
     'health-ready': 'public',
     'harness-active-tasks': 'service-token',
     'harness-decision': 'service-token',
+    'confirmation-create': 'service-token',
+    'confirmation-list-pending': 'service-token',
+    'confirmation-decide': 'service-token',
+    'confirmation-expire': 'service-token',
     'harness-interaction': 'service-token',
     'harness-interaction-editing': 'service-token',
     'harness-interaction-message': 'service-token',
@@ -43,5 +47,5 @@ test('every Core route declares its auth class', () => {
     'workflow-events': 'service-token',
     'assistant-stream': 'service-token',
   });
-  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 38);
+  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 42);
 });

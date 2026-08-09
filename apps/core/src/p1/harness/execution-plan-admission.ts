@@ -23,9 +23,16 @@ import {
   EXECUTION_PLAN_SNAPSHOT_HASH_COVERAGE_FIELDS,
   EXECUTION_PLAN_SNAPSHOT_SCHEMA_VERSION,
   executionPlanSnapshotSchema,
+  type AgentRevisionRef,
+  type BoundedExecutionSnapshot,
+  type CompiledExecutionPlan,
   type ExecutionPlanApprovalBasis,
   type ExecutionPlanSnapshot,
+  type HarnessReleaseId,
+  type IntentDeclaration,
+  type MarketingPlanId,
   type PlanConfirmationDecisionId,
+  type PlanDeliverable,
 } from '@meiye/contracts';
 
 import type { HarnessWorkflowInput } from './task-admission.js';
@@ -153,6 +160,86 @@ export function buildExecutionPlanSnapshot(input: {
       : {}),
   };
   return executionPlanSnapshotSchema.parse(draft);
+}
+
+// ─── Compile-finalize producer seam ─────────────────────────────────────────
+
+/**
+ * Frozen execution content owned by the compile-finalize boundary (V31-12
+ * producer). Only PlanCompiler-produced fields live here; harness-admission
+ * fields (prompts/skills/routes/facts/bounds) are assembled by
+ * HarnessTaskAdmissionService after they resolve. confirmationDecisionRef is
+ * never part of the freeze — it enters the snapshot only at admission.
+ */
+export type ExecutionPlanCompileFreeze = {
+  planId: MarketingPlanId;
+  planRevision: number;
+  intentDeclaration: IntentDeclaration;
+  contextBundleRef: {
+    bundleId: string;
+    revision: number;
+    hash: string;
+  };
+  executionPlan: CompiledExecutionPlan;
+  deliverables: PlanDeliverable[];
+  quoteRef: AgentRevisionRef;
+  rightsRevisionRefs: readonly string[];
+  harnessReleaseId: HarnessReleaseId;
+  /**
+   * U9 decision made at compile-finalize: pure copy exempts the decision
+   * (policy_exempt_copy), paid media requires confirmation. Never carries
+   * confirmationDecisionRef — it enters only at admission.
+   */
+  approvalBasis: ExecutionPlanApprovalBasis;
+};
+
+export type ExecutionPlanSnapshotAssemblyInput = {
+  freeze: ExecutionPlanCompileFreeze;
+  promptRevisionRefs: Record<string, { key: string; version: string }>;
+  skillManifestRefs: Record<string, Array<{ skillId: string; revision: string }>>;
+  routeRequirements: Array<{ capability: string; requirement?: string }>;
+  factRevisionRefs: readonly string[];
+  boundedExecution: BoundedExecutionSnapshot;
+  /**
+   * merchant_confirmed requires it; policy_exempt_copy forbids it.
+   * Passed through to buildExecutionPlanSnapshot (schema enforces both).
+   */
+  confirmationDecisionRef?: PlanConfirmationDecisionId | string;
+};
+
+/**
+ * Compile-finalize producer: assemble the full frozen content from the
+ * compiler freeze plus harness-admission fields, compute snapshotHash, and
+ * build the validated snapshot. Pure and idempotent — the same input always
+ * yields the same snapshotHash (confirmationDecisionRef never participates).
+ */
+export function assembleExecutionPlanSnapshot(
+  input: ExecutionPlanSnapshotAssemblyInput,
+): ExecutionPlanSnapshot {
+  const { freeze } = input;
+  const content: ExecutionPlanFrozenContent = {
+    planId: freeze.planId,
+    planRevision: freeze.planRevision,
+    intentDeclaration: freeze.intentDeclaration,
+    contextBundleRef: freeze.contextBundleRef,
+    executionPlan: freeze.executionPlan,
+    deliverables: freeze.deliverables,
+    promptRevisionRefs: input.promptRevisionRefs,
+    skillManifestRefs: input.skillManifestRefs,
+    routeRequirements: input.routeRequirements,
+    quoteRef: freeze.quoteRef,
+    rightsRevisionRefs: [...freeze.rightsRevisionRefs],
+    factRevisionRefs: [...input.factRevisionRefs],
+    boundedExecution: input.boundedExecution,
+    harnessReleaseId: freeze.harnessReleaseId,
+    approvalBasis: freeze.approvalBasis,
+  };
+  const { snapshotHash } = freezeExecutionPlanContent(content);
+  return buildExecutionPlanSnapshot({
+    content,
+    snapshotHash,
+    confirmationDecisionRef: input.confirmationDecisionRef,
+  });
 }
 
 // ─── Store contract ──────────────────────────────────────────────────────────

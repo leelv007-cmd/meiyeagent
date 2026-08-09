@@ -37,8 +37,10 @@ import { serverAuditReference } from '../creation-experience/creation-experience
 import type { ResolvedSkillInstruction } from '../skills/types.js';
 import type {
   ExecutionPlanAdmissionPort,
+  ExecutionPlanCompileFreeze,
   SnapshotLiveFacts,
 } from './execution-plan-admission.js';
+import { assembleExecutionPlanSnapshot } from './execution-plan-admission.js';
 import {
   HARNESS_CORE_PROMPT_KEYS,
   harnessPromptCapabilityRequirement,
@@ -92,6 +94,13 @@ export interface HarnessWorkflowInput {
    * writes the ExecutionPlanSnapshot row (sole writer). Absent ⇒ legacy replay.
    */
   executionPlanSnapshot?: ExecutionPlanSnapshot;
+  /**
+   * V31-12 compile-finalize freeze produced by the Composer plan session.
+   * Submit-input only: normalizeRequest strips it before the durable request,
+   * fingerprint, and registry claim. The full snapshot is assembled inside
+   * submit once prompts/skills/routes/bounds have resolved.
+   */
+  executionPlanFreeze?: ExecutionPlanCompileFreeze;
 }
 
 export interface HarnessSkillManifestSnapshot {
@@ -315,7 +324,17 @@ export class HarnessTaskAdmissionService {
 
   async submit(input: HarnessTaskRequest) {
     const normalized = normalizeRequest(input);
-    const fingerprint = fingerprintValue(normalized);
+    // V31-12: the assembled snapshot (and the compile-finalize freeze that
+    // feeds it) never participates in the fingerprint. The snapshot is
+    // deterministically derived from the frozen request fields, so a recovery
+    // replay without the freeze resolves to the same fingerprint and replays
+    // the frozen request instead of conflicting.
+    const {
+      executionPlanSnapshot: _fingerprintSnapshot,
+      ...fingerprintRequest
+    } = normalized;
+    void _fingerprintSnapshot;
+    const fingerprint = fingerprintValue(fingerprintRequest);
     const existing = await this.registry.lookup?.({
       taskId: input.taskId,
       fingerprint,
@@ -400,6 +419,47 @@ export class HarnessTaskAdmissionService {
       normalized,
       selectedSkillStages,
     );
+    // V31-12 producer seam: assemble the full snapshot from the compile-finalize
+    // freeze plus the harness fields resolved above, then one-shot admit it.
+    // policy_exempt_copy (pure copy, U9) closes end-to-end here; merchant_confirmed
+    // requires confirmationDecisionRef, which the confirmation side (V31-11)
+    // supplies once wired — until then it stays on the legacy replay branch.
+    if (!request.executionPlanSnapshot && input.executionPlanFreeze) {
+      const freeze = input.executionPlanFreeze;
+      if (freeze.approvalBasis === 'policy_exempt_copy') {
+        if (!this.executionPlanAdmission) {
+          throw new HarnessAdmissionError(
+            'FROZEN_REQUEST_MISSING',
+            'ExecutionPlanSnapshot admission requires the production admission writer (V31-12).',
+          );
+        }
+        const snapshot = assembleExecutionPlanSnapshot({
+          freeze,
+          promptRevisionRefs: promptRevisionRefsForSnapshot(
+            request.promptRevisionRefs,
+          ),
+          skillManifestRefs: skillManifestRefsFromStages(skillStages),
+          routeRequirements: capabilityRequirementsFromAxes([
+            ...primaryTaskCapabilityRequirements(normalized.executionSnapshot!),
+            ...skillCapabilityRequirements(selectedSkillStages),
+          ]),
+          factRevisionRefs: factRevisionRefsFromSnapshot(
+            normalized.executionSnapshot!,
+          ),
+          boundedExecution,
+        });
+        const admitted = await this.executionPlanAdmission.admitSnapshot({
+          workflowId: input.taskId,
+          workspaceId: request.workspaceId,
+          snapshot,
+          live: input.executionPlanLiveFacts,
+        });
+        request = {
+          ...request,
+          executionPlanSnapshot: admitted.admitted.snapshot,
+        };
+      }
+    }
     if (
       normalized.executionSnapshot &&
       request.frozenRouteSnapshot &&
@@ -736,8 +796,7 @@ function skillCapabilityRequirements(
 function skillCapabilityRequirement(
   skillRevisionRef: string,
   capabilities: string[],
-): ModelCapabilityRequirementAxis {
-  const requiredProtocolCapabilities: string[] = [];
+): ModelCapabilityRequirementAxis {  const requiredProtocolCapabilities: string[] = [];
   const requiredModalities: string[] = [];
   const requiredBusinessTags: string[] = [];
   const requiredModalityCapabilities: Array<{
@@ -797,6 +856,70 @@ function skillCapabilityRequirement(
 
 function pushUnique(values: string[], value: string) {
   if (!values.includes(value)) values.push(value);
+}
+
+// ─── V31-12 snapshot assembly helpers ───────────────────────────────────────
+
+function skillManifestRefsFromStages(
+  stages: Record<HarnessStage, HarnessSkillManifestSnapshot[]>,
+): Record<string, Array<{ skillId: string; revision: string }>> {
+  const refs: Record<string, Array<{ skillId: string; revision: string }>> = {};
+  for (const stage of HARNESS_STAGES) {
+    const manifests = stages[stage];
+    if (manifests.length === 0) continue;
+    refs[stage] = manifests.map((manifest) =>
+      splitSkillRevisionRef(manifest.skillRevisionRef),
+    );
+  }
+  return refs;
+}
+
+function promptRevisionRefsForSnapshot(
+  refs: Record<string, HarnessPromptRevisionReference> | undefined,
+): Record<string, { key: string; version: string }> {
+  const snapshotRefs: Record<string, { key: string; version: string }> = {};
+  for (const [key, ref] of Object.entries(refs ?? {})) {
+    if (!ref) continue;
+    snapshotRefs[key] = { key: ref.name, version: ref.version };
+  }
+  return snapshotRefs;
+}
+
+function splitSkillRevisionRef(skillRevisionRef: string): {
+  skillId: string;
+  revision: string;
+} {
+  const at = skillRevisionRef.lastIndexOf('@');
+  if (at <= 0 || at === skillRevisionRef.length - 1) {
+    throw new HarnessAdmissionError(
+      'FROZEN_ROUTE_MISMATCH',
+      `Skill revision ref ${skillRevisionRef} is not in skillId@revision form.`,
+    );
+  }
+  return {
+    skillId: skillRevisionRef.slice(0, at),
+    revision: skillRevisionRef.slice(at + 1),
+  };
+}
+
+function capabilityRequirementsFromAxes(
+  axes: readonly ModelCapabilityRequirementAxis[],
+): Array<{ capability: string; requirement?: string }> {
+  return axes.map((axis) => ({ capability: axis.axisId }));
+}
+
+/**
+ * Deterministic fact revision refs for the freeze, mirroring the composer
+ * proposal's factIntentions (identity + brief) so the snapshot names the same
+ * fact heads the plan was compiled against.
+ */
+function factRevisionRefsFromSnapshot(
+  snapshot: CreationExecutionSnapshot,
+): string[] {
+  return [
+    `identity:${snapshot.identity.id}@${snapshot.identity.revision}`,
+    `brief:${snapshot.briefContext.id}@${snapshot.briefContext.revision}`,
+  ];
 }
 
 function executionAssemblySnapshot(input: {
@@ -865,9 +988,11 @@ function normalizeRequest(
     usageReservation,
     executionPlanSnapshot,
     executionPlanLiveFacts: _executionPlanLiveFacts,
+    executionPlanFreeze: _executionPlanFreeze,
     ...request
   } = input;
   void _executionPlanLiveFacts;
+  void _executionPlanFreeze;
   const parsed = harnessTaskRequestSchema.parse(request);
   const planSnapshot = executionPlanSnapshot
     ? executionPlanSnapshotSchema.parse(executionPlanSnapshot)

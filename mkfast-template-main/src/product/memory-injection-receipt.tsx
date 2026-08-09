@@ -1,0 +1,116 @@
+/**
+ * V31-18: injection receipt visibility panel (任务详情 — workbench task surface).
+ *
+ * When a task has a bound MemoryInjectionReceipt, the merchant sees exactly
+ * which memories were injected into the run (source memory, content, time) and
+ * can revoke any of them from future injection. The receipt itself is a trace
+ * and stays visible after revocation (V3.1 §12.7 / §37.4-B2).
+ */
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import type { MemoryInjectionReceipt } from '@meiye/contracts';
+
+import { formatLocaleDate } from '@/lib/locale';
+import {
+  memory_injection_receipt_injected_at,
+  memory_injection_receipt_revoke,
+  memory_injection_receipt_revoked,
+  memory_injection_receipt_source,
+  memory_injection_receipt_title,
+} from '@/locale/paraglide/messages';
+import { commandP1, queryP1 } from '@/p1/client';
+import { p1QueryKeys } from '@/p1/query-keys';
+
+export function MemoryInjectionReceiptPanel({ taskId }: { taskId: string }) {
+  const queryClient = useQueryClient();
+  const [revokedIds, setRevokedIds] = useState<ReadonlySet<string>>(new Set());
+
+  const receiptQuery = useQuery({
+    queryKey: p1QueryKeys.request('memory', 'injection_receipt', { taskId }),
+    queryFn: ({ signal }) =>
+      queryP1<{ receipt: MemoryInjectionReceipt | null }>(
+        'memory',
+        { action: 'injection_receipt', payload: { taskId } },
+        signal
+      ),
+  });
+
+  const revoke = useMutation({
+    mutationFn: (input: { memoryId: string; expectedRevision: number }) =>
+      commandP1(
+        'memory',
+        {
+          action: 'revoke_memory',
+          payload: {
+            memoryId: input.memoryId,
+            expectedRevision: input.expectedRevision,
+          },
+        },
+        `memory:revoke:${input.memoryId}`
+      ),
+    onSuccess: (_result, input) => {
+      setRevokedIds((current) => new Set([...current, input.memoryId]));
+      queryClient.invalidateQueries({
+        queryKey: p1QueryKeys.module('memory'),
+      });
+    },
+  });
+
+  const receipt = receiptQuery.data?.receipt;
+  if (!receipt || receipt.entries.length === 0) return null;
+
+  return (
+    <section
+      className="meiye-porcelain rounded-2xl p-5 sm:p-6"
+      data-testid="memory-injection-receipt-panel"
+      data-task-id={taskId}
+    >
+      <h2 className="text-base font-semibold leading-7">
+        {memory_injection_receipt_title()}
+      </h2>
+      <p className="meiye-type-aux mt-1">
+        {memory_injection_receipt_injected_at({
+          date: formatLocaleDate(receipt.injectedAt),
+        })}
+      </p>
+      <ul className="mt-3 space-y-3">
+        {receipt.entries.map((entry) => {
+          const revoked = revokedIds.has(entry.memoryId);
+          return (
+            <li
+              className="rounded-xl border border-foreground/10 p-3 text-sm"
+              data-testid={`memory-injection-receipt-entry-${entry.memoryId}`}
+              key={entry.memoryId}
+            >
+              <p data-testid="memory-injection-receipt-statement">
+                {entry.statement}
+              </p>
+              <p
+                className="meiye-type-aux mt-1"
+                data-testid="memory-injection-receipt-source"
+              >
+                {memory_injection_receipt_source({ memoryId: entry.memoryId })}
+              </p>
+              <button
+                className="mt-2"
+                data-testid={`memory-injection-receipt-revoke-${entry.memoryId}`}
+                disabled={revoked || revoke.isPending}
+                onClick={() =>
+                  revoke.mutate({
+                    memoryId: entry.memoryId,
+                    expectedRevision: entry.revision,
+                  })
+                }
+                type="button"
+              >
+                {revoked
+                  ? memory_injection_receipt_revoked()
+                  : memory_injection_receipt_revoke()}
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}

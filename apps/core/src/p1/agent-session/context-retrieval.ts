@@ -111,6 +111,22 @@ export type RetrievalToolContext = {
   storeId?: string;
 };
 
+/**
+ * V31-18: per-turn memory injection binding. The turn runner (which owns
+ * taskId/runId/harnessReleaseId) sets this for the duration of a kernel turn;
+ * the `read_confirmed_experience` injection path reads it so the platform can
+ * record the MemoryInjectionReceipt at the real injection point.
+ */
+export type MemoryInjectionTurnBinding = {
+  taskId?: string;
+  runId: string;
+  harnessReleaseId: string;
+};
+
+export const memoryInjectionTurnBridge: {
+  current?: MemoryInjectionTurnBinding;
+} = {};
+
 const INTENT_PLAN_PHASES = ['intent', 'plan', 'make', 'delivery'] as const;
 
 function basePolicy(
@@ -545,6 +561,11 @@ export function createSessionRetrievalPorts(deps: {
       scope: Record<string, unknown>;
       threadId?: string;
       limit?: number;
+      injectionContext?: {
+        taskId?: string;
+        runId: string;
+        harnessReleaseId: string;
+      };
     }) => Promise<
       Array<{
         memoryId: string;
@@ -674,6 +695,9 @@ export function createSessionRetrievalPorts(deps: {
         scope: {},
         threadId,
         limit: limit ?? 8,
+        ...(memoryInjectionTurnBridge.current
+          ? { injectionContext: memoryInjectionTurnBridge.current }
+          : {}),
       });
       return entries.map((entry) => ({
         ref: `experience:${entry.memoryId}`,

@@ -45,7 +45,9 @@ test('createNotePageProgressReporter reports progress and may emit artifact.revi
   const projected: SemanticEventCandidate[] = [];
   const report = createNotePageProgressReporter({
     plan: {
-      pages: [{ id: 'p1', order: 1, textBlock: { title: '封面' } }],
+      pages: [
+        { id: 'p1', order: 1, textBlock: { title: '封面', body: '周末护理限时' } },
+      ],
     },
     reportProgress: async (event) => {
       progress.push(event);
@@ -76,9 +78,78 @@ test('createNotePageProgressReporter reports progress and may emit artifact.revi
 
   assert.equal(progress.length, 2);
   assert.match(progress[0]!.message, /第 1 页/);
-  assert.equal(projected.length, 2);
-  for (const candidate of projected) {
+  // V31-15 three-stage page growth: skeleton → copy → image running → image ready.
+  assert.equal(projected.length, 4);
+  const updates = projected.map((candidate) => {
     assert.equal(candidate.eventType, 'artifact.revised');
-    artifactUpdateWireSchema.parse(candidate.payload);
-  }
+    const parsed = artifactUpdateWireSchema.parse(candidate.payload);
+    if (parsed.mode !== 'delta') throw new Error('expected delta');
+    if (!('pages' in parsed.patch)) throw new Error('expected note patch');
+    return {
+      artifactId: parsed.artifactId,
+      revision: parsed.revision,
+      page: parsed.patch.pages?.[0],
+    };
+  });
+  assert.deepEqual(
+    updates.map(({ page }) => page!.stage),
+    ['skeleton', 'copy', 'image', 'image'],
+  );
+  assert.deepEqual(
+    updates.map(({ revision }) => revision),
+    [1, 2, 3, 4],
+  );
+  assert.equal(new Set(updates.map(({ artifactId }) => artifactId)).size, 1);
+  assert.equal(updates[1]!.page?.body, '周末护理限时');
+});
+
+test('skeleton/copy stages emit once per page across regeneration runs', async () => {
+  const projected: SemanticEventCandidate[] = [];
+  const report = createNotePageProgressReporter({
+    plan: {
+      pages: [{ id: 'p1', order: 1, textBlock: { title: '封面' } }],
+    },
+    reportProgress: async () => undefined,
+    artifactEmitter: {
+      async project(candidate) {
+        projected.push(candidate);
+      },
+    },
+    artifactContext: {
+      workspaceId: 'ws-1',
+      workflowId: 'wf-1',
+      threadId: 'thread-1',
+      artifactId: 'note:pkg-1',
+      nextRevision: (() => {
+        let n = 0;
+        return () => {
+          n += 1;
+          return n;
+        };
+      })(),
+      now: () => '2026-08-08T12:00:00.000Z',
+    },
+  });
+
+  await report({ pageId: 'p1', state: 'running' });
+  await report({ pageId: 'p1', state: 'success' });
+  await report({ pageId: 'p1', state: 'running' });
+  await report({ pageId: 'p1', state: 'success' });
+
+  const updates = projected.map((candidate) => {
+    assert.equal(candidate.eventType, 'artifact.revised');
+    const parsed = artifactUpdateWireSchema.parse(candidate.payload);
+    if (parsed.mode !== 'delta') throw new Error('expected delta');
+    if (!('pages' in parsed.patch)) throw new Error('expected note patch');
+    return {
+      revision: parsed.revision,
+      page: parsed.patch.pages?.[0],
+    };
+  });
+  const stages = updates.map(({ page }) => page!.stage);
+  assert.deepEqual(stages, ['skeleton', 'copy', 'image', 'image', 'image', 'image']);
+  assert.deepEqual(
+    updates.map(({ revision }) => revision),
+    [1, 2, 3, 4, 5, 6],
+  );
 });

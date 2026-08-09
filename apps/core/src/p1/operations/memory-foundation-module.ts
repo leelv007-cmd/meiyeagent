@@ -12,6 +12,25 @@ import type { P1OperationModule } from '../foundation/ports.js';
 import type { AgentMemoryPlatform } from './agent-memory-platform.js';
 import type { ReuseMemoryService } from './reuse-memory-service.js';
 
+/** V31-18: injection receipt lookup — exactly one of taskId / runId. */
+const injectionReceiptQuerySchema = z
+  .object({
+    taskId: z.string().trim().min(1).optional(),
+    runId: z.string().trim().min(1).optional(),
+  })
+  .strict()
+  .refine((input) => Boolean(input.taskId) !== Boolean(input.runId), {
+    message: 'Exactly one of taskId or runId is required.',
+  });
+
+/** V31-18: revoke an injected memory from future injection. */
+const revokeMemoryCommandSchema = z
+  .object({
+    memoryId: z.string().trim().min(1),
+    expectedRevision: z.number().int().nonnegative(),
+  })
+  .strict();
+
 function inputAction(input: Record<string, unknown>) {
   if (typeof input.action !== 'string' || !input.action.trim()) {
     throw new P1DomainError('INVALID_STATE', 'A memory action is required.');
@@ -92,6 +111,14 @@ export class MemoryFoundationModule implements P1OperationModule {
         input.conversationId,
       );
     }
+    if (action === 'revoke_memory') {
+      const input = parse(revokeMemoryCommandSchema, payload);
+      return this.memory.revokePreference(args.context, {
+        preferenceId: input.memoryId,
+        expectedRevision: input.expectedRevision,
+        idempotencyKey: args.idempotencyKey,
+      });
+    }
     throw new P1DomainError(
       'INVALID_STATE',
       `Unknown memory command ${action}.`,
@@ -110,9 +137,50 @@ export class MemoryFoundationModule implements P1OperationModule {
         parse(memoryEntriesPageQuerySchema, payload),
       );
     }
+    if (action === 'injection_receipt') {
+      return this.injectionReceiptQuery(args.context, payload);
+    }
     throw new P1DomainError(
       'INVALID_STATE',
       `Unknown memory query ${action}.`,
     );
+  }
+
+  /**
+   * V31-18: injection receipt visibility. Receipts are workspace-bound at
+   * record time (retrieveForInjection is workspace-filtered), but the receipt
+   * row itself carries no workspace column — so ownership is proven by every
+   * injected memoryId resolving inside this workspace's own memory ledger.
+   * Any foreign memoryId ⇒ cross-workspace leak attempt ⇒ FORBIDDEN.
+   */
+  private async injectionReceiptQuery(
+    context: P1Context,
+    payload: object,
+  ) {
+    if (!this.agentMemory) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Agent Memory platform is not assembled (V31-18).',
+      );
+    }
+    const input = parse(injectionReceiptQuerySchema, payload);
+    const receipt = input.taskId
+      ? await this.agentMemory.getInjectionReceiptByTask(input.taskId)
+      : await this.agentMemory.getInjectionReceiptByRun(input.runId!);
+    if (!receipt) return { receipt: null };
+    if (receipt.entries.length === 0) return { receipt };
+
+    const view = await this.memory.preferenceView(context.workspaceId);
+    const ownIds = new Set<string>([
+      ...view.candidates.map((candidate) => candidate.candidateId),
+      ...view.preferences.map((preference) => preference.preferenceId),
+    ]);
+    if (receipt.entries.some((entry) => !ownIds.has(entry.memoryId))) {
+      throw new P1DomainError(
+        'FORBIDDEN',
+        'Injection receipt does not belong to this workspace.',
+      );
+    }
+    return { receipt };
   }
 }

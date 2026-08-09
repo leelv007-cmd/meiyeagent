@@ -299,8 +299,9 @@ const memoryCreateActions = new Set([
   'delete_source_conversation',
   'reject_candidate',
   'delete_entry',
+  'revoke_memory',
 ]);
-const memoryQueryActions = new Set(['entries_page']);
+const memoryQueryActions = new Set(['entries_page', 'injection_receipt']);
 /**
  * Channel/deployment lifecycle actions (isolate/drain/recover).
  * Pre-registered for supply-control tickets; unregistered elsewhere → deny.

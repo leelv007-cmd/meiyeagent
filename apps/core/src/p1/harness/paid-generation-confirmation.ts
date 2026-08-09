@@ -16,6 +16,11 @@ import {
   type StructuredDecisionInput,
 } from '@meiye/contracts';
 
+import type {
+  CreateExecutionConfirmationInput,
+  CreateExecutionConfirmationResult,
+} from '../agent-session/execution-confirmation-service.js';
+import { creditUsageOperationId } from '../credit-billing/credit-ledger.js';
 import {
   merchantPaidGenerationConfirmationAccepted,
   merchantPaidGenerationConfirmationQuestion,
@@ -110,7 +115,25 @@ export type ConfirmPaidGenerationExecutionInput = {
     request: HarnessWorkflowInput,
     command: StructuredDecisionInput,
   ) => Promise<HarnessWorkflowInput>;
+  /**
+   * V31-11 confirmation-objects wiring: after merchant approval, create the
+   * domain confirmation request (balance check + FEFO reserve under the
+   * workspace credit lock). Idempotent by requestId — a durable replay that
+   * re-enters the approved branch reuses the existing request. The reserve
+   * reuses the Coordinator submission operation id, so confirmation-time and
+   * submission-time holds collapse into one ledger debit (U8=A, no double
+   * charge at execution-time settlement). Optional — absent in fixture paths.
+   */
+  createExecutionConfirmationRequest?: (
+    input: CreateExecutionConfirmationInput,
+  ) => Promise<CreateExecutionConfirmationResult>;
 };
+
+/**
+ * D-153: confirmation-objects hold window (1h–30d). Matches the DBOS
+ * confirmation-card default hold so the domain request outlives the card.
+ */
+const PAID_CONFIRMATION_HOLD_DURATION_MS = 48 * 60 * 60 * 1000;
 
 /**
  * D-164③ paid-generation execution confirmation (xhs-spec §3.2).
@@ -170,6 +193,7 @@ export async function confirmPaidGenerationExecution(
         state: 'success',
         message: merchantPaidGenerationConfirmationAccepted(),
       });
+      await createPaidExecutionConfirmationRequest(input, request);
       return request;
     }
     request = await input.applyCurrentTaskDecision(
@@ -178,4 +202,45 @@ export async function confirmPaidGenerationExecution(
       command,
     );
   }
+}
+
+/**
+ * V31-11: create the confirmation-object request only once the merchant
+ * approved execution. Skipped when the wiring port or plan snapshot is absent
+ * (legacy paths keep the Coordinator submission-time reserve semantics).
+ *
+ * Idempotency contract (U8=A — confirmation-time reserve is authoritative):
+ * - requestId `confirmation:<workflowId>` — same workflow re-entry reuses the
+ *   pending request instead of reserving twice.
+ * - reservationIdempotencyKey reuses `creditUsageOperationId(taskId)`, the
+ *   same operation id the Coordinator submission already consumed, so the
+ *   ledger collapses both holds into one FEFO debit; execution-time settlement
+ *   (quote/usage settle) never debits again, and failure refunds release the
+ *   same operation id exactly once.
+ */
+async function createPaidExecutionConfirmationRequest(
+  input: ConfirmPaidGenerationExecutionInput,
+  request: HarnessWorkflowInput,
+): Promise<void> {
+  const create = input.createExecutionConfirmationRequest;
+  const snapshot = request.executionSnapshot;
+  const plan = request.executionPlanSnapshot;
+  if (!create || !snapshot || !plan) return;
+  const createdAt = new Date().toISOString();
+  await create({
+    requestId: `confirmation:${input.workflowId}`,
+    workspaceId: request.workspaceId,
+    planId: plan.planId,
+    planRevision: plan.planRevision,
+    snapshotHash: plan.snapshotHash,
+    quoteRef: snapshot.quote,
+    reservationIdempotencyKey: creditUsageOperationId(snapshot.task.id),
+    createdAt,
+    holdExpiresAt: new Date(
+      Date.parse(createdAt) + PAID_CONFIRMATION_HOLD_DURATION_MS,
+    ).toISOString(),
+    actorId: request.actorId,
+    creditCost: request.usageReservation?.credits ?? 0,
+    failureRefundsCredits: true,
+  });
 }

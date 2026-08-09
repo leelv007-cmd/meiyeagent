@@ -20,6 +20,7 @@ import {
   type WorkspaceComposerDestinationResource,
   type WorkspaceComposerSubmissionResource,
   type WorkspaceAgentSemanticResource,
+  type WorkspaceConfirmationDecisionResource,
   type WorkspaceHarnessTaskCollectionResource,
   type WorkspaceHarnessDecisionResource,
   type WorkspaceHarnessInteractionResource,
@@ -134,6 +135,7 @@ export async function forwardWorkspaceCoreRequest(
     | WorkspaceHarnessDecisionResource
     | WorkspaceHarnessInteractionResource
     | WorkspaceHarnessProductMetricResource
+    | WorkspaceConfirmationDecisionResource
     | WorkspaceWorkflowEventResource
 ) {
   let body: string | undefined;

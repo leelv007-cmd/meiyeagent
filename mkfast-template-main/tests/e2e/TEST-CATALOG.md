@@ -1062,3 +1062,37 @@ fixture。产品请求不 mock，静态源码断言不能替代以下三条旅�
 | # | Test name | Flow |
 |---|---|---|
 | 1 | a stated industry gives the hot recommendation its industry whyNow | 确认门店后以一条 `finalize_store_intake` 写入行业（档案字段＋`store.profile.industry` 事实同批落地，并回读 ProductState 证明档案侧真的写进去了）；**先声明再生成**（后写事实会正确地把已交付推荐置为 stale 而非改写它）；走真实 Composer 交付一单；回首页展开今日推荐迷你卡，断言行业层原文「结合本店护发与头皮护理，今天适合把主推项目讲清楚。」，并**排他断言** platform／weekday 两句兜底文案缺席——没有排他这一半，一张同时显示两句的卡也会绿。 |
+
+## V3.1 批次旅程（发布交接 §37.4-K / Ops Console AC4 / Day-0 自由创作 §37.4-A）
+
+2026-08-09 登记三个 v3.1 journey spec（此前 v3.1 系列在目录中无登记，deep review 批次指
+出 V31-16/17 缺失）。三个 spec 均为 write-only，实跑归 merge controller；均无
+`test.skip`/`test.fixme`/条件 `isVisible` 包裹，面板锚定由真实交付保证。
+
+**File:** `specs/v31-publish-handoff-selfreport.spec.ts` | **Priority:** P1
+
+修复 P1-a/P1-b：Delivered ContentPackage 由真实 Composer fixture journey（image_text
+合同，仅模型边界为 fixture）产生，发布交接面板无条件锚定。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | Delivered handoff anchors: copy blocks, ZIP name, QR merchant-self, no direct publish | 真实图文 journey 到 delivered（不离开会话）→ `publish-handoff-panel` 必现：`data-show-direct-publish=false`、无直发提示、copy blocks ≥3、ZIP 名非空、`mobile-publish-handoff` 为 merchant_self_publish 且 `data-system-driven-allowed=false`；驱动代发尝试→拒绝提示可见（A19 客户端 fail-closed）；「我已发布」`data-binding-revision` 与 `content_packages` 的 package revision 精确一致；点击确认已发布→「已记录发布」；同日不渲染自报 strip（`not_yet_next_day` 诚实，零伪造）。 |
+| 2 | A19 attempt_publish_from_handoff rejects driven intents via P1 | 直发 P1 `operations:attempt_publish_from_handoff`（system_driven_publish）→ 403 `DRIVEN_PUBLISH_FROM_HANDOFF_REJECTED`。 |
+| 3 | self-report journey: next-day chips, once-per-work, two-ignore backoff | 真实交付后走真实 P1 边界：同日 ask→`not_yet_next_day`；次日记 `publishHandoffCompletedAt`→`ask` + 六 chips 全集；`mark_asked` 两次→409 `SELF_REPORT_ASK_CONFLICT`（once-per-work）；chips 落库为 merchant_recorded inquiry（V31-19 OutcomeEvidence 写路径）；回答后→`already_answered`；两个 work 连续 ignore→`store_backoff`。 |
+
+**File:** `specs/v31-ops-console-release-journey.spec.ts` | **Priority:** P1
+
+V31-22 AC4 全流程（review P1「声明的 Playwright 全流程不存在」修复）：admin 用户直驱真实
+P1 `ops-console` 模块。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | 发布 → 圈 canary → 试跑 → 放量 → 回滚 → 审计留痕 | `publish_release` 全标定成功、缺 pin（U11 控制项未设）拒发且不产生 artifact；`transition_lifecycle` draft→evaluating→canary；`set_canary_allowlist` 生效；`set_candidate_trial` 记录；`promote_to_production`（U12 人工放量）；`diff_releases` 可读；第二 release 放量后 `rollback_production`（reason+evidence 强制）→ `list_releases.production` 回到旧 release（`resolveForRun` 只读 production lifecycle，此即「新任务走旧 release」的 P1 可观察面）、新 release retired、canary 空；`record_rollback_drill` passed 落库；`list_audit` 逐 action 断言 operator/reason/evidence 留痕。 |
+
+**File:** `specs/v31-day0-free-creation-journey.spec.ts` | **Priority:** P1
+
+V31-07 §37.4-A（review P2 修复）：零门店商家 Day-0 自由创作。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | 零门店商家 free 模式提交自由创作，得到不带虚构门店事实的通用结果 | 不种门店（ProductState.store=null 为诚实前置）→ 切「自由创作」入口（D-111）→ copy lens + 显式选模型 + 目的地小红书 → 通用 intent 提交 202 → 首 token + 候选可见 + 交付卡到达 → `data-delivered=true`；全程无 `composer-grounding-blocker`（D-175 free 不被缺 confirmed_store/project 阻断）；`content_packages` 正文与候选文本非空且**排他断言**不含从未种过的门店名/项目/地址（零虚构门店事实）。 |

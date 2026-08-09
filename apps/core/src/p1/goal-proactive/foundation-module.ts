@@ -19,7 +19,6 @@ import { MarketingGoalStoreError } from './goal-store.js';
 import type { GoalService } from './goal-service.js';
 import { OpportunityDecisionStoreError } from './opportunity-decision-store.js';
 import type { ProactiveService } from './proactive-service.js';
-import type { ProactiveGateConfig } from './evidence-gate.js';
 import type { ProactiveSignal } from '@meiye/contracts';
 
 /**
@@ -163,16 +162,6 @@ const listSuggestionsSchema = z
   .object({
     now: z.iso.datetime().optional(),
     maxCandidates: z.number().int().positive().max(20).optional(),
-    /** Test/fixture override for gate config. */
-    config: z
-      .object({
-        disableProactiveAgent: z.boolean(),
-        proactiveFeatureOn: z.boolean(),
-        workspaceAllowlisted: z.boolean(),
-        coverageThreshold: z.number().finite().nullable(),
-      })
-      .strict()
-      .optional(),
     signals: z.array(z.unknown()).optional(),
   })
   .strict();
@@ -338,7 +327,6 @@ export class GoalProactiveFoundationModule implements P1OperationModule {
             resourceId,
             now: input.now ?? new Date().toISOString(),
             maxCandidates: input.maxCandidates,
-            config: input.config as ProactiveGateConfig | undefined,
             signals: coerceSignalsForWorkspace(resourceId, input.signals),
           });
           return {
@@ -360,7 +348,6 @@ export class GoalProactiveFoundationModule implements P1OperationModule {
             resourceId,
             now: input.now ?? new Date().toISOString(),
             maxCandidates: input.maxCandidates,
-            config: input.config as ProactiveGateConfig | undefined,
             signals: coerceSignalsForWorkspace(resourceId, input.signals),
           });
           return {

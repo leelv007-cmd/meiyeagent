@@ -1,4 +1,5 @@
 import {
+  agentExecutionConfirmationRequestSchema,
   harnessActiveTaskListSchema,
   harnessTaskSubmissionSchema,
   harnessDecisionSnapshotSchema,
@@ -7,8 +8,10 @@ import {
   harnessInteractionMerchantMessageSchema,
   harnessInteractionRequestSchema,
   firstUsableDraftMetricSchema,
+  planConfirmationDecisionSchema,
   structuredDecisionInputSchema,
   todayRecommendationStateSchema,
+  type AgentExecutionConfirmationRequest,
   type HarnessTaskSubmission,
   type FirstUsableDraftMetric,
   type HarnessDecisionSnapshot as HarnessDecisionReadModel,
@@ -16,6 +19,7 @@ import {
   type HarnessInteractionEditing,
   type HarnessInteractionMerchantMessage,
   type HarnessInteractionRendererAck,
+  type PlanConfirmationDecision,
   type StructuredDecisionInput,
 } from '@meiye/contracts';
 import { z } from 'zod';
@@ -37,6 +41,33 @@ const harnessInteractionSnapshotSchema = z
     status: z.enum(['absent', 'pending', 'resolved']),
   })
   .strict();
+
+/**
+ * V31-11 confirmation-objects decide surface (POST
+ * /v1/workspaces/:id/p1/confirmation-requests/:reqId/decide). The decision is
+ * immutable; rejected refunds the full hold back to the original lots.
+ */
+export type ConfirmationDecideResult = {
+  decision: PlanConfirmationDecision;
+  request: AgentExecutionConfirmationRequest;
+  merchantMessage: string | null;
+  refundedCredits: number;
+};
+
+const confirmationDecideResultSchema = z
+  .object({
+    decision: planConfirmationDecisionSchema,
+    request: agentExecutionConfirmationRequestSchema,
+    merchantMessage: z.string().nullable(),
+    refundedCredits: z.number(),
+  })
+  .strict();
+
+export type ConfirmationDecideInput = {
+  decisionId: string;
+  decision: 'confirmed' | 'rejected';
+  decidedAt: string;
+};
 
 export interface HarnessDecisionSnapshot extends HarnessDecisionReadModel {
   exists: boolean;
@@ -173,6 +204,25 @@ export async function submitHarnessInteraction(
     }
   );
   return readEnvelope<unknown>(response);
+}
+
+export async function decideExecutionConfirmation(
+  requestId: string,
+  input: ConfirmationDecideInput
+): Promise<ConfirmationDecideResult> {
+  const response = await telemetryFetch(
+    `/api/core/p1/confirmation-requests/${encodeURIComponent(requestId)}/decide`,
+    {
+      body: JSON.stringify(input),
+      credentials: 'same-origin',
+      headers: {
+        'content-type': 'application/json',
+        'idempotency-key': input.decisionId,
+      },
+      method: 'POST',
+    }
+  );
+  return confirmationDecideResultSchema.parse(await readEnvelope(response));
 }
 
 export async function readPendingHarnessInteractionMessage(

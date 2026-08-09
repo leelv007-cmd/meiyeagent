@@ -695,6 +695,59 @@ test('V31-15: out-of-order batch sorts; reconnect hydrate rebuilds artifacts', (
   assert.equal(measureArtifactDuplicateObjectRate(hydrated), 0);
 });
 
+test('V31-15: cold delta chain (no snapshot) bootstraps without resync loop', () => {
+  const cold = (revision: number, baseRevision: number, pages: unknown[]) =>
+    wire({
+      eventId: `art-cold-${revision}`,
+      streamOffset: String(revision),
+      eventType: 'artifact.revised',
+      payload: noteDeltaPayload({ revision, baseRevision, pages }),
+    });
+
+  // live apply path: first-frame delta with baseRevision=0 must apply, not
+  // mark needsSnapshotResync (no infinite resync on cold replay)
+  let state = empty({ session: session() });
+  state = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: cold(1, 0, [
+      { pageIndex: 0, stage: 'copy', title: '封面', body: '周末护理' },
+    ]),
+  }).state;
+  assert.equal(state.artifacts['art-note-1']?.revision, 1);
+  assert.equal(state.needsSnapshotResync, false);
+
+  // replay of the same cold delta (resync re-fetch) stays idempotent — no loop
+  const replay = reduceAgentWorkbench(state, {
+    type: 'apply_semantic_event',
+    event: cold(1, 0, [
+      { pageIndex: 0, stage: 'copy', title: '封面', body: '周末护理' },
+    ]),
+  });
+  assert.equal(replay.ok, true);
+  assert.equal(replay.duplicate, true);
+  assert.equal(replay.state.needsSnapshotResync, false);
+
+  // hydrate_replay from empty cursor with only cold deltas converges
+  const hydrated = reduceAgentWorkbench(empty(), {
+    type: 'hydrate_replay',
+    session: session(),
+    snapshot: {
+      revision: '2',
+      lastEventId: 'art-cold-2',
+      lastStreamOffset: '2',
+    },
+    events: [
+      cold(1, 0, [
+        { pageIndex: 0, stage: 'copy', title: '封面', body: '周末护理' },
+      ]),
+      cold(2, 1, [{ pageIndex: 1, stage: 'copy', body: '第二页' }]),
+    ],
+  }).state;
+  assert.equal(hydrated.artifacts['art-note-1']?.revision, 2);
+  assert.equal(hydrated.needsSnapshotResync, false);
+  assert.equal(hydrated.connection, 'live');
+});
+
 test('V31-15: ready content requires derived parentRevision; version 回看', () => {
   let state = empty({ session: session() });
   state = reduceAgentWorkbench(state, {

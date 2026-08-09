@@ -106,6 +106,90 @@ export type PublishHarnessReleaseInput = {
   manifestHash?: string;
 };
 
+/**
+ * V31-21 P1-a bootstrap: release pinned for fresh environments where no
+ * production release exists yet (first turn must not fail closed).
+ *
+ * The id keeps legacy composer-plan pins resolvable (`composer-plan-surface-v1`
+ * was the historical hardcoded session id). promptPackBindings stays empty so
+ * publish is green without Langfuse pins — the artifact's promptBindings are
+ * eval/trace bookkeeping; runtime prompt fetch resolves via env versions.
+ */
+export const DEFAULT_BOOTSTRAP_RELEASE_ID = 'composer-plan-surface-v1';
+
+/** Fully calibrated limits frozen into the bootstrap release (U11). */
+export const DEFAULT_BOOTSTRAP_CONTROL_LIMITS: AgentControlLimits = {
+  maxLlmSteps: 8,
+  maxToolCalls: 8,
+  maxRetrievalCalls: 4,
+  maxMerchantQuestions: 3,
+  maxReplans: 2,
+  maxSchemaRepairs: 2,
+  maxContextTokens: 8_000,
+  maxDelegations: 1,
+};
+
+/**
+ * Publish + promote the bootstrap release when no production lifecycle exists.
+ * Idempotent across API/worker processes: artifact write is immutable and
+ * promotion retires any conflicting holder. Never touches an ops-managed
+ * production release — it only fires when none is pinned.
+ */
+export async function ensureBootstrapProductionRelease(
+  store: HarnessReleaseStore,
+  options: {
+    middlewareBindings?: readonly HarnessMiddlewareBinding[];
+    now?: string;
+  } = {},
+): Promise<{ bootstrapped: boolean; releaseId: string }> {
+  const existing = await store.getLifecycleByStatus('production');
+  if (existing) return { bootstrapped: false, releaseId: existing.releaseId };
+  const service = new HarnessReleaseService(store);
+  const releaseId = DEFAULT_BOOTSTRAP_RELEASE_ID;
+  const createdAt = nowIso(options.now);
+  await service.publishArtifact({
+    releaseId,
+    version: 1,
+    agentSessionHarnessVersion: 'bootstrap/session-v1',
+    makeHarnessVersion: 'bootstrap/make-v1',
+    middlewareBindings: [...(options.middlewareBindings ?? [])],
+    controlLimits: { ...DEFAULT_BOOTSTRAP_CONTROL_LIMITS },
+    supervisorPolicyRef: { id: 'bootstrap', revision: '1' },
+    memoryPolicyRef: { id: 'bootstrap', revision: '1' },
+    contextCompilerRef: { id: 'bootstrap', revision: '1' },
+    planSchemaRevision: 'plan-schema/v1',
+    promptBindings: {},
+    promptPackBindings: {},
+    schemaBindings: {},
+    skillBindings: {},
+    toolPolicyRevision: 'bootstrap/tool-v1',
+    modelPolicyRevision: 'bootstrap/model-v1',
+    factPolicyRevision: 'bootstrap/fact-v1',
+    rightsPolicyRevision: 'bootstrap/rights-v1',
+    budgetPolicyRevision: 'bootstrap/budget-v1',
+    evalSuiteRevision: 'bootstrap/eval-v1',
+    createdAt,
+  });
+  try {
+    // Walk the legal lifecycle chain (draft→evaluating→canary→production);
+    // the final promotion retires any conflicting holder.
+    for (const toStatus of ['evaluating', 'canary', 'production'] as const) {
+      await service.transitionLifecycle({
+        releaseId,
+        toStatus,
+        approvedBy: 'system-bootstrap',
+        now: createdAt,
+      });
+    }
+  } catch (error) {
+    // Race: another process promoted a production release while we published.
+    const current = await store.getLifecycleByStatus('production');
+    if (current) return { bootstrapped: false, releaseId: current.releaseId };
+    throw error;
+  }
+  return { bootstrapped: true, releaseId };
+}
+
 export type HarnessReleaseSelectionReason =
   | 'frozen'
   | 'candidate'
@@ -554,9 +638,12 @@ export class HarnessReleaseService {
   /**
    * U10: per-run may only pin a full immutable releaseId (no field override API).
    * frozenReleaseId (in-flight) always wins so rollback never mutates task pins.
+   *
+   * workspaceId is only consulted for canary allowlist matching; frozen and
+   * candidate paths resolve without it (session pins carry no workspace).
    */
   async resolveForRun(input: {
-    workspaceId: string;
+    workspaceId?: string | null;
     frozenReleaseId?: string | null;
     /**
      * Full candidate releaseId only. Passing field-level overrides is not
@@ -593,6 +680,7 @@ export class HarnessReleaseService {
     if (canary) {
       const rollout = await this.store.getRollout(canary.releaseId);
       if (
+        input.workspaceId &&
         rollout?.workspaceAllowlist.includes(input.workspaceId)
       ) {
         const artifact = await this.getExactRelease(canary.releaseId);

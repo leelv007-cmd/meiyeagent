@@ -86,6 +86,19 @@ export class PostgresExecutionConfirmationRequestStore
   async savePending(
     input: StoredConfirmationRequest,
   ): Promise<StoredConfirmationRequest> {
+    return this.savePendingWithClient(this.pool, input);
+  }
+
+  /**
+   * P1-b: insert the pending request row on the caller-provided connection so
+   * it joins the same DB transaction as balance check + reservation + FEFO
+   * deduction (withWorkspaceCreditTransaction). Keeps ON CONFLICT
+   * (request_id) DO NOTHING idempotency.
+   */
+  async savePendingWithClient(
+    client: Queryable,
+    input: StoredConfirmationRequest,
+  ): Promise<StoredConfirmationRequest> {
     const request = parseConfirmationRequest(input.request);
     if (request.status !== 'pending') {
       throw new ExecutionConfirmationError(
@@ -93,7 +106,7 @@ export class PostgresExecutionConfirmationRequestStore
         'Only pending confirmation requests may be created.',
       );
     }
-    const inserted = await this.pool.query<RequestRow>(
+    const inserted = await client.query<RequestRow>(
       `INSERT INTO p1_execution_confirmation_requests (
          request_id, workspace_id, plan_id, plan_revision, status,
          reservation_idempotency_key, hold_expires_at,
@@ -424,6 +437,7 @@ export function confirmationCreditPortFromPostgresLedger(
           return lock(workspaceId, async (client) => {
             const txLedger: Port = {
               project: (ws, asOf) => ledger.project(ws, asOf),
+              transactionClient: client,
               consume: async (input) => {
                 if (!ledger.consumeWithClient) {
                   return ledger.consume(input);

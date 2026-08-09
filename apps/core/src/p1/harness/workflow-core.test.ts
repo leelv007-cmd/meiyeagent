@@ -27,6 +27,8 @@ import {
   BoundedExecutionResumeError,
   resumeWithRaisedServerLimit,
 } from './bounded-execution-controller.js';
+import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-event-store.js';
+import { applyArtifactUpdate, artifactUpdateWireSchema } from '@meiye/contracts';
 
 test('V31-14 snapshot consume path: zero nameIntent/compileBrief LLM re-call (trace)', async () => {
   const {
@@ -747,6 +749,108 @@ test('image and video snapshots use the same five Harness stages with modality-s
       JSON.stringify(traces[0]?.payload),
       new RegExp(`"modality":"${kind}"`, 'u')
     );
+  }
+});
+
+test('V31-15 video wiring: real media stage ports emit per-scene artifact.revised (running → success)', async () => {
+  const projected: SemanticEventCandidate[] = [];
+  const stages = mediaStages('video');
+  stages.compileMediaBrief = async () => ({
+    kind: 'video',
+    firstFramePrompt:
+      '夏日护理项目门店开场，展示明确的品牌主视觉和预约行动号召。',
+    storyboard: [
+      {
+        index: 1,
+        description: '门店护理场景与主视觉展示。',
+        durationSeconds: 8,
+      },
+      {
+        index: 2,
+        description: '护理前后对比特写。',
+        durationSeconds: 8,
+      },
+    ],
+    referenceAssetIds: ['asset-1'],
+    parameters: { durationSeconds: 16, ratio: '9:16' },
+    constraints: ['不得编造价格'],
+  });
+  stages.artifactProgressEmitter = {
+    async project(candidate) {
+      projected.push(candidate);
+    },
+  };
+
+  await runHarnessWorkflow(
+    'task-video-artifact',
+    mediaTaskInput('video'),
+    stages,
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        throw new Error('Unexpected media decision wait.');
+      },
+      async recordTrace() {},
+    }
+  );
+
+  const wires = projected.map((candidate) => {
+    assert.equal(candidate.eventType, 'artifact.revised');
+    assert.equal(candidate.sourceDomain, 'make_harness.artifact');
+    const parsed = artifactUpdateWireSchema.parse(candidate.payload);
+    if (parsed.mode !== 'delta') throw new Error('expected delta');
+    if (!('scenes' in parsed.patch)) throw new Error('expected video patch');
+    return {
+      wire: parsed,
+      scene: parsed.patch.scenes?.[0],
+    };
+  });
+  assert.equal(wires.length, 4);
+  const updates = wires.map(({ wire }) => wire);
+  const [scene0Run, scene1Run, scene0Ready, scene1Ready] = wires.map(
+    ({ scene }) => scene!
+  );
+  assert.ok(scene0Run && scene1Run && scene0Ready && scene1Ready);
+  assert.equal(scene0Run.sceneIndex, 0);
+  assert.equal(scene0Run.storyboard, '门店护理场景与主视觉展示。');
+  assert.equal(scene0Run.keyframeStatus, 'generating');
+  assert.equal(scene1Run.sceneIndex, 1);
+  assert.equal(scene1Run.storyboard, '护理前后对比特写。');
+  assert.equal(scene1Run.keyframeStatus, 'generating');
+  assert.equal(scene0Ready.sceneIndex, 0);
+  assert.equal(scene0Ready.storyboard, undefined);
+  assert.equal(scene0Ready.keyframeStatus, 'ready');
+  assert.equal(scene1Ready.sceneIndex, 1);
+  assert.equal(scene1Ready.storyboard, undefined);
+  assert.equal(scene1Ready.keyframeStatus, 'ready');
+  const revisions = updates.map((update) => update.revision);
+  assert.deepEqual(revisions, [1, 2, 3, 4]);
+  assert.equal(new Set(updates.map((update) => update.artifactId)).size, 1);
+  assert.match(updates[0]!.artifactId, /^video:/u);
+
+  // In-place reconciliation: both scenes land with storyboard + ready keyframe.
+  let state = applyArtifactUpdate(null, updates[0]!);
+  for (const update of updates.slice(1)) {
+    const applied = applyArtifactUpdate(
+      state.ok ? state.state : null,
+      update
+    );
+    if (applied.ok) state = applied;
+  }
+  assert.equal(state.ok, true);
+  if (!state.ok) return;
+  assert.equal(state.state.revision, 4);
+  assert.ok('scenes' in state.state.body);
+  if ('scenes' in state.state.body) {
+    assert.equal(state.state.body.scenes.length, 2);
+    assert.equal(state.state.body.scenes[0]?.storyboard, '门店护理场景与主视觉展示。');
+    assert.equal(state.state.body.scenes[0]?.keyframeStatus, 'ready');
+    assert.equal(state.state.body.scenes[1]?.storyboard, '护理前后对比特写。');
+    assert.equal(state.state.body.scenes[1]?.keyframeStatus, 'ready');
   }
 });
 

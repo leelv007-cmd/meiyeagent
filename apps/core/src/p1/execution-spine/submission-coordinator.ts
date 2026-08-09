@@ -7,6 +7,7 @@ import {
 
 import { fingerprintValue } from "../job-runtime/job-contracts.js";
 import { selectImageIntentOperation } from "../harness/image-intent-compiler.js";
+import type { ExecutionPlanCompileFreeze } from "../harness/execution-plan-admission.js";
 import type { HarnessWorkflowInput } from "../harness/task-admission.js";
 import { buildTerminalSemanticDecisionSuccessor } from "../harness/semantic-decision-resumption.js";
 import type { ProductBillingApplicationPort } from "../product-billing/durable-service.js";
@@ -33,6 +34,13 @@ export interface CreationSubmissionRecord {
 		/** Historical per-resource reservation retained for read compatibility. */
 		units: CreationSubmissionUsageUnit[];
 	};
+	/**
+	 * V31-12 compile-finalize freeze, written in-memory by the Composer plan
+	 * session after compile and consumed by the Harness admission path. Not
+	 * part of the durable submission payload; replays reconstruct the same
+	 * snapshot from the frozen harness request.
+	 */
+	executionPlanFreeze?: ExecutionPlanCompileFreeze;
 }
 
 export interface CreationSubmissionUsageUnit {

@@ -23,6 +23,7 @@ import {
 import {
   createRetrievalToolRegistry,
   createSessionRetrievalPorts,
+  memoryInjectionTurnBridge,
   RETRIEVAL_TOOL_NAMES,
 } from './context-retrieval.js';
 import { FixtureAgentKernel } from './agent-kernel.js';
@@ -588,4 +589,62 @@ test('first-batch retrieval tool names match V3.1 §20.2', () => {
     'read_platform_requirements',
     'read_recent_content',
   ]);
+});
+
+test('V31-18 read_confirmed_experience forwards the per-turn injection binding', async () => {
+  const seen: Array<{ injectionContext?: object }> = [];
+  const ports = createSessionRetrievalPorts({
+    experience: {
+      retrieveForInjection: async (query) => {
+        seen.push({ injectionContext: query.injectionContext });
+        return query.injectionContext
+          ? [
+              {
+                memoryId: 'pref-x',
+                statement: '语气轻一点',
+                kind: 'preference',
+                authority: 'confirmed',
+              },
+            ]
+          : [];
+      },
+    },
+  });
+  const registry = createRetrievalToolRegistry({
+    ports,
+    context: { workspaceId: 'ws-1', creationMode: 'customized' },
+  });
+  const tools = registry.toKernelTools({ phase: 'intent' });
+
+  // No turn binding → read-only retrieval, no injection context forwarded.
+  await tools.read_confirmed_experience!.execute({
+    response_format: 'concise',
+  });
+  assert.equal(seen[0]?.injectionContext, undefined);
+
+  // Turn runner binds task/run/release → forwarded to the injection point.
+  const binding = {
+    taskId: 'task-1',
+    runId: 'run-1',
+    harnessReleaseId: 'release-1',
+  };
+  memoryInjectionTurnBridge.current = binding;
+  try {
+    const result = await tools.read_confirmed_experience!.execute({
+      response_format: 'concise',
+    });
+    assert.equal(
+      (result as { confirmed: unknown[] }).confirmed.length,
+      1,
+    );
+    assert.deepEqual(seen[1]?.injectionContext, binding);
+  } finally {
+    memoryInjectionTurnBridge.current = undefined;
+  }
+
+  // Bridge restored → next read is read-only again.
+  await tools.read_confirmed_experience!.execute({
+    response_format: 'concise',
+  });
+  assert.equal(seen[2]?.injectionContext, undefined);
 });

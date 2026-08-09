@@ -246,6 +246,59 @@ test('ArtifactUpdate SSE: skip revision fails apply → snapshot fallback via re
   );
 });
 
+test('ArtifactUpdate SSE: cold delta first frame bootstraps client projection', async () => {
+  const store = new MemoryAgentSemanticEventStore();
+  const projector = new AgentSemanticEventProjector(store);
+
+  const coldDelta: ArtifactUpdateWire = artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'delta',
+    artifactId: 'art-note-1',
+    artifactType: 'note',
+    revision: 1,
+    status: 'partial',
+    baseRevision: 0,
+    patch: {
+      pages: [
+        { pageIndex: 0, stage: 'image', title: '封面', imageStatus: 'ready' },
+      ],
+    },
+  });
+
+  const projected = await projector.project(
+    candidate({ eventId: 'cold-1', payload: coldDelta }),
+  );
+  const frame = encodeAgentSemanticSseFrame(
+    semanticFrameFromDomain(projected.event),
+  );
+  const wire = agentSemanticEventToWire(projected.event);
+  const update = artifactUpdateWireSchema.parse(
+    (parseSseData(frame) as { payload: unknown }).payload,
+  );
+  assert.equal(update.mode, 'delta');
+  assert.equal(update.revision, 1);
+
+  // Cold client: baseRevision=0 delta bootstraps instead of needs_snapshot —
+  // the resync replay of the same frame converges instead of looping.
+  const applied = applyArtifactUpdate(null, update);
+  assert.equal(applied.ok, true);
+  if (!applied.ok) return;
+  assert.equal(applied.state.revision, 1);
+  assert.ok('pages' in applied.state.body);
+  if ('pages' in applied.state.body) {
+    assert.equal(applied.state.body.pages[0]?.imageStatus, 'ready');
+  }
+
+  // same frame re-apply idempotent (replay convergence)
+  const again = applyArtifactUpdate(
+    applied.state,
+    artifactUpdateWireSchema.parse(wire.payload),
+  );
+  assert.equal(again.ok, true);
+  if (!again.ok) return;
+  assert.equal(again.duplicate, true);
+});
+
 test('ArtifactUpdate SSE reconnect streamReplay frames decode cleanly', async () => {
   const store = new MemoryAgentSemanticEventStore();
   const projector = new AgentSemanticEventProjector(store);

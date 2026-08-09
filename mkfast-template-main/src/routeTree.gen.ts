@@ -112,6 +112,7 @@ import { Route as ApiCoreP1AssistantStreamRouteImport } from './routes/api/core/
 import { Route as ApiCoreDiagnosticsIdResumeRouteImport } from './routes/api/core/diagnostics/$id/resume'
 import { Route as ApiCoreDiagnosticsIdEventsRouteImport } from './routes/api/core/diagnostics/$id/events'
 import { Route as ApiCoreP1WorkflowsWorkflowIdEventsRouteImport } from './routes/api/core/p1/workflows/$workflowId/events'
+import { Route as ApiCoreP1ConfirmationRequestsRequestIdDecideRouteImport } from './routes/api/core/p1/confirmation-requests/$requestId/decide'
 import { Route as ApiCoreP1AgentThreadsThreadIdReplayRouteImport } from './routes/api/core/p1/agent-threads/$threadId/replay'
 import { Route as ApiCoreP1AgentThreadsThreadIdEventsRouteImport } from './routes/api/core/p1/agent-threads/$threadId/events'
 import { Route as ApiCoreP1HarnessTasksTaskIdProductMetricsRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/product-metrics'
@@ -650,6 +651,12 @@ const ApiCoreP1WorkflowsWorkflowIdEventsRoute =
     path: '/api/core/p1/workflows/$workflowId/events',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiCoreP1ConfirmationRequestsRequestIdDecideRoute =
+  ApiCoreP1ConfirmationRequestsRequestIdDecideRouteImport.update({
+    id: '/api/core/p1/confirmation-requests/$requestId/decide',
+    path: '/api/core/p1/confirmation-requests/$requestId/decide',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCoreP1AgentThreadsThreadIdReplayRoute =
   ApiCoreP1AgentThreadsThreadIdReplayRouteImport.update({
     id: '/api/core/p1/agent-threads/$threadId/replay',
@@ -816,6 +823,7 @@ export interface FileRoutesByFullPath {
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
   '/api/core/p1/agent-threads/$threadId/events': typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
   '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
+  '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
@@ -927,6 +935,7 @@ export interface FileRoutesByTo {
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
   '/api/core/p1/agent-threads/$threadId/events': typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
   '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
+  '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
@@ -1043,6 +1052,7 @@ export interface FileRoutesById {
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
   '/api/core/p1/agent-threads/$threadId/events': typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
   '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
+  '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
@@ -1160,6 +1170,7 @@ export interface FileRouteTypes {
     | '/api/core/p1/harness/tasks'
     | '/api/core/p1/agent-threads/$threadId/events'
     | '/api/core/p1/agent-threads/$threadId/replay'
+    | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
@@ -1271,6 +1282,7 @@ export interface FileRouteTypes {
     | '/api/core/p1/harness/tasks'
     | '/api/core/p1/agent-threads/$threadId/events'
     | '/api/core/p1/agent-threads/$threadId/replay'
+    | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
@@ -1386,6 +1398,7 @@ export interface FileRouteTypes {
     | '/api/core/p1/harness/tasks'
     | '/api/core/p1/agent-threads/$threadId/events'
     | '/api/core/p1/agent-threads/$threadId/replay'
+    | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
@@ -1438,6 +1451,7 @@ export interface RootRouteChildren {
   ApiCoreP1HarnessTasksRoute: typeof ApiCoreP1HarnessTasksRouteWithChildren
   ApiCoreP1AgentThreadsThreadIdEventsRoute: typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
   ApiCoreP1AgentThreadsThreadIdReplayRoute: typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
+  ApiCoreP1ConfirmationRequestsRequestIdDecideRoute: typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   ApiCoreP1WorkflowsWorkflowIdEventsRoute: typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
 }
 
@@ -2164,6 +2178,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCoreP1WorkflowsWorkflowIdEventsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/core/p1/confirmation-requests/$requestId/decide': {
+      id: '/api/core/p1/confirmation-requests/$requestId/decide'
+      path: '/api/core/p1/confirmation-requests/$requestId/decide'
+      fullPath: '/api/core/p1/confirmation-requests/$requestId/decide'
+      preLoaderRoute: typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/core/p1/agent-threads/$threadId/replay': {
       id: '/api/core/p1/agent-threads/$threadId/replay'
       path: '/api/core/p1/agent-threads/$threadId/replay'
@@ -2530,6 +2551,8 @@ const rootRouteChildren: RootRouteChildren = {
     ApiCoreP1AgentThreadsThreadIdEventsRoute,
   ApiCoreP1AgentThreadsThreadIdReplayRoute:
     ApiCoreP1AgentThreadsThreadIdReplayRoute,
+  ApiCoreP1ConfirmationRequestsRequestIdDecideRoute:
+    ApiCoreP1ConfirmationRequestsRequestIdDecideRoute,
   ApiCoreP1WorkflowsWorkflowIdEventsRoute:
     ApiCoreP1WorkflowsWorkflowIdEventsRoute,
 }

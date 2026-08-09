@@ -9,6 +9,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { type ReactNode, useState } from 'react';
 import { afterEach, expect, test, vi } from 'vitest';
 
+import type { ConfirmationDecideResult } from '@/product/harness-client';
 import {
   bindComposerTask,
   createComposerSession,
@@ -103,10 +104,44 @@ function createTransports(
     interaction?: AskMerchantQuestionRequest | ExecutionConfirmationRequest;
     interactionMessage?: ExecutionConfirmationRequest;
     question?: QuestionCard;
+    decideRejects?: boolean;
   } = {}
 ) {
+  const decide = vi.fn<
+    ComposerInteractionTransports['decideExecutionConfirmation']
+  >(async () => {
+    if (input.decideRejects) {
+      throw new Error('decide unavailable');
+    }
+    return {
+      decision: {
+        schemaVersion: 'plan-confirmation-decision/v1',
+        decisionId: 'dec-1',
+        requestId: input.interaction?.requestId ?? 'execution-1',
+        actorId: 'user-1',
+        decision: 'confirmed',
+        decidedAt: '2026-08-08T12:00:00.000Z',
+      },
+      request: {
+        schemaVersion: 'agent-execution-confirmation-request/v1',
+        requestId: input.interaction?.requestId ?? 'execution-1',
+        workspaceId: 'ws-1',
+        planId: 'plan-1',
+        planRevision: 1,
+        snapshotHash: 'snap-hash-1',
+        quoteRef: { id: 'quote-1', revision: 'r1' },
+        reservationIdempotencyKey: 'reserve-1',
+        createdAt: '2026-08-08T11:00:00.000Z',
+        holdExpiresAt: '2026-08-09T11:00:00.000Z',
+        status: 'decided',
+      },
+      merchantMessage: null,
+      refundedCredits: 0,
+    } as ConfirmationDecideResult;
+  });
   return {
     acknowledgeRenderer: vi.fn(async () => undefined),
+    decideExecutionConfirmation: decide,
     readDecision: vi.fn(async () => ({
       exists: Boolean(input.question),
       question: input.question ?? null,
@@ -302,6 +337,13 @@ test('handles confirmation answer, continuation message, and renderer ack', asyn
     )
   );
 
+  expect(transports.decideExecutionConfirmation).toHaveBeenCalledWith(
+    'execution-1',
+    expect.objectContaining({
+      decision: 'confirmed',
+      decisionId: 'composer-confirmation-decision:execution-1',
+    })
+  );
   expect(transports.submitInteraction).toHaveBeenCalledWith(
     TASK.taskId,
     expect.objectContaining({
@@ -321,4 +363,61 @@ test('handles confirmation answer, continuation message, and renderer ack', asyn
     revision: 4,
     step: 'execution_selection',
   });
+});
+
+test('confirmation answer records a rejected decide with the refund message', async () => {
+  const transports = createTransports({ interaction: EXECUTION_REQUEST });
+  const view = renderInteractions({ transports });
+  await waitFor(() =>
+    expect(
+      view.result.current.interactions.pendingExecutionConfirmation
+    ).toEqual(EXECUTION_REQUEST)
+  );
+
+  await act(() =>
+    view.result.current.interactions.answerExecutionConfirmation({
+      kind: 'rejected',
+      feedback: '换一个稳妥的模型',
+    })
+  );
+
+  expect(transports.decideExecutionConfirmation).toHaveBeenCalledWith(
+    'execution-1',
+    expect.objectContaining({ decision: 'rejected' })
+  );
+  expect(transports.submitInteraction).toHaveBeenCalledWith(
+    TASK.taskId,
+    expect.objectContaining({
+      requestId: 'execution-1',
+      revision: 4,
+      response: { kind: 'rejected', feedback: '换一个稳妥的模型' },
+    })
+  );
+});
+
+test('confirmation answer falls back to interaction-only resume when decide is unavailable', async () => {
+  const transports = createTransports({
+    interaction: EXECUTION_REQUEST,
+    decideRejects: true,
+  });
+  const view = renderInteractions({ transports });
+  await waitFor(() =>
+    expect(
+      view.result.current.interactions.pendingExecutionConfirmation
+    ).toEqual(EXECUTION_REQUEST)
+  );
+
+  await act(() =>
+    view.result.current.interactions.answerExecutionConfirmation({
+      kind: 'approved',
+    })
+  );
+
+  expect(transports.decideExecutionConfirmation).toHaveBeenCalledTimes(1);
+  expect(transports.submitInteraction).toHaveBeenCalledWith(
+    TASK.taskId,
+    expect.objectContaining({
+      idempotencyKey: 'composer-interaction:execution-1:r4:merchant',
+    })
+  );
 });

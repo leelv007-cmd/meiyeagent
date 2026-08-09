@@ -20,6 +20,7 @@ import {
 } from '@meiye/contracts';
 
 import {
+  assembleExecutionPlanSnapshot,
   assertExecutionPlanFidelity,
   buildExecutionPlanSnapshot,
   computeExecutionPlanSnapshotHash,
@@ -29,6 +30,7 @@ import {
   freezeExecutionPlanContent,
   resolveDurableReplayBranch,
   verifyExecutionPlanSnapshotForDbos,
+  type ExecutionPlanCompileFreeze,
   type ExecutionPlanFrozenContent,
 } from './execution-plan-admission.js';
 import { MemoryExecutionPlanSnapshotStore } from './memory-execution-plan-admission-store.js';
@@ -370,5 +372,108 @@ test('merchant_confirmed requires decisionRef; policy_exempt forbids it at admit
     (error: unknown) =>
       error instanceof ExecutionPlanAdmissionError &&
       error.code === 'DECISION_REF_FORBIDDEN',
+  );
+});
+
+// ─── Compile-finalize producer ──────────────────────────────────────────────
+
+function compileFreeze(
+  overrides: Partial<ExecutionPlanCompileFreeze> = {},
+): ExecutionPlanCompileFreeze {
+  const content = frozenContent();
+  return {
+    planId: content.planId,
+    planRevision: content.planRevision,
+    intentDeclaration: content.intentDeclaration,
+    contextBundleRef: content.contextBundleRef,
+    executionPlan: content.executionPlan,
+    deliverables: content.deliverables,
+    quoteRef: content.quoteRef,
+    rightsRevisionRefs: content.rightsRevisionRefs,
+    harnessReleaseId: content.harnessReleaseId,
+    approvalBasis: content.approvalBasis,
+    ...overrides,
+  } as unknown as ExecutionPlanCompileFreeze;
+}
+
+function assemblyInput(
+  overrides: Partial<ExecutionPlanCompileFreeze> = {},
+) {
+  const freeze = compileFreeze(overrides);
+  return {
+    freeze,
+    promptRevisionRefs: {},
+    skillManifestRefs: {},
+    routeRequirements: [],
+    factRevisionRefs: [],
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1' as const,
+      maxIterations: 10,
+      maxCostCents: 100,
+      maxWallClockMs: 60_000,
+      maxDelegations: 2,
+      requiredLimits: ['maxIterations', 'maxCostCents'] as Array<
+        'maxIterations' | 'maxCostCents' | 'maxWallClockMs' | 'maxDelegations'
+      >,
+      consumption: {
+        iterations: 0,
+        costCents: 0,
+        wallClockMs: 0,
+        delegations: 0,
+      },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+  };
+}
+
+test('compile-finalize assembly produces a validated snapshot; hash is stable (idempotent producer)', () => {
+  const snapshot = assembleExecutionPlanSnapshot(assemblyInput());
+  assert.equal(snapshot.schemaVersion, EXECUTION_PLAN_SNAPSHOT_SCHEMA_VERSION);
+  assert.equal(snapshot.approvalBasis, 'policy_exempt_copy');
+  assert.equal(snapshot.confirmationDecisionRef, undefined);
+  assert.equal(snapshot.planRevision, 1);
+  assert.equal(snapshot.quoteRef.id, 'quote-1');
+  assert.equal(snapshot.harnessReleaseId, 'release-1');
+
+  // Idempotent: assembling the same freeze twice yields the same hash, and the
+  // hash matches the direct freeze of the equivalent full content.
+  const again = assembleExecutionPlanSnapshot(assemblyInput());
+  assert.equal(again.snapshotHash, snapshot.snapshotHash);
+  const equivalentContent = frozenContent({
+    promptRevisionRefs: {},
+    skillManifestRefs: {},
+    routeRequirements: [],
+    factRevisionRefs: [],
+    boundedExecution: { ...BOUNDED, requiredLimits: ['maxIterations', 'maxCostCents'] },
+  });
+  assert.equal(
+    computeExecutionPlanSnapshotHash(equivalentContent),
+    snapshot.snapshotHash,
+  );
+
+  // Fidelity exit gate: the assembled snapshot executes exactly the frozen
+  // compile fields (confirmed == executing).
+  assert.equal(
+    assertExecutionPlanFidelity({ confirmed: equivalentContent, executing: snapshot }),
+    true,
+  );
+
+  // Drift in a compile field changes the hash (stale detection surface).
+  const drifted = assembleExecutionPlanSnapshot(
+    assemblyInput({ deliverables: [{ deliverableId: 'd1', kind: 'copy', quantity: 2 }] }),
+  );
+  assert.notEqual(drifted.snapshotHash, snapshot.snapshotHash);
+});
+
+test('compile-finalize assembly fails closed for merchant_confirmed without decisionRef', () => {
+  assert.throws(
+    () =>
+      assembleExecutionPlanSnapshot(
+        assemblyInput({ approvalBasis: 'merchant_confirmed' }),
+      ),
+    (error: unknown) =>
+      error instanceof Error &&
+      /confirmationDecisionRef/u.test(String((error as { message?: string }).message)),
   );
 });

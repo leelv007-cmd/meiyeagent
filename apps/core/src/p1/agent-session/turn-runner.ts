@@ -59,6 +59,7 @@ import {
 } from './state-machine.js';
 import { interceptSystemOnlyProposal } from './system-only-intercept.js';
 import type { AgentToolRegistry } from './tool-registry.js';
+import { memoryInjectionTurnBridge } from './context-retrieval.js';
 import {
   parseAgentTurnDecision,
   parseAgentTurnInput,
@@ -324,19 +325,13 @@ export class AgentTurnRunner {
     });
 
     const kernelResult = await middleware.wrapModelCall(middlewareCtx, () =>
-      this.deps.kernel.runTurn({
-        instructions: `beauty-marketing-agent phase=${authoritativeInput.phase}`,
-        prompt: JSON.stringify(projection),
-        tools: wrappedTools,
+      this.runKernelWithInjectionBinding({
+        input: authoritativeInput,
+        projection,
+        wrappedTools,
         activeToolNames,
-        maxLlmSteps: controlLimits.maxLlmSteps,
-        onPartial: async (partial) => {
-          this.activity.upsertPartial({
-            stableId: activityStableId,
-            payload: partial,
-            status: 'forming',
-          });
-        },
+        controlLimits,
+        activityStableId,
       }),
     );
     const llmCallCount = 1;
@@ -523,6 +518,45 @@ export class AgentTurnRunner {
       llmCallCount,
       billingUx,
     };
+  }
+
+  private async runKernelWithInjectionBinding(input: {
+    input: AgentTurnInput;
+    projection: ModelContextProjection;
+    wrappedTools: Record<string, AgentKernelToolDefinition>;
+    activeToolNames: string[];
+    controlLimits: AgentControlLimits;
+    activityStableId: string;
+  }): Promise<unknown> {
+    // V31-18: while the kernel may call read_confirmed_experience, the memory
+    // injection point must know which task/run/release it traces. The bridge
+    // is module-scoped (one turn at a time per process); restored on exit.
+    const previousBinding = memoryInjectionTurnBridge.current;
+    memoryInjectionTurnBridge.current = {
+      ...(input.input.activeTaskRef?.taskId
+        ? { taskId: input.input.activeTaskRef.taskId }
+        : {}),
+      runId: input.input.runId,
+      harnessReleaseId: input.input.harnessReleaseId,
+    };
+    try {
+      return await this.deps.kernel.runTurn({
+        instructions: `beauty-marketing-agent phase=${input.input.phase}`,
+        prompt: JSON.stringify(input.projection),
+        tools: input.wrappedTools,
+        activeToolNames: input.activeToolNames,
+        maxLlmSteps: input.controlLimits.maxLlmSteps,
+        onPartial: async (partial) => {
+          this.activity.upsertPartial({
+            stableId: input.activityStableId,
+            payload: partial,
+            status: 'forming',
+          });
+        },
+      });
+    } finally {
+      memoryInjectionTurnBridge.current = previousBinding;
+    }
   }
 
   private async resolveProgressiveLevel(

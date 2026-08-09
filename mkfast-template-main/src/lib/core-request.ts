@@ -253,6 +253,8 @@ export type WorkspaceHarnessInteractionResource =
   | `p1/harness/tasks/${string}/interaction/v2/renderer`;
 export type WorkspaceHarnessProductMetricResource =
   `p1/harness/tasks/${string}/product-metrics`;
+export type WorkspaceConfirmationDecisionResource =
+  `p1/confirmation-requests/${string}/decide`;
 
 export function workspaceWorkflowEventResource(
   workflowId: string
@@ -290,6 +292,12 @@ export function workspaceHarnessProductMetricResource(
   taskId: string
 ): WorkspaceHarnessProductMetricResource {
   return `p1/harness/tasks/${encodeURIComponent(taskId)}/product-metrics`;
+}
+
+export function workspaceConfirmationDecisionResource(
+  requestId: string
+): WorkspaceConfirmationDecisionResource {
+  return `p1/confirmation-requests/${encodeURIComponent(requestId)}/decide`;
 }
 
 export function workspaceCoreUpstreamPath(

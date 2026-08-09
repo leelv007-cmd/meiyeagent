@@ -56,6 +56,16 @@ import type { CustodyOwnedAssetContentType } from './p1/model-supply/index.js';
 import type { OperationsApplicationService } from './p1/operations/application-service.js';
 import type { OperationContext } from './p1/operations/types.js';
 import type { HarnessApplicationService } from './p1/harness/application-service.js';
+import type {
+  CreateExecutionConfirmationInput,
+  CreateExecutionConfirmationResult,
+  DecideExecutionConfirmationInput,
+  DecideExecutionConfirmationResult,
+  ExpireExecutionConfirmationInput,
+  ExpireExecutionConfirmationResult,
+} from './p1/agent-session/execution-confirmation-service.js';
+import { ExecutionConfirmationError } from './p1/agent-session/execution-confirmation-store.js';
+import type { StoredConfirmationRequest } from './p1/agent-session/execution-confirmation-store.js';
 import { composerSubmissionBodySchema } from './p1/execution-spine/creation-execution-snapshot.js';
 import {
   composerDestinationMappingRequestSchema,
@@ -229,6 +239,23 @@ interface CoreServerDependencies {
       };
     }>;
   };
+  /**
+   * V31-11: confirmation-card HTTP surface (create/decide/expire/list pending).
+   * Backed by sessionAgentHarness.createExecutionConfirmation /
+   * decideExecutionConfirmation / expireExecutionConfirmationHold.
+   */
+  executionConfirmation?: {
+    create(
+      input: CreateExecutionConfirmationInput,
+    ): Promise<CreateExecutionConfirmationResult>;
+    decide(
+      input: DecideExecutionConfirmationInput,
+    ): Promise<DecideExecutionConfirmationResult>;
+    expire(
+      input: ExpireExecutionConfirmationInput,
+    ): Promise<ExpireExecutionConfirmationResult>;
+    listPending(workspaceId: string): Promise<StoredConfirmationRequest[]>;
+  };
   serviceToken: string;
   workflowEvents?: WorkflowEventApplicationService;
   workflowHeartbeatMs?: number;
@@ -291,6 +318,64 @@ const workspaceBootstrapRequestSchema = z.object({
     name: z.string().trim().min(1).max(200),
   }),
 });
+
+const agentRevisionRefBodySchema = z.object({
+  id: z.string().trim().min(1).max(200),
+  revision: z.union([
+    z.number().int().nonnegative(),
+    z.string().trim().min(1).max(64),
+  ]),
+});
+
+// V31-11: confirmation-card create body (domain service re-validates deeply
+// via agentExecutionConfirmationRequestSchema — hold window + campaign bits).
+const executionConfirmationCreateBodySchema = z.object({
+  requestId: z.string().trim().min(1).max(200),
+  planId: z.string().trim().min(1).max(200),
+  planRevision: z.number().int().positive(),
+  snapshotHash: z.string().trim().min(1).max(200),
+  quoteRef: agentRevisionRefBodySchema,
+  reservationIdempotencyKey: z.string().trim().min(1).max(200),
+  createdAt: z.string().trim().min(1).max(64),
+  holdExpiresAt: z.string().trim().min(1).max(64),
+  creditCost: z.number().int().nonnegative(),
+  failureRefundsCredits: z.boolean(),
+  rightsSummary: z.string().max(2000).nullish(),
+  factSummary: z.string().max(2000).nullish(),
+  campaignPlanRef: agentRevisionRefBodySchema.optional(),
+  workOrdinal: z.number().int().positive().optional(),
+  approvalScope: z.enum(['plan_only', 'single_work']).optional(),
+});
+
+const executionConfirmationDecideBodySchema = z.object({
+  decisionId: z.string().trim().min(1).max(200),
+  decision: z.enum(['confirmed', 'rejected']),
+  decidedAt: z.string().trim().min(1).max(64),
+});
+
+const executionConfirmationExpireBodySchema = z.object({
+  now: z.string().trim().min(1).max(64),
+});
+
+/**
+ * V31-11 route-layer translation: ExecutionConfirmationError is a plain domain
+ * error (not P1DomainError), so map its codes onto HTTP semantics here.
+ */
+function translateExecutionConfirmationError(error: unknown): never {
+  if (error instanceof ExecutionConfirmationError) {
+    const status =
+      error.code === 'NOT_FOUND'
+        ? 404
+        : error.code === 'INSUFFICIENT_CREDITS' ||
+            error.code === 'INVALID_STATE' ||
+            error.code === 'CAMPAIGN_WORK_ALREADY_OPEN' ||
+            error.code === 'HOLD_NOT_EXPIRED'
+          ? 409
+          : 400;
+    throw new DomainError(error.code, error.message, status);
+  }
+  throw error;
+}
 
 function correlationId(request: IncomingMessage) {
   const value = request.headers['x-correlation-id'];
@@ -873,6 +958,7 @@ export function createCoreServer({
   interruptProtocol,
   planCatalog,
   runtimeTruth,
+  executionConfirmation,
   serviceToken,
   workflowEvents,
   workflowHeartbeatMs = 15_000,
@@ -2156,6 +2242,179 @@ export function createCoreServer({
           {
             code: 'INVALID_HARNESS_REQUEST',
             message: 'Harness request is invalid.',
+            status: 400,
+            unknownMessage: 'error',
+          }
+        );
+        return;
+      },
+    ]);
+
+    // V31-11: confirmation-card HTTP surface (create/decide/expire/list pending).
+    // Backed by sessionAgentHarness confirmation methods (core-assembly binding).
+    const confirmationCollectionWorkspaceId = workspaceRoute(
+      url.pathname,
+      'p1/confirmation-requests'
+    );
+    const confirmationActionMatch = url.pathname.match(
+      /^\/v1\/workspaces\/([^/]+)\/p1\/confirmation-requests\/([^/]+)\/(decide|expire)$/
+    );
+    routes.add('confirmation-create', [
+      'POST',
+      () => Boolean(executionConfirmation && confirmationCollectionWorkspaceId),
+      'service-token',
+      async () => {
+        await handleErrors(
+          async () => {
+            const context = p1Identity(
+              request,
+              confirmationCollectionWorkspaceId!,
+              requestCorrelationId
+            );
+            authorizeContentCreation(context);
+            const body = executionConfirmationCreateBodySchema.parse(
+              await readJson(request)
+            );
+            let result: CreateExecutionConfirmationResult;
+            try {
+              result = await executionConfirmation!.create({
+                ...body,
+                actorId: context.userId,
+                workspaceId: context.workspaceId,
+              });
+            } catch (error) {
+              throw translateExecutionConfirmationError(error);
+            }
+            sendJson(response, 201, result, requestCorrelationId);
+          },
+          {
+            code: 'INVALID_CONFIRMATION_REQUEST',
+            message: 'The confirmation request could not be created.',
+            status: 400,
+            unknownMessage: 'error',
+          }
+        );
+        return;
+      },
+    ]);
+    routes.add('confirmation-list-pending', [
+      'GET',
+      () => Boolean(executionConfirmation && confirmationCollectionWorkspaceId),
+      'service-token',
+      async () => {
+        await handleErrors(
+          async () => {
+            const context = p1Identity(
+              request,
+              confirmationCollectionWorkspaceId!,
+              requestCorrelationId
+            );
+            authorizeContentCreation(context);
+            const requests = await executionConfirmation!.listPending(
+              context.workspaceId
+            );
+            sendJson(response, 200, { requests }, requestCorrelationId);
+          },
+          {
+            code: 'CONFIRMATION_LIST_UNAVAILABLE',
+            message: 'Pending confirmation requests are unavailable.',
+            status: 400,
+            unknownMessage: 'error',
+          }
+        );
+        return;
+      },
+    ]);
+    routes.add('confirmation-decide', [
+      'POST',
+      () =>
+        Boolean(
+          executionConfirmation &&
+            confirmationActionMatch?.[3] === 'decide'
+        ),
+      'service-token',
+      async () => {
+        await handleErrors(
+          async () => {
+            const workspaceId = decodeURIComponent(
+              confirmationActionMatch![1]!
+            );
+            const requestId = decodeURIComponent(
+              confirmationActionMatch![2]!
+            );
+            const context = p1Identity(
+              request,
+              workspaceId,
+              requestCorrelationId
+            );
+            authorizeContentCreation(context);
+            const body = executionConfirmationDecideBodySchema.parse(
+              await readJson(request)
+            );
+            let result: DecideExecutionConfirmationResult;
+            try {
+              result = await executionConfirmation!.decide({
+                ...body,
+                requestId,
+                actorId: context.userId,
+              });
+            } catch (error) {
+              throw translateExecutionConfirmationError(error);
+            }
+            sendJson(response, 200, result, requestCorrelationId);
+          },
+          {
+            code: 'CONFIRMATION_DECIDE_FAILED',
+            message: 'The confirmation decision could not be recorded.',
+            p1Statuses: { NOT_FOUND: 404, INVALID_STATE: 409 },
+            status: 400,
+            unknownMessage: 'error',
+          }
+        );
+        return;
+      },
+    ]);
+    routes.add('confirmation-expire', [
+      'POST',
+      () =>
+        Boolean(
+          executionConfirmation &&
+            confirmationActionMatch?.[3] === 'expire'
+        ),
+      'service-token',
+      async () => {
+        await handleErrors(
+          async () => {
+            const workspaceId = decodeURIComponent(
+              confirmationActionMatch![1]!
+            );
+            const requestId = decodeURIComponent(
+              confirmationActionMatch![2]!
+            );
+            const context = p1Identity(
+              request,
+              workspaceId,
+              requestCorrelationId
+            );
+            authorizeContentCreation(context);
+            const body = executionConfirmationExpireBodySchema.parse(
+              await readJson(request)
+            );
+            let result: ExpireExecutionConfirmationResult;
+            try {
+              result = await executionConfirmation!.expire({
+                requestId,
+                now: body.now,
+              });
+            } catch (error) {
+              throw translateExecutionConfirmationError(error);
+            }
+            sendJson(response, 200, result, requestCorrelationId);
+          },
+          {
+            code: 'CONFIRMATION_EXPIRE_FAILED',
+            message: 'The confirmation hold could not be expired.',
+            p1Statuses: { NOT_FOUND: 404, INVALID_STATE: 409 },
             status: 400,
             unknownMessage: 'error',
           }

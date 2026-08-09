@@ -243,6 +243,17 @@ export type MemoryRetrieveQuery = {
   similarityByMemoryId?: Record<string, number>;
   limit?: number;
   now?: string;
+  /**
+   * V31-18 production chain: when a real generation turn injects memories,
+   * the caller binds this context so the platform records the
+   * MemoryInjectionReceipt right after retrieval. Omit for read-only /
+   * offline retrieval (evals, tests) — no receipt is written.
+   */
+  injectionContext?: {
+    taskId?: string;
+    runId: string;
+    harnessReleaseId: string;
+  };
 };
 
 // ─── Migration ──────────────────────────────────────────────────────────────
@@ -791,7 +802,26 @@ export class AgentMemoryPlatform {
       return left.memoryId.localeCompare(right.memoryId);
     });
 
-    return entries.slice(0, limit);
+    const result = entries.slice(0, limit);
+
+    // V31-18: record the injection receipt at the real injection point when
+    // the generation turn bound task/run/release context. Best-effort — the
+    // receipt is observability; it must never break the turn it traces.
+    const injection = query.injectionContext;
+    if (injection && result.length > 0 && injection.taskId) {
+      try {
+        await this.recordInjectionReceipt({
+          taskId: injection.taskId,
+          runId: injection.runId,
+          harnessReleaseId: injection.harnessReleaseId,
+          entries: result,
+        });
+      } catch {
+        // Receipt recording is a side channel; retrieval keeps serving.
+      }
+    }
+
+    return result;
   }
 
   /**

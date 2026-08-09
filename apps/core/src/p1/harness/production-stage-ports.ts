@@ -84,6 +84,12 @@ import {
   assessRecipeFactSatisfaction,
   type FactRightsAuthorizationPort,
 } from './fact-satisfaction.js';
+import {
+  evaluateMidExecutionContextFence,
+  HarnessExecutionFencePauseError,
+  HarnessExecutionFenceSafeStopError,
+} from './context-fence.js';
+import type { SnapshotLiveFacts } from './execution-plan-admission.js';
 import type {
   AgentPrimitiveLifecycleInput,
   AgentPrimitiveObservabilityAdapter,
@@ -412,6 +418,21 @@ export interface ProductionHarnessStagePortsOptions {
   policy?: {
     sensitiveLexicon: SensitiveLexiconReadPort;
   };
+  /**
+   * V31-14 P1-b: mid-execution Context Fence (§23.4) live-facts head reader.
+   * When wired, fenceContext classifies rights revocation (safe stop, no
+   * re-charge) and referenced price/date drift (pause prompt) BEFORE the
+   * existing recompile fallback. Not wired ⇒ zero behavior change.
+   */
+  fence?: {
+    resolveLiveFacts?: (input: {
+      workspaceId: string;
+      request: HarnessWorkflowInput;
+    }) =>
+      | Promise<SnapshotLiveFacts | undefined>
+      | SnapshotLiveFacts
+      | undefined;
+  };
 }
 
 export class ProductionHarnessStagePorts implements HarnessStagePorts {
@@ -433,6 +454,9 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
   private readonly observabilityEvents?: ObservabilityEventAuditPort;
   private readonly memorySedimentation?: HarnessMemorySedimentationPort;
   private readonly sensitiveLexicon?: SensitiveLexiconReadPort;
+  private readonly resolveFenceLiveFacts?: NonNullable<
+    ProductionHarnessStagePortsOptions['fence']
+  >['resolveLiveFacts'];
 
   constructor(options: ProductionHarnessStagePortsOptions) {
     this.runners = options.core.runners;
@@ -451,6 +475,7 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     this.observabilityEvents = options.observability?.events;
     this.memorySedimentation = options.memory?.sedimentation;
     this.sensitiveLexicon = options.policy?.sensitiveLexicon;
+    this.resolveFenceLiveFacts = options.fence?.resolveLiveFacts;
   }
 
   async recordObservabilityEvent(
@@ -641,8 +666,51 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     return this.context.compileAndFreeze(input);
   }
 
-  fenceContext(input: FirstArgument<HarnessStagePorts['fenceContext']>) {
+  async fenceContext(input: FirstArgument<HarnessStagePorts['fenceContext']>) {
+    await this.evaluateMidExecutionFence(input);
     return this.context.fence(input);
+  }
+
+  /**
+   * V31-14 P1-b (§23.4): classify in-flight execution against live facts
+   * before the recompile fallback. safe_stop → typed error (the DBOS failure
+   * settlement refunds the reservation, never re-charges). pause_prompt →
+   * typed pause error carrying the merchant-visible prompt. All other
+   * classifications (continue / soft drift) fall through to the existing
+   * recompile port unchanged.
+   */
+  private async evaluateMidExecutionFence(
+    input: FirstArgument<HarnessStagePorts['fenceContext']>,
+  ) {
+    const snapshot = input.request.executionPlanSnapshot;
+    if (!snapshot) return;
+    if (!this.resolveFenceLiveFacts) return;
+    const live = await this.resolveFenceLiveFacts({
+      workspaceId: input.request.workspaceId,
+      request: input.request,
+    });
+    if (!live) return;
+    const action = evaluateMidExecutionContextFence({
+      snapshot,
+      live,
+      // The plan's frozen fact refs are the facts this run will cite; drift on
+      // any of them is a referenced-fact change (§37.4-F/E precise interrupt).
+      referencedFactRevisionIds: snapshot.factRevisionRefs,
+    });
+    switch (action.action) {
+      case 'continue':
+      case 'complete_with_review':
+        return;
+      case 'safe_stop':
+        throw new HarnessExecutionFenceSafeStopError(action.message);
+      case 'pause_prompt':
+        throw new HarnessExecutionFencePauseError(action.message, action.diff);
+      case 'auto_update_plan':
+      case 'stale_reconfirm':
+        // Pre/post-confirm classifications are owned by admission-time gates;
+        // mid-execution must not mutate the plan silently.
+        return;
+    }
   }
 
   async assessFacts(

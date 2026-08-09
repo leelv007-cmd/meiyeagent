@@ -165,6 +165,54 @@ describe('a run the merchant cannot afford', () => {
   });
 });
 
+describe('V31-11 A5 dual-state and balance lines on the confirm strip', () => {
+  it('projects the refund dual-state from the model switch', () => {
+    const on = projectExecutionCost({
+      creditCost: 36,
+      requirements: [{ cost: 3, resource: 'image' }],
+      failureRefundsCredits: true,
+    });
+    expect(on.refundNotice).toBe('失败自动退回');
+
+    const off = projectExecutionCost({
+      creditCost: 36,
+      requirements: [{ cost: 3, resource: 'image' }],
+      failureRefundsCredits: false,
+    });
+    expect(off.refundNotice).toBe('该模型失败不退回');
+
+    const silent = projectExecutionCost({
+      creditCost: 36,
+      requirements: [{ cost: 3, resource: 'image' }],
+      failureRefundsCredits: null,
+    });
+    expect(silent.refundNotice).toBeNull();
+  });
+
+  it('shows the server balance line when the projection has one', () => {
+    render(
+      <ExecutionConfirmCard
+        {...openCard(
+          {},
+          {
+            creditCost: 36,
+            requirements: [{ cost: 3, resource: 'image' }],
+            failureRefundsCredits: true,
+            availableCredits: 40,
+          }
+        )}
+      />
+    );
+
+    expect(screen.getByTestId('execution-confirm-balance').textContent).toBe(
+      '当前可用 40 分'
+    );
+    expect(screen.getByTestId('execution-confirm-refund').textContent).toBe(
+      '失败自动退回'
+    );
+  });
+});
+
 describe('the state machine', () => {
   it('hands the input snapshot back when the run is declined', () => {
     const opened = openExecutionConfirm(createExecutionConfirmState(), {

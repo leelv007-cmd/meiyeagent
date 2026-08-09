@@ -27,6 +27,7 @@ import {
 import { ProactiveService } from './proactive-service.js';
 import { projectCampaignWeeklySlots } from './campaign-weekly-schedule.js';
 import { GoalProactiveFoundationModule } from './foundation-module.js';
+import { P1DomainError } from '../foundation/domain.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
 const TS2 = '2026-08-08T13:00:00.000Z';
@@ -564,6 +565,16 @@ test('campaign weekly slots use single_work confirmation scope (V31-11 contract)
 
 // ─── Foundation module surface ──────────────────────────────────────────────
 
+function memoryAdminConfigReader(entries: Record<string, unknown>) {
+  return {
+    get: async (
+      _scope: 'global' | 'workspace',
+      _workspaceId: string,
+      key: string,
+    ) => ({ value: entries[key] ?? null }),
+  };
+}
+
 test('foundation module get_idle_projection wires primary goal + suggestions', async () => {
   const goals = new MemoryMarketingGoalStore();
   const threads = new MemoryAgentSessionStore();
@@ -590,6 +601,9 @@ test('foundation module get_idle_projection wires primary goal + suggestions', a
   const proactive = new ProactiveService({
     decisions: new MemoryOpportunityDecisionStore(),
     threads,
+    configReader: memoryAdminConfigReader({
+      [PROACTIVE_FEATURE_FLAGS.proactiveOpportunity]: true,
+    }),
   });
   const module = new GoalProactiveFoundationModule(goalService, proactive);
 
@@ -604,12 +618,6 @@ test('foundation module get_idle_projection wires primary goal + suggestions', a
       action: 'get_idle_projection',
       payload: {
         now: TS,
-        config: {
-          disableProactiveAgent: false,
-          proactiveFeatureOn: true,
-          workspaceAllowlisted: true,
-          coverageThreshold: null,
-        },
         signals: [
           signal({
             kind: 'goal_stalled',
@@ -628,4 +636,77 @@ test('foundation module get_idle_projection wires primary goal + suggestions', a
   assert.ok(idle.suggestions.length >= 1);
   assert.ok(idle.suggestions[0]!.evidenceRefs.length >= 1);
   assert.ok(idle.suggestions[0]!.reason.includes('目标'));
+});
+
+test('query rejects client-supplied config; admin-config kill switch stays authoritative', async () => {
+  const goals = new MemoryMarketingGoalStore();
+  const threads = new MemoryAgentSessionStore();
+  const goalService = new GoalService({ goals, threads });
+  const proactive = new ProactiveService({
+    decisions: new MemoryOpportunityDecisionStore(),
+    threads,
+    configReader: memoryAdminConfigReader({
+      [PROACTIVE_KILL_SWITCH_KEYS.disableProactiveAgent]: true,
+    }),
+  });
+  const module = new GoalProactiveFoundationModule(goalService, proactive);
+
+  const projection = (await module.query({
+    context: {
+      workspaceId: 'ws-1',
+      userId: 'u1',
+      actor: 'owner',
+      correlationId: 'c1',
+    },
+    input: {
+      action: 'get_idle_projection',
+      payload: {
+        now: TS,
+        signals: [signal({ kind: 'goal_stalled', summary: '目标未推进' })],
+      },
+    },
+  })) as { gate: { open: boolean; reason: string }; suggestions: unknown[] };
+
+  assert.equal(projection.gate.open, false);
+  assert.equal(projection.gate.reason, 'kill_switch');
+  assert.deepEqual(projection.suggestions, []);
+});
+
+test('query rejects payload config: allowlist spoof is denied by schema', async () => {
+  const goals = new MemoryMarketingGoalStore();
+  const threads = new MemoryAgentSessionStore();
+  const goalService = new GoalService({ goals, threads });
+  const proactive = new ProactiveService({
+    decisions: new MemoryOpportunityDecisionStore(),
+    threads,
+    configReader: memoryAdminConfigReader({}),
+  });
+  const module = new GoalProactiveFoundationModule(goalService, proactive);
+
+  await assert.rejects(
+    () =>
+      module.query({
+        context: {
+          workspaceId: 'ws-1',
+          userId: 'u1',
+          actor: 'owner',
+          correlationId: 'c1',
+        },
+        input: {
+          action: 'get_idle_projection',
+          payload: {
+            now: TS,
+            config: {
+              disableProactiveAgent: false,
+              proactiveFeatureOn: true,
+              workspaceAllowlisted: true,
+              coverageThreshold: null,
+            },
+            signals: [signal({ kind: 'goal_stalled', summary: '目标未推进' })],
+          },
+        },
+      }),
+    (error: unknown) =>
+      error instanceof P1DomainError && error.code === 'INVALID_STATE',
+  );
 });

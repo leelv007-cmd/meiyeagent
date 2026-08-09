@@ -106,6 +106,13 @@ import {
 } from '../p1/harness/langfuse-prompts.js';
 import { PostgresHarnessReleaseStore } from '../p1/harness/postgres-harness-release.js';
 import {
+  ensureBootstrapProductionRelease,
+  HarnessReleaseService,
+} from '../p1/harness/harness-release.js';
+import {
+  assertProductionReleasePromptResolvable,
+} from '../p1/harness/prompt-packs.js';
+import {
   createProductionEvalLayersAssembly,
   evalLangfuseOutboxFromAuditStore,
   OutboxLangfuseEvalWriter,
@@ -456,6 +463,25 @@ export async function assembleCoreGraph(
   ]);
   await sensitiveWordsRepository.ensurePlatformBaseline();
   await harnessObservabilityStore.activateObservabilityReconciliationCutover();
+  /**
+   * V31-21 P1-a: production release bootstrap + boot-time resolvability.
+   * Fresh environments get one auto-published/promoted production release so
+   * the first session turn never fails on a missing pin. Boot only checks
+   * that the current production release is resolvable (V31-20 P2) — full
+   * registry strictness stays at publish time.
+   */
+  const harnessReleaseService = new HarnessReleaseService(harnessReleaseStore);
+  await ensureBootstrapProductionRelease(harnessReleaseStore, {
+    middlewareBindings: createDefaultIntentRetrievalBindings(),
+  });
+  const bootProductionLifecycle =
+    await harnessReleaseStore.getLifecycleByStatus('production');
+  const bootProductionArtifact = bootProductionLifecycle
+    ? await harnessReleaseStore.getArtifact(bootProductionLifecycle.releaseId)
+    : null;
+  assertProductionReleasePromptResolvable({
+    productionRelease: bootProductionArtifact ?? null,
+  });
   const integrationSecrets = integrationSecretStoreFromEnv(env);
   const credentialRotationReceipts = new PostgresCredentialRotationReceiptStore(
     pool,
@@ -782,26 +808,42 @@ export async function assembleCoreGraph(
     ? new AgentSessionHarnessService({
         store: agentSessionStore,
         kernel: sessionAgentKernel,
+        // V31-21 P1-a: lifecycle-aware resolution. A run's pinned releaseId is
+        // resolved as a frozen full-immutable pin (rollback never rewrites it);
+        // an unknown pin falls back to the current production lifecycle so a
+        // fresh/pre-bootstrap record still resolves (canary allowlist applies
+        // at pin time in the composer plan session).
         resolveRelease: async (harnessReleaseId) => {
-          const artifact =
-            await harnessReleaseStore.getArtifact(harnessReleaseId);
-          if (!artifact) {
-            throw new P1DomainError(
-              'INVALID_STATE',
-              `Harness release not found for session turn: ${harnessReleaseId}`,
-            );
-          }
-          const base = controlLimitsFromArtifact(artifact);
-          const existing = base.middlewareBindings ?? [];
-          const defaults = createDefaultIntentRetrievalBindings();
-          const present = new Set(existing.map((item) => item.policyId));
-          return {
-            ...base,
-            middlewareBindings: [
-              ...existing,
-              ...defaults.filter((item) => !present.has(item.policyId)),
-            ],
+          const resolve = async (frozenReleaseId?: string | null) => {
+            const resolved = await harnessReleaseService.resolveForRun({
+              ...(frozenReleaseId
+                ? { frozenReleaseId }
+                : {}),
+            });
+            const base = controlLimitsFromArtifact(resolved.artifact);
+            const existing = base.middlewareBindings ?? [];
+            const defaults = createDefaultIntentRetrievalBindings();
+            const present = new Set(existing.map((item) => item.policyId));
+            return {
+              controlLimits: resolved.controlLimits,
+              middlewareBindings: [
+                ...existing,
+                ...defaults.filter((item) => !present.has(item.policyId)),
+              ],
+              releaseId: resolved.releaseId,
+            };
           };
+          try {
+            return await resolve(harnessReleaseId);
+          } catch (error) {
+            if (
+              error instanceof P1DomainError &&
+              error.code === 'NOT_FOUND'
+            ) {
+              return resolve(null);
+            }
+            throw error;
+          }
         },
         createToolRegistry: (turn) =>
           createRetrievalToolRegistry({
@@ -1556,6 +1598,7 @@ export async function assembleCoreGraph(
     supplyPlanningControlPlane,
     harnessSchemaStore,
     harnessReleaseStore,
+    harnessReleaseService,
     opsConsoleStore,
     evalVerdictStore,
     evalLayersAssembly,

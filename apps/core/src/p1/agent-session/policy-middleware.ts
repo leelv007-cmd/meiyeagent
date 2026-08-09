@@ -9,6 +9,8 @@
 
 import type { HarnessMiddlewareBinding } from '@meiye/contracts';
 
+import { P1DomainError } from '../foundation/domain.js';
+
 export const POLICY_CONTROL_ACTIONS = [
   'continue',
   'end_turn',
@@ -119,21 +121,40 @@ export function composeMiddlewareOrder(
   };
 }
 
+export type PolicyMiddlewareRunnerOptions = {
+  /**
+   * Allow bindings that resolve to no registered policy.
+   * Test-only: pins execution order without handlers. Production default is
+   * fail-closed — every middlewareBinding must resolve to a registered policy.
+   */
+  allowUnregisteredBindings?: boolean;
+};
+
 export class PolicyMiddlewareRunner {
   private readonly byPolicyId = new Map<string, RegisteredPolicy>();
 
   constructor(
     private readonly bindings: readonly HarnessMiddlewareBinding[],
     policies: readonly RegisteredPolicy[],
+    options: PolicyMiddlewareRunnerOptions = {},
   ) {
     for (const policy of policies) {
       this.byPolicyId.set(policy.binding.policyId, policy);
     }
-    // Constructive: every binding must have a registered policy for production runs.
-    for (const binding of bindings) {
-      if (!this.byPolicyId.has(binding.policyId)) {
-        // Allow empty handler registration only when bindings empty (tests may pin order without handlers).
-        // Production turn-runner validates fullness separately.
+    // Fail-closed: a release pinning an unregistered policy would silently
+    // skip its gate otherwise. Only order-only tests opt out explicitly.
+    if (options.allowUnregisteredBindings !== true) {
+      const unregistered = bindings.filter(
+        (binding) => !this.byPolicyId.has(binding.policyId),
+      );
+      if (unregistered.length > 0) {
+        const ids = [
+          ...new Set(unregistered.map((binding) => binding.policyId)),
+        ].join(', ');
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `Middleware binding(s) without a registered policy: ${ids}. Every middlewareBinding must resolve to a registered policy; allowUnregisteredBindings is test-only.`,
+        );
       }
     }
   }

@@ -1003,6 +1003,104 @@ test('applyArtifactUpdate: in-place growth, same-revision idempotent, skip → n
   assert.equal(cold.reason, 'needs_snapshot');
 });
 
+test('applyArtifactUpdate: cold delta baseRevision=0 bootstraps; baseRevision>0 still needs_snapshot', () => {
+  const cold0 = artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'delta',
+    artifactId: 'art-note-1',
+    artifactType: 'note',
+    revision: 1,
+    status: 'partial',
+    baseRevision: 0,
+    patch: {
+      pages: [
+        {
+          pageIndex: 0,
+          stage: 'image',
+          title: '封面',
+          imageStatus: 'ready',
+        },
+      ],
+    },
+  });
+  const r0 = applyArtifactUpdate(null, cold0);
+  assert.equal(r0.ok, true);
+  if (!r0.ok) return;
+  assert.equal(r0.duplicate, false);
+  assert.equal(r0.state.revision, 1);
+  assert.equal(r0.state.versionHistory.length, 0);
+  assert.ok('pages' in r0.state.body);
+  if ('pages' in r0.state.body) {
+    assert.equal(r0.state.body.pages[0]?.title, '封面');
+    assert.equal(r0.state.body.pages[0]?.imageStatus, 'ready');
+  }
+
+  // next delta chains on the bootstrapped head
+  const chain = artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'delta',
+    artifactId: 'art-note-1',
+    artifactType: 'note',
+    revision: 2,
+    status: 'partial',
+    baseRevision: 1,
+    patch: { pages: [{ pageIndex: 0, stage: 'image', body: '正文' }] },
+  });
+  const rChain = applyArtifactUpdate(r0.state, chain);
+  assert.equal(rChain.ok, true);
+  if (!rChain.ok) return;
+  assert.equal(rChain.state.revision, 2);
+  assert.ok('pages' in rChain.state.body);
+  if ('pages' in rChain.state.body) {
+    assert.equal(rChain.state.body.pages[0]?.body, '正文');
+  }
+
+  // re-apply of the cold delta is idempotent against the bootstrapped head
+  const rAgain = applyArtifactUpdate(r0.state, cold0);
+  assert.equal(rAgain.ok, true);
+  if (!rAgain.ok) return;
+  assert.equal(rAgain.duplicate, true);
+
+  // cold delta baseRevision>0 without head still needs_snapshot (no bootstrap)
+  const coldSkip = artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'delta',
+    artifactId: 'art-note-1',
+    artifactType: 'note',
+    revision: 3,
+    status: 'partial',
+    baseRevision: 2,
+    patch: { pages: [{ pageIndex: 0, stage: 'copy' }] },
+  });
+  const rCold = applyArtifactUpdate(null, coldSkip);
+  assert.equal(rCold.ok, false);
+  if (rCold.ok) return;
+  assert.equal(rCold.reason, 'needs_snapshot');
+
+  // video cold delta bootstraps too
+  const vid = artifactUpdateWireSchema.parse({
+    schemaVersion: 'artifact-update/v1',
+    mode: 'delta',
+    artifactId: 'art-vid-1',
+    artifactType: 'video',
+    revision: 1,
+    status: 'partial',
+    baseRevision: 0,
+    patch: {
+      scenes: [
+        { sceneIndex: 0, storyboard: '开场', keyframeStatus: 'generating' },
+      ],
+    },
+  });
+  const rVid = applyArtifactUpdate(null, vid);
+  assert.equal(rVid.ok, true);
+  if (!rVid.ok) return;
+  assert.ok('scenes' in rVid.state.body);
+  if ('scenes' in rVid.state.body) {
+    assert.equal(rVid.state.body.scenes[0]?.storyboard, '开场');
+  }
+});
+
 test('applyArtifactUpdate: ready never silent-overwritten; derived version history 回看', () => {
   let state: ArtifactProjectionState | null = null;
   const toReady = artifactUpdateWireSchema.parse({

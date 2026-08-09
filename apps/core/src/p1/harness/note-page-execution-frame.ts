@@ -15,7 +15,11 @@ import type { MakeSteeringBoundaryPort } from './make-steering-boundary.js';
 import { createNotePageSteeringBoundaryTracker } from './make-steering-boundary.js';
 
 export type NotePagePlanLike = {
-  pages: Array<{ id: string; order: number; textBlock?: { title?: string } }>;
+  pages: Array<{
+    id: string;
+    order: number;
+    textBlock?: { title?: string; body?: string };
+  }>;
 };
 
 /**
@@ -86,6 +90,10 @@ export function createNotePageProgressReporter(input: {
           boundary: input.makeSteeringBoundary,
         })
       : null;
+  // V31-15: 骨架 → 文案 → 配图. skeleton/copy land once per page before the
+  // page image generation; image running/success land per generation attempt.
+  const skeletonEmitted = new Set<string>();
+  const copyEmitted = new Set<string>();
 
   return async (event) => {
     const order = notePageOrderLabel(input.plan, event.pageId);
@@ -109,17 +117,42 @@ export function createNotePageProgressReporter(input: {
               input.plan.pages.findIndex((p) => p.id === event.pageId),
             );
       const page = input.plan.pages.find((p) => p.id === event.pageId);
-      await emitNotePageArtifactProgress(input.artifactEmitter, {
+      const base = {
         workspaceId: input.artifactContext.workspaceId,
         workflowId: input.artifactContext.workflowId,
         threadId: input.artifactContext.threadId,
         artifactId: input.artifactContext.artifactId,
         pageIndex,
         pageId: event.pageId,
-        state: event.state,
-        revision: input.artifactContext.nextRevision(),
         title: page?.textBlock?.title,
         occurredAt: input.artifactContext.now(),
+      };
+      if (event.state === 'running') {
+        if (!skeletonEmitted.has(event.pageId)) {
+          skeletonEmitted.add(event.pageId);
+          await emitNotePageArtifactProgress(input.artifactEmitter, {
+            ...base,
+            stage: 'skeleton',
+            state: 'running',
+            revision: input.artifactContext.nextRevision(),
+          });
+        }
+        if (!copyEmitted.has(event.pageId)) {
+          copyEmitted.add(event.pageId);
+          await emitNotePageArtifactProgress(input.artifactEmitter, {
+            ...base,
+            stage: 'copy',
+            state: 'success',
+            body: page?.textBlock?.body,
+            revision: input.artifactContext.nextRevision(),
+          });
+        }
+      }
+      await emitNotePageArtifactProgress(input.artifactEmitter, {
+        ...base,
+        stage: 'image',
+        state: event.state,
+        revision: input.artifactContext.nextRevision(),
       });
     }
 

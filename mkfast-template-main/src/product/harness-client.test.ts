@@ -4,6 +4,7 @@ import test from 'node:test';
 import { P1RequestError } from '@/p1/client';
 import {
   acknowledgeHarnessInteractionRenderer,
+  decideExecutionConfirmation,
   readPendingHarnessInteractionMessage,
   readHarnessDecisionSnapshot,
   readHarnessSubmitResult,
@@ -343,4 +344,64 @@ test('parses the server-owned question target and persisted submit receipt', asy
       },
     }
   );
+});
+
+test('decides an execution confirmation through the domain decide boundary', async () => {
+  const previousFetch = globalThis.fetch;
+  let request: Request | undefined;
+  globalThis.fetch = async (input, init) => {
+    request = new Request(new URL(String(input), 'http://localhost'), init);
+    return Response.json({
+      data: {
+        decision: {
+          schemaVersion: 'plan-confirmation-decision/v1',
+          decisionId: 'dec-1',
+          requestId: 'req-1',
+          actorId: 'user-1',
+          decision: 'rejected',
+          decidedAt: '2026-08-08T12:00:00.000Z',
+        },
+        request: {
+          schemaVersion: 'agent-execution-confirmation-request/v1',
+          requestId: 'req-1',
+          workspaceId: 'ws-1',
+          planId: 'plan-1',
+          planRevision: 1,
+          snapshotHash: 'snap-hash-1',
+          quoteRef: { id: 'quote-1', revision: 'r1' },
+          reservationIdempotencyKey: 'reserve-1',
+          createdAt: '2026-08-08T11:00:00.000Z',
+          holdExpiresAt: '2026-08-09T11:00:00.000Z',
+          status: 'decided',
+        },
+        merchantMessage: '已暂不执行，积分已退回',
+        refundedCredits: 5,
+      },
+      meta: { correlationId: 'corr-test' },
+    });
+  };
+  try {
+    const result = await decideExecutionConfirmation('req-1', {
+      decisionId: 'dec-1',
+      decision: 'rejected',
+      decidedAt: '2026-08-08T12:00:00.000Z',
+    });
+    assert.equal(result.decision.decision, 'rejected');
+    assert.equal(result.request.status, 'decided');
+    assert.equal(result.merchantMessage, '已暂不执行，积分已退回');
+    assert.equal(result.refundedCredits, 5);
+    assert.equal(
+      request?.url,
+      'http://localhost/api/core/p1/confirmation-requests/req-1/decide'
+    );
+    assert.equal(request?.method, 'POST');
+    assert.equal(request?.headers.get('idempotency-key'), 'dec-1');
+    assert.deepEqual(await request?.json(), {
+      decisionId: 'dec-1',
+      decision: 'rejected',
+      decidedAt: '2026-08-08T12:00:00.000Z',
+    });
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
 });

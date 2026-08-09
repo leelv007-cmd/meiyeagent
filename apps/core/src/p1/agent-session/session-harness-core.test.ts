@@ -339,7 +339,10 @@ test('middleware order pin: before ascending, after reverse, wrap nested', async
     },
   ];
 
-  const runner = new PolicyMiddlewareRunner(bindings, policies);
+  // w1/w2 pin wrap order without handlers; test-only opt-out from fail-closed.
+  const runner = new PolicyMiddlewareRunner(bindings, policies, {
+    allowUnregisteredBindings: true,
+  });
   const ctx = {
     phase: 'intent',
     runId: 'r',
@@ -349,6 +352,46 @@ test('middleware order pin: before ascending, after reverse, wrap nested', async
   await runner.runBeforeModel(ctx);
   await runner.runAfterModel(ctx);
   assert.deepEqual(seen, ['before:b', 'before:a', 'after:d', 'after:c']);
+});
+
+test('unregistered binding fails closed at PolicyMiddlewareRunner construction', () => {
+  const ghostBinding: HarnessMiddlewareBinding = {
+    policyId: 'ghost.gate',
+    revision: '1',
+    kind: 'before_model',
+    order: 0,
+    allowedControlActions: ['continue'],
+  };
+  const registeredBinding: HarnessMiddlewareBinding = {
+    policyId: 'real.gate',
+    revision: '1',
+    kind: 'before_model',
+    order: 10,
+    allowedControlActions: ['continue'],
+  };
+
+  assert.throws(
+    () =>
+      new PolicyMiddlewareRunner([registeredBinding, ghostBinding], [
+        {
+          binding: registeredBinding,
+          handlers: {},
+        },
+      ]),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.code === 'INVALID_STATE' &&
+      /ghost\.gate/.test(error.message) &&
+      !/real\.gate/.test(error.message),
+  );
+  // Order-only opt-out stays available for order-pinning tests.
+  assert.doesNotThrow(() =>
+    new PolicyMiddlewareRunner(
+      [ghostBinding],
+      [],
+      { allowUnregisteredBindings: true },
+    ),
+  );
 });
 
 test('wrap_tool_call can deterministically refuse with gate id + reason', async () => {

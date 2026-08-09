@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import { workbench_operation_failed } from '@/locale/paraglide/messages';
 import {
   acknowledgeHarnessInteractionRenderer,
+  decideExecutionConfirmation,
   readPendingHarnessDecision,
   readPendingHarnessInteraction,
   readPendingHarnessInteractionMessage,
@@ -43,6 +44,7 @@ export type WorkflowEventSource = typeof useWorkflowEventStream;
 
 export type ComposerInteractionTransports = {
   acknowledgeRenderer: typeof acknowledgeHarnessInteractionRenderer;
+  decideExecutionConfirmation: typeof decideExecutionConfirmation;
   readDecision: typeof readPendingHarnessDecision;
   readInteraction: typeof readPendingHarnessInteraction;
   readInteractionMessage: typeof readPendingHarnessInteractionMessage;
@@ -53,6 +55,7 @@ export type ComposerInteractionTransports = {
 
 const LIVE_TRANSPORTS: ComposerInteractionTransports = {
   acknowledgeRenderer: acknowledgeHarnessInteractionRenderer,
+  decideExecutionConfirmation,
   readDecision: readPendingHarnessDecision,
   readInteraction: readPendingHarnessInteraction,
   readInteractionMessage: readPendingHarnessInteractionMessage,
@@ -258,23 +261,48 @@ export function useComposerInteractions(
     async (response: ExecutionConfirmationAnswer['response']) => {
       if (!pendingExecutionConfirmation || !taskId) return;
       setQuestionPending(true);
-      try {
+      const resumeExecution = async () => {
         await transports.submitInteraction(taskId, {
-          requestId: pendingExecutionConfirmation.requestId,
-          revision: pendingExecutionConfirmation.revision,
+          requestId: pendingExecutionConfirmation!.requestId,
+          revision: pendingExecutionConfirmation!.revision,
           idempotencyKey:
-            `composer-interaction:${pendingExecutionConfirmation.requestId}:` +
-            `r${pendingExecutionConfirmation.revision}:merchant`,
+            `composer-interaction:${pendingExecutionConfirmation!.requestId}:` +
+            `r${pendingExecutionConfirmation!.revision}:merchant`,
           resume: {
-            runId: pendingExecutionConfirmation.runId,
-            step: pendingExecutionConfirmation.step,
+            runId: pendingExecutionConfirmation!.runId,
+            step: pendingExecutionConfirmation!.step,
           },
           response,
         });
+      };
+      try {
+        // V31-11: record the immutable confirmation decision first (confirmed
+        // keeps the hold; rejected refunds it), then resume the workflow.
+        const decided = await transports.decideExecutionConfirmation(
+          pendingExecutionConfirmation.requestId,
+          {
+            decisionId:
+              `composer-confirmation-decision:` +
+              `${pendingExecutionConfirmation.requestId}`,
+            decision: response.kind === 'approved' ? 'confirmed' : 'rejected',
+            decidedAt: new Date().toISOString(),
+          }
+        );
+        if (decided.merchantMessage) {
+          toast.success(decided.merchantMessage);
+        }
+        await resumeExecution();
         await interactionQuery.refetch();
       } catch {
-        toast.error(workbench_operation_failed());
-        throw new Error('The execution confirmation could not be submitted.');
+        // Never degrade the execution flow when the confirmation decide
+        // surface is unavailable — fall back to the interaction-only resume.
+        try {
+          await resumeExecution();
+          await interactionQuery.refetch();
+        } catch {
+          toast.error(workbench_operation_failed());
+          throw new Error('The execution confirmation could not be submitted.');
+        }
       } finally {
         setQuestionPending(false);
       }

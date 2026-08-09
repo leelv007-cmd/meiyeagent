@@ -1,6 +1,9 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { isDeepStrictEqual } from 'node:util';
 import {
   harnessInteractionAnswerSchema,
+  INTERRUPT_PAYLOAD_SCHEMA_VERSION,
+  interruptPayloadSchema,
   questionCardSchema,
   structuredDecisionInputSchema,
   workflowProgressEnvelopeSchema,
@@ -8,10 +11,19 @@ import {
   type BoundedExecutionLimitName,
   type HarnessInteractionRequest,
   type HarnessStage,
+  type InterruptPayload,
   type ProductUsageUnit,
   type QuestionCard,
+  type ResumeInterruptCommand,
   type StructuredDecisionInput,
 } from '@meiye/contracts';
+
+import {
+  InterruptProtocolError,
+  type InterruptResumeBridgeInput,
+  type InterruptResumeBridgePort,
+  type StoredInterrupt,
+} from './interrupt-protocol.js';
 
 import {
   assertBoundedExecutionContinuationAuthorization,
@@ -23,6 +35,11 @@ import {
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
+import type {
+  CreateExecutionConfirmationInput,
+  CreateExecutionConfirmationResult,
+  ExecutionConfirmationService,
+} from '../agent-session/execution-confirmation-service.js';
 import { resumeWithRaisedServerLimit } from './bounded-execution-controller.js';
 import type {
   HarnessWorkflowInput,
@@ -38,6 +55,15 @@ import {
   projectLegacyFromMakeRequest,
   type ShadowReconciliationService,
 } from './shadow-reconciliation.js';
+import type {
+  ProductionSampleInput,
+  ProductionSampleOutcome,
+} from '../eval/production-sampling.js';
+import type { BindEvalResultInput } from '../eval/release-binding.js';
+import type {
+  QuickCheckToolCall,
+  QuickCheckTrace,
+} from '../agent-session/quick-checks.js';
 import type {
   HarnessDecisionService,
   HarnessDecisionStore,
@@ -80,6 +106,264 @@ import type { MerchantExecutionPromotionPort } from '../product-billing/durable-
 
 export const HARNESS_INTERACTION_CONTINUATION_LAYOUT =
   'bounded_followup_v1' as const;
+
+/**
+ * V31-14 P1-a: typed Interrupt protocol closed loop.
+ *
+ * mirrorPending mirrors a pending confirmation question into the durable
+ * p1_agent_interrupts store (home/mobile pending list). resolvePending syncs
+ * the interrupt lifecycle when the workflow resolves a question through its
+ * own channels. The resume direction is delivered by
+ * createHarnessInterruptResumeBridge (InterruptProtocolService.resume → DBOS
+ * recv channel), keeping duplicate resume side-effect free.
+ */
+export interface HarnessInterruptProtocolPort {
+  mirrorPending(input: {
+    workspaceId: string;
+    question: QuestionCard;
+    stage: HarnessStage;
+    request: HarnessWorkflowInput;
+    holdTimeoutSeconds?: number | null;
+  }): Promise<void>;
+  resolvePending(input: {
+    workspaceId: string;
+    interruptId: string;
+    revision: number;
+    source:
+      | 'decision'
+      | 'core_timeout'
+      | 'core_hold_expired'
+      | 'system_default'
+      | 'reservation_released';
+  }): Promise<void>;
+}
+
+export type HarnessInterruptResolutionSource =
+  | 'decision'
+  | 'core_timeout'
+  | 'core_hold_expired'
+  | 'system_default'
+  | 'reservation_released';
+
+/**
+ * Typed mirror payload from a pending QuestionCard.
+ *
+ * interruptId === questionId so resume CAS and the workflow's decision topic
+ * share one coordinate; revision === question.workflowRevision. The full
+ * QuestionCard travels in args so the resume bridge can reconstruct the
+ * StructuredDecisionInput (response.field / response.reason).
+ */
+export function harnessInterruptMirrorInput(input: {
+  question: QuestionCard;
+  stage: HarnessStage;
+  request: HarnessWorkflowInput;
+  holdTimeoutSeconds?: number | null;
+}): { workspaceId: string; payload: InterruptPayload } {
+  const { question, request, stage } = input;
+  const executionConfirmation =
+    question.executionConfirmationAuthority?.kind === 'external_action';
+  const payload = interruptPayloadSchema.parse({
+    schemaVersion: INTERRUPT_PAYLOAD_SCHEMA_VERSION,
+    interruptId: question.questionId,
+    threadId: `harness-thread:${question.workflowId}`,
+    runId: question.workflowId,
+    workflowId: question.workflowId,
+    step: stage,
+    revision: question.workflowRevision,
+    action: executionConfirmation ? 'confirm_paid_execution' : 'answer_question',
+    args: { question: structuredClone(question) },
+    config: executionConfirmation
+      ? {
+          allowAccept: true,
+          allowEdit: false,
+          allowReject: true,
+          allowRespond: false,
+        }
+      : {
+          allowAccept: true,
+          allowEdit: false,
+          allowReject: true,
+          allowRespond: true,
+        },
+    description: question.question,
+    // D-153: a business hold deadline only. Ordinary ask_merchant must not
+    // expire (D-116 carrier TTL ban). The timestamp is best-effort; the mirror
+    // helper tolerates a retried step re-computing it (same id + revision).
+    ...(input.holdTimeoutSeconds != null
+      ? {
+          expiresAt: new Date(
+            Date.now() + input.holdTimeoutSeconds * 1000,
+          ).toISOString(),
+        }
+      : {}),
+    resourceId: request.workspaceId,
+  });
+  return { workspaceId: request.workspaceId, payload };
+}
+
+export function interruptQuestionFromPayload(
+  payload: InterruptPayload,
+): QuestionCard {
+  const args = payload.args as { question?: unknown } | undefined;
+  const question = questionCardSchema.safeParse(args?.question);
+  if (!question.success) {
+    throw new Error('Interrupt payload does not carry a valid QuestionCard.');
+  }
+  if (
+    question.data.questionId !== payload.interruptId ||
+    question.data.workflowRevision !== payload.revision
+  ) {
+    throw new Error(
+      'Interrupt payload QuestionCard does not match its id/revision.',
+    );
+  }
+  return question.data;
+}
+
+/**
+ * Typed resume → StructuredDecisionInput mapping (V31-14 §27.6).
+ * accept/respond/edit map to 'accepted'; reject maps to 'ignored' (skip with
+ * the rejection value, matching ask_merchant rejection semantics). respond and
+ * edit require a merchant-supplied value; without one the resume fails closed.
+ */
+export function interruptResumeDecision(
+  question: QuestionCard,
+  command: ResumeInterruptCommand,
+): StructuredDecisionInput {
+  const args =
+    typeof command.args === 'object' &&
+    command.args !== null &&
+    !Array.isArray(command.args)
+      ? (command.args as { value?: unknown })
+      : undefined;
+  const value =
+    typeof args?.value === 'string' && args.value.length > 0
+      ? args.value
+      : undefined;
+  let state: StructuredDecisionInput['decision']['state'] = 'accepted';
+  let resolvedValue = 'approved';
+  switch (command.type) {
+    case 'accept':
+      state = 'accepted';
+      resolvedValue = value ?? 'approved';
+      break;
+    case 'respond':
+    case 'edit':
+      state = 'accepted';
+      if (!value) {
+        throw new Error(
+          `Interrupt resume type ${command.type} requires a merchant value.`,
+        );
+      }
+      resolvedValue = value;
+      break;
+    case 'reject':
+      state = 'ignored';
+      resolvedValue = value ?? 'rejected';
+      break;
+  }
+  return structuredDecisionInputSchema.parse({
+    idempotencyKey:
+      command.idempotencyKey ??
+      `interrupt:${command.interruptId}:r${command.revision}`,
+    questionId: question.questionId,
+    workflowRevision: question.workflowRevision,
+    patch: {
+      field: question.response.field,
+      value: resolvedValue,
+      reason: question.response.reason,
+    },
+    decision: {
+      state,
+      value: resolvedValue,
+    },
+  });
+}
+
+/**
+ * Production resume bridge: after the interrupt CAS applies, deliver the
+ * reconstructed decision into the suspended workflow's recv channel.
+ * DBOS.send idempotency key = stable per (interrupt, revision, resume key),
+ * so duplicate resumes after a failed delivery have zero extra side effects.
+ */
+export function createHarnessInterruptResumeBridge(
+  resolver?: HarnessRuntimeIdResolver,
+): InterruptResumeBridgePort {
+  return {
+    async deliver(input: InterruptResumeBridgeInput) {
+      const { workspaceId, payload, command } = input;
+      const question = interruptQuestionFromPayload(payload);
+      const runtimeWorkflowId =
+        (await resolver?.workflowRuntimeId(
+          workspaceId,
+          payload.workflowId,
+        )) ?? harnessRuntimeId(workspaceId, payload.workflowId);
+      await DBOS.send(
+        runtimeWorkflowId,
+        interruptResumeDecision(question, command),
+        decisionTopic(payload.interruptId),
+        `harness-interrupt:${workspaceId}:${runtimeWorkflowId}:${payload.interruptId}:${command.idempotencyKey ?? `r${command.revision}`}`,
+      );
+    },
+  };
+}
+
+/**
+ * Ready-made mirror wiring for assembly: builds the typed payload from the
+ * pending question and requests it through the protocol service. A durable
+ * step retry that re-computes a hold expiry timestamp is tolerated (same id +
+ * revision already pending → keep the first write); genuine conflicts throw.
+ */
+export function createHarnessInterruptProtocolPort(input: {
+  request: (input: {
+    workspaceId: string;
+    payload: InterruptPayload;
+  }) => Promise<{ record: StoredInterrupt; replayed: boolean }>;
+  resolveByWorkflow: (input: {
+    workspaceId: string;
+    interruptId: string;
+    revision: number;
+    source: HarnessInterruptResolutionSource;
+  }) => Promise<'applied' | 'replayed'>;
+  getById: (interruptId: string) => Promise<StoredInterrupt | null>;
+}): HarnessInterruptProtocolPort {
+  return {
+    async mirrorPending(mirrorInput) {
+      const { workspaceId: _workspaceId, ...mirror } = mirrorInput;
+      const { workspaceId, payload } = harnessInterruptMirrorInput(mirror);
+      try {
+        await input.request({ workspaceId, payload });
+      } catch (error) {
+        if (
+          error instanceof InterruptProtocolError &&
+          error.code === 'IDEMPOTENCY_CONFLICT'
+        ) {
+          const existing = await input.getById(payload.interruptId);
+          if (
+            existing?.status === 'pending' &&
+            existing.payload.revision === payload.revision
+          ) {
+            // Durable step retry: only the hold expiry timestamp drifted.
+            // Tolerate when the logical question is otherwise identical.
+            const {
+              expiresAt: _existingExpiry,
+              ...existingRest
+            } = existing.payload;
+            const {
+              expiresAt: _retriedExpiry,
+              ...retriedRest
+            } = payload;
+            if (isDeepStrictEqual(existingRest, retriedRest)) return;
+          }
+        }
+        throw error;
+      }
+    },
+    async resolvePending(resolveInput) {
+      await input.resolveByWorkflow(resolveInput);
+    },
+  };
+}
 
 export class HarnessInteractionLayoutResetRequiredError extends Error {
   readonly code = 'HARNESS_INTERACTION_LAYOUT_RESET_REQUIRED';
@@ -315,9 +599,20 @@ export async function readConfirmationCardHoldTimeoutSeconds(
   return timeoutSeconds;
 }
 
-interface HarnessDbosWorkflowOptions {
+export interface HarnessDbosWorkflowOptions {
   semanticResumptions?: HarnessSemanticDecisionResumptionStore;
   billing?: HarnessBillingSettlementPort;
+  /**
+   * V31-11 confirmation objects: ExecutionConfirmationService.createRequest
+   * bound onto the confirmation gate. After merchant approval the domain
+   * request reserves under the workspace credit lock with the same operation
+   * id the Coordinator submission consumed (U8=A), so execution-time
+   * settlement never debits twice. Absent ⇒ legacy submission-time hold only.
+   */
+  executionConfirmation?: Pick<
+    ExecutionConfirmationService,
+    'createRequest'
+  >;
   config?: Pick<AdminConfigRepository, 'get'>;
   decisions?: Pick<HarnessDecisionService, 'submitCoreTimeout'> &
     Partial<Pick<HarnessDecisionService, 'submitCoreHoldExpired'>>;
@@ -366,11 +661,30 @@ interface HarnessDbosWorkflowOptions {
     'maybeReconcileOnExecutionComplete'
   >;
   /**
+   * V31-23 L0.5: production sampling on Make complete (same sampling point as
+   * shadow reconciliation). shouldSample gates by admin-config sample rate;
+   * sample persists the l0.5 verdict bound to the release; recordAndEmit
+   * writes it through the eval writer (Langfuse outbox). Failures are
+   * swallowed — sampling must never fail the run.
+   */
+  productionSampling?: {
+    shouldSample(sampleKey: string): boolean | Promise<boolean>;
+    sample(input: ProductionSampleInput): Promise<ProductionSampleOutcome>;
+    recordAndEmit(input: BindEvalResultInput): Promise<unknown>;
+  };
+  /**
    * V31-16: dual-queue Make steering drain at terminal success (follow_up).
    * Page-unit steer drain is on note page progress; this is the all-complete hang.
    * Flag off / kill switch ⇒ port no-ops (zero behavior change).
    */
   makeSteeringBoundary?: import('./make-steering-boundary.js').MakeSteeringBoundaryPort;
+  /**
+   * V31-14 P1-a: typed Interrupt protocol closed loop. Mirrors pending
+   * confirmation questions into p1_agent_interrupts and syncs their lifecycle
+   * when the workflow resolves a question through its own channels. The resume
+   * direction flows back through InterruptProtocolService.resume's bridge.
+   */
+  interrupts?: HarnessInterruptProtocolPort;
 }
 
 export function registerHarnessDbosWorkflow(
@@ -378,21 +692,24 @@ export function registerHarnessDbosWorkflow(
   persistence: HarnessWorkflowPersistence,
   options: HarnessDbosWorkflowOptions = {},
 ) {
-  const {
-    semanticResumptions,
-    billing,
-    config,
-    decisions,
-    boundedContinuations,
-    taskRecallDue,
-    askMerchant,
-    interactions,
-    executionPlanAdmission,
-    resolveExecutionPlanLiveFacts,
-    resolveForceLegacyFiveStage,
-    shadowReconciliation,
-    makeSteeringBoundary,
-  } = options;
+    const {
+      semanticResumptions,
+      billing,
+      executionConfirmation,
+      config,
+      decisions,
+      boundedContinuations,
+      taskRecallDue,
+      askMerchant,
+      interactions,
+      executionPlanAdmission,
+      resolveExecutionPlanLiveFacts,
+      resolveForceLegacyFiveStage,
+      shadowReconciliation,
+      productionSampling,
+      makeSteeringBoundary,
+      interrupts,
+    } = options;
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
     if (!runtimeWorkflowId) {
@@ -542,6 +859,16 @@ export function registerHarnessDbosWorkflow(
               question,
               { interactionRequest, timeoutSeconds },
             );
+            // V31-14 P1-a: mirror the pending question into the typed Interrupt
+            // store. Idempotent on identical payload; a durable retry of this
+            // step replays registerPending and the mirror without conflicts.
+            await interrupts?.mirrorPending({
+              workspaceId: request.workspaceId,
+              question,
+              stage,
+              request,
+              holdTimeoutSeconds,
+            });
             return {
               ...(registered ?? { timeoutSeconds }),
               holdTimeoutSeconds,
@@ -557,6 +884,19 @@ export function registerHarnessDbosWorkflow(
         );
         assertHarnessInteractionContinuationLayout(pendingProjection);
         await DBOS.setEvent('pending-structured-decision', question);
+        // V31-14 P1-a: sync the mirrored interrupt lifecycle when this question
+        // resolves through any channel. Idempotent: a resume that already
+        // CAS-resolved the row replays as a no-op.
+        const resolveInterrupt = async (
+          source: HarnessInterruptResolutionSource,
+        ) => {
+          await interrupts?.resolvePending({
+            workspaceId: request.workspaceId,
+            interruptId: question.questionId,
+            revision: question.workflowRevision,
+            source,
+          });
+        };
         if (question.unattended !== 'continue') {
           const holdTimeoutSeconds = pendingProjection?.holdTimeoutSeconds;
           if (holdTimeoutSeconds == null) {
@@ -569,7 +909,11 @@ export function registerHarnessDbosWorkflow(
                 persistence,
                 request.workspaceId,
               );
-              if ('cancelled' in resolved) return resolved;
+              if ('cancelled' in resolved) {
+                await resolveInterrupt(resolved.resolutionSource);
+                return resolved;
+              }
+              await resolveInterrupt('decision');
               return {
                 command: resolved,
                 resolutionSource: 'decision' as const,
@@ -583,7 +927,11 @@ export function registerHarnessDbosWorkflow(
             request.workspaceId,
           );
           if (decision) {
-            if ('cancelled' in decision) return decision;
+            if ('cancelled' in decision) {
+              await resolveInterrupt(decision.resolutionSource);
+              return decision;
+            }
+            await resolveInterrupt('decision');
             return {
               command: decision,
               resolutionSource: 'decision' as const,
@@ -613,13 +961,18 @@ export function registerHarnessDbosWorkflow(
                 persistence,
                 request.workspaceId,
               );
-              if ('cancelled' in resolved) return resolved;
+              if ('cancelled' in resolved) {
+                await resolveInterrupt(resolved.resolutionSource);
+                return resolved;
+              }
+              await resolveInterrupt('decision');
               return {
                 command: resolved,
                 resolutionSource: 'decision' as const,
               };
             }
           }
+          await resolveInterrupt('core_hold_expired');
           return {
             cancelled: true as const,
             merchantMessage: '超时未选择，本次任务已取消，积分已退回',
@@ -636,7 +989,11 @@ export function registerHarnessDbosWorkflow(
               persistence,
               request.workspaceId,
             );
-            if ('cancelled' in resolved) return resolved;
+            if ('cancelled' in resolved) {
+              await resolveInterrupt(resolved.resolutionSource);
+              return resolved;
+            }
+            await resolveInterrupt('decision');
             return {
               command: resolved,
               resolutionSource: 'decision' as const,
@@ -653,6 +1010,7 @@ export function registerHarnessDbosWorkflow(
           { timeoutSeconds },
         );
         if (isReleasedReservationCancellation(decision)) {
+          await resolveInterrupt('reservation_released');
           return decision;
         }
         const command = confirmationCardDecision(
@@ -704,6 +1062,7 @@ export function registerHarnessDbosWorkflow(
                 },
               );
               if (expiry === 'expired' || expiry === 'replayed') {
+                await resolveInterrupt('core_hold_expired');
                 return {
                   cancelled: true as const,
                   merchantMessage: request.usageReservation
@@ -728,6 +1087,7 @@ export function registerHarnessDbosWorkflow(
               workspaceId: request.workspaceId,
             });
             if (followup === 'expired') {
+              await resolveInterrupt('core_hold_expired');
               return {
                 cancelled: true as const,
                 merchantMessage: request.usageReservation
@@ -736,6 +1096,7 @@ export function registerHarnessDbosWorkflow(
                 resolutionSource: 'core_hold_expired' as const,
               };
             }
+            await resolveInterrupt(followup.resolutionSource);
             return followup;
           }
           if (!decisions) {
@@ -759,18 +1120,24 @@ export function registerHarnessDbosWorkflow(
                 persistence,
                 request.workspaceId,
               );
-              if ('cancelled' in resolved) return resolved;
+              if ('cancelled' in resolved) {
+                await resolveInterrupt(resolved.resolutionSource);
+                return resolved;
+              }
+              await resolveInterrupt('decision');
               return {
                 command: resolved,
                 resolutionSource: 'decision' as const,
               };
             }
           }
+          await resolveInterrupt('core_timeout');
           return {
             command,
             resolutionSource: 'core_timeout' as const,
           };
         }
+        await resolveInterrupt('decision');
         return {
           command,
           resolutionSource: 'decision' as const,
@@ -858,7 +1225,7 @@ export function registerHarnessDbosWorkflow(
         result = await runHarnessWorkflow(
           workflowId,
           request,
-          ports,
+          withExecutionConfirmationStagePort(ports, executionConfirmation),
           runtime,
           { forceLegacyFiveStage },
         );
@@ -967,6 +1334,24 @@ export function registerHarnessDbosWorkflow(
           { name: 'shadow-reconciliation-sample' },
         );
       }
+      // V31-23 L0.5: production quick-check sample on Make complete, gated by
+      // the same admin-config sample rate as shadow reconciliation. The Make
+      // boundary cannot observe the session tool chain (read_context →
+      // generate → check → record), so the trace is synthesized from request
+      // facts and the toolOrder/level0/readonly assertions are excluded —
+      // sampled verdicts assert bounded + error-free execution structure.
+      // Failures are swallowed; sampling must never fail the run.
+      if (productionSampling && request.executionPlanSnapshot) {
+        await DBOS.runStep(
+          () =>
+            sampleProductionL05({
+              productionSampling,
+              workflowId,
+              request,
+            }),
+          { name: 'production-l0-5-sample' },
+        );
+      }
       await settleHarnessTerminalSuccess({
         billing,
         completedAt,
@@ -994,6 +1379,35 @@ type BillingRunStep = <T>(
   name: string,
   operation: () => Promise<T>,
 ) => Promise<T>;
+
+/**
+ * V31-11 confirmation-objects merge: bind ExecutionConfirmationService
+ * createRequest onto the shared stage ports so the confirmation gate creates
+ * the domain request after merchant approval. Returns the input ports
+ * untouched when the option is absent (legacy submission-time hold only), so
+ * fixture paths and pre-wiring assemblies keep their exact behavior.
+ */
+function withExecutionConfirmationStagePort(
+  ports: HarnessStagePorts | HarnessStageCollaborators,
+  executionConfirmation: Pick<ExecutionConfirmationService, 'createRequest'> |
+    undefined,
+): HarnessStagePorts | HarnessStageCollaborators {
+  if (!executionConfirmation) return ports;
+  const createExecutionConfirmationRequest = (
+    input: CreateExecutionConfirmationInput,
+  ): Promise<CreateExecutionConfirmationResult> =>
+    executionConfirmation.createRequest(input);
+  if ('shared' in ports) {
+    return {
+      ...ports,
+      shared: { ...ports.shared, createExecutionConfirmationRequest },
+    };
+  }
+  return {
+    ...(ports as HarnessStagePorts),
+    createExecutionConfirmationRequest,
+  };
+}
 
 export async function settleHarnessTerminalSuccess(input: {
   billing?: HarnessBillingSettlementPort;
@@ -1226,6 +1640,87 @@ export function harnessBillingSettlementInput(
     ...(trustedUsage ? { trustedUsage } : {}),
     ...(forceCreditRefund ? { forceCreditRefund: true } : {}),
   };
+}
+
+/**
+ * V31-23 L0.5 skeleton trace synthesized from request facts at Make complete.
+ * The Make boundary cannot observe the session tool chain (read_context →
+ * generate → check → record), so the trace carries only provable primitives:
+ * context materialization (read_context), generation (generate), and terminal
+ * recording (record). Callers exclude session-only assertions (toolOrder /
+ * level0 / readonly) so sampled verdicts stay honest.
+ */
+function l05MakeCompleteTrace(
+  request: HarnessWorkflowInput,
+): QuickCheckTrace {
+  const toolCalls: QuickCheckToolCall[] = [];
+  const snapshot = request.executionPlanSnapshot;
+  const execution = request.executionSnapshot;
+  if (snapshot?.contextBundleRef) {
+    toolCalls.push({ toolName: 'read_context', sideEffect: 'none' });
+  }
+  if (execution) {
+    toolCalls.push({ toolName: 'generate', sideEffect: 'paid' });
+    toolCalls.push({ toolName: 'record', sideEffect: 'internal_write' });
+  }
+  return {
+    toolCalls,
+    tags: ['l0.5', 'make'],
+    output: {
+      lens: execution?.lens,
+      planId: snapshot?.planId,
+      planRevision: snapshot?.planRevision,
+    },
+  };
+}
+
+export type ProductionL05SampleOutcome = {
+  sampled: boolean;
+  verdict?: string;
+  error?: true;
+};
+
+/**
+ * V31-23 L0.5 production sample at Make complete. Gates by admin-config sample
+ * rate, persists the verdict bound to the execution plan's release, and emits
+ * through recordAndEmit. Never throws — sampling must not fail the run.
+ */
+export async function sampleProductionL05(input: {
+  productionSampling: NonNullable<
+    HarnessDbosWorkflowOptions['productionSampling']
+  >;
+  workflowId: string;
+  request: HarnessWorkflowInput;
+}): Promise<ProductionL05SampleOutcome> {
+  const releaseId = input.request.executionPlanSnapshot?.harnessReleaseId;
+  if (!releaseId) return { sampled: false };
+  if (!(await input.productionSampling.shouldSample(input.workflowId))) {
+    return { sampled: false };
+  }
+  try {
+    const outcome = await input.productionSampling.sample({
+      harnessReleaseId: releaseId,
+      trace: l05MakeCompleteTrace(input.request),
+      sampleTraceId: `make:${input.workflowId}`,
+      includeTags: ['l0.5'],
+      excludeTags: ['toolOrder', 'level0', 'readonly'],
+      resultId: `l0.5:make:${input.workflowId}`,
+    });
+    await input.productionSampling.recordAndEmit({
+      harnessReleaseId: releaseId,
+      layer: 'l0.5',
+      gates: outcome.result.gates,
+      quickCheckIds: outcome.result.quickCheckIds,
+      evalSuiteRevision: outcome.result.evalSuiteRevision,
+      sampleTraceId: `make:${input.workflowId}`,
+      resultId: outcome.result.resultId,
+      createdAt: outcome.result.createdAt,
+    });
+    return { sampled: true, verdict: outcome.result.verdict };
+  } catch (error) {
+    console.error('L0.5 production sampling failed.', error);
+    return { sampled: false, error: true };
+  }
 }
 
 function billingTrustedUsage(

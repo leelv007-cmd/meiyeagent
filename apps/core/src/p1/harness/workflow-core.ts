@@ -36,6 +36,10 @@ import type {
   HarnessWorkflowInput,
 } from './task-admission.js';
 import type { StyleAnalysisResult } from './xhs-style-analysis.js';
+import {
+  emitVideoScenesArtifactProgress,
+  type ArtifactProgressEmitterPort,
+} from './artifact-progress-emitter.js';
 import type {
   ResolvedSkillInstruction,
   SkillInvocationReceipt,
@@ -72,6 +76,10 @@ import {
 } from './make-snapshot-consume.js';
 import { confirmPaidGenerationExecution } from './paid-generation-confirmation.js';
 import { createNotePageProgressReporter } from './note-page-execution-frame.js';
+import type {
+  CreateExecutionConfirmationInput,
+  CreateExecutionConfirmationResult,
+} from '../agent-session/execution-confirmation-service.js';
 import {
   createCarrierProgramRegistry,
   executeCompiledCarrierPlan,
@@ -224,6 +232,15 @@ export interface HarnessSharedStagePorts {
       'execution_check' | 'event_persistence'
     >;
   }): Promise<void>;
+  /**
+   * V31-11 confirmation objects: create the paid-execution confirmation request
+   * after merchant approval at the confirm gate. Optional — fixture paths and
+   * pre-V31-12 runs omit it; DBOS production wires
+   * ExecutionConfirmationService.createRequest (idempotent by requestId).
+   */
+  createExecutionConfirmationRequest?: (
+    input: CreateExecutionConfirmationInput,
+  ) => Promise<CreateExecutionConfirmationResult>;
   resolveStageSkills?(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
@@ -360,6 +377,13 @@ export interface HarnessMediaExecutionStagePorts {
     selection: HarnessMediaSelectionResult;
     skillInstructions?: readonly ResolvedSkillInstruction[];
   }): Promise<ContentPackageRevisionDelivery>;
+  /**
+   * Optional V31-15 producer: video scene progress emits artifact.revised via
+   * projector. Absent in fixture tests; production assembly wires
+   * AgentSemanticEventProjector (same emitter instance as the note path —
+   * media/note share the harness stage ports object).
+   */
+  artifactProgressEmitter?: ArtifactProgressEmitterPort;
 }
 
 export interface HarnessMediaStagePorts
@@ -1693,6 +1717,8 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
     workflowId,
     request: activeRequest,
     reportProgress,
+    createExecutionConfirmationRequest:
+      ports.createExecutionConfirmationRequest,
     awaitResolvedDecision: (question, stage) =>
       awaitResolvedDecision(runtime, question, stage),
     applyCurrentTaskDecision: (wfId, req, command) =>
@@ -2181,6 +2207,8 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
     request: activeRequest,
     reportProgress,
     noteOutline: noteOutlineSummary,
+    createExecutionConfirmationRequest:
+      ports.createExecutionConfirmationRequest,
     awaitResolvedDecision: (question, stage) =>
       awaitResolvedDecision(runtime, question, stage),
     applyCurrentTaskDecision: (wfId, req, command) =>
@@ -2471,6 +2499,37 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
     },
   );
   let { brief, metrics: briefMetrics } = unpackMediaBrief(compiledBrief);
+  // V31-15: video scene artifact producer. Scenes land running once the
+  // storyboard is compiled, success once the rendered video is selected.
+  // Emitter absent in fixture tests (optional port); no-op otherwise.
+  let videoArtifactRevision = 0;
+  const emitVideoSceneProgress = (
+    source: MediaBrief,
+    state: 'running' | 'success',
+  ): Promise<void> | undefined => {
+    if (source.kind !== 'video' || !ports.artifactProgressEmitter) return;
+    return emitVideoScenesArtifactProgress(
+      ports.artifactProgressEmitter,
+      {
+        workspaceId: activeRequest.workspaceId,
+        workflowId,
+        threadId:
+          activeRequest.executionPlanSnapshot?.planId ??
+          `shadow-workflow:${workflowId}`,
+        artifactId: `video:${activeRequest.packageId ?? workflowId}`,
+        scenes: source.storyboard.map(({ index, description }) => ({
+          sceneIndex: index - 1,
+          ...(state === 'running' ? { storyboard: description } : {}),
+        })),
+        state,
+        nextRevision: () => {
+          videoArtifactRevision += 1;
+          return videoArtifactRevision;
+        },
+        occurredAt: new Date().toISOString(),
+      },
+    );
+  };
   await trace(
     runtime,
     workflowId,
@@ -2499,11 +2558,14 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
     state: 'success',
     message: merchantProgressMessage('brief_compilation'),
   });
+  await emitVideoSceneProgress(brief, 'running');
 
   activeRequest = await confirmPaidGenerationExecution({
     workflowId,
     request: activeRequest,
     reportProgress,
+    createExecutionConfirmationRequest:
+      ports.createExecutionConfirmationRequest,
     awaitResolvedDecision: (question, stage) =>
       awaitResolvedDecision(runtime, question, stage),
     applyCurrentTaskDecision: (wfId, req, command) =>
@@ -2730,6 +2792,7 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
     state: 'success',
     message: mediaSelectionMessage(brief.kind),
   });
+  await emitVideoSceneProgress(brief, 'success');
 
   const fenced = await runtime.runStep(
     harnessEffectKey(workflowId, 2, 'fence', `r${bundle.bundle.revision}`),
@@ -2808,6 +2871,7 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
       },
     );
     ({ brief, metrics: briefMetrics } = unpackMediaBrief(compiledBrief));
+    await emitVideoSceneProgress(brief, 'running');
     await trace(
       runtime,
       workflowId,
@@ -2875,6 +2939,7 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
       state: 'success',
       message: `已按最新资料${mediaSelectionMessage(brief.kind)}`,
     });
+    await emitVideoSceneProgress(brief, 'success');
   }
 
   await finalizeSelectedMerchantExecution({

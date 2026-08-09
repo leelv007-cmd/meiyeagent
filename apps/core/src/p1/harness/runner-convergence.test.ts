@@ -42,6 +42,7 @@ import {
   assertZeroDuplicateSideEffects,
   buildRunnerEquivalenceSnapshot,
   diffRunnerEquivalence,
+  type RunnerEquivalenceSnapshot,
 } from './runner-equivalence.js';
 import {
   runHarnessWorkflow,
@@ -56,6 +57,7 @@ import {
   buildExecutionPlanSnapshot,
   freezeExecutionPlanContent,
 } from './execution-plan-admission.js';
+import { PRE_CONVERGENCE_BASELINES } from './fixtures/pre-convergence-equivalence-baselines.js';
 
 // ─── Taxonomy / six primitives ──────────────────────────────────────────────
 
@@ -187,6 +189,196 @@ test('V31-25: resolveCompiledCarrierExecution prefers frozen plan when present',
 });
 
 // ─── Equivalence baseline + kill/restart ─────────────────────────────────────
+
+/**
+ * REAL before/after comparison (V31-25, P1-b).
+ *
+ * PRE_CONVERGENCE_BASELINES are frozen snapshots captured by running the
+ * exact fixture task set through the PRE-CONVERGENCE runHarnessWorkflow entry
+ * at git commit 64bdaded8^ (prelude + descriptor.execute direct dispatch —
+ * the old five-stage runner entry). The post-convergence suite below runs the
+ * SAME fixture tasks through the CURRENT single-executor entry and asserts
+ * deliverable / settlement / recovery semantics are field-for-field equal.
+ *
+ * What this proves: the convergence commit did not change runner behavior for
+ * any fixture (deliverable, billing settlement markers, effect idempotency
+ * keys, progress sequence, trace stages). It does NOT prove the six-primitive
+ * internal rewrite landed — the runner functions still call the five-stage
+ * stage ports directly (grep read_context/ask_merchant in workflow-core = 0).
+ * That rewrite is tracked separately (V31-25 P1-a) and is out of scope here.
+ */
+type FixtureTaskId = keyof typeof PRE_CONVERGENCE_BASELINES;
+
+type FixtureAwaitDecision = (
+  question: Parameters<HarnessWorkflowRuntime['awaitDecision']>[0],
+  stage: Parameters<HarnessWorkflowRuntime['awaitDecision']>[1],
+) => Awaited<ReturnType<NonNullable<HarnessWorkflowRuntime['awaitDecision']>>>;
+
+const FIXTURE_TASKS: Record<
+  FixtureTaskId,
+  {
+    workflowId: string;
+    buildRequest: () => HarnessWorkflowInput;
+    buildStages: () =>
+      | HarnessStagePorts
+      | HarnessNoteStagePorts
+      | HarnessMediaStagePorts;
+    awaitDecision?: FixtureAwaitDecision;
+  }
+> = {
+  'copy-legacy': {
+    workflowId: 'v31-25-copy-legacy',
+    buildRequest: () => taskInput(),
+    buildStages: () => fixtureCopyStages(),
+  },
+  'note-legacy': {
+    workflowId: 'v31-25-note-legacy',
+    buildRequest: () => mediaTaskInput('image_text_note'),
+    buildStages: () => fixtureNoteStages(),
+    awaitDecision: noteStyleOrPaidDecision,
+  },
+  'media-legacy': {
+    workflowId: 'v31-25-media-legacy',
+    buildRequest: () => mediaTaskInput('image'),
+    buildStages: () => fixtureMediaStages(),
+    awaitDecision: approvePaid,
+  },
+  'copy-snapshot': {
+    workflowId: 'v31-25-copy-snapshot',
+    buildRequest: () => ({
+      ...taskInput(),
+      executionPlanSnapshot: buildTestPlanSnapshot('copy'),
+    }),
+    buildStages: () => fixtureCopyStages(),
+  },
+  'note-snapshot': {
+    workflowId: 'v31-25-note-snapshot',
+    buildRequest: () => ({
+      ...mediaTaskInput('image_text_note'),
+      executionPlanSnapshot: buildTestPlanSnapshot('note'),
+    }),
+    buildStages: () => fixtureNoteStages(),
+    awaitDecision: noteStyleOrPaidDecision,
+  },
+  'media-snapshot': {
+    workflowId: 'v31-25-media-snapshot',
+    buildRequest: () => ({
+      ...mediaTaskInput('image'),
+      executionPlanSnapshot: buildTestPlanSnapshot('media'),
+    }),
+    buildStages: () => fixtureMediaStages(),
+    awaitDecision: approvePaid,
+  },
+};
+
+/**
+ * Run one fixture task through the CURRENT (post-convergence) entry and
+ * return its deliverable / settlement / recovery equivalence snapshot.
+ */
+async function runFixtureSnapshot(fixtureId: FixtureTaskId) {
+  const fixture = FIXTURE_TASKS[fixtureId];
+  const keys: string[] = [];
+  const progress: Array<{ stage: string; state: string }> = [];
+  const traces: Array<{ stage: string }> = [];
+  const result = await runHarnessWorkflow(
+    fixture.workflowId,
+    fixture.buildRequest(),
+    fixture.buildStages(),
+    {
+      ...recordingRuntime(keys),
+      ...(fixture.awaitDecision
+        ? {
+            awaitDecision: async (
+              question: Parameters<HarnessWorkflowRuntime['awaitDecision']>[0],
+              stage: Parameters<HarnessWorkflowRuntime['awaitDecision']>[1],
+            ) => fixture.awaitDecision!(question, stage),
+          }
+        : {}),
+      async progress(event) {
+        progress.push({ stage: event.stage, state: event.state });
+      },
+      async recordTrace(input) {
+        traces.push({ stage: input.stage });
+      },
+    },
+  );
+  return buildRunnerEquivalenceSnapshot({
+    result,
+    effectKeys: keys,
+    progress,
+    traces,
+  });
+}
+
+async function collectFixtureEffectKeys(fixtureId: FixtureTaskId) {
+  const fixture = FIXTURE_TASKS[fixtureId];
+  const keys: string[] = [];
+  await runHarnessWorkflow(
+    fixture.workflowId,
+    fixture.buildRequest(),
+    fixture.buildStages(),
+    {
+      ...recordingRuntime(keys),
+      ...(fixture.awaitDecision
+        ? {
+            awaitDecision: async (
+              question: Parameters<HarnessWorkflowRuntime['awaitDecision']>[0],
+              stage: Parameters<HarnessWorkflowRuntime['awaitDecision']>[1],
+            ) => fixture.awaitDecision!(question, stage),
+          }
+        : {}),
+    },
+  );
+  return keys;
+}
+
+function assertMatchesPreConvergenceBaseline(
+  fixtureId: FixtureTaskId,
+  actual: RunnerEquivalenceSnapshot,
+) {
+  const expected = PRE_CONVERGENCE_BASELINES[fixtureId];
+  const mismatches = diffRunnerEquivalence(expected, actual);
+  assert.deepEqual(
+    mismatches,
+    [],
+    `${fixtureId} diverged from pre-convergence baseline (64bdaded8^): ${JSON.stringify(mismatches)}`,
+  );
+}
+
+test('V31-25: every fixture task matches its frozen pre-convergence baseline (deliverable/settlement/recovery)', async () => {
+  // True before/after: same fixture task set, pre-convergence code (64bdaded8^)
+  // vs post-convergence code, compared field-by-field. Includes both the LLM
+  // five-stage paths (copy/note/media) and the executionPlanSnapshot
+  // (snapshot-consume) paths. Note: this covers deliverable, billing/settlement
+  // markers, effect idempotency keys, progress sequence and trace stage names;
+  // it does not compare trace payload decoration (D-036 taxonomy fields were
+  // added by the convergence commit and are pinned by their own test).
+  for (const fixtureId of Object.keys(PRE_CONVERGENCE_BASELINES) as FixtureTaskId[]) {
+    const actual = await runFixtureSnapshot(fixtureId);
+    assertMatchesPreConvergenceBaseline(fixtureId, actual);
+  }
+});
+
+test('V31-25: kill/restart replay of every fixture lands on the pre-convergence effect key multiset', async () => {
+  // Recovery semantics: a durable replay must emit the same effect idempotency
+  // keys as the pre-convergence runner — first run, replay run, and the
+  // 64bdaded8^ baseline must all agree (multiset). Zero duplicate side effects
+  // is asserted per fixture here (redundant with the single-fixture test below
+  // but now proven for the full fixture task set).
+  for (const fixtureId of Object.keys(PRE_CONVERGENCE_BASELINES) as FixtureTaskId[]) {
+    const firstKeys = await collectFixtureEffectKeys(fixtureId);
+    const secondKeys = await collectFixtureEffectKeys(fixtureId);
+    assertZeroDuplicateSideEffects({
+      firstEffectKeys: firstKeys,
+      secondEffectKeys: secondKeys,
+    });
+    assert.deepEqual(
+      [...firstKeys].sort(),
+      [...PRE_CONVERGENCE_BASELINES[fixtureId].recovery.effectKeys].sort(),
+      `${fixtureId} replay effect keys drifted from pre-convergence baseline`,
+    );
+  }
+});
 
 test('V31-25: copy fixture equivalence baseline is stable across dual runs', async () => {
   const first = await runCopyFixture('task-v31-25-copy-a');
@@ -544,6 +736,26 @@ function approvePaid(
     },
     decision: { state: 'accepted' as const, value: 'approved' },
   };
+}
+
+function noteStyleOrPaidDecision(
+  question: Parameters<HarnessWorkflowRuntime['awaitDecision']>[0],
+) {
+  if (question.response.field === 'note_style') {
+    const styleId = question.options[0]?.id ?? 'practical_guide';
+    return {
+      idempotencyKey: `style:${question.questionId}`,
+      questionId: question.questionId,
+      workflowRevision: question.workflowRevision,
+      patch: {
+        field: question.response.field,
+        value: styleId,
+        reason: question.response.reason,
+      },
+      decision: { state: 'accepted' as const, value: styleId },
+    };
+  }
+  return approvePaid(question);
 }
 
 function fixtureCopyStages(): HarnessStagePorts {

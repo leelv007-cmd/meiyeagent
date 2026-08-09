@@ -4,6 +4,10 @@ import test from 'node:test';
 import type { SensitiveWordRecord } from '@meiye/contracts';
 
 import {
+  COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+} from '@meiye/contracts';
+
+import {
   HarnessIdentityPreflightError,
   HarnessSnapshotAssetReferenceError,
   HarnessSnapshotIdentityBindingError,
@@ -11,11 +15,21 @@ import {
   type HarnessCopyDeliveryPort,
   type ProductionHarnessStagePortsOptions,
 } from './production-stage-ports.js';
+import {
+  buildExecutionPlanSnapshot,
+  freezeExecutionPlanContent,
+  type ExecutionPlanFrozenContent,
+} from './execution-plan-admission.js';
+import {
+  HarnessExecutionFencePauseError,
+  HarnessExecutionFenceSafeStopError,
+} from './context-fence.js';
 import type { ContentPackageRevisionWriteInput } from '../execution-spine/content-package-revision-port.js';
 import { SourceContentPackageUnavailableError } from '../execution-spine/source-content-package-resolver.js';
 import {
   runHarnessWorkflow,
   type HarnessContextSnapshot,
+  type HarnessStagePorts,
 } from './workflow-core.js';
 import {
   HarnessSelectionError,
@@ -4084,3 +4098,196 @@ function composerRequest(snapshot: ReturnType<typeof composerSnapshot>) {
     executionSnapshot: snapshot,
   };
 }
+
+// ─── V31-14 P1-b: §23.4 mid-execution fence in the production runner ─────────
+
+const BOUNDED = {
+  schemaVersion: 'bounded-execution-snapshot/v1' as const,
+  maxIterations: 10,
+  maxCostCents: 100,
+  maxWallClockMs: 60_000,
+  maxDelegations: 2,
+  requiredLimits: ['maxIterations', 'maxCostCents'] as const,
+  consumption: {
+    iterations: 0,
+    costCents: 0,
+    wallClockMs: 0,
+    delegations: 0,
+  },
+  stopReason: null,
+  triggeredLimit: null,
+};
+
+function planSnapshot() {
+  const content = {
+    planId: 'plan-1',
+    planRevision: 1,
+    intentDeclaration: { summary: '推广' },
+    contextBundleRef: {
+      bundleId: 'bundle-1',
+      revision: 1,
+      hash: 'ctx-hash-1',
+    },
+    executionPlan: {
+      schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+      units: [
+        {
+          unitId: 'unit-1',
+          unitType: 'copy.generate',
+          primitive: 'generate' as const,
+        },
+      ],
+      dependencyGroups: [{ groupId: 'g1', unitIds: ['unit-1'] }],
+      boundedRetry: {
+        'unit-1': {
+          maxAttempts: 1,
+          maxCostCents: 0,
+          retry: { enabled: false as const },
+        },
+      },
+    },
+    deliverables: [{ deliverableId: 'd1', kind: 'copy', quantity: 1 }],
+    promptRevisionRefs: {},
+    skillManifestRefs: {},
+    routeRequirements: [],
+    quoteRef: { id: 'quote-1', revision: 1 },
+    rightsRevisionRefs: ['rights-1'],
+    factRevisionRefs: ['fact-1', 'fact-2'],
+    boundedExecution: BOUNDED,
+    harnessReleaseId: 'release-1',
+    approvalBasis: 'merchant_confirmed',
+  } as unknown as ExecutionPlanFrozenContent;
+  const { snapshotHash } = freezeExecutionPlanContent(content);
+  return buildExecutionPlanSnapshot({
+    content,
+    snapshotHash,
+    confirmationDecisionRef: 'decision-1',
+  });
+}
+
+function fencePorts(options?: Partial<ProductionHarnessStagePortsOptions>) {
+  const fences: Array<Record<string, unknown>> = [];
+  const ports = new ProductionHarnessStagePorts({
+    core: {
+      runners: { create: () => new QueueRunner([]) },
+      context: {
+        async compileAndFreeze() {
+          return contextSnapshot();
+        },
+        async fence(input) {
+          fences.push({ called: true, revision: input.context.bundle.revision });
+          return input.context;
+        },
+      },
+      delivery: new RecordingDelivery(),
+      now: () => '2026-07-18T00:01:00.000Z',
+    },
+    ...options,
+  });
+  return { ports, fences };
+}
+
+function fenceInput(
+  request: HarnessWorkflowInput,
+): Parameters<HarnessStagePorts['fenceContext']>[0] {
+  return {
+    workflowId: 'task-fence',
+    request,
+    declaration: {
+      normalizedIntent: '推广本店团购',
+      taskType: 'promotion_groupbuy_conversion',
+      deliveryLayer: 'copy',
+      relevantAssetCategories: ['promotion_activity'],
+      usedAssetCategories: [],
+      route: 'guidance',
+      routingSource: 'model',
+      implicitConstraints: [],
+    },
+    context: contextSnapshot(),
+  };
+}
+
+test('runner fence: in-flight rights revocation → safe stop without re-charge', async () => {
+  const { ports, fences } = fencePorts({
+    fence: {
+      resolveLiveFacts: async () => ({ rightsRevoked: true }),
+    },
+  });
+  const request: HarnessWorkflowInput = {
+    ...taskInput(),
+    executionPlanSnapshot: planSnapshot(),
+  };
+  await assert.rejects(
+    () => ports.fenceContext(fenceInput(request)),
+    (error: unknown) =>
+      error instanceof HarnessExecutionFenceSafeStopError &&
+      error.code === 'HARNESS_EXECUTION_FENCE_SAFE_STOP' &&
+      error.noAdditionalCharge === true &&
+      error.refundIfReserved === true &&
+      /授权已撤销/u.test(error.merchantMessage),
+  );
+  assert.equal(fences.length, 0, 'safe stop must not reach the recompile port');
+});
+
+test('runner fence: referenced price/date drift → pause prompt', async () => {
+  const { ports, fences } = fencePorts({
+    fence: {
+      resolveLiveFacts: async () => ({ quoteRevision: 99 }),
+    },
+  });
+  const request: HarnessWorkflowInput = {
+    ...taskInput(),
+    executionPlanSnapshot: planSnapshot(),
+  };
+  await assert.rejects(
+    () => ports.fenceContext(fenceInput(request)),
+    (error: unknown) =>
+      error instanceof HarnessExecutionFencePauseError &&
+      error.code === 'HARNESS_EXECUTION_FENCE_PAUSE_REQUIRED' &&
+      /报价|价格|日期/u.test(error.merchantMessage) &&
+      error.diff.quote?.frozen === 1 &&
+      error.diff.quote?.live === 99,
+  );
+  assert.equal(fences.length, 0, 'pause prompt must not reach the recompile port');
+});
+
+test('runner fence: current live facts fall through to the recompile port', async () => {
+  const { ports, fences } = fencePorts({
+    fence: {
+      resolveLiveFacts: async () => ({
+        quoteRevision: 1,
+        rightsRevisionRefs: ['rights-1'],
+        factRevisionRefs: ['fact-1', 'fact-2'],
+      }),
+    },
+  });
+  const request: HarnessWorkflowInput = {
+    ...taskInput(),
+    executionPlanSnapshot: planSnapshot(),
+  };
+  const fenced = await ports.fenceContext(fenceInput(request));
+  assert.equal(fenced.bundle.hash, 'a'.repeat(64));
+  assert.equal(fences.length, 1, 'recompile fallback still runs on continue');
+});
+
+test('runner fence: unwired or snapshotless runs keep the legacy recompile behavior', async () => {
+  const { ports, fences } = fencePorts();
+  const withoutPort = await ports.fenceContext(
+    fenceInput({ ...taskInput(), executionPlanSnapshot: planSnapshot() }),
+  );
+  assert.equal(withoutPort.bundle.hash, 'a'.repeat(64));
+  assert.equal(fences.length, 1);
+
+  const wired = fencePorts({
+    fence: { resolveLiveFacts: async () => ({ quoteRevision: 99 }) },
+  });
+  const snapshotless = await wired.ports.fenceContext(
+    fenceInput({ ...taskInput() }),
+  );
+  assert.equal(snapshotless.bundle.hash, 'a'.repeat(64));
+  assert.equal(
+    wired.fences.length,
+    1,
+    'legacy runs skip classification entirely',
+  );
+});

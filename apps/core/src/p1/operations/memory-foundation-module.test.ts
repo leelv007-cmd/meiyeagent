@@ -3,7 +3,8 @@ import test from 'node:test';
 
 import { requiredP1Capability } from '@meiye/contracts';
 
-import type { P1Context } from '../foundation/domain.js';
+import { P1DomainError, type P1Context } from '../foundation/domain.js';
+import { AgentMemoryPlatform } from './agent-memory-platform.js';
 import { MemoryFoundationModule } from './memory-foundation-module.js';
 import {
   MemoryReuseMemoryRepository,
@@ -16,6 +17,77 @@ const context: P1Context = {
   userId: 'owner-a',
   workspaceId: 'workspace-a',
 };
+
+const otherWorkspace: P1Context = {
+  actor: 'owner',
+  correlationId: 'memory-module',
+  userId: 'owner-b',
+  workspaceId: 'workspace-b',
+};
+
+const sourceVerifier = {
+  async verifyCandidate() {},
+  async verifyRevision() {},
+};
+
+const now = '2026-08-08T10:00:00.000Z';
+
+/**
+ * V31-18 module wiring: a memory platform whose receipt store carries one
+ * workspace-a receipt (task-gen-1 / run-1) for a confirmed preference.
+ */
+async function moduleWithReceipt() {
+  const repository = new MemoryReuseMemoryRepository();
+  const reuse = new ReuseMemoryService(repository, sourceVerifier, () => now);
+  const platform = new AgentMemoryPlatform(
+    reuse,
+    undefined,
+    undefined,
+    () => now,
+  );
+  const candidate = (
+    await platform.onExtracted({
+      workspaceId: context.workspaceId,
+      idempotencyPrefix: 'receipt-module',
+      items: [
+        {
+          itemId: 'a',
+          kind: 'preference',
+          semanticKey: 'tone.inject',
+          proposedValue: '克制',
+          defaultScope: { storeId: 'store-a' },
+          decisionEventId: 'd-inject',
+          taskId: 't-inject',
+          source: {
+            conversationId: 'c-inject',
+            sourceTurnId: 'turn-inject',
+            messageRange: { start: 0, end: 1 },
+          },
+          statement: '文案要克制',
+        },
+      ],
+    })
+  )[0];
+  assert.ok(candidate);
+  await platform.confirmMemoryCandidate(context, {
+    candidateId: candidate.candidateId,
+    preferenceId: 'pref-inject',
+    idempotencyKey: 'confirm-inject',
+  });
+  const entries = await platform.retrieveForInjection({
+    workspaceId: context.workspaceId,
+    scope: { storeId: 'store-a' },
+  });
+  assert.equal(entries.length, 1);
+  await platform.recordInjectionReceipt({
+    taskId: 'task-gen-1',
+    runId: 'run-1',
+    harnessReleaseId: 'release-1',
+    entries,
+  });
+  const module = new MemoryFoundationModule(reuse, platform);
+  return { module, platform, reuse, repository };
+}
 
 test('memory exposes bounded pages, candidate decisions, and memory-owned provenance tombstones', async () => {
   const service = new ReuseMemoryService(
@@ -167,4 +239,121 @@ test('memory exposes bounded pages, candidate decisions, and memory-owned proven
     );
     assert.equal(requiredP1Capability('command', 'memory', action), null);
   }
+});
+
+test('V31-18 injection receipt query is workspace-authenticated', async () => {
+  const { module } = await moduleWithReceipt();
+
+  assert.equal(
+    requiredP1Capability('query', 'memory', 'injection_receipt'),
+    'workspace.read',
+  );
+  assert.equal(
+    requiredP1Capability('command', 'memory', 'revoke_memory'),
+    'personal.preferences.manage',
+  );
+
+  const byTask = await module.query({
+    context,
+    input: { action: 'injection_receipt', payload: { taskId: 'task-gen-1' } },
+  });
+  const receiptByTask = (byTask as {
+    receipt: { taskId: string; runId: string; harnessReleaseId: string };
+  }).receipt;
+  assert.equal(receiptByTask.taskId, 'task-gen-1');
+  assert.equal(receiptByTask.runId, 'run-1');
+  assert.equal(receiptByTask.harnessReleaseId, 'release-1');
+  const byRun = await module.query({
+    context,
+    input: { action: 'injection_receipt', payload: { runId: 'run-1' } },
+  });
+  assert.equal(
+    (byRun as { receipt: { taskId: string } }).receipt.taskId,
+    'task-gen-1',
+  );
+
+  const missing = await module.query({
+    context,
+    input: { action: 'injection_receipt', payload: { runId: 'run-missing' } },
+  });
+  assert.deepEqual(missing, { receipt: null });
+
+  // Cross-workspace lookup must be rejected, not served.
+  await assert.rejects(
+    module.query({
+      context: otherWorkspace,
+      input: {
+        action: 'injection_receipt',
+        payload: { taskId: 'task-gen-1' },
+      },
+    }),
+    (error: unknown) =>
+      error instanceof P1DomainError && error.code === 'FORBIDDEN',
+  );
+  await assert.rejects(
+    module.query({
+      context: otherWorkspace,
+      input: { action: 'injection_receipt', payload: { runId: 'run-1' } },
+    }),
+    (error: unknown) =>
+      error instanceof P1DomainError && error.code === 'FORBIDDEN',
+  );
+
+  // Ambiguous payload (both ids) is an invalid input.
+  await assert.rejects(
+    module.query({
+      context,
+      input: {
+        action: 'injection_receipt',
+        payload: { taskId: 'task-gen-1', runId: 'run-1' },
+      },
+    }),
+    /Invalid memory payload/u,
+  );
+});
+
+test('V31-18 revoke_memory command excludes the memory from future injection', async () => {
+  const { module, platform } = await moduleWithReceipt();
+
+  const receipt = (
+    await module.query({
+      context,
+      input: { action: 'injection_receipt', payload: { taskId: 'task-gen-1' } },
+    })
+  ) as { receipt: { entries: Array<{ memoryId: string; revision: number }> } };
+  const entry = receipt.receipt.entries[0];
+  assert.equal(entry?.memoryId, 'pref-inject');
+
+  const revoked = await module.execute({
+    context,
+    idempotencyKey: 'revoke-inject-module',
+    input: {
+      action: 'revoke_memory',
+      payload: { memoryId: entry.memoryId, expectedRevision: entry.revision },
+    },
+  });
+  assert.equal(
+    (revoked as { recordState: string }).recordState,
+    'revoked',
+  );
+
+  // Historical receipt stays visible (trace) in the owning workspace.
+  const after = await module.query({
+    context,
+    input: { action: 'injection_receipt', payload: { taskId: 'task-gen-1' } },
+  });
+  assert.equal(
+    (after as { receipt: { entries: unknown[] } }).receipt.entries.length,
+    1,
+  );
+  // Future injection no longer includes the revoked memory.
+  assert.equal(
+    (
+      await platform.retrieveForInjection({
+        workspaceId: context.workspaceId,
+        scope: { storeId: 'store-a' },
+      })
+    ).length,
+    0,
+  );
 });

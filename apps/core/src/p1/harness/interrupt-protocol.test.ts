@@ -18,6 +18,8 @@ import {
   InterruptProtocolError,
   InterruptProtocolService,
   MemoryInterruptStore,
+  type InterruptResumeBridgeInput,
+  type InterruptResumeBridgePort,
 } from './interrupt-protocol.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
@@ -62,6 +64,7 @@ function resumeCommand(
 function service(options?: {
   members?: Set<string>;
   now?: string;
+  bridge?: InterruptResumeBridgePort;
 }) {
   const members = options?.members ?? new Set(['user-1:ws-1']);
   const store = new MemoryInterruptStore();
@@ -73,6 +76,7 @@ function service(options?: {
       },
     },
     () => options?.now ?? TS,
+    options?.bridge,
   );
   return { store, svc };
 }
@@ -239,4 +243,132 @@ test('kill/restart seam: re-request + re-resume identical payload has zero side 
     query: { resourceId: 'ws-1' as InterruptPayload['resourceId'] },
   });
   assert.equal(pending.length, 0);
+});
+
+test('resume bridge delivers once per CAS application; duplicate resume re-delivers idempotently', async () => {
+  const deliveries: InterruptResumeBridgeInput[] = [];
+  const { svc } = service({
+    bridge: {
+      async deliver(input) {
+        deliveries.push(input);
+      },
+    },
+  });
+  await svc.request({ workspaceId: 'ws-1', payload: payload() });
+  const command = resumeCommand({ idempotencyKey: 'bridge-1' });
+
+  const first = await svc.resume({
+    userId: 'user-1',
+    workspaceId: 'ws-1',
+    command,
+  });
+  assert.equal(first.outcome, 'applied');
+  const second = await svc.resume({
+    userId: 'user-1',
+    workspaceId: 'ws-1',
+    command,
+  });
+  assert.equal(second.outcome, 'replayed');
+
+  assert.equal(deliveries.length, 2, 'at-least-once re-delivery');
+  assert.deepEqual(
+    deliveries.map((d) => d.command),
+    [command, command],
+    'identical resume input on retry keeps side effects dedupable',
+  );
+  assert.equal(deliveries[0]?.payload.interruptId, 'int-1');
+  assert.equal(deliveries[0]?.payload.revision, 3);
+  assert.equal(deliveries[0]?.workspaceId, 'ws-1');
+});
+
+test('bridge failure fails resume; retry after CAS applied re-delivers (resume not lost)', async () => {
+  let fail = true;
+  const deliveries: InterruptResumeBridgeInput[] = [];
+  const { svc } = service({
+    bridge: {
+      async deliver(input) {
+        if (fail) throw new Error('workflow channel down');
+        deliveries.push(input);
+      },
+    },
+  });
+  await svc.request({ workspaceId: 'ws-1', payload: payload() });
+  const command = resumeCommand({ idempotencyKey: 'bridge-retry' });
+
+  await assert.rejects(() =>
+    svc.resume({ userId: 'user-1', workspaceId: 'ws-1', command }),
+  );
+  assert.equal(deliveries.length, 0);
+
+  fail = false;
+  const retried = await svc.resume({
+    userId: 'user-1',
+    workspaceId: 'ws-1',
+    command,
+  });
+  assert.equal(retried.outcome, 'replayed', 'CAS already applied, replay recovers');
+  assert.equal(deliveries.length, 1, 'replayed resume re-delivers the command');
+  assert.deepEqual(deliveries[0]?.command, command);
+});
+
+test('resolveByWorkflow syncs a mirrored interrupt without a resume command', async () => {
+  const { svc } = service();
+  await svc.request({ workspaceId: 'ws-1', payload: payload() });
+  const first = await svc.resolveByWorkflow({
+    workspaceId: 'ws-1',
+    interruptId: 'int-1',
+    revision: 3,
+    source: 'core_hold_expired',
+  });
+  assert.equal(first, 'applied');
+  const again = await svc.resolveByWorkflow({
+    workspaceId: 'ws-1',
+    interruptId: 'int-1',
+    revision: 3,
+    source: 'core_hold_expired',
+  });
+  assert.equal(again, 'replayed', 'duplicate workflow resolution replays');
+
+  const pending = await svc.listPending({
+    userId: 'user-1',
+    workspaceId: 'ws-1',
+    query: { resourceId: 'ws-1' as InterruptPayload['resourceId'] },
+  });
+  assert.equal(pending.length, 0, 'resolved interrupts leave the pending list');
+
+  // A later merchant resume on the resolved row conflicts (workflow moved on).
+  await assert.rejects(
+    () =>
+      svc.resume({
+        userId: 'user-1',
+        workspaceId: 'ws-1',
+        command: resumeCommand({ idempotencyKey: 'after-workflow-resolve' }),
+      }),
+    (error: unknown) =>
+      error instanceof InterruptProtocolError &&
+      error.code === 'IDEMPOTENCY_CONFLICT',
+  );
+});
+
+test('resolveByWorkflow is a no-op for foreign or missing rows', async () => {
+  const { svc } = service();
+  await svc.request({ workspaceId: 'ws-1', payload: payload() });
+  assert.equal(
+    await svc.resolveByWorkflow({
+      workspaceId: 'ws-2',
+      interruptId: 'int-1',
+      revision: 3,
+      source: 'decision',
+    }),
+    'replayed',
+  );
+  assert.equal(
+    await svc.resolveByWorkflow({
+      workspaceId: 'ws-1',
+      interruptId: 'int-unknown',
+      revision: 3,
+      source: 'decision',
+    }),
+    'replayed',
+  );
 });

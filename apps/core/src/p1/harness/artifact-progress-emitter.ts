@@ -25,9 +25,13 @@ export type NotePageProgressArtifactInput = {
   artifactId: string;
   pageIndex: number;
   pageId: string;
+  /** V31-15 page growth: skeleton → copy → image. */
+  stage: 'skeleton' | 'copy' | 'image';
   state: 'running' | 'success' | 'failed';
   revision: number;
   title?: string;
+  /** Copy body lands on the copy stage; kept by in-place reconciliation. */
+  body?: string;
   occurredAt: string;
   correlationId?: string;
 };
@@ -77,13 +81,16 @@ export function buildNotePageArtifactUpdate(
       pages: [
         {
           pageIndex: input.pageIndex,
-          stage: 'image',
+          stage: input.stage,
           ...(input.title ? { title: input.title } : {}),
-          imageStatus: noteImageStatus(input.state),
+          ...(input.body ? { body: input.body } : {}),
+          ...(input.stage === 'image'
+            ? { imageStatus: noteImageStatus(input.state) }
+            : {}),
         },
       ],
     },
-    summary: `note page ${input.pageIndex + 1} ${input.state}`,
+    summary: `note page ${input.pageIndex + 1} ${input.stage} ${input.state}`,
   });
 }
 
@@ -187,4 +194,40 @@ export async function emitVideoSceneArtifactProgress(
     }),
   );
   return update;
+}
+
+/**
+ * Emit a whole video scene batch (all storyboard scenes) at one real chain
+ * point (brief compiled → running / selection complete → success). Each scene
+ * takes the next monotonic revision; same artifactId in-place reconciliation.
+ */
+export async function emitVideoScenesArtifactProgress(
+  emitter: ArtifactProgressEmitterPort | undefined,
+  input: {
+    workspaceId: string;
+    workflowId: string;
+    threadId: string;
+    artifactId: string;
+    scenes: Array<{ sceneIndex: number; storyboard?: string }>;
+    state: 'running' | 'success';
+    nextRevision: () => number;
+    occurredAt: string;
+    correlationId?: string;
+  },
+): Promise<void> {
+  if (!emitter) return;
+  for (const scene of input.scenes) {
+    await emitVideoSceneArtifactProgress(emitter, {
+      workspaceId: input.workspaceId,
+      workflowId: input.workflowId,
+      threadId: input.threadId,
+      artifactId: input.artifactId,
+      sceneIndex: scene.sceneIndex,
+      state: input.state,
+      revision: input.nextRevision(),
+      ...(scene.storyboard ? { storyboard: scene.storyboard } : {}),
+      occurredAt: input.occurredAt,
+      correlationId: input.correlationId,
+    });
+  }
 }

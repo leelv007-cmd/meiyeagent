@@ -8,12 +8,15 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { Pool } from 'pg';
 
+import { agentExecutionConfirmationRequestSchema } from '@meiye/contracts';
+
 import { PostgresCreditLedger } from '../credit-billing/postgres-credit-ledger.js';
 import { ExecutionConfirmationService } from './execution-confirmation-service.js';
 import {
   confirmationCreditPortFromPostgresLedger,
   PostgresExecutionConfirmationMigration,
 } from './postgres-execution-confirmation-store.js';
+import type { ConfirmationRequestProjectionFacts } from './execution-confirmation-store.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 
@@ -86,6 +89,172 @@ test(
   },
 );
 
+test(
+  'savePendingWithClient joins the caller transaction: rollback removes both the request row and the reserve (P1-b)',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const fixture = await createFixture();
+    const { creditLedger, requestStore, workspaceId, cleanup } = fixture;
+    try {
+      await creditLedger.grant({
+        id: 'confirm-pkg-p1b',
+        workspaceId,
+        credits: 5,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'confirm-p1b',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+
+      const createdAt = '2026-08-08T12:00:00.000Z';
+      const client = await fixture.pool.connect();
+      try {
+        await client.query('BEGIN');
+        await creditLedger.consumeWithClient(client, {
+          workspaceId,
+          credits: 3,
+          transactionId: 'reserve-p1b',
+          actorId: 'merchant-p1b',
+          correlationId: 'confirmation:req-p1b',
+          createdAt,
+        });
+        await requestStore.savePendingWithClient(client, {
+          request: agentExecutionConfirmationRequestSchema.parse({
+            schemaVersion: 'agent-execution-confirmation-request/v1',
+            requestId: 'req-p1b',
+            workspaceId,
+            planId: 'plan-p1b',
+            planRevision: 1,
+            snapshotHash: 'snap-p1b',
+            quoteRef: { id: 'quote-p1b', revision: 1 },
+            reservationIdempotencyKey: 'reserve-p1b',
+            createdAt,
+            holdExpiresAt: '2026-08-09T12:00:00.000Z',
+            status: 'pending',
+          }),
+          projection: {
+            reservedCredits: 3,
+            failureRefundsCredits: true,
+            rightsSummary: null,
+            factSummary: null,
+          } satisfies ConfirmationRequestProjectionFacts,
+        });
+        await client.query('ROLLBACK');
+      } finally {
+        client.release();
+      }
+
+      // The row insert went through the same transaction as the reserve:
+      // a rollback must leave neither an orphan request row nor a deduction.
+      assert.equal(await requestStore.getById('req-p1b'), null);
+      const projection = await creditLedger.project(workspaceId, createdAt);
+      assert.equal(projection.availableCredits, 5);
+      assert.equal(projection.usedCredits, 0);
+    } finally {
+      await cleanup();
+    }
+  },
+);
+
+test(
+  'createRequest with insufficient balance leaves no orphan request row (A3)',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const fixture = await createFixture();
+    const { service, creditLedger, workspaceId, cleanup } = fixture;
+    try {
+      await creditLedger.grant({
+        id: 'confirm-pkg-short',
+        workspaceId,
+        credits: 2,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'confirm-short',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+
+      await assert.rejects(
+        () =>
+          service.createRequest({
+            requestId: 'req-short',
+            workspaceId,
+            planId: 'plan-short',
+            planRevision: 1,
+            snapshotHash: 'snap-short',
+            quoteRef: { id: 'quote-short', revision: 1 },
+            reservationIdempotencyKey: 'reserve-short',
+            createdAt: '2026-08-08T12:00:00.000Z',
+            holdExpiresAt: '2026-08-09T12:00:00.000Z',
+            actorId: 'merchant-short',
+            creditCost: 5,
+            failureRefundsCredits: true,
+          }),
+        /Insufficient credits/i,
+      );
+      assert.equal(await service.getRequest('req-short'), null);
+      const projection = await creditLedger.project(
+        workspaceId,
+        '2026-08-08T12:00:00.000Z',
+      );
+      assert.equal(projection.availableCredits, 2);
+      assert.equal(projection.usedCredits, 0);
+    } finally {
+      await cleanup();
+    }
+  },
+);
+
+test(
+  'createRequest same requestId re-entry never double-consumes (idempotent)',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const fixture = await createFixture();
+    const { service, creditLedger, workspaceId, cleanup } = fixture;
+    try {
+      await creditLedger.grant({
+        id: 'confirm-pkg-replay',
+        workspaceId,
+        credits: 10,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'confirm-replay',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+
+      const createdAt = '2026-08-08T12:00:00.000Z';
+      const input = {
+        requestId: 'req-replay',
+        workspaceId,
+        planId: 'plan-replay',
+        planRevision: 1,
+        snapshotHash: 'snap-replay',
+        quoteRef: { id: 'quote-replay', revision: 1 },
+        reservationIdempotencyKey: 'reserve-replay',
+        createdAt,
+        holdExpiresAt: '2026-08-09T12:00:00.000Z',
+        actorId: 'merchant-replay',
+        creditCost: 3,
+        failureRefundsCredits: true,
+      };
+      const first = await service.createRequest(input);
+      const replay = await service.createRequest(input);
+      assert.equal(replay.stored.request.requestId, first.stored.request.requestId);
+      assert.equal(replay.reservedCredits, 3);
+      const projection = await creditLedger.project(workspaceId, createdAt);
+      assert.equal(projection.availableCredits, 7);
+      assert.equal(projection.usedCredits, 3);
+    } finally {
+      await cleanup();
+    }
+  },
+);
+
 async function createFixture() {
   const schema = `confirm_${randomUUID().replaceAll('-', '')}`;
   const pool = new Pool({ connectionString });
@@ -128,6 +297,8 @@ async function createFixture() {
   return {
     service,
     creditLedger,
+    requestStore: migration.requestStore,
+    pool,
     workspaceId,
     async cleanup() {
       await pool.query(`DROP SCHEMA ${schema} CASCADE`).catch(() => undefined);

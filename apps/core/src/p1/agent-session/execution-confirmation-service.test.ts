@@ -119,6 +119,34 @@ test('createRequest concurrent attempts never over-debit (A3 memory seam)', asyn
   assert.equal((await ledger.project('ws-1', CREATED)).usedCredits, 3);
 });
 
+test('createRequest compensates orphan hold when row insert fails (non-tx seam)', async () => {
+  const ledger = new MemoryCreditLedger();
+  ledger.grant({
+    id: 'lot-comp',
+    workspaceId: 'ws-1',
+    credits: 20,
+    expirationDate: '2026-09-01T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+    sourceRef: 'comp-test',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  });
+  const requests = new (class extends MemoryExecutionConfirmationRequestStore {
+    async savePending(): Promise<never> {
+      throw new Error('injected request row failure');
+    }
+  })();
+  const service = new ExecutionConfirmationService(
+    requests,
+    new MemoryPlanConfirmationDecisionStore(),
+    confirmationCreditPortFromMemoryLedger(ledger),
+  );
+  await assert.rejects(() => service.createRequest(baseCreate()));
+  const projection = ledger.project('ws-1', CREATED);
+  assert.equal(projection.availableCredits, 20);
+  assert.equal(projection.usedCredits, 5);
+  assert.equal(projection.refundedCredits, 5);
+});
+
 test('PlanConfirmationDecision is immutable and carries no TTL', async () => {
   const { service, decisions } = makeService();
   await service.createRequest(baseCreate());

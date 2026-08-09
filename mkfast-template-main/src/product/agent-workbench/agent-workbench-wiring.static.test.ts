@@ -27,7 +27,11 @@ test('ComposerHome imports and mounts AgentWorkbenchHost with Thread-root props'
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /from '@\/product\/agent-workbench'/u);
   assert.match(home, /AgentWorkbenchHost/u);
-  assert.match(home, /explicitThreadId=\{initialThreadId/u);
+  assert.match(home, /explicitThreadId=\{activeAgentThreadId/u);
+  assert.match(
+    home,
+    /activeAgentThreadId = agentBinding\?\.threadId \?\? initialThreadId \?\? null/u
+  );
   assert.match(home, /explicitTaskId=\{initialTaskId/u);
   assert.match(home, /initialThreadId\?:/u);
 });
