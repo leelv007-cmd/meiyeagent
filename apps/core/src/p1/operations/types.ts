@@ -955,6 +955,16 @@ export interface ContentPackageRightsResolverPort {
     knownAssetIds?: string[];
     unauthorizedAssetIds: string[];
   }>;
+  /** Authoritative head for policy-sensitive execution fences. */
+  resolveWithRevision?(input: {
+    assetIds: string[];
+    platform?: ContentPackage['variants'][number]['platform'];
+    workspaceId: string;
+  }): Promise<{
+    knownAssetIds?: string[];
+    rightsRevision: string;
+    unauthorizedAssetIds: string[];
+  }>;
 }
 
 /**

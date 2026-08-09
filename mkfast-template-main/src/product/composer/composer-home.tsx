@@ -218,8 +218,10 @@ import {
   AgentWorkbenchHost,
   loadAgentWorkbenchReplay,
   subscribeAgentSemanticEvents,
+  useAgentWorkbenchState,
   usePublishHandoff,
 } from '@/product/agent-workbench';
+import { composerPendingInterruptGate } from './composer-pending-interrupt-gate';
 import { LensRadiogroup } from './lens-radiogroup';
 import { LensSwitchPreviewPanel } from './lens-switch-preview-panel';
 import { ComposerIdentityCard } from './composer-identity-card';
@@ -527,6 +529,10 @@ export function ComposerHome({
   const isMobile = useIsMobile();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const agentWorkbench = useAgentWorkbenchState();
+  const pendingInterruptGate = composerPendingInterruptGate(
+    agentWorkbench.pendingInterrupts.length
+  );
   const product = useProductState();
   const storeFacts = useQuery({
     enabled: Boolean(product.state?.workspaceId),
@@ -3862,7 +3868,9 @@ export function ComposerHome({
                       : null
                   }
                   disabled={
-                    createWork.isPending || creditAdmissionPending
+                    createWork.isPending ||
+                    creditAdmissionPending ||
+                    pendingInterruptGate.blocked
                   }
                   submitDisabled={
                     // D-C2: no lens means `canSubmit` will refuse, so the
@@ -3871,6 +3879,7 @@ export function ComposerHome({
                     lensId == null ||
                     createWork.isPending ||
                     creditAdmissionPending ||
+                    pendingInterruptGate.blocked ||
                     briefPending ||
                     destinationMapPending ||
                     !uploadsReady ||
@@ -4008,6 +4017,7 @@ export function ComposerHome({
                     selectedModel?.channelReadiness ?? null
                   }
                   onSubmit={() => {
+                    if (pendingInterruptGate.blocked) return;
                     if (
                       !livingPlanController.submitRevision(
                         lensState.draft.userText
@@ -4032,7 +4042,7 @@ export function ComposerHome({
                       briefState.phase !== 'open')
                   }
                   signedPreview={signedPreview}
-                  submitHint={submitIntent.hint}
+                  submitHint={pendingInterruptGate.hint ?? submitIntent.hint}
                   submitLabel={submitIntent.label}
                   intentError={submitBlockedMessage}
                   value={userText}

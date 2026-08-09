@@ -5,7 +5,7 @@
  * heads so DBOS pre-run and mid-execution fences see real revocation and drift.
  */
 
-import type { ExecutionPlanSnapshot } from '@meiye/contracts';
+import type { ExecutionPlanSnapshot, Platform } from '@meiye/contracts';
 import { createHash } from 'node:crypto';
 
 import type { MarketingIdentityRepository } from '../operations/marketing-identity.js';
@@ -17,6 +17,8 @@ import type { SnapshotLiveFacts } from './execution-plan-admission.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 
 export type RightsLiveHead = {
+  /** Frozen coordinate this authoritative lookup answered. */
+  frozenRevisionId?: string;
   revisionId: string;
   revoked: boolean;
 };
@@ -42,8 +44,18 @@ export type AuthoritativeExecutionPlanLiveFactsDependencies = {
     resolve(input: {
       workspaceId: string;
       assetIds: string[];
+      platform?: Platform;
     }): Promise<{
       knownAssetIds?: string[];
+      unauthorizedAssetIds: string[];
+    }>;
+    resolveWithRevision?(input: {
+      workspaceId: string;
+      assetIds: string[];
+      platform?: Platform;
+    }): Promise<{
+      knownAssetIds?: string[];
+      rightsRevision: string;
       unauthorizedAssetIds: string[];
     }>;
   };
@@ -71,17 +83,32 @@ export function createAuthoritativeExecutionPlanLiveFactsPorts(
   return {
     async resolveRightsHeads({ workspaceId, rightsRevisionRefs }) {
       const assetIds = [...new Set(dependencies.request.intent.assetReferences)];
-      const decision = await dependencies.rights.resolve({
+      const requestedPlatform =
+        dependencies.request.executionPlanSnapshot?.deliverables.find(
+          (deliverable) => deliverable.platform,
+        )?.platform;
+      const platform: Platform | undefined =
+        requestedPlatform === 'xiaohongshu' || requestedPlatform === 'douyin'
+          ? requestedPlatform
+          : undefined;
+      const rightsInput = {
         workspaceId,
         assetIds,
-      });
+        ...(platform ? { platform } : {}),
+      };
+      if (!dependencies.rights.resolveWithRevision) return [];
+      const decision = await dependencies.rights.resolveWithRevision(
+        rightsInput,
+      );
+      const currentRevision = decision.rightsRevision;
       const known = new Set(decision.knownAssetIds ?? []);
       const unauthorized = new Set(decision.unauthorizedAssetIds);
       const revoked = assetIds.some(
         (assetId) => !known.has(assetId) || unauthorized.has(assetId),
       );
-      return rightsRevisionRefs.map((revisionId) => ({
-        revisionId,
+      return rightsRevisionRefs.map((frozenRevisionId) => ({
+        frozenRevisionId,
+        revisionId: currentRevision,
         revoked,
       }));
     },
@@ -233,11 +260,13 @@ export async function resolveExecutionPlanLiveFactsFromPorts(input: {
           })
           .catch(() => [])
       : [];
-    const headById = new Map(heads.map((h) => [h.revisionId, h]));
+    const headByFrozenRef = new Map(
+      heads.map((head) => [head.frozenRevisionId ?? head.revisionId, head]),
+    );
     const liveRefs: string[] = [];
     let revoked = false;
     for (const ref of snapshot.rightsRevisionRefs) {
-      const head = headById.get(ref);
+      const head = headByFrozenRef.get(ref);
       if (!head || head.revoked) {
         revoked = true;
         continue;

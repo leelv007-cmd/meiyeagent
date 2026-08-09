@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ComposerPromptBar } from './composer-conversation';
+import { composerPendingInterruptGate } from './composer-pending-interrupt-gate';
 import { LensRadiogroup } from './lens-radiogroup';
 import { COMPOSER_LENS_LABELS, LENS_REQUIRED_SUBMIT_HINT } from './lens-labels';
 
@@ -26,15 +27,24 @@ afterEach(cleanup);
  * Mirrors the host wiring in composer-home: the gate, the label and the hint
  * all read the same "is a lens chosen" fact.
  */
-function SendGateHarness({ onSubmit }: { onSubmit: () => void }) {
+function SendGateHarness({
+  hasPendingInterrupt = false,
+  onSubmit,
+}: {
+  hasPendingInterrupt?: boolean;
+  onSubmit: () => void;
+}) {
   const [lensId, setLensId] = useState<CreationLensId | null>(null);
+  const interruptGate = composerPendingInterruptGate(
+    hasPendingInterrupt ? 1 : 0
+  );
   return (
     <ComposerPromptBar
       ariaLabel="描述这次想创作的内容"
       controlDensity="idle-compact"
       destination={null}
       destinationCapability={null}
-      disabled={false}
+      disabled={interruptGate.blocked}
       lensRequired={lensId == null}
       lensSlot={<LensRadiogroup onChange={setLensId} value={lensId} />}
       lensSummary={lensId ? COMPOSER_LENS_LABELS[lensId] : null}
@@ -46,11 +56,12 @@ function SendGateHarness({ onSubmit }: { onSubmit: () => void }) {
       reuseChips={[]}
       running={false}
       signedPreview={null}
-      submitDisabled={lensId == null}
+      submitDisabled={lensId == null || interruptGate.blocked}
       submitHint={
-        lensId == null
+        interruptGate.hint ??
+        (lensId == null
           ? '还没选创作类型：在上面的「创作类型（必选）」里选一个，发送就会亮起来。'
-          : null
+          : null)
       }
       submitLabel={lensId == null ? LENS_REQUIRED_SUBMIT_HINT : '开始创作'}
       value="帮我写一条美甲店夏日新款的种草文案"
@@ -98,5 +109,21 @@ describe('send gate visibility (D-C2)', () => {
 
     await user.click(submit);
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks new input and submit while an interrupt awaits a decision', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<SendGateHarness hasPendingInterrupt onSubmit={onSubmit} />);
+
+    const input = screen.getByLabelText('描述这次想创作的内容');
+    expect(input).toBeDisabled();
+    const submit = screen.getByTestId('composer-submit');
+    expect(submit).toBeDisabled();
+    expect(screen.getByTestId('composer-submit-intent')).toHaveTextContent(
+      '请先处理上方待确认事项，再开始新的创作。'
+    );
+    await user.click(submit);
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });

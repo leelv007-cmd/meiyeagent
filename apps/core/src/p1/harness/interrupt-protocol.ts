@@ -32,6 +32,8 @@ export type StoredInterrupt = {
   /** Canonical resume fingerprint for idempotent replay. */
   resolvedFingerprint?: string;
   resolvedCommand?: ResumeInterruptCommand;
+  /** Durable resume outbox state; CAS writes pending before bridge delivery. */
+  resumeDeliveryStatus?: 'none' | 'pending' | 'sent';
 };
 
 export type InterruptProtocolErrorCode =
@@ -84,6 +86,12 @@ export type InterruptStore = {
     resourceId: string;
     threadId?: string;
   }): Promise<StoredInterrupt[]>;
+  listUndelivered(limit: number): Promise<StoredInterrupt[]>;
+  markResumeDelivered(input: {
+    interruptId: string;
+    fingerprint: string;
+    deliveredAt: string;
+  }): Promise<boolean>;
 };
 
 export type InterruptMembershipPort = {
@@ -181,6 +189,7 @@ export class MemoryInterruptStore implements InterruptStore {
       ...row,
       payload: parsed,
       status: 'pending',
+      resumeDeliveryStatus: 'none',
     };
     this.#byId.set(parsed.interruptId, stored);
     return stored;
@@ -228,6 +237,7 @@ export class MemoryInterruptStore implements InterruptStore {
       resolvedAt: input.resolvedAt,
       resolvedFingerprint: input.fingerprint,
       resolvedCommand: input.command,
+      resumeDeliveryStatus: 'pending',
     };
     this.#byId.set(input.interruptId, next);
     return { outcome: 'applied' as const, row: next };
@@ -247,6 +257,38 @@ export class MemoryInterruptStore implements InterruptStore {
       rows.push(row);
     }
     return rows.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async listUndelivered(limit: number): Promise<StoredInterrupt[]> {
+    return [...this.#byId.values()]
+      .filter(
+        (row) =>
+          row.status === 'resolved' &&
+          row.resumeDeliveryStatus === 'pending' &&
+          row.resolvedCommand !== undefined,
+      )
+      .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+      .slice(0, limit);
+  }
+
+  async markResumeDelivered(input: {
+    interruptId: string;
+    fingerprint: string;
+    deliveredAt: string;
+  }): Promise<boolean> {
+    const row = this.#byId.get(input.interruptId);
+    if (
+      !row ||
+      row.status !== 'resolved' ||
+      row.resolvedFingerprint !== input.fingerprint
+    ) {
+      return false;
+    }
+    this.#byId.set(input.interruptId, {
+      ...row,
+      resumeDeliveryStatus: 'sent',
+    });
+    return true;
   }
 }
 
@@ -365,20 +407,7 @@ export class InterruptProtocolService {
         // bridge failure because the CAS row is already resolved. Bridge
         // implementations dedup on the command idempotency key, so duplicate
         // resume remains side-effect free (V31-14 durable seam).
-        if (this.resumeBridge) {
-          await this.resumeBridge.deliver({
-            workspaceId: input.workspaceId,
-            payload: result.row.payload,
-            command,
-          });
-        }
-        await this.semanticEvents?.project(
-          interruptSemanticCandidate({
-            payload: result.row.payload,
-            eventType: 'interrupt.resolved',
-            occurredAt: result.row.resolvedAt ?? this.now(),
-          }),
-        );
+        await this.deliverResolved(result.row, command);
         return { outcome: result.outcome, record: result.row, command };
       }
       case 'stale':
@@ -407,6 +436,62 @@ export class InterruptProtocolService {
         return _exhaustive;
       }
     }
+  }
+
+  /** Recover CAS-applied resumes even when the original HTTP process exited. */
+  async recoverUndelivered(limit = 20): Promise<{
+    delivered: number;
+    failed: number;
+  }> {
+    const rows = await this.store.listUndelivered(limit);
+    let delivered = 0;
+    let failed = 0;
+    for (const row of rows) {
+      if (!row.resolvedCommand || !row.resolvedFingerprint) {
+        failed += 1;
+        continue;
+      }
+      try {
+        await this.deliverResolved(row, row.resolvedCommand);
+        delivered += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    return { delivered, failed };
+  }
+
+  private async deliverResolved(
+    row: StoredInterrupt,
+    command: ResumeInterruptCommand,
+  ): Promise<void> {
+    if (this.resumeBridge) {
+      await this.resumeBridge.deliver({
+        workspaceId: row.workspaceId,
+        payload: row.payload,
+        command,
+      });
+    }
+    const fingerprint = row.resolvedFingerprint ?? resumeFingerprint(command);
+    const deliveredAt = this.now();
+    const marked = await this.store.markResumeDelivered({
+      interruptId: row.payload.interruptId,
+      fingerprint,
+      deliveredAt,
+    });
+    if (!marked) {
+      throw new InterruptProtocolError(
+        'IDEMPOTENCY_CONFLICT',
+        `Interrupt ${row.payload.interruptId} resume delivery no longer matches its CAS result.`,
+      );
+    }
+    await this.semanticEvents?.project(
+      interruptSemanticCandidate({
+        payload: row.payload,
+        eventType: 'interrupt.resolved',
+        occurredAt: row.resolvedAt ?? deliveredAt,
+      }),
+    );
   }
 
   /**
@@ -448,6 +533,13 @@ export class InterruptProtocolService {
       resolvedAt: this.now(),
     });
     if (result.outcome === 'applied' || result.outcome === 'replayed') {
+      if (result.row.resolvedFingerprint) {
+        await this.store.markResumeDelivered({
+          interruptId: result.row.payload.interruptId,
+          fingerprint: result.row.resolvedFingerprint,
+          deliveredAt: this.now(),
+        });
+      }
       await this.semanticEvents?.project(
         interruptSemanticCandidate({
           payload: result.row.payload,

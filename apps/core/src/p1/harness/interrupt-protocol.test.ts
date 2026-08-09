@@ -378,6 +378,45 @@ test('bridge failure fails resume; retry after CAS applied re-delivers (resume n
   assert.deepEqual(deliveries[0]?.command, command);
 });
 
+test('recovery delivers a CAS-resolved interrupt after the caller crash window', async () => {
+  let fail = true;
+  const deliveries: InterruptResumeBridgeInput[] = [];
+  const { store, svc } = service({
+    bridge: {
+      async deliver(input) {
+        if (fail) throw new Error('process crashed after resume CAS');
+        deliveries.push(input);
+      },
+    },
+  });
+  await svc.request({ workspaceId: 'ws-1', payload: payload() });
+  const command = resumeCommand({ idempotencyKey: 'bridge-recovery' });
+
+  await assert.rejects(() =>
+    svc.resume({ userId: 'user-1', workspaceId: 'ws-1', command }),
+  );
+  assert.equal(
+    (await store.getById('int-1'))?.resumeDeliveryStatus,
+    'pending',
+  );
+
+  fail = false;
+  assert.deepEqual(await svc.recoverUndelivered(), {
+    delivered: 1,
+    failed: 0,
+  });
+  assert.equal(deliveries.length, 1);
+  assert.equal(
+    (await store.getById('int-1'))?.resumeDeliveryStatus,
+    'sent',
+  );
+  assert.deepEqual(await svc.recoverUndelivered(), {
+    delivered: 0,
+    failed: 0,
+  });
+  assert.equal(deliveries.length, 1);
+});
+
 test('resolveByWorkflow syncs a mirrored interrupt without a resume command', async () => {
   const { svc } = service();
   await svc.request({ workspaceId: 'ws-1', payload: payload() });

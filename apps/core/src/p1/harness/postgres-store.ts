@@ -2095,11 +2095,14 @@ export class PostgresHarnessInteractionStore
       [runtimeTaskId, workspaceId],
     );
     const row = result.rows[0];
+    const interactionProjection = row
+      ? harnessInteractionPendingProjectionSchema.safeParse(
+          row.pending_projection,
+        )
+      : null;
     if (
-      row &&
-      harnessInteractionPendingProjectionSchema.safeParse(
-        row.pending_projection,
-      ).success
+      interactionProjection?.success &&
+      interactionProjection.data.request.kind !== 'execution_confirmation'
     ) {
       return null;
     }
@@ -2547,11 +2550,18 @@ export class PostgresHarnessInteractionStore
         [runtimeTaskId],
       );
       const node = pending.rows[0];
+      const interactionProjection = node
+        ? harnessInteractionPendingProjectionSchema.safeParse(
+            node.pending_projection,
+          )
+        : null;
       if (
-        node &&
-        harnessInteractionPendingProjectionSchema.safeParse(
-          node.pending_projection,
-        ).success
+        interactionProjection?.success &&
+        !(
+          interactionProjection.data.request.kind ===
+            'execution_confirmation' &&
+          input.mode === 'core_hold_expired'
+        )
       ) {
         await client.query('rollback');
         return { outcome: 'stale_question', resumeRequired: false };
@@ -2610,7 +2620,8 @@ export class PostgresHarnessInteractionStore
           input.event.payloadFingerprint,
           JSON.stringify(input.event),
           input.mode ?? 'decision',
-          input.mode === 'core_timeout' || input.mode === 'core_hold_expired'
+          input.mode === 'core_timeout' ||
+          (input.mode === 'core_hold_expired' && input.resumeWorkflow !== true)
             ? 'sent'
             : 'pending',
         ],
@@ -2650,7 +2661,8 @@ export class PostgresHarnessInteractionStore
         outcome: 'created',
         command: input.command,
         resumeRequired:
-          input.mode !== 'core_timeout' && input.mode !== 'core_hold_expired',
+          input.mode !== 'core_timeout' &&
+          (input.mode !== 'core_hold_expired' || input.resumeWorkflow === true),
       };
     } catch (error) {
       await client.query('rollback');

@@ -31,6 +31,42 @@ test('decision is persisted before the workflow is resumed', async () => {
   assert.equal(store.traces.length, 1);
 });
 
+test('external hold expiry durably resumes the exact waiting workflow as cancelled', async () => {
+  const order: string[] = [];
+  const store = new MemoryDecisionStore(order);
+  store.pending = question();
+  const service = new HarnessDecisionService(store, {
+    async resume(_workspaceId, _taskId, command) {
+      order.push(`cancel:${command.questionId}:${command.decision.state}`);
+    },
+  });
+  const expired = {
+    ...decisionInput(),
+    idempotencyKey: 'question-1:r1:core_hold_expired',
+    patch: {
+      ...decisionInput().patch,
+      value: '超时未选择，本次任务已取消，积分已退回',
+    },
+    decision: {
+      state: 'ignored' as const,
+      value: '超时未选择，本次任务已取消，积分已退回',
+    },
+  };
+
+  await service.submitCoreHoldExpired(
+    'workspace-1',
+    'task-35',
+    expired,
+    { resumeWorkflow: true },
+  );
+
+  assert.deepEqual(order, [
+    'persist:event-task-35-question-1-question-1:r1:core_hold_expired',
+    'cancel:question-1:ignored',
+    'resumed:event-task-35-question-1-question-1:r1:core_hold_expired',
+  ]);
+});
+
 test('duplicate decision is idempotent and does not resume twice', async () => {
   const order: string[] = [];
   const store = new MemoryDecisionStore(order);
@@ -324,7 +360,7 @@ class MemoryDecisionStore implements HarnessDecisionStore {
         (outcome === 'created' || outcome === 'replayed') &&
         this.resumeRequired &&
         input.mode !== 'core_timeout' &&
-        input.mode !== 'core_hold_expired',
+        (input.mode !== 'core_hold_expired' || input.resumeWorkflow === true),
     };
   }
 

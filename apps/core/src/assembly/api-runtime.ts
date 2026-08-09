@@ -1780,7 +1780,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           await harnessDecisions.submitCoreHoldExpired(
             sweep.workspaceId,
             sweep.taskId,
-            confirmationCardHoldExpired(target.question)
+            confirmationCardHoldExpired(target.question),
+            { resumeWorkflow: true },
           );
           await interruptProtocolService!.resolveByWorkflow({
             workspaceId: sweep.workspaceId,
@@ -1812,6 +1813,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
             harnessSystemDefaults.runOnce(),
             billingCompensationWorker.runOnce(),
             reservationSweeper.runOnce(),
+            interruptProtocolService!.recoverUndelivered(),
           ]);
           for (const result of results) {
             if (result.status === 'rejected') {

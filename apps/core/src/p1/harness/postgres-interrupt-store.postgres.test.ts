@@ -172,6 +172,78 @@ test(
           error.name === 'InterruptProtocolError' &&
           (error as { code?: string }).code === 'IDEMPOTENCY_CONFLICT',
       );
+
+      // CAS and bridge delivery are two durable steps. A restarted worker can
+      // recover the exact command without another merchant HTTP request.
+      const recoveryPayload = payload({
+        interruptId: 'int-pg-recovery',
+        revision: 8,
+      });
+      let bridgeAvailable = false;
+      const deliveries: string[] = [];
+      const crashWindowService = new InterruptProtocolService(
+        store,
+        {
+          async hasMembership(userId, workspaceId) {
+            return userId === 'user-1' && workspaceId === 'ws-pg-1';
+          },
+        },
+        () => '2026-08-08T12:02:00.000Z',
+        {
+          async deliver(input) {
+            if (!bridgeAvailable) throw new Error('DBOS unavailable');
+            deliveries.push(input.command.interruptId);
+          },
+        },
+      );
+      await crashWindowService.request({
+        workspaceId: 'ws-pg-1',
+        payload: recoveryPayload,
+      });
+      const recoveryCommand = resume({
+        interruptId: recoveryPayload.interruptId,
+        revision: recoveryPayload.revision,
+        idempotencyKey: 'resume-pg-recovery',
+      });
+      await assert.rejects(() =>
+        crashWindowService.resume({
+          userId: 'user-1',
+          workspaceId: 'ws-pg-1',
+          command: recoveryCommand,
+        }),
+      );
+
+      const afterCrash = await restartedStore.getById(
+        recoveryPayload.interruptId,
+      );
+      assert.equal(afterCrash?.status, 'resolved');
+      assert.equal(afterCrash?.resumeDeliveryStatus, 'pending');
+
+      bridgeAvailable = true;
+      const restartedService = new InterruptProtocolService(
+        restartedStore,
+        {
+          async hasMembership() {
+            return true;
+          },
+        },
+        () => '2026-08-08T12:03:00.000Z',
+        {
+          async deliver(input) {
+            deliveries.push(input.command.interruptId);
+          },
+        },
+      );
+      assert.deepEqual(await restartedService.recoverUndelivered(), {
+        delivered: 1,
+        failed: 0,
+      });
+      assert.deepEqual(deliveries, [recoveryPayload.interruptId]);
+      assert.equal(
+        (await restartedStore.getById(recoveryPayload.interruptId))
+          ?.resumeDeliveryStatus,
+        'sent',
+      );
     } finally {
       await cleanup();
     }

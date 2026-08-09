@@ -36,6 +36,23 @@ function renderWithQuery(node: React.ReactNode) {
 }
 
 describe('AgentWorkbenchHost Thread-root restore', () => {
+  it('shows a pending-interrupt load error even when no rows can be rendered', async () => {
+    render(
+      <AgentWorkbenchHost
+        enableIdleGoalProactive={false}
+        enableSessionRestore={false}
+        loadPendingInterrupts={async () => {
+          throw new Error('待处理确认格式无效，请刷新后重试。');
+        }}
+      />
+    );
+
+    expect(
+      await screen.findByTestId('agent-interrupt-error')
+    ).toHaveTextContent('待处理确认格式无效，请刷新后重试。');
+    expect(screen.queryByTestId('agent-pending-interrupt')).toBeNull();
+  });
+
   it('loads a refresh-safe typed interrupt and resumes the exact id/revision', async () => {
     let pending = [
       interruptPayloadSchema.parse({

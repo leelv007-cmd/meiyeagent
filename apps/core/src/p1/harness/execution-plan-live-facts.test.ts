@@ -9,6 +9,7 @@ import { COMPILED_EXECUTION_PLAN_SCHEMA_VERSION } from '@meiye/contracts';
 
 import {
   buildExecutionPlanSnapshot,
+  evaluateExecutionPlanStaleness,
   freezeExecutionPlanContent,
   type ExecutionPlanFrozenContent,
 } from './execution-plan-admission.js';
@@ -126,6 +127,66 @@ test('missing production head adapters fail closed instead of treating frozen re
   assert.deepEqual(live.factRevisionRefs, []);
   assert.equal(live.contextDrifted, true);
   assert.notEqual(live.quoteRevision, snapshot().quoteRef.revision);
+});
+
+test('authoritative rights policy head replaces the frozen ref and requires reconfirmation', async () => {
+  const frozen = {
+    ...snapshot(),
+    rightsRevisionRefs: ['rights:ws-1:policy-old'],
+  };
+  const ports = createAuthoritativeExecutionPlanLiveFactsPorts({
+    facts: {
+      async history() {
+        return [];
+      },
+      async listActive() {
+        return [];
+      },
+    },
+    request: {
+      actorId: 'actor-1',
+      workspaceId: 'ws-1',
+      packageId: 'package-1',
+      expectedRevision: 0,
+      workflowRevision: 1,
+      creationMode: 'customized',
+      rawInput: '用门店素材做图文',
+      intent: {
+        context: {
+          workId: 'work-1',
+          intent: '用门店素材做图文',
+          sourceSummaries: [],
+        },
+        assetReferences: ['asset-1'],
+      },
+    },
+    rights: {
+      async resolve() {
+        return { knownAssetIds: ['asset-1'], unauthorizedAssetIds: [] };
+      },
+      async resolveWithRevision() {
+        return {
+          knownAssetIds: ['asset-1'],
+          rightsRevision: 'rights:ws-1:policy-new',
+          unauthorizedAssetIds: [],
+        };
+      },
+    },
+  });
+
+  const live = await resolveExecutionPlanLiveFactsFromPorts({
+    snapshot: frozen,
+    workspaceId: 'ws-1',
+    ports,
+  });
+
+  assert.deepEqual(live.rightsRevisionRefs, ['rights:ws-1:policy-new']);
+  assert.notEqual(live.rightsRevoked, true);
+  const staleness = evaluateExecutionPlanStaleness({ snapshot: frozen, live });
+  assert.equal(staleness.status, 'stale');
+  assert.ok(
+    staleness.status === 'stale' && staleness.diff.rightsRevisionRefs,
+  );
 });
 
 test('unresolved quote and fact heads fail closed', async () => {

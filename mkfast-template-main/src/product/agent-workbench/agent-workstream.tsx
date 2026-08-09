@@ -235,7 +235,7 @@ function PendingInterruptStrip({
   ) => void | Promise<void>;
   resumingInterruptId: string | null;
 }) {
-  if (interrupts.length === 0) return null;
+  if (interrupts.length === 0 && !error) return null;
   return (
     <output
       className="border-warning/40 bg-warning/10 flex flex-col gap-2 rounded-lg border px-3 py-2"

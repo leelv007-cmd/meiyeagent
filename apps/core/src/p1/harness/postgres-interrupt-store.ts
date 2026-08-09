@@ -34,6 +34,7 @@ type InterruptRow = {
   resolved_at: Date | string | null;
   resolved_fingerprint: string | null;
   resolved_command: unknown | null;
+  resume_delivery_status: string;
 };
 
 type Queryable = Pick<Pool, 'query'>;
@@ -60,12 +61,15 @@ function parseRow(row: InterruptRow): StoredInterrupt {
       ? { resolvedFingerprint: row.resolved_fingerprint }
       : {}),
     ...(resolvedCommand ? { resolvedCommand } : {}),
+    resumeDeliveryStatus:
+      row.resume_delivery_status as StoredInterrupt['resumeDeliveryStatus'],
   };
 }
 
 const SELECT_COLS = `
   interrupt_id, workspace_id, resource_id, thread_id, revision, status,
-  payload, created_at, resolved_at, resolved_fingerprint, resolved_command
+  payload, created_at, resolved_at, resolved_fingerprint, resolved_command,
+  resume_delivery_status
 `;
 
 export class PostgresInterruptStore
@@ -95,14 +99,31 @@ export class PostgresInterruptStore
         created_at timestamptz NOT NULL,
         resolved_at timestamptz NULL,
         resolved_fingerprint text NULL,
-        resolved_command jsonb NULL
+        resolved_command jsonb NULL,
+        resume_delivery_status text NOT NULL DEFAULT 'none'
       );
+      ALTER TABLE p1_agent_interrupts
+        ADD COLUMN IF NOT EXISTS resume_delivery_status text NOT NULL
+          DEFAULT 'none';
+      ALTER TABLE p1_agent_interrupts
+        ADD COLUMN IF NOT EXISTS resume_delivery_updated_at timestamptz NULL;
+      DO $$
+      BEGIN
+        ALTER TABLE p1_agent_interrupts
+          ADD CONSTRAINT p1_agent_interrupts_resume_delivery_status_check
+          CHECK (resume_delivery_status IN ('none', 'pending', 'sent'));
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$;
       CREATE INDEX IF NOT EXISTS p1_agent_interrupts_pending_ws_idx
         ON p1_agent_interrupts (workspace_id, resource_id, created_at)
         WHERE status = 'pending';
       CREATE INDEX IF NOT EXISTS p1_agent_interrupts_pending_thread_idx
         ON p1_agent_interrupts (workspace_id, resource_id, thread_id, created_at)
         WHERE status = 'pending';
+      CREATE INDEX IF NOT EXISTS p1_agent_interrupts_resume_outbox_idx
+        ON p1_agent_interrupts (resolved_at, interrupt_id)
+        WHERE status = 'resolved' AND resume_delivery_status = 'pending';
     `);
   }
 
@@ -202,7 +223,9 @@ export class PostgresInterruptStore
           SET status = 'resolved',
               resolved_at = $1::timestamptz,
               resolved_fingerprint = $2,
-              resolved_command = $3::jsonb
+              resolved_command = $3::jsonb,
+              resume_delivery_status = 'pending',
+              resume_delivery_updated_at = $1::timestamptz
         WHERE interrupt_id = $4
           AND status = 'pending'
           AND revision = $5
@@ -286,6 +309,39 @@ export class PostgresInterruptStore
           [input.workspaceId, input.resourceId],
         );
     return result.rows.map(parseRow);
+  }
+
+  async listUndelivered(limit: number): Promise<StoredInterrupt[]> {
+    const result = await this.pool.query<InterruptRow>(
+      `SELECT ${SELECT_COLS}
+         FROM p1_agent_interrupts
+        WHERE status = 'resolved'
+          AND resume_delivery_status = 'pending'
+          AND resolved_command IS NOT NULL
+        ORDER BY resolved_at ASC, interrupt_id ASC
+        LIMIT $1`,
+      [limit],
+    );
+    return result.rows.map(parseRow);
+  }
+
+  async markResumeDelivered(input: {
+    interruptId: string;
+    fingerprint: string;
+    deliveredAt: string;
+  }): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE p1_agent_interrupts
+          SET resume_delivery_status = 'sent',
+              resume_delivery_updated_at = $1::timestamptz
+        WHERE interrupt_id = $2
+          AND status = 'resolved'
+          AND resolved_fingerprint = $3
+          AND resume_delivery_status IN ('pending', 'sent')
+        RETURNING interrupt_id`,
+      [input.deliveredAt, input.interruptId, input.fingerprint],
+    );
+    return result.rowCount === 1;
   }
 }
 
