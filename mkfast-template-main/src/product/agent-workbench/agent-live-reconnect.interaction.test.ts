@@ -139,27 +139,25 @@ describe('Agent live reconnect loop', () => {
     // Each attempt hands over exactly one usable event and then ends — the
     // shape a degraded stream has. Resetting the backoff on the event pinned
     // every retry at the base delay.
-    const subscribeLive = vi.fn<AgentLiveSubscriber>(
-      async ({ onEvent }) => {
-        offset += 1;
-        await onEvent(
-          agentSemanticEventWireSchema.parse({
-            schemaVersion: 'agent-semantic-event/v1',
-            threadId: 'thread-1',
-            contextRole: 'included',
-            sourceDomain: 'agent_run',
-            sourceEntityId: 'run-1',
-            sourceRevision: String(offset),
-            correlationId: 'corr-1',
-            payload: { text: `第 ${offset} 条` },
-            occurredAt: '2026-08-09T08:00:00.000Z',
-            eventId: `event-${offset}`,
-            streamOffset: String(offset),
-            eventType: 'message.final',
-          })
-        );
-      }
-    );
+    const subscribeLive = vi.fn<AgentLiveSubscriber>(async ({ onEvent }) => {
+      offset += 1;
+      await onEvent(
+        agentSemanticEventWireSchema.parse({
+          schemaVersion: 'agent-semantic-event/v1',
+          threadId: 'thread-1',
+          contextRole: 'included',
+          sourceDomain: 'agent_run',
+          sourceEntityId: 'run-1',
+          sourceRevision: String(offset),
+          correlationId: 'corr-1',
+          payload: { text: `第 ${offset} 条` },
+          occurredAt: '2026-08-09T08:00:00.000Z',
+          eventId: `event-${offset}`,
+          streamOffset: String(offset),
+          eventType: 'message.final',
+        })
+      );
+    });
     const controller = new AbortController();
     const loop = runAgentLiveReconnectLoop({
       store,

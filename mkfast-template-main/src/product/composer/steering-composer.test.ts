@@ -55,7 +55,8 @@ function submitResult(
       alreadyInvokedUnitIds: [],
       requiresRequote: false,
       requiresCorrection: false,
-      feeNote: '封面、第2页还没开始做，直接按你的话调整，不额外算积分；其余页也不受影响。',
+      feeNote:
+        '封面、第2页还没开始做，直接按你的话调整，不额外算积分；其余页也不受影响。',
       settledNote: null,
       queueNote: '当前这一步做完就按你的话改。',
     },
@@ -93,7 +94,7 @@ test('disable_make_steering kill switch removes the entry entirely', () => {
   );
 });
 
-test('the panel renders Core\'s scope and credit answer verbatim', () => {
+test("the panel renders Core's scope and credit answer verbatim", () => {
   // Nothing about money or scope is recomputed in the browser. Core sees the
   // real unit progress (including the 确认执行 hold, where nothing has been sent
   // upstream despite the outline saying 「配图中」) and answers; a browser that
@@ -109,7 +110,7 @@ test('the panel renders Core\'s scope and credit answer verbatim', () => {
   assert.equal(impact.queueNote, '当前这一步做完就按你的话改。');
 });
 
-test('a rebilled change carries Core\'s fee and settled sentences unchanged', () => {
+test("a rebilled change carries Core's fee and settled sentences unchanged", () => {
   const impact = projectSteeringImpact({
     result: submitResult({
       applicationStatus: 'accepted',
@@ -126,7 +127,8 @@ test('a rebilled change carries Core\'s fee and settled sentences unchanged', ()
         alreadyInvokedUnitIds: ['page-1'],
         requiresRequote: false,
         requiresCorrection: false,
-        feeNote: '封面会按你的改法重新生成并计 12 积分；其余页不动，不另算积分。',
+        feeNote:
+          '封面会按你的改法重新生成并计 12 积分；其余页不动，不另算积分。',
         settledNote: '之前已经生成的那次照常计费、不退回，原来那版也会留着。',
         queueNote: null,
       },

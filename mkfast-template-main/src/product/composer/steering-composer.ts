@@ -142,7 +142,6 @@ const IMAGE_STATUS_TO_UNIT_STATUS: Record<
   failed: 'failed',
 };
 
-
 /**
  * Note pages as Make units. The outline is Core's own projection
  * (`notePlanPreview` → note-plan timeline), so naming 封面 / 第N页 here is

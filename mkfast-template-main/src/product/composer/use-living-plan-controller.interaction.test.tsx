@@ -142,9 +142,7 @@ test('开始制作 records the merchant confirmation decision before Core is ask
 
 test('a confirmation decision that fails never asks Core to make', async () => {
   storeWithPricedPlan();
-  const fetchSpy = vi.fn(
-    async () => new Response('{}', { status: 200 })
-  );
+  const fetchSpy = vi.fn(async () => new Response('{}', { status: 200 }));
   vi.stubGlobal('fetch', fetchSpy);
   const decideConfirmation = vi.fn(async () => {
     throw new Error('confirmation authority unavailable');

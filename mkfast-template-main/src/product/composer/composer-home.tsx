@@ -3468,287 +3468,306 @@ export function ComposerHome({
                       experienceBasis={experienceBasis}
                       experienceCorrection={experienceCorrection}
                       experienceSediment={experienceSediment}
-                onSedimentKeepLater={(entryId) => {
-                  if (
-                    !canActOnExperienceSediment(experienceSediment, entryId)
-                  ) {
-                    return;
-                  }
-                  void commandP1(
-                    'memory',
-                    {
-                      action: 'confirm_candidate',
-                      payload: {
-                        entryId,
-                        positiveExamples: [],
-                        negativeExamples: [],
-                      },
-                    },
-                    `experience-sediment-confirm:${entryId}`
-                  )
-                    .then(() =>
-                      queryClient.invalidateQueries({
-                        queryKey: p1QueryKeys.module('memory'),
-                      })
-                    )
-                    .catch(() => {
-                      toast.error('确认经验未能记入，请到经验页重试。');
-                    });
-                }}
-                onSedimentThisTimeOnly={(entryId) => {
-                  if (
-                    !canActOnExperienceSediment(experienceSediment, entryId)
-                  ) {
-                    return;
-                  }
-                  void commandP1(
-                    'memory',
-                    {
-                      action: 'reject_candidate',
-                      payload: {
-                        entryId,
-                        reason: '仅本次任务，不作为长期经验',
-                      },
-                    },
-                    `experience-sediment-once:${entryId}`
-                  )
-                    .then(() =>
-                      queryClient.invalidateQueries({
-                        queryKey: p1QueryKeys.module('memory'),
-                      })
-                    )
-                    .catch(() => {
-                      toast.error('本次选择未能记入，请到经验页重试。');
-                    });
-                }}
-                deliveryAspectRatio={submissionAspectRatio ?? undefined}
-                deliveryLensId={lensState.lensId ?? undefined}
-                onDeliveryFollowUp={(seed) => {
-                  // D-164⑤: a chip prefills, never submits. The merchant reads the
-                  // sentence in her own box and decides — the same contract the
-                  // recommendation card's CTA already keeps.
-                  setViralAdaptBinding(null);
-                  cancelViralOpenCliRead();
-                  setViralAdaptJourney((current) =>
-                    current.phase === 'idle'
-                      ? current
-                      : cancelViralAdaptJourney(current)
-                  );
-                  setLensState((current) =>
-                    updateUserText(current, seed.intent)
-                  );
-                  focusComposerIntentInput();
-                }}
-                onDeliveryAiCover={(seed) => {
-                  // P2-11 / #323: freeze the chosen ratio+preset into the same
-                  // quote-signed contract the paid-media confirmation reads.
-                  applyAiCoverSeed(seed);
-                }}
-                onNotePlanOutlineEdit={({ pageId, title, body }) => {
-                  setNotePlanOutlineSaveError((current) =>
-                    current?.pageId === pageId ? null : current
-                  );
-                  setSession((current) => {
-                    const existing = current.turns.find(
-                      (turn) => turn.kind === 'note_plan'
-                    );
-                    if (!existing || existing.kind !== 'note_plan') {
-                      return current;
-                    }
-                    return updateComposerNotePlan(
-                      current,
-                      editNotePlanPageOutline(existing.timeline, {
-                        pageId,
-                        title,
-                        body,
-                      })
-                    );
-                  });
-                }}
-                notePlanOutlineSaveError={notePlanOutlineSaveError}
-                notePlanOutlineSavePendingPageId={
-                  notePlanOutlineSavePendingPageId
-                }
-                notePlanRegenerationError={notePlanRegenerationError}
-                notePlanHydrationError={notePlanHydrationFailed}
-                onNotePlanOutlineSave={(pageId) => {
-                  void saveNotePlanOutline(pageId);
-                }}
-                onNotePlanRegeneratePage={(pageId) => {
-                  void prepareNotePlanRegeneration(pageId);
-                }}
-                onOpenDelivery={openDelivery}
-                onRateDelivery={async ({
-                  transition,
-                  revision,
-                  taskId: deliveryTaskId,
-                }) => {
-                  if (transition.action === 'copy') {
-                    void navigator.clipboard?.writeText(
-                      session.deliveryStatement ?? ''
-                    );
-                    return;
-                  }
-                  const identity = {
-                    packageId: revision.packageId,
-                    versionId: revision.versionId,
-                    revision: revision.revision,
-                  };
-                  const event = (() => {
-                    if (transition.nextVerdict) {
-                      return {
-                        eventType: 'delivery_rating.recorded' as const,
+                      onSedimentKeepLater={(entryId) => {
+                        if (
+                          !canActOnExperienceSediment(
+                            experienceSediment,
+                            entryId
+                          )
+                        ) {
+                          return;
+                        }
+                        void commandP1(
+                          'memory',
+                          {
+                            action: 'confirm_candidate',
+                            payload: {
+                              entryId,
+                              positiveExamples: [],
+                              negativeExamples: [],
+                            },
+                          },
+                          `experience-sediment-confirm:${entryId}`
+                        )
+                          .then(() =>
+                            queryClient.invalidateQueries({
+                              queryKey: p1QueryKeys.module('memory'),
+                            })
+                          )
+                          .catch(() => {
+                            toast.error('确认经验未能记入，请到经验页重试。');
+                          });
+                      }}
+                      onSedimentThisTimeOnly={(entryId) => {
+                        if (
+                          !canActOnExperienceSediment(
+                            experienceSediment,
+                            entryId
+                          )
+                        ) {
+                          return;
+                        }
+                        void commandP1(
+                          'memory',
+                          {
+                            action: 'reject_candidate',
+                            payload: {
+                              entryId,
+                              reason: '仅本次任务，不作为长期经验',
+                            },
+                          },
+                          `experience-sediment-once:${entryId}`
+                        )
+                          .then(() =>
+                            queryClient.invalidateQueries({
+                              queryKey: p1QueryKeys.module('memory'),
+                            })
+                          )
+                          .catch(() => {
+                            toast.error('本次选择未能记入，请到经验页重试。');
+                          });
+                      }}
+                      deliveryAspectRatio={submissionAspectRatio ?? undefined}
+                      deliveryLensId={lensState.lensId ?? undefined}
+                      onDeliveryFollowUp={(seed) => {
+                        // D-164⑤: a chip prefills, never submits. The merchant reads the
+                        // sentence in her own box and decides — the same contract the
+                        // recommendation card's CTA already keeps.
+                        setViralAdaptBinding(null);
+                        cancelViralOpenCliRead();
+                        setViralAdaptJourney((current) =>
+                          current.phase === 'idle'
+                            ? current
+                            : cancelViralAdaptJourney(current)
+                        );
+                        setLensState((current) =>
+                          updateUserText(current, seed.intent)
+                        );
+                        focusComposerIntentInput();
+                      }}
+                      onDeliveryAiCover={(seed) => {
+                        // P2-11 / #323: freeze the chosen ratio+preset into the same
+                        // quote-signed contract the paid-media confirmation reads.
+                        applyAiCoverSeed(seed);
+                      }}
+                      onNotePlanOutlineEdit={({ pageId, title, body }) => {
+                        setNotePlanOutlineSaveError((current) =>
+                          current?.pageId === pageId ? null : current
+                        );
+                        setSession((current) => {
+                          const existing = current.turns.find(
+                            (turn) => turn.kind === 'note_plan'
+                          );
+                          if (!existing || existing.kind !== 'note_plan') {
+                            return current;
+                          }
+                          return updateComposerNotePlan(
+                            current,
+                            editNotePlanPageOutline(existing.timeline, {
+                              pageId,
+                              title,
+                              body,
+                            })
+                          );
+                        });
+                      }}
+                      notePlanOutlineSaveError={notePlanOutlineSaveError}
+                      notePlanOutlineSavePendingPageId={
+                        notePlanOutlineSavePendingPageId
+                      }
+                      notePlanRegenerationError={notePlanRegenerationError}
+                      notePlanHydrationError={notePlanHydrationFailed}
+                      onNotePlanOutlineSave={(pageId) => {
+                        void saveNotePlanOutline(pageId);
+                      }}
+                      onNotePlanRegeneratePage={(pageId) => {
+                        void prepareNotePlanRegeneration(pageId);
+                      }}
+                      onOpenDelivery={openDelivery}
+                      onRateDelivery={async ({
+                        transition,
+                        revision,
                         taskId: deliveryTaskId,
-                        payload: {
-                          ...identity,
-                          verdict: transition.nextVerdict,
-                        },
-                      };
-                    }
-                    const previousVerdict = transition.previousVerdict;
-                    if (!previousVerdict) {
-                      throw new Error(
-                        'Rating withdrawal requires a prior verdict.'
-                      );
-                    }
-                    return {
-                      eventType: 'delivery_rating.withdrawn' as const,
-                      taskId: deliveryTaskId,
-                      payload: {
-                        ...identity,
-                        previousVerdict,
-                      },
-                    };
-                  })();
-                  await appendObservabilityEvent(
-                    event,
-                    `delivery-rating:${deliveryTaskId}:${transition.idempotencyKey}`
-                  );
-                }}
-                onRecover={recoverFromReport}
-                executionConfirmSlot={
-                  // P1-05: in-stream DecisionFrame interrupt body (not sticky slot).
-                  // Pass null when idle so no empty DecisionFrame host remains.
-                  hasExecutionConfirmBody ? (
-                    <div data-testid="execution-confirm-slot">
-                      {pendingExecutionConfirmation ? (
-                        <ExecutionConfirmationInteractionCard
+                      }) => {
+                        if (transition.action === 'copy') {
+                          void navigator.clipboard?.writeText(
+                            session.deliveryStatement ?? ''
+                          );
+                          return;
+                        }
+                        const identity = {
+                          packageId: revision.packageId,
+                          versionId: revision.versionId,
+                          revision: revision.revision,
+                        };
+                        const event = (() => {
+                          if (transition.nextVerdict) {
+                            return {
+                              eventType: 'delivery_rating.recorded' as const,
+                              taskId: deliveryTaskId,
+                              payload: {
+                                ...identity,
+                                verdict: transition.nextVerdict,
+                              },
+                            };
+                          }
+                          const previousVerdict = transition.previousVerdict;
+                          if (!previousVerdict) {
+                            throw new Error(
+                              'Rating withdrawal requires a prior verdict.'
+                            );
+                          }
+                          return {
+                            eventType: 'delivery_rating.withdrawn' as const,
+                            taskId: deliveryTaskId,
+                            payload: {
+                              ...identity,
+                              previousVerdict,
+                            },
+                          };
+                        })();
+                        await appendObservabilityEvent(
+                          event,
+                          `delivery-rating:${deliveryTaskId}:${transition.idempotencyKey}`
+                        );
+                      }}
+                      onRecover={recoverFromReport}
+                      executionConfirmSlot={
+                        // P1-05: in-stream DecisionFrame interrupt body (not sticky slot).
+                        // Pass null when idle so no empty DecisionFrame host remains.
+                        hasExecutionConfirmBody ? (
+                          <div data-testid="execution-confirm-slot">
+                            {pendingExecutionConfirmation ? (
+                              <ExecutionConfirmationInteractionCard
+                                onRendererReady={acknowledgeAskMerchantRenderer}
+                                onRendererRejected={
+                                  refreshInteractionAfterRendererRejection
+                                }
+                                onSubmit={answerExecutionConfirmation}
+                                pending={questionPending}
+                                request={pendingExecutionConfirmation}
+                              />
+                            ) : pendingExecutionWaitingMessage ? (
+                              <ExecutionConfirmationWaitingMessageCard
+                                onSubmit={answerExecutionWaitingMessage}
+                                pending={questionPending}
+                                request={pendingExecutionWaitingMessage}
+                              />
+                            ) : clientExecutionConfirmOpen ? (
+                              <ExecutionConfirmCard
+                                {...projectExecutionConfirmCard(
+                                  executionConfirm,
+                                  {
+                                    busy: pendingNotePlanRegeneration
+                                      ? notePlanRegenerationBusy
+                                      : createWork.isPending ||
+                                        briefPending ||
+                                        creditAdmissionPending,
+                                    onConfirm: () => {
+                                      if (pendingNotePlanRegeneration) {
+                                        void confirmNotePlanRegeneration();
+                                        return;
+                                      }
+                                      const run = pendingRunRef.current;
+                                      if (!run) return;
+                                      void runCreate(
+                                        run.lensId,
+                                        run.videoConfirmAccepted,
+                                        run.briefConfirmationId,
+                                        () => {
+                                          setExecutionConfirm(confirmExecution);
+                                          pendingRunRef.current = null;
+                                        }
+                                      );
+                                    },
+                                    onReject: () => {
+                                      if (pendingNotePlanRegeneration) {
+                                        rejectNotePlanRegeneration();
+                                        return;
+                                      }
+                                      pendingRunRef.current = null;
+                                      setExecutionConfirm(
+                                        (current) =>
+                                          rejectExecution(current).state
+                                      );
+                                      setCostFeedback(
+                                        projectExecutionCostFeedback({
+                                          outcome: 'rejected',
+                                        })
+                                      );
+                                    },
+                                    staleNotice: pendingNotePlanRegeneration
+                                      ? (notePlanRegenerationError?.message ??
+                                        null)
+                                      : currentQuoteView
+                                        ? null
+                                        : briefStaleQuoteNotice(),
+                                  }
+                                )}
+                              />
+                            ) : null}
+                            <ExecutionCostFeedbackLine
+                              feedback={costFeedback}
+                            />
+                          </div>
+                        ) : null
+                      }
+                      questionSlot={
+                        <AskMerchantInteractionSlot
+                          delivered={session.phase === 'delivered'}
+                          fallback={
+                            pendingQuestion ? (
+                              <ComposerQuestionCard
+                                disabled={createWork.isPending}
+                                // D-116 safety edge ②: quota or an external effect means D-112
+                                // wants an explicit confirmation, so the card stops releasing
+                                // itself. v1's composer only signs export / assisted_handoff, so
+                                // the external branch is not reachable from here yet.
+                                hold={composerQuestionHold({
+                                  externalEffect: Boolean(
+                                    destination?.distributionTarget.startsWith(
+                                      'publish:'
+                                    )
+                                  ),
+                                  quotaBlocked,
+                                })}
+                                // Returned, not voided: the card awaits this and rolls its
+                                // settlement back if the post never reaches the ledger.
+                                onDecide={answerQuestion}
+                                pending={questionPending}
+                                question={pendingQuestion}
+                                reservationReleased={
+                                  questionReservationReleased
+                                }
+                                resolutionSource={questionResolutionSource}
+                                timeoutSeconds={questionTimeoutSeconds}
+                              />
+                            ) : null
+                          }
+                          onEditingChange={(
+                            request,
+                            editing,
+                            editingSessionId
+                          ) =>
+                            setHarnessInteractionEditing(taskId, {
+                              requestId: request.requestId,
+                              revision: request.revision,
+                              step: request.step,
+                              carrier: 'conversation',
+                              editing,
+                              editingSessionId,
+                            })
+                          }
                           onRendererReady={acknowledgeAskMerchantRenderer}
                           onRendererRejected={
                             refreshInteractionAfterRendererRejection
                           }
-                          onSubmit={answerExecutionConfirmation}
+                          onSubmit={answerAskMerchant}
                           pending={questionPending}
-                          request={pendingExecutionConfirmation}
+                          pendingRequest={pendingAskRequest}
+                          taskId={taskId}
                         />
-                      ) : pendingExecutionWaitingMessage ? (
-                        <ExecutionConfirmationWaitingMessageCard
-                          onSubmit={answerExecutionWaitingMessage}
-                          pending={questionPending}
-                          request={pendingExecutionWaitingMessage}
-                        />
-                      ) : clientExecutionConfirmOpen ? (
-                        <ExecutionConfirmCard
-                          {...projectExecutionConfirmCard(executionConfirm, {
-                            busy: pendingNotePlanRegeneration
-                              ? notePlanRegenerationBusy
-                              : createWork.isPending ||
-                                briefPending ||
-                                creditAdmissionPending,
-                            onConfirm: () => {
-                              if (pendingNotePlanRegeneration) {
-                                void confirmNotePlanRegeneration();
-                                return;
-                              }
-                              const run = pendingRunRef.current;
-                              if (!run) return;
-                              void runCreate(
-                                run.lensId,
-                                run.videoConfirmAccepted,
-                                run.briefConfirmationId,
-                                () => {
-                                  setExecutionConfirm(confirmExecution);
-                                  pendingRunRef.current = null;
-                                }
-                              );
-                            },
-                            onReject: () => {
-                              if (pendingNotePlanRegeneration) {
-                                rejectNotePlanRegeneration();
-                                return;
-                              }
-                              pendingRunRef.current = null;
-                              setExecutionConfirm(
-                                (current) => rejectExecution(current).state
-                              );
-                              setCostFeedback(
-                                projectExecutionCostFeedback({
-                                  outcome: 'rejected',
-                                })
-                              );
-                            },
-                            staleNotice: pendingNotePlanRegeneration
-                              ? (notePlanRegenerationError?.message ?? null)
-                              : currentQuoteView
-                                ? null
-                                : briefStaleQuoteNotice(),
-                          })}
-                        />
-                      ) : null}
-                      <ExecutionCostFeedbackLine feedback={costFeedback} />
-                    </div>
-                  ) : null
-                }
-                questionSlot={
-                  <AskMerchantInteractionSlot
-                    delivered={session.phase === 'delivered'}
-                    fallback={
-                      pendingQuestion ? (
-                        <ComposerQuestionCard
-                          disabled={createWork.isPending}
-                          // D-116 safety edge ②: quota or an external effect means D-112
-                          // wants an explicit confirmation, so the card stops releasing
-                          // itself. v1's composer only signs export / assisted_handoff, so
-                          // the external branch is not reachable from here yet.
-                          hold={composerQuestionHold({
-                            externalEffect: Boolean(
-                              destination?.distributionTarget.startsWith(
-                                'publish:'
-                              )
-                            ),
-                            quotaBlocked,
-                          })}
-                          // Returned, not voided: the card awaits this and rolls its
-                          // settlement back if the post never reaches the ledger.
-                          onDecide={answerQuestion}
-                          pending={questionPending}
-                          question={pendingQuestion}
-                          reservationReleased={questionReservationReleased}
-                          resolutionSource={questionResolutionSource}
-                          timeoutSeconds={questionTimeoutSeconds}
-                        />
-                      ) : null
-                    }
-                    onEditingChange={(request, editing, editingSessionId) =>
-                      setHarnessInteractionEditing(taskId, {
-                        requestId: request.requestId,
-                        revision: request.revision,
-                        step: request.step,
-                        carrier: 'conversation',
-                        editing,
-                        editingSessionId,
-                      })
-                    }
-                    onRendererReady={acknowledgeAskMerchantRenderer}
-                    onRendererRejected={
-                      refreshInteractionAfterRendererRejection
-                    }
-                    onSubmit={answerAskMerchant}
-                    pending={questionPending}
-                    pendingRequest={pendingAskRequest}
-                    taskId={taskId}
-                  />
-                }
+                      }
                       session={session}
                       stream={tokenStream}
                     />
@@ -3856,7 +3875,9 @@ export function ComposerHome({
                         Campaign plan: {campaign.campaignPlanRef.id}
                       </p>
                       <div
-                        data-approval-scope={campaign.planApproval.approvalScope}
+                        data-approval-scope={
+                          campaign.planApproval.approvalScope
+                        }
                         data-campaign-plan-ref={campaign.campaignPlanRef.id}
                         className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-sm"
                         data-request-id={campaign.planApproval.requestId}

@@ -53,4 +53,3 @@ test('the run lock is what makes the intent box unusable', () => {
   render(promptBar(false));
   expect(screen.getByTestId(COMPOSER_INTENT_INPUT_TESTID)).toBeEnabled();
 });
-
