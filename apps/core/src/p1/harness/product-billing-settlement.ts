@@ -61,6 +61,9 @@ export class HarnessProductBillingSettlementExecutor
       deploymentId: 'coordinator',
       status: 'completed',
       ...(input.trustedUsage ? { trustedUsage: input.trustedUsage } : {}),
+      ...(input.partialDelivery
+        ? { partialDelivery: input.partialDelivery }
+        : {}),
     });
     const usage = await this.requireUsage(input);
     assertActionUsageTerminal(usage, 'completed');

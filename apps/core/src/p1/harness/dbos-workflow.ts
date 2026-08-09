@@ -111,6 +111,7 @@ import {
 } from '../admin-config/foundation-module.js';
 import type { TaskRecallDueInput } from '../due-delivery/task-recall-producer.js';
 import type { MerchantExecutionPromotionPort } from '../product-billing/durable-service.js';
+import { isPartialDeliveryBasis } from '../product-billing/partial-delivery-settlement.js';
 
 export const HARNESS_INTERACTION_CONTINUATION_LAYOUT =
   'bounded_followup_v1' as const;
@@ -1939,6 +1940,7 @@ export function harnessBillingSettlementInput(
       ? pendingPlan.quoteRef
       : (admittedPlan?.quoteRef ?? snapshot.quote);
   const trustedUsage = billingTrustedUsage(result);
+  const partialDelivery = billingPartialDelivery(result);
   return {
     workspaceId: request.workspaceId,
     taskId: workflowId,
@@ -1951,7 +1953,36 @@ export function harnessBillingSettlementInput(
         }
       : {}),
     ...(trustedUsage ? { trustedUsage } : {}),
+    ...(partialDelivery ? { partialDelivery } : {}),
     ...(forceCreditRefund ? { forceCreditRefund: true } : {}),
+  };
+}
+
+/**
+ * Executor-declared delivered/total billable units (V31-16 partial settle).
+ *
+ * Read from the same server-built billing receipt as trustedUsage — a browser
+ * never reaches this shape, and an absent declaration keeps the full charge.
+ */
+function billingPartialDelivery(
+  result: unknown,
+): HarnessBillingSettlementInput['partialDelivery'] {
+  if (!result || typeof result !== 'object' || !('billingReceipt' in result)) {
+    return undefined;
+  }
+  const receipt = result.billingReceipt;
+  if (
+    !receipt ||
+    typeof receipt !== 'object' ||
+    !('partialDelivery' in receipt)
+  ) {
+    return undefined;
+  }
+  const candidate = receipt.partialDelivery;
+  if (!isPartialDeliveryBasis(candidate)) return undefined;
+  return {
+    totalUnits: candidate.totalUnits,
+    deliveredUnits: candidate.deliveredUnits,
   };
 }
 

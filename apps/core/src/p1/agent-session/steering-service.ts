@@ -17,6 +17,7 @@ import {
   type MakeSteeringCommand,
 } from '@meiye/contracts';
 
+import { partialDeliveryRefundRule } from '../product-billing/partial-delivery-settlement.js';
 import {
   classifySteeringInstruction,
   type SteeringClassifySignals,
@@ -273,14 +274,13 @@ export function settlePartialDelivery(input: {
 
   const successCount = successPages.length;
   const failedCount = failedPages.length;
-  const refundRule =
-    failedCount === 0
-      ? '无失败页，不退费。'
-      : refundCredits > 0
-        ? `失败页按模型失败退还开关退回 ${refundCredits} 积分；成功页保留且不重做。`
-        : nonRefundableFailedPages.length > 0
-          ? '失败页可重做，但当前模型关闭失败退还，已扣积分不退；成功页保留。'
-          : '失败页可重做；无已扣积分需退还。成功页保留。';
+  // Same sentence the credit ledger settlement produces — one refund rule, so
+  // the steering impact cannot promise a refund the ledger will not make.
+  const refundRule = partialDeliveryRefundRule({
+    failedUnits: failedCount,
+    refundCredits,
+    failureRefundsCredits: nonRefundableFailedPages.length === 0,
+  });
 
   const merchantMessage =
     failedCount === 0

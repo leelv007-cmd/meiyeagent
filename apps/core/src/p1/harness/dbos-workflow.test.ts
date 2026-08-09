@@ -1405,6 +1405,43 @@ test('cancellation refunds the effective successor quote, not the superseded hol
       forceCreditRefund: true,
     },
   ]);
+test('execution receipt forwards the executor partial delivery basis to settlement', () => {
+  const request = {
+    workspaceId: 'workspace-note-partial',
+    executionSnapshot: {
+      quote: { id: 'quote-note-partial', revision: 'quote-r1' },
+    },
+  } as HarnessWorkflowInput;
+
+  const settlement = harnessBillingSettlementInput(request, 'task-note-partial', {
+    billingReceipt: {
+      trustedUsage: {
+        kind: 'product_units',
+        units: [{ resource: 'image', quantity: 5 }],
+      },
+      partialDelivery: { totalUnits: 6, deliveredUnits: 5 },
+    },
+  });
+  assert.deepEqual(settlement?.partialDelivery, {
+    totalUnits: 6,
+    deliveredUnits: 5,
+  });
+
+  // Negative inbound: a malformed or over-claiming basis is dropped, so a bad
+  // receipt cannot invent a refund. Absent evidence stays a full charge.
+  for (const partialDelivery of [
+    { totalUnits: 6, deliveredUnits: 7 },
+    { totalUnits: 0, deliveredUnits: 0 },
+    { totalUnits: '6', deliveredUnits: '5' },
+    null,
+  ]) {
+    assert.equal(
+      harnessBillingSettlementInput(request, 'task-note-partial', {
+        billingReceipt: { partialDelivery },
+      })?.partialDelivery,
+      undefined,
+    );
+  }
 });
 
 // ─── V31-14 P1-a: typed Interrupt protocol mirror + resume bridge ───────────

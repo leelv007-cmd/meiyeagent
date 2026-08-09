@@ -25,6 +25,10 @@ import {
   computeProductAmount,
 } from './quote-math.js';
 import {
+  computePartialCreditSettlement,
+  type PartialDeliveryBasis,
+} from './partial-delivery-settlement.js';
+import {
   MemoryProductUsageLedger,
   reservedProductUsageUnits,
   type ProductUsageLedger,
@@ -87,6 +91,13 @@ export type SettleQuoteInput = {
   attemptId?: string;
   /** Micros per product unit for platform absorption cost estimate. */
   overproductionUnitCostMicros?: number;
+  /**
+   * Executor-observed partial delivery (V31-16): billable units frozen by the
+   * quote vs units that actually landed. Credit-era reservations are one total
+   * per task, so this is the only evidence that can turn "5 of 6 pages" into a
+   * partial credit refund instead of a full charge.
+   */
+  partialDelivery?: PartialDeliveryBasis;
 };
 
 export type FallbackDispatchInput = {
@@ -753,18 +764,43 @@ export class ProductQuoteService {
     // product_units trustedUsage; that evidence must not block credit commit
     // or invent bucket settlements that were never reserved.
     if (quote.creditCost !== undefined) {
+      // Partial delivery: charge what landed, return the failed units' credits
+      // when the frozen failure policy allows it. Absent evidence keeps the
+      // historical full-charge behavior rather than guessing a refund.
+      if (input.partialDelivery?.deliveredUnits === 0) {
+        // Zero delivered units is a failed run, not a partial one. Settling it
+        // here would leave the quote "settled" with a full refund and make the
+        // failure path unreachable.
+        throw new P1DomainError(
+          'INVALID_STATE',
+          `Quote ${quote.quoteId} delivered zero units and must settle through the failure path.`,
+        );
+      }
+      const partial = input.partialDelivery
+        ? computePartialCreditSettlement({
+            ...input.partialDelivery,
+            reservedCredits: quote.creditCost,
+            failureRefundsCredits: quote.failureRefundsCredits === true,
+          })
+        : null;
+      const refundCredits = partial?.refundCredits ?? 0;
       const usage = this.usage.settle({
         taskId: quote.taskId,
         settledUnits: [],
-        settlementStatus: 'estimated',
+        ...(refundCredits > 0 ? { refundCredits } : {}),
+        settlementStatus: partial ? 'reconciled' : 'estimated',
         updatedAt: now,
       });
+      const settledAmount =
+        partial && quote.creditCost > 0
+          ? Math.round((ceiling * partial.settledCredits) / quote.creditCost)
+          : ceiling;
       const next: ProductQuoteSnapshot = {
         ...quote,
-        lifecycleStatus: ceiling === 0 ? 'refunded' : 'settled',
-        settlementStatus: 'estimated',
-        settledAmount: ceiling,
-        refundedAmount: 0,
+        lifecycleStatus: settledAmount === 0 ? 'refunded' : 'settled',
+        settlementStatus: partial ? 'reconciled' : 'estimated',
+        settledAmount,
+        refundedAmount: ceiling - settledAmount,
         settledAt: now,
       };
       this.quotes.set(quote.quoteId, next);

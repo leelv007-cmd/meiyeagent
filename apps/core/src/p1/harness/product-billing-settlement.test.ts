@@ -374,6 +374,98 @@ test('harness settlement rejects task and workspace quote mismatches', async () 
   }
 });
 
+test('harness commit forwards partial delivery and refunds only the failed pages credits', async () => {
+  let forwarded: unknown;
+  const creditRefunds: Array<{ credits: number; refundOperationId: string }> = [];
+  const executor = new HarnessProductBillingSettlementExecutor(
+    {
+      async getQuote() {
+        return quote({ lifecycleStatus: 'dispatched', creditCost: 60 });
+      },
+      async settleTask(settlement) {
+        forwarded = (settlement as { partialDelivery?: unknown }).partialDelivery;
+      },
+      async getUsage() {
+        return usage({
+          status: 'partially_refunded',
+          settlementStatus: 'reconciled',
+          reservedQuantity: 0,
+          settledQuantity: 0,
+          refundedQuantity: 0,
+          reservedCredits: 60,
+          settledCredits: 50,
+          refundedCredits: 10,
+          billingMode: 'per_request',
+        });
+      },
+    },
+    undefined,
+    () => new Date('2026-08-09T00:00:00.000Z'),
+    undefined,
+    {
+      async refundUsageOperation(refund) {
+        creditRefunds.push({
+          credits: refund.credits ?? 0,
+          refundOperationId: refund.refundOperationId,
+        });
+        return [];
+      },
+    },
+  );
+
+  await executor.commit({
+    ...input,
+    trustedUsage: {
+      kind: 'product_units',
+      units: [{ resource: 'image', quantity: 5 }],
+    },
+    partialDelivery: { totalUnits: 6, deliveredUnits: 5 },
+  });
+
+  assert.deepEqual(forwarded, { totalUnits: 6, deliveredUnits: 5 });
+  assert.deepEqual(creditRefunds, [
+    { credits: 10, refundOperationId: `credit-reconcile:${input.taskId}` },
+  ]);
+});
+
+test('a complete delivery makes no credit refund on the same commit path', async () => {
+  const creditRefunds: number[] = [];
+  const executor = new HarnessProductBillingSettlementExecutor(
+    {
+      async getQuote() {
+        return quote({ lifecycleStatus: 'dispatched', creditCost: 60 });
+      },
+      async settleTask() {},
+      async getUsage() {
+        return usage({
+          status: 'committed',
+          settlementStatus: 'reconciled',
+          reservedQuantity: 0,
+          settledQuantity: 0,
+          refundedQuantity: 0,
+          reservedCredits: 60,
+          settledCredits: 60,
+          refundedCredits: 0,
+          billingMode: 'per_request',
+        });
+      },
+    },
+    undefined,
+    () => new Date('2026-08-09T00:00:00.000Z'),
+    undefined,
+    {
+      async refundUsageOperation(refund) {
+        creditRefunds.push(refund.credits ?? 0);
+        return [];
+      },
+    },
+  );
+
+  await executor.commit({ ...input, trustedUsage: undefined });
+
+  assert.deepEqual(creditRefunds, []);
+});
+
 function quote(
   overrides: Partial<ProductQuoteSnapshot> = {},
 ): ProductQuoteSnapshot {

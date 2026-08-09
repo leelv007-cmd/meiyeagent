@@ -1,3 +1,4 @@
+import type { PartialDeliveryBasis } from '../product-billing/partial-delivery-settlement.js';
 import type { TrustedUsageEvidence } from '../product-billing/quote-service.js';
 
 export interface HarnessBillingSettlementInput {
@@ -8,6 +9,12 @@ export interface HarnessBillingSettlementInput {
   /** Exact credit reservation accepted by the confirmed authority. */
   creditUsageOperationId?: string;
   trustedUsage?: TrustedUsageEvidence;
+  /**
+   * Delivered vs frozen billable units when the executor lands only part of a
+   * multi-unit run (V31-16). Credit-era partial refunds need this; without it
+   * settlement stays a full charge.
+   */
+  partialDelivery?: PartialDeliveryBasis;
   /** Platform failures and expired holds always refund merchant credits. */
   forceCreditRefund?: boolean;
 }

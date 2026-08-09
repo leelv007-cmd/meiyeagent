@@ -2260,6 +2260,61 @@ test('image-text note partial selection keeps merchantReport in the workflow res
   assert.equal(merchantReport?.kind, 'partial');
   assert.equal(merchantReport?.category, 'consistency');
   assert.ok(merchantReport?.actions.includes('review_partial'));
+  const trustedUsage =
+    'billingReceipt' in result
+      ? result.billingReceipt?.trustedUsage
+      : undefined;
+  assert.equal(trustedUsage?.kind, 'product_units');
+  if (trustedUsage?.kind === 'product_units') {
+    assert.deepEqual(
+      trustedUsage.units.find((unit) => unit.resource === 'image'),
+      { resource: 'image', quantity: 1 },
+    );
+  }
+  // V31-16: the credit reservation covered both pages, so the receipt has to
+  // declare that only one landed or the merchant pays for the page she lost.
+  assert.deepEqual(
+    'billingReceipt' in result
+      ? (result.billingReceipt as { partialDelivery?: unknown }).partialDelivery
+      : undefined,
+    { totalUnits: 2, deliveredUnits: 1 },
+  );
+});
+
+test('a complete note delivery declares no partial delivery basis', async () => {
+  const result = await runHarnessWorkflow(
+    'task-image-text-note-complete-basis',
+    mediaTaskInput('image_text_note'),
+    noteStages(false),
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        return {
+          idempotencyKey: 'choose-story-complete-basis',
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: 'note_style',
+            value: '故事版',
+            reason: '选择图文方向',
+          },
+          decision: { state: 'accepted', value: '故事版' },
+        };
+      },
+      async recordTrace() {},
+    },
+  );
+
+  assert.equal(
+    'billingReceipt' in result
+      ? (result.billingReceipt as { partialDelivery?: unknown }).partialDelivery
+      : undefined,
+    undefined,
+  );
 });
 
 test('DBOS note selection keeps durable effects under stable keys', async () => {

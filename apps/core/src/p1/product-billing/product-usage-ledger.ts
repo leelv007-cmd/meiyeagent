@@ -36,6 +36,13 @@ export type SettleProductUsageInput = {
   settledUnits?: ProductUsageUnit[];
   /** Legacy internal adapter input; quote lifecycle callers use settledUnits. */
   settledQuantity?: number;
+  /**
+   * Credit-era partial delivery: absolute credits to return for failed units.
+   * The credit reservation is one total per task, so a 6-page run that lost one
+   * page cannot express itself through the legacy bucket units — this is the
+   * only way a partial credit refund reaches the workspace ledger.
+   */
+  refundCredits?: number;
   settlementStatus: ProductSettlementStatus;
   updatedAt: string;
 };
@@ -62,6 +69,43 @@ export interface ProductUsageLedger {
   listByWorkspace(workspaceId: string): ProductUsageRecord[];
   /** Repository adapters may hydrate one transaction-local memory ledger. */
   restore?(record: ProductUsageRecord): void;
+}
+
+/**
+ * Credit-era partial settle: how many of the reserved credits go back.
+ *
+ * Fails closed on a caller that asks for more credits than were reserved, or
+ * asks for a credit refund on a task that never reserved credits — both would
+ * write a balance movement no quote authorized.
+ */
+function resolvePartialRefundCredits(
+  existing: ProductUsageRecord,
+  input: SettleProductUsageInput,
+): number {
+  if (input.refundCredits === undefined) return 0;
+  if (
+    !Number.isSafeInteger(input.refundCredits) ||
+    input.refundCredits < 0
+  ) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Partial settle refundCredits must be a non-negative integer.',
+    );
+  }
+  if (existing.reservedCredits === undefined) {
+    if (input.refundCredits === 0) return 0;
+    throw new P1DomainError(
+      'INVALID_STATE',
+      `Product usage for task ${existing.taskId} reserved no credits; a credit refund cannot settle against it.`,
+    );
+  }
+  if (input.refundCredits > existing.reservedCredits) {
+    throw new P1DomainError(
+      'INVALID_STATE',
+      'Partial settle refundCredits cannot exceed the reserved credits.',
+    );
+  }
+  return input.refundCredits;
 }
 
 function assertNonNegativeQuantity(quantity: number, field: string) {
@@ -210,6 +254,8 @@ export class MemoryProductUsageLedger implements ProductUsageLedger {
     );
     const settledQuantity = totalUnits(settledUnits);
 
+    const partialRefundCredits = resolvePartialRefundCredits(existing, input);
+
     // Idempotent settle: same settled quantity + status returns existing.
     if (
       existing.status === 'committed' ||
@@ -218,7 +264,8 @@ export class MemoryProductUsageLedger implements ProductUsageLedger {
     ) {
       if (
         sameUnits(settledProductUsageUnits(existing), settledUnits) &&
-        existing.settlementStatus === input.settlementStatus
+        existing.settlementStatus === input.settlementStatus &&
+        (existing.refundedCredits ?? 0) === partialRefundCredits
       ) {
         return structuredClone(existing);
       }
@@ -246,24 +293,31 @@ export class MemoryProductUsageLedger implements ProductUsageLedger {
       settledUnits,
     );
     const refundedQuantity = totalUnits(refundedUnits);
+    const creditStatus: ProductUsageRecord['status'] | undefined =
+      existing.reservedCredits === undefined || partialRefundCredits === 0
+        ? undefined
+        : partialRefundCredits === existing.reservedCredits
+          ? 'refunded'
+          : 'partially_refunded';
     const status: ProductUsageRecord['status'] =
-      refundedQuantity === 0
+      creditStatus ??
+      (refundedQuantity === 0
         ? 'committed'
         : settledQuantity === 0
           ? 'refunded'
-          : 'partially_refunded';
+          : 'partially_refunded');
 
     const next: ProductUsageRecord = {
       ...existing,
       status,
       settledQuantity,
       ...(existing.reservedCredits !== undefined
-        ? { settledCredits: existing.reservedCredits }
+        ? { settledCredits: existing.reservedCredits - partialRefundCredits }
         : {}),
       settledUnits,
       refundedQuantity,
       ...(existing.reservedCredits !== undefined
-        ? { refundedCredits: 0 }
+        ? { refundedCredits: partialRefundCredits }
         : {}),
       refundedUnits,
       settlementStatus: input.settlementStatus,

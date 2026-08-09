@@ -2568,7 +2568,28 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
     activeRequest.executionSnapshot?.sources.pageRegeneration;
   const imageUsageQuantity = pageRegeneration
     ? pageRegeneration.targetAssetIds.length
-    : selection.version.plan.pages.length;
+    : Math.max(
+        0,
+        selection.version.plan.pages.length -
+          (selection.partial?.unresolvedPageIds.length ?? 0),
+      );
+  /**
+   * V31-16 partial delivery basis. The quote froze credits for every page, so a
+   * run that lands 5 of 6 has to say so here or the merchant pays for the page
+   * she never received. Page-regeneration runs quote exactly one page and are
+   * never partial against the original plan: they quote exactly the pages
+   * they target.
+   */
+  const partialDelivery =
+    !pageRegeneration &&
+    selection.partial &&
+    selection.version.plan.pages.length > 0 &&
+    imageUsageQuantity < selection.version.plan.pages.length
+      ? {
+          totalUnits: selection.version.plan.pages.length,
+          deliveredUnits: imageUsageQuantity,
+        }
+      : undefined;
   const copyUsageQuantity = pageRegeneration
     ? 0
     : brief.candidates.candidates.length;
@@ -2597,6 +2618,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
               .map(({ id, revision }) => `${id}@${revision}`)
               .join(',')}`,
       },
+      ...(partialDelivery ? { partialDelivery } : {}),
     },
     delivery,
     deliveryLayer: routed.declaration.deliveryLayer,
