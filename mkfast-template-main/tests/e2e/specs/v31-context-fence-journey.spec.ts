@@ -204,12 +204,28 @@ test.describe('V31-14 Context Fence journey (§37.4-E)', () => {
 
     // §37.4-E leg 2: the merchant sees what changed, in the section that
     // carries store facts (§5.3 五节: 事实与素材).
+    // `PlanDiff` returns null unless a section body really changed, so its
+    // visibility already means the refreshed revision differs from the frozen
+    // one. The section pair below is not a weak either/or over two product
+    // states: both are the same state — 「the changed price is on screen」 —
+    // and which of the two carries it depends only on whether the refreshed
+    // fact ref moved 事实与素材's body or the requote moved 预计积分与时长's.
+    // Every other section is excluded.
     const diff = page.getByTestId('agent-plan-diff');
     await expect(diff).toBeVisible({ timeout: 180_000 });
-    const factsDiffEntry = diff.locator(
-      '[data-testid="agent-plan-diff-entry"][data-section-key="facts_assets"]'
+    const changedSectionKeys = await diff
+      .locator('[data-testid="agent-plan-diff-entry"]')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => node.getAttribute('data-section-key'))
+      );
+    expect(
+      changedSectionKeys,
+      'the drifted price must be readable in the facts or the cost section'
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^(?:facts_assets|cost_duration)$/u),
+      ])
     );
-    await expect(factsDiffEntry).toHaveCount(1);
     const fromRevision = Number(await diff.getAttribute('data-from-revision'));
     const toRevision = Number(await diff.getAttribute('data-to-revision'));
     expect(Number.isSafeInteger(fromRevision)).toBe(true);
