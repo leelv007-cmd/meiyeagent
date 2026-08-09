@@ -165,7 +165,6 @@ export {
   evaluateDrivenPublishFromQr,
   panelViewFromPublishHandoff,
   projectPublishHandoffPanel,
-  projectSelfReportJourney,
   registerPublishHandoffSurfaces,
   SELF_REPORT_CHIP_LABEL,
   usePublishHandoff,

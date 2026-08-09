@@ -7,7 +7,6 @@ import {
   buildPublishHandoffCopyBlocks,
   buildVideoHandoffSafetyChecklist,
   decidePublishFromHandoff,
-  evaluateSelfReportAsk,
   projectPublishCapabilityPresentation,
   type MobilePublishHandoff,
   type OutcomeSelfReportChipSignal,
@@ -134,16 +133,4 @@ export function panelViewFromPublishHandoff(
 
 export function evaluateDrivenPublishFromQr(intent: PublishFromHandoffIntent) {
   return decidePublishFromHandoff(intent);
-}
-
-export function projectSelfReportJourney(input: {
-  workId: string;
-  contentPackageId: string;
-  contentPackageRevision: number;
-  publishHandoffCompletedAt: string | null;
-  now: string;
-  workAskHistory: readonly SelfReportAskEvent[];
-  storeConsecutiveIgnores: number;
-}): SelfReportAskDecision {
-  return evaluateSelfReportAsk(input);
 }

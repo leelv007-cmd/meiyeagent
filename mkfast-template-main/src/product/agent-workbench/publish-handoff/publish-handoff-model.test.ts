@@ -7,7 +7,6 @@ import { test } from 'node:test';
 import {
   evaluateDrivenPublishFromQr,
   projectPublishHandoffPanel,
-  projectSelfReportJourney,
 } from './publish-handoff-model';
 
 test('assisted/unavailable hide direct publish CTA', () => {
@@ -54,21 +53,4 @@ test('A19 driven publish from QR is rejected', () => {
   }
   const allow = evaluateDrivenPublishFromQr('merchant_self_publish');
   assert.equal(allow.ok, true);
-});
-
-test('self-report journey next-day ask with chips', () => {
-  const decision = projectSelfReportJourney({
-    workId: 'work-1',
-    contentPackageId: 'pkg-1',
-    contentPackageRevision: 2,
-    publishHandoffCompletedAt: '2026-08-07T10:00:00.000Z',
-    now: '2026-08-08T09:00:00.000Z',
-    workAskHistory: [],
-    storeConsecutiveIgnores: 0,
-  });
-  assert.equal(decision.kind, 'ask');
-  if (decision.kind === 'ask') {
-    assert.ok(decision.chips.includes('no_activity'));
-    assert.match(decision.prompt, /有人来问/);
-  }
 });

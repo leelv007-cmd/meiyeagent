@@ -6,7 +6,6 @@ export {
   projectPublishHandoffPanel,
   panelViewFromPublishHandoff,
   evaluateDrivenPublishFromQr,
-  projectSelfReportJourney,
   SELF_REPORT_CHIP_LABEL,
   type PublishHandoffPanelFacts,
   type PublishHandoffPanelView,
