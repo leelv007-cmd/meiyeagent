@@ -33,6 +33,7 @@ import {
   PostgresConfirmationAuthorityStore,
   PostgresMarketingPlanStore,
   controlLimitsFromArtifact,
+  assertIntentRetrievalBindingsPinned,
   createDefaultIntentRetrievalBindings,
   createIntentRetrievalPolicies,
   createProductionPlanCompiler,
@@ -835,15 +836,16 @@ export async function assembleCoreGraph(
                 : {}),
             });
             const base = controlLimitsFromArtifact(resolved.artifact);
-            const existing = base.middlewareBindings ?? [];
-            const defaults = createDefaultIntentRetrievalBindings();
-            const present = new Set(existing.map((item) => item.policyId));
+            const middlewareBindings = base.middlewareBindings ?? [];
+            // The manifest is the only source of pins. Filling gaps here made an
+            // incomplete release indistinguishable from a complete one.
+            assertIntentRetrievalBindingsPinned({
+              releaseId: resolved.releaseId,
+              bindings: middlewareBindings,
+            });
             return {
               controlLimits: resolved.controlLimits,
-              middlewareBindings: [
-                ...existing,
-                ...defaults.filter((item) => !present.has(item.policyId)),
-              ],
+              middlewareBindings,
               releaseId: resolved.releaseId,
             };
           };

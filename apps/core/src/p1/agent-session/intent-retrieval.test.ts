@@ -34,6 +34,7 @@ import {
 } from './intent-interpreter.js';
 import {
   applyIntentRetrievalDecisionPatch,
+  assertIntentRetrievalBindingsPinned,
   createDefaultIntentRetrievalBindings,
   createIntentRetrievalPolicies,
 } from './intent-retrieval-policies.js';
@@ -415,6 +416,37 @@ test('turn runner: does not re-ask known field; budget exhaust → finish with a
   assert.equal(
     (result.policyState.questionBudgetRefusal as { gateId: string })?.gateId,
     'question_already_known',
+  );
+});
+
+test('a release that pins no Intent/retrieval middleware is rejected, not repaired', () => {
+  const complete = createDefaultIntentRetrievalBindings();
+
+  assert.doesNotThrow(() =>
+    assertIntentRetrievalBindingsPinned({
+      releaseId: 'release-complete',
+      bindings: complete,
+    }),
+  );
+  // An empty manifest used to be silently merge-filled with these three
+  // defaults, so a release missing its gates looked identical to one that had
+  // them and no turn could ever observe the difference.
+  assert.throws(
+    () =>
+      assertIntentRetrievalBindingsPinned({
+        releaseId: 'release-empty',
+        bindings: [],
+      }),
+    /release-empty does not pin required Intent\/retrieval middleware.*session\.tool_governance@v31-07:wrap_tool_call/su,
+  );
+  // A stale revision is a mismatch, not a pin.
+  assert.throws(
+    () =>
+      assertIntentRetrievalBindingsPinned({
+        releaseId: 'release-stale',
+        bindings: complete.map((binding) => ({ ...binding, revision: 'v31-06' })),
+      }),
+    /release-stale does not pin required Intent\/retrieval middleware/u,
   );
 });
 

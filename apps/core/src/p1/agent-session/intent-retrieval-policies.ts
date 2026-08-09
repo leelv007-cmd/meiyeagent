@@ -93,6 +93,32 @@ export function createDefaultIntentRetrievalBindings(): HarnessMiddlewareBinding
   ];
 }
 
+/**
+ * A release that does not pin these three gates runs Intent turns with no
+ * question budget, no high-risk assumption filter and no tool governance. That
+ * used to be repaired by merging the defaults in at assembly time, which meant
+ * an incomplete manifest could never be observed — so it is now a hard failure
+ * on the release that lacks them.
+ */
+export function assertIntentRetrievalBindingsPinned(input: {
+  releaseId: string;
+  bindings: readonly HarnessMiddlewareBinding[];
+}): void {
+  const pinned = new Set(
+    input.bindings.map(
+      (binding) => `${binding.policyId}@${binding.revision}:${binding.kind}`,
+    ),
+  );
+  const missing = createDefaultIntentRetrievalBindings()
+    .map((binding) => `${binding.policyId}@${binding.revision}:${binding.kind}`)
+    .filter((key) => !pinned.has(key));
+  if (missing.length > 0) {
+    throw new Error(
+      `HarnessRelease ${input.releaseId} does not pin required Intent/retrieval middleware: ${missing.join(', ')}.`,
+    );
+  }
+}
+
 function asDecision(modelOutput: unknown): AgentTurnDecision | null {
   if (
     modelOutput &&
