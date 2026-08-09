@@ -31,13 +31,12 @@ test('release-candidate evidence runs only when explicitly requested', async () 
     'utf8',
   );
 
-  const pushConditionCount = workflow.match(
-    /github\.event_name == 'push'/g,
-  )?.length;
+  const pushConditionCount =
+    workflow.match(/github\.event_name == 'push'/g)?.length ?? 0;
   assert.equal(
     pushConditionCount,
-    1,
-    'release-manifest must not run on every main push',
+    0,
+    'release-candidate evidence must not run on an ordinary main push',
   );
   assert.match(
     workflow,
