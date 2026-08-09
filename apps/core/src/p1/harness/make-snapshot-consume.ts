@@ -263,6 +263,95 @@ export function memoryStyleInstruction(
   return `结构化风格约束：语气=${style.tones.join('、') || 'default'}；标题不超过 ${style.maxTitleChars} 字；正文不超过 ${style.maxBodyChars} 字；单句不超过 ${style.maxSentenceChars} 字；禁用词=${style.forbiddenPhrases.join('、') || '无'}。`;
 }
 
+export type MemoryStyleViolation =
+  | { rule: 'max_title_chars'; limit: number; observed: number }
+  | { rule: 'max_body_chars'; limit: number; observed: number }
+  | { rule: 'max_sentence_chars'; limit: number; observed: number; sentence: string }
+  | { rule: 'forbidden_phrase'; phrase: string; field: 'title' | 'body' };
+
+/**
+ * V31-18 P1-5: does real generated copy actually obey the merchant's confirmed
+ * style? Until this existed, `maxBodyChars` / `maxSentenceChars` /
+ * `forbiddenPhrases` were only ever rendered into a prompt sentence — nothing
+ * anywhere compared them against output, so "the style constraint took effect"
+ * was provable only by a fixture that regexed its own prompt and returned
+ * hard-coded conforming copy.
+ *
+ * Pure and deterministic: sentence splitting uses the CJK and ASCII terminators
+ * the copy surface actually produces.
+ */
+export function assessMemoryStyleCompliance(
+  candidate: { title?: string; body?: string },
+  style: NonNullable<PlanMemoryContext['styleConstraints']> | undefined
+): { passed: boolean; violations: MemoryStyleViolation[] } {
+  if (!style) return { passed: true, violations: [] };
+  const violations: MemoryStyleViolation[] = [];
+  const title = candidate.title ?? '';
+  const body = candidate.body ?? '';
+
+  if ([...title].length > style.maxTitleChars) {
+    violations.push({
+      rule: 'max_title_chars',
+      limit: style.maxTitleChars,
+      observed: [...title].length,
+    });
+  }
+  if ([...body].length > style.maxBodyChars) {
+    violations.push({
+      rule: 'max_body_chars',
+      limit: style.maxBodyChars,
+      observed: [...body].length,
+    });
+  }
+  for (const sentence of splitSentences(body)) {
+    const length = [...sentence].length;
+    if (length > style.maxSentenceChars) {
+      violations.push({
+        rule: 'max_sentence_chars',
+        limit: style.maxSentenceChars,
+        observed: length,
+        sentence,
+      });
+    }
+  }
+  for (const phrase of style.forbiddenPhrases) {
+    if (title.includes(phrase)) {
+      violations.push({ rule: 'forbidden_phrase', phrase, field: 'title' });
+    }
+    if (body.includes(phrase)) {
+      violations.push({ rule: 'forbidden_phrase', phrase, field: 'body' });
+    }
+  }
+  return { passed: violations.length === 0, violations };
+}
+
+/** Merchant-readable rendering of why the confirmed style was not met. */
+export function describeMemoryStyleViolations(
+  violations: readonly MemoryStyleViolation[]
+): string {
+  return violations
+    .map((violation) => {
+      switch (violation.rule) {
+        case 'max_title_chars':
+          return `标题 ${violation.observed} 字超过约定的 ${violation.limit} 字`;
+        case 'max_body_chars':
+          return `正文 ${violation.observed} 字超过约定的 ${violation.limit} 字`;
+        case 'max_sentence_chars':
+          return `单句 ${violation.observed} 字超过约定的 ${violation.limit} 字`;
+        case 'forbidden_phrase':
+          return `${violation.field === 'title' ? '标题' : '正文'}出现约定禁用词「${violation.phrase}」`;
+      }
+    })
+    .join('；');
+}
+
+function splitSentences(body: string): string[] {
+  return body
+    .split(/[。！？!?\n]+/u)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+}
+
 /**
  * Deterministic media brief from frozen snapshot (no structured brief LLM).
  * V31-25: media runner converges onto snapshot materialization like copy.

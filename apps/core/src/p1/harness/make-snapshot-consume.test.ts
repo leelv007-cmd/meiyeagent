@@ -16,6 +16,8 @@ import {
   type ExecutionPlanFrozenContent,
 } from './execution-plan-admission.js';
 import {
+  assessMemoryStyleCompliance,
+  describeMemoryStyleViolations,
   isMakeSnapshotConsumePath,
   MakeSnapshotConsumeError,
   materializeCopyBriefFromSnapshot,
@@ -390,4 +392,76 @@ test('snapshotConsumeTracePayload asserts llmInvoked=false for both stages', () 
     assert.equal(payload.makeConsume, 'snapshot_validator');
     assert.equal(payload.stage, stage);
   }
+});
+
+const CONCISE_STYLE = {
+  tones: ['concise', 'restrained'] as const,
+  maxTitleChars: 24,
+  maxBodyChars: 32,
+  maxSentenceChars: 24,
+  forbiddenPhrases: ['绝对', '保证', '必然'],
+};
+
+test('V31-18 P1-5: real output is measured against the confirmed style, not the prompt', () => {
+  // Conforming: this is what the fixture returns, and it must pass on its own
+  // merits rather than because the fixture regexed its own instructions.
+  assert.deepEqual(
+    assessMemoryStyleCompliance(
+      { title: '周末护理，到店前先了解', body: '先沟通需求，再确认护理安排。周末到店，轻松一点。' },
+      CONCISE_STYLE,
+    ),
+    { passed: true, violations: [] },
+  );
+
+  // The three constraints nothing used to check, each proven separately.
+  const longBody = assessMemoryStyleCompliance(
+    {
+      title: '到店前先了解',
+      body:
+        '从真实需求出发，把项目特点、沟通流程和到店前需要确认的信息一次说清楚；' +
+        '具体方案以现场沟通和当前有效信息为准。',
+    },
+    CONCISE_STYLE,
+  );
+  assert.equal(longBody.passed, false);
+  assert.ok(
+    longBody.violations.some((row) => row.rule === 'max_body_chars'),
+    'a body over maxBodyChars must be a violation',
+  );
+  assert.ok(
+    longBody.violations.some((row) => row.rule === 'max_sentence_chars'),
+    'a sentence over maxSentenceChars must be a violation',
+  );
+
+  const longTitle = assessMemoryStyleCompliance(
+    { title: '这次想认真地、完整地介绍一下本店最近上线的新项目与流程', body: '简短正文。' },
+    CONCISE_STYLE,
+  );
+  assert.equal(longTitle.passed, false);
+  assert.deepEqual(
+    longTitle.violations.map((row) => row.rule),
+    ['max_title_chars'],
+  );
+
+  const forbidden = assessMemoryStyleCompliance(
+    { title: '保证有效', body: '效果绝对好。' },
+    CONCISE_STYLE,
+  );
+  assert.equal(forbidden.passed, false);
+  assert.deepEqual(
+    forbidden.violations
+      .filter((row) => row.rule === 'forbidden_phrase')
+      .map((row) => (row.rule === 'forbidden_phrase' ? row.phrase : '')),
+    ['绝对', '保证'],
+  );
+  assert.match(
+    describeMemoryStyleViolations(forbidden.violations),
+    /标题出现约定禁用词「保证」/u,
+  );
+
+  // No injected memory must never invent a constraint.
+  assert.deepEqual(
+    assessMemoryStyleCompliance({ title: 'x'.repeat(400), body: 'y'.repeat(4000) }, undefined),
+    { passed: true, violations: [] },
+  );
 });

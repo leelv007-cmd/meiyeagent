@@ -137,7 +137,11 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
       },
     ],
     receiptRef: {
-      harnessReleaseId: 'release-memory-1',
+      // V31-18 P2-10: the receipt names the release the PLAN bound, not the
+      // read-only pre-plan turn's (`release-memory-1`). A receiptRef embedded
+      // in a plan revision whose `boundRevisions.harnessReleaseId` says
+      // something else is one artifact contradicting itself.
+      harnessReleaseId: 'composer-plan-surface-v1',
       runId: firstBinding.runId,
       taskId: 'task-1',
     },
@@ -464,7 +468,9 @@ test('server pre-plan retrieval runs with a kernel that makes zero tool calls', 
       memoryContext: {
         entries: [{ memoryId: 'preference-live', revision: 5 }],
         receiptRef: {
-          harnessReleaseId: 'resolved-live-release',
+          // The live kernel release (`resolved-live-release`) belongs to the
+          // pre-plan turn; the injection is bound to the Run the plan froze.
+          harnessReleaseId: 'composer-plan-surface-v1',
           runId: binding.runId,
           taskId: submission.task.id,
         },

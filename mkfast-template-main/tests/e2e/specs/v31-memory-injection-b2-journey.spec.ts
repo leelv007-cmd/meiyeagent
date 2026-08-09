@@ -15,7 +15,25 @@ import {
   waitForResultJourney,
 } from '../fixtures/ui-journey';
 
-const DURABLE_PREFERENCE = '以后每次文案都简洁克制，请长期记住';
+/**
+ * Two durable preferences, not one. With a single memory, revoking it makes a
+ * MemoryInjectionReceipt structurally impossible, so `toHaveCount(0)` on the
+ * revoked entry passes identically when the whole memory layer is broken — the
+ * assertion cannot distinguish "revoke worked" from "nothing was ever
+ * injected". The surviving preference is the control: every negative assertion
+ * about the revoked one is paired with a positive assertion about the survivor.
+ *
+ * The former "style constraint took effect" assertions (title ≤ 24 / body ≤ 32 /
+ * no forbidden phrase) are deliberately gone. They passed only because the
+ * fixture runner regexes its own prompt for `正文不超过 32 字` and then returns
+ * hard-coded conforming copy (`ai-sdk-runner.ts:1657`), so they measured the
+ * fixture, not the product. Real enforcement of those constraints is unit-tested
+ * against real output in `assessMemoryStyleCompliance`
+ * (`apps/core/src/p1/harness/make-snapshot-consume.ts`); this journey proves
+ * source visibility, revocation and non-recurrence only.
+ */
+const REVOKED_PREFERENCE = '以后每次文案都简洁克制，请长期记住';
+const SURVIVING_PREFERENCE = '以后每次文案都先说门店位置，请长期记住';
 
 async function selectDestination(page: Page, destination: string) {
   const panel = await openComposerCapsule(page, 'destination');
@@ -53,15 +71,87 @@ async function queryMemory<T>(
   );
 }
 
+/** Poll until the submitted instruction has become a pending memory entry. */
+async function pendingEntryId(page: Page, value: string): Promise<string> {
+  let entryId = '';
+  await expect
+    .poll(async () => {
+      const pageResult = await queryMemory<MemoryEntriesPage>(
+        page,
+        'entries_page',
+        { limit: 50 }
+      );
+      const entry = pageResult.items.find(
+        (candidate) => candidate.value === value
+      );
+      entryId = entry?.entryId ?? '';
+      return entry?.status;
+    })
+    .toBe('pending');
+  expect(entryId).toBeTruthy();
+  return entryId;
+}
+
+async function confirmEntry(page: Page, entryId: string) {
+  await page.goto('/dashboard/memory');
+  const memoryCard = page.getByTestId(`memory-entry-${entryId}`);
+  await memoryCard.getByRole('button', { name: '确认记住' }).click();
+  await expect(memoryCard).toContainText('已确认');
+}
+
+/**
+ * Map each receipted statement to the memoryId the panel renders for it.
+ *
+ * Correlate by statement, never by the memory-page `entryId`: a pending entry's
+ * id is the candidateId (`reuse-memory-service.ts:753`) while the receipt
+ * carries the confirmed preference head's memoryId, so the two are not
+ * interchangeable.
+ */
+async function receiptedMemoryIdsByStatement(
+  page: Page
+): Promise<Map<string, string>> {
+  const panel = page.getByTestId('memory-injection-receipt-panel');
+  await expect(panel).toBeVisible();
+  const rows = await panel
+    .locator('[data-testid^="memory-injection-receipt-entry-"]')
+    .evaluateAll((nodes) =>
+      nodes.map((node) => ({
+        memoryId: (node.getAttribute('data-testid') ?? '').replace(
+          'memory-injection-receipt-entry-',
+          ''
+        ),
+        statement:
+          node
+            .querySelector('[data-testid="memory-injection-receipt-statement"]')
+            ?.textContent?.trim() ?? '',
+      }))
+    );
+  return new Map(rows.map((row) => [row.statement, row.memoryId]));
+}
+
+async function openTaskDetail(page: Page, taskId: string) {
+  const receiptLoaded = page.waitForResponse((response) => {
+    const body = response.request().postData() ?? '';
+    return (
+      response.url().includes('/api/core/p1/query') &&
+      body.includes('injection_receipt') &&
+      body.includes(taskId)
+    );
+  });
+  await page.goto(`/dashboard?taskId=${encodeURIComponent(taskId)}`);
+  await receiptLoaded;
+  await expect(page.getByTestId('agent-workbench-host')).toBeVisible();
+}
+
 test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));
 
-  test('task detail shows source, revoke persists, and the next task excludes it', async ({
+  test('revoking one of two confirmed memories stops only that one from injecting', async ({
     page,
     request,
   }) => {
-    test.setTimeout(600_000);
+    test.setTimeout(900_000);
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
@@ -69,36 +159,31 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
       (contract) => contract.modality === 'copy'
     )!;
 
+    // Two submissions, each stating one durable preference, then both confirmed.
     await page.goto('/dashboard');
     await selectDestination(page, copyContract.deliveryTarget);
-    const sourceWorkId = await submitComposerJourney(
+    const firstWorkId = await submitComposerJourney(
       page,
       copyContract,
-      DURABLE_PREFERENCE
+      REVOKED_PREFERENCE
     );
-    await waitForResultJourney(page, copyContract, sourceWorkId);
+    await waitForResultJourney(page, copyContract, firstWorkId);
+    const revokedEntryId = await pendingEntryId(page, REVOKED_PREFERENCE);
+    await confirmEntry(page, revokedEntryId);
 
-    let memoryEntryId = '';
-    await expect
-      .poll(async () => {
-        const pageResult = await queryMemory<MemoryEntriesPage>(
-          page,
-          'entries_page',
-          { limit: 20 }
-        );
-        const entry = pageResult.items.find(
-          (candidate) => candidate.value === DURABLE_PREFERENCE
-        );
-        memoryEntryId = entry?.entryId ?? '';
-        return entry?.status;
-      })
-      .toBe('pending');
+    await page.goto('/dashboard');
+    await selectDestination(page, copyContract.deliveryTarget);
+    const secondWorkId = await submitComposerJourney(
+      page,
+      copyContract,
+      SURVIVING_PREFERENCE
+    );
+    await waitForResultJourney(page, copyContract, secondWorkId);
+    const survivingEntryId = await pendingEntryId(page, SURVIVING_PREFERENCE);
+    await confirmEntry(page, survivingEntryId);
 
-    await page.goto('/dashboard/memory');
-    const memoryCard = page.getByTestId(`memory-entry-${memoryEntryId}`);
-    await memoryCard.getByRole('button', { name: '确认记住' }).click();
-    await expect(memoryCard).toContainText('已确认');
-
+    // A task after both confirmations must receipt BOTH — this is the positive
+    // baseline the later negative assertion is measured against.
     let injectedTaskId = '';
     await page.goto('/dashboard');
     await selectDestination(page, copyContract.deliveryTarget);
@@ -113,38 +198,71 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
       }
     );
     await waitForResultJourney(page, copyContract, injectedWorkId);
+    // The merchant's own words are memory, never delivered copy.
     await expect(
       page.getByTestId(copyContract.resultSurfaceTestId)
-    ).not.toContainText(DURABLE_PREFERENCE);
-    const conciseTitle = await page.getByTestId('copy-field-title').inputValue();
-    const conciseBody =
-      (await page.getByTestId('copy-field-body').textContent()) ?? '';
-    expect(conciseTitle.length).toBeLessThanOrEqual(24);
-    expect(conciseBody.length).toBeLessThanOrEqual(32);
-    expect(conciseBody).not.toMatch(/绝对|保证|必然/u);
+    ).not.toContainText(REVOKED_PREFERENCE);
+    await expect(
+      page.getByTestId(copyContract.resultSurfaceTestId)
+    ).not.toContainText(SURVIVING_PREFERENCE);
 
-    await page.goto(`/dashboard?taskId=${encodeURIComponent(injectedTaskId)}`);
+    await openTaskDetail(page, injectedTaskId);
+    const receipted = await receiptedMemoryIdsByStatement(page);
+    const revokedMemoryId = receipted.get(REVOKED_PREFERENCE);
+    const survivingMemoryId = receipted.get(SURVIVING_PREFERENCE);
+    expect(
+      revokedMemoryId,
+      'the confirmed preference to be revoked must be receipted'
+    ).toBeTruthy();
+    expect(
+      survivingMemoryId,
+      'the surviving confirmed preference must be receipted'
+    ).toBeTruthy();
+    expect(revokedMemoryId).not.toBe(survivingMemoryId);
+
+    // Revoke exactly one.
     const panel = page.getByTestId('memory-injection-receipt-panel');
-    await expect(panel).toBeVisible();
-    await expect(
-      panel.getByTestId('memory-injection-receipt-statement')
-    ).toContainText(DURABLE_PREFERENCE);
-    const revoke = panel
-      .locator('[data-testid^="memory-injection-receipt-revoke-"]')
-      .first();
-    const revokeTestId = await revoke.getAttribute('data-testid');
-    const injectedMemoryId = revokeTestId?.replace(
-      'memory-injection-receipt-revoke-',
-      ''
-    );
-    expect(injectedMemoryId).toBeTruthy();
-    await expect(
-      panel.getByTestId('memory-injection-receipt-source')
-    ).toContainText(injectedMemoryId!);
-    await revoke.click();
-    await expect(revoke).toBeDisabled();
-    await expect(revoke).toContainText('已撤销');
+    await panel
+      .getByTestId(`memory-injection-receipt-revoke-${revokedMemoryId}`)
+      .click();
 
+    // The disabled button and the 已撤销 label are local optimistic state:
+    // `MemoryInjectionReceiptPanel` seeds `revokedIds` from
+    // `useState(new Set())` and never derives it from the server
+    // (`src/product/memory-injection-receipt.tsx:26`), so the panel forgets the
+    // revocation on reload. These two assertions are therefore scoped to what
+    // they can honestly prove — that the click produced local feedback — and
+    // the durable proof is the server query and the next task's receipt below.
+    // Asserting them again after a reload would encode a guarantee the product
+    // does not currently make.
+    await expect(
+      panel.getByTestId(`memory-injection-receipt-revoke-${revokedMemoryId}`)
+    ).toBeDisabled();
+    // The survivor stays revocable — a blanket disable would also satisfy the
+    // assertion above.
+    await expect(
+      panel.getByTestId(`memory-injection-receipt-revoke-${survivingMemoryId}`)
+    ).toBeEnabled();
+
+    // Server truth, independent of the panel.
+    const entriesAfterRevoke = await queryMemory<MemoryEntriesPage>(
+      page,
+      'entries_page',
+      { limit: 50 }
+    );
+    expect(
+      entriesAfterRevoke.items.find(
+        (entry) => entry.entryId === survivingEntryId
+      )?.status
+    ).toBe('confirmed');
+    expect(
+      entriesAfterRevoke.items.find((entry) => entry.entryId === revokedEntryId)
+        ?.status
+    ).not.toBe('confirmed');
+
+    // The next task must still receipt the survivor and must not receipt the
+    // revoked one. The positive half is what makes this test fail if memory
+    // retrieval is broken outright, instead of passing vacuously.
     let laterTaskId = '';
     await page.goto('/dashboard');
     await selectDestination(page, copyContract.deliveryTarget);
@@ -159,26 +277,20 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
       }
     );
     await waitForResultJourney(page, copyContract, laterWorkId);
-    await expect(
-      page.getByTestId(copyContract.resultSurfaceTestId)
-    ).not.toContainText(DURABLE_PREFERENCE);
-    const restoredBody =
-      (await page.getByTestId('copy-field-body').textContent()) ?? '';
-    expect(restoredBody.length).toBeGreaterThan(32);
 
-    const laterReceiptLoaded = page.waitForResponse((response) => {
-      const body = response.request().postData() ?? '';
-      return (
-        response.url().includes('/api/core/p1/query') &&
-        body.includes('injection_receipt') &&
-        body.includes(laterTaskId)
-      );
-    });
-    await page.goto(`/dashboard?taskId=${encodeURIComponent(laterTaskId)}`);
-    await laterReceiptLoaded;
-    await expect(page.getByTestId('agent-workbench-host')).toBeVisible();
+    await openTaskDetail(page, laterTaskId);
+    const laterPanel = page.getByTestId('memory-injection-receipt-panel');
+    await expect(laterPanel).toBeVisible();
     await expect(
-      page.getByTestId(`memory-injection-receipt-entry-${injectedMemoryId}`)
+      laterPanel.getByTestId(
+        `memory-injection-receipt-entry-${survivingMemoryId}`
+      )
+    ).toHaveCount(1);
+    await expect(
+      laterPanel.getByTestId(`memory-injection-receipt-entry-${revokedMemoryId}`)
     ).toHaveCount(0);
+    await expect(
+      laterPanel.getByTestId('memory-injection-receipt-statement')
+    ).not.toContainText(REVOKED_PREFERENCE);
   });
 });

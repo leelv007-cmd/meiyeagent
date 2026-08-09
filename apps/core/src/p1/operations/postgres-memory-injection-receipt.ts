@@ -56,6 +56,19 @@ export class PostgresMemoryInjectionReceiptStore
         ON p1_memory_injection_receipts (run_id);
       CREATE INDEX IF NOT EXISTS p1_memory_injection_receipts_release_idx
         ON p1_memory_injection_receipts (harness_release_id);
+      -- NOT an outbox despite the name (V31-18 P1-7). It has no reader in any
+      -- process: the only SELECT is the same-transaction verification in
+      -- save() below, nothing ever leases or dispatches a row, and the CHECK
+      -- admits 'ready' alone so no consumer could mark a row done without a
+      -- schema change. It therefore grows one row per injected task forever and
+      -- delivers nothing, while costing an extra INSERT plus an extra
+      -- round-trip inside the hot receipt transaction. The atomicity it does
+      -- provide is real and tested; the delivery guarantee its name implies is
+      -- vacuous. Resolve it deliberately — either route injection receipts
+      -- through the existing drainer that already works
+      -- (harness_runtime.langfuse_outbox + outbox-worker.ts, which has leases,
+      -- attempts and dead-lettering), or drop this table. Both are decisions
+      -- for the owner of this seam; do not add a consumer here speculatively.
       CREATE TABLE IF NOT EXISTS p1_memory_injection_receipt_outbox (
         task_id text PRIMARY KEY REFERENCES p1_memory_injection_receipts(task_id)
           ON DELETE CASCADE,

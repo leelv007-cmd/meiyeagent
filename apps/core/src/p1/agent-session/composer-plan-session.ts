@@ -182,7 +182,12 @@ export class ComposerPlanSessionCoordinator
           `Composer Agent Run ${runId} cannot resume from ${started.run.status}.`
         );
       }
-      const turnResult = await this.runSessionTurn({
+      // The read-only pre-plan turn runs for its own effects. Its `releaseId`
+      // is deliberately NOT the injection binding (V31-18 P2-10): the receipt
+      // used to record the turn's release while the plan bound the Run's, so
+      // the transparency artifact named a release the plan never used. One
+      // value now drives both, and it is the one the plan binds.
+      await this.runSessionTurn({
         submission,
         threadId,
         runId,
@@ -193,7 +198,7 @@ export class ComposerPlanSessionCoordinator
         submission,
         threadId,
         runId,
-        harnessReleaseId: turnResult?.releaseId ?? started.run.harnessReleaseId,
+        harnessReleaseId: started.run.harnessReleaseId,
       });
       // V31-18 P0-1 (出口证明): planning failures propagate but must NOT close
       // the Run terminally. `submit()` consumed the merchant's credits inside
