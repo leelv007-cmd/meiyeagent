@@ -16,6 +16,7 @@ import {
   type HarnessCopyDeliveryPort,
 } from './production-stage-ports.js';
 import { runHarnessWorkflow } from './workflow-core.js';
+import { frozenHarnessPromptBundle } from './frozen-prompt.testing.js';
 import { pinnedPromptResolver } from '../model-supply/prompt-pin.testing.js';
 
 test('fixture harness runtime assembles and completes its structured model path', async () => {
@@ -194,6 +195,9 @@ class RecordingDelivery implements HarnessCopyDeliveryPort {
 
 function taskInput() {
   return {
+    // task-admission freezes a pin for every prompt site the task's packs
+    // claim, so a request without prompts is a state production cannot reach.
+    prompts: frozenHarnessPromptBundle(),
     actorId: 'owner-fixture',
     workspaceId: 'workspace-fixture',
     packageId: 'package-fixture',

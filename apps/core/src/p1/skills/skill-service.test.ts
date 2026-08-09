@@ -1310,14 +1310,14 @@ test('an accepted prompt Skill changes the fixture judgment at its declared Harn
         workId: 'work-skill-fixture',
       },
     },
+    prompt: frozenHarnessPrompt('intentNaming'),
     workflowId: 'workflow-skill-fixture',
     workflowRevision: 1,
   };
 
   const baseline = await nameHarnessIntent(input, runner);
   const enhanced = await nameHarnessIntent(
-    {
-    prompt: frozenHarnessPrompt('intentNaming'), ...input, skillInstructions: resolved.allowlist },
+    { ...input, skillInstructions: resolved.allowlist },
     runner,
   );
 
@@ -4056,17 +4056,16 @@ test('rolling a binding back to the previous frozen revision restores the fixtur
         workId: 'work-skill-rollback',
       },
     },
+    prompt: frozenHarnessPrompt('intentNaming'),
     workflowId: 'workflow-skill-rollback',
     workflowRevision: 1,
   };
   const currentJudgment = await nameHarnessIntent(
-    {
-    prompt: frozenHarnessPrompt('intentNaming'), ...intentInput, skillInstructions: current.allowlist },
+    { ...intentInput, skillInstructions: current.allowlist },
     runner,
   );
   const restoredJudgment = await nameHarnessIntent(
-    {
-    prompt: frozenHarnessPrompt('intentNaming'), ...intentInput, skillInstructions: restored.allowlist },
+    { ...intentInput, skillInstructions: restored.allowlist },
     runner,
   );
 
