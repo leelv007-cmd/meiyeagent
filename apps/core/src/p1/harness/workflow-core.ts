@@ -2133,12 +2133,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
       'brief_compilation',
     );
     selectedStyleId = noteStyleIdFromDecision(brief, styleDecision);
-    activeRequest = await applyCurrentTaskDecision(
-      workflowId,
-      activeRequest,
-      styleDecision,
-      runtime,
-    );
+    activeRequest = withForkDecisionReference(activeRequest, styleDecision);
   }
   const selectedNoteCandidate = brief.candidates.candidates.find(
     ({ styleId }) => styleId === selectedStyleId,
@@ -3596,7 +3591,7 @@ async function applyCurrentTaskDecision(
   }
   const value = command.decision.value;
   return {
-    ...request,
+    ...withForkDecisionReference(request, command),
     intent: {
       ...request.intent,
       context: {
@@ -3608,12 +3603,29 @@ async function applyCurrentTaskDecision(
         ],
       },
     },
+  };
+}
+
+/**
+ * Pins an in-plan fork answer (note style) onto the live request so a paused
+ * continuation and every later stage read it back instead of asking again.
+ * Unlike a semantic decision it never invalidates an admitted
+ * ExecutionPlanSnapshot: the candidates it chooses between are already part of
+ * the frozen plan, so the run continues instead of demanding a resubmission.
+ */
+function withForkDecisionReference(
+  request: HarnessWorkflowInput,
+  command: StructuredDecisionInput,
+): HarnessWorkflowInput {
+  if (command.decision.state === 'ignored') return request;
+  return {
+    ...request,
     decisionReferences: [
       ...(request.decisionReferences ?? []),
       {
         id: `decision:${command.questionId}:${command.idempotencyKey}`,
         field: command.patch.field,
-        value,
+        value: command.decision.value,
         revision: command.workflowRevision,
       },
     ],
