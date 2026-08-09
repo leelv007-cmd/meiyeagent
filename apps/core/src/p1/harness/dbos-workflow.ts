@@ -282,6 +282,74 @@ export function interruptResumeDecision(
   });
 }
 
+export function interruptResumeInteractionAnswer(
+  question: QuestionCard,
+  payload: InterruptPayload,
+  command: ResumeInterruptCommand,
+) {
+  const args =
+    typeof command.args === 'object' &&
+    command.args !== null &&
+    !Array.isArray(command.args)
+      ? (command.args as { value?: unknown })
+      : undefined;
+  const value =
+    typeof args?.value === 'string' && args.value.length > 0
+      ? args.value
+      : undefined;
+  const identity = {
+    requestId: question.questionId,
+    revision: question.workflowRevision,
+    idempotencyKey:
+      command.idempotencyKey ??
+      `interrupt:${command.interruptId}:r${command.revision}`,
+    resume: {
+      runId: question.workflowId,
+      step: payload.step,
+    },
+  };
+  if (question.executionConfirmationAuthority) {
+    if (command.type === 'respond' || command.type === 'edit') {
+      throw new Error(
+        `Execution confirmation does not accept ${command.type} resumes.`,
+      );
+    }
+    return harnessInteractionAnswerSchema.parse({
+      ...identity,
+      response:
+        command.type === 'accept'
+          ? { kind: 'approved' }
+          : {
+              kind: 'rejected',
+              ...(value ? { feedback: value } : {}),
+            },
+    });
+  }
+  if ((command.type === 'respond' || command.type === 'edit') && !value) {
+    throw new Error(
+      `Interrupt resume type ${command.type} requires a merchant value.`,
+    );
+  }
+  return harnessInteractionAnswerSchema.parse({
+    ...identity,
+    response:
+      command.type === 'reject'
+        ? { kind: 'skipped' }
+        : {
+            kind: 'answer',
+            items: [
+              {
+                itemId: question.response.field,
+                result: {
+                  kind: 'answer',
+                  value: value ?? question.options[0]?.label ?? 'approved',
+                },
+              },
+            ],
+          },
+  });
+}
+
 /**
  * Production resume bridge: after the interrupt CAS applies, deliver the
  * reconstructed decision into the suspended workflow's recv channel.
@@ -290,11 +358,27 @@ export function interruptResumeDecision(
  */
 export function createHarnessInterruptResumeBridge(
   resolver?: HarnessRuntimeIdResolver,
+  interactions?: {
+    submit(
+      workspaceId: string,
+      answer: unknown,
+      expectedRunId?: string,
+    ): Promise<unknown>;
+  },
 ): InterruptResumeBridgePort {
   return {
     async deliver(input: InterruptResumeBridgeInput) {
       const { workspaceId, payload, command } = input;
       const question = interruptQuestionFromPayload(payload);
+      if (interactions) {
+        await interactions.submit(
+          workspaceId,
+          interruptResumeInteractionAnswer(question, payload, command),
+          payload.workflowId,
+        );
+        return;
+      }
+      const decision = interruptResumeDecision(question, command);
       const runtimeWorkflowId =
         (await resolver?.workflowRuntimeId(
           workspaceId,
@@ -302,7 +386,7 @@ export function createHarnessInterruptResumeBridge(
         )) ?? harnessRuntimeId(workspaceId, payload.workflowId);
       await DBOS.send(
         runtimeWorkflowId,
-        interruptResumeDecision(question, command),
+        decision,
         decisionTopic(payload.interruptId),
         `harness-interrupt:${workspaceId}:${runtimeWorkflowId}:${payload.interruptId}:${command.idempotencyKey ?? `r${command.revision}`}`,
       );
@@ -1496,9 +1580,10 @@ function withExecutionConfirmationStagePort(
     },
   };
   if ('shared' in ports) {
+    Object.assign(ports.shared, confirmationPorts);
     return {
       ...ports,
-      shared: { ...ports.shared, ...confirmationPorts },
+      shared: ports.shared,
     };
   }
   return {

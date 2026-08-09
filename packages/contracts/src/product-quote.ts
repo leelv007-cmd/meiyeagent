@@ -209,6 +209,7 @@ export const publicProductQuoteSnapshotSchema: z.ZodType<PublicProductQuoteSnaps
       refundedAmount: z.number().optional(),
       platformAbsorbedAmount: z.number().optional(),
       createdAt: z.string().optional(),
+      expiresAt: z.string().optional(),
       confirmedAt: z.string().optional(),
       reservedAt: z.string().optional(),
       settledAt: z.string().optional(),

@@ -169,7 +169,9 @@ export function createSessionAgentKernel(input: {
   mode: string;
   activation?: string | null;
   direct?: OpenAiCompatibleAiSdkOptions | null;
-  fixtureDecision?: AgentTurnDecision;
+  fixtureDecision?:
+    | AgentTurnDecision
+    | ((request: AgentKernelTurnRequest) => AgentTurnDecision);
 }): AgentKernel | undefined {
   if (input.mode === 'fixture') {
     return new FixtureAgentKernel({

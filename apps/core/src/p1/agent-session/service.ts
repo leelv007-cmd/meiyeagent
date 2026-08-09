@@ -125,6 +125,7 @@ export type ComposerSessionTurnInput = {
   harnessReleaseId: string;
   merchantMessage: string;
   creationMode: 'customized' | 'free';
+  platform: string;
   activeTaskRef: { taskId: string; workflowId: string };
   approvedToolNames: string[];
   authority: ServerOwnedTurnAuthority;
@@ -292,6 +293,7 @@ export class AgentSessionHarnessService {
       merchantMessage: input.merchantMessage,
       proactiveMode: 'balanced',
       creationMode: input.creationMode,
+      platform: input.platform,
       sessionRevision: input.sessionRevision,
       activeTaskRef: input.activeTaskRef,
       approvedToolNames: [...input.approvedToolNames],

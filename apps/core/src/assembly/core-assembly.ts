@@ -686,6 +686,40 @@ export async function assembleCoreGraph(
     mode: modelRuntime.mode,
     activation: modelRuntime.activation,
     direct: modelRuntime.direct,
+    ...(env.APP_ENV === 'e2e'
+      ? {
+          fixtureDecision: (request: { prompt: string }) =>
+            /三页|3\s*页/u.test(request.prompt)
+              ? {
+                  merchantMessage: 'E2E three-page plan fixture',
+                  action: {
+                    kind: 'propose_plan' as const,
+                    proposal: {
+                      goalNarrative: 'Create a three-page merchant content plan.',
+                      recommendedDeliverables: [
+                        {
+                          carrier: 'note' as const,
+                          platform: 'xiaohongshu',
+                          quantity: 3,
+                          purpose: 'Three-page image-text note',
+                        },
+                      ],
+                      expressionStrategy: {},
+                      factIntentions: [],
+                      assetIntentions: [],
+                    },
+                  },
+                  evidenceRefs: [],
+                  assumptions: [],
+                }
+              : {
+                  merchantMessage: 'fixture-session-turn',
+                  action: { kind: 'finish_turn' as const },
+                  evidenceRefs: [],
+                  assumptions: [],
+                },
+        }
+      : {}),
   });
   /**
    * V31-07: retrieval ports wrap product / store-fact / identity (no re-query).
@@ -852,6 +886,7 @@ export async function assembleCoreGraph(
               workspaceId: turn.workspaceId,
               threadId: turn.threadId,
               creationMode: turn.creationMode ?? 'customized',
+              platform: turn.platform,
             },
           }),
         createPolicies: (_turn, authority) =>

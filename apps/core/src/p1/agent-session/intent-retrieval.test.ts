@@ -591,6 +591,30 @@ test('first-batch retrieval tool names match V3.1 §20.2', () => {
   ]);
 });
 
+test('platform requirements use the server-bound turn platform when model args omit it', async () => {
+  const seen: string[] = [];
+  const registry = createRetrievalToolRegistry({
+    ports: {
+      readPlatformRequirements: async ({ platform }) => {
+        seen.push(platform);
+        return { platform };
+      },
+    },
+    context: {
+      workspaceId: 'ws-1',
+      creationMode: 'customized',
+      platform: 'xiaohongshu',
+    },
+  });
+
+  const result = await registry
+    .toKernelTools({ phase: 'intent' })
+    .read_platform_requirements!.execute({ response_format: 'concise' });
+
+  assert.deepEqual(seen, ['xiaohongshu']);
+  assert.equal((result as { platform: string }).platform, 'xiaohongshu');
+});
+
 test('V31-18 read_confirmed_experience forwards the per-turn injection binding', async () => {
   const seen: Array<{ injectionContext?: object }> = [];
   const ports = createSessionRetrievalPorts({

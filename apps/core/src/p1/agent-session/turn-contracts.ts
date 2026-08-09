@@ -61,6 +61,8 @@ export const agentTurnInputSchema = z
      * free: store/project facts waived; never invent store claims.
      */
     creationMode: z.enum(['customized', 'free']).optional(),
+    /** Server-bound delivery platform used by retrieval tools. */
+    platform: z.string().min(1).max(100).optional(),
     sessionRevision: z.number().int().nonnegative().safe(),
     activePlanRef: revisionRefSchema.optional(),
     activeTaskRef: taskRefSchema.optional(),

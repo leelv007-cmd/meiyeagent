@@ -1350,8 +1350,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         },
       },
       () => new Date().toISOString(),
-      // Resume CAS → DBOS recv re-injection (exactly-once send topic).
-      createHarnessInterruptResumeBridge(),
+      // Resume CAS → durable decision close → DBOS recv re-injection.
+      createHarnessInterruptResumeBridge(undefined, harnessInteractions),
       {
         async project(candidate) {
           if (!agentSemanticEventProjector) {

@@ -109,6 +109,7 @@ export type RetrievalToolContext = {
   threadId?: string;
   creationMode?: 'customized' | 'free';
   storeId?: string;
+  platform?: string;
 };
 
 /**
@@ -179,7 +180,7 @@ export const readRecentContentArgsSchema = retrievalArgsBaseSchema;
 export const readConfirmedExperienceArgsSchema = retrievalArgsBaseSchema;
 export const readPlatformRequirementsArgsSchema = z
   .object({
-    platform: z.string().min(1).max(100),
+    platform: z.string().min(1).max(100).optional(),
     response_format: z.enum(['concise', 'detailed']).optional().default('concise'),
   })
   .strict();
@@ -426,15 +427,19 @@ export function createRetrievalToolRegistry(input: {
     }),
     execute: async (raw) => {
       const args = readPlatformRequirementsArgsSchema.parse(raw ?? {});
+      const platform = args.platform ?? context.platform;
+      if (!platform) {
+        throw new Error('Platform requirements require a server-bound platform.');
+      }
       const requirements = ports.readPlatformRequirements
-        ? await ports.readPlatformRequirements({ platform: args.platform })
+        ? await ports.readPlatformRequirements({ platform })
         : {
-            platform: args.platform,
+            platform,
             rules: ['no_false_medical_claims', 'disclose_promotions'],
           };
       return {
         response_format: args.response_format,
-        platform: args.platform,
+        platform,
         requirements,
       };
     },

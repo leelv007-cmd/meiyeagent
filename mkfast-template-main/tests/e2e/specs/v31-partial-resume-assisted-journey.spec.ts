@@ -21,13 +21,18 @@ async function submitPersistentConflictNote(page: Page) {
     .getByTestId('composer-intent-input')
     .fill('把门店案例做成三页图文持续冲突样本，其他页正常交付。');
 
+  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    timeout: 60_000,
+  });
+  const submit = page.getByTestId('composer-submit');
+  await expect(submit).toBeEnabled({ timeout: 60_000 });
   const submission = page.waitForResponse(
     (response) =>
       response.request().method() === 'POST' &&
       response.url().includes('/api/core/p1/composer/submissions'),
     { timeout: 120_000 }
   );
-  await page.getByTestId('composer-submit').click();
+  await submit.click();
 
   const response = await submission;
   const envelope = (await response.json()) as {
@@ -37,19 +42,27 @@ async function submitPersistentConflictNote(page: Page) {
   expect(response.ok(), envelope.error?.message).toBeTruthy();
   expect(envelope.data?.task?.id).toBeTruthy();
 
-  const direction = page
-    .getByTestId('ask-merchant-group-card')
-    .filter({ hasText: /两种图文方向/u });
-  await expect(direction).toBeVisible({ timeout: 120_000 });
-  await direction.getByTestId('ask-merchant-option-card').first().click();
+  await expect(page.getByTestId('agent-plan-section-deliverables')).toContainText(
+    /3\s*页/u,
+    { timeout: 120_000 }
+  );
+  const start = page.getByTestId('agent-commit-strip-start');
+  await expect(start).toBeEnabled({ timeout: 120_000 });
+  const startResponse = page.waitForResponse(
+    (current) =>
+      current.request().method() === 'POST' &&
+      /\/api\/core\/p1\/composer\/tasks\/[^/]+\/start$/u.test(
+        new URL(current.url()).pathname
+      ),
+    { timeout: 120_000 }
+  );
+  await start.click();
+  expect((await startResponse).ok()).toBeTruthy();
 
   const executionConfirmation = page.getByTestId(
     'execution-confirmation-interaction-card'
   );
   await expect(executionConfirmation).toBeVisible({ timeout: 120_000 });
-  await expect(
-    executionConfirmation.getByTestId('execution-confirmation-outline-row')
-  ).toHaveCount(3);
 
   return { taskId: envelope.data!.task!.id! };
 }

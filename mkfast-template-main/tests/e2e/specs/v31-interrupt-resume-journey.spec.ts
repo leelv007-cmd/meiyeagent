@@ -35,6 +35,40 @@ async function openCustomizedCreate(page: Page) {
   await expect(page.getByTestId('composer-home')).toBeVisible();
 }
 
+async function reachExecutionConfirmation(page: Page, intent: string) {
+  await page.getByTestId('composer-intent-input').fill(intent);
+  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    timeout: 60_000,
+  });
+  const submit = page.getByTestId('composer-submit');
+  await expect(submit).toBeEnabled({ timeout: 60_000 });
+  const submission = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  await submit.click();
+  expect((await submission).ok()).toBeTruthy();
+
+  const start = page.getByTestId('agent-commit-strip-start');
+  await expect(start).toBeEnabled({ timeout: 120_000 });
+  const startResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      /\/api\/core\/p1\/composer\/tasks\/[^/]+\/start$/u.test(
+        new URL(response.url()).pathname
+      ),
+    { timeout: 120_000 }
+  );
+  await start.click();
+  expect((await startResponse).ok()).toBeTruthy();
+
+  await expect(
+    page.getByTestId('execution-confirmation-interaction-card')
+  ).toBeVisible({ timeout: 120_000 });
+}
+
 test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));
@@ -50,11 +84,10 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
 
     await openCustomizedCreate(page);
 
-    const intent = page.getByTestId('composer-intent-input');
-    await intent.fill('帮我做一组含配图的小红书笔记，奶油风美甲。');
-    await page.getByTestId('composer-submit').click();
-
-    await page.getByRole('button', { name: '确认并开始' }).click();
+    await reachExecutionConfirmation(
+      page,
+      '帮我做三页含配图的小红书笔记，奶油风美甲。'
+    );
     const interruptHost = page.getByTestId('agent-pending-interrupt');
     await expect(interruptHost).toBeVisible({ timeout: 120_000 });
     const interruptId = await interruptHost.getAttribute('data-interrupt-id');
@@ -132,11 +165,10 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     await seedConfirmedStore(page);
 
     await openCustomizedCreate(page);
-    await page
-      .getByTestId('composer-intent-input')
-      .fill('按已确认的门店价格做一组图文。');
-    await page.getByTestId('composer-submit').click();
-    await page.getByRole('button', { name: '确认并开始' }).click();
+    await reachExecutionConfirmation(
+      page,
+      '按已确认的门店价格做三页图文。'
+    );
     const pending = page.getByTestId('agent-pending-interrupt');
     await expect(pending).toBeVisible({ timeout: 120_000 });
     const interruptId = await pending.getAttribute('data-interrupt-id');

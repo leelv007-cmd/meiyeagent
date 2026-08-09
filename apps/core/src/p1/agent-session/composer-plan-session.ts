@@ -44,6 +44,7 @@ export type ComposerPlanCompilerPort = {
     harnessReleaseId: string;
     merchantMessage: string;
     creationMode: 'customized' | 'free';
+    platform: string;
     activeTaskRef: { taskId: string; workflowId: string };
     approvedToolNames: string[];
     authority: {
@@ -448,6 +449,7 @@ export class ComposerPlanSessionCoordinator
       harnessReleaseId: input.harnessReleaseId,
       merchantMessage: input.merchantMessage ?? snapshot.intent.text,
       creationMode: snapshot.creationMode,
+      platform: snapshot.contentPackagePlatform,
       activeTaskRef: {
         taskId: submission.task.id,
         workflowId: submission.task.id,

@@ -33,6 +33,44 @@ async function openCustomizedCreate(page: Page) {
   await expect(page.getByTestId('composer-home')).toBeVisible();
   return authorized;
 }
+
+async function submitAndStartLivingPlan(page: Page) {
+  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    timeout: 60_000,
+  });
+  const submit = page.getByTestId('composer-submit');
+  await expect(submit).toBeEnabled({ timeout: 60_000 });
+  const submission = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  await submit.click();
+  const submissionResponse = await submission;
+  expect(
+    submissionResponse.ok(),
+    await submissionResponse.text()
+  ).toBeTruthy();
+
+  await expect(page.getByTestId('agent-plan-section-deliverables')).toContainText(
+    /3\s*页/u,
+    { timeout: 120_000 }
+  );
+  const start = page.getByTestId('agent-commit-strip-start');
+  await expect(start).toBeEnabled({ timeout: 120_000 });
+  const startResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      /\/api\/core\/p1\/composer\/tasks\/[^/]+\/start$/u.test(
+        new URL(response.url()).pathname
+      ),
+    { timeout: 120_000 }
+  );
+  await start.click();
+  expect((await startResponse).ok()).toBeTruthy();
+}
+
 async function changeConfirmedPriceFact(page: Page) {
   const state = await productState(page);
   const store = state.store;
@@ -134,7 +172,7 @@ test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
     page,
     request,
   }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(480_000);
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
@@ -143,36 +181,33 @@ test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
     await page
       .getByTestId('composer-intent-input')
       .fill('帮我按已确认的门店资料做三页图文，稍后核对事实。');
-    const submission = page.waitForResponse(
-      (response) =>
-        response.request().method() === 'POST' &&
-        response.url().includes('/api/core/p1/composer/submissions'),
-      { timeout: 120_000 }
-    );
-    await page.getByTestId('composer-submit').click();
-    const submissionResponse = await submission;
-    expect(
-      submissionResponse.ok(),
-      await submissionResponse.text()
-    ).toBeTruthy();
-
-    const direction = page
-      .getByTestId('ask-merchant-group-card')
-      .filter({ hasText: /两种图文方向/u });
-    await expect(direction).toBeVisible({ timeout: 120_000 });
-    await direction.getByTestId('ask-merchant-option-card').first().click();
+    await submitAndStartLivingPlan(page);
 
     const executionConfirmation = page.getByTestId(
       'execution-confirmation-interaction-card'
     );
     await expect(executionConfirmation).toBeVisible({ timeout: 120_000 });
-    await expect(
-      executionConfirmation.getByTestId('execution-confirmation-outline-row')
-    ).toHaveCount(3);
+    const executionInterrupt = page
+      .getByTestId('agent-pending-interrupt')
+      .filter({ hasText: /是否按当前方案开始生成/u });
+    await expect(executionInterrupt).toBeVisible({ timeout: 120_000 });
+    const executionInterruptId = await executionInterrupt.getAttribute(
+      'data-interrupt-id'
+    );
+    expect(executionInterruptId).toBeTruthy();
     await changeConfirmedPriceFact(page);
-    await executionConfirmation
-      .getByRole('button', { name: '确认执行' })
-      .click();
+    await executionInterrupt.getByTestId('agent-interrupt-accept').click();
+
+    const noteStyleInterrupt = page
+      .getByTestId('agent-pending-interrupt')
+      .filter({ hasText: /两种图文方向/u });
+    await expect(noteStyleInterrupt).toBeVisible({ timeout: 120_000 });
+    await expect(noteStyleInterrupt).toHaveAttribute(
+      'data-interrupt-schema-version',
+      'interrupt-payload/v1'
+    );
+    await noteStyleInterrupt.getByTestId('agent-interrupt-accept').click();
+    await expect(noteStyleInterrupt).toHaveCount(0, { timeout: 120_000 });
 
     const interrupt = page
       .getByTestId('agent-pending-interrupt')
@@ -185,6 +220,7 @@ test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
     const interruptId = await interrupt.getAttribute('data-interrupt-id');
     const revision = await interrupt.getAttribute('data-interrupt-revision');
     expect(interruptId).toBeTruthy();
+    expect(interruptId).not.toBe(executionInterruptId);
     expect(revision).toMatch(/^\d+$/u);
 
     await page.reload();
@@ -195,6 +231,9 @@ test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
     );
     await page.getByTestId('agent-interrupt-accept').click();
     await expect(interrupt).toHaveCount(0, { timeout: 120_000 });
+    await expect(page.getByTestId('composer-delivery-card')).toBeVisible({
+      timeout: 420_000,
+    });
   });
 
   test('§37.4-F rights revoke stops safely without double charge copy', async ({
@@ -209,13 +248,21 @@ test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
 
     await page
       .getByTestId('composer-intent-input')
-      .fill('用门店授权素材做一组笔记配图。');
+      .fill('用门店授权素材做三页笔记配图。');
+    await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+      timeout: 60_000,
+    });
+    await expect(page.getByTestId('composer-submit')).toBeEnabled({
+      timeout: 60_000,
+    });
     await page.getByTestId('composer-submit').click();
+    const start = page.getByTestId('agent-commit-strip-start');
+    await expect(start).toBeEnabled({ timeout: 120_000 });
     await productCommand(page, {
       type: 'withdraw_asset',
       assetId: authorized.id,
     });
-    await page.getByRole('button', { name: '确认并开始' }).click();
+    await start.click();
     await expect(
       page.getByText(/授权已撤销|安全停止|不会重复扣费/).first()
     ).toBeVisible({

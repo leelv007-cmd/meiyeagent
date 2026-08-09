@@ -1446,6 +1446,80 @@ test('resume bridge sends the reconstructed decision on the workflow topic with 
   assert.equal(sent[1]?.[3], sent[0]?.[3]);
 });
 
+test('production resume bridge resolves the typed harness interaction before workflow delivery', async () => {
+  const submitted: Array<{
+    workspaceId: string;
+    workflowId?: string;
+    answer: unknown;
+  }> = [];
+  const bridge = createHarnessInterruptResumeBridge(undefined, {
+    async submit(workspaceId, answer, workflowId) {
+      submitted.push({ workspaceId, workflowId, answer });
+    },
+  });
+  const { payload } = harnessInterruptMirrorInput({
+    question: interruptQuestion(),
+    stage: 'execution_selection',
+    request: interruptRequest(),
+  });
+
+  await bridge.deliver({
+    workspaceId: 'workspace-1',
+    payload,
+    command: interruptResume({ idempotencyKey: 'resume-persisted-1' }),
+  });
+
+  assert.equal(submitted.length, 1);
+  assert.equal(submitted[0]?.workspaceId, 'workspace-1');
+  assert.equal(submitted[0]?.workflowId, payload.workflowId);
+  assert.deepEqual(submitted[0]?.answer, {
+    requestId: payload.interruptId,
+    revision: payload.revision,
+    idempotencyKey: 'resume-persisted-1',
+    resume: {
+      runId: payload.workflowId,
+      step: 'execution_selection',
+    },
+    response: { kind: 'approved' },
+  });
+});
+
+test('production resume bridge accepts the recommended ask-merchant option', async () => {
+  const submitted: unknown[] = [];
+  const bridge = createHarnessInterruptResumeBridge(undefined, {
+    async submit(_workspaceId, answer) {
+      submitted.push(answer);
+    },
+  });
+  const { payload } = harnessInterruptMirrorInput({
+    question: interruptQuestion({ executionConfirmationAuthority: undefined }),
+    stage: 'brief_compilation',
+    request: interruptRequest(),
+  });
+
+  await bridge.deliver({
+    workspaceId: 'workspace-1',
+    payload,
+    command: interruptResume({ idempotencyKey: 'resume-option-1' }),
+  });
+
+  assert.deepEqual(submitted[0], {
+    requestId: payload.interruptId,
+    revision: payload.revision,
+    idempotencyKey: 'resume-option-1',
+    resume: { runId: payload.workflowId, step: 'brief_compilation' },
+    response: {
+      kind: 'answer',
+      items: [
+        {
+          itemId: 'execution_confirmation',
+          result: { kind: 'answer', value: '确认执行' },
+        },
+      ],
+    },
+  });
+});
+
 test('mirror port tolerates a durable retry that recomputes the hold expiry', async () => {
   const store = new MemoryInterruptStore();
   const service = new InterruptProtocolService(
