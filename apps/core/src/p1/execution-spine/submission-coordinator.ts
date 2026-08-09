@@ -1220,11 +1220,16 @@ export class CreationSubmissionCoordinator {
 		let started = 0;
 		for (const candidate of recoverable) {
 			try {
-				// V31-18 P0-1: recovery must re-enter plan preparation, not go
-				// around it. `prepare()` is idempotent (deterministic Thread/Run),
-				// rehydrates the freeze for rows persisted before it became
-				// durable, and performs the confirmed-memory retrieval whose
-				// receipt would otherwise be silently skipped on recovery.
+				// V31-18 P0-1: recovery must call prepareAgentPlan, not go around
+				// it — but what that call does depends on what the claim already
+				// carries. A durable claim from the atomic order (prepare before
+				// claim, ~:703-708) already has its agentBinding + freeze, so the
+				// short-circuit at ~:785-787 intentionally no-ops here: the frozen
+				// plan is the merchant-confirmed authority (V31-39) and must not be
+				// silently re-derived. Only a legacy claim predating that
+				// invariant — no agentBinding, no freeze — makes this call
+				// genuinely re-enter `prepare()` and re-run the confirmed-memory
+				// retrieval a persisted freeze would otherwise skip.
 				await this.prepareAgentPlan(candidate.submission);
 				if (await this.startHarness(candidate.submission)) started += 1;
 			} catch {

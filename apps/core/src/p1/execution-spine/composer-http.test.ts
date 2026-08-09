@@ -913,6 +913,23 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		};
 	}
 
+	/**
+	 * Test-only: seeds a row exactly the way `claim()` seeds a brand-new one,
+	 * bypassing prepare/claim ordering entirely. Used to simulate a
+	 * pre-durable-build claim (no agentBinding, no executionPlanFreeze) — a
+	 * shape no current caller of `claim()` can produce once prepare runs
+	 * before claim, but one that legitimately exists as historical data from
+	 * before that invariant landed.
+	 */
+	seedLegacyClaim(input: CreationSubmissionStoreClaim) {
+		const key = `${input.workspaceId}:${input.idempotencyKey}`;
+		this.claims.set(key, structuredClone(input));
+		this.harnessStarts.set(input.submission.snapshot.id, {
+			attempts: 0,
+			state: "reserved",
+		});
+	}
+
 	async persistAgentPlanning(input: {
 		workspaceId: string;
 		submissionId: string;
@@ -1167,11 +1184,15 @@ test("Composer returns authoritative Agent binding and treats the Thread hint ou
 	assert.deepEqual(continuationHints, ["thread-browser-a"]);
 });
 
-test("crash recovery idempotently persists Agent planning before Harness starts", async () => {
+test("a planning failure before claim rejects the submit and leaves no orphan row or reservation", async () => {
+	// Atomic order (T4, post-V31-39): `prepareAgentPlan(..., persistExisting:
+	// false)` now runs *before* `store.claim` (submission-coordinator.ts
+	// ~:703-708). A failure here happens before anything is ever persisted, so
+	// there is nothing for the store to roll back and nothing for recovery to
+	// find — unlike the pre-atomic-order shape this test used to pin, where
+	// claim() ran first and left a claimed-but-unplanned row behind.
 	const submissions = new MemorySubmissionStore();
-	submissions.failNextPlanningPersistence = true;
 	const starts: CreationSubmissionRecord[] = [];
-	let plans = 0;
 	const coordinator = new CreationSubmissionCoordinator(
 		submissions,
 		{ async start(input) { starts.push(structuredClone(input)); } },
@@ -1179,15 +1200,8 @@ test("crash recovery idempotently persists Agent planning before Harness starts"
 		fixedAdmission(),
 		undefined,
 		{
-			async prepare(input) {
-				plans += 1;
-				input.submission.executionPlanFreeze = {} as NonNullable<
-					CreationSubmissionRecord["executionPlanFreeze"]
-				>;
-				return {
-					threadId: asAgentThreadIdentity("thread-durable"),
-					runId: "run-durable",
-				};
+			async prepare() {
+				throw new Error("planning failed before claim");
 			},
 		},
 	);
@@ -1197,16 +1211,16 @@ test("crash recovery idempotently persists Agent planning before Harness starts"
 		workspaceId: "workspace-1",
 	};
 
-	await assert.rejects(coordinator.submit(command), /planning persistence/u);
+	await assert.rejects(coordinator.submit(command), /planning failed before claim/u);
 	assert.equal(starts.length, 0);
-	assert.deepEqual(await coordinator.recoverPendingStarts(), {
-		attempted: 1,
-		failed: 0,
-		started: 1,
-	});
-	assert.equal(plans, 2);
-	assert.equal(starts[0]?.agentBinding?.threadId, "thread-durable");
-	assert.ok(starts[0]?.executionPlanFreeze);
+	assert.equal(
+		submissions.claimedSubmission("workspace-1", "composer-submit-1"),
+		undefined,
+	);
+	assert.equal(
+		submissions.reservedUnits("workspace-1", "composer-submit-1"),
+		undefined,
+	);
 	assert.deepEqual(await coordinator.recoverPendingStarts(), {
 		attempted: 0,
 		failed: 0,
@@ -1214,44 +1228,97 @@ test("crash recovery idempotently persists Agent planning before Harness starts"
 	});
 });
 
-test("recovery completes a claim that crashed before Agent planning", async () => {
-	const submissions = new MemorySubmissionStore();
-	const starts: CreationSubmissionRecord[] = [];
-	let plans = 0;
-	const coordinator = new CreationSubmissionCoordinator(
-		submissions,
-		{ async start(input) { starts.push(structuredClone(input)); } },
-		fixedIds(),
-		fixedAdmission(),
-		undefined,
-		{
-			async prepare(input) {
-				plans += 1;
-				if (plans === 1) throw new Error("process crashed before plan");
-				input.submission.executionPlanFreeze = {} as NonNullable<
-					CreationSubmissionRecord["executionPlanFreeze"]
-				>;
-				return {
-					threadId: asAgentThreadIdentity("thread-after-crash"),
-					runId: "run-after-crash",
-				};
+test("recovery has nothing to retry when claim never happened, and only re-prepares a legacy claim missing binding+freeze", async () => {
+	// Arm ①: prepare fails before claim (see the test above) — recovery must
+	// find nothing, twice over, to make sure a failed attempt never leaves a
+	// dangling recoverable row behind.
+	{
+		const submissions = new MemorySubmissionStore();
+		const starts: CreationSubmissionRecord[] = [];
+		const coordinator = new CreationSubmissionCoordinator(
+			submissions,
+			{ async start(input) { starts.push(structuredClone(input)); } },
+			fixedIds(),
+			fixedAdmission(),
+			undefined,
+			{
+				async prepare() {
+					throw new Error("crashed before claim");
+				},
 			},
-		},
-	);
-	await assert.rejects(
-		coordinator.submit({
-			...submissionPayload(),
-			actorId: "owner-1",
+		);
+		await assert.rejects(
+			coordinator.submit({
+				...submissionPayload(),
+				actorId: "owner-1",
+				workspaceId: "workspace-1",
+			}),
+			/crashed before claim/u,
+		);
+		assert.deepEqual(await coordinator.recoverPendingStarts(), {
+			attempted: 0,
+			failed: 0,
+			started: 0,
+		});
+		assert.equal(starts.length, 0);
+	}
+
+	// Arm ②: a legacy claim — durably claimed, but predating the
+	// freeze-at-claim invariant, so it carries neither `agentBinding` nor
+	// `executionPlanFreeze`. No current caller of `claim()` can produce this
+	// shape (prepare always runs first now), but historical rows can. This is
+	// the one remaining case where recovery must still genuinely re-enter
+	// `prepare()` (V31-18 P0-1) instead of trusting a persisted freeze that
+	// was never written.
+	{
+		const submissions = new MemorySubmissionStore();
+		const starts: CreationSubmissionRecord[] = [];
+		let plans = 0;
+		const coordinator = new CreationSubmissionCoordinator(
+			submissions,
+			{ async start(input) { starts.push(structuredClone(input)); } },
+			fixedIds(),
+			fixedAdmission(),
+			undefined,
+			{
+				async prepare(input) {
+					plans += 1;
+					input.submission.executionPlanFreeze = {} as NonNullable<
+						CreationSubmissionRecord["executionPlanFreeze"]
+					>;
+					return {
+						threadId: asAgentThreadIdentity("thread-legacy-recovered"),
+						runId: "run-legacy-recovered",
+					};
+				},
+			},
+		);
+		submissions.seedLegacyClaim({
 			workspaceId: "workspace-1",
-		}),
-		/crashed before plan/u,
-	);
-	assert.deepEqual(await coordinator.recoverPendingStarts(), {
-		attempted: 1,
-		failed: 0,
-		started: 1,
-	});
-	assert.equal(starts[0]?.agentBinding?.threadId, "thread-after-crash");
+			idempotencyKey: "composer-submit-1",
+			payloadHash: "legacy-payload-hash",
+			submission: {
+				snapshot: { id: "task-legacy-1", workspaceId: "workspace-1" },
+				work: { id: "work-legacy-1" },
+				task: { id: "task-legacy-1" },
+				contentPackage: { id: "package-legacy-1", expectedRevision: 0 },
+				usageReservation: { id: "usage-reservation-legacy-1", units: [] },
+				agentPlanPending: false,
+			} as unknown as CreationSubmissionRecord,
+		});
+
+		assert.deepEqual(await coordinator.recoverPendingStarts(), {
+			attempted: 1,
+			failed: 0,
+			started: 1,
+		});
+		// The legacy claim's missing freeze forced a genuine entry into
+		// `prepare()` during recovery — recovery re-derived the plan rather
+		// than trusting an absent persisted freeze.
+		assert.equal(plans, 1);
+		assert.equal(starts[0]?.agentBinding?.threadId, "thread-legacy-recovered");
+		assert.ok(starts[0]?.executionPlanFreeze);
+	}
 });
 
 test("recovery reuses durable Agent planning after a crash before Harness acknowledgement", async () => {
@@ -3383,7 +3450,7 @@ function freezeForRecoveryTest() {
 	>;
 }
 
-test("V31-18 P0-1: crash recovery starts Make through plan preparation, not around it", async () => {
+test("V31-18 P0-1: crash recovery starts Make from the persisted freeze without re-preparing an already-durable claim", async () => {
 	const submissions = new MemorySubmissionStore();
 	const harness = new RecordingHarnessStarter();
 	let failNextStart = true;
@@ -3424,21 +3491,37 @@ test("V31-18 P0-1: crash recovery starts Make through plan preparation, not arou
 	await assert.rejects(coordinator.submit(command), /acknowledgement/u);
 	assert.equal(prepareCalls, 1);
 	assert.equal(harness.starts.length, 0);
+	// The atomic order (prepareAgentPlan before claim, ~:703-708) already
+	// embedded the frozen plan + binding into the row at claim time, before
+	// the Harness acknowledgement ever failed — this claim is durable, not
+	// claimed-but-unplanned.
+	const persistedBeforeRecovery = submissions.claimedSubmission(
+		"workspace-1",
+		"composer-submit-1",
+	);
+	assert.ok(persistedBeforeRecovery?.executionPlanFreeze);
+	assert.ok(persistedBeforeRecovery?.agentBinding);
 
 	assert.deepEqual(await coordinator.recoverPendingStarts(), {
 		attempted: 1,
 		failed: 0,
 		started: 1,
 	});
-	// `listRecoverableHarnessStarts` rebuilds the record from storage, so the
-	// in-memory freeze from the first attempt is gone. Recovery that skips plan
-	// preparation therefore starts Make with no ExecutionPlanSnapshot and no
-	// memory retrieval — the paid submission silently degrades to legacy.
-	assert.equal(prepareCalls, 2);
+	// A durably frozen plan is the merchant-confirmed authority (V31-39) —
+	// re-entering `prepare()` here would let recovery silently re-derive a
+	// possibly different plan instead of starting the one already frozen.
+	// The short-circuit at prepareAgentPlan (~:785-787) exists exactly to stop
+	// that, so an already-durable claim must not re-prepare.
+	assert.equal(prepareCalls, 1);
 	assert.equal(harness.starts.length, 1);
-	assert.ok(
+	assert.deepEqual(
 		harness.starts[0]?.executionPlanFreeze,
-		"recovered Make start must carry the compile freeze",
+		persistedBeforeRecovery?.executionPlanFreeze,
+		"Make must start from the persisted freeze, not a freshly re-derived one",
+	);
+	assert.deepEqual(
+		harness.starts[0]?.agentBinding,
+		persistedBeforeRecovery?.agentBinding,
 	);
 });
 
