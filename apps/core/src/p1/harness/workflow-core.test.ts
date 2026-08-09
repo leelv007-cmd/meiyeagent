@@ -1000,6 +1000,63 @@ test('V31-15 note wiring: the page reporter reads identity from this run’s bri
   );
 });
 
+for (const kind of ['image_text_note', 'video'] as const) {
+  test(`a ${kind} run with no Agent Thread publishes no artifact revisions`, async () => {
+    const projected: SemanticEventCandidate[] = [];
+    const stages =
+      kind === 'image_text_note'
+        ? noteStages(false, async (input) => {
+            await input.onPageProgress?.({ pageId: 'page-1', state: 'running' });
+            await input.onPageProgress?.({ pageId: 'page-1', state: 'success' });
+          })
+        : mediaStages('video');
+    stages.artifactProgressEmitter = {
+      async project(candidate) {
+        projected.push(candidate);
+      },
+    };
+    if (kind === 'video') {
+      (stages as HarnessMediaStagePorts).compileMediaBrief = async () => ({
+        kind: 'video',
+        firstFramePrompt: '夏日护理项目门店开场，展示明确的品牌主视觉。',
+        storyboard: [
+          { index: 1, description: '门店护理场景与主视觉展示。', durationSeconds: 8 },
+        ],
+        referenceAssetIds: ['asset-1'],
+        parameters: { durationSeconds: 8, ratio: '9:16' },
+        constraints: ['不得编造价格'],
+      });
+    }
+
+    // No agentThreadId: the request never came through a Composer Thread.
+    await runHarnessWorkflow(`task-${kind}-unbound`, mediaTaskInput(kind), stages, {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision(question) {
+        return {
+          idempotencyKey: `choose-story-unbound-${kind}`,
+          questionId: question.questionId,
+          workflowRevision: question.workflowRevision,
+          patch: {
+            field: 'note_style',
+            value: '故事版',
+            reason: '选择图文方向',
+          },
+          decision: { state: 'accepted', value: '故事版' },
+        };
+      },
+      async recordTrace() {},
+    });
+
+    // A synthesised `legacy-workflow:<id>` thread used to absorb these: rows no
+    // Thread owns, that replay and the adjust lineage lookup can never reach.
+    assert.deepEqual(projected, []);
+  });
+}
+
 test('configured media bounds fail closed when the bounded media port is unavailable', async () => {
   const request = mediaTaskInput('image');
   request.boundedExecution = boundedExecutionSnapshot(0, 1);

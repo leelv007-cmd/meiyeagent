@@ -32,6 +32,7 @@ import {
 } from '../execution-spine/creation-execution-snapshot.js';
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
 import type { AgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
+import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { RouteSnapshot } from '../model-supply/index.js';
 import { serverAuditReference } from '../creation-experience/creation-experience-events.js';
@@ -1026,7 +1027,9 @@ function normalizeRequest(
         snapshot,
         usageReservation,
         decisionReferences,
-		parsed.agentThreadId as AgentThreadIdentity | undefined,
+		parsed.agentThreadId
+			? asAgentThreadIdentity(parsed.agentThreadId)
+			: undefined,
 		parsed.artifactLineage,
       ),
       ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
@@ -1046,7 +1049,7 @@ function normalizeRequest(
     ...(parsed.reuseSeed ? { reuseSeed: parsed.reuseSeed } : {}),
     ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
 		...(parsed.agentThreadId
-			? { agentThreadId: parsed.agentThreadId as AgentThreadIdentity }
+			? { agentThreadId: asAgentThreadIdentity(parsed.agentThreadId) }
 			: {}),
 		...(parsed.artifactLineage ? { artifactLineage: parsed.artifactLineage } : {}),
   };

@@ -2008,16 +2008,21 @@ export function createNoteExecutionArtifactReporter(input: {
   const { plan, request, workflowId } = input;
   const now = input.now ?? (() => new Date().toISOString());
   let artifactRevision = request.artifactLineage?.parentRevision ?? 0;
+  // An unbound run publishes nothing. The Thread id is the only address an
+  // artifact has: replay, SSE and the adjust lineage lookup all key on it, so a
+  // synthesised `legacy-workflow:<id>` thread wrote revisions that no Thread
+  // owns and no reader can reach, while looking like a working producer.
+  const threadId = request.agentThreadId;
   return createNotePageProgressReporter({
     plan,
     reportProgress: input.reportProgress,
-    ...(input.artifactEmitter
+    ...(input.artifactEmitter && threadId
       ? {
           artifactEmitter: input.artifactEmitter,
           artifactContext: {
             workspaceId: request.workspaceId,
             workflowId,
-            threadId: request.agentThreadId ?? `legacy-workflow:${workflowId}`,
+            threadId,
             artifactId:
               request.artifactLineage?.artifactId ??
               `note:${request.packageId ?? workflowId}`,
@@ -2560,7 +2565,13 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
     source: MediaBrief,
     state: 'running' | 'success',
   ): Promise<void> => {
-    if (source.kind !== 'video' || !ports.artifactProgressEmitter) return;
+    // Same rule as the note producer: no Thread, no publication. A synthesised
+    // thread id addresses nothing that replay or the adjust lineage lookup can
+    // find.
+    const threadId = activeRequest.agentThreadId;
+    if (source.kind !== 'video' || !ports.artifactProgressEmitter || !threadId) {
+      return;
+    }
     const parentRevision = state === 'running' ? videoReadyRevision : undefined;
     if (parentRevision !== undefined) videoReadyRevision = undefined;
     await emitVideoScenesArtifactProgress(
@@ -2568,8 +2579,7 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
       {
         workspaceId: activeRequest.workspaceId,
         workflowId,
-        threadId:
-          activeRequest.agentThreadId ?? `legacy-workflow:${workflowId}`,
+        threadId,
 		artifactId:
 		  activeRequest.artifactLineage?.artifactId ??
 		  `video:${activeRequest.packageId ?? workflowId}`,
