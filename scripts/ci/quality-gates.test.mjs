@@ -68,6 +68,7 @@ test('the root required gate captures every root command and explicit security a
     'pnpm build',
     'pnpm test',
     'pnpm --filter @meiye/web test:interaction',
+    'pnpm --filter @meiye/web check',
     'pnpm check',
     'node scripts/uiux/secret-scan.mjs',
     'node scripts/uiux/bundle-budget.mjs',
@@ -119,6 +120,19 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
   assert.match(p2Script, /MODEL_EXECUTION_MODE=fixture/);
   assert.match(p2Script, /p2-browser-closure\.spec\.ts/);
   assert.doesNotMatch(p2Script, /API_KEY|PROVIDER_LIVE|STRIPE_SECRET_KEY/);
+
+  assert.deepEqual(await runGate('run-v31-browser-acceptance.sh'), [
+    `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/v31-day0-free-creation-journey.spec.ts tests/e2e/specs/v31-living-plan-journey.spec.ts tests/e2e/specs/v31-context-fence-journey.spec.ts tests/e2e/specs/v31-mid-run-steering-journey.spec.ts tests/e2e/specs/v31-interrupt-resume-journey.spec.ts tests/e2e/specs/v31-thread-root-workbench.spec.ts tests/e2e/specs/v31-ops-console-release-journey.spec.ts tests/e2e/specs/v31-publish-handoff-selfreport.spec.ts tests/e2e/specs/v31-goal-proactive-idle.spec.ts',
+  ]);
+
+  const v31Script = await readFile(
+    join(repositoryRoot, 'scripts/ci/run-v31-browser-acceptance.sh'),
+    'utf8'
+  );
+  assert.match(v31Script, /PLAYWRIGHT_PROVIDER_FREE=true/);
+  assert.match(v31Script, /MODEL_EXECUTION_MODE=fixture/);
+  assert.doesNotMatch(v31Script, /API_KEY|PROVIDER_LIVE|STRIPE_SECRET_KEY/);
 });
 
 test('the provider-free production candidate removes every commerce setting', () => {
@@ -275,9 +289,11 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(coreQuality, /bash scripts\/ci\/run-root-required-quality\.sh/);
   assert.match(coreQuality, /^ {2}production-main-journey:/m);
   assert.match(coreQuality, /^ {2}p2-browser-acceptance:/m);
+  assert.match(coreQuality, /^ {2}v31-browser-acceptance:/m);
   assert.match(coreQuality, /PLAYWRIGHT_PRODUCTION_CANDIDATE: true/);
   assert.match(coreQuality, /bash scripts\/ci\/run-pr-production-journey\.sh/);
   assert.match(coreQuality, /bash scripts\/ci\/run-p2-browser-acceptance\.sh/);
+  assert.match(coreQuality, /bash scripts\/ci\/run-v31-browser-acceptance\.sh/);
   assert.match(
     coreQuality,
     /REQUIRED_E2E_SPEC: tests\/e2e\/specs\/assembly-gate-required-journey\.spec\.ts/,
@@ -294,6 +310,7 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(coreQuality, /needs\.core-persistence\.result/);
   assert.match(coreQuality, /needs\.production-main-journey\.result/);
   assert.match(coreQuality, /needs\.p2-browser-acceptance\.result/);
+  assert.match(coreQuality, /needs\.v31-browser-acceptance\.result/);
   assert.match(coreQuality, /needs\.production-dependency-audit\.result/);
   assert.match(
     coreQuality,
@@ -309,6 +326,7 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
     'core-persistence-evidence',
     'production-main-journey-evidence',
     'p2-browser-acceptance-evidence',
+    'v31-browser-acceptance-evidence',
   ]) {
     assert.match(coreQuality, new RegExp(`name: ${artifactName}`));
   }
@@ -337,6 +355,14 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
   assert.match(
     coreQuality,
     /RELEASE_MANIFEST_PATH: output\/release\/release-manifest\.json/
+  );
+  assert.doesNotMatch(
+    coreQuality,
+    /# Release-candidate acceptance[\s\S]*?github\.event_name == 'push'/
+  );
+  assert.doesNotMatch(
+    coreQuality,
+    /# Release-candidate acceptance[\s\S]*?contains\(github\.event\.pull_request\.labels\.\*\.name, 'run-e2e'\)/
   );
   assert.match(
     coreQuality,

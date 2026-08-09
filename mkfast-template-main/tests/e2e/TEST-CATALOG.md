@@ -1065,6 +1065,13 @@ fixture。产品请求不 mock，静态源码断言不能替代以下三条旅�
 
 ## V3.1 批次旅程（发布交接 §37.4-K / Ops Console AC4 / Day-0 自由创作 §37.4-A）
 
+`v31-browser-acceptance` 是普通 PR 的 required job，使用独立 PostgreSQL/DBOS
+数据库与 fixture 模型边界，显式执行当前已登记的 V3.1 specs，并在成功或
+失败时都上传 `output/ci/v31-browser-acceptance` 及 Playwright test results。
+发布候选 full E2E 另行使用同 SHA release manifest，不会把该条件传播到
+普通 V3.1 browser gate。CI 清单是显式的：新增 V3.1 spec 必须同步更新
+`scripts/ci/run-v31-browser-acceptance.sh` 和本 catalog，不允许靠 glob 静默纳入或遗漏。
+
 2026-08-09 登记三个 v3.1 journey spec（此前 v3.1 系列在目录中无登记，deep review 批次指
 出 V31-16/17 缺失）。三个 spec 均为 write-only，实跑归 merge controller；均无
 `test.skip`/`test.fixme`/条件 `isVisible` 包裹，面板锚定由真实交付保证。

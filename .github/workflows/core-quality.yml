@@ -433,6 +433,66 @@ jobs:
             mkfast-template-main/test-results
           if-no-files-found: error
 
+  # V3.1 §37.4 browser acceptance. Required independently from the opt-in
+  # release-candidate manifest so ordinary pull requests cannot skip it.
+  v31-browser-acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_PASSWORD: meiye
+          POSTGRES_USER: meiye
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U meiye -d postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 20
+    env:
+      CI: true
+      MODEL_EXECUTION_MODE: fixture
+      PLAYWRIGHT_CORE_PORT: 4110
+      PORT: 3010
+      TEST_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_pr_v31_browser
+      TEST_DBOS_SYSTEM_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_pr_v31_browser_dbos
+      HARNESS_DBOS_SYSTEM_DATABASE_URL: postgres://meiye:meiye@127.0.0.1:5432/meiye_pr_v31_browser_dbos
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize V3.1 browser acceptance evidence
+        run: mkdir -p output/ci/v31-browser-acceptance && touch output/ci/v31-browser-acceptance/job-started.log
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.30.3
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-wqy-zenhei postgresql-client
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @meiye/web exec playwright install --with-deps chromium
+      - name: Provision V3.1 browser-acceptance databases
+        run: >-
+          set -o pipefail;
+          ./scripts/ci/provision-test-db.sh 2>&1 |
+          tee output/ci/v31-browser-acceptance/provision.log
+      - name: Run explicit V3.1 Chromium acceptance specs
+        run: bash scripts/ci/run-v31-browser-acceptance.sh
+        env:
+          CI_EVIDENCE_DIR: output/ci/v31-browser-acceptance
+          RELEASE_COMMIT_SHA: ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v31-browser-acceptance-evidence
+          path: |
+            output/ci/v31-browser-acceptance
+            mkfast-template-main/test-results
+          if-no-files-found: error
+
   required:
     if: ${{ always() }}
     needs:
@@ -443,6 +503,7 @@ jobs:
       - core-persistence
       - production-main-journey
       - p2-browser-acceptance
+      - v31-browser-acceptance
       - production-dependency-audit
     runs-on: ubuntu-latest
     steps:
@@ -455,6 +516,7 @@ jobs:
           REQUIRED_SESSION_QUICK_CHECKS_RESULT: ${{ needs.session-quick-checks.result }}
           REQUIRED_PRODUCTION_MAIN_JOURNEY_RESULT: ${{ needs.production-main-journey.result }}
           REQUIRED_P2_BROWSER_ACCEPTANCE_RESULT: ${{ needs.p2-browser-acceptance.result }}
+          REQUIRED_V31_BROWSER_ACCEPTANCE_RESULT: ${{ needs.v31-browser-acceptance.result }}
           REQUIRED_PRODUCTION_DEPENDENCY_AUDIT_RESULT: ${{ needs.production-dependency-audit.result }}
           REQUIRED_REDLINE_EVALS_RESULT: ${{ needs.redline-evals.result }}
           REQUIRED_ROOT_QUALITY_RESULT: ${{ needs.root-quality.result }}
@@ -506,15 +568,13 @@ jobs:
           if-no-files-found: error
 
   # Release-candidate acceptance builds every workspace, then boots Main, Core,
-  # Worker, and Canvas for the real browser harness. Keep the historical run-e2e
-  # label as an alias while release-candidate becomes the explicit RC signal.
+  # Worker, and Canvas for the real browser harness. Ordinary browser acceptance
+  # is required above and does not inherit this opt-in manifest dependency.
   e2e:
     if: >-
-      github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'pull_request' &&
-      (contains(github.event.pull_request.labels.*.name, 'release-candidate') ||
-      contains(github.event.pull_request.labels.*.name, 'run-e2e')))
+      contains(github.event.pull_request.labels.*.name, 'release-candidate'))
     needs: release-manifest
     runs-on: ubuntu-latest
     timeout-minutes: 90

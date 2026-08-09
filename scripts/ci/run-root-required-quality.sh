@@ -26,6 +26,7 @@ run_required_gate root-typecheck.log pnpm typecheck
 run_required_gate root-build.log pnpm build
 run_required_gate root-test.log pnpm test
 run_required_gate web-interaction-test.log pnpm --filter @meiye/web test:interaction
+run_required_gate web-check.log pnpm --filter @meiye/web check
 run_required_gate root-check.log pnpm check
 run_required_gate secret-scan.json node scripts/uiux/secret-scan.mjs
 run_required_gate bundle-report.json node scripts/uiux/bundle-budget.mjs

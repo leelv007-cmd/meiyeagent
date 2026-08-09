@@ -7,6 +7,7 @@ const requiredJobs = [
   ['core-persistence', 'REQUIRED_CORE_PERSISTENCE_RESULT'],
   ['production-main-journey', 'REQUIRED_PRODUCTION_MAIN_JOURNEY_RESULT'],
   ['p2-browser-acceptance', 'REQUIRED_P2_BROWSER_ACCEPTANCE_RESULT'],
+  ['v31-browser-acceptance', 'REQUIRED_V31_BROWSER_ACCEPTANCE_RESULT'],
   [
     'production-dependency-audit',
     'REQUIRED_PRODUCTION_DEPENDENCY_AUDIT_RESULT',
