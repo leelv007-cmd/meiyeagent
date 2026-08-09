@@ -1074,26 +1074,35 @@ fixture。产品请求不 mock，静态源码断言不能替代以下三条旅�
 
 **§37.4 A–K 与 spec 文件登记表（gate 逐个文件名索取，缺文件即 fail closed）**
 
-| §37.4 | Spec 文件 | 文件是否已存在 |
-|---|---|---|
-| A | `specs/v31-day0-free-creation-journey.spec.ts` | 是 |
-| B | `specs/v31-level1-copy-journey.spec.ts` | **否（待建）** |
-| B2 | `specs/v31-memory-injection-journey.spec.ts` | **否（待建）** |
-| C | `specs/v31-living-plan-journey.spec.ts` | 是 |
-| D | `specs/v31-video-paid-execution-journey.spec.ts` | **否（待建）** |
-| E, F | `specs/v31-context-fence-journey.spec.ts` | 是 |
-| G | `specs/v31-mid-run-steering-journey.spec.ts` | 是 |
-| H | `specs/v31-interrupt-resume-journey.spec.ts` | 是 |
-| I | `specs/v31-thread-root-workbench.spec.ts` | 是 |
-| J | `specs/v31-ops-console-release-journey.spec.ts` | 是 |
-| K | `specs/v31-publish-handoff-selfreport.spec.ts` | 是 |
-| — Artifact 语义流 | `specs/v31-artifact-growth-journey.spec.ts` | **否（待建）** |
-| — Goal + Proactive Idle | `specs/v31-goal-proactive-idle.spec.ts` | 是 |
+旅程定义以 `docs/design/0808规划/meiye-agent-v3.1-authoritative-plan-2026-08-08.md`
+§37.4（1763 行起）为权威，下表文件名照该节措辞取名，**一个字母一个文件**（主控裁决：
+E 与 F 不共用文件，否则红灯归属不可判、A–K 一对一归因断裂）。
 
-四个「待建」文件名即后续 wave 必须使用的确切路径：gate 现在就按名索取，文件不在
+| §37.4 | 旅程 | Spec 文件 | 文件是否已存在 |
+|---|---|---|---|
+| A | Day-0 自由创作 | `specs/v31-day0-free-creation-journey.spec.ts` | 是 |
+| B | Level 1 纯 copy | `specs/v31-level1-copy-journey.spec.ts` | **否（待建）** |
+| B2 | 记忆注入透明 | `specs/v31-memory-injection-journey.spec.ts` | **否（待建）** |
+| C | 定制图文（Level 2） | `specs/v31-living-plan-journey.spec.ts` | 是 |
+| D | 视频付费执行 | `specs/v31-video-paid-execution-journey.spec.ts` | **否（待建）** |
+| E | Plan stale | `specs/v31-context-fence-journey.spec.ts` | 是 |
+| F | 素材撤权 | `specs/v31-rights-revocation-journey.spec.ts` | **否（待建）** |
+| G | Mid-run Steering | `specs/v31-mid-run-steering-journey.spec.ts` | 是 |
+| H | Interrupt resume | `specs/v31-interrupt-resume-journey.spec.ts` | 是 |
+| I | Thread 连续 | `specs/v31-thread-root-workbench.spec.ts` | 是 |
+| J | Harness Release | `specs/v31-ops-console-release-journey.spec.ts` | 是 |
+| K | 自报旅程 | `specs/v31-publish-handoff-selfreport.spec.ts` | 是 |
+| — | Artifact 语义流 | `specs/v31-artifact-growth-journey.spec.ts` | **否（待建）** |
+| — | Goal + Proactive Idle | `specs/v31-goal-proactive-idle.spec.ts` | 是 |
+
+五个「待建」文件名即后续 wave 必须使用的确切路径：gate 现在就按名索取，文件不在
 时 `run-v31-browser-acceptance.sh` 在跑 Playwright 之前退出 1 并把缺失清单写入
 `missing-specs.log`，不允许「少跑几条也算绿」。`scripts/ci/quality-gates.test.mjs`
 同时校验仓库里每个 `v31-*.spec.ts` 都在该清单内（反向漂移也 fail closed）。
+
+F 从 context-fence 拆出后，E 与 F 的验收面不同：E＝确认前 price revision 变化 → 显示
+diff → 旧确认不可提交 → 重新确认后执行；F＝Plan 形成后撤权 → Make admission fail
+closed → 可换素材 → **不重复扣费（须验 ledger，不是页面文案）**。
 
 2026-08-09 登记三个 v3.1 journey spec（此前 v3.1 系列在目录中无登记，deep review 批次指
 出 V31-16/17 缺失）。三个 spec 均为 write-only，实跑归 merge controller；均无

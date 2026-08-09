@@ -25,6 +25,7 @@ const v31AcceptanceSpecs = [
   'tests/e2e/specs/v31-living-plan-journey.spec.ts',
   'tests/e2e/specs/v31-video-paid-execution-journey.spec.ts',
   'tests/e2e/specs/v31-context-fence-journey.spec.ts',
+  'tests/e2e/specs/v31-rights-revocation-journey.spec.ts',
   'tests/e2e/specs/v31-mid-run-steering-journey.spec.ts',
   'tests/e2e/specs/v31-interrupt-resume-journey.spec.ts',
   'tests/e2e/specs/v31-thread-root-workbench.spec.ts',
