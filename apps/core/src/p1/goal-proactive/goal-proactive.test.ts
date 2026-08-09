@@ -417,7 +417,22 @@ const OPEN_GATE = {
 test('V31-24: the kill switch closes accept and dismiss, not just the list', async () => {
   const threads = new MemoryAgentSessionStore();
   const decisions = new MemoryOpportunityDecisionStore();
-  const service = new ProactiveService({ decisions, threads });
+  // The candidate is genuinely proposed by owned data — only the kill switch
+  // stands between the merchant and the decision.
+  const service = new ProactiveService({
+    decisions,
+    threads,
+    signals: {
+      listSignals: () => [
+        signal({
+          kind: 'goal_stalled',
+          summary: '目标两周未推进',
+          goalId: 'goal-1',
+          resourceId: 'ws-kill',
+        }),
+      ],
+    },
+  });
   const killed = { ...OPEN_GATE, disableProactiveAgent: true };
   const candidateId = buildCandidateId({
     resourceId: 'ws-kill',
@@ -425,6 +440,12 @@ test('V31-24: the kill switch closes accept and dismiss, not just the list', asy
     goalId: 'goal-1',
     reason: '目标两周未推进',
   });
+  const open = await service.listSuggestions({
+    resourceId: 'ws-kill',
+    now: TS,
+    config: OPEN_GATE,
+  });
+  assert.equal(open.suggestions[0]?.candidateId, candidateId);
 
   await assert.rejects(
     () =>
@@ -433,8 +454,6 @@ test('V31-24: the kill switch closes accept and dismiss, not just the list', asy
         candidateId,
         actorId: 'merchant-1',
         now: TS,
-        reason: '目标两周未推进',
-        evidenceRefs: [{ kind: 'goal_stalled', ref: 'goal-1' }],
         config: killed,
       }),
     /acceptance is disabled: kill_switch/u,
@@ -453,12 +472,9 @@ test('V31-24: the kill switch closes accept and dismiss, not just the list', asy
 
   // Zero side effect: no decision row, no thread, no orphan waiting turn.
   assert.deepEqual(await decisions.listForResource({ resourceId: 'ws-kill' }), []);
-  assert.equal(
-    await threads.getThread({
-      resourceId: 'ws-kill',
-      threadId: `thread:proactive:${candidateId}`,
-    }),
-    null,
+  assert.deepEqual(
+    await threads.listRecentThreads({ resourceId: 'ws-kill' }),
+    [],
   );
 });
 
@@ -469,6 +485,15 @@ test('accept is idempotent on candidateId and never produces paid side effects',
   const service = new ProactiveService({
     decisions,
     threads,
+    signals: {
+      listSignals: () => [
+        signal({
+          kind: 'goal_stalled',
+          summary: '目标两周未推进',
+          goalId: 'goal-1',
+        }),
+      ],
+    },
     billingSideEffectPort: {
       reserveCredits: () => {
         billingTouched = true;
@@ -490,9 +515,6 @@ test('accept is idempotent on candidateId and never produces paid side effects',
     candidateId,
     actorId: 'merchant-1',
     now: TS,
-    reason: '目标两周未推进',
-    evidenceRefs: [{ kind: 'goal_stalled', ref: 'goal-1' }],
-    goalId: 'goal-1',
     threadId: 'thread-accept-1',
     runId: 'run-accept-1',
     config: OPEN_GATE,
@@ -515,9 +537,6 @@ test('accept is idempotent on candidateId and never produces paid side effects',
     candidateId,
     actorId: 'merchant-1',
     now: TS2,
-    reason: '目标两周未推进',
-    evidenceRefs: [{ kind: 'goal_stalled', ref: 'goal-1' }],
-    goalId: 'goal-1',
     config: OPEN_GATE,
     // Different thread/run ids — must replay original, not create another turn.
     threadId: 'thread-should-not-create',
@@ -538,8 +557,6 @@ test('accept is idempotent on candidateId and never produces paid side effects',
 test('dismiss then listSuggestions remembers decision after refresh/replay', async () => {
   const threads = new MemoryAgentSessionStore();
   const decisions = new MemoryOpportunityDecisionStore();
-  const service = new ProactiveService({ decisions, threads });
-
   const signals: ProactiveSignal[] = [
     signal({
       kind: 'goal_stalled',
@@ -548,6 +565,12 @@ test('dismiss then listSuggestions remembers decision after refresh/replay', asy
       weight: 2,
     }),
   ];
+  const service = new ProactiveService({
+    decisions,
+    threads,
+    signals: { listSignals: () => signals },
+  });
+
   const config = {
     disableProactiveAgent: false,
     proactiveFeatureOn: true,
@@ -605,6 +628,163 @@ test('kill switch closes suggestions even with allowlist and signals', async () 
   assert.equal(projection.gate.open, false);
   assert.equal(projection.gate.reason, 'kill_switch');
   assert.deepEqual(projection.suggestions, []);
+});
+
+test('accept reprojects the candidate from owned signals and rechecks the kill switch', async () => {
+  const threads = new MemoryAgentSessionStore();
+  const decisions = new MemoryOpportunityDecisionStore();
+  let killed = false;
+  const owned = signal({
+    kind: 'goal_stalled',
+    summary: '真实目标已停滞',
+    goalId: 'goal-1',
+  });
+  const service = new ProactiveService({
+    decisions,
+    threads,
+    signals: { listSignals: () => [owned] },
+    configReader: memoryAdminConfigReader({
+      [PROACTIVE_FEATURE_FLAGS.proactiveOpportunity]: true,
+      [PROACTIVE_KILL_SWITCH_KEYS.disableProactiveAgent]: killed,
+    }),
+  });
+  const projected = await service.listSuggestions({
+    resourceId: 'ws-1',
+    now: TS,
+    config: {
+      disableProactiveAgent: false,
+      proactiveFeatureOn: true,
+      workspaceAllowlisted: true,
+      coverageThreshold: null,
+    },
+  });
+  const candidateId = projected.suggestions[0]!.candidateId;
+
+  killed = true;
+  const killedService = new ProactiveService({
+    decisions,
+    threads,
+    signals: { listSignals: () => [owned] },
+    configReader: {
+      get: async (_scope, _workspaceId, key) => ({
+        value:
+          key === PROACTIVE_KILL_SWITCH_KEYS.disableProactiveAgent
+            ? killed
+            : key === PROACTIVE_FEATURE_FLAGS.proactiveOpportunity
+              ? true
+              : null,
+      }),
+    },
+  });
+  await assert.rejects(
+    () =>
+      killedService.acceptCandidate({
+        resourceId: 'ws-1',
+        candidateId,
+        actorId: 'merchant-1',
+        now: TS,
+      }),
+    /kill_switch/u,
+  );
+});
+
+test('dismiss rejects a candidate absent from the current owned-data projection', async () => {
+  const service = new ProactiveService({
+    decisions: new MemoryOpportunityDecisionStore(),
+    threads: new MemoryAgentSessionStore(),
+    signals: { listSignals: () => [] },
+    configReader: memoryAdminConfigReader({
+      [PROACTIVE_FEATURE_FLAGS.proactiveOpportunity]: true,
+    }),
+  });
+  await assert.rejects(
+    () => service.dismissCandidate({
+      resourceId: 'ws-1',
+      candidateId: 'candidate-not-owned',
+      actorId: 'merchant-1',
+      now: TS,
+    }),
+    /no longer proposed/u,
+  );
+});
+
+test('a service with no owned-data source refuses to decide any candidate', async () => {
+  // Reprojection used to run only when a signal source happened to be
+  // configured — the same shape as the gate bug — so a deployment missing the
+  // source accepted whatever candidateId arrived and opened a real turn for it.
+  const threads = new MemoryAgentSessionStore();
+  const decisions = new MemoryOpportunityDecisionStore();
+  const service = new ProactiveService({
+    decisions,
+    threads,
+    configReader: memoryAdminConfigReader({
+      [PROACTIVE_FEATURE_FLAGS.proactiveOpportunity]: true,
+    }),
+  });
+  const candidateId = buildCandidateId({
+    resourceId: 'ws-no-source',
+    signalKinds: ['goal_stalled'],
+    goalId: 'goal-1',
+    reason: '目标两周未推进',
+  });
+
+  await assert.rejects(
+    () =>
+      service.acceptCandidate({
+        resourceId: 'ws-no-source',
+        candidateId,
+        actorId: 'merchant-1',
+        now: TS,
+        config: OPEN_GATE,
+      }),
+    /owned-data signal source/u,
+  );
+  await assert.rejects(
+    () =>
+      service.dismissCandidate({
+        resourceId: 'ws-no-source',
+        candidateId,
+        actorId: 'merchant-1',
+        now: TS,
+        config: OPEN_GATE,
+      }),
+    /owned-data signal source/u,
+  );
+
+  assert.deepEqual(
+    await decisions.listForResource({ resourceId: 'ws-no-source' }),
+    [],
+  );
+  assert.deepEqual(
+    await threads.listRecentThreads({ resourceId: 'ws-no-source' }),
+    [],
+  );
+});
+
+test('accept rejects a candidate absent from the current owned-data projection', async () => {
+  const threads = new MemoryAgentSessionStore();
+  const decisions = new MemoryOpportunityDecisionStore();
+  const service = new ProactiveService({
+    decisions,
+    threads,
+    signals: { listSignals: () => [] },
+    configReader: memoryAdminConfigReader({
+      [PROACTIVE_FEATURE_FLAGS.proactiveOpportunity]: true,
+    }),
+  });
+
+  await assert.rejects(
+    () =>
+      service.acceptCandidate({
+        resourceId: 'ws-1',
+        candidateId: 'candidate-not-owned',
+        actorId: 'merchant-1',
+        now: TS,
+      }),
+    /no longer proposed/u,
+  );
+  assert.deepEqual(await decisions.listForResource({ resourceId: 'ws-1' }), []);
+  assert.deepEqual(await threads.listRecentThreads({ resourceId: 'ws-1' }), []);
 });
 
 test('campaign weekly slots use single_work confirmation scope (V31-11 contract)', () => {

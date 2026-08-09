@@ -10,6 +10,8 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { Pool } from 'pg';
 
+import type { ProactiveSignal } from '@meiye/contracts';
+
 import { migratePostgresSchema } from '../../postgres-schema-migration.js';
 import { MemoryAgentSessionStore } from '../agent-session/memory-agent-session-store.js';
 import {
@@ -21,6 +23,7 @@ import { GoalService } from './goal-service.js';
 import { MarketingGoalStoreError } from './goal-store.js';
 import { PostgresMarketingGoalStore } from './postgres-goal-store.js';
 import { PostgresOpportunityDecisionStore } from './postgres-opportunity-decision-store.js';
+import { buildCandidateId } from './proactive-pipeline.js';
 import { ProactiveService } from './proactive-service.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
@@ -96,10 +99,34 @@ test(
           error.code === 'GOAL_REVISION_CONFLICT',
       );
 
-      const candidateId = `cand-pg-${suffix}`;
+      // Accept takes no candidate body: the reason and goal it records come
+      // from reprojecting owned signals, so the PG round-trip has to go through
+      // the same source production uses.
+      const ownedSignal = {
+        resourceId,
+        kind: 'goal_stalled',
+        summary: 'PG accept',
+        goalId,
+        weight: 2,
+        observedAt: '2026-08-08T14:30:00.000Z',
+        evidenceRefs: [{ kind: 'goal_stalled', ref: goalId }],
+      } as unknown as ProactiveSignal;
+      const candidateId = buildCandidateId({
+        resourceId,
+        signalKinds: ['goal_stalled'],
+        goalId,
+        reason: 'PG accept',
+      });
+      const openGate = {
+        disableProactiveAgent: false,
+        proactiveFeatureOn: true,
+        workspaceAllowlisted: true,
+        coverageThreshold: null,
+      };
       const proactive = new ProactiveService({
         decisions,
         threads: new MemoryAgentSessionStore(),
+        signals: { listSignals: () => [ownedSignal] },
         defaultHarnessReleaseId: 'release-pg',
       });
 
@@ -108,10 +135,7 @@ test(
         candidateId,
         actorId: 'merchant-pg',
         now: '2026-08-08T15:00:00.000Z',
-        reason: 'PG accept',
-        evidenceRefs: [{ kind: 'goal_stalled', ref: goalId }],
-        threadId: `thread-pg-${suffix}`,
-        runId: `run-pg-${suffix}`,
+        config: openGate,
       });
       assert.equal(first.replayed, false);
       assert.equal(first.paidSideEffect, false);
@@ -121,10 +145,7 @@ test(
         candidateId,
         actorId: 'merchant-pg',
         now: '2026-08-08T16:00:00.000Z',
-        reason: 'PG accept replay',
-        evidenceRefs: [{ kind: 'goal_stalled', ref: goalId }],
-        threadId: `thread-pg-other-${suffix}`,
-        runId: `run-pg-other-${suffix}`,
+        config: openGate,
       });
       assert.equal(second.replayed, true);
       assert.equal(second.threadId, first.threadId);

@@ -6,7 +6,7 @@
  * refresh/replay via OpportunityDecisionStore.
  */
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 import type {
   OpportunityCandidate,
@@ -149,20 +149,62 @@ export class ProactiveService {
   }
 
   /**
+   * Re-derive a candidate from owned data at the decision boundary.
+   *
+   * The candidate body is a projection, never authoritative input: reason,
+   * goal and evidence all come from here, so a stale card the browser still
+   * renders cannot decide anything. A deployment with no signal source can
+   * prove nothing about any candidateId, so it decides nothing.
+   *
+   * This is also where the kill switch is enforced for the decision itself: the
+   * gate that produced the card and the gate that spends it are one resolution,
+   * so ops closing the path closes accept and dismiss with it.
+   */
+  private async requireProposedCandidate(input: {
+    resourceId: string;
+    candidateId: string;
+    now: string;
+    action: 'acceptance' | 'dismissal';
+    config?: ProactiveGateConfig;
+  }): Promise<OpportunityCandidate> {
+    if (!this.deps.signals) {
+      throw new Error(
+        `Proactive candidate ${input.action} requires an owned-data signal source to reproject the candidate.`,
+      );
+    }
+    const projection = await this.listSuggestions({
+      resourceId: input.resourceId,
+      now: input.now,
+      ...(input.config ? { config: input.config } : {}),
+    });
+    if (!projection.gate.open) {
+      throw new Error(
+        `Proactive candidate ${input.action} is disabled: ${projection.gate.reason}.`,
+      );
+    }
+    const current = projection.suggestions.find(
+      (candidate) => candidate.candidateId === input.candidateId,
+    );
+    if (!current) {
+      throw new Error(
+        `Proactive candidate ${input.candidateId} is no longer proposed.`,
+      );
+    }
+    return current;
+  }
+
+  /**
    * Accept a candidate: append decision (idempotent on candidateId) and open
    * one exit-durability Thread turn. Never calls billing / reservation.
+   *
+   * Takes no candidate body — reason, goal and evidence are reprojected from
+   * owned data here, so the caller cannot describe what it is accepting.
    */
   async acceptCandidate(input: {
     resourceId: string;
     candidateId: string;
     actorId: string;
     now: string;
-    reason: string;
-    evidenceRefs: OpportunityCandidate['evidenceRefs'];
-    goalId?: string;
-    signalKinds?: readonly string[];
-    /** When replaying accept, pass the same candidate createdAt. */
-    candidateCreatedAt?: string;
     decisionId?: string;
     threadId?: string;
     runId?: string;
@@ -204,21 +246,24 @@ export class ProactiveService {
       );
     }
 
-    // The kill switch has to hold on the accept path itself, not only on the
-    // list that produced the card. A browser still holding a rendered proposal
-    // from before ops closed the path must not be able to spend it.
-    const gate = await this.resolveGate({
+    const current = await this.requireProposedCandidate({
       resourceId: input.resourceId,
+      candidateId: input.candidateId,
+      now: input.now,
+      action: 'acceptance',
       ...(input.config ? { config: input.config } : {}),
     });
-    if (!gate.open) {
-      throw new Error(
-        `Proactive candidate acceptance is disabled: ${gate.reason}.`,
-      );
-    }
+    const acceptedReason = current.reason;
+    const acceptedGoalId = current.goalId;
 
-    const threadId = input.threadId ?? `thread:proactive:${randomUUID()}`;
-    const runId = input.runId ?? `run:proactive:${randomUUID()}`;
+    // Deterministic per candidate: an accept retry after a crash plans the
+    // same Thread/Run identity instead of reserving a second pair.
+    const acceptanceKey = createHash('sha256')
+      .update(`${input.resourceId}\u0000${input.candidateId}`)
+      .digest('hex')
+      .slice(0, 24);
+    const threadId = input.threadId ?? `thread:proactive:${acceptanceKey}`;
+    const runId = input.runId ?? `run:proactive:${acceptanceKey}`;
     const harnessReleaseId =
       input.harnessReleaseId ??
       this.deps.defaultHarnessReleaseId ??
@@ -299,15 +344,13 @@ export class ProactiveService {
     if (existing?.decision === 'dismissed') {
       return { decision: existing, replayed: true };
     }
-    const gate = await this.resolveGate({
+    await this.requireProposedCandidate({
       resourceId: input.resourceId,
+      candidateId: input.candidateId,
+      now: input.now,
+      action: 'dismissal',
       ...(input.config ? { config: input.config } : {}),
     });
-    if (!gate.open) {
-      throw new Error(
-        `Proactive candidate dismissal is disabled: ${gate.reason}.`,
-      );
-    }
     return this.deps.decisions.append({
       decisionId: input.decisionId ?? `odec:${randomUUID()}`,
       candidateId: input.candidateId,
