@@ -55,3 +55,38 @@ export function projectCampaignWeeklySlots(input: {
   }
   return slots;
 }
+
+export interface CampaignWorkSubmissionPort<TSubmission, TResult> {
+  submitCampaignWork(input: {
+    submission: TSubmission;
+    campaignPlanRef: AgentRevisionRef;
+    workOrdinal: number;
+  }): Promise<TResult>;
+}
+
+/** Production producer: schedule slots become distinct paid Work submissions. */
+export class CampaignPaidWorkProducer<TSubmission, TResult> {
+  constructor(
+    private readonly submissions: CampaignWorkSubmissionPort<
+      TSubmission,
+      TResult
+    >,
+  ) {}
+
+  async produce(input: {
+    slots: readonly CampaignWeeklySlot[];
+    buildSubmission(slot: CampaignWeeklySlot): TSubmission;
+  }): Promise<TResult[]> {
+    const results: TResult[] = [];
+    for (const slot of input.slots) {
+      results.push(
+        await this.submissions.submitCampaignWork({
+          submission: input.buildSubmission(slot),
+          campaignPlanRef: slot.campaignPlanRef,
+          workOrdinal: slot.workOrdinal,
+        }),
+      );
+    }
+    return results;
+  }
+}

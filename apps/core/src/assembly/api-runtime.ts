@@ -323,6 +323,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     agentSessionStore,
     sessionAgentHarness,
     executionConfirmationService,
+    executionConfirmationAuthority,
+    executionConfirmationAuthorityStore,
     sessionRetrievalExperiencePort,
     marketingPlanStore,
     planCompiler,
@@ -398,6 +400,10 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       contextBundleRepository
     )
   );
+  // V31-12/V31-14: rights and fact heads come from one authoritative,
+  // fail-closed adapter (createAuthoritativeExecutionPlanLiveFactsPorts).
+  // The earlier plan-assetUsage / echoing resolvers were removed so a frozen
+  // ref can never be reported back as its own live head.
   // V31-18: production AgentMemoryPlatform — Postgres injection receipts + admin-config kill switches.
   const agentMemoryPlatform = new AgentMemoryPlatform(
     reuseMemoryService,
@@ -1072,7 +1078,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           grantLotLedger,
           creditLedger
         )
-      )
+      ),
+      { creditLedger }
     );
     await creationSubmissionStore.migrate();
     const structuredNodeRunnerFactory = {
@@ -1242,7 +1249,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
             },
             ...authoritative,
           })({
-            workflowId: String(request.workflowRevision),
+            workflowId: request.workflowRevision
+              ? String(request.workflowRevision)
+              : '',
             request,
           });
         },
@@ -1407,8 +1416,15 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         // same credit operation id makes execution-time settlement a no-op
         // (U8=A — reserve before confirm, single debit).
         executionConfirmation: {
-          getDecision: (requestId) =>
-            executionConfirmationService.getDecision(requestId),
+          createRequest: (input) =>
+            executionConfirmationAuthority.createRequest(input),
+          putCurrent: (input) =>
+            executionConfirmationAuthorityStore.putCurrent(input),
+          getDecisionForWorkspace: (workspaceId, requestId) =>
+            executionConfirmationService.getDecisionForWorkspace(
+              workspaceId,
+              requestId,
+            ),
         },
         billing: {
           commit: (input) => harnessBilling.commit(input),
@@ -1453,6 +1469,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
             ...authoritative,
           })({ workflowId, request });
         },
+        refreshExecutionPlanLiveBindings: (input) =>
+          planCompiler.refreshLiveBindings(input),
         // V31-14: force_legacy_five_stage kill switch (landed).
         async resolveForceLegacyFiveStage() {
           const state = await opsConsoleStore.getKillSwitch(
@@ -1573,7 +1591,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         executionPlanAdmissionService,
         {
           createRequest: (input) =>
-            executionConfirmationService.createRequest(input),
+            executionConfirmationAuthority.createRequest(input),
+          putCurrent: (input) =>
+            executionConfirmationAuthorityStore.putCurrent(input),
         },
       ),
       harnessDecisions,
@@ -1709,9 +1729,13 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       productQuoteService,
       composerPlanSession,
       {
-        getDecision: (requestId) =>
-          executionConfirmationService.getDecision(requestId),
-        decide: (input) => executionConfirmationService.decide(input),
+        getDecision: (workspaceId, requestId) =>
+          executionConfirmationService.getDecisionForWorkspace(
+            workspaceId,
+            requestId,
+          ),
+        decide: (input) =>
+          executionConfirmationService.decideForWorkspace(input),
       },
     );
     const pendingStartCoordinator = composerSubmissionCoordinator;
@@ -2052,7 +2076,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     executionConfirmation: sessionAgentHarness
       ? {
           create: (input) =>
-            sessionAgentHarness.createExecutionConfirmation(input),
+            executionConfirmationAuthority.createRequest(input),
           decide: (input) =>
             sessionAgentHarness.decideExecutionConfirmation(input),
           expire: (input) =>

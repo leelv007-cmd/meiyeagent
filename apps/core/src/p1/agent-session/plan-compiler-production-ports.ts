@@ -38,6 +38,19 @@ export type ProductionPlanRightsResolver = {
   }>;
 };
 
+export function planCompilerRightsRevisionId(input: {
+  workspaceId: string;
+  knownAssetIds: readonly string[];
+  unauthorizedAssetIds: readonly string[];
+}) {
+  const rightsFingerprint = fingerprintValue({
+    workspaceId: input.workspaceId,
+    known: input.knownAssetIds,
+    unauthorized: input.unauthorizedAssetIds,
+  }).slice(0, 16);
+  return `rights:${input.workspaceId}:${rightsFingerprint}`;
+}
+
 export type ProductionPlanModelCatalog = {
   getCatalog(
     workspaceId: string,
@@ -64,12 +77,38 @@ export function createProductionPlanCompilerPorts(deps: {
   catalogRevisionId?: string;
   clock?: () => Date;
 }): PlanCompilerPorts {
+  const clock = deps.clock ?? (() => new Date());
   const quote: PlanCompilerQuotePort = {
     async resolveQuote(input) {
-      if (!input.quoteResolutionHint) {
-        throw new Error('Plan compile requires a ProductQuote authority snapshot.');
-      }
-      return input.quoteResolutionHint;
+      // An exact ProductQuote authority snapshot always wins: it carries the
+      // admitted validity window the confirmation fence re-checks.
+      if (input.quoteResolutionHint) return input.quoteResolutionHint;
+      // Server-owned plan quote authority: fingerprint deliverables + release.
+      // Amounts stay in billing domain; compiler only stores quoteRef.
+      const revision = fingerprintValue({
+        workspaceId: input.workspaceId,
+        planId: input.planId,
+        planRevision: input.planRevision,
+        deliverables: input.deliverables,
+        harnessReleaseId: input.harnessReleaseId,
+      }).slice(0, 24);
+      return {
+        quoteRef: input.billingQuoteRef ?? {
+          id: `plan-quote:${input.planId}`,
+          revision,
+        },
+        expiresAt: new Date(clock().getTime() + 60 * 60 * 1000).toISOString(),
+        summary: {
+          source: input.billingQuoteRef
+            ? 'admitted_product_quote'
+            : 'plan_compiler_quote_authority',
+          deliverableKinds: input.deliverables.map((item) => item.kind),
+          quantity: input.deliverables.reduce(
+            (sum, item) => sum + item.quantity,
+            0,
+          ),
+        },
+      };
     },
   };
 
@@ -103,11 +142,7 @@ export function createProductionPlanCompilerPorts(deps: {
       const knownAssetIds = resolved.knownAssetIds ?? [];
       const unauthorizedAssetIds = resolved.unauthorizedAssetIds;
 
-      const rightsFingerprint = fingerprintValue({
-        workspaceId: input.workspaceId,
-        known: knownAssetIds,
-        unauthorized: unauthorizedAssetIds,
-      }).slice(0, 16);
+
       return {
         rightsSummary: {
           source: 'content_package_rights',
@@ -117,7 +152,11 @@ export function createProductionPlanCompilerPorts(deps: {
         },
         rightsRevisionIds: [
           authoritativeRevision ??
-            `rights:${input.workspaceId}:${rightsFingerprint}`,
+            planCompilerRightsRevisionId({
+              workspaceId: input.workspaceId,
+              knownAssetIds,
+              unauthorizedAssetIds,
+            }),
         ],
         assetUsages: knownAssetIds.map((assetRef) => ({ assetRef })),
         factUsages: input.factIntentions.map((factRef) => ({ factRef })),

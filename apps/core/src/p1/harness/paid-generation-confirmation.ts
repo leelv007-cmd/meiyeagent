@@ -18,14 +18,31 @@ import {
   type StructuredDecisionInput,
 } from '@meiye/contracts';
 
+import type { CreateExecutionConfirmationAuthorityInput } from '../agent-session/execution-confirmation-authority.js';
+import type {
+  ConfirmationAuthorityStore,
+} from '../agent-session/execution-confirmation-authority-store.js';
+import type { CreateExecutionConfirmationResult } from '../agent-session/execution-confirmation-service.js';
+import type {
+  RefreshPlanLiveBindingsInput,
+  RefreshPlanLiveBindingsResult,
+} from '../agent-session/plan-compiler.js';
 import { executionConfirmationRequestId } from './execution-confirmation-id.js';
-import { buildExecutionPlanSnapshot } from './execution-plan-admission.js';
+import {
+  buildExecutionPlanSnapshot,
+  evaluateExecutionPlanStaleness,
+  freezeExecutionPlanContent,
+  type SnapshotLiveFacts,
+} from './execution-plan-admission.js';
 import {
   merchantPaidGenerationConfirmationAccepted,
   merchantPaidGenerationConfirmationQuestion,
   merchantPaidGenerationConfirmationReason,
 } from './merchant-delivery-language.js';
-import type { HarnessWorkflowInput } from './task-admission.js';
+import {
+  executionPlanAdmissionWorkflowId,
+  type HarnessWorkflowInput,
+} from './task-admission.js';
 
 export type PaidGenerationNoteOutline = {
   pageCount: number;
@@ -100,6 +117,7 @@ export type ConfirmPaidGenerationProgressEvent = {
 export type ConfirmPaidGenerationExecutionInput = {
   workflowId: string;
   request: HarnessWorkflowInput;
+  onActiveRequest?: (request: HarnessWorkflowInput) => void;
   reportProgress: (
     event: ConfirmPaidGenerationProgressEvent,
   ) => Promise<void>;
@@ -118,13 +136,27 @@ export type ConfirmPaidGenerationExecutionInput = {
     command: StructuredDecisionInput,
   ) => Promise<HarnessWorkflowInput>;
   getExecutionConfirmationDecision?: (
+    workspaceId: string,
     requestId: string,
   ) => Promise<PlanConfirmationDecision | null>;
   admitExecutionPlanSnapshot?: (input: {
     workflowId: string;
     workspaceId: string;
     snapshot: ExecutionPlanSnapshot;
+    live?: SnapshotLiveFacts;
   }) => Promise<ExecutionPlanSnapshot>;
+  resolveExecutionPlanLiveFacts?: (input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    snapshot: ExecutionPlanSnapshot;
+  }) => Promise<SnapshotLiveFacts | undefined>;
+  refreshExecutionPlanLiveBindings?: (
+    input: RefreshPlanLiveBindingsInput,
+  ) => Promise<RefreshPlanLiveBindingsResult>;
+  createExecutionConfirmationRequest?: (
+    input: CreateExecutionConfirmationAuthorityInput,
+  ) => Promise<CreateExecutionConfirmationResult>;
+  putExecutionConfirmationAuthority?: ConfirmationAuthorityStore['putCurrent'];
 };
 
 /**
@@ -145,19 +177,18 @@ export async function confirmPaidGenerationExecution(
     if (!snapshot) {
       return request;
     }
-    if (request.pendingExecutionPlanSnapshot) {
-      const existingDecision = await input.getExecutionConfirmationDecision?.(
-        executionConfirmationRequestId(input.workflowId),
-      );
-      if (existingDecision?.decision === 'confirmed') {
-        return admitConfirmedExecutionPlan(input, request);
-      }
-    }
+    const requestId =
+      request.executionConfirmationRequestId ??
+      executionConfirmationRequestId(input.workflowId);
+    const diffFields = request.executionConfirmationDiffFields ?? [];
     const question = questionCardSchema.parse({
-      questionId: executionConfirmationRequestId(input.workflowId),
+      questionId: requestId,
       workflowId: input.workflowId,
       workflowRevision: request.workflowRevision,
-      question: merchantPaidGenerationConfirmationQuestion(),
+      question:
+        diffFields.length > 0
+          ? `${merchantPaidGenerationConfirmationQuestion()}（方案已变化：${diffFields.join(', ')}，请重新确认）`
+          : merchantPaidGenerationConfirmationQuestion(),
       options: [
         { id: 'approved', label: '确认执行' },
         { id: 'rejected', label: '暂不执行' },
@@ -171,6 +202,12 @@ export async function confirmPaidGenerationExecution(
       executionConfirmationAuthority: {
         kind: 'external_action',
         revision: 'execution-external-action/v1',
+        ...(request.executionConfirmationReservedCredits
+          ? {
+              reservedCredits:
+                request.executionConfirmationReservedCredits,
+            }
+          : {}),
         ...(input.noteOutline ? { outline: input.noteOutline } : {}),
       },
       scope: 'current_task',
@@ -193,13 +230,19 @@ export async function confirmPaidGenerationExecution(
         state: 'success',
         message: merchantPaidGenerationConfirmationAccepted(),
       });
-      return admitConfirmedExecutionPlan(input, request);
+      if (!request.pendingExecutionPlanSnapshot) return request;
+      const confirmed = await admitConfirmedExecutionPlan(input, request);
+      if (confirmed.executionPlanSnapshot) return confirmed;
+      request = confirmed;
+      input.onActiveRequest?.(request);
+      continue;
     }
     request = await input.applyCurrentTaskDecision(
       input.workflowId,
       request,
       command,
     );
+    input.onActiveRequest?.(request);
   }
 }
 
@@ -217,8 +260,13 @@ async function admitConfirmedExecutionPlan(
       'Paid execution cannot start without confirmation decision and snapshot admission ports.',
     );
   }
-  const requestId = executionConfirmationRequestId(input.workflowId);
-  const decision = await input.getExecutionConfirmationDecision(requestId);
+  const requestId =
+    request.executionConfirmationRequestId ??
+    executionConfirmationRequestId(input.workflowId);
+  const decision = await input.getExecutionConfirmationDecision(
+    request.workspaceId,
+    requestId,
+  );
   if (!decision || decision.decision !== 'confirmed') {
     throw new Error(
       `Paid execution confirmation ${requestId} has no immutable confirmed decision.`,
@@ -229,10 +277,110 @@ async function admitConfirmedExecutionPlan(
     snapshotHash: pending.snapshotHash,
     confirmationDecisionRef: decision.decisionId,
   });
-  const admitted = await input.admitExecutionPlanSnapshot({
+  const live = await input.resolveExecutionPlanLiveFacts?.({
     workflowId: input.workflowId,
+    request,
+    snapshot,
+  });
+  if (live) {
+    if (live.quoteMissing === true) {
+      throw new Error('Paid execution quote is missing after confirmation.');
+    }
+    const staleness = evaluateExecutionPlanStaleness({ snapshot, live });
+    if (staleness.status === 'stale') {
+      if (live.rightsRevoked === true) {
+        throw new Error('Paid execution rights were revoked after confirmation.');
+      }
+      if (!input.refreshExecutionPlanLiveBindings) {
+        throw new Error(
+          'Paid execution cannot re-confirm drift without a durable plan revision writer.',
+        );
+      }
+      const refreshedPlan = await input.refreshExecutionPlanLiveBindings({
+        planId: pending.content.planId,
+        expectedRevision: pending.content.planRevision,
+        quoteRef:
+          live.quoteRevision === undefined
+            ? pending.content.quoteRef
+            : { ...pending.content.quoteRef, revision: live.quoteRevision },
+        rightsRevisionRefs:
+          live.rightsRevisionRefs === undefined
+            ? pending.content.rightsRevisionRefs
+            : [...live.rightsRevisionRefs],
+        factRevisionRefs:
+          live.factRevisionRefs === undefined
+            ? pending.content.factRevisionRefs
+            : [...live.factRevisionRefs],
+        now: decision.decidedAt,
+      });
+      const refreshed = freezeExecutionPlanContent({
+        ...pending.content,
+        planRevision: refreshedPlan.revision.revision,
+        quoteRef: refreshedPlan.revision.quoteRef,
+        rightsRevisionRefs: [
+          ...refreshedPlan.revision.boundRevisions.rightsRevisionIds,
+        ],
+        factRevisionRefs: [...refreshedPlan.factRevisionRefs],
+      });
+      if (refreshed.snapshotHash === pending.snapshotHash) {
+        throw new Error(
+          'Paid execution live facts drift requires a refreshed plan before re-confirmation.',
+        );
+      }
+      if (!input.createExecutionConfirmationRequest) {
+        throw new Error(
+          'Paid execution cannot re-confirm drift without the confirmation writer.',
+        );
+      }
+      if (!input.putExecutionConfirmationAuthority) {
+        throw new Error(
+          'Paid execution cannot re-confirm drift without the pending-plan authority.',
+        );
+      }
+      await input.putExecutionConfirmationAuthority({
+        workflowId: input.workflowId,
+        workspaceId: request.workspaceId,
+        planId: refreshed.content.planId,
+        planRevision: refreshed.content.planRevision,
+        snapshotHash: refreshed.snapshotHash,
+        quoteRef: refreshed.content.quoteRef,
+        rightsRevisionRefs: [...refreshed.content.rightsRevisionRefs],
+        factRevisionRefs: [...refreshed.content.factRevisionRefs],
+        frozenAt: decision.decidedAt,
+        reservationAttempt: 'successor',
+        predecessorRequestId: requestId,
+        ...(request.executionConfirmationContext
+          ? {
+              executionConfirmationContext:
+                request.executionConfirmationContext,
+            }
+          : {}),
+      });
+      const reconfirmation = await input.createExecutionConfirmationRequest({
+        actorId: request.actorId,
+        workspaceId: request.workspaceId,
+        workflowId: input.workflowId,
+      });
+      const reconfirmationRequestId =
+        reconfirmation.stored.request.requestId;
+      return {
+        ...request,
+        pendingExecutionPlanSnapshot: refreshed,
+        executionConfirmationRequestId: reconfirmationRequestId,
+        executionConfirmationReservationIdempotencyKey:
+          reconfirmation.stored.request.reservationIdempotencyKey,
+        executionConfirmationReservedCredits: reconfirmation.reservedCredits,
+        executionConfirmationDiffFields: Object.keys(staleness.diff),
+      };
+    }
+  }
+  const admitted = await input.admitExecutionPlanSnapshot({
+    workflowId: executionPlanAdmissionWorkflowId(input.workflowId, {
+      executionPlanSnapshot: snapshot,
+    }),
     workspaceId: request.workspaceId,
     snapshot,
+    ...(live ? { live } : {}),
   });
   return {
     ...request,

@@ -313,6 +313,20 @@ test('legacy durable task uses independent replay branch; incompatible layout fa
   );
 });
 
+test('a paid pending freeze is never classified as the legacy LLM replay branch', () => {
+  const pendingExecutionPlanSnapshot = freezeExecutionPlanContent(
+    frozenContent({ approvalBasis: 'merchant_confirmed' }),
+  );
+
+  assert.deepEqual(
+    resolveDurableReplayBranch({ pendingExecutionPlanSnapshot }),
+    {
+      branch: 'pending_confirmation',
+      snapshotHash: pendingExecutionPlanSnapshot.snapshotHash,
+    },
+  );
+});
+
 test('evaluateExecutionPlanStaleness projects quote/rights/fact diffs', () => {
   const snapshot = buildExecutionPlanSnapshot({
     content: frozenContent({
@@ -341,6 +355,15 @@ test('evaluateExecutionPlanStaleness projects quote/rights/fact diffs', () => {
     assert.ok(stale.diff.rightsRevisionRefs);
     assert.ok(stale.diff.factRevisionRefs);
   }
+
+  const missingQuote = evaluateExecutionPlanStaleness({
+    snapshot,
+    live: { quoteMissing: true },
+  });
+  assert.deepEqual(missingQuote, {
+    status: 'stale',
+    diff: { quoteMissing: true },
+  });
 });
 
 test('merchant_confirmed requires decisionRef; policy_exempt forbids it at admit', async () => {

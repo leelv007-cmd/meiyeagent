@@ -285,6 +285,8 @@ export type ExecutionPlanSnapshotStore = {
 export type SnapshotLiveFacts = {
   /** Live quote revision head (number or opaque string, matches AgentRevisionRef). */
   quoteRevision?: number | string;
+  /** The frozen quote no longer has an authoritative live head. */
+  quoteMissing?: boolean;
   rightsRevisionRefs?: readonly string[];
   factRevisionRefs?: readonly string[];
   /** When true, rights fence fails closed (revoked / missing). */
@@ -295,6 +297,7 @@ export type SnapshotLiveFacts = {
 
 export type SnapshotStaleDiff = {
   quote?: { frozen: number | string; live: number | string };
+  quoteMissing?: true;
   rightsRevisionRefs?: {
     frozen: readonly string[];
     live: readonly string[];
@@ -341,6 +344,9 @@ export function evaluateExecutionPlanStaleness(input: {
       frozen: snapshot.quoteRef.revision,
       live: live.quoteRevision,
     };
+  }
+  if (live.quoteMissing === true) {
+    diff.quoteMissing = true;
   }
   if (
     live.rightsRevisionRefs !== undefined &&
@@ -438,6 +444,10 @@ export type DurableReplayBranch =
       snapshot: ExecutionPlanSnapshot;
     }
   | {
+      branch: 'pending_confirmation';
+      snapshotHash: string;
+    }
+  | {
       branch: 'legacy';
       reason: 'no_snapshot';
     };
@@ -447,7 +457,10 @@ export type DurableReplayBranch =
  * five-stage replay. Incompatible partial layouts fail closed — no dual-write.
  */
 export function resolveDurableReplayBranch(
-  request: Pick<HarnessWorkflowInput, 'executionPlanSnapshot'> & {
+  request: Pick<
+    HarnessWorkflowInput,
+    'executionPlanSnapshot' | 'pendingExecutionPlanSnapshot'
+  > & {
     /** Corrupt / half-migrated marker: present but not a valid snapshot. */
     executionPlanSnapshotRaw?: unknown;
   },
@@ -480,6 +493,12 @@ export function resolveDurableReplayBranch(
     return {
       branch: 'execution_plan_snapshot',
       snapshot: parsed.data,
+    };
+  }
+  if (request.pendingExecutionPlanSnapshot) {
+    return {
+      branch: 'pending_confirmation',
+      snapshotHash: request.pendingExecutionPlanSnapshot.snapshotHash,
     };
   }
   return { branch: 'legacy', reason: 'no_snapshot' };

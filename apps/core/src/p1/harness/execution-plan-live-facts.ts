@@ -218,6 +218,8 @@ export type ExecutionPlanLiveFactsPorts = {
   resolveRightsHeads?(input: {
     workspaceId: string;
     rightsRevisionRefs: readonly string[];
+    /** Frozen plan coordinate, for adapters that re-read the plan revision. */
+    snapshot?: ExecutionPlanSnapshot;
   }): Promise<readonly RightsLiveHead[]>;
   resolveQuoteHead?(input: {
     workspaceId: string;
@@ -246,10 +248,12 @@ export async function resolveExecutionPlanLiveFactsFromPorts(input: {
         .resolveQuoteHead({ workspaceId, quoteId: snapshot.quoteRef.id })
         .catch(() => null)
     : null;
-  live.quoteRevision =
-    quote?.quoteId === snapshot.quoteRef.id
-      ? quote.revision
-      : `unresolved:${snapshot.quoteRef.id}`;
+  if (quote && quote.quoteId === snapshot.quoteRef.id) {
+    live.quoteRevision = quote.revision;
+  } else {
+    live.quoteRevision = `unresolved:${snapshot.quoteRef.id}`;
+    live.quoteMissing = true;
+  }
 
   if (snapshot.rightsRevisionRefs.length > 0) {
     const heads = ports.resolveRightsHeads
@@ -257,6 +261,7 @@ export async function resolveExecutionPlanLiveFactsFromPorts(input: {
           .resolveRightsHeads({
             workspaceId,
             rightsRevisionRefs: snapshot.rightsRevisionRefs,
+            snapshot,
           })
           .catch(() => [])
       : [];

@@ -7,7 +7,6 @@ import {
 	pickComposerSubmissionSignedFields,
 	type ContentPackage,
 	type DiagnosticRun,
-	type PlanConfirmationDecision,
 } from "@meiye/contracts";
 
 import type { DiagnosticRepository } from "../../diagnostics/repository.js";
@@ -21,6 +20,10 @@ import {
 import { toHarnessWorkflowInput } from "./creation-stage-port.js";
 import { ProductQuoteService } from "../product-billing/quote-service.js";
 import { triggersPaidMediaExecution } from "../harness/workflow-core.js";
+import {
+	CampaignPaidWorkProducer,
+	projectCampaignWeeklySlots,
+} from "../goal-proactive/campaign-weekly-schedule.js";
 import type { ComposerSubmissionBody } from "./creation-execution-snapshot.js";
 import {
 	CreationSubmissionCoordinator,
@@ -819,6 +822,8 @@ test("legacy Harness task admission stays retired without a configured Harness s
 
 class MemorySubmissionStore implements CreationSubmissionStore {
 	private readonly claims = new Map<string, CreationSubmissionStoreClaim>();
+	readonly freezePresentAtClaim = new Map<string, boolean>();
+	readonly confirmationStateAtClaim = new Map<string, string | undefined>();
 	private readonly harnessStarts = new Map<
 		string,
 		{
@@ -832,6 +837,10 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 	reservedUnits(workspaceId: string, idempotencyKey: string) {
 		return this.claims.get(`${workspaceId}:${idempotencyKey}`)?.submission
 			.usageReservation.units;
+	}
+
+	claimedSubmission(workspaceId: string, idempotencyKey: string) {
+		return this.claims.get(`${workspaceId}:${idempotencyKey}`)?.submission;
 	}
 
 	async readReceipt(input: {
@@ -852,17 +861,16 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		};
 	}
 
-	async readByTask(input: { workspaceId: string; taskId: string }) {
-		const claim = [...this.claims.values()].find(
-			(item) =>
-				item.workspaceId === input.workspaceId &&
-				item.submission.task.id === input.taskId,
-		);
-		return claim ? structuredClone(claim.submission) : null;
-	}
-
 	async claim(input: CreationSubmissionStoreClaim) {
 		const key = `${input.workspaceId}:${input.idempotencyKey}`;
+		this.freezePresentAtClaim.set(
+			key,
+			input.submission.executionPlanFreeze !== undefined,
+		);
+		this.confirmationStateAtClaim.set(
+			key,
+			input.submission.confirmationDispatch?.state,
+		);
 		const existing = this.claims.get(key);
 		if (!existing) {
 			this.claims.set(key, structuredClone(input));
@@ -885,6 +893,7 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		workspaceId: string;
 		submissionId: string;
 		freeze: CreationSubmissionRecord["executionPlanFreeze"];
+		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
 	}) {
 		const claim = [...this.claims.values()].find(
 			(candidate) =>
@@ -893,6 +902,9 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		);
 		if (!claim || !input.freeze) throw new Error("Submission freeze target missing.");
 		claim.submission.executionPlanFreeze = structuredClone(input.freeze);
+		claim.submission.confirmationDispatch = structuredClone(
+			input.confirmationDispatch,
+		);
 		return structuredClone(claim.submission);
 	}
 
@@ -924,6 +936,7 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		leaseId: string;
 		workspaceId: string;
 		submissionId: string;
+		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
 	}) {
 		const current = this.harnessStarts.get(input.submissionId);
 		if (!current) {
@@ -938,6 +951,39 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 			attempts: current.attempts,
 			state: "started",
 		});
+		const claim = [...this.claims.values()].find(
+			(candidate) =>
+				candidate.workspaceId === input.workspaceId &&
+				candidate.submission.snapshot.id === input.submissionId,
+		);
+		if (claim?.submission.confirmationDispatch) {
+			claim.submission.confirmationDispatch = {
+				...(input.confirmationDispatch ??
+					claim.submission.confirmationDispatch),
+				state: "dispatched",
+			};
+		}
+	}
+
+	async markHarnessStartDispatched(input: {
+		leaseId: string;
+		workspaceId: string;
+		submissionId: string;
+	}) {
+		const current = this.harnessStarts.get(input.submissionId);
+		if (current?.state !== "starting" || current.leaseId !== input.leaseId) {
+			throw new Error(`Stale harness lease ${input.leaseId}`);
+		}
+		const claim = [...this.claims.values()].find(
+			(candidate) =>
+				candidate.workspaceId === input.workspaceId &&
+				candidate.submission.snapshot.id === input.submissionId,
+		);
+		if (!claim) throw new Error("Submission dispatch target missing.");
+		if (claim.submission.confirmationDispatch) {
+			claim.submission.confirmationDispatch.state = "dispatched";
+		}
+		return structuredClone(claim.submission);
 	}
 
 	async releaseHarnessStart(input: {
@@ -992,6 +1038,9 @@ class RecordingHarnessStarter implements CreationSubmissionHarnessStarter {
 
 	async start(input: Parameters<CreationSubmissionHarnessStarter["start"]>[0]) {
 		this.starts.push(structuredClone(input));
+		return {
+			executionConfirmationRequestId: `confirmation:authority:${input.task.id}`,
+		};
 	}
 }
 
@@ -1031,91 +1080,6 @@ test("Composer returns authoritative Agent binding and treats the Thread hint ou
 	assert.deepEqual(continuationHints, ["thread-browser-a", "thread-browser-b"]);
 });
 
-test("paid Composer plan waits until exact explicit start before dispatching Make", async () => {
-	const submissions = new MemorySubmissionStore();
-	const harness = new RecordingHarnessStarter();
-	let completed = 0;
-	let revised = 0;
-	let confirmationDecisions = 0;
-	let immutableDecision: PlanConfirmationDecision | null = null;
-	const coordinator = new CreationSubmissionCoordinator(
-		submissions,
-		harness,
-		fixedIds(),
-		fixedAdmission(),
-		undefined,
-		{
-			async prepare(input) {
-				input.submission.executionPlanFreeze = {
-					approvalBasis: "merchant_confirmed",
-				} as never;
-				return { threadId: "thread-wait", runId: "run-wait", makeReady: false };
-			},
-			async completeExplicitStart(input) {
-				assert.equal(input.planRevision, 2);
-				return { threadId: "thread-wait", runId: "run-wait", makeReady: true };
-			},
-			async markExplicitStartCompleted() {
-				completed += 1;
-			},
-			async revisePrepared(input) {
-				assert.equal(input.planRevision, 1);
-				assert.equal(input.merchantInstruction, "减到 4 页");
-				revised += 1;
-				return { threadId: "thread-wait", runId: "run-wait", makeReady: false };
-			},
-		},
-		{
-			async getDecision() {
-				return immutableDecision;
-			},
-			async decide(input) {
-				assert.equal(input.requestId, `confirmation:${createdTaskId}`);
-				confirmationDecisions += 1;
-				immutableDecision = {
-						schemaVersion: "plan-confirmation-decision/v1",
-						...input,
-					} as PlanConfirmationDecision;
-				return { decision: immutableDecision };
-			},
-		},
-	);
-	let createdTaskId = "";
-	const created = await coordinator.submit({
-		...submissionPayload(),
-		actorId: "owner-1",
-		workspaceId: "workspace-1",
-	});
-	createdTaskId = created.task.id;
-	assert.equal(created.makeReady, false);
-	assert.equal(harness.starts.length, 0);
-	await coordinator.revisePrepared({
-		workspaceId: "workspace-1",
-		taskId: created.task.id,
-		planRevision: 1,
-		merchantInstruction: "减到 4 页",
-	});
-	assert.equal(revised, 1);
-	assert.equal(harness.starts.length, 0);
-
-	const started = await coordinator.startPrepared({
-		workspaceId: "workspace-1",
-		taskId: created.task.id,
-		planRevision: 2,
-	});
-	assert.equal(started.makeReady, true);
-	assert.equal(harness.starts.length, 1);
-	assert.equal(confirmationDecisions, 1);
-	assert.equal(completed, 1);
-	await coordinator.startPrepared({
-		workspaceId: "workspace-1",
-		taskId: created.task.id,
-		planRevision: 2,
-	});
-	assert.equal(harness.starts.length, 1);
-	assert.equal(confirmationDecisions, 1);
-});
-
 test("a failed Harness start releases the same submission for an idempotent retry", async () => {
 	const submissions = new MemorySubmissionStore();
 	let starts = 0;
@@ -1142,6 +1106,147 @@ test("a failed Harness start releases the same submission for an idempotent retr
 	assert.equal(replayed.replayed, true);
 	assert.equal(starts, 2);
 	assert.equal(submissions.count(), 1);
+});
+
+test("the compiled freeze is durable in the claim transaction before a paid Harness start", async () => {
+	const submissions = new MemorySubmissionStore();
+	let started = false;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		{
+			async start(submission) {
+				started = true;
+				assert.ok(submission.executionPlanFreeze);
+				assert.equal(submission.confirmationDispatch?.state, "dispatched");
+				assert.equal(submission.confirmationDispatch?.requestId, undefined);
+				return {
+					executionConfirmationRequestId:
+						"confirmation:authority-digest-freeze",
+				};
+			},
+		},
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare({ submission }) {
+				submission.executionPlanFreeze = recoveryExecutionPlanFreeze(submission);
+				return { threadId: "thread-freeze", runId: "run-freeze" };
+			},
+		},
+	);
+	const command: Parameters<CreationSubmissionCoordinator["submit"]>[0] = {
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	};
+
+	await coordinator.submit(command);
+
+	assert.equal(started, true);
+	assert.ok(
+		submissions.claimedSubmission("workspace-1", command.idempotencyKey)
+			?.executionPlanFreeze,
+		"claim must already carry the freeze; no post-claim patch window",
+	);
+	assert.equal(
+		submissions.freezePresentAtClaim.get(
+			`workspace-1:${command.idempotencyKey}`,
+		),
+		true,
+	);
+	assert.deepEqual(
+		submissions.claimedSubmission("workspace-1", command.idempotencyKey)
+			?.confirmationDispatch,
+		{
+			requestId: "confirmation:authority-digest-freeze",
+			state: "dispatched",
+			expiresAt: "2026-07-24T09:00:00.000Z",
+		},
+	);
+	assert.equal(
+		submissions.confirmationStateAtClaim.get(
+			`workspace-1:${command.idempotencyKey}`,
+		),
+		"pending",
+	);
+});
+
+test("the Campaign producer submits the second paid Work with its own U7 context", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	let id = 0;
+	const baseAdmission = fixedAdmission();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		{
+			createId(prefix) {
+				id += 1;
+				return `${prefix}-${id}`;
+			},
+			now: fixedIds().now,
+		},
+		{
+			async admit(input) {
+				const admitted = await baseAdmission.admit(input);
+				return {
+					...admitted,
+					taskId: `campaign-task-${input.idempotencyKey}`,
+					creditCost: 4,
+				};
+			},
+		},
+		undefined,
+		{
+			async prepare({ submission }) {
+				submission.executionPlanFreeze = recoveryExecutionPlanFreeze(submission);
+				return {
+					threadId: `thread-${submission.task.id}`,
+					runId: `run-${submission.task.id}`,
+				};
+			},
+		},
+	);
+	const producer = new CampaignPaidWorkProducer(coordinator);
+	const slots = projectCampaignWeeklySlots({
+		campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
+		horizonFrom: "2026-08-10T00:00:00.000Z",
+		horizonUntil: "2026-08-24T00:00:00.000Z",
+	});
+
+	await producer.produce({
+		slots,
+		buildSubmission(slot) {
+			return {
+				...submissionPayload(),
+				actorId: "owner-1",
+				workspaceId: "workspace-1",
+				idempotencyKey: `campaign-work-${slot.workOrdinal}`,
+			};
+		},
+	});
+
+	assert.deepEqual(
+		starter.starts.map((submission) => ({
+			requestId: submission.confirmationDispatch?.requestId,
+			...submission.executionConfirmationContext,
+		})),
+		[
+			{
+				requestId: undefined,
+				campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
+				workOrdinal: 1,
+				approvalScope: "single_work",
+			},
+			{
+				requestId: undefined,
+				campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
+				workOrdinal: 2,
+				approvalScope: "single_work",
+			},
+		],
+	);
 });
 
 test("a definitive pre-admission Harness rejection becomes terminal", async () => {
@@ -2218,6 +2323,48 @@ function submissionPayload(): ComposerSubmissionBody {
 			contentPackage: { id: "content-source-1", revision: "content-r3" },
 		},
 		surface: { id: "surface-composer", revision: "surface-r2" },
+	};
+}
+
+function recoveryExecutionPlanFreeze(
+	submission: CreationSubmissionRecord,
+): NonNullable<CreationSubmissionRecord["executionPlanFreeze"]> {
+	return {
+		planId: `plan-${submission.task.id}` as never,
+		planRevision: 1,
+		intentDeclaration: { summary: submission.snapshot.intent.text },
+		contextBundleRef: {
+			bundleId: submission.snapshot.briefContext.id,
+			revision: submission.snapshot.briefContext.revision,
+			hash: "context-freeze-hash",
+		},
+		executionPlan: {
+			schemaVersion: "compiled-execution-plan/v1",
+			units: [
+				{
+					unitId: "unit-1" as never,
+					unitType: "copy.generate",
+					primitive: "generate",
+				},
+			],
+			dependencyGroups: [
+				{ groupId: "group-1", unitIds: ["unit-1" as never] },
+			],
+			boundedRetry: {
+				"unit-1": {
+					maxAttempts: 1,
+					maxCostCents: 0,
+					retry: { enabled: false },
+				},
+			},
+		},
+		deliverables: [
+			{ deliverableId: "deliverable-1", kind: "copy", quantity: 1 },
+		],
+		quoteRef: submission.snapshot.quote,
+		rightsRevisionRefs: [submission.snapshot.rights.revision],
+		harnessReleaseId: "release-recovery-1" as never,
+		approvalBasis: "merchant_confirmed",
 	};
 }
 

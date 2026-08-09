@@ -1322,6 +1322,91 @@ test('execution receipt forwards trusted per-bucket product units to settlement'
   );
 });
 
+test('successor settlement uses the effective plan quote and confirmation operation', () => {
+  const request = {
+    workspaceId: 'workspace-successor-settlement',
+    executionSnapshot: {
+      quote: { id: 'quote-successor', revision: 'quote-r1' },
+    },
+    executionPlanSnapshot: {
+      planRevision: 1,
+      quoteRef: { id: 'quote-successor', revision: 'quote-r1' },
+    },
+    pendingExecutionPlanSnapshot: {
+      content: {
+        planRevision: 2,
+        quoteRef: { id: 'quote-successor', revision: 'quote-r2' },
+      },
+    },
+    executionConfirmationReservationIdempotencyKey:
+      'consume:confirmation:successor-r2',
+  } as HarnessWorkflowInput;
+
+  assert.deepEqual(
+    harnessBillingSettlementInput(request, 'task-successor-settlement'),
+    {
+      workspaceId: 'workspace-successor-settlement',
+      taskId: 'task-successor-settlement',
+      quoteId: 'quote-successor',
+      quoteRevision: 'quote-r2',
+      creditUsageOperationId: 'consume:confirmation:successor-r2',
+    },
+  );
+});
+
+test('cancellation refunds the effective successor quote, not the superseded hold', async () => {
+  const refunds: Array<Record<string, unknown>> = [];
+  // Post-reprice shape: the admitted snapshot still carries r1 while the
+  // pending successor plan holds r2 and owns the live credit reservation.
+  const request = {
+    workspaceId: 'workspace-successor-cancel',
+    executionSnapshot: {
+      quote: { id: 'quote-successor-cancel', revision: 'quote-r1' },
+    },
+    executionPlanSnapshot: {
+      planRevision: 1,
+      quoteRef: { id: 'quote-successor-cancel', revision: 'quote-r1' },
+    },
+    pendingExecutionPlanSnapshot: {
+      content: {
+        planRevision: 2,
+        quoteRef: { id: 'quote-successor-cancel', revision: 'quote-r2' },
+      },
+    },
+    executionConfirmationReservationIdempotencyKey:
+      'consume:confirmation:successor-cancel-r2',
+    usageReservation: { id: 'usage-reservation-successor-cancel', units: [] },
+  } as unknown as HarnessWorkflowInput;
+
+  await settleHarnessCancellation({
+    billing: {
+      async commit() {},
+      async refund(input) {
+        refunds.push(input as unknown as Record<string, unknown>);
+      },
+      async scheduleCompensation() {},
+      async completeCompensation() {},
+    },
+    cancellation: new HarnessWorkflowCancellation(
+      '超时未选择，本次任务已取消，积分已退回',
+    ),
+    request,
+    runStep: async (_name, operation) => operation(),
+    workflowId: 'task-successor-cancel',
+  });
+
+  assert.deepEqual(refunds, [
+    {
+      workspaceId: 'workspace-successor-cancel',
+      taskId: 'task-successor-cancel',
+      quoteId: 'quote-successor-cancel',
+      quoteRevision: 'quote-r2',
+      creditUsageOperationId: 'consume:confirmation:successor-cancel-r2',
+      forceCreditRefund: true,
+    },
+  ]);
+});
+
 // ─── V31-14 P1-a: typed Interrupt protocol mirror + resume bridge ───────────
 
 function interruptQuestion(overrides: Record<string, unknown> = {}) {

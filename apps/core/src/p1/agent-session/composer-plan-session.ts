@@ -516,6 +516,7 @@ export class ComposerPlanSessionCoordinator
       quoteRefHint: snapshot.quote,
       ...(quoteResolutionHint ? { quoteResolutionHint } : {}),
       now: input.now,
+      billingQuoteRef: snapshot.quote,
       ...(input.submission.usageReservation.credits !== undefined
         ? {
             livingPlanBilling: {

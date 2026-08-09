@@ -37,11 +37,18 @@ export interface CreationSubmissionRecord {
 		units: CreationSubmissionUsageUnit[];
 	};
 	/**
-	 * V31-12 compile-finalize freeze persisted with the durable submission so a
-	 * restarted worker can reconstruct the exact merchant-confirmed plan.
+	 * V31-12 compile-finalize freeze. New paid submissions persist it in the
+	 * same claim transaction as their credit reservation and confirmation
+	 * outbox; recovery reuses this exact value before Harness admission.
 	 */
 	executionPlanFreeze?: ExecutionPlanCompileFreeze;
 	executionConfirmationContext?: HarnessWorkflowInput["executionConfirmationContext"];
+	/** Reliable outbox marker committed with the credit reservation and freeze. */
+	confirmationDispatch?: {
+		requestId?: string;
+		state: "pending" | "dispatched" | "expired";
+		expiresAt?: string;
+	};
 }
 
 export interface CreationSubmissionUsageUnit {
@@ -88,6 +95,7 @@ export interface CreationSubmissionStore {
 		freeze: ExecutionPlanCompileFreeze;
 		quoteRef?: CreationSubmissionRecord["snapshot"]["quote"];
 		credits?: number;
+		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
 	}): Promise<CreationSubmissionRecord>;
 	/**
 	 * Separately leases the one external Harness start after the submission
@@ -102,10 +110,21 @@ export interface CreationSubmissionStore {
 		| { kind: "failed" }
 		| { kind: "started" }
 	>;
+	/**
+	 * Durably records that the paid confirmation dispatch has crossed the
+	 * external-start boundary. The lease remains starting until the idempotent
+	 * Harness admission returns and completeHarnessStart stores its authority ID.
+	 */
+	markHarnessStartDispatched(input: {
+		leaseId: string;
+		workspaceId: string;
+		submissionId: string;
+	}): Promise<CreationSubmissionRecord>;
 	completeHarnessStart(input: {
 		leaseId: string;
 		workspaceId: string;
 		submissionId: string;
+		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
 	}): Promise<void>;
 	releaseHarnessStart(input: {
 		leaseId: string;
@@ -125,11 +144,15 @@ export interface CreationSubmissionStore {
 	listRecoverableHarnessStarts(input: {
 		limit: number;
 	}): Promise<Array<{ submission: CreationSubmissionRecord }>>;
+	expireUndispatchedConfirmationHolds?(input: { limit: number }): Promise<number>;
 }
 
 /** StagePort boundary: the coordinator never imports DBOS or a durable carrier. */
 export interface CreationSubmissionHarnessStarter {
-	start(input: CreationSubmissionRecord): Promise<void>;
+	start(input: CreationSubmissionRecord): Promise<
+		| { executionConfirmationRequestId?: string }
+		| void
+	>;
 	classifyStartFailure?(
 		input: CreationSubmissionRecord,
 		error: unknown,
@@ -173,10 +196,15 @@ export interface ComposerSubmissionAgentPlanningPort {
 }
 
 export interface ComposerExplicitConfirmationPort {
-	getDecision(requestId: string): Promise<PlanConfirmationDecision | null>;
+	/** Workspace-owned read: a foreign workspace never sees the decision. */
+	getDecision(
+		workspaceId: string,
+		requestId: string,
+	): Promise<PlanConfirmationDecision | null>;
 	decide(input: {
 		decisionId: string;
 		requestId: string;
+		workspaceId: string;
 		actorId: string;
 		decision: "confirmed";
 		decidedAt: string;
@@ -290,12 +318,16 @@ export class CreationSubmissionCoordinator {
 		});
 		await this.startHarness(submission);
 		const requestId = executionConfirmationRequestId(submission.task.id);
-		let decision = await this.explicitConfirmations.getDecision(requestId);
+		let decision = await this.explicitConfirmations.getDecision(
+			submission.snapshot.workspaceId,
+			requestId,
+		);
 		if (!decision) {
 			decision = (
 				await this.explicitConfirmations.decide({
 					decisionId: `decision:${submission.task.id}:merchant-confirmed`,
 					requestId,
+					workspaceId: submission.snapshot.workspaceId,
 					actorId: submission.snapshot.actorId,
 					decision: "confirmed",
 					decidedAt: this.ids.now(),
@@ -361,8 +393,35 @@ export class CreationSubmissionCoordinator {
 	}
 
 	async submit(input: ComposerSubmissionRequest) {
+		return this.submitWithConfirmationContext(input);
+	}
+
+	async submitCampaignWork(input: {
+		submission: ComposerSubmissionRequest;
+		campaignPlanRef: { id: string; revision: number | string };
+		workOrdinal: number;
+	}) {
+		if (!Number.isSafeInteger(input.workOrdinal) || input.workOrdinal < 1) {
+			throw new Error("Campaign workOrdinal must be a positive integer.");
+		}
+		return this.submitWithConfirmationContext(input.submission, {
+			campaignPlanRef: input.campaignPlanRef,
+			workOrdinal: input.workOrdinal,
+			approvalScope: "single_work",
+		});
+	}
+
+	private async submitWithConfirmationContext(
+		input: ComposerSubmissionRequest,
+		executionConfirmationContext?: NonNullable<
+			CreationSubmissionRecord["executionConfirmationContext"]
+		>,
+	) {
 		const request = composerSubmissionRequestSchema.parse(input);
-		const payloadHash = fingerprintValue(receiptPayload(request));
+		const payloadHash = fingerprintValue({
+			...receiptPayload(request),
+			...(executionConfirmationContext ? { executionConfirmationContext } : {}),
+		});
 		const receipt = await this.store.readReceipt({
 			workspaceId: request.workspaceId,
 			idempotencyKey: request.idempotencyKey,
@@ -430,7 +489,13 @@ export class CreationSubmissionCoordinator {
 					? { credits: admitted.creditCost, units: [] }
 					: { units: admitted.usageUnits ?? productUsageUnits(snapshot) }),
 			},
+			...(executionConfirmationContext ? { executionConfirmationContext } : {}),
 		};
+		const preparedBinding = await this.prepareAgentPlan(
+			submission,
+			request.agentThreadId,
+			false,
+		);
 		const claimed = await this.store.claim({
 			workspaceId: command.workspaceId,
 			idempotencyKey: command.idempotencyKey,
@@ -440,10 +505,15 @@ export class CreationSubmissionCoordinator {
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();
 		}
-		const agentBinding = await this.prepareAgentPlan(
-			claimed.submission,
-			request.agentThreadId
-		);
+		const agentBinding =
+			claimed.kind === "existing"
+				? await this.prepareAgentPlan(
+						claimed.submission,
+						request.agentThreadId,
+					)
+				: preparedBinding;
+		// A paid Living Plan stays prepared until the merchant explicitly starts
+		// Make; only makeReady bindings dispatch inside submit.
 		if (agentBinding?.makeReady !== false) {
 			await this.startHarness(claimed.submission);
 		}
@@ -456,20 +526,24 @@ export class CreationSubmissionCoordinator {
 
 	private async prepareAgentPlan(
 		submission: CreationSubmissionRecord,
-		continuationThreadId?: string
+		continuationThreadId?: string,
+		persistExisting = true,
 	): Promise<ComposerAgentBinding | undefined> {
-		if (!this.agentPlanning) return Promise.resolve(undefined);
-		const binding = await this.agentPlanning.prepare({
-			...(continuationThreadId ? { continuationThreadId } : {}),
-			submission,
-		});
-		if (submission.executionPlanFreeze) {
+		const binding = this.agentPlanning
+			? await this.agentPlanning.prepare({
+					...(continuationThreadId ? { continuationThreadId } : {}),
+					submission,
+				})
+			: undefined;
+		ensureConfirmationDispatch(submission);
+		if (persistExisting && submission.executionPlanFreeze) {
 			const persisted = await this.store.saveExecutionPlanFreeze({
 				workspaceId: submission.snapshot.workspaceId,
 				submissionId: submission.snapshot.id,
 				freeze: submission.executionPlanFreeze,
 				quoteRef: submission.snapshot.quote,
 				credits: submission.usageReservation.credits,
+				confirmationDispatch: submission.confirmationDispatch,
 			});
 			submission.executionPlanFreeze = persisted.executionPlanFreeze;
 		}
@@ -806,11 +880,13 @@ export class CreationSubmissionCoordinator {
 
 	/** Replays only committed, reclaimable starts after a process crash. */
 	async recoverPendingStarts(limit = 100) {
+		await this.store.expireUndispatchedConfirmationHolds?.({ limit });
 		const recoverable = await this.store.listRecoverableHarnessStarts({ limit });
 		let failed = 0;
 		let started = 0;
 		for (const candidate of recoverable) {
 			try {
+				await this.prepareAgentPlan(candidate.submission);
 				if (await this.startHarness(candidate.submission)) started += 1;
 			} catch {
 				failed += 1;
@@ -820,6 +896,15 @@ export class CreationSubmissionCoordinator {
 	}
 
 	private async startHarness(submission: CreationSubmissionRecord) {
+		if (
+			requiresPaidConfirmation(submission) &&
+			(submission.executionPlanFreeze?.approvalBasis !== "merchant_confirmed" ||
+				!submission.confirmationDispatch)
+		) {
+			throw new Error(
+				"Paid Harness start requires a durable freeze and confirmation outbox.",
+			);
+		}
 		const startLease = {
 			workspaceId: submission.snapshot.workspaceId,
 			submissionId: submission.snapshot.id,
@@ -830,18 +915,38 @@ export class CreationSubmissionCoordinator {
 		}
 		if (harnessClaim.kind === "started") return false;
 		const leasedStart = { ...startLease, leaseId: harnessClaim.leaseId };
+		let startSubmission = submission;
 		let started = false;
 		try {
-			await this.harness.start(submission);
+			if (submission.confirmationDispatch) {
+				startSubmission = await this.store.markHarnessStartDispatched(
+					leasedStart,
+				);
+			}
+			const startedResult = await this.harness.start(startSubmission);
+			if (startSubmission.confirmationDispatch) {
+				const requestId = startedResult?.executionConfirmationRequestId;
+				if (!requestId) {
+					throw new Error(
+						"Paid Harness admission did not return its confirmation authority ID.",
+					);
+				}
+				startSubmission.confirmationDispatch.requestId = requestId;
+			}
 			started = true;
-			await this.store.completeHarnessStart(leasedStart);
+			await this.store.completeHarnessStart({
+				...leasedStart,
+				...(startSubmission.confirmationDispatch
+					? { confirmationDispatch: startSubmission.confirmationDispatch }
+					: {}),
+			});
 			return true;
 		} catch (error) {
 			if (!started) {
 				try {
 					const disposition =
 						(await this.harness.classifyStartFailure?.(
-							submission,
+							startSubmission,
 							error,
 						)) ?? "retry";
 					if (disposition === "terminal_rejection") {
@@ -864,6 +969,27 @@ export class CreationSubmissionCoordinator {
 			throw error;
 		}
 	}
+}
+
+function ensureConfirmationDispatch(submission: CreationSubmissionRecord) {
+	if (submission.executionPlanFreeze?.approvalBasis !== "merchant_confirmed") {
+		return;
+	}
+	submission.confirmationDispatch ??= {
+		state: "pending",
+		expiresAt: new Date(
+			Date.parse(submission.snapshot.createdAt) + 48 * 60 * 60 * 1_000,
+		).toISOString(),
+	};
+}
+
+function requiresPaidConfirmation(submission: CreationSubmissionRecord) {
+	const credits = submission.usageReservation.credits;
+	if (!Number.isSafeInteger(credits) || (credits ?? 0) <= 0) return false;
+	if (submission.snapshot.lens !== "copy") return true;
+	return submission.usageReservation.units.some(
+		(unit) => unit.resource === "image" || unit.resource === "video",
+	);
 }
 
 function productUsageUnits(

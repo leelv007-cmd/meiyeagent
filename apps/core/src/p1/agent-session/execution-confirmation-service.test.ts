@@ -22,11 +22,15 @@ import {
   MemoryExecutionConfirmationRequestStore,
   MemoryPlanConfirmationDecisionStore,
 } from './memory-execution-confirmation-store.js';
+import { confirmationCreditPortFromPostgresLedger } from './postgres-execution-confirmation-store.js';
 
 const CREATED = '2026-08-08T12:00:00.000Z';
 const HOLD = '2026-08-09T12:00:00.000Z'; // 24h
 
-function makeService(credits = 20) {
+function makeService(
+  credits = 20,
+  clock = () => new Date('2026-08-08T12:30:00.000Z'),
+) {
   const ledger = new MemoryCreditLedger();
   ledger.grant({
     id: 'lot-1',
@@ -43,6 +47,8 @@ function makeService(credits = 20) {
     requests,
     decisions,
     confirmationCreditPortFromMemoryLedger(ledger),
+    undefined,
+    { clock },
   );
   return { service, ledger, requests, decisions };
 }
@@ -119,6 +125,125 @@ test('createRequest concurrent attempts never over-debit (A3 memory seam)', asyn
   assert.equal((await ledger.project('ws-1', CREATED)).usedCredits, 3);
 });
 
+test('successor confirmation atomically replaces the prior hold instead of double-debiting', async () => {
+  const { service, ledger } = makeService(10);
+  await service.createRequest(
+    baseCreate({
+      requestId: 'req-reprice-r1',
+      reservationIdempotencyKey: 'reserve-reprice-r1',
+      creditCost: 6,
+    }),
+  );
+  await service.decide({
+    decisionId: 'decision-reprice-r1',
+    requestId: 'req-reprice-r1',
+    workspaceId: 'ws-1',
+    actorId: 'merchant-1',
+    decision: 'confirmed',
+    decidedAt: '2026-08-08T12:10:00.000Z',
+  });
+
+  const successor = await service.createRequest(
+    baseCreate({
+      requestId: 'req-reprice-r2',
+      planRevision: 2,
+      snapshotHash: 'snap-hash-2',
+      quoteRef: { id: 'quote-1', revision: 2 },
+      reservationIdempotencyKey: 'reserve-reprice-r2',
+      predecessorRequestId: 'req-reprice-r1',
+      replacesReservationIdempotencyKey: 'reserve-reprice-r1',
+      creditCost: 7,
+    }),
+  );
+  const replay = await service.createRequest(
+    baseCreate({
+      requestId: 'req-reprice-r2',
+      planRevision: 2,
+      snapshotHash: 'snap-hash-2',
+      quoteRef: { id: 'quote-1', revision: 2 },
+      reservationIdempotencyKey: 'reserve-reprice-r2',
+      predecessorRequestId: 'req-reprice-r1',
+      replacesReservationIdempotencyKey: 'reserve-reprice-r1',
+      creditCost: 7,
+    }),
+  );
+
+  assert.equal(successor.reservedCredits, 7);
+  assert.equal(replay.stored.request.requestId, 'req-reprice-r2');
+  assert.equal(
+    successor.stored.request.replacesReservationIdempotencyKey,
+    'reserve-reprice-r1',
+  );
+  const balance = ledger.project('ws-1', CREATED);
+  assert.equal(balance.availableCredits, 3);
+  assert.equal(balance.usedCredits, 13);
+  assert.equal(balance.refundedCredits, 6);
+
+  await assert.rejects(
+    () =>
+      service.createRequest(
+        baseCreate({
+          requestId: 'req-reprice-r2-duplicate',
+          planRevision: 2,
+          snapshotHash: 'snap-hash-2-duplicate',
+          quoteRef: { id: 'quote-1', revision: 2 },
+          reservationIdempotencyKey: 'reserve-reprice-r2-duplicate',
+          predecessorRequestId: 'req-reprice-r1',
+          replacesReservationIdempotencyKey: 'reserve-reprice-r1',
+          creditCost: 7,
+        }),
+      ),
+    (error: unknown) =>
+      error instanceof ExecutionConfirmationError &&
+      error.code === 'IDEMPOTENCY_CONFLICT',
+  );
+  assert.deepEqual(ledger.project('ws-1', CREATED), balance);
+});
+
+test('successor replacement rejects a confirmed hold from another plan or quote', async () => {
+  for (const lineage of [
+    { planId: 'plan-other', quoteRef: { id: 'quote-1', revision: 2 } },
+    { planId: 'plan-1', quoteRef: { id: 'quote-other', revision: 2 } },
+  ]) {
+    const { service, ledger } = makeService(10);
+    await service.createRequest(
+      baseCreate({
+        requestId: 'req-lineage-r1',
+        reservationIdempotencyKey: 'reserve-lineage-r1',
+        creditCost: 6,
+      }),
+    );
+    await service.decide({
+      decisionId: 'decision-lineage-r1',
+      requestId: 'req-lineage-r1',
+      workspaceId: 'ws-1',
+      actorId: 'merchant-1',
+      decision: 'confirmed',
+      decidedAt: '2026-08-08T12:10:00.000Z',
+    });
+
+    await assert.rejects(
+      () =>
+        service.createRequest(
+          baseCreate({
+            ...lineage,
+            requestId: 'req-lineage-r2',
+            planRevision: 2,
+            snapshotHash: 'snap-lineage-r2',
+            reservationIdempotencyKey: 'reserve-lineage-r2',
+            predecessorRequestId: 'req-lineage-r1',
+            replacesReservationIdempotencyKey: 'reserve-lineage-r1',
+            creditCost: 7,
+          }),
+        ),
+      (error: unknown) =>
+        error instanceof ExecutionConfirmationError &&
+        error.code === 'INVALID_STATE',
+    );
+    assert.equal(ledger.project('ws-1', CREATED).availableCredits, 4);
+  }
+});
+
 test('createRequest compensates orphan hold when row insert fails (non-tx seam)', async () => {
   const ledger = new MemoryCreditLedger();
   ledger.grant({
@@ -153,6 +278,7 @@ test('PlanConfirmationDecision is immutable and carries no TTL', async () => {
   const first = await service.decide({
     decisionId: 'dec-1',
     requestId: 'req-1',
+    workspaceId: 'ws-1',
     actorId: 'merchant-1',
     decision: 'confirmed',
     decidedAt: '2026-08-08T12:30:00.000Z',
@@ -164,11 +290,22 @@ test('PlanConfirmationDecision is immutable and carries no TTL', async () => {
   const replay = await service.decide({
     decisionId: 'dec-1',
     requestId: 'req-1',
+    workspaceId: 'ws-1',
     actorId: 'merchant-1',
     decision: 'confirmed',
     decidedAt: '2026-08-08T12:30:00.000Z',
   });
   assert.equal(replay.decision.decisionId, 'dec-1');
+
+  const laterClockReplay = await service.decide({
+    decisionId: 'dec-1',
+    requestId: 'req-1',
+    workspaceId: 'ws-1',
+    actorId: 'merchant-1',
+    decision: 'confirmed',
+    decidedAt: '2026-08-08T12:45:00.000Z',
+  });
+  assert.equal(laterClockReplay.decision.decidedAt, '2026-08-08T12:30:00.000Z');
 
   // Different decision for same request → fail closed.
   await assert.rejects(
@@ -176,6 +313,7 @@ test('PlanConfirmationDecision is immutable and carries no TTL', async () => {
       service.decide({
         decisionId: 'dec-2',
         requestId: 'req-1',
+        workspaceId: 'ws-1',
         actorId: 'merchant-1',
         decision: 'rejected',
         decidedAt: '2026-08-08T12:31:00.000Z',
@@ -187,6 +325,11 @@ test('PlanConfirmationDecision is immutable and carries no TTL', async () => {
 
   const stored = await decisions.getByRequestId('req-1');
   assert.equal(stored?.decision, 'confirmed');
+  assert.equal(
+    (await service.getDecisionForWorkspace('ws-1', 'req-1'))?.decision,
+    'confirmed',
+  );
+  assert.equal(await service.getDecisionForWorkspace('ws-2', 'req-1'), null);
 });
 
 test('reject fully refunds original hold lots with plain merchant message', async () => {
@@ -197,6 +340,7 @@ test('reject fully refunds original hold lots with plain merchant message', asyn
   const decided = await service.decide({
     decisionId: 'dec-reject',
     requestId: 'req-1',
+    workspaceId: 'ws-1',
     actorId: 'merchant-1',
     decision: 'rejected',
     decidedAt: '2026-08-08T13:00:00.000Z',
@@ -213,6 +357,115 @@ test('reject fully refunds original hold lots with plain merchant message', asyn
   );
 });
 
+test('replay completes a rejected decision after a crash immediately after decision append', async () => {
+  class CrashAfterDecisionAppend extends MemoryPlanConfirmationDecisionStore {
+    private crash = true;
+
+    override async append(
+      decision: Parameters<MemoryPlanConfirmationDecisionStore['append']>[0],
+    ) {
+      const appended = await super.append(decision);
+      if (this.crash) {
+        this.crash = false;
+        throw new Error('injected crash after decision append');
+      }
+      return appended;
+    }
+  }
+
+  const ledger = new MemoryCreditLedger();
+  ledger.grant({
+    id: 'lot-crash-append',
+    workspaceId: 'ws-1',
+    credits: 10,
+    expirationDate: '2026-09-01T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+    sourceRef: 'test',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  });
+  const requests = new MemoryExecutionConfirmationRequestStore();
+  const service = new ExecutionConfirmationService(
+    requests,
+    new CrashAfterDecisionAppend(),
+    confirmationCreditPortFromMemoryLedger(ledger),
+    undefined,
+    { clock: () => new Date('2026-08-08T12:30:00.000Z') },
+  );
+  await service.createRequest(baseCreate({ creditCost: 4 }));
+  const decision = {
+    decisionId: 'dec-crash-append',
+    requestId: 'req-1',
+    workspaceId: 'ws-1',
+    actorId: 'merchant-1',
+    decision: 'rejected' as const,
+    decidedAt: '2026-08-08T13:00:00.000Z',
+  };
+
+  await assert.rejects(() => service.decide(decision), /injected crash/);
+  const replay = await service.decide(decision);
+
+  assert.equal(replay.request.status, 'decided');
+  assert.equal(replay.refundedCredits, 4);
+  assert.equal(
+    (await ledger.project('ws-1', decision.decidedAt)).availableCredits,
+    10,
+  );
+});
+
+test('replay completes a rejected decision after a crash immediately after status transition', async () => {
+  class CrashAfterStatusTransition extends MemoryExecutionConfirmationRequestStore {
+    private crash = true;
+
+    override async markStatus(
+      input: Parameters<MemoryExecutionConfirmationRequestStore['markStatus']>[0],
+    ) {
+      const updated = await super.markStatus(input);
+      if (this.crash) {
+        this.crash = false;
+        throw new Error('injected crash after status transition');
+      }
+      return updated;
+    }
+  }
+
+  const ledger = new MemoryCreditLedger();
+  ledger.grant({
+    id: 'lot-crash-status',
+    workspaceId: 'ws-1',
+    credits: 10,
+    expirationDate: '2026-09-01T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+    sourceRef: 'test',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  });
+  const service = new ExecutionConfirmationService(
+    new CrashAfterStatusTransition(),
+    new MemoryPlanConfirmationDecisionStore(),
+    confirmationCreditPortFromMemoryLedger(ledger),
+    undefined,
+    { clock: () => new Date('2026-08-08T12:30:00.000Z') },
+  );
+  await service.createRequest(baseCreate({ creditCost: 4 }));
+  const decision = {
+    decisionId: 'dec-crash-status',
+    requestId: 'req-1',
+    workspaceId: 'ws-1',
+    actorId: 'merchant-1',
+    decision: 'rejected' as const,
+    decidedAt: '2026-08-08T13:00:00.000Z',
+  };
+
+  await assert.rejects(() => service.decide(decision), /injected crash/);
+  const replay = await service.decide(decision);
+
+  assert.equal(replay.request.status, 'decided');
+  assert.equal(replay.refundedCredits, 4);
+  assert.equal(
+    (await ledger.project('ws-1', decision.decidedAt)).availableCredits,
+    10,
+  );
+});
+
 test('hold expiry cancels + refunds + plain D-153 message (durable seam)', async () => {
   const { service, ledger } = makeService(8);
   await service.createRequest(baseCreate({ creditCost: 3 }));
@@ -222,6 +475,7 @@ test('hold expiry cancels + refunds + plain D-153 message (durable seam)', async
     () =>
       service.expireHold({
         requestId: 'req-1',
+        workspaceId: 'ws-1',
         now: '2026-08-08T18:00:00.000Z', // before HOLD
       }),
     (error: unknown) =>
@@ -231,6 +485,7 @@ test('hold expiry cancels + refunds + plain D-153 message (durable seam)', async
 
   const expired = await service.expireHold({
     requestId: 'req-1',
+    workspaceId: 'ws-1',
     now: '2026-08-09T12:00:01.000Z',
   });
   assert.equal(expired.request.status, 'expired');
@@ -245,9 +500,32 @@ test('hold expiry cancels + refunds + plain D-153 message (durable seam)', async
   // Idempotent re-expire.
   const again = await service.expireHold({
     requestId: 'req-1',
+    workspaceId: 'ws-1',
     now: '2026-08-09T13:00:00.000Z',
   });
   assert.equal(again.request.status, 'expired');
+});
+
+test('decide at the server-clock expiry boundary atomically expires and refunds', async () => {
+  const { service, ledger } = makeService(20, () => new Date(HOLD));
+  await service.createRequest(baseCreate());
+
+  await assert.rejects(
+    service.decideForWorkspace({
+      decisionId: 'dec-at-expiry',
+      requestId: 'req-1',
+      workspaceId: 'ws-1',
+      actorId: 'merchant-1',
+      decision: 'confirmed',
+      decidedAt: CREATED,
+    }),
+    (error: unknown) =>
+      error instanceof ExecutionConfirmationError &&
+      error.code === 'INVALID_STATE',
+  );
+  assert.equal((await service.getRequest('req-1'))?.request.status, 'expired');
+  assert.equal(ledger.project('ws-1', HOLD).availableCredits, 20);
+  assert.equal(await service.getDecision('req-1'), null);
 });
 
 test('Campaign second paid Work requires its own confirmation (U7)', async () => {
@@ -325,4 +603,51 @@ test('projection helpers keep A5 dual-state and held copy stable', () => {
     failureRefundsCredits: false,
   });
   assert.equal(off.refundLabel, '该模型失败不退回');
+});
+
+test('Postgres credit adapter fails fast without every client-aware operation', () => {
+  assert.throws(
+    () =>
+      confirmationCreditPortFromPostgresLedger({
+        project: async () => ({}) as never,
+        consume: async () => [],
+        refundUsageOperation: async () => [],
+        withWorkspaceCreditLock: async (
+          _workspaceId: string,
+          action: (client: never) => Promise<unknown>,
+        ) =>
+          action({} as never),
+      } as never),
+    /client-aware|transaction/i,
+  );
+});
+
+test('Postgres credit adapter never constructs a split non-transactional port', () => {
+  assert.throws(
+    () =>
+      confirmationCreditPortFromPostgresLedger({
+        async project() {
+          return {} as never;
+        },
+        async consume() {
+          return [];
+        },
+        async refundUsageOperation() {
+          return [];
+        },
+      } as never),
+    /transaction/i,
+  );
+});
+
+test('confirmation service requires one workspace transaction action seam', () => {
+  assert.throws(
+    () =>
+      new ExecutionConfirmationService(
+        new MemoryExecutionConfirmationRequestStore(),
+        new MemoryPlanConfirmationDecisionStore(),
+        {} as never,
+      ),
+    /transaction/i,
+  );
 });

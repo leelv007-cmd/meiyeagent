@@ -31,8 +31,12 @@ import {
   type CreationExecutionSnapshot,
 } from '../execution-spine/creation-execution-snapshot.js';
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
-import type { CreateExecutionConfirmationInput } from '../agent-session/execution-confirmation-service.js';
-import { creditUsageOperationId } from '../credit-billing/credit-ledger.js';
+import type { CreateExecutionConfirmationAuthorityInput } from '../agent-session/execution-confirmation-authority.js';
+import type {
+  ConfirmationAuthorityStore,
+  PendingConfirmationAuthority,
+} from '../agent-session/execution-confirmation-authority-store.js';
+import type { CreateExecutionConfirmationResult } from '../agent-session/execution-confirmation-service.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { RouteSnapshot } from '../model-supply/index.js';
 import { serverAuditReference } from '../creation-experience/creation-experience-events.js';
@@ -47,7 +51,6 @@ import {
   assembleExecutionPlanSnapshot,
   assemblePendingExecutionPlanSnapshot,
 } from './execution-plan-admission.js';
-import { executionConfirmationRequestId } from './execution-confirmation-id.js';
 import {
   HARNESS_CORE_PROMPT_KEYS,
   harnessPromptCapabilityRequirement,
@@ -103,6 +106,14 @@ export interface HarnessWorkflowInput {
   executionPlanSnapshot?: ExecutionPlanSnapshot;
   /** Durable frozen content while a paid Work waits for its immutable decision. */
   pendingExecutionPlanSnapshot?: PendingExecutionPlanSnapshot;
+  /** Deterministic request identity for a live-facts re-confirmation cycle. */
+  executionConfirmationRequestId?: string;
+  /** Exact credit operation owned by the current confirmation attempt. */
+  executionConfirmationReservationIdempotencyKey?: string;
+  /** Credits durably held for the exact pending confirmation attempt. */
+  executionConfirmationReservedCredits?: number;
+  /** Merchant-visible stale fields that caused the current re-confirmation. */
+  executionConfirmationDiffFields?: string[];
   /** Campaign Works carry the full U7 triple and never inherit plan approval. */
   executionConfirmationContext?: {
     campaignPlanRef: { id: string; revision: number | string };
@@ -320,6 +331,23 @@ const DEFAULT_EXECUTION_BOUNDS_RESOLVER: HarnessExecutionBoundsResolver = {
   },
 };
 
+export function executionPlanAdmissionWorkflowId(
+  taskId: string,
+  request: Pick<
+    HarnessWorkflowInput,
+    'executionPlanSnapshot' | 'pendingExecutionPlanSnapshot'
+  >,
+): string {
+  const snapshot =
+    request.executionPlanSnapshot ?? request.pendingExecutionPlanSnapshot;
+  if (!snapshot) return taskId;
+  const planRevision =
+    'content' in snapshot
+      ? snapshot.content.planRevision
+      : snapshot.planRevision;
+  return `${taskId}:plan:${planRevision}:${snapshot.snapshotHash}`;
+}
+
 export class HarnessTaskAdmissionService {
   constructor(
     private readonly registry: HarnessTaskRequestRegistry,
@@ -336,8 +364,10 @@ export class HarnessTaskAdmissionService {
      */
     private readonly executionPlanAdmission?: ExecutionPlanAdmissionPort,
     private readonly executionConfirmation?: {
-      createRequest(input: CreateExecutionConfirmationInput): Promise<unknown>;
-    },
+      createRequest(
+        input: CreateExecutionConfirmationAuthorityInput,
+      ): Promise<CreateExecutionConfirmationResult>;
+    } & Pick<ConfirmationAuthorityStore, 'putCurrent'>,
   ) {}
 
   async submit(input: HarnessTaskRequest) {
@@ -359,8 +389,7 @@ export class HarnessTaskAdmissionService {
       request: normalized,
     });
     if (existing) {
-      if (existing.kind === 'existing') {
-        if (!existing.request) return this.resumeExisting(existing);
+      if (existing.kind === 'existing' && existing.request) {
         await this.ensurePendingExecutionConfirmation(
           input.taskId,
           existing.request,
@@ -402,7 +431,7 @@ export class HarnessTaskAdmissionService {
         );
       }
       const admitted = await this.executionPlanAdmission.admitSnapshot({
-        workflowId: input.taskId,
+        workflowId: executionPlanAdmissionWorkflowId(input.taskId, request),
         workspaceId: request.workspaceId,
         snapshot: request.executionPlanSnapshot,
         live: input.executionPlanLiveFacts,
@@ -474,7 +503,9 @@ export class HarnessTaskAdmissionService {
           boundedExecution,
         });
         const admitted = await this.executionPlanAdmission.admitSnapshot({
-          workflowId: input.taskId,
+          workflowId: executionPlanAdmissionWorkflowId(input.taskId, {
+            executionPlanSnapshot: snapshot,
+          }),
           workspaceId: request.workspaceId,
           snapshot,
           live: input.executionPlanLiveFacts,
@@ -532,7 +563,6 @@ export class HarnessTaskAdmissionService {
       );
     }
     if (claim.kind === 'existing') {
-      if (!claim.request) return this.resumeExisting(claim);
       await this.ensurePendingExecutionConfirmation(input.taskId, claim.request);
       return this.resumeExisting(claim);
     }
@@ -548,7 +578,16 @@ export class HarnessTaskAdmissionService {
       workflowId: input.taskId,
       request,
     });
-    return { workflowId: handle.workflowId, replayed: false as const };
+    return {
+      workflowId: handle.workflowId,
+      replayed: false as const,
+      ...(request.executionConfirmationRequestId
+        ? {
+            executionConfirmationRequestId:
+              request.executionConfirmationRequestId,
+          }
+        : {}),
+    };
   }
 
   private async ensurePendingExecutionConfirmation(
@@ -572,24 +611,23 @@ export class HarnessTaskAdmissionService {
         'Paid execution requires a positive server-owned credit quote.',
       );
     }
-    const createdAt = new Date().toISOString();
-    await create({
-      requestId: executionConfirmationRequestId(workflowId),
+    await this.executionConfirmation.putCurrent(
+      pendingConfirmationAuthority({
+        workflowId,
+        request,
+        pending,
+        frozenAt: snapshot.createdAt,
+      }),
+    );
+    const created = await create({
+      workflowId,
       workspaceId: request.workspaceId,
-      planId: pending.content.planId,
-      planRevision: pending.content.planRevision,
-      snapshotHash: pending.snapshotHash,
-      quoteRef: pending.content.quoteRef,
-      reservationIdempotencyKey: creditUsageOperationId(snapshot.task.id),
-      createdAt,
-      holdExpiresAt: new Date(
-        Date.parse(createdAt) + 48 * 60 * 60 * 1000,
-      ).toISOString(),
       actorId: request.actorId,
-      creditCost: credits!,
-      failureRefundsCredits: true,
-      ...(request.executionConfirmationContext ?? {}),
     });
+    request.executionConfirmationRequestId = created.stored.request.requestId;
+    request.executionConfirmationReservationIdempotencyKey =
+      created.stored.request.reservationIdempotencyKey;
+    request.executionConfirmationReservedCredits = created.reservedCredits;
   }
 
   private async selectSkillManifests(
@@ -701,7 +739,16 @@ export class HarnessTaskAdmissionService {
       request: frozenRequest,
       ...(claim.runtimeId ? { runtimeId: claim.runtimeId } : {}),
     });
-    return { workflowId: handle.workflowId, replayed: true as const };
+    return {
+      workflowId: handle.workflowId,
+      replayed: true as const,
+      ...(frozenRequest.executionConfirmationRequestId
+        ? {
+            executionConfirmationRequestId:
+              frozenRequest.executionConfirmationRequestId,
+          }
+        : {}),
+    };
   }
 
   private async recordExecutionAssemblyAudit(
@@ -1009,6 +1056,32 @@ function factRevisionRefsFromSnapshot(
   ];
 }
 
+function pendingConfirmationAuthority(input: {
+  workflowId: string;
+  request: HarnessWorkflowInput;
+  pending: PendingExecutionPlanSnapshot;
+  frozenAt: string;
+}): PendingConfirmationAuthority {
+  return {
+    workflowId: input.workflowId,
+    workspaceId: input.request.workspaceId,
+    planId: input.pending.content.planId,
+    planRevision: input.pending.content.planRevision,
+    snapshotHash: input.pending.snapshotHash,
+    quoteRef: input.pending.content.quoteRef,
+    rightsRevisionRefs: [...input.pending.content.rightsRevisionRefs],
+    factRevisionRefs: [...input.pending.content.factRevisionRefs],
+    frozenAt: input.frozenAt,
+    reservationAttempt: 'initial',
+    ...(input.request.executionConfirmationContext
+      ? {
+          executionConfirmationContext:
+            input.request.executionConfirmationContext,
+        }
+      : {}),
+  };
+}
+
 function executionAssemblySnapshot(input: {
   workflowId: string;
   request: HarnessWorkflowInput;
@@ -1075,6 +1148,10 @@ function normalizeRequest(
     usageReservation,
     executionPlanSnapshot,
     executionConfirmationContext,
+    executionConfirmationRequestId,
+    executionConfirmationReservationIdempotencyKey,
+    executionConfirmationReservedCredits,
+    executionConfirmationDiffFields,
     pendingExecutionPlanSnapshot,
     executionPlanLiveFacts: _executionPlanLiveFacts,
     executionPlanFreeze: _executionPlanFreeze,
@@ -1100,6 +1177,16 @@ function normalizeRequest(
       ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
       ...(pendingExecutionPlanSnapshot ? { pendingExecutionPlanSnapshot } : {}),
       ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
+      ...(executionConfirmationRequestId ? { executionConfirmationRequestId } : {}),
+      ...(executionConfirmationReservationIdempotencyKey
+        ? { executionConfirmationReservationIdempotencyKey }
+        : {}),
+      ...(executionConfirmationReservedCredits
+        ? { executionConfirmationReservedCredits }
+        : {}),
+      ...(executionConfirmationDiffFields
+        ? { executionConfirmationDiffFields }
+        : {}),
     };
   }
   return {
@@ -1117,6 +1204,16 @@ function normalizeRequest(
     ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
     ...(pendingExecutionPlanSnapshot ? { pendingExecutionPlanSnapshot } : {}),
     ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
+    ...(executionConfirmationRequestId ? { executionConfirmationRequestId } : {}),
+    ...(executionConfirmationReservationIdempotencyKey
+      ? { executionConfirmationReservationIdempotencyKey }
+      : {}),
+    ...(executionConfirmationReservedCredits
+      ? { executionConfirmationReservedCredits }
+      : {}),
+    ...(executionConfirmationDiffFields
+      ? { executionConfirmationDiffFields }
+      : {}),
   };
 }
 

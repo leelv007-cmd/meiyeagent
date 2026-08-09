@@ -77,7 +77,13 @@ import {
   snapshotConsumeTracePayload,
   validateContextBundleAgainstSnapshot,
 } from './make-snapshot-consume.js';
-import { confirmPaidGenerationExecution } from './paid-generation-confirmation.js';
+import {
+  confirmPaidGenerationExecution,
+  type ConfirmPaidGenerationExecutionInput,
+} from './paid-generation-confirmation.js';
+import type { CreateExecutionConfirmationAuthorityInput } from '../agent-session/execution-confirmation-authority.js';
+import type { CreateExecutionConfirmationResult } from '../agent-session/execution-confirmation-service.js';
+import type { SnapshotLiveFacts } from './execution-plan-admission.js';
 import { createNotePageProgressReporter } from './note-page-execution-frame.js';
 import {
   createCarrierProgramRegistry,
@@ -232,13 +238,25 @@ export interface HarnessSharedStagePorts {
     >;
   }): Promise<void>;
   getExecutionConfirmationDecision?: (
+    workspaceId: string,
     requestId: string,
   ) => Promise<PlanConfirmationDecision | null>;
   admitExecutionPlanSnapshot?: (input: {
     workflowId: string;
     workspaceId: string;
     snapshot: ExecutionPlanSnapshot;
+    live?: SnapshotLiveFacts;
   }) => Promise<ExecutionPlanSnapshot>;
+  resolveExecutionPlanLiveFacts?: (input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    snapshot: ExecutionPlanSnapshot;
+  }) => Promise<SnapshotLiveFacts | undefined>;
+  refreshExecutionPlanLiveBindings?: ConfirmPaidGenerationExecutionInput['refreshExecutionPlanLiveBindings'];
+  createExecutionConfirmationRequest?: (
+    input: CreateExecutionConfirmationAuthorityInput,
+  ) => Promise<CreateExecutionConfirmationResult>;
+  putExecutionConfirmationAuthority?: ConfirmPaidGenerationExecutionInput['putExecutionConfirmationAuthority'];
   resolveStageSkills?(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
@@ -1136,6 +1154,7 @@ interface HarnessStageExecutionInput {
   progress: { sequence: number };
   reportProgress: HarnessProgressReporter;
   request: HarnessWorkflowInput;
+  onActiveRequest?: (request: HarnessWorkflowInput) => void;
   runtime: HarnessWorkflowRuntime;
   workflowId: string;
 }
@@ -1344,6 +1363,8 @@ async function runWorkflowPrelude(input: {
 export type RunHarnessWorkflowOptions = {
   /** Ops kill switch force_legacy_five_stage (V31-14). */
   forceLegacyFiveStage?: boolean;
+  /** Carries an admitted successor authority to terminal billing settlement. */
+  onActiveRequest?: (request: HarnessWorkflowInput) => void;
 };
 
 /**
@@ -1391,14 +1412,23 @@ export async function runHarnessWorkflow(
     activeRequest = await confirmPaidGenerationExecution({
       workflowId,
       request: activeRequest,
+      onActiveRequest: options.onActiveRequest,
       reportProgress,
       getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
       admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
+      resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
+      refreshExecutionPlanLiveBindings:
+        ports.refreshExecutionPlanLiveBindings,
+      createExecutionConfirmationRequest:
+        ports.createExecutionConfirmationRequest,
+      putExecutionConfirmationAuthority:
+        ports.putExecutionConfirmationAuthority,
       awaitResolvedDecision: (question, stage) =>
         awaitResolvedDecision(runtime, question, stage),
       applyCurrentTaskDecision: (wfId, req, command) =>
         applyCurrentTaskDecision(wfId, req, command, runtime),
     });
+    options.onActiveRequest?.(activeRequest);
   }
   const prelude = await runWorkflowPrelude({
     descriptor,
@@ -1433,6 +1463,7 @@ export async function runHarnessWorkflow(
       progress,
       reportProgress,
       request: activeRequest,
+      onActiveRequest: options.onActiveRequest,
       runtime,
       workflowId,
     },
@@ -1733,14 +1764,20 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
   activeRequest = await confirmPaidGenerationExecution({
     workflowId,
     request: activeRequest,
+    onActiveRequest: input.onActiveRequest,
     reportProgress,
     getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
     admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
+    resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
+    refreshExecutionPlanLiveBindings: ports.refreshExecutionPlanLiveBindings,
+    createExecutionConfirmationRequest: ports.createExecutionConfirmationRequest,
+    putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
     awaitResolvedDecision: (question, stage) =>
       awaitResolvedDecision(runtime, question, stage),
     applyCurrentTaskDecision: (wfId, req, command) =>
       applyCurrentTaskDecision(wfId, req, command, runtime),
   });
+  input.onActiveRequest?.(activeRequest);
 
   const executionSkills = stageSkills.execution_selection;
   let selection: HarnessSelectionResult = await executeSelectionToCompletion(
@@ -2231,15 +2268,21 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   activeRequest = await confirmPaidGenerationExecution({
     workflowId,
     request: activeRequest,
+    onActiveRequest: input.onActiveRequest,
     reportProgress,
     noteOutline: noteOutlineSummary,
     getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
     admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
+    resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
+    refreshExecutionPlanLiveBindings: ports.refreshExecutionPlanLiveBindings,
+    createExecutionConfirmationRequest: ports.createExecutionConfirmationRequest,
+    putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
     awaitResolvedDecision: (question, stage) =>
       awaitResolvedDecision(runtime, question, stage),
     applyCurrentTaskDecision: (wfId, req, command) =>
       applyCurrentTaskDecision(wfId, req, command, runtime),
   });
+  input.onActiveRequest?.(activeRequest);
 
   const executionSkills = stageSkills.execution_selection;
   let noteArtifactRevision = 0;
@@ -2589,14 +2632,20 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
   activeRequest = await confirmPaidGenerationExecution({
     workflowId,
     request: activeRequest,
+    onActiveRequest: input.onActiveRequest,
     reportProgress,
     getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
     admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
+    resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
+    refreshExecutionPlanLiveBindings: ports.refreshExecutionPlanLiveBindings,
+    createExecutionConfirmationRequest: ports.createExecutionConfirmationRequest,
+    putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
     awaitResolvedDecision: (question, stage) =>
       awaitResolvedDecision(runtime, question, stage),
     applyCurrentTaskDecision: (wfId, req, command) =>
       applyCurrentTaskDecision(wfId, req, command, runtime),
   });
+  input.onActiveRequest?.(activeRequest);
   const executionSkills = stageSkills.execution_selection;
   const executeMediaSelectionToCompletion = async (
     unitId: string,

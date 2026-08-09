@@ -322,10 +322,19 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
   constructor(
     private readonly pool: Pool,
     private readonly persistence: CreationSubmissionPersistencePort,
-    options: { harnessStartLeaseMs?: number } = {},
+    options: {
+      harnessStartLeaseMs?: number;
+      creditLedger?: Pick<PostgresCreditLedger, 'refundUsageOperationWithClient'>;
+    } = {},
   ) {
     this.harnessStartLeaseMs = options.harnessStartLeaseMs ?? 60_000;
+    this.creditLedger = options.creditLedger;
   }
+
+  private readonly creditLedger?: Pick<
+    PostgresCreditLedger,
+    'refundUsageOperationWithClient'
+  >;
 
   async migrate(client?: PoolClient) {
     await (client ?? this.pool).query(`
@@ -521,6 +530,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     freeze: CreationSubmissionRecord['executionPlanFreeze'];
     quoteRef?: CreationSubmissionRecord['snapshot']['quote'];
     credits?: number;
+    confirmationDispatch?: CreationSubmissionRecord['confirmationDispatch'];
   }) {
     if (!input.freeze) {
       throw new Error('Execution plan freeze is required.');
@@ -529,29 +539,41 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
       `UPDATE execution_spine.creation_submissions
           SET submission = jsonb_set(
               jsonb_set(
-                jsonb_set(submission,
-                '{executionPlanFreeze}',
-                $3::jsonb,
-                true
+                jsonb_set(
+                  jsonb_set(
+                    submission,
+                    '{executionPlanFreeze}',
+                    $3::jsonb,
+                    true
+                  ),
+                  '{confirmationDispatch}',
+                  $4::jsonb,
+                  true
                 ),
                 '{snapshot,quote}',
-                COALESCE($4::jsonb, submission#>'{snapshot,quote}'),
+                COALESCE($5::jsonb, submission#>'{snapshot,quote}'),
                 true
               ),
               '{usageReservation,credits}',
-              COALESCE($5::jsonb, submission#>'{usageReservation,credits}'),
+              COALESCE($6::jsonb, submission#>'{usageReservation,credits}'),
               true
             ),
               updated_at = clock_timestamp()
         WHERE workspace_id = $1
           AND id = $2
-          AND harness_state = 'reserved'
+          AND (
+            harness_state = 'reserved'
+            OR (
+              harness_state = 'starting'
+              AND harness_lease_expires_at <= clock_timestamp()
+            )
+          )
           AND (
             submission->'executionPlanFreeze' IS NULL
             OR submission->'executionPlanFreeze' = $3::jsonb
             OR (
-              submission#>>'{executionPlanFreeze,planId}' = $6
-              AND (submission#>>'{executionPlanFreeze,planRevision}')::integer < $7
+              submission#>>'{executionPlanFreeze,planId}' = $7
+              AND (submission#>>'{executionPlanFreeze,planRevision}')::integer < $8
             )
           )
         RETURNING submission`,
@@ -559,6 +581,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
         input.workspaceId,
         input.submissionId,
         JSON.stringify(input.freeze),
+        JSON.stringify(input.confirmationDispatch ?? null),
         input.quoteRef ? JSON.stringify(input.quoteRef) : null,
         input.credits !== undefined ? JSON.stringify(input.credits) : null,
         input.freeze.planId,
@@ -580,7 +603,9 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
       const submission = storedSubmission(stored.submission);
       if (
         JSON.stringify(submission.executionPlanFreeze) !==
-        JSON.stringify(input.freeze)
+          JSON.stringify(input.freeze) ||
+        JSON.stringify(submission.confirmationDispatch) !==
+          JSON.stringify(input.confirmationDispatch)
       ) {
         throw new Error(
           `Creation submission ${input.submissionId} cannot change its execution plan freeze after Harness admission.`,
@@ -706,6 +731,20 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
       inTransaction = true;
       const row = await this.lockSubmission(client, input);
       const now = await databaseNow(client);
+      if (this.creditLedger) {
+        const submission = storedSubmission(row.submission);
+        if (confirmationDispatchExpired(submission, now)) {
+          await this.expireLockedConfirmationHold(
+            client,
+            submission,
+            input.submissionId,
+            now.toISOString(),
+          );
+          await client.query("COMMIT");
+          inTransaction = false;
+          return { kind: "failed" as const };
+        }
+      }
       const leaseExpiresAt = row.harness_lease_expires_at
         ? new Date(row.harness_lease_expires_at)
         : null;
@@ -765,6 +804,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     leaseId: string;
     workspaceId: string;
     submissionId: string;
+    confirmationDispatch?: CreationSubmissionRecord['confirmationDispatch'];
   }) {
     const client = await this.pool.connect();
     let inTransaction = false;
@@ -796,8 +836,87 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
                 harness_lease_id = NULL,
                 harness_lease_expires_at = NULL,
                 harness_started_lease_id = $3,
-                updated_at = $4::timestamptz
+                submission = CASE
+                  WHEN $4::jsonb IS NOT NULL
+                    THEN jsonb_set(
+                      submission,
+                      '{confirmationDispatch}',
+                      jsonb_set(
+                        COALESCE($4::jsonb, '{}'::jsonb),
+                        '{state}',
+                        '"dispatched"'::jsonb,
+                        true
+                      ),
+                      true
+                    )
+                  ELSE submission
+                END,
+                updated_at = $5::timestamptz
           WHERE workspace_id = $1 AND id = $2`,
+        [
+          input.workspaceId,
+          input.submissionId,
+          input.leaseId,
+          input.confirmationDispatch
+            ? JSON.stringify(input.confirmationDispatch)
+            : null,
+          (await databaseNow(client)).toISOString(),
+        ],
+      );
+      await client.query("COMMIT");
+      inTransaction = false;
+    } catch (error) {
+      if (inTransaction) await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async markHarnessStartDispatched(input: {
+    leaseId: string;
+    workspaceId: string;
+    submissionId: string;
+  }) {
+    const client = await this.pool.connect();
+    let inTransaction = false;
+    try {
+      await client.query("BEGIN");
+      inTransaction = true;
+      const row = await this.lockSubmission(client, input);
+      if (
+        row.harness_state !== "starting" ||
+        row.harness_lease_id !== input.leaseId
+      ) {
+        throw new Error(
+          `Harness start lease ${input.leaseId} is no longer current.`,
+        );
+      }
+      const submission = storedSubmission(row.submission);
+      if (!submission.confirmationDispatch) {
+        await client.query("COMMIT");
+        inTransaction = false;
+        return submission;
+      }
+      if (submission.confirmationDispatch.state === "expired") {
+        throw new Error(
+          `Confirmation dispatch for ${input.submissionId} already expired.`,
+        );
+      }
+      const updated = await client.query<{ submission: unknown }>(
+        `UPDATE execution_spine.creation_submissions
+            SET submission = jsonb_set(
+                  submission,
+                  '{confirmationDispatch,state}',
+                  '"dispatched"'::jsonb,
+                  true
+                ),
+                updated_at = $4::timestamptz
+          WHERE workspace_id = $1
+            AND id = $2
+            AND harness_state = 'starting'
+            AND harness_lease_id = $3
+        RETURNING submission`,
         [
           input.workspaceId,
           input.submissionId,
@@ -805,8 +924,15 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
           (await databaseNow(client)).toISOString(),
         ],
       );
+      const persisted = updated.rows[0];
+      if (!persisted) {
+        throw new Error(
+          `Harness start lease ${input.leaseId} is no longer current.`,
+        );
+      }
       await client.query("COMMIT");
       inTransaction = false;
+      return storedSubmission(persisted.submission);
     } catch (error) {
       if (inTransaction) await client.query("ROLLBACK");
       throw error;
@@ -895,6 +1021,93 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     return result.rows.map((row) => ({ submission: storedSubmission(row.submission) }));
   }
 
+  async expireUndispatchedConfirmationHolds(input: { limit: number }) {
+    if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) {
+      throw new Error('Confirmation expiry limit must be from 1 through 100.');
+    }
+    if (!this.creditLedger) return 0;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const due = await client.query<{ id: string; submission: unknown }>(
+        `SELECT id, submission
+           FROM execution_spine.creation_submissions
+          WHERE harness_state IN ('reserved', 'starting')
+            AND submission->'confirmationDispatch'->>'state' = 'pending'
+            AND COALESCE(
+                  (submission->'confirmationDispatch'->>'expiresAt')::timestamptz,
+                  (submission->'snapshot'->>'createdAt')::timestamptz
+                    + interval '48 hours'
+                ) <= clock_timestamp()
+          ORDER BY updated_at, id
+          LIMIT $1
+          FOR UPDATE SKIP LOCKED`,
+        [input.limit],
+      );
+      const now = (await databaseNow(client)).toISOString();
+      for (const row of due.rows) {
+        const submission = storedSubmission(row.submission);
+        await this.expireLockedConfirmationHold(client, submission, row.id, now);
+      }
+      await client.query('COMMIT');
+      return due.rowCount ?? 0;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private async expireLockedConfirmationHold(
+    client: PoolClient,
+    submission: CreationSubmissionRecord,
+    submissionId: string,
+    now: string,
+  ) {
+    if (!this.creditLedger) return;
+    const billing = new DurableProductBillingService(
+      new PostgresProductBillingRepository(this.pool, client),
+      () => new Date(now),
+    );
+    const refunded = await billing.failAndRefund({
+      quoteId: submission.snapshot.quote.id,
+      workspaceId: submission.snapshot.workspaceId,
+      forceCreditRefund: true,
+      reason: 'confirmation_outbox_expired_before_dispatch',
+    });
+    const credits = storedUsageCredits(submission.usageReservation.credits);
+    if (
+      credits !== undefined &&
+      refunded.quote.lifecycleStatus === 'refunded'
+    ) {
+      await this.creditLedger.refundUsageOperationWithClient(client, {
+        workspaceId: submission.snapshot.workspaceId,
+        usageOperationId: creditUsageOperationId(submission.task.id),
+        refundOperationId: `confirmation-outbox-expiry:${submission.task.id}`,
+        credits,
+        actorId: 'system',
+        correlationId: `confirmation:${submission.task.id}`,
+        createdAt: now,
+      });
+    }
+    await client.query(
+      `UPDATE execution_spine.creation_submissions
+          SET harness_state = 'failed',
+              harness_lease_id = NULL,
+              harness_lease_expires_at = NULL,
+              submission = jsonb_set(
+                submission,
+                '{confirmationDispatch,state}',
+                '"expired"'::jsonb,
+                true
+              ),
+              updated_at = $3::timestamptz
+        WHERE workspace_id = $1 AND id = $2`,
+      [submission.snapshot.workspaceId, submissionId, now],
+    );
+  }
+
   private async lockSubmission(
     client: PoolClient,
     input: { workspaceId: string; submissionId: string },
@@ -937,6 +1150,7 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     decisionReferences?: unknown;
     executionPlanFreeze?: unknown;
     executionConfirmationContext?: unknown;
+    confirmationDispatch?: unknown;
     snapshot?: unknown;
     task?: { id?: unknown };
     usageReservation?: { id?: unknown; credits?: unknown; units?: unknown };
@@ -951,6 +1165,9 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
   );
   const executionConfirmationContext = storedExecutionConfirmationContext(
     candidate.executionConfirmationContext,
+  );
+  const confirmationDispatch = storedConfirmationDispatch(
+    candidate.confirmationDispatch,
   );
   const contentPackageId = requiredId(
     candidate.contentPackage?.id,
@@ -983,6 +1200,7 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     ...(decisionReferences ? { decisionReferences } : {}),
     ...(executionPlanFreeze ? { executionPlanFreeze } : {}),
     ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
+    ...(confirmationDispatch ? { confirmationDispatch } : {}),
     snapshot,
     task: { id: taskId },
     usageReservation: {
@@ -992,6 +1210,48 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     },
     work: { id: workId },
   };
+}
+
+function storedConfirmationDispatch(
+  value: unknown,
+): CreationSubmissionRecord['confirmationDispatch'] {
+  if (value === undefined || value === null) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Stored creation submission has invalid confirmation dispatch.');
+  }
+  const dispatch = value as Record<string, unknown>;
+  if (
+    (dispatch.requestId !== undefined &&
+      typeof dispatch.requestId !== 'string') ||
+    (dispatch.expiresAt !== undefined &&
+      typeof dispatch.expiresAt !== 'string') ||
+    (dispatch.state !== 'pending' &&
+      dispatch.state !== 'dispatched' &&
+      dispatch.state !== 'expired')
+  ) {
+    throw new Error('Stored creation submission has invalid confirmation dispatch.');
+  }
+  return {
+    ...(typeof dispatch.requestId === 'string'
+      ? { requestId: dispatch.requestId }
+      : {}),
+    state: dispatch.state,
+    ...(typeof dispatch.expiresAt === 'string'
+      ? { expiresAt: dispatch.expiresAt }
+      : {}),
+  };
+}
+
+function confirmationDispatchExpired(
+  submission: CreationSubmissionRecord,
+  now: Date,
+) {
+  const dispatch = submission.confirmationDispatch;
+  if (!dispatch || dispatch.state !== 'pending') return false;
+  const expiresAt = dispatch.expiresAt
+    ? Date.parse(dispatch.expiresAt)
+    : Date.parse(submission.snapshot.createdAt) + 48 * 60 * 60 * 1_000;
+  return Number.isFinite(expiresAt) && expiresAt <= now.getTime();
 }
 
 function storedExecutionPlanFreeze(

@@ -15,6 +15,7 @@ import {
 } from '../agent-session/memory-execution-confirmation-store.js';
 import {
   confirmationCreditPortFromMemoryLedger,
+  type CreateExecutionConfirmationResult,
   ExecutionConfirmationService,
 } from '../agent-session/execution-confirmation-service.js';
 import {
@@ -88,6 +89,7 @@ function paidRequest(overrides: {
       assetReferences: [],
     },
     executionSnapshot: {
+      createdAt: CREATED,
       id: 'snap-1',
       quote: { id: 'quote-1', revision: 'r1' },
       task: { id: taskId },
@@ -145,18 +147,22 @@ function makeService(credits = 20) {
 test('confirm gate attaches the immutable domain decision and admits the paid snapshot', async () => {
   const request = paidRequest({ credits: 7, plan: true });
   const admissions: string[] = [];
+  const decisionReads: Array<[string, string]> = [];
   const out = await confirmPaidGenerationExecution({
     workflowId: 'wf-1',
     request,
     reportProgress: async () => undefined,
-    getExecutionConfirmationDecision: async (requestId) => planConfirmationDecisionSchema.parse({
-      schemaVersion: 'plan-confirmation-decision/v1',
-      decisionId: 'decision-paid-1',
-      requestId,
-      actorId: 'merchant-1',
-      decision: 'confirmed',
-      decidedAt: CREATED,
-    }),
+    getExecutionConfirmationDecision: async (workspaceId, requestId) => {
+      decisionReads.push([workspaceId, requestId]);
+      return planConfirmationDecisionSchema.parse({
+        schemaVersion: 'plan-confirmation-decision/v1',
+        decisionId: 'decision-paid-1',
+        requestId,
+        actorId: 'merchant-1',
+        decision: 'confirmed',
+        decidedAt: CREATED,
+      });
+    },
     admitExecutionPlanSnapshot: async ({ snapshot }) => {
       admissions.push(snapshot.snapshotHash);
       return buildExecutionPlanSnapshot({
@@ -171,6 +177,7 @@ test('confirm gate attaches the immutable domain decision and admits the paid sn
   assert.equal(out.executionPlanSnapshot?.confirmationDecisionRef, 'decision-paid-1');
   assert.equal(out.executionPlanSnapshot?.approvalBasis, 'merchant_confirmed');
   assert.deepEqual(admissions, [request.pendingExecutionPlanSnapshot!.snapshotHash]);
+  assert.deepEqual(decisionReads, [['ws-1', 'confirmation:wf-1']]);
 });
 
 test('confirm gate fails closed when a pending paid freeze has no domain decision reader', async () => {
@@ -185,6 +192,123 @@ test('confirm gate fails closed when a pending paid freeze has no domain decisio
     /cannot start without confirmation decision/u,
   );
 });
+
+test('post-confirm live quote drift creates a diff-bound request and requires re-confirmation', async () => {
+  const request = paidRequest({ credits: 7, plan: true });
+  request.executionConfirmationRequestId = 'confirmation-authority-r1';
+  request.executionConfirmationReservationIdempotencyKey =
+    'consume:task:wf-drift';
+  const questions: string[] = [];
+  const created: Array<{ requestId: string; quoteRevision: number | string }> = [];
+  const admissionWorkflowIds: string[] = [];
+  let authoritativeSnapshotHash = '';
+  let liveReads = 0;
+  let activeReservationId: string | undefined;
+  const out = await confirmPaidGenerationExecution({
+    workflowId: 'wf-drift',
+    request,
+    reportProgress: async () => undefined,
+    awaitResolvedDecision: async (question) => {
+      questions.push(`${question.questionId}:${question.question}`);
+      if (questions.length === 2) {
+        assert.equal(
+          activeReservationId,
+          'consume:confirmation:successor-r2',
+          'successor settlement authority must publish before the second decision wait',
+        );
+      }
+      return approve().awaitResolvedDecision(question);
+    },
+    onActiveRequest(activeRequest) {
+      activeReservationId =
+        activeRequest.executionConfirmationReservationIdempotencyKey;
+    },
+    applyCurrentTaskDecision: async (_wf, req) => req,
+    getExecutionConfirmationDecision: async (_workspaceId, requestId) =>
+      planConfirmationDecisionSchema.parse({
+        schemaVersion: 'plan-confirmation-decision/v1',
+        decisionId: `decision-${requestId}`,
+        requestId,
+        actorId: 'merchant-1',
+        decision: 'confirmed',
+        decidedAt: CREATED,
+      }),
+    resolveExecutionPlanLiveFacts: async ({ snapshot }) => {
+      liveReads += 1;
+      return {
+        quoteRevision: liveReads === 1 ? 'r2' : snapshot.quoteRef.revision,
+      };
+    },
+    refreshExecutionPlanLiveBindings: async (input) => ({
+      revision: {
+        planId: input.planId,
+        revision: input.expectedRevision + 1,
+        quoteRef: input.quoteRef,
+        boundRevisions: {
+          rightsRevisionIds: [...input.rightsRevisionRefs],
+        },
+      },
+      executionPlan: request.pendingExecutionPlanSnapshot!.content.executionPlan,
+      factRevisionRefs: [...input.factRevisionRefs],
+    }) as never,
+    putExecutionConfirmationAuthority: async (input) => {
+      authoritativeSnapshotHash = input.snapshotHash;
+      assert.equal(
+        input.predecessorRequestId,
+        'confirmation-authority-r1',
+      );
+      created.push({
+        quoteRevision: input.quoteRef.revision,
+        requestId: `confirmation:wf-drift:${input.snapshotHash}`,
+      });
+      return input;
+    },
+    createExecutionConfirmationRequest: async () => {
+      return confirmationResult(
+        `confirmation:wf-drift:${authoritativeSnapshotHash}`,
+        'consume:confirmation:successor-r2',
+      );
+    },
+    admitExecutionPlanSnapshot: async ({ workflowId, snapshot }) => {
+      admissionWorkflowIds.push(workflowId);
+      return snapshot;
+    },
+  });
+
+  assert.equal(out.executionPlanSnapshot?.quoteRef.revision, 'r2');
+  assert.equal(
+    out.executionPlanSnapshot?.planRevision,
+    request.pendingExecutionPlanSnapshot!.content.planRevision + 1,
+  );
+  assert.equal(questions.length, 2);
+  assert.match(questions[1]!, /quote/u);
+  assert.deepEqual(created, [
+    {
+      requestId: `confirmation:wf-drift:${out.executionPlanSnapshot!.snapshotHash}`,
+      quoteRevision: 'r2',
+    },
+  ]);
+  assert.deepEqual(admissionWorkflowIds, [
+    `wf-drift:plan:${out.executionPlanSnapshot!.planRevision}:${out.executionPlanSnapshot!.snapshotHash}`,
+  ]);
+  assert.equal(
+    out.executionPlanSnapshot?.confirmationDecisionRef,
+    `decision-${created[0]!.requestId}`,
+  );
+  assert.equal(
+    out.executionConfirmationReservationIdempotencyKey,
+    'consume:confirmation:successor-r2',
+  );
+});
+
+function confirmationResult(
+  requestId: string,
+  reservationIdempotencyKey = 'consume:task:test',
+): CreateExecutionConfirmationResult {
+  return {
+    stored: { request: { requestId, reservationIdempotencyKey } },
+  } as CreateExecutionConfirmationResult;
+}
 
 test('submission-time reserve + confirmation-time reserve collapse into one debit (U8=A)', async () => {
   const { service, ledger } = makeService(20);

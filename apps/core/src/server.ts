@@ -57,13 +57,13 @@ import type { OperationsApplicationService } from './p1/operations/application-s
 import type { OperationContext } from './p1/operations/types.js';
 import type { HarnessApplicationService } from './p1/harness/application-service.js';
 import type {
-  CreateExecutionConfirmationInput,
   CreateExecutionConfirmationResult,
   DecideExecutionConfirmationInput,
   DecideExecutionConfirmationResult,
   ExpireExecutionConfirmationInput,
   ExpireExecutionConfirmationResult,
 } from './p1/agent-session/execution-confirmation-service.js';
+import type { CreateExecutionConfirmationAuthorityInput } from './p1/agent-session/execution-confirmation-authority.js';
 import { ExecutionConfirmationError } from './p1/agent-session/execution-confirmation-store.js';
 import type { StoredConfirmationRequest } from './p1/agent-session/execution-confirmation-store.js';
 import { composerSubmissionBodySchema } from './p1/execution-spine/creation-execution-snapshot.js';
@@ -97,6 +97,7 @@ import { RouteTable } from './route-table.js';
 import { registerComposerPlanCommandRoutes } from './composer-plan-route-registrar.js';
 
 interface CoreServerDependencies {
+  clock?: () => Date;
   assetReader?: Partial<AssetHttpPolicyPort> & {
     deleteCanvasAsset?(input: {
       objectKey: string;
@@ -257,7 +258,7 @@ interface CoreServerDependencies {
    */
   executionConfirmation?: {
     create(
-      input: CreateExecutionConfirmationInput,
+      input: CreateExecutionConfirmationAuthorityInput,
     ): Promise<CreateExecutionConfirmationResult>;
     decide(
       input: DecideExecutionConfirmationInput,
@@ -330,43 +331,20 @@ const workspaceBootstrapRequestSchema = z.object({
   }),
 });
 
-const agentRevisionRefBodySchema = z.object({
-  id: z.string().trim().min(1).max(200),
-  revision: z.union([
-    z.number().int().nonnegative(),
-    z.string().trim().min(1).max(64),
-  ]),
-});
-
 // V31-11: confirmation-card create body (domain service re-validates deeply
 // via agentExecutionConfirmationRequestSchema — hold window + campaign bits).
-const executionConfirmationCreateBodySchema = z.object({
-  requestId: z.string().trim().min(1).max(200),
-  planId: z.string().trim().min(1).max(200),
-  planRevision: z.number().int().positive(),
-  snapshotHash: z.string().trim().min(1).max(200),
-  quoteRef: agentRevisionRefBodySchema,
-  reservationIdempotencyKey: z.string().trim().min(1).max(200),
-  createdAt: z.string().trim().min(1).max(64),
-  holdExpiresAt: z.string().trim().min(1).max(64),
-  creditCost: z.number().int().nonnegative(),
-  failureRefundsCredits: z.boolean(),
-  rightsSummary: z.string().max(2000).nullish(),
-  factSummary: z.string().max(2000).nullish(),
-  campaignPlanRef: agentRevisionRefBodySchema.optional(),
-  workOrdinal: z.number().int().positive().optional(),
-  approvalScope: z.enum(['plan_only', 'single_work']).optional(),
-});
+const executionConfirmationCreateBodySchema = z
+  .object({
+    workflowId: z.string().trim().min(1).max(200),
+  })
+  .strict();
 
 const executionConfirmationDecideBodySchema = z.object({
   decisionId: z.string().trim().min(1).max(200),
   decision: z.enum(['confirmed', 'rejected']),
-  decidedAt: z.string().trim().min(1).max(64),
 });
 
-const executionConfirmationExpireBodySchema = z.object({
-  now: z.string().trim().min(1).max(64),
-});
+const executionConfirmationExpireBodySchema = z.object({});
 
 /**
  * V31-11 route-layer translation: ExecutionConfirmationError is a plain domain
@@ -380,6 +358,8 @@ function translateExecutionConfirmationError(error: unknown): never {
         : error.code === 'INSUFFICIENT_CREDITS' ||
             error.code === 'INVALID_STATE' ||
             error.code === 'CAMPAIGN_WORK_ALREADY_OPEN' ||
+            error.code === 'DECISION_IMMUTABLE' ||
+            error.code === 'IDEMPOTENCY_CONFLICT' ||
             error.code === 'HOLD_NOT_EXPIRED'
           ? 409
           : 400;
@@ -974,6 +954,7 @@ export function createCoreServer({
   serviceToken,
   workflowEvents,
   workflowHeartbeatMs = 15_000,
+  clock = () => new Date(),
 }: CoreServerDependencies) {
   const assetPolicy = assetReader ? assetHttpPolicyFor(assetReader) : undefined;
   return createServer(async (request, response) => {
@@ -2467,6 +2448,8 @@ export function createCoreServer({
                 ...body,
                 requestId,
                 actorId: context.userId,
+                workspaceId: context.workspaceId,
+                decidedAt: clock().toISOString(),
               });
             } catch (error) {
               throw translateExecutionConfirmationError(error);
@@ -2476,7 +2459,11 @@ export function createCoreServer({
           {
             code: 'CONFIRMATION_DECIDE_FAILED',
             message: 'The confirmation decision could not be recorded.',
-            p1Statuses: { NOT_FOUND: 404, INVALID_STATE: 409 },
+            p1Statuses: {
+              IDEMPOTENCY_CONFLICT: 409,
+              NOT_FOUND: 404,
+              INVALID_STATE: 409,
+            },
             status: 400,
             unknownMessage: 'error',
           }
@@ -2507,14 +2494,16 @@ export function createCoreServer({
               requestCorrelationId
             );
             authorizeContentCreation(context);
-            const body = executionConfirmationExpireBodySchema.parse(
+            executionConfirmationExpireBodySchema.parse(
               await readJson(request)
             );
             let result: ExpireExecutionConfirmationResult;
             try {
               result = await executionConfirmation!.expire({
                 requestId,
-                now: body.now,
+                now: clock().toISOString(),
+                actorId: context.userId,
+                workspaceId: context.workspaceId,
               });
             } catch (error) {
               throw translateExecutionConfirmationError(error);
@@ -2524,7 +2513,11 @@ export function createCoreServer({
           {
             code: 'CONFIRMATION_EXPIRE_FAILED',
             message: 'The confirmation hold could not be expired.',
-            p1Statuses: { NOT_FOUND: 404, INVALID_STATE: 409 },
+            p1Statuses: {
+              IDEMPOTENCY_CONFLICT: 409,
+              NOT_FOUND: 404,
+              INVALID_STATE: 409,
+            },
             status: 400,
             unknownMessage: 'error',
           }

@@ -17,7 +17,10 @@ import type {
  * semantic stages without reconstructing browser selections from intent text.
  */
 export interface HarnessCreationAdmissionPort {
-	submit(input: HarnessTaskRequest): Promise<{ workflowId: string }>;
+	submit(input: HarnessTaskRequest): Promise<{
+		workflowId: string;
+		executionConfirmationRequestId?: string;
+	}>;
 }
 
 export class CreationStagePort implements CreationSubmissionHarnessStarter {
@@ -46,6 +49,14 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 		if (started.workflowId !== submission.task.id) {
 			throw new Error("Harness admission must preserve the Coordinator task ID.");
 		}
+		return {
+			...(started.executionConfirmationRequestId
+				? {
+						executionConfirmationRequestId:
+							started.executionConfirmationRequestId,
+					}
+				: {}),
+		};
 	}
 
 	async classifyStartFailure(
