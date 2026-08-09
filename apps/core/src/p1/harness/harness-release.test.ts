@@ -10,6 +10,10 @@ import test from 'node:test';
 
 import type { AgentControlLimits } from '@meiye/contracts';
 
+import {
+  createDefaultIntentRetrievalBindings,
+  mergeDefaultIntentRetrievalBindings,
+} from '../agent-session/intent-retrieval-policies.js';
 import { P1DomainError } from '../foundation/domain.js';
 import {
   HARNESS_PROMPT_PACKS,
@@ -29,6 +33,7 @@ import {
   ensureSeedProductionRelease,
   SEED_HARNESS_RELEASE_ID,
 } from './seed-harness-release.js';
+import { resolveSessionRunRelease } from './session-run-release.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
 
@@ -216,6 +221,83 @@ test('legacy empty immutable production is atomically replaced by exact-pin seed
   const seed = await service.getExactRelease(SEED_HARNESS_RELEASE_ID);
   assert.ok(Object.keys(seed.promptPackBindings).length > 0);
   assert.ok(Object.values(seed.promptBindings).every((ref) => ref.version === '1'));
+});
+
+test('seeded production release owns its middleware; the assembly merge adds nothing', async () => {
+  const store = new MemoryHarnessReleaseStore();
+  const service = new HarnessReleaseService(store);
+  await ensureSeedProductionRelease({ store, service });
+  const seed = await service.getExactRelease(SEED_HARNESS_RELEASE_ID);
+
+  assert.deepEqual(
+    seed.middlewareBindings,
+    createDefaultIntentRetrievalBindings(),
+  );
+  // The session port used by core-assembly must return the release's own
+  // bindings unchanged; otherwise the assembly is a second authority.
+  const resolved = await resolveSessionRunRelease({
+    service,
+    harnessReleaseId: SEED_HARNESS_RELEASE_ID,
+  });
+  assert.equal(resolved.releaseId, SEED_HARNESS_RELEASE_ID);
+  assert.deepEqual(resolved.middlewareBindings, seed.middlewareBindings);
+  // An incomplete release still gets filled — that fail-open is why the seed
+  // has to be complete in the first place.
+  assert.equal(
+    mergeDefaultIntentRetrievalBindings([]).length,
+    createDefaultIntentRetrievalBindings().length,
+  );
+});
+
+test('an unknown frozen pin fails closed instead of falling back to production', async () => {
+  const { store, service } = createService();
+  await service.publishArtifact(basePublish('live-production'));
+  await service.transitionLifecycle({
+    releaseId: 'live-production',
+    toStatus: 'evaluating',
+    now: TS,
+  });
+  await service.transitionLifecycle({
+    releaseId: 'live-production',
+    toStatus: 'canary',
+    now: TS,
+  });
+  await service.transitionLifecycle({
+    releaseId: 'live-production',
+    toStatus: 'production',
+    now: TS,
+  });
+  assert.equal(
+    (await store.getLifecycleByStatus('production'))?.releaseId,
+    'live-production',
+  );
+
+  // Session port: a run pinned to a release this store never saw must fail,
+  // not silently continue on the current production composition.
+  await assert.rejects(
+    resolveSessionRunRelease({
+      service,
+      harnessReleaseId: 'release-that-never-existed',
+    }),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.code === 'NOT_FOUND' &&
+      error.message.includes('release-that-never-existed'),
+  );
+  // Same fail-closed answer one level down, so neither layer can reintroduce it.
+  await assert.rejects(
+    service.resolveForRun({
+      workspaceId: 'ws-any',
+      frozenReleaseId: 'release-that-never-existed',
+    }),
+    (error: unknown) =>
+      error instanceof P1DomainError && error.code === 'NOT_FOUND',
+  );
+  // A run with no pin at all still resolves the rollout normally.
+  assert.equal(
+    (await resolveSessionRunRelease({ service })).releaseId,
+    'live-production',
+  );
 });
 
 test('rollback rejects draft and evaluating releases without production history', async () => {

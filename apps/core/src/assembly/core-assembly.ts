@@ -29,8 +29,6 @@ import {
   PostgresAgentSessionStore,
   PostgresExecutionConfirmationMigration,
   PostgresMarketingPlanStore,
-  controlLimitsFromArtifact,
-  createDefaultIntentRetrievalBindings,
   createIntentRetrievalPolicies,
   createProductionPlanCompiler,
   createProductionPlanCompilerPorts,
@@ -108,6 +106,7 @@ import { PostgresHarnessReleaseStore } from '../p1/harness/postgres-harness-rele
 import {
   HarnessReleaseService,
 } from '../p1/harness/harness-release.js';
+import { resolveSessionRunRelease } from '../p1/harness/session-run-release.js';
 import { ensureSeedProductionRelease } from '../p1/harness/seed-harness-release.js';
 import {
   assertProductionReleasePromptResolvable,
@@ -805,23 +804,11 @@ export async function assembleCoreGraph(
         kernel: sessionAgentKernel,
         // Lifecycle-aware resolution is fail-closed: a frozen run must always
         // resolve its exact immutable release. Rollback only changes new runs.
-        resolveRelease: async (harnessReleaseId) => {
-          const resolved = await harnessReleaseService.resolveForRun({
-            frozenReleaseId: harnessReleaseId,
-          });
-          const base = controlLimitsFromArtifact(resolved.artifact);
-          const existing = base.middlewareBindings ?? [];
-          const defaults = createDefaultIntentRetrievalBindings();
-          const present = new Set(existing.map((item) => item.policyId));
-          return {
-            controlLimits: resolved.controlLimits,
-            middlewareBindings: [
-              ...existing,
-              ...defaults.filter((item) => !present.has(item.policyId)),
-            ],
-            releaseId: resolved.releaseId,
-          };
-        },
+        resolveRelease: (harnessReleaseId) =>
+          resolveSessionRunRelease({
+            service: harnessReleaseService,
+            harnessReleaseId,
+          }),
         createToolRegistry: (turn) =>
           createRetrievalToolRegistry({
             ports: sessionRetrievalPorts,

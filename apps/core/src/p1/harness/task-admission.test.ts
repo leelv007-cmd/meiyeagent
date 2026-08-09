@@ -28,11 +28,13 @@ import type {
   HarnessPromptResolver,
 } from './langfuse-prompts.js';
 import {
-  HARNESS_CORE_PROMPT_KEYS,
   HARNESS_LANGFUSE_PROMPT_NAMES,
   type HarnessPromptKey,
 } from './langfuse-prompts.js';
-import { promptKeysForPacks } from './prompt-packs.js';
+import {
+  COPY_TASK_PROMPT_PACK_IDS,
+  promptKeysForPacks,
+} from './prompt-packs.js';
 import {
   buildExecutionPlanSnapshot,
   ExecutionPlanAdmissionService,
@@ -414,16 +416,17 @@ test('Composer admission assembles manifest, binding, prompts, pin, then starts'
       const promptAxisIds = axisIds.filter(
         (axisId) => !axisId.startsWith('skill:'),
       );
-      // Copy-lens pins only the historical core 14; XHS vertical axisIds stay out.
-      assert.equal(promptAxisIds.length, HARNESS_CORE_PROMPT_KEYS.length);
-      assert.equal(promptAxisIds.length, 14);
-      assert.deepEqual(promptAxisIds, [...HARNESS_CORE_PROMPT_KEYS]);
+      // V31-20: a copy-lens task declares capability for exactly the prompt
+      // sites its declared packs freeze — no whole-registry surface, and no
+      // axis for a site the request never pinned.
+      const copyPromptKeys = promptKeysForPacks(COPY_TASK_PROMPT_PACK_IDS);
+      assert.deepEqual(promptAxisIds, [...copyPromptKeys]);
       assert.equal(
         promptAxisIds.some((axisId) => axisId.startsWith('xhs')),
         false,
       );
       assert.deepEqual(axisIds, [
-        ...HARNESS_CORE_PROMPT_KEYS,
+        ...copyPromptKeys,
         'skill:skill.intent@3',
       ]);
       return {

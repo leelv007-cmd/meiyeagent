@@ -1,3 +1,4 @@
+import { createDefaultIntentRetrievalBindings } from '../agent-session/intent-retrieval-policies.js';
 import type { PublishHarnessReleaseInput } from './harness-release.js';
 import {
   HarnessReleaseService,
@@ -8,7 +9,13 @@ import {
   promptKeysForAllPacks,
 } from './prompt-packs.js';
 
-export const SEED_HARNESS_RELEASE_ID = 'harness-release-seed-v1';
+/**
+ * The artifact is immutable, so the id has to change whenever the manifest
+ * below changes — republishing different content under the same id is an
+ * IDEMPOTENCY_CONFLICT, and an already-seeded environment would keep the old
+ * composition anyway. Bump this suffix together with the manifest.
+ */
+export const SEED_HARNESS_RELEASE_ID = 'harness-release-seed-v2';
 const SEED_CREATED_AT = '2026-08-09T00:00:00.000Z';
 
 /** Checked-in exact-pin seed; it is release authority, never derived from env. */
@@ -18,7 +25,12 @@ export function seedHarnessReleaseManifest(): PublishHarnessReleaseInput {
     version: 1,
     agentSessionHarnessVersion: 'agent-session/v1',
     makeHarnessVersion: 'make-harness/v1',
-    middlewareBindings: [],
+    /**
+     * The seed must carry the middleware the runtime actually installs, or the
+     * release stops being the authority and the assembly's default injection
+     * becomes a second truth.
+     */
+    middlewareBindings: createDefaultIntentRetrievalBindings(),
     controlLimits: {
       maxLlmSteps: 6,
       maxToolCalls: 8,
