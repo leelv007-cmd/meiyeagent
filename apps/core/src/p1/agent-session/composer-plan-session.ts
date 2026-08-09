@@ -311,7 +311,21 @@ export class ComposerPlanSessionCoordinator
         !isCompilableTurn(turnResult) &&
         !this.turnDeclinedToPlan(turnResult)
       ) {
-        assertTurnCanBeWaitedOn(turnResult);
+        try {
+          assertTurnCanBeWaitedOn(turnResult);
+        } catch (error) {
+          // V31-39: neither a plan proposal nor a merchant question means
+          // nothing can ever advance this run. Leaving it `running` (or
+          // parking it `waiting` with no interrupt to answer) strands it
+          // forever; fail it with the real error instead of a fabricated one.
+          await this.sessions.updateRunStatus({
+            resourceId,
+            runId,
+            status: 'failed',
+            finishedAt: this.now(),
+          });
+          throw error;
+        }
         await this.requestClarificationInterrupt({
           resourceId,
           threadId,
