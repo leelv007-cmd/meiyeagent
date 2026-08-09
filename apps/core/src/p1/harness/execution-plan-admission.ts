@@ -85,6 +85,9 @@ export type FreezeExecutionPlanResult = {
   snapshotHash: string;
 };
 
+/** Durable pre-decision carrier. The immutable decision is intentionally absent. */
+export type PendingExecutionPlanSnapshot = FreezeExecutionPlanResult;
+
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
@@ -240,6 +243,18 @@ export function assembleExecutionPlanSnapshot(
     snapshotHash,
     confirmationDecisionRef: input.confirmationDecisionRef,
   });
+}
+
+export function assemblePendingExecutionPlanSnapshot(
+  input: Omit<ExecutionPlanSnapshotAssemblyInput, 'confirmationDecisionRef'>,
+): PendingExecutionPlanSnapshot {
+  const snapshot = assembleExecutionPlanSnapshot({
+    ...input,
+    ...(input.freeze.approvalBasis === 'merchant_confirmed'
+      ? { confirmationDecisionRef: 'pending-decision-not-admitted' }
+      : {}),
+  });
+  return freezeExecutionPlanContent(pickFrozenContent(snapshot));
 }
 
 // ─── Store contract ──────────────────────────────────────────────────────────

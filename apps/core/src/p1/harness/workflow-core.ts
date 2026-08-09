@@ -11,6 +11,8 @@ import {
   type NoteStyleCandidates,
   type QuestionCard,
   type StructuredDecisionInput,
+  type ExecutionPlanSnapshot,
+  type PlanConfirmationDecision,
 } from '@meiye/contracts';
 import { projectHarnessExperienceBasis } from './experience-basis.js';
 
@@ -76,10 +78,6 @@ import {
 } from './make-snapshot-consume.js';
 import { confirmPaidGenerationExecution } from './paid-generation-confirmation.js';
 import { createNotePageProgressReporter } from './note-page-execution-frame.js';
-import type {
-  CreateExecutionConfirmationInput,
-  CreateExecutionConfirmationResult,
-} from '../agent-session/execution-confirmation-service.js';
 import {
   createCarrierProgramRegistry,
   executeCompiledCarrierPlan,
@@ -232,15 +230,14 @@ export interface HarnessSharedStagePorts {
       'execution_check' | 'event_persistence'
     >;
   }): Promise<void>;
-  /**
-   * V31-11 confirmation objects: create the paid-execution confirmation request
-   * after merchant approval at the confirm gate. Optional — fixture paths and
-   * pre-V31-12 runs omit it; DBOS production wires
-   * ExecutionConfirmationService.createRequest (idempotent by requestId).
-   */
-  createExecutionConfirmationRequest?: (
-    input: CreateExecutionConfirmationInput,
-  ) => Promise<CreateExecutionConfirmationResult>;
+  getExecutionConfirmationDecision?: (
+    requestId: string,
+  ) => Promise<PlanConfirmationDecision | null>;
+  admitExecutionPlanSnapshot?: (input: {
+    workflowId: string;
+    workspaceId: string;
+    snapshot: ExecutionPlanSnapshot;
+  }) => Promise<ExecutionPlanSnapshot>;
   resolveStageSkills?(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
@@ -1368,12 +1365,13 @@ export async function runHarnessWorkflow(
   runtime: HarnessWorkflowRuntime,
   options: RunHarnessWorkflowOptions = {},
 ): Promise<HarnessWorkflowResult> {
+  let activeRequest = request;
   const collaborators = stageCollaborators(
     stagePorts,
-    request.executionSnapshot?.lens,
+    activeRequest.executionSnapshot?.lens,
   );
   const descriptor =
-    HARNESS_LENS_STAGE_DESCRIPTORS[request.executionSnapshot?.lens ?? 'copy'];
+    HARNESS_LENS_STAGE_DESCRIPTORS[activeRequest.executionSnapshot?.lens ?? 'copy'];
   // D-118: every output lens dispatches inside the shared five-stage Harness;
   // lightweight copy/image execution may degrade stages but never bypass them.
   const ports = stagePortView(stagePorts, collaborators, descriptor.kind);
@@ -1388,11 +1386,24 @@ export async function runHarnessWorkflow(
       ? 'legacy_five_stage_runner'
       : 'compiled_plan_executor',
   );
+  if (activeRequest.pendingExecutionPlanSnapshot) {
+    activeRequest = await confirmPaidGenerationExecution({
+      workflowId,
+      request: activeRequest,
+      reportProgress,
+      getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
+      admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
+      awaitResolvedDecision: (question, stage) =>
+        awaitResolvedDecision(runtime, question, stage),
+      applyCurrentTaskDecision: (wfId, req, command) =>
+        applyCurrentTaskDecision(wfId, req, command, runtime),
+    });
+  }
   const prelude = await runWorkflowPrelude({
     descriptor,
     ports,
     reportProgress,
-    request,
+    request: activeRequest,
     runtime,
     workflowId,
     forceLegacyFiveStage: options.forceLegacyFiveStage,
@@ -1410,8 +1421,8 @@ export async function runHarnessWorkflow(
   });
   const { result } = await executeCompiledCarrierPlan({
     context: {
-      lens: request.executionSnapshot?.lens,
-      frozenExecutionPlan: request.executionPlanSnapshot?.executionPlan,
+      lens: activeRequest.executionSnapshot?.lens,
+      frozenExecutionPlan: activeRequest.executionPlanSnapshot?.executionPlan,
       forceLegacyFiveStage: options.forceLegacyFiveStage,
     },
     programInput: {
@@ -1420,7 +1431,7 @@ export async function runHarnessWorkflow(
       prelude,
       progress,
       reportProgress,
-      request,
+      request: activeRequest,
       runtime,
       workflowId,
     },
@@ -1722,8 +1733,8 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
     workflowId,
     request: activeRequest,
     reportProgress,
-    createExecutionConfirmationRequest:
-      ports.createExecutionConfirmationRequest,
+    getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
+    admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
     awaitResolvedDecision: (question, stage) =>
       awaitResolvedDecision(runtime, question, stage),
     applyCurrentTaskDecision: (wfId, req, command) =>
@@ -2212,8 +2223,8 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
     request: activeRequest,
     reportProgress,
     noteOutline: noteOutlineSummary,
-    createExecutionConfirmationRequest:
-      ports.createExecutionConfirmationRequest,
+    getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
+    admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
     awaitResolvedDecision: (question, stage) =>
       awaitResolvedDecision(runtime, question, stage),
     applyCurrentTaskDecision: (wfId, req, command) =>
@@ -2569,8 +2580,8 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
     workflowId,
     request: activeRequest,
     reportProgress,
-    createExecutionConfirmationRequest:
-      ports.createExecutionConfirmationRequest,
+    getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
+    admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
     awaitResolvedDecision: (question, stage) =>
       awaitResolvedDecision(runtime, question, stage),
     applyCurrentTaskDecision: (wfId, req, command) =>

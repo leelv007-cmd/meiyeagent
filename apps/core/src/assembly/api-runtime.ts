@@ -1396,8 +1396,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         // same credit operation id makes execution-time settlement a no-op
         // (U8=A — reserve before confirm, single debit).
         executionConfirmation: {
-          createRequest: (input) =>
-            executionConfirmationService.createRequest(input),
+          getDecision: (requestId) =>
+            executionConfirmationService.getDecision(requestId),
         },
         billing: {
           commit: (input) => harnessBilling.commit(input),
@@ -1559,7 +1559,11 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         createProductionSkillManifestResolver(skillRuntime.instructionResolver),
         promptAuditStore,
         // V31-12: one-shot ExecutionPlanSnapshot write on the real admission path.
-        executionPlanAdmissionService
+        executionPlanAdmissionService,
+        {
+          createRequest: (input) =>
+            executionConfirmationService.createRequest(input),
+        },
       ),
       harnessDecisions,
       harnessSchemaStore,
