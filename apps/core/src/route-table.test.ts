@@ -8,10 +8,13 @@ test('every Core route declares its auth class', () => {
     'agent-semantic-replay': 'service-token',
     assets: 'service-token',
     capabilities: 'public',
+    'campaign-paid-work-start': 'service-token',
+    'campaign-paid-work-status': 'service-token',
     'canvas-text-stream': 'service-token',
     'composer-content-package': 'service-token',
     'composer-destination-map': 'service-token',
     'composer-submissions': 'service-token',
+    'composer-task-answer': 'service-token',
     'composer-task-events': 'service-token',
     'composer-task-revise': 'service-token',
     'composer-task-start': 'service-token',
@@ -50,5 +53,5 @@ test('every Core route declares its auth class', () => {
     'workflow-events': 'service-token',
     'assistant-stream': 'service-token',
   });
-  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 45);
+  assert.equal(new Set(CORE_ROUTE_AUTH_CLASSES.map(([id]) => id)).size, 48);
 });
