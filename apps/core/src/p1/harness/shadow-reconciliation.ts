@@ -350,8 +350,9 @@ export class ShadowReconciliationService {
         newChain,
         oldChain: input.oldChain,
       };
-      const stored = await this.deps.store.putSampleIdempotent(sample);
-      await this.touchProgramStateOnSample(stored);
+      const inserted = await this.deps.store.putSampleIfOpen(sample);
+      if (!inserted.accepted) return { sampled: false };
+      const stored = inserted.sample;
 
       if (!stored.matched) {
         await this.appendAudit({
@@ -431,14 +432,19 @@ export class ShadowReconciliationService {
       if (!reason) return null;
 
       const closedAt = input.now;
-      await this.deps.store.putProgramState({
+      const closedState: ShadowProgramState = {
         ...state,
         status: 'closed',
         updatedAt: closedAt,
         closeReason: reason,
         closedAt,
         closedBy: input.operatorId,
-      });
+      };
+      const wonClose = await this.deps.store.closeProgramStateCas(
+        state,
+        closedState,
+      );
+      if (!wonClose) return null;
       await this.appendAudit({
         action: 'close_shadow_reconciliation',
         operatorId: input.operatorId,
@@ -464,41 +470,6 @@ export class ShadowReconciliationService {
       console.error('Shadow reconciliation close check failed.', error);
       return null;
     }
-  }
-
-  private async touchProgramStateOnSample(
-    sample: ShadowReconciliationSample,
-  ): Promise<void> {
-    const existing = await this.deps.store.getProgramState();
-    if (existing?.status === 'closed') return;
-
-    // putSampleIdempotent may return a prior sample — only count first insert
-    // when program sampleCount is still behind. Prefer recompute from store.
-    const samples = await this.deps.store.listSamples(10_000);
-    const sampleCount = samples.length;
-    const mismatchCount = samples.filter((s) => !s.matched).length;
-    const lastMismatchAt =
-      samples
-        .filter((s) => !s.matched)
-        .map((s) => s.sampledAt)
-        .sort()
-        .at(-1) ?? null;
-    const openedAt =
-      existing?.openedAt ??
-      samples.map((s) => s.sampledAt).sort()[0] ??
-      sample.sampledAt;
-
-    await this.deps.store.putProgramState({
-      status: 'open',
-      openedAt,
-      updatedAt: sample.sampledAt,
-      closeReason: null,
-      closedAt: null,
-      closedBy: null,
-      lastMismatchAt,
-      sampleCount,
-      mismatchCount,
-    });
   }
 
   private async appendAudit(input: {
@@ -568,7 +539,6 @@ export function mapExecutionLensToCarrier(
  * Returns null when independent dual sources are insufficient.
  */
 export function projectLegacyFromMakeRequest(input: {
-  snapshot: ExecutionPlanSnapshot;
   boundedExecution?: BoundedExecutionSnapshot;
   /**
    * Optional independently observed deliverables (e.g. from executionSnapshot).

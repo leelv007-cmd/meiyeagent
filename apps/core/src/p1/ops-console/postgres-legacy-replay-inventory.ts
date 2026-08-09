@@ -33,9 +33,12 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
       `with active_legacy as (
          select requests.task_id, requests.workflow_id, requests.created_at
          from harness_runtime.task_requests requests
-         where (
-           requests.request->'executionPlanSnapshot' is null
-           or jsonb_typeof(requests.request->'executionPlanSnapshot') = 'null'
+         where not exists (
+           select 1 from p1_execution_plan_snapshots snapshots
+           where snapshots.workflow_id = requests.task_id
+             and snapshots.snapshot_hash =
+               requests.request->'executionPlanSnapshot'->>'snapshotHash'
+             and snapshots.payload = requests.request->'executionPlanSnapshot'
          )
          and not exists (
            select 1 from harness_runtime.audit_events events
@@ -75,16 +78,26 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
           and events.event_type in (
             'package_delivered', 'workflow_failed', 'revision_conflict'
           )
-         where requests.request->'executionPlanSnapshot' is null
-            or jsonb_typeof(requests.request->'executionPlanSnapshot') = 'null'
+         where not exists (
+           select 1 from p1_execution_plan_snapshots snapshots
+           where snapshots.workflow_id = requests.task_id
+             and snapshots.snapshot_hash =
+               requests.request->'executionPlanSnapshot'->>'snapshotHash'
+             and snapshots.payload = requests.request->'executionPlanSnapshot'
+         )
          union all
          select decisions.created_at as terminal_at
          from harness_runtime.task_requests requests
          join harness_runtime.decision_events decisions
            on decisions.task_id = requests.task_id
           and decisions.resolution_source = 'core_hold_expired'
-         where requests.request->'executionPlanSnapshot' is null
-            or jsonb_typeof(requests.request->'executionPlanSnapshot') = 'null'
+         where not exists (
+           select 1 from p1_execution_plan_snapshots snapshots
+           where snapshots.workflow_id = requests.task_id
+             and snapshots.snapshot_hash =
+               requests.request->'executionPlanSnapshot'->>'snapshotHash'
+             and snapshots.payload = requests.request->'executionPlanSnapshot'
+         )
        ) terminals`,
     );
 
@@ -93,7 +106,6 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
       oldestActiveCreatedAt: toIso(activeRow?.oldest_created_at),
       sampleTaskIds: activeRow?.sample_task_ids ?? [],
       lastLegacyTerminalAt: toIso(terminal.rows[0]?.terminal_at ?? null),
-      noHistoryProofAuditId: null,
     };
   }
 }

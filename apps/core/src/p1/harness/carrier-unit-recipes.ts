@@ -108,7 +108,7 @@ export function buildCopyCarrierRecipe(): CarrierUnitRecipe {
       stage: 'execution_selection',
       role: 'gate',
     }),
-    unit('unit-copy-assemble', 'copy.generate', 'record', {
+    unit('unit-copy-assemble', 'delivery.record', 'record', {
       stage: 'assembly_delivery',
       role: 'assemble',
     }),
@@ -151,7 +151,7 @@ export function buildNoteCarrierRecipe(): CarrierUnitRecipe {
       stage: 'brief_compilation',
       role: 'brief',
     }),
-    unit('unit-note-style-ask', 'compliance.check', 'ask_merchant', {
+    unit('unit-note-style-ask', 'merchant.ask', 'ask_merchant', {
       stage: 'brief_compilation',
       role: 'style_choice',
     }),
@@ -163,11 +163,11 @@ export function buildNoteCarrierRecipe(): CarrierUnitRecipe {
       stage: 'execution_selection',
       role: 'consistency',
     }),
-    unit('unit-note-revise', 'note.generate', 'revise', {
+    unit('unit-note-revise', 'note.revise', 'revise', {
       stage: 'execution_selection',
       role: 'page_regenerate',
     }),
-    unit('unit-note-assemble', 'note.generate', 'record', {
+    unit('unit-note-assemble', 'delivery.record', 'record', {
       stage: 'assembly_delivery',
       role: 'assemble',
     }),
@@ -227,7 +227,7 @@ export function buildMediaCarrierRecipe(): CarrierUnitRecipe {
       stage: 'execution_selection',
       role: 'gate',
     }),
-    unit('unit-media-assemble', 'media.generate', 'record', {
+    unit('unit-media-assemble', 'delivery.record', 'record', {
       stage: 'assembly_delivery',
       role: 'assemble',
     }),
@@ -306,6 +306,12 @@ export class CarrierUnitRecipeRegistry {
           `Carrier ${recipe.carrier} unit ${u.unitId} uses unregistered unitType ${u.unitType}`,
         );
       }
+      const definition = this.unitRegistry.resolve(u.unitType);
+      if (definition.primitive !== u.primitive) {
+        throw new CarrierRecipeRegistryError(
+          `Carrier ${recipe.carrier} unit ${u.unitId} primitive ${u.primitive} does not match ${u.unitType}=${definition.primitive}`,
+        );
+      }
     }
   }
 }
@@ -325,13 +331,13 @@ export function createCanonicalCarrierUnitRecipeRegistry(
 
 /**
  * Constructive gate (V3.1 §22.2 / V31-25): a new product carrier may not copy
- * a whole runner. It must register recipe + unit types + program + tests.
+ * a whole runner. It must register recipe + unit types + primitive handlers + tests.
  */
 export function assertCarrierRegistrationComplete(input: {
   carrier: string;
   hasRecipe: boolean;
   hasUnitTypes: boolean;
-  hasCarrierProgram: boolean;
+  hasPrimitiveHandlers: boolean;
   hasTest: boolean;
 }): void {
   if (!input.carrier.trim()) {
@@ -347,9 +353,9 @@ export function assertCarrierRegistrationComplete(input: {
       `Carrier ${input.carrier} missing registered unit types.`,
     );
   }
-  if (!input.hasCarrierProgram) {
+  if (!input.hasPrimitiveHandlers) {
     throw new CarrierRecipeRegistryError(
-      `Carrier ${input.carrier} missing carrier program on the single executor.`,
+      `Carrier ${input.carrier} missing primitive handlers on the single executor.`,
     );
   }
   if (!input.hasTest) {

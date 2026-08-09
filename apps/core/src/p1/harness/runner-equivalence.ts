@@ -125,16 +125,7 @@ export function extractRecoverySemantics(input: {
   progress?: readonly { stage: string; state: string }[];
   traces?: readonly { stage: string }[];
 }): EquivalenceRecoverySemantics {
-  // Executor orchestration receipts are new durable metadata. The before/after
-  // baseline compares business effects, so keep those receipts out of the
-  // pre-convergence effect-key contract.
-  const effectKeys = [
-    ...new Set(
-      (input.effectKeys ?? []).filter(
-        (key) => !key.startsWith('compiled-primitive:'),
-      ),
-    ),
-  ].sort();
+  const effectKeys = [...new Set(input.effectKeys ?? [])].sort();
   const progressSequence = (input.progress ?? []).map(
     (p) => `${p.stage}:${p.state}`,
   );

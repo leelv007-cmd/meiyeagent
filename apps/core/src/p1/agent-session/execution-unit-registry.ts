@@ -121,6 +121,45 @@ export const CANONICAL_EXECUTION_UNIT_TYPES = Object.freeze([
     }),
     policyTags: Object.freeze(['gate', 'deterministic']),
   }),
+  Object.freeze({
+    unitType: 'merchant.ask',
+    description: 'Ask the merchant for a bounded structured decision.',
+    primitive: 'ask_merchant' as const,
+    sideEffectClass: 'external_side_effect' as const,
+    mayAppearInConditional: false,
+    inputSchema: freeInputSchema,
+    cacheDefault: Object.freeze({
+      cacheable: false as const,
+      reason: 'merchant decisions are durable interactions, never cached',
+    }),
+    policyTags: Object.freeze(['merchant_interaction', 'durable_wait']),
+  }),
+  Object.freeze({
+    unitType: 'note.revise',
+    description: 'Revise a bounded note page selection after a failed check.',
+    primitive: 'revise' as const,
+    sideEffectClass: 'none' as const,
+    mayAppearInConditional: false,
+    inputSchema: freeInputSchema,
+    cacheDefault: Object.freeze({
+      cacheable: false as const,
+      reason: 'revision output is non-deterministic',
+    }),
+    policyTags: Object.freeze(['billed', 'paid_media_candidate', 'note']),
+  }),
+  Object.freeze({
+    unitType: 'delivery.record',
+    description: 'Record and deliver the completed carrier result.',
+    primitive: 'record' as const,
+    sideEffectClass: 'bounded_write' as const,
+    mayAppearInConditional: false,
+    inputSchema: freeInputSchema,
+    cacheDefault: Object.freeze({
+      cacheable: false as const,
+      reason: 'delivery is durable and idempotent, never cached',
+    }),
+    policyTags: Object.freeze(['delivery', 'durable_write']),
+  }),
 ] as const satisfies readonly ExecutionUnitTypeDefinition[]);
 
 export class ExecutionUnitRegistryError extends Error {

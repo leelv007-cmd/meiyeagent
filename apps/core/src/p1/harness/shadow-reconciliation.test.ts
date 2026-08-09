@@ -192,14 +192,12 @@ test('legacy projection refuses snapshot self-fallback and requires independent 
   const snapshot = buildSnapshot();
   assert.equal(
     projectLegacyFromMakeRequest({
-      snapshot,
       boundedExecution: snapshot.boundedExecution,
       observedDeliverables: [{ kind: 'copy', quantity: 2 }],
     }),
     null,
   );
   const projected = projectLegacyFromMakeRequest({
-    snapshot,
     boundedExecution: snapshot.boundedExecution,
     observedDeliverables: [{ kind: 'copy', quantity: 7 }],
     observedFactRefs: ['legacy-fact'],
@@ -520,6 +518,39 @@ test('closed shadow program stops sampling completely', async () => {
   assert.equal((await store.listSamples()).length, 0);
 });
 
+test('sample insertion loses a close race instead of reopening the program', async () => {
+  const store = new MemoryShadowReconciliationStore();
+  const snapshot = buildSnapshot();
+  const fields = extractDeterministicFieldsFromSnapshot(snapshot);
+  const service = new ShadowReconciliationService({
+    store,
+    audit: new MemoryOpsConsoleAuditStore(),
+    resolveConfig: async () => ({ sampleRate: 1, windowDays: 14 }),
+  });
+  await service.maybeReconcileOnExecutionComplete({
+    workflowId: 'seed', workspaceId: 'ws', snapshot, oldChain: fields,
+    now: '2026-08-01T00:00:00.000Z',
+  });
+  const original = store.putSampleIfOpen.bind(store);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  store.putSampleIfOpen = async (sample) => {
+    await held;
+    return original(sample);
+  };
+  const sampling = service.maybeReconcileOnExecutionComplete({
+    workflowId: 'racing-sample', workspaceId: 'ws', snapshot, oldChain: fields,
+    now: '2026-08-15T00:00:00.000Z',
+  });
+  await service.tryCloseIfEligible({
+    now: '2026-08-15T00:00:00.000Z', operatorId: 'ops', correlationId: 'race',
+  });
+  release();
+  await sampling;
+  assert.equal((await store.getProgramState())?.status, 'closed');
+  assert.equal((await store.listSamples()).some((s) => s.workflowId === 'racing-sample'), false);
+});
+
 test('mismatch at window anchor is excluded from the following clean window', async () => {
   const store = new MemoryShadowReconciliationStore();
   const audit = new MemoryOpsConsoleAuditStore();
@@ -558,6 +589,12 @@ test('service never throws into production path on store failure', async () => {
         throw new Error('store down');
       },
       async putSampleIdempotent() {
+        throw new Error('store down');
+      },
+      async putSampleIfOpen() {
+        throw new Error('store down');
+      },
+      async closeProgramStateCas() {
         throw new Error('store down');
       },
       async listSamples() {

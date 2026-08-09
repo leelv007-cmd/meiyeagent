@@ -20,6 +20,7 @@ git -C "${repo_root}" worktree add --detach "${fixed_worktree}" "${fixed_commit}
 # workflow-core.ts is deliberately left at fixed_commit, which is the code
 # whose observable fixture results are being captured.
 for relative_path in \
+  apps/core/src/p1/agent-session/execution-unit-registry.ts \
   apps/core/src/p1/harness/carrier-unit-recipes.ts \
   apps/core/src/p1/harness/compiled-carrier-executor.ts \
   apps/core/src/p1/harness/five-stage-trace-taxonomy.ts \

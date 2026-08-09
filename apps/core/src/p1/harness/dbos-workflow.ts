@@ -1305,7 +1305,6 @@ export function registerHarnessDbosWorkflow(
               (ref) => ref.id,
             );
             const oldChain = projectLegacyFromMakeRequest({
-              snapshot,
               boundedExecution: request.boundedExecution,
               observedDeliverables: request.executionSnapshot?.deliverables?.map(
                 (item) => ({
@@ -1313,11 +1312,11 @@ export function registerHarnessDbosWorkflow(
                   quantity: item.quantity,
                 }),
               ),
-              // Only pass when the request independently carries fact refs.
-              observedFactRefs:
-                decisionFactRefs && decisionFactRefs.length > 0
-                  ? decisionFactRefs
-                  : undefined,
+              observedFactRefs: decisionFactRefs ?? [],
+              observedRightsRefs: request.executionSnapshot
+                ? [`rights-revision:${request.executionSnapshot.rights.revision}`]
+                : undefined,
+              observedQuoteRef: request.executionSnapshot?.quote,
             });
             if (!oldChain) return { sampled: false as const };
             const now = new Date(await DBOS.now()).toISOString();

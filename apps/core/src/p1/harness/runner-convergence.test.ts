@@ -10,6 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -24,10 +25,9 @@ import {
 } from './carrier-unit-recipes.js';
 import {
   assertNoGrammarInterpreter,
-  assertRecipesHavePrograms,
-  createCarrierProgramRegistry,
   createMemoryPrimitiveEffectStore,
   executeCompiledCarrierPlan,
+  immediatePrimitiveEffectStore,
   resolveCompiledCarrierExecution,
 } from './compiled-carrier-executor.js';
 import {
@@ -124,7 +124,7 @@ test('V31-25: new carrier constructive check rejects runner-fork shape', () => {
         carrier: 'audio',
         hasRecipe: false,
         hasUnitTypes: true,
-        hasCarrierProgram: true,
+        hasPrimitiveHandlers: true,
         hasTest: true,
       }),
     /missing CompiledExecutionPlan recipe/,
@@ -135,42 +135,35 @@ test('V31-25: new carrier constructive check rejects runner-fork shape', () => {
         carrier: 'audio',
         hasRecipe: true,
         hasUnitTypes: true,
-        hasCarrierProgram: false,
+        hasPrimitiveHandlers: false,
         hasTest: true,
       }),
-    /missing carrier program/,
+    /missing primitive handlers/,
   );
   assertCarrierRegistrationComplete({
     carrier: 'copy',
     hasRecipe: true,
     hasUnitTypes: true,
-    hasCarrierProgram: true,
+    hasPrimitiveHandlers: true,
     hasTest: true,
   });
 });
 
-test('V31-25: single executor requires recipe+program pairing', async () => {
-  const recipes = createCanonicalCarrierUnitRecipeRegistry();
-  const programs = createCarrierProgramRegistry<
-    { carrier: string },
-    { ok: true }
-  >({
-    copy: async () => ({ ok: true }),
-    note: async () => ({ ok: true }),
-    // media intentionally missing
-  });
-  assert.throws(
-    () => assertRecipesHavePrograms({ recipes, programs: programs as never }),
-    /media/,
+test('V31-25: single executor fails closed without terminal record', async () => {
+  const plan = structuredClone(
+    createCanonicalCarrierUnitRecipeRegistry().resolve('media').plan,
   );
+  plan.units.at(-1)!.primitive = 'check';
   await assert.rejects(
     () =>
       executeCompiledCarrierPlan({
-        context: { lens: 'image' },
+        context: { lens: 'image', frozenExecutionPlan: plan },
         programInput: { carrier: 'media' },
-        programs,
+        primitiveHandlers: primitiveHandlersReturningNull(),
+        effectStore: immediatePrimitiveEffectStore,
+        executionId: 'missing-record',
       }),
-    /media.*no program|No carrier program for media/i,
+    /must end with a record unit/,
   );
 });
 
@@ -183,11 +176,6 @@ test('V31-25: resolveCompiledCarrierExecution prefers frozen plan when present',
   assert.equal(resolution.usedCanonicalRecipe, false);
   assert.equal(resolution.executorPath, 'compiled_plan_executor');
   assert.equal(resolution.executionPlan.units.length, frozen.units.length);
-  const legacy = resolveCompiledCarrierExecution({
-    lens: 'copy',
-    forceLegacyFiveStage: true,
-  });
-  assert.equal(legacy.executorPath, 'legacy_five_stage_runner');
 });
 
 test('V31-25: changing a typed plan unit changes primitive execution', async () => {
@@ -197,9 +185,20 @@ test('V31-25: changing a typed plan unit changes primitive execution', async () 
     ['read_context', 'generate', 'check', 'revise', 'record', 'ask_merchant'].map(
       (primitive) => [
         primitive,
-        async ({ unit }: { unit: { unitId: string } }) => {
+        async ({
+          unit,
+          priorOutputs,
+        }: {
+          unit: { unitId: string };
+          priorOutputs: ReadonlyMap<string, unknown>;
+        }) => {
           calls.push(`${primitive}:${unit.unitId}`);
-          return primitive === 'record' ? { deliveredBy: unit.unitId } : null;
+          return primitive === 'record'
+            ? {
+                deliveredBy: unit.unitId,
+                checkedBy: priorOutputs.get('unit-copy-check'),
+              }
+            : primitive;
         },
       ],
     ),
@@ -209,21 +208,82 @@ test('V31-25: changing a typed plan unit changes primitive execution', async () 
     context: { lens: 'copy', frozenExecutionPlan: recipe.plan },
     programInput: { ignored: true },
     primitiveHandlers: handlers as never,
+    effectStore: immediatePrimitiveEffectStore,
+    executionId: 'mutate-first',
   });
-  assert.deepEqual(first.result, { deliveredBy: 'unit-copy-assemble' });
+  assert.deepEqual(first.result, {
+    deliveredBy: 'unit-copy-assemble',
+    checkedBy: 'check',
+  });
 
   const mutated = structuredClone(recipe.plan);
   const check = mutated.units.find((unit) => unit.unitId === 'unit-copy-check');
   assert.ok(check);
   check.primitive = 'revise';
   calls.length = 0;
-  await executeCompiledCarrierPlan({
+  const second = await executeCompiledCarrierPlan({
     context: { lens: 'copy', frozenExecutionPlan: mutated },
     programInput: { ignored: true },
     primitiveHandlers: handlers as never,
+    effectStore: immediatePrimitiveEffectStore,
+    executionId: 'mutate-second',
   });
   assert.ok(calls.includes('revise:unit-copy-check'));
   assert.ok(!calls.includes('check:unit-copy-check'));
+  assert.notDeepEqual(second.result, first.result);
+});
+
+function primitiveHandlersReturningNull() {
+  const value = async () => null;
+  return {
+    read_context: value,
+    ask_merchant: value,
+    generate: value,
+    check: value,
+    revise: value,
+    record: value,
+  };
+}
+
+test('V31-25: production workflow has no inert handler or carrier-program fallback', () => {
+  const executor = readFileSync(
+    new URL('./compiled-carrier-executor.ts', import.meta.url),
+    'utf8',
+  );
+  const workflow = readFileSync(new URL('./workflow-core.ts', import.meta.url), 'utf8');
+  const dbos = readFileSync(new URL('./dbos-workflow.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(executor, /inertPrimitiveHandlers|programs\?:|programs\.resolve/);
+  assert.doesNotMatch(workflow, /createCarrierProgramRegistry/);
+  assert.match(workflow, /primitiveHandlers:/);
+  assert.match(dbos, /observedRightsRefs:\s*request\.executionSnapshot/);
+  assert.match(dbos, /observedQuoteRef:\s*request\.executionSnapshot\?\.quote/);
+});
+
+test('V31-25: legacy kill switch blocks new starts without invoking a runner', async () => {
+  const keys: string[] = [];
+  await assert.rejects(
+    () =>
+      runHarnessWorkflow(
+        'legacy-blocked',
+        taskInput(),
+        fixtureCopyStages(),
+        recordingRuntime(keys),
+        { forceLegacyFiveStage: true },
+      ),
+    /blocks new starts.*legacy runner is retired/,
+  );
+  assert.deepEqual(keys, []);
+});
+
+test('V31-25: durable topology baseline includes compiled primitive effects', () => {
+  const recovery = buildRunnerEquivalenceSnapshot({
+    result: { delivery: { packageId: 'p', versionId: 'v', revision: 1 } },
+    effectKeys: ['compiled-primitive:run:unit-context', 'business-write'],
+  }).recovery;
+  assert.deepEqual(recovery.effectKeys, [
+    'business-write',
+    'compiled-primitive:run:unit-context',
+  ]);
 });
 
 test('V31-25: durable primitive effects survive executor restart without duplicate writes', async () => {
@@ -274,12 +334,10 @@ test('V31-25: durable primitive effects survive executor restart without duplica
  * SAME fixture tasks through the CURRENT single-executor entry and asserts
  * deliverable / settlement / recovery semantics are field-for-field equal.
  *
- * What this proves: the convergence commit did not change runner behavior for
- * any fixture (deliverable, billing settlement markers, effect idempotency
- * keys, progress sequence, trace stages). It does NOT prove the six-primitive
- * internal rewrite landed — the runner functions still call the five-stage
- * stage ports directly (grep read_context/ask_merchant in workflow-core = 0).
- * That rewrite is tracked separately (V31-25 P1-a) and is out of scope here.
+ * What this proves: the convergence did not change business behavior for any
+ * fixture while adding the durable six-primitive topology. The comparison
+ * keeps the fixed pre-convergence business effects and explicitly adds every
+ * compiled primitive effect key produced by the current executor.
  */
 type FixtureTaskId = keyof typeof PRE_CONVERGENCE_BASELINES;
 
@@ -410,13 +468,39 @@ function assertMatchesPreConvergenceBaseline(
   fixtureId: FixtureTaskId,
   actual: RunnerEquivalenceSnapshot,
 ) {
-  const expected = PRE_CONVERGENCE_BASELINES[fixtureId];
+  const expected = process.env.V31_PRE_CONVERGENCE_BASELINE_OUTPUT
+    ? PRE_CONVERGENCE_BASELINES[fixtureId]
+    : expectedCurrentTopology(fixtureId);
   const mismatches = diffRunnerEquivalence(expected, actual);
   assert.deepEqual(
     mismatches,
     [],
     `${fixtureId} diverged from pre-convergence baseline (64bdaded8^): ${JSON.stringify(mismatches)}`,
   );
+}
+
+function expectedCurrentTopology(
+  fixtureId: FixtureTaskId,
+): RunnerEquivalenceSnapshot {
+  const fixture = FIXTURE_TASKS[fixtureId];
+  const request = fixture.buildRequest();
+  const resolution = resolveCompiledCarrierExecution({
+    lens: request.executionSnapshot?.lens,
+    frozenExecutionPlan: request.executionPlanSnapshot?.executionPlan,
+  });
+  const primitiveKeys = resolution.executionPlan.units
+    .map(
+      (unit) =>
+        `compiled-primitive:${fixture.workflowId}:${unit.unitId}`,
+    );
+  const baseline = PRE_CONVERGENCE_BASELINES[fixtureId];
+  return {
+    ...baseline,
+    recovery: {
+      ...baseline.recovery,
+      effectKeys: [...baseline.recovery.effectKeys, ...primitiveKeys].sort(),
+    },
+  };
 }
 
 test('V31-25: every fixture task matches its frozen pre-convergence baseline (deliverable/settlement/recovery)', async () => {
@@ -467,8 +551,8 @@ test('V31-25: kill/restart replay of every fixture lands on the pre-convergence 
       secondEffectKeys: secondKeys,
     });
     assert.deepEqual(
-      firstKeys.filter((key) => !key.startsWith('compiled-primitive:')).sort(),
-      [...PRE_CONVERGENCE_BASELINES[fixtureId].recovery.effectKeys].sort(),
+      firstKeys.sort(),
+      [...expectedCurrentTopology(fixtureId).recovery.effectKeys].sort(),
       `${fixtureId} replay effect keys drifted from pre-convergence baseline`,
     );
   }
@@ -795,7 +879,9 @@ function stripWorkflowIds(
     recovery: {
       ...snapshot.recovery,
       effectKeys: snapshot.recovery.effectKeys.map((k) =>
-        k.replace(/wf:[^:]+:/, 'wf:TASK:'),
+        k
+          .replace(/wf:[^:]+:/, 'wf:TASK:')
+          .replace(/compiled-primitive:[^:]+:/, 'compiled-primitive:TASK:'),
       ),
     },
   };
@@ -1258,12 +1344,6 @@ function mediaTaskInput(
 }
 
 function buildTestPlanSnapshot(kind: 'note' | 'media' | 'copy') {
-  const unitType =
-    kind === 'note'
-      ? 'note.generate'
-      : kind === 'media'
-        ? 'media.generate'
-        : 'copy.generate';
   const content = {
     planId: `plan-${kind}-1`,
     planRevision: 1,
@@ -1275,24 +1355,7 @@ function buildTestPlanSnapshot(kind: 'note' | 'media' | 'copy') {
       revision: 1,
       hash: 'a'.repeat(64),
     },
-    executionPlan: {
-      schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
-      units: [
-        {
-          unitId: 'unit-1',
-          unitType,
-          primitive: 'generate' as const,
-        },
-      ],
-      dependencyGroups: [{ groupId: 'g1', unitIds: ['unit-1'] }],
-      boundedRetry: {
-        'unit-1': {
-          maxAttempts: 1,
-          maxCostCents: 0,
-          retry: { enabled: false as const },
-        },
-      },
-    },
+    executionPlan: createCanonicalCarrierUnitRecipeRegistry().resolve(kind).plan,
     deliverables: [
       {
         deliverableId: 'd1',

@@ -608,10 +608,21 @@ export class PlanCompiler {
       unitCacheKeys,
     });
 
+    const recordUnitId = unitId('unit-delivery-record');
+    const recordDef = this.registry.resolve('delivery.record');
+    units.push({
+      unitId: recordUnitId,
+      unitType: recordDef.unitType,
+      primitive: recordDef.primitive,
+      input: { planId: input.revision.planId, planRevision: input.revision.revision },
+    });
+    boundedRetry[recordUnitId] = defaultRetryOff();
+
     const dependencyGroups = [
       { groupId: 'g-context', unitIds: [contextUnitId] },
       { groupId: 'g-generate', unitIds: generateUnitIds },
       { groupId: 'g-check', unitIds: [checkUnitId] },
+      { groupId: 'g-record', unitIds: [recordUnitId] },
     ];
 
     const executionPlan = compiledExecutionPlanSchema.parse({

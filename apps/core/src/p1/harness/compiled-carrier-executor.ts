@@ -1,12 +1,12 @@
 /**
  * Single CompiledExecutionPlan → executor entry (V31-25 / V3.1 §22.4 step 3).
  *
- * Topology: resolve carrier recipe (or frozen snapshot.executionPlan) → run the
- * registered carrier program. Control flow remains in TypeScript (HITL /
- * bounded / confirm) — no grammar interpreter (D-101 / §22.2).
+ * Topology: resolve carrier recipe (or frozen snapshot.executionPlan) → run
+ * every typed unit through its bound primitive handler. There is no carrier
+ * program fallback or second runner.
  *
  * All product carriers (copy/note/media) enter here; adding a carrier requires
- * recipe + program registration (see carrier-unit-recipes constructive gate).
+ * recipe + primitive-handler registration (see the constructive gate).
  */
 
 import type {
@@ -29,8 +29,6 @@ export type CompiledCarrierExecutorContext = {
   lens?: 'copy' | 'image' | 'video' | 'image_text_note';
   /** Frozen plan from ExecutionPlanSnapshot when present. */
   frozenExecutionPlan?: CompiledExecutionPlan;
-  /** force_legacy_five_stage kill switch — still uses single entry, tags path. */
-  forceLegacyFiveStage?: boolean;
 };
 
 export type CompiledCarrierResolution = {
@@ -42,7 +40,7 @@ export type CompiledCarrierResolution = {
    */
   executionPlan: CompiledExecutionPlan;
   /** Observability path tag (D-036 / ops). */
-  executorPath: 'compiled_plan_executor' | 'legacy_five_stage_runner';
+  executorPath: 'compiled_plan_executor';
   /** True when recipe was used because freeze lacked a plan. */
   usedCanonicalRecipe: boolean;
 };
@@ -55,14 +53,6 @@ export class CompiledCarrierExecutorError extends Error {
     this.name = 'CompiledCarrierExecutorError';
   }
 }
-
-export type CarrierProgramRegistry<TInput, TResult> = {
-  has(carrier: ContentCarrierKind): boolean;
-  resolve(
-    carrier: ContentCarrierKind,
-  ): (input: TInput) => Promise<TResult>;
-  list(): ContentCarrierKind[];
-};
 
 export type CompiledPrimitiveId = NonNullable<ExecutionUnit['primitive']>;
 
@@ -97,56 +87,11 @@ export function createMemoryPrimitiveEffectStore(): PrimitiveEffectStore {
   };
 }
 
-const immediateEffectStore: PrimitiveEffectStore = {
+export const immediatePrimitiveEffectStore: PrimitiveEffectStore = {
   run(_key, operation) {
     return operation();
   },
 };
-
-function inertPrimitiveHandlers<TInput>(): CompiledPrimitiveHandlers<TInput> {
-  const inert = async () => null;
-  return {
-    read_context: inert,
-    ask_merchant: inert,
-    generate: inert,
-    check: inert,
-    revise: inert,
-    record: inert,
-  };
-}
-
-export function createCarrierProgramRegistry<TInput, TResult>(
-  programs: Partial<
-    Record<ContentCarrierKind, (input: TInput) => Promise<TResult>>
-  >,
-): CarrierProgramRegistry<TInput, TResult> {
-  const map = new Map<
-    ContentCarrierKind,
-    (input: TInput) => Promise<TResult>
-  >();
-  for (const [carrier, program] of Object.entries(programs) as Array<
-    [ContentCarrierKind, ((input: TInput) => Promise<TResult>) | undefined]
-  >) {
-    if (program) map.set(carrier, program);
-  }
-  return {
-    has(carrier) {
-      return map.has(carrier);
-    },
-    resolve(carrier) {
-      const found = map.get(carrier);
-      if (!found) {
-        throw new CompiledCarrierExecutorError(
-          `No carrier program for ${carrier}. Register a program on the single executor — do not fork a runner.`,
-        );
-      }
-      return found;
-    },
-    list() {
-      return [...map.keys()];
-    },
-  };
-}
 
 /**
  * Resolve carrier + plan for this Make run (pure). Does not execute side effects.
@@ -167,25 +112,22 @@ export function resolveCompiledCarrierExecution(
     carrier,
     recipe,
     executionPlan: useFrozen ? frozen : recipe.plan,
-    executorPath: context.forceLegacyFiveStage
-      ? 'legacy_five_stage_runner'
-      : 'compiled_plan_executor',
+    executorPath: 'compiled_plan_executor',
     usedCanonicalRecipe: !useFrozen,
   };
 }
 
 /**
- * Single executor entry: resolve plan, require registered program, run it.
- * Carrier programs own HITL/bounded control flow; this function never
- * interprets ConditionalNode / dynamic JS.
+ * Single executor entry. A terminal record unit is mandatory and its output is
+ * the execution result; no out-of-plan carrier callback can invent a result.
  */
 export async function executeCompiledCarrierPlan<TInput, TResult>(input: {
   context: CompiledCarrierExecutorContext;
   programInput: TInput;
-  programs?: CarrierProgramRegistry<TInput, TResult>;
-  primitiveHandlers?: CompiledPrimitiveHandlers<TInput>;
-  effectStore?: PrimitiveEffectStore;
-  executionId?: string;
+  primitiveHandlers: CompiledPrimitiveHandlers<TInput>;
+  effectStore: PrimitiveEffectStore;
+  executionId: string;
+  selfDurablePrimitives?: readonly CompiledPrimitiveId[];
   recipeRegistry?: CarrierUnitRecipeRegistry;
   /**
    * Optional hook for observability / shadow — receives resolved plan before
@@ -197,23 +139,23 @@ export async function executeCompiledCarrierPlan<TInput, TResult>(input: {
     input.context,
     input.recipeRegistry,
   );
-  if (input.programs && !input.programs.has(resolution.carrier)) {
-    throw new CompiledCarrierExecutorError(
-      `Carrier ${resolution.carrier} has a recipe but no program. Constructive gate failed.`,
-    );
-  }
   await input.onResolved?.(resolution);
   assertNoGrammarInterpreter(resolution.executionPlan);
   const outputs = await executePrimitiveUnits({
     plan: resolution.executionPlan,
     programInput: input.programInput,
-    handlers: input.primitiveHandlers ?? inertPrimitiveHandlers<TInput>(),
-    effectStore: input.effectStore ?? immediateEffectStore,
-    executionId: input.executionId ?? resolution.carrier,
+    handlers: input.primitiveHandlers,
+    effectStore: input.effectStore,
+    executionId: input.executionId,
+    selfDurablePrimitives: input.selfDurablePrimitives,
   });
-  const result = input.programs
-    ? await input.programs.resolve(resolution.carrier)(input.programInput)
-    : (outputs.at(-1)?.output as TResult);
+  const terminal = outputs.at(-1);
+  if (terminal?.primitive !== 'record') {
+    throw new CompiledCarrierExecutorError(
+      'CompiledExecutionPlan must end with a record unit that owns delivery.',
+    );
+  }
+  const result = terminal.output as TResult;
   return { result, resolution };
 }
 
@@ -223,6 +165,7 @@ export async function executePrimitiveUnits<TInput>(input: {
   handlers: CompiledPrimitiveHandlers<TInput>;
   effectStore: PrimitiveEffectStore;
   executionId: string;
+  selfDurablePrimitives?: readonly CompiledPrimitiveId[];
 }): Promise<Array<{ unitId: string; primitive: CompiledPrimitiveId; output: unknown }>> {
   const unitsById = new Map(input.plan.units.map((unit) => [unit.unitId, unit]));
   const scheduled = input.plan.dependencyGroups.flatMap((group) => group.unitIds);
@@ -255,15 +198,19 @@ export async function executePrimitiveUnits<TInput>(input: {
         `No primitive handler bound for ${unit.primitive}.`,
       );
     }
-    const output = await input.effectStore.run(
-      `compiled-primitive:${input.executionId}:${unit.unitId}`,
-      () =>
-        handler({
-          unit,
-          programInput: input.programInput,
-          priorOutputs,
-        }),
-    );
+    const operation = () =>
+      handler({ unit, programInput: input.programInput, priorOutputs });
+    const effectKey = `compiled-primitive:${input.executionId}:${unit.unitId}`;
+    const selfDurable = input.selfDurablePrimitives?.includes(unit.primitive);
+    if (selfDurable) {
+      // Record owns nested business durability. Persist only its topology
+      // marker here, then run the internally idempotent delivery operation
+      // outside a nested DBOS step.
+      await input.effectStore.run(effectKey, async () => ({ admitted: true }));
+    }
+    const output = selfDurable
+      ? await operation()
+      : await input.effectStore.run(effectKey, operation);
     priorOutputs.set(unit.unitId, output);
     results.push({ unitId: unit.unitId, primitive: unit.primitive, output });
   }
@@ -283,22 +230,6 @@ export function assertNoGrammarInterpreter(plan: CompiledExecutionPlan): void {
     if (serialized.includes(`"${key}"`)) {
       throw new CompiledCarrierExecutorError(
         `CompiledExecutionPlan must not embed ${key} (plan-as-data only; no grammar interpreter).`,
-      );
-    }
-  }
-}
-
-/**
- * Constructive check used by tests: every registered recipe has a program.
- */
-export function assertRecipesHavePrograms(input: {
-  recipes: CarrierUnitRecipeRegistry;
-  programs: CarrierProgramRegistry<unknown, unknown>;
-}): void {
-  for (const recipe of input.recipes.list()) {
-    if (!input.programs.has(recipe.carrier)) {
-      throw new CompiledCarrierExecutorError(
-        `Recipe for ${recipe.carrier} has no carrier program on the single executor.`,
       );
     }
   }

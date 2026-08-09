@@ -753,11 +753,12 @@ test('V31-26a U14: archive gate fails closed without inventory; export and flag 
 
   const store = new MemoryHarnessReleaseStore();
   const drills = new MemoryOpsRollbackDrillStore();
+  const auditStore = new MemoryOpsConsoleAuditStore();
   const wiredService = new OpsConsoleService({
     releases: new HarnessReleaseService(store),
     catalog: store,
     toolPolicies: new MemoryToolPolicyStore(),
-    audit: new MemoryOpsConsoleAuditStore(),
+    audit: auditStore,
     killSwitches: new MemoryOpsKillSwitchStore(),
     trials: new MemoryOpsCandidateTrialStore(),
     drills,
@@ -784,6 +785,33 @@ test('V31-26a U14: archive gate fails closed without inventory; export and flag 
     reason: 'prove rollback path',
     evidence: 'unit-test',
     createdAt: '2026-08-01T00:00:00.000Z',
+  });
+
+  const withoutProof = (await wired.query({
+    context: adminCtx(),
+    input: {
+      action: 'legacy_replay_archive_gate',
+      payload: { now: '2026-08-09T00:00:00.000Z' },
+    },
+  })) as {
+    gate: { archiveAllowed: boolean };
+    inventory: { activePendingCount: number };
+  };
+  assert.equal(withoutProof.gate.archiveAllowed, false);
+
+  await auditStore.append({
+    id: 'audit-no-history-1',
+    action: 'record_legacy_no_history_proof',
+    operatorId: 'ops',
+    reason: 'Verified the authoritative inventory has no legacy history',
+    evidence: 'query-result:zero-rows',
+    target: 'legacy-replay-history',
+    detail: {
+      verifiedZeroRows: true,
+      inventorySource: 'p1_execution_plan_snapshots',
+    },
+    createdAt: '2026-08-09T00:00:00.000Z',
+    correlationId: 'audit-no-history-1',
   });
 
   const open = (await wired.query({

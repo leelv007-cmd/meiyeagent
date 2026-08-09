@@ -4,6 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 
 import type { Pool, PoolClient } from 'pg';
 
@@ -21,6 +22,14 @@ export interface ShadowReconciliationStore {
   putSampleIdempotent(
     sample: ShadowReconciliationSample,
   ): Promise<ShadowReconciliationSample>;
+  putSampleIfOpen(sample: ShadowReconciliationSample): Promise<{
+    accepted: boolean;
+    sample: ShadowReconciliationSample;
+  }>;
+  closeProgramStateCas(
+    expected: ShadowProgramState,
+    closed: ShadowProgramState,
+  ): Promise<boolean>;
   listSamples(limit?: number): Promise<ShadowReconciliationSample[]>;
   countMismatchesSince(sinceIso: string): Promise<number>;
 }
@@ -49,6 +58,25 @@ export class MemoryShadowReconciliationStore
     if (existing) return structuredClone(existing);
     this.samples.set(sample.workflowId, structuredClone(sample));
     return structuredClone(sample);
+  }
+
+  async putSampleIfOpen(sample: ShadowReconciliationSample) {
+    if (this.state?.status === 'closed') {
+      return { accepted: false, sample: structuredClone(sample) };
+    }
+    const stored = await this.putSampleIdempotent(sample);
+    const samples = await this.listSamples(10_000);
+    this.state = programStateFromSamples(this.state, samples, stored.sampledAt);
+    return { accepted: true, sample: stored };
+  }
+
+  async closeProgramStateCas(
+    expected: ShadowProgramState,
+    closed: ShadowProgramState,
+  ): Promise<boolean> {
+    if (!this.state || !isDeepStrictEqual(this.state, expected)) return false;
+    this.state = structuredClone(closed);
+    return true;
   }
 
   async listSamples(limit = 500): Promise<ShadowReconciliationSample[]> {
@@ -169,6 +197,80 @@ export class PostgresShadowReconciliationStore
     return structuredClone(existing.rows[0].payload);
   }
 
+  async putSampleIfOpen(sample: ShadowReconciliationSample) {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      // The state row is absent before the first sample, so row locking alone
+      // cannot serialize two initial open-check/insert transitions.
+      await client.query(
+        `SELECT pg_advisory_xact_lock(
+           hashtext('p1-shadow-reconciliation-program-global')
+         )`,
+      );
+      const stateResult = await client.query<StateRow>(
+        `SELECT payload FROM p1_shadow_reconciliation_state
+         WHERE id = 'global' FOR UPDATE`,
+      );
+      const state = stateResult.rows[0]?.payload ?? null;
+      if (state?.status === 'closed') {
+        await client.query('ROLLBACK');
+        return { accepted: false, sample: structuredClone(sample) };
+      }
+      const payload = structuredClone(sample);
+      const inserted = await client.query<SampleRow>(
+        `INSERT INTO p1_shadow_reconciliation_samples (
+           workflow_id, workspace_id, snapshot_hash, matched, sampled_at, payload
+         ) VALUES ($1, $2, $3, $4, $5::timestamptz, $6::jsonb)
+         ON CONFLICT (workflow_id) DO NOTHING
+         RETURNING workflow_id, workspace_id, matched, sampled_at, payload`,
+        [sample.workflowId, sample.workspaceId, sample.snapshotHash, sample.matched, sample.sampledAt, JSON.stringify(payload)],
+      );
+      const stored = inserted.rows[0]?.payload ?? (
+        await client.query<SampleRow>(
+          `SELECT workflow_id, workspace_id, matched, sampled_at, payload
+           FROM p1_shadow_reconciliation_samples WHERE workflow_id = $1`,
+          [sample.workflowId],
+        )
+      ).rows[0]?.payload ?? payload;
+      const samplesResult = await client.query<SampleRow>(
+        `SELECT workflow_id, workspace_id, matched, sampled_at, payload
+         FROM p1_shadow_reconciliation_samples ORDER BY sampled_at DESC`,
+      );
+      const nextState = programStateFromSamples(
+        state,
+        samplesResult.rows.map((row) => row.payload),
+        stored.sampledAt,
+      );
+      await client.query(
+        `INSERT INTO p1_shadow_reconciliation_state (id, payload, updated_at)
+         VALUES ('global', $1::jsonb, $2::timestamptz)
+         ON CONFLICT (id) DO UPDATE SET payload=EXCLUDED.payload, updated_at=EXCLUDED.updated_at`,
+        [JSON.stringify(nextState), nextState.updatedAt],
+      );
+      await client.query('COMMIT');
+      return { accepted: true, sample: structuredClone(stored) };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async closeProgramStateCas(
+    expected: ShadowProgramState,
+    closed: ShadowProgramState,
+  ): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE p1_shadow_reconciliation_state
+       SET payload=$1::jsonb, updated_at=$2::timestamptz
+       WHERE id='global' AND payload=$3::jsonb AND payload->>'status'='open'`,
+      [JSON.stringify(closed), closed.updatedAt, JSON.stringify(expected)],
+    );
+    return (result.rowCount ?? 0) === 1;
+  }
+
   async listSamples(limit = 500): Promise<ShadowReconciliationSample[]> {
     const result = await this.pool.query<SampleRow>(
       `SELECT workflow_id, workspace_id, matched, sampled_at, payload
@@ -198,3 +300,22 @@ export function newShadowSampleId(): string {
 }
 
 export type { ShadowCloseReason, ShadowFieldDiff };
+
+function programStateFromSamples(
+  existing: ShadowProgramState | null,
+  samples: ShadowReconciliationSample[],
+  updatedAt: string,
+): ShadowProgramState {
+  const ordered = [...samples].sort((a, b) => a.sampledAt.localeCompare(b.sampledAt));
+  return {
+    status: 'open',
+    openedAt: existing?.openedAt ?? ordered[0]?.sampledAt ?? updatedAt,
+    updatedAt,
+    closeReason: null,
+    closedAt: null,
+    closedBy: null,
+    lastMismatchAt: ordered.filter((sample) => !sample.matched).at(-1)?.sampledAt ?? null,
+    sampleCount: samples.length,
+    mismatchCount: samples.filter((sample) => !sample.matched).length,
+  };
+}

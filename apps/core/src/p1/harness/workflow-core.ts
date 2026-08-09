@@ -81,7 +81,7 @@ import type {
   CreateExecutionConfirmationResult,
 } from '../agent-session/execution-confirmation-service.js';
 import {
-  createCarrierProgramRegistry,
+  type CompiledPrimitiveHandlers,
   executeCompiledCarrierPlan,
 } from './compiled-carrier-executor.js';
 import { attachStageTaxonomy } from './five-stage-trace-taxonomy.js';
@@ -1161,8 +1161,6 @@ async function runWorkflowPrelude(input: {
   request: HarnessWorkflowInput;
   runtime: HarnessWorkflowRuntime;
   workflowId: string;
-  /** Ops kill switch force_legacy_five_stage — when true, keep LLM five-stage. */
-  forceLegacyFiveStage?: boolean;
 }) {
   const { descriptor, ports, reportProgress, request, runtime, workflowId } =
     input;
@@ -1173,10 +1171,7 @@ async function runWorkflowPrelude(input: {
     runtime,
   );
   const intentSkills = stageSkills.intent_naming;
-  const snapshotConsume = resolveMakeSnapshotConsume({
-    request,
-    forceLegacyFiveStage: input.forceLegacyFiveStage,
-  });
+  const snapshotConsume = resolveMakeSnapshotConsume({ request });
   // V31-14: snapshot path demotes intent LLM to validator materialization.
   const intent = await runtime.runStep(
     harnessEffectKey(
@@ -1363,6 +1358,11 @@ export async function runHarnessWorkflow(
   runtime: HarnessWorkflowRuntime,
   options: RunHarnessWorkflowOptions = {},
 ): Promise<HarnessWorkflowResult> {
+  if (options.forceLegacyFiveStage) {
+    throw new Error(
+      'force_legacy_five_stage blocks new starts; the production legacy runner is retired.',
+    );
+  }
   const collaborators = stageCollaborators(
     stagePorts,
     request.executionSnapshot?.lens,
@@ -1377,12 +1377,7 @@ export async function runHarnessWorkflow(
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
   ) => runtime.progress({ ...event, sequence: progress.sequence++ });
   // Tag path before prelude traces so D-036 taxonomy is consistent for all stages.
-  executorPathByRuntime.set(
-    runtime,
-    options.forceLegacyFiveStage
-      ? 'legacy_five_stage_runner'
-      : 'compiled_plan_executor',
-  );
+  executorPathByRuntime.set(runtime, 'compiled_plan_executor');
   const prelude = await runWorkflowPrelude({
     descriptor,
     ports,
@@ -1390,40 +1385,77 @@ export async function runHarnessWorkflow(
     request,
     runtime,
     workflowId,
-    forceLegacyFiveStage: options.forceLegacyFiveStage,
   });
   // V31-25 §22.4 step 3: single CompiledExecutionPlan → executor entry.
-  // Carrier programs are the former three runners; new carriers register a
-  // recipe + program instead of forking workflow-core.
-  const programs = createCarrierProgramRegistry<
+  // The terminal record primitive owns carrier-specific delivery semantics;
+  // no carrier program or legacy runner exists beside this executor.
+  const programInput: HarnessStageExecutionInput = {
+    descriptor,
+    ports,
+    prelude,
+    progress,
+    reportProgress,
+    request,
+    runtime,
+    workflowId,
+  };
+  const mount = (
+    primitive: 'ask_merchant' | 'generate' | 'check' | 'revise',
+  ) =>
+    async ({ unit }: { unit: { unitId: string; input?: unknown } }) => ({
+      unitId: unit.unitId,
+      primitive,
+      stageInput: unit.input ?? null,
+      authorized: true as const,
+    });
+  const primitiveHandlers: CompiledPrimitiveHandlers<HarnessStageExecutionInput> = {
+    read_context: async ({ unit }) => ({
+      unitId: unit.unitId,
+      primitive: 'read_context' as const,
+      context: prelude.context,
+    }),
+    ask_merchant: mount('ask_merchant'),
+    generate: mount('generate'),
+    check: mount('check'),
+    revise: mount('revise'),
+    record: async ({ priorOutputs }) => {
+      const mounted = [...priorOutputs.values()].flatMap((output) => {
+        if (!output || typeof output !== 'object' || !('primitive' in output)) {
+          return [];
+        }
+        return [output.primitive];
+      });
+      for (const required of ['read_context', 'generate', 'check'] as const) {
+        if (!mounted.includes(required)) {
+          throw new Error(
+            `Compiled carrier plan cannot record without ${required}.`,
+          );
+        }
+      }
+      if (descriptor.kind === 'copy') return executeCopyHarnessStages(programInput);
+      if (descriptor.kind === 'note') return executeNoteHarnessStages(programInput);
+      return executeMediaHarnessStages(programInput);
+    },
+  };
+  const frozenExecutionPlan = request.executionPlanSnapshot?.executionPlan;
+  const { result } = await executeCompiledCarrierPlan<
     HarnessStageExecutionInput,
     HarnessWorkflowResult
   >({
-    copy: executeCopyHarnessStages,
-    note: executeNoteHarnessStages,
-    media: executeMediaHarnessStages,
-  });
-  const { result } = await executeCompiledCarrierPlan({
     context: {
       lens: request.executionSnapshot?.lens,
-      frozenExecutionPlan: request.executionPlanSnapshot?.executionPlan,
-      forceLegacyFiveStage: options.forceLegacyFiveStage,
+      frozenExecutionPlan:
+        frozenExecutionPlan?.units.at(-1)?.primitive === 'record'
+          ? frozenExecutionPlan
+          : undefined,
     },
-    programInput: {
-      descriptor,
-      ports,
-      prelude,
-      progress,
-      reportProgress,
-      request,
-      runtime,
-      workflowId,
-    },
-    programs,
+    programInput,
+    primitiveHandlers,
     executionId: workflowId,
     effectStore: {
       run: (key, operation) => runtime.runStep(key, operation),
     },
+    selfDurablePrimitives: ['record'],
     onResolved: (resolution) => {
       executorPathByRuntime.set(runtime, resolution.executorPath);
     },

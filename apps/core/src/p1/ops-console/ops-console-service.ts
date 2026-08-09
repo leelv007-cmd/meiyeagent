@@ -722,9 +722,19 @@ export class OpsConsoleService {
     const rollbackDrillPassed = drills.some((drill) => drill.result === 'passed');
     // Audit store is always present on the service; list is the export primitive.
     let auditExportAvailable = false;
+    let verifiedNoHistoryAuditId: string | null = null;
     try {
-      await this.deps.audit.list(1);
+      const auditEntries = await this.deps.audit.list(500);
       auditExportAvailable = true;
+      const proof = auditEntries.find(
+        (entry) =>
+          entry.action === 'record_legacy_no_history_proof' &&
+          entry.target === 'legacy-replay-history' &&
+          Boolean(entry.evidence?.trim()) &&
+          entry.detail.verifiedZeroRows === true &&
+          entry.detail.inventorySource === 'p1_execution_plan_snapshots',
+      );
+      verifiedNoHistoryAuditId = proof?.id ?? null;
     } catch {
       auditExportAvailable = false;
     }
@@ -748,6 +758,7 @@ export class OpsConsoleService {
       auditExportAvailable,
       maxHoldWindowDays: LEGACY_REPLAY_MAX_HOLD_WINDOW_DAYS,
       opsPolicyBufferDays,
+      verifiedNoHistoryAuditId,
     });
     return { gate, inventory };
   }
