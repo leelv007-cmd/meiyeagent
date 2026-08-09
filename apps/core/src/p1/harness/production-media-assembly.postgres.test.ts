@@ -120,6 +120,7 @@ import {
   type HarnessWorkflowInput,
 } from './task-admission.js';
 import { harnessRuntimeId } from './workspace-scope.js';
+import { pinnedPromptResolver } from '../model-supply/prompt-pin.testing.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 const systemDatabaseUrl = process.env.TEST_DBOS_SYSTEM_DATABASE_URL;
@@ -1388,6 +1389,7 @@ test(
         },
       );
       const models = new ModelSupplyApplicationService({
+        promptResolver: pinnedPromptResolver,
         assetStorage: new MemoryModelAssetStorage(),
         models: catalogModels,
         deployments,
@@ -2462,6 +2464,7 @@ function productionModelSupply(providerRequests: ProviderExecutionRequest[]) {
   const merchantExecutionBilling =
     productionMerchantExecutionBilling(promotedEffects);
   const models = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     catalogRevisionId: 'model-r1',
     models: catalogModels,
     deployments: [deployment],

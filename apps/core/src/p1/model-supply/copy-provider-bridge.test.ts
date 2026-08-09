@@ -4,6 +4,7 @@ import { RecordedAdapterRouter } from './adapters.js';
 import { createDefaultCatalogModels, createDefaultDeployments } from './catalog.js';
 import { ProductCopyProviderBridge } from './copy-provider-bridge.js';
 import { ModelSupplyApplicationService } from './index.js';
+import { pinnedPromptResolver } from './prompt-pin.testing.js';
 
 test('Product CopyProvider bridge returns content plus requested/actual route and revisioned usage evidence', async () => {
   const deployments = createDefaultDeployments({
@@ -11,6 +12,7 @@ test('Product CopyProvider bridge returns content plus requested/actual route an
   });
   const bridge = new ProductCopyProviderBridge(
     new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models: createDefaultCatalogModels(),
       deployments,
       execution: new RecordedAdapterRouter(),

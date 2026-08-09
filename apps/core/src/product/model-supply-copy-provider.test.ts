@@ -16,6 +16,7 @@ import {
 } from '../p1/model-supply/index.js';
 import { modelSupplyCheckpointToFoundationRoute } from '../p1/route-snapshot-normalize.js';
 import type { CopyProviderRequest } from './copy-provider.js';
+import { pinnedPromptResolver } from '../p1/model-supply/prompt-pin.testing.js';
 import {
   ModelSupplyProductCopyProvider,
   resolveCanonicalCopySelection,
@@ -93,6 +94,7 @@ test('copy fails closed when no canonical default is configured', () => {
 test('prompt-head rollback changes only future copy generation evidence', async () => {
   const repository = new MemoryModelSupplyControlPlaneRepository();
   const models = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: createDefaultCatalogModels(),
     deployments: createDefaultDeployments({
       activatedDeploymentIds: ['openai-direct-recorded'],

@@ -12,6 +12,7 @@ import { PostgresRedemptionStore } from '../foundation/postgres-redemption.js';
 import { PostgresFoundationRepository } from '../foundation/postgres-repository.js';
 import { RedemptionApplicationService } from '../foundation/redemption.js';
 import { FoundationModelSupplyLedger } from './foundation-ledger.js';
+import { pinnedPromptResolver } from './prompt-pin.testing.js';
 import {
   ModelSupplyApplicationService,
   RecordedProviderExecutionPort,
@@ -280,6 +281,7 @@ test(
       { clock: fixtureClock },
     );
     const application = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models: [model],
       deployments: [deployment],
       execution,
@@ -297,6 +299,7 @@ test(
 
     const completed = await application.submit(submission);
     const restarted = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models: [model],
       deployments: [deployment],
       execution,
@@ -327,6 +330,7 @@ test(
     const failingExecution = new RecordedProviderExecutionPort();
     failingExecution.failNext(copyModel.id, 'acceptance_unknown');
     const failed = await new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models: [copyModel],
       deployments: [copyDeployment],
       execution: failingExecution,
@@ -450,6 +454,7 @@ test(
       'legacy-base-image-one',
     );
     const legacyApplication = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models: [model],
       deployments: [deployment],
       execution: new RecordedProviderExecutionPort(),
@@ -507,6 +512,7 @@ test(
       },
     };
     const grantApplication = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models: [model],
       deployments: [deployment],
       execution: redemptionExecution,
@@ -617,6 +623,7 @@ test(
       },
     };
     const packageApplication = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models: [model],
       deployments: [deployment],
       execution: packageExecution,
@@ -748,6 +755,7 @@ test(
       },
     };
     const legacyOnlyApplication = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models: [model],
       deployments: [deployment],
       execution: legacyOnlyExecution,

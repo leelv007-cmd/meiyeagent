@@ -18,6 +18,10 @@ import {
   type HarnessCopyDeliveryPort,
 } from './production-stage-ports.js';
 import { runHarnessWorkflow } from './workflow-core.js';
+import {
+  frozenHarnessPrompt,
+  frozenHarnessPromptBundle,
+} from './frozen-prompt.testing.js';
 
 const now = '2026-07-18T09:00:00.000Z';
 const factRef = 'store_fact:fact-price:1';
@@ -127,6 +131,10 @@ test('corrected intake fact is the only price in the next frozen Task, output an
         factTypes: ['price'],
         bundle: input.context.bundle,
         at: now,
+        prompts: {
+          factSatisfaction: frozenHarnessPrompt('factSatisfaction'),
+          factCriticality: frozenHarnessPrompt('factCriticality'),
+        },
       },
       new QueueRunner([
         {
@@ -145,6 +153,9 @@ test('corrected intake fact is the only price in the next frozen Task, output an
   const result = await runHarnessWorkflow(
     'task-after-correction',
     {
+      // task-admission freezes a pin for every prompt site the task's packs
+      // claim, so a request without prompts is a state production cannot reach.
+      prompts: frozenHarnessPromptBundle(),
       actorId: 'owner-a',
       workspaceId: 'workspace-a',
       packageId: 'package-after-correction',
@@ -228,6 +239,10 @@ test('corrected intake fact is the only price in the next frozen Task, output an
       factTypes: ['price'],
       bundle,
       at: now,
+      prompts: {
+        factSatisfaction: frozenHarnessPrompt('factSatisfaction'),
+        factCriticality: frozenHarnessPrompt('factCriticality'),
+      },
     },
     new QueueRunner([
       {

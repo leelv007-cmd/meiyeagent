@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ProviderExecutionPort } from '../foundation/ports.js';
+import { pinnedPromptResolver } from './prompt-pin.testing.js';
 import {
   ModelSupplyApplicationService,
   type ModelSupplyProviderAdmissionPort,
@@ -62,6 +63,7 @@ test('provider admission rejects before the provider is invoked', async () => {
     },
   };
   const service = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution: provider,
@@ -93,6 +95,7 @@ test('provider admission freezes pool facts and releases its lease after executi
     },
   };
   const service = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution: {
@@ -137,6 +140,7 @@ test('freeze persistence failure releases capacity and stays rejected before pro
   const released: string[] = [];
   let providerCalls = 0;
   const service = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution: {
@@ -180,6 +184,7 @@ test('freeze persistence failure releases capacity and stays rejected before pro
 
 test('lease release failure does not rewrite a completed provider outcome', async () => {
   const service = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution: {

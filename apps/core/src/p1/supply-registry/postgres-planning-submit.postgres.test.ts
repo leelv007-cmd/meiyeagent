@@ -6,6 +6,7 @@ import { MemoryModelSupplyControlPlaneRepository } from '../model-supply/foundat
 import { DurableMediaGenerationApplicationService } from '../model-supply/media-generation-workflow.js';
 import { createModelSupplyRuntime } from '../model-supply/runtime-assembly.js';
 import { modelRuntimeAssemblyFromEnv } from '../model-supply/runtime-config.js';
+import { pinnedPromptResolver } from '../model-supply/prompt-pin.testing.js';
 import {
   PostgresSupplyPlanningControlPlane,
   PostgresSupplyPlanningMigration,
@@ -87,6 +88,7 @@ describe(
       const repository = new MemoryModelSupplyControlPlaneRepository();
       const runtime = createModelSupplyRuntime({
         application: {
+          promptResolver: pinnedPromptResolver,
           execution: catalog.runtime.execution,
           resultSink: repository,
         },
@@ -166,6 +168,7 @@ describe(
       const repository = new MemoryModelSupplyControlPlaneRepository();
       const runtime = createModelSupplyRuntime({
         application: {
+          promptResolver: pinnedPromptResolver,
           execution: catalog.runtime.execution,
           resultSink: repository,
         },

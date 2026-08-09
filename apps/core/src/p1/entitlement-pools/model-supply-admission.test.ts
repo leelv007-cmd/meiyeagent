@@ -5,6 +5,7 @@ import type { ProviderExecutionPort } from '../foundation/ports.js';
 import { ModelSupplyApplicationService } from '../model-supply/index.js';
 import type { AccountAllocation, EntitlementPolicyRevision } from './contracts.js';
 import { PostgresModelSupplyProviderAdmission } from './model-supply-admission.js';
+import { pinnedPromptResolver } from '../model-supply/prompt-pin.testing.js';
 import type {
   AcquireFairPostgresCapacityLeaseInput,
   AcquirePostgresCapacityLeaseInput,
@@ -186,6 +187,7 @@ function service(
   execution: ProviderExecutionPort,
 ) {
   return new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution,

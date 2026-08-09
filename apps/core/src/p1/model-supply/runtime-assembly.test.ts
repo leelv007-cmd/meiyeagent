@@ -14,6 +14,7 @@ import {
 } from './foundation-module.js';
 import { MemoryHealthOverlayPort } from '../supply-registry/health-overlay.js';
 import type { RankingCandidateInput } from '../supply-registry/three-layer-ranking.js';
+import { pinnedPromptResolver } from './prompt-pin.testing.js';
 import {
   HARNESS_PROMPT_SITES,
   harnessPromptCapabilityRequirement,
@@ -40,6 +41,7 @@ function assemble(
   const repository = new MemoryModelSupplyControlPlaneRepository();
   return createModelSupplyRuntime({
     application: {
+      promptResolver: pinnedPromptResolver,
       execution: catalog.runtime.execution,
       resultSink: repository,
     },
@@ -203,6 +205,7 @@ test('fixture initialization publishes an active live-verified copy platform def
   let registry: ReturnType<typeof expandCatalogRevisionPayload> | null = null;
   const runtime = createModelSupplyRuntime({
     application: {
+      promptResolver: pinnedPromptResolver,
       execution: catalog.runtime.execution,
       resultSink: repository,
     },
@@ -264,6 +267,7 @@ test('fixture initialization publishes an active live-verified image.edit platfo
   let registry: ReturnType<typeof expandCatalogRevisionPayload> | null = null;
   const runtime = createModelSupplyRuntime({
     application: {
+      promptResolver: pinnedPromptResolver,
       execution: catalog.runtime.execution,
       resultSink: repository,
     },

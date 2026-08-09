@@ -15,6 +15,7 @@ import {
   priceRevisionKey,
 } from './catalog.js';
 import { planModelSupplyCandidates } from './route-planning.js';
+import { pinnedPromptResolver } from './prompt-pin.testing.js';
 import {
   ModelSupplyApplicationService,
   RecordedProviderExecutionPort,
@@ -125,6 +126,7 @@ test('freezes the requested non-standard price tier for the selected execution c
       : price,
   );
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models,
     deployments,
     prices,

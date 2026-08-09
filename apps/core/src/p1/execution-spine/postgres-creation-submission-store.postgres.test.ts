@@ -44,6 +44,7 @@ import {
 import { PostgresGrantLotLedger } from "../foundation/postgres-grant-lot.js";
 import { GrantLotAwareProductEntitlementService } from "../foundation/grant-lot-entitlement-service.js";
 import { MemoryFoundationRepository } from "../foundation/memory-repository.js";
+import { frozenHarnessPrompt } from '../harness/frozen-prompt.testing.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const noOpGrantLots = {
@@ -1694,6 +1695,7 @@ test(
       const runNaming = (runner: ModelSupplyStructuredNodeRunner) =>
         nameHarnessIntent(
           {
+            prompt: frozenHarnessPrompt('intentNaming'),
             workflowId: submission.task.id,
             workflowRevision: submission.snapshot.revision,
             creationMode: submission.snapshot.creationMode,

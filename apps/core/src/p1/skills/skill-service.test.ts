@@ -34,6 +34,7 @@ import {
   type SkillRevision,
 } from './index.js';
 import { DurableSkillInstructionResolver } from './runtime.js';
+import { frozenHarnessPrompt } from '../harness/frozen-prompt.testing.js';
 
 const NOW = '2026-07-26T02:00:00.000Z';
 const PROMPT_CONTENT =
@@ -1315,7 +1316,8 @@ test('an accepted prompt Skill changes the fixture judgment at its declared Harn
 
   const baseline = await nameHarnessIntent(input, runner);
   const enhanced = await nameHarnessIntent(
-    { ...input, skillInstructions: resolved.allowlist },
+    {
+    prompt: frozenHarnessPrompt('intentNaming'), ...input, skillInstructions: resolved.allowlist },
     runner,
   );
 
@@ -4058,11 +4060,13 @@ test('rolling a binding back to the previous frozen revision restores the fixtur
     workflowRevision: 1,
   };
   const currentJudgment = await nameHarnessIntent(
-    { ...intentInput, skillInstructions: current.allowlist },
+    {
+    prompt: frozenHarnessPrompt('intentNaming'), ...intentInput, skillInstructions: current.allowlist },
     runner,
   );
   const restoredJudgment = await nameHarnessIntent(
-    { ...intentInput, skillInstructions: restored.allowlist },
+    {
+    prompt: frozenHarnessPrompt('intentNaming'), ...intentInput, skillInstructions: restored.allowlist },
     runner,
   );
 

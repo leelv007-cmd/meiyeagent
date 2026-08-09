@@ -32,6 +32,7 @@ import {
 } from './postgres-repository.js';
 import { buildSupplyRequestFreeze } from './supply-ledger-fields.js';
 import { PostgresModelSupplyProviderAdmission } from './model-supply-admission.js';
+import { pinnedPromptResolver } from '../model-supply/prompt-pin.testing.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 
@@ -1031,6 +1032,7 @@ test(
         },
       };
       const service = new ModelSupplyApplicationService({
+        promptResolver: pinnedPromptResolver,
         models: [model],
         deployments: [deployment],
         providerAdmission: admission,
@@ -1212,6 +1214,7 @@ test(
         workspaceId,
       };
       const result = await new ModelSupplyApplicationService({
+        promptResolver: pinnedPromptResolver,
         deployments: [deployment],
         execution: new RecordedProviderExecutionPort(),
         ledger,

@@ -16,6 +16,7 @@ import {
   type HarnessCopyDeliveryPort,
 } from './production-stage-ports.js';
 import { runHarnessWorkflow } from './workflow-core.js';
+import { pinnedPromptResolver } from '../model-supply/prompt-pin.testing.js';
 
 test('fixture harness runtime assembles and completes its structured model path', async () => {
   const catalog = modelRuntimeAssemblyFromEnv({
@@ -28,6 +29,7 @@ test('fixture harness runtime assembles and completes its structured model path'
     (message) => warnings.push(message),
   );
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     deployments: catalog.deployments,
     execution: catalog.runtime.execution,
     models: catalog.models,
