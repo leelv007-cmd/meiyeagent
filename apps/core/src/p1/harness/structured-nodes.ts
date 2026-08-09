@@ -8,10 +8,9 @@ import {
   type TaskIntentInput,
 } from '@meiye/contracts';
 import { z } from 'zod';
-import {
-  HARNESS_BUILTIN_PROMPTS,
-  type HarnessFrozenPrompt,
-  type HarnessPromptKey,
+import type {
+  HarnessFrozenPrompt,
+  HarnessPromptKey,
 } from './langfuse-prompts.js';
 import type { CreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import {
@@ -339,7 +338,7 @@ export async function nameHarnessIntent(
     schemaName: 'harness_intent_naming_v1',
     schemaRevision: 'intent-naming-v1',
     instructions: materializeSkillInstructions(
-      input.prompt?.content ?? HARNESS_BUILTIN_PROMPTS.intentNaming,
+      requireFrozenPromptContent('intentNaming', input.prompt),
       input.skillInstructions,
     ),
     prompt: canonicalJson(parsedIntent),
@@ -495,7 +494,10 @@ async function runExecutionBriefCompilation(
       schemaName: `harness_${input.unitKind}_brief_v1`,
       schemaRevision: `${input.unitKind}-brief-v1`,
       instructions: materializeSkillInstructions(
-        input.prompt?.content ?? briefInstructions[input.unitKind],
+        requireFrozenPromptContent(
+          BRIEF_PROMPT_KEY_BY_UNIT_KIND[input.unitKind],
+          input.prompt,
+        ),
         input.skillInstructions,
       ),
       prompt: canonicalJson({
@@ -615,13 +617,32 @@ const briefSchemaByKind = {
   video: videoBriefSchema,
 } as const;
 
-const briefInstructions = {
-  copy: HARNESS_BUILTIN_PROMPTS.briefCompilation,
-  image:
-    'Compile a complete image execution brief with a production-ready prompt, authorized reference asset IDs, explicit ratio and resolution, and safety constraints.',
-  video:
-    'Compile a complete video execution brief with ordered shots, timing, narration where needed, first-frame prompt, authorized references, parameters, and safety constraints.',
-} as const;
+const BRIEF_PROMPT_KEY_BY_UNIT_KIND = {
+  copy: 'briefCompilation',
+  image: 'briefImage',
+  video: 'briefVideo',
+} as const satisfies Record<ExecutionUnitKind, HarnessPromptKey>;
+
+/**
+ * A missing pin fails closed. Substituting the hardcoded builtin was
+ * indistinguishable from a correct pin at runtime, which is exactly what breaks
+ * rollback (the release names one version while the run used another) and eval
+ * attribution. task-admission freezes the pins for every prompt site the task's
+ * packs claim, so an absent pin here means the freeze is wrong, not that a
+ * default is wanted.
+ */
+function requireFrozenPromptContent(
+  promptKey: HarnessPromptKey,
+  prompt: HarnessFrozenPrompt | undefined,
+): string {
+  const content = prompt?.content;
+  if (!content?.trim()) {
+    throw new Error(
+      `Structured node requires the frozen prompt pin ${promptKey}; refusing to substitute a builtin prompt.`,
+    );
+  }
+  return content;
+}
 
 type CompletenessShape = Record<string, CompletenessRule>;
 

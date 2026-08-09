@@ -32,6 +32,7 @@ import {
   type ModelSupplyPromptResolver,
   type ReferenceAssetResolverPort,
 } from './index.js';
+import { pinnedPromptResolver } from './prompt-pin.testing.js';
 import { FixtureAiStreamingRunner } from './ai-sdk-runner.js';
 import { RecordedAdapterRouter } from './adapters.js';
 import { MediaActivationProbeExecutor } from './activation-probe-executor.js';
@@ -70,7 +71,7 @@ function setup(
     new MemoryAdminConfigRepository(),
   planningControlPlane?: ModelSupplyPlanningControlPlanePort,
   merchantExecutionBilling?: MerchantExecutionBillingPort,
-  promptResolver?: ModelSupplyPromptResolver,
+  promptResolver: ModelSupplyPromptResolver = pinnedPromptResolver,
 ) {
   const repository = new MemoryModelSupplyControlPlaneRepository();
   const models = new ModelSupplyApplicationService({
@@ -82,7 +83,7 @@ function setup(
     execution,
     ...(referenceAssets ? { referenceAssets } : {}),
     ...(merchantExecutionBilling ? { merchantExecutionBilling } : {}),
-    ...(promptResolver ? { promptResolver } : {}),
+    promptResolver,
     resultSink: repository,
   });
   const controlPlane = new ModelSupplyControlPlaneService({
@@ -1237,6 +1238,7 @@ describe('ModelSupplyFoundationModule', () => {
     });
     const repository = new MemoryModelSupplyControlPlaneRepository();
     const application = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       deployments,
       execution: new RecordedProviderExecutionPort(),
       models: createDefaultCatalogModels(),
@@ -1453,6 +1455,7 @@ describe('ModelSupplyFoundationModule', () => {
   it('validates the explicitly requested RoutePolicy candidate instead of the published head', async () => {
     const repository = new MemoryModelSupplyControlPlaneRepository();
     const application = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       deployments: createDefaultDeployments({
         activatedDeploymentIds: [
           'openai-direct-recorded',
@@ -1578,6 +1581,7 @@ describe('ModelSupplyFoundationModule', () => {
     const models = createDefaultCatalogModels();
     const deployments = createDefaultDeployments();
     const application = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       deployments,
       execution: new RecordedProviderExecutionPort(),
       models,
@@ -1663,6 +1667,7 @@ describe('ModelSupplyFoundationModule', () => {
       },
     });
     const application = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       deployments,
       execution: new RecordedProviderExecutionPort(),
       models,
@@ -1754,6 +1759,7 @@ describe('ModelSupplyFoundationModule', () => {
     primary.accountIdentity = 'account-fingerprint-official';
     primary.endpointFingerprint = 'endpoint-fingerprint-official';
     const application = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       deployments,
       execution: new RecordedProviderExecutionPort(),
       models,
@@ -1812,6 +1818,7 @@ describe('ModelSupplyFoundationModule', () => {
     ) => {
       const candidateControlPlane = new ModelSupplyControlPlaneService({
         application: new ModelSupplyApplicationService({
+          promptResolver: pinnedPromptResolver,
           deployments: candidateDeployments,
           execution: new RecordedProviderExecutionPort(),
           models,
@@ -1901,6 +1908,7 @@ describe('ModelSupplyFoundationModule', () => {
       MODEL_EXECUTION_MODE: 'fixture',
     });
     const application = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       deployments: fixture.deployments,
       execution: fixture.runtime.execution,
       models: fixture.models,
@@ -1980,6 +1988,7 @@ describe('ModelSupplyFoundationModule', () => {
       MODEL_EXECUTION_MODE: 'fixture',
     });
     const application = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       deployments: fixture.deployments,
       execution: fixture.runtime.execution,
       models: fixture.models,
@@ -2074,6 +2083,7 @@ describe('ModelSupplyFoundationModule', () => {
       activationEvidenceStatus: 'recorded',
     });
     const models = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       deployments: disabledDeployments,
       execution: new RecordedProviderExecutionPort(),
       models: catalogModels,
@@ -2120,6 +2130,7 @@ describe('ModelSupplyFoundationModule', () => {
       MODEL_EXECUTION_MODE: 'disabled',
     });
     const application = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       deployments: disabled.deployments,
       execution: disabled.runtime.execution,
       models: disabled.models,
@@ -2194,6 +2205,7 @@ describe('ModelSupplyFoundationModule', () => {
       MODEL_EXECUTION_MODE: 'direct',
     });
     const application = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       deployments: direct.deployments,
       execution: direct.runtime.execution,
       models: direct.models,
@@ -2276,6 +2288,7 @@ describe('ModelSupplyFoundationModule', () => {
     const warnings: string[] = [];
     const repository = new MemoryModelSupplyControlPlaneRepository();
     const models = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models: createDefaultCatalogModels(),
       deployments: createDefaultDeployments({
         activatedDeploymentIds: ['openai-direct-recorded'],
@@ -3020,6 +3033,7 @@ describe('ModelSupplyFoundationModule', () => {
     });
     const repository = new MemoryModelSupplyControlPlaneRepository();
     const application = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models: runtime.models,
       deployments: runtime.deployments,
       execution: runtime.runtime.execution,
@@ -3484,6 +3498,7 @@ describe('ModelSupplyFoundationModule', () => {
       },
     });
     const billed = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       deployments: createDefaultDeployments({
         activatedDeploymentIds: ['deepseek-v4-pro-direct'],
         activationEvidenceStatus: 'recorded',
@@ -5278,6 +5293,7 @@ describe('ModelSupplyFoundationModule', () => {
     let executedDeploymentId = '';
     const repository = new MemoryModelSupplyControlPlaneRepository();
     const application = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       deployments,
       execution: {
         async execute(request) {

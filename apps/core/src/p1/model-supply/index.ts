@@ -2311,7 +2311,15 @@ export class ModelSupplyApplicationService {
         operation: submission.operation,
         workspaceId: submission.workspaceId,
       }));
-    if (!promptBinding) return submission;
+    // Fail closed. Returning the submission untouched let a language-model
+    // generation run with no prompt pin recorded anywhere, which is
+    // indistinguishable at runtime from a correctly pinned run and breaks both
+    // rollback and eval attribution.
+    if (!promptBinding) {
+      throw new Error(
+        `Model supply submission for ${submission.operation} has no pinned prompt binding; refusing to run a language model unpinned.`,
+      );
+    }
     assertPromptBinding(submission.operation, promptBinding);
     const frozen = structuredClone(promptBinding);
     this.preparedPromptBindings.set(key, frozen);

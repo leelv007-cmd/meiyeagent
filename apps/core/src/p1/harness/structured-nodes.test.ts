@@ -40,6 +40,7 @@ test('intent naming covers five task types across both delivery layers', async (
 
       const named = await nameHarnessIntent(
         {
+          prompt: pinnedIntentPrompt(),
           workflowId: `workflow-${taskType}-${deliveryLayer}`,
           workflowRevision: 3,
           intent: {
@@ -77,6 +78,7 @@ test('repair metrics observe a runner callback without counting attempts as repa
   const metrics = new InMemoryStructuredNodeMetrics();
   await nameHarnessIntent(
     {
+      prompt: pinnedIntentPrompt(),
       workflowId: 'workflow-repair-callback',
       workflowRevision: 1,
       intent: {
@@ -116,6 +118,7 @@ test('repair metrics preserve multiple runner-result reasons independently from 
   const metrics = new InMemoryStructuredNodeMetrics();
   await nameHarnessIntent(
     {
+      prompt: pinnedIntentPrompt(),
       workflowId: 'workflow-repair-result',
       workflowRevision: 1,
       intent: {
@@ -176,6 +179,7 @@ test('invalid repair callback events fail closed instead of entering model fallb
   await assert.rejects(
     nameHarnessIntent(
       {
+        prompt: pinnedIntentPrompt(),
         workflowId: 'workflow-repair-invalid-callback',
         workflowRevision: 1,
         intent: {
@@ -220,6 +224,7 @@ test('intent naming turns one blocking gap into one QuestionCard', async () => {
 
   const named = await nameHarnessIntent(
     {
+      prompt: pinnedIntentPrompt(),
       workflowId: 'workflow-question',
       workflowRevision: 5,
       intent: {
@@ -272,6 +277,7 @@ test('the server-owned delivery layer cannot be changed by intent model output',
 
   const named = await nameHarnessIntent(
     {
+      prompt: pinnedIntentPrompt(),
       workflowId: 'workflow-server-delivery-layer',
       workflowRevision: 1,
       deliveryLayer: 'finished_media',
@@ -347,6 +353,7 @@ test('brief compilation produces complete copy, image and video unit briefs', as
     const runner = new FixtureStructuredNodeRunner(outputs[kind]);
     const brief = await compileExecutionBrief(
       {
+        prompt: pinnedBriefPrompt(kind),
         workflowId: 'workflow-brief',
         unitId: `${kind}-primary`,
         unitKind: kind,
@@ -423,6 +430,7 @@ test('a copy brief that will not compile degrades instead of ending the run', as
 
   const brief = await compileExecutionBrief(
     {
+      prompt: pinnedBriefPrompt('copy'),
       workflowId: 'workflow-brief-fallback',
       unitId: 'copy-primary',
       unitKind: 'copy',
@@ -452,6 +460,7 @@ test('a copy brief that will not compile degrades instead of ending the run', as
   await assert.rejects(
     compileExecutionBrief(
       {
+        prompt: pinnedBriefPrompt('copy'),
         workflowId: 'workflow-brief-fallback',
         unitId: 'copy-primary',
         unitKind: 'copy',
@@ -469,6 +478,7 @@ test('a copy brief that will not compile degrades instead of ending the run', as
   await assert.rejects(
     compileExecutionBrief(
       {
+        prompt: pinnedBriefPrompt('copy'),
         workflowId: 'workflow-brief-fallback',
         unitId: 'copy-primary',
         unitKind: 'copy',
@@ -516,6 +526,7 @@ test('brief compilation exposes only fact refs authorized by satisfaction', asyn
 
   await compileExecutionBrief(
     {
+      prompt: pinnedBriefPrompt('copy'),
       workflowId: 'workflow-authorized-facts',
       unitId: 'copy-primary',
       unitKind: 'copy',
@@ -585,6 +596,7 @@ test('brief compilation keeps current facts separate from instruction contributi
 
   await compileExecutionBrief(
     {
+      prompt: pinnedBriefPrompt('copy'),
       workflowId: 'workflow-layered-facts',
       unitId: 'copy-primary',
       unitKind: 'copy',
@@ -627,6 +639,7 @@ test('copy brief model failure uses a conservative brief and reports degradation
   };
   const brief = await compileExecutionBrief(
     {
+      prompt: pinnedBriefPrompt('copy'),
       workflowId: 'workflow-brief-fallback',
       unitId: 'copy-primary',
       unitKind: 'copy',
@@ -751,6 +764,7 @@ test('brief compilation receives the frozen structured Composer contract before 
 
   await compileExecutionBrief(
     {
+      prompt: pinnedBriefPrompt('copy'),
       workflowId: 'workflow-snapshot-contract',
       unitId: 'copy-primary',
       unitKind: 'copy',
@@ -803,6 +817,7 @@ test('brief compilation receives the frozen structured Composer contract before 
   });
   await compileExecutionBrief(
     {
+      prompt: pinnedBriefPrompt('copy'),
       workflowId: 'workflow-without-default-read',
       unitId: 'copy-primary',
       unitKind: 'copy',
@@ -836,6 +851,7 @@ test('nested completeness reports partial non-empty output independently from sc
   const metrics = new InMemoryStructuredNodeMetrics();
   await nameHarnessIntent(
     {
+      prompt: pinnedIntentPrompt(),
       workflowId: 'workflow-partial-metrics',
       workflowRevision: 1,
       intent: {
@@ -1009,6 +1025,7 @@ test('nested completeness reports an empty optional choice list honestly', async
   const metrics = new InMemoryStructuredNodeMetrics();
   await nameHarnessIntent(
     {
+      prompt: pinnedIntentPrompt(),
       workflowId: 'workflow-full-metrics',
       workflowRevision: 1,
       intent: {
@@ -1063,6 +1080,7 @@ test('free entry is declared without asking the model to choose the route', asyn
   const runner = new FixtureStructuredNodeRunner({});
   const named = await nameHarnessIntent(
     {
+      prompt: pinnedIntentPrompt(),
       workflowId: 'workflow-free-entry',
       workflowRevision: 1,
       creationMode: 'free',
@@ -1097,6 +1115,7 @@ test('model failures choose intent-specific conservative guidance', async () => 
     };
     const named = await nameHarnessIntent(
       {
+        prompt: pinnedIntentPrompt(),
         workflowId: `workflow-fallback-${expectedField}`,
         workflowRevision: 1,
         creationMode: 'customized',
@@ -1124,6 +1143,7 @@ test('authorization and source-fence errors never become routing fallback', asyn
   await assert.rejects(
     nameHarnessIntent(
       {
+        prompt: pinnedIntentPrompt(),
         workflowId: 'workflow-hard-gate',
         workflowRevision: 1,
         creationMode: 'customized',
@@ -1157,6 +1177,7 @@ test('invalid model output falls back to conservative guidance', async () => {
 
   const named = await nameHarnessIntent(
       {
+        prompt: pinnedIntentPrompt(),
         workflowId: 'workflow-invalid',
         workflowRevision: 0,
         intent: {
@@ -1282,3 +1303,77 @@ function frozenPrompt(name: string, content: string) {
     isFallback: false,
   };
 }
+
+function pinnedIntentPrompt() {
+  return frozenPrompt('harness/intent-naming', 'frozen:intentNaming');
+}
+
+function pinnedBriefPrompt(unitKind: 'copy' | 'image' | 'video') {
+  return frozenPrompt(`harness/${unitKind}-brief`, `frozen:brief:${unitKind}`);
+}
+
+test('structured nodes fail closed when the frozen prompt pin is missing', async () => {
+  const intentRunner = new FixtureStructuredNodeRunner({
+    normalizedIntent: '推广当前团购',
+    taskType: 'promotion_groupbuy_conversion',
+    deliveryLayer: 'copy',
+    relevantAssetCategories: ['promotion_activity'],
+    usedAssetCategories: ['promotion_activity'],
+    route: 'customized',
+    implicitConstraints: [],
+    blockingGap: null,
+  });
+  // Substituting HARNESS_BUILTIN_PROMPTS here used to be silent, so a run on a
+  // builtin prompt was indistinguishable from a run on the release pin.
+  await assert.rejects(
+    nameHarnessIntent(
+      {
+        workflowId: 'workflow-missing-intent-pin',
+        workflowRevision: 1,
+        intent: {
+          context: {
+            workId: 'work-missing-intent-pin',
+            intent: '按当前价格写团购内容',
+            sourceSummaries: [],
+          },
+          assetReferences: [],
+        },
+      },
+      intentRunner,
+    ),
+    /requires the frozen prompt pin intentNaming/u,
+  );
+  assert.equal(intentRunner.requests.length, 0);
+
+  const briefKeys = {
+    copy: 'briefCompilation',
+    image: 'briefImage',
+    video: 'briefVideo',
+  } as const;
+  for (const kind of ['copy', 'image', 'video'] as const) {
+    const briefRunner = new FixtureStructuredNodeRunner({});
+    await assert.rejects(
+      compileExecutionBrief(
+        {
+          workflowId: `workflow-missing-${kind}-pin`,
+          unitId: `${kind}-missing-pin`,
+          unitKind: kind,
+          declaration: {
+            normalizedIntent: '介绍日常护理服务',
+            taskType: 'daily_service_exposure',
+            deliveryLayer: kind === 'video' ? 'finished_media' : 'copy',
+            relevantAssetCategories: ['industry_category'],
+            usedAssetCategories: ['industry_category'],
+            route: 'customized',
+            routingSource: 'model',
+            implicitConstraints: [],
+          },
+          bundle: contextBundleFixture(),
+        },
+        briefRunner,
+      ),
+      new RegExp(`requires the frozen prompt pin ${briefKeys[kind]}`, 'u'),
+    );
+    assert.equal(briefRunner.requests.length, 0);
+  }
+});

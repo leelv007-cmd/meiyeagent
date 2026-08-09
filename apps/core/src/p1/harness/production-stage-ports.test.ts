@@ -3808,6 +3808,10 @@ function taskInput() {
       },
       assetReferences: [],
     },
+    // task-admission freezes a pin for every prompt site the task's packs claim,
+    // so a request without prompts is a state production cannot reach. Omitting
+    // them here is what let the builtin-prompt substitution look green.
+    prompts: harnessPromptBundle(),
   };
 }
 
