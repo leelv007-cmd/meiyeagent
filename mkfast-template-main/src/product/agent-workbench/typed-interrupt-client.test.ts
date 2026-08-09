@@ -14,27 +14,30 @@ test('typed interrupt client preserves interruptId and revision across list/resu
       return Response.json({ outcome: 'applied' });
     }
     return Response.json({
-      interrupts: [
-        {
-          schemaVersion: 'interrupt-payload/v1',
-          interruptId: 'interrupt-1',
-          threadId: 'thread-1',
-          runId: 'run-1',
-          workflowId: 'workflow-1',
-          step: 'context_injection',
-          revision: 4,
-          action: 'answer_question',
-          args: {},
-          config: {
-            allowAccept: true,
-            allowEdit: false,
-            allowReject: true,
-            allowRespond: false,
+      data: {
+        interrupts: [
+          {
+            schemaVersion: 'interrupt-payload/v1',
+            interruptId: 'interrupt-1',
+            threadId: 'thread-1',
+            runId: 'run-1',
+            workflowId: 'workflow-1',
+            step: 'context_injection',
+            revision: 4,
+            action: 'answer_question',
+            args: {},
+            config: {
+              allowAccept: true,
+              allowEdit: false,
+              allowReject: true,
+              allowRespond: false,
+            },
+            description: '价格已变化',
+            resourceId: 'workspace-1',
           },
-          description: '价格已变化',
-          resourceId: 'workspace-1',
-        },
-      ],
+        ],
+      },
+      meta: { requestId: 'request-1' },
     });
   };
 

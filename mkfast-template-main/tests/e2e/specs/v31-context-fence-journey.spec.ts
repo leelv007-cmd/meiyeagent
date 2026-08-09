@@ -142,20 +142,59 @@ test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
 
     await page
       .getByTestId('composer-intent-input')
-      .fill('帮我按确认方案做图文，稍后我会改价格事实。');
+      .fill('帮我按已确认的门店资料做三页图文，稍后核对事实。');
+    const submission = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response.url().includes('/api/core/p1/composer/submissions'),
+      { timeout: 120_000 }
+    );
     await page.getByTestId('composer-submit').click();
-    const creationConfirm = page.getByRole('button', { name: '确认并开始' });
-    await expect(creationConfirm).toBeVisible({ timeout: 120_000 });
-    await changeConfirmedPriceFact(page);
-    await creationConfirm.click();
+    const submissionResponse = await submission;
+    expect(
+      submissionResponse.ok(),
+      await submissionResponse.text()
+    ).toBeTruthy();
 
-    const interrupt = page.getByTestId('agent-pending-interrupt');
+    const direction = page
+      .getByTestId('ask-merchant-group-card')
+      .filter({ hasText: /两种图文方向/u });
+    await expect(direction).toBeVisible({ timeout: 120_000 });
+    await direction.getByTestId('ask-merchant-option-card').first().click();
+
+    const executionConfirmation = page.getByTestId(
+      'execution-confirmation-interaction-card'
+    );
+    await expect(executionConfirmation).toBeVisible({ timeout: 120_000 });
+    await expect(
+      executionConfirmation.getByTestId('execution-confirmation-outline-row')
+    ).toHaveCount(3);
+    await changeConfirmedPriceFact(page);
+    await executionConfirmation
+      .getByRole('button', { name: '确认执行' })
+      .click();
+
+    const interrupt = page
+      .getByTestId('agent-pending-interrupt')
+      .filter({ hasText: /价格|事实|变化/u });
     await expect(interrupt).toBeVisible({ timeout: 120_000 });
-    await expect(interrupt).toContainText(/价格|事实|变化/);
     await expect(interrupt).toHaveAttribute(
       'data-interrupt-schema-version',
       'interrupt-payload/v1'
     );
+    const interruptId = await interrupt.getAttribute('data-interrupt-id');
+    const revision = await interrupt.getAttribute('data-interrupt-revision');
+    expect(interruptId).toBeTruthy();
+    expect(revision).toMatch(/^\d+$/u);
+
+    await page.reload();
+    await expect(interrupt).toHaveAttribute('data-interrupt-id', interruptId!);
+    await expect(interrupt).toHaveAttribute(
+      'data-interrupt-revision',
+      revision!
+    );
+    await page.getByTestId('agent-interrupt-accept').click();
+    await expect(interrupt).toHaveCount(0, { timeout: 120_000 });
   });
 
   test('§37.4-F rights revoke stops safely without double charge copy', async ({

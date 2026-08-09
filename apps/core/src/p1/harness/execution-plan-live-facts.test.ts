@@ -13,6 +13,7 @@ import {
   type ExecutionPlanFrozenContent,
 } from './execution-plan-admission.js';
 import {
+  createAuthoritativeExecutionPlanLiveFactsPorts,
   createResolveExecutionPlanLiveFacts,
   resolveExecutionPlanLiveFactsFromPorts,
 } from './execution-plan-live-facts.js';
@@ -165,6 +166,69 @@ test('material price/date fact change sets contextDrifted', async () => {
     },
   });
   assert.equal(live.contextDrifted, true);
+});
+
+test('authoritative brief head detects a material store fact changed after freeze', async () => {
+  const frozenAt = '2026-08-09T00:00:00.000Z';
+  const currentAt = '2026-08-09T00:05:00.000Z';
+  const frozenPrice = {
+    factId: 'store-project:project-1:price',
+    kind: 'price' as const,
+    revision: 1,
+    effectiveFrom: '2026-08-08T00:00:00.000Z',
+    expiresAt: null,
+  };
+  const currentPrice = {
+    ...frozenPrice,
+    revision: 2,
+    effectiveFrom: '2026-08-09T00:01:00.000Z',
+  };
+  const ports = createAuthoritativeExecutionPlanLiveFactsPorts({
+    facts: {
+      async history() {
+        return [];
+      },
+      async listActive({ at }) {
+        return [at === frozenAt ? frozenPrice : currentPrice] as never;
+      },
+    },
+    now: () => currentAt,
+    request: {
+      actorId: 'actor-1',
+      workspaceId: 'ws-1',
+      packageId: 'package-1',
+      expectedRevision: 0,
+      workflowRevision: 1,
+      creationMode: 'customized',
+      rawInput: '做图文',
+      intent: {
+        context: {
+          workId: 'work-1',
+          intent: '做图文',
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+      executionSnapshot: {
+        createdAt: frozenAt,
+        briefContext: { id: 'brief-1', revision: 1 },
+      } as never,
+    },
+    rights: {
+      async resolve() {
+        return { knownAssetIds: [], unauthorizedAssetIds: [] };
+      },
+    },
+  });
+
+  const heads = await ports.resolveFactHeads!({
+    workspaceId: 'ws-1',
+    factRevisionRefs: ['brief:brief-1@1'],
+  });
+
+  assert.equal(heads[0]?.frozenRevisionId, 'brief:brief-1@1');
+  assert.notEqual(heads[0]?.factRevisionId, 'brief:brief-1@1');
+  assert.equal(heads[0]?.materialPriceOrDateChanged, true);
 });
 
 test('createResolveExecutionPlanLiveFacts skips when no snapshot on request', async () => {

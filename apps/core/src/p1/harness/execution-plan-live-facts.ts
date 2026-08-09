@@ -6,6 +6,7 @@
  */
 
 import type { ExecutionPlanSnapshot } from '@meiye/contracts';
+import { createHash } from 'node:crypto';
 
 import type { MarketingIdentityRepository } from '../operations/marketing-identity.js';
 import {
@@ -34,7 +35,7 @@ export type FactLiveHead = {
 };
 
 export type AuthoritativeExecutionPlanLiveFactsDependencies = {
-  facts: Pick<StoreFactLedger, 'history'>;
+  facts: Pick<StoreFactLedger, 'history' | 'listActive'>;
   identities?: Pick<MarketingIdentityRepository, 'listActive'>;
   request: HarnessWorkflowInput;
   rights: {
@@ -113,7 +114,37 @@ export function createAuthoritativeExecutionPlanLiveFactsPorts(
             brief.id === briefId &&
             String(brief.revision) === revision
           ) {
-            heads.push({ frozenRevisionId, factRevisionId: frozenRevisionId });
+            const scope =
+              dependencies.request.factScope ?? { storeId: workspaceId };
+            const frozenAt =
+              dependencies.request.executionSnapshot!.createdAt;
+            const [frozenFacts, currentFacts] = await Promise.all([
+              dependencies.facts.listActive({
+                workspaceId,
+                scope,
+                at: frozenAt,
+              }),
+              dependencies.facts.listActive({
+                workspaceId,
+                scope,
+                at: now(),
+              }),
+            ]);
+            const frozenMaterial = materialFactHeads(frozenFacts);
+            const currentMaterial = materialFactHeads(currentFacts);
+            const materialChanged = frozenMaterial !== currentMaterial;
+            heads.push({
+              frozenRevisionId,
+              factRevisionId: materialChanged
+                ? `${frozenRevisionId}:material-head:${createHash('sha256')
+                    .update(currentMaterial)
+                    .digest('hex')
+                    .slice(0, 16)}`
+                : frozenRevisionId,
+              ...(materialChanged
+                ? { materialPriceOrDateChanged: true }
+                : {}),
+            });
           }
           continue;
         }
@@ -139,6 +170,17 @@ export function createAuthoritativeExecutionPlanLiveFactsPorts(
       return heads;
     },
   };
+}
+function materialFactHeads(
+  facts: Awaited<ReturnType<StoreFactLedger['listActive']>>,
+) {
+  return facts
+    .filter(
+      (fact) => MATERIAL_FACT_KINDS.has(fact.kind) || fact.expiresAt !== null,
+    )
+    .map((fact) => `${fact.factId}:${fact.revision}:${fact.expiresAt ?? ''}`)
+    .sort()
+    .join('|');
 }
 
 export type ExecutionPlanLiveFactsPorts = {

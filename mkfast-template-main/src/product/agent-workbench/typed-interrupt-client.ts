@@ -9,6 +9,9 @@ import { z } from 'zod';
 const pendingInterruptsResponseSchema = z
   .object({ interrupts: z.array(interruptPayloadSchema) })
   .strict();
+const pendingInterruptsEnvelopeSchema = z.object({
+  data: pendingInterruptsResponseSchema,
+});
 
 export class TypedInterruptClientError extends Error {
   constructor(
@@ -47,7 +50,7 @@ export async function listPendingInterrupts(
     { credentials: 'same-origin', signal: input.signal }
   );
   if (!response.ok) throw await responseError(response);
-  return pendingInterruptsResponseSchema.parse(await response.json())
+  return pendingInterruptsEnvelopeSchema.parse(await response.json()).data
     .interrupts;
 }
 
