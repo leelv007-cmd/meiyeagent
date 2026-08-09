@@ -60,6 +60,22 @@
 
 `startPrepared` **解析当前存的 authority id，不重算 base**。（不是二选一——重算这个策略与该机制在数学上不兼容：`:r:` id 掺入了上一次终态决策的 `decisionId`，是决策历史的函数而非 `{workflowId, planRevision, snapshotHash}` 的函数，所以任何从输入重算的做法在存在前序终态决策时必然找不到当前 id。）
 
+### ID 传递链（七跳，逐跳锚已亲验；实施这条修法需要整条链）
+
+派生只发生在第 ⑦ 跳，其余六跳全是**逐字透传**——所以「解析存的 id」只需在 ① 的位置换成读权威存的那一份，中间跳无需改动：
+
+| 跳 | 位置 | 动作 |
+|---|---|---|
+| ① | `submission-coordinator.ts:382`（`startPrepared`） | **缺陷所在**：重算 base，遇 `:r:` 后继即找不到 |
+| ② | `submission-coordinator.ts:1319` → `:1334`（`submissionResponse`） | 读 `confirmationDispatch.requestId` 并原样暴露给浏览器（零派生） |
+| ③ | `submission-coordinator.ts:701` → `:710` | 取 `prepared.executionConfirmationRequestId`，原样写入 `confirmationDispatch` |
+| ④ | `creation-stage-port.ts:67` | 转发到 Harness 端口 |
+| ⑤ | `task-admission.ts:383` → `:384 admit(input, false)` | 进入准备态（不启 DBOS） |
+| ⑥ | `task-admission.ts:692` | **ID 换载体的赋值点**：`request.executionConfirmationRequestId = created.stored.request.requestId` |
+| ⑦ | `execution-confirmation-authority.ts:115` → `:169 resolveRequestId` → `:173` helper / `:199` `:r:` 派生 | **唯一派生处**（base 由单一 helper 出；有前序终态决策时派生 `:r:` 后继） |
+
+第 ⑥ 跳由 review-memory 补出（我原先的记账把它与 ⑦ 合并成一跳，五跳实为七跳）。它是唯一「跨载体」的赋值——从确认权威的 `stored.request` 搬到 Harness 的 `request` 上——所以任何排查「id 在哪一跳变了」的人必须知道这一跳存在。
+
 ### 产品口径
 
 **拒绝后强制改稿**（D-122 介入位＝修正点；「暂不执行」后不改稿再确认对商家无新信息量）。改稿 bump planRevision → 新 base，拒绝臂自然失活，无需退役任何东西。
