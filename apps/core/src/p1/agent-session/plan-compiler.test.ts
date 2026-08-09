@@ -824,6 +824,9 @@ test('note CompiledExecutionPlan carries the six primitive program with explicit
   });
 
   const plan = (await compiler.compile(input)).executionPlan;
+  // The repeatable "pages" step runs once per requested deliverable unit
+  // (plan-compiler.ts ~:792-801), so quantity 4 expands into 4 generate
+  // instances instead of one unit carrying a scalar quantity.
   assert.deepEqual(
     plan.units.map((unit) => unit.primitive),
     [
@@ -831,26 +834,47 @@ test('note CompiledExecutionPlan carries the six primitive program with explicit
       'generate',
       'ask_merchant',
       'generate',
+      'generate',
+      'generate',
+      'generate',
       'check',
       'revise',
       'record',
     ],
   );
+  // Dependency groups are the compiler's actual "explicit dependencies"
+  // mechanism — units run group by group, and a group can hold more than one
+  // unit (brief + style ask share one; all 4 expanded pages instances share
+  // the execute group with check/revise). There is no separate per-unit
+  // `priorOutputUnitIds` field on `input` (it does not exist anywhere in the
+  // compiler or the ExecutionUnit contract); the executor threads prior
+  // outputs at runtime off this group ordering (compiled-carrier-executor.ts
+  // `priorOutputs`).
   assert.deepEqual(
     plan.dependencyGroups.map((group) => group.unitIds),
-    plan.units.map((unit) => [unit.unitId]),
+    [
+      ['unit-note-context'],
+      ['unit-note-brief', 'unit-note-style-ask'],
+      [
+        'unit-note-pages-1',
+        'unit-note-pages-2',
+        'unit-note-pages-3',
+        'unit-note-pages-4',
+        'unit-note-check',
+        'unit-note-revise',
+      ],
+      ['unit-note-assemble'],
+    ],
   );
-  for (const [index, unit] of plan.units.entries()) {
-    const inputValue = unit.input as { priorOutputUnitIds?: string[] } | undefined;
-    assert.deepEqual(
-      inputValue?.priorOutputUnitIds ?? [],
-      index === 0 ? [] : [plan.units[index - 1]!.unitId],
+  const pagesUnits = plan.units.filter((unit) =>
+    unit.unitId.startsWith('unit-note-pages'),
+  );
+  assert.equal(pagesUnits.length, 4);
+  for (const unit of pagesUnits) {
+    assert.equal(
+      (unit.input as { deliverables?: Array<{ quantity?: number }> })
+        .deliverables?.[0]?.quantity,
+      4,
     );
   }
-  assert.equal(
-    (plan.units.find((unit) => unit.unitId === 'unit-note-pages')?.input as {
-      quantity: number;
-    }).quantity,
-    4,
-  );
 });

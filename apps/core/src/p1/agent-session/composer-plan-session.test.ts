@@ -212,13 +212,22 @@ test('Composer production seam runs Session intent before PlanCompiler and paid 
     [{ kind: 'note', quantity: 3 }],
   );
   assert.equal(compiled!.revision.intent.summary, '以门店授权素材制作图文');
-  const pagesUnit = compiled!.executionPlan.units.find(
+  // The compiler expands a repeatable step once per requested deliverable
+  // unit (plan-compiler.ts ~:792-801) instead of carrying a scalar quantity
+  // on one unit, so 3 requested pages means 3 distinct `pages` unit
+  // instances, each still carrying the full deliverable (with its quantity)
+  // it was expanded from.
+  const pagesUnits = compiled!.executionPlan.units.filter(
     (unit) => (unit.input as { role?: string } | undefined)?.role === 'pages',
   );
-  assert.equal(
-    (pagesUnit?.input as { quantity?: number } | undefined)?.quantity,
-    3,
-  );
+  assert.equal(pagesUnits.length, 3);
+  for (const unit of pagesUnits) {
+    assert.equal(
+      (unit.input as { deliverables?: Array<{ quantity?: number }> })
+        .deliverables?.[0]?.quantity,
+      3,
+    );
+  }
   // Same freeze the paid confirmation authority will bind.
   assert.equal(submission.executionPlanFreeze?.deliverables[0]?.quantity, 3);
 });
@@ -646,16 +655,30 @@ test('revise recompiles six pages into four units and binds a fresh ProductQuote
   const freeze = submission.executionPlanFreeze!;
   assert.equal(freeze.planRevision, 2);
   assert.equal(freeze.deliverables[0]?.quantity, 4);
-  const pageUnit = freeze.executionPlan.units.find(
-    (unit) => unit.unitId === 'unit-note-pages',
+  // The compiler expands a repeatable step once per requested deliverable
+  // unit (plan-compiler.ts ~:792-801), so revising down to 4 pages produces
+  // 4 distinct `unit-note-pages-N` instances, not one unit carrying a
+  // scalar quantity — hence "four units" in the test title.
+  const pageUnits = freeze.executionPlan.units.filter((unit) =>
+    unit.unitId.startsWith('unit-note-pages'),
   );
-  assert.equal((pageUnit?.input as { quantity?: number }).quantity, 4);
+  assert.equal(pageUnits.length, 4);
+  for (const unit of pageUnits) {
+    assert.equal(
+      (unit.input as { deliverables?: Array<{ quantity?: number }> })
+        .deliverables?.[0]?.quantity,
+      4,
+    );
+  }
   assert.deepEqual(
     freeze.executionPlan.units.map((unit) => unit.primitive),
     [
       'read_context',
       'generate',
       'ask_merchant',
+      'generate',
+      'generate',
+      'generate',
       'generate',
       'check',
       'revise',
@@ -1717,14 +1740,29 @@ test('server pre-plan retrieval runs with a kernel that makes zero tool calls', 
   const freeze = submission.executionPlanFreeze;
   assert.ok(freeze);
   assert.equal(retrievalCalls, 1);
+  // Unit input carries the full compiler contract now (stage/role/plan
+  // identity/the whole deliverables array), not the older flat
+  // deliverableId/index/kind shape — deliverable + plan identity come from
+  // the freeze the compiler just produced, everything else is a fixed
+  // literal.
   assert.deepEqual(
     freeze.executionPlan.units.find(
       (unit) => unit.unitType === 'copy.generate'
     )?.input,
     {
-      deliverableId: 'd1-copy',
-      index: 0,
-      kind: 'copy',
+      stage: 'brief_compilation',
+      role: 'brief',
+      planId: freeze.planId,
+      planRevision: freeze.planRevision,
+      deliverables: [
+        {
+          deliverableId: 'd1-copy',
+          kind: 'copy',
+          platform: 'xiaohongshu',
+          quantity: 1,
+        },
+      ],
+      quoteRef: freeze.quoteRef,
       memoryContext: {
         entries: [{ memoryId: 'preference-live', revision: 5 }],
         receiptRef: {
@@ -1742,7 +1780,6 @@ test('server pre-plan retrieval runs with a kernel that makes zero tool calls', 
           tones: ['concise', 'restrained'],
         },
       },
-      quoteRef: freeze.quoteRef,
     }
   );
 });
@@ -1755,17 +1792,28 @@ test('real Composer recovery deterministically rebuilds a missing freeze from it
     ports: createFixturePlanCompilerPorts(),
   });
   let compiles = 0;
-  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
-    retrieveConfirmedExperience: async () => [],
-    async compilePlan(input) {
-      compiles += 1;
-      return compiler.compile(input);
+  let tick = 0;
+  const coordinator = new ComposerPlanSessionCoordinator(
+    sessions,
+    plans,
+    {
+      retrieveConfirmedExperience: async () => [],
+      async compilePlan(input) {
+        compiles += 1;
+        return compiler.compile(input);
+      },
+      async adjustPlan(input) {
+        compiles += 1;
+        return compiler.adjust(input);
+      },
     },
-    async adjustPlan(input) {
-      compiles += 1;
-      return compiler.adjust(input);
-    },
-  });
+    // The two Runs' exitRuns ordering falls back to `runId.localeCompare`
+    // whenever `startedAt` ties, and real wall-clock time can tie two
+    // sequential `prepare()` calls within the same millisecond — a
+    // deterministic advancing clock (matching the pattern above) keeps the
+    // ordering this test depends on from flaking.
+    { now: () => new Date(Date.parse(TS) + tick++ * 1_000).toISOString() },
+  );
   const submitted = record('task-crash-after-plan', '生成三页护理图文');
   const binding = await coordinator.prepare({ submission: submitted });
   const expectedFreeze = structuredClone(submitted.executionPlanFreeze);
