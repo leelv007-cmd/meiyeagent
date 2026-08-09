@@ -3,7 +3,7 @@
 **Parent**: 审计来源 `docs/reviews/v31-spec-assertion-audit-2026-08-09.md` §1.1–§1.3；判据 V3.1 §37.4；纪律 D-150③ 假绿三禁（`docs/ops/agent-dispatch-runbook-2026-07-29.md:39`）
 **批次**: Wave 3（**browser lane 第一个任务，先于任何 spec 重写与上游阻塞复诊**）
 **Blocked by**: None — can start immediately（纯 fixture 改动，不依赖任何合并后 runtime）
-**Status**: open — 2026-08-09 由 L-CI 开票，未开工
+**Status**: in-progress — 2026-08-09 由 L-CI 开票并实施；三处改动已落 `6f6379565`，assertion 级先红后绿实测完成（hermetic A/B `10/10`）。**AC6 未完成**：两个 required job 本机跑不起来（load average 74，Web webServer 连续两轮 120s 超时），需在健康宿主或 CI 上补。**不由 L-CI 关票。**
 
 ## What to build
 
@@ -24,15 +24,29 @@ await expect(
 商家点完图文方向后，三种终态任一出现即通过，**其中一种是 `data-outcome="failed"`**。
 直白说：**一次彻底失败的生成，现在会让旅程判绿。**
 
-`chooseImageTextDirection` 的 5 个 spec 调用方（`grep -rl` 实测）：
+`chooseImageTextDirection` 的调用方（**口径已更正，见下**）：
 
-| Spec | 归属 | 是否已 required |
-|---|---|---|
-| `specs/v31-living-plan-journey.spec.ts` | §37.4-C | 否（V31 gate，待转绿） |
-| `specs/v31-mid-run-steering-journey.spec.ts` | §37.4-G | 否（V31 gate，待转绿） |
-| `specs/m04-browser-hard-gate.spec.ts` | M-04 浏览器硬门 | **是** — `production-main-journey` |
-| `specs/p2-browser-closure.spec.ts` | P2 收口 | **是** — `p2-browser-acceptance` |
-| `specs/w01-storefact-wiring.spec.ts` | W01 | 否 |
+| 调用点 | 类别 | 归属 | 是否已 required |
+|---|---|---|---|
+| `specs/v31-living-plan-journey.spec.ts:80` | 直接调用 | §37.4-C | 否（V31 gate，待转绿） |
+| `specs/v31-mid-run-steering-journey.spec.ts:114`、`:172` | 直接调用（2 处） | §37.4-G | 否（V31 gate，待转绿） |
+| `specs/p2-browser-closure.spec.ts:264` | 直接调用 | P2 收口 | **是** — `p2-browser-acceptance` |
+| `fixtures/ui-journey.ts:543`（`submitComposerJourney` 内部） | **间接：全部 image_text 旅程** | 共享 fixture | **是**（经 `submitComposerJourney`） |
+
+> **口径更正（L-CI 自陈，恢复班次实测）**：本票初稿写「5 个 spec 调用方」并把
+> `m04-browser-hard-gate.spec.ts`、`w01-storefact-wiring.spec.ts` 列为调用方。
+> **`grep -rl` 数的是「文件里出现过这个名字」，不是「调用」**——那两个文件只在注释里
+> 提到它（`m04-browser-hard-gate.spec.ts:277` 写的正是「which the shared fixture runs
+> before this hook」）。真实直接调用方是 3 个 spec 文件、4 个调用点。
+>
+> 但**结论方向没变，反而更强**：真正的放大器是 `ui-journey.ts:543`——
+> `submitComposerJourney` 自己在 image_text 分支里调它，所以每一条 image_text 旅程
+> 都经过这个 helper。实测 `submitComposerJourney` 有 **18 个 spec 文件 / 30 个调用点**
+> （初稿写 19，多算了一个），其中 **9 个 spec 走 image_text**：
+> `m04-browser-hard-gate`、`note-page-regeneration-journey`、`p1-f2-acceptance`、
+> `p2-browser-closure`、`ui-journey-three-modal`、`v31-publish-handoff-selfreport`、
+> `t39-r-gate-journey-matrix`、`xhs-image-text-main-journey`、`w01-storefact-wiring`。
+> 两个已 required 的 job 命中这条间接路径，所以票面对「main 上今天就有洞」的判断成立。
 
 **排期理由（这是本票要先做的原因）**：handoff `docs/handoff/v3.1-full-remediation-handoff-2026-08-09.md:200` 记录 Campaign 卡在
 `chooseImageTextDirection` / `awaiting_answer`，并因同 HEAD 的必跑
@@ -56,7 +70,7 @@ await expect(
 
 `merchantStatus` 在 `:623-629` 已被 `toContainText(/生成中|可发布|已发布就绪/)` 断过，
 到这一行必然已解析且有文本，因此 or 分支恒真，「generating 阶段 Result 保持可见」
-从未被验证。这条断言所在的 `submitComposerJourney` 有 **19 个 spec 调用方**，其中
+从未被验证。这条断言所在的 `submitComposerJourney` 有 **19 个 spec 调用方**（实测应为 18，见上文口径更正），其中
 4 个已 required：`m04-browser-hard-gate`、`p2-browser-closure`、
 `w12-identity-draft-assistant`、`xhs-image-text-main-journey`（另含 §37.4-K 的
 `v31-publish-handoff-selfreport`）。
@@ -101,6 +115,62 @@ spec 仍绿。§37.4 把「每轮必要问题 ≤1」写成**产品行为**（§
 - 调用方清单与 required 交集由 `grep -rl` ＋ 比对 `scripts/ci/run-pr-production-journey.sh`、
   `scripts/ci/run-p2-browser-acceptance.sh` 实测得出，非估计。
 
+## 实施记录（L-CI，2026-08-09）
+
+改动全部落在 `mkfast-template-main/tests/e2e/fixtures/ui-journey.ts`，**未碰任何 `*.spec.ts`**。
+
+### 三处改法
+
+1. **失败终态不再是终态**：`terminalFailure` 不再进可接受集合。改为在商家作答**之前**先数一次
+   失败卡数量，作答后**竞速**「resumed/execution_confirmation」与「失败卡数量变化」；命中失败
+   即抛出，并把该失败卡文本打进错误信息。
+2. **`.or(merchantStatus)` 删除**：generating 阶段直接断 `image-worksurface`。
+3. **「只问一个问题」确定化**：删掉 `resumed || cardVisible` 与两处 early return。方向卡**必须**
+   出现；到达时**必须尚未结算**（点击前后各读一次 settlement 属性）；点击失败不再有回退分支。
+
+### 一处口径更正：不存在「frozen route 预答问题」
+
+原 docblock 用「frozen route 可能预先作答，所以卡片可以从不出现」为可跳过分支背书。
+**逐环追到 Core，该说法不成立**：`workflow-core.ts` 只在 `activeRequest.decisionReferences`
+已带 `note_style` 时跳过 `noteStyleQuestion`，而写入它的只有两条路——派生提交
+（`submission-coordinator.ts`，条件 `source.lens === 'image_text_note' && input.sourceNoteStyleId`）
+与重放商家决策的 resumption（`task-admission.ts` 的 `snapshotWorkflowInput`，来源
+`snapshot.semanticDecision`）。**两条都由商家决策派生，`MODEL_EXECUTION_MODE` 无关**；
+且 `unattended: 'hold'` 无默认值、hold 超时 48h（`DEFAULT_CONFIRMATION_CARD_HOLD_TIMEOUT_SECONDS`），
+除商家作答外无物释放。全部现有调用点都紧跟一次全新 Composer 提交，**问题恒被提出**。
+
+### 两处由实测（而非设想）改出来的设计
+
+- **竞速而非「等满再看」**：初版写成「等 60s 下游状态，超时后再去读失败卡」。实测发现商家自己的
+  `test.setTimeout` 短于 60s 时，Playwright 先杀测试，**富化后的失败信息完全拿不到**——
+  失败的运行仍然报成「什么都没出现」。改为竞速后失败即报（实测 < 30s 断言已加进对照）。
+- **只认新增失败卡**：`composer-report-card` 是会话 turn，故意先失败再重试的旅程屏幕上本来就有
+  一张。若无条件认它，那类旅程会被误判红。故改为「作答前计数、只认增量」。
+
+### 回归面（实测调用路径，非估计）
+
+`submitComposerJourney` 的 18 个 spec 文件里 **9 个走 image_text**，加 3 个直接调用方，
+共 12 条路径经过 `chooseImageTextDirection`。**逐个核过：当前没有任何调用点处于「问题已被预答」
+分支**——最像的 `note-page-regeneration-journey.spec.ts` 只调用 `submitComposerJourney` 一次
+（全新提交），之后的逐页重生成走 `note-plan-page-regenerate` 按钮，不再进本 helper。
+因此「方向卡必须出现」对现存全部调用点都成立，无需给 helper 加参数。
+
+### 先红后绿证据（hermetic A/B）
+
+用一份临时 Playwright harness 做 A/B：把**修复前**的 fixture 原样取出为独立模块，与修复后的
+同时导入，对同一份合成 DOM 各跑一遍。不起 Core／Worker／Web，不碰任何数据库，全部由
+`route.fulfill` 供页。**10/10 pass**（5.2 分钟，含两条被断言自身超时拉长的用例）：
+
+| 缺陷 | 修复前 | 修复后 |
+|---|---|---|
+| ① 失败终态 | `data-outcome="failed"` 出现即**判绿** | **判红**，错误信息含失败卡原文；健康 resumed 仍绿；上一轮遗留的失败卡不误判 |
+| ② generating 断言 | worksurface 从不渲染时该断言**照过**，红在更靠后的最终 surface 断言上（诊断指错地方） | **该断言本身判红**，信息即 `image_text generating path must keep Result visible until ready`；worksurface 渲染时仍绿 |
+| ③ 一问可跳过 | 只有 resumed 行、没有方向卡时**判绿** | **判红**（缺卡）；卡片到达时已结算也**判红**（而非放过） |
+
+该 harness **未提交**：它必须同时载入一份修复前 fixture 的 1064 行副本，作为长期资产会腐烂；
+把它做成常驻的 fixture 契约 spec 需要单独决定落点与「缺卡用例耗时 5 分钟」的取舍，
+属另一张票。复现方式已完整写在本节，判据是上表三行。
+
 ## 附带观察（**不在本票范围**，记录待主控决定，勿在本票内动手）
 
 **本仓的 lint 有配置、但没有任何 CI 步骤执行它。**
@@ -137,9 +207,9 @@ spec 仍绿。§37.4 把「每轮必要问题 ≤1」写成**产品行为**（§
 
 | AC | production writer | production consumer | failure-recovery test | PG result | Playwright result | required CI job |
 |---|---|---|---|---|---|---|
-| AC1 | — | — | — | — | — | — |
-| AC2 | — | — | — | — | — | — |
-| AC3 | — | — | — | — | — | — |
-| AC4 | — | — | — | — | — | — |
-| AC5 | — | — | — | — | — | — |
-| AC6 | — | — | — | — | — | — |
+| AC1 | `tests/e2e/fixtures/ui-journey.ts:404-431` | `tests/e2e/fixtures/ui-journey.ts:543` | hermetic A/B「失败终态」对照（修复前绿／修复后红＋含报告原文，且遗留失败卡不误判） | — | `10/10 pass`（hermetic A/B 全套，5.2 min） | `production-main-journey`、`p2-browser-acceptance`（**本轮未实跑，见 AC6**） |
+| AC2 | 同 AC1／AC3／AC4 | 同 AC1／AC3／AC4 | 三处各一组对照，全部实跑 | — | `10/10 pass` | — |
+| AC3 | `tests/e2e/fixtures/ui-journey.ts:700-708` | `tests/e2e/fixtures/ui-journey.ts:718` | hermetic A/B「worksurface 从不渲染」对照（修复前该断言照过、红在更靠后处；修复后该断言自身红） | — | `10/10 pass` | 同 AC1 |
+| AC4 | `tests/e2e/fixtures/ui-journey.ts:338-341`、`:375-393` | `tests/e2e/fixtures/ui-journey.ts:543` | hermetic A/B「无卡片」与「卡片到达时已结算」两条对照，均由绿转红 | — | `10/10 pass` | 同 AC1 |
+| AC5 | `tests/e2e/fixtures/ui-journey.ts:340`、`:386`、`:422`、`:705` | 断言消息即判据本身 | 「monotonic downstream state」措辞已删；新消息逐条对应实际断言 | — | `biome check` 通过；单文件 `tsc --noEmit --strict` 退出 0 | — |
+| AC6 | — | — | — | — | **未取得** | **未实跑**：本机 load average 74（其他 lane 重型 test 饱和），Web webServer 连续两轮 120s 起不来；无 push 权限故无法走 CI 复核 |
