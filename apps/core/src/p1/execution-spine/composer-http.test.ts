@@ -13,6 +13,7 @@ import {
 
 import type { DiagnosticRepository } from "../../diagnostics/repository.js";
 import { createCoreServer, streamWorkflowEvents } from "../../server.js";
+import { executionConfirmationAuthorityRequestId } from "../agent-session/execution-confirmation-authority.js";
 import { computeExecutionPlanSnapshotHash } from "../harness/execution-plan-admission.js";
 import { buildContentPackage } from "../operations/content-package.js";
 import {
@@ -1072,7 +1073,7 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 	let completed = 0;
 	let revised = 0;
 	let immutableDecision: PlanConfirmationDecision | null = null;
-	const superseded: string[] = [];
+	let authorityPlanRevision = 1;
 	const coordinator = new CreationSubmissionCoordinator(
 		submissions,
 		harness,
@@ -1100,6 +1101,7 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 				assert.equal(input.planRevision, 1);
 				assert.equal(input.merchantInstruction, "减到 4 页");
 				revised += 1;
+				authorityPlanRevision = 2;
 				input.submission.executionPlanFreeze = {
 					...input.submission.executionPlanFreeze!,
 					planRevision: 2,
@@ -1112,7 +1114,7 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 				return immutableDecision;
 			},
 			async getRequest(requestId) {
-				const planRevision = requestId.endsWith("plan-r1") ? 1 : 2;
+				const planRevision = authorityPlanRevision;
 				const currentFreeze = {
 					approvalBasis: "merchant_confirmed",
 					planId: "plan-paid",
@@ -1130,8 +1132,24 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 					},
 				};
 			},
-			async supersedePending(input) {
-				superseded.push(input.requestId);
+			async getCurrentByWorkflowId(workflowId) {
+				const currentFreeze = {
+					approvalBasis: "merchant_confirmed",
+					planId: "plan-paid",
+					planRevision: authorityPlanRevision,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+				} as never;
+				return {
+					workflowId,
+					workspaceId: "workspace-1",
+					planId: "plan-paid",
+					planRevision: authorityPlanRevision,
+					snapshotHash: computeExecutionPlanSnapshotHash(currentFreeze),
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+					rightsRevisionRefs: [],
+					factRevisionRefs: [],
+					frozenAt: "2026-08-09T08:00:00.000Z",
+				};
 			},
 		},
 	);
@@ -1158,10 +1176,20 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 		/immutable confirmed decision/u,
 	);
 	assert.equal(harness.starts.length, 0);
+	const revisionTwoFreeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-paid",
+		planRevision: 2,
+		quoteRef: { id: "quote-1", revision: "quote-r5" },
+	} as never;
 	immutableDecision = planConfirmationDecisionSchema.parse({
 		schemaVersion: "plan-confirmation-decision/v1",
 		decisionId: `decision:${createdTaskId}:merchant-confirmed`,
-		requestId: `confirmation:${createdTaskId}:plan-r2`,
+		requestId: executionConfirmationAuthorityRequestId({
+			workflowId: `${createdTaskId}:plan-r2`,
+			planRevision: 2,
+			snapshotHash: computeExecutionPlanSnapshotHash(revisionTwoFreeze),
+		}),
 		actorId: "owner-1",
 		decision: "confirmed",
 		decidedAt: "2026-08-09T08:00:00.000Z",
@@ -1177,7 +1205,6 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 	assert.equal(revised, 1);
 	assert.equal(harness.starts.length, 0);
 	assert.equal(harness.preparations.length, 2);
-	assert.deepEqual(superseded, [`confirmation:${createdTaskId}:plan-r1`]);
 
 	const started = await coordinator.startPrepared({
 		workspaceId: "workspace-1",

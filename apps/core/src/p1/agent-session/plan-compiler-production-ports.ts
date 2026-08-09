@@ -29,6 +29,19 @@ export type ProductionPlanRightsResolver = {
   }>;
 };
 
+export function planCompilerRightsRevisionId(input: {
+  workspaceId: string;
+  knownAssetIds: readonly string[];
+  unauthorizedAssetIds: readonly string[];
+}) {
+  const rightsFingerprint = fingerprintValue({
+    workspaceId: input.workspaceId,
+    known: input.knownAssetIds,
+    unauthorized: input.unauthorizedAssetIds,
+  }).slice(0, 16);
+  return `rights:${input.workspaceId}:${rightsFingerprint}`;
+}
+
 export type ProductionPlanModelCatalog = {
   getCatalog(
     workspaceId: string,

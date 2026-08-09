@@ -25,9 +25,11 @@ import {
 import {
   AgentSessionHarnessService,
   confirmationCreditPortFromPostgresLedger,
+  ConfirmationAuthorityAssembler,
   ExecutionConfirmationService,
   PostgresAgentSessionStore,
   PostgresExecutionConfirmationMigration,
+  PostgresConfirmationAuthorityStore,
   PostgresMarketingPlanStore,
   controlLimitsFromArtifact,
   createDefaultIntentRetrievalBindings,
@@ -749,10 +751,13 @@ export async function assembleCoreGraph(
    */
   const executionConfirmationMigration =
     new PostgresExecutionConfirmationMigration(pool);
+  const executionConfirmationAuthorityStore =
+    new PostgresConfirmationAuthorityStore(pool);
   const executionConfirmationService = new ExecutionConfirmationService(
     executionConfirmationMigration.requestStore,
     executionConfirmationMigration.decisionStore,
     confirmationCreditPortFromPostgresLedger(creditLedger),
+    executionConfirmationAuthorityStore,
   );
   /**
    * V31-12: ExecutionPlanSnapshot admission (sole writer of execution_plan_snapshot).
@@ -762,6 +767,11 @@ export async function assembleCoreGraph(
     new PostgresExecutionPlanAdmissionMigration(pool);
   const executionPlanAdmissionService = new ExecutionPlanAdmissionService(
     executionPlanAdmissionMigration.store,
+  );
+  const executionConfirmationAuthority = new ConfirmationAuthorityAssembler(
+    executionConfirmationService,
+    executionConfirmationAuthorityStore,
+    productQuoteService,
   );
   /** V31-14: durable pending interrupts (CAS resume / listPending). */
   const interruptStore = new PostgresInterruptStore(pool);
@@ -1182,6 +1192,7 @@ export async function assembleCoreGraph(
     marketingPlanStore,
     // V31-11 confirmation objects (request + immutable decision).
     executionConfirmationMigration,
+    executionConfirmationAuthorityStore,
     // V31-12 ExecutionPlanSnapshot admission (one-shot immutable).
     executionPlanAdmissionMigration,
     // V31-14 durable Interrupt store (pending confirm survives restart).
@@ -1662,6 +1673,8 @@ export async function assembleCoreGraph(
     marketingPlanStore,
     planCompiler,
     executionConfirmationService,
+    executionConfirmationAuthority,
+    executionConfirmationAuthorityStore,
     executionConfirmationRequestStore:
       executionConfirmationMigration.requestStore,
     planConfirmationDecisionStore: executionConfirmationMigration.decisionStore,

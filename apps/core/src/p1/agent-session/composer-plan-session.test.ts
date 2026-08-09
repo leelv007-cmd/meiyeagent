@@ -19,6 +19,7 @@ import type { HarnessFrozenPrompts } from '../harness/langfuse-prompts.js';
 import { MemoryExecutionPlanSnapshotStore } from '../harness/memory-execution-plan-admission-store.js';
 import {
   HarnessTaskAdmissionService,
+  executionPlanAdmissionWorkflowId,
   type HarnessTaskRequestRegistry,
   type HarnessWorkflowInput,
   type HarnessWorkflowStarter,
@@ -767,9 +768,10 @@ test('Composer submit → task-admission assembles and one-shot writes the Execu
 
   await stage.start(submission);
   const first = starter.requests[0];
-  const admitted = await snapshotStore.getByWorkflowId('task-chain-1');
-  assert.ok(admitted);
   assert.ok(first?.executionPlanSnapshot);
+  const admittedWorkflowId = executionPlanAdmissionWorkflowId('task-chain-1', first);
+  const admitted = await snapshotStore.getByWorkflowId(admittedWorkflowId);
+  assert.ok(admitted);
   assert.equal(
     first.executionPlanSnapshot.snapshotHash,
     admitted.snapshot.snapshotHash
@@ -799,7 +801,7 @@ test('Composer submit → task-admission assembles and one-shot writes the Execu
   // At-least-once replay: same submission re-enters the admission path and the
   // snapshot row is not double-written.
   await stage.start(submission);
-  const admittedAgain = await snapshotStore.getByWorkflowId('task-chain-1');
+  const admittedAgain = await snapshotStore.getByWorkflowId(admittedWorkflowId);
   assert.equal(admittedAgain?.admittedAt, admitted.admittedAt);
   assert.equal(admittedAgain?.snapshot.snapshotHash, admitted.snapshot.snapshotHash);
   assert.equal(starter.requests.length, 2);
@@ -835,8 +837,12 @@ test('paid admission creates one pending request before Make and carries the dur
     undefined,
     new ExecutionPlanAdmissionService(new MemoryExecutionPlanSnapshotStore()),
     {
-      async createRequest(input) {
-        calls.push({ requestId: input.requestId, snapshotHash: input.snapshotHash });
+      async putCurrent(input) {
+        calls.push({ requestId: input.workflowId, snapshotHash: input.snapshotHash });
+        return input;
+      },
+      async createRequest() {
+        return confirmationCreationResult('confirmation:task-paid-chain-1:plan-r1');
       },
     },
   );
@@ -850,7 +856,7 @@ test('paid admission creates one pending request before Make and carries the dur
 
   assert.deepEqual(calls, [
     {
-      requestId: 'confirmation:task-paid-chain-1:plan-r1',
+      requestId: 'task-paid-chain-1:plan-r1',
       snapshotHash: calls[0]!.snapshotHash,
     },
   ]);
@@ -889,7 +895,18 @@ test('Campaign second paid Work creates an independent confirmation request', as
     undefined,
     undefined,
     new ExecutionPlanAdmissionService(new MemoryExecutionPlanSnapshotStore()),
-    { async createRequest(input) { calls.push(input); } },
+    {
+      async putCurrent(input) {
+        calls.push({
+          requestId: input.workflowId,
+          workOrdinal: input.executionConfirmationContext?.workOrdinal,
+        });
+        return input;
+      },
+      async createRequest(input) {
+        return confirmationCreationResult(`confirmation:${input.workflowId}`);
+      },
+    },
   );
   const stage = new CreationStagePort({
     preparePendingConfirmation: (input) =>
@@ -901,10 +918,18 @@ test('Campaign second paid Work creates an independent confirmation request', as
   await stage.preparePendingConfirmation(works[1]!);
 
   assert.deepEqual(calls.map(({ requestId, workOrdinal }) => ({ requestId, workOrdinal })), [
-    { requestId: 'confirmation:task-campaign-1:plan-r1', workOrdinal: 1 },
-    { requestId: 'confirmation:task-campaign-2:plan-r1', workOrdinal: 2 },
+    { requestId: 'task-campaign-1:plan-r1', workOrdinal: 1 },
+    { requestId: 'task-campaign-2:plan-r1', workOrdinal: 2 },
   ]);
 });
+
+function confirmationCreationResult(requestId: string) {
+  return {
+    stored: { request: { requestId } },
+    reservedCredits: 6,
+    replayed: false,
+  } as never;
+}
 
 function copyRecord(
   taskId: string,

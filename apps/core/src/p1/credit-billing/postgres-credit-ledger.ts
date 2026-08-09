@@ -433,6 +433,16 @@ export class PostgresCreditLedger implements PostgresSchemaMigrator {
     return (await this.readBalanceSnapshot(workspaceId, asOf)).projection;
   }
 
+  async projectWithClient(
+    client: PoolClient,
+    workspaceId: string,
+    asOf = new Date().toISOString(),
+  ): Promise<CreditBalanceProjection> {
+    const lots = await this.listLotsFrom(client, workspaceId);
+    const transactions = await this.listTransactionsFrom(client, workspaceId);
+    return projectCreditBalance(lots, transactions, asOf);
+  }
+
   async expireSubscriptionLots(input: {
     workspaceId: string;
     subscriptionId: string;

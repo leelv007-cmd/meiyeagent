@@ -114,6 +114,28 @@ test('missing rights head treated as revoked', async () => {
   assert.equal(live.rightsRevoked, true);
 });
 
+test('an authorized rights head revision advances without being classified as revoked', async () => {
+  const snap = snapshot();
+  const live = await resolveExecutionPlanLiveFactsFromPorts({
+    snapshot: snap,
+    workspaceId: 'ws-1',
+    ports: {
+      async resolveRightsHeads() {
+        return [
+          {
+            frozenRevisionId: 'rights-1',
+            revisionId: 'rights-3',
+            revoked: false,
+          },
+          { revisionId: 'rights-2', revoked: false },
+        ];
+      },
+    },
+  });
+  assert.equal(live.rightsRevoked, undefined);
+  assert.deepEqual(live.rightsRevisionRefs, ['rights-3', 'rights-2']);
+});
+
 test('material price/date fact change sets contextDrifted', async () => {
   const snap = snapshot();
   const live = await resolveExecutionPlanLiveFactsFromPorts({

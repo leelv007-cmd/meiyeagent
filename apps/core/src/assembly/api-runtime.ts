@@ -85,7 +85,10 @@ import {
 } from '../p1/harness/interaction-service.js';
 import { requireHarnessFrozenPrompt } from '../p1/harness/langfuse-prompts.js';
 import { langfuseSenderFromEnv } from '../p1/harness/langfuse-sender.js';
-import { createResolveExecutionPlanLiveFacts } from '../p1/harness/execution-plan-live-facts.js';
+import {
+  createResolveExecutionPlanLiveFacts,
+  type ExecutionPlanLiveFactsPorts,
+} from '../p1/harness/execution-plan-live-facts.js';
 import { InterruptProtocolService } from '../p1/harness/interrupt-protocol.js';
 import { PostgresNoteMediaAdmissionCoordinator } from '../p1/harness/note-media-admission.js';
 import {
@@ -187,6 +190,7 @@ import {
   AgentSessionFoundationModule,
   PostgresAgentSessionStore,
   findActiveExitRun,
+  planCompilerRightsRevisionId,
   projectThreadToSession,
   resolveMakeSteeringGate,
 } from '../p1/agent-session/index.js';
@@ -317,6 +321,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     agentSessionStore,
     sessionAgentHarness,
     executionConfirmationService,
+    executionConfirmationAuthority,
+    executionConfirmationAuthorityStore,
     sessionRetrievalExperiencePort,
     marketingPlanStore,
     planCompiler,
@@ -392,6 +398,51 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       contextBundleRepository
     )
   );
+  const resolveExecutionRightsHeads: NonNullable<
+    ExecutionPlanLiveFactsPorts['resolveRightsHeads']
+  > = async ({ workspaceId, rightsRevisionRefs, snapshot }) => {
+    const plan = await marketingPlanStore.getRevision(
+      snapshot.planId,
+      snapshot.planRevision,
+    );
+    if (!plan) return [];
+    const assetIntentions = plan.revision.assetUsages.flatMap(
+      (usage) => {
+        if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return [];
+        const intention = (usage as Record<string, unknown>).intention;
+        return typeof intention === 'string' ? [intention] : [];
+      },
+    );
+    const assetIds = assetIntentions.filter((value) =>
+      /^[A-Za-z0-9_.:-]{3,}$/u.test(value),
+    );
+    const platformCandidate = snapshot.deliverables.find(
+      (deliverable) => deliverable.platform,
+    )?.platform;
+    const platform =
+      platformCandidate === 'xiaohongshu' ||
+      platformCandidate === 'douyin' ||
+      platformCandidate === 'video_account'
+        ? platformCandidate
+        : undefined;
+    const resolved = await contentPackageRightsResolver.resolve({
+      workspaceId,
+      assetIds,
+      ...(platform ? { platform } : {}),
+    });
+    const knownAssetIds = resolved.knownAssetIds ?? [];
+    const unauthorizedAssetIds = resolved.unauthorizedAssetIds;
+    const currentRevisionId = planCompilerRightsRevisionId({
+      workspaceId,
+      knownAssetIds,
+      unauthorizedAssetIds,
+    });
+    return rightsRevisionRefs.map((frozenRevisionId) => ({
+      frozenRevisionId,
+      revisionId: currentRevisionId,
+      revoked: unauthorizedAssetIds.length > 0,
+    }));
+  };
   // V31-18: production AgentMemoryPlatform — Postgres injection receipts + admin-config kill switches.
   const agentMemoryPlatform = new AgentMemoryPlatform(
     reuseMemoryService,
@@ -1221,16 +1272,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
                 revision: quote.revision,
               };
             },
-            async resolveRightsHeads({ rightsRevisionRefs }) {
-              // Freeze refs are opaque revision ids from Plan Compiler; the
-              // dedicated rights head table is a documented gap — production
-              // reports the freeze set as current, delivery/fence ports stay
-              // fail-closed on package/asset revocation.
-              return rightsRevisionRefs.map((revisionId) => ({
-                revisionId,
-                revoked: false,
-              }));
-            },
+            resolveRightsHeads: resolveExecutionRightsHeads,
           })({ workflowId: request.workflowRevision ? String(request.workflowRevision) : '', request }),
       },
     });
@@ -1368,8 +1410,15 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         // same credit operation id makes execution-time settlement a no-op
         // (U8=A — reserve before confirm, single debit).
         executionConfirmation: {
-          getDecision: (requestId) =>
-            executionConfirmationService.getDecision(requestId),
+          createRequest: (input) =>
+            executionConfirmationAuthority.createRequest(input),
+          putCurrent: (input) =>
+            executionConfirmationAuthorityStore.putCurrent(input),
+          getDecisionForWorkspace: (workspaceId, requestId) =>
+            executionConfirmationService.getDecisionForWorkspace(
+              workspaceId,
+              requestId,
+            ),
         },
         billing: {
           commit: (input) => harnessBilling.commit(input),
@@ -1407,15 +1456,49 @@ export async function startApi(env: NodeJS.ProcessEnv) {
               revision: quote.revision,
             };
           },
-          async resolveRightsHeads({ rightsRevisionRefs }) {
-            // Freeze refs are opaque revision ids from Plan Compiler. Without a
-            // dedicated rights-revision head table, production reports the freeze
-            // set as current (not revoked). Package/asset revocation is still
-            // fail-closed at delivery and mid-execution fence ports.
-            return rightsRevisionRefs.map((revisionId) => ({
-              revisionId,
-              revoked: false,
-            }));
+          resolveRightsHeads: resolveExecutionRightsHeads,
+          async resolveFactHeads({ workspaceId, factRevisionRefs }) {
+            const identities = await marketingIdentities.listActive(
+              workspaceId,
+              new Date().toISOString(),
+            );
+            return Promise.all(
+              factRevisionRefs.map(async (frozenRef) => {
+                const separator = frozenRef.lastIndexOf('@');
+                const prefix = separator > 0 ? frozenRef.slice(0, separator) : frozenRef;
+                const frozenRevision = separator > 0 ? frozenRef.slice(separator + 1) : '';
+                if (prefix.startsWith('identity:')) {
+                  const identityId = prefix.slice('identity:'.length);
+                  const current = identities.find(
+                    (identity) => identity.identityId === identityId,
+                  );
+                  const liveRevision = current
+                    ? String(current.version)
+                    : 'missing';
+                  return {
+                    factRevisionId: `${prefix}@${liveRevision}`,
+                    materialPriceOrDateChanged:
+                      liveRevision !== frozenRevision,
+                  };
+                }
+                if (prefix.startsWith('brief:')) {
+                  const bundleId = prefix.slice('brief:'.length);
+                  const current = await contextBundleRepository.get(
+                    workspaceId,
+                    bundleId,
+                  );
+                  const liveRevision = current
+                    ? String(current.revision)
+                    : 'missing';
+                  return {
+                    factRevisionId: `${prefix}@${liveRevision}`,
+                    materialPriceOrDateChanged:
+                      liveRevision !== frozenRevision,
+                  };
+                }
+                return { factRevisionId: frozenRef };
+              }),
+            );
           },
         }),
         // V31-14: force_legacy_five_stage kill switch (landed).
@@ -1537,9 +1620,11 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         executionPlanAdmissionService,
         {
           createRequest: (input) =>
-            executionConfirmationService.createRequest(input),
+            executionConfirmationAuthority.createRequest(input),
+          putCurrent: (input) =>
+            executionConfirmationAuthorityStore.putCurrent(input),
         },
-      );
+      ),
     harnessService = new HarnessApplicationService(
       harnessTaskAdmissionService,
       harnessDecisions,
@@ -1618,8 +1703,10 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           executionConfirmationService.getDecision(requestId),
         getRequest: (requestId) =>
           executionConfirmationService.getRequest(requestId),
-        supersedePending: (input) =>
-          executionConfirmationService.supersedePending(input),
+        getCurrentByWorkflowId: (workflowId) =>
+          executionConfirmationAuthorityStore.getCurrentByWorkflowId(
+            workflowId
+          ),
       },
     );
     const pendingStartCoordinator = composerSubmissionCoordinator;
@@ -1879,7 +1966,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     executionConfirmation: sessionAgentHarness
       ? {
           create: (input) =>
-            sessionAgentHarness.createExecutionConfirmation(input),
+            executionConfirmationAuthority.createRequest(input),
           decide: (input) =>
             sessionAgentHarness.decideExecutionConfirmation(input),
           expire: (input) =>

@@ -76,7 +76,13 @@ import {
   snapshotConsumeTracePayload,
   validateContextBundleAgainstSnapshot,
 } from './make-snapshot-consume.js';
-import { confirmPaidGenerationExecution } from './paid-generation-confirmation.js';
+import {
+  confirmPaidGenerationExecution,
+  type ConfirmPaidGenerationExecutionInput,
+} from './paid-generation-confirmation.js';
+import type { CreateExecutionConfirmationAuthorityInput } from '../agent-session/execution-confirmation-authority.js';
+import type { CreateExecutionConfirmationResult } from '../agent-session/execution-confirmation-service.js';
+import type { SnapshotLiveFacts } from './execution-plan-admission.js';
 import { createNotePageProgressReporter } from './note-page-execution-frame.js';
 import {
   createCarrierProgramRegistry,
@@ -231,13 +237,24 @@ export interface HarnessSharedStagePorts {
     >;
   }): Promise<void>;
   getExecutionConfirmationDecision?: (
+    workspaceId: string,
     requestId: string,
   ) => Promise<PlanConfirmationDecision | null>;
   admitExecutionPlanSnapshot?: (input: {
     workflowId: string;
     workspaceId: string;
     snapshot: ExecutionPlanSnapshot;
+    live?: SnapshotLiveFacts;
   }) => Promise<ExecutionPlanSnapshot>;
+  resolveExecutionPlanLiveFacts?: (input: {
+    workflowId: string;
+    request: HarnessWorkflowInput;
+    snapshot: ExecutionPlanSnapshot;
+  }) => Promise<SnapshotLiveFacts | undefined>;
+  createExecutionConfirmationRequest?: (
+    input: CreateExecutionConfirmationAuthorityInput,
+  ) => Promise<CreateExecutionConfirmationResult>;
+  putExecutionConfirmationAuthority?: ConfirmPaidGenerationExecutionInput['putExecutionConfirmationAuthority'];
   resolveStageSkills?(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
@@ -1388,6 +1405,11 @@ export async function runHarnessWorkflow(
       reportProgress,
       getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
       admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
+      resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
+      createExecutionConfirmationRequest:
+        ports.createExecutionConfirmationRequest,
+      putExecutionConfirmationAuthority:
+        ports.putExecutionConfirmationAuthority,
       awaitResolvedDecision: (question, stage) =>
         awaitResolvedDecision(runtime, question, stage),
       applyCurrentTaskDecision: (wfId, req, command) =>
@@ -1730,6 +1752,9 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
     reportProgress,
     getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
     admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
+    resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
+    createExecutionConfirmationRequest: ports.createExecutionConfirmationRequest,
+    putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
     awaitResolvedDecision: (question, stage) =>
       awaitResolvedDecision(runtime, question, stage),
     applyCurrentTaskDecision: (wfId, req, command) =>
@@ -2220,6 +2245,9 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
     noteOutline: noteOutlineSummary,
     getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
     admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
+    resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
+    createExecutionConfirmationRequest: ports.createExecutionConfirmationRequest,
+    putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
     awaitResolvedDecision: (question, stage) =>
       awaitResolvedDecision(runtime, question, stage),
     applyCurrentTaskDecision: (wfId, req, command) =>
@@ -2577,6 +2605,9 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
     reportProgress,
     getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
     admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
+    resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
+    createExecutionConfirmationRequest: ports.createExecutionConfirmationRequest,
+    putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
     awaitResolvedDecision: (question, stage) =>
       awaitResolvedDecision(runtime, question, stage),
     applyCurrentTaskDecision: (wfId, req, command) =>

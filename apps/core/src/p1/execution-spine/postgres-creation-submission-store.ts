@@ -635,11 +635,20 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     freeze: CreationSubmissionRecord['executionPlanFreeze'];
     quoteRef?: CreationSubmissionRecord['snapshot']['quote'];
     credits?: number;
+    clarificationResolution?: {
+      interruptId: string;
+      revision: number;
+      threadId: string;
+      runId: string;
+    };
   }) {
     if (!input.freeze) {
       throw new Error('Execution plan freeze is required.');
     }
-    const result = await this.pool.query<{ submission: unknown }>(
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query<{ submission: unknown }>(
       `UPDATE execution_spine.creation_submissions
           SET submission = jsonb_set(jsonb_set(
               jsonb_set(
@@ -679,30 +688,53 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
         input.freeze.planRevision,
       ],
     );
-    const row = result.rows[0];
-    if (!row) {
-      const existing = await this.pool.query<{ submission: unknown }>(
+      const row = result.rows[0];
+      let submission: CreationSubmissionRecord;
+      if (!row) {
+        const existing = await client.query<{ submission: unknown }>(
         `SELECT submission
            FROM execution_spine.creation_submissions
           WHERE workspace_id = $1 AND id = $2`,
         [input.workspaceId, input.submissionId],
       );
-      const stored = existing.rows[0];
-      if (!stored) {
-        throw new Error(`Creation submission ${input.submissionId} was not found.`);
+        const stored = existing.rows[0];
+        if (!stored) {
+          throw new Error(`Creation submission ${input.submissionId} was not found.`);
+        }
+        submission = storedSubmission(stored.submission);
+        if (
+          JSON.stringify(submission.executionPlanFreeze) !==
+          JSON.stringify(input.freeze)
+        ) {
+          throw new Error(
+            `Creation submission ${input.submissionId} cannot change its execution plan freeze after Harness admission.`,
+          );
+        }
+      } else {
+        submission = storedSubmission(row.submission);
       }
-      const submission = storedSubmission(stored.submission);
-      if (
-        JSON.stringify(submission.executionPlanFreeze) !==
-        JSON.stringify(input.freeze)
-      ) {
-        throw new Error(
-          `Creation submission ${input.submissionId} cannot change its execution plan freeze after Harness admission.`,
+      if (input.clarificationResolution) {
+        await client.query(
+          `INSERT INTO execution_spine.composer_plan_outbox
+            (event_id, workspace_id, submission_id, event_type, payload)
+           VALUES ($1, $2, $3, 'interrupt.resolved', $4::jsonb)
+           ON CONFLICT (event_id) DO NOTHING`,
+          [
+            `${input.clarificationResolution.interruptId}:resolved`,
+            input.workspaceId,
+            input.submissionId,
+            JSON.stringify(input.clarificationResolution),
+          ],
         );
       }
+      await client.query('COMMIT');
       return submission;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-    return storedSubmission(row.submission);
   }
 
 	async saveRepricedExecutionPlanFreeze(input: {

@@ -36,6 +36,9 @@ export * from './plan-compiler.js';
 export * from './plan-compiler-production-ports.js';
 // V31-11 ExecutionConfirmationRequest + PlanConfirmationDecision (U7/U8)
 export * from './execution-confirmation-store.js';
+export * from './execution-confirmation-authority.js';
+export * from './execution-confirmation-authority-store.js';
+export * from './execution-confirmation-expiry-job.js';
 export * from './execution-confirmation-projection.js';
 export * from './execution-confirmation-service.js';
 export * from './memory-execution-confirmation-store.js';

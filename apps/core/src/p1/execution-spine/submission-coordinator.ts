@@ -8,7 +8,8 @@ import {
 } from "@meiye/contracts";
 
 import { fingerprintValue } from "../job-runtime/job-contracts.js";
-import { executionConfirmationRequestId } from "../harness/execution-confirmation-id.js";
+import { executionConfirmationAuthorityRequestId } from "../agent-session/execution-confirmation-authority.js";
+import type { PendingConfirmationAuthority } from "../agent-session/execution-confirmation-authority-store.js";
 import { selectImageIntentOperation } from "../harness/image-intent-compiler.js";
 import type { ExecutionPlanCompileFreeze } from "../harness/execution-plan-admission.js";
 import type { HarnessWorkflowInput } from "../harness/task-admission.js";
@@ -92,6 +93,7 @@ export interface CreationSubmissionStore {
 		freeze: ExecutionPlanCompileFreeze;
 		quoteRef?: CreationSubmissionRecord["snapshot"]["quote"];
 		credits?: number;
+		clarificationResolution?: ComposerClarificationResolution;
 	}): Promise<CreationSubmissionRecord>;
 	saveRepricedExecutionPlanFreeze?(input: {
 		workspaceId: string;
@@ -218,7 +220,15 @@ export interface ComposerExplicitConfirmationPort {
 			status: string;
 		};
 	} | null>;
-	supersedePending?(input: { requestId: string; actorId: string; now: string }): Promise<void>;
+	getCurrentByWorkflowId?(
+		workflowId: string,
+	): Promise<PendingConfirmationAuthority | null>;
+	/** Legacy test adapter only; successor repricing no longer invokes this seam. */
+	supersedePending?(input: {
+		requestId: string;
+		actorId: string;
+		now: string;
+	}): Promise<void>;
 }
 
 export interface CreationSubmissionAdmissionPort {
@@ -322,12 +332,34 @@ export class CreationSubmissionCoordinator {
 		if (!this.explicitConfirmations) {
 			throw new Error("Paid Composer start requires confirmation authority.");
 		}
-		const requestId = executionConfirmationRequestId(composerPreparedAttemptId(submission));
-		if (!this.explicitConfirmations.getRequest) {
+		const workflowId = composerPreparedAttemptId(submission);
+		if (
+			!this.explicitConfirmations.getRequest ||
+			!this.explicitConfirmations.getCurrentByWorkflowId
+		) {
 			throw new Error("Paid Composer start requires confirmation request authority.");
 		}
-		const authority = await this.explicitConfirmations.getRequest(requestId);
+		const planAuthority = await this.explicitConfirmations.getCurrentByWorkflowId(
+			workflowId,
+		);
 		const freeze = submission.executionPlanFreeze;
+		if (
+			!planAuthority ||
+			planAuthority.workspaceId !== input.workspaceId ||
+			planAuthority.planId !== freeze.planId ||
+			planAuthority.planRevision !== input.planRevision ||
+			planAuthority.planRevision !== freeze.planRevision ||
+			planAuthority.quoteRef.id !== freeze.quoteRef.id ||
+			String(planAuthority.quoteRef.revision) !== String(freeze.quoteRef.revision)
+		) {
+			throw new Error("Paid Composer start requires the exact prepared plan authority.");
+		}
+		const requestId = executionConfirmationAuthorityRequestId({
+			workflowId,
+			planRevision: planAuthority.planRevision,
+			snapshotHash: planAuthority.snapshotHash,
+		});
+		const authority = await this.explicitConfirmations.getRequest(requestId);
 		if (
 			!authority ||
 			authority.request.requestId !== requestId ||
@@ -335,7 +367,7 @@ export class CreationSubmissionCoordinator {
 			authority.request.planRevision !== input.planRevision ||
 			authority.request.planRevision !== freeze.planRevision ||
 			authority.request.status !== "decided" ||
-			!authority.request.snapshotHash ||
+			authority.request.snapshotHash !== planAuthority.snapshotHash ||
 			authority.request.quoteRef.id !== freeze.quoteRef.id ||
 			String(authority.request.quoteRef.revision) !== String(freeze.quoteRef.revision)
 		) {
@@ -387,7 +419,6 @@ export class CreationSubmissionCoordinator {
 		if (!this.agentPlanning.revisePrepared) {
 			throw new Error("Composer plan revision is unavailable.");
 		}
-		const previousAttemptId = composerPreparedAttemptId(submission);
 		const binding = await this.agentPlanning.revisePrepared({
 			submission,
 			planRevision: input.planRevision,
@@ -413,17 +444,6 @@ export class CreationSubmissionCoordinator {
 				freeze: submission.executionPlanFreeze,
 				quoteRef: submission.snapshot.quote,
 				credits: submission.usageReservation.credits,
-			});
-		}
-		const successorAttemptId = composerPreparedAttemptId(submission);
-		if (successorAttemptId !== previousAttemptId) {
-			if (!this.explicitConfirmations?.supersedePending) {
-				throw new Error("Composer reprice requires stale confirmation release authority.");
-			}
-			await this.explicitConfirmations.supersedePending({
-				requestId: executionConfirmationRequestId(previousAttemptId),
-				actorId: submission.snapshot.actorId,
-				now: this.ids.now(),
 			});
 		}
 		await this.preparePendingConfirmation(submission);
@@ -484,6 +504,9 @@ export class CreationSubmissionCoordinator {
 			freeze: submission.executionPlanFreeze,
 			quoteRef: submission.snapshot.quote,
 			credits: submission.usageReservation.credits,
+			...(binding.clarificationResolution
+				? { clarificationResolution: binding.clarificationResolution }
+				: {}),
 		});
 		await this.agentPlanning.commitClarificationResolution?.({
 			submission,

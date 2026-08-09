@@ -11,6 +11,8 @@
  * hold expiry: cancel + refund + plain-language merchant message (D-153).
  */
 
+import { isDeepStrictEqual } from 'node:util';
+
 import {
   agentExecutionConfirmationRequestSchema,
   planConfirmationDecisionSchema,
@@ -32,14 +34,16 @@ import {
 } from './execution-confirmation-projection.js';
 import {
   ExecutionConfirmationError,
+  type ConfirmationTransactionClient,
   type ConfirmationRequestProjectionFacts,
   type ExecutionConfirmationRequestStore,
   type PlanConfirmationDecisionStore,
   type StoredConfirmationRequest,
 } from './execution-confirmation-store.js';
+import type { ConfirmationAuthorityStore } from './execution-confirmation-authority-store.js';
 
 /** Credit ledger surface required by confirmation create/decide/expire. */
-export type ConfirmationCreditLedgerPort = {
+export type ConfirmationCreditTransactionPort = {
   project(
     workspaceId: string,
     asOf?: string,
@@ -62,24 +66,18 @@ export type ConfirmationCreditLedgerPort = {
   }):
     | Promise<readonly CreditLotTransaction[]>
     | readonly CreditLotTransaction[];
-  /**
-   * Optional transactional seam for Postgres: runs the whole create path under
-   * one workspace credit lock (A3). Memory implementations may omit this.
-   */
-  withWorkspaceCreditTransaction?<T>(
+  transactionClient: ConfirmationTransactionClient;
+};
+
+export type ConfirmationCreditLedgerPort = {
+  withWorkspaceCreditTransaction<T>(
     workspaceId: string,
-    action: (ledger: ConfirmationCreditLedgerPort) => Promise<T>,
+    action: (ledger: ConfirmationCreditTransactionPort) => Promise<T>,
   ): Promise<T>;
-  /**
-   * Postgres seam: the transaction client, present only while running inside
-   * withWorkspaceCreditTransaction. Lets the create path insert the pending
-   * request row into the same DB transaction as balance check + reservation +
-   * FEFO deduction (P1-b — no "row without deduction" window).
-   */
-  transactionClient?: import('pg').PoolClient;
 };
 
 export type CreateExecutionConfirmationInput = {
+  workflowId?: string;
   requestId: string;
   workspaceId: string;
   planId: string;
@@ -106,6 +104,7 @@ export type CreateExecutionConfirmationInput = {
 export type DecideExecutionConfirmationInput = {
   decisionId: string;
   requestId: string;
+  workspaceId: string;
   actorId: string;
   decision: 'confirmed' | 'rejected';
   decidedAt: string;
@@ -113,6 +112,7 @@ export type DecideExecutionConfirmationInput = {
 
 export type ExpireExecutionConfirmationInput = {
   requestId: string;
+  workspaceId: string;
   actorId?: string;
   now: string;
 };
@@ -141,7 +141,15 @@ export class ExecutionConfirmationService {
     private readonly requests: ExecutionConfirmationRequestStore,
     private readonly decisions: PlanConfirmationDecisionStore,
     private readonly credits: ConfirmationCreditLedgerPort,
-  ) {}
+    private readonly authorities?: Pick<
+      ConfirmationAuthorityStore,
+      'getCurrentByWorkflowIdInTransaction'
+    >,
+  ) {
+    if (typeof credits.withWorkspaceCreditTransaction !== 'function') {
+      throw new Error('Execution confirmation requires a workspace transaction port.');
+    }
+  }
 
   /**
    * Create pending request with pre-confirm reserve (U8=A).
@@ -166,11 +174,114 @@ export class ExecutionConfirmationService {
       }
     }
 
-    const run = async (ledger: ConfirmationCreditLedgerPort) => {
+    const request = agentExecutionConfirmationRequestSchema.parse({
+      schemaVersion: 'agent-execution-confirmation-request/v1',
+      requestId: input.requestId,
+      workspaceId: input.workspaceId,
+      planId: input.planId,
+      planRevision: input.planRevision,
+      snapshotHash: input.snapshotHash,
+      quoteRef: input.quoteRef,
+      reservationIdempotencyKey: input.reservationIdempotencyKey,
+      createdAt: input.createdAt,
+      holdExpiresAt: input.holdExpiresAt,
+      status: 'pending',
+      ...(input.campaignPlanRef
+        ? { campaignPlanRef: input.campaignPlanRef }
+        : {}),
+      ...(input.workOrdinal !== undefined
+        ? { workOrdinal: input.workOrdinal }
+        : {}),
+      ...(input.approvalScope ? { approvalScope: input.approvalScope } : {}),
+    });
+    const projection: ConfirmationRequestProjectionFacts = {
+      reservedCredits: requiresReserve ? input.creditCost : 0,
+      failureRefundsCredits: input.failureRefundsCredits,
+      rightsSummary: input.rightsSummary?.trim() || null,
+      factSummary: input.factSummary?.trim() || null,
+    };
+
+    const run = async (ledger: ConfirmationCreditTransactionPort) => {
+      if (this.authorities) {
+        if (!input.workflowId) {
+          throw new ExecutionConfirmationError(
+            'INVALID_STATE',
+            'Confirmation authority validation requires a workflowId.',
+          );
+        }
+        const current =
+          await this.authorities.getCurrentByWorkflowIdInTransaction(
+            ledger.transactionClient,
+            input.workflowId,
+            true,
+          );
+        if (!current || current.workspaceId !== input.workspaceId) {
+          throw new ExecutionConfirmationError(
+            'NOT_FOUND',
+            `Execution plan for workflow ${input.workflowId} was not found.`,
+          );
+        }
+        if (
+          current.planId !== input.planId ||
+          current.planRevision !== input.planRevision ||
+          current.snapshotHash !== input.snapshotHash ||
+          !isDeepStrictEqual(current.quoteRef, input.quoteRef)
+        ) {
+          throw new ExecutionConfirmationError(
+            'AUTHORITY_ADVANCED',
+            `Execution plan for workflow ${input.workflowId} advanced before confirmation creation.`,
+          );
+        }
+      }
+
       // Idempotent re-entry on same requestId before reserve side-effects.
-      const existing = await this.requests.getById(input.requestId);
+      const existing = await this.getOwnedRequest(
+        input.workspaceId,
+        input.requestId,
+        ledger.transactionClient,
+        true,
+      );
+      if (!existing) {
+        const foreign = await this.getRequestById(
+          input.requestId,
+          ledger.transactionClient,
+        );
+        if (foreign) {
+          throw new ExecutionConfirmationError(
+            'NOT_FOUND',
+            `Confirmation request ${input.requestId} was not found.`,
+          );
+        }
+      }
       if (existing) {
-        assertConfirmationRequestReplay(existing, input);
+        if (
+          !isDeepStrictEqual(
+            { ...existing.request, status: 'pending' },
+            request,
+          ) ||
+          !isDeepStrictEqual(existing.projection, projection)
+        ) {
+          throw new ExecutionConfirmationError(
+            'IDEMPOTENCY_CONFLICT',
+            `Confirmation request ${input.requestId} already exists with different facts.`,
+          );
+        }
+        const decision = await this.decisions.getByRequestIdInTransaction(
+          ledger.transactionClient,
+          input.requestId,
+        );
+        if (
+          existing.request.status !== 'pending' &&
+          !(
+            existing.request.status === 'decided' &&
+            decision?.decision === 'confirmed'
+          )
+        ) {
+          throw new ExecutionConfirmationError(
+            'TERMINAL_CONFIRMATION_ATTEMPT',
+            `Confirmation request ${input.requestId} is terminal and requires a successor.`,
+          );
+        }
         const balance = await ledger.project(input.workspaceId, input.createdAt);
         return {
           stored: existing,
@@ -191,11 +302,14 @@ export class ExecutionConfirmationService {
         input.campaignPlanRef &&
         input.workOrdinal !== undefined
       ) {
-        const prior = await this.requests.findCampaignWork({
-          workspaceId: input.workspaceId,
-          campaignPlanId: input.campaignPlanRef.id,
-          workOrdinal: input.workOrdinal,
-        });
+        const prior = await this.findCampaignWork(
+          {
+            workspaceId: input.workspaceId,
+            campaignPlanId: input.campaignPlanRef.id,
+            workOrdinal: input.workOrdinal,
+          },
+          ledger.transactionClient,
+        );
         if (prior && prior.request.requestId !== input.requestId) {
           // U7: second paid Work must create its own request — different ordinal
           // is fine; same ordinal with different request is conflict.
@@ -206,7 +320,6 @@ export class ExecutionConfirmationService {
         }
       }
 
-      let reservedCredits = 0;
       if (requiresReserve) {
         const balance = await ledger.project(input.workspaceId, input.createdAt);
         if (balance.availableCredits < input.creditCost) {
@@ -223,58 +336,16 @@ export class ExecutionConfirmationService {
           correlationId: `confirmation:${input.requestId}`,
           createdAt: input.createdAt,
         });
-        reservedCredits = input.creditCost;
       }
 
-      const request = agentExecutionConfirmationRequestSchema.parse({
-        schemaVersion: 'agent-execution-confirmation-request/v1',
-        requestId: input.requestId,
-        workspaceId: input.workspaceId,
-        planId: input.planId,
-        planRevision: input.planRevision,
-        snapshotHash: input.snapshotHash,
-        quoteRef: input.quoteRef,
-        reservationIdempotencyKey: input.reservationIdempotencyKey,
-        createdAt: input.createdAt,
-        holdExpiresAt: input.holdExpiresAt,
-        status: 'pending',
-        ...(input.campaignPlanRef
-          ? { campaignPlanRef: input.campaignPlanRef }
-          : {}),
-        ...(input.workOrdinal !== undefined
-          ? { workOrdinal: input.workOrdinal }
-          : {}),
-        ...(input.approvalScope ? { approvalScope: input.approvalScope } : {}),
-      });
-
-      const projection: ConfirmationRequestProjectionFacts = {
-        reservedCredits,
-        failureRefundsCredits: input.failureRefundsCredits,
-        rightsSummary: input.rightsSummary?.trim() || null,
-        factSummary: input.factSummary?.trim() || null,
-      };
-
       let stored: StoredConfirmationRequest;
-      const txClient = ledger.transactionClient;
-      const txAwareStore = this.requests as ExecutionConfirmationRequestStore & {
-        savePendingWithClient?(
-          client: import('pg').PoolClient,
-          input: StoredConfirmationRequest,
-        ): Promise<StoredConfirmationRequest>;
-      };
       try {
-        stored =
-          txClient && txAwareStore.savePendingWithClient
-            ? await txAwareStore.savePendingWithClient(txClient, {
-                request,
-                projection,
-              })
-            : await this.requests.savePending({ request, projection });
+        stored = await this.requests.savePendingInTransaction(
+          ledger.transactionClient,
+          { request, projection },
+        );
       } catch (error) {
-        // Compensate an orphan FEFO hold only on the non-transactional path:
-        // inside a workspace transaction the rollback already removes the
-        // reserve, and refunding on the aborted client would mask the error.
-        if (!txClient && reservedCredits > 0) {
+        if (ledger.transactionClient === null && projection.reservedCredits > 0) {
           await ledger.refundUsageOperation({
             workspaceId: input.workspaceId,
             usageOperationId: input.reservationIdempotencyKey,
@@ -301,16 +372,33 @@ export class ExecutionConfirmationService {
       };
     };
 
-    if (this.credits.withWorkspaceCreditTransaction) {
-      return this.credits.withWorkspaceCreditTransaction(input.workspaceId, run);
-    }
-    return run(this.credits);
+    return this.credits.withWorkspaceCreditTransaction(input.workspaceId, run);
   }
 
   async decide(
     input: DecideExecutionConfirmationInput,
   ): Promise<DecideExecutionConfirmationResult> {
-    const stored = await this.requests.getById(input.requestId);
+    return this.decideForWorkspace(input);
+  }
+
+  async decideForWorkspace(
+    input: DecideExecutionConfirmationInput,
+  ): Promise<DecideExecutionConfirmationResult> {
+    const run = (ledger: ConfirmationCreditTransactionPort) =>
+      this.completeDecision(input, ledger);
+    return this.credits.withWorkspaceCreditTransaction(input.workspaceId, run);
+  }
+
+  private async completeDecision(
+    input: DecideExecutionConfirmationInput,
+    ledger: ConfirmationCreditTransactionPort,
+  ): Promise<DecideExecutionConfirmationResult> {
+    const stored = await this.getOwnedRequest(
+      input.workspaceId,
+      input.requestId,
+      ledger.transactionClient,
+      true,
+    );
     if (!stored) {
       throw new ExecutionConfirmationError(
         'NOT_FOUND',
@@ -324,7 +412,7 @@ export class ExecutionConfirmationService {
       );
     }
 
-    const decision = planConfirmationDecisionSchema.parse({
+    const candidate = planConfirmationDecisionSchema.parse({
       schemaVersion: 'plan-confirmation-decision/v1',
       decisionId: input.decisionId,
       requestId: input.requestId,
@@ -333,47 +421,61 @@ export class ExecutionConfirmationService {
       decidedAt: input.decidedAt,
     });
 
-    const prior = await this.decisions.getByRequestId(input.requestId);
-    if (prior) {
-      // Immutable: same decision facts replay; different facts fail closed.
-      const appended = await this.decisions.append(decision);
-      return {
-        decision: appended,
-        request: stored.request,
-        merchantMessage:
-          prior.decision === 'rejected'
-            ? projectRejectRefundMessage(stored.projection.reservedCredits)
-            : null,
-        refundedCredits: prior.decision === 'rejected'
-          ? stored.projection.reservedCredits
-          : 0,
-      };
+    const prior = await this.getDecisionById(
+      input.decisionId,
+      ledger.transactionClient,
+    );
+    if (
+      prior &&
+      (prior.requestId !== candidate.requestId ||
+        prior.actorId !== candidate.actorId ||
+        prior.decision !== candidate.decision)
+    ) {
+      throw new ExecutionConfirmationError(
+        'DECISION_IMMUTABLE',
+        `PlanConfirmationDecision ${input.decisionId} is immutable.`,
+      );
     }
-
-    await this.decisions.append(decision);
-    await this.requests.markStatus({
-      requestId: input.requestId,
-      status: 'decided',
-      expectedStatus: 'pending',
-    });
+    const appended = await this.appendDecision(
+      prior ?? candidate,
+      ledger.transactionClient,
+    );
+    if (stored.request.status === 'pending') {
+      await this.markOwnedStatus(
+        {
+          workspaceId: input.workspaceId,
+          requestId: input.requestId,
+          status: 'decided',
+          expectedStatus: 'pending',
+        },
+        ledger.transactionClient,
+      );
+    }
 
     let refundedCredits = 0;
     let merchantMessage: string | null = null;
-    if (input.decision === 'rejected') {
-      refundedCredits = await this.refundHold({
-        workspaceId: stored.request.workspaceId,
-        reservationIdempotencyKey: stored.request.reservationIdempotencyKey,
-        requestId: stored.request.requestId,
-        actorId: input.actorId,
-        createdAt: input.decidedAt,
-        reservedCredits: stored.projection.reservedCredits,
-      });
+    if (appended.decision === 'rejected') {
+      refundedCredits = await this.refundHold(
+        {
+          workspaceId: stored.request.workspaceId,
+          reservationIdempotencyKey: stored.request.reservationIdempotencyKey,
+          requestId: stored.request.requestId,
+          actorId: input.actorId,
+          createdAt: appended.decidedAt,
+          reservedCredits: stored.projection.reservedCredits,
+        },
+        ledger,
+      );
       merchantMessage = projectRejectRefundMessage(refundedCredits);
     }
 
-    const updated = await this.requests.getById(input.requestId);
+    const updated = await this.getOwnedRequest(
+      input.workspaceId,
+      input.requestId,
+      ledger.transactionClient,
+    );
     return {
-      decision,
+      decision: appended,
       request: updated?.request ?? { ...stored.request, status: 'decided' },
       merchantMessage,
       refundedCredits,
@@ -387,7 +489,27 @@ export class ExecutionConfirmationService {
   async expireHold(
     input: ExpireExecutionConfirmationInput,
   ): Promise<ExpireExecutionConfirmationResult> {
-    const stored = await this.requests.getById(input.requestId);
+    return this.expireForWorkspace(input);
+  }
+
+  async expireForWorkspace(
+    input: ExpireExecutionConfirmationInput,
+  ): Promise<ExpireExecutionConfirmationResult> {
+    const run = (ledger: ConfirmationCreditTransactionPort) =>
+      this.completeExpiry(input, ledger);
+    return this.credits.withWorkspaceCreditTransaction(input.workspaceId, run);
+  }
+
+  private async completeExpiry(
+    input: ExpireExecutionConfirmationInput,
+    ledger: ConfirmationCreditTransactionPort,
+  ): Promise<ExpireExecutionConfirmationResult> {
+    const stored = await this.getOwnedRequest(
+      input.workspaceId,
+      input.requestId,
+      ledger.transactionClient,
+      true,
+    );
     if (!stored) {
       throw new ExecutionConfirmationError(
         'NOT_FOUND',
@@ -400,17 +522,10 @@ export class ExecutionConfirmationService {
         `Confirmation request ${input.requestId} already decided; cannot expire.`,
       );
     }
-    if (stored.request.status === 'expired') {
-      return {
-        request: stored.request,
-        merchantMessage: projectHoldExpiredMessage(
-          stored.projection.reservedCredits,
-        ),
-        refundedCredits: stored.projection.reservedCredits,
-      };
-    }
-
-    if (Date.parse(input.now) < Date.parse(stored.request.holdExpiresAt)) {
+    if (
+      stored.request.status !== 'expired' &&
+      Date.parse(input.now) < Date.parse(stored.request.holdExpiresAt)
+    ) {
       throw new ExecutionConfirmationError(
         'HOLD_NOT_EXPIRED',
         `Confirmation request ${input.requestId} hold has not expired yet.`,
@@ -418,54 +533,38 @@ export class ExecutionConfirmationService {
     }
 
     const actorId = input.actorId ?? 'system';
-    const refundedCredits = await this.refundHold({
-      workspaceId: stored.request.workspaceId,
-      reservationIdempotencyKey: stored.request.reservationIdempotencyKey,
-      requestId: stored.request.requestId,
-      actorId,
-      createdAt: input.now,
-      reservedCredits: stored.projection.reservedCredits,
-    });
-    await this.requests.markStatus({
-      requestId: input.requestId,
-      status: 'expired',
-      expectedStatus: 'pending',
-    });
-    const updated = await this.requests.getById(input.requestId);
+    const refundedCredits = await this.refundHold(
+      {
+        workspaceId: stored.request.workspaceId,
+        reservationIdempotencyKey: stored.request.reservationIdempotencyKey,
+        requestId: stored.request.requestId,
+        actorId,
+        createdAt: input.now,
+        reservedCredits: stored.projection.reservedCredits,
+      },
+      ledger,
+    );
+    if (stored.request.status === 'pending') {
+      await this.markOwnedStatus(
+        {
+          workspaceId: input.workspaceId,
+          requestId: input.requestId,
+          status: 'expired',
+          expectedStatus: 'pending',
+        },
+        ledger.transactionClient,
+      );
+    }
+    const updated = await this.getOwnedRequest(
+      input.workspaceId,
+      input.requestId,
+      ledger.transactionClient,
+    );
     return {
       request: updated?.request ?? { ...stored.request, status: 'expired' },
       merchantMessage: projectHoldExpiredMessage(refundedCredits),
       refundedCredits,
     };
-  }
-
-  /** Reprice successor: terminally release a stale pending attempt before a new request. */
-  async supersedePending(input: {
-    requestId: string;
-    actorId: string;
-    now: string;
-  }): Promise<void> {
-    const stored = await this.requests.getById(input.requestId);
-    if (!stored || stored.request.status === 'expired') return;
-    if (stored.request.status !== 'pending') {
-      throw new ExecutionConfirmationError(
-        'INVALID_STATE',
-        `Confirmation request ${input.requestId} is not pending and cannot be superseded.`,
-      );
-    }
-    await this.refundHold({
-      workspaceId: stored.request.workspaceId,
-      reservationIdempotencyKey: stored.request.reservationIdempotencyKey,
-      requestId: stored.request.requestId,
-      actorId: input.actorId,
-      createdAt: input.now,
-      reservedCredits: stored.projection.reservedCredits,
-    });
-    await this.requests.markStatus({
-      requestId: input.requestId,
-      status: 'expired',
-      expectedStatus: 'pending',
-    });
   }
 
   async getRequest(
@@ -484,10 +583,73 @@ export class ExecutionConfirmationService {
     return this.requests.listPendingByWorkspace(workspaceId);
   }
 
+  async expireDueHolds(input: {
+    now: string;
+    limit?: number;
+  }): Promise<{ expiredRequestIds: string[] }> {
+    await this.reconcileDecidedWithoutDecision({ limit: input.limit });
+    const due = await this.requests.listDuePending(input.now, input.limit);
+    const expiredRequestIds: string[] = [];
+    for (const stored of due) {
+      await this.expireForWorkspace({
+        requestId: stored.request.requestId,
+        workspaceId: stored.request.workspaceId,
+        actorId: 'system:confirmation-expiry-sweeper',
+        now: input.now,
+      });
+      expiredRequestIds.push(stored.request.requestId);
+    }
+    return { expiredRequestIds };
+  }
+
+  async reconcileDecidedWithoutDecision(input: { limit?: number } = {}) {
+    const candidates = await this.requests.listUnreconciledDecided(input.limit);
+    const restoredRequestIds: string[] = [];
+    for (const candidate of candidates) {
+      const restored = await this.credits.withWorkspaceCreditTransaction(
+        candidate.request.workspaceId,
+        async (ledger) => {
+          const current = await this.requests.getOwnedInTransaction(
+            ledger.transactionClient,
+            candidate.request.workspaceId,
+            candidate.request.requestId,
+            true,
+          );
+          if (current?.request.status !== 'decided') return false;
+          const decision = await this.decisions.getByRequestIdInTransaction(
+            ledger.transactionClient,
+            candidate.request.requestId,
+          );
+          if (decision) return false;
+          await this.requests.restoreOwnedPendingInTransaction(
+            ledger.transactionClient,
+            {
+              workspaceId: candidate.request.workspaceId,
+              requestId: candidate.request.requestId,
+            },
+          );
+          return true;
+        },
+      );
+      if (restored) restoredRequestIds.push(candidate.request.requestId);
+    }
+    return { restoredRequestIds };
+  }
+
   async getDecision(
     requestId: string,
   ): Promise<PlanConfirmationDecision | null> {
     return this.decisions.getByRequestId(requestId);
+  }
+
+  async getDecisionForWorkspace(
+    workspaceId: string,
+    requestId: string,
+  ): Promise<PlanConfirmationDecision | null> {
+    const stored = await this.requests.getById(requestId);
+    return stored?.request.workspaceId === workspaceId
+      ? this.decisions.getByRequestId(requestId)
+      : null;
   }
 
   /**
@@ -521,16 +683,19 @@ export class ExecutionConfirmationService {
     return { requiresNewConfirmation: true };
   }
 
-  private async refundHold(input: {
-    workspaceId: string;
-    reservationIdempotencyKey: string;
-    requestId: string;
-    actorId: string;
-    createdAt: string;
-    reservedCredits: number;
-  }): Promise<number> {
+  private async refundHold(
+    input: {
+      workspaceId: string;
+      reservationIdempotencyKey: string;
+      requestId: string;
+      actorId: string;
+      createdAt: string;
+      reservedCredits: number;
+    },
+    ledger: ConfirmationCreditTransactionPort,
+  ): Promise<number> {
     if (input.reservedCredits <= 0) return 0;
-    const refunds = await this.credits.refundUsageOperation({
+    const refunds = await ledger.refundUsageOperation({
       workspaceId: input.workspaceId,
       usageOperationId: input.reservationIdempotencyKey,
       refundOperationId: `confirmation-refund:${input.requestId}`,
@@ -542,35 +707,63 @@ export class ExecutionConfirmationService {
       .filter((row) => row.credited)
       .reduce((sum, row) => sum + row.credits, 0);
   }
-}
 
-function assertConfirmationRequestReplay(
-  existing: StoredConfirmationRequest,
-  input: CreateExecutionConfirmationInput,
-) {
-  const request = existing.request;
-  const same =
-    request.workspaceId === input.workspaceId &&
-    request.planId === input.planId &&
-    request.planRevision === input.planRevision &&
-    request.snapshotHash === input.snapshotHash &&
-    request.quoteRef.id === input.quoteRef.id &&
-    String(request.quoteRef.revision) === String(input.quoteRef.revision) &&
-    request.reservationIdempotencyKey === input.reservationIdempotencyKey &&
-    request.approvalScope === input.approvalScope &&
-    request.workOrdinal === input.workOrdinal &&
-    request.campaignPlanRef?.id === input.campaignPlanRef?.id &&
-    String(request.campaignPlanRef?.revision ?? '') ===
-      String(input.campaignPlanRef?.revision ?? '') &&
-    existing.projection.reservedCredits === input.creditCost &&
-    existing.projection.failureRefundsCredits === input.failureRefundsCredits &&
-    existing.projection.rightsSummary === (input.rightsSummary?.trim() || null) &&
-    existing.projection.factSummary === (input.factSummary?.trim() || null);
-  if (!same) {
-    throw new ExecutionConfirmationError(
-      'IDEMPOTENCY_CONFLICT',
-      `Confirmation request ${input.requestId} was reused with different immutable authority.`,
+  private async getOwnedRequest(
+    workspaceId: string,
+    requestId: string,
+    client: ConfirmationTransactionClient,
+    forUpdate = false,
+  ): Promise<StoredConfirmationRequest | null> {
+    return this.requests.getOwnedInTransaction(
+      client,
+      workspaceId,
+      requestId,
+      forUpdate,
     );
+  }
+
+  private async getRequestById(
+    requestId: string,
+    client: ConfirmationTransactionClient,
+  ): Promise<StoredConfirmationRequest | null> {
+    return this.requests.getByIdInTransaction(client, requestId);
+  }
+
+  private async findCampaignWork(
+    input: {
+      workspaceId: string;
+      campaignPlanId: string;
+      workOrdinal: number;
+    },
+    client: ConfirmationTransactionClient,
+  ): Promise<StoredConfirmationRequest | null> {
+    return this.requests.findCampaignWorkInTransaction(client, input);
+  }
+
+  private async appendDecision(
+    decision: PlanConfirmationDecision,
+    client: ConfirmationTransactionClient,
+  ): Promise<PlanConfirmationDecision> {
+    return this.decisions.appendInTransaction(client, decision);
+  }
+
+  private async getDecisionById(
+    decisionId: string,
+    client: ConfirmationTransactionClient,
+  ): Promise<PlanConfirmationDecision | null> {
+    return this.decisions.getByIdInTransaction(client, decisionId);
+  }
+
+  private async markOwnedStatus(
+    input: {
+      workspaceId: string;
+      requestId: string;
+      status: 'decided' | 'expired';
+      expectedStatus?: 'pending';
+    },
+    client: ConfirmationTransactionClient,
+  ): Promise<StoredConfirmationRequest | null> {
+    return this.requests.markOwnedStatusInTransaction(client, input);
   }
 }
 
@@ -610,12 +803,9 @@ export function confirmationCreditPortFromMemoryLedger(ledger: {
     return run;
   };
   return {
-    project: (workspaceId, asOf) => ledger.project(workspaceId, asOf),
-    consume: (input) => serialize(() => ledger.consume(input)),
-    refundUsageOperation: (input) =>
-      serialize(() => ledger.refundUsageOperation(input)),
     withWorkspaceCreditTransaction: async (_workspaceId, action) =>
       serialize(() => action({
+        transactionClient: null,
         project: (workspaceId, asOf) => ledger.project(workspaceId, asOf),
         consume: (input) => ledger.consume(input),
         refundUsageOperation: (input) => ledger.refundUsageOperation(input),
