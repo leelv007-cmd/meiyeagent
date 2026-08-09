@@ -13,6 +13,7 @@ import {
 
 import type { DiagnosticRepository } from "../../diagnostics/repository.js";
 import { createCoreServer, streamWorkflowEvents } from "../../server.js";
+import { computeExecutionPlanSnapshotHash } from "../harness/execution-plan-admission.js";
 import { buildContentPackage } from "../operations/content-package.js";
 import {
 	WorkflowEventApplicationService,
@@ -829,6 +830,7 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		}
 	>();
 	readonly reprices: Array<{ credits: number; quoteId: string }> = [];
+	failNextReprice = false;
 
 	/** What the coordinator actually reserved, for allowance-unit assertions. */
 	reservedUnits(workspaceId: string, idempotencyKey: string) {
@@ -895,12 +897,17 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		);
 		if (!claim || !input.freeze) throw new Error("Submission freeze target missing.");
 		claim.submission.executionPlanFreeze = structuredClone(input.freeze);
+		claim.submission.agentPlanPending = false;
 		return structuredClone(claim.submission);
 	}
 
 	async saveRepricedExecutionPlanFreeze(input: Parameters<
 		NonNullable<CreationSubmissionStore["saveRepricedExecutionPlanFreeze"]>
 	>[0]) {
+		if (this.failNextReprice) {
+			this.failNextReprice = false;
+			throw new Error("Atomic reprice commit failed");
+		}
 		const claim = [...this.claims.values()].find(
 			(candidate) =>
 				candidate.workspaceId === input.workspaceId &&
@@ -913,6 +920,8 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 			revision: String(input.freeze.quoteRef.revision),
 		};
 		claim.submission.usageReservation.credits = input.credits;
+		claim.submission.usageReservation.creditUsageOperationId =
+			`credit-usage:${claim.submission.task.id}:plan-r${input.freeze.planRevision}`;
 		this.reprices.push({ credits: input.credits, quoteId: input.freeze.quoteRef.id });
 		return structuredClone(claim.submission);
 	}
@@ -1063,6 +1072,7 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 	let completed = 0;
 	let revised = 0;
 	let immutableDecision: PlanConfirmationDecision | null = null;
+	const superseded: string[] = [];
 	const coordinator = new CreationSubmissionCoordinator(
 		submissions,
 		harness,
@@ -1073,6 +1083,9 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 			async prepare(input) {
 				input.submission.executionPlanFreeze = {
 					approvalBasis: "merchant_confirmed",
+					planId: "plan-paid",
+					planRevision: 1,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
 				} as never;
 				return { threadId: "thread-wait", runId: "run-wait", makeReady: false };
 			},
@@ -1087,12 +1100,38 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 				assert.equal(input.planRevision, 1);
 				assert.equal(input.merchantInstruction, "减到 4 页");
 				revised += 1;
+				input.submission.executionPlanFreeze = {
+					...input.submission.executionPlanFreeze!,
+					planRevision: 2,
+				} as never;
 				return { threadId: "thread-wait", runId: "run-wait", makeReady: false };
 			},
 		},
 		{
 			async getDecision() {
 				return immutableDecision;
+			},
+			async getRequest(requestId) {
+				const planRevision = requestId.endsWith("plan-r1") ? 1 : 2;
+				const currentFreeze = {
+					approvalBasis: "merchant_confirmed",
+					planId: "plan-paid",
+					planRevision,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+				} as never;
+				return {
+					request: {
+						requestId,
+						planId: "plan-paid",
+						planRevision,
+						snapshotHash: computeExecutionPlanSnapshotHash(currentFreeze),
+						quoteRef: { id: "quote-1", revision: "quote-r5" },
+						status: "decided",
+					},
+				};
+			},
+			async supersedePending(input) {
+				superseded.push(input.requestId);
 			},
 		},
 	);
@@ -1114,7 +1153,7 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 		coordinator.startPrepared({
 			workspaceId: "workspace-1",
 			taskId: created.task.id,
-			planRevision: 2,
+			planRevision: 1,
 		}),
 		/immutable confirmed decision/u,
 	);
@@ -1122,7 +1161,7 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 	immutableDecision = planConfirmationDecisionSchema.parse({
 		schemaVersion: "plan-confirmation-decision/v1",
 		decisionId: `decision:${createdTaskId}:merchant-confirmed`,
-		requestId: `confirmation:${createdTaskId}`,
+		requestId: `confirmation:${createdTaskId}:plan-r2`,
 		actorId: "owner-1",
 		decision: "confirmed",
 		decidedAt: "2026-08-09T08:00:00.000Z",
@@ -1137,6 +1176,8 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 	});
 	assert.equal(revised, 1);
 	assert.equal(harness.starts.length, 0);
+	assert.equal(harness.preparations.length, 2);
+	assert.deepEqual(superseded, [`confirmation:${createdTaskId}:plan-r1`]);
 
 	const started = await coordinator.startPrepared({
 		workspaceId: "workspace-1",
@@ -1195,6 +1236,12 @@ test("clarification answer continues the prepared task and durably stores its co
 				};
 			},
 		},
+		{
+			async getDecision() {
+				return null;
+			},
+			async supersedePending() {},
+		},
 	);
 	const created = await coordinator.submit({
 		...submissionPayload(),
@@ -1202,6 +1249,11 @@ test("clarification answer continues the prepared task and durably stores its co
 		workspaceId: "workspace-1",
 	});
 	assert.equal(harness.preparations.length, 0);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 0,
+		failed: 0,
+		started: 0,
+	});
 
 	await coordinator.answerClarification({
 		workspaceId: "workspace-1",
@@ -1222,8 +1274,101 @@ test("clarification answer continues the prepared task and durably stores its co
 	assert.equal(harness.starts.length, 0);
 });
 
+test("clarification remains pending when its atomic reprice commit fails", async () => {
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	let committedResolutions = 0;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare() {
+				return {
+					threadId: "thread-crash",
+					runId: "run-crash",
+					makeReady: false,
+				};
+			},
+			async answerClarification(input) {
+				input.submission.executionPlanFreeze = {
+					approvalBasis: "merchant_confirmed",
+					planId: "plan-crash",
+					planRevision: 1,
+					quoteRef: { id: "quote-crash-r2", revision: "quote-r2" },
+				} as never;
+				return {
+					threadId: "thread-crash",
+					runId: "run-crash",
+					makeReady: false,
+					clarificationResolution: {
+						interruptId: "interrupt-crash",
+						revision: 1,
+						threadId: "thread-crash",
+						runId: "run-crash",
+					},
+					repriceCommit: {
+						expectedFreeze: null,
+						previousQuoteRef: { id: "quote-1", revision: "quote-r5" },
+						successorQuote: {
+							quoteId: "quote-crash-r2",
+							catalogModelId: "model-1",
+							quotePolicyRevision: "quote.policy@1",
+							billingMode: "per_request",
+							creditCost: 4,
+							unitRate: 4,
+						},
+						credits: 4,
+					},
+				};
+			},
+			async commitClarificationResolution() {
+				committedResolutions += 1;
+			},
+		},
+	);
+	const created = await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	submissions.failNextReprice = true;
+
+	await assert.rejects(
+		coordinator.answerClarification({
+			workspaceId: "workspace-1",
+			taskId: created.task.id,
+			merchantAnswer: "减到 4 页",
+		}),
+		/Atomic reprice commit failed/u,
+	);
+
+	assert.equal(committedResolutions, 0);
+	assert.equal(
+		(
+			await submissions.readByTask({
+				workspaceId: "workspace-1",
+				taskId: created.task.id,
+			})
+		)?.executionPlanFreeze,
+		undefined,
+	);
+	assert.equal(harness.preparations.length, 0);
+
+	await coordinator.answerClarification({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		merchantAnswer: "减到 4 页",
+	});
+	assert.equal(committedResolutions, 1);
+	assert.equal(harness.preparations.length, 1);
+});
+
 test("plan revision commits its quote successor through the atomic billing and freeze seam", async () => {
 	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
 	const previousFreeze = {
 		approvalBasis: "merchant_confirmed",
 		planId: "plan-reprice",
@@ -1238,7 +1383,7 @@ test("plan revision commits its quote successor through the atomic billing and f
 	} as never;
 	const coordinator = new CreationSubmissionCoordinator(
 		submissions,
-		new RecordingHarnessStarter(),
+		harness,
 		fixedIds(),
 		fixedAdmission(),
 		undefined,
@@ -1269,6 +1414,12 @@ test("plan revision commits its quote successor through the atomic billing and f
 				};
 			},
 		},
+		{
+			async getDecision() {
+				return null;
+			},
+			async supersedePending() {},
+		},
 	);
 	const created = await coordinator.submit({
 		...submissionPayload(),
@@ -1284,6 +1435,10 @@ test("plan revision commits its quote successor through the atomic billing and f
 	});
 
 	assert.deepEqual(submissions.reprices, [{ credits: 4, quoteId: "quote-r2" }]);
+	assert.equal(
+		harness.preparations[1]?.usageReservation.creditUsageOperationId,
+		`credit-usage:${created.task.id}:plan-r2`,
+	);
 	assert.equal("repriceCommit" in revised, false);
 });
 

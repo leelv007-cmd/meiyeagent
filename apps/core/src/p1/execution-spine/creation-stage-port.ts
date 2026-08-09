@@ -6,9 +6,10 @@ import {
 import { UserSelectedSkillIneligibleError } from "../skills/service.js";
 
 import type { CreationExecutionSnapshot } from "./creation-execution-snapshot.js";
-import type {
-	CreationSubmissionHarnessStarter,
-	CreationSubmissionRecord,
+import {
+	type CreationSubmissionHarnessStarter,
+	type CreationSubmissionRecord,
+	composerPreparedAttemptId,
 } from "./submission-coordinator.js";
 
 /**
@@ -17,9 +18,8 @@ import type {
  * semantic stages without reconstructing browser selections from intent text.
  */
 export interface HarnessCreationAdmissionPort {
-	submit(input: HarnessTaskRequest): Promise<{ workflowId: string }>;
-	preparePendingConfirmation?(input: HarnessTaskRequest): Promise<{ workflowId: string }>;
-	dispatchPrepared?(input: HarnessTaskRequest): Promise<{ workflowId: string }>;
+	preparePendingConfirmation(input: HarnessTaskRequest): Promise<{ workflowId: string }>;
+	dispatchPrepared(input: HarnessTaskRequest): Promise<{ workflowId: string }>;
 }
 
 export class CreationStagePort implements CreationSubmissionHarnessStarter {
@@ -35,8 +35,10 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				"Paid Composer Make requires a durable ExecutionPlanFreeze.",
 			);
 		}
+		const attemptId = composerPreparedAttemptId(submission);
 		const command = {
-			taskId: submission.task.id,
+			taskId: attemptId,
+			...(attemptId !== submission.task.id ? { sourceTaskId: submission.task.id } : {}),
 			...toHarnessWorkflowInput(
 				submission.snapshot,
 				submission.usageReservation,
@@ -45,10 +47,8 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				submission.executionConfirmationContext,
 			),
 		};
-		const started = this.admission.dispatchPrepared
-			? await this.admission.dispatchPrepared(command)
-			: await this.admission.submit(command);
-		if (started.workflowId !== submission.task.id) {
+		const started = await this.admission.dispatchPrepared(command);
+		if (started.workflowId !== attemptId) {
 			throw new Error("Harness admission must preserve the Coordinator task ID.");
 		}
 	}
@@ -60,11 +60,10 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				"Paid Composer Make requires a durable ExecutionPlanFreeze.",
 			);
 		}
-		if (!this.admission.preparePendingConfirmation) {
-			throw new Error("Pending Harness confirmation preparation is unavailable.");
-		}
+		const attemptId = composerPreparedAttemptId(submission);
 		const prepared = await this.admission.preparePendingConfirmation({
-			taskId: submission.task.id,
+			taskId: attemptId,
+			sourceTaskId: submission.task.id,
 			...toHarnessWorkflowInput(
 				submission.snapshot,
 				submission.usageReservation,
@@ -73,7 +72,7 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				submission.executionConfirmationContext,
 			),
 		});
-		if (prepared.workflowId !== submission.task.id) {
+		if (prepared.workflowId !== attemptId) {
 			throw new Error("Harness preparation must preserve the Coordinator task ID.");
 		}
 	}

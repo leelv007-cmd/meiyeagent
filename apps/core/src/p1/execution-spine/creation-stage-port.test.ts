@@ -9,7 +9,10 @@ import { CreationStagePort } from "./creation-stage-port.js";
 test("the Coordinator starts the existing Harness from one frozen Composer snapshot", async () => {
 	const calls: unknown[] = [];
 	const stage = new CreationStagePort({
-		async submit(input) {
+		async preparePendingConfirmation(input) {
+			return { workflowId: input.taskId };
+		},
+		async dispatchPrepared(input) {
 			calls.push(structuredClone(input));
 			return { workflowId: input.taskId };
 		},
@@ -81,7 +84,10 @@ test("the Coordinator starts the existing Harness from one frozen Composer snaps
 test("a terminal successor carries the late answer into Harness context and decision references", async () => {
 	const calls: Array<Record<string, unknown>> = [];
 	const stage = new CreationStagePort({
-		async submit(input) {
+		async preparePendingConfirmation(input) {
+			return { workflowId: input.taskId };
+		},
+		async dispatchPrepared(input) {
 			calls.push(structuredClone(input) as unknown as Record<string, unknown>);
 			return { workflowId: input.taskId };
 		},
@@ -152,7 +158,10 @@ test("only permanent immutable-request conflicts terminate a start", async () =>
 		"Immutable request rejected.",
 	);
 	const stage = new CreationStagePort({
-		async submit(input) {
+		async preparePendingConfirmation(input) {
+			return { workflowId: input.taskId };
+		},
+		async dispatchPrepared(input) {
 			return { workflowId: input.taskId };
 		},
 	});

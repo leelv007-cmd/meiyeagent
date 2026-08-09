@@ -17,10 +17,16 @@ export type ComposerClarificationInterruptPort = {
     revision: number;
     occurredAt: string;
   }): Promise<{ interruptId: string }>;
+  pending(input: {
+    resourceId: string;
+    threadId: string;
+    runId: string;
+  }): Promise<{ interruptId: string; revision: number } | null>;
   resolve(input: {
     resourceId: string;
     threadId: string;
     runId: string;
+    interruptId?: string;
     occurredAt: string;
   }): Promise<{ interruptId: string }>;
 };
@@ -68,8 +74,11 @@ export class ComposerSemanticClarificationInterrupts
       threadId: input.threadId,
     });
     const pending = latestPendingQuestion(events, input.runId);
-    if (!pending) throw new Error('Composer clarification has no exact pending interrupt.');
+    if (!pending) return { interruptId: input.interruptId ?? '' };
     const payload = pending.payload as { interruptId: string; revision?: number };
+    if (input.interruptId && payload.interruptId !== input.interruptId) {
+      throw new Error('Composer clarification interrupt authority changed before commit.');
+    }
     await this.projector.project({
       eventId: `${payload.interruptId}:resolved`,
       threadId: input.threadId,
@@ -88,6 +97,23 @@ export class ComposerSemanticClarificationInterrupts
       occurredAt: input.occurredAt,
     });
     return { interruptId: payload.interruptId };
+  }
+
+  async pending(input: Parameters<ComposerClarificationInterruptPort['pending']>[0]) {
+    const events = await this.store.listByThread({
+      resourceId: input.resourceId,
+      threadId: input.threadId,
+    });
+    const pending = latestPendingQuestion(events, input.runId);
+    if (!pending) return null;
+    const payload = pending.payload as {
+      interruptId: string;
+      revision?: number;
+    };
+    return {
+      interruptId: payload.interruptId,
+      revision: payload.revision ?? Number(pending.sourceRevision),
+    };
   }
 }
 

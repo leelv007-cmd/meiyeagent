@@ -14,6 +14,7 @@ import type { MarketingPlanRevision } from '@meiye/contracts';
 
 import type {
   ComposerAgentBinding,
+  ComposerClarificationResolution,
   ComposerSubmissionAgentPlanningPort,
   CreationSubmissionRecord,
 } from '../execution-spine/submission-coordinator.js';
@@ -282,13 +283,13 @@ export class ComposerPlanSessionCoordinator
       harnessReleaseId: run.harnessReleaseId,
       merchantMessage: answer,
     });
-    await this.clarificationInterrupts?.resolve({
-      resourceId,
-      threadId: run.threadId,
-      runId,
-      occurredAt: this.now(),
-    });
     if (!isCompilableTurn(turnResult)) {
+      await this.clarificationInterrupts?.resolve({
+        resourceId,
+        threadId: run.threadId,
+        runId,
+        occurredAt: this.now(),
+      });
       await this.requestClarificationInterrupt({
         resourceId,
         threadId: run.threadId,
@@ -298,6 +299,11 @@ export class ComposerPlanSessionCoordinator
       });
       return { threadId: run.threadId, runId, makeReady: false };
     }
+    const pendingInterrupt = await this.clarificationInterrupts?.pending({
+      resourceId,
+      threadId: run.threadId,
+      runId,
+    });
     const previousQuoteRef = { ...input.submission.snapshot.quote };
     const quantity =
       turnResult.decision.action.proposal.recommendedDeliverables[0]?.quantity ?? 1;
@@ -338,6 +344,15 @@ export class ComposerPlanSessionCoordinator
       threadId: run.threadId,
       runId,
       makeReady: false,
+      ...(pendingInterrupt
+        ? {
+            clarificationResolution: {
+              ...pendingInterrupt,
+              threadId: run.threadId,
+              runId,
+            },
+          }
+        : {}),
       ...(reprice && hasSuccessorCredits
         ? {
             repriceCommit: {
@@ -349,6 +364,24 @@ export class ComposerPlanSessionCoordinator
           }
         : {}),
     };
+  }
+
+  async commitClarificationResolution(input: {
+    submission: CreationSubmissionRecord;
+    resolution?: ComposerClarificationResolution;
+  }): Promise<void> {
+    if (!this.clarificationInterrupts) return;
+    const resourceId = input.submission.snapshot.workspaceId;
+    const runId = composerRunId(input.submission);
+    const run = await this.sessions.getRun({ resourceId, runId });
+    if (!run) throw new Error(`Composer Agent Run ${runId} was not found.`);
+    await this.clarificationInterrupts.resolve({
+      resourceId,
+      threadId: input.resolution?.threadId ?? run.threadId,
+      runId: input.resolution?.runId ?? runId,
+      ...(input.resolution?.interruptId ? { interruptId: input.resolution.interruptId } : {}),
+      occurredAt: this.now(),
+    });
   }
 
   async completeExplicitStart(input: {

@@ -333,6 +333,19 @@ test('ask_merchant waits for a clarification answer and never fallback-compiles'
     },
     credits: 4,
   });
+  assert.ok(answered.clarificationResolution);
+  semanticEvents = await eventStore.listByThread({
+    resourceId: 'workspace-1',
+    threadId: waiting.threadId,
+  });
+  assert.deepEqual(
+    semanticEvents.map((event) => event.eventType),
+    ['interrupt.requested'],
+  );
+  await coordinator.commitClarificationResolution({
+    submission,
+    resolution: answered.clarificationResolution,
+  });
   semanticEvents = await eventStore.listByThread({
     resourceId: 'workspace-1',
     threadId: waiting.threadId,
@@ -747,7 +760,10 @@ test('Composer submit → task-admission assembles and one-shot writes the Execu
     undefined,
     new ExecutionPlanAdmissionService(snapshotStore)
   );
-  const stage = new CreationStagePort({ submit: (input) => admission.submit(input) });
+  const stage = new CreationStagePort({
+    preparePendingConfirmation: (input) => admission.preparePendingConfirmation(input),
+    dispatchPrepared: (input) => admission.dispatchPrepared(input),
+  });
 
   await stage.start(submission);
   const first = starter.requests[0];
@@ -825,7 +841,6 @@ test('paid admission creates one pending request before Make and carries the dur
     },
   );
   const stage = new CreationStagePort({
-    submit: (input) => admission.submit(input),
     preparePendingConfirmation: (input) =>
       admission.preparePendingConfirmation(input),
     dispatchPrepared: (input) => admission.dispatchPrepared(input),
@@ -835,7 +850,7 @@ test('paid admission creates one pending request before Make and carries the dur
 
   assert.deepEqual(calls, [
     {
-      requestId: 'confirmation:task-paid-chain-1',
+      requestId: 'confirmation:task-paid-chain-1:plan-r1',
       snapshotHash: calls[0]!.snapshotHash,
     },
   ]);
@@ -877,17 +892,17 @@ test('Campaign second paid Work creates an independent confirmation request', as
     { async createRequest(input) { calls.push(input); } },
   );
   const stage = new CreationStagePort({
-    submit: (input) => admission.submit(input),
     preparePendingConfirmation: (input) =>
       admission.preparePendingConfirmation(input),
+    dispatchPrepared: (input) => admission.dispatchPrepared(input),
   });
 
   await stage.preparePendingConfirmation(works[0]!);
   await stage.preparePendingConfirmation(works[1]!);
 
   assert.deepEqual(calls.map(({ requestId, workOrdinal }) => ({ requestId, workOrdinal })), [
-    { requestId: 'confirmation:task-campaign-1', workOrdinal: 1 },
-    { requestId: 'confirmation:task-campaign-2', workOrdinal: 2 },
+    { requestId: 'confirmation:task-campaign-1:plan-r1', workOrdinal: 1 },
+    { requestId: 'confirmation:task-campaign-2:plan-r1', workOrdinal: 2 },
   ]);
 });
 

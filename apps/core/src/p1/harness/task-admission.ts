@@ -68,6 +68,9 @@ export interface HarnessWorkflowInput {
   workflowRevision: number;
   creationMode: 'customized' | 'free';
   rawInput: string;
+  /** Versioned workflow authority for a mutable Living Plan revision. */
+  preparedAttemptId?: string;
+  sourceTaskId?: string;
   intent: TaskIntentInput;
   /**
    * Merchant-confirmed Skill revision refs for this task. Optional on legacy
@@ -158,6 +161,8 @@ export interface HarnessTaskRequest extends Omit<
   | 'promptRevisionRefs'
 > {
   taskId: string;
+  /** Versioned plan attempts retain the immutable source Composer task. */
+  sourceTaskId?: string;
   /**
    * Admission-time live facts for stale-confirm rejection (V31-12).
    * Not part of the durable workflow input / fingerprint.
@@ -620,7 +625,9 @@ export class HarnessTaskAdmissionService {
       planRevision: pending.content.planRevision,
       snapshotHash: pending.snapshotHash,
       quoteRef: pending.content.quoteRef,
-      reservationIdempotencyKey: creditUsageOperationId(snapshot.task.id),
+      reservationIdempotencyKey:
+        request.usageReservation?.creditUsageOperationId ??
+        creditUsageOperationId(snapshot.task.id),
       createdAt,
       holdExpiresAt: new Date(
         Date.parse(createdAt) + 48 * 60 * 60 * 1000,
@@ -852,7 +859,8 @@ export function assertHarnessExecutionAssemblyPinned(
   }
   if (
     request.executionSnapshot &&
-    assembly.workflowId !== request.executionSnapshot.task.id
+    assembly.workflowId !==
+      (request.preparedAttemptId ?? request.executionSnapshot.task.id)
   ) {
     throw new Error(
       'Execution assembly workflow does not match the durable task.',
@@ -1115,6 +1123,7 @@ function normalizeRequest(
     usageReservation,
     executionPlanSnapshot,
     executionConfirmationContext,
+    sourceTaskId,
     pendingExecutionPlanSnapshot,
     executionPlanLiveFacts: _executionPlanLiveFacts,
     executionPlanFreeze: _executionPlanFreeze,
@@ -1130,13 +1139,15 @@ function normalizeRequest(
     ? creationExecutionSnapshotSchema.parse(executionSnapshot)
     : undefined;
   if (snapshot) {
-    assertExecutionSnapshotMatchesRequest(snapshot, parsed);
+    assertExecutionSnapshotMatchesRequest(snapshot, parsed, sourceTaskId);
     return {
       ...snapshotWorkflowInput(
         snapshot,
         usageReservation,
         decisionReferences,
       ),
+      ...(sourceTaskId ? { sourceTaskId } : {}),
+      ...(sourceTaskId ? { preparedAttemptId: parsed.taskId } : {}),
       ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
       ...(pendingExecutionPlanSnapshot ? { pendingExecutionPlanSnapshot } : {}),
       ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
@@ -1216,6 +1227,7 @@ function snapshotWorkflowInput(
 function assertExecutionSnapshotMatchesRequest(
   snapshot: CreationExecutionSnapshot,
   request: z.infer<typeof harnessTaskRequestSchema>,
+  sourceTaskId?: string,
 ) {
   const snapshotAssetIds = snapshot.sources.assets.map((asset) => asset.id);
   const matchingAssets =
@@ -1237,7 +1249,7 @@ function assertExecutionSnapshotMatchesRequest(
   if (
     snapshot.actorId !== request.actorId ||
     snapshot.workspaceId !== request.workspaceId ||
-    snapshot.task.id !== request.taskId ||
+    snapshot.task.id !== (sourceTaskId ?? request.taskId) ||
     snapshot.work.id !== context.workId ||
     snapshot.contentPackage.id !== request.packageId ||
     snapshot.contentPackage.expectedRevision !== request.expectedRevision ||

@@ -641,7 +641,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     }
     const result = await this.pool.query<{ submission: unknown }>(
       `UPDATE execution_spine.creation_submissions
-          SET submission = jsonb_set(
+          SET submission = jsonb_set(jsonb_set(
               jsonb_set(
                 jsonb_set(submission,
                 '{executionPlanFreeze}',
@@ -655,7 +655,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
               '{usageReservation,credits}',
               COALESCE($5::jsonb, submission#>'{usageReservation,credits}'),
               true
-            ),
+            ), '{agentPlanPending}', 'false'::jsonb, true),
               updated_at = clock_timestamp()
         WHERE workspace_id = $1
           AND id = $2
@@ -713,6 +713,12 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 		freeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
 		successorQuote: BuildProductQuoteInput;
 		credits: number;
+    clarificationResolution?: {
+      interruptId: string;
+      revision: number;
+      threadId: string;
+      runId: string;
+    };
 	}) {
 		if (!this.persistence.reprice) {
 			throw new Error("Atomic product billing reprice persistence is unavailable.");
@@ -750,6 +756,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 			}
 			const next: CreationSubmissionRecord = {
 				...current,
+        agentPlanPending: false,
 				snapshot: {
 					...current.snapshot,
 					quote: {
@@ -784,6 +791,20 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 					input.freeze.quoteRef.id,
 				],
 			);
+			if (input.clarificationResolution) {
+				await client.query(
+					`INSERT INTO execution_spine.composer_plan_outbox
+					  (event_id, workspace_id, submission_id, event_type, payload)
+					 VALUES ($1, $2, $3, 'interrupt.resolved', $4::jsonb)
+					 ON CONFLICT (event_id) DO NOTHING`,
+					[
+						`${input.clarificationResolution.interruptId}:resolved`,
+						input.workspaceId,
+						input.submissionId,
+						JSON.stringify(input.clarificationResolution),
+					],
+				);
+			}
 			await client.query(
 				`INSERT INTO execution_spine.composer_plan_outbox
 				  (event_id, workspace_id, submission_id, event_type, payload)

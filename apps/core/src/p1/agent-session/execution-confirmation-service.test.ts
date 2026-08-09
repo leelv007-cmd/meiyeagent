@@ -95,6 +95,23 @@ test('createRequest reserves FEFO credits and projects 已预留 N 分 + A5 refu
   assert.equal(off.card.refundLabel, '该模型失败不退回');
 });
 
+test('createRequest rejects a changed immutable authority under the same request id', async () => {
+  const { service, ledger } = makeService(12);
+  await service.createRequest(baseCreate());
+
+  await assert.rejects(
+    service.createRequest(
+      baseCreate({
+        planRevision: 2,
+        snapshotHash: 'snap-hash-2',
+      }),
+    ),
+    (error: unknown) =>
+      error instanceof ExecutionConfirmationError && error.code === 'IDEMPOTENCY_CONFLICT',
+  );
+  assert.equal((await ledger.project('ws-1', CREATED)).usedCredits, 5);
+});
+
 test('createRequest concurrent attempts never over-debit (A3 memory seam)', async () => {
   const { service, ledger } = makeService(5);
   const attempts = Array.from({ length: 4 }, (_, index) =>

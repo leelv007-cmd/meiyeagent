@@ -170,6 +170,7 @@ export class ExecutionConfirmationService {
       // Idempotent re-entry on same requestId before reserve side-effects.
       const existing = await this.requests.getById(input.requestId);
       if (existing) {
+        assertConfirmationRequestReplay(existing, input);
         const balance = await ledger.project(input.workspaceId, input.createdAt);
         return {
           stored: existing,
@@ -438,6 +439,35 @@ export class ExecutionConfirmationService {
     };
   }
 
+  /** Reprice successor: terminally release a stale pending attempt before a new request. */
+  async supersedePending(input: {
+    requestId: string;
+    actorId: string;
+    now: string;
+  }): Promise<void> {
+    const stored = await this.requests.getById(input.requestId);
+    if (!stored || stored.request.status === 'expired') return;
+    if (stored.request.status !== 'pending') {
+      throw new ExecutionConfirmationError(
+        'INVALID_STATE',
+        `Confirmation request ${input.requestId} is not pending and cannot be superseded.`,
+      );
+    }
+    await this.refundHold({
+      workspaceId: stored.request.workspaceId,
+      reservationIdempotencyKey: stored.request.reservationIdempotencyKey,
+      requestId: stored.request.requestId,
+      actorId: input.actorId,
+      createdAt: input.now,
+      reservedCredits: stored.projection.reservedCredits,
+    });
+    await this.requests.markStatus({
+      requestId: input.requestId,
+      status: 'expired',
+      expectedStatus: 'pending',
+    });
+  }
+
   async getRequest(
     requestId: string,
   ): Promise<StoredConfirmationRequest | null> {
@@ -511,6 +541,36 @@ export class ExecutionConfirmationService {
     return refunds
       .filter((row) => row.credited)
       .reduce((sum, row) => sum + row.credits, 0);
+  }
+}
+
+function assertConfirmationRequestReplay(
+  existing: StoredConfirmationRequest,
+  input: CreateExecutionConfirmationInput,
+) {
+  const request = existing.request;
+  const same =
+    request.workspaceId === input.workspaceId &&
+    request.planId === input.planId &&
+    request.planRevision === input.planRevision &&
+    request.snapshotHash === input.snapshotHash &&
+    request.quoteRef.id === input.quoteRef.id &&
+    String(request.quoteRef.revision) === String(input.quoteRef.revision) &&
+    request.reservationIdempotencyKey === input.reservationIdempotencyKey &&
+    request.approvalScope === input.approvalScope &&
+    request.workOrdinal === input.workOrdinal &&
+    request.campaignPlanRef?.id === input.campaignPlanRef?.id &&
+    String(request.campaignPlanRef?.revision ?? '') ===
+      String(input.campaignPlanRef?.revision ?? '') &&
+    existing.projection.reservedCredits === input.creditCost &&
+    existing.projection.failureRefundsCredits === input.failureRefundsCredits &&
+    existing.projection.rightsSummary === (input.rightsSummary?.trim() || null) &&
+    existing.projection.factSummary === (input.factSummary?.trim() || null);
+  if (!same) {
+    throw new ExecutionConfirmationError(
+      'IDEMPOTENCY_CONFLICT',
+      `Confirmation request ${input.requestId} was reused with different immutable authority.`,
+    );
   }
 }
 

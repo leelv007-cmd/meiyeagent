@@ -410,6 +410,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     new ReuseMemoryComposerConversationDeletionNotifier(reuseMemoryService)
   );
   let harnessService: HarnessApplicationService | undefined;
+  let harnessTaskAdmissionService: HarnessTaskAdmissionService | undefined;
   let interruptProtocolService: InterruptProtocolService | undefined;
   let composerDestinationMapper: ComposerDestinationMappingPort | undefined;
   let composerSubmissionCoordinator: CreationSubmissionCoordinator | undefined;
@@ -1270,7 +1271,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         events: harnessObservabilityEvents,
         context: harnessSchemaStore,
       },
-      creditLedger
+      creditLedger,
+      creationSubmissionStore
     );
     const billingCompensations = new PostgresHarnessBillingCompensationStore(
       pool
@@ -1450,8 +1452,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       }
     );
     await DBOS.launch();
-    harnessService = new HarnessApplicationService(
-      new HarnessTaskAdmissionService(
+    harnessTaskAdmissionService = new HarnessTaskAdmissionService(
         harnessSchemaStore,
         new DbosHarnessWorkflowStarter(harnessWorkflow),
         harnessPromptResolver,
@@ -1538,7 +1539,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           createRequest: (input) =>
             executionConfirmationService.createRequest(input),
         },
-      ),
+      );
+    harnessService = new HarnessApplicationService(
+      harnessTaskAdmissionService,
       harnessDecisions,
       harnessSchemaStore,
       dueAwareRecommendations,
@@ -1580,7 +1583,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     });
     composerSubmissionCoordinator = new CreationSubmissionCoordinator(
       creationSubmissionStore,
-      new CreationStagePort(harnessService),
+      new CreationStagePort(harnessTaskAdmissionService),
       {
         createId(prefix) {
           return `${prefix}-${randomUUID()}`;
@@ -1613,6 +1616,10 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       {
         getDecision: (requestId) =>
           executionConfirmationService.getDecision(requestId),
+        getRequest: (requestId) =>
+          executionConfirmationService.getRequest(requestId),
+        supersedePending: (input) =>
+          executionConfirmationService.supersedePending(input),
       },
     );
     const pendingStartCoordinator = composerSubmissionCoordinator;

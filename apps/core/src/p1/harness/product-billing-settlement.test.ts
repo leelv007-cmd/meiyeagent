@@ -232,6 +232,47 @@ test('harness refund rejects a committed terminal usage instead of recording it 
   );
 });
 
+test('harness credit refund settles the persisted repriced usage operation', async () => {
+  let refundedUsageOperationId: string | undefined;
+  const executor = new HarnessProductBillingSettlementExecutor(
+    {
+      async getQuote() {
+        return quote({ creditCost: 4 });
+      },
+      async settleTask() {},
+      async getUsage() {
+        return usage({
+          status: 'refunded',
+          refundedCredits: 4,
+          refundedQuantity: 1,
+        });
+      },
+    },
+    undefined,
+    undefined,
+    undefined,
+    {
+      async refundUsageOperation(refund) {
+        refundedUsageOperationId = refund.usageOperationId;
+        return [];
+      },
+    },
+    {
+      async readByTask() {
+        return {
+          usageReservation: {
+            creditUsageOperationId: 'credit-usage:task-settlement:plan-r3',
+          },
+        };
+      },
+    },
+  );
+
+  await executor.refund(input);
+
+  assert.equal(refundedUsageOperationId, 'credit-usage:task-settlement:plan-r3');
+});
+
 test('harness settlement rejects a quote before the settlement lifecycle', async () => {
   let settleCalls = 0;
   const executor = new HarnessProductBillingSettlementExecutor(
