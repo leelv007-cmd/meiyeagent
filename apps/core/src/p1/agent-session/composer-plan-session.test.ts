@@ -596,10 +596,24 @@ test(
       );
       const created = await coordinator.prepare({ submission: first });
       threadId = created.threadId;
+      const committedFreeze = structuredClone(first.executionPlanFreeze);
+      assert.ok(committedFreeze);
+
+      // Simulate a crash after append/event commit but before the submission
+      // claim persisted its freeze. The same Run must reconstruct r1.
+      first.executionPlanFreeze = undefined;
       const replayed = await coordinator.prepare({
         continuationThreadId: 'ignored-after-binding',
         submission: first,
       });
+      assert.deepEqual(
+        first.executionPlanFreeze,
+        JSON.parse(JSON.stringify(committedFreeze)),
+      );
+      assert.equal(
+        (await plans.listRevisions(committedFreeze.planId)).length,
+        1,
+      );
       const revised = await coordinator.prepare({
         continuationThreadId: created.threadId,
         submission: record(
