@@ -20,6 +20,7 @@ import {
   contentPackageCarrierOf,
   contentPackageSchema,
   imageTextNoteVersionSchema,
+  artifactUpdateWireSchema,
   type ContentPackage,
   type NotePlan,
 } from '@meiye/contracts';
@@ -38,6 +39,8 @@ import { buildContentPackage } from '../operations/content-package.js';
 import { PostgresOperationsRepository } from '../operations/postgres-repository.js';
 import { ProductContentPackageRightsResolver } from '../operations/product-package-rights-adapter.js';
 import { unconfiguredNotePlanEnhancementJudgeResolver } from './note-plan-structured-port.js';
+import { createNotePageProgressReporter } from './note-page-execution-frame.js';
+import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-event-store.js';
 import {
   UnifiedHarnessStagePorts,
   type HarnessMediaExecutionPort,
@@ -143,7 +146,7 @@ async function seedPageRegenFixture(pool: Pool): Promise<PageRegenFixture> {
     derivedPackageId,
     taskId,
     workId,
-    targetAssetId: genAsset2,
+    targetAssetIds: [genAsset2],
   });
   const snapshot = request.executionSnapshot!;
 
@@ -476,6 +479,80 @@ test(
 );
 
 test(
+  'non-contiguous note subset runs source pages 1 and 3 and reporter becomes ready from actual runner mappings',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const pool = new Pool({ connectionString });
+    let cleanup: (() => Promise<void>) | undefined;
+    try {
+      const fixture = await seedPageRegenFixture(pool);
+      cleanup = fixture.cleanup;
+      const {
+        derivedPackageId,
+        genAsset3,
+        merchantAssetId,
+        packageId,
+        plan,
+        ports,
+        request,
+        taskId,
+        workspaceId,
+      } = fixture;
+      const subsetRequest = pageRegenRequest({
+        workspaceId,
+        packageId,
+        derivedPackageId,
+        taskId,
+        workId: request.executionSnapshot!.work.id,
+        targetAssetIds: [merchantAssetId, genAsset3],
+      });
+      const projected: SemanticEventCandidate[] = [];
+      let revision = 10;
+      const report = createNotePageProgressReporter({
+        plan,
+        reportProgress: async () => undefined,
+        artifactEmitter: { async project(candidate) { projected.push(candidate); } },
+        artifactContext: {
+          workspaceId,
+          workflowId: taskId,
+          threadId: 'thread-subset',
+          artifactId: `note:${packageId}`,
+          parentRevision: 10,
+          targetSourceUnitIds: [plan.pages[0]!.id, plan.pages[2]!.id],
+          nextRevision: () => { revision += 1; return revision; },
+          now: () => '2026-08-09T12:00:00.000Z',
+        },
+      });
+
+      const selection = await ports.executeNoteAndSelect({
+        workflowId: taskId,
+        request: subsetRequest,
+        brief: noteBrief(plan),
+        context: emptyContext(subsetRequest, [merchantAssetId]),
+        selectedStyleId: plan.style.id,
+        onPageProgress: report,
+      });
+
+      assert.equal(fixture.imageCalls(), 2);
+      assert.deepEqual(
+        selection.auditSignals
+          .filter(({ eventType }) => eventType === 'note_page_regenerated')
+          .map(({ payload }) => payload.pageId),
+        [plan.pages[0]!.id, plan.pages[2]!.id],
+      );
+      const updates = projected.map(({ payload }) => artifactUpdateWireSchema.parse(payload));
+      assert.ok(updates.slice(0, -1).every(({ status }) => status !== 'ready'));
+      assert.equal(updates.at(-1)?.status, 'ready');
+    } finally {
+      if (cleanup) await cleanup();
+      await pool.end();
+    }
+  },
+);
+
+test(
   'delivery refuses a merchant source asset revoked mid-execution',
   {
     skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
@@ -617,7 +694,7 @@ function pageRegenRequest(input: {
   derivedPackageId: string;
   taskId: string;
   workId: string;
-  targetAssetId: string;
+  targetAssetIds: string[];
 }): HarnessWorkflowInput {
   const snapshot = createCreationExecutionSnapshot(
     {
@@ -656,7 +733,7 @@ function pageRegenRequest(input: {
       sources: {
         assets: [],
         contentPackage: { id: input.packageId, revision: '1' },
-        pageRegeneration: { targetAssetId: input.targetAssetId },
+        pageRegeneration: { targetAssetIds: input.targetAssetIds },
       },
       rights: { revision: 'rights-r1', summary: 'authorized' },
       identity: { id: 'identity-1', revision: 'identity-r1' },

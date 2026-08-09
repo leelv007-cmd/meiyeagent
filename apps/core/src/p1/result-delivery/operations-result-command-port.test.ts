@@ -728,9 +728,6 @@ test('Composer snapshot adjustment keeps the latest semantic decision snapshot',
 		artifactId: 'note:package-1',
 		parentRevision: 7,
 		targetUnitIds: ['page-1'],
-		sourceUnitMappings: [
-		  { sourceUnitId: 'page-1', executionUnitId: 'page-1' },
-		],
 	  },
 	);
   assert.equal(
@@ -743,7 +740,7 @@ test('Composer snapshot adjustment keeps the latest semantic decision snapshot',
   );
 });
 
-test('note set adjustment freezes non-contiguous source-to-execution page units', async () => {
+test('note set adjustment freezes non-contiguous source page units without inventing execution ids', async () => {
   const { composerCalls, port } = fixture({
     noteSnapshot: true,
     semanticSnapshot: true,
@@ -783,12 +780,17 @@ test('note set adjustment freezes non-contiguous source-to-execution page units'
   );
 
   assert.deepEqual(
-    (composerCalls[0] as { sourceArtifactLineage?: { sourceUnitMappings?: unknown } })
-      .sourceArtifactLineage?.sourceUnitMappings,
-    [
-      { sourceUnitId: 'page-1', executionUnitId: 'page-1' },
-      { sourceUnitId: 'page-3', executionUnitId: 'page-3' },
-    ],
+    (composerCalls[0] as { sourceArtifactLineage?: unknown }).sourceArtifactLineage,
+    {
+      artifactId: 'note:package-1',
+      parentRevision: 7,
+      targetUnitIds: ['page-1', 'page-3'],
+    },
+  );
+  assert.deepEqual(
+    (composerCalls[0] as { pageRegenerationTargetAssetIds?: unknown })
+      .pageRegenerationTargetAssetIds,
+    ['asset-1', 'asset-3'],
   );
 });
 

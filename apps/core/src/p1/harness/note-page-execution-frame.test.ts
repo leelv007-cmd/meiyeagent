@@ -186,18 +186,58 @@ test('local regeneration continues the source artifact revision and becomes read
       threadId: 'thread-source',
       artifactId: 'note:source-package',
       parentRevision: 7,
-	  targetUnitIds: ['p2'],
+	  targetSourceUnitIds: ['p2'],
       nextRevision: () => { revision += 1; return revision; },
       now: () => '2026-08-09T12:00:00.000Z',
     },
   });
 
-  await report({ pageId: 'p2', state: 'running' });
-  await report({ pageId: 'p2', state: 'success' });
+  await report({ pageId: 'p2', sourcePageId: 'p2', state: 'running' });
+  await report({ pageId: 'p2', sourcePageId: 'p2', state: 'success' });
 
   const updates = projected.map((candidate) => artifactUpdateWireSchema.parse(candidate.payload));
   assert.equal(updates[0]?.artifactId, 'note:source-package');
   assert.equal(updates[0]?.mode, 'delta');
   assert.equal(updates[0]?.parentRevision, 7);
   assert.equal(updates.at(-1)?.status, 'ready');
+});
+
+test('non-contiguous subset becomes ready only after runner maps every source page to an executed page', async () => {
+  const projected: SemanticEventCandidate[] = [];
+  let revision = 7;
+  const report = createNotePageProgressReporter({
+    plan: {
+      pages: [
+        { id: 'execution-p1', order: 1 },
+        { id: 'execution-p2', order: 2 },
+        { id: 'execution-p3', order: 3 },
+      ],
+    },
+    reportProgress: async () => undefined,
+    artifactEmitter: { async project(candidate) { projected.push(candidate); } },
+    artifactContext: {
+      workspaceId: 'ws-1',
+      workflowId: 'wf-successor',
+      threadId: 'thread-source',
+      artifactId: 'note:source-package',
+      parentRevision: 7,
+      targetSourceUnitIds: ['source-p1', 'source-p3'],
+      nextRevision: () => { revision += 1; return revision; },
+      now: () => '2026-08-09T12:00:00.000Z',
+    },
+  });
+
+  await report({ pageId: 'execution-p1', sourcePageId: 'source-p1', state: 'running' });
+  await report({ pageId: 'execution-p1', sourcePageId: 'source-p1', state: 'success' });
+  assert.notEqual(
+    artifactUpdateWireSchema.parse(projected.at(-1)?.payload).status,
+    'ready',
+  );
+  await report({ pageId: 'execution-p3', sourcePageId: 'source-p3', state: 'running' });
+  await report({ pageId: 'execution-p3', sourcePageId: 'source-p3', state: 'success' });
+
+  assert.equal(
+    artifactUpdateWireSchema.parse(projected.at(-1)?.payload).status,
+    'ready',
+  );
 });

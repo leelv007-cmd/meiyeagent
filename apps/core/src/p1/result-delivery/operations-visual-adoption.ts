@@ -59,7 +59,7 @@ export interface ResultAdjustComposerSubmissionPort {
     idempotencyKey: string;
     instruction: string;
     outputCount: number;
-    pageRegenerationTargetAssetId?: string;
+    pageRegenerationTargetAssetIds?: string[];
     quote: { id: string; revision: string };
     sourceContentPackage: { id: string; revision: number };
     sourceNoteStyleId?: string;
@@ -827,14 +827,10 @@ export class OperationsResultCommandPort {
               composerCommand.scope,
             ),
             outputCount: expectedOutputCount,
-            ...(frozen.snapshot.lens === 'image_text_note' &&
-            composerCommand.scope?.kind === 'asset' &&
-            expectedOutputCount === 1
-              ? {
-                  pageRegenerationTargetAssetId:
-                    composerCommand.scope.assetId,
-                }
-              : {}),
+			...(frozen.snapshot.lens === 'image_text_note' &&
+			composerCommand.scope?.kind !== 'text_selection'
+			  ? { pageRegenerationTargetAssetIds: [...scopedAssetIds] }
+			  : {}),
             quote: { id: quote.quoteId, revision: quote.revision },
             sourceContentPackage: {
               id: frozen.contentPackage.id,
@@ -848,14 +844,6 @@ export class OperationsResultCommandPort {
 				  sourceArtifactLineage: {
 					...frozen.artifactLineage,
 					...(targetUnitIds ? { targetUnitIds } : {}),
-					...(targetUnitIds
-					  ? {
-						  sourceUnitMappings: targetUnitIds.map((pageId) => ({
-							sourceUnitId: pageId,
-							executionUnitId: pageId,
-						  })),
-						}
-					  : {}),
 				  },
 				}
 			  : {}),

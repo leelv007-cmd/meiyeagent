@@ -35,6 +35,8 @@ export function notePageOrderLabel(
 
 export type NotePageProgressEvent = {
   pageId: string;
+  /** Frozen source page mapped by the subset runner after execution planning. */
+  sourcePageId?: string;
   state: 'running' | 'success';
 };
 
@@ -66,8 +68,8 @@ export function createNotePageProgressReporter(input: {
     /** Starting revision; increments per success event. */
     nextRevision: () => number;
     now: () => string;
-	/** Frozen page ids targeted by this execution. */
-	targetUnitIds?: readonly string[];
+	/** Frozen source page ids targeted by this execution. */
+	targetSourceUnitIds?: readonly string[];
 	/** Ready revision of the source artifact continued by this execution. */
 	parentRevision?: number;
   };
@@ -99,6 +101,7 @@ export function createNotePageProgressReporter(input: {
   const skeletonEmitted = new Set<string>();
   const copyEmitted = new Set<string>();
   const completedPages = new Set<string>();
+  const completedSourcePages = new Set<string>();
   let readyRevision: number | undefined = input.artifactContext?.parentRevision;
 	let derivedParentRevision: number | undefined = input.artifactContext?.parentRevision;
 
@@ -139,6 +142,7 @@ export function createNotePageProgressReporter(input: {
           derivedParentRevision = readyRevision;
           readyRevision = undefined;
           completedPages.clear();
+		  completedSourcePages.clear();
         }
         if (!skeletonEmitted.has(event.pageId)) {
           skeletonEmitted.add(event.pageId);
@@ -164,9 +168,15 @@ export function createNotePageProgressReporter(input: {
           });
         }
       }
-      if (event.state === 'success') completedPages.add(event.pageId);
-		const terminalUnitIds = input.artifactContext.targetUnitIds ?? unitIds;
-		const terminal = terminalUnitIds.every((pageId) => completedPages.has(pageId));
+      if (event.state === 'success') {
+		completedPages.add(event.pageId);
+		if (event.sourcePageId) completedSourcePages.add(event.sourcePageId);
+	  }
+		const terminal = input.artifactContext.targetSourceUnitIds
+		  ? input.artifactContext.targetSourceUnitIds.every((sourcePageId) =>
+			  completedSourcePages.has(sourcePageId),
+			)
+		  : unitIds.every((pageId) => completedPages.has(pageId));
       const revision = input.artifactContext.nextRevision();
       await emitNotePageArtifactProgress(input.artifactEmitter, {
         ...base,

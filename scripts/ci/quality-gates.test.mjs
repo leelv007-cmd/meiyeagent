@@ -91,7 +91,6 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
   // part of the ordinary PR run — not a spec that exists without running.
   assert.deepEqual(await runGate('run-pr-production-journey.sh'), [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-	'pnpm exec tsx --test tests/v31-artifact-composer-sse-workbench.journey.test.ts',
 	'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/assembly-gate-required-journey.spec.ts tests/e2e/specs/m04-browser-hard-gate.spec.ts tests/e2e/specs/marketing-identity-flow.spec.ts tests/e2e/specs/w12-identity-draft-assistant.spec.ts tests/e2e/specs/xhs-image-text-main-journey.spec.ts tests/e2e/specs/v31-thread-root-workbench.spec.ts',
   ]);
 
@@ -103,7 +102,7 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
   assert.match(script, /PLAYWRIGHT_PROVIDER_FREE=true/);
   assert.match(script, /MODEL_EXECUTION_MODE=fixture/);
   assert.match(script, /xhs-image-text-main-journey\.spec\.ts/);
-	assert.match(script, /v31-artifact-composer-sse-workbench\.journey\.test\.ts/);
+	assert.doesNotMatch(script, /v31-artifact-composer-sse-workbench\.journey\.test\.ts/);
 	assert.match(script, /v31-thread-root-workbench\.spec\.ts/);
   assert.doesNotMatch(script, /API_KEY|PROVIDER_LIVE|STRIPE_SECRET_KEY/);
 

@@ -60,7 +60,116 @@ test.describe('XHS image-text main journey (production gate)', () => {
     const workId = await submitComposerJourney(
       page,
       imageTextContract,
-      '把本店皮肤护理案例做成小红书图文笔记'
+      '把本店皮肤护理案例做成小红书图文笔记',
+      {
+        onDeliveryCardVisible: async () => {
+          const host = page.getByTestId('agent-workbench-host');
+          const threadId = await host.getAttribute('data-thread-id');
+          expect(
+            threadId,
+            'Composer must bind the Artifact to its real Thread'
+          ).toBeTruthy();
+
+          const note = page.getByTestId('agent-artifact-note');
+          await expect(note).toBeVisible({ timeout: 60_000 });
+          await expect(note).toHaveAttribute('data-artifact-status', 'ready');
+          await expect(page.getByTestId('agent-artifact-card')).toHaveCount(1);
+
+          const replayPath = `/api/core/p1/agent-threads/${encodeURIComponent(threadId!)}/replay`;
+          const fullReplay = (await page.evaluate(async (path) => {
+            const response = await fetch(path, { credentials: 'same-origin' });
+            if (!response.ok)
+              throw new Error(`replay failed: ${response.status}`);
+            return response.json();
+          }, replayPath)) as {
+            data: {
+              events: Array<{
+                eventId: string;
+                eventType: string;
+                payload: { revision?: number; status?: string };
+                streamOffset: string;
+              }>;
+              session: unknown;
+              snapshot: unknown;
+            };
+            meta?: unknown;
+          };
+          const artifacts = fullReplay.data.events.filter(
+            ({ eventType }) => eventType === 'artifact.revised'
+          );
+          expect(artifacts.length).toBeGreaterThanOrEqual(3);
+          expect(artifacts.at(-1)?.payload.status).toBe('ready');
+          const firstArtifact = artifacts[0]!;
+          const finalArtifact = artifacts.at(-1)!;
+          expect(finalArtifact.payload.revision).toBeGreaterThan(
+            (firstArtifact.payload.revision ?? 0) + 1
+          );
+
+          let replayCalls = 0;
+          let eventCalls = 0;
+          let reconnectLastEventId: string | undefined;
+          await page.route(`**${replayPath}**`, async (route) => {
+            replayCalls += 1;
+            if (replayCalls === 1) {
+              await route.fulfill({
+                body: JSON.stringify({
+                  ...fullReplay,
+                  data: {
+                    ...fullReplay.data,
+                    events: [firstArtifact],
+                    snapshot: {
+                      revision: '0',
+                      lastEventId: null,
+                      lastStreamOffset: null,
+                    },
+                  },
+                }),
+                contentType: 'application/json',
+                status: 200,
+              });
+              return;
+            }
+            await route.fulfill({
+              body: JSON.stringify(fullReplay),
+              contentType: 'application/json',
+              status: 200,
+            });
+          });
+          await page.route(
+            `**/api/core/p1/agent-threads/${encodeURIComponent(threadId!)}/events**`,
+            async (route) => {
+              eventCalls += 1;
+              if (eventCalls !== 1) {
+                await route.continue();
+                return;
+              }
+              reconnectLastEventId = route.request().headers()['last-event-id'];
+              await route.fulfill({
+                body: `id: ${finalArtifact.eventId}\nevent: agent.semantic\ndata: ${JSON.stringify(finalArtifact)}\n\n`,
+                contentType: 'text/event-stream',
+                status: 200,
+              });
+            }
+          );
+
+          // A real browser transport disconnect loses the in-memory Workbench.
+          // On reconnect, the first durable replay is intentionally truncated;
+          // the live final revision creates a real gap and must trigger a second,
+          // full snapshot replay rather than accepting the jumped revision.
+          await page.context().setOffline(true);
+          await page.context().setOffline(false);
+          await page.reload();
+
+          await expect(page.getByTestId('agent-artifact-note')).toHaveAttribute(
+            'data-artifact-status',
+            'ready',
+            { timeout: 60_000 }
+          );
+          await expect.poll(() => replayCalls).toBeGreaterThanOrEqual(2);
+          expect(reconnectLastEventId).toBe(firstArtifact.eventId);
+          await expect(page.getByTestId('agent-artifact-card')).toHaveCount(1);
+        },
+      }
     );
     await waitForResultJourney(page, imageTextContract, workId);
 

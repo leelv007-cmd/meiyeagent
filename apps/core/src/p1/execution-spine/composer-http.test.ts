@@ -1631,7 +1631,7 @@ test("an image-text note Result adjustment reserves the quoted image output", as
 		idempotencyKey: "result-adjust-note-1",
 		instruction: "重做指定图片",
 		outputCount: 1,
-		pageRegenerationTargetAssetId: "asset-page-2",
+		pageRegenerationTargetAssetIds: ["asset-page-2"],
 		quote: { id: "quote-adjust-note-1", revision: "quote-adjust-note-r1" },
 		sourceContentPackage: { id: source.contentPackage.id, revision: 1 },
 		sourceNoteStyleId: "story",
@@ -1649,7 +1649,7 @@ test("an image-text note Result adjustment reserves the quoted image output", as
 	assert.equal(adjusted.snapshot.signedSubmission?.beautyVoiceRole, "customer");
 	assert.equal(adjusted.snapshot.signedSubmission?.thinkingLevel, "deep");
 	assert.deepEqual(adjusted.snapshot.sources.pageRegeneration, {
-		targetAssetId: "asset-page-2",
+		targetAssetIds: ["asset-page-2"],
 	});
 	const noteStyleDecision = starter.starts[1]?.decisionReferences?.[0];
 	assert.match(noteStyleDecision?.id ?? "", /^decision-[a-f0-9]{24}$/u);

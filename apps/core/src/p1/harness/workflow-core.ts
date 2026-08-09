@@ -409,6 +409,7 @@ export interface HarnessNoteExecutionStagePorts {
     runStep?: HarnessEffectRunner;
     onPageProgress?: (event: {
       pageId: string;
+	  sourcePageId?: string;
       state: 'running' | 'success';
     }) => Promise<void> | void;
   }): Promise<HarnessNoteSelectionResult>;
@@ -2256,10 +2257,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
 			  ...(activeRequest.artifactLineage
 				? {
 					parentRevision: activeRequest.artifactLineage.parentRevision,
-					targetUnitIds:
-					  activeRequest.artifactLineage.sourceUnitMappings?.map(
-						({ executionUnitId }) => executionUnitId,
-					  ) ?? activeRequest.artifactLineage.targetUnitIds,
+					targetSourceUnitIds: activeRequest.artifactLineage.targetUnitIds,
 				  }
 				: {}),
               nextRevision: () => {
@@ -2421,7 +2419,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   const pageRegeneration =
     activeRequest.executionSnapshot?.sources.pageRegeneration;
   const imageUsageQuantity = pageRegeneration
-    ? 1
+    ? pageRegeneration.targetAssetIds.length
     : selection.version.plan.pages.length;
   const copyUsageQuantity = pageRegeneration
     ? 0
@@ -2446,7 +2444,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
           },
         ],
         evidenceRef: pageRegeneration
-          ? `note-page-regeneration:${pageRegeneration.targetAssetId}`
+          ? `note-page-regeneration:${pageRegeneration.targetAssetIds.join(',')}`
           : `note-plan-pages:${selection.version.plan.pages
               .map(({ id, revision }) => `${id}@${revision}`)
               .join(',')}`,

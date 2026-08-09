@@ -382,8 +382,8 @@ export class CreationSubmissionCoordinator {
 		idempotencyKey: string;
 		instruction: string;
 		outputCount: number;
-		/** Single-page note image regenerate target (result_adjust asset scope). */
-		pageRegenerationTargetAssetId?: string;
+		/** Frozen note image subset (result_adjust asset/set scope). */
+		pageRegenerationTargetAssetIds?: string[];
 		quote: { id: string; revision: string };
 		sourceContentPackage: { id: string; revision: number };
 		sourceNoteStyleId?: string;
@@ -497,10 +497,10 @@ export class CreationSubmissionCoordinator {
 					id: input.sourceContentPackage.id,
 					revision: String(input.sourceContentPackage.revision),
 				},
-				...(input.pageRegenerationTargetAssetId
+				...(input.pageRegenerationTargetAssetIds
 					? {
 							pageRegeneration: {
-								targetAssetId: input.pageRegenerationTargetAssetId,
+								targetAssetIds: input.pageRegenerationTargetAssetIds,
 							},
 						}
 					: {}),
