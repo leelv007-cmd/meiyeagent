@@ -341,6 +341,20 @@ export class HarnessTaskAdmissionService {
   ) {}
 
   async submit(input: HarnessTaskRequest) {
+    return this.admit(input, true);
+  }
+
+  /** Freeze and persist a paid request plus its pending confirmation, without DBOS start. */
+  async preparePendingConfirmation(input: HarnessTaskRequest) {
+    return this.admit(input, false);
+  }
+
+  /** Dispatches an already frozen request after its immutable decision exists. */
+  async dispatchPrepared(input: HarnessTaskRequest) {
+    return this.admit(input, true);
+  }
+
+  private async admit(input: HarnessTaskRequest, dispatch: boolean) {
     const normalized = normalizeRequest(input);
     // V31-12: the assembled snapshot (and the compile-finalize freeze that
     // feeds it) never participates in the fingerprint. The snapshot is
@@ -366,7 +380,9 @@ export class HarnessTaskAdmissionService {
           existing.request,
         );
       }
-      return this.resumeExisting(existing);
+      return dispatch
+        ? this.resumeExisting(existing)
+        : this.preparedExisting(existing);
     }
     const limits = boundedExecutionLimitsSchema.parse(
       await this.executionBounds.resolve(normalized),
@@ -534,7 +550,9 @@ export class HarnessTaskAdmissionService {
     if (claim.kind === 'existing') {
       if (!claim.request) return this.resumeExisting(claim);
       await this.ensurePendingExecutionConfirmation(input.taskId, claim.request);
-      return this.resumeExisting(claim);
+      return dispatch
+        ? this.resumeExisting(claim)
+        : this.preparedExisting(claim);
     }
     await this.ensurePendingExecutionConfirmation(input.taskId, request);
     await this.recordExecutionAssemblyAudit(request, [
@@ -544,11 +562,33 @@ export class HarnessTaskAdmissionService {
       'task_pin',
     ]);
     await this.recordPromptFallbackAudits(input.taskId, request);
+    if (!dispatch) {
+      return { workflowId: input.taskId, replayed: false as const };
+    }
     const handle = await this.starter.start({
       workflowId: input.taskId,
       request,
     });
     return { workflowId: handle.workflowId, replayed: false as const };
+  }
+
+  private preparedExisting(
+    claim:
+      | {
+          kind: 'existing';
+          workflowId: string;
+          runtimeId?: string;
+          request: HarnessWorkflowInput;
+        }
+      | { kind: 'conflict' },
+  ) {
+    if (claim.kind === 'conflict') {
+      throw new HarnessAdmissionError(
+        'REQUEST_FINGERPRINT_CONFLICT',
+        'Task ID was reused with a different Harness request payload.',
+      );
+    }
+    return { workflowId: claim.workflowId, replayed: true as const };
   }
 
   private async ensurePendingExecutionConfirmation(

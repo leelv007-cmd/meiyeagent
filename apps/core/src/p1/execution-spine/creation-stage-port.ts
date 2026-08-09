@@ -18,6 +18,8 @@ import type {
  */
 export interface HarnessCreationAdmissionPort {
 	submit(input: HarnessTaskRequest): Promise<{ workflowId: string }>;
+	preparePendingConfirmation?(input: HarnessTaskRequest): Promise<{ workflowId: string }>;
+	dispatchPrepared?(input: HarnessTaskRequest): Promise<{ workflowId: string }>;
 }
 
 export class CreationStagePort implements CreationSubmissionHarnessStarter {
@@ -33,7 +35,35 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				"Paid Composer Make requires a durable ExecutionPlanFreeze.",
 			);
 		}
-		const started = await this.admission.submit({
+		const command = {
+			taskId: submission.task.id,
+			...toHarnessWorkflowInput(
+				submission.snapshot,
+				submission.usageReservation,
+				submission.decisionReferences,
+				submission.executionPlanFreeze,
+				submission.executionConfirmationContext,
+			),
+		};
+		const started = this.admission.dispatchPrepared
+			? await this.admission.dispatchPrepared(command)
+			: await this.admission.submit(command);
+		if (started.workflowId !== submission.task.id) {
+			throw new Error("Harness admission must preserve the Coordinator task ID.");
+		}
+	}
+
+	async preparePendingConfirmation(submission: CreationSubmissionRecord) {
+		if (!submission.executionPlanFreeze) {
+			throw new HarnessAdmissionError(
+				"FROZEN_REQUEST_MISSING",
+				"Paid Composer Make requires a durable ExecutionPlanFreeze.",
+			);
+		}
+		if (!this.admission.preparePendingConfirmation) {
+			throw new Error("Pending Harness confirmation preparation is unavailable.");
+		}
+		const prepared = await this.admission.preparePendingConfirmation({
 			taskId: submission.task.id,
 			...toHarnessWorkflowInput(
 				submission.snapshot,
@@ -43,8 +73,8 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				submission.executionConfirmationContext,
 			),
 		});
-		if (started.workflowId !== submission.task.id) {
-			throw new Error("Harness admission must preserve the Coordinator task ID.");
+		if (prepared.workflowId !== submission.task.id) {
+			throw new Error("Harness preparation must preserve the Coordinator task ID.");
 		}
 	}
 

@@ -32,6 +32,7 @@ import {
   type PlanProposal,
 } from './turn-contracts.js';
 import type { AgentTurnRunnerResult } from './turn-runner.js';
+import type { ComposerClarificationInterruptPort } from './composer-clarification-interrupt.js';
 
 export type ComposerPlanCompilerPort = {
   compilePlan(input: CompilePlanInput): Promise<CompilePlanResult>;
@@ -69,6 +70,7 @@ export type ComposerPlanSessionOptions = {
   requireSessionTurn?: boolean;
   requireQuoteAuthority?: boolean;
   quoteAuthority?: ComposerPlanQuoteAuthority;
+  clarificationInterrupts?: ComposerClarificationInterruptPort;
   resolveHarnessReleaseId?: (
     submission: CreationSubmissionRecord
   ) => string | Promise<string>;
@@ -98,6 +100,7 @@ export class ComposerPlanSessionCoordinator
     submission: CreationSubmissionRecord
   ) => string | Promise<string>;
   private readonly quoteAuthority?: ComposerPlanQuoteAuthority;
+  private readonly clarificationInterrupts?: ComposerClarificationInterruptPort;
 
   constructor(
     private readonly sessions: AgentSessionStore,
@@ -112,6 +115,7 @@ export class ComposerPlanSessionCoordinator
       throw new Error('Production Composer requires ProductQuote authority.');
     }
     this.quoteAuthority = options.quoteAuthority;
+    this.clarificationInterrupts = options.clarificationInterrupts;
     this.now = options.now ?? (() => new Date().toISOString());
     this.resolveHarnessReleaseId =
       options.resolveHarnessReleaseId ??
@@ -179,6 +183,13 @@ export class ComposerPlanSessionCoordinator
           harnessReleaseId: started.run.harnessReleaseId,
         });
         if (this.compiler.runComposerTurn && !isCompilableTurn(turnResult)) {
+          await this.requestClarificationInterrupt({
+            resourceId,
+            threadId,
+            runId,
+            revision: started.thread.sessionRevision,
+            turnResult,
+          });
           await this.sessions.updateRunStatus({
             resourceId,
             runId,
@@ -271,9 +282,30 @@ export class ComposerPlanSessionCoordinator
       harnessReleaseId: run.harnessReleaseId,
       merchantMessage: answer,
     });
+    await this.clarificationInterrupts?.resolve({
+      resourceId,
+      threadId: run.threadId,
+      runId,
+      occurredAt: this.now(),
+    });
     if (!isCompilableTurn(turnResult)) {
+      await this.requestClarificationInterrupt({
+        resourceId,
+        threadId: run.threadId,
+        runId,
+        revision: thread.sessionRevision,
+        turnResult,
+      });
       return { threadId: run.threadId, runId, makeReady: false };
     }
+    const previousQuoteRef = { ...input.submission.snapshot.quote };
+    const quantity =
+      turnResult.decision.action.proposal.recommendedDeliverables[0]?.quantity ?? 1;
+    const reprice = await this.quoteAuthority?.reprice({
+      submission: input.submission,
+      merchantInstruction: answer,
+      quantity,
+    });
     await this.compile({
       submission: input.submission,
       threadId: run.threadId,
@@ -283,8 +315,40 @@ export class ComposerPlanSessionCoordinator
       proposal: turnResult.decision.action.proposal,
       harnessReleaseId: run.harnessReleaseId,
       now: this.now(),
+      ...(reprice ? { quoteResolutionHint: reprice.resolution } : {}),
     });
-    return { threadId: run.threadId, runId, makeReady: false };
+    const successorCredits = reprice?.resolution.summary?.creditCost;
+    const hasSuccessorCredits =
+      typeof successorCredits === 'number' &&
+      Number.isSafeInteger(successorCredits) &&
+      successorCredits > 0;
+    if (reprice) {
+      input.submission.snapshot = {
+        ...input.submission.snapshot,
+        quote: {
+          id: reprice.resolution.quoteRef.id,
+          revision: String(reprice.resolution.quoteRef.revision),
+        },
+      };
+      if (hasSuccessorCredits) {
+        input.submission.usageReservation.credits = successorCredits;
+      }
+    }
+    return {
+      threadId: run.threadId,
+      runId,
+      makeReady: false,
+      ...(reprice && hasSuccessorCredits
+        ? {
+            repriceCommit: {
+              expectedFreeze: null,
+              previousQuoteRef,
+              successorQuote: reprice.successorQuote,
+              credits: successorCredits,
+            },
+          }
+        : {}),
+    };
   }
 
   async completeExplicitStart(input: {
@@ -444,6 +508,10 @@ export class ComposerPlanSessionCoordinator
         ? {
             repriceCommit: {
               expectedFreeze,
+              previousQuoteRef: {
+                id: expectedFreeze.quoteRef.id,
+                revision: String(expectedFreeze.quoteRef.revision),
+              },
               successorQuote: reprice.successorQuote,
               credits: successorCredits,
             },
@@ -515,6 +583,26 @@ export class ComposerPlanSessionCoordinator
     });
   }
 
+  private async requestClarificationInterrupt(input: {
+    resourceId: string;
+    threadId: string;
+    runId: string;
+    revision: number;
+    turnResult: AgentTurnRunnerResult | null;
+  }) {
+    if (!this.clarificationInterrupts) return;
+    const decision = input.turnResult?.decision;
+    if (!decision || decision.action.kind !== 'ask_merchant') return;
+    await this.clarificationInterrupts.request({
+      resourceId: input.resourceId,
+      threadId: input.threadId,
+      runId: input.runId,
+      question: decision.action.question,
+      revision: input.revision,
+      occurredAt: this.now(),
+    });
+  }
+
   private async compile(input: {
     submission: CreationSubmissionRecord;
     threadId: string;
@@ -524,11 +612,12 @@ export class ComposerPlanSessionCoordinator
     proposal?: PlanProposal;
     harnessReleaseId: string;
     now: string;
+    quoteResolutionHint?: PlanCompilerQuoteResolution;
   }): Promise<void> {
     const snapshot = input.submission.snapshot;
-    const quoteResolutionHint = await this.quoteAuthority?.resolveCurrent({
-      submission: input.submission,
-    });
+    const quoteResolutionHint =
+      input.quoteResolutionHint ??
+      (await this.quoteAuthority?.resolveCurrent({ submission: input.submission }));
     const compileInput: CompilePlanInput = {
       workspaceId: snapshot.workspaceId,
       resourceId: snapshot.workspaceId,

@@ -34,6 +34,8 @@ export interface CreationSubmissionRecord {
 	usageReservation: {
 		id: string;
 		credits?: number;
+		/** Durable credit-ledger lineage; reprices refund this exact operation. */
+		creditUsageOperationId?: string;
 		/** Historical per-resource reservation retained for read compatibility. */
 		units: CreationSubmissionUsageUnit[];
 	};
@@ -93,7 +95,8 @@ export interface CreationSubmissionStore {
 	saveRepricedExecutionPlanFreeze?(input: {
 		workspaceId: string;
 		submissionId: string;
-		expectedFreeze: ExecutionPlanCompileFreeze;
+		expectedFreeze: ExecutionPlanCompileFreeze | null;
+		previousQuoteRef: { id: string; revision: string };
 		freeze: ExecutionPlanCompileFreeze;
 		successorQuote: BuildProductQuoteInput;
 		credits: number;
@@ -139,6 +142,7 @@ export interface CreationSubmissionStore {
 /** StagePort boundary: the coordinator never imports DBOS or a durable carrier. */
 export interface CreationSubmissionHarnessStarter {
 	start(input: CreationSubmissionRecord): Promise<void>;
+	preparePendingConfirmation?(input: CreationSubmissionRecord): Promise<void>;
 	classifyStartFailure?(
 		input: CreationSubmissionRecord,
 		error: unknown,
@@ -157,7 +161,8 @@ export type ComposerAgentBinding = {
 	makeReady?: boolean;
 	/** Server-only handoff consumed by the atomic billing/freeze commit. */
 	repriceCommit?: {
-		expectedFreeze: ExecutionPlanCompileFreeze;
+		expectedFreeze: ExecutionPlanCompileFreeze | null;
+		previousQuoteRef: { id: string; revision: string };
 		successorQuote: BuildProductQuoteInput;
 		credits: number;
 	};
@@ -292,15 +297,15 @@ export class CreationSubmissionCoordinator {
 		if (!this.explicitConfirmations) {
 			throw new Error("Paid Composer start requires confirmation authority.");
 		}
-		const binding = await this.agentPlanning.completeExplicitStart({
-			submission,
-			planRevision: input.planRevision,
-		});
 		const requestId = executionConfirmationRequestId(submission.task.id);
 		const decision = await this.explicitConfirmations.getDecision(requestId);
 		if (!decision || decision.decision !== "confirmed") {
 			throw new Error("Paid Composer start requires an immutable confirmed decision.");
 		}
+		const binding = await this.agentPlanning.completeExplicitStart({
+			submission,
+			planRevision: input.planRevision,
+		});
 		await this.startHarness(submission);
 		await this.agentPlanning.markExplicitStartCompleted?.({ submission });
 		return submissionResponse(submission, true, {
@@ -394,6 +399,19 @@ export class CreationSubmissionCoordinator {
 			merchantAnswer: input.merchantAnswer,
 		});
 		if (!submission.executionPlanFreeze) return binding;
+		if (binding.repriceCommit) {
+			if (!this.store.saveRepricedExecutionPlanFreeze) {
+				throw new Error("Atomic Composer clarification reprice persistence is unavailable.");
+			}
+			await this.store.saveRepricedExecutionPlanFreeze({
+				workspaceId: input.workspaceId,
+				submissionId: submission.snapshot.id,
+				freeze: submission.executionPlanFreeze,
+				...binding.repriceCommit,
+			});
+			await this.preparePendingConfirmation(submission);
+			return { threadId: binding.threadId, runId: binding.runId, makeReady: binding.makeReady };
+		}
 		await this.store.saveExecutionPlanFreeze({
 			workspaceId: input.workspaceId,
 			submissionId: submission.snapshot.id,
@@ -401,6 +419,7 @@ export class CreationSubmissionCoordinator {
 			quoteRef: submission.snapshot.quote,
 			credits: submission.usageReservation.credits,
 		});
+		await this.preparePendingConfirmation(submission);
 		return binding;
 	}
 
@@ -422,6 +441,8 @@ export class CreationSubmissionCoordinator {
 			);
 			if (agentBinding?.makeReady !== false) {
 				await this.startHarness(receipt.submission);
+			} else {
+				await this.preparePendingConfirmation(receipt.submission);
 			}
 			return submissionResponse(receipt.submission, true, agentBinding);
 		}
@@ -490,12 +511,22 @@ export class CreationSubmissionCoordinator {
 		);
 		if (agentBinding?.makeReady !== false) {
 			await this.startHarness(claimed.submission);
+		} else {
+			await this.preparePendingConfirmation(claimed.submission);
 		}
 		return submissionResponse(
 			claimed.submission,
 			claimed.kind === "existing",
 			agentBinding
 		);
+	}
+
+	private async preparePendingConfirmation(submission: CreationSubmissionRecord) {
+		if (!submission.executionPlanFreeze) return;
+		if (!this.harness.preparePendingConfirmation) {
+			throw new Error("Pending Harness confirmation preparation is unavailable.");
+		}
+		await this.harness.preparePendingConfirmation(submission);
 	}
 
 	private async prepareAgentPlan(
@@ -850,7 +881,13 @@ export class CreationSubmissionCoordinator {
 
 	/** Replays only committed, reclaimable starts after a process crash. */
 	async recoverPendingStarts(limit = 100) {
-		const recoverable = await this.store.listRecoverableHarnessStarts({ limit });
+		const recoverable = (
+			await this.store.listRecoverableHarnessStarts({ limit })
+		).filter(
+			(candidate) =>
+				candidate.submission.executionPlanFreeze?.approvalBasis !==
+				"merchant_confirmed",
+		);
 		let failed = 0;
 		let started = 0;
 		for (const candidate of recoverable) {

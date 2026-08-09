@@ -8,6 +8,9 @@ import {
   type ComposerPlanCompilerPort,
 } from '../p1/agent-session/composer-plan-session.js';
 import { fingerprintValue } from '../p1/job-runtime/job-contracts.js';
+import type { AgentSemanticEventProjector } from '../p1/agent-semantic-events/semantic-event-projector.js';
+import type { AgentSemanticEventStore } from '../p1/agent-semantic-events/semantic-event-store.js';
+import { ComposerSemanticClarificationInterrupts } from '../p1/agent-session/composer-clarification-interrupt.js';
 
 export function assembleProductionComposerPlanSession(input: {
   sessions: AgentSessionStore;
@@ -17,6 +20,10 @@ export function assembleProductionComposerPlanSession(input: {
   quoteService: Pick<ProductBillingApplicationPort, 'getQuote'>;
   releaseResolver: {
     resolveForRun(input: { workspaceId: string }): Promise<{ releaseId: string }>;
+  };
+  semanticEvents: {
+    store: AgentSemanticEventStore;
+    projector: Pick<AgentSemanticEventProjector, 'project'>;
   };
 }) {
   if (!input.sessionHarness) {
@@ -31,6 +38,10 @@ export function assembleProductionComposerPlanSession(input: {
     {
       requireSessionTurn: true,
       requireQuoteAuthority: true,
+      clarificationInterrupts: new ComposerSemanticClarificationInterrupts(
+        input.semanticEvents.store,
+        input.semanticEvents.projector,
+      ),
       quoteAuthority: {
         async resolveCurrent({ submission }) {
           const ref = submission.snapshot.quote;

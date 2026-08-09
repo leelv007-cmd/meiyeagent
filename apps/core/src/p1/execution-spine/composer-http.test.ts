@@ -1010,9 +1010,14 @@ class RecordingHarnessStarter implements CreationSubmissionHarnessStarter {
 	readonly starts: Array<
 		Parameters<CreationSubmissionHarnessStarter["start"]>[0]
 	> = [];
+	readonly preparations: CreationSubmissionRecord[] = [];
 
 	async start(input: Parameters<CreationSubmissionHarnessStarter["start"]>[0]) {
 		this.starts.push(structuredClone(input));
+	}
+
+	async preparePendingConfirmation(input: CreationSubmissionRecord) {
+		this.preparations.push(structuredClone(input));
 	}
 }
 
@@ -1098,6 +1103,13 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 		workspaceId: "workspace-1",
 	});
 	createdTaskId = created.task.id;
+	assert.equal(harness.preparations.length, 1);
+	assert.equal(harness.preparations[0]?.task.id, created.task.id);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 0,
+		failed: 0,
+		started: 0,
+	});
 	await assert.rejects(
 		coordinator.startPrepared({
 			workspaceId: "workspace-1",
@@ -1144,9 +1156,10 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 
 test("clarification answer continues the prepared task and durably stores its compiled freeze", async () => {
 	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
 	const coordinator = new CreationSubmissionCoordinator(
 		submissions,
-		new RecordingHarnessStarter(),
+		harness,
 		fixedIds(),
 		fixedAdmission(),
 		undefined,
@@ -1160,8 +1173,26 @@ test("clarification answer continues the prepared task and durably stores its co
 					approvalBasis: "merchant_confirmed",
 					planId: "plan-clarify",
 					planRevision: 1,
+					quoteRef: { id: "quote-clarify-r2", revision: "quote-r2" },
 				} as never;
-				return { threadId: "thread-clarify", runId: "run-clarify", makeReady: false };
+				return {
+					threadId: "thread-clarify",
+					runId: "run-clarify",
+					makeReady: false,
+					repriceCommit: {
+						expectedFreeze: null,
+						previousQuoteRef: { id: "quote-1", revision: "quote-r5" },
+						successorQuote: {
+							quoteId: "quote-clarify-r2",
+							catalogModelId: "model-1",
+							quotePolicyRevision: "quote.policy@1",
+							billingMode: "per_request",
+							creditCost: 4,
+							unitRate: 4,
+						},
+						credits: 4,
+					},
+				};
 			},
 		},
 	);
@@ -1170,6 +1201,7 @@ test("clarification answer continues the prepared task and durably stores its co
 		actorId: "owner-1",
 		workspaceId: "workspace-1",
 	});
+	assert.equal(harness.preparations.length, 0);
 
 	await coordinator.answerClarification({
 		workspaceId: "workspace-1",
@@ -1183,6 +1215,11 @@ test("clarification answer continues the prepared task and durably stores its co
 	});
 	assert.equal(restartedRead?.executionPlanFreeze?.planId, "plan-clarify");
 	assert.equal(restartedRead?.executionPlanFreeze?.planRevision, 1);
+	assert.deepEqual(submissions.reprices, [
+		{ credits: 4, quoteId: "quote-clarify-r2" },
+	]);
+	assert.equal(harness.preparations.length, 1);
+	assert.equal(harness.starts.length, 0);
 });
 
 test("plan revision commits its quote successor through the atomic billing and freeze seam", async () => {
@@ -1218,6 +1255,7 @@ test("plan revision commits its quote successor through the atomic billing and f
 					makeReady: false,
 					repriceCommit: {
 						expectedFreeze: previousFreeze,
+						previousQuoteRef: { id: "quote-r1", revision: "r1" },
 						successorQuote: {
 							quoteId: "quote-r2",
 							catalogModelId: "model-1",

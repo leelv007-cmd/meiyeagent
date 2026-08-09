@@ -1573,6 +1573,10 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       quoteAuthority: productQuoteAuthority,
       quoteService: productQuoteService,
       releaseResolver: harnessReleaseService,
+      semanticEvents: {
+        store: agentSemanticEventStore,
+        projector: semanticProjectorForHarness,
+      },
     });
     composerSubmissionCoordinator = new CreationSubmissionCoordinator(
       creationSubmissionStore,

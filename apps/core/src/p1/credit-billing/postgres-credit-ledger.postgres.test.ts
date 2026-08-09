@@ -172,7 +172,7 @@ test(
 );
 
 test(
-  'Postgres plan reprice releases the old credit operation and reserves the successor ledger amount',
+  'Postgres r1 to r2 to r3 reprices refund each previous usage operation and reserve the final amount',
   { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
   async () => {
     const fixture = await createFixture();
@@ -251,6 +251,10 @@ test(
         await reservation.reprice(client, {
           submission,
           expectedFreeze,
+          previousQuoteRef: {
+            id: previous.quoteId,
+            revision: previous.revision,
+          },
           freeze,
           successorQuote: successorInput,
           credits: 4,
@@ -263,6 +267,51 @@ test(
         client.release();
       }
 
+      const thirdInput = {
+        ...successorInput,
+        creditCost: 3,
+        outputCount: 3,
+        quoteId: `${previous.quoteId}-r3`,
+        unitRate: 3,
+      };
+      const thirdPreview = new ProductQuoteService().buildQuote(thirdInput);
+      submission.snapshot = createSnapshot({
+        quoteId: successorPreview.quoteId,
+        quoteRevision: successorPreview.revision,
+        submission,
+        workspaceId,
+      });
+      submission.usageReservation.credits = 4;
+      const thirdFreeze = {
+        planId: 'plan-reprice',
+        planRevision: 3,
+        quoteRef: {
+          id: thirdPreview.quoteId,
+          revision: thirdPreview.revision,
+        },
+      } as never;
+      const thirdClient = await pool.connect();
+      try {
+        await thirdClient.query('BEGIN');
+        await reservation.reprice(thirdClient, {
+          submission,
+          expectedFreeze: freeze,
+          previousQuoteRef: {
+            id: successorPreview.quoteId,
+            revision: successorPreview.revision,
+          },
+          freeze: thirdFreeze,
+          successorQuote: thirdInput,
+          credits: 3,
+        });
+        await thirdClient.query('COMMIT');
+      } catch (error) {
+        await thirdClient.query('ROLLBACK');
+        throw error;
+      } finally {
+        thirdClient.release();
+      }
+
       const billing = new DurableProductBillingService(billingRepository);
       const usage = await billing.getUsage(submission.task.id, workspaceId);
       const successor = await billing.getQuoteByTask(
@@ -270,17 +319,32 @@ test(
         workspaceId,
       );
       const released = await billing.getQuote(previous.quoteId, workspaceId);
+      const releasedSecond = await billing.getQuote(
+        successorPreview.quoteId,
+        workspaceId,
+      );
       const balance = await creditLedger.project(
         workspaceId,
         '2026-08-02T00:00:00.000Z',
       );
-      assert.equal(usage?.quoteId, successorPreview.quoteId);
-      assert.equal(usage?.reservedCredits, 4);
+      assert.equal(usage?.quoteId, thirdPreview.quoteId);
+      assert.equal(usage?.reservedCredits, 3);
       assert.equal(successor?.lifecycleStatus, 'reserved');
       assert.equal(released?.lifecycleStatus, 'refunded');
-      assert.equal(balance.usedCredits, 4);
-      assert.equal(balance.refundedCredits, 2);
-      assert.equal(balance.availableCredits, 6);
+      assert.equal(releasedSecond?.lifecycleStatus, 'refunded');
+      assert.equal(balance.usedCredits, 3);
+      assert.equal(balance.refundedCredits, 6);
+      assert.equal(balance.availableCredits, 7);
+      const usageOperations = (await creditLedger.listTransactions(workspaceId))
+        .filter((transaction) => transaction.transactionType === 'USAGE')
+        .map((transaction) => transaction.operationId);
+      assert.equal(usageOperations.length, 3);
+      assert.equal(
+        usageOperations.includes(
+          submission.usageReservation.creditUsageOperationId ?? '',
+        ),
+        true,
+      );
     } finally {
       await fixture.cleanup();
     }

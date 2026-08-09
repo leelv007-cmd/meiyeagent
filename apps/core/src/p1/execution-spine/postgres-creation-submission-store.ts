@@ -52,7 +52,8 @@ export interface CreationSubmissionPersistencePort {
   ): Promise<void>;
 	reprice?(client: PoolClient, input: {
 		submission: CreationSubmissionRecord;
-		expectedFreeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		expectedFreeze: CreationSubmissionRecord["executionPlanFreeze"] | null;
+		previousQuoteRef: { id: string; revision: string };
 		freeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
 		successorQuote: BuildProductQuoteInput;
 		credits: number;
@@ -66,7 +67,8 @@ export interface CreationUsageReservationPort {
   ): Promise<void>;
 	reprice?(client: PoolClient, input: {
 		submission: CreationSubmissionRecord;
-		expectedFreeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		expectedFreeze: CreationSubmissionRecord["executionPlanFreeze"] | null;
+		previousQuoteRef: { id: string; revision: string };
 		freeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
 		successorQuote: BuildProductQuoteInput;
 		credits: number;
@@ -174,10 +176,12 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
       workspaceId: snapshot.workspaceId,
     });
     if (credits !== undefined && creditLedger) {
+		const usageOperationId = creditUsageOperationId(submission.task.id);
+		submission.usageReservation.creditUsageOperationId = usageOperationId;
       await creditLedger.consumeWithClient(client, {
         workspaceId: snapshot.workspaceId,
         credits,
-        transactionId: creditUsageOperationId(submission.task.id),
+        transactionId: usageOperationId,
         actorId: snapshot.actorId,
         correlationId: `coordinator:${submission.task.id}`,
         createdAt: snapshot.createdAt,
@@ -210,7 +214,8 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
 
 	async reprice(client: PoolClient, input: {
 		submission: CreationSubmissionRecord;
-		expectedFreeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		expectedFreeze: CreationSubmissionRecord["executionPlanFreeze"] | null;
+		previousQuoteRef: { id: string; revision: string };
 		freeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
 		successorQuote: BuildProductQuoteInput;
 		credits: number;
@@ -230,8 +235,8 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
 		);
 		const replaced = await billing.replaceReservedQuote({
 			workspaceId: snapshot.workspaceId,
-			previousQuoteId: input.expectedFreeze.quoteRef.id,
-			previousQuoteRevision: String(input.expectedFreeze.quoteRef.revision),
+			previousQuoteId: input.previousQuoteRef.id,
+			previousQuoteRevision: input.previousQuoteRef.revision,
 			successor: input.successorQuote,
 			taskId: submission.task.id,
 			usageId: submission.usageReservation.id,
@@ -246,20 +251,24 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
 				"Repriced quote and execution freeze do not bind the same ledger amount.",
 			);
 		}
+		const previousUsageOperationId =
+			submission.usageReservation.creditUsageOperationId ??
+			creditUsageOperationId(submission.task.id);
 		await this.credits.refundUsageOperationWithClient(client, {
 			workspaceId: snapshot.workspaceId,
-			usageOperationId: creditUsageOperationId(submission.task.id),
+			usageOperationId: previousUsageOperationId,
 			refundOperationId: `plan-reprice-refund:${submission.task.id}:r${input.freeze.planRevision}`,
 			actorId: snapshot.actorId,
 			correlationId: `plan-reprice:${submission.task.id}`,
 			createdAt: snapshot.createdAt,
 		});
+		const successorUsageOperationId = creditUsageOperationId(
+			`${submission.task.id}:plan-r${input.freeze.planRevision}:quote-${input.freeze.quoteRef.id}@${input.freeze.quoteRef.revision}`,
+		);
 		await this.credits.consumeWithClient(client, {
 			workspaceId: snapshot.workspaceId,
 			credits: input.credits,
-			transactionId: creditUsageOperationId(
-				`${submission.task.id}:plan-r${input.freeze.planRevision}`,
-			),
+			transactionId: successorUsageOperationId,
 			actorId: snapshot.actorId,
 			correlationId: `plan-reprice:${submission.task.id}`,
 			createdAt: snapshot.createdAt,
@@ -270,6 +279,7 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
 			taskId: submission.task.id,
 			workspaceId: snapshot.workspaceId,
 		});
+		submission.usageReservation.creditUsageOperationId = successorUsageOperationId;
 	}
 }
 
@@ -698,7 +708,8 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 	async saveRepricedExecutionPlanFreeze(input: {
 		workspaceId: string;
 		submissionId: string;
-		expectedFreeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		expectedFreeze: CreationSubmissionRecord["executionPlanFreeze"] | null;
+		previousQuoteRef: { id: string; revision: string };
 		freeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
 		successorQuote: BuildProductQuoteInput;
 		credits: number;
@@ -730,7 +741,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 			}
 			if (
 				row.harness_state !== "reserved" ||
-				JSON.stringify(current.executionPlanFreeze) !==
+				JSON.stringify(current.executionPlanFreeze ?? null) !==
 					JSON.stringify(input.expectedFreeze)
 			) {
 				throw new Error(
@@ -755,6 +766,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 			await this.persistence.reprice(client, {
 				submission: next,
 				expectedFreeze: input.expectedFreeze,
+				previousQuoteRef: input.previousQuoteRef,
 				freeze: input.freeze,
 				successorQuote: input.successorQuote,
 				credits: input.credits,
@@ -784,7 +796,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 					JSON.stringify({
 						planId: input.freeze.planId,
 						planRevision: input.freeze.planRevision,
-						previousQuoteRef: input.expectedFreeze.quoteRef,
+						previousQuoteRef: input.previousQuoteRef,
 						quoteRef: input.freeze.quoteRef,
 						credits: input.credits,
 					}),

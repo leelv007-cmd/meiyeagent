@@ -530,7 +530,7 @@ test(
       const executionPlanFreeze = recoveryExecutionPlanFreeze(submission);
       const clarificationCoordinator = new CreationSubmissionCoordinator(
         store,
-        { async start() {} },
+        { async start() {}, async preparePendingConfirmation() {} },
         {
           createId() {
             return "unused-clarification-id";
