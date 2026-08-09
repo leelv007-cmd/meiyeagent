@@ -49,10 +49,15 @@ export type RefundProductUsageInput = {
   updatedAt: string;
 };
 
+export type ReplaceProductUsageReservationInput = ReserveProductUsageInput & {
+  expectedQuoteId: string;
+};
+
 export interface ProductUsageLedger {
   reserve(input: ReserveProductUsageInput): ProductUsageRecord;
   settle(input: SettleProductUsageInput): ProductUsageRecord;
   refund(input: RefundProductUsageInput): ProductUsageRecord;
+  replaceReservation(input: ReplaceProductUsageReservationInput): ProductUsageRecord;
   getByTask(taskId: string): ProductUsageRecord | null;
   listByWorkspace(workspaceId: string): ProductUsageRecord[];
   /** Repository adapters may hydrate one transaction-local memory ledger. */
@@ -140,6 +145,54 @@ export class MemoryProductUsageLedger implements ProductUsageLedger {
     this.byTask.set(input.taskId, record);
     this.byId.set(input.id, record);
     return structuredClone(record);
+  }
+
+  replaceReservation(
+    input: ReplaceProductUsageReservationInput,
+  ): ProductUsageRecord {
+    const existing = this.byTask.get(input.taskId);
+    if (
+      !existing ||
+      existing.status !== 'reserved' ||
+      existing.quoteId !== input.expectedQuoteId ||
+      existing.id !== input.id
+    ) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        `Product usage for task ${input.taskId} is not the expected reserved quote.`,
+      );
+    }
+    const units = normalizeUnits(input.units ?? [], 'units');
+    if (
+      input.credits !== undefined &&
+      (!Number.isSafeInteger(input.credits) || input.credits < 1)
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Product usage credits must be a positive integer.',
+      );
+    }
+    const next: ProductUsageRecord = {
+      id: input.id,
+      taskId: input.taskId,
+      workspaceId: input.workspaceId,
+      quoteId: input.quoteId,
+      status: 'reserved',
+      reservedQuantity: totalUnits(units),
+      ...(input.credits !== undefined ? { reservedCredits: input.credits } : {}),
+      reservedUnits: units,
+      settledQuantity: 0,
+      settledUnits: [],
+      refundedQuantity: 0,
+      refundedUnits: [],
+      billingMode: input.billingMode,
+      settlementStatus: 'estimated',
+      createdAt: existing.createdAt,
+      updatedAt: input.createdAt,
+    };
+    this.byTask.set(input.taskId, next);
+    this.byId.set(input.id, next);
+    return structuredClone(next);
   }
 
   settle(input: SettleProductUsageInput): ProductUsageRecord {

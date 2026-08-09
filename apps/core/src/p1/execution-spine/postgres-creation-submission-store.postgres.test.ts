@@ -528,13 +528,36 @@ test(
       });
       assert.equal(first.kind, "created");
       const executionPlanFreeze = recoveryExecutionPlanFreeze(submission);
-      submission.executionPlanFreeze = executionPlanFreeze;
-      const frozen = await store.saveExecutionPlanFreeze({
+      const clarificationCoordinator = new CreationSubmissionCoordinator(
+        store,
+        { async start() {} },
+        {
+          createId() {
+            return "unused-clarification-id";
+          },
+          now() {
+            return "2026-07-22T09:05:00.000Z";
+          },
+        },
+        { async admit() { throw new Error("not used"); } },
+        undefined,
+        {
+          async prepare() {
+            throw new Error("not used");
+          },
+          async answerClarification(input) {
+            assert.equal(input.merchantAnswer, "主要面向第一次到店的新客");
+            input.submission.executionPlanFreeze = executionPlanFreeze;
+            return { threadId: "thread-clarify", runId: "run-clarify", makeReady: false };
+          },
+        },
+      );
+      await clarificationCoordinator.answerClarification({
         workspaceId,
-        submissionId: submission.snapshot.id,
-        freeze: executionPlanFreeze,
+        taskId: submission.task.id,
+        merchantAnswer: "主要面向第一次到店的新客",
       });
-      assert.deepEqual(frozen.executionPlanFreeze, executionPlanFreeze);
+      submission.executionPlanFreeze = executionPlanFreeze;
       const restartedStore = new PostgresCreationSubmissionStore(
         pool,
         new PostgresCreationSubmissionPersistence(

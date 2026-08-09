@@ -25,6 +25,7 @@ import {
   type DispatchQuoteInput,
   type FallbackDispatchInput,
   type ReserveQuoteInput,
+  type ReplaceReservedQuoteInput,
   type SettleQuoteInput,
   type TrustedUsageEvidence,
 } from './quote-service.js';
@@ -249,6 +250,13 @@ export interface ProductBillingApplicationPort {
     quote: ProductQuoteSnapshot;
     usage: ProductUsageRecord;
   }>;
+  replaceReservedQuote(
+    input: ReplaceReservedQuoteInput & WorkspaceInput,
+  ): MaybePromise<{
+    previous: ProductQuoteSnapshot;
+    quote: ProductQuoteSnapshot;
+    usage: ProductUsageRecord;
+  }>;
   dispatch(input: DispatchQuoteInput & WorkspaceInput): MaybePromise<{
     quote: ProductQuoteSnapshot;
     providerCost?: ProviderCostSnapshot;
@@ -351,6 +359,34 @@ export class DurableProductBillingService
     const workspaceId = this.workspace(input.workspaceId);
     return this.mutateQuote(workspaceId, input.quoteId, (service) =>
       service.reserve(input),
+    );
+  }
+
+  async replaceReservedQuote(
+    input: ReplaceReservedQuoteInput & WorkspaceInput,
+  ) {
+    const workspaceId = this.workspace(input.workspaceId);
+    return this.run(() =>
+      this.repository.withTransaction(
+        workspaceId,
+        [
+          `quote:${input.previousQuoteId}`,
+          `quote:${input.successor.quoteId}`,
+          `task:${input.taskId}`,
+        ],
+        async (transaction) => {
+          const service = await this.requireLocalByQuote(
+            transaction,
+            workspaceId,
+            input.previousQuoteId,
+          );
+          const result = service.replaceReservedQuote(input);
+          await transaction.saveQuote(workspaceId, result.previous);
+          await transaction.saveQuote(workspaceId, result.quote);
+          await transaction.saveUsage(workspaceId, result.usage);
+          return result;
+        },
+      ),
     );
   }
 

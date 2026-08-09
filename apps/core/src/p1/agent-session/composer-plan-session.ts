@@ -6,7 +6,10 @@
  * retried submission reuse its Run instead of appending another plan revision.
  */
 
-import type { ExecutionPlanApprovalBasis } from '@meiye/contracts';
+import type {
+  BuildProductQuoteInput,
+  ExecutionPlanApprovalBasis,
+} from '@meiye/contracts';
 import type { MarketingPlanRevision } from '@meiye/contracts';
 
 import type {
@@ -79,7 +82,10 @@ export type ComposerPlanQuoteAuthority = {
     submission: CreationSubmissionRecord;
     merchantInstruction: string;
     quantity: number;
-  }): Promise<PlanCompilerQuoteResolution>;
+  }): Promise<{
+    resolution: PlanCompilerQuoteResolution;
+    successorQuote: BuildProductQuoteInput;
+  }>;
 };
 
 const COMPOSER_PLAN_HARNESS_RELEASE_ID = 'composer-plan-surface-v1';
@@ -371,14 +377,19 @@ export class ComposerPlanSessionCoordinator
     const instruction = input.merchantInstruction.trim();
     if (!instruction) throw new Error('Plan revision instruction is required.');
     const snapshot = input.submission.snapshot;
+    const expectedFreeze = input.submission.executionPlanFreeze;
+    if (!expectedFreeze) {
+      throw new Error('Plan revision requires the current durable freeze.');
+    }
     const patch = canonicalPlanPatchFromMerchantInstruction(instruction);
     const quantity =
       patch.deliverableQuantity ?? latest.revision.deliverables[0]?.quantity ?? 1;
-    const quoteResolutionHint = await this.quoteAuthority?.reprice({
+    const reprice = await this.quoteAuthority?.reprice({
       submission: input.submission,
       merchantInstruction: instruction,
       quantity,
     });
+    const quoteResolutionHint = reprice?.resolution;
     const result = await this.compiler.adjustPlan({
       workspaceId: resourceId,
       resourceId,
@@ -402,6 +413,11 @@ export class ComposerPlanSessionCoordinator
           }
         : {}),
     });
+    const successorCredits = quoteResolutionHint?.summary?.creditCost;
+    const hasSuccessorCredits =
+      typeof successorCredits === 'number' &&
+      Number.isSafeInteger(successorCredits) &&
+      successorCredits > 0;
     if (quoteResolutionHint) {
       input.submission.snapshot = {
         ...input.submission.snapshot,
@@ -410,9 +426,8 @@ export class ComposerPlanSessionCoordinator
           revision: String(quoteResolutionHint.quoteRef.revision),
         },
       };
-      const creditCost = quoteResolutionHint.summary?.creditCost;
-      if (Number.isSafeInteger(creditCost) && (creditCost as number) > 0) {
-        input.submission.usageReservation.credits = creditCost as number;
+      if (hasSuccessorCredits) {
+        input.submission.usageReservation.credits = successorCredits;
       }
     }
     input.submission.executionPlanFreeze = compileFinalizeExecutionPlanFreeze({
@@ -421,7 +436,20 @@ export class ComposerPlanSessionCoordinator
       contextRevision: String(snapshot.briefContext.revision),
       approvalBasis: approvalBasisForSubmission(snapshot.lens),
     });
-    return { threadId: run.threadId, runId, makeReady: false };
+    return {
+      threadId: run.threadId,
+      runId,
+      makeReady: false,
+      ...(reprice && hasSuccessorCredits
+        ? {
+            repriceCommit: {
+              expectedFreeze,
+              successorQuote: reprice.successorQuote,
+              credits: successorCredits,
+            },
+          }
+        : {}),
+    };
   }
 
   private runIntentTurn(input: {

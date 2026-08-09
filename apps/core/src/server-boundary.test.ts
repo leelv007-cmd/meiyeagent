@@ -173,6 +173,47 @@ test('Core lets only the trusted worker bootstrap a matching workspace', async (
   assert.equal(calls.length, 1);
 });
 
+test('Composer clarification answer is an independent authenticated command without planRevision', async (t) => {
+  const answers: Array<{ workspaceId: string; taskId: string; merchantAnswer: string }> = [];
+  const server = createCoreServer({
+    diagnosticRepository: diagnostics,
+    serviceToken: 'test-service-token',
+    composerSubmission: {
+      coordinator: {
+        async submit() {
+          throw new Error('not used');
+        },
+        async answerClarification(input) {
+          answers.push(input);
+          return { threadId: 'thread-1', runId: 'run-1', makeReady: false };
+        },
+      },
+    },
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => server.close());
+  const { port } = server.address() as AddressInfo;
+
+  const response = await fetch(
+    `http://127.0.0.1:${port}/v1/workspaces/workspace-a/p1/composer/tasks/task-clarify/answer`,
+    {
+      method: 'POST',
+      headers: commandHeaders(),
+      body: JSON.stringify({ merchantAnswer: '主要面向第一次到店的新客' }),
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(answers, [
+    {
+      workspaceId: 'workspace-a',
+      taskId: 'task-clarify',
+      merchantAnswer: '主要面向第一次到店的新客',
+    },
+  ]);
+});
+
 async function coreServer(t: TestContext) {
   const repository = new MemoryProductRepository();
   repository.grantMembership('user-a', 'workspace-a');

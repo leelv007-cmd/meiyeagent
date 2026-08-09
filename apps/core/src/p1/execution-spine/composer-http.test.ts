@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import {
 	isComposerVariantPlatform,
+	planConfirmationDecisionSchema,
 	pickComposerSubmissionSignedFields,
 	type ContentPackage,
 	type DiagnosticRun,
@@ -827,6 +828,7 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 			leaseId?: string;
 		}
 	>();
+	readonly reprices: Array<{ credits: number; quoteId: string }> = [];
 
 	/** What the coordinator actually reserved, for allowance-unit assertions. */
 	reservedUnits(workspaceId: string, idempotencyKey: string) {
@@ -893,6 +895,25 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		);
 		if (!claim || !input.freeze) throw new Error("Submission freeze target missing.");
 		claim.submission.executionPlanFreeze = structuredClone(input.freeze);
+		return structuredClone(claim.submission);
+	}
+
+	async saveRepricedExecutionPlanFreeze(input: Parameters<
+		NonNullable<CreationSubmissionStore["saveRepricedExecutionPlanFreeze"]>
+	>[0]) {
+		const claim = [...this.claims.values()].find(
+			(candidate) =>
+				candidate.workspaceId === input.workspaceId &&
+				candidate.submission.snapshot.id === input.submissionId,
+		);
+		if (!claim) throw new Error("Submission reprice target missing.");
+		claim.submission.executionPlanFreeze = structuredClone(input.freeze);
+		claim.submission.snapshot.quote = {
+			id: input.freeze.quoteRef.id,
+			revision: String(input.freeze.quoteRef.revision),
+		};
+		claim.submission.usageReservation.credits = input.credits;
+		this.reprices.push({ credits: input.credits, quoteId: input.freeze.quoteRef.id });
 		return structuredClone(claim.submission);
 	}
 
@@ -1036,7 +1057,6 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 	const harness = new RecordingHarnessStarter();
 	let completed = 0;
 	let revised = 0;
-	let confirmationDecisions = 0;
 	let immutableDecision: PlanConfirmationDecision | null = null;
 	const coordinator = new CreationSubmissionCoordinator(
 		submissions,
@@ -1069,15 +1089,6 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 			async getDecision() {
 				return immutableDecision;
 			},
-			async decide(input) {
-				assert.equal(input.requestId, `confirmation:${createdTaskId}`);
-				confirmationDecisions += 1;
-				immutableDecision = {
-						schemaVersion: "plan-confirmation-decision/v1",
-						...input,
-					} as PlanConfirmationDecision;
-				return { decision: immutableDecision };
-			},
 		},
 	);
 	let createdTaskId = "";
@@ -1087,6 +1098,23 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 		workspaceId: "workspace-1",
 	});
 	createdTaskId = created.task.id;
+	await assert.rejects(
+		coordinator.startPrepared({
+			workspaceId: "workspace-1",
+			taskId: created.task.id,
+			planRevision: 2,
+		}),
+		/immutable confirmed decision/u,
+	);
+	assert.equal(harness.starts.length, 0);
+	immutableDecision = planConfirmationDecisionSchema.parse({
+		schemaVersion: "plan-confirmation-decision/v1",
+		decisionId: `decision:${createdTaskId}:merchant-confirmed`,
+		requestId: `confirmation:${createdTaskId}`,
+		actorId: "owner-1",
+		decision: "confirmed",
+		decidedAt: "2026-08-09T08:00:00.000Z",
+	});
 	assert.equal(created.makeReady, false);
 	assert.equal(harness.starts.length, 0);
 	await coordinator.revisePrepared({
@@ -1105,7 +1133,6 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 	});
 	assert.equal(started.makeReady, true);
 	assert.equal(harness.starts.length, 1);
-	assert.equal(confirmationDecisions, 1);
 	assert.equal(completed, 1);
 	await coordinator.startPrepared({
 		workspaceId: "workspace-1",
@@ -1113,7 +1140,113 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 		planRevision: 2,
 	});
 	assert.equal(harness.starts.length, 1);
-	assert.equal(confirmationDecisions, 1);
+});
+
+test("clarification answer continues the prepared task and durably stores its compiled freeze", async () => {
+	const submissions = new MemorySubmissionStore();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		new RecordingHarnessStarter(),
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare() {
+				return { threadId: "thread-clarify", runId: "run-clarify", makeReady: false };
+			},
+			async answerClarification(input) {
+				assert.equal(input.merchantAnswer, "主要面向第一次到店的新客");
+				input.submission.executionPlanFreeze = {
+					approvalBasis: "merchant_confirmed",
+					planId: "plan-clarify",
+					planRevision: 1,
+				} as never;
+				return { threadId: "thread-clarify", runId: "run-clarify", makeReady: false };
+			},
+		},
+	);
+	const created = await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+
+	await coordinator.answerClarification({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		merchantAnswer: "主要面向第一次到店的新客",
+	});
+
+	const restartedRead = await submissions.readByTask({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+	});
+	assert.equal(restartedRead?.executionPlanFreeze?.planId, "plan-clarify");
+	assert.equal(restartedRead?.executionPlanFreeze?.planRevision, 1);
+});
+
+test("plan revision commits its quote successor through the atomic billing and freeze seam", async () => {
+	const submissions = new MemorySubmissionStore();
+	const previousFreeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-reprice",
+		planRevision: 1,
+		quoteRef: { id: "quote-r1", revision: "r1" },
+	} as never;
+	const nextFreeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-reprice",
+		planRevision: 2,
+		quoteRef: { id: "quote-r2", revision: "r2" },
+	} as never;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		new RecordingHarnessStarter(),
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				input.submission.executionPlanFreeze = previousFreeze;
+				return { threadId: "thread-reprice", runId: "run-reprice", makeReady: false };
+			},
+			async revisePrepared(input) {
+				input.submission.executionPlanFreeze = nextFreeze;
+				return {
+					threadId: "thread-reprice",
+					runId: "run-reprice",
+					makeReady: false,
+					repriceCommit: {
+						expectedFreeze: previousFreeze,
+						successorQuote: {
+							quoteId: "quote-r2",
+							catalogModelId: "model-1",
+							quotePolicyRevision: "quote.policy@1",
+							billingMode: "per_request",
+							creditCost: 4,
+							unitRate: 4,
+						},
+						credits: 4,
+					},
+				};
+			},
+		},
+	);
+	const created = await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+
+	const revised = await coordinator.revisePrepared({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		planRevision: 1,
+		merchantInstruction: "减到 4 页",
+	});
+
+	assert.deepEqual(submissions.reprices, [{ credits: 4, quoteId: "quote-r2" }]);
+	assert.equal("repriceCommit" in revised, false);
 });
 
 test("a failed Harness start releases the same submission for an idempotent retry", async () => {

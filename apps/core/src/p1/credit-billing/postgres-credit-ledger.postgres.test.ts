@@ -11,6 +11,7 @@ import {
 } from '../execution-spine/creation-execution-snapshot.js';
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
 import { DurableProductBillingService } from '../product-billing/durable-service.js';
+import { ProductQuoteService } from '../product-billing/quote-service.js';
 import { PostgresProductBillingRepository } from '../product-billing/postgres-repository.js';
 import { HarnessProductBillingSettlementExecutor } from '../harness/product-billing-settlement.js';
 import { CreditBillingService } from './credit-billing-service.js';
@@ -164,6 +165,122 @@ test(
         usages.filter(Boolean).map((usage) => usage?.reservedCredits),
         [2, 2],
       );
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+test(
+  'Postgres plan reprice releases the old credit operation and reserves the successor ledger amount',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const fixture = await createFixture();
+    const { billingRepository, creditLedger, pool, workspaceId } = fixture;
+    const reservation = new PostgresProductBillingUsageReservation(
+      pool,
+      undefined,
+      creditLedger,
+    );
+    const submission = creditSubmission(workspaceId, 'plan-reprice');
+    try {
+      await creditLedger.grant({
+        id: 'plan-reprice-package',
+        workspaceId,
+        credits: 10,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'plan-reprice-test',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      const previous = await seedCreditQuote(
+        billingRepository,
+        workspaceId,
+        submission.snapshot.quote.id,
+        submission.task.id,
+      );
+      submission.snapshot = createSnapshot({
+        quoteId: previous.quoteId,
+        quoteRevision: previous.revision,
+        submission,
+        workspaceId,
+      });
+      await reserveInTransaction(reservation, pool, submission);
+      const frozenPrevious = await new DurableProductBillingService(
+        billingRepository,
+      ).getQuote(previous.quoteId, workspaceId);
+      assert.ok(frozenPrevious);
+      const successorInput = {
+        billingMode: 'per_request' as const,
+        catalogModelId: frozenPrevious.catalogModelId,
+        catalogModelRevision: frozenPrevious.catalogModelRevision,
+        creditCost: 4,
+        failureRefundsCredits: frozenPrevious.failureRefundsCredits,
+        frozenCandidateDeploymentIds:
+          frozenPrevious.frozenCandidateDeploymentIds,
+        operation: frozenPrevious.operation,
+        outputCount: 4,
+        quoteId: `${previous.quoteId}-r2`,
+        quotePolicyRevision: frozenPrevious.quotePolicyRevision,
+        routeSnapshotRef: frozenPrevious.routeSnapshotRef,
+        submissionContractHash: frozenPrevious.submissionContractHash,
+        submissionInputAssetsHash: frozenPrevious.submissionInputAssetsHash,
+        submissionPromptHash: frozenPrevious.submissionPromptHash,
+        submissionReferenceAssetsHash:
+          frozenPrevious.submissionReferenceAssetsHash,
+        unitRate: 4,
+        workspaceId,
+      };
+      const successorPreview = new ProductQuoteService().buildQuote(successorInput);
+      const expectedFreeze = {
+        planId: 'plan-reprice',
+        planRevision: 1,
+        quoteRef: { id: previous.quoteId, revision: previous.revision },
+      } as never;
+      const freeze = {
+        planId: 'plan-reprice',
+        planRevision: 2,
+        quoteRef: {
+          id: successorPreview.quoteId,
+          revision: successorPreview.revision,
+        },
+      } as never;
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await reservation.reprice(client, {
+          submission,
+          expectedFreeze,
+          freeze,
+          successorQuote: successorInput,
+          credits: 4,
+        });
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+
+      const billing = new DurableProductBillingService(billingRepository);
+      const usage = await billing.getUsage(submission.task.id, workspaceId);
+      const successor = await billing.getQuoteByTask(
+        submission.task.id,
+        workspaceId,
+      );
+      const released = await billing.getQuote(previous.quoteId, workspaceId);
+      const balance = await creditLedger.project(
+        workspaceId,
+        '2026-08-02T00:00:00.000Z',
+      );
+      assert.equal(usage?.quoteId, successorPreview.quoteId);
+      assert.equal(usage?.reservedCredits, 4);
+      assert.equal(successor?.lifecycleStatus, 'reserved');
+      assert.equal(released?.lifecycleStatus, 'refunded');
+      assert.equal(balance.usedCredits, 4);
+      assert.equal(balance.refundedCredits, 2);
+      assert.equal(balance.availableCredits, 6);
     } finally {
       await fixture.cleanup();
     }

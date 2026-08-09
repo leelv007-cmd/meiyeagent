@@ -603,6 +603,37 @@ describe('ProductQuoteService lifecycle', () => {
     assert.equal(settled.usage.refundedCredits ?? 0, 0);
   });
 
+  it('atomically replaces a reserved quote while keeping one task ledger at the successor amount', () => {
+    const quotes = service();
+    const previous = quotes.buildQuote({
+      ...perRequestInput('quote-plan-r1'),
+      creditCost: 6,
+      unitRate: 6,
+    });
+    quotes.confirm({ quoteId: previous.quoteId, taskId: 'task-plan-reprice' });
+    quotes.reserve({ quoteId: previous.quoteId, units: [], usageId: 'usage-plan' });
+
+    const replaced = quotes.replaceReservedQuote({
+      previousQuoteId: previous.quoteId,
+      previousQuoteRevision: previous.revision,
+      taskId: 'task-plan-reprice',
+      usageId: 'usage-plan',
+      successor: {
+        ...perRequestInput('quote-plan-r2'),
+        creditCost: 4,
+        unitRate: 4,
+      },
+    });
+
+    assert.equal(replaced.previous.lifecycleStatus, 'refunded');
+    assert.equal(replaced.previous.refundedAmount, 6);
+    assert.equal(replaced.quote.lifecycleStatus, 'reserved');
+    assert.equal(replaced.quote.creditCost, 4);
+    assert.equal(replaced.usage.quoteId, 'quote-plan-r2');
+    assert.equal(replaced.usage.reservedCredits, 4);
+    assert.equal(quotes.getQuoteByTask('task-plan-reprice')?.quoteId, 'quote-plan-r2');
+  });
+
   it('min charge and rounding affect quotedSeconds', () => {
     const quotes = service();
     const quoted = quotes.buildQuote({

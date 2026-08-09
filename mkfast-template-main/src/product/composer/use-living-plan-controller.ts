@@ -12,6 +12,12 @@ function activePlanRevision(): number | null {
   return activePlan?.revisions.at(-1)?.revision ?? null;
 }
 
+function hasPendingPlanClarification(): boolean {
+  return getAgentWorkbenchHostStore()
+    .getState()
+    .pendingInterrupts.some((item) => item.interruptType === 'answer_question');
+}
+
 export function useLivingPlanController(input: {
   taskId: string | null;
   focusIntent(): void;
@@ -46,11 +52,29 @@ export function useLivingPlanController(input: {
     [input]
   );
 
-  const submitRevision = useCallback(
+  const submitPlanCommand = useCallback(
     (merchantInstruction: string): boolean => {
+      const instruction = merchantInstruction.trim();
+      if (hasPendingPlanClarification()) {
+        if (!input.taskId || !instruction) {
+          toast.error('请先写下补充信息');
+          return true;
+        }
+        void telemetryFetch(
+          `/api/core/p1/composer/tasks/${encodeURIComponent(input.taskId)}/answer`,
+          {
+            body: JSON.stringify({ merchantAnswer: instruction }),
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            method: 'POST',
+          }
+        ).then((response) => {
+          if (!response.ok) toast.error('补充信息提交失败，请重试');
+        });
+        return true;
+      }
       if (!revising) return false;
       const revision = activePlanRevision();
-      const instruction = merchantInstruction.trim();
       if (!input.taskId || !revision || !instruction) {
         toast.error('请先写下方案调整要求');
         return true;
@@ -75,5 +99,5 @@ export function useLivingPlanController(input: {
     [input.taskId, revising]
   );
 
-  return { onCommitAction, submitRevision };
+  return { onCommitAction, submitPlanCommand };
 }

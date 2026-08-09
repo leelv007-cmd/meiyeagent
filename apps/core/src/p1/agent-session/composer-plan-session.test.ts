@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import test from 'node:test';
 import { Pool } from 'pg';
 
+import { assembleProductionComposerPlanSession } from '../../assembly/composer-plan-runtime-assembly.js';
 import { AgentSemanticEventProjector } from '../agent-semantic-events/semantic-event-projector.js';
 import { MemoryAgentSemanticEventStore } from '../agent-semantic-events/memory-semantic-event-store.js';
 import { PostgresAgentSemanticEventStore } from '../agent-semantic-events/postgres-semantic-event-store.js';
@@ -169,22 +170,21 @@ test('Composer production seam runs Session intent before PlanCompiler and paid 
 test('production Composer assembly fails closed when Session runTurn is missing', () => {
   const sessions = new MemoryAgentSessionStore();
   const plans = new MemoryMarketingPlanStore();
-  const compiler = new PlanCompiler({
-    store: plans,
-    ports: createFixturePlanCompilerPorts(),
-  });
 
   assert.throws(
     () =>
-      new ComposerPlanSessionCoordinator(
+      assembleProductionComposerPlanSession({
         sessions,
         plans,
-        {
-          compilePlan: (input) => compiler.compile(input),
-          adjustPlan: (input) => compiler.adjust(input),
+        sessionHarness: undefined,
+        quoteAuthority: { async resolve() { throw new Error('not used'); } },
+        quoteService: { async getQuote() { return null; } },
+        releaseResolver: {
+          async resolveForRun() {
+            return { releaseId: 'release-1' };
+          },
         },
-        { requireSessionTurn: true },
-      ),
+      }),
     /requires Session runTurn/u,
   );
 });
@@ -334,9 +334,21 @@ test('revise recompiles six pages into four units and binds a fresh ProductQuote
         async reprice(input) {
           assert.equal(input.quantity, 4);
           return {
-            quoteRef: { id: 'product-quote-4', revision: 'r4' },
-            expiresAt: '2026-08-09T11:00:00.000Z',
-            summary: { creditCost: 4 },
+            resolution: {
+              quoteRef: { id: 'product-quote-4', revision: 'r4' },
+              expiresAt: '2026-08-09T11:00:00.000Z',
+              summary: { creditCost: 4 },
+            },
+            successorQuote: {
+              quoteId: 'product-quote-4',
+              catalogModelId: 'model-1',
+              quotePolicyRevision: 'quote.policy@1',
+              billingMode: 'per_request',
+              creditCost: 4,
+              unitRate: 4,
+              workspaceId: 'workspace-1',
+              expiresAt: '2026-08-09T11:00:00.000Z',
+            },
           };
         },
       },
@@ -353,10 +365,21 @@ test('revise recompiles six pages into four units and binds a fresh ProductQuote
   const freeze = submission.executionPlanFreeze!;
   assert.equal(freeze.planRevision, 2);
   assert.equal(freeze.deliverables[0]?.quantity, 4);
-  assert.equal(
-    freeze.executionPlan.units.filter((unit) => unit.unitType === 'note.generate')
-      .length,
-    4,
+  const pageUnit = freeze.executionPlan.units.find(
+    (unit) => unit.unitId === 'unit-note-pages',
+  );
+  assert.equal((pageUnit?.input as { quantity?: number }).quantity, 4);
+  assert.deepEqual(
+    freeze.executionPlan.units.map((unit) => unit.primitive),
+    [
+      'read_context',
+      'generate',
+      'ask_merchant',
+      'generate',
+      'check',
+      'revise',
+      'record',
+    ],
   );
   assert.deepEqual(freeze.quoteRef, { id: 'product-quote-4', revision: 'r4' });
   assert.equal(submission.snapshot.quote.id, 'product-quote-4');

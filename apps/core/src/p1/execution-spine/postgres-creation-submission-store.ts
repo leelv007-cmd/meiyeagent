@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { isComposerVariantPlatform } from "@meiye/contracts";
+import {
+  isComposerVariantPlatform,
+  type BuildProductQuoteInput,
+} from "@meiye/contracts";
 import type { Pool, PoolClient } from "pg";
 
 import { P1DomainError } from "../foundation/domain.js";
@@ -47,6 +50,13 @@ export interface CreationSubmissionPersistencePort {
     client: PoolClient,
     submission: CreationSubmissionRecord,
   ): Promise<void>;
+	reprice?(client: PoolClient, input: {
+		submission: CreationSubmissionRecord;
+		expectedFreeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		freeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		successorQuote: BuildProductQuoteInput;
+		credits: number;
+	}): Promise<void>;
 }
 
 export interface CreationUsageReservationPort {
@@ -54,6 +64,13 @@ export interface CreationUsageReservationPort {
     client: PoolClient,
     submission: CreationSubmissionRecord,
   ): Promise<void>;
+	reprice?(client: PoolClient, input: {
+		submission: CreationSubmissionRecord;
+		expectedFreeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		freeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		successorQuote: BuildProductQuoteInput;
+		credits: number;
+	}): Promise<void>;
 }
 
 /**
@@ -64,7 +81,10 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
   constructor(
     private readonly pool: Pool,
     private readonly grantLots?: Pick<PostgresGrantLotLedger, 'consumeWithClient'>,
-    private readonly credits?: Pick<PostgresCreditLedger, 'consumeWithClient'>,
+    private readonly credits?: Pick<
+      PostgresCreditLedger,
+      'consumeWithClient' | 'refundUsageOperationWithClient'
+    >,
   ) {}
 
   async reserve(client: PoolClient, submission: CreationSubmissionRecord) {
@@ -187,6 +207,70 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
       });
     }
   }
+
+	async reprice(client: PoolClient, input: {
+		submission: CreationSubmissionRecord;
+		expectedFreeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		freeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		successorQuote: BuildProductQuoteInput;
+		credits: number;
+	}) {
+		const { submission } = input;
+		const snapshot = submission.snapshot;
+		if (!this.credits) {
+			throw new P1DomainError(
+				"INVALID_STATE",
+				"Plan reprice requires the durable merchant credit ledger.",
+			);
+		}
+		await lockWorkspaceCreditsWithClient(client, snapshot.workspaceId);
+		const billing = new DurableProductBillingService(
+			new PostgresProductBillingRepository(this.pool, client),
+			() => new Date(snapshot.createdAt),
+		);
+		const replaced = await billing.replaceReservedQuote({
+			workspaceId: snapshot.workspaceId,
+			previousQuoteId: input.expectedFreeze.quoteRef.id,
+			previousQuoteRevision: String(input.expectedFreeze.quoteRef.revision),
+			successor: input.successorQuote,
+			taskId: submission.task.id,
+			usageId: submission.usageReservation.id,
+		});
+		if (
+			replaced.quote.quoteId !== input.freeze.quoteRef.id ||
+			replaced.quote.revision !== String(input.freeze.quoteRef.revision) ||
+			replaced.usage.reservedCredits !== input.credits
+		) {
+			throw new P1DomainError(
+				"INVALID_STATE",
+				"Repriced quote and execution freeze do not bind the same ledger amount.",
+			);
+		}
+		await this.credits.refundUsageOperationWithClient(client, {
+			workspaceId: snapshot.workspaceId,
+			usageOperationId: creditUsageOperationId(submission.task.id),
+			refundOperationId: `plan-reprice-refund:${submission.task.id}:r${input.freeze.planRevision}`,
+			actorId: snapshot.actorId,
+			correlationId: `plan-reprice:${submission.task.id}`,
+			createdAt: snapshot.createdAt,
+		});
+		await this.credits.consumeWithClient(client, {
+			workspaceId: snapshot.workspaceId,
+			credits: input.credits,
+			transactionId: creditUsageOperationId(
+				`${submission.task.id}:plan-r${input.freeze.planRevision}`,
+			),
+			actorId: snapshot.actorId,
+			correlationId: `plan-reprice:${submission.task.id}`,
+			createdAt: snapshot.createdAt,
+		});
+		await billing.bindMerchantSubmissionInput({
+			inputSnapshot: creationSubmissionMerchantInput(submission),
+			quoteRevision: replaced.quote.revision,
+			taskId: submission.task.id,
+			workspaceId: snapshot.workspaceId,
+		});
+	}
 }
 
 /**
@@ -309,6 +393,16 @@ export class PostgresCreationSubmissionPersistence implements CreationSubmission
     }
     await this.usage.reserve(client, submission);
   }
+
+	reprice(
+		client: PoolClient,
+		input: Parameters<NonNullable<CreationUsageReservationPort["reprice"]>>[1],
+	) {
+		if (!this.usage.reprice) {
+			throw new Error("Product billing reprice persistence is unavailable.");
+		}
+		return this.usage.reprice(client, input);
+	}
 }
 
 /**
@@ -404,6 +498,16 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
       CREATE INDEX IF NOT EXISTS creation_submissions_harness_recovery_idx
         ON execution_spine.creation_submissions (updated_at, id)
         WHERE harness_state IN ('reserved', 'starting');
+      CREATE TABLE IF NOT EXISTS execution_spine.composer_plan_outbox (
+        event_id text PRIMARY KEY,
+        workspace_id text NOT NULL,
+        submission_id text NOT NULL,
+        event_type text NOT NULL,
+        payload jsonb NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS composer_plan_outbox_workspace_created_idx
+        ON execution_spine.composer_plan_outbox (workspace_id, created_at, event_id);
     `);
   }
 
@@ -590,6 +694,111 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     }
     return storedSubmission(row.submission);
   }
+
+	async saveRepricedExecutionPlanFreeze(input: {
+		workspaceId: string;
+		submissionId: string;
+		expectedFreeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		freeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		successorQuote: BuildProductQuoteInput;
+		credits: number;
+	}) {
+		if (!this.persistence.reprice) {
+			throw new Error("Atomic product billing reprice persistence is unavailable.");
+		}
+		const client = await this.pool.connect();
+		try {
+			await client.query("BEGIN");
+			const selected = await client.query<{
+				harness_state: HarnessStartState;
+				submission: unknown;
+			}>(
+				`SELECT harness_state, submission
+				   FROM execution_spine.creation_submissions
+				  WHERE workspace_id=$1 AND id=$2
+				  FOR UPDATE`,
+				[input.workspaceId, input.submissionId],
+			);
+			const row = selected.rows[0];
+			if (!row) throw new Error(`Creation submission ${input.submissionId} was not found.`);
+			const current = storedSubmission(row.submission);
+			if (
+				JSON.stringify(current.executionPlanFreeze) === JSON.stringify(input.freeze)
+			) {
+				await client.query("COMMIT");
+				return current;
+			}
+			if (
+				row.harness_state !== "reserved" ||
+				JSON.stringify(current.executionPlanFreeze) !==
+					JSON.stringify(input.expectedFreeze)
+			) {
+				throw new Error(
+					`Creation submission ${input.submissionId} reprice lost its freeze CAS.`,
+				);
+			}
+			const next: CreationSubmissionRecord = {
+				...current,
+				snapshot: {
+					...current.snapshot,
+					quote: {
+						id: input.freeze.quoteRef.id,
+						revision: String(input.freeze.quoteRef.revision),
+					},
+				},
+				usageReservation: {
+					...current.usageReservation,
+					credits: input.credits,
+				},
+				executionPlanFreeze: structuredClone(input.freeze),
+			};
+			await this.persistence.reprice(client, {
+				submission: next,
+				expectedFreeze: input.expectedFreeze,
+				freeze: input.freeze,
+				successorQuote: input.successorQuote,
+				credits: input.credits,
+			});
+			await client.query(
+				`UPDATE execution_spine.creation_submissions
+				    SET submission=$3::jsonb,
+				        quote_id=$4,
+				        updated_at=clock_timestamp()
+				  WHERE workspace_id=$1 AND id=$2 AND harness_state='reserved'`,
+				[
+					input.workspaceId,
+					input.submissionId,
+					JSON.stringify(next),
+					input.freeze.quoteRef.id,
+				],
+			);
+			await client.query(
+				`INSERT INTO execution_spine.composer_plan_outbox
+				  (event_id, workspace_id, submission_id, event_type, payload)
+				 VALUES ($1, $2, $3, 'plan.repriced', $4::jsonb)
+				 ON CONFLICT (event_id) DO NOTHING`,
+				[
+					`plan-repriced:${input.submissionId}:r${input.freeze.planRevision}`,
+					input.workspaceId,
+					input.submissionId,
+					JSON.stringify({
+						planId: input.freeze.planId,
+						planRevision: input.freeze.planRevision,
+						previousQuoteRef: input.expectedFreeze.quoteRef,
+						quoteRef: input.freeze.quoteRef,
+						credits: input.credits,
+					}),
+				],
+			);
+			await client.query("COMMIT");
+			return next;
+		} catch (error) {
+			await client.query("ROLLBACK");
+			throw error;
+		} finally {
+			client.release();
+		}
+	}
 
   /**
    * Persists the immutable successor snapshot for a semantic answer without

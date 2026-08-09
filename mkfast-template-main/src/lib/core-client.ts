@@ -19,6 +19,9 @@ import {
   workspaceCoreUpstreamPath,
   type WorkspaceComposerDestinationResource,
   type WorkspaceComposerSubmissionResource,
+  type WorkspaceComposerTaskAnswerResource,
+  type WorkspaceComposerTaskReviseResource,
+  type WorkspaceComposerTaskStartResource,
   type WorkspaceAgentSemanticResource,
   type WorkspaceConfirmationDecisionResource,
   type WorkspaceHarnessTaskCollectionResource,
@@ -129,6 +132,9 @@ export async function forwardWorkspaceCoreRequest(
     | 'p1/harness/recommendation'
     | WorkspaceComposerDestinationResource
     | WorkspaceComposerSubmissionResource
+    | WorkspaceComposerTaskAnswerResource
+    | WorkspaceComposerTaskReviseResource
+    | WorkspaceComposerTaskStartResource
     | WorkspaceAgentSemanticResource
     | WorkspacePendingActionsResource
     | WorkspaceHarnessTaskCollectionResource

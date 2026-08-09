@@ -4009,7 +4009,7 @@ export function ComposerHome({
                   }
                   onSubmit={() => {
                     if (
-                      !livingPlanController.submitRevision(
+                      !livingPlanController.submitPlanCommand(
                         lensState.draft.userText
                       )
                     ) {
