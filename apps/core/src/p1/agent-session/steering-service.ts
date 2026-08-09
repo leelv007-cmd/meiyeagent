@@ -378,8 +378,6 @@ export function projectSteeringImpact(input: {
   affectedUnitIds: readonly string[];
   preservedUnitIds: readonly string[];
   units: readonly SteeringUnitProgress[];
-  /** Server-priced credits for the re-generation, when a quote produced one. */
-  rebillCredits?: number | null;
 }): SteeringImpactProjection {
   const requiresRequote = input.classificationKind === 'plan_change';
   const requiresCorrection =
@@ -402,12 +400,10 @@ export function projectSteeringImpact(input: {
   const target =
     affectedLabels.length > 0 ? affectedLabels.join('、') : '改动的页';
   const keepNote = preservedLabels.length > 0 ? '；其余页不动，不另算积分' : '';
-  // A figure the server never priced is a claim about her balance made from
-  // missing data — name the rule and omit the number instead.
-  const amount =
-    typeof input.rebillCredits === 'number' && input.rebillCredits > 0
-      ? `并计 ${input.rebillCredits} 积分`
-      : '，按正常生成一样算积分';
+  // No figure: the re-generation is not quoted until it is submitted, so naming
+  // credits here would be a claim about her balance made from missing data.
+  // The rule she can act on is that it prices like any other generation.
+  const amount = '，按正常生成一样算积分';
 
   const feeNote = requiresCorrection
     ? ''
