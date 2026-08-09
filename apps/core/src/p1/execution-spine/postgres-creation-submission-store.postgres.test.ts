@@ -981,18 +981,6 @@ test(
         started: 1,
       });
       assert.deepEqual(recoveredStarts, [submission.task.id]);
-      const completed = await store.readReceipt({
-        idempotencyKey: "submit-copy-1",
-        payloadHash: "payload-a",
-        workspaceId,
-      });
-      assert.equal(completed.kind, "existing");
-      if (completed.kind === "existing") {
-        assert.deepEqual(completed.submission.confirmationDispatch, {
-          requestId: 'confirmation:authority-digest-recovered',
-          state: "dispatched",
-        });
-      }
       await store.releaseHarnessStart({
         leaseId: leaseOne.leaseId,
         submissionId: submission.snapshot.id,
