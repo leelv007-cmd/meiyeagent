@@ -73,6 +73,10 @@ function basePublish(
         order: 0,
         allowedControlActions: ['continue', 'end_turn'],
       },
+      // assertIntentRetrievalBindingsPinned (intent-retrieval-policies.ts)
+      // fails closed on any release missing these three — every fixture
+      // release must carry them, not just the seeded production one.
+      ...createDefaultIntentRetrievalBindings(),
     ],
     controlLimits: { ...CONTROL_LIMITS },
     supervisorPolicyRef: { id: 'sup', revision: '1' },
