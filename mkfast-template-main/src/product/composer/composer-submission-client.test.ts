@@ -150,6 +150,7 @@ test('submits the exact Composer body and returns the durable handles', async ()
       data: {
         contentPackage: { expectedRevision: 0, id: 'package-1' },
         replayed: false,
+        makeReady: true,
         runId: 'run-1',
         snapshot: {
           id: 'snapshot-task-1',
@@ -198,6 +199,7 @@ test('selected skill refs enter the submission payload; empty stays empty', asyn
       data: {
         contentPackage: { expectedRevision: 0, id: 'package-1' },
         replayed: false,
+        makeReady: true,
         runId: 'run-1',
         snapshot: {
           id: 'snapshot-task-1',

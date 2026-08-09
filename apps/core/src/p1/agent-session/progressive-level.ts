@@ -134,9 +134,10 @@ export function isPureCopyOperation(input: ProgressiveLevelInput): boolean {
     return carriers.every((carrier) => carrier === 'copy');
   }
 
-  // No structured signal: infer from message — media keywords ⇒ not pure copy.
-  if (LEVEL2_PATTERNS.test(input.merchantMessage)) return false;
-  return true;
+  // No structured signal is not evidence of zero paid media. Production must
+  // provide lens/carriers/units; fail toward Living Plan instead of granting a
+  // copy exemption from merchant prose.
+  return false;
 }
 
 function matchLevel0(
@@ -160,6 +161,11 @@ function matchLevel0(
 export function classifyProgressiveLevel(
   input: ProgressiveLevelInput,
 ): ProgressiveLevelResult {
+  const hasStructuredAuthority =
+    input.includesPaidMediaExecution !== undefined ||
+    input.paidMediaUnitResources !== undefined ||
+    input.lens !== undefined ||
+    (input.carriers !== undefined && input.carriers.length > 0);
   const pureCopy = isPureCopyOperation(input);
   const killSwitch = input.forceConfirmationKillSwitch === true;
 
@@ -189,10 +195,14 @@ export function classifyProgressiveLevel(
   }
 
   // Structured paid media or L2 message cues → Level 2 Living Plan path.
-  if (!pureCopy || LEVEL2_PATTERNS.test(input.merchantMessage)) {
+  if (!hasStructuredAuthority || !pureCopy || LEVEL2_PATTERNS.test(input.merchantMessage)) {
     return {
       level: 2,
-      reason: pureCopy ? 'complex_copy_or_multi_deliverable' : 'paid_media_or_complex_creation',
+      reason: !hasStructuredAuthority
+        ? 'structured_execution_authority_missing'
+        : pureCopy
+          ? 'complex_copy_or_multi_deliverable'
+          : 'paid_media_or_complex_creation',
       confirmationExempt: false,
       approvalBasis: 'merchant_confirmed',
       isPureCopy: pureCopy,

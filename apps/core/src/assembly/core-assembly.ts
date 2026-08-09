@@ -854,7 +854,16 @@ export async function assembleCoreGraph(
               creationMode: turn.creationMode ?? 'customized',
             },
           }),
-        createPolicies: () => createIntentRetrievalPolicies({}),
+        createPolicies: (_turn, authority) =>
+          createIntentRetrievalPolicies({
+            knownFields: authority?.knownFields ?? [],
+            ...(authority?.impactByKey
+              ? { impactByKey: authority.impactByKey }
+              : {}),
+            ...(authority?.authoritativeKeys
+              ? { authoritativeKeys: authority.authoritativeKeys }
+              : {}),
+          }),
         resolveCreationMode: (turn) => turn.creationMode,
         registerCheckpointWriter: true,
         // Kill switch can only tighten pure-copy exemption (U1 / A13).

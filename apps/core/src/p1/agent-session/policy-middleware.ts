@@ -131,7 +131,7 @@ export type PolicyMiddlewareRunnerOptions = {
 };
 
 export class PolicyMiddlewareRunner {
-  private readonly byPolicyId = new Map<string, RegisteredPolicy>();
+  private readonly byExactBinding = new Map<string, RegisteredPolicy>();
 
   constructor(
     private readonly bindings: readonly HarnessMiddlewareBinding[],
@@ -139,18 +139,16 @@ export class PolicyMiddlewareRunner {
     options: PolicyMiddlewareRunnerOptions = {},
   ) {
     for (const policy of policies) {
-      this.byPolicyId.set(policy.binding.policyId, policy);
+      this.byExactBinding.set(bindingKey(policy.binding), policy);
     }
     // Fail-closed: a release pinning an unregistered policy would silently
     // skip its gate otherwise. Only order-only tests opt out explicitly.
     if (options.allowUnregisteredBindings !== true) {
       const unregistered = bindings.filter(
-        (binding) => !this.byPolicyId.has(binding.policyId),
+        (binding) => !this.byExactBinding.has(bindingKey(binding)),
       );
       if (unregistered.length > 0) {
-        const ids = [
-          ...new Set(unregistered.map((binding) => binding.policyId)),
-        ].join(', ');
+        const ids = unregistered.map(bindingKey).join(', ');
         throw new P1DomainError(
           'INVALID_STATE',
           `Middleware binding(s) without a registered policy: ${ids}. Every middlewareBinding must resolve to a registered policy; allowUnregisteredBindings is test-only.`,
@@ -168,7 +166,7 @@ export class PolicyMiddlewareRunner {
   ): Promise<PolicyControlDecision> {
     const { beforeModel } = this.pinnedOrder;
     for (const binding of beforeModel) {
-      const policy = this.byPolicyId.get(binding.policyId);
+      const policy = this.byExactBinding.get(bindingKey(binding));
       const handler = policy?.handlers.before_model;
       if (!handler) continue;
       const decision = await handler({ ...ctx });
@@ -186,7 +184,7 @@ export class PolicyMiddlewareRunner {
   ): Promise<PolicyControlDecision> {
     const { afterModel } = this.pinnedOrder;
     for (const binding of afterModel) {
-      const policy = this.byPolicyId.get(binding.policyId);
+      const policy = this.byExactBinding.get(bindingKey(binding));
       const handler = policy?.handlers.after_model;
       if (!handler) continue;
       const decision = await handler({ ...ctx });
@@ -207,7 +205,7 @@ export class PolicyMiddlewareRunner {
     let next = core;
     // Outer = lower order: nest from highest order down to lowest.
     for (const binding of [...wrapModel].reverse()) {
-      const policy = this.byPolicyId.get(binding.policyId);
+      const policy = this.byExactBinding.get(bindingKey(binding));
       const handler = policy?.handlers.wrap_model;
       if (!handler) continue;
       const inner = next;
@@ -223,7 +221,7 @@ export class PolicyMiddlewareRunner {
     const { wrapToolCall } = this.pinnedOrder;
     let next: () => Promise<unknown | ToolCallIntercept> = core;
     for (const binding of [...wrapToolCall].reverse()) {
-      const policy = this.byPolicyId.get(binding.policyId);
+      const policy = this.byExactBinding.get(bindingKey(binding));
       const handler = policy?.handlers.wrap_tool_call;
       if (!handler) continue;
       const inner = next;
@@ -231,4 +229,8 @@ export class PolicyMiddlewareRunner {
     }
     return next();
   }
+}
+
+function bindingKey(binding: HarnessMiddlewareBinding): string {
+  return `${binding.policyId}@${binding.revision}:${binding.kind}`;
 }
