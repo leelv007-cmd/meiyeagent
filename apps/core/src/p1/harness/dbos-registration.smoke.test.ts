@@ -143,6 +143,12 @@ test(
     });
     DBOS.setConfig({
       name: 'beauty-marketing-harness-smoke',
+      // The SDK defaults runAdminServer to true on port 3001 (config.js
+      // `runAdminServer ?? true`), so any suite that omits it cannot run beside
+      // another DBOS suite on the same host — the second one fails with
+      // "Unable to start DBOS admin server on port 3001". Every setConfig in
+      // this file disables it for that reason.
+      runAdminServer: false,
       systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: 'harness-smoke-v1',
     });
@@ -468,6 +474,7 @@ test(
     const persistedTimeouts: string[] = [];
     DBOS.setConfig({
       name: 'beauty-marketing-harness-timeout-smoke',
+      runAdminServer: false,
       systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: 'harness-timeout-smoke-v1',
     });
@@ -662,6 +669,7 @@ test(
     const forbiddenCoreTimeouts: string[] = [];
     DBOS.setConfig({
       name: 'beauty-marketing-harness-system-default-smoke',
+      runAdminServer: false,
       systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: 'harness-system-default-smoke-v1',
     });
@@ -811,6 +819,7 @@ test(
     });
     DBOS.setConfig({
       name: 'beauty-marketing-harness-manual-handoff-smoke',
+      runAdminServer: false,
       systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: 'harness-manual-handoff-smoke-v1',
     });
@@ -896,6 +905,7 @@ test(
     let refunds = 0;
     DBOS.setConfig({
       name: 'beauty-marketing-harness-renderer-expiry',
+      runAdminServer: false,
       systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: `harness-renderer-expiry-${workflowId}`,
     });
@@ -1124,6 +1134,7 @@ test(
     });
     DBOS.setConfig({
       name: 'beauty-marketing-harness-reask-smoke',
+      runAdminServer: false,
       systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: 'harness-reask-smoke-v1',
     });
@@ -1307,6 +1318,7 @@ test(
     let recallDue = 0;
     DBOS.setConfig({
       name: 'beauty-marketing-harness-unattended-hold',
+      runAdminServer: false,
       systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion,
     });
@@ -1436,6 +1448,7 @@ test(
     let expiries = 0;
     DBOS.setConfig({
       name: 'beauty-marketing-harness-held-answer',
+      runAdminServer: false,
       systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: 'harness-held-answer-v1',
     });
@@ -1590,6 +1603,7 @@ test(
     };
     DBOS.setConfig({
       name: 'beauty-marketing-harness-replay',
+      runAdminServer: false,
       systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion,
     });
@@ -1704,6 +1718,7 @@ test(
     });
     DBOS.setConfig({
       name: 'beauty-marketing-harness-hold-replay',
+      runAdminServer: false,
       systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion,
     });
@@ -1811,6 +1826,7 @@ test(
     let coreTimeouts = 0;
     DBOS.setConfig({
       name: 'beauty-marketing-harness-quota-hold',
+      runAdminServer: false,
       systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: 'harness-quota-hold-v1',
     });
@@ -1927,6 +1943,7 @@ test(
       );
       DBOS.setConfig({
         name: 'beauty-marketing-harness-media-admission',
+        runAdminServer: false,
         systemDatabaseUrl: systemDatabaseUrl,
         applicationVersion,
       });
@@ -1992,6 +2009,7 @@ test(
       );
       DBOS.setConfig({
         name: 'beauty-marketing-harness-media-admission',
+        runAdminServer: false,
         systemDatabaseUrl: systemDatabaseUrl,
         applicationVersion,
       });
@@ -2051,6 +2069,7 @@ test(
       );
       DBOS.setConfig({
         name: 'beauty-marketing-harness-media-admission',
+        runAdminServer: false,
         systemDatabaseUrl: systemDatabaseUrl,
         applicationVersion,
       });

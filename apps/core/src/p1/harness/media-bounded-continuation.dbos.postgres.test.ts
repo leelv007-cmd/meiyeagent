@@ -317,6 +317,7 @@ test(
 
       DBOS.setConfig({
         name: 'beauty-marketing-issue247-bounded-continuation',
+        runAdminServer: false,
         systemDatabaseUrl,
         applicationVersion: `issue247-bounded-${suffix}`,
       });
