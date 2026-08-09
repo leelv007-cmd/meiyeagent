@@ -1096,3 +1096,20 @@ V31-07 §37.4-A（review P2 修复）：零门店商家 Day-0 自由创作。
 | # | Test name | Flow |
 |---|---|---|
 | 1 | 零门店商家 free 模式提交自由创作，得到不带虚构门店事实的通用结果 | 不种门店（ProductState.store=null 为诚实前置）→ 切「自由创作」入口（D-111）→ copy lens + 显式选模型 + 目的地小红书 → 通用 intent 提交 202 → 首 token + 候选可见 + 交付卡到达 → `data-delivered=true`；全程无 `composer-grounding-blocker`（D-175 free 不被缺 confirmed_store/project 阻断）；`content_packages` 正文与候选文本非空且**排他断言**不含从未种过的门店名/项目/地址（零虚构门店事实）。 |
+
+## V31-15 Artifact 旅程缺口（未实施，登记待领）
+
+2026-08-09 登记。`specs/xhs-image-text-main-journey.spec.ts` 是目前唯一见证
+`artifact.revised` 的浏览器旅程，且此前在本目录**无登记**。它已覆盖的部分是真的：
+中途断流 → 主机自行重连 → `artifact-head-replay` / `artifact-gap-close` 两个故障
+标记 → 单卡片不分裂 → 末条 `status=ready`。下面五条是它**没有**覆盖的面，逐条写出
+必须见证什么。全部尚未实现，本节只是合同；实现方按目录既有体例把条目移入自己的
+spec 段落，不要在本节挂 `test.skip`/`test.fixme` 占位。
+
+| # | 待实施旅程 | 必须见证的流 |
+|---|---|---|
+| 1 | 非连续子集重生落在各自源页 | 现有旅程只重生**第 1 页**——恰好是 `pageIndex` 塌缩到 0 时唯一「碰巧正确」的那一页（core 侧塌缩已修，见 `note-page-execution-frame.ts` 的 `sourcePageOrder`）。旅程须选**页 3 与页 5** 这类非连续子集：确认卡 → confirm → 商家进度文案逐条为「正在生成第 3 页配图」「第 3 页配图已完成」「正在生成第 5 页配图」…（**排他断言**不出现裸 page id，如「第 page-3 页」）→ 卡片上第 3/5 行 `data-image-status` 走 generating→ready 而第 1/2/4 行的 imageRef **不变**（重生前后取属性对比，不是「存在即通过」）。 |
+| 2 | 版本回看 | 交付后回看历史 revision：卡片上打开版本列表 → 选一条早于当前的 revision → 面板渲染**那一条**的页文案与配图（与当前 revision 断言不等）→ 返回最新不留残影（`data-revision` 回到最大值）。当前无任何浏览器证据表明版本回看可达，实现前先按 #333 的教训确认它**从 UI 真的可达**，不可达就照实记 BLOCKED 而不是写个能过的断言。 |
+| 3 | 刷新后重新水合 | 现有旅程刻意「never reloads the page」，所以冷启动水合从未被见证。旅程须在 artifact 处于 `partial`（若干页 ready、若干页 generating）时 `page.reload()` → 冷 replay 后卡片恢复到**刷新前那些页的同一状态**（逐行 `data-image-status` 对比，不是只看卡片存在）→ 随后仍能收到剩余页的实时 revision 直到 `ready`；且刷新不产生第二张卡片。刷新前后的 `data-revision` 单调不回退。 |
+| 4 | 视频 artifact | 只有 note 侧被见证过。视频链同样发 `artifact.revised`（`emitVideoScenesArtifactProgress`，storyboard 编译时 running、成片选定后 success）。旅程须走视频 lens 到交付：分镜行按 `sceneIndex` 逐条出现且带 storyboard 文案 → `keyframeStatus` generating→ready → 末条 `status=ready` → 单卡片。 |
+| 5 | 阶段生长断言到位，而不是数条数 | 现有断言是 `artifacts.length >= 3` 加末条 ready，这对「三条都是同一阶段」也成立。旅程须按页断言 `骨架 → 文案 → 配图` 的**次序**：同一 `pageIndex` 上先出现 `stage=skeleton`，再 `stage=copy` 且带 body 文案，最后 `stage=image` 且 `imageStatus` 由 generating 转 ready；跨页断言页序，不用总条数代替。 |
