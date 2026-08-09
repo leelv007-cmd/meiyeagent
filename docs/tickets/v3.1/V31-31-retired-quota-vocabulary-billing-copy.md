@@ -27,7 +27,11 @@ billingNotice: '本次调用消耗产品文案额度；模型供应商费用由�
 两重问题：
 
 1. 以退役的 `额度` 计量，违反 D-172。
-2. **无任何 Web 消费者**——`mkfast-template-main/src` 全域 grep `billingNotice` 只命中审计测试自身的注释，没有渲染方。这是 D-150 形态的孤儿字段，且它承载的是一条**计费口径声明**（告诉商家这次调用花了什么、供应商费用怎么结算），孤儿化的代价不是少一行字，是 BYOK 商家在界面上得不到费用归属的交代。
+2. **无任何产品消费者**——`mkfast-template-main/src` 全域 grep `billingNotice` 只命中审计测试自身的注释，没有渲染方。这是 D-150 形态的孤儿字段，且它承载的是一条**计费口径声明**（告诉商家这次调用花了什么、供应商费用怎么结算），孤儿化的代价不是少一行字，是 BYOK 商家在界面上得不到费用归属的交代。
+
+   **精确口径（实施前必读，勿把「孤儿」读成「无人引用」）**：该字段确有两处非渲染引用，删除路径必须一并处理——
+   - `apps/core/src/p1/integrations/foundation-byok-ledger.test.ts:179`：`assert.match(options.billingNotice, /供应商/)`。这是**测试断言，不是 D-150 意义上的消费者**（测试不是商家看得到的面），但删字段会红这条，须同步删断言。
+   - `getStrictByokOptions` 查询把它连同 profiles/usage 一起回传（见 `docs/ledgers/contentpackage-productization/tickets/03-byok-real-execution.md:47`），即它**在投影上出得去**，只是 Web 不读。所以「保留」路径不需要新建传输接缝，只需要接渲染方。
 
 **本票要做的决策**：给它一个真消费者并把文案改成积分制正确口径，或者删除该字段。二者都可接受，但**必须择一并给出理由**——继续「生产但无人读」不是选项。若选保留，须按 D-150 给出消费者证明三段（core 命令／处理分支／写入或产出的渲染位）。
 
@@ -56,7 +60,7 @@ job.step = '任务已取消，视频额度已退还'
 
 ## Acceptance criteria（行为为证）
 
-- [ ] 项 1 已择一落地：**要么**该 `billingNotice` 有真渲染消费者且文案为积分制正确口径，并在票下给出 D-150 消费者证明三段 `file:line`；**要么**字段已删除且 `git grep billingNotice` 在 `apps/core/src` 与 `mkfast-template-main/src` 均无生产/消费残留。
+- [ ] 项 1 已择一落地：**要么**该 `billingNotice` 有真渲染消费者且文案为积分制正确口径，并在票下给出 D-150 消费者证明三段 `file:line`；**要么**字段已删除且 `git grep billingNotice` 在 `apps/core/src` 与 `mkfast-template-main/src` 均无生产/消费残留（含 `foundation-byok-ledger.test.ts:179` 的断言同步删除）。
 - [ ] 项 1 的口径正确性由行为断言背书，而非 grep：投影测试（或渲染测试）断言该文案不含 `额度／条数／三桶`，且其数字与实际计费单位一致（若保留数字）。
 - [ ] 项 2 已择一落地：改写为与实际退款语义一致的口径，**或**随 legacy video 路径一并退役并从 `git ls-files` 证明删除。
 - [ ] 若项 2 选择改写：改写后的文案所断言的退款行为与 `refund()` 实际释放的资源类型一致（桶 vs 积分），并有断言背书。
