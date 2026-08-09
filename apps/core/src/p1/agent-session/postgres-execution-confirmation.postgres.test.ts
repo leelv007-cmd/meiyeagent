@@ -11,10 +11,13 @@ import { Pool } from 'pg';
 import { agentExecutionConfirmationRequestSchema } from '@meiye/contracts';
 
 import { PostgresCreditLedger } from '../credit-billing/postgres-credit-ledger.js';
+import { PgBossJobPort } from '../job-runtime/pg-boss-job-port.js';
 import { ExecutionConfirmationService } from './execution-confirmation-service.js';
+import { PostgresConfirmationAuthorityStore } from './execution-confirmation-authority-store.js';
 import {
   CONFIRMATION_EXPIRY_JOB_KIND,
   createConfirmationExpiryJobHandler,
+  registerConfirmationExpirySchedule,
 } from './execution-confirmation-expiry-job.js';
 import {
   confirmationCreditPortFromPostgresLedger,
@@ -26,6 +29,48 @@ import {
 } from './execution-confirmation-store.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
+
+test(
+  'pending confirmation authority survives a Postgres store restart and advances on live drift',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const fixture = await createFixture();
+    try {
+      const store = new PostgresConfirmationAuthorityStore(fixture.pool);
+      await store.migrate();
+      const first = {
+        workflowId: 'workflow-authority',
+        workspaceId: fixture.workspaceId,
+        planId: 'plan-authority',
+        planRevision: 1,
+        snapshotHash: 'snapshot-authority-1',
+        quoteRef: { id: 'quote-authority', revision: 1 },
+        rightsRevisionRefs: ['rights-1'],
+        factRevisionRefs: ['fact-1'],
+        frozenAt: '2026-08-09T08:00:00.000Z',
+      };
+      await store.putCurrent(first);
+      const restarted = new PostgresConfirmationAuthorityStore(fixture.pool);
+      assert.deepEqual(
+        await restarted.getCurrentByWorkflowId(first.workflowId),
+        first,
+      );
+      const drifted = {
+        ...first,
+        planRevision: 2,
+        snapshotHash: 'snapshot-authority-2',
+        frozenAt: '2026-08-09T08:01:00.000Z',
+      };
+      await restarted.putCurrent(drifted);
+      assert.deepEqual(
+        await restarted.getCurrentByWorkflowId(first.workflowId),
+        drifted,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
 
 test(
   'Postgres confirmation create serializes concurrent reserves without over-debit (A3)',
@@ -470,7 +515,7 @@ test(
 );
 
 test(
-  'expiry sweeper owns due holds with the system actor and refunds exactly once',
+  'pg-boss expiry owner survives restart and refunds a due hold exactly once',
   {
     skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
   },
@@ -484,6 +529,11 @@ test(
       workspaceId,
       cleanup,
     } = fixture;
+    const suffix = randomUUID().replaceAll('-', '').slice(0, 12);
+    const bossSchema = `confirm_boss_${suffix}`;
+    const queuePrefix = `confirm-${suffix}`;
+    let runtime: PgBossJobPort | undefined;
+    let worker: { stop(): Promise<void> } | undefined;
     try {
       await creditLedger.grant({
         id: 'confirm-pkg-sweeper',
@@ -503,46 +553,76 @@ test(
         quoteRef: { id: 'quote-sweeper', revision: 1 },
         reservationIdempotencyKey: 'reserve-sweeper',
         createdAt: '2026-08-08T12:00:00.000Z',
-        holdExpiresAt: '2026-08-09T12:00:00.000Z',
+        holdExpiresAt: '2026-08-09T08:00:00.000Z',
         actorId: 'merchant-sweeper',
         creditCost: 4,
         failureRefundsCredits: true,
       });
+      runtime = PgBossJobPort.connect({
+        connection: { connectionString, schema: bossSchema },
+        queuePrefix,
+        clock: () => new Date('2026-08-09T12:00:01.000Z'),
+      });
+      await registerConfirmationExpirySchedule(runtime);
+      assert.equal((await runtime.listRecurring()).length, 1);
+      await runtime.enqueue({
+        jobId: 'confirmation-expiry-after-restart-1',
+        workspaceId: '__system__',
+        kind: CONFIRMATION_EXPIRY_JOB_KIND,
+        payload: {},
+      });
+      await runtime.stop();
+
       const restartedService = new ExecutionConfirmationService(
         requestStore,
         decisionStore,
         confirmationCreditPortFromPostgresLedger(creditLedger),
       );
-      const first = await createConfirmationExpiryJobHandler(restartedService)(
-        {
-          id: 'confirmation-expiry-after-restart-1',
-          workspaceId: '__system__',
-          kind: CONFIRMATION_EXPIRY_JOB_KIND,
-          payload: {},
-        } as never,
-        { claimedAt: '2026-08-09T12:00:01.000Z' } as never,
+      runtime = PgBossJobPort.connect({
+        connection: { connectionString, schema: bossSchema },
+        queuePrefix,
+        clock: () => new Date('2026-08-09T12:00:01.000Z'),
+      });
+      worker = await runtime.startWorker(
+        createConfirmationExpiryJobHandler(restartedService),
       );
-      assert.equal(first.status, 'completed');
-      assert.deepEqual(first.output, { expiredRequestIds: ['req-sweeper'] });
+      await waitForConfirmation(async () => {
+        const stored = await requestStore.getByWorkspaceId(
+          workspaceId,
+          'req-sweeper',
+        );
+        return stored?.request.status === 'expired' ? stored : null;
+      });
+      await worker.stop();
+      worker = undefined;
+      await runtime.stop();
 
       const secondRestartedService = new ExecutionConfirmationService(
         requestStore,
         decisionStore,
         confirmationCreditPortFromPostgresLedger(creditLedger),
       );
-      const second = await createConfirmationExpiryJobHandler(
-        secondRestartedService,
-      )(
-        {
-          id: 'confirmation-expiry-after-restart-2',
-          workspaceId: '__system__',
-          kind: CONFIRMATION_EXPIRY_JOB_KIND,
-          payload: {},
-        } as never,
-        { claimedAt: '2026-08-09T13:00:00.000Z' } as never,
+      runtime = PgBossJobPort.connect({
+        connection: { connectionString, schema: bossSchema },
+        queuePrefix,
+        clock: () => new Date('2026-08-09T13:00:00.000Z'),
+      });
+      await runtime.enqueue({
+        jobId: 'confirmation-expiry-after-restart-2',
+        workspaceId: '__system__',
+        kind: CONFIRMATION_EXPIRY_JOB_KIND,
+        payload: {},
+      });
+      worker = await runtime.startWorker(
+        createConfirmationExpiryJobHandler(secondRestartedService),
       );
-      assert.equal(second.status, 'completed');
-      assert.deepEqual(second.output, { expiredRequestIds: [] });
+      await waitForConfirmation(async () => {
+        const inspection = await runtime?.inspect(
+          '__system__',
+          'confirmation-expiry-after-restart-2',
+        );
+        return inspection?.status === 'completed' ? inspection : null;
+      });
       assert.equal(
         (await requestStore.getByWorkspaceId(workspaceId, 'req-sweeper'))
           ?.request.status,
@@ -561,7 +641,20 @@ test(
         (row) => row.transactionType === 'REFUND',
       );
       assert.equal(refund?.actorId, 'system:confirmation-expiry-sweeper');
+      assert.equal(
+        (await creditLedger.listTransactions(workspaceId)).filter(
+          (row) => row.transactionType === 'REFUND',
+        ).length,
+        1,
+      );
     } finally {
+      await worker?.stop().catch(() => undefined);
+      await runtime?.stop().catch(() => undefined);
+      const cleanupPool = new Pool({ connectionString });
+      await cleanupPool
+        .query(`DROP SCHEMA IF EXISTS "${bossSchema}" CASCADE`)
+        .catch(() => undefined);
+      await cleanupPool.end();
       await cleanup();
     }
   },
@@ -714,4 +807,17 @@ async function createFixture() {
       await pool.end();
     },
   };
+}
+
+async function waitForConfirmation<T>(
+  read: () => Promise<T | null>,
+  timeoutMs = 15_000,
+): Promise<T> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = await read();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error('Timed out waiting for confirmation job completion.');
 }

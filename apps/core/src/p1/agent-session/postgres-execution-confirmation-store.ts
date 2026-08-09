@@ -20,6 +20,7 @@ import {
   parseConfirmationDecision,
   parseConfirmationRequest,
   type ConfirmationRequestProjectionFacts,
+  type ConfirmationTransactionClient,
   type ExecutionConfirmationRequestStore,
   type PlanConfirmationDecisionStore,
   type StoredConfirmationRequest,
@@ -334,6 +335,48 @@ export class PostgresExecutionConfirmationRequestStore
     );
     return result.rows.map(parseStored);
   }
+
+  savePendingInTransaction(
+    client: ConfirmationTransactionClient,
+    input: StoredConfirmationRequest,
+  ) {
+    return this.savePendingWithClient(requireClient(client), input);
+  }
+
+  getByIdInTransaction(
+    client: ConfirmationTransactionClient,
+    requestId: string,
+  ) {
+    return this.getByIdWithClient(requireClient(client), requestId);
+  }
+
+  getOwnedInTransaction(
+    client: ConfirmationTransactionClient,
+    workspaceId: string,
+    requestId: string,
+    forUpdate = false,
+  ) {
+    return this.getByWorkspaceIdWithClient(
+      requireClient(client),
+      workspaceId,
+      requestId,
+      forUpdate,
+    );
+  }
+
+  markOwnedStatusInTransaction(
+    client: ConfirmationTransactionClient,
+    input: Parameters<ExecutionConfirmationRequestStore['markOwnedStatusInTransaction']>[1],
+  ) {
+    return this.markStatusForWorkspaceWithClient(requireClient(client), input);
+  }
+
+  findCampaignWorkInTransaction(
+    client: ConfirmationTransactionClient,
+    input: Parameters<ExecutionConfirmationRequestStore['findCampaignWorkInTransaction']>[1],
+  ) {
+    return this.findCampaignWorkWithClient(requireClient(client), input);
+  }
 }
 
 export class PostgresPlanConfirmationDecisionStore
@@ -449,6 +492,27 @@ export class PostgresPlanConfirmationDecisionStore
       ? parseConfirmationDecision(result.rows[0].payload)
       : null;
   }
+
+  appendInTransaction(
+    client: ConfirmationTransactionClient,
+    decision: PlanConfirmationDecision,
+  ) {
+    return this.appendWithClient(requireClient(client), decision);
+  }
+
+  getByIdInTransaction(
+    client: ConfirmationTransactionClient,
+    decisionId: string,
+  ) {
+    return this.getByIdWithClient(requireClient(client), decisionId);
+  }
+}
+
+function requireClient(client: ConfirmationTransactionClient): PoolClient {
+  if (!client) {
+    throw new Error('Postgres confirmation transactions require a database client.');
+  }
+  return client;
 }
 
 /**
@@ -514,8 +578,6 @@ export interface PostgresConfirmationCreditLedger {
 export function confirmationCreditPortFromPostgresLedger(
   ledger: PostgresConfirmationCreditLedger,
 ): import('./execution-confirmation-service.js').ConfirmationCreditLedgerPort {
-  type Port =
-    import('./execution-confirmation-service.js').ConfirmationCreditLedgerPort;
   if (
     typeof ledger.withWorkspaceCreditLock !== 'function' ||
     typeof ledger.projectWithClient !== 'function' ||
@@ -530,16 +592,10 @@ export function confirmationCreditPortFromPostgresLedger(
   const projectWithClient = ledger.projectWithClient.bind(ledger);
   const consumeWithClient = ledger.consumeWithClient.bind(ledger);
   const refundWithClient = ledger.refundUsageOperationWithClient.bind(ledger);
-  const outsideTransaction = (): never => {
-    throw new Error('Confirmation credit operations require a workspace transaction.');
-  };
   return {
-    project: outsideTransaction,
-    consume: outsideTransaction,
-    refundUsageOperation: outsideTransaction,
     withWorkspaceCreditTransaction: async (workspaceId, action) =>
       lock(workspaceId, async (client) => {
-        const txLedger: Port = {
+        const txLedger: import('./execution-confirmation-service.js').ConfirmationCreditTransactionPort = {
           project: (ws, asOf) => projectWithClient(client, ws, asOf),
           transactionClient: client,
           consume: (input) => consumeWithClient(client, input),

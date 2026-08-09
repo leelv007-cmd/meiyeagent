@@ -11,6 +11,9 @@ import {
   type AgentExecutionConfirmationRequest,
   type PlanConfirmationDecision,
 } from '@meiye/contracts';
+import type { PoolClient } from 'pg';
+
+export type ConfirmationTransactionClient = PoolClient | null;
 
 export class ExecutionConfirmationError extends Error {
   readonly code: string;
@@ -61,6 +64,38 @@ export interface ExecutionConfirmationRequestStore {
   listPendingByWorkspace(
     workspaceId: string,
   ): Promise<StoredConfirmationRequest[]>;
+  savePendingInTransaction(
+    client: ConfirmationTransactionClient,
+    input: StoredConfirmationRequest,
+  ): Promise<StoredConfirmationRequest>;
+  getByIdInTransaction(
+    client: ConfirmationTransactionClient,
+    requestId: string,
+  ): Promise<StoredConfirmationRequest | null>;
+  getOwnedInTransaction(
+    client: ConfirmationTransactionClient,
+    workspaceId: string,
+    requestId: string,
+    forUpdate?: boolean,
+  ): Promise<StoredConfirmationRequest | null>;
+  markOwnedStatusInTransaction(
+    client: ConfirmationTransactionClient,
+    input: {
+      workspaceId: string;
+      requestId: string;
+      status: 'decided' | 'expired';
+      expectedStatus?: 'pending';
+    },
+  ): Promise<StoredConfirmationRequest | null>;
+  findCampaignWorkInTransaction(
+    client: ConfirmationTransactionClient,
+    input: {
+      workspaceId: string;
+      campaignPlanId: string;
+      workOrdinal: number;
+    },
+  ): Promise<StoredConfirmationRequest | null>;
+  listDuePending(now: string, limit?: number): Promise<StoredConfirmationRequest[]>;
 }
 
 export interface PlanConfirmationDecisionStore {
@@ -70,6 +105,14 @@ export interface PlanConfirmationDecisionStore {
   append(decision: PlanConfirmationDecision): Promise<PlanConfirmationDecision>;
   getById(decisionId: string): Promise<PlanConfirmationDecision | null>;
   getByRequestId(requestId: string): Promise<PlanConfirmationDecision | null>;
+  appendInTransaction(
+    client: ConfirmationTransactionClient,
+    decision: PlanConfirmationDecision,
+  ): Promise<PlanConfirmationDecision>;
+  getByIdInTransaction(
+    client: ConfirmationTransactionClient,
+    decisionId: string,
+  ): Promise<PlanConfirmationDecision | null>;
 }
 
 export function parseConfirmationRequest(

@@ -29,6 +29,7 @@ import {
   ExecutionConfirmationService,
   PostgresAgentSessionStore,
   PostgresExecutionConfirmationMigration,
+  PostgresConfirmationAuthorityStore,
   PostgresMarketingPlanStore,
   controlLimitsFromArtifact,
   createDefaultIntentRetrievalBindings,
@@ -750,6 +751,8 @@ export async function assembleCoreGraph(
    */
   const executionConfirmationMigration =
     new PostgresExecutionConfirmationMigration(pool);
+  const executionConfirmationAuthorityStore =
+    new PostgresConfirmationAuthorityStore(pool);
   const executionConfirmationService = new ExecutionConfirmationService(
     executionConfirmationMigration.requestStore,
     executionConfirmationMigration.decisionStore,
@@ -766,7 +769,7 @@ export async function assembleCoreGraph(
   );
   const executionConfirmationAuthority = new ConfirmationAuthorityAssembler(
     executionConfirmationService,
-    executionPlanAdmissionService,
+    executionConfirmationAuthorityStore,
     productQuoteService,
   );
   /** V31-14: durable pending interrupts (CAS resume / listPending). */
@@ -1179,6 +1182,7 @@ export async function assembleCoreGraph(
     marketingPlanStore,
     // V31-11 confirmation objects (request + immutable decision).
     executionConfirmationMigration,
+    executionConfirmationAuthorityStore,
     // V31-12 ExecutionPlanSnapshot admission (one-shot immutable).
     executionPlanAdmissionMigration,
     // V31-14 durable Interrupt store (pending confirm survives restart).
@@ -1660,6 +1664,7 @@ export async function assembleCoreGraph(
     planCompiler,
     executionConfirmationService,
     executionConfirmationAuthority,
+    executionConfirmationAuthorityStore,
     executionConfirmationRequestStore:
       executionConfirmationMigration.requestStore,
     planConfirmationDecisionStore: executionConfirmationMigration.decisionStore,

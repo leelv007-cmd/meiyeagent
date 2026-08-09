@@ -1,12 +1,17 @@
+import { createHash } from 'node:crypto';
+
 import type { ProductQuoteSnapshot } from '@meiye/contracts';
 
 import { creditUsageOperationId } from '../credit-billing/credit-ledger.js';
-import type { AdmittedExecutionPlanSnapshot } from '../harness/execution-plan-admission.js';
 import type {
   CreateExecutionConfirmationResult,
   ExecutionConfirmationService,
 } from './execution-confirmation-service.js';
 import { ExecutionConfirmationError } from './execution-confirmation-store.js';
+import type {
+  ConfirmationAuthorityStore,
+  PendingConfirmationAuthority,
+} from './execution-confirmation-authority-store.js';
 
 const DEFAULT_HOLD_DURATION_MS = 48 * 60 * 60 * 1000;
 
@@ -16,10 +21,11 @@ export type CreateExecutionConfirmationAuthorityInput = {
   workflowId: string;
 };
 
-export interface ConfirmationAuthorityPlanReader {
-  getByWorkflowId(
+export interface ConfirmationAuthorityPlanReader
+  extends Pick<ConfirmationAuthorityStore, 'getCurrentByWorkflowId'> {
+  getCurrentByWorkflowId(
     workflowId: string,
-  ): Promise<AdmittedExecutionPlanSnapshot | null>;
+  ): Promise<PendingConfirmationAuthority | null>;
 }
 
 export interface ConfirmationAuthorityQuoteReader {
@@ -36,7 +42,7 @@ export class ConfirmationAuthorityAssembler {
   constructor(
     private readonly confirmations: Pick<
       ExecutionConfirmationService,
-      'createRequest'
+      'createRequest' | 'getRequest' | 'getDecision'
     >,
     private readonly plans: ConfirmationAuthorityPlanReader,
     private readonly quotes: ConfirmationAuthorityQuoteReader,
@@ -49,14 +55,13 @@ export class ConfirmationAuthorityAssembler {
   async createRequest(
     input: CreateExecutionConfirmationAuthorityInput,
   ): Promise<CreateExecutionConfirmationResult> {
-    const admitted = await this.plans.getByWorkflowId(input.workflowId);
-    if (!admitted || admitted.workspaceId !== input.workspaceId) {
+    const plan = await this.plans.getCurrentByWorkflowId(input.workflowId);
+    if (!plan || plan.workspaceId !== input.workspaceId) {
       throw new ExecutionConfirmationError(
         'NOT_FOUND',
         `Execution plan for workflow ${input.workflowId} was not found.`,
       );
     }
-    const plan = admitted.snapshot;
     const quote = await this.quotes.getQuote(
       plan.quoteRef.id,
       input.workspaceId,
@@ -82,10 +87,12 @@ export class ConfirmationAuthorityAssembler {
         `ProductQuote ${quote.quoteId} does not contain a positive server credit cost.`,
       );
     }
-    const createdAt = this.clock().toISOString();
+    const requestId = await this.resolveRequestId(input.workflowId, plan);
+    const existing = await this.confirmations.getRequest(requestId);
+    const createdAt = existing?.request.createdAt ?? this.clock().toISOString();
     const taskId = quote.taskId ?? input.workflowId;
     return this.confirmations.createRequest({
-      requestId: `confirmation:${input.workflowId}`,
+      requestId,
       workspaceId: input.workspaceId,
       planId: plan.planId,
       planRevision: plan.planRevision,
@@ -93,9 +100,9 @@ export class ConfirmationAuthorityAssembler {
       quoteRef: { id: quote.quoteId, revision: quote.revision },
       reservationIdempotencyKey: creditUsageOperationId(taskId),
       createdAt,
-      holdExpiresAt: new Date(
-        Date.parse(createdAt) + this.holdDurationMs,
-      ).toISOString(),
+      holdExpiresAt:
+        existing?.request.holdExpiresAt ??
+        new Date(Date.parse(createdAt) + this.holdDurationMs).toISOString(),
       actorId: input.actorId,
       creditCost: quote.creditCost!,
       failureRefundsCredits: quote.failureRefundsCredits === true,
@@ -103,4 +110,26 @@ export class ConfirmationAuthorityAssembler {
       factSummary: [...plan.factRevisionRefs].sort().join(', ') || null,
     });
   }
+
+  private async resolveRequestId(
+    workflowId: string,
+    plan: PendingConfirmationAuthority,
+  ): Promise<string> {
+    const base = `confirmation:${digest(`${workflowId}\0${plan.planRevision}\0${plan.snapshotHash}`)}`;
+    let candidate = base;
+    for (;;) {
+      const existing = await this.confirmations.getRequest(candidate);
+      if (!existing) return candidate;
+      if (existing.request.workspaceId !== plan.workspaceId) {
+        throw new ExecutionConfirmationError('NOT_FOUND', 'Workflow was not found.');
+      }
+      const decision = await this.confirmations.getDecision(candidate);
+      if (!decision) return candidate;
+      candidate = `${base}:r:${digest(`${candidate}\0${decision.decisionId}`).slice(0, 16)}`;
+    }
+  }
+}
+
+function digest(input: string): string {
+  return createHash('sha256').update(input).digest('hex').slice(0, 40);
 }

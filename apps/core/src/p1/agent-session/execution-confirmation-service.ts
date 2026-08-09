@@ -34,6 +34,7 @@ import {
 } from './execution-confirmation-projection.js';
 import {
   ExecutionConfirmationError,
+  type ConfirmationTransactionClient,
   type ConfirmationRequestProjectionFacts,
   type ExecutionConfirmationRequestStore,
   type PlanConfirmationDecisionStore,
@@ -41,7 +42,7 @@ import {
 } from './execution-confirmation-store.js';
 
 /** Credit ledger surface required by confirmation create/decide/expire. */
-export type ConfirmationCreditLedgerPort = {
+export type ConfirmationCreditTransactionPort = {
   project(
     workspaceId: string,
     asOf?: string,
@@ -64,21 +65,14 @@ export type ConfirmationCreditLedgerPort = {
   }):
     | Promise<readonly CreditLotTransaction[]>
     | readonly CreditLotTransaction[];
-  /**
-   * Optional transactional seam for Postgres: runs the whole create path under
-   * one workspace credit lock (A3). Memory implementations may omit this.
-   */
-  withWorkspaceCreditTransaction?<T>(
+  transactionClient: ConfirmationTransactionClient;
+};
+
+export type ConfirmationCreditLedgerPort = {
+  withWorkspaceCreditTransaction<T>(
     workspaceId: string,
-    action: (ledger: ConfirmationCreditLedgerPort) => Promise<T>,
+    action: (ledger: ConfirmationCreditTransactionPort) => Promise<T>,
   ): Promise<T>;
-  /**
-   * Postgres seam: the transaction client, present only while running inside
-   * withWorkspaceCreditTransaction. Lets the create path insert the pending
-   * request row into the same DB transaction as balance check + reservation +
-   * FEFO deduction (P1-b — no "row without deduction" window).
-   */
-  transactionClient?: import('pg').PoolClient;
 };
 
 export type CreateExecutionConfirmationInput = {
@@ -145,7 +139,11 @@ export class ExecutionConfirmationService {
     private readonly requests: ExecutionConfirmationRequestStore,
     private readonly decisions: PlanConfirmationDecisionStore,
     private readonly credits: ConfirmationCreditLedgerPort,
-  ) {}
+  ) {
+    if (typeof credits.withWorkspaceCreditTransaction !== 'function') {
+      throw new Error('Execution confirmation requires a workspace transaction port.');
+    }
+  }
 
   /**
    * Create pending request with pre-confirm reserve (U8=A).
@@ -197,7 +195,7 @@ export class ExecutionConfirmationService {
       factSummary: input.factSummary?.trim() || null,
     };
 
-    const run = async (ledger: ConfirmationCreditLedgerPort) => {
+    const run = async (ledger: ConfirmationCreditTransactionPort) => {
       // Idempotent re-entry on same requestId before reserve side-effects.
       const existing = await this.getRequestById(
         input.requestId,
@@ -279,26 +277,13 @@ export class ExecutionConfirmationService {
       }
 
       let stored: StoredConfirmationRequest;
-      const txClient = ledger.transactionClient;
-      const txAwareStore = this.requests as ExecutionConfirmationRequestStore & {
-        savePendingWithClient?(
-          client: import('pg').PoolClient,
-          input: StoredConfirmationRequest,
-        ): Promise<StoredConfirmationRequest>;
-      };
       try {
-        stored =
-          txClient && txAwareStore.savePendingWithClient
-            ? await txAwareStore.savePendingWithClient(txClient, {
-                request,
-                projection,
-              })
-            : await this.requests.savePending({ request, projection });
+        stored = await this.requests.savePendingInTransaction(
+          ledger.transactionClient,
+          { request, projection },
+        );
       } catch (error) {
-        // Compensate an orphan FEFO hold only on the non-transactional path:
-        // inside a workspace transaction the rollback already removes the
-        // reserve, and refunding on the aborted client would mask the error.
-        if (!txClient && projection.reservedCredits > 0) {
+        if (ledger.transactionClient === null && projection.reservedCredits > 0) {
           await ledger.refundUsageOperation({
             workspaceId: input.workspaceId,
             usageOperationId: input.reservationIdempotencyKey,
@@ -325,10 +310,7 @@ export class ExecutionConfirmationService {
       };
     };
 
-    if (this.credits.withWorkspaceCreditTransaction) {
-      return this.credits.withWorkspaceCreditTransaction(input.workspaceId, run);
-    }
-    return run(this.credits);
+    return this.credits.withWorkspaceCreditTransaction(input.workspaceId, run);
   }
 
   async decide(
@@ -340,17 +322,14 @@ export class ExecutionConfirmationService {
   async decideForWorkspace(
     input: DecideExecutionConfirmationInput,
   ): Promise<DecideExecutionConfirmationResult> {
-    const run = (ledger: ConfirmationCreditLedgerPort) =>
+    const run = (ledger: ConfirmationCreditTransactionPort) =>
       this.completeDecision(input, ledger);
-    if (this.credits.withWorkspaceCreditTransaction) {
-      return this.credits.withWorkspaceCreditTransaction(input.workspaceId, run);
-    }
-    return run(this.credits);
+    return this.credits.withWorkspaceCreditTransaction(input.workspaceId, run);
   }
 
   private async completeDecision(
     input: DecideExecutionConfirmationInput,
-    ledger: ConfirmationCreditLedgerPort,
+    ledger: ConfirmationCreditTransactionPort,
   ): Promise<DecideExecutionConfirmationResult> {
     const stored = await this.getOwnedRequest(
       input.workspaceId,
@@ -454,17 +433,14 @@ export class ExecutionConfirmationService {
   async expireForWorkspace(
     input: ExpireExecutionConfirmationInput,
   ): Promise<ExpireExecutionConfirmationResult> {
-    const run = (ledger: ConfirmationCreditLedgerPort) =>
+    const run = (ledger: ConfirmationCreditTransactionPort) =>
       this.completeExpiry(input, ledger);
-    if (this.credits.withWorkspaceCreditTransaction) {
-      return this.credits.withWorkspaceCreditTransaction(input.workspaceId, run);
-    }
-    return run(this.credits);
+    return this.credits.withWorkspaceCreditTransaction(input.workspaceId, run);
   }
 
   private async completeExpiry(
     input: ExpireExecutionConfirmationInput,
-    ledger: ConfirmationCreditLedgerPort,
+    ledger: ConfirmationCreditTransactionPort,
   ): Promise<ExpireExecutionConfirmationResult> {
     const stored = await this.getOwnedRequest(
       input.workspaceId,
@@ -549,19 +525,7 @@ export class ExecutionConfirmationService {
     now: string;
     limit?: number;
   }): Promise<{ expiredRequestIds: string[] }> {
-    const dueStore = this.requests as ExecutionConfirmationRequestStore & {
-      listDuePending?(
-        now: string,
-        limit?: number,
-      ): Promise<StoredConfirmationRequest[]>;
-    };
-    if (!dueStore.listDuePending) {
-      throw new ExecutionConfirmationError(
-        'INVALID_STATE',
-        'Confirmation expiry store does not support durable due-hold scans.',
-      );
-    }
-    const due = await dueStore.listDuePending(input.now, input.limit);
+    const due = await this.requests.listDuePending(input.now, input.limit);
     const expiredRequestIds: string[] = [];
     for (const stored of due) {
       await this.expireForWorkspace({
@@ -585,8 +549,10 @@ export class ExecutionConfirmationService {
     workspaceId: string,
     requestId: string,
   ): Promise<PlanConfirmationDecision | null> {
-    const owned = await this.getOwnedRequest(workspaceId, requestId);
-    return owned ? this.decisions.getByRequestId(requestId) : null;
+    const stored = await this.requests.getById(requestId);
+    return stored?.request.workspaceId === workspaceId
+      ? this.decisions.getByRequestId(requestId)
+      : null;
   }
 
   /**
@@ -629,7 +595,7 @@ export class ExecutionConfirmationService {
       createdAt: string;
       reservedCredits: number;
     },
-    ledger: ConfirmationCreditLedgerPort = this.credits,
+    ledger: ConfirmationCreditTransactionPort,
   ): Promise<number> {
     if (input.reservedCredits <= 0) return 0;
     const refunds = await ledger.refundUsageOperation({
@@ -648,48 +614,22 @@ export class ExecutionConfirmationService {
   private async getOwnedRequest(
     workspaceId: string,
     requestId: string,
-    client?: import('pg').PoolClient,
+    client: ConfirmationTransactionClient,
     forUpdate = false,
   ): Promise<StoredConfirmationRequest | null> {
-    const workspaceStore = this.requests as ExecutionConfirmationRequestStore & {
-      getByWorkspaceId?(
-        workspaceId: string,
-        requestId: string,
-      ): Promise<StoredConfirmationRequest | null>;
-      getByWorkspaceIdWithClient?(
-        client: import('pg').PoolClient,
-        workspaceId: string,
-        requestId: string,
-        forUpdate?: boolean,
-      ): Promise<StoredConfirmationRequest | null>;
-    };
-    const stored =
-      client && workspaceStore.getByWorkspaceIdWithClient
-        ? await workspaceStore.getByWorkspaceIdWithClient(
-            client,
-            workspaceId,
-            requestId,
-            forUpdate,
-          )
-        : workspaceStore.getByWorkspaceId
-          ? await workspaceStore.getByWorkspaceId(workspaceId, requestId)
-          : await this.requests.getById(requestId);
-    return stored?.request.workspaceId === workspaceId ? stored : null;
+    return this.requests.getOwnedInTransaction(
+      client,
+      workspaceId,
+      requestId,
+      forUpdate,
+    );
   }
 
   private async getRequestById(
     requestId: string,
-    client?: import('pg').PoolClient,
+    client: ConfirmationTransactionClient,
   ): Promise<StoredConfirmationRequest | null> {
-    const txStore = this.requests as ExecutionConfirmationRequestStore & {
-      getByIdWithClient?(
-        client: import('pg').PoolClient,
-        requestId: string,
-      ): Promise<StoredConfirmationRequest | null>;
-    };
-    return client && txStore.getByIdWithClient
-      ? txStore.getByIdWithClient(client, requestId)
-      : this.requests.getById(requestId);
+    return this.requests.getByIdInTransaction(client, requestId);
   }
 
   private async findCampaignWork(
@@ -698,51 +638,23 @@ export class ExecutionConfirmationService {
       campaignPlanId: string;
       workOrdinal: number;
     },
-    client?: import('pg').PoolClient,
+    client: ConfirmationTransactionClient,
   ): Promise<StoredConfirmationRequest | null> {
-    const txStore = this.requests as ExecutionConfirmationRequestStore & {
-      findCampaignWorkWithClient?(
-        client: import('pg').PoolClient,
-        input: {
-          workspaceId: string;
-          campaignPlanId: string;
-          workOrdinal: number;
-        },
-      ): Promise<StoredConfirmationRequest | null>;
-    };
-    return client && txStore.findCampaignWorkWithClient
-      ? txStore.findCampaignWorkWithClient(client, input)
-      : this.requests.findCampaignWork(input);
+    return this.requests.findCampaignWorkInTransaction(client, input);
   }
 
   private async appendDecision(
     decision: PlanConfirmationDecision,
-    client?: import('pg').PoolClient,
+    client: ConfirmationTransactionClient,
   ): Promise<PlanConfirmationDecision> {
-    const txStore = this.decisions as PlanConfirmationDecisionStore & {
-      appendWithClient?(
-        client: import('pg').PoolClient,
-        decision: PlanConfirmationDecision,
-      ): Promise<PlanConfirmationDecision>;
-    };
-    return client && txStore.appendWithClient
-      ? txStore.appendWithClient(client, decision)
-      : this.decisions.append(decision);
+    return this.decisions.appendInTransaction(client, decision);
   }
 
   private async getDecisionById(
     decisionId: string,
-    client?: import('pg').PoolClient,
+    client: ConfirmationTransactionClient,
   ): Promise<PlanConfirmationDecision | null> {
-    const txStore = this.decisions as PlanConfirmationDecisionStore & {
-      getByIdWithClient?(
-        client: import('pg').PoolClient,
-        decisionId: string,
-      ): Promise<PlanConfirmationDecision | null>;
-    };
-    return client && txStore.getByIdWithClient
-      ? txStore.getByIdWithClient(client, decisionId)
-      : this.decisions.getById(decisionId);
+    return this.decisions.getByIdInTransaction(client, decisionId);
   }
 
   private async markOwnedStatus(
@@ -752,25 +664,9 @@ export class ExecutionConfirmationService {
       status: 'decided' | 'expired';
       expectedStatus?: 'pending';
     },
-    client?: import('pg').PoolClient,
+    client: ConfirmationTransactionClient,
   ): Promise<StoredConfirmationRequest | null> {
-    const txStore = this.requests as ExecutionConfirmationRequestStore & {
-      markStatusForWorkspaceWithClient?(
-        client: import('pg').PoolClient,
-        command: {
-          workspaceId: string;
-          requestId: string;
-          status: 'decided' | 'expired';
-          expectedStatus?: 'pending';
-        },
-      ): Promise<StoredConfirmationRequest | null>;
-    };
-    if (client && txStore.markStatusForWorkspaceWithClient) {
-      return txStore.markStatusForWorkspaceWithClient(client, input);
-    }
-    const owned = await this.getOwnedRequest(input.workspaceId, input.requestId);
-    if (!owned) return null;
-    return this.requests.markStatus(input);
+    return this.requests.markOwnedStatusInTransaction(client, input);
   }
 }
 
@@ -810,12 +706,9 @@ export function confirmationCreditPortFromMemoryLedger(ledger: {
     return run;
   };
   return {
-    project: (workspaceId, asOf) => ledger.project(workspaceId, asOf),
-    consume: (input) => serialize(() => ledger.consume(input)),
-    refundUsageOperation: (input) =>
-      serialize(() => ledger.refundUsageOperation(input)),
     withWorkspaceCreditTransaction: async (_workspaceId, action) =>
       serialize(() => action({
+        transactionClient: null,
         project: (workspaceId, asOf) => ledger.project(workspaceId, asOf),
         consume: (input) => ledger.consume(input),
         refundUsageOperation: (input) => ledger.refundUsageOperation(input),

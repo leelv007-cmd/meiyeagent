@@ -14,6 +14,7 @@ import {
   parseConfirmationDecision,
   parseConfirmationRequest,
   type ExecutionConfirmationRequestStore,
+  type ConfirmationTransactionClient,
   type PlanConfirmationDecisionStore,
   type StoredConfirmationRequest,
 } from './execution-confirmation-store.js';
@@ -150,6 +151,62 @@ export class MemoryExecutionConfirmationRequestStore
       )
       .map((row) => structuredClone(row));
   }
+
+  savePendingInTransaction(
+    _client: ConfirmationTransactionClient,
+    input: StoredConfirmationRequest,
+  ) {
+    return this.savePending(input);
+  }
+
+  getByIdInTransaction(
+    _client: ConfirmationTransactionClient,
+    requestId: string,
+  ) {
+    return this.getById(requestId);
+  }
+
+  async getOwnedInTransaction(
+    _client: ConfirmationTransactionClient,
+    workspaceId: string,
+    requestId: string,
+  ) {
+    const stored = await this.getById(requestId);
+    return stored?.request.workspaceId === workspaceId ? stored : null;
+  }
+
+  async markOwnedStatusInTransaction(
+    client: ConfirmationTransactionClient,
+    input: Parameters<ExecutionConfirmationRequestStore['markOwnedStatusInTransaction']>[1],
+  ) {
+    const owned = await this.getOwnedInTransaction(
+      client,
+      input.workspaceId,
+      input.requestId,
+    );
+    return owned ? this.markStatus(input) : null;
+  }
+
+  findCampaignWorkInTransaction(
+    _client: ConfirmationTransactionClient,
+    input: Parameters<ExecutionConfirmationRequestStore['findCampaignWorkInTransaction']>[1],
+  ) {
+    return this.findCampaignWork(input);
+  }
+
+  async listDuePending(now: string, limit = 100) {
+    return [...this.#byId.values()]
+      .filter(
+        (row) =>
+          row.request.status === 'pending' &&
+          Date.parse(row.request.holdExpiresAt) <= Date.parse(now),
+      )
+      .sort((a, b) =>
+        a.request.holdExpiresAt.localeCompare(b.request.holdExpiresAt),
+      )
+      .slice(0, Math.max(1, Math.min(limit, 500)))
+      .map((row) => structuredClone(row));
+  }
 }
 
 export class MemoryPlanConfirmationDecisionStore
@@ -199,5 +256,19 @@ export class MemoryPlanConfirmationDecisionStore
   ): Promise<PlanConfirmationDecision | null> {
     const id = this.#byRequest.get(requestId);
     return id ? this.getById(id) : null;
+  }
+
+  appendInTransaction(
+    _client: ConfirmationTransactionClient,
+    decision: PlanConfirmationDecision,
+  ) {
+    return this.append(decision);
+  }
+
+  getByIdInTransaction(
+    _client: ConfirmationTransactionClient,
+    decisionId: string,
+  ) {
+    return this.getById(decisionId);
   }
 }

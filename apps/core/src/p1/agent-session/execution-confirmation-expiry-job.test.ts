@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import {
@@ -49,19 +48,4 @@ test('confirmation expiry handler uses durable claimedAt and is replay safe', as
     { now: '2026-08-09T13:00:00.000Z' },
     { now: '2026-08-09T13:00:00.000Z' },
   ]);
-});
-
-test('production worker registers and handles the confirmation expiry schedule', async () => {
-  const source = await readFile(
-    new URL('../../assembly/worker-runtime.ts', import.meta.url),
-    'utf8',
-  );
-  assert.match(
-    source,
-    /await registerConfirmationExpirySchedule\(jobRuntime\)/u,
-  );
-  assert.match(
-    source,
-    /\[CONFIRMATION_EXPIRY_JOB_KIND\]:\s*createConfirmationExpiryJobHandler\(executionConfirmationService\)/u,
-  );
 });

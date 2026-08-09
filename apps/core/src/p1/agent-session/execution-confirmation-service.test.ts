@@ -489,3 +489,15 @@ test('Postgres credit adapter never constructs a split non-transactional port', 
     /transaction/i,
   );
 });
+
+test('confirmation service requires one workspace transaction action seam', () => {
+  assert.throws(
+    () =>
+      new ExecutionConfirmationService(
+        new MemoryExecutionConfirmationRequestStore(),
+        new MemoryPlanConfirmationDecisionStore(),
+        {} as never,
+      ),
+    /transaction/i,
+  );
+});
