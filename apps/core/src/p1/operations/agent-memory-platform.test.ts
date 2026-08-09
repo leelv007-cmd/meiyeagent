@@ -110,6 +110,58 @@ test('onExtracted always lands proposed candidates and never activates heads', a
   );
 });
 
+test('onExtracted rejects a Business Fact key: the fact ledger owns it, not Memory', async () => {
+  const { platform: mem } = platform();
+  await assert.rejects(
+    mem.onExtracted({
+      workspaceId: context.workspaceId,
+      idempotencyPrefix: 'extract-fact-1',
+      items: [
+        {
+          itemId: 'item-fact-1',
+          kind: 'preference',
+          semanticKey: 'business_fact.store_hours',
+          proposedValue: '10:00-22:00',
+          defaultScope: { storeId: 'store-a' },
+          decisionEventId: 'decision-fact-1',
+          taskId: 'task-fact-1',
+          source: source(),
+          statement: '营业时间 10:00-22:00',
+          confidence: 0.7,
+        },
+      ],
+    }),
+    (error: unknown) =>
+      error instanceof ReuseMemoryError &&
+      error.code === 'INVALID_STATE' &&
+      /belongs to the fact ledger and cannot be overridden by Memory/u.test(
+        error.message,
+      ),
+  );
+  await assert.rejects(
+    mem.onExtracted({
+      workspaceId: context.workspaceId,
+      idempotencyPrefix: 'extract-fact-2',
+      items: [
+        {
+          itemId: 'item-fact-2',
+          kind: 'preference',
+          semanticKey: 'store_fact.address',
+          proposedValue: '门店地址变更',
+          defaultScope: { storeId: 'store-a' },
+          decisionEventId: 'decision-fact-2',
+          taskId: 'task-fact-2',
+          source: source(),
+          statement: '门店地址变更',
+          confidence: 0.7,
+        },
+      ],
+    }),
+    (error: unknown) =>
+      error instanceof ReuseMemoryError && error.code === 'INVALID_STATE',
+  );
+});
+
 test('dual channel: session activates immediately; cross-thread needs confirm', async () => {
   const { platform: mem, reuse } = platform();
   const session = await mem.activateSessionScoped({
