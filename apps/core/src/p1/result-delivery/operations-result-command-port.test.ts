@@ -794,6 +794,52 @@ test('note set adjustment freezes non-contiguous source page units without inven
   );
 });
 
+test('whole-note adjustment without scope keeps the full-plan execution path', async () => {
+  const { composerCalls, port } = fixture({
+    noteSnapshot: true,
+    quoteOutputCount: 2,
+    quoteStatus: 'quoted',
+  });
+  const source = {
+    expectedPackageRevision: 3,
+    kind: 'content_package_snapshot' as const,
+    packageId: 'package-1',
+    snapshotId: 'snapshot-task-1',
+    workflowId: 'task-1',
+  };
+  const prepared = await port.prepareAdjust(
+    context,
+    {
+      expectedWorkUpdatedAt: '2026-07-20T00:00:00.000Z',
+      instruction: '整份笔记重新生成',
+      source,
+      workId: 'work-1',
+    },
+    'adjust-whole-note-prepare',
+  );
+  await port.adjust(
+    context,
+    {
+      billingQuoteId: 'quote-fresh',
+      derivedTaskId: prepared.task.id,
+      derivedWorkId: prepared.work.id,
+      instruction: '整份笔记重新生成',
+      source,
+    },
+    'adjust-whole-note-confirm',
+  );
+
+  assert.equal(
+    (composerCalls[0] as { pageRegenerationTargetAssetIds?: unknown })
+      .pageRegenerationTargetAssetIds,
+    undefined,
+  );
+  assert.deepEqual(
+    (composerCalls[0] as { sourceArtifactLineage?: unknown }).sourceArtifactLineage,
+    { artifactId: 'note:package-1', parentRevision: 7 },
+  );
+});
+
 test('Composer snapshot adjustment never fabricates a legacy CreativeJob', async () => {
   const { composerCalls, port, submitCalls } = fixture({
     quoteOutputCount: 2,

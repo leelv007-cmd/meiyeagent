@@ -798,27 +798,33 @@ export class OperationsResultCommandPort {
               404,
             );
           }
-		  const notePages = currentPackageVersion?.note?.plan.pages;
-		  const scopedAssetIds = new Set(resultAdjustScopeAssetIds(composerCommand.scope));
-		  const targetUnitIds = notePages
-			? notePages
-				.filter((page) =>
-				  scopedAssetIds.size === 0 ||
-				  (page.imageAssetId !== undefined && scopedAssetIds.has(page.imageAssetId)),
-				)
-				.map((page) => page.id)
-			: undefined;
-		  if (
-			frozen.snapshot.lens === 'image_text_note' &&
-			composerCommand.scope?.kind !== 'text_selection' &&
-			(!targetUnitIds || targetUnitIds.length !== expectedOutputCount)
-		  ) {
-			throw new OperationsError(
-			  'RESULT_ADJUST_SCOPE_MISMATCH',
-			  'The frozen note target pages do not match the adjustment scope.',
-			  409,
-			);
-		  }
+          const notePages = currentPackageVersion?.note?.plan.pages;
+          const hasPageSubsetScope =
+            composerCommand.scope?.kind === 'asset' ||
+            composerCommand.scope?.kind === 'set';
+          const scopedAssetIds = new Set(
+            resultAdjustScopeAssetIds(composerCommand.scope),
+          );
+          const targetUnitIds = notePages && hasPageSubsetScope
+            ? notePages
+                .filter(
+                  (page) =>
+                    page.imageAssetId !== undefined &&
+                    scopedAssetIds.has(page.imageAssetId),
+                )
+                .map((page) => page.id)
+            : undefined;
+          if (
+            frozen.snapshot.lens === 'image_text_note' &&
+            hasPageSubsetScope &&
+            (!targetUnitIds || targetUnitIds.length !== expectedOutputCount)
+          ) {
+            throw new OperationsError(
+              'RESULT_ADJUST_SCOPE_MISMATCH',
+              'The frozen note target pages do not match the adjustment scope.',
+              409,
+            );
+          }
           return this.composerSubmissions!.submit({
             actorId: operation.userId,
             idempotencyKey: `result-adjust:${idempotencyKey}`,
@@ -827,10 +833,9 @@ export class OperationsResultCommandPort {
               composerCommand.scope,
             ),
             outputCount: expectedOutputCount,
-			...(frozen.snapshot.lens === 'image_text_note' &&
-			composerCommand.scope?.kind !== 'text_selection'
-			  ? { pageRegenerationTargetAssetIds: [...scopedAssetIds] }
-			  : {}),
+            ...(frozen.snapshot.lens === 'image_text_note' && hasPageSubsetScope
+              ? { pageRegenerationTargetAssetIds: [...scopedAssetIds] }
+              : {}),
             quote: { id: quote.quoteId, revision: quote.revision },
             sourceContentPackage: {
               id: frozen.contentPackage.id,

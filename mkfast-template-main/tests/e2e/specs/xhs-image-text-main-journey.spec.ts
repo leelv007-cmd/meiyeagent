@@ -10,7 +10,7 @@
  * gate stays near a three-minute budget while still covering the note carrier.
  */
 
-import { expect, test } from '@playwright/test';
+import { expect, test, type Response } from '@playwright/test';
 
 import {
   cleanupE2EUsers,
@@ -108,32 +108,29 @@ test.describe('XHS image-text main journey (production gate)', () => {
           let replayCalls = 0;
           let eventCalls = 0;
           let reconnectLastEventId: string | undefined;
+          let reconnectLastStreamOffset: string | null = null;
+          const agentResponses: Response[] = [];
+          page.on('response', (response) => {
+            if (
+              response
+                .url()
+                .includes(`/agent-threads/${encodeURIComponent(threadId!)}/`)
+            ) {
+              agentResponses.push(response);
+            }
+          });
           await page.route(`**${replayPath}**`, async (route) => {
             replayCalls += 1;
             if (replayCalls === 1) {
-              await route.fulfill({
-                body: JSON.stringify({
-                  ...fullReplay,
-                  data: {
-                    ...fullReplay.data,
-                    events: [firstArtifact],
-                    snapshot: {
-                      revision: '0',
-                      lastEventId: null,
-                      lastStreamOffset: null,
-                    },
-                  },
-                }),
-                contentType: 'application/json',
-                status: 200,
-              });
+              const faultUrl = new URL(route.request().url());
+              faultUrl.searchParams.set(
+                'e2eAgentFault',
+                'artifact-head-replay'
+              );
+              await route.continue({ url: faultUrl.toString() });
               return;
             }
-            await route.fulfill({
-              body: JSON.stringify(fullReplay),
-              contentType: 'application/json',
-              status: 200,
-            });
+            await route.continue();
           });
           await page.route(
             `**/api/core/p1/agent-threads/${encodeURIComponent(threadId!)}/events**`,
@@ -144,11 +141,12 @@ test.describe('XHS image-text main journey (production gate)', () => {
                 return;
               }
               reconnectLastEventId = route.request().headers()['last-event-id'];
-              await route.fulfill({
-                body: `id: ${finalArtifact.eventId}\nevent: agent.semantic\ndata: ${JSON.stringify(finalArtifact)}\n\n`,
-                contentType: 'text/event-stream',
-                status: 200,
-              });
+              reconnectLastStreamOffset = new URL(
+                route.request().url()
+              ).searchParams.get('lastStreamOffset');
+              const faultUrl = new URL(route.request().url());
+              faultUrl.searchParams.set('e2eAgentFault', 'artifact-gap-close');
+              await route.continue({ url: faultUrl.toString() });
             }
           );
 
@@ -167,6 +165,16 @@ test.describe('XHS image-text main journey (production gate)', () => {
           );
           await expect.poll(() => replayCalls).toBeGreaterThanOrEqual(2);
           expect(reconnectLastEventId).toBe(firstArtifact.eventId);
+          expect(reconnectLastStreamOffset).toBe(firstArtifact.streamOffset);
+          const appliedFaults = (
+            await Promise.all(
+              agentResponses.map((response) =>
+                response.headerValue('x-meiye-e2e-agent-fault-applied')
+              )
+            )
+          ).filter((value): value is string => value !== null);
+          expect(appliedFaults).toContain('artifact-head-replay');
+          expect(appliedFaults).toContain('artifact-gap-close');
           await expect(page.getByTestId('agent-artifact-card')).toHaveCount(1);
         },
       }

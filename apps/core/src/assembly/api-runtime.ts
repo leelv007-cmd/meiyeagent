@@ -1838,6 +1838,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       : undefined,
     agentSemanticEvents: semanticProjector
       ? {
+		  ...(e2eFixtureEnabled ? { e2eFaultInjectionEnabled: true } : {}),
           async resolveSession({ workspaceId, threadId }) {
             const thread = await agentSessionStore.getThread({
               resourceId: workspaceId,

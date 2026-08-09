@@ -106,6 +106,20 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
 	assert.match(script, /v31-thread-root-workbench\.spec\.ts/);
   assert.doesNotMatch(script, /API_KEY|PROVIDER_LIVE|STRIPE_SECRET_KEY/);
 
+	const artifactBrowserJourney = await readFile(
+	  join(
+		repositoryRoot,
+		'mkfast-template-main/tests/e2e/specs/xhs-image-text-main-journey.spec.ts'
+	  ),
+	  'utf8'
+	);
+	assert.match(artifactBrowserJourney, /e2eAgentFault/u);
+	assert.match(
+	  artifactBrowserJourney,
+	  /x-meiye-e2e-agent-fault-applied/u
+	);
+	assert.doesNotMatch(artifactBrowserJourney, /route\.fulfill/u);
+
   assert.deepEqual(await runGate('run-p2-browser-acceptance.sh'), [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
     'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/image-text-note-compiler.spec.ts tests/e2e/specs/viral-adapt-opencli-gate.spec.ts tests/e2e/specs/p2-browser-closure.spec.ts tests/e2e/specs/admin-sensitive-words.spec.ts tests/e2e/specs/composer-card-family.spec.ts',

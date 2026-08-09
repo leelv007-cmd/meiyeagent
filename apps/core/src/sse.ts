@@ -8,6 +8,7 @@ interface SseSource {
 }
 
 export async function streamSse(input: {
+  additionalResponseHeaders?: Readonly<Record<string, string>>;
   disconnectMessage: string;
   encodeStreamError?: (error: unknown) => string;
   errorFallback: HttpErrorFallback;
@@ -41,6 +42,7 @@ export async function streamSse(input: {
             throw new Error(`${input.disconnectMessage} before start.`);
           }
           input.response.writeHead(200, {
+            ...input.additionalResponseHeaders,
             'cache-control': 'no-cache, no-transform',
             connection: 'keep-alive',
             'content-type': 'text/event-stream; charset=utf-8',
