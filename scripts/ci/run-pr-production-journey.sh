@@ -16,6 +16,10 @@ xhs_image_text_main_spec="${XHS_IMAGE_TEXT_MAIN_JOURNEY_SPEC:-tests/e2e/specs/xh
 # V31-18 B2 is a required production browser contract: receipt persistence,
 # structured style application, non-leakage, revoke, and next-task exclusion.
 memory_injection_b2_spec="${REQUIRED_V31_MEMORY_INJECTION_SPEC:-tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts}"
+# V31-18 AC4: deleted-conversation provenance must stay honest in the memory
+# vault (来源对话已删除). The assertion has lived in memory-vault-governance
+# since it was written; no required gate ran it until this entry.
+memory_vault_governance_spec="${MEMORY_VAULT_GOVERNANCE_SPEC:-tests/e2e/specs/memory-vault-governance.spec.ts}"
 agent_thread_workbench_spec="${AGENT_THREAD_WORKBENCH_SPEC:-tests/e2e/specs/v31-thread-root-workbench.spec.ts}"
 # V31 U7: visible Campaign plan_only + two sequential single_work confirms.
 campaign_paid_work_spec="${CAMPAIGN_PAID_WORK_JOURNEY_SPEC:-tests/e2e/specs/campaign-paid-work-confirmation.spec.ts}"
@@ -36,6 +40,7 @@ pnpm --filter @meiye/web exec playwright test \
   tests/e2e/specs/w12-identity-draft-assistant.spec.ts \
   "${xhs_image_text_main_spec}" \
   "${memory_injection_b2_spec}" \
+  "${memory_vault_governance_spec}" \
 	"${agent_thread_workbench_spec}" \
   "${campaign_paid_work_spec}" \
   2>&1 | tee "${evidence_dir}/playwright-production-journey.log"

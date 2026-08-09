@@ -136,7 +136,7 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
   // part of the ordinary PR run — not a spec that exists without running.
   assert.deepEqual(await runGate('run-pr-production-journey.sh'), [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/assembly-gate-required-journey.spec.ts tests/e2e/specs/m04-browser-hard-gate.spec.ts tests/e2e/specs/marketing-identity-flow.spec.ts tests/e2e/specs/w12-identity-draft-assistant.spec.ts tests/e2e/specs/xhs-image-text-main-journey.spec.ts tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts tests/e2e/specs/v31-thread-root-workbench.spec.ts tests/e2e/specs/campaign-paid-work-confirmation.spec.ts',
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/assembly-gate-required-journey.spec.ts tests/e2e/specs/m04-browser-hard-gate.spec.ts tests/e2e/specs/marketing-identity-flow.spec.ts tests/e2e/specs/w12-identity-draft-assistant.spec.ts tests/e2e/specs/xhs-image-text-main-journey.spec.ts tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts tests/e2e/specs/memory-vault-governance.spec.ts tests/e2e/specs/v31-thread-root-workbench.spec.ts tests/e2e/specs/campaign-paid-work-confirmation.spec.ts',
   ]);
 
   const script = await readFile(
