@@ -8,6 +8,12 @@ import { createHash } from 'node:crypto';
 
 import type { Pool } from 'pg';
 import { LEGACY_REPLAY_ADMISSION_LOCK } from '../harness/legacy-replay-admission-lock.js';
+import {
+  isLegacyReplayAdmissionSealed,
+  LEGACY_REPLAY_ADMISSION_SEAL_AUDIT_EVENT_TYPE,
+  LEGACY_REPLAY_ADMISSION_SEAL_DEPLOYMENT_ID,
+  LEGACY_REPLAY_ADMISSION_SEAL_TABLE,
+} from '../harness/legacy-replay-admission-seal.js';
 
 import type {
   LegacyReplayInventoryPort,
@@ -47,7 +53,23 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
          on p1_legacy_replay_installation_ledger;
        create trigger p1_legacy_replay_ledger_immutable
          before update or delete on p1_legacy_replay_installation_ledger
-         for each row execute function p1_reject_legacy_replay_ledger_mutation()`,
+         for each row execute function p1_reject_legacy_replay_ledger_mutation();
+       create table if not exists ${LEGACY_REPLAY_ADMISSION_SEAL_TABLE} (
+         singleton boolean primary key default true check (singleton),
+         deployment_id text not null,
+         evidence_audit_id text not null,
+         sealed_at timestamptz not null default now()
+       );
+       create or replace function p1_reject_legacy_replay_seal_mutation()
+       returns trigger language plpgsql as $$
+       begin
+         raise exception 'legacy replay admission seal is append-only';
+       end $$;
+       drop trigger if exists p1_legacy_replay_admission_seal_immutable
+         on ${LEGACY_REPLAY_ADMISSION_SEAL_TABLE};
+       create trigger p1_legacy_replay_admission_seal_immutable
+         before update or delete on ${LEGACY_REPLAY_ADMISSION_SEAL_TABLE}
+         for each row execute function p1_reject_legacy_replay_seal_mutation()`,
     );
     const client = await this.pool.connect();
     try {
@@ -82,6 +104,75 @@ export class PostgresLegacyReplayInventory implements LegacyReplayInventoryPort 
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * V31-26a / P0-B: close the legacy replay admission branch explicitly.
+   *
+   * Never implied by schema presence. The seal row is written only when an
+   * operator-recorded `legacy_replay_admission_seal` audit row backs it, which
+   * the runtime request path cannot produce. Sealing deliberately does *not*
+   * require zero legacy history: stopping new legacy admissions is how an
+   * installation drains its remaining legacy tasks before U14 archive, so that
+   * condition belongs to the archive gate, not here. Append-only: a second call
+   * is a no-op and the trigger rejects update/delete.
+   */
+  async sealLegacyReplayAdmission(input: {
+    evidenceAuditId: string;
+  }): Promise<void> {
+    if (!input.evidenceAuditId.trim()) {
+      throw new Error(
+        'Legacy replay admission seal requires an audited proof id.',
+      );
+    }
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin isolation level serializable');
+      await client.query('select pg_advisory_xact_lock(hashtext($1))', [
+        LEGACY_REPLAY_ADMISSION_LOCK,
+      ]);
+      const already = await client.query<{ sealed: boolean }>(
+        `select exists (
+           select 1 from ${LEGACY_REPLAY_ADMISSION_SEAL_TABLE}
+            where singleton=true and deployment_id=$1
+         ) as sealed`,
+        [LEGACY_REPLAY_ADMISSION_SEAL_DEPLOYMENT_ID],
+      );
+      if (already.rows[0]?.sealed === true) {
+        await client.query('commit');
+        return;
+      }
+      const proof = await client.query<{ audited: boolean }>(
+        `select exists (
+           select 1 from harness_runtime.audit_events
+            where id=$1 and event_type=$2
+         ) as audited`,
+        [input.evidenceAuditId, LEGACY_REPLAY_ADMISSION_SEAL_AUDIT_EVENT_TYPE],
+      );
+      if (proof.rows[0]?.audited !== true) {
+        throw new Error(
+          `Legacy replay admission seal requires an audited ${LEGACY_REPLAY_ADMISSION_SEAL_AUDIT_EVENT_TYPE} proof row; ${input.evidenceAuditId} does not qualify.`,
+        );
+      }
+      await client.query(
+        `insert into ${LEGACY_REPLAY_ADMISSION_SEAL_TABLE}
+           (singleton, deployment_id, evidence_audit_id)
+         values (true, $1, $2)
+         on conflict (singleton) do nothing`,
+        [LEGACY_REPLAY_ADMISSION_SEAL_DEPLOYMENT_ID, input.evidenceAuditId],
+      );
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /** True only when the explicit seal row exists (see the seal module). */
+  async legacyReplayAdmissionSealed(): Promise<boolean> {
+    return isLegacyReplayAdmissionSealed(this.pool);
   }
 
   async installationEvidence(): Promise<string | null> {

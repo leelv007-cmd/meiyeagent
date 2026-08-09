@@ -82,6 +82,7 @@ import {
 } from '../admin-config/foundation-module.js';
 import { harnessLogicalId, harnessRuntimeId } from './workspace-scope.js';
 import { LEGACY_REPLAY_ADMISSION_LOCK } from './legacy-replay-admission-lock.js';
+import { isLegacyReplayAdmissionSealed } from './legacy-replay-admission-seal.js';
 import {
   projectTodayRecommendation,
   type TodayRecommendationRecord,
@@ -574,11 +575,11 @@ export class PostgresHarnessStore
             }
           : { kind: 'conflict' as const };
       }
-      const ledgerTable = await client.query<{ installed: boolean }>(
-        `select to_regclass('public.p1_legacy_replay_installation_ledger')
-                  is not null as installed`,
-      );
-      if (ledgerTable.rows[0]?.installed) {
+      // P0-B: schema presence must never close this branch. The installation
+      // ledger is archive *evidence*; admission is closed only by the explicit
+      // append-only seal an operator records once every branch produces an
+      // ExecutionPlanSnapshot. Until then the legacy branch stays admissible.
+      if (await isLegacyReplayAdmissionSealed(client)) {
         const admitted = await client.query<{ admitted: boolean }>(
           `select exists (
              select 1
@@ -595,7 +596,7 @@ export class PostgresHarnessStore
         );
         if (!admitted.rows[0]?.admitted) {
           throw new Error(
-            'Legacy replay admission is closed by the immutable installation ledger.',
+            'Legacy replay admission is closed by the recorded installation seal.',
           );
         }
       }
