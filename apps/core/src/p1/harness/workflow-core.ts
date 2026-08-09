@@ -279,6 +279,11 @@ export interface HarnessSharedStagePorts {
     declaration: IntentDeclaration;
     context: HarnessContextSnapshot;
   }): Promise<HarnessContextSnapshot>;
+  /** Records an explicit merchant acknowledgement for one exact live-facts diff. */
+  acknowledgeContextFence?(input: {
+    workflowId: string;
+    diff: import('./execution-plan-admission.js').SnapshotStaleDiff;
+  }): Promise<void> | void;
   assessFacts?(input: {
     workflowId: string;
     request: HarnessWorkflowInput;

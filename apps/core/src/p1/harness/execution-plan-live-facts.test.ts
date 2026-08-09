@@ -114,6 +114,43 @@ test('missing rights head treated as revoked', async () => {
   assert.equal(live.rightsRevoked, true);
 });
 
+test('missing production head adapters fail closed instead of treating frozen refs as current', async () => {
+  const live = await resolveExecutionPlanLiveFactsFromPorts({
+    snapshot: snapshot(),
+    workspaceId: 'ws-1',
+    ports: {},
+  });
+  assert.equal(live.rightsRevoked, true);
+  assert.deepEqual(live.rightsRevisionRefs, []);
+  assert.deepEqual(live.factRevisionRefs, []);
+  assert.equal(live.contextDrifted, true);
+  assert.notEqual(live.quoteRevision, snapshot().quoteRef.revision);
+});
+
+test('unresolved quote and fact heads fail closed', async () => {
+  const live = await resolveExecutionPlanLiveFactsFromPorts({
+    snapshot: snapshot(),
+    workspaceId: 'ws-1',
+    ports: {
+      async resolveRightsHeads({ rightsRevisionRefs }) {
+        return rightsRevisionRefs.map((revisionId) => ({
+          revisionId,
+          revoked: false,
+        }));
+      },
+      async resolveQuoteHead() {
+        return null;
+      },
+      async resolveFactHeads() {
+        return [];
+      },
+    },
+  });
+  assert.notEqual(live.quoteRevision, snapshot().quoteRef.revision);
+  assert.deepEqual(live.factRevisionRefs, []);
+  assert.equal(live.contextDrifted, true);
+});
+
 test('material price/date fact change sets contextDrifted', async () => {
   const snap = snapshot();
   const live = await resolveExecutionPlanLiveFactsFromPorts({

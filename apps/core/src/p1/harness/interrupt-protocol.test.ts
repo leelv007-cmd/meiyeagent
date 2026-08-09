@@ -81,6 +81,55 @@ function service(options?: {
   return { store, svc };
 }
 
+test('request and resume project the canonical interrupt lifecycle once', async () => {
+  const events: Array<{ eventType: string; payload: unknown; threadId: string }> = [];
+  const eventIds = new Set<string>();
+  const store = new MemoryInterruptStore();
+  const svc = new InterruptProtocolService(
+    store,
+    { async hasMembership() { return true; } },
+    () => TS,
+    undefined,
+    {
+      async project(candidate) {
+        if (eventIds.has(candidate.eventId)) return;
+        eventIds.add(candidate.eventId);
+        events.push({
+          eventType: candidate.eventType,
+          payload: candidate.payload,
+          threadId: candidate.threadId,
+        });
+      },
+    },
+  );
+
+  await svc.request({ workspaceId: 'ws-1', payload: payload() });
+  await svc.request({ workspaceId: 'ws-1', payload: payload() });
+  await svc.resume({
+    userId: 'user-1',
+    workspaceId: 'ws-1',
+    command: resumeCommand({ idempotencyKey: 'semantic-1' }),
+  });
+  await svc.resume({
+    userId: 'user-1',
+    workspaceId: 'ws-1',
+    command: resumeCommand({ idempotencyKey: 'semantic-1' }),
+  });
+
+  assert.deepEqual(events.map((event) => event.eventType), [
+    'interrupt.requested',
+    'interrupt.resolved',
+  ]);
+  assert.equal(events[0]?.threadId, 'thread-1');
+  assert.deepEqual(events[0]?.payload, {
+    interruptId: 'int-1',
+    interruptType: 'confirm_paid_execution',
+    description: '确认执行付费生成',
+    revision: 3,
+    schemaVersion: 'interrupt-payload/v1',
+  });
+});
+
 test('request is idempotent for identical payload', async () => {
   const { svc } = service();
   const first = await svc.request({ workspaceId: 'ws-1', payload: payload() });

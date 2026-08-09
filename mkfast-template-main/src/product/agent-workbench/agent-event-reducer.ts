@@ -60,6 +60,9 @@ export type InterruptProjection = {
   description: string;
   revision: number;
   streamOffset: string;
+  schemaVersion?: string;
+  allowAccept?: boolean;
+  allowReject?: boolean;
 };
 
 /**
@@ -138,6 +141,7 @@ export type AgentWorkbenchAction =
   | { type: 'set_session'; session: WorkbenchSessionProjection | null }
   | { type: 'set_explicit_thread_id'; threadId: string | null }
   | { type: 'set_explicit_task_id'; taskId: string | null }
+  | { type: 'set_pending_interrupts'; interrupts: InterruptProjection[] }
   | {
       type: 'set_resolve_source';
       resolveSource: AgentWorkbenchClientState['resolveSource'];
@@ -298,6 +302,8 @@ export function reduceAgentWorkbench(
       return ok({ ...state, explicitThreadId: action.threadId });
     case 'set_explicit_task_id':
       return ok({ ...state, explicitTaskId: action.taskId });
+    case 'set_pending_interrupts':
+      return ok({ ...state, pendingInterrupts: action.interrupts });
     case 'set_resolve_source':
       return ok({ ...state, resolveSource: action.resolveSource });
     case 'set_mobile_pane':
@@ -577,6 +583,7 @@ function projectEvent(
         description: readString(payload, 'description')?.trim() || '',
         revision: readNumber(payload, 'revision') ?? 0,
         streamOffset: event.streamOffset,
+        schemaVersion: readString(payload, 'schemaVersion')?.trim(),
       };
       const without = state.pendingInterrupts.filter(
         (item) => item.interruptId !== interruptId

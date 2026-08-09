@@ -3,8 +3,17 @@
  * V31-24: Idle primary goal + proactive suggestions on Idle first screen.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { agentSemanticEventWireSchema } from '@meiye/contracts';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import {
+  agentSemanticEventWireSchema,
+  interruptPayloadSchema,
+} from '@meiye/contracts';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { __resetAgentWorkbenchHostStoreForTests } from './agent-event-store';
@@ -27,6 +36,54 @@ function renderWithQuery(node: React.ReactNode) {
 }
 
 describe('AgentWorkbenchHost Thread-root restore', () => {
+  it('loads a refresh-safe typed interrupt and resumes the exact id/revision', async () => {
+    let pending = [
+      interruptPayloadSchema.parse({
+        schemaVersion: 'interrupt-payload/v1' as const,
+        interruptId: 'interrupt-live-1',
+        threadId: 'thread-live',
+        runId: 'run-live',
+        workflowId: 'workflow-live',
+        step: 'context_injection',
+        revision: 7,
+        action: 'answer_question',
+        args: {},
+        config: {
+          allowAccept: true,
+          allowEdit: false,
+          allowReject: true,
+          allowRespond: false,
+        },
+        description: '价格已变化，请确认后继续。',
+        resourceId: 'ws-live',
+      }),
+    ];
+    const loadPendingInterrupts = vi.fn(async () => pending);
+    const resumeInterrupt = vi.fn(async ({ interrupt }) => {
+      expect(interrupt.interruptId).toBe('interrupt-live-1');
+      expect(interrupt.revision).toBe(7);
+      pending = [];
+      return { outcome: 'applied' };
+    });
+    render(
+      <AgentWorkbenchHost
+        enableIdleGoalProactive={false}
+        enableSessionRestore={false}
+        loadPendingInterrupts={loadPendingInterrupts}
+        resumeInterrupt={resumeInterrupt}
+      />
+    );
+
+    const row = await screen.findByTestId('agent-pending-interrupt');
+    expect(row).toHaveAttribute('data-interrupt-id', 'interrupt-live-1');
+    expect(row).toHaveAttribute('data-interrupt-revision', '7');
+    fireEvent.click(screen.getByTestId('agent-interrupt-accept'));
+    await waitFor(() => expect(resumeInterrupt).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(screen.queryByTestId('agent-pending-interrupt')).toBeNull()
+    );
+  });
+
   it('resumes the authenticated live seam from replay cursors and applies plan events', async () => {
     const subscribeLive = vi.fn(async (input) => {
       await input.onEvent(

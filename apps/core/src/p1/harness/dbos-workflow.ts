@@ -1,4 +1,5 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
   harnessInteractionAnswerSchema,
@@ -69,6 +70,7 @@ import type {
   HarnessDecisionStore,
 } from './decision-service.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
+import { HarnessExecutionFencePauseError } from './context-fence.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import {
   buildSemanticDecisionResumption,
@@ -158,6 +160,7 @@ export function harnessInterruptMirrorInput(input: {
   stage: HarnessStage;
   request: HarnessWorkflowInput;
   holdTimeoutSeconds?: number | null;
+  agentCoordinates?: { threadId: string; runId: string };
 }): { workspaceId: string; payload: InterruptPayload } {
   const { question, request, stage } = input;
   const executionConfirmation =
@@ -165,8 +168,9 @@ export function harnessInterruptMirrorInput(input: {
   const payload = interruptPayloadSchema.parse({
     schemaVersion: INTERRUPT_PAYLOAD_SCHEMA_VERSION,
     interruptId: question.questionId,
-    threadId: `harness-thread:${question.workflowId}`,
-    runId: question.workflowId,
+    threadId:
+      input.agentCoordinates?.threadId ?? `harness-thread:${question.workflowId}`,
+    runId: input.agentCoordinates?.runId ?? question.workflowId,
     workflowId: question.workflowId,
     step: stage,
     revision: question.workflowRevision,
@@ -326,11 +330,26 @@ export function createHarnessInterruptProtocolPort(input: {
     source: HarnessInterruptResolutionSource;
   }) => Promise<'applied' | 'replayed'>;
   getById: (interruptId: string) => Promise<StoredInterrupt | null>;
+  resolveAgentCoordinates?: (input: {
+    workspaceId: string;
+    workflowId: string;
+    request: HarnessWorkflowInput;
+  }) => Promise<{ threadId: string; runId: string }>;
 }): HarnessInterruptProtocolPort {
   return {
     async mirrorPending(mirrorInput) {
       const { workspaceId: _workspaceId, ...mirror } = mirrorInput;
-      const { workspaceId, payload } = harnessInterruptMirrorInput(mirror);
+      const agentCoordinates = input.resolveAgentCoordinates
+        ? await input.resolveAgentCoordinates({
+            workspaceId: mirrorInput.workspaceId,
+            workflowId: mirror.question.workflowId,
+            request: mirror.request,
+          })
+        : undefined;
+      const { workspaceId, payload } = harnessInterruptMirrorInput({
+        ...mirror,
+        ...(agentCoordinates ? { agentCoordinates } : {}),
+      });
       try {
         await input.request({ workspaceId, payload });
       } catch (error) {
@@ -1222,13 +1241,60 @@ export function registerHarnessDbosWorkflow(
         const forceLegacyFiveStage = resolveForceLegacyFiveStage
           ? await resolveForceLegacyFiveStage()
           : false;
-        result = await runHarnessWorkflow(
-          workflowId,
-          request,
-          withExecutionConfirmationStagePort(ports, executionConfirmation),
-          runtime,
-          { forceLegacyFiveStage },
+        const executionPorts = withExecutionConfirmationStagePort(
+          ports,
+          executionConfirmation,
         );
+        for (;;) {
+          try {
+            result = await runHarnessWorkflow(
+              workflowId,
+              request,
+              executionPorts,
+              runtime,
+              { forceLegacyFiveStage },
+            );
+            break;
+          } catch (error) {
+            if (!(error instanceof HarnessExecutionFencePauseError)) {
+              throw error;
+            }
+            const question = contextFencePauseQuestion({
+              workflowId,
+              workflowRevision: request.workflowRevision,
+              error,
+            });
+            const resolved = await runtime.awaitDecision(
+              question,
+              'context_injection',
+            );
+            if ('cancelled' in resolved) {
+              throw new HarnessWorkflowCancellation(
+                resolved.merchantMessage,
+                resolved.resolutionSource,
+              );
+            }
+            const command = 'command' in resolved ? resolved.command : resolved;
+            if (command.decision.state !== 'accepted') {
+              throw new HarnessWorkflowCancellation(
+                '你已选择不继续使用变化后的事实，本次任务已结束。',
+                'decision',
+              );
+            }
+            const shared = 'shared' in executionPorts
+              ? executionPorts.shared
+              : executionPorts;
+            if (!shared.acknowledgeContextFence) {
+              throw new Error(
+                'Context fence pause requires an acknowledgement port.',
+              );
+            }
+            await shared.acknowledgeContextFence({
+              workflowId,
+              diff: error.diff,
+            });
+          }
+        }
       } catch (error) {
         if (error instanceof HarnessInteractionLayoutResetRequiredError) {
           closeProgressStream = false;
@@ -1372,6 +1438,34 @@ export function registerHarnessDbosWorkflow(
   };
   return DBOS.registerWorkflow(workflow, {
     name: 'beautyMarketingHarnessWorkflow',
+  });
+}
+
+export function contextFencePauseQuestion(input: {
+  workflowId: string;
+  workflowRevision: number;
+  error: HarnessExecutionFencePauseError;
+}): QuestionCard {
+  const diffId = createHash('sha256')
+    .update(JSON.stringify(input.error.diff))
+    .digest('hex')
+    .slice(0, 16);
+  return questionCardSchema.parse({
+    questionId: `${input.workflowId}:context-fence:${diffId}`,
+    workflowId: input.workflowId,
+    workflowRevision: input.workflowRevision,
+    question: input.error.merchantMessage,
+    options: [
+      { id: 'continue_after_review', label: '确认变化后继续' },
+      { id: 'stop', label: '停止本次任务' },
+    ],
+    freeText: { enabled: false },
+    response: {
+      field: 'context_fence_acknowledgement',
+      reason: '已引用的价格、日期或权利版本发生变化',
+    },
+    unattended: 'hold',
+    scope: 'current_task',
   });
 }
 

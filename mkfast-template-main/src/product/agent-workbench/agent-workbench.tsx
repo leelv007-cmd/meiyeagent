@@ -9,11 +9,15 @@
  * Living Plan (V31-10) mounts inside Workstream when plan.* events land.
  */
 
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { queryP1 } from '@/p1/client';
 
 import type { OutcomeSelfReportChipSignal } from '@meiye/contracts';
+import type {
+  InterruptPayload,
+  ResumeInterruptCommand,
+} from '@meiye/contracts';
 
 import { MemoryInjectionReceiptPanel } from '@/product/memory-injection-receipt';
 
@@ -37,6 +41,10 @@ import type { WorkstreamMobilePane } from './mobile-workstream-switch';
 import type { CommitStripAction, CommitStripView } from './plan';
 import { registerPlanSurfaces } from './plan/register-plan-surfaces';
 import type { PublishHandoffPanelView } from './publish-handoff';
+import {
+  listPendingInterrupts,
+  resumePendingInterrupt,
+} from './typed-interrupt-client';
 import {
   workbenchRootMode,
   type WorkbenchSessionResolveResponse,
@@ -102,6 +110,14 @@ export type AgentWorkbenchHostProps = {
   ) => void | Promise<void>;
   onSelfReportIgnore?: () => void | Promise<void>;
   className?: string;
+  loadPendingInterrupts?: (input: {
+    threadId?: string;
+    signal?: AbortSignal;
+  }) => Promise<InterruptPayload[]>;
+  resumeInterrupt?: (input: {
+    interrupt: InterruptPayload;
+    type: ResumeInterruptCommand['type'];
+  }) => Promise<unknown>;
 };
 
 const defaultLoadSession: AgentWorkbenchSessionLoader = async ({
@@ -137,10 +153,16 @@ export function AgentWorkbenchHost({
   onSelfReportChip,
   onSelfReportIgnore,
   className,
+  loadPendingInterrupts = listPendingInterrupts,
+  resumeInterrupt = resumePendingInterrupt,
 }: AgentWorkbenchHostProps) {
   const store = getAgentWorkbenchHostStore();
   const state = useAgentWorkbenchState(store);
   const dispatch = useAgentWorkbenchDispatch(store);
+  const [interruptError, setInterruptError] = useState<string | null>(null);
+  const [resumingInterruptId, setResumingInterruptId] = useState<string | null>(
+    null
+  );
   // Dedupes in-flight / completed restores across Strict Mode remounts.
   const restoreEpochRef = useRef(0);
   const lastRestoredKeyRef = useRef<string | null>(null);
@@ -216,6 +238,79 @@ export function AgentWorkbenchHost({
     })();
   }, [enableSessionRestore, explicitThreadId, loadReplay, loadSession, store]);
 
+  const refreshPendingInterrupts = useCallback(
+    async (signal?: AbortSignal) => {
+      const pending = await loadPendingInterrupts({
+        ...(explicitThreadId ? { threadId: explicitThreadId } : {}),
+        ...(signal ? { signal } : {}),
+      });
+      store.dispatch({
+        type: 'set_pending_interrupts',
+        interrupts: pending.map((interrupt) => ({
+          interruptId: interrupt.interruptId,
+          interruptType: interrupt.action,
+          description: interrupt.description,
+          revision: interrupt.revision,
+          schemaVersion: interrupt.schemaVersion,
+          allowAccept: interrupt.config.allowAccept,
+          allowReject: interrupt.config.allowReject,
+          streamOffset: '0',
+        })),
+      });
+      return pending;
+    },
+    [explicitThreadId, loadPendingInterrupts, store]
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void refreshPendingInterrupts(controller.signal).catch((error) => {
+      if (!controller.signal.aborted) {
+        setInterruptError(
+          error instanceof Error ? error.message : '待处理确认加载失败'
+        );
+      }
+    });
+    return () => controller.abort();
+  }, [refreshPendingInterrupts]);
+
+  const handleInterruptResume = useCallback(
+    async (
+      projection: import('./agent-event-reducer').InterruptProjection,
+      type: ResumeInterruptCommand['type']
+    ) => {
+      setInterruptError(null);
+      setResumingInterruptId(projection.interruptId);
+      try {
+        const pending = await loadPendingInterrupts({
+          ...(explicitThreadId ? { threadId: explicitThreadId } : {}),
+        });
+        const exact = pending.find(
+          (candidate) =>
+            candidate.interruptId === projection.interruptId &&
+            candidate.revision === projection.revision
+        );
+        if (!exact) {
+          throw new Error('待处理确认已变化，请刷新后重试。');
+        }
+        await resumeInterrupt({ interrupt: exact, type });
+        await refreshPendingInterrupts();
+      } catch (error) {
+        setInterruptError(
+          error instanceof Error ? error.message : '确认恢复失败'
+        );
+      } finally {
+        setResumingInterruptId(null);
+      }
+    },
+    [
+      explicitThreadId,
+      loadPendingInterrupts,
+      refreshPendingInterrupts,
+      resumeInterrupt,
+    ]
+  );
+
   useEffect(() => {
     const threadId = state.session?.threadId;
     if (
@@ -278,7 +373,9 @@ export function AgentWorkbenchHost({
       {/* V31-18: injection receipt visibility on the task-detail surface.
        * explicitTaskId is the only task-scoped identity the host owns; the
        * panel no-ops when the task has no receipt yet. */}
-      {explicitTaskId ? <MemoryInjectionReceiptPanel taskId={explicitTaskId} /> : null}
+      {explicitTaskId ? (
+        <MemoryInjectionReceiptPanel taskId={explicitTaskId} />
+      ) : null}
       <AgentWorkstream
         className={className}
         livingPlanCommitStrip={livingPlanCommitStrip}
@@ -291,6 +388,9 @@ export function AgentWorkbenchHost({
           })
         }
         onLivingPlanCommitAction={onLivingPlanCommitAction}
+        interruptError={interruptError}
+        onInterruptResume={handleInterruptResume}
+        resumingInterruptId={resumingInterruptId}
         onMobilePaneChange={(pane: WorkstreamMobilePane) =>
           dispatch({ type: 'set_mobile_pane', pane })
         }

@@ -16,13 +16,17 @@ import {
   InterruptProtocolService,
   MemoryInterruptStore,
 } from './interrupt-protocol.js';
-import { HarnessExecutionFenceSafeStopError } from './context-fence.js';
+import {
+  HarnessExecutionFencePauseError,
+  HarnessExecutionFenceSafeStopError,
+} from './context-fence.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 
 import {
   commitHarnessBillingOrSchedule,
   assertHarnessInteractionContinuationLayout,
   confirmationCardDecision,
+  contextFencePauseQuestion,
   createHarnessInterruptProtocolPort,
   createHarnessInterruptResumeBridge,
   failHarnessWorkflowPreservingExecutionError,
@@ -65,6 +69,22 @@ const settlement = {
   quoteId: 'quote-billing-failure',
   quoteRevision: 'quote-revision-1',
 };
+
+test('context fence drift becomes a held typed question, not a terminal failure', () => {
+  const question = contextFencePauseQuestion({
+    workflowId: 'workflow-fence',
+    workflowRevision: 4,
+    error: new HarnessExecutionFencePauseError(
+      '已引用的价格发生变化，请确认后继续。',
+      { quote: { frozen: 1, live: 2 } },
+    ),
+  });
+  assert.equal(question.workflowId, 'workflow-fence');
+  assert.equal(question.workflowRevision, 4);
+  assert.equal(question.unattended, 'hold');
+  assert.equal(question.response.field, 'context_fence_acknowledgement');
+  assert.match(question.questionId, /context-fence/u);
+});
 
 test('invalid suspension data fails open to a valid held recovery card', () => {
   const question = suspensionQuestionFailOpen(
@@ -1468,6 +1488,32 @@ test('mirror port tolerates a durable retry that recomputes the hold expiry', as
     resourceId: 'workspace-1',
   });
   assert.equal(pending.length, 0, 'workflow resolution clears the mirrored row');
+});
+
+test('production mirror resolves the real AgentThread coordinates', async () => {
+  const store = new MemoryInterruptStore();
+  const service = new InterruptProtocolService(
+    store,
+    { async hasMembership() { return true; } },
+    () => '2026-08-08T12:00:00.000Z',
+  );
+  const port = createHarnessInterruptProtocolPort({
+    request: (input) => service.request(input),
+    resolveByWorkflow: (input) => service.resolveByWorkflow(input),
+    getById: (id) => store.getById(id),
+    async resolveAgentCoordinates() {
+      return { threadId: 'thread:composer:real', runId: 'run:composer:real' };
+    },
+  });
+  await port.mirrorPending({
+    workspaceId: 'workspace-1',
+    question: interruptQuestion(),
+    stage: 'execution_selection',
+    request: interruptRequest(),
+  });
+  const row = await store.getById('question-1');
+  assert.equal(row?.payload.threadId, 'thread:composer:real');
+  assert.equal(row?.payload.runId, 'run:composer:real');
 });
 
 test('mirror port rejects a genuine same-revision payload conflict', async () => {

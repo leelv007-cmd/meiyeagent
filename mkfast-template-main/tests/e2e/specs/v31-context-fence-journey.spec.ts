@@ -6,6 +6,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import {
+  productState,
   seedComposerInlineAuthorize,
   seedConfirmedStore,
 } from '../fixtures/product';
@@ -30,23 +31,97 @@ async function openCustomizedCreate(page: Page) {
   await selectComposerLens(page, 'image_text');
   await expect(page.getByTestId('composer-home')).toBeVisible();
 }
-
-
-/**
- * D-043 progressive fact confirm: intents that name missing/conflicting key
- * facts (price, deadline, …) suspend on a server-driven 「确认本次创作」 gate
- * before the run continues. The card is Core-rendered (no static testid in
- * web src) — anchor on its accessible name. Click through when it appears so
- * the journey reaches the plan surfaces behind it.
- */
-async function confirmCreationGateIfPresent(page: Page) {
-  const confirm = page.getByRole('button', { name: '确认并开始' });
-  try {
-    await confirm.waitFor({ state: 'visible', timeout: 45_000 });
-  } catch {
-    return; // No gate for this intent — run continues directly.
+async function changeConfirmedPriceFact(page: Page) {
+  const state = await productState(page);
+  const store = state.store;
+  const project = store?.projects.find(
+    ({ id }) => id === 'project-grounded-creation'
+  );
+  if (store?.revision === undefined || !project) {
+    throw new Error('Confirmed store project is missing before price drift');
   }
-  await confirm.click();
+  await page.evaluate(
+    async ({ project: confirmedProject, storeRevision, workspaceId }) => {
+      const capturedAt = new Date().toISOString();
+      const batchId = `v31-price-drift-${crypto.randomUUID()}`;
+      const candidateId = `${batchId}:price`;
+      const response = await fetch('/api/core/p1/commands', {
+        body: JSON.stringify({
+          module: 'asset-memory',
+          action: 'finalize_store_intake',
+          payload: {
+            batch: {
+              batchId,
+              candidates: [
+                {
+                  candidateId,
+                  fact: {
+                    effectiveFrom: capturedAt,
+                    expiresAt: null,
+                    key: `service.${confirmedProject.id}.price`,
+                    kind: 'price',
+                    scope: { storeId: workspaceId },
+                    source: {
+                      capturedAt,
+                      kind: 'user_confirmation',
+                      referenceId: batchId,
+                    },
+                    value: { amount: 269, currency: 'CNY' },
+                  },
+                  objectKind: 'store_fact',
+                  status: 'pending',
+                },
+              ],
+              source: {
+                capabilityStatus: 'assisted',
+                capturedAt,
+                example: false,
+                kind: 'manual',
+                referenceId: batchId,
+                sourceId: `${batchId}:source`,
+                sourceWorkspaceId: workspaceId,
+              },
+              summary: 'V31 price drift after creation confirmation.',
+              taskId: `${batchId}:task`,
+            },
+            confirmations: [
+              {
+                candidateId,
+                expectedFactRevision: 1,
+                factId: `store-project:${confirmedProject.id}:price`,
+              },
+            ],
+            profilePatch: {
+              expectedRevision: storeRevision,
+              projects: {
+                upsert: [
+                  {
+                    ...confirmedProject,
+                    price: 269,
+                    priceValidUntil: confirmedProject.priceValidUntil ?? null,
+                  },
+                ],
+              },
+            },
+          },
+        }),
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': `v31-price-drift-${crypto.randomUUID()}`,
+        },
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error(`Price drift injection failed: ${response.status}`);
+      }
+    },
+    {
+      project,
+      storeRevision: store.revision,
+      workspaceId: state.workspaceId,
+    }
+  );
 }
 
 test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
@@ -63,32 +138,22 @@ test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
     await seedConfirmedStore(page);
     await openCustomizedCreate(page);
 
-    await page.getByTestId('composer-intent-input').fill(
-      '帮我按确认方案做图文，稍后我会改价格事实。',
-    );
+    await page
+      .getByTestId('composer-intent-input')
+      .fill('帮我按确认方案做图文，稍后我会改价格事实。');
     await page.getByTestId('composer-submit').click();
-    await confirmCreationGateIfPresent(page);
+    const creationConfirm = page.getByRole('button', { name: '确认并开始' });
+    await expect(creationConfirm).toBeVisible({ timeout: 120_000 });
+    await changeConfirmedPriceFact(page);
+    await creationConfirm.click();
 
-    // Seam: when Core marks plan stale, UI must surface reconfirm / diff —
-    // never silently replace the confirmed plan. Production surfaces carry the
-    // agent- prefix (agent-plan-diff renders adjustments; the commit strip
-    // holds start behind `plan_stale`).
-    const staleSurface = page
-      .getByTestId('agent-plan-diff')
-      .or(page.getByText(/方案已变化|需要重新确认|事实有更新/));
-
-    // Without live drift injection fixtures, this assertion is soft:
-    // either stale surface appears or the living plan / question interaction
-    // remains the merchant-visible truth (no silent scheme swap).
-    const planOrInterrupt = page
-      .getByTestId('agent-living-plan')
-      .or(page.getByTestId('agent-commit-strip'))
-      .or(page.getByTestId('ask-merchant-group-card'))
-      .or(page.getByTestId('composer-question-card'));
-
-    await expect(planOrInterrupt.or(staleSurface).first()).toBeVisible({
-      timeout: 120_000,
-    });
+    const interrupt = page.getByTestId('agent-pending-interrupt');
+    await expect(interrupt).toBeVisible({ timeout: 120_000 });
+    await expect(interrupt).toContainText(/价格|事实|变化/);
+    await expect(interrupt).toHaveAttribute(
+      'data-interrupt-schema-version',
+      'interrupt-payload/v1'
+    );
   });
 
   test('§37.4-F rights revoke stops safely without double charge copy', async ({
@@ -101,23 +166,16 @@ test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
     await seedConfirmedStore(page);
     await openCustomizedCreate(page);
 
-    await page.getByTestId('composer-intent-input').fill(
-      '用门店授权素材做一组笔记配图。',
-    );
+    await page
+      .getByTestId('composer-intent-input')
+      .fill('用门店授权素材做一组笔记配图。');
     await page.getByTestId('composer-submit').click();
-    await confirmCreationGateIfPresent(page);
-
-    // Seam contract for fail-closed rights fence: the run must stay observable
-    // (activity / narrative / one question), and merchant-facing language must
-    // not promise a second charge; stop/pause messaging is acceptable.
-    const stopOrHold = page
-      .getByText(/授权已撤销|安全停止|不会重复扣费|暂停/)
-      .or(page.getByTestId('ask-merchant-group-card'))
-      .or(page.getByTestId('composer-question-card'))
-      .or(page.getByTestId('agent-activity-line'))
-      .or(page.getByTestId('agent-narrative-line'));
-
-    await expect(stopOrHold.first()).toBeVisible({ timeout: 120_000 });
+    await page.getByRole('button', { name: '确认并开始' }).click();
+    await expect(
+      page.getByText(/授权已撤销|安全停止|不会重复扣费/).first()
+    ).toBeVisible({
+      timeout: 120_000,
+    });
     await expect(page.getByText(/再次扣费|重复扣费/)).toHaveCount(0);
   });
 });

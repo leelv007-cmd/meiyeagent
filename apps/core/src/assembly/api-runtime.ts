@@ -4,6 +4,7 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import { confirmationCardTimeoutSecondsSchema } from '@meiye/contracts';
 import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
+import { fingerprintValue } from '../p1/job-runtime/job-contracts.js';
 import {
   ADMIN_CONFIG_KEY_CLASSIFICATION,
   createMarketingIdentityReferenceResolver,
@@ -85,7 +86,10 @@ import {
 } from '../p1/harness/interaction-service.js';
 import { requireHarnessFrozenPrompt } from '../p1/harness/langfuse-prompts.js';
 import { langfuseSenderFromEnv } from '../p1/harness/langfuse-sender.js';
-import { createResolveExecutionPlanLiveFacts } from '../p1/harness/execution-plan-live-facts.js';
+import {
+  createAuthoritativeExecutionPlanLiveFactsPorts,
+  createResolveExecutionPlanLiveFacts,
+} from '../p1/harness/execution-plan-live-facts.js';
 import { InterruptProtocolService } from '../p1/harness/interrupt-protocol.js';
 import { PostgresNoteMediaAdmissionCoordinator } from '../p1/harness/note-media-admission.js';
 import {
@@ -1207,8 +1211,14 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       // V31-14 (§23.4): mid-execution fence — rights revocation safe-stops
       // without re-charge; referenced price/date drift pauses with a prompt.
       fence: {
-        resolveLiveFacts: async ({ request }) =>
-          createResolveExecutionPlanLiveFacts({
+        resolveLiveFacts: async ({ request }) => {
+          const authoritative = createAuthoritativeExecutionPlanLiveFactsPorts({
+            facts: storeFactLedger,
+            identities: marketingIdentities,
+            request,
+            rights: contentPackageRightsResolver,
+          });
+          return createResolveExecutionPlanLiveFacts({
             async resolveQuoteHead({ workspaceId, quoteId }) {
               const quote = await productQuoteService.getQuote(
                 quoteId,
@@ -1220,17 +1230,12 @@ export async function startApi(env: NodeJS.ProcessEnv) {
                 revision: quote.revision,
               };
             },
-            async resolveRightsHeads({ rightsRevisionRefs }) {
-              // Freeze refs are opaque revision ids from Plan Compiler; the
-              // dedicated rights head table is a documented gap — production
-              // reports the freeze set as current, delivery/fence ports stay
-              // fail-closed on package/asset revocation.
-              return rightsRevisionRefs.map((revisionId) => ({
-                revisionId,
-                revoked: false,
-              }));
-            },
-          })({ workflowId: request.workflowRevision ? String(request.workflowRevision) : '', request }),
+            ...authoritative,
+          })({
+            workflowId: String(request.workflowRevision),
+            request,
+          });
+        },
       },
     });
     // Single wiring owner: wrap copy ports so image/video share the same
@@ -1346,7 +1351,15 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       },
       () => new Date().toISOString(),
       // Resume CAS → DBOS recv re-injection (exactly-once send topic).
-      createHarnessInterruptResumeBridge()
+      createHarnessInterruptResumeBridge(),
+      {
+        async project(candidate) {
+          if (!agentSemanticEventProjector) {
+            throw new Error('Agent semantic interrupt projector is unavailable.');
+          }
+          return agentSemanticEventProjector.project(candidate);
+        },
+      },
     );
     const harnessWorkflow = registerHarnessDbosWorkflow(
       harnessStages,
@@ -1361,6 +1374,22 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           resolveByWorkflow: (input) =>
             interruptProtocolService!.resolveByWorkflow(input),
           getById: (id) => interruptStore.getById(id),
+          async resolveAgentCoordinates({ workspaceId, workflowId }) {
+            const runId = `run:composer:${fingerprintValue({
+              workspaceId,
+              taskId: workflowId,
+            }).slice(0, 32)}`;
+            const run = await agentSessionStore.getRun({
+              resourceId: workspaceId,
+              runId,
+            });
+            if (!run) {
+              throw new Error(
+                `Agent Run ${runId} is unavailable for interrupt projection.`,
+              );
+            }
+            return { threadId: run.threadId, runId: run.runId };
+          },
         }),
         // V31-11: confirmation gate binds ExecutionConfirmationService; the
         // same credit operation id makes execution-time settlement a no-op
@@ -1393,29 +1422,25 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         // V31-12: DBOS pre-run re-verification of admitted ExecutionPlanSnapshot.
         executionPlanAdmission: executionPlanAdmissionService,
         // V31-14: production live fence reader (quote + rights heads).
-        resolveExecutionPlanLiveFacts: createResolveExecutionPlanLiveFacts({
-          async resolveQuoteHead({ workspaceId, quoteId }) {
-            const quote = await productQuoteService.getQuote(
-              quoteId,
-              workspaceId,
-            );
-            if (!quote) return null;
-            return {
-              quoteId,
-              revision: quote.revision,
-            };
-          },
-          async resolveRightsHeads({ rightsRevisionRefs }) {
-            // Freeze refs are opaque revision ids from Plan Compiler. Without a
-            // dedicated rights-revision head table, production reports the freeze
-            // set as current (not revoked). Package/asset revocation is still
-            // fail-closed at delivery and mid-execution fence ports.
-            return rightsRevisionRefs.map((revisionId) => ({
-              revisionId,
-              revoked: false,
-            }));
-          },
-        }),
+        resolveExecutionPlanLiveFacts: async ({ workflowId, request }) => {
+          const authoritative = createAuthoritativeExecutionPlanLiveFactsPorts({
+            facts: storeFactLedger,
+            identities: marketingIdentities,
+            request,
+            rights: contentPackageRightsResolver,
+          });
+          return createResolveExecutionPlanLiveFacts({
+            async resolveQuoteHead({ workspaceId, quoteId }) {
+              const quote = await productQuoteService.getQuote(
+                quoteId,
+                workspaceId,
+              );
+              if (!quote) return null;
+              return { quoteId, revision: quote.revision };
+            },
+            ...authoritative,
+          })({ workflowId, request });
+        },
         // V31-14: force_legacy_five_stage kill switch (landed).
         async resolveForceLegacyFiveStage() {
           const state = await opsConsoleStore.getKillSwitch(

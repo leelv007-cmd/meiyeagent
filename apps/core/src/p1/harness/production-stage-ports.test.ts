@@ -4251,6 +4251,37 @@ test('runner fence: referenced price/date drift → pause prompt', async () => {
   assert.equal(fences.length, 0, 'pause prompt must not reach the recompile port');
 });
 
+test('runner fence: exact merchant acknowledgement resumes once', async () => {
+  const { ports, fences } = fencePorts({
+    fence: { resolveLiveFacts: async () => ({ quoteRevision: 99 }) },
+  });
+  const request: HarnessWorkflowInput = {
+    ...taskInput(),
+    executionPlanSnapshot: planSnapshot(),
+  };
+  let pause: HarnessExecutionFencePauseError | undefined;
+  await assert.rejects(
+    () => ports.fenceContext(fenceInput(request)),
+    (error: unknown) => {
+      if (!(error instanceof HarnessExecutionFencePauseError)) return false;
+      pause = error;
+      return true;
+    },
+  );
+  assert.ok(pause);
+  ports.acknowledgeContextFence({
+    workflowId: 'task-fence',
+    diff: pause.diff,
+  });
+  await ports.fenceContext(fenceInput(request));
+  assert.equal(fences.length, 1);
+  await assert.rejects(
+    () => ports.fenceContext(fenceInput(request)),
+    HarnessExecutionFencePauseError,
+    'acknowledgement is consumed and does not disable future fences',
+  );
+});
+
 test('runner fence: current live facts fall through to the recompile port', async () => {
   const { ports, fences } = fencePorts({
     fence: {

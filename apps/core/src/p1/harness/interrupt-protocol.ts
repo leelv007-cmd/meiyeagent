@@ -19,6 +19,7 @@ import {
   type ListPendingInterruptsQuery,
   type ResumeInterruptCommand,
 } from '@meiye/contracts';
+import type { SemanticEventCandidate } from '../agent-semantic-events/index.js';
 
 export type InterruptRecordStatus = 'pending' | 'resolved' | 'expired';
 
@@ -106,6 +107,38 @@ export type InterruptResumeBridgeInput = {
 export type InterruptResumeBridgePort = {
   deliver(input: InterruptResumeBridgeInput): Promise<void>;
 };
+
+export type InterruptSemanticEventPort = {
+  project(candidate: SemanticEventCandidate): Promise<unknown>;
+};
+
+function interruptSemanticCandidate(input: {
+  payload: InterruptPayload;
+  eventType: 'interrupt.requested' | 'interrupt.resolved';
+  occurredAt: string;
+}): SemanticEventCandidate {
+  const { payload, eventType, occurredAt } = input;
+  return {
+    eventId: `${payload.interruptId}:${eventType}:r${payload.revision}`,
+    threadId: payload.threadId,
+    resourceId: payload.resourceId,
+    contextRole: 'excluded',
+    sourceDomain: 'interrupt',
+    sourceEntityId: payload.interruptId,
+    sourceRevision: String(payload.revision),
+    correlationId: payload.runId,
+    causationId: payload.workflowId,
+    eventType,
+    payload: {
+      interruptId: payload.interruptId,
+      interruptType: payload.action,
+      description: payload.description,
+      revision: payload.revision,
+      schemaVersion: payload.schemaVersion,
+    },
+    occurredAt,
+  };
+}
 
 function resumeFingerprint(command: ResumeInterruptCommand): string {
   const payload = {
@@ -228,6 +261,8 @@ export class InterruptProtocolService {
      * 'replayed' alike so a failed delivery can be retried at-least-once.
      */
     private readonly resumeBridge?: InterruptResumeBridgePort,
+    /** Canonical AgentThread projection; eventId makes replay repair idempotent. */
+    private readonly semanticEvents?: InterruptSemanticEventPort,
   ) {}
 
   /**
@@ -238,9 +273,12 @@ export class InterruptProtocolService {
     payload: InterruptPayload;
   }): Promise<{ record: StoredInterrupt; replayed: boolean }> {
     const payload = interruptPayloadSchema.parse(input.payload);
-    if (payload.resourceId !== input.workspaceId && payload.resourceId) {
-      // resourceId is the merchant resource; workspaceId is the auth boundary.
-      // For v1 they share the workspace id in production wiring.
+    if (payload.resourceId !== input.workspaceId) {
+      throw new InterruptProtocolError(
+        'FORBIDDEN',
+        'Interrupt resource must match the authenticated workspace.',
+        403,
+      );
     }
     const existing = await this.store.getById(payload.interruptId);
     if (
@@ -249,6 +287,13 @@ export class InterruptProtocolService {
       isDeepStrictEqual(existing.payload, payload) &&
       existing.workspaceId === input.workspaceId
     ) {
+      await this.semanticEvents?.project(
+        interruptSemanticCandidate({
+          payload: existing.payload,
+          eventType: 'interrupt.requested',
+          occurredAt: existing.createdAt,
+        }),
+      );
       return { record: existing, replayed: true };
     }
     const record = await this.store.putPending({
@@ -257,6 +302,13 @@ export class InterruptProtocolService {
       workspaceId: input.workspaceId,
       createdAt: this.now(),
     });
+    await this.semanticEvents?.project(
+      interruptSemanticCandidate({
+        payload: record.payload,
+        eventType: 'interrupt.requested',
+        occurredAt: record.createdAt,
+      }),
+    );
     return { record, replayed: false };
   }
 
@@ -320,6 +372,13 @@ export class InterruptProtocolService {
             command,
           });
         }
+        await this.semanticEvents?.project(
+          interruptSemanticCandidate({
+            payload: result.row.payload,
+            eventType: 'interrupt.resolved',
+            occurredAt: result.row.resolvedAt ?? this.now(),
+          }),
+        );
         return { outcome: result.outcome, record: result.row, command };
       }
       case 'stale':
@@ -388,7 +447,16 @@ export class InterruptProtocolService {
       fingerprint,
       resolvedAt: this.now(),
     });
-    if (result.outcome === 'applied') return 'applied';
+    if (result.outcome === 'applied' || result.outcome === 'replayed') {
+      await this.semanticEvents?.project(
+        interruptSemanticCandidate({
+          payload: result.row.payload,
+          eventType: 'interrupt.resolved',
+          occurredAt: result.row.resolvedAt ?? this.now(),
+        }),
+      );
+      return result.outcome;
+    }
     // replayed / stale / conflict / expired / missing: nothing more to do.
     return 'replayed';
   }

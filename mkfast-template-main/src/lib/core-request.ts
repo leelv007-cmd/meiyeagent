@@ -242,6 +242,9 @@ export type WorkspaceAgentSemanticResource =
   `p1/agent-threads/${string}/${'events' | 'replay'}`;
 export type WorkspaceHarnessTaskCollectionResource = 'p1/harness/tasks';
 export type WorkspacePendingActionsResource = 'p1/pending-actions';
+export type WorkspacePendingInterruptResource =
+  | 'p1/pending-interrupts'
+  | 'p1/interrupts/resume';
 export type WorkspaceHarnessDecisionResource =
   `p1/harness/tasks/${string}/decision`;
 export type WorkspaceHarnessInteractionResource =

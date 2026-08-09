@@ -54,54 +54,30 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     await intent.fill('帮我做一组含配图的小红书笔记，奶油风美甲。');
     await page.getByTestId('composer-submit').click();
 
-    // Wait for a typed-interrupt surface. Production renderers: ask-merchant
-    // group / legacy question card (ask_merchant), the in-stream execution
-    // confirm card (execution_confirm, P1-05), or the commit strip holding a
-    // plan confirm (agent- prefix is the real workbench namespace).
-    // The D-043 progressive fact confirm (「确认本次创作」, durable across
-    // refresh since QA ISSUE-003 fix) is itself a pending typed-interrupt
-    // surface and the deterministic one for this intent; the other renderers
-    // stay in the chain for runs that suspend elsewhere.
-    const interruptHost = page
-      .getByRole('region', { name: '确认本次创作' })
-      .or(page.getByTestId('execution-confirmation-interaction-card'))
-      .or(page.getByTestId('composer-question-card'))
-      .or(page.getByTestId('ask-merchant-group-card'))
-      .or(page.getByTestId('agent-commit-strip'));
-
-    await expect(interruptHost.first()).toBeVisible({ timeout: 120_000 });
-
-    // Capture visible interrupt copy before refresh.
-    const beforeText = (await interruptHost.first().innerText()).trim();
+    await page.getByRole('button', { name: '确认并开始' }).click();
+    const interruptHost = page.getByTestId('agent-pending-interrupt');
+    await expect(interruptHost).toBeVisible({ timeout: 120_000 });
+    const interruptId = await interruptHost.getAttribute('data-interrupt-id');
+    const revision = await interruptHost.getAttribute(
+      'data-interrupt-revision'
+    );
+    expect(interruptId).toBeTruthy();
+    expect(revision).toMatch(/^\d+$/u);
+    const beforeText = (await interruptHost.innerText()).trim();
     expect(beforeText.length).toBeGreaterThan(0);
 
     // §37.4-H: refresh / reconnect must not drop pending interrupt.
     await page.reload();
-    await expect(interruptHost.first()).toBeVisible({ timeout: 60_000 });
-    const afterText = (await interruptHost.first().innerText()).trim();
-    expect(afterText.length).toBeGreaterThan(0);
-
-    // Resume by accepting / confirming (stable interruptId+revision CAS on Core).
-    const resume = interruptHost
-      .first()
-      .getByRole('button', { name: /确认执行|确认|继续|同意/ })
-      .first();
-    if (await resume.isVisible().catch(() => false)) {
-      await resume.click();
-      // After resume, interrupt host should clear or progress.
-      await expect
-        .poll(async () => {
-          const still = await interruptHost.first().isVisible().catch(() => false);
-          const progress = await page
-            .getByTestId('agent-activity-line')
-            .or(page.getByTestId('agent-narrative-line'))
-            .first()
-            .isVisible()
-            .catch(() => false);
-          return !still || progress;
-        }, { timeout: 60_000 })
-        .toBeTruthy();
-    }
+    await expect(interruptHost).toHaveAttribute(
+      'data-interrupt-id',
+      interruptId!
+    );
+    await expect(interruptHost).toHaveAttribute(
+      'data-interrupt-revision',
+      revision!
+    );
+    await page.getByTestId('agent-interrupt-accept').click();
+    await expect(interruptHost).toHaveCount(0, { timeout: 60_000 });
   });
 
   test('homepage pending interrupts list is workspace-scoped', async ({
@@ -112,18 +88,21 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     await loginByForm(page, user);
     await seedConfirmedStore(page);
 
-    // listPendingInterrupts surface: pending-actions inbox / mobile workbench.
-    await page.goto('/dashboard');
-    const inbox = page
-      .getByTestId('pending-actions-inbox')
-      .or(page.getByTestId('actionable-inbox'))
-      .or(page.getByRole('link', { name: /待处理|待确认/ }));
+    await openCustomizedCreate(page);
+    await page
+      .getByTestId('composer-intent-input')
+      .fill('按已确认的门店价格做一组图文。');
+    await page.getByTestId('composer-submit').click();
+    await page.getByRole('button', { name: '确认并开始' }).click();
+    const pending = page.getByTestId('agent-pending-interrupt');
+    await expect(pending).toBeVisible({ timeout: 120_000 });
+    const interruptId = await pending.getAttribute('data-interrupt-id');
 
-    // Inbox may be empty without an active interrupt — presence of route is enough
-    // for the seam contract when no pending rows exist.
-    await expect(page.getByTestId('dashboard-home').or(page.locator('main'))).toBeVisible({
-      timeout: 30_000,
-    });
-    void inbox;
+    await page.goto('/dashboard');
+    await expect(page.getByTestId('agent-pending-interrupt')).toHaveAttribute(
+      'data-interrupt-id',
+      interruptId!,
+      { timeout: 60_000 }
+    );
   });
 });

@@ -26,6 +26,7 @@ import {
   type WorkspaceHarnessInteractionResource,
   type WorkspaceHarnessProductMetricResource,
   type WorkspacePendingActionsResource,
+  type WorkspacePendingInterruptResource,
   type WorkspaceWorkflowEventResource,
 } from '@/lib/core-request';
 import { normalizeProductRole } from '@meiye/contracts';
@@ -131,6 +132,7 @@ export async function forwardWorkspaceCoreRequest(
     | WorkspaceComposerSubmissionResource
     | WorkspaceAgentSemanticResource
     | WorkspacePendingActionsResource
+    | WorkspacePendingInterruptResource
     | WorkspaceHarnessTaskCollectionResource
     | WorkspaceHarnessDecisionResource
     | WorkspaceHarnessInteractionResource
