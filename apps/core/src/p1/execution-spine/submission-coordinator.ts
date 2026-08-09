@@ -47,6 +47,12 @@ export interface CreationSubmissionRecord {
 	executionPlanFreeze?: ExecutionPlanCompileFreeze;
 	agentPlanPending?: boolean;
 	executionConfirmationContext?: HarnessWorkflowInput["executionConfirmationContext"];
+	/** Reliable outbox marker committed with the credit reservation and freeze. */
+	confirmationDispatch?: {
+		requestId: string;
+		state: "pending" | "dispatched" | "expired";
+		expiresAt?: string;
+	};
 }
 
 export interface CreationSubmissionUsageUnit {
@@ -94,6 +100,7 @@ export interface CreationSubmissionStore {
 		quoteRef?: CreationSubmissionRecord["snapshot"]["quote"];
 		credits?: number;
 		clarificationResolution?: ComposerClarificationResolution;
+		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
 	}): Promise<CreationSubmissionRecord>;
 	saveRepricedExecutionPlanFreeze?(input: {
 		workspaceId: string;
@@ -141,6 +148,7 @@ export interface CreationSubmissionStore {
 	listRecoverableHarnessStarts(input: {
 		limit: number;
 	}): Promise<Array<{ submission: CreationSubmissionRecord }>>;
+	expireUndispatchedConfirmationHolds?(input: { limit: number }): Promise<number>;
 }
 
 /** StagePort boundary: the coordinator never imports DBOS or a durable carrier. */
@@ -590,6 +598,11 @@ export class CreationSubmissionCoordinator {
 			},
 			...(this.agentPlanning ? { agentPlanPending: true } : {}),
 		};
+		const preparedBinding = await this.prepareAgentPlan(
+			submission,
+			request.agentThreadId,
+			false,
+		);
 		const claimed = await this.store.claim({
 			workspaceId: command.workspaceId,
 			idempotencyKey: command.idempotencyKey,
@@ -599,10 +612,13 @@ export class CreationSubmissionCoordinator {
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();
 		}
-		const agentBinding = await this.prepareAgentPlan(
-			claimed.submission,
-			request.agentThreadId
-		);
+		const agentBinding =
+			claimed.kind === "existing"
+				? await this.prepareAgentPlan(
+						claimed.submission,
+						request.agentThreadId,
+					)
+				: preparedBinding;
 		if (agentBinding?.makeReady !== false) {
 			await this.startHarness(claimed.submission);
 		} else {
@@ -625,21 +641,25 @@ export class CreationSubmissionCoordinator {
 
 	private async prepareAgentPlan(
 		submission: CreationSubmissionRecord,
-		continuationThreadId?: string
+		continuationThreadId?: string,
+		persistExisting = true,
 	): Promise<ComposerAgentBinding | undefined> {
-		if (!this.agentPlanning) return Promise.resolve(undefined);
-		const binding = await this.agentPlanning.prepare({
-			...(continuationThreadId ? { continuationThreadId } : {}),
-			submission,
-		});
-		if (submission.executionPlanFreeze) {
-			submission.agentPlanPending = false;
+		const binding = this.agentPlanning
+			? await this.agentPlanning.prepare({
+					...(continuationThreadId ? { continuationThreadId } : {}),
+					submission,
+				})
+			: undefined;
+		ensureConfirmationDispatch(submission);
+		if (submission.executionPlanFreeze) submission.agentPlanPending = false;
+		if (persistExisting && submission.executionPlanFreeze) {
 			const persisted = await this.store.saveExecutionPlanFreeze({
 				workspaceId: submission.snapshot.workspaceId,
 				submissionId: submission.snapshot.id,
 				freeze: submission.executionPlanFreeze,
 				quoteRef: submission.snapshot.quote,
 				credits: submission.usageReservation.credits,
+				confirmationDispatch: submission.confirmationDispatch,
 			});
 			submission.executionPlanFreeze = persisted.executionPlanFreeze;
 		}
@@ -976,13 +996,14 @@ export class CreationSubmissionCoordinator {
 
 	/** Replays only committed, reclaimable starts after a process crash. */
 	async recoverPendingStarts(limit = 100) {
+		await this.store.expireUndispatchedConfirmationHolds?.({ limit });
 		const recoverable = (
 			await this.store.listRecoverableHarnessStarts({ limit })
 		).filter(
 			(candidate) =>
 				candidate.submission.agentPlanPending !== true &&
 				candidate.submission.executionPlanFreeze?.approvalBasis !==
-				"merchant_confirmed",
+					"merchant_confirmed",
 		);
 		let failed = 0;
 		let started = 0;
@@ -997,6 +1018,16 @@ export class CreationSubmissionCoordinator {
 	}
 
 	private async startHarness(submission: CreationSubmissionRecord) {
+		if (
+			requiresPaidConfirmation(submission) &&
+			(submission.executionPlanFreeze?.approvalBasis !== "merchant_confirmed" ||
+				!submission.confirmationDispatch ||
+				submission.confirmationDispatch.state === "expired")
+		) {
+			throw new Error(
+				"Paid Harness start requires a durable freeze and confirmation outbox.",
+			);
+		}
 		const startLease = {
 			workspaceId: submission.snapshot.workspaceId,
 			submissionId: submission.snapshot.id,
@@ -1048,6 +1079,32 @@ export function composerPreparedAttemptId(submission: CreationSubmissionRecord):
 	return freeze?.approvalBasis === "merchant_confirmed"
 		? `${submission.task.id}:plan-r${freeze.planRevision}`
 		: submission.task.id;
+}
+
+function ensureConfirmationDispatch(submission: CreationSubmissionRecord) {
+	if (
+		submission.executionPlanFreeze?.approvalBasis !== "merchant_confirmed" &&
+		!requiresPaidConfirmation(submission)
+	) {
+		return;
+	}
+	const attemptId = composerPreparedAttemptId(submission);
+	submission.confirmationDispatch ??= {
+		requestId: `confirmation:${attemptId}`,
+		state: "pending",
+		expiresAt: new Date(
+			Date.parse(submission.snapshot.createdAt) + 48 * 60 * 60 * 1_000,
+		).toISOString(),
+	};
+}
+
+function requiresPaidConfirmation(submission: CreationSubmissionRecord) {
+	const credits = submission.usageReservation.credits;
+	if (!Number.isSafeInteger(credits) || (credits ?? 0) <= 0) return false;
+	if (submission.snapshot.lens !== "copy") return true;
+	return submission.usageReservation.units.some(
+		(unit) => unit.resource === "image" || unit.resource === "video",
+	);
 }
 
 function productUsageUnits(

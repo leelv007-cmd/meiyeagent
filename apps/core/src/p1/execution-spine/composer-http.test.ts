@@ -839,6 +839,10 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 			.usageReservation.units;
 	}
 
+	claimedSubmission(workspaceId: string, idempotencyKey: string) {
+		return this.claims.get(`${workspaceId}:${idempotencyKey}`)?.submission;
+	}
+
 	async readReceipt(input: {
 		workspaceId: string;
 		idempotencyKey: string;
@@ -1160,6 +1164,13 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 		workspaceId: "workspace-1",
 	});
 	createdTaskId = created.task.id;
+	const claimed = submissions.claimedSubmission(
+		"workspace-1",
+		"composer-submit-1",
+	);
+	assert.ok(claimed?.executionPlanFreeze);
+	assert.equal(claimed?.agentPlanPending, false);
+	assert.equal(claimed?.confirmationDispatch?.state, "pending");
 	assert.equal(harness.preparations.length, 1);
 	assert.equal(harness.preparations[0]?.task.id, created.task.id);
 	assert.deepEqual(await coordinator.recoverPendingStarts(), {
