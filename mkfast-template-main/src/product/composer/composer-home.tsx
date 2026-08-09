@@ -700,6 +700,8 @@ export function ComposerHome({
   );
   const livingPlanController = useLivingPlanController({
     taskId: session.task?.taskId ?? initialTaskId ?? null,
+    executionConfirmationRequestId:
+      session.task?.executionConfirmationRequestId ?? null,
     focusIntent: focusComposerIntentInput,
   });
   const [agentBinding, setAgentBinding] = useState<{

@@ -1314,6 +1314,9 @@ function submissionResponse(
 	replayed: boolean,
 	agentBinding?: ComposerAgentBinding
 ) {
+	const withheldForConfirmation =
+		agentBinding?.makeReady === false &&
+		submission.confirmationDispatch?.requestId;
 	return {
 		contentPackage: submission.contentPackage,
 		...(agentBinding
@@ -1322,6 +1325,13 @@ function submissionResponse(
 					runId: agentBinding.runId,
 					makeReady: agentBinding.makeReady !== false,
 				}
+			: {}),
+		// The authority ID is derived from a snapshot digest, so the browser
+		// cannot compute it. A response that withholds Make must therefore name
+		// the request the merchant has to decide, or the commit strip has no way
+		// to record a decision before asking to start.
+		...(withheldForConfirmation
+			? { executionConfirmationRequestId: withheldForConfirmation }
 			: {}),
 		replayed,
 		snapshot: {

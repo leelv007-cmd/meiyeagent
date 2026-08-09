@@ -1723,6 +1723,14 @@ test("the compiled freeze is durable in the claim transaction and a paid submit 
 		),
 		"pending",
 	);
+	// The authority ID is a digest the browser cannot compute, so the response
+	// that withholds Make must also hand back the exact request the merchant has
+	// to decide. Without it the commit strip can only start an unapproved plan.
+	assert.equal(
+		response.executionConfirmationRequestId,
+		submissions.claimedSubmission("workspace-1", command.idempotencyKey)!
+			.confirmationDispatch!.requestId,
+	);
 	// Crash recovery is an unauthorized inbound edge for a plan the merchant has
 	// not approved: it must leave the submission waiting, not spend the hold.
 	assert.deepEqual(await coordinator.recoverPendingStarts(), {
