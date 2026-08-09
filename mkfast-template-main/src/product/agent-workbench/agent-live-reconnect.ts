@@ -8,6 +8,14 @@ import type { AgentEventStore } from './agent-event-store';
 
 export const AGENT_LIVE_RECONNECT_BASE_DELAY_MS = 250;
 export const AGENT_LIVE_RECONNECT_MAX_DELAY_MS = 8_000;
+/**
+ * How long a subscription must survive before the backoff counts as recovered.
+ * A connection that outlives the maximum delay is the evidence; arriving events
+ * are not — a stream that flaps delivers one event per attempt, and resetting on
+ * that pinned the retry at the base delay forever, turning a degraded server
+ * into a 4-requests-per-second loop against it.
+ */
+export const AGENT_LIVE_RECONNECT_STABLE_MS = AGENT_LIVE_RECONNECT_MAX_DELAY_MS;
 
 type OnlineEventTarget = Pick<
   EventTarget,
@@ -60,6 +68,7 @@ export async function runAgentLiveReconnectLoop(input: {
     }
 
     const cursor = input.store.getState();
+    const subscribedAt = Date.now();
     try {
       await input.subscribeLive({
         threadId: input.threadId,
@@ -69,7 +78,6 @@ export async function runAgentLiveReconnectLoop(input: {
         onEvent: async (event) => {
           const applied = applyLiveSemanticEvent(input.store, event);
           if (applied.ok || input.signal.aborted) {
-            if (applied.ok) consecutiveDisconnects = 0;
             return;
           }
           await reconnectAgentWorkbench({
@@ -84,6 +92,9 @@ export async function runAgentLiveReconnectLoop(input: {
       // A rejected subscription and a clean EOF share the same recovery path.
     }
     if (input.signal.aborted) return;
+    if (Date.now() - subscribedAt >= AGENT_LIVE_RECONNECT_STABLE_MS) {
+      consecutiveDisconnects = 0;
+    }
     reconnectBeforeSubscribe = true;
     consecutiveDisconnects += 1;
   }

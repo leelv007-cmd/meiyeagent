@@ -5,6 +5,7 @@ import type { AgentReplayLoader } from './agent-event-client';
 import { createAgentEventStore } from './agent-event-store';
 import {
   AGENT_LIVE_RECONNECT_BASE_DELAY_MS,
+  AGENT_LIVE_RECONNECT_STABLE_MS,
   runAgentLiveReconnectLoop,
 } from './agent-live-reconnect';
 
@@ -107,6 +108,144 @@ describe('Agent live reconnect loop', () => {
         threadId: 'thread-1',
       })
     );
+
+    controller.abort();
+    await loop;
+  });
+
+  it('keeps backing off when a flapping stream delivers one event per attempt', async () => {
+    vi.useFakeTimers();
+    const store = createAgentEventStore();
+    store.dispatch({
+      type: 'set_session',
+      session: {
+        resourceId: 'workspace-1',
+        threadId: 'thread-1',
+        sessionRevision: 1,
+      },
+    });
+
+    const loadReplay: AgentReplayLoader = async () => ({
+      session: {
+        resourceId: 'workspace-1',
+        threadId: 'thread-1',
+        sessionRevision: 1,
+      },
+      snapshot: { revision: '0', lastEventId: null, lastStreamOffset: null },
+      events: [],
+    });
+    let offset = 0;
+    // Each attempt hands over exactly one usable event and then ends — the
+    // shape a degraded stream has. Resetting the backoff on the event pinned
+    // every retry at the base delay.
+    const subscribeLive = vi.fn(
+      async ({
+        onEvent,
+      }: {
+        onEvent: (event: unknown) => Promise<void> | void;
+      }) => {
+        offset += 1;
+        await onEvent(
+          agentSemanticEventWireSchema.parse({
+            schemaVersion: 'agent-semantic-event/v1',
+            threadId: 'thread-1',
+            contextRole: 'included',
+            sourceDomain: 'agent_run',
+            sourceEntityId: 'run-1',
+            sourceRevision: String(offset),
+            correlationId: 'corr-1',
+            payload: { text: `第 ${offset} 条` },
+            occurredAt: '2026-08-09T08:00:00.000Z',
+            eventId: `event-${offset}`,
+            streamOffset: String(offset),
+            eventType: 'message.final',
+          })
+        );
+      }
+    );
+    const controller = new AbortController();
+    const loop = runAgentLiveReconnectLoop({
+      store,
+      loadReplay,
+      subscribeLive,
+      threadId: 'thread-1',
+      signal: controller.signal,
+    });
+
+    await flushMicrotasks();
+    expect(subscribeLive).toHaveBeenCalledTimes(1);
+    // Attempt 2 after the base delay, attempt 3 only after twice that.
+    await vi.advanceTimersByTimeAsync(AGENT_LIVE_RECONNECT_BASE_DELAY_MS);
+    await flushMicrotasks();
+    expect(subscribeLive).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(AGENT_LIVE_RECONNECT_BASE_DELAY_MS);
+    await flushMicrotasks();
+    expect(subscribeLive).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(AGENT_LIVE_RECONNECT_BASE_DELAY_MS);
+    await flushMicrotasks();
+    expect(subscribeLive).toHaveBeenCalledTimes(3);
+
+    controller.abort();
+    await loop;
+  });
+
+  it('resets the backoff after a subscription outlives the maximum delay', async () => {
+    vi.useFakeTimers();
+    const store = createAgentEventStore();
+    store.dispatch({
+      type: 'set_session',
+      session: {
+        resourceId: 'workspace-1',
+        threadId: 'thread-1',
+        sessionRevision: 1,
+      },
+    });
+
+    const loadReplay: AgentReplayLoader = async () => ({
+      session: {
+        resourceId: 'workspace-1',
+        threadId: 'thread-1',
+        sessionRevision: 1,
+      },
+      snapshot: { revision: '0', lastEventId: null, lastStreamOffset: null },
+      events: [],
+    });
+    const subscribeLive = vi
+      .fn()
+      // Two quick failures push the delay to twice the base.
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      // Then a healthy connection that survives past the stable window.
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, AGENT_LIVE_RECONNECT_STABLE_MS + 1);
+          })
+      )
+      .mockResolvedValue(undefined);
+    const controller = new AbortController();
+    const loop = runAgentLiveReconnectLoop({
+      store,
+      loadReplay,
+      subscribeLive,
+      threadId: 'thread-1',
+      signal: controller.signal,
+    });
+
+    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(AGENT_LIVE_RECONNECT_BASE_DELAY_MS);
+    await flushMicrotasks();
+    await vi.advanceTimersByTimeAsync(AGENT_LIVE_RECONNECT_BASE_DELAY_MS * 2);
+    await flushMicrotasks();
+    expect(subscribeLive).toHaveBeenCalledTimes(3);
+
+    await vi.advanceTimersByTimeAsync(AGENT_LIVE_RECONNECT_STABLE_MS + 1);
+    await flushMicrotasks();
+    // The long connection ended; the next attempt is back at the base delay
+    // rather than continuing to grow from where it left off.
+    await vi.advanceTimersByTimeAsync(AGENT_LIVE_RECONNECT_BASE_DELAY_MS);
+    await flushMicrotasks();
+    expect(subscribeLive).toHaveBeenCalledTimes(4);
 
     controller.abort();
     await loop;
