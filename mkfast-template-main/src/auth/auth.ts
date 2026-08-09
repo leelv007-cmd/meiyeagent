@@ -61,7 +61,7 @@ export function createAuth() {
         emailVerificationPolicy.requireEmailVerification,
       // https://www.better-auth.com/docs/authentication/email-password#forget-password
       sendResetPassword: async ({ user, url }) => {
-        if (import.meta.env.MODE === 'e2e') return;
+        if (import.meta.env?.MODE === 'e2e') return;
         await sendEmail({
           to: user.email,
           template: 'forgotPassword',
@@ -74,7 +74,7 @@ export function createAuth() {
       autoSignInAfterVerification: true,
       // https://www.better-auth.com/docs/authentication/email-password#require-email-verification
       sendVerificationEmail: async ({ user, url }) => {
-        if (import.meta.env.MODE === 'e2e') return;
+        if (import.meta.env?.MODE === 'e2e') return;
         await sendEmail({
           to: user.email,
           template: 'verifyEmail',
