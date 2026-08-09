@@ -763,6 +763,8 @@ test('V31-26a U14: archive gate fails closed without inventory; export and flag 
     trials: new MemoryOpsCandidateTrialStore(),
     drills,
     legacyReplayInventory: inv,
+    resolveLegacyReplayInstallationEvidence: async () =>
+      'test-db:harness_runtime.task_requests',
   });
   const wired = new OpsConsoleFoundationModule(wiredService);
 
@@ -799,20 +801,30 @@ test('V31-26a U14: archive gate fails closed without inventory; export and flag 
   };
   assert.equal(withoutProof.gate.archiveAllowed, false);
 
-  await auditStore.append({
-    id: 'audit-no-history-1',
-    action: 'record_legacy_no_history_proof',
-    operatorId: 'ops',
-    reason: 'Verified the authoritative inventory has no legacy history',
-    evidence: 'query-result:zero-rows',
-    target: 'legacy-replay-history',
-    detail: {
-      verifiedZeroRows: true,
-      inventorySource: 'p1_execution_plan_snapshots',
+  const proof = (await wired.execute({
+    context: adminCtx(),
+    input: {
+      action: 'record_legacy_no_history_proof',
+      payload: {
+        reason: 'Verified the authoritative inventory has no legacy history',
+        evidence: 'query-result:zero-rows',
+        now: '2026-08-09T00:00:00.000Z',
+      },
     },
-    createdAt: '2026-08-09T00:00:00.000Z',
-    correlationId: 'audit-no-history-1',
-  });
+    idempotencyKey: 'audit-no-history-1',
+  })) as unknown as {
+    action: string;
+    detail: { installationEvidence: string; inventorySource: string };
+  };
+  assert.equal(proof.action, 'record_legacy_no_history_proof');
+  assert.equal(
+    proof.detail.installationEvidence,
+    'test-db:harness_runtime.task_requests',
+  );
+  assert.equal(
+    proof.detail.inventorySource,
+    'harness_runtime.task_requests+p1_execution_plan_snapshots',
+  );
 
   const open = (await wired.query({
     context: adminCtx(),

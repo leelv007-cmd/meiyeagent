@@ -191,6 +191,10 @@ export class OpsConsoleFoundationModule implements P1OperationModule {
       );
     }
 
+    if (action === 'record_legacy_no_history_proof') {
+      return this.service.recordLegacyNoHistoryProof(args.context, meta);
+    }
+
     throw new P1DomainError(
       'INVALID_STATE',
       `Unknown ops-console action ${action}.`,

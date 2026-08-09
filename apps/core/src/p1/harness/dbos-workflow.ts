@@ -28,6 +28,7 @@ import {
 import {
   assertBoundedExecutionContinuationAuthorization,
   HarnessWorkflowCancellation,
+  observeLegacyHarnessDeterministicFields,
   runHarnessWorkflow,
   harnessMediaJobTopic,
   type BoundedExecutionContinuationCapability,
@@ -51,10 +52,7 @@ import {
   type ExecutionPlanAdmissionPort,
   type SnapshotLiveFacts,
 } from './execution-plan-admission.js';
-import {
-  projectLegacyFromMakeRequest,
-  type ShadowReconciliationService,
-} from './shadow-reconciliation.js';
+import type { ShadowReconciliationService } from './shadow-reconciliation.js';
 import type {
   ProductionSampleInput,
   ProductionSampleOutcome,
@@ -658,7 +656,7 @@ export interface HarnessDbosWorkflowOptions {
    */
   shadowReconciliation?: Pick<
     ShadowReconciliationService,
-    'maybeReconcileOnExecutionComplete'
+    'maybeReconcileOnExecutionComplete' | 'shouldObserveLegacyExecution'
   >;
   /**
    * V31-23 L0.5: production sampling on Make complete (same sampling point as
@@ -1300,35 +1298,51 @@ export function registerHarnessDbosWorkflow(
       if (shadowReconciliation && request.executionPlanSnapshot) {
         await DBOS.runStep(
           async () => {
-            const snapshot = request.executionPlanSnapshot!;
-            const decisionFactRefs = request.decisionReferences?.map(
-              (ref) => ref.id,
-            );
-            const oldChain = projectLegacyFromMakeRequest({
-              boundedExecution: request.boundedExecution,
-              observedDeliverables: request.executionSnapshot?.deliverables?.map(
-                (item) => ({
-                  kind: item.kind,
-                  quantity: item.quantity,
-                }),
-              ),
-              observedFactRefs: decisionFactRefs ?? [],
-              observedRightsRefs: request.executionSnapshot
-                ? [`rights-revision:${request.executionSnapshot.rights.revision}`]
-                : undefined,
-              observedQuoteRef: request.executionSnapshot?.quote,
-            });
-            if (!oldChain) return { sampled: false as const };
-            const now = new Date(await DBOS.now()).toISOString();
-            return shadowReconciliation.maybeReconcileOnExecutionComplete({
-              workflowId,
-              workspaceId: request.workspaceId,
-              snapshot,
-              oldChain,
-              now,
-              operatorId: 'system',
-              correlationId: workflowId,
-            });
+            try {
+              const snapshot = request.executionPlanSnapshot!;
+              if (
+                !(await shadowReconciliation.shouldObserveLegacyExecution(
+                  workflowId,
+                ))
+              ) {
+                return { sampled: false as const };
+              }
+              const legacyLiveFacts = resolveExecutionPlanLiveFacts
+                ? await resolveExecutionPlanLiveFacts({ workflowId, request })
+                : undefined;
+              if (legacyLiveFacts?.quoteRevision === undefined) {
+                return { sampled: false as const };
+              }
+              const oldChain = await observeLegacyHarnessDeterministicFields(
+                `${workflowId}:legacy-shadow`,
+                request,
+                withExecutionConfirmationStagePort(
+                  ports,
+                  executionConfirmation,
+                ),
+                runtime,
+                {
+                  quoteRef: {
+                    id: snapshot.quoteRef.id,
+                    revision: legacyLiveFacts.quoteRevision,
+                  },
+                },
+              );
+              if (!oldChain) return { sampled: false as const };
+              const now = new Date(await DBOS.now()).toISOString();
+              return shadowReconciliation.maybeReconcileOnExecutionComplete({
+                workflowId,
+                workspaceId: request.workspaceId,
+                snapshot,
+                oldChain,
+                now,
+                operatorId: 'system',
+                correlationId: workflowId,
+              });
+            } catch (error) {
+              console.error('Legacy shadow observation failed.', error);
+              return { sampled: false as const };
+            }
           },
           { name: 'shadow-reconciliation-sample' },
         );

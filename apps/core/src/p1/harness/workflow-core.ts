@@ -81,11 +81,18 @@ import type {
   CreateExecutionConfirmationResult,
 } from '../agent-session/execution-confirmation-service.js';
 import {
+  assertCompiledCarrierPlanCompatible,
   type CompiledPrimitiveHandlers,
   executeCompiledCarrierPlan,
+  resolveCompiledCarrierExecution,
 } from './compiled-carrier-executor.js';
+import { createCanonicalCarrierUnitRecipeRegistry } from './carrier-unit-recipes.js';
 import { attachStageTaxonomy } from './five-stage-trace-taxonomy.js';
 import type { StageTaxonomyPayload } from './five-stage-trace-taxonomy.js';
+import {
+  projectLegacyDeterministicFields,
+  type ShadowDeterministicFields,
+} from './shadow-reconciliation.js';
 
 export {
   confirmPaidGenerationExecution,
@@ -1085,17 +1092,13 @@ interface HarnessLensStageDescriptor {
 }
 
 const COPY_STAGE_DESCRIPTOR = {
-  execute: executeCopyHarnessStages,
   kind: 'copy',
   includeEntryTrace: true,
   includeExecutionRoot: false,
   routeNotice: true,
   useActiveRequestForExecutionRoot: false,
-} as const satisfies HarnessLensStageDescriptor & {
-  execute: typeof executeCopyHarnessStages;
-};
+} as const satisfies HarnessLensStageDescriptor;
 const MEDIA_STAGE_DESCRIPTOR = {
-  execute: executeMediaHarnessStages,
   kind: 'media',
   includeEntryTrace: true,
   includeExecutionRoot: true,
@@ -1103,11 +1106,8 @@ const MEDIA_STAGE_DESCRIPTOR = {
   scopeError:
     'A media submission must resolve to the finished_media delivery layer.',
   useActiveRequestForExecutionRoot: false,
-} as const satisfies HarnessLensStageDescriptor & {
-  execute: typeof executeMediaHarnessStages;
-};
+} as const satisfies HarnessLensStageDescriptor;
 const NOTE_STAGE_DESCRIPTOR = {
-  execute: executeNoteHarnessStages,
   kind: 'note',
   includeEntryTrace: false,
   includeExecutionRoot: true,
@@ -1115,9 +1115,7 @@ const NOTE_STAGE_DESCRIPTOR = {
   scopeError:
     'An image-text note must resolve to the finished_media delivery layer.',
   useActiveRequestForExecutionRoot: true,
-} as const satisfies HarnessLensStageDescriptor & {
-  execute: typeof executeNoteHarnessStages;
-};
+} as const satisfies HarnessLensStageDescriptor;
 
 const HARNESS_LENS_STAGE_DESCRIPTORS = {
   copy: COPY_STAGE_DESCRIPTOR,
@@ -1135,24 +1133,46 @@ interface HarnessStageExecutionInput {
   request: HarnessWorkflowInput;
   runtime: HarnessWorkflowRuntime;
   workflowId: string;
+  legacyObservationFacts?: {
+    quoteRef: { id: string; revision: number | string };
+  };
 }
 
-type CopyHarnessWorkflowResult = Awaited<
-  ReturnType<typeof executeCopyHarnessStages>
+type GeneratorResult<T> = T extends AsyncGenerator<unknown, infer R, unknown>
+  ? R
+  : never;
+type CopyHarnessWorkflowResult = GeneratorResult<
+  ReturnType<typeof createCopyPrimitiveProgram>
 > & {
   billingReceipt?: undefined;
   merchantReport?: undefined;
 };
-type MediaHarnessWorkflowResult = Awaited<
-  ReturnType<typeof executeMediaHarnessStages>
+type MediaHarnessWorkflowResult = GeneratorResult<
+  ReturnType<typeof createMediaPrimitiveProgram>
 > & { merchantReport?: undefined };
-type NoteHarnessWorkflowResult = Awaited<
-  ReturnType<typeof executeNoteHarnessStages>
+type NoteHarnessWorkflowResult = GeneratorResult<
+  ReturnType<typeof createNotePrimitiveProgram>
 >;
 type HarnessWorkflowResult =
   | CopyHarnessWorkflowResult
   | MediaHarnessWorkflowResult
   | NoteHarnessWorkflowResult;
+
+type CarrierPrimitiveYield = {
+  primitive:
+    | 'read_context'
+    | 'ask_merchant'
+    | 'generate'
+    | 'check'
+    | 'revise';
+  value: unknown;
+};
+
+type CarrierPrimitiveProgram = AsyncGenerator<
+  CarrierPrimitiveYield,
+  HarnessWorkflowResult,
+  void
+>;
 
 async function runWorkflowPrelude(input: {
   descriptor: HarnessLensStageDescriptor;
@@ -1161,6 +1181,7 @@ async function runWorkflowPrelude(input: {
   request: HarnessWorkflowInput;
   runtime: HarnessWorkflowRuntime;
   workflowId: string;
+  forceLegacyFiveStage?: boolean;
 }) {
   const { descriptor, ports, reportProgress, request, runtime, workflowId } =
     input;
@@ -1171,7 +1192,10 @@ async function runWorkflowPrelude(input: {
     runtime,
   );
   const intentSkills = stageSkills.intent_naming;
-  const snapshotConsume = resolveMakeSnapshotConsume({ request });
+  const snapshotConsume = resolveMakeSnapshotConsume({
+    request,
+    forceLegacyFiveStage: input.forceLegacyFiveStage,
+  });
   // V31-14: snapshot path demotes intent LLM to validator materialization.
   const intent = await runtime.runStep(
     harnessEffectKey(
@@ -1358,9 +1382,12 @@ export async function runHarnessWorkflow(
   runtime: HarnessWorkflowRuntime,
   options: RunHarnessWorkflowOptions = {},
 ): Promise<HarnessWorkflowResult> {
-  if (options.forceLegacyFiveStage) {
-    throw new Error(
-      'force_legacy_five_stage blocks new starts; the production legacy runner is retired.',
+  if (!options.forceLegacyFiveStage && request.executionPlanSnapshot) {
+    assertCompiledCarrierPlanCompatible(
+      resolveCompiledCarrierExecution({
+        lens: request.executionSnapshot?.lens,
+        frozenExecutionPlan: request.executionPlanSnapshot.executionPlan,
+      }),
     );
   }
   const collaborators = stageCollaborators(
@@ -1377,7 +1404,12 @@ export async function runHarnessWorkflow(
     event: Omit<Parameters<HarnessWorkflowRuntime['progress']>[0], 'sequence'>,
   ) => runtime.progress({ ...event, sequence: progress.sequence++ });
   // Tag path before prelude traces so D-036 taxonomy is consistent for all stages.
-  executorPathByRuntime.set(runtime, 'compiled_plan_executor');
+  executorPathByRuntime.set(
+    runtime,
+    options.forceLegacyFiveStage
+      ? 'legacy_five_stage_runner'
+      : 'compiled_plan_executor',
+  );
   const prelude = await runWorkflowPrelude({
     descriptor,
     ports,
@@ -1385,6 +1417,7 @@ export async function runHarnessWorkflow(
     request,
     runtime,
     workflowId,
+    forceLegacyFiveStage: options.forceLegacyFiveStage,
   });
   // V31-25 §22.4 step 3: single CompiledExecutionPlan → executor entry.
   // The terminal record primitive owns carrier-specific delivery semantics;
@@ -1399,43 +1432,23 @@ export async function runHarnessWorkflow(
     runtime,
     workflowId,
   };
-  const mount = (
-    primitive: 'ask_merchant' | 'generate' | 'check' | 'revise',
-  ) =>
-    async ({ unit }: { unit: { unitId: string; input?: unknown } }) => ({
-      unitId: unit.unitId,
-      primitive,
-      stageInput: unit.input ?? null,
-      authorized: true as const,
-    });
+  const primitiveProgram = createCarrierPrimitiveProgram(programInput);
+  if (options.forceLegacyFiveStage) {
+    return drainLegacyCarrierProgram(primitiveProgram);
+  }
   const primitiveHandlers: CompiledPrimitiveHandlers<HarnessStageExecutionInput> = {
-    read_context: async ({ unit }) => ({
-      unitId: unit.unitId,
-      primitive: 'read_context' as const,
-      context: prelude.context,
-    }),
-    ask_merchant: mount('ask_merchant'),
-    generate: mount('generate'),
-    check: mount('check'),
-    revise: mount('revise'),
-    record: async ({ priorOutputs }) => {
-      const mounted = [...priorOutputs.values()].flatMap((output) => {
-        if (!output || typeof output !== 'object' || !('primitive' in output)) {
-          return [];
-        }
-        return [output.primitive];
-      });
-      for (const required of ['read_context', 'generate', 'check'] as const) {
-        if (!mounted.includes(required)) {
-          throw new Error(
-            `Compiled carrier plan cannot record without ${required}.`,
-          );
-        }
-      }
-      if (descriptor.kind === 'copy') return executeCopyHarnessStages(programInput);
-      if (descriptor.kind === 'note') return executeNoteHarnessStages(programInput);
-      return executeMediaHarnessStages(programInput);
-    },
+    read_context: ({ priorOutputs }) =>
+      advanceCarrierPrimitive(primitiveProgram, 'read_context', priorOutputs),
+    ask_merchant: ({ priorOutputs }) =>
+      advanceCarrierPrimitive(primitiveProgram, 'ask_merchant', priorOutputs),
+    generate: ({ priorOutputs }) =>
+      advanceCarrierPrimitive(primitiveProgram, 'generate', priorOutputs),
+    check: ({ priorOutputs }) =>
+      advanceCarrierPrimitive(primitiveProgram, 'check', priorOutputs),
+    revise: ({ priorOutputs }) =>
+      advanceCarrierPrimitive(primitiveProgram, 'revise', priorOutputs),
+    record: ({ priorOutputs }) =>
+      recordCarrierPrimitiveResult(primitiveProgram, priorOutputs),
   };
   const frozenExecutionPlan = request.executionPlanSnapshot?.executionPlan;
   const { result } = await executeCompiledCarrierPlan<
@@ -1444,10 +1457,7 @@ export async function runHarnessWorkflow(
   >({
     context: {
       lens: request.executionSnapshot?.lens,
-      frozenExecutionPlan:
-        frozenExecutionPlan?.units.at(-1)?.primitive === 'record'
-          ? frozenExecutionPlan
-          : undefined,
+      frozenExecutionPlan,
     },
     programInput,
     primitiveHandlers,
@@ -1463,7 +1473,178 @@ export async function runHarnessWorkflow(
   return result;
 }
 
-async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
+export async function observeLegacyHarnessDeterministicFields(
+  workflowId: string,
+  request: HarnessWorkflowInput,
+  stagePorts:
+    | HarnessStagePorts
+    | HarnessMediaStagePorts
+    | HarnessNoteStagePorts
+    | HarnessStageCollaborators,
+  runtime: HarnessWorkflowRuntime,
+  legacyObservationFacts: {
+    quoteRef: { id: string; revision: number | string };
+  },
+): Promise<ShadowDeterministicFields | null> {
+  const collaborators = stageCollaborators(
+    stagePorts,
+    request.executionSnapshot?.lens,
+  );
+  const descriptor =
+    HARNESS_LENS_STAGE_DESCRIPTORS[request.executionSnapshot?.lens ?? 'copy'];
+  const ports = stagePortView(stagePorts, collaborators, descriptor.kind);
+  const progress = { sequence: 0 };
+  const reportProgress: HarnessProgressReporter = (event) =>
+    runtime.progress({ ...event, sequence: progress.sequence++ });
+  const prelude = await runWorkflowPrelude({
+    descriptor,
+    ports,
+    reportProgress,
+    request,
+    runtime,
+    workflowId,
+    forceLegacyFiveStage: true,
+  });
+  const program = createCarrierPrimitiveProgram({
+    descriptor,
+    ports,
+    prelude,
+    progress,
+    reportProgress,
+    request,
+    runtime,
+    workflowId,
+    legacyObservationFacts,
+  });
+  const preRecordPrimitiveCount =
+    createCanonicalCarrierUnitRecipeRegistry()
+      .resolve(descriptor.kind)
+      .plan.units.length - 1;
+  let observation: ShadowDeterministicFields | null = null;
+  for (let index = 0; index < preRecordPrimitiveCount; index += 1) {
+    const advanced = await program.next();
+    if (advanced.done) throw new Error('Legacy shadow program ended before record.');
+    if (
+      advanced.value.value &&
+      typeof advanced.value.value === 'object' &&
+      'legacyObservation' in advanced.value.value
+    ) {
+      observation = advanced.value.value
+        .legacyObservation as ShadowDeterministicFields;
+    }
+  }
+  await program.return(undefined as never);
+  return observation;
+}
+
+const primitiveProgramPosition = new WeakMap<CarrierPrimitiveProgram, number>();
+
+function legacyObservationFromProgram(input: {
+  carrier: 'copy' | 'note' | 'media';
+  request: HarnessWorkflowInput;
+  factRefs: readonly string[];
+  rightsRefs: readonly string[];
+  facts?: HarnessStageExecutionInput['legacyObservationFacts'];
+}): ShadowDeterministicFields | null {
+  const snapshot =
+    input.request.boundedExecution ??
+    input.request.executionPlanSnapshot?.boundedExecution;
+  if (!snapshot || !input.facts) return null;
+  return projectLegacyDeterministicFields({
+    deliverables: [{ kind: input.carrier, quantity: 1 }],
+    factRefs: input.factRefs,
+    rightsRefs: input.rightsRefs,
+    quoteRef: input.facts.quoteRef,
+    bounds: {
+      maxIterations: snapshot.maxIterations,
+      maxCostCents: snapshot.maxCostCents,
+      maxWallClockMs: snapshot.maxWallClockMs,
+      maxDelegations: snapshot.maxDelegations,
+    },
+  });
+}
+
+function createCarrierPrimitiveProgram(
+  input: HarnessStageExecutionInput,
+): CarrierPrimitiveProgram {
+  if (input.descriptor.kind === 'copy') {
+    return createCopyPrimitiveProgram(input) as CarrierPrimitiveProgram;
+  }
+  if (input.descriptor.kind === 'note') {
+    return createNotePrimitiveProgram(input) as CarrierPrimitiveProgram;
+  }
+  return createMediaPrimitiveProgram(input) as CarrierPrimitiveProgram;
+}
+
+async function synchronizeCarrierPrimitiveProgram(
+  program: CarrierPrimitiveProgram,
+  priorOutputs: ReadonlyMap<string, unknown>,
+): Promise<void> {
+  let position = primitiveProgramPosition.get(program) ?? 0;
+  const prior = [...priorOutputs.values()];
+  while (position < prior.length) {
+    const expected = prior[position];
+    if (
+      !expected ||
+      typeof expected !== 'object' ||
+      !('primitive' in expected)
+    ) {
+      throw new Error('Compiled primitive output is not typed.');
+    }
+    const replayed = await program.next();
+    if (replayed.done || replayed.value.primitive !== expected.primitive) {
+      throw new Error('Compiled primitive replay topology is incompatible.');
+    }
+    position += 1;
+  }
+  primitiveProgramPosition.set(program, position);
+}
+
+async function advanceCarrierPrimitive(
+  program: CarrierPrimitiveProgram,
+  primitive: CarrierPrimitiveYield['primitive'],
+  priorOutputs: ReadonlyMap<string, unknown>,
+): Promise<CarrierPrimitiveYield> {
+  await synchronizeCarrierPrimitiveProgram(program, priorOutputs);
+  const advanced = await program.next();
+  if (advanced.done || advanced.value.primitive !== primitive) {
+    throw new Error(
+      `Compiled carrier plan expected ${primitive} but business program yielded ${advanced.done ? 'record' : advanced.value.primitive}.`,
+    );
+  }
+  primitiveProgramPosition.set(
+    program,
+    (primitiveProgramPosition.get(program) ?? 0) + 1,
+  );
+  return advanced.value;
+}
+
+async function recordCarrierPrimitiveResult(
+  program: CarrierPrimitiveProgram,
+  priorOutputs: ReadonlyMap<string, unknown>,
+): Promise<HarnessWorkflowResult> {
+  await synchronizeCarrierPrimitiveProgram(program, priorOutputs);
+  const recorded = await program.next();
+  if (!recorded.done) {
+    throw new Error(
+      `Compiled carrier plan attempted record before ${recorded.value.primitive}.`,
+    );
+  }
+  return recorded.value;
+}
+
+async function drainLegacyCarrierProgram(
+  program: CarrierPrimitiveProgram,
+): Promise<HarnessWorkflowResult> {
+  while (true) {
+    const advanced = await program.next();
+    if (advanced.done) return advanced.value;
+  }
+}
+
+async function* createCopyPrimitiveProgram(
+  input: HarnessStageExecutionInput,
+) {
   const {
     ports: stagePorts,
     prelude,
@@ -1678,6 +1859,8 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
   let activeRequest = prelude.activeRequest;
   let bundle = prelude.context;
 
+  yield { primitive: 'read_context', value: bundle };
+
   const briefSkills = stageSkills.brief_compilation;
   const snapshotConsume = prelude.snapshotConsume;
   let compiledBrief = await runtime.runStep(
@@ -1749,6 +1932,8 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
       : merchantProgressMessage('brief_compilation'),
   });
 
+  yield { primitive: 'generate', value: { brief, bundle } };
+
   activeRequest = await confirmPaidGenerationExecution({
     workflowId,
     request: activeRequest,
@@ -1803,6 +1988,8 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
     state: 'success',
     message: merchantProgressMessage('execution_selection'),
   });
+
+  yield { primitive: 'generate', value: { selection, brief } };
 
   const fenced = await runtime.runStep(
     harnessEffectKey(workflowId, 2, 'fence', `r${bundle.bundle.revision}`),
@@ -1949,6 +2136,24 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
     workflowId,
   });
 
+  yield {
+    primitive: 'check',
+    value: {
+      selection,
+      brief,
+      bundle,
+      legacyObservation: legacyObservationFromProgram({
+        carrier: 'copy',
+        request: activeRequest,
+        factRefs: factGate.allowedFactRefs ?? brief.factRefs,
+        rightsRefs: bundle.policyReferences.rightsRefs.map(
+          (right) => `${right.assetId}:${right.status}`,
+        ),
+        facts: input.legacyObservationFacts,
+      }),
+    },
+  };
+
   const assemblySkills = stageSkills.assembly_delivery;
   const delivery = await runtime.runStep(
     harnessEffectKey(
@@ -2011,7 +2216,9 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
   };
 }
 
-async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
+async function* createNotePrimitiveProgram(
+  input: HarnessStageExecutionInput,
+) {
   const {
     ports: stagePorts,
     prelude,
@@ -2025,6 +2232,8 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   let activeRequest = prelude.activeRequest;
   let context = prelude.context;
   let factGate = prelude.factGate;
+
+  yield { primitive: 'read_context', value: context };
 
   if (
     activeRequest.executionSnapshot?.sources.assets.some(
@@ -2101,6 +2310,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
     state: 'suspended',
     message: merchantNoteProgressMessage('styles_ready'),
   });
+  yield { primitive: 'generate', value: { brief, context } };
   const frozenStyle = [...(activeRequest.decisionReferences ?? [])]
     .reverse()
     .find(({ field }) => field === 'note_style');
@@ -2138,6 +2348,10 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
     message: merchantNoteProgressMessage('style_selected'),
     notePlanPreview,
   });
+  yield {
+    primitive: 'ask_merchant',
+    value: { selectedStyleId, notePlanPreview },
+  };
 
   const fenced = await runtime.runStep(
     harnessEffectKey(workflowId, 2, 'fence', `r${context.bundle.revision}`),
@@ -2380,6 +2594,27 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
         })
       : merchantNoteProgressMessage('consistency_checked'),
   });
+  yield { primitive: 'generate', value: { selection, brief } };
+  yield {
+    primitive: 'check',
+    value: {
+      selection,
+      regenerationCount: noteRegenerationSignals.length,
+      legacyObservation: legacyObservationFromProgram({
+        carrier: 'note',
+        request: activeRequest,
+        factRefs: factGate.allowedFactRefs ?? [],
+        rightsRefs: context.policyReferences.rightsRefs.map(
+          (right) => `${right.assetId}:${right.status}`,
+        ),
+        facts: input.legacyObservationFacts,
+      }),
+    },
+  };
+  yield {
+    primitive: 'revise',
+    value: { selection, regenerationSignals: noteRegenerationSignals },
+  };
 
   const assemblySkills = stageSkills.assembly_delivery;
   const delivery = await runtime.runStep(
@@ -2486,7 +2721,9 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   };
 }
 
-async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
+async function* createMediaPrimitiveProgram(
+  input: HarnessStageExecutionInput,
+) {
   const {
     ports: stagePorts,
     prelude,
@@ -2501,6 +2738,8 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
   let activeRequest = prelude.activeRequest;
   let bundle = prelude.context;
   let factGate = prelude.factGate;
+
+  yield { primitive: 'read_context', value: bundle };
 
   const briefSkills = stageSkills.brief_compilation;
   const snapshotConsume = prelude.snapshotConsume;
@@ -2595,6 +2834,8 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
     message: merchantProgressMessage('brief_compilation'),
   });
   await emitVideoSceneProgress(brief, 'running');
+
+  yield { primitive: 'generate', value: { brief, bundle } };
 
   activeRequest = await confirmPaidGenerationExecution({
     workflowId,
@@ -2830,6 +3071,8 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
   });
   await emitVideoSceneProgress(brief, 'success');
 
+  yield { primitive: 'generate', value: { selection, brief } };
+
   const fenced = await runtime.runStep(
     harnessEffectKey(workflowId, 2, 'fence', `r${bundle.bundle.revision}`),
     () =>
@@ -2984,6 +3227,24 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
     selectionEffectKey: selection.merchantExecutionEffectKey,
     workflowId,
   });
+
+  yield {
+    primitive: 'check',
+    value: {
+      selection,
+      brief,
+      bundle,
+      legacyObservation: legacyObservationFromProgram({
+        carrier: 'media',
+        request: activeRequest,
+        factRefs: factGate.allowedFactRefs ?? [],
+        rightsRefs: bundle.policyReferences.rightsRefs.map(
+          (right) => `${right.assetId}:${right.status}`,
+        ),
+        facts: input.legacyObservationFacts,
+      }),
+    },
+  };
 
   const assemblySkills = stageSkills.assembly_delivery;
   const delivery = await runtime.runStep(

@@ -315,6 +315,16 @@ export type ShadowReconciliationServiceDeps = {
 export class ShadowReconciliationService {
   constructor(private readonly deps: ShadowReconciliationServiceDeps) {}
 
+  async shouldObserveLegacyExecution(sampleKey: string): Promise<boolean> {
+    const state = await this.deps.store.getProgramState();
+    if (state?.status === 'closed') return false;
+    const config = await this.deps.resolveConfig();
+    return shouldSampleShadowReconciliation({
+      sampleRate: config.sampleRate,
+      sampleKey,
+    });
+  }
+
   /**
    * Hook for Make execution-complete path. Failures never throw — evidence only.
    */
@@ -518,63 +528,4 @@ function normalizeDeliverables(
   return [...byKind.entries()]
     .map(([kind, quantity]) => ({ kind, quantity }))
     .sort((a, b) => a.kind.localeCompare(b.kind));
-}
-
-/**
- * Map Composer/execution-spine lens kinds onto plan deliverable carriers.
- */
-export function mapExecutionLensToCarrier(
-  kind: string,
-): ShadowDeliverableCarrier | null {
-  if (kind === 'copy') return 'copy';
-  if (kind === 'image_text_note') return 'note';
-  if (kind === 'image' || kind === 'video') return 'media';
-  if (kind === 'note' || kind === 'media') return kind;
-  return null;
-}
-
-/**
- * Best-effort old-chain projection from Make request fields that still exist
- * outside the snapshot freeze (execution complete path).
- * Returns null when independent dual sources are insufficient.
- */
-export function projectLegacyFromMakeRequest(input: {
-  boundedExecution?: BoundedExecutionSnapshot;
-  /**
-   * Optional independently observed deliverables (e.g. from executionSnapshot).
-   * When omitted, falls back to snapshot deliverables (bounds-only drift check).
-   */
-  observedDeliverables?: Array<{
-    kind: string;
-    quantity: number;
-  }>;
-  observedFactRefs?: readonly string[];
-  observedRightsRefs?: readonly string[];
-  observedQuoteRef?: { id: string; revision: number | string };
-}): ShadowDeterministicFields | null {
-  if (
-    !input.boundedExecution ||
-    !input.observedDeliverables ||
-    !input.observedFactRefs ||
-    !input.observedRightsRefs ||
-    !input.observedQuoteRef
-  ) {
-    return null;
-  }
-  const mappedObserved = input.observedDeliverables
-    .map((item) => {
-      const kind = mapExecutionLensToCarrier(item.kind);
-      return kind ? { kind, quantity: item.quantity } : null;
-    })
-    .filter((item): item is { kind: ShadowDeliverableCarrier; quantity: number } =>
-      item !== null,
-    );
-  if (mappedObserved.length === 0) return null;
-  return projectLegacyDeterministicFields({
-    deliverables: mappedObserved,
-    factRefs: input.observedFactRefs,
-    rightsRefs: input.observedRightsRefs,
-    quoteRef: input.observedQuoteRef,
-    bounds: boundsFromSnapshot(input.boundedExecution),
-  });
 }

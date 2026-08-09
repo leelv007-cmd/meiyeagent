@@ -103,6 +103,10 @@ export type OpsConsoleServiceDeps = {
   resolveLegacyReplayOpsBufferDays?: () =>
     | number
     | Promise<number>;
+  resolveLegacyReplayInstallationEvidence?: () =>
+    | string
+    | null
+    | Promise<string | null>;
 };
 
 function nowIso(now?: string): string {
@@ -623,6 +627,54 @@ export class OpsConsoleService {
     return this.deps.audit.list(limit);
   }
 
+  async recordLegacyNoHistoryProof(
+    context: P1Context,
+    meta: OpsWriteMeta,
+  ): Promise<OpsConsoleAuditEntry> {
+    const reason = requireReason(meta.reason, 'record_legacy_no_history_proof');
+    const evidence = requireEvidence(
+      meta.evidence,
+      'record_legacy_no_history_proof',
+    );
+    if (
+      !this.deps.legacyReplayInventory ||
+      !this.deps.resolveLegacyReplayInstallationEvidence
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Legacy inventory and installation evidence source must be wired.',
+      );
+    }
+    const [inventory, installationEvidence] = await Promise.all([
+      this.deps.legacyReplayInventory.snapshot(),
+      this.deps.resolveLegacyReplayInstallationEvidence(),
+    ]);
+    if (
+      inventory.activePendingCount !== 0 ||
+      inventory.lastLegacyTerminalAt !== null ||
+      !installationEvidence?.trim()
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'No-history proof requires authoritative zero history and installation evidence.',
+      );
+    }
+    return this.audit(
+      context,
+      'record_legacy_no_history_proof',
+      'legacy-replay-history',
+      reason,
+      evidence,
+      {
+        verifiedZeroRows: true,
+        inventorySource:
+          'harness_runtime.task_requests+p1_execution_plan_snapshots',
+        installationEvidence: installationEvidence.trim(),
+      },
+      meta.now,
+    );
+  }
+
   /**
    * V31-26a / U14: read-only archive condition gate.
    * Fail closed when inventory or audit is unavailable.
@@ -732,7 +784,10 @@ export class OpsConsoleService {
           entry.target === 'legacy-replay-history' &&
           Boolean(entry.evidence?.trim()) &&
           entry.detail.verifiedZeroRows === true &&
-          entry.detail.inventorySource === 'p1_execution_plan_snapshots',
+          entry.detail.inventorySource ===
+            'harness_runtime.task_requests+p1_execution_plan_snapshots' &&
+          typeof entry.detail.installationEvidence === 'string' &&
+          entry.detail.installationEvidence.trim().length > 0,
       );
       verifiedNoHistoryAuditId = proof?.id ?? null;
     } catch {

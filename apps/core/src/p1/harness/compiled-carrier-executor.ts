@@ -141,6 +141,7 @@ export async function executeCompiledCarrierPlan<TInput, TResult>(input: {
   );
   await input.onResolved?.(resolution);
   assertNoGrammarInterpreter(resolution.executionPlan);
+  assertCompiledCarrierPlanCompatible(resolution);
   const outputs = await executePrimitiveUnits({
     plan: resolution.executionPlan,
     programInput: input.programInput,
@@ -151,12 +152,33 @@ export async function executeCompiledCarrierPlan<TInput, TResult>(input: {
   });
   const terminal = outputs.at(-1);
   if (terminal?.primitive !== 'record') {
+    throw new CompiledCarrierExecutorError('Missing record output.');
+  }
+  return { result: terminal.output as TResult, resolution };
+}
+
+export function assertCompiledCarrierPlanCompatible(
+  resolution: CompiledCarrierResolution,
+): void {
+  const primitives = resolution.executionPlan.units.map(
+    (unit) => unit.primitive,
+  );
+  if (primitives.at(-1) !== 'record') {
     throw new CompiledCarrierExecutorError(
       'CompiledExecutionPlan must end with a record unit that owns delivery.',
     );
   }
-  const result = terminal.output as TResult;
-  return { result, resolution };
+  if (
+    primitives.length !== resolution.recipe.primitiveSequence.length ||
+    primitives.some(
+      (primitive, index) =>
+        primitive !== resolution.recipe.primitiveSequence[index],
+    )
+  ) {
+    throw new CompiledCarrierExecutorError(
+      `Frozen CompiledExecutionPlan is incompatible with the ${resolution.carrier} primitive topology.`,
+    );
+  }
 }
 
 export async function executePrimitiveUnits<TInput>(input: {

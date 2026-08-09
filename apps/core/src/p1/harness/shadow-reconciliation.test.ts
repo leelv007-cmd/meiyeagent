@@ -25,7 +25,6 @@ import {
   compareShadowDeterministicFields,
   extractDeterministicFieldsFromSnapshot,
   projectLegacyDeterministicFields,
-  projectLegacyFromMakeRequest,
   resolveShadowReconciliationConfig,
   shouldSampleShadowReconciliation,
 } from './shadow-reconciliation.js';
@@ -186,27 +185,6 @@ test('compareShadowDeterministicFields: field-level diffs locate mismatch', () =
   const quantityDiff = result.diffs.find((d) => d.field === 'deliverables');
   assert.ok(quantityDiff);
   assert.notDeepEqual(quantityDiff!.expected, quantityDiff!.actual);
-});
-
-test('legacy projection refuses snapshot self-fallback and requires independent observations', () => {
-  const snapshot = buildSnapshot();
-  assert.equal(
-    projectLegacyFromMakeRequest({
-      boundedExecution: snapshot.boundedExecution,
-      observedDeliverables: [{ kind: 'copy', quantity: 2 }],
-    }),
-    null,
-  );
-  const projected = projectLegacyFromMakeRequest({
-    boundedExecution: snapshot.boundedExecution,
-    observedDeliverables: [{ kind: 'copy', quantity: 7 }],
-    observedFactRefs: ['legacy-fact'],
-    observedRightsRefs: ['legacy-rights'],
-    observedQuoteRef: { id: 'legacy-quote', revision: 8 },
-  });
-  assert.equal(projected?.deliverables[0]?.quantity, 7);
-  assert.deepEqual(projected?.factRefs, ['legacy-fact']);
-  assert.equal(projected?.quoteRef.id, 'legacy-quote');
 });
 
 // ─── Sampling gate ──────────────────────────────────────────────────────────

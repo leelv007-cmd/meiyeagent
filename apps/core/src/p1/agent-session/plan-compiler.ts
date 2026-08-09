@@ -16,26 +16,22 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import {
-  COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
   MARKETING_PLAN_REVISION_SCHEMA_VERSION,
-  compiledExecutionPlanSchema,
-  executionUnitIdSchema,
   marketingPlanIdSchema,
   marketingPlanRevisionSchema,
   type AgentRevisionRef,
   type CompiledExecutionPlan,
-  type ExecutionUnit,
-  type ExecutionUnitId,
   type MarketingPlanReadiness,
   type MarketingPlanRevision,
   type PlanDeliverable,
 } from '@meiye/contracts';
 
+import { createCanonicalCarrierUnitRecipeRegistry } from '../harness/carrier-unit-recipes.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import {
   buildExecutionUnitCacheKey,
   createCanonicalExecutionUnitRegistry,
-  ExecutionUnitRegistry,
+  type ExecutionUnitRegistry,
   type ExecutionUnitTypeDefinition,
 } from './execution-unit-registry.js';
 import {
@@ -206,22 +202,12 @@ export class PlanCompilerError extends Error {
   }
 }
 
-const CARRIER_TO_UNIT: Record<PlanDeliverable['kind'], string> = {
-  copy: 'copy.generate',
-  note: 'note.generate',
-  media: 'media.generate',
-};
-
 function sha256Hex(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
 function deliverableId(index: number, kind: string): string {
   return `d${index + 1}-${kind}`;
-}
-
-function unitId(value: string): ExecutionUnitId {
-  return executionUnitIdSchema.parse(value);
 }
 
 // ─── Compiler ───────────────────────────────────────────────────────────────
@@ -522,120 +508,44 @@ export class PlanCompiler {
     executionPlan: CompiledExecutionPlan;
     unitCacheKeys: Record<string, string>;
   } {
-    const units: ExecutionUnit[] = [];
+    const carriers = [...new Set(input.deliverables.map((item) => item.kind))];
+    if (carriers.length !== 1 || !carriers[0]) {
+      throw new PlanCompilerError(
+        'MULTI_CARRIER_PLAN_UNSUPPORTED',
+        'One durable Make execution plan must target exactly one carrier.',
+      );
+    }
+    const canonical = structuredClone(
+      createCanonicalCarrierUnitRecipeRegistry().resolve(carriers[0]).plan,
+    );
+    for (const unit of canonical.units) {
+      unit.input = {
+        ...(unit.input && typeof unit.input === 'object' ? unit.input : {}),
+        planId: input.revision.planId,
+        planRevision: input.revision.revision,
+        deliverables: input.deliverables,
+        quoteRef: input.revision.quoteRef,
+      };
+    }
+    const contextUnit = canonical.units.find(
+      (unit) => unit.unitType === 'context.read',
+    );
     const unitCacheKeys: Record<string, string> = {};
-    const boundedRetry: CompiledExecutionPlan['boundedRetry'] = {};
     const cachePolicies: NonNullable<CompiledExecutionPlan['cachePolicies']> =
       {};
-
-    // Group 0: context read (parallel-safe, single unit)
-    const contextUnitId = unitId('unit-context-read');
-    const contextDef = this.registry.resolve('context.read');
-    units.push({
-      unitId: contextUnitId,
-      unitType: contextDef.unitType,
-      primitive: contextDef.primitive,
-      input: {
-        contextBundleId: input.revision.boundRevisions.contextBundleId,
-        contextRevision: input.revision.boundRevisions.contextRevision,
-      },
-    });
-    boundedRetry[contextUnitId] = defaultRetryOff();
-    this.applyCachePolicy({
-      unitId: contextUnitId,
-      definition: contextDef,
-      workspaceId: input.workspaceId,
-      harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
-      input: units[0]!.input,
-      cachePolicies,
-      unitCacheKeys,
-    });
-
-    // Group 1: generate units (one per deliverable quantity expanded lightly)
-    const generateUnitIds: ExecutionUnitId[] = [];
-    for (const deliverable of input.deliverables) {
-      const unitType = CARRIER_TO_UNIT[deliverable.kind];
-      const definition = this.registry.resolve(unitType);
-      for (let i = 0; i < deliverable.quantity; i += 1) {
-        const generateUnitId = unitId(
-          `unit-${deliverable.deliverableId}-${i + 1}`,
-        );
-        const unitInput = {
-          deliverableId: deliverable.deliverableId,
-          kind: deliverable.kind,
-          index: i,
-          quoteRef: input.revision.quoteRef,
-        };
-        units.push({
-          unitId: generateUnitId,
-          unitType: definition.unitType,
-          primitive: definition.primitive,
-          input: unitInput,
-        });
-        boundedRetry[generateUnitId] = defaultRetryOff();
-        this.applyCachePolicy({
-          unitId: generateUnitId,
-          definition,
-          workspaceId: input.workspaceId,
-          harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
-          input: unitInput,
-          cachePolicies,
-          unitCacheKeys,
-        });
-        generateUnitIds.push(generateUnitId);
-      }
+    if (contextUnit) {
+      this.applyCachePolicy({
+        unitId: contextUnit.unitId,
+        definition: this.registry.resolve(contextUnit.unitType),
+        workspaceId: input.workspaceId,
+        harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
+        input: contextUnit.input,
+        cachePolicies,
+        unitCacheKeys,
+      });
+      canonical.cachePolicies = cachePolicies;
     }
-
-    // Group 2: compliance check
-    const checkUnitId = unitId('unit-compliance-check');
-    const checkDef = this.registry.resolve('compliance.check');
-    units.push({
-      unitId: checkUnitId,
-      unitType: checkDef.unitType,
-      primitive: checkDef.primitive,
-      input: {
-        rightsRevisionIds: input.revision.boundRevisions.rightsRevisionIds,
-      },
-    });
-    boundedRetry[checkUnitId] = defaultRetryOff();
-    this.applyCachePolicy({
-      unitId: checkUnitId,
-      definition: checkDef,
-      workspaceId: input.workspaceId,
-      harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
-      input: units[units.length - 1]!.input,
-      cachePolicies,
-      unitCacheKeys,
-    });
-
-    const recordUnitId = unitId('unit-delivery-record');
-    const recordDef = this.registry.resolve('delivery.record');
-    units.push({
-      unitId: recordUnitId,
-      unitType: recordDef.unitType,
-      primitive: recordDef.primitive,
-      input: { planId: input.revision.planId, planRevision: input.revision.revision },
-    });
-    boundedRetry[recordUnitId] = defaultRetryOff();
-
-    const dependencyGroups = [
-      { groupId: 'g-context', unitIds: [contextUnitId] },
-      { groupId: 'g-generate', unitIds: generateUnitIds },
-      { groupId: 'g-check', unitIds: [checkUnitId] },
-      { groupId: 'g-record', unitIds: [recordUnitId] },
-    ];
-
-    const executionPlan = compiledExecutionPlanSchema.parse({
-      schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
-      units,
-      dependencyGroups,
-      boundedRetry,
-      ...(Object.keys(cachePolicies).length > 0
-        ? { cachePolicies }
-        : {}),
-    });
-
-    return { executionPlan, unitCacheKeys };
+    return { executionPlan: canonical, unitCacheKeys };
   }
 
   private applyCachePolicy(input: {
@@ -664,15 +574,6 @@ export class PlanCompiler {
       dependsOn: [...input.definition.cacheDefault.dependsOn],
     };
   }
-}
-
-function defaultRetryOff(): CompiledExecutionPlan['boundedRetry'][string] {
-  // D-167③ / BLOCK-06: unit retry default off.
-  return {
-    maxAttempts: 1,
-    maxCostCents: 0,
-    retry: { enabled: false },
-  };
 }
 
 /**

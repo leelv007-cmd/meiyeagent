@@ -35,8 +35,8 @@ test('V31-14 snapshot consume path: zero nameIntent/compileBrief LLM re-call (tr
     buildExecutionPlanSnapshot,
     freezeExecutionPlanContent,
   } = await import('./execution-plan-admission.js');
-  const { COMPILED_EXECUTION_PLAN_SCHEMA_VERSION } = await import(
-    '@meiye/contracts'
+  const { createCanonicalCarrierUnitRecipeRegistry } = await import(
+    './carrier-unit-recipes.js'
   );
 
   const content = {
@@ -48,24 +48,8 @@ test('V31-14 snapshot consume path: zero nameIntent/compileBrief LLM re-call (tr
       revision: 1,
       hash: 'a'.repeat(64),
     },
-    executionPlan: {
-      schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
-      units: [
-        {
-          unitId: 'unit-1',
-          unitType: 'copy.generate',
-          primitive: 'generate' as const,
-        },
-      ],
-      dependencyGroups: [{ groupId: 'g1', unitIds: ['unit-1'] }],
-      boundedRetry: {
-        'unit-1': {
-          maxAttempts: 1,
-          maxCostCents: 0,
-          retry: { enabled: false as const },
-        },
-      },
-    },
+    executionPlan: createCanonicalCarrierUnitRecipeRegistry().resolve('copy')
+      .plan,
     deliverables: [{ deliverableId: 'd1', kind: 'copy', quantity: 1 }],
     promptRevisionRefs: {},
     skillManifestRefs: {},
@@ -228,12 +212,12 @@ test('five semantic stages run in order with stable effect keys and a delivery f
     'wf:task-35:s2:context:0',
     'compiled-primitive:task-35:unit-copy-context',
     'compiled-primitive:task-35:unit-copy-brief',
-    'compiled-primitive:task-35:unit-copy-select',
-    'compiled-primitive:task-35:unit-copy-check',
-    'compiled-primitive:task-35:unit-copy-assemble',
     'wf:task-35:s3:copy:0',
+    'compiled-primitive:task-35:unit-copy-select',
     'wf:task-35:s4:copy:selection',
+    'compiled-primitive:task-35:unit-copy-check',
     'wf:task-35:s2:fence:r1',
+    'compiled-primitive:task-35:unit-copy-assemble',
     'wf:task-35:s5:package:0',
   ]);
   assert.deepEqual(
@@ -431,11 +415,11 @@ test('selected Skill refs freeze and enter all five stage effects and traces wit
     'wf:task-35:s2:context:skills=skill.context_injection%402:0',
   );
   assert.equal(
-    calls[8],
+    calls[5],
     'wf:task-35:s3:copy:skills=skill.brief_compilation%402:0',
   );
   assert.equal(
-    calls[9],
+    calls[7],
     'wf:task-35:s4:copy:skills=skill.execution_selection%402:selection',
   );
   assert.equal(
@@ -711,12 +695,12 @@ test('image and video snapshots use the same five Harness stages with modality-s
       `wf:task-${kind}:s2:context:0`,
       `compiled-primitive:task-${kind}:unit-media-context`,
       `compiled-primitive:task-${kind}:unit-media-brief`,
-      `compiled-primitive:task-${kind}:unit-media-select`,
-      `compiled-primitive:task-${kind}:unit-media-check`,
-      `compiled-primitive:task-${kind}:unit-media-assemble`,
       `wf:task-${kind}:s3:${kind}:0`,
+      `compiled-primitive:task-${kind}:unit-media-select`,
       `wf:task-${kind}:s4:${kind}:selection`,
+      `compiled-primitive:task-${kind}:unit-media-check`,
       `wf:task-${kind}:s2:fence:r1`,
+      `compiled-primitive:task-${kind}:unit-media-assemble`,
       `wf:task-${kind}:s5:package:0`,
     ]);
     assert.deepEqual(progress, [
@@ -1515,14 +1499,14 @@ test('image-text note uses the fourth Harness fork and waits for style choice be
     'wf:task-image-text-note:s2:context:0',
     'compiled-primitive:task-image-text-note:unit-note-context',
     'compiled-primitive:task-image-text-note:unit-note-brief',
+    'wf:task-image-text-note:s3:image_text_note:0',
     'compiled-primitive:task-image-text-note:unit-note-style-ask',
     'compiled-primitive:task-image-text-note:unit-note-pages',
+    'wf:task-image-text-note:s2:fence:r1',
+    'wf:task-image-text-note:s4:image_text_note:selection',
     'compiled-primitive:task-image-text-note:unit-note-check',
     'compiled-primitive:task-image-text-note:unit-note-revise',
     'compiled-primitive:task-image-text-note:unit-note-assemble',
-    'wf:task-image-text-note:s3:image_text_note:0',
-    'wf:task-image-text-note:s2:fence:r1',
-    'wf:task-image-text-note:s4:image_text_note:selection',
     'wf:task-image-text-note:s5:package:0',
   ]);
   assert.deepEqual(progress, [
@@ -2153,12 +2137,12 @@ test('an existing pending industry question replays the original decision sequen
     'wf:task-copy:s2:context:0',
     'compiled-primitive:task-copy:unit-copy-context',
     'compiled-primitive:task-copy:unit-copy-brief',
-    'compiled-primitive:task-copy:unit-copy-select',
-    'compiled-primitive:task-copy:unit-copy-check',
-    'compiled-primitive:task-copy:unit-copy-assemble',
     'wf:task-copy:s3:copy:0',
+    'compiled-primitive:task-copy:unit-copy-select',
     'wf:task-copy:s4:copy:selection',
+    'compiled-primitive:task-copy:unit-copy-check',
     'wf:task-copy:s2:fence:r1',
+    'compiled-primitive:task-copy:unit-copy-assemble',
     'wf:task-copy:s5:package:0',
   ]);
 });

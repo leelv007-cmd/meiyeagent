@@ -863,6 +863,31 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           langfuseBaseUrl: env.LANGFUSE_BASE_URL ?? null,
           // V31-26a / U14: production PG inventory for legacy replay archive gate.
           legacyReplayInventory: new PostgresLegacyReplayInventory(pool),
+          async resolveLegacyReplayInstallationEvidence() {
+            const result = await pool.query<{
+              database_name: string;
+              task_requests: string | null;
+              execution_plan_snapshots: string | null;
+              audit_events: string | null;
+              decision_events: string | null;
+            }>(
+              `select current_database() as database_name,
+                      to_regclass('harness_runtime.task_requests')::text as task_requests,
+                      to_regclass('p1_execution_plan_snapshots')::text as execution_plan_snapshots,
+                      to_regclass('harness_runtime.audit_events')::text as audit_events,
+                      to_regclass('harness_runtime.decision_events')::text as decision_events`,
+            );
+            const row = result.rows[0];
+            if (
+              !row?.task_requests ||
+              !row.execution_plan_snapshots ||
+              !row.audit_events ||
+              !row.decision_events
+            ) {
+              return null;
+            }
+            return JSON.stringify(row);
+          },
           // V31-26a: dual-write admin-config for kill switches runtime hot-reads there.
           killSwitchAdminConfigMirror: {
             async applyBoolean(input) {

@@ -277,7 +277,6 @@ test('compiled plan is data: retry default off, dependency groups, cache key has
     planId: 'plan-exec-1',
     proposal: baseProposal({
       recommendedDeliverables: [
-        { carrier: 'copy', quantity: 1, purpose: '纯文案' },
         { carrier: 'note', platform: 'xiaohongshu', quantity: 2, purpose: '笔记' },
       ],
     }),

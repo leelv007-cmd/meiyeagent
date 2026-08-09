@@ -9,8 +9,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
@@ -18,11 +17,16 @@ import {
   HARNESS_STAGES,
 } from '@meiye/contracts';
 
+import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import {
   assertCarrierRegistrationComplete,
   createCanonicalCarrierUnitRecipeRegistry,
   lensToContentCarrier,
 } from './carrier-unit-recipes.js';
+import {
+  buildExecutionPlanSnapshot,
+  freezeExecutionPlanContent,
+} from './execution-plan-admission.js';
 import {
   assertNoGrammarInterpreter,
   createMemoryPrimitiveEffectStore,
@@ -36,6 +40,7 @@ import {
   STAGE_TO_PRIMITIVES,
   stageTaxonomyPayload,
 } from './five-stage-trace-taxonomy.js';
+import { PRE_CONVERGENCE_BASELINES } from './fixtures/pre-convergence-equivalence-baselines.js';
 import {
   materializeMediaBriefFromSnapshot,
   materializeNoteBriefFromSnapshot,
@@ -46,20 +51,14 @@ import {
   diffRunnerEquivalence,
   type RunnerEquivalenceSnapshot,
 } from './runner-equivalence.js';
+import type { HarnessWorkflowInput } from './task-admission.js';
 import {
-  runHarnessWorkflow,
   type HarnessMediaStagePorts,
   type HarnessNoteStagePorts,
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
+  runHarnessWorkflow,
 } from './workflow-core.js';
-import type { HarnessWorkflowInput } from './task-admission.js';
-import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
-import {
-  buildExecutionPlanSnapshot,
-  freezeExecutionPlanContent,
-} from './execution-plan-admission.js';
-import { PRE_CONVERGENCE_BASELINES } from './fixtures/pre-convergence-equivalence-baselines.js';
 
 // ─── Taxonomy / six primitives ──────────────────────────────────────────────
 
@@ -178,7 +177,7 @@ test('V31-25: resolveCompiledCarrierExecution prefers frozen plan when present',
   assert.equal(resolution.executionPlan.units.length, frozen.units.length);
 });
 
-test('V31-25: changing a typed plan unit changes primitive execution', async () => {
+test('V31-25: changing a typed plan unit makes the frozen topology fail closed', async () => {
   const recipe = createCanonicalCarrierUnitRecipeRegistry().resolve('copy');
   const calls: string[] = [];
   const handlers = Object.fromEntries(
@@ -221,16 +220,18 @@ test('V31-25: changing a typed plan unit changes primitive execution', async () 
   assert.ok(check);
   check.primitive = 'revise';
   calls.length = 0;
-  const second = await executeCompiledCarrierPlan({
-    context: { lens: 'copy', frozenExecutionPlan: mutated },
-    programInput: { ignored: true },
-    primitiveHandlers: handlers as never,
-    effectStore: immediatePrimitiveEffectStore,
-    executionId: 'mutate-second',
-  });
-  assert.ok(calls.includes('revise:unit-copy-check'));
-  assert.ok(!calls.includes('check:unit-copy-check'));
-  assert.notDeepEqual(second.result, first.result);
+  await assert.rejects(
+    () =>
+      executeCompiledCarrierPlan({
+        context: { lens: 'copy', frozenExecutionPlan: mutated },
+        programInput: { ignored: true },
+        primitiveHandlers: handlers as never,
+        effectStore: immediatePrimitiveEffectStore,
+        executionId: 'mutate-second',
+      }),
+    /incompatible with the copy primitive topology/,
+  );
+  assert.deepEqual(calls, []);
 });
 
 function primitiveHandlersReturningNull() {
@@ -254,25 +255,64 @@ test('V31-25: production workflow has no inert handler or carrier-program fallba
   const dbos = readFileSync(new URL('./dbos-workflow.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(executor, /inertPrimitiveHandlers|programs\?:|programs\.resolve/);
   assert.doesNotMatch(workflow, /createCarrierProgramRegistry/);
+  assert.doesNotMatch(
+    workflow,
+    /execute(?:Copy|Note|Media)HarnessStages\(/,
+  );
+  assert.match(workflow, /create(?:Copy|Note|Media)PrimitiveProgram/);
   assert.match(workflow, /primitiveHandlers:/);
-  assert.match(dbos, /observedRightsRefs:\s*request\.executionSnapshot/);
-  assert.match(dbos, /observedQuoteRef:\s*request\.executionSnapshot\?\.quote/);
+  assert.match(dbos, /observeLegacyHarnessDeterministicFields\(/);
+  assert.doesNotMatch(dbos, /projectLegacyFromMakeRequest|observedRightsRefs/);
 });
 
-test('V31-25: legacy kill switch blocks new starts without invoking a runner', async () => {
+test('V31-25: legacy kill switch runs rollback path without compiled primitive effects', async () => {
   const keys: string[] = [];
-  await assert.rejects(
-    () =>
-      runHarnessWorkflow(
-        'legacy-blocked',
-        taskInput(),
-        fixtureCopyStages(),
-        recordingRuntime(keys),
-        { forceLegacyFiveStage: true },
-      ),
-    /blocks new starts.*legacy runner is retired/,
+  const result = await runHarnessWorkflow(
+    'legacy-rollback',
+    taskInput(),
+    fixtureCopyStages(),
+    recordingRuntime(keys),
+    { forceLegacyFiveStage: true },
   );
-  assert.deepEqual(keys, []);
+  assert.equal(result.delivery.packageId, 'package-1');
+  assert.equal(keys.some((key) => key.startsWith('compiled-primitive:')), false);
+  assert.ok(keys.some((key) => key.includes(':s5:package:')));
+});
+
+test('V31-13: legacy shadow observation dual-runs only through pre-record primitives', async () => {
+  const { observeLegacyHarnessDeterministicFields } = await import(
+    './workflow-core.js'
+  );
+  const stages = fixtureMediaStages();
+  let deliveries = 0;
+  const originalDeliver = stages.assembleMediaAndDeliver;
+  stages.assembleMediaAndDeliver = async (input) => {
+    deliveries += 1;
+    return originalDeliver(input);
+  };
+  const request = {
+    ...mediaTaskInput('image'),
+    executionPlanSnapshot: buildTestPlanSnapshot('media'),
+  };
+  const observed = await observeLegacyHarnessDeterministicFields(
+    'legacy-shadow-observation',
+    request,
+    stages,
+    {
+      ...recordingRuntime([]),
+      awaitDecision: async (question) => approvePaid(question),
+    },
+    {
+      quoteRef: { id: 'quote-1', revision: 'live-quote-r1' },
+    },
+  );
+  assert.equal(deliveries, 0);
+  assert.equal(observed?.deliverables[0]?.kind, 'media');
+  assert.deepEqual(observed?.quoteRef, {
+    id: 'quote-1',
+    revision: 'live-quote-r1',
+  });
+  assert.deepEqual(observed?.rightsRefs, []);
 });
 
 test('V31-25: durable topology baseline includes compiled primitive effects', () => {
@@ -320,6 +360,44 @@ test('V31-25: durable primitive effects survive executor restart without duplica
   assert.deepEqual(replay.result, afterRestart.result);
   assert.equal(contextReads, 1);
   assert.equal(businessWrites, 1);
+});
+
+test('V31-25: production workflow self-durable record survives kill after business commit exactly once', async () => {
+  const completed = new Map<string, unknown>();
+  let killAfterCommit = true;
+  let deliveryWrites = 0;
+  const stages = fixtureCopyStages();
+  const deliver = stages.assembleAndDeliver;
+  stages.assembleAndDeliver = async (input) => {
+    deliveryWrites += 1;
+    return deliver(input);
+  };
+  const runtime: HarnessWorkflowRuntime = {
+    ...recordingRuntime([]),
+    async runStep(key, operation) {
+      if (completed.has(key)) return completed.get(key) as never;
+      const output = await operation();
+      completed.set(key, output);
+      if (key.includes(':s5:package:') && killAfterCommit) {
+        killAfterCommit = false;
+        throw new Error('worker killed after durable delivery commit');
+      }
+      return output;
+    },
+  };
+  const run = () =>
+    runHarnessWorkflow(
+      'self-durable-record',
+      taskInput(),
+      stages,
+      runtime,
+    );
+
+  await assert.rejects(run, /worker killed after durable delivery commit/);
+  const restarted = await run();
+  const replayed = await run();
+  assert.deepEqual(replayed, restarted);
+  assert.equal(deliveryWrites, 1);
 });
 
 // ─── Equivalence baseline + kill/restart ─────────────────────────────────────
