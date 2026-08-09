@@ -872,8 +872,21 @@ export function registerHarnessDbosWorkflow(
             replayBranch.branch === 'execution_plan_snapshot'
               ? replayBranch.snapshot.snapshotHash
               : replayBranch.snapshotHash;
-          // When the admission writer is wired, also re-verify the stored row.
-          if (executionPlanAdmission) {
+          // When the admission writer is wired, also re-verify the stored
+          // row — but only for the branch that is guaranteed to already be
+          // admitted. task-admission.ts admits the execution_plan_snapshot
+          // branch synchronously before the workflow ever starts (V31-12).
+          // A pending_confirmation branch is, by design, NOT admitted yet on
+          // this first pass: V31-12 defers that admission to the
+          // confirmation gate, which runs later in this same workflow body
+          // once the merchant decides (see admitExecutionPlanSnapshot
+          // below, which admits and verifies together). Verifying it here
+          // unconditionally made every fresh paid task die on this exact
+          // step, before the confirmation card was ever built (4A).
+          if (
+            executionPlanAdmission &&
+            replayBranch.branch === 'execution_plan_snapshot'
+          ) {
             await executionPlanAdmission.verifyAdmittedForDbos({
               workflowId,
               snapshotHash: replaySnapshotHash,
