@@ -31,6 +31,24 @@ const imageTextContract = JOURNEY_CONTRACTS.find(
   ({ modality }) => modality === 'image_text'
 )!;
 
+function isResultDeliveryResponse(response: Response, action: string) {
+  if (
+    response.request().method() !== 'POST' ||
+    !response.url().includes('/api/core/p1/commands')
+  ) {
+    return false;
+  }
+  try {
+    const body = response.request().postDataJSON() as {
+      action?: string;
+      module?: string;
+    };
+    return body.module === 'result-delivery' && body.action === action;
+  } catch {
+    return false;
+  }
+}
+
 test.describe('XHS image-text main journey (production gate)', () => {
   test.beforeAll(async ({ request }) => {
     test.setTimeout(120_000);
@@ -56,6 +74,53 @@ test.describe('XHS image-text main journey (production gate)', () => {
     await seedComposerInlineAuthorize(page, {
       fileName: 'xhs-main-journey-source.png',
     });
+    let replayCalls = 0;
+    let eventCalls = 0;
+    let reconnectLastEventId: string | undefined;
+    let reconnectLastStreamOffset: string | null = null;
+    let replayFaultApplied = false;
+    let streamFaultApplied = false;
+    const agentResponses: Response[] = [];
+    page.on('response', (response) => {
+      if (!response.url().includes('/api/core/p1/agent-threads/')) return;
+      agentResponses.push(response);
+      void response
+        .headerValue('x-meiye-e2e-agent-fault-applied')
+        .then((fault) => {
+          if (fault === 'artifact-head-replay') replayFaultApplied = true;
+          if (fault === 'artifact-gap-close') streamFaultApplied = true;
+        });
+    });
+    await page.route(
+      '**/api/core/p1/agent-threads/*/replay**',
+      async (route) => {
+        replayCalls += 1;
+        if (!replayFaultApplied) {
+          const faultUrl = new URL(route.request().url());
+          faultUrl.searchParams.set('e2eAgentFault', 'artifact-head-replay');
+          await route.continue({ url: faultUrl.toString() });
+          return;
+        }
+        await route.continue();
+      }
+    );
+    await page.route(
+      '**/api/core/p1/agent-threads/*/events**',
+      async (route) => {
+        eventCalls += 1;
+        if (eventCalls === 1) {
+          const faultUrl = new URL(route.request().url());
+          faultUrl.searchParams.set('e2eAgentFault', 'artifact-gap-close');
+          await route.continue({ url: faultUrl.toString() });
+          return;
+        }
+        reconnectLastEventId = route.request().headers()['last-event-id'];
+        reconnectLastStreamOffset = new URL(
+          route.request().url()
+        ).searchParams.get('lastStreamOffset');
+        await route.continue();
+      }
+    );
 
     const workId = await submitComposerJourney(
       page,
@@ -74,6 +139,12 @@ test.describe('XHS image-text main journey (production gate)', () => {
           await expect(note).toBeVisible({ timeout: 60_000 });
           await expect(note).toHaveAttribute('data-artifact-status', 'ready');
           await expect(page.getByTestId('agent-artifact-card')).toHaveCount(1);
+          // Core closes the first real SSE after dropping one Artifact revision.
+          // The host must reconnect itself; this journey never reloads the page.
+          await expect.poll(() => streamFaultApplied).toBe(true);
+          await expect.poll(() => replayFaultApplied).toBe(true);
+          await expect.poll(() => replayCalls).toBeGreaterThanOrEqual(2);
+          await expect.poll(() => eventCalls).toBeGreaterThanOrEqual(2);
 
           const replayPath = `/api/core/p1/agent-threads/${encodeURIComponent(threadId!)}/replay`;
           const fullReplay = (await page.evaluate(async (path) => {
@@ -105,65 +176,11 @@ test.describe('XHS image-text main journey (production gate)', () => {
             (firstArtifact.payload.revision ?? 0) + 1
           );
 
-          let replayCalls = 0;
-          let eventCalls = 0;
-          let reconnectLastEventId: string | undefined;
-          let reconnectLastStreamOffset: string | null = null;
-          const agentResponses: Response[] = [];
-          page.on('response', (response) => {
-            if (
-              response
-                .url()
-                .includes(`/agent-threads/${encodeURIComponent(threadId!)}/`)
-            ) {
-              agentResponses.push(response);
-            }
-          });
-          await page.route(`**${replayPath}**`, async (route) => {
-            replayCalls += 1;
-            if (replayCalls === 1) {
-              const faultUrl = new URL(route.request().url());
-              faultUrl.searchParams.set(
-                'e2eAgentFault',
-                'artifact-head-replay'
-              );
-              await route.continue({ url: faultUrl.toString() });
-              return;
-            }
-            await route.continue();
-          });
-          await page.route(
-            `**/api/core/p1/agent-threads/${encodeURIComponent(threadId!)}/events**`,
-            async (route) => {
-              eventCalls += 1;
-              if (eventCalls !== 1) {
-                await route.continue();
-                return;
-              }
-              reconnectLastEventId = route.request().headers()['last-event-id'];
-              reconnectLastStreamOffset = new URL(
-                route.request().url()
-              ).searchParams.get('lastStreamOffset');
-              const faultUrl = new URL(route.request().url());
-              faultUrl.searchParams.set('e2eAgentFault', 'artifact-gap-close');
-              await route.continue({ url: faultUrl.toString() });
-            }
-          );
-
-          // A real browser transport disconnect loses the in-memory Workbench.
-          // On reconnect, the first durable replay is intentionally truncated;
-          // the live final revision creates a real gap and must trigger a second,
-          // full snapshot replay rather than accepting the jumped revision.
-          await page.context().setOffline(true);
-          await page.context().setOffline(false);
-          await page.reload();
-
           await expect(page.getByTestId('agent-artifact-note')).toHaveAttribute(
             'data-artifact-status',
             'ready',
             { timeout: 60_000 }
           );
-          await expect.poll(() => replayCalls).toBeGreaterThanOrEqual(2);
           expect(reconnectLastEventId).toBe(firstArtifact.eventId);
           expect(reconnectLastStreamOffset).toBe(firstArtifact.streamOffset);
           const appliedFaults = (
@@ -176,6 +193,61 @@ test.describe('XHS image-text main journey (production gate)', () => {
           expect(appliedFaults).toContain('artifact-head-replay');
           expect(appliedFaults).toContain('artifact-gap-close');
           await expect(page.getByTestId('agent-artifact-card')).toHaveCount(1);
+
+          const recoveredRevision = Number(
+            await page
+              .getByTestId('agent-artifact-note')
+              .getAttribute('data-revision')
+          );
+          expect(recoveredRevision).toBeGreaterThan(0);
+          const readyRow = page
+            .locator(
+              '[data-testid="note-plan-page-row"][data-image-status="ready"]'
+            )
+            .first();
+          await expect(readyRow).toBeVisible({ timeout: 60_000 });
+          const prepareResponse = page.waitForResponse(
+            (response) =>
+              isResultDeliveryResponse(response, 'result_adjust_prepare'),
+            { timeout: 60_000 }
+          );
+          await readyRow.getByTestId('note-plan-page-regenerate').click();
+          expect((await prepareResponse).ok()).toBe(true);
+
+          const confirmResponse = page.waitForResponse(
+            (response) => isResultDeliveryResponse(response, 'result_adjust'),
+            { timeout: 60_000 }
+          );
+          await page.getByTestId('execution-confirm-accept').click();
+          expect((await confirmResponse).ok()).toBe(true);
+          const derivedConfirmation = page.getByTestId(
+            'execution-confirmation-interaction-card'
+          );
+          await expect(derivedConfirmation).toBeVisible({ timeout: 60_000 });
+          await derivedConfirmation
+            .getByRole('button', { name: '确认执行' })
+            .click();
+
+          await expect
+            .poll(
+              async () =>
+                Number(
+                  await page
+                    .getByTestId('agent-artifact-note')
+                    .getAttribute('data-revision')
+                ),
+              {
+                message:
+                  'the automatically re-subscribed SSE must receive the successor Artifact revision',
+                timeout: 120_000,
+              }
+            )
+            .toBeGreaterThan(recoveredRevision);
+          await expect(page.getByTestId('agent-artifact-note')).toHaveAttribute(
+            'data-artifact-status',
+            'ready',
+            { timeout: 120_000 }
+          );
         },
       }
     );

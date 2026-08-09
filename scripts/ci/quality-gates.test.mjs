@@ -119,6 +119,7 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
 	  /x-meiye-e2e-agent-fault-applied/u
 	);
 	assert.doesNotMatch(artifactBrowserJourney, /route\.fulfill/u);
+	assert.doesNotMatch(artifactBrowserJourney, /page\.reload/u);
 
   assert.deepEqual(await runGate('run-p2-browser-acceptance.sh'), [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
