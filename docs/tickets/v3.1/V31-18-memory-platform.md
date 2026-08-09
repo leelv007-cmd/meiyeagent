@@ -26,7 +26,9 @@
 - 违规只作 advisory annotation，**永不拒绝**（不得 brick 已扣费的提交）；
 - 另加一处 delivery-time advisory。
 
-**时点**：与 V31-18 P1-8 的绑定时刻相同——即 `merchant_confirmed` 真正拿到 ExecutionPlanSnapshot 之时（当前 `apps/core/src/p1/harness/task-admission.ts:427` 只放行 `policy_exempt_copy`，所以 note/media 走 legacy，两者都还没生效面）。**故现在不接线**，由 integration 波按本节作为已定规格消费，避免变成孤儿。
+**时点**：与 V31-18 P1-8 的绑定时刻相同——即 `merchant_confirmed` 真正拿到 ExecutionPlanSnapshot 之时（`apps/core/src/p1/harness/task-admission.ts:567` 只放行 `policy_exempt_copy`，所以 note/media 走 legacy，两者都还没生效面）。**故现在不接线**，由 integration 波按本节作为已定规格消费，避免变成孤儿。
+
+> **重锚（Wave 4，2026-08-10）**：上句原写 `task-admission.ts:427`，那是 T4 树的行号；集成树 `98949870a` 上 `:427` 已是 `private async admit(input, dispatch)`，`policy_exempt_copy` 实际在 `:567`。这是树漂移不是错号，已按集成树改写。**这个「绑定时刻＝`merchant_confirmed`」的结论是下面那条恢复路径裁决的依据之一**，见「裁决 — 恢复路径 P0-1 的满足机制」。
 
 **原语位置（integration 直接取用）**：
 - `assessMemoryStyleCompliance(candidate, style)` — `apps/core/src/p1/harness/make-snapshot-consume.ts:283`，纯函数、CJK 感知，返回 `{passed, violations}`，`MemoryStyleViolation` 覆盖 max_title_chars / max_body_chars / max_sentence_chars / forbidden_phrase。
@@ -36,6 +38,27 @@
 **同一次变更内必须一起做**：删除 `ai-sdk-runner.ts:1657` 的 fixture 自读 prompt 作弊，改为让 fixture 产出**真正合规**的输出（而非被正则触发的硬编码）。否则接线后门会因为错误的理由变绿。
 
 **附带记录（P2-9，契约即天花板）**：`planMemoryContextSchema`（`packages/contracts/src/agent-domain.ts:480-509`）是 `.strict()`，`tones` 是封闭二值枚举上限 2，`entries` 只带 `{memoryId, revision}`，唯一能承载自由文本的字段是 `forbiddenPhrases`（20×100 字符）且被硬编码 `['绝对','保证','必然']` 占满。两条正则对 join 后的 statements 取值，无论确认了 1 条还是 8 条偏好都只有 4 个可达状态；**未命中任何正则的条目仍会进 `entries`**，于是 receipt 声称已注入、下游零影响——与 P1-8 同类的透明度谎报。承载任意偏好需改上述 schema + `make-snapshot-consume.ts` 的读取端，**与本节接线同一时点执行**。
+
+## 裁决 — 恢复路径 P0-1 的满足机制变了（2026-08-10，主控裁决；W4-A 发现）
+
+**发现路径**：W4-A 在合并树上跑出 `composer-http.test.ts` **三红**。红的成因不是回归，是 P0-1 的**满足机制已经换了**，而测试还钉在旧机制上。
+
+**先说一件坐标事实**：P0-1 在本票**票面上从来没有过段落**——它是 T4 修复轮的 lane 内编号。它真正的落点在**代码注释**里：`apps/core/src/p1/execution-spine/submission-coordinator.ts:1215-1219`（集成树 `98949870a`）写着「V31-18 P0-1: recovery must re-enter plan preparation, not go around it」。本节即为该编号在票面上建立正式落点。
+
+**双臂语义（裁决终态）**：
+
+| 臂 | 行的形态 | 恢复时发生什么 | 为什么这样是对的 |
+|---|---|---|---|
+| **持久臂**（新行，主流） | 有 `agentBinding` ＋ 有 `executionPlanFreeze` | `prepareAgentPlan` 在 `:777` **短路返回**，prepare 不跑，检索不重做 | 原子序（prepare 先于 claim，T7 `5965ee9b1` `fix(harness): close paid confirmation crash windows`）下，新行的**检索产物在 claim 时已随 freeze 持久化**。恢复读持久化 freeze 即可；**重推导会让确认后的计划漂移，违反 V31-39 的付费确认语义** |
+| **可达臂**（pre-durable 遗留行） | 缺 `agentBinding` 或缺 `executionPlanFreeze` | 短路不成立 ⇒ `prepare()` **真跑**，检索与 receipt 真发生 | 这些行的检索产物当年没被持久化，不重跑就真的丢 receipt。P0-1 的原始诉求在这一臂上仍然成立 |
+
+**实施红线**：`submission-coordinator.ts:777` 的短路（`if (submission.agentBinding && submission.executionPlanFreeze) return submission.agentBinding;`）是**防确认后计划漂移的守卫，不是优化**。任何 lane 不得以「P0-1 要求恢复必须重入 prepare」为理由回退或弱化它——那句要求只对可达臂成立。同一约束已互引进 V31-33 与 V31-41（两票同摸 `recoverPendingStarts`）。
+
+**依据链**：绑定时刻＝`merchant_confirmed`（见上节「时点」）是本裁决的依据之一。代码侧还有第二处独立印证：`recoverPendingStarts` 的过滤谓词 `:1196-1209` 正是按 `executionPlanFreeze?.approvalBasis !== "merchant_confirmed"` 分流的——`merchant_confirmed` 的行只由显式 start 命令启动，恢复不得替商家按下确认，唯一例外是 `confirmationDispatch?.state === "dispatched"`（已跨出外部启动边界、授权 ID 没回来的行）。即「`merchant_confirmed` 是分界」这件事在产品代码里已经是硬编码的，不只是文档结论。
+
+**附带项（同一次变更内一并修，不要只改测试）**：`:1215-1219` 那段注释现在**过宽**——它声称 prepare「performs the confirmed-memory retrieval whose receipt would otherwise be silently skipped on recovery」，但持久臂在 `:777` 就返回了，那次检索**不会发生**。注释按字面读是错的，而且错得很有诱导性：下一个读它的人会认为 `:777` 是 bug 并「修」掉它。请与测试重钉同一次改掉，把主张限定到可达臂。
+
+**测试重钉归属**：代码与测试由 **W4-B** 落地（RED→GREEN）。**待补录**：W4-B 的 commit SHA 由主控回填到此处 ⇒ `（W4-B commit: 待补录）`。本票在此之前不得据此勾选任何 AC。
 
 ## Evidence
 
@@ -141,3 +164,4 @@
 - Wave 4（2026-08-10，review-memory 在 `codex/v31-w4-tickets`，基座 `98949870a`）：把 L-CI 落的空 Evidence scaffold 按真实证据填实——writer/consumer/test 三列锚署集成树，结果数字署 T4 树 `8d74ad642` 一次性新库实测；给出 5 条 AC 的逐条勾选裁定（**全部不得勾选**，理由各异）；报出两个缺口（`agent-memory-platform.ts:547` 的 Business Fact 守卫零测试；Evidence 列集与本票 3 条非 PG/非浏览器轴的 AC 不匹配）；落 T4 域 per-file 对账基准（单测 9 文件＝127、PG 10 文件＝42）供 W4-A 对账。
 - 同轮自我更正：初稿把一对聚合观测写成了「并发档位致红」，核证后发现该红出自 fix-03 树、签名是库内残留行（`attempted: 4`），且本会话零 `40P01` 实测——已改写为明确的「不得当作并发证据」并列出三条理由。**归因错误若不更正，会给后续 lane 一个不存在的假红分类去套。**
 - 本 commit 对 `apps/core`、`mkfast-template-main`、`packages`、`scripts`、`.github` 零改动，未改 Status 与任何 checkbox。
+- Wave 4 追加（同日）：落主控对 T4/T7 崩溃恢复语义碰撞的裁决（W4-A 发现，`composer-http.test.ts` 三红）——新建「裁决 — 恢复路径 P0-1 的满足机制变了」节，记双臂语义、`:777` 实施红线、`merchant_confirmed` 依据链（含 `recoverPendingStarts :1196-1209` 的代码级第二印证），并报出 `:1215-1219` 注释过宽须与测试重钉同批修正；W4-B 的 commit SHA 位留空待主控回填。**坐标更正两处**：P0-1 在本票票面此前**无落点**（是 T4 lane 内编号，真落点在代码注释），本节即为其正式落点；「时点」段的 `task-admission.ts:427` 是 T4 树行号，集成树上 `policy_exempt_copy` 实在 `:567`，已重锚。互引已同步至 V31-33 与 V31-41 的「关联」节。
