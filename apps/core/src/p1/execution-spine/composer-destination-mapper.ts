@@ -100,7 +100,11 @@ export class StructuredComposerDestinationMapper
   constructor(
     private readonly executor: StructuredObjectExecutor,
     private readonly prompt?: {
-      resolve(): Promise<ModelSupplyPromptBinding>;
+      /**
+       * workspaceId is required: the release pin is workspace-scoped, and a
+       * workspace-less resolve silently returns bare production.
+       */
+      resolve(input: { workspaceId: string }): Promise<ModelSupplyPromptBinding>;
     },
     private readonly promptAudits?: ModelSupplyPromptAuditPort,
   ) {}
@@ -113,7 +117,11 @@ export class StructuredComposerDestinationMapper
   }): Promise<ComposerDestinationMapping> {
     const destination = input.destination.trim();
     if (!destination) return DEFAULT_CLARIFICATION;
-    const prompt = await this.prompt?.resolve();
+    const prompt = this.prompt
+      ? await this.prompt.resolve({
+          workspaceId: requirePromptWorkspaceId(input.workspaceId),
+        })
+      : undefined;
     if (prompt) {
       assertModelSupplyPromptBinding(
         prompt,
@@ -169,6 +177,20 @@ export class StructuredComposerDestinationMapper
       return DEFAULT_CLARIFICATION;
     }
   }
+}
+
+/**
+ * Fail closed rather than resolve a workspace-scoped release pin without a
+ * workspace, which would silently fall back to bare production.
+ */
+function requirePromptWorkspaceId(workspaceId?: string): string {
+  const trimmed = workspaceId?.trim();
+  if (!trimmed) {
+    throw new Error(
+      'Destination mapping requires a workspaceId to resolve its release-pinned prompt.',
+    );
+  }
+  return trimmed;
 }
 
 function promptReference(prompt: ModelSupplyPromptBinding) {

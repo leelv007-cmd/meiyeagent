@@ -83,11 +83,8 @@ import {
   HarnessInteractionService,
   HarnessSystemDefaultProducer,
 } from '../p1/harness/interaction-service.js';
-import {
-  requireHarnessFrozenPrompt,
-  resolveHarnessPromptKeys,
-  type HarnessPromptKey,
-} from '../p1/harness/langfuse-prompts.js';
+import { requireHarnessFrozenPrompt } from '../p1/harness/langfuse-prompts.js';
+import { resolveDestinationMappingPrompt } from '../p1/harness/destination-prompt-release.js';
 import { langfuseSenderFromEnv } from '../p1/harness/langfuse-sender.js';
 import { createResolveExecutionPlanLiveFacts } from '../p1/harness/execution-plan-live-facts.js';
 import { InterruptProtocolService } from '../p1/harness/interrupt-protocol.js';
@@ -1052,23 +1049,12 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     composerDestinationMapper = new StructuredComposerDestinationMapper(
       structuredExecutor,
       {
-        async resolve() {
-          const key: HarnessPromptKey = 'destinationMapping';
-          const release = await harnessReleaseService.resolveForRun({});
-          const binding = release.artifact.promptBindings[key];
-          if (!binding || binding.key !== key || !binding.version.trim()) {
-            throw new Error(
-              `Production HarnessRelease is missing exact prompt pin ${key}.`
-            );
-          }
-          return requireHarnessFrozenPrompt(
-            await resolveHarnessPromptKeys(
-              harnessPromptResolver,
-              [key],
-              { [key]: binding.version }
-            ) as Parameters<typeof requireHarnessFrozenPrompt>[0],
-            key
-          );
+        async resolve({ workspaceId }) {
+          return resolveDestinationMappingPrompt({
+            releases: harnessReleaseService,
+            prompts: harnessPromptResolver,
+            workspaceId,
+          });
         },
       },
       promptAuditStore
