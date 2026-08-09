@@ -94,6 +94,7 @@ import type { ContentCarrierKind } from './carrier-unit-recipes.js';
 import { attachStageTaxonomy } from './five-stage-trace-taxonomy.js';
 import type { StageTaxonomyPayload } from './five-stage-trace-taxonomy.js';
 import { runFrozenLegacyFiveStage } from './frozen-legacy-five-stage.js';
+import { persistLegacyShadowObservation } from './legacy-shadow-observation-emitter.js';
 import type { ShadowDeterministicFields } from './shadow-reconciliation.js';
 
 export {
@@ -1458,6 +1459,18 @@ export async function runHarnessWorkflow(
   if (options.forceLegacyFiveStage) {
     return runFrozenLegacyFiveStage(programInput);
   }
+  // V31-13 P1-G: record the old chain's projection on this path too. It used to
+  // be emitted only from inside the frozen legacy runner, so with the kill switch
+  // off — normal production — the shadow program sampled nothing and could never
+  // close. The projection reads the merchant's creation snapshot, which is
+  // independent of the frozen plan the new chain is compared against.
+  await persistLegacyShadowObservation({
+    runtime,
+    request,
+    workflowId,
+    factRefs: prelude.factGate.allowedFactRefs ?? [],
+    context: prelude.context,
+  });
   // V31-25 P0-A: the plan directs execution. Each unit is dispatched to the
   // business step its declared `primitive:role` names, in plan order, with the
   // unit itself passed in — so removing, repeating or reparameterising a unit

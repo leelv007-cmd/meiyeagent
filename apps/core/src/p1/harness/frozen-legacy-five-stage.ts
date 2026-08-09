@@ -13,10 +13,7 @@
 import { isBoundedExecutionSuspension } from './bounded-execution-controller.js';
 import { projectHarnessExperienceBasis } from './experience-basis.js';
 import { merchantNoteStyleQuestion } from './merchant-delivery-language.js';
-import {
-  projectLegacyDeterministicFields,
-  type ShadowDeterministicFields,
-} from './shadow-reconciliation.js';
+import { persistLegacyShadowObservation } from './legacy-shadow-observation-emitter.js';
 import type {
   HarnessMediaStagePorts,
   HarnessNoteStagePorts,
@@ -466,48 +463,12 @@ async function persistLegacyObservation(
   factRefs: readonly string[],
   context: HarnessStageExecutionInput['prelude']['context'],
 ) {
-  if (!input.runtime.recordLegacyShadowObservation) return;
-  const observation = legacyObservation(input, factRefs, context);
-  if (!observation) return;
-  await input.runtime.recordLegacyShadowObservation({
-    observation,
+  await persistLegacyShadowObservation({
+    runtime: input.runtime,
+    request: input.request,
     workflowId: input.workflowId,
-    workspaceId: input.request.workspaceId,
-  });
-}
-
-function legacyObservation(
-  input: HarnessStageExecutionInput,
-  factRefs: readonly string[],
-  context: HarnessStageExecutionInput['prelude']['context'],
-): ShadowDeterministicFields | null {
-  const snapshot = input.request.executionSnapshot;
-  const bounds =
-    input.request.boundedExecution ??
-    input.request.executionPlanSnapshot?.boundedExecution;
-  if (!snapshot || !bounds) return null;
-  return projectLegacyDeterministicFields({
-    deliverables: snapshot.deliverables.map((deliverable) => ({
-      kind:
-        deliverable.kind === 'copy'
-          ? 'copy'
-          : deliverable.kind === 'image_text_note'
-            ? 'note'
-            : 'media',
-      quantity: deliverable.quantity,
-    })),
-    factRefs: [...factRefs],
-    rightsRefs:
-      context.policyReferences?.rightsRefs?.map(
-        (right) => `${right.assetId}:${right.status}`,
-      ) ?? [],
-    quoteRef: snapshot.quote,
-    bounds: {
-      maxIterations: bounds.maxIterations,
-      maxCostCents: bounds.maxCostCents,
-      maxWallClockMs: bounds.maxWallClockMs,
-      maxDelegations: bounds.maxDelegations,
-    },
+    factRefs,
+    context,
   });
 }
 

@@ -774,6 +774,57 @@ test('V31-25: legacy kill switch runs rollback path without compiled primitive e
   });
 });
 
+test('V31-13 P1-G: the compiled path records a legacy shadow observation with the kill switch off', async () => {
+  // recordLegacyShadowObservation had exactly one caller, inside the frozen
+  // legacy runner, so nothing was ever sampled unless forceLegacyFiveStage was
+  // on. The shadow program could therefore never accumulate observations and
+  // never close.
+  const observations: Parameters<
+    NonNullable<HarnessWorkflowRuntime['recordLegacyShadowObservation']>
+  >[0][] = [];
+  const baseRequest = mediaTaskInput('image_text_note');
+  const executionSnapshot = baseRequest.executionSnapshot!;
+  const result = await runHarnessWorkflow(
+    'p1g-compiled-shadow-sample',
+    {
+      ...baseRequest,
+      executionPlanSnapshot: buildTestPlanSnapshot('note'),
+      executionSnapshot: {
+        ...executionSnapshot,
+        deliverable: { ...executionSnapshot.deliverable!, quantity: 7 },
+        deliverables: executionSnapshot.deliverables.map((deliverable) => ({
+          ...deliverable,
+          quantity: 7,
+        })),
+      },
+    },
+    fixtureNoteStages(),
+    {
+      ...recordingRuntime([]),
+      async awaitDecision(question) {
+        return noteStyleOrPaidDecision(question);
+      },
+      async recordLegacyShadowObservation(input) {
+        observations.push(input);
+      },
+    },
+    // No forceLegacyFiveStage: this is the normal production path.
+  );
+
+  assert.equal(result.delivery.packageId, 'package-1');
+  assert.equal(observations.length, 1);
+  assert.equal(observations[0]?.workflowId, 'p1g-compiled-shadow-sample');
+  // The projection comes from the merchant's creation snapshot, not from the
+  // frozen plan the new chain is compared against.
+  assert.deepEqual(observations[0]?.observation.deliverables, [
+    { kind: 'note', quantity: 7 },
+  ]);
+  assert.deepEqual(observations[0]?.observation.quoteRef, {
+    id: 'quote-1',
+    revision: 'quote-r1',
+  });
+});
+
 test('V31-25: frozen rollback module has no dependency on compiled carrier business programs', () => {
   const workflow = readFileSync(new URL('./workflow-core.ts', import.meta.url), 'utf8');
   const frozen = readFileSync(
