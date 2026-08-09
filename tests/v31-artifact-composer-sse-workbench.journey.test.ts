@@ -7,6 +7,11 @@ import { AgentSemanticEventProjector } from '../apps/core/src/p1/agent-semantic-
 import { MemoryAgentSemanticEventStore } from '../apps/core/src/p1/agent-semantic-events/memory-semantic-event-store.ts';
 import { createCoreServer } from '../apps/core/src/server.ts';
 import type { DiagnosticRepository } from '../apps/core/src/diagnostics/repository.ts';
+import {
+  agentSemanticEventIdSchema,
+  agentSemanticEventWireSchema,
+  artifactUpdateWireSchema,
+} from '@meiye/contracts';
 import type { AgentSemanticEventWire, DiagnosticRun } from '@meiye/contracts';
 import { createCreationExecutionSnapshot } from '../apps/core/src/p1/execution-spine/creation-execution-snapshot.ts';
 import type { CreationSubmissionRecord } from '../apps/core/src/p1/execution-spine/submission-coordinator.ts';
@@ -23,8 +28,39 @@ import {
   projectVisibleArtifacts,
   reduceAgentWorkbench,
 } from '../mkfast-template-main/src/product/agent-workbench/agent-event-reducer.ts';
+import type {
+  ClientSnapshotCursor,
+  WorkbenchSessionProjection,
+} from '../mkfast-template-main/src/product/agent-workbench/agent-event-reducer.ts';
 
 const TS = '2026-08-09T08:00:00.000Z';
+
+/**
+ * Typed against the shapes the Workbench reducer actually consumes, and every
+ * event is re-parsed with the production wire schema. The previous inline cast
+ * declared a `session.revision` field that `AgentThread` does not have, so the
+ * journey silently published `sessionRevision: undefined` — nothing caught it
+ * because the root `tests/` directory belonged to no tsconfig.
+ */
+type ReplayEnvelope = {
+  data: {
+    events: AgentSemanticEventWire[];
+    session: WorkbenchSessionProjection;
+    snapshot: ClientSnapshotCursor;
+  };
+};
+
+async function readReplayEnvelope(response: Response): Promise<ReplayEnvelope> {
+  const body = (await response.json()) as ReplayEnvelope;
+  return {
+    data: {
+      ...body.data,
+      events: body.data.events.map((event) =>
+        agentSemanticEventWireSchema.parse(event),
+      ),
+    },
+  };
+}
 
 test('Composer artifact survives production HTTP replay and Last-Event-ID SSE into Workbench resync rules', async (t) => {
   const sessions = new MemoryAgentSessionStore();
@@ -90,7 +126,7 @@ test('Composer artifact survives production HTTP replay and Last-Event-ID SSE in
 	  agentSemanticEvents: {
 		async resolveSession({ workspaceId, threadId }) {
 		  if (workspaceId !== submission.snapshot.workspaceId || threadId !== binding.threadId) return null;
-		  return { resourceId: workspaceId, threadId, sessionRevision: session.revision };
+		  return { resourceId: workspaceId, threadId, sessionRevision: session.sessionRevision };
 		},
 		loadReplay: (input) => projector.loadReplay(input),
 		streamReplay(input) {
@@ -112,22 +148,16 @@ test('Composer artifact survives production HTTP replay and Last-Event-ID SSE in
 	};
 	const replayResponse = await fetch(`${base}/replay`, { headers });
 	assert.equal(replayResponse.status, 200);
-	const replayBody = await replayResponse.json() as {
-	  data: {
-		events: AgentSemanticEventWire[];
-		session: { resourceId: string; threadId: string; sessionRevision: number };
-		snapshot: {
-		  revision: string;
-		  lastEventId: string | null;
-		  lastStreamOffset: string | null;
-		};
-	  };
-	};
-	const sseWires = replayBody.data.events.filter((candidate) =>
-	  (candidate as { eventType?: string }).eventType === 'artifact.revised'
-	) as AgentSemanticEventWire[];
-  assert.equal(sseWires[0]?.payload.mode, 'snapshot');
-  assert.equal(sseWires.at(-1)?.payload.status, 'ready');
+	const replayBody = await readReplayEnvelope(replayResponse);
+	assert.equal(
+	  replayBody.data.session.sessionRevision,
+	  session.sessionRevision,
+	);
+	const sseWires = replayBody.data.events.filter(
+	  (candidate) => candidate.eventType === 'artifact.revised',
+	);
+  assert.equal(artifactUpdateWireSchema.parse(sseWires[0]?.payload).mode, 'snapshot');
+  assert.equal(artifactUpdateWireSchema.parse(sseWires.at(-1)?.payload).status, 'ready');
 
 	const firstArtifact = sseWires[0];
 	const finalArtifact = sseWires.at(-1);
@@ -168,10 +198,16 @@ test('Composer artifact survives production HTTP replay and Last-Event-ID SSE in
 	});
 	assert.equal(duplicate.ok, true);
 	assert.equal(duplicate.state.needsSnapshotResync, false);
-	const jumped = structuredClone(finalArtifact);
-	jumped.eventId = 'event-revision-jump';
-	jumped.streamOffset = '999';
-	jumped.payload.revision += 2;
+	const jumpedPayload = artifactUpdateWireSchema.parse(
+	  structuredClone(finalArtifact.payload),
+	);
+	jumpedPayload.revision += 2;
+	const jumped: AgentSemanticEventWire = {
+	  ...finalArtifact,
+	  eventId: agentSemanticEventIdSchema.parse('event-revision-jump'),
+	  streamOffset: '999',
+	  payload: jumpedPayload,
+	};
 	const resync = reduceAgentWorkbench(workbench, {
 	  type: 'apply_events_batch',
 	  events: [jumped],
@@ -181,7 +217,7 @@ test('Composer artifact survives production HTTP replay and Last-Event-ID SSE in
 
 	const snapshotRetry = await fetch(`${base}/replay`, { headers });
 	assert.equal(snapshotRetry.status, 200);
-	const retryBody = await snapshotRetry.json() as typeof replayBody;
+	const retryBody = await readReplayEnvelope(snapshotRetry);
 	const recovered = reduceAgentWorkbench(resync.state, {
 	  type: 'hydrate_replay',
 	  session: retryBody.data.session,
