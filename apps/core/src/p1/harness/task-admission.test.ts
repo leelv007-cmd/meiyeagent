@@ -1211,6 +1211,53 @@ test('a paid submission whose reserve fails leaves no started workflow', async (
   assert.equal(order.includes('start'), false);
 });
 
+/**
+ * The one remaining legacy fall-through, pinned so it stays deliberate: a task
+ * that was admitted before the compile freeze existed carries neither snapshot
+ * nor freeze on replay. It must stay on the legacy replay branch and must not
+ * open a confirmation request — there is no frozen plan to confirm. Every other
+ * paid precondition fails closed instead (see the two tests above).
+ */
+test('a durable task with no freeze replays on legacy and opens no confirmation', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const snapshotStore = new MemoryExecutionPlanSnapshotStore();
+  const confirmations: string[] = [];
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    new ExecutionPlanAdmissionService(snapshotStore),
+    {
+      async createRequest() {
+        confirmations.push('create');
+        throw new Error('Legacy replay must not create a confirmation.');
+      },
+      async putCurrent() {
+        confirmations.push('putCurrent');
+        throw new Error('Legacy replay must not pin a pending authority.');
+      },
+    },
+  );
+
+  const first = await service.submit(taskRequest({ taskId: 'task-legacy-1' }));
+  const replay = await service.submit(taskRequest({ taskId: 'task-legacy-1' }));
+
+  assert.equal(first.replayed, false);
+  assert.equal(replay.replayed, true);
+  assert.deepEqual(confirmations, []);
+  for (const request of starter.requests) {
+    assert.equal(request.executionPlanSnapshot, undefined);
+    assert.equal(request.pendingExecutionPlanSnapshot, undefined);
+    assert.equal(request.executionConfirmationRequestId, undefined);
+  }
+});
+
 test('V31-12 submit with ExecutionPlanSnapshot without admission writer fails closed', async () => {
   const service = new HarnessTaskAdmissionService(
     new MemoryRequestRegistry(),
