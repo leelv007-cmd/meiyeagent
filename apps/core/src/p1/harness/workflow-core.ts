@@ -6,6 +6,8 @@ import {
   type HarnessStage,
   type ContentPackage,
   type ContentPackageRevisionDelivery,
+  type ExecutionUnit,
+  type MerchantReport,
   type CreativeRecommendationDecisionTrace,
   type HarnessExperienceBasis,
   type NoteStyleCandidates,
@@ -83,9 +85,12 @@ import type {
 import {
   assertCompiledCarrierPlanCompatible,
   type CompiledPrimitiveHandlers,
+  type CompiledPrimitiveId,
+  compiledStepKey,
   executeCompiledCarrierPlan,
   resolveCompiledCarrierExecution,
 } from './compiled-carrier-executor.js';
+import type { ContentCarrierKind } from './carrier-unit-recipes.js';
 import { attachStageTaxonomy } from './five-stage-trace-taxonomy.js';
 import type { StageTaxonomyPayload } from './five-stage-trace-taxonomy.js';
 import { runFrozenLegacyFiveStage } from './frozen-legacy-five-stage.js';
@@ -1137,41 +1142,60 @@ export interface HarnessStageExecutionInput {
   workflowId: string;
 }
 
-type GeneratorResult<T> = T extends AsyncGenerator<unknown, infer R, unknown>
-  ? R
-  : never;
-type CopyHarnessWorkflowResult = GeneratorResult<
-  ReturnType<typeof createCopyCarrierBusinessProgram>
-> & {
+/** Shape every carrier's terminal record unit returns. */
+type CarrierRecordResultBase = {
+  delivery: ContentPackageRevisionDelivery;
+  deliveryLayer: IntentDeclaration['deliveryLayer'];
+  experienceBasis: HarnessExperienceBasis;
+  recommendation: {
+    recommendedCandidateId: string;
+    decisionTrace: CreativeRecommendationDecisionTrace;
+  };
+  trace: DecisionTraceFragment;
+};
+type CopyHarnessWorkflowResult = CarrierRecordResultBase & {
   billingReceipt?: undefined;
   merchantReport?: undefined;
 };
-type MediaHarnessWorkflowResult = GeneratorResult<
-  ReturnType<typeof createMediaCarrierBusinessProgram>
-> & { merchantReport?: undefined };
-type NoteHarnessWorkflowResult = GeneratorResult<
-  ReturnType<typeof createNoteCarrierBusinessProgram>
->;
+type MediaHarnessWorkflowResult = CarrierRecordResultBase & {
+  merchantReport?: undefined;
+  billingReceipt?: {
+    trustedUsage: {
+      kind: 'media_duration';
+      actualSeconds: number;
+      evidenceRef: string;
+    };
+  };
+};
+type NoteHarnessWorkflowResult = CarrierRecordResultBase & {
+  merchantReport?: MerchantReport;
+  billingReceipt: {
+    trustedUsage: {
+      kind: 'product_units';
+      units: Array<{ resource: 'copy' | 'image'; quantity: number }>;
+      evidenceRef: string;
+    };
+  };
+};
 export type HarnessWorkflowResult =
   | CopyHarnessWorkflowResult
   | MediaHarnessWorkflowResult
   | NoteHarnessWorkflowResult;
 
-type CarrierPrimitiveYield = {
-  primitive:
-    | 'read_context'
-    | 'ask_merchant'
-    | 'generate'
-    | 'check'
-    | 'revise';
-  value: unknown;
-};
+/**
+ * One business step a carrier implements, addressed by the plan as
+ * `primitive:role`. The unit is an *input*: steps read their declared
+ * parameters from it, so editing a unit changes what executes.
+ */
+type CarrierStep = (input: {
+  unit: ExecutionUnit;
+  priorOutputs: ReadonlyMap<string, unknown>;
+}) => Promise<unknown>;
 
-type CarrierPrimitiveProgram = AsyncGenerator<
-  CarrierPrimitiveYield,
-  HarnessWorkflowResult,
-  void
->;
+type CarrierStepMachine = {
+  carrier: ContentCarrierKind;
+  steps: ReadonlyMap<string, CarrierStep>;
+};
 
 async function runWorkflowPrelude(input: {
   descriptor: HarnessLensStageDescriptor;
@@ -1434,20 +1458,35 @@ export async function runHarnessWorkflow(
   if (options.forceLegacyFiveStage) {
     return runFrozenLegacyFiveStage(programInput);
   }
-  const primitiveProgram = createCompiledCarrierPrimitiveProgram(programInput);
+  // V31-25 P0-A: the plan directs execution. Each unit is dispatched to the
+  // business step its declared `primitive:role` names, in plan order, with the
+  // unit itself passed in — so removing, repeating or reparameterising a unit
+  // changes what runs. There is no positional generator agreement here.
+  const machine = createCarrierStepMachine(programInput);
+  const dispatch =
+    (primitive: CompiledPrimitiveId): CarrierStep =>
+    async ({ unit, priorOutputs }) => {
+      if (unit.primitive !== primitive) {
+        throw new Error(
+          `Primitive handler ${primitive} received unit ${unit.unitId} bound to ${unit.primitive}.`,
+        );
+      }
+      const key = compiledStepKey(unit);
+      const step = machine.steps.get(key);
+      if (!step) {
+        throw new Error(
+          `Carrier ${machine.carrier} has no business step bound for ${key} (unit ${unit.unitId}).`,
+        );
+      }
+      return step({ unit, priorOutputs });
+    };
   const primitiveHandlers: CompiledPrimitiveHandlers<HarnessStageExecutionInput> = {
-    read_context: ({ priorOutputs }) =>
-      advanceCarrierPrimitive(primitiveProgram, 'read_context', priorOutputs),
-    ask_merchant: ({ priorOutputs }) =>
-      advanceCarrierPrimitive(primitiveProgram, 'ask_merchant', priorOutputs),
-    generate: ({ priorOutputs }) =>
-      advanceCarrierPrimitive(primitiveProgram, 'generate', priorOutputs),
-    check: ({ priorOutputs }) =>
-      advanceCarrierPrimitive(primitiveProgram, 'check', priorOutputs),
-    revise: ({ priorOutputs }) =>
-      advanceCarrierPrimitive(primitiveProgram, 'revise', priorOutputs),
-    record: ({ priorOutputs }) =>
-      recordCarrierPrimitiveResult(primitiveProgram, priorOutputs),
+    read_context: dispatch('read_context'),
+    ask_merchant: dispatch('ask_merchant'),
+    generate: dispatch('generate'),
+    check: dispatch('check'),
+    revise: dispatch('revise'),
+    record: dispatch('record'),
   };
   const frozenExecutionPlan = request.executionPlanSnapshot?.executionPlan;
   const { result } = await executeCompiledCarrierPlan<
@@ -1464,15 +1503,17 @@ export async function runHarnessWorkflow(
     effectStore: {
       run: (key, operation) => runtime.runStep(key, operation),
     },
-    // Each business program already owns its durable effects and orchestration
-    // boundaries. The compiled units persist topology markers first, then run
-    // outside that DBOS step so DBOS.runStep is never nested.
+    // A primitive is self-durable when its own body opens durable steps, since
+    // the executor must not nest a DBOS step around it (D-038①): read_context
+    // and generate open HITL waits and bounded continuations, record opens the
+    // delivery commit, check opens the OCC fence and the policy gates.
+    // revise opens none, so the executor owns its durable unit boundary and its
+    // output is cached and replayed instead of the ports being re-invoked.
     selfDurablePrimitives: [
       'read_context',
       'ask_merchant',
       'generate',
       'check',
-      'revise',
       'record',
     ],
     onResolved: (resolution) => {
@@ -1482,98 +1523,21 @@ export async function runHarnessWorkflow(
   return result;
 }
 
-const primitiveProgramPosition = new WeakMap<CarrierPrimitiveProgram, number>();
-
-function createCompiledCarrierPrimitiveProgram(
+function createCarrierStepMachine(
   input: HarnessStageExecutionInput,
-): CarrierPrimitiveProgram {
+): CarrierStepMachine {
   if (input.descriptor.kind === 'copy') {
-    return createCompiledCopyPrimitiveProgram(input);
+    return createCopyCarrierStepMachine(input);
   }
   if (input.descriptor.kind === 'note') {
-    return createCompiledNotePrimitiveProgram(input);
+    return createNoteCarrierStepMachine(input);
   }
-  return createCompiledMediaPrimitiveProgram(input);
+  return createMediaCarrierStepMachine(input);
 }
 
-function createCompiledCopyPrimitiveProgram(
+function createCopyCarrierStepMachine(
   input: HarnessStageExecutionInput,
-): CarrierPrimitiveProgram {
-  return createCopyCarrierBusinessProgram(input) as CarrierPrimitiveProgram;
-}
-
-function createCompiledNotePrimitiveProgram(
-  input: HarnessStageExecutionInput,
-): CarrierPrimitiveProgram {
-  return createNoteCarrierBusinessProgram(input) as CarrierPrimitiveProgram;
-}
-
-function createCompiledMediaPrimitiveProgram(
-  input: HarnessStageExecutionInput,
-): CarrierPrimitiveProgram {
-  return createMediaCarrierBusinessProgram(input) as CarrierPrimitiveProgram;
-}
-
-async function synchronizeCarrierPrimitiveProgram(
-  program: CarrierPrimitiveProgram,
-  priorOutputs: ReadonlyMap<string, unknown>,
-): Promise<void> {
-  let position = primitiveProgramPosition.get(program) ?? 0;
-  const prior = [...priorOutputs.values()];
-  while (position < prior.length) {
-    const expected = prior[position];
-    if (
-      !expected ||
-      typeof expected !== 'object' ||
-      !('primitive' in expected)
-    ) {
-      throw new Error('Compiled primitive output is not typed.');
-    }
-    const replayed = await program.next();
-    if (replayed.done || replayed.value.primitive !== expected.primitive) {
-      throw new Error('Compiled primitive replay topology is incompatible.');
-    }
-    position += 1;
-  }
-  primitiveProgramPosition.set(program, position);
-}
-
-async function advanceCarrierPrimitive(
-  program: CarrierPrimitiveProgram,
-  primitive: CarrierPrimitiveYield['primitive'],
-  priorOutputs: ReadonlyMap<string, unknown>,
-): Promise<CarrierPrimitiveYield> {
-  await synchronizeCarrierPrimitiveProgram(program, priorOutputs);
-  const advanced = await program.next();
-  if (advanced.done || advanced.value.primitive !== primitive) {
-    throw new Error(
-      `Compiled carrier plan expected ${primitive} but business program yielded ${advanced.done ? 'record' : advanced.value.primitive}.`,
-    );
-  }
-  primitiveProgramPosition.set(
-    program,
-    (primitiveProgramPosition.get(program) ?? 0) + 1,
-  );
-  return advanced.value;
-}
-
-async function recordCarrierPrimitiveResult(
-  program: CarrierPrimitiveProgram,
-  priorOutputs: ReadonlyMap<string, unknown>,
-): Promise<HarnessWorkflowResult> {
-  await synchronizeCarrierPrimitiveProgram(program, priorOutputs);
-  const recorded = await program.next();
-  if (!recorded.done) {
-    throw new Error(
-      `Compiled carrier plan attempted record before ${recorded.value.primitive}.`,
-    );
-  }
-  return recorded.value;
-}
-
-async function* createCopyCarrierBusinessProgram(
-  input: HarnessStageExecutionInput,
-) {
+): CarrierStepMachine {
   const {
     ports: stagePorts,
     prelude,
@@ -1787,12 +1751,18 @@ async function* createCopyCarrierBusinessProgram(
   let factGate = prelude.factGate;
   let activeRequest = prelude.activeRequest;
   let bundle = prelude.context;
-
-  yield { primitive: 'read_context', value: bundle };
-
   const briefSkills = stageSkills.brief_compilation;
   const snapshotConsume = prelude.snapshotConsume;
-  let compiledBrief = await runtime.runStep(
+  let compiledBrief: CopyBrief | MeasuredCopyBrief;
+  let brief!: ReturnType<typeof unpackBrief>['brief'];
+  let briefMetrics: ReturnType<typeof unpackBrief>['metrics'];
+  let briefDegraded: ReturnType<typeof unpackBrief>['degraded'];
+  let selection!: HarnessSelectionResult;
+
+  const readContextStep: CarrierStep = async () => bundle;
+
+  const generateBriefStep: CarrierStep = async () => {
+  compiledBrief = await runtime.runStep(
     harnessEffectKey(
       workflowId,
       3,
@@ -1821,11 +1791,11 @@ async function* createCopyCarrierBusinessProgram(
       });
     },
   );
-  let {
+  ({
     brief,
     metrics: briefMetrics,
     degraded: briefDegraded,
-  } = unpackBrief(compiledBrief);
+  } = unpackBrief(compiledBrief));
   await trace(
     runtime,
     workflowId,
@@ -1861,8 +1831,12 @@ async function* createCopyCarrierBusinessProgram(
       : merchantProgressMessage('brief_compilation'),
   });
 
-  yield { primitive: 'generate', value: { brief, bundle } };
+    return { brief, bundle };
+  };
 
+  const executionSkills = stageSkills.execution_selection;
+
+  const generateSelectionStep: CarrierStep = async ({ unit }) => {
   activeRequest = await confirmPaidGenerationExecution({
     workflowId,
     request: activeRequest,
@@ -1875,13 +1849,12 @@ async function* createCopyCarrierBusinessProgram(
       applyCurrentTaskDecision(wfId, req, command, runtime),
   });
 
-  const executionSkills = stageSkills.execution_selection;
-  let selection: HarnessSelectionResult = await executeSelectionToCompletion(
+  selection = await executeSelectionToCompletion(
       harnessEffectKey(
         workflowId,
         4,
         skillEffectUnit('copy', executionSkills.instructions),
-        'selection',
+        selectionEffectDiscriminator(unit),
       ),
       {
         workflowId,
@@ -1918,8 +1891,10 @@ async function* createCopyCarrierBusinessProgram(
     message: merchantProgressMessage('execution_selection'),
   });
 
-  yield { primitive: 'generate', value: { selection, brief } };
+    return { selection, brief };
+  };
 
+  const checkGateStep: CarrierStep = async ({ unit }) => {
   const fenced = await runtime.runStep(
     harnessEffectKey(workflowId, 2, 'fence', `r${bundle.bundle.revision}`),
     () =>
@@ -2065,16 +2040,20 @@ async function* createCopyCarrierBusinessProgram(
     workflowId,
   });
 
-  yield {
-    primitive: 'check',
-    value: {
-      selection,
-      brief,
-      bundle,
-    },
+    return projectDeliveryReadiness({
+      unit,
+      selectedCandidateId: selection.winner.candidateId,
+      producedCandidateId: selection.winner.candidateId,
+      plannedTargets: [],
+      producedTargets: [],
+      partialTargets: [],
+    });
   };
 
   const assemblySkills = stageSkills.assembly_delivery;
+
+  const recordAssembleStep: CarrierStep = async ({ priorOutputs }) => {
+  requireDeliveryReadiness(priorOutputs);
   const delivery = await runtime.runStep(
     harnessEffectKey(
       workflowId,
@@ -2133,12 +2112,24 @@ async function* createCopyCarrierBusinessProgram(
     experienceBasis: projectHarnessExperienceBasis(bundle.bundle),
     recommendation,
     trace: selection.trace,
+  } satisfies CopyHarnessWorkflowResult;
+  };
+
+  return {
+    carrier: 'copy',
+    steps: new Map<string, CarrierStep>([
+      ['read_context:context', readContextStep],
+      ['generate:brief', generateBriefStep],
+      ['generate:selection', generateSelectionStep],
+      ['check:gate', checkGateStep],
+      ['record:assemble', recordAssembleStep],
+    ]),
   };
 }
 
-async function* createNoteCarrierBusinessProgram(
+function createNoteCarrierStepMachine(
   input: HarnessStageExecutionInput,
-) {
+): CarrierStepMachine {
   const {
     ports: stagePorts,
     prelude,
@@ -2152,9 +2143,22 @@ async function* createNoteCarrierBusinessProgram(
   let activeRequest = prelude.activeRequest;
   let context = prelude.context;
   let factGate = prelude.factGate;
+  let brief!: HarnessNoteBrief;
+  let selectedStyleId!: string;
+  let selectedNoteCandidate!: HarnessNoteBrief['candidates']['candidates'][number];
+  let activeNoteCandidate!: HarnessNoteBrief['candidates']['candidates'][number];
+  let selection!: Awaited<
+    ReturnType<HarnessNoteStagePorts['executeNoteAndSelect']>
+  >;
+  let noteRegenerationSignals: typeof selection.auditSignals = [];
 
-  yield { primitive: 'read_context', value: context };
+  const briefSkills = stageSkills.brief_compilation;
+  const snapshotConsume = prelude.snapshotConsume;
+  const executionSkills = stageSkills.execution_selection;
 
+  const readContextStep: CarrierStep = async () => context;
+
+  const generateBriefStep: CarrierStep = async () => {
   if (
     activeRequest.executionSnapshot?.sources.assets.some(
       ({ role }) => role === 'style',
@@ -2167,9 +2171,7 @@ async function* createNoteCarrierBusinessProgram(
     });
   }
 
-  const briefSkills = stageSkills.brief_compilation;
-  const snapshotConsume = prelude.snapshotConsume;
-  let brief = await runtime.runStep(
+  brief = await runtime.runStep(
     harnessEffectKey(
       workflowId,
       3,
@@ -2230,11 +2232,14 @@ async function* createNoteCarrierBusinessProgram(
     state: 'suspended',
     message: merchantNoteProgressMessage('styles_ready'),
   });
-  yield { primitive: 'generate', value: { brief, context } };
+    return { brief, context };
+  };
+
+  const askStyleStep: CarrierStep = async () => {
   const frozenStyle = [...(activeRequest.decisionReferences ?? [])]
     .reverse()
     .find(({ field }) => field === 'note_style');
-  let selectedStyleId = frozenStyle
+  selectedStyleId = frozenStyle
     ? noteStyleIdFromValue(brief, frozenStyle.value)
     : noteStyleIdFromDecision(
         brief,
@@ -2244,12 +2249,13 @@ async function* createNoteCarrierBusinessProgram(
           'brief_compilation',
         ),
       );
-  const selectedNoteCandidate = brief.candidates.candidates.find(
+  const resolvedNoteCandidate = brief.candidates.candidates.find(
     ({ styleId }) => styleId === selectedStyleId,
   );
-  if (!selectedNoteCandidate) {
+  if (!resolvedNoteCandidate) {
     throw new HarnessMediaScopeError(merchantNoteStyleUnavailable());
   }
+  selectedNoteCandidate = resolvedNoteCandidate;
   const notePlanPreview = {
     styleId: selectedNoteCandidate.styleId,
     styleName: selectedNoteCandidate.styleName,
@@ -2268,11 +2274,10 @@ async function* createNoteCarrierBusinessProgram(
     message: merchantNoteProgressMessage('style_selected'),
     notePlanPreview,
   });
-  yield {
-    primitive: 'ask_merchant',
-    value: { selectedStyleId, notePlanPreview },
+    return { selectedStyleId, notePlanPreview };
   };
 
+  const generatePagesStep: CarrierStep = async ({ unit }) => {
   const fenced = await runtime.runStep(
     harnessEffectKey(workflowId, 2, 'fence', `r${context.bundle.revision}`),
     () =>
@@ -2357,7 +2362,7 @@ async function* createNoteCarrierBusinessProgram(
     });
   }
 
-  const activeNoteCandidate =
+  activeNoteCandidate =
     brief.candidates.candidates.find(
       ({ styleId }) => styleId === selectedStyleId,
     ) ?? selectedNoteCandidate;
@@ -2385,7 +2390,6 @@ async function* createNoteCarrierBusinessProgram(
       applyCurrentTaskDecision(wfId, req, command, runtime),
   });
 
-  const executionSkills = stageSkills.execution_selection;
   let noteArtifactRevision = 0;
   const noteSelectionInput = {
     workflowId,
@@ -2442,23 +2446,15 @@ async function* createNoteCarrierBusinessProgram(
         : {}),
     }),
   };
-  const selection = await runSelectionStage(
+  selection = await runSelectionStage(
     runtime,
     workflowId,
-    'image_text_note',
+    `image_text_note${selectionEffectDiscriminatorSuffix(unit)}`,
     executionSkills.instructions,
     noteSelectionInput,
-    async (input) => {
-      const selected = await ports.executeNoteAndSelect(input);
-      await ports.recordExecutionAssemblyStep?.({
-        workflowId,
-        request: input.request,
-        step: 'execution_check',
-      });
-      return selected;
-    },
+    (stageInput) => ports.executeNoteAndSelect(stageInput),
   );
-  const noteRegenerationSignals = selection.auditSignals.filter(
+  noteRegenerationSignals = selection.auditSignals.filter(
     (signal) => signal.eventType === 'note_page_regenerated',
   );
   await trace(
@@ -2472,63 +2468,79 @@ async function* createNoteCarrierBusinessProgram(
       ...skillTraceLineage(executionSkills),
     },
     `r${context.bundle.revision}`,
-    noteRegenerationSignals.length > 0
-      ? async () => {
-          if (!ports.recordObservabilityEvent) {
-            throw new Error(
-              'Note regeneration requires canonical observability.',
-            );
-          }
-          for (const signal of noteRegenerationSignals) {
-            const auditRef = signal.payload.auditRef;
-            if (typeof auditRef !== 'string' || auditRef.trim().length === 0) {
-              throw new Error(
-                'Note regeneration observability requires an auditRef.',
-              );
-            }
-            const idempotencyKey = `note-regenerated:${workflowId}:${auditRef}`;
-            await ports.recordObservabilityEvent({
-              workflowId,
-              request: activeRequest,
-              idempotencyKey,
-              event: {
-                eventType: 'note_page_regenerated',
-                payload: signal.payload,
-              },
-              ...(signal.payload.imagePoints === 0
-                ? { promptKey: 'noteTextBlock' as const }
-                : {}),
-            });
-          }
-        }
-      : undefined,
   );
-  await reportProgress({
-    stage: 'execution_selection',
-    state: 'success',
-    message: selection.partial
-      ? merchantPartialFailure({
-          completed: '可用页面已经生成',
-          failed: `第 ${selection.partial.unresolvedPageIds.join('、')} 页的一致性复核仍未通过`,
-          nextStep: '先查看已生成页面，再单独重新生成标记页面',
-        })
-      : merchantNoteProgressMessage('consistency_checked'),
-  });
-  yield { primitive: 'generate', value: { selection, brief } };
-  yield {
-    primitive: 'check',
-    value: {
-      selection,
-      brief,
-      context,
-      regenerationCount: noteRegenerationSignals.length,
-    },
-  };
-  yield {
-    primitive: 'revise',
-    value: { selection, regenerationSignals: noteRegenerationSignals },
+    return { selection, brief };
   };
 
+  // check owns the note consistency verification the plan asks for. Its rubric
+  // is a declared unit parameter, and the assembly-step record for the check
+  // moved here from inside the selection port: the check unit owns it now.
+  const checkConsistencyStep: CarrierStep = async ({ unit }) => {
+    const readiness = projectDeliveryReadiness({
+      unit,
+      selectedCandidateId: selectedStyleId,
+      producedCandidateId: selection.selectedStyleId,
+      plannedTargets: activeNoteCandidate.plan.pages.map((page) => page.id),
+      producedTargets: selection.version.plan.pages.map((page) => page.id),
+      partialTargets: selection.partial?.unresolvedPageIds ?? [],
+    });
+    await ports.recordExecutionAssemblyStep?.({
+      workflowId,
+      request: activeRequest,
+      step: 'execution_check',
+    });
+    await reportProgress({
+      stage: 'execution_selection',
+      state: 'success',
+      message: readiness.passed
+        ? merchantNoteProgressMessage('consistency_checked')
+        : merchantPartialFailure({
+            completed: '可用页面已经生成',
+            failed: `第 ${readiness.findings.join('、')} 页的一致性复核仍未通过`,
+            nextStep: '先查看已生成页面，再单独重新生成标记页面',
+          }),
+    });
+    return readiness;
+  };
+
+  // revise owns the page-regeneration observability the plan asks for. It is
+  // skipped entirely when the plan omits the revise unit.
+  const revisePagesStep: CarrierStep = async ({ priorOutputs }) => {
+    const readiness = requireDeliveryReadiness(priorOutputs);
+    if (noteRegenerationSignals.length === 0) {
+      return { regeneratedPages: 0, unresolvedPages: readiness.findings };
+    }
+    if (!ports.recordObservabilityEvent) {
+      throw new Error('Note regeneration requires canonical observability.');
+    }
+    for (const signal of noteRegenerationSignals) {
+      const auditRef = signal.payload.auditRef;
+      if (typeof auditRef !== 'string' || auditRef.trim().length === 0) {
+        throw new Error(
+          'Note regeneration observability requires an auditRef.',
+        );
+      }
+      await ports.recordObservabilityEvent({
+        workflowId,
+        request: activeRequest,
+        idempotencyKey: `note-regenerated:${workflowId}:${auditRef}`,
+        event: {
+          eventType: 'note_page_regenerated',
+          payload: signal.payload,
+        },
+        ...(signal.payload.imagePoints === 0
+          ? { promptKey: 'noteTextBlock' as const }
+          : {}),
+      });
+    }
+    return {
+      regeneratedPages: noteRegenerationSignals.length,
+      unresolvedPages: readiness.findings,
+    };
+  };
+
+  const recordAssembleStep: CarrierStep = async ({ priorOutputs }) => {
+  const readiness = requireDeliveryReadiness(priorOutputs);
   const assemblySkills = stageSkills.assembly_delivery;
   const delivery = await runtime.runStep(
     harnessEffectKey(
@@ -2583,15 +2595,13 @@ async function* createNoteCarrierBusinessProgram(
       useSuggestion: '建议逐页核对画面、文字和预约引导，确认后再发布',
     }),
   });
-  const partialReport = selection.partial
-    ? merchantPartialDeliveryReport({
-        message: merchantNotePartialConsistency(
-          selection.partial.unresolvedPageIds.length,
-        ),
+  const partialReport = readiness.passed
+    ? undefined
+    : merchantPartialDeliveryReport({
+        message: merchantNotePartialConsistency(readiness.findings.length),
         nextStep:
           '可以先用已经对好的页面发布，或者让我把没对上的那几页重做一次。',
-      })
-    : undefined;
+      });
   const pageRegeneration =
     activeRequest.executionSnapshot?.sources.pageRegeneration;
   const imageUsageQuantity = pageRegeneration
@@ -2631,12 +2641,26 @@ async function* createNoteCarrierBusinessProgram(
     experienceBasis: projectHarnessExperienceBasis(context.bundle),
     recommendation,
     trace: selection.trace,
+  } satisfies NoteHarnessWorkflowResult;
+  };
+
+  return {
+    carrier: 'note',
+    steps: new Map<string, CarrierStep>([
+      ['read_context:context', readContextStep],
+      ['generate:brief', generateBriefStep],
+      ['ask_merchant:style_choice', askStyleStep],
+      ['generate:pages', generatePagesStep],
+      ['check:consistency', checkConsistencyStep],
+      ['revise:page_regenerate', revisePagesStep],
+      ['record:assemble', recordAssembleStep],
+    ]),
   };
 }
 
-async function* createMediaCarrierBusinessProgram(
+function createMediaCarrierStepMachine(
   input: HarnessStageExecutionInput,
-) {
+): CarrierStepMachine {
   const {
     ports: stagePorts,
     prelude,
@@ -2651,42 +2675,14 @@ async function* createMediaCarrierBusinessProgram(
   let activeRequest = prelude.activeRequest;
   let bundle = prelude.context;
   let factGate = prelude.factGate;
-
-  yield { primitive: 'read_context', value: bundle };
-
+  let compiledBrief: MediaBrief | MeasuredMediaBrief;
+  let brief!: ReturnType<typeof unpackMediaBrief>['brief'];
+  let briefMetrics: ReturnType<typeof unpackMediaBrief>['metrics'];
+  let selection!: HarnessMediaSelectionResult;
+  let boundedCheckpoint: unknown;
   const briefSkills = stageSkills.brief_compilation;
   const snapshotConsume = prelude.snapshotConsume;
-  let compiledBrief = await runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      3,
-      skillEffectUnit(kind, briefSkills.instructions),
-      '0',
-    ),
-    async () => {
-      // V31-25: snapshot path materializes media brief without structured LLM.
-      if (isMakeSnapshotConsumePath(snapshotConsume)) {
-        return materializeMediaBriefFromSnapshot({
-          snapshot: snapshotConsume.snapshot,
-          declaration: routed.declaration,
-          request: activeRequest,
-        }).brief;
-      }
-      return ports.compileMediaBrief({
-        workflowId,
-        request: activeRequest,
-        declaration: routed.declaration,
-        context: bundle,
-        ...(factGate.allowedFactRefs
-          ? { allowedFactRefs: factGate.allowedFactRefs }
-          : {}),
-        ...(briefSkills.instructions.length > 0
-          ? { skillInstructions: briefSkills.instructions }
-          : {}),
-      });
-    },
-  );
-  let { brief, metrics: briefMetrics } = unpackMediaBrief(compiledBrief);
+  const executionSkills = stageSkills.execution_selection;
   // V31-15: video scene artifact producer. Scenes land running once the
   // storyboard is compiled, success once the rendered video is selected.
   // Emitter absent in fixture tests (optional port); no-op otherwise.
@@ -2718,50 +2714,6 @@ async function* createMediaCarrierBusinessProgram(
       },
     );
   };
-  await trace(
-    runtime,
-    workflowId,
-    'brief_compilation',
-    {
-    executionRoot: mediaExecutionRoot(request),
-    ...mediaBriefTrace(brief),
-    ...(request.prompts?.briefCompilation
-      ? { prompt: promptTraceReference(request.prompts.briefCompilation) }
-      : {}),
-    ...(briefMetrics ? { metrics: briefMetrics } : {}),
-    ...skillTraceLineage(briefSkills),
-    ...(isMakeSnapshotConsumePath(snapshotConsume)
-      ? snapshotConsumeTracePayload({
-          snapshotHash: snapshotConsume.snapshot.snapshotHash,
-          approvalBasis: snapshotConsume.snapshot.approvalBasis,
-          stage: 'brief_compilation',
-          llmInvoked: false,
-        })
-      : { makeConsume: 'legacy_llm', llmInvoked: true }),
-    },
-    `r${bundle.bundle.revision}`,
-  );
-  await reportProgress({
-    stage: 'brief_compilation',
-    state: 'success',
-    message: merchantProgressMessage('brief_compilation'),
-  });
-  await emitVideoSceneProgress(brief, 'running');
-
-  yield { primitive: 'generate', value: { brief, bundle } };
-
-  activeRequest = await confirmPaidGenerationExecution({
-    workflowId,
-    request: activeRequest,
-    reportProgress,
-    createExecutionConfirmationRequest:
-      ports.createExecutionConfirmationRequest,
-    awaitResolvedDecision: (question, stage) =>
-      awaitResolvedDecision(runtime, question, stage),
-    applyCurrentTaskDecision: (wfId, req, command) =>
-      applyCurrentTaskDecision(wfId, req, command, runtime),
-  });
-  const executionSkills = stageSkills.execution_selection;
   const executeMediaSelectionToCompletion = async (
     unitId: string,
     initialInput: Parameters<
@@ -2932,6 +2884,87 @@ async function* createMediaCarrierBusinessProgram(
     });
     return outcome;
   };
+
+  const readContextStep: CarrierStep = async () => bundle;
+
+  const generateBriefStep: CarrierStep = async () => {
+  compiledBrief = await runtime.runStep(
+    harnessEffectKey(
+      workflowId,
+      3,
+      skillEffectUnit(kind, briefSkills.instructions),
+      '0',
+    ),
+    async () => {
+      // V31-25: snapshot path materializes media brief without structured LLM.
+      if (isMakeSnapshotConsumePath(snapshotConsume)) {
+        return materializeMediaBriefFromSnapshot({
+          snapshot: snapshotConsume.snapshot,
+          declaration: routed.declaration,
+          request: activeRequest,
+        }).brief;
+      }
+      return ports.compileMediaBrief({
+        workflowId,
+        request: activeRequest,
+        declaration: routed.declaration,
+        context: bundle,
+        ...(factGate.allowedFactRefs
+          ? { allowedFactRefs: factGate.allowedFactRefs }
+          : {}),
+        ...(briefSkills.instructions.length > 0
+          ? { skillInstructions: briefSkills.instructions }
+          : {}),
+      });
+    },
+  );
+  ({ brief, metrics: briefMetrics } = unpackMediaBrief(compiledBrief));
+  await trace(
+    runtime,
+    workflowId,
+    'brief_compilation',
+    {
+    executionRoot: mediaExecutionRoot(request),
+    ...mediaBriefTrace(brief),
+    ...(request.prompts?.briefCompilation
+      ? { prompt: promptTraceReference(request.prompts.briefCompilation) }
+      : {}),
+    ...(briefMetrics ? { metrics: briefMetrics } : {}),
+    ...skillTraceLineage(briefSkills),
+    ...(isMakeSnapshotConsumePath(snapshotConsume)
+      ? snapshotConsumeTracePayload({
+          snapshotHash: snapshotConsume.snapshot.snapshotHash,
+          approvalBasis: snapshotConsume.snapshot.approvalBasis,
+          stage: 'brief_compilation',
+          llmInvoked: false,
+        })
+      : { makeConsume: 'legacy_llm', llmInvoked: true }),
+    },
+    `r${bundle.bundle.revision}`,
+  );
+  await reportProgress({
+    stage: 'brief_compilation',
+    state: 'success',
+    message: merchantProgressMessage('brief_compilation'),
+  });
+  await emitVideoSceneProgress(brief, 'running');
+
+    return { brief, bundle };
+  };
+
+  const generateSelectionStep: CarrierStep = async ({ unit }) => {
+  activeRequest = await confirmPaidGenerationExecution({
+    workflowId,
+    request: activeRequest,
+    reportProgress,
+    createExecutionConfirmationRequest:
+      ports.createExecutionConfirmationRequest,
+    awaitResolvedDecision: (question, stage) =>
+      awaitResolvedDecision(runtime, question, stage),
+    applyCurrentTaskDecision: (wfId, req, command) =>
+      applyCurrentTaskDecision(wfId, req, command, runtime),
+  });
+  const executionSkills = stageSkills.execution_selection;
   const mediaSelectionInput = {
     workflowId,
     request: activeRequest,
@@ -2952,11 +2985,11 @@ async function* createMediaCarrierBusinessProgram(
         }
       : {}),
   };
-  let selection = await executeMediaSelectionToCompletion(
-    kind,
+  selection = await executeMediaSelectionToCompletion(
+    `${kind}${selectionEffectDiscriminatorSuffix(unit)}`,
     mediaSelectionInput,
   );
-  let boundedCheckpoint = selection.boundedCurrentBest;
+  boundedCheckpoint = selection.boundedCurrentBest;
   if (selection.boundedExecution) {
     activeRequest = {
       ...activeRequest,
@@ -2984,8 +3017,10 @@ async function* createMediaCarrierBusinessProgram(
   });
   await emitVideoSceneProgress(brief, 'success');
 
-  yield { primitive: 'generate', value: { selection, brief } };
+    return { selection, brief };
+  };
 
+  const checkGateStep: CarrierStep = async ({ unit }) => {
   const fenced = await runtime.runStep(
     harnessEffectKey(workflowId, 2, 'fence', `r${bundle.bundle.revision}`),
     () =>
@@ -3141,16 +3176,20 @@ async function* createMediaCarrierBusinessProgram(
     workflowId,
   });
 
-  yield {
-    primitive: 'check',
-    value: {
-      selection,
-      brief,
-      bundle,
-    },
+    return projectDeliveryReadiness({
+      unit,
+      selectedCandidateId: selection.asset.id,
+      producedCandidateId: selection.asset.id,
+      plannedTargets: [],
+      producedTargets: [],
+      partialTargets: [],
+    });
   };
 
   const assemblySkills = stageSkills.assembly_delivery;
+
+  const recordAssembleStep: CarrierStep = async ({ priorOutputs }) => {
+  requireDeliveryReadiness(priorOutputs);
   const delivery = await runtime.runStep(
     harnessEffectKey(
       workflowId,
@@ -3225,7 +3264,150 @@ async function* createMediaCarrierBusinessProgram(
           },
         }
       : {}),
+  } satisfies MediaHarnessWorkflowResult;
   };
+
+  return {
+    carrier: 'media',
+    steps: new Map<string, CarrierStep>([
+      ['read_context:context', readContextStep],
+      ['generate:brief', generateBriefStep],
+      ['generate:selection', generateSelectionStep],
+      ['check:gate', checkGateStep],
+      ['record:assemble', recordAssembleStep],
+    ]),
+  };
+}
+
+
+// ─── Plan-directed check helpers (V31-25 P0-A) ──────────────────────────────
+
+/**
+ * Output of a `check` unit. The rubric is declared by the plan unit, so the
+ * merchant-visible consequence of a check is a function of the plan, not of a
+ * hard-coded branch inside a carrier program.
+ */
+export type CarrierDeliveryReadiness = {
+  readonly checkedBy: 'compiled_plan_check_unit';
+  readonly rubric: string;
+  readonly passed: boolean;
+  readonly findings: readonly string[];
+  readonly selectedCandidateId: string;
+};
+
+const CARRIER_CHECK_RUBRICS = [
+  'copy_delivery_readiness',
+  'media_delivery_readiness',
+  'note_page_consistency',
+  'note_selected_style',
+] as const;
+
+function declaredCheckRubric(unit: ExecutionUnit): string {
+  const input = unit.input;
+  const rubric =
+    input && typeof input === 'object' && 'rubric' in input
+      ? (input as { rubric?: unknown }).rubric
+      : undefined;
+  if (typeof rubric !== 'string' || rubric.trim().length === 0) {
+    throw new Error(
+      `Check unit ${unit.unitId} declares no rubric; the executor will not guess one.`,
+    );
+  }
+  if (!(CARRIER_CHECK_RUBRICS as readonly string[]).includes(rubric)) {
+    throw new Error(
+      `Check unit ${unit.unitId} declares unknown rubric ${rubric}.`,
+    );
+  }
+  return rubric;
+}
+
+/**
+ * Evaluate the rubric the plan's check unit names. Findings are the reason a
+ * delivery is reported as partial, so a different rubric on the same run
+ * produces a different merchant-visible package report.
+ */
+export function projectDeliveryReadiness(input: {
+  unit: ExecutionUnit;
+  selectedCandidateId: string;
+  producedCandidateId: string;
+  plannedTargets: readonly string[];
+  producedTargets: readonly string[];
+  partialTargets: readonly string[];
+}): CarrierDeliveryReadiness {
+  const rubric = declaredCheckRubric(input.unit);
+  const findings: string[] = [];
+  if (rubric === 'note_page_consistency') {
+    const produced = new Set(input.producedTargets);
+    for (const planned of input.plannedTargets) {
+      if (!produced.has(planned)) findings.push(planned);
+    }
+    for (const unresolved of input.partialTargets) {
+      if (!findings.includes(unresolved)) findings.push(unresolved);
+    }
+  } else if (rubric === 'note_selected_style') {
+    if (input.producedCandidateId !== input.selectedCandidateId) {
+      findings.push(input.producedCandidateId);
+    }
+  } else {
+    if (!input.selectedCandidateId.trim()) {
+      findings.push('missing_selected_candidate');
+    }
+    findings.push(...input.partialTargets);
+  }
+  return {
+    checkedBy: 'compiled_plan_check_unit',
+    rubric,
+    passed: findings.length === 0,
+    findings,
+    selectedCandidateId: input.selectedCandidateId,
+  };
+}
+
+function isDeliveryReadiness(value: unknown): value is CarrierDeliveryReadiness {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { checkedBy?: unknown }).checkedBy === 'compiled_plan_check_unit'
+  );
+}
+
+/**
+ * record consumes the check output through the executor's durable
+ * priorOutputs, so a plan that never ran a check cannot deliver.
+ */
+export function requireDeliveryReadiness(
+  priorOutputs: ReadonlyMap<string, unknown>,
+): CarrierDeliveryReadiness {
+  for (const output of [...priorOutputs.values()].reverse()) {
+    if (isDeliveryReadiness(output)) return output;
+  }
+  throw new Error(
+    'record unit cannot deliver without a completed check unit output.',
+  );
+}
+
+/** Per-deliverable expansion keeps effect keys distinct without moving the canonical key. */
+function deliverableUnitDiscriminator(unit: ExecutionUnit): string | null {
+  const input = unit.input;
+  if (!input || typeof input !== 'object') return null;
+  const record = input as { deliverableId?: unknown; deliverableIndex?: unknown };
+  if (
+    typeof record.deliverableId !== 'string' ||
+    typeof record.deliverableIndex !== 'number'
+  ) {
+    return null;
+  }
+  return `${record.deliverableId}-${record.deliverableIndex}`;
+}
+
+function selectionEffectDiscriminator(unit: ExecutionUnit): string {
+  const suffix = deliverableUnitDiscriminator(unit);
+  return suffix ? `selection:${suffix}` : 'selection';
+}
+
+function selectionEffectDiscriminatorSuffix(unit: ExecutionUnit): string {
+  const suffix = deliverableUnitDiscriminator(unit);
+  return suffix ? `-${suffix}` : '';
 }
 
 export class HarnessMediaScopeError extends Error {

@@ -25,6 +25,27 @@ import {
 /** Product content carriers (ContentPackage kind vocabulary). */
 export type ContentCarrierKind = 'copy' | 'note' | 'media';
 
+/**
+ * One executable step this carrier implements. The compiled plan directs
+ * execution by naming steps (`primitive` + `role`); the executor refuses any
+ * unit whose step is not declared here, so the catalog is the carrier's
+ * executable surface — not documentation.
+ */
+export type CarrierStepDeclaration = {
+  readonly primitive:
+    | 'read_context'
+    | 'ask_merchant'
+    | 'generate'
+    | 'check'
+    | 'revise'
+    | 'record';
+  readonly role: string;
+  /** A plan omitting a required step is rejected. */
+  readonly required: boolean;
+  /** Repeatable steps may appear once per deliverable unit. */
+  readonly repeatable: boolean;
+};
+
 export type CarrierUnitRecipe = {
   readonly carrier: ContentCarrierKind;
   readonly description: string;
@@ -35,6 +56,8 @@ export type CarrierUnitRecipe = {
    * execution→generate/check/revise). Used by constructive docs & eval layers.
    */
   readonly primitiveSequence: readonly string[];
+  /** Executable step surface consumed by the compiled-plan executor. */
+  readonly stepCatalog: readonly CarrierStepDeclaration[];
 };
 
 export class CarrierRecipeRegistryError extends Error {
@@ -90,11 +113,50 @@ function buildPlan(units: ExecutionUnit[], groups: CompiledExecutionPlan['depend
   });
 }
 
+const COPY_STEP_CATALOG: readonly CarrierStepDeclaration[] = [
+  { primitive: 'read_context', role: 'context', required: true, repeatable: false },
+  { primitive: 'generate', role: 'brief', required: true, repeatable: false },
+  { primitive: 'generate', role: 'selection', required: true, repeatable: true },
+  { primitive: 'check', role: 'gate', required: true, repeatable: false },
+  { primitive: 'record', role: 'assemble', required: true, repeatable: false },
+];
+
+const NOTE_STEP_CATALOG: readonly CarrierStepDeclaration[] = [
+  { primitive: 'read_context', role: 'context', required: true, repeatable: false },
+  { primitive: 'generate', role: 'brief', required: true, repeatable: false },
+  {
+    primitive: 'ask_merchant',
+    role: 'style_choice',
+    required: true,
+    repeatable: false,
+  },
+  { primitive: 'generate', role: 'pages', required: true, repeatable: true },
+  { primitive: 'check', role: 'consistency', required: true, repeatable: false },
+  // Page regeneration only runs when the consistency check reports findings, so
+  // a plan may legitimately omit it.
+  {
+    primitive: 'revise',
+    role: 'page_regenerate',
+    required: false,
+    repeatable: false,
+  },
+  { primitive: 'record', role: 'assemble', required: true, repeatable: false },
+];
+
+const MEDIA_STEP_CATALOG: readonly CarrierStepDeclaration[] = [
+  { primitive: 'read_context', role: 'context', required: true, repeatable: false },
+  { primitive: 'generate', role: 'brief', required: true, repeatable: false },
+  { primitive: 'generate', role: 'selection', required: true, repeatable: true },
+  { primitive: 'check', role: 'gate', required: true, repeatable: false },
+  { primitive: 'record', role: 'assemble', required: true, repeatable: false },
+];
+
 /** Copy carrier: context → brief generate → selection generate/check → assembly record. */
 export function buildCopyCarrierRecipe(): CarrierUnitRecipe {
   const units = [
     unit('unit-copy-context', 'context.read', 'read_context', {
       stage: 'context_injection',
+      role: 'context',
     }),
     unit('unit-copy-brief', 'copy.generate', 'generate', {
       stage: 'brief_compilation',
@@ -107,6 +169,7 @@ export function buildCopyCarrierRecipe(): CarrierUnitRecipe {
     unit('unit-copy-check', 'compliance.check', 'check', {
       stage: 'execution_selection',
       role: 'gate',
+      rubric: 'copy_delivery_readiness',
     }),
     unit('unit-copy-assemble', 'delivery.record', 'record', {
       stage: 'assembly_delivery',
@@ -138,6 +201,7 @@ export function buildCopyCarrierRecipe(): CarrierUnitRecipe {
       'check',
       'record',
     ],
+    stepCatalog: COPY_STEP_CATALOG,
   };
 }
 
@@ -146,6 +210,7 @@ export function buildNoteCarrierRecipe(): CarrierUnitRecipe {
   const units = [
     unit('unit-note-context', 'context.read', 'read_context', {
       stage: 'context_injection',
+      role: 'context',
     }),
     unit('unit-note-brief', 'note.generate', 'generate', {
       stage: 'brief_compilation',
@@ -162,6 +227,7 @@ export function buildNoteCarrierRecipe(): CarrierUnitRecipe {
     unit('unit-note-check', 'compliance.check', 'check', {
       stage: 'execution_selection',
       role: 'consistency',
+      rubric: 'note_page_consistency',
     }),
     unit('unit-note-revise', 'note.revise', 'revise', {
       stage: 'execution_selection',
@@ -206,6 +272,7 @@ export function buildNoteCarrierRecipe(): CarrierUnitRecipe {
       'revise',
       'record',
     ],
+    stepCatalog: NOTE_STEP_CATALOG,
   };
 }
 
@@ -214,6 +281,7 @@ export function buildMediaCarrierRecipe(): CarrierUnitRecipe {
   const units = [
     unit('unit-media-context', 'context.read', 'read_context', {
       stage: 'context_injection',
+      role: 'context',
     }),
     unit('unit-media-brief', 'media.generate', 'generate', {
       stage: 'brief_compilation',
@@ -226,6 +294,7 @@ export function buildMediaCarrierRecipe(): CarrierUnitRecipe {
     unit('unit-media-check', 'compliance.check', 'check', {
       stage: 'execution_selection',
       role: 'gate',
+      rubric: 'media_delivery_readiness',
     }),
     unit('unit-media-assemble', 'delivery.record', 'record', {
       stage: 'assembly_delivery',
@@ -260,6 +329,7 @@ export function buildMediaCarrierRecipe(): CarrierUnitRecipe {
       'check',
       'record',
     ],
+    stepCatalog: MEDIA_STEP_CATALOG,
   };
 }
 

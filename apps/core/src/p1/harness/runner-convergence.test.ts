@@ -15,6 +15,7 @@ import test from 'node:test';
 import {
   COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
   HARNESS_STAGES,
+  type CompiledExecutionPlan,
 } from '@meiye/contracts';
 
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
@@ -177,7 +178,7 @@ test('V31-25: resolveCompiledCarrierExecution prefers frozen plan when present',
   assert.equal(resolution.executionPlan.units.length, frozen.units.length);
 });
 
-test('V31-25: changing a typed plan unit makes the frozen topology fail closed', async () => {
+test('V31-25: a plan naming a step the carrier does not implement fails closed', async () => {
   const recipe = createCanonicalCarrierUnitRecipeRegistry().resolve('copy');
   const calls: string[] = [];
   const handlers = Object.fromEntries(
@@ -215,6 +216,8 @@ test('V31-25: changing a typed plan unit makes the frozen topology fail closed',
     checkedBy: 'check',
   });
 
+  // Repointing a unit at a primitive the carrier never bound for that role is
+  // not a "different plan", it is an unexecutable one: fail closed, run nothing.
   const mutated = structuredClone(recipe.plan);
   const check = mutated.units.find((unit) => unit.unitId === 'unit-copy-check');
   assert.ok(check);
@@ -229,9 +232,300 @@ test('V31-25: changing a typed plan unit makes the frozen topology fail closed',
         effectStore: immediatePrimitiveEffectStore,
         executionId: 'mutate-second',
       }),
-    /incompatible with the copy primitive topology/,
+    /names step revise:gate, which the copy carrier does not implement/,
   );
   assert.deepEqual(calls, []);
+});
+
+test('V31-25: a plan that drops a required step or repeats a single-shot step fails closed', async () => {
+  const recipe = createCanonicalCarrierUnitRecipeRegistry().resolve('note');
+  const run = (plan: CompiledExecutionPlan, executionId: string) =>
+    executeCompiledCarrierPlan({
+      context: { lens: 'image_text_note' as const, frozenExecutionPlan: plan },
+      programInput: { ignored: true },
+      primitiveHandlers: {
+        ...primitiveHandlersReturningNull(),
+        record: async () => ({ delivered: true }),
+      },
+      effectStore: immediatePrimitiveEffectStore,
+      executionId,
+    });
+
+  const missingCheck = structuredClone(recipe.plan) as CompiledExecutionPlan;
+  missingCheck.units = missingCheck.units.filter(
+    (unit) => unit.unitId !== 'unit-note-check',
+  );
+  missingCheck.dependencyGroups = missingCheck.dependencyGroups.map((group) => ({
+    ...group,
+    unitIds: group.unitIds.filter((unitId) => unitId !== 'unit-note-check'),
+  }));
+  await assert.rejects(
+    () => run(missingCheck, 'note-missing-check'),
+    /omits required step check:consistency for carrier note/,
+  );
+
+  const repeatedCheck = structuredClone(recipe.plan) as CompiledExecutionPlan;
+  const noteCheck = repeatedCheck.units.find(
+    (unit) => unit.unitId === 'unit-note-check',
+  );
+  assert.ok(noteCheck);
+  const duplicate = structuredClone(noteCheck);
+  duplicate.unitId = 'unit-note-check-2' as typeof duplicate.unitId;
+  // Insert in place: appending would move record off the tail and trip the
+  // terminal-record rule instead of the repeat rule under test.
+  const checkAt = repeatedCheck.units.indexOf(noteCheck) + 1;
+  repeatedCheck.units = [
+    ...repeatedCheck.units.slice(0, checkAt),
+    duplicate,
+    ...repeatedCheck.units.slice(checkAt),
+  ];
+  repeatedCheck.dependencyGroups = repeatedCheck.dependencyGroups.map((group) =>
+    group.unitIds.includes(noteCheck.unitId)
+      ? { ...group, unitIds: [...group.unitIds, duplicate.unitId] }
+      : group,
+  );
+  await assert.rejects(
+    () => run(repeatedCheck, 'note-repeated-check'),
+    /repeats non-repeatable step check:consistency for carrier note/,
+  );
+});
+
+// ─── P0-A: the plan directs execution (mutation evidence) ────────────────────
+
+/**
+ * Note ports whose produced version is missing one planned page. The two note
+ * rubrics then disagree about the same run: `note_page_consistency` finds the
+ * dropped page, `note_selected_style` finds nothing because the style that came
+ * back is the style that was asked for. Nothing about the request differs
+ * between the mutation runs below — only one field of one plan unit.
+ */
+function fixtureNoteStagesDroppingPage(pageId: string): HarnessNoteStagePorts {
+  const stages = fixtureNoteStages();
+  const execute = stages.executeNoteAndSelect;
+  return {
+    ...stages,
+    async executeNoteAndSelect(input) {
+      const selected = await execute(input);
+      return {
+        ...selected,
+        version: {
+          ...selected.version,
+          plan: {
+            ...selected.version.plan,
+            pages: selected.version.plan.pages.filter(
+              (page) => page.id !== pageId,
+            ),
+          },
+        },
+      };
+    },
+  };
+}
+
+async function runNotePlanMutation(input: {
+  workflowId: string;
+  mutate: (plan: CompiledExecutionPlan) => void;
+  stages?: HarnessNoteStagePorts;
+  effectKeys?: string[];
+}) {
+  const snapshot = buildTestPlanSnapshot('note', input.mutate);
+  return runHarnessWorkflow(
+    input.workflowId,
+    {
+      ...mediaTaskInput('image_text_note'),
+      executionPlanSnapshot: snapshot,
+    },
+    input.stages ?? fixtureNoteStagesDroppingPage('page-2'),
+    {
+      ...recordingRuntime(input.effectKeys ?? []),
+      async awaitDecision(question) {
+        return noteStyleOrPaidDecision(question);
+      },
+    },
+  );
+}
+
+function noteCheckUnit(plan: CompiledExecutionPlan) {
+  const unit = plan.units.find((entry) => entry.unitId === 'unit-note-check');
+  assert.ok(unit, 'note plan must carry a check unit');
+  assert.ok(unit.input, 'check unit must carry declared parameters');
+  return unit.input as Record<string, unknown>;
+}
+
+test('V31-25 P0-A: repointing the note check unit at another rubric changes the merchant-visible delivery', async () => {
+  // Same request, same ports, same code path. The ONLY difference between the
+  // two runs is units[unit-note-check].input.rubric.
+  const consistency = await runNotePlanMutation({
+    workflowId: 'p0a-note-rubric-consistency',
+    mutate: (plan) => {
+      noteCheckUnit(plan).rubric = 'note_page_consistency';
+    },
+  });
+  const styleOnly = await runNotePlanMutation({
+    workflowId: 'p0a-note-rubric-style',
+    mutate: (plan) => {
+      noteCheckUnit(plan).rubric = 'note_selected_style';
+    },
+  });
+
+  // page-2 was planned but never produced. Under the page-consistency rubric
+  // that is a partial delivery the merchant is told about; under the
+  // selected-style rubric the same run is a clean delivery.
+  assert.equal(consistency.merchantReport?.kind, 'partial');
+  assert.match(consistency.merchantReport?.message ?? '', /没完全对上/);
+  assert.equal(styleOnly.merchantReport, undefined);
+  assert.notDeepEqual(consistency.merchantReport, styleOnly.merchantReport);
+  // Both runs still delivered: the rubric changed the verdict, not the plumbing.
+  assert.equal(consistency.delivery.packageId, 'package-1');
+  assert.equal(styleOnly.delivery.packageId, 'package-1');
+});
+
+test('V31-25 P0-A: an unknown rubric on the check unit fails closed instead of defaulting', async () => {
+  await assert.rejects(
+    () =>
+      runNotePlanMutation({
+        workflowId: 'p0a-note-rubric-unknown',
+        mutate: (plan) => {
+          noteCheckUnit(plan).rubric = 'whatever_passes';
+        },
+      }),
+    /declares unknown rubric whatever_passes/,
+  );
+});
+
+test('V31-25 P0-A: dropping the revise unit stops the page-regeneration step from running', async () => {
+  const observed: string[] = [];
+  const regeneratingStages = (): HarnessNoteStagePorts => {
+    const base = fixtureNoteStagesDroppingPage('page-2');
+    const execute = base.executeNoteAndSelect;
+    return {
+      ...base,
+      async executeNoteAndSelect(input) {
+        const selected = await execute(input);
+        return {
+          ...selected,
+          auditSignals: [
+            {
+              eventType: 'note_page_regenerated' as const,
+              payload: { auditRef: 'audit-regen-1', imagePoints: 1 },
+            },
+          ],
+        };
+      },
+      async recordObservabilityEvent(input) {
+        observed.push(input.event.eventType);
+      },
+    } as HarnessNoteStagePorts;
+  };
+
+  const withRevise = await runNotePlanMutation({
+    workflowId: 'p0a-note-revise-present',
+    mutate: () => {},
+    stages: regeneratingStages(),
+  });
+  assert.equal(withRevise.delivery.packageId, 'package-1');
+  assert.deepEqual(observed, ['note_page_regenerated']);
+
+  observed.length = 0;
+  const withoutRevise = await runNotePlanMutation({
+    workflowId: 'p0a-note-revise-absent',
+    mutate: (plan) => {
+      plan.units = plan.units.filter(
+        (unit) => unit.unitId !== 'unit-note-revise',
+      );
+      plan.dependencyGroups = plan.dependencyGroups.map((group) => ({
+        ...group,
+        unitIds: group.unitIds.filter(
+          (unitId) => unitId !== 'unit-note-revise',
+        ),
+      }));
+    },
+    stages: regeneratingStages(),
+  });
+  // revise is declared optional, so removing it must not break delivery — but
+  // its business effect must genuinely stop happening.
+  assert.equal(withoutRevise.delivery.packageId, 'package-1');
+  assert.deepEqual(observed, []);
+});
+
+test('V31-25 P0-A: repeating the note pages unit runs the selection port once per unit under distinct durable keys', async () => {
+  const selectionCalls: string[] = [];
+  const countingStages = (): HarnessNoteStagePorts => {
+    const base = fixtureNoteStagesDroppingPage('page-2');
+    const execute = base.executeNoteAndSelect;
+    return {
+      ...base,
+      async executeNoteAndSelect(input) {
+        selectionCalls.push(input.selectedStyleId);
+        return execute(input);
+      },
+    };
+  };
+  // Stage 4 selection keys only; the stage 3 brief key also carries the kind.
+  const selectionEffectKeys = (keys: string[]) =>
+    [
+      ...new Set(
+        keys.filter(
+          (key) => key.includes(':s4:') && key.endsWith(':selection'),
+        ),
+      ),
+    ].sort();
+
+  const singleKeys: string[] = [];
+  await runNotePlanMutation({
+    workflowId: 'p0a-note-pages-single',
+    mutate: () => {},
+    stages: countingStages(),
+    effectKeys: singleKeys,
+  });
+  assert.equal(selectionCalls.length, 1);
+
+  selectionCalls.length = 0;
+  const expandedKeys: string[] = [];
+  await runNotePlanMutation({
+    workflowId: 'p0a-note-pages-expanded',
+    mutate: (plan) => {
+      const pages = plan.units.find(
+        (unit) => unit.unitId === 'unit-note-pages',
+      );
+      assert.ok(pages);
+      const pagesInput = pages.input as Record<string, unknown>;
+      pagesInput.deliverableId = 'd1';
+      pagesInput.deliverableIndex = 0;
+      const second = structuredClone(pages);
+      second.unitId = 'unit-note-pages-2' as typeof second.unitId;
+      (second.input as Record<string, unknown>).deliverableIndex = 1;
+      const unitAt = plan.units.indexOf(pages) + 1;
+      plan.units = [
+        ...plan.units.slice(0, unitAt),
+        second,
+        ...plan.units.slice(unitAt),
+      ];
+      plan.dependencyGroups = plan.dependencyGroups.map((group) => {
+        if (!group.unitIds.includes(pages.unitId)) return group;
+        const groupAt = group.unitIds.indexOf(pages.unitId) + 1;
+        return {
+          ...group,
+          unitIds: [
+            ...group.unitIds.slice(0, groupAt),
+            second.unitId,
+            ...group.unitIds.slice(groupAt),
+          ],
+        };
+      });
+    },
+    stages: countingStages(),
+    effectKeys: expandedKeys,
+  });
+  // The plan asked for the step twice, so the production port ran twice under
+  // two distinct durable effect keys instead of replaying one cached result.
+  assert.equal(selectionCalls.length, 2);
+  assert.equal(selectionEffectKeys(singleKeys).length, 1);
+  assert.equal(selectionEffectKeys(expandedKeys).length, 2);
+  assert.notDeepEqual(
+    selectionEffectKeys(expandedKeys),
+    selectionEffectKeys(singleKeys),
+  );
 });
 
 function primitiveHandlersReturningNull() {
@@ -259,7 +553,15 @@ test('V31-25: production workflow has no inert handler or carrier-program fallba
     workflow,
     /execute(?:Copy|Note|Media)HarnessStages\(/,
   );
-  assert.match(workflow, /createCompiled(?:Copy|Note|Media)PrimitiveProgram/);
+  // Anti-regression for the units-as-checksum design this replaced: the old
+  // executor advanced a generator and only checked that its next yield agreed
+  // with the plan, so the plan could agree or abort but never direct anything.
+  assert.doesNotMatch(
+    workflow,
+    /primitiveProgramPosition|synchronizeCarrierPrimitiveProgram|advanceCarrierPrimitive|CarrierPrimitiveProgram/,
+  );
+  assert.doesNotMatch(workflow, /async function\* create\w+CarrierBusinessProgram/);
+  assert.match(workflow, /createCarrierStepMachine/);
   assert.match(workflow, /primitiveHandlers:/);
   assert.match(dbos, /legacyShadowObservationReader\.read\(/);
   assert.doesNotMatch(dbos, /projectLegacyFromMakeRequest|observedRightsRefs/);
@@ -329,10 +631,14 @@ test('V31-25: frozen rollback module has no dependency on compiled carrier busin
     new URL('./frozen-legacy-five-stage.ts', import.meta.url),
     'utf8',
   );
-  const compiledPrograms = workflow.slice(
-    workflow.indexOf('function createCompiledCarrierPrimitiveProgram'),
-    workflow.indexOf('async function synchronizeCarrierPrimitiveProgram'),
-  );
+  const machinesFrom = workflow.indexOf('function createCarrierStepMachine');
+  const machinesTo = workflow.indexOf('// ─── Plan-directed check helpers');
+  assert.ok(machinesFrom > 0, 'carrier step machine section not found');
+  assert.ok(machinesTo > machinesFrom, 'step machine section markers inverted');
+  const compiledPrograms = workflow.slice(machinesFrom, machinesTo);
+  // Guard the slice itself: a renamed marker used to silently yield '' here and
+  // every doesNotMatch below passed vacuously.
+  assert.ok(compiledPrograms.length > 5_000, 'step machine slice is too small');
   assert.doesNotMatch(
     frozen,
     /CarrierBusinessProgram|createCompiled|executeCompiledCarrierPlan|compiled-carrier-executor/,
@@ -372,7 +678,7 @@ test('V31-25: corrupting the new compiled plan does not disable frozen legacy de
         fixtureCopyStages(),
         recordingRuntime([]),
       ),
-    /incompatible|expected|snapshot/i,
+    /names step revise:context, which the copy carrier does not implement/,
   );
   const legacy = await runHarnessWorkflow(
     'compiled-program-corrupted',
@@ -1583,7 +1889,20 @@ function mediaTaskInput(
   return { ...taskInput(), executionSnapshot: snapshot };
 }
 
-function buildTestPlanSnapshot(kind: 'note' | 'media' | 'copy') {
+/**
+ * `mutatePlan` runs BEFORE the freeze, so the result is a legitimately frozen
+ * snapshot of a different compiled plan — not a tampered one. Tampering after
+ * the freeze is rejected by the snapshot hash gate, which is a separate
+ * invariant with its own test.
+ */
+function buildTestPlanSnapshot(
+  kind: 'note' | 'media' | 'copy',
+  mutatePlan?: (plan: CompiledExecutionPlan) => void,
+) {
+  const executionPlan = structuredClone(
+    createCanonicalCarrierUnitRecipeRegistry().resolve(kind).plan,
+  ) as CompiledExecutionPlan;
+  mutatePlan?.(executionPlan);
   const content = {
     planId: `plan-${kind}-1`,
     planRevision: 1,
@@ -1595,7 +1914,7 @@ function buildTestPlanSnapshot(kind: 'note' | 'media' | 'copy') {
       revision: 1,
       hash: 'a'.repeat(64),
     },
-    executionPlan: createCanonicalCarrierUnitRecipeRegistry().resolve(kind).plan,
+    executionPlan,
     deliverables: [
       {
         deliverableId: 'd1',

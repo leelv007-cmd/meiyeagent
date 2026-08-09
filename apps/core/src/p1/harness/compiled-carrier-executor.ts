@@ -157,27 +157,91 @@ export async function executeCompiledCarrierPlan<TInput, TResult>(input: {
   return { result: terminal.output as TResult, resolution };
 }
 
+/**
+ * Role declared by a unit. The executor dispatches on `primitive:role`, so the
+ * role is the plan's instruction about *which* business step to run — not a
+ * label. A unit without a role is rejected rather than defaulted, otherwise a
+ * malformed plan would silently pick whatever step happens to be first.
+ */
+export function compiledUnitRole(unit: ExecutionUnit): string {
+  const input = unit.input;
+  const role =
+    input && typeof input === 'object' && 'role' in input
+      ? (input as { role?: unknown }).role
+      : undefined;
+  if (typeof role !== 'string' || role.trim().length === 0) {
+    throw new CompiledCarrierExecutorError(
+      `Execution unit ${unit.unitId} declares no step role; the executor cannot dispatch it.`,
+    );
+  }
+  return role;
+}
+
+export function compiledStepKey(unit: ExecutionUnit): string {
+  return `${unit.primitive}:${compiledUnitRole(unit)}`;
+}
+
+/**
+ * Structural compatibility, not a sequence checksum.
+ *
+ * A frozen plan is executable when every unit names a step this carrier
+ * actually implements, is bound to this carrier's own unit types, keeps the
+ * declared step order, repeats only repeatable steps, and terminates in record.
+ * Sequence equality was the old rule and it could only agree or abort: it
+ * accepted the media plan for a copy request (identical primitive sequences)
+ * and rejected every legitimate per-deliverable expansion.
+ */
 export function assertCompiledCarrierPlanCompatible(
   resolution: CompiledCarrierResolution,
 ): void {
-  const primitives = resolution.executionPlan.units.map(
-    (unit) => unit.primitive,
-  );
-  if (primitives.at(-1) !== 'record') {
+  const { recipe, carrier } = resolution;
+  const units = resolution.executionPlan.units;
+  if (units.at(-1)?.primitive !== 'record') {
     throw new CompiledCarrierExecutorError(
       'CompiledExecutionPlan must end with a record unit that owns delivery.',
     );
   }
-  if (
-    primitives.length !== resolution.recipe.primitiveSequence.length ||
-    primitives.some(
-      (primitive, index) =>
-        primitive !== resolution.recipe.primitiveSequence[index],
-    )
-  ) {
-    throw new CompiledCarrierExecutorError(
-      `Frozen CompiledExecutionPlan is incompatible with the ${resolution.carrier} primitive topology.`,
-    );
+  const catalogKeys = recipe.stepCatalog.map(
+    (step) => `${step.primitive}:${step.role}`,
+  );
+  const carrierUnitTypes = new Set(
+    recipe.plan.units.map((unit) => unit.unitType),
+  );
+  const seen = new Map<string, number>();
+  let cursor = -1;
+  for (const unit of units) {
+    if (!carrierUnitTypes.has(unit.unitType)) {
+      throw new CompiledCarrierExecutorError(
+        `Frozen CompiledExecutionPlan unit ${unit.unitId} uses unitType ${unit.unitType}, which does not belong to the ${carrier} carrier.`,
+      );
+    }
+    const key = compiledStepKey(unit);
+    const index = catalogKeys.indexOf(key);
+    if (index === -1) {
+      throw new CompiledCarrierExecutorError(
+        `Frozen CompiledExecutionPlan unit ${unit.unitId} names step ${key}, which the ${carrier} carrier does not implement.`,
+      );
+    }
+    if (index < cursor) {
+      throw new CompiledCarrierExecutorError(
+        `Frozen CompiledExecutionPlan unit ${unit.unitId} places ${key} out of the ${carrier} step order.`,
+      );
+    }
+    cursor = index;
+    const count = (seen.get(key) ?? 0) + 1;
+    seen.set(key, count);
+    if (count > 1 && recipe.stepCatalog[index]?.repeatable !== true) {
+      throw new CompiledCarrierExecutorError(
+        `Frozen CompiledExecutionPlan repeats non-repeatable step ${key} for carrier ${carrier}.`,
+      );
+    }
+  }
+  for (const [index, step] of recipe.stepCatalog.entries()) {
+    if (step.required && !seen.has(catalogKeys[index] as string)) {
+      throw new CompiledCarrierExecutorError(
+        `Frozen CompiledExecutionPlan omits required step ${catalogKeys[index]} for carrier ${carrier}.`,
+      );
+    }
   }
 }
 
