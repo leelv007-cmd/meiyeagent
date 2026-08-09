@@ -6,8 +6,12 @@
  * retried submission reuse its Run instead of appending another plan revision.
  */
 
-import type { ExecutionPlanApprovalBasis } from '@meiye/contracts';
-import type { MarketingPlanRevision } from '@meiye/contracts';
+import {
+  planMemoryContextSchema,
+  type ExecutionPlanApprovalBasis,
+  type MarketingPlanRevision,
+  type PlanMemoryContext,
+} from '@meiye/contracts';
 
 import type {
   ComposerAgentBinding,
@@ -15,8 +19,10 @@ import type {
   CreationSubmissionRecord,
 } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import { isAgentMemoryDisabledError } from '../operations/agent-memory-platform.js';
 import type { ExecutionPlanCompileFreeze } from '../harness/execution-plan-admission.js';
 import type { AgentSessionStore } from './agent-session-store.js';
+import type { RetrievalExperience } from './context-retrieval.js';
 import type {
   CompilePlanInput,
   CompilePlanResult,
@@ -35,6 +41,23 @@ export type ComposerPlanCompilerPort = {
   adjustPlan(
     input: CompilePlanInput & { existingPlanId: string }
   ): Promise<CompilePlanResult>;
+  /**
+   * V31-18 P0-2 (可达性): server-owned confirmed-experience retrieval is
+   * REQUIRED, not opportunistic. It is derived from the production Composer
+   * surface — a deploy that can accept a submission can always retrieve
+   * confirmed memory — and must never be inferred from the presence of an
+   * LLM kernel (`runComposerTurn`), which is absent whenever the provider is
+   * not `live_verified`.
+   */
+  retrieveConfirmedExperience(input: {
+    workspaceId: string;
+    threadId: string;
+    taskId: string;
+    runId: string;
+    harnessReleaseId: string;
+    storeId: string;
+    platform: string;
+  }): Promise<RetrievalExperience[]>;
   runComposerTurn?(input: {
     resourceId: string;
     threadId: string;
@@ -61,6 +84,19 @@ export type ComposerPlanCompilerPort = {
   }): Promise<AgentTurnRunnerResult>;
 };
 
+/**
+ * Why a plan carries no injected memory. `kill_switch` is a deliberate ops
+ * action; `unavailable` is an outage or a receipt conflict. The two must never
+ * be indistinguishable from each other or from a silent success.
+ */
+export type ComposerPlanMemoryDegradation = {
+  workspaceId: string;
+  taskId: string;
+  runId: string;
+  reason: 'kill_switch' | 'unavailable';
+  detail: string;
+};
+
 export type ComposerPlanSessionOptions = {
   now?: () => string;
   /** Production must never bypass the Session intent turn. */
@@ -70,6 +106,14 @@ export type ComposerPlanSessionOptions = {
   resolveHarnessReleaseId?: (
     submission: CreationSubmissionRecord
   ) => string | Promise<string>;
+  /**
+   * V31-18 P0-1 (出口): memory is advisory. `prepare()` runs *after*
+   * `store.claim()` has already consumed the merchant's credits, so a
+   * memory-layer failure degrades the plan to "no injected memory, therefore
+   * no receipt" instead of failing a paid submission. Every degradation is
+   * reported here so it is never silent.
+   */
+  onMemoryDegraded?: (event: ComposerPlanMemoryDegradation) => void;
 };
 
 export type ComposerPlanQuoteAuthority = {
@@ -84,6 +128,16 @@ export type ComposerPlanQuoteAuthority = {
 };
 
 const COMPOSER_PLAN_HARNESS_RELEASE_ID = 'composer-plan-surface-v1';
+const COMPOSER_SESSION_LIMITS = {
+  maxLlmSteps: 6,
+  maxToolCalls: 12,
+  maxRetrievalCalls: 6,
+  maxMerchantQuestions: 1,
+  maxReplans: 2,
+  maxSchemaRepairs: 2,
+  maxContextTokens: 32_000,
+  maxDelegations: 2,
+} as const;
 
 export class ComposerPlanSessionCoordinator
   implements ComposerSubmissionAgentPlanningPort
@@ -93,6 +147,9 @@ export class ComposerPlanSessionCoordinator
     submission: CreationSubmissionRecord
   ) => string | Promise<string>;
   private readonly quoteAuthority?: ComposerPlanQuoteAuthority;
+  private readonly onMemoryDegraded:
+    | ((event: ComposerPlanMemoryDegradation) => void)
+    | undefined;
 
   constructor(
     private readonly sessions: AgentSessionStore,
@@ -107,10 +164,20 @@ export class ComposerPlanSessionCoordinator
       throw new Error('Production Composer requires ProductQuote authority.');
     }
     this.quoteAuthority = options.quoteAuthority;
+    // Assembly-layer reachability assertion (V31-18 P0-2). A bare
+    // `{ compilePlan, adjustPlan }` fallback — the shape a non-`live_verified`
+    // production deploy used to get — cannot construct this coordinator, so
+    // confirmed memory can no longer be skipped silently in production.
+    if (typeof compiler.retrieveConfirmedExperience !== 'function') {
+      throw new Error(
+        'Composer plan session requires server-owned confirmed experience retrieval.'
+      );
+    }
     this.now = options.now ?? (() => new Date().toISOString());
     this.resolveHarnessReleaseId =
       options.resolveHarnessReleaseId ??
       (() => COMPOSER_PLAN_HARNESS_RELEASE_ID);
+    this.onMemoryDegraded = options.onMemoryDegraded;
   }
 
   async prepare(input: {
@@ -165,50 +232,65 @@ export class ComposerPlanSessionCoordinator
           `Composer Agent Run ${runId} cannot resume from ${started.run.status}.`
         );
       }
-      try {
-        const turnResult = await this.runIntentTurn({
-          submission,
-          threadId,
+      // The read-only pre-plan turn runs for its own effects. Its `releaseId`
+      // is deliberately NOT the injection binding (V31-18 P2-10): the receipt
+      // used to record the turn's release while the plan bound the Run's, so
+      // the transparency artifact named a release the plan never used. One
+      // value now drives both, and it is the one the plan binds.
+      const turnResult = await this.runIntentTurn({
+        submission,
+        threadId,
+        runId,
+        sessionRevision: started.thread.sessionRevision,
+        harnessReleaseId: started.run.harnessReleaseId,
+      });
+      if (this.compiler.runComposerTurn && !isCompilableTurn(turnResult)) {
+        await this.sessions.updateRunStatus({
+          resourceId,
           runId,
-          sessionRevision: started.thread.sessionRevision,
-          harnessReleaseId: started.run.harnessReleaseId,
+          status: 'waiting',
         });
-        if (this.compiler.runComposerTurn && !isCompilableTurn(turnResult)) {
-          await this.sessions.updateRunStatus({
-            resourceId,
-            runId,
-            status: 'waiting',
-          });
-          return { threadId, runId, makeReady: false };
-        }
-        await this.compile({
-          submission,
-          threadId,
-          runSessionRevision: started.thread.sessionRevision,
-          planId,
-          previous: latest?.revision ?? null,
-          harnessReleaseId: started.run.harnessReleaseId,
-          now,
-          proposal: isCompilableTurn(turnResult)
-            ? turnResult.decision.action.proposal
-            : proposalFromSubmission(submission),
-        });
-      } catch (error) {
-        if (
-          started.run.status === 'running' ||
-          started.run.status === 'waiting'
-        ) {
-          await this.sessions.updateRunStatus({
-            resourceId,
-            runId,
-            status: 'failed',
-            finishedAt: this.now(),
-          });
-        }
-        throw error;
+        return { threadId, runId, makeReady: false };
       }
+      const memoryContext = await this.retrievePlanMemoryContext({
+        submission,
+        threadId,
+        runId,
+        harnessReleaseId: started.run.harnessReleaseId,
+      });
+      // V31-18 P0-1 (出口证明): planning failures propagate but must NOT close
+      // the Run terminally. `submit()` consumed the merchant's credits inside
+      // `store.claim()` *before* calling `prepare()`, and `composerRunId` is a
+      // deterministic function of workspace+task — a terminal Run here would
+      // make the retry with the same idempotencyKey hit `cannot resume from
+      // failed` forever, holding the credits with no exit. Leaving the Run
+      // non-terminal IS the exit: the retry re-enters this branch and
+      // recompiles against the same session revision.
+      await this.compile({
+        submission,
+        threadId,
+        runSessionRevision: started.thread.sessionRevision,
+        planId,
+        previous: latest?.revision ?? null,
+        harnessReleaseId: started.run.harnessReleaseId,
+        memoryContext,
+        now,
+        proposal: isCompilableTurn(turnResult)
+          ? turnResult.decision.action.proposal
+          : proposalFromSubmission(submission),
+      });
     }
 
+    // V31-18 P0-1 (出口证明, second half): skipping compile must not skip the
+    // freeze. `executionPlanFreeze` is in-memory only — `storedSubmission` has
+    // no key for it — so every replay that rebuilds the record from
+    // `execution_spine.creation_submissions` (`submit()`'s existing-receipt
+    // branch and `recoverPendingStarts()`) arrives with it unset. Leaving it
+    // unset made the *recovered* submission fall through `task-admission.ts`'s
+    // legacy five-stage branch: the retry stopped being bricked but silently
+    // lost its ExecutionPlanSnapshot. The compiled plan is durable and
+    // immutable, so rebuild the identical freeze from it instead of
+    // recompiling.
     if (!submission.executionPlanFreeze) {
       const compiled = await this.plans.getLatest(planId);
       if (!compiled) {
@@ -269,6 +351,12 @@ export class ComposerPlanSessionCoordinator
     if (!isCompilableTurn(turnResult)) {
       return { threadId: run.threadId, runId, makeReady: false };
     }
+    const memoryContext = await this.retrievePlanMemoryContext({
+      submission: input.submission,
+      threadId: run.threadId,
+      runId,
+      harnessReleaseId: run.harnessReleaseId,
+    });
     await this.compile({
       submission: input.submission,
       threadId: run.threadId,
@@ -277,6 +365,7 @@ export class ComposerPlanSessionCoordinator
       previous: (await this.plans.getLatest(planId))?.revision ?? null,
       proposal: turnResult.decision.action.proposal,
       harnessReleaseId: run.harnessReleaseId,
+      memoryContext,
       now: this.now(),
     });
     return { threadId: run.threadId, runId, makeReady: false };
@@ -489,6 +578,47 @@ export class ComposerPlanSessionCoordinator
     });
   }
 
+  private async retrievePlanMemoryContext(input: {
+    submission: CreationSubmissionRecord;
+    threadId: string;
+    runId: string;
+    harnessReleaseId: string;
+  }): Promise<PlanMemoryContext | null> {
+    const snapshot = input.submission.snapshot;
+    let entries: RetrievalExperience[];
+    try {
+      entries = await this.compiler.retrieveConfirmedExperience({
+        workspaceId: snapshot.workspaceId,
+        threadId: input.threadId,
+        taskId: input.submission.task.id,
+        runId: input.runId,
+        harnessReleaseId: input.harnessReleaseId,
+        storeId: snapshot.workspaceId,
+        platform: snapshot.contentPackagePlatform,
+      });
+    } catch (error) {
+      // The receipt is written inside retrieval (transparency invariant:
+      // no receipt ⇒ no injection). So a receipt CONFLICT, an outage, or a
+      // deliberate `disable_memory_read` all land here and all mean the same
+      // thing for this plan: compile without injected memory. They never fail
+      // an already-claimed paid submission.
+      this.onMemoryDegraded?.({
+        workspaceId: snapshot.workspaceId,
+        taskId: input.submission.task.id,
+        runId: input.runId,
+        reason: isAgentMemoryDisabledError(error) ? 'kill_switch' : 'unavailable',
+        detail: error instanceof Error ? error.message : String(error),
+      });
+      return null;
+    }
+    return planMemoryContextFromConfirmedExperience({
+      entries,
+      runId: input.runId,
+      taskId: input.submission.task.id,
+      harnessReleaseId: input.harnessReleaseId,
+    });
+  }
+
   private async compile(input: {
     submission: CreationSubmissionRecord;
     threadId: string;
@@ -497,6 +627,7 @@ export class ComposerPlanSessionCoordinator
     previous: MarketingPlanRevision | null;
     proposal?: PlanProposal;
     harnessReleaseId: string;
+    memoryContext: PlanMemoryContext | null;
     now: string;
   }): Promise<void> {
     const snapshot = input.submission.snapshot;
@@ -515,6 +646,7 @@ export class ComposerPlanSessionCoordinator
       harnessReleaseId: input.harnessReleaseId,
       quoteRefHint: snapshot.quote,
       ...(quoteResolutionHint ? { quoteResolutionHint } : {}),
+      memoryContext: input.memoryContext,
       now: input.now,
       billingQuoteRef: snapshot.quote,
       ...(input.submission.usageReservation.credits !== undefined
@@ -603,6 +735,43 @@ function isCompilableTurn(
     !result!.systemOnlyBlock &&
     result!.decision?.action.kind === 'propose_plan'
   );
+}
+
+function planMemoryContextFromConfirmedExperience(input: {
+  entries: RetrievalExperience[];
+  runId: string;
+  taskId: string;
+  harnessReleaseId: string;
+}): PlanMemoryContext | null {
+  const confirmed = input.entries.filter(
+    (entry) => entry.status === 'confirmed' && entry.ref.startsWith('experience:')
+  );
+  const entries = confirmed.map((entry) => ({
+    memoryId: entry.ref.slice('experience:'.length),
+    revision: entry.revision,
+  }));
+  if (entries.length === 0) return null;
+  const statements = confirmed.map((entry) => entry.instruction).join('\n');
+  const concise = /简洁|简短|精炼/u.test(statements);
+  const restrained = /克制|不夸张|少夸张/u.test(statements);
+  return planMemoryContextSchema.parse({
+    entries,
+    receiptRef: {
+      harnessReleaseId: input.harnessReleaseId,
+      runId: input.runId,
+      taskId: input.taskId,
+    },
+    styleConstraints: {
+      forbiddenPhrases: restrained ? ['绝对', '保证', '必然'] : [],
+      maxBodyChars: concise ? 32 : 4_000,
+      maxSentenceChars: concise ? 24 : 500,
+      maxTitleChars: concise ? 24 : 500,
+      tones: [
+        ...(concise ? (['concise'] as const) : []),
+        ...(restrained ? (['restrained'] as const) : []),
+      ],
+    },
+  });
 }
 
 export function proposalFromSubmission(

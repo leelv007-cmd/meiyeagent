@@ -1652,6 +1652,9 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         typeof brief.instructions === 'string'
           ? brief.instructions.split('本次需求：').at(-1)?.trim()
           : undefined;
+      const conciseStyle =
+        typeof brief.instructions === 'string' &&
+        /正文不超过 32 字/u.test(brief.instructions);
       const candidates = [
         {
           title: '新项目到店前先看这几点',
@@ -1671,12 +1674,18 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
       ] as const;
       return {
         ...(candidates[index] ?? candidates[0]),
+        ...(conciseStyle
+          ? {
+              title: '周末护理，到店前先了解',
+              body: '先沟通需求，再确认护理安排。周末到店，轻松一点。',
+            }
+          : {}),
         ...(textSelectionContract
           ? {
               body: `${textSelectionContract.sourceBody.slice(0, textSelectionContract.start)}优化后的${textSelectionContract.sourceBody.slice(textSelectionContract.start, textSelectionContract.end)}${textSelectionContract.sourceBody.slice(textSelectionContract.end)}`,
             }
           : {}),
-        ...(frozenIntent
+        ...(frozenIntent && !conciseStyle
           ? {
               title: `${frozenIntent.slice(0, 120)}｜${(candidates[index] ?? candidates[0]).title}`,
             }

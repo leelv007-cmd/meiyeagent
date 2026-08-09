@@ -108,6 +108,8 @@ export {
   type PlanDeliverable,
   intentDeclarationSchema,
   type IntentDeclaration,
+  planMemoryContextSchema,
+  type PlanMemoryContext,
   marketingPlanRevisionSchema,
   type MarketingPlanRevision,
   marketingPlanReadinessSchema,

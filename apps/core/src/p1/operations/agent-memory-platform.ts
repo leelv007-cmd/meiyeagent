@@ -68,6 +68,27 @@ export const DEFAULT_AGENT_MEMORY_KILL_SWITCH: AgentMemoryKillSwitch = {
 };
 
 /**
+ * A deliberate ops kill switch must stay distinguishable from an outage:
+ * callers that degrade (V31-18 P0-1) report which of the two happened, so
+ * flipping the switch never looks like a permanent product failure.
+ */
+export class AgentMemoryDisabledError extends ReuseMemoryError {
+  constructor(readonly capability: 'read' | 'write') {
+    super(
+      'INVALID_STATE',
+      `Memory ${capability} is disabled by kill switch.`,
+    );
+    this.name = 'AgentMemoryDisabledError';
+  }
+}
+
+export function isAgentMemoryDisabledError(
+  error: unknown,
+): error is AgentMemoryDisabledError {
+  return error instanceof AgentMemoryDisabledError;
+}
+
+/**
  * Resolve kill switch from admin-config heads.
  * Feature flag off OR kill switch true ⇒ path disabled.
  */
@@ -166,6 +187,19 @@ export interface MemoryInjectionReceiptStore {
   getByRun(runId: string): Promise<MemoryInjectionReceipt | null>;
 }
 
+function hasSameInjectionBusinessIdentity(
+  left: MemoryInjectionReceipt,
+  right: MemoryInjectionReceipt,
+): boolean {
+  return (
+    left.schemaVersion === right.schemaVersion &&
+    left.taskId === right.taskId &&
+    left.runId === right.runId &&
+    left.harnessReleaseId === right.harnessReleaseId &&
+    JSON.stringify(left.entries) === JSON.stringify(right.entries)
+  );
+}
+
 export class MemoryInjectionReceiptMemoryStore
   implements MemoryInjectionReceiptStore
 {
@@ -176,8 +210,8 @@ export class MemoryInjectionReceiptMemoryStore
     const receipt = memoryInjectionReceiptSchema.parse(input);
     const existing = this.byTask.get(receipt.taskId);
     if (existing) {
-      // Idempotent on exact payload; conflict on divergence.
-      if (JSON.stringify(existing) !== JSON.stringify(receipt)) {
+      // A retry can have a later clock after the first response was lost.
+      if (!hasSameInjectionBusinessIdentity(existing, receipt)) {
         throw new ReuseMemoryError(
           'CONFLICT',
           `Injection receipt for task ${receipt.taskId} already exists with another payload.`,
@@ -510,6 +544,12 @@ export class AgentMemoryPlatform {
     await this.assertWriteEnabled();
     const proposed: PreferenceCandidate[] = [];
     for (const item of input.items) {
+      if (/^(?:business_fact|store_fact)\./u.test(item.semanticKey)) {
+        throw new ReuseMemoryError(
+          'INVALID_STATE',
+          `Business Fact ${item.semanticKey} belongs to the fact ledger and cannot be overridden by Memory.`,
+        );
+      }
       if (item.kind !== 'preference' && item.kind !== 'correction' && item.kind !== 'procedure') {
         throw new ReuseMemoryError(
           'INVALID_STATE',
@@ -804,21 +844,19 @@ export class AgentMemoryPlatform {
 
     const result = entries.slice(0, limit);
 
-    // V31-18: record the injection receipt at the real injection point when
-    // the generation turn bound task/run/release context. Best-effort — the
-    // receipt is observability; it must never break the turn it traces.
+    // Persist the receipt before returning injectable memory. Plan compilation
+    // may only apply these entries after the durable receipt/outbox commits.
     const injection = query.injectionContext;
-    if (injection && result.length > 0 && injection.taskId) {
-      try {
-        await this.recordInjectionReceipt({
-          taskId: injection.taskId,
-          runId: injection.runId,
-          harnessReleaseId: injection.harnessReleaseId,
-          entries: result,
-        });
-      } catch {
-        // Receipt recording is a side channel; retrieval keeps serving.
-      }
+    const confirmedForInjection = result.filter(
+      (entry) => entry.authority !== 'session',
+    );
+    if (injection && confirmedForInjection.length > 0 && injection.taskId) {
+      await this.recordInjectionReceipt({
+        taskId: injection.taskId,
+        runId: injection.runId,
+        harnessReleaseId: injection.harnessReleaseId,
+        entries: confirmedForInjection,
+      });
     }
 
     return result;
@@ -983,20 +1021,14 @@ export class AgentMemoryPlatform {
   private async assertWriteEnabled() {
     const switchState = await this.resolveKillSwitch();
     if (switchState.disableMemoryWrite) {
-      throw new ReuseMemoryError(
-        'INVALID_STATE',
-        'Memory write is disabled by kill switch.',
-      );
+      throw new AgentMemoryDisabledError('write');
     }
   }
 
   private async assertReadEnabled() {
     const switchState = await this.resolveKillSwitch();
     if (switchState.disableMemoryRead) {
-      throw new ReuseMemoryError(
-        'INVALID_STATE',
-        'Memory read is disabled by kill switch.',
-      );
+      throw new AgentMemoryDisabledError('read');
     }
   }
 }

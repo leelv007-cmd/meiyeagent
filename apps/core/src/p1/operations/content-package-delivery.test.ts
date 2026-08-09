@@ -21,6 +21,7 @@ import {
   ContentPackageDeliveryError,
   ContentPackageDeliveryService,
   contentPackageDeliveryCapability,
+  projectActiveResultSignals,
   type ContentPackagePublishPort,
 } from './content-package-delivery.js';
 import { OperationsFoundationModule } from './foundation-module.js';
@@ -35,6 +36,33 @@ const context: OperationContext = {
   userId: 'owner-a',
   workspaceId: 'workspace-a',
 };
+
+test('unprovable legacy result signals stay quarantined from exact evidence', () => {
+  const active = projectActiveResultSignals([
+    {
+      actorId: 'legacy-actor',
+      contentPackageRevision: 'unknown',
+      id: 'legacy-signal',
+      kind: 'inquiry',
+      occurredAt: '2026-08-01T00:00:00.000Z',
+      source: 'merchant_recorded',
+      status: 'active',
+    },
+    {
+      actorId: 'owner-a',
+      contentPackageRevision: 4,
+      id: 'exact-signal',
+      kind: 'store_visit',
+      occurredAt: '2026-08-02T00:00:00.000Z',
+      source: 'merchant_recorded',
+      status: 'active',
+    },
+  ]);
+  assert.deepEqual(
+    active.map((signal) => signal.id),
+    ['exact-signal']
+  );
+});
 
 test('the three-state gate opens automatic publish only with complete live evidence', () => {
   const base = {
@@ -827,6 +855,7 @@ test('merchant chips update the result ladder while verified and inferred source
     resultSignals: [
       {
         actorId: 'owner-a',
+        contentPackageRevision: 1,
         id: 'old-signal-a',
         kind: 'private_message',
         occurredAt: '2026-07-10T07:10:00.000Z',
@@ -1064,13 +1093,21 @@ test('V31-19: result signal write is idempotent on package+signal+observedAt+sou
   };
   const first = await setup.service.recordResultSignal(context, input);
   assert.equal(first.resultSignals?.length, 1);
+  assert.equal(first.resultSignals?.[0]?.contentPackageRevision, 2);
   // Retry after success — same key, same payload, no second row.
-  const retry = await setup.service.recordResultSignal(context, {
-    ...input,
-    expectedRevision: 99, // OCC not required on pure idempotent hit
-  });
+  const retry = await setup.service.recordResultSignal(context, input);
   assert.equal(retry.revision, first.revision);
   assert.equal(retry.resultSignals?.length, 1);
+
+  await assert.rejects(
+    setup.service.recordResultSignal(context, {
+      ...input,
+      expectedRevision: 99,
+    }),
+    (error: unknown) =>
+      error instanceof ContentPackageDeliveryError &&
+      error.code === 'CONTENT_PACKAGE_REVISION_CONFLICT',
+  );
 
   await assert.rejects(
     setup.service.recordResultSignal(context, {
@@ -1081,6 +1118,79 @@ test('V31-19: result signal write is idempotent on package+signal+observedAt+sou
       error instanceof ContentPackageDeliveryError &&
       error.code === 'RESULT_SIGNAL_IDEMPOTENCY_CONFLICT',
   );
+});
+
+test('V31-19: concurrent result signals with the same expected revision allow one writer', async () => {
+  const setup = await createSetup('assisted');
+  await setup.service.recordManualResult(context, {
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+
+  const writes = await Promise.allSettled([
+    setup.service.recordResultSignal(context, {
+      expectedRevision: 2,
+      kind: 'inquiry',
+      occurredAt: '2026-07-17T10:00:00.000Z',
+      packageId: 'package-a',
+      sourceRef: 'self-report:concurrent-a',
+    }),
+    setup.service.recordResultSignal(context, {
+      expectedRevision: 2,
+      kind: 'store_visit',
+      occurredAt: '2026-07-17T10:01:00.000Z',
+      packageId: 'package-a',
+      sourceRef: 'self-report:concurrent-b',
+    }),
+  ]);
+
+  assert.equal(writes.filter((result) => result.status === 'fulfilled').length, 1);
+  const rejection = writes.find((result) => result.status === 'rejected');
+  assert.ok(rejection && rejection.status === 'rejected');
+  assert.ok(
+    rejection.reason instanceof ContentPackageDeliveryError &&
+      rejection.reason.code === 'CONTENT_PACKAGE_REVISION_CONFLICT',
+  );
+
+  const state = (await setup.repository.loadWorkspace('workspace-a'))!;
+  assert.equal(state.contentPackages[0]?.revision, 3);
+  assert.equal(state.contentPackages[0]?.resultSignals?.length, 1);
+});
+
+test('V31-19: concurrent duplicate key with a different payload conflicts under the lock', async () => {
+  const setup = await createSetup('assisted');
+  await setup.service.recordManualResult(context, {
+    expectedRevision: 1,
+    packageId: 'package-a',
+    platform: 'douyin',
+    status: 'published',
+    variantVersionId: 'douyin-v1',
+  });
+  const writes = await Promise.allSettled([
+    setup.service.recordResultSignal(context, {
+      expectedRevision: 2,
+      kind: 'inquiry',
+      note: 'first payload',
+      occurredAt: '2026-07-17T10:00:00.000Z',
+      packageId: 'package-a',
+      sourceRef: 'self-report:same-key',
+    }),
+    setup.service.recordResultSignal(context, {
+      expectedRevision: 2,
+      kind: 'inquiry',
+      note: 'different payload',
+      occurredAt: '2026-07-17T10:00:00.000Z',
+      packageId: 'package-a',
+      sourceRef: 'self-report:same-key',
+    }),
+  ]);
+  assert.equal(writes.filter((result) => result.status === 'fulfilled').length, 1);
+  const rejected = writes.find((result) => result.status === 'rejected');
+  assert.ok(rejected && rejected.status === 'rejected');
+  assert.equal(rejected.reason.code, 'RESULT_SIGNAL_IDEMPOTENCY_CONFLICT');
 });
 
 test('V31-19: correct and withdraw are append-only and bind exact package revision', async () => {
@@ -1115,6 +1225,17 @@ test('V31-19: correct and withdraw are append-only and bind exact package revisi
   assert.equal(corrected.resultSignals?.at(-1)?.kind, 'store_visit');
   assert.equal(corrected.resultSignals?.at(-1)?.supersedesSignalId, priorId);
   assert.equal(corrected.revision, 4);
+  const correctedRetry = await setup.service.recordResultSignal(context, {
+    action: 'correct',
+    expectedRevision: 3,
+    kind: 'store_visit',
+    note: '其实已经到店了',
+    occurredAt: '2026-07-17T11:00:00.000Z',
+    packageId: 'package-a',
+    supersedesSignalId: priorId,
+  });
+  assert.equal(correctedRetry.revision, 4);
+  assert.equal(correctedRetry.resultSignals?.length, 2);
 
   const afterCorrect = await setup.service.results(context, 'package-a');
   assert.equal(afterCorrect.signals.merchant.length, 1);
@@ -1131,6 +1252,15 @@ test('V31-19: correct and withdraw are append-only and bind exact package revisi
     supersedesSignalId: activeId,
   });
   assert.equal(withdrawn.resultSignals?.at(-1)?.status, 'withdrawn');
+  const withdrawnRetry = await setup.service.recordResultSignal(context, {
+    action: 'withdraw',
+    expectedRevision: 4,
+    kind: 'store_visit',
+    packageId: 'package-a',
+    supersedesSignalId: activeId,
+  });
+  assert.equal(withdrawnRetry.revision, 5);
+  assert.equal(withdrawnRetry.resultSignals?.length, 3);
   const afterWithdraw = await setup.service.results(context, 'package-a');
   assert.equal(afterWithdraw.signals.merchant.length, 0);
   assert.equal(afterWithdraw.signals.history?.length, 3);

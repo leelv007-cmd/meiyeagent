@@ -20,6 +20,13 @@ import {
 import { toHarnessWorkflowInput } from "./creation-stage-port.js";
 import { ProductQuoteService } from "../product-billing/quote-service.js";
 import { triggersPaidMediaExecution } from "../harness/workflow-core.js";
+import { ComposerPlanSessionCoordinator } from "../agent-session/composer-plan-session.js";
+import { MemoryAgentSessionStore } from "../agent-session/memory-agent-session-store.js";
+import {
+	createFixturePlanCompilerPorts,
+	PlanCompiler,
+} from "../agent-session/plan-compiler.js";
+import { MemoryMarketingPlanStore } from "../agent-session/memory-plan-store.js";
 import {
 	CampaignPaidWorkProducer,
 	projectCampaignWeeklySlots,
@@ -2418,3 +2425,157 @@ function modalitySubmissionPayload(
 		route: { id: `route-${kind}-1`, revision: `route-${kind}-r1` },
 	};
 }
+
+/** Marker freeze: this test asserts the freeze survives recovery, not its shape. */
+function freezeForRecoveryTest() {
+	return {
+		planId: "plan-recovered",
+		planRevision: 1,
+		intentDeclaration: { summary: "recovered" },
+		contextBundleRef: { bundleId: "context-1", revision: 1, hash: "hash-1" },
+		executionPlan: {
+			schemaVersion: "compiled-execution-plan/v1",
+			units: [],
+			dependencyGroups: [],
+		},
+		deliverables: [],
+		quoteRef: { id: "quote-1", revision: 1 },
+		rightsRevisionRefs: [],
+		harnessReleaseId: "composer-plan-surface-v1",
+		approvalBasis: "policy_exempt_copy",
+	} as unknown as NonNullable<
+		CreationSubmissionRecord["executionPlanFreeze"]
+	>;
+}
+
+test("V31-18 P0-1: crash recovery starts Make through plan preparation, not around it", async () => {
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	let failNextStart = true;
+	let prepareCalls = 0;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		{
+			async start(submission) {
+				if (failNextStart) {
+					failNextStart = false;
+					throw new Error("Harness acknowledgement unavailable");
+				}
+				return harness.start(submission);
+			},
+			async classifyStartFailure() {
+				return "retry";
+			},
+		},
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			// Stands in for ComposerPlanSessionCoordinator.prepare: it retrieves
+			// confirmed memory and leaves the compile freeze on the record.
+			async prepare(input) {
+				prepareCalls += 1;
+				input.submission.executionPlanFreeze = freezeForRecoveryTest();
+				return { threadId: "thread-recovered", runId: "run-recovered" };
+			},
+		},
+	);
+	const command: Parameters<CreationSubmissionCoordinator["submit"]>[0] = {
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	};
+
+	await assert.rejects(coordinator.submit(command), /acknowledgement/u);
+	assert.equal(prepareCalls, 1);
+	assert.equal(harness.starts.length, 0);
+
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 1,
+		failed: 0,
+		started: 1,
+	});
+	// `listRecoverableHarnessStarts` rebuilds the record from storage, so the
+	// in-memory freeze from the first attempt is gone. Recovery that skips plan
+	// preparation therefore starts Make with no ExecutionPlanSnapshot and no
+	// memory retrieval — the paid submission silently degrades to legacy.
+	assert.equal(prepareCalls, 2);
+	assert.equal(harness.starts.length, 1);
+	assert.ok(
+		harness.starts[0]?.executionPlanFreeze,
+		"recovered Make start must carry the compile freeze",
+	);
+});
+
+test("V31-18 P0-2: a Result adjustment retrieves confirmed memory like a first submission", async () => {
+	const submissions = new MemorySubmissionStore();
+	const starter = new RecordingHarnessStarter();
+	const retrievals: Array<{ workspaceId: string; taskId: string }> = [];
+	const plans = new MemoryMarketingPlanStore();
+	const planCompiler = new PlanCompiler({
+		store: plans,
+		ports: createFixturePlanCompilerPorts(),
+	});
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		starter,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		new ComposerPlanSessionCoordinator(
+			new MemoryAgentSessionStore(),
+			plans,
+			{
+				compilePlan: (input) => planCompiler.compile(input),
+				adjustPlan: (input) => planCompiler.adjust(input),
+				retrieveConfirmedExperience: async (input) => {
+					retrievals.push({
+						workspaceId: input.workspaceId,
+						taskId: input.taskId,
+					});
+					return [];
+				},
+			},
+		),
+	);
+	await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	assert.deepEqual(retrievals, [
+		{ workspaceId: "workspace-1", taskId: "task-1" },
+	]);
+
+	const source = starter.starts[0]!;
+	await coordinator.submitResultAdjustment({
+		actorId: "owner-1",
+		idempotencyKey: "result-adjust-memory-1",
+		instruction: "语气更自然",
+		outputCount: 1,
+		quote: { id: "quote-adjust-1", revision: "quote-adjust-r1" },
+		sourceContentPackage: { id: source.contentPackage.id, revision: 1 },
+		sourceSnapshot: structuredClone(source.snapshot),
+		taskId: "composer-task:result-adjust:memory",
+		workId: "work-result-adjust-memory",
+		workspaceId: "workspace-1",
+	});
+
+	// A correction ("下次别这样") is exactly where a merchant checks whether the
+	// preference they confirmed took hold. `submitResultAdjustment` claimed and
+	// started Make without ever preparing a plan, so confirmed memory was never
+	// retrieved, no MemoryInjectionReceipt was written, and the receipt panel
+	// stayed empty on the one path that tests recurrence.
+	assert.deepEqual(retrievals, [
+		{ workspaceId: "workspace-1", taskId: "task-1" },
+		{
+			workspaceId: "workspace-1",
+			taskId: "composer-task:result-adjust:memory",
+		},
+	]);
+	assert.equal(starter.starts.length, 2);
+	assert.ok(
+		starter.starts[1]?.executionPlanFreeze,
+		"the adjustment must carry its own compile freeze",
+	);
+});

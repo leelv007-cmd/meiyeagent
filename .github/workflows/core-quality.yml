@@ -362,6 +362,7 @@ jobs:
           RELEASE_COMMIT_SHA: ${{ github.sha }}
           REQUIRED_BROWSER_HARD_GATE_SPEC: tests/e2e/specs/m04-browser-hard-gate.spec.ts
           REQUIRED_E2E_SPEC: tests/e2e/specs/assembly-gate-required-journey.spec.ts
+          REQUIRED_V31_MEMORY_INJECTION_SPEC: tests/e2e/specs/v31-memory-injection-b2-journey.spec.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

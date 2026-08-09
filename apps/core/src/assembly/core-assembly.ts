@@ -742,6 +742,7 @@ export async function assembleCoreGraph(
         Array<{
           memoryId: string;
           statement: string;
+          revision: number;
           kind?: string;
           authority?: string;
         }>
@@ -775,6 +776,37 @@ export async function assembleCoreGraph(
     },
     now: () => new Date().toISOString(),
   });
+  /**
+   * V31-18 P0-2: server-owned confirmed-experience retrieval. It is assembled
+   * unconditionally — the Composer needs it on every deploy, while the Session
+   * kernel only exists in fixture mode or after `live_verified` activation.
+   * Both the Session Harness tool path and the Composer plan path consume this
+   * single definition, so retrieval and its MemoryInjectionReceipt cannot be
+   * present on one path and silently absent on the other.
+   */
+  const sessionConfirmedExperienceRetrieval = async (input: {
+    workspaceId: string;
+    threadId: string;
+    taskId: string;
+    runId: string;
+    harnessReleaseId: string;
+    storeId: string;
+    platform: string;
+  }) =>
+    sessionRetrievalPorts.listConfirmedExperience?.({
+      workspaceId: input.workspaceId,
+      threadId: input.threadId,
+      limit: 8,
+      injectionContext: {
+        taskId: input.taskId,
+        runId: input.runId,
+        harnessReleaseId: input.harnessReleaseId,
+      },
+      scope: {
+        storeId: input.storeId,
+        platform: input.platform,
+      },
+    }) ?? [];
   /** Durable agent session store (V31-02) — also backs Session Harness service. */
   const agentSessionStore = new PostgresAgentSessionStore(pool);
   /** V31-24 MarketingGoal + opportunity decision log (production PG only). */
@@ -858,11 +890,9 @@ export async function assembleCoreGraph(
     ? new AgentSessionHarnessService({
         store: agentSessionStore,
         kernel: sessionAgentKernel,
-        // V31-21 P1-a: lifecycle-aware resolution. A run's pinned releaseId is
-        // resolved as a frozen full-immutable pin (rollback never rewrites it);
-        // an unknown pin falls back to the current production lifecycle so a
-        // fresh/pre-bootstrap record still resolves (canary allowlist applies
-        // at pin time in the composer plan session).
+        // V31-21: a run's pinned releaseId is immutable. Unknown pins fail
+        // closed; silently rebinding them to the current release would corrupt
+        // receipt attribution and replay fidelity.
         resolveRelease: async (harnessReleaseId) => {
           const resolve = async (frozenReleaseId?: string | null) => {
             const resolved = await harnessReleaseService.resolveForRun({
@@ -883,17 +913,7 @@ export async function assembleCoreGraph(
               releaseId: resolved.releaseId,
             };
           };
-          try {
-            return await resolve(harnessReleaseId);
-          } catch (error) {
-            if (
-              error instanceof P1DomainError &&
-              error.code === 'NOT_FOUND'
-            ) {
-              return resolve(null);
-            }
-            throw error;
-          }
+          return resolve(harnessReleaseId);
         },
         createToolRegistry: (turn) =>
           createRetrievalToolRegistry({
@@ -903,8 +923,10 @@ export async function assembleCoreGraph(
               threadId: turn.threadId,
               creationMode: turn.creationMode ?? 'customized',
               platform: turn.platform,
+              ...(turn.memoryScope ?? {}),
             },
           }),
+        retrieveConfirmedExperience: sessionConfirmedExperienceRetrieval,
         createPolicies: (_turn, authority) =>
           createIntentRetrievalPolicies({
             knownFields: authority?.knownFields ?? [],
@@ -1710,6 +1732,7 @@ export async function assembleCoreGraph(
     agentSessionStore,
     sessionRetrievalPorts,
     sessionRetrievalExperiencePort,
+    sessionConfirmedExperienceRetrieval,
     sessionAgentHarness,
     marketingPlanStore,
     planCompiler,

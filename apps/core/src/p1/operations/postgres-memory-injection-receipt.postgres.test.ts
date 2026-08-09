@@ -9,7 +9,10 @@ import test from 'node:test';
 
 import { Pool } from 'pg';
 
-import { AgentMemoryPlatform } from './agent-memory-platform.js';
+import {
+  AgentMemoryPlatform,
+  type MemoryInjectionReceiptStore,
+} from './agent-memory-platform.js';
 import { PostgresMemoryInjectionReceiptStore } from './postgres-memory-injection-receipt.js';
 import {
   MemoryReuseMemoryRepository,
@@ -38,8 +41,13 @@ test(
     const platform = new AgentMemoryPlatform(reuse, store, undefined, () => now);
 
     const taskId = `task-inj-${randomUUID()}`;
+    const retryTaskId = `task-inj-retry-${randomUUID()}`;
+    const commitLostTaskId = `task-inj-commit-lost-${randomUUID()}`;
     const runId = `run-inj-${randomUUID()}`;
     const releaseId = `release-inj-${randomUUID()}`;
+    const triggerSuffix = randomUUID().replaceAll('-', '');
+    const triggerName = `memory_receipt_fail_${triggerSuffix}`;
+    const functionName = `memory_receipt_fail_fn_${triggerSuffix}`;
 
     try {
       const [candidate] = await platform.onExtracted({
@@ -97,6 +105,98 @@ test(
       });
       assert.deepEqual(again, receipt);
 
+      // The transaction committed, but the caller lost the response. A retry
+      // after the process clock advances must return the first durable receipt.
+      let loseFirstCommittedResponse = true;
+      let retryClock = now;
+      const commitLostStore: MemoryInjectionReceiptStore = {
+        async save(input) {
+          const saved = await store.save(input);
+          if (loseFirstCommittedResponse) {
+            loseFirstCommittedResponse = false;
+            throw new Error('response lost after commit');
+          }
+          return saved;
+        },
+        getByTask: (id) => store.getByTask(id),
+        getByRun: (id) => store.getByRun(id),
+      };
+      const commitLostPlatform = new AgentMemoryPlatform(
+        reuse,
+        commitLostStore,
+        undefined,
+        () => retryClock,
+      );
+      await assert.rejects(
+        commitLostPlatform.recordInjectionReceipt({
+          taskId: commitLostTaskId,
+          runId: `${runId}-commit-lost`,
+          harnessReleaseId: releaseId,
+          entries,
+        }),
+        /response lost after commit/u,
+      );
+      const firstCommitted = await store.getByTask(commitLostTaskId);
+      assert.equal(firstCommitted?.injectedAt, now);
+      // The committed row's physical version, so the retry below can be shown
+      // to have read it rather than rewritten it (put-once).
+      const firstCommittedRow = await pool.query<{
+        payload: unknown;
+        row_version: string;
+      }>(
+        `SELECT payload, xmin::text AS row_version
+         FROM p1_memory_injection_receipts
+         WHERE task_id = $1`,
+        [commitLostTaskId],
+      );
+      assert.deepEqual(firstCommittedRow.rows[0]?.payload, firstCommitted);
+      retryClock = '2026-08-08T12:05:00.000Z';
+      const recovered = await commitLostPlatform.recordInjectionReceipt({
+        taskId: commitLostTaskId,
+        runId: `${runId}-commit-lost`,
+        harnessReleaseId: releaseId,
+        entries,
+      });
+      assert.deepEqual(recovered, firstCommitted);
+      const recoveredRow = await pool.query<{
+        payload: unknown;
+        row_version: string;
+      }>(
+        `SELECT payload, xmin::text AS row_version
+         FROM p1_memory_injection_receipts
+         WHERE task_id = $1`,
+        [commitLostTaskId],
+      );
+      assert.deepEqual(recoveredRow.rows[0], firstCommittedRow.rows[0]);
+
+      for (const divergentEntries of [
+        entries.map((entry, index) =>
+          index === 0
+            ? {
+                ...entry,
+                memoryId: `${entry.memoryId}-other` as typeof entry.memoryId,
+              }
+            : entry,
+        ),
+        entries.map((entry, index) =>
+          index === 0 ? { ...entry, revision: entry.revision + 1 } : entry,
+        ),
+        entries.map((entry, index) =>
+          index === 0 ? { ...entry, statement: `${entry.statement}。` } : entry,
+        ),
+      ]) {
+        await assert.rejects(
+          commitLostPlatform.recordInjectionReceipt({
+            taskId: commitLostTaskId,
+            runId: `${runId}-commit-lost`,
+            harnessReleaseId: releaseId,
+            entries: divergentEntries,
+          }),
+          (error: unknown) =>
+            error instanceof ReuseMemoryError && error.code === 'CONFLICT',
+        );
+      }
+
       // Divergent payload conflicts.
       await assert.rejects(
         platform.recordInjectionReceipt({
@@ -116,10 +216,73 @@ test(
       assert.deepEqual(byTask, receipt);
       const byRun = await restarted.getByRun(runId);
       assert.deepEqual(byRun, receipt);
+
+      // V31-18 P1-7: the retired write-only "outbox" must be gone after migrate(),
+      // including on databases that already had it.
+      const retired = await pool.query<{ present: boolean }>(
+        `SELECT to_regclass('p1_memory_injection_receipt_outbox') IS NOT NULL AS present`,
+      );
+      assert.equal(retired.rows[0]?.present, false);
+
+      // Transaction cleanup, NOT cross-table atomicity — that property left with
+      // the retired outbox, because save() now writes exactly one table.
+      //
+      // Be precise about which half has teeth: the trigger is BEFORE INSERT, so
+      // the row never lands and the `receipt_count: '0'` below is true no matter
+      // what save() does with its transaction. The assertion that bites is the
+      // *retry succeeding* afterwards — if save() failed to ROLLBACK, the pooled
+      // client would be handed back carrying an aborted transaction and the
+      // retry would fail with 25P02 instead of committing.
+      await pool.query(`
+        CREATE FUNCTION ${functionName}() RETURNS trigger AS $$
+        BEGIN
+          RAISE EXCEPTION 'forced receipt failure';
+        END;
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER ${triggerName}
+          BEFORE INSERT ON p1_memory_injection_receipts
+          FOR EACH ROW
+          WHEN (NEW.task_id = '${retryTaskId}')
+          EXECUTE FUNCTION ${functionName}();
+      `);
+      await assert.rejects(
+        platform.recordInjectionReceipt({
+          taskId: retryTaskId,
+          runId: `${runId}-retry`,
+          harnessReleaseId: releaseId,
+          entries,
+          injectedAt: now,
+        }),
+        /forced receipt failure/u,
+      );
+      const rolledBack = await pool.query<{ receipt_count: string }>(
+        `SELECT count(*)::text AS receipt_count
+           FROM p1_memory_injection_receipts WHERE task_id = $1`,
+        [retryTaskId],
+      );
+      assert.deepEqual(rolledBack.rows[0], { receipt_count: '0' });
+      await pool.query(`DROP TRIGGER ${triggerName} ON p1_memory_injection_receipts`);
+      await pool.query(`DROP FUNCTION ${functionName}()`);
+      const retried = await platform.recordInjectionReceipt({
+        taskId: retryTaskId,
+        runId: `${runId}-retry`,
+        harnessReleaseId: releaseId,
+        entries,
+        injectedAt: now,
+      });
+      assert.equal(retried.taskId, retryTaskId);
+      const committed = await pool.query<{ receipt_count: string }>(
+        `SELECT count(*)::text AS receipt_count
+           FROM p1_memory_injection_receipts WHERE task_id = $1`,
+        [retryTaskId],
+      );
+      assert.deepEqual(committed.rows[0], { receipt_count: '1' });
     } finally {
+      await pool.query(`DROP TRIGGER IF EXISTS ${triggerName} ON p1_memory_injection_receipts`).catch(() => undefined);
+      await pool.query(`DROP FUNCTION IF EXISTS ${functionName}()`).catch(() => undefined);
       await pool.query(
-        `DELETE FROM p1_memory_injection_receipts WHERE task_id = $1`,
-        [taskId],
+        `DELETE FROM p1_memory_injection_receipts WHERE task_id = ANY($1::text[])`,
+        [[taskId, retryTaskId, commitLostTaskId]],
       );
       await pool.end();
     }

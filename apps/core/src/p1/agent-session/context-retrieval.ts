@@ -6,6 +6,7 @@
  * Free creation (D-175): store/project tools return empty without blocking.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { z } from 'zod';
 
 import {
@@ -60,6 +61,7 @@ export type RetrievalContent = {
 export type RetrievalExperience = {
   ref: string;
   instruction: string;
+  revision: number;
   status: 'confirmed' | 'pending';
   kind?: string;
 };
@@ -92,6 +94,13 @@ export type SessionRetrievalPorts = {
     workspaceId: string;
     threadId?: string;
     limit?: number;
+    injectionContext?: MemoryInjectionTurnBinding;
+    scope?: {
+      storeId?: string;
+      personaId?: string;
+      scene?: string;
+      platform?: string;
+    };
   }) => Promise<RetrievalExperience[]>;
   readPlatformRequirements?: (input: {
     platform: string;
@@ -109,6 +118,8 @@ export type RetrievalToolContext = {
   threadId?: string;
   creationMode?: 'customized' | 'free';
   storeId?: string;
+  personaId?: string;
+  scene?: string;
   platform?: string;
 };
 
@@ -124,9 +135,21 @@ export type MemoryInjectionTurnBinding = {
   harnessReleaseId: string;
 };
 
-export const memoryInjectionTurnBridge: {
-  current?: MemoryInjectionTurnBinding;
-} = {};
+const memoryInjectionTurnContext =
+  new AsyncLocalStorage<MemoryInjectionTurnBinding>();
+
+export function runWithMemoryInjectionTurnBinding<T>(
+  binding: MemoryInjectionTurnBinding,
+  callback: () => T,
+): T {
+  return memoryInjectionTurnContext.run(binding, callback);
+}
+
+export function currentMemoryInjectionTurnBinding():
+  | MemoryInjectionTurnBinding
+  | undefined {
+  return memoryInjectionTurnContext.getStore();
+}
 
 const INTENT_PLAN_PHASES = ['intent', 'plan', 'make', 'delivery'] as const;
 
@@ -400,6 +423,12 @@ export function createRetrievalToolRegistry(input: {
             workspaceId: context.workspaceId,
             threadId: context.threadId,
             limit: args.limit ?? (format === 'detailed' ? 8 : 4),
+            scope: {
+              ...(context.storeId ? { storeId: context.storeId } : {}),
+              ...(context.personaId ? { personaId: context.personaId } : {}),
+              ...(context.scene ? { scene: context.scene } : {}),
+              ...(context.platform ? { platform: context.platform } : {}),
+            },
           })
         : [];
       const confirmed = items.filter((item) => item.status === 'confirmed');
@@ -575,6 +604,7 @@ export function createSessionRetrievalPorts(deps: {
       Array<{
         memoryId: string;
         statement: string;
+        revision: number;
         kind?: string;
         authority?: string;
       }>
@@ -693,20 +723,27 @@ export function createSessionRetrievalPorts(deps: {
       }));
     },
 
-    async listConfirmedExperience({ workspaceId, threadId, limit }) {
+    async listConfirmedExperience({
+      workspaceId,
+      threadId,
+      limit,
+      scope,
+      injectionContext: boundInjectionContext,
+    }) {
       if (!deps.experience) return [];
+      const injectionContext =
+        boundInjectionContext ?? currentMemoryInjectionTurnBinding();
       const entries = await deps.experience.retrieveForInjection({
         workspaceId,
-        scope: {},
+        scope: scope ?? {},
         threadId,
         limit: limit ?? 8,
-        ...(memoryInjectionTurnBridge.current
-          ? { injectionContext: memoryInjectionTurnBridge.current }
-          : {}),
+        ...(injectionContext ? { injectionContext } : {}),
       });
       return entries.map((entry) => ({
         ref: `experience:${entry.memoryId}`,
         instruction: entry.statement,
+        revision: entry.revision,
         status:
           entry.authority === 'session'
             ? ('pending' as const)

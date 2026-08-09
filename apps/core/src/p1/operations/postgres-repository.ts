@@ -373,6 +373,84 @@ export class PostgresOperationsRepository implements OperationsRepository {
       ALTER TABLE p1_content_packages
         ALTER COLUMN revision SET DEFAULT 0,
         ALTER COLUMN revision SET NOT NULL;
+      UPDATE p1_content_packages AS package
+      SET payload = jsonb_set(
+        package.payload,
+        '{resultSignals}',
+        (
+          SELECT jsonb_agg(
+            CASE
+              WHEN (
+                jsonb_typeof(signal.value->'contentPackageRevision') = 'number'
+                AND signal.value->>'contentPackageRevision' ~ '^[0-9]+$'
+              )
+                OR (
+                  jsonb_typeof(signal.value->'contentPackageRevision') = 'string'
+                  AND signal.value->>'contentPackageRevision' = 'unknown'
+                )
+              THEN signal.value
+              ELSE signal.value || jsonb_build_object(
+                'contentPackageRevision',
+                COALESCE(
+                  (
+                    SELECT audit.payload->'details'->'contentPackageRevision'
+                    FROM p1_operations_audit_events AS audit
+                    WHERE audit.workspace_id = package.workspace_id
+                      AND audit.payload->>'entityId' = package.id
+                      AND audit.payload->>'action' IN (
+                        'content_package.result_signal_recorded',
+                        'content_package.result_signal_corrected',
+                        'content_package.result_signal_withdrawn'
+                      )
+                      AND audit.payload->'details'->>'signalId' = signal.value->>'id'
+                      AND jsonb_typeof(
+                        audit.payload->'details'->'contentPackageRevision'
+                      ) = 'number'
+                      AND audit.payload->'details'->>'contentPackageRevision'
+                        ~ '^[0-9]+$'
+                    ORDER BY audit.updated_at DESC
+                    LIMIT 1
+                  ),
+                  '"unknown"'::jsonb
+                )
+              )
+            END
+            ORDER BY signal.ordinality
+          )
+          FROM jsonb_array_elements(package.payload->'resultSignals')
+            WITH ORDINALITY AS signal(value, ordinality)
+        )
+      )
+      WHERE jsonb_typeof(package.payload->'resultSignals') = 'array'
+        AND jsonb_array_length(package.payload->'resultSignals') > 0
+        AND EXISTS (
+          SELECT 1
+          FROM jsonb_array_elements(package.payload->'resultSignals') AS legacy(signal)
+          WHERE NOT COALESCE((
+            (
+              jsonb_typeof(legacy.signal->'contentPackageRevision') = 'number'
+              AND legacy.signal->>'contentPackageRevision' ~ '^[0-9]+$'
+            )
+            OR (
+              jsonb_typeof(legacy.signal->'contentPackageRevision') = 'string'
+              AND legacy.signal->>'contentPackageRevision' = 'unknown'
+            )
+          ), false)
+        );
+      ALTER TABLE p1_content_packages
+        DROP CONSTRAINT IF EXISTS p1_content_packages_result_signal_revision_required;
+      ALTER TABLE p1_content_packages
+        ADD CONSTRAINT p1_content_packages_result_signal_revision_required
+        CHECK (
+          NOT jsonb_path_exists(
+            payload,
+            '$.resultSignals[*] ? (!exists(@.contentPackageRevision))'
+          )
+          AND NOT jsonb_path_exists(
+            payload,
+            '$.resultSignals[*] ? (!((@.contentPackageRevision.type() == "number" && @.contentPackageRevision >= 0) || (@.contentPackageRevision.type() == "string" && @.contentPackageRevision == "unknown")))'
+          )
+        );
       CREATE INDEX IF NOT EXISTS p1_content_packages_status_updated_idx
         ON p1_content_packages
         (workspace_id, ((payload->>'status')), updated_at DESC);

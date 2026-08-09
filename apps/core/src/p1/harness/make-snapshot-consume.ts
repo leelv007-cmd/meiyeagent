@@ -17,9 +17,11 @@ import { isDeepStrictEqual } from 'node:util';
 import {
   DEFAULT_NOTE_STYLES,
   executionPlanSnapshotSchema,
+  planMemoryContextSchema,
   type ExecutionPlanSnapshot,
   type NotePlan,
   type NoteStyleCandidates,
+  type PlanMemoryContext,
 } from '@meiye/contracts';
 
 import type { IntentDeclaration } from './structured-nodes.js';
@@ -208,11 +210,14 @@ export function materializeCopyBriefFromSnapshot(input: {
       : ('xiaohongshu' as const);
   const quantity =
     snapshot.deliverables.find((d) => d.kind === 'copy')?.quantity ?? 1;
+  const style = snapshotMemoryStyleConstraints(snapshot);
+  const styleInstruction = memoryStyleInstruction(style);
   return {
     brief: {
       kind: 'copy',
       instructions:
         `按已确认方案「${declaration.normalizedIntent}」生成 ${quantity} 条文案。` +
+        styleInstruction +
         '只使用冻结事实与授权素材，不得编造价格、日期、效果或顾客案例，不得偏离 ExecutionPlanSnapshot。',
       platform,
       cta: '私信了解详情并预约',
@@ -222,12 +227,129 @@ export function materializeCopyBriefFromSnapshot(input: {
       constraints: [
         '不得编造价格、效果、资质或顾客案例',
         '只使用已确认的本店事实',
+        ...(style ? [styleInstruction] : []),
         `snapshotHash=${snapshot.snapshotHash}`,
       ],
     },
     llmInvoked: false,
     mode: MAKE_SNAPSHOT_CONSUME_TRACE_MODE,
   };
+}
+
+/**
+ * Merchant-confirmed style constraints as the plan froze them onto every
+ * execution unit. Shared by the copy, media and note materializers: a
+ * MemoryInjectionReceipt tells the merchant their preference was injected, so
+ * every carrier that shows 已注入 must actually consume it (V31-18 P1-8).
+ */
+export function snapshotMemoryStyleConstraints(
+  snapshot: ExecutionPlanSnapshot
+): NonNullable<PlanMemoryContext['styleConstraints']> | undefined {
+  return snapshot.executionPlan.units
+    .map((unit) => {
+      if (!unit.input || typeof unit.input !== 'object') return null;
+      return planMemoryContextSchema.safeParse(
+        (unit.input as Record<string, unknown>).memoryContext
+      );
+    })
+    .find((result) => result?.success)?.data?.styleConstraints;
+}
+
+/** Model-facing rendering of the confirmed style; empty when none was injected. */
+export function memoryStyleInstruction(
+  style: NonNullable<PlanMemoryContext['styleConstraints']> | undefined
+): string {
+  if (!style) return '';
+  return `结构化风格约束：语气=${style.tones.join('、') || 'default'}；标题不超过 ${style.maxTitleChars} 字；正文不超过 ${style.maxBodyChars} 字；单句不超过 ${style.maxSentenceChars} 字；禁用词=${style.forbiddenPhrases.join('、') || '无'}。`;
+}
+
+export type MemoryStyleViolation =
+  | { rule: 'max_title_chars'; limit: number; observed: number }
+  | { rule: 'max_body_chars'; limit: number; observed: number }
+  | { rule: 'max_sentence_chars'; limit: number; observed: number; sentence: string }
+  | { rule: 'forbidden_phrase'; phrase: string; field: 'title' | 'body' };
+
+/**
+ * V31-18 P1-5: does real generated copy actually obey the merchant's confirmed
+ * style? Until this existed, `maxBodyChars` / `maxSentenceChars` /
+ * `forbiddenPhrases` were only ever rendered into a prompt sentence — nothing
+ * anywhere compared them against output, so "the style constraint took effect"
+ * was provable only by a fixture that regexed its own prompt and returned
+ * hard-coded conforming copy.
+ *
+ * Pure and deterministic: sentence splitting uses the CJK and ASCII terminators
+ * the copy surface actually produces.
+ */
+export function assessMemoryStyleCompliance(
+  candidate: { title?: string; body?: string },
+  style: NonNullable<PlanMemoryContext['styleConstraints']> | undefined
+): { passed: boolean; violations: MemoryStyleViolation[] } {
+  if (!style) return { passed: true, violations: [] };
+  const violations: MemoryStyleViolation[] = [];
+  const title = candidate.title ?? '';
+  const body = candidate.body ?? '';
+
+  if ([...title].length > style.maxTitleChars) {
+    violations.push({
+      rule: 'max_title_chars',
+      limit: style.maxTitleChars,
+      observed: [...title].length,
+    });
+  }
+  if ([...body].length > style.maxBodyChars) {
+    violations.push({
+      rule: 'max_body_chars',
+      limit: style.maxBodyChars,
+      observed: [...body].length,
+    });
+  }
+  for (const sentence of splitSentences(body)) {
+    const length = [...sentence].length;
+    if (length > style.maxSentenceChars) {
+      violations.push({
+        rule: 'max_sentence_chars',
+        limit: style.maxSentenceChars,
+        observed: length,
+        sentence,
+      });
+    }
+  }
+  for (const phrase of style.forbiddenPhrases) {
+    if (title.includes(phrase)) {
+      violations.push({ rule: 'forbidden_phrase', phrase, field: 'title' });
+    }
+    if (body.includes(phrase)) {
+      violations.push({ rule: 'forbidden_phrase', phrase, field: 'body' });
+    }
+  }
+  return { passed: violations.length === 0, violations };
+}
+
+/** Merchant-readable rendering of why the confirmed style was not met. */
+export function describeMemoryStyleViolations(
+  violations: readonly MemoryStyleViolation[]
+): string {
+  return violations
+    .map((violation) => {
+      switch (violation.rule) {
+        case 'max_title_chars':
+          return `标题 ${violation.observed} 字超过约定的 ${violation.limit} 字`;
+        case 'max_body_chars':
+          return `正文 ${violation.observed} 字超过约定的 ${violation.limit} 字`;
+        case 'max_sentence_chars':
+          return `单句 ${violation.observed} 字超过约定的 ${violation.limit} 字`;
+        case 'forbidden_phrase':
+          return `${violation.field === 'title' ? '标题' : '正文'}出现约定禁用词「${violation.phrase}」`;
+      }
+    })
+    .join('；');
+}
+
+function splitSentences(body: string): string[] {
+  return body
+    .split(/[。！？!?\n]+/u)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
 }
 
 /**
@@ -281,9 +403,16 @@ export function materializeMediaBriefFromSnapshot(input: {
   const lens = request.executionSnapshot?.lens;
   const kind = lens === 'video' ? ('video' as const) : ('image' as const);
   const summary = declaration.normalizedIntent;
+  // V31-18 P1-8: the plan stamps `memoryContext` on media units too and the
+  // receipt panel tells the merchant it was 已注入, but only the copy
+  // materializer used to read it — so a confirmed preference had zero effect on
+  // image and video output while the UI claimed otherwise.
+  const style = snapshotMemoryStyleConstraints(snapshot);
+  const styleInstruction = memoryStyleInstruction(style);
   const constraints = [
     '不得编造价格、效果、资质或顾客案例',
     '只使用已确认的本店事实与授权素材',
+    ...(styleInstruction ? [styleInstruction] : []),
     `snapshotHash=${snapshot.snapshotHash}`,
   ];
   if (kind === 'video') {
@@ -303,7 +432,7 @@ export function materializeMediaBriefFromSnapshot(input: {
           },
         ],
         firstFramePrompt:
-          `按已确认方案「${summary}」生成竖版视频首帧，真实门店场景，主体清晰，不得编造价格与效果。`,
+          `按已确认方案「${summary}」生成竖版视频首帧，真实门店场景，主体清晰，不得编造价格与效果。${styleInstruction}`,
         referenceAssetIds: [],
         parameters: { durationSeconds: 8, ratio: '9:16' },
         constraints,
@@ -330,7 +459,7 @@ export function materializeMediaBriefFromSnapshot(input: {
         outputPlan: { kind: 'single' },
       },
       prompt:
-        `按已确认方案「${summary}」生成竖版门店活动海报，保留品牌主视觉和预约行动号召，不得编造价格与效果。snapshotHash=${snapshot.snapshotHash}`,
+        `按已确认方案「${summary}」生成竖版门店活动海报，保留品牌主视觉和预约行动号召，不得编造价格与效果。${styleInstruction}snapshotHash=${snapshot.snapshotHash}`,
       referenceAssetIds: [],
       parameters: { ratio: '9:16', resolution: '1080p' },
       constraints,
@@ -361,11 +490,17 @@ export function materializeNoteBriefFromSnapshot(input: {
   validateIntentAgainstSnapshot({ snapshot, declaration });
   const themeAnchor =
     declaration.normalizedIntent.trim().slice(0, 40) || '本店服务科普';
+  // V31-18 P1-8: the note carrier stamps and receipts `memoryContext` like copy
+  // does, so the confirmed style must reach the page scaffold the downstream
+  // page generation consumes — otherwise 已注入 is a claim with no effect.
+  const styleInstruction = memoryStyleInstruction(
+    snapshotMemoryStyleConstraints(snapshot)
+  );
   const candidates: NoteStyleCandidates = {
     candidates: DEFAULT_NOTE_STYLES.styles.map((style) => ({
       styleId: style.id,
       styleName: style.name,
-      positioning: style.writingGuide,
+      positioning: `${style.writingGuide}${styleInstruction}`,
       plan: buildDeterministicNotePlan({
         themeAnchor,
         styleId: style.id,
@@ -373,6 +508,7 @@ export function materializeNoteBriefFromSnapshot(input: {
         factRefs: snapshot.factRevisionRefs,
         rightsRefs: snapshot.rightsRevisionRefs,
         snapshotHash: snapshot.snapshotHash,
+        memoryStyleInstruction: styleInstruction,
       }),
     })),
   };
@@ -393,6 +529,7 @@ function buildDeterministicNotePlan(input: {
   factRefs: readonly string[];
   rightsRefs: readonly string[];
   snapshotHash: string;
+  memoryStyleInstruction?: string;
 }): NotePlan {
   const imageIntent = (purpose: string, subject: string) => ({
     operation: 'image.generate' as const,
@@ -414,7 +551,7 @@ function buildDeterministicNotePlan(input: {
     style: {
       id: input.styleId,
       name: input.styleName,
-      positioning: `${input.styleName}（快照确定性脚手架）`,
+      positioning: `${input.styleName}（快照确定性脚手架）${input.memoryStyleInstruction ?? ''}`,
     },
     pages: [
       {

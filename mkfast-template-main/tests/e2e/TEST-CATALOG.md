@@ -1103,3 +1103,11 @@ V31-07 §37.4-A（review P2 修复）：零门店商家 Day-0 自由创作。
 | # | Test name | Flow |
 |---|---|---|
 | 1 | 零门店商家 free 模式提交自由创作，得到不带虚构门店事实的通用结果 | 不种门店（ProductState.store=null 为诚实前置）→ 切「自由创作」入口（D-111）→ copy lens + 显式选模型 + 目的地小红书 → 通用 intent 提交 202 → 首 token + 候选可见 + 交付卡到达 → `data-delivered=true`；全程无 `composer-grounding-blocker`（D-175 free 不被缺 confirmed_store/project 阻断）；`content_packages` 正文与候选文本非空且**排他断言**不含从未种过的门店名/项目/地址（零虚构门店事实）。 |
+
+**File:** `specs/v31-memory-injection-b2-journey.spec.ts` | **Priority:** P1
+
+V31-18 §37.4-B2（adversarial review 修复）：记忆注入透明度与撤销。**双记忆**是本 spec 的核心约束——单记忆时撤销后 receipt 结构上不可能存在，`toHaveCount(0)` 在「记忆层整体坏掉」时同样通过，无法区分「撤销生效」与「从未注入」。
+
+| # | Test name | Flow |
+|---|---|---|
+| 1 | 撤销两条已确认记忆中的一条，只有那一条不再注入 | 两次提交各声明一条长期偏好 → 各自沉淀 pending → Memory UI 逐条「确认记住」→ 第三次提交后任务详情 receipt 面板**同时**列出两条（按 statement 关联 memoryId，不用 memory 页 `entryId`：pending 的 id 是 candidateId、receipt 携带 confirmed head 的 memoryId，两者不通用）→ 只撤销其一 → 就地断言该条 disabled、幸存条仍 enabled（`revokedIds` 是 `useState` 本地态、刷新即忘，故不做刷新后断言）→ `entries_page` 服务端断言幸存条仍 confirmed、被撤条不再 confirmed → 第四次提交：receipt 面板仍在且**正向**含幸存条 1 条、被撤条 0 条、statement 不含被撤原文。原「风格约束生效」断言（标题≤24／正文≤32／无禁用词）已移除：它只因 fixture 自读 prompt（`ai-sdk-runner.ts:1657`）返回硬编码合规文案而通过，真实约束改由 `assessMemoryStyleCompliance` 单测对真实输出断言。 |

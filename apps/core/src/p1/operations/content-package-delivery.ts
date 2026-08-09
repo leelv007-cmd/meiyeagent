@@ -500,23 +500,17 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
     // Idempotency key = contentPackage id + signal + observedAt/sourceRef.
     // Revision is the exact package binding snapshot at write time; lookup
     // matches on signal identity so retries after success stay idempotent.
-    if (action === 'record') {
+    {
       const existing = contentPackage.resultSignals ?? [];
       const duplicate = existing.find((row) =>
-        resultSignalMatchesIdempotencyIdentity(row, {
-          packageId: contentPackage.id,
-          kind: input.kind,
+        resultSignalMatchesWriteIdentity(row, {
+          ...input,
+          action,
           observedAt,
-          sourceRef: input.sourceRef,
-        })
+        }, contentPackage.id)
       );
       if (duplicate) {
-        const samePayload =
-          duplicate.kind === input.kind &&
-          (duplicate.note ?? '') === (input.note ?? '') &&
-          (duplicate.quantity ?? null) === (input.quantity ?? null) &&
-          (duplicate.sourceRef ?? '') === (input.sourceRef ?? '');
-        if (!samePayload) {
+        if (!resultSignalPayloadMatches(duplicate, input)) {
           throw new ContentPackageDeliveryError(
             'RESULT_SIGNAL_IDEMPOTENCY_CONFLICT',
             'A different result signal already exists for this idempotency key.'
@@ -556,22 +550,38 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
         }
 
         // Re-check idempotency under the lock for concurrent record races.
-        if (action === 'record') {
+        {
           const duplicate = existing.find((row) =>
-            resultSignalMatchesIdempotencyIdentity(row, {
-              packageId: current.id,
-              kind: input.kind,
+            resultSignalMatchesWriteIdentity(row, {
+              ...input,
+              action,
               observedAt,
-              sourceRef: input.sourceRef,
-            })
+            }, current.id)
           );
           if (duplicate) {
+            if (!resultSignalPayloadMatches(duplicate, input)) {
+              throw new ContentPackageDeliveryError(
+                'RESULT_SIGNAL_IDEMPOTENCY_CONFLICT',
+                'A different result signal already exists for this idempotency key.'
+              );
+            }
             return structuredClone(current);
           }
         }
 
+        // The earlier check is only an optimistic fast-fail. The authoritative
+        // OCC comparison must happen after acquiring the workspace lock so two
+        // distinct writes cannot both consume the same package revision.
+        if (current.revision !== input.expectedRevision) {
+          throw new ContentPackageDeliveryError(
+            'CONTENT_PACKAGE_REVISION_CONFLICT',
+            'ContentPackage revision changed. Refresh and retry.'
+          );
+        }
+
         const signal: ContentPackageResultSignal = {
           actorId: context.userId,
+          contentPackageRevision: current.revision,
           id: this.id(),
           kind: input.kind,
           ...(input.note ? { note: input.note } : {}),
@@ -601,7 +611,11 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
               : action === 'correct'
                 ? 'content_package.result_signal_corrected'
                 : 'content_package.result_signal_recorded',
-            current.id
+            current.id,
+            {
+              contentPackageRevision: current.revision,
+              signalId: signal.id,
+            }
           )
         );
         await repository.saveWorkspace(state);
@@ -614,6 +628,9 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
     const contentPackage = await this.requirePackage(context, packageId);
     const history = contentPackage.resultSignals ?? [];
     const latest = projectActiveResultSignals(history);
+    const quarantined = history.filter(
+      (signal) => signal.contentPackageRevision === 'unknown'
+    );
     const merchant = latest.filter(
       (signal) => signal.source === 'merchant_recorded'
     );
@@ -642,6 +659,7 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
       signals: {
         inferred,
         merchant,
+        quarantined,
         verified,
         history,
       },
@@ -1337,7 +1355,8 @@ function auditEvent(
   context: OperationContext,
   createdAt: string,
   action: string,
-  entityId: string
+  entityId: string,
+  details?: Record<string, unknown>
 ): OperationsAuditEvent {
   return {
     action,
@@ -1346,6 +1365,7 @@ function auditEvent(
     createdAt,
     entityId,
     entityType: 'content_package',
+    ...(details ? { details } : {}),
     id: id(),
     workspaceId: context.workspaceId,
   };
@@ -1380,6 +1400,7 @@ export function projectActiveResultSignals(
   );
   return history.filter(
     (row) =>
+      typeof row.contentPackageRevision === 'number' &&
       (row.status ?? 'active') !== 'withdrawn' &&
       (row.status ?? 'active') !== 'superseded' &&
       !superseded.has(row.id)
@@ -1394,6 +1415,7 @@ function resultSignalMatchesIdempotencyIdentity(
   row: ContentPackageResultSignal,
   identity: {
     packageId: string;
+    contentPackageRevision: number;
     kind: ContentPackageResultSignal['kind'];
     observedAt: string;
     sourceRef?: string;
@@ -1404,23 +1426,67 @@ function resultSignalMatchesIdempotencyIdentity(
     mapContentPackageResultKindToOutcomeSignal(row.kind) ?? 'feedback';
   const inputSignal =
     mapContentPackageResultKindToOutcomeSignal(identity.kind) ?? 'feedback';
-  // Revision is bound at write time on the package; identity compare uses the
-  // stable package id + signal + clocks (MAJOR-13 submit key).
+  // New rows carry the exact consumed revision. Quarantined historical rows
+  // cannot satisfy a new idempotency identity and remain read-only.
+  if (typeof row.contentPackageRevision !== 'number') return false;
   const rowKey = buildOutcomeEvidenceIdempotencyKey({
     contentPackageId: identity.packageId,
-    contentPackageRevision: '_',
+    contentPackageRevision: row.contentPackageRevision,
     signal: rowSignal,
     observedAt: row.occurredAt,
     sourceRef: row.sourceRef,
   });
   const inputKey = buildOutcomeEvidenceIdempotencyKey({
     contentPackageId: identity.packageId,
-    contentPackageRevision: '_',
+    contentPackageRevision: identity.contentPackageRevision,
     signal: inputSignal,
     observedAt: identity.observedAt,
     sourceRef: identity.sourceRef,
   });
   return rowKey === inputKey;
+}
+
+function resultSignalMatchesWriteIdentity(
+  row: ContentPackageResultSignal,
+  input: {
+    action: 'record' | 'correct' | 'withdraw';
+    expectedRevision: number;
+    kind: ContentPackageResultSignal['kind'];
+    observedAt: string;
+    sourceRef?: string;
+    supersedesSignalId?: string;
+  },
+  packageId: string,
+): boolean {
+  if (input.action === 'record') {
+    return resultSignalMatchesIdempotencyIdentity(row, {
+      packageId,
+      contentPackageRevision: input.expectedRevision,
+      kind: input.kind,
+      observedAt: input.observedAt,
+      sourceRef: input.sourceRef,
+    });
+  }
+  return row.contentPackageRevision === input.expectedRevision &&
+    row.supersedesSignalId === input.supersedesSignalId &&
+    ((input.action === 'withdraw') === ((row.status ?? 'active') === 'withdrawn'));
+}
+
+function resultSignalPayloadMatches(
+  row: ContentPackageResultSignal,
+  input: {
+    kind: ContentPackageResultSignal['kind'];
+    note?: string;
+    occurredAt?: string;
+    quantity?: number;
+    sourceRef?: string;
+  },
+): boolean {
+  return row.kind === input.kind &&
+    (row.note ?? '') === (input.note ?? '') &&
+    (row.quantity ?? null) === (input.quantity ?? null) &&
+    (row.sourceRef ?? '') === (input.sourceRef ?? '') &&
+    (input.occurredAt === undefined || row.occurredAt === input.occurredAt);
 }
 
 function resultLadder(

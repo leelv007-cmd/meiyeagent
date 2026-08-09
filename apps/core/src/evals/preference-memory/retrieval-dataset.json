@@ -1,0 +1,199 @@
+{
+  "schemaVersion": "memory-retrieval-dataset/v1",
+  "datasetId": "beauty-memory-retrieval-v1",
+  "replayCount": 3,
+  "cases": [
+    {
+      "caseId": "tenant-and-scope-fence",
+      "query": {
+        "workspaceId": "workspace-a",
+        "scope": { "storeId": "store-a", "platform": "xiaohongshu" },
+        "limit": 5
+      },
+      "memories": [
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-correction",
+          "kind": "correction",
+          "semanticKey": "tone.no-hard-sell",
+          "statement": "不要写强促销话术",
+          "scope": { "storeId": "store-a" },
+          "confidence": 0.8
+        },
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-xhs",
+          "kind": "preference",
+          "semanticKey": "tone.xhs",
+          "statement": "小红书语气轻一点",
+          "scope": { "storeId": "store-a", "platform": "xiaohongshu" },
+          "confidence": 0.7
+        },
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-wrong-store",
+          "kind": "preference",
+          "semanticKey": "tone.other-store",
+          "statement": "另一家店要热情",
+          "scope": { "storeId": "store-b" },
+          "confidence": 1
+        },
+        {
+          "workspaceId": "workspace-b",
+          "preferenceId": "pref-other-tenant",
+          "kind": "correction",
+          "semanticKey": "tone.other-tenant",
+          "statement": "其他租户的纠正",
+          "scope": { "storeId": "store-a", "platform": "xiaohongshu" },
+          "confidence": 1
+        }
+      ],
+      "relevantIds": ["pref-correction", "pref-xhs"],
+      "expectedRetrievedIds": ["pref-correction", "pref-xhs"],
+      "minimumPrecision": 1,
+      "minimumRecall": 1
+    },
+    {
+      "caseId": "authority-before-similarity",
+      "query": {
+        "workspaceId": "workspace-a",
+        "scope": { "storeId": "store-a", "platform": "xiaohongshu" },
+        "limit": 2,
+        "similarityByMemoryId": {
+          "pref-global": 1,
+          "pref-narrow": 0.1,
+          "pref-correction": 0
+        }
+      },
+      "memories": [
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-global",
+          "kind": "preference",
+          "semanticKey": "tone.global",
+          "statement": "全局偏好",
+          "scope": { "storeId": "store-a" },
+          "confidence": 1
+        },
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-narrow",
+          "kind": "preference",
+          "semanticKey": "tone.narrow",
+          "statement": "当前店小红书偏好",
+          "scope": { "storeId": "store-a", "platform": "xiaohongshu" },
+          "confidence": 0.5
+        },
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-correction",
+          "kind": "correction",
+          "semanticKey": "tone.correction",
+          "statement": "不要称呼老板娘",
+          "scope": { "storeId": "store-a" },
+          "confidence": 0.2
+        }
+      ],
+      "relevantIds": ["pref-correction", "pref-narrow"],
+      "expectedRetrievedIds": ["pref-correction", "pref-narrow"],
+      "minimumPrecision": 1,
+      "minimumRecall": 1
+    },
+    {
+      "caseId": "revoked-head-is-not-retrieved",
+      "query": {
+        "workspaceId": "workspace-a",
+        "scope": { "storeId": "store-a" },
+        "limit": 5
+      },
+      "memories": [
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-active",
+          "kind": "preference",
+          "semanticKey": "tone.active",
+          "statement": "保持简洁",
+          "scope": { "storeId": "store-a" },
+          "confidence": 0.8
+        },
+        {
+          "workspaceId": "workspace-a",
+          "preferenceId": "pref-revoked",
+          "kind": "preference",
+          "semanticKey": "tone.revoked",
+          "statement": "已撤销的偏好",
+          "scope": { "storeId": "store-a" },
+          "confidence": 1,
+          "revoked": true
+        }
+      ],
+      "relevantIds": ["pref-active"],
+      "expectedRetrievedIds": ["pref-active"],
+      "minimumPrecision": 1,
+      "minimumRecall": 1
+    },
+    {
+      "caseId": "persona-scene-platform-narrowest-with-hard-negatives",
+      "query": {
+        "workspaceId": "workspace-a",
+        "scope": { "storeId": "store-a", "personaId": "new-customer", "scene": "summer-promo", "platform": "xiaohongshu" },
+        "limit": 3
+      },
+      "memories": [
+        {
+          "workspaceId": "workspace-a", "preferenceId": "pref-four-dim", "kind": "preference",
+          "semanticKey": "tone.four-dim", "statement": "新客夏促小红书使用轻松语气",
+          "scope": { "storeId": "store-a", "personaId": "new-customer", "scene": "summer-promo", "platform": "xiaohongshu" }, "confidence": 0.5
+        },
+        {
+          "workspaceId": "workspace-a", "preferenceId": "pref-store-wide", "kind": "preference",
+          "semanticKey": "tone.store", "statement": "门店通用简洁语气",
+          "scope": { "storeId": "store-a" }, "confidence": 1
+        },
+        {
+          "workspaceId": "workspace-a", "preferenceId": "hard-negative-persona", "kind": "correction",
+          "semanticKey": "tone.wrong-persona", "statement": "老客专属口吻",
+          "scope": { "storeId": "store-a", "personaId": "returning-customer", "scene": "summer-promo", "platform": "xiaohongshu" }, "confidence": 1
+        },
+        {
+          "workspaceId": "workspace-a", "preferenceId": "hard-negative-scene", "kind": "correction",
+          "semanticKey": "tone.wrong-scene", "statement": "春节活动口吻",
+          "scope": { "storeId": "store-a", "personaId": "new-customer", "scene": "spring-festival", "platform": "xiaohongshu" }, "confidence": 1
+        },
+        {
+          "workspaceId": "workspace-a", "preferenceId": "hard-negative-platform", "kind": "correction",
+          "semanticKey": "tone.wrong-platform", "statement": "抖音直播口吻",
+          "scope": { "storeId": "store-a", "personaId": "new-customer", "scene": "summer-promo", "platform": "douyin" }, "confidence": 1
+        }
+      ],
+      "relevantIds": ["pref-four-dim", "pref-store-wide"],
+      "expectedRetrievedIds": ["pref-four-dim", "pref-store-wide"],
+      "minimumPrecision": 1,
+      "minimumRecall": 1
+    },
+    {
+      "caseId": "business-fact-cannot-be-memory-override",
+      "query": {
+        "workspaceId": "workspace-a",
+        "scope": { "storeId": "store-a" },
+        "limit": 5
+      },
+      "memories": [
+        {
+          "workspaceId": "workspace-a", "preferenceId": "illegal-price-override", "kind": "correction",
+          "semanticKey": "business_fact.price", "statement": "项目价格改成 1 元",
+          "scope": { "storeId": "store-a" }, "confidence": 1, "expectWriteRejected": true
+        },
+        {
+          "workspaceId": "workspace-a", "preferenceId": "legal-tone", "kind": "correction",
+          "semanticKey": "tone.no-price-claim", "statement": "没有事实依据时不写价格",
+          "scope": { "storeId": "store-a" }, "confidence": 0.8
+        }
+      ],
+      "relevantIds": ["legal-tone"],
+      "expectedRetrievedIds": ["legal-tone"],
+      "minimumPrecision": 1,
+      "minimumRecall": 1
+    }
+  ]
+}

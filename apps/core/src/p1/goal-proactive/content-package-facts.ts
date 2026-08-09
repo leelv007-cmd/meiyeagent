@@ -32,6 +32,13 @@ export type OwnedResultSignalFact = {
   id: string;
   kind: string;
   occurredAt: string;
+  /**
+   * Exact consumed ContentPackage revision, or `'unknown'` for the quarantined
+   * legacy rows the V31-19 migration could not prove. Declared here because a
+   * missing declaration silently dropped the field and let unprovable history
+   * count as valid evidence.
+   */
+  contentPackageRevision?: number | 'unknown';
   status?: 'active' | 'superseded' | 'withdrawn' | string;
   supersedesSignalId?: string;
 };
@@ -96,6 +103,10 @@ export function projectActiveOwnedResultSignals(
   );
   return history.filter(
     (row) =>
+      // Quarantine filter (the twin's rule): a row that cannot name the exact
+      // revision it observed is not provable evidence, so U2's first-window
+      // coverage must not count it.
+      typeof row.contentPackageRevision === 'number' &&
       (row.status ?? 'active') !== 'withdrawn' &&
       (row.status ?? 'active') !== 'superseded' &&
       !superseded.has(row.id),

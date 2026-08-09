@@ -67,6 +67,49 @@ export interface ContentPackageRevisionWritePort {
 	): Promise<ContentPackageRevisionDelivery>;
 }
 
+export interface SteeringDerivedRevisionWriteInput {
+	workspaceId: string;
+	packageId: string;
+	expectedRevision: number;
+	steeringCommandId: string;
+	derivedDelivery: Omit<
+		ContentPackageRevisionWriteInput,
+		"workspaceId" | "packageId" | "expectedRevision" | "idempotencyKey"
+	>;
+}
+
+/**
+ * Narrow steering seam over the canonical ContentPackage revision writer.
+ * The adapter owns the command-derived idempotency identity; OCC and the sole
+ * aggregate write remain entirely inside ContentPackageRevisionWritePort.
+ */
+export interface SteeringDerivedRevisionWritePort {
+	createDerivedRevision(
+		input: SteeringDerivedRevisionWriteInput,
+	): Promise<ContentPackageRevisionDelivery>;
+}
+
+export class SteeringDerivedRevisionWriteAdapter
+	implements SteeringDerivedRevisionWritePort
+{
+	constructor(private readonly writer: ContentPackageRevisionWritePort) {}
+
+	createDerivedRevision(input: SteeringDerivedRevisionWriteInput) {
+		return this.writer.write({
+			...input.derivedDelivery,
+			workspaceId: input.workspaceId,
+			packageId: input.packageId,
+			expectedRevision: input.expectedRevision,
+			idempotencyKey: [
+				"steering-derived",
+				input.steeringCommandId,
+				input.packageId,
+				input.expectedRevision,
+			].join(":"),
+		});
+	}
+}
+
 export class ContentPackageRevisionWriteError extends Error {
 	readonly status = 409;
 

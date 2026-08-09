@@ -157,6 +157,9 @@ test(
               id: `sig-${suffix}`,
               kind: 'inquiry',
               occurredAt: '2026-08-01T00:00:00.000Z',
+              // Production rows always name the exact consumed revision;
+              // quarantined `'unknown'` rows are not provable evidence.
+              contentPackageRevision: 3,
               status: 'active',
             },
           ],

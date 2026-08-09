@@ -58,6 +58,7 @@ test('coverage projection: denominator delivered, numerator with active evidence
           id: 'sig-1',
           kind: 'inquiry',
           occurredAt: TS,
+          contentPackageRevision: 2,
           status: 'active',
         },
       ],
@@ -71,6 +72,7 @@ test('coverage projection: denominator delivered, numerator with active evidence
           id: 'sig-w',
           kind: 'inquiry',
           occurredAt: TS,
+          contentPackageRevision: 2,
           status: 'withdrawn',
         },
       ],
@@ -79,18 +81,31 @@ test('coverage projection: denominator delivered, numerator with active evidence
       id: 'cp-3',
       status: 'generating', // not delivered
       resultSignals: [
-        { id: 'sig-x', kind: 'inquiry', occurredAt: TS, status: 'active' },
+        {
+          id: 'sig-x',
+          kind: 'inquiry',
+          occurredAt: TS,
+          contentPackageRevision: 1,
+          status: 'active',
+        },
       ],
     }),
     pkg({
       id: 'cp-4',
       status: 'review_ready',
       resultSignals: [
-        { id: 'sig-old', kind: 'inquiry', occurredAt: OLD, status: 'active' },
+        {
+          id: 'sig-old',
+          kind: 'inquiry',
+          occurredAt: OLD,
+          contentPackageRevision: 1,
+          status: 'active',
+        },
         {
           id: 'sig-new',
           kind: 'inquiry',
           occurredAt: TS,
+          contentPackageRevision: 2,
           status: 'active',
           supersedesSignalId: 'sig-old',
         },
@@ -114,13 +129,65 @@ test('coverage projection: denominator delivered, numerator with active evidence
   assert.equal(active[0]!.id, 'sig-new');
 });
 
+test('V31-19: quarantined `unknown` revision rows are not provable evidence', () => {
+  const packages: OwnedContentPackageFact[] = [
+    pkg({
+      id: 'cp-legacy',
+      status: 'accepted',
+      // Backfilled by the V31-19 migration: the exact consumed revision could
+      // not be proven, so this row must not answer "has outcome evidence".
+      resultSignals: [
+        {
+          id: 'sig-legacy',
+          kind: 'inquiry',
+          occurredAt: TS,
+          contentPackageRevision: 'unknown',
+          status: 'active',
+        },
+      ],
+    }),
+    pkg({
+      id: 'cp-exact',
+      status: 'accepted',
+      resultSignals: [
+        {
+          id: 'sig-exact',
+          kind: 'inquiry',
+          occurredAt: TS,
+          contentPackageRevision: 4,
+          status: 'active',
+        },
+      ],
+    }),
+  ];
+
+  assert.deepEqual(
+    projectActiveOwnedResultSignals(
+      packages[0]!.resultSignals!,
+    ).map((row) => row.id),
+    [],
+  );
+  assert.equal(packageHasActiveOutcomeEvidence(packages[0]!), false);
+  assert.equal(packageHasActiveOutcomeEvidence(packages[1]!), true);
+  assert.deepEqual(
+    projectEvidenceCoverageCounts({ resourceId: 'ws-1', packages }),
+    { denominator: 2, numerator: 1 },
+  );
+});
+
 test('coverage port reads through ContentPackageFactsReader', async () => {
   const packages: OwnedContentPackageFact[] = [
     pkg({
       id: 'cp-a',
       status: 'accepted',
       resultSignals: [
-        { id: 's1', kind: 'appointment', occurredAt: TS, status: 'active' },
+        {
+          id: 's1',
+          kind: 'appointment',
+          occurredAt: TS,
+          contentPackageRevision: 1,
+          status: 'active',
+        },
       ],
     }),
     pkg({ id: 'cp-b', status: 'review_ready' }),
@@ -156,7 +223,13 @@ test('unpublished_duration signal only for aged delivered without publish mark',
         },
       ],
       resultSignals: [
-        { id: 's', kind: 'inquiry', occurredAt: TS, status: 'active' },
+        {
+          id: 's',
+          kind: 'inquiry',
+          occurredAt: TS,
+          contentPackageRevision: 1,
+          status: 'active',
+        },
       ],
     }),
   ];
@@ -203,7 +276,13 @@ test('historical_performance signal for published package without outcome eviden
         },
       ],
       resultSignals: [
-        { id: 's', kind: 'inquiry', occurredAt: TS, status: 'active' },
+        {
+          id: 's',
+          kind: 'inquiry',
+          occurredAt: TS,
+          contentPackageRevision: 1,
+          status: 'active',
+        },
       ],
     }),
     pkg({
@@ -239,7 +318,13 @@ test('gate unset still observes coverage from real package counts; allowlist ope
       id: 'cp-1',
       status: 'review_ready',
       resultSignals: [
-        { id: 's1', kind: 'inquiry', occurredAt: TS, status: 'active' },
+        {
+          id: 's1',
+          kind: 'inquiry',
+          occurredAt: TS,
+          contentPackageRevision: 1,
+          status: 'active',
+        },
       ],
     }),
     pkg({ id: 'cp-2', status: 'accepted' }),

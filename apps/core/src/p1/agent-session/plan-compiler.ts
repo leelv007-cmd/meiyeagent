@@ -29,6 +29,7 @@ import {
   type MarketingPlanReadiness,
   type MarketingPlanRevision,
   type PlanDeliverable,
+  type PlanMemoryContext,
 } from '@meiye/contracts';
 
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
@@ -178,6 +179,8 @@ export type CompilePlanInput = {
   quoteRefHint?: AgentRevisionRef;
   /** Exact ProductQuote authority snapshot, including its validity window. */
   quoteResolutionHint?: PlanCompilerQuoteResolution;
+  /** Confirmed memories returned by this Session turn, with exact receipt binding. */
+  memoryContext?: PlanMemoryContext | null;
   now?: string;
   /** Optional merchant billing overlay for Living Plan cost section (no invention). */
   livingPlanBilling?: PlanLivingPlanBillingOverlay;
@@ -419,6 +422,7 @@ export class PlanCompiler {
             .map((item) => item.platform)
             .filter((value): value is string => Boolean(value)),
         },
+        memoryContext: input.memoryContext ?? null,
         goal: {
           summary: goalSummary,
           whyNow: proposal.whyNow ?? null,
@@ -465,6 +469,7 @@ export class PlanCompiler {
         goal: revisionDraft.goal,
         deliverables: revisionDraft.deliverables,
         expression: revisionDraft.expression,
+        memoryContext: revisionDraft.memoryContext,
         quoteRef: revisionDraft.quoteRef,
         boundRevisions: revisionDraft.boundRevisions,
         rightsSummary: revisionDraft.rightsSummary,
@@ -721,6 +726,9 @@ export class PlanCompiler {
       input: {
         contextBundleId: input.revision.boundRevisions.contextBundleId,
         contextRevision: input.revision.boundRevisions.contextRevision,
+        ...(input.revision.memoryContext
+          ? { memoryContext: input.revision.memoryContext }
+          : {}),
       },
     });
     boundedRetry[contextUnitId] = defaultRetryOff();
@@ -748,6 +756,9 @@ export class PlanCompiler {
           kind: deliverable.kind,
           index: i,
           quoteRef: input.revision.quoteRef,
+          ...(input.revision.memoryContext
+            ? { memoryContext: input.revision.memoryContext }
+            : {}),
         };
         units.push({
           unitId: generateUnitId,

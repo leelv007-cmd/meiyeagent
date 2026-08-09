@@ -41,6 +41,13 @@ import { buildSemanticDecisionResumption } from "../harness/semantic-decision-re
 import {
   nameHarnessIntent,
 } from "../harness/structured-nodes.js";
+import { ComposerPlanSessionCoordinator } from "../agent-session/composer-plan-session.js";
+import { PostgresAgentSessionStore } from "../agent-session/postgres-agent-session-store.js";
+import { PostgresMarketingPlanStore } from "../agent-session/postgres-plan-store.js";
+import {
+  createFixturePlanCompilerPorts,
+  PlanCompiler,
+} from "../agent-session/plan-compiler.js";
 import { PostgresGrantLotLedger } from "../foundation/postgres-grant-lot.js";
 import { GrantLotAwareProductEntitlementService } from "../foundation/grant-lot-entitlement-service.js";
 import { PostgresCreditLedger } from "../credit-billing/postgres-credit-ledger.js";
@@ -2546,6 +2553,177 @@ function recoveryExecutionPlanFreeze(
     approvalBasis,
   };
 }
+
+test(
+  "V31-18 P0-1: a planning failure after the paid claim is recoverable by the same idempotencyKey",
+  { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const operations = new PostgresOperationsRepository(pool);
+    const billingRepository = new PostgresProductBillingRepository(pool);
+    const store = new PostgresCreationSubmissionStore(
+      pool,
+      new PostgresCreationSubmissionPersistence(
+        new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
+      ),
+    );
+    const sessions = new PostgresAgentSessionStore(pool);
+    const plans = new PostgresMarketingPlanStore(pool);
+    const suffix = randomUUID();
+    const workspaceId = `spine-plan-recover-${suffix}`;
+    const quoteId = `spine-quote-${suffix}`;
+    const taskId = `spine-task-${suffix}`;
+    const cleanupSubmission = reserveRecord(workspaceId, quoteId, suffix);
+
+    try {
+      await operations.migrate();
+      await billingRepository.migrate();
+      await store.applySchema();
+      await sessions.migrate();
+      await plans.migrate();
+      const quote = await seedQuote(
+        billingRepository,
+        workspaceId,
+        quoteId,
+        taskId,
+      );
+      const request = coordinatorRequest({
+        quoteId,
+        quoteRevision: quote.revision,
+        suffix,
+        workspaceId,
+      });
+      const planCompiler = new PlanCompiler({
+        store: plans,
+        ports: createFixturePlanCompilerPorts(),
+      });
+      let compileCalls = 0;
+      let harnessStarts = 0;
+      const coordinator = new CreationSubmissionCoordinator(
+        store,
+        {
+          async start() {
+            harnessStarts += 1;
+          },
+        },
+        {
+          createId(prefix) {
+            return prefix === "work"
+              ? `spine-work-${suffix}`
+              : `spine-package-${suffix}`;
+          },
+          now() {
+            return "2026-08-09T09:00:00.000Z";
+          },
+        },
+        {
+          async admit() {
+            return {
+              identity: { id: "identity-1", revision: "identity-r1" },
+              modelPolicy: {
+                id: "policy-1",
+                mode: "fixed",
+                revision: "policy-r1",
+              },
+              modelSelection: {
+                source: "platform_default",
+                catalogModelId: "copy-model-1",
+                platformConfigRevision: "admin-config:41",
+              },
+              recipeBinding: {
+                contentModules: ["social_cover"],
+                deliverables: [
+                  {
+                    aspectRatio: "3:4",
+                    id: "copy-main",
+                    kind: "copy",
+                    order: 0,
+                    quantity: 1,
+                  },
+                ],
+                lens: "copy",
+              },
+              rights: {
+                revision: "rights-r1",
+                summary: "authorized source assets",
+              },
+              route: { id: "route-1", revision: "route-r1" },
+              taskId,
+            };
+          },
+        },
+        undefined,
+        new ComposerPlanSessionCoordinator(sessions, plans, {
+          compilePlan: (input) => {
+            compileCalls += 1;
+            if (compileCalls === 1) {
+              throw new Error("plan compiler transport failed");
+            }
+            return planCompiler.compile(input);
+          },
+          adjustPlan: (input) => planCompiler.adjust(input),
+          retrieveConfirmedExperience: async () => [],
+        }),
+      );
+
+      // Attempt 1: claim() already consumed the merchant's usage/credits, then
+      // planning fails. Nothing may start Make, but the paid state is committed.
+      await assert.rejects(
+        () => coordinator.submit(request),
+        /plan compiler transport failed/u,
+      );
+      const paid = await pool.query<{ usage: number }>(
+        `SELECT count(*)::int AS usage FROM p1_product_billing_usage
+          WHERE workspace_id = $1 AND task_id = $2`,
+        [workspaceId, taskId],
+      );
+      assert.equal(paid.rows[0]?.usage, 1);
+      assert.equal(harnessStarts, 0);
+
+      // Attempt 2: the same idempotencyKey must recover, not brick with
+      // `cannot resume from failed`. This is the reservation's exit.
+      const recovered = await coordinator.submit(request);
+      assert.equal(recovered.replayed, true);
+      assert.equal(compileCalls, 2);
+      assert.equal(harnessStarts, 1);
+      const counts = await pool.query<{ submissions: number; usage: number }>(
+        `SELECT
+           (SELECT count(*)::int FROM execution_spine.creation_submissions
+             WHERE workspace_id = $1) AS submissions,
+           (SELECT count(*)::int FROM p1_product_billing_usage
+             WHERE workspace_id = $1 AND task_id = $2) AS usage`,
+        [workspaceId, taskId],
+      );
+      assert.deepEqual(counts.rows[0], { submissions: 1, usage: 1 });
+      assert.ok(recovered.runId);
+      const run = await sessions.getRun({
+        resourceId: workspaceId,
+        runId: recovered.runId,
+      });
+      assert.equal(run?.status, "completed");
+    } finally {
+      await pool
+        .query("DELETE FROM p1_marketing_plan_revisions WHERE resource_id = $1", [
+          workspaceId,
+        ])
+        .catch(() => undefined);
+      await pool
+        .query("DELETE FROM p1_agent_runs WHERE thread_id IN (SELECT thread_id FROM p1_agent_threads WHERE resource_id = $1)", [
+          workspaceId,
+        ])
+        .catch(() => undefined);
+      await pool
+        .query("DELETE FROM p1_agent_threads WHERE resource_id = $1", [
+          workspaceId,
+        ])
+        .catch(() => undefined);
+      await cleanup(pool, workspaceId, cleanupSubmission).catch(
+        () => undefined,
+      );
+      await pool.end();
+    }
+  },
+);
 
 function reserveRecord(
   workspaceId: string,

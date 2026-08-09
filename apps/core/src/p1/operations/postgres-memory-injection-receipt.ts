@@ -21,6 +21,19 @@ function clonePayload(row: PayloadRow | undefined): unknown | null {
   return row ? structuredClone(row.payload) : null;
 }
 
+function hasSameInjectionBusinessIdentity(
+  left: MemoryInjectionReceipt,
+  right: MemoryInjectionReceipt,
+): boolean {
+  return (
+    left.schemaVersion === right.schemaVersion &&
+    left.taskId === right.taskId &&
+    left.runId === right.runId &&
+    left.harnessReleaseId === right.harnessReleaseId &&
+    isDeepStrictEqual(left.entries, right.entries)
+  );
+}
+
 export class PostgresMemoryInjectionReceiptStore
   implements MemoryInjectionReceiptStore, PostgresSchemaMigrator
 {
@@ -43,44 +56,66 @@ export class PostgresMemoryInjectionReceiptStore
         ON p1_memory_injection_receipts (run_id);
       CREATE INDEX IF NOT EXISTS p1_memory_injection_receipts_release_idx
         ON p1_memory_injection_receipts (harness_release_id);
+      -- V31-18 P1-7: p1_memory_injection_receipt_outbox is retired. It was never
+      -- an outbox — no process ever read it, its only SELECT was this store's
+      -- own same-transaction verification, and its status CHECK admitted
+      -- 'ready' alone, so no consumer could have marked a row done without a
+      -- schema change. It grew one row per injected task forever and delivered
+      -- nothing. Dropped rather than given a consumer: routing it through the
+      -- one drainer that does work (harness_runtime.langfuse_outbox +
+      -- outbox-worker.ts) would build delivery for a message no recipient has
+      -- been designed for. Guarded drop, for dev databases created before this.
+      DROP TABLE IF EXISTS p1_memory_injection_receipt_outbox;
     `);
   }
 
   async save(input: MemoryInjectionReceipt): Promise<MemoryInjectionReceipt> {
     const receipt = memoryInjectionReceiptSchema.parse(input);
-    const inserted = await this.pool.query<PayloadRow>(
-      `INSERT INTO p1_memory_injection_receipts (
-         task_id,
-         run_id,
-         harness_release_id,
-         payload,
-         injected_at
-       ) VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz)
-       ON CONFLICT (task_id) DO NOTHING
-       RETURNING payload`,
-      [
-        receipt.taskId,
-        receipt.runId,
-        receipt.harnessReleaseId,
-        JSON.stringify(receipt),
-        receipt.injectedAt,
-      ],
-    );
-    if (inserted.rows[0]) {
-      return memoryInjectionReceiptSchema.parse(inserted.rows[0].payload);
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const inserted = await client.query<PayloadRow>(
+        `INSERT INTO p1_memory_injection_receipts (
+           task_id,
+           run_id,
+           harness_release_id,
+           payload,
+           injected_at
+         ) VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz)
+         ON CONFLICT (task_id) DO NOTHING
+         RETURNING payload`,
+        [
+          receipt.taskId,
+          receipt.runId,
+          receipt.harnessReleaseId,
+          JSON.stringify(receipt),
+          receipt.injectedAt,
+        ],
+      );
+      const storedPayload = inserted.rows[0]?.payload ?? (
+        await client.query<PayloadRow>(
+          `SELECT payload FROM p1_memory_injection_receipts WHERE task_id = $1`,
+          [receipt.taskId],
+        )
+      ).rows[0]?.payload;
+      const stored = memoryInjectionReceiptSchema.safeParse(storedPayload);
+      if (
+        !stored.success ||
+        !hasSameInjectionBusinessIdentity(stored.data, receipt)
+      ) {
+        throw new ReuseMemoryError(
+          'CONFLICT',
+          `Injection receipt for task ${receipt.taskId} already exists with another payload.`,
+        );
+      }
+      await client.query('COMMIT');
+      return stored.data;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-    const existing = await this.pool.query<PayloadRow>(
-      `SELECT payload FROM p1_memory_injection_receipts WHERE task_id = $1`,
-      [receipt.taskId],
-    );
-    const stored = clonePayload(existing.rows[0]);
-    if (stored && isDeepStrictEqual(stored, receipt)) {
-      return memoryInjectionReceiptSchema.parse(stored);
-    }
-    throw new ReuseMemoryError(
-      'CONFLICT',
-      `Injection receipt for task ${receipt.taskId} already exists with another payload.`,
-    );
   }
 
   async getByTask(taskId: string): Promise<MemoryInjectionReceipt | null> {

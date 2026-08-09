@@ -23,6 +23,7 @@ import {
   type RetainedTailMessage,
 } from './compaction.js';
 import type { ModelContextSource } from './context-projection.js';
+import type { RetrievalExperience } from './context-retrieval.js';
 import type {
   CompilePlanInput,
   CompilePlanResult,
@@ -63,6 +64,16 @@ export type AgentSessionHarnessServiceOptions = {
    * Preferred in production assembly over a static toolRegistry.
    */
   createToolRegistry?: (input: AgentTurnInput) => AgentToolRegistry;
+  /** Server-owned pre-plan lookup; does not depend on model tool choice. */
+  retrieveConfirmedExperience?: (input: {
+    workspaceId: string;
+    threadId: string;
+    taskId: string;
+    runId: string;
+    harnessReleaseId: string;
+    storeId: string;
+    platform: string;
+  }) => Promise<RetrievalExperience[]>;
   /**
    * Factory so each turn can close over fresh knownFields / call counters.
    * When omitted, `policies` static list is used.
@@ -217,6 +228,23 @@ export class AgentSessionHarnessService {
       ...compile,
       patch: canonicalPlanPatchFromMerchantInstruction(instruction),
     });
+  }
+
+  async retrieveConfirmedExperience(input: {
+    workspaceId: string;
+    threadId: string;
+    taskId: string;
+    runId: string;
+    harnessReleaseId: string;
+    storeId: string;
+    platform: string;
+  }): Promise<RetrievalExperience[]> {
+    if (!this.options.retrieveConfirmedExperience) {
+      throw new Error(
+        'Server-owned confirmed experience retrieval is not configured.'
+      );
+    }
+    return this.options.retrieveConfirmedExperience(input);
   }
 
   private requirePlanCompiler(): PlanCompiler {

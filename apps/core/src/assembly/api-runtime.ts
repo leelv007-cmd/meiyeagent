@@ -322,6 +322,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     sessionAgentKernel,
     agentSessionStore,
     sessionAgentHarness,
+    sessionConfirmedExperienceRetrieval,
     executionConfirmationService,
     executionConfirmationAuthority,
     executionConfirmationAuthorityStore,
@@ -1683,6 +1684,19 @@ export async function startApi(env: NodeJS.ProcessEnv) {
               },
             };
           },
+        },
+        onMemoryDegraded: (event) => {
+          // Never silent: a flipped kill switch and an outage are both visible
+          // and distinguishable, while the paid submission still proceeds.
+          console.warn(
+            `[memory] plan compiled without injected memory (${event.reason})`,
+            {
+              workspaceId: event.workspaceId,
+              taskId: event.taskId,
+              runId: event.runId,
+              detail: event.detail,
+            },
+          );
         },
         // V31-21 P1-a: new submissions pin the current production release
         // (canary workspace-allowlist applies here). The pinned releaseId is

@@ -477,6 +477,39 @@ export const intentDeclarationSchema = z
 
 export type IntentDeclaration = z.infer<typeof intentDeclarationSchema>;
 
+export const planMemoryContextSchema = z
+  .object({
+    receiptRef: z
+      .object({
+        taskId: identifierSchema,
+        runId: agentRunIdSchema,
+        harnessReleaseId: harnessReleaseIdSchema,
+      })
+      .strict(),
+    entries: z
+      .array(
+        z
+          .object({
+            memoryId: memoryIdSchema,
+            revision: revisionNumberSchema,
+          })
+          .strict(),
+      )
+      .max(100),
+    styleConstraints: z
+      .object({
+        tones: z.array(z.enum(['concise', 'restrained'])).max(2),
+        maxTitleChars: z.number().int().positive().max(500),
+        maxBodyChars: z.number().int().positive().max(4_000),
+        maxSentenceChars: z.number().int().positive().max(500),
+        forbiddenPhrases: z.array(nonEmptyTrimmedStringSchema.max(100)).max(20),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type PlanMemoryContext = z.infer<typeof planMemoryContextSchema>;
+
 export const marketingPlanRevisionSchema = z
   .object({
     schemaVersion: z.literal(MARKETING_PLAN_REVISION_SCHEMA_VERSION),
@@ -487,6 +520,8 @@ export const marketingPlanRevisionSchema = z
     scope: marketingPlanScopeSchema,
     // No lifecycle status column — append-only; readiness is projection (BLOCK-07).
     intent: intentDeclarationSchema,
+    /** Exact confirmed-memory inputs and their durable injection receipt binding. */
+    memoryContext: planMemoryContextSchema.nullable().optional(),
     goal: z
       .object({
         summary: nonEmptyTrimmedStringSchema.max(2_000),

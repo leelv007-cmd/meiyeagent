@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "memory-retrieval-baseline/v1",
+  "datasetId": "beauty-memory-retrieval-v1",
+  "passed": true,
+  "macroPrecision": 1,
+  "macroRecall": 1,
+  "cases": [
+    {
+      "caseId": "tenant-and-scope-fence",
+      "retrievedIds": ["pref-correction", "pref-xhs"],
+      "precision": 1,
+      "recall": 1,
+      "replayDistribution": { "pref-correction": 3, "pref-xhs": 3 },
+      "passed": true
+    },
+    {
+      "caseId": "authority-before-similarity",
+      "retrievedIds": ["pref-correction", "pref-narrow"],
+      "precision": 1,
+      "recall": 1,
+      "replayDistribution": { "pref-correction": 3, "pref-narrow": 3 },
+      "passed": true
+    },
+    {
+      "caseId": "revoked-head-is-not-retrieved",
+      "retrievedIds": ["pref-active"],
+      "precision": 1,
+      "recall": 1,
+      "replayDistribution": { "pref-active": 3 },
+      "passed": true
+    },
+    {
+      "caseId": "persona-scene-platform-narrowest-with-hard-negatives",
+      "retrievedIds": ["pref-four-dim", "pref-store-wide"],
+      "precision": 1,
+      "recall": 1,
+      "replayDistribution": { "pref-four-dim": 3, "pref-store-wide": 3 },
+      "passed": true
+    },
+    {
+      "caseId": "business-fact-cannot-be-memory-override",
+      "retrievedIds": ["legal-tone"],
+      "precision": 1,
+      "recall": 1,
+      "replayDistribution": { "legal-tone": 3 },
+      "passed": true
+    }
+  ]
+}
