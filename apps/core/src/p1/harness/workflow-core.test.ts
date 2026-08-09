@@ -15,6 +15,7 @@ import {
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
 import { HarnessSelectionError } from './execution-selection.js';
+import { HarnessExecutionFencePauseError } from './context-fence.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
@@ -1667,6 +1668,64 @@ test('image-text note reuses its frozen style decision without asking again', as
   );
 
   assert.equal(result.recommendation.recommendedCandidateId, 'story');
+});
+
+test('a note style pick rides the fence pause so the resumed run never asks again', async () => {
+  const request = mediaTaskInput('image_text_note');
+  assert.ok(request.executionSnapshot, 'the fixture must carry an admitted snapshot');
+  const stages = noteStages();
+  stages.fenceContext = async () => {
+    throw new HarnessExecutionFencePauseError(
+      '已引用的价格发生变化，请确认后继续。',
+      { quote: { frozen: 1, live: 2 } },
+    );
+  };
+  let asked = 0;
+  let pause: unknown;
+  await assert.rejects(
+    () =>
+      runHarnessWorkflow('task-note-fence-pause', request, stages, {
+        async runStep(_key, operation) {
+          return operation();
+        },
+        async progress() {},
+        async token() {},
+        async awaitDecision(question) {
+          asked += 1;
+          return {
+            idempotencyKey: 'choose-story-fence',
+            questionId: question.questionId,
+            workflowRevision: question.workflowRevision,
+            patch: {
+              field: 'note_style',
+              value: '故事版',
+              reason: '选择图文方向',
+            },
+            decision: { state: 'accepted', value: '故事版' },
+          };
+        },
+        async recordTrace() {},
+      }),
+    (error: unknown) => {
+      pause = error;
+      return error instanceof HarnessExecutionFencePauseError;
+    },
+  );
+  assert.equal(asked, 1);
+  // The pick is an in-plan fork answer, so it pins onto the paused
+  // continuation instead of invalidating the admitted snapshot.
+  const resumeRequest = (pause as HarnessExecutionFencePauseError).resumeRequest;
+  assert.deepEqual(
+    resumeRequest?.decisionReferences?.map(({ field, value }) => ({
+      field,
+      value,
+    })),
+    [{ field: 'note_style', value: '故事版' }],
+  );
+  assert.deepEqual(
+    resumeRequest?.executionSnapshot,
+    request.executionSnapshot,
+  );
 });
 
 test('image-text note partial selection keeps merchantReport in the workflow result', async () => {

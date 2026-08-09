@@ -16,13 +16,19 @@ import {
   InterruptProtocolService,
   MemoryInterruptStore,
 } from './interrupt-protocol.js';
-import { HarnessExecutionFenceSafeStopError } from './context-fence.js';
+import {
+  HarnessExecutionFencePauseError,
+  HarnessExecutionFenceSafeStopError,
+} from './context-fence.js';
+import { HarnessInteractionError } from './interaction-service.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 
 import {
   commitHarnessBillingOrSchedule,
   assertHarnessInteractionContinuationLayout,
   confirmationCardDecision,
+  confirmationCardHoldExpired,
+  contextFencePauseQuestion,
   createHarnessInterruptProtocolPort,
   createHarnessInterruptResumeBridge,
   failHarnessWorkflowPreservingExecutionError,
@@ -65,6 +71,22 @@ const settlement = {
   quoteId: 'quote-billing-failure',
   quoteRevision: 'quote-revision-1',
 };
+
+test('context fence drift becomes a held typed question, not a terminal failure', () => {
+  const question = contextFencePauseQuestion({
+    workflowId: 'workflow-fence',
+    workflowRevision: 4,
+    error: new HarnessExecutionFencePauseError(
+      '已引用的价格发生变化，请确认后继续。',
+      { quote: { frozen: 1, live: 2 } },
+    ),
+  });
+  assert.equal(question.workflowId, 'workflow-fence');
+  assert.equal(question.workflowRevision, 4);
+  assert.equal(question.unattended, 'hold');
+  assert.equal(question.response.field, 'context_fence_acknowledgement');
+  assert.match(question.questionId, /context-fence/u);
+});
 
 test('invalid suspension data fails open to a valid held recovery card', () => {
   const question = suspensionQuestionFailOpen(
@@ -167,6 +189,45 @@ test('resume accepts a valid command after rejecting invalid runtime data', asyn
       command,
       'structured-decision:question-1',
       'harness-decision:workspace-1:runtime-1:decision-1',
+    ],
+  ]);
+});
+
+test('exact core hold expiry resumes DBOS with a scoped cancellation signal', async (t) => {
+  const sent: unknown[][] = [];
+  t.mock.method(DBOS, 'send', async (...args: unknown[]) => {
+    sent.push(args);
+  });
+  const question = questionCardSchema.parse({
+    questionId: 'question-expired-1',
+    workflowId: 'task-expired-1',
+    workflowRevision: 3,
+    question: '这次想采用哪种笔记风格？',
+    options: [{ id: 'style-a', label: '克制专业' }],
+    freeText: { enabled: false },
+    response: { field: 'note_style', reason: '选择表达风格' },
+    scope: 'current_task',
+  });
+
+  await resumeHarnessDbosWorkflow(
+    'workspace-expired-1',
+    question.workflowId,
+    confirmationCardHoldExpired(question),
+    { async workflowRuntimeId() { return 'runtime-expired-1'; } },
+  );
+
+  assert.deepEqual(sent, [
+    [
+      'runtime-expired-1',
+      {
+        cancelled: true,
+        interruptId: question.questionId,
+        merchantMessage: '超时未选择，本次任务已取消，积分已退回',
+        resolutionSource: 'core_hold_expired',
+        revision: question.workflowRevision,
+      },
+      `structured-decision:${question.questionId}`,
+      `harness-decision:workspace-expired-1:runtime-expired-1:${question.questionId}:r3:core_hold_expired`,
     ],
   ]);
 });
@@ -1511,6 +1572,102 @@ test('resume bridge sends the reconstructed decision on the workflow topic with 
   assert.equal(sent[1]?.[3], sent[0]?.[3]);
 });
 
+test('production resume bridge resolves the typed harness interaction before workflow delivery', async () => {
+  const submitted: Array<{
+    workspaceId: string;
+    workflowId?: string;
+    answer: unknown;
+  }> = [];
+  const bridge = createHarnessInterruptResumeBridge(undefined, {
+    async submit(workspaceId, answer, workflowId) {
+      submitted.push({ workspaceId, workflowId, answer });
+    },
+  });
+  const { payload } = harnessInterruptMirrorInput({
+    question: interruptQuestion(),
+    stage: 'execution_selection',
+    request: interruptRequest(),
+  });
+
+  await bridge.deliver({
+    workspaceId: 'workspace-1',
+    payload,
+    command: interruptResume({ idempotencyKey: 'resume-persisted-1' }),
+  });
+
+  assert.equal(submitted.length, 1);
+  assert.equal(submitted[0]?.workspaceId, 'workspace-1');
+  assert.equal(submitted[0]?.workflowId, payload.workflowId);
+  assert.deepEqual(submitted[0]?.answer, {
+    requestId: payload.interruptId,
+    revision: payload.revision,
+    idempotencyKey: 'resume-persisted-1',
+    resume: {
+      runId: payload.workflowId,
+      step: 'execution_selection',
+    },
+    response: { kind: 'approved' },
+  });
+});
+
+test('production resume bridge treats an already-resolved interaction as a delivered replay', async () => {
+  const bridge = createHarnessInterruptResumeBridge(undefined, {
+    async submit() {
+      throw new HarnessInteractionError(
+        'STALE_INTERACTION_REQUEST',
+        'The interaction request is no longer pending.',
+      );
+    },
+  });
+  const { payload } = harnessInterruptMirrorInput({
+    question: interruptQuestion(),
+    stage: 'execution_selection',
+    request: interruptRequest(),
+  });
+
+  await bridge.deliver({
+    workspaceId: 'workspace-1',
+    payload,
+    command: interruptResume({ idempotencyKey: 'resume-replay-1' }),
+  });
+});
+
+test('production resume bridge accepts the recommended ask-merchant option', async () => {
+  const submitted: unknown[] = [];
+  const bridge = createHarnessInterruptResumeBridge(undefined, {
+    async submit(_workspaceId, answer) {
+      submitted.push(answer);
+    },
+  });
+  const { payload } = harnessInterruptMirrorInput({
+    question: interruptQuestion({ executionConfirmationAuthority: undefined }),
+    stage: 'brief_compilation',
+    request: interruptRequest(),
+  });
+
+  await bridge.deliver({
+    workspaceId: 'workspace-1',
+    payload,
+    command: interruptResume({ idempotencyKey: 'resume-option-1' }),
+  });
+
+  assert.deepEqual(submitted[0], {
+    requestId: payload.interruptId,
+    revision: payload.revision,
+    idempotencyKey: 'resume-option-1',
+    resume: { runId: payload.workflowId, step: 'brief_compilation' },
+    response: {
+      kind: 'answer',
+      items: [
+        {
+          itemId: 'execution_confirmation',
+          result: { kind: 'answer', value: '确认执行' },
+        },
+      ],
+    },
+  });
+});
+
 test('mirror port tolerates a durable retry that recomputes the hold expiry', async () => {
   const store = new MemoryInterruptStore();
   const service = new InterruptProtocolService(
@@ -1553,6 +1710,32 @@ test('mirror port tolerates a durable retry that recomputes the hold expiry', as
     resourceId: 'workspace-1',
   });
   assert.equal(pending.length, 0, 'workflow resolution clears the mirrored row');
+});
+
+test('production mirror resolves the real AgentThread coordinates', async () => {
+  const store = new MemoryInterruptStore();
+  const service = new InterruptProtocolService(
+    store,
+    { async hasMembership() { return true; } },
+    () => '2026-08-08T12:00:00.000Z',
+  );
+  const port = createHarnessInterruptProtocolPort({
+    request: (input) => service.request(input),
+    resolveByWorkflow: (input) => service.resolveByWorkflow(input),
+    getById: (id) => store.getById(id),
+    async resolveAgentCoordinates() {
+      return { threadId: 'thread:composer:real', runId: 'run:composer:real' };
+    },
+  });
+  await port.mirrorPending({
+    workspaceId: 'workspace-1',
+    question: interruptQuestion(),
+    stage: 'execution_selection',
+    request: interruptRequest(),
+  });
+  const row = await store.getById('question-1');
+  assert.equal(row?.payload.threadId, 'thread:composer:real');
+  assert.equal(row?.payload.runId, 'run:composer:real');
 });
 
 test('mirror port rejects a genuine same-revision payload conflict', async () => {

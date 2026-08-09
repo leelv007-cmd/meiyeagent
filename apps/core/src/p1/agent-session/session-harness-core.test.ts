@@ -394,6 +394,28 @@ test('unregistered binding fails closed at PolicyMiddlewareRunner construction',
   );
 });
 
+test('middleware implementation must match release policyId, revision and kind exactly', () => {
+  const releaseBinding: HarnessMiddlewareBinding = {
+    policyId: 'rights.gate',
+    revision: 'r2',
+    kind: 'before_model',
+    order: 0,
+    allowedControlActions: ['continue'],
+  };
+  for (const mismatched of [
+    { ...releaseBinding, revision: 'r1' },
+    { ...releaseBinding, kind: 'after_model' as const },
+  ]) {
+    assert.throws(
+      () =>
+        new PolicyMiddlewareRunner([releaseBinding], [
+          { binding: mismatched, handlers: {} },
+        ]),
+      /rights\.gate@r2:before_model/u,
+    );
+  }
+});
+
 test('wrap_tool_call can deterministically refuse with gate id + reason', async () => {
   const binding: HarnessMiddlewareBinding = {
     policyId: 'tenant-gate',

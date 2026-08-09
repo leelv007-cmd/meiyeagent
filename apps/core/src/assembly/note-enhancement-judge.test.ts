@@ -71,7 +71,7 @@ test('api-runtime production assembly wires noteEnhancementJudge via mode select
   );
   assert.match(
     source,
-    /noteEnhancementJudge:\s*noteEnhancementJudgeResolverForMode\(\s*modelRuntime\.mode\s*\)/
+    /noteEnhancementJudge:\s*noteEnhancementJudgeResolverForMode\([\s\S]*?env\.APP_ENV === 'e2e' \? 'gateway' : modelRuntime\.mode[\s\S]*?\)/
   );
   assert.doesNotMatch(
     source,

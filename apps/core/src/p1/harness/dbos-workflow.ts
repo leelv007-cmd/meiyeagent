@@ -1,4 +1,5 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import {
   harnessInteractionAnswerSchema,
@@ -74,6 +75,7 @@ import type {
   HarnessDecisionStore,
 } from './decision-service.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
+import { HarnessExecutionFencePauseError } from './context-fence.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import {
   buildSemanticDecisionResumption,
@@ -97,6 +99,7 @@ import {
 import {
   askMerchantInteractionRequestFromQuestion,
   executionConfirmationInteractionRequestFromQuestion,
+  HarnessInteractionError,
   type HarnessInteractionStore,
   type HarnessInteractionService,
 } from './interaction-service.js';
@@ -163,6 +166,7 @@ export function harnessInterruptMirrorInput(input: {
   stage: HarnessStage;
   request: HarnessWorkflowInput;
   holdTimeoutSeconds?: number | null;
+  agentCoordinates?: { threadId: string; runId: string };
 }): { workspaceId: string; payload: InterruptPayload } {
   const { question, request, stage } = input;
   const executionConfirmation =
@@ -170,8 +174,9 @@ export function harnessInterruptMirrorInput(input: {
   const payload = interruptPayloadSchema.parse({
     schemaVersion: INTERRUPT_PAYLOAD_SCHEMA_VERSION,
     interruptId: question.questionId,
-    threadId: `harness-thread:${question.workflowId}`,
-    runId: question.workflowId,
+    threadId:
+      input.agentCoordinates?.threadId ?? `harness-thread:${question.workflowId}`,
+    runId: input.agentCoordinates?.runId ?? question.workflowId,
     workflowId: question.workflowId,
     step: stage,
     revision: question.workflowRevision,
@@ -285,6 +290,74 @@ export function interruptResumeDecision(
   });
 }
 
+export function interruptResumeInteractionAnswer(
+  question: QuestionCard,
+  payload: InterruptPayload,
+  command: ResumeInterruptCommand,
+) {
+  const args =
+    typeof command.args === 'object' &&
+    command.args !== null &&
+    !Array.isArray(command.args)
+      ? (command.args as { value?: unknown })
+      : undefined;
+  const value =
+    typeof args?.value === 'string' && args.value.length > 0
+      ? args.value
+      : undefined;
+  const identity = {
+    requestId: question.questionId,
+    revision: question.workflowRevision,
+    idempotencyKey:
+      command.idempotencyKey ??
+      `interrupt:${command.interruptId}:r${command.revision}`,
+    resume: {
+      runId: question.workflowId,
+      step: payload.step,
+    },
+  };
+  if (question.executionConfirmationAuthority) {
+    if (command.type === 'respond' || command.type === 'edit') {
+      throw new Error(
+        `Execution confirmation does not accept ${command.type} resumes.`,
+      );
+    }
+    return harnessInteractionAnswerSchema.parse({
+      ...identity,
+      response:
+        command.type === 'accept'
+          ? { kind: 'approved' }
+          : {
+              kind: 'rejected',
+              ...(value ? { feedback: value } : {}),
+            },
+    });
+  }
+  if ((command.type === 'respond' || command.type === 'edit') && !value) {
+    throw new Error(
+      `Interrupt resume type ${command.type} requires a merchant value.`,
+    );
+  }
+  return harnessInteractionAnswerSchema.parse({
+    ...identity,
+    response:
+      command.type === 'reject'
+        ? { kind: 'skipped' }
+        : {
+            kind: 'answer',
+            items: [
+              {
+                itemId: question.response.field,
+                result: {
+                  kind: 'answer',
+                  value: value ?? question.options[0]?.label ?? 'approved',
+                },
+              },
+            ],
+          },
+  });
+}
+
 /**
  * Production resume bridge: after the interrupt CAS applies, deliver the
  * reconstructed decision into the suspended workflow's recv channel.
@@ -293,11 +366,36 @@ export function interruptResumeDecision(
  */
 export function createHarnessInterruptResumeBridge(
   resolver?: HarnessRuntimeIdResolver,
+  interactions?: {
+    submit(
+      workspaceId: string,
+      answer: unknown,
+      expectedRunId?: string,
+    ): Promise<unknown>;
+  },
 ): InterruptResumeBridgePort {
   return {
     async deliver(input: InterruptResumeBridgeInput) {
       const { workspaceId, payload, command } = input;
       const question = interruptQuestionFromPayload(payload);
+      if (interactions) {
+        try {
+          await interactions.submit(
+            workspaceId,
+            interruptResumeInteractionAnswer(question, payload, command),
+            payload.workflowId,
+          );
+        } catch (error) {
+          if (
+            !(error instanceof HarnessInteractionError) ||
+            error.code !== 'STALE_INTERACTION_REQUEST'
+          ) {
+            throw error;
+          }
+        }
+        return;
+      }
+      const decision = interruptResumeDecision(question, command);
       const runtimeWorkflowId =
         (await resolver?.workflowRuntimeId(
           workspaceId,
@@ -305,7 +403,7 @@ export function createHarnessInterruptResumeBridge(
         )) ?? harnessRuntimeId(workspaceId, payload.workflowId);
       await DBOS.send(
         runtimeWorkflowId,
-        interruptResumeDecision(question, command),
+        decision,
         decisionTopic(payload.interruptId),
         `harness-interrupt:${workspaceId}:${runtimeWorkflowId}:${payload.interruptId}:${command.idempotencyKey ?? `r${command.revision}`}`,
       );
@@ -331,11 +429,26 @@ export function createHarnessInterruptProtocolPort(input: {
     source: HarnessInterruptResolutionSource;
   }) => Promise<'applied' | 'replayed'>;
   getById: (interruptId: string) => Promise<StoredInterrupt | null>;
+  resolveAgentCoordinates?: (input: {
+    workspaceId: string;
+    workflowId: string;
+    request: HarnessWorkflowInput;
+  }) => Promise<{ threadId: string; runId: string }>;
 }): HarnessInterruptProtocolPort {
   return {
     async mirrorPending(mirrorInput) {
       const { workspaceId: _workspaceId, ...mirror } = mirrorInput;
-      const { workspaceId, payload } = harnessInterruptMirrorInput(mirror);
+      const agentCoordinates = input.resolveAgentCoordinates
+        ? await input.resolveAgentCoordinates({
+            workspaceId: mirrorInput.workspaceId,
+            workflowId: mirror.question.workflowId,
+            request: mirror.request,
+          })
+        : undefined;
+      const { workspaceId, payload } = harnessInterruptMirrorInput({
+        ...mirror,
+        ...(agentCoordinates ? { agentCoordinates } : {}),
+      });
       try {
         await input.request({ workspaceId, payload });
       } catch (error) {
@@ -608,11 +721,7 @@ export interface HarnessDbosWorkflowOptions {
   semanticResumptions?: HarnessSemanticDecisionResumptionStore;
   billing?: HarnessBillingSettlementPort;
   /**
-   * V31-11 confirmation objects: ExecutionConfirmationService.createRequest
-   * bound onto the confirmation gate. After merchant approval the domain
-   * request reserves under the workspace credit lock with the same operation
-   * id the Coordinator submission consumed (U8=A), so execution-time
-   * settlement never debits twice. Absent ⇒ legacy submission-time hold only.
+   * Authoritative confirmation decision used to admit the exact paid plan.
    */
   executionConfirmation?: Pick<ConfirmationAuthorityAssembler, 'createRequest'> &
     Pick<ExecutionConfirmationService, 'getDecisionForWorkspace'> & {
@@ -986,8 +1095,11 @@ export function registerHarnessDbosWorkflow(
           decisionTopic(question.questionId),
           { timeoutSeconds },
         );
-        if (isReleasedReservationCancellation(decision)) {
-          await resolveInterrupt('reservation_released');
+        if (
+          isReleasedReservationCancellation(decision) ||
+          isCoreHoldExpiredCancellation(decision, question)
+        ) {
+          await resolveInterrupt(decision.resolutionSource);
           return decision;
         }
         const command = confirmationCardDecision(
@@ -1197,6 +1309,7 @@ export function registerHarnessDbosWorkflow(
     try {
       let result;
       try {
+        let activeWorkflowRequest = request;
         // V31-12: verification → context/rights fence. Keep this inside the
         // billing compensation boundary so an admitted stale snapshot cannot
         // strand its reservation before workflow execution starts.
@@ -1238,24 +1351,70 @@ export function registerHarnessDbosWorkflow(
         const forceLegacyFiveStage = resolveForceLegacyFiveStage
           ? await resolveForceLegacyFiveStage()
           : false;
-        result = await runHarnessWorkflow(
-          workflowId,
-          request,
-          withExecutionConfirmationStagePort(
-            ports,
-            executionConfirmation,
-            executionPlanAdmission,
-            resolveExecutionPlanLiveFacts,
-            refreshExecutionPlanLiveBindings,
-          ),
-          runtime,
-          {
-            forceLegacyFiveStage,
-            onActiveRequest(activeRequest) {
-              effectiveRequest = activeRequest;
-            },
-          },
+        const executionPorts = withExecutionConfirmationStagePort(
+          ports,
+          executionConfirmation,
+          executionPlanAdmission,
+          resolveExecutionPlanLiveFacts,
+          refreshExecutionPlanLiveBindings,
         );
+        for (;;) {
+          try {
+            result = await runHarnessWorkflow(
+              workflowId,
+              activeWorkflowRequest,
+              executionPorts,
+              runtime,
+              {
+                forceLegacyFiveStage,
+                onActiveRequest(activeRequest) {
+                  effectiveRequest = activeRequest;
+                },
+              },
+            );
+            break;
+          } catch (error) {
+            if (!(error instanceof HarnessExecutionFencePauseError)) {
+              throw error;
+            }
+            activeWorkflowRequest =
+              error.resumeRequest ?? activeWorkflowRequest;
+            const question = contextFencePauseQuestion({
+              workflowId,
+              workflowRevision: request.workflowRevision,
+              error,
+            });
+            const resolved = await runtime.awaitDecision(
+              question,
+              'context_injection',
+            );
+            if ('cancelled' in resolved) {
+              throw new HarnessWorkflowCancellation(
+                resolved.merchantMessage,
+                resolved.resolutionSource,
+              );
+            }
+            const command = 'command' in resolved ? resolved.command : resolved;
+            if (command.decision.state !== 'accepted') {
+              throw new HarnessWorkflowCancellation(
+                '你已选择不继续使用变化后的事实，本次任务已结束。',
+                'decision',
+              );
+            }
+            const shared = 'shared' in executionPorts
+              ? executionPorts.shared
+              : executionPorts;
+            if (!shared.acknowledgeContextFence) {
+              throw new Error(
+                'Context fence pause requires an acknowledgement port.',
+              );
+            }
+            await shared.acknowledgeContextFence({
+              workflowId,
+              diff: error.diff,
+            });
+          }
+        }
       } catch (error) {
         if (error instanceof HarnessInteractionLayoutResetRequiredError) {
           closeProgressStream = false;
@@ -1402,18 +1561,40 @@ export function registerHarnessDbosWorkflow(
   });
 }
 
+export function contextFencePauseQuestion(input: {
+  workflowId: string;
+  workflowRevision: number;
+  error: HarnessExecutionFencePauseError;
+}): QuestionCard {
+  const diffId = createHash('sha256')
+    .update(JSON.stringify(input.error.diff))
+    .digest('hex')
+    .slice(0, 16);
+  return questionCardSchema.parse({
+    questionId: `${input.workflowId}:context-fence:${diffId}`,
+    workflowId: input.workflowId,
+    workflowRevision: input.workflowRevision,
+    question: input.error.merchantMessage,
+    options: [
+      { id: 'continue_after_review', label: '确认变化后继续' },
+      { id: 'stop', label: '停止本次任务' },
+    ],
+    freeText: { enabled: false },
+    response: {
+      field: 'context_fence_acknowledgement',
+      reason: '已引用的价格、日期或权利版本发生变化',
+    },
+    unattended: 'hold',
+    scope: 'current_task',
+  });
+}
+
 type BillingRunStep = <T>(
   name: string,
   operation: () => Promise<T>,
 ) => Promise<T>;
 
-/**
- * V31-11 confirmation-objects merge: bind ExecutionConfirmationService
- * createRequest onto the shared stage ports so the confirmation gate creates
- * the domain request after merchant approval. Returns the input ports
- * untouched when the option is absent (legacy submission-time hold only), so
- * fixture paths and pre-wiring assemblies keep their exact behavior.
- */
+/** Bind the confirmed decision and immutable snapshot admission to Make. */
 function withExecutionConfirmationStagePort(
   ports: HarnessStagePorts | HarnessStageCollaborators,
   executionConfirmation: HarnessDbosWorkflowOptions['executionConfirmation'] |
@@ -1470,6 +1651,7 @@ function withExecutionConfirmationStagePort(
       executionConfirmation.createRequest(input),
   };
   if ('shared' in ports) {
+    Object.assign(ports.shared, confirmationPorts);
     return {
       ...ports,
       shared: { ...ports.shared, ...confirmationPorts },
@@ -1922,9 +2104,18 @@ export async function resumeHarnessDbosWorkflow(
   const runtimeWorkflowId =
     (await resolver?.workflowRuntimeId(workspaceId, workflowId)) ??
     harnessRuntimeId(workspaceId, workflowId);
+  const payload = isCoreHoldExpiredCommand(parsedCommand)
+    ? {
+        cancelled: true as const,
+        interruptId: parsedCommand.questionId,
+        merchantMessage: '超时未选择，本次任务已取消，积分已退回',
+        resolutionSource: 'core_hold_expired' as const,
+        revision: parsedCommand.workflowRevision,
+      }
+    : parsedCommand;
   await DBOS.send(
     runtimeWorkflowId,
-    parsedCommand,
+    payload,
     decisionTopic(parsedCommand.questionId),
     `harness-decision:${workspaceId}:${runtimeWorkflowId}:${parsedCommand.idempotencyKey}`,
   );
@@ -2184,6 +2375,17 @@ export function confirmationCardHoldExpired(question: QuestionCard) {
   });
 }
 
+function isCoreHoldExpiredCommand(
+  command: StructuredDecisionInput,
+): boolean {
+  return (
+    command.idempotencyKey ===
+      `${command.questionId}:r${command.workflowRevision}:core_hold_expired` &&
+    command.decision.state === 'ignored' &&
+    command.decision.value === '超时未选择，本次任务已取消，积分已退回'
+  );
+}
+
 async function waitForHeldDecision(
   question: QuestionCard,
   timeoutSeconds: number,
@@ -2194,7 +2396,12 @@ async function waitForHeldDecision(
     decisionTopic(question.questionId),
     { timeoutSeconds },
   );
-  if (isReleasedReservationCancellation(decision)) return decision;
+  if (
+    isReleasedReservationCancellation(decision) ||
+    isCoreHoldExpiredCancellation(decision, question)
+  ) {
+    return decision;
+  }
   return decision
     ? confirmationCardDecision(
         question,
@@ -2230,6 +2437,33 @@ function isReleasedReservationCancellation(
   );
 }
 
+function isCoreHoldExpiredCancellation(
+  value: unknown,
+  question: QuestionCard,
+): value is {
+  cancelled: true;
+  interruptId: string;
+  merchantMessage: string;
+  resolutionSource: 'core_hold_expired';
+  revision: number;
+} {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as {
+    cancelled?: unknown;
+    interruptId?: unknown;
+    merchantMessage?: unknown;
+    resolutionSource?: unknown;
+    revision?: unknown;
+  };
+  return (
+    candidate.cancelled === true &&
+    candidate.interruptId === question.questionId &&
+    typeof candidate.merchantMessage === 'string' &&
+    candidate.resolutionSource === 'core_hold_expired' &&
+    candidate.revision === question.workflowRevision
+  );
+}
+
 async function waitForDecisionWithoutTimeout(
   question: QuestionCard,
   persistence: HarnessWorkflowPersistence,
@@ -2240,7 +2474,12 @@ async function waitForDecisionWithoutTimeout(
       decisionTopic(question.questionId),
     );
     if (!decision) continue;
-    if (isReleasedReservationCancellation(decision)) return decision;
+    if (
+      isReleasedReservationCancellation(decision) ||
+      isCoreHoldExpiredCancellation(decision, question)
+    ) {
+      return decision;
+    }
     return confirmationCardDecision(
       question,
       decision,

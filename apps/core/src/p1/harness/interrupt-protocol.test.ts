@@ -81,6 +81,55 @@ function service(options?: {
   return { store, svc };
 }
 
+test('request and resume project the canonical interrupt lifecycle once', async () => {
+  const events: Array<{ eventType: string; payload: unknown; threadId: string }> = [];
+  const eventIds = new Set<string>();
+  const store = new MemoryInterruptStore();
+  const svc = new InterruptProtocolService(
+    store,
+    { async hasMembership() { return true; } },
+    () => TS,
+    undefined,
+    {
+      async project(candidate) {
+        if (eventIds.has(candidate.eventId)) return;
+        eventIds.add(candidate.eventId);
+        events.push({
+          eventType: candidate.eventType,
+          payload: candidate.payload,
+          threadId: candidate.threadId,
+        });
+      },
+    },
+  );
+
+  await svc.request({ workspaceId: 'ws-1', payload: payload() });
+  await svc.request({ workspaceId: 'ws-1', payload: payload() });
+  await svc.resume({
+    userId: 'user-1',
+    workspaceId: 'ws-1',
+    command: resumeCommand({ idempotencyKey: 'semantic-1' }),
+  });
+  await svc.resume({
+    userId: 'user-1',
+    workspaceId: 'ws-1',
+    command: resumeCommand({ idempotencyKey: 'semantic-1' }),
+  });
+
+  assert.deepEqual(events.map((event) => event.eventType), [
+    'interrupt.requested',
+    'interrupt.resolved',
+  ]);
+  assert.equal(events[0]?.threadId, 'thread-1');
+  assert.deepEqual(events[0]?.payload, {
+    interruptId: 'int-1',
+    interruptType: 'confirm_paid_execution',
+    description: '确认执行付费生成',
+    revision: 3,
+    schemaVersion: 'interrupt-payload/v1',
+  });
+});
+
 test('request is idempotent for identical payload', async () => {
   const { svc } = service();
   const first = await svc.request({ workspaceId: 'ws-1', payload: payload() });
@@ -106,6 +155,24 @@ test('resume by interruptId+revision CAS applies once; duplicate is replay', asy
     command,
   });
   assert.equal(second.outcome, 'replayed');
+});
+
+test('schema-mismatched resume fails before CAS and keeps the interrupt pending', async () => {
+  const { store, svc } = service();
+  await svc.request({ workspaceId: 'ws-1', payload: payload() });
+  await assert.rejects(
+    () =>
+      svc.resume({
+        userId: 'user-1',
+        workspaceId: 'ws-1',
+        command: {
+          ...resumeCommand(),
+          schemaVersion: 'interrupt-payload/v999',
+        } as unknown as ResumeInterruptCommand,
+      }),
+    /schemaVersion/u,
+  );
+  assert.equal((await store.getById('int-1'))?.status, 'pending');
 });
 
 test('stale revision resume is rejected (no position index)', async () => {
@@ -309,6 +376,45 @@ test('bridge failure fails resume; retry after CAS applied re-delivers (resume n
   assert.equal(retried.outcome, 'replayed', 'CAS already applied, replay recovers');
   assert.equal(deliveries.length, 1, 'replayed resume re-delivers the command');
   assert.deepEqual(deliveries[0]?.command, command);
+});
+
+test('recovery delivers a CAS-resolved interrupt after the caller crash window', async () => {
+  let fail = true;
+  const deliveries: InterruptResumeBridgeInput[] = [];
+  const { store, svc } = service({
+    bridge: {
+      async deliver(input) {
+        if (fail) throw new Error('process crashed after resume CAS');
+        deliveries.push(input);
+      },
+    },
+  });
+  await svc.request({ workspaceId: 'ws-1', payload: payload() });
+  const command = resumeCommand({ idempotencyKey: 'bridge-recovery' });
+
+  await assert.rejects(() =>
+    svc.resume({ userId: 'user-1', workspaceId: 'ws-1', command }),
+  );
+  assert.equal(
+    (await store.getById('int-1'))?.resumeDeliveryStatus,
+    'pending',
+  );
+
+  fail = false;
+  assert.deepEqual(await svc.recoverUndelivered(), {
+    delivered: 1,
+    failed: 0,
+  });
+  assert.equal(deliveries.length, 1);
+  assert.equal(
+    (await store.getById('int-1'))?.resumeDeliveryStatus,
+    'sent',
+  );
+  assert.deepEqual(await svc.recoverUndelivered(), {
+    delivered: 0,
+    failed: 0,
+  });
+  assert.equal(deliveries.length, 1);
 });
 
 test('resolveByWorkflow syncs a mirrored interrupt without a resume command', async () => {

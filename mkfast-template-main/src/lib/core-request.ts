@@ -238,10 +238,17 @@ export type WorkspaceWorkflowEventResource = `p1/workflows/${string}/events`;
 export type WorkspaceComposerDestinationResource =
   'p1/composer/destination-map';
 export type WorkspaceComposerSubmissionResource = 'p1/composer/submissions';
+export type WorkspaceComposerTaskStartResource =
+  `p1/composer/tasks/${string}/start`;
+export type WorkspaceComposerTaskReviseResource =
+  `p1/composer/tasks/${string}/revise`;
 export type WorkspaceAgentSemanticResource =
   `p1/agent-threads/${string}/${'events' | 'replay'}`;
 export type WorkspaceHarnessTaskCollectionResource = 'p1/harness/tasks';
 export type WorkspacePendingActionsResource = 'p1/pending-actions';
+export type WorkspacePendingInterruptResource =
+  | 'p1/pending-interrupts'
+  | 'p1/interrupts/resume';
 export type WorkspaceHarnessDecisionResource =
   `p1/harness/tasks/${string}/decision`;
 export type WorkspaceHarnessInteractionResource =
@@ -267,6 +274,18 @@ export function workspaceAgentSemanticResource(
   kind: 'events' | 'replay'
 ): WorkspaceAgentSemanticResource {
   return `p1/agent-threads/${encodeURIComponent(threadId)}/${kind}`;
+}
+
+export function workspaceComposerTaskStartResource(
+  taskId: string
+): WorkspaceComposerTaskStartResource {
+  return `p1/composer/tasks/${encodeURIComponent(taskId)}/start`;
+}
+
+export function workspaceComposerTaskReviseResource(
+  taskId: string
+): WorkspaceComposerTaskReviseResource {
+  return `p1/composer/tasks/${encodeURIComponent(taskId)}/revise`;
 }
 
 export function workspaceHarnessDecisionResource(

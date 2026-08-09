@@ -37,6 +37,7 @@ import {
 } from './resume-reconciler.js';
 import { harnessRuntimeId } from './workspace-scope.js';
 import { HarnessTaskAdmissionService } from './task-admission.js';
+import { confirmationCardHoldExpired } from './dbos-workflow.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 
@@ -461,6 +462,23 @@ test(
         }),
         { timeoutSeconds: null, interactionRequest: executionRequest },
       );
+      const paidDecisionTarget = await restartedStore.readDecisionTarget(
+        workspaceId,
+        runId,
+      );
+      assert.equal(
+        paidDecisionTarget?.question.questionId,
+        executionRequest.requestId,
+      );
+      assert.equal(
+        paidDecisionTarget?.question.workflowRevision,
+        executionRequest.revision,
+      );
+      assert.equal(paidDecisionTarget?.status, 'pending');
+      assert.equal(
+        paidDecisionTarget?.question.response.field,
+        'execution_confirmation',
+      );
       const executionResumes: unknown[] = [];
       const executionService = createPgInteractionService(
         pool,
@@ -636,6 +654,55 @@ test(
         { kind: 'resumed', replayed: false },
       );
       assert.equal(executionResumes.length, 2);
+
+      const expiringExecutionRequest = executionConfirmationRequestSchema.parse({
+        ...executionRequest,
+        requestId: `interaction-execution-expiry-${suffix}`,
+        revision: executionRequest.revision + 2,
+      });
+      const expiringQuestion = questionCardSchema.parse({
+        questionId: expiringExecutionRequest.requestId,
+        workflowId: runId,
+        workflowRevision: expiringExecutionRequest.revision,
+        question: '是否按到期前的方案执行？',
+        options: [
+          { id: 'approved', label: '确认执行' },
+          { id: 'rejected', label: '暂不执行' },
+        ],
+        freeText: { enabled: true },
+        response: {
+          field: 'execution_confirmation',
+          reason: '到期前需要商家确认',
+        },
+        scope: 'current_task',
+      });
+      await restartedStore.registerPending(workspaceId, expiringQuestion, {
+        timeoutSeconds: null,
+        interactionRequest: expiringExecutionRequest,
+      });
+      const expiryResumes: unknown[] = [];
+      const expiryDecisions = new HarnessDecisionService(restartedStore, {
+        async resume(_workspaceId, _taskId, command) {
+          expiryResumes.push(command);
+        },
+      });
+      await expiryDecisions.submitCoreHoldExpired(
+        workspaceId,
+        runId,
+        confirmationCardHoldExpired(expiringQuestion),
+        { resumeWorkflow: true },
+      );
+      assert.equal(expiryResumes.length, 1);
+      assert.equal(
+        (expiryResumes[0] as { questionId: string }).questionId,
+        expiringExecutionRequest.requestId,
+      );
+      const expiredTarget = await restartedStore.readDecisionTarget(
+        workspaceId,
+        runId,
+      );
+      assert.equal(expiredTarget?.status, 'resolved');
+      assert.equal(expiredTarget?.resolutionSource, 'core_hold_expired');
 
       const timeoutRequest = askMerchantQuestionRequestSchema.parse({
         ...request,

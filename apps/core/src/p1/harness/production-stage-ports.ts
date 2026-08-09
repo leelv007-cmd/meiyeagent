@@ -436,6 +436,7 @@ export interface ProductionHarnessStagePortsOptions {
 }
 
 export class ProductionHarnessStagePorts implements HarnessStagePorts {
+  private readonly acknowledgedContextFences = new Set<string>();
   private readonly runners: HarnessStructuredNodeRunnerFactory;
   private readonly context: ProductionHarnessContextPort;
   private readonly delivery: HarnessCopyDeliveryPort;
@@ -671,6 +672,24 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
     return this.context.fence(input);
   }
 
+  acknowledgeContextFence(input: {
+    workflowId: string;
+    diff: import('./execution-plan-admission.js').SnapshotStaleDiff;
+  }) {
+    this.acknowledgedContextFences.add(
+      this.contextFenceAcknowledgementKey(input.workflowId, input.diff),
+    );
+  }
+
+  private contextFenceAcknowledgementKey(
+    workflowId: string,
+    diff: import('./execution-plan-admission.js').SnapshotStaleDiff,
+  ) {
+    return `${workflowId}:${createHash('sha256')
+      .update(JSON.stringify(diff))
+      .digest('hex')}`;
+  }
+
   /**
    * V31-14 P1-b (§23.4): classify in-flight execution against live facts
    * before the recompile fallback. safe_stop → typed error (the DBOS failure
@@ -704,7 +723,18 @@ export class ProductionHarnessStagePorts implements HarnessStagePorts {
       case 'safe_stop':
         throw new HarnessExecutionFenceSafeStopError(action.message);
       case 'pause_prompt':
-        throw new HarnessExecutionFencePauseError(action.message, action.diff);
+        {
+          const key = this.contextFenceAcknowledgementKey(
+            input.workflowId,
+            action.diff,
+          );
+          if (this.acknowledgedContextFences.delete(key)) return;
+        }
+        throw new HarnessExecutionFencePauseError(
+          action.message,
+          action.diff,
+          input.request,
+        );
       case 'auto_update_plan':
       case 'stale_reconfirm':
         // Pre/post-confirm classifications are owned by admission-time gates;

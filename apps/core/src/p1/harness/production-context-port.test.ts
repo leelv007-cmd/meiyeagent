@@ -28,6 +28,7 @@ import {
   LedgerBackedFactRightsAuthorizationPort,
   LedgerBackedHarnessContextPort,
 } from './production-context-port.js';
+import { createAuthoritativeExecutionPlanLiveFactsPorts } from './execution-plan-live-facts.js';
 import { createHarnessCandidateValidator } from './policy-gates.js';
 
 test('production fact rights re-resolve the frozen fact and rights head fail closed', async () => {
@@ -93,6 +94,148 @@ test('production fact rights re-resolve the frozen fact and rights head fail clo
       fact: frozenFact,
     }),
     false,
+  );
+});
+
+test('execution fence adapter reads current fact and asset-rights heads', async () => {
+  const facts = new MemoryStoreFactLedger();
+  await facts.append({
+    workspaceId: 'workspace-1',
+    factId: 'offer-price',
+    kind: 'price',
+    key: 'offer.price',
+    value: 398,
+    scope: { storeId: 'workspace-1' },
+    source: {
+      kind: 'user_confirmation',
+      referenceId: 'decision-price-1',
+      capturedAt: '2026-07-18T00:00:00.000Z',
+    },
+    effectiveFrom: '2026-07-18T00:00:00.000Z',
+    expiresAt: null,
+    expectedRevision: 0,
+    recordedAt: '2026-07-18T00:00:00.000Z',
+    recordedBy: 'owner-1',
+  });
+  let revoked = false;
+  const rightsWithRevision = {
+    async resolve({ assetIds }: { assetIds: string[] }) {
+      return {
+        knownAssetIds: [...assetIds],
+        unauthorizedAssetIds: revoked ? [...assetIds] : [],
+      };
+    },
+    async resolveWithRevision({ assetIds }: { assetIds: string[] }) {
+      return {
+        knownAssetIds: [...assetIds],
+        // The live policy head, never an echo of the frozen coordinate.
+        rightsRevision: revoked ? 'rights-live-2' : 'rights-live-1',
+        unauthorizedAssetIds: revoked ? [...assetIds] : [],
+      };
+    },
+  };
+  const ports = createAuthoritativeExecutionPlanLiveFactsPorts({
+    facts,
+    now: () => '2026-07-18T00:03:00.000Z',
+    request: {
+      ...taskInput(),
+      intent: { ...taskInput().intent, assetReferences: ['asset-1'] },
+    },
+    rights: rightsWithRevision,
+  });
+
+  assert.deepEqual(
+    await ports.resolveFactHeads?.({
+      workspaceId: 'workspace-1',
+      factRevisionRefs: ['store_fact:offer-price:1'],
+    }),
+    [
+      {
+        frozenRevisionId: 'store_fact:offer-price:1',
+        factRevisionId: 'store_fact:offer-price:1',
+        materialPriceOrDateChanged: false,
+      },
+    ],
+  );
+  assert.deepEqual(
+    await ports.resolveRightsHeads?.({
+      workspaceId: 'workspace-1',
+      rightsRevisionRefs: ['rights-freeze-1'],
+    }),
+    [
+      {
+        frozenRevisionId: 'rights-freeze-1',
+        revisionId: 'rights-live-1',
+        revoked: false,
+      },
+    ],
+  );
+  // V31-14: a resolver that cannot answer with a revision yields no head at
+  // all, so resolveExecutionPlanLiveFactsFromPorts treats the freeze as
+  // revoked. Reporting the frozen ref back as its own live head is the
+  // retired behaviour this asserts against.
+  const withoutRevisionHead = createAuthoritativeExecutionPlanLiveFactsPorts({
+    facts,
+    now: () => '2026-07-18T00:03:00.000Z',
+    request: {
+      ...taskInput(),
+      intent: { ...taskInput().intent, assetReferences: ['asset-1'] },
+    },
+    rights: { resolve: rightsWithRevision.resolve },
+  });
+  assert.deepEqual(
+    await withoutRevisionHead.resolveRightsHeads?.({
+      workspaceId: 'workspace-1',
+      rightsRevisionRefs: ['rights-freeze-1'],
+    }),
+    [],
+  );
+
+  await facts.append({
+    workspaceId: 'workspace-1',
+    factId: 'offer-price',
+    kind: 'price',
+    key: 'offer.price',
+    value: 368,
+    scope: { storeId: 'workspace-1' },
+    source: {
+      kind: 'user_confirmation',
+      referenceId: 'decision-price-2',
+      capturedAt: '2026-07-18T00:02:00.000Z',
+    },
+    effectiveFrom: '2026-07-18T00:00:00.000Z',
+    expiresAt: null,
+    expectedRevision: 1,
+    recordedAt: '2026-07-18T00:02:00.000Z',
+    recordedBy: 'owner-1',
+  });
+  assert.deepEqual(
+    await ports.resolveFactHeads?.({
+      workspaceId: 'workspace-1',
+      factRevisionRefs: ['store_fact:offer-price:1'],
+    }),
+    [
+      {
+        frozenRevisionId: 'store_fact:offer-price:1',
+        factRevisionId: 'store_fact:offer-price:2',
+        materialPriceOrDateChanged: true,
+      },
+    ],
+  );
+
+  revoked = true;
+  assert.deepEqual(
+    await ports.resolveRightsHeads?.({
+      workspaceId: 'workspace-1',
+      rightsRevisionRefs: ['rights-freeze-1'],
+    }),
+    [
+      {
+        frozenRevisionId: 'rights-freeze-1',
+        revisionId: 'rights-live-2',
+        revoked: true,
+      },
+    ],
   );
 });
 

@@ -67,6 +67,7 @@ test('public quote wire schema rejects server-only routing fields', () => {
     billingMode: 'per_request',
     formula: { unitRate: 1.5, expression: 'per_request * 1.5' },
     lifecycleStatus: 'quoted',
+    expiresAt: '2026-07-20T01:00:00.000Z',
   };
 
   assert.equal(

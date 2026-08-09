@@ -143,6 +143,9 @@ test.describe('V31-07 Day-0 自由创作 (§37.4-A)', () => {
     const submissionBody = JSON.parse(await submissionResponse.text()) as {
       data?: {
         contentPackage?: { id?: string };
+        makeReady?: boolean;
+        runId?: string;
+        threadId?: string;
         work?: { id?: string };
       };
       error?: { message?: string };
@@ -154,6 +157,12 @@ test.describe('V31-07 Day-0 自由创作 (§37.4-A)', () => {
     const workId = submissionBody.data?.work?.id ?? '';
     expect(packageId).toBeTruthy();
     expect(workId).toBeTruthy();
+    expect(submissionBody.data?.threadId).toBeTruthy();
+    expect(submissionBody.data?.runId).toBeTruthy();
+    expect(submissionBody.data?.makeReady).toBe(true);
+
+    // Pure copy is the only policy exemption: Session still ran and returned
+    // durable handles, while Make was admitted without an extra start request.
 
     // ADR-0014: stays in the conversation; first usable token streams.
     await expect(page).not.toHaveURL(/\/dashboard\/results\//u);

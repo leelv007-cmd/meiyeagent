@@ -652,7 +652,6 @@ function withAiSdkTelemetry<T>(
     operation,
   );
 }
-
 function structuredRepairPrompt(prompt: string, invalidText: string) {
   return JSON.stringify({
     originalPrompt: prompt,
@@ -1602,7 +1601,8 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
         ? plan.pages.map(fixtureRecord)
         : [];
       const conflict =
-        attempt === 'initial' && /图文冲突样本/u.test(themeAnchor);
+        /图文持续冲突样本/u.test(themeAnchor) ||
+        (attempt === 'initial' && /图文冲突样本/u.test(themeAnchor));
       return {
         evaluatedAt:
           typeof payload.evaluatedAt === 'string'

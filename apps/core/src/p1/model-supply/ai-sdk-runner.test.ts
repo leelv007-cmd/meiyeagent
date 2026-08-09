@@ -12,7 +12,10 @@ import {
   resolveOpenAiCompatibleProviderName,
 } from './ai-sdk-runner.js';
 import { executionBriefSchema } from '../harness/structured-nodes.js';
-import { notePlanSchema } from '@meiye/contracts';
+import {
+  notePlanConsistencyEvaluationSchema,
+  notePlanSchema,
+} from '@meiye/contracts';
 
 test('fixture structured chunk pacing accepts bounded E2E-only overrides', () => {
   assert.equal(
@@ -44,7 +47,6 @@ test('fixture structured chunk pacing accepts bounded E2E-only overrides', () =>
     40,
   );
 });
-
 test('fixture structured execution compiles the frozen video delivery into one storyboard', async () => {
   const executor = new FixtureAiStructuredObjectExecutor();
   const schema = z.object({
@@ -173,6 +175,30 @@ test('fixture NotePlan varies page composition with merchant semantics', async (
     promotion.output.pages[3]?.textBlock.exactText,
     ['398 元'],
   );
+});
+
+test('fixture persistent note conflict remains unresolved after page regeneration', async () => {
+  const executor = new FixtureAiStructuredObjectExecutor();
+  const generate = (attempt: 'initial' | 'after_regeneration') =>
+    executor.generate({
+      instructions: 'Evaluate the complete note for cross-page consistency.',
+      prompt: JSON.stringify({
+        attempt,
+        evaluatedAt: '2026-08-09T00:00:00.000Z',
+        plan: {
+          themeAnchor: '图文持续冲突样本',
+          pages: [{ id: 'page-1' }, { id: 'page-2' }, { id: 'page-3' }],
+        },
+      }),
+      schema: notePlanConsistencyEvaluationSchema,
+      schemaName: 'harness_note_consistency_v1',
+    });
+
+  const initial = await generate('initial');
+  const afterRegeneration = await generate('after_regeneration');
+
+  assert.deepEqual(initial.output.regenerationPageIds, ['page-2']);
+  assert.deepEqual(afterRegeneration.output.regenerationPageIds, ['page-2']);
 });
 
 test('formal non-streaming copy generation uses one structured object request', async () => {

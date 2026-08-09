@@ -140,6 +140,53 @@ test(
 );
 
 test(
+  'concurrent projection of one event ID inserts once and replays the rest',
+  { skip },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresAgentSemanticEventStore(pool);
+    const resourceId = `resource-concurrent-${randomUUID()}`;
+    const eventId = `${resourceId}-resolved`;
+    try {
+      await store.migrate();
+      const projector = new AgentSemanticEventProjector(store);
+      const results = await Promise.all(
+        Array.from({ length: 8 }, () =>
+          projector.project({
+            eventId,
+            threadId: `${resourceId}-thread`,
+            resourceId,
+            contextRole: 'excluded',
+            sourceDomain: 'interrupt',
+            sourceEntityId: 'interrupt-1',
+            sourceRevision: '1',
+            correlationId: 'interrupt-1',
+            eventType: 'interrupt.resolved',
+            payload: { interruptId: 'interrupt-1' },
+            occurredAt: '2026-08-09T10:00:00.000Z',
+          }),
+        ),
+      );
+
+      assert.equal(results.filter((result) => !result.replayed).length, 1);
+      assert.equal(results.filter((result) => result.replayed).length, 7);
+      assert.equal(
+        new Set(results.map((result) => result.event.streamOffset)).size,
+        1,
+      );
+      assert.equal(store.writeCount, 1);
+    } finally {
+      await pool
+        .query('DELETE FROM p1_agent_semantic_events WHERE resource_id = $1', [
+          resourceId,
+        ])
+        .catch(() => undefined);
+      await pool.end();
+    }
+  },
+);
+
+test(
   'Postgres ephemeral path performs zero INSERT on token emit (constructive)',
   { skip },
   async () => {

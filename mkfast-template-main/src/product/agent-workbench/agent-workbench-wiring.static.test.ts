@@ -32,7 +32,12 @@ test('ComposerHome imports and mounts AgentWorkbenchHost with Thread-root props'
     home,
     /activeAgentThreadId = agentBinding\?\.threadId \?\? initialThreadId \?\? null/u
   );
-  assert.match(home, /explicitTaskId=\{initialTaskId/u);
+  // V31-12: a durable paid task recovered into the session outranks the URL
+  // hint, which stays as the fallback for a cold link.
+  assert.match(
+    home,
+    /explicitTaskId=\{session\.task\?\.taskId \?\? initialTaskId \?\? null\}/u
+  );
   assert.match(home, /initialThreadId\?:/u);
 });
 

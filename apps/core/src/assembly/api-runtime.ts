@@ -41,6 +41,7 @@ import { E2ECreditDetailFixture } from '../p1/credit-billing/e2e-credit-detail-f
 import { assertReferenceModelsArePriced } from '../p1/credit-billing/reference-number-model-validation.js';
 import { DueAwareHarnessRecommendationReader } from '../p1/due-delivery/recommendation-reader.js';
 import { TaskRecallDueProducer } from '../p1/due-delivery/task-recall-producer.js';
+import { fingerprintValue } from '../p1/job-runtime/job-contracts.js';
 import {
   StructuredComposerDestinationMapper,
   type ComposerDestinationMappingPort,
@@ -71,6 +72,7 @@ import {
   abandonReleasedHarnessReservation,
   createHarnessInterruptProtocolPort,
   createHarnessInterruptResumeBridge,
+  confirmationCardHoldExpired,
   DbosHarnessWorkflowStarter,
   DEFAULT_CONFIRMATION_CARD_TIMEOUT_SECONDS,
   registerHarnessDbosWorkflow,
@@ -86,8 +88,8 @@ import {
 import { requireHarnessFrozenPrompt } from '../p1/harness/langfuse-prompts.js';
 import { langfuseSenderFromEnv } from '../p1/harness/langfuse-sender.js';
 import {
+  createAuthoritativeExecutionPlanLiveFactsPorts,
   createResolveExecutionPlanLiveFacts,
-  type ExecutionPlanLiveFactsPorts,
 } from '../p1/harness/execution-plan-live-facts.js';
 import { InterruptProtocolService } from '../p1/harness/interrupt-protocol.js';
 import { PostgresNoteMediaAdmissionCoordinator } from '../p1/harness/note-media-admission.js';
@@ -115,6 +117,7 @@ import {
 import {
   DEFAULT_HOLD_RESERVATION_TTL_SECONDS,
   HarnessReservationSweeper,
+  type HarnessReservationSweep,
 } from '../p1/harness/reservation-sweeper.js';
 import {
   HarnessResumeReconciler,
@@ -191,7 +194,6 @@ import {
   ComposerPlanSessionCoordinator,
   PostgresAgentSessionStore,
   findActiveExitRun,
-  planCompilerRightsRevisionId,
   projectThreadToSession,
   resolveMakeSteeringGate,
 } from '../p1/agent-session/index.js';
@@ -398,91 +400,10 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       contextBundleRepository
     )
   );
-  const resolveExecutionRightsHeads: NonNullable<
-    ExecutionPlanLiveFactsPorts['resolveRightsHeads']
-  > = async ({ workspaceId, rightsRevisionRefs, snapshot }) => {
-    const plan = await marketingPlanStore.getRevision(
-      snapshot.planId,
-      snapshot.planRevision,
-    );
-    if (!plan) return [];
-    const assetIntentions = plan.revision.assetUsages.flatMap(
-      (usage) => {
-        if (!usage || typeof usage !== 'object' || Array.isArray(usage)) return [];
-        const intention = (usage as Record<string, unknown>).intention;
-        return typeof intention === 'string' ? [intention] : [];
-      },
-    );
-    const assetIds = assetIntentions.filter((value) =>
-      /^[A-Za-z0-9_.:-]{3,}$/u.test(value),
-    );
-    const platformCandidate = snapshot.deliverables.find(
-      (deliverable) => deliverable.platform,
-    )?.platform;
-    const platform =
-      platformCandidate === 'xiaohongshu' ||
-      platformCandidate === 'douyin' ||
-      platformCandidate === 'video_account'
-        ? platformCandidate
-        : undefined;
-    const resolved = await contentPackageRightsResolver.resolve({
-      workspaceId,
-      assetIds,
-      ...(platform ? { platform } : {}),
-    });
-    const knownAssetIds = resolved.knownAssetIds ?? [];
-    const unauthorizedAssetIds = resolved.unauthorizedAssetIds;
-    const currentRevisionId = planCompilerRightsRevisionId({
-      workspaceId,
-      knownAssetIds,
-      unauthorizedAssetIds,
-    });
-    return rightsRevisionRefs.map((frozenRevisionId) => ({
-      frozenRevisionId,
-      revisionId: currentRevisionId,
-      revoked: unauthorizedAssetIds.length > 0,
-    }));
-  };
-  const resolveExecutionFactHeads: NonNullable<
-    ExecutionPlanLiveFactsPorts['resolveFactHeads']
-  > = async ({ workspaceId, factRevisionRefs }) => {
-    const identities = await marketingIdentities.listActive(
-      workspaceId,
-      new Date().toISOString(),
-    );
-    return Promise.all(
-      factRevisionRefs.map(async (frozenRef) => {
-        const separator = frozenRef.lastIndexOf('@');
-        const prefix = separator > 0 ? frozenRef.slice(0, separator) : frozenRef;
-        const frozenRevision =
-          separator > 0 ? frozenRef.slice(separator + 1) : '';
-        if (prefix.startsWith('identity:')) {
-          const identityId = prefix.slice('identity:'.length);
-          const current = identities.find(
-            (identity) => identity.identityId === identityId,
-          );
-          const liveRevision = current ? String(current.version) : 'missing';
-          return {
-            factRevisionId: `${prefix}@${liveRevision}`,
-            materialPriceOrDateChanged: liveRevision !== frozenRevision,
-          };
-        }
-        if (prefix.startsWith('brief:')) {
-          const bundleId = prefix.slice('brief:'.length);
-          const current = await contextBundleRepository.get(
-            workspaceId,
-            bundleId,
-          );
-          const liveRevision = current ? String(current.revision) : 'missing';
-          return {
-            factRevisionId: `${prefix}@${liveRevision}`,
-            materialPriceOrDateChanged: liveRevision !== frozenRevision,
-          };
-        }
-        return { factRevisionId: frozenRef };
-      }),
-    );
-  };
+  // V31-12/V31-14: rights and fact heads come from one authoritative,
+  // fail-closed adapter (createAuthoritativeExecutionPlanLiveFactsPorts).
+  // The earlier plan-assetUsage / echoing resolvers were removed so a frozen
+  // ref can never be reported back as its own live head.
   // V31-18: production AgentMemoryPlatform — Postgres injection receipts + admin-config kill switches.
   const agentMemoryPlatform = new AgentMemoryPlatform(
     reuseMemoryService,
@@ -505,6 +426,14 @@ export async function startApi(env: NodeJS.ProcessEnv) {
   let composerDestinationMapper: ComposerDestinationMappingPort | undefined;
   let composerSubmissionCoordinator: CreationSubmissionCoordinator | undefined;
   let agentSemanticEventProjector: AgentSemanticEventProjector | undefined;
+  let e2eInterruptExpiryRunner:
+    | {
+        expire(input: {
+          workspaceId: string;
+          interruptId: string;
+        }): Promise<{ expired: true }>;
+      }
+    | undefined;
   // Pending-actions is an unconditional platform service (Z2-WIRING / #94 handoff).
   // Harness questions need the harness_runtime schema; approvals come from operations.
   const pendingActionsQuestionStore = harnessInteractionStore;
@@ -1299,8 +1228,14 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       // V31-14 (§23.4): mid-execution fence — rights revocation safe-stops
       // without re-charge; referenced price/date drift pauses with a prompt.
       fence: {
-        resolveLiveFacts: async ({ request }) =>
-          createResolveExecutionPlanLiveFacts({
+        resolveLiveFacts: async ({ request }) => {
+          const authoritative = createAuthoritativeExecutionPlanLiveFactsPorts({
+            facts: storeFactLedger,
+            identities: marketingIdentities,
+            request,
+            rights: contentPackageRightsResolver,
+          });
+          return createResolveExecutionPlanLiveFacts({
             async resolveQuoteHead({ workspaceId, quoteId }) {
               const quote = await productQuoteService.getQuote(
                 quoteId,
@@ -1312,14 +1247,14 @@ export async function startApi(env: NodeJS.ProcessEnv) {
                 revision: quote.revision,
               };
             },
-            resolveRightsHeads: resolveExecutionRightsHeads,
-            resolveFactHeads: resolveExecutionFactHeads,
+            ...authoritative,
           })({
             workflowId: request.workflowRevision
               ? String(request.workflowRevision)
               : '',
             request,
-          }),
+          });
+        },
       },
     });
     // Single wiring owner: wrap copy ports so image/video share the same
@@ -1342,7 +1277,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       imageProfile: IMAGE_MODEL_RECIPE_PROFILE,
       models: p1ModelSupplyService,
       noteAdmission: noteMediaAdmission,
-      noteEnhancementJudge: noteEnhancementJudgeResolverForMode(modelRuntime.mode),
+      noteEnhancementJudge: noteEnhancementJudgeResolverForMode(
+        env.APP_ENV === 'e2e' ? 'gateway' : modelRuntime.mode
+      ),
       noteSettings: notePlanSettings,
       now: () => new Date().toISOString(),
       runners: structuredNodeRunnerFactory,
@@ -1434,8 +1371,16 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         },
       },
       () => new Date().toISOString(),
-      // Resume CAS → DBOS recv re-injection (exactly-once send topic).
-      createHarnessInterruptResumeBridge()
+      // Resume CAS → durable decision close → DBOS recv re-injection.
+      createHarnessInterruptResumeBridge(undefined, harnessInteractions),
+      {
+        async project(candidate) {
+          if (!agentSemanticEventProjector) {
+            throw new Error('Agent semantic interrupt projector is unavailable.');
+          }
+          return agentSemanticEventProjector.project(candidate);
+        },
+      },
     );
     const harnessWorkflow = registerHarnessDbosWorkflow(
       harnessStages,
@@ -1450,6 +1395,22 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           resolveByWorkflow: (input) =>
             interruptProtocolService!.resolveByWorkflow(input),
           getById: (id) => interruptStore.getById(id),
+          async resolveAgentCoordinates({ workspaceId, workflowId }) {
+            const runId = `run:composer:${fingerprintValue({
+              workspaceId,
+              taskId: workflowId,
+            }).slice(0, 32)}`;
+            const run = await agentSessionStore.getRun({
+              resourceId: workspaceId,
+              runId,
+            });
+            if (!run) {
+              throw new Error(
+                `Agent Run ${runId} is unavailable for interrupt projection.`,
+              );
+            }
+            return { threadId: run.threadId, runId: run.runId };
+          },
         }),
         // V31-11: confirmation gate binds ExecutionConfirmationService; the
         // same credit operation id makes execution-time settlement a no-op
@@ -1489,21 +1450,25 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         // V31-12: DBOS pre-run re-verification of admitted ExecutionPlanSnapshot.
         executionPlanAdmission: executionPlanAdmissionService,
         // V31-14: production live fence reader (quote + rights heads).
-        resolveExecutionPlanLiveFacts: createResolveExecutionPlanLiveFacts({
-          async resolveQuoteHead({ workspaceId, quoteId }) {
-            const quote = await productQuoteService.getQuote(
-              quoteId,
-              workspaceId,
-            );
-            if (!quote) return null;
-            return {
-              quoteId,
-              revision: quote.revision,
-            };
-          },
-          resolveRightsHeads: resolveExecutionRightsHeads,
-          resolveFactHeads: resolveExecutionFactHeads,
-        }),
+        resolveExecutionPlanLiveFacts: async ({ workflowId, request }) => {
+          const authoritative = createAuthoritativeExecutionPlanLiveFactsPorts({
+            facts: storeFactLedger,
+            identities: marketingIdentities,
+            request,
+            rights: contentPackageRightsResolver,
+          });
+          return createResolveExecutionPlanLiveFacts({
+            async resolveQuoteHead({ workspaceId, quoteId }) {
+              const quote = await productQuoteService.getQuote(
+                quoteId,
+                workspaceId,
+              );
+              if (!quote) return null;
+              return { quoteId, revision: quote.revision };
+            },
+            ...authoritative,
+          })({ workflowId, request });
+        },
         refreshExecutionPlanLiveBindings: (input) =>
           planCompiler.refreshLiveBindings(input),
         // V31-14: force_legacy_five_stage kill switch (landed).
@@ -1658,14 +1623,67 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     );
     agentSemanticEventProjector = semanticProjectorForHarness;
     planCompiler.bindSemanticEventProjector(semanticProjectorForHarness);
+    if (!sessionAgentHarness) {
+      throw new Error(
+        'Production Composer requires the Agent Session runTurn assembly.',
+      );
+    }
     const composerPlanSession = new ComposerPlanSessionCoordinator(
       agentSessionStore,
       marketingPlanStore,
-      sessionAgentHarness ?? {
-        compilePlan: (input) => planCompiler.compile(input),
-        adjustPlan: (input) => planCompiler.adjust(input),
-      },
+      sessionAgentHarness,
       {
+        requireSessionTurn: true,
+        requireQuoteAuthority: true,
+        quoteAuthority: {
+          async resolveCurrent({ submission }) {
+            const ref = submission.snapshot.quote;
+            const quote = await productQuoteService.getQuote(
+              ref.id,
+              submission.snapshot.workspaceId,
+            );
+            if (!quote || quote.revision !== String(ref.revision) || !quote.expiresAt) {
+              throw new Error(
+                `ProductQuote ${ref.id}@${ref.revision} is missing, stale, or has no authority expiry.`,
+              );
+            }
+            return {
+              quoteRef: { id: quote.quoteId, revision: quote.revision },
+              expiresAt: quote.expiresAt,
+              summary: {
+                source: 'product_quote',
+                creditCost: quote.creditCost,
+                outputCount: quote.outputCount,
+              },
+            };
+          },
+          async reprice({ submission, merchantInstruction, quantity }) {
+            const quoteId = `plan-requote:${submission.task.id}:${fingerprintValue({
+              merchantInstruction,
+              quantity,
+            }).slice(0, 16)}`;
+            const build = await productQuoteAuthority.resolve({
+              workspaceId: submission.snapshot.workspaceId,
+              catalogModelId: submission.snapshot.catalogModel.id,
+              operation: submission.snapshot.operation,
+              quoteId,
+              quantity,
+            });
+            const quote = await productQuoteService.buildQuote(build);
+            if (!quote.expiresAt) {
+              throw new Error(`Repriced ProductQuote ${quote.quoteId} has no expiry.`);
+            }
+            return {
+              quoteRef: { id: quote.quoteId, revision: quote.revision },
+              expiresAt: quote.expiresAt,
+              summary: {
+                source: 'product_quote_reprice',
+                creditCost: quote.creditCost,
+                outputCount: quote.outputCount,
+              },
+            };
+          },
+        },
         // V31-21 P1-a: new submissions pin the current production release
         // (canary workspace-allowlist applies here). The pinned releaseId is
         // then frozen on the Run + ExecutionPlanSnapshot — rollback changes
@@ -1709,7 +1727,16 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         sourcePackages: sourceContentPackageAdmissionReader,
       }),
       productQuoteService,
-      composerPlanSession
+      composerPlanSession,
+      {
+        getDecision: (workspaceId, requestId) =>
+          executionConfirmationService.getDecisionForWorkspace(
+            workspaceId,
+            requestId,
+          ),
+        decide: (input) =>
+          executionConfirmationService.decideForWorkspace(input),
+      },
     );
     const pendingStartCoordinator = composerSubmissionCoordinator;
     await runIfPostgresSchemaStable(pool, async () => {
@@ -1769,22 +1796,99 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       billingCompensations,
       harnessBilling
     );
+    const reservationSweeperOptions = {
+      async expireHold(sweep: HarnessReservationSweep) {
+        const target = await harnessDecisions.readDecisionTarget(
+          sweep.workspaceId,
+          sweep.taskId
+        );
+        if (!target || target.question.questionId !== sweep.questionId) {
+          throw new Error(
+            `Expired hold ${sweep.questionId} is not the authoritative decision target.`
+          );
+        }
+        await harnessDecisions.submitCoreHoldExpired(
+          sweep.workspaceId,
+          sweep.taskId,
+          confirmationCardHoldExpired(target.question),
+          { resumeWorkflow: true },
+        );
+        await interruptProtocolService!.resolveByWorkflow({
+          workspaceId: sweep.workspaceId,
+          interruptId: target.question.questionId,
+          revision: target.question.workflowRevision,
+          source: 'core_hold_expired',
+        });
+      },
+      async reservationTtlSeconds() {
+        const revision = await adminConfigRepository.get(
+          'global',
+          '__global__',
+          HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY
+        );
+        return Number(
+          revision?.value ?? DEFAULT_HOLD_RESERVATION_TTL_SECONDS
+        );
+      },
+    };
     const reservationSweeper = new HarnessReservationSweeper(
       harnessInteractionStore,
       harnessBilling,
-      {
-        async reservationTtlSeconds() {
-          const revision = await adminConfigRepository.get(
-            'global',
-            '__global__',
-            HARNESS_RESERVATION_SWEEP_TTL_CONFIG_KEY
-          );
-          return Number(
-            revision?.value ?? DEFAULT_HOLD_RESERVATION_TTL_SECONDS
-          );
-        },
-      }
+      reservationSweeperOptions
     );
+    e2eInterruptExpiryRunner = {
+      async expire({ workspaceId, interruptId }) {
+        const pending = await interruptStore.getById(interruptId);
+        if (
+          !pending ||
+          pending.workspaceId !== workspaceId ||
+          pending.status !== 'pending'
+        ) {
+          throw new Error('Pending interrupt was not found for expiry.');
+        }
+        const taskId = pending.payload.workflowId;
+        const ttlSeconds =
+          await reservationSweeperOptions.reservationTtlSeconds();
+        const advancedNow = new Date(
+          Date.now() + (ttlSeconds + 1) * 1_000
+        );
+        const exactSweeper = new HarnessReservationSweeper(
+          harnessInteractionStore,
+          harnessBilling,
+          {
+            ...reservationSweeperOptions,
+            batchSize: 1,
+            now: () => advancedNow,
+          }
+        );
+        const outcome = await exactSweeper.runOnce({ workspaceId, taskId });
+        if (
+          outcome.claimed !== 1 ||
+          outcome.completed !== 1 ||
+          outcome.failed !== 0
+        ) {
+          throw new Error(
+            `Exact reservation expiry did not complete: ${JSON.stringify(outcome)}.`
+          );
+        }
+        const decision = await harnessDecisions.readDecisionTarget(
+          workspaceId,
+          taskId
+        );
+        const resolvedInterrupt = await interruptStore.getById(interruptId);
+        if (
+          decision?.status !== 'resolved' ||
+          decision.resolutionSource !== 'core_hold_expired' ||
+          decision.question.questionId !== interruptId ||
+          resolvedInterrupt?.status !== 'resolved'
+        ) {
+          throw new Error(
+            'Exact reservation expiry did not resolve the authoritative decision and typed interrupt.'
+          );
+        }
+        return { expired: true as const };
+      },
+    };
     let compensationRunning = false;
     const runCompensation = async () => {
       if (compensationRunning) return;
@@ -1796,6 +1900,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
             harnessSystemDefaults.runOnce(),
             billingCompensationWorker.runOnce(),
             reservationSweeper.runOnce(),
+            interruptProtocolService!.recoverUndelivered(),
           ]);
           for (const result of results) {
             if (result.status === 'rejected') {
@@ -1960,6 +2065,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           productBilling: productQuoteService,
           subscriptions: creditSubscriptionStore,
         })
+      : undefined,
+    e2eInterruptExpiryFixture: e2eFixtureEnabled
+      ? e2eInterruptExpiryRunner
       : undefined,
     e2eUserSelectedSkillFixture,
     e2eUserSelectedSkillEvidence,

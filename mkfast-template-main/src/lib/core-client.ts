@@ -19,6 +19,8 @@ import {
   workspaceCoreUpstreamPath,
   type WorkspaceComposerDestinationResource,
   type WorkspaceComposerSubmissionResource,
+  type WorkspaceComposerTaskReviseResource,
+  type WorkspaceComposerTaskStartResource,
   type WorkspaceAgentSemanticResource,
   type WorkspaceConfirmationDecisionResource,
   type WorkspaceHarnessTaskCollectionResource,
@@ -26,6 +28,7 @@ import {
   type WorkspaceHarnessInteractionResource,
   type WorkspaceHarnessProductMetricResource,
   type WorkspacePendingActionsResource,
+  type WorkspacePendingInterruptResource,
   type WorkspaceWorkflowEventResource,
 } from '@/lib/core-request';
 import { normalizeProductRole } from '@meiye/contracts';
@@ -129,8 +132,11 @@ export async function forwardWorkspaceCoreRequest(
     | 'p1/harness/recommendation'
     | WorkspaceComposerDestinationResource
     | WorkspaceComposerSubmissionResource
+    | WorkspaceComposerTaskReviseResource
+    | WorkspaceComposerTaskStartResource
     | WorkspaceAgentSemanticResource
     | WorkspacePendingActionsResource
+    | WorkspacePendingInterruptResource
     | WorkspaceHarnessTaskCollectionResource
     | WorkspaceHarnessDecisionResource
     | WorkspaceHarnessInteractionResource

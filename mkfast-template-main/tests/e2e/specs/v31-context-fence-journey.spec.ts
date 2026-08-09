@@ -6,16 +6,25 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import {
+  productState,
   seedComposerInlineAuthorize,
   seedConfirmedStore,
 } from '../fixtures/product';
 import { selectComposerLens } from '../fixtures/ui-journey';
 
 /**
- * V31-14 / V3.1 §37.4-E/F — Context Fence journeys (spec only).
+ * V31-14 / V3.1 §37.4-E — Plan stale journey.
  *
- * - §37.4-E Plan stale after confirm (fact/rights/cost drift → reconfirm)
- * - §37.4-F material rights revoke mid-execution → safe stop, no double charge
+ * §37.4-E original text: 确认前价格 revision 变化、显示 diff、旧确认不可提交、
+ * 重新确认后执行. The drift is a real append-only store-fact write (not an
+ * intent sentence hinting at one), and the three consequences are asserted
+ * separately: the plan diff must render the changed section, the superseded
+ * confirmation authority must refuse a second decision, and delivery may only
+ * happen after a fresh confirmation request with a different requestId.
+ *
+ * §37.4-F moved to `v31-rights-revocation-journey.spec.ts` — its old form here
+ * asserted the absence of the words「重复扣费」on the page, which is unrelated
+ * to whether a second debit happened.
  *
  * Real browser run is owned by the merge controller. Do not run full e2e here.
  */
@@ -24,39 +33,149 @@ async function openCustomizedCreate(page: Page) {
   await page.goto('/dashboard');
   // image_text submissions fail closed (400 INVALID_STATE) without a
   // case_image workspace source — seed one first, as the merchant would.
-  await seedComposerInlineAuthorize(page, {
+  const authorized = await seedComposerInlineAuthorize(page, {
     fileName: `v31-journey-${crypto.randomUUID()}.png`,
   });
   await selectComposerLens(page, 'image_text');
   await expect(page.getByTestId('composer-home')).toBeVisible();
+  return authorized;
 }
 
-/**
- * D-043 progressive fact confirm: intents that name missing/conflicting key
- * facts (price, deadline, …) suspend on a server-driven 「确认本次创作」 gate
- * before the run continues. The card is Core-rendered (no static testid in
- * web src) — anchor on its accessible name. Click through when it appears so
- * the journey reaches the plan surfaces behind it.
- */
-async function confirmCreationGateIfPresent(page: Page) {
-  const confirm = page.getByRole('button', { name: '确认并开始' });
-  try {
-    await confirm.waitFor({ state: 'visible', timeout: 45_000 });
-  } catch {
-    return; // No gate for this intent — run continues directly.
+async function submitAndStartLivingPlan(page: Page) {
+  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    timeout: 60_000,
+  });
+  const submit = page.getByTestId('composer-submit');
+  await expect(submit).toBeEnabled({ timeout: 60_000 });
+  const submission = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  await submit.click();
+  const submissionResponse = await submission;
+  expect(submissionResponse.ok(), await submissionResponse.text()).toBeTruthy();
+
+  await expect(
+    page.getByTestId('agent-plan-section-deliverables')
+  ).toContainText(/3\s*页/u, { timeout: 120_000 });
+  const start = page.getByTestId('agent-commit-strip-start');
+  await expect(start).toBeEnabled({ timeout: 120_000 });
+  const startResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      /\/api\/core\/p1\/composer\/tasks\/[^/]+\/start$/u.test(
+        new URL(response.url()).pathname
+      ),
+    { timeout: 120_000 }
+  );
+  await start.click();
+  expect((await startResponse).ok()).toBeTruthy();
+}
+
+async function changeConfirmedPriceFact(page: Page) {
+  const state = await productState(page);
+  const store = state.store;
+  const project = store?.projects.find(
+    ({ id }) => id === 'project-grounded-creation'
+  );
+  if (store?.revision === undefined || !project) {
+    throw new Error('Confirmed store project is missing before price drift');
   }
-  await confirm.click();
+  await page.evaluate(
+    async ({ project: confirmedProject, storeRevision, workspaceId }) => {
+      const capturedAt = new Date().toISOString();
+      const batchId = `v31-price-drift-${crypto.randomUUID()}`;
+      const candidateId = `${batchId}:price`;
+      const response = await fetch('/api/core/p1/commands', {
+        body: JSON.stringify({
+          module: 'asset-memory',
+          action: 'finalize_store_intake',
+          payload: {
+            batch: {
+              batchId,
+              candidates: [
+                {
+                  candidateId,
+                  fact: {
+                    effectiveFrom: capturedAt,
+                    expiresAt: null,
+                    key: `service.${confirmedProject.id}.price`,
+                    kind: 'price',
+                    scope: { storeId: workspaceId },
+                    source: {
+                      capturedAt,
+                      kind: 'user_confirmation',
+                      referenceId: batchId,
+                    },
+                    value: { amount: 269, currency: 'CNY' },
+                  },
+                  objectKind: 'store_fact',
+                  status: 'pending',
+                },
+              ],
+              source: {
+                capabilityStatus: 'assisted',
+                capturedAt,
+                example: false,
+                kind: 'manual',
+                referenceId: batchId,
+                sourceId: `${batchId}:source`,
+                sourceWorkspaceId: workspaceId,
+              },
+              summary: 'V31 price drift after creation confirmation.',
+              taskId: `${batchId}:task`,
+            },
+            confirmations: [
+              {
+                candidateId,
+                expectedFactRevision: 1,
+                factId: `store-project:${confirmedProject.id}:price`,
+              },
+            ],
+            profilePatch: {
+              expectedRevision: storeRevision,
+              projects: {
+                upsert: [
+                  {
+                    ...confirmedProject,
+                    price: 269,
+                    priceValidUntil: confirmedProject.priceValidUntil ?? null,
+                  },
+                ],
+              },
+            },
+          },
+        }),
+        credentials: 'same-origin',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': `v31-price-drift-${crypto.randomUUID()}`,
+        },
+        method: 'POST',
+      });
+      if (!response.ok) {
+        throw new Error(`Price drift injection failed: ${response.status}`);
+      }
+    },
+    {
+      project,
+      storeRevision: store.revision,
+      workspaceId: state.workspaceId,
+    }
+  );
 }
 
-test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
+test.describe('V31-14 Context Fence journey (§37.4-E)', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));
 
-  test('§37.4-E plan stale shows reconfirm surface (not silent continue)', async ({
+  test('a price revision that lands before confirmation shows a diff, voids the old confirmation, and only executes after a fresh one', async ({
     page,
     request,
   }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(480_000);
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
@@ -64,59 +183,115 @@ test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
 
     await page
       .getByTestId('composer-intent-input')
-      .fill('帮我按确认方案做图文，稍后我会改价格事实。');
-    await page.getByTestId('composer-submit').click();
-    await confirmCreationGateIfPresent(page);
+      .fill('帮我按已确认的门店资料做三页图文。');
+    await submitAndStartLivingPlan(page);
 
-    // Seam: when Core marks plan stale, UI must surface reconfirm / diff —
-    // never silently replace the confirmed plan. Production surfaces carry the
-    // agent- prefix (agent-plan-diff renders adjustments; the commit strip
-    // holds start behind `plan_stale`).
-    const staleSurface = page
-      .getByTestId('agent-plan-diff')
-      .or(page.getByText(/方案已变化|需要重新确认|事实有更新/));
+    const executionConfirmation = page.getByTestId(
+      'execution-confirmation-interaction-card'
+    );
+    await expect(executionConfirmation).toBeVisible({ timeout: 120_000 });
+    const staleRequestId =
+      await executionConfirmation.getAttribute('data-request-id');
+    expect(staleRequestId).toBeTruthy();
+    const executionInterrupt = page
+      .getByTestId('agent-pending-interrupt')
+      .filter({ hasText: /是否按当前方案开始生成/u });
+    await expect(executionInterrupt).toBeVisible({ timeout: 120_000 });
 
-    // Without live drift injection fixtures, this assertion is soft:
-    // either stale surface appears or the living plan / question interaction
-    // remains the merchant-visible truth (no silent scheme swap).
-    const planOrInterrupt = page
-      .getByTestId('agent-living-plan')
-      .or(page.getByTestId('agent-commit-strip'))
-      .or(page.getByTestId('ask-merchant-group-card'))
-      .or(page.getByTestId('composer-question-card'));
+    // §37.4-E leg 1: the referenced price really changes before confirmation.
+    await changeConfirmedPriceFact(page);
+    await executionInterrupt.getByTestId('agent-interrupt-accept').click();
 
-    await expect(planOrInterrupt.or(staleSurface).first()).toBeVisible({
-      timeout: 120_000,
+    // §37.4-E leg 2: the merchant sees what changed, in the section that
+    // carries store facts (§5.3 五节: 事实与素材).
+    // `PlanDiff` returns null unless a section body really changed, so its
+    // visibility already means the refreshed revision differs from the frozen
+    // one. The section pair below is not a weak either/or over two product
+    // states: both are the same state — 「the changed price is on screen」 —
+    // and which of the two carries it depends only on whether the refreshed
+    // fact ref moved 事实与素材's body or the requote moved 预计积分与时长's.
+    // Every other section is excluded.
+    const diff = page.getByTestId('agent-plan-diff');
+    await expect(diff).toBeVisible({ timeout: 180_000 });
+    const changedSectionKeys = await diff
+      .locator('[data-testid="agent-plan-diff-entry"]')
+      .evaluateAll((nodes) =>
+        nodes.map((node) => node.getAttribute('data-section-key'))
+      );
+    expect(
+      changedSectionKeys,
+      'the drifted price must be readable in the facts or the cost section'
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^(?:facts_assets|cost_duration)$/u),
+      ])
+    );
+    const fromRevision = Number(await diff.getAttribute('data-from-revision'));
+    const toRevision = Number(await diff.getAttribute('data-to-revision'));
+    expect(Number.isSafeInteger(fromRevision)).toBe(true);
+    expect(toRevision).toBeGreaterThan(fromRevision);
+
+    // §37.4-E leg 3: execution needs a *new* confirmation authority, and the
+    // superseded one can no longer authorize anything.
+    const freshConfirmation = page.locator(
+      `[data-testid="execution-confirmation-interaction-card"]:not([data-request-id="${staleRequestId}"])`
+    );
+    await expect(freshConfirmation).toBeVisible({ timeout: 180_000 });
+    const freshRequestId =
+      await freshConfirmation.getAttribute('data-request-id');
+    expect(freshRequestId).toBeTruthy();
+    expect(freshRequestId).not.toBe(staleRequestId);
+    await expect(page.getByTestId('composer-delivery-card')).toHaveCount(0);
+
+    const staleDecision = await page.request.post(
+      `/api/core/p1/confirmation-requests/${encodeURIComponent(
+        staleRequestId!
+      )}/decide`,
+      {
+        data: {
+          decision: 'confirmed',
+          decisionId: `stale-confirm:${staleRequestId}`,
+        },
+      }
+    );
+    expect(staleDecision.status(), await staleDecision.text()).toBe(409);
+
+    // §37.4-E leg 4: 重新确认后执行.
+    const freshInterrupt = page
+      .getByTestId('agent-pending-interrupt')
+      .filter({ hasText: /是否按当前方案开始生成/u });
+    await expect(freshInterrupt).toBeVisible({ timeout: 180_000 });
+    await expect(freshInterrupt).toHaveAttribute(
+      'data-interrupt-schema-version',
+      'interrupt-payload/v1'
+    );
+    const freshInterruptId =
+      await freshInterrupt.getAttribute('data-interrupt-id');
+    const freshInterruptRevision = await freshInterrupt.getAttribute(
+      'data-interrupt-revision'
+    );
+    expect(freshInterruptRevision).toMatch(/^\d+$/u);
+    await page.reload();
+    await expect(freshInterrupt).toHaveAttribute(
+      'data-interrupt-id',
+      freshInterruptId!
+    );
+    await expect(freshInterrupt).toHaveAttribute(
+      'data-interrupt-revision',
+      freshInterruptRevision!
+    );
+    await freshInterrupt.getByTestId('agent-interrupt-accept').click();
+    await expect(freshInterrupt).toHaveCount(0, { timeout: 180_000 });
+
+    const noteStyleInterrupt = page
+      .getByTestId('agent-pending-interrupt')
+      .filter({ hasText: /两种图文方向/u });
+    await expect(noteStyleInterrupt).toBeVisible({ timeout: 180_000 });
+    await noteStyleInterrupt.getByTestId('agent-interrupt-accept').click();
+    await expect(noteStyleInterrupt).toHaveCount(0, { timeout: 180_000 });
+
+    await expect(page.getByTestId('composer-delivery-card')).toBeVisible({
+      timeout: 420_000,
     });
-  });
-
-  test('§37.4-F rights revoke stops safely without double charge copy', async ({
-    page,
-    request,
-  }) => {
-    test.setTimeout(240_000);
-    const user = await registerE2EUser(request);
-    await loginByForm(page, user);
-    await seedConfirmedStore(page);
-    await openCustomizedCreate(page);
-
-    await page
-      .getByTestId('composer-intent-input')
-      .fill('用门店授权素材做一组笔记配图。');
-    await page.getByTestId('composer-submit').click();
-    await confirmCreationGateIfPresent(page);
-
-    // Seam contract for fail-closed rights fence: the run must stay observable
-    // (activity / narrative / one question), and merchant-facing language must
-    // not promise a second charge; stop/pause messaging is acceptable.
-    const stopOrHold = page
-      .getByText(/授权已撤销|安全停止|不会重复扣费|暂停/)
-      .or(page.getByTestId('ask-merchant-group-card'))
-      .or(page.getByTestId('composer-question-card'))
-      .or(page.getByTestId('agent-activity-line'))
-      .or(page.getByTestId('agent-narrative-line'));
-
-    await expect(stopOrHold.first()).toBeVisible({ timeout: 120_000 });
-    await expect(page.getByText(/再次扣费|重复扣费/)).toHaveCount(0);
   });
 });

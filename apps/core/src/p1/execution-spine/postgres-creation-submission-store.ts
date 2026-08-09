@@ -442,6 +442,19 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
       : { kind: "conflict" as const };
   }
 
+  async readByTask(input: { workspaceId: string; taskId: string }) {
+    const result = await this.pool.query<{ submission: unknown }>(
+      `SELECT submission
+         FROM execution_spine.creation_submissions
+        WHERE workspace_id = $1 AND task_id = $2
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [input.workspaceId, input.taskId],
+    );
+    const row = result.rows[0];
+    return row ? storedSubmission(row.submission) : null;
+  }
+
   async claim(input: CreationSubmissionStoreClaim) {
     const client = await this.pool.connect();
     let inTransaction = false;
@@ -515,6 +528,8 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     workspaceId: string;
     submissionId: string;
     freeze: CreationSubmissionRecord['executionPlanFreeze'];
+    quoteRef?: CreationSubmissionRecord['snapshot']['quote'];
+    credits?: number;
     confirmationDispatch?: CreationSubmissionRecord['confirmationDispatch'];
   }) {
     if (!input.freeze) {
@@ -523,16 +538,26 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     const result = await this.pool.query<{ submission: unknown }>(
       `UPDATE execution_spine.creation_submissions
           SET submission = jsonb_set(
+              jsonb_set(
                 jsonb_set(
-                  submission,
-                  '{executionPlanFreeze}',
-                  $3::jsonb,
+                  jsonb_set(
+                    submission,
+                    '{executionPlanFreeze}',
+                    $3::jsonb,
+                    true
+                  ),
+                  '{confirmationDispatch}',
+                  $4::jsonb,
                   true
                 ),
-                '{confirmationDispatch}',
-                $4::jsonb,
+                '{snapshot,quote}',
+                COALESCE($5::jsonb, submission#>'{snapshot,quote}'),
                 true
               ),
+              '{usageReservation,credits}',
+              COALESCE($6::jsonb, submission#>'{usageReservation,credits}'),
+              true
+            ),
               updated_at = clock_timestamp()
         WHERE workspace_id = $1
           AND id = $2
@@ -546,6 +571,10 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
           AND (
             submission->'executionPlanFreeze' IS NULL
             OR submission->'executionPlanFreeze' = $3::jsonb
+            OR (
+              submission#>>'{executionPlanFreeze,planId}' = $7
+              AND (submission#>>'{executionPlanFreeze,planRevision}')::integer < $8
+            )
           )
         RETURNING submission`,
       [
@@ -553,6 +582,10 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
         input.submissionId,
         JSON.stringify(input.freeze),
         JSON.stringify(input.confirmationDispatch ?? null),
+        input.quoteRef ? JSON.stringify(input.quoteRef) : null,
+        input.credits !== undefined ? JSON.stringify(input.credits) : null,
+        input.freeze.planId,
+        input.freeze.planRevision,
       ],
     );
     const row = result.rows[0];

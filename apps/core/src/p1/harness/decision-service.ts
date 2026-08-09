@@ -76,6 +76,8 @@ export interface HarnessDecisionStore {
       | 'core_timeout'
       | 'core_hold_expired'
       | 'late_answer';
+    /** External expiry workers must wake the DBOS recv after persistence. */
+    resumeWorkflow?: boolean;
   }): Promise<{
     outcome:
       | 'created'
@@ -250,12 +252,14 @@ export class HarnessDecisionService {
     workspaceId: string,
     taskId: string,
     input: StructuredDecisionInput,
+    options?: { resumeWorkflow?: boolean },
   ) {
     const command = structuredDecisionInputSchema.parse(input);
     try {
       return await this.persistAndDispatch({
         command,
         mode: 'core_hold_expired',
+        resumeWorkflow: options?.resumeWorkflow === true,
         target: await this.readTarget(workspaceId, taskId),
         taskId,
         workspaceId,
@@ -281,11 +285,19 @@ export class HarnessDecisionService {
       | 'core_timeout'
       | 'core_hold_expired'
       | 'late_answer';
+    resumeWorkflow?: boolean;
     target: Awaited<ReturnType<HarnessDecisionService['readTarget']>>;
     taskId: string;
     workspaceId: string;
   }) {
-    const { command, mode, target, taskId, workspaceId } = input;
+    const {
+      command,
+      mode,
+      resumeWorkflow = false,
+      target,
+      taskId,
+      workspaceId,
+    } = input;
     const pending = target?.question ?? null;
     if (
       pending?.questionId === command.questionId &&
@@ -330,6 +342,7 @@ export class HarnessDecisionService {
       event,
       trace,
       mode,
+      ...(resumeWorkflow ? { resumeWorkflow: true } : {}),
     });
     if (result.outcome !== 'created' && result.outcome !== 'replayed') {
       throw decisionConflict(result.outcome);
@@ -373,7 +386,7 @@ export class HarnessDecisionService {
               workspaceId,
             });
           }
-        } else if (mode === 'decision') {
+        } else if (mode === 'decision' || resumeWorkflow) {
           await this.workflow.resume(workspaceId, taskId, persistedCommand);
         }
         if (

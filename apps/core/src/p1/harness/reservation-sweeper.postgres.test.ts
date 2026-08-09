@@ -21,7 +21,15 @@ test(
     const expiredTaskId = `expired-hold-${suffix}`;
     const currentTaskId = `current-hold-${suffix}`;
     const continueTaskId = `continue-${suffix}`;
-    const taskIds = [expiredTaskId, currentTaskId, continueTaskId];
+    const scopedTaskId = `scoped-${suffix}`;
+    const scopedOtherTaskId = `scoped-other-${suffix}`;
+    const taskIds = [
+      expiredTaskId,
+      currentTaskId,
+      continueTaskId,
+      scopedTaskId,
+      scopedOtherTaskId,
+    ];
     const runtimeIds = taskIds.map((taskId) =>
       harnessRuntimeId(workspaceId, taskId),
     );
@@ -39,10 +47,24 @@ test(
             heldSince:
               taskId === currentTaskId
                 ? '2026-07-27T12:00:00.000Z'
+                : taskId === scopedTaskId || taskId === scopedOtherTaskId
+                  ? '2026-07-27T13:00:00.000Z'
                 : '2026-07-25T00:00:00.000Z',
           }),
         ),
       );
+
+      const exactClaim = await store.claimBatch({
+        expiresBefore: '2026-07-28T00:00:00.000Z',
+        limit: 20,
+        taskId: scopedTaskId,
+        workspaceId,
+      });
+      assert.deepEqual(
+        exactClaim.map(({ taskId }) => taskId),
+        [scopedTaskId],
+      );
+      await store.markFailed(exactClaim[0]!, 'scoped claim proof', 'refund');
 
       const claimed = await store.claimBatch({
         expiresBefore: '2026-07-26T00:00:00.000Z',

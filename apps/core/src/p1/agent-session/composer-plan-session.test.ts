@@ -122,6 +122,300 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
   );
 });
 
+test('Composer production seam runs Session intent before PlanCompiler and paid Make stays waiting', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const calls: string[] = [];
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    async runComposerTurn(input) {
+      calls.push(`turn:${input.authority.progressiveLevel.lens}`);
+      assert.equal(input.authority.knownFields.includes('rights'), true);
+      return {
+        decision: {
+          merchantMessage: '已识别为图文计划',
+          action: {
+            kind: 'propose_plan',
+            proposal: {
+              goalNarrative: '以门店授权素材制作图文',
+              recommendedDeliverables: [
+                { carrier: 'note', platform: 'xiaohongshu', quantity: 3 },
+              ],
+            },
+          },
+          evidenceRefs: [],
+          assumptions: [],
+        },
+      } as never;
+    },
+    async compilePlan(input) {
+      calls.push('compile');
+      assert.deepEqual(input.quoteRefHint, {
+        id: 'quote-task-session-first',
+        revision: 'quote-r1',
+      });
+      return compiler.compile(input);
+    },
+    async adjustPlan(input) {
+      calls.push('adjust');
+      return compiler.adjust(input);
+    },
+  });
+
+  const binding = await coordinator.prepare({
+    submission: record('task-session-first', '为夏日护理做 6 页图文'),
+  });
+
+  assert.deepEqual(calls, ['turn:note', 'compile']);
+  assert.equal(binding.makeReady, false);
+  const run = await sessions.getRun({
+    resourceId: 'workspace-1',
+    runId: binding.runId,
+  });
+  assert.equal(run?.status, 'running');
+});
+
+test('production Composer assembly fails closed when Session runTurn is missing', () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+
+  assert.throws(
+    () =>
+      new ComposerPlanSessionCoordinator(
+        sessions,
+        plans,
+        {
+          compilePlan: (input) => compiler.compile(input),
+          adjustPlan: (input) => compiler.adjust(input),
+        },
+        { requireSessionTurn: true },
+      ),
+    /requires Session runTurn/u,
+  );
+});
+
+test('ask_merchant waits for a clarification answer and never fallback-compiles', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  let turn = 0;
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    async runComposerTurn(input) {
+      turn += 1;
+      if (turn === 1) {
+        return {
+          decision: {
+            merchantMessage: '需要确认页数',
+            action: { kind: 'ask_merchant', question: '需要几页？' },
+            evidenceRefs: [],
+            assumptions: [],
+          },
+        } as never;
+      }
+      assert.equal(input.merchantMessage, '4 页');
+      return {
+        decision: {
+          merchantMessage: '已确认',
+          action: {
+            kind: 'propose_plan',
+            proposal: {
+              goalNarrative: '四页图文',
+              recommendedDeliverables: [
+                { carrier: 'note', platform: 'xiaohongshu', quantity: 4 },
+              ],
+            },
+          },
+          evidenceRefs: [],
+          assumptions: [],
+        },
+      } as never;
+    },
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+  const submission = record('task-clarification', '做一组图文');
+  const waiting = await coordinator.prepare({ submission });
+
+  assert.equal(await plans.getLatest(`plan:workspace-1:${waiting.threadId}`), null);
+  assert.equal(Boolean(submission.executionPlanFreeze), false);
+  assert.equal(
+    (await sessions.getRun({ resourceId: 'workspace-1', runId: waiting.runId }))
+      ?.status,
+    'waiting',
+  );
+
+  await coordinator.answerClarification({ submission, merchantAnswer: '4 页' });
+  assert.equal(submission.executionPlanFreeze?.deliverables[0]?.quantity, 4);
+});
+
+test('system-only block and empty decision never fallback-compile a plan', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const results = [
+    {
+      decision: null,
+      systemOnlyBlock: {
+        blocked: true,
+        gateId: 'system-only',
+        reason: 'system-only proposal',
+        nextAction: 'ask_merchant',
+      },
+    },
+    { decision: null, systemOnlyBlock: null },
+  ];
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    async runComposerTurn() {
+      return results.shift() as never;
+    },
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+
+  for (const taskId of ['task-system-block', 'task-empty-decision']) {
+    const submission = record(taskId, '做一组图文');
+    const binding = await coordinator.prepare({ submission });
+    assert.equal(Boolean(submission.executionPlanFreeze), false);
+    assert.equal(
+      (await sessions.getRun({ resourceId: 'workspace-1', runId: binding.runId }))
+        ?.status,
+      'waiting',
+    );
+  }
+});
+
+test('revise recompiles six pages into four units and binds a fresh ProductQuote', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const ports = createFixturePlanCompilerPorts();
+  ports.quote = {
+    async resolveQuote(input) {
+      assert.ok(input.quoteResolutionHint);
+      return input.quoteResolutionHint;
+    },
+  };
+  const compiler = new PlanCompiler({ store: plans, ports });
+  const coordinator = new ComposerPlanSessionCoordinator(
+    sessions,
+    plans,
+    {
+      async runComposerTurn() {
+        return {
+          decision: {
+            merchantMessage: '六页方案',
+            action: {
+              kind: 'propose_plan',
+              proposal: {
+                goalNarrative: '六页图文',
+                recommendedDeliverables: [
+                  { carrier: 'note', platform: 'xiaohongshu', quantity: 6 },
+                ],
+              },
+            },
+            evidenceRefs: [],
+            assumptions: [],
+          },
+        } as never;
+      },
+      compilePlan: (input) => compiler.compile(input),
+      adjustPlan: (input) => compiler.adjust(input),
+    },
+    {
+      requireSessionTurn: true,
+      requireQuoteAuthority: true,
+      quoteAuthority: {
+        async resolveCurrent() {
+          return {
+            quoteRef: { id: 'product-quote-6', revision: 'r6' },
+            expiresAt: '2026-08-09T10:00:00.000Z',
+          };
+        },
+        async reprice(input) {
+          assert.equal(input.quantity, 4);
+          return {
+            quoteRef: { id: 'product-quote-4', revision: 'r4' },
+            expiresAt: '2026-08-09T11:00:00.000Z',
+            summary: { creditCost: 4 },
+          };
+        },
+      },
+    },
+  );
+  const submission = record('task-real-four-pages', '先做 6 页图文');
+  const binding = await coordinator.prepare({ submission });
+  await coordinator.revisePrepared({
+    submission,
+    planRevision: 1,
+    merchantInstruction: '只做小红书，减到 4 页',
+  });
+
+  const freeze = submission.executionPlanFreeze!;
+  assert.equal(freeze.planRevision, 2);
+  assert.equal(freeze.deliverables[0]?.quantity, 4);
+  assert.equal(
+    freeze.executionPlan.units.filter((unit) => unit.unitType === 'note.generate')
+      .length,
+    4,
+  );
+  assert.deepEqual(freeze.quoteRef, { id: 'product-quote-4', revision: 'r4' });
+  assert.equal(submission.snapshot.quote.id, 'product-quote-4');
+  assert.equal(submission.usageReservation.credits, 4);
+  assert.equal(binding.makeReady, false);
+});
+
+test('explicit start fails closed when the latest plan has unauthorized assets', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const ports = createFixturePlanCompilerPorts();
+  ports.rights = {
+    async resolveRights() {
+      return {
+        rightsSummary: { unauthorizedAssetIds: ['asset-case-1'] },
+        rightsRevisionIds: ['rights-denied-r1'],
+        assetUsages: [],
+        factUsages: [],
+        blocked: true,
+      };
+    },
+  };
+  const compiler = new PlanCompiler({ store: plans, ports });
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+  const submission = record('task-rights-denied', '使用门店素材制作图文');
+  const binding = await coordinator.prepare({ submission });
+
+  await assert.rejects(
+    () =>
+      coordinator.completeExplicitStart({
+        submission,
+        planRevision: submission.executionPlanFreeze!.planRevision,
+      }),
+    /latest plan is blocked/u,
+  );
+  assert.equal(
+    (await sessions.getRun({
+      resourceId: submission.snapshot.workspaceId,
+      runId: binding.runId,
+    }))?.status,
+    'completed',
+  );
+});
+
 test('a continuation Thread is resolved inside the submission workspace', async () => {  const sessions = new MemoryAgentSessionStore();
   const plans = new MemoryMarketingPlanStore();
   const compiler = new PlanCompiler({
@@ -524,6 +818,110 @@ test('paid admission creates one pending request before Make and carries the dur
   );
   assert.equal(starter.requests[0]?.executionPlanSnapshot, undefined);
   assert.ok(starter.requests[0]?.pendingExecutionPlanSnapshot);
+});
+
+test('Campaign second paid Work creates an independent confirmation request', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({ store: plans, ports: createFixturePlanCompilerPorts() });
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+  const works = [record('task-campaign-1', '第一周'), record('task-campaign-2', '第二周')];
+  for (const [index, submission] of works.entries()) {
+    submission.executionConfirmationContext = {
+      campaignPlanRef: { id: 'campaign-plan-1', revision: 2 },
+      workOrdinal: index + 1,
+      approvalScope: 'single_work',
+    };
+    await coordinator.prepare({ submission });
+  }
+  const authority = new MemoryConfirmationAuthorityStore();
+  const requests = new MemoryExecutionConfirmationRequestStore();
+  const ledger = new MemoryCreditLedger();
+  ledger.grant({
+    id: 'campaign-lot',
+    workspaceId: 'workspace-1',
+    credits: 40,
+    expirationDate: '2026-09-01T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+    sourceRef: 'campaign',
+    createdAt: TS,
+  });
+  const service = new ExecutionConfirmationService(
+    requests,
+    new MemoryPlanConfirmationDecisionStore(),
+    confirmationCreditPortFromMemoryLedger(ledger),
+  );
+  const confirmation = new ConfirmationAuthorityAssembler(
+    service,
+    authority,
+    {
+      async getQuote(quoteId, workspaceId) {
+        assert.equal(workspaceId, 'workspace-1');
+        const taskId = quoteId.replace(/^quote-/u, '');
+        const current = await authority.getCurrentByWorkflowId(taskId);
+        return {
+          quoteId,
+          revision: current!.quoteRef.revision,
+          taskId,
+          creditCost: 8,
+          failureRefundsCredits: true,
+        } as never;
+      },
+    },
+    { clock: () => new Date(TS) },
+  );
+  const starter = new RecordingStarter();
+  const admission = new HarnessTaskAdmissionService(
+    new MemoryHarnessRegistry(),
+    starter,
+    new MemoryPromptResolver(),
+    undefined,
+    undefined,
+    { async resolve() { return copyRoute(); } },
+    undefined,
+    undefined,
+    new ExecutionPlanAdmissionService(new MemoryExecutionPlanSnapshotStore()),
+    {
+      createRequest: (input) => confirmation.createRequest(input),
+      putCurrent: (input) => authority.putCurrent(input),
+    },
+  );
+  const stage = new CreationStagePort({ submit: (input) => admission.submit(input) });
+
+  await stage.start(works[0]!);
+  await stage.start(works[1]!);
+
+  const requestIds = starter.requests.map(
+    (request) => request.executionConfirmationRequestId,
+  );
+  assert.equal(requestIds.length, 2);
+  assert.ok(requestIds[0] && requestIds[1]);
+  assert.notEqual(requestIds[0], requestIds[1]);
+  const stored = await Promise.all(
+    requestIds.map(async (requestId) => (await service.getRequest(requestId!))!.request),
+  );
+  assert.deepEqual(
+    stored.map(({ workOrdinal, approvalScope, campaignPlanRef }) => ({
+      workOrdinal,
+      approvalScope,
+      campaignPlanRef,
+    })),
+    [
+      {
+        workOrdinal: 1,
+        approvalScope: 'single_work',
+        campaignPlanRef: { id: 'campaign-plan-1', revision: 2 },
+      },
+      {
+        workOrdinal: 2,
+        approvalScope: 'single_work',
+        campaignPlanRef: { id: 'campaign-plan-1', revision: 2 },
+      },
+    ],
+  );
 });
 
 function copyRecord(

@@ -29,6 +29,40 @@ function authority(credits = 5) {
 }
 
 describe('CatalogProductQuoteAuthority', () => {
+  it('owns the absolute quote expiry instead of leaving it to PlanCompiler', async () => {
+    const fixed = new Date('2026-08-09T08:00:00.000Z');
+    const quoteAuthority = new CatalogProductQuoteAuthority(
+      {
+        async getCatalog() {
+          return {
+            models: [
+              {
+                id: 'copy-model',
+                creditPricing: {
+                  'copy.generate': {
+                    creditCost: 1,
+                    failureRefundsCredits: true,
+                  },
+                },
+              },
+            ],
+            revisionId: 'catalog-expiry-r1',
+          };
+        },
+      },
+      () => fixed,
+    );
+
+    const quote = await quoteAuthority.resolve({
+      catalogModelId: 'copy-model',
+      operation: 'copy.generate',
+      quantity: 1,
+      quoteId: 'quote-expiry-1',
+      workspaceId: 'workspace-1',
+    });
+    assert.equal(quote.expiresAt, '2026-08-09T09:00:00.000Z');
+  });
+
   it('quotes every published credit operation from its own price and refund policy', async () => {
     const operations = [
       'copy.generate',

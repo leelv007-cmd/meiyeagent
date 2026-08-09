@@ -75,6 +75,12 @@ export type AgentWorkstreamProps = {
   ) => void | Promise<void>;
   onSelfReportIgnore?: () => void | Promise<void>;
   className?: string;
+  interruptError?: string | null;
+  resumingInterruptId?: string | null;
+  onInterruptResume?: (
+    interrupt: InterruptProjection,
+    type: 'accept' | 'reject'
+  ) => void | Promise<void>;
 };
 
 export function AgentWorkstream({
@@ -97,6 +103,9 @@ export function AgentWorkstream({
   onSelfReportChip,
   onSelfReportIgnore,
   className,
+  interruptError = null,
+  resumingInterruptId = null,
+  onInterruptResume,
 }: AgentWorkstreamProps) {
   const layout = resolveMobileWorkstreamLayout({
     viewport,
@@ -146,7 +155,12 @@ export function AgentWorkstream({
           className="flex flex-col gap-3"
           data-testid="agent-workstream-process"
         >
-          <PendingInterruptStrip interrupts={interrupts} />
+          <PendingInterruptStrip
+            error={interruptError}
+            interrupts={interrupts}
+            onResume={onInterruptResume}
+            resumingInterruptId={resumingInterruptId}
+          />
           {narratives.map((line) => (
             <NarrativeLine
               deliveryKey={line.deliveryKey}
@@ -208,15 +222,22 @@ export function AgentWorkstream({
 }
 
 function PendingInterruptStrip({
+  error,
   interrupts,
+  onResume,
+  resumingInterruptId,
 }: {
+  error: string | null;
   interrupts: InterruptProjection[];
+  onResume?: (
+    interrupt: InterruptProjection,
+    type: 'accept' | 'reject'
+  ) => void | Promise<void>;
+  resumingInterruptId: string | null;
 }) {
-  if (interrupts.length === 0) return null;
+  if (interrupts.length === 0 && !error) return null;
   return (
-    <div
-      aria-atomic="true"
-      aria-live="polite"
+    <output
       className="border-warning/40 bg-warning/10 flex flex-col gap-2 rounded-lg border px-3 py-2"
       data-testid="agent-pending-interrupts"
     >
@@ -224,6 +245,8 @@ function PendingInterruptStrip({
         <div
           className="text-foreground text-sm"
           data-interrupt-id={item.interruptId}
+          data-interrupt-revision={item.revision}
+          data-interrupt-schema-version={item.schemaVersion ?? ''}
           data-testid="agent-pending-interrupt"
           key={item.interruptId}
         >
@@ -231,9 +254,44 @@ function PendingInterruptStrip({
           <p className="text-muted mt-0.5 text-xs leading-relaxed">
             {item.description || item.interruptType}
           </p>
+          {onResume ? (
+            <div className="mt-2 flex gap-2">
+              {item.allowAccept !== false ? (
+                <button
+                  className="bg-primary text-primary-foreground rounded-md px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+                  data-testid="agent-interrupt-accept"
+                  disabled={resumingInterruptId === item.interruptId}
+                  onClick={() => void onResume(item, 'accept')}
+                  type="button"
+                >
+                  确认并继续
+                </button>
+              ) : null}
+              {item.allowReject ? (
+                <button
+                  className="border-border rounded-md border px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+                  data-testid="agent-interrupt-reject"
+                  disabled={resumingInterruptId === item.interruptId}
+                  onClick={() => void onResume(item, 'reject')}
+                  type="button"
+                >
+                  停止本次任务
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ))}
-    </div>
+      {error ? (
+        <p
+          className="text-destructive text-xs"
+          data-testid="agent-interrupt-error"
+          role="alert"
+        >
+          {error}
+        </p>
+      ) : null}
+    </output>
   );
 }
 

@@ -139,6 +139,8 @@ export interface ProductQuoteSnapshot {
    */
   platformAbsorbedAmount?: number;
   createdAt?: string;
+  /** Server quote-authority validity window; consumers must not invent it. */
+  expiresAt?: string;
   confirmedAt?: string;
   reservedAt?: string;
   settledAt?: string;
@@ -207,6 +209,7 @@ export const publicProductQuoteSnapshotSchema: z.ZodType<PublicProductQuoteSnaps
       refundedAmount: z.number().optional(),
       platformAbsorbedAmount: z.number().optional(),
       createdAt: z.string().optional(),
+      expiresAt: z.string().optional(),
       confirmedAt: z.string().optional(),
       reservedAt: z.string().optional(),
       settledAt: z.string().optional(),
@@ -364,4 +367,6 @@ export interface BuildProductQuoteInput {
   taskId?: string;
   /** Optional explicit ceiling override (defaults to computed confirmed amount). */
   authorizedCeiling?: number;
+  /** Absolute validity from ProductQuote authority. */
+  expiresAt?: string;
 }

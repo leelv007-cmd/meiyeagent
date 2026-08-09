@@ -2095,11 +2095,14 @@ export class PostgresHarnessInteractionStore
       [runtimeTaskId, workspaceId],
     );
     const row = result.rows[0];
+    const interactionProjection = row
+      ? harnessInteractionPendingProjectionSchema.safeParse(
+          row.pending_projection,
+        )
+      : null;
     if (
-      row &&
-      harnessInteractionPendingProjectionSchema.safeParse(
-        row.pending_projection,
-      ).success
+      interactionProjection?.success &&
+      interactionProjection.data.request.kind !== 'execution_confirmation'
     ) {
       return null;
     }
@@ -2154,11 +2157,18 @@ export class PostgresHarnessInteractionStore
   async claimBatch(input: {
     expiresBefore: string;
     limit: number;
+    taskId?: string;
+    workspaceId?: string;
   }): Promise<HarnessReservationSweep[]> {
+    const hasWorkspace = input.workspaceId !== undefined;
+    const hasTask = input.taskId !== undefined;
     if (
       !Number.isSafeInteger(input.limit) ||
       input.limit < 1 ||
-      !Number.isFinite(Date.parse(input.expiresBefore))
+      !Number.isFinite(Date.parse(input.expiresBefore)) ||
+      hasWorkspace !== hasTask ||
+      (hasWorkspace &&
+        (!input.workspaceId?.trim() || !input.taskId?.trim()))
     ) {
       throw new Error(
         'Reservation sweep claim requires a valid limit and timestamp.',
@@ -2206,6 +2216,13 @@ export class PostgresHarnessInteractionStore
           where questions.status='pending'
             and coalesce(questions.payload->>'unattended', 'hold')='hold'
             and questions.updated_at <= $1::timestamptz
+            and (
+              $4::text is null
+              or (
+                usage.workspace_id=$4
+                and requests.workflow_id=$5
+              )
+            )
             and requests.request ? 'usageReservation'
             and usage.status='reserved'
             and quotes.lifecycle_status='reserved'
@@ -2226,6 +2243,10 @@ export class PostgresHarnessInteractionStore
            from harness_runtime.reservation_sweeps
           where status='processing'
             and updated_at < now() - interval '1 minute'
+            and (
+              $4::text is null
+              or (workspace_id=$4 and task_id=$5)
+            )
           order by updated_at, task_id
           limit $2
           for update skip locked
@@ -2267,7 +2288,13 @@ export class PostgresHarnessInteractionStore
                    held_since, attempts
        )
        select * from claimed order by held_since, task_id`,
-      [input.expiresBefore, input.limit, MAX_RESERVATION_SWEEP_ATTEMPTS],
+      [
+        input.expiresBefore,
+        input.limit,
+        MAX_RESERVATION_SWEEP_ATTEMPTS,
+        input.workspaceId ?? null,
+        input.taskId ?? null,
+      ],
     );
     return result.rows.map((row) => ({
       workspaceId: row.workspace_id,
@@ -2547,11 +2574,18 @@ export class PostgresHarnessInteractionStore
         [runtimeTaskId],
       );
       const node = pending.rows[0];
+      const interactionProjection = node
+        ? harnessInteractionPendingProjectionSchema.safeParse(
+            node.pending_projection,
+          )
+        : null;
       if (
-        node &&
-        harnessInteractionPendingProjectionSchema.safeParse(
-          node.pending_projection,
-        ).success
+        interactionProjection?.success &&
+        !(
+          interactionProjection.data.request.kind ===
+            'execution_confirmation' &&
+          input.mode === 'core_hold_expired'
+        )
       ) {
         await client.query('rollback');
         return { outcome: 'stale_question', resumeRequired: false };
@@ -2610,7 +2644,8 @@ export class PostgresHarnessInteractionStore
           input.event.payloadFingerprint,
           JSON.stringify(input.event),
           input.mode ?? 'decision',
-          input.mode === 'core_timeout' || input.mode === 'core_hold_expired'
+          input.mode === 'core_timeout' ||
+          (input.mode === 'core_hold_expired' && input.resumeWorkflow !== true)
             ? 'sent'
             : 'pending',
         ],
@@ -2650,7 +2685,8 @@ export class PostgresHarnessInteractionStore
         outcome: 'created',
         command: input.command,
         resumeRequired:
-          input.mode !== 'core_timeout' && input.mode !== 'core_hold_expired',
+          input.mode !== 'core_timeout' &&
+          (input.mode !== 'core_hold_expired' || input.resumeWorkflow === true),
       };
     } catch (error) {
       await client.query('rollback');

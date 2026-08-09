@@ -38,6 +38,7 @@ import type {
   HarnessWorkflowInput,
 } from './task-admission.js';
 import type { StyleAnalysisResult } from './xhs-style-analysis.js';
+import { HarnessExecutionFencePauseError } from './context-fence.js';
 import {
   emitVideoScenesArtifactProgress,
   type ArtifactProgressEmitterPort,
@@ -294,6 +295,11 @@ export interface HarnessSharedStagePorts {
     declaration: IntentDeclaration;
     context: HarnessContextSnapshot;
   }): Promise<HarnessContextSnapshot>;
+  /** Records an explicit merchant acknowledgement for one exact live-facts diff. */
+  acknowledgeContextFence?(input: {
+    workflowId: string;
+    diff: import('./execution-plan-admission.js').SnapshotStaleDiff;
+  }): Promise<void> | void;
   assessFacts?(input: {
     workflowId: string;
     request: HarnessWorkflowInput;
@@ -1816,15 +1822,16 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
     message: merchantProgressMessage('execution_selection'),
   });
 
-  const fenced = await runtime.runStep(
+  const fenced = await runContextFenceStep(
+    runtime,
     harnessEffectKey(workflowId, 2, 'fence', `r${bundle.bundle.revision}`),
-    () =>
-      ports.fenceContext({
-        workflowId,
-        request: activeRequest,
-        declaration: routed.declaration,
-        context: bundle,
-      }),
+    ports,
+    {
+      workflowId,
+      request: activeRequest,
+      declaration: routed.declaration,
+      context: bundle,
+    },
   );
   if (fenced.bundle.hash !== bundle.bundle.hash) {
     bundle = fenced;
@@ -2116,16 +2123,18 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   const frozenStyle = [...(activeRequest.decisionReferences ?? [])]
     .reverse()
     .find(({ field }) => field === 'note_style');
-  let selectedStyleId = frozenStyle
-    ? noteStyleIdFromValue(brief, frozenStyle.value)
-    : noteStyleIdFromDecision(
-        brief,
-        await awaitResolvedDecision(
-          runtime,
-          noteStyleQuestion(workflowId, request, brief),
-          'brief_compilation',
-        ),
-      );
+  let selectedStyleId: string;
+  if (frozenStyle) {
+    selectedStyleId = noteStyleIdFromValue(brief, frozenStyle.value);
+  } else {
+    const styleDecision = await awaitResolvedDecision(
+      runtime,
+      noteStyleQuestion(workflowId, request, brief),
+      'brief_compilation',
+    );
+    selectedStyleId = noteStyleIdFromDecision(brief, styleDecision);
+    activeRequest = withForkDecisionReference(activeRequest, styleDecision);
+  }
   const selectedNoteCandidate = brief.candidates.candidates.find(
     ({ styleId }) => styleId === selectedStyleId,
   );
@@ -2151,15 +2160,16 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
     notePlanPreview,
   });
 
-  const fenced = await runtime.runStep(
+  const fenced = await runContextFenceStep(
+    runtime,
     harnessEffectKey(workflowId, 2, 'fence', `r${context.bundle.revision}`),
-    () =>
-      ports.fenceContext({
-        workflowId,
-        request: activeRequest,
-        declaration: routed.declaration,
-        context,
-      }),
+    ports,
+    {
+      workflowId,
+      request: activeRequest,
+      declaration: routed.declaration,
+      context,
+    },
   );
   if (fenced.bundle.hash !== context.bundle.hash) {
     context = fenced;
@@ -2854,15 +2864,16 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
   });
   await emitVideoSceneProgress(brief, 'success');
 
-  const fenced = await runtime.runStep(
+  const fenced = await runContextFenceStep(
+    runtime,
     harnessEffectKey(workflowId, 2, 'fence', `r${bundle.bundle.revision}`),
-    () =>
-      ports.fenceContext({
-        workflowId,
-        request: activeRequest,
-        declaration: routed.declaration,
-        context: bundle,
-      }),
+    ports,
+    {
+      workflowId,
+      request: activeRequest,
+      declaration: routed.declaration,
+      context: bundle,
+    },
   );
   if (fenced.bundle.hash !== bundle.bundle.hash) {
     bundle = fenced;
@@ -3536,6 +3547,28 @@ function unpackBrief(input: CopyBrief | MeasuredCopyBrief): {
   return 'brief' in input ? input : { brief: input };
 }
 
+async function runContextFenceStep(
+  runtime: HarnessWorkflowRuntime,
+  effectIdempotencyKey: string,
+  ports: Pick<HarnessSharedStagePorts, 'fenceContext'>,
+  input: Parameters<HarnessSharedStagePorts['fenceContext']>[0],
+) {
+  try {
+    return await runtime.runStep(effectIdempotencyKey, () =>
+      ports.fenceContext(input),
+    );
+  } catch (error) {
+    if (error instanceof HarnessExecutionFencePauseError) {
+      throw new HarnessExecutionFencePauseError(
+        error.merchantMessage,
+        error.diff,
+        input.request,
+      );
+    }
+    throw error;
+  }
+}
+
 async function applyCurrentTaskDecision(
   workflowId: string,
   request: HarnessWorkflowInput,
@@ -3558,7 +3591,7 @@ async function applyCurrentTaskDecision(
   }
   const value = command.decision.value;
   return {
-    ...request,
+    ...withForkDecisionReference(request, command),
     intent: {
       ...request.intent,
       context: {
@@ -3570,12 +3603,29 @@ async function applyCurrentTaskDecision(
         ],
       },
     },
+  };
+}
+
+/**
+ * Pins an in-plan fork answer (note style) onto the live request so a paused
+ * continuation and every later stage read it back instead of asking again.
+ * Unlike a semantic decision it never invalidates an admitted
+ * ExecutionPlanSnapshot: the candidates it chooses between are already part of
+ * the frozen plan, so the run continues instead of demanding a resubmission.
+ */
+function withForkDecisionReference(
+  request: HarnessWorkflowInput,
+  command: StructuredDecisionInput,
+): HarnessWorkflowInput {
+  if (command.decision.state === 'ignored') return request;
+  return {
+    ...request,
     decisionReferences: [
       ...(request.decisionReferences ?? []),
       {
         id: `decision:${command.questionId}:${command.idempotencyKey}`,
         field: command.patch.field,
-        value,
+        value: command.decision.value,
         revision: command.workflowRevision,
       },
     ],
@@ -3706,20 +3756,21 @@ async function resolveFactSatisfaction(input: {
       allowedFactRefs: assessment.factRefs,
     };
   }
-  const context = await input.runtime.runStep(
+  const context = await runContextFenceStep(
+    input.runtime,
     harnessEffectKey(
       input.workflowId,
       2,
       'fact-decision-fence',
       `r${input.context.bundle.revision}`,
     ),
-    () =>
-      input.ports.fenceContext({
-        workflowId: input.workflowId,
-        request,
-        declaration: input.declaration,
-        context: input.context,
-      }),
+    input.ports,
+    {
+      workflowId: input.workflowId,
+      request,
+      declaration: input.declaration,
+      context: input.context,
+    },
   );
   await input.reportProgress({
     stage: 'context_injection',

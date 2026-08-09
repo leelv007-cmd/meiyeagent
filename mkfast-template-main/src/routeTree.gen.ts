@@ -92,6 +92,7 @@ import { Route as ApiStorageFileRouteImport } from './routes/api/storage/file'
 import { Route as ApiE2eUsersRouteImport } from './routes/api/e2e/users'
 import { Route as ApiE2eUserSelectedSkillFixtureRouteImport } from './routes/api/e2e/user-selected-skill-fixture'
 import { Route as ApiE2eUserSelectedSkillEvidenceRouteImport } from './routes/api/e2e/user-selected-skill-evidence'
+import { Route as ApiE2eInterruptExpiryFixtureRouteImport } from './routes/api/e2e/interrupt-expiry-fixture'
 import { Route as ApiE2eCreditDetailFixtureRouteImport } from './routes/api/e2e/credit-detail-fixture'
 import { Route as ApiCoreDiagnosticsRouteImport } from './routes/api/core/diagnostics'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
@@ -99,11 +100,13 @@ import { Route as AdminUsersUserIdRouteImport } from './routes/admin/users.$user
 import { Route as ApiCoreProductStateRouteImport } from './routes/api/core/product/state'
 import { Route as ApiCoreProductCommandsRouteImport } from './routes/api/core/product/commands'
 import { Route as ApiCoreP1QueryRouteImport } from './routes/api/core/p1/query'
+import { Route as ApiCoreP1PendingInterruptsRouteImport } from './routes/api/core/p1/pending-interrupts'
 import { Route as ApiCoreP1PendingActionsRouteImport } from './routes/api/core/p1/pending-actions'
 import { Route as ApiCoreP1CommandsRouteImport } from './routes/api/core/p1/commands'
 import { Route as ApiCoreP1AssetsRouteImport } from './routes/api/core/p1/assets'
 import { Route as AdminSupplyViewsViewIdRouteImport } from './routes/admin/supply.views.$viewId'
 import { Route as AdminSupplyTasksTaskIdRouteImport } from './routes/admin/supply.tasks.$taskId'
+import { Route as ApiCoreP1InterruptsResumeRouteImport } from './routes/api/core/p1/interrupts/resume'
 import { Route as ApiCoreP1HarnessTasksRouteImport } from './routes/api/core/p1/harness/tasks'
 import { Route as ApiCoreP1HarnessRecommendationRouteImport } from './routes/api/core/p1/harness/recommendation'
 import { Route as ApiCoreP1ComposerSubmissionsRouteImport } from './routes/api/core/p1/composer/submissions'
@@ -118,6 +121,8 @@ import { Route as ApiCoreP1AgentThreadsThreadIdEventsRouteImport } from './route
 import { Route as ApiCoreP1HarnessTasksTaskIdProductMetricsRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/product-metrics'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction'
 import { Route as ApiCoreP1HarnessTasksTaskIdDecisionRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/decision'
+import { Route as ApiCoreP1ComposerTasksTaskIdStartRouteImport } from './routes/api/core/p1/composer/tasks/$taskId/start'
+import { Route as ApiCoreP1ComposerTasksTaskIdReviseRouteImport } from './routes/api/core/p1/composer/tasks/$taskId/revise'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionRendererRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/renderer'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionMessageRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/message'
 import { Route as ApiCoreP1HarnessTasksTaskIdInteractionEditingRouteImport } from './routes/api/core/p1/harness/tasks/$taskId/interaction/editing'
@@ -543,6 +548,12 @@ const ApiE2eUserSelectedSkillEvidenceRoute =
     path: '/api/e2e/user-selected-skill-evidence',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiE2eInterruptExpiryFixtureRoute =
+  ApiE2eInterruptExpiryFixtureRouteImport.update({
+    id: '/api/e2e/interrupt-expiry-fixture',
+    path: '/api/e2e/interrupt-expiry-fixture',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiE2eCreditDetailFixtureRoute =
   ApiE2eCreditDetailFixtureRouteImport.update({
     id: '/api/e2e/credit-detail-fixture',
@@ -579,6 +590,12 @@ const ApiCoreP1QueryRoute = ApiCoreP1QueryRouteImport.update({
   path: '/api/core/p1/query',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCoreP1PendingInterruptsRoute =
+  ApiCoreP1PendingInterruptsRouteImport.update({
+    id: '/api/core/p1/pending-interrupts',
+    path: '/api/core/p1/pending-interrupts',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCoreP1PendingActionsRoute = ApiCoreP1PendingActionsRouteImport.update({
   id: '/api/core/p1/pending-actions',
   path: '/api/core/p1/pending-actions',
@@ -604,6 +621,12 @@ const AdminSupplyTasksTaskIdRoute = AdminSupplyTasksTaskIdRouteImport.update({
   path: '/tasks/$taskId',
   getParentRoute: () => AdminSupplyRoute,
 } as any)
+const ApiCoreP1InterruptsResumeRoute =
+  ApiCoreP1InterruptsResumeRouteImport.update({
+    id: '/api/core/p1/interrupts/resume',
+    path: '/api/core/p1/interrupts/resume',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiCoreP1HarnessTasksRoute = ApiCoreP1HarnessTasksRouteImport.update({
   id: '/api/core/p1/harness/tasks',
   path: '/api/core/p1/harness/tasks',
@@ -686,6 +709,18 @@ const ApiCoreP1HarnessTasksTaskIdDecisionRoute =
     id: '/$taskId/decision',
     path: '/$taskId/decision',
     getParentRoute: () => ApiCoreP1HarnessTasksRoute,
+  } as any)
+const ApiCoreP1ComposerTasksTaskIdStartRoute =
+  ApiCoreP1ComposerTasksTaskIdStartRouteImport.update({
+    id: '/api/core/p1/composer/tasks/$taskId/start',
+    path: '/api/core/p1/composer/tasks/$taskId/start',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiCoreP1ComposerTasksTaskIdReviseRoute =
+  ApiCoreP1ComposerTasksTaskIdReviseRouteImport.update({
+    id: '/api/core/p1/composer/tasks/$taskId/revise',
+    path: '/api/core/p1/composer/tasks/$taskId/revise',
+    getParentRoute: () => rootRouteImport,
   } as any)
 const ApiCoreP1HarnessTasksTaskIdInteractionRendererRoute =
   ApiCoreP1HarnessTasksTaskIdInteractionRendererRouteImport.update({
@@ -791,6 +826,7 @@ export interface FileRoutesByFullPath {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
+  '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
   '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
@@ -811,6 +847,7 @@ export interface FileRoutesByFullPath {
   '/api/core/p1/assets': typeof ApiCoreP1AssetsRoute
   '/api/core/p1/commands': typeof ApiCoreP1CommandsRoute
   '/api/core/p1/pending-actions': typeof ApiCoreP1PendingActionsRoute
+  '/api/core/p1/pending-interrupts': typeof ApiCoreP1PendingInterruptsRoute
   '/api/core/p1/query': typeof ApiCoreP1QueryRoute
   '/api/core/product/commands': typeof ApiCoreProductCommandsRoute
   '/api/core/product/state': typeof ApiCoreProductStateRoute
@@ -821,10 +858,13 @@ export interface FileRoutesByFullPath {
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
+  '/api/core/p1/interrupts/resume': typeof ApiCoreP1InterruptsResumeRoute
   '/api/core/p1/agent-threads/$threadId/events': typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
   '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
   '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
+  '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
+  '/api/core/p1/composer/tasks/$taskId/start': typeof ApiCoreP1ComposerTasksTaskIdStartRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
   '/api/core/p1/harness/tasks/$taskId/product-metrics': typeof ApiCoreP1HarnessTasksTaskIdProductMetricsRoute
@@ -903,6 +943,7 @@ export interface FileRoutesByTo {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
+  '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
   '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
@@ -923,6 +964,7 @@ export interface FileRoutesByTo {
   '/api/core/p1/assets': typeof ApiCoreP1AssetsRoute
   '/api/core/p1/commands': typeof ApiCoreP1CommandsRoute
   '/api/core/p1/pending-actions': typeof ApiCoreP1PendingActionsRoute
+  '/api/core/p1/pending-interrupts': typeof ApiCoreP1PendingInterruptsRoute
   '/api/core/p1/query': typeof ApiCoreP1QueryRoute
   '/api/core/product/commands': typeof ApiCoreProductCommandsRoute
   '/api/core/product/state': typeof ApiCoreProductStateRoute
@@ -933,10 +975,13 @@ export interface FileRoutesByTo {
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
+  '/api/core/p1/interrupts/resume': typeof ApiCoreP1InterruptsResumeRoute
   '/api/core/p1/agent-threads/$threadId/events': typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
   '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
   '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
+  '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
+  '/api/core/p1/composer/tasks/$taskId/start': typeof ApiCoreP1ComposerTasksTaskIdStartRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
   '/api/core/p1/harness/tasks/$taskId/product-metrics': typeof ApiCoreP1HarnessTasksTaskIdProductMetricsRoute
@@ -1020,6 +1065,7 @@ export interface FileRoutesById {
   '/api/auth/$': typeof ApiAuthSplatRoute
   '/api/core/diagnostics': typeof ApiCoreDiagnosticsRouteWithChildren
   '/api/e2e/credit-detail-fixture': typeof ApiE2eCreditDetailFixtureRoute
+  '/api/e2e/interrupt-expiry-fixture': typeof ApiE2eInterruptExpiryFixtureRoute
   '/api/e2e/user-selected-skill-evidence': typeof ApiE2eUserSelectedSkillEvidenceRoute
   '/api/e2e/user-selected-skill-fixture': typeof ApiE2eUserSelectedSkillFixtureRoute
   '/api/e2e/users': typeof ApiE2eUsersRoute
@@ -1040,6 +1086,7 @@ export interface FileRoutesById {
   '/api/core/p1/assets': typeof ApiCoreP1AssetsRoute
   '/api/core/p1/commands': typeof ApiCoreP1CommandsRoute
   '/api/core/p1/pending-actions': typeof ApiCoreP1PendingActionsRoute
+  '/api/core/p1/pending-interrupts': typeof ApiCoreP1PendingInterruptsRoute
   '/api/core/p1/query': typeof ApiCoreP1QueryRoute
   '/api/core/product/commands': typeof ApiCoreProductCommandsRoute
   '/api/core/product/state': typeof ApiCoreProductStateRoute
@@ -1050,10 +1097,13 @@ export interface FileRoutesById {
   '/api/core/p1/composer/submissions': typeof ApiCoreP1ComposerSubmissionsRoute
   '/api/core/p1/harness/recommendation': typeof ApiCoreP1HarnessRecommendationRoute
   '/api/core/p1/harness/tasks': typeof ApiCoreP1HarnessTasksRouteWithChildren
+  '/api/core/p1/interrupts/resume': typeof ApiCoreP1InterruptsResumeRoute
   '/api/core/p1/agent-threads/$threadId/events': typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
   '/api/core/p1/agent-threads/$threadId/replay': typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
   '/api/core/p1/confirmation-requests/$requestId/decide': typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   '/api/core/p1/workflows/$workflowId/events': typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
+  '/api/core/p1/composer/tasks/$taskId/revise': typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
+  '/api/core/p1/composer/tasks/$taskId/start': typeof ApiCoreP1ComposerTasksTaskIdStartRoute
   '/api/core/p1/harness/tasks/$taskId/decision': typeof ApiCoreP1HarnessTasksTaskIdDecisionRoute
   '/api/core/p1/harness/tasks/$taskId/interaction': typeof ApiCoreP1HarnessTasksTaskIdInteractionRouteWithChildren
   '/api/core/p1/harness/tasks/$taskId/product-metrics': typeof ApiCoreP1HarnessTasksTaskIdProductMetricsRoute
@@ -1138,6 +1188,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
+    | '/api/e2e/interrupt-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
     | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
@@ -1158,6 +1209,7 @@ export interface FileRouteTypes {
     | '/api/core/p1/assets'
     | '/api/core/p1/commands'
     | '/api/core/p1/pending-actions'
+    | '/api/core/p1/pending-interrupts'
     | '/api/core/p1/query'
     | '/api/core/product/commands'
     | '/api/core/product/state'
@@ -1168,10 +1220,13 @@ export interface FileRouteTypes {
     | '/api/core/p1/composer/submissions'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
+    | '/api/core/p1/interrupts/resume'
     | '/api/core/p1/agent-threads/$threadId/events'
     | '/api/core/p1/agent-threads/$threadId/replay'
     | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
+    | '/api/core/p1/composer/tasks/$taskId/revise'
+    | '/api/core/p1/composer/tasks/$taskId/start'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
     | '/api/core/p1/harness/tasks/$taskId/product-metrics'
@@ -1250,6 +1305,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
+    | '/api/e2e/interrupt-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
     | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
@@ -1270,6 +1326,7 @@ export interface FileRouteTypes {
     | '/api/core/p1/assets'
     | '/api/core/p1/commands'
     | '/api/core/p1/pending-actions'
+    | '/api/core/p1/pending-interrupts'
     | '/api/core/p1/query'
     | '/api/core/product/commands'
     | '/api/core/product/state'
@@ -1280,10 +1337,13 @@ export interface FileRouteTypes {
     | '/api/core/p1/composer/submissions'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
+    | '/api/core/p1/interrupts/resume'
     | '/api/core/p1/agent-threads/$threadId/events'
     | '/api/core/p1/agent-threads/$threadId/replay'
     | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
+    | '/api/core/p1/composer/tasks/$taskId/revise'
+    | '/api/core/p1/composer/tasks/$taskId/start'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
     | '/api/core/p1/harness/tasks/$taskId/product-metrics'
@@ -1366,6 +1426,7 @@ export interface FileRouteTypes {
     | '/api/auth/$'
     | '/api/core/diagnostics'
     | '/api/e2e/credit-detail-fixture'
+    | '/api/e2e/interrupt-expiry-fixture'
     | '/api/e2e/user-selected-skill-evidence'
     | '/api/e2e/user-selected-skill-fixture'
     | '/api/e2e/users'
@@ -1386,6 +1447,7 @@ export interface FileRouteTypes {
     | '/api/core/p1/assets'
     | '/api/core/p1/commands'
     | '/api/core/p1/pending-actions'
+    | '/api/core/p1/pending-interrupts'
     | '/api/core/p1/query'
     | '/api/core/product/commands'
     | '/api/core/product/state'
@@ -1396,10 +1458,13 @@ export interface FileRouteTypes {
     | '/api/core/p1/composer/submissions'
     | '/api/core/p1/harness/recommendation'
     | '/api/core/p1/harness/tasks'
+    | '/api/core/p1/interrupts/resume'
     | '/api/core/p1/agent-threads/$threadId/events'
     | '/api/core/p1/agent-threads/$threadId/replay'
     | '/api/core/p1/confirmation-requests/$requestId/decide'
     | '/api/core/p1/workflows/$workflowId/events'
+    | '/api/core/p1/composer/tasks/$taskId/revise'
+    | '/api/core/p1/composer/tasks/$taskId/start'
     | '/api/core/p1/harness/tasks/$taskId/decision'
     | '/api/core/p1/harness/tasks/$taskId/interaction'
     | '/api/core/p1/harness/tasks/$taskId/product-metrics'
@@ -1431,6 +1496,7 @@ export interface RootRouteChildren {
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
   ApiCoreDiagnosticsRoute: typeof ApiCoreDiagnosticsRouteWithChildren
   ApiE2eCreditDetailFixtureRoute: typeof ApiE2eCreditDetailFixtureRoute
+  ApiE2eInterruptExpiryFixtureRoute: typeof ApiE2eInterruptExpiryFixtureRoute
   ApiE2eUserSelectedSkillEvidenceRoute: typeof ApiE2eUserSelectedSkillEvidenceRoute
   ApiE2eUserSelectedSkillFixtureRoute: typeof ApiE2eUserSelectedSkillFixtureRoute
   ApiE2eUsersRoute: typeof ApiE2eUsersRoute
@@ -1441,6 +1507,7 @@ export interface RootRouteChildren {
   ApiCoreP1AssetsRoute: typeof ApiCoreP1AssetsRoute
   ApiCoreP1CommandsRoute: typeof ApiCoreP1CommandsRoute
   ApiCoreP1PendingActionsRoute: typeof ApiCoreP1PendingActionsRoute
+  ApiCoreP1PendingInterruptsRoute: typeof ApiCoreP1PendingInterruptsRoute
   ApiCoreP1QueryRoute: typeof ApiCoreP1QueryRoute
   ApiCoreProductCommandsRoute: typeof ApiCoreProductCommandsRoute
   ApiCoreProductStateRoute: typeof ApiCoreProductStateRoute
@@ -1449,10 +1516,13 @@ export interface RootRouteChildren {
   ApiCoreP1ComposerSubmissionsRoute: typeof ApiCoreP1ComposerSubmissionsRoute
   ApiCoreP1HarnessRecommendationRoute: typeof ApiCoreP1HarnessRecommendationRoute
   ApiCoreP1HarnessTasksRoute: typeof ApiCoreP1HarnessTasksRouteWithChildren
+  ApiCoreP1InterruptsResumeRoute: typeof ApiCoreP1InterruptsResumeRoute
   ApiCoreP1AgentThreadsThreadIdEventsRoute: typeof ApiCoreP1AgentThreadsThreadIdEventsRoute
   ApiCoreP1AgentThreadsThreadIdReplayRoute: typeof ApiCoreP1AgentThreadsThreadIdReplayRoute
   ApiCoreP1ConfirmationRequestsRequestIdDecideRoute: typeof ApiCoreP1ConfirmationRequestsRequestIdDecideRoute
   ApiCoreP1WorkflowsWorkflowIdEventsRoute: typeof ApiCoreP1WorkflowsWorkflowIdEventsRoute
+  ApiCoreP1ComposerTasksTaskIdReviseRoute: typeof ApiCoreP1ComposerTasksTaskIdReviseRoute
+  ApiCoreP1ComposerTasksTaskIdStartRoute: typeof ApiCoreP1ComposerTasksTaskIdStartRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -2038,6 +2108,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiE2eUserSelectedSkillEvidenceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/e2e/interrupt-expiry-fixture': {
+      id: '/api/e2e/interrupt-expiry-fixture'
+      path: '/api/e2e/interrupt-expiry-fixture'
+      fullPath: '/api/e2e/interrupt-expiry-fixture'
+      preLoaderRoute: typeof ApiE2eInterruptExpiryFixtureRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/e2e/credit-detail-fixture': {
       id: '/api/e2e/credit-detail-fixture'
       path: '/api/e2e/credit-detail-fixture'
@@ -2087,6 +2164,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiCoreP1QueryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/core/p1/pending-interrupts': {
+      id: '/api/core/p1/pending-interrupts'
+      path: '/api/core/p1/pending-interrupts'
+      fullPath: '/api/core/p1/pending-interrupts'
+      preLoaderRoute: typeof ApiCoreP1PendingInterruptsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/core/p1/pending-actions': {
       id: '/api/core/p1/pending-actions'
       path: '/api/core/p1/pending-actions'
@@ -2121,6 +2205,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/supply/tasks/$taskId'
       preLoaderRoute: typeof AdminSupplyTasksTaskIdRouteImport
       parentRoute: typeof AdminSupplyRoute
+    }
+    '/api/core/p1/interrupts/resume': {
+      id: '/api/core/p1/interrupts/resume'
+      path: '/api/core/p1/interrupts/resume'
+      fullPath: '/api/core/p1/interrupts/resume'
+      preLoaderRoute: typeof ApiCoreP1InterruptsResumeRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/core/p1/harness/tasks': {
       id: '/api/core/p1/harness/tasks'
@@ -2219,6 +2310,20 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/core/p1/harness/tasks/$taskId/decision'
       preLoaderRoute: typeof ApiCoreP1HarnessTasksTaskIdDecisionRouteImport
       parentRoute: typeof ApiCoreP1HarnessTasksRoute
+    }
+    '/api/core/p1/composer/tasks/$taskId/start': {
+      id: '/api/core/p1/composer/tasks/$taskId/start'
+      path: '/api/core/p1/composer/tasks/$taskId/start'
+      fullPath: '/api/core/p1/composer/tasks/$taskId/start'
+      preLoaderRoute: typeof ApiCoreP1ComposerTasksTaskIdStartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/core/p1/composer/tasks/$taskId/revise': {
+      id: '/api/core/p1/composer/tasks/$taskId/revise'
+      path: '/api/core/p1/composer/tasks/$taskId/revise'
+      fullPath: '/api/core/p1/composer/tasks/$taskId/revise'
+      preLoaderRoute: typeof ApiCoreP1ComposerTasksTaskIdReviseRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/core/p1/harness/tasks/$taskId/interaction/renderer': {
       id: '/api/core/p1/harness/tasks/$taskId/interaction/renderer'
@@ -2529,6 +2634,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiAuthSplatRoute: ApiAuthSplatRoute,
   ApiCoreDiagnosticsRoute: ApiCoreDiagnosticsRouteWithChildren,
   ApiE2eCreditDetailFixtureRoute: ApiE2eCreditDetailFixtureRoute,
+  ApiE2eInterruptExpiryFixtureRoute: ApiE2eInterruptExpiryFixtureRoute,
   ApiE2eUserSelectedSkillEvidenceRoute: ApiE2eUserSelectedSkillEvidenceRoute,
   ApiE2eUserSelectedSkillFixtureRoute: ApiE2eUserSelectedSkillFixtureRoute,
   ApiE2eUsersRoute: ApiE2eUsersRoute,
@@ -2539,6 +2645,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCoreP1AssetsRoute: ApiCoreP1AssetsRoute,
   ApiCoreP1CommandsRoute: ApiCoreP1CommandsRoute,
   ApiCoreP1PendingActionsRoute: ApiCoreP1PendingActionsRoute,
+  ApiCoreP1PendingInterruptsRoute: ApiCoreP1PendingInterruptsRoute,
   ApiCoreP1QueryRoute: ApiCoreP1QueryRoute,
   ApiCoreProductCommandsRoute: ApiCoreProductCommandsRoute,
   ApiCoreProductStateRoute: ApiCoreProductStateRoute,
@@ -2547,6 +2654,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiCoreP1ComposerSubmissionsRoute: ApiCoreP1ComposerSubmissionsRoute,
   ApiCoreP1HarnessRecommendationRoute: ApiCoreP1HarnessRecommendationRoute,
   ApiCoreP1HarnessTasksRoute: ApiCoreP1HarnessTasksRouteWithChildren,
+  ApiCoreP1InterruptsResumeRoute: ApiCoreP1InterruptsResumeRoute,
   ApiCoreP1AgentThreadsThreadIdEventsRoute:
     ApiCoreP1AgentThreadsThreadIdEventsRoute,
   ApiCoreP1AgentThreadsThreadIdReplayRoute:
@@ -2555,6 +2663,10 @@ const rootRouteChildren: RootRouteChildren = {
     ApiCoreP1ConfirmationRequestsRequestIdDecideRoute,
   ApiCoreP1WorkflowsWorkflowIdEventsRoute:
     ApiCoreP1WorkflowsWorkflowIdEventsRoute,
+  ApiCoreP1ComposerTasksTaskIdReviseRoute:
+    ApiCoreP1ComposerTasksTaskIdReviseRoute,
+  ApiCoreP1ComposerTasksTaskIdStartRoute:
+    ApiCoreP1ComposerTasksTaskIdStartRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

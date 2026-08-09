@@ -27,6 +27,15 @@ export type ProductionPlanRightsResolver = {
     knownAssetIds?: string[];
     unauthorizedAssetIds: string[];
   }>;
+  resolveWithRevision?(input: {
+    workspaceId: string;
+    assetIds: string[];
+    platform?: string;
+  }): Promise<{
+    knownAssetIds?: string[];
+    rightsRevision: string;
+    unauthorizedAssetIds: string[];
+  }>;
 };
 
 export function planCompilerRightsRevisionId(input: {
@@ -69,9 +78,11 @@ export function createProductionPlanCompilerPorts(deps: {
   clock?: () => Date;
 }): PlanCompilerPorts {
   const clock = deps.clock ?? (() => new Date());
-
   const quote: PlanCompilerQuotePort = {
     async resolveQuote(input) {
+      // An exact ProductQuote authority snapshot always wins: it carries the
+      // admitted validity window the confirmation fence re-checks.
+      if (input.quoteResolutionHint) return input.quoteResolutionHint;
       // Server-owned plan quote authority: fingerprint deliverables + release.
       // Amounts stay in billing domain; compiler only stores quoteRef.
       const revision = fingerprintValue({
@@ -108,16 +119,29 @@ export function createProductionPlanCompilerPorts(deps: {
         /^[A-Za-z0-9_.:-]{3,}$/u.test(value),
       );
       const platform = input.deliverables.find((item) => item.platform)?.platform;
-      const resolved =
-        assetIds.length > 0
-          ? await deps.rights.resolve({
-              workspaceId: input.workspaceId,
-              assetIds,
-              ...(platform ? { platform } : {}),
-            })
-          : { knownAssetIds: [] as string[], unauthorizedAssetIds: [] as string[] };
+      const rightsInput = {
+        workspaceId: input.workspaceId,
+        assetIds,
+        ...(platform ? { platform } : {}),
+      };
+      let authoritativeRevision: string | undefined;
+      let resolved: {
+        knownAssetIds?: string[];
+        unauthorizedAssetIds: string[];
+      };
+      if (deps.rights.resolveWithRevision) {
+        const decision = await deps.rights.resolveWithRevision(rightsInput);
+        authoritativeRevision = decision.rightsRevision;
+        resolved = decision;
+      } else {
+        resolved =
+          assetIds.length > 0
+            ? await deps.rights.resolve(rightsInput)
+            : { knownAssetIds: [], unauthorizedAssetIds: [] };
+      }
       const knownAssetIds = resolved.knownAssetIds ?? [];
       const unauthorizedAssetIds = resolved.unauthorizedAssetIds;
+
 
       return {
         rightsSummary: {
@@ -127,22 +151,19 @@ export function createProductionPlanCompilerPorts(deps: {
           status: unauthorizedAssetIds.length > 0 ? 'partial' : 'resolved',
         },
         rightsRevisionIds: [
-          planCompilerRightsRevisionId({
-            workspaceId: input.workspaceId,
-            knownAssetIds,
-            unauthorizedAssetIds,
-          }),
+          authoritativeRevision ??
+            planCompilerRightsRevisionId({
+              workspaceId: input.workspaceId,
+              knownAssetIds,
+              unauthorizedAssetIds,
+            }),
         ],
-        assetUsages: input.assetIntentions.map((intention, index) => ({
-          intention,
-          assetRef: knownAssetIds[index] ?? `intent:${index + 1}`,
-        })),
-        factUsages: input.factIntentions.map((intention, index) => ({
-          intention,
-          factRef: `fact-intent:${index + 1}`,
-        })),
-        // Compile stays open with partial rights; hard block is for total model unavailability.
-        blocked: false,
+        assetUsages: knownAssetIds.map((assetRef) => ({ assetRef })),
+        factUsages: input.factIntentions.map((factRef) => ({ factRef })),
+        // Rights are an execution authority, not a warning. Any unauthorized
+        // referenced asset makes readiness blocked until a new revision binds
+        // an authorized set.
+        blocked: unauthorizedAssetIds.length > 0,
       };
     },
   };

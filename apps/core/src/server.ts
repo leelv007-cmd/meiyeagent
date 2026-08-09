@@ -94,6 +94,7 @@ import {
   assetHttpPolicyFor,
 } from './p1/model-supply/asset-http-policy.js';
 import { RouteTable } from './route-table.js';
+import { registerComposerPlanCommandRoutes } from './composer-plan-route-registrar.js';
 
 interface CoreServerDependencies {
   clock?: () => Date;
@@ -136,6 +137,13 @@ interface CoreServerDependencies {
   e2eCreditDetailFixture?: {
     seed(input: { workspaceId: string }): Promise<{ ready: true }>;
   };
+  /** E2E-only interrupt clock owner; absent from non-E2E assemblies. */
+  e2eInterruptExpiryFixture?: {
+    expire(input: {
+      workspaceId: string;
+      interruptId: string;
+    }): Promise<{ expired: true }>;
+  };
   /**
    * E2E-only Spec E user_selected Skill seed (published + bound). Absent from
    * non-E2E assemblies. Optional foreignWorkspaceId seeds a tenant-scoped pack.
@@ -163,7 +171,10 @@ interface CoreServerDependencies {
   >;
   composerDestinationMapper?: ComposerDestinationMappingPort;
   composerSubmission?: {
-    coordinator: Pick<CreationSubmissionCoordinator, 'submit'>;
+    coordinator: Pick<CreationSubmissionCoordinator, 'submit'> &
+      Partial<
+        Pick<CreationSubmissionCoordinator, 'startPrepared' | 'revisePrepared'>
+      >;
   };
   /** Workspace-authenticated semantic replay/read seam (V31-28). */
   agentSemanticEvents?: {
@@ -930,6 +941,7 @@ export function createCoreServer({
   agentSemanticEvents,
   contentPackageReader,
   e2eCreditDetailFixture,
+  e2eInterruptExpiryFixture,
   e2eUserSelectedSkillFixture,
   e2eUserSelectedSkillEvidence,
   e2eFixtureEnabled = false,
@@ -1204,6 +1216,45 @@ export function createCoreServer({
             message: 'The E2E credit detail fixture could not be seeded.',
             status: 400,
           }
+        );
+        return;
+      },
+    ]);
+
+    routes.add('e2e-interrupt-expiry-fixture', [
+      'POST',
+      () =>
+        url.pathname === '/v1/e2e/interrupt-expiry-fixture' &&
+        e2eFixtureEnabled &&
+        Boolean(e2eInterruptExpiryFixture),
+      'service-token',
+      async () => {
+        await handleErrors(
+          async () => {
+            const workspaceId = request.headers['x-workspace-id'];
+            if (typeof workspaceId !== 'string' || workspaceId.length === 0) {
+              throw new DomainError('NOT_FOUND', 'Workspace resource was not found.', 404);
+            }
+            const context = productIdentity(request, workspaceId, requestCorrelationId);
+            const body = (await readJson(request)) as { interruptId?: unknown };
+            if (context.actor !== 'user' || typeof body.interruptId !== 'string') {
+              throw new DomainError('COMMAND_ACTOR_FORBIDDEN', 'The interrupt expiry fixture is unavailable.', 403);
+            }
+            sendJson(
+              response,
+              200,
+              await e2eInterruptExpiryFixture!.expire({
+                workspaceId: context.workspaceId,
+                interruptId: body.interruptId,
+              }),
+              requestCorrelationId,
+            );
+          },
+          {
+            code: 'INVALID_STATE',
+            message: 'The E2E interrupt expiry fixture could not advance the clock.',
+            status: 400,
+          },
         );
         return;
       },
@@ -1583,6 +1634,65 @@ export function createCoreServer({
         return;
       },
     ]);
+
+    registerComposerPlanCommandRoutes({
+      routes,
+      pathname: url.pathname,
+      startAvailable: Boolean(composerSubmission?.coordinator.startPrepared),
+      reviseAvailable: Boolean(composerSubmission?.coordinator.revisePrepared),
+      async onStart(composerTaskStartRoute) {
+        await handleErrors(async () => {
+          const context = p1Identity(
+            request,
+            composerTaskStartRoute.workspaceId,
+            requestCorrelationId
+          );
+          authorizeContentCreation(context);
+          const body = z
+            .object({ planRevision: z.number().int().positive() })
+            .strict()
+            .parse(await readJson(request));
+          const result = await composerSubmission!.coordinator.startPrepared!({
+            workspaceId: context.workspaceId,
+            taskId: composerTaskStartRoute.taskId,
+            planRevision: body.planRevision,
+          });
+          sendJson(response, 202, result, requestCorrelationId);
+        }, {
+          code: 'COMPOSER_PLAN_START_FAILED',
+          message: 'Composer plan could not be started.',
+          status: 409,
+        });
+      },
+      async onRevise(composerTaskReviseRoute) {
+        await handleErrors(async () => {
+          const context = p1Identity(
+            request,
+            composerTaskReviseRoute.workspaceId,
+            requestCorrelationId
+          );
+          authorizeContentCreation(context);
+          const body = z
+            .object({
+              planRevision: z.number().int().positive(),
+              merchantInstruction: z.string().trim().min(1).max(4_000),
+            })
+            .strict()
+            .parse(await readJson(request));
+          const result = await composerSubmission!.coordinator.revisePrepared!({
+            workspaceId: context.workspaceId,
+            taskId: composerTaskReviseRoute.taskId,
+            planRevision: body.planRevision,
+            merchantInstruction: body.merchantInstruction,
+          });
+          sendJson(response, 200, result, requestCorrelationId);
+        }, {
+          code: 'COMPOSER_PLAN_REVISE_FAILED',
+          message: 'Composer plan could not be revised.',
+          status: 409,
+        });
+      },
+    });
 
     const composerTaskEventRoute = workspaceComposerTaskEventRoute(
       url.pathname
