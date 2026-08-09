@@ -357,6 +357,115 @@ describe(
       );
     });
 
+    it('persists a partial credit refund through the durable settle seam', async () => {
+      // V31-16 partial delivery is the money path, and every other test of it
+      // stubs getUsage and hand-writes refundedCredits. This one drives the
+      // real durable service against real Postgres: a 6-page note that lands 5
+      // pages must charge 5 and return the sixth page's credits, and the number
+      // has to survive the process that wrote it.
+      const workspaceId = workspace();
+      const taskId = 'partial-credit-note-task';
+      const quoteId = 'partial-credit-note';
+
+      const reserveProcess = new DurableProductBillingService(repository);
+      const quote = await reserveProcess.buildQuote({
+        ...quoteInput(workspaceId, quoteId),
+        billingMode: 'per_request',
+        creditCost: 60,
+        failureRefundsCredits: true,
+      });
+      await reserveProcess.confirm({ quoteId, taskId, workspaceId });
+      await reserveProcess.beforeSubmit({
+        quoteId,
+        quoteRevision: quote.revision,
+        resource: 'image',
+        taskId,
+        workspaceId,
+      });
+
+      // A separate process settles, so the basis has to reach the ledger
+      // through Postgres rather than through a live in-memory quote.
+      const settleProcess = new DurableProductBillingService(repository);
+      await settleProcess.settleTask({
+        attemptId: 'partial-credit-note-attempt',
+        deploymentId: 'coordinator',
+        status: 'completed',
+        taskId,
+        workspaceId,
+        partialDelivery: { totalUnits: 6, deliveredUnits: 5 },
+      });
+
+      // A third process reads it back: nothing here was ever in this service's
+      // memory, so a matching number can only have come off disk.
+      const readProcess = new DurableProductBillingService(repository);
+      const usage = await readProcess.getUsage(taskId, workspaceId);
+      assert.equal(usage?.reservedCredits, 60);
+      // 60 - round(60 * 5 / 6) = 10: the failed page's share, not the whole hold.
+      assert.equal(usage?.refundedCredits, 10);
+      assert.equal(usage?.settledCredits, 50);
+      assert.equal(usage?.status, 'partially_refunded');
+
+      // Straight out of SQL, so no repository projection can manufacture it.
+      const stored = await pool.query<{
+        refunded_credits: string | null;
+        settled_credits: string | null;
+        status: string;
+      }>(
+        `SELECT status,
+                payload->>'refundedCredits' AS refunded_credits,
+                payload->>'settledCredits' AS settled_credits
+           FROM p1_product_billing_usage
+          WHERE workspace_id = $1 AND task_id = $2`,
+        [workspaceId, taskId],
+      );
+      assert.equal(stored.rows.length, 1);
+      assert.equal(stored.rows[0]?.status, 'partially_refunded');
+      assert.equal(stored.rows[0]?.refunded_credits, '10');
+      assert.equal(stored.rows[0]?.settled_credits, '50');
+    });
+
+    it('charges every credit when the same run delivers all its units', async () => {
+      // Negative inbound for the exit above: identical shape, complete
+      // delivery. A refund here would mean the pro-rate fires on evidence that
+      // says nothing failed.
+      const workspaceId = workspace();
+      const taskId = 'complete-credit-note-task';
+      const quoteId = 'complete-credit-note';
+
+      const service = new DurableProductBillingService(repository);
+      const quote = await service.buildQuote({
+        ...quoteInput(workspaceId, quoteId),
+        billingMode: 'per_request',
+        creditCost: 60,
+        failureRefundsCredits: true,
+      });
+      await service.confirm({ quoteId, taskId, workspaceId });
+      await service.beforeSubmit({
+        quoteId,
+        quoteRevision: quote.revision,
+        resource: 'image',
+        taskId,
+        workspaceId,
+      });
+      await service.settleTask({
+        attemptId: 'complete-credit-note-attempt',
+        deploymentId: 'coordinator',
+        status: 'completed',
+        taskId,
+        workspaceId,
+        partialDelivery: { totalUnits: 6, deliveredUnits: 6 },
+      });
+
+      const usage = await new DurableProductBillingService(repository).getUsage(
+        taskId,
+        workspaceId,
+      );
+      assert.equal(usage?.reservedCredits, 60);
+      assert.equal(usage?.refundedCredits, 0);
+      assert.equal(usage?.settledCredits, 60);
+      assert.equal(usage?.status, 'committed');
+    });
+
     it('requires a fresh quote and billing task for a paid reroll', async () => {
       const workspaceId = workspace();
       const firstProcess = new DurableProductBillingService(repository);
