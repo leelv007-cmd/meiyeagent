@@ -896,11 +896,21 @@ test(
         }),
         [],
       );
+      // Restore only the path removed above; overwriting the whole row with
+      // the local `submission` object would clobber the `agentBinding` the
+      // clarification flow already persisted server-side (the local object
+      // never mirrors that field back).
       await pool.query(
         `UPDATE execution_spine.creation_submissions
-            SET submission = $3::jsonb
+            SET submission = jsonb_set(
+              submission, '{snapshot,distributionTarget}', $3::jsonb
+            )
           WHERE workspace_id = $1 AND id = $2`,
-        [workspaceId, submission.snapshot.id, JSON.stringify(submission)],
+        [
+          workspaceId,
+          submission.snapshot.id,
+          JSON.stringify(submission.snapshot.distributionTarget),
+        ],
       );
       await billingRepository.saveProviderCost(workspaceId, {
         attemptId: `attempt-${suffix}`,
@@ -1245,6 +1255,14 @@ test(
         dispatchedSubmission,
         "merchant_confirmed",
       );
+      // The atomic prepare-before-claim order (V31-39) always sets these two
+      // together, so a persisted freeze without a binding is not a state
+      // real production can reach; recovery correctly refuses to guess a
+      // binding when it has no agentPlanning to re-derive one.
+      dispatchedSubmission.agentBinding = {
+        threadId: asAgentThreadIdentity(`thread-${dispatchedSuffix}`),
+        runId: `run-${dispatchedSuffix}`,
+      };
       dispatchedSubmission.confirmationDispatch = {
         state: "pending",
         expiresAt: "2099-01-01T00:00:00.000Z",
@@ -2547,7 +2565,7 @@ function recoveryExecutionPlanFreeze(
 }
 
 test(
-  "V31-18 P0-1: a planning failure after the paid claim is recoverable by the same idempotencyKey",
+  "V31-18 P0-1: a planning failure before the paid claim leaves nothing committed, and the same idempotencyKey retries clean",
   { skip: connectionString ? false : "TEST_DATABASE_URL is not configured" },
   async () => {
     const pool = new Pool({ connectionString });
@@ -2658,8 +2676,10 @@ test(
         }),
       );
 
-      // Attempt 1: claim() already consumed the merchant's usage/credits, then
-      // planning fails. Nothing may start Make, but the paid state is committed.
+      // Attempt 1: the atomic prepare-before-claim order (V31-39) runs
+      // planning before store.claim(), so a planning failure here means
+      // claim() never ran at all — nothing is paid and no submission row
+      // exists yet.
       await assert.rejects(
         () => coordinator.submit(request),
         /plan compiler transport failed/u,
@@ -2669,13 +2689,14 @@ test(
           WHERE workspace_id = $1 AND task_id = $2`,
         [workspaceId, taskId],
       );
-      assert.equal(paid.rows[0]?.usage, 1);
+      assert.equal(paid.rows[0]?.usage, 0);
       assert.equal(harnessStarts, 0);
 
-      // Attempt 2: the same idempotencyKey must recover, not brick with
-      // `cannot resume from failed`. This is the reservation's exit.
+      // Attempt 2: the same idempotencyKey must retry clean, not brick with
+      // `cannot resume from failed`. Since attempt 1 committed nothing, this
+      // is a fresh claim (not a replay) once planning succeeds.
       const recovered = await coordinator.submit(request);
-      assert.equal(recovered.replayed, true);
+      assert.equal(recovered.replayed, false);
       assert.equal(compileCalls, 2);
       assert.equal(harnessStarts, 1);
       const counts = await pool.query<{ submissions: number; usage: number }>(
