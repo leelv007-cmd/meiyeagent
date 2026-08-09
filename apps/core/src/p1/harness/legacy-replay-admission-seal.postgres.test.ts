@@ -21,6 +21,7 @@ import {
   isLegacyReplayAdmissionSealed,
   LEGACY_REPLAY_ADMISSION_SEAL_TABLE,
 } from './legacy-replay-admission-seal.js';
+import { PostgresExecutionPlanSnapshotStore } from './postgres-execution-plan-admission-store.js';
 import { PostgresHarnessStore } from './postgres-store.js';
 import {
   HarnessTaskAdmissionService,
@@ -66,6 +67,8 @@ test(
     const taskId = `task-seal-open-${randomUUID()}`;
     try {
       await store.applySchema();
+      // claim() reads the snapshot table, which applySchema does not create.
+      await new PostgresExecutionPlanSnapshotStore(pool).migrate();
       await resetSeal(pool);
       // Exactly what api-runtime.ts:353 does on every API boot.
       await new PostgresLegacyReplayInventory(pool).migrateInstallationLedger();
@@ -101,6 +104,8 @@ test(
     const auditId = `seal-proof-${randomUUID()}`;
     try {
       await store.applySchema();
+      // claim() reads the snapshot table, which applySchema does not create.
+      await new PostgresExecutionPlanSnapshotStore(pool).migrate();
       await resetSeal(pool);
       await inventory.migrateInstallationLedger();
       await pool.query(
@@ -180,6 +185,8 @@ test(
     };
     try {
       await store.applySchema();
+      // claim() reads the snapshot table, which applySchema does not create.
+      await new PostgresExecutionPlanSnapshotStore(pool).migrate();
       await resetSeal(pool);
       await new PostgresLegacyReplayInventory(pool).migrateInstallationLedger();
 
@@ -237,6 +244,7 @@ test(
     const inventory = new PostgresLegacyReplayInventory(pool);
     try {
       await new PostgresHarnessStore(pool).applySchema();
+      await new PostgresExecutionPlanSnapshotStore(pool).migrate();
       await resetSeal(pool);
       await inventory.migrateInstallationLedger();
       await assert.rejects(

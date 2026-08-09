@@ -172,8 +172,22 @@ test(
   },
 );
 
+/**
+ * V31-26a / P0-B: the ledger migration serializes against task admission but must
+ * NOT close it.
+ *
+ * This test previously asserted the racing claim was rejected with "Legacy replay
+ * admission is closed". That encoded the defect: api-runtime calls
+ * migrateInstallationLedger() on every API boot, so asserting rejection here
+ * asserted that booting the API kills the legacy branch every paid note/media
+ * Make still runs on. The ledger is archive evidence; only the explicitly
+ * recorded seal closes admission, which the second half of this test proves.
+ *
+ * Note on how the old assertion survived: on a long-lived test database the
+ * zero-history guard below skipped the whole test, so it never ran at all.
+ */
 test(
-  'legacy replay installation and task admission serialize without a false zero-history proof',
+  'legacy replay installation and task admission serialize without closing the live branch',
   { skip: process.env.TEST_DATABASE_URL ? false : 'TEST_DATABASE_URL is not configured' },
   async (t) => {
     const suffix = randomUUID();
@@ -233,24 +247,74 @@ test(
       await blocker.query('commit');
 
       await migration;
-      await assert.rejects(admission, /Legacy replay admission is closed/);
+      // Both took the same advisory lock, so they serialized; and the migration
+      // did not close admission — the claim landed.
+      const claimed = await admission;
+      assert.equal(claimed.kind, 'created');
       const rows = await control.query<{ count: string }>(
         `select count(*)::text as count
            from harness_runtime.task_requests
           where workflow_id=$1`,
         [taskId],
       );
-      assert.equal(rows.rows[0]?.count, '0');
+      assert.equal(rows.rows[0]?.count, '1');
       assert.match(
         (await new PostgresLegacyReplayInventory(control).installationEvidence()) ?? '',
         /migrationChecksum/,
       );
+
+      // The recorded seal is what closes it. Same shape of claim, now refused.
+      const auditId = `seal-proof-${suffix}`;
+      await control.query(
+        `insert into harness_runtime.audit_events
+           (id, workflow_id, stage, event_type, payload)
+         values ($1, $2, 'assembly_delivery', 'legacy_replay_admission_seal',
+                 '{"verified":true}'::jsonb)`,
+        [auditId, `seal-${suffix}`],
+      );
+      await new PostgresLegacyReplayInventory(control).sealLegacyReplayAdmission({
+        evidenceAuditId: auditId,
+      });
+      await assert.rejects(
+        new PostgresHarnessStore(admissionPool).claim({
+          taskId: `${taskId}-sealed`,
+          fingerprint: `fingerprint-sealed-${suffix}`,
+          request: {
+            actorId: 'owner-ledger-race',
+            workspaceId: `workspace-ledger-race-${suffix}`,
+            packageId: `package-ledger-race-${suffix}`,
+            expectedRevision: 0,
+            workflowRevision: 1,
+            creationMode: 'customized',
+            rawInput: '旧链并发准入',
+            intent: {
+              context: {
+                workId: `work-ledger-race-${suffix}`,
+                intent: '旧链并发准入',
+                sourceSummaries: [],
+              },
+              assetReferences: [],
+            },
+          },
+        }),
+        /Legacy replay admission is closed by the recorded installation seal\./,
+      );
     } finally {
       await blocker.query('rollback').catch(() => undefined);
       blocker.release();
+      // The seal must not outlive this test: a leftover seal row closes legacy
+      // admission for every later claim() against the same database. Truncate
+      // does not fire the append-only row trigger.
+      await control
+        .query('truncate table harness_runtime.legacy_replay_admission_seal')
+        .catch(() => undefined);
       await control.query(
-        'delete from harness_runtime.task_requests where workflow_id=$1',
-        [taskId],
+        `delete from harness_runtime.audit_events where id=$1`,
+        [`seal-proof-${suffix}`],
+      );
+      await control.query(
+        'delete from harness_runtime.task_requests where workflow_id like $1',
+        [`${taskId}%`],
       );
       await control.query('drop table if exists p1_legacy_replay_installation_ledger cascade');
       await control.query('drop function if exists p1_reject_legacy_replay_ledger_mutation()');
