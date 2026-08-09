@@ -91,6 +91,48 @@ it('renders note outline summary rows when frozen.outline is present', () => {
   expect(rows[2]).toHaveTextContent('预约引导');
 });
 
+it('meters the held line in credits, not the retired bucket unit', () => {
+  render(
+    <ExecutionConfirmationInteractionCard
+      onRendererReady={async () => undefined}
+      onSubmit={async () => undefined}
+      request={{
+        ...REQUEST,
+        frozen: {
+          ...REQUEST.frozen,
+          reservedCredits: 12,
+          // Deliberately disagrees with the reserve: a card that went back to
+          // summing debitPreview quantities would print 3 here, and 3 is a
+          // bucket count, not credits.
+          debitPreview: [
+            { resource: 'image', quantity: 2 },
+            { resource: 'video', quantity: 1 },
+          ],
+        },
+      }}
+    />
+  );
+
+  const held = screen.getByTestId('execution-confirmation-held');
+  expect(held).toHaveTextContent('已预留 12 分（等待确认）');
+  // RETIRED-METERING: what this line printed until D-172, pinned as absent.
+  expect(held.textContent).not.toMatch(/额度|条数/u);
+});
+
+it('omits the held line when the server reserved no credits', () => {
+  render(
+    <ExecutionConfirmationInteractionCard
+      onRendererReady={async () => undefined}
+      onSubmit={async () => undefined}
+      request={REQUEST}
+    />
+  );
+
+  expect(
+    screen.queryByTestId('execution-confirmation-held')
+  ).not.toBeInTheDocument();
+});
+
 it('rejects without inventing feedback inside the frozen card', async () => {
   const user = userEvent.setup();
   const onSubmit = vi.fn(async () => undefined);

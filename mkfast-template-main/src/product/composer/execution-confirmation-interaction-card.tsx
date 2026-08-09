@@ -54,10 +54,13 @@ export function ExecutionConfirmationInteractionCard({
   ]);
 
   /**
-   * Compact confirmation strip expansion (V31-11): when debitPreview carries
-   * media units we surface a held-credits hint. Refund dual-state / rights /
-   * facts are projected by the host when available via outline title lines —
-   * the card stays read-only with only reject / confirm.
+   * Compact confirmation strip expansion (V31-11): the held hint reads the
+   * server's pre-confirm reserve, `frozen.reservedCredits`. It deliberately
+   * does not sum `debitPreview` quantities — those are per-bucket media units,
+   * which D-172 retired as the merchant billing unit, so summing them would
+   * print a bucket count under a 分 label. Refund dual-state / rights / facts
+   * are projected by the host when available via outline title lines — the card
+   * stays read-only with only reject / confirm.
    */
   const heldCredits = request.frozen.reservedCredits ?? 0;
 
