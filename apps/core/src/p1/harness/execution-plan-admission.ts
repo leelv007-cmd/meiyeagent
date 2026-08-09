@@ -438,6 +438,10 @@ export type DurableReplayBranch =
       snapshot: ExecutionPlanSnapshot;
     }
   | {
+      branch: 'pending_confirmation';
+      snapshotHash: string;
+    }
+  | {
       branch: 'legacy';
       reason: 'no_snapshot';
     };
@@ -447,7 +451,10 @@ export type DurableReplayBranch =
  * five-stage replay. Incompatible partial layouts fail closed — no dual-write.
  */
 export function resolveDurableReplayBranch(
-  request: Pick<HarnessWorkflowInput, 'executionPlanSnapshot'> & {
+  request: Pick<
+    HarnessWorkflowInput,
+    'executionPlanSnapshot' | 'pendingExecutionPlanSnapshot'
+  > & {
     /** Corrupt / half-migrated marker: present but not a valid snapshot. */
     executionPlanSnapshotRaw?: unknown;
   },
@@ -480,6 +487,12 @@ export function resolveDurableReplayBranch(
     return {
       branch: 'execution_plan_snapshot',
       snapshot: parsed.data,
+    };
+  }
+  if (request.pendingExecutionPlanSnapshot) {
+    return {
+      branch: 'pending_confirmation',
+      snapshotHash: request.pendingExecutionPlanSnapshot.snapshotHash,
     };
   }
   return { branch: 'legacy', reason: 'no_snapshot' };

@@ -506,6 +506,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     workspaceId: string;
     submissionId: string;
     freeze: CreationSubmissionRecord['executionPlanFreeze'];
+    confirmationDispatch?: CreationSubmissionRecord['confirmationDispatch'];
   }) {
     if (!input.freeze) {
       throw new Error('Execution plan freeze is required.');
@@ -513,21 +514,37 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     const result = await this.pool.query<{ submission: unknown }>(
       `UPDATE execution_spine.creation_submissions
           SET submission = jsonb_set(
-                submission,
-                '{executionPlanFreeze}',
-                $3::jsonb,
+                jsonb_set(
+                  submission,
+                  '{executionPlanFreeze}',
+                  $3::jsonb,
+                  true
+                ),
+                '{confirmationDispatch}',
+                $4::jsonb,
                 true
               ),
               updated_at = clock_timestamp()
         WHERE workspace_id = $1
           AND id = $2
-          AND harness_state = 'reserved'
+          AND (
+            harness_state = 'reserved'
+            OR (
+              harness_state = 'starting'
+              AND harness_lease_expires_at <= clock_timestamp()
+            )
+          )
           AND (
             submission->'executionPlanFreeze' IS NULL
             OR submission->'executionPlanFreeze' = $3::jsonb
           )
         RETURNING submission`,
-      [input.workspaceId, input.submissionId, JSON.stringify(input.freeze)],
+      [
+        input.workspaceId,
+        input.submissionId,
+        JSON.stringify(input.freeze),
+        JSON.stringify(input.confirmationDispatch ?? null),
+      ],
     );
     const row = result.rows[0];
     if (!row) {
@@ -544,7 +561,9 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
       const submission = storedSubmission(stored.submission);
       if (
         JSON.stringify(submission.executionPlanFreeze) !==
-        JSON.stringify(input.freeze)
+          JSON.stringify(input.freeze) ||
+        JSON.stringify(submission.confirmationDispatch) !==
+          JSON.stringify(input.confirmationDispatch)
       ) {
         throw new Error(
           `Creation submission ${input.submissionId} cannot change its execution plan freeze after Harness admission.`,
@@ -760,6 +779,16 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
                 harness_lease_id = NULL,
                 harness_lease_expires_at = NULL,
                 harness_started_lease_id = $3,
+                submission = CASE
+                  WHEN submission ? 'confirmationDispatch'
+                    THEN jsonb_set(
+                      submission,
+                      '{confirmationDispatch,state}',
+                      '"dispatched"'::jsonb,
+                      true
+                    )
+                  ELSE submission
+                END,
                 updated_at = $4::timestamptz
           WHERE workspace_id = $1 AND id = $2`,
         [
@@ -901,6 +930,7 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     decisionReferences?: unknown;
     executionPlanFreeze?: unknown;
     executionConfirmationContext?: unknown;
+    confirmationDispatch?: unknown;
     snapshot?: unknown;
     task?: { id?: unknown };
     usageReservation?: { id?: unknown; credits?: unknown; units?: unknown };
@@ -915,6 +945,9 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
   );
   const executionConfirmationContext = storedExecutionConfirmationContext(
     candidate.executionConfirmationContext,
+  );
+  const confirmationDispatch = storedConfirmationDispatch(
+    candidate.confirmationDispatch,
   );
   const contentPackageId = requiredId(
     candidate.contentPackage?.id,
@@ -947,6 +980,7 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     ...(decisionReferences ? { decisionReferences } : {}),
     ...(executionPlanFreeze ? { executionPlanFreeze } : {}),
     ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
+    ...(confirmationDispatch ? { confirmationDispatch } : {}),
     snapshot,
     task: { id: taskId },
     usageReservation: {
@@ -956,6 +990,23 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     },
     work: { id: workId },
   };
+}
+
+function storedConfirmationDispatch(
+  value: unknown,
+): CreationSubmissionRecord['confirmationDispatch'] {
+  if (value === undefined || value === null) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Stored creation submission has invalid confirmation dispatch.');
+  }
+  const dispatch = value as Record<string, unknown>;
+  if (
+    typeof dispatch.requestId !== 'string' ||
+    (dispatch.state !== 'pending' && dispatch.state !== 'dispatched')
+  ) {
+    throw new Error('Stored creation submission has invalid confirmation dispatch.');
+  }
+  return { requestId: dispatch.requestId, state: dispatch.state };
 }
 
 function storedExecutionPlanFreeze(

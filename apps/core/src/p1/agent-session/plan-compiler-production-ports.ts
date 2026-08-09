@@ -29,6 +29,19 @@ export type ProductionPlanRightsResolver = {
   }>;
 };
 
+export function planCompilerRightsRevisionId(input: {
+  workspaceId: string;
+  knownAssetIds: readonly string[];
+  unauthorizedAssetIds: readonly string[];
+}) {
+  const rightsFingerprint = fingerprintValue({
+    workspaceId: input.workspaceId,
+    known: input.knownAssetIds,
+    unauthorized: input.unauthorizedAssetIds,
+  }).slice(0, 16);
+  return `rights:${input.workspaceId}:${rightsFingerprint}`;
+}
+
 export type ProductionPlanModelCatalog = {
   getCatalog(
     workspaceId: string,
@@ -104,12 +117,6 @@ export function createProductionPlanCompilerPorts(deps: {
       const knownAssetIds = resolved.knownAssetIds ?? [];
       const unauthorizedAssetIds = resolved.unauthorizedAssetIds;
 
-      const rightsFingerprint = fingerprintValue({
-        workspaceId: input.workspaceId,
-        known: knownAssetIds,
-        unauthorized: unauthorizedAssetIds,
-      }).slice(0, 16);
-
       return {
         rightsSummary: {
           source: 'content_package_rights',
@@ -117,7 +124,13 @@ export function createProductionPlanCompilerPorts(deps: {
           unauthorizedAssetIds,
           status: unauthorizedAssetIds.length > 0 ? 'partial' : 'resolved',
         },
-        rightsRevisionIds: [`rights:${input.workspaceId}:${rightsFingerprint}`],
+        rightsRevisionIds: [
+          planCompilerRightsRevisionId({
+            workspaceId: input.workspaceId,
+            knownAssetIds,
+            unauthorizedAssetIds,
+          }),
+        ],
         assetUsages: input.assetIntentions.map((intention, index) => ({
           intention,
           assetRef: knownAssetIds[index] ?? `intent:${index + 1}`,

@@ -108,6 +108,7 @@ export class ConfirmationAuthorityAssembler {
       failureRefundsCredits: quote.failureRefundsCredits === true,
       rightsSummary: [...plan.rightsRevisionRefs].sort().join(', ') || null,
       factSummary: [...plan.factRevisionRefs].sort().join(', ') || null,
+      ...(plan.executionConfirmationContext ?? {}),
     });
   }
 

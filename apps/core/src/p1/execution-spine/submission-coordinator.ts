@@ -35,13 +35,17 @@ export interface CreationSubmissionRecord {
 		units: CreationSubmissionUsageUnit[];
 	};
 	/**
-	 * V31-12 compile-finalize freeze, written in-memory by the Composer plan
-	 * session after compile and consumed by the Harness admission path. Not
-	 * part of the durable submission payload; replays reconstruct the same
-	 * snapshot from the frozen harness request.
+	 * V31-12 compile-finalize freeze. New paid submissions persist it in the
+	 * same claim transaction as their credit reservation and confirmation
+	 * outbox; recovery reuses this exact value before Harness admission.
 	 */
 	executionPlanFreeze?: ExecutionPlanCompileFreeze;
 	executionConfirmationContext?: HarnessWorkflowInput["executionConfirmationContext"];
+	/** Reliable outbox marker committed with the credit reservation and freeze. */
+	confirmationDispatch?: {
+		requestId: string;
+		state: "pending" | "dispatched";
+	};
 }
 
 export interface CreationSubmissionUsageUnit {
@@ -82,6 +86,7 @@ export interface CreationSubmissionStore {
 		workspaceId: string;
 		submissionId: string;
 		freeze: ExecutionPlanCompileFreeze;
+		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
 	}): Promise<CreationSubmissionRecord>;
 	/**
 	 * Separately leases the one external Harness start after the submission
@@ -225,8 +230,35 @@ export class CreationSubmissionCoordinator {
 	}
 
 	async submit(input: ComposerSubmissionRequest) {
+		return this.submitWithConfirmationContext(input);
+	}
+
+	async submitCampaignWork(input: {
+		submission: ComposerSubmissionRequest;
+		campaignPlanRef: { id: string; revision: number | string };
+		workOrdinal: number;
+	}) {
+		if (!Number.isSafeInteger(input.workOrdinal) || input.workOrdinal < 1) {
+			throw new Error("Campaign workOrdinal must be a positive integer.");
+		}
+		return this.submitWithConfirmationContext(input.submission, {
+			campaignPlanRef: input.campaignPlanRef,
+			workOrdinal: input.workOrdinal,
+			approvalScope: "single_work",
+		});
+	}
+
+	private async submitWithConfirmationContext(
+		input: ComposerSubmissionRequest,
+		executionConfirmationContext?: NonNullable<
+			CreationSubmissionRecord["executionConfirmationContext"]
+		>,
+	) {
 		const request = composerSubmissionRequestSchema.parse(input);
-		const payloadHash = fingerprintValue(receiptPayload(request));
+		const payloadHash = fingerprintValue({
+			...receiptPayload(request),
+			...(executionConfirmationContext ? { executionConfirmationContext } : {}),
+		});
 		const receipt = await this.store.readReceipt({
 			workspaceId: request.workspaceId,
 			idempotencyKey: request.idempotencyKey,
@@ -292,7 +324,13 @@ export class CreationSubmissionCoordinator {
 					? { credits: admitted.creditCost, units: [] }
 					: { units: admitted.usageUnits ?? productUsageUnits(snapshot) }),
 			},
+			...(executionConfirmationContext ? { executionConfirmationContext } : {}),
 		};
+		const preparedBinding = await this.prepareAgentPlan(
+			submission,
+			request.agentThreadId,
+			false,
+		);
 		const claimed = await this.store.claim({
 			workspaceId: command.workspaceId,
 			idempotencyKey: command.idempotencyKey,
@@ -302,10 +340,13 @@ export class CreationSubmissionCoordinator {
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();
 		}
-		const agentBinding = await this.prepareAgentPlan(
-			claimed.submission,
-			request.agentThreadId
-		);
+		const agentBinding =
+			claimed.kind === "existing"
+				? await this.prepareAgentPlan(
+						claimed.submission,
+						request.agentThreadId,
+					)
+				: preparedBinding;
 		await this.startHarness(claimed.submission);
 		return submissionResponse(
 			claimed.submission,
@@ -316,18 +357,22 @@ export class CreationSubmissionCoordinator {
 
 	private async prepareAgentPlan(
 		submission: CreationSubmissionRecord,
-		continuationThreadId?: string
+		continuationThreadId?: string,
+		persistExisting = true,
 	): Promise<ComposerAgentBinding | undefined> {
-		if (!this.agentPlanning) return Promise.resolve(undefined);
-		const binding = await this.agentPlanning.prepare({
-			...(continuationThreadId ? { continuationThreadId } : {}),
-			submission,
-		});
-		if (submission.executionPlanFreeze) {
+		const binding = this.agentPlanning
+			? await this.agentPlanning.prepare({
+					...(continuationThreadId ? { continuationThreadId } : {}),
+					submission,
+				})
+			: undefined;
+		ensureConfirmationDispatch(submission);
+		if (persistExisting && submission.executionPlanFreeze) {
 			const persisted = await this.store.saveExecutionPlanFreeze({
 				workspaceId: submission.snapshot.workspaceId,
 				submissionId: submission.snapshot.id,
 				freeze: submission.executionPlanFreeze,
+				confirmationDispatch: submission.confirmationDispatch,
 			});
 			submission.executionPlanFreeze = persisted.executionPlanFreeze;
 		}
@@ -669,6 +714,7 @@ export class CreationSubmissionCoordinator {
 		let started = 0;
 		for (const candidate of recoverable) {
 			try {
+				await this.prepareAgentPlan(candidate.submission);
 				if (await this.startHarness(candidate.submission)) started += 1;
 			} catch {
 				failed += 1;
@@ -678,6 +724,15 @@ export class CreationSubmissionCoordinator {
 	}
 
 	private async startHarness(submission: CreationSubmissionRecord) {
+		if (
+			requiresPaidConfirmation(submission) &&
+			(submission.executionPlanFreeze?.approvalBasis !== "merchant_confirmed" ||
+				!submission.confirmationDispatch)
+		) {
+			throw new Error(
+				"Paid Harness start requires a durable freeze and confirmation outbox.",
+			);
+		}
 		const startLease = {
 			workspaceId: submission.snapshot.workspaceId,
 			submissionId: submission.snapshot.id,
@@ -722,6 +777,25 @@ export class CreationSubmissionCoordinator {
 			throw error;
 		}
 	}
+}
+
+function ensureConfirmationDispatch(submission: CreationSubmissionRecord) {
+	if (submission.executionPlanFreeze?.approvalBasis !== "merchant_confirmed") {
+		return;
+	}
+	submission.confirmationDispatch ??= {
+		requestId: `confirmation:${submission.task.id}`,
+		state: "pending",
+	};
+}
+
+function requiresPaidConfirmation(submission: CreationSubmissionRecord) {
+	const credits = submission.usageReservation.credits;
+	if (!Number.isSafeInteger(credits) || (credits ?? 0) <= 0) return false;
+	if (submission.snapshot.lens !== "copy") return true;
+	return submission.usageReservation.units.some(
+		(unit) => unit.resource === "image" || unit.resource === "video",
+	);
 }
 
 function productUsageUnits(

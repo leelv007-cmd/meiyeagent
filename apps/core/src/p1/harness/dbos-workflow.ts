@@ -38,6 +38,11 @@ import {
 import type {
   ExecutionConfirmationService,
 } from '../agent-session/execution-confirmation-service.js';
+import type {
+  ConfirmationAuthorityAssembler,
+  CreateExecutionConfirmationAuthorityInput,
+} from '../agent-session/execution-confirmation-authority.js';
+import type { ConfirmationAuthorityStore } from '../agent-session/execution-confirmation-authority-store.js';
 import { resumeWithRaisedServerLimit } from './bounded-execution-controller.js';
 import type {
   HarnessWorkflowInput,
@@ -607,10 +612,10 @@ export interface HarnessDbosWorkflowOptions {
    * id the Coordinator submission consumed (U8=A), so execution-time
    * settlement never debits twice. Absent ⇒ legacy submission-time hold only.
    */
-  executionConfirmation?: Pick<
-    ExecutionConfirmationService,
-    'getDecision'
-  >;
+  executionConfirmation?: Pick<ConfirmationAuthorityAssembler, 'createRequest'> &
+    Pick<ExecutionConfirmationService, 'getDecisionForWorkspace'> & {
+      putCurrent: ConfirmationAuthorityStore['putCurrent'];
+    };
   config?: Pick<AdminConfigRepository, 'get'>;
   decisions?: Pick<HarnessDecisionService, 'submitCoreTimeout'> &
     Partial<Pick<HarnessDecisionService, 'submitCoreHoldExpired'>>;
@@ -726,6 +731,12 @@ export function registerHarnessDbosWorkflow(
     await DBOS.runStep(
       async () => {
         const branch = resolveDurableReplayBranch(request);
+        if (branch.branch === 'pending_confirmation') {
+          return {
+            branch: 'pending_confirmation' as const,
+            snapshotHash: branch.snapshotHash,
+          };
+        }
         if (branch.branch === 'legacy') {
           return { branch: 'legacy' as const };
         }
@@ -1227,6 +1238,7 @@ export function registerHarnessDbosWorkflow(
             ports,
             executionConfirmation,
             executionPlanAdmission,
+            resolveExecutionPlanLiveFacts,
           ),
           runtime,
           { forceLegacyFiveStage },
@@ -1391,28 +1403,54 @@ type BillingRunStep = <T>(
  */
 function withExecutionConfirmationStagePort(
   ports: HarnessStagePorts | HarnessStageCollaborators,
-  executionConfirmation: Pick<ExecutionConfirmationService, 'getDecision'> |
+  executionConfirmation: HarnessDbosWorkflowOptions['executionConfirmation'] |
     undefined,
   executionPlanAdmission:
     | Pick<ExecutionPlanAdmissionPort, 'admitSnapshot' | 'verifyAdmittedForDbos'>
     | undefined,
+  resolveExecutionPlanLiveFacts:
+    | NonNullable<HarnessDbosWorkflowOptions['resolveExecutionPlanLiveFacts']>
+    | undefined,
 ): HarnessStagePorts | HarnessStageCollaborators {
   if (!executionConfirmation || !executionPlanAdmission) return ports;
   const confirmationPorts = {
-    getExecutionConfirmationDecision: (requestId: string) =>
-      executionConfirmation.getDecision(requestId),
+    getExecutionConfirmationDecision: (workspaceId: string, requestId: string) =>
+      executionConfirmation.getDecisionForWorkspace(workspaceId, requestId),
     async admitExecutionPlanSnapshot(input: {
       workflowId: string;
       workspaceId: string;
       snapshot: import('@meiye/contracts').ExecutionPlanSnapshot;
+      live?: SnapshotLiveFacts;
     }) {
       const admitted = await executionPlanAdmission.admitSnapshot(input);
       await executionPlanAdmission.verifyAdmittedForDbos({
         workflowId: input.workflowId,
         snapshotHash: admitted.admitted.snapshot.snapshotHash,
+        ...(input.live ? { live: input.live } : {}),
       });
       return admitted.admitted.snapshot;
     },
+    resolveExecutionPlanLiveFacts: resolveExecutionPlanLiveFacts
+      ? async (input: {
+          workflowId: string;
+          request: HarnessWorkflowInput;
+          snapshot: import('@meiye/contracts').ExecutionPlanSnapshot;
+        }) =>
+          resolveExecutionPlanLiveFacts({
+            workflowId: input.workflowId,
+            request: {
+              ...input.request,
+              executionPlanSnapshot: input.snapshot,
+            },
+          })
+      : undefined,
+    putExecutionConfirmationAuthority: (input: Parameters<
+      ConfirmationAuthorityStore['putCurrent']
+    >[0]) => executionConfirmation.putCurrent(input),
+    createExecutionConfirmationRequest: (
+      input: CreateExecutionConfirmationAuthorityInput,
+    ) =>
+      executionConfirmation.createRequest(input),
   };
   if ('shared' in ports) {
     return {

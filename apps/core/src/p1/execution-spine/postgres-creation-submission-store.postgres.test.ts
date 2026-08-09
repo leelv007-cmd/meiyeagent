@@ -43,6 +43,7 @@ import {
 } from "../harness/structured-nodes.js";
 import { PostgresGrantLotLedger } from "../foundation/postgres-grant-lot.js";
 import { GrantLotAwareProductEntitlementService } from "../foundation/grant-lot-entitlement-service.js";
+import { PostgresCreditLedger } from "../credit-billing/postgres-credit-ledger.js";
 import { MemoryFoundationRepository } from "../foundation/memory-repository.js";
 
 const connectionString = process.env.TEST_DATABASE_URL;
@@ -488,10 +489,15 @@ test(
     const pool = new Pool({ connectionString });
     const operations = new PostgresOperationsRepository(pool);
     const billingRepository = new PostgresProductBillingRepository(pool);
+    const creditLedger = new PostgresCreditLedger(pool);
     const store = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(
-        new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
+        new PostgresProductBillingUsageReservation(
+          pool,
+          noOpGrantLots,
+          creditLedger,
+        ),
       ),
       { harnessStartLeaseMs: 60_000 },
     );
@@ -503,12 +509,28 @@ test(
     try {
       await operations.migrate();
       await billingRepository.migrate();
+      const migrationClient = await pool.connect();
+      try {
+        await creditLedger.migrate(migrationClient);
+      } finally {
+        migrationClient.release();
+      }
       await store.applySchema();
+      await creditLedger.grant({
+        id: `credit-${suffix}`,
+        workspaceId,
+        credits: 10,
+        expirationDate: "2026-09-01T00:00:00.000Z",
+        transactionType: "PURCHASE_PACKAGE",
+        sourceRef: `crash-window-${suffix}`,
+        createdAt: "2026-07-01T00:00:00.000Z",
+      });
       const quote = await seedQuote(
         billingRepository,
         workspaceId,
         quoteId,
         submission.task.id,
+        { creditCost: 4 },
       );
       submission.snapshot = createSnapshot({
         contentPackagePlatform: "wechat_moments",
@@ -519,6 +541,20 @@ test(
         submission,
         workspaceId,
       });
+      submission.usageReservation = {
+        id: submission.usageReservation.id,
+        credits: 4,
+        units: [],
+      };
+      const executionPlanFreeze = recoveryExecutionPlanFreeze(
+        submission,
+        "merchant_confirmed",
+      );
+      submission.executionPlanFreeze = executionPlanFreeze;
+      submission.confirmationDispatch = {
+        requestId: `confirmation:${submission.task.id}`,
+        state: "pending",
+      };
 
       const first = await store.claim({
         idempotencyKey: "submit-copy-1",
@@ -527,14 +563,11 @@ test(
         workspaceId,
       });
       assert.equal(first.kind, "created");
-      const executionPlanFreeze = recoveryExecutionPlanFreeze(submission);
-      submission.executionPlanFreeze = executionPlanFreeze;
-      const frozen = await store.saveExecutionPlanFreeze({
-        workspaceId,
-        submissionId: submission.snapshot.id,
-        freeze: executionPlanFreeze,
-      });
-      assert.deepEqual(frozen.executionPlanFreeze, executionPlanFreeze);
+      assert.equal(
+        (await creditLedger.project(workspaceId, submission.snapshot.createdAt))
+          .usedCredits,
+        4,
+      );
       const reservedQuote = await billingRepository.getQuote(
         workspaceId,
         quoteId,
@@ -904,6 +937,10 @@ test(
         recoverable[0]?.submission.executionPlanFreeze,
         executionPlanFreeze,
       );
+      assert.deepEqual(recoverable[0]?.submission.confirmationDispatch, {
+        requestId: `confirmation:${submission.task.id}`,
+        state: "pending",
+      });
       if (leaseOne.kind !== "start") {
         throw new Error("Expected the initial Harness lease claim.");
       }
@@ -935,6 +972,18 @@ test(
         started: 1,
       });
       assert.deepEqual(recoveredStarts, [submission.task.id]);
+      const completed = await store.readReceipt({
+        idempotencyKey: "submit-copy-1",
+        payloadHash: "payload-a",
+        workspaceId,
+      });
+      assert.equal(completed.kind, "existing");
+      if (completed.kind === "existing") {
+        assert.deepEqual(completed.submission.confirmationDispatch, {
+          requestId: `confirmation:${submission.task.id}`,
+          state: "dispatched",
+        });
+      }
       await store.releaseHarnessStart({
         leaseId: leaseOne.leaseId,
         submissionId: submission.snapshot.id,
@@ -2000,6 +2049,7 @@ test(
 
 function recoveryExecutionPlanFreeze(
   submission: CreationSubmissionRecord,
+  approvalBasis: "merchant_confirmed" | "policy_exempt_copy" = "policy_exempt_copy",
 ): NonNullable<CreationSubmissionRecord['executionPlanFreeze']> {
   return {
     planId: `plan-${submission.task.id}` as never,
@@ -2022,7 +2072,7 @@ function recoveryExecutionPlanFreeze(
     quoteRef: submission.snapshot.quote,
     rightsRevisionRefs: [submission.snapshot.rights.revision],
     harnessReleaseId: 'release-recovery-1' as never,
-    approvalBasis: 'policy_exempt_copy',
+    approvalBasis,
   };
 }
 
@@ -2104,7 +2154,7 @@ async function seedQuote(
   workspaceId: string,
   quoteId: string,
   taskId: string,
-  options?: { outputCount?: number; unitRate?: number },
+  options?: { creditCost?: number; outputCount?: number; unitRate?: number },
 ) {
   const billing = new DurableProductBillingService(repository);
   await seedUnconfirmedQuote(repository, workspaceId, quoteId, options);
@@ -2115,7 +2165,7 @@ async function seedUnconfirmedQuote(
   repository: PostgresProductBillingRepository,
   workspaceId: string,
   quoteId: string,
-  options?: { outputCount?: number; unitRate?: number },
+  options?: { creditCost?: number; outputCount?: number; unitRate?: number },
 ) {
   return new DurableProductBillingService(repository).buildQuote({
     billingMode: "per_request",
@@ -2125,6 +2175,9 @@ async function seedUnconfirmedQuote(
     quoteId,
     quotePolicyRevision: "quote-policy-1",
     routeSnapshotRef: "route-1",
+    ...(options?.creditCost !== undefined
+      ? { creditCost: options.creditCost }
+      : {}),
     ...(options?.outputCount !== undefined
       ? { outputCount: options.outputCount }
       : {}),
@@ -2202,6 +2255,13 @@ async function cleanup(
   workspaceId: string,
   submission: CreationSubmissionRecord,
 ) {
+  await pool.query(
+    "DELETE FROM p1_credit_lot_transactions WHERE workspace_id = $1",
+    [workspaceId],
+  );
+  await pool.query("DELETE FROM p1_credit_grant_lots WHERE workspace_id = $1", [
+    workspaceId,
+  ]);
   await pool.query(
     "DELETE FROM execution_spine.creation_submissions WHERE workspace_id = $1",
     [workspaceId],

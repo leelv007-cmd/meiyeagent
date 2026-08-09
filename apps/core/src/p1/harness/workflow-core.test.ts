@@ -107,7 +107,7 @@ test('paid decision admits the snapshot before Make: zero nameIntent/compileBrie
     compileBriefCalls += 1;
     return originalBrief(input);
   };
-  stages.getExecutionConfirmationDecision = async (requestId) => {
+  stages.getExecutionConfirmationDecision = async (_workspaceId, requestId) => {
     const { planConfirmationDecisionSchema } = await import('@meiye/contracts');
     return planConfirmationDecisionSchema.parse({
       schemaVersion: 'plan-confirmation-decision/v1',

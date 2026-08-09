@@ -44,6 +44,11 @@ test('authority assembler freezes plan, quote, rights, facts and clock from serv
         rightsRevisionRefs: ['rights-2', 'rights-1'],
         factRevisionRefs: ['fact-1'],
         frozenAt: '2026-08-09T11:59:00.000Z',
+        executionConfirmationContext: {
+          campaignPlanRef: { id: 'campaign-plan-1', revision: 2 },
+          workOrdinal: 2,
+          approvalScope: 'single_work',
+        },
       } as never;
     },
   };
@@ -79,6 +84,9 @@ test('authority assembler freezes plan, quote, rights, facts and clock from serv
     reservationIdempotencyKey: 'consume:task:task-authority',
     createdAt: '2026-08-09T12:00:00.000Z',
     holdExpiresAt: '2026-08-11T12:00:00.000Z',
+    campaignPlanRef: { id: 'campaign-plan-1', revision: 2 },
+    workOrdinal: 2,
+    approvalScope: 'single_work',
     status: 'pending',
   });
   assert.match(result.stored.request.requestId, /^confirmation:[a-f0-9]{40}$/u);

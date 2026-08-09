@@ -16,6 +16,11 @@ export type PendingConfirmationAuthority = {
   rightsRevisionRefs: readonly string[];
   factRevisionRefs: readonly string[];
   frozenAt: string;
+  executionConfirmationContext?: {
+    campaignPlanRef: AgentRevisionRef;
+    workOrdinal: number;
+    approvalScope: 'single_work';
+  };
 };
 
 export interface ConfirmationAuthorityStore {

@@ -33,6 +33,8 @@ import { MemoryAgentSessionStore } from './memory-agent-session-store.js';
 import { MemoryMarketingPlanStore } from './memory-plan-store.js';
 import { PostgresAgentSessionStore } from './postgres-agent-session-store.js';
 import { PostgresMarketingPlanStore } from './postgres-plan-store.js';
+import { MemoryConfirmationAuthorityStore } from './execution-confirmation-authority-store.js';
+import type { CreateExecutionConfirmationResult } from './execution-confirmation-service.js';
 import {
   createFixturePlanCompilerPorts,
   PlanCompiler,
@@ -388,7 +390,12 @@ test('paid admission creates one pending request before Make and carries the dur
   await coordinator.prepare({ submission });
   assert.equal(submission.executionPlanFreeze?.approvalBasis, 'merchant_confirmed');
 
-  const calls: Array<{ requestId: string; snapshotHash: string }> = [];
+  const calls: Array<{
+    actorId: string;
+    workspaceId: string;
+    workflowId: string;
+  }> = [];
+  const authority = new MemoryConfirmationAuthorityStore();
   const starter = new RecordingStarter();
   const admission = new HarnessTaskAdmissionService(
     new MemoryHarnessRegistry(),
@@ -402,64 +409,41 @@ test('paid admission creates one pending request before Make and carries the dur
     new ExecutionPlanAdmissionService(new MemoryExecutionPlanSnapshotStore()),
     {
       async createRequest(input) {
-        calls.push({ requestId: input.requestId, snapshotHash: input.snapshotHash });
+        calls.push(input);
+        return confirmationResult('confirmation:authority-paid-chain-1');
       },
+      putCurrent: (input) => authority.putCurrent(input),
     },
   );
   const stage = new CreationStagePort({ submit: (input) => admission.submit(input) });
 
   await stage.start(submission);
+  await stage.start(submission);
 
-  assert.deepEqual(calls, [
-    {
-      requestId: 'confirmation:task-paid-chain-1',
-      snapshotHash: starter.requests[0]!.pendingExecutionPlanSnapshot!.snapshotHash,
-    },
-  ]);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[1], calls[0]);
+  assert.deepEqual(calls[0], {
+    actorId: 'owner-1',
+    workspaceId: 'workspace-1',
+    workflowId: 'task-paid-chain-1',
+  });
+  assert.equal(
+    (await authority.getCurrentByWorkflowId('task-paid-chain-1'))?.snapshotHash,
+    starter.requests[0]!.pendingExecutionPlanSnapshot!.snapshotHash,
+  );
+  assert.equal(
+    starter.requests[0]?.executionConfirmationRequestId,
+    'confirmation:authority-paid-chain-1',
+  );
   assert.equal(starter.requests[0]?.executionPlanSnapshot, undefined);
   assert.ok(starter.requests[0]?.pendingExecutionPlanSnapshot);
 });
 
-test('Campaign second paid Work creates an independent confirmation request', async () => {
-  const sessions = new MemoryAgentSessionStore();
-  const plans = new MemoryMarketingPlanStore();
-  const compiler = new PlanCompiler({ store: plans, ports: createFixturePlanCompilerPorts() });
-  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
-    compilePlan: (input) => compiler.compile(input),
-    adjustPlan: (input) => compiler.adjust(input),
-  });
-  const works = [record('task-campaign-1', '第一周'), record('task-campaign-2', '第二周')];
-  for (const [index, submission] of works.entries()) {
-    submission.executionConfirmationContext = {
-      campaignPlanRef: { id: 'campaign-plan-1', revision: 2 },
-      workOrdinal: index + 1,
-      approvalScope: 'single_work',
-    };
-    await coordinator.prepare({ submission });
-  }
-  const calls: Array<{ requestId: string; workOrdinal?: number }> = [];
-  const admission = new HarnessTaskAdmissionService(
-    new MemoryHarnessRegistry(),
-    new RecordingStarter(),
-    new MemoryPromptResolver(),
-    undefined,
-    undefined,
-    { async resolve() { return copyRoute(); } },
-    undefined,
-    undefined,
-    new ExecutionPlanAdmissionService(new MemoryExecutionPlanSnapshotStore()),
-    { async createRequest(input) { calls.push(input); } },
-  );
-  const stage = new CreationStagePort({ submit: (input) => admission.submit(input) });
-
-  await stage.start(works[0]!);
-  await stage.start(works[1]!);
-
-  assert.deepEqual(calls.map(({ requestId, workOrdinal }) => ({ requestId, workOrdinal })), [
-    { requestId: 'confirmation:task-campaign-1', workOrdinal: 1 },
-    { requestId: 'confirmation:task-campaign-2', workOrdinal: 2 },
-  ]);
-});
+function confirmationResult(requestId: string): CreateExecutionConfirmationResult {
+  return {
+    stored: { request: { requestId } },
+  } as CreateExecutionConfirmationResult;
+}
 
 function copyRecord(
   taskId: string,
