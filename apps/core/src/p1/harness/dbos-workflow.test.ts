@@ -22,6 +22,11 @@ import {
 } from './context-fence.js';
 import { HarnessInteractionError } from './interaction-service.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
+import {
+  ExecutionPlanAdmissionError,
+  ExecutionPlanAdmissionService,
+} from './execution-plan-admission.js';
+import { MemoryExecutionPlanSnapshotStore } from './memory-execution-plan-admission-store.js';
 
 import {
   commitHarnessBillingOrSchedule,
@@ -782,6 +787,99 @@ test('a pre-a9 replay stops before settlement, terminal writes, or later DBOS op
     ),
     false,
   );
+});
+
+test('4A RED: a fresh paid task with a pending confirmation snapshot dies in the pre-run verification step before the confirmation gate ever runs (V31-12 admit-after-decide vs the pre-run verify assuming an already-admitted row)', async (t) => {
+  const workflowId = 'workflow-pending-confirmation-fresh';
+  const workflowIdDescriptor = Object.getOwnPropertyDescriptor(
+    DBOS,
+    'workflowID',
+  );
+  Object.defineProperty(DBOS, 'workflowID', {
+    configurable: true,
+    get: () => workflowId,
+  });
+  t.after(() => {
+    if (workflowIdDescriptor) {
+      Object.defineProperty(DBOS, 'workflowID', workflowIdDescriptor);
+    }
+  });
+  t.mock.method(
+    DBOS,
+    'registerWorkflow',
+    ((workflow: unknown) => workflow) as typeof DBOS.registerWorkflow,
+  );
+  const stepNames: string[] = [];
+  t.mock.method(
+    DBOS,
+    'runStep',
+    async <T>(
+      operation: () => Promise<T>,
+      options?: { name?: string },
+    ): Promise<T> => {
+      stepNames.push(options?.name ?? 'unnamed');
+      return operation();
+    },
+  );
+  const unreachableStage = async (): Promise<never> => {
+    throw new Error(
+      'The pre-run verification step must not let a fresh pending confirmation reach any Harness stage.',
+    );
+  };
+  const stages: HarnessStagePorts = {
+    nameIntent: unreachableStage,
+    injectContext: unreachableStage,
+    fenceContext: unreachableStage,
+    compileBrief: unreachableStage,
+    executeAndSelect: unreachableStage,
+    assembleAndDeliver: unreachableStage,
+  };
+  // Real admission service, empty store: nothing has been admitted for this
+  // workflow yet, which is exactly the state a fresh paid task is in before
+  // the merchant has decided (V31-12: "确认请求持 hash 作锚... 确认后...").
+  const executionPlanAdmission = new ExecutionPlanAdmissionService(
+    new MemoryExecutionPlanSnapshotStore(),
+  );
+  const workflow = registerHarnessDbosWorkflow(
+    stages,
+    {
+      async registerPending() {
+        throw new Error('Must not register a pending step before verification even ran.');
+      },
+      async readPending() {
+        throw new Error('Must not read a pending step before verification even ran.');
+      },
+      async recordStageTrace() {
+        throw new Error('Must not record a stage trace before verification even ran.');
+      },
+      async recordTerminalFailure() {
+        throw new Error('Must not record terminal failure before verification even ran.');
+      },
+    },
+    { executionPlanAdmission },
+  );
+  const request = {
+    workspaceId: 'workspace-pending-confirmation-fresh',
+    // Paid/non-exempt path (task-admission.ts's else branch, V31-12): only a
+    // pending marker is attached before Make begins. Admission is deferred
+    // to the confirmation gate, which runs later in this same workflow body
+    // once the merchant decides — nothing is admitted yet on this, the
+    // first-ever invocation.
+    pendingExecutionPlanSnapshot: {
+      snapshotHash: 'pending-snapshot-hash-fresh',
+    },
+  } as unknown as HarnessWorkflowInput;
+
+  await assert.rejects(
+    workflow({ workflowId, request }),
+    (error: unknown) =>
+      error instanceof ExecutionPlanAdmissionError &&
+      error.code === 'NOT_FOUND',
+  );
+  // The confirmation-interaction-card is built inside a later stage/step;
+  // if the pre-run verification step is the thing that killed the workflow,
+  // no stage or persistence call ever ran to produce one.
+  assert.deepEqual(stepNames, ['execution-plan-snapshot-verification']);
 });
 
 test('ask_merchant caller derives one replay-stable key from the canonical question', async () => {
