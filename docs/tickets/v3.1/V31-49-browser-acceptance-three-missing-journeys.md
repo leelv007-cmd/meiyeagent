@@ -65,16 +65,33 @@ fail-closed 逐句：`:44-48` 遍历 `-f` 检查，`:50-58` 有缺即把清单 `
 - **改指向既有 spec**（把门脚本 `:27` 那一行的路径改成 `v31-memory-injection-b2-journey.spec.ts`）—— **但必须先把第 ③ 跳的断言补进那条 spec，否则等于把一个真缺口注销掉**。补断言与改指向必须同一次变更落地，不得分两批。
 - **不要**为了凑门而新建一个薄壳 spec：五跳里四跳会与既有 spec 逐字重复，重复的浏览器旅程每条要跑十几分钟，且两份断言漂移后没人知道该信哪份。
 
-### 第 ③ 跳的缺口是**两层**，写断言前必须先裁产品那层
+### 第 ③ 跳的缺口是**两层**——产品那层已裁（2026-08-10，主控裁决）
 
-产品侧「经验来源」这行是有的：`mkfast-template-main/src/product/memory-injection-receipt.tsx:88-93`，`data-testid="memory-injection-receipt-source"`，渲染 `memory_injection_receipt_source({ memoryId: entry.memoryId })`。而那条文案的原文是——
+**缺口现状（只读亲验）**：产品侧「经验来源」这行是有的：`mkfast-template-main/src/product/memory-injection-receipt.tsx:88-93`，`data-testid="memory-injection-receipt-source"`，渲染 `memory_injection_receipt_source({ memoryId: entry.memoryId })`。而那条文案的原文是——
 
 - `project.inlang/messages/zh.json:3386`：`"memory_injection_receipt_source": "来源记忆 {memoryId}"`
 - `project.inlang/messages/en.json:3386`：`"Source memory {memoryId}"`
 
 **即「经验来源」当前只显示一个不透明 id。** 对照 §39 的目的（`plan:1817`「商家能回答『它为什么这么写』」），一串 UUID 回答不了这个问题。而**人类可读的来源确实存在**，只是在另一个页面：`mkfast-template-main/src/product/memory-vault-page.tsx:196-206` 的 `formatEntrySource` 渲染 `source.preview` ＋ `source.observedAt`，并在源对话被删时渲染「来源已删除」（`:204-205`，对应 V31-18 AC4）。**收据面板与那个页面之间没有跳转**。
 
-**给实施 lane 的红线**：不要写一条「断言 `memory-injection-receipt-source` 可见且含 memoryId」的测试来关这个缺口。那是同一族的自证——它测的是「我们渲染了我们渲染的东西」，与 V31-18 裁决里被判为 fixture 同义反复的 `正文不超过 32 字` 正则是同一种错误（该 spec 头注 `:26-33` 正是为这个原因删掉了旧的风格断言）。**正确顺序是：先由主控裁「经验来源」的产品形态（收据行直接显示 preview／或提供到 memory vault 的跳转），再按裁定的形态写断言。** 本票把这一裁决点显式挂出来，不替主控决定。
+### 裁决 — 收据行**内联 preview**，不走跳转（主控，2026-08-10）
+
+**定形**：收据行渲染来源记忆的 `source.preview`（截断）＋ `observedAt`，语义与 memory-vault 的 `formatEntrySource`（`memory-vault-page.tsx:196-206`）**同源**——含「来源已删除」回落（对应 V31-18 AC4）。`memoryId` **降为次要展示**（tooltip／详情），不再作主文案。
+
+**依据**：非技术商家的第一眼要能回答「它为什么这么写」，**内联一句话就是答案，跳转是第二跳成本**。这与既有产品审美裁决一致（拟人化一句话 > 卡片跳转）。vault 页保留为**深层视图**，两处此后**共享同一格式化语义**以防再漂移——即不要在收据面板另写一份格式化逻辑。
+
+**实施红线（三条，缺一不可）**：
+
+1. **契约必须动，这不是可选项。** 实测：`packages/contracts/src/agent-domain.ts:642-661` 的 `memoryInjectionReceiptSchema` 是 `.strict()`，其 `entries` 元素也是 `.strict()`，字段恰好只有 `{memoryId, statement, revision}`（`:652-654`）——**既不带 `preview` 也不带 `observedAt`**。所以「receipt payload 现不携带 preview」是**已核实的事实**，接线补齐属本次实施范围。**禁止以「省接线」为由降级回裸 `memoryId`**。
+2. **schema 版本与历史行要一起想。** 该 schema 带版本字面量 `MEMORY_INJECTION_RECEIPT_SCHEMA_VERSION`（`:644`，当前 `'memory-injection-receipt/v1'`），且 receipt 是 **put-once 持久化**的（`apps/core/src/p1/operations/postgres-memory-injection-receipt.ts:72`，写入后不可改）。因此**已存在的历史 receipt 行永远不会有新字段**——新字段要么在 v1 上设为 optional 并让 UI 对历史行回落，要么升 v2 并明确历史行的展示形态。**不得让历史 receipt 打开就空白或崩**。选哪条由实施 lane 定，但必须在票下写明选了哪条及历史行的实际表现。
+3. **`entries` 上限 100、`statement` 上限 4000（`:653`、`:658`）**——preview 的截断长度要自己定并写进契约，不要把一整条源对话塞进 receipt 让单条 receipt 膨胀。
+
+**断言纪律（裁形态后才写，正负配对）**：
+
+- **不要**写「断言 `memory-injection-receipt-source` 可见且含 memoryId」这类测试。那是自证——测的是「我们渲染了我们渲染的东西」，与 V31-18 裁决判为 fixture 同义反复的 `正文不超过 32 字` 正则同一种错误（b2 spec 头注 `:26-33` 正是为此删掉了旧风格断言）。
+- **正**：注入了某条确认记忆后，收据行显示的 preview **确实是那条源对话的内容**（用旅程里商家真说过的话作判据，与 b2 spec 现有的 `REVOKED_PREFERENCE` / `SURVIVING_PREFERENCE` 手法一致）。
+- **负**：源对话被删后，同一行回落为「来源已删除」语义，**且不再显示 preview**。这一条与 V31-18 AC4 同一个产品行为，两处断言应共享判据文案（`memory_entry_source_deleted` 与收据行的回落文案要么同一条 message，要么在票下说明为何必须是两条）。
+- **配对的必要性**：只有正断言时，一个恒显示 preview 的实现也能过；只有负断言时，一个从不显示 preview 的实现也能过。
 
 ### 顺带更正两处对该 spec 的**过度声称**（都不改代码，只记账）
 
@@ -119,7 +136,8 @@ fail-closed 逐句：`:44-48` 遍历 `-f` 检查，`:50-58` 有缺即把清单 `
 
 - [ ] `tests/e2e/specs/v31-level1-copy-journey.spec.ts` 落地，§37.4-B 四件各有断言；第 4 件（`policy_exempt_copy` 下 plan/quote/release 仍冻结 ＋ 重放扣费幂等）**在浏览器旅程内**被证明，且幂等用真重放而非结构断言
 - [ ] `tests/e2e/specs/v31-artifact-growth-journey.spec.ts` 落地，§5.5 四件各有断言；「单一稳定 ID」与「原位生长」两条均为**正负配对**断言
-- [ ] §37.4-B2 第 ③ 跳「经验来源」的**产品形态先由主控裁定**，再据此在 `v31-memory-injection-b2-journey.spec.ts` 内补断言；**不接受**「断言 source 行显示了 memoryId」这类自证
+- [ ] §37.4-B2 第 ③ 跳「经验来源」按**已裁定形态**落地：收据行内联 `source.preview`（截断）＋ `observedAt`，与 `formatEntrySource` 共享格式化语义、含「来源已删除」回落，`memoryId` 降为次要展示。契约补字段属本次范围（`memoryInjectionReceiptSchema` 现为 `.strict()` 且不带 preview），并在票下写明 v1-optional 还是升 v2、以及历史 put-once receipt 行的实际表现
+- [ ] 上条的断言**正负配对**：正＝preview 确为该条源对话内容（用旅程里商家真说过的话作判据）；负＝源对话删除后回落为「来源已删除」且**不再显示 preview**。**不接受**「断言 source 行显示了 memoryId」这类自证
 - [ ] 上条落地后，门脚本 `:27` 改指向 `v31-memory-injection-b2-journey.spec.ts`，**且与补断言同一次变更**；同批更新 `TEST-CATALOG.md` 与 `quality-gates.test.mjs`
 - [ ] 门脚本 `:39` 注释里的「风格」删除（该 spec 无风格断言，V31-18 裁决亦明写风格约束现在不接线）；spec 头注 `:33` 的「source visibility」按补断言后的真实覆盖改写
 - [ ] `bash scripts/ci/run-v31-browser-acceptance.sh` 走完 `:44-58` 的缺口检查（不再 `exit 1`），并真的跑到 `:64` 的 playwright
@@ -135,4 +153,5 @@ fail-closed 逐句：`:44-48` 遍历 `-f` 检查，`:50-58` 有缺即把清单 `
 
 - 开票：主控派发（2026-08-10），事实底座由主控给出（门脚本 16 条钉于 ci-gates `9ab20aff5`、现 13 有 3 缺、缺口从未派过 lane）。
 - Wave 4（2026-08-10，review-memory 在 `codex/v31-w4-tickets`，基座 `98949870a`）：门脚本 16 条**逐条只读核证存在性**（13 在 3 缺，与派件一致）；核清 16 ＝ 12 字母 ＋ 4 非字母项，并写明门注释 `:20` 只覆盖前 12 条；三条缺失 spec 各按 §37.4 / §5.5 原文落成任务书（`plan` 行号逐条署出）；**B2 重叠度分析署 review-memory 名**——逐跳量到 4/5 已覆盖、仅「经验来源」为真缺口，并进一步定出该缺口是**两层**（测试零断言 ＋ 产品只显示 UUID，人类可读来源在 `memory-vault-page.tsx:196-206` 且无跳转），据此裁「改指向既有 spec 但必须先补 ③ 跳」而非新建薄壳；顺带更正两处对该 spec 的过度声称（门脚本 `:39` 的「风格」、spec 头注 `:33` 的「source visibility」）；防拆门裁决写入票面。
+- Wave 4 追加（同日，主控裁决）：③ 跳的**产品形态已裁定＝收据行内联 preview，不走跳转**（依据：非技术商家第一眼要能回答「它为什么这么写」，内联一句话即答案、跳转是第二跳成本；vault 页降为深层视图，两处共享同一格式化语义防再漂移）。落票时把实施红线钉到契约级：**已核实** `packages/contracts/src/agent-domain.ts:642-661` 的 receipt schema 是 `.strict()`、entry 字段恰为 `{memoryId, statement, revision}`（`:652-654`），**确实不带 preview／observedAt**，故「接线补齐属实施范围」不是假设而是事实；另加两条本轮新查出的约束——schema 带版本字面量（`:644`）且 receipt 是 put-once 持久化（`postgres-memory-injection-receipt.ts:72`），**历史行永远不会有新字段**，必须选 v1-optional 或升 v2 并说明历史行表现，不得打开空白或崩；`entries` 上限 100 / `statement` 上限 4000（`:653`、`:658`）要求 preview 自定截断长度。断言纪律按正负配对写入 AC。
 - 本 commit 对 `apps/core`、`mkfast-template-main`、`packages`、`scripts`、`.github` 零改动——**包括没有改门脚本**：门现在红着是正确状态，改它属实施 lane 且须按本票 AC 的顺序来。

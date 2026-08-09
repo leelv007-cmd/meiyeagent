@@ -66,7 +66,7 @@
 
 | 跳 | T7 树位置（发现时） | **集成树 `98949870a`（实施基准）** | 动作 |
 |---|---|---|---|
-| ① | `submission-coordinator.ts:382`（`startPrepared`） | **`:418`** | **缺陷所在**：重算 base，遇 `:r:` 后继即找不到 |
+| ① | `submission-coordinator.ts:382`（`startPrepared`） | **`:418`** | **缺陷所在**：重算 base，遇 `:r:` 后继即找不到。**已修 ⇒ `5d7326e35`（merged `bb6fe34be`）**：`fix(execution-spine): startPrepared resolves the persisted authority ID instead of recomputing it`，同 commit 改 `submission-coordinator.ts` 与 `composer-http.test.ts` |
 | ② | `submission-coordinator.ts:1319` → `:1334`（`submissionResponse`） | **`:1444`** → **`:1461`** | 读 `confirmationDispatch.requestId` 并原样暴露给浏览器（零派生） |
 | ③ | `submission-coordinator.ts:701` → `:710` | **`:742`**（取值）→ **`:751`**（写入 dispatch）；缺 ID 即抛在 **`:744-747`** | 取 `prepared.executionConfirmationRequestId`，原样写入 `confirmationDispatch` |
 | ④ | `creation-stage-port.ts:67` | **`:74`** | 转发到 Harness 端口 |
@@ -125,6 +125,9 @@ R4 把付费确认权威 ID 交给浏览器并落进 `sessionStorage`（`session
 
 ## Acceptance criteria
 
+> **未核证项（review-memory 自陈，2026-08-10）**：上面两条 AC 的代码已落地（`0761bccfa`，`postgres-execution-confirmation.postgres.test.ts` **+202 行**，merged `bb6fe34be`、主控亲验），但**我没有勾选**，因为我写在 AC 里的两项要求无法由 diff 单独证明：① 断言是否真压在 SQL 收窄那一层（`postgres-execution-confirmation-store.ts:212` 的谓词）而非只压 HTTP 状态码；② **变异背书**是否真做过——把 `server.ts:2557-2562` 的 spread 顺序反转后该断言必须转红。`0761bccfa` 只改了一个测试文件，变异测试按定义不会在 diff 里留痕。**请主控在勾选前确认这两点**；若已确认，直接把这两个框勾上即可，无需改文字。
+
+
 - [ ] `decision == null` 有 RED→GREEN：run 终态为 `failed`、错误文案指名原因、无中断行写入
 - [ ] `systemOnlyBlock` 有 RED→GREEN：产生可锚定的商家阻塞面，run 不停在无出边 `waiting`
 - [ ] 一条覆盖性断言：意图轮的所有出口分支穷举（propose / ask / declined / null / blocked），不存在落进 `waiting` 且无生产者的组合
@@ -136,8 +139,8 @@ R4 把付费确认权威 ID 交给浏览器并落进 `sessionStorage`（`session
 - [ ] 强制改稿实现在旅程/前台（拒绝后引导商家进编辑态）；**权威层不得出现「同 base 第二次请求一律拒绝」**——加了就会打死过期臂且无红灯
 - [ ] 存量清理不得给 `confirmed` 加 TTL（U8，`ed370e197`）；释放走「执行消费」或 V31-41 族的一次性清理
 - [ ] 票面三道栅栏与 U8 归因随实施保留，不得因「看起来是死码/看起来是缺陷」而删
-- [ ] **（W4-B 代码）跨 workspace decide 被拒**：workspace A 的会话持 workspace B 的 requestId 去 decide → 得 `NOT_FOUND`/404，**且与「requestId 完全不存在」返回同一状态**（不得出现可区分的存在性 oracle）。断言要压在 SQL 收窄那一层（`postgres-execution-confirmation-store.ts:212` 的谓词），不是只压 HTTP 状态码
-- [ ] **（W4-B 代码）body 夹带 `workspaceId` 不生效**：请求体带一个异租户 `workspaceId` → 被 zod strip 掉、decide 仍用会话上下文的 workspace。**变异背书**：把 `server.ts:2557-2562` 的 spread 顺序反转（`...body` 放到显式键之后）→ 该断言必须转红；不转红说明断言压错了层
+- [ ] **（W4-B 代码，`0761bccfa` merged `bb6fe34be` 已落地；勾选待主控，见下方「未核证项」）跨 workspace decide 被拒**：workspace A 的会话持 workspace B 的 requestId 去 decide → 得 `NOT_FOUND`/404，**且与「requestId 完全不存在」返回同一状态**（不得出现可区分的存在性 oracle）。断言要压在 SQL 收窄那一层（`postgres-execution-confirmation-store.ts:212` 的谓词），不是只压 HTTP 状态码
+- [ ] **（W4-B 代码，`0761bccfa` merged `bb6fe34be` 已落地；勾选待主控，见下方「未核证项」）body 夹带 `workspaceId` 不生效**：请求体带一个异租户 `workspaceId` → 被 zod strip 掉、decide 仍用会话上下文的 workspace。**变异背书**：把 `server.ts:2557-2562` 的 spread 顺序反转（`...body` 放到显式键之后）→ 该断言必须转红；不转红说明断言压错了层
 - [ ] 上面两条以**行为为证**，不接受「读一遍代码确认安全」；补完后本节「缺口」段随之改写为已覆盖
 
 ## per-file 对账基准（T7 域，review-memory 实测，2026-08-09）
@@ -177,3 +180,8 @@ R4 把付费确认权威 ID 交给浏览器并落进 `sessionStorage`（`session
 | `submissionResponse` 改为自行派生 `confirmation:${task.id}` | 31/32 | `actual 'confirmation:task-1'` vs `expected 'confirmation:authority:task-1'` |
 
 **T7 自报全集对账**：T7 落盘的 `core-perfile-summary.txt` 报 `files=30 tests=432 pass=432 fail=0 skip=0`。review-memory 独立核算：30 行 per-file 的 `tests` 加总确为 **432**、`pass` 加总 **432**、无任何 `exit≠0` 行，**加总成立**；且本表 11 个文件中有 **10 个在其集合内且计数逐个相同**。唯一差异是 `p1/harness/paid-generation-confirmation.test.ts`（本表 4/4）**不在**其 30 之内——那是另一个 id helper（`executionConfirmationRequestId(workflowId)`）的消费者面，建议 W4-A 的全集把它纳入。
+
+## 留痕
+
+- Wave 4（2026-08-10，review-memory 在 `codex/v31-w4-tickets`，基座 `98949870a`）：七跳表加集成树列；新建「追加项：decide 四层防线零测试覆盖」节（四层锚点表，含中央 `route-table.ts:42` 这个第二锚点）＋两条承重 AC；落 T7 域 per-file 对账基准与 432/432 对账。
+- Wave 4 追加（同日，回填 W4-B 交付 SHA）：两条承重 AC 的代码已由 W4-B 落地 ⇒ `0761bccfa`（`test(agent-session): pin decide's cross-workspace rejection and body-smuggled workspaceId rejection`，`postgres-execution-confirmation.postgres.test.ts` **+202 行**），经 merge `bb6fe34be` 入集成树、主控亲验。七跳表第 ① 跳的缺陷亦已修 ⇒ `5d7326e35`（同 commit 改产品与测试两个文件）。**该 merge 共带三个 commit**（第三条是 `111022d1d` 崩溃恢复重钉，见 V31-18），**三者都不碰 `agent-memory-platform`**——即 V31-18 AC1 的 Business Fact 守卫测试（W4-B 任务 5）**尚未落地**，那个引用位仍留 `待补录`，勿误认为已闭合。

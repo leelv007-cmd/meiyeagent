@@ -51,7 +51,7 @@ L-T4 在 V31-18/19 修复轮遇到一次间歇性 PG 红：`postgres-creation-su
 - **V31-39**（`V31-39-fixture-kernel-composer-decision.md`，`:r:` 与 `startPrepared` 终裁）：同属确认链入口面，改的是 `startPrepared` 的 id 解析（集成树 `submission-coordinator.ts:382`），与本票不共享谓词，但**同文件**，合并顺序需主控排。
 - 三票的共同底座是「补偿扫描是多租户共享资源」这一事实：V31-33 管公平性、V31-41 管终止性、V31-39 管入口正确性。任一票单独修完都不足以让扫描侧行为完整。
 
-**W4 裁决约束（2026-08-10，主控裁决，全文在 V31-18「裁决 — 恢复路径 P0-1 的满足机制变了」）**：恢复路径的**双臂语义已定**——持久臂（有 `agentBinding` ＋ 有 `executionPlanFreeze`）在 `submission-coordinator.ts:777` 短路，不重跑 prepare；可达臂（pre-durable 遗留行）才真跑。**实施本票时不得回退 `:777` 短路**——它是防确认后计划漂移的守卫，回退会违反 V31-39 的付费确认语义。本票改的是 `listRecoverableHarnessStarts` 的 WHERE 租户维度，与该短路不在同一层，但两者都在 `recoverPendingStarts`（`:1190`）这条路径上，改动时容易顺手「整理」到它。
+**W4 裁决约束（2026-08-10，主控裁决，全文在 V31-18「裁决 — 恢复路径 P0-1 的满足机制变了」）**：恢复路径的**双臂语义已定**——持久臂（有 `agentBinding` ＋ 有 `executionPlanFreeze`）在 `submission-coordinator.ts:777`（@ `98949870a`）／**`:785`（@ 合入后 `bb6fe34be`，实施 lane 认这个）** 短路，不重跑 prepare；可达臂（pre-durable 遗留行）才真跑。**实施本票时不得回退该短路**——它是防确认后计划漂移的守卫，回退会违反 V31-39 的付费确认语义。本票改的是 `listRecoverableHarnessStarts` 的 WHERE 租户维度，与该短路不在同一层，但两者都在 `recoverPendingStarts`（`:1190`）这条路径上，改动时容易顺手「整理」到它。
 
 ## Evidence
 

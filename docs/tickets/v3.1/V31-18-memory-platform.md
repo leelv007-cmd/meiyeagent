@@ -49,16 +49,20 @@
 
 | 臂 | 行的形态 | 恢复时发生什么 | 为什么这样是对的 |
 |---|---|---|---|
-| **持久臂**（新行，主流） | 有 `agentBinding` ＋ 有 `executionPlanFreeze` | `prepareAgentPlan` 在 `:777` **短路返回**，prepare 不跑，检索不重做 | 原子序（prepare 先于 claim，T7 `5965ee9b1` `fix(harness): close paid confirmation crash windows`）下，新行的**检索产物在 claim 时已随 freeze 持久化**。恢复读持久化 freeze 即可；**重推导会让确认后的计划漂移，违反 V31-39 的付费确认语义** |
+| **持久臂**（新行，主流） | 有 `agentBinding` ＋ 有 `executionPlanFreeze` | `prepareAgentPlan` **短路返回**（`:777` @ `98949870a`／`:785` @ 合入后 `bb6fe34be`），prepare 不跑，检索不重做 | 原子序（prepare 先于 claim，T7 `5965ee9b1` `fix(harness): close paid confirmation crash windows`）下，新行的**检索产物在 claim 时已随 freeze 持久化**。恢复读持久化 freeze 即可；**重推导会让确认后的计划漂移，违反 V31-39 的付费确认语义** |
 | **可达臂**（pre-durable 遗留行） | 缺 `agentBinding` 或缺 `executionPlanFreeze` | 短路不成立 ⇒ `prepare()` **真跑**，检索与 receipt 真发生 | 这些行的检索产物当年没被持久化，不重跑就真的丢 receipt。P0-1 的原始诉求在这一臂上仍然成立 |
 
-**实施红线**：`submission-coordinator.ts:777` 的短路（`if (submission.agentBinding && submission.executionPlanFreeze) return submission.agentBinding;`）是**防确认后计划漂移的守卫，不是优化**。任何 lane 不得以「P0-1 要求恢复必须重入 prepare」为理由回退或弱化它——那句要求只对可达臂成立。同一约束已互引进 V31-33 与 V31-41（两票同摸 `recoverPendingStarts`）。
+**实施红线**：那段短路（`if (submission.agentBinding && submission.executionPlanFreeze) return submission.agentBinding;`）是**防确认后计划漂移的守卫，不是优化**。任何 lane 不得以「P0-1 要求恢复必须重入 prepare」为理由回退或弱化它——那句要求只对可达臂成立。同一约束已互引进 V31-33 与 V31-41（两票同摸 `recoverPendingStarts`）。
+
+> **锚点两署（合入后必读）**：该短路在本票基座 `98949870a` 上是 `submission-coordinator.ts:777`，在 W4-B 合入后的 `bb6fe34be` 上是 **`:785`**（漂 8 行）。**实施 lane 认合入树 ⇒ 认 `:785`**；两个行号都对，差的只是署树。W4-B 落地的新注释自己写的是「~:785-787」，与合入树一致。
 
 **依据链**：绑定时刻＝`merchant_confirmed`（见上节「时点」）是本裁决的依据之一。代码侧还有第二处独立印证：`recoverPendingStarts` 的过滤谓词 `:1196-1209` 正是按 `executionPlanFreeze?.approvalBasis !== "merchant_confirmed"` 分流的——`merchant_confirmed` 的行只由显式 start 命令启动，恢复不得替商家按下确认，唯一例外是 `confirmationDispatch?.state === "dispatched"`（已跨出外部启动边界、授权 ID 没回来的行）。即「`merchant_confirmed` 是分界」这件事在产品代码里已经是硬编码的，不只是文档结论。
 
-**附带项（同一次变更内一并修，不要只改测试）**：`:1215-1219` 那段注释现在**过宽**——它声称 prepare「performs the confirmed-memory retrieval whose receipt would otherwise be silently skipped on recovery」，但持久臂在 `:777` 就返回了，那次检索**不会发生**。注释按字面读是错的，而且错得很有诱导性：下一个读它的人会认为 `:777` 是 bug 并「修」掉它。请与测试重钉同一次改掉，把主张限定到可达臂。
+**附带项 — 已修，并按要求与测试重钉同批（2026-08-10 回填）**：原注释（`:1215-1219` @ `98949870a`）声称 prepare「performs the confirmed-memory retrieval whose receipt would otherwise be silently skipped on recovery」，但持久臂在短路处就返回了，那次检索**不会发生**——按字面读是错的，且诱导下一个读者把短路当 bug 修掉。
 
-**测试重钉归属**：代码与测试由 **W4-B** 落地（RED→GREEN）。**待补录**：W4-B 的 commit SHA 由主控回填到此处 ⇒ `（W4-B commit: 待补录）`。本票在此之前不得据此勾选任何 AC。
+W4-B 的 `111022d1d` 已把它改成双臂如实描述，与测试重钉在**同一个 commit** 内（该 commit 同时改 `composer-http.test.ts` 与 `submission-coordinator.ts`，主控亲验后经 merge `bb6fe34be` 入集成树）。新注释逐字要点：durable claim 来自原子序（prepare 先于 claim，`~:703-708`）已带 `agentBinding` ＋ freeze，**短路「intentionally no-ops here」**，冻结计划是 merchant-confirmed 权威（V31-39）**must not be silently re-derived**；只有 legacy claim（无 binding、无 freeze）才真正重入 `prepare()` 并重跑那次检索。**即注释现在与本节的双臂语义一致，不再有「短路是 bug」的读法空间。**
+
+**测试重钉归属**：代码与测试由 **W4-B** 落地（RED→GREEN），已完成 ⇒ **`111022d1d`（merged `bb6fe34be`）**，commit 标题 `test(execution-spine): re-pin crash-recovery invariants for the atomic prepare-before-claim order`。W4-A 报的 `composer-http.test.ts` 三红即由此 commit 重钉（该文件 +213 行改动量）。本节的裁决落点自此闭合。
 
 ## Evidence
 
