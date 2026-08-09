@@ -96,6 +96,26 @@ test('in-flight rights revocation → safe_stop with noAdditionalCharge', () => 
   }
 });
 
+test('missing live quote fails closed instead of continuing execution', () => {
+  for (const action of [
+    evaluateMidExecutionContextFence({
+      snapshot: snapshot(),
+      live: { quoteMissing: true },
+    }),
+    evaluatePostConfirmPreExecuteFence({
+      snapshot: snapshot(),
+      live: { quoteMissing: true },
+    }),
+  ]) {
+    assert.equal(action.action, 'safe_stop');
+    if (action.action === 'safe_stop') {
+      assert.equal(action.reason, 'quote_missing');
+      assert.equal(action.noAdditionalCharge, true);
+      assert.equal(action.refundIfReserved, true);
+    }
+  }
+});
+
 test('in-flight referenced price/date change → pause_prompt', () => {
   const action = evaluateMidExecutionContextFence({
     snapshot: snapshot(),

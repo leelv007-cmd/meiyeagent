@@ -14,6 +14,7 @@ import {
   ExecutionPlanAdmissionService,
 } from '../harness/execution-plan-admission.js';
 import { HARNESS_LANGFUSE_PROMPT_NAMES } from '../harness/langfuse-prompts.js';
+import { confirmPaidGenerationExecution } from '../harness/paid-generation-confirmation.js';
 import type { HarnessFrozenPrompts } from '../harness/langfuse-prompts.js';
 import { MemoryExecutionPlanSnapshotStore } from '../harness/memory-execution-plan-admission-store.js';
 import {
@@ -33,6 +34,17 @@ import { MemoryAgentSessionStore } from './memory-agent-session-store.js';
 import { MemoryMarketingPlanStore } from './memory-plan-store.js';
 import { PostgresAgentSessionStore } from './postgres-agent-session-store.js';
 import { PostgresMarketingPlanStore } from './postgres-plan-store.js';
+import { MemoryConfirmationAuthorityStore } from './execution-confirmation-authority-store.js';
+import { ConfirmationAuthorityAssembler } from './execution-confirmation-authority.js';
+import {
+  confirmationCreditPortFromMemoryLedger,
+  ExecutionConfirmationService,
+} from './execution-confirmation-service.js';
+import {
+  MemoryExecutionConfirmationRequestStore,
+  MemoryPlanConfirmationDecisionStore,
+} from './memory-execution-confirmation-store.js';
+import { MemoryCreditLedger } from '../credit-billing/credit-ledger.js';
 import {
   createFixturePlanCompilerPorts,
   PlanCompiler,
@@ -252,6 +264,11 @@ test('compile-finalize freezes the copy plan; freeze matches the compiled revisi
   assert.deepEqual(freeze.executionPlan, latest.executionPlan);
   assert.deepEqual(freeze.quoteRef, latest.revision.quoteRef);
   assert.deepEqual(
+    freeze.quoteRef,
+    submission.snapshot.quote,
+    'compile-finalize must preserve the admitted billing quote authority',
+  );
+  assert.deepEqual(
     [...freeze.rightsRevisionRefs],
     latest.revision.boundRevisions.rightsRevisionIds
   );
@@ -333,7 +350,11 @@ test('Composer submit → task-admission assembles and one-shot writes the Execu
 
   await stage.start(submission);
   const first = starter.requests[0];
-  const admitted = await snapshotStore.getByWorkflowId('task-chain-1');
+  const admissionWorkflowId =
+    `task-chain-1:plan:${first!.executionPlanSnapshot!.planRevision}:${first!.executionPlanSnapshot!.snapshotHash}`;
+  const admitted = await snapshotStore.getByWorkflowId(
+    admissionWorkflowId,
+  );
   assert.ok(admitted);
   assert.ok(first?.executionPlanSnapshot);
   assert.equal(
@@ -365,12 +386,144 @@ test('Composer submit → task-admission assembles and one-shot writes the Execu
   // At-least-once replay: same submission re-enters the admission path and the
   // snapshot row is not double-written.
   await stage.start(submission);
-  const admittedAgain = await snapshotStore.getByWorkflowId('task-chain-1');
+  const admittedAgain = await snapshotStore.getByWorkflowId(admissionWorkflowId);
   assert.equal(admittedAgain?.admittedAt, admitted.admittedAt);
   assert.equal(admittedAgain?.snapshot.snapshotHash, admitted.snapshot.snapshotHash);
   assert.equal(starter.requests.length, 2);
   assert.equal(starter.requests[1]?.executionPlanSnapshot?.snapshotHash, admitted.snapshot.snapshotHash);
   assert.equal(registry.claims.length, 1);
+});
+
+test('paid admission creates one pending request before Make and carries the durable freeze', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+  const submission = record('task-paid-chain-1', '生成一组付费图文');
+  await coordinator.prepare({ submission });
+  assert.equal(submission.executionPlanFreeze?.approvalBasis, 'merchant_confirmed');
+
+  const authority = new MemoryConfirmationAuthorityStore();
+  const requests = new MemoryExecutionConfirmationRequestStore();
+  const ledger = new MemoryCreditLedger();
+  ledger.grant({
+    id: 'paid-chain-lot',
+    workspaceId: 'workspace-1',
+    credits: 20,
+    expirationDate: '2026-09-01T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+    sourceRef: 'paid-chain',
+    createdAt: TS,
+  });
+  const service = new ExecutionConfirmationService(
+    requests,
+    new MemoryPlanConfirmationDecisionStore(),
+    confirmationCreditPortFromMemoryLedger(ledger),
+  );
+  const confirmation = new ConfirmationAuthorityAssembler(
+    service,
+    authority,
+    {
+      async getQuote(_quoteId, workspaceId) {
+        const current = await authority.getCurrentByWorkflowId(
+          'task-paid-chain-1',
+        );
+        assert.equal(workspaceId, 'workspace-1');
+        return {
+          quoteId: current!.quoteRef.id,
+          revision: current!.quoteRef.revision,
+          taskId: 'task-paid-chain-1',
+          creditCost: 8,
+          failureRefundsCredits: true,
+        } as never;
+      },
+    },
+    { clock: () => new Date(TS) },
+  );
+  const starter = new RecordingStarter();
+  const admission = new HarnessTaskAdmissionService(
+    new MemoryHarnessRegistry(),
+    starter,
+    new MemoryPromptResolver(),
+    undefined,
+    undefined,
+    { async resolve() { return copyRoute(); } },
+    undefined,
+    undefined,
+    new ExecutionPlanAdmissionService(new MemoryExecutionPlanSnapshotStore()),
+    {
+      createRequest: (input) => confirmation.createRequest(input),
+      putCurrent: (input) => authority.putCurrent(input),
+    },
+  );
+  const stage = new CreationStagePort({ submit: (input) => admission.submit(input) });
+
+  await stage.start(submission);
+  await stage.start(submission);
+
+  const cardRequestIds: string[] = [];
+  const confirmed = await confirmPaidGenerationExecution({
+    workflowId: 'task-paid-chain-1',
+    request: starter.requests[0]!,
+    reportProgress: async () => undefined,
+    async awaitResolvedDecision(question) {
+      cardRequestIds.push(question.questionId);
+      assert.equal(
+        (await service.getRequest(question.questionId))?.request.status,
+        'pending',
+        'the authority request and hold must exist before the card is answerable',
+      );
+      await service.decideForWorkspace({
+        decisionId: `decision:${question.questionId}`,
+        requestId: question.questionId,
+        workspaceId: 'workspace-1',
+        actorId: 'owner-1',
+        decision: 'confirmed',
+        decidedAt: TS,
+      });
+      return {
+        questionId: question.questionId,
+        workflowRevision: 1,
+        idempotencyKey: 'paid-chain-confirm',
+        patch: { field: 'execution_confirmation', value: 'approved' },
+        decision: { state: 'accepted', value: 'approved' },
+      } as never;
+    },
+    applyCurrentTaskDecision: async (_workflowId, request) => request,
+    getExecutionConfirmationDecision: (workspaceId, requestId) =>
+      service.getDecisionForWorkspace(workspaceId, requestId),
+    admitExecutionPlanSnapshot: async ({ snapshot }) => snapshot,
+  });
+
+  assert.equal(
+    (await authority.getCurrentByWorkflowId('task-paid-chain-1'))?.snapshotHash,
+    starter.requests[0]!.pendingExecutionPlanSnapshot!.snapshotHash,
+  );
+  assert.deepEqual(cardRequestIds, [
+    starter.requests[0]!.executionConfirmationRequestId,
+  ]);
+  assert.equal(
+    confirmed.executionPlanSnapshot?.confirmationDecisionRef,
+    `decision:${starter.requests[0]!.executionConfirmationRequestId}`,
+  );
+  assert.equal(
+    starter.requests[0]?.executionConfirmationRequestId,
+    (await service.getRequest(
+      starter.requests[0]!.executionConfirmationRequestId!,
+    ))?.request.requestId,
+  );
+  assert.equal(
+    (await ledger.project('workspace-1', TS)).availableCredits,
+    12,
+  );
+  assert.equal(starter.requests[0]?.executionPlanSnapshot, undefined);
+  assert.ok(starter.requests[0]?.pendingExecutionPlanSnapshot);
 });
 
 function copyRecord(

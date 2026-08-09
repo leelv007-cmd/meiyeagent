@@ -103,7 +103,8 @@ export class HarnessProductBillingSettlementExecutor
       }
       await this.credits.refundUsageOperation({
         workspaceId: input.workspaceId,
-        usageOperationId: creditUsageOperationId(input.taskId),
+        usageOperationId:
+          input.creditUsageOperationId ?? creditUsageOperationId(input.taskId),
         refundOperationId: `credit-${kind}:${input.taskId}`,
         credits: usage.refundedCredits,
         actorId: 'system-harness',

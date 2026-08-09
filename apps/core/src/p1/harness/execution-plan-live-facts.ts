@@ -11,6 +11,8 @@ import type { SnapshotLiveFacts } from './execution-plan-admission.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
 
 export type RightsLiveHead = {
+  /** Frozen ref used to look up a head whose current revision has advanced. */
+  frozenRevisionId?: string;
   revisionId: string;
   revoked: boolean;
 };
@@ -34,6 +36,7 @@ export type ExecutionPlanLiveFactsPorts = {
   resolveRightsHeads?(input: {
     workspaceId: string;
     rightsRevisionRefs: readonly string[];
+    snapshot: ExecutionPlanSnapshot;
   }): Promise<readonly RightsLiveHead[]>;
   resolveQuoteHead?(input: {
     workspaceId: string;
@@ -64,6 +67,8 @@ export async function resolveExecutionPlanLiveFactsFromPorts(input: {
     });
     if (quote) {
       live.quoteRevision = quote.revision;
+    } else {
+      live.quoteMissing = true;
     }
   }
 
@@ -71,8 +76,11 @@ export async function resolveExecutionPlanLiveFactsFromPorts(input: {
     const heads = await ports.resolveRightsHeads({
       workspaceId,
       rightsRevisionRefs: snapshot.rightsRevisionRefs,
+      snapshot,
     });
-    const headById = new Map(heads.map((h) => [h.revisionId, h]));
+    const headById = new Map(
+      heads.map((head) => [head.frozenRevisionId ?? head.revisionId, head]),
+    );
     const liveRefs: string[] = [];
     let revoked = false;
     for (const ref of snapshot.rightsRevisionRefs) {

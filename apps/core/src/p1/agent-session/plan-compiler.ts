@@ -74,6 +74,8 @@ export type PlanCompilerQuotePort = {
     planRevision: number;
     deliverables: PlanDeliverable[];
     harnessReleaseId: string;
+    /** Server-admitted billing quote; never sourced from PlanProposal/model output. */
+    billingQuoteRef?: AgentRevisionRef;
   }): Promise<PlanCompilerQuoteResolution>;
 };
 
@@ -172,6 +174,8 @@ export type CompilePlanInput = {
   now?: string;
   /** Optional merchant billing overlay for Living Plan cost section (no invention). */
   livingPlanBilling?: PlanLivingPlanBillingOverlay;
+  /** Server-admitted Composer billing quote to freeze into this plan revision. */
+  billingQuoteRef?: AgentRevisionRef;
   /**
    * Contamination channel for constructive tests: anything the model might
    * illegally put in a proposal envelope. Compiler MUST ignore these.
@@ -194,6 +198,19 @@ export type CompilePlanResult = {
   skillInvocationReceipts: SkillInvocationReceipt[];
   /** Cache keys for units that are cacheable (workspace + releaseId). */
   unitCacheKeys: Record<string, string>;
+};
+
+export type RefreshPlanLiveBindingsInput = {
+  planId: string;
+  expectedRevision: number;
+  quoteRef: AgentRevisionRef;
+  rightsRevisionRefs: readonly string[];
+  factRevisionRefs: readonly string[];
+  now?: string;
+};
+
+export type RefreshPlanLiveBindingsResult = MarketingPlanCompileArtifact & {
+  factRevisionRefs: readonly string[];
 };
 
 export class PlanCompilerError extends Error {
@@ -307,6 +324,9 @@ export class PlanCompiler {
         planRevision: nextRevision,
         deliverables,
         harnessReleaseId: input.harnessReleaseId,
+        ...(input.billingQuoteRef
+          ? { billingQuoteRef: input.billingQuoteRef }
+          : {}),
       }),
     ]);
 
@@ -471,6 +491,92 @@ export class PlanCompiler {
     return this.compile(input);
   }
 
+  /**
+   * Persist a post-confirm live-authority refresh as an append-only
+   * MarketingPlanRevision. This is intentionally compiler-owned: the Harness
+   * may detect drift, but it never invents an in-memory revision number.
+   *
+   * Re-entry after a committed append returns the exact matching successor;
+   * an unrelated newer revision fails closed.
+   */
+  async refreshLiveBindings(
+    input: RefreshPlanLiveBindingsInput,
+  ): Promise<RefreshPlanLiveBindingsResult> {
+    const source = await this.store.getRevision(
+      input.planId,
+      input.expectedRevision,
+    );
+    if (!source) {
+      throw new PlanCompilerError(
+        'PLAN_NOT_FOUND',
+        `Plan revision ${input.planId}@${input.expectedRevision} was not found.`,
+      );
+    }
+    const targetRevision = input.expectedRevision + 1;
+    const existing = await this.store.getLatest(input.planId);
+    if (existing?.revision.revision === targetRevision) {
+      return this.assertMatchingLiveRefresh(existing, input);
+    }
+    if (existing?.revision.revision !== input.expectedRevision) {
+      throw new PlanCompilerError(
+        'PLAN_LIVE_REFRESH_CONFLICT',
+        `Plan ${input.planId} advanced to revision ${existing?.revision.revision ?? 'missing'} before live binding refresh.`,
+      );
+    }
+
+    const now = input.now ?? new Date().toISOString();
+    const liveBindingRefresh = {
+      sourcePlanRevision: input.expectedRevision,
+      quoteRef: input.quoteRef,
+      rightsRevisionRefs: [...input.rightsRevisionRefs],
+      factRevisionRefs: [...input.factRevisionRefs],
+    };
+    const draft = marketingPlanRevisionSchema.parse({
+      ...source.revision,
+      revision: targetRevision,
+      quoteRef: input.quoteRef,
+      factUsages: input.factRevisionRefs.map((factRef) => ({ factRef })),
+      rightsSummary: {
+        source: 'live_execution_fence',
+        revisionIds: [...input.rightsRevisionRefs],
+        previous: source.revision.rightsSummary,
+      },
+      capabilitySummary: {
+        source: 'live_execution_fence',
+        previous: source.revision.capabilitySummary,
+        liveBindingRefresh,
+      },
+      boundRevisions: {
+        ...source.revision.boundRevisions,
+        rightsRevisionIds: [...input.rightsRevisionRefs],
+      },
+      contentHash: 'pending',
+      createdAt: now,
+    });
+    const revision = marketingPlanRevisionSchema.parse({
+      ...draft,
+      contentHash: sha256Hex(
+        fingerprintValue({
+          ...draft,
+          contentHash: undefined,
+        }),
+      ),
+    });
+    try {
+      const stored = await this.store.append({
+        revision,
+        executionPlan: source.executionPlan,
+      });
+      return { ...stored, factRevisionRefs: [...input.factRevisionRefs] };
+    } catch (error) {
+      const raced = await this.store.getLatest(input.planId);
+      if (raced?.revision.revision === targetRevision) {
+        return this.assertMatchingLiveRefresh(raced, input);
+      }
+      throw error;
+    }
+  }
+
   projectReadiness(input: {
     revision: MarketingPlanRevision;
     facts: PlanReadinessFacts;
@@ -502,6 +608,33 @@ export class PlanCompiler {
       occurredAt: input.revision.createdAt,
     });
     await this.semanticEvents.project(candidate);
+  }
+
+  private assertMatchingLiveRefresh(
+    artifact: MarketingPlanCompileArtifact,
+    input: RefreshPlanLiveBindingsInput,
+  ): RefreshPlanLiveBindingsResult {
+    const summary = artifact.revision.capabilitySummary;
+    const marker =
+      summary && typeof summary === 'object' && !Array.isArray(summary)
+        ? (summary as { liveBindingRefresh?: unknown }).liveBindingRefresh
+        : undefined;
+    const expected = {
+      sourcePlanRevision: input.expectedRevision,
+      quoteRef: input.quoteRef,
+      rightsRevisionRefs: [...input.rightsRevisionRefs],
+      factRevisionRefs: [...input.factRevisionRefs],
+    };
+    if (fingerprintValue(marker) !== fingerprintValue(expected)) {
+      throw new PlanCompilerError(
+        'PLAN_LIVE_REFRESH_CONFLICT',
+        `Plan ${input.planId}@${artifact.revision.revision} is not the requested live binding successor.`,
+      );
+    }
+    return {
+      ...artifact,
+      factRevisionRefs: [...input.factRevisionRefs],
+    };
   }
 
   private buildDeliverables(proposal: PlanProposal): PlanDeliverable[] {
@@ -714,7 +847,7 @@ export function createFixturePlanCompilerPorts(
     quote: {
       async resolveQuote(input) {
         return {
-          quoteRef: {
+          quoteRef: input.billingQuoteRef ?? {
             id: `quote-${input.planId}`,
             revision: input.planRevision,
           },

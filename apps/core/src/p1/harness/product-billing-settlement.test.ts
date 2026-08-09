@@ -260,6 +260,43 @@ test('harness settlement rejects a quote before the settlement lifecycle', async
   assert.equal(settleCalls, 0);
 });
 
+test('harness refunds the exact successor confirmation reservation', async () => {
+  let refundedOperationId: string | undefined;
+  const successorOperationId = 'consume:confirmation:successor-authority';
+  const executor = new HarnessProductBillingSettlementExecutor(
+    {
+      async getQuote() {
+        return quote({ creditCost: 7, lifecycleStatus: 'refunded' });
+      },
+      async settleTask() {},
+      async getUsage() {
+        return usage({
+          billingMode: 'per_request',
+          status: 'refunded',
+          reservedCredits: 7,
+          refundedCredits: 7,
+        });
+      },
+    },
+    undefined,
+    undefined,
+    undefined,
+    {
+      async refundUsageOperation(refund) {
+        refundedOperationId = refund.usageOperationId;
+        return [];
+      },
+    },
+  );
+
+  await executor.refund({
+    ...input,
+    creditUsageOperationId: successorOperationId,
+  });
+
+  assert.equal(refundedOperationId, successorOperationId);
+});
+
 test('harness settlement rejects task and workspace quote mismatches', async () => {
   for (const facts of [
     { taskId: 'task-other' },

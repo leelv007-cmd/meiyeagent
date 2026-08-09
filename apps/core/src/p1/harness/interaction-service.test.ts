@@ -123,6 +123,7 @@ test('external execution authority freezes a hold-only confirmation request', ()
       executionConfirmationAuthority: {
         kind: 'external_action',
         revision: 'execution-external-action/v1',
+        reservedCredits: 5,
       },
       scope: 'current_task',
     },
@@ -142,6 +143,7 @@ test('external execution authority freezes a hold-only confirmation request', ()
   assert.equal(request?.kind, 'execution_confirmation');
   assert.equal(request?.frozen.condition.kind, 'external_action');
   assert.equal(request?.frozen.condition.required, true);
+  assert.equal(request?.frozen.reservedCredits, 5);
   assert.deepEqual(request?.frozen.debitPreview, []);
   assert.deepEqual(request?.frozen.timeoutPolicy, {
     kind: 'hold',

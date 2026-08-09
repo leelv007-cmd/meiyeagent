@@ -1,72 +1,74 @@
-/**
- * V31-11 / U7 — Campaign 每个含付费媒体的派生 Work 单独确认。
- *
- * Spec only (local rule: Playwright files are authored, not executed in-lane).
- * Asserts the confirmation surface is per-work (second paid Work shows a fresh
- * confirmation card; plan_only campaign approval does not pre-authorize charges).
- */
-import { expect, test } from '@playwright/test';
+/** V31-11 / U7: the second paid Work must render and decide its own request. */
+import { expect, test, type Page } from '@playwright/test';
+
+import {
+  cleanupE2EUsers,
+  loginByForm,
+  registerE2EUser,
+} from '../fixtures/auth';
+import { seedConfirmedStore } from '../fixtures/product';
+import {
+  closeComposerCapsule,
+  openComposerRecipeCard,
+  selectComposerLens,
+} from '../fixtures/ui-journey';
 
 test.describe('V31-11 Campaign paid Work confirmation (U7)', () => {
-  test.skip(
-    true,
-    'Authored for CI/journey owners; local agent lanes do not run Playwright e2e.'
-  );
+  test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
+  test.afterAll(async ({ request }) => cleanupE2EUsers(request));
 
-  test('second paid Work under one Campaign requires its own confirmation', async ({
+  test('second paid Work requires a fresh browser confirmation', async ({
     page,
+    request,
   }) => {
-    // Journey sketch (when live fixture supplies Campaign L3 + two media Works):
-    // 1) Approve Campaign plan_only (schedule only — no debit).
-    // 2) First paid Work freezes exact quote/rights → confirmation card.
-    // 3) Confirm Work 1 → execute.
-    // 4) Second paid Work freezes its own quote → a *new* confirmation card
-    //    (different requestId / workOrdinal=2), never silent reuse of Work 1.
-    await page.goto('/app');
+    test.setTimeout(240_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
 
-    const firstCard = page.getByTestId(
-      'execution-confirmation-interaction-card'
+    const firstRequestId = await submitPaidCampaignWork(
+      page,
+      'Campaign 第一周：生成一张夏日护理海报'
     );
-    await expect(firstCard).toBeVisible({ timeout: 30_000 });
-    const firstRequestId = await firstCard.getAttribute('data-request-id');
-    expect(firstRequestId).toBeTruthy();
-
-    await firstCard.getByRole('button', { name: /确认执行/ }).click();
-    await expect(firstCard).toBeHidden({ timeout: 30_000 });
-
-    const secondCard = page.getByTestId(
-      'execution-confirmation-interaction-card'
+    const secondRequestId = await submitPaidCampaignWork(
+      page,
+      'Campaign 第二周：生成一张补水护理海报'
     );
-    await expect(secondCard).toBeVisible({ timeout: 60_000 });
-    const secondRequestId = await secondCard.getAttribute('data-request-id');
-    expect(secondRequestId).toBeTruthy();
+
     expect(secondRequestId).not.toEqual(firstRequestId);
-
-    // Hold / debit visibility on the compact strip when units were reserved.
-    await expect(
-      secondCard
-        .getByTestId('execution-confirmation-held')
-        .or(secondCard.getByText(/已预留|确认本次执行方案/))
-    ).toBeVisible();
-
-    await secondCard.getByRole('button', { name: /确认执行/ }).click();
-  });
-
-  test('compact confirm strip shows credits hold and only reject/confirm', async ({
-    page,
-  }) => {
-    await page.goto('/app');
-    const card = page.getByTestId('execution-confirm-card');
-    // Host may mount either the interaction card or the client confirm strip.
-    const surface = card.or(
-      page.getByTestId('execution-confirmation-interaction-card')
-    );
-    await expect(surface.first()).toBeVisible({ timeout: 30_000 });
-
-    // Read-only: no parameter pickers.
-    await expect(surface.first().locator('select')).toHaveCount(0);
-    await expect(
-      surface.first().getByRole('button', { name: /确认|暂不|先不/ })
-    ).toHaveCount(2);
   });
 });
+
+async function submitPaidCampaignWork(page: Page, intentText: string) {
+  await page.goto('/dashboard');
+  await seedConfirmedStore(page);
+  await selectComposerLens(page, 'image_text');
+  const recipePanel = await openComposerRecipeCard(
+    page,
+    'composer-recipe-card-recipe.promotion_poster'
+  );
+  await closeComposerCapsule(page, recipePanel);
+  const intent = page.getByTestId('composer-intent-input');
+  await intent.fill(intentText);
+  await expect(page.getByTestId('composer-quote-line')).toBeVisible({
+    timeout: 30_000,
+  });
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  await page.getByTestId('composer-submit').click();
+  const response = await responsePromise;
+  expect(response.ok(), await response.text()).toBeTruthy();
+
+  const card = page.getByTestId('execution-confirmation-interaction-card');
+  await expect(card).toBeVisible({ timeout: 60_000 });
+  const requestId = await card.getAttribute('data-request-id');
+  expect(requestId).toBeTruthy();
+  await expect(card.getByTestId('execution-confirmation-held')).toBeVisible();
+  await expect(card.locator('select')).toHaveCount(0);
+  await card.getByRole('button', { name: '确认执行' }).click();
+  await expect(card).toBeHidden({ timeout: 60_000 });
+  return requestId!;
+}

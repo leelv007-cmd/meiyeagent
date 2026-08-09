@@ -297,6 +297,12 @@ export function executionConfirmationInteractionRequestFromQuestion(input: {
           : []),
       ],
       ...(outline ? { outline } : {}),
+      ...(question.executionConfirmationAuthority.reservedCredits
+        ? {
+            reservedCredits:
+              question.executionConfirmationAuthority.reservedCredits,
+          }
+        : {}),
       debitPreview: [],
       condition: {
         kind: 'external_action',

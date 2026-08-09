@@ -29,6 +29,19 @@ export type ProductionPlanRightsResolver = {
   }>;
 };
 
+export function planCompilerRightsRevisionId(input: {
+  workspaceId: string;
+  knownAssetIds: readonly string[];
+  unauthorizedAssetIds: readonly string[];
+}) {
+  const rightsFingerprint = fingerprintValue({
+    workspaceId: input.workspaceId,
+    known: input.knownAssetIds,
+    unauthorized: input.unauthorizedAssetIds,
+  }).slice(0, 16);
+  return `rights:${input.workspaceId}:${rightsFingerprint}`;
+}
+
 export type ProductionPlanModelCatalog = {
   getCatalog(
     workspaceId: string,
@@ -69,13 +82,15 @@ export function createProductionPlanCompilerPorts(deps: {
         harnessReleaseId: input.harnessReleaseId,
       }).slice(0, 24);
       return {
-        quoteRef: {
+        quoteRef: input.billingQuoteRef ?? {
           id: `plan-quote:${input.planId}`,
           revision,
         },
         expiresAt: new Date(clock().getTime() + 60 * 60 * 1000).toISOString(),
         summary: {
-          source: 'plan_compiler_quote_authority',
+          source: input.billingQuoteRef
+            ? 'admitted_product_quote'
+            : 'plan_compiler_quote_authority',
           deliverableKinds: input.deliverables.map((item) => item.kind),
           quantity: input.deliverables.reduce(
             (sum, item) => sum + item.quantity,
@@ -104,12 +119,6 @@ export function createProductionPlanCompilerPorts(deps: {
       const knownAssetIds = resolved.knownAssetIds ?? [];
       const unauthorizedAssetIds = resolved.unauthorizedAssetIds;
 
-      const rightsFingerprint = fingerprintValue({
-        workspaceId: input.workspaceId,
-        known: knownAssetIds,
-        unauthorized: unauthorizedAssetIds,
-      }).slice(0, 16);
-
       return {
         rightsSummary: {
           source: 'content_package_rights',
@@ -117,7 +126,13 @@ export function createProductionPlanCompilerPorts(deps: {
           unauthorizedAssetIds,
           status: unauthorizedAssetIds.length > 0 ? 'partial' : 'resolved',
         },
-        rightsRevisionIds: [`rights:${input.workspaceId}:${rightsFingerprint}`],
+        rightsRevisionIds: [
+          planCompilerRightsRevisionId({
+            workspaceId: input.workspaceId,
+            knownAssetIds,
+            unauthorizedAssetIds,
+          }),
+        ],
         assetUsages: input.assetIntentions.map((intention, index) => ({
           intention,
           assetRef: knownAssetIds[index] ?? `intent:${index + 1}`,

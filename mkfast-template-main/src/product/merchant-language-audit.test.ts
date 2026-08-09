@@ -68,11 +68,41 @@ const MERCHANT_SOURCE_ROOTS = [
   'mkfast-template-main/src/routes/index.tsx',
   // Core writes merchant copy too, and the browser renders it verbatim: the
   // report card states plainly that it never re-words Core, so
-  // `merchantMessage` on a terminal frame is merchant-visible text. Every
-  // `merchantMessage` producer in the repo is under this one directory
-  // (checked by the test below), which is why the root can be this narrow
-  // without leaving a hole.
+  // `merchantMessage` on a terminal frame is merchant-visible text.
   'apps/core/src/p1/harness',
+  // Session-turn copy: the agent's outbound `merchantMessage`, the confirmation
+  // card, and the hold/reject refund lines are all written here. This root used
+  // to be missing, on the claim that every Core producer lived under
+  // `p1/harness` — see CORE_RETIRED_UNIT_DEBT for why that claim was false.
+  'apps/core/src/p1/agent-session',
+];
+
+/**
+ * Core files that still name a retired unit in merchant-facing text, with the
+ * reason each is not yet rewritten. This is a debt ledger, not an exemption:
+ * `CORE_RETIRED_UNIT_DEBT` is asserted to be *exactly* the set of offenders in
+ * all of `apps/core/src`, so a new offender anywhere in Core fails this file
+ * even under a field name nobody has thought of yet.
+ *
+ * Both entries meter in 额度 on the legacy three-bucket reservation model. The
+ * correct credit-era wording is a billing-domain decision — `refund(state, …,
+ * 'video', …)` returns a bucket, not 积分, so substituting 积分 here would make
+ * the copy assert a refund that did not happen. Escalated rather than guessed.
+ */
+const CORE_RETIRED_UNIT_DEBT = [
+  // `billingNotice` on the BYOK integrations projection: '…消耗产品文案额度…'.
+  // Produced, but no Web consumer reads it today.
+  'apps/core/src/p1/integrations/application-service.ts',
+  // Legacy video `job.step` labels: '技术处理失败，额度已退还' and
+  // '任务已取消，视频额度已退还'. `productCommandSchema` still admits
+  // `cancel_video` (`packages/contracts/src/product-schema.ts`), so the command
+  // reaches the service — but the production assembly pins
+  // `legacyVideoPath: 'disabled'` (`apps/core/src/assembly/core-assembly.ts`),
+  // and that path rejects the whole legacy video command set with
+  // `LEGACY_VIDEO_PATH_RETIRED` before any label is written. So these two are
+  // unreachable copy under the shipped assembly, not a live merchant-facing
+  // lie — ledgered because the flag is an option, not a deletion.
+  'apps/core/src/product/product-service.ts',
 ];
 
 /**
@@ -313,37 +343,57 @@ test('the admin message exemption names live namespaces, not dead ones', () => {
   }
 });
 
-test('every Core merchant message producer is inside the scanned root', () => {
-  // The Core root above is narrow, so it is only sound while `merchantMessage`
-  // is written nowhere else. A new producer outside it would be merchant text
-  // this audit never reads — the silent hole, in a new place.
-  const producers = spawnSync(
+test('no Core file outside the declared debt names a retired unit', () => {
+  // Replaces a location invariant the codebase outgrew. The old guard asserted
+  // that every `merchantMessage:` hit in Core lived under `p1/harness`, which
+  // was wrong twice over: `merchantMessage` is also the *inbound* turn field
+  // (the merchant's own words — `turn-contracts.ts:57`), so most hits were
+  // never copy at all; and Core writes merchant copy under other field names
+  // entirely (`billingNotice`, video `job.step`), which a `merchantMessage`
+  // grep cannot see. Scanning Core for the retired *token* catches both.
+  const offenders = spawnSync(
     'git',
     [
       'grep',
       '--files-with-matches',
-      '--fixed-strings',
-      // The produced field, not the identifier: `const merchantMessage = …`
-      // reading a provider prompt in model-supply is not merchant copy.
-      'merchantMessage:',
+      ...FORBIDDEN_UNIT_TOKENS.flatMap((token) => ['-e', token]),
       '--',
       'apps/core/src',
     ],
     { cwd: repoRoot, encoding: 'utf8' }
   );
+  // 0 = hits, 1 = no hits; anything else is a grep failure, never a pass.
   assert.ok(
-    producers.status === 0,
-    producers.stderr || 'no merchantMessage producer found in apps/core/src'
+    offenders.status === 0 || offenders.status === 1,
+    offenders.stderr ||
+      `git grep over apps/core/src failed with status ${String(offenders.status)}`
   );
-  const outside = (producers.stdout || '')
-    .split('\n')
-    .filter(Boolean)
-    .filter((file) => !file.startsWith('apps/core/src/p1/harness/'));
+  const files = (offenders.stdout || '').split('\n').filter(Boolean).sort();
   assert.deepEqual(
-    outside,
-    [],
-    `Core merchant copy outside the scanned root:\n${outside.join('\n')}`
+    files,
+    [...CORE_RETIRED_UNIT_DEBT].sort(),
+    'Core retired-unit debt changed. A new file here means merchant copy ' +
+      'started metering in a retired unit; a file dropping off means the debt ' +
+      'was paid and must be removed from CORE_RETIRED_UNIT_DEBT.\n' +
+      `found:    ${files.join(', ')}\n` +
+      `declared: ${[...CORE_RETIRED_UNIT_DEBT].sort().join(', ')}`
   );
+});
+
+test('the declared Core debt is real: every entry still carries a token', () => {
+  // A debt entry that no longer matches is a stale exemption widening the
+  // scan — the same failure mode the admin-prefix test guards against.
+  for (const file of CORE_RETIRED_UNIT_DEBT) {
+    assert.ok(
+      trackedFiles(file).length === 1,
+      `debt entry ${file} is not a tracked file`
+    );
+    const source = readFileSync(resolve(repoRoot, file), 'utf8');
+    assert.ok(
+      FORBIDDEN_UNIT_TOKENS.some((token) => source.includes(token)),
+      `debt entry ${file} no longer names a retired unit — remove it`
+    );
+  }
 });
 
 test('the retired per-bucket redemption controls stay retired', () => {
