@@ -88,10 +88,8 @@ import {
 } from './compiled-carrier-executor.js';
 import { attachStageTaxonomy } from './five-stage-trace-taxonomy.js';
 import type { StageTaxonomyPayload } from './five-stage-trace-taxonomy.js';
-import {
-  projectLegacyDeterministicFields,
-  type ShadowDeterministicFields,
-} from './shadow-reconciliation.js';
+import { runFrozenLegacyFiveStage } from './frozen-legacy-five-stage.js';
+import type { ShadowDeterministicFields } from './shadow-reconciliation.js';
 
 export {
   confirmPaidGenerationExecution,
@@ -1128,7 +1126,7 @@ const HARNESS_LENS_STAGE_DESCRIPTORS = {
   image_text_note: NOTE_STAGE_DESCRIPTOR,
 } as const;
 
-interface HarnessStageExecutionInput {
+export interface HarnessStageExecutionInput {
   descriptor: HarnessLensStageDescriptor;
   ports: HarnessStagePorts | HarnessMediaStagePorts | HarnessNoteStagePorts;
   prelude: Awaited<ReturnType<typeof runWorkflowPrelude>>;
@@ -1154,7 +1152,7 @@ type MediaHarnessWorkflowResult = GeneratorResult<
 type NoteHarnessWorkflowResult = GeneratorResult<
   ReturnType<typeof createNoteCarrierBusinessProgram>
 >;
-type HarnessWorkflowResult =
+export type HarnessWorkflowResult =
   | CopyHarnessWorkflowResult
   | MediaHarnessWorkflowResult
   | NoteHarnessWorkflowResult;
@@ -1434,7 +1432,7 @@ export async function runHarnessWorkflow(
     workflowId,
   };
   if (options.forceLegacyFiveStage) {
-    return runFrozenLegacyHarnessAdapter(programInput);
+    return runFrozenLegacyFiveStage(programInput);
   }
   const primitiveProgram = createCompiledCarrierPrimitiveProgram(programInput);
   const primitiveHandlers: CompiledPrimitiveHandlers<HarnessStageExecutionInput> = {
@@ -1514,119 +1512,6 @@ function createCompiledMediaPrimitiveProgram(
   input: HarnessStageExecutionInput,
 ): CarrierPrimitiveProgram {
   return createMediaCarrierBusinessProgram(input) as CarrierPrimitiveProgram;
-}
-
-/** Frozen rollback adapter retained until V31-26b pilot acceptance. */
-function runFrozenLegacyHarnessAdapter(
-  input: HarnessStageExecutionInput,
-): Promise<HarnessWorkflowResult> {
-  const program =
-    input.descriptor.kind === 'copy'
-      ? createFrozenLegacyCopyProgram(input)
-      : input.descriptor.kind === 'note'
-        ? createFrozenLegacyNoteProgram(input)
-        : createFrozenLegacyMediaProgram(input);
-  return drainFrozenLegacyCarrierProgram(
-    input,
-    program as CarrierPrimitiveProgram,
-  );
-}
-
-function createFrozenLegacyCopyProgram(
-  input: HarnessStageExecutionInput,
-): CarrierPrimitiveProgram {
-  return createCopyCarrierBusinessProgram(input) as CarrierPrimitiveProgram;
-}
-
-function createFrozenLegacyNoteProgram(
-  input: HarnessStageExecutionInput,
-): CarrierPrimitiveProgram {
-  return createNoteCarrierBusinessProgram(input) as CarrierPrimitiveProgram;
-}
-
-function createFrozenLegacyMediaProgram(
-  input: HarnessStageExecutionInput,
-): CarrierPrimitiveProgram {
-  return createMediaCarrierBusinessProgram(input) as CarrierPrimitiveProgram;
-}
-
-async function drainFrozenLegacyCarrierProgram(
-  input: HarnessStageExecutionInput,
-  program: CarrierPrimitiveProgram,
-): Promise<HarnessWorkflowResult> {
-  let checkOutput: unknown;
-  while (true) {
-    const advanced = await program.next();
-    if (advanced.done) {
-      const observation = frozenLegacyObservation(input, checkOutput);
-      if (observation && input.runtime.recordLegacyShadowObservation) {
-        await input.runtime.recordLegacyShadowObservation({
-          observation,
-          workflowId: input.workflowId,
-          workspaceId: input.request.workspaceId,
-        });
-      }
-      return advanced.value;
-    }
-    if (advanced.value.primitive === 'check') {
-      checkOutput = advanced.value.value;
-    }
-  }
-}
-
-function frozenLegacyObservation(
-  input: HarnessStageExecutionInput,
-  checkOutput: unknown,
-): ShadowDeterministicFields | null {
-  const snapshot = input.request.executionSnapshot;
-  const bounds =
-    input.request.boundedExecution ??
-    input.request.executionPlanSnapshot?.boundedExecution;
-  if (!snapshot || !bounds) return null;
-  const checked =
-    checkOutput && typeof checkOutput === 'object'
-      ? (checkOutput as Record<string, unknown>)
-      : {};
-  const brief =
-    checked.brief && typeof checked.brief === 'object'
-      ? (checked.brief as { factRefs?: unknown })
-      : null;
-  const contextValue = checked.bundle ?? checked.context;
-  const context =
-    contextValue && typeof contextValue === 'object'
-      ? (contextValue as {
-          policyReferences?: {
-            rightsRefs?: Array<{ assetId: string; status: string }>;
-          };
-        })
-      : null;
-  return projectLegacyDeterministicFields({
-    deliverables: snapshot.deliverables.map((deliverable) => ({
-      kind:
-        deliverable.kind === 'copy'
-          ? 'copy'
-          : deliverable.kind === 'image_text_note'
-            ? 'note'
-            : 'media',
-      quantity: deliverable.quantity,
-    })),
-    factRefs: Array.isArray(brief?.factRefs)
-      ? brief.factRefs.filter(
-          (value): value is string => typeof value === 'string',
-        )
-      : [],
-    rightsRefs:
-      context?.policyReferences?.rightsRefs?.map(
-        (right) => `${right.assetId}:${right.status}`,
-      ) ?? [],
-    quoteRef: snapshot.quote,
-    bounds: {
-      maxIterations: bounds.maxIterations,
-      maxCostCents: bounds.maxCostCents,
-      maxWallClockMs: bounds.maxWallClockMs,
-      maxDelegations: bounds.maxDelegations,
-    },
-  });
 }
 
 async function synchronizeCarrierPrimitiveProgram(

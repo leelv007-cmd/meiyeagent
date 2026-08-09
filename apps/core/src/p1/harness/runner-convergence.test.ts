@@ -323,16 +323,65 @@ test('V31-25: legacy kill switch runs rollback path without compiled primitive e
   });
 });
 
-test('V31-25: frozen rollback adapter does not invoke the compiled primitive program factories', () => {
+test('V31-25: frozen rollback module has no dependency on compiled carrier business programs', () => {
   const workflow = readFileSync(new URL('./workflow-core.ts', import.meta.url), 'utf8');
-  const frozenAdapter = workflow.slice(
-    workflow.indexOf('function runFrozenLegacyHarnessAdapter'),
-    workflow.indexOf('async function drainFrozenLegacyCarrierProgram'),
+  const frozen = readFileSync(
+    new URL('./frozen-legacy-five-stage.ts', import.meta.url),
+    'utf8',
+  );
+  const compiledPrograms = workflow.slice(
+    workflow.indexOf('function createCompiledCarrierPrimitiveProgram'),
+    workflow.indexOf('async function synchronizeCarrierPrimitiveProgram'),
   );
   assert.doesNotMatch(
-    frozenAdapter,
-    /create(?:Copy|Note|Media)PrimitiveProgram/,
+    frozen,
+    /CarrierBusinessProgram|createCompiled|executeCompiledCarrierPlan|compiled-carrier-executor/,
   );
+  assert.match(frozen, /import type \{[^}]*\} from '\.\/workflow-core\.js';/);
+  assert.doesNotMatch(
+    frozen,
+    /import \{[^}]*\} from '\.\/workflow-core\.js';/,
+  );
+  assert.match(
+    frozen,
+    /c8e679fef11ecdefcb542e5d12296bb7bcd5e91b/,
+  );
+  assert.match(frozen, /type FrozenLegacy(?:Copy|Note|Media)Ports/);
+  assert.doesNotMatch(compiledPrograms, /FrozenLegacy|runFrozenLegacy/);
+});
+
+test('V31-25: corrupting the new compiled plan does not disable frozen legacy delivery', async () => {
+  const snapshot = buildTestPlanSnapshot('copy');
+  const corruptedRequest: HarnessWorkflowInput = {
+    ...taskInput(),
+    executionPlanSnapshot: {
+      ...snapshot,
+      executionPlan: {
+        ...snapshot.executionPlan,
+        units: snapshot.executionPlan.units.map((unit, index) =>
+          index === 0 ? { ...unit, primitive: 'revise' as const } : unit,
+        ),
+      },
+    },
+  };
+  await assert.rejects(
+    () =>
+      runHarnessWorkflow(
+        'compiled-program-corrupted',
+        corruptedRequest,
+        fixtureCopyStages(),
+        recordingRuntime([]),
+      ),
+    /incompatible|expected|snapshot/i,
+  );
+  const legacy = await runHarnessWorkflow(
+    'compiled-program-corrupted',
+    corruptedRequest,
+    fixtureCopyStages(),
+    recordingRuntime([]),
+    { forceLegacyFiveStage: true },
+  );
+  assert.equal(legacy.delivery?.packageId, 'package-1');
 });
 
 test('V31-13: legacy shadow reads exact multi-page durable projection without executing a runner', async () => {
