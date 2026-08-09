@@ -1020,6 +1020,20 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
       inTransaction = true;
       const row = await this.lockSubmission(client, input);
       const now = await databaseNow(client);
+      if (this.creditLedger) {
+        const submission = storedSubmission(row.submission);
+        if (confirmationDispatchExpired(submission, now)) {
+          await this.expireLockedConfirmationHold(
+            client,
+            submission,
+            input.submissionId,
+            now.toISOString(),
+          );
+          await client.query("COMMIT");
+          inTransaction = false;
+          return { kind: "failed" as const };
+        }
+      }
       const leaseExpiresAt = row.harness_lease_expires_at
         ? new Date(row.harness_lease_expires_at)
         : null;
@@ -1245,35 +1259,7 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
       const now = (await databaseNow(client)).toISOString();
       for (const row of due.rows) {
         const submission = storedSubmission(row.submission);
-        const credits = storedUsageCredits(submission.usageReservation.credits);
-        if (credits !== undefined) {
-          await this.creditLedger.refundUsageOperationWithClient(client, {
-            workspaceId: submission.snapshot.workspaceId,
-            usageOperationId:
-              submission.usageReservation.creditUsageOperationId ??
-              creditUsageOperationId(submission.task.id),
-            refundOperationId: `confirmation-outbox-expiry:${submission.task.id}:${submission.confirmationDispatch?.requestId ?? 'initial'}`,
-            credits,
-            actorId: 'system',
-            correlationId: `confirmation:${submission.task.id}`,
-            createdAt: now,
-          });
-        }
-        await client.query(
-          `UPDATE execution_spine.creation_submissions
-              SET harness_state = 'failed',
-                  harness_lease_id = NULL,
-                  harness_lease_expires_at = NULL,
-                  submission = jsonb_set(
-                    submission,
-                    '{confirmationDispatch,state}',
-                    '"expired"'::jsonb,
-                    true
-                  ),
-                  updated_at = $3::timestamptz
-            WHERE workspace_id = $1 AND id = $2`,
-          [submission.snapshot.workspaceId, row.id, now],
-        );
+        await this.expireLockedConfirmationHold(client, submission, row.id, now);
       }
       await client.query('COMMIT');
       return due.rowCount ?? 0;
@@ -1283,6 +1269,57 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     } finally {
       client.release();
     }
+  }
+
+  private async expireLockedConfirmationHold(
+    client: PoolClient,
+    submission: CreationSubmissionRecord,
+    submissionId: string,
+    now: string,
+  ) {
+    if (!this.creditLedger) return;
+    const billing = new DurableProductBillingService(
+      new PostgresProductBillingRepository(this.pool, client),
+      () => new Date(now),
+    );
+    const refunded = await billing.failAndRefund({
+      quoteId: submission.snapshot.quote.id,
+      workspaceId: submission.snapshot.workspaceId,
+      forceCreditRefund: true,
+      reason: 'confirmation_outbox_expired_before_dispatch',
+    });
+    const credits = storedUsageCredits(submission.usageReservation.credits);
+    if (
+      credits !== undefined &&
+      refunded.quote.lifecycleStatus === 'refunded'
+    ) {
+      await this.creditLedger.refundUsageOperationWithClient(client, {
+        workspaceId: submission.snapshot.workspaceId,
+        usageOperationId:
+          submission.usageReservation.creditUsageOperationId ??
+          creditUsageOperationId(submission.task.id),
+        refundOperationId: `confirmation-outbox-expiry:${submission.task.id}:${submission.confirmationDispatch?.requestId ?? 'initial'}`,
+        credits,
+        actorId: 'system',
+        correlationId: `confirmation:${submission.task.id}`,
+        createdAt: now,
+      });
+    }
+    await client.query(
+      `UPDATE execution_spine.creation_submissions
+          SET harness_state = 'failed',
+              harness_lease_id = NULL,
+              harness_lease_expires_at = NULL,
+              submission = jsonb_set(
+                submission,
+                '{confirmationDispatch,state}',
+                '"expired"'::jsonb,
+                true
+              ),
+              updated_at = $3::timestamptz
+        WHERE workspace_id = $1 AND id = $2`,
+      [submission.snapshot.workspaceId, submissionId, now],
+    );
   }
 
   private async lockSubmission(
@@ -1444,6 +1481,18 @@ function storedConfirmationDispatch(
       ? { expiresAt: dispatch.expiresAt }
       : {}),
   };
+}
+
+function confirmationDispatchExpired(
+  submission: CreationSubmissionRecord,
+  now: Date,
+) {
+  const dispatch = submission.confirmationDispatch;
+  if (!dispatch || dispatch.state !== 'pending') return false;
+  const expiresAt = dispatch.expiresAt
+    ? Date.parse(dispatch.expiresAt)
+    : Date.parse(submission.snapshot.createdAt) + 48 * 60 * 60 * 1_000;
+  return Number.isFinite(expiresAt) && expiresAt <= now.getTime();
 }
 function storedExecutionPlanFreeze(
   value: unknown,

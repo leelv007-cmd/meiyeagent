@@ -1027,6 +1027,13 @@ test(
     const workspaceId = `spine-outbox-${suffix}`;
     const quoteId = `spine-outbox-quote-${suffix}`;
     const submission = reserveRecord(workspaceId, quoteId, suffix);
+    const boundarySuffix = randomUUID();
+    const boundaryQuoteId = `spine-outbox-quote-${boundarySuffix}`;
+    const boundarySubmission = reserveRecord(
+      workspaceId,
+      boundaryQuoteId,
+      boundarySuffix,
+    );
     try {
       await operations.migrate();
       await billingRepository.migrate();
@@ -1098,6 +1105,16 @@ test(
           .availableCredits,
         10,
       );
+      assert.equal(
+        (await billingRepository.getUsage(workspaceId, submission.task.id))
+          ?.status,
+        "refunded",
+      );
+      assert.equal(
+        (await billingRepository.getQuote(workspaceId, quoteId))
+          ?.lifecycleStatus,
+        "refunded",
+      );
       const receipt = await store.readReceipt({
         workspaceId,
         idempotencyKey: `outbox-${suffix}`,
@@ -1120,8 +1137,69 @@ test(
         await store.expireUndispatchedConfirmationHolds({ limit: 10 }),
         0,
       );
+
+      const boundaryQuote = await seedQuote(
+        billingRepository,
+        workspaceId,
+        boundaryQuoteId,
+        boundarySubmission.task.id,
+        { creditCost: 4 },
+      );
+      boundarySubmission.snapshot = createSnapshot({
+        contentPackagePlatform: "wechat_moments",
+        distributionTarget: "manual_copy",
+        platformId: "wechat_moments",
+        quoteId: boundaryQuoteId,
+        quoteRevision: boundaryQuote.revision,
+        submission: boundarySubmission,
+        workspaceId,
+      });
+      boundarySubmission.usageReservation = {
+        id: boundarySubmission.usageReservation.id,
+        credits: 4,
+        units: [],
+      };
+      boundarySubmission.executionPlanFreeze = recoveryExecutionPlanFreeze(
+        boundarySubmission,
+      );
+      boundarySubmission.confirmationDispatch = {
+        requestId: `confirmation:${boundarySubmission.task.id}`,
+        state: "pending",
+        expiresAt: "2026-07-01T00:00:01.000Z",
+      };
+      await store.claim({
+        idempotencyKey: `outbox-boundary-${boundarySuffix}`,
+        payloadHash: `payload-boundary-${boundarySuffix}`,
+        submission: boundarySubmission,
+        workspaceId,
+      });
+
+      assert.deepEqual(
+        await store.claimHarnessStart({
+          submissionId: boundarySubmission.snapshot.id,
+          workspaceId,
+        }),
+        { kind: "failed" },
+      );
+      assert.equal(
+        (await creditLedger.project(workspaceId, new Date().toISOString()))
+          .availableCredits,
+        10,
+      );
+      assert.equal(
+        (
+          await billingRepository.getUsage(
+            workspaceId,
+            boundarySubmission.task.id,
+          )
+        )?.status,
+        "refunded",
+      );
     } finally {
       await cleanup(pool, workspaceId, submission).catch(() => undefined);
+      await cleanup(pool, workspaceId, boundarySubmission).catch(
+        () => undefined,
+      );
       await pool.query("DELETE FROM workspaces WHERE id = $1", [workspaceId])
         .catch(() => undefined);
       await pool.end();
