@@ -45,8 +45,19 @@ await expect(
 ```
 
 `chooseImageTextDirection()` 在商家点完图文方向后，接受三种终态之一，**其中一种是
-`data-outcome="failed"`**。凡调用该 fixture 的 spec（C＝`v31-living-plan-journey`、
-G＝`v31-mid-run-steering-journey`）都可以在生成彻底失败的情况下走绿。
+`data-outcome="failed"`**。凡调用该 fixture 的 spec 都可以在生成彻底失败的情况下走绿。
+
+**影响面（2026-08-09 补测，修正本节初稿只写 C／G 的说法）**：`grep -rl` 实测 5 个调用方，
+其中 **2 个在当前已 required 的 job 里**——即今天 main 上就有「失败也能过必跑门」的洞，
+不只是未来 V31 gate 的问题：
+
+| Spec | 归属 | 是否已 required |
+|---|---|---|
+| `specs/v31-living-plan-journey.spec.ts` | §37.4-C | 否 |
+| `specs/v31-mid-run-steering-journey.spec.ts` | §37.4-G | 否 |
+| `specs/m04-browser-hard-gate.spec.ts` | M-04 硬门 | **是** — `production-main-journey` |
+| `specs/p2-browser-closure.spec.ts` | P2 收口 | **是** — `p2-browser-acceptance` |
+| `specs/w01-storefact-wiring.spec.ts` | W01 | 否 |
 
 必须改成：只接受 `resumedLine` 或 `executionConfirmation`（两者都是「继续前进」）；
 失败终态出现时应当 fail 并把 report card 文本打进错误信息。若确有需要区分「fixture
@@ -67,6 +78,10 @@ await expect(
 到这一行它必然已解析且有文本，所以 `or` 分支恒被满足，
 「generating 阶段 Result 保持可见」实际未被验证。必须去掉 `or(merchantStatus)`，
 直接断 `image-worksurface`。
+
+影响面：该断言所在的 `submitComposerJourney` 有 **19 个 spec 调用方**，其中 4 个已 required
+（`m04-browser-hard-gate`、`p2-browser-closure`、`w12-identity-draft-assistant`、
+`xhs-image-text-main-journey`），另含 §37.4-K 的 `v31-publish-handoff-selfreport`。
 
 ### 1.3 `chooseImageTextDirection` 允许整段跳过 —— B1 + B2
 
@@ -220,7 +235,9 @@ F 的现存前身 `v31-context-fence-journey.spec.ts:93-121` 是 B6 的教科书
 
 ## 3. 建议的修复顺序（给 Wave 3）
 
-1. **先修 1.1／1.2／1.3 三处共享 fixture**——失败终态可过是全局性假绿，且一处修好，C/G/K 同时受益。
+1. **先修 1.1／1.2／1.3 三处共享 fixture** —— 已开票 `docs/tickets/v3.1/V31-29-e2e-fixture-truthfulness.md`，
+   定为 Wave 3 browser lane 第一个任务，**排在上游 Harness/renderer 阻塞复诊之前**（理由见该票排期理由）。
+   失败终态可过是全局性假绿，且已落在两个当前 required 的 job 内。
 2. 修四处 B1 硬跳过：`v31-interrupt-resume-journey.spec.ts:89-110`、`v31-living-plan-journey.spec.ts:121-128`，以及两处 `confirmCreationGateIfPresent` 的 `catch { return }`。
 3. 把 E 从「五选一恒绿」重写为真 drift 三段断言（依赖 Task 3 落地）。
 4. 把 J 从纯 API 改为控制台旅程 ＋ 四条 release 解析断言（依赖 Task 6 落地）。
