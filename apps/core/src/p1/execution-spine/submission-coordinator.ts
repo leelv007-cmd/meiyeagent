@@ -8,7 +8,6 @@ import {
 } from "@meiye/contracts";
 
 import { fingerprintValue } from "../job-runtime/job-contracts.js";
-import { executionConfirmationAuthorityRequestId } from "../agent-session/execution-confirmation-authority.js";
 import type { PendingConfirmationAuthority } from "../agent-session/execution-confirmation-authority-store.js";
 import { selectImageIntentOperation } from "../harness/image-intent-compiler.js";
 import type { ExecutionPlanCompileFreeze } from "../harness/execution-plan-admission.js";
@@ -415,11 +414,20 @@ export class CreationSubmissionCoordinator {
 		) {
 			throw new Error("Paid Composer start requires the exact prepared plan authority.");
 		}
-		const requestId = executionConfirmationAuthorityRequestId({
-			workflowId,
-			planRevision: planAuthority.planRevision,
-			snapshotHash: planAuthority.snapshotHash,
-		});
+		// The authority ID is not a pure function of {workflowId, planRevision,
+		// snapshotHash} once a prior terminal decision exists on this base:
+		// resolveRequestId (execution-confirmation-authority.ts:199) derives a
+		// `:r:` successor from the decision history, so recomputing it here would
+		// resolve a stale, superseded request whenever the prepared attempt is a
+		// successor. The dispatch that requested this confirmation already
+		// persisted the exact authority ID it received (:743/:751); resolve that
+		// instead of rederiving it.
+		const requestId = submission.confirmationDispatch?.requestId;
+		if (!requestId) {
+			throw new Error(
+				"Paid Composer start requires a durable confirmation authority ID.",
+			);
+		}
 		const authority = await this.explicitConfirmations.getRequest(requestId);
 		if (
 			!authority ||

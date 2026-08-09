@@ -1418,20 +1418,15 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 		/immutable confirmed decision/u,
 	);
 	assert.equal(harness.starts.length, 0);
-	const revisionTwoFreeze = {
-		approvalBasis: "merchant_confirmed",
-		planId: "plan-paid",
-		planRevision: 2,
-		quoteRef: { id: "quote-1", revision: "quote-r5" },
-	} as never;
+	// The re-request after revising to plan-r2 dispatches through the same
+	// fixture harness (RecordingHarnessStarter.preparePendingConfirmation does
+	// not vary its returned ID by revision), so this is the exact ID persisted
+	// on confirmationDispatch. startPrepared must resolve that persisted ID,
+	// not rederive one from {workflowId, planRevision, snapshotHash}.
 	immutableDecision = planConfirmationDecisionSchema.parse({
 		schemaVersion: "plan-confirmation-decision/v1",
 		decisionId: `decision:${createdTaskId}:merchant-confirmed`,
-		requestId: executionConfirmationAuthorityRequestId({
-			workflowId: `${createdTaskId}:plan-r2`,
-			planRevision: 2,
-			snapshotHash: computeExecutionPlanSnapshotHash(revisionTwoFreeze),
-		}),
+		requestId: `confirmation:authority:${createdTaskId}`,
 		actorId: "owner-1",
 		decision: "confirmed",
 		decidedAt: "2026-08-09T08:00:00.000Z",
@@ -1536,14 +1531,12 @@ test("admission answering with a second authority ID fails the start", async () 
 		"composer-submit-1",
 	)?.confirmationDispatch?.requestId;
 	assert.equal(persistedRequestId, `confirmation:authority:${created.task.id}`);
+	// startPrepared resolves the persisted authority ID, so the merchant's
+	// decision must be recorded against that exact ID, not a rederived one.
 	immutableDecision = planConfirmationDecisionSchema.parse({
 		schemaVersion: "plan-confirmation-decision/v1",
 		decisionId: `decision:${created.task.id}:merchant-confirmed`,
-		requestId: executionConfirmationAuthorityRequestId({
-			workflowId: `${created.task.id}:plan-r1`,
-			planRevision: 1,
-			snapshotHash,
-		}),
+		requestId: `confirmation:authority:${created.task.id}`,
 		actorId: "owner-1",
 		decision: "confirmed",
 		decidedAt: "2026-08-09T08:00:00.000Z",
@@ -1567,6 +1560,140 @@ test("admission answering with a second authority ID fails the start", async () 
 			?.confirmationDispatch?.requestId,
 		persistedRequestId,
 	);
+});
+
+test("startPrepared resolves the persisted successor authority ID after an expired attempt, not a recomputed base (V31-39)", async () => {
+	const submissions = new MemorySubmissionStore();
+	const freeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-paid",
+		planRevision: 1,
+		quoteRef: { id: "quote-1", revision: "quote-r5" },
+	} as never;
+	const snapshotHash = computeExecutionPlanSnapshotHash(freeze);
+	const workflowId = "task-1:plan-r1";
+	const baseRequestId = executionConfirmationAuthorityRequestId({
+		workflowId,
+		planRevision: 1,
+		snapshotHash,
+	});
+	// Shape mirrors the `:r:` successor execution-confirmation-authority.ts:199
+	// derives once a prior terminal decision exists on the base — it is never
+	// equal to what recomputing {workflowId, planRevision, snapshotHash} yields.
+	const successorRequestId = `${baseRequestId}:r:successor-after-expiry`;
+	let completed = 0;
+	const starts: Array<Parameters<CreationSubmissionHarnessStarter["start"]>[0]> =
+		[];
+	const harness: CreationSubmissionHarnessStarter = {
+		async start(input) {
+			starts.push(structuredClone(input));
+			return { executionConfirmationRequestId: successorRequestId };
+		},
+		// Admission already resolved and dispatched the successor authority;
+		// startPrepared must resolve that exact ID, not rederive the base.
+		async preparePendingConfirmation() {
+			return { executionConfirmationRequestId: successorRequestId };
+		},
+	};
+	const authorityRequests = new Map<
+		string,
+		{ planRevision: number; snapshotHash: string; status: string }
+	>([
+		[baseRequestId, { planRevision: 1, snapshotHash, status: "expired" }],
+		[successorRequestId, { planRevision: 1, snapshotHash, status: "decided" }],
+	]);
+	const immutableDecision = planConfirmationDecisionSchema.parse({
+		schemaVersion: "plan-confirmation-decision/v1",
+		decisionId: "decision:task-1:merchant-confirmed",
+		requestId: successorRequestId,
+		actorId: "owner-1",
+		decision: "confirmed",
+		decidedAt: "2026-08-09T08:00:00.000Z",
+	});
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				input.submission.executionPlanFreeze = freeze;
+				return {
+					threadId: asAgentThreadIdentity("thread-successor"),
+					runId: "run-successor",
+					makeReady: true,
+				};
+			},
+			async completeExplicitStart(input) {
+				assert.equal(input.planRevision, 1);
+				return {
+					threadId: asAgentThreadIdentity("thread-successor"),
+					runId: "run-successor",
+					makeReady: true,
+				};
+			},
+			async markExplicitStartCompleted() {
+				completed += 1;
+			},
+		},
+		{
+			async getDecision(_workspaceId, requestId) {
+				return requestId === immutableDecision.requestId
+					? immutableDecision
+					: null;
+			},
+			async getRequest(requestId) {
+				const record = authorityRequests.get(requestId);
+				if (!record) return null;
+				return {
+					request: {
+						requestId,
+						planId: "plan-paid",
+						planRevision: record.planRevision,
+						snapshotHash: record.snapshotHash,
+						quoteRef: { id: "quote-1", revision: "quote-r5" },
+						status: record.status,
+					},
+				};
+			},
+			async getCurrentByWorkflowId(workflowIdArg) {
+				return {
+					workflowId: workflowIdArg,
+					workspaceId: "workspace-1",
+					planId: "plan-paid",
+					planRevision: 1,
+					snapshotHash,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+					rightsRevisionRefs: [],
+					factRevisionRefs: [],
+					frozenAt: "2026-08-09T08:00:00.000Z",
+				};
+			},
+		},
+	);
+
+	const created = await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	assert.equal(created.makeReady, false);
+	assert.equal(
+		submissions.claimedSubmission("workspace-1", "composer-submit-1")
+			?.confirmationDispatch?.requestId,
+		successorRequestId,
+	);
+
+	const started = await coordinator.startPrepared({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		planRevision: 1,
+	});
+
+	assert.equal(started.makeReady, true);
+	assert.equal(starts.length, 1);
+	assert.equal(completed, 1);
 });
 
 test("clarification answer continues the prepared task and durably stores its compiled freeze", async () => {
