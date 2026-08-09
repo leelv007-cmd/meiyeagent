@@ -6,6 +6,7 @@ import {
   registerE2EUser,
 } from '../fixtures/auth';
 import {
+  productCommand,
   productState,
   seedComposerInlineAuthorize,
   seedConfirmedStore,
@@ -25,11 +26,12 @@ async function openCustomizedCreate(page: Page) {
   await page.goto('/dashboard');
   // image_text submissions fail closed (400 INVALID_STATE) without a
   // case_image workspace source — seed one first, as the merchant would.
-  await seedComposerInlineAuthorize(page, {
+  const authorized = await seedComposerInlineAuthorize(page, {
     fileName: `v31-journey-${crypto.randomUUID()}.png`,
   });
   await selectComposerLens(page, 'image_text');
   await expect(page.getByTestId('composer-home')).toBeVisible();
+  return authorized;
 }
 async function changeConfirmedPriceFact(page: Page) {
   const state = await productState(page);
@@ -164,12 +166,16 @@ test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
-    await openCustomizedCreate(page);
+    const authorized = await openCustomizedCreate(page);
 
     await page
       .getByTestId('composer-intent-input')
       .fill('用门店授权素材做一组笔记配图。');
     await page.getByTestId('composer-submit').click();
+    await productCommand(page, {
+      type: 'withdraw_asset',
+      assetId: authorized.id,
+    });
     await page.getByRole('button', { name: '确认并开始' }).click();
     await expect(
       page.getByText(/授权已撤销|安全停止|不会重复扣费/).first()

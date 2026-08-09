@@ -66,6 +66,33 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     const beforeText = (await interruptHost.innerText()).trim();
     expect(beforeText.length).toBeGreaterThan(0);
 
+    const invalidSchema = await page.request.post(
+      '/api/core/p1/interrupts/resume',
+      {
+        data: {
+          schemaVersion: 'interrupt-payload/v999',
+          interruptId,
+          revision: Number(revision),
+          type: 'accept',
+          idempotencyKey: `invalid-schema:${interruptId}`,
+        },
+      }
+    );
+    expect(invalidSchema.status()).toBe(400);
+    const staleRevision = await page.request.post(
+      '/api/core/p1/interrupts/resume',
+      {
+        data: {
+          schemaVersion: 'interrupt-payload/v1',
+          interruptId,
+          revision: Number(revision) + 1,
+          type: 'accept',
+          idempotencyKey: `stale-revision:${interruptId}`,
+        },
+      }
+    );
+    expect(staleRevision.status()).toBe(409);
+
     // §37.4-H: refresh / reconnect must not drop pending interrupt.
     await page.reload();
     await expect(interruptHost).toHaveAttribute(
@@ -78,6 +105,22 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     );
     await page.getByTestId('agent-interrupt-accept').click();
     await expect(interruptHost).toHaveCount(0, { timeout: 60_000 });
+    const duplicate = await page.request.post(
+      '/api/core/p1/interrupts/resume',
+      {
+        data: {
+          schemaVersion: 'interrupt-payload/v1',
+          interruptId,
+          revision: Number(revision),
+          type: 'accept',
+          idempotencyKey: `interrupt-resume:${interruptId}:r${revision}:accept`,
+        },
+      }
+    );
+    expect(duplicate.ok(), await duplicate.text()).toBeTruthy();
+    expect(await duplicate.json()).toMatchObject({
+      data: { outcome: 'replayed' },
+    });
   });
 
   test('homepage pending interrupts list is workspace-scoped', async ({

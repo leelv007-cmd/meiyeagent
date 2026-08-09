@@ -157,6 +157,24 @@ test('resume by interruptId+revision CAS applies once; duplicate is replay', asy
   assert.equal(second.outcome, 'replayed');
 });
 
+test('schema-mismatched resume fails before CAS and keeps the interrupt pending', async () => {
+  const { store, svc } = service();
+  await svc.request({ workspaceId: 'ws-1', payload: payload() });
+  await assert.rejects(
+    () =>
+      svc.resume({
+        userId: 'user-1',
+        workspaceId: 'ws-1',
+        command: {
+          ...resumeCommand(),
+          schemaVersion: 'interrupt-payload/v999',
+        } as unknown as ResumeInterruptCommand,
+      }),
+    /schemaVersion/u,
+  );
+  assert.equal((await store.getById('int-1'))?.status, 'pending');
+});
+
 test('stale revision resume is rejected (no position index)', async () => {
   const { svc } = service();
   await svc.request({ workspaceId: 'ws-1', payload: payload({ revision: 5 }) });
