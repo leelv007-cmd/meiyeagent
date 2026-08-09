@@ -448,6 +448,89 @@ test('V31-25 P0-A: dropping the revise unit stops the page-regeneration step fro
   assert.deepEqual(observed, []);
 });
 
+test('V31-25 P0-C: a plan the real compiler produced for quantity 3 executes three page units', async () => {
+  // Closes the loop the P0-A tests open by hand: the plan under test is whatever
+  // PlanCompiler actually emits, so a compiler that ignores quantity fails here.
+  const { PlanCompiler, createFixturePlanCompilerPorts } = await import(
+    '../agent-session/plan-compiler.js'
+  );
+  const { MemoryMarketingPlanStore } = await import(
+    '../agent-session/memory-plan-store.js'
+  );
+  const compiler = new PlanCompiler({
+    store: new MemoryMarketingPlanStore(),
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const compiled = await compiler.compile({
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    goalIds: ['goal-1'],
+    proposal: {
+      goalNarrative: '小红书护理案例种草',
+      whyNow: '暑期新客',
+      recommendedDeliverables: [
+        {
+          carrier: 'note',
+          platform: 'xiaohongshu',
+          quantity: 3,
+          purpose: '案例种草笔记',
+        },
+      ],
+      expressionStrategy: { voice: '专业温和', promotionIntensity: 'soft' },
+      factIntentions: ['门店地址'],
+      assetIntentions: ['before_after_case'],
+      assumptions: [{ key: 'tone', statement: '少一点硬广', risk: 'low' }],
+    },
+    intentRevision: 1,
+    contextBundleId: 'bundle-1',
+    contextRevision: 'ctx-1',
+    harnessReleaseId: 'release-1',
+    now: '2026-08-09T12:00:00.000Z',
+    planId: 'plan-p0c-exec-1',
+  });
+
+  const selectionCalls: string[] = [];
+  const base = fixtureNoteStages();
+  const execute = base.executeNoteAndSelect;
+  const keys: string[] = [];
+  // Freeze the compiler's own plan, so the snapshot hash covers it.
+  const snapshot = buildTestPlanSnapshot('note', (plan) => {
+    plan.units = compiled.executionPlan.units;
+    plan.dependencyGroups = compiled.executionPlan.dependencyGroups;
+    plan.boundedRetry = compiled.executionPlan.boundedRetry;
+    if (compiled.executionPlan.cachePolicies) {
+      plan.cachePolicies = compiled.executionPlan.cachePolicies;
+    }
+  });
+  const result = await runHarnessWorkflow(
+    'p0c-compiled-note-quantity-3',
+    {
+      ...mediaTaskInput('image_text_note'),
+      executionPlanSnapshot: snapshot,
+    },
+    {
+      ...base,
+      async executeNoteAndSelect(input) {
+        selectionCalls.push(input.selectedStyleId);
+        return execute(input);
+      },
+    },
+    {
+      ...recordingRuntime(keys),
+      async awaitDecision(question) {
+        return noteStyleOrPaidDecision(question);
+      },
+    },
+  );
+
+  assert.equal(result.delivery.packageId, 'package-1');
+  assert.equal(selectionCalls.length, 3);
+  const selectionKeys = keys.filter(
+    (key) => key.includes(':s4:') && key.endsWith(':selection'),
+  );
+  assert.equal(new Set(selectionKeys).size, 3);
+});
+
 test('V31-25 P0-A: repeating the note pages unit runs the selection port once per unit under distinct durable keys', async () => {
   const selectionCalls: string[] = [];
   const countingStages = (): HarnessNoteStagePorts => {
