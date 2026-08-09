@@ -205,3 +205,84 @@ test(
     }
   },
 );
+
+test(
+  'a replay carrying different content is refused while a jsonb key reorder is not',
+  { skip },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresAgentSemanticEventStore(pool);
+    const resourceId = `resource-diverge-${randomUUID()}`;
+    const threadId = `${resourceId}-thread`;
+    const eventId = `${resourceId}-artifact-r1`;
+    // Declaration order that jsonb cannot preserve: it sorts object keys by
+    // length then bytes. A byte comparison of the round-trip against this value
+    // would call every replay a divergence.
+    const payload = {
+      revision: 1,
+      artifactId: 'note:package-diverge',
+      status: 'partial',
+      artifactType: 'note',
+      schemaVersion: 'artifact-update/v1',
+    };
+    const candidate = {
+      eventId,
+      threadId,
+      resourceId,
+      contextRole: 'excluded' as const,
+      sourceDomain: 'make_harness.artifact',
+      sourceEntityId: 'note:package-diverge',
+      sourceRevision: '1',
+      correlationId: 'corr-diverge',
+      eventType: 'artifact.revised',
+      payload,
+      occurredAt: '2026-08-09T09:00:00.000Z',
+    };
+
+    try {
+      await store.migrate();
+      const first = await store.appendProjected(candidate);
+      assert.equal(first.replayed, false);
+
+      const stored = await pool.query<{ payload: { payload: unknown } }>(
+        `SELECT payload FROM p1_agent_semantic_events WHERE event_id = $1`,
+        [eventId],
+      );
+      const storedPayload = stored.rows[0]?.payload.payload as Record<
+        string,
+        unknown
+      >;
+      assert.ok(storedPayload);
+      assert.notDeepEqual(Object.keys(storedPayload), Object.keys(payload));
+
+      // The ordinary crash-window replay: same content, no new write.
+      const writesBefore = store.writeCount;
+      const replay = await store.appendProjected(candidate);
+      assert.equal(replay.replayed, true);
+      assert.equal(store.writeCount, writesBefore);
+
+      // A re-execution that reached a different revision body under the same
+      // eventId. The store used to answer `replayed: true` and keep its own row,
+      // so the caller believed its version had landed.
+      await assert.rejects(
+        store.appendProjected({
+          ...candidate,
+          payload: { ...payload, status: 'ready' },
+        }),
+        (error: unknown) =>
+          error instanceof Error &&
+          'code' in error &&
+          error.code === 'AGENT_SEMANTIC_EVENT_CONFLICT' &&
+          /already projected with different content/u.test(error.message),
+      );
+      assert.equal(store.writeCount, writesBefore);
+    } finally {
+      await pool
+        .query('DELETE FROM p1_agent_semantic_events WHERE resource_id = $1', [
+          resourceId,
+        ])
+        .catch(() => undefined);
+      await pool.end();
+    }
+  },
+);

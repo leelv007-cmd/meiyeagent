@@ -15,6 +15,7 @@ import {
 
 import type { PostgresSchemaMigrator } from '../../postgres-schema-migration.js';
 import {
+  assertProjectedReplayMatches,
   buildProjectedEvent,
   type AgentSemanticEventStore,
   type ListSemanticEventsInput,
@@ -84,6 +85,7 @@ export class PostgresAgentSemanticEventStore
             `Semantic event ${candidate.eventId} already projected under another boundary.`,
           );
         }
+        assertProjectedReplayMatches(event, candidate);
         await client.query('COMMIT');
         return { event, replayed: true };
       }

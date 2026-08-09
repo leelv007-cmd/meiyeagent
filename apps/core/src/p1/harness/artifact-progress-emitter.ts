@@ -12,7 +12,10 @@ import {
   type ArtifactUpdateWire,
 } from '@meiye/contracts';
 
-import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-event-store.js';
+import {
+  AgentSemanticEventStoreError,
+  type SemanticEventCandidate,
+} from '../agent-semantic-events/semantic-event-store.js';
 
 export type ArtifactProgressEmitterPort = {
   project(candidate: SemanticEventCandidate): Promise<unknown>;
@@ -39,6 +42,16 @@ export function nonBlockingArtifactEmitter(
       try {
         return await emitter.project(candidate);
       } catch (error) {
+        // A divergence conflict is not a transient write failure and must not be
+        // dropped: it says this run's content disagrees with the revision
+        // already published under that id. Swallowing it restores exactly the
+        // silent splice the store's guard exists to end.
+        if (
+          error instanceof AgentSemanticEventStoreError &&
+          error.code === 'AGENT_SEMANTIC_EVENT_CONFLICT'
+        ) {
+          throw error;
+        }
         onDropped(error);
         return undefined;
       }
