@@ -25,6 +25,10 @@ run_required_gate() {
 run_required_gate root-typecheck.log pnpm typecheck
 run_required_gate root-build.log pnpm build
 run_required_gate root-test.log pnpm test
+# Its own gate, never an `&&` step inside root `test`: the journey suite crosses
+# package boundaries and a failure here must not make the script-gate families
+# unreachable. run_required_gate records the failure and keeps going.
+run_required_gate root-test-journeys.log pnpm test:journeys
 run_required_gate web-interaction-test.log pnpm --filter @meiye/web test:interaction
 run_required_gate root-check.log pnpm check
 run_required_gate secret-scan.json node scripts/uiux/secret-scan.mjs
