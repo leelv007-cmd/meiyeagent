@@ -11,6 +11,7 @@ import {
   confirmationCreditPortFromMemoryLedger,
   ExecutionConfirmationService,
 } from './execution-confirmation-service.js';
+import { MemoryConfirmationAuthorityStore } from './execution-confirmation-authority-store.js';
 import { ExecutionConfirmationError } from './execution-confirmation-store.js';
 import {
   MemoryExecutionConfirmationRequestStore,
@@ -46,6 +47,7 @@ test('authority assembler freezes plan, quote, rights, facts and clock from serv
         rightsRevisionRefs: ['rights-2', 'rights-1'],
         factRevisionRefs: ['fact-1'],
         frozenAt: '2026-08-09T11:59:00.000Z',
+        reservationAttempt: 'successor',
         executionConfirmationContext: {
           campaignPlanRef: { id: 'campaign-plan-1', revision: 2 },
           workOrdinal: 2,
@@ -83,7 +85,8 @@ test('authority assembler freezes plan, quote, rights, facts and clock from serv
     planRevision: 7,
     snapshotHash: 'hash-authority',
     quoteRef: { id: 'quote-authority', revision: 'rev-3' },
-    reservationIdempotencyKey: 'consume:task:task-authority',
+    reservationIdempotencyKey:
+      result.stored.request.reservationIdempotencyKey,
     createdAt: '2026-08-09T12:00:00.000Z',
     holdExpiresAt: '2026-08-11T12:00:00.000Z',
     campaignPlanRef: { id: 'campaign-plan-1', revision: 2 },
@@ -92,6 +95,10 @@ test('authority assembler freezes plan, quote, rights, facts and clock from serv
     status: 'pending',
   });
   assert.match(result.stored.request.requestId, /^confirmation:[a-f0-9]{40}$/u);
+  assert.match(
+    result.stored.request.reservationIdempotencyKey,
+    /^consume:confirmation:[a-f0-9]{40}$/u,
+  );
   assert.equal(result.reservedCredits, 6);
   assert.equal(result.card.rightsSummary, 'rights-1, rights-2');
   assert.equal(result.card.factSummary, 'fact-1');
@@ -140,9 +147,27 @@ test('authority assembler replays one workflow with its first frozen clock', asy
     }) as never,
   };
   let now = '2026-08-09T12:00:00.001Z';
-  const assembler = new ConfirmationAuthorityAssembler(service, plans, quotes, {
-    clock: () => new Date(now),
-  });
+  let createBarrier:
+    | { entered(): void; wait: Promise<void> }
+    | undefined;
+  const assembler = new ConfirmationAuthorityAssembler(
+    {
+      getRequest: (requestId) => service.getRequest(requestId),
+      getDecision: (requestId) => service.getDecision(requestId),
+      async createRequest(input) {
+        const barrier = createBarrier;
+        if (barrier) {
+          createBarrier = undefined;
+          barrier.entered();
+          await barrier.wait;
+        }
+        return service.createRequest(input);
+      },
+    },
+    plans,
+    quotes,
+    { clock: () => new Date(now) },
+  );
   const command = {
     actorId: 'merchant-1',
     workspaceId: 'ws-1',
@@ -163,6 +188,19 @@ test('authority assembler replays one workflow with its first frozen clock', asy
     14,
   );
 
+  let releaseCreate!: () => void;
+  let enteredCreate!: () => void;
+  const entered = new Promise<void>((resolve) => {
+    enteredCreate = resolve;
+  });
+  createBarrier = {
+    entered: enteredCreate,
+    wait: new Promise<void>((resolve) => {
+      releaseCreate = resolve;
+    }),
+  };
+  const reconfirmPromise = assembler.createRequest(command);
+  await entered;
   await service.decide({
     decisionId: 'decision-replay-1',
     requestId: first.stored.request.requestId,
@@ -171,8 +209,9 @@ test('authority assembler replays one workflow with its first frozen clock', asy
     decision: 'rejected',
     decidedAt: '2026-08-09T12:01:00.000Z',
   });
+  releaseCreate();
   now = '2026-08-09T12:02:00.000Z';
-  const reconfirm = await assembler.createRequest(command);
+  const reconfirm = await reconfirmPromise;
   now = '2026-08-09T12:02:00.500Z';
   const reconfirmReplay = await assembler.createRequest(command);
   assert.notEqual(reconfirm.stored.request.requestId, first.stored.request.requestId);
@@ -185,13 +224,27 @@ test('authority assembler replays one workflow with its first frozen clock', asy
     reconfirm.stored.request.createdAt,
   );
 
+  let releaseExpiryCreate!: () => void;
+  let enteredExpiryCreate!: () => void;
+  const enteredExpiry = new Promise<void>((resolve) => {
+    enteredExpiryCreate = resolve;
+  });
+  createBarrier = {
+    entered: enteredExpiryCreate,
+    wait: new Promise<void>((resolve) => {
+      releaseExpiryCreate = resolve;
+    }),
+  };
+  const successorPromise = assembler.createRequest(command);
+  await enteredExpiry;
   await service.expireHold({
     requestId: reconfirm.stored.request.requestId,
     workspaceId: 'ws-1',
     now: '2026-08-11T12:02:01.000Z',
   });
+  releaseExpiryCreate();
   now = '2026-08-11T12:03:00.000Z';
-  const successor = await assembler.createRequest(command);
+  const successor = await successorPromise;
   assert.notEqual(
     successor.stored.request.requestId,
     reconfirm.stored.request.requestId,
@@ -225,6 +278,14 @@ test('authority assembler replays one workflow with its first frozen clock', asy
       error.code === 'INVALID_STATE',
   );
   assert.equal(ledger.project('ws-1', now).availableCredits, 14);
+  assert.deepEqual(await service.reconcileDecidedWithoutDecision(), {
+    restoredRequestIds: [successor.stored.request.requestId],
+  });
+  const recoveredPending = await assembler.createRequest(command);
+  assert.equal(
+    recoveredPending.stored.request.requestId,
+    successor.stored.request.requestId,
+  );
   await service.decide({
     decisionId: 'decision-reconcile-missing',
     requestId: successor.stored.request.requestId,
@@ -251,6 +312,82 @@ test('authority assembler replays one workflow with its first frozen clock', asy
     confirmedAttempt.stored.request.requestId,
   );
   assert.equal(ledger.project('ws-1', now).availableCredits, 14);
+});
+
+test('authority assembler retries an authority that advances before the credit transaction', async () => {
+  const ledger = new MemoryCreditLedger();
+  ledger.grant({
+    id: 'lot-authority-advance',
+    workspaceId: 'ws-1',
+    credits: 20,
+    expirationDate: '2026-09-01T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+    sourceRef: 'test',
+    createdAt: '2026-08-01T00:00:00.000Z',
+  });
+  const authorityStore = new MemoryConfirmationAuthorityStore();
+  const revision1 = {
+    workflowId: 'workflow-authority-advance',
+    workspaceId: 'ws-1',
+    planId: 'plan-authority-advance',
+    planRevision: 1,
+    snapshotHash: 'hash-authority-advance-1',
+    quoteRef: { id: 'quote-authority-advance', revision: 1 },
+    rightsRevisionRefs: [],
+    factRevisionRefs: [],
+    frozenAt: '2026-08-09T11:59:00.000Z',
+  } as const;
+  const revision2 = {
+    ...revision1,
+    planRevision: 2,
+    snapshotHash: 'hash-authority-advance-2',
+    frozenAt: '2026-08-09T12:00:00.000Z',
+  } as const;
+  await authorityStore.putCurrent(revision1);
+  let firstRead = true;
+  const plans: ConfirmationAuthorityPlanReader = {
+    async getCurrentByWorkflowId(workflowId) {
+      if (firstRead) {
+        firstRead = false;
+        await authorityStore.putCurrent(revision2);
+        return revision1;
+      }
+      return authorityStore.getCurrentByWorkflowId(workflowId);
+    },
+  };
+  const service = new ExecutionConfirmationService(
+    new MemoryExecutionConfirmationRequestStore(),
+    new MemoryPlanConfirmationDecisionStore(),
+    confirmationCreditPortFromMemoryLedger(ledger),
+    authorityStore,
+  );
+  const assembler = new ConfirmationAuthorityAssembler(
+    service,
+    plans,
+    {
+      getQuote: () => ({
+        quoteId: 'quote-authority-advance',
+        revision: 1,
+        taskId: 'task-authority-advance',
+        creditCost: 6,
+        failureRefundsCredits: true,
+      }) as never,
+    },
+    { clock: () => new Date('2026-08-09T12:01:00.000Z') },
+  );
+
+  const result = await assembler.createRequest({
+    actorId: 'merchant-1',
+    workspaceId: 'ws-1',
+    workflowId: revision1.workflowId,
+  });
+
+  assert.equal(result.stored.request.planRevision, 2);
+  assert.equal(result.stored.request.snapshotHash, revision2.snapshotHash);
+  assert.equal(
+    ledger.project('ws-1', '2026-08-09T12:02:00.000Z').availableCredits,
+    14,
+  );
 });
 
 test('authority assembler rejects foreign workspace and quote revision drift', async () => {

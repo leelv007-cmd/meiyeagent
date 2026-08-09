@@ -35,7 +35,10 @@ import {
   merchantPaidGenerationConfirmationQuestion,
   merchantPaidGenerationConfirmationReason,
 } from './merchant-delivery-language.js';
-import type { HarnessWorkflowInput } from './task-admission.js';
+import {
+  executionPlanAdmissionWorkflowId,
+  type HarnessWorkflowInput,
+} from './task-admission.js';
 
 export type PaidGenerationNoteOutline = {
   pageCount: number;
@@ -191,6 +194,12 @@ export async function confirmPaidGenerationExecution(
       executionConfirmationAuthority: {
         kind: 'external_action',
         revision: 'execution-external-action/v1',
+        ...(request.executionConfirmationReservedCredits
+          ? {
+              reservedCredits:
+                request.executionConfirmationReservedCredits,
+            }
+          : {}),
         ...(input.noteOutline ? { outline: input.noteOutline } : {}),
       },
       scope: 'current_task',
@@ -271,6 +280,7 @@ async function admitConfirmedExecutionPlan(
       }
       const refreshed = freezeExecutionPlanContent({
         ...pending.content,
+        planRevision: pending.content.planRevision + 1,
         quoteRef:
           live.quoteRevision === undefined
             ? pending.content.quoteRef
@@ -309,6 +319,7 @@ async function admitConfirmedExecutionPlan(
         rightsRevisionRefs: [...refreshed.content.rightsRevisionRefs],
         factRevisionRefs: [...refreshed.content.factRevisionRefs],
         frozenAt: decision.decidedAt,
+        reservationAttempt: 'successor',
         ...(request.executionConfirmationContext
           ? {
               executionConfirmationContext:
@@ -327,12 +338,15 @@ async function admitConfirmedExecutionPlan(
         ...request,
         pendingExecutionPlanSnapshot: refreshed,
         executionConfirmationRequestId: reconfirmationRequestId,
+        executionConfirmationReservedCredits: reconfirmation.reservedCredits,
         executionConfirmationDiffFields: Object.keys(staleness.diff),
       };
     }
   }
   const admitted = await input.admitExecutionPlanSnapshot({
-    workflowId: input.workflowId,
+    workflowId: executionPlanAdmissionWorkflowId(input.workflowId, {
+      executionPlanSnapshot: snapshot,
+    }),
     workspaceId: request.workspaceId,
     snapshot,
     ...(live ? { live } : {}),

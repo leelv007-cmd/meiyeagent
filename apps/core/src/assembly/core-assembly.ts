@@ -757,6 +757,7 @@ export async function assembleCoreGraph(
     executionConfirmationMigration.requestStore,
     executionConfirmationMigration.decisionStore,
     confirmationCreditPortFromPostgresLedger(creditLedger),
+    executionConfirmationAuthorityStore,
   );
   /**
    * V31-12: ExecutionPlanSnapshot admission (sole writer of execution_plan_snapshot).

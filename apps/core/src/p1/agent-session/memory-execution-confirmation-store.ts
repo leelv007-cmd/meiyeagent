@@ -207,6 +207,36 @@ export class MemoryExecutionConfirmationRequestStore
       .slice(0, Math.max(1, Math.min(limit, 500)))
       .map((row) => structuredClone(row));
   }
+
+  async listUnreconciledDecided(limit = 100) {
+    return [...this.#byId.values()]
+      .filter((stored) => stored.request.status === 'decided')
+      .slice(0, limit)
+      .map((stored) => structuredClone(stored));
+  }
+
+  async restoreOwnedPendingInTransaction(
+    _client: ConfirmationTransactionClient,
+    input: { workspaceId: string; requestId: string },
+  ) {
+    const existing = this.#byId.get(input.requestId);
+    if (
+      !existing ||
+      existing.request.workspaceId !== input.workspaceId ||
+      existing.request.status !== 'decided'
+    ) {
+      return existing ? structuredClone(existing) : null;
+    }
+    const restored = {
+      ...existing,
+      request: parseConfirmationRequest({
+        ...existing.request,
+        status: 'pending',
+      }),
+    };
+    this.#byId.set(input.requestId, restored);
+    return structuredClone(restored);
+  }
 }
 
 export class MemoryPlanConfirmationDecisionStore
@@ -270,5 +300,12 @@ export class MemoryPlanConfirmationDecisionStore
     decisionId: string,
   ) {
     return this.getById(decisionId);
+  }
+
+  getByRequestIdInTransaction(
+    _client: ConfirmationTransactionClient,
+    requestId: string,
+  ) {
+    return this.getByRequestId(requestId);
   }
 }

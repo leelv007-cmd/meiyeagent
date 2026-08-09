@@ -74,6 +74,8 @@ export type PlanCompilerQuotePort = {
     planRevision: number;
     deliverables: PlanDeliverable[];
     harnessReleaseId: string;
+    /** Server-admitted billing quote; never sourced from PlanProposal/model output. */
+    billingQuoteRef?: AgentRevisionRef;
   }): Promise<PlanCompilerQuoteResolution>;
 };
 
@@ -172,6 +174,8 @@ export type CompilePlanInput = {
   now?: string;
   /** Optional merchant billing overlay for Living Plan cost section (no invention). */
   livingPlanBilling?: PlanLivingPlanBillingOverlay;
+  /** Server-admitted Composer billing quote to freeze into this plan revision. */
+  billingQuoteRef?: AgentRevisionRef;
   /**
    * Contamination channel for constructive tests: anything the model might
    * illegally put in a proposal envelope. Compiler MUST ignore these.
@@ -307,6 +311,9 @@ export class PlanCompiler {
         planRevision: nextRevision,
         deliverables,
         harnessReleaseId: input.harnessReleaseId,
+        ...(input.billingQuoteRef
+          ? { billingQuoteRef: input.billingQuoteRef }
+          : {}),
       }),
     ]);
 
@@ -714,7 +721,7 @@ export function createFixturePlanCompilerPorts(
     quote: {
       async resolveQuote(input) {
         return {
-          quoteRef: {
+          quoteRef: input.billingQuoteRef ?? {
             id: `quote-${input.planId}`,
             revision: input.planRevision,
           },

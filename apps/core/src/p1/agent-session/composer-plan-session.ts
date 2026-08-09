@@ -185,6 +185,7 @@ export class ComposerPlanSessionCoordinator
       contextRevision: String(snapshot.briefContext.revision),
       harnessReleaseId: input.harnessReleaseId,
       now: input.now,
+      billingQuoteRef: snapshot.quote,
       ...(input.submission.usageReservation.credits !== undefined
         ? {
             livingPlanBilling: {

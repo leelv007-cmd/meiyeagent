@@ -82,13 +82,15 @@ export function createProductionPlanCompilerPorts(deps: {
         harnessReleaseId: input.harnessReleaseId,
       }).slice(0, 24);
       return {
-        quoteRef: {
+        quoteRef: input.billingQuoteRef ?? {
           id: `plan-quote:${input.planId}`,
           revision,
         },
         expiresAt: new Date(clock().getTime() + 60 * 60 * 1000).toISOString(),
         summary: {
-          source: 'plan_compiler_quote_authority',
+          source: input.billingQuoteRef
+            ? 'admitted_product_quote'
+            : 'plan_compiler_quote_authority',
           deliverableKinds: input.deliverables.map((item) => item.kind),
           quantity: input.deliverables.reduce(
             (sum, item) => sum + item.quantity,

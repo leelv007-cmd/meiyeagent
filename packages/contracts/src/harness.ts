@@ -354,6 +354,8 @@ export const questionCardSchema = z
       .object({
         kind: z.literal('external_action'),
         revision: z.literal('execution-external-action/v1'),
+        /** Credits already reserved by the server before the card is shown. */
+        reservedCredits: z.number().int().positive().optional(),
         /** Note paid-media outline summary for the confirm card (L1-4). */
         outline: executionConfirmationOutlineSchema.optional(),
       })
@@ -433,6 +435,8 @@ export const executionConfirmationRequestSchema = z
         params: z.array(executionConfirmationParamSchema).max(12),
         /** Optional note outline rows for confirm-card display (L1-4). */
         outline: executionConfirmationOutlineSchema.optional(),
+        /** Server-owned credit hold backing this exact confirmation attempt. */
+        reservedCredits: z.number().int().positive().optional(),
         debitPreview: z
           .array(
             z

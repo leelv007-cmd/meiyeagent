@@ -96,6 +96,11 @@ export interface ExecutionConfirmationRequestStore {
     },
   ): Promise<StoredConfirmationRequest | null>;
   listDuePending(now: string, limit?: number): Promise<StoredConfirmationRequest[]>;
+  listUnreconciledDecided(limit?: number): Promise<StoredConfirmationRequest[]>;
+  restoreOwnedPendingInTransaction(
+    client: ConfirmationTransactionClient,
+    input: { workspaceId: string; requestId: string },
+  ): Promise<StoredConfirmationRequest | null>;
 }
 
 export interface PlanConfirmationDecisionStore {
@@ -112,6 +117,10 @@ export interface PlanConfirmationDecisionStore {
   getByIdInTransaction(
     client: ConfirmationTransactionClient,
     decisionId: string,
+  ): Promise<PlanConfirmationDecision | null>;
+  getByRequestIdInTransaction(
+    client: ConfirmationTransactionClient,
+    requestId: string,
   ): Promise<PlanConfirmationDecision | null>;
 }
 

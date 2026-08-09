@@ -1006,7 +1006,8 @@ test('V31-12 task-admission one-shot writes ExecutionPlanSnapshot and replays wi
     starter.requests[0]?.executionPlanSnapshot?.snapshotHash,
     snapshotHash,
   );
-  const stored = await snapshotStore.getByWorkflowId('task-v31-12');
+  const admissionWorkflowId = `task-v31-12:plan:${content.planRevision}:${snapshotHash}`;
+  const stored = await snapshotStore.getByWorkflowId(admissionWorkflowId);
   assert.equal(stored?.snapshot.snapshotHash, snapshotHash);
 
   const second = await service.submit({
@@ -1015,7 +1016,7 @@ test('V31-12 task-admission one-shot writes ExecutionPlanSnapshot and replays wi
   });
   assert.equal(second.replayed, true);
   // Registry replay path does not re-claim; snapshot row stays one-shot.
-  const storedAgain = await snapshotStore.getByWorkflowId('task-v31-12');
+  const storedAgain = await snapshotStore.getByWorkflowId(admissionWorkflowId);
   assert.equal(storedAgain?.admittedAt, stored?.admittedAt);
 
   // Stale confirmation rejected on a fresh task (unique hash + drifted quote).

@@ -197,6 +197,7 @@ test('post-confirm live quote drift creates a diff-bound request and requires re
   const request = paidRequest({ credits: 7, plan: true });
   const questions: string[] = [];
   const created: Array<{ requestId: string; quoteRevision: number | string }> = [];
+  const admissionWorkflowIds: string[] = [];
   let authoritativeSnapshotHash = '';
   let liveReads = 0;
   const out = await confirmPaidGenerationExecution({
@@ -236,10 +237,17 @@ test('post-confirm live quote drift creates a diff-bound request and requires re
         `confirmation:wf-drift:${authoritativeSnapshotHash}`,
       );
     },
-    admitExecutionPlanSnapshot: async ({ snapshot }) => snapshot,
+    admitExecutionPlanSnapshot: async ({ workflowId, snapshot }) => {
+      admissionWorkflowIds.push(workflowId);
+      return snapshot;
+    },
   });
 
   assert.equal(out.executionPlanSnapshot?.quoteRef.revision, 'r2');
+  assert.equal(
+    out.executionPlanSnapshot?.planRevision,
+    request.pendingExecutionPlanSnapshot!.content.planRevision + 1,
+  );
   assert.equal(questions.length, 2);
   assert.match(questions[1]!, /quote/u);
   assert.deepEqual(created, [
@@ -248,6 +256,13 @@ test('post-confirm live quote drift creates a diff-bound request and requires re
       quoteRevision: 'r2',
     },
   ]);
+  assert.deepEqual(admissionWorkflowIds, [
+    `wf-drift:plan:${out.executionPlanSnapshot!.planRevision}:${out.executionPlanSnapshot!.snapshotHash}`,
+  ]);
+  assert.equal(
+    out.executionPlanSnapshot?.confirmationDecisionRef,
+    `decision-${created[0]!.requestId}`,
+  );
 });
 
 function confirmationResult(requestId: string): CreateExecutionConfirmationResult {

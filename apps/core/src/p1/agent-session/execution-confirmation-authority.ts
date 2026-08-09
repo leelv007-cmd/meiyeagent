@@ -55,6 +55,29 @@ export class ConfirmationAuthorityAssembler {
   async createRequest(
     input: CreateExecutionConfirmationAuthorityInput,
   ): Promise<CreateExecutionConfirmationResult> {
+    for (let attempt = 0; attempt < 32; attempt += 1) {
+      try {
+        return await this.createRequestAttempt(input);
+      } catch (error) {
+        if (
+          error instanceof ExecutionConfirmationError &&
+          (error.code === 'TERMINAL_CONFIRMATION_ATTEMPT' ||
+            error.code === 'AUTHORITY_ADVANCED')
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new ExecutionConfirmationError(
+      'IDEMPOTENCY_CONFLICT',
+      `Confirmation authority ${input.workflowId} did not converge on a current attempt.`,
+    );
+  }
+
+  private async createRequestAttempt(
+    input: CreateExecutionConfirmationAuthorityInput,
+  ): Promise<CreateExecutionConfirmationResult> {
     const plan = await this.plans.getCurrentByWorkflowId(input.workflowId);
     if (!plan || plan.workspaceId !== input.workspaceId) {
       throw new ExecutionConfirmationError(
@@ -96,6 +119,7 @@ export class ConfirmationAuthorityAssembler {
     const taskId = quote.taskId ?? input.workflowId;
     const baseReservationId = creditUsageOperationId(taskId);
     return this.confirmations.createRequest({
+      workflowId: input.workflowId,
       requestId,
       workspaceId: input.workspaceId,
       planId: plan.planId,
@@ -103,7 +127,7 @@ export class ConfirmationAuthorityAssembler {
       snapshotHash: plan.snapshotHash,
       quoteRef: { id: quote.quoteId, revision: quote.revision },
       reservationIdempotencyKey:
-        requestId === baseRequestId
+        requestId === baseRequestId && plan.reservationAttempt !== 'successor'
           ? baseReservationId
           : `consume:confirmation:${digest(`${baseReservationId}\0${requestId}`)}`,
       createdAt,

@@ -40,6 +40,7 @@ import {
   type PlanConfirmationDecisionStore,
   type StoredConfirmationRequest,
 } from './execution-confirmation-store.js';
+import type { ConfirmationAuthorityStore } from './execution-confirmation-authority-store.js';
 
 /** Credit ledger surface required by confirmation create/decide/expire. */
 export type ConfirmationCreditTransactionPort = {
@@ -76,6 +77,7 @@ export type ConfirmationCreditLedgerPort = {
 };
 
 export type CreateExecutionConfirmationInput = {
+  workflowId?: string;
   requestId: string;
   workspaceId: string;
   planId: string;
@@ -139,6 +141,10 @@ export class ExecutionConfirmationService {
     private readonly requests: ExecutionConfirmationRequestStore,
     private readonly decisions: PlanConfirmationDecisionStore,
     private readonly credits: ConfirmationCreditLedgerPort,
+    private readonly authorities?: Pick<
+      ConfirmationAuthorityStore,
+      'getCurrentByWorkflowIdInTransaction'
+    >,
   ) {
     if (typeof credits.withWorkspaceCreditTransaction !== 'function') {
       throw new Error('Execution confirmation requires a workspace transaction port.');
@@ -196,18 +202,58 @@ export class ExecutionConfirmationService {
     };
 
     const run = async (ledger: ConfirmationCreditTransactionPort) => {
+      if (this.authorities) {
+        if (!input.workflowId) {
+          throw new ExecutionConfirmationError(
+            'INVALID_STATE',
+            'Confirmation authority validation requires a workflowId.',
+          );
+        }
+        const current =
+          await this.authorities.getCurrentByWorkflowIdInTransaction(
+            ledger.transactionClient,
+            input.workflowId,
+            true,
+          );
+        if (!current || current.workspaceId !== input.workspaceId) {
+          throw new ExecutionConfirmationError(
+            'NOT_FOUND',
+            `Execution plan for workflow ${input.workflowId} was not found.`,
+          );
+        }
+        if (
+          current.planId !== input.planId ||
+          current.planRevision !== input.planRevision ||
+          current.snapshotHash !== input.snapshotHash ||
+          !isDeepStrictEqual(current.quoteRef, input.quoteRef)
+        ) {
+          throw new ExecutionConfirmationError(
+            'AUTHORITY_ADVANCED',
+            `Execution plan for workflow ${input.workflowId} advanced before confirmation creation.`,
+          );
+        }
+      }
+
       // Idempotent re-entry on same requestId before reserve side-effects.
-      const existing = await this.getRequestById(
+      const existing = await this.getOwnedRequest(
+        input.workspaceId,
         input.requestId,
         ledger.transactionClient,
+        true,
       );
-      if (existing) {
-        if (existing.request.workspaceId !== input.workspaceId) {
+      if (!existing) {
+        const foreign = await this.getRequestById(
+          input.requestId,
+          ledger.transactionClient,
+        );
+        if (foreign) {
           throw new ExecutionConfirmationError(
             'NOT_FOUND',
             `Confirmation request ${input.requestId} was not found.`,
           );
         }
+      }
+      if (existing) {
         if (
           !isDeepStrictEqual(
             { ...existing.request, status: 'pending' },
@@ -218,6 +264,22 @@ export class ExecutionConfirmationService {
           throw new ExecutionConfirmationError(
             'IDEMPOTENCY_CONFLICT',
             `Confirmation request ${input.requestId} already exists with different facts.`,
+          );
+        }
+        const decision = await this.decisions.getByRequestIdInTransaction(
+          ledger.transactionClient,
+          input.requestId,
+        );
+        if (
+          existing.request.status !== 'pending' &&
+          !(
+            existing.request.status === 'decided' &&
+            decision?.decision === 'confirmed'
+          )
+        ) {
+          throw new ExecutionConfirmationError(
+            'TERMINAL_CONFIRMATION_ATTEMPT',
+            `Confirmation request ${input.requestId} is terminal and requires a successor.`,
           );
         }
         const balance = await ledger.project(input.workspaceId, input.createdAt);
@@ -525,6 +587,7 @@ export class ExecutionConfirmationService {
     now: string;
     limit?: number;
   }): Promise<{ expiredRequestIds: string[] }> {
+    await this.reconcileDecidedWithoutDecision({ limit: input.limit });
     const due = await this.requests.listDuePending(input.now, input.limit);
     const expiredRequestIds: string[] = [];
     for (const stored of due) {
@@ -537,6 +600,40 @@ export class ExecutionConfirmationService {
       expiredRequestIds.push(stored.request.requestId);
     }
     return { expiredRequestIds };
+  }
+
+  async reconcileDecidedWithoutDecision(input: { limit?: number } = {}) {
+    const candidates = await this.requests.listUnreconciledDecided(input.limit);
+    const restoredRequestIds: string[] = [];
+    for (const candidate of candidates) {
+      const restored = await this.credits.withWorkspaceCreditTransaction(
+        candidate.request.workspaceId,
+        async (ledger) => {
+          const current = await this.requests.getOwnedInTransaction(
+            ledger.transactionClient,
+            candidate.request.workspaceId,
+            candidate.request.requestId,
+            true,
+          );
+          if (current?.request.status !== 'decided') return false;
+          const decision = await this.decisions.getByRequestIdInTransaction(
+            ledger.transactionClient,
+            candidate.request.requestId,
+          );
+          if (decision) return false;
+          await this.requests.restoreOwnedPendingInTransaction(
+            ledger.transactionClient,
+            {
+              workspaceId: candidate.request.workspaceId,
+              requestId: candidate.request.requestId,
+            },
+          );
+          return true;
+        },
+      );
+      if (restored) restoredRequestIds.push(candidate.request.requestId);
+    }
+    return { restoredRequestIds };
   }
 
   async getDecision(

@@ -108,6 +108,8 @@ export interface HarnessWorkflowInput {
   pendingExecutionPlanSnapshot?: PendingExecutionPlanSnapshot;
   /** Deterministic request identity for a live-facts re-confirmation cycle. */
   executionConfirmationRequestId?: string;
+  /** Credits durably held for the exact pending confirmation attempt. */
+  executionConfirmationReservedCredits?: number;
   /** Merchant-visible stale fields that caused the current re-confirmation. */
   executionConfirmationDiffFields?: string[];
   /** Campaign Works carry the full U7 triple and never inherit plan approval. */
@@ -327,6 +329,23 @@ const DEFAULT_EXECUTION_BOUNDS_RESOLVER: HarnessExecutionBoundsResolver = {
   },
 };
 
+export function executionPlanAdmissionWorkflowId(
+  taskId: string,
+  request: Pick<
+    HarnessWorkflowInput,
+    'executionPlanSnapshot' | 'pendingExecutionPlanSnapshot'
+  >,
+): string {
+  const snapshot =
+    request.executionPlanSnapshot ?? request.pendingExecutionPlanSnapshot;
+  if (!snapshot) return taskId;
+  const planRevision =
+    'content' in snapshot
+      ? snapshot.content.planRevision
+      : snapshot.planRevision;
+  return `${taskId}:plan:${planRevision}:${snapshot.snapshotHash}`;
+}
+
 export class HarnessTaskAdmissionService {
   constructor(
     private readonly registry: HarnessTaskRequestRegistry,
@@ -368,7 +387,7 @@ export class HarnessTaskAdmissionService {
       request: normalized,
     });
     if (existing) {
-      if (existing.kind === 'existing') {
+      if (existing.kind === 'existing' && existing.request) {
         await this.ensurePendingExecutionConfirmation(
           input.taskId,
           existing.request,
@@ -410,7 +429,7 @@ export class HarnessTaskAdmissionService {
         );
       }
       const admitted = await this.executionPlanAdmission.admitSnapshot({
-        workflowId: input.taskId,
+        workflowId: executionPlanAdmissionWorkflowId(input.taskId, request),
         workspaceId: request.workspaceId,
         snapshot: request.executionPlanSnapshot,
         live: input.executionPlanLiveFacts,
@@ -482,7 +501,9 @@ export class HarnessTaskAdmissionService {
           boundedExecution,
         });
         const admitted = await this.executionPlanAdmission.admitSnapshot({
-          workflowId: input.taskId,
+          workflowId: executionPlanAdmissionWorkflowId(input.taskId, {
+            executionPlanSnapshot: snapshot,
+          }),
           workspaceId: request.workspaceId,
           snapshot,
           live: input.executionPlanLiveFacts,
@@ -593,6 +614,7 @@ export class HarnessTaskAdmissionService {
       actorId: request.actorId,
     });
     request.executionConfirmationRequestId = created.stored.request.requestId;
+    request.executionConfirmationReservedCredits = created.reservedCredits;
   }
 
   private async selectSkillManifests(
@@ -1028,6 +1050,7 @@ function pendingConfirmationAuthority(input: {
     rightsRevisionRefs: [...input.pending.content.rightsRevisionRefs],
     factRevisionRefs: [...input.pending.content.factRevisionRefs],
     frozenAt: input.frozenAt,
+    reservationAttempt: 'initial',
     ...(input.request.executionConfirmationContext
       ? {
           executionConfirmationContext:
@@ -1104,6 +1127,7 @@ function normalizeRequest(
     executionPlanSnapshot,
     executionConfirmationContext,
     executionConfirmationRequestId,
+    executionConfirmationReservedCredits,
     executionConfirmationDiffFields,
     pendingExecutionPlanSnapshot,
     executionPlanLiveFacts: _executionPlanLiveFacts,
@@ -1131,6 +1155,9 @@ function normalizeRequest(
       ...(pendingExecutionPlanSnapshot ? { pendingExecutionPlanSnapshot } : {}),
       ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
       ...(executionConfirmationRequestId ? { executionConfirmationRequestId } : {}),
+      ...(executionConfirmationReservedCredits
+        ? { executionConfirmationReservedCredits }
+        : {}),
       ...(executionConfirmationDiffFields
         ? { executionConfirmationDiffFields }
         : {}),
@@ -1152,6 +1179,9 @@ function normalizeRequest(
     ...(pendingExecutionPlanSnapshot ? { pendingExecutionPlanSnapshot } : {}),
     ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
     ...(executionConfirmationRequestId ? { executionConfirmationRequestId } : {}),
+    ...(executionConfirmationReservedCredits
+      ? { executionConfirmationReservedCredits }
+      : {}),
     ...(executionConfirmationDiffFields
       ? { executionConfirmationDiffFields }
       : {}),

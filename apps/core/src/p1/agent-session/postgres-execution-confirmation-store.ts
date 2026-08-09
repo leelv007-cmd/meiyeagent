@@ -336,6 +336,25 @@ export class PostgresExecutionConfirmationRequestStore
     return result.rows.map(parseStored);
   }
 
+  async listUnreconciledDecided(limit = 100) {
+    const result = await this.pool.query<RequestRow>(
+      `SELECT request.request_id, request.workspace_id, request.payload,
+              request.projection, request.status, request.campaign_plan_id,
+              request.work_ordinal
+         FROM p1_execution_confirmation_requests request
+        WHERE request.status = 'decided'
+          AND NOT EXISTS (
+            SELECT 1
+              FROM p1_plan_confirmation_decisions decision
+             WHERE decision.request_id = request.request_id
+          )
+        ORDER BY request.created_at
+        LIMIT $1`,
+      [Math.max(1, Math.min(limit, 500))],
+    );
+    return result.rows.map(parseStored);
+  }
+
   savePendingInTransaction(
     client: ConfirmationTransactionClient,
     input: StoredConfirmationRequest,
@@ -369,6 +388,22 @@ export class PostgresExecutionConfirmationRequestStore
     input: Parameters<ExecutionConfirmationRequestStore['markOwnedStatusInTransaction']>[1],
   ) {
     return this.markStatusForWorkspaceWithClient(requireClient(client), input);
+  }
+
+  async restoreOwnedPendingInTransaction(
+    client: ConfirmationTransactionClient,
+    input: { workspaceId: string; requestId: string },
+  ) {
+    const result = await requireClient(client).query<RequestRow>(
+      `UPDATE p1_execution_confirmation_requests
+          SET status = 'pending',
+              payload = jsonb_set(payload, '{status}', '"pending"'::jsonb, true)
+        WHERE workspace_id = $1 AND request_id = $2 AND status = 'decided'
+        RETURNING request_id, workspace_id, payload, projection, status,
+                  campaign_plan_id, work_ordinal`,
+      [input.workspaceId, input.requestId],
+    );
+    return result.rows[0] ? parseStored(result.rows[0]) : null;
   }
 
   findCampaignWorkInTransaction(
@@ -505,6 +540,13 @@ export class PostgresPlanConfirmationDecisionStore
     decisionId: string,
   ) {
     return this.getByIdWithClient(requireClient(client), decisionId);
+  }
+
+  getByRequestIdInTransaction(
+    client: ConfirmationTransactionClient,
+    requestId: string,
+  ) {
+    return this.getByRequestIdWithClient(requireClient(client), requestId);
   }
 }
 

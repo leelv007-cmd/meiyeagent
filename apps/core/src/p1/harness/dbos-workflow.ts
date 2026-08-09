@@ -44,9 +44,10 @@ import type {
 } from '../agent-session/execution-confirmation-authority.js';
 import type { ConfirmationAuthorityStore } from '../agent-session/execution-confirmation-authority-store.js';
 import { resumeWithRaisedServerLimit } from './bounded-execution-controller.js';
-import type {
-  HarnessWorkflowInput,
-  HarnessWorkflowStarter,
+import {
+  executionPlanAdmissionWorkflowId,
+  type HarnessWorkflowInput,
+  type HarnessWorkflowStarter,
 } from './task-admission.js';
 import {
   resolveDurableReplayBranch,
@@ -751,7 +752,9 @@ export function registerHarnessDbosWorkflow(
         // When the admission writer is wired, also re-verify the stored row.
         if (executionPlanAdmission) {
           await executionPlanAdmission.verifyAdmittedForDbos({
-            workflowId,
+            workflowId: executionPlanAdmissionWorkflowId(workflowId, {
+              executionPlanSnapshot: branch.snapshot,
+            }),
             snapshotHash: branch.snapshot.snapshotHash,
             live,
           });

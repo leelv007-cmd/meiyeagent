@@ -227,6 +227,12 @@ test(
     const authorityStore = new PostgresConfirmationAuthorityStore(fixture.pool);
     try {
       await authorityStore.migrate();
+      const authoritativeService = new ExecutionConfirmationService(
+        fixture.requestStore,
+        fixture.decisionStore,
+        confirmationCreditPortFromPostgresLedger(fixture.creditLedger),
+        authorityStore,
+      );
       await fixture.creditLedger.grant({
         id: 'confirm-terminal-balance',
         workspaceId: fixture.workspaceId,
@@ -238,7 +244,7 @@ test(
       });
       let now = '2026-08-09T09:00:00.000Z';
       const assembler = new ConfirmationAuthorityAssembler(
-        fixture.service,
+        authoritativeService,
         authorityStore,
         {
           getQuote(quoteId) {
@@ -273,7 +279,7 @@ test(
 
       await putAuthority('workflow-confirmed');
       const confirmed = await assembler.createRequest(command('workflow-confirmed'));
-      await fixture.service.decide({
+      await authoritativeService.decide({
         decisionId: 'decision-confirmed-pg',
         requestId: confirmed.stored.request.requestId,
         workspaceId: fixture.workspaceId,
@@ -315,7 +321,16 @@ test(
           .availableCredits,
         8,
       );
-      await fixture.service.decide({
+      assert.deepEqual(
+        await authoritativeService.reconcileDecidedWithoutDecision(),
+        { restoredRequestIds: [unreconciled.stored.request.requestId] },
+      );
+      assert.equal(
+        (await assembler.createRequest(command('workflow-unreconciled')))
+          .stored.request.requestId,
+        unreconciled.stored.request.requestId,
+      );
+      await authoritativeService.decide({
         decisionId: 'decision-reconciled-rejected-pg',
         requestId: unreconciled.stored.request.requestId,
         workspaceId: fixture.workspaceId,
@@ -332,7 +347,7 @@ test(
       const rejectedSuccessor = await assembler.createRequest(
         command('workflow-unreconciled'),
       );
-      await fixture.service.expireHold({
+      await authoritativeService.expireHold({
         requestId: rejectedSuccessor.stored.request.requestId,
         workspaceId: fixture.workspaceId,
         now: '2026-08-12T09:00:00.000Z',
@@ -345,7 +360,7 @@ test(
         expiredSuccessor.stored.request.requestId,
         rejectedSuccessor.stored.request.requestId,
       );
-      await fixture.service.expireHold({
+      await authoritativeService.expireHold({
         requestId: rejectedSuccessor.stored.request.requestId,
         workspaceId: fixture.workspaceId,
         now: '2026-08-12T09:02:00.000Z',
@@ -354,6 +369,140 @@ test(
         (await fixture.creditLedger.project(fixture.workspaceId, now))
           .availableCredits,
         8,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+test(
+  'Postgres authority closes reject/expire successor TOCTOU inside the workspace transaction',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const fixture = await createFixture();
+    const authorityStore = new PostgresConfirmationAuthorityStore(fixture.pool);
+    try {
+      await authorityStore.migrate();
+      const authoritativeService = new ExecutionConfirmationService(
+        fixture.requestStore,
+        fixture.decisionStore,
+        confirmationCreditPortFromPostgresLedger(fixture.creditLedger),
+        authorityStore,
+      );
+      await fixture.creditLedger.grant({
+        id: 'confirm-successor-race-balance',
+        workspaceId: fixture.workspaceId,
+        credits: 30,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'confirm-successor-race-balance',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      let now = '2026-08-09T09:00:00.000Z';
+      const quotes = {
+        getQuote(quoteId: string) {
+          return {
+            quoteId,
+            revision: 1,
+            taskId: `task:${quoteId}`,
+            creditCost: 6,
+            failureRefundsCredits: true,
+          } as never;
+        },
+      };
+      const direct = new ConfirmationAuthorityAssembler(
+        authoritativeService,
+        authorityStore,
+        quotes,
+        { clock: () => new Date(now) },
+      );
+      const command = (workflowId: string) => ({
+        actorId: 'merchant-race',
+        workspaceId: fixture.workspaceId,
+        workflowId,
+      });
+      const putAuthority = (workflowId: string) =>
+        authorityStore.putCurrent({
+          workflowId,
+          workspaceId: fixture.workspaceId,
+          planId: `plan:${workflowId}`,
+          planRevision: 1,
+          snapshotHash: `snapshot:${workflowId}`,
+          quoteRef: { id: `quote:${workflowId}`, revision: 1 },
+          rightsRevisionRefs: [],
+          factRevisionRefs: [],
+          frozenAt: now,
+        });
+
+      const runRace = async (
+        workflowId: string,
+        terminal: 'rejected' | 'expired',
+      ) => {
+        await putAuthority(workflowId);
+        const initial = await direct.createRequest(command(workflowId));
+        let releaseCreate!: () => void;
+        let enteredCreate!: () => void;
+        const createGate = new Promise<void>((resolve) => {
+          releaseCreate = resolve;
+        });
+        const entered = new Promise<void>((resolve) => {
+          enteredCreate = resolve;
+        });
+        let pauseOnce = true;
+        const racing = new ConfirmationAuthorityAssembler(
+          {
+            getRequest: (requestId) => authoritativeService.getRequest(requestId),
+            getDecision: (requestId) =>
+              authoritativeService.getDecision(requestId),
+            async createRequest(input) {
+              if (pauseOnce) {
+                pauseOnce = false;
+                enteredCreate();
+                await createGate;
+              }
+              return authoritativeService.createRequest(input);
+            },
+          },
+          authorityStore,
+          quotes,
+          { clock: () => new Date(now) },
+        );
+        const successorPromise = racing.createRequest(command(workflowId));
+        await entered;
+        if (terminal === 'rejected') {
+          await authoritativeService.decideForWorkspace({
+            decisionId: `decision:${workflowId}`,
+            requestId: initial.stored.request.requestId,
+            workspaceId: fixture.workspaceId,
+            actorId: 'merchant-race',
+            decision: 'rejected',
+            decidedAt: now,
+          });
+        } else {
+          now = '2026-08-12T09:00:00.000Z';
+          await authoritativeService.expireForWorkspace({
+            requestId: initial.stored.request.requestId,
+            workspaceId: fixture.workspaceId,
+            actorId: 'system:expiry',
+            now,
+          });
+        }
+        releaseCreate();
+        const successor = await successorPromise;
+        assert.notEqual(
+          successor.stored.request.requestId,
+          initial.stored.request.requestId,
+        );
+        assert.equal(successor.stored.request.status, 'pending');
+      };
+
+      await runRace('workflow-reject-race', 'rejected');
+      await runRace('workflow-expire-race', 'expired');
+      assert.equal(
+        (await fixture.creditLedger.project(fixture.workspaceId, now))
+          .availableCredits,
+        18,
       );
     } finally {
       await fixture.cleanup();

@@ -2,7 +2,10 @@ import type { AgentRevisionRef } from '@meiye/contracts';
 import type { Pool, PoolClient } from 'pg';
 
 import type { PostgresSchemaMigrator } from '../../postgres-schema-migration.js';
-import { ExecutionConfirmationError } from './execution-confirmation-store.js';
+import {
+  ExecutionConfirmationError,
+  type ConfirmationTransactionClient,
+} from './execution-confirmation-store.js';
 
 export type PendingConfirmationAuthority = {
   workflowId: string;
@@ -14,6 +17,8 @@ export type PendingConfirmationAuthority = {
   rightsRevisionRefs: readonly string[];
   factRevisionRefs: readonly string[];
   frozenAt: string;
+  /** Successor attempts must not reuse the Coordinator's initial reservation. */
+  reservationAttempt?: 'initial' | 'successor';
   executionConfirmationContext?: {
     campaignPlanRef: AgentRevisionRef;
     workOrdinal: number;
@@ -27,6 +32,11 @@ export interface ConfirmationAuthorityStore {
   ): Promise<PendingConfirmationAuthority>;
   getCurrentByWorkflowId(
     workflowId: string,
+  ): Promise<PendingConfirmationAuthority | null>;
+  getCurrentByWorkflowIdInTransaction(
+    client: ConfirmationTransactionClient,
+    workflowId: string,
+    forUpdate?: boolean,
   ): Promise<PendingConfirmationAuthority | null>;
   clearCurrent(workflowId: string, snapshotHash: string): Promise<void>;
 }
@@ -66,6 +76,13 @@ export class MemoryConfirmationAuthorityStore
   async getCurrentByWorkflowId(workflowId: string) {
     const current = this.#current.get(workflowId);
     return current ? structuredClone(current) : null;
+  }
+
+  getCurrentByWorkflowIdInTransaction(
+    _client: ConfirmationTransactionClient,
+    workflowId: string,
+  ) {
+    return this.getCurrentByWorkflowId(workflowId);
   }
 
   async clearCurrent(workflowId: string, snapshotHash: string) {
@@ -177,13 +194,32 @@ export class PostgresConfirmationAuthorityStore
   }
 
   async getCurrentByWorkflowId(workflowId: string) {
-    const result = await this.pool.query<AuthorityRow>(
+    return this.getCurrentByWorkflowIdWithClient(this.pool, workflowId);
+  }
+
+  async getCurrentByWorkflowIdWithClient(
+    client: Pick<PoolClient, 'query'>,
+    workflowId: string,
+    forUpdate = false,
+  ) {
+    const result = await client.query<AuthorityRow>(
       `SELECT workflow_id, workspace_id, plan_revision, snapshot_hash, payload
          FROM p1_execution_confirmation_authorities
-        WHERE workflow_id = $1`,
+        WHERE workflow_id = $1${forUpdate ? ' FOR UPDATE' : ''}`,
       [workflowId],
     );
     return result.rows[0]?.payload ?? null;
+  }
+
+  getCurrentByWorkflowIdInTransaction(
+    client: ConfirmationTransactionClient,
+    workflowId: string,
+    forUpdate = false,
+  ) {
+    if (!client) {
+      throw new Error('Postgres confirmation authority requires a transaction client.');
+    }
+    return this.getCurrentByWorkflowIdWithClient(client, workflowId, forUpdate);
   }
 
   async clearCurrent(workflowId: string, snapshotHash: string) {
