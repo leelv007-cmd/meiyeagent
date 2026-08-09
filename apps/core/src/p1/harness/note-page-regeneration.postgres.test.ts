@@ -561,7 +561,9 @@ test(
       // changed.
       assert.deepEqual(
         updates.map((update) =>
-          'patch' in update ? update.patch.pages?.map(({ pageIndex }) => pageIndex) : null,
+          update.mode === 'delta' && 'pages' in update.patch
+            ? update.patch.pages?.map(({ pageIndex }) => pageIndex)
+            : null,
         ),
         [[0], [0], [0], [0], [2], [2], [2], [2]],
       );
