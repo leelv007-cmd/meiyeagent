@@ -93,6 +93,25 @@ export function createDefaultIntentRetrievalBindings(): HarnessMiddlewareBinding
   ];
 }
 
+/**
+ * Assembly-side merge for a resolved HarnessRelease: the release's own bindings
+ * always win, defaults only fill policyIds the release never pinned. A complete
+ * release therefore makes this a no-op — that is what keeps the release the
+ * single authority instead of the assembly.
+ */
+export function mergeDefaultIntentRetrievalBindings(
+  releaseBindings: readonly HarnessMiddlewareBinding[] | undefined,
+): HarnessMiddlewareBinding[] {
+  const existing = releaseBindings ?? [];
+  const present = new Set(existing.map((binding) => binding.policyId));
+  return [
+    ...existing,
+    ...createDefaultIntentRetrievalBindings().filter(
+      (binding) => !present.has(binding.policyId),
+    ),
+  ];
+}
+
 function asDecision(modelOutput: unknown): AgentTurnDecision | null {
   if (
     modelOutput &&

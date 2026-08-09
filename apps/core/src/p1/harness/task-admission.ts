@@ -54,16 +54,23 @@ import {
   assemblePendingExecutionPlanSnapshot,
 } from './execution-plan-admission.js';
 import {
-  HARNESS_CORE_PROMPT_KEYS,
   harnessPromptCapabilityRequirement,
   promptRevisionReferences,
   promptTraceReference,
+  resolveHarnessPromptKeys,
 } from './langfuse-prompts.js';
 import type {
   HarnessFrozenPrompts,
+  HarnessPromptKey,
   HarnessPromptResolver,
   HarnessPromptRevisionReference,
 } from './langfuse-prompts.js';
+import {
+  COPY_TASK_PROMPT_PACK_IDS,
+  promptKeysForAllPacks,
+  promptKeysForPacks,
+  type HarnessPromptPackId,
+} from './prompt-packs.js';
 
 export interface HarnessWorkflowInput {
 	/** Session-owned identity; never substitute planId or workflowId. */
@@ -145,6 +152,12 @@ export interface HarnessSkillManifestSnapshot {
   requiredModelCapabilities: string[];
   /** Full server-resolved execution material frozen at admission for new tasks. */
   resolvedInstruction?: ResolvedSkillInstruction;
+}
+
+export interface HarnessReleasePromptBindingsResolver {
+  resolvePromptBindings(
+    request: HarnessTaskRequest,
+  ): Promise<Record<string, { key: string; version: string }>>;
 }
 
 export type HarnessSkillManifestSelection = Omit<
@@ -388,6 +401,8 @@ export class HarnessTaskAdmissionService {
         input: CreateExecutionConfirmationAuthorityInput,
       ): Promise<CreateExecutionConfirmationResult>;
     } & Pick<ConfirmationAuthorityStore, 'putCurrent'>,
+    /** Production authority for exact prompt pins frozen in HarnessRelease. */
+    private readonly releasePromptBindings?: HarnessReleasePromptBindingsResolver,
   ) {}
 
   async submit(input: HarnessTaskRequest) {
@@ -462,6 +477,9 @@ export class HarnessTaskAdmissionService {
       };
     }
     const selectedSkillStages = await this.selectSkillManifests(normalized);
+    // One authority for "which prompt sites this task uses": the route
+    // capability requirements and the frozen prompt pins must be the same set.
+    const promptKeys = promptKeysForAdmission(normalized);
     if (normalized.executionSnapshot) {
       if (!this.frozenRoutes) {
         throw new HarnessAdmissionError(
@@ -476,17 +494,41 @@ export class HarnessTaskAdmissionService {
           {
             requirements: primaryTaskCapabilityRequirements(
               normalized.executionSnapshot,
+              promptKeys,
             ).concat(skillCapabilityRequirements(selectedSkillStages)),
           },
         ),
       };
     }
     if (this.prompts) {
-      const prompts = await this.prompts.resolve();
+      const releaseBindings = this.releasePromptBindings
+        ? await this.releasePromptBindings.resolvePromptBindings(input)
+        : undefined;
+      const exactVersions = releaseBindings
+        ? Object.fromEntries(
+            promptKeys.map((key) => {
+              const binding = releaseBindings[key];
+              if (!binding || binding.key !== key || !binding.version.trim()) {
+                throw new HarnessAdmissionError(
+                  'FROZEN_REQUEST_MISSING',
+                  `HarnessRelease is missing exact prompt pin ${key}.`,
+                );
+              }
+              return [key, binding.version];
+            }),
+          )
+        : undefined;
+      const prompts = await resolveHarnessPromptKeys(
+        this.prompts,
+        promptKeys,
+        exactVersions,
+      );
       request = {
         ...request,
-        prompts,
-        promptRevisionRefs: promptRevisionReferences(prompts),
+        prompts: prompts as HarnessFrozenPrompts,
+        promptRevisionRefs: promptRevisionReferences(
+          prompts as HarnessFrozenPrompts,
+        ),
       };
     }
     const skillStages = await this.materializeSkillManifests(
@@ -514,7 +556,10 @@ export class HarnessTaskAdmissionService {
           ),
           skillManifestRefs: skillManifestRefsFromStages(skillStages),
           routeRequirements: capabilityRequirementsFromAxes([
-            ...primaryTaskCapabilityRequirements(normalized.executionSnapshot!),
+            ...primaryTaskCapabilityRequirements(
+              normalized.executionSnapshot!,
+              promptKeys,
+            ),
             ...skillCapabilityRequirements(selectedSkillStages),
           ]),
           factRevisionRefs: factRevisionRefsFromSnapshot(
@@ -543,7 +588,10 @@ export class HarnessTaskAdmissionService {
             ),
             skillManifestRefs: skillManifestRefsFromStages(skillStages),
             routeRequirements: capabilityRequirementsFromAxes([
-              ...primaryTaskCapabilityRequirements(normalized.executionSnapshot!),
+              ...primaryTaskCapabilityRequirements(
+                normalized.executionSnapshot!,
+                promptKeys,
+              ),
               ...skillCapabilityRequirements(selectedSkillStages),
             ]),
             factRevisionRefs: factRevisionRefsFromSnapshot(
@@ -850,6 +898,35 @@ export class HarnessTaskAdmissionService {
   }
 }
 
+function promptKeysForAdmission(
+  request: HarnessWorkflowInputBeforeBounds,
+) {
+  const snapshot = request.executionSnapshot;
+  const lens = snapshot?.lens;
+  // Legacy replay carries no lens, so no pack can be excluded. Derive the full
+  // set instead of restating pack ids, or a newly added pack silently drops out.
+  if (!lens) return promptKeysForAllPacks();
+  const packIds: readonly HarnessPromptPackId[] =
+    lens === 'copy'
+      ? COPY_TASK_PROMPT_PACK_IDS
+      : lens === 'image_text_note'
+        ? ['agentControl', 'note', 'media', 'cover']
+        : lens === 'video'
+          ? ['agentControl', 'video']
+          : ['agentControl', 'media', 'cover'];
+  const selected = snapshot.recipe.id === 'recipe.viral_adapt'
+    ? [...packIds, 'viral' as const]
+    : packIds;
+  const keys = promptKeysForPacks(selected);
+  if (
+    snapshot.recipe.id === 'recipe.viral_adapt' &&
+    (snapshot.viralAdaptSource?.authorizedAssetIds.length ?? 0) === 0
+  ) {
+    return keys.filter((key) => key !== 'xhsViralImageVision');
+  }
+  return keys;
+}
+
 export function assertHarnessExecutionAssemblyPinned(
   request: HarnessWorkflowInput,
 ) {
@@ -889,15 +966,12 @@ export function assertHarnessExecutionAssemblyPinned(
 
 function primaryTaskCapabilityRequirements(
   snapshot: CreationExecutionSnapshot,
+  promptKeys: readonly HarnessPromptKey[],
 ): ModelCapabilityRequirementAxis[] {
   if (snapshot.lens === 'copy') {
-    // Pin the historical 14 core harness axes only. XHS vertical sites
-    // (#315) stay in the prompt registry for resolve/versioning/fallback but
-    // are not part of every copy-lens admission surface until their pipeline
-    // tickets wire explicit consumers.
-    return HARNESS_CORE_PROMPT_KEYS.map((key) =>
-      harnessPromptCapabilityRequirement(key),
-    );
+    // Exactly the prompt sites this task freezes. Declaring capability for a
+    // site the request never pinned is the same double truth in miniature.
+    return promptKeys.map((key) => harnessPromptCapabilityRequirement(key));
   }
   // D-165 deliberately defers per-site multi-model pins. A media task's sole
   // durable RouteSnapshot therefore remains the generation route; controller

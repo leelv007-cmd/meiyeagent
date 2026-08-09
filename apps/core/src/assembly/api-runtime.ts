@@ -86,6 +86,7 @@ import {
   HarnessSystemDefaultProducer,
 } from '../p1/harness/interaction-service.js';
 import { requireHarnessFrozenPrompt } from '../p1/harness/langfuse-prompts.js';
+import { resolveDestinationMappingPrompt } from '../p1/harness/destination-prompt-release.js';
 import { langfuseSenderFromEnv } from '../p1/harness/langfuse-sender.js';
 import {
   createAuthoritativeExecutionPlanLiveFactsPorts,
@@ -187,6 +188,7 @@ import {
   OpsConsoleFoundationModule,
   OpsConsoleService,
   PostgresLegacyReplayInventory,
+  resolveWorkspaceHarnessRelease,
 } from '../p1/ops-console/index.js';
 import { HarnessReleaseService } from '../p1/harness/harness-release.js';
 import {
@@ -881,6 +883,18 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           killSwitches: opsConsoleStore,
           trials: opsConsoleStore,
           drills: opsConsoleStore,
+          verdicts: evalLayersAssembly.verdicts,
+          evaluator: {
+            async sample(input) {
+              const outcome = await evalLayersAssembly.sampler.sample(input);
+              await evalLayersAssembly.langfuseWriter.writeEvalResult(
+                outcome.result,
+              );
+              return outcome;
+            },
+          },
+          rollbackOperations: opsConsoleStore,
+          runPins: opsConsoleStore,
           langfuseBaseUrl: env.LANGFUSE_BASE_URL ?? null,
           // V31-26a / U14: production PG inventory for legacy replay archive gate.
           legacyReplayInventory: new PostgresLegacyReplayInventory(pool),
@@ -1056,11 +1070,12 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     composerDestinationMapper = new StructuredComposerDestinationMapper(
       structuredExecutor,
       {
-        async resolve() {
-          return requireHarnessFrozenPrompt(
-            await harnessPromptResolver.resolve(),
-            'destinationMapping'
-          );
+        async resolve({ workspaceId }) {
+          return resolveDestinationMappingPrompt({
+            releases: harnessReleaseService,
+            prompts: harnessPromptResolver,
+            workspaceId,
+          });
         },
       },
       promptAuditStore
@@ -1596,6 +1611,21 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           putCurrent: (input) =>
             executionConfirmationAuthorityStore.putCurrent(input),
         },
+        {
+          async resolvePromptBindings(request) {
+            const frozenReleaseId = request.executionPlanFreeze?.harnessReleaseId;
+            const resolved = frozenReleaseId
+              ? await harnessReleaseService.resolveForRun({ frozenReleaseId })
+              : await resolveWorkspaceHarnessRelease({
+                  workspaceId: request.workspaceId,
+                  runId: request.taskId,
+                  releases: harnessReleaseService,
+                  trials: opsConsoleStore,
+                  rollbackOperations: opsConsoleStore,
+                });
+            return resolved.artifact.promptBindings;
+          },
+        }
       ),
       harnessDecisions,
       harnessSchemaStore,
@@ -1702,9 +1732,13 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         // (canary workspace-allowlist applies here). The pinned releaseId is
         // then frozen on the Run + ExecutionPlanSnapshot — rollback changes
         // only what *new* runs resolve to, never in-flight pins.
-        resolveHarnessReleaseId: async (submission) => {
-          const resolved = await harnessReleaseService.resolveForRun({
+        resolveHarnessReleaseId: async (submission, runId) => {
+          const resolved = await resolveWorkspaceHarnessRelease({
             workspaceId: submission.snapshot.workspaceId,
+            runId,
+            releases: harnessReleaseService,
+            trials: opsConsoleStore,
+            rollbackOperations: opsConsoleStore,
           });
           return resolved.releaseId;
         },

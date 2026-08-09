@@ -173,6 +173,13 @@ export function validateReleasePromptPublish(input: {
 	const failures: ReleasePromptPublishFailure[] = [];
 	const requireFullRegistryCoverage = input.requireFullRegistryCoverage !== false;
 
+	if (Object.keys(input.promptPackBindings).length === 0) {
+		failures.push({
+			code: 'unknown_pack',
+			message: 'Production release must declare at least one prompt pack.',
+		});
+	}
+
 	if (requireFullRegistryCoverage) {
 		for (const key of collectUncoveredRegistryKeys()) {
 			failures.push({

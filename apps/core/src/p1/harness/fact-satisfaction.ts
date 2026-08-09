@@ -13,7 +13,6 @@ import {
 } from '../model-supply/structured-node-runner.js';
 import { isReferenceEligibleFactSnapshot } from './structured-nodes.js';
 import {
-  HARNESS_BUILTIN_PROMPTS,
   type HarnessFrozenPrompt,
 } from './langfuse-prompts.js';
 
@@ -113,15 +112,20 @@ export async function assessRecipeFactSatisfaction(
     };
   }
 
+  // Resolve the pin before the runner try/catch. Inside it, a throw would be
+  // caught as a model failure and degrade into conservativeGuidance — which is
+  // fail *open*: the run would continue on no pin at all.
+  const satisfactionInstructions = requireFactPromptContent(
+    'factSatisfaction',
+    input.prompts?.factSatisfaction,
+  );
   let assessmentResult;
   try {
     assessmentResult = await runner.run({
       effectIdempotencyKey: `wf:${input.workflowId}:s2:facts:0`,
       schemaName: 'harness_fact_satisfaction_v1',
       schemaRevision: 'fact-satisfaction-v1',
-      instructions:
-        input.prompts?.factSatisfaction?.content ??
-        HARNESS_BUILTIN_PROMPTS.factSatisfaction,
+      instructions: satisfactionInstructions,
       prompt: canonicalJson({
         intent: input.intent,
         factTypes: input.factTypes,
@@ -201,15 +205,19 @@ export async function assessRecipeFactSatisfaction(
 
   const criticalityEffectIdempotencyKey = `wf:${input.workflowId}:s2:facts:criticality:0`;
   const criticalitySchemaName = 'harness_fact_criticality_v1';
+  // Same reason as above: resolve the pin outside the try so a missing pin
+  // cannot be mistaken for a model failure and degraded into guidance.
+  const criticalityInstructions = requireFactPromptContent(
+    'factCriticality',
+    input.prompts?.factCriticality,
+  );
   let result;
   try {
     result = await runner.run({
       effectIdempotencyKey: criticalityEffectIdempotencyKey,
       schemaName: criticalitySchemaName,
       schemaRevision: 'fact-criticality-v1',
-      instructions:
-        input.prompts?.factCriticality?.content ??
-        HARNESS_BUILTIN_PROMPTS.factCriticality,
+      instructions: criticalityInstructions,
       prompt: canonicalJson({
         intent: input.intent,
         missingFactTypes: assessment.missingFactTypes,
@@ -456,4 +464,25 @@ function sortCanonical(value: unknown): unknown {
     );
   }
   return value;
+}
+
+/**
+ * A missing pin fails closed. Substituting the hardcoded builtin was
+ * indistinguishable from a correct pin at runtime, which breaks rollback (the
+ * release names one version while the run used another) and eval attribution.
+ * Both keys live in the agentControl prompt pack, so task-admission freezes them
+ * for every lens and for the legacy full set — an absent pin here means the
+ * freeze is wrong, not that a default is wanted.
+ */
+function requireFactPromptContent(
+  promptKey: 'factSatisfaction' | 'factCriticality',
+  prompt: Pick<HarnessFrozenPrompt, 'content'> | undefined,
+): string {
+  const content = prompt?.content;
+  if (!content?.trim()) {
+    throw new Error(
+      `Fact satisfaction requires the frozen prompt pin ${promptKey}; refusing to substitute a builtin prompt.`,
+    );
+  }
+  return content;
 }

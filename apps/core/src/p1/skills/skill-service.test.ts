@@ -34,6 +34,7 @@ import {
   type SkillRevision,
 } from './index.js';
 import { DurableSkillInstructionResolver } from './runtime.js';
+import { frozenHarnessPrompt } from '../harness/frozen-prompt.testing.js';
 
 const NOW = '2026-07-26T02:00:00.000Z';
 const PROMPT_CONTENT =
@@ -1309,6 +1310,7 @@ test('an accepted prompt Skill changes the fixture judgment at its declared Harn
         workId: 'work-skill-fixture',
       },
     },
+    prompt: frozenHarnessPrompt('intentNaming'),
     workflowId: 'workflow-skill-fixture',
     workflowRevision: 1,
   };
@@ -4054,6 +4056,7 @@ test('rolling a binding back to the previous frozen revision restores the fixtur
         workId: 'work-skill-rollback',
       },
     },
+    prompt: frozenHarnessPrompt('intentNaming'),
     workflowId: 'workflow-skill-rollback',
     workflowRevision: 1,
   };

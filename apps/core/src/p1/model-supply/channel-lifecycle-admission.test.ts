@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CapabilityHotAssemblyRegistry } from '../supply-registry/hot-assembly.js';
+import { pinnedPromptResolver } from './prompt-pin.testing.js';
 import {
   ModelSupplyApplicationService,
   ModelSupplyProviderAdmissionError,
@@ -84,6 +85,7 @@ test('production submit does not invoke a quarantined execution channel', async 
   let providerCalls = 0;
   const recorded = new RecordedProviderExecutionPort();
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     capabilityHotAssembly: lifecycle,
@@ -118,6 +120,7 @@ test('media provider submit does not invoke a stop-new execution channel', async
     'operator stop new tasks',
   );
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [imageModel],
     deployments: [imageDeployment],
     capabilityHotAssembly: lifecycle,
@@ -156,6 +159,7 @@ test('media provider submit does not invoke a stop-new execution channel', async
 test('media provider lifecycle drains accepted work before completing', async () => {
   const lifecycle = hotAssembly();
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [imageModel],
     deployments: [imageDeployment],
     capabilityHotAssembly: lifecycle,

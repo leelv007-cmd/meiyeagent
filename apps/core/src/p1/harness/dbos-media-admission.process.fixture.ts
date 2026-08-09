@@ -35,6 +35,7 @@ const noteAdmission = new PostgresNoteMediaAdmissionCoordinator(pool);
 await noteAdmission.migrate();
 DBOS.setConfig({
   name: 'beauty-marketing-harness-media-admission',
+  runAdminServer: false,
   systemDatabaseUrl,
   applicationVersion,
 });

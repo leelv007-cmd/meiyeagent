@@ -12,6 +12,8 @@ import test from 'node:test';
 
 import { Pool } from 'pg';
 
+import type { HarnessReleaseService } from '../harness/harness-release.js';
+import { resolveWorkspaceHarnessRelease } from './ops-console-service.js';
 import { PostgresOpsConsoleStore } from './postgres-ops-console.js';
 import { AGENT_TOOL_POLICY_SCHEMA_VERSION } from './tool-policy.js';
 
@@ -74,8 +76,8 @@ test(
         (error: unknown) =>
           error instanceof Error &&
           (/duplicate key|unique/i.test(error.message) ||
-            'code' in error &&
-              String((error as { code?: string }).code) === '23505'),
+            ('code' in error &&
+              String((error as { code?: string }).code) === '23505')),
       );
 
       const listed = await store.list(10);
@@ -144,10 +146,10 @@ test(
       assert.ok(tools.includes(toolName));
       const revisions = await restarted.listByTool(toolName);
       assert.equal(revisions.length, 2);
-      assert.deepEqual(
-        revisions.map((item) => item.revision).sort(),
-        ['rev-1', 'rev-2'],
-      );
+      assert.deepEqual(revisions.map((item) => item.revision).sort(), [
+        'rev-1',
+        'rev-2',
+      ]);
       const exact = await restarted.getRevision(toolName, 'rev-1');
       assert.equal(exact?.description, 'first');
 
@@ -165,6 +167,9 @@ test(
         operatorId: 'ops-pg',
         reason: 'trial',
         updatedAt: ts2,
+        expiresAt: '2026-08-09T01:00:00.000Z',
+        consumedByRunId: null,
+        consumedAt: null,
       });
       const drillId = `drill-${randomUUID()}`;
       await store.appendRollbackDrill({
@@ -184,10 +189,162 @@ test(
       assert.ok(drills.some((item) => item.id === drillId));
       const trials = await restarted.listCandidateTrials();
       assert.ok(trials.some((item) => item.candidateReleaseId === 'rel-cand'));
+
+      const rollbackOperationId = `rollback-op-crash-${randomUUID()}`;
+      await store.beginRollbackOperation({
+        id: rollbackOperationId,
+        toReleaseId: 'rel-pg-0',
+        createdAt: ts2,
+        audit: {
+          id: rollbackOperationId,
+          action: 'rollback_production',
+          operatorId: 'ops-pg',
+          reason: 'recover crash',
+          evidence: 'incident-1',
+          target: 'rel-pg-0',
+          detail: {},
+          createdAt: ts2,
+          correlationId: 'corr-recover',
+        },
+      });
+      assert.equal((await restarted.listPendingRollbackOperations()).length, 1);
+      assert.ok((await restarted.listCandidateTrials()).length > 0);
+      await pool.query(`
+        CREATE OR REPLACE FUNCTION p1_test_fail_rollback_audit()
+        RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+          IF NEW.id LIKE 'rollback-op-crash-%' THEN
+            RAISE EXCEPTION 'simulated audit crash';
+          END IF;
+          RETURN NEW;
+        END $$;
+        CREATE TRIGGER p1_test_fail_rollback_audit_trigger
+        BEFORE INSERT ON p1_ops_console_audit
+        FOR EACH ROW EXECUTE FUNCTION p1_test_fail_rollback_audit();
+      `);
+      await assert.rejects(
+        restarted.completeRollbackOperation(rollbackOperationId),
+        /simulated audit crash/,
+      );
+      assert.equal((await restarted.listPendingRollbackOperations()).length, 1);
+      assert.ok((await restarted.listCandidateTrials()).length > 0);
+      assert.equal(
+        (await restarted.list(50)).some(
+          (entry) => entry.id === rollbackOperationId,
+        ),
+        false,
+      );
+      await pool.query(`
+        DROP TRIGGER p1_test_fail_rollback_audit_trigger ON p1_ops_console_audit;
+        DROP FUNCTION p1_test_fail_rollback_audit();
+      `);
+      await restarted.completeRollbackOperation(rollbackOperationId);
+      assert.equal((await restarted.listPendingRollbackOperations()).length, 0);
+      assert.equal((await restarted.listCandidateTrials()).length, 0);
+      assert.ok(
+        (await restarted.list(50)).some(
+          (entry) => entry.id === rollbackOperationId,
+        ),
+      );
+
+      const concurrentOperationId = `rollback-op-concurrent-${randomUUID()}`;
+      await restarted.putCandidateTrial({
+        workspaceId: `ws-${randomUUID()}`,
+        candidateReleaseId: 'rel-cand',
+        operatorId: 'ops-pg',
+        reason: 'must be cleared by recovery',
+        updatedAt: ts2,
+        expiresAt: '2026-08-09T01:00:00.000Z',
+        consumedByRunId: null,
+        consumedAt: null,
+      });
+      await restarted.beginRollbackOperation({
+        id: concurrentOperationId,
+        toReleaseId: 'rel-pg-0',
+        createdAt: ts2,
+        audit: {
+          id: concurrentOperationId,
+          action: 'rollback_production',
+          operatorId: 'ops-pg',
+          reason: 'concurrent recovery',
+          evidence: 'incident-concurrent',
+          target: 'rel-pg-0',
+          detail: {},
+          createdAt: ts2,
+          correlationId: 'corr-concurrent',
+        },
+      });
+      let pendingListCalls = 0;
+      let releaseListBarrier!: () => void;
+      const bothListed = new Promise<void>((resolve) => {
+        releaseListBarrier = resolve;
+      });
+      const rollbackOperations = {
+        beginRollbackOperation: (
+          operation: Parameters<
+            typeof restarted.beginRollbackOperation
+          >[0],
+        ) => restarted.beginRollbackOperation(operation),
+        async listPendingRollbackOperations() {
+          const operations = await restarted.listPendingRollbackOperations();
+          pendingListCalls += 1;
+          if (pendingListCalls === 2) releaseListBarrier();
+          await bothListed;
+          return operations;
+        },
+        completeRollbackOperation: (operationId: string) =>
+          restarted.completeRollbackOperation(operationId),
+      };
+      const releases = {
+        async rollbackProduction() {
+          return {};
+        },
+        async resolveForRun() {
+          return { releaseId: 'rel-pg-0' };
+        },
+      } as unknown as HarnessReleaseService;
+      const recovered = await Promise.all([
+        resolveWorkspaceHarnessRelease({
+          workspaceId: 'ws-concurrent-a',
+          runId: 'run-concurrent-a',
+          releases,
+          trials: restarted,
+          rollbackOperations,
+        }),
+        resolveWorkspaceHarnessRelease({
+          workspaceId: 'ws-concurrent-b',
+          runId: 'run-concurrent-b',
+          releases,
+          trials: restarted,
+          rollbackOperations,
+        }),
+      ]);
+      assert.deepEqual(
+        recovered.map((item) => item.releaseId),
+        ['rel-pg-0', 'rel-pg-0'],
+      );
+      assert.equal((await restarted.listPendingRollbackOperations()).length, 0);
+      assert.equal((await restarted.listCandidateTrials()).length, 0);
+      assert.equal(
+        (await restarted.list(50)).filter(
+          (entry) => entry.id === concurrentOperationId,
+        ).length,
+        1,
+      );
     } finally {
+      await pool.query(
+        'DROP TRIGGER IF EXISTS p1_test_fail_rollback_audit_trigger ON p1_ops_console_audit',
+      );
+      await pool.query('DROP FUNCTION IF EXISTS p1_test_fail_rollback_audit()');
       await pool.query(
         `DELETE FROM p1_ops_console_audit WHERE id = ANY($1::text[])`,
         [[auditId1, auditId2]],
+      );
+      await pool.query(
+        `DELETE FROM p1_ops_console_audit WHERE id LIKE 'rollback-op-%'`,
+      );
+      await pool.query(
+        `DELETE FROM p1_ops_console_rollback_operations WHERE id LIKE 'rollback-op-%'`,
       );
       await pool.query(
         `DELETE FROM p1_ops_console_tool_policies WHERE tool_name = $1`,
@@ -203,6 +360,66 @@ test(
       );
       await pool.query(
         `DELETE FROM p1_ops_console_rollback_drills WHERE id LIKE 'drill-%'`,
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'Postgres migration expires legacy trials and malformed reads fail closed',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresOpsConsoleStore(pool);
+    await store.migrate();
+    const legacyWorkspace = `legacy-${randomUUID()}`;
+    const malformedWorkspace = `malformed-${randomUUID()}`;
+    try {
+      for (const workspaceId of [legacyWorkspace, malformedWorkspace]) {
+        const payload = {
+          workspaceId,
+          candidateReleaseId: 'rel-legacy',
+          operatorId: 'ops',
+          reason: 'legacy',
+          updatedAt: '2026-08-08T00:00:00.000Z',
+        };
+        await pool.query(
+          `INSERT INTO p1_ops_console_candidate_trials
+           (workspace_id, candidate_release_id, operator_id, reason, updated_at, payload)
+           VALUES ($1, 'rel-legacy', 'ops', 'legacy', NOW(), $2::jsonb)`,
+          [workspaceId, JSON.stringify(payload)],
+        );
+      }
+      await store.migrate();
+      assert.equal(await store.getCandidateTrial(legacyWorkspace), null);
+
+      await pool.query(
+        `INSERT INTO p1_ops_console_candidate_trials
+         (workspace_id, candidate_release_id, operator_id, reason, updated_at, payload)
+         VALUES ($1, 'rel-bad', 'ops', 'bad', NOW(), $2::jsonb)`,
+        [
+          malformedWorkspace,
+          JSON.stringify({
+            workspaceId: malformedWorkspace,
+            candidateReleaseId: 'rel-bad',
+            operatorId: 'ops',
+            reason: 'bad',
+            updatedAt: 'bad-date',
+            expiresAt: 'also-bad',
+            consumedByRunId: null,
+            consumedAt: null,
+          }),
+        ],
+      );
+      await assert.rejects(
+        store.getCandidateTrial(malformedWorkspace),
+        /timestamps are invalid/,
+      );
+    } finally {
+      await pool.query(
+        'DELETE FROM p1_ops_console_candidate_trials WHERE workspace_id = ANY($1::text[])',
+        [[legacyWorkspace, malformedWorkspace]],
       );
       await pool.end();
     }

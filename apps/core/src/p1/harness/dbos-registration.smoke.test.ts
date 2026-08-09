@@ -40,8 +40,27 @@ import type {
   HarnessStagePorts,
 } from './workflow-core.js';
 
-const systemDatabaseUrl = process.env.TEST_DBOS_SYSTEM_DATABASE_URL;
-const databaseUrl = process.env.TEST_DATABASE_URL;
+/**
+ * This suite is the only place that asserts durable DBOS step ordering by
+ * function ID, so it must never report green without a system database. It used
+ * to gate every case on `{ skip: !systemDatabaseUrl }`, which turned a missing
+ * env into `# SKIP` — a silent pass that let a step-order regression reach the
+ * branch. A missing URL now throws at module load and fails the whole file.
+ */
+function requireSmokeDatabaseUrl(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(
+      `${name} is required by dbos-registration.smoke.test.ts; this suite asserts durable step ordering and must never skip.`,
+    );
+  }
+  return value;
+}
+
+const systemDatabaseUrl = requireSmokeDatabaseUrl(
+  'TEST_DBOS_SYSTEM_DATABASE_URL',
+);
+const databaseUrl = requireSmokeDatabaseUrl('TEST_DATABASE_URL');
 
 test('registered workflow accepts both legacy and scoped invocation payloads', () => {
   const request = {
@@ -76,7 +95,6 @@ test('registered workflow accepts both legacy and scoped invocation payloads', (
 
 test(
   'production DBOS registration launches and delivers one five-stage workflow',
-  { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-smoke-${randomUUID()}`;
     const executionSnapshot = createCreationExecutionSnapshot(
@@ -126,7 +144,13 @@ test(
     });
     DBOS.setConfig({
       name: 'beauty-marketing-harness-smoke',
-      systemDatabaseUrl: systemDatabaseUrl!,
+      // The SDK defaults runAdminServer to true on port 3001 (config.js
+      // `runAdminServer ?? true`), so any suite that omits it cannot run beside
+      // another DBOS suite on the same host — the second one fails with
+      // "Unable to start DBOS admin server on port 3001". Every setConfig in
+      // this file disables it for that reason.
+      runAdminServer: false,
+      systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: 'harness-smoke-v1',
     });
     const workflow = registerHarnessDbosWorkflow(
@@ -406,7 +430,6 @@ test(
 
 test(
   'confirmation timeout exits DBOS pending state and delivers the generic route',
-  { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-timeout-${randomUUID()}`;
     const runtimeWorkflowId = harnessRuntimeId(
@@ -452,7 +475,8 @@ test(
     const persistedTimeouts: string[] = [];
     DBOS.setConfig({
       name: 'beauty-marketing-harness-timeout-smoke',
-      systemDatabaseUrl: systemDatabaseUrl!,
+      runAdminServer: false,
+      systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: 'harness-timeout-smoke-v1',
     });
     const workflow = registerHarnessDbosWorkflow(
@@ -556,6 +580,20 @@ test(
       assert.deepEqual(persistedTimeouts, [
         `${workflowId}:offer-price:r1:core_timeout`,
       ]);
+      // V31-12 replay-order fence, asserted before the exact function IDs below
+      // so a reintroduced step reports its own cause instead of an off-by-one
+      // diff. The legacy branch must record no durable step for snapshot
+      // verification: wrapping the branch resolution in DBOS.runStep put one at
+      // function ID 0 and shifted every index after it, which makes a workflow
+      // already suspended at DBOS.recv unrecoverable across the deploy — DBOS
+      // replays by index and finds the wrong recorded step.
+      assert.equal(
+        (await DBOS.listWorkflowSteps(runtimeWorkflowId))?.some(
+          (step) => step.name === 'execution-plan-snapshot-verification',
+        ),
+        false,
+        'legacy replay branch must not record a durable snapshot-verification step',
+      );
       assert.deepEqual(
         (await DBOS.listWorkflowSteps(runtimeWorkflowId))
           ?.filter((step) => step.functionID >= 4 && step.functionID <= 7)
@@ -590,7 +628,6 @@ test(
 
 test(
   'typed confirmation timeout persists system_default and resumes the production DBOS topic',
-  { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-system-default-${randomUUID()}`;
     const workspaceId = 'workspace-system-default';
@@ -633,7 +670,8 @@ test(
     const forbiddenCoreTimeouts: string[] = [];
     DBOS.setConfig({
       name: 'beauty-marketing-harness-system-default-smoke',
-      systemDatabaseUrl: systemDatabaseUrl!,
+      runAdminServer: false,
+      systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: 'harness-system-default-smoke-v1',
     });
     const workflow = registerHarnessDbosWorkflow(
@@ -761,7 +799,6 @@ test(
 
 test(
   'snapshot without usage reservation does not persist a paid generation confirmation',
-  { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-execution-confirmation-${randomUUID()}`;
     const workspaceId = `workspace-execution-confirmation-${randomUUID()}`;
@@ -783,7 +820,8 @@ test(
     });
     DBOS.setConfig({
       name: 'beauty-marketing-harness-manual-handoff-smoke',
-      systemDatabaseUrl: systemDatabaseUrl!,
+      runAdminServer: false,
+      systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: 'harness-manual-handoff-smoke-v1',
     });
     const workflow = registerHarnessDbosWorkflow(ports, {
@@ -825,7 +863,6 @@ test(
 
 test(
   'an unacknowledged renderer expires and refunds after DBOS cold recovery',
-  { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-renderer-expiry-${randomUUID()}`;
     const workspaceId = `workspace-renderer-expiry-${randomUUID()}`;
@@ -869,7 +906,8 @@ test(
     let refunds = 0;
     DBOS.setConfig({
       name: 'beauty-marketing-harness-renderer-expiry',
-      systemDatabaseUrl: systemDatabaseUrl!,
+      runAdminServer: false,
+      systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: `harness-renderer-expiry-${workflowId}`,
     });
     const workflow = registerHarnessDbosWorkflow(
@@ -1005,7 +1043,6 @@ test(
 
 test(
   'durable r2 reask resumes the original production DBOS question exactly once',
-  { skip: !systemDatabaseUrl || !databaseUrl },
   async () => {
     const suffix = randomUUID();
     const workflowId = `harness-reask-${suffix}`;
@@ -1098,7 +1135,8 @@ test(
     });
     DBOS.setConfig({
       name: 'beauty-marketing-harness-reask-smoke',
-      systemDatabaseUrl: systemDatabaseUrl!,
+      runAdminServer: false,
+      systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: 'harness-reask-smoke-v1',
     });
     const workflow = registerHarnessDbosWorkflow(
@@ -1237,7 +1275,6 @@ test(
 
 test(
   'a pre-be bounded hold input exits its old unbounded branch after cold recovery',
-  { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-unattended-hold-${randomUUID()}`;
     const workspaceId = 'workspace-hold-replay';
@@ -1282,7 +1319,8 @@ test(
     let recallDue = 0;
     DBOS.setConfig({
       name: 'beauty-marketing-harness-unattended-hold',
-      systemDatabaseUrl: systemDatabaseUrl!,
+      runAdminServer: false,
+      systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion,
     });
     registerHarnessDbosWorkflow(
@@ -1504,7 +1542,6 @@ test(
 
 test(
   'a reserved hold delivers when the merchant answers inside the hold window',
-  { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-held-answer-${randomUUID()}`;
     const workspaceId = 'workspace-held-answer';
@@ -1545,7 +1582,8 @@ test(
     let expiries = 0;
     DBOS.setConfig({
       name: 'beauty-marketing-harness-held-answer',
-      systemDatabaseUrl: systemDatabaseUrl!,
+      runAdminServer: false,
+      systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: 'harness-held-answer-v1',
     });
     const workflow = registerHarnessDbosWorkflow(
@@ -1654,7 +1692,6 @@ test(
 
 test(
   'a pre-T45 pending function-ID layout replays without branching or failure',
-  { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-replay-${randomUUID()}`;
     const workspaceId = 'workspace-replay';
@@ -1700,7 +1737,8 @@ test(
     };
     DBOS.setConfig({
       name: 'beauty-marketing-harness-replay',
-      systemDatabaseUrl: systemDatabaseUrl!,
+      runAdminServer: false,
+      systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion,
     });
     registerHarnessDbosWorkflow(
@@ -1778,7 +1816,6 @@ test(
 
 test(
   'a pre-C1 held function-ID layout replays without branching or failure',
-  { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-hold-replay-${randomUUID()}`;
     const workspaceId = 'workspace-hold-replay';
@@ -1815,7 +1852,8 @@ test(
     });
     DBOS.setConfig({
       name: 'beauty-marketing-harness-hold-replay',
-      systemDatabaseUrl: systemDatabaseUrl!,
+      runAdminServer: false,
+      systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion,
     });
     registerHarnessDbosWorkflow(
@@ -1885,7 +1923,6 @@ test(
 
 test(
   'a run without a usage reservation never arms core auto-continuation',
-  { skip: !systemDatabaseUrl },
   async () => {
     const workflowId = `harness-quota-hold-${randomUUID()}`;
     const workspaceId = 'workspace-quota-hold';
@@ -1923,7 +1960,8 @@ test(
     let coreTimeouts = 0;
     DBOS.setConfig({
       name: 'beauty-marketing-harness-quota-hold',
-      systemDatabaseUrl: systemDatabaseUrl!,
+      runAdminServer: false,
+      systemDatabaseUrl: systemDatabaseUrl,
       applicationVersion: 'harness-quota-hold-v1',
     });
     const workflow = registerHarnessDbosWorkflow(
@@ -2015,13 +2053,12 @@ test(
 
 test(
   'note media admission recovery keeps the wait inside one stable DBOS effect',
-  { skip: !systemDatabaseUrl || !databaseUrl },
   async () => {
     const workflowId = `harness-media-admission-${randomUUID()}`;
     const workspaceId = `workspace-media-admission-${workflowId}`;
     const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
     const applicationVersion = `harness-media-admission-${workflowId}`;
-    const pool = new Pool({ connectionString: databaseUrl! });
+    const pool = new Pool({ connectionString: databaseUrl });
     const noteAdmission = new PostgresNoteMediaAdmissionCoordinator(pool);
     await noteAdmission.migrate();
     const blocker = await noteAdmission.claim({
@@ -2040,7 +2077,8 @@ test(
       );
       DBOS.setConfig({
         name: 'beauty-marketing-harness-media-admission',
-        systemDatabaseUrl: systemDatabaseUrl!,
+        runAdminServer: false,
+        systemDatabaseUrl: systemDatabaseUrl,
         applicationVersion,
       });
       createMediaAdmissionWorkflow(noteAdmission);
@@ -2087,13 +2125,12 @@ test(
 
 test(
   'same note media claim resumes idempotently after a crash',
-  { skip: !systemDatabaseUrl || !databaseUrl },
   async () => {
     const workflowId = `harness-media-admission-idempotent-${randomUUID()}`;
     const workspaceId = `workspace-media-admission-${workflowId}`;
     const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
     const applicationVersion = `harness-media-admission-${workflowId}`;
-    const pool = new Pool({ connectionString: databaseUrl! });
+    const pool = new Pool({ connectionString: databaseUrl });
     const noteAdmission = new PostgresNoteMediaAdmissionCoordinator(pool);
     await noteAdmission.migrate();
 
@@ -2106,7 +2143,8 @@ test(
       );
       DBOS.setConfig({
         name: 'beauty-marketing-harness-media-admission',
-        systemDatabaseUrl: systemDatabaseUrl!,
+        runAdminServer: false,
+        systemDatabaseUrl: systemDatabaseUrl,
         applicationVersion,
       });
       createMediaAdmissionWorkflow(noteAdmission);
@@ -2147,13 +2185,12 @@ test(
 
 test(
   'terminal note media admission replay is idempotent after the database commit',
-  { skip: !systemDatabaseUrl || !databaseUrl },
   async () => {
     const workflowId = `harness-media-admission-terminal-${randomUUID()}`;
     const workspaceId = `workspace-media-admission-${workflowId}`;
     const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
     const applicationVersion = `harness-media-admission-${workflowId}`;
-    const pool = new Pool({ connectionString: databaseUrl! });
+    const pool = new Pool({ connectionString: databaseUrl });
     const noteAdmission = new PostgresNoteMediaAdmissionCoordinator(pool);
     await noteAdmission.migrate();
 
@@ -2166,7 +2203,8 @@ test(
       );
       DBOS.setConfig({
         name: 'beauty-marketing-harness-media-admission',
-        systemDatabaseUrl: systemDatabaseUrl!,
+        runAdminServer: false,
+        systemDatabaseUrl: systemDatabaseUrl,
         applicationVersion,
       });
       createMediaAdmissionWorkflow(noteAdmission);

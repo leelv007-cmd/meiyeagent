@@ -32,8 +32,6 @@ import {
   PostgresExecutionConfirmationMigration,
   PostgresConfirmationAuthorityStore,
   PostgresMarketingPlanStore,
-  controlLimitsFromArtifact,
-  createDefaultIntentRetrievalBindings,
   createIntentRetrievalPolicies,
   createProductionPlanCompiler,
   createProductionPlanCompilerPorts,
@@ -109,9 +107,10 @@ import {
 } from '../p1/harness/langfuse-prompts.js';
 import { PostgresHarnessReleaseStore } from '../p1/harness/postgres-harness-release.js';
 import {
-  ensureBootstrapProductionRelease,
   HarnessReleaseService,
 } from '../p1/harness/harness-release.js';
+import { resolveSessionRunRelease } from '../p1/harness/session-run-release.js';
+import { ensureSeedProductionRelease } from '../p1/harness/seed-harness-release.js';
 import {
   assertProductionReleasePromptResolvable,
 } from '../p1/harness/prompt-packs.js';
@@ -466,16 +465,11 @@ export async function assembleCoreGraph(
   ]);
   await sensitiveWordsRepository.ensurePlatformBaseline();
   await harnessObservabilityStore.activateObservabilityReconciliationCutover();
-  /**
-   * V31-21 P1-a: production release bootstrap + boot-time resolvability.
-   * Fresh environments get one auto-published/promoted production release so
-   * the first session turn never fails on a missing pin. Boot only checks
-   * that the current production release is resolvable (V31-20 P2) — full
-   * registry strictness stays at publish time.
-   */
+  /** Boot upgrades only absent/legacy-empty production to the checked-in seed. */
   const harnessReleaseService = new HarnessReleaseService(harnessReleaseStore);
-  await ensureBootstrapProductionRelease(harnessReleaseStore, {
-    middlewareBindings: createDefaultIntentRetrievalBindings(),
+  await ensureSeedProductionRelease({
+    store: harnessReleaseStore,
+    service: harnessReleaseService,
   });
   const bootProductionLifecycle =
     await harnessReleaseStore.getLifecycleByStatus('production');
@@ -890,31 +884,13 @@ export async function assembleCoreGraph(
     ? new AgentSessionHarnessService({
         store: agentSessionStore,
         kernel: sessionAgentKernel,
-        // V31-21: a run's pinned releaseId is immutable. Unknown pins fail
-        // closed; silently rebinding them to the current release would corrupt
-        // receipt attribution and replay fidelity.
-        resolveRelease: async (harnessReleaseId) => {
-          const resolve = async (frozenReleaseId?: string | null) => {
-            const resolved = await harnessReleaseService.resolveForRun({
-              ...(frozenReleaseId
-                ? { frozenReleaseId }
-                : {}),
-            });
-            const base = controlLimitsFromArtifact(resolved.artifact);
-            const existing = base.middlewareBindings ?? [];
-            const defaults = createDefaultIntentRetrievalBindings();
-            const present = new Set(existing.map((item) => item.policyId));
-            return {
-              controlLimits: resolved.controlLimits,
-              middlewareBindings: [
-                ...existing,
-                ...defaults.filter((item) => !present.has(item.policyId)),
-              ],
-              releaseId: resolved.releaseId,
-            };
-          };
-          return resolve(harnessReleaseId);
-        },
+        // Lifecycle-aware resolution is fail-closed: a frozen run must always
+        // resolve its exact immutable release. Rollback only changes new runs.
+        resolveRelease: (harnessReleaseId) =>
+          resolveSessionRunRelease({
+            service: harnessReleaseService,
+            harnessReleaseId,
+          }),
         createToolRegistry: (turn) =>
           createRetrievalToolRegistry({
             ports: sessionRetrievalPorts,

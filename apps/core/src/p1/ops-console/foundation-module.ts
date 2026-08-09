@@ -3,6 +3,7 @@
  * Admin action boundary for Release desk / Tool Policy / Kill Switch / audit.
  */
 
+import type { QuickCheckTrace } from '../agent-session/quick-checks.js';
 import type { P1Context } from '../foundation/domain.js';
 import { P1DomainError } from '../foundation/domain.js';
 import type { P1OperationModule } from '../foundation/ports.js';
@@ -88,6 +89,28 @@ export class OpsConsoleFoundationModule implements P1OperationModule {
       return this.service.publishRelease(args.context, input, meta);
     }
 
+    if (action === 'run_release_eval') {
+      const trace = payload.trace;
+      if (
+        !trace ||
+        typeof trace !== 'object' ||
+        !Array.isArray((trace as Record<string, unknown>).toolCalls)
+      ) {
+        throw new P1DomainError(
+          'INVALID_STATE',
+          'run_release_eval requires a QuickCheckTrace with toolCalls.',
+        );
+      }
+      return this.service.runReleaseEval(
+        args.context,
+        {
+          releaseId: stringField(payload, 'releaseId'),
+          trace: trace as QuickCheckTrace,
+        },
+        meta,
+      );
+    }
+
     if (action === 'transition_lifecycle') {
       return this.service.transitionLifecycle(
         args.context,
@@ -140,6 +163,20 @@ export class OpsConsoleFoundationModule implements P1OperationModule {
       return this.service.rollbackProduction(
         args.context,
         { toReleaseId: stringField(payload, 'toReleaseId') },
+        meta,
+      );
+    }
+
+    if (action === 'authorize_production_history') {
+      return this.service.authorizeProductionHistoryMigration(
+        args.context,
+        {
+          releaseId: stringField(payload, 'releaseId'),
+          promotedAt:
+            typeof payload.promotedAt === 'string'
+              ? payload.promotedAt
+              : undefined,
+        },
         meta,
       );
     }
@@ -222,6 +259,10 @@ export class OpsConsoleFoundationModule implements P1OperationModule {
 
     if (action === 'list_candidate_trials') {
       return { items: await this.service.listCandidateTrials() };
+    }
+
+    if (action === 'list_recent_run_pins') {
+      return { items: await this.service.listRecentRunPins() };
     }
 
     if (action === 'list_rollback_drills') {

@@ -10,6 +10,10 @@ import test from 'node:test';
 
 import type { AgentControlLimits } from '@meiye/contracts';
 
+import {
+  createDefaultIntentRetrievalBindings,
+  mergeDefaultIntentRetrievalBindings,
+} from '../agent-session/intent-retrieval-policies.js';
 import { P1DomainError } from '../foundation/domain.js';
 import {
   HARNESS_PROMPT_PACKS,
@@ -23,11 +27,13 @@ import {
   assertControlLimitsFullySet,
   computeHarnessReleaseManifestHash,
   diffHarnessReleaseArtifacts,
-  DEFAULT_BOOTSTRAP_CONTROL_LIMITS,
-  DEFAULT_BOOTSTRAP_RELEASE_ID,
-  ensureBootstrapProductionRelease,
   type PublishHarnessReleaseInput,
 } from './harness-release.js';
+import {
+  ensureSeedProductionRelease,
+  SEED_HARNESS_RELEASE_ID,
+} from './seed-harness-release.js';
+import { resolveSessionRunRelease } from './session-run-release.js';
 
 const TS = '2026-08-08T12:00:00.000Z';
 
@@ -173,6 +179,164 @@ test('publish creates immutable artifact with stable manifestHash and non-empty 
   const restored = await service.getExactRelease('rel-a');
   assert.deepEqual(restored, published.artifact);
   assert.ok(restored.controlLimits.maxDelegations >= 0);
+});
+
+test('production publish rejects an empty prompt pack manifest', async () => {
+  const { service } = createService();
+  await assert.rejects(
+    service.publishArtifact(
+      basePublish('rel-empty-pack', {
+        promptBindings: {},
+        promptPackBindings: {},
+      }),
+    ),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.code === 'INVALID_STATE' &&
+      error.message.includes('prompt pack'),
+  );
+});
+
+test('legacy empty immutable production is atomically replaced by exact-pin seed', async () => {
+  const source = createService();
+  const valid = await source.service.publishArtifact(basePublish('legacy-empty'));
+  const store = new MemoryHarnessReleaseStore();
+  await store.putArtifactImmutable({
+    ...valid.artifact,
+    promptBindings: {},
+    promptPackBindings: {},
+  });
+  await store.putLifecycle({
+    ...valid.lifecycle,
+    status: 'production',
+  });
+  await store.putRollout(valid.rollout);
+  const service = new HarnessReleaseService(store);
+
+  await ensureSeedProductionRelease({ store, service });
+
+  const production = await store.getLifecycleByStatus('production');
+  assert.equal(production?.releaseId, SEED_HARNESS_RELEASE_ID);
+  assert.equal((await store.getLifecycle('legacy-empty'))?.status, 'retired');
+  const seed = await service.getExactRelease(SEED_HARNESS_RELEASE_ID);
+  assert.ok(Object.keys(seed.promptPackBindings).length > 0);
+  assert.ok(Object.values(seed.promptBindings).every((ref) => ref.version === '1'));
+});
+
+test('seeded production release owns its middleware; the assembly merge adds nothing', async () => {
+  const store = new MemoryHarnessReleaseStore();
+  const service = new HarnessReleaseService(store);
+  await ensureSeedProductionRelease({ store, service });
+  const seed = await service.getExactRelease(SEED_HARNESS_RELEASE_ID);
+
+  assert.deepEqual(
+    seed.middlewareBindings,
+    createDefaultIntentRetrievalBindings(),
+  );
+  // The session port used by core-assembly must return the release's own
+  // bindings unchanged; otherwise the assembly is a second authority.
+  const resolved = await resolveSessionRunRelease({
+    service,
+    harnessReleaseId: SEED_HARNESS_RELEASE_ID,
+  });
+  assert.equal(resolved.releaseId, SEED_HARNESS_RELEASE_ID);
+  assert.deepEqual(resolved.middlewareBindings, seed.middlewareBindings);
+  // An incomplete release still gets filled — that fail-open is why the seed
+  // has to be complete in the first place.
+  assert.equal(
+    mergeDefaultIntentRetrievalBindings([]).length,
+    createDefaultIntentRetrievalBindings().length,
+  );
+});
+
+test('an unknown frozen pin fails closed instead of falling back to production', async () => {
+  const { store, service } = createService();
+  await service.publishArtifact(basePublish('live-production'));
+  await service.transitionLifecycle({
+    releaseId: 'live-production',
+    toStatus: 'evaluating',
+    now: TS,
+  });
+  await service.transitionLifecycle({
+    releaseId: 'live-production',
+    toStatus: 'canary',
+    now: TS,
+  });
+  await service.transitionLifecycle({
+    releaseId: 'live-production',
+    toStatus: 'production',
+    now: TS,
+  });
+  assert.equal(
+    (await store.getLifecycleByStatus('production'))?.releaseId,
+    'live-production',
+  );
+
+  // Session port: a run pinned to a release this store never saw must fail,
+  // not silently continue on the current production composition.
+  await assert.rejects(
+    resolveSessionRunRelease({
+      service,
+      harnessReleaseId: 'release-that-never-existed',
+    }),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.code === 'NOT_FOUND' &&
+      error.message.includes('release-that-never-existed'),
+  );
+  // Same fail-closed answer one level down, so neither layer can reintroduce it.
+  await assert.rejects(
+    service.resolveForRun({
+      workspaceId: 'ws-any',
+      frozenReleaseId: 'release-that-never-existed',
+    }),
+    (error: unknown) =>
+      error instanceof P1DomainError && error.code === 'NOT_FOUND',
+  );
+  // A run with no pin at all still resolves the rollout normally.
+  assert.equal(
+    (await resolveSessionRunRelease({ service })).releaseId,
+    'live-production',
+  );
+});
+
+test('rollback rejects draft and evaluating releases without production history', async () => {
+  const { service } = createService();
+  await service.publishArtifact(basePublish('never-production'));
+  await assert.rejects(
+    service.rollbackProduction({ toReleaseId: 'never-production' }),
+    /must be retired/,
+  );
+  await service.transitionLifecycle({
+    releaseId: 'never-production',
+    toStatus: 'evaluating',
+  });
+  await assert.rejects(
+    service.rollbackProduction({ toReleaseId: 'never-production' }),
+    /must be retired/,
+  );
+});
+
+test('retired release without authoritative history is isolated until explicitly authorized', async () => {
+  const { service } = createService();
+  await service.publishArtifact(basePublish('retired-unproven'));
+  await service.transitionLifecycle({
+    releaseId: 'retired-unproven',
+    toStatus: 'retired',
+  });
+
+  await assert.rejects(
+    service.rollbackProduction({ toReleaseId: 'retired-unproven' }),
+    /no prior production identity/,
+  );
+  await service.authorizeProductionHistory({
+    releaseId: 'retired-unproven',
+    promotedAt: TS,
+  });
+  const rolled = await service.rollbackProduction({
+    toReleaseId: 'retired-unproven',
+  });
+  assert.equal(rolled.production.releaseId, 'retired-unproven');
 });
 
 test('publish rejects unset controlLimits (U11)', async () => {
@@ -456,58 +620,6 @@ test('resolver always returns non-empty controlLimits from published artifact', 
   for (const key of Object.keys(CONTROL_LIMITS) as (keyof AgentControlLimits)[]) {
     assert.equal(typeof resolved.controlLimits[key], 'number');
   }
-});
-
-test('bootstrap publishes + promotes a production release on a fresh store (V31-21 P1-a)', async () => {
-  const { store } = createService();
-  const first = await ensureBootstrapProductionRelease(store, {
-    middlewareBindings: [
-      {
-        policyId: 'tenant-gate',
-        revision: '1',
-        kind: 'wrap_tool_call',
-        order: 0,
-        allowedControlActions: ['continue'],
-      },
-    ],
-  });
-  assert.equal(first.bootstrapped, true);
-  assert.equal(first.releaseId, DEFAULT_BOOTSTRAP_RELEASE_ID);
-
-  const lifecycle = await store.getLifecycleByStatus('production');
-  assert.equal(lifecycle?.releaseId, DEFAULT_BOOTSTRAP_RELEASE_ID);
-  const artifact = await store.getArtifact(DEFAULT_BOOTSTRAP_RELEASE_ID);
-  assert.ok(artifact);
-  assert.deepEqual(artifact.controlLimits, DEFAULT_BOOTSTRAP_CONTROL_LIMITS);
-  // Id keeps legacy composer-plan pins resolvable; empty pack bindings keep
-  // publish green without Langfuse pins (V31-20 strictness lives at publish).
-  assert.deepEqual(artifact.promptPackBindings, {});
-
-  // A session turn resolves the bootstrap release as a frozen pin.
-  const service = new HarnessReleaseService(store);
-  const resolved = await service.resolveForRun({
-    frozenReleaseId: DEFAULT_BOOTSTRAP_RELEASE_ID,
-  });
-  assert.equal(resolved.selection, 'frozen');
-  assert.deepEqual(resolved.controlLimits, DEFAULT_BOOTSTRAP_CONTROL_LIMITS);
-});
-
-test('bootstrap is a no-op once a production release is pinned (never overwrites ops)', async () => {
-  const { store, service } = createService();
-  await service.publishArtifact(basePublish('ops-1'));
-  for (const toStatus of ['evaluating', 'canary', 'production'] as const) {
-    await service.transitionLifecycle({
-      releaseId: 'ops-1',
-      toStatus,
-      now: TS,
-    });
-  }
-  const boot = await ensureBootstrapProductionRelease(store);
-  assert.equal(boot.bootstrapped, false);
-  assert.equal(boot.releaseId, 'ops-1');
-  const lifecycle = await store.getLifecycleByStatus('production');
-  assert.equal(lifecycle?.releaseId, 'ops-1');
-  assert.equal(await store.getArtifact(DEFAULT_BOOTSTRAP_RELEASE_ID), null);
 });
 
 test('resolveForRun works without workspaceId for frozen pins (session port, V31-21 P1-a)', async () => {

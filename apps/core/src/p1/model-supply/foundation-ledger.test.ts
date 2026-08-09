@@ -24,6 +24,7 @@ import type {
 } from '../product-billing/durable-service.js';
 import type { SupplyRequestFreeze } from '../entitlement-pools/supply-ledger-fields.js';
 import { FoundationModelSupplyLedger } from './foundation-ledger.js';
+import { pinnedPromptResolver } from './prompt-pin.testing.js';
 import {
   ModelSupplyApplicationService,
   ModelSupplyProviderAdmissionError,
@@ -184,6 +185,7 @@ test('a non-durable unknown merchant execution replays without another provider 
   };
   let providerCalls = 0;
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     deployments: [copyDeployment],
     execution: {
       async execute() {
@@ -328,6 +330,7 @@ test('a ProductUsage-reserved task never consumes the legacy grant-lot ledger', 
       },
     );
     return new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       deployments: [videoDeployment],
       execution: new RecordedProviderExecutionPort(),
       ledger: {
@@ -454,6 +457,7 @@ test('replays a pre-upgrade job-linked freeze without mutating immutable facts',
     workspaceId: context.workspaceId,
   };
   const preview = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     deployments: [deployment],
     execution: new RecordedProviderExecutionPort(),
     models: [model],
@@ -519,6 +523,7 @@ test('replays a pre-upgrade ordinary freeze without mutating immutable facts', a
     workspaceId: context.workspaceId,
   };
   const preview = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     deployments: [deployment],
     execution: new RecordedProviderExecutionPort(),
     models: [model],
@@ -577,6 +582,7 @@ test('re-reads a competing durable freeze when ProductUsage settles after a miss
     workspaceId: context.workspaceId,
   };
   const preview = await new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     deployments: [deployment],
     execution: new RecordedProviderExecutionPort(),
     merchantExecutionBilling: merchantExecutionBillingStub({
@@ -719,6 +725,7 @@ test('rejects a permanently invalid route before consuming a grant lot', async (
   });
   let providerExecutions = 0;
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution: {
@@ -776,6 +783,7 @@ test('persists one immutable supply freeze before provider I/O and links settlem
     },
   );
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [pricedDeployment],
     prices: [{
@@ -866,6 +874,7 @@ test('rejects a fresh supplier freeze without an explicit execution channel befo
   const { freezes, supplyFreezes } = createStrictSupplyFreezeStore();
   let providerExecutions = 0;
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [{ ...deployment, executionChannelId: undefined }],
     ledger: new FoundationModelSupplyLedger(
@@ -921,6 +930,7 @@ test('replays a pre-upgrade settlement without rewriting its provider cost fact'
     workspaceId: context.workspaceId,
   };
   const result = await new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     deployments: [deployment],
     execution: new RecordedProviderExecutionPort(),
     ledger: new FoundationModelSupplyLedger(foundation),
@@ -1002,6 +1012,7 @@ test('retries with the winning legacy cost fact during a rolling-upgrade settlem
   };
 
   const result = await new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     deployments: [deployment],
     execution: new RecordedProviderExecutionPort(),
     ledger: new FoundationModelSupplyLedger(
@@ -1026,6 +1037,7 @@ test('retries with the winning legacy cost fact during a rolling-upgrade settlem
 test('records unknown pricing explicitly instead of fabricating a zero estimate', async () => {
   const { ledger } = await fixture();
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [
       {
@@ -1102,6 +1114,7 @@ test('checkpoints route, job, reservation and pending attempt before provider ex
     },
   };
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution,
@@ -1187,6 +1200,7 @@ test('atomically seeds an explicit plan allowance on first reserve without defau
     },
   });
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution: new RecordedProviderExecutionPort(),
@@ -1211,6 +1225,7 @@ test('atomically seeds an explicit plan allowance on first reserve without defau
     available: 2,
   });
   const restarted = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution: new RecordedProviderExecutionPort(),
@@ -1263,6 +1278,7 @@ test('lets a newly provisioned trial workspace generate through the production c
     new CompositeProductEntitlementPolicy(productBootstrap, entitlements),
   );
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution: new RecordedProviderExecutionPort(),
@@ -1385,6 +1401,7 @@ test('lets a trusted payment grant generate when recorded owner checkout is disa
     },
   };
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     deployments: [deployment],
     execution: new RecordedProviderExecutionPort(),
     ledger: new FoundationModelSupplyLedger(
@@ -1460,6 +1477,7 @@ test('keeps one reservation and one frozen candidate set across a safe pre-accep
   execution.failNext('copy-quality', 'rejected_before_accept');
   const freezes: SupplyRequestFreeze[] = [];
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: copyModels,
     deployments: copyDeployments,
     execution,
@@ -1598,6 +1616,7 @@ test('keeps a pre-accept media fallback resumable when the next frozen attempt r
   let providerCalls = 0;
   let application!: ModelSupplyApplicationService;
   application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments,
     execution: {
@@ -1809,6 +1828,7 @@ test('refunds canonical billing when a cross-model fallback is rejected', async 
   execution.failNext(copyModels[0]!.id, 'rejected_before_accept');
   let providerExecutions = 0;
   const result = await new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: copyModels,
     deployments: copyDeployments,
     execution: {
@@ -1911,6 +1931,7 @@ test('refunds grant-lot copy usage after acceptance-unknown partial delivery', a
   const execution = new RecordedProviderExecutionPort();
   execution.failNext(copyModel.id, 'acceptance_unknown');
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [copyModel],
     deployments: [copyDeployment],
     execution,
@@ -2019,6 +2040,7 @@ test('retries a missed grant refund from a persisted failed result without repea
     prompt: '退款短暂失败后重试',
   };
   const firstApplication = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [copyModel],
     deployments: [copyDeployment],
     execution,
@@ -2036,6 +2058,7 @@ test('retries a missed grant refund from a persisted failed result without repea
   );
 
   const restartedApplication = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [copyModel],
     deployments: [copyDeployment],
     execution,
@@ -2092,6 +2115,7 @@ test('does not repeat the provider side effect after a crash between execution a
     prompt: '不可重复生成',
   };
   const crashed = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution,
@@ -2101,6 +2125,7 @@ test('does not repeat the provider side effect after a crash between execution a
   assert.equal(executions, 1);
 
   const restarted = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution,
@@ -2147,6 +2172,7 @@ test('replays a pre-grant-lot ordinal-one checkpoint without changing its payloa
   };
   await assert.rejects(
     new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models: [model],
       deployments: [deployment],
       execution: new RecordedProviderExecutionPort(),
@@ -2166,6 +2192,7 @@ test('replays a pre-grant-lot ordinal-one checkpoint without changing its payloa
     createdAt: '2026-07-19T00:00:00.000Z',
   });
   const recovered = await new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution: new RecordedProviderExecutionPort(),
@@ -2187,6 +2214,7 @@ test('reconciles acceptance-unknown to late success without deleting estimated c
   const execution = new RecordedProviderExecutionPort();
   execution.failNext(model.id, 'acceptance_unknown');
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution,
@@ -2294,6 +2322,7 @@ test('recovers the authoritative result without regeneration when the read-model
     prompt: '读模型失败仍可恢复',
   };
   const crashed = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution,
@@ -2308,6 +2337,7 @@ test('recovers the authoritative result without regeneration when the read-model
   await assert.rejects(crashed.submit(submission), /projection unavailable/);
 
   const restarted = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution,
@@ -2332,6 +2362,7 @@ test('records a zero-product-usage generation without skipping provider or Found
   const foundation = new P1ApplicationService(repository);
   const ledger = new FoundationModelSupplyLedger(foundation);
   const application = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [model],
     deployments: [deployment],
     execution: new RecordedProviderExecutionPort(),
@@ -2445,6 +2476,7 @@ test('persists and refunds a pre-provider rejection for a cold workspace', async
   };
   const createApplication = () =>
     new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models: [copyModel],
       deployments: [copyDeployment],
       execution,

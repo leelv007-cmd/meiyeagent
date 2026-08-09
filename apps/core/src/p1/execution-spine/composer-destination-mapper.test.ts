@@ -42,15 +42,23 @@ test('destination mapping consumes the request-pinned prompt and does not swallo
     distributionTarget: 'manual_copy',
     status: 'mapped',
   });
+  const resolveInputs: Array<{ workspaceId: string }> = [];
   const mapper = new StructuredComposerDestinationMapper(executor, {
-    async resolve() {
+    async resolve(input) {
+      resolveInputs.push(structuredClone(input));
       return frozenPrompt('frozen:destination-mapping');
     },
   });
 
-  await mapper.map({ destination: '发到抖音，生成后手动复制' });
+  await mapper.map({
+    destination: '发到抖音，生成后手动复制',
+    workspaceId: 'workspace-1',
+  });
 
   assert.equal(executor.calls[0]?.instructions, 'frozen:destination-mapping');
+  // The release pin is workspace-scoped, so the caller's workspace has to reach
+  // the resolver; resolving without one silently takes bare production.
+  assert.deepEqual(resolveInputs, [{ workspaceId: 'workspace-1' }]);
 
   const unavailable = new StructuredComposerDestinationMapper(executor, {
     async resolve() {
@@ -58,10 +66,37 @@ test('destination mapping consumes the request-pinned prompt and does not swallo
     },
   });
   await assert.rejects(
-    unavailable.map({ destination: '发到小红书' }),
+    unavailable.map({ destination: '发到小红书', workspaceId: 'workspace-1' }),
     /pinned prompt unavailable/u,
   );
   assert.equal(executor.calls.length, 1);
+});
+
+test('destination mapping refuses to resolve its pinned prompt without a workspace', async () => {
+  const executor = new RecordingExecutor({
+    contentPackagePlatform: 'xiaohongshu',
+    distributionTarget: 'manual_copy',
+    status: 'mapped',
+  });
+  let resolveCalls = 0;
+  const mapper = new StructuredComposerDestinationMapper(executor, {
+    async resolve() {
+      resolveCalls += 1;
+      return frozenPrompt('frozen:destination-mapping');
+    },
+  });
+
+  for (const workspaceId of [undefined, '', '   ']) {
+    await assert.rejects(
+      mapper.map({
+        destination: '发到小红书，生成后手动复制',
+        ...(workspaceId === undefined ? {} : { workspaceId }),
+      }),
+      /requires a workspaceId/u,
+    );
+  }
+  assert.equal(resolveCalls, 0);
+  assert.equal(executor.calls.length, 0);
 });
 
 test('destination mapping persists pilot fallback lineage before provider invocation', async () => {
@@ -149,7 +184,10 @@ test('destination mapping rejects the wrong prompt name or content hash before p
     });
 
     await assert.rejects(
-      mapper.map({ destination: '发到小红书，生成后手动复制' }),
+      mapper.map({
+        destination: '发到小红书，生成后手动复制',
+        workspaceId: 'workspace-1',
+      }),
       /Prompt binding/u,
     );
     assert.equal(executor.calls.length, 0);

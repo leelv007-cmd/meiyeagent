@@ -54,6 +54,9 @@ test(
     const dbosConfig = {
       applicationVersion: `skill-governance-${suffix}`,
       name: 'beauty-marketing-skill-governance',
+      // The SDK defaults runAdminServer to true on port 3001, so a suite that
+      // omits it cannot run beside any other DBOS suite on the same host.
+      runAdminServer: false,
       systemDatabaseUrl: systemDatabaseUrl!,
     };
     let launched = false;

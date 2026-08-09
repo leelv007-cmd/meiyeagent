@@ -26,6 +26,7 @@ import {
   type IntentDeclaration,
 } from './structured-nodes.js';
 import type { HarnessWorkflowInput } from './task-admission.js';
+import { frozenHarnessPrompt } from './frozen-prompt.testing.js';
 
 const connectionString = process.env.TEST_DATABASE_URL;
 const now = '2026-07-25T12:00:00.000Z';
@@ -164,6 +165,7 @@ test(
       const runner = new RecordingFixtureRunner();
       const brief = await compileExecutionBrief(
         {
+          prompt: frozenHarnessPrompt('briefCompilation'),
           workflowId: 't43-workflow',
           unitId: 'copy-r1',
           unitKind: 'copy',

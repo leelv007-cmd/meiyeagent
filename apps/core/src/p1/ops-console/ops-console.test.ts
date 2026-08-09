@@ -16,6 +16,8 @@ import {
 
 import type { P1Context } from '../foundation/domain.js';
 import { P1DomainError } from '../foundation/domain.js';
+import { createDefaultProductionQuickCheckSampler } from '../eval/production-sampling.js';
+import { MemoryEvalVerdictStore } from '../eval/verdict-store.js';
 import {
   defaultPromptPackBindings,
   HARNESS_PROMPT_PACKS,
@@ -29,7 +31,11 @@ import {
 import { MemoryOpsConsoleAuditStore } from './audit.js';
 import { OpsConsoleFoundationModule } from './foundation-module.js';
 import { OPS_KILL_SWITCH_IDS } from './kill-switches.js';
-import { OpsConsoleService } from './ops-console-service.js';
+import {
+  OpsConsoleService,
+  type OpsConsoleServiceDeps,
+  resolveWorkspaceHarnessRelease,
+} from './ops-console-service.js';
 import {
   MemoryOpsCandidateTrialStore,
   MemoryOpsKillSwitchStore,
@@ -116,7 +122,9 @@ function operatorCtx(): P1Context {
   };
 }
 
-function createHarness() {
+function createHarness(options: {
+  runPins?: OpsConsoleServiceDeps['runPins'];
+} = {}) {
   const store = new MemoryHarnessReleaseStore();
   const releases = new HarnessReleaseService(store);
   const audit = new MemoryOpsConsoleAuditStore();
@@ -124,6 +132,11 @@ function createHarness() {
   const killSwitches = new MemoryOpsKillSwitchStore();
   const trials = new MemoryOpsCandidateTrialStore();
   const drills = new MemoryOpsRollbackDrillStore();
+  const verdicts = new MemoryEvalVerdictStore();
+  const evaluator = createDefaultProductionQuickCheckSampler({
+    releases: store,
+    verdicts,
+  });
   const service = new OpsConsoleService({
     releases,
     catalog: store,
@@ -132,10 +145,43 @@ function createHarness() {
     killSwitches,
     trials,
     drills,
+    verdicts,
+    evaluator,
+    ...(options.runPins ? { runPins: options.runPins } : {}),
     langfuseBaseUrl: 'https://langfuse.example.test',
   });
   const module = new OpsConsoleFoundationModule(service);
-  return { store, releases, service, module, audit, toolPolicies };
+  return { store, releases, service, module, audit, toolPolicies, trials, drills, verdicts };
+}
+
+async function recordGreenPromotionGates(
+  releaseId: string,
+  verdicts: MemoryEvalVerdictStore,
+  drills: MemoryOpsRollbackDrillStore,
+) {
+  await verdicts.putImmutable({
+    schemaVersion: 'eval-layer-result/v1',
+    resultId: `green-${releaseId}`,
+    layer: 'l1',
+    harnessReleaseId: releaseId as never,
+    evalSuiteRevision: 'eval/1',
+    gates: (['fidelity', 'rights', 'redline'] as const).map((kind) => ({ id: `${kind}-${releaseId}`, kind, passed: true })),
+    thresholds: [],
+    verdict: 'passed',
+    scoredBookkept: false,
+    releasable: true,
+    createdAt: TS,
+  });
+  await drills.appendRollbackDrill({
+    id: `drill-${releaseId}`,
+    releaseId,
+    operatorId: 'ops-a',
+    reason: 'readiness',
+    evidence: 'playbook',
+    result: 'passed',
+    notes: null,
+    createdAt: TS,
+  });
 }
 
 test('capability map: ops-console admin actions require platform.manage; operator lacks it', () => {
@@ -145,6 +191,8 @@ test('capability map: ops-console admin actions require platform.manage; operato
     'set_kill_switch',
     'create_tool_policy_revision',
     'promote_to_production',
+    'run_release_eval',
+    'authorize_production_history',
   ] as const) {
     assert.equal(
       requiredP1Capability('command', 'ops-console', action),
@@ -157,6 +205,7 @@ test('capability map: ops-console admin actions require platform.manage; operato
     'diff_releases',
     'list_kill_switches',
     'list_audit',
+    'list_recent_run_pins',
   ] as const) {
     assert.equal(
       requiredP1Capability('query', 'ops-console', action),
@@ -226,8 +275,74 @@ test('publish_release rejects missing prompt pin and surfaces pack key', async (
   );
 });
 
+test('run_release_eval derives release-bound verdict from the production quick-check evaluator', async () => {
+  const { module, audit } = createHarness();
+  await module.execute({
+    context: adminCtx('ops-eval'),
+    input: {
+      action: 'publish_release',
+      payload: { ...basePublish('rel-eval'), reason: 'publish eval target' },
+    },
+  });
+
+  const evaluated = (await module.execute({
+    context: adminCtx('ops-eval'),
+    input: {
+      action: 'run_release_eval',
+      payload: {
+        releaseId: 'rel-eval',
+        reason: 'evaluate candidate trace',
+        trace: {
+          toolCalls: [],
+          tags: ['l0.5'],
+        },
+        verdict: 'passed',
+      },
+    },
+  })) as unknown as {
+    releaseId: string;
+    verdict: string;
+    evalSuiteRevision: string;
+  };
+
+  assert.equal(evaluated.releaseId, 'rel-eval');
+  assert.equal(evaluated.verdict, 'failed');
+  assert.equal(evaluated.evalSuiteRevision, 'eval/1');
+  assert.ok(
+    (await audit.list()).some(
+      (entry) =>
+        entry.action === 'run_release_eval' && entry.target === 'rel-eval',
+    ),
+  );
+});
+
 test('publish → canary allowlist → candidate trial → promote → rollback with audit', async () => {
-  const { module, service, releases } = createHarness();
+  const activeRunId = 'run-inflight-rel-next';
+  const {
+    module,
+    service,
+    releases,
+    trials: trialStore,
+    verdicts,
+    drills,
+  } = createHarness({
+    runPins: {
+      async listRecentRunPins() {
+        return [];
+      },
+      async listActiveRunPins() {
+        return [
+          {
+            runId: activeRunId,
+            workspaceId: 'ws-x',
+            harnessReleaseId: 'rel-next',
+            status: 'running',
+            startedAt: TS,
+          },
+        ];
+      },
+    },
+  });
 
   const published = (await module.execute({
     context: adminCtx('ops-a'),
@@ -258,6 +373,7 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
       },
     },
   });
+  await recordGreenPromotionGates('rel-prod', verdicts, drills);
   await module.execute({
     context: adminCtx('ops-a'),
     input: {
@@ -329,12 +445,23 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
   assert.equal(trials.items.length, 1);
   assert.equal(trials.items[0]?.candidateReleaseId, 'rel-next');
 
-  // Candidate resolve path still owned by release service (U10).
-  const trialResolve = await releases.resolveForRun({
+  // The workspace trial assignment is consumed by the new-run resolver.
+  const trialResolve = await resolveWorkspaceHarnessRelease({
     workspaceId: 'ws-trial',
-    candidateReleaseId: 'rel-next',
+    runId: 'run-trial-1',
+    now: TS,
+    releases,
+    trials: trialStore,
   });
   assert.equal(trialResolve.selection, 'candidate');
+  const nextRun = await resolveWorkspaceHarnessRelease({
+    workspaceId: 'ws-trial',
+    runId: 'run-trial-2',
+    now: TS,
+    releases,
+    trials: trialStore,
+  });
+  assert.equal(nextRun.selection, 'production');
 
   await module.execute({
     context: adminCtx('ops-a'),
@@ -348,6 +475,7 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
       },
     },
   });
+  await recordGreenPromotionGates('rel-next', verdicts, drills);
   await module.execute({
     context: adminCtx('ops-a'),
     input: {
@@ -392,8 +520,7 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
       },
     }),
     (error: unknown) =>
-      error instanceof P1DomainError &&
-      error.message.includes('evidence'),
+      error instanceof P1DomainError && error.message.includes('evidence'),
   );
 
   const rolled = (await module.execute({
@@ -426,6 +553,7 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
 
   const newTask = await releases.resolveForRun({ workspaceId: 'ws-x' });
   assert.equal(newTask.releaseId, 'rel-prod');
+  assert.equal((await trialStore.listCandidateTrials()).length, 0);
   const stillFrozen = await releases.resolveForRun({
     workspaceId: 'ws-x',
     frozenReleaseId: 'rel-next',
@@ -445,7 +573,14 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
   const audit = (await module.query({
     context: adminCtx(),
     input: { action: 'list_audit', payload: { limit: 50 } },
-  })) as { items: { action: string; operatorId: string; reason: string }[] };
+  })) as {
+    items: {
+      action: string;
+      operatorId: string;
+      reason: string;
+      detail: Record<string, unknown>;
+    }[];
+  };
   assert.ok(audit.items.length >= 5);
   assert.ok(
     audit.items.some(
@@ -455,6 +590,11 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
         entry.reason.includes('error rate'),
     ),
   );
+  assert.deepEqual(
+    audit.items.find((entry) => entry.action === 'rollback_production')
+      ?.detail.inFlightRunIds,
+    [activeRunId],
+  );
 
   const diff = (await module.query({
     context: adminCtx(),
@@ -463,7 +603,9 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
       payload: { leftReleaseId: 'rel-prod', rightReleaseId: 'rel-next' },
     },
   })) as { changes: { path: string }[] };
-  assert.ok(diff.changes.some((change) => change.path === 'toolPolicyRevision'));
+  assert.ok(
+    diff.changes.some((change) => change.path === 'toolPolicyRevision'),
+  );
 
   const langfuse = (await module.query({
     context: adminCtx(),
@@ -491,7 +633,136 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
   })) as unknown as { drill: { result: string }; audit: { action: string } };
   assert.equal(drill.drill.result, 'passed');
   assert.equal(drill.audit.action, 'record_rollback_drill');
-  assert.equal((await service.listRollbackDrills()).length, 1);
+  assert.equal(
+    (await service.listRollbackDrills()).filter(
+      (item) => item.evidence === 'drill-run-1',
+    ).length,
+    1,
+  );
+});
+
+test('manual promotion accepts scored when hard gates and readiness are green', async () => {
+  const { releases, service, verdicts, drills } = createHarness();
+  await releases.publishArtifact(basePublish('rel-scored'));
+  await releases.transitionLifecycle({
+    releaseId: 'rel-scored',
+    toStatus: 'evaluating',
+  });
+  await releases.transitionLifecycle({
+    releaseId: 'rel-scored',
+    toStatus: 'canary',
+  });
+  await verdicts.putImmutable({
+    schemaVersion: 'eval-layer-result/v1',
+    resultId: 'scored-rel-scored',
+    layer: 'l1',
+    harnessReleaseId: 'rel-scored' as never,
+    evalSuiteRevision: 'eval/1',
+    gates: (['fidelity', 'rights', 'redline'] as const).map((kind) => ({
+      id: `${kind}-scored`,
+      kind,
+      passed: true,
+    })),
+    thresholds: [
+      {
+        id: 'brand-tone',
+        kind: 'brand_tone',
+        score: 0,
+        direction: 'min',
+        bound: 1,
+        met: false,
+      },
+    ],
+    verdict: 'scored',
+    scoredBookkept: true,
+    releasable: true,
+    createdAt: TS,
+  });
+  await drills.appendRollbackDrill({
+    id: 'drill-scored',
+    releaseId: 'rel-scored',
+    operatorId: 'ops-a',
+    reason: 'readiness',
+    evidence: 'run',
+    result: 'passed',
+    notes: null,
+    createdAt: TS,
+  });
+  const promoted = await service.promoteToProduction(
+    adminCtx(),
+    { releaseId: 'rel-scored' },
+    { reason: 'human click' },
+  );
+  assert.equal(promoted.lifecycle.status, 'production');
+});
+
+test('pending rollback recovery completes lifecycle, clears trials, and selects rollback production', async () => {
+  const { releases, trials } = createHarness();
+  for (const [index, releaseId] of [
+    'rel-recovery-old',
+    'rel-recovery-new',
+  ].entries()) {
+    await releases.publishArtifact(
+      basePublish(releaseId, { version: index + 1 }),
+    );
+    for (const toStatus of ['evaluating', 'canary', 'production'] as const) {
+      await releases.transitionLifecycle({ releaseId, toStatus });
+    }
+  }
+  await trials.putCandidateTrial({
+    workspaceId: 'ws-recovery',
+    candidateReleaseId: 'rel-recovery-new',
+    operatorId: 'ops-a',
+    reason: 'trial before crash',
+    updatedAt: TS,
+    expiresAt: '2026-08-08T18:15:00.000Z',
+    consumedByRunId: null,
+    consumedAt: null,
+  });
+  let completed = false;
+  const pendingRollbackAudit = {
+    id: 'rollback-recovery',
+    action: 'rollback_production' as const,
+    operatorId: 'ops-a',
+    reason: 'recover',
+    evidence: 'incident://recovery',
+    target: 'rel-recovery-old',
+    detail: {},
+    createdAt: TS,
+    correlationId: 'corr-recovery',
+  };
+  const rollbackOperations = {
+    async beginRollbackOperation() {},
+    async listPendingRollbackOperations() {
+      return [
+        {
+          id: 'rollback-recovery',
+          toReleaseId: 'rel-recovery-old',
+          createdAt: TS,
+          audit: pendingRollbackAudit,
+        },
+      ];
+    },
+    async completeRollbackOperation() {
+      await trials.clearCandidateTrials();
+      completed = true;
+      return pendingRollbackAudit;
+    },
+  };
+
+  const resolved = await resolveWorkspaceHarnessRelease({
+    workspaceId: 'ws-recovery',
+    runId: 'run-after-crash',
+    now: TS,
+    releases,
+    trials,
+    rollbackOperations,
+  });
+
+  assert.equal(resolved.releaseId, 'rel-recovery-old');
+  assert.equal(resolved.selection, 'production');
+  assert.equal(completed, true);
+  assert.equal((await trials.listCandidateTrials()).length, 0);
 });
 
 test('tool policy edits only create new revisions; in-place update is blocked', async () => {
@@ -719,15 +990,13 @@ test('V31-26a U14: archive gate fails closed without inventory; export and flag 
   assert.equal(unWired.gate.archiveAllowed, false);
   assert.equal(unWired.inventory, null);
   assert.ok(
-    unWired.gate.blockingReasons.some((reason) =>
-      reason.includes('not wired'),
-    ),
+    unWired.gate.blockingReasons.some((reason) => reason.includes('not wired')),
   );
 
   // Wire inventory + passed drill → still need hold/buffer unless never-had-legacy.
-  const {
-    MemoryLegacyReplayInventory,
-  } = await import('./legacy-replay-archive-gate.js');
+  const { MemoryLegacyReplayInventory } = await import(
+    './legacy-replay-archive-gate.js'
+  );
   const inv = new MemoryLegacyReplayInventory({
     activePendingCount: 0,
     oldestActiveCreatedAt: null,
@@ -736,9 +1005,7 @@ test('V31-26a U14: archive gate fails closed without inventory; export and flag 
   });
   // Recreate service with inventory via private deps is hard; call service method with deps.
   // Instead re-build module with inventory.
-  const {
-    MemoryOpsConsoleAuditStore,
-  } = await import('./audit.js');
+  const { MemoryOpsConsoleAuditStore } = await import('./audit.js');
   const {
     MemoryOpsCandidateTrialStore,
     MemoryOpsKillSwitchStore,
@@ -818,9 +1085,7 @@ test('V31-26a U14: archive gate fails closed without inventory; export and flag 
   })) as { items: { key: string; landed: boolean }[]; landedCount: number };
   assert.ok(flags.items.length >= 10);
   assert.ok(flags.landedCount >= 5);
-  assert.ok(
-    flags.items.some((item) => item.key === 'force_legacy_five_stage'),
-  );
+  assert.ok(flags.items.some((item) => item.key === 'force_legacy_five_stage'));
 
   // Capability map covers new queries.
   for (const action of [

@@ -28,9 +28,13 @@ import type {
   HarnessPromptResolver,
 } from './langfuse-prompts.js';
 import {
-  HARNESS_CORE_PROMPT_KEYS,
   HARNESS_LANGFUSE_PROMPT_NAMES,
+  type HarnessPromptKey,
 } from './langfuse-prompts.js';
+import {
+  COPY_TASK_PROMPT_PACK_IDS,
+  promptKeysForPacks,
+} from './prompt-packs.js';
 import {
   buildExecutionPlanSnapshot,
   ExecutionPlanAdmissionService,
@@ -214,6 +218,77 @@ test('accepted task keeps its frozen prompt while only a new task observes a pub
   );
 });
 
+test('copy admission resolves only its declared prompt packs', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const resolver = new SelectivePromptResolver();
+  const snapshot = composerSnapshot();
+  const expected = promptKeysForPacks(['agentControl', 'copy']);
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    resolver,
+    undefined,
+    undefined,
+    { async resolve() { return copyRoute(snapshot); } },
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    {
+      async resolvePromptBindings() {
+        return Object.fromEntries(
+          expected.map((key) => [key, { key, version: 'release-42' }]),
+        );
+      },
+    },
+  );
+
+  await service.submit(snapshotTaskRequest(snapshot));
+
+  assert.deepEqual(resolver.requestedKeys, [expected]);
+  assert.deepEqual(
+    resolver.requestedVersions,
+    [Object.fromEntries(expected.map((key) => [key, 'release-42']))],
+  );
+  assert.equal(resolver.fullResolveCalls, 0);
+  assert.deepEqual(
+    Object.keys(starter.requests[0]?.promptRevisionRefs ?? {}).sort(),
+    [...expected].sort(),
+  );
+});
+
+for (const assetIds of [[], ['asset-viral-1']] as const) {
+  test(`viral admission selects rewrite ${assetIds.length ? 'with' : 'without'} image vision`, async () => {
+    const registry = new MemoryRequestRegistry();
+    const resolver = new SelectivePromptResolver();
+    const snapshot = composerSnapshot(assetIds);
+    const base = promptKeysForPacks(['agentControl', 'copy', 'viral']);
+    const expected = assetIds.length
+      ? base
+      : base.filter((key) => key !== 'xhsViralImageVision');
+    const service = new HarnessTaskAdmissionService(
+      registry,
+      new RecordingStarter(),
+      resolver,
+      undefined,
+      undefined,
+      { async resolve() { return copyRoute(snapshot); } },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        async resolvePromptBindings() {
+          return Object.fromEntries(expected.map((key) => [key, { key, version: 'release-viral' }]));
+        },
+      },
+    );
+    await service.submit(snapshotTaskRequest(snapshot));
+    assert.deepEqual(resolver.requestedKeys, [expected]);
+  });
+}
+
 test('accepted task replay reads the frozen request before prompt resolution', async () => {
   const registry = new MemoryRequestRegistry();
   const starter = new RecordingStarter();
@@ -343,16 +418,17 @@ test('Composer admission assembles manifest, binding, prompts, pin, then starts'
       const promptAxisIds = axisIds.filter(
         (axisId) => !axisId.startsWith('skill:'),
       );
-      // Copy-lens pins only the historical core 14; XHS vertical axisIds stay out.
-      assert.equal(promptAxisIds.length, HARNESS_CORE_PROMPT_KEYS.length);
-      assert.equal(promptAxisIds.length, 14);
-      assert.deepEqual(promptAxisIds, [...HARNESS_CORE_PROMPT_KEYS]);
+      // V31-20: a copy-lens task declares capability for exactly the prompt
+      // sites its declared packs freeze — no whole-registry surface, and no
+      // axis for a site the request never pinned.
+      const copyPromptKeys = promptKeysForPacks(COPY_TASK_PROMPT_PACK_IDS);
+      assert.deepEqual(promptAxisIds, [...copyPromptKeys]);
       assert.equal(
         promptAxisIds.some((axisId) => axisId.startsWith('xhs')),
         false,
       );
       assert.deepEqual(axisIds, [
-        ...HARNESS_CORE_PROMPT_KEYS,
+        ...copyPromptKeys,
         'skill:skill.intent@3',
       ]);
       return {
@@ -1365,6 +1441,31 @@ class MutablePromptResolver implements HarnessPromptResolver {
   }
 }
 
+class SelectivePromptResolver implements HarnessPromptResolver {
+  fullResolveCalls = 0;
+  readonly requestedKeys: HarnessPromptKey[][] = [];
+  readonly requestedVersions: Array<Record<string, string | number>> = [];
+
+  async resolve(): Promise<HarnessFrozenPrompts> {
+    this.fullResolveCalls += 1;
+    throw new Error('full prompt resolution must not run for a copy task');
+  }
+
+  async resolveKeys(
+    keys: readonly HarnessPromptKey[],
+    exactVersions?: Readonly<Partial<Record<HarnessPromptKey, string | number>>>,
+  ) {
+    this.requestedKeys.push([...keys]);
+    this.requestedVersions.push({ ...exactVersions });
+    return Object.fromEntries(
+      keys.map((key) => [
+        key,
+        prompt(HARNESS_LANGFUSE_PROMPT_NAMES[key], `${key}-v7`, 7),
+      ]),
+    );
+  }
+}
+
 class RequiredUnsetBoundsResolver implements HarnessExecutionBoundsResolver {
   calls = 0;
 
@@ -1485,7 +1586,7 @@ function taskRequest(overrides: { rawInput?: string; taskId?: string } = {}) {
   };
 }
 
-function composerSnapshot() {
+function composerSnapshot(viralAssetIds: readonly string[] | null = null) {
   return createCreationExecutionSnapshot(
     {
       actorId: 'owner-1',
@@ -1498,13 +1599,31 @@ function composerSnapshot() {
       creationMode: 'customized',
       intent: '为夏日护理项目写一条预约文案',
       surface: { id: 'surface-1', revision: 'surface-r1' },
-      recipe: { id: 'recipe-1', revision: 'recipe-r1' },
+      recipe: viralAssetIds
+        ? { id: 'recipe.viral_adapt', revision: 'recipe.viral_adapt@1' }
+        : { id: 'recipe-1', revision: 'recipe-r1' },
       lens: 'copy' as const,
       platform: { id: 'douyin' as const },
       deliverables: [
         { id: 'copy-primary', kind: 'copy' as const, quantity: 1, order: 1 },
       ],
-      sources: { assets: [] },
+      sources: {
+        assets: (viralAssetIds ?? []).map((id) => ({
+          id,
+          revision: '1',
+          role: 'source' as const,
+        })),
+      },
+      ...(viralAssetIds
+        ? {
+            viralAdaptSource: {
+              schemaVersion: 'viral-adapt-source/v1' as const,
+              track: 'paste' as const,
+              noteText: '夏日护理笔记',
+              authorizedAssetIds: [...viralAssetIds],
+            },
+          }
+        : {}),
       rights: { revision: 'rights-r1', summary: 'authorized' },
       identity: { id: 'identity-1', revision: 'identity-r1' },
       modelPolicy: {

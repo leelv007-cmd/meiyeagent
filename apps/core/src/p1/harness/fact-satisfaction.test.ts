@@ -35,6 +35,7 @@ test('all eight formal Recipes use ContextBundle factTypes instead of text uploa
     );
     const result = await assessRecipeFactSatisfaction(
       {
+        prompts: pinnedFactPrompts(),
         workflowId: `workflow-${recipe.recipeId}`,
         workflowRevision: 1,
         intent: recipe.presentation.summary,
@@ -522,6 +523,7 @@ test('diagnostic logger failures preserve conservative guidance', async () => {
 test('a ledger wider than the recipe factTypes keeps every matched fact authorized', async () => {
   const result = await assessRecipeFactSatisfaction(
     {
+      prompts: pinnedFactPrompts(),
       workflowId: 'workflow-1',
       workflowRevision: 1,
       intent: '介绍服务和价格',
@@ -902,6 +904,9 @@ function request(factTypes: StoreFactKind[]) {
     factTypes,
     bundle: bundleWithFacts(['service']),
     at: NOW,
+    // Both keys live in the agentControl pack, so task-admission always freezes
+    // them; a request without them is a state production cannot reach.
+    prompts: pinnedFactPrompts(),
   };
 }
 
@@ -1047,3 +1052,73 @@ function frozenPrompt(name: string, content: string) {
     isFallback: false,
   };
 }
+
+function pinnedFactPrompts() {
+  return {
+    factSatisfaction: frozenPrompt(
+      'harness/fact-satisfaction',
+      'frozen:factSatisfaction',
+    ),
+    factCriticality: frozenPrompt(
+      'harness/fact-criticality',
+      'frozen:factCriticality',
+    ),
+  };
+}
+
+test('fact satisfaction fails closed when a frozen prompt pin is missing', async () => {
+  // Substituting HARNESS_BUILTIN_PROMPTS here was silent, so a run on a builtin
+  // prompt was indistinguishable from a run on the release pin. Both keys live
+  // in the agentControl pack, so task-admission always freezes them.
+  const satisfactionRunner = new QueueRunner([
+    { status: 'satisfied', matchedFactRefs: [], missingFactTypes: [] },
+  ]);
+  await assert.rejects(
+    assessRecipeFactSatisfaction(
+      {
+        workflowId: 'workflow-missing-fact-pin',
+        workflowRevision: 1,
+        intent: '介绍护理服务和价格',
+        factTypes: ['service'],
+        bundle: bundleWithFacts(['service']),
+        at: NOW,
+      },
+      satisfactionRunner,
+      authorizedRights,
+    ),
+    /requires the frozen prompt pin factSatisfaction/u,
+  );
+  assert.equal(satisfactionRunner.requests.length, 0);
+
+  // factCriticality is only reached once satisfaction reports a gap, so pin
+  // satisfaction and leave criticality absent to isolate the second guard.
+  const criticalityRunner = new QueueRunner([
+    {
+      status: 'partial',
+      matchedFactRefs: ['store_fact:fact-service:1'],
+      missingFactTypes: ['price'],
+    },
+  ]);
+  await assert.rejects(
+    assessRecipeFactSatisfaction(
+      {
+        workflowId: 'workflow-missing-criticality-pin',
+        workflowRevision: 1,
+        intent: '介绍护理服务和价格',
+        factTypes: ['service', 'price'],
+        bundle: bundleWithFacts(['service']),
+        at: NOW,
+        prompts: {
+          factSatisfaction: frozenPrompt(
+            'harness/fact-satisfaction',
+            'frozen:factSatisfaction',
+          ),
+        },
+      },
+      criticalityRunner,
+      authorizedRights,
+    ),
+    /requires the frozen prompt pin factCriticality/u,
+  );
+  assert.equal(criticalityRunner.requests.length, 1);
+});

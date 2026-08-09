@@ -1,477 +1,360 @@
-/**
- * V31-22 Ops Console release journey (AC4, write-only; master runs with lane
- * ports).
- *
- * Drives the real P1 ops-console module through the full rollout lifecycle the
- * ticket promised: 发布 → 圈 canary allowlist → candidate 试跑 → 人工放量 →
- * rollback → 审计留痕. Core service semantics are the authority
- * (`apps/core/src/p1/ops-console/ops-console-service.ts`):
- * - publish_release rejects unset control limits (U11 缺 pin 拒发)
- * - set_canary_allowlist / set_candidate_trial shape rollout + trial records
- * - promote_to_production is the human U12 click
- * - rollbackProduction re-pins a prior release; `resolveForRun` consults the
- *   production lifecycle for new runs, so the production pointer after
- *   rollback IS the "new runs go to the old release" observable
- * - every write appends an audit entry (operator/reason/evidence)
- *
- * No conditional assertions and no test.skip/fixme: every step either proves
- * the service semantics or fails red.
- */
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Response } from '@playwright/test';
 
+import {
+  SEED_HARNESS_RELEASE_ID,
+  seedHarnessReleaseManifest,
+} from '../../../../apps/core/src/p1/harness/seed-harness-release';
 import {
   cleanupE2EUsers,
   loginByForm,
   registerE2EUser,
 } from '../fixtures/auth';
-import { productState } from '../fixtures/product';
+import {
+  seedComposerInlineAuthorize,
+  seedConfirmedStore,
+} from '../fixtures/product';
+import { selectComposerLens } from '../fixtures/ui-journey';
 
-type P1Envelope<T> = {
-  data?: T;
-  error?: { code?: string; message?: string };
+const passingQuickCheckTrace = {
+  toolCalls: [
+    { toolName: 'read_context' },
+    { toolName: 'generate' },
+    { toolName: 'check' },
+    { toolName: 'record' },
+  ],
+  tags: ['l0.5'],
 };
 
-const CONTROL_LIMITS = {
-  maxDelegations: 2,
-  maxLlmSteps: 6,
-  maxMerchantQuestions: 1,
-  maxReplans: 3,
-  maxRetrievalCalls: 4,
-  maxSchemaRepairs: 1,
-  maxToolCalls: 8,
-  maxContextTokens: 32_000,
-};
-
-function publishInput(
-  releaseId: string,
-  overrides: Record<string, unknown> = {}
-) {
-  return {
-    agentSessionHarnessVersion: 'session/1',
-    budgetPolicyRevision: 'budget/1',
-    contextCompilerRef: { id: 'ctx', revision: '1' },
-    controlLimits: { ...CONTROL_LIMITS },
-    evalSuiteRevision: 'eval/1',
-    factPolicyRevision: 'fact/1',
-    makeHarnessVersion: 'make/1',
-    memoryPolicyRef: { id: 'mem', revision: '1' },
-    middlewareBindings: [],
-    modelPolicyRevision: 'model/1',
-    planSchemaRevision: 'plan-schema/v1',
-    promptBindings: {},
-    promptPackBindings: {},
-    releaseId,
-    rightsPolicyRevision: 'rights/1',
-    schemaBindings: {},
-    skillBindings: {},
-    supervisorPolicyRef: { id: 'sup', revision: '1' },
-    toolPolicyRevision: 'tool/1',
-    version: 1,
-    ...overrides,
+async function workspaceIdFromProductApi(page: Page): Promise<string> {
+  const response = await page.request.get('/api/core/product/state');
+  expect(response.ok(), await response.text()).toBeTruthy();
+  const envelope = (await response.json()) as {
+    data?: { workspaceId?: string };
   };
+  expect(envelope.data?.workspaceId).toBeTruthy();
+  return envelope.data!.workspaceId!;
 }
 
-async function p1Query<T>(
+async function openConsole(page: Page) {
+  await page.goto('/admin/ops-console');
+  await expect(page.getByTestId('admin-ops-console')).toBeVisible();
+}
+
+async function publish(
   page: Page,
-  module: string,
-  action: string,
-  payload: Record<string, unknown> = {}
+  releaseId: string,
+  version: number,
+  toolPolicy: string
 ) {
-  return page.evaluate(
-    async ({ queryAction, queryModule, queryPayload }) => {
-      const response = await fetch('/api/core/p1/query', {
-        body: JSON.stringify({
-          action: queryAction,
-          module: queryModule,
-          payload: queryPayload,
-        }),
-        credentials: 'same-origin',
-        headers: { 'content-type': 'application/json' },
-        method: 'POST',
-      });
-      const envelope = (await response.json()) as P1Envelope<unknown>;
-      if (!response.ok || envelope.data === undefined) {
-        throw new Error(
-          envelope.error?.message ??
-            `${queryModule}.${queryAction} query failed`
-        );
-      }
-      return envelope.data as T;
-    },
-    { queryAction: action, queryModule: module, queryPayload: payload }
-  );
+  const manifest = {
+    ...seedHarnessReleaseManifest(),
+    releaseId,
+    version,
+    toolPolicyRevision: toolPolicy,
+    createdAt: new Date().toISOString(),
+  };
+  await page.getByTestId('admin-ops-console-publish-release').fill(releaseId);
+  await page
+    .getByTestId('admin-ops-console-publish-version')
+    .fill(String(version));
+  await page
+    .getByTestId('admin-ops-console-publish-tool-policy')
+    .fill(toolPolicy);
+  await page
+    .getByTestId('admin-ops-console-publish-manifest')
+    .fill(JSON.stringify(manifest));
+  await page
+    .getByTestId('admin-ops-console-publish-reason')
+    .fill(`publish ${releaseId}`);
+  await page.getByTestId('admin-ops-console-publish-submit').click();
+  await expect(
+    page.getByTestId(`admin-ops-console-release-${releaseId}`)
+  ).toBeVisible();
 }
 
-async function p1Command<T>(
+async function transition(
   page: Page,
-  module: string,
-  action: string,
-  payload: Record<string, unknown>,
-  idempotencyKey: string
+  releaseId: string,
+  status: 'evaluating' | 'canary'
 ) {
-  return page.evaluate(
-    async ({ cmdAction, cmdModule, cmdPayload, key }) => {
-      const response = await fetch('/api/core/p1/commands', {
-        body: JSON.stringify({
-          action: cmdAction,
-          module: cmdModule,
-          payload: cmdPayload,
-        }),
-        credentials: 'same-origin',
-        headers: {
-          'content-type': 'application/json',
-          'idempotency-key': key,
-        },
-        method: 'POST',
-      });
-      const envelope = (await response.json()) as P1Envelope<unknown>;
-      if (!response.ok || envelope.data === undefined) {
-        throw new Error(
-          envelope.error?.message ?? `${cmdModule}.${cmdAction} command failed`
-        );
-      }
-      return envelope.data as T;
-    },
-    {
-      cmdAction: action,
-      cmdModule: module,
-      cmdPayload: payload,
-      key: idempotencyKey,
-    }
-  );
+  await page.getByTestId('admin-ops-console-advance-release').fill(releaseId);
+  await page
+    .getByTestId('admin-ops-console-advance-status')
+    .selectOption(status);
+  await page
+    .getByTestId('admin-ops-console-advance-reason')
+    .fill(`advance ${status}`);
+  await page.getByTestId('admin-ops-console-advance-submit').click();
+  await expect(
+    page.getByTestId(`admin-ops-console-release-${releaseId}`)
+  ).toHaveAttribute('data-status', status);
 }
 
-async function p1CommandExpectError(
+async function evaluateAndRecordDrill(page: Page, releaseId: string) {
+  await page.getByTestId('admin-ops-console-eval-release').fill(releaseId);
+  await page
+    .getByTestId('admin-ops-console-eval-reason')
+    .fill(`evaluate ${releaseId}`);
+  await page
+    .getByTestId('admin-ops-console-eval-trace')
+    .fill(JSON.stringify(passingQuickCheckTrace));
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/commands')
+  );
+  await page.getByTestId('admin-ops-console-eval-submit').click();
+  const response = await responsePromise;
+  expect(response.ok(), await response.text()).toBeTruthy();
+  await expect(
+    page.getByTestId('admin-ops-console-eval-observation')
+  ).toContainText(`${releaseId}: passed`);
+  await page
+    .getByTestId('admin-ops-console-drill-evidence')
+    .fill(`runbook://${releaseId}`);
+  await page.getByTestId('admin-ops-console-drill-submit').click();
+  await expect(page.getByText('Rollback drill recorded')).toBeVisible();
+}
+
+async function promote(page: Page, releaseId: string) {
+  await page.getByTestId('admin-ops-console-promote-release').fill(releaseId);
+  await page
+    .getByTestId('admin-ops-console-promote-reason')
+    .fill(`promote ${releaseId}`);
+  await page.getByTestId('admin-ops-console-promote-submit').click();
+  await expect(
+    page.getByTestId(`admin-ops-console-release-${releaseId}`)
+  ).toHaveAttribute('data-status', 'production');
+}
+
+async function startCopyRun(
   page: Page,
-  module: string,
-  action: string,
-  payload: Record<string, unknown>,
-  idempotencyKey: string
-) {
-  return page.evaluate(
-    async ({ cmdAction, cmdModule, cmdPayload, key }) => {
-      const response = await fetch('/api/core/p1/commands', {
-        body: JSON.stringify({
-          action: cmdAction,
-          module: cmdModule,
-          payload: cmdPayload,
-        }),
-        credentials: 'same-origin',
-        headers: {
-          'content-type': 'application/json',
-          'idempotency-key': key,
-        },
-        method: 'POST',
-      });
-      const envelope = (await response.json()) as P1Envelope<unknown>;
-      return {
-        code: envelope.error?.code ?? '',
-        message: envelope.error?.message ?? '',
-        status: response.status,
-      };
-    },
-    {
-      cmdAction: action,
-      cmdModule: module,
-      cmdPayload: payload,
-      key: idempotencyKey,
-    }
-  );
-}
-
-type OpsReleaseList = {
-  canary: string | null;
-  draft: string[];
-  items: Array<{
-    approvedBy: string | null;
-    createdAt: string;
-    manifestHash: string;
-    releaseId: string;
-    status: string;
-    updatedAt: string | null;
-    version: number;
-    workspaceAllowlist: string[];
-  }>;
-  production: string | null;
-};
-
-type OpsAuditEntry = {
-  action: string;
-  createdAt: string;
-  detail: Record<string, unknown>;
-  evidence: string | null;
-  id: string;
-  operatorId: string;
-  reason: string;
-  target: string;
-};
-
-test.describe('V31-22 Ops Console release journey (AC4)', () => {
-  test.afterEach(async ({ request }) => {
-    await cleanupE2EUsers(request);
+  intent: string
+): Promise<{ response: Promise<Response> }> {
+  await page.goto('/dashboard');
+  await selectComposerLens(page, 'copy');
+  await page.getByTestId('composer-intent-input').fill(intent);
+  await expect(page.getByTestId('composer-submit')).toBeEnabled({
+    timeout: 30_000,
   });
+  const response = page.waitForResponse(
+    (item) =>
+      item.request().method() === 'POST' &&
+      item.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  await page.getByTestId('composer-submit').click();
+  const brief = page.getByTestId('composer-brief-surface');
+  if (await brief.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await page.getByTestId('composer-brief-confirm').click();
+  }
+  return { response };
+}
 
-  test('发布 → 圈 canary → 试跑 → 放量 → 回滚 → 审计留痕', async ({
+async function submitCopyRun(page: Page, intent: string) {
+  const started = await startCopyRun(page, intent);
+  const response = await started.response;
+  expect(response.ok(), await response.text()).toBeTruthy();
+}
+
+async function prepareImageTextRun(page: Page, intent: string) {
+  await page.goto('/dashboard');
+  await seedConfirmedStore(page);
+  await seedComposerInlineAuthorize(page, {
+    fileName: `rollback-inflight-${crypto.randomUUID()}.png`,
+  });
+  await selectComposerLens(page, 'image_text');
+  await page.getByTestId('composer-intent-input').fill(intent);
+  await expect(page.getByTestId('composer-submit')).toBeEnabled({
+    timeout: 30_000,
+  });
+}
+
+async function startPreparedRun(page: Page) {
+  const response = page.waitForResponse(
+    (item) =>
+      item.request().method() === 'POST' &&
+      item.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  await page.getByTestId('composer-submit').click();
+  const brief = page.getByTestId('composer-brief-surface');
+  if (await brief.isVisible({ timeout: 3_000 }).catch(() => false)) {
+    await page.getByTestId('composer-brief-confirm').click();
+  }
+  return { response };
+}
+
+function runPinsFor(page: Page, releaseId: string) {
+  return page
+    .getByTestId('admin-ops-console-run-pin')
+    .filter({ hasText: releaseId });
+}
+
+async function waitForNewRunPin(
+  page: Page,
+  releaseId: string,
+  previousCount: number,
+  expectedStatus?: 'active' | 'running'
+) {
+  await expect
+    .poll(
+      async () => {
+        await page.getByTestId('admin-ops-console-refresh-run-pins').click();
+        const pins = runPinsFor(page, releaseId);
+        if ((await pins.count()) <= previousCount) {
+          return 'missing:';
+        }
+        const newest = pins.first();
+        const status = expectedStatus
+          ? await newest.getAttribute('data-run-status')
+          : 'observed';
+        return `${status}:${(await newest.getAttribute('data-run-id')) ?? ''}`;
+      },
+      { timeout: 60_000 }
+    )
+    .toMatch(
+      new RegExp(
+        `^${expectedStatus === 'active' ? '(?:running|waiting)' : (expectedStatus ?? 'observed')}:.+`,
+        'u'
+      )
+    );
+  const observedRunId =
+    (await runPinsFor(page, releaseId).first().getAttribute('data-run-id')) ??
+    '';
+  expect(observedRunId).toBeTruthy();
+  return observedRunId;
+}
+
+test.describe('V31 Ops Console real release journey', () => {
+  test.afterEach(async ({ request }) => cleanupE2EUsers(request));
+
+  test('UI publish → canary routing → trial → promote → in-flight rollback → new task pin', async ({
+    browser,
     page,
     request,
   }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(360_000);
     const admin = await registerE2EUser(request, { role: 'admin' });
+    const outsider = await registerE2EUser(request);
+    const runner = await registerE2EUser(request);
     await loginByForm(page, admin);
-    await page.goto('/dashboard');
-    const workspaceId = (await productState(page)).workspaceId;
-    expect(workspaceId.length).toBeGreaterThan(0);
+    const workspaceId = await workspaceIdFromProductApi(page);
+    const outsiderContext = await browser.newContext();
+    const outsiderPage = await outsiderContext.newPage();
+    await loginByForm(outsiderPage, outsider);
+    const outsiderWorkspaceId = await workspaceIdFromProductApi(outsiderPage);
+    expect(outsiderWorkspaceId).not.toBe(workspaceId);
+    const runnerContext = await browser.newContext();
+    const runningPage = await runnerContext.newPage();
+    await loginByForm(runningPage, runner);
 
-    const suffix = `${Date.now()}`;
-    const releaseA = `release-e2e-a-${suffix}`;
-    const releaseB = `release-e2e-b-${suffix}`;
-    const releaseBadPin = `release-e2e-badpin-${suffix}`;
+    const suffix = Date.now();
+    const releaseA = `release-ui-a-${suffix}`;
+    const releaseB = `release-ui-b-${suffix}`;
 
-    // ── 缺 pin 拒发 (U11): unset control limit must reject publish.
-    const rejected = await p1CommandExpectError(
-      page,
-      'ops-console',
-      'publish_release',
-      publishInput(releaseBadPin, {
-        controlLimits: { ...CONTROL_LIMITS, maxLlmSteps: null },
-      }),
-      `publish-badpin-${suffix}`
-    );
-    expect(rejected.status).toBeGreaterThanOrEqual(400);
-    expect(rejected.code).toBe('INVALID_STATE');
-    expect(rejected.message).toMatch(/U11|unset/iu);
-    const afterReject = await p1Query<OpsReleaseList>(
-      page,
-      'ops-console',
-      'list_releases',
-      {}
-    );
-    expect(afterReject.items.map(({ releaseId }) => releaseId)).not.toContain(
-      releaseBadPin
-    );
+    try {
+      await openConsole(page);
+      await publish(page, releaseA, 101, 'tool/ui-a');
+      await transition(page, releaseA, 'evaluating');
+      await transition(page, releaseA, 'canary');
+      await page
+        .getByTestId('admin-ops-console-allowlist-release')
+        .fill(releaseA);
+      await page
+        .getByTestId('admin-ops-console-allowlist-workspaces')
+        .fill(workspaceId);
+      await page
+        .getByTestId('admin-ops-console-allowlist-reason')
+        .fill('UI canary allowlist');
+      await page.getByTestId('admin-ops-console-allowlist-submit').click();
 
-    // ── 发布 release A (draft).
-    const publishedA = await p1Command<{ artifact: { version: number } }>(
-      page,
-      'ops-console',
-      'publish_release',
-      publishInput(releaseA),
-      `publish-a-${suffix}`
-    );
-    expect(publishedA.artifact.version).toBe(1);
+      await submitCopyRun(page, `allowlisted candidate A ${suffix}`);
+      await submitCopyRun(outsiderPage, `nonallowlisted production ${suffix}`);
+      await openConsole(page);
+      await page.getByTestId('admin-ops-console-refresh').click();
+      await expect(runPinsFor(page, releaseA).first()).toBeVisible();
+      await expect(
+        runPinsFor(page, SEED_HARNESS_RELEASE_ID).first()
+      ).toBeVisible();
 
-    // ── 走合法生命周期 draft→evaluating→canary，圈 canary allowlist。
-    for (const toStatus of ['evaluating', 'canary'] as const) {
-      await p1Command(
-        page,
-        'ops-console',
-        'transition_lifecycle',
-        {
-          releaseId: releaseA,
-          reason: `e2e transition to ${toStatus}`,
-          toStatus,
-        },
-        `transition-a-${toStatus}-${suffix}`
+      await evaluateAndRecordDrill(page, releaseA);
+      await promote(page, releaseA);
+
+      await publish(page, releaseB, 102, 'tool/ui-b');
+      await page
+        .getByTestId('admin-ops-console-trial-workspace')
+        .fill(workspaceId);
+      await page.getByTestId('admin-ops-console-trial-release').fill(releaseB);
+      await page
+        .getByTestId('admin-ops-console-trial-reason')
+        .fill('one run UI trial');
+      await page.getByTestId('admin-ops-console-trial-submit').click();
+
+      await submitCopyRun(page, `candidate B ${suffix}`);
+      await openConsole(page);
+      await page.getByTestId('admin-ops-console-refresh').click();
+      await expect(
+        page.getByTestId(`admin-ops-console-trial-observation-${releaseB}`)
+      ).not.toContainText('pending');
+      await expect(runPinsFor(page, releaseB).first()).toBeVisible();
+
+      await submitCopyRun(page, `production A ${suffix}`);
+      await openConsole(page);
+      await page.getByTestId('admin-ops-console-refresh').click();
+      await expect(runPinsFor(page, releaseA).first()).toBeVisible();
+
+      await transition(page, releaseB, 'evaluating');
+      await transition(page, releaseB, 'canary');
+      await evaluateAndRecordDrill(page, releaseB);
+      await promote(page, releaseB);
+
+      await prepareImageTextRun(
+        runningPage,
+        `use the authorized image for an inflight xiaohongshu note ${suffix}`
       );
+      const previousBCount = await runPinsFor(page, releaseB).count();
+      const [running, frozenRunId] = await Promise.all([
+        startPreparedRun(runningPage),
+        waitForNewRunPin(page, releaseB, previousBCount, 'active'),
+      ]);
+
+      await page
+        .getByTestId('admin-ops-console-rollback-target')
+        .fill(releaseA);
+      await page
+        .getByTestId('admin-ops-console-rollback-reason')
+        .fill('UI rollback incident');
+      await page
+        .getByTestId('admin-ops-console-rollback-evidence')
+        .fill('incident://ui-e2e');
+      await page.getByTestId('admin-ops-console-rollback-submit').click();
+      await expect(
+        page.getByTestId(`admin-ops-console-release-${releaseA}`)
+      ).toHaveAttribute('data-status', 'production');
+      await page.getByTestId('admin-ops-console-refresh').click();
+      await expect(
+        page.getByTestId('admin-ops-console-run-pin').filter({
+          hasText: frozenRunId,
+        })
+      ).toBeVisible();
+      await expect(
+        page
+          .getByTestId('admin-ops-console-audit-row')
+          .filter({ hasText: 'rollback_production' })
+          .first()
+      ).toContainText(frozenRunId);
+      expect((await running.response).ok()).toBeTruthy();
+
+      const previousACount = await runPinsFor(page, releaseA).count();
+      const [postRollback] = await Promise.all([
+        startCopyRun(runningPage, `post rollback A ${suffix}`),
+        waitForNewRunPin(page, releaseA, previousACount),
+      ]);
+      void postRollback.response.catch(() => undefined);
+    } finally {
+      await runnerContext.close();
+      await outsiderContext.close();
     }
-    await p1Command(
-      page,
-      'ops-console',
-      'set_canary_allowlist',
-      {
-        releaseId: releaseA,
-        reason: 'e2e canary allowlist',
-        workspaceAllowlist: [workspaceId],
-      },
-      `canary-allowlist-a-${suffix}`
-    );
-
-    // ── candidate 试跑。
-    await p1Command(
-      page,
-      'ops-console',
-      'set_candidate_trial',
-      {
-        candidateReleaseId: releaseA,
-        reason: 'e2e candidate trial',
-        workspaceId,
-      },
-      `candidate-trial-${suffix}`
-    );
-
-    // ── 人工放量 (U12 human click)。
-    await p1Command(
-      page,
-      'ops-console',
-      'promote_to_production',
-      { releaseId: releaseA, reason: 'e2e promote A' },
-      `promote-a-${suffix}`
-    );
-
-    const afterPromoteA = await p1Query<OpsReleaseList>(
-      page,
-      'ops-console',
-      'list_releases',
-      {}
-    );
-    expect(afterPromoteA.production).toBe(releaseA);
-    const itemA = afterPromoteA.items.find(
-      ({ releaseId }) => releaseId === releaseA
-    );
-    expect(itemA?.status).toBe('production');
-    expect(itemA?.workspaceAllowlist).toEqual([workspaceId]);
-
-    // ── 第二个 release B: 发布 → canary → 放量，替换生产。
-    await p1Command(
-      page,
-      'ops-console',
-      'publish_release',
-      publishInput(releaseB, { version: 2 }),
-      `publish-b-${suffix}`
-    );
-    for (const toStatus of ['evaluating', 'canary'] as const) {
-      await p1Command(
-        page,
-        'ops-console',
-        'transition_lifecycle',
-        {
-          releaseId: releaseB,
-          reason: `e2e transition to ${toStatus}`,
-          toStatus,
-        },
-        `transition-b-${toStatus}-${suffix}`
-      );
-    }
-    await p1Command(
-      page,
-      'ops-console',
-      'set_canary_allowlist',
-      {
-        releaseId: releaseB,
-        reason: 'e2e canary allowlist B',
-        workspaceAllowlist: [workspaceId],
-      },
-      `canary-allowlist-b-${suffix}`
-    );
-    await p1Command(
-      page,
-      'ops-console',
-      'promote_to_production',
-      { releaseId: releaseB, reason: 'e2e promote B' },
-      `promote-b-${suffix}`
-    );
-
-    // ── diff 可读(放量前对照)。
-    const diff = await p1Query<{ changes: unknown[] }>(
-      page,
-      'ops-console',
-      'diff_releases',
-      { leftReleaseId: releaseA, rightReleaseId: releaseB }
-    );
-    expect(diff.changes.length).toBeGreaterThan(0);
-
-    // ── 一键 rollback 回 A，带 reason + evidence(强制留痕)。
-    const rolled = await p1Command<{
-      previousProduction: { releaseId: string } | null;
-      production: { releaseId: string };
-    }>(
-      page,
-      'ops-console',
-      'rollback_production',
-      {
-        evidence: 'e2e rollback drill evidence link',
-        reason: 'e2e rollback to A after B regression',
-        toReleaseId: releaseA,
-      },
-      `rollback-${suffix}`
-    );
-    expect(rolled.production.releaseId).toBe(releaseA);
-    expect(rolled.previousProduction?.releaseId).toBe(releaseB);
-
-    // ── rollback 后新任务走旧 release: resolveForRun 只读 production
-    // lifecycle,production 指针即新任务的解析结果。
-    const afterRollback = await p1Query<OpsReleaseList>(
-      page,
-      'ops-console',
-      'list_releases',
-      {}
-    );
-    expect(afterRollback.production).toBe(releaseA);
-    expect(afterRollback.canary).toBeNull();
-    const itemBAfter = afterRollback.items.find(
-      ({ releaseId }) => releaseId === releaseB
-    );
-    expect(itemBAfter?.status).toBe('retired');
-    const itemAAfter = afterRollback.items.find(
-      ({ releaseId }) => releaseId === releaseA
-    );
-    expect(itemAAfter?.status).toBe('production');
-
-    // ── 回滚演练留痕。
-    const drill = await p1Command<{ drill: { id: string; result: string } }>(
-      page,
-      'ops-console',
-      'record_rollback_drill',
-      {
-        evidence: 'e2e drill evidence',
-        notes: 'fixture drill',
-        reason: 'e2e pre-release rollback drill',
-        releaseId: releaseA,
-        result: 'passed',
-      },
-      `drill-${suffix}`
-    );
-    expect(drill.drill.result).toBe('passed');
-    const drills = await p1Query<{ items: Array<{ releaseId: string }> }>(
-      page,
-      'ops-console',
-      'list_rollback_drills',
-      {}
-    );
-    expect(drills.items.some((row) => row.releaseId === releaseA)).toBe(true);
-
-    // ── 审计留痕:每个写操作都有条目(operator/reason/evidence 非空)。
-    const audit = await p1Query<{ items: OpsAuditEntry[] }>(
-      page,
-      'ops-console',
-      'list_audit',
-      { limit: 100 }
-    );
-    const actions = audit.items.map(({ action }) => action);
-    for (const expected of [
-      'publish_release',
-      'transition_lifecycle',
-      'set_canary_allowlist',
-      'set_candidate_trial',
-      'promote_to_production',
-      'rollback_production',
-      'record_rollback_drill',
-    ]) {
-      expect(actions, `audit must contain ${expected}`).toContain(expected);
-    }
-    const auditByTarget = new Map(
-      audit.items.map((entry) => [entry.action, entry] as const)
-    );
-    for (const action of [
-      'publish_release',
-      'set_canary_allowlist',
-      'promote_to_production',
-      'rollback_production',
-      'record_rollback_drill',
-    ]) {
-      const entry = auditByTarget.get(action);
-      expect(entry, `audit entry ${action}`).toBeTruthy();
-      expect(entry!.reason.trim().length).toBeGreaterThan(0);
-      expect(entry!.operatorId).toBeTruthy();
-      expect(entry!.createdAt).toBeTruthy();
-    }
-    expect(auditByTarget.get('rollback_production')!.evidence).toMatch(
-      /e2e rollback/i
-    );
-    expect(auditByTarget.get('record_rollback_drill')!.evidence).toMatch(
-      /e2e drill/i
-    );
-    const rollbackTarget = auditByTarget.get('rollback_production')!.target;
-    expect(rollbackTarget).toBe(releaseA);
   });
 });

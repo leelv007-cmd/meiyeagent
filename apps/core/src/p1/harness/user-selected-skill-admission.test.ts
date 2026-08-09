@@ -30,12 +30,15 @@ import {
 import { DurableSkillInstructionResolver } from '../skills/runtime.js';
 import type { HarnessFrozenPrompt } from './langfuse-prompts.js';
 import {
-  HARNESS_CORE_PROMPT_KEYS,
   HARNESS_LANGFUSE_PROMPT_NAMES,
   type HarnessFrozenPrompts,
   type HarnessPromptResolver,
 } from './langfuse-prompts.js';
 import { createProductionSkillManifestResolver } from './production-skill-manifest-resolver.js';
+import {
+  COPY_TASK_PROMPT_PACK_IDS,
+  promptKeysForPacks,
+} from './prompt-packs.js';
 import {
   HarnessAdmissionError,
   HarnessTaskAdmissionService,
@@ -666,14 +669,17 @@ test('admission freezes selection, skill stages, route digest, prompts, catalog 
     fingerprintValue(frozen.frozenRouteSnapshot),
   );
   assert.ok(frozen.promptRevisionRefs);
-  assert.ok(
-    Object.keys(frozen.promptRevisionRefs!).length >=
-      HARNESS_CORE_PROMPT_KEYS.length,
+  // V31-20 selective freeze: a pure-copy task pins its declared packs and
+  // nothing else, so the assertion is the pack set — not the whole registry.
+  const copyPromptKeys = promptKeysForPacks(COPY_TASK_PROMPT_PACK_IDS);
+  assert.deepEqual(
+    Object.keys(frozen.promptRevisionRefs!).sort(),
+    [...copyPromptKeys].sort(),
   );
-  for (const key of HARNESS_CORE_PROMPT_KEYS) {
+  for (const key of copyPromptKeys) {
     assert.ok(
       frozen.promptRevisionRefs![key],
-      `core prompt ${key} must be frozen on the request`,
+      `declared pack prompt ${key} must be frozen on the request`,
     );
   }
   assert.deepEqual(frozen.executionAssembly!.rootAxes.catalogRevision, {

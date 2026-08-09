@@ -125,7 +125,7 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
 
   assert.deepEqual(await runGate('run-p2-browser-acceptance.sh'), [
     `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/image-text-note-compiler.spec.ts tests/e2e/specs/viral-adapt-opencli-gate.spec.ts tests/e2e/specs/p2-browser-closure.spec.ts tests/e2e/specs/admin-sensitive-words.spec.ts tests/e2e/specs/composer-card-family.spec.ts',
+    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/image-text-note-compiler.spec.ts tests/e2e/specs/viral-adapt-opencli-gate.spec.ts tests/e2e/specs/p2-browser-closure.spec.ts tests/e2e/specs/admin-sensitive-words.spec.ts tests/e2e/specs/composer-card-family.spec.ts tests/e2e/specs/v31-ops-console-release-journey.spec.ts',
   ]);
 
   const p2Script = await readFile(
@@ -137,6 +137,7 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
   assert.match(p2Script, /PLAYWRIGHT_PROVIDER_FREE=true/);
   assert.match(p2Script, /MODEL_EXECUTION_MODE=fixture/);
   assert.match(p2Script, /p2-browser-closure\.spec\.ts/);
+  assert.match(p2Script, /v31-ops-console-release-journey\.spec\.ts/);
   assert.doesNotMatch(p2Script, /API_KEY|PROVIDER_LIVE|STRIPE_SECRET_KEY/);
 
   assert.deepEqual(await runGate('run-v31-browser-acceptance.sh'), [

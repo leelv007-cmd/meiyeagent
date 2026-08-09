@@ -31,6 +31,7 @@ import {
   skillPromptSnapshotPortFromHarness,
 } from './index.js';
 import { DurableSkillInstructionResolver } from './runtime.js';
+import { frozenHarnessPrompt } from '../harness/frozen-prompt.testing.js';
 
 function promptReference(prompt: {
   contentHash: string;
@@ -2082,7 +2083,8 @@ test(
       assert.equal(
         (
           await nameHarnessIntent(
-            { ...intentInput, skillInstructions: current.allowlist },
+            {
+            prompt: frozenHarnessPrompt('intentNaming'), ...intentInput, skillInstructions: current.allowlist },
             runner,
           )
         ).declaration.route,
@@ -2091,7 +2093,8 @@ test(
       assert.equal(
         (
           await nameHarnessIntent(
-            { ...intentInput, skillInstructions: restored.allowlist },
+            {
+            prompt: frozenHarnessPrompt('intentNaming'), ...intentInput, skillInstructions: restored.allowlist },
             runner,
           )
         ).declaration.route,

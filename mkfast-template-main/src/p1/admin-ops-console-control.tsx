@@ -19,6 +19,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Table,
   TableBody,
@@ -90,6 +91,19 @@ export function AdminOpsConsoleControl() {
   const [toolDescription, setToolDescription] = useState('');
   const [toolReason, setToolReason] = useState('');
   const [killReason, setKillReason] = useState('');
+  const [publishReleaseId, setPublishReleaseId] = useState('');
+  const [publishVersion, setPublishVersion] = useState('1');
+  const [publishToolPolicy, setPublishToolPolicy] = useState('tool-policy/v1');
+  const [publishManifest, setPublishManifest] = useState('');
+  const [publishReason, setPublishReason] = useState('');
+  const [evalReleaseId, setEvalReleaseId] = useState('');
+  const [evalReason, setEvalReason] = useState('');
+  const [evalTrace, setEvalTrace] = useState('');
+  const [drillEvidence, setDrillEvidence] = useState('');
+  const [evalObservation, setEvalObservation] = useState<{
+    releaseId: string;
+    verdict: string;
+  } | null>(null);
 
   const releasesQuery = useQuery({
     queryKey: p1QueryKeys.request(MODULE, 'list_releases'),
@@ -116,6 +130,29 @@ export function AdminOpsConsoleControl() {
     queryFn: () =>
       queryP1<OpsToolPolicyListView>(MODULE, { action: 'list_tool_policies' }),
   });
+  const trialsQuery = useQuery({
+    queryKey: p1QueryKeys.request(MODULE, 'list_candidate_trials'),
+    queryFn: () =>
+      queryP1<{
+        items: Array<{
+          workspaceId: string;
+          candidateReleaseId: string;
+          consumedByRunId: string | null;
+        }>;
+      }>(MODULE, { action: 'list_candidate_trials' }),
+  });
+  const runPinsQuery = useQuery({
+    queryKey: p1QueryKeys.request(MODULE, 'list_recent_run_pins'),
+    queryFn: () =>
+      queryP1<{
+        items: Array<{
+          runId: string;
+          workspaceId: string;
+          harnessReleaseId: string;
+          status: string;
+        }>;
+      }>(MODULE, { action: 'list_recent_run_pins' }),
+  });
 
   const invalidateAll = async () => {
     await Promise.all([
@@ -137,6 +174,64 @@ export function AdminOpsConsoleControl() {
     onSuccess: async () => {
       toast.success('Promoted to production');
       setPromoteReason('');
+      await invalidateAll();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const publishMutation = useMutation({
+    mutationFn: () => {
+      const manifest = JSON.parse(publishManifest) as Record<string, unknown>;
+      return commandP1(MODULE, {
+        action: 'publish_release',
+        payload: {
+          ...manifest,
+          releaseId: publishReleaseId.trim(),
+          version: Number(publishVersion),
+          toolPolicyRevision: publishToolPolicy.trim(),
+          reason: publishReason.trim(),
+        },
+      });
+    },
+    onSuccess: async () => {
+      toast.success('Published exact-pin candidate');
+      setPublishReason('');
+      await invalidateAll();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const evalMutation = useMutation({
+    mutationFn: () =>
+      commandP1<{ releaseId: string; verdict: string }>(MODULE, {
+        action: 'run_release_eval',
+        payload: {
+          releaseId: evalReleaseId.trim(),
+          reason: evalReason.trim(),
+          trace: JSON.parse(evalTrace) as Record<string, unknown>,
+        },
+      }),
+    onSuccess: async (result) => {
+      setEvalObservation(result);
+      toast.success('Release-bound eval recorded');
+      await invalidateAll();
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  const drillMutation = useMutation({
+    mutationFn: () =>
+      commandP1(MODULE, {
+        action: 'record_rollback_drill',
+        payload: {
+          releaseId: evalReleaseId.trim(),
+          result: 'passed',
+          reason: evalReason.trim(),
+          evidence: drillEvidence.trim(),
+        },
+      }),
+    onSuccess: async () => {
+      toast.success('Rollback drill recorded');
       await invalidateAll();
     },
     onError: (error: Error) => toast.error(error.message),
@@ -355,7 +450,11 @@ export function AdminOpsConsoleControl() {
                   ...buckets.draft,
                   ...buckets.other,
                 ].map((item) => (
-                  <TableRow key={item.releaseId}>
+                  <TableRow
+                    key={item.releaseId}
+                    data-testid={`admin-ops-console-release-${item.releaseId}`}
+                    data-status={item.status}
+                  >
                     <TableCell className="font-mono text-xs">
                       {item.releaseId}
                       <span className="ml-2 text-muted-foreground">
@@ -397,6 +496,118 @@ export function AdminOpsConsoleControl() {
             className="grid gap-3 md:grid-cols-2"
             data-testid="admin-ops-console-release-actions"
           >
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-sm font-medium">Publish exact-pin candidate</p>
+              <Input
+                data-testid="admin-ops-console-publish-release"
+                placeholder="releaseId"
+                value={publishReleaseId}
+                onChange={(event) => setPublishReleaseId(event.target.value)}
+              />
+              <Input
+                data-testid="admin-ops-console-publish-version"
+                placeholder="version"
+                value={publishVersion}
+                onChange={(event) => setPublishVersion(event.target.value)}
+              />
+              <Input
+                data-testid="admin-ops-console-publish-tool-policy"
+                placeholder="tool policy revision"
+                value={publishToolPolicy}
+                onChange={(event) => setPublishToolPolicy(event.target.value)}
+              />
+              <Textarea
+                data-testid="admin-ops-console-publish-manifest"
+                placeholder="full HarnessRelease manifest JSON"
+                value={publishManifest}
+                onChange={(event) => setPublishManifest(event.target.value)}
+              />
+              <Input
+                data-testid="admin-ops-console-publish-reason"
+                placeholder="reason"
+                value={publishReason}
+                onChange={(event) => setPublishReason(event.target.value)}
+              />
+              <Button
+                data-testid="admin-ops-console-publish-submit"
+                type="button"
+                size="sm"
+                disabled={
+                  !publishReleaseId.trim() ||
+                  !publishManifest.trim() ||
+                  !publishReason.trim() ||
+                  publishMutation.isPending
+                }
+                onClick={() => publishMutation.mutate()}
+              >
+                Publish
+              </Button>
+            </div>
+
+            <div className="space-y-2 rounded-md border p-3">
+              <p className="text-sm font-medium">Release-bound quick check</p>
+              <Input
+                data-testid="admin-ops-console-eval-release"
+                placeholder="releaseId"
+                value={evalReleaseId}
+                onChange={(event) => setEvalReleaseId(event.target.value)}
+              />
+              <Input
+                data-testid="admin-ops-console-eval-reason"
+                placeholder="reason"
+                value={evalReason}
+                onChange={(event) => setEvalReason(event.target.value)}
+              />
+              <Textarea
+                data-testid="admin-ops-console-eval-trace"
+                placeholder="QuickCheckTrace JSON"
+                value={evalTrace}
+                onChange={(event) => setEvalTrace(event.target.value)}
+              />
+              <Button
+                data-testid="admin-ops-console-eval-submit"
+                type="button"
+                size="sm"
+                disabled={
+                  !evalReleaseId.trim() ||
+                  !evalReason.trim() ||
+                  !evalTrace.trim() ||
+                  evalMutation.isPending
+                }
+                onClick={() => evalMutation.mutate()}
+              >
+                Run production evaluator
+              </Button>
+              {evalObservation ? (
+                <p
+                  data-testid="admin-ops-console-eval-observation"
+                  className="text-xs"
+                >
+                  {evalObservation.releaseId}: {evalObservation.verdict}
+                </p>
+              ) : null}
+              <Input
+                data-testid="admin-ops-console-drill-evidence"
+                placeholder="rollback drill evidence"
+                value={drillEvidence}
+                onChange={(event) => setDrillEvidence(event.target.value)}
+              />
+              <Button
+                data-testid="admin-ops-console-drill-submit"
+                type="button"
+                size="sm"
+                disabled={
+                  !evalReleaseId.trim() ||
+                  !evalReason.trim() ||
+                  !drillEvidence.trim() ||
+                  drillMutation.isPending
+                }
+                onClick={() => drillMutation.mutate()}
+              >
+                Record passed rollback drill
+              </Button>
+            </div>
+
             <div className="space-y-2 rounded-md border p-3">
               <p className="text-sm font-medium">Advance lifecycle</p>
               <Input
@@ -640,6 +851,46 @@ export function AdminOpsConsoleControl() {
         </FramePanel>
       </Frame>
 
+      <Frame data-testid="admin-ops-console-run-pins">
+        <FrameHeader>
+          <FrameTitle>Recent release pins</FrameTitle>
+        </FrameHeader>
+        <FramePanel className="space-y-1">
+          <Button
+            data-testid="admin-ops-console-refresh-run-pins"
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={runPinsQuery.isFetching}
+            onClick={() => void runPinsQuery.refetch()}
+          >
+            Refresh release pins
+          </Button>
+          {trialsQuery.data?.items.map((item) => (
+            <p
+              key={item.workspaceId}
+              data-testid={`admin-ops-console-trial-observation-${item.candidateReleaseId}`}
+              className="text-xs"
+            >
+              trial {item.workspaceId}: {item.candidateReleaseId} /{' '}
+              {item.consumedByRunId ?? 'pending'}
+            </p>
+          ))}
+          {runPinsQuery.data?.items.map((item) => (
+            <p
+              key={item.runId}
+              data-testid="admin-ops-console-run-pin"
+              data-run-id={item.runId}
+              data-run-status={item.status}
+              className="text-xs"
+            >
+              {item.workspaceId}: {item.runId} / {item.harnessReleaseId} /{' '}
+              {item.status}
+            </p>
+          ))}
+        </FramePanel>
+      </Frame>
+
       <Frame data-testid="admin-ops-console-tool-policy">
         <FrameHeader>
           <FrameTitle>{admin_ops_console_tool_policy_title()}</FrameTitle>
@@ -819,7 +1070,10 @@ export function AdminOpsConsoleControl() {
             </TableHeader>
             <TableBody>
               {(auditQuery.data?.items ?? []).map((entry) => (
-                <TableRow key={entry.id}>
+                <TableRow
+                  key={entry.id}
+                  data-testid="admin-ops-console-audit-row"
+                >
                   <TableCell className="text-xs">{entry.createdAt}</TableCell>
                   <TableCell className="font-mono text-xs">
                     {entry.operatorId}
@@ -837,6 +1091,9 @@ export function AdminOpsConsoleControl() {
                         evidence: {entry.evidence}
                       </div>
                     ) : null}
+                    <div className="text-muted-foreground">
+                      detail: {JSON.stringify(entry.detail)}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}

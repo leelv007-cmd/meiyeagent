@@ -105,7 +105,8 @@ export type ComposerPlanSessionOptions = {
   requireQuoteAuthority?: boolean;
   quoteAuthority?: ComposerPlanQuoteAuthority;
   resolveHarnessReleaseId?: (
-    submission: CreationSubmissionRecord
+    submission: CreationSubmissionRecord,
+    runId: string,
   ) => string | Promise<string>;
   /**
    * V31-18 P0-1 (出口): memory is advisory. `prepare()` runs *after*
@@ -145,7 +146,8 @@ export class ComposerPlanSessionCoordinator
 {
   private readonly now: () => string;
   private readonly resolveHarnessReleaseId: (
-    submission: CreationSubmissionRecord
+    submission: CreationSubmissionRecord,
+    runId: string,
   ) => string | Promise<string>;
   private readonly quoteAuthority?: ComposerPlanQuoteAuthority;
   private readonly onMemoryDegraded:
@@ -214,7 +216,7 @@ export class ComposerPlanSessionCoordinator
           expectedSessionRevision: thread.sessionRevision,
           runId,
           trigger: 'merchant_turn',
-          harnessReleaseId: await this.resolveHarnessReleaseId(submission),
+          harnessReleaseId: await this.resolveHarnessReleaseId(submission, runId),
           now,
         });
 

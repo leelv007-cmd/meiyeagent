@@ -3,6 +3,8 @@
  * Memory implementations are test-only; production uses Postgres.
  */
 
+import { P1DomainError } from '../foundation/domain.js';
+import type { OpsConsoleAuditEntry } from './audit.js';
 import {
   OPS_KILL_SWITCH_IDS,
   type OpsKillSwitchId,
@@ -15,6 +17,37 @@ export type OpsCandidateTrial = {
   operatorId: string;
   reason: string;
   updatedAt: string;
+  expiresAt: string;
+  consumedByRunId: string | null;
+  consumedAt: string | null;
+};
+
+export function parseOpsCandidateTrial(value: unknown): OpsCandidateTrial {
+  if (!value || typeof value !== 'object') {
+    throw new P1DomainError('INVALID_STATE', 'Candidate trial payload is invalid.');
+  }
+  const trial = value as Record<string, unknown>;
+  const requiredStrings = ['workspaceId', 'candidateReleaseId', 'operatorId', 'reason', 'updatedAt', 'expiresAt'] as const;
+  if (requiredStrings.some((key) => typeof trial[key] !== 'string' || !(trial[key] as string).trim())) {
+    throw new P1DomainError('INVALID_STATE', 'Candidate trial payload is missing required expiry-bound fields.');
+  }
+  if (Number.isNaN(Date.parse(trial.updatedAt as string)) || Number.isNaN(Date.parse(trial.expiresAt as string))) {
+    throw new P1DomainError('INVALID_STATE', 'Candidate trial timestamps are invalid.');
+  }
+  if (trial.consumedByRunId !== null && typeof trial.consumedByRunId !== 'string') {
+    throw new P1DomainError('INVALID_STATE', 'Candidate trial consumedByRunId is invalid.');
+  }
+  if (trial.consumedAt !== null && typeof trial.consumedAt !== 'string') {
+    throw new P1DomainError('INVALID_STATE', 'Candidate trial consumedAt is invalid.');
+  }
+  return structuredClone(value as OpsCandidateTrial);
+}
+
+export type OpsRollbackOperation = {
+  id: string;
+  toReleaseId: string;
+  audit: OpsConsoleAuditEntry;
+  createdAt: string;
 };
 
 export type OpsRollbackDrillRecord = {
@@ -36,7 +69,20 @@ export interface OpsKillSwitchStore {
 
 export interface OpsCandidateTrialStore {
   putCandidateTrial(trial: OpsCandidateTrial): Promise<OpsCandidateTrial>;
+  getCandidateTrial(workspaceId: string): Promise<OpsCandidateTrial | null>;
+  consumeCandidateTrial(input: {
+    workspaceId: string;
+    runId: string;
+    now: string;
+  }): Promise<OpsCandidateTrial | null>;
+  clearCandidateTrials(): Promise<void>;
   listCandidateTrials(): Promise<OpsCandidateTrial[]>;
+}
+
+export interface OpsRollbackOperationStore {
+  beginRollbackOperation(operation: OpsRollbackOperation): Promise<void>;
+  listPendingRollbackOperations(): Promise<OpsRollbackOperation[]>;
+  completeRollbackOperation(operationId: string): Promise<OpsConsoleAuditEntry>;
 }
 
 export interface OpsRollbackDrillStore {
@@ -95,7 +141,7 @@ export class MemoryOpsCandidateTrialStore implements OpsCandidateTrialStore {
   async putCandidateTrial(
     trial: OpsCandidateTrial,
   ): Promise<OpsCandidateTrial> {
-    const copy = structuredClone(trial);
+    const copy = parseOpsCandidateTrial(trial);
     this.byWorkspace.set(trial.workspaceId, copy);
     return structuredClone(copy);
   }
@@ -104,6 +150,31 @@ export class MemoryOpsCandidateTrialStore implements OpsCandidateTrialStore {
     return [...this.byWorkspace.values()]
       .map((item) => structuredClone(item))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async getCandidateTrial(workspaceId: string): Promise<OpsCandidateTrial | null> {
+    const item = this.byWorkspace.get(workspaceId);
+    return item ? parseOpsCandidateTrial(item) : null;
+  }
+
+  async consumeCandidateTrial(input: { workspaceId: string; runId: string; now: string }) {
+    const item = this.byWorkspace.get(input.workspaceId);
+    if (!item || item.expiresAt <= input.now) {
+      if (item) this.byWorkspace.delete(input.workspaceId);
+      return null;
+    }
+    if (item.consumedByRunId && item.consumedByRunId !== input.runId) return null;
+    const consumed = {
+      ...item,
+      consumedByRunId: input.runId,
+      consumedAt: item.consumedAt ?? input.now,
+    };
+    this.byWorkspace.set(input.workspaceId, consumed);
+    return structuredClone(consumed);
+  }
+
+  async clearCandidateTrials(): Promise<void> {
+    this.byWorkspace.clear();
   }
 }
 

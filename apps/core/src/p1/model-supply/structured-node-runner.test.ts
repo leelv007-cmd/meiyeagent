@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { z } from 'zod';
 
@@ -600,6 +601,7 @@ test('D-035 measures one real schema repair as first-pass miss, repair, and retr
 
   const named = await nameHarnessIntent(
     {
+      prompt: pinnedIntentNamingPrompt(),
       workflowId: 'workflow-real-repair',
       workflowRevision: 1,
       intent: {
@@ -1335,6 +1337,7 @@ test('D-035 counts a call when both the first pass and bounded repair fail', asy
 
   const named = await nameHarnessIntent(
     {
+      prompt: pinnedIntentNamingPrompt(),
       workflowId: 'workflow-double-schema-failure',
       workflowRevision: 1,
       intent: {
@@ -1439,6 +1442,7 @@ test('D-035 measures one real schema repair as first-pass miss, repair, and retr
 
   const named = await nameHarnessIntent(
     {
+      prompt: pinnedIntentNamingPrompt(),
       workflowId: 'workflow-real-repair',
       workflowRevision: 1,
       intent: {
@@ -2266,4 +2270,17 @@ function openAiStreamResponse(contentChunks: string[]) {
     `${chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('')}data: [DONE]\n\n`,
     { headers: { 'content-type': 'text/event-stream' } },
   );
+}
+
+function pinnedIntentNamingPrompt() {
+  const content = 'frozen:intentNaming';
+  return {
+    name: 'harness/intent-naming',
+    version: '1',
+    content,
+    contentHash: createHash('sha256').update(content).digest('hex'),
+    label: 'production',
+    source: 'langfuse' as const,
+    isFallback: false,
+  };
 }

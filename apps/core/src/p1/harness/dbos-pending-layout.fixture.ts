@@ -14,6 +14,7 @@ const workspaceId = 'workspace-replay';
 const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
 DBOS.setConfig({
   name: 'beauty-marketing-harness-replay',
+  runAdminServer: false,
   systemDatabaseUrl,
   applicationVersion,
 });

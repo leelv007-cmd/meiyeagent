@@ -15,6 +15,7 @@ export {
 export {
   OpsConsoleService,
   hashToolPolicyDraft,
+  resolveWorkspaceHarnessRelease,
   type OpsCandidateTrial,
   type OpsConsoleServiceDeps,
   type OpsReleaseListItem,

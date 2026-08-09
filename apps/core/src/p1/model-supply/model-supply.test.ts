@@ -15,6 +15,7 @@ import {
   type ProviderExecutionRequest,
   type ProviderExecutionResponse,
 } from './index.js';
+import { pinnedPromptResolver } from './prompt-pin.testing.js';
 
 const models: CatalogModel[] = [
   {
@@ -131,6 +132,7 @@ const deployments: ModelDeployment[] = [
 
 function service() {
   return new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models,
     deployments,
     execution: new RecordedProviderExecutionPort(),
@@ -172,6 +174,7 @@ function governedCopyFallbackDeployments() {
 
 test('historical Canvas submissions keep input assets without inventing empty node lineage', () => {
   const historicalService = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [
       ...models,
       {
@@ -396,6 +399,7 @@ test('prompt fallback audit identity ignores correlation ids and includes frozen
   ) => {
     const audits: Array<{ id: string }> = [];
     const app = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models,
       deployments,
       execution: new RecordedProviderExecutionPort(),
@@ -449,6 +453,38 @@ test('prompt fallback audit identity ignores correlation ids and includes frozen
   assert.notEqual(first, changedVersion);
   assert.notEqual(first, changedSource);
   assert.notEqual(first, changedReason);
+});
+
+test('a language model submission with no resolvable prompt pin fails closed', async () => {
+  const unpinned = new ModelSupplyApplicationService({
+    models,
+    deployments,
+    execution: new RecordedProviderExecutionPort(),
+  });
+
+  for (const operation of ['copy.generate', 'text.respond'] as const) {
+    await assert.rejects(
+      unpinned.prepareSubmission({
+        workspaceId: 'workspace-unpinned',
+        actorId: 'owner-unpinned',
+        correlationId: 'correlation-unpinned',
+        idempotencyKey: `unpinned-${operation}`,
+        operation,
+        selection: {
+          mode: 'fixed',
+          catalogModelId:
+            operation === 'copy.generate' ? 'copy-quality' : 'copy-quality',
+        },
+        dataClass: [],
+        prompt: 'Run without a pinned prompt.',
+      }),
+      new RegExp(
+        `Model supply submission for ${operation.replace('.', '\\.')} has no pinned prompt binding`,
+        'u',
+      ),
+      'an unpinned generation is indistinguishable at runtime from a pinned one and breaks rollback and eval attribution',
+    );
+  }
 });
 
 test('explicit frozen prompt binding wins on replay and resolver failures stop before provider I/O', async () => {
@@ -558,6 +594,7 @@ test('text.respond accepts the frozen viral image-vision prompt binding', async 
     operations: ['text.respond' as const],
   };
   const app = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [textModel],
     deployments: [
       {
@@ -608,6 +645,7 @@ test('fixed selection never crosses CatalogModel and inactive deployments cannot
       : deployment
   );
   const app = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models,
     deployments: inactive,
     execution: new RecordedProviderExecutionPort(),
@@ -647,6 +685,7 @@ test('OpenAI, Anthropic and Gemini direct profiles share the recorded LLM contra
 
 test('language quality probe rejects text output for copy.generate', async () => {
   const app = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models,
     deployments,
     execution: {
@@ -680,6 +719,7 @@ test('language quality probe rejects text output for copy.generate', async () =>
 
 test('language quality probe rejects copy candidates for copy.adapt', async () => {
   const app = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [
       {
         ...models[0]!,
@@ -706,6 +746,7 @@ test('language quality probe rejects copy candidates for copy.adapt', async () =
 
 test('language quality probe rejects copy candidates for text.respond', async () => {
   const app = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [
       {
         ...models[0]!,
@@ -790,6 +831,7 @@ test('language quality probe rejects empty operation-shaped output', async () =>
 
   for (const { operation, response } of cases) {
     const app = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models: [
         {
           ...models[0]!,
@@ -821,6 +863,7 @@ test('language quality probe rejects empty operation-shaped output', async () =>
 
 test('custom LLM executes only by fixed selection and freezes its API family', async () => {
   const app = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [
       {
         id: 'llm-custom',
@@ -871,7 +914,7 @@ test('custom LLM executes only by fixed selection and freezes its API family', a
 
 test('safe-only copy refunds acceptance_unknown and never retries another model', async () => {
   const execution = new RecordedProviderExecutionPort();
-  const app = new ModelSupplyApplicationService({ models, deployments, execution });
+  const app = new ModelSupplyApplicationService({ promptResolver: pinnedPromptResolver, models, deployments, execution });
   execution.failNext('copy-quality', 'acceptance_unknown');
 
   const result = await app.submit({
@@ -900,6 +943,7 @@ test('a provider rejection before acceptance can be retried instead of replaying
     },
   };
   const app = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models,
     deployments,
     execution,
@@ -1004,6 +1048,7 @@ test('Auto settles and refunds before an undeclared cross-model fallback', async
   let settlementCalls = 0;
   let settledUsageStatus: string | undefined;
   const app = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models,
     deployments,
     execution: {
@@ -1127,6 +1172,7 @@ test('Auto records every pre-accept fallback attempt and provider cost under one
 test('Auto keeps Product Core as the only retry owner and stops after two pre-accept attempts', async () => {
   const execution = new RecordedProviderExecutionPort();
   const app = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models,
     deployments: governedCopyFallbackDeployments(),
     execution,
@@ -1151,7 +1197,7 @@ test('Auto keeps Product Core as the only retry owner and stops after two pre-ac
 
 test('Auto honors explicit frozen fallback refusal after rejection-before-accept', async () => {
   const execution = new RecordedProviderExecutionPort();
-  const app = new ModelSupplyApplicationService({ models, deployments, execution });
+  const app = new ModelSupplyApplicationService({ promptResolver: pinnedPromptResolver, models, deployments, execution });
   execution.failNext('copy-quality', 'rejected_before_accept');
   const result = await app.submit({
     workspaceId: 'workspace-a',
@@ -1190,6 +1236,7 @@ test('all admitted image and video models use the same durable asset and cost co
 test('application service writes a completed generation through the repository sink before returning', async () => {
   const persisted: Array<{ workspaceId: string; jobId: string }> = [];
   const app = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models,
     deployments,
     execution: new RecordedProviderExecutionPort(),
@@ -1249,6 +1296,7 @@ test('deployment data-class policy honors regional defaults and explicit restric
       : deployment
   );
   const app = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models,
     deployments: restrictedDeployments,
     execution: new RecordedProviderExecutionPort(),
@@ -1282,6 +1330,7 @@ test('deployment data-class policy honors regional defaults and explicit restric
   );
 
   const overseasCannotExpand = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models,
     deployments: deployments.map((deployment) =>
       deployment.catalogModelId === 'copy-quality'
@@ -1376,6 +1425,7 @@ test('frozen routes execute the credential, policy, price, channel, and model ve
       : deployment
   );
   const app = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: originalModels,
     deployments: originalDeployments,
     execution: {
@@ -1484,6 +1534,7 @@ test('frozen routes survive worker restart after their catalog entries are delet
     },
   };
   const snapshot = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [frozenModel],
     deployments: [frozenDeployment],
     execution: new RecordedProviderExecutionPort(),
@@ -1496,6 +1547,7 @@ test('frozen routes survive worker restart after their catalog entries are delet
 
   let executed: ProviderExecutionRequest | undefined;
   const restartedWorker = new ModelSupplyApplicationService({
+    promptResolver: pinnedPromptResolver,
     models: [],
     deployments: [],
     execution: {
@@ -1527,6 +1579,7 @@ test('frozen routes survive worker restart after their catalog entries are delet
 test('Bifrost and LiteLLM isolated PoC ports satisfy the same LLM result contract without owning catalog state', async () => {
   for (const gateway of ['bifrost', 'litellm'] as const) {
     const app = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       models,
       deployments,
       execution: new RecordedGatewayPocPort(gateway),

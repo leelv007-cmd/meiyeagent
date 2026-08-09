@@ -18,6 +18,7 @@ import { ModelSupplyProductCopyProvider } from './model-supply-copy-provider.js'
 import type { ProductQualityEvent } from './quality-sink.js';
 import type { LegacyInFlightDecision } from './legacy-inflight-decision.js';
 import type { HandoffPackage, ProductState } from '@meiye/contracts';
+import { pinnedPromptResolver } from '../p1/model-supply/prompt-pin.testing.js';
 
 const merchant = {
   actor: 'user' as const,
@@ -2089,6 +2090,7 @@ describe('product golden journey', () => {
     const repository = new MemoryProductRepository();
     repository.grantMembership('user-a', 'workspace-a');
     const modelSupply = new ModelSupplyApplicationService({
+      promptResolver: pinnedPromptResolver,
       deployments: createDefaultDeployments({
         activatedDeploymentIds: [
           'openai-direct-recorded',

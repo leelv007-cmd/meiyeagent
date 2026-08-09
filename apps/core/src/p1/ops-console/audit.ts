@@ -6,11 +6,13 @@
 
 export type OpsConsoleAuditAction =
   | 'publish_release'
+  | 'run_release_eval'
   | 'transition_lifecycle'
   | 'set_canary_allowlist'
   | 'set_candidate_trial'
   | 'promote_to_production'
   | 'rollback_production'
+  | 'authorize_production_history'
   | 'record_rollback_drill'
   | 'create_tool_policy_revision'
   | 'set_kill_switch'
