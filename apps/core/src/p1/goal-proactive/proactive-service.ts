@@ -277,9 +277,9 @@ export class ProactiveService {
       thread = await this.deps.threads.createThread({
         resourceId: input.resourceId,
         threadId,
-        title: input.reason.slice(0, 200) || '主动建议',
+        title: acceptedReason.slice(0, 200) || '主动建议',
         now: input.now,
-        activeGoalIds: input.goalId ? [input.goalId] : [],
+        activeGoalIds: acceptedGoalId ? [acceptedGoalId] : [],
       });
     }
 

@@ -17,6 +17,7 @@ import type {
 } from '@meiye/contracts';
 
 import type { ComposerSessionPhase } from './composer-session';
+import type { NotePlanTimeline } from './note-plan-timeline';
 
 export type SteeringApplicationStatus =
   | 'accepted'
@@ -123,6 +124,65 @@ export type SteeringImpactView = SteeringImpactProjection & {
  * Read Core's answer. Nothing is recomputed here: a browser that recalculated
  * scope or credits would be inventing a second truth about the merchant's run.
  */
+/** Unit progress Core classifies against (steering_submit `units`). */
+export type SteeringUnitProgress = {
+  unitId: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  label?: string;
+  pageIndex?: number;
+};
+
+const IMAGE_STATUS_TO_UNIT_STATUS: Record<
+  NotePlanTimeline['pages'][number]['imageStatus'],
+  SteeringUnitProgress['status']
+> = {
+  pending: 'pending',
+  generating: 'running',
+  ready: 'completed',
+  failed: 'failed',
+};
+
+
+/**
+ * Note pages as Make units. The outline is Core's own projection
+ * (`notePlanPreview` → note-plan timeline), so naming 封面 / 第N页 here is
+ * relabelling what the merchant already sees, not inventing a plan.
+ *
+ * Without an outline the list is empty and Core answers 「无法确定影响范围」 —
+ * which is the honest reply, and the one that asks the merchant to name a page.
+ */
+export function steeringUnitsFromNotePlan(
+  timeline: NotePlanTimeline | null | undefined,
+  options: {
+    /**
+     * False while the run still holds on the paid-media execution_confirm.
+     *
+     * The outline turns every page 「配图中」 as soon as `execution_selection`
+     * reports `suspended`, and that suspension *is* the confirmation gate — the
+     * quote and the usage reservation are what it is waiting on, so not one
+     * provider call has gone out. Reading that label as work-in-flight would
+     * tell the merchant her free edit costs credits (live-caught 2026-08-09).
+     *
+     * Defaults to true: assuming a call already happened is the safe error,
+     * since the opposite direction promises a change is free and then bills it.
+     */
+    generationStarted?: boolean;
+  } = {}
+): SteeringUnitProgress[] {
+  if (!timeline) return [];
+  const started = options.generationStarted ?? true;
+  return timeline.pages.map((page) => {
+    const cover = page.pageRole === 'cover' || page.order === 1;
+    return {
+      unitId: page.pageId,
+      status: started
+        ? IMAGE_STATUS_TO_UNIT_STATUS[page.imageStatus]
+        : 'pending',
+      label: cover ? '封面' : `第${page.order}页`,
+      pageIndex: Math.max(0, page.order - 1),
+    };
+  });
+}
 export function projectSteeringImpact(input: {
   result: SteeringSubmitResult;
 }): SteeringImpactView {

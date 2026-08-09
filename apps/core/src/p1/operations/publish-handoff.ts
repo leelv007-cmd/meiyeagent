@@ -441,6 +441,58 @@ export class PublishHandoffService {
   }
 
   /**
+   * Refresh-safe projection for the next-day follow-up. The publish result is
+   * already the canonical durable fact, so completedAt is recovered from the
+   * latest manual publish event instead of browser memory.
+   */
+  async getPublishHandoffRecovery(
+    context: OperationContext,
+    input: {
+      packageId: string;
+      workId: string;
+      platform: string;
+      variantVersionId: string;
+    },
+  ): Promise<{
+    contentPackageId: string;
+    latestRevision: number;
+    publishHandoffCompletedAt: string | null;
+  }> {
+    const state = await this.repository.loadWorkspace(context.workspaceId);
+    const contentPackage = await this.requirePackage(context, input.packageId);
+    const prepared = [...(state?.auditEvents ?? [])]
+      .reverse()
+      .find((event) => {
+        const details = event.details as Record<string, unknown> | undefined;
+        const handoff = details?.handoff as MobilePublishHandoff | undefined;
+        return (
+          event.action === AUDIT_MOBILE_HANDOFF &&
+          details?.workId === input.workId &&
+          details?.variantVersionId === input.variantVersionId &&
+          handoff?.contentPackageRef.id === input.packageId &&
+          handoff.platform === input.platform
+        );
+      });
+    const published = [...(contentPackage.deliveryEvents ?? [])]
+      .reverse()
+      .find((event) => {
+        return (
+          contentPackage.source.workId === input.workId &&
+          event.type === 'manual_publish_result' &&
+          event.status === 'published' &&
+          event.platform === input.platform &&
+          event.variantVersionId === input.variantVersionId
+        );
+      });
+    return {
+      contentPackageId: contentPackage.id,
+      latestRevision: contentPackage.revision,
+      publishHandoffCompletedAt:
+        prepared && published ? published.occurredAt : null,
+    };
+  }
+
+  /**
    * Self-report chip write path: consumes OutcomeEvidence physical writer
    * (recordResultSignal) with exact revision OCC.
    */

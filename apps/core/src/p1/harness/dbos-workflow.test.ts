@@ -1405,6 +1405,8 @@ test('cancellation refunds the effective successor quote, not the superseded hol
       forceCreditRefund: true,
     },
   ]);
+});
+
 test('execution receipt forwards the executor partial delivery basis to settlement', () => {
   const request = {
     workspaceId: 'workspace-note-partial',

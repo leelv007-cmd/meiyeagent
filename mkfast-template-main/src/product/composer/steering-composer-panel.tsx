@@ -33,6 +33,7 @@ import {
   isSteeringEntryVisible,
   projectSteeringHistory,
   projectSteeringImpact,
+  steeringUnitsFromNotePlan,
   type SteeringCommandHistoryItem,
   type SteeringImpactView,
   type SteeringSubmitResult,
@@ -202,6 +203,8 @@ export function SteeringComposerHost({
   phase,
   taskId,
   workId,
+  notePlanTimeline,
+  awaitingExecutionConfirm,
   onCarryToComposer,
   className,
 }: SteeringComposerHostProps) {
