@@ -347,12 +347,15 @@ export class ComposerPlanSessionCoordinator
         harnessReleaseId: started.run.harnessReleaseId,
       });
       // V31-18 P0-1 (出口证明): planning failures propagate but must NOT close
-      // the Run terminally. `submit()` consumed the merchant's credits inside
-      // `store.claim()` *before* calling `prepare()`, and `composerRunId` is a
-      // deterministic function of workspace+task — a terminal Run here would
-      // make the retry with the same idempotencyKey hit `cannot resume from
-      // failed` forever, holding the credits with no exit. Leaving the Run
-      // non-terminal IS the exit: the retry re-enters this branch and
+      // the Run terminally. `submit()` now runs `prepare()` *before*
+      // `store.claim()` (the atomic prepare-before-claim order, V31-39), so a
+      // failure here means claim() never ran — nothing is charged yet. But
+      // `composerRunId` is a deterministic function of workspace+task, and
+      // this Run already exists in the session store from `started` above;
+      // marking it `failed` would make the retry's `prepare()` call hit its
+      // own `started.run.status === 'failed'` guard (~line 294, "cannot
+      // resume from failed") and permanently brick this task. Leaving the
+      // Run non-terminal IS the exit: the retry re-enters this branch and
       // recompiles against the same session revision.
       await this.compile({
         submission,
