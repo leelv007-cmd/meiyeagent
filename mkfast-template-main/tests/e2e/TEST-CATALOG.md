@@ -1066,11 +1066,34 @@ fixture。产品请求不 mock，静态源码断言不能替代以下三条旅�
 ## V3.1 批次旅程（发布交接 §37.4-K / Ops Console AC4 / Day-0 自由创作 §37.4-A）
 
 `v31-browser-acceptance` 是普通 PR 的 required job，使用独立 PostgreSQL/DBOS
-数据库与 fixture 模型边界，显式执行当前已登记的 V3.1 specs，并在成功或
+数据库与 fixture 模型边界，显式执行下表登记的 V3.1 specs，并在成功或
 失败时都上传 `output/ci/v31-browser-acceptance` 及 Playwright test results。
 发布候选 full E2E 另行使用同 SHA release manifest，不会把该条件传播到
 普通 V3.1 browser gate。CI 清单是显式的：新增 V3.1 spec 必须同步更新
 `scripts/ci/run-v31-browser-acceptance.sh` 和本 catalog，不允许靠 glob 静默纳入或遗漏。
+
+**§37.4 A–K 与 spec 文件登记表（gate 逐个文件名索取，缺文件即 fail closed）**
+
+| §37.4 | Spec 文件 | 文件是否已存在 |
+|---|---|---|
+| A | `specs/v31-day0-free-creation-journey.spec.ts` | 是 |
+| B | `specs/v31-level1-copy-journey.spec.ts` | **否（待建）** |
+| B2 | `specs/v31-memory-injection-journey.spec.ts` | **否（待建）** |
+| C | `specs/v31-living-plan-journey.spec.ts` | 是 |
+| D | `specs/v31-video-paid-execution-journey.spec.ts` | **否（待建）** |
+| E, F | `specs/v31-context-fence-journey.spec.ts` | 是 |
+| G | `specs/v31-mid-run-steering-journey.spec.ts` | 是 |
+| H | `specs/v31-interrupt-resume-journey.spec.ts` | 是 |
+| I | `specs/v31-thread-root-workbench.spec.ts` | 是 |
+| J | `specs/v31-ops-console-release-journey.spec.ts` | 是 |
+| K | `specs/v31-publish-handoff-selfreport.spec.ts` | 是 |
+| — Artifact 语义流 | `specs/v31-artifact-growth-journey.spec.ts` | **否（待建）** |
+| — Goal + Proactive Idle | `specs/v31-goal-proactive-idle.spec.ts` | 是 |
+
+四个「待建」文件名即后续 wave 必须使用的确切路径：gate 现在就按名索取，文件不在
+时 `run-v31-browser-acceptance.sh` 在跑 Playwright 之前退出 1 并把缺失清单写入
+`missing-specs.log`，不允许「少跑几条也算绿」。`scripts/ci/quality-gates.test.mjs`
+同时校验仓库里每个 `v31-*.spec.ts` 都在该清单内（反向漂移也 fail closed）。
 
 2026-08-09 登记三个 v3.1 journey spec（此前 v3.1 系列在目录中无登记，deep review 批次指
 出 V31-16/17 缺失）。三个 spec 均为 write-only，实跑归 merge controller；均无

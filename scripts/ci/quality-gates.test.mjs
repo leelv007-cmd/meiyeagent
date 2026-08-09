@@ -1,15 +1,55 @@
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const repositoryRoot = resolve(import.meta.dirname, '../..');
 const releaseCommitSha = 'a'.repeat(40);
 
-async function runGate(scriptName, environment = {}, expectedStatus = 0) {
+// V3.1 §37.4 A–K plus the artifact and goal/proactive journeys. The gate names
+// every spec explicitly, so a journey whose file has not landed keeps CI red.
+const v31AcceptanceSpecs = [
+  'tests/e2e/specs/v31-day0-free-creation-journey.spec.ts',
+  'tests/e2e/specs/v31-level1-copy-journey.spec.ts',
+  'tests/e2e/specs/v31-memory-injection-journey.spec.ts',
+  'tests/e2e/specs/v31-living-plan-journey.spec.ts',
+  'tests/e2e/specs/v31-video-paid-execution-journey.spec.ts',
+  'tests/e2e/specs/v31-context-fence-journey.spec.ts',
+  'tests/e2e/specs/v31-mid-run-steering-journey.spec.ts',
+  'tests/e2e/specs/v31-interrupt-resume-journey.spec.ts',
+  'tests/e2e/specs/v31-thread-root-workbench.spec.ts',
+  'tests/e2e/specs/v31-ops-console-release-journey.spec.ts',
+  'tests/e2e/specs/v31-publish-handoff-selfreport.spec.ts',
+  'tests/e2e/specs/v31-artifact-growth-journey.spec.ts',
+  'tests/e2e/specs/v31-goal-proactive-idle.spec.ts',
+];
+
+async function stageV31SpecTree(presentSpecs) {
+  const stagedRoot = await mkdtemp(join(tmpdir(), 'meiye-v31-specs-'));
+  for (const spec of presentSpecs) {
+    const target = join(stagedRoot, 'mkfast-template-main', spec);
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, '');
+  }
+  return stagedRoot;
+}
+
+async function runGate(
+  scriptName,
+  environment = {},
+  expectedStatus = 0,
+  cwd = repositoryRoot
+) {
   const directory = await mkdtemp(join(tmpdir(), 'meiye-ci-gate-'));
   const logPath = join(directory, 'commands.log');
   const commandStub = `#!/bin/bash
@@ -31,7 +71,7 @@ fi
     '/bin/bash',
     [join(repositoryRoot, 'scripts/ci', scriptName)],
     {
-      cwd: repositoryRoot,
+      cwd,
       encoding: 'utf8',
       env: {
         ...process.env,
@@ -121,11 +161,6 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
   assert.match(p2Script, /p2-browser-closure\.spec\.ts/);
   assert.doesNotMatch(p2Script, /API_KEY|PROVIDER_LIVE|STRIPE_SECRET_KEY/);
 
-  assert.deepEqual(await runGate('run-v31-browser-acceptance.sh'), [
-    `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
-    'pnpm --filter @meiye/web exec playwright test tests/e2e/specs/v31-day0-free-creation-journey.spec.ts tests/e2e/specs/v31-living-plan-journey.spec.ts tests/e2e/specs/v31-context-fence-journey.spec.ts tests/e2e/specs/v31-mid-run-steering-journey.spec.ts tests/e2e/specs/v31-interrupt-resume-journey.spec.ts tests/e2e/specs/v31-thread-root-workbench.spec.ts tests/e2e/specs/v31-ops-console-release-journey.spec.ts tests/e2e/specs/v31-publish-handoff-selfreport.spec.ts tests/e2e/specs/v31-goal-proactive-idle.spec.ts',
-  ]);
-
   const v31Script = await readFile(
     join(repositoryRoot, 'scripts/ci/run-v31-browser-acceptance.sh'),
     'utf8'
@@ -133,6 +168,68 @@ test('the ordinary PR production journey is fixed to one provider-free candidate
   assert.match(v31Script, /PLAYWRIGHT_PROVIDER_FREE=true/);
   assert.match(v31Script, /MODEL_EXECUTION_MODE=fixture/);
   assert.doesNotMatch(v31Script, /API_KEY|PROVIDER_LIVE|STRIPE_SECRET_KEY/);
+});
+
+test('the V3.1 browser gate runs every named §37.4 journey spec', async () => {
+  const stagedRoot = await stageV31SpecTree(v31AcceptanceSpecs);
+
+  assert.deepEqual(
+    await runGate('run-v31-browser-acceptance.sh', {}, 0, stagedRoot),
+    [
+      `node scripts/production-network-boundary-gate.mjs --expected-commit-sha ${releaseCommitSha}`,
+      `pnpm --filter @meiye/web exec playwright test ${v31AcceptanceSpecs.join(
+        ' '
+      )}`,
+    ]
+  );
+});
+
+test('the V3.1 browser gate fails closed when a journey spec is absent', async () => {
+  for (const absentSpec of v31AcceptanceSpecs) {
+    const stagedRoot = await stageV31SpecTree(
+      v31AcceptanceSpecs.filter((spec) => spec !== absentSpec)
+    );
+
+    const result = spawnSync(
+      '/bin/bash',
+      [join(repositoryRoot, 'scripts/ci/run-v31-browser-acceptance.sh')],
+      {
+        cwd: stagedRoot,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          CI_EVIDENCE_DIR: join(stagedRoot, 'evidence'),
+          RELEASE_COMMIT_SHA: releaseCommitSha,
+        },
+      }
+    );
+
+    assert.equal(result.status, 1, `${absentSpec} did not fail the gate`);
+    assert.match(result.stderr, new RegExp(`missing 1 required spec`, 'u'));
+    assert.match(result.stderr, new RegExp(absentSpec.replace(/\./gu, '\\.')));
+    assert.equal(
+      await readFile(join(stagedRoot, 'evidence/missing-specs.log'), 'utf8'),
+      result.stderr
+    );
+  }
+});
+
+test('every V3.1 spec in the repository is registered in the required gate', async () => {
+  const specFiles = await readdir(
+    join(repositoryRoot, 'mkfast-template-main/tests/e2e/specs')
+  );
+  const repositoryV31Specs = specFiles
+    .filter((file) => file.startsWith('v31-') && file.endsWith('.spec.ts'))
+    .map((file) => `tests/e2e/specs/${file}`);
+
+  const unregistered = repositoryV31Specs.filter(
+    (spec) => !v31AcceptanceSpecs.includes(spec)
+  );
+  assert.deepEqual(
+    unregistered,
+    [],
+    'add new V3.1 specs to run-v31-browser-acceptance.sh and TEST-CATALOG.md'
+  );
 });
 
 test('the provider-free production candidate removes every commerce setting', () => {
@@ -412,4 +509,47 @@ test('workflows wire fast, release-candidate, SCA, and provider-live gates', asy
     providerLive.indexOf('name: Initialize redacted live evidence') <
       providerLive.indexOf('name: Provider live preflight')
   );
+});
+
+function extractJobBlock(workflow, jobName) {
+  const block = workflow.match(
+    new RegExp(`^ {2}${jobName}:$([\\s\\S]*?)(?=^ {2}\\S|(?![\\s\\S]))`, 'mu')
+  );
+  assert.ok(block, `job ${jobName} is missing from the workflow`);
+  return block[1];
+}
+
+test('the required aggregate blocks on exactly the jobs the checker enforces', async () => {
+  const coreQuality = await readFile(
+    join(repositoryRoot, '.github/workflows/core-quality.yml'),
+    'utf8'
+  );
+  const checker = await readFile(
+    join(repositoryRoot, 'scripts/ci/assert-required-jobs.mjs'),
+    'utf8'
+  );
+
+  const requiredBlock = extractJobBlock(coreQuality, 'required');
+  const declaredNeeds = [
+    ...requiredBlock.matchAll(/^ {6}- ([a-z0-9-]+)$/gmu),
+  ].map((match) => match[1]);
+  const enforcedJobs = [...checker.matchAll(/\[\s*'([a-z0-9-]+)',/gu)].map(
+    (match) => match[1]
+  );
+
+  assert.deepEqual([...declaredNeeds].sort(), [...enforcedJobs].sort());
+  for (const jobName of declaredNeeds) {
+    extractJobBlock(coreQuality, jobName);
+  }
+
+  // Ordinary browser acceptance must not inherit the opt-in release-manifest
+  // dependency; only the release-candidate e2e job may depend on it.
+  for (const jobName of ['p2-browser-acceptance', 'v31-browser-acceptance']) {
+    const jobBlock = extractJobBlock(coreQuality, jobName);
+    assert.doesNotMatch(jobBlock, /^ {4}needs:/mu);
+    assert.doesNotMatch(jobBlock, /^ {4}if:/mu);
+    assert.match(jobBlock, /^ {6}- uses: actions\/upload-artifact@v4$/mu);
+    assert.match(jobBlock, /^ {8}if: always\(\)$/mu);
+  }
+  assert.match(extractJobBlock(coreQuality, 'e2e'), /^ {4}needs: release-manifest$/mu);
 });
