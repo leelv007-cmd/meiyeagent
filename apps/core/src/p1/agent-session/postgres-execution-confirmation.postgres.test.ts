@@ -5,11 +5,15 @@
 
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { once } from 'node:events';
+import type { AddressInfo } from 'node:net';
 import test from 'node:test';
 import { Pool } from 'pg';
 
 import { agentExecutionConfirmationRequestSchema } from '@meiye/contracts';
 
+import { createCoreServer } from '../../server.js';
+import type { DiagnosticRepository } from '../../diagnostics/repository.js';
 import { creditUsageOperationId } from '../credit-billing/credit-ledger.js';
 import { PostgresCreditLedger } from '../credit-billing/postgres-credit-ledger.js';
 import { HarnessProductBillingSettlementExecutor } from '../harness/product-billing-settlement.js';
@@ -1460,6 +1464,204 @@ test(
       );
     } finally {
       await cleanup();
+    }
+  },
+);
+
+function noopDiagnostics(): DiagnosticRepository {
+  return {
+    async create(run) {
+      return run;
+    },
+    async get() {
+      return null;
+    },
+    async save(run) {
+      return run;
+    },
+  };
+}
+
+async function startDecideServer(
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+  clock: () => Date,
+  t: test.TestContext,
+) {
+  const server = createCoreServer({
+    diagnosticRepository: noopDiagnostics(),
+    clock,
+    serviceToken: 'confirm-postgres-decide-token',
+    executionConfirmation: {
+      create: (input) => fixture.service.createRequest(input as never),
+      decide: (input) => fixture.service.decide(input),
+      expire: (input) => fixture.service.expireHold(input),
+      listPending: (workspaceId) =>
+        fixture.service.listPendingByWorkspace(workspaceId),
+    },
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(() => server.close());
+  const { port } = server.address() as AddressInfo;
+  return (workspaceId: string) =>
+    `http://127.0.0.1:${port}/v1/workspaces/${workspaceId}/p1/confirmation-requests`;
+}
+
+test(
+  'decide is rejected for a foreign workspace through the real HTTP route and the Postgres SQL workspace scope',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async (t) => {
+    const clock = () => new Date('2026-08-08T12:30:00.000Z');
+    const fixture = await createFixture(clock);
+    const foreignWorkspaceId = `ws-confirm-foreign-${randomUUID()}`;
+    try {
+      await fixture.pool.query(
+        "INSERT INTO workspaces (id, name) VALUES ($1, 'Foreign workspace')",
+        [foreignWorkspaceId],
+      );
+      await fixture.creditLedger.grant({
+        id: 'decide-cross-workspace-lot',
+        workspaceId: fixture.workspaceId,
+        credits: 10,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'decide-cross-workspace',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      const requestId = 'req-decide-cross-workspace';
+      await fixture.service.createRequest({
+        requestId,
+        workspaceId: fixture.workspaceId,
+        planId: 'plan-decide-cross-workspace',
+        planRevision: 1,
+        snapshotHash: 'snapshot-decide-cross-workspace',
+        quoteRef: { id: 'quote-decide-cross-workspace', revision: 1 },
+        reservationIdempotencyKey: 'reserve-decide-cross-workspace',
+        createdAt: '2026-08-08T12:00:00.000Z',
+        holdExpiresAt: '2026-08-09T12:00:00.000Z',
+        actorId: 'merchant-owner',
+        creditCost: 4,
+        failureRefundsCredits: true,
+      });
+      const base = await startDecideServer(fixture, clock, t);
+
+      // Workspace B presents its own valid service token and a route that
+      // names *its own* workspace — layers ①-③ (zod, handler spread, the
+      // service-token gate) all let this HTTP request through untouched.
+      // Only the store's `WHERE workspace_id = $1 AND request_id = $2`
+      // (postgres-execution-confirmation-store.ts, getByWorkspaceIdWithClient)
+      // can still stop it from deciding workspace A's request.
+      const response = await fetch(
+        `${base(foreignWorkspaceId)}/${encodeURIComponent(requestId)}/decide`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-service-token': 'confirm-postgres-decide-token',
+            'x-user-id': 'foreign-owner',
+            'x-workspace-id': foreignWorkspaceId,
+            'x-workspace-role': 'owner',
+          },
+          body: JSON.stringify({
+            decisionId: 'decision-cross-workspace',
+            decision: 'confirmed',
+          }),
+        },
+      );
+      assert.equal(response.status, 404);
+
+      const untouched = await fixture.service.getRequest(requestId);
+      assert.equal(untouched?.request.status, 'pending');
+      assert.equal(
+        await fixture.service.getDecisionForWorkspace(
+          fixture.workspaceId,
+          requestId,
+        ),
+        null,
+      );
+    } finally {
+      await fixture.cleanup();
+    }
+  },
+);
+
+test(
+  'decide ignores a body-smuggled workspaceId and always uses the route/token-derived workspace',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async (t) => {
+    const clock = () => new Date('2026-08-08T12:30:00.000Z');
+    const fixture = await createFixture(clock);
+    try {
+      await fixture.creditLedger.grant({
+        id: 'decide-body-smuggle-lot',
+        workspaceId: fixture.workspaceId,
+        credits: 10,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'decide-body-smuggle',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      const requestId = 'req-decide-body-smuggle';
+      await fixture.service.createRequest({
+        requestId,
+        workspaceId: fixture.workspaceId,
+        planId: 'plan-decide-body-smuggle',
+        planRevision: 1,
+        snapshotHash: 'snapshot-decide-body-smuggle',
+        quoteRef: { id: 'quote-decide-body-smuggle', revision: 1 },
+        reservationIdempotencyKey: 'reserve-decide-body-smuggle',
+        createdAt: '2026-08-08T12:00:00.000Z',
+        holdExpiresAt: '2026-08-09T12:00:00.000Z',
+        actorId: 'merchant-owner',
+        creditCost: 4,
+        failureRefundsCredits: true,
+      });
+      const base = await startDecideServer(fixture, clock, t);
+      const impersonatedWorkspaceId = 'ws-should-be-ignored-and-does-not-exist';
+
+      // The body carries a foreign workspaceId alongside the two fields the
+      // decide schema actually declares (decisionId, decision). If the
+      // handler ever forwarded that field into the store's query instead of
+      // the route/token-derived one, `WHERE workspace_id = $1` would miss
+      // this real request and the call would 404, not succeed.
+      const response = await fetch(
+        `${base(fixture.workspaceId)}/${encodeURIComponent(requestId)}/decide`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-service-token': 'confirm-postgres-decide-token',
+            'x-user-id': 'merchant-owner',
+            'x-workspace-id': fixture.workspaceId,
+            'x-workspace-role': 'owner',
+          },
+          body: JSON.stringify({
+            decisionId: 'decision-body-smuggle',
+            decision: 'confirmed',
+            workspaceId: impersonatedWorkspaceId,
+          }),
+        },
+      );
+      assert.equal(response.status, 200);
+      const parsed = (await response.json()) as {
+        data: { decision: { decision: string } };
+      };
+      assert.equal(parsed.data.decision.decision, 'confirmed');
+
+      const recorded = await fixture.service.getDecisionForWorkspace(
+        fixture.workspaceId,
+        requestId,
+      );
+      assert.equal(recorded?.decision, 'confirmed');
+      assert.equal(
+        await fixture.service.getDecisionForWorkspace(
+          impersonatedWorkspaceId,
+          requestId,
+        ),
+        null,
+      );
+    } finally {
+      await fixture.cleanup();
     }
   },
 );
