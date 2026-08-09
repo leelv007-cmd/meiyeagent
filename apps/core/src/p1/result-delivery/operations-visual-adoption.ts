@@ -38,7 +38,11 @@ export interface ResultAdjustSnapshotReadPort {
 	| {
 		snapshot: CreationExecutionSnapshot;
 		agentThreadId?: AgentThreadIdentity;
-		artifactLineage?: { artifactId: string; parentRevision: number };
+		artifactLineage?: {
+		  artifactId: string;
+		  parentRevision: number;
+		  targetUnitIds?: string[];
+		};
 	  }
 	| null
   >;
@@ -60,7 +64,11 @@ export interface ResultAdjustComposerSubmissionPort {
     sourceNoteStyleId?: string;
     sourceSnapshot: CreationExecutionSnapshot;
 	sourceAgentThreadId?: AgentThreadIdentity;
-	sourceArtifactLineage?: { artifactId: string; parentRevision: number };
+	sourceArtifactLineage?: {
+	  artifactId: string;
+	  parentRevision: number;
+	  targetUnitIds?: string[];
+	};
     taskId: string;
     textSelectionScope?: ResultAdjustTextSelectionScope;
     workId: string;
@@ -788,6 +796,27 @@ export class OperationsResultCommandPort {
               404,
             );
           }
+		  const notePages = currentPackageVersion?.note?.plan.pages;
+		  const scopedAssetIds = new Set(resultAdjustScopeAssetIds(composerCommand.scope));
+		  const targetUnitIds = notePages
+			? notePages
+				.filter((page) =>
+				  scopedAssetIds.size === 0 ||
+				  (page.imageAssetId !== undefined && scopedAssetIds.has(page.imageAssetId)),
+				)
+				.map((page) => page.id)
+			: undefined;
+		  if (
+			frozen.snapshot.lens === 'image_text_note' &&
+			composerCommand.scope?.kind !== 'text_selection' &&
+			(!targetUnitIds || targetUnitIds.length !== expectedOutputCount)
+		  ) {
+			throw new OperationsError(
+			  'RESULT_ADJUST_SCOPE_MISMATCH',
+			  'The frozen note target pages do not match the adjustment scope.',
+			  409,
+			);
+		  }
           return this.composerSubmissions!.submit({
             actorId: operation.userId,
             idempotencyKey: `result-adjust:${idempotencyKey}`,
@@ -812,7 +841,14 @@ export class OperationsResultCommandPort {
             ...(sourceNoteStyleId ? { sourceNoteStyleId } : {}),
             sourceSnapshot: frozen.snapshot,
 			...(frozen.agentThreadId ? { sourceAgentThreadId: frozen.agentThreadId } : {}),
-			...(frozen.artifactLineage ? { sourceArtifactLineage: frozen.artifactLineage } : {}),
+			...(frozen.artifactLineage
+			  ? {
+				  sourceArtifactLineage: {
+					...frozen.artifactLineage,
+					...(targetUnitIds ? { targetUnitIds } : {}),
+				  },
+				}
+			  : {}),
             taskId: composerCommand.derivedTaskId,
             ...(composerCommand.scope?.kind === 'text_selection'
               ? { textSelectionScope: composerCommand.scope }

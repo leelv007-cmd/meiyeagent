@@ -862,6 +862,46 @@ test('V31-15 video wiring: real media stage ports emit per-scene artifact.revise
     assert.equal(state.state.body.scenes[1]?.storyboard, '护理前后对比特写。');
     assert.equal(state.state.body.scenes[1]?.keyframeStatus, 'ready');
   }
+
+  const successorEvents: SemanticEventCandidate[] = [];
+  stages.artifactProgressEmitter = {
+    async project(candidate) {
+      successorEvents.push(candidate);
+    },
+  };
+  await runHarnessWorkflow(
+    'task-video-artifact-successor',
+    {
+      ...request,
+      artifactLineage: {
+        artifactId: 'video:original-package',
+        parentRevision: 9,
+      },
+    },
+    stages,
+    {
+      async runStep(_key, operation) {
+        return operation();
+      },
+      async progress() {},
+      async token() {},
+      async awaitDecision() {
+        throw new Error('Unexpected media decision wait.');
+      },
+      async recordTrace() {},
+    },
+  );
+  const successorUpdates = successorEvents.map((candidate) =>
+    artifactUpdateWireSchema.parse(candidate.payload),
+  );
+  assert.equal(successorUpdates[0]?.artifactId, 'video:original-package');
+  assert.equal(successorUpdates[0]?.mode, 'delta');
+  assert.equal(successorUpdates[0]?.parentRevision, 9);
+  assert.deepEqual(
+    successorUpdates.map(({ revision }) => revision),
+    [10, 11, 12, 13],
+  );
+  assert.equal(successorUpdates.at(-1)?.status, 'ready');
 });
 
 test('configured media bounds fail closed when the bounded media port is unavailable', async () => {

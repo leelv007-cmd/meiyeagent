@@ -13,6 +13,7 @@ required_hard_gate_spec="${REQUIRED_BROWSER_HARD_GATE_SPEC:-tests/e2e/specs/m04-
 # note object workspace. Kept as a dedicated lean file so the journey budget
 # stays near three minutes for this path without pulling the full T20 suite.
 xhs_image_text_main_spec="${XHS_IMAGE_TEXT_MAIN_JOURNEY_SPEC:-tests/e2e/specs/xhs-image-text-main-journey.spec.ts}"
+agent_thread_workbench_spec="${AGENT_THREAD_WORKBENCH_SPEC:-tests/e2e/specs/v31-thread-root-workbench.spec.ts}"
 mkdir -p "${evidence_dir}"
 
 export PLAYWRIGHT_PRODUCTION_CANDIDATE=true
@@ -23,10 +24,16 @@ node scripts/production-network-boundary-gate.mjs \
   --expected-commit-sha "${RELEASE_COMMIT_SHA}" \
   2>&1 | tee "${evidence_dir}/production-boundary.log"
 
+# Required cross-package protocol journey. It uses the production Core HTTP
+# server and browser reducer contracts, including Last-Event-ID and gap replay.
+pnpm exec tsx --test tests/v31-artifact-composer-sse-workbench.journey.test.ts \
+  2>&1 | tee "${evidence_dir}/agent-artifact-http-journey.log"
+
 pnpm --filter @meiye/web exec playwright test \
   "${required_e2e_spec}" \
   "${required_hard_gate_spec}" \
   tests/e2e/specs/marketing-identity-flow.spec.ts \
   tests/e2e/specs/w12-identity-draft-assistant.spec.ts \
   "${xhs_image_text_main_spec}" \
+	"${agent_thread_workbench_spec}" \
   2>&1 | tee "${evidence_dir}/playwright-production-journey.log"

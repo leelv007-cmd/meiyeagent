@@ -158,7 +158,13 @@ function fixture(
             ...(options.noteSnapshot
               ? {
                   note: {
-                    plan: { style: { id: 'story' } },
+					plan: {
+					  style: { id: 'story' },
+					  pages: [
+						{ id: 'page-1', imageAssetId: 'asset-1' },
+						{ id: 'page-2', imageAssetId: 'asset-2' },
+					  ],
+					},
                   },
                 }
               : {}),
@@ -717,7 +723,11 @@ test('Composer snapshot adjustment keeps the latest semantic decision snapshot',
 	);
 	assert.deepEqual(
 	  (composerCalls[0] as { sourceArtifactLineage?: unknown }).sourceArtifactLineage,
-	  { artifactId: 'note:package-1', parentRevision: 7 },
+	  {
+		artifactId: 'note:package-1',
+		parentRevision: 7,
+		targetUnitIds: ['page-1'],
+	  },
 	);
   assert.equal(
     (

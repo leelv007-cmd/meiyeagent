@@ -112,6 +112,40 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
   );
 });
 
+test('real Composer recovery deterministically rebuilds a missing freeze from its durable compiled plan', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  let compiles = 0;
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    async compilePlan(input) {
+      compiles += 1;
+      return compiler.compile(input);
+    },
+    async adjustPlan(input) {
+      compiles += 1;
+      return compiler.adjust(input);
+    },
+  });
+  const submitted = record('task-crash-after-plan', '生成三页护理图文');
+  const binding = await coordinator.prepare({ submission: submitted });
+  const expectedFreeze = structuredClone(submitted.executionPlanFreeze);
+  assert.ok(expectedFreeze);
+
+  const recovered = structuredClone(submitted);
+  delete recovered.executionPlanFreeze;
+  delete recovered.agentBinding;
+  const recoveredBinding = await coordinator.prepare({ submission: recovered });
+
+  assert.deepEqual(recoveredBinding, binding);
+  assert.deepEqual(recovered.executionPlanFreeze, expectedFreeze);
+  assert.equal(compiles, 1, 'recovery must not append another plan revision');
+  assert.equal((await plans.listRevisions(expectedFreeze.planId)).length, 1);
+});
+
 test('a continuation Thread is resolved inside the submission workspace', async () => {  const sessions = new MemoryAgentSessionStore();
   const plans = new MemoryMarketingPlanStore();
   const compiler = new PlanCompiler({

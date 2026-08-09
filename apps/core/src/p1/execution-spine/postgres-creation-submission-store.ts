@@ -949,11 +949,20 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
 function storedArtifactLineage(value: unknown): CreationSubmissionRecord["artifactLineage"] {
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Stored creation submission has invalid artifact lineage.");
-  const candidate = value as { artifactId?: unknown; parentRevision?: unknown };
+	const candidate = value as { artifactId?: unknown; parentRevision?: unknown; targetUnitIds?: unknown };
   if (typeof candidate.artifactId !== "string" || !candidate.artifactId.trim() || !Number.isSafeInteger(candidate.parentRevision) || (candidate.parentRevision as number) < 1) {
 	throw new Error("Stored creation submission has invalid artifact lineage.");
   }
-  return { artifactId: candidate.artifactId, parentRevision: candidate.parentRevision as number };
+	if (candidate.targetUnitIds !== undefined && (
+	  !Array.isArray(candidate.targetUnitIds) ||
+	  candidate.targetUnitIds.length === 0 ||
+	  candidate.targetUnitIds.some((id) => typeof id !== "string" || !id.trim())
+	)) throw new Error("Stored creation submission has invalid artifact target units.");
+	return {
+	  artifactId: candidate.artifactId,
+	  parentRevision: candidate.parentRevision as number,
+	  ...(candidate.targetUnitIds ? { targetUnitIds: candidate.targetUnitIds as string[] } : {}),
+	};
 }
 
 function storedExecutionPlanFreeze(

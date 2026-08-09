@@ -66,8 +66,8 @@ export function createNotePageProgressReporter(input: {
     /** Starting revision; increments per success event. */
     nextRevision: () => number;
     now: () => string;
-	/** Number of pages targeted by this execution (may be a local regeneration subset). */
-	terminalUnitCount?: number;
+	/** Frozen page ids targeted by this execution. */
+	targetUnitIds?: readonly string[];
 	/** Ready revision of the source artifact continued by this execution. */
 	parentRevision?: number;
   };
@@ -165,8 +165,8 @@ export function createNotePageProgressReporter(input: {
         }
       }
       if (event.state === 'success') completedPages.add(event.pageId);
-		const terminalUnitCount = input.artifactContext.terminalUnitCount ?? unitIds.length;
-		const terminal = completedPages.size >= terminalUnitCount;
+		const terminalUnitIds = input.artifactContext.targetUnitIds ?? unitIds;
+		const terminal = terminalUnitIds.every((pageId) => completedPages.has(pageId));
       const revision = input.artifactContext.nextRevision();
       await emitNotePageArtifactProgress(input.artifactEmitter, {
         ...base,

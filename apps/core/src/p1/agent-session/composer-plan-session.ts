@@ -134,6 +134,16 @@ export class ComposerPlanSessionCoordinator
         }
         throw error;
       }
+	} else if (latest && !submission.executionPlanFreeze) {
+	  // A process may die after PlanCompiler durably appends the revision but
+	  // before the submission row stores its freeze. Rebuild only from that
+	  // durable compiled artifact; never compile/append a second revision.
+	  submission.executionPlanFreeze = compileFinalizeExecutionPlanFreeze({
+		result: latest,
+		contextBundleId: submission.snapshot.briefContext.id,
+		contextRevision: String(submission.snapshot.briefContext.revision),
+		approvalBasis: approvalBasisForSubmission(submission.snapshot.lens),
+	  });
     }
 
     const currentRun = await this.sessions.getRun({ resourceId, runId });

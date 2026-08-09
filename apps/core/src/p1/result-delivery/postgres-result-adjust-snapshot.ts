@@ -33,21 +33,29 @@ export class PostgresResultAdjustSnapshotReadPort
     const snapshot = result.rows[0]?.snapshot;
 	if (!snapshot) return null;
 	const parsed = creationExecutionSnapshotSchema.parse(snapshot);
-	const submission = result.rows[0]?.submission as { agentBinding?: { threadId?: unknown } } | undefined;
+	const submission = result.rows[0]?.submission as {
+	  agentBinding?: { threadId?: unknown };
+	  artifactLineage?: { artifactId?: unknown };
+	} | undefined;
 	const threadValue = submission?.agentBinding?.threadId;
 	if (typeof threadValue !== 'string') return { snapshot: parsed };
 	const agentThreadId = asAgentThreadIdentity(threadValue);
-	const artifactId = `${parsed.lens === 'image_text_note' ? 'note' : parsed.lens === 'video' ? 'video' : parsed.lens}:${parsed.contentPackage.id}`;
+	const storedArtifactId = submission?.artifactLineage?.artifactId;
+	const artifactId =
+	  typeof storedArtifactId === 'string' && storedArtifactId.trim()
+		? storedArtifactId
+		: `${parsed.lens === 'image_text_note' ? 'note' : parsed.lens === 'video' ? 'video' : parsed.lens}:${parsed.contentPackage.id}`;
 	const artifact = await this.pool.query<{ payload: unknown }>(
 	  `SELECT payload
 	     FROM p1_agent_semantic_events
 	    WHERE thread_id = $1
+	      AND resource_id = $3
 	      AND event_type = 'artifact.revised'
 	      AND payload->'payload'->>'artifactId' = $2
 	      AND payload->'payload'->>'status' = 'ready'
 	    ORDER BY stream_offset DESC
 	    LIMIT 1`,
-	  [agentThreadId, artifactId],
+	  [agentThreadId, artifactId, input.workspaceId],
 	);
 	const event = artifact.rows[0]?.payload as { payload?: unknown } | undefined;
 	const wire = event?.payload ? artifactUpdateWireSchema.safeParse(event.payload) : undefined;

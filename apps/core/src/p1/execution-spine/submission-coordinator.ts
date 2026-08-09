@@ -44,7 +44,11 @@ export interface CreationSubmissionRecord {
 	/** Durable continuation hint needed if the process crashes before planning. */
 	agentContinuationThreadId?: AgentThreadIdentity;
 	/** Stable artifact identity continued by a Result successor. */
-	artifactLineage?: { artifactId: string; parentRevision: number };
+	artifactLineage?: {
+		artifactId: string;
+		parentRevision: number;
+		targetUnitIds?: string[];
+	};
 }
 
 export interface CreationSubmissionUsageUnit {
@@ -384,7 +388,7 @@ export class CreationSubmissionCoordinator {
 		sourceNoteStyleId?: string;
 		sourceSnapshot: CreationExecutionSnapshot;
 		sourceAgentThreadId?: AgentThreadIdentity;
-		sourceArtifactLineage?: { artifactId: string; parentRevision: number };
+		sourceArtifactLineage?: CreationSubmissionRecord["artifactLineage"];
 		taskId: string;
 		textSelectionScope?: ResultAdjustTextSelectionScope;
 		workId: string;

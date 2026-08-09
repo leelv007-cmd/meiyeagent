@@ -2256,7 +2256,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
 			  ...(activeRequest.artifactLineage
 				? {
 					parentRevision: activeRequest.artifactLineage.parentRevision,
-					terminalUnitCount: activeRequest.executionSnapshot?.deliverable.quantity,
+					targetUnitIds: activeRequest.artifactLineage.targetUnitIds,
 				  }
 				: {}),
               nextRevision: () => {
@@ -2509,8 +2509,8 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
   // V31-15: video scene artifact producer. Scenes land running once the
   // storyboard is compiled, success once the rendered video is selected.
   // Emitter absent in fixture tests (optional port); no-op otherwise.
-  let videoArtifactRevision = 0;
-  let videoReadyRevision: number | undefined;
+	let videoArtifactRevision = activeRequest.artifactLineage?.parentRevision ?? 0;
+	let videoReadyRevision: number | undefined = activeRequest.artifactLineage?.parentRevision;
   const emitVideoSceneProgress = async (
     source: MediaBrief,
     state: 'running' | 'success',
@@ -2525,7 +2525,9 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
         workflowId,
         threadId:
           activeRequest.agentThreadId ?? `legacy-workflow:${workflowId}`,
-        artifactId: `video:${activeRequest.packageId ?? workflowId}`,
+		artifactId:
+		  activeRequest.artifactLineage?.artifactId ??
+		  `video:${activeRequest.packageId ?? workflowId}`,
         scenes: source.storyboard.map(({ index, description }) => ({
           sceneIndex: index - 1,
           ...(state === 'running' ? { storyboard: description } : {}),

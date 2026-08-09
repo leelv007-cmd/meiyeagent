@@ -186,7 +186,7 @@ test('local regeneration continues the source artifact revision and becomes read
       threadId: 'thread-source',
       artifactId: 'note:source-package',
       parentRevision: 7,
-      terminalUnitCount: 1,
+	  targetUnitIds: ['p2'],
       nextRevision: () => { revision += 1; return revision; },
       now: () => '2026-08-09T12:00:00.000Z',
     },

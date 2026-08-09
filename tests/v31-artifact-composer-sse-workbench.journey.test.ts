@@ -112,7 +112,17 @@ test('Composer artifact survives production HTTP replay and Last-Event-ID SSE in
 	};
 	const replayResponse = await fetch(`${base}/replay`, { headers });
 	assert.equal(replayResponse.status, 200);
-	const replayBody = await replayResponse.json() as { data: { events: unknown[]; snapshot: { lastEventId: string } } };
+	const replayBody = await replayResponse.json() as {
+	  data: {
+		events: AgentSemanticEventWire[];
+		session: { resourceId: string; threadId: string; sessionRevision: number };
+		snapshot: {
+		  revision: string;
+		  lastEventId: string | null;
+		  lastStreamOffset: string | null;
+		};
+	  };
+	};
 	const sseWires = replayBody.data.events.filter((candidate) =>
 	  (candidate as { eventType?: string }).eventType === 'artifact.revised'
 	) as AgentSemanticEventWire[];
@@ -168,6 +178,19 @@ test('Composer artifact survives production HTTP replay and Last-Event-ID SSE in
 	});
 	assert.equal(resync.state.connection, 'resyncing');
 	assert.equal(resync.state.needsSnapshotResync, true);
+
+	const snapshotRetry = await fetch(`${base}/replay`, { headers });
+	assert.equal(snapshotRetry.status, 200);
+	const retryBody = await snapshotRetry.json() as typeof replayBody;
+	const recovered = reduceAgentWorkbench(resync.state, {
+	  type: 'hydrate_replay',
+	  session: retryBody.data.session,
+	  snapshot: retryBody.data.snapshot,
+	  events: retryBody.data.events,
+	});
+	assert.equal(recovered.state.connection, 'live');
+	assert.equal(recovered.state.needsSnapshotResync, false);
+	assert.equal(projectVisibleArtifacts(recovered.state)[0]?.status, 'ready');
 });
 
 function composerRecord(): CreationSubmissionRecord {
