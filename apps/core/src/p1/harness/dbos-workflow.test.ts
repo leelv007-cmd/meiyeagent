@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import {
   questionCardSchema,
@@ -23,8 +23,11 @@ import {
 import { HarnessInteractionError } from './interaction-service.js';
 import { normalizeHarnessTerminalFailure } from './terminal-failure.js';
 import {
+  buildExecutionPlanSnapshot,
   ExecutionPlanAdmissionError,
   ExecutionPlanAdmissionService,
+  freezeExecutionPlanContent,
+  type ExecutionPlanFrozenContent,
 } from './execution-plan-admission.js';
 import { MemoryExecutionPlanSnapshotStore } from './memory-execution-plan-admission-store.js';
 
@@ -789,8 +792,7 @@ test('a pre-a9 replay stops before settlement, terminal writes, or later DBOS op
   );
 });
 
-test('4A RED: a fresh paid task with a pending confirmation snapshot dies in the pre-run verification step before the confirmation gate ever runs (V31-12 admit-after-decide vs the pre-run verify assuming an already-admitted row)', async (t) => {
-  const workflowId = 'workflow-pending-confirmation-fresh';
+function mockDbosRuntime(t: TestContext, workflowId: string) {
   const workflowIdDescriptor = Object.getOwnPropertyDescriptor(
     DBOS,
     'workflowID',
@@ -821,9 +823,138 @@ test('4A RED: a fresh paid task with a pending confirmation snapshot dies in the
       return operation();
     },
   );
+  t.mock.method(DBOS, 'now', async () => Date.now());
+  t.mock.method(DBOS, 'writeStream', async () => {});
+  t.mock.method(DBOS, 'setEvent', async () => {});
+  t.mock.method(DBOS, 'closeStream', async () => {});
+  return stepNames;
+}
+
+function admission4AFrozenContent(): ExecutionPlanFrozenContent {
+  return {
+    planId: 'plan-4a',
+    planRevision: 1,
+    intentDeclaration: { summary: '4A 复现固定内容' },
+    contextBundleRef: { bundleId: 'bundle-4a', revision: 1, hash: 'ctx-hash-4a' },
+    executionPlan: {
+      schemaVersion: 'compiled-execution-plan/v1',
+      units: [{ unitId: 'unit-4a', unitType: 'copy.generate', primitive: 'generate' }],
+      dependencyGroups: [{ groupId: 'g-4a', unitIds: ['unit-4a'] }],
+      boundedRetry: {
+        'unit-4a': { maxAttempts: 1, maxCostCents: 0, retry: { enabled: false } },
+      },
+    },
+    deliverables: [{ deliverableId: 'd-4a', kind: 'copy', quantity: 1 }],
+    promptRevisionRefs: { copyGeneration: { key: 'copyGeneration', version: 'v1' } },
+    skillManifestRefs: {},
+    routeRequirements: [],
+    quoteRef: { id: 'quote-4a', revision: 1 },
+    rightsRevisionRefs: ['rights-4a'],
+    factRevisionRefs: ['fact-4a'],
+    boundedExecution: {
+      schemaVersion: 'bounded-execution-snapshot/v1',
+      maxIterations: 10,
+      maxCostCents: 100,
+      maxWallClockMs: 60_000,
+      maxDelegations: 2,
+      requiredLimits: ['maxIterations', 'maxCostCents'],
+      consumption: { iterations: 0, costCents: 0, wallClockMs: 0, delegations: 0 },
+      stopReason: null,
+      triggeredLimit: null,
+    },
+    harnessReleaseId: 'release-4a',
+    approvalBasis: 'policy_exempt_copy',
+  } as unknown as ExecutionPlanFrozenContent;
+}
+
+test('4A fix: a fresh paid task with a pending confirmation snapshot proceeds past the pre-run verification step instead of dying on NOT_FOUND (V31-12 admit-after-decide)', async (t) => {
+  const workflowId = 'workflow-pending-confirmation-fresh';
+  const stepNames = mockDbosRuntime(t, workflowId);
+  const reachedNameIntent = new Error(
+    'REACHED_NAME_INTENT_PAST_VERIFICATION: the pre-run verification step let a fresh pending confirmation proceed into the first real Harness stage instead of dying on NOT_FOUND.',
+  );
+  const unreachableStage = async (): Promise<never> => {
+    throw new Error('This stage must not run before nameIntent.');
+  };
+  const stages: HarnessStagePorts = {
+    nameIntent: async () => {
+      throw reachedNameIntent;
+    },
+    injectContext: unreachableStage,
+    fenceContext: unreachableStage,
+    compileBrief: unreachableStage,
+    executeAndSelect: unreachableStage,
+    assembleAndDeliver: unreachableStage,
+  };
+  // Real admission service, empty store: nothing has been admitted for this
+  // workflow yet, which is exactly the state a fresh paid task is in before
+  // the merchant has decided (V31-12: "确认请求持 hash 作锚... 确认后...").
+  const executionPlanAdmission = new ExecutionPlanAdmissionService(
+    new MemoryExecutionPlanSnapshotStore(),
+  );
+  const persistenceCalls: string[] = [];
+  const workflow = registerHarnessDbosWorkflow(
+    stages,
+    {
+      async registerPending(): Promise<never> {
+        persistenceCalls.push('registerPending');
+        throw new Error('This test does not expect a clarification interrupt.');
+      },
+      async readPending() {
+        persistenceCalls.push('readPending');
+        return null;
+      },
+      async recordStageTrace() {
+        persistenceCalls.push('recordStageTrace');
+      },
+      async recordTerminalFailure() {
+        persistenceCalls.push('recordTerminalFailure');
+      },
+    },
+    { executionPlanAdmission },
+  );
+  const request = {
+    workspaceId: 'workspace-pending-confirmation-fresh',
+    // Paid/non-exempt path (task-admission.ts's else branch, V31-12): only a
+    // pending marker is attached before Make begins. Admission is deferred
+    // to the confirmation gate, which runs later in this same workflow body
+    // once the merchant decides — nothing is admitted yet on this, the
+    // first-ever invocation.
+    pendingExecutionPlanSnapshot: {
+      snapshotHash: 'pending-snapshot-hash-fresh',
+    },
+  } as unknown as HarnessWorkflowInput;
+
+  await assert.rejects(
+    workflow({ workflowId, request }),
+    (error: unknown) =>
+      !(error instanceof ExecutionPlanAdmissionError) &&
+      error === reachedNameIntent,
+  );
+  // Both pre-run verification checkpoints in this workflow body run and
+  // complete without throwing (registerHarnessDbosWorkflow has one at entry
+  // and one further down guarding the confirmation-gate path; neither one
+  // requires admission for a pending_confirmation branch after the fix).
+  // Execution then reaches real intent-resolution machinery
+  // ('skill-resolve-intent', the per-run intent step) and calls
+  // nameIntent, which is this test's deliberate throw — the workflow's own
+  // failure handling then persists the terminal failure. None of that ever
+  // ran before the fix (the whole run died on the very first step).
+  assert.deepEqual(stepNames, [
+    'execution-plan-snapshot-verification',
+    'execution-plan-snapshot-verification',
+    'skill-resolve-intent',
+    `wf-${workflowId}-s1-intent-0`,
+    'persist-terminal-failure',
+  ]);
+});
+
+test('4A anti-narrowing pin: an execution_plan_snapshot branch (already pre-admitted by task-admission.ts) is still verified against its admitted row', async (t) => {
+  const workflowId = 'workflow-snapshot-branch-still-verified';
+  const stepNames = mockDbosRuntime(t, workflowId);
   const unreachableStage = async (): Promise<never> => {
     throw new Error(
-      'The pre-run verification step must not let a fresh pending confirmation reach any Harness stage.',
+      'The execution_plan_snapshot branch must still die on NOT_FOUND when nothing is admitted — narrowing the verify to this branch must not also skip it.',
     );
   };
   const stages: HarnessStagePorts = {
@@ -834,9 +965,10 @@ test('4A RED: a fresh paid task with a pending confirmation snapshot dies in the
     executeAndSelect: unreachableStage,
     assembleAndDeliver: unreachableStage,
   };
-  // Real admission service, empty store: nothing has been admitted for this
-  // workflow yet, which is exactly the state a fresh paid task is in before
-  // the merchant has decided (V31-12: "确认请求持 hash 作锚... 确认后...").
+  // Real admission service, empty store: this branch's snapshot is never
+  // admitted (unlike real production, where task-admission.ts admits it
+  // synchronously before the workflow starts) — the verify must still run
+  // and still fail closed here.
   const executionPlanAdmission = new ExecutionPlanAdmissionService(
     new MemoryExecutionPlanSnapshotStore(),
   );
@@ -858,27 +990,22 @@ test('4A RED: a fresh paid task with a pending confirmation snapshot dies in the
     },
     { executionPlanAdmission },
   );
+  const content = admission4AFrozenContent();
+  const { snapshotHash } = freezeExecutionPlanContent(content);
+  const snapshot = buildExecutionPlanSnapshot({ content, snapshotHash });
   const request = {
-    workspaceId: 'workspace-pending-confirmation-fresh',
-    // Paid/non-exempt path (task-admission.ts's else branch, V31-12): only a
-    // pending marker is attached before Make begins. Admission is deferred
-    // to the confirmation gate, which runs later in this same workflow body
-    // once the merchant decides — nothing is admitted yet on this, the
-    // first-ever invocation.
-    pendingExecutionPlanSnapshot: {
-      snapshotHash: 'pending-snapshot-hash-fresh',
-    },
+    workspaceId: 'workspace-snapshot-branch-still-verified',
+    executionPlanSnapshot: snapshot,
   } as unknown as HarnessWorkflowInput;
 
   await assert.rejects(
     workflow({ workflowId, request }),
     (error: unknown) =>
-      error instanceof ExecutionPlanAdmissionError &&
-      error.code === 'NOT_FOUND',
+      error instanceof ExecutionPlanAdmissionError && error.code === 'NOT_FOUND',
   );
-  // The confirmation-interaction-card is built inside a later stage/step;
-  // if the pre-run verification step is the thing that killed the workflow,
-  // no stage or persistence call ever ran to produce one.
+  // Same single-step shape as before the 4A fix: narrowing to
+  // pending_confirmation did not add, remove, or rename any step for the
+  // execution_plan_snapshot branch.
   assert.deepEqual(stepNames, ['execution-plan-snapshot-verification']);
 });
 
