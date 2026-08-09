@@ -42,6 +42,8 @@ test(
       new PostgresResultAdjustSnapshotReadPort(pool);
     const suffix = randomUUID();
     const workspaceId = `adjust-read-${suffix}`;
+    /** Another tenant sharing the thread and artifact under test (case 3). */
+    const foreignWorkspaceId = `adjust-foreign-${suffix}`;
 
     try {
       await submissions.applySchema();
@@ -88,14 +90,29 @@ test(
       assert.equal(partialRead.artifactLineage, undefined);
       assert.equal(partialRead.artifactLineageUnreadable, undefined);
 
-      // 3. Ready: the latest ready revision wins, and the artifactId falls back
+      // 3. Ready: the newest ready revision wins, and the artifactId falls back
       //    to the lens prefix when the submission stored none.
+      //
+      //    Projected r9 first and r4 second on purpose. Production allocates
+      //    revisions monotonically, so insertion order and numeric order agree
+      //    there and a test that follows them cannot say which one the port
+      //    reads. Inverted, it can: the port orders by stream_offset, so the
+      //    answer is r4 — the newest projection — and a port that took
+      //    MAX(revision) would answer r9 and fail here.
+      //
+      //    The third event is another workspace's, on the same thread and the
+      //    same artifactId, carrying the highest stream_offset of the three.
+      //    stream_offset is allocated per thread without regard to resource_id
+      //    (postgres-semantic-event-store.ts: MAX(stream_offset) WHERE
+      //    thread_id = $1), so without the query's `resource_id` predicate this
+      //    foreign row is exactly what `ORDER BY stream_offset DESC LIMIT 1`
+      //    would return, and one workspace would adjust from another's revision.
       const ready = noteSnapshot(workspaceId, `${suffix}-ready`);
       const readyThread = `thread-${suffix}-ready`;
       await insertSubmission(pool, workspaceId, ready, {
         agentBinding: { threadId: readyThread, runId: `run-${suffix}-b` },
       });
-      for (const revision of [4, 9]) {
+      for (const revision of [9, 4]) {
         await projector.project(
           artifactCandidate({
             artifactId: `note:${ready.contentPackage.id}`,
@@ -107,11 +124,21 @@ test(
           }),
         );
       }
+      await projector.project(
+        artifactCandidate({
+          artifactId: `note:${ready.contentPackage.id}`,
+          eventId: `artifact.revised:${suffix}-foreign:r7`,
+          resourceId: foreignWorkspaceId,
+          revision: 7,
+          status: 'ready',
+          threadId: readyThread,
+        }),
+      );
       const readyRead = await port.get({ snapshotId: ready.id, workspaceId });
       assert.ok(readyRead && 'snapshot' in readyRead);
       assert.deepEqual(readyRead.artifactLineage, {
         artifactId: `note:${ready.contentPackage.id}`,
-        parentRevision: 9,
+        parentRevision: 4,
       });
       assert.equal(readyRead.artifactLineageUnreadable, undefined);
 
@@ -151,6 +178,7 @@ test(
       assert.equal(corruptRead.artifactLineageUnreadable, true);
     } finally {
       await cleanup(pool, workspaceId);
+      await cleanup(pool, foreignWorkspaceId);
       await pool.end();
     }
   },
