@@ -22,6 +22,7 @@ import {
   type MediaAdmissionCrashMode,
 } from './dbos-media-admission.fixture.js';
 import {
+  confirmationCardHoldExpired,
   normalizeHarnessDbosWorkflowInput,
   registerHarnessDbosWorkflow,
   resumeHarnessDbosInteractionWorkflow,
@@ -1362,6 +1363,139 @@ test(
           [9, 'refund-product-usage'],
         ],
       );
+    } finally {
+      await DBOS.shutdown({ deregister: true });
+    }
+  },
+);
+
+test(
+  'an external reservation sweeper expiry closes the exact pending DBOS hold',
+  { skip: !systemDatabaseUrl },
+  async () => {
+    const workflowId = `harness-external-expiry-${randomUUID()}`;
+    const workspaceId = `workspace-external-expiry-${randomUUID()}`;
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const question: QuestionCard = {
+      questionId: `${workflowId}:note-style`,
+      workflowId,
+      workflowRevision: 1,
+      question: '这次想采用哪种笔记风格？',
+      options: [{ id: 'style-a', label: '克制专业' }],
+      freeText: { enabled: false },
+      response: {
+        field: 'note_style',
+        reason: '选择本次图文笔记的表达风格',
+      },
+      scope: 'current_task',
+    };
+    const skills = await createSmokeSkills(workflowId);
+    const ports = smokePorts(workflowId, skills.service, []);
+    ports.nameIntent = async () => ({
+      declaration: {
+        normalizedIntent: '制作两版图文笔记',
+        taskType: 'routine_marketing_materials',
+        deliveryLayer: 'copy',
+        relevantAssetCategories: ['product_service'],
+        usedAssetCategories: [],
+        route: 'guidance',
+        routingSource: 'model',
+        implicitConstraints: [],
+      },
+      blockingQuestion: question,
+    });
+    let refunds = 0;
+    DBOS.setConfig({
+      name: 'beauty-marketing-harness-external-expiry',
+      systemDatabaseUrl: systemDatabaseUrl!,
+      applicationVersion: `harness-external-expiry-${workflowId}`,
+    });
+    const workflow = registerHarnessDbosWorkflow(
+      ports,
+      {
+        async registerPending(_workspaceId, pendingQuestion) {
+          autoApprovePaidGenerationConfirmation(
+            workspaceId,
+            workflowId,
+            pendingQuestion,
+          );
+        },
+        async readPending() {
+          return null;
+        },
+        async recordStageTrace() {},
+        async recordTerminalFailure() {},
+      },
+      {
+        billing: {
+          async commit() {
+            throw new Error('An expired hold must not commit usage.');
+          },
+          async refund() {
+            refunds += 1;
+          },
+          async scheduleCompensation() {
+            throw new Error('The expiry refund succeeds.');
+          },
+        },
+        config: {
+          async get() {
+            return {
+              actorId: 'platform-admin',
+              correlationId: `external-expiry-${workflowId}`,
+              createdAt: '2026-08-09T09:00:00.000Z',
+              key: 'harness.confirmation_card.timeout_seconds',
+              reason: 'Keep the hold pending for the external sweeper',
+              revision: 1,
+              rolledBackToRevision: null,
+              scope: 'global',
+              status: 'applied',
+              value: 3_600,
+              workspaceId: '__global__',
+            };
+          },
+        },
+        decisions: {
+          async submitCoreTimeout() {
+            throw new Error('The external sweeper owns this expiry.');
+          },
+          async submitCoreHoldExpired() {
+            throw new Error('The decision is persisted before DBOS delivery.');
+          },
+        },
+      },
+    );
+
+    try {
+      await DBOS.launch();
+      const handle = await DBOS.startWorkflow(workflow, {
+        workflowID: runtimeWorkflowId,
+      })({
+        workflowId,
+        request: {
+          ...snapshotTimeoutRequest(workflowId, workspaceId),
+          usageReservation: {
+            id: `usage-reservation-${workflowId}`,
+            units: [{ resource: 'copy', quantity: 1 }],
+          },
+        },
+      });
+      await DBOS.getEvent(runtimeWorkflowId, 'pending-structured-decision', {
+        timeoutSeconds: 5,
+      });
+      await resumeHarnessDbosWorkflow(
+        workspaceId,
+        workflowId,
+        confirmationCardHoldExpired(question),
+      );
+      assert.deepEqual(await handle.getResult(), {
+        delivery: null,
+        merchantMessage: '超时未选择，本次任务已取消，积分已退回',
+        outcome: 'cancelled',
+        resolutionSource: 'core_hold_expired',
+      });
+      assert.equal(await waitForWorkflowStatus(handle, 'SUCCESS'), 'SUCCESS');
+      assert.equal(refunds, 1);
     } finally {
       await DBOS.shutdown({ deregister: true });
     }

@@ -22,6 +22,8 @@ export interface HarnessReservationSweepStore {
   claimBatch(input: {
     expiresBefore: string;
     limit: number;
+    taskId?: string;
+    workspaceId?: string;
   }): Promise<HarnessReservationSweep[]>;
   markCompleted(input: HarnessReservationSweep): Promise<void>;
   markFailed(
@@ -43,7 +45,7 @@ export class HarnessReservationSweeper {
     } = {},
   ) {}
 
-  async runOnce() {
+  async runOnce(scope?: { taskId: string; workspaceId: string }) {
     const now = this.options.now?.() ?? new Date();
     const configuredTtl = this.options.reservationTtlSeconds;
     const ttlSeconds =
@@ -59,6 +61,7 @@ export class HarnessReservationSweeper {
     const sweeps = await this.store.claimBatch({
       expiresBefore,
       limit: this.options.batchSize ?? 20,
+      ...(scope ?? {}),
     });
     let completed = 0;
     let failed = 0;

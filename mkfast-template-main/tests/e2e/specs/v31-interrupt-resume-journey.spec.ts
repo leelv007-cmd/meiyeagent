@@ -49,7 +49,16 @@ async function reachExecutionConfirmation(page: Page, intent: string) {
     { timeout: 120_000 }
   );
   await submit.click();
-  expect((await submission).ok()).toBeTruthy();
+  const submissionResponse = await submission;
+  const submissionEnvelope = (await submissionResponse.json()) as {
+    data?: { task?: { id?: string } };
+    error?: { message?: string };
+  };
+  expect(
+    submissionResponse.ok(),
+    submissionEnvelope.error?.message
+  ).toBeTruthy();
+  expect(submissionEnvelope.data?.task?.id).toBeTruthy();
 
   const start = page.getByTestId('agent-commit-strip-start');
   await expect(start).toBeEnabled({ timeout: 120_000 });
@@ -67,6 +76,71 @@ async function reachExecutionConfirmation(page: Page, intent: string) {
   await expect(
     page.getByTestId('execution-confirmation-interaction-card')
   ).toBeVisible({ timeout: 120_000 });
+
+  return { taskId: submissionEnvelope.data!.task!.id! };
+}
+
+async function queryProductUsage(page: Page, taskId: string) {
+  return page.evaluate(async (currentTaskId) => {
+    const response = await fetch('/api/core/p1/query', {
+      body: JSON.stringify({
+        action: 'get_usage',
+        module: 'product-billing',
+        payload: { taskId: currentTaskId },
+      }),
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    const envelope = (await response.json()) as {
+      data?: {
+        refundedCredits?: number;
+        reservedCredits?: number;
+        settledCredits?: number;
+        status?: string;
+      };
+      error?: { message?: string };
+    };
+    if (!response.ok || !envelope.data) {
+      throw new Error(envelope.error?.message ?? 'Product usage read failed');
+    }
+    return envelope.data;
+  }, taskId);
+}
+
+async function queryCreditRefunds(page: Page) {
+  return page.evaluate(async () => {
+    const response = await fetch('/api/core/p1/query', {
+      body: JSON.stringify({
+        action: 'credit_detail',
+        module: 'entitlements',
+        payload: {},
+      }),
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
+    });
+    const envelope = (await response.json()) as {
+      data?: {
+        transactions?: Array<{
+          creditedAmount?: number;
+          credits?: number;
+          operation?: string;
+          refundDisposition?: string;
+          status?: string;
+          type?: string;
+        }>;
+      };
+      error?: { message?: string };
+    };
+    if (!response.ok || !envelope.data?.transactions) {
+      throw new Error(envelope.error?.message ?? 'Credit detail read failed');
+    }
+    return envelope.data.transactions.filter(
+      (transaction) =>
+        transaction.operation === 'creation' && transaction.type === 'refund'
+    );
+  });
 }
 
 test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
@@ -183,7 +257,7 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     );
   });
 
-  test('expired interrupt fails closed without dispatching the suspended run', async ({
+  test('expired hold refunds and closes the dispatched waiting run without continuing', async ({
     page,
     request,
   }) => {
@@ -192,7 +266,10 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     await loginByForm(page, user);
     await seedConfirmedStore(page);
     await openCustomizedCreate(page);
-    await reachExecutionConfirmation(page, '按已确认资料做三页图文。');
+    const { taskId } = await reachExecutionConfirmation(
+      page,
+      '按已确认资料做三页图文。'
+    );
 
     const pending = page.getByTestId('agent-pending-interrupt');
     await expect(pending).toBeVisible({ timeout: 120_000 });
@@ -209,15 +286,49 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
       }
     );
     expect(expiry.ok(), await expiry.text()).toBeTruthy();
+    await expect
+      .poll(
+        async () => {
+          const decision = await page.request.get(
+            `/api/core/p1/harness/tasks/${encodeURIComponent(taskId)}/decision`
+          );
+          return (await decision.json()) as unknown;
+        },
+        { timeout: 60_000 }
+      )
+      .toMatchObject({
+        data: {
+          resolutionSource: 'core_hold_expired',
+          status: 'resolved',
+        },
+      });
+    await expect
+      .poll(() => queryProductUsage(page, taskId), { timeout: 60_000 })
+      .toMatchObject({ status: 'refunded' });
+    const refundedUsage = await queryProductUsage(page, taskId);
+    expect(refundedUsage.reservedCredits).toBeGreaterThan(0);
+    expect(refundedUsage.refundedCredits).toBe(refundedUsage.reservedCredits);
+    expect(refundedUsage.settledCredits ?? 0).toBe(0);
+    await expect
+      .poll(() => queryCreditRefunds(page), { timeout: 60_000 })
+      .toContainEqual(
+        expect.objectContaining({
+          creditedAmount: refundedUsage.reservedCredits,
+          credits: refundedUsage.reservedCredits,
+          refundDisposition: 'credited',
+          status: 'refunded',
+        })
+      );
     await page.reload();
     await expect(
       page.locator(
         `[data-testid="agent-pending-interrupt"][data-interrupt-id="${interruptId}"]`
       )
     ).toHaveCount(0);
-    await expect(
-      page.getByTestId('execution-confirmation-interaction-card')
-    ).toBeVisible();
+    await expect(page.getByTestId('composer-terminal-outcome')).toContainText(
+      /已取消.*积分已退回/u,
+      { timeout: 60_000 }
+    );
 
     const resume = await page.request.post('/api/core/p1/interrupts/resume', {
       data: {
@@ -230,7 +341,7 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     });
     expect(resume.status()).toBe(409);
     expect(await resume.json()).toMatchObject({
-      error: { code: 'EXPIRED' },
+      error: { code: 'IDEMPOTENCY_CONFLICT' },
     });
   });
 });

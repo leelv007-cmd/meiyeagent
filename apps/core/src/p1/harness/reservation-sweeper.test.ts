@@ -29,17 +29,25 @@ test('expired hold reservation is refunded and completion remains idempotent', a
     reservationTtlSeconds: 48 * 60 * 60,
   });
 
-  assert.deepEqual(await worker.runOnce(), {
-    claimed: 1,
-    completed: 1,
-    failed: 0,
-  });
+  assert.deepEqual(
+    await worker.runOnce({
+      workspaceId: 'workspace-sweep',
+      taskId: 'task-sweep',
+    }),
+    {
+      claimed: 1,
+      completed: 1,
+      failed: 0,
+    },
+  );
   assert.equal(billing.refundCalls, 1);
   assert.deepEqual(store.completed, ['task-sweep']);
   assert.deepEqual(store.claimInputs, [
     {
       expiresBefore: '2026-07-26T00:00:00.000Z',
       limit: 20,
+      taskId: 'task-sweep',
+      workspaceId: 'workspace-sweep',
     },
   ]);
 });
@@ -152,7 +160,12 @@ test('a persisted post-refund claim retries the same billing identity after comp
 });
 
 class MemorySweepStore implements HarnessReservationSweepStore {
-  readonly claimInputs: Array<{ expiresBefore: string; limit: number }> = [];
+  readonly claimInputs: Array<{
+    expiresBefore: string;
+    limit: number;
+    taskId?: string;
+    workspaceId?: string;
+  }> = [];
   readonly completed: string[] = [];
   readonly failed: Array<{
     phase: 'completion' | 'refund';
@@ -162,7 +175,12 @@ class MemorySweepStore implements HarnessReservationSweepStore {
 
   constructor(private readonly batches: HarnessReservationSweep[][]) {}
 
-  async claimBatch(input: { expiresBefore: string; limit: number }) {
+  async claimBatch(input: {
+    expiresBefore: string;
+    limit: number;
+    taskId?: string;
+    workspaceId?: string;
+  }) {
     this.claimInputs.push(input);
     return this.batches.shift() ?? [];
   }

@@ -1116,8 +1116,11 @@ export function registerHarnessDbosWorkflow(
           decisionTopic(question.questionId),
           { timeoutSeconds },
         );
-        if (isReleasedReservationCancellation(decision)) {
-          await resolveInterrupt('reservation_released');
+        if (
+          isReleasedReservationCancellation(decision) ||
+          isCoreHoldExpiredCancellation(decision, question)
+        ) {
+          await resolveInterrupt(decision.resolutionSource);
           return decision;
         }
         const command = confirmationCardDecision(
@@ -2033,9 +2036,18 @@ export async function resumeHarnessDbosWorkflow(
   const runtimeWorkflowId =
     (await resolver?.workflowRuntimeId(workspaceId, workflowId)) ??
     harnessRuntimeId(workspaceId, workflowId);
+  const payload = isCoreHoldExpiredCommand(parsedCommand)
+    ? {
+        cancelled: true as const,
+        interruptId: parsedCommand.questionId,
+        merchantMessage: '超时未选择，本次任务已取消，积分已退回',
+        resolutionSource: 'core_hold_expired' as const,
+        revision: parsedCommand.workflowRevision,
+      }
+    : parsedCommand;
   await DBOS.send(
     runtimeWorkflowId,
-    parsedCommand,
+    payload,
     decisionTopic(parsedCommand.questionId),
     `harness-decision:${workspaceId}:${runtimeWorkflowId}:${parsedCommand.idempotencyKey}`,
   );
@@ -2295,6 +2307,17 @@ export function confirmationCardHoldExpired(question: QuestionCard) {
   });
 }
 
+function isCoreHoldExpiredCommand(
+  command: StructuredDecisionInput,
+): boolean {
+  return (
+    command.idempotencyKey ===
+      `${command.questionId}:r${command.workflowRevision}:core_hold_expired` &&
+    command.decision.state === 'ignored' &&
+    command.decision.value === '超时未选择，本次任务已取消，积分已退回'
+  );
+}
+
 async function waitForHeldDecision(
   question: QuestionCard,
   timeoutSeconds: number,
@@ -2305,7 +2328,12 @@ async function waitForHeldDecision(
     decisionTopic(question.questionId),
     { timeoutSeconds },
   );
-  if (isReleasedReservationCancellation(decision)) return decision;
+  if (
+    isReleasedReservationCancellation(decision) ||
+    isCoreHoldExpiredCancellation(decision, question)
+  ) {
+    return decision;
+  }
   return decision
     ? confirmationCardDecision(
         question,
@@ -2341,6 +2369,33 @@ function isReleasedReservationCancellation(
   );
 }
 
+function isCoreHoldExpiredCancellation(
+  value: unknown,
+  question: QuestionCard,
+): value is {
+  cancelled: true;
+  interruptId: string;
+  merchantMessage: string;
+  resolutionSource: 'core_hold_expired';
+  revision: number;
+} {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as {
+    cancelled?: unknown;
+    interruptId?: unknown;
+    merchantMessage?: unknown;
+    resolutionSource?: unknown;
+    revision?: unknown;
+  };
+  return (
+    candidate.cancelled === true &&
+    candidate.interruptId === question.questionId &&
+    typeof candidate.merchantMessage === 'string' &&
+    candidate.resolutionSource === 'core_hold_expired' &&
+    candidate.revision === question.workflowRevision
+  );
+}
+
 async function waitForDecisionWithoutTimeout(
   question: QuestionCard,
   persistence: HarnessWorkflowPersistence,
@@ -2351,7 +2406,12 @@ async function waitForDecisionWithoutTimeout(
       decisionTopic(question.questionId),
     );
     if (!decision) continue;
-    if (isReleasedReservationCancellation(decision)) return decision;
+    if (
+      isReleasedReservationCancellation(decision) ||
+      isCoreHoldExpiredCancellation(decision, question)
+    ) {
+      return decision;
+    }
     return confirmationCardDecision(
       question,
       decision,

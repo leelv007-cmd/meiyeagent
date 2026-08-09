@@ -27,6 +27,7 @@ import {
   commitHarnessBillingOrSchedule,
   assertHarnessInteractionContinuationLayout,
   confirmationCardDecision,
+  confirmationCardHoldExpired,
   contextFencePauseQuestion,
   createHarnessInterruptProtocolPort,
   createHarnessInterruptResumeBridge,
@@ -188,6 +189,45 @@ test('resume accepts a valid command after rejecting invalid runtime data', asyn
       command,
       'structured-decision:question-1',
       'harness-decision:workspace-1:runtime-1:decision-1',
+    ],
+  ]);
+});
+
+test('exact core hold expiry resumes DBOS with a scoped cancellation signal', async (t) => {
+  const sent: unknown[][] = [];
+  t.mock.method(DBOS, 'send', async (...args: unknown[]) => {
+    sent.push(args);
+  });
+  const question = questionCardSchema.parse({
+    questionId: 'question-expired-1',
+    workflowId: 'task-expired-1',
+    workflowRevision: 3,
+    question: '这次想采用哪种笔记风格？',
+    options: [{ id: 'style-a', label: '克制专业' }],
+    freeText: { enabled: false },
+    response: { field: 'note_style', reason: '选择表达风格' },
+    scope: 'current_task',
+  });
+
+  await resumeHarnessDbosWorkflow(
+    'workspace-expired-1',
+    question.workflowId,
+    confirmationCardHoldExpired(question),
+    { async workflowRuntimeId() { return 'runtime-expired-1'; } },
+  );
+
+  assert.deepEqual(sent, [
+    [
+      'runtime-expired-1',
+      {
+        cancelled: true,
+        interruptId: question.questionId,
+        merchantMessage: '超时未选择，本次任务已取消，积分已退回',
+        resolutionSource: 'core_hold_expired',
+        revision: question.workflowRevision,
+      },
+      `structured-decision:${question.questionId}`,
+      `harness-decision:workspace-expired-1:runtime-expired-1:${question.questionId}:r3:core_hold_expired`,
     ],
   ]);
 });

@@ -65,6 +65,13 @@ export class PostgresAgentSemanticEventStore
     try {
       await client.query('BEGIN');
 
+      // Event IDs are idempotency identities. Serialize the check+insert
+      // across concurrent workflow and sweeper resolution paths before either
+      // one allocates a stream offset.
+      await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+        candidate.eventId,
+      ]);
+
       const existing = await client.query<PayloadRow>(
         `SELECT payload
            FROM p1_agent_semantic_events
