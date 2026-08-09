@@ -64,16 +64,19 @@ const publishedCreditConfigs = [
 test('credit-plan config keys are a single contracts source including reference_numbers', () => {
   // Spec G / #390: no handwritten shell/core copies — contracts is authority.
   assert.equal(CREDIT_PLAN_CONFIG_KEYS, CONTRACT_CREDIT_PLAN_CONFIG_KEYS);
-  assert.deepEqual([...CREDIT_PLAN_CONFIG_KEYS], [
-    'plan.credits.trial',
-    'plan.credits.starter',
-    'plan.credits.growth',
-    'plan.credits.pro',
-    'plan.credits.addons',
-    'plan.credits.cycle_coefficients',
-    'plan.credits.reference_numbers',
-    'plan.credits.trial.enabled',
-  ]);
+  assert.deepEqual(
+    [...CREDIT_PLAN_CONFIG_KEYS],
+    [
+      'plan.credits.trial',
+      'plan.credits.starter',
+      'plan.credits.growth',
+      'plan.credits.pro',
+      'plan.credits.addons',
+      'plan.credits.cycle_coefficients',
+      'plan.credits.reference_numbers',
+      'plan.credits.trial.enabled',
+    ]
+  );
   assert.ok(
     PLAN_CONTROL_CONFIG_KEYS.includes('plan.credits.reference_numbers'),
     'reference_numbers must appear in the plans runtime config key list'
@@ -102,29 +105,26 @@ test('uses versioned credit-plan keys, preserves existing controls, and keeps th
   );
 
   const queryClient = new QueryClient();
-  queryClient.setQueryData(
-    p1QueryKeys.request('admin-config', 'config_list'),
-    [
-      ...publishedCreditConfigs,
-      {
-        effectiveValue: {
-          published: {
-            growth: { copy: 1_300, image: 260, video: 26 },
-            pro: { copy: 2_800, image: 560, video: 56 },
-            starter: { copy: 500, image: 100, video: 10 },
-            trial: { copy: 100, image: 20, video: 2 },
-          },
-          referenceModels: {
-            copy: 'deepseek-v4-pro',
-            image: 'seedream-5-pro',
-            video: 'seedance-2',
-          },
+  queryClient.setQueryData(p1QueryKeys.request('admin-config', 'config_list'), [
+    ...publishedCreditConfigs,
+    {
+      effectiveValue: {
+        published: {
+          growth: { copy: 1_300, image: 260, video: 26 },
+          pro: { copy: 2_800, image: 560, video: 56 },
+          starter: { copy: 500, image: 100, video: 10 },
+          trial: { copy: 100, image: 20, video: 2 },
         },
-        key: 'plan.credits.reference_numbers',
-        storedValue: null,
+        referenceModels: {
+          copy: 'deepseek-v4-pro',
+          image: 'seedream-5-pro',
+          video: 'seedance-2',
+        },
       },
-    ]
-  );
+      key: 'plan.credits.reference_numbers',
+      storedValue: null,
+    },
+  ]);
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
       <AdminPlanControl />

@@ -69,7 +69,10 @@ export function PublishArtifact({
       {summary ? (
         <p className="text-muted text-xs leading-relaxed">{summary}</p>
       ) : null}
-      <ul className="flex flex-col gap-1.5" data-testid="agent-artifact-publish-items">
+      <ul
+        className="flex flex-col gap-1.5"
+        data-testid="agent-artifact-publish-items"
+      >
         {items.map((item) => (
           <li
             className="text-foreground flex items-center justify-between gap-2 text-xs"

@@ -67,7 +67,7 @@ export const SELF_REPORT_CHIP_LABEL: Record<
 };
 
 export function projectPublishHandoffPanel(
-  facts: PublishHandoffPanelFacts,
+  facts: PublishHandoffPanelFacts
 ): PublishHandoffPanelView {
   const capability = projectPublishCapabilityPresentation(facts.capabilityMode);
   const copyBlocks = buildPublishHandoffCopyBlocks({
@@ -107,7 +107,7 @@ export function projectPublishHandoffPanel(
 
 /** Convert contract view → panel view (after prepare_mobile_publish_handoff). */
 export function panelViewFromPublishHandoff(
-  view: PublishHandoffView,
+  view: PublishHandoffView
 ): PublishHandoffPanelView {
   return {
     contentPackageId: view.contentPackageRef.id,
@@ -132,9 +132,7 @@ export function panelViewFromPublishHandoff(
   };
 }
 
-export function evaluateDrivenPublishFromQr(
-  intent: PublishFromHandoffIntent,
-) {
+export function evaluateDrivenPublishFromQr(intent: PublishFromHandoffIntent) {
   return decidePublishFromHandoff(intent);
 }
 

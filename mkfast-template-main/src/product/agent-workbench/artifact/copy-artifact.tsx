@@ -70,7 +70,10 @@ export function CopyArtifact({
       {summary ? (
         <p className="text-muted text-xs leading-relaxed">{summary}</p>
       ) : null}
-      <ul className="flex flex-col gap-2" data-testid="agent-artifact-copy-blocks">
+      <ul
+        className="flex flex-col gap-2"
+        data-testid="agent-artifact-copy-blocks"
+      >
         {blocks.map((block) => (
           <li
             className="border-border/50 bg-muted/20 rounded-md border px-3 py-2"

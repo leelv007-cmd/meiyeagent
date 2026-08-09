@@ -266,7 +266,7 @@ export function AdminOpsConsoleControl() {
       releasesQuery.data
         ? bucketReleases(releasesQuery.data)
         : { production: [], canary: [], draft: [], other: [] },
-    [releasesQuery.data],
+    [releasesQuery.data]
   );
 
   const loadDiff = async () => {
@@ -297,7 +297,9 @@ export function AdminOpsConsoleControl() {
       }
       window.open(result.url, '_blank', 'noopener,noreferrer');
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Langfuse link failed');
+      toast.error(
+        error instanceof Error ? error.message : 'Langfuse link failed'
+      );
     }
   };
 
@@ -673,7 +675,9 @@ export function AdminOpsConsoleControl() {
               </TableBody>
             </Table>
           ) : (
-            <p className="text-sm text-muted-foreground">No tool policies yet</p>
+            <p className="text-sm text-muted-foreground">
+              No tool policies yet
+            </p>
           )}
           <div className="grid gap-2 md:grid-cols-2">
             <Input
@@ -759,7 +763,9 @@ export function AdminOpsConsoleControl() {
                   </TableCell>
                   <TableCell>
                     {item.canEnable ? (
-                      <Badge variant={item.enabled ? 'destructive' : 'secondary'}>
+                      <Badge
+                        variant={item.enabled ? 'destructive' : 'secondary'}
+                      >
                         {item.enabled ? 'ON' : 'OFF'}
                       </Badge>
                     ) : (
@@ -782,7 +788,11 @@ export function AdminOpsConsoleControl() {
                         })
                       }
                     >
-                      {item.canEnable ? (item.enabled ? 'Disable' : 'Enable') : '—'}
+                      {item.canEnable
+                        ? item.enabled
+                          ? 'Disable'
+                          : 'Enable'
+                        : '—'}
                     </Button>
                   </TableCell>
                 </TableRow>

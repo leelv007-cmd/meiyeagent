@@ -90,16 +90,22 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
       await resume.click();
       // After resume, interrupt host should clear or progress.
       await expect
-        .poll(async () => {
-          const still = await interruptHost.first().isVisible().catch(() => false);
-          const progress = await page
-            .getByTestId('agent-activity-line')
-            .or(page.getByTestId('agent-narrative-line'))
-            .first()
-            .isVisible()
-            .catch(() => false);
-          return !still || progress;
-        }, { timeout: 60_000 })
+        .poll(
+          async () => {
+            const still = await interruptHost
+              .first()
+              .isVisible()
+              .catch(() => false);
+            const progress = await page
+              .getByTestId('agent-activity-line')
+              .or(page.getByTestId('agent-narrative-line'))
+              .first()
+              .isVisible()
+              .catch(() => false);
+            return !still || progress;
+          },
+          { timeout: 60_000 }
+        )
         .toBeTruthy();
     }
   });
@@ -121,7 +127,9 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
 
     // Inbox may be empty without an active interrupt — presence of route is enough
     // for the seam contract when no pending rows exist.
-    await expect(page.getByTestId('dashboard-home').or(page.locator('main'))).toBeVisible({
+    await expect(
+      page.getByTestId('dashboard-home').or(page.locator('main'))
+    ).toBeVisible({
       timeout: 30_000,
     });
     void inbox;

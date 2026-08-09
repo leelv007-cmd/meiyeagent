@@ -55,9 +55,6 @@ export function SkillCapabilityPillRow({
             const label = `${composer_skill_capability_explainable_prefix()}: ${view.title}`;
             return (
               <span
-                aria-label={composer_skill_capability_explainable_aria({
-                  title: view.title,
-                })}
                 className={cn(
                   'inline-flex min-h-12 min-w-12 items-center rounded-full border px-4 py-2 text-sm font-medium',
                   'border-input bg-muted text-muted-foreground',
@@ -69,7 +66,12 @@ export function SkillCapabilityPillRow({
                 key={`explainable:${view.skillId}`}
                 title={view.summary}
               >
-                {label}
+                <span className="sr-only">
+                  {composer_skill_capability_explainable_aria({
+                    title: view.title,
+                  })}
+                </span>
+                <span aria-hidden="true">{label}</span>
               </span>
             );
           }

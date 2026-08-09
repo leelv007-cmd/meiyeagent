@@ -17,7 +17,7 @@ export type ResultExportPlatform = 'xiaohongshu' | 'douyin' | 'video_account';
 export type ExportFullPackageTransport = (
   module: Parameters<typeof commandP1>[0],
   call: Parameters<typeof commandP1>[1],
-  idempotencyKey?: string,
+  idempotencyKey?: string
 ) => Promise<unknown>;
 
 export type ExportFullPackageResult = {
@@ -30,7 +30,7 @@ export type ExportFullPackageResult = {
  * in result-center (no ZIP) — returns null so callers fail closed.
  */
 export function resolveZipExportPlatform(
-  platform: string,
+  platform: string
 ): ResultExportPlatform | null {
   if (
     platform === 'xiaohongshu' ||
@@ -77,7 +77,7 @@ export async function exportAndDownloadFullPackage(input: {
   const platform = resolveZipExportPlatform(input.platform);
   if (!platform) {
     throw new Error(
-      'Full package ZIP export is only available for xiaohongshu / douyin / video_account.',
+      'Full package ZIP export is only available for xiaohongshu / douyin / video_account.'
     );
   }
   const result = (await input.transport(
@@ -90,7 +90,7 @@ export async function exportAndDownloadFullPackage(input: {
         platform,
       },
     },
-    `export:${input.packageId}:${input.expectedRevision}:${platform}`,
+    `export:${input.packageId}:${input.expectedRevision}:${platform}`
   )) as ExportFullPackageResult;
 
   if (!result?.downloadUrl || typeof result.downloadUrl !== 'string') {

@@ -105,7 +105,7 @@ describe('outcome-observation-model', () => {
     });
     assert.deepEqual(
       ladder.filter((s) => s.reached).map((s) => s.id),
-      ['published'],
+      ['published']
     );
 
     const facts = observationsFromResultSignals({
@@ -135,7 +135,7 @@ describe('outcome-observation-model', () => {
     const active = activeOutcomeObservations(facts);
     assert.deepEqual(
       active.map((o) => o.id),
-      ['s2'],
+      ['s2']
     );
   });
 

@@ -1,7 +1,4 @@
-import {
-  p1ModuleRequestSchema,
-  type P1ModuleRequest,
-} from '@meiye/contracts';
+import { p1ModuleRequestSchema, type P1ModuleRequest } from '@meiye/contracts';
 import { ADMIN_ROLE, type AuthSession } from '@/auth/recent-admin-session';
 
 /** Admin-config actions that any verified workspace actor may proxy. */
@@ -21,9 +18,7 @@ const ADMIN_CONFIG_ADMIN_ACTIONS = new Set<string>([
   'cloudflare_inventory',
 ]);
 
-export type AdminConfigProxyDeniedReason =
-  | 'admin_required'
-  | 'unknown_action';
+export type AdminConfigProxyDeniedReason = 'admin_required' | 'unknown_action';
 
 export type AdminConfigProxyDeniedObservation = {
   event: 'admin_config_proxy_denied';

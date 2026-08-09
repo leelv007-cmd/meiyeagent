@@ -8,7 +8,12 @@
  *
  * Driver runs this Playwright suite — lane agents must not start e2e here.
  */
-import { expect, test, type Page, type APIRequestContext } from '@playwright/test';
+import {
+  expect,
+  test,
+  type Page,
+  type APIRequestContext,
+} from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -68,8 +73,10 @@ test.describe('admin credential rotation handoff (#367)', () => {
       timeout: 60_000,
     });
     const versionBefore =
-      (await readDisplayedSecretVersion(page, /model\.direct|平台|ark|凭证/i)) ??
-      null;
+      (await readDisplayedSecretVersion(
+        page,
+        /model\.direct|平台|ark|凭证/i
+      )) ?? null;
 
     // Capture outbound navigations / analytics-ish requests for receipt leak checks.
     const outbound: string[] = [];
@@ -106,9 +113,13 @@ test.describe('admin credential rotation handoff (#367)', () => {
       await rotateOrStore.click();
     }
 
-    const receiptCard = slot.getByTestId('provider-credential-rotation-receipt');
+    const receiptCard = slot.getByTestId(
+      'provider-credential-rotation-receipt'
+    );
     await expect(receiptCard).toBeVisible({ timeout: 60_000 });
-    await expect(slot.getByTestId('provider-credential-receipt-id')).toBeVisible();
+    await expect(
+      slot.getByTestId('provider-credential-receipt-id')
+    ).toBeVisible();
     await expect(
       slot.getByTestId('provider-credential-receipt-expires')
     ).toBeVisible();
@@ -131,7 +142,9 @@ test.describe('admin credential rotation handoff (#367)', () => {
     await expect(receiptCard).not.toHaveText(FORBIDDEN_SECRET);
     await expect(receiptCard).not.toContainText(stagedSecret);
 
-    const completeLink = slot.getByTestId('provider-credential-complete-rotation');
+    const completeLink = slot.getByTestId(
+      'provider-credential-complete-rotation'
+    );
     // Router Link carries the supply list's default search params; pathname
     // and receipt absence are what matter.
     await expect(completeLink).toHaveAttribute(
@@ -162,7 +175,9 @@ test.describe('admin credential rotation handoff (#367)', () => {
     );
     await expect(rotateRow).toBeVisible();
 
-    const receiptField = rotateRow.getByTestId('supply-credential-rotate-receipt');
+    const receiptField = rotateRow.getByTestId(
+      'supply-credential-rotate-receipt'
+    );
     await expect(receiptField).toHaveValue(receiptId, { timeout: 15_000 });
     await expect(receiptField).toHaveAttribute('data-handoff-prefill', 'true');
     await expect(
@@ -196,10 +211,9 @@ test.describe('admin credential rotation handoff (#367)', () => {
     await expect(dialog).toBeVisible({ timeout: 30_000 });
     await dialog.getByRole('button', { name: /确认凭据轮换/i }).click();
 
-    await expect(page.getByTestId('supply-governed-action-result')).toContainText(
-      /执行成功|成功/,
-      { timeout: 60_000 }
-    );
+    await expect(
+      page.getByTestId('supply-governed-action-result')
+    ).toContainText(/执行成功|成功/, { timeout: 60_000 });
 
     // After success the handoff is cleared — remounting supply must not re-prefill.
     await page.reload();

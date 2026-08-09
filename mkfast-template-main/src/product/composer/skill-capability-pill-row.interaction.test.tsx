@@ -85,19 +85,13 @@ function PillHarness({
         }}
         selectedSkillRevisionRefs={selected}
       />
-      <output data-testid="draft-skill-payload">{JSON.stringify(payload)}</output>
-      <button
-        data-testid="fake-submit"
-        onClick={onSubmit}
-        type="button"
-      >
+      <output data-testid="draft-skill-payload">
+        {JSON.stringify(payload)}
+      </output>
+      <button data-testid="fake-submit" onClick={onSubmit} type="button">
         Submit
       </button>
-      <button
-        data-testid="fake-execute"
-        onClick={onExecute}
-        type="button"
-      >
+      <button data-testid="fake-execute" onClick={onExecute} type="button">
         Execute
       </button>
     </div>

@@ -1,10 +1,7 @@
 import { expect, type Page } from '@playwright/test';
 
 import { E2E_TEST_SECRET } from './test-data';
-import {
-  closeComposerCapsule,
-  openComposerCapsule,
-} from './ui-journey';
+import { closeComposerCapsule, openComposerCapsule } from './ui-journey';
 
 export const E2E_USER_SELECTED_SKILL_ID = 'skill.e2e-user-selected';
 export const E2E_TENANT_ISOLATED_SKILL_ID = 'skill.e2e-tenant-isolated';
@@ -116,10 +113,7 @@ export async function openSkillCapabilityPills(page: Page) {
   return row;
 }
 
-export async function selectUserSelectedSkillPill(
-  page: Page,
-  skillId: string
-) {
+export async function selectUserSelectedSkillPill(page: Page, skillId: string) {
   await openSkillCapabilityPills(page);
   const pill = page.getByTestId(`composer-skill-selectable-${skillId}`);
   await expect(pill).toBeVisible();

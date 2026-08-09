@@ -81,8 +81,7 @@ async function p1Command<T>(
       };
       if (!response.ok || envelope.data === undefined) {
         throw new Error(
-          envelope.error?.message ??
-            `${cmdModule}.${cmdAction} command failed`
+          envelope.error?.message ?? `${cmdModule}.${cmdAction} command failed`
         );
       }
       return envelope.data as T;
@@ -181,9 +180,7 @@ test.describe('V31-24 Goal + Proactive Idle', () => {
           resourceId: 'ignored-client-placeholder',
           observedAt: new Date().toISOString(),
           summary: '目标两周未推进',
-          evidenceRefs: [
-            { kind: 'goal_stalled', ref: `goal-e2e-${suffix}` },
-          ],
+          evidenceRefs: [{ kind: 'goal_stalled', ref: `goal-e2e-${suffix}` }],
           goalId: `goal-e2e-${suffix}`,
           weight: 2,
         },

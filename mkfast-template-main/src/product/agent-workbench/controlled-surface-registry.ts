@@ -82,7 +82,13 @@ const registry = new Map<string, SurfaceRegistration>();
 function bootstrapFoundation(): void {
   if (registry.size > 0) return;
   registry.set('narrative', {
-    allowedPropKeys: ['text', 'id', 'occurredAt', 'streamOffset', 'deliveryKey'],
+    allowedPropKeys: [
+      'text',
+      'id',
+      'occurredAt',
+      'streamOffset',
+      'deliveryKey',
+    ],
   });
   registry.set('activity', {
     allowedPropKeys: [

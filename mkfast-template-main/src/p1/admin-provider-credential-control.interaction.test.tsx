@@ -60,7 +60,6 @@ const existingCredentials = [
   },
 ];
 
-
 // The control renders a router Link to /admin/supply (SPA handoff), so tests
 // mount it inside a memory router with a stub supply route.
 async function renderInRouter(client: QueryClient) {
@@ -138,9 +137,13 @@ describe('AdminProviderCredentialControl rotation receipt handoff', () => {
       .find((node) => node.getAttribute('data-slot') === 'model.direct');
     if (!slot) throw new Error('model.direct slot missing');
 
-    const secret = within(slot).getByLabelText(/model\.direct|新凭据|New secret/i);
+    const secret = within(slot).getByLabelText(
+      /model\.direct|新凭据|New secret/i
+    );
     await user.type(secret, 'new-platform-secret-value-must-not-echo');
-    await user.click(within(slot).getByRole('button', { name: /轮换|Rotate/i }));
+    await user.click(
+      within(slot).getByRole('button', { name: /轮换|Rotate/i })
+    );
 
     const receipt = await within(slot).findByTestId(
       'provider-credential-rotation-receipt'
@@ -175,7 +178,9 @@ describe('AdminProviderCredentialControl rotation receipt handoff', () => {
 
     // Secret must leave the input and never appear in the receipt card.
     expect(secret).toHaveValue('');
-    expect(receipt.textContent).not.toMatch(/new-platform-secret|secretReference/i);
+    expect(receipt.textContent).not.toMatch(
+      /new-platform-secret|secretReference/i
+    );
     expect(JSON.stringify(p1Client.commandP1.mock.calls[0])).not.toMatch(
       /secureWriteReceipt|secretReference/
     );
@@ -257,9 +262,7 @@ describe('AdminProviderCredentialControl rotation receipt handoff', () => {
       ).toBeTruthy();
     });
 
-    expect(
-      within(slot).queryByText(/连接成功|Connection passed/i)
-    ).toBeNull();
+    expect(within(slot).queryByText(/连接成功|Connection passed/i)).toBeNull();
     // testedAt is rendered via toLocaleString — assert the localized string.
     const expectedTestedAt = new Date(testedAt).toLocaleString();
     expect(slot.textContent).toContain(expectedTestedAt);

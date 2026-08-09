@@ -493,7 +493,10 @@ test('shared projection loading keeps generation_image not_verified (never green
 test('live catalog and shared query keys consume the same supply + metrics cache', () => {
   const queryClient = new QueryClient();
   const snapshot = buildLiveGenerationImageSupplySnapshot();
-  queryClient.setQueryData(adminOperationalMetricsQueryKey, LIVE_OPERATIONAL_METRICS);
+  queryClient.setQueryData(
+    adminOperationalMetricsQueryKey,
+    LIVE_OPERATIONAL_METRICS
+  );
   queryClient.setQueryData(adminCapabilitySupplySnapshotQueryKey, snapshot);
 
   const html = renderToStaticMarkup(

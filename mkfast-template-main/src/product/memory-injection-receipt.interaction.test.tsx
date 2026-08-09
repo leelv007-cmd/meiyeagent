@@ -6,12 +6,7 @@
  * future injection while the historical trace remains.
  */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import {
-  cleanup,
-  render,
-  screen,
-  waitFor,
-} from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const p1 = vi.hoisted(() => ({
@@ -65,12 +60,15 @@ afterEach(() => {
 describe('memory injection receipt panel', () => {
   it('shows injected memories with content, source and time', async () => {
     p1.queryP1.mockImplementation(
-      (module: string, input: { action: string; payload: { taskId?: string } }) =>
+      (
+        module: string,
+        input: { action: string; payload: { taskId?: string } }
+      ) =>
         module === 'memory' &&
         input.action === 'injection_receipt' &&
         input.payload.taskId === 'task-gen-1'
           ? Promise.resolve({ receipt })
-          : Promise.reject(new Error('unexpected query')),
+          : Promise.reject(new Error('unexpected query'))
     );
     renderPanel('task-gen-1');
 
@@ -93,9 +91,7 @@ describe('memory injection receipt panel', () => {
     await waitFor(() => {
       expect(p1.queryP1).toHaveBeenCalled();
     });
-    expect(
-      screen.queryByTestId('memory-injection-receipt-panel')
-    ).toBeNull();
+    expect(screen.queryByTestId('memory-injection-receipt-panel')).toBeNull();
   });
 
   it('revokes a memory via the memory module command and marks it revoked', async () => {

@@ -1344,22 +1344,23 @@ export function AdminModelControl() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-<SelectItem value="success">
-                  {p1_admin_model_route_failure_success()}
-                </SelectItem>
-                <SelectItem value="rejected_before_accept">
-                  {p1_admin_model_route_failure_rejected_before_accept()}
-                </SelectItem>
-                <SelectItem value="accepted_failure">
-                  {p1_admin_model_route_failure_accepted()}
-                </SelectItem>
-                <SelectItem value="acceptance_unknown">
-                  {p1_admin_model_route_failure_unknown()}
-                </SelectItem>
-                                  </SelectContent>
+                      <SelectItem value="success">
+                        {p1_admin_model_route_failure_success()}
+                      </SelectItem>
+                      <SelectItem value="rejected_before_accept">
+                        {p1_admin_model_route_failure_rejected_before_accept()}
+                      </SelectItem>
+                      <SelectItem value="accepted_failure">
+                        {p1_admin_model_route_failure_accepted()}
+                      </SelectItem>
+                      <SelectItem value="acceptance_unknown">
+                        {p1_admin_model_route_failure_unknown()}
+                      </SelectItem>
+                    </SelectContent>
                   </Select>
                 )}
-              />            </div>
+              />{' '}
+            </div>
             <div className="space-y-2">
               <Label htmlFor="route-simulator-unavailable">
                 {p1_admin_model_route_unavailable_deployments()}

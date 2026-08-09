@@ -10,7 +10,7 @@ import { expect, test } from '@playwright/test';
 test.describe('V31-11 Campaign paid Work confirmation (U7)', () => {
   test.skip(
     true,
-    'Authored for CI/journey owners; local agent lanes do not run Playwright e2e.',
+    'Authored for CI/journey owners; local agent lanes do not run Playwright e2e.'
   );
 
   test('second paid Work under one Campaign requires its own confirmation', async ({
@@ -24,7 +24,9 @@ test.describe('V31-11 Campaign paid Work confirmation (U7)', () => {
     //    (different requestId / workOrdinal=2), never silent reuse of Work 1.
     await page.goto('/app');
 
-    const firstCard = page.getByTestId('execution-confirmation-interaction-card');
+    const firstCard = page.getByTestId(
+      'execution-confirmation-interaction-card'
+    );
     await expect(firstCard).toBeVisible({ timeout: 30_000 });
     const firstRequestId = await firstCard.getAttribute('data-request-id');
     expect(firstRequestId).toBeTruthy();
@@ -33,7 +35,7 @@ test.describe('V31-11 Campaign paid Work confirmation (U7)', () => {
     await expect(firstCard).toBeHidden({ timeout: 30_000 });
 
     const secondCard = page.getByTestId(
-      'execution-confirmation-interaction-card',
+      'execution-confirmation-interaction-card'
     );
     await expect(secondCard).toBeVisible({ timeout: 60_000 });
     const secondRequestId = await secondCard.getAttribute('data-request-id');
@@ -42,9 +44,9 @@ test.describe('V31-11 Campaign paid Work confirmation (U7)', () => {
 
     // Hold / debit visibility on the compact strip when units were reserved.
     await expect(
-      secondCard.getByTestId('execution-confirmation-held').or(
-        secondCard.getByText(/已预留|确认本次执行方案/),
-      ),
+      secondCard
+        .getByTestId('execution-confirmation-held')
+        .or(secondCard.getByText(/已预留|确认本次执行方案/))
     ).toBeVisible();
 
     await secondCard.getByRole('button', { name: /确认执行/ }).click();
@@ -57,14 +59,14 @@ test.describe('V31-11 Campaign paid Work confirmation (U7)', () => {
     const card = page.getByTestId('execution-confirm-card');
     // Host may mount either the interaction card or the client confirm strip.
     const surface = card.or(
-      page.getByTestId('execution-confirmation-interaction-card'),
+      page.getByTestId('execution-confirmation-interaction-card')
     );
     await expect(surface.first()).toBeVisible({ timeout: 30_000 });
 
     // Read-only: no parameter pickers.
     await expect(surface.first().locator('select')).toHaveCount(0);
     await expect(
-      surface.first().getByRole('button', { name: /确认|暂不|先不/ }),
+      surface.first().getByRole('button', { name: /确认|暂不|先不/ })
     ).toHaveCount(2);
   });
 });

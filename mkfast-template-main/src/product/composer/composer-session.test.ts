@@ -60,7 +60,11 @@ test('the merchant sentence opens the run and the task binds the candidate area'
   );
   assert.equal(opened.phase, 'submitting');
   assert.deepEqual(opened.turns, [
-    { kind: 'merchant', id: 'session-1:merchant:0', text: '写一条周末预约文案' },
+    {
+      kind: 'merchant',
+      id: 'session-1:merchant:0',
+      text: '写一条周末预约文案',
+    },
   ]);
 
   const bound = bindComposerTask(opened, TASK);

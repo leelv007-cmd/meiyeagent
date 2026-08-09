@@ -122,7 +122,7 @@ test('duplicate eventId is ignored (idempotent apply)', () => {
 });
 
 test('out-of-order streamOffset batch sorts and yields sequential state', () => {
-  let state = empty({ session: session() });
+  const state = empty({ session: session() });
   const result = reduceAgentWorkbench(state, {
     type: 'apply_events_batch',
     events: [
@@ -147,7 +147,7 @@ test('out-of-order streamOffset batch sorts and yields sequential state', () => 
 });
 
 test('foreign thread events are ignored', () => {
-  let state = empty({ session: session() });
+  const state = empty({ session: session() });
   const result = reduceAgentWorkbench(state, {
     type: 'apply_semantic_event',
     event: wire({

@@ -119,10 +119,12 @@ test.describe('Spec E / #382 merchant user_selected skill journey', () => {
 
     const intentStage = evidence.skillStages.intent_naming ?? [];
     const injected = intentStage.find(
-      (entry) =>
-        entry.skillRevisionRef === seeded.publicSkill.skillRevisionRef
+      (entry) => entry.skillRevisionRef === seeded.publicSkill.skillRevisionRef
     );
-    expect(injected, 'user_selected skill must freeze into intent_naming').toBeTruthy();
+    expect(
+      injected,
+      'user_selected skill must freeze into intent_naming'
+    ).toBeTruthy();
     expect(injected!.contentHash.length).toBeGreaterThan(0);
     expect(injected!.promptNameAtVersion).toBe(
       seeded.publicSkill.promptNameAtVersion
@@ -141,7 +143,9 @@ test.describe('Spec E / #382 merchant user_selected skill journey', () => {
     );
     expect(taskPin, 'task_pin assembly audit must exist').toBeTruthy();
     expect(taskPin!.axisScope).toBe('task_root');
-    expect(taskPin!.catalogRevision ?? evidence.rootAxes?.catalogRevision).toBeTruthy();
+    expect(
+      taskPin!.catalogRevision ?? evidence.rootAxes?.catalogRevision
+    ).toBeTruthy();
     expect(taskPin!.scene ?? evidence.rootAxes?.scene).toBeTruthy();
     expect(injected!.promptNameAtVersion).toMatch(/@.+/u);
     expect(seeded.publicSkill.skillRevisionRef).toBe(

@@ -168,7 +168,8 @@ test('promotes merchant to admin and returns audit fields', async () => {
         ok: true,
         session: adminSession(),
       }),
-      getDatabase: () => ({ transaction: async (fn) => fn({}) }) as RoleChangeDatabase,
+      getDatabase: () =>
+        ({ transaction: async (fn) => fn({}) }) as RoleChangeDatabase,
       applyChange: async (_db, input) => {
         captured.push(input);
         const result: ApplyPlatformRoleChangeResult = {
@@ -244,7 +245,9 @@ test('rejects demoting the last platform admin', async () => {
     {
       resolveAdminSession: async () => ({
         ok: true,
-        session: adminSession({ user: { id: 'only-admin', emailVerified: true, role: 'admin' } }),
+        session: adminSession({
+          user: { id: 'only-admin', emailVerified: true, role: 'admin' },
+        }),
       }),
       applyChange: async () => {
         throw new PlatformRoleChangeError(
@@ -257,10 +260,7 @@ test('rejects demoting the last platform admin', async () => {
 
   assert.equal(response.status, 409);
   const body = await readJson(response);
-  assert.equal(
-    (body.error as { code: string }).code,
-    LAST_ADMIN_REQUIRED_CODE
-  );
+  assert.equal((body.error as { code: string }).code, LAST_ADMIN_REQUIRED_CODE);
 });
 
 test('maps user-not-found and role-unchanged errors', async () => {
@@ -276,7 +276,10 @@ test('maps user-not-found and role-unchanged errors', async () => {
         session: adminSession(),
       }),
       applyChange: async () => {
-        throw new PlatformRoleChangeError(USER_NOT_FOUND_CODE, 'User not found.');
+        throw new PlatformRoleChangeError(
+          USER_NOT_FOUND_CODE,
+          'User not found.'
+        );
       },
     }
   );

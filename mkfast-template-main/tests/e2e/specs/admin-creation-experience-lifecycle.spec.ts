@@ -44,9 +44,9 @@ test('admin visually publishes and rolls back Recipe and Surface revisions', asy
   );
   // #376: same-page success panel, no new route.
   await expect(page.getByTestId('recipe-publish-success-panel')).toBeVisible();
-  await expect(page.getByTestId('recipe-publish-success-revision')).toContainText(
-    `${recipeId}@3`
-  );
+  await expect(
+    page.getByTestId('recipe-publish-success-revision')
+  ).toContainText(`${recipeId}@3`);
   await expect(page).toHaveURL(/\/admin\/templates/);
 
   await page.getByLabel('摘要').fill('用于验收 Recipe 回滚生命周期');
@@ -97,9 +97,7 @@ test('admin visually publishes and rolls back Recipe and Surface revisions', asy
     /draft · r\d+/
   );
   // Free-text revision input is retired (#376).
-  await expect(
-    surfaceEditor.getByLabel('Recipe revision ID')
-  ).toHaveCount(0);
+  await expect(surfaceEditor.getByLabel('Recipe revision ID')).toHaveCount(0);
   const revisionSelect = surfaceEditor.getByTestId('surface-recipe-revision-0');
   await expect(revisionSelect).toBeVisible();
   await revisionSelect.selectOption(`${recipeId}@7`);
@@ -291,9 +289,9 @@ test('fixed recipe revision stays on frontend until Surface re-publish', async (
   const recipeV2RevisionId = `${recipeId}@6`;
   await expect(page.getByTestId('recipe-publish-success-panel')).toBeVisible();
   // Recipe publish success is not Surface publish evidence.
-  await expect(page.getByTestId('recipe-publish-success-revision')).toContainText(
-    recipeV2RevisionId
-  );
+  await expect(
+    page.getByTestId('recipe-publish-success-revision')
+  ).toContainText(recipeV2RevisionId);
 
   const browserAfterRecipeOnly = await page.request.post('/api/core/p1/query', {
     data: {
@@ -326,15 +324,19 @@ test('fixed recipe revision stays on frontend until Surface re-publish', async (
   await page.getByTestId('publish-success-surface-id').fill(surfaceId);
   await page.getByTestId('update-surface-refs-button').click();
   const surfaceEditor = page.getByTestId('surface-editor');
-  await expect(surfaceEditor.getByTestId('surface-ref-update-notice')).toContainText(
-    /已更新|未引用/
-  );
+  await expect(
+    surfaceEditor.getByTestId('surface-ref-update-notice')
+  ).toContainText(/已更新|未引用/);
   await expect(
     surfaceEditor.getByTestId('surface-recipe-revision-0')
   ).toHaveValue(recipeV2RevisionId);
   await surfaceEditor.getByLabel('变更原因').fill('E2E promote surface to v2');
-  await surfaceEditor.getByRole('button', { name: '保存 Surface 草稿' }).click();
-  await surfaceEditor.getByRole('button', { name: '生成 Surface 预览' }).click();
+  await surfaceEditor
+    .getByRole('button', { name: '保存 Surface 草稿' })
+    .click();
+  await surfaceEditor
+    .getByRole('button', { name: '生成 Surface 预览' })
+    .click();
   await surfaceEditor.getByRole('button', { name: '发布 Surface' }).click();
   await expect(page.getByTestId('surface-lifecycle-status')).toHaveText(
     /^published · r\d+$/

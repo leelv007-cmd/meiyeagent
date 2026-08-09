@@ -76,8 +76,8 @@ function loader(events: AgentSemanticEventWire[]): AgentReplayLoader {
         revision: events.at(-1)?.streamOffset ?? '0',
         lastEventId: clientLastEventId ?? null,
         lastStreamOffset: clientLastEventId
-          ? (events.find((e) => e.eventId === clientLastEventId)?.streamOffset ??
-            null)
+          ? (events.find((e) => e.eventId === clientLastEventId)
+              ?.streamOffset ?? null)
           : null,
       },
       events: after,

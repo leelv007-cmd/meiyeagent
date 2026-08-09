@@ -70,12 +70,10 @@ afterEach(cleanup);
 
 function renderCatalog(input: { storage: Storage; returnKey?: string }) {
   const queryCalls: Array<{ action: string }> = [];
-  const query = vi.fn(
-    async (_module: unknown, call: { action: string }) => {
-      queryCalls.push(call);
-      return surface;
-    }
-  );
+  const query = vi.fn(async (_module: unknown, call: { action: string }) => {
+    queryCalls.push(call);
+    return surface;
+  });
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });

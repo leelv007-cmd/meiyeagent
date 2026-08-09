@@ -83,7 +83,6 @@ export class PlatformRoleChangeError extends Error {
  * `tx` is a Drizzle transaction; typed loosely so tests avoid Workers getDb().
  */
 export type RoleChangeDatabase = {
-  // biome-ignore lint/suspicious/noExplicitAny: Drizzle tx shape without Workers coupling
   transaction: <T>(fn: (tx: any) => Promise<T>) => Promise<T>;
 };
 
@@ -114,8 +113,7 @@ export function parseSetRoleRequestBody(
     };
   }
   const record = body as Record<string, unknown>;
-  const userId =
-    typeof record.userId === 'string' ? record.userId.trim() : '';
+  const userId = typeof record.userId === 'string' ? record.userId.trim() : '';
   if (!userId) {
     return {
       ok: false,
@@ -245,10 +243,7 @@ export async function applyPlatformRoleChange(
       | { id: string; role: string | null }
       | undefined;
     if (!subject) {
-      throw new PlatformRoleChangeError(
-        USER_NOT_FOUND_CODE,
-        'User not found.'
-      );
+      throw new PlatformRoleChangeError(USER_NOT_FOUND_CODE, 'User not found.');
     }
 
     const fromRole = subject.role ?? PLATFORM_ROLE_USER;
@@ -321,9 +316,7 @@ export type HandleAdminSetRoleOptions = {
    * Admin + step-up gate. Defaults to requireRecentAdminSession
    * (which uses the authoritative active-session guard).
    */
-  resolveAdminSession?: (
-    request: Request
-  ) => Promise<RecentAdminSessionResult>;
+  resolveAdminSession?: (request: Request) => Promise<RecentAdminSessionResult>;
   /** Defaults to getDb(). Injectable for pure unit tests. */
   getDatabase?: () => RoleChangeDatabase | Promise<RoleChangeDatabase>;
   /** Defaults to applyPlatformRoleChange. */
@@ -422,10 +415,7 @@ export async function handleAdminSetRole(
       return mapPlatformRoleChangeError(error);
     }
     // Surface the DB last-admin trigger if the app-level check races.
-    if (
-      error instanceof Error &&
-      /LAST_ADMIN_REQUIRED/u.test(error.message)
-    ) {
+    if (error instanceof Error && /LAST_ADMIN_REQUIRED/u.test(error.message)) {
       return mapPlatformRoleChangeError(
         new PlatformRoleChangeError(
           LAST_ADMIN_REQUIRED_CODE,

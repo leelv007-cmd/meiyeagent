@@ -8,10 +8,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
-import {
-  ADMIN_NAV_GROUPS,
-  ADMIN_SIDEBAR_ITEMS,
-} from '@/config/sidebar-config';
+import { ADMIN_NAV_GROUPS, ADMIN_SIDEBAR_ITEMS } from '@/config/sidebar-config';
 import { Routes } from '@/lib/routes';
 
 const here = dirname(fileURLToPath(import.meta.url));

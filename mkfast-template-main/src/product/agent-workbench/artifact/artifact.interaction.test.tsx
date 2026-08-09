@@ -235,9 +235,7 @@ describe('Mobile Artifact fullscreen sheet', () => {
 
 describe('Workstream desktop right rail wires ArtifactCanvas', () => {
   it('desktop works column shows artifact canvas without worksSlot', () => {
-    render(
-      <AgentWorkstream state={withNoteArtifact()} viewport="desktop" />
-    );
+    render(<AgentWorkstream state={withNoteArtifact()} viewport="desktop" />);
     expect(screen.getByTestId('agent-workstream-works')).toBeTruthy();
     expect(screen.getByTestId('agent-artifact-canvas')).toBeTruthy();
     expect(screen.getByTestId('agent-artifact-note')).toBeTruthy();

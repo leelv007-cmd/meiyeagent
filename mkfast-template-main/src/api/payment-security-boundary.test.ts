@@ -85,10 +85,7 @@ test('admin refund-review mounts the protected refund review consumer', async ()
     routeSource,
     /import \{ AdminPaymentRefundReview \} from '@\/p1\/admin-payment-refund-review';[\s\S]*?<AdminPaymentRefundReview \/>/u
   );
-  assert.doesNotMatch(
-    auditSource,
-    /AdminPaymentRefundReview/
-  );
+  assert.doesNotMatch(auditSource, /AdminPaymentRefundReview/);
   assert.match(
     apiSource,
     /listPaymentRefundReviews[\s\S]*?method: 'GET'[\s\S]*?middleware\(\[adminApiMiddleware\]\)/u

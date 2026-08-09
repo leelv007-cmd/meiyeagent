@@ -8,9 +8,7 @@ import {
   projectPendingActionsForExceptionHome,
 } from '@/p1/admin-exception-home';
 import { useAdminCapabilityRegistryProjection } from '@/p1/admin-capability-registry';
-import {
-  PAYMENT_REFUND_REVIEW_QUERY_KEY,
-} from '@/p1/admin-payment-refund-review';
+import { PAYMENT_REFUND_REVIEW_QUERY_KEY } from '@/p1/admin-payment-refund-review';
 import {
   pendingActionsQueryKey,
   readPendingActions,

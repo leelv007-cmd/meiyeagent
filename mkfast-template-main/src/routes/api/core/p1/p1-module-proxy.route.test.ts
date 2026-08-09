@@ -74,7 +74,11 @@ test('route modules bind the real injectable POST handlers', async () => {
 });
 
 test('merchant config_get/list/history on query route → BFF 403 and no upstream', async () => {
-  for (const action of ['config_get', 'config_list', 'config_history'] as const) {
+  for (const action of [
+    'config_get',
+    'config_list',
+    'config_history',
+  ] as const) {
     const upstream = trackingUpstream();
     const observations: AdminConfigProxyDeniedObservation[] = [];
     const handlers = createP1QueryHandlers({
@@ -119,7 +123,11 @@ test('merchant config_get/list/history on query route → BFF 403 and no upstrea
 });
 
 test('admin config_get/list/history on query route → forwarded to Core upstream', async () => {
-  for (const action of ['config_get', 'config_list', 'config_history'] as const) {
+  for (const action of [
+    'config_get',
+    'config_list',
+    'config_history',
+  ] as const) {
     const upstream = trackingUpstream();
     const handlers = createP1QueryHandlers({
       getSession: async () => adminSession,
@@ -137,10 +145,7 @@ test('admin config_get/list/history on query route → forwarded to Core upstrea
     assert.equal(response.status, 200, action);
     assert.equal(upstream.calls.length, 1, action);
     assert.equal(upstream.calls[0]?.resource, 'p1/query');
-    assert.equal(
-      JSON.parse(upstream.calls[0]?.body ?? '{}').action,
-      action
-    );
+    assert.equal(JSON.parse(upstream.calls[0]?.body ?? '{}').action, action);
   }
 });
 
@@ -252,10 +257,7 @@ test('unknown admin-config action is denied on both routes with structured obser
       (body.error as { code: string }).code,
       'ADMIN_CONFIG_FORBIDDEN'
     );
-    assert.equal(
-      (body.error as { reason: string }).reason,
-      'unknown_action'
-    );
+    assert.equal((body.error as { reason: string }).reason, 'unknown_action');
     assert.equal(upstream.calls.length, 0, resource);
     assert.deepEqual(observations[0], {
       event: 'admin_config_proxy_denied',

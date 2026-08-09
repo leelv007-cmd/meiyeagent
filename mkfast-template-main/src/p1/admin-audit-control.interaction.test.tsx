@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -82,7 +88,10 @@ function stubAuditQueries() {
       module: string,
       request: { action: string; payload?: Record<string, unknown> }
     ) => {
-      if (module === 'model-supply' && request.action === 'revision_rollback_audits') {
+      if (
+        module === 'model-supply' &&
+        request.action === 'revision_rollback_audits'
+      ) {
         return ROLLBACK_PAYLOAD;
       }
       if (module === 'model-supply' && request.action === 'catalog_revisions') {
@@ -142,7 +151,10 @@ describe('AdminAuditControl filters and export', () => {
       target: { value: '2026-08-06' },
     });
     await user.type(screen.getByTestId('admin-audit-filter-actor'), 'alice');
-    await user.type(screen.getByTestId('admin-audit-filter-action'), 'rollback');
+    await user.type(
+      screen.getByTestId('admin-audit-filter-action'),
+      'rollback'
+    );
 
     await waitFor(() => {
       expect(screen.queryByText('template.publish')).toBeNull();
@@ -170,7 +182,10 @@ describe('AdminAuditControl filters and export', () => {
     renderControl();
     await waitForAuditList();
 
-    await user.type(screen.getByTestId('admin-audit-filter-action'), 'rollback');
+    await user.type(
+      screen.getByTestId('admin-audit-filter-action'),
+      'rollback'
+    );
     await waitFor(() => {
       expect(screen.getAllByTestId(/^admin-audit-event-/)).toHaveLength(1);
     });
@@ -209,7 +224,10 @@ describe('AdminAuditControl filters and export', () => {
       (call) => `${call[0]}.${call[1]?.action}`
     );
     expect(p1Actions.sort()).toEqual(
-      ['model-supply.catalog_revisions', 'model-supply.revision_rollback_audits'].sort()
+      [
+        'model-supply.catalog_revisions',
+        'model-supply.revision_rollback_audits',
+      ].sort()
     );
   });
 });

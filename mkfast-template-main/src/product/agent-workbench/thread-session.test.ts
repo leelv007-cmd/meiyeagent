@@ -18,10 +18,10 @@ test('explicit threadId from search wins; taskId is independent', () => {
     }),
     { explicitThreadId: 'thread-1', explicitTaskId: 'task-9' }
   );
-  assert.deepEqual(
-    resolveDashboardThreadTarget({ taskId: 'task-only' }),
-    { explicitThreadId: null, explicitTaskId: 'task-only' }
-  );
+  assert.deepEqual(resolveDashboardThreadTarget({ taskId: 'task-only' }), {
+    explicitThreadId: null,
+    explicitTaskId: 'task-only',
+  });
   assert.deepEqual(resolveDashboardThreadTarget({}), {
     explicitThreadId: null,
     explicitTaskId: null,

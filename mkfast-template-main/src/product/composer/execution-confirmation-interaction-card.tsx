@@ -61,7 +61,7 @@ export function ExecutionConfirmationInteractionCard({
    */
   const heldUnits = request.frozen.debitPreview.reduce(
     (sum, unit) => sum + unit.quantity,
-    0,
+    0
   );
 
   return (

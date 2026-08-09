@@ -94,7 +94,9 @@ describe('asset library cold-start stacking', () => {
     expect(identityEntry.hasAttribute('open')).toBe(false);
     // Collapsed <details> still mounts children in the DOM; the point is that
     // it is not an open first-screen panel competing with upload.
-    expect(identityEntry.querySelector('[data-testid="marketing-identity-manager"]')).toBeTruthy();
+    expect(
+      identityEntry.querySelector('[data-testid="marketing-identity-manager"]')
+    ).toBeTruthy();
   });
 
   it('opens the store intake wizard from the single secondary entry', async () => {

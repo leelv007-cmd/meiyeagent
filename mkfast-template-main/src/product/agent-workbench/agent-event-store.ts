@@ -64,11 +64,7 @@ export function __resetAgentWorkbenchHostStoreForTests(
 export function useAgentWorkbenchState(
   store: AgentEventStore = getAgentWorkbenchHostStore()
 ): AgentWorkbenchClientState {
-  return useSyncExternalStore(
-    store.subscribe,
-    store.getState,
-    store.getState
-  );
+  return useSyncExternalStore(store.subscribe, store.getState, store.getState);
 }
 
 export function useAgentWorkbenchDispatch(

@@ -72,8 +72,7 @@ export function AdminNotificationsPopover() {
           pendingActionBody: admin_notifications_pending_action_body(),
           pendingActionTitle: (kind) =>
             admin_notifications_pending_action_title({ kind }),
-          refundBody: (orderId) =>
-            admin_notifications_refund_body({ orderId }),
+          refundBody: (orderId) => admin_notifications_refund_body({ orderId }),
           refundTitle: admin_notifications_refund_title(),
         },
       }),

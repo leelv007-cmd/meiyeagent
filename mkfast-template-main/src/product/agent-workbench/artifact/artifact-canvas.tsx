@@ -128,10 +128,7 @@ function ArtifactBodyView({
   switch (artifact.artifactType) {
     case 'note':
       return (
-        <NoteArtifact
-          {...common}
-          pages={'pages' in body ? body.pages : []}
-        />
+        <NoteArtifact {...common} pages={'pages' in body ? body.pages : []} />
       );
     case 'video':
       return (
@@ -204,8 +201,7 @@ function GenericTypedArtifact({
   summary?: string;
   lines: string[];
 }) {
-  const surface =
-    artifactType === 'plan' ? 'artifact_plan' : 'artifact_image';
+  const surface = artifactType === 'plan' ? 'artifact_plan' : 'artifact_image';
   const gate = resolveControlledSurface({
     surface,
     props: {
@@ -230,9 +226,7 @@ function GenericTypedArtifact({
         </h3>
         <span className="text-muted text-[10px] uppercase">{status}</span>
       </header>
-      {summary ? (
-        <p className="text-muted mb-2 text-xs">{summary}</p>
-      ) : null}
+      {summary ? <p className="text-muted mb-2 text-xs">{summary}</p> : null}
       <ul className="text-foreground space-y-1 text-xs">
         {lines.map((line) => (
           <li key={line}>{line}</li>

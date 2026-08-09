@@ -133,9 +133,7 @@ function renderWithClient(ui: ReactNode) {
   seedClient(client);
   return {
     client,
-    ...render(
-      <QueryClientProvider client={client}>{ui}</QueryClientProvider>
-    ),
+    ...render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>),
   };
 }
 
@@ -213,20 +211,24 @@ describe('AdminOperationsTodoPopover', () => {
       pendingReview,
       resolvedReview,
     ]);
-    expect(client.getQueryData(pendingActionsQueryKey)).toEqual(
-      pendingActions
-    );
+    expect(client.getQueryData(pendingActionsQueryKey)).toEqual(pendingActions);
 
     await user.click(screen.getByTestId('admin-ops-todo-trigger'));
     const popover = await screen.findByTestId('admin-ops-todo-popover');
     expect(
       within(popover).getByTestId('admin-ops-todo-count-pending-actions')
-    ).toHaveTextContent(String(expected.find((i) => i.id === 'pending-actions')?.count));
+    ).toHaveTextContent(
+      String(expected.find((i) => i.id === 'pending-actions')?.count)
+    );
     expect(
       within(popover).getByTestId('admin-ops-todo-count-refund-review')
-    ).toHaveTextContent(String(expected.find((i) => i.id === 'refund-review')?.count));
+    ).toHaveTextContent(
+      String(expected.find((i) => i.id === 'refund-review')?.count)
+    );
     expect(
       within(popover).getByTestId('admin-ops-todo-count-exceptions')
-    ).toHaveTextContent(String(expected.find((i) => i.id === 'exceptions')?.count));
+    ).toHaveTextContent(
+      String(expected.find((i) => i.id === 'exceptions')?.count)
+    );
   });
 });

@@ -869,7 +869,10 @@ export function useResultCenterView(
       case 'continue_adjust':
       case 'handle_current_issue':
         await navigate({
-          search: (current: ResultCenterSearch) => ({ ...current, panel: 'adjust' }),
+          search: (current: ResultCenterSearch) => ({
+            ...current,
+            panel: 'adjust',
+          }),
         });
         window.requestAnimationFrame(() => {
           document
@@ -879,12 +882,18 @@ export function useResultCenterView(
         return;
       case 'deliver':
         await navigate({
-          search: (current: ResultCenterSearch) => ({ ...current, panel: 'delivery' }),
+          search: (current: ResultCenterSearch) => ({
+            ...current,
+            panel: 'delivery',
+          }),
         });
         return;
       case 'open_history':
         await navigate({
-          search: (current: ResultCenterSearch) => ({ ...current, panel: 'history' }),
+          search: (current: ResultCenterSearch) => ({
+            ...current,
+            panel: 'history',
+          }),
         });
         window.requestAnimationFrame(() => {
           document
@@ -896,7 +905,10 @@ export function useResultCenterView(
         return;
       case 'open_run_detail':
         await navigate({
-          search: (current: ResultCenterSearch) => ({ ...current, panel: 'run' }),
+          search: (current: ResultCenterSearch) => ({
+            ...current,
+            panel: 'run',
+          }),
         });
         window.requestAnimationFrame(() => {
           document
@@ -1131,7 +1143,10 @@ export function useResultCenterView(
         );
         await refreshCanonicalResult();
         await navigate({
-          search: (current: ResultCenterSearch) => ({ ...current, panel: 'history' }),
+          search: (current: ResultCenterSearch) => ({
+            ...current,
+            panel: 'history',
+          }),
         });
       }}
       actionBusy={commands.shellActionBusy}
@@ -1425,7 +1440,10 @@ export function useResultCenterView(
       }
       onVideoDeliver={() =>
         navigate({
-          search: (current: ResultCenterSearch) => ({ ...current, panel: 'delivery' }),
+          search: (current: ResultCenterSearch) => ({
+            ...current,
+            panel: 'delivery',
+          }),
         })
       }
       onVideoCanonicalEdit={

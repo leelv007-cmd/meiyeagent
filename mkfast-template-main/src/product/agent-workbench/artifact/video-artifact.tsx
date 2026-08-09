@@ -77,7 +77,10 @@ export function VideoArtifact({
       {summary ? (
         <p className="text-muted text-xs leading-relaxed">{summary}</p>
       ) : null}
-      <ol className="flex flex-col gap-2" data-testid="agent-artifact-video-scenes">
+      <ol
+        className="flex flex-col gap-2"
+        data-testid="agent-artifact-video-scenes"
+      >
         {scenes.length === 0 ? (
           <li className="text-muted text-xs">等待分镜…</li>
         ) : (

@@ -95,11 +95,7 @@ import {
   IconVideo,
 } from '@tabler/icons-react';
 import { useMutation, useQueries, useQueryClient } from '@tanstack/react-query';
-import {
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 
 interface ModelSection {
@@ -391,9 +387,8 @@ export function ModelSettings({
 }: ModelSettingsProps = {}) {
   const access = useWorkspaceAccess();
   const [sectionId, setSectionId] = useState<ModelSection['id']>('llm');
-  const [uncontrolledAdvancedOpen, setUncontrolledAdvancedOpen] = useState(
-    defaultAdvancedOpen
-  );
+  const [uncontrolledAdvancedOpen, setUncontrolledAdvancedOpen] =
+    useState(defaultAdvancedOpen);
   const advancedOpen = advancedOpenProp ?? uncontrolledAdvancedOpen;
   const setAdvancedOpen = (open: boolean) => {
     if (advancedOpenProp === undefined) {
@@ -466,10 +461,8 @@ export function ModelSettings({
   const snapshots = useMemo(
     () =>
       MODEL_SECTIONS.map((item, index) => ({
-        catalog: normalizeCatalog(
-          catalogQueries[index]?.data,
-          item.operation
-        ).models,
+        catalog: normalizeCatalog(catalogQueries[index]?.data, item.operation)
+          .models,
         preferences: normalizePreferences(preferencesQueries[index]?.data),
       })),
     [catalogQueries, preferencesQueries]
@@ -572,10 +565,7 @@ export function ModelSettings({
         )}
       </section>
 
-      <Collapsible
-        onOpenChange={setAdvancedOpen}
-        open={advancedOpen}
-      >
+      <Collapsible onOpenChange={setAdvancedOpen} open={advancedOpen}>
         <CollapsibleTrigger
           className="flex min-h-touch-target w-full items-center justify-between gap-4 rounded-lg border border-divider bg-surface-1 p-4 text-left"
           data-testid="model-settings-advanced-trigger"

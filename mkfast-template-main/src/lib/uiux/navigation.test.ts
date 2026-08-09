@@ -89,8 +89,7 @@ test('shared navigation labels resolve in the active locale at access time', () 
   assert.equal('AdminRecipeStudio' in Routes, false);
   assert.ok(
     ADMIN_SIDEBAR_ITEMS.some(
-      (item) =>
-        item.href === Routes.AdminTemplates && item.id === 'templates'
+      (item) => item.href === Routes.AdminTemplates && item.id === 'templates'
     )
   );
   assert.ok(

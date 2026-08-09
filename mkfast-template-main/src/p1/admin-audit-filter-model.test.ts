@@ -52,10 +52,11 @@ function ids(filtered: readonly AuditListEvent[]) {
 
 describe('filterAuditEvents', () => {
   it('returns the full set when every dimension is empty', () => {
-    assert.deepEqual(
-      ids(filterAuditEvents(events, emptyAuditListFilters())),
-      ['evt-template', 'evt-catalog', 'evt-rollback']
-    );
+    assert.deepEqual(ids(filterAuditEvents(events, emptyAuditListFilters())), [
+      'evt-template',
+      'evt-catalog',
+      'evt-rollback',
+    ]);
     assert.equal(hasActiveAuditFilters(emptyAuditListFilters()), false);
   });
 
@@ -75,9 +76,7 @@ describe('filterAuditEvents', () => {
       ...emptyAuditListFilters(),
       action: 'rollback',
     };
-    assert.deepEqual(ids(filterAuditEvents(events, filters)), [
-      'evt-rollback',
-    ]);
+    assert.deepEqual(ids(filterAuditEvents(events, filters)), ['evt-rollback']);
   });
 
   it('filters by inclusive local-day time window', () => {
@@ -102,9 +101,7 @@ describe('filterAuditEvents', () => {
       action: 'rollback',
     };
     assert.equal(hasActiveAuditFilters(filters), true);
-    assert.deepEqual(ids(filterAuditEvents(events, filters)), [
-      'evt-rollback',
-    ]);
+    assert.deepEqual(ids(filterAuditEvents(events, filters)), ['evt-rollback']);
   });
 
   it('preserves input order', () => {
@@ -134,7 +131,10 @@ describe('buildAuditCsv', () => {
       action: 'rollback',
     });
     const csv = buildAuditCsv(filtered);
-    assert.match(csv, /^id,action,actor,correlationId,createdAt,reason,scope\n/);
+    assert.match(
+      csv,
+      /^id,action,actor,correlationId,createdAt,reason,scope\n/
+    );
     assert.match(csv, /evt-rollback,catalog\.rollback,admin-alice/);
     assert.doesNotMatch(csv, /evt-template/);
     assert.doesNotMatch(csv, /evt-catalog/);

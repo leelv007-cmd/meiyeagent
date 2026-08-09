@@ -67,7 +67,10 @@ export function NoteArtifact({
       {summary ? (
         <p className="text-muted text-xs leading-relaxed">{summary}</p>
       ) : null}
-      <ol className="flex flex-col gap-2" data-testid="agent-artifact-note-pages">
+      <ol
+        className="flex flex-col gap-2"
+        data-testid="agent-artifact-note-pages"
+      >
         {pages.length === 0 ? (
           <li className="text-muted text-xs">等待页骨架…</li>
         ) : (

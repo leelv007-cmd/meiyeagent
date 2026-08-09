@@ -27,9 +27,12 @@ test('assisted/unavailable hide direct publish CTA', () => {
     assert.equal(view.publicationBindingRevision, 3);
     assert.deepEqual(
       view.copyBlocks.map((b) => b.role),
-      ['title', 'body', 'topics', 'cta'],
+      ['title', 'body', 'topics', 'cta']
     );
-    assert.deepEqual(view.orderedImagePaths, ['images/01.jpg', 'images/02.jpg']);
+    assert.deepEqual(view.orderedImagePaths, [
+      'images/01.jpg',
+      'images/02.jpg',
+    ]);
   }
 });
 

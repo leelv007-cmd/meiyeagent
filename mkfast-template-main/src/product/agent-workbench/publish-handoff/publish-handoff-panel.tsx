@@ -38,16 +38,14 @@ export type PublishHandoffPanelProps = {
     platformUrl?: string;
     note?: string;
   }) => void | Promise<void>;
-  onSelfReport?: (
-    signal: OutcomeSelfReportChipSignal,
-  ) => void | Promise<void>;
+  onSelfReport?: (signal: OutcomeSelfReportChipSignal) => void | Promise<void>;
   onIgnoreSelfReport?: () => void | Promise<void>;
   /**
    * Optional: attempt driven publish from QR (tests A19). Production UI never
    * exposes a driven button; this is a fail-closed seam.
    */
   onAttemptDrivenPublish?: (
-    intent: PublishFromHandoffIntent,
+    intent: PublishFromHandoffIntent
   ) => void | Promise<void>;
   className?: string;
 };
@@ -99,7 +97,7 @@ export function PublishHandoffPanel({
       setMessage('发布包下载已开始');
     } catch (error) {
       setMessage(
-        error instanceof Error ? error.message : '发布包下载失败，请稍后重试',
+        error instanceof Error ? error.message : '发布包下载失败，请稍后重试'
       );
     } finally {
       setZipBusy(false);
@@ -131,7 +129,7 @@ export function PublishHandoffPanel({
     <section
       className={cn(
         'border-border bg-background flex flex-col gap-4 rounded-xl border p-4',
-        className,
+        className
       )}
       data-capability-mode={view.capability.mode}
       data-content-package-id={view.contentPackageId}
@@ -171,7 +169,10 @@ export function PublishHandoffPanel({
       )}
 
       {/* Copy blocks */}
-      <div className="flex flex-col gap-2" data-testid="publish-handoff-copy-blocks">
+      <div
+        className="flex flex-col gap-2"
+        data-testid="publish-handoff-copy-blocks"
+      >
         {view.copyBlocks.map((block) => (
           <div
             className="border-border flex items-start justify-between gap-2 rounded-lg border px-3 py-2"
@@ -180,7 +181,9 @@ export function PublishHandoffPanel({
             key={block.role}
           >
             <div className="min-w-0 flex-1">
-              <p className="text-muted text-[11px] font-medium">{block.label}</p>
+              <p className="text-muted text-[11px] font-medium">
+                {block.label}
+              </p>
               <p className="text-foreground mt-0.5 whitespace-pre-wrap text-xs">
                 {block.value}
               </p>
@@ -345,10 +348,7 @@ export function PublishHandoffPanel({
           >
             {selfReportPrompt}
           </p>
-          <div
-            className="flex flex-wrap gap-2"
-            data-testid="self-report-chips"
-          >
+          <div className="flex flex-wrap gap-2" data-testid="self-report-chips">
             {selfReportChips.map((signal) => (
               <button
                 className="border-border min-h-11 min-w-11 rounded-full border px-3 py-2 text-xs"

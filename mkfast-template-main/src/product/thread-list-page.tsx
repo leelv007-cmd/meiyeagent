@@ -77,10 +77,7 @@ export function ThreadListPage() {
     >
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
         <div className="flex items-center justify-between gap-3">
-          <p
-            className="text-muted text-sm"
-            data-testid="thread-list-nav-label"
-          >
+          <p className="text-muted text-sm" data-testid="thread-list-nav-label">
             {canonical_history_navigation_recent()}
           </p>
           <a

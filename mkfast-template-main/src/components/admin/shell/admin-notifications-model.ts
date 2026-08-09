@@ -29,7 +29,9 @@ export interface AdminNotificationItem {
 function isPendingAction(
   item: PendingAction | ActionableInboxItem
 ): item is PendingAction {
-  return 'kind' in item && (item.kind === 'question' || item.kind === 'approval');
+  return (
+    'kind' in item && (item.kind === 'question' || item.kind === 'approval')
+  );
 }
 
 export function projectAdminNotifications(input: {

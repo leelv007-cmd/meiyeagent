@@ -171,12 +171,12 @@ test.describe('V31-05 Thread-root Workbench', () => {
     const other = await browser.newContext();
     const otherPage = await other.newPage();
     await loginByForm(otherPage, user);
-    await otherPage.goto(
-      `/dashboard?threadId=${encodeURIComponent(threadId)}`
+    await otherPage.goto(`/dashboard?threadId=${encodeURIComponent(threadId)}`);
+    await expect(otherPage.getByTestId('agent-workbench-host')).toHaveAttribute(
+      'data-thread-id',
+      threadId,
+      { timeout: 30_000 }
     );
-    await expect(
-      otherPage.getByTestId('agent-workbench-host')
-    ).toHaveAttribute('data-thread-id', threadId, { timeout: 30_000 });
     await other.close();
   });
 

@@ -17,7 +17,7 @@ test('V31-24 Idle goal-proactive panel is mounted from AgentWorkbenchHost Idle p
   assert.match(host, /rootMode === 'idle'/u);
   assert.match(host, /enableIdleGoalProactive/u);
   const panel = readSource(
-    'src/product/agent-workbench/idle-goal-proactive.tsx',
+    'src/product/agent-workbench/idle-goal-proactive.tsx'
   );
   assert.match(panel, /idle-suggestion-why-now/u);
   assert.match(panel, /accept_opportunity/u);
@@ -84,7 +84,10 @@ test('V31-17: Delivered publish handoff wired into Workstream + ComposerHome', (
   assert.match(stream, /data-delivered/u);
   const home = readSource('src/product/composer/composer-home.tsx');
   assert.match(home, /usePublishHandoff/u);
-  assert.match(home, /publishHandoffView=\{publishHandoff\.publishHandoffView\}/u);
+  assert.match(
+    home,
+    /publishHandoffView=\{publishHandoff\.publishHandoffView\}/u
+  );
   assert.match(home, /prepare_mobile_publish_handoff|usePublishHandoff/u);
   const index = readSource('src/product/agent-workbench/index.ts');
   assert.match(index, /PublishHandoffPanel/u);

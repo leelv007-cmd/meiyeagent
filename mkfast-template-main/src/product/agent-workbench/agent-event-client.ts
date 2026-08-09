@@ -44,9 +44,8 @@ export async function reconnectAgentWorkbench(input: {
     input.threadId && input.threadId !== before.session?.threadId
   );
   // On resync after patch fail, always re-fetch from empty cursor
-  const clientLastEventId = before.needsSnapshotResync || changesThread
-    ? null
-    : before.lastEventId;
+  const clientLastEventId =
+    before.needsSnapshotResync || changesThread ? null : before.lastEventId;
 
   const pack = await loadReplay({
     clientLastEventId,

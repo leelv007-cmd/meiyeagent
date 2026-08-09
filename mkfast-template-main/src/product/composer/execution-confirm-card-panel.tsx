@@ -99,26 +99,17 @@ export function ExecutionConfirmCard({
         </p>
       ) : null}
       {cost.balanceNotice ? (
-        <p
-          className="meiye-type-aux"
-          data-testid="execution-confirm-balance"
-        >
+        <p className="meiye-type-aux" data-testid="execution-confirm-balance">
           {cost.balanceNotice}
         </p>
       ) : null}
       {cost.refundNotice ? (
-        <p
-          className="meiye-type-aux"
-          data-testid="execution-confirm-refund"
-        >
+        <p className="meiye-type-aux" data-testid="execution-confirm-refund">
           {cost.refundNotice}
         </p>
       ) : null}
       {cost.rightsNotice ? (
-        <p
-          className="meiye-type-aux"
-          data-testid="execution-confirm-rights"
-        >
+        <p className="meiye-type-aux" data-testid="execution-confirm-rights">
           {cost.rightsNotice}
         </p>
       ) : null}

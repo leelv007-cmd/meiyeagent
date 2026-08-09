@@ -26,7 +26,6 @@ const connectionString = process.env.TEST_DATABASE_URL;
 
 const schema = { ...authSchema, ...appSchema };
 
-
 function errorChainText(error: unknown): string {
   const parts: string[] = [];
   let current: unknown = error;
@@ -199,7 +198,10 @@ test(
               .where(eq(appSchema.adminRoleChangeAudit.id, promote.auditId));
           },
           (error: unknown) => {
-            assert.match(errorChainText(error), /ADMIN_ROLE_CHANGE_AUDIT_IMMUTABLE/u);
+            assert.match(
+              errorChainText(error),
+              /ADMIN_ROLE_CHANGE_AUDIT_IMMUTABLE/u
+            );
             return true;
           }
         );
@@ -210,7 +212,10 @@ test(
               .where(eq(appSchema.adminRoleChangeAudit.id, promote.auditId));
           },
           (error: unknown) => {
-            assert.match(errorChainText(error), /ADMIN_ROLE_CHANGE_AUDIT_IMMUTABLE/u);
+            assert.match(
+              errorChainText(error),
+              /ADMIN_ROLE_CHANGE_AUDIT_IMMUTABLE/u
+            );
             return true;
           }
         );

@@ -412,7 +412,10 @@ test('assertNoAckAssignOwnerUi negative patterns', () => {
 });
 
 test('parseExceptionHomeUrlState: comma tokens, defaults, garbage, canonical order', () => {
-  assert.deepEqual(parseExceptionHomeUrlState({}), DEFAULT_EXCEPTION_HOME_URL_STATE);
+  assert.deepEqual(
+    parseExceptionHomeUrlState({}),
+    DEFAULT_EXCEPTION_HOME_URL_STATE
+  );
   assert.deepEqual(
     parseExceptionHomeUrlState(new URLSearchParams()),
     DEFAULT_EXCEPTION_HOME_URL_STATE

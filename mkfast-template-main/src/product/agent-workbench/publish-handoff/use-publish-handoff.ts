@@ -46,12 +46,12 @@ export type UsePublishHandoffResult = {
 };
 
 export function usePublishHandoff(
-  input: UsePublishHandoffInput,
+  input: UsePublishHandoffInput
 ): UsePublishHandoffResult {
   const enabled = input.enabled !== false;
   const [view, setView] = useState<PublishHandoffPanelView | null>(null);
   const [selfReport, setSelfReport] = useState<SelfReportAskDecision | null>(
-    null,
+    null
   );
   const preparedKeyRef = useRef<string | null>(null);
   const askIdRef = useRef<string | null>(null);
@@ -110,7 +110,7 @@ export function usePublishHandoff(
               ...(workId ? { workId } : {}),
             },
           },
-          `prepare-mobile-publish-handoff:${packageId}:${matched.revision}`,
+          `prepare-mobile-publish-handoff:${packageId}:${matched.revision}`
         );
         if (cancelled) return;
         preparedKeyRef.current = key;
@@ -141,7 +141,7 @@ export function usePublishHandoff(
                   action: 'mark_asked',
                 },
               },
-              `self-report-ask:${workId}`,
+              `self-report-ask:${workId}`
             );
             askIdRef.current = ask.askId;
           }
@@ -154,14 +154,7 @@ export function usePublishHandoff(
     return () => {
       cancelled = true;
     };
-  }, [
-    enabled,
-    packageId,
-    phase,
-    platform,
-    variantVersionId,
-    workId,
-  ]);
+  }, [enabled, packageId, phase, platform, variantVersionId, workId]);
 
   const onPublishHandoffCopy = useCallback((role: string, value: string) => {
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
@@ -186,7 +179,7 @@ export function usePublishHandoff(
         transport: commandP1,
       });
     },
-    [platform, view],
+    [platform, view]
   );
 
   const onPublishHandoffRecordPublished = useCallback(
@@ -196,8 +189,7 @@ export function usePublishHandoff(
       platformUrl?: string;
       note?: string;
     }) => {
-      const resolvedVariant =
-        variantVersionIdRef.current ?? variantVersionId;
+      const resolvedVariant = variantVersionIdRef.current ?? variantVersionId;
       if (!resolvedVariant) {
         throw new Error('Publish handoff variant is not prepared yet.');
       }
@@ -210,14 +202,12 @@ export function usePublishHandoff(
             expectedRevision: record.contentPackageRevision,
             platform,
             variantVersionId: resolvedVariant,
-            ...(record.platformUrl
-              ? { platformUrl: record.platformUrl }
-              : {}),
+            ...(record.platformUrl ? { platformUrl: record.platformUrl } : {}),
             ...(record.note ? { note: record.note } : {}),
             ...(workId ? { workId } : {}),
           },
         },
-        `merchant-published:${record.contentPackageId}:${record.contentPackageRevision}`,
+        `merchant-published:${record.contentPackageId}:${record.contentPackageRevision}`
       );
       publishedAtRef.current = new Date().toISOString();
 
@@ -238,7 +228,7 @@ export function usePublishHandoff(
         }
       }
     },
-    [platform, variantVersionId, workId],
+    [platform, variantVersionId, workId]
   );
 
   const onSelfReportChip = useCallback(
@@ -255,7 +245,7 @@ export function usePublishHandoff(
             sourceRef: `chip:${signal}`,
           },
         },
-        `self-report-signal:${view.contentPackageId}:${signal}`,
+        `self-report-signal:${view.contentPackageId}:${signal}`
       );
       if (workId) {
         await commandP1(
@@ -270,12 +260,12 @@ export function usePublishHandoff(
               ...(askIdRef.current ? { askId: askIdRef.current } : {}),
             },
           },
-          `self-report-answered:${workId}`,
+          `self-report-answered:${workId}`
         );
       }
       setSelfReport({ kind: 'skip', reason: 'already_answered' });
     },
-    [view, workId],
+    [view, workId]
   );
 
   const onSelfReportIgnore = useCallback(async () => {
@@ -292,7 +282,7 @@ export function usePublishHandoff(
           ...(askIdRef.current ? { askId: askIdRef.current } : {}),
         },
       },
-      `self-report-ignored:${workId}`,
+      `self-report-ignored:${workId}`
     );
     setSelfReport({ kind: 'skip', reason: 'already_asked_this_work' });
   }, [view, workId]);
@@ -322,13 +312,11 @@ export function usePublishHandoff(
       onPublishHandoffRecordPublished,
       onSelfReportChip,
       onSelfReportIgnore,
-    ],
+    ]
   );
 }
 
-function mapChipToResultKind(
-  signal: OutcomeSelfReportChipSignal,
-): string {
+function mapChipToResultKind(signal: OutcomeSelfReportChipSignal): string {
   switch (signal) {
     case 'inquiry':
       return 'inquiry';

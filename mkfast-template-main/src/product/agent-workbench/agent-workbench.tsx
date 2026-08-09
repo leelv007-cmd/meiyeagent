@@ -278,7 +278,9 @@ export function AgentWorkbenchHost({
       {/* V31-18: injection receipt visibility on the task-detail surface.
        * explicitTaskId is the only task-scoped identity the host owns; the
        * panel no-ops when the task has no receipt yet. */}
-      {explicitTaskId ? <MemoryInjectionReceiptPanel taskId={explicitTaskId} /> : null}
+      {explicitTaskId ? (
+        <MemoryInjectionReceiptPanel taskId={explicitTaskId} />
+      ) : null}
       <AgentWorkstream
         className={className}
         livingPlanCommitStrip={livingPlanCommitStrip}

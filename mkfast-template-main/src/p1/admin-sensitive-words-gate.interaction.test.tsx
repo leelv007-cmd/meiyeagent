@@ -48,7 +48,9 @@ beforeEach(() => {
 
 describe('AdminSensitiveWordsGateAlert three-state surface', () => {
   it('loading copy appears while the enabled-lexicon query is pending', async () => {
-    let resolveList: ((value: { items: []; total: number }) => void) | undefined;
+    let resolveList:
+      | ((value: { items: []; total: number }) => void)
+      | undefined;
     p1Client.queryP1.mockImplementation(
       () =>
         new Promise((resolve) => {

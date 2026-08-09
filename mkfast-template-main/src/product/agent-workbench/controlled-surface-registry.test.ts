@@ -14,7 +14,10 @@ import {
 } from './controlled-surface-registry';
 
 test('foundation registry only ships narrative + activity in V31-04', () => {
-  assert.deepEqual([...AGENT_FOUNDATION_SURFACE_KEYS], ['narrative', 'activity']);
+  assert.deepEqual(
+    [...AGENT_FOUNDATION_SURFACE_KEYS],
+    ['narrative', 'activity']
+  );
 });
 
 test('registered foundation surfaces resolve', () => {

@@ -128,7 +128,9 @@ const COMPOSER_CAPSULE_KINDS: readonly ComposerCapsuleKind[] = [
  * first so Escape/open sequences stay stable under the single-popover UI.
  */
 /** Expand Idle 「更多」so secondary capsules (lens/recipe/attach/@) mount. */
-export async function ensureComposerSecondaryCapsules(page: Page): Promise<void> {
+export async function ensureComposerSecondaryCapsules(
+  page: Page
+): Promise<void> {
   const more = page.getByTestId('composer-capsule-more');
   if (!(await more.isVisible().catch(() => false))) return;
   if ((await more.getAttribute('aria-expanded')) === 'true') return;
@@ -151,7 +153,12 @@ export async function openComposerCapsule(
     }
   }
   // Idle-compact hides 素材/输出类型/配方/@ behind 「更多」until expanded.
-  if (kind === 'attach' || kind === 'lens' || kind === 'recipe' || kind === 'mention') {
+  if (
+    kind === 'attach' ||
+    kind === 'lens' ||
+    kind === 'recipe' ||
+    kind === 'mention'
+  ) {
     await ensureComposerSecondaryCapsules(page);
   }
   await page.getByTestId(`composer-capsule-${kind}`).click();

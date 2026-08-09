@@ -46,10 +46,9 @@ export const Route = createFileRoute('/api/e2e/user-selected-skill-fixture')({
         // Forward optional isolation tenant via query (session proxy strips custom headers).
         const inbound = new URL(request.url);
         const foreign = inbound.searchParams.get('foreignWorkspaceId');
-        const corePath =
-          foreign && foreign.trim()
-            ? `/v1/e2e/user-selected-skill-fixture?foreignWorkspaceId=${encodeURIComponent(foreign.trim())}`
-            : '/v1/e2e/user-selected-skill-fixture';
+        const corePath = foreign?.trim()
+          ? `/v1/e2e/user-selected-skill-fixture?foreignWorkspaceId=${encodeURIComponent(foreign.trim())}`
+          : '/v1/e2e/user-selected-skill-fixture';
 
         return forwardAuthenticatedCoreRequest(
           payloadFreeRequest(request),

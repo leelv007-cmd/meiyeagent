@@ -45,11 +45,7 @@ export function registerArtifactSurfaces(): void {
   });
 
   registerAgentSurface('artifact_note', {
-    allowedPropKeys: [
-      ...SHARED_ARTIFACT_PROPS,
-      'pageCount',
-      'pages',
-    ],
+    allowedPropKeys: [...SHARED_ARTIFACT_PROPS, 'pageCount', 'pages'],
   });
 
   registerAgentSurface('artifact_video', {

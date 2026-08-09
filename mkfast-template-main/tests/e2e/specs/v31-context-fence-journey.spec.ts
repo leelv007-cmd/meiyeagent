@@ -31,7 +31,6 @@ async function openCustomizedCreate(page: Page) {
   await expect(page.getByTestId('composer-home')).toBeVisible();
 }
 
-
 /**
  * D-043 progressive fact confirm: intents that name missing/conflicting key
  * facts (price, deadline, …) suspend on a server-driven 「确认本次创作」 gate
@@ -63,9 +62,9 @@ test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
     await seedConfirmedStore(page);
     await openCustomizedCreate(page);
 
-    await page.getByTestId('composer-intent-input').fill(
-      '帮我按确认方案做图文，稍后我会改价格事实。',
-    );
+    await page
+      .getByTestId('composer-intent-input')
+      .fill('帮我按确认方案做图文，稍后我会改价格事实。');
     await page.getByTestId('composer-submit').click();
     await confirmCreationGateIfPresent(page);
 
@@ -101,9 +100,9 @@ test.describe('V31-14 Context Fence journeys (§37.4-E/F)', () => {
     await seedConfirmedStore(page);
     await openCustomizedCreate(page);
 
-    await page.getByTestId('composer-intent-input').fill(
-      '用门店授权素材做一组笔记配图。',
-    );
+    await page
+      .getByTestId('composer-intent-input')
+      .fill('用门店授权素材做一组笔记配图。');
     await page.getByTestId('composer-submit').click();
     await confirmCreationGateIfPresent(page);
 

@@ -38,7 +38,7 @@ test('ops-console control panel renders release / tool policy / kill switch / au
   const html = renderToStaticMarkup(
     <QueryClientProvider client={queryClient}>
       <AdminOpsConsoleControl />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
   assert.match(html, /data-testid="admin-ops-console"/);
   assert.match(html, /data-testid="admin-ops-console-refresh"/);

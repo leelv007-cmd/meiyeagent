@@ -22,10 +22,7 @@ function createLifecycleApi() {
   const heads = new Map<string, Record<string, unknown>>();
   const keyFor = (kind: 'recipe' | 'surface', id: string) => `${kind}:${id}`;
 
-  const buildPublishedRevisions = (
-    surfaceId: string,
-    recipeIds: string[]
-  ) => {
+  const buildPublishedRevisions = (surfaceId: string, recipeIds: string[]) => {
     const merged = new Set<string>(
       recipeIds.map((id) => String(id).trim()).filter(Boolean)
     );
@@ -389,14 +386,14 @@ describe('Recipe / Surface visual lifecycle editor', () => {
       'prompt.gov.demo@1'
     );
     await user.type(screen.getByLabelText('变更原因'), '验收治理保存回执');
-    await user.click(
-      screen.getByRole('button', { name: '治理保存 Recipe' })
-    );
+    await user.click(screen.getByRole('button', { name: '治理保存 Recipe' }));
 
     expect(
       await screen.findByTestId('recipe-lifecycle-status')
     ).toHaveTextContent('draft · r2');
-    expect(screen.getByTestId('recipe-compilation-receipt')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('recipe-compilation-receipt')
+    ).toBeInTheDocument();
     expect(screen.getByTestId('recipe-studio-phase')).toHaveTextContent(
       'phase: validated'
     );
@@ -486,9 +483,7 @@ describe('Recipe / Surface visual lifecycle editor', () => {
       'prompt.gov.fail@1'
     );
     await user.type(screen.getByLabelText('变更原因'), '验收错误表面');
-    await user.click(
-      screen.getByRole('button', { name: '治理保存 Recipe' })
-    );
+    await user.click(screen.getByRole('button', { name: '治理保存 Recipe' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(stableMessage);
     expect(
@@ -624,9 +619,7 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     await user.clear(screen.getByLabelText('标题'));
     await user.type(screen.getByLabelText('标题'), '回填后改标题');
     await user.type(screen.getByLabelText('变更原因'), '治理保存回填验收');
-    await user.click(
-      screen.getByRole('button', { name: '治理保存 Recipe' })
-    );
+    await user.click(screen.getByRole('button', { name: '治理保存 Recipe' }));
 
     expect(
       await screen.findByTestId('recipe-lifecycle-status')
@@ -1318,16 +1311,18 @@ describe('Recipe / Surface visual lifecycle editor', () => {
 
     const panel = await screen.findByTestId('recipe-publish-success-panel');
     expect(panel).toBeInTheDocument();
-    expect(screen.getByTestId('recipe-publish-success-revision')).toHaveTextContent(
-      `${recipeId}@6`
-    );
+    expect(
+      screen.getByTestId('recipe-publish-success-revision')
+    ).toHaveTextContent(`${recipeId}@6`);
     // Prefill target surface from loaded Surface editor.
     expect(screen.getByTestId('publish-success-surface-id')).toHaveValue(
       surfaceId
     );
     // No new route navigation — same page control remains mounted.
     expect(window.location.href).toBe(hrefBefore);
-    expect(screen.getByTestId('creation-experience-control')).toBeInTheDocument();
+    expect(
+      screen.getByTestId('creation-experience-control')
+    ).toBeInTheDocument();
 
     await user.click(screen.getByTestId('update-surface-refs-button'));
 
@@ -1468,7 +1463,10 @@ describe('Recipe / Surface visual lifecycle editor', () => {
     // Wait - head status is preview so publish is enabled without re-preview.
     const panel = await screen.findByTestId('recipe-publish-success-panel');
     expect(panel).toBeInTheDocument();
-    await user.type(screen.getByTestId('publish-success-surface-id'), surfaceId);
+    await user.type(
+      screen.getByTestId('publish-success-surface-id'),
+      surfaceId
+    );
     await user.click(screen.getByTestId('update-surface-refs-button'));
     expect(
       await screen.findByTestId('surface-ref-update-notice')
@@ -1605,56 +1603,58 @@ describe('Recipe / Surface visual lifecycle editor', () => {
         label: '已具备',
         receiptId: 'rcpt_ready',
       },
-    ])(
-      'presents evaluation evidence status $status ($label)',
-      async ({ status, label, receiptId }) => {
-        const user = userEvent.setup();
-        const recipeId = `recipe.ev.${status}`;
-        const head = seedRecipeHead(recipeId, 3);
-        const api: CreationExperienceAdminApi = {
-          query: vi.fn(async (action, payload) => {
-            if (action === 'recipe_get') return head;
-            if (action === 'recipe_history') return [head];
-            if (action === 'recipe_evidence_status') {
-              return {
-                recipeId: String(payload.recipeId),
-                recipeRevision: Number(payload.recipeRevision),
-                currentPromptRevisionRef: head.promptRevisionRef,
-                evaluation: evidenceGate(status, { receiptId }),
-                internalTest: evidenceGate('none', {
-                  evidenceKind: 'recipe_internal_test',
-                }),
-              };
-            }
-            return null;
-          }),
-          command: vi.fn(async () => {
-            throw new Error('unexpected command');
-          }),
-        };
+    ])('presents evaluation evidence status $status ($label)', async ({
+      status,
+      label,
+      receiptId,
+    }) => {
+      const user = userEvent.setup();
+      const recipeId = `recipe.ev.${status}`;
+      const head = seedRecipeHead(recipeId, 3);
+      const api: CreationExperienceAdminApi = {
+        query: vi.fn(async (action, payload) => {
+          if (action === 'recipe_get') return head;
+          if (action === 'recipe_history') return [head];
+          if (action === 'recipe_evidence_status') {
+            return {
+              recipeId: String(payload.recipeId),
+              recipeRevision: Number(payload.recipeRevision),
+              currentPromptRevisionRef: head.promptRevisionRef,
+              evaluation: evidenceGate(status, { receiptId }),
+              internalTest: evidenceGate('none', {
+                evidenceKind: 'recipe_internal_test',
+              }),
+            };
+          }
+          return null;
+        }),
+        command: vi.fn(async () => {
+          throw new Error('unexpected command');
+        }),
+      };
 
-        render(<AdminCreationExperienceControl api={api} />);
-        await user.type(screen.getByLabelText('Recipe ID'), recipeId);
-        await user.click(screen.getByRole('button', { name: '加载 Recipe' }));
+      render(<AdminCreationExperienceControl api={api} />);
+      await user.type(screen.getByLabelText('Recipe ID'), recipeId);
+      await user.click(screen.getByRole('button', { name: '加载 Recipe' }));
 
-        const panel = await screen.findByTestId('recipe-evidence-panel');
-        expect(panel).toBeInTheDocument();
-        expect(
-          screen.getByTestId('recipe-evidence-evaluation')
-        ).toHaveAttribute('data-status', status);
-        expect(
-          screen.getByTestId('recipe-evidence-evaluation-status')
-        ).toHaveTextContent(`状态: ${label}`);
-        expect(
-          screen.getByTestId('recipe-evidence-evaluation-receipt')
-        ).toHaveTextContent(
-          receiptId ? `receiptId: ${receiptId}` : 'receiptId: —'
-        );
-        expect(screen.getByTestId('recipe-evidence-revision')).toHaveTextContent(
-          'revision: r3'
-        );
-      }
-    );
+      const panel = await screen.findByTestId('recipe-evidence-panel');
+      expect(panel).toBeInTheDocument();
+      expect(screen.getByTestId('recipe-evidence-evaluation')).toHaveAttribute(
+        'data-status',
+        status
+      );
+      expect(
+        screen.getByTestId('recipe-evidence-evaluation-status')
+      ).toHaveTextContent(`状态: ${label}`);
+      expect(
+        screen.getByTestId('recipe-evidence-evaluation-receipt')
+      ).toHaveTextContent(
+        receiptId ? `receiptId: ${receiptId}` : 'receiptId: —'
+      );
+      expect(screen.getByTestId('recipe-evidence-revision')).toHaveTextContent(
+        'revision: r3'
+      );
+    });
 
     it('does not expose any pass-state submit controls for evidence', async () => {
       const user = userEvent.setup();
@@ -1789,9 +1789,7 @@ describe('Recipe / Surface visual lifecycle editor', () => {
 
       const failed = await screen.findByTestId('recipe-evidence-failed-cases');
       expect(failed).toHaveTextContent('redline-invented-critical-fact');
-      expect(failed).toHaveTextContent(
-        'output invents a critical price fact'
-      );
+      expect(failed).toHaveTextContent('output invents a critical price fact');
       expect(screen.getByTestId('recipe-evidence-failed-case')).toHaveAttribute(
         'data-case-id',
         'redline-invented-critical-fact'
@@ -1968,18 +1966,17 @@ describe('Recipe / Surface visual lifecycle editor', () => {
 
       await user.clear(screen.getByLabelText('变更原因'));
       await user.type(screen.getByLabelText('变更原因'), 'bump revision');
-      await user.click(
-        screen.getByRole('button', { name: '治理保存 Recipe' })
-      );
+      await user.click(screen.getByRole('button', { name: '治理保存 Recipe' }));
 
       await waitFor(() => {
-        expect(screen.getByTestId('recipe-evidence-revision')).toHaveTextContent(
-          'revision: r2'
-        );
+        expect(
+          screen.getByTestId('recipe-evidence-revision')
+        ).toHaveTextContent('revision: r2');
       });
-      expect(
-        screen.getByTestId('recipe-evidence-evaluation')
-      ).toHaveAttribute('data-status', 'none');
+      expect(screen.getByTestId('recipe-evidence-evaluation')).toHaveAttribute(
+        'data-status',
+        'none'
+      );
       expect(
         screen.getByTestId('recipe-evidence-evaluation-status')
       ).toHaveTextContent('状态: 无证据');

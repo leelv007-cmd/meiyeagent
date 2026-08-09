@@ -71,7 +71,7 @@ export type AgentWorkstreamProps = {
     note?: string;
   }) => void | Promise<void>;
   onSelfReportChip?: (
-    signal: OutcomeSelfReportChipSignal,
+    signal: OutcomeSelfReportChipSignal
   ) => void | Promise<void>;
   onSelfReportIgnore?: () => void | Promise<void>;
   className?: string;
@@ -110,8 +110,7 @@ export function AgentWorkstream({
   const mobileWorksOpen = viewport === 'mobile' && layout.showWorks;
   // deliveredKeys from semantic stream OR host-provided handoff view after
   // composer session phase reaches delivered (production path).
-  const delivered =
-    state.deliveredKeys.size > 0 || Boolean(publishHandoffView);
+  const delivered = state.deliveredKeys.size > 0 || Boolean(publishHandoffView);
 
   const publishHandoffNode = publishHandoffView ? (
     <PublishHandoffPanel
@@ -216,9 +215,10 @@ function PendingInterruptStrip({
   if (interrupts.length === 0) return null;
   return (
     <div
+      aria-atomic="true"
+      aria-live="polite"
       className="border-warning/40 bg-warning/10 flex flex-col gap-2 rounded-lg border px-3 py-2"
       data-testid="agent-pending-interrupts"
-      role="status"
     >
       {interrupts.map((item) => (
         <div

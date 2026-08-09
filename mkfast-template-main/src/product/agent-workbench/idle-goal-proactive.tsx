@@ -43,7 +43,8 @@ export type IdleGoalProactiveProjection = {
   suggestions: IdleProactiveSuggestion[];
 };
 
-export type IdleGoalProactiveLoader = () => Promise<IdleGoalProactiveProjection>;
+export type IdleGoalProactiveLoader =
+  () => Promise<IdleGoalProactiveProjection>;
 
 const defaultLoadIdleProjection: IdleGoalProactiveLoader = () =>
   queryP1<IdleGoalProactiveProjection>('goal-proactive', {
@@ -188,9 +189,7 @@ export function IdleGoalProactivePanel({
     >
       {primaryGoal ? (
         <div data-testid="idle-primary-goal">
-          <p className="text-sm font-medium text-foreground">
-            当前目标
-          </p>
+          <p className="text-sm font-medium text-foreground">当前目标</p>
           <p
             className="mt-1 text-base text-foreground"
             data-testid="idle-primary-goal-statement"
@@ -210,10 +209,7 @@ export function IdleGoalProactivePanel({
       ) : null}
 
       {hasSuggestions ? (
-        <ul
-          className="mt-3 space-y-2"
-          data-testid="idle-proactive-suggestions"
-        >
+        <ul className="mt-3 space-y-2" data-testid="idle-proactive-suggestions">
           {suggestions.map((suggestion) => (
             <li
               key={suggestion.candidateId}

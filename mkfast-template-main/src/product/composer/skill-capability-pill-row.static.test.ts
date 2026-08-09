@@ -9,8 +9,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const read = (relative: string) =>
-  readFileSync(join(here, relative), 'utf8');
+const read = (relative: string) => readFileSync(join(here, relative), 'utf8');
 
 test('capability pills reuse recipe pill family — confirm-style button, no form', () => {
   const row = read('./skill-capability-pill-row.tsx');

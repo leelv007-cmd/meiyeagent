@@ -35,8 +35,7 @@ const p1Client = vi.hoisted(() => ({
 
 vi.mock('@/p1/client', () => p1Client);
 
-const HANDOFF_RECEIPT_ID =
-  'secure-write-123e4567-e89b-42d3-a456-426614174000';
+const HANDOFF_RECEIPT_ID = 'secure-write-123e4567-e89b-42d3-a456-426614174000';
 const HANDOFF_ACCOUNT_ID = 'cred-provider-ark';
 
 function impactPreview(id: string, scope: string) {
@@ -943,7 +942,10 @@ describe('AdminSupplyControl governed actions', () => {
       expiresAt: '2099-01-01T00:00:00.000Z',
     });
     p1Client.queryP1.mockResolvedValueOnce(
-      impactPreview('preview-rotate-handoff', 'credential_account:cred-provider-ark')
+      impactPreview(
+        'preview-rotate-handoff',
+        'credential_account:cred-provider-ark'
+      )
     );
     p1Client.commandP1.mockResolvedValueOnce({
       correlationId: 'rotate-handoff-1',
@@ -971,7 +973,9 @@ describe('AdminSupplyControl governed actions', () => {
     ).toHaveTextContent(HANDOFF_ACCOUNT_ID);
 
     // No receiptId in share/external links on the supply surface.
-    const anchors = screen.getAllByRole('link').map((a) => a.getAttribute('href') ?? '');
+    const anchors = screen
+      .getAllByRole('link')
+      .map((a) => a.getAttribute('href') ?? '');
     expect(anchors.some((href) => href.includes(HANDOFF_RECEIPT_ID))).toBe(
       false
     );
@@ -1050,7 +1054,10 @@ describe('AdminSupplyControl governed actions', () => {
       expiresAt: '2099-01-01T00:00:00.000Z',
     });
     p1Client.queryP1.mockResolvedValueOnce(
-      impactPreview('preview-rotate-dup', 'credential_account:cred-provider-ark')
+      impactPreview(
+        'preview-rotate-dup',
+        'credential_account:cred-provider-ark'
+      )
     );
     p1Client.commandP1.mockRejectedValueOnce(
       new Error('The secure-write receipt has already been consumed.')

@@ -182,9 +182,7 @@ describe('AgentWorkstream document timeline', () => {
 describe('Controlled surface gate on line components', () => {
   it('NarrativeLine refuses to paint when registry would reject props', () => {
     // Direct render still runs gate without forbidden props — paints.
-    const { container } = render(
-      <NarrativeLine id="x" text="安全叙事" />
-    );
+    const { container } = render(<NarrativeLine id="x" text="安全叙事" />);
     expect(
       container.querySelector('[data-testid="agent-narrative-line"]')
     ).toBeTruthy();

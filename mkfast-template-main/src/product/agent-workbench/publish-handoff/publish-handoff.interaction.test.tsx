@@ -38,7 +38,7 @@ afterEach(() => {
 });
 
 function baseView(
-  mode: 'assisted' | 'unavailable' | 'automatic_verified' = 'assisted',
+  mode: 'assisted' | 'unavailable' | 'automatic_verified' = 'assisted'
 ) {
   return projectPublishHandoffPanel({
     contentPackageId: 'pkg-1',
@@ -70,7 +70,7 @@ describe('PublishHandoffPanel', () => {
   it('registers controlled surfaces', () => {
     for (const key of PUBLISH_HANDOFF_SURFACE_KEYS) {
       expect(resolveControlledSurface({ surface: key, props: {} }).ok).toBe(
-        true,
+        true
       );
     }
   });
@@ -79,36 +79,42 @@ describe('PublishHandoffPanel', () => {
     render(<PublishHandoffPanel view={baseView('assisted')} />);
     expect(screen.getByTestId('publish-handoff-panel')).toHaveAttribute(
       'data-show-direct-publish',
-      'false',
+      'false'
     );
-    expect(screen.getByTestId('publish-handoff-no-direct-publish')).toBeTruthy();
+    expect(
+      screen.getByTestId('publish-handoff-no-direct-publish')
+    ).toBeTruthy();
     expect(screen.queryByTestId('publish-handoff-direct-publish')).toBeNull();
     expect(screen.getAllByTestId('publish-handoff-copy-block')).toHaveLength(4);
     expect(screen.getByTestId('publish-handoff-zip-name')).toHaveTextContent(
-      '美美店-图文-小红书-20260808-r4.zip',
+      '美美店-图文-小红书-20260808-r4.zip'
     );
     expect(screen.getByTestId('publish-handoff-image-order')).toHaveTextContent(
-      'images/01.jpg',
+      'images/01.jpg'
     );
   });
 
   it('unavailable still shows export/copy path without direct publish', () => {
     render(<PublishHandoffPanel view={baseView('unavailable')} />);
-    expect(screen.getByTestId('publish-handoff-no-direct-publish')).toBeTruthy();
-    expect(screen.getByTestId('publish-handoff-capability-label')).toHaveTextContent(
-      '暂不可用',
-    );
+    expect(
+      screen.getByTestId('publish-handoff-no-direct-publish')
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId('publish-handoff-capability-label')
+    ).toHaveTextContent('暂不可用');
   });
 
   it('MobilePublishHandoff rejects driven publish (A19)', () => {
     render(<PublishHandoffPanel view={baseView()} />);
     expect(screen.getByTestId('mobile-publish-handoff')).toHaveAttribute(
       'data-system-driven-allowed',
-      'false',
+      'false'
     );
-    fireEvent.click(screen.getByTestId('mobile-publish-handoff-driven-attempt'));
+    fireEvent.click(
+      screen.getByTestId('mobile-publish-handoff-driven-attempt')
+    );
     expect(
-      screen.getByTestId('mobile-publish-handoff-driven-reject'),
+      screen.getByTestId('mobile-publish-handoff-driven-reject')
     ).toHaveTextContent(/不会代发|A19/);
   });
 
@@ -118,11 +124,11 @@ describe('PublishHandoffPanel', () => {
       <PublishHandoffPanel
         onRecordPublished={onRecordPublished}
         view={baseView()}
-      />,
+      />
     );
     expect(screen.getByTestId('publish-handoff-i-published')).toHaveAttribute(
       'data-binding-revision',
-      '4',
+      '4'
     );
     fireEvent.change(screen.getByTestId('publish-handoff-platform-url'), {
       target: { value: 'https://www.xiaohongshu.com/explore/1' },
@@ -150,10 +156,10 @@ describe('PublishHandoffPanel', () => {
         ]}
         selfReportPrompt="昨天的笔记有人来问吗？"
         view={baseView()}
-      />,
+      />
     );
     expect(screen.getByTestId('self-report-prompt')).toHaveTextContent(
-      /有人来问/,
+      /有人来问/
     );
     fireEvent.click(screen.getByTestId('self-report-chip-no_activity'));
     expect(onSelfReport).toHaveBeenCalledWith('no_activity');
@@ -163,9 +169,7 @@ describe('PublishHandoffPanel', () => {
 
   it('copy block action fires for title', () => {
     const onCopyBlock = vi.fn();
-    render(
-      <PublishHandoffPanel onCopyBlock={onCopyBlock} view={baseView()} />,
-    );
+    render(<PublishHandoffPanel onCopyBlock={onCopyBlock} view={baseView()} />);
     fireEvent.click(screen.getByTestId('publish-handoff-copy-title'));
     expect(onCopyBlock).toHaveBeenCalledWith('title', '周末护理');
   });
@@ -173,15 +177,12 @@ describe('PublishHandoffPanel', () => {
   it('download ZIP button invokes export handler with deterministic file name', async () => {
     const onDownloadZip = vi.fn(async () => undefined);
     render(
-      <PublishHandoffPanel
-        onDownloadZip={onDownloadZip}
-        view={baseView()}
-      />,
+      <PublishHandoffPanel onDownloadZip={onDownloadZip} view={baseView()} />
     );
     fireEvent.click(screen.getByTestId('publish-handoff-download-zip'));
     await waitFor(() => {
       expect(onDownloadZip).toHaveBeenCalledWith(
-        '美美店-图文-小红书-20260808-r4.zip',
+        '美美店-图文-小红书-20260808-r4.zip'
       );
     });
   });
@@ -189,12 +190,11 @@ describe('PublishHandoffPanel', () => {
   it('MobilePublishHandoff QR renders a real image and keeps frozen handoff URL', async () => {
     render(<PublishHandoffPanel view={baseView()} />);
     const qr = screen.getByTestId('mobile-publish-handoff-qr');
-    expect(qr).toHaveAttribute(
-      'data-handoff-url',
-      '/dashboard/handoff/tok123',
-    );
+    expect(qr).toHaveAttribute('data-handoff-url', '/dashboard/handoff/tok123');
     await waitFor(() => {
-      expect(screen.getByTestId('mobile-publish-handoff-qr-image')).toBeTruthy();
+      expect(
+        screen.getByTestId('mobile-publish-handoff-qr-image')
+      ).toBeTruthy();
     });
     const img = screen.getByTestId('mobile-publish-handoff-qr-image');
     expect(img.tagName).toBe('IMG');

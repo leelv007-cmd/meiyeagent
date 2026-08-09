@@ -143,11 +143,14 @@ test('unselected negative: refs never enter submission payload', () => {
 test('selected positive then cancel removes from submission payload', () => {
   const eligible = eligibleSkillRevisionRefs([SELECTABLE]);
   let selected = toggleSelectedSkillRevisionRef([], 'skill.story@3', eligible);
-  assert.deepEqual(
-    userSelectedSkillRefsForSubmission(selected, [SELECTABLE]),
-    ['skill.story@3']
+  assert.deepEqual(userSelectedSkillRefsForSubmission(selected, [SELECTABLE]), [
+    'skill.story@3',
+  ]);
+  selected = toggleSelectedSkillRevisionRef(
+    selected,
+    'skill.story@3',
+    eligible
   );
-  selected = toggleSelectedSkillRevisionRef(selected, 'skill.story@3', eligible);
   assert.deepEqual(
     userSelectedSkillRefsForSubmission(selected, [SELECTABLE]),
     []

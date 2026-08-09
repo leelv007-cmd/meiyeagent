@@ -71,9 +71,9 @@ describe('IdleGoalProactivePanel', () => {
     renderPanel();
 
     await waitFor(() => {
-      expect(screen.getByTestId('idle-primary-goal-statement')).toHaveTextContent(
-        '本月多接咨询'
-      );
+      expect(
+        screen.getByTestId('idle-primary-goal-statement')
+      ).toHaveTextContent('本月多接咨询');
     });
     expect(screen.getByTestId('idle-primary-goal-progress')).toHaveTextContent(
       '已交付 3'

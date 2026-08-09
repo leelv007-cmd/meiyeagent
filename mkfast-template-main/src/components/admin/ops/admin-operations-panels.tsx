@@ -550,7 +550,9 @@ function AdminTasksPanel() {
                     data-testid="admin-ops-tasks-outcome-chart"
                   >
                     <PieChart>
-                      <ChartTooltip content={<ChartTooltipContent nameKey="label" />} />
+                      <ChartTooltip
+                        content={<ChartTooltipContent nameKey="label" />}
+                      />
                       <Pie
                         data={slices}
                         dataKey="value"

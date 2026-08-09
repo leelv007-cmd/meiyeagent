@@ -13,14 +13,14 @@ import {
 } from '@/components/reui/frame';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label'
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';;
+} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import {
   Table,
@@ -195,9 +195,7 @@ export function AdminFeishuToolControl() {
               value={connectionId || undefined}
             >
               <SelectTrigger className="w-full" id="admin-feishu-connection">
-                <SelectValue
-                  placeholder={p1_admin_feishu_connection_empty()}
-                />
+                <SelectValue placeholder={p1_admin_feishu_connection_empty()} />
               </SelectTrigger>
               <SelectContent>
                 {feishuConnections.map((connection) => (

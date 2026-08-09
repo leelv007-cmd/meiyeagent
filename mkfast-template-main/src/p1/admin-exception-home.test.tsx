@@ -109,10 +109,7 @@ test('client severity filter hides non-matching rows without changing projection
   }
 
   const html = renderToStaticMarkup(
-    <AdminExceptionHome
-      view={view}
-      severityFilter={['blocked', 'attention']}
-    />
+    <AdminExceptionHome view={view} severityFilter={['blocked', 'attention']} />
   );
   assert.match(html, /data-severity-filter="blocked,attention"/);
   assert.match(
@@ -315,9 +312,7 @@ test('shared mock cache: home and catalog agree on generation_image (was home no
     now: NOW,
     registry: shared,
   });
-  const homeHtml = renderToStaticMarkup(
-    <AdminExceptionHome view={homeView} />
-  );
+  const homeHtml = renderToStaticMarkup(<AdminExceptionHome view={homeView} />);
   const catalogHtml = renderToStaticMarkup(
     <AdminCapabilityRegistry
       view={shared}
@@ -353,7 +348,10 @@ test('supply failure is stale on exception home (never green empty)', () => {
   const html = renderToStaticMarkup(<AdminExceptionHome view={view} />);
 
   assert.match(html, /data-severity="stale"/);
-  assert.match(html, /supply_snapshot_query_failed|supply_snapshot_refresh_failed/);
+  assert.match(
+    html,
+    /supply_snapshot_query_failed|supply_snapshot_refresh_failed/
+  );
   assert.doesNotMatch(html, /data-testid="exception-empty-state"/);
   assert.doesNotMatch(html, /\u5f53\u524d\u65e0\u5f85\u5904\u7406\u5f02\u5e38/);
 });
@@ -361,7 +359,10 @@ test('supply failure is stale on exception home (never green empty)', () => {
 test('live shared cache: home and catalog both mark generation_image available', () => {
   const snapshot = buildLiveGenerationImageSupplySnapshot();
   const queryClient = new QueryClient();
-  queryClient.setQueryData(pendingActionsQueryKey, [] satisfies PendingAction[]);
+  queryClient.setQueryData(
+    pendingActionsQueryKey,
+    [] satisfies PendingAction[]
+  );
   queryClient.setQueryData(
     adminOperationalMetricsQueryKey,
     LIVE_OPERATIONAL_METRICS
@@ -398,7 +399,10 @@ test('live exception home: empty enabled lexicon shows inactive gate alert', () 
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  queryClient.setQueryData(pendingActionsQueryKey, [] satisfies PendingAction[]);
+  queryClient.setQueryData(
+    pendingActionsQueryKey,
+    [] satisfies PendingAction[]
+  );
   queryClient.setQueryData(
     adminOperationalMetricsQueryKey,
     LIVE_OPERATIONAL_METRICS
@@ -428,7 +432,10 @@ test('live exception home: gate loading is not empty inactive', () => {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  queryClient.setQueryData(pendingActionsQueryKey, [] satisfies PendingAction[]);
+  queryClient.setQueryData(
+    pendingActionsQueryKey,
+    [] satisfies PendingAction[]
+  );
   queryClient.setQueryData(
     adminOperationalMetricsQueryKey,
     LIVE_OPERATIONAL_METRICS

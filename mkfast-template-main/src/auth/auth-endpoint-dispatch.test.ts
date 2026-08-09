@@ -54,14 +54,14 @@ async function readJson(response: Response) {
 }
 
 test('toAuthRelativePath strips the Better Auth base path exactly', () => {
-  assert.equal(toAuthRelativePath('/api/auth/admin/remove-user'), '/admin/remove-user');
+  assert.equal(
+    toAuthRelativePath('/api/auth/admin/remove-user'),
+    '/admin/remove-user'
+  );
   assert.equal(toAuthRelativePath('/api/auth/delete-user'), '/delete-user');
   assert.equal(toAuthRelativePath('/api/auth'), '/');
   assert.equal(toAuthRelativePath('/api/auth/'), '/');
-  assert.equal(
-    toAuthRelativePath('/admin/remove-user'),
-    '/admin/remove-user'
-  );
+  assert.equal(toAuthRelativePath('/admin/remove-user'), '/admin/remove-user');
   // Trailing slash on a resource path is normalized for exact match.
   assert.equal(
     toAuthRelativePath('/api/auth/admin/remove-user/'),

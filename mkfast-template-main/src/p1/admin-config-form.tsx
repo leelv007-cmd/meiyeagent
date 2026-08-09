@@ -378,7 +378,11 @@ function ToggleSetField(props: FieldViewProps) {
           const locked = Boolean(atMin && selected.has(option.value));
           const testId = `${domId(props)}-${option.value}`;
           return (
-            <label className="flex items-center gap-2" htmlFor={testId} key={option.value}>
+            <label
+              className="flex items-center gap-2"
+              htmlFor={testId}
+              key={option.value}
+            >
               <Switch
                 checked={selected.has(option.value)}
                 data-testid={testId}
@@ -477,7 +481,10 @@ function ListField(props: FieldViewProps) {
             {items.map((_, index) => (
               <TableRow key={rowId(configKey, path, index)}>
                 {field.itemFields.map((itemField) => (
-                  <TableCell className="align-middle whitespace-normal" key={itemField.id}>
+                  <TableCell
+                    className="align-middle whitespace-normal"
+                    key={itemField.id}
+                  >
                     <FieldView
                       configKey={configKey}
                       dense
@@ -499,7 +506,9 @@ function ListField(props: FieldViewProps) {
                     variant="ghost"
                   >
                     <IconTrash />
-                    <span className="sr-only">{admin_config_list_remove()}</span>
+                    <span className="sr-only">
+                      {admin_config_list_remove()}
+                    </span>
                   </Button>
                 </TableCell>
               </TableRow>

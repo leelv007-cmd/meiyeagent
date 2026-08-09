@@ -67,15 +67,14 @@ function model(id: string, displayName = id): CatalogModelView {
 
 test('merchant model settings copy never exposes LLM jargon', () => {
   for (const text of MERCHANT_COPY) {
-    assert.doesNotMatch(
-      text,
-      /\bLLM\b/u,
-      `merchant copy leaked LLM: ${text}`
-    );
+    assert.doesNotMatch(text, /\bLLM\b/u, `merchant copy leaked LLM: ${text}`);
   }
   assert.match(model_settings_llm_title(), /文案模型|Copy models/u);
   assert.match(settings_models_summary_auto(), /自动|Automatic/u);
-  assert.match(settings_models_advanced_heading(), /自己挑选|Advanced|Choose yourself/u);
+  assert.match(
+    settings_models_advanced_heading(),
+    /自己挑选|Advanced|Choose yourself/u
+  );
 });
 
 test('default summary uses resolved model names and falls back to automatic', () => {

@@ -20,11 +20,11 @@ test('resolveZipExportPlatform accepts ZIP platforms only', () => {
 test('withAssetDownloadParam mirrors result-center download=1', () => {
   assert.equal(
     withAssetDownloadParam('/api/core/p1/assets?objectKey=a%2Fb.zip'),
-    '/api/core/p1/assets?objectKey=a%2Fb.zip&download=1',
+    '/api/core/p1/assets?objectKey=a%2Fb.zip&download=1'
   );
   assert.equal(
     withAssetDownloadParam('/api/core/p1/assets?objectKey=x&download=1'),
-    '/api/core/p1/assets?objectKey=x&download=1',
+    '/api/core/p1/assets?objectKey=x&download=1'
   );
 });
 
@@ -67,14 +67,11 @@ test('exportAndDownloadFullPackage calls result_export then starts download', as
     packageId: 'pkg-1',
     platform: 'xiaohongshu',
   });
-  assert.equal(
-    calls[0]?.key,
-    'export:pkg-1:4:xiaohongshu',
-  );
+  assert.equal(calls[0]?.key, 'export:pkg-1:4:xiaohongshu');
   assert.equal(downloads.length, 1);
   assert.equal(
     downloads[0]?.url,
-    '/api/core/p1/assets?objectKey=ws%2Fexports%2Fa.zip&download=1',
+    '/api/core/p1/assets?objectKey=ws%2Fexports%2Fa.zip&download=1'
   );
   assert.equal(downloads[0]?.fileName, 'store-note-xhs-r4.zip');
   assert.equal(result.receiptId, 'receipt-1');
@@ -88,6 +85,6 @@ test('exportAndDownloadFullPackage rejects non-ZIP platforms', async () => {
       platform: 'wechat_moments',
       transport: async () => ({ downloadUrl: '/x' }),
     }),
-    /xiaohongshu|douyin|video_account/iu,
+    /xiaohongshu|douyin|video_account/iu
   );
 });

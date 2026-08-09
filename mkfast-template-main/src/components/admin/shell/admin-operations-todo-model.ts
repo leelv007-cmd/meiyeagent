@@ -8,7 +8,10 @@ import type { ExceptionHomeView } from '@/p1/admin-exception-home-model';
 import { Routes } from '@/lib/routes';
 
 /** Wire response may be PendingAction[] or mixed ActionableInboxItem[]. */
-export type PendingActionsWire = readonly (PendingAction | ActionableInboxItem)[];
+export type PendingActionsWire = readonly (
+  | PendingAction
+  | ActionableInboxItem
+)[];
 
 export interface AdminOperationsTodoItem {
   count: number;

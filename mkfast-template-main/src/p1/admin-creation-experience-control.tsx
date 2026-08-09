@@ -2027,7 +2027,8 @@ function SurfaceEditor({
           </div>
           {refUpdateNotice ? (
             <p
-              role="status"
+              aria-atomic="true"
+              aria-live="polite"
               data-testid="surface-ref-update-notice"
               className="text-sm text-muted-foreground"
             >

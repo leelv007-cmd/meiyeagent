@@ -88,7 +88,9 @@ test.describe('admin exception-home URL filter (#385)', () => {
 
     await page.reload();
     const after = await waitForExceptionHome(page);
-    await expect(page).toHaveURL(/exceptions=blocked%2Cattention|exceptions=blocked,attention/u);
+    await expect(page).toHaveURL(
+      /exceptions=blocked%2Cattention|exceptions=blocked,attention/u
+    );
     await expect(after).toHaveAttribute(
       'data-severity-filter',
       'blocked,attention'
@@ -112,9 +114,7 @@ test.describe('admin exception-home URL filter (#385)', () => {
       return;
     }
 
-    const projected = Number(
-      await panel.getAttribute('data-exception-count')
-    );
+    const projected = Number(await panel.getAttribute('data-exception-count'));
     const visible = Number(
       await panel.getAttribute('data-visible-exception-count')
     );
@@ -145,7 +145,9 @@ test.describe('admin exception-home URL filter (#385)', () => {
     await expect(toggle).toBeVisible();
     await toggle.click();
 
-    await expect(page).toHaveURL(/exceptions=blocked%2Cdegraded|exceptions=blocked,degraded/u);
+    await expect(page).toHaveURL(
+      /exceptions=blocked%2Cdegraded|exceptions=blocked,degraded/u
+    );
     await expect(panel).toHaveAttribute(
       'data-severity-filter',
       'blocked,degraded'
