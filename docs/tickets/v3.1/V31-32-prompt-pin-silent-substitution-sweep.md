@@ -70,6 +70,8 @@ grep -rn "prompts?\.[a-zA-Z]*?\.content" --include='*.ts' apps/core/src \
 与 Task 6 Work Item 2（`fe23943b7`）同一证据档位：
 
 - [ ] 每一处缺 pin 时 fail closed，错误信息**报出 prompt key 名**
+- [ ] **降级 try/catch 里的守卫不是守卫**：逐处确认 guard 不在会把异常降级成"模型失败"的 try 内。实证——Ruling 3 的 `factSatisfaction`／`factCriticality` 初版把 guard 放在 `runner.run(...)` 的 `instructions:` 实参位（正是旧 `?? HARNESS_BUILTIN_PROMPTS` 表达式所在位），那个 `try` 的 `catch` 返回 `conservativeGuidance(...)`，于是缺 pin 被当成模型失败吞掉、**整个 run 在完全没有 pin 的状态下继续跑**——同一个洞下移一层，比原洞更难发现。守卫必须上移到 try 之外，并留注释挡住"顺手 tidy 回迁"。余量 11 处里 note／cover／viral 路径带 fallback 处理的要逐一过这一条。
+- [ ] **断拒绝不断结果**：测试必须 `assert.rejects` 断言"抛出"，不能只断行为结果。上述 fail-open 初版之所以被抓到，只因为测试断的是 rejection（`Missing expected rejection`）；当时全部行为断言都是绿的——**outcome 形态的测试会把 fail-open 验成 fail-closed**。
 - [ ] **每一处**都有 mutation-RED 证据：把 guard 改回静默回落，对应测试必须转红（`Missing expected rejection` 一类）
 - [ ] fixture 改成与生产同形，而不是把断言改弱 —— 生产恒有 resolver、`request.prompts` 恒被冻结，缺 pin 的测试替身在测一个生产到不了的状态
 - [ ] 逐 key 对 `promptKeysForAdmission` 的可达性核查写进票面证据（证明不会把正确 admit 的任务打死）
