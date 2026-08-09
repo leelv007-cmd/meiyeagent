@@ -68,6 +68,27 @@ export const DEFAULT_AGENT_MEMORY_KILL_SWITCH: AgentMemoryKillSwitch = {
 };
 
 /**
+ * A deliberate ops kill switch must stay distinguishable from an outage:
+ * callers that degrade (V31-18 P0-1) report which of the two happened, so
+ * flipping the switch never looks like a permanent product failure.
+ */
+export class AgentMemoryDisabledError extends ReuseMemoryError {
+  constructor(readonly capability: 'read' | 'write') {
+    super(
+      'INVALID_STATE',
+      `Memory ${capability} is disabled by kill switch.`,
+    );
+    this.name = 'AgentMemoryDisabledError';
+  }
+}
+
+export function isAgentMemoryDisabledError(
+  error: unknown,
+): error is AgentMemoryDisabledError {
+  return error instanceof AgentMemoryDisabledError;
+}
+
+/**
  * Resolve kill switch from admin-config heads.
  * Feature flag off OR kill switch true ⇒ path disabled.
  */
@@ -1000,20 +1021,14 @@ export class AgentMemoryPlatform {
   private async assertWriteEnabled() {
     const switchState = await this.resolveKillSwitch();
     if (switchState.disableMemoryWrite) {
-      throw new ReuseMemoryError(
-        'INVALID_STATE',
-        'Memory write is disabled by kill switch.',
-      );
+      throw new AgentMemoryDisabledError('write');
     }
   }
 
   private async assertReadEnabled() {
     const switchState = await this.resolveKillSwitch();
     if (switchState.disableMemoryRead) {
-      throw new ReuseMemoryError(
-        'INVALID_STATE',
-        'Memory read is disabled by kill switch.',
-      );
+      throw new AgentMemoryDisabledError('read');
     }
   }
 }

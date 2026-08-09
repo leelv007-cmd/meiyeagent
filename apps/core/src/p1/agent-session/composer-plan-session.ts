@@ -19,6 +19,7 @@ import type {
   CreationSubmissionRecord,
 } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
+import { isAgentMemoryDisabledError } from '../operations/agent-memory-platform.js';
 import type { ExecutionPlanCompileFreeze } from '../harness/execution-plan-admission.js';
 import type { AgentSessionStore } from './agent-session-store.js';
 import type { RetrievalExperience } from './context-retrieval.js';
@@ -32,7 +33,15 @@ export type ComposerPlanCompilerPort = {
   adjustPlan(
     input: CompilePlanInput & { existingPlanId: string }
   ): Promise<CompilePlanResult>;
-  retrieveConfirmedExperience?(input: {
+  /**
+   * V31-18 P0-2 (可达性): server-owned confirmed-experience retrieval is
+   * REQUIRED, not opportunistic. It is derived from the production Composer
+   * surface — a deploy that can accept a submission can always retrieve
+   * confirmed memory — and must never be inferred from the presence of an
+   * LLM kernel (`runTurn`), which is absent whenever the provider is not
+   * `live_verified`.
+   */
+  retrieveConfirmedExperience(input: {
     workspaceId: string;
     threadId: string;
     taskId: string;
@@ -48,11 +57,32 @@ export type ComposerPlanCompilerPort = {
   }): Promise<Pick<AgentTurnRunnerResult, 'releaseId' | 'toolCalls'>>;
 };
 
+/**
+ * Why a plan carries no injected memory. `kill_switch` is a deliberate ops
+ * action; `unavailable` is an outage or a receipt conflict. The two must never
+ * be indistinguishable from each other or from a silent success.
+ */
+export type ComposerPlanMemoryDegradation = {
+  workspaceId: string;
+  taskId: string;
+  runId: string;
+  reason: 'kill_switch' | 'unavailable';
+  detail: string;
+};
+
 export type ComposerPlanSessionOptions = {
   now?: () => string;
   resolveHarnessReleaseId?: (
     submission: CreationSubmissionRecord
   ) => string | Promise<string>;
+  /**
+   * V31-18 P0-1 (出口): memory is advisory. `prepare()` runs *after*
+   * `store.claim()` has already consumed the merchant's credits, so a
+   * memory-layer failure degrades the plan to "no injected memory, therefore
+   * no receipt" instead of failing a paid submission. Every degradation is
+   * reported here so it is never silent.
+   */
+  onMemoryDegraded?: (event: ComposerPlanMemoryDegradation) => void;
 };
 
 const COMPOSER_PLAN_HARNESS_RELEASE_ID = 'composer-plan-surface-v1';
@@ -74,6 +104,9 @@ export class ComposerPlanSessionCoordinator
   private readonly resolveHarnessReleaseId: (
     submission: CreationSubmissionRecord
   ) => string | Promise<string>;
+  private readonly onMemoryDegraded:
+    | ((event: ComposerPlanMemoryDegradation) => void)
+    | undefined;
 
   constructor(
     private readonly sessions: AgentSessionStore,
@@ -81,10 +114,20 @@ export class ComposerPlanSessionCoordinator
     private readonly compiler: ComposerPlanCompilerPort,
     options: ComposerPlanSessionOptions = {}
   ) {
+    // Assembly-layer reachability assertion (V31-18 P0-2). A bare
+    // `{ compilePlan, adjustPlan }` fallback — the shape a non-`live_verified`
+    // production deploy used to get — cannot construct this coordinator, so
+    // confirmed memory can no longer be skipped silently in production.
+    if (typeof compiler.retrieveConfirmedExperience !== 'function') {
+      throw new Error(
+        'Composer plan session requires server-owned confirmed experience retrieval.'
+      );
+    }
     this.now = options.now ?? (() => new Date().toISOString());
     this.resolveHarnessReleaseId =
       options.resolveHarnessReleaseId ??
       (() => COMPOSER_PLAN_HARNESS_RELEASE_ID);
+    this.onMemoryDegraded = options.onMemoryDegraded;
   }
 
   async prepare(input: {
@@ -139,45 +182,37 @@ export class ComposerPlanSessionCoordinator
           `Composer Agent Run ${runId} cannot resume from ${started.run.status}.`
         );
       }
-      try {
-        const turnResult = await this.runSessionTurn({
-          submission,
-          threadId,
-          runId,
-          sessionRevision: started.thread.sessionRevision,
-          harnessReleaseId: started.run.harnessReleaseId,
-        });
-        const memoryContext = await this.retrievePlanMemoryContext({
-          submission,
-          threadId,
-          runId,
-          harnessReleaseId:
-            turnResult?.releaseId ?? started.run.harnessReleaseId,
-        });
-        await this.compile({
-          submission,
-          threadId,
-          runSessionRevision: started.thread.sessionRevision,
-          planId,
-          previous: latest?.revision ?? null,
-          harnessReleaseId: started.run.harnessReleaseId,
-          memoryContext,
-          now,
-        });
-      } catch (error) {
-        if (
-          started.run.status === 'running' ||
-          started.run.status === 'waiting'
-        ) {
-          await this.sessions.updateRunStatus({
-            resourceId,
-            runId,
-            status: 'failed',
-            finishedAt: this.now(),
-          });
-        }
-        throw error;
-      }
+      const turnResult = await this.runSessionTurn({
+        submission,
+        threadId,
+        runId,
+        sessionRevision: started.thread.sessionRevision,
+        harnessReleaseId: started.run.harnessReleaseId,
+      });
+      const memoryContext = await this.retrievePlanMemoryContext({
+        submission,
+        threadId,
+        runId,
+        harnessReleaseId: turnResult?.releaseId ?? started.run.harnessReleaseId,
+      });
+      // V31-18 P0-1 (出口证明): planning failures propagate but must NOT close
+      // the Run terminally. `submit()` consumed the merchant's credits inside
+      // `store.claim()` *before* calling `prepare()`, and `composerRunId` is a
+      // deterministic function of workspace+task — a terminal Run here would
+      // make the retry with the same idempotencyKey hit `cannot resume from
+      // failed` forever, holding the credits with no exit. Leaving the Run
+      // non-terminal IS the exit: the retry re-enters this branch and
+      // recompiles against the same session revision.
+      await this.compile({
+        submission,
+        threadId,
+        runSessionRevision: started.thread.sessionRevision,
+        planId,
+        previous: latest?.revision ?? null,
+        harnessReleaseId: started.run.harnessReleaseId,
+        memoryContext,
+        now,
+      });
     }
 
     const currentRun = await this.sessions.getRun({ resourceId, runId });
@@ -241,24 +276,33 @@ export class ComposerPlanSessionCoordinator
     runId: string;
     harnessReleaseId: string;
   }): Promise<PlanMemoryContext | null> {
-    if (!this.compiler.retrieveConfirmedExperience) {
-      if (this.compiler.runTurn) {
-        throw new Error(
-          'Session production planning requires server-owned confirmed experience retrieval.'
-        );
-      }
+    const snapshot = input.submission.snapshot;
+    let entries: RetrievalExperience[];
+    try {
+      entries = await this.compiler.retrieveConfirmedExperience({
+        workspaceId: snapshot.workspaceId,
+        threadId: input.threadId,
+        taskId: input.submission.task.id,
+        runId: input.runId,
+        harnessReleaseId: input.harnessReleaseId,
+        storeId: snapshot.workspaceId,
+        platform: snapshot.contentPackagePlatform,
+      });
+    } catch (error) {
+      // The receipt is written inside retrieval (transparency invariant:
+      // no receipt ⇒ no injection). So a receipt CONFLICT, an outage, or a
+      // deliberate `disable_memory_read` all land here and all mean the same
+      // thing for this plan: compile without injected memory. They never fail
+      // an already-claimed paid submission.
+      this.onMemoryDegraded?.({
+        workspaceId: snapshot.workspaceId,
+        taskId: input.submission.task.id,
+        runId: input.runId,
+        reason: isAgentMemoryDisabledError(error) ? 'kill_switch' : 'unavailable',
+        detail: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
-    const snapshot = input.submission.snapshot;
-    const entries = await this.compiler.retrieveConfirmedExperience({
-      workspaceId: snapshot.workspaceId,
-      threadId: input.threadId,
-      taskId: input.submission.task.id,
-      runId: input.runId,
-      harnessReleaseId: input.harnessReleaseId,
-      storeId: snapshot.workspaceId,
-      platform: snapshot.contentPackagePlatform,
-    });
     return planMemoryContextFromConfirmedExperience({
       entries,
       runId: input.runId,

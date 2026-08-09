@@ -23,8 +23,13 @@ import {
   type HarnessWorkflowStarter,
 } from '../harness/task-admission.js';
 import type { RouteSnapshot } from '../model-supply/index.js';
+import { AgentMemoryDisabledError } from '../operations/agent-memory-platform.js';
+import { ReuseMemoryError } from '../operations/reuse-memory-service.js';
+import type { RetrievalExperience } from './context-retrieval.js';
 import {
   ComposerPlanSessionCoordinator,
+  type ComposerPlanCompilerPort,
+  type ComposerPlanMemoryDegradation,
   approvalBasisForSubmission,
   compileFinalizeExecutionPlanFreeze,
   proposalFromSubmission,
@@ -37,11 +42,14 @@ import { PostgresMarketingPlanStore } from './postgres-plan-store.js';
 import {
   createFixturePlanCompilerPorts,
   PlanCompiler,
+  type CompilePlanInput,
 } from './plan-compiler.js';
 import { AgentSessionHarnessService } from './service.js';
 
 const TS = '2026-08-09T08:00:00.000Z';
 const connectionString = process.env.TEST_DATABASE_URL;
+/** Workspace with no confirmed memory — retrieval still runs (V31-18 P0-2). */
+const noConfirmedExperience = async (): Promise<RetrievalExperience[]> => [];
 const COMPOSER_SESSION_LIMITS_FOR_TEST = {
   maxLlmSteps: 6,
   maxToolCalls: 12,
@@ -199,6 +207,164 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
   );
 });
 
+test('V31-18 P0-2: the bare Composer fallback shape cannot be assembled', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  // Exactly the object a production deploy without a Session kernel used to
+  // receive: compile/adjust only, no server-owned retrieval. It must not build.
+  assert.throws(
+    () =>
+      new ComposerPlanSessionCoordinator(sessions, plans, {
+        compilePlan: (input: CompilePlanInput) => compiler.compile(input),
+        adjustPlan: (input: CompilePlanInput & { existingPlanId: string }) =>
+          compiler.adjust(input),
+      } as unknown as ComposerPlanCompilerPort),
+    /requires server-owned confirmed experience retrieval/u
+  );
+  // The same shape with retrieval present builds and retrieves.
+  let retrievalCalls = 0;
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+    retrieveConfirmedExperience: async () => {
+      retrievalCalls += 1;
+      return [];
+    },
+  });
+  await coordinator.prepare({ submission: copyRecord('task-fallback', '写文案') });
+  assert.equal(retrievalCalls, 1);
+});
+
+test('V31-18 P0-1: disable_memory_read degrades the plan, never the paid submission', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const degradations: ComposerPlanMemoryDegradation[] = [];
+  const coordinator = new ComposerPlanSessionCoordinator(
+    sessions,
+    plans,
+    {
+      compilePlan: (input) => compiler.compile(input),
+      adjustPlan: (input) => compiler.adjust(input),
+      // Production shape: AgentMemoryPlatform.retrieveForInjection fails closed
+      // on `disable_memory_read` / `agent_memory_read_v1` off.
+      retrieveConfirmedExperience: async () => {
+        throw new AgentMemoryDisabledError('read');
+      },
+    },
+    { onMemoryDegraded: (event) => degradations.push(event) }
+  );
+
+  const submission = copyRecord('task-killswitch', '写一条周末护理文案');
+  const binding = await coordinator.prepare({ submission });
+
+  assert.ok(submission.executionPlanFreeze, 'the paid submission still plans');
+  const latest = await plans.getLatest(submission.executionPlanFreeze.planId);
+  assert.equal(latest?.revision.memoryContext ?? null, null);
+  assert.deepEqual(degradations, [
+    {
+      workspaceId: 'workspace-1',
+      taskId: 'task-killswitch',
+      runId: binding.runId,
+      reason: 'kill_switch',
+      detail: 'Memory read is disabled by kill switch.',
+    },
+  ]);
+  const run = await sessions.getRun({
+    resourceId: 'workspace-1',
+    runId: binding.runId,
+  });
+  assert.equal(run?.status, 'completed');
+});
+
+test('V31-18 P0-1: a receipt conflict degrades to no injection (no receipt ⇒ no injection)', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const degradations: ComposerPlanMemoryDegradation[] = [];
+  const coordinator = new ComposerPlanSessionCoordinator(
+    sessions,
+    plans,
+    {
+      compilePlan: (input) => compiler.compile(input),
+      adjustPlan: (input) => compiler.adjust(input),
+      retrieveConfirmedExperience: async () => {
+        throw new ReuseMemoryError(
+          'CONFLICT',
+          'Injection receipt for task task-receipt-conflict already exists with another payload.'
+        );
+      },
+    },
+    { onMemoryDegraded: (event) => degradations.push(event) }
+  );
+
+  const submission = copyRecord('task-receipt-conflict', '写一条到店提醒');
+  await coordinator.prepare({ submission });
+
+  assert.ok(submission.executionPlanFreeze);
+  const latest = await plans.getLatest(submission.executionPlanFreeze.planId);
+  assert.equal(latest?.revision.memoryContext ?? null, null);
+  assert.equal(degradations.length, 1);
+  assert.equal(degradations[0]?.reason, 'unavailable');
+});
+
+test('V31-18 P0-1: a failed planning attempt leaves the Run resumable', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  let compileCalls = 0;
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    // A non-memory planning failure (compile authority) must still be
+    // retryable: the credits are already consumed by `store.claim()`.
+    compilePlan: (input) => {
+      compileCalls += 1;
+      if (compileCalls === 1) {
+        throw new Error('plan compiler transport failed');
+      }
+      return compiler.compile(input);
+    },
+    adjustPlan: (input) => compiler.adjust(input),
+    retrieveConfirmedExperience: noConfirmedExperience,
+  });
+
+  const submission = copyRecord('task-retryable', '写一条周末护理文案');
+  const threadId = 'thread-retryable';
+  await assert.rejects(
+    () => coordinator.prepare({ continuationThreadId: threadId, submission }),
+    /plan compiler transport failed/u
+  );
+  const runsAfterFailure = await sessions.listRuns({
+    resourceId: 'workspace-1',
+    threadId,
+  });
+  assert.equal(runsAfterFailure.length, 1);
+  const runId = runsAfterFailure[0]!.runId;
+  assert.notEqual(runsAfterFailure[0]!.status, 'failed');
+
+  // The retry (same idempotencyKey ⇒ same deterministic runId) recovers.
+  const binding = await coordinator.prepare({ submission });
+  assert.equal(binding.runId, runId);
+  assert.equal(compileCalls, 2);
+  assert.ok(submission.executionPlanFreeze);
+  assert.equal(
+    (await sessions.getRun({ resourceId: 'workspace-1', runId }))?.status,
+    'completed'
+  );
+});
+
 test('server pre-plan retrieval runs with a kernel that makes zero tool calls', async () => {
   const sessions = new MemoryAgentSessionStore();
   const plans = new MemoryMarketingPlanStore();
@@ -283,6 +449,7 @@ test('a continuation Thread is resolved inside the submission workspace', async 
   const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
     compilePlan: (input) => compiler.compile(input),
     adjustPlan: (input) => compiler.adjust(input),
+    retrieveConfirmedExperience: noConfirmedExperience,
   });
   const first = await coordinator.prepare({
     submission: record('task-a', 'A'),
@@ -320,6 +487,7 @@ test(
       const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
         compilePlan: (input) => compiler.compile(input),
         adjustPlan: (input) => compiler.adjust(input),
+        retrieveConfirmedExperience: noConfirmedExperience,
       });
       const first = record(
         `task-${randomUUID()}`,
@@ -394,6 +562,7 @@ test('compile-finalize freezes the copy plan; freeze matches the compiled revisi
   const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
     compilePlan: (input) => compiler.compile(input),
     adjustPlan: (input) => compiler.adjust(input),
+    retrieveConfirmedExperience: noConfirmedExperience,
   });
 
   const submission = copyRecord('task-freeze-1', '为门店写一条夏日团购文案');
@@ -449,6 +618,7 @@ test('pure copy stays frozen with policy_exempt_copy and no decision ref (U9)', 
   const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
     compilePlan: (input) => compiler.compile(input),
     adjustPlan: (input) => compiler.adjust(input),
+    retrieveConfirmedExperience: noConfirmedExperience,
   });
   const submission = copyRecord('task-freeze-u9', '发布文案');
   const first = await coordinator.prepare({ submission });
@@ -473,6 +643,7 @@ test('Composer submit → task-admission assembles and one-shot writes the Execu
   const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
     compilePlan: (input) => compiler.compile(input),
     adjustPlan: (input) => compiler.adjust(input),
+    retrieveConfirmedExperience: noConfirmedExperience,
   });
 
   const submission = copyRecord('task-chain-1', '为夏日项目写预约文案');

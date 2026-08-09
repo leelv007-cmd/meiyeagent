@@ -316,6 +316,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     sessionAgentKernel,
     agentSessionStore,
     sessionAgentHarness,
+    sessionConfirmedExperienceRetrieval,
     executionConfirmationService,
     sessionRetrievalExperiencePort,
     marketingPlanStore,
@@ -1565,11 +1566,30 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     const composerPlanSession = new ComposerPlanSessionCoordinator(
       agentSessionStore,
       marketingPlanStore,
+      // V31-18 P0-2: `sessionAgentHarness` exists only when a Session kernel
+      // does (fixture mode, or `live_verified` + direct). Every other
+      // production deploy takes the fallback, which therefore must carry the
+      // same server-owned retrieval — otherwise confirmed memory, the
+      // MemoryInjectionReceipt and the receipt panel disappear with no error.
       sessionAgentHarness ?? {
         compilePlan: (input) => planCompiler.compile(input),
         adjustPlan: (input) => planCompiler.adjust(input),
+        retrieveConfirmedExperience: sessionConfirmedExperienceRetrieval,
       },
       {
+        onMemoryDegraded: (event) => {
+          // Never silent: a flipped kill switch and an outage are both visible
+          // and distinguishable, while the paid submission still proceeds.
+          console.warn(
+            `[memory] plan compiled without injected memory (${event.reason})`,
+            {
+              workspaceId: event.workspaceId,
+              taskId: event.taskId,
+              runId: event.runId,
+              detail: event.detail,
+            },
+          );
+        },
         // V31-21 P1-a: new submissions pin the current production release
         // (canary workspace-allowlist applies here). The pinned releaseId is
         // then frozen on the Run + ExecutionPlanSnapshot — rollback changes

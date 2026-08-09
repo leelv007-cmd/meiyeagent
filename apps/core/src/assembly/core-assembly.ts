@@ -737,6 +737,37 @@ export async function assembleCoreGraph(
     },
     now: () => new Date().toISOString(),
   });
+  /**
+   * V31-18 P0-2: server-owned confirmed-experience retrieval. It is assembled
+   * unconditionally — the Composer needs it on every deploy, while the Session
+   * kernel only exists in fixture mode or after `live_verified` activation.
+   * Both the Session Harness tool path and the Composer plan path consume this
+   * single definition, so retrieval and its MemoryInjectionReceipt cannot be
+   * present on one path and silently absent on the other.
+   */
+  const sessionConfirmedExperienceRetrieval = async (input: {
+    workspaceId: string;
+    threadId: string;
+    taskId: string;
+    runId: string;
+    harnessReleaseId: string;
+    storeId: string;
+    platform: string;
+  }) =>
+    sessionRetrievalPorts.listConfirmedExperience?.({
+      workspaceId: input.workspaceId,
+      threadId: input.threadId,
+      limit: 8,
+      injectionContext: {
+        taskId: input.taskId,
+        runId: input.runId,
+        harnessReleaseId: input.harnessReleaseId,
+      },
+      scope: {
+        storeId: input.storeId,
+        platform: input.platform,
+      },
+    }) ?? [];
   /** Durable agent session store (V31-02) — also backs Session Harness service. */
   const agentSessionStore = new PostgresAgentSessionStore(pool);
   /** V31-24 MarketingGoal + opportunity decision log (production PG only). */
@@ -844,21 +875,7 @@ export async function assembleCoreGraph(
               ...(turn.memoryScope ?? {}),
             },
           }),
-        retrieveConfirmedExperience: async (input) =>
-          sessionRetrievalPorts.listConfirmedExperience?.({
-            workspaceId: input.workspaceId,
-            threadId: input.threadId,
-            limit: 8,
-            injectionContext: {
-              taskId: input.taskId,
-              runId: input.runId,
-              harnessReleaseId: input.harnessReleaseId,
-            },
-            scope: {
-              storeId: input.storeId,
-              platform: input.platform,
-            },
-          }) ?? [],
+        retrieveConfirmedExperience: sessionConfirmedExperienceRetrieval,
         createPolicies: () => createIntentRetrievalPolicies({}),
         resolveCreationMode: (turn) => turn.creationMode,
         registerCheckpointWriter: true,
@@ -1654,6 +1671,7 @@ export async function assembleCoreGraph(
     agentSessionStore,
     sessionRetrievalPorts,
     sessionRetrievalExperiencePort,
+    sessionConfirmedExperienceRetrieval,
     sessionAgentHarness,
     marketingPlanStore,
     planCompiler,
