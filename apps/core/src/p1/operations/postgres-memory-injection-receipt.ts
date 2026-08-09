@@ -56,26 +56,16 @@ export class PostgresMemoryInjectionReceiptStore
         ON p1_memory_injection_receipts (run_id);
       CREATE INDEX IF NOT EXISTS p1_memory_injection_receipts_release_idx
         ON p1_memory_injection_receipts (harness_release_id);
-      -- NOT an outbox despite the name (V31-18 P1-7). It has no reader in any
-      -- process: the only SELECT is the same-transaction verification in
-      -- save() below, nothing ever leases or dispatches a row, and the CHECK
-      -- admits 'ready' alone so no consumer could mark a row done without a
-      -- schema change. It therefore grows one row per injected task forever and
-      -- delivers nothing, while costing an extra INSERT plus an extra
-      -- round-trip inside the hot receipt transaction. The atomicity it does
-      -- provide is real and tested; the delivery guarantee its name implies is
-      -- vacuous. Resolve it deliberately — either route injection receipts
-      -- through the existing drainer that already works
-      -- (harness_runtime.langfuse_outbox + outbox-worker.ts, which has leases,
-      -- attempts and dead-lettering), or drop this table. Both are decisions
-      -- for the owner of this seam; do not add a consumer here speculatively.
-      CREATE TABLE IF NOT EXISTS p1_memory_injection_receipt_outbox (
-        task_id text PRIMARY KEY REFERENCES p1_memory_injection_receipts(task_id)
-          ON DELETE CASCADE,
-        payload jsonb NOT NULL,
-        status text NOT NULL CHECK (status IN ('ready')),
-        created_at timestamptz NOT NULL
-      );
+      -- V31-18 P1-7: p1_memory_injection_receipt_outbox is retired. It was never
+      -- an outbox — no process ever read it, its only SELECT was this store's
+      -- own same-transaction verification, and its status CHECK admitted
+      -- 'ready' alone, so no consumer could have marked a row done without a
+      -- schema change. It grew one row per injected task forever and delivered
+      -- nothing. Dropped rather than given a consumer: routing it through the
+      -- one drainer that does work (harness_runtime.langfuse_outbox +
+      -- outbox-worker.ts) would build delivery for a message no recipient has
+      -- been designed for. Guarded drop, for dev databases created before this.
+      DROP TABLE IF EXISTS p1_memory_injection_receipt_outbox;
     `);
   }
 
@@ -116,33 +106,6 @@ export class PostgresMemoryInjectionReceiptStore
         throw new ReuseMemoryError(
           'CONFLICT',
           `Injection receipt for task ${receipt.taskId} already exists with another payload.`,
-        );
-      }
-      await client.query(
-        `INSERT INTO p1_memory_injection_receipt_outbox (
-           task_id,
-           payload,
-           status,
-           created_at
-         ) VALUES ($1, $2::jsonb, 'ready', $3::timestamptz)
-         ON CONFLICT (task_id) DO NOTHING`,
-        [
-          receipt.taskId,
-          JSON.stringify(stored.data),
-          stored.data.injectedAt,
-        ],
-      );
-      const outbox = await client.query<PayloadRow>(
-        `SELECT payload FROM p1_memory_injection_receipt_outbox WHERE task_id = $1`,
-        [receipt.taskId],
-      );
-      if (
-        !outbox.rows[0] ||
-        !isDeepStrictEqual(outbox.rows[0].payload, stored.data)
-      ) {
-        throw new ReuseMemoryError(
-          'CONFLICT',
-          `Injection receipt outbox for task ${receipt.taskId} is missing or divergent.`,
         );
       }
       await client.query('COMMIT');

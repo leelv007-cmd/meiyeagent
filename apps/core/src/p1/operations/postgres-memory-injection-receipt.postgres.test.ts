@@ -46,8 +46,8 @@ test(
     const runId = `run-inj-${randomUUID()}`;
     const releaseId = `release-inj-${randomUUID()}`;
     const triggerSuffix = randomUUID().replaceAll('-', '');
-    const triggerName = `memory_outbox_fail_${triggerSuffix}`;
-    const functionName = `memory_outbox_fail_fn_${triggerSuffix}`;
+    const triggerName = `memory_receipt_fail_${triggerSuffix}`;
+    const functionName = `memory_receipt_fail_fn_${triggerSuffix}`;
 
     try {
       const [candidate] = await platform.onExtracted({
@@ -138,16 +138,18 @@ test(
       );
       const firstCommitted = await store.getByTask(commitLostTaskId);
       assert.equal(firstCommitted?.injectedAt, now);
-      const firstCommittedOutbox = await pool.query<{
+      // The committed row's physical version, so the retry below can be shown
+      // to have read it rather than rewritten it (put-once).
+      const firstCommittedRow = await pool.query<{
         payload: unknown;
         row_version: string;
       }>(
         `SELECT payload, xmin::text AS row_version
-         FROM p1_memory_injection_receipt_outbox
+         FROM p1_memory_injection_receipts
          WHERE task_id = $1`,
         [commitLostTaskId],
       );
-      assert.deepEqual(firstCommittedOutbox.rows[0]?.payload, firstCommitted);
+      assert.deepEqual(firstCommittedRow.rows[0]?.payload, firstCommitted);
       retryClock = '2026-08-08T12:05:00.000Z';
       const recovered = await commitLostPlatform.recordInjectionReceipt({
         taskId: commitLostTaskId,
@@ -156,16 +158,16 @@ test(
         entries,
       });
       assert.deepEqual(recovered, firstCommitted);
-      const recoveredOutbox = await pool.query<{
+      const recoveredRow = await pool.query<{
         payload: unknown;
         row_version: string;
       }>(
         `SELECT payload, xmin::text AS row_version
-         FROM p1_memory_injection_receipt_outbox
+         FROM p1_memory_injection_receipts
          WHERE task_id = $1`,
         [commitLostTaskId],
       );
-      assert.deepEqual(recoveredOutbox.rows[0], firstCommittedOutbox.rows[0]);
+      assert.deepEqual(recoveredRow.rows[0], firstCommittedRow.rows[0]);
 
       for (const divergentEntries of [
         entries.map((entry, index) =>
@@ -215,23 +217,25 @@ test(
       const byRun = await restarted.getByRun(runId);
       assert.deepEqual(byRun, receipt);
 
-      const outbox = await pool.query<{ payload: unknown; status: string }>(
-        `SELECT payload, status
-         FROM p1_memory_injection_receipt_outbox
-         WHERE task_id = $1`,
-        [taskId],
+      // V31-18 P1-7: the retired write-only "outbox" must be gone after migrate(),
+      // including on databases that already had it.
+      const retired = await pool.query<{ present: boolean }>(
+        `SELECT to_regclass('p1_memory_injection_receipt_outbox') IS NOT NULL AS present`,
       );
-      assert.equal(outbox.rows[0]?.status, 'ready');
-      assert.deepEqual(outbox.rows[0]?.payload, receipt);
+      assert.equal(retired.rows[0]?.present, false);
 
+      // A failure anywhere inside save() must leave no receipt behind, and the
+      // retry must then succeed. Previously forced through a trigger on the
+      // retired outbox; now forced on the receipt insert itself, which is the
+      // row that actually matters.
       await pool.query(`
         CREATE FUNCTION ${functionName}() RETURNS trigger AS $$
         BEGIN
-          RAISE EXCEPTION 'forced outbox failure';
+          RAISE EXCEPTION 'forced receipt failure';
         END;
         $$ LANGUAGE plpgsql;
         CREATE TRIGGER ${triggerName}
-          BEFORE INSERT ON p1_memory_injection_receipt_outbox
+          BEFORE INSERT ON p1_memory_injection_receipts
           FOR EACH ROW
           WHEN (NEW.task_id = '${retryTaskId}')
           EXECUTE FUNCTION ${functionName}();
@@ -244,19 +248,15 @@ test(
           entries,
           injectedAt: now,
         }),
-        /forced outbox failure/u,
+        /forced receipt failure/u,
       );
-      const rolledBack = await pool.query<{ receipt_count: string; outbox_count: string }>(
-        `SELECT
-           (SELECT count(*) FROM p1_memory_injection_receipts WHERE task_id = $1)::text AS receipt_count,
-           (SELECT count(*) FROM p1_memory_injection_receipt_outbox WHERE task_id = $1)::text AS outbox_count`,
+      const rolledBack = await pool.query<{ receipt_count: string }>(
+        `SELECT count(*)::text AS receipt_count
+           FROM p1_memory_injection_receipts WHERE task_id = $1`,
         [retryTaskId],
       );
-      assert.deepEqual(rolledBack.rows[0], {
-        receipt_count: '0',
-        outbox_count: '0',
-      });
-      await pool.query(`DROP TRIGGER ${triggerName} ON p1_memory_injection_receipt_outbox`);
+      assert.deepEqual(rolledBack.rows[0], { receipt_count: '0' });
+      await pool.query(`DROP TRIGGER ${triggerName} ON p1_memory_injection_receipts`);
       await pool.query(`DROP FUNCTION ${functionName}()`);
       const retried = await platform.recordInjectionReceipt({
         taskId: retryTaskId,
@@ -266,18 +266,14 @@ test(
         injectedAt: now,
       });
       assert.equal(retried.taskId, retryTaskId);
-      const committed = await pool.query<{ receipt_count: string; outbox_count: string }>(
-        `SELECT
-           (SELECT count(*) FROM p1_memory_injection_receipts WHERE task_id = $1)::text AS receipt_count,
-           (SELECT count(*) FROM p1_memory_injection_receipt_outbox WHERE task_id = $1)::text AS outbox_count`,
+      const committed = await pool.query<{ receipt_count: string }>(
+        `SELECT count(*)::text AS receipt_count
+           FROM p1_memory_injection_receipts WHERE task_id = $1`,
         [retryTaskId],
       );
-      assert.deepEqual(committed.rows[0], {
-        receipt_count: '1',
-        outbox_count: '1',
-      });
+      assert.deepEqual(committed.rows[0], { receipt_count: '1' });
     } finally {
-      await pool.query(`DROP TRIGGER IF EXISTS ${triggerName} ON p1_memory_injection_receipt_outbox`).catch(() => undefined);
+      await pool.query(`DROP TRIGGER IF EXISTS ${triggerName} ON p1_memory_injection_receipts`).catch(() => undefined);
       await pool.query(`DROP FUNCTION IF EXISTS ${functionName}()`).catch(() => undefined);
       await pool.query(
         `DELETE FROM p1_memory_injection_receipts WHERE task_id = ANY($1::text[])`,
