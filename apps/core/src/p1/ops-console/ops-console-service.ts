@@ -160,6 +160,10 @@ export type OpsConsoleServiceDeps = {
   resolveLegacyReplayOpsBufferDays?: () =>
     | number
     | Promise<number>;
+  resolveLegacyReplayInstallationEvidence?: () =>
+    | string
+    | null
+    | Promise<string | null>;
 };
 
 function nowIso(now?: string): string {
@@ -184,6 +188,32 @@ function requireEvidence(evidence: unknown, label: string): string {
     );
   }
   return evidence.trim();
+}
+
+const LEGACY_REPLAY_LEDGER_DEPLOYMENT_ID = 'v31-26a-legacy-replay-ledger-v1';
+
+function verifiedLegacyReplayInstallationEvidence(
+  evidence: string,
+): string | null {
+  try {
+    const parsed = JSON.parse(evidence) as Record<string, unknown>;
+    const expectedChecksum = createHash('sha256')
+      .update(LEGACY_REPLAY_LEDGER_DEPLOYMENT_ID)
+      .digest('hex');
+    if (
+      parsed.deploymentId !== LEGACY_REPLAY_LEDGER_DEPLOYMENT_ID ||
+      parsed.migrationChecksum !== expectedChecksum ||
+      parsed.initialLegacyCount !== 0 ||
+      parsed.legacyTerminalAuditCount !== 0 ||
+      typeof parsed.installedAt !== 'string' ||
+      Number.isNaN(Date.parse(parsed.installedAt))
+    ) {
+      return null;
+    }
+    return JSON.stringify(parsed);
+  } catch {
+    return null;
+  }
 }
 
 export class OpsConsoleService {
@@ -804,6 +834,57 @@ export class OpsConsoleService {
     return this.deps.audit.list(limit);
   }
 
+  async recordLegacyNoHistoryProof(
+    context: P1Context,
+    meta: OpsWriteMeta,
+  ): Promise<OpsConsoleAuditEntry> {
+    const reason = requireReason(meta.reason, 'record_legacy_no_history_proof');
+    const evidence = requireEvidence(
+      meta.evidence,
+      'record_legacy_no_history_proof',
+    );
+    if (
+      !this.deps.legacyReplayInventory ||
+      !this.deps.resolveLegacyReplayInstallationEvidence
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Legacy inventory and installation evidence source must be wired.',
+      );
+    }
+    const [inventory, installationEvidence] = await Promise.all([
+      this.deps.legacyReplayInventory.snapshot(),
+      this.deps.resolveLegacyReplayInstallationEvidence(),
+    ]);
+    const verifiedInstallationEvidence = installationEvidence
+      ? verifiedLegacyReplayInstallationEvidence(installationEvidence)
+      : null;
+    if (
+      inventory.activePendingCount !== 0 ||
+      inventory.lastLegacyTerminalAt !== null ||
+      !verifiedInstallationEvidence
+    ) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'No-history proof requires authoritative zero history and installation evidence.',
+      );
+    }
+    return this.audit(
+      context,
+      'record_legacy_no_history_proof',
+      'legacy-replay-history',
+      reason,
+      evidence,
+      {
+        verifiedZeroRows: true,
+        inventorySource:
+          'harness_runtime.task_requests+p1_execution_plan_snapshots',
+        installationEvidence: verifiedInstallationEvidence,
+      },
+      meta.now,
+    );
+  }
+
   /**
    * V31-26a / U14: read-only archive condition gate.
    * Fail closed when inventory or audit is unavailable.
@@ -901,9 +982,24 @@ export class OpsConsoleService {
     );
     // Audit store is always present on the service; list is the export primitive.
     let auditExportAvailable = false;
+    let verifiedNoHistoryAuditId: string | null = null;
     try {
-      await this.deps.audit.list(1);
+      const auditEntries = await this.deps.audit.list(500);
       auditExportAvailable = true;
+      const proof = auditEntries.find(
+        (entry) =>
+          entry.action === 'record_legacy_no_history_proof' &&
+          entry.target === 'legacy-replay-history' &&
+          Boolean(entry.evidence?.trim()) &&
+          entry.detail.verifiedZeroRows === true &&
+          entry.detail.inventorySource ===
+            'harness_runtime.task_requests+p1_execution_plan_snapshots' &&
+          typeof entry.detail.installationEvidence === 'string' &&
+          verifiedLegacyReplayInstallationEvidence(
+            entry.detail.installationEvidence,
+          ) !== null,
+      );
+      verifiedNoHistoryAuditId = proof?.id ?? null;
     } catch {
       auditExportAvailable = false;
     }
@@ -927,6 +1023,7 @@ export class OpsConsoleService {
       auditExportAvailable,
       maxHoldWindowDays: LEGACY_REPLAY_MAX_HOLD_WINDOW_DAYS,
       opsPolicyBufferDays,
+      verifiedNoHistoryAuditId,
     });
     return { gate, inventory };
   }

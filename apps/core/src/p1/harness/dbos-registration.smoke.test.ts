@@ -37,8 +37,17 @@ import { PostgresHarnessResumeReconcilerStore } from './postgres-resume-reconcil
 import { HarnessResumeReconciler } from './resume-reconciler.js';
 import type {
   HarnessMediaSelectionResult,
+  HarnessMediaStagePorts,
+  HarnessNoteStagePorts,
   HarnessStagePorts,
 } from './workflow-core.js';
+import {
+  createMakeRestartWorkflow,
+  MAKE_RESTART_APP_NAME,
+  makeRestartRequest,
+  migrateMakeRestartReceipt,
+} from './dbos-make-restart.fixture.js';
+import { PostgresLegacyShadowObservationReader } from './legacy-shadow-observation-reader.js';
 
 /**
  * This suite is the only place that asserts durable DBOS step ordering by
@@ -424,6 +433,276 @@ test(
       assert.equal(events.at(-1)?.data.sourceRevision, 1);
     } finally {
       await DBOS.shutdown({ deregister: true });
+    }
+  },
+);
+
+test(
+  'production Make survives a DBOS worker SIGKILL after the PG delivery commit exactly once',
+  { skip: !systemDatabaseUrl || !databaseUrl },
+  async () => {
+    const workflowId = `harness-make-restart-${randomUUID()}`;
+    const workspaceId = `workspace-make-restart-${workflowId}`;
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const applicationVersion = `harness-make-restart-${workflowId}`;
+    const pool = new Pool({ connectionString: databaseUrl! });
+    await migrateMakeRestartReceipt(pool);
+    await pool.query(
+      'delete from p1_make_restart_delivery_receipts where workflow_id=$1',
+      [workflowId],
+    );
+    try {
+      await createMakeRestartCrashFixture(
+        workflowId,
+        workspaceId,
+        applicationVersion,
+      );
+      DBOS.setConfig({
+        name: MAKE_RESTART_APP_NAME,
+        systemDatabaseUrl: systemDatabaseUrl!,
+        applicationVersion,
+      });
+      createMakeRestartWorkflow({
+        crashAfterDeliveryCommit: false,
+        pool,
+        workflowId,
+        workspaceId,
+      });
+      await DBOS.launch();
+      const recovered = DBOS.retrieveWorkflow<{
+        delivery: { packageId: string; revision: number; versionId: string };
+      }>(runtimeWorkflowId);
+      const result = await recovered.getResult();
+      assert.deepEqual(result.delivery, {
+        packageId: `package-${workflowId}`,
+        revision: 1,
+        versionId: `version-${workflowId}`,
+      });
+      const receipts = await pool.query<{
+        effect_key: string;
+        package_id: string;
+        revision: string;
+      }>(
+        `select effect_key, package_id, revision::text
+           from p1_make_restart_delivery_receipts
+          where workflow_id=$1`,
+        [workflowId],
+      );
+      assert.deepEqual(receipts.rows, [
+        {
+          effect_key: `make-delivery:${workflowId}`,
+          package_id: `package-${workflowId}`,
+          revision: '1',
+        },
+      ]);
+      const steps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
+      assert.ok(steps);
+      const primitiveSteps = steps.filter(({ name }) =>
+        name.startsWith('compiled-primitive-'),
+      );
+      assert.equal(primitiveSteps.length, 5);
+      assert.equal(new Set(primitiveSteps.map(({ name }) => name)).size, primitiveSteps.length);
+    } finally {
+      await pool.query(
+        'delete from p1_make_restart_delivery_receipts where workflow_id=$1',
+        [workflowId],
+      );
+      await DBOS.shutdown({ deregister: true });
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'production force-legacy Make writes a durable shadow observation consumed by the read-only observer',
+  { skip: !systemDatabaseUrl || !databaseUrl },
+  async () => {
+    const workflowId = `harness-legacy-observation-${randomUUID()}`;
+    const workspaceId = `workspace-legacy-observation-${workflowId}`;
+    const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+    const applicationVersion = `harness-legacy-observation-${workflowId}`;
+    const pool = new Pool({ connectionString: databaseUrl! });
+    const persistence = new PostgresHarnessStore(pool);
+    const workflowInput = makeRestartRequest(workflowId, workspaceId);
+    await persistence.applySchema();
+    await migrateMakeRestartReceipt(pool);
+    await pool.query(
+      `insert into harness_runtime.task_requests
+         (task_id, workflow_id, runtime_id, fingerprint, request)
+       values ($1, $2, $1, $3, $4::jsonb)`,
+      [
+        runtimeWorkflowId,
+        workflowId,
+        `fixture-${workflowId}`,
+        JSON.stringify(workflowInput.request),
+      ],
+    );
+    try {
+      DBOS.setConfig({
+        name: MAKE_RESTART_APP_NAME,
+        systemDatabaseUrl: systemDatabaseUrl!,
+        applicationVersion,
+      });
+      const workflow = createMakeRestartWorkflow({
+        crashAfterDeliveryCommit: false,
+        forceLegacyFiveStage: true,
+        persistence,
+        pool,
+        workflowId,
+        workspaceId,
+      });
+      await DBOS.launch();
+      const result = await DBOS.startWorkflow(workflow, {
+        workflowID: runtimeWorkflowId,
+      })(workflowInput).then((handle) => handle.getResult());
+      assert.ok(result.delivery);
+      assert.equal(result.delivery.packageId, `package-${workflowId}`);
+      const observation = await new PostgresLegacyShadowObservationReader(
+        pool,
+      ).read({ workflowId, workspaceId });
+      assert.deepEqual(observation?.deliverables, [
+        { kind: 'copy', quantity: 1 },
+      ]);
+      assert.deepEqual(observation?.quoteRef, {
+        id: `quote-${workflowId}`,
+        revision: 'quote-r1',
+      });
+      const steps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
+      assert.equal(
+        steps?.filter(({ name }) => name === 'persist-legacy-shadow-observation')
+          .length,
+        1,
+      );
+      assert.equal(
+        steps?.some(({ name }) => name.startsWith('compiled-primitive-')),
+        false,
+      );
+    } finally {
+      await DBOS.shutdown({ deregister: true });
+      await pool.query(
+        'delete from harness_runtime.audit_events where workflow_id=$1',
+        [runtimeWorkflowId],
+      );
+      await pool.query(
+        'delete from harness_runtime.decision_traces where task_id=$1',
+        [runtimeWorkflowId],
+      );
+      await pool.query(
+        'delete from harness_runtime.task_requests where workflow_id=$1',
+        [workflowId],
+      );
+      await pool.query(
+        'delete from p1_make_restart_delivery_receipts where workflow_id=$1',
+        [workflowId],
+      );
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'production force-legacy note and media persist inner effects without nested DBOS steps',
+  { skip: !systemDatabaseUrl || !databaseUrl },
+  async () => {
+    const pool = new Pool({ connectionString: databaseUrl! });
+    await pool.query(
+      `create table if not exists p1_force_legacy_effect_receipts (
+         effect_key text primary key,
+         workflow_id text not null,
+         carrier text not null,
+         effect_kind text not null,
+         attempt_count integer not null default 1,
+         created_at timestamptz not null default now()
+       );
+       alter table p1_force_legacy_effect_receipts
+         add column if not exists attempt_count integer not null default 1`,
+    );
+    try {
+      for (const carrier of ['note', 'media'] as const) {
+        const workflowId = `force-legacy-${carrier}-${randomUUID()}`;
+        const workspaceId = `workspace-${workflowId}`;
+        const runtimeWorkflowId = harnessRuntimeId(workspaceId, workflowId);
+        const applicationVersion = `force-legacy-${carrier}-${workflowId}`;
+        DBOS.setConfig({
+          name: `beauty-marketing-force-legacy-${carrier}`,
+          systemDatabaseUrl: systemDatabaseUrl!,
+          applicationVersion,
+        });
+        const workflow = registerHarnessDbosWorkflow(
+          forceLegacyEffectPorts({
+            carrier,
+            pool,
+            workflowId,
+            workspaceId,
+          }) as never,
+          {
+            async registerPending() {},
+            async readPending() {
+              return null;
+            },
+            async recordStageTrace() {},
+            async recordTerminalFailure() {},
+          },
+          { resolveForceLegacyFiveStage: async () => true },
+        );
+        try {
+          await DBOS.launch();
+          const request = forceLegacyEffectRequest(
+            carrier,
+            workflowId,
+            workspaceId,
+          );
+          const first = await DBOS.startWorkflow(workflow, {
+            workflowID: runtimeWorkflowId,
+          })(request).then((handle) => handle.getResult());
+          const replay = await DBOS.startWorkflow(workflow, {
+            workflowID: runtimeWorkflowId,
+          })(request).then((handle) => handle.getResult());
+          assert.deepEqual(replay, first);
+          assert.ok(first.delivery);
+          assert.equal(first.delivery.packageId, `package-${workflowId}`);
+          const receipts = await pool.query<{
+            attempt_count: number;
+            effect_key: string;
+            effect_kind: string;
+          }>(
+            `select attempt_count, effect_key, effect_kind
+               from p1_force_legacy_effect_receipts
+              where workflow_id=$1
+              order by effect_kind`,
+            [workflowId],
+          );
+          assert.deepEqual(
+            receipts.rows.map(({ effect_kind }) => effect_kind),
+            ['delivery', carrier === 'note' ? 'page' : 'provider'],
+          );
+          assert.equal(
+            new Set(receipts.rows.map(({ effect_key }) => effect_key)).size,
+            2,
+          );
+          assert.deepEqual(
+            receipts.rows.map(({ attempt_count }) => attempt_count),
+            [1, 1],
+          );
+          const steps = await DBOS.listWorkflowSteps(runtimeWorkflowId);
+          const innerEffectName =
+            carrier === 'note'
+              ? `force-legacy-note-page-${workflowId}-page-1`
+              : `force-legacy-media-provider-${workflowId}-asset-1`;
+          assert.equal(
+            steps?.filter(({ name }) => name === innerEffectName).length,
+            1,
+          );
+        } finally {
+          await DBOS.shutdown({ deregister: true });
+          await pool.query(
+            'delete from p1_force_legacy_effect_receipts where workflow_id=$1',
+            [workflowId],
+          );
+        }
+      }
+    } finally {
+      await pool.end();
     }
   },
 );
@@ -2476,6 +2755,64 @@ function createMediaAdmissionCrashFixture(
   });
 }
 
+function createMakeRestartCrashFixture(
+  workflowId: string,
+  workspaceId: string,
+  applicationVersion: string,
+) {
+  return new Promise<void>((resolve, reject) => {
+    const child = spawn(
+      process.execPath,
+      [
+        '--import',
+        'tsx',
+        fileURLToPath(
+          new URL('./dbos-make-restart.process.fixture.ts', import.meta.url),
+        ),
+      ],
+      {
+        env: {
+          ...process.env,
+          V31_MAKE_RESTART_APP_VERSION: applicationVersion,
+          V31_MAKE_RESTART_WORKFLOW_ID: workflowId,
+          V31_MAKE_RESTART_WORKSPACE_ID: workspaceId,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    let stdout = '';
+    let stderr = '';
+    const timeout = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error('Make restart fixture did not commit delivery.'));
+    }, 20_000);
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once('error', (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    child.once('exit', (_code, signal) => {
+      clearTimeout(timeout);
+      if (stdout.includes('MAKE_DELIVERY_COMMITTED') && signal === 'SIGKILL') {
+        resolve();
+        return;
+      }
+      reject(
+        new Error(
+          `Make restart fixture failed (${String(signal)}): ${stderr || stdout}`,
+        ),
+      );
+    });
+  });
+}
+
 function assertAdmissionEffectLayout(
   steps: Awaited<ReturnType<typeof DBOS.listWorkflowSteps>>,
   workflowId: string,
@@ -2541,6 +2878,359 @@ function autoApprovePaidGenerationConfirmation(
 
 const SMOKE_PRIVATE_INSTRUCTION =
   'F21 private Skill instruction must never enter DBOS step output.';
+
+function forceLegacyEffectRequest(
+  carrier: 'note' | 'media',
+  workflowId: string,
+  workspaceId: string,
+) {
+  const lens = carrier === 'note' ? 'image_text_note' : 'image';
+  const snapshot = createCreationExecutionSnapshot(
+    {
+      actorId: 'owner-force-legacy-effect',
+      workspaceId,
+      idempotencyKey: `submission-${workflowId}`,
+      taskId: workflowId,
+      workId: `work-${workflowId}`,
+      contentPackageId: `package-${workflowId}`,
+      expectedContentPackageRevision: 0,
+      creationMode: 'customized',
+      intent: '生成可发布的门店内容',
+      surface: { id: 'surface-force-legacy', revision: 'surface-r1' },
+      recipe: { id: `recipe-${carrier}`, revision: 'recipe-r1' },
+      lens,
+      operation: 'image.generate',
+      platform: { id: 'xiaohongshu' },
+      contentPackagePlatform: 'xiaohongshu',
+      distributionTarget: 'export',
+      deliverable: {
+        kind: carrier === 'note' ? 'note' : 'image_set',
+        quantity: 1,
+        aspectRatio: '9:16',
+        ...(carrier === 'note' ? { notePageBound: 2 } : {}),
+      },
+      deliverables: [
+        {
+          id: `${carrier}-main`,
+          kind: lens,
+          order: 0,
+          quantity: 1,
+          aspectRatio: '9:16',
+          ...(carrier === 'note' ? { notePageBound: 2 } : {}),
+        },
+      ],
+      sources: { assets: [] },
+      rights: { revision: 'rights-r1', summary: 'authorized' },
+      identity: { id: 'identity-force-legacy', revision: 'identity-r1' },
+      modelPolicy: { id: 'policy-force-legacy', revision: 'policy-r1', mode: 'fixed' },
+      catalogModel: { id: 'model-force-legacy', revision: 'model-r1' },
+      quote: { id: `quote-${workflowId}`, revision: 'quote-r1' },
+      route: { id: 'route-force-legacy', revision: 'route-r1' },
+      briefContext: { id: 'brief-force-legacy', revision: 1 },
+      contentModules: ['social_cover'],
+    },
+    '2026-08-09T00:00:00.000Z',
+  );
+  return {
+    workflowId,
+    request: {
+      actorId: snapshot.actorId,
+      workspaceId,
+      packageId: snapshot.contentPackage.id,
+      expectedRevision: snapshot.contentPackage.expectedRevision,
+      workflowRevision: snapshot.revision,
+      creationMode: snapshot.creationMode,
+      rawInput: snapshot.intent.text,
+      intent: {
+        context: {
+          workId: snapshot.work.id,
+          intent: snapshot.intent.text,
+          sourceSummaries: [],
+        },
+        assetReferences: [],
+      },
+      ...(carrier === 'note'
+        ? {
+            decisionReferences: [
+              {
+                id: `decision-${workflowId}-style`,
+                field: 'note_style',
+                value: 'fixture-style',
+                revision: 1,
+              },
+            ],
+          }
+        : {}),
+      executionSnapshot: snapshot,
+    },
+  };
+}
+
+function forceLegacyEffectPorts(input: {
+  carrier: 'note' | 'media';
+  pool: Pool;
+  workflowId: string;
+  workspaceId: string;
+}): HarnessNoteStagePorts | HarnessMediaStagePorts {
+  const context = {
+    bundle: {
+      bundleId: `bundle-${input.workflowId}`,
+      revision: 1,
+      hash: 'a'.repeat(64),
+      serializerVersion: 'context-bundle-c14n-v1' as const,
+      workspaceId: input.workspaceId,
+      taskId: input.workflowId,
+      frozenAt: '2026-08-09T00:00:00.000Z',
+      frozenBy: 'owner-force-legacy-effect',
+      previousRevision: null,
+      referencedFactRevisions: [],
+      sourceRevisions: {
+        facts: 0,
+        assets: 0,
+        identity: 0,
+        rights: 0,
+        preferences: 0,
+        recipe: 0,
+        platformRules: 0,
+        currentSignal: 1,
+      },
+      dimensions: {
+        promotion_task: {},
+        traffic_opportunity: {},
+        expression_identity: {},
+        platform_mechanism: {},
+        store_facts_assets: {},
+        conversion_action: {},
+      },
+    },
+    policyReferences: { sourceRefs: [], rightsRefs: [], identityRefs: [] },
+  };
+  const shared: Pick<
+    HarnessStagePorts,
+    'nameIntent' | 'injectContext' | 'fenceContext'
+  > = {
+    async nameIntent() {
+      return {
+        declaration: {
+          normalizedIntent: '门店内容',
+          taskType: 'routine_marketing_materials',
+          deliveryLayer: 'finished_media',
+          relevantAssetCategories: [],
+          usedAssetCategories: [],
+          route: 'customized',
+          routingSource: 'policy',
+          implicitConstraints: [],
+        },
+        blockingQuestion: null,
+      };
+    },
+    async injectContext() {
+      return context;
+    },
+    async fenceContext() {
+      return context;
+    },
+  };
+  if (input.carrier === 'note') {
+    const plan = {
+      schema: 'note-plan/v1' as const,
+      themeAnchor: '门店护理',
+      style: {
+        id: 'fixture-style',
+        name: '冻结旧链风格',
+        positioning: '恢复验证',
+      },
+      pages: [
+        {
+          id: 'page-1',
+          order: 1,
+          revision: 1,
+          pageRole: 'cover' as const,
+          pagePurpose: 'capture_attention' as const,
+          imageIntent: {
+            operation: 'image.generate' as const,
+            purpose: '封面',
+            subject: '门店护理',
+            scene: '真实门店',
+            composition: '竖版主视觉',
+            references: [],
+            exactText: [],
+            changes: [],
+            invariants: [],
+            factRefs: [],
+            rightsRefs: [],
+            outputPlan: { kind: 'single' as const },
+          },
+          textBlock: {
+            title: '门店护理',
+            body: '到店了解详情',
+            exactText: [],
+          },
+          dependencies: [],
+        },
+      ],
+    };
+    return {
+      ...shared,
+      async compileNoteBrief() {
+        return {
+          kind: 'image_text_note',
+          candidates: {
+            candidates: [
+              {
+                styleId: 'fixture-style',
+                styleName: '冻结旧链风格',
+                positioning: '恢复验证',
+                plan,
+              },
+            ],
+          },
+        };
+      },
+      async executeNoteAndSelect(execution) {
+        if (!execution.runStep) throw new Error('note runStep is required');
+        await execution.runStep(
+          `force-legacy-note-page:${input.workflowId}:page-1`,
+          () =>
+            recordForceLegacyEffect(
+              input.pool,
+              input.workflowId,
+              'note',
+              'page',
+              `note-page:${input.workflowId}:page-1`,
+            ),
+        );
+        return {
+          auditSignals: [],
+          childRuns: [],
+          ownedAssets: [],
+          selectedStyleId: execution.selectedStyleId,
+          version: {
+            schema: 'image-text-note-version/v1',
+            plan,
+            regenerationReceipts: [],
+          },
+          trace: {
+            stage: 'execution_selection',
+            winnerCandidateId: execution.selectedStyleId,
+            candidateScores: [],
+            blockedCandidates: [],
+            rubricVersion: 'force-legacy-note-v1',
+            rubricHash: 'force-legacy-note-rubric',
+          },
+        };
+      },
+      async assembleNoteAndDeliver() {
+        await recordForceLegacyEffect(
+          input.pool,
+          input.workflowId,
+          'note',
+          'delivery',
+          `delivery:${input.workflowId}`,
+        );
+        return {
+          packageId: `package-${input.workflowId}`,
+          versionId: `version-${input.workflowId}`,
+          revision: 1,
+        };
+      },
+    };
+  }
+  return {
+    ...shared,
+    async compileMediaBrief() {
+      return {
+        kind: 'image',
+        intent: {
+          operation: 'image.generate',
+          purpose: '门店活动图',
+          subject: '门店项目',
+          scene: '真实门店',
+          composition: '竖版主体居中',
+          references: [],
+          exactText: [],
+          changes: [],
+          invariants: [],
+          factRefs: [],
+          rightsRefs: [],
+          outputPlan: { kind: 'single' },
+        },
+        prompt: '生成一张门店活动图',
+        referenceAssetIds: [],
+        parameters: { ratio: '9:16', resolution: '1080p' },
+        constraints: [],
+      };
+    },
+    async executeMediaAndSelect(execution) {
+      if (!execution.runStep) throw new Error('media runStep is required');
+      await execution.runStep(
+        `force-legacy-media-provider:${input.workflowId}:asset-1`,
+        () =>
+          recordForceLegacyEffect(
+            input.pool,
+            input.workflowId,
+            'media',
+            'provider',
+            `media-provider:${input.workflowId}:asset-1`,
+          ),
+      );
+      return {
+        kind: 'image',
+        asset: {
+          contentType: 'image/png',
+          id: `asset-${input.workflowId}`,
+          objectKey: `owned/${input.workflowId}`,
+          sha256: 'force-legacy-media-sha',
+          sizeBytes: 1024,
+        },
+        childRun: {
+          runId: `run-${input.workflowId}`,
+          runType: 'model_job',
+          status: 'succeeded',
+        },
+        trace: {
+          stage: 'execution_selection',
+          winnerCandidateId: `asset-${input.workflowId}`,
+          candidateScores: [],
+          blockedCandidates: [],
+          rubricVersion: 'force-legacy-media-v1',
+          rubricHash: 'force-legacy-media-rubric',
+        },
+      };
+    },
+    async assembleMediaAndDeliver() {
+      await recordForceLegacyEffect(
+        input.pool,
+        input.workflowId,
+        'media',
+        'delivery',
+        `delivery:${input.workflowId}`,
+      );
+      return {
+        packageId: `package-${input.workflowId}`,
+        versionId: `version-${input.workflowId}`,
+        revision: 1,
+      };
+    },
+  };
+}
+
+async function recordForceLegacyEffect(
+  pool: Pool,
+  workflowId: string,
+  carrier: 'note' | 'media',
+  effectKind: 'page' | 'provider' | 'delivery',
+  effectKey: string,
+) {
+  await pool.query(
+    `insert into p1_force_legacy_effect_receipts
+       (effect_key, workflow_id, carrier, effect_kind)
+     values ($1, $2, $3, $4)
+     on conflict (effect_key) do update
+       set attempt_count=p1_force_legacy_effect_receipts.attempt_count + 1`,
+    [effectKey, workflowId, carrier, effectKind],
+  );
+}
 
 function smokePorts(
   workflowId: string,

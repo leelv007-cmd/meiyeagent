@@ -315,6 +315,16 @@ export type ShadowReconciliationServiceDeps = {
 export class ShadowReconciliationService {
   constructor(private readonly deps: ShadowReconciliationServiceDeps) {}
 
+  async shouldObserveLegacyExecution(sampleKey: string): Promise<boolean> {
+    const state = await this.deps.store.getProgramState();
+    if (state?.status === 'closed') return false;
+    const config = await this.deps.resolveConfig();
+    return shouldSampleShadowReconciliation({
+      sampleRate: config.sampleRate,
+      sampleKey,
+    });
+  }
+
   /**
    * Hook for Make execution-complete path. Failures never throw — evidence only.
    */
@@ -322,6 +332,8 @@ export class ShadowReconciliationService {
     input: ShadowReconcileOnCompleteInput,
   ): Promise<ShadowReconcileOutcome> {
     try {
+      const state = await this.deps.store.getProgramState();
+      if (state?.status === 'closed') return { sampled: false };
       const config = await this.deps.resolveConfig();
       if (
         !shouldSampleShadowReconciliation({
@@ -348,8 +360,9 @@ export class ShadowReconciliationService {
         newChain,
         oldChain: input.oldChain,
       };
-      const stored = await this.deps.store.putSampleIdempotent(sample);
-      await this.touchProgramStateOnSample(stored);
+      const inserted = await this.deps.store.putSampleIfOpen(sample);
+      if (!inserted.accepted) return { sampled: false };
+      const stored = inserted.sample;
 
       if (!stored.matched) {
         await this.appendAudit({
@@ -411,6 +424,8 @@ export class ShadowReconciliationService {
       const freeAnchorMs = Date.parse(freeAnchorIso);
       const continuousFreeMs = nowMs - freeAnchorMs;
       const elapsedMs = nowMs - openedMs;
+      // The mismatch at the anchor starts the next clean interval; it is not
+      // part of that interval. Stores therefore implement this as sampledAt > anchor.
       const mismatchesSinceAnchor =
         await this.deps.store.countMismatchesSince(freeAnchorIso);
 
@@ -427,14 +442,19 @@ export class ShadowReconciliationService {
       if (!reason) return null;
 
       const closedAt = input.now;
-      await this.deps.store.putProgramState({
+      const closedState: ShadowProgramState = {
         ...state,
         status: 'closed',
         updatedAt: closedAt,
         closeReason: reason,
         closedAt,
         closedBy: input.operatorId,
-      });
+      };
+      const wonClose = await this.deps.store.closeProgramStateCas(
+        state,
+        closedState,
+      );
+      if (!wonClose) return null;
       await this.appendAudit({
         action: 'close_shadow_reconciliation',
         operatorId: input.operatorId,
@@ -460,41 +480,6 @@ export class ShadowReconciliationService {
       console.error('Shadow reconciliation close check failed.', error);
       return null;
     }
-  }
-
-  private async touchProgramStateOnSample(
-    sample: ShadowReconciliationSample,
-  ): Promise<void> {
-    const existing = await this.deps.store.getProgramState();
-    if (existing?.status === 'closed') return;
-
-    // putSampleIdempotent may return a prior sample — only count first insert
-    // when program sampleCount is still behind. Prefer recompute from store.
-    const samples = await this.deps.store.listSamples(10_000);
-    const sampleCount = samples.length;
-    const mismatchCount = samples.filter((s) => !s.matched).length;
-    const lastMismatchAt =
-      samples
-        .filter((s) => !s.matched)
-        .map((s) => s.sampledAt)
-        .sort()
-        .at(-1) ?? null;
-    const openedAt =
-      existing?.openedAt ??
-      samples.map((s) => s.sampledAt).sort()[0] ??
-      sample.sampledAt;
-
-    await this.deps.store.putProgramState({
-      status: 'open',
-      openedAt,
-      updatedAt: sample.sampledAt,
-      closeReason: null,
-      closedAt: null,
-      closedBy: null,
-      lastMismatchAt,
-      sampleCount,
-      mismatchCount,
-    });
   }
 
   private async appendAudit(input: {
@@ -543,61 +528,4 @@ function normalizeDeliverables(
   return [...byKind.entries()]
     .map(([kind, quantity]) => ({ kind, quantity }))
     .sort((a, b) => a.kind.localeCompare(b.kind));
-}
-
-/**
- * Map Composer/execution-spine lens kinds onto plan deliverable carriers.
- */
-export function mapExecutionLensToCarrier(
-  kind: string,
-): ShadowDeliverableCarrier | null {
-  if (kind === 'copy') return 'copy';
-  if (kind === 'image_text_note') return 'note';
-  if (kind === 'image' || kind === 'video') return 'media';
-  if (kind === 'note' || kind === 'media') return kind;
-  return null;
-}
-
-/**
- * Best-effort old-chain projection from Make request fields that still exist
- * outside the snapshot freeze (execution complete path).
- * Returns null when independent dual sources are insufficient.
- */
-export function projectLegacyFromMakeRequest(input: {
-  snapshot: ExecutionPlanSnapshot;
-  boundedExecution?: BoundedExecutionSnapshot;
-  /**
-   * Optional independently observed deliverables (e.g. from executionSnapshot).
-   * When omitted, falls back to snapshot deliverables (bounds-only drift check).
-   */
-  observedDeliverables?: Array<{
-    kind: string;
-    quantity: number;
-  }>;
-  observedFactRefs?: readonly string[];
-  observedRightsRefs?: readonly string[];
-  observedQuoteRef?: { id: string; revision: number | string };
-}): ShadowDeterministicFields | null {
-  if (!input.boundedExecution) return null;
-  const mappedObserved = (input.observedDeliverables ?? [])
-    .map((item) => {
-      const kind = mapExecutionLensToCarrier(item.kind);
-      return kind ? { kind, quantity: item.quantity } : null;
-    })
-    .filter((item): item is { kind: ShadowDeliverableCarrier; quantity: number } =>
-      item !== null,
-    );
-  return projectLegacyDeterministicFields({
-    deliverables:
-      mappedObserved.length > 0
-        ? mappedObserved
-        : input.snapshot.deliverables.map((d) => ({
-            kind: d.kind,
-            quantity: d.quantity,
-          })),
-    factRefs: input.observedFactRefs ?? input.snapshot.factRevisionRefs,
-    rightsRefs: input.observedRightsRefs ?? input.snapshot.rightsRevisionRefs,
-    quoteRef: input.observedQuoteRef ?? input.snapshot.quoteRef,
-    bounds: boundsFromSnapshot(input.boundedExecution),
-  });
 }

@@ -16,27 +16,24 @@
 import { createHash, randomUUID } from 'node:crypto';
 
 import {
-  COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
-  MARKETING_PLAN_REVISION_SCHEMA_VERSION,
   compiledExecutionPlanSchema,
-  executionUnitIdSchema,
+  MARKETING_PLAN_REVISION_SCHEMA_VERSION,
   marketingPlanIdSchema,
   marketingPlanRevisionSchema,
   type AgentRevisionRef,
   type CompiledExecutionPlan,
-  type ExecutionUnit,
-  type ExecutionUnitId,
   type MarketingPlanReadiness,
   type MarketingPlanRevision,
   type PlanDeliverable,
   type PlanMemoryContext,
 } from '@meiye/contracts';
 
+import { createCanonicalCarrierUnitRecipeRegistry } from '../harness/carrier-unit-recipes.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import {
   buildExecutionUnitCacheKey,
   createCanonicalExecutionUnitRegistry,
-  ExecutionUnitRegistry,
+  type ExecutionUnitRegistry,
   type ExecutionUnitTypeDefinition,
 } from './execution-unit-registry.js';
 import {
@@ -201,8 +198,30 @@ export type CompilePlanInput = {
   };
 };
 
+/** One carrier's durable execution plan (see CompilePlanResult.executionPlans). */
+export type CompiledCarrierExecutionPlan = {
+  carrier: PlanDeliverable['kind'];
+  executionPlan: CompiledExecutionPlan;
+  unitCacheKeys: Record<string, string>;
+};
+
 export type CompilePlanResult = {
   revision: MarketingPlanRevision;
+  /**
+   * The plan revision may span carriers (a merchant can order copy and notes in
+   * one Plan, and the Living Plan / quote / credit projections all model that),
+   * but one durable Make execution targets exactly one carrier: the executor
+   * resolves a single carrier recipe per run and namespaces its durable effect
+   * keys under it. So compilation emits one execution plan per carrier here, in
+   * deliverable order, and a Make submission carries exactly one of them.
+   */
+  executionPlans: CompiledCarrierExecutionPlan[];
+  /**
+   * First carrier's plan. Convenience for the single-carrier case; on a
+   * multi-carrier revision callers must pick from `executionPlans`. Submitting
+   * the wrong carrier's plan is refused by the executor's carrier binding rather
+   * than silently executed.
+   */
   executionPlan: CompiledExecutionPlan;
   readiness: MarketingPlanReadiness;
   skillInvocationReceipts: SkillInvocationReceipt[];
@@ -233,22 +252,12 @@ export class PlanCompilerError extends Error {
   }
 }
 
-const CARRIER_TO_UNIT: Record<PlanDeliverable['kind'], string> = {
-  copy: 'copy.generate',
-  note: 'note.generate',
-  media: 'media.generate',
-};
-
 function sha256Hex(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
 function deliverableId(index: number, kind: string): string {
   return `d${index + 1}-${kind}`;
-}
-
-function unitId(value: string): ExecutionUnitId {
-  return executionUnitIdSchema.parse(value);
 }
 
 // ─── Compiler ───────────────────────────────────────────────────────────────
@@ -339,8 +348,20 @@ export class PlanCompiler {
         revision: latest.revision,
         readiness,
       });
+      // Same doctrine as the fresh path: rebuild the carrier plans
+      // deterministically and let the stored primary win round-trip identity.
+      const executionPlans = this.buildExecutionPlans({
+        revision: latest.revision,
+        workspaceId: input.workspaceId,
+        deliverables: latest.revision.deliverables,
+      }).map((compiled, index) =>
+        index === 0
+          ? { ...compiled, executionPlan: latest.executionPlan }
+          : compiled,
+      );
       return {
         revision: latest.revision,
+        executionPlans,
         executionPlan: latest.executionPlan,
         readiness,
         skillInvocationReceipts: [],
@@ -482,14 +503,24 @@ export class PlanCompiler {
       contentHash,
     });
 
-    const { executionPlan, unitCacheKeys } = this.buildExecutionPlan({
+    const executionPlans = this.buildExecutionPlans({
       revision,
       workspaceId: input.workspaceId,
       deliverables,
     });
+    const [primary] = executionPlans;
+    if (!primary) {
+      throw new PlanCompilerError(
+        'EMPTY_PLAN_NO_CARRIER',
+        'A plan revision must compile at least one carrier execution plan.',
+      );
+    }
+    const { executionPlan, unitCacheKeys } = primary;
 
     // A18: reject any plan that would place side-effect units in conditionals.
-    assertNoConditionalSideEffects(executionPlan, this.registry);
+    for (const compiled of executionPlans) {
+      assertNoConditionalSideEffects(compiled.executionPlan, this.registry);
+    }
 
     const stored = await this.store.append({ revision, executionPlan });
 
@@ -518,6 +549,13 @@ export class PlanCompiler {
 
     return {
       revision: stored.revision,
+      // The store round-trips the primary plan; the remaining carriers keep the
+      // freshly compiled artifacts.
+      executionPlans: executionPlans.map((compiled, index) =>
+        index === 0
+          ? { ...compiled, executionPlan: stored.executionPlan }
+          : compiled,
+      ),
       executionPlan: stored.executionPlan,
       readiness,
       skillInvocationReceipts: recipeSkills.skillInvocationReceipts,
@@ -702,144 +740,148 @@ export class PlanCompiler {
     }));
   }
 
-  private buildExecutionPlan(input: {
+  /**
+   * One execution plan per carrier present in the revision, in deliverable
+   * order. Splitting here (rather than rejecting the revision) is the deliberate
+   * decision: the Plan is allowed to span carriers, a single Make execution is
+   * not.
+   */
+  private buildExecutionPlans(input: {
     revision: MarketingPlanRevision;
     workspaceId: string;
+    deliverables: PlanDeliverable[];
+  }): CompiledCarrierExecutionPlan[] {
+    const carriers = [...new Set(input.deliverables.map((item) => item.kind))];
+    return carriers.map((carrier) => ({
+      carrier,
+      ...this.buildCarrierExecutionPlan({
+        ...input,
+        carrier,
+        deliverables: input.deliverables.filter(
+          (item) => item.kind === carrier,
+        ),
+      }),
+    }));
+  }
+
+  private buildCarrierExecutionPlan(input: {
+    revision: MarketingPlanRevision;
+    workspaceId: string;
+    carrier: PlanDeliverable['kind'];
+    /** Only the deliverables of this carrier. */
     deliverables: PlanDeliverable[];
   }): {
     executionPlan: CompiledExecutionPlan;
     unitCacheKeys: Record<string, string>;
   } {
-    const units: ExecutionUnit[] = [];
-    const unitCacheKeys: Record<string, string> = {};
+    const carrier = input.carrier;
+    const recipe = createCanonicalCarrierUnitRecipeRegistry().resolve(carrier);
+    const canonical = structuredClone(recipe.plan);
+    const repeatableSteps = new Set(
+      recipe.stepCatalog
+        .filter((step) => step.repeatable)
+        .map((step) => `${step.primitive}:${step.role}`),
+    );
+    const commonInput = {
+      planId: input.revision.planId,
+      planRevision: input.revision.revision,
+      deliverables: input.deliverables,
+      quoteRef: input.revision.quoteRef,
+    };
+
+    // Per-deliverable expansion: a repeatable step runs once per requested
+    // deliverable unit, so quantity 1 and quantity 7 are different plans. The
+    // executor keys each instance's durable effects on deliverableId +
+    // deliverableIndex, which is why they must be carried on the unit itself.
+    const expansions = input.deliverables.flatMap((deliverable) =>
+      Array.from({ length: deliverable.quantity }, (_, index) => ({
+        deliverableId: deliverable.deliverableId,
+        deliverableIndex: index,
+      })),
+    );
+    const expandedIds = new Map<string, string[]>();
+    const units = canonical.units.flatMap((unit) => {
+      const declaredInput =
+        unit.input && typeof unit.input === 'object' ? unit.input : {};
+      const role = (declaredInput as { role?: unknown }).role;
+      const stepKey = `${unit.primitive}:${typeof role === 'string' ? role : ''}`;
+      if (!repeatableSteps.has(stepKey) || expansions.length <= 1) {
+        return [
+          {
+            ...unit,
+            input: {
+              ...declaredInput,
+              ...commonInput,
+              ...(repeatableSteps.has(stepKey) && expansions[0]
+                ? expansions[0]
+                : {}),
+            },
+          },
+        ];
+      }
+      const instances = expansions.map((expansion, index) => ({
+        ...unit,
+        unitId: `${unit.unitId}-${index + 1}` as typeof unit.unitId,
+        input: { ...declaredInput, ...commonInput, ...expansion },
+      }));
+      expandedIds.set(
+        unit.unitId,
+        instances.map((instance) => instance.unitId),
+      );
+      return instances;
+    });
+    // V31-18: confirmed-memory context rides the units that read context or
+    // generate content — the same units whose cache keys must change when the
+    // injected memory changes.
+    if (input.revision.memoryContext) {
+      for (const unit of units) {
+        if (unit.primitive === 'generate' || unit.unitType === 'context.read') {
+          (unit.input as Record<string, unknown>).memoryContext =
+            input.revision.memoryContext;
+        }
+      }
+    }
+    const dependencyGroups = canonical.dependencyGroups.map((group) => ({
+      ...group,
+      unitIds: group.unitIds.flatMap(
+        (unitId) => (expandedIds.get(unitId) ?? [unitId]) as typeof unitId[],
+      ),
+    }));
+    // Per-unit bounds must follow the expansion, otherwise an expanded instance
+    // would execute with no bounded-retry entry of its own.
     const boundedRetry: CompiledExecutionPlan['boundedRetry'] = {};
+    for (const [unitId, bounds] of Object.entries(canonical.boundedRetry)) {
+      for (const expandedId of expandedIds.get(unitId) ?? [unitId]) {
+        boundedRetry[expandedId] = { ...bounds };
+      }
+    }
+
+    // Every cacheable unit carries its own policy and key. Only the context unit
+    // used to get one, which silently dropped generate-side caching.
+    const unitCacheKeys: Record<string, string> = {};
     const cachePolicies: NonNullable<CompiledExecutionPlan['cachePolicies']> =
       {};
-
-    const carrier = input.deliverables.some((item) => item.kind === 'note')
-      ? 'note'
-      : input.deliverables.some((item) => item.kind === 'media')
-        ? 'media'
-        : 'copy';
-    const generationType = CARRIER_TO_UNIT[carrier];
-    const dependencyGroups: CompiledExecutionPlan['dependencyGroups'] = [];
-    const addUnit = (unit: ExecutionUnit) => {
-      const definition = this.registry.resolve(unit.unitType);
-      units.push(unit);
-      boundedRetry[unit.unitId] = defaultRetryOff();
+    for (const unit of units) {
       this.applyCachePolicy({
         unitId: unit.unitId,
-        definition,
+        definition: this.registry.resolve(unit.unitType),
         workspaceId: input.workspaceId,
         harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
         input: unit.input,
         cachePolicies,
         unitCacheKeys,
       });
-      dependencyGroups.push({
-        groupId: `g-${dependencyGroups.length + 1}`,
-        unitIds: [unit.unitId],
-      });
-    };
-    const priorOutputUnitIds = () =>
-      units.length === 0 ? [] : [units[units.length - 1]!.unitId];
-
-    addUnit({
-      unitId: unitId(`unit-${carrier}-context`),
-      unitType: 'context.read',
-      primitive: 'read_context',
-      input: {
-        contextBundleId: input.revision.boundRevisions.contextBundleId,
-        contextRevision: input.revision.boundRevisions.contextRevision,
-        ...(input.revision.memoryContext
-          ? { memoryContext: input.revision.memoryContext }
-          : {}),
-        priorOutputUnitIds: [],
-      },
-    });
-    addUnit({
-      unitId: unitId(`unit-${carrier}-brief`),
-      unitType: generationType,
-      primitive: 'generate',
-      input: {
-        role: 'brief',
-        deliverables: input.deliverables,
-        ...(input.revision.memoryContext
-          ? { memoryContext: input.revision.memoryContext }
-          : {}),
-        priorOutputUnitIds: priorOutputUnitIds(),
-      },
-    });
-    if (carrier === 'note') {
-      addUnit({
-        unitId: unitId('unit-note-style-ask'),
-        unitType: 'compliance.check',
-        primitive: 'ask_merchant',
-        input: {
-          role: 'style_choice',
-          priorOutputUnitIds: priorOutputUnitIds(),
-        },
-      });
     }
-    addUnit({
-      unitId: unitId(
-        carrier === 'note' ? 'unit-note-pages' : `unit-${carrier}-select`,
-      ),
-      unitType: generationType,
-      primitive: 'generate',
-      input: {
-        role: carrier === 'note' ? 'pages' : 'selection',
-        quantity: input.deliverables.reduce(
-          (sum, deliverable) => sum + deliverable.quantity,
-          0,
-        ),
-        quoteRef: input.revision.quoteRef,
-        ...(input.revision.memoryContext
-          ? { memoryContext: input.revision.memoryContext }
-          : {}),
-        priorOutputUnitIds: priorOutputUnitIds(),
-      },
-    });
-    addUnit({
-      unitId: unitId(`unit-${carrier}-check`),
-      unitType: 'compliance.check',
-      primitive: 'check',
-      input: {
-        rightsRevisionIds: input.revision.boundRevisions.rightsRevisionIds,
-        priorOutputUnitIds: priorOutputUnitIds(),
-      },
-    });
-    if (carrier === 'note') {
-      addUnit({
-        unitId: unitId('unit-note-revise'),
-        unitType: generationType,
-        primitive: 'revise',
-        input: {
-          role: 'bounded_revision',
-          priorOutputUnitIds: priorOutputUnitIds(),
-        },
-      });
-    }
-    addUnit({
-      unitId: unitId(`unit-${carrier}-assemble`),
-      unitType: generationType,
-      primitive: 'record',
-      input: {
-        role: 'assembly_delivery',
-        priorOutputUnitIds: priorOutputUnitIds(),
-      },
-    });
 
+    // Closing parse: the compiler's output is a contract, so it is validated
+    // here rather than trusted because it started from a canonical recipe.
     const executionPlan = compiledExecutionPlanSchema.parse({
-      schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
+      ...canonical,
       units,
       dependencyGroups,
       boundedRetry,
-      ...(Object.keys(cachePolicies).length > 0
-        ? { cachePolicies }
-        : {}),
+      ...(Object.keys(cachePolicies).length > 0 ? { cachePolicies } : {}),
     });
-
     return { executionPlan, unitCacheKeys };
   }
 
@@ -869,15 +911,6 @@ export class PlanCompiler {
       dependsOn: [...input.definition.cacheDefault.dependsOn],
     };
   }
-}
-
-function defaultRetryOff(): CompiledExecutionPlan['boundedRetry'][string] {
-  // D-167③ / BLOCK-06: unit retry default off.
-  return {
-    maxAttempts: 1,
-    maxCostCents: 0,
-    retry: { enabled: false },
-  };
 }
 
 /**

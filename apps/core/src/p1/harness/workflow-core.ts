@@ -6,6 +6,8 @@ import {
   type HarnessStage,
   type ContentPackage,
   type ContentPackageRevisionDelivery,
+  type ExecutionUnit,
+  type MerchantReport,
   type CreativeRecommendationDecisionTrace,
   type HarnessExperienceBasis,
   type NoteStyleCandidates,
@@ -96,11 +98,19 @@ import type {
   CreateExecutionConfirmationResult,
 } from '../agent-session/execution-confirmation-service.js';
 import {
-  createCarrierProgramRegistry,
+  assertCompiledCarrierPlanCompatible,
+  type CompiledPrimitiveHandlers,
+  type CompiledPrimitiveId,
+  compiledStepKey,
   executeCompiledCarrierPlan,
+  resolveCompiledCarrierExecution,
 } from './compiled-carrier-executor.js';
+import type { ContentCarrierKind } from './carrier-unit-recipes.js';
 import { attachStageTaxonomy } from './five-stage-trace-taxonomy.js';
 import type { StageTaxonomyPayload } from './five-stage-trace-taxonomy.js';
+import { runFrozenLegacyFiveStage } from './frozen-legacy-five-stage.js';
+import { persistLegacyShadowObservation } from './legacy-shadow-observation-emitter.js';
+import type { ShadowDeterministicFields } from './shadow-reconciliation.js';
 
 export {
   confirmPaidGenerationExecution,
@@ -491,6 +501,11 @@ export interface HarnessWorkflowRuntime {
     effectIdempotencyKey: string,
     operation: () => Promise<Output>,
   ): Promise<Output>;
+  recordLegacyShadowObservation?(input: {
+    observation: ShadowDeterministicFields;
+    workflowId: string;
+    workspaceId: string;
+  }): Promise<void>;
   finalizeMerchantExecution?(input: {
     quoteRevision: string;
     sourceEffectKey: string;
@@ -1118,17 +1133,13 @@ interface HarnessLensStageDescriptor {
 }
 
 const COPY_STAGE_DESCRIPTOR = {
-  execute: executeCopyHarnessStages,
   kind: 'copy',
   includeEntryTrace: true,
   includeExecutionRoot: false,
   routeNotice: true,
   useActiveRequestForExecutionRoot: false,
-} as const satisfies HarnessLensStageDescriptor & {
-  execute: typeof executeCopyHarnessStages;
-};
+} as const satisfies HarnessLensStageDescriptor;
 const MEDIA_STAGE_DESCRIPTOR = {
-  execute: executeMediaHarnessStages,
   kind: 'media',
   includeEntryTrace: true,
   includeExecutionRoot: true,
@@ -1136,11 +1147,8 @@ const MEDIA_STAGE_DESCRIPTOR = {
   scopeError:
     'A media submission must resolve to the finished_media delivery layer.',
   useActiveRequestForExecutionRoot: false,
-} as const satisfies HarnessLensStageDescriptor & {
-  execute: typeof executeMediaHarnessStages;
-};
+} as const satisfies HarnessLensStageDescriptor;
 const NOTE_STAGE_DESCRIPTOR = {
-  execute: executeNoteHarnessStages,
   kind: 'note',
   includeEntryTrace: false,
   includeExecutionRoot: true,
@@ -1148,9 +1156,7 @@ const NOTE_STAGE_DESCRIPTOR = {
   scopeError:
     'An image-text note must resolve to the finished_media delivery layer.',
   useActiveRequestForExecutionRoot: true,
-} as const satisfies HarnessLensStageDescriptor & {
-  execute: typeof executeNoteHarnessStages;
-};
+} as const satisfies HarnessLensStageDescriptor;
 
 const HARNESS_LENS_STAGE_DESCRIPTORS = {
   copy: COPY_STAGE_DESCRIPTOR,
@@ -1159,7 +1165,7 @@ const HARNESS_LENS_STAGE_DESCRIPTORS = {
   image_text_note: NOTE_STAGE_DESCRIPTOR,
 } as const;
 
-interface HarnessStageExecutionInput {
+export interface HarnessStageExecutionInput {
   descriptor: HarnessLensStageDescriptor;
   ports: HarnessStagePorts | HarnessMediaStagePorts | HarnessNoteStagePorts;
   prelude: Awaited<ReturnType<typeof runWorkflowPrelude>>;
@@ -1171,22 +1177,60 @@ interface HarnessStageExecutionInput {
   workflowId: string;
 }
 
-type CopyHarnessWorkflowResult = Awaited<
-  ReturnType<typeof executeCopyHarnessStages>
-> & {
+/** Shape every carrier's terminal record unit returns. */
+type CarrierRecordResultBase = {
+  delivery: ContentPackageRevisionDelivery;
+  deliveryLayer: IntentDeclaration['deliveryLayer'];
+  experienceBasis: HarnessExperienceBasis;
+  recommendation: {
+    recommendedCandidateId: string;
+    decisionTrace: CreativeRecommendationDecisionTrace;
+  };
+  trace: DecisionTraceFragment;
+};
+type CopyHarnessWorkflowResult = CarrierRecordResultBase & {
   billingReceipt?: undefined;
   merchantReport?: undefined;
 };
-type MediaHarnessWorkflowResult = Awaited<
-  ReturnType<typeof executeMediaHarnessStages>
-> & { merchantReport?: undefined };
-type NoteHarnessWorkflowResult = Awaited<
-  ReturnType<typeof executeNoteHarnessStages>
->;
-type HarnessWorkflowResult =
+type MediaHarnessWorkflowResult = CarrierRecordResultBase & {
+  merchantReport?: undefined;
+  billingReceipt?: {
+    trustedUsage: {
+      kind: 'media_duration';
+      actualSeconds: number;
+      evidenceRef: string;
+    };
+  };
+};
+type NoteHarnessWorkflowResult = CarrierRecordResultBase & {
+  merchantReport?: MerchantReport;
+  billingReceipt: {
+    trustedUsage: {
+      kind: 'product_units';
+      units: Array<{ resource: 'copy' | 'image'; quantity: number }>;
+      evidenceRef: string;
+    };
+  };
+};
+export type HarnessWorkflowResult =
   | CopyHarnessWorkflowResult
   | MediaHarnessWorkflowResult
   | NoteHarnessWorkflowResult;
+
+/**
+ * One business step a carrier implements, addressed by the plan as
+ * `primitive:role`. The unit is an *input*: steps read their declared
+ * parameters from it, so editing a unit changes what executes.
+ */
+type CarrierStep = (input: {
+  unit: ExecutionUnit;
+  priorOutputs: ReadonlyMap<string, unknown>;
+}) => Promise<unknown>;
+
+type CarrierStepMachine = {
+  carrier: ContentCarrierKind;
+  steps: ReadonlyMap<string, CarrierStep>;
+};
 
 async function runWorkflowPrelude(input: {
   descriptor: HarnessLensStageDescriptor;
@@ -1195,7 +1239,6 @@ async function runWorkflowPrelude(input: {
   request: HarnessWorkflowInput;
   runtime: HarnessWorkflowRuntime;
   workflowId: string;
-  /** Ops kill switch force_legacy_five_stage — when true, keep LLM five-stage. */
   forceLegacyFiveStage?: boolean;
 }) {
   const { descriptor, ports, reportProgress, request, runtime, workflowId } =
@@ -1399,6 +1442,14 @@ export async function runHarnessWorkflow(
   runtime: HarnessWorkflowRuntime,
   options: RunHarnessWorkflowOptions = {},
 ): Promise<HarnessWorkflowResult> {
+  if (!options.forceLegacyFiveStage && request.executionPlanSnapshot) {
+    assertCompiledCarrierPlanCompatible(
+      resolveCompiledCarrierExecution({
+        lens: request.executionSnapshot?.lens,
+        frozenExecutionPlan: request.executionPlanSnapshot.executionPlan,
+      }),
+    );
+  }
   let activeRequest = request;
   const collaborators = stageCollaborators(
     stagePorts,
@@ -1452,34 +1503,94 @@ export async function runHarnessWorkflow(
     forceLegacyFiveStage: options.forceLegacyFiveStage,
   });
   // V31-25 §22.4 step 3: single CompiledExecutionPlan → executor entry.
-  // Carrier programs are the former three runners; new carriers register a
-  // recipe + program instead of forking workflow-core.
-  const programs = createCarrierProgramRegistry<
+  // The terminal record primitive owns carrier-specific delivery semantics;
+  // no carrier program or legacy runner exists beside this executor.
+  const programInput: HarnessStageExecutionInput = {
+    descriptor,
+    ports,
+    prelude,
+    progress,
+    reportProgress,
+    request,
+    ...(options.onActiveRequest
+      ? { onActiveRequest: options.onActiveRequest }
+      : {}),
+    runtime,
+    workflowId,
+  };
+  if (options.forceLegacyFiveStage) {
+    return runFrozenLegacyFiveStage(programInput);
+  }
+  // V31-13 P1-G: record the old chain's projection on this path too. It used to
+  // be emitted only from inside the frozen legacy runner, so with the kill switch
+  // off — normal production — the shadow program sampled nothing and could never
+  // close. The projection reads the merchant's creation snapshot, which is
+  // independent of the frozen plan the new chain is compared against.
+  await persistLegacyShadowObservation({
+    runtime,
+    request,
+    workflowId,
+    factRefs: prelude.factGate.allowedFactRefs ?? [],
+    context: prelude.context,
+  });
+  // V31-25 P0-A: the plan directs execution. Each unit is dispatched to the
+  // business step its declared `primitive:role` names, in plan order, with the
+  // unit itself passed in — so removing, repeating or reparameterising a unit
+  // changes what runs. There is no positional generator agreement here.
+  const machine = createCarrierStepMachine(programInput);
+  const dispatch =
+    (primitive: CompiledPrimitiveId): CarrierStep =>
+    async ({ unit, priorOutputs }) => {
+      if (unit.primitive !== primitive) {
+        throw new Error(
+          `Primitive handler ${primitive} received unit ${unit.unitId} bound to ${unit.primitive}.`,
+        );
+      }
+      const key = compiledStepKey(unit);
+      const step = machine.steps.get(key);
+      if (!step) {
+        throw new Error(
+          `Carrier ${machine.carrier} has no business step bound for ${key} (unit ${unit.unitId}).`,
+        );
+      }
+      return step({ unit, priorOutputs });
+    };
+  const primitiveHandlers: CompiledPrimitiveHandlers<HarnessStageExecutionInput> = {
+    read_context: dispatch('read_context'),
+    ask_merchant: dispatch('ask_merchant'),
+    generate: dispatch('generate'),
+    check: dispatch('check'),
+    revise: dispatch('revise'),
+    record: dispatch('record'),
+  };
+  const frozenExecutionPlan = request.executionPlanSnapshot?.executionPlan;
+  const { result } = await executeCompiledCarrierPlan<
     HarnessStageExecutionInput,
     HarnessWorkflowResult
   >({
-    copy: executeCopyHarnessStages,
-    note: executeNoteHarnessStages,
-    media: executeMediaHarnessStages,
-  });
-  const { result } = await executeCompiledCarrierPlan({
     context: {
-      lens: activeRequest.executionSnapshot?.lens,
-      frozenExecutionPlan: activeRequest.executionPlanSnapshot?.executionPlan,
-      forceLegacyFiveStage: options.forceLegacyFiveStage,
+      lens: request.executionSnapshot?.lens,
+      frozenExecutionPlan,
     },
-    programInput: {
-      descriptor,
-      ports,
-      prelude,
-      progress,
-      reportProgress,
-      request: activeRequest,
-      onActiveRequest: options.onActiveRequest,
-      runtime,
-      workflowId,
+    programInput,
+    primitiveHandlers,
+    executionId: workflowId,
+    effectStore: {
+      run: (key, operation) => runtime.runStep(key, operation),
     },
-    programs,
+    // A primitive is self-durable when its own body opens durable steps, since
+    // the executor must not nest a DBOS step around it (D-038①): read_context
+    // and generate open HITL waits and bounded continuations, record opens the
+    // delivery commit, check opens the OCC fence and the policy gates.
+    // revise opens none, so the executor owns its durable unit boundary and its
+    // output is cached and replayed instead of the ports being re-invoked.
+    selfDurablePrimitives: [
+      'read_context',
+      'ask_merchant',
+      'generate',
+      'check',
+      'record',
+    ],
     onResolved: (resolution) => {
       executorPathByRuntime.set(runtime, resolution.executorPath);
     },
@@ -1487,7 +1598,21 @@ export async function runHarnessWorkflow(
   return result;
 }
 
-async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
+function createCarrierStepMachine(
+  input: HarnessStageExecutionInput,
+): CarrierStepMachine {
+  if (input.descriptor.kind === 'copy') {
+    return createCopyCarrierStepMachine(input);
+  }
+  if (input.descriptor.kind === 'note') {
+    return createNoteCarrierStepMachine(input);
+  }
+  return createMediaCarrierStepMachine(input);
+}
+
+function createCopyCarrierStepMachine(
+  input: HarnessStageExecutionInput,
+): CarrierStepMachine {
   const {
     ports: stagePorts,
     prelude,
@@ -1701,10 +1826,18 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
   let factGate = prelude.factGate;
   let activeRequest = prelude.activeRequest;
   let bundle = prelude.context;
-
   const briefSkills = stageSkills.brief_compilation;
   const snapshotConsume = prelude.snapshotConsume;
-  let compiledBrief = await runtime.runStep(
+  let compiledBrief: CopyBrief | MeasuredCopyBrief;
+  let brief!: ReturnType<typeof unpackBrief>['brief'];
+  let briefMetrics: ReturnType<typeof unpackBrief>['metrics'];
+  let briefDegraded: ReturnType<typeof unpackBrief>['degraded'];
+  let selection!: HarnessSelectionResult;
+
+  const readContextStep: CarrierStep = async () => bundle;
+
+  const generateBriefStep: CarrierStep = async () => {
+  compiledBrief = await runtime.runStep(
     harnessEffectKey(
       workflowId,
       3,
@@ -1733,11 +1866,11 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
       });
     },
   );
-  let {
+  ({
     brief,
     metrics: briefMetrics,
     degraded: briefDegraded,
-  } = unpackBrief(compiledBrief);
+  } = unpackBrief(compiledBrief));
   await trace(
     runtime,
     workflowId,
@@ -1773,6 +1906,12 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
       : merchantProgressMessage('brief_compilation'),
   });
 
+    return { brief, bundle };
+  };
+
+  const executionSkills = stageSkills.execution_selection;
+
+  const generateSelectionStep: CarrierStep = async ({ unit }) => {
   activeRequest = await confirmPaidGenerationExecution({
     workflowId,
     request: activeRequest,
@@ -1791,13 +1930,12 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
   });
   input.onActiveRequest?.(activeRequest);
 
-  const executionSkills = stageSkills.execution_selection;
-  let selection: HarnessSelectionResult = await executeSelectionToCompletion(
+  selection = await executeSelectionToCompletion(
       harnessEffectKey(
         workflowId,
         4,
         skillEffectUnit('copy', executionSkills.instructions),
-        'selection',
+        selectionEffectDiscriminator(unit),
       ),
       {
         workflowId,
@@ -1834,6 +1972,10 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
     message: merchantProgressMessage('execution_selection'),
   });
 
+    return { selection, brief };
+  };
+
+  const checkGateStep: CarrierStep = async ({ unit }) => {
   const fenced = await runContextFenceStep(
     runtime,
     harnessEffectKey(workflowId, 2, 'fence', `r${bundle.bundle.revision}`),
@@ -1980,7 +2122,20 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
     workflowId,
   });
 
+    return projectDeliveryReadiness({
+      unit,
+      selectedCandidateId: selection.winner.candidateId,
+      producedCandidateId: selection.winner.candidateId,
+      plannedTargets: [],
+      producedTargets: [],
+      partialTargets: [],
+    });
+  };
+
   const assemblySkills = stageSkills.assembly_delivery;
+
+  const recordAssembleStep: CarrierStep = async ({ priorOutputs }) => {
+  requireDeliveryReadiness(priorOutputs);
   const delivery = await runtime.runStep(
     harnessEffectKey(
       workflowId,
@@ -2039,6 +2194,18 @@ async function executeCopyHarnessStages(input: HarnessStageExecutionInput) {
     experienceBasis: projectHarnessExperienceBasis(bundle.bundle),
     recommendation,
     trace: selection.trace,
+  } satisfies CopyHarnessWorkflowResult;
+  };
+
+  return {
+    carrier: 'copy',
+    steps: new Map<string, CarrierStep>([
+      ['read_context:context', readContextStep],
+      ['generate:brief', generateBriefStep],
+      ['generate:selection', generateSelectionStep],
+      ['check:gate', checkGateStep],
+      ['record:assemble', recordAssembleStep],
+    ]),
   };
 }
 
@@ -2142,7 +2309,9 @@ export function createNoteExecutionArtifactReporter(input: {
   });
 }
 
-async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
+function createNoteCarrierStepMachine(
+  input: HarnessStageExecutionInput,
+): CarrierStepMachine {
   const {
     ports: stagePorts,
     prelude,
@@ -2156,7 +2325,22 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   let activeRequest = prelude.activeRequest;
   let context = prelude.context;
   let factGate = prelude.factGate;
+  let brief!: HarnessNoteBrief;
+  let selectedStyleId!: string;
+  let selectedNoteCandidate!: HarnessNoteBrief['candidates']['candidates'][number];
+  let activeNoteCandidate!: HarnessNoteBrief['candidates']['candidates'][number];
+  let selection!: Awaited<
+    ReturnType<HarnessNoteStagePorts['executeNoteAndSelect']>
+  >;
+  let noteRegenerationSignals: typeof selection.auditSignals = [];
 
+  const briefSkills = stageSkills.brief_compilation;
+  const snapshotConsume = prelude.snapshotConsume;
+  const executionSkills = stageSkills.execution_selection;
+
+  const readContextStep: CarrierStep = async () => context;
+
+  const generateBriefStep: CarrierStep = async () => {
   if (
     activeRequest.executionSnapshot?.sources.assets.some(
       ({ role }) => role === 'style',
@@ -2169,9 +2353,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
     });
   }
 
-  const briefSkills = stageSkills.brief_compilation;
-  const snapshotConsume = prelude.snapshotConsume;
-  let brief = await runtime.runStep(
+  brief = await runtime.runStep(
     harnessEffectKey(
       workflowId,
       3,
@@ -2232,10 +2414,13 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
     state: 'suspended',
     message: merchantNoteProgressMessage('styles_ready'),
   });
+    return { brief, context };
+  };
+
+  const askStyleStep: CarrierStep = async () => {
   const frozenStyle = [...(activeRequest.decisionReferences ?? [])]
     .reverse()
     .find(({ field }) => field === 'note_style');
-  let selectedStyleId: string;
   if (frozenStyle) {
     selectedStyleId = noteStyleIdFromValue(brief, frozenStyle.value);
   } else {
@@ -2247,12 +2432,13 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
     selectedStyleId = noteStyleIdFromDecision(brief, styleDecision);
     activeRequest = withForkDecisionReference(activeRequest, styleDecision);
   }
-  const selectedNoteCandidate = brief.candidates.candidates.find(
+  const resolvedNoteCandidate = brief.candidates.candidates.find(
     ({ styleId }) => styleId === selectedStyleId,
   );
-  if (!selectedNoteCandidate) {
+  if (!resolvedNoteCandidate) {
     throw new HarnessMediaScopeError(merchantNoteStyleUnavailable());
   }
+  selectedNoteCandidate = resolvedNoteCandidate;
   const notePlanPreview = {
     styleId: selectedNoteCandidate.styleId,
     styleName: selectedNoteCandidate.styleName,
@@ -2271,7 +2457,10 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
     message: merchantNoteProgressMessage('style_selected'),
     notePlanPreview,
   });
+    return { selectedStyleId, notePlanPreview };
+  };
 
+  const generatePagesStep: CarrierStep = async ({ unit }) => {
   const fenced = await runContextFenceStep(
     runtime,
     harnessEffectKey(workflowId, 2, 'fence', `r${context.bundle.revision}`),
@@ -2357,7 +2546,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
     });
   }
 
-  const activeNoteCandidate =
+  activeNoteCandidate =
     brief.candidates.candidates.find(
       ({ styleId }) => styleId === selectedStyleId,
     ) ?? selectedNoteCandidate;
@@ -2392,6 +2581,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
   input.onActiveRequest?.(activeRequest);
 
   const executionSkills = stageSkills.execution_selection;
+  let noteArtifactRevision = 0;
   const noteSelectionInput = {
     workflowId,
     request: activeRequest,
@@ -2428,23 +2618,23 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
         : {}),
     }),
   };
-  const selection = await runSelectionStage(
+  selection = await runSelectionStage(
     runtime,
     workflowId,
-    'image_text_note',
+    `image_text_note${selectionEffectDiscriminatorSuffix(unit)}`,
     executionSkills.instructions,
     noteSelectionInput,
-    async (input) => {
-      const selected = await ports.executeNoteAndSelect(input);
+    async (stageInput) => {
+      const selected = await ports.executeNoteAndSelect(stageInput);
       await ports.recordExecutionAssemblyStep?.({
         workflowId,
-        request: input.request,
+        request: stageInput.request,
         step: 'execution_check',
       });
       return selected;
     },
   );
-  const noteRegenerationSignals = selection.auditSignals.filter(
+  noteRegenerationSignals = selection.auditSignals.filter(
     (signal) => signal.eventType === 'note_page_regenerated',
   );
   await trace(
@@ -2458,49 +2648,77 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
       ...skillTraceLineage(executionSkills),
     },
     `r${context.bundle.revision}`,
-    noteRegenerationSignals.length > 0
-      ? async () => {
-          if (!ports.recordObservabilityEvent) {
-            throw new Error(
-              'Note regeneration requires canonical observability.',
-            );
-          }
-          for (const signal of noteRegenerationSignals) {
-            const auditRef = signal.payload.auditRef;
-            if (typeof auditRef !== 'string' || auditRef.trim().length === 0) {
-              throw new Error(
-                'Note regeneration observability requires an auditRef.',
-              );
-            }
-            const idempotencyKey = `note-regenerated:${workflowId}:${auditRef}`;
-            await ports.recordObservabilityEvent({
-              workflowId,
-              request: activeRequest,
-              idempotencyKey,
-              event: {
-                eventType: 'note_page_regenerated',
-                payload: signal.payload,
-              },
-              ...(signal.payload.imagePoints === 0
-                ? { promptKey: 'noteTextBlock' as const }
-                : {}),
-            });
-          }
-        }
-      : undefined,
   );
-  await reportProgress({
-    stage: 'execution_selection',
-    state: 'success',
-    message: selection.partial
-      ? merchantPartialFailure({
-          completed: '可用页面已经生成',
-          failed: `第 ${selection.partial.unresolvedPageIds.join('、')} 页的一致性复核仍未通过`,
-          nextStep: '先查看已生成页面，再单独重新生成标记页面',
-        })
-      : merchantNoteProgressMessage('consistency_checked'),
-  });
+    return { selection, brief };
+  };
 
+  // check owns the note consistency verification the plan asks for, and its
+  // rubric is a declared unit parameter. It deliberately performs no business
+  // write: check is self-durable, so its body replays after a restart, and the
+  // `execution_check` assembly-step record therefore stays inside the durable
+  // selection step where the pre-convergence runner put it. Moving that write
+  // here made it fire a second time on every restart.
+  const checkConsistencyStep: CarrierStep = async ({ unit }) => {
+    const readiness = projectDeliveryReadiness({
+      unit,
+      selectedCandidateId: selectedStyleId,
+      producedCandidateId: selection.selectedStyleId,
+      plannedTargets: activeNoteCandidate.plan.pages.map((page) => page.id),
+      producedTargets: selection.version.plan.pages.map((page) => page.id),
+      partialTargets: selection.partial?.unresolvedPageIds ?? [],
+    });
+    await reportProgress({
+      stage: 'execution_selection',
+      state: 'success',
+      message: readiness.passed
+        ? merchantNoteProgressMessage('consistency_checked')
+        : merchantPartialFailure({
+            completed: '可用页面已经生成',
+            failed: `第 ${readiness.findings.join('、')} 页的一致性复核仍未通过`,
+            nextStep: '先查看已生成页面，再单独重新生成标记页面',
+          }),
+    });
+    return readiness;
+  };
+
+  // revise owns the page-regeneration observability the plan asks for. It is
+  // skipped entirely when the plan omits the revise unit.
+  const revisePagesStep: CarrierStep = async ({ priorOutputs }) => {
+    const readiness = requireDeliveryReadiness(priorOutputs);
+    if (noteRegenerationSignals.length === 0) {
+      return { regeneratedPages: 0, unresolvedPages: readiness.findings };
+    }
+    if (!ports.recordObservabilityEvent) {
+      throw new Error('Note regeneration requires canonical observability.');
+    }
+    for (const signal of noteRegenerationSignals) {
+      const auditRef = signal.payload.auditRef;
+      if (typeof auditRef !== 'string' || auditRef.trim().length === 0) {
+        throw new Error(
+          'Note regeneration observability requires an auditRef.',
+        );
+      }
+      await ports.recordObservabilityEvent({
+        workflowId,
+        request: activeRequest,
+        idempotencyKey: `note-regenerated:${workflowId}:${auditRef}`,
+        event: {
+          eventType: 'note_page_regenerated',
+          payload: signal.payload,
+        },
+        ...(signal.payload.imagePoints === 0
+          ? { promptKey: 'noteTextBlock' as const }
+          : {}),
+      });
+    }
+    return {
+      regeneratedPages: noteRegenerationSignals.length,
+      unresolvedPages: readiness.findings,
+    };
+  };
+
+  const recordAssembleStep: CarrierStep = async ({ priorOutputs }) => {
+  const readiness = requireDeliveryReadiness(priorOutputs);
   const assemblySkills = stageSkills.assembly_delivery;
   const delivery = await runtime.runStep(
     harnessEffectKey(
@@ -2555,15 +2773,13 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
       useSuggestion: '建议逐页核对画面、文字和预约引导，确认后再发布',
     }),
   });
-  const partialReport = selection.partial
-    ? merchantPartialDeliveryReport({
-        message: merchantNotePartialConsistency(
-          selection.partial.unresolvedPageIds.length,
-        ),
+  const partialReport = readiness.passed
+    ? undefined
+    : merchantPartialDeliveryReport({
+        message: merchantNotePartialConsistency(readiness.findings.length),
         nextStep:
           '可以先用已经对好的页面发布，或者让我把没对上的那几页重做一次。',
-      })
-    : undefined;
+      });
   const pageRegeneration =
     activeRequest.executionSnapshot?.sources.pageRegeneration;
   const imageUsageQuantity = pageRegeneration
@@ -2625,10 +2841,26 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
     experienceBasis: projectHarnessExperienceBasis(context.bundle),
     recommendation,
     trace: selection.trace,
+  } satisfies NoteHarnessWorkflowResult;
+  };
+
+  return {
+    carrier: 'note',
+    steps: new Map<string, CarrierStep>([
+      ['read_context:context', readContextStep],
+      ['generate:brief', generateBriefStep],
+      ['ask_merchant:style_choice', askStyleStep],
+      ['generate:pages', generatePagesStep],
+      ['check:consistency', checkConsistencyStep],
+      ['revise:page_regenerate', revisePagesStep],
+      ['record:assemble', recordAssembleStep],
+    ]),
   };
 }
 
-async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
+function createMediaCarrierStepMachine(
+  input: HarnessStageExecutionInput,
+): CarrierStepMachine {
   const {
     ports: stagePorts,
     prelude,
@@ -2643,40 +2875,14 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
   let activeRequest = prelude.activeRequest;
   let bundle = prelude.context;
   let factGate = prelude.factGate;
-
+  let compiledBrief: MediaBrief | MeasuredMediaBrief;
+  let brief!: ReturnType<typeof unpackMediaBrief>['brief'];
+  let briefMetrics: ReturnType<typeof unpackMediaBrief>['metrics'];
+  let selection!: HarnessMediaSelectionResult;
+  let boundedCheckpoint: unknown;
   const briefSkills = stageSkills.brief_compilation;
   const snapshotConsume = prelude.snapshotConsume;
-  let compiledBrief = await runtime.runStep(
-    harnessEffectKey(
-      workflowId,
-      3,
-      skillEffectUnit(kind, briefSkills.instructions),
-      '0',
-    ),
-    async () => {
-      // V31-25: snapshot path materializes media brief without structured LLM.
-      if (isMakeSnapshotConsumePath(snapshotConsume)) {
-        return materializeMediaBriefFromSnapshot({
-          snapshot: snapshotConsume.snapshot,
-          declaration: routed.declaration,
-          request: activeRequest,
-        }).brief;
-      }
-      return ports.compileMediaBrief({
-        workflowId,
-        request: activeRequest,
-        declaration: routed.declaration,
-        context: bundle,
-        ...(factGate.allowedFactRefs
-          ? { allowedFactRefs: factGate.allowedFactRefs }
-          : {}),
-        ...(briefSkills.instructions.length > 0
-          ? { skillInstructions: briefSkills.instructions }
-          : {}),
-      });
-    },
-  );
-  let { brief, metrics: briefMetrics } = unpackMediaBrief(compiledBrief);
+  const executionSkills = stageSkills.execution_selection;
   // V31-15: video scene artifact producer. Scenes land running once the
   // storyboard is compiled, success once the rendered video is selected.
   // Emitter absent in fixture tests (optional port); no-op otherwise.
@@ -2724,54 +2930,6 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
     );
     if (state === 'success') videoReadyRevision = videoArtifactRevision;
   };
-  await trace(
-    runtime,
-    workflowId,
-    'brief_compilation',
-    {
-    executionRoot: mediaExecutionRoot(request),
-    ...mediaBriefTrace(brief),
-    ...(request.prompts?.briefCompilation
-      ? { prompt: promptTraceReference(request.prompts.briefCompilation) }
-      : {}),
-    ...(briefMetrics ? { metrics: briefMetrics } : {}),
-    ...skillTraceLineage(briefSkills),
-    ...(isMakeSnapshotConsumePath(snapshotConsume)
-      ? snapshotConsumeTracePayload({
-          snapshotHash: snapshotConsume.snapshot.snapshotHash,
-          approvalBasis: snapshotConsume.snapshot.approvalBasis,
-          stage: 'brief_compilation',
-          llmInvoked: false,
-        })
-      : { makeConsume: 'legacy_llm', llmInvoked: true }),
-    },
-    `r${bundle.bundle.revision}`,
-  );
-  await reportProgress({
-    stage: 'brief_compilation',
-    state: 'success',
-    message: merchantProgressMessage('brief_compilation'),
-  });
-  await emitVideoSceneProgress(brief, 'running');
-
-  activeRequest = await confirmPaidGenerationExecution({
-    workflowId,
-    request: activeRequest,
-    onActiveRequest: input.onActiveRequest,
-    reportProgress,
-    getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
-    admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
-    resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
-    refreshExecutionPlanLiveBindings: ports.refreshExecutionPlanLiveBindings,
-    createExecutionConfirmationRequest: ports.createExecutionConfirmationRequest,
-    putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
-    awaitResolvedDecision: (question, stage) =>
-      awaitResolvedDecision(runtime, question, stage),
-    applyCurrentTaskDecision: (wfId, req, command) =>
-      applyCurrentTaskDecision(wfId, req, command, runtime),
-  });
-  input.onActiveRequest?.(activeRequest);
-  const executionSkills = stageSkills.execution_selection;
   const executeMediaSelectionToCompletion = async (
     unitId: string,
     initialInput: Parameters<
@@ -2942,6 +3100,93 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
     });
     return outcome;
   };
+
+  const readContextStep: CarrierStep = async () => bundle;
+
+  const generateBriefStep: CarrierStep = async () => {
+  compiledBrief = await runtime.runStep(
+    harnessEffectKey(
+      workflowId,
+      3,
+      skillEffectUnit(kind, briefSkills.instructions),
+      '0',
+    ),
+    async () => {
+      // V31-25: snapshot path materializes media brief without structured LLM.
+      if (isMakeSnapshotConsumePath(snapshotConsume)) {
+        return materializeMediaBriefFromSnapshot({
+          snapshot: snapshotConsume.snapshot,
+          declaration: routed.declaration,
+          request: activeRequest,
+        }).brief;
+      }
+      return ports.compileMediaBrief({
+        workflowId,
+        request: activeRequest,
+        declaration: routed.declaration,
+        context: bundle,
+        ...(factGate.allowedFactRefs
+          ? { allowedFactRefs: factGate.allowedFactRefs }
+          : {}),
+        ...(briefSkills.instructions.length > 0
+          ? { skillInstructions: briefSkills.instructions }
+          : {}),
+      });
+    },
+  );
+  ({ brief, metrics: briefMetrics } = unpackMediaBrief(compiledBrief));
+  await trace(
+    runtime,
+    workflowId,
+    'brief_compilation',
+    {
+    executionRoot: mediaExecutionRoot(request),
+    ...mediaBriefTrace(brief),
+    ...(request.prompts?.briefCompilation
+      ? { prompt: promptTraceReference(request.prompts.briefCompilation) }
+      : {}),
+    ...(briefMetrics ? { metrics: briefMetrics } : {}),
+    ...skillTraceLineage(briefSkills),
+    ...(isMakeSnapshotConsumePath(snapshotConsume)
+      ? snapshotConsumeTracePayload({
+          snapshotHash: snapshotConsume.snapshot.snapshotHash,
+          approvalBasis: snapshotConsume.snapshot.approvalBasis,
+          stage: 'brief_compilation',
+          llmInvoked: false,
+        })
+      : { makeConsume: 'legacy_llm', llmInvoked: true }),
+    },
+    `r${bundle.bundle.revision}`,
+  );
+  await reportProgress({
+    stage: 'brief_compilation',
+    state: 'success',
+    message: merchantProgressMessage('brief_compilation'),
+  });
+  await emitVideoSceneProgress(brief, 'running');
+
+    return { brief, bundle };
+  };
+
+  const generateSelectionStep: CarrierStep = async ({ unit }) => {
+  activeRequest = await confirmPaidGenerationExecution({
+    workflowId,
+    request: activeRequest,
+    onActiveRequest: input.onActiveRequest,
+    reportProgress,
+    getExecutionConfirmationDecision: ports.getExecutionConfirmationDecision,
+    admitExecutionPlanSnapshot: ports.admitExecutionPlanSnapshot,
+    resolveExecutionPlanLiveFacts: ports.resolveExecutionPlanLiveFacts,
+    refreshExecutionPlanLiveBindings: ports.refreshExecutionPlanLiveBindings,
+    createExecutionConfirmationRequest: ports.createExecutionConfirmationRequest,
+    putExecutionConfirmationAuthority: ports.putExecutionConfirmationAuthority,
+    awaitResolvedDecision: (question, stage) =>
+      awaitResolvedDecision(runtime, question, stage),
+    applyCurrentTaskDecision: (wfId, req, command) =>
+      applyCurrentTaskDecision(wfId, req, command, runtime),
+  });
+  input.onActiveRequest?.(activeRequest);
+  const executionSkills = stageSkills.execution_selection;
   const mediaSelectionInput = {
     workflowId,
     request: activeRequest,
@@ -2962,11 +3207,11 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
         }
       : {}),
   };
-  let selection = await executeMediaSelectionToCompletion(
-    kind,
+  selection = await executeMediaSelectionToCompletion(
+    `${kind}${selectionEffectDiscriminatorSuffix(unit)}`,
     mediaSelectionInput,
   );
-  let boundedCheckpoint = selection.boundedCurrentBest;
+  boundedCheckpoint = selection.boundedCurrentBest;
   if (selection.boundedExecution) {
     activeRequest = {
       ...activeRequest,
@@ -2994,6 +3239,10 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
   });
   await emitVideoSceneProgress(brief, 'success');
 
+    return { selection, brief };
+  };
+
+  const checkGateStep: CarrierStep = async ({ unit }) => {
   const fenced = await runContextFenceStep(
     runtime,
     harnessEffectKey(workflowId, 2, 'fence', `r${bundle.bundle.revision}`),
@@ -3150,7 +3399,20 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
     workflowId,
   });
 
+    return projectDeliveryReadiness({
+      unit,
+      selectedCandidateId: selection.asset.id,
+      producedCandidateId: selection.asset.id,
+      plannedTargets: [],
+      producedTargets: [],
+      partialTargets: [],
+    });
+  };
+
   const assemblySkills = stageSkills.assembly_delivery;
+
+  const recordAssembleStep: CarrierStep = async ({ priorOutputs }) => {
+  requireDeliveryReadiness(priorOutputs);
   const delivery = await runtime.runStep(
     harnessEffectKey(
       workflowId,
@@ -3225,7 +3487,150 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
           },
         }
       : {}),
+  } satisfies MediaHarnessWorkflowResult;
   };
+
+  return {
+    carrier: 'media',
+    steps: new Map<string, CarrierStep>([
+      ['read_context:context', readContextStep],
+      ['generate:brief', generateBriefStep],
+      ['generate:selection', generateSelectionStep],
+      ['check:gate', checkGateStep],
+      ['record:assemble', recordAssembleStep],
+    ]),
+  };
+}
+
+
+// ─── Plan-directed check helpers (V31-25 P0-A) ──────────────────────────────
+
+/**
+ * Output of a `check` unit. The rubric is declared by the plan unit, so the
+ * merchant-visible consequence of a check is a function of the plan, not of a
+ * hard-coded branch inside a carrier program.
+ */
+export type CarrierDeliveryReadiness = {
+  readonly checkedBy: 'compiled_plan_check_unit';
+  readonly rubric: string;
+  readonly passed: boolean;
+  readonly findings: readonly string[];
+  readonly selectedCandidateId: string;
+};
+
+const CARRIER_CHECK_RUBRICS = [
+  'copy_delivery_readiness',
+  'media_delivery_readiness',
+  'note_page_consistency',
+  'note_selected_style',
+] as const;
+
+function declaredCheckRubric(unit: ExecutionUnit): string {
+  const input = unit.input;
+  const rubric =
+    input && typeof input === 'object' && 'rubric' in input
+      ? (input as { rubric?: unknown }).rubric
+      : undefined;
+  if (typeof rubric !== 'string' || rubric.trim().length === 0) {
+    throw new Error(
+      `Check unit ${unit.unitId} declares no rubric; the executor will not guess one.`,
+    );
+  }
+  if (!(CARRIER_CHECK_RUBRICS as readonly string[]).includes(rubric)) {
+    throw new Error(
+      `Check unit ${unit.unitId} declares unknown rubric ${rubric}.`,
+    );
+  }
+  return rubric;
+}
+
+/**
+ * Evaluate the rubric the plan's check unit names. Findings are the reason a
+ * delivery is reported as partial, so a different rubric on the same run
+ * produces a different merchant-visible package report.
+ */
+export function projectDeliveryReadiness(input: {
+  unit: ExecutionUnit;
+  selectedCandidateId: string;
+  producedCandidateId: string;
+  plannedTargets: readonly string[];
+  producedTargets: readonly string[];
+  partialTargets: readonly string[];
+}): CarrierDeliveryReadiness {
+  const rubric = declaredCheckRubric(input.unit);
+  const findings: string[] = [];
+  if (rubric === 'note_page_consistency') {
+    const produced = new Set(input.producedTargets);
+    for (const planned of input.plannedTargets) {
+      if (!produced.has(planned)) findings.push(planned);
+    }
+    for (const unresolved of input.partialTargets) {
+      if (!findings.includes(unresolved)) findings.push(unresolved);
+    }
+  } else if (rubric === 'note_selected_style') {
+    if (input.producedCandidateId !== input.selectedCandidateId) {
+      findings.push(input.producedCandidateId);
+    }
+  } else {
+    if (!input.selectedCandidateId.trim()) {
+      findings.push('missing_selected_candidate');
+    }
+    findings.push(...input.partialTargets);
+  }
+  return {
+    checkedBy: 'compiled_plan_check_unit',
+    rubric,
+    passed: findings.length === 0,
+    findings,
+    selectedCandidateId: input.selectedCandidateId,
+  };
+}
+
+function isDeliveryReadiness(value: unknown): value is CarrierDeliveryReadiness {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    (value as { checkedBy?: unknown }).checkedBy === 'compiled_plan_check_unit'
+  );
+}
+
+/**
+ * record consumes the check output through the executor's durable
+ * priorOutputs, so a plan that never ran a check cannot deliver.
+ */
+export function requireDeliveryReadiness(
+  priorOutputs: ReadonlyMap<string, unknown>,
+): CarrierDeliveryReadiness {
+  for (const output of [...priorOutputs.values()].reverse()) {
+    if (isDeliveryReadiness(output)) return output;
+  }
+  throw new Error(
+    'record unit cannot deliver without a completed check unit output.',
+  );
+}
+
+/** Per-deliverable expansion keeps effect keys distinct without moving the canonical key. */
+function deliverableUnitDiscriminator(unit: ExecutionUnit): string | null {
+  const input = unit.input;
+  if (!input || typeof input !== 'object') return null;
+  const record = input as { deliverableId?: unknown; deliverableIndex?: unknown };
+  if (
+    typeof record.deliverableId !== 'string' ||
+    typeof record.deliverableIndex !== 'number'
+  ) {
+    return null;
+  }
+  return `${record.deliverableId}-${record.deliverableIndex}`;
+}
+
+function selectionEffectDiscriminator(unit: ExecutionUnit): string {
+  const suffix = deliverableUnitDiscriminator(unit);
+  return suffix ? `selection:${suffix}` : 'selection';
+}
+
+function selectionEffectDiscriminatorSuffix(unit: ExecutionUnit): string {
+  const suffix = deliverableUnitDiscriminator(unit);
+  return suffix ? `-${suffix}` : '';
 }
 
 export class HarnessMediaScopeError extends Error {

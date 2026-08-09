@@ -466,6 +466,96 @@ test('idempotent sample for same workflowId does not double-count', async () => 
   assert.equal((await store.listSamples()).length, 1);
 });
 
+test('closed shadow program stops sampling completely', async () => {
+  const store = new MemoryShadowReconciliationStore();
+  await store.putProgramState({
+    status: 'closed',
+    openedAt: '2026-08-01T00:00:00.000Z',
+    updatedAt: '2026-08-15T00:00:00.000Z',
+    closeReason: 'early_achieved',
+    closedAt: '2026-08-15T00:00:00.000Z',
+    closedBy: 'ops',
+    lastMismatchAt: null,
+    sampleCount: 1,
+    mismatchCount: 0,
+  });
+  const service = new ShadowReconciliationService({
+    store,
+    audit: new MemoryOpsConsoleAuditStore(),
+    resolveConfig: async () => ({ sampleRate: 1, windowDays: 14 }),
+  });
+  const snapshot = buildSnapshot();
+  const result = await service.maybeReconcileOnExecutionComplete({
+    workflowId: 'wf-after-close',
+    workspaceId: 'ws-1',
+    snapshot,
+    oldChain: extractDeterministicFieldsFromSnapshot(snapshot),
+    now: '2026-08-16T00:00:00.000Z',
+  });
+  assert.equal(result.sampled, false);
+  assert.equal((await store.listSamples()).length, 0);
+});
+
+test('sample insertion loses a close race instead of reopening the program', async () => {
+  const store = new MemoryShadowReconciliationStore();
+  const snapshot = buildSnapshot();
+  const fields = extractDeterministicFieldsFromSnapshot(snapshot);
+  const service = new ShadowReconciliationService({
+    store,
+    audit: new MemoryOpsConsoleAuditStore(),
+    resolveConfig: async () => ({ sampleRate: 1, windowDays: 14 }),
+  });
+  await service.maybeReconcileOnExecutionComplete({
+    workflowId: 'seed', workspaceId: 'ws', snapshot, oldChain: fields,
+    now: '2026-08-01T00:00:00.000Z',
+  });
+  const original = store.putSampleIfOpen.bind(store);
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  store.putSampleIfOpen = async (sample) => {
+    await held;
+    return original(sample);
+  };
+  const sampling = service.maybeReconcileOnExecutionComplete({
+    workflowId: 'racing-sample', workspaceId: 'ws', snapshot, oldChain: fields,
+    now: '2026-08-15T00:00:00.000Z',
+  });
+  await service.tryCloseIfEligible({
+    now: '2026-08-15T00:00:00.000Z', operatorId: 'ops', correlationId: 'race',
+  });
+  release();
+  await sampling;
+  assert.equal((await store.getProgramState())?.status, 'closed');
+  assert.equal((await store.listSamples()).some((s) => s.workflowId === 'racing-sample'), false);
+});
+
+test('mismatch at window anchor is excluded from the following clean window', async () => {
+  const store = new MemoryShadowReconciliationStore();
+  const audit = new MemoryOpsConsoleAuditStore();
+  const service = new ShadowReconciliationService({
+    store,
+    audit,
+    resolveConfig: async () => ({ sampleRate: 1, windowDays: 14 }),
+  });
+  const snapshot = buildSnapshot();
+  await service.maybeReconcileOnExecutionComplete({
+    workflowId: 'wf-anchor-mismatch',
+    workspaceId: 'ws-1',
+    snapshot,
+    oldChain: projectLegacyDeterministicFields({
+      ...extractDeterministicFieldsFromSnapshot(snapshot),
+      deliverables: [{ kind: 'copy', quantity: 99 }],
+    }),
+    now: '2026-08-01T00:00:00.000Z',
+  });
+  const closed = await service.tryCloseIfEligible({
+    now: '2026-08-15T00:00:00.000Z',
+    operatorId: 'ops',
+    correlationId: 'clean-window',
+  });
+  assert.equal(closed?.reason, 'early_achieved');
+});
+
 test('service never throws into production path on store failure', async () => {
   const audit = new MemoryOpsConsoleAuditStore();
   const service = new ShadowReconciliationService({
@@ -477,6 +567,12 @@ test('service never throws into production path on store failure', async () => {
         throw new Error('store down');
       },
       async putSampleIdempotent() {
+        throw new Error('store down');
+      },
+      async putSampleIfOpen() {
+        throw new Error('store down');
+      },
+      async closeProgramStateCas() {
         throw new Error('store down');
       },
       async listSamples() {

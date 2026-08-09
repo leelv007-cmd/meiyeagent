@@ -14,6 +14,7 @@ import {
 import type { Pool, PoolClient } from 'pg';
 
 import type { PostgresSchemaMigrator } from '../../postgres-schema-migration.js';
+import { LEGACY_REPLAY_ADMISSION_LOCK } from './legacy-replay-admission-lock.js';
 import {
   ExecutionPlanAdmissionError,
   type AdmittedExecutionPlanSnapshot,
@@ -76,44 +77,68 @@ export class PostgresExecutionPlanSnapshotStore
     row: AdmittedExecutionPlanSnapshot,
   ): Promise<AdmittedExecutionPlanSnapshot> {
     const snapshot = executionPlanSnapshotSchema.parse(row.snapshot);
-    const inserted = await this.pool.query<SnapshotRow>(
-      `INSERT INTO p1_execution_plan_snapshots (
-         snapshot_hash, workflow_id, workspace_id, plan_id, plan_revision,
-         approval_basis, confirmation_decision_ref, payload, admitted_at
-       ) VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::timestamptz
-       )
-       ON CONFLICT (snapshot_hash) DO NOTHING
-       RETURNING snapshot_hash, workflow_id, workspace_id, admitted_at, payload`,
-      [
-        snapshot.snapshotHash,
-        row.workflowId,
-        row.workspaceId,
-        snapshot.planId,
-        snapshot.planRevision,
-        snapshot.approvalBasis,
-        snapshot.confirmationDecisionRef ?? null,
-        JSON.stringify(snapshot),
-        row.admittedAt,
-      ],
-    );
-    if (inserted.rows[0]) {
-      return parseRow(inserted.rows[0]);
+    const client = await this.pool.connect();
+    try {
+      await client.query('begin');
+      await client.query('select pg_advisory_xact_lock(hashtext($1))', [
+        LEGACY_REPLAY_ADMISSION_LOCK,
+      ]);
+      const inserted = await client.query<SnapshotRow>(
+        `INSERT INTO p1_execution_plan_snapshots (
+           snapshot_hash, workflow_id, workspace_id, plan_id, plan_revision,
+           approval_basis, confirmation_decision_ref, payload, admitted_at
+         ) VALUES (
+           $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::timestamptz
+         )
+         ON CONFLICT (snapshot_hash) DO NOTHING
+         RETURNING snapshot_hash, workflow_id, workspace_id, admitted_at, payload`,
+        [
+          snapshot.snapshotHash,
+          row.workflowId,
+          row.workspaceId,
+          snapshot.planId,
+          snapshot.planRevision,
+          snapshot.approvalBasis,
+          snapshot.confirmationDecisionRef ?? null,
+          JSON.stringify(snapshot),
+          row.admittedAt,
+        ],
+      );
+      const persisted = inserted.rows[0]
+        ? parseRow(inserted.rows[0])
+        : await this.getByHashWithClient(client, snapshot.snapshotHash);
+      if (
+        persisted &&
+        persisted.workflowId === row.workflowId &&
+        persisted.workspaceId === row.workspaceId &&
+        isDeepStrictEqual(persisted.snapshot, snapshot)
+      ) {
+        await client.query('commit');
+        return persisted;
+      }
+      throw new ExecutionPlanAdmissionError(
+        'IDEMPOTENCY_CONFLICT',
+        `ExecutionPlanSnapshot ${snapshot.snapshotHash} is immutable and already bound to a different admission row.`,
+      );
+    } catch (error) {
+      await client.query('rollback');
+      throw error;
+    } finally {
+      client.release();
     }
+  }
 
-    const existing = await this.getByHash(snapshot.snapshotHash);
-    if (
-      existing &&
-      existing.workflowId === row.workflowId &&
-      existing.workspaceId === row.workspaceId &&
-      isDeepStrictEqual(existing.snapshot, snapshot)
-    ) {
-      return existing;
-    }
-    throw new ExecutionPlanAdmissionError(
-      'IDEMPOTENCY_CONFLICT',
-      `ExecutionPlanSnapshot ${snapshot.snapshotHash} is immutable and already bound to a different admission row.`,
+  private async getByHashWithClient(
+    client: PoolClient,
+    snapshotHash: string,
+  ): Promise<AdmittedExecutionPlanSnapshot | null> {
+    const result = await client.query<SnapshotRow>(
+      `SELECT snapshot_hash, workflow_id, workspace_id, admitted_at, payload
+         FROM p1_execution_plan_snapshots
+        WHERE snapshot_hash = $1`,
+      [snapshotHash],
     );
+    return result.rows[0] ? parseRow(result.rows[0]) : null;
   }
 
   async getByHash(

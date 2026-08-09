@@ -111,6 +111,7 @@ import {
 } from '../p1/harness/production-context-port.js';
 import { ProductionHarnessFrozenRouteSnapshotResolver } from '../p1/harness/production-frozen-route.js';
 import { createProductionHarnessMediaAssembly } from '../p1/harness/production-media-assembly.js';
+import { PostgresLegacyShadowObservationReader } from '../p1/harness/legacy-shadow-observation-reader.js';
 import {
   ProductionHarnessStagePorts,
   type HarnessStructuredNodeRunnerFactory,
@@ -359,6 +360,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     sourceContentPackageAdmissionReader,
     contentPackageApprovalPolicy,
   } = await assembleCoreGraph(env, { role: 'api' });
+  const legacyReplayInventory = new PostgresLegacyReplayInventory(pool);
+  await legacyReplayInventory.migrateInstallationLedger();
   const assetIntakeService = new AssetIntakeService(
     assetIntakeRepository,
     storeFactLedger
@@ -898,7 +901,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           runPins: opsConsoleStore,
           langfuseBaseUrl: env.LANGFUSE_BASE_URL ?? null,
           // V31-26a / U14: production PG inventory for legacy replay archive gate.
-          legacyReplayInventory: new PostgresLegacyReplayInventory(pool),
+          legacyReplayInventory: legacyReplayInventory,
+          resolveLegacyReplayInstallationEvidence: () =>
+            legacyReplayInventory.installationEvidence(),
           // V31-26a: dual-write admin-config for kill switches runtime hot-reads there.
           killSwitchAdminConfigMirror: {
             async applyBoolean(input) {
@@ -1498,6 +1503,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         },
         // V31-13: shadow reconcil sample on Make complete (PG store + ops audit).
         shadowReconciliation: shadowReconciliationService,
+        legacyShadowObservationReader:
+          new PostgresLegacyShadowObservationReader(pool),
         // V31-23 L0.5: production sample on Make complete (same sampling point,
         // same admin-config sample rate as shadow reconciliation). Verdicts are
         // bound to the release and written through the eval assembly.

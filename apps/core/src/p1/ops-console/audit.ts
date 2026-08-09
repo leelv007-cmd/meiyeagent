@@ -19,7 +19,8 @@ export type OpsConsoleAuditAction =
   /** V31-13: shadow deterministic-field mismatch (evidence only). */
   | 'shadow_reconciliation_mismatch'
   /** V31-13: shadow program close (timebox or early mismatch=0). */
-  | 'close_shadow_reconciliation';
+  | 'close_shadow_reconciliation'
+  | 'record_legacy_no_history_proof';
 
 export type OpsConsoleAuditEntry = {
   id: string;

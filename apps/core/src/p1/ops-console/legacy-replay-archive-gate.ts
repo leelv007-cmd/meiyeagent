@@ -42,6 +42,7 @@ export type LegacyReplayArchiveGateFacts = {
   opsPolicyBufferDays?: number;
   rollbackDrillPassed: boolean;
   auditExportAvailable: boolean;
+  verifiedNoHistoryAuditId?: string | null;
 };
 
 export type LegacyReplayConditionStatus = {
@@ -101,10 +102,10 @@ export function evaluateLegacyReplayArchiveGate(
     holdDetail =
       'Hold window cannot complete while active/pending legacy instances remain.';
   } else if (inventory.lastLegacyTerminalAt === null) {
-    // Never observed a legacy instance → window vacuously complete.
-    holdOk = true;
-    holdDetail =
-      'No historical legacy instances observed; hold window vacuously complete.';
+    holdOk = Boolean(facts.verifiedNoHistoryAuditId?.trim());
+    holdDetail = holdOk
+      ? `Audited no-history proof ${facts.verifiedNoHistoryAuditId}; hold window complete.`
+      : 'Legacy terminal history is unknown and no audited no-history proof exists; fail closed.';
   } else {
     const elapsed = daysBetween(inventory.lastLegacyTerminalAt, facts.now);
     if (!Number.isFinite(elapsed) || elapsed < 0) {
@@ -140,9 +141,10 @@ export function evaluateLegacyReplayArchiveGate(
     bufferDetail =
       'Ops policy buffer requires zero active legacy and completed hold window.';
   } else if (inventory.lastLegacyTerminalAt === null) {
-    bufferOk = true;
-    bufferDetail =
-      'No historical legacy instances; ops policy buffer vacuously complete.';
+    bufferOk = Boolean(facts.verifiedNoHistoryAuditId?.trim());
+    bufferDetail = bufferOk
+      ? `Audited no-history proof ${facts.verifiedNoHistoryAuditId}; ops buffer complete.`
+      : 'Legacy terminal history is unknown and no audited no-history proof exists; fail closed.';
   } else {
     const required = maxHold + bufferDays;
     const elapsed = daysBetween(inventory.lastLegacyTerminalAt, facts.now);

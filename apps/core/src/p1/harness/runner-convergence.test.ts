@@ -9,23 +9,30 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync } from 'node:fs';
 import test from 'node:test';
 
 import {
   COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
   HARNESS_STAGES,
+  type CompiledExecutionPlan,
 } from '@meiye/contracts';
 
+import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
 import {
   assertCarrierRegistrationComplete,
   createCanonicalCarrierUnitRecipeRegistry,
   lensToContentCarrier,
 } from './carrier-unit-recipes.js';
 import {
+  buildExecutionPlanSnapshot,
+  freezeExecutionPlanContent,
+} from './execution-plan-admission.js';
+import {
   assertNoGrammarInterpreter,
-  assertRecipesHavePrograms,
-  createCarrierProgramRegistry,
+  createMemoryPrimitiveEffectStore,
   executeCompiledCarrierPlan,
+  immediatePrimitiveEffectStore,
   resolveCompiledCarrierExecution,
 } from './compiled-carrier-executor.js';
 import {
@@ -34,6 +41,10 @@ import {
   STAGE_TO_PRIMITIVES,
   stageTaxonomyPayload,
 } from './five-stage-trace-taxonomy.js';
+import {
+  POST_CONVERGENCE_PRIMITIVE_EFFECT_KEYS,
+  PRE_CONVERGENCE_BASELINES,
+} from './fixtures/pre-convergence-equivalence-baselines.js';
 import {
   materializeMediaBriefFromSnapshot,
   materializeNoteBriefFromSnapshot,
@@ -44,20 +55,14 @@ import {
   diffRunnerEquivalence,
   type RunnerEquivalenceSnapshot,
 } from './runner-equivalence.js';
+import type { HarnessWorkflowInput } from './task-admission.js';
 import {
-  runHarnessWorkflow,
   type HarnessMediaStagePorts,
   type HarnessNoteStagePorts,
   type HarnessStagePorts,
   type HarnessWorkflowRuntime,
+  runHarnessWorkflow,
 } from './workflow-core.js';
-import type { HarnessWorkflowInput } from './task-admission.js';
-import { createCreationExecutionSnapshot } from '../execution-spine/creation-execution-snapshot.js';
-import {
-  buildExecutionPlanSnapshot,
-  freezeExecutionPlanContent,
-} from './execution-plan-admission.js';
-import { PRE_CONVERGENCE_BASELINES } from './fixtures/pre-convergence-equivalence-baselines.js';
 
 // ─── Taxonomy / six primitives ──────────────────────────────────────────────
 
@@ -122,7 +127,7 @@ test('V31-25: new carrier constructive check rejects runner-fork shape', () => {
         carrier: 'audio',
         hasRecipe: false,
         hasUnitTypes: true,
-        hasCarrierProgram: true,
+        hasPrimitiveHandlers: true,
         hasTest: true,
       }),
     /missing CompiledExecutionPlan recipe/,
@@ -133,42 +138,35 @@ test('V31-25: new carrier constructive check rejects runner-fork shape', () => {
         carrier: 'audio',
         hasRecipe: true,
         hasUnitTypes: true,
-        hasCarrierProgram: false,
+        hasPrimitiveHandlers: false,
         hasTest: true,
       }),
-    /missing carrier program/,
+    /missing primitive handlers/,
   );
   assertCarrierRegistrationComplete({
     carrier: 'copy',
     hasRecipe: true,
     hasUnitTypes: true,
-    hasCarrierProgram: true,
+    hasPrimitiveHandlers: true,
     hasTest: true,
   });
 });
 
-test('V31-25: single executor requires recipe+program pairing', async () => {
-  const recipes = createCanonicalCarrierUnitRecipeRegistry();
-  const programs = createCarrierProgramRegistry<
-    { carrier: string },
-    { ok: true }
-  >({
-    copy: async () => ({ ok: true }),
-    note: async () => ({ ok: true }),
-    // media intentionally missing
-  });
-  assert.throws(
-    () => assertRecipesHavePrograms({ recipes, programs: programs as never }),
-    /media/,
+test('V31-25: single executor fails closed without terminal record', async () => {
+  const plan = structuredClone(
+    createCanonicalCarrierUnitRecipeRegistry().resolve('media').plan,
   );
+  plan.units.at(-1)!.primitive = 'check';
   await assert.rejects(
     () =>
       executeCompiledCarrierPlan({
-        context: { lens: 'image' },
+        context: { lens: 'image', frozenExecutionPlan: plan },
         programInput: { carrier: 'media' },
-        programs,
+        primitiveHandlers: primitiveHandlersReturningNull(),
+        effectStore: immediatePrimitiveEffectStore,
+        executionId: 'missing-record',
       }),
-    /media.*no program|No carrier program for media/i,
+    /must end with a record unit/,
   );
 });
 
@@ -181,11 +179,893 @@ test('V31-25: resolveCompiledCarrierExecution prefers frozen plan when present',
   assert.equal(resolution.usedCanonicalRecipe, false);
   assert.equal(resolution.executorPath, 'compiled_plan_executor');
   assert.equal(resolution.executionPlan.units.length, frozen.units.length);
-  const legacy = resolveCompiledCarrierExecution({
-    lens: 'copy',
-    forceLegacyFiveStage: true,
+});
+
+test('V31-25: a plan naming a step the carrier does not implement fails closed', async () => {
+  const recipe = createCanonicalCarrierUnitRecipeRegistry().resolve('copy');
+  const calls: string[] = [];
+  const handlers = Object.fromEntries(
+    ['read_context', 'generate', 'check', 'revise', 'record', 'ask_merchant'].map(
+      (primitive) => [
+        primitive,
+        async ({
+          unit,
+          priorOutputs,
+        }: {
+          unit: { unitId: string };
+          priorOutputs: ReadonlyMap<string, unknown>;
+        }) => {
+          calls.push(`${primitive}:${unit.unitId}`);
+          return primitive === 'record'
+            ? {
+                deliveredBy: unit.unitId,
+                checkedBy: priorOutputs.get('unit-copy-check'),
+              }
+            : primitive;
+        },
+      ],
+    ),
+  );
+
+  const first = await executeCompiledCarrierPlan({
+    context: { lens: 'copy', frozenExecutionPlan: recipe.plan },
+    programInput: { ignored: true },
+    primitiveHandlers: handlers as never,
+    effectStore: immediatePrimitiveEffectStore,
+    executionId: 'mutate-first',
   });
-  assert.equal(legacy.executorPath, 'legacy_five_stage_runner');
+  assert.deepEqual(first.result, {
+    deliveredBy: 'unit-copy-assemble',
+    checkedBy: 'check',
+  });
+
+  // Repointing a unit at a primitive the carrier never bound for that role is
+  // not a "different plan", it is an unexecutable one: fail closed, run nothing.
+  const mutated = structuredClone(recipe.plan);
+  const check = mutated.units.find((unit) => unit.unitId === 'unit-copy-check');
+  assert.ok(check);
+  check.primitive = 'revise';
+  calls.length = 0;
+  await assert.rejects(
+    () =>
+      executeCompiledCarrierPlan({
+        context: { lens: 'copy', frozenExecutionPlan: mutated },
+        programInput: { ignored: true },
+        primitiveHandlers: handlers as never,
+        effectStore: immediatePrimitiveEffectStore,
+        executionId: 'mutate-second',
+      }),
+    /names step revise:gate, which the copy carrier does not implement/,
+  );
+  assert.deepEqual(calls, []);
+});
+
+test('V31-25: a plan that drops a required step or repeats a single-shot step fails closed', async () => {
+  const recipe = createCanonicalCarrierUnitRecipeRegistry().resolve('note');
+  const run = (plan: CompiledExecutionPlan, executionId: string) =>
+    executeCompiledCarrierPlan({
+      context: { lens: 'image_text_note' as const, frozenExecutionPlan: plan },
+      programInput: { ignored: true },
+      primitiveHandlers: {
+        ...primitiveHandlersReturningNull(),
+        record: async () => ({ delivered: true }),
+      },
+      effectStore: immediatePrimitiveEffectStore,
+      executionId,
+    });
+
+  const missingCheck = structuredClone(recipe.plan) as CompiledExecutionPlan;
+  missingCheck.units = missingCheck.units.filter(
+    (unit) => unit.unitId !== 'unit-note-check',
+  );
+  missingCheck.dependencyGroups = missingCheck.dependencyGroups.map((group) => ({
+    ...group,
+    unitIds: group.unitIds.filter((unitId) => unitId !== 'unit-note-check'),
+  }));
+  await assert.rejects(
+    () => run(missingCheck, 'note-missing-check'),
+    /omits required step check:consistency for carrier note/,
+  );
+
+  const repeatedCheck = structuredClone(recipe.plan) as CompiledExecutionPlan;
+  const noteCheck = repeatedCheck.units.find(
+    (unit) => unit.unitId === 'unit-note-check',
+  );
+  assert.ok(noteCheck);
+  const duplicate = structuredClone(noteCheck);
+  duplicate.unitId = 'unit-note-check-2' as typeof duplicate.unitId;
+  // Insert in place: appending would move record off the tail and trip the
+  // terminal-record rule instead of the repeat rule under test.
+  const checkAt = repeatedCheck.units.indexOf(noteCheck) + 1;
+  repeatedCheck.units = [
+    ...repeatedCheck.units.slice(0, checkAt),
+    duplicate,
+    ...repeatedCheck.units.slice(checkAt),
+  ];
+  repeatedCheck.dependencyGroups = repeatedCheck.dependencyGroups.map((group) =>
+    group.unitIds.includes(noteCheck.unitId)
+      ? { ...group, unitIds: [...group.unitIds, duplicate.unitId] }
+      : group,
+  );
+  await assert.rejects(
+    () => run(repeatedCheck, 'note-repeated-check'),
+    /repeats non-repeatable step check:consistency for carrier note/,
+  );
+});
+
+test('V31-25 P1-H: a frozen plan from another carrier is refused for this request', async () => {
+  // copy and media have identical primitive sequences AND identical step
+  // catalogs, so sequence equality accepted the media plan for a copy request
+  // and ran it under copy's effect-key namespacing. Plan identity is bound to
+  // the executing carrier through the unit types the carrier owns.
+  const registry = createCanonicalCarrierUnitRecipeRegistry();
+  const copyRecipe = registry.resolve('copy');
+  const mediaRecipe = registry.resolve('media');
+  assert.deepEqual(copyRecipe.primitiveSequence, mediaRecipe.primitiveSequence);
+  assert.deepEqual(
+    copyRecipe.stepCatalog.map((step) => `${step.primitive}:${step.role}`),
+    mediaRecipe.stepCatalog.map((step) => `${step.primitive}:${step.role}`),
+  );
+
+  const calls: string[] = [];
+  const track = <T>(primitive: string, output: T) => async () => {
+    calls.push(primitive);
+    return output;
+  };
+  const handlers = {
+    read_context: track('read_context', null),
+    ask_merchant: track('ask_merchant', null),
+    generate: track('generate', null),
+    check: track('check', null),
+    revise: track('revise', null),
+    record: track('record', { delivered: true }),
+  };
+
+  await assert.rejects(
+    () =>
+      executeCompiledCarrierPlan({
+        context: { lens: 'copy', frozenExecutionPlan: mediaRecipe.plan },
+        programInput: { ignored: true },
+        primitiveHandlers: handlers,
+        effectStore: immediatePrimitiveEffectStore,
+        executionId: 'p1h-copy-request-media-plan',
+      }),
+    /uses unitType media\.generate, which does not belong to the copy carrier/,
+  );
+  assert.deepEqual(calls, []);
+
+  // The reverse direction is refused too, and the matching carrier still runs.
+  await assert.rejects(
+    () =>
+      executeCompiledCarrierPlan({
+        context: { lens: 'image', frozenExecutionPlan: copyRecipe.plan },
+        programInput: { ignored: true },
+        primitiveHandlers: handlers,
+        effectStore: immediatePrimitiveEffectStore,
+        executionId: 'p1h-media-request-copy-plan',
+      }),
+    /uses unitType copy\.generate, which does not belong to the media carrier/,
+  );
+  const matched = await executeCompiledCarrierPlan({
+    context: { lens: 'copy', frozenExecutionPlan: copyRecipe.plan },
+    programInput: { ignored: true },
+    primitiveHandlers: handlers,
+    effectStore: immediatePrimitiveEffectStore,
+    executionId: 'p1h-copy-request-copy-plan',
+  });
+  assert.deepEqual(matched.result, { delivered: true });
+});
+
+// ─── P0-A: the plan directs execution (mutation evidence) ────────────────────
+
+/**
+ * Note ports whose produced version is missing one planned page. The two note
+ * rubrics then disagree about the same run: `note_page_consistency` finds the
+ * dropped page, `note_selected_style` finds nothing because the style that came
+ * back is the style that was asked for. Nothing about the request differs
+ * between the mutation runs below — only one field of one plan unit.
+ */
+function fixtureNoteStagesDroppingPage(pageId: string): HarnessNoteStagePorts {
+  const stages = fixtureNoteStages();
+  const execute = stages.executeNoteAndSelect;
+  return {
+    ...stages,
+    async executeNoteAndSelect(input) {
+      const selected = await execute(input);
+      return {
+        ...selected,
+        version: {
+          ...selected.version,
+          plan: {
+            ...selected.version.plan,
+            pages: selected.version.plan.pages.filter(
+              (page) => page.id !== pageId,
+            ),
+          },
+        },
+      };
+    },
+  };
+}
+
+async function runNotePlanMutation(input: {
+  workflowId: string;
+  mutate: (plan: CompiledExecutionPlan) => void;
+  stages?: HarnessNoteStagePorts;
+  effectKeys?: string[];
+}) {
+  const snapshot = buildTestPlanSnapshot('note', input.mutate);
+  return runHarnessWorkflow(
+    input.workflowId,
+    {
+      ...mediaTaskInput('image_text_note'),
+      executionPlanSnapshot: snapshot,
+    },
+    input.stages ?? fixtureNoteStagesDroppingPage('page-2'),
+    {
+      ...recordingRuntime(input.effectKeys ?? []),
+      async awaitDecision(question) {
+        return noteStyleOrPaidDecision(question);
+      },
+    },
+  );
+}
+
+function noteCheckUnit(plan: CompiledExecutionPlan) {
+  const unit = plan.units.find((entry) => entry.unitId === 'unit-note-check');
+  assert.ok(unit, 'note plan must carry a check unit');
+  assert.ok(unit.input, 'check unit must carry declared parameters');
+  return unit.input as Record<string, unknown>;
+}
+
+test('V31-25 P0-A: repointing the note check unit at another rubric changes the merchant-visible delivery', async () => {
+  // Same request, same ports, same code path. The ONLY difference between the
+  // two runs is units[unit-note-check].input.rubric.
+  const consistency = await runNotePlanMutation({
+    workflowId: 'p0a-note-rubric-consistency',
+    mutate: (plan) => {
+      noteCheckUnit(plan).rubric = 'note_page_consistency';
+    },
+  });
+  const styleOnly = await runNotePlanMutation({
+    workflowId: 'p0a-note-rubric-style',
+    mutate: (plan) => {
+      noteCheckUnit(plan).rubric = 'note_selected_style';
+    },
+  });
+
+  // page-2 was planned but never produced. Under the page-consistency rubric
+  // that is a partial delivery the merchant is told about; under the
+  // selected-style rubric the same run is a clean delivery.
+  assert.equal(consistency.merchantReport?.kind, 'partial');
+  assert.match(consistency.merchantReport?.message ?? '', /没完全对上/);
+  assert.equal(styleOnly.merchantReport, undefined);
+  assert.notDeepEqual(consistency.merchantReport, styleOnly.merchantReport);
+  // Both runs still delivered: the rubric changed the verdict, not the plumbing.
+  assert.equal(consistency.delivery.packageId, 'package-1');
+  assert.equal(styleOnly.delivery.packageId, 'package-1');
+});
+
+test('V31-25 P0-A: an unknown rubric on the check unit fails closed instead of defaulting', async () => {
+  await assert.rejects(
+    () =>
+      runNotePlanMutation({
+        workflowId: 'p0a-note-rubric-unknown',
+        mutate: (plan) => {
+          noteCheckUnit(plan).rubric = 'whatever_passes';
+        },
+      }),
+    /declares unknown rubric whatever_passes/,
+  );
+});
+
+test('V31-25 P0-A: dropping the revise unit stops the page-regeneration step from running', async () => {
+  const observed: string[] = [];
+  const regeneratingStages = (): HarnessNoteStagePorts => {
+    const base = fixtureNoteStagesDroppingPage('page-2');
+    const execute = base.executeNoteAndSelect;
+    return {
+      ...base,
+      async executeNoteAndSelect(input) {
+        const selected = await execute(input);
+        return {
+          ...selected,
+          auditSignals: [
+            {
+              eventType: 'note_page_regenerated' as const,
+              payload: { auditRef: 'audit-regen-1', imagePoints: 1 },
+            },
+          ],
+        };
+      },
+      async recordObservabilityEvent(input) {
+        observed.push(input.event.eventType);
+      },
+    } as HarnessNoteStagePorts;
+  };
+
+  const withRevise = await runNotePlanMutation({
+    workflowId: 'p0a-note-revise-present',
+    mutate: () => {},
+    stages: regeneratingStages(),
+  });
+  assert.equal(withRevise.delivery.packageId, 'package-1');
+  assert.deepEqual(observed, ['note_page_regenerated']);
+
+  observed.length = 0;
+  const withoutRevise = await runNotePlanMutation({
+    workflowId: 'p0a-note-revise-absent',
+    mutate: (plan) => {
+      plan.units = plan.units.filter(
+        (unit) => unit.unitId !== 'unit-note-revise',
+      );
+      plan.dependencyGroups = plan.dependencyGroups.map((group) => ({
+        ...group,
+        unitIds: group.unitIds.filter(
+          (unitId) => unitId !== 'unit-note-revise',
+        ),
+      }));
+    },
+    stages: regeneratingStages(),
+  });
+  // revise is declared optional, so removing it must not break delivery — but
+  // its business effect must genuinely stop happening.
+  assert.equal(withoutRevise.delivery.packageId, 'package-1');
+  assert.deepEqual(observed, []);
+});
+
+test('V31-25 P0-C: a plan the real compiler produced for quantity 3 executes three page units', async () => {
+  // Closes the loop the P0-A tests open by hand: the plan under test is whatever
+  // PlanCompiler actually emits, so a compiler that ignores quantity fails here.
+  const { PlanCompiler, createFixturePlanCompilerPorts } = await import(
+    '../agent-session/plan-compiler.js'
+  );
+  const { MemoryMarketingPlanStore } = await import(
+    '../agent-session/memory-plan-store.js'
+  );
+  const compiler = new PlanCompiler({
+    store: new MemoryMarketingPlanStore(),
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const compiled = await compiler.compile({
+    workspaceId: 'ws-1',
+    threadId: 'thread-1',
+    goalIds: ['goal-1'],
+    proposal: {
+      goalNarrative: '小红书护理案例种草',
+      whyNow: '暑期新客',
+      recommendedDeliverables: [
+        {
+          carrier: 'note',
+          platform: 'xiaohongshu',
+          quantity: 3,
+          purpose: '案例种草笔记',
+        },
+      ],
+      expressionStrategy: { voice: '专业温和', promotionIntensity: 'soft' },
+      factIntentions: ['门店地址'],
+      assetIntentions: ['before_after_case'],
+      assumptions: [{ key: 'tone', statement: '少一点硬广', risk: 'low' }],
+    },
+    intentRevision: 1,
+    contextBundleId: 'bundle-1',
+    contextRevision: 'ctx-1',
+    harnessReleaseId: 'release-1',
+    now: '2026-08-09T12:00:00.000Z',
+    planId: 'plan-p0c-exec-1',
+  });
+
+  const selectionCalls: string[] = [];
+  const base = fixtureNoteStages();
+  const execute = base.executeNoteAndSelect;
+  const keys: string[] = [];
+  // Freeze the compiler's own plan, so the snapshot hash covers it.
+  const snapshot = buildTestPlanSnapshot('note', (plan) => {
+    plan.units = compiled.executionPlan.units;
+    plan.dependencyGroups = compiled.executionPlan.dependencyGroups;
+    plan.boundedRetry = compiled.executionPlan.boundedRetry;
+    if (compiled.executionPlan.cachePolicies) {
+      plan.cachePolicies = compiled.executionPlan.cachePolicies;
+    }
+  });
+  const result = await runHarnessWorkflow(
+    'p0c-compiled-note-quantity-3',
+    {
+      ...mediaTaskInput('image_text_note'),
+      executionPlanSnapshot: snapshot,
+    },
+    {
+      ...base,
+      async executeNoteAndSelect(input) {
+        selectionCalls.push(input.selectedStyleId);
+        return execute(input);
+      },
+    },
+    {
+      ...recordingRuntime(keys),
+      async awaitDecision(question) {
+        return noteStyleOrPaidDecision(question);
+      },
+    },
+  );
+
+  assert.equal(result.delivery.packageId, 'package-1');
+  assert.equal(selectionCalls.length, 3);
+  const selectionKeys = keys.filter(
+    (key) => key.includes(':s4:') && key.endsWith(':selection'),
+  );
+  assert.equal(new Set(selectionKeys).size, 3);
+});
+
+test('V31-25 P0-A: repeating the note pages unit runs the selection port once per unit under distinct durable keys', async () => {
+  const selectionCalls: string[] = [];
+  const countingStages = (): HarnessNoteStagePorts => {
+    const base = fixtureNoteStagesDroppingPage('page-2');
+    const execute = base.executeNoteAndSelect;
+    return {
+      ...base,
+      async executeNoteAndSelect(input) {
+        selectionCalls.push(input.selectedStyleId);
+        return execute(input);
+      },
+    };
+  };
+  // Stage 4 selection keys only; the stage 3 brief key also carries the kind.
+  const selectionEffectKeys = (keys: string[]) =>
+    [
+      ...new Set(
+        keys.filter(
+          (key) => key.includes(':s4:') && key.endsWith(':selection'),
+        ),
+      ),
+    ].sort();
+
+  const singleKeys: string[] = [];
+  await runNotePlanMutation({
+    workflowId: 'p0a-note-pages-single',
+    mutate: () => {},
+    stages: countingStages(),
+    effectKeys: singleKeys,
+  });
+  assert.equal(selectionCalls.length, 1);
+
+  selectionCalls.length = 0;
+  const expandedKeys: string[] = [];
+  await runNotePlanMutation({
+    workflowId: 'p0a-note-pages-expanded',
+    mutate: (plan) => {
+      const pages = plan.units.find(
+        (unit) => unit.unitId === 'unit-note-pages',
+      );
+      assert.ok(pages);
+      const pagesInput = pages.input as Record<string, unknown>;
+      pagesInput.deliverableId = 'd1';
+      pagesInput.deliverableIndex = 0;
+      const second = structuredClone(pages);
+      second.unitId = 'unit-note-pages-2' as typeof second.unitId;
+      (second.input as Record<string, unknown>).deliverableIndex = 1;
+      const unitAt = plan.units.indexOf(pages) + 1;
+      plan.units = [
+        ...plan.units.slice(0, unitAt),
+        second,
+        ...plan.units.slice(unitAt),
+      ];
+      plan.dependencyGroups = plan.dependencyGroups.map((group) => {
+        if (!group.unitIds.includes(pages.unitId)) return group;
+        const groupAt = group.unitIds.indexOf(pages.unitId) + 1;
+        return {
+          ...group,
+          unitIds: [
+            ...group.unitIds.slice(0, groupAt),
+            second.unitId,
+            ...group.unitIds.slice(groupAt),
+          ],
+        };
+      });
+    },
+    stages: countingStages(),
+    effectKeys: expandedKeys,
+  });
+  // The plan asked for the step twice, so the production port ran twice under
+  // two distinct durable effect keys instead of replaying one cached result.
+  assert.equal(selectionCalls.length, 2);
+  assert.equal(selectionEffectKeys(singleKeys).length, 1);
+  assert.equal(selectionEffectKeys(expandedKeys).length, 2);
+  assert.notDeepEqual(
+    selectionEffectKeys(expandedKeys),
+    selectionEffectKeys(singleKeys),
+  );
+});
+
+function primitiveHandlersReturningNull() {
+  const value = async () => null;
+  return {
+    read_context: value,
+    ask_merchant: value,
+    generate: value,
+    check: value,
+    revise: value,
+    record: value,
+  };
+}
+
+test('V31-25: production workflow has no inert handler or carrier-program fallback', () => {
+  const executor = readFileSync(
+    new URL('./compiled-carrier-executor.ts', import.meta.url),
+    'utf8',
+  );
+  const workflow = readFileSync(new URL('./workflow-core.ts', import.meta.url), 'utf8');
+  const dbos = readFileSync(new URL('./dbos-workflow.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(executor, /inertPrimitiveHandlers|programs\?:|programs\.resolve/);
+  assert.doesNotMatch(workflow, /createCarrierProgramRegistry/);
+  assert.doesNotMatch(
+    workflow,
+    /execute(?:Copy|Note|Media)HarnessStages\(/,
+  );
+  // Anti-regression for the units-as-checksum design this replaced: the old
+  // executor advanced a generator and only checked that its next yield agreed
+  // with the plan, so the plan could agree or abort but never direct anything.
+  assert.doesNotMatch(
+    workflow,
+    /primitiveProgramPosition|synchronizeCarrierPrimitiveProgram|advanceCarrierPrimitive|CarrierPrimitiveProgram/,
+  );
+  assert.doesNotMatch(workflow, /async function\* create\w+CarrierBusinessProgram/);
+  assert.match(workflow, /createCarrierStepMachine/);
+  assert.match(workflow, /primitiveHandlers:/);
+  assert.match(dbos, /legacyShadowObservationReader\.read\(/);
+  assert.doesNotMatch(dbos, /projectLegacyFromMakeRequest|observedRightsRefs/);
+  assert.doesNotMatch(dbos, /observeLegacyHarnessDeterministicFields/);
+  const shadowBlock = dbos.slice(
+    dbos.indexOf('V31-13: sample shadow reconcile'),
+    dbos.indexOf('V31-23 L0.5: production quick-check'),
+  );
+  assert.doesNotMatch(
+    shadowBlock,
+    /runHarnessWorkflow|resolveExecutionPlanLiveFacts|executionConfirmation|billing|ports\b|runtime\b/,
+  );
+});
+
+test('V31-25: legacy kill switch runs rollback path without compiled primitive effects', async () => {
+  const keys: string[] = [];
+  const observations: Parameters<
+    NonNullable<HarnessWorkflowRuntime['recordLegacyShadowObservation']>
+  >[0][] = [];
+  const baseRequest = mediaTaskInput('image_text_note');
+  const executionSnapshot = baseRequest.executionSnapshot!;
+  const result = await runHarnessWorkflow(
+    'legacy-rollback',
+    {
+      ...baseRequest,
+      boundedExecution: buildTestPlanSnapshot('note').boundedExecution,
+      executionSnapshot: {
+        ...executionSnapshot,
+        deliverable: {
+          ...executionSnapshot.deliverable!,
+          quantity: 7,
+        },
+        deliverables: executionSnapshot.deliverables.map((deliverable) => ({
+          ...deliverable,
+          quantity: 7,
+        })),
+      },
+    },
+    fixtureNoteStages(),
+    {
+      ...recordingRuntime(keys),
+      async awaitDecision(question) {
+        return noteStyleOrPaidDecision(question);
+      },
+      async recordLegacyShadowObservation(input) {
+        observations.push(input);
+      },
+    },
+    { forceLegacyFiveStage: true },
+  );
+  assert.equal(result.delivery.packageId, 'package-1');
+  assert.equal(keys.some((key) => key.startsWith('compiled-primitive:')), false);
+  assert.ok(keys.some((key) => key.includes(':s5:package:')));
+  assert.equal(observations.length, 1);
+  assert.deepEqual(observations[0]?.observation.deliverables, [
+    { kind: 'note', quantity: 7 },
+  ]);
+  assert.deepEqual(observations[0]?.observation.quoteRef, {
+    id: 'quote-1',
+    revision: 'quote-r1',
+  });
+});
+
+test('V31-13 P1-G: the compiled path records a legacy shadow observation with the kill switch off', async () => {
+  // recordLegacyShadowObservation had exactly one caller, inside the frozen
+  // legacy runner, so nothing was ever sampled unless forceLegacyFiveStage was
+  // on. The shadow program could therefore never accumulate observations and
+  // never close.
+  const observations: Parameters<
+    NonNullable<HarnessWorkflowRuntime['recordLegacyShadowObservation']>
+  >[0][] = [];
+  const baseRequest = mediaTaskInput('image_text_note');
+  const executionSnapshot = baseRequest.executionSnapshot!;
+  const result = await runHarnessWorkflow(
+    'p1g-compiled-shadow-sample',
+    {
+      ...baseRequest,
+      executionPlanSnapshot: buildTestPlanSnapshot('note'),
+      executionSnapshot: {
+        ...executionSnapshot,
+        deliverable: { ...executionSnapshot.deliverable!, quantity: 7 },
+        deliverables: executionSnapshot.deliverables.map((deliverable) => ({
+          ...deliverable,
+          quantity: 7,
+        })),
+      },
+    },
+    fixtureNoteStages(),
+    {
+      ...recordingRuntime([]),
+      async awaitDecision(question) {
+        return noteStyleOrPaidDecision(question);
+      },
+      async recordLegacyShadowObservation(input) {
+        observations.push(input);
+      },
+    },
+    // No forceLegacyFiveStage: this is the normal production path.
+  );
+
+  assert.equal(result.delivery.packageId, 'package-1');
+  assert.equal(observations.length, 1);
+  assert.equal(observations[0]?.workflowId, 'p1g-compiled-shadow-sample');
+  // The projection comes from the merchant's creation snapshot, not from the
+  // frozen plan the new chain is compared against.
+  assert.deepEqual(observations[0]?.observation.deliverables, [
+    { kind: 'note', quantity: 7 },
+  ]);
+  assert.deepEqual(observations[0]?.observation.quoteRef, {
+    id: 'quote-1',
+    revision: 'quote-r1',
+  });
+});
+
+test('V31-25: frozen rollback module has no dependency on compiled carrier business programs', () => {
+  const workflow = readFileSync(new URL('./workflow-core.ts', import.meta.url), 'utf8');
+  const frozen = readFileSync(
+    new URL('./frozen-legacy-five-stage.ts', import.meta.url),
+    'utf8',
+  );
+  const machinesFrom = workflow.indexOf('function createCarrierStepMachine');
+  const machinesTo = workflow.indexOf('// ─── Plan-directed check helpers');
+  assert.ok(machinesFrom > 0, 'carrier step machine section not found');
+  assert.ok(machinesTo > machinesFrom, 'step machine section markers inverted');
+  const compiledPrograms = workflow.slice(machinesFrom, machinesTo);
+  // Guard the slice itself: a renamed marker used to silently yield '' here and
+  // every doesNotMatch below passed vacuously.
+  assert.ok(compiledPrograms.length > 5_000, 'step machine slice is too small');
+  assert.doesNotMatch(
+    frozen,
+    /CarrierBusinessProgram|createCompiled|executeCompiledCarrierPlan|compiled-carrier-executor/,
+  );
+  assert.match(frozen, /import type \{[^}]*\} from '\.\/workflow-core\.js';/);
+  assert.doesNotMatch(
+    frozen,
+    /import \{[^}]*\} from '\.\/workflow-core\.js';/,
+  );
+  assert.match(
+    frozen,
+    /c8e679fef11ecdefcb542e5d12296bb7bcd5e91b/,
+  );
+  assert.match(frozen, /type FrozenLegacy(?:Copy|Note|Media)Ports/);
+  assert.doesNotMatch(compiledPrograms, /FrozenLegacy|runFrozenLegacy/);
+});
+
+test('V31-25: corrupting the new compiled plan does not disable frozen legacy delivery', async () => {
+  const snapshot = buildTestPlanSnapshot('copy');
+  const corruptedRequest: HarnessWorkflowInput = {
+    ...taskInput(),
+    executionPlanSnapshot: {
+      ...snapshot,
+      executionPlan: {
+        ...snapshot.executionPlan,
+        units: snapshot.executionPlan.units.map((unit, index) =>
+          index === 0 ? { ...unit, primitive: 'revise' as const } : unit,
+        ),
+      },
+    },
+  };
+  await assert.rejects(
+    () =>
+      runHarnessWorkflow(
+        'compiled-program-corrupted',
+        corruptedRequest,
+        fixtureCopyStages(),
+        recordingRuntime([]),
+      ),
+    /names step revise:context, which the copy carrier does not implement/,
+  );
+  const legacy = await runHarnessWorkflow(
+    'compiled-program-corrupted',
+    corruptedRequest,
+    fixtureCopyStages(),
+    recordingRuntime([]),
+    { forceLegacyFiveStage: true },
+  );
+  assert.equal(legacy.delivery?.packageId, 'package-1');
+});
+
+test('V31-13: legacy shadow reads exact multi-page durable projection without executing a runner', async () => {
+  const { parseLegacyShadowObservation } = await import(
+    './legacy-shadow-observation-reader.js'
+  );
+  const observed = parseLegacyShadowObservation({
+    deliverables: [{ kind: 'note', quantity: 7 }],
+    factRefs: ['fact-1'],
+    rightsRefs: ['asset-1:allowed'],
+    quoteRef: { id: 'quote-1', revision: 'legacy-r1' },
+    bounds: {
+      maxIterations: 8,
+      maxCostCents: 500,
+      maxWallClockMs: 60_000,
+      maxDelegations: 2,
+    },
+  });
+  assert.equal(observed?.deliverables[0]?.quantity, 7);
+});
+
+test('V31-25: durable topology baseline includes compiled primitive effects', () => {
+  const recovery = buildRunnerEquivalenceSnapshot({
+    result: { delivery: { packageId: 'p', versionId: 'v', revision: 1 } },
+    effectKeys: ['compiled-primitive:run:unit-context', 'business-write'],
+  }).recovery;
+  assert.deepEqual(recovery.effectKeys, [
+    'business-write',
+    'compiled-primitive:run:unit-context',
+  ]);
+});
+
+test('V31-25: durable primitive effects survive executor restart without duplicate writes', async () => {
+  const store = createMemoryPrimitiveEffectStore();
+  let contextReads = 0;
+  let businessWrites = 0;
+  let killOnce = true;
+  const handlers = {
+    read_context: async () => ({ readNumber: ++contextReads }),
+    generate: async () => {
+      if (killOnce) {
+        killOnce = false;
+        throw new Error('simulated worker kill');
+      }
+      return null;
+    },
+    check: async () => null,
+    revise: async () => null,
+    ask_merchant: async () => null,
+    record: async () => ({ writeNumber: ++businessWrites }),
+  };
+  const run = () =>
+    executeCompiledCarrierPlan({
+      context: { lens: 'copy' as const },
+      programInput: { ignored: true },
+      primitiveHandlers: handlers,
+      effectStore: store,
+      executionId: 'durable-run-1',
+    });
+
+  await assert.rejects(run, /simulated worker kill/);
+  const afterRestart = await run();
+  const replay = await run();
+  assert.deepEqual(replay.result, afterRestart.result);
+  assert.equal(contextReads, 1);
+  assert.equal(businessWrites, 1);
+});
+
+test('V31-25: production workflow self-durable record survives kill after business commit exactly once', async () => {
+  const completed = new Map<string, unknown>();
+  let killAfterCommit = true;
+  let deliveryWrites = 0;
+  const stages = fixtureCopyStages();
+  const deliver = stages.assembleAndDeliver;
+  stages.assembleAndDeliver = async (input) => {
+    deliveryWrites += 1;
+    return deliver(input);
+  };
+  const runtime: HarnessWorkflowRuntime = {
+    ...recordingRuntime([]),
+    async runStep(key, operation) {
+      if (completed.has(key)) return completed.get(key) as never;
+      const output = await operation();
+      completed.set(key, output);
+      if (key.includes(':s5:package:') && killAfterCommit) {
+        killAfterCommit = false;
+        throw new Error('worker killed after durable delivery commit');
+      }
+      return output;
+    },
+  };
+  const run = () =>
+    runHarnessWorkflow(
+      'self-durable-record',
+      taskInput(),
+      stages,
+      runtime,
+    );
+
+  await assert.rejects(run, /worker killed after durable delivery commit/);
+  const restarted = await run();
+  const replayed = await run();
+  assert.deepEqual(replayed, restarted);
+  assert.equal(deliveryWrites, 1);
+});
+
+test('V31-25: production primitive topology never nests a durable step', async () => {
+  let depth = 0;
+  let maximumDepth = 0;
+  const runtime: HarnessWorkflowRuntime = {
+    ...recordingRuntime([]),
+    async runStep(_key, operation) {
+      depth += 1;
+      maximumDepth = Math.max(maximumDepth, depth);
+      assert.equal(depth, 1, 'nested durable step');
+      try {
+        return await operation();
+      } finally {
+        depth -= 1;
+      }
+    },
+  };
+  await runHarnessWorkflow(
+    'no-nested-primitive-step',
+    taskInput(),
+    fixtureCopyStages(),
+    runtime,
+  );
+  assert.equal(maximumDepth, 1);
+});
+
+test('V31-25: frozen note and media keep page/provider effects at one durable depth', async () => {
+  for (const kind of ['image_text_note', 'image'] as const) {
+    let depth = 0;
+    let maximumDepth = 0;
+    const runtime: HarnessWorkflowRuntime = {
+      ...recordingRuntime([]),
+      async runStep(_key, operation) {
+        depth += 1;
+        maximumDepth = Math.max(maximumDepth, depth);
+        assert.equal(depth, 1, `nested durable step for ${kind}`);
+        try {
+          return await operation();
+        } finally {
+          depth -= 1;
+        }
+      },
+      async awaitDecision(question) {
+        return noteStyleOrPaidDecision(question);
+      },
+    };
+    if (kind === 'image_text_note') {
+      const stages = fixtureNoteStages();
+      const execute = stages.executeNoteAndSelect;
+      stages.executeNoteAndSelect = (input) =>
+        input.runStep!('legacy-note-page-effect', () => execute(input));
+      await runHarnessWorkflow(
+        `frozen-depth-${kind}`,
+        mediaTaskInput(kind),
+        stages,
+        runtime,
+        { forceLegacyFiveStage: true },
+      );
+    } else {
+      const stages = fixtureMediaStages();
+      const execute = stages.executeMediaAndSelect;
+      stages.executeMediaAndSelect = (input) =>
+        input.runStep!('legacy-media-provider-effect', () => execute(input));
+      await runHarnessWorkflow(
+        `frozen-depth-${kind}`,
+        mediaTaskInput(kind),
+        stages,
+        runtime,
+        { forceLegacyFiveStage: true },
+      );
+    }
+    assert.equal(maximumDepth, 1);
+  }
 });
 
 // ─── Equivalence baseline + kill/restart ─────────────────────────────────────
@@ -200,12 +1080,10 @@ test('V31-25: resolveCompiledCarrierExecution prefers frozen plan when present',
  * SAME fixture tasks through the CURRENT single-executor entry and asserts
  * deliverable / settlement / recovery semantics are field-for-field equal.
  *
- * What this proves: the convergence commit did not change runner behavior for
- * any fixture (deliverable, billing settlement markers, effect idempotency
- * keys, progress sequence, trace stages). It does NOT prove the six-primitive
- * internal rewrite landed — the runner functions still call the five-stage
- * stage ports directly (grep read_context/ask_merchant in workflow-core = 0).
- * That rewrite is tracked separately (V31-25 P1-a) and is out of scope here.
+ * What this proves: the convergence did not change business behavior for any
+ * fixture while adding the durable six-primitive topology. The comparison
+ * keeps the fixed pre-convergence business effects and explicitly adds every
+ * compiled primitive effect key produced by the current executor.
  */
 type FixtureTaskId = keyof typeof PRE_CONVERGENCE_BASELINES;
 
@@ -332,17 +1210,50 @@ async function collectFixtureEffectKeys(fixtureId: FixtureTaskId) {
   return keys;
 }
 
+/**
+ * Set only when this suite runs against the PRE-convergence commit to capture
+ * baselines. At that commit there are no compiled-primitive markers, so the
+ * expectation is the raw baseline. Separate from the output path on purpose: the
+ * one env var used to mean both "where to write" and "which expectation", so a
+ * normal CI run silently took the derived expectation.
+ */
+const capturingPreConvergenceBaseline =
+  process.env.V31_PRE_CONVERGENCE_BASELINE_CAPTURE === '1';
+
 function assertMatchesPreConvergenceBaseline(
   fixtureId: FixtureTaskId,
   actual: RunnerEquivalenceSnapshot,
 ) {
-  const expected = PRE_CONVERGENCE_BASELINES[fixtureId];
+  const expected = capturingPreConvergenceBaseline
+    ? PRE_CONVERGENCE_BASELINES[fixtureId]
+    : expectedCurrentTopology(fixtureId);
   const mismatches = diffRunnerEquivalence(expected, actual);
   assert.deepEqual(
     mismatches,
     [],
     `${fixtureId} diverged from pre-convergence baseline (64bdaded8^): ${JSON.stringify(mismatches)}`,
   );
+}
+
+/**
+ * Pre-convergence business effects (frozen, real provenance) plus the pinned
+ * post-convergence primitive markers. Neither half is read from the production
+ * resolver, so a topology change fails instead of moving the expectation.
+ */
+function expectedCurrentTopology(
+  fixtureId: FixtureTaskId,
+): RunnerEquivalenceSnapshot {
+  const baseline = PRE_CONVERGENCE_BASELINES[fixtureId];
+  return {
+    ...baseline,
+    recovery: {
+      ...baseline.recovery,
+      effectKeys: [
+        ...baseline.recovery.effectKeys,
+        ...POST_CONVERGENCE_PRIMITIVE_EFFECT_KEYS[fixtureId],
+      ].sort(),
+    },
+  };
 }
 
 test('V31-25: every fixture task matches its frozen pre-convergence baseline (deliverable/settlement/recovery)', async () => {
@@ -353,10 +1264,150 @@ test('V31-25: every fixture task matches its frozen pre-convergence baseline (de
   // markers, effect idempotency keys, progress sequence and trace stage names;
   // it does not compare trace payload decoration (D-036 taxonomy fields were
   // added by the convergence commit and are pinned by their own test).
+  const generated: Partial<Record<FixtureTaskId, RunnerEquivalenceSnapshot>> = {};
   for (const fixtureId of Object.keys(PRE_CONVERGENCE_BASELINES) as FixtureTaskId[]) {
-    const actual = await runFixtureSnapshot(fixtureId);
+    generated[fixtureId] = await runFixtureSnapshot(fixtureId);
+  }
+  // Write before asserting: the generator script's whole job is to capture
+  // baselines, and asserting first meant a capture run that disagreed with the
+  // checked-in file produced no output at all — the script could never bootstrap
+  // or update a baseline.
+  if (process.env.V31_PRE_CONVERGENCE_BASELINE_OUTPUT) {
+    writeFileSync(
+      process.env.V31_PRE_CONVERGENCE_BASELINE_OUTPUT,
+      `${JSON.stringify(generated, null, 2)}\n`,
+      'utf8',
+    );
+  }
+  for (const [fixtureId, actual] of Object.entries(generated) as Array<
+    [FixtureTaskId, RunnerEquivalenceSnapshot]
+  >) {
     assertMatchesPreConvergenceBaseline(fixtureId, actual);
   }
+});
+
+/**
+ * V31-25 P1-D: measured drift of the legacy rollback module, pinned.
+ *
+ * FIXTURE_TASKS never set forceLegacyFiveStage, so the module that described
+ * itself as c8e679fef's five-stage runner had never once been compared against
+ * the pre-convergence baseline. Running that comparison shows it is NOT a
+ * faithful freeze: on all three carriers it diverges on trace stages, progress
+ * sequence, effect keys and recommendation deliverables, and on note it also
+ * diverges on billing-receipt presence.
+ *
+ * Those axes are pinned here rather than asserted equal, because the drift is
+ * real and unfixed. This is a change detector in both directions: further drift
+ * fails, and so does a fix, which then has to shrink this list deliberately. It
+ * is not a freeze proof, and the module no longer claims to be one.
+ */
+const LEGACY_ROLLBACK_MEASURED_DRIFT: Record<string, readonly string[]> = {
+  'copy-legacy': [
+    'deliverable.recommendationDeliverables',
+    'recovery.effectKeys',
+    'recovery.progressSequence',
+    'recovery.traceStages',
+  ],
+  'note-legacy': [
+    'deliverable.billingReceiptPresent',
+    'deliverable.recommendationDeliverables',
+    'recovery.effectKeys',
+    'recovery.progressSequence',
+    'recovery.traceStages',
+    'settlement.hasBillingReceipt',
+  ],
+  'media-legacy': [
+    'deliverable.recommendationDeliverables',
+    'recovery.effectKeys',
+    'recovery.progressSequence',
+    'recovery.traceStages',
+  ],
+};
+
+test('V31-25 P1-D: the legacy rollback module is compared, and its drift is exactly the pinned set', async () => {
+  const drift: Array<{ fixtureId: FixtureTaskId; paths: string[] }> = [];
+  for (const fixtureId of ['copy-legacy', 'note-legacy', 'media-legacy'] as const) {
+    const fixture = FIXTURE_TASKS[fixtureId];
+    const keys: string[] = [];
+    const progress: Array<{ stage: string; state: string }> = [];
+    const traces: Array<{ stage: string }> = [];
+    const result = await runHarnessWorkflow(
+      fixture.workflowId,
+      fixture.buildRequest(),
+      fixture.buildStages(),
+      {
+        ...recordingRuntime(keys),
+        ...(fixture.awaitDecision
+          ? {
+              awaitDecision: async (
+                question: Parameters<HarnessWorkflowRuntime['awaitDecision']>[0],
+                stage: Parameters<HarnessWorkflowRuntime['awaitDecision']>[1],
+              ) => fixture.awaitDecision!(question, stage),
+            }
+          : {}),
+        async progress(event) {
+          progress.push({ stage: event.stage, state: event.state });
+        },
+        async recordTrace(input) {
+          traces.push({ stage: input.stage });
+        },
+      },
+      { forceLegacyFiveStage: true },
+    );
+    // The legacy path emits no compiled-primitive markers, so the expectation is
+    // the raw pre-convergence baseline.
+    const mismatches = diffRunnerEquivalence(
+      PRE_CONVERGENCE_BASELINES[fixtureId],
+      buildRunnerEquivalenceSnapshot({ result, effectKeys: keys, progress, traces }),
+    );
+    drift.push({
+      fixtureId,
+      paths: [...new Set(mismatches.map((item) => item.path))].sort(),
+    });
+  }
+  for (const { fixtureId, paths } of drift) {
+    assert.deepEqual(
+      paths,
+      [...(LEGACY_ROLLBACK_MEASURED_DRIFT[fixtureId] ?? [])],
+      `${fixtureId}: legacy rollback drift changed; update LEGACY_ROLLBACK_MEASURED_DRIFT deliberately (shrinking it is a fix, growing it is a regression)`,
+    );
+  }
+  // The rollback path must at least still deliver on every carrier.
+  assert.equal(drift.length, 3);
+});
+
+test('V31-25 P1-F: the recovery expectation is pinned, not read back from the production resolver', async () => {
+  // Drift guard for the guard: if the pinned primitive keys were derived from
+  // resolveCompiledCarrierExecution again, adding a unit to a carrier recipe
+  // would silently move the expectation. Here the pinned list is compared to the
+  // live resolver, and a mismatch is a deliberate-update signal rather than a
+  // self-fulfilling pass.
+  for (const fixtureId of Object.keys(PRE_CONVERGENCE_BASELINES) as FixtureTaskId[]) {
+    const fixture = FIXTURE_TASKS[fixtureId];
+    const request = fixture.buildRequest();
+    const resolution = resolveCompiledCarrierExecution({
+      lens: request.executionSnapshot?.lens,
+      frozenExecutionPlan: request.executionPlanSnapshot?.executionPlan,
+    });
+    assert.deepEqual(
+      [...POST_CONVERGENCE_PRIMITIVE_EFFECT_KEYS[fixtureId]],
+      resolution.executionPlan.units.map(
+        (unit) => `compiled-primitive:${fixture.workflowId}:${unit.unitId}`,
+      ),
+      `${fixtureId}: carrier topology changed; update POST_CONVERGENCE_PRIMITIVE_EFFECT_KEYS deliberately`,
+    );
+  }
+});
+
+test('V31-25: equivalence comparison detects a mutated generated baseline', async () => {
+  const actual = await runFixtureSnapshot('copy-legacy');
+  const mutated = structuredClone(actual);
+  if (!mutated.deliverable.delivery) throw new Error('fixture must deliver');
+  mutated.deliverable.delivery.packageId = 'mutated-package';
+  assert.ok(
+    diffRunnerEquivalence(PRE_CONVERGENCE_BASELINES['copy-legacy'], mutated)
+      .some((item) => item.path === 'deliverable.delivery.packageId'),
+  );
 });
 
 test('V31-25: kill/restart replay of every fixture lands on the pre-convergence effect key multiset', async () => {
@@ -373,8 +1424,8 @@ test('V31-25: kill/restart replay of every fixture lands on the pre-convergence 
       secondEffectKeys: secondKeys,
     });
     assert.deepEqual(
-      [...firstKeys].sort(),
-      [...PRE_CONVERGENCE_BASELINES[fixtureId].recovery.effectKeys].sort(),
+      firstKeys.sort(),
+      [...expectedCurrentTopology(fixtureId).recovery.effectKeys].sort(),
       `${fixtureId} replay effect keys drifted from pre-convergence baseline`,
     );
   }
@@ -390,6 +1441,233 @@ test('V31-25: copy fixture equivalence baseline is stable across dual runs', asy
   assert.equal(a.deliverable.outcome, 'delivered');
   assert.equal(a.deliverable.delivery?.packageId, 'package-1');
   assert.equal(a.settlement.cancelled, false);
+});
+
+/**
+ * V31-25 P1-E: a real restart, counted.
+ *
+ * The two tests around this one run the workflow twice with a fresh
+ * non-durable runtime and compare effect-key multisets. Two independent runs
+ * trivially produce the same keys, so those tests cannot detect duplication:
+ * nothing crashes, nothing survives, and no port invocation is counted. Here a
+ * single durable store survives the kill, the restart resumes against it, and
+ * every business port is counted across both attempts.
+ */
+function durableRestartRuntime(input: {
+  completed: Map<string, unknown>;
+  keys: string[];
+  killAt?: (key: string) => boolean;
+}): HarnessWorkflowRuntime {
+  return {
+    ...recordingRuntime(input.keys),
+    async runStep(key, operation) {
+      if (input.completed.has(key)) {
+        return structuredClone(input.completed.get(key)) as never;
+      }
+      const output = await operation();
+      input.completed.set(key, structuredClone(output));
+      if (input.killAt?.(key)) {
+        throw new Error(`worker killed after ${key}`);
+      }
+      return output;
+    },
+    async awaitDecision(question) {
+      return noteStyleOrPaidDecision(question);
+    },
+  };
+}
+
+type NotePortCounts = {
+  compileNoteBrief: number;
+  executeNoteAndSelect: number;
+  assembleNoteAndDeliver: number;
+  recordExecutionAssemblyStep: number;
+};
+
+function countingNoteStages(): {
+  stages: HarnessNoteStagePorts;
+  calls: NotePortCounts;
+} {
+  const calls: NotePortCounts = {
+    compileNoteBrief: 0,
+    executeNoteAndSelect: 0,
+    assembleNoteAndDeliver: 0,
+    recordExecutionAssemblyStep: 0,
+  };
+  const base = fixtureNoteStages();
+  return {
+    calls,
+    stages: {
+      ...base,
+      async compileNoteBrief(portInput) {
+        calls.compileNoteBrief += 1;
+        return base.compileNoteBrief(portInput);
+      },
+      async executeNoteAndSelect(portInput) {
+        calls.executeNoteAndSelect += 1;
+        return base.executeNoteAndSelect(portInput);
+      },
+      async assembleNoteAndDeliver(portInput) {
+        calls.assembleNoteAndDeliver += 1;
+        return base.assembleNoteAndDeliver(portInput);
+      },
+      async recordExecutionAssemblyStep() {
+        calls.recordExecutionAssemblyStep += 1;
+      },
+    },
+  };
+}
+
+test('V31-25 P1-E: a real kill and restart invokes no note port more often than a clean run', async () => {
+  const noteRequest = () => mediaTaskInput('image_text_note');
+
+  // Baseline: one clean uninterrupted run through the same durable runtime.
+  const clean = countingNoteStages();
+  const cleanResult = await runHarnessWorkflow(
+    'p1e-note-clean',
+    noteRequest(),
+    clean.stages,
+    durableRestartRuntime({ completed: new Map(), keys: [] }),
+  );
+  assert.equal(cleanResult.delivery.packageId, 'package-1');
+  assert.ok(
+    clean.calls.executeNoteAndSelect > 0 && clean.calls.compileNoteBrief > 0,
+    'baseline must actually exercise the paid ports',
+  );
+
+  for (const killAfter of [
+    ':s3:image_text_note:',
+    ':s4:image_text_note:selection',
+    ':s5:package:',
+  ]) {
+    const { stages, calls } = countingNoteStages();
+    // One durable store shared by the killed attempt and the restart.
+    const completed = new Map<string, unknown>();
+    let killArmed = true;
+    const workflowId = `p1e-note-restart-${killAfter.replaceAll(':', '-')}`;
+    const run = (killAt?: (key: string) => boolean) =>
+      runHarnessWorkflow(
+        workflowId,
+        noteRequest(),
+        stages,
+        durableRestartRuntime({
+          completed,
+          keys: [],
+          ...(killAt ? { killAt } : {}),
+        }),
+      );
+
+    await assert.rejects(
+      () =>
+        run((key) => {
+          if (!killArmed || !key.includes(killAfter)) return false;
+          killArmed = false;
+          return true;
+        }),
+      /worker killed after/,
+      `${killAfter}: the kill must actually interrupt the run`,
+    );
+    assert.equal(killArmed, false, `${killAfter}: kill never fired`);
+
+    const restarted = await run();
+    assert.equal(restarted.delivery.packageId, 'package-1');
+    assert.deepEqual(
+      calls,
+      clean.calls,
+      `${killAfter}: restart changed port invocation counts`,
+    );
+  }
+});
+
+test('V31-25 P1-E: a real kill and restart does not re-run the media billing promotion', async () => {
+  // finalizeMerchantExecution promotes the reserved charge, so a duplicate here
+  // is a double charge. It is counted across a real restart rather than inferred
+  // from effect-key equality.
+  const noteRequest = () => mediaTaskInput('image');
+  const build = () => {
+    const calls = {
+      compileMediaBrief: 0,
+      executeMediaAndSelect: 0,
+      assembleMediaAndDeliver: 0,
+      finalizeMerchantExecution: 0,
+    };
+    const base = fixtureMediaStages();
+    const stages: HarnessMediaStagePorts = {
+      ...base,
+      async compileMediaBrief(portInput) {
+        calls.compileMediaBrief += 1;
+        return base.compileMediaBrief(portInput);
+      },
+      async executeMediaAndSelect(portInput) {
+        calls.executeMediaAndSelect += 1;
+        return base.executeMediaAndSelect(portInput);
+      },
+      async assembleMediaAndDeliver(portInput) {
+        calls.assembleMediaAndDeliver += 1;
+        return base.assembleMediaAndDeliver(portInput);
+      },
+    };
+    return { stages, calls };
+  };
+  const runtimeFor = (
+    calls: { finalizeMerchantExecution: number },
+    completed: Map<string, unknown>,
+    killAt?: (key: string) => boolean,
+  ): HarnessWorkflowRuntime => ({
+    ...durableRestartRuntime({
+      completed,
+      keys: [],
+      ...(killAt ? { killAt } : {}),
+    }),
+    async awaitDecision(question) {
+      return approvePaid(question);
+    },
+    async finalizeMerchantExecution() {
+      calls.finalizeMerchantExecution += 1;
+    },
+  });
+
+  const clean = build();
+  await runHarnessWorkflow(
+    'p1e-media-clean',
+    noteRequest(),
+    clean.stages,
+    runtimeFor(clean.calls, new Map()),
+  );
+
+  for (const killAfter of [':s4:image:selection', ':s5:package:']) {
+    const { stages, calls } = build();
+    const completed = new Map<string, unknown>();
+    let killArmed = true;
+    const workflowId = `p1e-media-restart-${killAfter.replaceAll(':', '-')}`;
+    await assert.rejects(
+      () =>
+        runHarnessWorkflow(
+          workflowId,
+          noteRequest(),
+          stages,
+          runtimeFor(calls, completed, (key) => {
+            if (!killArmed || !key.includes(killAfter)) return false;
+            killArmed = false;
+            return true;
+          }),
+        ),
+      /worker killed after/,
+    );
+    assert.equal(killArmed, false, `${killAfter}: kill never fired`);
+    const restarted = await runHarnessWorkflow(
+      workflowId,
+      noteRequest(),
+      stages,
+      runtimeFor(calls, completed),
+    );
+    assert.equal(restarted.delivery.packageId, 'package-1');
+    assert.deepEqual(
+      calls,
+      clean.calls,
+      `${killAfter}: restart changed media port invocation counts`,
+    );
+  }
 });
 
 test('V31-25: kill/restart replay yields zero duplicate side effects', async () => {
@@ -701,7 +1979,9 @@ function stripWorkflowIds(
     recovery: {
       ...snapshot.recovery,
       effectKeys: snapshot.recovery.effectKeys.map((k) =>
-        k.replace(/wf:[^:]+:/, 'wf:TASK:'),
+        k
+          .replace(/wf:[^:]+:/, 'wf:TASK:')
+          .replace(/compiled-primitive:[^:]+:/, 'compiled-primitive:TASK:'),
       ),
     },
   };
@@ -1163,13 +2443,20 @@ function mediaTaskInput(
   return { ...taskInput(), executionSnapshot: snapshot };
 }
 
-function buildTestPlanSnapshot(kind: 'note' | 'media' | 'copy') {
-  const unitType =
-    kind === 'note'
-      ? 'note.generate'
-      : kind === 'media'
-        ? 'media.generate'
-        : 'copy.generate';
+/**
+ * `mutatePlan` runs BEFORE the freeze, so the result is a legitimately frozen
+ * snapshot of a different compiled plan — not a tampered one. Tampering after
+ * the freeze is rejected by the snapshot hash gate, which is a separate
+ * invariant with its own test.
+ */
+function buildTestPlanSnapshot(
+  kind: 'note' | 'media' | 'copy',
+  mutatePlan?: (plan: CompiledExecutionPlan) => void,
+) {
+  const executionPlan = structuredClone(
+    createCanonicalCarrierUnitRecipeRegistry().resolve(kind).plan,
+  ) as CompiledExecutionPlan;
+  mutatePlan?.(executionPlan);
   const content = {
     planId: `plan-${kind}-1`,
     planRevision: 1,
@@ -1181,24 +2468,7 @@ function buildTestPlanSnapshot(kind: 'note' | 'media' | 'copy') {
       revision: 1,
       hash: 'a'.repeat(64),
     },
-    executionPlan: {
-      schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
-      units: [
-        {
-          unitId: 'unit-1',
-          unitType,
-          primitive: 'generate' as const,
-        },
-      ],
-      dependencyGroups: [{ groupId: 'g1', unitIds: ['unit-1'] }],
-      boundedRetry: {
-        'unit-1': {
-          maxAttempts: 1,
-          maxCostCents: 0,
-          retry: { enabled: false as const },
-        },
-      },
-    },
+    executionPlan,
     deliverables: [
       {
         deliverableId: 'd1',

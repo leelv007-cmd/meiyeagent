@@ -35,6 +35,7 @@ import {
   type ComposerPlanMemoryDegradation,
   approvalBasisForSubmission,
   compileFinalizeExecutionPlanFreeze,
+  ExecutionPlanFreezeError,
   proposalFromSubmission,
 } from './composer-plan-session.js';
 import { FixtureAgentKernel } from './agent-kernel.js';
@@ -890,6 +891,127 @@ test('compile-finalize freezes the copy plan; freeze matches the compiled revisi
     approvalBasis: approvalBasisForSubmission(submission.snapshot.lens),
   });
   assert.deepEqual(rebuilt, freeze);
+});
+
+test('P0-C: freezing a multi-carrier plan revision fails closed instead of half-delivering', async () => {
+  // A Plan revision may span carriers (Living Plan, quote and credit cost all
+  // project that, and the compiler emits one execution plan per carrier), but a
+  // freeze carries ONE executionPlan next to the revision's full deliverable
+  // list. Freezing a cross-carrier revision would promise every deliverable and
+  // execute only the first carrier's units. The freeze boundary is the single
+  // point where a Plan becomes a durable Make, so it is where that fails closed.
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const compiled = await compiler.compile({
+    workspaceId: 'ws-multi-carrier',
+    threadId: 'thread-multi-carrier',
+    goalIds: ['goal-1'],
+    planId: 'plan-multi-carrier-freeze',
+    proposal: {
+      goalNarrative: '小红书图文加朋友圈短文案',
+      whyNow: '明天下午空档',
+      recommendedDeliverables: [
+        {
+          carrier: 'note',
+          platform: 'xiaohongshu',
+          quantity: 6,
+          purpose: '案例图文',
+        },
+        {
+          carrier: 'copy',
+          platform: 'wechat_moments',
+          quantity: 1,
+          purpose: '短文案',
+        },
+      ],
+      expressionStrategy: { voice: '专业温和', promotionIntensity: 'soft' },
+      factIntentions: ['门店地址'],
+      assetIntentions: ['before_after_case'],
+      assumptions: [{ key: 'tone', statement: '少一点硬广', risk: 'low' }],
+    },
+    intentRevision: 1,
+    contextBundleId: 'bundle-multi-carrier',
+    contextRevision: '1',
+    harnessReleaseId: 'release-1',
+    now: '2026-08-09T12:00:00.000Z',
+  });
+
+  // Compilation itself succeeds and splits per carrier: the Plan is quotable and
+  // displayable across carriers.
+  assert.deepEqual(
+    compiled.executionPlans.map((plan) => plan.carrier),
+    ['note', 'copy'],
+  );
+  assert.deepEqual(
+    compiled.revision.deliverables.map((item) => item.kind),
+    ['note', 'copy'],
+  );
+
+  // Producing a durable freeze from it does not.
+  assert.throws(
+    () =>
+      compileFinalizeExecutionPlanFreeze({
+        result: {
+          revision: compiled.revision,
+          executionPlan: compiled.executionPlan,
+        },
+        contextBundleId: 'bundle-multi-carrier',
+        contextRevision: '1',
+        approvalBasis: 'merchant_confirmed',
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof ExecutionPlanFreezeError);
+      assert.equal(error.code, 'MULTI_CARRIER_FREEZE_UNSUPPORTED');
+      assert.match(error.message, /spans note, copy/);
+      assert.match(error.message, /execute only note/);
+      return true;
+    },
+  );
+
+  // Single-carrier revisions still freeze, so the gate is not a blanket block.
+  const singleCarrier = await compiler.compile({
+    workspaceId: 'ws-multi-carrier',
+    threadId: 'thread-multi-carrier',
+    goalIds: ['goal-1'],
+    planId: 'plan-single-carrier-freeze',
+    proposal: {
+      goalNarrative: '只要小红书图文',
+      whyNow: '明天下午空档',
+      recommendedDeliverables: [
+        {
+          carrier: 'note',
+          platform: 'xiaohongshu',
+          quantity: 6,
+          purpose: '案例图文',
+        },
+      ],
+      expressionStrategy: { voice: '专业温和' },
+      factIntentions: ['门店地址'],
+      assetIntentions: ['before_after_case'],
+      assumptions: [{ key: 'tone', statement: '少一点硬广', risk: 'low' }],
+    },
+    intentRevision: 1,
+    contextBundleId: 'bundle-multi-carrier',
+    contextRevision: '1',
+    harnessReleaseId: 'release-1',
+    now: '2026-08-09T12:00:00.000Z',
+  });
+  const frozen = compileFinalizeExecutionPlanFreeze({
+    result: {
+      revision: singleCarrier.revision,
+      executionPlan: singleCarrier.executionPlan,
+    },
+    contextBundleId: 'bundle-multi-carrier',
+    contextRevision: '1',
+    approvalBasis: 'merchant_confirmed',
+  });
+  assert.deepEqual(
+    frozen.deliverables.map((item) => item.kind),
+    ['note'],
+  );
 });
 
 test('pure copy stays frozen with policy_exempt_copy and no decision ref (U9)', async () => {

@@ -396,7 +396,6 @@ test('compiled plan is data: retry default off, dependency groups, cache key has
     planId: 'plan-exec-1',
     proposal: baseProposal({
       recommendedDeliverables: [
-        { carrier: 'copy', quantity: 1, purpose: '纯文案' },
         { carrier: 'note', platform: 'xiaohongshu', quantity: 2, purpose: '笔记' },
       ],
     }),
@@ -433,6 +432,14 @@ test('compiled plan is data: retry default off, dependency groups, cache key has
     assert.equal(plan.cachePolicies?.[unit.unitId], undefined);
   }
 
+  // Every cacheable unit carries its own policy, not just context.read. When
+  // only the context unit was wired the check unit silently lost its policy.
+  const cacheableTypes = plan.units
+    .filter((unit) => plan.cachePolicies?.[unit.unitId])
+    .map((unit) => unit.unitType)
+    .sort();
+  assert.deepEqual(cacheableTypes, ['compliance.check', 'context.read']);
+
   // Direct cache key helper contract.
   const key = buildExecutionUnitCacheKey({
     workspaceId: 'ws-a',
@@ -451,6 +458,103 @@ test('compiled plan is data: retry default off, dependency groups, cache key has
       }),
     ExecutionUnitRegistryError,
   );
+});
+
+// ─── P0-C: quantity actually compiles ───────────────────────────────────────
+
+async function compileNotePlan(quantity: number) {
+  const { compiler, input } = compileInput(new MemoryMarketingPlanStore(), {
+    planId: `plan-qty-${quantity}`,
+    proposal: baseProposal({
+      recommendedDeliverables: [
+        { carrier: 'note', platform: 'xiaohongshu', quantity, purpose: '笔记' },
+      ],
+    }),
+  });
+  return (await compiler.compile(input)).executionPlan;
+}
+
+test('P0-C: requested quantity expands the repeatable step instead of producing the same plan', async () => {
+  const one = await compileNotePlan(1);
+  const seven = await compileNotePlan(7);
+
+  const pageUnits = (plan: Awaited<ReturnType<typeof compileNotePlan>>) =>
+    plan.units.filter((unit) => unit.unitId.startsWith('unit-note-pages'));
+  assert.equal(pageUnits(one).length, 1);
+  assert.equal(pageUnits(seven).length, 7);
+
+  // Distinct unit ids, and each instance names which deliverable unit it is —
+  // the executor keys its durable effects on exactly these fields.
+  const ids = pageUnits(seven).map((unit) => unit.unitId);
+  assert.equal(new Set(ids).size, 7);
+  assert.deepEqual(
+    pageUnits(seven).map(
+      (unit) => (unit.input as { deliverableIndex?: number }).deliverableIndex,
+    ),
+    [0, 1, 2, 3, 4, 5, 6],
+  );
+  for (const unit of pageUnits(seven)) {
+    assert.equal(
+      (unit.input as { deliverableId?: string }).deliverableId,
+      'd1-note',
+    );
+  }
+
+  // The expanded units are scheduled, not orphaned.
+  const scheduled = seven.dependencyGroups.flatMap((group) => group.unitIds);
+  assert.equal(scheduled.length, seven.units.length);
+  assert.equal(new Set(scheduled).size, scheduled.length);
+  for (const id of ids) assert.ok(scheduled.includes(id));
+
+  // The plan a merchant is quoted for differs; it used to be byte-identical.
+  assert.notDeepEqual(one.units, seven.units);
+  assert.notEqual(JSON.stringify(one), JSON.stringify(seven));
+});
+
+test('P0-C: a multi-carrier plan compiles one execution plan per carrier', async () => {
+  // Restores the deliverable line that was deleted to keep this fixture
+  // single-carrier, which is what hid the per-carrier constant. The Plan is
+  // allowed to span carriers; one Make execution is not, so compilation splits
+  // rather than rejecting the revision.
+  const { compiler, input } = compileInput(new MemoryMarketingPlanStore(), {
+    planId: 'plan-multi-carrier-1',
+    proposal: baseProposal({
+      recommendedDeliverables: [
+        { carrier: 'copy', quantity: 1, purpose: '纯文案' },
+        { carrier: 'note', platform: 'xiaohongshu', quantity: 2, purpose: '笔记' },
+      ],
+    }),
+  });
+  const result = await compiler.compile(input);
+
+  assert.deepEqual(
+    result.executionPlans.map((compiled) => compiled.carrier),
+    ['copy', 'note'],
+  );
+  // Both carriers are quoted on one revision.
+  assert.deepEqual(
+    result.revision.deliverables.map((item) => `${item.kind}:${item.quantity}`),
+    ['copy:1', 'note:2'],
+  );
+  // Each plan carries only its own carrier's units, so neither can execute the
+  // other's steps under the wrong effect-key namespace.
+  const [copyPlan, notePlan] = result.executionPlans;
+  assert.ok(copyPlan && notePlan);
+  for (const unit of copyPlan.executionPlan.units) {
+    assert.match(unit.unitId, /^unit-copy-/);
+  }
+  for (const unit of notePlan.executionPlan.units) {
+    assert.match(unit.unitId, /^unit-note-/);
+  }
+  // The note carrier asked for 2, so its repeatable step expanded to 2.
+  assert.equal(
+    notePlan.executionPlan.units.filter((unit) =>
+      unit.unitId.startsWith('unit-note-pages'),
+    ).length,
+    2,
+  );
+  // The convenience field is the first carrier's plan, not a merged one.
+  assert.deepEqual(result.executionPlan, copyPlan.executionPlan);
 });
 
 // ─── A18 + no grammar interpreter ───────────────────────────────────────────

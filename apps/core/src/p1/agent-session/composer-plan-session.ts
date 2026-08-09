@@ -870,9 +870,30 @@ export class ComposerPlanSessionCoordinator
   }
 }
 
+export class ExecutionPlanFreezeError extends Error {
+  readonly code: string;
+
+  constructor(code: string, message: string) {
+    super(message);
+    this.name = 'ExecutionPlanFreezeError';
+    this.code = code;
+  }
+}
+
 /**
  * Deterministic bundle fingerprint for the freeze: same bundle + revision
  * always yields the same contextBundleRef.hash (idempotent freeze).
+ *
+ * This is the single point where a Plan becomes a durable Make, so it is where
+ * the one-carrier-per-execution rule is enforced. A Plan revision may span
+ * carriers — the Living Plan, the quote and the credit cost all project a
+ * multi-carrier plan, and PlanCompiler compiles one execution plan per carrier —
+ * but a freeze carries exactly one `executionPlan` alongside the revision's FULL
+ * deliverable list. Freezing a multi-carrier revision would therefore promise
+ * every deliverable while executing only the first carrier's units: a silent
+ * half-delivery that the merchant has already been quoted for. That fails closed
+ * here, naming the carriers, until one Make per carrier is actually wired
+ * (V31-47).
  */
 export function compileFinalizeExecutionPlanFreeze(input: {
   result: Pick<CompilePlanResult, 'revision' | 'executionPlan'>;
@@ -882,6 +903,13 @@ export function compileFinalizeExecutionPlanFreeze(input: {
 }): ExecutionPlanCompileFreeze {
   const { result } = input;
   const revision = result.revision;
+  const carriers = [...new Set(revision.deliverables.map((item) => item.kind))];
+  if (carriers.length > 1) {
+    throw new ExecutionPlanFreezeError(
+      'MULTI_CARRIER_FREEZE_UNSUPPORTED',
+      `A durable execution freeze carries one carrier's execution plan, but plan ${revision.planId} revision ${revision.revision} spans ${carriers.join(', ')}. Freezing it would promise every deliverable and execute only ${carriers[0]}. Split it into one Make per carrier.`,
+    );
+  }
   return {
     planId: revision.planId,
     planRevision: revision.revision,

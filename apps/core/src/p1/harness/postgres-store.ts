@@ -81,6 +81,8 @@ import {
   type AdminConfigRepository,
 } from '../admin-config/foundation-module.js';
 import { harnessLogicalId, harnessRuntimeId } from './workspace-scope.js';
+import { LEGACY_REPLAY_ADMISSION_LOCK } from './legacy-replay-admission-lock.js';
+import { isLegacyReplayAdmissionSealed } from './legacy-replay-admission-seal.js';
 import {
   projectTodayRecommendation,
   type TodayRecommendationRecord,
@@ -225,6 +227,28 @@ export class PostgresHarnessStore
         payload jsonb not null,
         created_at timestamptz not null default now()
       );
+
+      -- V31-26a: legacy replay admission seal. Lives here, beside the table
+      -- claim() reads, so the gate never has to probe for schema presence.
+      create table if not exists harness_runtime.legacy_replay_admission_seal (
+        singleton boolean primary key default true check (singleton),
+        deployment_id text not null,
+        evidence_audit_id text not null,
+        sealed_at timestamptz not null default now()
+      );
+
+      create or replace function harness_runtime.reject_legacy_replay_seal_mutation()
+      returns trigger language plpgsql as $$
+      begin
+        raise exception 'legacy replay admission seal is append-only';
+      end $$;
+
+      drop trigger if exists legacy_replay_admission_seal_immutable
+        on harness_runtime.legacy_replay_admission_seal;
+      create trigger legacy_replay_admission_seal_immutable
+        before update or delete on harness_runtime.legacy_replay_admission_seal
+        for each row
+        execute function harness_runtime.reject_legacy_replay_seal_mutation();
 
       create table if not exists harness_runtime.observability_root_claims (
         workflow_id text primary key,
@@ -534,6 +558,9 @@ export class PostgresHarnessStore
     try {
       await client.query('begin');
       await client.query('select pg_advisory_xact_lock(hashtext($1))', [
+        LEGACY_REPLAY_ADMISSION_LOCK,
+      ]);
+      await client.query('select pg_advisory_xact_lock(hashtext($1))', [
         runtimeTaskId,
       ]);
       const existing = await client.query<{
@@ -569,6 +596,31 @@ export class PostgresHarnessStore
               request: row.request as HarnessWorkflowInput,
             }
           : { kind: 'conflict' as const };
+      }
+      // P0-B: schema presence must never close this branch. The installation
+      // ledger is archive *evidence*; admission is closed only by the explicit
+      // append-only seal an operator records once every branch produces an
+      // ExecutionPlanSnapshot. Until then the legacy branch stays admissible.
+      if (await isLegacyReplayAdmissionSealed(client)) {
+        const admitted = await client.query<{ admitted: boolean }>(
+          `select exists (
+             select 1
+               from p1_execution_plan_snapshots snapshots
+              where snapshots.workflow_id=$1
+                and snapshots.snapshot_hash=$2
+                and snapshots.payload=$3::jsonb
+           ) as admitted`,
+          [
+            input.taskId,
+            input.request.executionPlanSnapshot?.snapshotHash ?? null,
+            JSON.stringify(input.request.executionPlanSnapshot ?? null),
+          ],
+        );
+        if (!admitted.rows[0]?.admitted) {
+          throw new Error(
+            'Legacy replay admission is closed by the recorded installation seal.',
+          );
+        }
       }
       await client.query(
         `insert into harness_runtime.task_requests

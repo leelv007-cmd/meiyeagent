@@ -57,10 +57,8 @@ import {
   type ExecutionPlanAdmissionPort,
   type SnapshotLiveFacts,
 } from './execution-plan-admission.js';
-import {
-  projectLegacyFromMakeRequest,
-  type ShadowReconciliationService,
-} from './shadow-reconciliation.js';
+import type { ShadowReconciliationService } from './shadow-reconciliation.js';
+import type { LegacyShadowObservationReader } from './legacy-shadow-observation-reader.js';
 import type {
   ProductionSampleInput,
   ProductionSampleOutcome,
@@ -775,8 +773,10 @@ export interface HarnessDbosWorkflowOptions {
    */
   shadowReconciliation?: Pick<
     ShadowReconciliationService,
-    'maybeReconcileOnExecutionComplete'
+    'maybeReconcileOnExecutionComplete' | 'shouldObserveLegacyExecution'
   >;
+  /** Read-only legacy pilot receipt. Missing receipt means no shadow sample. */
+  legacyShadowObservationReader?: LegacyShadowObservationReader;
   /**
    * V31-23 L0.5: production sampling on Make complete (same sampling point as
    * shadow reconciliation). shouldSample gates by admin-config sample rate;
@@ -824,6 +824,7 @@ export function registerHarnessDbosWorkflow(
       refreshExecutionPlanLiveBindings,
       resolveForceLegacyFiveStage,
       shadowReconciliation,
+      legacyShadowObservationReader,
       productionSampling,
       makeSteeringBoundary,
       interrupts,
@@ -892,6 +893,19 @@ export function registerHarnessDbosWorkflow(
         return DBOS.runStep(operation, {
           name: effectIdempotencyKey.replaceAll(':', '-'),
         });
+      },
+      recordLegacyShadowObservation(input) {
+        return DBOS.runStep(
+          () =>
+            persistence.recordStageTrace({
+              workspaceId: input.workspaceId,
+              id: `trace-${input.workflowId}-legacy-shadow-observation`,
+              taskId: input.workflowId,
+              stage: 'legacy_shadow_observation',
+              payload: { legacyShadowObservation: input.observation },
+            }),
+          { name: 'persist-legacy-shadow-observation' },
+        );
       },
       ...(billing?.promoteMerchantExecution
         ? {
@@ -1530,39 +1544,41 @@ export function registerHarnessDbosWorkflow(
         : undefined;
       // V31-13: sample shadow reconcile on successful Make complete (no daemon).
       // Failures inside the service are swallowed; this step must not fail the run.
-      if (shadowReconciliation && effectiveRequest.executionPlanSnapshot) {
+      if (
+        shadowReconciliation &&
+        legacyShadowObservationReader &&
+        effectiveRequest.executionPlanSnapshot
+      ) {
         await DBOS.runStep(
           async () => {
-            const snapshot = effectiveRequest.executionPlanSnapshot!;
-            const decisionFactRefs = effectiveRequest.decisionReferences?.map(
-              (ref) => ref.id,
-            );
-            const oldChain = projectLegacyFromMakeRequest({
-              snapshot,
-              boundedExecution: effectiveRequest.boundedExecution,
-              observedDeliverables: effectiveRequest.executionSnapshot?.deliverables?.map(
-                (item) => ({
-                  kind: item.kind,
-                  quantity: item.quantity,
-                }),
-              ),
-              // Only pass when the request independently carries fact refs.
-              observedFactRefs:
-                decisionFactRefs && decisionFactRefs.length > 0
-                  ? decisionFactRefs
-                  : undefined,
-            });
-            if (!oldChain) return { sampled: false as const };
-            const now = new Date(await DBOS.now()).toISOString();
-            return shadowReconciliation.maybeReconcileOnExecutionComplete({
-              workflowId,
-              workspaceId: effectiveRequest.workspaceId,
-              snapshot,
-              oldChain,
-              now,
-              operatorId: 'system',
-              correlationId: workflowId,
-            });
+            try {
+              const snapshot = effectiveRequest.executionPlanSnapshot!;
+              if (
+                !(await shadowReconciliation.shouldObserveLegacyExecution(
+                  workflowId,
+                ))
+              ) {
+                return { sampled: false as const };
+              }
+              const oldChain = await legacyShadowObservationReader.read({
+                workflowId,
+                workspaceId: effectiveRequest.workspaceId,
+              });
+              if (!oldChain) return { sampled: false as const };
+              const now = new Date(await DBOS.now()).toISOString();
+              return shadowReconciliation.maybeReconcileOnExecutionComplete({
+                workflowId,
+                workspaceId: effectiveRequest.workspaceId,
+                snapshot,
+                oldChain,
+                now,
+                operatorId: 'system',
+                correlationId: workflowId,
+              });
+            } catch (error) {
+              console.error('Legacy shadow observation failed.', error);
+              return { sampled: false as const };
+            }
           },
           { name: 'shadow-reconciliation-sample' },
         );
