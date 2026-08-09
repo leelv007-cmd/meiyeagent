@@ -238,3 +238,114 @@ test(
     }
   },
 );
+
+test(
+  // V31-18 AC2: "false persistence=0" — a one-off correction is an audit
+  // signal, never a preference (recordPreferenceSignal requires 3 distinct
+  // tasks before it proposes a candidate at all; one signal must land no
+  // row in the active-heads table).
+  'Postgres false persistence gate: one correction signal lands zero rows in p1_preference_heads',
+  { skip: !process.env.TEST_DATABASE_URL },
+  async () => {
+    const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
+    const repository = new PostgresReuseMemoryRepository(pool);
+    const workspaceId = `false-persistence-${randomUUID()}`;
+    await repository.migrate();
+    try {
+      const service = new ReuseMemoryService(
+        repository,
+        {
+          verifyCandidate: async () => {},
+          verifyRevision: async () => {},
+        },
+        () => '2026-08-10T03:00:00.000Z',
+      );
+      const recorded = await service.recordPreferenceSignal(
+        { workspaceId },
+        {
+          signalId: 'signal-temporary-1',
+          decisionId: 'decision-temporary-1',
+          taskId: 'task-temporary-1',
+          semanticKey: 'tone.less-promotional',
+          value: true,
+          defaultScope: { storeId: 'store-a' },
+          kind: 'modified',
+        },
+      );
+      assert.equal(recorded.candidate, null);
+      assert.deepEqual(await service.listConfirmedPreferences(workspaceId), []);
+      const heads = await pool.query(
+        'SELECT count(*)::int AS n FROM p1_preference_heads WHERE workspace_id = $1',
+        [workspaceId],
+      );
+      assert.equal(heads.rows[0]?.n, 0);
+    } finally {
+      await repository.deleteWorkspaceForTest(workspaceId);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  // V31-18 AC1 first half: "跨店泄漏=0" — the server-side retrieval SQL
+  // scopes by workspace_id, so workspace B's read can never surface
+  // workspace A's confirmed preference rows.
+  'Postgres cross-store isolation: workspace B never retrieves workspace A confirmed preferences',
+  { skip: !process.env.TEST_DATABASE_URL },
+  async () => {
+    const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
+    const repository = new PostgresReuseMemoryRepository(pool);
+    const workspaceA = `cross-store-a-${randomUUID()}`;
+    const workspaceB = `cross-store-b-${randomUUID()}`;
+    await repository.migrate();
+    try {
+      const service = new ReuseMemoryService(
+        repository,
+        {
+          verifyCandidate: async () => {},
+          verifyRevision: async () => {},
+        },
+        () => '2026-08-10T03:00:00.000Z',
+      );
+      await service.proposePreference({
+        candidateId: 'preference-candidate-cross-store',
+        workspaceId: workspaceA,
+        semanticKey: 'tone.cross-store',
+        proposedValue: true,
+        defaultScope: { storeId: 'store-a' },
+        evidenceDecisionIds: ['decision-cross-store'],
+        evidenceTaskIds: ['task-cross-store'],
+        trigger: 'explicit_long_term_intent',
+        status: 'pending',
+        proposedAt: '2026-08-10T03:00:00.000Z',
+      });
+      await service.confirmPreference(
+        { workspaceId: workspaceA, userId: 'owner-a' },
+        {
+          candidateId: 'preference-candidate-cross-store',
+          preferenceId: 'preference-cross-store',
+          expectedRevision: 0,
+          positiveExamples: ['少一点促销感'],
+          negativeExamples: [],
+          idempotencyKey: 'confirm-cross-store',
+        },
+      );
+      const fromA = await service.listConfirmedPreferences(workspaceA);
+      assert.equal(fromA.length, 1);
+      assert.equal(fromA[0]?.preferenceId, 'preference-cross-store');
+      // Same service instance, only the workspaceId argument changes: this
+      // presses the SQL predicate itself, not a separately-scoped client.
+      const fromB = await service.listConfirmedPreferences(workspaceB);
+      assert.deepEqual(fromB, []);
+      const rowsUnderB = await pool.query(
+        'SELECT count(*)::int AS n FROM p1_preference_heads WHERE workspace_id = $1',
+        [workspaceB],
+      );
+      assert.equal(rowsUnderB.rows[0]?.n, 0);
+    } finally {
+      await repository.deleteWorkspaceForTest(workspaceA);
+      await repository.deleteWorkspaceForTest(workspaceB);
+      await pool.end();
+    }
+  },
+);
