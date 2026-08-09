@@ -29,7 +29,12 @@ test('the send control states which of its two jobs the next press does', () => 
     /storeFactsPending:\s*creationMode === 'customized' && showProgressiveFact,/u
   );
   assert.match(home, /submitLabel=\{submitIntent\.label\}/u);
-  assert.match(home, /submitHint=\{submitIntent\.hint\}/u);
+  // V31-14: a pending typed interrupt speaks first — it is the reason the next
+  // press cannot start anything — and the two-jobs hint stays behind it.
+  assert.match(
+    home,
+    /submitHint=\{pendingInterruptGate\.hint \?\? submitIntent\.hint\}/u
+  );
   // The constant label is now only the branch where a press really starts a run.
   assert.doesNotMatch(home, /submitLabel=\{creation_entry_submit\(\)\}/u);
 });

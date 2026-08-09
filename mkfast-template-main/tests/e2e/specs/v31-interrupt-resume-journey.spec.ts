@@ -173,6 +173,12 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     const beforeText = (await interruptHost.innerText()).trim();
     expect(beforeText.length).toBeGreaterThan(0);
 
+    // §37.4-H: a pending interrupt blocks ordinary new input until answered.
+    await expect(page.getByTestId('composer-submit')).toBeDisabled();
+    await expect(page.getByTestId('composer-submit-intent')).toContainText(
+      '请先处理上方待确认事项'
+    );
+
     const invalidSchema = await page.request.post(
       '/api/core/p1/interrupts/resume',
       {
@@ -216,6 +222,13 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
         `[data-testid="agent-pending-interrupt"][data-interrupt-id="${interruptId}"]`
       )
     ).toHaveCount(0, { timeout: 60_000 });
+    // §37.4-H: resume must make the run continue, not merely retire the card.
+    // The next determinate state of an image_text run is its style question.
+    await expect(
+      page
+        .getByTestId('agent-pending-interrupt')
+        .filter({ hasText: /两种图文方向/u })
+    ).toBeVisible({ timeout: 180_000 });
     const duplicate = await page.request.post(
       '/api/core/p1/interrupts/resume',
       {
@@ -234,13 +247,14 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     });
   });
 
-  test('homepage pending interrupts list is workspace-scoped', async ({
+  test('the pending interrupt reaches the owner homepage and no other workspace', async ({
+    browser,
     page,
     request,
   }) => {
     test.setTimeout(240_000);
-    const user = await registerE2EUser(request);
-    await loginByForm(page, user);
+    const owner = await registerE2EUser(request);
+    await loginByForm(page, owner);
     await seedConfirmedStore(page);
 
     await openCustomizedCreate(page);
@@ -248,12 +262,54 @@ test.describe('V31-14 Interrupt resume journey (§37.4-H)', () => {
     const pending = page.getByTestId('agent-pending-interrupt');
     await expect(pending).toBeVisible({ timeout: 120_000 });
     const interruptId = await pending.getAttribute('data-interrupt-id');
+    const revision = await pending.getAttribute('data-interrupt-revision');
+    expect(interruptId).toBeTruthy();
 
     await page.goto('/dashboard');
     await expect(page.getByTestId('agent-pending-interrupt')).toHaveAttribute(
       'data-interrupt-id',
       interruptId!,
       { timeout: 60_000 }
+    );
+
+    // A second workspace must neither list nor resume the owner's interrupt.
+    const outsiderContext = await browser.newContext();
+    try {
+      const outsider = await outsiderContext.newPage();
+      const otherUser = await registerE2EUser(request);
+      await loginByForm(outsider, otherUser);
+      await outsider.goto('/dashboard');
+      const outsiderList = await outsider.request.get(
+        '/api/core/p1/pending-interrupts'
+      );
+      expect(outsiderList.ok(), await outsiderList.text()).toBeTruthy();
+      const listed = (await outsiderList.json()) as {
+        data?: { interrupts?: Array<{ interruptId?: string }> };
+      };
+      expect(
+        (listed.data?.interrupts ?? []).map((item) => item.interruptId)
+      ).not.toContain(interruptId);
+      const stolenResume = await outsider.request.post(
+        '/api/core/p1/interrupts/resume',
+        {
+          data: {
+            idempotencyKey: `cross-workspace:${interruptId}`,
+            interruptId,
+            revision: Number(revision),
+            schemaVersion: 'interrupt-payload/v1',
+            type: 'accept',
+          },
+        }
+      );
+      expect(stolenResume.ok()).toBeFalsy();
+    } finally {
+      await outsiderContext.close();
+    }
+
+    // The owner's interrupt is untouched by the foreign attempt.
+    await expect(page.getByTestId('agent-pending-interrupt')).toHaveAttribute(
+      'data-interrupt-revision',
+      revision!
     );
   });
 
