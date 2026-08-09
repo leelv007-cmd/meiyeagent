@@ -1504,7 +1504,14 @@ async function seedRejectedConfirmation(
   });
 }
 
-async function createFixture() {
+/**
+ * @param clock server clock the domain reads for decide/expiry deadlines.
+ * Defaults inside the hold window used by the fixtures below — the wall clock
+ * would silently turn every hardcoded `holdExpiresAt` into a time bomb.
+ */
+async function createFixture(
+  clock: () => Date = () => new Date('2026-08-08T12:30:00.000Z'),
+) {
   const schema = `confirm_${randomUUID().replaceAll('-', '')}`;
   const pool = new Pool({ connectionString });
   await pool.query(`CREATE SCHEMA ${schema}`);
@@ -1541,6 +1548,8 @@ async function createFixture() {
     migration.requestStore,
     migration.decisionStore,
     confirmationCreditPortFromPostgresLedger(creditLedger),
+    undefined,
+    { clock },
   );
 
   return {

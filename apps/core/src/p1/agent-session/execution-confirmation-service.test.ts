@@ -388,6 +388,8 @@ test('replay completes a rejected decision after a crash immediately after decis
     requests,
     new CrashAfterDecisionAppend(),
     confirmationCreditPortFromMemoryLedger(ledger),
+    undefined,
+    { clock: () => new Date('2026-08-08T12:30:00.000Z') },
   );
   await service.createRequest(baseCreate({ creditCost: 4 }));
   const decision = {
@@ -440,6 +442,8 @@ test('replay completes a rejected decision after a crash immediately after statu
     new CrashAfterStatusTransition(),
     new MemoryPlanConfirmationDecisionStore(),
     confirmationCreditPortFromMemoryLedger(ledger),
+    undefined,
+    { clock: () => new Date('2026-08-08T12:30:00.000Z') },
   );
   await service.createRequest(baseCreate({ creditCost: 4 }));
   const decision = {

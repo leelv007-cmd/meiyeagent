@@ -38,7 +38,7 @@ const diagnostics: DiagnosticRepository = {
   },
 };
 
-function makeService(credits = 20) {
+function makeService(credits = 20, now = '2026-08-09T13:00:00.000Z') {
   const ledger = new MemoryCreditLedger();
   ledger.grant({
     id: 'lot-1',
@@ -53,6 +53,11 @@ function makeService(credits = 20) {
     new MemoryExecutionConfirmationRequestStore(),
     new MemoryPlanConfirmationDecisionStore(),
     confirmationCreditPortFromMemoryLedger(ledger),
+    undefined,
+    // Route and domain read one server clock (production wires wall time to
+    // both). Leaving the domain on wall time made every hold deadline here a
+    // time bomb against the hardcoded HOLD instant.
+    { clock: () => new Date(now) },
   );
   return { ledger, service };
 }
@@ -69,7 +74,7 @@ async function startServer(
   now = '2026-08-09T13:00:00.000Z',
   credits = 20,
 ) {
-  const { ledger, service } = makeService(credits);
+  const { ledger, service } = makeService(credits, now);
   const server = createCoreServer({
     diagnosticRepository: diagnostics,
     clock: () => new Date(now),
@@ -126,7 +131,9 @@ async function jsonFetch(url: string, init: RequestInit) {
 }
 
 test('confirmation HTTP surface creates, lists, decides and enforces the immutable decision', async (t) => {
-  const { base, headers } = await startServer(t);
+  // Server clock inside the hold window: decide is only lawful before the
+  // deadline (a past-deadline decide is the expiry path, covered separately).
+  const { base, headers } = await startServer(t, '2026-08-08T13:00:00.000Z');
 
   const created = await jsonFetch(base, {
     method: 'POST',
