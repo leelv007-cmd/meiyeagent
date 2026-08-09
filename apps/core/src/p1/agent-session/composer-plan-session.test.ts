@@ -428,6 +428,53 @@ test('system-only block and empty decision never fallback-compile a plan', async
   }
 });
 
+test('a turn that neither proposes nor asks fails the run instead of parking it', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    // This is exactly what the fixture AgentKernel returns today: a decision
+    // with no proposal and no question. It used to leave the run `waiting` with
+    // no interrupt raised, so no merchant action could ever advance it and no
+    // plan existed to start — a wait state with no producer for its exit.
+    async runComposerTurn() {
+      return {
+        decision: {
+          merchantMessage: 'fixture-session-turn',
+          action: { kind: 'finish_turn' },
+          evidenceRefs: [],
+          assumptions: [],
+        },
+      } as never;
+    },
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+
+  const submission = record('task-unusable-turn', '做一组图文');
+  await assert.rejects(
+    coordinator.prepare({ submission }),
+    /produced neither a plan proposal nor a merchant question/u,
+  );
+  assert.equal(Boolean(submission.executionPlanFreeze), false);
+  const threads = await sessions.listRecentThreads({
+    resourceId: 'workspace-1',
+    limit: 10,
+  });
+  assert.equal(threads.length, 1);
+  const runs = await sessions.listRuns({
+    resourceId: 'workspace-1',
+    threadId: threads[0]!.threadId,
+  });
+  assert.deepEqual(
+    runs.map((run) => run.status),
+    ['failed'],
+  );
+});
+
 test('revise recompiles six pages into four units and binds a fresh ProductQuote', async () => {
   const sessions = new MemoryAgentSessionStore();
   const plans = new MemoryMarketingPlanStore();

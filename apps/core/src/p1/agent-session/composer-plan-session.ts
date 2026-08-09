@@ -186,6 +186,7 @@ export class ComposerPlanSessionCoordinator
           harnessReleaseId: started.run.harnessReleaseId,
         });
         if (this.compiler.runComposerTurn && !isCompilableTurn(turnResult)) {
+          assertTurnCanBeWaitedOn(turnResult);
           await this.requestClarificationInterrupt({
             resourceId,
             threadId,
@@ -725,6 +726,23 @@ export function approvalBasisForSubmission(
   lens: CreationSubmissionRecord['snapshot']['lens'],
 ): ExecutionPlanApprovalBasis {
   return lens === 'copy' ? 'policy_exempt_copy' : 'merchant_confirmed';
+}
+
+/**
+ * A non-compilable turn may only park the run when something can still move it:
+ * an `ask_merchant` decision becomes a clarification interrupt the merchant can
+ * answer, and a null decision / systemOnlyBlock is the deliberate
+ * nothing-was-produced contract. A decision that finished the turn without a
+ * plan and without a question is neither — leaving that `waiting` gave the run
+ * no plan to start and no question to answer, so nothing could ever advance it.
+ */
+function assertTurnCanBeWaitedOn(result: AgentTurnRunnerResult | null): void {
+  const decision = result?.decision;
+  if (!decision || result?.systemOnlyBlock) return;
+  if (decision.action.kind === 'ask_merchant') return;
+  throw new Error(
+    `Composer Intent turn produced neither a plan proposal nor a merchant question (action=${decision.action.kind}).`,
+  );
 }
 
 function isCompilableTurn(

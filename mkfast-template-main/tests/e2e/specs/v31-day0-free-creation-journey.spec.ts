@@ -10,6 +10,16 @@
  * - the result contains no fabricated store facts (the seed store was never
  *   confirmed; its name/project/address must not appear anywhere)
  *
+ * Sequence under test (the real one, verified in Core):
+ * `POST /p1/composer/submissions` runs the Agent Session Intent turn before the
+ * PlanCompiler, and pure copy is the **only** approval exemption
+ * (`approvalBasisForSubmission` → `policy_exempt_copy`,
+ * `apps/core/src/p1/agent-session/composer-plan-session.ts`). So this journey —
+ * and only this journey — may answer `makeReady: true` and start Make without
+ * any merchant decision: no execution-confirmation card, and no explicit
+ * `tasks/:taskId/start` command. Both of those absences are asserted, because
+ * "copy is exempt" is a claim about what does NOT happen.
+ *
  * Real Core session end to end (Web → Core → Harness; only the model boundary
  * is fixture mode). No mocks on the critical chain, no conditional assertions,
  * no test.skip/fixme.
@@ -27,9 +37,11 @@ import {
   openComposerCapsule,
   selectComposerLens,
 } from '../fixtures/ui-journey';
-import { firstTokenLocator } from '../fixtures/user-activation';
 
 const NEVER_SEEDED_STORE_FACTS = ['E2E 美业门店', '透亮猫眼', '湖墅南路'];
+
+const FREE_INTENT =
+  '帮我的美容工作室写一条克制的开业文案，先不写具体项目和价格';
 
 async function operationsQuery<T>(
   page: Page,
@@ -80,6 +92,18 @@ test.describe('V31-07 Day-0 自由创作 (§37.4-A)', () => {
     await loginByForm(page, user);
     await page.goto('/dashboard');
 
+    // Copy is exempt from the merchant decision, which is a statement about
+    // requests that never happen — so record them from the first navigation on.
+    const explicitStartRequests: string[] = [];
+    page.on('request', (candidate) => {
+      if (
+        candidate.method() === 'POST' &&
+        /\/api\/core\/p1\/composer\/tasks\/[^/]+\/start$/u.test(candidate.url())
+      ) {
+        explicitStartRequests.push(candidate.url());
+      }
+    });
+
     // Honest precondition: the merchant really has no store.
     const initial = await productState(page);
     expect(initial.store).toBeNull();
@@ -99,31 +123,43 @@ test.describe('V31-07 Day-0 自由创作 (§37.4-A)', () => {
     // 输出类型 stays in the bottom capsule in both modes (spec 2.4).
     await selectComposerLens(page, 'copy');
 
-    // Free mode pins the generation model explicitly.
+    // Free mode pins the generation model explicitly. The select leads with a
+    // 「选择模型」 placeholder whose value is empty, so picking the first option
+    // by label pins nothing at all — the pinned model is the first option that
+    // carries a real catalog id, and the select must end up holding it.
     const modelSelect = page.getByTestId('composer-free-model-select');
     await expect(modelSelect).toBeEnabled({ timeout: 30_000 });
-    const modelOptions = await modelSelect.locator('option').allTextContents();
-    const firstModel = modelOptions.find((label) => label.trim().length > 0);
-    expect(firstModel, 'free mode must offer at least one model').toBeTruthy();
-    await modelSelect.selectOption({ label: firstModel });
+    const firstRealModel = modelSelect
+      .locator('option[value]:not([value=""])')
+      .first();
+    await expect(
+      firstRealModel,
+      'free mode must offer at least one selectable model'
+    ).toHaveCount(1);
+    const pinnedModelId = (await firstRealModel.getAttribute('value')) ?? '';
+    expect(pinnedModelId.length).toBeGreaterThan(0);
+    await modelSelect.selectOption(pinnedModelId);
+    await expect(
+      modelSelect,
+      'the pinned model must survive the selection'
+    ).toHaveValue(pinnedModelId);
 
     // 提交自由创作 — a generic intent that claims no store facts.
     const intentInput = page.getByTestId('composer-intent-input');
-    await intentInput.fill(
-      '帮我的美容工作室写一条克制的开业文案，先不写具体项目和价格'
-    );
-    await expect(intentInput).toHaveValue(
-      '帮我的美容工作室写一条克制的开业文案，先不写具体项目和价格'
-    );
+    await intentInput.fill(FREE_INTENT);
+    await expect(intentInput).toHaveValue(FREE_INTENT);
 
-    // 目的地明确为小红书(避免 destination 澄清打断自由创作路径)。
+    // 目的地明确为小红书(避免 destination 澄清打断自由创作路径)。文案 lens pins
+    // 朋友圈 as its default, so 小红书 starts unpressed and this really is one
+    // merchant choice — these chips toggle, so the state is asserted on both
+    // sides of the click instead of guarded by a conditional.
     const destinationPanel = await openComposerCapsule(page, 'destination');
     const destination = page.getByTestId(
       'composer-destination-option-xiaohongshu'
     );
-    if ((await destination.getAttribute('aria-pressed')) !== 'true') {
-      await destination.click();
-    }
+    await expect(destination).toHaveAttribute('aria-pressed', 'false');
+    await destination.click();
+    await expect(destination).toHaveAttribute('aria-pressed', 'true');
     await closeComposerCapsule(page, destinationPanel);
 
     await expect(page.getByTestId('composer-quote-line')).toBeVisible({
@@ -132,19 +168,26 @@ test.describe('V31-07 Day-0 自由创作 (§37.4-A)', () => {
     // D-175: no store/project grounding blocker on the free path.
     await expect(page.getByTestId('composer-grounding-blocker')).toHaveCount(0);
 
+    const submit = page.getByTestId('composer-submit');
+    await expect(
+      submit,
+      'the free composer must be ready to submit before the journey clicks send'
+    ).toBeEnabled({ timeout: 60_000 });
     const submissionResponsePromise = page.waitForResponse(
       (response) =>
         response.request().method() === 'POST' &&
         response.url().includes('/api/core/p1/composer/submissions'),
       { timeout: 120_000 }
     );
-    await page.getByTestId('composer-submit').click();
+    await submit.click();
     const submissionResponse = await submissionResponsePromise;
-    const submissionBody = JSON.parse(await submissionResponse.text()) as {
+    const submissionText = await submissionResponse.text();
+    const submissionBody = JSON.parse(submissionText) as {
       data?: {
         contentPackage?: { id?: string };
         makeReady?: boolean;
         runId?: string;
+        task?: { id?: string };
         threadId?: string;
         work?: { id?: string };
       };
@@ -155,22 +198,36 @@ test.describe('V31-07 Day-0 自由创作 (§37.4-A)', () => {
     );
     const packageId = submissionBody.data?.contentPackage?.id ?? '';
     const workId = submissionBody.data?.work?.id ?? '';
-    expect(packageId).toBeTruthy();
-    expect(workId).toBeTruthy();
-    expect(submissionBody.data?.threadId).toBeTruthy();
-    expect(submissionBody.data?.runId).toBeTruthy();
-    expect(submissionBody.data?.makeReady).toBe(true);
+    expect(packageId.length, `body=${submissionText}`).toBeGreaterThan(0);
+    expect(workId.length, `body=${submissionText}`).toBeGreaterThan(0);
+    expect(
+      (submissionBody.data?.task?.id ?? '').length,
+      `body=${submissionText}`
+    ).toBeGreaterThan(0);
+    expect(
+      (submissionBody.data?.threadId ?? '').length,
+      'the Intent turn must bind a durable Agent Thread'
+    ).toBeGreaterThan(0);
+    expect(
+      (submissionBody.data?.runId ?? '').length,
+      'the Intent turn must bind a durable Agent Run'
+    ).toBeGreaterThan(0);
+    // Pure copy is the only policy exemption: the Session still ran and
+    // returned durable handles, while Make was admitted inside this one request
+    // instead of waiting for an explicit start.
+    expect(
+      submissionBody.data?.makeReady,
+      'policy_exempt_copy must admit Make on submit'
+    ).toBe(true);
 
-    // Pure copy is the only policy exemption: Session still ran and returned
-    // durable handles, while Make was admitted without an extra start request.
-
-    // ADR-0014: stays in the conversation; first usable token streams.
+    // ADR-0014: stays in the conversation; first usable token streams. The
+    // token lives on the candidate stream itself, so the element is named
+    // rather than matched by the attribute under assertion.
     await expect(page).not.toHaveURL(/\/dashboard\/results\//u);
-    await expect(firstTokenLocator(page)).toHaveAttribute(
-      'data-has-token',
-      'true',
-      { timeout: 90_000 }
-    );
+    const candidateStream = page.getByTestId('composer-candidate-stream');
+    await expect(candidateStream).toHaveAttribute('data-has-token', 'true', {
+      timeout: 90_000,
+    });
     await expect(page.getByTestId('composer-candidate-primary')).toBeVisible();
 
     // 交付卡到达 → 安全通用结果存在。
@@ -184,6 +241,18 @@ test.describe('V31-07 Day-0 自由创作 (§37.4-A)', () => {
       { timeout: 60_000 }
     );
 
+    // The exemption, stated as the two things that must never have happened:
+    // no execution-confirmation decision was asked for, and no explicit start
+    // command was issued — yet the run delivered.
+    await expect(
+      page.getByTestId('execution-confirmation-interaction-card'),
+      'pure copy must reach delivery without a merchant execution decision'
+    ).toHaveCount(0);
+    expect(
+      explicitStartRequests,
+      'policy_exempt_copy must not need the explicit plan start command'
+    ).toEqual([]);
+
     // 通用结果内容 = 非空、且不含任何虚构门店事实(从未种过门店)。
     const packages = await operationsQuery<
       Array<{
@@ -195,15 +264,15 @@ test.describe('V31-07 Day-0 自由创作 (§37.4-A)', () => {
         }>;
       }>
     >(page, 'content_packages', {});
-    const matched = packages.find((entry) => entry.id === packageId);
     expect(
-      matched,
+      packages.map((entry) => entry.id),
       'the free-creation ContentPackage must be listed'
-    ).toBeTruthy();
+    ).toContain(packageId);
+    const matched = packages.find((entry) => entry.id === packageId)!;
     const versionText = [
-      matched!.versions?.[0]?.title ?? '',
-      matched!.versions?.[0]?.body ?? '',
-      ...(matched!.versions?.[0]?.topics ?? []),
+      matched.versions?.[0]?.title ?? '',
+      matched.versions?.[0]?.body ?? '',
+      ...(matched.versions?.[0]?.topics ?? []),
     ]
       .join('\n')
       .trim();
@@ -215,12 +284,18 @@ test.describe('V31-07 Day-0 自由创作 (§37.4-A)', () => {
       ).not.toContain(fabricated);
     }
 
-    // 候选正文同样不得虚构门店事实。
-    const candidateText = await page
-      .getByTestId('composer-candidate-primary')
-      .innerText();
+    // 商家眼前的过程与候选同样不得虚构门店事实。The whole conversation is the
+    // subject: the candidate card collapses into a summary capsule once the
+    // delivery turn lands (`candidateShouldCollapse`), so asserting on the
+    // conversation covers the streamed copy, the collapsed capsule and the
+    // delivery statement rather than whichever one happens to be mounted.
+    const conversation = page.getByTestId('composer-conversation');
+    await expect(conversation).toBeVisible();
     for (const fabricated of NEVER_SEEDED_STORE_FACTS) {
-      expect(candidateText).not.toContain(fabricated);
+      await expect(
+        conversation,
+        `the conversation must not fabricate store fact ${fabricated}`
+      ).not.toContainText(fabricated);
     }
   });
 });
