@@ -18,6 +18,7 @@ const scopeSchema = z
 const retrievalDatasetSchema = z.object({
   schemaVersion: z.literal('memory-retrieval-dataset/v1'),
   datasetId: z.string().min(1),
+  replayCount: z.number().int().min(2).max(20),
   cases: z.array(
     z.object({
       caseId: z.string().min(1),
@@ -37,6 +38,7 @@ const retrievalDatasetSchema = z.object({
           scope: scopeSchema,
           confidence: z.number().min(0).max(1),
           revoked: z.boolean().optional(),
+          expectWriteRejected: z.boolean().optional(),
         }),
       ),
       relevantIds: z.array(z.string()),
@@ -61,8 +63,9 @@ export async function runMemoryRetrievalEval(input: unknown) {
     const platform = new AgentMemoryPlatform(reuse);
 
     for (const [index, memory] of fixture.memories.entries()) {
-      const candidate = (
-        await platform.onExtracted({
+      let extracted: Awaited<ReturnType<AgentMemoryPlatform['onExtracted']>> = [];
+      try {
+        extracted = await platform.onExtracted({
           workspaceId: memory.workspaceId,
           idempotencyPrefix: `${fixture.caseId}:${index}`,
           items: [
@@ -83,8 +86,15 @@ export async function runMemoryRetrievalEval(input: unknown) {
               },
             },
           ],
-        })
-      )[0]!;
+        });
+      } catch (error) {
+        if (memory.expectWriteRejected) continue;
+        throw error;
+      }
+      if (memory.expectWriteRejected) {
+        throw new Error(`Expected memory ${memory.preferenceId} to be rejected.`);
+      }
+      const candidate = extracted[0]!;
       await platform.confirmMemoryCandidate(
         { workspaceId: memory.workspaceId, userId: 'eval-owner' },
         {
@@ -105,9 +115,14 @@ export async function runMemoryRetrievalEval(input: unknown) {
       }
     }
 
-    const retrievedIds = (
-      await platform.retrieveForInjection(fixture.query)
-    ).map((entry) => entry.memoryId);
+    const replays: string[][] = [];
+    for (let replay = 0; replay < dataset.replayCount; replay += 1) {
+      replays.push((await platform.retrieveForInjection(fixture.query)).map((entry) => entry.memoryId));
+    }
+    const retrievedIds = replays[0] ?? [];
+    const replayDistribution = Object.fromEntries(
+      retrievedIds.map((id) => [id, replays.filter((result) => result.includes(id)).length]),
+    );
     const relevant = new Set(fixture.relevantIds);
     const hits = retrievedIds.filter((id) => relevant.has(id)).length;
     const precision = retrievedIds.length === 0 ? 0 : hits / retrievedIds.length;
@@ -115,6 +130,7 @@ export async function runMemoryRetrievalEval(input: unknown) {
     const passed =
       JSON.stringify(retrievedIds) ===
         JSON.stringify(fixture.expectedRetrievedIds) &&
+      replays.every((result) => JSON.stringify(result) === JSON.stringify(retrievedIds)) &&
       precision >= fixture.minimumPrecision &&
       recall >= fixture.minimumRecall;
     cases.push({
@@ -122,6 +138,7 @@ export async function runMemoryRetrievalEval(input: unknown) {
       retrievedIds,
       precision,
       recall,
+      replayDistribution,
       passed,
     });
   }

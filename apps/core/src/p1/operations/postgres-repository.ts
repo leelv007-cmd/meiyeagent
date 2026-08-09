@@ -373,6 +373,46 @@ export class PostgresOperationsRepository implements OperationsRepository {
       ALTER TABLE p1_content_packages
         ALTER COLUMN revision SET DEFAULT 0,
         ALTER COLUMN revision SET NOT NULL;
+      UPDATE p1_content_packages AS package
+      SET payload = jsonb_set(
+        package.payload,
+        '{resultSignals}',
+        (
+          SELECT jsonb_agg(
+            CASE
+              WHEN signal.value ? 'contentPackageRevision' THEN signal.value
+              ELSE signal.value || jsonb_build_object(
+                'contentPackageRevision',
+                GREATEST(
+                  0,
+                  COALESCE((package.payload->>'revision')::integer, package.revision::integer)
+                    - jsonb_array_length(package.payload->'resultSignals')
+                    + signal.ordinality::integer - 1
+                )
+              )
+            END
+            ORDER BY signal.ordinality
+          )
+          FROM jsonb_array_elements(package.payload->'resultSignals')
+            WITH ORDINALITY AS signal(value, ordinality)
+        )
+      )
+      WHERE jsonb_typeof(package.payload->'resultSignals') = 'array'
+        AND jsonb_array_length(package.payload->'resultSignals') > 0
+        AND jsonb_path_exists(
+          package.payload,
+          '$.resultSignals[*] ? (!exists(@.contentPackageRevision))'
+        );
+      ALTER TABLE p1_content_packages
+        DROP CONSTRAINT IF EXISTS p1_content_packages_result_signal_revision_required;
+      ALTER TABLE p1_content_packages
+        ADD CONSTRAINT p1_content_packages_result_signal_revision_required
+        CHECK (
+          NOT jsonb_path_exists(
+            payload,
+            '$.resultSignals[*] ? (!exists(@.contentPackageRevision))'
+          )
+        );
       CREATE INDEX IF NOT EXISTS p1_content_packages_status_updated_idx
         ON p1_content_packages
         (workspace_id, ((payload->>'status')), updated_at DESC);

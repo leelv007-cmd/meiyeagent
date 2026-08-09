@@ -327,6 +327,7 @@ export class AgentTurnRunner {
     const kernelResult = await middleware.wrapModelCall(middlewareCtx, () =>
       this.runKernelWithInjectionBinding({
         input: authoritativeInput,
+        releaseId,
         projection,
         wrappedTools,
         activeToolNames,
@@ -522,6 +523,7 @@ export class AgentTurnRunner {
 
   private async runKernelWithInjectionBinding(input: {
     input: AgentTurnInput;
+    releaseId: string;
     projection: ModelContextProjection;
     wrappedTools: Record<string, AgentKernelToolDefinition>;
     activeToolNames: string[];
@@ -536,7 +538,7 @@ export class AgentTurnRunner {
           ? { taskId: input.input.activeTaskRef.taskId }
           : {}),
         runId: input.input.runId,
-        harnessReleaseId: input.input.harnessReleaseId,
+        harnessReleaseId: input.releaseId,
       },
       () =>
         this.deps.kernel.runTurn({

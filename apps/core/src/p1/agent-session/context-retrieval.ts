@@ -93,6 +93,12 @@ export type SessionRetrievalPorts = {
     workspaceId: string;
     threadId?: string;
     limit?: number;
+    scope?: {
+      storeId?: string;
+      personaId?: string;
+      scene?: string;
+      platform?: string;
+    };
   }) => Promise<RetrievalExperience[]>;
   readPlatformRequirements?: (input: {
     platform: string;
@@ -110,6 +116,9 @@ export type RetrievalToolContext = {
   threadId?: string;
   creationMode?: 'customized' | 'free';
   storeId?: string;
+  personaId?: string;
+  scene?: string;
+  platform?: string;
 };
 
 /**
@@ -412,6 +421,12 @@ export function createRetrievalToolRegistry(input: {
             workspaceId: context.workspaceId,
             threadId: context.threadId,
             limit: args.limit ?? (format === 'detailed' ? 8 : 4),
+            scope: {
+              ...(context.storeId ? { storeId: context.storeId } : {}),
+              ...(context.personaId ? { personaId: context.personaId } : {}),
+              ...(context.scene ? { scene: context.scene } : {}),
+              ...(context.platform ? { platform: context.platform } : {}),
+            },
           })
         : [];
       const confirmed = items.filter((item) => item.status === 'confirmed');
@@ -701,12 +716,12 @@ export function createSessionRetrievalPorts(deps: {
       }));
     },
 
-    async listConfirmedExperience({ workspaceId, threadId, limit }) {
+    async listConfirmedExperience({ workspaceId, threadId, limit, scope }) {
       if (!deps.experience) return [];
       const injectionContext = currentMemoryInjectionTurnBinding();
       const entries = await deps.experience.retrieveForInjection({
         workspaceId,
-        scope: {},
+        scope: scope ?? {},
         threadId,
         limit: limit ?? 8,
         ...(injectionContext ? { injectionContext } : {}),

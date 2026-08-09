@@ -19,13 +19,18 @@ import type { ExecutionPlanCompileFreeze } from '../harness/execution-plan-admis
 import type { AgentSessionStore } from './agent-session-store.js';
 import type { CompilePlanInput, CompilePlanResult } from './plan-compiler.js';
 import type { MarketingPlanStore } from './plan-store.js';
-import type { PlanProposal } from './turn-contracts.js';
+import type { AgentTurnInput, PlanProposal } from './turn-contracts.js';
 
 export type ComposerPlanCompilerPort = {
   compilePlan(input: CompilePlanInput): Promise<CompilePlanResult>;
   adjustPlan(
     input: CompilePlanInput & { existingPlanId: string }
   ): Promise<CompilePlanResult>;
+  runTurn?(input: {
+    resourceId: string;
+    turn: AgentTurnInput;
+    readOnly?: boolean;
+  }): Promise<unknown>;
 };
 
 export type ComposerPlanSessionOptions = {
@@ -36,6 +41,16 @@ export type ComposerPlanSessionOptions = {
 };
 
 const COMPOSER_PLAN_HARNESS_RELEASE_ID = 'composer-plan-surface-v1';
+const COMPOSER_SESSION_LIMITS = {
+  maxLlmSteps: 6,
+  maxToolCalls: 12,
+  maxRetrievalCalls: 6,
+  maxMerchantQuestions: 1,
+  maxReplans: 2,
+  maxSchemaRepairs: 2,
+  maxContextTokens: 32_000,
+  maxDelegations: 2,
+} as const;
 
 export class ComposerPlanSessionCoordinator
   implements ComposerSubmissionAgentPlanningPort
@@ -110,6 +125,13 @@ export class ComposerPlanSessionCoordinator
         );
       }
       try {
+        await this.runSessionTurn({
+          submission,
+          threadId,
+          runId,
+          sessionRevision: started.thread.sessionRevision,
+          harnessReleaseId: started.run.harnessReleaseId,
+        });
         await this.compile({
           submission,
           threadId,
@@ -149,6 +171,43 @@ export class ComposerPlanSessionCoordinator
     }
 
     return { threadId, runId };
+  }
+
+  private async runSessionTurn(input: {
+    submission: CreationSubmissionRecord;
+    threadId: string;
+    runId: string;
+    sessionRevision: number;
+    harnessReleaseId: string;
+  }): Promise<void> {
+    if (!this.compiler.runTurn) return;
+    const snapshot = input.submission.snapshot;
+    await this.compiler.runTurn({
+      resourceId: snapshot.workspaceId,
+      readOnly: true,
+      turn: {
+        threadId: input.threadId,
+        runId: input.runId,
+        workspaceId: snapshot.workspaceId,
+        actorId: snapshot.actorId,
+        phase: 'intent',
+        merchantMessage: snapshot.intent.text,
+        proactiveMode: 'balanced',
+        creationMode: snapshot.creationMode,
+        sessionRevision: input.sessionRevision,
+        activeTaskRef: {
+          taskId: input.submission.task.id,
+          workflowId: input.submission.task.id,
+        },
+        memoryScope: {
+          storeId: snapshot.workspaceId,
+          platform: snapshot.contentPackagePlatform,
+        },
+        approvedToolNames: ['read_confirmed_experience'],
+        limits: COMPOSER_SESSION_LIMITS,
+        harnessReleaseId: input.harnessReleaseId,
+      },
+    });
   }
 
   private async compile(input: {

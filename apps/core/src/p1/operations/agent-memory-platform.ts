@@ -510,6 +510,12 @@ export class AgentMemoryPlatform {
     await this.assertWriteEnabled();
     const proposed: PreferenceCandidate[] = [];
     for (const item of input.items) {
+      if (/^(?:business_fact|store_fact)\./u.test(item.semanticKey)) {
+        throw new ReuseMemoryError(
+          'INVALID_STATE',
+          `Business Fact ${item.semanticKey} belongs to the fact ledger and cannot be overridden by Memory.`,
+        );
+      }
       if (item.kind !== 'preference' && item.kind !== 'correction' && item.kind !== 'procedure') {
         throw new ReuseMemoryError(
           'INVALID_STATE',

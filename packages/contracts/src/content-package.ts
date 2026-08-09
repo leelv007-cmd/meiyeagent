@@ -593,7 +593,7 @@ export const contentPackageDeliveryCapabilitySchema = z.object({
 export const contentPackageResultSignalSchema = z.object({
   actorId: contentPackageIdSchema,
   /** Exact ContentPackage revision consumed by this append. */
-  contentPackageRevision: z.number().int().nonnegative().optional(),
+  contentPackageRevision: z.number().int().nonnegative(),
   id: contentPackageIdSchema,
   kind: z.enum([
     'attention',

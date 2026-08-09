@@ -500,24 +500,17 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
     // Idempotency key = contentPackage id + signal + observedAt/sourceRef.
     // Revision is the exact package binding snapshot at write time; lookup
     // matches on signal identity so retries after success stay idempotent.
-    if (action === 'record') {
+    {
       const existing = contentPackage.resultSignals ?? [];
       const duplicate = existing.find((row) =>
-        resultSignalMatchesIdempotencyIdentity(row, {
-          packageId: contentPackage.id,
-          contentPackageRevision: input.expectedRevision,
-          kind: input.kind,
+        resultSignalMatchesWriteIdentity(row, {
+          ...input,
+          action,
           observedAt,
-          sourceRef: input.sourceRef,
-        })
+        }, contentPackage.id)
       );
       if (duplicate) {
-        const samePayload =
-          duplicate.kind === input.kind &&
-          (duplicate.note ?? '') === (input.note ?? '') &&
-          (duplicate.quantity ?? null) === (input.quantity ?? null) &&
-          (duplicate.sourceRef ?? '') === (input.sourceRef ?? '');
-        if (!samePayload) {
+        if (!resultSignalPayloadMatches(duplicate, input)) {
           throw new ContentPackageDeliveryError(
             'RESULT_SIGNAL_IDEMPOTENCY_CONFLICT',
             'A different result signal already exists for this idempotency key.'
@@ -557,17 +550,21 @@ export class ContentPackageDeliveryService implements ContextInvalidationSink {
         }
 
         // Re-check idempotency under the lock for concurrent record races.
-        if (action === 'record') {
+        {
           const duplicate = existing.find((row) =>
-            resultSignalMatchesIdempotencyIdentity(row, {
-              packageId: current.id,
-              contentPackageRevision: input.expectedRevision,
-              kind: input.kind,
+            resultSignalMatchesWriteIdentity(row, {
+              ...input,
+              action,
               observedAt,
-              sourceRef: input.sourceRef,
-            })
+            }, current.id)
           );
           if (duplicate) {
+            if (!resultSignalPayloadMatches(duplicate, input)) {
+              throw new ContentPackageDeliveryError(
+                'RESULT_SIGNAL_IDEMPOTENCY_CONFLICT',
+                'A different result signal already exists for this idempotency key.'
+              );
+            }
             return structuredClone(current);
           }
         }
@@ -1436,6 +1433,49 @@ function resultSignalMatchesIdempotencyIdentity(
     sourceRef: identity.sourceRef,
   });
   return rowKey === inputKey;
+}
+
+function resultSignalMatchesWriteIdentity(
+  row: ContentPackageResultSignal,
+  input: {
+    action: 'record' | 'correct' | 'withdraw';
+    expectedRevision: number;
+    kind: ContentPackageResultSignal['kind'];
+    observedAt: string;
+    sourceRef?: string;
+    supersedesSignalId?: string;
+  },
+  packageId: string,
+): boolean {
+  if (input.action === 'record') {
+    return resultSignalMatchesIdempotencyIdentity(row, {
+      packageId,
+      contentPackageRevision: input.expectedRevision,
+      kind: input.kind,
+      observedAt: input.observedAt,
+      sourceRef: input.sourceRef,
+    });
+  }
+  return row.contentPackageRevision === input.expectedRevision &&
+    row.supersedesSignalId === input.supersedesSignalId &&
+    ((input.action === 'withdraw') === ((row.status ?? 'active') === 'withdrawn'));
+}
+
+function resultSignalPayloadMatches(
+  row: ContentPackageResultSignal,
+  input: {
+    kind: ContentPackageResultSignal['kind'];
+    note?: string;
+    occurredAt?: string;
+    quantity?: number;
+    sourceRef?: string;
+  },
+): boolean {
+  return row.kind === input.kind &&
+    (row.note ?? '') === (input.note ?? '') &&
+    (row.quantity ?? null) === (input.quantity ?? null) &&
+    (row.sourceRef ?? '') === (input.sourceRef ?? '') &&
+    (input.occurredAt === undefined || row.occurredAt === input.occurredAt);
 }
 
 function resultLadder(

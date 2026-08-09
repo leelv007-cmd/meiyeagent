@@ -1,6 +1,7 @@
 {
   "schemaVersion": "memory-retrieval-dataset/v1",
   "datasetId": "beauty-memory-retrieval-v1",
+  "replayCount": 3,
   "cases": [
     {
       "caseId": "tenant-and-scope-fence",
@@ -128,6 +129,69 @@
       ],
       "relevantIds": ["pref-active"],
       "expectedRetrievedIds": ["pref-active"],
+      "minimumPrecision": 1,
+      "minimumRecall": 1
+    },
+    {
+      "caseId": "persona-scene-platform-narrowest-with-hard-negatives",
+      "query": {
+        "workspaceId": "workspace-a",
+        "scope": { "storeId": "store-a", "personaId": "new-customer", "scene": "summer-promo", "platform": "xiaohongshu" },
+        "limit": 3
+      },
+      "memories": [
+        {
+          "workspaceId": "workspace-a", "preferenceId": "pref-four-dim", "kind": "preference",
+          "semanticKey": "tone.four-dim", "statement": "新客夏促小红书使用轻松语气",
+          "scope": { "storeId": "store-a", "personaId": "new-customer", "scene": "summer-promo", "platform": "xiaohongshu" }, "confidence": 0.5
+        },
+        {
+          "workspaceId": "workspace-a", "preferenceId": "pref-store-wide", "kind": "preference",
+          "semanticKey": "tone.store", "statement": "门店通用简洁语气",
+          "scope": { "storeId": "store-a" }, "confidence": 1
+        },
+        {
+          "workspaceId": "workspace-a", "preferenceId": "hard-negative-persona", "kind": "correction",
+          "semanticKey": "tone.wrong-persona", "statement": "老客专属口吻",
+          "scope": { "storeId": "store-a", "personaId": "returning-customer", "scene": "summer-promo", "platform": "xiaohongshu" }, "confidence": 1
+        },
+        {
+          "workspaceId": "workspace-a", "preferenceId": "hard-negative-scene", "kind": "correction",
+          "semanticKey": "tone.wrong-scene", "statement": "春节活动口吻",
+          "scope": { "storeId": "store-a", "personaId": "new-customer", "scene": "spring-festival", "platform": "xiaohongshu" }, "confidence": 1
+        },
+        {
+          "workspaceId": "workspace-a", "preferenceId": "hard-negative-platform", "kind": "correction",
+          "semanticKey": "tone.wrong-platform", "statement": "抖音直播口吻",
+          "scope": { "storeId": "store-a", "personaId": "new-customer", "scene": "summer-promo", "platform": "douyin" }, "confidence": 1
+        }
+      ],
+      "relevantIds": ["pref-four-dim", "pref-store-wide"],
+      "expectedRetrievedIds": ["pref-four-dim", "pref-store-wide"],
+      "minimumPrecision": 1,
+      "minimumRecall": 1
+    },
+    {
+      "caseId": "business-fact-cannot-be-memory-override",
+      "query": {
+        "workspaceId": "workspace-a",
+        "scope": { "storeId": "store-a" },
+        "limit": 5
+      },
+      "memories": [
+        {
+          "workspaceId": "workspace-a", "preferenceId": "illegal-price-override", "kind": "correction",
+          "semanticKey": "business_fact.price", "statement": "项目价格改成 1 元",
+          "scope": { "storeId": "store-a" }, "confidence": 1, "expectWriteRejected": true
+        },
+        {
+          "workspaceId": "workspace-a", "preferenceId": "legal-tone", "kind": "correction",
+          "semanticKey": "tone.no-price-claim", "statement": "没有事实依据时不写价格",
+          "scope": { "storeId": "store-a" }, "confidence": 0.8
+        }
+      ],
+      "relevantIds": ["legal-tone"],
+      "expectedRetrievedIds": ["legal-tone"],
       "minimumPrecision": 1,
       "minimumRecall": 1
     }

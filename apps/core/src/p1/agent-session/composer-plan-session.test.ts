@@ -51,12 +51,17 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
     semanticEvents: new AgentSemanticEventProjector(eventStore),
   });
   let tick = 0;
+  const sessionTurns: Array<Record<string, unknown>> = [];
   const coordinator = new ComposerPlanSessionCoordinator(
     sessions,
     plans,
     {
       compilePlan: (input) => compiler.compile(input),
       adjustPlan: (input) => compiler.adjust(input),
+      runTurn: async (input) => {
+        sessionTurns.push(structuredClone(input.turn as Record<string, unknown>));
+        return {} as never;
+      },
     },
     { now: () => new Date(Date.parse(TS) + tick++ * 1_000).toISOString() }
   );
@@ -66,6 +71,12 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
   const replayedBinding = await coordinator.prepare({ submission: first });
 
   assert.deepEqual(replayedBinding, firstBinding);
+  assert.equal(sessionTurns.length, 1);
+  assert.deepEqual(sessionTurns[0]?.activeTaskRef, {
+    taskId: 'task-1',
+    workflowId: 'task-1',
+  });
+  assert.equal(sessionTurns[0]?.runId, firstBinding.runId);
   assert.equal(
     (
       await sessions.listRuns({
@@ -91,6 +102,11 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
   });
 
   assert.equal(adjustedBinding.threadId, firstBinding.threadId);
+  assert.equal(sessionTurns.length, 2);
+  assert.deepEqual(sessionTurns[1]?.activeTaskRef, {
+    taskId: 'task-2',
+    workflowId: 'task-2',
+  });
   assert.notEqual(adjustedBinding.runId, firstBinding.runId);
   events = await eventStore.listByThread({
     resourceId: 'workspace-1',

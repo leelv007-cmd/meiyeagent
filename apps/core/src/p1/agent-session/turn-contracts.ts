@@ -64,6 +64,15 @@ export const agentTurnInputSchema = z
     sessionRevision: z.number().int().nonnegative().safe(),
     activePlanRef: revisionRefSchema.optional(),
     activeTaskRef: taskRefSchema.optional(),
+    memoryScope: z
+      .object({
+        storeId: z.string().min(1).max(200),
+        personaId: z.string().min(1).max(200).optional(),
+        scene: z.string().min(1).max(200).optional(),
+        platform: z.string().min(1).max(100).optional(),
+      })
+      .strict()
+      .optional(),
     /** Server-owned allowlist only — never trust client tool names alone. */
     approvedToolNames: z.array(z.string().min(1).max(200)).max(100),
     limits: agentControlLimitsSchema,

@@ -808,11 +808,9 @@ export async function assembleCoreGraph(
     ? new AgentSessionHarnessService({
         store: agentSessionStore,
         kernel: sessionAgentKernel,
-        // V31-21 P1-a: lifecycle-aware resolution. A run's pinned releaseId is
-        // resolved as a frozen full-immutable pin (rollback never rewrites it);
-        // an unknown pin falls back to the current production lifecycle so a
-        // fresh/pre-bootstrap record still resolves (canary allowlist applies
-        // at pin time in the composer plan session).
+        // V31-21: a run's pinned releaseId is immutable. Unknown pins fail
+        // closed; silently rebinding them to the current release would corrupt
+        // receipt attribution and replay fidelity.
         resolveRelease: async (harnessReleaseId) => {
           const resolve = async (frozenReleaseId?: string | null) => {
             const resolved = await harnessReleaseService.resolveForRun({
@@ -833,17 +831,7 @@ export async function assembleCoreGraph(
               releaseId: resolved.releaseId,
             };
           };
-          try {
-            return await resolve(harnessReleaseId);
-          } catch (error) {
-            if (
-              error instanceof P1DomainError &&
-              error.code === 'NOT_FOUND'
-            ) {
-              return resolve(null);
-            }
-            throw error;
-          }
+          return resolve(harnessReleaseId);
         },
         createToolRegistry: (turn) =>
           createRetrievalToolRegistry({
@@ -852,6 +840,7 @@ export async function assembleCoreGraph(
               workspaceId: turn.workspaceId,
               threadId: turn.threadId,
               creationMode: turn.creationMode ?? 'customized',
+              ...(turn.memoryScope ?? {}),
             },
           }),
         createPolicies: () => createIntentRetrievalPolicies({}),

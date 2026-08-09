@@ -733,6 +733,47 @@ test('V31-18 concurrent workspace turns keep memory injection bindings isolated'
   });
 });
 
+test('V31-18 receipt attribution uses the resolved canonical release id', async () => {
+  let attributedReleaseId: string | undefined;
+  const runner = new AgentTurnRunner({
+    kernel: coordinatedRetrievalKernel(deferredResolved(), deferredResolved()),
+    toolRegistry: createRetrievalToolRegistry({
+      ports: createSessionRetrievalPorts({
+        experience: {
+          retrieveForInjection: async (query) => {
+            attributedReleaseId = query.injectionContext?.harnessReleaseId;
+            return [];
+          },
+        },
+      }),
+      context: { workspaceId: 'ws-a', creationMode: 'customized' },
+    }),
+    resolveRelease: async () => ({
+      controlLimits: { ...CONTROL_LIMITS },
+      middlewareBindings: [],
+      releaseId: 'release-canonical',
+    }),
+    readOnly: true,
+  });
+
+  await runner.run(baseTurn({
+    activeTaskRef: { taskId: 'task-a', workflowId: 'workflow-a' },
+    approvedToolNames: ['read_confirmed_experience'],
+    harnessReleaseId: 'release-requested-alias',
+    runId: 'run-a',
+    threadId: 'thread-a',
+    workspaceId: 'ws-a',
+  }));
+
+  assert.equal(attributedReleaseId, 'release-canonical');
+});
+
+function deferredResolved() {
+  const gate = deferred<void>();
+  gate.resolve();
+  return gate;
+}
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   const promise = new Promise<T>((resolvePromise) => {

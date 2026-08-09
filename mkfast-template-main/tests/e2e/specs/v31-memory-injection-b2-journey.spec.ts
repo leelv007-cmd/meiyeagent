@@ -1,8 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import type {
-  MemoryEntriesPage,
-  MemoryInjectionReceipt,
-} from '@meiye/contracts';
+import type { MemoryEntriesPage } from '@meiye/contracts';
 
 import {
   cleanupE2EUsers,
@@ -12,11 +9,19 @@ import {
 import { seedConfirmedStore } from '../fixtures/product';
 import {
   JOURNEY_CONTRACTS,
+  closeComposerCapsule,
+  openComposerCapsule,
   submitComposerJourney,
   waitForResultJourney,
 } from '../fixtures/ui-journey';
 
 const DURABLE_PREFERENCE = '以后每次文案都简洁克制，请长期记住';
+
+async function selectDestination(page: Page, destination: string) {
+  const panel = await openComposerCapsule(page, 'destination');
+  await page.getByTestId(`composer-destination-option-${destination}`).click();
+  await closeComposerCapsule(page, panel);
+}
 
 async function queryMemory<T>(
   page: Page,
@@ -65,6 +70,7 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
     )!;
 
     await page.goto('/dashboard');
+    await selectDestination(page, copyContract.deliveryTarget);
     const sourceWorkId = await submitComposerJourney(
       page,
       copyContract,
@@ -95,6 +101,7 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
 
     let injectedTaskId = '';
     await page.goto('/dashboard');
+    await selectDestination(page, copyContract.deliveryTarget);
     const injectedWorkId = await submitComposerJourney(
       page,
       copyContract,
@@ -107,35 +114,31 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
     );
     await waitForResultJourney(page, copyContract, injectedWorkId);
 
-    let injectedMemoryId = '';
-    await expect
-      .poll(async () => {
-        const result = await queryMemory<{
-          receipt: MemoryInjectionReceipt | null;
-        }>(page, 'injection_receipt', { taskId: injectedTaskId });
-        injectedMemoryId = result.receipt?.entries[0]?.memoryId ?? '';
-        return result.receipt?.entries.length ?? 0;
-      })
-      .toBeGreaterThan(0);
-
     await page.goto(`/dashboard?taskId=${encodeURIComponent(injectedTaskId)}`);
     const panel = page.getByTestId('memory-injection-receipt-panel');
     await expect(panel).toBeVisible();
     await expect(
       panel.getByTestId('memory-injection-receipt-statement')
     ).toContainText(DURABLE_PREFERENCE);
+    const revoke = panel
+      .locator('[data-testid^="memory-injection-receipt-revoke-"]')
+      .first();
+    const revokeTestId = await revoke.getAttribute('data-testid');
+    const injectedMemoryId = revokeTestId?.replace(
+      'memory-injection-receipt-revoke-',
+      ''
+    );
+    expect(injectedMemoryId).toBeTruthy();
     await expect(
       panel.getByTestId('memory-injection-receipt-source')
-    ).toContainText(injectedMemoryId);
-    const revoke = panel.getByTestId(
-      `memory-injection-receipt-revoke-${injectedMemoryId}`
-    );
+    ).toContainText(injectedMemoryId!);
     await revoke.click();
     await expect(revoke).toBeDisabled();
     await expect(revoke).toContainText('已撤销');
 
     let laterTaskId = '';
     await page.goto('/dashboard');
+    await selectDestination(page, copyContract.deliveryTarget);
     const laterWorkId = await submitComposerJourney(
       page,
       copyContract,
@@ -148,17 +151,19 @@ test.describe('V31-18 memory injection transparency (§37.4-B2)', () => {
     );
     await waitForResultJourney(page, copyContract, laterWorkId);
 
-    await expect
-      .poll(async () => {
-        const result = await queryMemory<{
-          receipt: MemoryInjectionReceipt | null;
-        }>(page, 'injection_receipt', { taskId: laterTaskId });
-        return (
-          result.receipt?.entries.some(
-            (entry) => entry.memoryId === injectedMemoryId
-          ) ?? false
-        );
-      })
-      .toBe(false);
+    const laterReceiptLoaded = page.waitForResponse((response) => {
+      const body = response.request().postData() ?? '';
+      return (
+        response.url().includes('/api/core/p1/query') &&
+        body.includes('injection_receipt') &&
+        body.includes(laterTaskId)
+      );
+    });
+    await page.goto(`/dashboard?taskId=${encodeURIComponent(laterTaskId)}`);
+    await laterReceiptLoaded;
+    await expect(page.getByTestId('agent-workbench-host')).toBeVisible();
+    await expect(
+      page.getByTestId(`memory-injection-receipt-entry-${injectedMemoryId}`)
+    ).toHaveCount(0);
   });
 });
