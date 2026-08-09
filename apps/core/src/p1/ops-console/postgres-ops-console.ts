@@ -288,6 +288,15 @@ export class PostgresOpsConsoleStore
     return result.rows.map((row) => structuredClone(row.payload));
   }
 
+  async getCandidateTrial(workspaceId: string): Promise<OpsCandidateTrial | null> {
+    const result = await this.pool.query<PayloadRow<OpsCandidateTrial>>(
+      `SELECT payload FROM p1_ops_console_candidate_trials
+        WHERE workspace_id = $1`,
+      [workspaceId],
+    );
+    return result.rows[0] ? structuredClone(result.rows[0].payload) : null;
+  }
+
   // ── Rollback drills (append-only) ────────────────────────────────────────
 
   async appendRollbackDrill(

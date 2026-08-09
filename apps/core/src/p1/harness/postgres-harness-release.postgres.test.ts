@@ -176,3 +176,60 @@ test(
     }
   },
 );
+
+test(
+  'Postgres lifecycle swap serializes concurrent production changes atomically',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString });
+    const store = new PostgresHarnessReleaseStore(pool);
+    await store.migrate();
+    const service = new HarnessReleaseService(store);
+    const ids = [0, 1, 2].map(() => `hr-swap-${randomUUID()}`);
+    try {
+      for (const [index, releaseId] of ids.entries()) {
+        await service.publishArtifact(
+          publishInput(releaseId!, {
+            version: index + 1,
+            toolPolicyRevision: `tool/swap-${index + 1}`,
+          }),
+        );
+      }
+      for (const toStatus of ['evaluating', 'canary', 'production'] as const) {
+        await service.transitionLifecycle({ releaseId: ids[0]!, toStatus });
+      }
+
+      await Promise.all([
+        service.rollbackProduction({ toReleaseId: ids[1]!, approvedBy: 'ops-a' }),
+        service.rollbackProduction({ toReleaseId: ids[2]!, approvedBy: 'ops-b' }),
+      ]);
+
+      const lifecycles = await store.listLifecycles();
+      const production = lifecycles.filter(
+        (item) => ids.includes(item.releaseId) && item.status === 'production',
+      );
+      assert.equal(production.length, 1);
+      assert.ok(ids.slice(1).includes(production[0]!.releaseId));
+      assert.equal(
+        lifecycles.filter(
+          (item) => ids.includes(item.releaseId) && item.status === 'retired',
+        ).length,
+        2,
+      );
+    } finally {
+      await pool.query(
+        'DELETE FROM p1_harness_release_rollouts WHERE release_id = ANY($1::text[])',
+        [ids],
+      );
+      await pool.query(
+        'DELETE FROM p1_harness_release_lifecycle WHERE release_id = ANY($1::text[])',
+        [ids],
+      );
+      await pool.query(
+        'DELETE FROM p1_harness_release_artifacts WHERE release_id = ANY($1::text[])',
+        [ids],
+      );
+      await pool.end();
+    }
+  },
+);

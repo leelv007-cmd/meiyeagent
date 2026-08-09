@@ -75,6 +75,18 @@ export type OpsWriteMeta = {
   now?: string;
 };
 
+export async function resolveWorkspaceHarnessRelease(input: {
+  workspaceId: string;
+  releases: HarnessReleaseService;
+  trials: OpsCandidateTrialStore;
+}) {
+  const trial = await input.trials.getCandidateTrial(input.workspaceId);
+  return input.releases.resolveForRun({
+    workspaceId: input.workspaceId,
+    ...(trial ? { candidateReleaseId: trial.candidateReleaseId } : {}),
+  });
+}
+
 export type OpsConsoleServiceDeps = {
   releases: HarnessReleaseService;
   /** Catalog reads (list*) — same store as HarnessReleaseService. */

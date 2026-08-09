@@ -183,6 +183,83 @@ export class PostgresHarnessReleaseStore implements HarnessReleaseStore {
     }
   }
 
+  async putLifecycleExclusive(lifecycle: HarnessReleaseLifecycle) {
+    const parsed = harnessReleaseLifecycleSchema.parse(lifecycle);
+    if (parsed.status !== 'production' && parsed.status !== 'canary') {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Exclusive lifecycle swap only supports production or canary.',
+      );
+    }
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `SELECT pg_advisory_xact_lock(hashtext('p1-harness-release-lifecycle-swap'))`,
+      );
+      const holderResult = await client.query<PayloadRow<unknown>>(
+        `SELECT payload FROM p1_harness_release_lifecycle
+          WHERE status = $1 AND release_id <> $2
+          FOR UPDATE`,
+        [parsed.status, parsed.releaseId],
+      );
+      let previousHolder: HarnessReleaseLifecycle | null = null;
+      const holderPayload = clonePayload(holderResult.rows[0]);
+      if (holderPayload) {
+        const holder = harnessReleaseLifecycleSchema.parse(holderPayload);
+        previousHolder = harnessReleaseLifecycleSchema.parse({
+          ...holder,
+          status: 'retired',
+          updatedAt: parsed.updatedAt,
+        });
+        await client.query(
+          `UPDATE p1_harness_release_lifecycle SET
+             status = 'retired', updated_at = $2::timestamptz, payload = $3::jsonb
+           WHERE release_id = $1`,
+          [
+            previousHolder.releaseId,
+            previousHolder.updatedAt,
+            JSON.stringify(previousHolder),
+          ],
+        );
+      }
+      const result = await client.query<PayloadRow<HarnessReleaseLifecycle>>(
+        `INSERT INTO p1_harness_release_lifecycle
+           (release_id, status, approved_by, approved_at, updated_at, payload)
+         VALUES ($1, $2, $3, $4::timestamptz, $5::timestamptz, $6::jsonb)
+         ON CONFLICT (release_id) DO UPDATE SET
+           status = EXCLUDED.status,
+           approved_by = EXCLUDED.approved_by,
+           approved_at = EXCLUDED.approved_at,
+           updated_at = EXCLUDED.updated_at,
+           payload = EXCLUDED.payload
+         RETURNING payload`,
+        [
+          parsed.releaseId,
+          parsed.status,
+          parsed.approvedBy ?? null,
+          parsed.approvedAt ?? null,
+          parsed.updatedAt,
+          JSON.stringify(parsed),
+        ],
+      );
+      await client.query('COMMIT');
+      return {
+        lifecycle: harnessReleaseLifecycleSchema.parse(result.rows[0]!.payload),
+        previousHolder,
+      };
+    } catch (error) {
+      try {
+        await client.query('ROLLBACK');
+      } catch {
+        // ignore rollback failures after connection errors
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async getLifecycle(
     releaseId: string,
   ): Promise<HarnessReleaseLifecycle | null> {

@@ -29,7 +29,10 @@ import {
 import { MemoryOpsConsoleAuditStore } from './audit.js';
 import { OpsConsoleFoundationModule } from './foundation-module.js';
 import { OPS_KILL_SWITCH_IDS } from './kill-switches.js';
-import { OpsConsoleService } from './ops-console-service.js';
+import {
+  OpsConsoleService,
+  resolveWorkspaceHarnessRelease,
+} from './ops-console-service.js';
 import {
   MemoryOpsCandidateTrialStore,
   MemoryOpsKillSwitchStore,
@@ -135,7 +138,7 @@ function createHarness() {
     langfuseBaseUrl: 'https://langfuse.example.test',
   });
   const module = new OpsConsoleFoundationModule(service);
-  return { store, releases, service, module, audit, toolPolicies };
+  return { store, releases, service, module, audit, toolPolicies, trials };
 }
 
 test('capability map: ops-console admin actions require platform.manage; operator lacks it', () => {
@@ -227,7 +230,7 @@ test('publish_release rejects missing prompt pin and surfaces pack key', async (
 });
 
 test('publish → canary allowlist → candidate trial → promote → rollback with audit', async () => {
-  const { module, service, releases } = createHarness();
+  const { module, service, releases, trials: trialStore } = createHarness();
 
   const published = (await module.execute({
     context: adminCtx('ops-a'),
@@ -329,10 +332,11 @@ test('publish → canary allowlist → candidate trial → promote → rollback 
   assert.equal(trials.items.length, 1);
   assert.equal(trials.items[0]?.candidateReleaseId, 'rel-next');
 
-  // Candidate resolve path still owned by release service (U10).
-  const trialResolve = await releases.resolveForRun({
+  // The workspace trial assignment is consumed by the new-run resolver.
+  const trialResolve = await resolveWorkspaceHarnessRelease({
     workspaceId: 'ws-trial',
-    candidateReleaseId: 'rel-next',
+    releases,
+    trials: trialStore,
   });
   assert.equal(trialResolve.selection, 'candidate');
 

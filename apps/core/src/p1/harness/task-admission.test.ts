@@ -30,7 +30,9 @@ import type {
 import {
   HARNESS_CORE_PROMPT_KEYS,
   HARNESS_LANGFUSE_PROMPT_NAMES,
+  type HarnessPromptKey,
 } from './langfuse-prompts.js';
+import { promptKeysForPacks } from './prompt-packs.js';
 import {
   buildExecutionPlanSnapshot,
   ExecutionPlanAdmissionService,
@@ -211,6 +213,45 @@ test('accepted task keeps its frozen prompt while only a new task observes a pub
   assert.equal(
     registry.claims[0]?.fingerprint,
     registry.lookups[1]?.fingerprint,
+  );
+});
+
+test('copy admission resolves only its declared prompt packs', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const resolver = new SelectivePromptResolver();
+  const snapshot = composerSnapshot();
+  const expected = promptKeysForPacks(['agentControl', 'copy']);
+  const service = new HarnessTaskAdmissionService(
+    registry,
+    starter,
+    resolver,
+    undefined,
+    undefined,
+    { async resolve() { return copyRoute(snapshot); } },
+    undefined,
+    undefined,
+    undefined,
+    {
+      async resolvePromptBindings() {
+        return Object.fromEntries(
+          expected.map((key) => [key, { key, version: 'release-42' }]),
+        );
+      },
+    },
+  );
+
+  await service.submit(snapshotTaskRequest(snapshot));
+
+  assert.deepEqual(resolver.requestedKeys, [expected]);
+  assert.deepEqual(
+    resolver.requestedVersions,
+    [Object.fromEntries(expected.map((key) => [key, 'release-42']))],
+  );
+  assert.equal(resolver.fullResolveCalls, 0);
+  assert.deepEqual(
+    Object.keys(starter.requests[0]?.promptRevisionRefs ?? {}).sort(),
+    [...expected].sort(),
   );
 });
 
@@ -1142,6 +1183,31 @@ class MutablePromptResolver implements HarnessPromptResolver {
         ),
       ]),
     ) as HarnessFrozenPrompts;
+  }
+}
+
+class SelectivePromptResolver implements HarnessPromptResolver {
+  fullResolveCalls = 0;
+  readonly requestedKeys: HarnessPromptKey[][] = [];
+  readonly requestedVersions: Array<Record<string, string | number>> = [];
+
+  async resolve(): Promise<HarnessFrozenPrompts> {
+    this.fullResolveCalls += 1;
+    throw new Error('full prompt resolution must not run for a copy task');
+  }
+
+  async resolveKeys(
+    keys: readonly HarnessPromptKey[],
+    exactVersions?: Readonly<Partial<Record<HarnessPromptKey, string | number>>>,
+  ) {
+    this.requestedKeys.push([...keys]);
+    this.requestedVersions.push({ ...exactVersions });
+    return Object.fromEntries(
+      keys.map((key) => [
+        key,
+        prompt(HARNESS_LANGFUSE_PROMPT_NAMES[key], `${key}-v7`, 7),
+      ]),
+    );
   }
 }
 

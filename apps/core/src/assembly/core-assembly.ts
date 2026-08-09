@@ -106,7 +106,6 @@ import {
 } from '../p1/harness/langfuse-prompts.js';
 import { PostgresHarnessReleaseStore } from '../p1/harness/postgres-harness-release.js';
 import {
-  ensureBootstrapProductionRelease,
   HarnessReleaseService,
 } from '../p1/harness/harness-release.js';
 import {
@@ -464,16 +463,11 @@ export async function assembleCoreGraph(
   await sensitiveWordsRepository.ensurePlatformBaseline();
   await harnessObservabilityStore.activateObservabilityReconciliationCutover();
   /**
-   * V31-21 P1-a: production release bootstrap + boot-time resolvability.
-   * Fresh environments get one auto-published/promoted production release so
-   * the first session turn never fails on a missing pin. Boot only checks
-   * that the current production release is resolvable (V31-20 P2) — full
-   * registry strictness stays at publish time.
+   * Boot validates an existing production release only. A fresh environment
+   * remains unpinned until ops publishes an explicit, complete manifest; new
+   * runs then fail closed instead of inventing a second prompt authority.
    */
   const harnessReleaseService = new HarnessReleaseService(harnessReleaseStore);
-  await ensureBootstrapProductionRelease(harnessReleaseStore, {
-    middlewareBindings: createDefaultIntentRetrievalBindings(),
-  });
   const bootProductionLifecycle =
     await harnessReleaseStore.getLifecycleByStatus('production');
   const bootProductionArtifact = bootProductionLifecycle
@@ -808,42 +802,24 @@ export async function assembleCoreGraph(
     ? new AgentSessionHarnessService({
         store: agentSessionStore,
         kernel: sessionAgentKernel,
-        // V31-21 P1-a: lifecycle-aware resolution. A run's pinned releaseId is
-        // resolved as a frozen full-immutable pin (rollback never rewrites it);
-        // an unknown pin falls back to the current production lifecycle so a
-        // fresh/pre-bootstrap record still resolves (canary allowlist applies
-        // at pin time in the composer plan session).
+        // Lifecycle-aware resolution is fail-closed: a frozen run must always
+        // resolve its exact immutable release. Rollback only changes new runs.
         resolveRelease: async (harnessReleaseId) => {
-          const resolve = async (frozenReleaseId?: string | null) => {
-            const resolved = await harnessReleaseService.resolveForRun({
-              ...(frozenReleaseId
-                ? { frozenReleaseId }
-                : {}),
-            });
-            const base = controlLimitsFromArtifact(resolved.artifact);
-            const existing = base.middlewareBindings ?? [];
-            const defaults = createDefaultIntentRetrievalBindings();
-            const present = new Set(existing.map((item) => item.policyId));
-            return {
-              controlLimits: resolved.controlLimits,
-              middlewareBindings: [
-                ...existing,
-                ...defaults.filter((item) => !present.has(item.policyId)),
-              ],
-              releaseId: resolved.releaseId,
-            };
+          const resolved = await harnessReleaseService.resolveForRun({
+            frozenReleaseId: harnessReleaseId,
+          });
+          const base = controlLimitsFromArtifact(resolved.artifact);
+          const existing = base.middlewareBindings ?? [];
+          const defaults = createDefaultIntentRetrievalBindings();
+          const present = new Set(existing.map((item) => item.policyId));
+          return {
+            controlLimits: resolved.controlLimits,
+            middlewareBindings: [
+              ...existing,
+              ...defaults.filter((item) => !present.has(item.policyId)),
+            ],
+            releaseId: resolved.releaseId,
           };
-          try {
-            return await resolve(harnessReleaseId);
-          } catch (error) {
-            if (
-              error instanceof P1DomainError &&
-              error.code === 'NOT_FOUND'
-            ) {
-              return resolve(null);
-            }
-            throw error;
-          }
         },
         createToolRegistry: (turn) =>
           createRetrievalToolRegistry({

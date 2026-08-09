@@ -106,90 +106,6 @@ export type PublishHarnessReleaseInput = {
   manifestHash?: string;
 };
 
-/**
- * V31-21 P1-a bootstrap: release pinned for fresh environments where no
- * production release exists yet (first turn must not fail closed).
- *
- * The id keeps legacy composer-plan pins resolvable (`composer-plan-surface-v1`
- * was the historical hardcoded session id). promptPackBindings stays empty so
- * publish is green without Langfuse pins — the artifact's promptBindings are
- * eval/trace bookkeeping; runtime prompt fetch resolves via env versions.
- */
-export const DEFAULT_BOOTSTRAP_RELEASE_ID = 'composer-plan-surface-v1';
-
-/** Fully calibrated limits frozen into the bootstrap release (U11). */
-export const DEFAULT_BOOTSTRAP_CONTROL_LIMITS: AgentControlLimits = {
-  maxLlmSteps: 8,
-  maxToolCalls: 8,
-  maxRetrievalCalls: 4,
-  maxMerchantQuestions: 3,
-  maxReplans: 2,
-  maxSchemaRepairs: 2,
-  maxContextTokens: 8_000,
-  maxDelegations: 1,
-};
-
-/**
- * Publish + promote the bootstrap release when no production lifecycle exists.
- * Idempotent across API/worker processes: artifact write is immutable and
- * promotion retires any conflicting holder. Never touches an ops-managed
- * production release — it only fires when none is pinned.
- */
-export async function ensureBootstrapProductionRelease(
-  store: HarnessReleaseStore,
-  options: {
-    middlewareBindings?: readonly HarnessMiddlewareBinding[];
-    now?: string;
-  } = {},
-): Promise<{ bootstrapped: boolean; releaseId: string }> {
-  const existing = await store.getLifecycleByStatus('production');
-  if (existing) return { bootstrapped: false, releaseId: existing.releaseId };
-  const service = new HarnessReleaseService(store);
-  const releaseId = DEFAULT_BOOTSTRAP_RELEASE_ID;
-  const createdAt = nowIso(options.now);
-  await service.publishArtifact({
-    releaseId,
-    version: 1,
-    agentSessionHarnessVersion: 'bootstrap/session-v1',
-    makeHarnessVersion: 'bootstrap/make-v1',
-    middlewareBindings: [...(options.middlewareBindings ?? [])],
-    controlLimits: { ...DEFAULT_BOOTSTRAP_CONTROL_LIMITS },
-    supervisorPolicyRef: { id: 'bootstrap', revision: '1' },
-    memoryPolicyRef: { id: 'bootstrap', revision: '1' },
-    contextCompilerRef: { id: 'bootstrap', revision: '1' },
-    planSchemaRevision: 'plan-schema/v1',
-    promptBindings: {},
-    promptPackBindings: {},
-    schemaBindings: {},
-    skillBindings: {},
-    toolPolicyRevision: 'bootstrap/tool-v1',
-    modelPolicyRevision: 'bootstrap/model-v1',
-    factPolicyRevision: 'bootstrap/fact-v1',
-    rightsPolicyRevision: 'bootstrap/rights-v1',
-    budgetPolicyRevision: 'bootstrap/budget-v1',
-    evalSuiteRevision: 'bootstrap/eval-v1',
-    createdAt,
-  });
-  try {
-    // Walk the legal lifecycle chain (draft→evaluating→canary→production);
-    // the final promotion retires any conflicting holder.
-    for (const toStatus of ['evaluating', 'canary', 'production'] as const) {
-      await service.transitionLifecycle({
-        releaseId,
-        toStatus,
-        approvedBy: 'system-bootstrap',
-        now: createdAt,
-      });
-    }
-  } catch (error) {
-    // Race: another process promoted a production release while we published.
-    const current = await store.getLifecycleByStatus('production');
-    if (current) return { bootstrapped: false, releaseId: current.releaseId };
-    throw error;
-  }
-  return { bootstrapped: true, releaseId };
-}
-
 export type HarnessReleaseSelectionReason =
   | 'frozen'
   | 'candidate'
@@ -228,6 +144,13 @@ export interface HarnessReleaseStore {
   putLifecycle(
     lifecycle: HarnessReleaseLifecycle,
   ): Promise<HarnessReleaseLifecycle>;
+  /** Atomically retire the exclusive status holder and install the successor. */
+  putLifecycleExclusive(
+    lifecycle: HarnessReleaseLifecycle,
+  ): Promise<{
+    lifecycle: HarnessReleaseLifecycle;
+    previousHolder: HarnessReleaseLifecycle | null;
+  }>;
   getLifecycle(releaseId: string): Promise<HarnessReleaseLifecycle | null>;
   listLifecycles(): Promise<HarnessReleaseLifecycle[]>;
   /**
@@ -292,6 +215,33 @@ export class MemoryHarnessReleaseStore implements HarnessReleaseStore {
     }
     this.lifecycles.set(parsed.releaseId, structuredClone(parsed));
     return structuredClone(parsed);
+  }
+
+  async putLifecycleExclusive(lifecycle: HarnessReleaseLifecycle) {
+    const parsed = harnessReleaseLifecycleSchema.parse(lifecycle);
+    if (parsed.status !== 'production' && parsed.status !== 'canary') {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Exclusive lifecycle swap only supports production or canary.',
+      );
+    }
+    let previousHolder: HarnessReleaseLifecycle | null = null;
+    for (const [id, current] of this.lifecycles) {
+      if (id !== parsed.releaseId && current.status === parsed.status) {
+        previousHolder = harnessReleaseLifecycleSchema.parse({
+          ...current,
+          status: 'retired',
+          updatedAt: parsed.updatedAt,
+        });
+        this.lifecycles.set(id, structuredClone(previousHolder));
+        break;
+      }
+    }
+    this.lifecycles.set(parsed.releaseId, structuredClone(parsed));
+    return {
+      lifecycle: structuredClone(parsed),
+      previousHolder: previousHolder ? structuredClone(previousHolder) : null,
+    };
   }
 
   async getLifecycle(
@@ -584,20 +534,6 @@ export class HarnessReleaseService {
 
     const updatedAt = nowIso(input.now);
 
-    // Enforce single production / single canary by retiring the previous holder.
-    if (input.toStatus === 'production' || input.toStatus === 'canary') {
-      const holder = await this.store.getLifecycleByStatus(input.toStatus);
-      if (holder && holder.releaseId !== input.releaseId) {
-        await this.store.putLifecycle(
-          harnessReleaseLifecycleSchema.parse({
-            ...holder,
-            status: 'retired',
-            updatedAt,
-          }),
-        );
-      }
-    }
-
     const next = harnessReleaseLifecycleSchema.parse({
       schemaVersion: HARNESS_RELEASE_LIFECYCLE_SCHEMA_VERSION,
       releaseId: input.releaseId,
@@ -609,6 +545,9 @@ export class HarnessReleaseService {
           : current.approvedAt,
       updatedAt,
     });
+    if (next.status === 'production' || next.status === 'canary') {
+      return (await this.store.putLifecycleExclusive(next)).lifecycle;
+    }
     return this.store.putLifecycle(next);
   }
 
@@ -737,20 +676,7 @@ export class HarnessReleaseService {
     // Allow rollback from retired (or any non-production) by forcing
     // transition path: retire current production, then set target production.
     const updatedAt = nowIso(input.now);
-    const current = await this.store.getLifecycleByStatus('production');
-    let previousProduction: HarnessReleaseLifecycle | null = null;
-    if (current && current.releaseId !== input.toReleaseId) {
-      previousProduction = await this.store.putLifecycle(
-        harnessReleaseLifecycleSchema.parse({
-          ...current,
-          status: 'retired',
-          updatedAt,
-        }),
-      );
-    }
-    // Direct put after uniqueness slot is free (bypass retired→production only
-    // when intermediate states would block; rollback is an ops force-path).
-    const production = await this.store.putLifecycle(
+    const swapped = await this.store.putLifecycleExclusive(
       harnessReleaseLifecycleSchema.parse({
         schemaVersion: HARNESS_RELEASE_LIFECYCLE_SCHEMA_VERSION,
         releaseId: input.toReleaseId,
@@ -760,7 +686,10 @@ export class HarnessReleaseService {
         updatedAt,
       }),
     );
-    return { production, previousProduction };
+    return {
+      production: swapped.lifecycle,
+      previousProduction: swapped.previousHolder,
+    };
   }
 
   async diffReleases(

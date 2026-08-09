@@ -83,7 +83,11 @@ import {
   HarnessInteractionService,
   HarnessSystemDefaultProducer,
 } from '../p1/harness/interaction-service.js';
-import { requireHarnessFrozenPrompt } from '../p1/harness/langfuse-prompts.js';
+import {
+  requireHarnessFrozenPrompt,
+  resolveHarnessPromptKeys,
+  type HarnessPromptKey,
+} from '../p1/harness/langfuse-prompts.js';
 import { langfuseSenderFromEnv } from '../p1/harness/langfuse-sender.js';
 import { createResolveExecutionPlanLiveFacts } from '../p1/harness/execution-plan-live-facts.js';
 import { InterruptProtocolService } from '../p1/harness/interrupt-protocol.js';
@@ -181,6 +185,7 @@ import {
   OpsConsoleFoundationModule,
   OpsConsoleService,
   PostgresLegacyReplayInventory,
+  resolveWorkspaceHarnessRelease,
 } from '../p1/ops-console/index.js';
 import { HarnessReleaseService } from '../p1/harness/harness-release.js';
 import {
@@ -1036,9 +1041,21 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       structuredExecutor,
       {
         async resolve() {
+          const key: HarnessPromptKey = 'destinationMapping';
+          const release = await harnessReleaseService.resolveForRun({});
+          const binding = release.artifact.promptBindings[key];
+          if (!binding || binding.key !== key || !binding.version.trim()) {
+            throw new Error(
+              `Production HarnessRelease is missing exact prompt pin ${key}.`
+            );
+          }
           return requireHarnessFrozenPrompt(
-            await harnessPromptResolver.resolve(),
-            'destinationMapping'
+            await resolveHarnessPromptKeys(
+              harnessPromptResolver,
+              [key],
+              { [key]: binding.version }
+            ) as Parameters<typeof requireHarnessFrozenPrompt>[0],
+            key
           );
         },
       },
@@ -1533,7 +1550,20 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         createProductionSkillManifestResolver(skillRuntime.instructionResolver),
         promptAuditStore,
         // V31-12: one-shot ExecutionPlanSnapshot write on the real admission path.
-        executionPlanAdmissionService
+        executionPlanAdmissionService,
+        {
+          async resolvePromptBindings(request) {
+            const frozenReleaseId = request.executionPlanFreeze?.harnessReleaseId;
+            const resolved = frozenReleaseId
+              ? await harnessReleaseService.resolveForRun({ frozenReleaseId })
+              : await resolveWorkspaceHarnessRelease({
+                  workspaceId: request.workspaceId,
+                  releases: harnessReleaseService,
+                  trials: opsConsoleStore,
+                });
+            return resolved.artifact.promptBindings;
+          },
+        }
       ),
       harnessDecisions,
       harnessSchemaStore,
@@ -1575,8 +1605,10 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         // then frozen on the Run + ExecutionPlanSnapshot — rollback changes
         // only what *new* runs resolve to, never in-flight pins.
         resolveHarnessReleaseId: async (submission) => {
-          const resolved = await harnessReleaseService.resolveForRun({
+          const resolved = await resolveWorkspaceHarnessRelease({
             workspaceId: submission.snapshot.workspaceId,
+            releases: harnessReleaseService,
+            trials: opsConsoleStore,
           });
           return resolved.releaseId;
         },

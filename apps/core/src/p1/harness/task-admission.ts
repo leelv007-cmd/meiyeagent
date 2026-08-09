@@ -46,12 +46,18 @@ import {
   harnessPromptCapabilityRequirement,
   promptRevisionReferences,
   promptTraceReference,
+  resolveHarnessPromptKeys,
 } from './langfuse-prompts.js';
 import type {
   HarnessFrozenPrompts,
   HarnessPromptResolver,
   HarnessPromptRevisionReference,
 } from './langfuse-prompts.js';
+import {
+  COPY_TASK_PROMPT_PACK_IDS,
+  promptKeysForPacks,
+  type HarnessPromptPackId,
+} from './prompt-packs.js';
 
 export interface HarnessWorkflowInput {
   actorId: string;
@@ -109,6 +115,12 @@ export interface HarnessSkillManifestSnapshot {
   requiredModelCapabilities: string[];
   /** Full server-resolved execution material frozen at admission for new tasks. */
   resolvedInstruction?: ResolvedSkillInstruction;
+}
+
+export interface HarnessReleasePromptBindingsResolver {
+  resolvePromptBindings(
+    request: HarnessTaskRequest,
+  ): Promise<Record<string, { key: string; version: string }>>;
 }
 
 export type HarnessSkillManifestSelection = Omit<
@@ -320,6 +332,8 @@ export class HarnessTaskAdmissionService {
      * Required when submit carries executionPlanSnapshot; absent skips write.
      */
     private readonly executionPlanAdmission?: ExecutionPlanAdmissionPort,
+    /** Production authority for exact prompt pins frozen in HarnessRelease. */
+    private readonly releasePromptBindings?: HarnessReleasePromptBindingsResolver,
   ) {}
 
   async submit(input: HarnessTaskRequest) {
@@ -408,11 +422,35 @@ export class HarnessTaskAdmissionService {
       };
     }
     if (this.prompts) {
-      const prompts = await this.prompts.resolve();
+      const promptKeys = promptKeysForAdmission(normalized);
+      const releaseBindings = this.releasePromptBindings
+        ? await this.releasePromptBindings.resolvePromptBindings(input)
+        : undefined;
+      const exactVersions = releaseBindings
+        ? Object.fromEntries(
+            promptKeys.map((key) => {
+              const binding = releaseBindings[key];
+              if (!binding || binding.key !== key || !binding.version.trim()) {
+                throw new HarnessAdmissionError(
+                  'FROZEN_REQUEST_MISSING',
+                  `HarnessRelease is missing exact prompt pin ${key}.`,
+                );
+              }
+              return [key, binding.version];
+            }),
+          )
+        : undefined;
+      const prompts = await resolveHarnessPromptKeys(
+        this.prompts,
+        promptKeys,
+        exactVersions,
+      );
       request = {
         ...request,
-        prompts,
-        promptRevisionRefs: promptRevisionReferences(prompts),
+        prompts: prompts as HarnessFrozenPrompts,
+        promptRevisionRefs: promptRevisionReferences(
+          prompts as HarnessFrozenPrompts,
+        ),
       };
     }
     const skillStages = await this.materializeSkillManifests(
@@ -694,6 +732,32 @@ export class HarnessTaskAdmissionService {
       });
     }
   }
+}
+
+function promptKeysForAdmission(
+  request: HarnessWorkflowInputBeforeBounds,
+) {
+  const lens = request.executionSnapshot?.lens;
+  if (!lens) {
+    return promptKeysForPacks([
+      'agentControl',
+      'copy',
+      'note',
+      'media',
+      'cover',
+      'viral',
+      'video',
+    ]);
+  }
+  const packIds: readonly HarnessPromptPackId[] =
+    lens === 'copy'
+      ? COPY_TASK_PROMPT_PACK_IDS
+      : lens === 'image_text_note'
+        ? ['agentControl', 'note', 'media', 'cover']
+        : lens === 'video'
+          ? ['agentControl', 'video']
+          : ['agentControl', 'media', 'cover'];
+  return promptKeysForPacks(packIds);
 }
 
 export function assertHarnessExecutionAssemblyPinned(

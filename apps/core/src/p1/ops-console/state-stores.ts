@@ -36,6 +36,7 @@ export interface OpsKillSwitchStore {
 
 export interface OpsCandidateTrialStore {
   putCandidateTrial(trial: OpsCandidateTrial): Promise<OpsCandidateTrial>;
+  getCandidateTrial(workspaceId: string): Promise<OpsCandidateTrial | null>;
   listCandidateTrials(): Promise<OpsCandidateTrial[]>;
 }
 
@@ -104,6 +105,11 @@ export class MemoryOpsCandidateTrialStore implements OpsCandidateTrialStore {
     return [...this.byWorkspace.values()]
       .map((item) => structuredClone(item))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  }
+
+  async getCandidateTrial(workspaceId: string): Promise<OpsCandidateTrial | null> {
+    const item = this.byWorkspace.get(workspaceId);
+    return item ? structuredClone(item) : null;
   }
 }
 

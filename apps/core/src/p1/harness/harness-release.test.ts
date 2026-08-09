@@ -23,9 +23,6 @@ import {
   assertControlLimitsFullySet,
   computeHarnessReleaseManifestHash,
   diffHarnessReleaseArtifacts,
-  DEFAULT_BOOTSTRAP_CONTROL_LIMITS,
-  DEFAULT_BOOTSTRAP_RELEASE_ID,
-  ensureBootstrapProductionRelease,
   type PublishHarnessReleaseInput,
 } from './harness-release.js';
 
@@ -173,6 +170,22 @@ test('publish creates immutable artifact with stable manifestHash and non-empty 
   const restored = await service.getExactRelease('rel-a');
   assert.deepEqual(restored, published.artifact);
   assert.ok(restored.controlLimits.maxDelegations >= 0);
+});
+
+test('production publish rejects an empty prompt pack manifest', async () => {
+  const { service } = createService();
+  await assert.rejects(
+    service.publishArtifact(
+      basePublish('rel-empty-pack', {
+        promptBindings: {},
+        promptPackBindings: {},
+      }),
+    ),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.code === 'INVALID_STATE' &&
+      error.message.includes('prompt pack'),
+  );
 });
 
 test('publish rejects unset controlLimits (U11)', async () => {
@@ -456,58 +469,6 @@ test('resolver always returns non-empty controlLimits from published artifact', 
   for (const key of Object.keys(CONTROL_LIMITS) as (keyof AgentControlLimits)[]) {
     assert.equal(typeof resolved.controlLimits[key], 'number');
   }
-});
-
-test('bootstrap publishes + promotes a production release on a fresh store (V31-21 P1-a)', async () => {
-  const { store } = createService();
-  const first = await ensureBootstrapProductionRelease(store, {
-    middlewareBindings: [
-      {
-        policyId: 'tenant-gate',
-        revision: '1',
-        kind: 'wrap_tool_call',
-        order: 0,
-        allowedControlActions: ['continue'],
-      },
-    ],
-  });
-  assert.equal(first.bootstrapped, true);
-  assert.equal(first.releaseId, DEFAULT_BOOTSTRAP_RELEASE_ID);
-
-  const lifecycle = await store.getLifecycleByStatus('production');
-  assert.equal(lifecycle?.releaseId, DEFAULT_BOOTSTRAP_RELEASE_ID);
-  const artifact = await store.getArtifact(DEFAULT_BOOTSTRAP_RELEASE_ID);
-  assert.ok(artifact);
-  assert.deepEqual(artifact.controlLimits, DEFAULT_BOOTSTRAP_CONTROL_LIMITS);
-  // Id keeps legacy composer-plan pins resolvable; empty pack bindings keep
-  // publish green without Langfuse pins (V31-20 strictness lives at publish).
-  assert.deepEqual(artifact.promptPackBindings, {});
-
-  // A session turn resolves the bootstrap release as a frozen pin.
-  const service = new HarnessReleaseService(store);
-  const resolved = await service.resolveForRun({
-    frozenReleaseId: DEFAULT_BOOTSTRAP_RELEASE_ID,
-  });
-  assert.equal(resolved.selection, 'frozen');
-  assert.deepEqual(resolved.controlLimits, DEFAULT_BOOTSTRAP_CONTROL_LIMITS);
-});
-
-test('bootstrap is a no-op once a production release is pinned (never overwrites ops)', async () => {
-  const { store, service } = createService();
-  await service.publishArtifact(basePublish('ops-1'));
-  for (const toStatus of ['evaluating', 'canary', 'production'] as const) {
-    await service.transitionLifecycle({
-      releaseId: 'ops-1',
-      toStatus,
-      now: TS,
-    });
-  }
-  const boot = await ensureBootstrapProductionRelease(store);
-  assert.equal(boot.bootstrapped, false);
-  assert.equal(boot.releaseId, 'ops-1');
-  const lifecycle = await store.getLifecycleByStatus('production');
-  assert.equal(lifecycle?.releaseId, 'ops-1');
-  assert.equal(await store.getArtifact(DEFAULT_BOOTSTRAP_RELEASE_ID), null);
 });
 
 test('resolveForRun works without workspaceId for frozen pins (session port, V31-21 P1-a)', async () => {

@@ -576,6 +576,7 @@ export interface HarnessPromptResolver {
 	 */
 	resolveKeys?(
 		keys: readonly HarnessPromptKey[],
+		exactVersions?: Readonly<Partial<Record<HarnessPromptKey, string | number>>>,
 	): Promise<Partial<Record<HarnessPromptKey, HarnessFrozenPrompt>>>;
 }
 
@@ -586,9 +587,10 @@ export interface HarnessPromptResolver {
 export async function resolveHarnessPromptKeys(
 	resolver: HarnessPromptResolver,
 	keys: readonly HarnessPromptKey[],
+	exactVersions?: Readonly<Partial<Record<HarnessPromptKey, string | number>>>,
 ): Promise<Partial<Record<HarnessPromptKey, HarnessFrozenPrompt>>> {
 	if (resolver.resolveKeys) {
-		return resolver.resolveKeys(keys);
+		return resolver.resolveKeys(keys, exactVersions);
 	}
 	const full = await resolver.resolve();
 	const unique = uniquePromptKeys(keys);
@@ -651,7 +653,7 @@ export interface LangfuseHarnessPromptResolverOptions {
 	secretKey?: string;
 	label?: string;
 	policy?: LangfusePromptPolicy;
-	versions?: Partial<Record<HarnessPromptKey, number>>;
+	versions?: Partial<Record<HarnessPromptKey, string | number>>;
 	fetch?: typeof globalThis.fetch;
 	timeoutMs?: number;
 	warn?: (input: { name: string; reason: string; version?: number }) => void;
@@ -672,11 +674,12 @@ export class LangfuseHarnessPromptResolver implements HarnessPromptResolver {
 
 	async resolveKeys(
 		keys: readonly HarnessPromptKey[],
+		exactVersions?: Readonly<Partial<Record<HarnessPromptKey, string | number>>>,
 	): Promise<Partial<Record<HarnessPromptKey, HarnessFrozenPrompt>>> {
 		const uniqueKeys = uniquePromptKeys(keys);
 		if ((this.options.policy ?? "strict") === "strict") {
 			const missing = uniqueKeys.filter(
-				(key) => this.options.versions?.[key] === undefined,
+				(key) => (exactVersions ?? this.options.versions)?.[key] === undefined,
 			);
 			if (missing.length > 0) {
 				throw new Error(
@@ -693,6 +696,7 @@ export class LangfuseHarnessPromptResolver implements HarnessPromptResolver {
 							key,
 							HARNESS_LANGFUSE_PROMPT_NAMES[key],
 							HARNESS_BUILTIN_PROMPTS[key],
+							exactVersions?.[key],
 						),
 					] as const,
 			),
@@ -706,9 +710,10 @@ export class LangfuseHarnessPromptResolver implements HarnessPromptResolver {
 		key: HarnessPromptKey,
 		name: string,
 		builtin: string,
+		exactVersion?: string | number,
 	) {
 		const label = this.options.label ?? "production";
-		const version = this.options.versions?.[key];
+		const version = exactVersion ?? this.options.versions?.[key];
 		if (
 			!this.options.baseUrl?.trim() ||
 			!this.options.publicKey?.trim() ||
@@ -771,7 +776,7 @@ export class LangfuseHarnessPromptResolver implements HarnessPromptResolver {
 		builtin: string,
 		label: string,
 		reason: string,
-		version?: number,
+		version?: string | number,
 	) {
 		if ((this.options.policy ?? "strict") === "strict") {
 			const pin = version === undefined ? "" : ` version=${version}`;
@@ -781,10 +786,14 @@ export class LangfuseHarnessPromptResolver implements HarnessPromptResolver {
 			}
 			throw new Error(message);
 		}
+		const numericVersion =
+			version === undefined || !Number.isFinite(Number(version))
+				? undefined
+				: Number(version);
 		(this.options.warn ?? warnPromptFallback)({
 			name,
 			reason,
-			...(version === undefined ? {} : { version }),
+			...(numericVersion === undefined ? {} : { version: numericVersion }),
 		});
 		return fallbackPrompt(name, builtin, label, reason);
 	}
