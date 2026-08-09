@@ -31,6 +31,7 @@ import {
   type CreationExecutionSnapshot,
 } from '../execution-spine/creation-execution-snapshot.js';
 import type { CreationSubmissionRecord } from '../execution-spine/submission-coordinator.js';
+import type { AgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { RouteSnapshot } from '../model-supply/index.js';
 import { serverAuditReference } from '../creation-experience/creation-experience-events.js';
@@ -54,6 +55,8 @@ import type {
 } from './langfuse-prompts.js';
 
 export interface HarnessWorkflowInput {
+	/** Session-owned identity; never substitute planId or workflowId. */
+	agentThreadId?: AgentThreadIdentity;
   actorId: string;
   workspaceId: string;
   packageId: string;
@@ -180,6 +183,7 @@ export interface HarnessSkillManifestResolver {
 
 export const harnessTaskRequestSchema = harnessTaskSubmissionSchema
   .extend({
+		agentThreadId: z.string().trim().min(1).optional(),
     actorId: z.string().trim().min(1),
     workspaceId: z.string().trim().min(1),
     packageId: z.string().trim().min(1),
@@ -1007,6 +1011,7 @@ function normalizeRequest(
         snapshot,
         usageReservation,
         decisionReferences,
+		parsed.agentThreadId as AgentThreadIdentity | undefined,
       ),
       ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
     };
@@ -1024,6 +1029,9 @@ function normalizeRequest(
     factScope: parsed.factScope ?? { storeId: parsed.workspaceId },
     ...(parsed.reuseSeed ? { reuseSeed: parsed.reuseSeed } : {}),
     ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
+		...(parsed.agentThreadId
+			? { agentThreadId: parsed.agentThreadId as AgentThreadIdentity }
+			: {}),
   };
 }
 
@@ -1031,6 +1039,7 @@ function snapshotWorkflowInput(
   snapshot: CreationExecutionSnapshot,
   usageReservation?: CreationSubmissionRecord['usageReservation'],
   decisionReferences?: HarnessWorkflowInput['decisionReferences'],
+	agentThreadId?: AgentThreadIdentity,
 ): HarnessWorkflowInputBeforeBounds {
   const semanticDecision = snapshot.semanticDecision;
   const frozenDecisionReferences = [
@@ -1045,6 +1054,7 @@ function snapshotWorkflowInput(
     frozenDecisionReferences.unshift(semanticDecision.reference);
   }
   return {
+		...(agentThreadId ? { agentThreadId } : {}),
     actorId: snapshot.actorId,
     workspaceId: snapshot.workspaceId,
     packageId: snapshot.contentPackage.id,

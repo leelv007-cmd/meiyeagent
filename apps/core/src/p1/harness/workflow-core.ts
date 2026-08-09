@@ -2249,8 +2249,7 @@ async function executeNoteHarnessStages(input: HarnessStageExecutionInput) {
               workspaceId: activeRequest.workspaceId,
               workflowId,
               threadId:
-                activeRequest.executionPlanSnapshot?.planId ??
-                `shadow-workflow:${workflowId}`,
+                activeRequest.agentThreadId ?? `legacy-workflow:${workflowId}`,
               artifactId: `note:${activeRequest.packageId ?? workflowId}`,
               nextRevision: () => {
                 noteArtifactRevision += 1;
@@ -2503,19 +2502,21 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
   // storyboard is compiled, success once the rendered video is selected.
   // Emitter absent in fixture tests (optional port); no-op otherwise.
   let videoArtifactRevision = 0;
-  const emitVideoSceneProgress = (
+  let videoReadyRevision: number | undefined;
+  const emitVideoSceneProgress = async (
     source: MediaBrief,
     state: 'running' | 'success',
-  ): Promise<void> | undefined => {
+  ): Promise<void> => {
     if (source.kind !== 'video' || !ports.artifactProgressEmitter) return;
-    return emitVideoScenesArtifactProgress(
+    const parentRevision = state === 'running' ? videoReadyRevision : undefined;
+    if (parentRevision !== undefined) videoReadyRevision = undefined;
+    await emitVideoScenesArtifactProgress(
       ports.artifactProgressEmitter,
       {
         workspaceId: activeRequest.workspaceId,
         workflowId,
         threadId:
-          activeRequest.executionPlanSnapshot?.planId ??
-          `shadow-workflow:${workflowId}`,
+          activeRequest.agentThreadId ?? `legacy-workflow:${workflowId}`,
         artifactId: `video:${activeRequest.packageId ?? workflowId}`,
         scenes: source.storyboard.map(({ index, description }) => ({
           sceneIndex: index - 1,
@@ -2527,8 +2528,10 @@ async function executeMediaHarnessStages(input: HarnessStageExecutionInput) {
           return videoArtifactRevision;
         },
         occurredAt: new Date().toISOString(),
+        ...(parentRevision !== undefined ? { parentRevision } : {}),
       },
     );
+    if (state === 'success') videoReadyRevision = videoArtifactRevision;
   };
   await trace(
     runtime,

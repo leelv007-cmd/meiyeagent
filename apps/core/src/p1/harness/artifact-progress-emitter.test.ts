@@ -21,7 +21,7 @@ import {
 } from './artifact-progress-emitter.js';
 import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-event-store.js';
 
-test('note page delta parses artifactUpdateWireSchema', () => {
+test('note page first revision is a production snapshot', () => {
   const update = buildNotePageArtifactUpdate({
     workspaceId: 'ws-1',
     workflowId: 'wf-1',
@@ -36,7 +36,7 @@ test('note page delta parses artifactUpdateWireSchema', () => {
     occurredAt: '2026-08-08T12:00:00.000Z',
   });
   const parsed = artifactUpdateWireSchema.parse(update);
-  assert.equal(parsed.mode, 'delta');
+  assert.equal(parsed.mode, 'snapshot');
   assert.equal(parsed.artifactType, 'note');
   assert.equal(parsed.revision, 1);
 });
@@ -99,10 +99,10 @@ test('note page three stages emit skeleton → copy → image with consistent ar
     title: '封面',
     occurredAt: '2026-08-08T12:00:00.000Z',
   });
-  if (skeleton.mode !== 'delta') throw new Error('expected delta');
-  if (!('pages' in skeleton.patch)) throw new Error('expected note patch');
-  assert.equal(skeleton.patch.pages?.[0]?.stage, 'skeleton');
-  assert.equal(skeleton.patch.pages?.[0]?.imageStatus, undefined);
+  if (skeleton.mode !== 'snapshot') throw new Error('expected snapshot');
+  if (!('pages' in skeleton.full)) throw new Error('expected note full body');
+  assert.equal(skeleton.full.pages?.[0]?.stage, 'skeleton');
+  assert.equal(skeleton.full.pages?.[0]?.imageStatus, undefined);
 
   const copy = buildNotePageArtifactUpdate({
     workspaceId: 'ws-1',
@@ -252,7 +252,7 @@ test('video scene batch emits every scene with monotonic revisions (running then
   }
 });
 
-test('first-frame note/video updates carry cold bootstrap marker baseRevision=0', () => {
+test('first-frame note/video updates are reconstructable snapshots', () => {
   const note = buildNotePageArtifactUpdate({
     workspaceId: 'ws-1',
     workflowId: 'wf-1',
@@ -265,9 +265,7 @@ test('first-frame note/video updates carry cold bootstrap marker baseRevision=0'
     revision: 1,
     occurredAt: '2026-08-08T12:00:00.000Z',
   });
-  assert.equal(note.mode, 'delta');
-  if (note.mode !== 'delta') return;
-  assert.equal(note.baseRevision, 0);
+  assert.equal(note.mode, 'snapshot');
 
   const video = buildVideoSceneArtifactUpdate({
     workspaceId: 'ws-1',
@@ -279,9 +277,7 @@ test('first-frame note/video updates carry cold bootstrap marker baseRevision=0'
     revision: 1,
     occurredAt: '2026-08-08T12:00:00.000Z',
   });
-  assert.equal(video.mode, 'delta');
-  if (video.mode !== 'delta') return;
-  assert.equal(video.baseRevision, 0);
+  assert.equal(video.mode, 'snapshot');
 });
 
 test('emit without emitter is no-op', async () => {

@@ -14,6 +14,7 @@ import type {
   ComposerSubmissionAgentPlanningPort,
   CreationSubmissionRecord,
 } from '../execution-spine/submission-coordinator.js';
+import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import type { ExecutionPlanCompileFreeze } from '../harness/execution-plan-admission.js';
 import type { AgentSessionStore } from './agent-session-store.js';
@@ -148,7 +149,9 @@ export class ComposerPlanSessionCoordinator
       });
     }
 
-    return { threadId, runId };
+    const binding = { threadId: asAgentThreadIdentity(threadId), runId };
+    submission.agentBinding = binding;
+    return binding;
   }
 
   private async compile(input: {

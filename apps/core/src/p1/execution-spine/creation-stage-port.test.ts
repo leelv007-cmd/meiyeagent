@@ -5,6 +5,7 @@ import { HarnessAdmissionError } from "../harness/task-admission.js";
 import { UserSelectedSkillIneligibleError } from "../skills/service.js";
 import { createCreationExecutionSnapshot } from "./creation-execution-snapshot.js";
 import { CreationStagePort } from "./creation-stage-port.js";
+import { asAgentThreadIdentity } from "./submission-coordinator.js";
 
 test("the Coordinator starts the existing Harness from one frozen Composer snapshot", async () => {
 	const calls: unknown[] = [];
@@ -40,11 +41,16 @@ test("the Coordinator starts the existing Harness from one frozen Composer snaps
 			id: "usage-reservation-task-1",
 			units: [{ resource: "copy", quantity: 1 }],
 		},
+		agentBinding: {
+			threadId: asAgentThreadIdentity("thread:composer:authoritative"),
+			runId: "run:composer:authoritative",
+		},
 	});
 
 	assert.deepEqual(calls, [
 		{
 			taskId: "task-1",
+			agentThreadId: "thread:composer:authoritative",
 			actorId: "owner-1",
 			workspaceId: "workspace-1",
 			packageId: "package-1",

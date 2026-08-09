@@ -41,6 +41,8 @@ export interface CreationSubmissionRecord {
 	 * snapshot from the frozen harness request.
 	 */
 	executionPlanFreeze?: ExecutionPlanCompileFreeze;
+	/** Authoritative Session identity bound before the Harness starts. */
+	agentBinding?: ComposerAgentBinding;
 }
 
 export interface CreationSubmissionUsageUnit {
@@ -129,8 +131,20 @@ export interface CreationSubmissionIdFactory {
 	now(): string;
 }
 
+declare const agentThreadIdentityBrand: unique symbol;
+
+export type AgentThreadIdentity = string & {
+	readonly [agentThreadIdentityBrand]: "AgentThreadIdentity";
+};
+
+export function asAgentThreadIdentity(value: string): AgentThreadIdentity {
+	const normalized = value.trim();
+	if (!normalized) throw new Error("Agent Thread identity cannot be empty.");
+	return normalized as AgentThreadIdentity;
+}
+
 export type ComposerAgentBinding = {
-	threadId: string;
+	threadId: AgentThreadIdentity;
 	runId: string;
 };
 
@@ -308,15 +322,17 @@ export class CreationSubmissionCoordinator {
 		);
 	}
 
-	private prepareAgentPlan(
+	private async prepareAgentPlan(
 		submission: CreationSubmissionRecord,
 		continuationThreadId?: string
 	): Promise<ComposerAgentBinding | undefined> {
-		if (!this.agentPlanning) return Promise.resolve(undefined);
-		return this.agentPlanning.prepare({
+		if (!this.agentPlanning) return undefined;
+		const binding = await this.agentPlanning.prepare({
 			...(continuationThreadId ? { continuationThreadId } : {}),
 			submission,
 		});
+		submission.agentBinding = binding;
+		return binding;
 	}
 
 	async submitResultAdjustment(input: {

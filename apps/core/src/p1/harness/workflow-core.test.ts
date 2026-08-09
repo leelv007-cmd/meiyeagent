@@ -781,9 +781,13 @@ test('V31-15 video wiring: real media stage ports emit per-scene artifact.revise
     },
   };
 
+  const request = {
+    ...mediaTaskInput('video'),
+    agentThreadId: 'thread:composer:artifact-journey',
+  } as unknown as HarnessWorkflowInput;
   await runHarnessWorkflow(
     'task-video-artifact',
-    mediaTaskInput('video'),
+    request,
     stages,
     {
       async runStep(_key, operation) {
@@ -801,14 +805,20 @@ test('V31-15 video wiring: real media stage ports emit per-scene artifact.revise
   const wires = projected.map((candidate) => {
     assert.equal(candidate.eventType, 'artifact.revised');
     assert.equal(candidate.sourceDomain, 'make_harness.artifact');
+    assert.equal(candidate.threadId, 'thread:composer:artifact-journey');
     const parsed = artifactUpdateWireSchema.parse(candidate.payload);
-    if (parsed.mode !== 'delta') throw new Error('expected delta');
-    if (!('scenes' in parsed.patch)) throw new Error('expected video patch');
     return {
       wire: parsed,
-      scene: parsed.patch.scenes?.[0],
+      scene:
+        parsed.mode === 'delta' && 'scenes' in parsed.patch
+          ? parsed.patch.scenes?.[0]
+          : parsed.mode === 'snapshot' && 'scenes' in parsed.full
+            ? parsed.full.scenes[0]
+            : undefined,
     };
   });
+  assert.equal(wires[0]?.wire.mode, 'snapshot');
+  assert.equal(wires.at(-1)?.wire.status, 'ready');
   assert.equal(wires.length, 4);
   const updates = wires.map(({ wire }) => wire);
   const [scene0Run, scene1Run, scene0Ready, scene1Ready] = wires.map(

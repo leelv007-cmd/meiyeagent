@@ -83,12 +83,18 @@ test('createNotePageProgressReporter reports progress and may emit artifact.revi
   const updates = projected.map((candidate) => {
     assert.equal(candidate.eventType, 'artifact.revised');
     const parsed = artifactUpdateWireSchema.parse(candidate.payload);
-    if (parsed.mode !== 'delta') throw new Error('expected delta');
-    if (!('pages' in parsed.patch)) throw new Error('expected note patch');
+    const pages =
+      parsed.mode === 'snapshot' && 'pages' in parsed.full
+        ? parsed.full.pages
+        : parsed.mode === 'delta' && 'pages' in parsed.patch
+          ? parsed.patch.pages
+          : undefined;
+    if (!pages) throw new Error('expected note artifact body');
     return {
       artifactId: parsed.artifactId,
       revision: parsed.revision,
-      page: parsed.patch.pages?.[0],
+      page: pages[0],
+		status: parsed.status,
     };
   });
   assert.deepEqual(
@@ -101,6 +107,7 @@ test('createNotePageProgressReporter reports progress and may emit artifact.revi
   );
   assert.equal(new Set(updates.map(({ artifactId }) => artifactId)).size, 1);
   assert.equal(updates[1]!.page?.body, '周末护理限时');
+	assert.equal(updates.at(-1)?.status, 'ready');
 });
 
 test('skeleton/copy stages emit once per page across regeneration runs', async () => {
@@ -139,11 +146,17 @@ test('skeleton/copy stages emit once per page across regeneration runs', async (
   const updates = projected.map((candidate) => {
     assert.equal(candidate.eventType, 'artifact.revised');
     const parsed = artifactUpdateWireSchema.parse(candidate.payload);
-    if (parsed.mode !== 'delta') throw new Error('expected delta');
-    if (!('pages' in parsed.patch)) throw new Error('expected note patch');
+    const pages =
+      parsed.mode === 'snapshot' && 'pages' in parsed.full
+        ? parsed.full.pages
+        : parsed.mode === 'delta' && 'pages' in parsed.patch
+          ? parsed.patch.pages
+          : undefined;
+    if (!pages) throw new Error('expected note artifact body');
     return {
       revision: parsed.revision,
-      page: parsed.patch.pages?.[0],
+      page: pages[0],
+		parentRevision: parsed.parentRevision,
     };
   });
   const stages = updates.map(({ page }) => page!.stage);
@@ -152,4 +165,5 @@ test('skeleton/copy stages emit once per page across regeneration runs', async (
     updates.map(({ revision }) => revision),
     [1, 2, 3, 4, 5, 6],
   );
+	assert.equal(updates[4]?.parentRevision, 4);
 });

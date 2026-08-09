@@ -22,6 +22,7 @@ import { ProductQuoteService } from "../product-billing/quote-service.js";
 import { triggersPaidMediaExecution } from "../harness/workflow-core.js";
 import type { ComposerSubmissionBody } from "./creation-execution-snapshot.js";
 import {
+	asAgentThreadIdentity,
 	CreationSubmissionCoordinator,
 	type CreationSubmissionAdmissionPort,
 	type CreationSubmissionHarnessStarter,
@@ -981,7 +982,10 @@ test("Composer returns authoritative Agent binding and treats the Thread hint ou
 		{
 			async prepare(input) {
 				continuationHints.push(input.continuationThreadId);
-				return { threadId: "thread-authoritative", runId: "run-authoritative" };
+				return {
+					threadId: asAgentThreadIdentity("thread-authoritative"),
+					runId: "run-authoritative",
+				};
 			},
 		}
 	);

@@ -94,6 +94,9 @@ export function createNotePageProgressReporter(input: {
   // page image generation; image running/success land per generation attempt.
   const skeletonEmitted = new Set<string>();
   const copyEmitted = new Set<string>();
+  const completedPages = new Set<string>();
+  let readyRevision: number | undefined;
+  let derivedParentRevision: number | undefined;
 
   return async (event) => {
     const order = notePageOrderLabel(input.plan, event.pageId);
@@ -128,6 +131,11 @@ export function createNotePageProgressReporter(input: {
         occurredAt: input.artifactContext.now(),
       };
       if (event.state === 'running') {
+        if (readyRevision !== undefined) {
+          derivedParentRevision = readyRevision;
+          readyRevision = undefined;
+          completedPages.clear();
+        }
         if (!skeletonEmitted.has(event.pageId)) {
           skeletonEmitted.add(event.pageId);
           await emitNotePageArtifactProgress(input.artifactEmitter, {
@@ -135,7 +143,11 @@ export function createNotePageProgressReporter(input: {
             stage: 'skeleton',
             state: 'running',
             revision: input.artifactContext.nextRevision(),
+            ...(derivedParentRevision !== undefined
+              ? { parentRevision: derivedParentRevision }
+              : {}),
           });
+          derivedParentRevision = undefined;
         }
         if (!copyEmitted.has(event.pageId)) {
           copyEmitted.add(event.pageId);
@@ -148,12 +160,21 @@ export function createNotePageProgressReporter(input: {
           });
         }
       }
+      if (event.state === 'success') completedPages.add(event.pageId);
+      const terminal = completedPages.size === unitIds.length;
+      const revision = input.artifactContext.nextRevision();
       await emitNotePageArtifactProgress(input.artifactEmitter, {
         ...base,
         stage: 'image',
         state: event.state,
-        revision: input.artifactContext.nextRevision(),
+        revision,
+        ...(terminal ? { status: 'ready' as const } : {}),
+        ...(derivedParentRevision !== undefined
+          ? { parentRevision: derivedParentRevision }
+          : {}),
       });
+      derivedParentRevision = undefined;
+      if (terminal) readyRevision = revision;
     }
 
     // V31-16: unit completion boundary — steer inserts after current page unit.

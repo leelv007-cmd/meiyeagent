@@ -66,6 +66,8 @@ test('Composer submission creates/reuses Thread+Run and appends real plan semant
   const replayedBinding = await coordinator.prepare({ submission: first });
 
   assert.deepEqual(replayedBinding, firstBinding);
+  assert.ok(first.executionPlanFreeze);
+  assert.notEqual(firstBinding.threadId, first.executionPlanFreeze.planId);
   assert.equal(
     (
       await sessions.listRuns({
@@ -312,7 +314,7 @@ test('Composer submit → task-admission assembles and one-shot writes the Execu
   });
 
   const submission = copyRecord('task-chain-1', '为夏日项目写预约文案');
-  await coordinator.prepare({ submission });
+  const binding = await coordinator.prepare({ submission });
   assert.ok(submission.executionPlanFreeze);
 
   const registry = new MemoryHarnessRegistry();
@@ -336,6 +338,8 @@ test('Composer submit → task-admission assembles and one-shot writes the Execu
   const admitted = await snapshotStore.getByWorkflowId('task-chain-1');
   assert.ok(admitted);
   assert.ok(first?.executionPlanSnapshot);
+  assert.equal(first?.agentThreadId, binding.threadId);
+  assert.notEqual(first?.agentThreadId, first?.executionPlanSnapshot.planId);
   assert.equal(
     first.executionPlanSnapshot.snapshotHash,
     admitted.snapshot.snapshotHash
