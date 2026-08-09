@@ -16,8 +16,9 @@
  *     them is in the required set. 「删除、归档或显式标注降级」 is only honest
  *     if the marking is machine-checkable.
  *  4. The required image-text direction choice uses a real click, proves the
- *     option state advanced, and never hides a click failure behind the full
- *     journey polling timeout unless a frozen route actually resumes.
+ *     option state advanced, and never hides a click failure. V31-29 removed
+ *     the frozen-route swallow path: a failed click or a terminal failure
+ *     after the answer fails the journey outright.
  *
  * Issue #257 retired both public Operations actions. Internal application
  * service methods may remain for governed server callers; this file checks only
@@ -122,26 +123,27 @@ test('the image-text direction helper fails fast on real click errors', () => {
   );
 
   assert.doesNotMatch(helper, /force:\s*true/u);
-  assert.match(helper, /\.click\(\{ timeout: 3_000 \}\)/u);
+  assert.match(helper, /\.click\(\{ timeout: 15_000 \}\)/u);
   assert.match(helper, /directionSettlementProof\(productionRenderer\)/u);
   assert.match(
     helper,
-    /\.toPass\(\s*\{\s*timeout: 300_000,?\s*\}\s*\);[\s\S]*?direction\.click/u,
+    /\.toBeVisible\(\{ timeout: 300_000 \}\);[\s\S]*?direction\.click/u,
     'the long poll must finish before the real click is attempted'
-  );
-  const longPoll = helper.slice(
-    helper.indexOf('await expect(async () =>'),
-    helper.indexOf('if (\n    await resumedLine')
-  );
-  assert.doesNotMatch(
-    longPoll,
-    /\.catch\(\(\) => false\)/u,
-    'fatal page or browser errors must escape the long poll immediately'
   );
   assert.match(
     helper,
-    /catch \(error\) \{[\s\S]*?resumedLine[\s\S]*?waitFor\(\{ state: 'visible', timeout: 2_000 \}\)[\s\S]*?return;[\s\S]*?throw error;/u,
-    'a click error may be ignored only when frozen-route resume becomes visible promptly'
+    /toBeEnabled\(\);[\s\S]*?direction\.click/u,
+    'the option must prove actionable before the click, not force-skipped'
+  );
+  assert.doesNotMatch(
+    helper,
+    /catch \(error\)/u,
+    'V31-29: no frozen-route swallow path — a failed click fails the journey'
+  );
+  assert.match(
+    helper,
+    /if \(outcome === 'failed'\) \{[\s\S]*?throw new Error/u,
+    'V31-29: a terminal failure after the answer must fail the journey, not read as settlement'
   );
   const afterClick = helper.slice(helper.indexOf('const settlementProof'));
   assert.match(

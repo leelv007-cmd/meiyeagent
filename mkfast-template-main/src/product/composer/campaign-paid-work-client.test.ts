@@ -21,6 +21,7 @@ const responseBody = {
       {
         approvalScope: 'single_work',
         contentPackage: { expectedRevision: 0, id: 'package-1' },
+        makeReady: true,
         replayed: false,
         runId: 'run-1',
         snapshot: {
