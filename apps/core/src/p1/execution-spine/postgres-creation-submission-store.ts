@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { isComposerVariantPlatform } from "@meiye/contracts";
+import {
+  isComposerVariantPlatform,
+  type BuildProductQuoteInput,
+} from "@meiye/contracts";
 import type { Pool, PoolClient } from "pg";
 
 import { P1DomainError } from "../foundation/domain.js";
@@ -50,6 +53,14 @@ export interface CreationSubmissionPersistencePort {
     client: PoolClient,
     submission: CreationSubmissionRecord,
   ): Promise<void>;
+	reprice?(client: PoolClient, input: {
+		submission: CreationSubmissionRecord;
+		expectedFreeze: CreationSubmissionRecord["executionPlanFreeze"] | null;
+		previousQuoteRef: { id: string; revision: string };
+		freeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		successorQuote: BuildProductQuoteInput;
+		credits: number;
+	}): Promise<void>;
 }
 
 export interface CreationUsageReservationPort {
@@ -57,6 +68,14 @@ export interface CreationUsageReservationPort {
     client: PoolClient,
     submission: CreationSubmissionRecord,
   ): Promise<void>;
+	reprice?(client: PoolClient, input: {
+		submission: CreationSubmissionRecord;
+		expectedFreeze: CreationSubmissionRecord["executionPlanFreeze"] | null;
+		previousQuoteRef: { id: string; revision: string };
+		freeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		successorQuote: BuildProductQuoteInput;
+		credits: number;
+	}): Promise<void>;
 }
 
 /**
@@ -67,7 +86,10 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
   constructor(
     private readonly pool: Pool,
     private readonly grantLots?: Pick<PostgresGrantLotLedger, 'consumeWithClient'>,
-    private readonly credits?: Pick<PostgresCreditLedger, 'consumeWithClient'>,
+    private readonly credits?: Pick<
+      PostgresCreditLedger,
+      'consumeWithClient' | 'refundUsageOperationWithClient'
+    >,
   ) {}
 
   async reserve(client: PoolClient, submission: CreationSubmissionRecord) {
@@ -157,10 +179,12 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
       workspaceId: snapshot.workspaceId,
     });
     if (credits !== undefined && creditLedger) {
+		const usageOperationId = creditUsageOperationId(submission.task.id);
+		submission.usageReservation.creditUsageOperationId = usageOperationId;
       await creditLedger.consumeWithClient(client, {
         workspaceId: snapshot.workspaceId,
         credits,
-        transactionId: creditUsageOperationId(submission.task.id),
+        transactionId: usageOperationId,
         actorId: snapshot.actorId,
         correlationId: `coordinator:${submission.task.id}`,
         createdAt: snapshot.createdAt,
@@ -190,6 +214,76 @@ export class PostgresProductBillingUsageReservation implements CreationUsageRese
       });
     }
   }
+
+	async reprice(client: PoolClient, input: {
+		submission: CreationSubmissionRecord;
+		expectedFreeze: CreationSubmissionRecord["executionPlanFreeze"] | null;
+		previousQuoteRef: { id: string; revision: string };
+		freeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		successorQuote: BuildProductQuoteInput;
+		credits: number;
+	}) {
+		const { submission } = input;
+		const snapshot = submission.snapshot;
+		if (!this.credits) {
+			throw new P1DomainError(
+				"INVALID_STATE",
+				"Plan reprice requires the durable merchant credit ledger.",
+			);
+		}
+		await lockWorkspaceCreditsWithClient(client, snapshot.workspaceId);
+		const billing = new DurableProductBillingService(
+			new PostgresProductBillingRepository(this.pool, client),
+			() => new Date(snapshot.createdAt),
+		);
+		const replaced = await billing.replaceReservedQuote({
+			workspaceId: snapshot.workspaceId,
+			previousQuoteId: input.previousQuoteRef.id,
+			previousQuoteRevision: input.previousQuoteRef.revision,
+			successor: input.successorQuote,
+			taskId: submission.task.id,
+			usageId: submission.usageReservation.id,
+		});
+		if (
+			replaced.quote.quoteId !== input.freeze.quoteRef.id ||
+			replaced.quote.revision !== String(input.freeze.quoteRef.revision) ||
+			replaced.usage.reservedCredits !== input.credits
+		) {
+			throw new P1DomainError(
+				"INVALID_STATE",
+				"Repriced quote and execution freeze do not bind the same ledger amount.",
+			);
+		}
+		const previousUsageOperationId =
+			submission.usageReservation.creditUsageOperationId ??
+			creditUsageOperationId(submission.task.id);
+		await this.credits.refundUsageOperationWithClient(client, {
+			workspaceId: snapshot.workspaceId,
+			usageOperationId: previousUsageOperationId,
+			refundOperationId: `plan-reprice-refund:${submission.task.id}:r${input.freeze.planRevision}`,
+			actorId: snapshot.actorId,
+			correlationId: `plan-reprice:${submission.task.id}`,
+			createdAt: snapshot.createdAt,
+		});
+		const successorUsageOperationId = creditUsageOperationId(
+			`${submission.task.id}:plan-r${input.freeze.planRevision}:quote-${input.freeze.quoteRef.id}@${input.freeze.quoteRef.revision}`,
+		);
+		await this.credits.consumeWithClient(client, {
+			workspaceId: snapshot.workspaceId,
+			credits: input.credits,
+			transactionId: successorUsageOperationId,
+			actorId: snapshot.actorId,
+			correlationId: `plan-reprice:${submission.task.id}`,
+			createdAt: snapshot.createdAt,
+		});
+		await billing.bindMerchantSubmissionInput({
+			inputSnapshot: creationSubmissionMerchantInput(submission),
+			quoteRevision: replaced.quote.revision,
+			taskId: submission.task.id,
+			workspaceId: snapshot.workspaceId,
+		});
+		submission.usageReservation.creditUsageOperationId = successorUsageOperationId;
+	}
 }
 
 /**
@@ -312,6 +406,16 @@ export class PostgresCreationSubmissionPersistence implements CreationSubmission
     }
     await this.usage.reserve(client, submission);
   }
+
+	reprice(
+		client: PoolClient,
+		input: Parameters<NonNullable<CreationUsageReservationPort["reprice"]>>[1],
+	) {
+		if (!this.usage.reprice) {
+			throw new Error("Product billing reprice persistence is unavailable.");
+		}
+		return this.usage.reprice(client, input);
+	}
 }
 
 /**
@@ -416,6 +520,16 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
       CREATE INDEX IF NOT EXISTS creation_submissions_harness_recovery_idx
         ON execution_spine.creation_submissions (updated_at, id)
         WHERE harness_state IN ('reserved', 'starting');
+      CREATE TABLE IF NOT EXISTS execution_spine.composer_plan_outbox (
+        event_id text PRIMARY KEY,
+        workspace_id text NOT NULL,
+        submission_id text NOT NULL,
+        event_type text NOT NULL,
+        payload jsonb NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
+      CREATE INDEX IF NOT EXISTS composer_plan_outbox_workspace_created_idx
+        ON execution_spine.composer_plan_outbox (workspace_id, created_at, event_id);
     `);
   }
 
@@ -535,6 +649,12 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 	quoteRef?: CreationSubmissionRecord['snapshot']['quote'];
 	credits?: number;
 	confirmationDispatch?: CreationSubmissionRecord['confirmationDispatch'];
+	clarificationResolution?: {
+	  interruptId: string;
+	  revision: number;
+	  threadId: string;
+	  runId: string;
+	};
   }) {
 	// `makeReady` is transient turn state; only the identity is durable.
 	const durableBinding = {
@@ -584,10 +704,25 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 		freezeReplayed &&
 		dispatchReplayed
 	  ) {
+	  if (input.clarificationResolution) {
+		await client.query(
+		  `INSERT INTO execution_spine.composer_plan_outbox
+			(event_id, workspace_id, submission_id, event_type, payload)
+		   VALUES ($1, $2, $3, 'interrupt.resolved', $4::jsonb)
+		   ON CONFLICT (event_id) DO NOTHING`,
+		  [
+			`${input.clarificationResolution.interruptId}:resolved`,
+			input.workspaceId,
+			input.submissionId,
+			JSON.stringify(input.clarificationResolution),
+		  ],
+		);
+	  }
 		await client.query('COMMIT');
 		return current;
 	  }
 	  current.agentBinding = durableBinding;
+	  current.agentPlanPending = false;
 	  current.executionPlanFreeze = input.executionPlanFreeze;
 	  if (input.confirmationDispatch !== undefined) {
 		current.confirmationDispatch = input.confirmationDispatch;
@@ -616,6 +751,20 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 		  `Creation submission ${input.submissionId} cannot change its execution plan freeze after Harness admission.`,
 		);
 	  }
+	  if (input.clarificationResolution) {
+		await client.query(
+		  `INSERT INTO execution_spine.composer_plan_outbox
+			(event_id, workspace_id, submission_id, event_type, payload)
+		   VALUES ($1, $2, $3, 'interrupt.resolved', $4::jsonb)
+		   ON CONFLICT (event_id) DO NOTHING`,
+		  [
+			`${input.clarificationResolution.interruptId}:resolved`,
+			input.workspaceId,
+			input.submissionId,
+			JSON.stringify(input.clarificationResolution),
+		  ],
+		);
+	  }
 	  await client.query('COMMIT');
 	  return current;
 	} catch (error) {
@@ -625,6 +774,134 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
 	  client.release();
 	}
   }
+
+	async saveRepricedExecutionPlanFreeze(input: {
+		workspaceId: string;
+		submissionId: string;
+		expectedFreeze: CreationSubmissionRecord["executionPlanFreeze"] | null;
+		previousQuoteRef: { id: string; revision: string };
+		freeze: NonNullable<CreationSubmissionRecord["executionPlanFreeze"]>;
+		successorQuote: BuildProductQuoteInput;
+		credits: number;
+    clarificationResolution?: {
+      interruptId: string;
+      revision: number;
+      threadId: string;
+      runId: string;
+    };
+	}) {
+		if (!this.persistence.reprice) {
+			throw new Error("Atomic product billing reprice persistence is unavailable.");
+		}
+		const client = await this.pool.connect();
+		try {
+			await client.query("BEGIN");
+			const selected = await client.query<{
+				harness_state: HarnessStartState;
+				submission: unknown;
+			}>(
+				`SELECT harness_state, submission
+				   FROM execution_spine.creation_submissions
+				  WHERE workspace_id=$1 AND id=$2
+				  FOR UPDATE`,
+				[input.workspaceId, input.submissionId],
+			);
+			const row = selected.rows[0];
+			if (!row) throw new Error(`Creation submission ${input.submissionId} was not found.`);
+			const current = storedSubmission(row.submission);
+			if (
+				JSON.stringify(current.executionPlanFreeze) === JSON.stringify(input.freeze)
+			) {
+				await client.query("COMMIT");
+				return current;
+			}
+			if (
+				row.harness_state !== "reserved" ||
+				JSON.stringify(current.executionPlanFreeze ?? null) !==
+					JSON.stringify(input.expectedFreeze)
+			) {
+				throw new Error(
+					`Creation submission ${input.submissionId} reprice lost its freeze CAS.`,
+				);
+			}
+			const next: CreationSubmissionRecord = {
+				...current,
+        agentPlanPending: false,
+				snapshot: {
+					...current.snapshot,
+					quote: {
+						id: input.freeze.quoteRef.id,
+						revision: String(input.freeze.quoteRef.revision),
+					},
+				},
+				usageReservation: {
+					...current.usageReservation,
+					credits: input.credits,
+				},
+				executionPlanFreeze: structuredClone(input.freeze),
+			};
+			await this.persistence.reprice(client, {
+				submission: next,
+				expectedFreeze: input.expectedFreeze,
+				previousQuoteRef: input.previousQuoteRef,
+				freeze: input.freeze,
+				successorQuote: input.successorQuote,
+				credits: input.credits,
+			});
+			await client.query(
+				`UPDATE execution_spine.creation_submissions
+				    SET submission=$3::jsonb,
+				        quote_id=$4,
+				        updated_at=clock_timestamp()
+				  WHERE workspace_id=$1 AND id=$2 AND harness_state='reserved'`,
+				[
+					input.workspaceId,
+					input.submissionId,
+					JSON.stringify(next),
+					input.freeze.quoteRef.id,
+				],
+			);
+			if (input.clarificationResolution) {
+				await client.query(
+					`INSERT INTO execution_spine.composer_plan_outbox
+					  (event_id, workspace_id, submission_id, event_type, payload)
+					 VALUES ($1, $2, $3, 'interrupt.resolved', $4::jsonb)
+					 ON CONFLICT (event_id) DO NOTHING`,
+					[
+						`${input.clarificationResolution.interruptId}:resolved`,
+						input.workspaceId,
+						input.submissionId,
+						JSON.stringify(input.clarificationResolution),
+					],
+				);
+			}
+			await client.query(
+				`INSERT INTO execution_spine.composer_plan_outbox
+				  (event_id, workspace_id, submission_id, event_type, payload)
+				 VALUES ($1, $2, $3, 'plan.repriced', $4::jsonb)
+				 ON CONFLICT (event_id) DO NOTHING`,
+				[
+					`plan-repriced:${input.submissionId}:r${input.freeze.planRevision}`,
+					input.workspaceId,
+					input.submissionId,
+					JSON.stringify({
+						planId: input.freeze.planId,
+						planRevision: input.freeze.planRevision,
+						previousQuoteRef: input.previousQuoteRef,
+						quoteRef: input.freeze.quoteRef,
+						credits: input.credits,
+					}),
+				],
+			);
+			await client.query("COMMIT");
+			return next;
+		} catch (error) {
+			await client.query("ROLLBACK");
+			throw error;
+		} finally {
+			client.release();
+		}
+	}
 
   /**
    * Persists the immutable successor snapshot for a semantic answer without
@@ -908,7 +1185,10 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
         inTransaction = false;
         return submission;
       }
-      if (submission.confirmationDispatch.state === "expired") {
+      if (
+        submission.confirmationDispatch.state !== "pending" &&
+        submission.confirmationDispatch.state !== "dispatched"
+      ) {
         throw new Error(
           `Confirmation dispatch for ${input.submissionId} already expired.`,
         );
@@ -1093,8 +1373,10 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     ) {
       await this.creditLedger.refundUsageOperationWithClient(client, {
         workspaceId: submission.snapshot.workspaceId,
-        usageOperationId: creditUsageOperationId(submission.task.id),
-        refundOperationId: `confirmation-outbox-expiry:${submission.task.id}`,
+        usageOperationId:
+          submission.usageReservation.creditUsageOperationId ??
+          creditUsageOperationId(submission.task.id),
+        refundOperationId: `confirmation-outbox-expiry:${submission.task.id}:${submission.confirmationDispatch?.requestId ?? 'initial'}`,
         credits,
         actorId: 'system',
         correlationId: `confirmation:${submission.task.id}`,
@@ -1159,14 +1441,20 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
 	agentBinding?: unknown;
 	agentContinuationThreadId?: unknown;
 	artifactLineage?: unknown;
+    agentPlanPending?: unknown;
+    confirmationDispatch?: unknown;
     contentPackage?: { expectedRevision?: unknown; id?: unknown };
     decisionReferences?: unknown;
     executionPlanFreeze?: unknown;
     executionConfirmationContext?: unknown;
-    confirmationDispatch?: unknown;
     snapshot?: unknown;
     task?: { id?: unknown };
-    usageReservation?: { id?: unknown; credits?: unknown; units?: unknown };
+    usageReservation?: {
+      id?: unknown;
+      credits?: unknown;
+      creditUsageOperationId?: unknown;
+      units?: unknown;
+    };
     work?: { id?: unknown };
   };
   const snapshot = creationExecutionSnapshotSchema.parse(candidate.snapshot);
@@ -1192,6 +1480,24 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     "usageReservation.id",
   );
   const credits = storedUsageCredits(candidate.usageReservation?.credits);
+  const creditUsageOperationId =
+    candidate.usageReservation?.creditUsageOperationId;
+  if (
+    creditUsageOperationId !== undefined &&
+    (typeof creditUsageOperationId !== "string" || !creditUsageOperationId)
+  ) {
+    throw new Error(
+      "Stored creation submission has an invalid credit usage operation.",
+    );
+  }
+  if (
+    candidate.agentPlanPending !== undefined &&
+    typeof candidate.agentPlanPending !== "boolean"
+  ) {
+    throw new Error(
+      "Stored creation submission has an invalid Agent plan state.",
+    );
+  }
   const usageUnits = storedUsageUnits(candidate.usageReservation?.units, {
     allowEmpty: credits !== undefined,
   });
@@ -1214,12 +1520,18 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     ...(executionPlanFreeze ? { executionPlanFreeze } : {}),
     ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
     ...(confirmationDispatch ? { confirmationDispatch } : {}),
+    ...(typeof candidate.agentPlanPending === "boolean"
+      ? { agentPlanPending: candidate.agentPlanPending }
+      : {}),
     snapshot,
     task: { id: taskId },
     usageReservation: {
       id: usageReservationId,
       units: usageUnits,
       ...(credits !== undefined ? { credits } : {}),
+      ...(typeof creditUsageOperationId === "string"
+        ? { creditUsageOperationId }
+        : {}),
     },
     work: { id: workId },
 	...(storedContinuationThreadId(candidate.agentContinuationThreadId)

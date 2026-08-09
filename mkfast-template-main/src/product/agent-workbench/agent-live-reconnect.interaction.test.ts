@@ -2,6 +2,7 @@ import { agentSemanticEventWireSchema } from '@meiye/contracts';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { AgentReplayLoader } from './agent-event-client';
+import type { AgentLiveSubscriber } from './agent-event-transport';
 import { createAgentEventStore } from './agent-event-store';
 import {
   AGENT_LIVE_RECONNECT_BASE_DELAY_MS,
@@ -138,12 +139,8 @@ describe('Agent live reconnect loop', () => {
     // Each attempt hands over exactly one usable event and then ends — the
     // shape a degraded stream has. Resetting the backoff on the event pinned
     // every retry at the base delay.
-    const subscribeLive = vi.fn(
-      async ({
-        onEvent,
-      }: {
-        onEvent: (event: unknown) => Promise<void> | void;
-      }) => {
+    const subscribeLive = vi.fn<AgentLiveSubscriber>(
+      async ({ onEvent }) => {
         offset += 1;
         await onEvent(
           agentSemanticEventWireSchema.parse({

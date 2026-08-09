@@ -9,36 +9,223 @@ import {
   seedComposerInlineAuthorize,
   seedConfirmedStore,
 } from '../fixtures/product';
-import { selectComposerLens } from '../fixtures/ui-journey';
+import {
+  closeComposerCapsule,
+  openComposerCapsule,
+  selectComposerLens,
+} from '../fixtures/ui-journey';
 
 /**
- * V31-10 / V3.1 §37.4-C first half — Living Plan journey (spec only).
+ * V31-10 / V3.1 §37.4-C — Living Plan journey against the real production
+ * sequence (no route mocks; only the model boundary is fixture mode).
  *
- * Journey under test (Level 2 定制图文):
- *   检索 → 一问 → Living Plan → 自然语言调整
+ * The sequence this file encodes is the one Core actually runs
+ * (`apps/core/src/p1/agent-session/composer-plan-session.ts`,
+ * `apps/core/src/composer-plan-route-registrar.ts`):
  *
- * Real browser run is owned by the merge controller. This file is the
- * Playwright seam contract: selectors + ordering of merchant-visible steps.
- * Do not run in agent lanes (`pnpm e2e` is forbidden for execution agents).
+ * 1. `POST /p1/composer/submissions` runs an Agent Session **Intent turn before
+ *    the PlanCompiler** (`prepare()` → `runIntentTurn()` → `compile()`), so the
+ *    202 already carries a compiled plan revision.
+ * 2. Every non-copy lens freezes as `merchant_confirmed`, so that same 202
+ *    answers `makeReady: false` — **Make does not start on submit**, and the
+ *    AgentRun stays running/waiting rather than completing at compile time.
+ *    Pure copy (`policy_exempt_copy`) is the only exemption and is covered by
+ *    `v31-day0-free-creation-journey.spec.ts`.
+ * 3. The commit strip is the merchant's command surface over three real Core
+ *    commands — `tasks/:taskId/answer`, `tasks/:taskId/revise`,
+ *    `tasks/:taskId/start` (`use-living-plan-controller.ts`). Only `start`
+ *    admits Make.
  *
- * Confirm / Make / note page regen / publish handoff are out of scope here
- * (V31-11+ / §37.4-C second half).
+ * Every assertion below is unconditional: no `if (await x.isVisible())` around
+ * the step under test, no `.or()` unions that pass on the wrong surface, no
+ * step that can be skipped. Strict helpers are written inline rather than
+ * borrowed, so a shared-fixture regression cannot soften this file.
  */
 
+const CUSTOMIZED_INTENT =
+  '明天下午还有两个空档，帮我发点奶油风美甲，不要太像广告。';
+const REVISE_INSTRUCTION = '只做小红书，减到 4 页';
+
+type SubmissionBinding = {
+  taskId: string;
+  workId: string;
+};
+
+/**
+ * Bring the merchant to a submittable 小红书图文 draft.
+ *
+ * `image_text` submissions fail closed (400 INVALID_STATE) without a
+ * `case_image` workspace source, so a real case photo is attached first — the
+ * same contract the three-modal journey exercises.
+ */
 async function openCustomizedCreate(page: Page) {
   await page.goto('/dashboard');
-  // image_text submissions fail closed (400 INVALID_STATE) without a
-  // case_image workspace source — seed one first, as the merchant would
-  // attach a case photo (same contract the three-modal journey exercises).
   await seedComposerInlineAuthorize(page, {
     fileName: `v31-journey-${crypto.randomUUID()}.png`,
   });
-  // Customized image-text path (Level 2 Living Plan), not pure-copy Level 1.
   await selectComposerLens(page, 'image_text');
   await expect(page.getByTestId('composer-home')).toBeVisible();
+
+  // 图文 pins 小红书 as its lens default (`composer-home` lensDefault), so the
+  // destination is asserted rather than clicked: these chips are toggles, and a
+  // click here would clear the platform the plan is about to be priced for.
+  const destinationPanel = await openComposerCapsule(page, 'destination');
+  await expect(
+    page.getByTestId('composer-destination-option-xiaohongshu'),
+    '图文 must arrive pre-bound to 小红书 before the plan is compiled'
+  ).toHaveAttribute('aria-pressed', 'true');
+  await closeComposerCapsule(page, destinationPanel);
 }
 
-test.describe('V31-10 Living Plan journey (§37.4-C first half)', () => {
+/**
+ * Submit the plan-shaping turn and return the ids the 202 minted.
+ *
+ * Asserts the whole submit contract inline: a bound server quote, then an
+ * enabled send control (`composer-home` submitDisabled folds in the bound quote,
+ * upload readiness, quota and the frozen phase — pressing a disabled send
+ * produces no POST at all, so the response wait would burn its budget on a
+ * request that was never going to exist), then the 202 itself — including
+ * `makeReady: false`, which is the seam-level statement that Make was **not**
+ * admitted.
+ */
+async function submitPlanShapingTurn(page: Page): Promise<SubmissionBinding> {
+  const intent = page.getByTestId('composer-intent-input');
+  await intent.fill(CUSTOMIZED_INTENT);
+  await expect(intent).toHaveValue(CUSTOMIZED_INTENT);
+
+  await expect(
+    page.getByTestId('composer-quote-line'),
+    'submit must bind the server quote before creation'
+  ).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId('composer-grounding-blocker')).toHaveCount(0);
+
+  const submit = page.getByTestId('composer-submit');
+  await expect(
+    submit,
+    'the composer must be ready to submit before the journey clicks send'
+  ).toBeEnabled({ timeout: 60_000 });
+  await expect(submit).not.toHaveAttribute('aria-disabled', 'true');
+
+  const submissionResponsePromise = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' &&
+      response.url().includes('/api/core/p1/composer/submissions'),
+    { timeout: 120_000 }
+  );
+  await submit.click();
+  const submissionResponse = await submissionResponsePromise;
+  const submissionText = await submissionResponse.text();
+  const submission = JSON.parse(submissionText) as {
+    data?: {
+      makeReady?: boolean;
+      runId?: string;
+      task?: { id?: string };
+      threadId?: string;
+      work?: { id?: string };
+    };
+    error?: { message?: string };
+  };
+  expect(
+    submissionResponse.status(),
+    `composer submission must be accepted with 202; body=${submissionText}`
+  ).toBe(202);
+  const taskId = submission.data?.task?.id ?? '';
+  const workId = submission.data?.work?.id ?? '';
+  expect(
+    taskId.length,
+    `the 202 must carry a task id; body=${submissionText}`
+  ).toBeGreaterThan(0);
+  expect(
+    workId.length,
+    `the 202 must carry a work id; body=${submissionText}`
+  ).toBeGreaterThan(0);
+  expect(
+    (submission.data?.threadId ?? '').length,
+    'the 202 must bind the Agent Thread the Intent turn ran on'
+  ).toBeGreaterThan(0);
+  expect(
+    (submission.data?.runId ?? '').length,
+    'the 202 must bind the Agent Run the Intent turn ran on'
+  ).toBeGreaterThan(0);
+  // U9: 图文 freezes as merchant_confirmed, so the coordinator answers
+  // makeReady:false and never calls startHarness on this request.
+  expect(
+    submission.data?.makeReady,
+    'a merchant-confirmed plan must not admit Make on submit'
+  ).toBe(false);
+
+  return { taskId, workId };
+}
+
+/** The compiled plan (revision 1) as the merchant sees it, with Make idle. */
+async function assertCompiledPlanWithoutMake(
+  page: Page,
+  binding: SubmissionBinding
+) {
+  const plan = page.getByTestId('agent-living-plan');
+  await expect(
+    plan,
+    'the Intent turn must compile a plan revision'
+  ).toBeVisible({ timeout: 120_000 });
+  await expect(plan).toHaveAttribute('data-revision', '1');
+  for (const section of [
+    'goal',
+    'deliverables',
+    'expression',
+    'facts_assets',
+    'cost_duration',
+  ] as const) {
+    await expect(
+      page.getByTestId(`agent-plan-section-${section}`),
+      `the Living Plan document must carry its ${section} section`
+    ).toBeVisible();
+  }
+
+  // Make is not running: no delivered work, and no 成品交付卡 for the submitted
+  // Work. `data-delivered` is the Workstream's own statement about delivery.
+  await expect(page.getByTestId('agent-workstream')).toHaveAttribute(
+    'data-delivered',
+    'false'
+  );
+  await expect(
+    page.locator(
+      `[data-testid="composer-delivery-card"][data-work-id="${binding.workId}"]`
+    ),
+    'submit must not deliver a Work before the merchant starts the plan'
+  ).toHaveCount(0);
+  await expect(
+    page,
+    'submitting must not navigate away from the Composer conversation'
+  ).not.toHaveURL(/\/dashboard\/results\//u);
+
+  // Compact Plan / commit strip is the confirm surface: it must be present and
+  // offer a start the merchant can actually press.
+  const strip = page.getByTestId('agent-commit-strip');
+  await expect(strip).toBeVisible();
+  await expect(
+    strip,
+    'a ready plan must not disable its start (quote + rights + readiness)'
+  ).toHaveAttribute('data-start-disabled', 'false');
+  await expect(page.getByTestId('agent-commit-strip-start')).toBeEnabled();
+}
+
+/**
+ * §21.4 question budget: the Intent phase admits at most one merchant question
+ * (`maxMerchantQuestions: 1`, enforced by `session.question_budget`). Known
+ * platform/lens/rights/quote fields are server-owned and must never be re-asked,
+ * so a compiled plan must not leave a second question standing.
+ *
+ * This is a bound, not a branch: the count is read once and asserted.
+ */
+async function assertIntentQuestionBudget(page: Page) {
+  const pendingQuestions = page.getByTestId('agent-pending-interrupt');
+  expect(
+    await pendingQuestions.count(),
+    'the Intent phase may hold at most one merchant question at a time'
+  ).toBeLessThanOrEqual(1);
+}
+
+test.describe('V31-10 Living Plan journey (§37.4-C)', () => {
   test.beforeAll(async ({ request }) => cleanupE2EUsers(request));
   test.afterAll(async ({ request }) => cleanupE2EUsers(request));
 
@@ -46,86 +233,153 @@ test.describe('V31-10 Living Plan journey (§37.4-C first half)', () => {
     page,
     request,
   }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(300_000);
     const user = await registerE2EUser(request);
     await loginByForm(page, user);
     await seedConfirmedStore(page);
 
     await openCustomizedCreate(page);
+    const binding = await submitPlanShapingTurn(page);
+    await assertCompiledPlanWithoutMake(page, binding);
+    await assertIntentQuestionBudget(page);
 
-    // Merchant states a fuzzy business goal (not a filled form).
-    const intent = page.getByTestId('composer-intent-input');
-    await intent.fill(
-      '明天下午还有两个空档，帮我发点奶油风美甲，不要太像广告。'
+    const deliverables = page.getByTestId('agent-plan-section-deliverables');
+    const revision1Deliverables = (await deliverables.innerText()).trim();
+    expect(
+      revision1Deliverables.length,
+      'the compiled plan must state what it will produce'
+    ).toBeGreaterThan(0);
+
+    // 自然语言调整 → a NEW plan revision. The merchant's instruction reaches
+    // Core through the real revise command, and the proof that it landed is the
+    // plan itself (revision number + deliverable quantity), never a toast.
+    const revisePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response
+          .url()
+          .includes(
+            `/api/core/p1/composer/tasks/${encodeURIComponent(binding.taskId)}/revise`
+          ),
+      { timeout: 120_000 }
     );
-    await page.getByTestId('composer-submit').click();
-
-    // 1) Retrieval/progress is visible as narrative or stage lines (not a
-    // form). On the Composer conversation surface these render through the
-    // progress card (composer-stage-line); the agent- lines cover the
-    // Workbench pane when it hosts the run.
-    const retrievalSignal = page
-      .getByTestId('agent-activity-line')
-      .or(page.getByTestId('agent-narrative-line'))
-      .or(page.getByTestId('composer-stage-line'))
-      .or(page.getByTestId('composer-progress-card'));
-    await expect(retrievalSignal.first()).toBeVisible({ timeout: 60_000 });
-
-    // 2) Session question budget is structural: zero or one visible question,
-    // never a second card. Known platform/lens/rights/quote fields are server-
-    // owned and therefore must not be re-asked.
-    const visibleQuestions = page
-      .getByTestId('ask-merchant-group-card')
-      .or(page.getByTestId('composer-question-card'));
-    await expect(visibleQuestions).toHaveCount(0);
-
-    // 3) Living Plan grows in the same Workstream (five-section document).
-    await expect(page.getByTestId('agent-living-plan')).toBeVisible({
-      timeout: 90_000,
-    });
-    await expect(page.getByTestId('agent-plan-section-goal')).toBeVisible();
-    await expect(
-      page.getByTestId('agent-plan-section-deliverables')
-    ).toBeVisible();
-    await expect(
-      page.getByTestId('agent-plan-section-expression')
-    ).toBeVisible();
-    await expect(
-      page.getByTestId('agent-plan-section-facts_assets')
-    ).toBeVisible();
-    await expect(
-      page.getByTestId('agent-plan-section-cost_duration')
-    ).toBeVisible();
-
-    // Compact Plan / commit strip unifies Brief/quote/confirm presentation.
-    await expect(page.getByTestId('agent-commit-strip')).toBeVisible();
-    await expect(page.getByTestId('agent-commit-strip-start')).toBeEnabled();
-
-    // 4) Natural-language adjust → new revision + readable diff; prior revision browsable.
     await page.getByTestId('agent-commit-strip-revise').click();
-    await page
-      .getByTestId('composer-intent-input')
-      .fill('只做小红书，减到 4 页');
-    await page.getByTestId('composer-submit').click();
-
-    await expect(page.getByTestId('agent-living-plan')).toHaveAttribute(
-      'data-revision',
-      '2',
-      { timeout: 90_000 }
-    );
+    // 返回修改 is only a real affordance if the box it focuses can be typed in
+    // and sent: the plan command rides the same intent input
+    // (`use-living-plan-controller.submitPlanCommand`).
+    const intent = page.getByTestId('composer-intent-input');
     await expect(
-      page.getByTestId('agent-plan-section-deliverables')
-    ).toContainText('4 页');
-    await expect(page.getByTestId('agent-plan-diff')).toBeVisible({
-      timeout: 60_000,
+      intent,
+      '返回修改 must hand back an editable intent box for the plan command'
+    ).toBeEnabled();
+    await intent.fill(REVISE_INSTRUCTION);
+    await expect(intent).toHaveValue(REVISE_INSTRUCTION);
+    const reviseSubmit = page.getByTestId('composer-submit');
+    await expect(
+      reviseSubmit,
+      'a waiting plan must let the merchant send the adjustment'
+    ).toBeEnabled();
+    await reviseSubmit.click();
+    const reviseResponse = await revisePromise;
+    expect(
+      reviseResponse.status(),
+      `plan revise must be accepted; body=${await reviseResponse.text()}`
+    ).toBe(200);
+
+    const plan = page.getByTestId('agent-living-plan');
+    await expect(plan).toHaveAttribute('data-revision', '2', {
+      timeout: 120_000,
     });
-    // Old version remains reachable (revision chips when history length > 1).
-    const rev1 = page.getByTestId('agent-living-plan-revision-1');
-    await expect(rev1).toBeVisible();
-    await rev1.click();
-    await expect(page.getByTestId('agent-living-plan')).toHaveAttribute(
-      'data-revision',
-      '1'
+    await expect(
+      deliverables,
+      'the revision must carry the deliverable quantity the merchant asked for'
+    ).toContainText('4 页');
+    expect(
+      (await deliverables.innerText()).trim(),
+      'a revision that reads exactly like its predecessor changed nothing'
+    ).not.toBe(revision1Deliverables);
+    await expect(page.getByTestId('agent-plan-diff')).toBeVisible();
+    await expect(page.getByTestId('agent-plan-diff')).toHaveAttribute(
+      'data-to-revision',
+      '2'
+    );
+    await expect(page.getByTestId('agent-plan-diff-adjustment')).toContainText(
+      REVISE_INSTRUCTION
+    );
+    // The revised turn must not leave a question standing behind it.
+    await assertIntentQuestionBudget(page);
+
+    // Append-only history: the previous revision stays browsable and still
+    // reads as it did — going back is a view change, never a rewrite.
+    const revision1 = page.getByTestId('agent-living-plan-revision-1');
+    await expect(revision1).toBeVisible();
+    await revision1.click();
+    await expect(plan).toHaveAttribute('data-revision', '1');
+    expect(
+      (await deliverables.innerText()).trim(),
+      'the earlier revision must still read as it did before the adjustment'
+    ).toBe(revision1Deliverables);
+    const revision2 = page.getByTestId('agent-living-plan-revision-2');
+    await revision2.click();
+    await expect(plan).toHaveAttribute('data-revision', '2');
+  });
+
+  test('提交不启动 Make，显式开始才启动（commit strip start）', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(360_000);
+    const user = await registerE2EUser(request);
+    await loginByForm(page, user);
+    await seedConfirmedStore(page);
+
+    await openCustomizedCreate(page);
+    const binding = await submitPlanShapingTurn(page);
+    await assertCompiledPlanWithoutMake(page, binding);
+
+    // Explicit start is the only admission: it carries the exact plan revision
+    // the merchant is looking at, and Core rejects anything else
+    // (`completeExplicitStart` compares against the durable latest freeze).
+    const startPromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' &&
+        response
+          .url()
+          .includes(
+            `/api/core/p1/composer/tasks/${encodeURIComponent(binding.taskId)}/start`
+          ),
+      { timeout: 120_000 }
+    );
+    await page.getByTestId('agent-commit-strip-start').click();
+    const startResponse = await startPromise;
+    const startText = await startResponse.text();
+    expect(
+      JSON.parse(startResponse.request().postData() ?? '{}'),
+      'start must name the plan revision it is confirming'
+    ).toEqual({ planRevision: 1 });
+    expect(
+      startResponse.status(),
+      `explicit start must be accepted with 202; body=${startText}`
+    ).toBe(202);
+    expect(
+      (JSON.parse(startText) as { data?: { makeReady?: boolean } }).data
+        ?.makeReady,
+      'explicit start is what admits Make'
+    ).toBe(true);
+
+    // Execution really begins only now. The delivered Work is the one signal no
+    // pre-start state can fake: it exists only because Make ran, and it carries
+    // the workId the submission minted (so the prepared attempt's events must
+    // also reach this conversation).
+    await expect(
+      page.locator(
+        `[data-testid="composer-delivery-card"][data-work-id="${binding.workId}"]`
+      ),
+      'the started plan must deliver the Work the submission minted'
+    ).toBeVisible({ timeout: 180_000 });
+    await expect(page.getByTestId('agent-workstream')).toHaveAttribute(
+      'data-delivered',
+      'true'
     );
   });
 });

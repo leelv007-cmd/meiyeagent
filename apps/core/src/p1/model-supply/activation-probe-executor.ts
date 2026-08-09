@@ -146,7 +146,7 @@ export class MediaActivationProbeExecutor
   }
 
   async execute(input: MediaActivationProbeInput) {
-    const { receipt, request, taskRef } = await this.submit(input);
+    const { request, taskRef } = await this.submit(input);
 
     let state: Awaited<ReturnType<MediaProviderLifecyclePort['poll']>> | null =
       null;

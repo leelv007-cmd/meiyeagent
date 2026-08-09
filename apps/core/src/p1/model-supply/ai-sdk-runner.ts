@@ -1228,7 +1228,7 @@ function fixtureStructuredOutput(schemaName: string, prompt: string) {
       const person = payload.kind === 'person';
       // The first clause of the background line is the name the merchant led
       // with; the rest is what they said about it.
-      const [lead = background, ...rest] = background
+      const [lead = background] = background
         .split(/[，,。；;]/u)
         .map((part) => part.trim())
         .filter(Boolean);

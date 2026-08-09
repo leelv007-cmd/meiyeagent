@@ -11,8 +11,8 @@ import test from 'node:test';
 import type { AgentControlLimits } from '@meiye/contracts';
 
 import {
+  assertIntentRetrievalBindingsPinned,
   createDefaultIntentRetrievalBindings,
-  mergeDefaultIntentRetrievalBindings,
 } from '../agent-session/intent-retrieval-policies.js';
 import { P1DomainError } from '../foundation/domain.js';
 import {
@@ -241,11 +241,15 @@ test('seeded production release owns its middleware; the assembly merge adds not
   });
   assert.equal(resolved.releaseId, SEED_HARNESS_RELEASE_ID);
   assert.deepEqual(resolved.middlewareBindings, seed.middlewareBindings);
-  // An incomplete release still gets filled — that fail-open is why the seed
-  // has to be complete in the first place.
-  assert.equal(
-    mergeDefaultIntentRetrievalBindings([]).length,
-    createDefaultIntentRetrievalBindings().length,
+  // An incomplete release now fails closed — the seed being complete is what
+  // lets the session port resolve it at all.
+  assert.throws(
+    () =>
+      assertIntentRetrievalBindingsPinned({
+        releaseId: 'incomplete-release',
+        bindings: [],
+      }),
+    /does not pin required Intent\/retrieval middleware/u,
   );
 });
 

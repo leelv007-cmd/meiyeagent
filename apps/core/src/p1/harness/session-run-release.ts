@@ -11,7 +11,7 @@ import type {
   HarnessMiddlewareBinding,
 } from '@meiye/contracts';
 
-import { mergeDefaultIntentRetrievalBindings } from '../agent-session/intent-retrieval-policies.js';
+import { assertIntentRetrievalBindingsPinned } from '../agent-session/intent-retrieval-policies.js';
 import { controlLimitsFromArtifact } from '../agent-session/turn-runner.js';
 import type { HarnessReleaseService } from './harness-release.js';
 
@@ -30,11 +30,16 @@ export async function resolveSessionRunRelease(input: {
     input.harnessReleaseId ? { frozenReleaseId: input.harnessReleaseId } : {},
   );
   const base = controlLimitsFromArtifact(resolved.artifact);
+  const middlewareBindings = [...(base.middlewareBindings ?? [])];
+  // The manifest is the only source of pins. Filling gaps here made an
+  // incomplete release indistinguishable from a complete one.
+  assertIntentRetrievalBindingsPinned({
+    releaseId: resolved.releaseId,
+    bindings: middlewareBindings,
+  });
   return {
     controlLimits: resolved.controlLimits,
-    middlewareBindings: mergeDefaultIntentRetrievalBindings(
-      base.middlewareBindings,
-    ),
+    middlewareBindings,
     releaseId: resolved.releaseId,
   };
 }

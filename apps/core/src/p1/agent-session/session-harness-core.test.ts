@@ -394,6 +394,41 @@ test('unregistered binding fails closed at PolicyMiddlewareRunner construction',
   );
 });
 
+test('a registered policy the release never pins fails closed', () => {
+  const pinned: HarnessMiddlewareBinding = {
+    policyId: 'real.gate',
+    revision: '1',
+    kind: 'before_model',
+    order: 0,
+    allowedControlActions: ['continue'],
+  };
+  const unpinned: HarnessMiddlewareBinding = {
+    policyId: 'question.budget',
+    revision: 'v31-07',
+    kind: 'after_model',
+    order: 10,
+    allowedControlActions: ['continue'],
+  };
+
+  // The mirror of an unregistered binding: the gate is built and handed to the
+  // runner, the release forgot to pin it, and every turn then runs without it.
+  assert.throws(
+    () =>
+      new PolicyMiddlewareRunner(
+        [pinned],
+        [
+          { binding: pinned, handlers: {} },
+          { binding: unpinned, handlers: {} },
+        ],
+      ),
+    (error: unknown) =>
+      error instanceof P1DomainError &&
+      error.code === 'INVALID_STATE' &&
+      /question\.budget@v31-07:after_model/.test(error.message) &&
+      !/real\.gate/.test(error.message),
+  );
+});
+
 test('middleware implementation must match release policyId, revision and kind exactly', () => {
   const releaseBinding: HarnessMiddlewareBinding = {
     policyId: 'rights.gate',

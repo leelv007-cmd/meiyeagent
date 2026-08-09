@@ -43,7 +43,6 @@ import {
   type ModelSupplyApplicationService,
   modelSupplyJobId,
   type ModelSupplyPlanningControlPlanePort,
-  type ModelSupplyPlanningControlPlaneState,
   type ModelSupplyRouteSimulationInput,
   type ModelSupplyResult,
   type RouteSnapshot,
@@ -61,7 +60,6 @@ import {
   parseAudioSpeechContract,
 } from './audio-contracts.js';
 import {
-  audioProductionActivationBlockers,
   isAudioGenerationOperation,
   isAudioProductionGenerationAllowed,
 } from './audio-activation-gate.js';
@@ -3146,78 +3144,6 @@ export class ModelSupplyControlPlaneService {
     });
   }
 
-  private async requireCanvasGenerationCapability(
-    workspaceId: string,
-    userId: string,
-    request: ReturnType<typeof canvasGenerationRequest>,
-  ) {
-    const source = this.catalogSourceForWorkspace(
-      workspaceId,
-      await this.repository.getCurrentPublishedCatalogRevision(workspaceId),
-    );
-    const candidates = (
-      await this.application.constrainRuntimeDeploymentsForRequest(
-        source.payload.deployments,
-      )
-    ).filter((candidate) =>
-        candidate.status === 'active' &&
-        candidate.canvasGenerationCapabilities?.some(
-          (capability) => capability.operation === request.operation,
-        ),
-      )
-      .filter((candidate) =>
-        !isAudioGenerationOperation(request.operation) ||
-        this.allowRecordedExecution ||
-        isAudioProductionGenerationAllowed({
-          operation: request.operation,
-          deployment: candidate,
-        }),
-      )
-      .sort((left, right) => left.id.localeCompare(right.id));
-    const preferences = await this.repository.getPreferences(
-      workspaceId,
-      userId,
-      request.operation,
-    );
-    const selectedModelId =
-      request.modelId ?? preferences.userDefault ?? preferences.workspaceDefault;
-    if (!selectedModelId) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'Canvas generation model is not configured for this workspace.',
-      );
-    }
-    const deployment = candidates.find(
-      (candidate) => candidate.catalogModelId === selectedModelId,
-    );
-    const capability = deployment?.canvasGenerationCapabilities?.find(
-      (candidate) => candidate.operation === request.operation,
-    );
-    if (!deployment || !capability) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'Requested Canvas generation capability is inactive.',
-      );
-    }
-    const unsupportedParameter = Object.keys(request.parameters).find(
-      (parameter) =>
-        !capability.parameters.includes(
-          parameter as CanvasGenerationParameterName,
-        ),
-    );
-    const unsupportedRole = request.inputAssets.find(
-      (asset) => !capability.inputAssetRoles.includes(asset.role),
-    );
-    if (unsupportedParameter || unsupportedRole) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        unsupportedParameter
-          ? `Canvas generation parameter ${unsupportedParameter} is inactive for this model.`
-          : `Canvas generation input role ${unsupportedRole?.role} is inactive for this model.`,
-      );
-    }
-    return { catalogRevisionId: source.revisionId, deployment };
-  }
 
   private async assertCanvasProject(context: P1Context, projectId: string) {
     if (!this.canvasProjects) {
@@ -3254,18 +3180,6 @@ export class ModelSupplyControlPlaneService {
     }
   }
 
-  private async assertCanvasGenerationLineage(
-    context: P1Context,
-    request: ReturnType<typeof canvasGenerationRequest>,
-  ) {
-    await this.assertCanvasRevision(context, request.projectId, request.revisionId);
-    if (request.checkpointId !== request.revisionId) {
-      throw new P1DomainError(
-        'INVALID_STATE',
-        'Canvas generation checkpoint must equal the frozen revision.',
-      );
-    }
-  }
 
   async getAdminCatalogControl(workspaceId: string) {
     const source = this.catalogSourceForWorkspace(
@@ -5190,23 +5104,6 @@ function canvasGenerationSubmitRequest(payload: Record<string, unknown>) {
   return { quoteId, request: canvasGenerationRequest(requestPayload) };
 }
 
-function canvasGenerationOriginRef(
-  request: ReturnType<typeof canvasGenerationRequest>,
-  modelId: string,
-): AdvancedCanvasGenerationOriginRef {
-  return {
-    checkpointId: request.checkpointId,
-    count: request.count,
-    ...(request.itemId ? { itemId: request.itemId } : {}),
-    modelId,
-    ...(request.nodeId ? { nodeId: request.nodeId } : {}),
-    parameters: structuredClone(request.parameters),
-		prompt: request.prompt,
-    projectId: request.projectId,
-    revisionId: request.revisionId,
-    type: 'advanced_canvas_project_revision',
-  };
-}
 
 function canvasGenerationRetrySource(value: unknown, projectId: string) {
 	const view = publicCanvasGenerationJob(value, projectId);
@@ -5832,24 +5729,6 @@ function assertExactCanvasKeys(
   }
 }
 
-function canvasGenerationPayloadHash(
-  workspaceId: string,
-  request: ReturnType<typeof canvasGenerationRequest>,
-) {
-  const parameters = Object.fromEntries(
-    Object.entries(request.parameters).sort(([left], [right]) =>
-      left.localeCompare(right),
-    ),
-  );
-  return createHash('sha256')
-    .update(JSON.stringify({
-      workspaceId,
-      ...request,
-      dataClass: [...request.dataClass].sort(),
-      parameters,
-    }))
-    .digest('hex');
-}
 
 function productUsageQuantity(
   value: unknown,

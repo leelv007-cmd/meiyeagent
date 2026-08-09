@@ -68,6 +68,8 @@ import { admitFreshCreditRun } from './workbench-credit';
 
 type ComposerCreated = {
   contentPackage: { id: string };
+  /** Present when the submit withheld Make pending paid confirmation. */
+  executionConfirmationRequestId?: string;
   runId?: string;
   task: { id: string };
   threadId?: string;
@@ -383,6 +385,12 @@ export function useComposerRun(options: UseComposerRunOptions) {
           taskId: created.task.id,
           workId: created.work.id,
           packageId: created.contentPackage.id,
+          ...(created.executionConfirmationRequestId
+            ? {
+                executionConfirmationRequestId:
+                  created.executionConfirmationRequestId,
+              }
+            : {}),
         })
       );
       await queryClient.invalidateQueries({

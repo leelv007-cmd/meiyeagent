@@ -4,6 +4,7 @@ import type { ProductQuoteSnapshot } from '@meiye/contracts';
 
 import { creditUsageOperationId } from '../credit-billing/credit-ledger.js';
 import { executionConfirmationAuthorityRequestId } from '../harness/execution-confirmation-id.js';
+export { executionConfirmationAuthorityRequestId } from '../harness/execution-confirmation-id.js';
 import type {
   CreateExecutionConfirmationResult,
   ExecutionConfirmationService,

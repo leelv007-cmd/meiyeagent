@@ -50,8 +50,8 @@ import {
   PlanCompiler,
 } from "../agent-session/plan-compiler.js";
 import { PostgresGrantLotLedger } from "../foundation/postgres-grant-lot.js";
-import { GrantLotAwareProductEntitlementService } from "../foundation/grant-lot-entitlement-service.js";
 import { PostgresCreditLedger } from "../credit-billing/postgres-credit-ledger.js";
+import { GrantLotAwareProductEntitlementService } from "../foundation/grant-lot-entitlement-service.js";
 import { MemoryFoundationRepository } from "../foundation/memory-repository.js";
 import { frozenHarnessPrompt } from '../harness/frozen-prompt.testing.js';
 
@@ -498,15 +498,10 @@ test(
     const pool = new Pool({ connectionString });
     const operations = new PostgresOperationsRepository(pool);
     const billingRepository = new PostgresProductBillingRepository(pool);
-    const creditLedger = new PostgresCreditLedger(pool);
     const store = new PostgresCreationSubmissionStore(
       pool,
       new PostgresCreationSubmissionPersistence(
-        new PostgresProductBillingUsageReservation(
-          pool,
-          noOpGrantLots,
-          creditLedger,
-        ),
+        new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
       ),
       { harnessStartLeaseMs: 60_000 },
     );
@@ -518,32 +513,16 @@ test(
     try {
       await operations.migrate();
       await billingRepository.migrate();
-      const migrationClient = await pool.connect();
-      try {
-        await creditLedger.migrate(migrationClient);
-      } finally {
-        migrationClient.release();
-      }
       await store.applySchema();
       await pool.query(
 		"INSERT INTO workspaces (id, name) VALUES ($1, 'Execution spine store test')",
         [workspaceId],
       );
-      await creditLedger.grant({
-        id: `credit-${suffix}`,
-        workspaceId,
-        credits: 10,
-        expirationDate: "2026-09-01T00:00:00.000Z",
-        transactionType: "PURCHASE_PACKAGE",
-        sourceRef: `crash-window-${suffix}`,
-        createdAt: "2026-07-01T00:00:00.000Z",
-      });
       const quote = await seedQuote(
         billingRepository,
         workspaceId,
         quoteId,
         submission.task.id,
-        { creditCost: 4 },
       );
       submission.snapshot = createSnapshot({
         contentPackagePlatform: "wechat_moments",
@@ -554,20 +533,6 @@ test(
         submission,
         workspaceId,
       });
-      submission.usageReservation = {
-        id: submission.usageReservation.id,
-        credits: 4,
-        units: [],
-      };
-      const executionPlanFreeze = recoveryExecutionPlanFreeze(
-        submission,
-        "merchant_confirmed",
-      );
-      submission.executionPlanFreeze = executionPlanFreeze;
-      submission.confirmationDispatch = {
-        requestId: `confirmation:${submission.task.id}`,
-        state: "pending",
-      };
 
       const first = await store.claim({
         idempotencyKey: "submit-copy-1",
@@ -576,10 +541,50 @@ test(
         workspaceId,
       });
       assert.equal(first.kind, "created");
-      assert.equal(
-        (await creditLedger.project(workspaceId, submission.snapshot.createdAt))
-          .usedCredits,
-        4,
+      const executionPlanFreeze = recoveryExecutionPlanFreeze(submission);
+      const clarificationCoordinator = new CreationSubmissionCoordinator(
+        store,
+        { async start() {}, async preparePendingConfirmation() {} },
+        {
+          createId() {
+            return "unused-clarification-id";
+          },
+          now() {
+            return "2026-07-22T09:05:00.000Z";
+          },
+        },
+        { async admit() { throw new Error("not used"); } },
+        undefined,
+        {
+          async prepare() {
+            throw new Error("not used");
+          },
+          async answerClarification(input) {
+            assert.equal(input.merchantAnswer, "主要面向第一次到店的新客");
+            input.submission.executionPlanFreeze = executionPlanFreeze;
+            return { threadId: asAgentThreadIdentity("thread-clarify"), runId: "run-clarify", makeReady: false };
+          },
+        },
+      );
+      await clarificationCoordinator.answerClarification({
+        workspaceId,
+        taskId: submission.task.id,
+        merchantAnswer: "主要面向第一次到店的新客",
+      });
+      submission.executionPlanFreeze = executionPlanFreeze;
+      const restartedStore = new PostgresCreationSubmissionStore(
+        pool,
+        new PostgresCreationSubmissionPersistence(
+          new PostgresProductBillingUsageReservation(pool, noOpGrantLots),
+        ),
+      );
+      const recoveredAfterCrash = await restartedStore.readByTask({
+        workspaceId,
+        taskId: submission.task.id,
+      });
+      assert.deepEqual(
+        recoveredAfterCrash?.executionPlanFreeze,
+        executionPlanFreeze,
       );
       const reservedQuote = await billingRepository.getQuote(
         workspaceId,
@@ -950,10 +955,6 @@ test(
         recoverable[0]?.submission.executionPlanFreeze,
         executionPlanFreeze,
       );
-      assert.deepEqual(recoverable[0]?.submission.confirmationDispatch, {
-        requestId: `confirmation:${submission.task.id}`,
-        state: "pending",
-      });
       if (leaseOne.kind !== "start") {
         throw new Error("Expected the initial Harness lease claim.");
       }
@@ -989,18 +990,6 @@ test(
         started: 1,
       });
       assert.deepEqual(recoveredStarts, [submission.task.id]);
-      const completed = await store.readReceipt({
-        idempotencyKey: "submit-copy-1",
-        payloadHash: "payload-a",
-        workspaceId,
-      });
-      assert.equal(completed.kind, "existing");
-      if (completed.kind === "existing") {
-        assert.deepEqual(completed.submission.confirmationDispatch, {
-          requestId: 'confirmation:authority-digest-recovered',
-          state: "dispatched",
-        });
-      }
       await store.releaseHarnessStart({
         leaseId: leaseOne.leaseId,
         submissionId: submission.snapshot.id,
@@ -1093,7 +1082,7 @@ test(
         workspaceId,
         quoteId,
         submission.task.id,
-        { creditCost: 4 },
+        { creditCost: 4, outputCount: 1, unitRate: 4 },
       );
       submission.snapshot = createSnapshot({
         contentPackagePlatform: "wechat_moments",
@@ -2530,7 +2519,7 @@ test(
 
 function recoveryExecutionPlanFreeze(
   submission: CreationSubmissionRecord,
-  approvalBasis: "merchant_confirmed" | "policy_exempt_copy" = "policy_exempt_copy",
+  approvalBasis: 'policy_exempt_copy' | 'merchant_confirmed' = 'policy_exempt_copy',
 ): NonNullable<CreationSubmissionRecord['executionPlanFreeze']> {
   return {
     planId: `plan-${submission.task.id}` as never,
@@ -2824,12 +2813,12 @@ async function seedUnconfirmedQuote(
     catalogModelId: "copy-model-1",
     catalogModelRevision: "catalog-r1",
     frozenCandidateDeploymentIds: ["copy-deployment-1"],
-    quoteId,
-    quotePolicyRevision: "quote-policy-1",
-    routeSnapshotRef: "route-1",
     ...(options?.creditCost !== undefined
       ? { creditCost: options.creditCost }
       : {}),
+    quoteId,
+    quotePolicyRevision: "quote-policy-1",
+    routeSnapshotRef: "route-1",
     ...(options?.outputCount !== undefined
       ? { outputCount: options.outputCount }
       : {}),
@@ -2907,13 +2896,6 @@ async function cleanup(
   workspaceId: string,
   submission: CreationSubmissionRecord,
 ) {
-  await pool.query(
-    "DELETE FROM p1_credit_lot_transactions WHERE workspace_id = $1",
-    [workspaceId],
-  );
-  await pool.query("DELETE FROM p1_credit_grant_lots WHERE workspace_id = $1", [
-    workspaceId,
-  ]);
   await pool.query(
     "DELETE FROM execution_spine.creation_submissions WHERE workspace_id = $1",
     [workspaceId],

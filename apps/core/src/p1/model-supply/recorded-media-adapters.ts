@@ -21,7 +21,6 @@ import type {
   MediaProviderLifecyclePort,
   MediaProviderSubmissionReceipt,
   ModelAssetStoragePort,
-  ModelOperation,
   OwnedAsset,
   ProviderExecutionRequest,
   ProviderExecutionResponse,

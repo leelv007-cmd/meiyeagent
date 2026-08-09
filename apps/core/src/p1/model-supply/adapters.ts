@@ -719,7 +719,7 @@ class ConfiguredMediaExecutionPort
     private readonly fallback: ProviderExecutionPort,
     private readonly arkOptions?: ArkMediaExecutionOptions,
     private readonly tuziOptions?: TuziMediaExecutionOptions,
-    private readonly volcengineTtsOptions?: VolcengineTtsLifecycleOptions,
+    volcengineTtsOptions?: VolcengineTtsLifecycleOptions,
   ) {
     this.ark = arkOptions ? new ArkMediaExecutionPort(arkOptions) : undefined;
     this.tuzi = tuziOptions ? new TuziMediaExecutionPort(tuziOptions) : undefined;

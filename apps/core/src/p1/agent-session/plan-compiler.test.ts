@@ -707,3 +707,46 @@ test('A8: execution units use free unitType + optional six-primitive only', asyn
     assert.equal('kind' in unit, false);
   }
 });
+
+test('note CompiledExecutionPlan carries the six primitive program with explicit prior-output dependencies', async () => {
+  const store = new MemoryMarketingPlanStore();
+  const { compiler, input } = compileInput(store, {
+    planId: 'plan-six-primitives',
+    proposal: baseProposal({
+      recommendedDeliverables: [
+        { carrier: 'note', quantity: 4, purpose: '四页笔记' },
+      ],
+    }),
+  });
+
+  const plan = (await compiler.compile(input)).executionPlan;
+  assert.deepEqual(
+    plan.units.map((unit) => unit.primitive),
+    [
+      'read_context',
+      'generate',
+      'ask_merchant',
+      'generate',
+      'check',
+      'revise',
+      'record',
+    ],
+  );
+  assert.deepEqual(
+    plan.dependencyGroups.map((group) => group.unitIds),
+    plan.units.map((unit) => [unit.unitId]),
+  );
+  for (const [index, unit] of plan.units.entries()) {
+    const inputValue = unit.input as { priorOutputUnitIds?: string[] } | undefined;
+    assert.deepEqual(
+      inputValue?.priorOutputUnitIds ?? [],
+      index === 0 ? [] : [plan.units[index - 1]!.unitId],
+    );
+  }
+  assert.equal(
+    (plan.units.find((unit) => unit.unitId === 'unit-note-pages')?.input as {
+      quantity: number;
+    }).quantity,
+    4,
+  );
+});

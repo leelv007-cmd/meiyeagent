@@ -13,7 +13,6 @@ import type {
 	Acceptance,
 	AdvancedCanvasGenerationOrigin,
 	AdvancedCanvasGenerationOriginRef,
-  CatalogModel,
   CanvasGenerationInputAsset,
   CanvasGenerationInputNodeBinding,
   DataClass,

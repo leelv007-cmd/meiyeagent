@@ -193,7 +193,6 @@ import {
 import { HarnessReleaseService } from '../p1/harness/harness-release.js';
 import {
   AgentSessionFoundationModule,
-  ComposerPlanSessionCoordinator,
   PostgresAgentSessionStore,
   findActiveExitRun,
   projectThreadToSession,
@@ -255,6 +254,7 @@ import {
 import { createCoreServer } from '../server.js';
 
 import { assembleCoreGraph } from './core-assembly.js';
+import { assembleProductionComposerPlanSession } from './composer-plan-runtime-assembly.js';
 
 export async function startApi(env: NodeJS.ProcessEnv) {
   const {
@@ -425,6 +425,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     new ReuseMemoryComposerConversationDeletionNotifier(reuseMemoryService)
   );
   let harnessService: HarnessApplicationService | undefined;
+  let harnessTaskAdmissionService: HarnessTaskAdmissionService | undefined;
   let interruptProtocolService: InterruptProtocolService | undefined;
   let composerDestinationMapper: ComposerDestinationMappingPort | undefined;
   let composerSubmissionCoordinator: CreationSubmissionCoordinator | undefined;
@@ -1312,7 +1313,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         events: harnessObservabilityEvents,
         context: harnessSchemaStore,
       },
-      creditLedger
+      creditLedger,
+      creationSubmissionStore
     );
     const billingCompensations = new PostgresHarnessBillingCompensationStore(
       pool
@@ -1521,8 +1523,7 @@ export async function startApi(env: NodeJS.ProcessEnv) {
       }
     );
     await DBOS.launch();
-    harnessService = new HarnessApplicationService(
-      new HarnessTaskAdmissionService(
+    harnessTaskAdmissionService = new HarnessTaskAdmissionService(
         harnessSchemaStore,
         new DbosHarnessWorkflowStarter(harnessWorkflow),
         harnessPromptResolver,
@@ -1627,6 +1628,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           },
         }
       ),
+    harnessService = new HarnessApplicationService(
+      harnessTaskAdmissionService,
       harnessDecisions,
       harnessSchemaStore,
       dueAwareRecommendations,
@@ -1654,99 +1657,53 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     );
     agentSemanticEventProjector = semanticProjectorForHarness;
     planCompiler.bindSemanticEventProjector(semanticProjectorForHarness);
-    if (!sessionAgentHarness) {
-      throw new Error(
-        'Production Composer requires the Agent Session runTurn assembly.',
-      );
-    }
-    const composerPlanSession = new ComposerPlanSessionCoordinator(
-      agentSessionStore,
-      marketingPlanStore,
-      sessionAgentHarness,
-      {
-        requireSessionTurn: true,
-        requireQuoteAuthority: true,
-        quoteAuthority: {
-          async resolveCurrent({ submission }) {
-            const ref = submission.snapshot.quote;
-            const quote = await productQuoteService.getQuote(
-              ref.id,
-              submission.snapshot.workspaceId,
-            );
-            if (!quote || quote.revision !== String(ref.revision) || !quote.expiresAt) {
-              throw new Error(
-                `ProductQuote ${ref.id}@${ref.revision} is missing, stale, or has no authority expiry.`,
-              );
-            }
-            return {
-              quoteRef: { id: quote.quoteId, revision: quote.revision },
-              expiresAt: quote.expiresAt,
-              summary: {
-                source: 'product_quote',
-                creditCost: quote.creditCost,
-                outputCount: quote.outputCount,
-              },
-            };
+    const composerPlanSession = assembleProductionComposerPlanSession({
+      sessions: agentSessionStore,
+      plans: marketingPlanStore,
+      sessionHarness: sessionAgentHarness,
+      quoteAuthority: productQuoteAuthority,
+      quoteService: productQuoteService,
+      releaseResolver: harnessReleaseService,
+      semanticEvents: {
+        store: agentSemanticEventStore,
+        projector: semanticProjectorForHarness,
+      },
+      // The fixture kernel returns one canned decision for every turn and its
+      // request carries no submission, so it can neither propose this
+      // merchant's plan nor ask about it. Falling back to the submission is the
+      // only honest exit; with a live model the same silence stays a failure.
+      compileFromSubmissionWithoutProposal: modelRuntime.mode === 'fixture',
+      onMemoryDegraded: (event) => {
+        // Never silent: a flipped kill switch and an outage are both visible
+        // and distinguishable, while the paid submission still proceeds.
+        console.warn(
+          `[memory] plan compiled without injected memory (${event.reason})`,
+          {
+            workspaceId: event.workspaceId,
+            taskId: event.taskId,
+            runId: event.runId,
+            detail: event.detail,
           },
-          async reprice({ submission, merchantInstruction, quantity }) {
-            const quoteId = `plan-requote:${submission.task.id}:${fingerprintValue({
-              merchantInstruction,
-              quantity,
-            }).slice(0, 16)}`;
-            const build = await productQuoteAuthority.resolve({
-              workspaceId: submission.snapshot.workspaceId,
-              catalogModelId: submission.snapshot.catalogModel.id,
-              operation: submission.snapshot.operation,
-              quoteId,
-              quantity,
-            });
-            const quote = await productQuoteService.buildQuote(build);
-            if (!quote.expiresAt) {
-              throw new Error(`Repriced ProductQuote ${quote.quoteId} has no expiry.`);
-            }
-            return {
-              quoteRef: { id: quote.quoteId, revision: quote.revision },
-              expiresAt: quote.expiresAt,
-              summary: {
-                source: 'product_quote_reprice',
-                creditCost: quote.creditCost,
-                outputCount: quote.outputCount,
-              },
-            };
-          },
-        },
-        onMemoryDegraded: (event) => {
-          // Never silent: a flipped kill switch and an outage are both visible
-          // and distinguishable, while the paid submission still proceeds.
-          console.warn(
-            `[memory] plan compiled without injected memory (${event.reason})`,
-            {
-              workspaceId: event.workspaceId,
-              taskId: event.taskId,
-              runId: event.runId,
-              detail: event.detail,
-            },
-          );
-        },
-        // V31-21 P1-a: new submissions pin the current production release
-        // (canary workspace-allowlist applies here). The pinned releaseId is
-        // then frozen on the Run + ExecutionPlanSnapshot — rollback changes
-        // only what *new* runs resolve to, never in-flight pins.
-        resolveHarnessReleaseId: async (submission, runId) => {
-          const resolved = await resolveWorkspaceHarnessRelease({
-            workspaceId: submission.snapshot.workspaceId,
-            runId,
-            releases: harnessReleaseService,
-            trials: opsConsoleStore,
-            rollbackOperations: opsConsoleStore,
-          });
-          return resolved.releaseId;
-        },
-      }
-    );
+        );
+      },
+      // V31-21 P1-a: new submissions pin the current production release
+      // (canary workspace-allowlist applies here). The pinned releaseId is
+      // then frozen on the Run + ExecutionPlanSnapshot — rollback changes
+      // only what *new* runs resolve to, never in-flight pins.
+      resolveHarnessReleaseId: async (submission, runId) => {
+        const resolved = await resolveWorkspaceHarnessRelease({
+          workspaceId: submission.snapshot.workspaceId,
+          runId,
+          releases: harnessReleaseService,
+          trials: opsConsoleStore,
+          rollbackOperations: opsConsoleStore,
+        });
+        return resolved.releaseId;
+      },
+    });
     composerSubmissionCoordinator = new CreationSubmissionCoordinator(
       creationSubmissionStore,
-      new CreationStagePort(harnessService),
+      new CreationStagePort(harnessTaskAdmissionService),
       {
         createId(prefix) {
           return `${prefix}-${randomUUID()}`;
@@ -1784,6 +1741,12 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           ),
         decide: (input) =>
           executionConfirmationService.decideForWorkspace(input),
+        getRequest: (requestId) =>
+          executionConfirmationService.getRequest(requestId),
+        getCurrentByWorkflowId: (workflowId) =>
+          executionConfirmationAuthorityStore.getCurrentByWorkflowId(
+            workflowId
+          ),
       },
     );
     const pendingStartCoordinator = composerSubmissionCoordinator;

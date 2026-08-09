@@ -242,6 +242,8 @@ export type WorkspaceComposerTaskStartResource =
   `p1/composer/tasks/${string}/start`;
 export type WorkspaceComposerTaskReviseResource =
   `p1/composer/tasks/${string}/revise`;
+export type WorkspaceComposerTaskAnswerResource =
+  `p1/composer/tasks/${string}/answer`;
 export type WorkspaceAgentSemanticResource =
   `p1/agent-threads/${string}/${'events' | 'replay'}`;
 export type WorkspaceHarnessTaskCollectionResource = 'p1/harness/tasks';
@@ -286,6 +288,12 @@ export function workspaceComposerTaskReviseResource(
   taskId: string
 ): WorkspaceComposerTaskReviseResource {
   return `p1/composer/tasks/${encodeURIComponent(taskId)}/revise`;
+}
+
+export function workspaceComposerTaskAnswerResource(
+  taskId: string
+): WorkspaceComposerTaskAnswerResource {
+  return `p1/composer/tasks/${encodeURIComponent(taskId)}/answer`;
 }
 
 export function workspaceHarnessDecisionResource(

@@ -155,6 +155,19 @@ export class PolicyMiddlewareRunner {
         );
       }
     }
+    // The mirror case, and the quieter one: a gate that was built and handed
+    // over but never pinned by the release runs on no turn at all, and nothing
+    // in the turn result says so.
+    const pinned = new Set(bindings.map(bindingKey));
+    const unpinned = policies
+      .map((policy) => bindingKey(policy.binding))
+      .filter((key) => !pinned.has(key));
+    if (unpinned.length > 0) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        `Registered policy(ies) the release never pins: ${unpinned.join(', ')}. A gate the HarnessRelease does not bind by policyId@revision:kind would never run.`,
+      );
+    }
   }
 
   get pinnedOrder() {

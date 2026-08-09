@@ -4,13 +4,17 @@ import type { AddressInfo } from "node:net";
 import test from "node:test";
 import {
 	isComposerVariantPlatform,
+	planConfirmationDecisionSchema,
 	pickComposerSubmissionSignedFields,
 	type ContentPackage,
 	type DiagnosticRun,
+	type PlanConfirmationDecision,
 } from "@meiye/contracts";
 
 import type { DiagnosticRepository } from "../../diagnostics/repository.js";
 import { createCoreServer, streamWorkflowEvents } from "../../server.js";
+import { executionConfirmationAuthorityRequestId } from "../agent-session/execution-confirmation-authority.js";
+import { computeExecutionPlanSnapshotHash } from "../harness/execution-plan-admission.js";
 import { buildContentPackage } from "../operations/content-package.js";
 import {
 	WorkflowEventApplicationService,
@@ -841,6 +845,8 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 			leaseId?: string;
 		}
 	>();
+	readonly reprices: Array<{ credits: number; quoteId: string }> = [];
+	failNextReprice = false;
 
 	/** What the coordinator actually reserved, for allowance-unit assertions. */
 	reservedUnits(workspaceId: string, idempotencyKey: string) {
@@ -868,6 +874,15 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 			kind: "existing" as const,
 			submission: structuredClone(existing.submission),
 		};
+	}
+
+	async readByTask(input: { workspaceId: string; taskId: string }) {
+		const claim = [...this.claims.values()].find(
+			(item) =>
+				item.workspaceId === input.workspaceId &&
+				item.submission.task.id === input.taskId,
+		);
+		return claim ? structuredClone(claim.submission) : null;
 	}
 
 	async claim(input: CreationSubmissionStoreClaim) {
@@ -936,6 +951,7 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 			}
 		}
 		current.agentBinding = structuredClone(binding);
+		current.agentPlanPending = false;
 		current.executionPlanFreeze = structuredClone(input.executionPlanFreeze);
 		if (input.confirmationDispatch !== undefined) {
 			current.confirmationDispatch = structuredClone(input.confirmationDispatch);
@@ -947,6 +963,31 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 			current.usageReservation.credits = input.credits;
 		}
 		return structuredClone(current);
+	}
+
+	async saveRepricedExecutionPlanFreeze(input: Parameters<
+		NonNullable<CreationSubmissionStore["saveRepricedExecutionPlanFreeze"]>
+	>[0]) {
+		if (this.failNextReprice) {
+			this.failNextReprice = false;
+			throw new Error("Atomic reprice commit failed");
+		}
+		const claim = [...this.claims.values()].find(
+			(candidate) =>
+				candidate.workspaceId === input.workspaceId &&
+				candidate.submission.snapshot.id === input.submissionId,
+		);
+		if (!claim) throw new Error("Submission reprice target missing.");
+		claim.submission.executionPlanFreeze = structuredClone(input.freeze);
+		claim.submission.snapshot.quote = {
+			id: input.freeze.quoteRef.id,
+			revision: String(input.freeze.quoteRef.revision),
+		};
+		claim.submission.usageReservation.credits = input.credits;
+		claim.submission.usageReservation.creditUsageOperationId =
+			`credit-usage:${claim.submission.task.id}:plan-r${input.freeze.planRevision}`;
+		this.reprices.push({ credits: input.credits, quoteId: input.freeze.quoteRef.id });
+		return structuredClone(claim.submission);
 	}
 
 	async claimHarnessStart(input: {
@@ -977,7 +1018,6 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 		leaseId: string;
 		workspaceId: string;
 		submissionId: string;
-		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
 	}) {
 		const current = this.harnessStarts.get(input.submissionId);
 		if (!current) {
@@ -992,18 +1032,6 @@ class MemorySubmissionStore implements CreationSubmissionStore {
 			attempts: current.attempts,
 			state: "started",
 		});
-		const claim = [...this.claims.values()].find(
-			(candidate) =>
-				candidate.workspaceId === input.workspaceId &&
-				candidate.submission.snapshot.id === input.submissionId,
-		);
-		if (claim?.submission.confirmationDispatch) {
-			claim.submission.confirmationDispatch = {
-				...(input.confirmationDispatch ??
-					claim.submission.confirmationDispatch),
-				state: "dispatched",
-			};
-		}
 	}
 
 	async markHarnessStartDispatched(input: {
@@ -1076,9 +1104,21 @@ class RecordingHarnessStarter implements CreationSubmissionHarnessStarter {
 	readonly starts: Array<
 		Parameters<CreationSubmissionHarnessStarter["start"]>[0]
 	> = [];
+	readonly preparations: CreationSubmissionRecord[] = [];
+	/** Makes admission answer with an authority other than the persisted one. */
+	startRequestIdOverride?: string;
 
 	async start(input: Parameters<CreationSubmissionHarnessStarter["start"]>[0]) {
 		this.starts.push(structuredClone(input));
+		return {
+			executionConfirmationRequestId:
+				this.startRequestIdOverride ??
+				`confirmation:authority:${input.task.id}`,
+		};
+	}
+
+	async preparePendingConfirmation(input: CreationSubmissionRecord) {
+		this.preparations.push(structuredClone(input));
 		return {
 			executionConfirmationRequestId: `confirmation:authority:${input.task.id}`,
 		};
@@ -1260,6 +1300,522 @@ test("recovery reuses durable Agent planning after a crash before Harness acknow
 	assert.equal(starts, 2);
 });
 
+test("paid Composer plan waits until exact explicit start before dispatching Make", async () => {
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	let completed = 0;
+	let revised = 0;
+	let immutableDecision: PlanConfirmationDecision | null = null;
+	let authorityPlanRevision = 1;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				input.submission.executionPlanFreeze = {
+					approvalBasis: "merchant_confirmed",
+					planId: "plan-paid",
+					planRevision: 1,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+				} as never;
+				// A stale/buggy planning hint cannot bypass the server-owned
+				// merchant-confirmed freeze and immutable decision gate.
+				return { threadId: asAgentThreadIdentity("thread-wait"), runId: "run-wait", makeReady: true };
+			},
+			async completeExplicitStart(input) {
+				assert.equal(input.planRevision, 2);
+				return { threadId: asAgentThreadIdentity("thread-wait"), runId: "run-wait", makeReady: true };
+			},
+			async markExplicitStartCompleted() {
+				completed += 1;
+			},
+			async revisePrepared(input) {
+				assert.equal(input.planRevision, 1);
+				assert.equal(input.merchantInstruction, "减到 4 页");
+				revised += 1;
+				authorityPlanRevision = 2;
+				input.submission.executionPlanFreeze = {
+					...input.submission.executionPlanFreeze!,
+					planRevision: 2,
+				} as never;
+				return { threadId: asAgentThreadIdentity("thread-wait"), runId: "run-wait", makeReady: false };
+			},
+		},
+		{
+			async getDecision() {
+				return immutableDecision;
+			},
+			async getRequest(requestId) {
+				const planRevision = authorityPlanRevision;
+				const currentFreeze = {
+					approvalBasis: "merchant_confirmed",
+					planId: "plan-paid",
+					planRevision,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+				} as never;
+				return {
+					request: {
+						requestId,
+						planId: "plan-paid",
+						planRevision,
+						snapshotHash: computeExecutionPlanSnapshotHash(currentFreeze),
+						quoteRef: { id: "quote-1", revision: "quote-r5" },
+						status: "decided",
+					},
+				};
+			},
+			async getCurrentByWorkflowId(workflowId) {
+				const currentFreeze = {
+					approvalBasis: "merchant_confirmed",
+					planId: "plan-paid",
+					planRevision: authorityPlanRevision,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+				} as never;
+				return {
+					workflowId,
+					workspaceId: "workspace-1",
+					planId: "plan-paid",
+					planRevision: authorityPlanRevision,
+					snapshotHash: computeExecutionPlanSnapshotHash(currentFreeze),
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+					rightsRevisionRefs: [],
+					factRevisionRefs: [],
+					frozenAt: "2026-08-09T08:00:00.000Z",
+				};
+			},
+		},
+	);
+	let createdTaskId = "";
+	const created = await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	createdTaskId = created.task.id;
+	const claimed = submissions.claimedSubmission(
+		"workspace-1",
+		"composer-submit-1",
+	);
+	assert.ok(claimed?.executionPlanFreeze);
+	assert.equal(claimed?.agentPlanPending, false);
+	assert.equal(claimed?.confirmationDispatch?.state, "pending");
+	assert.equal(harness.preparations.length, 1);
+	assert.equal(harness.preparations[0]?.task.id, created.task.id);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 0,
+		failed: 0,
+		started: 0,
+	});
+	await assert.rejects(
+		coordinator.startPrepared({
+			workspaceId: "workspace-1",
+			taskId: created.task.id,
+			planRevision: 1,
+		}),
+		/immutable confirmed decision/u,
+	);
+	assert.equal(harness.starts.length, 0);
+	const revisionTwoFreeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-paid",
+		planRevision: 2,
+		quoteRef: { id: "quote-1", revision: "quote-r5" },
+	} as never;
+	immutableDecision = planConfirmationDecisionSchema.parse({
+		schemaVersion: "plan-confirmation-decision/v1",
+		decisionId: `decision:${createdTaskId}:merchant-confirmed`,
+		requestId: executionConfirmationAuthorityRequestId({
+			workflowId: `${createdTaskId}:plan-r2`,
+			planRevision: 2,
+			snapshotHash: computeExecutionPlanSnapshotHash(revisionTwoFreeze),
+		}),
+		actorId: "owner-1",
+		decision: "confirmed",
+		decidedAt: "2026-08-09T08:00:00.000Z",
+	});
+	assert.equal(created.makeReady, false);
+	assert.equal(harness.starts.length, 0);
+	await coordinator.revisePrepared({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		planRevision: 1,
+		merchantInstruction: "减到 4 页",
+	});
+	assert.equal(revised, 1);
+	assert.equal(harness.starts.length, 0);
+	assert.equal(harness.preparations.length, 2);
+
+	const started = await coordinator.startPrepared({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		planRevision: 2,
+	});
+	assert.equal(started.makeReady, true);
+	assert.equal(harness.starts.length, 1);
+	assert.equal(completed, 1);
+	await coordinator.startPrepared({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		planRevision: 2,
+	});
+	assert.equal(harness.starts.length, 1);
+});
+
+test("admission answering with a second authority ID fails the start", async () => {
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	let completed = 0;
+	const freeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-paid",
+		planRevision: 1,
+		quoteRef: { id: "quote-1", revision: "quote-r5" },
+	} as never;
+	const snapshotHash = computeExecutionPlanSnapshotHash(freeze);
+	let immutableDecision: PlanConfirmationDecision | null = null;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				input.submission.executionPlanFreeze = freeze;
+				return { threadId: asAgentThreadIdentity("thread-wait"), runId: "run-wait", makeReady: false };
+			},
+			async completeExplicitStart() {
+				return { threadId: asAgentThreadIdentity("thread-wait"), runId: "run-wait", makeReady: true };
+			},
+			async markExplicitStartCompleted() {
+				completed += 1;
+			},
+		},
+		{
+			async getDecision() {
+				return immutableDecision;
+			},
+			async getRequest(requestId) {
+				return {
+					request: {
+						requestId,
+						planId: "plan-paid",
+						planRevision: 1,
+						snapshotHash,
+						quoteRef: { id: "quote-1", revision: "quote-r5" },
+						status: "decided",
+					},
+				};
+			},
+			async getCurrentByWorkflowId(workflowId) {
+				return {
+					workflowId,
+					workspaceId: "workspace-1",
+					planId: "plan-paid",
+					planRevision: 1,
+					snapshotHash,
+					quoteRef: { id: "quote-1", revision: "quote-r5" },
+					rightsRevisionRefs: [],
+					factRevisionRefs: [],
+					frozenAt: "2026-08-09T08:00:00.000Z",
+				};
+			},
+		},
+	);
+
+	const created = await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	const persistedRequestId = submissions.claimedSubmission(
+		"workspace-1",
+		"composer-submit-1",
+	)?.confirmationDispatch?.requestId;
+	assert.equal(persistedRequestId, `confirmation:authority:${created.task.id}`);
+	immutableDecision = planConfirmationDecisionSchema.parse({
+		schemaVersion: "plan-confirmation-decision/v1",
+		decisionId: `decision:${created.task.id}:merchant-confirmed`,
+		requestId: executionConfirmationAuthorityRequestId({
+			workflowId: `${created.task.id}:plan-r1`,
+			planRevision: 1,
+			snapshotHash,
+		}),
+		actorId: "owner-1",
+		decision: "confirmed",
+		decidedAt: "2026-08-09T08:00:00.000Z",
+	});
+
+	// The pending confirmation already told the merchant which authority they
+	// were approving. Admission re-affirming a *different* one would mean the
+	// money was held against one request and spent against another.
+	harness.startRequestIdOverride = "confirmation:authority:someone-elses-run";
+	await assert.rejects(
+		coordinator.startPrepared({
+			workspaceId: "workspace-1",
+			taskId: created.task.id,
+			planRevision: 1,
+		}),
+		/returned a different confirmation authority ID/u,
+	);
+	assert.equal(completed, 0);
+	assert.equal(
+		submissions.claimedSubmission("workspace-1", "composer-submit-1")
+			?.confirmationDispatch?.requestId,
+		persistedRequestId,
+	);
+});
+
+test("clarification answer continues the prepared task and durably stores its compiled freeze", async () => {
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare() {
+				return { threadId: asAgentThreadIdentity("thread-clarify"), runId: "run-clarify", makeReady: false };
+			},
+			async answerClarification(input) {
+				assert.equal(input.merchantAnswer, "主要面向第一次到店的新客");
+				input.submission.executionPlanFreeze = {
+					approvalBasis: "merchant_confirmed",
+					planId: "plan-clarify",
+					planRevision: 1,
+					quoteRef: { id: "quote-clarify-r2", revision: "quote-r2" },
+				} as never;
+				return {
+					threadId: asAgentThreadIdentity("thread-clarify"),
+					runId: "run-clarify",
+					makeReady: false,
+					repriceCommit: {
+						expectedFreeze: null,
+						previousQuoteRef: { id: "quote-1", revision: "quote-r5" },
+						successorQuote: {
+							quoteId: "quote-clarify-r2",
+							catalogModelId: "model-1",
+							quotePolicyRevision: "quote.policy@1",
+							billingMode: "per_request",
+							creditCost: 4,
+							unitRate: 4,
+						},
+						credits: 4,
+					},
+				};
+			},
+		},
+		{
+			async getDecision() {
+				return null;
+			},
+			async supersedePending() {},
+		},
+	);
+	const created = await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	assert.equal(harness.preparations.length, 0);
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 0,
+		failed: 0,
+		started: 0,
+	});
+
+	await coordinator.answerClarification({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		merchantAnswer: "主要面向第一次到店的新客",
+	});
+
+	const restartedRead = await submissions.readByTask({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+	});
+	assert.equal(restartedRead?.executionPlanFreeze?.planId, "plan-clarify");
+	assert.equal(restartedRead?.executionPlanFreeze?.planRevision, 1);
+	assert.deepEqual(submissions.reprices, [
+		{ credits: 4, quoteId: "quote-clarify-r2" },
+	]);
+	assert.equal(harness.preparations.length, 1);
+	assert.equal(harness.starts.length, 0);
+});
+
+test("clarification remains pending when its atomic reprice commit fails", async () => {
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	let committedResolutions = 0;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare() {
+				return {
+					threadId: asAgentThreadIdentity("thread-crash"),
+					runId: "run-crash",
+					makeReady: false,
+				};
+			},
+			async answerClarification(input) {
+				input.submission.executionPlanFreeze = {
+					approvalBasis: "merchant_confirmed",
+					planId: "plan-crash",
+					planRevision: 1,
+					quoteRef: { id: "quote-crash-r2", revision: "quote-r2" },
+				} as never;
+				return {
+					threadId: asAgentThreadIdentity("thread-crash"),
+					runId: "run-crash",
+					makeReady: false,
+					clarificationResolution: {
+						interruptId: "interrupt-crash",
+						revision: 1,
+						threadId: "thread-crash",
+						runId: "run-crash",
+					},
+					repriceCommit: {
+						expectedFreeze: null,
+						previousQuoteRef: { id: "quote-1", revision: "quote-r5" },
+						successorQuote: {
+							quoteId: "quote-crash-r2",
+							catalogModelId: "model-1",
+							quotePolicyRevision: "quote.policy@1",
+							billingMode: "per_request",
+							creditCost: 4,
+							unitRate: 4,
+						},
+						credits: 4,
+					},
+				};
+			},
+			async commitClarificationResolution() {
+				committedResolutions += 1;
+			},
+		},
+	);
+	const created = await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+	submissions.failNextReprice = true;
+
+	await assert.rejects(
+		coordinator.answerClarification({
+			workspaceId: "workspace-1",
+			taskId: created.task.id,
+			merchantAnswer: "减到 4 页",
+		}),
+		/Atomic reprice commit failed/u,
+	);
+
+	assert.equal(committedResolutions, 0);
+	assert.equal(
+		(
+			await submissions.readByTask({
+				workspaceId: "workspace-1",
+				taskId: created.task.id,
+			})
+		)?.executionPlanFreeze,
+		undefined,
+	);
+	assert.equal(harness.preparations.length, 0);
+
+	await coordinator.answerClarification({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		merchantAnswer: "减到 4 页",
+	});
+	assert.equal(committedResolutions, 1);
+	assert.equal(harness.preparations.length, 1);
+});
+
+test("plan revision commits its quote successor through the atomic billing and freeze seam", async () => {
+	const submissions = new MemorySubmissionStore();
+	const harness = new RecordingHarnessStarter();
+	const previousFreeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-reprice",
+		planRevision: 1,
+		quoteRef: { id: "quote-r1", revision: "r1" },
+	} as never;
+	const nextFreeze = {
+		approvalBasis: "merchant_confirmed",
+		planId: "plan-reprice",
+		planRevision: 2,
+		quoteRef: { id: "quote-r2", revision: "r2" },
+	} as never;
+	const coordinator = new CreationSubmissionCoordinator(
+		submissions,
+		harness,
+		fixedIds(),
+		fixedAdmission(),
+		undefined,
+		{
+			async prepare(input) {
+				input.submission.executionPlanFreeze = previousFreeze;
+				return { threadId: asAgentThreadIdentity("thread-reprice"), runId: "run-reprice", makeReady: false };
+			},
+			async revisePrepared(input) {
+				input.submission.executionPlanFreeze = nextFreeze;
+				return {
+					threadId: asAgentThreadIdentity("thread-reprice"),
+					runId: "run-reprice",
+					makeReady: false,
+					repriceCommit: {
+						expectedFreeze: previousFreeze,
+						previousQuoteRef: { id: "quote-r1", revision: "r1" },
+						successorQuote: {
+							quoteId: "quote-r2",
+							catalogModelId: "model-1",
+							quotePolicyRevision: "quote.policy@1",
+							billingMode: "per_request",
+							creditCost: 4,
+							unitRate: 4,
+						},
+						credits: 4,
+					},
+				};
+			},
+		},
+		{
+			async getDecision() {
+				return null;
+			},
+			async supersedePending() {},
+		},
+	);
+	const created = await coordinator.submit({
+		...submissionPayload(),
+		actorId: "owner-1",
+		workspaceId: "workspace-1",
+	});
+
+	const revised = await coordinator.revisePrepared({
+		workspaceId: "workspace-1",
+		taskId: created.task.id,
+		planRevision: 1,
+		merchantInstruction: "减到 4 页",
+	});
+
+	assert.deepEqual(submissions.reprices, [{ credits: 4, quoteId: "quote-r2" }]);
+	assert.equal(
+		harness.preparations[1]?.usageReservation.creditUsageOperationId,
+		`credit-usage:${created.task.id}:plan-r2`,
+	);
+	assert.equal("repriceCommit" in revised, false);
+});
+
 test("a failed Harness start releases the same submission for an idempotent retry", async () => {
 	const submissions = new MemorySubmissionStore();
 	let starts = 0;
@@ -1288,23 +1844,12 @@ test("a failed Harness start releases the same submission for an idempotent retr
 	assert.equal(submissions.count(), 1);
 });
 
-test("the compiled freeze is durable in the claim transaction before a paid Harness start", async () => {
+test("the compiled freeze is durable in the claim transaction and a paid submit stops at pending confirmation", async () => {
 	const submissions = new MemorySubmissionStore();
-	let started = false;
+	const starter = new RecordingHarnessStarter();
 	const coordinator = new CreationSubmissionCoordinator(
 		submissions,
-		{
-			async start(submission) {
-				started = true;
-				assert.ok(submission.executionPlanFreeze);
-				assert.equal(submission.confirmationDispatch?.state, "dispatched");
-				assert.equal(submission.confirmationDispatch?.requestId, undefined);
-				return {
-					executionConfirmationRequestId:
-						"confirmation:authority-digest-freeze",
-				};
-			},
-		},
+		starter,
 		fixedIds(),
 		fixedAdmission(),
 		undefined,
@@ -1321,9 +1866,12 @@ test("the compiled freeze is durable in the claim transaction before a paid Harn
 		workspaceId: "workspace-1",
 	};
 
-	await coordinator.submit(command);
+	const response = await coordinator.submit(command);
 
-	assert.equal(started, true);
+	// V31-10/V31-28: a merchant_confirmed freeze must never start Make on submit.
+	assert.equal(response.makeReady, false);
+	assert.deepEqual(starter.starts, []);
+	assert.equal(starter.preparations.length, 1);
 	assert.ok(
 		submissions.claimedSubmission("workspace-1", command.idempotencyKey)
 			?.executionPlanFreeze,
@@ -1339,8 +1887,11 @@ test("the compiled freeze is durable in the claim transaction before a paid Harn
 		submissions.claimedSubmission("workspace-1", command.idempotencyKey)
 			?.confirmationDispatch,
 		{
-			requestId: "confirmation:authority-digest-freeze",
-			state: "dispatched",
+			requestId: `confirmation:authority:${
+				submissions.claimedSubmission("workspace-1", command.idempotencyKey)!
+					.task.id
+			}`,
+			state: "pending",
 			expiresAt: "2026-07-24T09:00:00.000Z",
 		},
 	);
@@ -1350,6 +1901,29 @@ test("the compiled freeze is durable in the claim transaction before a paid Harn
 		),
 		"pending",
 	);
+	// The authority ID is a digest the browser cannot compute, so the response
+	// that withholds Make must also hand back the exact request the merchant has
+	// to decide. Without it the commit strip can only start an unapproved plan.
+	//
+	// It must be that ID verbatim, never a second one derived at the HTTP edge:
+	// the real rule (executionConfirmationAuthorityRequestId) yields
+	// `confirmation:<sha40>`, and the authority may hand back a `:r:` successor
+	// of it after a prior terminal decision. This double answers with a shape
+	// that rule can never produce, so any recomputation here turns this red.
+	const preparedRequestId = submissions.claimedSubmission(
+		"workspace-1",
+		command.idempotencyKey,
+	)!.confirmationDispatch!.requestId;
+	assert.equal(preparedRequestId, "confirmation:authority:task-1");
+	assert.equal(response.executionConfirmationRequestId, preparedRequestId);
+	// Crash recovery is an unauthorized inbound edge for a plan the merchant has
+	// not approved: it must leave the submission waiting, not spend the hold.
+	assert.deepEqual(await coordinator.recoverPendingStarts(), {
+		attempted: 0,
+		failed: 0,
+		started: 0,
+	});
+	assert.deepEqual(starter.starts, []);
 });
 
 test("the Campaign producer submits the second paid Work with its own U7 context", async () => {
@@ -1407,20 +1981,55 @@ test("the Campaign producer submits the second paid Work with its own U7 context
 		},
 	});
 
+	// Each slot raises its own pending confirmation authority; one approval can
+	// never cover the next Work, and no Work starts Make before that approval.
+	assert.deepEqual(starter.starts, []);
 	assert.deepEqual(
-		starter.starts.map((submission) => ({
+		starter.preparations.map((submission) => ({
 			requestId: submission.confirmationDispatch?.requestId,
+			state: submission.confirmationDispatch?.state,
 			...submission.executionConfirmationContext,
 		})),
 		[
 			{
 				requestId: undefined,
+				state: "pending",
 				campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
 				workOrdinal: 1,
 				approvalScope: "single_work",
 			},
 			{
 				requestId: undefined,
+				state: "pending",
+				campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
+				workOrdinal: 2,
+				approvalScope: "single_work",
+			},
+		],
+	);
+	assert.deepEqual(
+		[1, 2].map((workOrdinal) => {
+			const claimed = submissions.claimedSubmission(
+				"workspace-1",
+				`campaign-work-${workOrdinal}`,
+			);
+			return {
+				requestId: claimed?.confirmationDispatch?.requestId,
+				state: claimed?.confirmationDispatch?.state,
+				...claimed?.executionConfirmationContext,
+			};
+		}),
+		[
+			{
+				requestId: "confirmation:authority:campaign-task-campaign-work-1",
+				state: "pending",
+				campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
+				workOrdinal: 1,
+				approvalScope: "single_work",
+			},
+			{
+				requestId: "confirmation:authority:campaign-task-campaign-work-2",
+				state: "pending",
 				campaignPlanRef: { id: "campaign-plan-1", revision: 3 },
 				workOrdinal: 2,
 				approvalScope: "single_work",
@@ -2574,48 +3183,6 @@ function submissionPayload(): ComposerSubmissionBody {
 	};
 }
 
-function recoveryExecutionPlanFreeze(
-	submission: CreationSubmissionRecord,
-): NonNullable<CreationSubmissionRecord["executionPlanFreeze"]> {
-	return {
-		planId: `plan-${submission.task.id}` as never,
-		planRevision: 1,
-		intentDeclaration: { summary: submission.snapshot.intent.text },
-		contextBundleRef: {
-			bundleId: submission.snapshot.briefContext.id,
-			revision: submission.snapshot.briefContext.revision,
-			hash: "context-freeze-hash",
-		},
-		executionPlan: {
-			schemaVersion: "compiled-execution-plan/v1",
-			units: [
-				{
-					unitId: "unit-1" as never,
-					unitType: "copy.generate",
-					primitive: "generate",
-				},
-			],
-			dependencyGroups: [
-				{ groupId: "group-1", unitIds: ["unit-1" as never] },
-			],
-			boundedRetry: {
-				"unit-1": {
-					maxAttempts: 1,
-					maxCostCents: 0,
-					retry: { enabled: false },
-				},
-			},
-		},
-		deliverables: [
-			{ deliverableId: "deliverable-1", kind: "copy", quantity: 1 },
-		],
-		quoteRef: submission.snapshot.quote,
-		rightsRevisionRefs: [submission.snapshot.rights.revision],
-		harnessReleaseId: "release-recovery-1" as never,
-		approvalBasis: "merchant_confirmed",
-	};
-}
-
 function modalitySubmissionPayload(
 	kind: "copy" | "image" | "image_text_note" | "video",
 ): ComposerSubmissionBody {
@@ -2820,3 +3387,44 @@ test("V31-18 P0-2: a Result adjustment retrieves confirmed memory like a first s
 		"the adjustment must carry its own compile freeze",
 	);
 });
+function recoveryExecutionPlanFreeze(
+	submission: CreationSubmissionRecord,
+): NonNullable<CreationSubmissionRecord["executionPlanFreeze"]> {
+	return {
+		planId: `plan-${submission.task.id}` as never,
+		planRevision: 1,
+		intentDeclaration: { summary: submission.snapshot.intent.text },
+		contextBundleRef: {
+			bundleId: submission.snapshot.briefContext.id,
+			revision: submission.snapshot.briefContext.revision,
+			hash: "context-freeze-hash",
+		},
+		executionPlan: {
+			schemaVersion: "compiled-execution-plan/v1",
+			units: [
+				{
+					unitId: "unit-1" as never,
+					unitType: "copy.generate",
+					primitive: "generate",
+				},
+			],
+			dependencyGroups: [
+				{ groupId: "group-1", unitIds: ["unit-1" as never] },
+			],
+			boundedRetry: {
+				"unit-1": {
+					maxAttempts: 1,
+					maxCostCents: 0,
+					retry: { enabled: false },
+				},
+			},
+		},
+		deliverables: [
+			{ deliverableId: "deliverable-1", kind: "copy", quantity: 1 },
+		],
+		quoteRef: submission.snapshot.quote,
+		rightsRevisionRefs: [submission.snapshot.rights.revision],
+		harnessReleaseId: "release-recovery-1" as never,
+		approvalBasis: "merchant_confirmed",
+	};
+}

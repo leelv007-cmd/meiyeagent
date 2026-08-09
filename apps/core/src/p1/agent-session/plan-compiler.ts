@@ -179,13 +179,13 @@ export type CompilePlanInput = {
   quoteRefHint?: AgentRevisionRef;
   /** Exact ProductQuote authority snapshot, including its validity window. */
   quoteResolutionHint?: PlanCompilerQuoteResolution;
+  /** Server-admitted billing quote; never sourced from PlanProposal/model output. */
+  billingQuoteRef?: AgentRevisionRef;
   /** Confirmed memories returned by this Session turn, with exact receipt binding. */
   memoryContext?: PlanMemoryContext | null;
   now?: string;
   /** Optional merchant billing overlay for Living Plan cost section (no invention). */
   livingPlanBilling?: PlanLivingPlanBillingOverlay;
-  /** Server-admitted Composer billing quote to freeze into this plan revision. */
-  billingQuoteRef?: AgentRevisionRef;
   /**
    * Contamination channel for constructive tests: anything the model might
    * illegally put in a proposal envelope. Compiler MUST ignore these.
@@ -716,97 +716,119 @@ export class PlanCompiler {
     const cachePolicies: NonNullable<CompiledExecutionPlan['cachePolicies']> =
       {};
 
-    // Group 0: context read (parallel-safe, single unit)
-    const contextUnitId = unitId('unit-context-read');
-    const contextDef = this.registry.resolve('context.read');
-    units.push({
-      unitId: contextUnitId,
-      unitType: contextDef.unitType,
-      primitive: contextDef.primitive,
+    const carrier = input.deliverables.some((item) => item.kind === 'note')
+      ? 'note'
+      : input.deliverables.some((item) => item.kind === 'media')
+        ? 'media'
+        : 'copy';
+    const generationType = CARRIER_TO_UNIT[carrier];
+    const dependencyGroups: CompiledExecutionPlan['dependencyGroups'] = [];
+    const addUnit = (unit: ExecutionUnit) => {
+      const definition = this.registry.resolve(unit.unitType);
+      units.push(unit);
+      boundedRetry[unit.unitId] = defaultRetryOff();
+      this.applyCachePolicy({
+        unitId: unit.unitId,
+        definition,
+        workspaceId: input.workspaceId,
+        harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
+        input: unit.input,
+        cachePolicies,
+        unitCacheKeys,
+      });
+      dependencyGroups.push({
+        groupId: `g-${dependencyGroups.length + 1}`,
+        unitIds: [unit.unitId],
+      });
+    };
+    const priorOutputUnitIds = () =>
+      units.length === 0 ? [] : [units[units.length - 1]!.unitId];
+
+    addUnit({
+      unitId: unitId(`unit-${carrier}-context`),
+      unitType: 'context.read',
+      primitive: 'read_context',
       input: {
         contextBundleId: input.revision.boundRevisions.contextBundleId,
         contextRevision: input.revision.boundRevisions.contextRevision,
         ...(input.revision.memoryContext
           ? { memoryContext: input.revision.memoryContext }
           : {}),
+        priorOutputUnitIds: [],
       },
     });
-    boundedRetry[contextUnitId] = defaultRetryOff();
-    this.applyCachePolicy({
-      unitId: contextUnitId,
-      definition: contextDef,
-      workspaceId: input.workspaceId,
-      harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
-      input: units[0]!.input,
-      cachePolicies,
-      unitCacheKeys,
+    addUnit({
+      unitId: unitId(`unit-${carrier}-brief`),
+      unitType: generationType,
+      primitive: 'generate',
+      input: {
+        role: 'brief',
+        deliverables: input.deliverables,
+        ...(input.revision.memoryContext
+          ? { memoryContext: input.revision.memoryContext }
+          : {}),
+        priorOutputUnitIds: priorOutputUnitIds(),
+      },
     });
-
-    // Group 1: generate units (one per deliverable quantity expanded lightly)
-    const generateUnitIds: ExecutionUnitId[] = [];
-    for (const deliverable of input.deliverables) {
-      const unitType = CARRIER_TO_UNIT[deliverable.kind];
-      const definition = this.registry.resolve(unitType);
-      for (let i = 0; i < deliverable.quantity; i += 1) {
-        const generateUnitId = unitId(
-          `unit-${deliverable.deliverableId}-${i + 1}`,
-        );
-        const unitInput = {
-          deliverableId: deliverable.deliverableId,
-          kind: deliverable.kind,
-          index: i,
-          quoteRef: input.revision.quoteRef,
-          ...(input.revision.memoryContext
-            ? { memoryContext: input.revision.memoryContext }
-            : {}),
-        };
-        units.push({
-          unitId: generateUnitId,
-          unitType: definition.unitType,
-          primitive: definition.primitive,
-          input: unitInput,
-        });
-        boundedRetry[generateUnitId] = defaultRetryOff();
-        this.applyCachePolicy({
-          unitId: generateUnitId,
-          definition,
-          workspaceId: input.workspaceId,
-          harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
-          input: unitInput,
-          cachePolicies,
-          unitCacheKeys,
-        });
-        generateUnitIds.push(generateUnitId);
-      }
+    if (carrier === 'note') {
+      addUnit({
+        unitId: unitId('unit-note-style-ask'),
+        unitType: 'compliance.check',
+        primitive: 'ask_merchant',
+        input: {
+          role: 'style_choice',
+          priorOutputUnitIds: priorOutputUnitIds(),
+        },
+      });
     }
-
-    // Group 2: compliance check
-    const checkUnitId = unitId('unit-compliance-check');
-    const checkDef = this.registry.resolve('compliance.check');
-    units.push({
-      unitId: checkUnitId,
-      unitType: checkDef.unitType,
-      primitive: checkDef.primitive,
+    addUnit({
+      unitId: unitId(
+        carrier === 'note' ? 'unit-note-pages' : `unit-${carrier}-select`,
+      ),
+      unitType: generationType,
+      primitive: 'generate',
+      input: {
+        role: carrier === 'note' ? 'pages' : 'selection',
+        quantity: input.deliverables.reduce(
+          (sum, deliverable) => sum + deliverable.quantity,
+          0,
+        ),
+        quoteRef: input.revision.quoteRef,
+        ...(input.revision.memoryContext
+          ? { memoryContext: input.revision.memoryContext }
+          : {}),
+        priorOutputUnitIds: priorOutputUnitIds(),
+      },
+    });
+    addUnit({
+      unitId: unitId(`unit-${carrier}-check`),
+      unitType: 'compliance.check',
+      primitive: 'check',
       input: {
         rightsRevisionIds: input.revision.boundRevisions.rightsRevisionIds,
+        priorOutputUnitIds: priorOutputUnitIds(),
       },
     });
-    boundedRetry[checkUnitId] = defaultRetryOff();
-    this.applyCachePolicy({
-      unitId: checkUnitId,
-      definition: checkDef,
-      workspaceId: input.workspaceId,
-      harnessReleaseId: input.revision.boundRevisions.harnessReleaseId,
-      input: units[units.length - 1]!.input,
-      cachePolicies,
-      unitCacheKeys,
+    if (carrier === 'note') {
+      addUnit({
+        unitId: unitId('unit-note-revise'),
+        unitType: generationType,
+        primitive: 'revise',
+        input: {
+          role: 'bounded_revision',
+          priorOutputUnitIds: priorOutputUnitIds(),
+        },
+      });
+    }
+    addUnit({
+      unitId: unitId(`unit-${carrier}-assemble`),
+      unitType: generationType,
+      primitive: 'record',
+      input: {
+        role: 'assembly_delivery',
+        priorOutputUnitIds: priorOutputUnitIds(),
+      },
     });
-
-    const dependencyGroups = [
-      { groupId: 'g-context', unitIds: [contextUnitId] },
-      { groupId: 'g-generate', unitIds: generateUnitIds },
-      { groupId: 'g-check', unitIds: [checkUnitId] },
-    ];
 
     const executionPlan = compiledExecutionPlanSchema.parse({
       schemaVersion: COMPILED_EXECUTION_PLAN_SCHEMA_VERSION,
@@ -908,7 +930,7 @@ export function createFixturePlanCompilerPorts(
     quote: {
       async resolveQuote(input) {
         return {
-          quoteRef: input.billingQuoteRef ?? {
+          quoteRef: {
             id: `quote-${input.planId}`,
             revision: input.planRevision,
           },

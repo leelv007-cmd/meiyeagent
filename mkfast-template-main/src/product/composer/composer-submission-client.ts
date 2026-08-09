@@ -86,6 +86,12 @@ const composerSubmissionResultSchema = z
     replayed: z.boolean(),
     /** False while a paid Living Plan waits for explicit merchant start. */
     makeReady: z.boolean(),
+    /**
+     * The confirmation the commit strip must decide before that start. Derived
+     * from a snapshot digest server-side, so the browser cannot recompute it;
+     * absent when the plan is exempt from paid confirmation.
+     */
+    executionConfirmationRequestId: identifierSchema.optional(),
     threadId: identifierSchema,
     runId: identifierSchema,
     snapshot: z

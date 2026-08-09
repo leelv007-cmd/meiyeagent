@@ -173,7 +173,10 @@ interface CoreServerDependencies {
   composerSubmission?: {
     coordinator: Pick<CreationSubmissionCoordinator, 'submit'> &
       Partial<
-        Pick<CreationSubmissionCoordinator, 'startPrepared' | 'revisePrepared'>
+        Pick<
+          CreationSubmissionCoordinator,
+          'answerClarification' | 'startPrepared' | 'revisePrepared'
+        >
       >;
   };
   /** Workspace-authenticated semantic replay/read seam (V31-28). */
@@ -1640,60 +1643,16 @@ export function createCoreServer({
     registerComposerPlanCommandRoutes({
       routes,
       pathname: url.pathname,
-      startAvailable: Boolean(composerSubmission?.coordinator.startPrepared),
-      reviseAvailable: Boolean(composerSubmission?.coordinator.revisePrepared),
-      async onStart(composerTaskStartRoute) {
-        await handleErrors(async () => {
-          const context = p1Identity(
-            request,
-            composerTaskStartRoute.workspaceId,
-            requestCorrelationId
-          );
-          authorizeContentCreation(context);
-          const body = z
-            .object({ planRevision: z.number().int().positive() })
-            .strict()
-            .parse(await readJson(request));
-          const result = await composerSubmission!.coordinator.startPrepared!({
-            workspaceId: context.workspaceId,
-            taskId: composerTaskStartRoute.taskId,
-            planRevision: body.planRevision,
-          });
-          sendJson(response, 202, result, requestCorrelationId);
-        }, {
-          code: 'COMPOSER_PLAN_START_FAILED',
-          message: 'Composer plan could not be started.',
-          status: 409,
-        });
+      coordinator: composerSubmission?.coordinator,
+      authorize(workspaceId) {
+        const context = p1Identity(request, workspaceId, requestCorrelationId);
+        authorizeContentCreation(context);
+        return context;
       },
-      async onRevise(composerTaskReviseRoute) {
-        await handleErrors(async () => {
-          const context = p1Identity(
-            request,
-            composerTaskReviseRoute.workspaceId,
-            requestCorrelationId
-          );
-          authorizeContentCreation(context);
-          const body = z
-            .object({
-              planRevision: z.number().int().positive(),
-              merchantInstruction: z.string().trim().min(1).max(4_000),
-            })
-            .strict()
-            .parse(await readJson(request));
-          const result = await composerSubmission!.coordinator.revisePrepared!({
-            workspaceId: context.workspaceId,
-            taskId: composerTaskReviseRoute.taskId,
-            planRevision: body.planRevision,
-            merchantInstruction: body.merchantInstruction,
-          });
-          sendJson(response, 200, result, requestCorrelationId);
-        }, {
-          code: 'COMPOSER_PLAN_REVISE_FAILED',
-          message: 'Composer plan could not be revised.',
-          status: 409,
-        });
-      },
+      readBody: () => readJson(request),
+      respond: (status, payload) =>
+        sendJson(response, status, payload, requestCorrelationId),
+      handle: (command, fallback) => handleErrors(command, fallback),
     });
 
     const composerTaskEventRoute = workspaceComposerTaskEventRoute(

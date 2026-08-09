@@ -1,13 +1,15 @@
 import {
 	pickComposerSubmissionSignedFields,
 	structuredDecisionInputSchema,
+	type BuildProductQuoteInput,
 	type PlanConfirmationDecision,
 	type ResultAdjustTextSelectionScope,
 	type StructuredDecisionInput,
 } from "@meiye/contracts";
 
 import { fingerprintValue } from "../job-runtime/job-contracts.js";
-import { executionConfirmationRequestId } from "../harness/execution-confirmation-id.js";
+import { executionConfirmationAuthorityRequestId } from "../agent-session/execution-confirmation-authority.js";
+import type { PendingConfirmationAuthority } from "../agent-session/execution-confirmation-authority-store.js";
 import { selectImageIntentOperation } from "../harness/image-intent-compiler.js";
 import type { ExecutionPlanCompileFreeze } from "../harness/execution-plan-admission.js";
 import type { HarnessWorkflowInput } from "../harness/task-admission.js";
@@ -33,22 +35,16 @@ export interface CreationSubmissionRecord {
 	usageReservation: {
 		id: string;
 		credits?: number;
+		/** Durable credit-ledger lineage; reprices refund this exact operation. */
+		creditUsageOperationId?: string;
 		/** Historical per-resource reservation retained for read compatibility. */
 		units: CreationSubmissionUsageUnit[];
 	};
 	/**
-	 * V31-12 compile-finalize freeze. New paid submissions persist it in the
-	 * same claim transaction as their credit reservation and confirmation
-	 * outbox; recovery reuses this exact value before Harness admission.
+	 * V31-12 compile-finalize freeze persisted with the durable submission so a
+	 * restarted worker can reconstruct the exact merchant-confirmed plan.
 	 */
 	executionPlanFreeze?: ExecutionPlanCompileFreeze;
-	executionConfirmationContext?: HarnessWorkflowInput["executionConfirmationContext"];
-	/** Reliable outbox marker committed with the credit reservation and freeze. */
-	confirmationDispatch?: {
-		requestId?: string;
-		state: "pending" | "dispatched" | "expired";
-		expiresAt?: string;
-	};
 	/** Authoritative Session identity bound before the Harness starts. */
 	agentBinding?: ComposerAgentBinding;
 	/** Durable continuation hint needed if the process crashes before planning. */
@@ -59,6 +55,14 @@ export interface CreationSubmissionRecord {
 		parentRevision: number;
 		targetUnitIds?: string[];
 		sourceUnitMappings?: Array<{ sourceUnitId: string; executionUnitId: string }>;
+	};
+	agentPlanPending?: boolean;
+	executionConfirmationContext?: HarnessWorkflowInput["executionConfirmationContext"];
+	/** Reliable outbox marker committed with the credit reservation and freeze. */
+	confirmationDispatch?: {
+		requestId?: string;
+		state: "pending" | "dispatched" | "expired";
+		expiresAt?: string;
 	};
 }
 
@@ -107,7 +111,18 @@ export interface CreationSubmissionStore {
 		executionPlanFreeze: ExecutionPlanCompileFreeze;
 		quoteRef?: CreationSubmissionRecord["snapshot"]["quote"];
 		credits?: number;
+		clarificationResolution?: ComposerClarificationResolution;
 		confirmationDispatch?: CreationSubmissionRecord["confirmationDispatch"];
+	}): Promise<CreationSubmissionRecord>;
+	saveRepricedExecutionPlanFreeze?(input: {
+		workspaceId: string;
+		submissionId: string;
+		expectedFreeze: ExecutionPlanCompileFreeze | null;
+		previousQuoteRef: { id: string; revision: string };
+		freeze: ExecutionPlanCompileFreeze;
+		successorQuote: BuildProductQuoteInput;
+		credits: number;
+		clarificationResolution?: ComposerClarificationResolution;
 	}): Promise<CreationSubmissionRecord>;
 	/**
 	 * Separately leases the one external Harness start after the submission
@@ -165,6 +180,10 @@ export interface CreationSubmissionHarnessStarter {
 		| { executionConfirmationRequestId?: string }
 		| void
 	>;
+	preparePendingConfirmation?(input: CreationSubmissionRecord): Promise<
+		| { executionConfirmationRequestId?: string }
+		| void
+	>;
 	classifyStartFailure?(
 		input: CreationSubmissionRecord,
 		error: unknown,
@@ -193,6 +212,21 @@ export type ComposerAgentBinding = {
 	runId: string;
 	/** False while a paid Living Plan waits for an explicit merchant start. */
 	makeReady?: boolean;
+	/** Server-only handoff consumed by the atomic billing/freeze commit. */
+	repriceCommit?: {
+		expectedFreeze: ExecutionPlanCompileFreeze | null;
+		previousQuoteRef: { id: string; revision: string };
+		successorQuote: BuildProductQuoteInput;
+		credits: number;
+	};
+	clarificationResolution?: ComposerClarificationResolution;
+};
+
+export type ComposerClarificationResolution = {
+	interruptId: string;
+	revision: number;
+	threadId: string;
+	runId: string;
 };
 
 /** Composer → Agent Session/Plan seam. Web never projects plan events. */
@@ -217,6 +251,10 @@ export interface ComposerSubmissionAgentPlanningPort {
 		submission: CreationSubmissionRecord;
 		merchantAnswer: string;
 	}): Promise<ComposerAgentBinding>;
+	commitClarificationResolution?(input: {
+		submission: CreationSubmissionRecord;
+		resolution?: ComposerClarificationResolution;
+	}): Promise<void>;
 }
 
 export interface ComposerExplicitConfirmationPort {
@@ -225,7 +263,7 @@ export interface ComposerExplicitConfirmationPort {
 		workspaceId: string,
 		requestId: string,
 	): Promise<PlanConfirmationDecision | null>;
-	decide(input: {
+	decide?(input: {
 		decisionId: string;
 		requestId: string;
 		workspaceId: string;
@@ -233,6 +271,25 @@ export interface ComposerExplicitConfirmationPort {
 		decision: "confirmed";
 		decidedAt: string;
 	}): Promise<{ decision: PlanConfirmationDecision }>;
+	getRequest?(requestId: string): Promise<{
+		request: {
+			requestId: string;
+			planId: string;
+			planRevision: number;
+			snapshotHash: string;
+			quoteRef: { id: string; revision: string | number };
+			status: string;
+		};
+	} | null>;
+	getCurrentByWorkflowId?(
+		workflowId: string,
+	): Promise<PendingConfirmationAuthority | null>;
+	/** Legacy test adapter only; successor repricing no longer invokes this seam. */
+	supersedePending?(input: {
+		requestId: string;
+		actorId: string;
+		now: string;
+	}): Promise<void>;
 }
 
 export interface CreationSubmissionAdmissionPort {
@@ -320,7 +377,7 @@ export class CreationSubmissionCoordinator {
 		if (!this.store.readByTask || !this.agentPlanning?.completeExplicitStart) {
 			throw new Error("Explicit Composer plan start is unavailable.");
 		}
-		const submission = await this.store.readByTask({
+		let submission = await this.store.readByTask({
 			workspaceId: input.workspaceId,
 			taskId: input.taskId,
 		});
@@ -336,31 +393,59 @@ export class CreationSubmissionCoordinator {
 		if (!this.explicitConfirmations) {
 			throw new Error("Paid Composer start requires confirmation authority.");
 		}
+		const workflowId = composerPreparedAttemptId(submission);
+		if (
+			!this.explicitConfirmations.getRequest ||
+			!this.explicitConfirmations.getCurrentByWorkflowId
+		) {
+			throw new Error("Paid Composer start requires confirmation request authority.");
+		}
+		const planAuthority = await this.explicitConfirmations.getCurrentByWorkflowId(
+			workflowId,
+		);
+		const freeze = submission.executionPlanFreeze;
+		if (
+			!planAuthority ||
+			planAuthority.workspaceId !== input.workspaceId ||
+			planAuthority.planId !== freeze.planId ||
+			planAuthority.planRevision !== input.planRevision ||
+			planAuthority.planRevision !== freeze.planRevision ||
+			planAuthority.quoteRef.id !== freeze.quoteRef.id ||
+			String(planAuthority.quoteRef.revision) !== String(freeze.quoteRef.revision)
+		) {
+			throw new Error("Paid Composer start requires the exact prepared plan authority.");
+		}
+		const requestId = executionConfirmationAuthorityRequestId({
+			workflowId,
+			planRevision: planAuthority.planRevision,
+			snapshotHash: planAuthority.snapshotHash,
+		});
+		const authority = await this.explicitConfirmations.getRequest(requestId);
+		if (
+			!authority ||
+			authority.request.requestId !== requestId ||
+			authority.request.planId !== freeze.planId ||
+			authority.request.planRevision !== input.planRevision ||
+			authority.request.planRevision !== freeze.planRevision ||
+			authority.request.status !== "decided" ||
+			authority.request.snapshotHash !== planAuthority.snapshotHash ||
+			authority.request.quoteRef.id !== freeze.quoteRef.id ||
+			String(authority.request.quoteRef.revision) !== String(freeze.quoteRef.revision)
+		) {
+			throw new Error("Paid Composer start requires the exact prepared plan authority.");
+		}
+		const decision = await this.explicitConfirmations.getDecision(
+			input.workspaceId,
+			requestId,
+		);
+		if (!decision || decision.requestId !== requestId || decision.decision !== "confirmed") {
+			throw new Error("Paid Composer start requires an immutable confirmed decision.");
+		}
 		const binding = await this.agentPlanning.completeExplicitStart({
 			submission,
 			planRevision: input.planRevision,
 		});
 		await this.startHarness(submission);
-		const requestId = executionConfirmationRequestId(submission.task.id);
-		let decision = await this.explicitConfirmations.getDecision(
-			submission.snapshot.workspaceId,
-			requestId,
-		);
-		if (!decision) {
-			decision = (
-				await this.explicitConfirmations.decide({
-					decisionId: `decision:${submission.task.id}:merchant-confirmed`,
-					requestId,
-					workspaceId: submission.snapshot.workspaceId,
-					actorId: submission.snapshot.actorId,
-					decision: "confirmed",
-					decidedAt: this.ids.now(),
-				})
-			).decision;
-		}
-		if (decision.decision !== "confirmed") {
-			throw new Error("Paid Composer start requires an immutable confirmed decision.");
-		}
 		await this.agentPlanning.markExplicitStartCompleted?.({ submission });
 		return submissionResponse(submission, true, {
 			...binding,
@@ -381,7 +466,7 @@ export class CreationSubmissionCoordinator {
 		) {
 			throw new Error("Composer plan revision is unavailable.");
 		}
-		const submission = await this.store.readByTask({
+		let submission = await this.store.readByTask({
 			workspaceId: input.workspaceId,
 			taskId: input.taskId,
 		});
@@ -406,14 +491,94 @@ export class CreationSubmissionCoordinator {
 		if (!submission.executionPlanFreeze) {
 			throw new Error("Revised Composer plan did not produce a durable freeze.");
 		}
-		await this.store.persistAgentPlanning({
+		if (binding.repriceCommit) {
+			if (!this.store.saveRepricedExecutionPlanFreeze) {
+				throw new Error("Atomic Composer plan reprice persistence is unavailable.");
+			}
+			submission = await this.store.saveRepricedExecutionPlanFreeze({
+				workspaceId: input.workspaceId,
+				submissionId: submission.snapshot.id,
+				freeze: submission.executionPlanFreeze,
+				...binding.repriceCommit,
+			});
+		} else {
+			submission = await this.store.persistAgentPlanning({
+				workspaceId: input.workspaceId,
+				submissionId: submission.snapshot.id,
+				agentBinding: { threadId: binding.threadId, runId: binding.runId },
+				executionPlanFreeze: submission.executionPlanFreeze,
+				quoteRef: submission.snapshot.quote,
+				credits: submission.usageReservation.credits,
+			});
+		}
+		await this.preparePendingConfirmation(submission);
+		return {
+			threadId: binding.threadId,
+			runId: binding.runId,
+			makeReady: binding.makeReady,
+		};
+	}
+
+	async answerClarification(input: {
+		workspaceId: string;
+		taskId: string;
+		merchantAnswer: string;
+	}) {
+		if (!this.store.readByTask || !this.agentPlanning?.answerClarification) {
+			throw new Error("Composer clarification answer is unavailable.");
+		}
+		let submission = await this.store.readByTask({
+			workspaceId: input.workspaceId,
+			taskId: input.taskId,
+		});
+		if (!submission) throw new Error("Prepared Composer task was not found.");
+		if (submission.executionPlanFreeze) {
+			await this.agentPlanning.commitClarificationResolution?.({ submission });
+			await this.preparePendingConfirmation(submission);
+			return { makeReady: false };
+		}
+		const binding = await this.agentPlanning.answerClarification({
+			submission,
+			merchantAnswer: input.merchantAnswer,
+		});
+		if (!submission.executionPlanFreeze) return binding;
+		submission.agentPlanPending = false;
+		if (binding.repriceCommit) {
+			if (!this.store.saveRepricedExecutionPlanFreeze) {
+				throw new Error("Atomic Composer clarification reprice persistence is unavailable.");
+			}
+			submission = await this.store.saveRepricedExecutionPlanFreeze({
+				workspaceId: input.workspaceId,
+				submissionId: submission.snapshot.id,
+				freeze: submission.executionPlanFreeze,
+				...(binding.clarificationResolution
+					? { clarificationResolution: binding.clarificationResolution }
+					: {}),
+				...binding.repriceCommit,
+			});
+			await this.agentPlanning.commitClarificationResolution?.({
+				submission,
+				resolution: binding.clarificationResolution,
+			});
+			await this.preparePendingConfirmation(submission);
+			return { threadId: binding.threadId, runId: binding.runId, makeReady: binding.makeReady };
+		}
+		submission = await this.store.persistAgentPlanning({
 			workspaceId: input.workspaceId,
 			submissionId: submission.snapshot.id,
 			agentBinding: { threadId: binding.threadId, runId: binding.runId },
 			executionPlanFreeze: submission.executionPlanFreeze,
 			quoteRef: submission.snapshot.quote,
 			credits: submission.usageReservation.credits,
+			...(binding.clarificationResolution
+				? { clarificationResolution: binding.clarificationResolution }
+				: {}),
 		});
+		await this.agentPlanning.commitClarificationResolution?.({
+			submission,
+			resolution: binding.clarificationResolution,
+		});
+		await this.preparePendingConfirmation(submission);
 		return binding;
 	}
 
@@ -421,6 +586,10 @@ export class CreationSubmissionCoordinator {
 		return this.submitWithConfirmationContext(input);
 	}
 
+	/**
+	 * U7: each Campaign schedule slot submits its own paid Work with a distinct
+	 * confirmation context, so one approval never covers a second Work.
+	 */
 	async submitCampaignWork(input: {
 		submission: ComposerSubmissionRequest;
 		campaignPlanRef: { id: string; revision: number | string };
@@ -456,11 +625,17 @@ export class CreationSubmissionCoordinator {
 			throw new CreationSubmissionConflictError();
 		}
 		if (receipt.kind === "existing") {
-			const agentBinding = await this.prepareAgentPlan(
+			const preparedBinding = await this.prepareAgentPlan(
 				receipt.submission,
 				request.agentThreadId
 			);
-			if (agentBinding?.makeReady !== false) {
+			const agentBinding = explicitConfirmationBinding(
+				receipt.submission,
+				preparedBinding,
+			);
+			if (agentBinding?.makeReady === false) {
+				await this.preparePendingConfirmation(receipt.submission);
+			} else {
 				await this.startHarness(receipt.submission);
 			}
 			return submissionResponse(receipt.submission, true, agentBinding);
@@ -504,9 +679,6 @@ export class CreationSubmissionCoordinator {
 		});
 		const snapshot = createCreationExecutionSnapshot(command, this.ids.now());
 		const submission: CreationSubmissionRecord = {
-			...(request.agentThreadId
-				? { agentContinuationThreadId: asAgentThreadIdentity(request.agentThreadId) }
-				: {}),
 			snapshot,
 			work: { id: snapshot.work.id },
 			task: { id: snapshot.task.id },
@@ -517,6 +689,7 @@ export class CreationSubmissionCoordinator {
 					? { credits: admitted.creditCost, units: [] }
 					: { units: admitted.usageUnits ?? productUsageUnits(snapshot) }),
 			},
+			...(this.agentPlanning ? { agentPlanPending: true } : {}),
 			...(executionConfirmationContext ? { executionConfirmationContext } : {}),
 		};
 		const preparedBinding = await this.prepareAgentPlan(
@@ -533,16 +706,20 @@ export class CreationSubmissionCoordinator {
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();
 		}
-		const agentBinding =
+		const preparedAgentBinding =
 			claimed.kind === "existing"
 				? await this.prepareAgentPlan(
 						claimed.submission,
 						request.agentThreadId,
 					)
 				: preparedBinding;
-		// A paid Living Plan stays prepared until the merchant explicitly starts
-		// Make; only makeReady bindings dispatch inside submit.
-		if (agentBinding?.makeReady !== false) {
+		const agentBinding = explicitConfirmationBinding(
+			claimed.submission,
+			preparedAgentBinding,
+		);
+		if (agentBinding?.makeReady === false) {
+			await this.preparePendingConfirmation(claimed.submission);
+		} else {
 			await this.startHarness(claimed.submission);
 		}
 		return submissionResponse(
@@ -550,6 +727,40 @@ export class CreationSubmissionCoordinator {
 			claimed.kind === "existing",
 			agentBinding
 		);
+	}
+
+	private async preparePendingConfirmation(submission: CreationSubmissionRecord) {
+		if (!submission.executionPlanFreeze) return;
+		ensureConfirmationDispatch(submission);
+		// An exempt plan (pure copy, U9) carries no confirmation authority, so
+		// there is no pending request to prepare — and demanding one here would
+		// reject the exempt freeze the clarification path just committed.
+		if (!submission.confirmationDispatch) return;
+		if (!this.harness.preparePendingConfirmation) {
+			throw new Error("Pending Harness confirmation preparation is unavailable.");
+		}
+		const prepared = await this.harness.preparePendingConfirmation(submission);
+		const requestId = prepared?.executionConfirmationRequestId;
+		if (!requestId) {
+			throw new Error(
+				"Pending Harness confirmation did not return its exact authority ID.",
+			);
+		}
+		submission.confirmationDispatch = {
+			...submission.confirmationDispatch,
+			requestId,
+			state: "pending",
+		};
+		const persisted = await this.store.persistAgentPlanning({
+			workspaceId: submission.snapshot.workspaceId,
+			submissionId: submission.snapshot.id,
+			agentBinding: requireAgentBinding(submission),
+			executionPlanFreeze: submission.executionPlanFreeze,
+			quoteRef: submission.snapshot.quote,
+			credits: submission.usageReservation.credits,
+			confirmationDispatch: submission.confirmationDispatch,
+		});
+		submission.confirmationDispatch = persisted.confirmationDispatch;
 	}
 
 	private async prepareAgentPlan(
@@ -575,6 +786,7 @@ export class CreationSubmissionCoordinator {
 			submission,
 		});
 		ensureConfirmationDispatch(submission);
+		if (submission.executionPlanFreeze) submission.agentPlanPending = false;
 		// A parked turn (makeReady === false) legitimately returns without a
 		// freeze — the merchant still owes an answer or an explicit start.
 		// Only a ready binding must have frozen a plan.
@@ -955,6 +1167,13 @@ export class CreationSubmissionCoordinator {
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();
 		}
+		// V31-18 P0-2: a correction is the path on which a merchant checks whether
+		// the preference they confirmed actually took hold, so it must prepare its
+		// plan exactly like a first submission. Claiming and starting Make directly
+		// skipped confirmed-experience retrieval and its MemoryInjectionReceipt on
+		// the one surface that tests recurrence. Confirmed preferences are
+		// workspace-scoped (`agent-memory-platform.ts:801`), so a fresh Thread for
+		// the adjustment task still retrieves them.
 		const agentBinding = await this.prepareAgentPlan(
 			claimed.submission,
 			input.request.agentThreadId,
@@ -970,18 +1189,34 @@ export class CreationSubmissionCoordinator {
 	/** Replays only committed, reclaimable starts after a process crash. */
 	async recoverPendingStarts(limit = 100) {
 		await this.store.expireUndispatchedConfirmationHolds?.({ limit });
-		const recoverable = await this.store.listRecoverableHarnessStarts({ limit });
+		const recoverable = (
+			await this.store.listRecoverableHarnessStarts({ limit })
+		).filter((candidate) => {
+			if (candidate.submission.agentPlanPending === true) return false;
+			if (
+				candidate.submission.executionPlanFreeze?.approvalBasis !==
+				"merchant_confirmed"
+			) {
+				return true;
+			}
+			// A merchant-confirmed plan is started only by the explicit start
+			// command, so recovery must not replay one that is still awaiting the
+			// merchant. The single exception is a submission whose confirmation
+			// dispatch already crossed the external start boundary: its Harness run
+			// may be live while its exact authority ID never came back, and the
+			// undispatched-hold sweeper only scans `pending`, so nothing else would
+			// ever release that lease.
+			return candidate.submission.confirmationDispatch?.state === "dispatched";
+		});
 		let failed = 0;
 		let started = 0;
 		for (const candidate of recoverable) {
 			try {
 				// V31-18 P0-1: recovery must re-enter plan preparation, not go
-				// around it. `listRecoverableHarnessStarts` rebuilds the record
-				// from storage and `executionPlanFreeze` never persisted, so
-				// starting Make directly dropped the ExecutionPlanSnapshot onto the
-				// legacy branch and skipped confirmed-memory retrieval entirely.
-				// `prepare()` is idempotent: it reuses the deterministic Thread/Run
-				// and rehydrates the freeze from the durable compiled plan.
+				// around it. `prepare()` is idempotent (deterministic Thread/Run),
+				// rehydrates the freeze for rows persisted before it became
+				// durable, and performs the confirmed-memory retrieval whose
+				// receipt would otherwise be silently skipped on recovery.
 				await this.prepareAgentPlan(candidate.submission);
 				if (await this.startHarness(candidate.submission)) started += 1;
 			} catch {
@@ -995,7 +1230,8 @@ export class CreationSubmissionCoordinator {
 		if (
 			requiresPaidConfirmation(submission) &&
 			(submission.executionPlanFreeze?.approvalBasis !== "merchant_confirmed" ||
-				!submission.confirmationDispatch)
+				!submission.confirmationDispatch ||
+				submission.confirmationDispatch.state === "expired")
 		) {
 			throw new Error(
 				"Paid Harness start requires a durable freeze and confirmation outbox.",
@@ -1014,6 +1250,7 @@ export class CreationSubmissionCoordinator {
 		let startSubmission = submission;
 		let started = false;
 		try {
+			const persistedRequestId = submission.confirmationDispatch?.requestId;
 			if (submission.confirmationDispatch) {
 				startSubmission = await this.store.markHarnessStartDispatched(
 					leasedStart,
@@ -1025,6 +1262,13 @@ export class CreationSubmissionCoordinator {
 				if (!requestId) {
 					throw new Error(
 						"Paid Harness admission did not return its confirmation authority ID.",
+					);
+				}
+				// A pending confirmation already persisted its exact authority ID; the
+				// starter may only re-affirm that ID, never mint a second one.
+				if (persistedRequestId && requestId !== persistedRequestId) {
+					throw new Error(
+						"Paid Harness admission returned a different confirmation authority ID.",
 					);
 				}
 				startSubmission.confirmationDispatch.requestId = requestId;
@@ -1067,15 +1311,56 @@ export class CreationSubmissionCoordinator {
 	}
 }
 
+export function composerPreparedAttemptId(submission: CreationSubmissionRecord): string {
+	const freeze = submission.executionPlanFreeze;
+	return freeze?.approvalBasis === "merchant_confirmed"
+		? `${submission.task.id}:plan-r${freeze.planRevision}`
+		: submission.task.id;
+}
+
+function requireAgentBinding(
+	submission: CreationSubmissionRecord,
+): ComposerAgentBinding {
+	if (!submission.agentBinding) {
+		throw new Error(
+			"Planned submission is missing its authoritative Agent Thread binding.",
+		);
+	}
+	return submission.agentBinding;
+}
+
 function ensureConfirmationDispatch(submission: CreationSubmissionRecord) {
-	if (submission.executionPlanFreeze?.approvalBasis !== "merchant_confirmed") {
+	if (
+		submission.executionPlanFreeze?.approvalBasis !== "merchant_confirmed" &&
+		!requiresPaidConfirmation(submission)
+	) {
 		return;
 	}
+	const attemptId = composerPreparedAttemptId(submission);
 	submission.confirmationDispatch ??= {
 		state: "pending",
 		expiresAt: new Date(
 			Date.parse(submission.snapshot.createdAt) + 48 * 60 * 60 * 1_000,
 		).toISOString(),
+	};
+}
+
+function explicitConfirmationBinding(
+	submission: CreationSubmissionRecord,
+	binding: ComposerAgentBinding | undefined,
+): ComposerAgentBinding | undefined {
+	if (submission.executionPlanFreeze?.approvalBasis !== "merchant_confirmed") {
+		return binding;
+	}
+	if (!binding) {
+		throw new Error(
+			"Merchant-confirmed plan requires its durable Agent binding.",
+		);
+	}
+	return {
+		threadId: binding.threadId,
+		runId: binding.runId,
+		makeReady: false,
 	};
 }
 
@@ -1156,6 +1441,9 @@ function submissionResponse(
 	replayed: boolean,
 	agentBinding?: ComposerAgentBinding
 ) {
+	const withheldForConfirmation =
+		agentBinding?.makeReady === false &&
+		submission.confirmationDispatch?.requestId;
 	return {
 		contentPackage: submission.contentPackage,
 		...(agentBinding
@@ -1164,6 +1452,13 @@ function submissionResponse(
 					runId: agentBinding.runId,
 					makeReady: agentBinding.makeReady !== false,
 				}
+			: {}),
+		// The authority ID is derived from a snapshot digest, so the browser
+		// cannot compute it. A response that withholds Make must therefore name
+		// the request the merchant has to decide, or the commit strip has no way
+		// to record a decision before asking to start.
+		...(withheldForConfirmation
+			? { executionConfirmationRequestId: withheldForConfirmation }
 			: {}),
 		replayed,
 		snapshot: {

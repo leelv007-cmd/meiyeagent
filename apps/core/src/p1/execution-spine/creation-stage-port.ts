@@ -6,9 +6,10 @@ import {
 import { UserSelectedSkillIneligibleError } from "../skills/service.js";
 
 import type { CreationExecutionSnapshot } from "./creation-execution-snapshot.js";
-import type {
-	CreationSubmissionHarnessStarter,
-	CreationSubmissionRecord,
+import {
+	type CreationSubmissionHarnessStarter,
+	type CreationSubmissionRecord,
+	composerPreparedAttemptId,
 } from "./submission-coordinator.js";
 
 /**
@@ -17,7 +18,11 @@ import type {
  * semantic stages without reconstructing browser selections from intent text.
  */
 export interface HarnessCreationAdmissionPort {
-	submit(input: HarnessTaskRequest): Promise<{
+	preparePendingConfirmation(input: HarnessTaskRequest): Promise<{
+		workflowId: string;
+		executionConfirmationRequestId?: string;
+	}>;
+	dispatchPrepared(input: HarnessTaskRequest): Promise<{
 		workflowId: string;
 		executionConfirmationRequestId?: string;
 	}>;
@@ -41,8 +46,42 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				"Planned submission is missing its authoritative Agent Thread binding.",
 			);
 		}
-		const started = await this.admission.submit({
-			taskId: submission.task.id,
+		const attemptId = composerPreparedAttemptId(submission);
+		const command = {
+			taskId: attemptId,
+			...(attemptId !== submission.task.id ? { sourceTaskId: submission.task.id } : {}),
+			...toHarnessWorkflowInput(
+				submission.snapshot,
+				submission.usageReservation,
+				submission.decisionReferences,
+				submission.executionPlanFreeze,
+				submission.executionConfirmationContext,
+				submission.agentBinding?.threadId,
+				submission.artifactLineage,
+			),
+		};
+		const started = await this.admission.dispatchPrepared(command);
+		if (started.workflowId !== attemptId) {
+			throw new Error("Harness admission must preserve the Coordinator task ID.");
+		}
+		return {
+			...(started.executionConfirmationRequestId
+				? { executionConfirmationRequestId: started.executionConfirmationRequestId }
+				: {}),
+		};
+	}
+
+	async preparePendingConfirmation(submission: CreationSubmissionRecord) {
+		if (!submission.executionPlanFreeze) {
+			throw new HarnessAdmissionError(
+				"FROZEN_REQUEST_MISSING",
+				"Paid Composer Make requires a durable ExecutionPlanFreeze.",
+			);
+		}
+		const attemptId = composerPreparedAttemptId(submission);
+		const prepared = await this.admission.preparePendingConfirmation({
+			taskId: attemptId,
+			sourceTaskId: submission.task.id,
 			...toHarnessWorkflowInput(
 				submission.snapshot,
 				submission.usageReservation,
@@ -53,14 +92,14 @@ export class CreationStagePort implements CreationSubmissionHarnessStarter {
 				submission.artifactLineage,
 			),
 		});
-		if (started.workflowId !== submission.task.id) {
-			throw new Error("Harness admission must preserve the Coordinator task ID.");
+		if (prepared.workflowId !== attemptId) {
+			throw new Error("Harness preparation must preserve the Coordinator task ID.");
 		}
 		return {
-			...(started.executionConfirmationRequestId
+			...(prepared.executionConfirmationRequestId
 				? {
 						executionConfirmationRequestId:
-							started.executionConfirmationRequestId,
+							prepared.executionConfirmationRequestId,
 					}
 				: {}),
 		};

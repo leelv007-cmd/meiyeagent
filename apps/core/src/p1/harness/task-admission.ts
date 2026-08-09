@@ -88,6 +88,9 @@ export interface HarnessWorkflowInput {
   workflowRevision: number;
   creationMode: 'customized' | 'free';
   rawInput: string;
+  /** Versioned workflow authority for a mutable Living Plan revision. */
+  preparedAttemptId?: string;
+  sourceTaskId?: string;
   intent: TaskIntentInput;
   /**
    * Merchant-confirmed Skill revision refs for this task. Optional on legacy
@@ -123,7 +126,7 @@ export interface HarnessWorkflowInput {
   executionPlanSnapshot?: ExecutionPlanSnapshot;
   /** Durable frozen content while a paid Work waits for its immutable decision. */
   pendingExecutionPlanSnapshot?: PendingExecutionPlanSnapshot;
-  /** Deterministic request identity for a live-facts re-confirmation cycle. */
+  /** Deterministic request identity for the currently frozen confirmation attempt. */
   executionConfirmationRequestId?: string;
   /** Exact credit operation owned by the current confirmation attempt. */
   executionConfirmationReservationIdempotencyKey?: string;
@@ -192,6 +195,8 @@ export interface HarnessTaskRequest extends Omit<
   | 'promptRevisionRefs'
 > {
   taskId: string;
+  /** Versioned plan attempts retain the immutable source Composer task. */
+  sourceTaskId?: string;
   /**
    * Admission-time live facts for stale-confirm rejection (V31-12).
    * Not part of the durable workflow input / fingerprint.
@@ -406,6 +411,20 @@ export class HarnessTaskAdmissionService {
   ) {}
 
   async submit(input: HarnessTaskRequest) {
+    return this.admit(input, true);
+  }
+
+  /** Freeze and persist a paid request plus its pending confirmation, without DBOS start. */
+  async preparePendingConfirmation(input: HarnessTaskRequest) {
+    return this.admit(input, false);
+  }
+
+  /** Dispatches an already frozen request after its immutable decision exists. */
+  async dispatchPrepared(input: HarnessTaskRequest) {
+    return this.admit(input, true);
+  }
+
+  private async admit(input: HarnessTaskRequest, dispatch: boolean) {
     const normalized = normalizeRequest(input);
     // V31-12: the assembled snapshot (and the compile-finalize freeze that
     // feeds it) never participates in the fingerprint. The snapshot is
@@ -424,13 +443,16 @@ export class HarnessTaskAdmissionService {
       request: normalized,
     });
     if (existing) {
-      if (existing.kind === 'existing' && existing.request) {
+      if (existing.kind === 'existing') {
+        if (!existing.request) return this.resumeExisting(existing);
         await this.ensurePendingExecutionConfirmation(
           input.taskId,
           existing.request,
         );
       }
-      return this.resumeExisting(existing);
+      return dispatch
+        ? this.resumeExisting(existing)
+        : this.preparedExisting(existing);
     }
     const limits = boundedExecutionLimitsSchema.parse(
       await this.executionBounds.resolve(normalized),
@@ -631,8 +653,11 @@ export class HarnessTaskAdmissionService {
       );
     }
     if (claim.kind === 'existing') {
+      if (!claim.request) return this.resumeExisting(claim);
       await this.ensurePendingExecutionConfirmation(input.taskId, claim.request);
-      return this.resumeExisting(claim);
+      return dispatch
+        ? this.resumeExisting(claim)
+        : this.preparedExisting(claim);
     }
     await this.ensurePendingExecutionConfirmation(input.taskId, request);
     await this.recordExecutionAssemblyAudit(request, [
@@ -642,6 +667,18 @@ export class HarnessTaskAdmissionService {
       'task_pin',
     ]);
     await this.recordPromptFallbackAudits(input.taskId, request);
+    if (!dispatch) {
+      return {
+        workflowId: input.taskId,
+        replayed: false as const,
+        ...(request.executionConfirmationRequestId
+          ? {
+              executionConfirmationRequestId:
+                request.executionConfirmationRequestId,
+            }
+          : {}),
+      };
+    }
     const handle = await this.starter.start({
       workflowId: input.taskId,
       request,
@@ -653,6 +690,34 @@ export class HarnessTaskAdmissionService {
         ? {
             executionConfirmationRequestId:
               request.executionConfirmationRequestId,
+          }
+        : {}),
+    };
+  }
+
+  private preparedExisting(
+    claim:
+      | {
+          kind: 'existing';
+          workflowId: string;
+          runtimeId?: string;
+          request: HarnessWorkflowInput;
+        }
+      | { kind: 'conflict' },
+  ) {
+    if (claim.kind === 'conflict') {
+      throw new HarnessAdmissionError(
+        'REQUEST_FINGERPRINT_CONFLICT',
+        'Task ID was reused with a different Harness request payload.',
+      );
+    }
+    return {
+      workflowId: claim.workflowId,
+      replayed: true as const,
+      ...(claim.request.executionConfirmationRequestId
+        ? {
+            executionConfirmationRequestId:
+              claim.request.executionConfirmationRequestId,
           }
         : {}),
     };
@@ -956,7 +1021,8 @@ export function assertHarnessExecutionAssemblyPinned(
   }
   if (
     request.executionSnapshot &&
-    assembly.workflowId !== request.executionSnapshot.task.id
+    assembly.workflowId !==
+      (request.preparedAttemptId ?? request.executionSnapshot.task.id)
   ) {
     throw new Error(
       'Execution assembly workflow does not match the durable task.',
@@ -1166,7 +1232,10 @@ function pendingConfirmationAuthority(input: {
     rightsRevisionRefs: [...input.pending.content.rightsRevisionRefs],
     factRevisionRefs: [...input.pending.content.factRevisionRefs],
     frozenAt: input.frozenAt,
-    reservationAttempt: 'initial',
+    reservationAttempt:
+      input.request.sourceTaskId || input.pending.content.planRevision > 1
+        ? 'successor'
+        : 'initial',
     ...(input.request.executionConfirmationContext
       ? {
           executionConfirmationContext:
@@ -1242,6 +1311,7 @@ function normalizeRequest(
     usageReservation,
     executionPlanSnapshot,
     executionConfirmationContext,
+    sourceTaskId,
     executionConfirmationRequestId,
     executionConfirmationReservationIdempotencyKey,
     executionConfirmationReservedCredits,
@@ -1261,7 +1331,7 @@ function normalizeRequest(
     ? creationExecutionSnapshotSchema.parse(executionSnapshot)
     : undefined;
   if (snapshot) {
-    assertExecutionSnapshotMatchesRequest(snapshot, parsed);
+    assertExecutionSnapshotMatchesRequest(snapshot, parsed, sourceTaskId);
     return {
       ...snapshotWorkflowInput(
         snapshot,
@@ -1272,6 +1342,8 @@ function normalizeRequest(
 			: undefined,
 		parsed.artifactLineage,
       ),
+      ...(sourceTaskId ? { sourceTaskId } : {}),
+      ...(sourceTaskId ? { preparedAttemptId: parsed.taskId } : {}),
       ...(planSnapshot ? { executionPlanSnapshot: planSnapshot } : {}),
       ...(pendingExecutionPlanSnapshot ? { pendingExecutionPlanSnapshot } : {}),
       ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
@@ -1379,6 +1451,7 @@ function snapshotWorkflowInput(
 function assertExecutionSnapshotMatchesRequest(
   snapshot: CreationExecutionSnapshot,
   request: z.infer<typeof harnessTaskRequestSchema>,
+  sourceTaskId?: string,
 ) {
   const snapshotAssetIds = snapshot.sources.assets.map((asset) => asset.id);
   const matchingAssets =
@@ -1400,7 +1473,7 @@ function assertExecutionSnapshotMatchesRequest(
   if (
     snapshot.actorId !== request.actorId ||
     snapshot.workspaceId !== request.workspaceId ||
-    snapshot.task.id !== request.taskId ||
+    snapshot.task.id !== (sourceTaskId ?? request.taskId) ||
     snapshot.work.id !== context.workId ||
     snapshot.contentPackage.id !== request.packageId ||
     snapshot.contentPackage.expectedRevision !== request.expectedRevision ||

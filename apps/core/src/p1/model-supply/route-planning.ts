@@ -37,10 +37,6 @@ interface RoutePlanningCatalog {
   deployments: ModelDeployment[];
 }
 
-interface PlannedRouteCandidate {
-  model: CatalogModel;
-  deployment: ModelDeployment;
-}
 
 function recordedCostEstimate(
   operation: ModelOperation,

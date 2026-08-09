@@ -98,6 +98,14 @@ export type FallbackDispatchInput = {
   supplyCostDeltaMicros?: number;
 };
 
+export type ReplaceReservedQuoteInput = {
+  previousQuoteId: string;
+  previousQuoteRevision: string;
+  successor: BuildProductQuoteInput;
+  taskId: string;
+  usageId: string;
+};
+
 function revisionFor(input: BuildProductQuoteInput): string {
   return createHash('sha256')
     .update(
@@ -503,6 +511,80 @@ export class ProductQuoteService {
     }
 
     return { quote: structuredClone(quote), usage };
+  }
+
+  replaceReservedQuote(input: ReplaceReservedQuoteInput): {
+    previous: ProductQuoteSnapshot;
+    quote: ProductQuoteSnapshot;
+    usage: ProductUsageRecord;
+  } {
+    const previous = this.requireQuote(input.previousQuoteId);
+    const usage = this.usage.getByTask(input.taskId);
+    if (
+      previous.revision !== input.previousQuoteRevision ||
+      previous.taskId !== input.taskId ||
+      previous.lifecycleStatus !== 'reserved' ||
+      !usage ||
+      usage.status !== 'reserved' ||
+      usage.quoteId !== previous.quoteId ||
+      usage.id !== input.usageId
+    ) {
+      throw new P1DomainError(
+        'IDEMPOTENCY_CONFLICT',
+        'Plan reprice requires the exact current reserved quote and usage.',
+      );
+    }
+    if (input.successor.workspaceId !== previous.workspaceId) {
+      throw new P1DomainError(
+        'INVALID_STATE',
+        'Successor quote must stay inside the current workspace.',
+      );
+    }
+    const successor = this.buildQuote(input.successor);
+    const now = this.clock().toISOString();
+    const released: ProductQuoteSnapshot = {
+      ...previous,
+      taskId: undefined,
+      lifecycleStatus: 'refunded',
+      settlementStatus: 'reconciled',
+      settledAmount: 0,
+      refundedAmount:
+        previous.authorizedCeiling ??
+        previous.confirmedAmount ??
+        previous.creditCost ??
+        0,
+      settledAt: now,
+    };
+    this.quotes.set(previous.quoteId, released);
+    this.taskIndex.delete(input.taskId);
+    const confirmed = this.confirm({
+      quoteId: successor.quoteId,
+      taskId: input.taskId,
+    });
+    const replacedUsage = this.usage.replaceReservation({
+      id: input.usageId,
+      expectedQuoteId: previous.quoteId,
+      quoteId: confirmed.quoteId,
+      taskId: input.taskId,
+      workspaceId: previous.workspaceId!,
+      units: confirmed.creditCost !== undefined ? [] : (confirmed.debitUnits ?? []),
+      ...(confirmed.creditCost !== undefined
+        ? { credits: confirmed.creditCost }
+        : {}),
+      billingMode: confirmed.billingMode,
+      createdAt: now,
+    });
+    const reserved: ProductQuoteSnapshot = {
+      ...confirmed,
+      lifecycleStatus: 'reserved',
+      reservedAt: now,
+    };
+    this.quotes.set(reserved.quoteId, reserved);
+    return {
+      previous: structuredClone(released),
+      quote: structuredClone(reserved),
+      usage: replacedUsage,
+    };
   }
 
   dispatch(input: DispatchQuoteInput): {

@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 
 import { telemetryFetch } from '@/lib/product-telemetry';
 import { getAgentWorkbenchHostStore } from '@/product/agent-workbench';
+import { decideExecutionConfirmation } from '@/product/harness-client';
 
 function activePlanRevision(): number | null {
   const workbench = getAgentWorkbenchHostStore().getState();
@@ -12,9 +13,18 @@ function activePlanRevision(): number | null {
   return activePlan?.revisions.at(-1)?.revision ?? null;
 }
 
+function hasPendingPlanClarification(): boolean {
+  return getAgentWorkbenchHostStore()
+    .getState()
+    .pendingInterrupts.some((item) => item.interruptType === 'answer_question');
+}
+
 export function useLivingPlanController(input: {
   taskId: string | null;
+  /** Authority the paid plan is waiting on; absent for an exempt (copy) plan. */
+  executionConfirmationRequestId?: string | null;
   focusIntent(): void;
+  decideConfirmation?: typeof decideExecutionConfirmation;
 }) {
   const [revising, setRevising] = useState(false);
 
@@ -31,26 +41,65 @@ export function useLivingPlanController(input: {
         return;
       }
       setRevising(false);
-      void telemetryFetch(
-        `/api/core/p1/composer/tasks/${encodeURIComponent(input.taskId)}/start`,
-        {
-          body: JSON.stringify({ planRevision: revision }),
-          credentials: 'same-origin',
-          headers: { 'content-type': 'application/json' },
-          method: 'POST',
+      const taskId = input.taskId;
+      const requestId = input.executionConfirmationRequestId;
+      const decide = input.decideConfirmation ?? decideExecutionConfirmation;
+      void (async () => {
+        // The strip already showed the reserved credits and the refund rule, so
+        // pressing 开始制作 is the merchant's billing consent. Record that
+        // immutable decision first: the confirmation authority rejects any paid
+        // start whose request is not already `decided`, which is why this strip
+        // could not start a paid plan at all before the decision was wired.
+        if (requestId) {
+          try {
+            await decide(requestId, {
+              decisionId: `living-plan-commit:${requestId}`,
+              decision: 'confirmed',
+              decidedAt: new Date().toISOString(),
+            });
+          } catch {
+            toast.error('方案确认失败，请重试');
+            return;
+          }
         }
-      ).then((response) => {
+        const response = await telemetryFetch(
+          `/api/core/p1/composer/tasks/${encodeURIComponent(taskId)}/start`,
+          {
+            body: JSON.stringify({ planRevision: revision }),
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            method: 'POST',
+          }
+        );
         if (!response.ok) toast.error('开始制作失败，请重试');
-      });
+      })();
     },
     [input]
   );
 
-  const submitRevision = useCallback(
+  const submitPlanCommand = useCallback(
     (merchantInstruction: string): boolean => {
+      const instruction = merchantInstruction.trim();
+      if (hasPendingPlanClarification()) {
+        if (!input.taskId || !instruction) {
+          toast.error('请先写下补充信息');
+          return true;
+        }
+        void telemetryFetch(
+          `/api/core/p1/composer/tasks/${encodeURIComponent(input.taskId)}/answer`,
+          {
+            body: JSON.stringify({ merchantAnswer: instruction }),
+            credentials: 'same-origin',
+            headers: { 'content-type': 'application/json' },
+            method: 'POST',
+          }
+        ).then((response) => {
+          if (!response.ok) toast.error('补充信息提交失败，请重试');
+        });
+        return true;
+      }
       if (!revising) return false;
       const revision = activePlanRevision();
-      const instruction = merchantInstruction.trim();
       if (!input.taskId || !revision || !instruction) {
         toast.error('请先写下方案调整要求');
         return true;
@@ -75,5 +124,5 @@ export function useLivingPlanController(input: {
     [input.taskId, revising]
   );
 
-  return { onCommitAction, submitRevision };
+  return { onCommitAction, revising, submitPlanCommand };
 }

@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { Pool } from 'pg';
 
+import { assembleProductionComposerPlanSession } from '../../assembly/composer-plan-runtime-assembly.js';
 import { AgentSemanticEventProjector } from '../agent-semantic-events/semantic-event-projector.js';
 import { MemoryAgentSemanticEventStore } from '../agent-semantic-events/memory-semantic-event-store.js';
 import { PostgresAgentSemanticEventStore } from '../agent-semantic-events/postgres-semantic-event-store.js';
@@ -14,11 +16,11 @@ import {
   ExecutionPlanAdmissionService,
 } from '../harness/execution-plan-admission.js';
 import { HARNESS_LANGFUSE_PROMPT_NAMES } from '../harness/langfuse-prompts.js';
-import { confirmPaidGenerationExecution } from '../harness/paid-generation-confirmation.js';
 import type { HarnessFrozenPrompts } from '../harness/langfuse-prompts.js';
 import { MemoryExecutionPlanSnapshotStore } from '../harness/memory-execution-plan-admission-store.js';
 import {
   HarnessTaskAdmissionService,
+  executionPlanAdmissionWorkflowId,
   type HarnessTaskRequestRegistry,
   type HarnessWorkflowInput,
   type HarnessWorkflowStarter,
@@ -41,17 +43,7 @@ import { MemoryAgentSessionStore } from './memory-agent-session-store.js';
 import { MemoryMarketingPlanStore } from './memory-plan-store.js';
 import { PostgresAgentSessionStore } from './postgres-agent-session-store.js';
 import { PostgresMarketingPlanStore } from './postgres-plan-store.js';
-import { MemoryConfirmationAuthorityStore } from './execution-confirmation-authority-store.js';
-import { ConfirmationAuthorityAssembler } from './execution-confirmation-authority.js';
-import {
-  confirmationCreditPortFromMemoryLedger,
-  ExecutionConfirmationService,
-} from './execution-confirmation-service.js';
-import {
-  MemoryExecutionConfirmationRequestStore,
-  MemoryPlanConfirmationDecisionStore,
-} from './memory-execution-confirmation-store.js';
-import { MemoryCreditLedger } from '../credit-billing/credit-ledger.js';
+import { ComposerSemanticClarificationInterrupts } from './composer-clarification-interrupt.js';
 import {
   createFixturePlanCompilerPorts,
   PlanCompiler,
@@ -153,6 +145,7 @@ test('Composer production seam runs Session intent before PlanCompiler and paid 
     ports: createFixturePlanCompilerPorts(),
   });
   const calls: string[] = [];
+  let compiledPlanId: string | undefined;
   const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
     retrieveConfirmedExperience: async () => [],
     async runComposerTurn(input) {
@@ -177,6 +170,7 @@ test('Composer production seam runs Session intent before PlanCompiler and paid 
     },
     async compilePlan(input) {
       calls.push('compile');
+      compiledPlanId = input.planId;
       assert.deepEqual(input.quoteRefHint, {
         id: 'quote-task-session-first',
         revision: 'quote-r1',
@@ -189,9 +183,8 @@ test('Composer production seam runs Session intent before PlanCompiler and paid 
     },
   });
 
-  const binding = await coordinator.prepare({
-    submission: record('task-session-first', '为夏日护理做 6 页图文'),
-  });
+  const submission = record('task-session-first', '为夏日护理做 6 页图文');
+  const binding = await coordinator.prepare({ submission });
 
   assert.deepEqual(calls, ['turn:note', 'compile']);
   assert.equal(binding.makeReady, false);
@@ -200,29 +193,71 @@ test('Composer production seam runs Session intent before PlanCompiler and paid 
     runId: binding.runId,
   });
   assert.equal(run?.status, 'running');
+
+  // The turn must change the product, not just precede the compile. The
+  // merchant asked for 6 pages, so the submission-derived fallback proposal
+  // would compile 6; the model proposed 3. Whatever the plan and its execution
+  // units say is what Make will produce, so 3 here is the whole point of
+  // running the turn at all.
+  assert.equal(proposalFromSubmission(submission).recommendedDeliverables[0]?.quantity, 6);
+  assert.ok(compiledPlanId, 'the compile seam must receive a plan id');
+  const compiled = await plans.getLatest(compiledPlanId!);
+  assert.ok(compiled, 'the turn must have produced a durable plan revision');
+  assert.deepEqual(
+    compiled!.revision.deliverables.map((item) => ({
+      kind: item.kind,
+      quantity: item.quantity,
+    })),
+    [{ kind: 'note', quantity: 3 }],
+  );
+  assert.equal(compiled!.revision.intent.summary, '以门店授权素材制作图文');
+  const pagesUnit = compiled!.executionPlan.units.find(
+    (unit) => (unit.input as { role?: string } | undefined)?.role === 'pages',
+  );
+  assert.equal(
+    (pagesUnit?.input as { quantity?: number } | undefined)?.quantity,
+    3,
+  );
+  // Same freeze the paid confirmation authority will bind.
+  assert.equal(submission.executionPlanFreeze?.deliverables[0]?.quantity, 3);
 });
 
 test('production Composer assembly fails closed when Session runTurn is missing', () => {
   const sessions = new MemoryAgentSessionStore();
   const plans = new MemoryMarketingPlanStore();
-  const compiler = new PlanCompiler({
-    store: plans,
-    ports: createFixturePlanCompilerPorts(),
-  });
+  const semanticStore = new MemoryAgentSemanticEventStore();
 
   assert.throws(
     () =>
-      new ComposerPlanSessionCoordinator(
+      assembleProductionComposerPlanSession({
         sessions,
         plans,
-        {
-          compilePlan: (input: CompilePlanInput) => compiler.compile(input),
-          adjustPlan: (input: CompilePlanInput & { existingPlanId: string }) =>
-            compiler.adjust(input),
-        } as unknown as ComposerPlanCompilerPort,
-        { requireSessionTurn: true },
-      ),
+        sessionHarness: undefined,
+        quoteAuthority: { async resolve() { throw new Error('not used'); } },
+        quoteService: { async getQuote() { return null; } },
+        releaseResolver: {
+          async resolveForRun() {
+            return { releaseId: 'release-1' };
+          },
+        },
+        semanticEvents: {
+          store: semanticStore,
+          projector: new AgentSemanticEventProjector(semanticStore),
+        },
+        compileFromSubmissionWithoutProposal: false,
+      }),
     /requires Session runTurn/u,
+  );
+});
+
+test('the submission fallback reaches production bound to fixture mode only', async () => {
+  const source = await readFile(
+    new URL('../../assembly/api-runtime.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(
+    source,
+    /compileFromSubmissionWithoutProposal:\s*modelRuntime\.mode === 'fixture'/u,
   );
 });
 
@@ -231,8 +266,17 @@ test('ask_merchant waits for a clarification answer and never fallback-compiles'
   const plans = new MemoryMarketingPlanStore();
   const compiler = new PlanCompiler({
     store: plans,
-    ports: createFixturePlanCompilerPorts(),
+    ports: createFixturePlanCompilerPorts({
+      quote: {
+        async resolveQuote(input) {
+          assert.ok(input.quoteResolutionHint);
+          return input.quoteResolutionHint;
+        },
+      },
+    }),
   });
+  const eventStore = new MemoryAgentSemanticEventStore();
+  const projector = new AgentSemanticEventProjector(eventStore);
   let turn = 0;
   const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
     retrieveConfirmedExperience: async () => [],
@@ -242,7 +286,10 @@ test('ask_merchant waits for a clarification answer and never fallback-compiles'
         return {
           decision: {
             merchantMessage: '需要确认页数',
-            action: { kind: 'ask_merchant', question: '需要几页？' },
+            action: {
+              kind: 'ask_merchant',
+              question: { itemId: 'page-count', question: '需要几页？' },
+            },
             evidenceRefs: [],
             assumptions: [],
           },
@@ -268,6 +315,39 @@ test('ask_merchant waits for a clarification answer and never fallback-compiles'
     },
     compilePlan: (input) => compiler.compile(input),
     adjustPlan: (input) => compiler.adjust(input),
+  }, {
+    clarificationInterrupts: new ComposerSemanticClarificationInterrupts(
+      eventStore,
+      projector,
+    ),
+    quoteAuthority: {
+      async resolveCurrent() {
+        throw new Error('clarification must not reuse the old quote');
+      },
+      async reprice(input) {
+        assert.equal(input.quantity, 4);
+        assert.equal(input.merchantInstruction, '4 页');
+        return {
+          successorQuote: {
+            quoteId: 'quote-clarification-r2',
+            catalogModelId: 'model-1',
+            quotePolicyRevision: 'quote.policy@1',
+            billingMode: 'per_request',
+            creditCost: 4,
+            unitRate: 4,
+          },
+          resolution: {
+            quoteRef: { id: 'quote-clarification-r2', revision: 'quote-r2' },
+            expiresAt: '2026-08-09T09:00:00.000Z',
+            summary: {
+              source: 'product_quote_reprice',
+              creditCost: 4,
+              outputCount: 4,
+            },
+          },
+        };
+      },
+    },
   });
   const submission = record('task-clarification', '做一组图文');
   const waiting = await coordinator.prepare({ submission });
@@ -279,9 +359,72 @@ test('ask_merchant waits for a clarification answer and never fallback-compiles'
       ?.status,
     'waiting',
   );
+  let semanticEvents = await eventStore.listByThread({
+    resourceId: 'workspace-1',
+    threadId: waiting.threadId,
+  });
+  assert.deepEqual(
+    semanticEvents.map((event) => event.eventType),
+    ['interrupt.requested'],
+  );
+  assert.deepEqual(semanticEvents[0]?.payload, {
+    interruptId: (semanticEvents[0]?.payload as { interruptId: string }).interruptId,
+    interruptType: 'answer_question',
+    description: '需要几页？',
+    question: { itemId: 'page-count', question: '需要几页？' },
+    revision: 1,
+  });
 
-  await coordinator.answerClarification({ submission, merchantAnswer: '4 页' });
+  const answered = await coordinator.answerClarification({
+    submission,
+    merchantAnswer: '4 页',
+  });
   assert.equal(submission.executionPlanFreeze?.deliverables[0]?.quantity, 4);
+  assert.deepEqual(submission.executionPlanFreeze?.quoteRef, {
+    id: 'quote-clarification-r2',
+    revision: 'quote-r2',
+  });
+  assert.deepEqual(answered.repriceCommit, {
+    expectedFreeze: null,
+    previousQuoteRef: {
+      id: 'quote-task-clarification',
+      revision: 'quote-r1',
+    },
+    successorQuote: {
+      quoteId: 'quote-clarification-r2',
+      catalogModelId: 'model-1',
+      quotePolicyRevision: 'quote.policy@1',
+      billingMode: 'per_request',
+      creditCost: 4,
+      unitRate: 4,
+    },
+    credits: 4,
+  });
+  assert.ok(answered.clarificationResolution);
+  semanticEvents = await eventStore.listByThread({
+    resourceId: 'workspace-1',
+    threadId: waiting.threadId,
+  });
+  assert.deepEqual(
+    semanticEvents.map((event) => event.eventType),
+    ['interrupt.requested'],
+  );
+  await coordinator.commitClarificationResolution({
+    submission,
+    resolution: answered.clarificationResolution,
+  });
+  semanticEvents = await eventStore.listByThread({
+    resourceId: 'workspace-1',
+    threadId: waiting.threadId,
+  });
+  assert.deepEqual(
+    semanticEvents.map((event) => event.eventType),
+    ['interrupt.requested', 'interrupt.resolved'],
+  );
+  assert.equal(
+    (semanticEvents[1]?.payload as { interruptId: string }).interruptId,
+    (semanticEvents[0]?.payload as { interruptId: string }).interruptId,
+  );
 });
 
 test('system-only block and empty decision never fallback-compile a plan', async () => {
@@ -322,6 +465,103 @@ test('system-only block and empty decision never fallback-compile a plan', async
       'waiting',
     );
   }
+});
+
+test('a turn that neither proposes nor asks fails the run instead of parking it', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    retrieveConfirmedExperience: async () => [],
+    // This is exactly what the fixture AgentKernel returns today: a decision
+    // with no proposal and no question. It used to leave the run `waiting` with
+    // no interrupt raised, so no merchant action could ever advance it and no
+    // plan existed to start — a wait state with no producer for its exit.
+    async runComposerTurn() {
+      return {
+        decision: {
+          merchantMessage: 'fixture-session-turn',
+          action: { kind: 'finish_turn' },
+          evidenceRefs: [],
+          assumptions: [],
+        },
+      } as never;
+    },
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+
+  const submission = record('task-unusable-turn', '做一组图文');
+  await assert.rejects(
+    coordinator.prepare({ submission }),
+    /produced neither a plan proposal nor a merchant question/u,
+  );
+  assert.equal(Boolean(submission.executionPlanFreeze), false);
+  const threads = await sessions.listRecentThreads({
+    resourceId: 'workspace-1',
+    limit: 10,
+  });
+  assert.equal(threads.length, 1);
+  const runs = await sessions.listRuns({
+    resourceId: 'workspace-1',
+    threadId: threads[0]!.threadId,
+  });
+  assert.deepEqual(
+    runs.map((run) => run.status),
+    ['failed'],
+  );
+});
+
+test('a fixture kernel that offers no plan compiles the submission it was given', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const coordinator = new ComposerPlanSessionCoordinator(
+    sessions,
+    plans,
+    {
+      retrieveConfirmedExperience: async () => [],
+      async runComposerTurn() {
+        return {
+          decision: {
+            merchantMessage: 'fixture-session-turn',
+            action: { kind: 'finish_turn' },
+            evidenceRefs: [],
+            assumptions: [],
+          },
+        } as never;
+      },
+      compilePlan: (input) => compiler.compile(input),
+      adjustPlan: (input) => compiler.adjust(input),
+    },
+    // The fixture kernel is a single assembly-level instance and its turn
+    // request carries no submission, so it cannot propose this merchant's plan.
+    // Rather than let it invent one, the submission itself becomes the
+    // proposal — the same fallback the live path uses. Live mode keeps failing
+    // loudly, because there a silent fallback would mean a paid model call with
+    // no effect on the plan.
+    { compileFromSubmissionWithoutProposal: true },
+  );
+
+  const submission = record('task-fixture-fallback', '做一组图文');
+  const binding = await coordinator.prepare({ submission });
+
+  assert.equal(binding.makeReady, false);
+  const freeze = submission.executionPlanFreeze;
+  assert.ok(freeze, 'the fixture turn must still leave a plan to look at');
+  const compiled = await plans.getLatest(freeze.planId);
+  assert.ok(compiled);
+  assert.deepEqual(
+    compiled.revision.deliverables.map((item) => item.quantity),
+    [6],
+    'the plan must carry the submission its merchant actually signed',
+  );
 });
 
 test('revise recompiles six pages into four units and binds a fresh ProductQuote', async () => {
@@ -374,9 +614,21 @@ test('revise recompiles six pages into four units and binds a fresh ProductQuote
         async reprice(input) {
           assert.equal(input.quantity, 4);
           return {
-            quoteRef: { id: 'product-quote-4', revision: 'r4' },
-            expiresAt: '2026-08-09T11:00:00.000Z',
-            summary: { creditCost: 4 },
+            resolution: {
+              quoteRef: { id: 'product-quote-4', revision: 'r4' },
+              expiresAt: '2026-08-09T11:00:00.000Z',
+              summary: { creditCost: 4 },
+            },
+            successorQuote: {
+              quoteId: 'product-quote-4',
+              catalogModelId: 'model-1',
+              quotePolicyRevision: 'quote.policy@1',
+              billingMode: 'per_request',
+              creditCost: 4,
+              unitRate: 4,
+              workspaceId: 'workspace-1',
+              expiresAt: '2026-08-09T11:00:00.000Z',
+            },
           };
         },
       },
@@ -393,10 +645,21 @@ test('revise recompiles six pages into four units and binds a fresh ProductQuote
   const freeze = submission.executionPlanFreeze!;
   assert.equal(freeze.planRevision, 2);
   assert.equal(freeze.deliverables[0]?.quantity, 4);
-  assert.equal(
-    freeze.executionPlan.units.filter((unit) => unit.unitType === 'note.generate')
-      .length,
-    4,
+  const pageUnit = freeze.executionPlan.units.find(
+    (unit) => unit.unitId === 'unit-note-pages',
+  );
+  assert.equal((pageUnit?.input as { quantity?: number }).quantity, 4);
+  assert.deepEqual(
+    freeze.executionPlan.units.map((unit) => unit.primitive),
+    [
+      'read_context',
+      'generate',
+      'ask_merchant',
+      'generate',
+      'check',
+      'revise',
+      'record',
+    ],
   );
   assert.deepEqual(freeze.quoteRef, { id: 'product-quote-4', revision: 'r4' });
   assert.equal(submission.snapshot.quote.id, 'product-quote-4');
@@ -501,10 +764,24 @@ test(
       );
       const created = await coordinator.prepare({ submission: first });
       threadId = created.threadId;
+      const committedFreeze = structuredClone(first.executionPlanFreeze);
+      assert.ok(committedFreeze);
+
+      // Simulate a crash after append/event commit but before the submission
+      // claim persisted its freeze. The same Run must reconstruct r1.
+      first.executionPlanFreeze = undefined;
       const replayed = await coordinator.prepare({
         continuationThreadId: 'ignored-after-binding',
         submission: first,
       });
+      assert.deepEqual(
+        first.executionPlanFreeze,
+        JSON.parse(JSON.stringify(committedFreeze)),
+      );
+      assert.equal(
+        (await plans.listRevisions(committedFreeze.planId)).length,
+        1,
+      );
       const revised = await coordinator.prepare({
         continuationThreadId: created.threadId,
         submission: record(
@@ -600,11 +877,6 @@ test('compile-finalize freezes the copy plan; freeze matches the compiled revisi
   assert.deepEqual(freeze.executionPlan, latest.executionPlan);
   assert.deepEqual(freeze.quoteRef, latest.revision.quoteRef);
   assert.deepEqual(
-    freeze.quoteRef,
-    submission.snapshot.quote,
-    'compile-finalize must preserve the admitted billing quote authority',
-  );
-  assert.deepEqual(
     [...freeze.rightsRevisionRefs],
     latest.revision.boundRevisions.rightsRevisionIds
   );
@@ -651,6 +923,15 @@ test('pure copy stays frozen with policy_exempt_copy and no decision ref (U9)', 
   const replayedBinding = await coordinator.prepare({ submission });
   assert.deepEqual(replayedBinding, first);
   assert.deepEqual(submission.executionPlanFreeze, freeze);
+
+  // Crash seam: the append-only MarketingPlanRevision may commit before the
+  // submission claim persists its freeze. Replay reconstructs that exact
+  // revision instead of appending r2.
+  submission.executionPlanFreeze = undefined;
+  const recoveredBinding = await coordinator.prepare({ submission });
+  assert.deepEqual(recoveredBinding, first);
+  assert.deepEqual(submission.executionPlanFreeze, freeze);
+  assert.equal((await plans.listRevisions(freeze.planId)).length, 1);
 });
 
 test('Composer submit → task-admission assembles and one-shot writes the ExecutionPlanSnapshot (idempotent replay)', async () => {
@@ -684,19 +965,19 @@ test('Composer submit → task-admission assembles and one-shot writes the Execu
     undefined,
     new ExecutionPlanAdmissionService(snapshotStore)
   );
-  const stage = new CreationStagePort({ submit: (input) => admission.submit(input) });
+  const stage = new CreationStagePort({
+    preparePendingConfirmation: (input) => admission.preparePendingConfirmation(input),
+    dispatchPrepared: (input) => admission.dispatchPrepared(input),
+  });
 
   await stage.start(submission);
   const first = starter.requests[0];
-  const admissionWorkflowId =
-    `task-chain-1:plan:${first!.executionPlanSnapshot!.planRevision}:${first!.executionPlanSnapshot!.snapshotHash}`;
-  const admitted = await snapshotStore.getByWorkflowId(
-    admissionWorkflowId,
-  );
-  assert.ok(admitted);
   assert.ok(first?.executionPlanSnapshot);
   assert.equal(first?.agentThreadId, binding.threadId);
   assert.notEqual(first?.agentThreadId, first?.executionPlanSnapshot.planId);
+  const admittedWorkflowId = executionPlanAdmissionWorkflowId('task-chain-1', first);
+  const admitted = await snapshotStore.getByWorkflowId(admittedWorkflowId);
+  assert.ok(admitted);
   assert.equal(
     first.executionPlanSnapshot.snapshotHash,
     admitted.snapshot.snapshotHash
@@ -726,7 +1007,7 @@ test('Composer submit → task-admission assembles and one-shot writes the Execu
   // At-least-once replay: same submission re-enters the admission path and the
   // snapshot row is not double-written.
   await stage.start(submission);
-  const admittedAgain = await snapshotStore.getByWorkflowId(admissionWorkflowId);
+  const admittedAgain = await snapshotStore.getByWorkflowId(admittedWorkflowId);
   assert.equal(admittedAgain?.admittedAt, admitted.admittedAt);
   assert.equal(admittedAgain?.snapshot.snapshotHash, admitted.snapshot.snapshotHash);
   assert.equal(starter.requests.length, 2);
@@ -750,43 +1031,7 @@ test('paid admission creates one pending request before Make and carries the dur
   await coordinator.prepare({ submission });
   assert.equal(submission.executionPlanFreeze?.approvalBasis, 'merchant_confirmed');
 
-  const authority = new MemoryConfirmationAuthorityStore();
-  const requests = new MemoryExecutionConfirmationRequestStore();
-  const ledger = new MemoryCreditLedger();
-  ledger.grant({
-    id: 'paid-chain-lot',
-    workspaceId: 'workspace-1',
-    credits: 20,
-    expirationDate: '2026-09-01T00:00:00.000Z',
-    transactionType: 'PURCHASE_PACKAGE',
-    sourceRef: 'paid-chain',
-    createdAt: TS,
-  });
-  const service = new ExecutionConfirmationService(
-    requests,
-    new MemoryPlanConfirmationDecisionStore(),
-    confirmationCreditPortFromMemoryLedger(ledger),
-  );
-  const confirmation = new ConfirmationAuthorityAssembler(
-    service,
-    authority,
-    {
-      async getQuote(_quoteId, workspaceId) {
-        const current = await authority.getCurrentByWorkflowId(
-          'task-paid-chain-1',
-        );
-        assert.equal(workspaceId, 'workspace-1');
-        return {
-          quoteId: current!.quoteRef.id,
-          revision: current!.quoteRef.revision,
-          taskId: 'task-paid-chain-1',
-          creditCost: 8,
-          failureRefundsCredits: true,
-        } as never;
-      },
-    },
-    { clock: () => new Date(TS) },
-  );
+  const calls: Array<{ requestId: string; snapshotHash: string }> = [];
   const starter = new RecordingStarter();
   const admission = new HarnessTaskAdmissionService(
     new MemoryHarnessRegistry(),
@@ -799,70 +1044,32 @@ test('paid admission creates one pending request before Make and carries the dur
     undefined,
     new ExecutionPlanAdmissionService(new MemoryExecutionPlanSnapshotStore()),
     {
-      createRequest: (input) => confirmation.createRequest(input),
-      putCurrent: (input) => authority.putCurrent(input),
+      async putCurrent(input) {
+        calls.push({ requestId: input.workflowId, snapshotHash: input.snapshotHash });
+        return input;
+      },
+      async createRequest() {
+        return confirmationCreationResult('confirmation:task-paid-chain-1:plan-r1');
+      },
     },
   );
-  const stage = new CreationStagePort({ submit: (input) => admission.submit(input) });
-
-  await stage.start(submission);
-  await stage.start(submission);
-
-  const cardRequestIds: string[] = [];
-  const confirmed = await confirmPaidGenerationExecution({
-    workflowId: 'task-paid-chain-1',
-    request: starter.requests[0]!,
-    reportProgress: async () => undefined,
-    async awaitResolvedDecision(question) {
-      cardRequestIds.push(question.questionId);
-      assert.equal(
-        (await service.getRequest(question.questionId))?.request.status,
-        'pending',
-        'the authority request and hold must exist before the card is answerable',
-      );
-      await service.decideForWorkspace({
-        decisionId: `decision:${question.questionId}`,
-        requestId: question.questionId,
-        workspaceId: 'workspace-1',
-        actorId: 'owner-1',
-        decision: 'confirmed',
-        decidedAt: TS,
-      });
-      return {
-        questionId: question.questionId,
-        workflowRevision: 1,
-        idempotencyKey: 'paid-chain-confirm',
-        patch: { field: 'execution_confirmation', value: 'approved' },
-        decision: { state: 'accepted', value: 'approved' },
-      } as never;
-    },
-    applyCurrentTaskDecision: async (_workflowId, request) => request,
-    getExecutionConfirmationDecision: (workspaceId, requestId) =>
-      service.getDecisionForWorkspace(workspaceId, requestId),
-    admitExecutionPlanSnapshot: async ({ snapshot }) => snapshot,
+  const stage = new CreationStagePort({
+    preparePendingConfirmation: (input) =>
+      admission.preparePendingConfirmation(input),
+    dispatchPrepared: (input) => admission.dispatchPrepared(input),
   });
 
-  assert.equal(
-    (await authority.getCurrentByWorkflowId('task-paid-chain-1'))?.snapshotHash,
-    starter.requests[0]!.pendingExecutionPlanSnapshot!.snapshotHash,
-  );
-  assert.deepEqual(cardRequestIds, [
-    starter.requests[0]!.executionConfirmationRequestId,
+  await stage.preparePendingConfirmation(submission);
+
+  assert.deepEqual(calls, [
+    {
+      requestId: 'task-paid-chain-1:plan-r1',
+      snapshotHash: calls[0]!.snapshotHash,
+    },
   ]);
-  assert.equal(
-    confirmed.executionPlanSnapshot?.confirmationDecisionRef,
-    `decision:${starter.requests[0]!.executionConfirmationRequestId}`,
-  );
-  assert.equal(
-    starter.requests[0]?.executionConfirmationRequestId,
-    (await service.getRequest(
-      starter.requests[0]!.executionConfirmationRequestId!,
-    ))?.request.requestId,
-  );
-  assert.equal(
-    (await ledger.project('workspace-1', TS)).availableCredits,
-    12,
-  );
+  assert.equal(starter.requests.length, 0);
+  await stage.start(submission);
+  assert.equal(starter.requests.length, 1);
   assert.equal(starter.requests[0]?.executionPlanSnapshot, undefined);
   assert.ok(starter.requests[0]?.pendingExecutionPlanSnapshot);
 });
@@ -885,46 +1092,10 @@ test('Campaign second paid Work creates an independent confirmation request', as
     };
     await coordinator.prepare({ submission });
   }
-  const authority = new MemoryConfirmationAuthorityStore();
-  const requests = new MemoryExecutionConfirmationRequestStore();
-  const ledger = new MemoryCreditLedger();
-  ledger.grant({
-    id: 'campaign-lot',
-    workspaceId: 'workspace-1',
-    credits: 40,
-    expirationDate: '2026-09-01T00:00:00.000Z',
-    transactionType: 'PURCHASE_PACKAGE',
-    sourceRef: 'campaign',
-    createdAt: TS,
-  });
-  const service = new ExecutionConfirmationService(
-    requests,
-    new MemoryPlanConfirmationDecisionStore(),
-    confirmationCreditPortFromMemoryLedger(ledger),
-  );
-  const confirmation = new ConfirmationAuthorityAssembler(
-    service,
-    authority,
-    {
-      async getQuote(quoteId, workspaceId) {
-        assert.equal(workspaceId, 'workspace-1');
-        const taskId = quoteId.replace(/^quote-/u, '');
-        const current = await authority.getCurrentByWorkflowId(taskId);
-        return {
-          quoteId,
-          revision: current!.quoteRef.revision,
-          taskId,
-          creditCost: 8,
-          failureRefundsCredits: true,
-        } as never;
-      },
-    },
-    { clock: () => new Date(TS) },
-  );
-  const starter = new RecordingStarter();
+  const calls: Array<{ requestId: string; workOrdinal?: number }> = [];
   const admission = new HarnessTaskAdmissionService(
     new MemoryHarnessRegistry(),
-    starter,
+    new RecordingStarter(),
     new MemoryPromptResolver(),
     undefined,
     undefined,
@@ -933,44 +1104,40 @@ test('Campaign second paid Work creates an independent confirmation request', as
     undefined,
     new ExecutionPlanAdmissionService(new MemoryExecutionPlanSnapshotStore()),
     {
-      createRequest: (input) => confirmation.createRequest(input),
-      putCurrent: (input) => authority.putCurrent(input),
+      async putCurrent(input) {
+        calls.push({
+          requestId: input.workflowId,
+          workOrdinal: input.executionConfirmationContext?.workOrdinal,
+        });
+        return input;
+      },
+      async createRequest(input) {
+        return confirmationCreationResult(`confirmation:${input.workflowId}`);
+      },
     },
   );
-  const stage = new CreationStagePort({ submit: (input) => admission.submit(input) });
+  const stage = new CreationStagePort({
+    preparePendingConfirmation: (input) =>
+      admission.preparePendingConfirmation(input),
+    dispatchPrepared: (input) => admission.dispatchPrepared(input),
+  });
 
-  await stage.start(works[0]!);
-  await stage.start(works[1]!);
+  await stage.preparePendingConfirmation(works[0]!);
+  await stage.preparePendingConfirmation(works[1]!);
 
-  const requestIds = starter.requests.map(
-    (request) => request.executionConfirmationRequestId,
-  );
-  assert.equal(requestIds.length, 2);
-  assert.ok(requestIds[0] && requestIds[1]);
-  assert.notEqual(requestIds[0], requestIds[1]);
-  const stored = await Promise.all(
-    requestIds.map(async (requestId) => (await service.getRequest(requestId!))!.request),
-  );
-  assert.deepEqual(
-    stored.map(({ workOrdinal, approvalScope, campaignPlanRef }) => ({
-      workOrdinal,
-      approvalScope,
-      campaignPlanRef,
-    })),
-    [
-      {
-        workOrdinal: 1,
-        approvalScope: 'single_work',
-        campaignPlanRef: { id: 'campaign-plan-1', revision: 2 },
-      },
-      {
-        workOrdinal: 2,
-        approvalScope: 'single_work',
-        campaignPlanRef: { id: 'campaign-plan-1', revision: 2 },
-      },
-    ],
-  );
+  assert.deepEqual(calls.map(({ requestId, workOrdinal }) => ({ requestId, workOrdinal })), [
+    { requestId: 'task-campaign-1:plan-r1', workOrdinal: 1 },
+    { requestId: 'task-campaign-2:plan-r1', workOrdinal: 2 },
+  ]);
 });
+
+function confirmationCreationResult(requestId: string) {
+  return {
+    stored: { request: { requestId } },
+    reservedCredits: 6,
+    replayed: false,
+  } as never;
+}
 
 function copyRecord(
   taskId: string,

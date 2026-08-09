@@ -94,22 +94,29 @@ export function createDefaultIntentRetrievalBindings(): HarnessMiddlewareBinding
 }
 
 /**
- * Assembly-side merge for a resolved HarnessRelease: the release's own bindings
- * always win, defaults only fill policyIds the release never pinned. A complete
- * release therefore makes this a no-op — that is what keeps the release the
- * single authority instead of the assembly.
+ * A release that does not pin these three gates runs Intent turns with no
+ * question budget, no high-risk assumption filter and no tool governance. That
+ * used to be repaired by merging the defaults in at assembly time, which meant
+ * an incomplete manifest could never be observed — so it is now a hard failure
+ * on the release that lacks them.
  */
-export function mergeDefaultIntentRetrievalBindings(
-  releaseBindings: readonly HarnessMiddlewareBinding[] | undefined,
-): HarnessMiddlewareBinding[] {
-  const existing = releaseBindings ?? [];
-  const present = new Set(existing.map((binding) => binding.policyId));
-  return [
-    ...existing,
-    ...createDefaultIntentRetrievalBindings().filter(
-      (binding) => !present.has(binding.policyId),
+export function assertIntentRetrievalBindingsPinned(input: {
+  releaseId: string;
+  bindings: readonly HarnessMiddlewareBinding[];
+}): void {
+  const pinned = new Set(
+    input.bindings.map(
+      (binding) => `${binding.policyId}@${binding.revision}:${binding.kind}`,
     ),
-  ];
+  );
+  const missing = createDefaultIntentRetrievalBindings()
+    .map((binding) => `${binding.policyId}@${binding.revision}:${binding.kind}`)
+    .filter((key) => !pinned.has(key));
+  if (missing.length > 0) {
+    throw new Error(
+      `HarnessRelease ${input.releaseId} does not pin required Intent/retrieval middleware: ${missing.join(', ')}.`,
+    );
+  }
 }
 
 function asDecision(modelOutput: unknown): AgentTurnDecision | null {

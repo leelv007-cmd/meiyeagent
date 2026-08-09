@@ -45,6 +45,11 @@ export class HarnessProductBillingSettlementExecutor
       PostgresCreditLedger,
       'refundUsageOperation'
     >,
+    private readonly creditUsageLineage?: {
+      readByTask(input: { workspaceId: string; taskId: string }): Promise<{
+        usageReservation: { creditUsageOperationId?: string };
+      } | null>;
+    },
   ) {}
 
   async commit(input: HarnessBillingSettlementInput) {
@@ -101,10 +106,17 @@ export class HarnessProductBillingSettlementExecutor
           'Merchant credit ledger is unavailable for a credit refund.',
         );
       }
+      const submission = await this.creditUsageLineage?.readByTask({
+        workspaceId: input.workspaceId,
+        taskId: input.taskId,
+      });
+      const usageOperationId =
+        input.creditUsageOperationId ??
+        submission?.usageReservation.creditUsageOperationId ??
+        creditUsageOperationId(input.taskId);
       await this.credits.refundUsageOperation({
         workspaceId: input.workspaceId,
-        usageOperationId:
-          input.creditUsageOperationId ?? creditUsageOperationId(input.taskId),
+        usageOperationId,
         refundOperationId: `credit-${kind}:${input.taskId}`,
         credits: usage.refundedCredits,
         actorId: 'system-harness',

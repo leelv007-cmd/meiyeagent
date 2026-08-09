@@ -8,17 +8,19 @@
 
 import {
   planMemoryContextSchema,
+  type BuildProductQuoteInput,
   type ExecutionPlanApprovalBasis,
   type MarketingPlanRevision,
   type PlanMemoryContext,
 } from '@meiye/contracts';
 
+import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import type {
   ComposerAgentBinding,
+  ComposerClarificationResolution,
   ComposerSubmissionAgentPlanningPort,
   CreationSubmissionRecord,
 } from '../execution-spine/submission-coordinator.js';
-import { asAgentThreadIdentity } from '../execution-spine/submission-coordinator.js';
 import { fingerprintValue } from '../job-runtime/job-contracts.js';
 import { isAgentMemoryDisabledError } from '../operations/agent-memory-platform.js';
 import type { ExecutionPlanCompileFreeze } from '../harness/execution-plan-admission.js';
@@ -36,6 +38,9 @@ import {
   type PlanProposal,
 } from './turn-contracts.js';
 import type { AgentTurnRunnerResult } from './turn-runner.js';
+import type { ImpactCategory } from './ambiguity-policy.js';
+import { projectComposerTurnAuthority } from './composer-turn-authority.js';
+import type { ComposerClarificationInterruptPort } from './composer-clarification-interrupt.js';
 
 export type ComposerPlanCompilerPort = {
   compilePlan(input: CompilePlanInput): Promise<CompilePlanResult>;
@@ -78,8 +83,8 @@ export type ComposerPlanCompilerPort = {
         includesPaidMediaExecution: boolean;
         paidMediaUnitResources: string[];
       };
-      knownFields: string[];
-      impactByKey: ReadonlyMap<string, 'rights' | 'facts' | 'fees'>;
+      knownFields: readonly string[];
+      impactByKey: ReadonlyMap<string, ImpactCategory>;
       authoritativeKeys: ReadonlySet<string>;
     };
   }): Promise<AgentTurnRunnerResult>;
@@ -104,10 +109,19 @@ export type ComposerPlanSessionOptions = {
   requireSessionTurn?: boolean;
   requireQuoteAuthority?: boolean;
   quoteAuthority?: ComposerPlanQuoteAuthority;
+  clarificationInterrupts?: ComposerClarificationInterruptPort;
   resolveHarnessReleaseId?: (
     submission: CreationSubmissionRecord,
-    runId: string,
+    runId: string
   ) => string | Promise<string>;
+  /**
+   * Compile from the submission when the turn offers no proposal and asks
+   * nothing. Only the fixture kernel is allowed this: it is one assembly-level
+   * instance whose turn request carries no submission, so it cannot propose
+   * this merchant's plan and must not invent one. With a real model the same
+   * silence is a paid call that left the plan untouched, and that fails loudly.
+   */
+  compileFromSubmissionWithoutProposal?: boolean;
   /**
    * V31-18 P0-1 (出口): memory is advisory. `prepare()` runs *after*
    * `store.claim()` has already consumed the merchant's credits, so a
@@ -126,20 +140,13 @@ export type ComposerPlanQuoteAuthority = {
     submission: CreationSubmissionRecord;
     merchantInstruction: string;
     quantity: number;
-  }): Promise<PlanCompilerQuoteResolution>;
+  }): Promise<{
+    resolution: PlanCompilerQuoteResolution;
+    successorQuote: BuildProductQuoteInput;
+  }>;
 };
 
 const COMPOSER_PLAN_HARNESS_RELEASE_ID = 'composer-plan-surface-v1';
-const COMPOSER_SESSION_LIMITS = {
-  maxLlmSteps: 6,
-  maxToolCalls: 12,
-  maxRetrievalCalls: 6,
-  maxMerchantQuestions: 1,
-  maxReplans: 2,
-  maxSchemaRepairs: 2,
-  maxContextTokens: 32_000,
-  maxDelegations: 2,
-} as const;
 
 export class ComposerPlanSessionCoordinator
   implements ComposerSubmissionAgentPlanningPort
@@ -147,12 +154,14 @@ export class ComposerPlanSessionCoordinator
   private readonly now: () => string;
   private readonly resolveHarnessReleaseId: (
     submission: CreationSubmissionRecord,
-    runId: string,
+    runId: string
   ) => string | Promise<string>;
   private readonly quoteAuthority?: ComposerPlanQuoteAuthority;
   private readonly onMemoryDegraded:
     | ((event: ComposerPlanMemoryDegradation) => void)
     | undefined;
+  private readonly clarificationInterrupts?: ComposerClarificationInterruptPort;
+  private readonly compileFromSubmissionWithoutProposal: boolean;
 
   constructor(
     private readonly sessions: AgentSessionStore,
@@ -176,11 +185,27 @@ export class ComposerPlanSessionCoordinator
         'Composer plan session requires server-owned confirmed experience retrieval.'
       );
     }
+    this.onMemoryDegraded = options.onMemoryDegraded;
+    this.clarificationInterrupts = options.clarificationInterrupts;
+    this.compileFromSubmissionWithoutProposal =
+      options.compileFromSubmissionWithoutProposal === true;
     this.now = options.now ?? (() => new Date().toISOString());
     this.resolveHarnessReleaseId =
       options.resolveHarnessReleaseId ??
       (() => COMPOSER_PLAN_HARNESS_RELEASE_ID);
-    this.onMemoryDegraded = options.onMemoryDegraded;
+  }
+
+  /**
+   * A turn that answered, blocked nothing, and asked nothing: it declined to
+   * propose. Only the fixture kernel may fall back to the submission here — a
+   * missing decision or a system-only block is still a wait with no producer
+   * for its exit, and stays parked so the leak keeps its own report.
+   */
+  private turnDeclinedToPlan(result: AgentTurnRunnerResult | null): boolean {
+    if (!this.compileFromSubmissionWithoutProposal) return false;
+    const decision = result?.decision;
+    if (!decision || result?.systemOnlyBlock) return false;
+    return decision.action.kind !== 'ask_merchant';
   }
 
   async prepare(input: {
@@ -220,7 +245,7 @@ export class ComposerPlanSessionCoordinator
           now,
         });
 
-	const exitRuns = (await this.sessions.listRuns({ resourceId, threadId }))
+		const exitRuns = (await this.sessions.listRuns({ resourceId, threadId }))
 	  .filter((run) => run.durability === 'exit')
 	  .sort((left, right) =>
 		left.startedAt.localeCompare(right.startedAt) || left.runId.localeCompare(right.runId),
@@ -281,7 +306,19 @@ export class ComposerPlanSessionCoordinator
         sessionRevision: started.thread.sessionRevision,
         harnessReleaseId: started.run.harnessReleaseId,
       });
-      if (this.compiler.runComposerTurn && !isCompilableTurn(turnResult)) {
+      if (
+        this.compiler.runComposerTurn &&
+        !isCompilableTurn(turnResult) &&
+        !this.turnDeclinedToPlan(turnResult)
+      ) {
+        assertTurnCanBeWaitedOn(turnResult);
+        await this.requestClarificationInterrupt({
+          resourceId,
+          threadId,
+          runId,
+          revision: started.thread.sessionRevision,
+          turnResult,
+        });
         await this.sessions.updateRunStatus({
           resourceId,
           runId,
@@ -316,7 +353,7 @@ export class ComposerPlanSessionCoordinator
           ? turnResult.decision.action.proposal
           : proposalFromSubmission(submission),
       });
-	} else if (exactCompiled && !submission.executionPlanFreeze) {
+		} else if (exactCompiled && !submission.executionPlanFreeze) {
 	  // A process may die after PlanCompiler durably appends the revision but
 	  // before the submission row stores its freeze. Rebuild only from that
 	  // durable compiled artifact; never compile/append a second revision.
@@ -371,30 +408,56 @@ export class ComposerPlanSessionCoordinator
     }
     const thread = await this.sessions.getThread({
       resourceId,
-      threadId: run.threadId,
+      threadId: asAgentThreadIdentity(run.threadId),
     });
     if (!thread) throw new Error(`Composer Thread ${run.threadId} was not found.`);
     const planId = composerPlanId(resourceId, run.threadId);
     const turnResult = await this.runIntentTurn({
       submission: input.submission,
-      threadId: run.threadId,
+      threadId: asAgentThreadIdentity(run.threadId),
       runId,
       sessionRevision: thread.sessionRevision,
       harnessReleaseId: run.harnessReleaseId,
       merchantMessage: answer,
     });
     if (!isCompilableTurn(turnResult)) {
+      await this.clarificationInterrupts?.resolve({
+        resourceId,
+        threadId: asAgentThreadIdentity(run.threadId),
+        runId,
+        occurredAt: this.now(),
+      });
+      await this.requestClarificationInterrupt({
+        resourceId,
+        threadId: asAgentThreadIdentity(run.threadId),
+        runId,
+        revision: thread.sessionRevision,
+        turnResult,
+      });
       return { threadId: asAgentThreadIdentity(run.threadId), runId, makeReady: false };
     }
+    const pendingInterrupt = await this.clarificationInterrupts?.pending({
+      resourceId,
+      threadId: asAgentThreadIdentity(run.threadId),
+      runId,
+    });
+    const previousQuoteRef = { ...input.submission.snapshot.quote };
+    const quantity =
+      turnResult.decision.action.proposal.recommendedDeliverables[0]?.quantity ?? 1;
+    const reprice = await this.quoteAuthority?.reprice({
+      submission: input.submission,
+      merchantInstruction: answer,
+      quantity,
+    });
     const memoryContext = await this.retrievePlanMemoryContext({
       submission: input.submission,
-      threadId: run.threadId,
+      threadId: asAgentThreadIdentity(run.threadId),
       runId,
       harnessReleaseId: run.harnessReleaseId,
     });
     await this.compile({
       submission: input.submission,
-      threadId: run.threadId,
+      threadId: asAgentThreadIdentity(run.threadId),
       runSessionRevision: thread.sessionRevision,
       planId,
       previous: (await this.plans.getLatest(planId))?.revision ?? null,
@@ -402,8 +465,67 @@ export class ComposerPlanSessionCoordinator
       harnessReleaseId: run.harnessReleaseId,
       memoryContext,
       now: this.now(),
+      ...(reprice ? { quoteResolutionHint: reprice.resolution } : {}),
     });
-    return { threadId: asAgentThreadIdentity(run.threadId), runId, makeReady: false };
+    const successorCredits = reprice?.resolution.summary?.creditCost;
+    const hasSuccessorCredits =
+      typeof successorCredits === 'number' &&
+      Number.isSafeInteger(successorCredits) &&
+      successorCredits > 0;
+    if (reprice) {
+      input.submission.snapshot = {
+        ...input.submission.snapshot,
+        quote: {
+          id: reprice.resolution.quoteRef.id,
+          revision: String(reprice.resolution.quoteRef.revision),
+        },
+      };
+      if (hasSuccessorCredits) {
+        input.submission.usageReservation.credits = successorCredits;
+      }
+    }
+    return {
+      threadId: asAgentThreadIdentity(run.threadId),
+      runId,
+      makeReady: false,
+      ...(pendingInterrupt
+        ? {
+            clarificationResolution: {
+              ...pendingInterrupt,
+              threadId: asAgentThreadIdentity(run.threadId),
+              runId,
+            },
+          }
+        : {}),
+      ...(reprice && hasSuccessorCredits
+        ? {
+            repriceCommit: {
+              expectedFreeze: null,
+              previousQuoteRef,
+              successorQuote: reprice.successorQuote,
+              credits: successorCredits,
+            },
+          }
+        : {}),
+    };
+  }
+
+  async commitClarificationResolution(input: {
+    submission: CreationSubmissionRecord;
+    resolution?: ComposerClarificationResolution;
+  }): Promise<void> {
+    if (!this.clarificationInterrupts) return;
+    const resourceId = input.submission.snapshot.workspaceId;
+    const runId = composerRunId(input.submission);
+    const run = await this.sessions.getRun({ resourceId, runId });
+    if (!run) throw new Error(`Composer Agent Run ${runId} was not found.`);
+    await this.clarificationInterrupts.resolve({
+      resourceId,
+      threadId: input.resolution?.threadId ?? run.threadId,
+      runId: input.resolution?.runId ?? runId,
+      ...(input.resolution?.interruptId ? { interruptId: input.resolution.interruptId } : {}),
+      occurredAt: this.now(),
+    });
   }
 
   async completeExplicitStart(input: {
@@ -496,18 +618,23 @@ export class ComposerPlanSessionCoordinator
     const instruction = input.merchantInstruction.trim();
     if (!instruction) throw new Error('Plan revision instruction is required.');
     const snapshot = input.submission.snapshot;
+    const expectedFreeze = input.submission.executionPlanFreeze;
+    if (!expectedFreeze) {
+      throw new Error('Plan revision requires the current durable freeze.');
+    }
     const patch = canonicalPlanPatchFromMerchantInstruction(instruction);
     const quantity =
       patch.deliverableQuantity ?? latest.revision.deliverables[0]?.quantity ?? 1;
-    const quoteResolutionHint = await this.quoteAuthority?.reprice({
+    const reprice = await this.quoteAuthority?.reprice({
       submission: input.submission,
       merchantInstruction: instruction,
       quantity,
     });
+    const quoteResolutionHint = reprice?.resolution;
     const result = await this.compiler.adjustPlan({
       workspaceId: resourceId,
       resourceId,
-      threadId: run.threadId,
+      threadId: asAgentThreadIdentity(run.threadId),
       planId,
       existingPlanId: planId,
       proposal: proposalFromSubmission(input.submission),
@@ -527,6 +654,11 @@ export class ComposerPlanSessionCoordinator
           }
         : {}),
     });
+    const successorCredits = quoteResolutionHint?.summary?.creditCost;
+    const hasSuccessorCredits =
+      typeof successorCredits === 'number' &&
+      Number.isSafeInteger(successorCredits) &&
+      successorCredits > 0;
     if (quoteResolutionHint) {
       input.submission.snapshot = {
         ...input.submission.snapshot,
@@ -535,9 +667,8 @@ export class ComposerPlanSessionCoordinator
           revision: String(quoteResolutionHint.quoteRef.revision),
         },
       };
-      const creditCost = quoteResolutionHint.summary?.creditCost;
-      if (Number.isSafeInteger(creditCost) && (creditCost as number) > 0) {
-        input.submission.usageReservation.credits = creditCost as number;
+      if (hasSuccessorCredits) {
+        input.submission.usageReservation.credits = successorCredits;
       }
     }
     input.submission.executionPlanFreeze = compileFinalizeExecutionPlanFreeze({
@@ -546,7 +677,24 @@ export class ComposerPlanSessionCoordinator
       contextRevision: String(snapshot.briefContext.revision),
       approvalBasis: approvalBasisForSubmission(snapshot.lens),
     });
-    return { threadId: asAgentThreadIdentity(run.threadId), runId, makeReady: false };
+    return {
+      threadId: asAgentThreadIdentity(run.threadId),
+      runId,
+      makeReady: false,
+      ...(reprice && hasSuccessorCredits
+        ? {
+            repriceCommit: {
+              expectedFreeze,
+              previousQuoteRef: {
+                id: expectedFreeze.quoteRef.id,
+                revision: String(expectedFreeze.quoteRef.revision),
+              },
+              successorQuote: reprice.successorQuote,
+              credits: successorCredits,
+            },
+          }
+        : {}),
+    };
   }
 
   private runIntentTurn(input: {
@@ -595,21 +743,28 @@ export class ComposerPlanSessionCoordinator
           includesPaidMediaExecution: paidResources.length > 0,
           paidMediaUnitResources: paidResources,
         },
-        knownFields: [
-          'intent',
-          'platform',
-          'lens',
-          'identity',
-          'rights',
-          'quote',
-        ],
-        impactByKey: new Map([
-          ['rights', 'rights'],
-          ['price', 'facts'],
-          ['fees', 'fees'],
-        ]),
-        authoritativeKeys: new Set(['rights', 'price', 'fees']),
+        ...projectComposerTurnAuthority(submission),
       },
+    });
+  }
+
+  private async requestClarificationInterrupt(input: {
+    resourceId: string;
+    threadId: string;
+    runId: string;
+    revision: number;
+    turnResult: AgentTurnRunnerResult | null;
+  }) {
+    if (!this.clarificationInterrupts) return;
+    const decision = input.turnResult?.decision;
+    if (!decision || decision.action.kind !== 'ask_merchant') return;
+    await this.clarificationInterrupts.request({
+      resourceId: input.resourceId,
+      threadId: input.threadId,
+      runId: input.runId,
+      question: decision.action.question,
+      revision: input.revision,
+      occurredAt: this.now(),
     });
   }
 
@@ -664,11 +819,12 @@ export class ComposerPlanSessionCoordinator
     harnessReleaseId: string;
     memoryContext: PlanMemoryContext | null;
     now: string;
+    quoteResolutionHint?: PlanCompilerQuoteResolution;
   }): Promise<void> {
     const snapshot = input.submission.snapshot;
-    const quoteResolutionHint = await this.quoteAuthority?.resolveCurrent({
-      submission: input.submission,
-    });
+    const quoteResolutionHint =
+      input.quoteResolutionHint ??
+      (await this.quoteAuthority?.resolveCurrent({ submission: input.submission }));
     const compileInput: CompilePlanInput = {
       workspaceId: snapshot.workspaceId,
       resourceId: snapshot.workspaceId,
@@ -758,6 +914,23 @@ export function approvalBasisForSubmission(
   return lens === 'copy' ? 'policy_exempt_copy' : 'merchant_confirmed';
 }
 
+/**
+ * A non-compilable turn may only park the run when something can still move it:
+ * an `ask_merchant` decision becomes a clarification interrupt the merchant can
+ * answer, and a null decision / systemOnlyBlock is the deliberate
+ * nothing-was-produced contract. A decision that finished the turn without a
+ * plan and without a question is neither — leaving that `waiting` gave the run
+ * no plan to start and no question to answer, so nothing could ever advance it.
+ */
+function assertTurnCanBeWaitedOn(result: AgentTurnRunnerResult | null): void {
+  const decision = result?.decision;
+  if (!decision || result?.systemOnlyBlock) return;
+  if (decision.action.kind === 'ask_merchant') return;
+  throw new Error(
+    `Composer Intent turn produced neither a plan proposal nor a merchant question (action=${decision.action.kind}).`,
+  );
+}
+
 function isCompilableTurn(
   result: AgentTurnRunnerResult | null,
 ): result is AgentTurnRunnerResult & {
@@ -771,6 +944,7 @@ function isCompilableTurn(
     result!.decision?.action.kind === 'propose_plan'
   );
 }
+
 
 function planMemoryContextFromConfirmedExperience(input: {
   entries: RetrievalExperience[];

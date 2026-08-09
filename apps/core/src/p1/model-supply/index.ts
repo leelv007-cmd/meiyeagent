@@ -3,12 +3,9 @@ import {
   MODEL_CAPABILITY_VOCABULARY_VERSION,
   type ModelCapabilityRequirementAxis,
   type ModelCapabilityProfile,
-  type GeneratedCopyCandidateContent,
-  type GeneratedPlatformVariants,
   type HealthOverlayPort,
   type ProviderFailoverAvailabilityEvent,
   type ProviderFailoverBillingEvent,
-  type VideoCompositionEvidence,
 } from '@meiye/contracts';
 import { toJSONSchema, type ZodType } from 'zod';
 import { recordedH264Video } from './recorded-media-adapters.js';
@@ -3764,7 +3761,6 @@ export class ModelSupplyApplicationService {
           };
         } else {
           try {
-        let resolvedReferenceAssets: ResolvedReferenceAsset[] | undefined;
         const referenceAssetIds = submission.input?.inputAssets
           ?.filter((asset) => asset.role === 'reference_image')
           .map((asset) => asset.assetId) ?? submission.input?.referenceAssetIds;
@@ -3810,7 +3806,6 @@ export class ModelSupplyApplicationService {
               };
             } else {
               const resolved = resolutions as ResolvedReferenceAsset[];
-              resolvedReferenceAssets = resolved;
               const roleByAssetId = new Map(
                 submission.input?.inputAssets?.map((asset) => [
                   asset.assetId,
@@ -6050,7 +6045,6 @@ export type {
   EditVideoWorkflowInput,
   SelectVideoCandidateInput,
   VideoExecutionContract,
-  VideoWorkflowShotInput,
 } from './video-workflow-contract.js';
 export {
   VideoWorkflowCancellationError,
@@ -6089,7 +6083,6 @@ import type {
   EditVideoWorkflowInput,
   SelectVideoCandidateInput,
   VideoExecutionContract,
-  VideoWorkflowShotInput,
 } from './video-workflow-contract.js';
 import {
   VideoWorkflowCancellationError,

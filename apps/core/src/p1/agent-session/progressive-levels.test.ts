@@ -307,11 +307,9 @@ test('Level 0 turn: zero LLM calls and state stays outside machine', async () =>
     readOnly: true,
   });
 
-  const started = performance.now();
   const result = await runner.run(
     baseTurn({ merchantMessage: '删除最后一句' }),
   );
-  const elapsedMs = performance.now() - started;
 
   assert.equal(kernelInvocations, 0);
   assert.equal(result.llmCallCount, 0);
@@ -321,11 +319,14 @@ test('Level 0 turn: zero LLM calls and state stays outside machine', async () =>
   assert.equal(result.decision?.action.kind, 'finish_turn');
   assert.ok(result.billingUx);
   assert.equal(result.billingUx?.quoteChip.visible, true);
-  // Micro latency note: V31-05 baseline file in-flight; assert L0 stays cheap.
-  assert.ok(
-    elapsedMs < 50,
-    `Level 0 should be sub-50ms without LLM; got ${elapsedMs.toFixed(2)}ms (V31-05 baseline pending)`,
-  );
+  // "Cheap" is asserted structurally, not by wall clock. The old `<50ms` bound
+  // passed standalone at ~9ms and failed at 76-134ms whenever the rest of this
+  // file ran first or the host was busy, so it measured the host, not Level 0.
+  // What Level 0 actually promises is that no billable work happens: no kernel
+  // invocation, no LLM call, no tool call, and no state written into the
+  // machine — all four asserted above. The latency figure itself belongs to the
+  // V31-05 baseline capture (Task 10), which measures it on a quiet host.
+  assert.deepEqual(result.toolCalls, []);
 });
 
 test('Level 1 pure copy: interpreting → handing_off + billing UX', async () => {

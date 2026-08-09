@@ -166,6 +166,11 @@ export type ComposerSessionTask = {
   taskId: string;
   workId: string;
   packageId: string;
+  /**
+   * The paid plan's confirmation authority, handed back by the submit that
+   * withheld Make. The commit strip decides it before asking Core to start.
+   */
+  executionConfirmationRequestId?: string;
 };
 
 export type ComposerSession = {
@@ -816,7 +821,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseTask(value: unknown): ComposerSessionTask | null {
   if (!isRecord(value)) return null;
-  const { taskId, workId, packageId } = value;
+  const { taskId, workId, packageId, executionConfirmationRequestId } = value;
   if (
     typeof taskId !== 'string' ||
     typeof workId !== 'string' ||
@@ -827,7 +832,16 @@ function parseTask(value: unknown): ComposerSessionTask | null {
   ) {
     return null;
   }
-  return { taskId, workId, packageId };
+  return {
+    taskId,
+    workId,
+    packageId,
+    // Restored so a reloaded tab can still confirm the plan it is looking at.
+    ...(typeof executionConfirmationRequestId === 'string' &&
+    executionConfirmationRequestId
+      ? { executionConfirmationRequestId }
+      : {}),
+  };
 }
 
 /**

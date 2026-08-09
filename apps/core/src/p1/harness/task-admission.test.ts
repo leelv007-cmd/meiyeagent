@@ -58,6 +58,20 @@ test('same task and payload returns the original workflow handle', async () => {
   assert.deepEqual(starter.runtimeIds, [undefined, 'legacy-task-35']);
 });
 
+test('prepare freezes without starting and dispatch starts the persisted request once', async () => {
+  const registry = new MemoryRequestRegistry();
+  const starter = new RecordingStarter();
+  const service = new HarnessTaskAdmissionService(registry, starter);
+
+  const prepared = await service.preparePendingConfirmation(taskRequest());
+  assert.deepEqual(prepared, { workflowId: 'task-35', replayed: false });
+  assert.equal(starter.starts, 0);
+
+  const dispatched = await service.dispatchPrepared(taskRequest());
+  assert.deepEqual(dispatched, { workflowId: 'task-35', replayed: true });
+  assert.equal(starter.starts, 1);
+});
+
 test('same task and different payload is an explicit 409 conflict', async () => {
   const service = new HarnessTaskAdmissionService(
     new MemoryRequestRegistry(),

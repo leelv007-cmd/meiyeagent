@@ -10,7 +10,10 @@ import { asAgentThreadIdentity } from "./submission-coordinator.js";
 test("the Coordinator starts the existing Harness from one frozen Composer snapshot", async () => {
 	const calls: unknown[] = [];
 	const stage = new CreationStagePort({
-		async submit(input) {
+		async preparePendingConfirmation(input) {
+			return { workflowId: input.taskId };
+		},
+		async dispatchPrepared(input) {
 			calls.push(structuredClone(input));
 			return { workflowId: input.taskId };
 		},
@@ -86,7 +89,8 @@ test("the Coordinator starts the existing Harness from one frozen Composer snaps
 
 test("planned Harness admission fails closed without an authoritative Agent Thread", async () => {
 	const stage = new CreationStagePort({
-		async submit() { throw new Error("must not submit"); },
+		async preparePendingConfirmation() { throw new Error("must not prepare"); },
+		async dispatchPrepared() { throw new Error("must not dispatch"); },
 	});
 	const snapshot = createCreationExecutionSnapshot(command(), "2026-07-22T09:00:00.000Z");
 	await assert.rejects(
@@ -105,7 +109,10 @@ test("planned Harness admission fails closed without an authoritative Agent Thre
 test("a terminal successor carries the late answer into Harness context and decision references", async () => {
 	const calls: Array<Record<string, unknown>> = [];
 	const stage = new CreationStagePort({
-		async submit(input) {
+		async preparePendingConfirmation(input) {
+			return { workflowId: input.taskId };
+		},
+		async dispatchPrepared(input) {
 			calls.push(structuredClone(input) as unknown as Record<string, unknown>);
 			return { workflowId: input.taskId };
 		},
@@ -176,7 +183,10 @@ test("only permanent immutable-request conflicts terminate a start", async () =>
 		"Immutable request rejected.",
 	);
 	const stage = new CreationStagePort({
-		async submit(input) {
+		async preparePendingConfirmation(input) {
+			return { workflowId: input.taskId };
+		},
+		async dispatchPrepared(input) {
 			return { workflowId: input.taskId };
 		},
 	});
