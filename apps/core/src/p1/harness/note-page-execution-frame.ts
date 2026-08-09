@@ -107,6 +107,16 @@ export function createNotePageProgressReporter(input: {
 	 *
 	 * Absent means no durability: the counter is a plain in-process local, which
 	 * is correct for a fixture run and for any caller with no durable runtime.
+	 *
+	 * What this memo does NOT do, measured: removing it leaves every re-execution
+	 * test green. The brief is itself a durable step, so re-executed content is
+	 * deterministic and the plain counter already produces a byte-identical
+	 * chain — the memo has no independent failing test and buys nothing on the
+	 * ordinary replay path. It is depth against a content source that one day
+	 * stops being durable. The enforcement point is `assertProjectedReplayMatches`
+	 * in the semantic event store: that guard, not this memo, is what turns a
+	 * spliced artifact into a loud refusal. The keying above is the part of this
+	 * memo that is load-bearing, and it does have its own failing test.
 	 */
 	runStep?: (
 	  key: string,
