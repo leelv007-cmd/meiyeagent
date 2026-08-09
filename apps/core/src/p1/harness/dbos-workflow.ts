@@ -36,8 +36,6 @@ import {
   type HarnessWorkflowRuntime,
 } from './workflow-core.js';
 import type {
-  CreateExecutionConfirmationInput,
-  CreateExecutionConfirmationResult,
   ExecutionConfirmationService,
 } from '../agent-session/execution-confirmation-service.js';
 import { resumeWithRaisedServerLimit } from './bounded-execution-controller.js';
@@ -611,7 +609,7 @@ export interface HarnessDbosWorkflowOptions {
    */
   executionConfirmation?: Pick<
     ExecutionConfirmationService,
-    'createRequest'
+    'getDecision'
   >;
   config?: Pick<AdminConfigRepository, 'get'>;
   decisions?: Pick<HarnessDecisionService, 'submitCoreTimeout'> &
@@ -630,7 +628,7 @@ export interface HarnessDbosWorkflowOptions {
    */
   executionPlanAdmission?: Pick<
     ExecutionPlanAdmissionPort,
-    'verifyAdmittedForDbos'
+    'admitSnapshot' | 'verifyAdmittedForDbos'
   >;
   /**
    * Optional live fence facts resolved just before DBOS verification.
@@ -1225,7 +1223,11 @@ export function registerHarnessDbosWorkflow(
         result = await runHarnessWorkflow(
           workflowId,
           request,
-          withExecutionConfirmationStagePort(ports, executionConfirmation),
+          withExecutionConfirmationStagePort(
+            ports,
+            executionConfirmation,
+            executionPlanAdmission,
+          ),
           runtime,
           { forceLegacyFiveStage },
         );
@@ -1389,23 +1391,38 @@ type BillingRunStep = <T>(
  */
 function withExecutionConfirmationStagePort(
   ports: HarnessStagePorts | HarnessStageCollaborators,
-  executionConfirmation: Pick<ExecutionConfirmationService, 'createRequest'> |
+  executionConfirmation: Pick<ExecutionConfirmationService, 'getDecision'> |
     undefined,
+  executionPlanAdmission:
+    | Pick<ExecutionPlanAdmissionPort, 'admitSnapshot' | 'verifyAdmittedForDbos'>
+    | undefined,
 ): HarnessStagePorts | HarnessStageCollaborators {
-  if (!executionConfirmation) return ports;
-  const createExecutionConfirmationRequest = (
-    input: CreateExecutionConfirmationInput,
-  ): Promise<CreateExecutionConfirmationResult> =>
-    executionConfirmation.createRequest(input);
+  if (!executionConfirmation || !executionPlanAdmission) return ports;
+  const confirmationPorts = {
+    getExecutionConfirmationDecision: (requestId: string) =>
+      executionConfirmation.getDecision(requestId),
+    async admitExecutionPlanSnapshot(input: {
+      workflowId: string;
+      workspaceId: string;
+      snapshot: import('@meiye/contracts').ExecutionPlanSnapshot;
+    }) {
+      const admitted = await executionPlanAdmission.admitSnapshot(input);
+      await executionPlanAdmission.verifyAdmittedForDbos({
+        workflowId: input.workflowId,
+        snapshotHash: admitted.admitted.snapshot.snapshotHash,
+      });
+      return admitted.admitted.snapshot;
+    },
+  };
   if ('shared' in ports) {
     return {
       ...ports,
-      shared: { ...ports.shared, createExecutionConfirmationRequest },
+      shared: { ...ports.shared, ...confirmationPorts },
     };
   }
   return {
     ...(ports as HarnessStagePorts),
-    createExecutionConfirmationRequest,
+    ...confirmationPorts,
   };
 }
 

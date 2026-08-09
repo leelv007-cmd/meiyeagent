@@ -294,15 +294,10 @@ export function useComposerInteractions(
         await resumeExecution();
         await interactionQuery.refetch();
       } catch {
-        // Never degrade the execution flow when the confirmation decide
-        // surface is unavailable — fall back to the interaction-only resume.
-        try {
-          await resumeExecution();
-          await interactionQuery.refetch();
-        } catch {
-          toast.error(workbench_operation_failed());
-          throw new Error('The execution confirmation could not be submitted.');
-        }
+        // The immutable domain decision is the only authority that can release
+        // paid execution. Keep the workflow suspended when that write fails.
+        toast.error(workbench_operation_failed());
+        throw new Error('The execution confirmation could not be submitted.');
       } finally {
         setQuestionPending(false);
       }

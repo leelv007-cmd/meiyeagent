@@ -395,7 +395,7 @@ test('confirmation answer records a rejected decide with the refund message', as
   );
 });
 
-test('confirmation answer falls back to interaction-only resume when decide is unavailable', async () => {
+test('confirmation answer stays suspended when the domain decision is unavailable', async () => {
   const transports = createTransports({
     interaction: EXECUTION_REQUEST,
     decideRejects: true,
@@ -407,17 +407,14 @@ test('confirmation answer falls back to interaction-only resume when decide is u
     ).toEqual(EXECUTION_REQUEST)
   );
 
-  await act(() =>
-    view.result.current.interactions.answerExecutionConfirmation({
-      kind: 'approved',
-    })
-  );
+  await expect(
+    act(() =>
+      view.result.current.interactions.answerExecutionConfirmation({
+        kind: 'approved',
+      })
+    )
+  ).rejects.toThrow('The execution confirmation could not be submitted.');
 
   expect(transports.decideExecutionConfirmation).toHaveBeenCalledTimes(1);
-  expect(transports.submitInteraction).toHaveBeenCalledWith(
-    TASK.taskId,
-    expect.objectContaining({
-      idempotencyKey: 'composer-interaction:execution-1:r4:merchant',
-    })
-  );
+  expect(transports.submitInteraction).not.toHaveBeenCalled();
 });

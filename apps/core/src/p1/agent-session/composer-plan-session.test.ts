@@ -472,6 +472,94 @@ test('Composer submit → task-admission assembles and one-shot writes the Execu
   assert.equal(registry.claims.length, 1);
 });
 
+test('paid admission creates one pending request before Make and carries the durable freeze', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({
+    store: plans,
+    ports: createFixturePlanCompilerPorts(),
+  });
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+  const submission = record('task-paid-chain-1', '生成一组付费图文');
+  await coordinator.prepare({ submission });
+  assert.equal(submission.executionPlanFreeze?.approvalBasis, 'merchant_confirmed');
+
+  const calls: Array<{ requestId: string; snapshotHash: string }> = [];
+  const starter = new RecordingStarter();
+  const admission = new HarnessTaskAdmissionService(
+    new MemoryHarnessRegistry(),
+    starter,
+    new MemoryPromptResolver(),
+    undefined,
+    undefined,
+    { async resolve() { return copyRoute(); } },
+    undefined,
+    undefined,
+    new ExecutionPlanAdmissionService(new MemoryExecutionPlanSnapshotStore()),
+    {
+      async createRequest(input) {
+        calls.push({ requestId: input.requestId, snapshotHash: input.snapshotHash });
+      },
+    },
+  );
+  const stage = new CreationStagePort({ submit: (input) => admission.submit(input) });
+
+  await stage.start(submission);
+
+  assert.deepEqual(calls, [
+    {
+      requestId: 'confirmation:task-paid-chain-1',
+      snapshotHash: starter.requests[0]!.pendingExecutionPlanSnapshot!.snapshotHash,
+    },
+  ]);
+  assert.equal(starter.requests[0]?.executionPlanSnapshot, undefined);
+  assert.ok(starter.requests[0]?.pendingExecutionPlanSnapshot);
+});
+
+test('Campaign second paid Work creates an independent confirmation request', async () => {
+  const sessions = new MemoryAgentSessionStore();
+  const plans = new MemoryMarketingPlanStore();
+  const compiler = new PlanCompiler({ store: plans, ports: createFixturePlanCompilerPorts() });
+  const coordinator = new ComposerPlanSessionCoordinator(sessions, plans, {
+    compilePlan: (input) => compiler.compile(input),
+    adjustPlan: (input) => compiler.adjust(input),
+  });
+  const works = [record('task-campaign-1', '第一周'), record('task-campaign-2', '第二周')];
+  for (const [index, submission] of works.entries()) {
+    submission.executionConfirmationContext = {
+      campaignPlanRef: { id: 'campaign-plan-1', revision: 2 },
+      workOrdinal: index + 1,
+      approvalScope: 'single_work',
+    };
+    await coordinator.prepare({ submission });
+  }
+  const calls: Array<{ requestId: string; workOrdinal?: number }> = [];
+  const admission = new HarnessTaskAdmissionService(
+    new MemoryHarnessRegistry(),
+    new RecordingStarter(),
+    new MemoryPromptResolver(),
+    undefined,
+    undefined,
+    { async resolve() { return copyRoute(); } },
+    undefined,
+    undefined,
+    new ExecutionPlanAdmissionService(new MemoryExecutionPlanSnapshotStore()),
+    { async createRequest(input) { calls.push(input); } },
+  );
+  const stage = new CreationStagePort({ submit: (input) => admission.submit(input) });
+
+  await stage.start(works[0]!);
+  await stage.start(works[1]!);
+
+  assert.deepEqual(calls.map(({ requestId, workOrdinal }) => ({ requestId, workOrdinal })), [
+    { requestId: 'confirmation:task-campaign-1', workOrdinal: 1 },
+    { requestId: 'confirmation:task-campaign-2', workOrdinal: 2 },
+  ]);
+});
+
 function copyRecord(
   taskId: string,
   intent: string,

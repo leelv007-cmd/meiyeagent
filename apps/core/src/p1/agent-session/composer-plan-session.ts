@@ -170,6 +170,19 @@ export class ComposerPlanSessionCoordinator
       }
     }
 
+    if (!submission.executionPlanFreeze) {
+      const compiled = await this.plans.getLatest(planId);
+      if (!compiled) {
+        throw new Error(`Composer plan ${planId} was not found after compile.`);
+      }
+      submission.executionPlanFreeze = compileFinalizeExecutionPlanFreeze({
+        result: compiled,
+        contextBundleId: submission.snapshot.briefContext.id,
+        contextRevision: String(submission.snapshot.briefContext.revision),
+        approvalBasis: approvalBasisForSubmission(submission.snapshot.lens),
+      });
+    }
+
     const currentRun = await this.sessions.getRun({ resourceId, runId });
     const makeReady =
       !this.compiler.runComposerTurn ||

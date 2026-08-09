@@ -515,6 +515,59 @@ export class PostgresCreationSubmissionStore implements CreationSubmissionStore 
     }
   }
 
+  async saveExecutionPlanFreeze(input: {
+    workspaceId: string;
+    submissionId: string;
+    freeze: CreationSubmissionRecord['executionPlanFreeze'];
+  }) {
+    if (!input.freeze) {
+      throw new Error('Execution plan freeze is required.');
+    }
+    const result = await this.pool.query<{ submission: unknown }>(
+      `UPDATE execution_spine.creation_submissions
+          SET submission = jsonb_set(
+                submission,
+                '{executionPlanFreeze}',
+                $3::jsonb,
+                true
+              ),
+              updated_at = clock_timestamp()
+        WHERE workspace_id = $1
+          AND id = $2
+          AND harness_state = 'reserved'
+          AND (
+            submission->'executionPlanFreeze' IS NULL
+            OR submission->'executionPlanFreeze' = $3::jsonb
+          )
+        RETURNING submission`,
+      [input.workspaceId, input.submissionId, JSON.stringify(input.freeze)],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      const existing = await this.pool.query<{ submission: unknown }>(
+        `SELECT submission
+           FROM execution_spine.creation_submissions
+          WHERE workspace_id = $1 AND id = $2`,
+        [input.workspaceId, input.submissionId],
+      );
+      const stored = existing.rows[0];
+      if (!stored) {
+        throw new Error(`Creation submission ${input.submissionId} was not found.`);
+      }
+      const submission = storedSubmission(stored.submission);
+      if (
+        JSON.stringify(submission.executionPlanFreeze) !==
+        JSON.stringify(input.freeze)
+      ) {
+        throw new Error(
+          `Creation submission ${input.submissionId} cannot change its execution plan freeze after Harness admission.`,
+        );
+      }
+      return submission;
+    }
+    return storedSubmission(row.submission);
+  }
+
   /**
    * Persists the immutable successor snapshot for a semantic answer without
    * creating another Work, Task, ContentPackage, or usage reservation. The
@@ -859,6 +912,8 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
   const candidate = value as {
     contentPackage?: { expectedRevision?: unknown; id?: unknown };
     decisionReferences?: unknown;
+    executionPlanFreeze?: unknown;
+    executionConfirmationContext?: unknown;
     snapshot?: unknown;
     task?: { id?: unknown };
     usageReservation?: { id?: unknown; credits?: unknown; units?: unknown };
@@ -867,6 +922,12 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
   const snapshot = creationExecutionSnapshotSchema.parse(candidate.snapshot);
   const decisionReferences = storedDecisionReferences(
     candidate.decisionReferences,
+  );
+  const executionPlanFreeze = storedExecutionPlanFreeze(
+    candidate.executionPlanFreeze,
+  );
+  const executionConfirmationContext = storedExecutionConfirmationContext(
+    candidate.executionConfirmationContext,
   );
   const contentPackageId = requiredId(
     candidate.contentPackage?.id,
@@ -897,6 +958,8 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
       id: contentPackageId,
     },
     ...(decisionReferences ? { decisionReferences } : {}),
+    ...(executionPlanFreeze ? { executionPlanFreeze } : {}),
+    ...(executionConfirmationContext ? { executionConfirmationContext } : {}),
     snapshot,
     task: { id: taskId },
     usageReservation: {
@@ -906,6 +969,53 @@ function storedSubmission(value: unknown): CreationSubmissionRecord {
     },
     work: { id: workId },
   };
+}
+
+function storedExecutionPlanFreeze(
+  value: unknown,
+): CreationSubmissionRecord['executionPlanFreeze'] {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Stored creation submission has an invalid execution plan freeze.');
+  }
+  const freeze = value as Record<string, unknown>;
+  if (
+    typeof freeze.planId !== 'string' ||
+    !Number.isSafeInteger(freeze.planRevision) ||
+    !freeze.executionPlan ||
+    !Array.isArray(freeze.deliverables) ||
+    !freeze.quoteRef ||
+    !Array.isArray(freeze.rightsRevisionRefs) ||
+    typeof freeze.harnessReleaseId !== 'string' ||
+    (freeze.approvalBasis !== 'merchant_confirmed' &&
+      freeze.approvalBasis !== 'policy_exempt_copy')
+  ) {
+    throw new Error('Stored creation submission has an invalid execution plan freeze.');
+  }
+  return structuredClone(value) as CreationSubmissionRecord['executionPlanFreeze'];
+}
+
+function storedExecutionConfirmationContext(
+  value: unknown,
+): CreationSubmissionRecord['executionConfirmationContext'] {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Stored creation submission has invalid Campaign confirmation context.');
+  }
+  const context = value as Record<string, unknown>;
+  const campaign = context.campaignPlanRef;
+  if (
+    !campaign ||
+    typeof campaign !== 'object' ||
+    Array.isArray(campaign) ||
+    typeof (campaign as Record<string, unknown>).id !== 'string' ||
+    !Number.isSafeInteger(context.workOrdinal) ||
+    (context.workOrdinal as number) < 1 ||
+    context.approvalScope !== 'single_work'
+  ) {
+    throw new Error('Stored creation submission has invalid Campaign confirmation context.');
+  }
+  return structuredClone(value) as CreationSubmissionRecord['executionConfirmationContext'];
 }
 
 function storedDecisionReferences(

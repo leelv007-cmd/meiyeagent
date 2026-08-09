@@ -30,9 +30,8 @@ import {
 import type { SemanticEventCandidate } from '../agent-semantic-events/semantic-event-store.js';
 import { applyArtifactUpdate, artifactUpdateWireSchema } from '@meiye/contracts';
 
-test('V31-14 snapshot consume path: zero nameIntent/compileBrief LLM re-call (trace)', async () => {
+test('paid decision admits the snapshot before Make: zero nameIntent/compileBrief LLM re-call', async () => {
   const {
-    buildExecutionPlanSnapshot,
     freezeExecutionPlanContent,
   } = await import('./execution-plan-admission.js');
   const { COMPILED_EXECUTION_PLAN_SCHEMA_VERSION } = await import(
@@ -90,13 +89,9 @@ test('V31-14 snapshot consume path: zero nameIntent/compileBrief LLM re-call (tr
       triggeredLimit: null,
     },
     harnessReleaseId: 'release-1',
-    approvalBasis: 'policy_exempt_copy' as const,
+    approvalBasis: 'merchant_confirmed' as const,
   };
-  const { snapshotHash } = freezeExecutionPlanContent(content as never);
-  const planSnapshot = buildExecutionPlanSnapshot({
-    content: content as never,
-    snapshotHash,
-  });
+  const pendingExecutionPlanSnapshot = freezeExecutionPlanContent(content as never);
 
   let nameIntentCalls = 0;
   let compileBriefCalls = 0;
@@ -112,6 +107,18 @@ test('V31-14 snapshot consume path: zero nameIntent/compileBrief LLM re-call (tr
     compileBriefCalls += 1;
     return originalBrief(input);
   };
+  stages.getExecutionConfirmationDecision = async (requestId) => {
+    const { planConfirmationDecisionSchema } = await import('@meiye/contracts');
+    return planConfirmationDecisionSchema.parse({
+      schemaVersion: 'plan-confirmation-decision/v1',
+      decisionId: 'decision-paid-snapshot-1',
+      requestId,
+      actorId: 'owner-1',
+      decision: 'confirmed',
+      decidedAt: '2026-08-09T00:00:00.000Z',
+    });
+  };
+  stages.admitExecutionPlanSnapshot = async ({ snapshot }) => snapshot;
   // injectContext must match freeze ref for validator soft path (different bundle id OK)
   stages.injectContext = async () => ({
     bundle: {
@@ -151,8 +158,13 @@ test('V31-14 snapshot consume path: zero nameIntent/compileBrief LLM re-call (tr
   await runHarnessWorkflow(
     'task-snap',
     {
-      ...taskInput(),
-      executionPlanSnapshot: planSnapshot,
+      ...snapshotTaskInput(),
+      pendingExecutionPlanSnapshot,
+      usageReservation: {
+        id: 'usage-paid-snapshot-1',
+        credits: 5,
+        units: [{ resource: 'image', quantity: 1 }],
+      },
     },
     stages,
     {
@@ -161,8 +173,8 @@ test('V31-14 snapshot consume path: zero nameIntent/compileBrief LLM re-call (tr
       },
       async progress() {},
       async token() {},
-      async awaitDecision() {
-        throw new Error('Unexpected decision wait.');
+      async awaitDecision(question) {
+        return approvePaidGenerationConfirmation(question);
       },
       async recordTrace(input) {
         traces.push({ stage: input.stage, payload: input.payload });
