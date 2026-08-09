@@ -135,7 +135,16 @@ export class ConfirmationAuthorityAssembler {
         return { baseRequestId: base, requestId: candidate };
       }
       const decision = await this.confirmations.getDecision(candidate);
-      const terminalFact = decision?.decisionId ?? existing.request.status;
+      if (existing.request.status === 'decided' && !decision) {
+        throw new ExecutionConfirmationError(
+          'INVALID_STATE',
+          `Confirmation request ${candidate} is awaiting decision reconciliation.`,
+        );
+      }
+      if (decision?.decision === 'confirmed') {
+        return { baseRequestId: base, requestId: candidate };
+      }
+      const terminalFact = decision?.decisionId ?? 'expired';
       candidate = `${base}:r:${digest(`${candidate}\0${terminalFact}`).slice(0, 16)}`;
     }
   }

@@ -11,6 +11,7 @@ import {
   confirmationCreditPortFromMemoryLedger,
   ExecutionConfirmationService,
 } from './execution-confirmation-service.js';
+import { ExecutionConfirmationError } from './execution-confirmation-store.js';
 import {
   MemoryExecutionConfirmationRequestStore,
   MemoryPlanConfirmationDecisionStore,
@@ -217,12 +218,39 @@ test('authority assembler replays one workflow with its first frozen clock', asy
     expectedStatus: 'pending',
   });
   now = '2026-08-11T12:05:00.000Z';
-  const missingDecisionSuccessor = await assembler.createRequest(command);
-  assert.notEqual(
-    missingDecisionSuccessor.stored.request.requestId,
-    successor.stored.request.requestId,
+  await assert.rejects(
+    () => assembler.createRequest(command),
+    (error: unknown) =>
+      error instanceof ExecutionConfirmationError &&
+      error.code === 'INVALID_STATE',
   );
-  assert.equal(missingDecisionSuccessor.stored.request.status, 'pending');
+  assert.equal(ledger.project('ws-1', now).availableCredits, 14);
+  await service.decide({
+    decisionId: 'decision-reconcile-missing',
+    requestId: successor.stored.request.requestId,
+    workspaceId: 'ws-1',
+    actorId: 'merchant-1',
+    decision: 'rejected',
+    decidedAt: now,
+  });
+  assert.equal(ledger.project('ws-1', now).availableCredits, 20);
+
+  const confirmedAttempt = await assembler.createRequest(command);
+  await service.decide({
+    decisionId: 'decision-confirmed-final',
+    requestId: confirmedAttempt.stored.request.requestId,
+    workspaceId: 'ws-1',
+    actorId: 'merchant-1',
+    decision: 'confirmed',
+    decidedAt: '2026-08-11T12:06:00.000Z',
+  });
+  now = '2026-08-11T12:07:00.000Z';
+  const confirmedReplay = await assembler.createRequest(command);
+  assert.equal(
+    confirmedReplay.stored.request.requestId,
+    confirmedAttempt.stored.request.requestId,
+  );
+  assert.equal(ledger.project('ws-1', now).availableCredits, 14);
 });
 
 test('authority assembler rejects foreign workspace and quote revision drift', async () => {

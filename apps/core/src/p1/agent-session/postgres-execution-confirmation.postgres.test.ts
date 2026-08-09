@@ -12,6 +12,7 @@ import { agentExecutionConfirmationRequestSchema } from '@meiye/contracts';
 
 import { PostgresCreditLedger } from '../credit-billing/postgres-credit-ledger.js';
 import { PgBossJobPort } from '../job-runtime/pg-boss-job-port.js';
+import { ConfirmationAuthorityAssembler } from './execution-confirmation-authority.js';
 import { ExecutionConfirmationService } from './execution-confirmation-service.js';
 import { PostgresConfirmationAuthorityStore } from './execution-confirmation-authority-store.js';
 import {
@@ -214,6 +215,148 @@ test(
       );
     } finally {
       await cleanup();
+    }
+  },
+);
+
+test(
+  'Postgres authority terminal classification never reserves after confirmed or unreconciled decided',
+  { skip: connectionString ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const fixture = await createFixture();
+    const authorityStore = new PostgresConfirmationAuthorityStore(fixture.pool);
+    try {
+      await authorityStore.migrate();
+      await fixture.creditLedger.grant({
+        id: 'confirm-terminal-balance',
+        workspaceId: fixture.workspaceId,
+        credits: 20,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'confirm-terminal-balance',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      let now = '2026-08-09T09:00:00.000Z';
+      const assembler = new ConfirmationAuthorityAssembler(
+        fixture.service,
+        authorityStore,
+        {
+          getQuote(quoteId) {
+            return {
+              quoteId,
+              revision: 1,
+              taskId: `task:${quoteId}`,
+              creditCost: 6,
+              failureRefundsCredits: true,
+            } as never;
+          },
+        },
+        { clock: () => new Date(now) },
+      );
+      const putAuthority = (workflowId: string) =>
+        authorityStore.putCurrent({
+          workflowId,
+          workspaceId: fixture.workspaceId,
+          planId: `plan:${workflowId}`,
+          planRevision: 1,
+          snapshotHash: `snapshot:${workflowId}`,
+          quoteRef: { id: `quote:${workflowId}`, revision: 1 },
+          rightsRevisionRefs: [],
+          factRevisionRefs: [],
+          frozenAt: now,
+        });
+      const command = (workflowId: string) => ({
+        actorId: 'merchant-terminal',
+        workspaceId: fixture.workspaceId,
+        workflowId,
+      });
+
+      await putAuthority('workflow-confirmed');
+      const confirmed = await assembler.createRequest(command('workflow-confirmed'));
+      await fixture.service.decide({
+        decisionId: 'decision-confirmed-pg',
+        requestId: confirmed.stored.request.requestId,
+        workspaceId: fixture.workspaceId,
+        actorId: 'merchant-terminal',
+        decision: 'confirmed',
+        decidedAt: now,
+      });
+      now = '2026-08-09T09:01:00.000Z';
+      const confirmedReplay = await assembler.createRequest(
+        command('workflow-confirmed'),
+      );
+      assert.equal(
+        confirmedReplay.stored.request.requestId,
+        confirmed.stored.request.requestId,
+      );
+      assert.equal(
+        (await fixture.creditLedger.project(fixture.workspaceId, now))
+          .availableCredits,
+        14,
+      );
+
+      await putAuthority('workflow-unreconciled');
+      const unreconciled = await assembler.createRequest(
+        command('workflow-unreconciled'),
+      );
+      await fixture.requestStore.markStatus({
+        requestId: unreconciled.stored.request.requestId,
+        status: 'decided',
+        expectedStatus: 'pending',
+      });
+      await assert.rejects(
+        () => assembler.createRequest(command('workflow-unreconciled')),
+        (error: unknown) =>
+          error instanceof ExecutionConfirmationError &&
+          error.code === 'INVALID_STATE',
+      );
+      assert.equal(
+        (await fixture.creditLedger.project(fixture.workspaceId, now))
+          .availableCredits,
+        8,
+      );
+      await fixture.service.decide({
+        decisionId: 'decision-reconciled-rejected-pg',
+        requestId: unreconciled.stored.request.requestId,
+        workspaceId: fixture.workspaceId,
+        actorId: 'merchant-terminal',
+        decision: 'rejected',
+        decidedAt: now,
+      });
+      assert.equal(
+        (await fixture.creditLedger.project(fixture.workspaceId, now))
+          .availableCredits,
+        14,
+      );
+
+      const rejectedSuccessor = await assembler.createRequest(
+        command('workflow-unreconciled'),
+      );
+      await fixture.service.expireHold({
+        requestId: rejectedSuccessor.stored.request.requestId,
+        workspaceId: fixture.workspaceId,
+        now: '2026-08-12T09:00:00.000Z',
+      });
+      now = '2026-08-12T09:01:00.000Z';
+      const expiredSuccessor = await assembler.createRequest(
+        command('workflow-unreconciled'),
+      );
+      assert.notEqual(
+        expiredSuccessor.stored.request.requestId,
+        rejectedSuccessor.stored.request.requestId,
+      );
+      await fixture.service.expireHold({
+        requestId: rejectedSuccessor.stored.request.requestId,
+        workspaceId: fixture.workspaceId,
+        now: '2026-08-12T09:02:00.000Z',
+      });
+      assert.equal(
+        (await fixture.creditLedger.project(fixture.workspaceId, now))
+          .availableCredits,
+        8,
+      );
+    } finally {
+      await fixture.cleanup();
     }
   },
 );
