@@ -41,7 +41,10 @@ import {
   STAGE_TO_PRIMITIVES,
   stageTaxonomyPayload,
 } from './five-stage-trace-taxonomy.js';
-import { PRE_CONVERGENCE_BASELINES } from './fixtures/pre-convergence-equivalence-baselines.js';
+import {
+  POST_CONVERGENCE_PRIMITIVE_EFFECT_KEYS,
+  PRE_CONVERGENCE_BASELINES,
+} from './fixtures/pre-convergence-equivalence-baselines.js';
 import {
   materializeMediaBriefFromSnapshot,
   materializeNoteBriefFromSnapshot,
@@ -288,6 +291,69 @@ test('V31-25: a plan that drops a required step or repeats a single-shot step fa
     () => run(repeatedCheck, 'note-repeated-check'),
     /repeats non-repeatable step check:consistency for carrier note/,
   );
+});
+
+test('V31-25 P1-H: a frozen plan from another carrier is refused for this request', async () => {
+  // copy and media have identical primitive sequences AND identical step
+  // catalogs, so sequence equality accepted the media plan for a copy request
+  // and ran it under copy's effect-key namespacing. Plan identity is bound to
+  // the executing carrier through the unit types the carrier owns.
+  const registry = createCanonicalCarrierUnitRecipeRegistry();
+  const copyRecipe = registry.resolve('copy');
+  const mediaRecipe = registry.resolve('media');
+  assert.deepEqual(copyRecipe.primitiveSequence, mediaRecipe.primitiveSequence);
+  assert.deepEqual(
+    copyRecipe.stepCatalog.map((step) => `${step.primitive}:${step.role}`),
+    mediaRecipe.stepCatalog.map((step) => `${step.primitive}:${step.role}`),
+  );
+
+  const calls: string[] = [];
+  const track = <T>(primitive: string, output: T) => async () => {
+    calls.push(primitive);
+    return output;
+  };
+  const handlers = {
+    read_context: track('read_context', null),
+    ask_merchant: track('ask_merchant', null),
+    generate: track('generate', null),
+    check: track('check', null),
+    revise: track('revise', null),
+    record: track('record', { delivered: true }),
+  };
+
+  await assert.rejects(
+    () =>
+      executeCompiledCarrierPlan({
+        context: { lens: 'copy', frozenExecutionPlan: mediaRecipe.plan },
+        programInput: { ignored: true },
+        primitiveHandlers: handlers,
+        effectStore: immediatePrimitiveEffectStore,
+        executionId: 'p1h-copy-request-media-plan',
+      }),
+    /uses unitType media\.generate, which does not belong to the copy carrier/,
+  );
+  assert.deepEqual(calls, []);
+
+  // The reverse direction is refused too, and the matching carrier still runs.
+  await assert.rejects(
+    () =>
+      executeCompiledCarrierPlan({
+        context: { lens: 'image', frozenExecutionPlan: copyRecipe.plan },
+        programInput: { ignored: true },
+        primitiveHandlers: handlers,
+        effectStore: immediatePrimitiveEffectStore,
+        executionId: 'p1h-media-request-copy-plan',
+      }),
+    /uses unitType copy\.generate, which does not belong to the media carrier/,
+  );
+  const matched = await executeCompiledCarrierPlan({
+    context: { lens: 'copy', frozenExecutionPlan: copyRecipe.plan },
+    programInput: { ignored: true },
+    primitiveHandlers: handlers,
+    effectStore: immediatePrimitiveEffectStore,
+    executionId: 'p1h-copy-request-copy-plan',
+  });
+  assert.deepEqual(matched.result, { delivered: true });
 });
 
 // ─── P0-A: the plan directs execution (mutation evidence) ────────────────────
@@ -1093,11 +1159,21 @@ async function collectFixtureEffectKeys(fixtureId: FixtureTaskId) {
   return keys;
 }
 
+/**
+ * Set only when this suite runs against the PRE-convergence commit to capture
+ * baselines. At that commit there are no compiled-primitive markers, so the
+ * expectation is the raw baseline. Separate from the output path on purpose: the
+ * one env var used to mean both "where to write" and "which expectation", so a
+ * normal CI run silently took the derived expectation.
+ */
+const capturingPreConvergenceBaseline =
+  process.env.V31_PRE_CONVERGENCE_BASELINE_CAPTURE === '1';
+
 function assertMatchesPreConvergenceBaseline(
   fixtureId: FixtureTaskId,
   actual: RunnerEquivalenceSnapshot,
 ) {
-  const expected = process.env.V31_PRE_CONVERGENCE_BASELINE_OUTPUT
+  const expected = capturingPreConvergenceBaseline
     ? PRE_CONVERGENCE_BASELINES[fixtureId]
     : expectedCurrentTopology(fixtureId);
   const mismatches = diffRunnerEquivalence(expected, actual);
@@ -1108,26 +1184,23 @@ function assertMatchesPreConvergenceBaseline(
   );
 }
 
+/**
+ * Pre-convergence business effects (frozen, real provenance) plus the pinned
+ * post-convergence primitive markers. Neither half is read from the production
+ * resolver, so a topology change fails instead of moving the expectation.
+ */
 function expectedCurrentTopology(
   fixtureId: FixtureTaskId,
 ): RunnerEquivalenceSnapshot {
-  const fixture = FIXTURE_TASKS[fixtureId];
-  const request = fixture.buildRequest();
-  const resolution = resolveCompiledCarrierExecution({
-    lens: request.executionSnapshot?.lens,
-    frozenExecutionPlan: request.executionPlanSnapshot?.executionPlan,
-  });
-  const primitiveKeys = resolution.executionPlan.units
-    .map(
-      (unit) =>
-        `compiled-primitive:${fixture.workflowId}:${unit.unitId}`,
-    );
   const baseline = PRE_CONVERGENCE_BASELINES[fixtureId];
   return {
     ...baseline,
     recovery: {
       ...baseline.recovery,
-      effectKeys: [...baseline.recovery.effectKeys, ...primitiveKeys].sort(),
+      effectKeys: [
+        ...baseline.recovery.effectKeys,
+        ...POST_CONVERGENCE_PRIMITIVE_EFFECT_KEYS[fixtureId],
+      ].sort(),
     },
   };
 }
@@ -1142,15 +1215,45 @@ test('V31-25: every fixture task matches its frozen pre-convergence baseline (de
   // added by the convergence commit and are pinned by their own test).
   const generated: Partial<Record<FixtureTaskId, RunnerEquivalenceSnapshot>> = {};
   for (const fixtureId of Object.keys(PRE_CONVERGENCE_BASELINES) as FixtureTaskId[]) {
-    const actual = await runFixtureSnapshot(fixtureId);
-    generated[fixtureId] = actual;
-    assertMatchesPreConvergenceBaseline(fixtureId, actual);
+    generated[fixtureId] = await runFixtureSnapshot(fixtureId);
   }
+  // Write before asserting: the generator script's whole job is to capture
+  // baselines, and asserting first meant a capture run that disagreed with the
+  // checked-in file produced no output at all — the script could never bootstrap
+  // or update a baseline.
   if (process.env.V31_PRE_CONVERGENCE_BASELINE_OUTPUT) {
     writeFileSync(
       process.env.V31_PRE_CONVERGENCE_BASELINE_OUTPUT,
       `${JSON.stringify(generated, null, 2)}\n`,
       'utf8',
+    );
+  }
+  for (const [fixtureId, actual] of Object.entries(generated) as Array<
+    [FixtureTaskId, RunnerEquivalenceSnapshot]
+  >) {
+    assertMatchesPreConvergenceBaseline(fixtureId, actual);
+  }
+});
+
+test('V31-25 P1-F: the recovery expectation is pinned, not read back from the production resolver', async () => {
+  // Drift guard for the guard: if the pinned primitive keys were derived from
+  // resolveCompiledCarrierExecution again, adding a unit to a carrier recipe
+  // would silently move the expectation. Here the pinned list is compared to the
+  // live resolver, and a mismatch is a deliberate-update signal rather than a
+  // self-fulfilling pass.
+  for (const fixtureId of Object.keys(PRE_CONVERGENCE_BASELINES) as FixtureTaskId[]) {
+    const fixture = FIXTURE_TASKS[fixtureId];
+    const request = fixture.buildRequest();
+    const resolution = resolveCompiledCarrierExecution({
+      lens: request.executionSnapshot?.lens,
+      frozenExecutionPlan: request.executionPlanSnapshot?.executionPlan,
+    });
+    assert.deepEqual(
+      [...POST_CONVERGENCE_PRIMITIVE_EFFECT_KEYS[fixtureId]],
+      resolution.executionPlan.units.map(
+        (unit) => `compiled-primitive:${fixture.workflowId}:${unit.unitId}`,
+      ),
+      `${fixtureId}: carrier topology changed; update POST_CONVERGENCE_PRIMITIVE_EFFECT_KEYS deliberately`,
     );
   }
 });

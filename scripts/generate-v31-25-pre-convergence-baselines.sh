@@ -37,9 +37,27 @@ ln -s "${repo_root}/apps/core/node_modules" "${fixed_worktree}/apps/core/node_mo
 ln -s "${repo_root}/packages/contracts/node_modules" "${fixed_worktree}/packages/contracts/node_modules"
 
 mkdir -p "$(dirname "${output_path}")"
+# CAPTURE selects the expectation (raw baseline: the fixed commit emits no
+# compiled-primitive markers); OUTPUT is only where the capture is written. They
+# were one variable, which made a normal CI run silently compare against a
+# resolver-derived expectation. The run writes the file before asserting, so a
+# disagreeing capture still produces output to diff — the assertion failure is
+# then reported by the non-zero exit below.
+capture_status=0
+V31_PRE_CONVERGENCE_BASELINE_CAPTURE=1 \
 V31_PRE_CONVERGENCE_BASELINE_OUTPUT="${output_path}" \
   pnpm --dir "${fixed_worktree}/apps/core" exec tsx --test --test-concurrency=1 \
   --test-name-pattern='every fixture task matches its frozen pre-convergence baseline' \
-  src/p1/harness/runner-convergence.test.ts
+  src/p1/harness/runner-convergence.test.ts || capture_status=$?
+
+if [[ ! -s "${output_path}" ]]; then
+  printf 'Capture produced no baseline at %s\n' "${output_path}" >&2
+  exit 1
+fi
 
 printf 'Generated %s from %s\n' "${output_path}" "${fixed_commit}"
+if (( capture_status != 0 )); then
+  printf 'Capture disagreed with the checked-in baseline; diff %s before accepting.\n' \
+    "${output_path}" >&2
+  exit "${capture_status}"
+fi
