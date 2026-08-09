@@ -1092,7 +1092,9 @@ test("paid Composer plan waits until exact explicit start before dispatching Mak
 					planRevision: 1,
 					quoteRef: { id: "quote-1", revision: "quote-r5" },
 				} as never;
-				return { threadId: "thread-wait", runId: "run-wait", makeReady: false };
+				// A stale/buggy planning hint cannot bypass the server-owned
+				// merchant-confirmed freeze and immutable decision gate.
+				return { threadId: "thread-wait", runId: "run-wait", makeReady: true };
 			},
 			async completeExplicitStart(input) {
 				assert.equal(input.planRevision, 2);

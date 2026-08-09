@@ -729,6 +729,15 @@ test('pure copy stays frozen with policy_exempt_copy and no decision ref (U9)', 
   const replayedBinding = await coordinator.prepare({ submission });
   assert.deepEqual(replayedBinding, first);
   assert.deepEqual(submission.executionPlanFreeze, freeze);
+
+  // Crash seam: the append-only MarketingPlanRevision may commit before the
+  // submission claim persists its freeze. Replay reconstructs that exact
+  // revision instead of appending r2.
+  submission.executionPlanFreeze = undefined;
+  const recoveredBinding = await coordinator.prepare({ submission });
+  assert.deepEqual(recoveredBinding, first);
+  assert.deepEqual(submission.executionPlanFreeze, freeze);
+  assert.equal((await plans.listRevisions(freeze.planId)).length, 1);
 });
 
 test('Composer submit → task-admission assembles and one-shot writes the ExecutionPlanSnapshot (idempotent replay)', async () => {

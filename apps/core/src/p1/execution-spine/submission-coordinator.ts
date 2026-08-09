@@ -536,14 +536,18 @@ export class CreationSubmissionCoordinator {
 			throw new CreationSubmissionConflictError();
 		}
 		if (receipt.kind === "existing") {
-			const agentBinding = await this.prepareAgentPlan(
+			const preparedBinding = await this.prepareAgentPlan(
 				receipt.submission,
 				request.agentThreadId
 			);
-			if (agentBinding?.makeReady !== false) {
-				await this.startHarness(receipt.submission);
-			} else {
+			const agentBinding = explicitConfirmationBinding(
+				receipt.submission,
+				preparedBinding,
+			);
+			if (agentBinding?.makeReady === false) {
 				await this.preparePendingConfirmation(receipt.submission);
+			} else {
+				await this.startHarness(receipt.submission);
 			}
 			return submissionResponse(receipt.submission, true, agentBinding);
 		}
@@ -612,17 +616,21 @@ export class CreationSubmissionCoordinator {
 		if (claimed.kind === "conflict") {
 			throw new CreationSubmissionConflictError();
 		}
-		const agentBinding =
+		const preparedAgentBinding =
 			claimed.kind === "existing"
 				? await this.prepareAgentPlan(
 						claimed.submission,
 						request.agentThreadId,
 					)
 				: preparedBinding;
-		if (agentBinding?.makeReady !== false) {
-			await this.startHarness(claimed.submission);
-		} else {
+		const agentBinding = explicitConfirmationBinding(
+			claimed.submission,
+			preparedAgentBinding,
+		);
+		if (agentBinding?.makeReady === false) {
 			await this.preparePendingConfirmation(claimed.submission);
+		} else {
+			await this.startHarness(claimed.submission);
 		}
 		return submissionResponse(
 			claimed.submission,
@@ -1095,6 +1103,25 @@ function ensureConfirmationDispatch(submission: CreationSubmissionRecord) {
 		expiresAt: new Date(
 			Date.parse(submission.snapshot.createdAt) + 48 * 60 * 60 * 1_000,
 		).toISOString(),
+	};
+}
+
+function explicitConfirmationBinding(
+	submission: CreationSubmissionRecord,
+	binding: ComposerAgentBinding | undefined,
+): ComposerAgentBinding | undefined {
+	if (submission.executionPlanFreeze?.approvalBasis !== "merchant_confirmed") {
+		return binding;
+	}
+	if (!binding) {
+		throw new Error(
+			"Merchant-confirmed plan requires its durable Agent binding.",
+		);
+	}
+	return {
+		threadId: binding.threadId,
+		runId: binding.runId,
+		makeReady: false,
 	};
 }
 
