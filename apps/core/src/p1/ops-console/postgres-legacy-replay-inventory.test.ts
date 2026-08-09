@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import test from 'node:test';
 
 import { Pool } from 'pg';
@@ -126,6 +126,46 @@ test(
       assert.ok(snapshot.sampleTaskIds.includes(`${prefix}-corrupt`));
     } finally {
       await pool.query('delete from harness_runtime.task_requests where task_id like $1', [`${prefix}%`]);
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'legacy replay installation ledger rejects tampering in Postgres',
+  { skip: process.env.TEST_DATABASE_URL ? false : 'TEST_DATABASE_URL is not configured' },
+  async () => {
+    const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
+    try {
+      await new PostgresHarnessStore(pool).applySchema();
+      await new PostgresExecutionPlanSnapshotStore(pool).migrate();
+      const inventory = new PostgresLegacyReplayInventory(pool);
+      await inventory.migrateInstallationLedger();
+      await pool.query(
+        `insert into p1_legacy_replay_installation_ledger
+           (singleton, deployment_id, migration_checksum, initial_legacy_count)
+         values (true, $1, $2, 0)
+         on conflict (singleton) do nothing`,
+        [
+          'v31-26a-legacy-replay-ledger-v1',
+          createHash('sha256')
+            .update('v31-26a-legacy-replay-ledger-v1')
+            .digest('hex'),
+        ],
+      );
+      await assert.rejects(
+        () =>
+          pool.query(
+            `update p1_legacy_replay_installation_ledger
+                set initial_legacy_count=1
+              where singleton=true`,
+          ),
+        /immutable/,
+      );
+      assert.match((await inventory.installationEvidence()) ?? '', /migrationChecksum/);
+    } finally {
+      await pool.query('drop table if exists p1_legacy_replay_installation_ledger');
+      await pool.query('drop function if exists p1_reject_legacy_replay_ledger_mutation()');
       await pool.end();
     }
   },

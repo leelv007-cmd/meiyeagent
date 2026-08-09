@@ -133,6 +133,32 @@ function requireEvidence(evidence: unknown, label: string): string {
   return evidence.trim();
 }
 
+const LEGACY_REPLAY_LEDGER_DEPLOYMENT_ID = 'v31-26a-legacy-replay-ledger-v1';
+
+function verifiedLegacyReplayInstallationEvidence(
+  evidence: string,
+): string | null {
+  try {
+    const parsed = JSON.parse(evidence) as Record<string, unknown>;
+    const expectedChecksum = createHash('sha256')
+      .update(LEGACY_REPLAY_LEDGER_DEPLOYMENT_ID)
+      .digest('hex');
+    if (
+      parsed.deploymentId !== LEGACY_REPLAY_LEDGER_DEPLOYMENT_ID ||
+      parsed.migrationChecksum !== expectedChecksum ||
+      parsed.initialLegacyCount !== 0 ||
+      parsed.legacyTerminalAuditCount !== 0 ||
+      typeof parsed.installedAt !== 'string' ||
+      Number.isNaN(Date.parse(parsed.installedAt))
+    ) {
+      return null;
+    }
+    return JSON.stringify(parsed);
+  } catch {
+    return null;
+  }
+}
+
 export class OpsConsoleService {
   constructor(private readonly deps: OpsConsoleServiceDeps) {}
 
@@ -649,10 +675,13 @@ export class OpsConsoleService {
       this.deps.legacyReplayInventory.snapshot(),
       this.deps.resolveLegacyReplayInstallationEvidence(),
     ]);
+    const verifiedInstallationEvidence = installationEvidence
+      ? verifiedLegacyReplayInstallationEvidence(installationEvidence)
+      : null;
     if (
       inventory.activePendingCount !== 0 ||
       inventory.lastLegacyTerminalAt !== null ||
-      !installationEvidence?.trim()
+      !verifiedInstallationEvidence
     ) {
       throw new P1DomainError(
         'INVALID_STATE',
@@ -669,7 +698,7 @@ export class OpsConsoleService {
         verifiedZeroRows: true,
         inventorySource:
           'harness_runtime.task_requests+p1_execution_plan_snapshots',
-        installationEvidence: installationEvidence.trim(),
+        installationEvidence: verifiedInstallationEvidence,
       },
       meta.now,
     );
@@ -787,7 +816,9 @@ export class OpsConsoleService {
           entry.detail.inventorySource ===
             'harness_runtime.task_requests+p1_execution_plan_snapshots' &&
           typeof entry.detail.installationEvidence === 'string' &&
-          entry.detail.installationEvidence.trim().length > 0,
+          verifiedLegacyReplayInstallationEvidence(
+            entry.detail.installationEvidence,
+          ) !== null,
       );
       verifiedNoHistoryAuditId = proof?.id ?? null;
     } catch {

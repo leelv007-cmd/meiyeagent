@@ -86,13 +86,8 @@ import {
   executeCompiledCarrierPlan,
   resolveCompiledCarrierExecution,
 } from './compiled-carrier-executor.js';
-import { createCanonicalCarrierUnitRecipeRegistry } from './carrier-unit-recipes.js';
 import { attachStageTaxonomy } from './five-stage-trace-taxonomy.js';
 import type { StageTaxonomyPayload } from './five-stage-trace-taxonomy.js';
-import {
-  projectLegacyDeterministicFields,
-  type ShadowDeterministicFields,
-} from './shadow-reconciliation.js';
 
 export {
   confirmPaidGenerationExecution,
@@ -1133,9 +1128,6 @@ interface HarnessStageExecutionInput {
   request: HarnessWorkflowInput;
   runtime: HarnessWorkflowRuntime;
   workflowId: string;
-  legacyObservationFacts?: {
-    quoteRef: { id: string; revision: number | string };
-  };
 }
 
 type GeneratorResult<T> = T extends AsyncGenerator<unknown, infer R, unknown>
@@ -1432,10 +1424,10 @@ export async function runHarnessWorkflow(
     runtime,
     workflowId,
   };
-  const primitiveProgram = createCarrierPrimitiveProgram(programInput);
   if (options.forceLegacyFiveStage) {
-    return drainLegacyCarrierProgram(primitiveProgram);
+    return runFrozenLegacyHarnessAdapter(programInput);
   }
+  const primitiveProgram = createCompiledCarrierPrimitiveProgram(programInput);
   const primitiveHandlers: CompiledPrimitiveHandlers<HarnessStageExecutionInput> = {
     read_context: ({ priorOutputs }) =>
       advanceCarrierPrimitive(primitiveProgram, 'read_context', priorOutputs),
@@ -1465,7 +1457,17 @@ export async function runHarnessWorkflow(
     effectStore: {
       run: (key, operation) => runtime.runStep(key, operation),
     },
-    selfDurablePrimitives: ['record'],
+    // Each business program already owns its durable effects and orchestration
+    // boundaries. The compiled units persist topology markers first, then run
+    // outside that DBOS step so DBOS.runStep is never nested.
+    selfDurablePrimitives: [
+      'read_context',
+      'ask_merchant',
+      'generate',
+      'check',
+      'revise',
+      'record',
+    ],
     onResolved: (resolution) => {
       executorPathByRuntime.set(runtime, resolution.executorPath);
     },
@@ -1473,98 +1475,9 @@ export async function runHarnessWorkflow(
   return result;
 }
 
-export async function observeLegacyHarnessDeterministicFields(
-  workflowId: string,
-  request: HarnessWorkflowInput,
-  stagePorts:
-    | HarnessStagePorts
-    | HarnessMediaStagePorts
-    | HarnessNoteStagePorts
-    | HarnessStageCollaborators,
-  runtime: HarnessWorkflowRuntime,
-  legacyObservationFacts: {
-    quoteRef: { id: string; revision: number | string };
-  },
-): Promise<ShadowDeterministicFields | null> {
-  const collaborators = stageCollaborators(
-    stagePorts,
-    request.executionSnapshot?.lens,
-  );
-  const descriptor =
-    HARNESS_LENS_STAGE_DESCRIPTORS[request.executionSnapshot?.lens ?? 'copy'];
-  const ports = stagePortView(stagePorts, collaborators, descriptor.kind);
-  const progress = { sequence: 0 };
-  const reportProgress: HarnessProgressReporter = (event) =>
-    runtime.progress({ ...event, sequence: progress.sequence++ });
-  const prelude = await runWorkflowPrelude({
-    descriptor,
-    ports,
-    reportProgress,
-    request,
-    runtime,
-    workflowId,
-    forceLegacyFiveStage: true,
-  });
-  const program = createCarrierPrimitiveProgram({
-    descriptor,
-    ports,
-    prelude,
-    progress,
-    reportProgress,
-    request,
-    runtime,
-    workflowId,
-    legacyObservationFacts,
-  });
-  const preRecordPrimitiveCount =
-    createCanonicalCarrierUnitRecipeRegistry()
-      .resolve(descriptor.kind)
-      .plan.units.length - 1;
-  let observation: ShadowDeterministicFields | null = null;
-  for (let index = 0; index < preRecordPrimitiveCount; index += 1) {
-    const advanced = await program.next();
-    if (advanced.done) throw new Error('Legacy shadow program ended before record.');
-    if (
-      advanced.value.value &&
-      typeof advanced.value.value === 'object' &&
-      'legacyObservation' in advanced.value.value
-    ) {
-      observation = advanced.value.value
-        .legacyObservation as ShadowDeterministicFields;
-    }
-  }
-  await program.return(undefined as never);
-  return observation;
-}
-
 const primitiveProgramPosition = new WeakMap<CarrierPrimitiveProgram, number>();
 
-function legacyObservationFromProgram(input: {
-  carrier: 'copy' | 'note' | 'media';
-  request: HarnessWorkflowInput;
-  factRefs: readonly string[];
-  rightsRefs: readonly string[];
-  facts?: HarnessStageExecutionInput['legacyObservationFacts'];
-}): ShadowDeterministicFields | null {
-  const snapshot =
-    input.request.boundedExecution ??
-    input.request.executionPlanSnapshot?.boundedExecution;
-  if (!snapshot || !input.facts) return null;
-  return projectLegacyDeterministicFields({
-    deliverables: [{ kind: input.carrier, quantity: 1 }],
-    factRefs: input.factRefs,
-    rightsRefs: input.rightsRefs,
-    quoteRef: input.facts.quoteRef,
-    bounds: {
-      maxIterations: snapshot.maxIterations,
-      maxCostCents: snapshot.maxCostCents,
-      maxWallClockMs: snapshot.maxWallClockMs,
-      maxDelegations: snapshot.maxDelegations,
-    },
-  });
-}
-
-function createCarrierPrimitiveProgram(
+function createCompiledCarrierPrimitiveProgram(
   input: HarnessStageExecutionInput,
 ): CarrierPrimitiveProgram {
   if (input.descriptor.kind === 'copy') {
@@ -1574,6 +1487,19 @@ function createCarrierPrimitiveProgram(
     return createNotePrimitiveProgram(input) as CarrierPrimitiveProgram;
   }
   return createMediaPrimitiveProgram(input) as CarrierPrimitiveProgram;
+}
+
+/** Frozen rollback adapter retained until V31-26b pilot acceptance. */
+function runFrozenLegacyHarnessAdapter(
+  input: HarnessStageExecutionInput,
+): Promise<HarnessWorkflowResult> {
+  const program =
+    input.descriptor.kind === 'copy'
+      ? createCopyPrimitiveProgram(input)
+      : input.descriptor.kind === 'note'
+        ? createNotePrimitiveProgram(input)
+        : createMediaPrimitiveProgram(input);
+  return drainLegacyCarrierProgram(program as CarrierPrimitiveProgram);
 }
 
 async function synchronizeCarrierPrimitiveProgram(
@@ -2142,15 +2068,6 @@ async function* createCopyPrimitiveProgram(
       selection,
       brief,
       bundle,
-      legacyObservation: legacyObservationFromProgram({
-        carrier: 'copy',
-        request: activeRequest,
-        factRefs: factGate.allowedFactRefs ?? brief.factRefs,
-        rightsRefs: bundle.policyReferences.rightsRefs.map(
-          (right) => `${right.assetId}:${right.status}`,
-        ),
-        facts: input.legacyObservationFacts,
-      }),
     },
   };
 
@@ -2600,15 +2517,6 @@ async function* createNotePrimitiveProgram(
     value: {
       selection,
       regenerationCount: noteRegenerationSignals.length,
-      legacyObservation: legacyObservationFromProgram({
-        carrier: 'note',
-        request: activeRequest,
-        factRefs: factGate.allowedFactRefs ?? [],
-        rightsRefs: context.policyReferences.rightsRefs.map(
-          (right) => `${right.assetId}:${right.status}`,
-        ),
-        facts: input.legacyObservationFacts,
-      }),
     },
   };
   yield {
@@ -3234,15 +3142,6 @@ async function* createMediaPrimitiveProgram(
       selection,
       brief,
       bundle,
-      legacyObservation: legacyObservationFromProgram({
-        carrier: 'media',
-        request: activeRequest,
-        factRefs: factGate.allowedFactRefs ?? [],
-        rightsRefs: bundle.policyReferences.rightsRefs.map(
-          (right) => `${right.assetId}:${right.status}`,
-        ),
-        facts: input.legacyObservationFacts,
-      }),
     },
   };
 

@@ -28,7 +28,6 @@ import {
 import {
   assertBoundedExecutionContinuationAuthorization,
   HarnessWorkflowCancellation,
-  observeLegacyHarnessDeterministicFields,
   runHarnessWorkflow,
   harnessMediaJobTopic,
   type BoundedExecutionContinuationCapability,
@@ -53,6 +52,7 @@ import {
   type SnapshotLiveFacts,
 } from './execution-plan-admission.js';
 import type { ShadowReconciliationService } from './shadow-reconciliation.js';
+import type { LegacyShadowObservationReader } from './legacy-shadow-observation-reader.js';
 import type {
   ProductionSampleInput,
   ProductionSampleOutcome,
@@ -658,6 +658,8 @@ export interface HarnessDbosWorkflowOptions {
     ShadowReconciliationService,
     'maybeReconcileOnExecutionComplete' | 'shouldObserveLegacyExecution'
   >;
+  /** Read-only legacy pilot receipt. Missing receipt means no shadow sample. */
+  legacyShadowObservationReader?: LegacyShadowObservationReader;
   /**
    * V31-23 L0.5: production sampling on Make complete (same sampling point as
    * shadow reconciliation). shouldSample gates by admin-config sample rate;
@@ -690,24 +692,25 @@ export function registerHarnessDbosWorkflow(
   persistence: HarnessWorkflowPersistence,
   options: HarnessDbosWorkflowOptions = {},
 ) {
-    const {
-      semanticResumptions,
-      billing,
-      executionConfirmation,
-      config,
-      decisions,
-      boundedContinuations,
-      taskRecallDue,
-      askMerchant,
-      interactions,
-      executionPlanAdmission,
-      resolveExecutionPlanLiveFacts,
-      resolveForceLegacyFiveStage,
-      shadowReconciliation,
-      productionSampling,
-      makeSteeringBoundary,
-      interrupts,
-    } = options;
+  const {
+    semanticResumptions,
+    billing,
+    executionConfirmation,
+    config,
+    decisions,
+    boundedContinuations,
+    taskRecallDue,
+    askMerchant,
+    interactions,
+    executionPlanAdmission,
+    resolveExecutionPlanLiveFacts,
+    resolveForceLegacyFiveStage,
+    shadowReconciliation,
+    legacyShadowObservationReader,
+    productionSampling,
+    makeSteeringBoundary,
+    interrupts,
+  } = options;
   const workflow = async (input: HarnessDbosWorkflowInput) => {
     const runtimeWorkflowId = DBOS.workflowID;
     if (!runtimeWorkflowId) {
@@ -1295,7 +1298,11 @@ export function registerHarnessDbosWorkflow(
         : undefined;
       // V31-13: sample shadow reconcile on successful Make complete (no daemon).
       // Failures inside the service are swallowed; this step must not fail the run.
-      if (shadowReconciliation && request.executionPlanSnapshot) {
+      if (
+        shadowReconciliation &&
+        legacyShadowObservationReader &&
+        request.executionPlanSnapshot
+      ) {
         await DBOS.runStep(
           async () => {
             try {
@@ -1307,27 +1314,10 @@ export function registerHarnessDbosWorkflow(
               ) {
                 return { sampled: false as const };
               }
-              const legacyLiveFacts = resolveExecutionPlanLiveFacts
-                ? await resolveExecutionPlanLiveFacts({ workflowId, request })
-                : undefined;
-              if (legacyLiveFacts?.quoteRevision === undefined) {
-                return { sampled: false as const };
-              }
-              const oldChain = await observeLegacyHarnessDeterministicFields(
-                `${workflowId}:legacy-shadow`,
-                request,
-                withExecutionConfirmationStagePort(
-                  ports,
-                  executionConfirmation,
-                ),
-                runtime,
-                {
-                  quoteRef: {
-                    id: snapshot.quoteRef.id,
-                    revision: legacyLiveFacts.quoteRevision,
-                  },
-                },
-              );
+              const oldChain = await legacyShadowObservationReader.read({
+                workflowId,
+                workspaceId: request.workspaceId,
+              });
               if (!oldChain) return { sampled: false as const };
               const now = new Date(await DBOS.now()).toISOString();
               return shadowReconciliation.maybeReconcileOnExecutionComplete({

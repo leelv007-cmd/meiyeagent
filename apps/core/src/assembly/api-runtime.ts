@@ -105,6 +105,7 @@ import {
 } from '../p1/harness/production-context-port.js';
 import { ProductionHarnessFrozenRouteSnapshotResolver } from '../p1/harness/production-frozen-route.js';
 import { createProductionHarnessMediaAssembly } from '../p1/harness/production-media-assembly.js';
+import { PostgresLegacyShadowObservationReader } from '../p1/harness/legacy-shadow-observation-reader.js';
 import {
   ProductionHarnessStagePorts,
   type HarnessStructuredNodeRunnerFactory,
@@ -348,6 +349,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
     sourceContentPackageAdmissionReader,
     contentPackageApprovalPolicy,
   } = await assembleCoreGraph(env, { role: 'api' });
+  const legacyReplayInventory = new PostgresLegacyReplayInventory(pool);
+  await legacyReplayInventory.migrateInstallationLedger();
   const assetIntakeService = new AssetIntakeService(
     assetIntakeRepository,
     storeFactLedger
@@ -862,32 +865,9 @@ export async function startApi(env: NodeJS.ProcessEnv) {
           drills: opsConsoleStore,
           langfuseBaseUrl: env.LANGFUSE_BASE_URL ?? null,
           // V31-26a / U14: production PG inventory for legacy replay archive gate.
-          legacyReplayInventory: new PostgresLegacyReplayInventory(pool),
-          async resolveLegacyReplayInstallationEvidence() {
-            const result = await pool.query<{
-              database_name: string;
-              task_requests: string | null;
-              execution_plan_snapshots: string | null;
-              audit_events: string | null;
-              decision_events: string | null;
-            }>(
-              `select current_database() as database_name,
-                      to_regclass('harness_runtime.task_requests')::text as task_requests,
-                      to_regclass('p1_execution_plan_snapshots')::text as execution_plan_snapshots,
-                      to_regclass('harness_runtime.audit_events')::text as audit_events,
-                      to_regclass('harness_runtime.decision_events')::text as decision_events`,
-            );
-            const row = result.rows[0];
-            if (
-              !row?.task_requests ||
-              !row.execution_plan_snapshots ||
-              !row.audit_events ||
-              !row.decision_events
-            ) {
-              return null;
-            }
-            return JSON.stringify(row);
-          },
+          legacyReplayInventory: legacyReplayInventory,
+          resolveLegacyReplayInstallationEvidence: () =>
+            legacyReplayInventory.installationEvidence(),
           // V31-26a: dual-write admin-config for kill switches runtime hot-reads there.
           killSwitchAdminConfigMirror: {
             async applyBoolean(input) {
@@ -1450,6 +1430,8 @@ export async function startApi(env: NodeJS.ProcessEnv) {
         },
         // V31-13: shadow reconcil sample on Make complete (PG store + ops audit).
         shadowReconciliation: shadowReconciliationService,
+        legacyShadowObservationReader:
+          new PostgresLegacyShadowObservationReader(pool),
         // V31-23 L0.5: production sample on Make complete (same sampling point,
         // same admin-config sample rate as shadow reconciliation). Verdicts are
         // bound to the release and written through the eval assembly.

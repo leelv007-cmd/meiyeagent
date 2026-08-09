@@ -261,8 +261,17 @@ test('V31-25: production workflow has no inert handler or carrier-program fallba
   );
   assert.match(workflow, /create(?:Copy|Note|Media)PrimitiveProgram/);
   assert.match(workflow, /primitiveHandlers:/);
-  assert.match(dbos, /observeLegacyHarnessDeterministicFields\(/);
+  assert.match(dbos, /legacyShadowObservationReader\.read\(/);
   assert.doesNotMatch(dbos, /projectLegacyFromMakeRequest|observedRightsRefs/);
+  assert.doesNotMatch(dbos, /observeLegacyHarnessDeterministicFields/);
+  const shadowBlock = dbos.slice(
+    dbos.indexOf('V31-13: sample shadow reconcile'),
+    dbos.indexOf('V31-23 L0.5: production quick-check'),
+  );
+  assert.doesNotMatch(
+    shadowBlock,
+    /runHarnessWorkflow|resolveExecutionPlanLiveFacts|executionConfirmation|billing|ports\b|runtime\b/,
+  );
 });
 
 test('V31-25: legacy kill switch runs rollback path without compiled primitive effects', async () => {
@@ -279,40 +288,23 @@ test('V31-25: legacy kill switch runs rollback path without compiled primitive e
   assert.ok(keys.some((key) => key.includes(':s5:package:')));
 });
 
-test('V31-13: legacy shadow observation dual-runs only through pre-record primitives', async () => {
-  const { observeLegacyHarnessDeterministicFields } = await import(
-    './workflow-core.js'
+test('V31-13: legacy shadow reads exact multi-page durable projection without executing a runner', async () => {
+  const { parseLegacyShadowObservation } = await import(
+    './legacy-shadow-observation-reader.js'
   );
-  const stages = fixtureMediaStages();
-  let deliveries = 0;
-  const originalDeliver = stages.assembleMediaAndDeliver;
-  stages.assembleMediaAndDeliver = async (input) => {
-    deliveries += 1;
-    return originalDeliver(input);
-  };
-  const request = {
-    ...mediaTaskInput('image'),
-    executionPlanSnapshot: buildTestPlanSnapshot('media'),
-  };
-  const observed = await observeLegacyHarnessDeterministicFields(
-    'legacy-shadow-observation',
-    request,
-    stages,
-    {
-      ...recordingRuntime([]),
-      awaitDecision: async (question) => approvePaid(question),
+  const observed = parseLegacyShadowObservation({
+    deliverables: [{ kind: 'note', quantity: 7 }],
+    factRefs: ['fact-1'],
+    rightsRefs: ['asset-1:allowed'],
+    quoteRef: { id: 'quote-1', revision: 'legacy-r1' },
+    bounds: {
+      maxIterations: 8,
+      maxCostCents: 500,
+      maxWallClockMs: 60_000,
+      maxDelegations: 2,
     },
-    {
-      quoteRef: { id: 'quote-1', revision: 'live-quote-r1' },
-    },
-  );
-  assert.equal(deliveries, 0);
-  assert.equal(observed?.deliverables[0]?.kind, 'media');
-  assert.deepEqual(observed?.quoteRef, {
-    id: 'quote-1',
-    revision: 'live-quote-r1',
   });
-  assert.deepEqual(observed?.rightsRefs, []);
+  assert.equal(observed?.deliverables[0]?.quantity, 7);
 });
 
 test('V31-25: durable topology baseline includes compiled primitive effects', () => {
@@ -398,6 +390,31 @@ test('V31-25: production workflow self-durable record survives kill after busine
   const replayed = await run();
   assert.deepEqual(replayed, restarted);
   assert.equal(deliveryWrites, 1);
+});
+
+test('V31-25: production primitive topology never nests a durable step', async () => {
+  let depth = 0;
+  let maximumDepth = 0;
+  const runtime: HarnessWorkflowRuntime = {
+    ...recordingRuntime([]),
+    async runStep(_key, operation) {
+      depth += 1;
+      maximumDepth = Math.max(maximumDepth, depth);
+      assert.equal(depth, 1, 'nested durable step');
+      try {
+        return await operation();
+      } finally {
+        depth -= 1;
+      }
+    },
+  };
+  await runHarnessWorkflow(
+    'no-nested-primitive-step',
+    taskInput(),
+    fixtureCopyStages(),
+    runtime,
+  );
+  assert.equal(maximumDepth, 1);
 });
 
 // ─── Equivalence baseline + kill/restart ─────────────────────────────────────

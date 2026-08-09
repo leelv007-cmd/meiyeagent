@@ -6,6 +6,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 
 import type { AgentControlLimits } from '@meiye/contracts';
@@ -754,6 +755,16 @@ test('V31-26a U14: archive gate fails closed without inventory; export and flag 
   const store = new MemoryHarnessReleaseStore();
   const drills = new MemoryOpsRollbackDrillStore();
   const auditStore = new MemoryOpsConsoleAuditStore();
+  const validInstallationEvidence = JSON.stringify({
+    deploymentId: 'v31-26a-legacy-replay-ledger-v1',
+    migrationChecksum: createHash('sha256')
+      .update('v31-26a-legacy-replay-ledger-v1')
+      .digest('hex'),
+    installedAt: '2026-08-01T00:00:00.000Z',
+    initialLegacyCount: 0,
+    legacyTerminalAuditCount: 0,
+  });
+  let installationEvidence = validInstallationEvidence;
   const wiredService = new OpsConsoleService({
     releases: new HarnessReleaseService(store),
     catalog: store,
@@ -763,8 +774,7 @@ test('V31-26a U14: archive gate fails closed without inventory; export and flag 
     trials: new MemoryOpsCandidateTrialStore(),
     drills,
     legacyReplayInventory: inv,
-    resolveLegacyReplayInstallationEvidence: async () =>
-      'test-db:harness_runtime.task_requests',
+    resolveLegacyReplayInstallationEvidence: async () => installationEvidence,
   });
   const wired = new OpsConsoleFoundationModule(wiredService);
 
@@ -801,6 +811,26 @@ test('V31-26a U14: archive gate fails closed without inventory; export and flag 
   };
   assert.equal(withoutProof.gate.archiveAllowed, false);
 
+  installationEvidence = JSON.stringify({
+    ...JSON.parse(validInstallationEvidence),
+    initialLegacyCount: 1,
+  });
+  await assert.rejects(
+    () =>
+      wired.execute({
+        context: adminCtx(),
+        input: {
+          action: 'record_legacy_no_history_proof',
+          payload: {
+            reason: 'tampered ledger',
+            evidence: 'forged',
+          },
+        },
+      }),
+    /authoritative zero history and installation evidence/,
+  );
+  installationEvidence = validInstallationEvidence;
+
   const proof = (await wired.execute({
     context: adminCtx(),
     input: {
@@ -817,10 +847,7 @@ test('V31-26a U14: archive gate fails closed without inventory; export and flag 
     detail: { installationEvidence: string; inventorySource: string };
   };
   assert.equal(proof.action, 'record_legacy_no_history_proof');
-  assert.equal(
-    proof.detail.installationEvidence,
-    'test-db:harness_runtime.task_requests',
-  );
+  assert.match(proof.detail.installationEvidence, /migrationChecksum/);
   assert.equal(
     proof.detail.inventorySource,
     'harness_runtime.task_requests+p1_execution_plan_snapshots',

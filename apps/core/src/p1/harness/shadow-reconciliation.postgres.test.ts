@@ -4,6 +4,9 @@ import test from 'node:test';
 
 import { Pool } from 'pg';
 
+import { PostgresLegacyShadowObservationReader } from './legacy-shadow-observation-reader.js';
+import { PostgresHarnessStore } from './postgres-store.js';
+import { harnessRuntimeId } from './workspace-scope.js';
 import { PostgresShadowReconciliationStore } from './shadow-reconciliation-store.js';
 import type {
   ShadowProgramState,
@@ -111,6 +114,68 @@ test(
           "DELETE FROM p1_shadow_reconciliation_state WHERE id = 'global'",
         ).catch(() => undefined);
       }
+      await pool.end();
+    }
+  },
+);
+
+test(
+  'Postgres legacy shadow reader preserves exact multi-page projection',
+  {
+    skip: process.env.TEST_DATABASE_URL
+      ? false
+      : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
+    const suffix = randomUUID();
+    const workflowId = `legacy-shadow-reader-${suffix}`;
+    const workspaceId = `workspace-${suffix}`;
+    const runtimeId = harnessRuntimeId(workspaceId, workflowId);
+    try {
+      await new PostgresHarnessStore(pool).applySchema();
+      await pool.query(
+        `insert into harness_runtime.task_requests
+           (task_id, workflow_id, runtime_id, fingerprint, request)
+         values ($1, $2, $1, 'fixture', '{}'::jsonb)`,
+        [runtimeId, workflowId],
+      );
+      await pool.query(
+        `insert into harness_runtime.decision_traces
+           (id, task_id, stage, payload, trace_contract_version)
+         values ($1, $2, 'assembly_delivery', $3::jsonb, 'observability/v1')`,
+        [
+          `${runtimeId}:legacy-observation`,
+          runtimeId,
+          JSON.stringify({
+            legacyShadowObservation: {
+              deliverables: [{ kind: 'note', quantity: 9 }],
+              factRefs: ['fact-1'],
+              rightsRefs: ['asset-1:allowed'],
+              quoteRef: { id: 'quote-1', revision: 'legacy-r1' },
+              bounds: {
+                maxIterations: 8,
+                maxCostCents: 500,
+                maxWallClockMs: 60_000,
+                maxDelegations: 2,
+              },
+            },
+          }),
+        ],
+      );
+      const observed = await new PostgresLegacyShadowObservationReader(
+        pool,
+      ).read({ workflowId, workspaceId });
+      assert.equal(observed?.deliverables[0]?.quantity, 9);
+    } finally {
+      await pool.query(
+        'delete from harness_runtime.decision_traces where task_id=$1',
+        [runtimeId],
+      );
+      await pool.query(
+        'delete from harness_runtime.task_requests where task_id=$1',
+        [runtimeId],
+      );
       await pool.end();
     }
   },
