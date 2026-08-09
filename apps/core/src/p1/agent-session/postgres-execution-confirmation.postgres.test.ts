@@ -74,6 +74,7 @@ test(
       ).value;
       const expired = await service.expireHold({
         requestId: winner.stored.request.requestId,
+        workspaceId,
         now: '2026-08-09T12:00:01.000Z',
       });
       assert.equal(expired.refundedCredits, 3);
@@ -255,6 +256,320 @@ test(
   },
 );
 
+test(
+  'decision command rolls back and replays exactly once after a crash following decision append',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const fixture = await createFixture();
+    const {
+      service,
+      creditLedger,
+      decisionStore,
+      requestStore,
+      workspaceId,
+      cleanup,
+    } = fixture;
+    try {
+      await seedRejectedConfirmation(fixture, 'append');
+      const originalAppend = decisionStore.appendWithClient.bind(decisionStore);
+      let crash = true;
+      decisionStore.appendWithClient = async (client, decision) => {
+        const appended = await originalAppend(client, decision);
+        if (crash) {
+          crash = false;
+          throw new Error('injected crash after decision append');
+        }
+        return appended;
+      };
+      const command = rejectedDecision(workspaceId, 'append');
+
+      await assert.rejects(() => service.decide(command), /injected crash/);
+      assert.equal(await decisionStore.getByRequestId(command.requestId), null);
+      assert.equal(
+        (await requestStore.getByWorkspaceId(workspaceId, command.requestId))
+          ?.request.status,
+        'pending',
+      );
+      assert.equal(
+        (await creditLedger.project(workspaceId, command.decidedAt))
+          .availableCredits,
+        6,
+      );
+
+      const replay = await service.decide(command);
+      assert.equal(replay.request.status, 'decided');
+      assert.equal(replay.refundedCredits, 4);
+      assert.equal(
+        (await creditLedger.project(workspaceId, command.decidedAt))
+          .availableCredits,
+        10,
+      );
+    } finally {
+      await cleanup();
+    }
+  },
+);
+
+test(
+  'decision command rolls back and replays exactly once after a crash following status transition',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const fixture = await createFixture();
+    const { service, creditLedger, requestStore, workspaceId, cleanup } =
+      fixture;
+    try {
+      await seedRejectedConfirmation(fixture, 'status');
+      const originalMark =
+        requestStore.markStatusForWorkspaceWithClient.bind(requestStore);
+      let crash = true;
+      requestStore.markStatusForWorkspaceWithClient = async (client, input) => {
+        const updated = await originalMark(client, input);
+        if (crash) {
+          crash = false;
+          throw new Error('injected crash after status transition');
+        }
+        return updated;
+      };
+      const command = rejectedDecision(workspaceId, 'status');
+
+      await assert.rejects(() => service.decide(command), /injected crash/);
+      assert.equal(
+        (await requestStore.getByWorkspaceId(workspaceId, command.requestId))
+          ?.request.status,
+        'pending',
+      );
+      assert.equal(
+        (await creditLedger.project(workspaceId, command.decidedAt))
+          .availableCredits,
+        6,
+      );
+
+      const replay = await service.decide(command);
+      assert.equal(replay.request.status, 'decided');
+      assert.equal(replay.refundedCredits, 4);
+      assert.equal(
+        (await creditLedger.project(workspaceId, command.decidedAt))
+          .availableCredits,
+        10,
+      );
+    } finally {
+      await cleanup();
+    }
+  },
+);
+
+test(
+  'create transaction uses only client-aware balance and request reads',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const fixture = await createFixture();
+    const { service, creditLedger, requestStore, workspaceId, cleanup } =
+      fixture;
+    try {
+      await creditLedger.grant({
+        id: 'confirm-pkg-client-only',
+        workspaceId,
+        credits: 10,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'confirm-client-only',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      creditLedger.project = async () => {
+        throw new Error('pool project forbidden inside transaction');
+      };
+      requestStore.getById = async () => {
+        throw new Error('pool request read forbidden inside transaction');
+      };
+
+      const created = await service.createRequest({
+        requestId: 'req-client-only',
+        workspaceId,
+        planId: 'plan-client-only',
+        planRevision: 1,
+        snapshotHash: 'snap-client-only',
+        quoteRef: { id: 'quote-client-only', revision: 1 },
+        reservationIdempotencyKey: 'reserve-client-only',
+        createdAt: '2026-08-08T12:00:00.000Z',
+        holdExpiresAt: '2026-08-09T12:00:00.000Z',
+        actorId: 'merchant-client-only',
+        creditCost: 4,
+        failureRefundsCredits: true,
+      });
+      assert.equal(created.reservedCredits, 4);
+    } finally {
+      await cleanup();
+    }
+  },
+);
+
+test(
+  'savePending conflict resolves through the caller client without a pool read',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const fixture = await createFixture();
+    const { requestStore, workspaceId, cleanup } = fixture;
+    const client = await fixture.pool.connect();
+    try {
+      const input = {
+        request: agentExecutionConfirmationRequestSchema.parse({
+          schemaVersion: 'agent-execution-confirmation-request/v1',
+          requestId: 'req-conflict-client',
+          workspaceId,
+          planId: 'plan-conflict-client',
+          planRevision: 1,
+          snapshotHash: 'snap-conflict-client',
+          quoteRef: { id: 'quote-conflict-client', revision: 1 },
+          reservationIdempotencyKey: 'reserve-conflict-client',
+          createdAt: '2026-08-08T12:00:00.000Z',
+          holdExpiresAt: '2026-08-09T12:00:00.000Z',
+          status: 'pending',
+        }),
+        projection: {
+          reservedCredits: 0,
+          failureRefundsCredits: true,
+          rightsSummary: null,
+          factSummary: null,
+        } satisfies ConfirmationRequestProjectionFacts,
+      };
+      await requestStore.savePending(input);
+      requestStore.getById = async () => {
+        throw new Error('pool conflict read forbidden');
+      };
+      await client.query('BEGIN');
+      const replay = await requestStore.savePendingWithClient(client, input);
+      await client.query('COMMIT');
+      assert.equal(replay.request.requestId, input.request.requestId);
+    } finally {
+      await client.query('ROLLBACK').catch(() => undefined);
+      client.release();
+      await cleanup();
+    }
+  },
+);
+
+test(
+  'expiry sweeper owns due holds with the system actor and refunds exactly once',
+  {
+    skip: connectionString ? false : 'TEST_DATABASE_URL is not configured',
+  },
+  async () => {
+    const fixture = await createFixture();
+    const { service, creditLedger, requestStore, workspaceId, cleanup } =
+      fixture;
+    try {
+      await creditLedger.grant({
+        id: 'confirm-pkg-sweeper',
+        workspaceId,
+        credits: 10,
+        expirationDate: '2026-09-01T00:00:00.000Z',
+        transactionType: 'PURCHASE_PACKAGE',
+        sourceRef: 'confirm-sweeper',
+        createdAt: '2026-08-01T00:00:00.000Z',
+      });
+      await service.createRequest({
+        requestId: 'req-sweeper',
+        workspaceId,
+        planId: 'plan-sweeper',
+        planRevision: 1,
+        snapshotHash: 'snap-sweeper',
+        quoteRef: { id: 'quote-sweeper', revision: 1 },
+        reservationIdempotencyKey: 'reserve-sweeper',
+        createdAt: '2026-08-08T12:00:00.000Z',
+        holdExpiresAt: '2026-08-09T12:00:00.000Z',
+        actorId: 'merchant-sweeper',
+        creditCost: 4,
+        failureRefundsCredits: true,
+      });
+      const sweep = (
+        service as unknown as {
+          expireDueHolds?: (input: { now: string; limit?: number }) => Promise<{
+            expiredRequestIds: string[];
+          }>;
+        }
+      ).expireDueHolds;
+      assert.equal(typeof sweep, 'function');
+
+      const first = await sweep!.call(service, {
+        now: '2026-08-09T12:00:01.000Z',
+      });
+      assert.deepEqual(first.expiredRequestIds, ['req-sweeper']);
+      const second = await sweep!.call(service, {
+        now: '2026-08-09T13:00:00.000Z',
+      });
+      assert.deepEqual(second.expiredRequestIds, []);
+      assert.equal(
+        (await requestStore.getByWorkspaceId(workspaceId, 'req-sweeper'))
+          ?.request.status,
+        'expired',
+      );
+      assert.equal(
+        (
+          await creditLedger.project(
+            workspaceId,
+            '2026-08-09T13:00:00.000Z',
+          )
+        ).availableCredits,
+        10,
+      );
+      const refund = (await creditLedger.listTransactions(workspaceId)).find(
+        (row) => row.transactionType === 'REFUND',
+      );
+      assert.equal(refund?.actorId, 'system:confirmation-expiry-sweeper');
+    } finally {
+      await cleanup();
+    }
+  },
+);
+
+function rejectedDecision(workspaceId: string, suffix: string) {
+  return {
+    decisionId: `dec-crash-${suffix}`,
+    requestId: `req-crash-${suffix}`,
+    workspaceId,
+    actorId: 'merchant-crash',
+    decision: 'rejected' as const,
+    decidedAt: '2026-08-08T13:00:00.000Z',
+  };
+}
+
+async function seedRejectedConfirmation(
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+  suffix: string,
+) {
+  await fixture.creditLedger.grant({
+    id: `confirm-pkg-crash-${suffix}`,
+    workspaceId: fixture.workspaceId,
+    credits: 10,
+    expirationDate: '2026-09-01T00:00:00.000Z',
+    transactionType: 'PURCHASE_PACKAGE',
+    sourceRef: `confirm-crash-${suffix}`,
+    createdAt: '2026-08-01T00:00:00.000Z',
+  });
+  await fixture.service.createRequest({
+    requestId: `req-crash-${suffix}`,
+    workspaceId: fixture.workspaceId,
+    planId: `plan-crash-${suffix}`,
+    planRevision: 1,
+    snapshotHash: `snap-crash-${suffix}`,
+    quoteRef: { id: `quote-crash-${suffix}`, revision: 1 },
+    reservationIdempotencyKey: `reserve-crash-${suffix}`,
+    createdAt: '2026-08-08T12:00:00.000Z',
+    holdExpiresAt: '2026-08-09T12:00:00.000Z',
+    actorId: 'merchant-crash',
+    creditCost: 4,
+    failureRefundsCredits: true,
+  });
+}
+
 async function createFixture() {
   const schema = `confirm_${randomUUID().replaceAll('-', '')}`;
   const pool = new Pool({ connectionString });
@@ -297,6 +612,7 @@ async function createFixture() {
   return {
     service,
     creditLedger,
+    decisionStore: migration.decisionStore,
     requestStore: migration.requestStore,
     pool,
     workspaceId,

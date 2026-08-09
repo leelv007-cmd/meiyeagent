@@ -53,7 +53,7 @@ function makeService(credits = 20) {
     new MemoryPlanConfirmationDecisionStore(),
     confirmationCreditPortFromMemoryLedger(ledger),
   );
-  return service;
+  return { ledger, service };
 }
 
 function createBody(overrides: Record<string, unknown> = {}) {
@@ -74,10 +74,14 @@ function createBody(overrides: Record<string, unknown> = {}) {
   };
 }
 
-async function startServer(t: test.TestContext) {
-  const service = makeService();
+async function startServer(
+  t: test.TestContext,
+  now = '2026-08-09T13:00:00.000Z',
+) {
+  const { ledger, service } = makeService();
   const server = createCoreServer({
     diagnosticRepository: diagnostics,
+    clock: () => new Date(now),
     serviceToken: 'confirm-test-token',
     executionConfirmation: {
       create: (input) => service.createRequest(input),
@@ -98,7 +102,7 @@ async function startServer(t: test.TestContext) {
     'x-workspace-id': 'ws-1',
     'x-workspace-role': 'owner',
   };
-  return { base, headers };
+  return { base, headers, ledger, service };
 }
 
 async function jsonFetch(url: string, init: RequestInit) {
@@ -150,6 +154,16 @@ test('confirmation HTTP surface creates, lists, decides and enforces the immutab
     (decided.body.data as { decision: { decision: string } }).decision.decision,
     'confirmed',
   );
+
+  const conflictingDecision = await jsonFetch(`${base}/req-http-1/decide`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      decisionId: 'decision-http-conflict',
+      decision: 'rejected',
+    }),
+  });
+  assert.equal(conflictingDecision.response.status, 409);
 
   // Decided holds cannot expire (INVALID_STATE → 409 via p1Statuses).
   const expired = await jsonFetch(`${base}/req-http-1/expire`, {
@@ -208,4 +222,160 @@ test('confirmation routes require the service token', async (t) => {
     },
   });
   assert.equal(response.status, 401);
+});
+
+test('foreign workspace cannot decide or expire another workspace confirmation', async (t) => {
+  const { base, headers, ledger } = await startServer(t);
+  await jsonFetch(base, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(createBody()),
+  });
+  await jsonFetch(base, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(
+      createBody({
+        requestId: 'req-http-2',
+        reservationIdempotencyKey: 'reserve-http-2',
+      }),
+    ),
+  });
+
+  const foreignHeaders = {
+    ...headers,
+    'x-user-id': 'owner-2',
+    'x-workspace-id': 'ws-2',
+  };
+  const foreignBase = base.replace('/workspaces/ws-1/', '/workspaces/ws-2/');
+  const decided = await jsonFetch(`${foreignBase}/req-http-1/decide`, {
+    method: 'POST',
+    headers: foreignHeaders,
+    body: JSON.stringify({
+      decisionId: 'decision-foreign',
+      decision: 'rejected',
+      decidedAt: '2026-08-08T13:00:00.000Z',
+    }),
+  });
+  assert.equal(decided.response.status, 404);
+
+  const expired = await jsonFetch(`${foreignBase}/req-http-2/expire`, {
+    method: 'POST',
+    headers: foreignHeaders,
+    body: JSON.stringify({ now: '2026-08-09T13:00:00.000Z' }),
+  });
+  assert.equal(expired.response.status, 404);
+
+  const listed = await jsonFetch(base, { method: 'GET', headers });
+  const requests = (
+    listed.body.data as {
+      requests: Array<{ request: { status: string } }>;
+    }
+  ).requests;
+  assert.deepEqual(
+    requests.map((row) => row.request.status),
+    ['pending', 'pending'],
+  );
+  assert.equal(
+    (await ledger.project('ws-1', '2026-08-09T13:00:00.000Z'))
+      .availableCredits,
+    10,
+  );
+});
+
+test('foreign workspace cannot replay-create another workspace request id', async (t) => {
+  const { base, headers, ledger } = await startServer(t);
+  const created = await jsonFetch(base, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(createBody()),
+  });
+  assert.equal(created.response.status, 201);
+
+  const foreignHeaders = {
+    ...headers,
+    'x-user-id': 'owner-2',
+    'x-workspace-id': 'ws-2',
+  };
+  const foreignBase = base.replace('/workspaces/ws-1/', '/workspaces/ws-2/');
+  const replay = await jsonFetch(foreignBase, {
+    method: 'POST',
+    headers: foreignHeaders,
+    body: JSON.stringify(createBody()),
+  });
+
+  assert.equal(replay.response.status, 404);
+  assert.equal(
+    (await ledger.project('ws-1', '2026-08-08T13:00:00.000Z'))
+      .availableCredits,
+    15,
+  );
+});
+
+test('same request id replay with changed authoritative facts is rejected', async (t) => {
+  const { base, headers, ledger } = await startServer(t);
+  const created = await jsonFetch(base, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(createBody()),
+  });
+  assert.equal(created.response.status, 201);
+
+  const replay = await jsonFetch(base, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(
+      createBody({ snapshotHash: 'changed-snapshot', creditCost: 7 }),
+    ),
+  });
+
+  assert.equal(replay.response.status, 409);
+  assert.equal(
+    (await ledger.project('ws-1', '2026-08-08T13:00:00.000Z'))
+      .availableCredits,
+    15,
+  );
+});
+
+test('confirmation HTTP timestamps are server-owned and cannot advance expiry', async (t) => {
+  const serverNow = '2026-08-08T18:00:00.000Z';
+  const { base, headers } = await startServer(t, serverNow);
+  await jsonFetch(base, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(createBody()),
+  });
+
+  const decided = await jsonFetch(`${base}/req-http-1/decide`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      decisionId: 'decision-server-clock',
+      decision: 'confirmed',
+      decidedAt: '2099-01-01T00:00:00.000Z',
+    }),
+  });
+  assert.equal(decided.response.status, 200);
+  const decidedAt = Date.parse(
+    (decided.body.data as { decision: { decidedAt: string } }).decision
+      .decidedAt,
+  );
+  assert.equal(decidedAt, Date.parse(serverNow));
+
+  await jsonFetch(base, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(
+      createBody({
+        requestId: 'req-http-clock-2',
+        reservationIdempotencyKey: 'reserve-http-clock-2',
+      }),
+    ),
+  });
+  const expired = await jsonFetch(`${base}/req-http-clock-2/expire`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ now: '2099-01-01T00:00:00.000Z' }),
+  });
+  assert.equal(expired.response.status, 409);
 });

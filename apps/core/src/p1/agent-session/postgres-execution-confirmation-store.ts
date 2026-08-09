@@ -135,7 +135,7 @@ export class PostgresExecutionConfirmationRequestStore
     if (inserted.rows[0]) {
       return parseStored(inserted.rows[0]);
     }
-    const existing = await this.getById(request.requestId);
+    const existing = await this.getByIdWithClient(client, request.requestId);
     if (
       existing &&
       isDeepStrictEqual(existing.request, request) &&
@@ -150,12 +150,47 @@ export class PostgresExecutionConfirmationRequestStore
   }
 
   async getById(requestId: string): Promise<StoredConfirmationRequest | null> {
-    const result = await this.pool.query<RequestRow>(
+    return this.getByIdWithClient(this.pool, requestId);
+  }
+
+  async getByIdWithClient(
+    client: Queryable,
+    requestId: string,
+  ): Promise<StoredConfirmationRequest | null> {
+    const result = await client.query<RequestRow>(
       `SELECT request_id, workspace_id, payload, projection, status,
               campaign_plan_id, work_ordinal
          FROM p1_execution_confirmation_requests
         WHERE request_id = $1`,
       [requestId],
+    );
+    return result.rows[0] ? parseStored(result.rows[0]) : null;
+  }
+
+  async getByWorkspaceId(
+    workspaceId: string,
+    requestId: string,
+  ): Promise<StoredConfirmationRequest | null> {
+    return this.getByWorkspaceIdWithClient(
+      this.pool,
+      workspaceId,
+      requestId,
+    );
+  }
+
+  async getByWorkspaceIdWithClient(
+    client: Queryable,
+    workspaceId: string,
+    requestId: string,
+    forUpdate = false,
+  ): Promise<StoredConfirmationRequest | null> {
+    const result = await client.query<RequestRow>(
+      `SELECT request_id, workspace_id, payload, projection, status,
+              campaign_plan_id, work_ordinal
+         FROM p1_execution_confirmation_requests
+        WHERE workspace_id = $1 AND request_id = $2
+        ${forUpdate ? 'FOR UPDATE' : ''}`,
+      [workspaceId, requestId],
     );
     return result.rows[0] ? parseStored(result.rows[0]) : null;
   }
@@ -166,6 +201,28 @@ export class PostgresExecutionConfirmationRequestStore
     expectedStatus?: 'pending';
   }): Promise<StoredConfirmationRequest | null> {
     const existing = await this.getById(input.requestId);
+    if (!existing) return null;
+    return this.markStatusForWorkspaceWithClient(this.pool, {
+      ...input,
+      workspaceId: existing.request.workspaceId,
+    });
+  }
+
+  async markStatusForWorkspaceWithClient(
+    client: Queryable,
+    input: {
+      workspaceId: string;
+      requestId: string;
+      status: 'decided' | 'expired';
+      expectedStatus?: 'pending';
+    },
+  ): Promise<StoredConfirmationRequest | null> {
+    const existing = await this.getByWorkspaceIdWithClient(
+      client,
+      input.workspaceId,
+      input.requestId,
+      true,
+    );
     if (!existing) return null;
     if (
       input.expectedStatus &&
@@ -189,16 +246,25 @@ export class PostgresExecutionConfirmationRequestStore
       ...existing.request,
       status: input.status,
     });
-    const updated = await this.pool.query<RequestRow>(
+    const updated = await client.query<RequestRow>(
       `UPDATE p1_execution_confirmation_requests
           SET status = $2, payload = $3::jsonb
-        WHERE request_id = $1 AND status = 'pending'
+        WHERE request_id = $1 AND workspace_id = $4 AND status = 'pending'
         RETURNING request_id, workspace_id, payload, projection, status,
                   campaign_plan_id, work_ordinal`,
-      [input.requestId, input.status, JSON.stringify(nextRequest)],
+      [
+        input.requestId,
+        input.status,
+        JSON.stringify(nextRequest),
+        input.workspaceId,
+      ],
     );
     if (!updated.rows[0]) {
-      const again = await this.getById(input.requestId);
+      const again = await this.getByWorkspaceIdWithClient(
+        client,
+        input.workspaceId,
+        input.requestId,
+      );
       if (again?.request.status === input.status) return again;
       throw new ExecutionConfirmationError(
         'INVALID_STATE',
@@ -213,7 +279,18 @@ export class PostgresExecutionConfirmationRequestStore
     campaignPlanId: string;
     workOrdinal: number;
   }): Promise<StoredConfirmationRequest | null> {
-    const result = await this.pool.query<RequestRow>(
+    return this.findCampaignWorkWithClient(this.pool, input);
+  }
+
+  async findCampaignWorkWithClient(
+    client: Queryable,
+    input: {
+      workspaceId: string;
+      campaignPlanId: string;
+      workOrdinal: number;
+    },
+  ): Promise<StoredConfirmationRequest | null> {
+    const result = await client.query<RequestRow>(
       `SELECT request_id, workspace_id, payload, projection, status,
               campaign_plan_id, work_ordinal
          FROM p1_execution_confirmation_requests
@@ -238,6 +315,22 @@ export class PostgresExecutionConfirmationRequestStore
         WHERE workspace_id = $1 AND status = 'pending'
         ORDER BY created_at ASC`,
       [workspaceId],
+    );
+    return result.rows.map(parseStored);
+  }
+
+  async listDuePending(
+    now: string,
+    limit = 100,
+  ): Promise<StoredConfirmationRequest[]> {
+    const result = await this.pool.query<RequestRow>(
+      `SELECT request_id, workspace_id, payload, projection, status,
+              campaign_plan_id, work_ordinal
+         FROM p1_execution_confirmation_requests
+        WHERE status = 'pending' AND hold_expires_at <= $1::timestamptz
+        ORDER BY hold_expires_at, created_at
+        LIMIT $2`,
+      [now, Math.max(1, Math.min(limit, 500))],
     );
     return result.rows.map(parseStored);
   }
@@ -267,8 +360,15 @@ export class PostgresPlanConfirmationDecisionStore
   async append(
     decision: PlanConfirmationDecision,
   ): Promise<PlanConfirmationDecision> {
+    return this.appendWithClient(this.pool, decision);
+  }
+
+  async appendWithClient(
+    client: Queryable,
+    decision: PlanConfirmationDecision,
+  ): Promise<PlanConfirmationDecision> {
     const parsed = parseConfirmationDecision(decision);
-    const inserted = await this.pool.query<DecisionRow>(
+    const inserted = await client.query<DecisionRow>(
       `INSERT INTO p1_plan_confirmation_decisions (
          decision_id, request_id, actor_id, decision, decided_at, payload
        ) VALUES ($1, $2, $3, $4, $5::timestamptz, $6::jsonb)
@@ -286,7 +386,7 @@ export class PostgresPlanConfirmationDecisionStore
     if (inserted.rows[0]) {
       return parseConfirmationDecision(inserted.rows[0].payload);
     }
-    const byId = await this.getById(parsed.decisionId);
+    const byId = await this.getByIdWithClient(client, parsed.decisionId);
     if (byId && isDeepStrictEqual(byId, parsed)) {
       return byId;
     }
@@ -297,7 +397,10 @@ export class PostgresPlanConfirmationDecisionStore
       );
     }
     // Conflict on request_id unique: another decision already recorded.
-    const byRequest = await this.getByRequestId(parsed.requestId);
+    const byRequest = await this.getByRequestIdWithClient(
+      client,
+      parsed.requestId,
+    );
     if (byRequest && isDeepStrictEqual(byRequest, parsed)) {
       return byRequest;
     }
@@ -308,7 +411,14 @@ export class PostgresPlanConfirmationDecisionStore
   }
 
   async getById(decisionId: string): Promise<PlanConfirmationDecision | null> {
-    const result = await this.pool.query<DecisionRow>(
+    return this.getByIdWithClient(this.pool, decisionId);
+  }
+
+  private async getByIdWithClient(
+    client: Queryable,
+    decisionId: string,
+  ): Promise<PlanConfirmationDecision | null> {
+    const result = await client.query<DecisionRow>(
       `SELECT decision_id, request_id, payload
          FROM p1_plan_confirmation_decisions
         WHERE decision_id = $1`,
@@ -322,7 +432,14 @@ export class PostgresPlanConfirmationDecisionStore
   async getByRequestId(
     requestId: string,
   ): Promise<PlanConfirmationDecision | null> {
-    const result = await this.pool.query<DecisionRow>(
+    return this.getByRequestIdWithClient(this.pool, requestId);
+  }
+
+  private async getByRequestIdWithClient(
+    client: Queryable,
+    requestId: string,
+  ): Promise<PlanConfirmationDecision | null> {
+    const result = await client.query<DecisionRow>(
       `SELECT decision_id, request_id, payload
          FROM p1_plan_confirmation_decisions
         WHERE request_id = $1`,
@@ -423,33 +540,46 @@ export function confirmationCreditPortFromPostgresLedger(
     ): Promise<
       readonly import('../credit-billing/credit-ledger.js').CreditLotTransaction[]
     >;
+    projectWithClient?(
+      client: PoolClient,
+      workspaceId: string,
+      asOf?: string,
+    ): Promise<import('../credit-billing/credit-ledger.js').CreditBalanceProjection>;
   },
 ): import('./execution-confirmation-service.js').ConfirmationCreditLedgerPort {
   type Port =
     import('./execution-confirmation-service.js').ConfirmationCreditLedgerPort;
+  if (
+    ledger.withWorkspaceCreditLock &&
+    (!ledger.projectWithClient ||
+      !ledger.consumeWithClient ||
+      !ledger.refundUsageOperationWithClient)
+  ) {
+    throw new Error(
+      'Confirmation credit transactions require projectWithClient, consumeWithClient and refundUsageOperationWithClient.',
+    );
+  }
+  const lock = ledger.withWorkspaceCreditLock?.bind(ledger);
+  const projectWithClient = ledger.projectWithClient?.bind(ledger);
+  const consumeWithClient = ledger.consumeWithClient?.bind(ledger);
+  const refundWithClient = ledger.refundUsageOperationWithClient?.bind(ledger);
   return {
     project: (workspaceId, asOf) => ledger.project(workspaceId, asOf),
     consume: (input) => ledger.consume(input),
     refundUsageOperation: (input) => ledger.refundUsageOperation(input),
-    withWorkspaceCreditTransaction: ledger.withWorkspaceCreditLock
+    withWorkspaceCreditTransaction: lock
       ? async (workspaceId, action) => {
-          const lock = ledger.withWorkspaceCreditLock!.bind(ledger);
           return lock(workspaceId, async (client) => {
+            if (!projectWithClient || !consumeWithClient || !refundWithClient) {
+              throw new Error(
+                'Confirmation credit transaction client operations are unavailable.',
+              );
+            }
             const txLedger: Port = {
-              project: (ws, asOf) => ledger.project(ws, asOf),
+              project: (ws, asOf) => projectWithClient(client, ws, asOf),
               transactionClient: client,
-              consume: async (input) => {
-                if (!ledger.consumeWithClient) {
-                  return ledger.consume(input);
-                }
-                return ledger.consumeWithClient(client, input);
-              },
-              refundUsageOperation: async (input) => {
-                if (!ledger.refundUsageOperationWithClient) {
-                  return ledger.refundUsageOperation(input);
-                }
-                return ledger.refundUsageOperationWithClient(client, input);
-              },
+              consume: (input) => consumeWithClient(client, input),
+              refundUsageOperation: (input) => refundWithClient(client, input),
             };
             return action(txLedger);
           });

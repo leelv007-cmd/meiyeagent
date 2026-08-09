@@ -96,6 +96,7 @@ import {
 import { RouteTable } from './route-table.js';
 
 interface CoreServerDependencies {
+  clock?: () => Date;
   assetReader?: Partial<AssetHttpPolicyPort> & {
     deleteCanvasAsset?(input: {
       objectKey: string;
@@ -350,12 +351,9 @@ const executionConfirmationCreateBodySchema = z.object({
 const executionConfirmationDecideBodySchema = z.object({
   decisionId: z.string().trim().min(1).max(200),
   decision: z.enum(['confirmed', 'rejected']),
-  decidedAt: z.string().trim().min(1).max(64),
 });
 
-const executionConfirmationExpireBodySchema = z.object({
-  now: z.string().trim().min(1).max(64),
-});
+const executionConfirmationExpireBodySchema = z.object({});
 
 /**
  * V31-11 route-layer translation: ExecutionConfirmationError is a plain domain
@@ -369,6 +367,8 @@ function translateExecutionConfirmationError(error: unknown): never {
         : error.code === 'INSUFFICIENT_CREDITS' ||
             error.code === 'INVALID_STATE' ||
             error.code === 'CAMPAIGN_WORK_ALREADY_OPEN' ||
+            error.code === 'DECISION_IMMUTABLE' ||
+            error.code === 'IDEMPOTENCY_CONFLICT' ||
             error.code === 'HOLD_NOT_EXPIRED'
           ? 409
           : 400;
@@ -962,6 +962,7 @@ export function createCoreServer({
   serviceToken,
   workflowEvents,
   workflowHeartbeatMs = 15_000,
+  clock = () => new Date(),
 }: CoreServerDependencies) {
   const assetPolicy = assetReader ? assetHttpPolicyFor(assetReader) : undefined;
   return createServer(async (request, response) => {
@@ -2357,6 +2358,8 @@ export function createCoreServer({
                 ...body,
                 requestId,
                 actorId: context.userId,
+                workspaceId: context.workspaceId,
+                decidedAt: clock().toISOString(),
               });
             } catch (error) {
               throw translateExecutionConfirmationError(error);
@@ -2366,7 +2369,11 @@ export function createCoreServer({
           {
             code: 'CONFIRMATION_DECIDE_FAILED',
             message: 'The confirmation decision could not be recorded.',
-            p1Statuses: { NOT_FOUND: 404, INVALID_STATE: 409 },
+            p1Statuses: {
+              IDEMPOTENCY_CONFLICT: 409,
+              NOT_FOUND: 404,
+              INVALID_STATE: 409,
+            },
             status: 400,
             unknownMessage: 'error',
           }
@@ -2397,14 +2404,16 @@ export function createCoreServer({
               requestCorrelationId
             );
             authorizeContentCreation(context);
-            const body = executionConfirmationExpireBodySchema.parse(
+            executionConfirmationExpireBodySchema.parse(
               await readJson(request)
             );
             let result: ExpireExecutionConfirmationResult;
             try {
               result = await executionConfirmation!.expire({
                 requestId,
-                now: body.now,
+                now: clock().toISOString(),
+                actorId: context.userId,
+                workspaceId: context.workspaceId,
               });
             } catch (error) {
               throw translateExecutionConfirmationError(error);
@@ -2414,7 +2423,11 @@ export function createCoreServer({
           {
             code: 'CONFIRMATION_EXPIRE_FAILED',
             message: 'The confirmation hold could not be expired.',
-            p1Statuses: { NOT_FOUND: 404, INVALID_STATE: 409 },
+            p1Statuses: {
+              IDEMPOTENCY_CONFLICT: 409,
+              NOT_FOUND: 404,
+              INVALID_STATE: 409,
+            },
             status: 400,
             unknownMessage: 'error',
           }
