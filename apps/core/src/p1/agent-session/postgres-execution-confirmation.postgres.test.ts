@@ -66,6 +66,82 @@ test(
         await restarted.getCurrentByWorkflowId(first.workflowId),
         drifted,
       );
+      await assert.rejects(
+        () =>
+          restarted.putCurrent({
+            ...first,
+            frozenAt: '2099-01-01T00:00:00.000Z',
+          }),
+        (error: unknown) =>
+          error instanceof ExecutionConfirmationError &&
+          error.code === 'IDEMPOTENCY_CONFLICT',
+      );
+      assert.deepEqual(
+        await restarted.putCurrent({
+          ...drifted,
+          frozenAt: '1999-01-01T00:00:00.000Z',
+        }),
+        drifted,
+      );
+      await assert.rejects(
+        () =>
+          restarted.putCurrent({
+            ...drifted,
+            snapshotHash: 'snapshot-authority-conflict',
+          }),
+        (error: unknown) =>
+          error instanceof ExecutionConfirmationError &&
+          error.code === 'IDEMPOTENCY_CONFLICT',
+      );
+
+      const concurrentWorkflowId = 'workflow-authority-concurrent';
+      const sameMillisecond = '2026-08-09T08:02:00.000Z';
+      const [higher, lower] = await Promise.allSettled([
+        restarted.putCurrent({
+          ...first,
+          workflowId: concurrentWorkflowId,
+          planRevision: 4,
+          snapshotHash: 'snapshot-authority-4',
+          frozenAt: sameMillisecond,
+        }),
+        restarted.putCurrent({
+          ...first,
+          workflowId: concurrentWorkflowId,
+          planRevision: 3,
+          snapshotHash: 'snapshot-authority-3',
+          frozenAt: sameMillisecond,
+        }),
+      ]);
+      assert.equal(higher.status, 'fulfilled');
+      assert.equal(lower.status, 'rejected');
+      assert.equal(
+        (await restarted.getCurrentByWorkflowId(concurrentWorkflowId))
+          ?.planRevision,
+        4,
+      );
+
+      const inverseWorkflowId = 'workflow-authority-concurrent-inverse';
+      await Promise.allSettled([
+        restarted.putCurrent({
+          ...first,
+          workflowId: inverseWorkflowId,
+          planRevision: 3,
+          snapshotHash: 'snapshot-authority-inverse-3',
+          frozenAt: sameMillisecond,
+        }),
+        restarted.putCurrent({
+          ...first,
+          workflowId: inverseWorkflowId,
+          planRevision: 4,
+          snapshotHash: 'snapshot-authority-inverse-4',
+          frozenAt: sameMillisecond,
+        }),
+      ]);
+      assert.equal(
+        (await restarted.getCurrentByWorkflowId(inverseWorkflowId))
+          ?.planRevision,
+        4,
+      );
     } finally {
       await fixture.cleanup();
     }

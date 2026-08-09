@@ -87,10 +87,14 @@ export class ConfirmationAuthorityAssembler {
         `ProductQuote ${quote.quoteId} does not contain a positive server credit cost.`,
       );
     }
-    const requestId = await this.resolveRequestId(input.workflowId, plan);
+    const { baseRequestId, requestId } = await this.resolveRequestId(
+      input.workflowId,
+      plan,
+    );
     const existing = await this.confirmations.getRequest(requestId);
     const createdAt = existing?.request.createdAt ?? this.clock().toISOString();
     const taskId = quote.taskId ?? input.workflowId;
+    const baseReservationId = creditUsageOperationId(taskId);
     return this.confirmations.createRequest({
       requestId,
       workspaceId: input.workspaceId,
@@ -98,7 +102,10 @@ export class ConfirmationAuthorityAssembler {
       planRevision: plan.planRevision,
       snapshotHash: plan.snapshotHash,
       quoteRef: { id: quote.quoteId, revision: quote.revision },
-      reservationIdempotencyKey: creditUsageOperationId(taskId),
+      reservationIdempotencyKey:
+        requestId === baseRequestId
+          ? baseReservationId
+          : `consume:confirmation:${digest(`${baseReservationId}\0${requestId}`)}`,
       createdAt,
       holdExpiresAt:
         existing?.request.holdExpiresAt ??
@@ -115,18 +122,21 @@ export class ConfirmationAuthorityAssembler {
   private async resolveRequestId(
     workflowId: string,
     plan: PendingConfirmationAuthority,
-  ): Promise<string> {
+  ): Promise<{ baseRequestId: string; requestId: string }> {
     const base = `confirmation:${digest(`${workflowId}\0${plan.planRevision}\0${plan.snapshotHash}`)}`;
     let candidate = base;
     for (;;) {
       const existing = await this.confirmations.getRequest(candidate);
-      if (!existing) return candidate;
+      if (!existing) return { baseRequestId: base, requestId: candidate };
       if (existing.request.workspaceId !== plan.workspaceId) {
         throw new ExecutionConfirmationError('NOT_FOUND', 'Workflow was not found.');
       }
+      if (existing.request.status === 'pending') {
+        return { baseRequestId: base, requestId: candidate };
+      }
       const decision = await this.confirmations.getDecision(candidate);
-      if (!decision) return candidate;
-      candidate = `${base}:r:${digest(`${candidate}\0${decision.decisionId}`).slice(0, 16)}`;
+      const terminalFact = decision?.decisionId ?? existing.request.status;
+      candidate = `${base}:r:${digest(`${candidate}\0${terminalFact}`).slice(0, 16)}`;
     }
   }
 }

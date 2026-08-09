@@ -27,8 +27,9 @@ test('authority assembler freezes plan, quote, rights, facts and clock from serv
     sourceRef: 'test',
     createdAt: '2026-08-01T00:00:00.000Z',
   });
+  const requests = new MemoryExecutionConfirmationRequestStore();
   const service = new ExecutionConfirmationService(
-    new MemoryExecutionConfirmationRequestStore(),
+    requests,
     new MemoryPlanConfirmationDecisionStore(),
     confirmationCreditPortFromMemoryLedger(ledger),
   );
@@ -107,8 +108,9 @@ test('authority assembler replays one workflow with its first frozen clock', asy
     sourceRef: 'test',
     createdAt: '2026-08-01T00:00:00.000Z',
   });
+  const requests = new MemoryExecutionConfirmationRequestStore();
   const service = new ExecutionConfirmationService(
-    new MemoryExecutionConfirmationRequestStore(),
+    requests,
     new MemoryPlanConfirmationDecisionStore(),
     confirmationCreditPortFromMemoryLedger(ledger),
   );
@@ -165,7 +167,7 @@ test('authority assembler replays one workflow with its first frozen clock', asy
     requestId: first.stored.request.requestId,
     workspaceId: 'ws-1',
     actorId: 'merchant-1',
-    decision: 'confirmed',
+    decision: 'rejected',
     decidedAt: '2026-08-09T12:01:00.000Z',
   });
   now = '2026-08-09T12:02:00.000Z';
@@ -181,6 +183,46 @@ test('authority assembler replays one workflow with its first frozen clock', asy
     reconfirmReplay.stored.request.createdAt,
     reconfirm.stored.request.createdAt,
   );
+
+  await service.expireHold({
+    requestId: reconfirm.stored.request.requestId,
+    workspaceId: 'ws-1',
+    now: '2026-08-11T12:02:01.000Z',
+  });
+  now = '2026-08-11T12:03:00.000Z';
+  const successor = await assembler.createRequest(command);
+  assert.notEqual(
+    successor.stored.request.requestId,
+    reconfirm.stored.request.requestId,
+  );
+  assert.equal(successor.stored.request.status, 'pending');
+  assert.equal(
+    ledger.project('ws-1', now).availableCredits,
+    14,
+  );
+  await service.expireHold({
+    requestId: reconfirm.stored.request.requestId,
+    workspaceId: 'ws-1',
+    now: '2026-08-11T12:04:00.000Z',
+  });
+  assert.equal(
+    ledger
+      .listTransactions('ws-1')
+      .filter((transaction) => transaction.transactionType === 'REFUND').length,
+    2,
+  );
+  await requests.markStatus({
+    requestId: successor.stored.request.requestId,
+    status: 'decided',
+    expectedStatus: 'pending',
+  });
+  now = '2026-08-11T12:05:00.000Z';
+  const missingDecisionSuccessor = await assembler.createRequest(command);
+  assert.notEqual(
+    missingDecisionSuccessor.stored.request.requestId,
+    successor.stored.request.requestId,
+  );
+  assert.equal(missingDecisionSuccessor.stored.request.status, 'pending');
 });
 
 test('authority assembler rejects foreign workspace and quote revision drift', async () => {

@@ -1,5 +1,3 @@
-import { isDeepStrictEqual } from 'node:util';
-
 import type { AgentRevisionRef } from '@meiye/contracts';
 import type { Pool, PoolClient } from 'pg';
 
@@ -46,10 +44,19 @@ export class MemoryConfirmationAuthorityStore
         'Workflow was not found.',
       );
     }
-    if (existing && Date.parse(existing.frozenAt) > Date.parse(input.frozenAt)) {
+    if (existing && input.planRevision < existing.planRevision) {
       throw new ExecutionConfirmationError(
         'IDEMPOTENCY_CONFLICT',
         `Confirmation authority ${input.workflowId} has a newer frozen plan.`,
+      );
+    }
+    if (existing && input.planRevision === existing.planRevision) {
+      if (input.snapshotHash === existing.snapshotHash) {
+        return structuredClone(existing);
+      }
+      throw new ExecutionConfirmationError(
+        'IDEMPOTENCY_CONFLICT',
+        `Confirmation authority ${input.workflowId} revision ${input.planRevision} has a different snapshot.`,
       );
     }
     this.#current.set(input.workflowId, structuredClone(input));
@@ -71,6 +78,7 @@ export class MemoryConfirmationAuthorityStore
 type AuthorityRow = {
   workflow_id: string;
   workspace_id: string;
+  plan_revision: string | number;
   snapshot_hash: string;
   payload: PendingConfirmationAuthority;
 };
@@ -86,28 +94,62 @@ export class PostgresConfirmationAuthorityStore
       CREATE TABLE IF NOT EXISTS p1_execution_confirmation_authorities (
         workflow_id text PRIMARY KEY,
         workspace_id text NOT NULL,
+        plan_revision bigint NOT NULL,
         snapshot_hash text NOT NULL,
         payload jsonb NOT NULL,
         frozen_at timestamptz NOT NULL
       )
+    `);
+    await db.query(`
+      ALTER TABLE p1_execution_confirmation_authorities
+        ADD COLUMN IF NOT EXISTS plan_revision bigint;
+      UPDATE p1_execution_confirmation_authorities
+         SET plan_revision = (payload->>'planRevision')::bigint
+       WHERE plan_revision IS NULL;
+      ALTER TABLE p1_execution_confirmation_authorities
+        ALTER COLUMN plan_revision SET NOT NULL
     `);
   }
 
   async putCurrent(input: PendingConfirmationAuthority) {
     const result = await this.pool.query<AuthorityRow>(
       `INSERT INTO p1_execution_confirmation_authorities (
-         workflow_id, workspace_id, snapshot_hash, payload, frozen_at
-       ) VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz)
+         workflow_id, workspace_id, plan_revision, snapshot_hash, payload, frozen_at
+       ) VALUES ($1, $2, $3, $4, $5::jsonb, $6::timestamptz)
        ON CONFLICT (workflow_id) DO UPDATE
-         SET snapshot_hash = EXCLUDED.snapshot_hash,
-             payload = EXCLUDED.payload,
-             frozen_at = EXCLUDED.frozen_at
+         SET plan_revision = CASE
+               WHEN EXCLUDED.plan_revision > p1_execution_confirmation_authorities.plan_revision
+                 THEN EXCLUDED.plan_revision
+               ELSE p1_execution_confirmation_authorities.plan_revision
+             END,
+             snapshot_hash = CASE
+               WHEN EXCLUDED.plan_revision > p1_execution_confirmation_authorities.plan_revision
+                 THEN EXCLUDED.snapshot_hash
+               ELSE p1_execution_confirmation_authorities.snapshot_hash
+             END,
+             payload = CASE
+               WHEN EXCLUDED.plan_revision > p1_execution_confirmation_authorities.plan_revision
+                 THEN EXCLUDED.payload
+               ELSE p1_execution_confirmation_authorities.payload
+             END,
+             frozen_at = CASE
+               WHEN EXCLUDED.plan_revision > p1_execution_confirmation_authorities.plan_revision
+                 THEN EXCLUDED.frozen_at
+               ELSE p1_execution_confirmation_authorities.frozen_at
+             END
        WHERE p1_execution_confirmation_authorities.workspace_id = EXCLUDED.workspace_id
-         AND p1_execution_confirmation_authorities.frozen_at <= EXCLUDED.frozen_at
-       RETURNING workflow_id, workspace_id, snapshot_hash, payload`,
+         AND (
+           EXCLUDED.plan_revision > p1_execution_confirmation_authorities.plan_revision
+           OR (
+             EXCLUDED.plan_revision = p1_execution_confirmation_authorities.plan_revision
+             AND EXCLUDED.snapshot_hash = p1_execution_confirmation_authorities.snapshot_hash
+           )
+         )
+       RETURNING workflow_id, workspace_id, plan_revision, snapshot_hash, payload`,
       [
         input.workflowId,
         input.workspaceId,
+        input.planRevision,
         input.snapshotHash,
         JSON.stringify(input),
         input.frozenAt,
@@ -117,9 +159,13 @@ export class PostgresConfirmationAuthorityStore
     if (!stored) {
       const existing = await this.getCurrentByWorkflowId(input.workflowId);
       if (existing?.workspaceId === input.workspaceId) {
+        const message =
+          existing.planRevision === input.planRevision
+            ? `Confirmation authority ${input.workflowId} revision ${input.planRevision} has a different snapshot.`
+            : `Confirmation authority ${input.workflowId} has a newer frozen plan.`;
         throw new ExecutionConfirmationError(
           'IDEMPOTENCY_CONFLICT',
-          `Confirmation authority ${input.workflowId} has a newer frozen plan.`,
+          message,
         );
       }
       throw new ExecutionConfirmationError(
@@ -127,18 +173,12 @@ export class PostgresConfirmationAuthorityStore
         'Workflow was not found.',
       );
     }
-    if (!isDeepStrictEqual(stored, input)) {
-      throw new ExecutionConfirmationError(
-        'IDEMPOTENCY_CONFLICT',
-        `Confirmation authority ${input.workflowId} was not frozen as requested.`,
-      );
-    }
     return stored;
   }
 
   async getCurrentByWorkflowId(workflowId: string) {
     const result = await this.pool.query<AuthorityRow>(
-      `SELECT workflow_id, workspace_id, snapshot_hash, payload
+      `SELECT workflow_id, workspace_id, plan_revision, snapshot_hash, payload
          FROM p1_execution_confirmation_authorities
         WHERE workflow_id = $1`,
       [workflowId],
